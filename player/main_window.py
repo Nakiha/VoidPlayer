@@ -12,7 +12,9 @@ from .viewport_panel import ViewportPanel
 from .media_info_bar import MediaInfoBar
 from .controls_bar import ControlsBar
 from .timeline_area import TimelineArea
-from .theme_utils import get_color_hex
+from .theme_utils import get_color_hex, ColorKey
+from .debug_monitor import DebugMonitorWindow
+from .config import config, Profile
 
 
 class MainWindow(QWidget):
@@ -23,6 +25,7 @@ class MainWindow(QWidget):
         self._sources: list[str] = []
         self._view_mode = ViewMode.SIDE_BY_SIDE
         self._is_playing = False
+        self._debug_monitor: DebugMonitorWindow | None = None
         self._setup_ui()
         self._connect_signals()
         self._load_demo_data()
@@ -36,8 +39,8 @@ class MainWindow(QWidget):
         """更新样式 (主题变化时调用)"""
         self.setStyleSheet(f"""
             QWidget {{
-                background-color: {get_color_hex('bg_base')};
-                color: {get_color_hex('text_primary')};
+                background-color: {get_color_hex(ColorKey.BG_BASE)};
+                color: {get_color_hex(ColorKey.TEXT_PRIMARY)};
             }}
         """)
 
@@ -75,6 +78,12 @@ class MainWindow(QWidget):
         self.toolbar.view_mode_changed.connect(self.set_view_mode)
         self.toolbar.add_media_clicked.connect(self._on_add_media)
 
+        # 调试监控 (仅在非性能模式下启用)
+        if config.profile != Profile.PERF:
+            self.toolbar.debug_monitor_clicked.connect(self._show_debug_monitor)
+        else:
+            self.toolbar.debug_btn.hide()
+
         # 媒体信息条信号
         self.media_info_bar.media_remove_clicked.connect(self.remove_media)
         self.media_info_bar.media_changed.connect(self._on_media_changed)
@@ -99,6 +108,16 @@ class MainWindow(QWidget):
         # 演示: 添加一个新媒体
         new_media = f"Video_{len(self._sources) + 1}"
         self.add_media(new_media)
+
+    def _show_debug_monitor(self):
+        """显示性能监控窗口"""
+        if self._debug_monitor is None:
+            self._debug_monitor = DebugMonitorWindow(
+                None, auto_tracemalloc=(config.profile == Profile.DEBUG)
+            )
+        self._debug_monitor.show()
+        self._debug_monitor.raise_()
+        self._debug_monitor.activateWindow()
 
     def _on_media_changed(self, item_index: int, media_index: int):
         """媒体选择改变时的回调"""

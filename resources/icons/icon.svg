@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Background -->
+  <rect x="16" y="16" width="224" height="224" rx="48" ry="48" fill="#2a2a2a" stroke="#888888" stroke-width="3"/>
+
+  <!-- Multi-panel rectangles -->
+  <rect x="44" y="52" width="76" height="56" rx="10" fill="#5a5a5a" stroke="#777777" stroke-width="2"/>
+  <rect x="90" y="68" width="76" height="56" rx="10" fill="#6a6a6a" stroke="#888888" stroke-width="2"/>
+  <rect x="136" y="84" width="76" height="56" rx="10" fill="#7a7a7a" stroke="#999999" stroke-width="2"/>
+
+  <!-- Play button -->
+  <polygon points="108,148 108,218 178,183" fill="#cccccc"/>
+
+  <!-- Highlight on play button -->
+  <polygon points="108,148 108,183 143,165.5" fill="#888888" opacity="0.4"/>
+</svg>

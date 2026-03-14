@@ -20,7 +20,7 @@ QFont::setPointSize: Point size <= 0 (-1), must be greater than 0
 
 ### 1. 创建辅助函数 `create_tool_button()`
 
-在 [player/widgets.py](player/widgets.py) 中创建辅助函数：
+在 [player/widgets/buttons.py](player/widgets/buttons.py) 中创建辅助函数：
 
 ```python
 from PySide6.QtGui import QFont
@@ -65,7 +65,7 @@ self.btn = create_tool_button(FluentIcon.SETTING, self, 28)
 
 | 文件 | 修改内容 |
 |------|----------|
-| [player/widgets.py](player/widgets.py) | 新增 `create_tool_button()` 函数 |
+| [player/widgets/buttons.py](player/widgets/buttons.py) | 新增 `create_tool_button()` 函数 |
 | [player/controls_bar.py](player/controls_bar.py) | 所有按钮改用 `create_tool_button()` |
 | [player/track_row.py](player/track_row.py) | 所有按钮改用 `create_tool_button()` |
 | [player/media_info_bar.py](player/media_info_bar.py) | 所有按钮改用 `create_tool_button()` |

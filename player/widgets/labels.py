@@ -1,0 +1,90 @@
+"""
+时间标签控件
+"""
+from PySide6.QtGui import QFont, QFontMetrics
+from PySide6.QtWidgets import QSizePolicy
+from qfluentwidgets import BodyLabel
+
+from .time_utils import format_time_ms
+
+
+class TimeLabel(BodyLabel):
+    """统一的播放时间显示控件 - 显示 当前/总时长 格式"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._current_ms = 0
+        self._duration_ms = 0
+        self._apply_style()
+        self._update_display()
+
+    def _apply_style(self):
+        """应用等宽字体样式"""
+        font = QFont("Consolas, Monaco, monospace")
+        font.setPointSize(10)
+        self.setFont(font)
+        # 透明背景，避免遮挡父控件背景
+        self.setStyleSheet("TimeLabel { background: transparent; }")
+
+    def setTime(self, current_ms: int, duration_ms: int):
+        """设置当前时间和总时长"""
+        self._current_ms = current_ms
+        self._duration_ms = duration_ms
+        self._update_display()
+
+    def setCurrentTime(self, ms: int):
+        """设置当前时间"""
+        self._current_ms = ms
+        self._update_display()
+
+    def setDuration(self, ms: int):
+        """设置总时长"""
+        self._duration_ms = ms
+        self._update_display()
+
+    def _update_display(self):
+        """更新显示"""
+        if self._duration_ms <= 0:
+            self.setText("--:-- / --:--")
+        else:
+            current_str = format_time_ms(self._current_ms)
+            duration_str = format_time_ms(self._duration_ms)
+            self.setText(f"{current_str} / {duration_str}")
+
+
+class OffsetLabel(BodyLabel):
+    """偏移时间显示控件 - 显示带符号的偏移值"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._offset_ms = 0
+        self._apply_style()
+        self._update_display()
+
+    def _apply_style(self):
+        """应用等宽字体样式"""
+        font = QFont("Consolas, Monaco, monospace")
+        font.setPointSize(10)
+        self.setFont(font)
+        # 透明背景，避免遮挡父控件背景
+        self.setStyleSheet("OffsetLabel { background: transparent; }")
+        # 最小宽度刚好包裹 "00:00"
+        fm = QFontMetrics(font)
+        min_width = fm.horizontalAdvance("00:00") + 4  # 加一点边距
+        self.setMinimumWidth(min_width)
+        # 允许根据内容自动扩展宽度
+        self.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+
+    def setOffset(self, ms: int):
+        """设置偏移值"""
+        self._offset_ms = ms
+        self._update_display()
+
+    def offset(self) -> int:
+        """获取当前偏移值"""
+        return self._offset_ms
+
+    def _update_display(self):
+        """更新显示"""
+        self.setText(format_time_ms(self._offset_ms, show_sign=True))
+        self.updateGeometry()  # 通知布局重新计算大小

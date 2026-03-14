@@ -14,7 +14,7 @@ from .media_info_bar import MediaInfoBar
 from .controls_bar import ControlsBar
 from .timeline_area import TimelineArea
 from .track_row import TrackRow
-from .theme_utils import get_color, get_color_hex, get_accent_color, get_accent_color_hex
+from .theme_utils import get_color, get_color_hex, get_accent_color, get_accent_color_hex, ColorKey
 
 # Core (需要 voidview_native)
 # from .sync_controller import SyncController, VideoSource
@@ -38,6 +38,7 @@ __all__ = [
     'get_color_hex',
     'get_accent_color',
     'get_accent_color_hex',
+    'ColorKey',
     # Core (暂不导出)
     # 'SyncController',
     # 'VideoSource',

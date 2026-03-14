@@ -1,8 +1,80 @@
-"""日志配置 - 支持日志轮转"""
+"""日志配置 - 支持日志轮转和全局异常捕获"""
 
+import faulthandler
+import logging
 import sys
+import threading
+import traceback
+import warnings
 from pathlib import Path
+
 from loguru import logger
+
+# faulthandler 文件句柄 (保持打开直到程序结束)
+_crash_file = None
+
+
+def _setup_qt_handler():
+    """设置 Qt 消息处理器"""
+    try:
+        from PySide6.QtCore import qInstallMessageHandler, QtMsgType
+
+        _levels = {
+            QtMsgType.QtDebugMsg: "debug",
+            QtMsgType.QtWarningMsg: "warning",
+            QtMsgType.QtCriticalMsg: "error",
+            QtMsgType.QtFatalMsg: "critical",
+            QtMsgType.QtInfoMsg: "info",
+        }
+
+        def qt_handler(msg_type, context, msg):
+            level = _levels.get(msg_type, "debug")
+            file_info = f"{context.file}:{context.line}" if context.file else ""
+            logger.log(level, f"[Qt] {msg} ({file_info})")
+
+        qInstallMessageHandler(qt_handler)
+        return True
+    except ImportError:
+        return False
+
+
+class _LoguruHandler(logging.Handler):
+    """将标准 logging 转发到 loguru"""
+
+    def emit(self, record: logging.LogRecord):
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+
+        # 从 record 中提取位置信息，放到消息前缀
+        filename = Path(record.pathname).name if record.pathname else record.name
+        line = record.lineno or 0
+
+        # 使用特殊前缀标记，让 filter 函数提取
+        logger.opt(depth=0, exception=record.exc_info).log(
+            level, f"\x00{filename}:{line}\x00{record.getMessage()}"
+        )
+
+
+def _warning_handler(message, category, filename, lineno, _file=None, _line=None):
+    """将 warnings 模块的警告重定向到 loguru"""
+    logger.warning(f"{category.__name__}: {message} ({filename}:{lineno})")
+
+
+def _exception_hook(exc_type, exc_value, exc_tb):
+    """全局异常钩子 - 捕获未处理的异常并记录到日志"""
+    tb_str = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    logger.critical(f"未捕获的异常:\n{tb_str}")
+    # 调用默认的异常处理器
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+
+def _thread_exception_hook(args):
+    """线程异常钩子 - 捕获线程中未处理的异常"""
+    tb_str = ''.join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_tb))
+    thread_name = args.thread.name if args.thread else "unknown"
+    logger.critical(f"线程 [{thread_name}] 未捕获的异常:\n{tb_str}")
 
 
 def setup_logging(
@@ -56,11 +128,33 @@ def setup_logging(
 
     log_dir.mkdir(parents=True, exist_ok=True)
 
+    # 格式化过滤器: 添加 short_file (只显示文件名)
+    import re
+    _prefix_pattern = re.compile(r"^\x00([^:\x00]+):(\d+)\x00")
+
+    def format_filter(record):
+        # 检查是否有特殊前缀 (来自 _LoguruHandler)
+        msg = record["message"]
+        match = _prefix_pattern.match(msg)
+        if match:
+            record["extra"]["short_file"] = match.group(1)
+            record["extra"]["line"] = int(match.group(2))
+            # 移除前缀
+            record["message"] = msg[match.end():]
+        else:
+            # 普通 loguru 调用
+            if record["file"]:
+                record["extra"]["short_file"] = record["file"].name
+            else:
+                record["extra"]["short_file"] = record["name"]
+            record["extra"]["line"] = record["line"]
+        return True
+
     # 控制台输出格式
     console_format = (
         "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
         "<level>{level: <8}</level> | "
-        "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
+        "<cyan>{extra[short_file]}</cyan>:<cyan>{extra[line]}</cyan> - "
         "<level>{message}</level>"
     )
 
@@ -68,7 +162,7 @@ def setup_logging(
     file_format = (
         "{time:YYYY-MM-DD HH:mm:ss} | "
         "{level: <8} | "
-        "{name}:{function}:{line} - "
+        "{extra[short_file]}:{extra[line]} - "
         "{message}"
     )
 
@@ -79,6 +173,7 @@ def setup_logging(
             format=console_format,
             level=level,
             colorize=True,
+            filter=format_filter,
         )
 
     # 添加文件处理器
@@ -91,7 +186,27 @@ def setup_logging(
         retention=retention,
         compression=compression if compression else None,
         encoding="utf-8",
+        filter=format_filter,
     )
+
+    # 安装全局异常钩子
+    sys.excepthook = _exception_hook
+    threading.excepthook = _thread_exception_hook
+
+    # 将 warnings 重定向到日志
+    warnings.showwarning = _warning_handler
+
+    # 将标准 logging 重定向到 loguru (第三方库可能使用)
+    logging.basicConfig(handlers=[_LoguruHandler()], level=logging.DEBUG, force=True)
+
+    # 启用 faulthandler (捕获 C 级崩溃)
+    global _crash_file
+    crash_path = log_dir / f"{app_name}_crash.log"
+    _crash_file = crash_path.open("w", encoding="utf-8")
+    faulthandler.enable(file=_crash_file)
+
+    # 设置 Qt 消息处理器 (延迟调用，需在 QApplication 创建后)
+    _setup_qt_handler()
 
     logger.info(f"日志系统已初始化，日志目录: {log_dir}")
 

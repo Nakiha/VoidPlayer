@@ -3,15 +3,15 @@ TrackRow - 单条轨道控制
 """
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QFrame
 from PySide6.QtCore import Signal, Qt
-from PySide6.QtGui import QPainter, QColor, QPen, QFont
+from PySide6.QtGui import QPainter, QPen
 from qfluentwidgets import (
     TransparentToolButton,
     BodyLabel,
     FluentIcon,
 )
 
-from .theme_utils import get_color, get_color_hex, get_accent_color
-from .widgets import create_tool_button
+from .theme_utils import get_color, get_color_hex, get_accent_color, ColorKey
+from .widgets import create_tool_button, OffsetLabel, ResizableContainer
 
 
 class TrackContent(QWidget):
@@ -19,8 +19,8 @@ class TrackContent(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._playhead_position = 0.3  # 播放头位置 (0~1)
-        self._clip_width = 0.9  # 视频片段宽度比例
+        self._playhead_position = 0.3
+        self._clip_width = 0.9
         self.setMinimumWidth(100)
 
     def set_playhead_position(self, position: float):
@@ -38,20 +38,17 @@ class TrackContent(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # 背景
-        painter.fillRect(self.rect(), get_color("bg_track_content"))
-
         # 绘制视频片段
         clip_margin = 5
         clip_height = 26
         clip_y = (self.height() - clip_height) // 2
         clip_width = int((self.width() - clip_margin * 2) * self._clip_width)
 
-        painter.setBrush(get_color("bg_clip"))
+        painter.setBrush(get_color(ColorKey.BG_CLIP))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(clip_margin, clip_y, clip_width, clip_height, 2, 2)
 
-        # 绘制播放头 (使用系统主题色)
+        # 绘制播放头
         playhead_x = int(self.width() * self._playhead_position)
         painter.setPen(QPen(get_accent_color(), 1))
         painter.drawLine(playhead_x, 0, playhead_x, self.height())
@@ -65,6 +62,10 @@ class TrackRow(QWidget):
     visibility_toggled = Signal(bool)
     mute_toggled = Signal(bool)
     offset_changed = Signal(int)  # 毫秒
+    controls_width_changed = Signal(int)  # 请求调整 controls_panel 宽度
+
+    # 类级别的默认宽度（所有 TrackRow 共享）
+    _controls_width = 320
 
     def __init__(self, file_name: str = "", parent=None):
         super().__init__(parent)
@@ -76,89 +77,88 @@ class TrackRow(QWidget):
         self._setup_ui()
 
     def _setup_ui(self):
+        # 设置 TrackRow 支持 QSS 背景色
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # 左侧控制区 (320px)
+        # 左侧控制区 - 透明背景
         self.controls_panel = QWidget(self)
-        self.controls_panel.setFixedWidth(320)
-        self._update_controls_style()
+        self.controls_panel.setFixedWidth(TrackRow._controls_width)
+        self.controls_panel.setStyleSheet("background: transparent;")
         controls_layout = QHBoxLayout(self.controls_panel)
-        controls_layout.setContentsMargins(12, 0, 12, 0)
-        controls_layout.setSpacing(10)
+        controls_layout.setContentsMargins(8, 4, 8, 4)
+        controls_layout.setSpacing(4)
 
         # 移除按钮
-        self.remove_btn = create_tool_button(FluentIcon.CLOSE, self, 20)
+        self.remove_btn = create_tool_button(FluentIcon.CLOSE, self, 28)
         self.remove_btn.setToolTip("移除轨道")
         self.remove_btn.clicked.connect(self.remove_clicked)
         controls_layout.addWidget(self.remove_btn)
 
         # 文件名
         self.file_label = BodyLabel(self._file_name, self)
+        self.file_label.setStyleSheet("BodyLabel { background: transparent; }")
         controls_layout.addWidget(self.file_label, 1)
 
         # 可见性按钮
-        self.visibility_btn = create_tool_button(FluentIcon.VIEW, self, 20)
+        self.visibility_btn = create_tool_button(FluentIcon.VIEW, self, 28)
         self.visibility_btn.setToolTip("显示/隐藏视频")
         self.visibility_btn.clicked.connect(self._on_visibility_clicked)
         controls_layout.addWidget(self.visibility_btn)
 
         # 静音按钮
-        self.mute_btn = create_tool_button(FluentIcon.VOLUME, self, 20)
+        self.mute_btn = create_tool_button(FluentIcon.VOLUME, self, 28)
         self.mute_btn.setToolTip("静音/取消静音")
         self.mute_btn.clicked.connect(self._on_mute_clicked)
         controls_layout.addWidget(self.mute_btn)
 
         # 偏移控制区
-        # 后退按钮
-        self.offset_prev_btn = create_tool_button(FluentIcon.LEFT_ARROW, self, 18)
+        self.offset_prev_btn = create_tool_button(FluentIcon.LEFT_ARROW, self, 28)
         self.offset_prev_btn.setToolTip("偏移 -1 帧")
         self.offset_prev_btn.clicked.connect(self._on_offset_decrease)
         controls_layout.addWidget(self.offset_prev_btn)
 
-        # 偏移时间显示
-        self.offset_label = BodyLabel("00:00", self)
-        # 使用 QFont 设置字体，避免与 qfluentwidgets 主题系统冲突
-        font = QFont("Consolas, Monaco, monospace")
-        font.setPointSize(10)
-        self.offset_label.setFont(font)
-        self.offset_label.setStyleSheet(f"color: {get_color_hex('text_secondary')};")
-        self.offset_label.setFixedWidth(45)
-        controls_layout.addWidget(self.offset_label)
-
-        # 前进按钮
-        self.offset_next_btn = create_tool_button(FluentIcon.RIGHT_ARROW, self, 18)
-        self.offset_next_btn.setToolTip("偏移 +1 帧")
+        self.offset_next_btn = create_tool_button(FluentIcon.RIGHT_ARROW, self, 28)
+        self.offset_next_btn.setToolTip("偏移 +0.01秒")
         self.offset_next_btn.clicked.connect(self._on_offset_increase)
         controls_layout.addWidget(self.offset_next_btn)
 
+        self.offset_label = OffsetLabel(self)
+        controls_layout.addWidget(self.offset_label)
+
         main_layout.addWidget(self.controls_panel)
 
-        # 右侧轨道区
-        self.track_content = TrackContent(self)
-        main_layout.addWidget(self.track_content, 1)
+        # 右侧轨道区（用 ResizableContainer 包裹，左侧可拖动）
+        self.track_container = ResizableContainer(self)
+        self.track_container.setResizable(ResizableContainer.Edge.LEFT)
+        self.track_container.setRange(ResizableContainer.DEFAULT_MIN_WIDTH, ResizableContainer.DEFAULT_MAX_WIDTH)
+        self.track_container.setCurrentWidth(TrackRow._controls_width)
+        self.track_container.widthChanged.connect(self._on_width_changed)
 
-    def _update_controls_style(self):
-        """更新控制区样式"""
-        self.controls_panel.setStyleSheet(
-            f"background-color: {get_color_hex('bg_track_controls')};"
-        )
+        self.track_content = TrackContent(self.track_container)
+        self.track_container.setWidget(self.track_content)
+        main_layout.addWidget(self.track_container, 1)
+
+    def set_alt_row(self, is_alt: bool):
+        """设置是否为交替行"""
+        bg_color = ColorKey.BG_TRACK_ALT if is_alt else ColorKey.BG_TRACK_CONTROLS
+        self.setStyleSheet(f"TrackRow {{ background-color: {get_color_hex(bg_color)}; }}")
 
     def _on_visibility_clicked(self):
         """可见性切换"""
         self._is_visible = not self._is_visible
-        # 更新图标
         if self._is_visible:
             self.visibility_btn.setIcon(FluentIcon.VIEW)
         else:
-            self.visibility_btn.setIcon(FluentIcon.VIEW_OFF)
+            self.visibility_btn.setIcon(FluentIcon.HIDE)
         self.visibility_toggled.emit(self._is_visible)
 
     def _on_mute_clicked(self):
         """静音切换"""
         self._is_muted = not self._is_muted
-        # 更新图标
         if self._is_muted:
             self.mute_btn.setIcon(FluentIcon.MUTE)
         else:
@@ -166,24 +166,20 @@ class TrackRow(QWidget):
         self.mute_toggled.emit(self._is_muted)
 
     def _on_offset_decrease(self):
-        """减少偏移 (-1帧 ≈ 33ms)"""
-        self._offset_ms -= 33
-        self._update_offset_display()
+        """减少偏移"""
+        self._offset_ms -= 10
+        self.offset_label.setOffset(self._offset_ms)
         self.offset_changed.emit(self._offset_ms)
 
     def _on_offset_increase(self):
-        """增加偏移 (+1帧 ≈ 33ms)"""
-        self._offset_ms += 33
-        self._update_offset_display()
+        """增加偏移"""
+        self._offset_ms += 10
+        self.offset_label.setOffset(self._offset_ms)
         self.offset_changed.emit(self._offset_ms)
 
-    def _update_offset_display(self):
-        """更新偏移时间显示"""
-        abs_ms = abs(self._offset_ms)
-        sec = abs_ms // 1000
-        ms = abs_ms % 1000 // 10
-        sign = "-" if self._offset_ms < 0 else ""
-        self.offset_label.setText(f"{sign}{sec:02d}:{ms:02d}")
+    def _on_width_changed(self, new_width: int):
+        """宽度变化 - 通知 TimelineArea 同步所有轨道"""
+        self.controls_width_changed.emit(new_width)
 
     def set_file_name(self, name: str):
         """设置文件名"""
@@ -197,4 +193,14 @@ class TrackRow(QWidget):
     def set_offset(self, offset_ms: int):
         """设置偏移值"""
         self._offset_ms = offset_ms
-        self._update_offset_display()
+        self.offset_label.setOffset(self._offset_ms)
+
+    @classmethod
+    def set_controls_width(cls, width: int):
+        """设置类级别的 controls_panel 宽度"""
+        cls._controls_width = width
+
+    def apply_controls_width(self, width: int):
+        """应用宽度到当前 TrackRow 的 controls_panel 和 track_container"""
+        self.controls_panel.setFixedWidth(width)
+        self.track_container.setCurrentWidth(width)

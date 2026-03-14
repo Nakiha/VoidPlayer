@@ -1,39 +1,17 @@
 """
 ControlsBar - 播放控制条
 """
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QFrame
+from PySide6.QtWidgets import QWidget, QHBoxLayout
 from PySide6.QtCore import Signal, Qt
-from PySide6.QtGui import QColor, QFont
 from qfluentwidgets import (
-    TransparentToolButton,
     ComboBox,
-    BodyLabel,
     Slider,
     FluentIcon,
-    isDarkTheme,
     themeColor,
 )
 
-from .theme_utils import get_color_hex
-from .widgets import create_tool_button
-
-
-class ControlGroup(QFrame):
-    """控制组控件 - 带背景的组合控件"""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._update_style()
-
-    def _update_style(self):
-        """更新样式"""
-        self.setStyleSheet(f"""
-            ControlGroup {{
-                background-color: {get_color_hex('bg_control_group')};
-                border-radius: 3px;
-                padding: 4px 8px;
-            }}
-        """)
+from .theme_utils import get_color_hex, ColorKey
+from .widgets import create_tool_button, TimeLabel
 
 
 class ControlsBar(QWidget):
@@ -54,20 +32,30 @@ class ControlsBar(QWidget):
         super().__init__(parent)
         self._is_playing = False
         self._is_looping = True
-        self._duration_ms = 9600  # 9.6秒
+        self._duration_ms = 0  # 总时长，由外部设置
         self._current_ms = 0
-        self.setFixedHeight(36)
+        self.setFixedHeight(40)  # 32px 按钮 + 4px*2 边距 = 40px
+        self._update_style()
         self._setup_ui()
+
+    def _update_style(self):
+        """更新背景样式 - 稍亮引导用户操作"""
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+            ControlsBar {{
+                background-color: {get_color_hex(ColorKey.BG_CONTROL_GROUP)};
+            }}
+        """)
 
     def _setup_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 0, 8, 4)
+        layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(4)
 
         # 缩放选择
         self.zoom_combo = ComboBox(self)
-        self.zoom_combo.addItems(["50%", "75%", "100%", "121%", "150%", "200%", "400%"])
-        self.zoom_combo.setCurrentIndex(3)  # 默认 121%
+        self.zoom_combo.addItems(["50%", "75%", "100%", "125%", "150%", "200%", "400%"])
+        self.zoom_combo.setCurrentIndex(2)   # 默认 100%
         self.zoom_combo.setFixedWidth(80)
         self.zoom_combo.currentIndexChanged.connect(self._on_zoom_changed)
         layout.addWidget(self.zoom_combo)
@@ -81,25 +69,25 @@ class ControlsBar(QWidget):
         layout.addWidget(self.speed_combo)
 
         # 全屏按钮
-        self.fullscreen_btn = create_tool_button(FluentIcon.FULL_SCREEN, self, 28)
+        self.fullscreen_btn = create_tool_button(FluentIcon.FULL_SCREEN, self, 32)
         self.fullscreen_btn.setToolTip("全屏")
         self.fullscreen_btn.clicked.connect(self.fullscreen_toggled)
         layout.addWidget(self.fullscreen_btn)
 
         # 上一帧按钮
-        self.prev_frame_btn = create_tool_button(FluentIcon.LEFT_ARROW, self, 28)
+        self.prev_frame_btn = create_tool_button(FluentIcon.LEFT_ARROW, self, 32)
         self.prev_frame_btn.setToolTip("上一帧")
         self.prev_frame_btn.clicked.connect(self.prev_frame_clicked)
         layout.addWidget(self.prev_frame_btn)
 
         # 下一帧按钮
-        self.next_frame_btn = create_tool_button(FluentIcon.RIGHT_ARROW, self, 28)
+        self.next_frame_btn = create_tool_button(FluentIcon.RIGHT_ARROW, self, 32)
         self.next_frame_btn.setToolTip("下一帧")
         self.next_frame_btn.clicked.connect(self.next_frame_clicked)
         layout.addWidget(self.next_frame_btn)
 
         # 循环按钮 (激发式)
-        self.loop_btn = create_tool_button(FluentIcon.SYNC, self, 28)
+        self.loop_btn = create_tool_button(FluentIcon.SYNC, self, 32)
         self.loop_btn.setToolTip("循环播放")
         self.loop_btn.setCheckable(True)
         self.loop_btn.setChecked(self._is_looping)
@@ -108,26 +96,40 @@ class ControlsBar(QWidget):
         layout.addWidget(self.loop_btn)
 
         # 播放按钮
-        self.play_btn = create_tool_button(FluentIcon.PLAY, self, 28)
+        self.play_btn = create_tool_button(FluentIcon.PLAY, self, 32)
         self.play_btn.setToolTip("播放")
         self.play_btn.clicked.connect(self._on_play_clicked)
         layout.addWidget(self.play_btn)
 
         # 时间显示
-        self.time_label = BodyLabel("00:00 / 09.60", self)
-        # 使用 QFont 设置字体，避免与 qfluentwidgets 主题系统冲突
-        font = QFont("Consolas, Monaco, monospace")
-        font.setPointSize(10)
-        self.time_label.setFont(font)
+        self.time_label = TimeLabel(self)
         layout.addWidget(self.time_label)
 
         # 时间轴滑块
         self.timeline_slider = Slider(Qt.Orientation.Horizontal, self)
         self.timeline_slider.setRange(0, 1000)
-        self.timeline_slider.setValue(300)  # 默认 30% 位置
-        self.timeline_slider.setFixedHeight(20)  # 增加高度确保滑块完整显示
+        self.timeline_slider.setValue(0)  # 初始位置为起点
+        self.timeline_slider.setFixedHeight(24)  # 确保滑块手柄完整显示
         self.timeline_slider.valueChanged.connect(self._on_slider_changed)
         layout.addWidget(self.timeline_slider, 1)
+
+        # 初始化控件状态
+        self._update_controls_enabled()
+        self._update_time_display()
+
+    def _update_controls_enabled(self):
+        """根据是否加载媒体来启用/禁用控件"""
+        has_media = self._duration_ms > 0
+
+        # 媒体播放相关控件
+        self.zoom_combo.setEnabled(has_media)
+        self.speed_combo.setEnabled(has_media)
+        self.fullscreen_btn.setEnabled(has_media)
+        self.prev_frame_btn.setEnabled(has_media)
+        self.next_frame_btn.setEnabled(has_media)
+        self.loop_btn.setEnabled(has_media)
+        self.play_btn.setEnabled(has_media)
+        self.timeline_slider.setEnabled(has_media)
 
     def _on_play_clicked(self):
         """播放按钮点击"""
@@ -158,17 +160,17 @@ class ControlsBar(QWidget):
                 TransparentToolButton {{
                     background-color: rgba({r}, {g}, {b}, 60);
                     border: none;
-                    border-radius: 14px;
+                    border-radius: 16px;
                     padding: 0px;
                     margin: 0px;
                 }}
                 TransparentToolButton:hover {{
                     background-color: rgba({r}, {g}, {b}, 100);
-                    border-radius: 14px;
+                    border-radius: 16px;
                 }}
                 TransparentToolButton:pressed {{
                     background-color: rgba({r}, {g}, {b}, 140);
-                    border-radius: 14px;
+                    border-radius: 16px;
                 }}
             """)
         else:
@@ -176,17 +178,17 @@ class ControlsBar(QWidget):
                 TransparentToolButton {
                     background-color: transparent;
                     border: none;
-                    border-radius: 14px;
+                    border-radius: 16px;
                     padding: 0px;
                     margin: 0px;
                 }
                 TransparentToolButton:hover {
                     background-color: rgba(255, 255, 255, 20);
-                    border-radius: 14px;
+                    border-radius: 16px;
                 }
                 TransparentToolButton:pressed {
                     background-color: rgba(255, 255, 255, 40);
-                    border-radius: 14px;
+                    border-radius: 16px;
                 }
             """)
 
@@ -208,13 +210,12 @@ class ControlsBar(QWidget):
 
     def _update_time_display(self):
         """更新时间显示"""
-        current_sec = self._current_ms / 1000
-        total_sec = self._duration_ms / 1000
-        self.time_label.setText(f"{current_sec:05.2f} / {total_sec:05.2f}")
+        self.time_label.setTime(self._current_ms, self._duration_ms)
 
     def set_duration(self, duration_ms: int):
         """设置总时长"""
         self._duration_ms = duration_ms
+        self._update_controls_enabled()
         self._update_time_display()
 
     def set_current_time(self, time_ms: int):

@@ -27,6 +27,7 @@ class ToolBar(QWidget):
     export_clicked = Signal()
     settings_clicked = Signal()
     help_clicked = Signal()
+    debug_monitor_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -100,6 +101,14 @@ class ToolBar(QWidget):
         self.settings_btn.setToolTip("设置")
         self.settings_btn.clicked.connect(self.settings_clicked)
         layout.addWidget(self.settings_btn)
+
+        layout.addSpacing(4)
+
+        # 性能监控按钮
+        self.debug_btn = create_tool_button(FluentIcon.STOP_WATCH, self, 32)
+        self.debug_btn.setToolTip("性能监控")
+        self.debug_btn.clicked.connect(self.debug_monitor_clicked)
+        layout.addWidget(self.debug_btn)
 
         layout.addSpacing(4)
 

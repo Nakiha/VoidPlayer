@@ -1,8 +1,6 @@
 """
-WidgetUtils - 控件工具
-修复 qfluentwidgets 控件的常见问题
+按钮工具函数
 """
-from PySide6.QtGui import QFont
 from qfluentwidgets import TransparentToolButton, FluentIcon
 
 

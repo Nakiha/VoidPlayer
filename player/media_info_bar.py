@@ -43,13 +43,13 @@ class MediaInfoItem(QWidget):
         layout.addStretch()
 
         # 设置按钮
-        self.settings_btn = create_tool_button(FluentIcon.SETTING, self, 24)
+        self.settings_btn = create_tool_button(FluentIcon.SETTING, self, 28)
         self.settings_btn.setToolTip("媒体设置")
         self.settings_btn.clicked.connect(lambda: self.media_settings_clicked.emit(self.index))
         layout.addWidget(self.settings_btn)
 
         # 关闭按钮
-        self.remove_btn = create_tool_button(FluentIcon.CLOSE, self, 24)
+        self.remove_btn = create_tool_button(FluentIcon.CLOSE, self, 28)
         self.remove_btn.setToolTip("移除媒体")
         self.remove_btn.clicked.connect(lambda: self.media_remove_clicked.emit(self.index))
         layout.addWidget(self.remove_btn)

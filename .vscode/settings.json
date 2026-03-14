@@ -13,5 +13,7 @@
         "statusBar.debuggingForeground": "#FCFCFF",
         "statusBar.noFolderBackground": "#15158E",
         "statusBar.noFolderForeground": "#FCFCFF"
-    }
+    },
+    "cmake.sourceDirectory": "D:/Code/yorune/VoidPlayer/native",
+    "cmake.buildDirectory": "${sourceDirectory}/build"
 }

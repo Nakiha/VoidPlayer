@@ -20,12 +20,12 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QTextEdit,
-    QSplitter,
 )
 from PySide6.QtCore import QTimer, Qt, QRect
 from PySide6.QtGui import QPainter, QPen, QFont
 
 from .theme_utils import get_color, ColorKey
+from .widgets import HighlightSplitter
 
 try:
     import psutil
@@ -449,7 +449,7 @@ class DebugMonitorWindow(QWidget):
         layout.addWidget(self.memory_label)
 
         # 分割器
-        splitter = QSplitter(Qt.Vertical)
+        splitter = HighlightSplitter(Qt.Vertical)
 
         # 内存曲线图
         self.memory_chart = MemoryChart()

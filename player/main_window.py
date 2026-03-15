@@ -6,10 +6,8 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout
 from PySide6.QtCore import Qt
 from qfluentwidgets import isDarkTheme, FluentIcon
 
-from .view_mode import ViewMode
+from .viewport import ViewMode, ViewportPanel
 from .toolbar import ToolBar
-from .viewport_panel import ViewportPanel
-from .media_info_bar import MediaInfoBar
 from .controls_bar import ControlsBar
 from .timeline_area import TimelineArea
 from .theme_utils import get_color_hex, ColorKey
@@ -53,22 +51,19 @@ class MainWindow(QWidget):
         self.toolbar = ToolBar(self)
         self.main_layout.addWidget(self.toolbar)
 
-        # 2. 视频预览区域 (flex: 1)
+        # 2. 视频预览区域（包含媒体信息）(flex: 1)
+        # 现在 ViewportPanel 已经内置了媒体信息条
         self.viewport_panel = ViewportPanel(self)
         self.main_layout.addWidget(self.viewport_panel, 1)
 
-        # 3. 媒体信息条 (32px)
-        self.media_info_bar = MediaInfoBar(self)
-        self.main_layout.addWidget(self.media_info_bar)
-
-        # 媒体信息条和播放控制条之间的间距
+        # 播放控制条之前的间距
         self.main_layout.addSpacing(4)
 
-        # 4. 播放控制条 (42px)
+        # 3. 播放控制条 (42px)
         self.controls_bar = ControlsBar(self)
         self.main_layout.addWidget(self.controls_bar)
 
-        # 5. 时间轴轨道区域 (动态高度)
+        # 4. 时间轴轨道区域 (动态高度)
         self.timeline_area = TimelineArea(self)
         self.main_layout.addWidget(self.timeline_area)
 
@@ -84,9 +79,9 @@ class MainWindow(QWidget):
         else:
             self.toolbar.debug_btn.hide()
 
-        # 媒体信息条信号
-        self.media_info_bar.media_remove_clicked.connect(self.remove_media)
-        self.media_info_bar.media_changed.connect(self._on_media_changed)
+        # 视口面板信号（包含媒体选择和移除）
+        self.viewport_panel.media_remove_clicked.connect(self.remove_media)
+        self.viewport_panel.media_changed.connect(self._on_media_changed)
 
         # 控制条信号
         self.controls_bar.play_clicked.connect(self.play)
@@ -115,13 +110,19 @@ class MainWindow(QWidget):
             self._debug_monitor = DebugMonitorWindow(
                 None, auto_tracemalloc=(config.profile == Profile.DEBUG)
             )
-        self._debug_monitor.show()
+
+        # 如果窗口最小化，恢复窗口状态
+        if self._debug_monitor.isMinimized():
+            self._debug_monitor.showNormal()
+        else:
+            self._debug_monitor.show()
+
         self._debug_monitor.raise_()
         self._debug_monitor.activateWindow()
 
-    def _on_media_changed(self, item_index: int, media_index: int):
+    def _on_media_changed(self, slot_index: int, media_index: int):
         """媒体选择改变时的回调"""
-        # item_index: 哪个媒体项 (0=左, 1=右)
+        # slot_index: 哪个槽位 (0=左, 1=右, ...)
         # media_index: 选择了哪个源
         # TODO: 切换 VideoPlaceholder 中的画面
         pass
@@ -133,24 +134,20 @@ class MainWindow(QWidget):
         self._sources.clear()
         self.timeline_area.clear_tracks()
 
-        # 设置媒体信息栏的源列表
-        self.media_info_bar.set_sources(sources)
-        self.media_info_bar.set_media_count(len(sources))
+        # 设置视口面板的源列表
+        self.viewport_panel.set_sources(sources)
 
         for i, source in enumerate(sources):
             self._sources.append(source)
             self.timeline_area.add_track(i, source)
-            self.media_info_bar.set_media_name(i, source)
 
     def add_media(self, path: str):
         """添加单个媒体"""
         index = len(self._sources)
         self._sources.append(path)
 
-        # 添加源到媒体信息栏的源列表
-        self.media_info_bar.add_source(path)
-        # 添加媒体项并设置当前源
-        self.media_info_bar.add_media_item(path)
+        # 添加源到视口面板
+        self.viewport_panel.add_source(path)
 
         # 添加轨道
         self.timeline_area.add_track(index, path)
@@ -158,11 +155,10 @@ class MainWindow(QWidget):
     def remove_media(self, index: int):
         """移除媒体"""
         if 0 <= index < len(self._sources):
-            source = self._sources.pop(index)
+            self._sources.pop(index)
             self.timeline_area.remove_track(index)
-            # 移除媒体项和源
-            self.media_info_bar.remove_media_item(index)
-            self.media_info_bar.remove_source(source)
+            # 移除视口面板中的源
+            self.viewport_panel.remove_source(index)
 
     def set_sync_offset(self, index: int, offset_ms: int):
         """设置时间偏移"""
@@ -196,9 +192,8 @@ class MainWindow(QWidget):
         """新建项目"""
         self._sources.clear()
         self.timeline_area.clear_tracks()
-        # 清空媒体信息栏
-        self.media_info_bar.set_sources([])
-        self.media_info_bar.set_media_count(0)
+        # 清空视口面板
+        self.viewport_panel.set_sources([])
 
     def open_project(self, path: str):
         """打开项目"""

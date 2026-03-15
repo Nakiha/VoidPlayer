@@ -162,6 +162,19 @@ class ResizableContainer(QWidget):
         self._child_widget.setMouseTracking(True)
         self._layout.addWidget(widget)
 
+    def takeWidget(self) -> QWidget | None:
+        """取出子控件，清理事件过滤器和光标"""
+        if not self._child_widget:
+            return None
+        widget = self._child_widget
+        widget.removeEventFilter(self)
+        widget.setCursor(Qt.CursorShape.ArrowCursor)
+        widget.setMouseTracking(False)
+        self._layout.removeWidget(widget)
+        widget.setParent(None)
+        self._child_widget = None
+        return widget
+
     def _get_edge_at(self, pos: QPoint) -> int:
         """获取指定位置所在的边缘"""
         edge = 0
@@ -218,6 +231,9 @@ class ResizableContainer(QWidget):
 
     def _on_drag_move(self, total_x: int):
         """拖动移动"""
+        # 对于 LEFT 边缘，方向需要反转（向左拖动 = 宽度增加）
+        if self._drag_edge & self.Edge.LEFT:
+            total_x = -total_x
         new_width = self._calculate_width_with_lock(total_x)
         if new_width != self._current_width:
             self._current_width = int(new_width)

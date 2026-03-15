@@ -7,11 +7,10 @@ from qfluentwidgets import (
     ComboBox,
     Slider,
     FluentIcon,
-    themeColor,
 )
 
 from .theme_utils import get_color_hex, ColorKey
-from .widgets import create_tool_button, TimeLabel
+from .widgets import create_tool_button, TimeLabel, CheckableToolButton
 
 
 class ControlsBar(QWidget):
@@ -87,12 +86,11 @@ class ControlsBar(QWidget):
         layout.addWidget(self.next_frame_btn)
 
         # 循环按钮 (激发式)
-        self.loop_btn = create_tool_button(FluentIcon.SYNC, self, 32)
+        self.loop_btn = CheckableToolButton(FluentIcon.SYNC, self)
+        self.loop_btn.setFixedSize(32, 32)
         self.loop_btn.setToolTip("循环播放")
-        self.loop_btn.setCheckable(True)
         self.loop_btn.setChecked(self._is_looping)
         self.loop_btn.clicked.connect(self._on_loop_clicked)
-        self._update_loop_button_style()
         layout.addWidget(self.loop_btn)
 
         # 播放按钮
@@ -145,52 +143,7 @@ class ControlsBar(QWidget):
     def _on_loop_clicked(self):
         """循环按钮点击"""
         self._is_looping = self.loop_btn.isChecked()
-        self._update_loop_button_style()
         self.loop_toggled.emit(self._is_looping)
-
-    def _update_loop_button_style(self):
-        """更新循环按钮样式"""
-        # 激发状态下使用主题色背景高亮
-        if self._is_looping:
-            accent_color = themeColor()
-            # 使用 rgba 格式设置半透明背景色
-            r, g, b = accent_color.red(), accent_color.green(), accent_color.blue()
-            # 设置与按钮大小一致的背景区域
-            self.loop_btn.setStyleSheet(f"""
-                TransparentToolButton {{
-                    background-color: rgba({r}, {g}, {b}, 60);
-                    border: none;
-                    border-radius: 16px;
-                    padding: 0px;
-                    margin: 0px;
-                }}
-                TransparentToolButton:hover {{
-                    background-color: rgba({r}, {g}, {b}, 100);
-                    border-radius: 16px;
-                }}
-                TransparentToolButton:pressed {{
-                    background-color: rgba({r}, {g}, {b}, 140);
-                    border-radius: 16px;
-                }}
-            """)
-        else:
-            self.loop_btn.setStyleSheet("""
-                TransparentToolButton {
-                    background-color: transparent;
-                    border: none;
-                    border-radius: 16px;
-                    padding: 0px;
-                    margin: 0px;
-                }
-                TransparentToolButton:hover {
-                    background-color: rgba(255, 255, 255, 20);
-                    border-radius: 16px;
-                }
-                TransparentToolButton:pressed {
-                    background-color: rgba(255, 255, 255, 40);
-                    border-radius: 16px;
-                }
-            """)
 
     def _on_slider_changed(self, value: int):
         """滑块值变化"""

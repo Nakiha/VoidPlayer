@@ -6,11 +6,9 @@ VoidPlayer - Multi-video playback module
 from .logging_config import setup_logging, get_logger
 
 # UI 组件 (无 native 依赖)
-from .view_mode import ViewMode
+from .viewport import ViewMode, ViewportPanel, MediaHeader
 from .main_window import MainWindow
 from .toolbar import ToolBar
-from .viewport_panel import ViewportPanel
-from .media_info_bar import MediaInfoBar
 from .controls_bar import ControlsBar
 from .timeline_area import TimelineArea
 from .track_row import TrackRow
@@ -29,7 +27,7 @@ __all__ = [
     'MainWindow',
     'ToolBar',
     'ViewportPanel',
-    'MediaInfoBar',
+    'MediaHeader',
     'ControlsBar',
     'TimelineArea',
     'TrackRow',

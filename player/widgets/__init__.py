@@ -4,33 +4,41 @@ VoidPlayer 控件模块
 包含播放器使用的各种自定义控件和工具函数。
 
 模块结构:
-- time_utils: 时间格式化工具函数
-- labels: 时间标签控件 (TimeLabel, OffsetLabel)
+- time_widgets: 时间相关控件和工具函数 (TimeLabel, OffsetLabel, format_time_*)
 - buttons: 按钮工具函数 (create_tool_button)
-- resize: 拖动调整控件 (ResizableContainer)
+- highlight_splitter: 悬浮高亮分割器 (HighlightSplitter)
+- checkable_button: 可切换状态按钮 (CheckableToolButton)
+- resizable_container: 可拖动调整大小的容器 (ResizableContainer)
 """
 
-# 时间工具函数
-from .time_utils import format_time_seconds, format_time_ms
-
-# 标签控件
-from .labels import TimeLabel, OffsetLabel
+# 时间控件和工具函数
+from .time_widgets import format_time_seconds, format_time_ms, TimeLabel, OffsetLabel
 
 # 按钮工具
 from .buttons import create_tool_button
 
-# 拖动调整控件
-from .resize import ResizableContainer
+# 悬浮高亮分割器
+from .highlight_splitter import HighlightSplitter
+
+# 可切换状态按钮
+from .checkable_button import CheckableToolButton
+
+# 可调整大小容器
+from .resizable_container import ResizableContainer
 
 __all__ = [
     # 时间工具
     'format_time_seconds',
     'format_time_ms',
-    # 标签控件
+    # 时间控件
     'TimeLabel',
     'OffsetLabel',
     # 按钮工具
     'create_tool_button',
-    # 拖动调整控件
+    # 悬浮高亮分割器
+    'HighlightSplitter',
+    # 可切换状态按钮
+    'CheckableToolButton',
+    # 可调整大小容器
     'ResizableContainer',
 ]

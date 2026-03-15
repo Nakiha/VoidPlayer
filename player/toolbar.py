@@ -11,7 +11,7 @@ from qfluentwidgets import (
     FluentIcon,
 )
 
-from .view_mode import ViewMode
+from .viewport import ViewMode
 from .widgets import create_tool_button
 
 

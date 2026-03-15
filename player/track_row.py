@@ -11,7 +11,7 @@ from qfluentwidgets import (
 )
 
 from .theme_utils import get_color, get_color_hex, get_accent_color, ColorKey
-from .widgets import create_tool_button, OffsetLabel, ResizableContainer
+from .widgets import create_tool_button, OffsetLabel, HighlightSplitter
 
 
 class TrackContent(QWidget):
@@ -73,6 +73,7 @@ class TrackRow(QWidget):
         self._is_visible = True
         self._is_muted = False
         self._offset_ms = 0
+        self._syncing = False  # 防止递归同步
         self.setFixedHeight(40)
         self._setup_ui()
 
@@ -84,9 +85,14 @@ class TrackRow(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
+        # 使用 splitter 分割控制区和轨道区
+        self.splitter = HighlightSplitter(Qt.Orientation.Horizontal, self)
+        self.splitter.setHandleWidth(1)
+        self.splitter.setChildrenCollapsible(False)
+
         # 左侧控制区 - 透明背景
-        self.controls_panel = QWidget(self)
-        self.controls_panel.setFixedWidth(TrackRow._controls_width)
+        self.controls_panel = QWidget(self.splitter)
+        self.controls_panel.setMinimumWidth(200)  # 最小宽度限制
         self.controls_panel.setStyleSheet("background: transparent;")
         controls_layout = QHBoxLayout(self.controls_panel)
         controls_layout.setContentsMargins(8, 4, 8, 4)
@@ -129,18 +135,19 @@ class TrackRow(QWidget):
         self.offset_label = OffsetLabel(self)
         controls_layout.addWidget(self.offset_label)
 
-        main_layout.addWidget(self.controls_panel)
+        self.splitter.addWidget(self.controls_panel)
 
-        # 右侧轨道区（用 ResizableContainer 包裹，左侧可拖动）
-        self.track_container = ResizableContainer(self)
-        self.track_container.setResizable(ResizableContainer.Edge.LEFT)
-        self.track_container.setRange(ResizableContainer.DEFAULT_MIN_WIDTH, ResizableContainer.DEFAULT_MAX_WIDTH)
-        self.track_container.setCurrentWidth(TrackRow._controls_width)
-        self.track_container.widthChanged.connect(self._on_width_changed)
+        # 右侧轨道区
+        self.track_content = TrackContent(self.splitter)
+        self.splitter.addWidget(self.track_content)
 
-        self.track_content = TrackContent(self.track_container)
-        self.track_container.setWidget(self.track_content)
-        main_layout.addWidget(self.track_container, 1)
+        # 初始化分割位置
+        self.splitter.setSizes([TrackRow._controls_width, 1000])
+
+        # 连接分割器移动信号
+        self.splitter.splitterMoved.connect(self._on_splitter_moved)
+
+        main_layout.addWidget(self.splitter, 1)
 
     def set_alt_row(self, is_alt: bool):
         """设置是否为交替行"""
@@ -177,8 +184,25 @@ class TrackRow(QWidget):
         self.offset_label.setOffset(self._offset_ms)
         self.offset_changed.emit(self._offset_ms)
 
-    def _on_width_changed(self, new_width: int):
-        """宽度变化 - 通知 TimelineArea 同步所有轨道"""
+    def _on_splitter_moved(self, pos: int, index: int):
+        """分割器移动 - 通知 TimelineArea 同步所有轨道"""
+        if self._syncing:
+            return
+
+        sizes = self.splitter.sizes()
+        total_width = sum(sizes)
+        max_width = int(total_width * 0.6)
+
+        new_width = sizes[0]
+        if new_width > max_width:
+            # 限制在 60% 以内
+            new_width = max_width
+            sizes[0] = new_width
+            sizes[1] = total_width - new_width
+            self._syncing = True
+            self.splitter.setSizes(sizes)
+            self._syncing = False
+
         self.controls_width_changed.emit(new_width)
 
     def set_file_name(self, name: str):
@@ -201,6 +225,9 @@ class TrackRow(QWidget):
         cls._controls_width = width
 
     def apply_controls_width(self, width: int):
-        """应用宽度到当前 TrackRow 的 controls_panel 和 track_container"""
-        self.controls_panel.setFixedWidth(width)
-        self.track_container.setCurrentWidth(width)
+        """应用宽度到当前 TrackRow 的 controls_panel"""
+        if self._syncing:
+            return
+        self._syncing = True
+        self.splitter.moveSplitter(width, 1)
+        self._syncing = False

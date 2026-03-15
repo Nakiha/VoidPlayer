@@ -441,7 +441,7 @@ class DebugMonitorWindow(QWidget):
         self.resize(800, 600)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setContentsMargins(4, 4, 4, 4)
 
         # 实时内存信息
         self.memory_label = QLabel("内存: -- MB")

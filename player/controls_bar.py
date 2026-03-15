@@ -7,6 +7,7 @@ from qfluentwidgets import (
     ComboBox,
     Slider,
     FluentIcon,
+    ToolTipFilter,
 )
 
 from .theme_utils import get_color_hex, ColorKey
@@ -48,7 +49,7 @@ class ControlsBar(QWidget):
 
     def _setup_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
         # 缩放选择
@@ -68,20 +69,17 @@ class ControlsBar(QWidget):
         layout.addWidget(self.speed_combo)
 
         # 全屏按钮
-        self.fullscreen_btn = create_tool_button(FluentIcon.FULL_SCREEN, self, 32)
-        self.fullscreen_btn.setToolTip("全屏")
+        self.fullscreen_btn = create_tool_button(FluentIcon.FULL_SCREEN, self, 32, "全屏")
         self.fullscreen_btn.clicked.connect(self.fullscreen_toggled)
         layout.addWidget(self.fullscreen_btn)
 
         # 上一帧按钮
-        self.prev_frame_btn = create_tool_button(FluentIcon.LEFT_ARROW, self, 32)
-        self.prev_frame_btn.setToolTip("上一帧")
+        self.prev_frame_btn = create_tool_button(FluentIcon.LEFT_ARROW, self, 32, "上一帧")
         self.prev_frame_btn.clicked.connect(self.prev_frame_clicked)
         layout.addWidget(self.prev_frame_btn)
 
         # 下一帧按钮
-        self.next_frame_btn = create_tool_button(FluentIcon.RIGHT_ARROW, self, 32)
-        self.next_frame_btn.setToolTip("下一帧")
+        self.next_frame_btn = create_tool_button(FluentIcon.RIGHT_ARROW, self, 32, "下一帧")
         self.next_frame_btn.clicked.connect(self.next_frame_clicked)
         layout.addWidget(self.next_frame_btn)
 
@@ -89,13 +87,13 @@ class ControlsBar(QWidget):
         self.loop_btn = CheckableToolButton(FluentIcon.SYNC, self)
         self.loop_btn.setFixedSize(32, 32)
         self.loop_btn.setToolTip("循环播放")
+        self.loop_btn.installEventFilter(ToolTipFilter(self.loop_btn, 0))
         self.loop_btn.setChecked(self._is_looping)
         self.loop_btn.clicked.connect(self._on_loop_clicked)
         layout.addWidget(self.loop_btn)
 
         # 播放按钮
-        self.play_btn = create_tool_button(FluentIcon.PLAY, self, 32)
-        self.play_btn.setToolTip("播放")
+        self.play_btn = create_tool_button(FluentIcon.PLAY, self, 32, "播放")
         self.play_btn.clicked.connect(self._on_play_clicked)
         layout.addWidget(self.play_btn)
 

@@ -26,6 +26,9 @@ from .checkable_button import CheckableToolButton
 # 可调整大小容器
 from .resizable_container import ResizableContainer
 
+# 省略文本标签
+from .elide_label import ElideLabel
+
 __all__ = [
     # 时间工具
     'format_time_seconds',
@@ -41,4 +44,6 @@ __all__ = [
     'CheckableToolButton',
     # 可调整大小容器
     'ResizableContainer',
+    # 省略文本标签
+    'ElideLabel',
 ]

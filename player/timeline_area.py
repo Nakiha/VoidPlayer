@@ -3,7 +3,7 @@ TimelineArea - 时间轴轨道区域
 """
 from typing import Optional
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, QTimer
 from qfluentwidgets import SmoothScrollArea
 
 from .track_row import TrackRow
@@ -19,10 +19,14 @@ class TimelineArea(QWidget):
     track_mute_toggled = Signal(int, bool)  # index, muted
     track_offset_changed = Signal(int, int)  # index, offset_ms
 
+    MAX_CONTROLS_RATIO = 0.6  # controls_panel 最大占比
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._tracks: list[TrackRow] = []
         self._playhead_position = 0.0
+        self._controls_width = 320  # 当前 controls_panel 宽度（像素）
+        self._syncing = False  # 防止递归同步
         self._setup_ui()
 
     def _setup_ui(self):
@@ -41,12 +45,15 @@ class TimelineArea(QWidget):
         while len(self._tracks) < index:
             self._tracks.append(None)
 
+        # 从现有 track 获取当前实际宽度（解决窗口 resize 后宽度不同步的问题）
+        self._sync_controls_width()
+
         track = TrackRow(name, self)
         track.remove_clicked.connect(lambda: self._on_track_remove(index))
         track.visibility_toggled.connect(lambda v: self._on_track_visibility(index, v))
         track.mute_toggled.connect(lambda m: self._on_track_mute(index, m))
         track.offset_changed.connect(lambda o: self._on_track_offset(index, o))
-        track.controls_width_changed.connect(self._on_controls_width_changed)
+        track.splitter_moved.connect(self._on_splitter_moved)
 
         if index >= len(self._tracks):
             self._tracks.append(track)
@@ -56,9 +63,10 @@ class TimelineArea(QWidget):
             self.main_layout.insertWidget(index, track)
 
         track.set_playhead_position(self._playhead_position)
-        # 设置交替行样式：偶数索引稍亮，奇数索引保持基础色
         track.set_alt_row(index % 2 == 0)
-        self.updateGeometry()  # 通知布局更新
+        # 延迟应用当前宽度（等待布局完成）
+        QTimer.singleShot(0, lambda: track.set_controls_width(self._controls_width))
+        self.updateGeometry()
 
     def remove_track(self, index: int):
         """移除轨道"""
@@ -96,15 +104,42 @@ class TimelineArea(QWidget):
         """轨道偏移信号"""
         self.track_offset_changed.emit(index, offset_ms)
 
-    def _on_controls_width_changed(self, new_width: int):
-        """统一设置所有 TrackRow 的 controls_panel 宽度"""
-        # 更新类级别的宽度
-        TrackRow.set_controls_width(new_width)
+    def _on_splitter_moved(self, new_width: int):
+        """处理 splitter 拖动 - 同步所有轨道"""
+        if self._syncing:
+            return
 
-        # 应用到所有轨道
+        # 获取 sender（触发信号的 track）
+        sender = self.sender()
+        if sender is None:
+            return
+
+        # 限制最大比例
+        total_width = sender.splitter.width()
+        if total_width > 0:
+            max_width = int(total_width * self.MAX_CONTROLS_RATIO)
+            new_width = min(new_width, max_width)
+
+        self._controls_width = new_width
+        self._syncing = True
+
+        # 先限制 sender 自身（会被 moveSplitter 限制在范围内）
+        sender.set_controls_width(new_width)
+
+        for track in self._tracks:
+            if track is not None and track is not sender:
+                track.set_controls_width(new_width)
+
+        self._syncing = False
+
+    def _sync_controls_width(self):
+        """从现有 track 同步当前宽度（处理窗口 resize 的情况）"""
         for track in self._tracks:
             if track is not None:
-                track.apply_controls_width(new_width)
+                sizes = track.splitter.sizes()
+                if sizes:
+                    self._controls_width = sizes[0]
+                break
 
     def clear_tracks(self):
         """清除所有轨道"""

@@ -36,7 +36,7 @@ class ToolBar(QWidget):
 
     def _setup_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(0)
 
         # 左侧: 视图模式切换
@@ -73,48 +73,42 @@ class ToolBar(QWidget):
         layout.addSpacing(4)
 
         # 打开按钮
-        self.open_btn = create_tool_button(FluentIcon.FOLDER, self, 32)
-        self.open_btn.setToolTip("打开项目")
+        self.open_btn = create_tool_button(FluentIcon.FOLDER, self, 32, "打开项目")
         self.open_btn.clicked.connect(self.open_project_clicked)
         layout.addWidget(self.open_btn)
 
         layout.addSpacing(4)
 
         # 保存按钮
-        self.save_btn = create_tool_button(FluentIcon.SAVE, self, 32)
-        self.save_btn.setToolTip("保存项目")
+        self.save_btn = create_tool_button(FluentIcon.SAVE, self, 32, "保存项目")
         self.save_btn.clicked.connect(self.save_project_clicked)
         layout.addWidget(self.save_btn)
 
         layout.addSpacing(4)
 
         # 导出按钮
-        self.export_btn = create_tool_button(FluentIcon.SHARE, self, 32)
-        self.export_btn.setToolTip("导出")
+        self.export_btn = create_tool_button(FluentIcon.SHARE, self, 32, "导出")
         self.export_btn.clicked.connect(self.export_clicked)
         layout.addWidget(self.export_btn)
 
         layout.addSpacing(4)
 
         # 设置按钮
-        self.settings_btn = create_tool_button(FluentIcon.SETTING, self, 32)
-        self.settings_btn.setToolTip("设置")
+        self.settings_btn = create_tool_button(FluentIcon.SETTING, self, 32, "设置")
         self.settings_btn.clicked.connect(self.settings_clicked)
         layout.addWidget(self.settings_btn)
 
         layout.addSpacing(4)
 
         # 性能监控按钮
-        self.debug_btn = create_tool_button(FluentIcon.STOP_WATCH, self, 32)
-        self.debug_btn.setToolTip("性能监控")
+        self.debug_btn = create_tool_button(FluentIcon.STOP_WATCH, self, 32, "性能监控")
         self.debug_btn.clicked.connect(self.debug_monitor_clicked)
         layout.addWidget(self.debug_btn)
 
         layout.addSpacing(4)
 
         # 帮助按钮
-        self.help_btn = create_tool_button(FluentIcon.HELP, self, 32)
-        self.help_btn.setToolTip("帮助")
+        self.help_btn = create_tool_button(FluentIcon.HELP, self, 32, "帮助")
         self.help_btn.clicked.connect(self.help_clicked)
         layout.addWidget(self.help_btn)
 

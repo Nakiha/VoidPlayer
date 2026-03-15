@@ -75,9 +75,8 @@ class ViewportPanel(QWidget):
 
         # 第二行：MediaInfo 容器
         self.info_container = QWidget(self)
-        self.info_container.setFixedHeight(32)
         self.info_layout = QHBoxLayout(self.info_container)
-        self.info_layout.setContentsMargins(8, 4, 8, 0)
+        self.info_layout.setContentsMargins(0, 0, 0, 0)  # 边距由 MediaHeader 自己控制
         self.info_layout.setSpacing(0)
         main_layout.addWidget(self.info_container)
 

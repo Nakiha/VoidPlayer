@@ -56,9 +56,6 @@ class MainWindow(QWidget):
         self.viewport_panel = ViewportPanel(self)
         self.main_layout.addWidget(self.viewport_panel, 1)
 
-        # 播放控制条之前的间距
-        self.main_layout.addSpacing(4)
-
         # 3. 播放控制条 (42px)
         self.controls_bar = ControlsBar(self)
         self.main_layout.addWidget(self.controls_bar)

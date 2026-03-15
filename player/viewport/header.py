@@ -1,7 +1,7 @@
 """
 MediaHeader - 媒体信息头部控件
 """
-from PySide6.QtWidgets import QWidget, QHBoxLayout
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QSizePolicy
 from PySide6.QtCore import Signal
 from qfluentwidgets import (
     ComboBox,
@@ -24,32 +24,37 @@ class MediaHeader(QWidget):
         self.index = index
         self._sources = sources
         self._current_source = current_source
-        self.setFixedHeight(32)
         self._setup_ui()
 
     def _setup_ui(self):
+        # 设置尺寸策略：水平方向扩展填充
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        # 设置最小宽度，防止被过度压缩
+        self.setMinimumWidth(100)
+
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 8, 0)  # 左边距由容器控制，右边距给按钮留空间
-        layout.setSpacing(8)
+        layout.setContentsMargins(4, 4, 4, 4)  # 自己控制边距，不受容器影响
+        layout.setSpacing(4)
 
         # 媒体选择下拉框
         self.media_combo = ComboBox(self)
         self.media_combo.setPlaceholderText("选择媒体")
+        # 使用 Minimum 策略：允许压缩但不小于 minimumSizeHint
+        self.media_combo.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        self.media_combo.setMinimumWidth(50)
         self._update_combo_items()
         self.media_combo.currentIndexChanged.connect(self._on_selection_changed)
-        layout.addWidget(self.media_combo)
+        layout.addWidget(self.media_combo, 1)  # stretch=1 让 ComboBox 占据可用空间
 
         layout.addStretch()
 
         # 设置按钮
-        self.settings_btn = create_tool_button(FluentIcon.SETTING, self, 28)
-        self.settings_btn.setToolTip("媒体设置")
+        self.settings_btn = create_tool_button(FluentIcon.SETTING, self, 28, "媒体设置")
         self.settings_btn.clicked.connect(lambda: self.media_settings_clicked.emit(self.index))
         layout.addWidget(self.settings_btn)
 
         # 关闭按钮
-        self.remove_btn = create_tool_button(FluentIcon.CLOSE, self, 28)
-        self.remove_btn.setToolTip("移除媒体")
+        self.remove_btn = create_tool_button(FluentIcon.CLOSE, self, 28, "移除媒体")
         self.remove_btn.clicked.connect(lambda: self.media_remove_clicked.emit(self.index))
         layout.addWidget(self.remove_btn)
 

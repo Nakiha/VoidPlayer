@@ -8,10 +8,11 @@ from qfluentwidgets import (
     Slider,
     FluentIcon,
     ToolTipFilter,
+    TransparentToggleToolButton,
 )
 
 from .theme_utils import get_color_hex, ColorKey
-from .widgets import create_tool_button, TimeLabel, CheckableToolButton
+from .widgets import create_tool_button, TimeLabel
 
 
 class ControlsBar(QWidget):
@@ -84,12 +85,12 @@ class ControlsBar(QWidget):
         layout.addWidget(self.next_frame_btn)
 
         # 循环按钮 (激发式)
-        self.loop_btn = CheckableToolButton(FluentIcon.SYNC, self)
+        self.loop_btn = TransparentToggleToolButton(FluentIcon.SYNC, self)
         self.loop_btn.setFixedSize(32, 32)
         self.loop_btn.setToolTip("循环播放")
         self.loop_btn.installEventFilter(ToolTipFilter(self.loop_btn, 0))
         self.loop_btn.setChecked(self._is_looping)
-        self.loop_btn.clicked.connect(self._on_loop_clicked)
+        self.loop_btn.toggled.connect(self._on_loop_toggled)
         layout.addWidget(self.loop_btn)
 
         # 播放按钮
@@ -138,10 +139,10 @@ class ControlsBar(QWidget):
             self.play_btn.setIcon(FluentIcon.PAUSE)
             self.play_clicked.emit()
 
-    def _on_loop_clicked(self):
-        """循环按钮点击"""
-        self._is_looping = self.loop_btn.isChecked()
-        self.loop_toggled.emit(self._is_looping)
+    def _on_loop_toggled(self, checked: bool):
+        """循环按钮状态切换"""
+        self._is_looping = checked
+        self.loop_toggled.emit(checked)
 
     def _on_slider_changed(self, value: int):
         """滑块值变化"""

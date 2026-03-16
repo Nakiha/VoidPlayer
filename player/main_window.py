@@ -1,9 +1,17 @@
 """
 MainWindow - 主窗口
 """
+import sys
+import subprocess
 from typing import Optional
-from PySide6.QtWidgets import QWidget, QVBoxLayout
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QFileDialog
+from PySide6.QtCore import Qt, QMimeData
+from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from qfluentwidgets import isDarkTheme, FluentIcon
+
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QFileDialog
+from PySide6.QtCore import Qt, QMimeData
+from PySide6.QtGui import QDragEnterEvent, QDropEvent
 from qfluentwidgets import isDarkTheme, FluentIcon
 
 from .viewport import ViewMode, ViewportPanel
@@ -13,24 +21,36 @@ from .timeline_area import TimelineArea
 from .theme_utils import get_color_hex, ColorKey
 from .debug_monitor import DebugMonitorWindow
 from .config import config, Profile
+from .widgets import HighlightSplitter
 
 
 class MainWindow(QWidget):
     """主窗口 - 整体布局协调"""
 
-    def __init__(self, parent=None):
+    # 启动新窗口时要排除的参数黑名单
+    NEW_WINDOW_EXCLUDE_ARGS = {"-i", "--input"}
+
+    def __init__(
+        self,
+        initial_files: Optional[list[str]] = None,
+        launch_args: Optional[list[str]] = None,
+        parent=None
+    ):
         super().__init__(parent)
         self._sources: list[str] = []
         self._view_mode = ViewMode.SIDE_BY_SIDE
         self._is_playing = False
         self._debug_monitor: DebugMonitorWindow | None = None
+        self._launch_args = launch_args or []
         self._setup_ui()
         self._connect_signals()
-        self._load_demo_data()
+        self._load_initial_files(initial_files or [])
 
     def _setup_ui(self):
         self.setWindowTitle("VoidPlayer - 视频对比播放器")
-        self.setMinimumSize(1200, 800)
+        self.setMinimumSize(520, 360)
+        self.resize(520, 360)
+        self.setAcceptDrops(True)
         self._update_style()
 
     def _update_style(self):
@@ -51,24 +71,45 @@ class MainWindow(QWidget):
         self.toolbar = ToolBar(self)
         self.main_layout.addWidget(self.toolbar)
 
-        # 2. 视频预览区域（包含媒体信息）(flex: 1)
-        # 现在 ViewportPanel 已经内置了媒体信息条
-        self.viewport_panel = ViewportPanel(self)
-        self.main_layout.addWidget(self.viewport_panel, 1)
+        # 2. 垂直分割器 - 分隔上部区域和 timeline_area
+        self.v_splitter = HighlightSplitter(Qt.Orientation.Vertical, self)
+        self.v_splitter.setHandleWidth(1)
+        self.v_splitter.setChildrenCollapsible(False)
 
-        # 3. 播放控制条 (42px)
-        self.controls_bar = ControlsBar(self)
-        self.main_layout.addWidget(self.controls_bar)
+        # 2.1 上部容器 (viewport_panel + controls_bar)
+        self.top_container = QWidget(self.v_splitter)
+        self.top_layout = QVBoxLayout(self.top_container)
+        self.top_layout.setContentsMargins(0, 0, 0, 0)
+        self.top_layout.setSpacing(0)
 
-        # 4. 时间轴轨道区域 (动态高度)
-        self.timeline_area = TimelineArea(self)
-        self.main_layout.addWidget(self.timeline_area)
+        # 视频预览区域（包含媒体信息）
+        self.viewport_panel = ViewportPanel(self.top_container)
+        self.top_layout.addWidget(self.viewport_panel, 1)
+
+        # 播放控制条 (42px)
+        self.controls_bar = ControlsBar(self.top_container)
+        self.top_layout.addWidget(self.controls_bar)
+
+        self.v_splitter.addWidget(self.top_container)
+
+        # 2.2 时间轴轨道区域 (可压缩，最小 0px)
+        self.timeline_area = TimelineArea(self.v_splitter)
+        self.timeline_area.setMinimumHeight(0)
+        self.v_splitter.addWidget(self.timeline_area)
+
+        # 设置分割器初始比例：上部占主要空间
+        self.main_layout.addWidget(self.v_splitter, 1)
+
+        # 延迟设置初始大小比例
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._init_splitter_sizes)
 
     def _connect_signals(self):
         """连接信号"""
         # 工具栏信号
         self.toolbar.view_mode_changed.connect(self.set_view_mode)
         self.toolbar.add_media_clicked.connect(self._on_add_media)
+        self.toolbar.new_window_clicked.connect(self._on_new_window)
 
         # 调试监控 (仅在非性能模式下启用)
         if config.profile != Profile.PERF:
@@ -89,17 +130,101 @@ class MainWindow(QWidget):
         self.timeline_area.track_remove_clicked.connect(self.remove_media)
         self.timeline_area.track_offset_changed.connect(self.set_sync_offset)
 
-    def _load_demo_data(self):
-        """加载演示数据"""
-        # 添加演示媒体
-        self.add_media("CityHall_1920x1080")
-        self.add_media("UshaikaRiverEmb_1920x1080")
+        # 分割器信号 - 用于限制 timeline_area 最大高度
+        self.v_splitter.splitterMoved.connect(self._on_splitter_moved)
+
+        # 时间轴扩展请求
+        self.timeline_area.expand_requested.connect(self._on_timeline_expand_requested)
+
+    def _init_splitter_sizes(self):
+        """初始化分割器大小比例"""
+        total_height = self.v_splitter.height()
+        if total_height > 0:
+            # 上部区域占大部分，timeline_area 使用其最大高度
+            timeline_max = self.timeline_area.maximumHeight()
+            top_height = max(total_height - timeline_max, total_height // 2)
+            self.v_splitter.setSizes([top_height, total_height - top_height])
+
+    def _on_splitter_moved(self, pos: int, index: int):
+        """分割器移动 - 限制 timeline_area 最大高度不超过窗体 40%"""
+        sizes = self.v_splitter.sizes()
+        if len(sizes) >= 2:
+            total = sum(sizes)
+            if total > 0:
+                max_timeline_height = int(total * 0.4)
+                if sizes[1] > max_timeline_height:
+                    excess = sizes[1] - max_timeline_height
+                    self.v_splitter.setSizes([sizes[0] + excess, max_timeline_height])
+
+    def _on_timeline_expand_requested(self, required_height: int):
+        """时间轴扩展请求 - 自动调整 splitter 使 timeline_area 获得足够高度"""
+        sizes = self.v_splitter.sizes()
+        if len(sizes) >= 2:
+            total = sum(sizes)
+            if total > 0:
+                # 最大高度为窗体 40%
+                max_timeline_height = int(total * 0.4)
+                # 目标高度：不超过最大限制
+                target_height = min(required_height, max_timeline_height)
+
+                current_height = sizes[1]
+                # 只有当前高度小于目标高度时才扩展
+                if current_height < target_height:
+                    new_top_height = total - target_height
+                    self.v_splitter.setSizes([new_top_height, target_height])
+
+    def _load_initial_files(self, files: list[str]):
+        """加载初始文件"""
+        for file_path in files:
+            self.add_media(file_path)
 
     def _on_add_media(self):
-        """添加媒体按钮点击"""
-        # 演示: 添加一个新媒体
-        new_media = f"Video_{len(self._sources) + 1}"
-        self.add_media(new_media)
+        """添加媒体按钮点击 - 打开文件选择器"""
+        files, _ = QFileDialog.getOpenFileNames(
+            self,
+            "选择媒体文件",
+            "",
+            "所有文件 (*.*)"
+        )
+        for file_path in files:
+            self.add_media(file_path)
+
+    def _on_new_window(self):
+        """启动新的 VoidPlayer 窗口"""
+        # 过滤掉黑名单中的参数
+        filtered_args = []
+        skip_next = False
+        for arg in self._launch_args:
+            if skip_next:
+                skip_next = False
+                continue
+            if arg in self.NEW_WINDOW_EXCLUDE_ARGS:
+                skip_next = True
+                continue
+            filtered_args.append(arg)
+
+        # 启动新进程
+        exe = sys.executable
+        script = sys.argv[0]
+        cmd = [exe, script] + filtered_args
+        subprocess.Popen(cmd)
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        """拖入事件 - 接受文件拖入"""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event: QDropEvent):
+        """放下事件 - 处理拖入的文件"""
+        for url in event.mimeData().urls():
+            file_path = url.toLocalFile()
+            if file_path:
+                self.add_media(file_path)
+        event.acceptProposedAction()
+
+    def _update_view_mode_enabled(self):
+        """根据文件数量更新视图模式切换的可用状态"""
+        self.toolbar.set_view_mode_enabled(len(self._sources) > 0)
 
     def _show_debug_monitor(self):
         """显示性能监控窗口"""
@@ -149,6 +274,9 @@ class MainWindow(QWidget):
         # 添加轨道
         self.timeline_area.add_track(index, path)
 
+        # 更新视图模式切换状态
+        self._update_view_mode_enabled()
+
     def remove_media(self, index: int):
         """移除媒体"""
         if 0 <= index < len(self._sources):
@@ -156,6 +284,9 @@ class MainWindow(QWidget):
             self.timeline_area.remove_track(index)
             # 移除视口面板中的源
             self.viewport_panel.remove_source(index)
+
+            # 更新视图模式切换状态
+            self._update_view_mode_enabled()
 
     def set_sync_offset(self, index: int, offset_ms: int):
         """设置时间偏移"""

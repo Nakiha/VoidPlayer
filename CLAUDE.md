@@ -22,7 +22,8 @@
 |------|------|
 | TimeLabel | 播放时间显示 (当前/总时长) |
 | OffsetLabel | 偏移时间显示 (带正负号) |
+| ElideLabel | 文本过长时自动省略，悬停显示完整 tooltip |
+| ElideComboBox | 下拉框显示 basename，悬停显示完整路径 tooltip |
 | HighlightSplitter | 悬浮高亮分割器 |
-| CheckableToolButton | 可切换状态按钮 (checked 时主题色高亮) |
 | ResizableContainer | 可拖动调整大小的容器 |
-| create_tool_button | 创建工具按钮 |
+| create_tool_button | 创建工具按钮 (修复字体警告) |

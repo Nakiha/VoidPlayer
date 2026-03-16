@@ -4,11 +4,13 @@ ViewportPanel - 视频预览区域（支持并排/分屏模式）
 from enum import Enum
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt
+from qfluentwidgets import isDarkTheme, FluentIcon, IconWidget, SubtitleLabel
 
 from .placeholder import VideoPlaceholder
 from .header import MediaHeader
 from ..widgets.resizable_container import ResizableContainer
+from ..theme_utils import get_color_hex, ColorKey
 
 
 class ViewMode(Enum):
@@ -73,12 +75,53 @@ class ViewportPanel(QWidget):
         self.panel_layout.setSpacing(0)
         main_layout.addWidget(self.panel_container, 1)
 
+        # 空状态占位提示
+        self._empty_placeholder = self._create_empty_placeholder()
+        self.panel_layout.addWidget(self._empty_placeholder)
+
         # 第二行：MediaInfo 容器
         self.info_container = QWidget(self)
         self.info_layout = QHBoxLayout(self.info_container)
         self.info_layout.setContentsMargins(0, 0, 0, 0)  # 边距由 MediaHeader 自己控制
         self.info_layout.setSpacing(0)
         main_layout.addWidget(self.info_container)
+
+    def _create_empty_placeholder(self) -> QWidget:
+        """创建空状态占位提示"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # 图标
+        icon = IconWidget(FluentIcon.VIDEO, widget)
+        icon.setFixedSize(64, 64)
+        layout.addWidget(icon, 0, Qt.AlignmentFlag.AlignCenter)
+
+        layout.addSpacing(8)
+
+        # 提示文字
+        label = SubtitleLabel("点击「添加媒体」或拖放文件到这里")
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(label, 0, Qt.AlignmentFlag.AlignCenter)
+
+        # 设置样式
+        text_color = get_color_hex(ColorKey.TEXT_SECONDARY)
+        bg_color = get_color_hex(ColorKey.BG_BASE)
+        widget.setStyleSheet(f"""
+            QWidget {{
+                background-color: {bg_color};
+            }}
+            SubtitleLabel {{
+                color: {text_color};
+            }}
+        """)
+
+        return widget
+
+    def _update_empty_placeholder(self):
+        """更新空状态占位提示的可见性"""
+        has_files = len(self._sources) > 0
+        self._empty_placeholder.setVisible(not has_files)
 
     def _add_slot(self, index: int, current_source: str):
         """创建并添加槽位（panel + info_item）"""
@@ -114,11 +157,12 @@ class ViewportPanel(QWidget):
         self._info_items.clear()
 
     def _clear_panel_layout(self):
-        """清空 panel 布局"""
+        """清空 panel 布局（保留 _empty_placeholder）"""
         while self.panel_layout.count():
             item = self.panel_layout.takeAt(0)
-            if item.widget():
-                item.widget().setParent(None)
+            widget = item.widget()
+            if widget and widget != self._empty_placeholder:
+                widget.setParent(None)
 
     def _clear_info_layout(self):
         """清空 info 布局"""
@@ -293,6 +337,9 @@ class ViewportPanel(QWidget):
         else:
             self._apply_split_screen_mode()
 
+        # 更新空状态占位
+        self._update_empty_placeholder()
+
     def add_source(self, source: str):
         """添加一个新的媒体源"""
         self._sources.append(source)
@@ -310,6 +357,9 @@ class ViewportPanel(QWidget):
             self._apply_side_by_side_mode()
         else:
             self._apply_split_screen_mode()
+
+        # 更新空状态占位
+        self._update_empty_placeholder()
 
     def remove_source(self, index: int):
         """移除指定索引的媒体源"""
@@ -339,6 +389,9 @@ class ViewportPanel(QWidget):
                 self._apply_side_by_side_mode()
             else:
                 self._apply_split_screen_mode()
+
+            # 更新空状态占位
+            self._update_empty_placeholder()
 
     @property
     def view_mode(self) -> ViewMode:

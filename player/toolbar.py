@@ -1,7 +1,7 @@
 """
 ToolBar - 顶部工具栏
 """
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QSpacerItem, QSizePolicy
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QSpacerItem, QSizePolicy, QGraphicsOpacityEffect
 from PySide6.QtCore import Signal
 from qfluentwidgets import (
     PushButton,
@@ -21,18 +21,17 @@ class ToolBar(QWidget):
     # 信号
     view_mode_changed = Signal(ViewMode)
     add_media_clicked = Signal()
-    new_project_clicked = Signal()
+    new_window_clicked = Signal()
     open_project_clicked = Signal()
     save_project_clicked = Signal()
-    export_clicked = Signal()
     settings_clicked = Signal()
-    help_clicked = Signal()
     debug_monitor_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(40)  # 32px 内容 + 4px * 2 边距
         self._setup_ui()
+        self.set_view_mode_enabled(False)  # 初始禁用（无文件）
 
     def _setup_ui(self):
         layout = QHBoxLayout(self)
@@ -44,7 +43,7 @@ class ToolBar(QWidget):
         self.view_mode_segment.addItem("side_by_side", "并排", lambda: self._on_view_mode_changed(ViewMode.SIDE_BY_SIDE))
         self.view_mode_segment.addItem("split_screen", "分屏", lambda: self._on_view_mode_changed(ViewMode.SPLIT_SCREEN))
         self.view_mode_segment.setCurrentItem("side_by_side")
-        self.view_mode_segment.setFixedHeight(32)  # 与添加媒体按钮同高
+        self.view_mode_segment.setFixedSize(240, 32)  # 固定宽度，与添加媒体按钮同高
 
         # 设置按钮铺满 SegmentedWidget
         for item in self.view_mode_segment.items.values():
@@ -64,11 +63,11 @@ class ToolBar(QWidget):
 
         layout.addSpacing(4)
 
-        # 新项目按钮
-        self.new_project_btn = PushButton("＋ 新项目", self)
-        self.new_project_btn.setFixedHeight(32)
-        self.new_project_btn.clicked.connect(self.new_project_clicked)
-        layout.addWidget(self.new_project_btn)
+        # 新窗口按钮
+        self.new_window_btn = PushButton("＋ 新窗口", self)
+        self.new_window_btn.setFixedHeight(32)
+        self.new_window_btn.clicked.connect(self.new_window_clicked)
+        layout.addWidget(self.new_window_btn)
 
         layout.addSpacing(4)
 
@@ -86,13 +85,6 @@ class ToolBar(QWidget):
 
         layout.addSpacing(4)
 
-        # 导出按钮
-        self.export_btn = create_tool_button(FluentIcon.SHARE, self, 32, "导出")
-        self.export_btn.clicked.connect(self.export_clicked)
-        layout.addWidget(self.export_btn)
-
-        layout.addSpacing(4)
-
         # 设置按钮
         self.settings_btn = create_tool_button(FluentIcon.SETTING, self, 32, "设置")
         self.settings_btn.clicked.connect(self.settings_clicked)
@@ -105,13 +97,6 @@ class ToolBar(QWidget):
         self.debug_btn.clicked.connect(self.debug_monitor_clicked)
         layout.addWidget(self.debug_btn)
 
-        layout.addSpacing(4)
-
-        # 帮助按钮
-        self.help_btn = create_tool_button(FluentIcon.HELP, self, 32, "帮助")
-        self.help_btn.clicked.connect(self.help_clicked)
-        layout.addWidget(self.help_btn)
-
     def _on_view_mode_changed(self, mode: ViewMode):
         """视图模式切换"""
         self.view_mode_changed.emit(mode)
@@ -122,3 +107,14 @@ class ToolBar(QWidget):
             self.view_mode_segment.setCurrentItem("side_by_side")
         else:
             self.view_mode_segment.setCurrentItem("split_screen")
+
+    def set_view_mode_enabled(self, enabled: bool):
+        """设置视图模式切换是否可用"""
+        self.view_mode_segment.setEnabled(enabled)
+        # 禁用时设置透明度模拟置灰效果
+        if enabled:
+            self.view_mode_segment.setGraphicsEffect(None)
+        else:
+            effect = QGraphicsOpacityEffect(self.view_mode_segment)
+            effect.setOpacity(0.5)
+            self.view_mode_segment.setGraphicsEffect(effect)

@@ -7,7 +7,6 @@ VoidPlayer 控件模块
 - time_widgets: 时间相关控件和工具函数 (TimeLabel, OffsetLabel, format_time_*)
 - buttons: 按钮工具函数 (create_tool_button)
 - highlight_splitter: 悬浮高亮分割器 (HighlightSplitter)
-- checkable_button: 可切换状态按钮 (CheckableToolButton)
 - resizable_container: 可拖动调整大小的容器 (ResizableContainer)
 """
 
@@ -20,14 +19,14 @@ from .buttons import create_tool_button
 # 悬浮高亮分割器
 from .highlight_splitter import HighlightSplitter
 
-# 可切换状态按钮
-from .checkable_button import CheckableToolButton
-
 # 可调整大小容器
 from .resizable_container import ResizableContainer
 
 # 省略文本标签
 from .elide_label import ElideLabel
+
+# 省略文本下拉框
+from .elide_combo import ElideComboBox
 
 __all__ = [
     # 时间工具
@@ -40,10 +39,10 @@ __all__ = [
     'create_tool_button',
     # 悬浮高亮分割器
     'HighlightSplitter',
-    # 可切换状态按钮
-    'CheckableToolButton',
     # 可调整大小容器
     'ResizableContainer',
     # 省略文本标签
     'ElideLabel',
+    # 省略文本下拉框
+    'ElideComboBox',
 ]

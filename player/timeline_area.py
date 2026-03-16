@@ -3,7 +3,7 @@ TimelineArea - 时间轴轨道区域
 """
 from typing import Optional
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy
-from PySide6.QtCore import Signal, QTimer
+from PySide6.QtCore import Signal, QTimer, Qt
 from qfluentwidgets import SmoothScrollArea
 
 from .track_row import TrackRow
@@ -18,8 +18,10 @@ class TimelineArea(QWidget):
     track_visibility_toggled = Signal(int, bool)  # index, visible
     track_mute_toggled = Signal(int, bool)  # index, muted
     track_offset_changed = Signal(int, int)  # index, offset_ms
+    expand_requested = Signal(int)  # 请求扩展高度 (所需高度)
 
     MAX_CONTROLS_RATIO = 0.6  # controls_panel 最大占比
+    TRACK_ROW_HEIGHT = 40  # 单条轨道高度
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -35,9 +37,47 @@ class TimelineArea(QWidget):
         # 设置 sizePolicy 让高度根据内容自动调整
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
+        # 主布局
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
+
+        # 滚动区域
+        self.scroll_area = SmoothScrollArea(self)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.scroll_area.setStyleSheet(f"""
+            SmoothScrollArea {{
+                background-color: {get_color_hex(ColorKey.BG_TIMELINE)};
+                border: none;
+            }}
+            QScrollBar:vertical {{
+                width: 8px;
+                background-color: transparent;
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {get_color_hex(ColorKey.BG_TRACK_ALT)};
+                border-radius: 4px;
+                min-height: 20px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {get_color_hex(ColorKey.TEXT_SECONDARY)};
+            }}
+        """)
+
+        # 滚动区域内容容器
+        self.scroll_content = QWidget(self.scroll_area)
+        self.scroll_content.setStyleSheet(f"background-color: {get_color_hex(ColorKey.BG_TIMELINE)};")
+        self.tracks_layout = QVBoxLayout(self.scroll_content)
+        self.tracks_layout.setContentsMargins(0, 0, 0, 0)
+        self.tracks_layout.setSpacing(0)
+
+        self.scroll_area.setWidget(self.scroll_content)
+        self.main_layout.addWidget(self.scroll_area)
+
+        # 更新最大高度
+        self._update_max_height()
 
     def add_track(self, index: int, name: str):
         """添加轨道"""
@@ -57,23 +97,29 @@ class TimelineArea(QWidget):
 
         if index >= len(self._tracks):
             self._tracks.append(track)
-            self.main_layout.addWidget(track)
+            self.tracks_layout.addWidget(track)
         else:
             self._tracks[index] = track
-            self.main_layout.insertWidget(index, track)
+            self.tracks_layout.insertWidget(index, track)
 
         track.set_playhead_position(self._playhead_position)
         track.set_alt_row(index % 2 == 0)
         # 延迟应用当前宽度（等待布局完成）
         QTimer.singleShot(0, lambda: track.set_controls_width(self._controls_width))
+        self._update_max_height()
         self.updateGeometry()
+
+        # 请求扩展高度
+        track_count = len([t for t in self._tracks if t is not None])
+        self.expand_requested.emit(track_count * self.TRACK_ROW_HEIGHT)
 
     def remove_track(self, index: int):
         """移除轨道"""
         if 0 <= index < len(self._tracks) and self._tracks[index] is not None:
             track = self._tracks.pop(index)
-            self.main_layout.removeWidget(track)
+            self.tracks_layout.removeWidget(track)
             track.deleteLater()
+            self._update_max_height()
             self.updateGeometry()  # 通知布局更新
 
     def update_playhead(self, position: float):
@@ -141,10 +187,18 @@ class TimelineArea(QWidget):
                     self._controls_width = sizes[0]
                 break
 
+    def _update_max_height(self):
+        """更新最大高度限制 - 基于轨道数量"""
+        track_count = len([t for t in self._tracks if t is not None])
+        content_height = track_count * self.TRACK_ROW_HEIGHT
+        # 设置为内容高度，窗体 40% 的限制由 MainWindow 的 splitter 控制
+        self.setMaximumHeight(content_height if track_count > 0 else 0)
+
     def clear_tracks(self):
         """清除所有轨道"""
         for track in self._tracks:
             if track is not None:
-                self.main_layout.removeWidget(track)
+                self.tracks_layout.removeWidget(track)
                 track.deleteLater()
         self._tracks.clear()
+        self._update_max_height()

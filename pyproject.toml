@@ -29,6 +29,7 @@ dependencies = [
     "PySide6>=6.10.0",
     "PySide6-Fluent-Widgets>=1.11.0",
     "psutil>=5.9.0",
+    "loguru>=0.7.0",
 ]
 
 [project.optional-dependencies]

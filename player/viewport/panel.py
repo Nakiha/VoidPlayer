@@ -23,6 +23,10 @@ class ViewportPanel(QWidget):
     """
     视频预览区域 - 支持并排和分屏两种模式
 
+    数据流：
+    - 用户操作 → 发射请求信号 (media_swap_requested, media_remove_clicked)
+    - 外部通过 set_sources / add_slot / remove_slot / on_sources_swapped / on_source_moved 更新显示
+
     布局结构：
     ┌─────────────────────────────────┐
     │  panel_container (flex: 1)      │  <- 第一行：视频预览
@@ -31,27 +35,21 @@ class ViewportPanel(QWidget):
     │  info_container (fixed 32px)    │  <- 第二行：媒体信息
     │  [Info1]  [Info2]  [Info3]...   │
     └─────────────────────────────────┘
-
-    并排模式(SIDE_BY_SIDE)：
-    - 显示所有视频面板和信息条
-    - 固定 1/n 等分，不可调整宽度
-
-    分屏模式(SPLIT_SCREEN)：
-    - 只显示前两个视频面板和信息条
-    - 使用 ResizableContainer，双边可拖动调整
     """
 
-    # 信号
-    split_position_changed = Signal(float)  # 分割线位置变化 (0.0 ~ 1.0)
-    media_changed = Signal(int, int)  # (slot_index, selected_media_index)
+    # 请求信号 (用户操作 → 请求外部处理)
+    media_swap_requested = Signal(int, int)  # (slot_index, target_media_index) 请求交换
     media_settings_clicked = Signal(int)  # slot_index
     media_remove_clicked = Signal(int)  # slot_index
+
+    # 状态信号
+    split_position_changed = Signal(float)  # 分割线位置变化 (0.0 ~ 1.0)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._view_mode = ViewMode.SIDE_BY_SIDE
         self._split_position = 0.5
-        self._sources: list[str] = []
+        self._sources: list[str] = []  # 缓存，用于显示
         self._panels: list[VideoPlaceholder] = []
         self._info_items: list[MediaHeader] = []
 
@@ -82,7 +80,7 @@ class ViewportPanel(QWidget):
         # 第二行：MediaInfo 容器
         self.info_container = QWidget(self)
         self.info_layout = QHBoxLayout(self.info_container)
-        self.info_layout.setContentsMargins(0, 0, 0, 0)  # 边距由 MediaHeader 自己控制
+        self.info_layout.setContentsMargins(0, 0, 0, 0)
         self.info_layout.setSpacing(0)
         main_layout.addWidget(self.info_container)
 
@@ -92,19 +90,16 @@ class ViewportPanel(QWidget):
         layout = QVBoxLayout(widget)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # 图标
         icon = IconWidget(FluentIcon.VIDEO, widget)
         icon.setFixedSize(64, 64)
         layout.addWidget(icon, 0, Qt.AlignmentFlag.AlignCenter)
 
         layout.addSpacing(8)
 
-        # 提示文字
         label = SubtitleLabel("点击「添加媒体」或拖放文件到这里")
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(label, 0, Qt.AlignmentFlag.AlignCenter)
 
-        # 设置样式
         text_color = get_color_hex(ColorKey.TEXT_SECONDARY)
         bg_color = get_color_hex(ColorKey.BG_BASE)
         widget.setStyleSheet(f"""
@@ -131,8 +126,9 @@ class ViewportPanel(QWidget):
 
         # 创建媒体信息条
         info_item = MediaHeader(index, self._sources, current_source, self)
+        # MediaHeader 选择改变时，请求交换
         info_item.media_changed.connect(
-            lambda media_idx, slot_idx=index: self.media_changed.emit(slot_idx, media_idx)
+            lambda slot_idx, media_idx: self.media_swap_requested.emit(slot_idx, media_idx)
         )
         info_item.media_settings_clicked.connect(
             lambda slot_idx=index: self.media_settings_clicked.emit(slot_idx)
@@ -174,13 +170,18 @@ class ViewportPanel(QWidget):
     def _clear_containers(self):
         """清除分屏模式的容器"""
         if self._container1:
-            self._container1.takeWidget()  # 清理事件过滤器和光标
+            self._container1.takeWidget()
             self._container1.deleteLater()
             self._container1 = None
         if self._container2:
-            self._container2.takeWidget()  # 清理事件过滤器和光标
+            self._container2.takeWidget()
             self._container2.deleteLater()
             self._container2 = None
+
+    def _refresh_all_info_sources(self):
+        """刷新所有 MediaHeader 的源列表"""
+        for i, info in enumerate(self._info_items):
+            info.update_sources(self._sources, self._sources[i] if i < len(self._sources) else "")
 
     # ========== 模式切换 ==========
 
@@ -201,13 +202,11 @@ class ViewportPanel(QWidget):
         self._clear_panel_layout()
         self._clear_containers()
 
-        # 所有 panel 直接添加，等分显示
         for panel in self._panels:
             panel.setParent(None)
-            self.panel_layout.addWidget(panel, 1)  # stretch=1 等分
+            self.panel_layout.addWidget(panel, 1)
             panel.show()
 
-        # 所有 info 等分显示
         self._update_info_layout()
 
     def _apply_split_screen_mode(self):
@@ -221,35 +220,31 @@ class ViewportPanel(QWidget):
         panels_to_show = self._panels[:2]
         total_width = self.panel_container.width()
         if total_width < 200:
-            total_width = 800  # 默认值
+            total_width = 800
 
         half_width = total_width // 2
 
-        # 第一个 container：启用 RIGHT 边缘拖动，使用固定宽度
         self._container1 = ResizableContainer(self.panel_container)
         self._container1.setResizable(ResizableContainer.Edge.RIGHT)
-        self._container1.setRange(0, total_width)  # 允许压缩到 0
+        self._container1.setRange(0, total_width)
         self._container1.setCurrentWidth(half_width)
         self._container1.setFixedWidth(half_width)
         self._container1.setWidget(panels_to_show[0])
         self._container1.widthChanged.connect(self._on_container1_width_changed)
         self.panel_layout.addWidget(self._container1)
 
-        # 第二个 container：启用 LEFT 边缘拖动，也使用固定宽度
         self._container2 = ResizableContainer(self.panel_container)
         self._container2.setResizable(ResizableContainer.Edge.LEFT)
-        self._container2.setRange(0, total_width)  # 允许压缩到 0
+        self._container2.setRange(0, total_width)
         self._container2.setCurrentWidth(half_width)
         self._container2.setFixedWidth(half_width)
         self._container2.setWidget(panels_to_show[1])
         self._container2.widthChanged.connect(self._on_container2_width_changed)
         self.panel_layout.addWidget(self._container2)
 
-        # 隐藏第 3 个及之后的 panel
         for panel in self._panels[2:]:
             panel.hide()
 
-        # 更新 info 布局（只显示前 2 个）
         self._update_info_layout()
 
     def _update_info_layout(self):
@@ -263,7 +258,7 @@ class ViewportPanel(QWidget):
         for i, info in enumerate(self._info_items):
             info.setParent(None)
             if i < visible_count:
-                self.info_layout.addWidget(info, 1)  # stretch=1 等分
+                self.info_layout.addWidget(info, 1)
                 info.show()
             else:
                 info.hide()
@@ -277,16 +272,13 @@ class ViewportPanel(QWidget):
         total_width = self.panel_container.width()
         remaining = total_width - width
 
-        # 同时更新两个 container 的固定宽度
         self._container1.setFixedWidth(width)
         self._container2.setFixedWidth(remaining)
         self._container2.setCurrentWidth(remaining)
 
-        # 更新 range
         self._container1.setRange(0, total_width)
         self._container2.setRange(0, total_width)
 
-        # 更新分割位置
         if total_width > 0:
             self._split_position = width / total_width
             self.split_position_changed.emit(self._split_position)
@@ -302,55 +294,45 @@ class ViewportPanel(QWidget):
         total_width = self.panel_container.width()
         new_width1 = total_width - width
 
-        # 同时更新两个 container 的固定宽度
         self._container1.setFixedWidth(new_width1)
         self._container1.setCurrentWidth(new_width1)
         self._container2.setFixedWidth(width)
 
-        # 更新 range
         self._container1.setRange(0, total_width)
         self._container2.setRange(0, total_width)
 
-        # 更新分割位置
         if total_width > 0:
             self._split_position = new_width1 / total_width
             self.split_position_changed.emit(self._split_position)
 
         self._syncing_width = False
 
-    # ========== 公共 API ==========
+    # ========== 公共 API (由 MainWindow 调用) ==========
 
     def set_sources(self, sources: list[str]):
-        """设置所有可用的媒体源列表"""
-        self._sources = sources
-
-        # 清除现有槽位
+        """设置所有媒体源 (全量更新)"""
+        self._sources = sources.copy()
         self._clear_slots()
 
-        # 创建新的槽位
         for i, source in enumerate(sources):
             self._add_slot(i, source)
 
-        # 应用当前模式
         if self._view_mode == ViewMode.SIDE_BY_SIDE:
             self._apply_side_by_side_mode()
         else:
             self._apply_split_screen_mode()
 
-        # 更新空状态占位
         self._update_empty_placeholder()
 
-    def add_source(self, source: str):
-        """添加一个新的媒体源"""
+    def add_slot(self, source: str):
+        """添加一个槽位"""
         self._sources.append(source)
         index = len(self._panels)
 
-        # 创建新槽位
         self._add_slot(index, source)
 
-        # 更新所有槽位的源列表
-        for info in self._info_items:
-            info.update_sources(self._sources)
+        # 更新所有 MediaHeader 的源列表
+        self._refresh_all_info_sources()
 
         # 重新应用当前模式
         if self._view_mode == ViewMode.SIDE_BY_SIDE:
@@ -358,40 +340,81 @@ class ViewportPanel(QWidget):
         else:
             self._apply_split_screen_mode()
 
-        # 更新空状态占位
         self._update_empty_placeholder()
 
-    def remove_source(self, index: int):
-        """移除指定索引的媒体源"""
-        if 0 <= index < len(self._sources):
-            self._sources.pop(index)
+    def remove_slot(self, index: int):
+        """移除指定索引的槽位"""
+        if not (0 <= index < len(self._sources)):
+            return
 
-            # 移除对应的槽位
-            if index < len(self._panels):
-                panel = self._panels.pop(index)
-                info = self._info_items.pop(index)
-                self._clear_panel_layout()
-                self._clear_info_layout()
-                panel.deleteLater()
-                info.deleteLater()
+        self._sources.pop(index)
 
-            # 更新后续槽位的索引
-            for i in range(index, len(self._panels)):
-                self._panels[i].index = i
-                self._info_items[i].index = i
+        if index < len(self._panels):
+            panel = self._panels.pop(index)
+            info = self._info_items.pop(index)
+            self._clear_panel_layout()
+            self._clear_info_layout()
+            panel.deleteLater()
+            info.deleteLater()
 
-            # 更新所有槽位的源列表
-            for info in self._info_items:
-                info.update_sources(self._sources)
+        # 更新后续槽位的索引
+        for i in range(index, len(self._panels)):
+            self._panels[i].index = i
+            self._info_items[i].index = i
 
-            # 重新应用当前模式
-            if self._view_mode == ViewMode.SIDE_BY_SIDE:
-                self._apply_side_by_side_mode()
-            else:
-                self._apply_split_screen_mode()
+        # 更新所有 MediaHeader 的源列表
+        self._refresh_all_info_sources()
 
-            # 更新空状态占位
-            self._update_empty_placeholder()
+        # 重新应用当前模式
+        if self._view_mode == ViewMode.SIDE_BY_SIDE:
+            self._apply_side_by_side_mode()
+        else:
+            self._apply_split_screen_mode()
+
+        self._update_empty_placeholder()
+
+    def on_sources_swapped(self, index1: int, index2: int):
+        """响应源交换 (TrackManager.sources_swapped)"""
+        if not (0 <= index1 < len(self._sources) and 0 <= index2 < len(self._sources)):
+            return
+
+        # 交换缓存中的源
+        self._sources[index1], self._sources[index2] = \
+            self._sources[index2], self._sources[index1]
+
+        # 更新所有 MediaHeader 的显示
+        self._refresh_all_info_sources()
+
+    def on_source_moved(self, old_index: int, new_index: int):
+        """响应源移动 (TrackManager.sources_reordered)"""
+        if not (0 <= old_index < len(self._sources) and 0 <= new_index < len(self._sources)):
+            return
+
+        # 移动缓存中的源
+        source = self._sources.pop(old_index)
+        self._sources.insert(new_index, source)
+
+        # 重排 panels
+        panel = self._panels.pop(old_index)
+        self._panels.insert(new_index, panel)
+
+        # 重排 info_items
+        info = self._info_items.pop(old_index)
+        self._info_items.insert(new_index, info)
+
+        # 更新所有槽位的索引
+        for i, (p, inf) in enumerate(zip(self._panels, self._info_items)):
+            p.index = i
+            inf.index = i
+
+        # 更新所有 MediaHeader 的源列表
+        self._refresh_all_info_sources()
+
+        # 重新应用当前模式
+        if self._view_mode == ViewMode.SIDE_BY_SIDE:
+            self._apply_side_by_side_mode()
+        else:
+            self._apply_split_screen_mode()
 
     @property
     def view_mode(self) -> ViewMode:
@@ -404,7 +427,6 @@ class ViewportPanel(QWidget):
     @split_position.setter
     def split_position(self, value: float):
         self._split_position = max(0.0, min(1.0, value))
-        # 更新容器宽度
         if self._container1 and self._container2:
             total_width = self.panel_container.width()
             left_width = int(total_width * self._split_position)

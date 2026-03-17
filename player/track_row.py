@@ -11,7 +11,7 @@ from qfluentwidgets import (
 )
 
 from .theme_utils import get_color, get_color_hex, get_accent_color, ColorKey
-from .widgets import create_tool_button, OffsetLabel, HighlightSplitter, ElideLabel
+from .widgets import create_tool_button, OffsetLabel, HighlightSplitter, DraggableElideLabel
 
 # 偏移步进常量
 OFFSET_STEP_MS = 10  # 0.01秒 = 10毫秒
@@ -69,6 +69,9 @@ class TrackRow(QWidget):
     mute_toggled = Signal(bool)
     offset_changed = Signal(int)  # 毫秒
     splitter_moved = Signal(int)  # splitter 拖动时发送新的宽度（像素）
+    drag_started = Signal()  # 开始拖拽
+    drag_moved = Signal(int)  # 拖拽移动 (global_y)
+    drag_finished = Signal()  # 结束拖拽
 
     def __init__(self, file_name: str = "", parent=None):
         super().__init__(parent)
@@ -76,6 +79,8 @@ class TrackRow(QWidget):
         self._is_visible = True
         self._is_muted = False
         self._offset_ms = 0
+        self._is_dragging = False
+        self._normal_style = ""  # 保存正常样式
         self.setFixedHeight(40)
         self._setup_ui()
 
@@ -104,10 +109,13 @@ class TrackRow(QWidget):
         self.remove_btn.clicked.connect(self.remove_clicked)
         controls_layout.addWidget(self.remove_btn)
 
-        # 文件名
-        self.file_label = ElideLabel(self._file_name, self)
+        # 文件名 (可拖拽)
+        self.file_label = DraggableElideLabel(self._file_name, self)
         self.file_label.setStyleSheet("background: transparent;")
         self.file_label.setMinimumWidth(60)  # 确保文件名有最小显示空间
+        self.file_label.drag_started.connect(self.drag_started)
+        self.file_label.drag_moved.connect(self.drag_moved)
+        self.file_label.drag_finished.connect(self.drag_finished)
         controls_layout.addWidget(self.file_label, 1)
 
         # 可见性按钮
@@ -153,7 +161,20 @@ class TrackRow(QWidget):
     def set_alt_row(self, is_alt: bool):
         """设置是否为交替行"""
         bg_color = ColorKey.BG_TRACK_ALT if is_alt else ColorKey.BG_TRACK_CONTROLS
-        self.setStyleSheet(f"background-color: {get_color_hex(bg_color)};")
+        self._normal_style = f"background-color: {get_color_hex(bg_color)};"
+        if not self._is_dragging:
+            self.setStyleSheet(self._normal_style)
+
+    def set_dragging(self, is_dragging: bool):
+        """设置拖拽状态"""
+        self._is_dragging = is_dragging
+        if is_dragging:
+            # 拖拽时的半透明主题色
+            accent = get_accent_color()
+            self.setStyleSheet(f"background-color: rgba({accent.red()}, {accent.green()}, {accent.blue()}, 0.2);")
+        else:
+            # 恢复正常样式
+            self.setStyleSheet(self._normal_style)
 
     def _on_visibility_clicked(self):
         """可见性切换"""

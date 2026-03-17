@@ -5,12 +5,7 @@ import sys
 import subprocess
 from typing import Optional
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QFileDialog
-from PySide6.QtCore import Qt, QMimeData
-from PySide6.QtGui import QDragEnterEvent, QDropEvent
-from qfluentwidgets import isDarkTheme, FluentIcon
-
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QFileDialog
-from PySide6.QtCore import Qt, QMimeData
+from PySide6.QtCore import Qt, QMimeData, QTimer
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
 from qfluentwidgets import isDarkTheme, FluentIcon
 
@@ -22,6 +17,7 @@ from .theme_utils import get_color_hex, ColorKey
 from .debug_monitor import DebugMonitorWindow
 from .config import config, Profile
 from .widgets import HighlightSplitter
+from .track_manager import TrackManager
 
 
 class MainWindow(QWidget):
@@ -37,11 +33,14 @@ class MainWindow(QWidget):
         parent=None
     ):
         super().__init__(parent)
-        self._sources: list[str] = []
         self._view_mode = ViewMode.SIDE_BY_SIDE
         self._is_playing = False
         self._debug_monitor: DebugMonitorWindow | None = None
         self._launch_args = launch_args or []
+
+        # 唯一数据源
+        self._track_manager = TrackManager(self)
+
         self._setup_ui()
         self._connect_signals()
         self._load_initial_files(initial_files or [])
@@ -101,11 +100,17 @@ class MainWindow(QWidget):
         self.main_layout.addWidget(self.v_splitter, 1)
 
         # 延迟设置初始大小比例
-        from PySide6.QtCore import QTimer
         QTimer.singleShot(0, self._init_splitter_sizes)
 
     def _connect_signals(self):
         """连接信号"""
+        # TrackManager 信号 -> 更新各组件
+        self._track_manager.source_added.connect(self._on_source_added)
+        self._track_manager.source_removed.connect(self._on_source_removed)
+        self._track_manager.sources_swapped.connect(self._on_sources_swapped)
+        self._track_manager.sources_reordered.connect(self._on_sources_reordered)
+        self._track_manager.sources_reset.connect(self._on_sources_reset)
+
         # 工具栏信号
         self.toolbar.view_mode_changed.connect(self.set_view_mode)
         self.toolbar.add_media_clicked.connect(self._on_add_media)
@@ -117,9 +122,9 @@ class MainWindow(QWidget):
         else:
             self.toolbar.debug_btn.hide()
 
-        # 视口面板信号（包含媒体选择和移除）
+        # 视口面板信号
         self.viewport_panel.media_remove_clicked.connect(self.remove_media)
-        self.viewport_panel.media_changed.connect(self._on_media_changed)
+        self.viewport_panel.media_swap_requested.connect(self._track_manager.swap_sources)
 
         # 控制条信号
         self.controls_bar.play_clicked.connect(self.play)
@@ -129,8 +134,9 @@ class MainWindow(QWidget):
         # 时间轴信号
         self.timeline_area.track_remove_clicked.connect(self.remove_media)
         self.timeline_area.track_offset_changed.connect(self.set_sync_offset)
+        self.timeline_area.track_move_requested.connect(self._track_manager.move_source)
 
-        # 分割器信号 - 用于限制 timeline_area 最大高度
+        # 分割器信号
         self.v_splitter.splitterMoved.connect(self._on_splitter_moved)
 
         # 时间轴扩展请求
@@ -157,21 +163,53 @@ class MainWindow(QWidget):
                     self.v_splitter.setSizes([sizes[0] + excess, max_timeline_height])
 
     def _on_timeline_expand_requested(self, required_height: int):
-        """时间轴扩展请求 - 自动调整 splitter 使 timeline_area 获得足够高度"""
+        """时间轴扩展请求"""
         sizes = self.v_splitter.sizes()
         if len(sizes) >= 2:
             total = sum(sizes)
             if total > 0:
-                # 最大高度为窗体 40%
                 max_timeline_height = int(total * 0.4)
-                # 目标高度：不超过最大限制
                 target_height = min(required_height, max_timeline_height)
-
                 current_height = sizes[1]
-                # 只有当前高度小于目标高度时才扩展
                 if current_height < target_height:
                     new_top_height = total - target_height
                     self.v_splitter.setSizes([new_top_height, target_height])
+
+    # ========== TrackManager 信号回调 ==========
+
+    def _on_source_added(self, index: int, source: str):
+        """源添加回调"""
+        self.timeline_area.add_track(index, source)
+        self.viewport_panel.add_slot(source)
+        self._update_view_mode_enabled()
+
+    def _on_source_removed(self, index: int):
+        """源移除回调"""
+        self.timeline_area.remove_track(index)
+        self.viewport_panel.remove_slot(index)
+        self._update_view_mode_enabled()
+
+    def _on_sources_swapped(self, index1: int, index2: int):
+        """源交换回调"""
+        # 交换后需要同步更新 UI 显示
+        self.viewport_panel.on_sources_swapped(index1, index2)
+        self.timeline_area.reorder_track(index1, index2)
+
+    def _on_sources_reordered(self, old_index: int, new_index: int):
+        """源重排序回调"""
+        self.viewport_panel.on_source_moved(old_index, new_index)
+        self.timeline_area.reorder_track(old_index, new_index)
+
+    def _on_sources_reset(self):
+        """源重置回调"""
+        sources = self._track_manager.sources()
+        self.viewport_panel.set_sources(sources)
+        self.timeline_area.clear_tracks()
+        for i, source in enumerate(sources):
+            self.timeline_area.add_track(i, source)
+        self._update_view_mode_enabled()
+
+    # ========== 用户操作 ==========
 
     def _load_initial_files(self, files: list[str]):
         """加载初始文件"""
@@ -179,7 +217,7 @@ class MainWindow(QWidget):
             self.add_media(file_path)
 
     def _on_add_media(self):
-        """添加媒体按钮点击 - 打开文件选择器"""
+        """添加媒体按钮点击"""
         files, _ = QFileDialog.getOpenFileNames(
             self,
             "选择媒体文件",
@@ -191,7 +229,6 @@ class MainWindow(QWidget):
 
     def _on_new_window(self):
         """启动新的 VoidPlayer 窗口"""
-        # 过滤掉黑名单中的参数
         filtered_args = []
         skip_next = False
         for arg in self._launch_args:
@@ -203,19 +240,18 @@ class MainWindow(QWidget):
                 continue
             filtered_args.append(arg)
 
-        # 启动新进程
         exe = sys.executable
         script = sys.argv[0]
         cmd = [exe, script] + filtered_args
         subprocess.Popen(cmd)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
-        """拖入事件 - 接受文件拖入"""
+        """拖入事件"""
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
 
     def dropEvent(self, event: QDropEvent):
-        """放下事件 - 处理拖入的文件"""
+        """放下事件"""
         for url in event.mimeData().urls():
             file_path = url.toLocalFile()
             if file_path:
@@ -223,8 +259,8 @@ class MainWindow(QWidget):
         event.acceptProposedAction()
 
     def _update_view_mode_enabled(self):
-        """根据文件数量更新视图模式切换的可用状态"""
-        self.toolbar.set_view_mode_enabled(len(self._sources) > 0)
+        """更新视图模式切换的可用状态"""
+        self.toolbar.set_view_mode_enabled(self._track_manager.count() > 0)
 
     def _show_debug_monitor(self):
         """显示性能监控窗口"""
@@ -233,7 +269,6 @@ class MainWindow(QWidget):
                 None, auto_tracemalloc=(config.profile == Profile.DEBUG)
             )
 
-        # 如果窗口最小化，恢复窗口状态
         if self._debug_monitor.isMinimized():
             self._debug_monitor.showNormal()
         else:
@@ -242,51 +277,15 @@ class MainWindow(QWidget):
         self._debug_monitor.raise_()
         self._debug_monitor.activateWindow()
 
-    def _on_media_changed(self, slot_index: int, media_index: int):
-        """媒体选择改变时的回调"""
-        # slot_index: 哪个槽位 (0=左, 1=右, ...)
-        # media_index: 选择了哪个源
-        # TODO: 切换 VideoPlaceholder 中的画面
-        pass
-
     # ========== 公共 API ==========
 
-    def load_sources(self, sources: list[str]):
-        """加载媒体源列表"""
-        self._sources.clear()
-        self.timeline_area.clear_tracks()
-
-        # 设置视口面板的源列表
-        self.viewport_panel.set_sources(sources)
-
-        for i, source in enumerate(sources):
-            self._sources.append(source)
-            self.timeline_area.add_track(i, source)
-
     def add_media(self, path: str):
-        """添加单个媒体"""
-        index = len(self._sources)
-        self._sources.append(path)
-
-        # 添加源到视口面板
-        self.viewport_panel.add_source(path)
-
-        # 添加轨道
-        self.timeline_area.add_track(index, path)
-
-        # 更新视图模式切换状态
-        self._update_view_mode_enabled()
+        """添加媒体"""
+        self._track_manager.add_source(path)
 
     def remove_media(self, index: int):
         """移除媒体"""
-        if 0 <= index < len(self._sources):
-            self._sources.pop(index)
-            self.timeline_area.remove_track(index)
-            # 移除视口面板中的源
-            self.viewport_panel.remove_source(index)
-
-            # 更新视图模式切换状态
-            self._update_view_mode_enabled()
+        self._track_manager.remove_source(index)
 
     def set_sync_offset(self, index: int, offset_ms: int):
         """设置时间偏移"""
@@ -310,7 +309,6 @@ class MainWindow(QWidget):
 
     def seek_to(self, timestamp_ms: int):
         """跳转到指定时间"""
-        # 更新播放头位置
         duration = 9600  # 演示时长
         if duration > 0:
             position = timestamp_ms / duration
@@ -318,10 +316,11 @@ class MainWindow(QWidget):
 
     def new_project(self):
         """新建项目"""
-        self._sources.clear()
-        self.timeline_area.clear_tracks()
-        # 清空视口面板
-        self.viewport_panel.set_sources([])
+        self._track_manager.clear()
+
+    def load_sources(self, sources: list[str]):
+        """加载媒体源列表"""
+        self._track_manager.set_sources(sources)
 
     def open_project(self, path: str):
         """打开项目"""

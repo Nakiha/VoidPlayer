@@ -23,6 +23,7 @@
 | TimeLabel | 播放时间显示 (当前/总时长) |
 | OffsetLabel | 偏移时间显示 (带正负号) |
 | ElideLabel | 文本过长时自动省略，悬停显示完整 tooltip |
+| DraggableElideLabel | 可拖拽的省略文本标签，用于轨道重排序 |
 | ElideComboBox | 下拉框显示 basename，悬停显示完整路径 tooltip |
 | HighlightSplitter | 悬浮高亮分割器 |
 | ResizableContainer | 可拖动调整大小的容器 |

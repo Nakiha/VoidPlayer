@@ -2,19 +2,22 @@
 TimelineArea - 时间轴轨道区域
 """
 from typing import Optional
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy, QFrame
 from PySide6.QtCore import Signal, QTimer, Qt
 from qfluentwidgets import SmoothScrollArea
 
 from .track_row import TrackRow
-from .theme_utils import get_color_hex, ColorKey
+from .theme_utils import get_color_hex, get_accent_color_hex, ColorKey
 
 
 class TimelineArea(QWidget):
     """时间轴轨道区域 - 管理多条轨道"""
 
-    # 信号 (转发 TrackRow 的信号)
+    # 请求信号 (用户操作 → 请求外部处理)
     track_remove_clicked = Signal(int)  # index
+    track_move_requested = Signal(int, int)  # old_index, new_index (请求移动)
+
+    # 转发信号
     track_visibility_toggled = Signal(int, bool)  # index, visible
     track_mute_toggled = Signal(int, bool)  # index, muted
     track_offset_changed = Signal(int, int)  # index, offset_ms
@@ -29,6 +32,8 @@ class TimelineArea(QWidget):
         self._playhead_position = 0.0
         self._controls_width = 320  # 当前 controls_panel 宽度（像素）
         self._syncing = False  # 防止递归同步
+        self._drag_index = -1  # 当前拖拽的 track 索引
+        self._drop_index = -1  # 当前悬停的目标位置
         self._setup_ui()
 
     def _setup_ui(self):
@@ -76,6 +81,12 @@ class TimelineArea(QWidget):
         self.scroll_area.setWidget(self.scroll_content)
         self.main_layout.addWidget(self.scroll_area)
 
+        # 插入指示线 (初始隐藏)
+        self._drop_indicator = QFrame(self.scroll_content)
+        self._drop_indicator.setFixedHeight(3)
+        self._drop_indicator.setStyleSheet(f"background-color: {get_accent_color_hex()}; border-radius: 1px;")
+        self._drop_indicator.hide()
+
         # 更新最大高度
         self._update_max_height()
 
@@ -89,11 +100,15 @@ class TimelineArea(QWidget):
         self._sync_controls_width()
 
         track = TrackRow(name, self)
-        track.remove_clicked.connect(lambda: self._on_track_remove(index))
-        track.visibility_toggled.connect(lambda v: self._on_track_visibility(index, v))
-        track.mute_toggled.connect(lambda m: self._on_track_mute(index, m))
-        track.offset_changed.connect(lambda o: self._on_track_offset(index, o))
+        # 所有信号都使用动态索引（重排序后索引会变化）
+        track.remove_clicked.connect(lambda: self._on_track_remove(self._tracks.index(track)))
+        track.visibility_toggled.connect(lambda v: self._on_track_visibility(self._tracks.index(track), v))
+        track.mute_toggled.connect(lambda m: self._on_track_mute(self._tracks.index(track), m))
+        track.offset_changed.connect(lambda o: self._on_track_offset(self._tracks.index(track), o))
         track.splitter_moved.connect(self._on_splitter_moved)
+        track.drag_started.connect(lambda: self._on_track_drag_started(self._tracks.index(track)))
+        track.drag_moved.connect(lambda y: self._on_track_drag_moved(self._tracks.index(track), y))
+        track.drag_finished.connect(lambda: self._on_track_drag_finished(self._tracks.index(track)))
 
         if index >= len(self._tracks):
             self._tracks.append(track)
@@ -202,3 +217,124 @@ class TimelineArea(QWidget):
                 track.deleteLater()
         self._tracks.clear()
         self._update_max_height()
+
+    # ========== 拖拽重排序 ==========
+
+    def _on_track_drag_started(self, index: int):
+        """轨道拖拽开始"""
+        if len(self._tracks) < 2:
+            return  # 单条轨道不允许拖拽
+
+        self._drag_index = index
+        self._drop_index = index
+
+        # 设置拖拽样式
+        if self._tracks[index] is not None:
+            self._tracks[index].set_dragging(True)
+
+    def _on_track_drag_moved(self, track_index: int, global_y: int):
+        """轨道拖拽移动"""
+        if self._drag_index < 0:
+            return
+
+        # 计算目标索引
+        drop_index = self._calculate_drop_index(global_y)
+
+        if drop_index != self._drop_index:
+            self._drop_index = drop_index
+            self._update_drop_indicator()
+
+    def _on_track_drag_finished(self, track_index: int):
+        """轨道拖拽结束"""
+        if self._drag_index < 0:
+            return
+
+        # 隐藏指示线
+        self._drop_indicator.hide()
+
+        # 恢复拖拽样式
+        if self._drag_index < len(self._tracks) and self._tracks[self._drag_index] is not None:
+            self._tracks[self._drag_index].set_dragging(False)
+
+        # 执行重排序
+        old_index = self._drag_index
+        new_index = self._drop_index
+
+        # 重置状态
+        self._drag_index = -1
+        self._drop_index = -1
+
+        # 只有位置变化才触发重排序请求
+        if old_index != new_index:
+            self.track_move_requested.emit(old_index, new_index)
+
+    def _calculate_drop_index(self, global_y: int) -> int:
+        """根据全局 Y 坐标计算目标索引"""
+        # 将全局坐标转换为滚动内容区域的坐标
+        local_y = self.scroll_content.mapFromGlobal(self.scroll_content.mapToGlobal(
+            self.scroll_content.pos()
+        )).y() + global_y - self.mapToGlobal(self.pos()).y()
+
+        # 直接使用 global_y 相对于 scroll_content 的位置
+        scroll_content_global = self.scroll_content.mapToGlobal(self.scroll_content.pos())
+        local_y = global_y - scroll_content_global.y() + self.scroll_content.y()
+
+        # 简化计算：根据 y 位置计算索引
+        track_count = len([t for t in self._tracks if t is not None])
+        if track_count == 0:
+            return 0
+
+        # 计算目标索引
+        index = local_y // self.TRACK_ROW_HEIGHT
+        index = max(0, min(index, track_count))
+
+        # 如果拖到自己的位置，返回原索引
+        if index == self._drag_index:
+            return self._drag_index
+
+        # 如果拖到被拖拽项之后的位置，需要调整
+        if index > self._drag_index:
+            index = min(index, track_count - 1)
+
+        return index
+
+    def _update_drop_indicator(self):
+        """更新插入指示线位置"""
+        if self._drop_index < 0:
+            self._drop_indicator.hide()
+            return
+
+        # 计算指示线 Y 位置
+        y = self._drop_index * self.TRACK_ROW_HEIGHT
+
+        # 如果拖到被拖拽项之后，位置需要调整
+        if self._drop_index > self._drag_index:
+            y = (self._drop_index + 1) * self.TRACK_ROW_HEIGHT
+
+        # 设置指示线位置和大小
+        self._drop_indicator.setGeometry(0, y - 1, self.scroll_content.width(), 3)
+        self._drop_indicator.raise_()
+        self._drop_indicator.show()
+
+    def reorder_track(self, old_index: int, new_index: int):
+        """重排序轨道 (由 MainWindow 在 TrackManager 信号后调用)"""
+        if old_index == new_index:
+            return
+
+        if not (0 <= old_index < len(self._tracks)):
+            return
+
+        if not (0 <= new_index < len(self._tracks)):
+            return
+
+        track = self._tracks.pop(old_index)
+        self._tracks.insert(new_index, track)
+
+        # 更新布局
+        self.tracks_layout.removeWidget(track)
+        self.tracks_layout.insertWidget(new_index, track)
+
+        # 更新交替行样式
+        for i, t in enumerate(self._tracks):
+            if t is not None:
+                t.set_alt_row(i % 2 == 0)

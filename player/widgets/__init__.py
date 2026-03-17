@@ -25,6 +25,9 @@ from .resizable_container import ResizableContainer
 # 省略文本标签
 from .elide_label import ElideLabel
 
+# 可拖拽省略文本标签
+from .draggable_label import DraggableElideLabel
+
 # 省略文本下拉框
 from .elide_combo import ElideComboBox
 
@@ -43,6 +46,8 @@ __all__ = [
     'ResizableContainer',
     # 省略文本标签
     'ElideLabel',
+    # 可拖拽省略文本标签
+    'DraggableElideLabel',
     # 省略文本下拉框
     'ElideComboBox',
 ]

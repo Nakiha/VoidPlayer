@@ -13,13 +13,13 @@ from .viewport import ViewMode, ViewportPanel
 from .toolbar import ToolBar
 from .controls_bar import ControlsBar
 from .timeline_area import TimelineArea
-from .theme_utils import get_color_hex, ColorKey
-from .debug_monitor import DebugMonitorWindow
-from .config import config, Profile
+from ..theme_utils import get_color_hex, ColorKey
+from ..core.debug_monitor import DebugMonitorWindow
+from ..core.config import config, Profile
 from .widgets import HighlightSplitter
-from .track_manager import TrackManager
-from .decoder_pool import DecoderPool
-from .shortcuts import ShortcutManager, ShortcutAction
+from ..core.track_manager import TrackManager
+from ..core.decoder_pool import DecoderPool
+from ..core.shortcuts import ShortcutManager, ShortcutAction
 
 
 class MainWindow(QWidget):

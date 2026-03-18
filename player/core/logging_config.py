@@ -223,7 +223,7 @@ def setup_logging(
 def _setup_native_logging(log_dir: Path, app_name: str, level: str):
     """配置 native 模块日志"""
     try:
-        import voidview_native
+        from player.native import voidview_native
 
         # 映射 loguru 级别到 native 级别
         level_map = {

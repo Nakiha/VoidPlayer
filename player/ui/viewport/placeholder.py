@@ -4,7 +4,7 @@ VideoPlaceholder - 视频预览占位控件
 from PySide6.QtGui import QPainter, QColor
 from PySide6.QtWidgets import QWidget
 
-from ..theme_utils import isDarkTheme
+from ...theme_utils import isDarkTheme
 
 
 class VideoPlaceholder(QWidget):

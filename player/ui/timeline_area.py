@@ -7,10 +7,10 @@ from PySide6.QtCore import Signal, QTimer, Qt
 from qfluentwidgets import SmoothScrollArea
 
 from .track_row import TrackRow
-from .theme_utils import get_color_hex, get_accent_color_hex, ColorKey
+from ..theme_utils import get_color_hex, get_accent_color_hex, ColorKey
 
 if TYPE_CHECKING:
-    from .decoder_pool import MediaInfo
+    from ..core.decoder_pool import MediaInfo
 
 
 class TimelineArea(QWidget):

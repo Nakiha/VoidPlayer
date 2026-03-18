@@ -91,7 +91,7 @@ inline void add_file_sink(
         file_sink->set_level(spdlog::level::trace);  // 文件记录所有级别
         get_logger()->sinks().push_back(file_sink);
         get_logger()->info(
-            "Native 日志配置: path={}, max_size={}MB, max_files={}",
+            "Native log sink added: path={}, max_size={}MB, max_files={}",
             log_path, max_size / (1024 * 1024), max_files
         );
     } catch (const spdlog::spdlog_ex& ex) {

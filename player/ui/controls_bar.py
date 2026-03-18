@@ -11,7 +11,7 @@ from qfluentwidgets import (
     TransparentToggleToolButton,
 )
 
-from .theme_utils import get_color_hex, ColorKey
+from ..theme_utils import get_color_hex, ColorKey
 from .widgets import create_tool_button, TimeLabel
 
 

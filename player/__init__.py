@@ -3,20 +3,16 @@ VoidPlayer - Multi-video playback module
 """
 
 # Logging
-from .logging_config import setup_logging, get_logger
+from .core.logging_config import setup_logging, get_logger
 
-# UI 组件 (无 native 依赖)
-from .viewport import ViewMode, ViewportPanel, MediaHeader
-from .main_window import MainWindow
-from .toolbar import ToolBar
-from .controls_bar import ControlsBar
-from .timeline_area import TimelineArea
-from .track_row import TrackRow
+# UI 组件
+from .ui.viewport import ViewMode, ViewportPanel, MediaHeader
+from .ui.main_window import MainWindow
+from .ui.toolbar import ToolBar
+from .ui.controls_bar import ControlsBar
+from .ui.timeline_area import TimelineArea
+from .ui.track_row import TrackRow
 from .theme_utils import get_color, get_color_hex, get_accent_color, get_accent_color_hex, ColorKey
-
-# Core (需要 voidview_native)
-# from .sync_controller import SyncController, VideoSource
-# from .playback_manager import PlaybackManager, PlayState
 
 __all__ = [
     # Logging
@@ -37,9 +33,4 @@ __all__ = [
     'get_accent_color',
     'get_accent_color_hex',
     'ColorKey',
-    # Core (暂不导出)
-    # 'SyncController',
-    # 'VideoSource',
-    # 'PlaybackManager',
-    # 'PlayState',
 ]

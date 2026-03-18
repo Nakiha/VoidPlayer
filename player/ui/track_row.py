@@ -10,7 +10,7 @@ from qfluentwidgets import (
     FluentIcon,
 )
 
-from .theme_utils import get_color, get_color_hex, get_accent_color, ColorKey
+from ..theme_utils import get_color, get_color_hex, get_accent_color, ColorKey
 from .widgets import create_tool_button, OffsetLabel, HighlightSplitter, DraggableElideLabel
 
 # 偏移步进常量

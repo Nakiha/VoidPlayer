@@ -24,8 +24,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QTimer, Qt, QRect
 from PySide6.QtGui import QPainter, QPen, QFont
 
-from .theme_utils import get_color, ColorKey
-from .widgets import HighlightSplitter
+from ..theme_utils import get_color, ColorKey
+from ..ui.widgets import HighlightSplitter
 
 try:
     import psutil

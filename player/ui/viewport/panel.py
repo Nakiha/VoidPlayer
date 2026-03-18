@@ -10,7 +10,7 @@ from qfluentwidgets import FluentIcon, IconWidget, SubtitleLabel
 
 from .gl_widget import MultiTrackGLWidget
 from .header import MediaHeader
-from ..theme_utils import get_color_hex, ColorKey
+from ...theme_utils import get_color_hex, ColorKey
 
 
 class ViewportPanel(QWidget):

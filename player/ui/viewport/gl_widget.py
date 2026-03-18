@@ -15,7 +15,7 @@ from OpenGL.GL import *
 from loguru import logger
 
 if TYPE_CHECKING:
-    import voidview_native
+    from player.native import voidview_native
 
 
 class ViewMode(IntEnum):
@@ -69,7 +69,7 @@ class MultiTrackGLWidget(QOpenGLWidget):
 
     def _load_shader_source(self, filename: str) -> str:
         """从文件加载 shader 源码"""
-        shader_path = Path(__file__).parent.parent / "shaders" / filename
+        shader_path = Path(__file__).parent.parent.parent / "shaders" / filename
         with open(shader_path, 'r', encoding='utf-8') as f:
             return f.read()
 

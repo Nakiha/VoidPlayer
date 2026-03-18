@@ -23,9 +23,9 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QSurfaceFormat
 from qfluentwidgets import setThemeColor, setTheme, Theme
 
-from player.logging_config import setup_logging, get_logger
-from player.main_window import MainWindow
-from player.config import config, Profile
+from player.core.logging_config import setup_logging, get_logger
+from player.ui.main_window import MainWindow
+from player.core.config import config, Profile
 
 
 def parse_args():
@@ -123,7 +123,7 @@ def main():
 
     # 打印 native 模块版本信息
     try:
-        import voidview_native
+        from player.native import voidview_native
         version = getattr(voidview_native, "__version__", "unknown")
         build_time = getattr(voidview_native, "__build_time__", "unknown")
         logger.info(f"native 模块: version={version}, build_time={build_time}")

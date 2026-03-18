@@ -7,28 +7,12 @@ DecoderPool - 多轨道解码器管理器
 - 同步多轨道解码
 - 播放控制 (播放/暂停/seek)
 """
-import sys
-import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
-from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, QTimer
 
-# 确保能找到 voidview_native
-if "voidview_native" not in sys.modules:
-    # 添加 FFmpeg DLL 路径
-    project_root = Path(__file__).parent.parent
-    ffmpeg_bin = project_root / "libs" / "ffmpeg" / "bin"
-    if ffmpeg_bin.exists():
-        if sys.platform == 'win32' and hasattr(os, 'add_dll_directory'):
-            os.add_dll_directory(str(ffmpeg_bin))
-        os.environ["PATH"] = str(ffmpeg_bin) + os.pathsep + os.environ.get("PATH", "")
-
-    # 添加 player 目录
-    sys.path.insert(0, str(project_root / "player"))
-
-import voidview_native
+from player.native import voidview_native
 
 if TYPE_CHECKING:
     pass

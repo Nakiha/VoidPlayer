@@ -161,7 +161,11 @@ PYBIND11_MODULE(voidview_native, m) {
 
         .def("seek_to", &voidview::HardwareDecoder::seek_to,
              py::arg("timestamp_ms"),
-             "Seek to timestamp in milliseconds")
+             "Seek to timestamp in milliseconds (keyframe-level, fast)")
+
+        .def("seek_to_precise", &voidview::HardwareDecoder::seek_to_precise,
+             py::arg("timestamp_ms"),
+             "Seek to exact frame before timestamp (frame-accurate, slower)")
 
         .def_property_readonly("texture_id", &voidview::HardwareDecoder::get_texture_id,
              "OpenGL texture ID of current frame")

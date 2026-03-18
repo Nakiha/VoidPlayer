@@ -132,17 +132,22 @@ class MultiTrackGLWidget(QOpenGLWidget):
         self.update()
 
     def set_decoders(self, decoders: list["voidview_native.HardwareDecoder | None"]):
-        """设置解码器列表"""
+        """设置解码器列表
+
+        注意: 此方法不修改 _track_count，track 数量由 set_track_count 控制
+        """
         self._decoders = [None] * self.MAX_TRACKS
         self._aspect_ratios = [0.0] * self.MAX_TRACKS
         for i, dec in enumerate(decoders[:self.MAX_TRACKS]):
             self._decoders[i] = dec
             # 从解码器获取宽高比
-            if dec and hasattr(dec, 'width') and hasattr(dec, 'height'):
-                w, h = dec.width, dec.height
-                if w > 0 and h > 0:
-                    self._aspect_ratios[i] = w / h
-        self._track_count = min(len(decoders), self.MAX_TRACKS)
+            if dec:
+                try:
+                    w, h = dec.width, dec.height
+                    if w > 0 and h > 0:
+                        self._aspect_ratios[i] = w / h
+                except Exception as e:
+                    logger.error(f"set_decoders[{i}]: Failed to get width/height: {e}")
         self.update()
 
     def set_track_count(self, count: int):

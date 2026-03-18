@@ -5,14 +5,13 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout
 from PySide6.QtCore import Signal, Qt
 from qfluentwidgets import (
     ComboBox,
-    Slider,
     FluentIcon,
     ToolTipFilter,
     TransparentToggleToolButton,
 )
 
 from ..theme_utils import get_color_hex, ColorKey
-from .widgets import create_tool_button, TimeLabel
+from .widgets import create_tool_button, TimeLabel, TimelineSlider
 
 
 class ControlsBar(QWidget):
@@ -24,7 +23,8 @@ class ControlsBar(QWidget):
     prev_frame_clicked = Signal()
     next_frame_clicked = Signal()
     loop_toggled = Signal(bool)
-    seek_requested = Signal(int)  # 毫秒
+    seek_requested = Signal(int)  # 毫秒，快速 seek (keyframe)
+    precise_seek_requested = Signal(int)  # 毫秒，精确 seek (frame-accurate)
     zoom_changed = Signal(int)  # 百分比
     speed_changed = Signal(float)
     fullscreen_toggled = Signal()
@@ -104,13 +104,11 @@ class ControlsBar(QWidget):
         self.time_label = TimeLabel(self)
         layout.addWidget(self.time_label)
 
-        # 时间轴滑块
-        self.timeline_slider = Slider(Qt.Orientation.Horizontal, self)
-        self.timeline_slider.setRange(0, 1000)
-        self.timeline_slider.setValue(0)  # 初始位置为起点
-        self.timeline_slider.setFixedHeight(24)  # 确保滑块手柄完整显示
+        # 时间轴进度条
+        self.timeline_slider = TimelineSlider(self)
         self.timeline_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 不拦截快捷键
-        self.timeline_slider.valueChanged.connect(self._on_slider_changed)
+        self.timeline_slider.position_dragging.connect(self._on_slider_dragging)
+        self.timeline_slider.position_changed.connect(self._on_slider_changed)
         layout.addWidget(self.timeline_slider, 1)
 
         # 初始化控件状态
@@ -147,11 +145,17 @@ class ControlsBar(QWidget):
         self._is_looping = checked
         self.loop_toggled.emit(checked)
 
-    def _on_slider_changed(self, value: int):
-        """滑块值变化"""
-        self._current_ms = int(value / 1000 * self._duration_ms)
+    def _on_slider_dragging(self, position_us: int):
+        """滑块拖动中 - 更新时间显示，发送快速 seek"""
+        self._current_ms = position_us // 1000  # 微秒转毫秒
         self._update_time_display()
         self.seek_requested.emit(self._current_ms)
+
+    def _on_slider_changed(self, position_us: int):
+        """滑块位置最终确定 - 发送精确 seek"""
+        self._current_ms = position_us // 1000  # 微秒转毫秒
+        self._update_time_display()
+        self.precise_seek_requested.emit(self._current_ms)
 
     def _on_zoom_changed(self, index: int):
         """缩放变化"""
@@ -170,17 +174,14 @@ class ControlsBar(QWidget):
     def set_duration(self, duration_ms: int):
         """设置总时长"""
         self._duration_ms = duration_ms
+        self.timeline_slider.set_duration(duration_ms * 1000)  # 毫秒转微秒
         self._update_controls_enabled()
         self._update_time_display()
 
     def set_current_time(self, time_ms: int):
         """设置当前时间"""
         self._current_ms = time_ms
-        # 更新滑块 (不触发信号)
-        self.timeline_slider.blockSignals(True)
-        if self._duration_ms > 0:
-            self.timeline_slider.setValue(int(time_ms / self._duration_ms * 1000))
-        self.timeline_slider.blockSignals(False)
+        self.timeline_slider.set_position(time_ms * 1000)  # 毫秒转微秒
         self._update_time_display()
 
     def set_position(self, position_ms: int):

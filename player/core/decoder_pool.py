@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import QObject, Signal, QTimer
 
 from player.native import voidview_native
+from player.core.logging_config import get_logger
 
 if TYPE_CHECKING:
     pass
@@ -105,6 +106,14 @@ class DecoderPool(QObject):
         self._is_playing = False
         self._current_position_ms = 0
         self._duration_ms = 0  # 所有轨道中最长的时长
+        self._logger = get_logger()
+
+        # 延迟 seek 相关
+        self._pending_seek_ms: int | None = None
+        self._pending_seek_is_precise: bool = False
+        self._seek_timer = QTimer(self)
+        self._seek_timer.setSingleShot(True)
+        self._seek_timer.timeout.connect(self._execute_pending_seek)
 
         # 播放定时器
         self._play_timer = QTimer(self)
@@ -246,19 +255,87 @@ class DecoderPool(QObject):
             self.play()
 
     def seek_to(self, position_ms: int):
-        """跳转到指定时间"""
-        position_ms = max(0, min(position_ms, self._duration_ms))
-        self._current_position_ms = position_ms
+        """
+        快速跳转到指定时间 (关键帧级别)
 
+        使用延迟执行策略：当用户快速连续点击时，
+        只执行最后一次 seek 请求，避免重复 seek 导致卡顿。
+        """
+        position_ms = max(0, min(position_ms, self._duration_ms))
+        self._schedule_seek(position_ms, is_precise=False)
+
+    def seek_to_precise(self, position_ms: int):
+        """
+        精确跳转到指定时间之前的最近帧 (帧级别精确)
+
+        使用延迟执行策略：当用户快速连续点击时，
+        只执行最后一次 seek 请求，避免重复 seek 导致卡顿。
+        """
+        position_ms = max(0, min(position_ms, self._duration_ms))
+        self._schedule_seek(position_ms, is_precise=True)
+
+    def _schedule_seek(self, position_ms: int, is_precise: bool):
+        """
+        调度一个延迟 seek 请求
+
+        如果已有挂起的请求，新的请求会覆盖它。
+        延迟 50ms 执行，确保连续点击时只执行最后一次。
+        """
+        self._pending_seek_ms = position_ms
+        self._pending_seek_is_precise = is_precise
+        # 重启定时器（如果已经在运行，会重置计时）
+        self._seek_timer.start(50)
+
+    def _execute_pending_seek(self):
+        """执行挂起的 seek 请求"""
+        if self._pending_seek_ms is None:
+            return
+
+        target_ms = self._pending_seek_ms
+        is_precise = self._pending_seek_is_precise
+        self._pending_seek_ms = None
+
+
+        # 执行 seek 操作
         for track in self._tracks:
-            if track and track.decoder and track.enabled:
-                target_ms = position_ms + track.offset_ms
-                target_ms = max(0, target_ms)
-                track.decoder.seek_to(target_ms)
+            if not track or not track.decoder or not track.enabled:
+                continue
+
+            adjusted_ms = max(0, target_ms + track.offset_ms)
+            if is_precise:
+                track.decoder.seek_to_precise(adjusted_ms)
+            else:
+                track.decoder.seek_to(adjusted_ms)
 
         # seek 后立即解码一帧以更新纹理
-        # _decode_frame 会发出 position_changed 和 frame_ready 信号
-        self._decode_frame()
+        self._decode_frame_after_seek(target_ms)
+
+    def _decode_frame_after_seek(self, target_ms: int):
+        """seek 后解码一帧"""
+        any_decoded = False
+
+        for track in self._tracks:
+            if not track or not track.enabled or not track.decoder:
+                continue
+
+            if track.decoder.eof:
+                continue
+
+            if track.decoder.decode_next_frame():
+                track.current_pts_ms = track.decoder.current_pts_ms
+                any_decoded = True
+            elif track.decoder.eof:
+                pass
+            elif track.decoder.has_error:
+                self.error_occurred.emit(track.index, track.decoder.error_message)
+
+        # 更新位置
+        self._current_position_ms = target_ms
+        self.position_changed.emit(self._current_position_ms)
+
+        if any_decoded:
+            self.frame_ready.emit()
+
 
     def step_frame(self):
         """单步进帧"""

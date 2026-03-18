@@ -54,11 +54,19 @@ public:
     bool decode_next_frame();
 
     /**
-     * Seek to timestamp
+     * Seek to timestamp (keyframe-level, fast)
      * @param timestamp_ms Target time in milliseconds
      * @return True on success
      */
     bool seek_to(int64_t timestamp_ms);
+
+    /**
+     * Seek to exact frame before timestamp (frame-accurate, slower)
+     * Seeks to the last frame with pts <= timestamp_ms
+     * @param timestamp_ms Target time in milliseconds
+     * @return True on success
+     */
+    bool seek_to_precise(int64_t timestamp_ms);
 
     // ==================== Properties ====================
 

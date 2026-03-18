@@ -63,6 +63,9 @@ find_package(pybind11 CONFIG REQUIRED)
 message(STATUS "Python: ${Python3_VERSION}")
 message(STATUS "pybind11: ${pybind11_VERSION}")
 
+# 自定义输出目录 (可通过命令行指定)
+set(VOIDVIEW_OUTPUT_DIR "" CACHE PATH "Output directory for the native module")
+
 # ==================== 编译时间 ====================
 
 # 获取编译时间
@@ -139,13 +142,16 @@ if(WIN32)
         )
     endif()
 
-    # 复制产物到 player 目录 (重命名为标准名称)
-    add_custom_command(TARGET voidview_native POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "$<TARGET_FILE:voidview_native>"
-            "${CMAKE_CURRENT_SOURCE_DIR}/../player/voidview_native.pyd"
-        COMMENT "Copying voidview_native.pyd to player directory..."
-    )
+    # 复制产物到指定输出目录
+    if(VOIDVIEW_OUTPUT_DIR)
+        add_custom_command(TARGET voidview_native POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${VOIDVIEW_OUTPUT_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:voidview_native>"
+                "${VOIDVIEW_OUTPUT_DIR}/$<TARGET_FILE_NAME:voidview_native>"
+            COMMENT "Copying voidview_native to ${VOIDVIEW_OUTPUT_DIR}..."
+        )
+    endif()
 endif()
 
 # ==================== 安装 ====================

@@ -113,6 +113,8 @@ class ViewportPanel(QWidget):
         """更新空状态占位提示的可见性"""
         has_files = len(self._sources) > 0
         self._empty_placeholder.setVisible(not has_files)
+        # 无视频时隐藏 info_container，避免留下空白条
+        self.info_container.setVisible(has_files)
 
     def _add_slot(self, index: int, current_source: str):
         """创建并添加槽位（info_item）"""

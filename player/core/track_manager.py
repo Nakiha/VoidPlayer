@@ -1,7 +1,9 @@
 """
 TrackManager - 媒体轨道数据管理器 (唯一数据源)
 """
+import os
 from PySide6.QtCore import QObject, Signal
+from .logging_config import get_logger
 
 
 class TrackManager(QObject):
@@ -26,6 +28,7 @@ class TrackManager(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._sources: list[str] = []
+        self._logger = get_logger()
 
     # ========== 查询 ==========
 
@@ -48,14 +51,17 @@ class TrackManager(QObject):
     def set_sources(self, sources: list[str]):
         """设置源列表 (批量替换，最多 MAX_TRACKS 个)"""
         self._sources = sources[:self.MAX_TRACKS].copy()
+        self._logger.info(f"TrackManager: set_sources -> {[os.path.basename(s) for s in self._sources]}")
         self.sources_reset.emit()
 
     def add_source(self, source: str) -> int:
         """添加源，返回索引 (-1 表示已达到上限)"""
         if len(self._sources) >= self.MAX_TRACKS:
+            self._logger.warning(f"TrackManager: add_source failed (max {self.MAX_TRACKS} reached)")
             return -1
         index = len(self._sources)
         self._sources.append(source)
+        self._logger.info(f"TrackManager: add_source [{index}] <- {os.path.basename(source)}")
         self.source_added.emit(index, source)
         return index
 
@@ -67,7 +73,8 @@ class TrackManager(QObject):
         """移除源"""
         if not (0 <= index < len(self._sources)):
             return False
-        self._sources.pop(index)
+        removed = self._sources.pop(index)
+        self._logger.info(f"TrackManager: remove_source [{index}] <- {os.path.basename(removed)}")
         self.source_removed.emit(index)
         return True
 
@@ -97,6 +104,7 @@ class TrackManager(QObject):
         self._sources[index1], self._sources[index2] = \
             self._sources[index2], self._sources[index1]
 
+        self._logger.info(f"TrackManager: swap_sources [{index1}] <-> [{index2}]")
         self.sources_swapped.emit(index1, index2)
         return True
 
@@ -126,10 +134,13 @@ class TrackManager(QObject):
         item = self._sources.pop(old_index)
         self._sources.insert(new_index, item)
 
+        self._logger.info(f"TrackManager: move_source [{old_index}] -> [{new_index}]")
         self.sources_reordered.emit(old_index, new_index)
         return True
 
     def clear(self):
         """清空所有源"""
+        count = len(self._sources)
         self._sources.clear()
+        self._logger.info(f"TrackManager: clear ({count} tracks removed)")
         self.sources_reset.emit()

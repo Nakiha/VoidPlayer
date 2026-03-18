@@ -7,24 +7,22 @@
 
 ## Native 模块
 
-修改 `native/` 目录下的代码后，必须重新构建并复制产物：
+修改 `native/` 目录下的代码后，运行构建脚本：
 
 ```bash
-cd native/build
-cmake --build . --config Release
-# 产物会自动复制到 player/ 目录
+python build_native.py
+# 产物会自动安装到 Python site-packages 目录
 ```
 
 ## 验证
-
-修改后运行 `timeout 1 python run_player.py 2>&1` 检查基础错误
+修改后5秒超时运行 `python run_player.py -i resources/video/NovosobornayaSquare_1920x1080.mp4 -i resources/video/TheaterSquare_1920x1080.mp4 --auto-play` 以检查错误
 
 ## UI
 
 - 控件间距固定 4px，注意不要在父子控件中重复加边距
 - 所有固有色必须通过 `player/theme_utils.py` 统一管理，获取使用 `get_color_hex(ColorKey.${枚举值})`
 
-## 通用控件 (player/widgets/)
+## 通用控件 (player/ui/widgets/)
 
 需要类似功能时优先复用，不要新建：
 

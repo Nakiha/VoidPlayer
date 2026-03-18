@@ -59,6 +59,11 @@ def parse_args():
         default=[],
         help="初始加载的媒体文件 (可多次指定)"
     )
+    parser.add_argument(
+        "--auto-play",
+        action="store_true",
+        help="启动完成后自动开始播放"
+    )
     return parser.parse_args()
 
 
@@ -126,20 +131,21 @@ def main():
         from player.native import voidview_native
         version = getattr(voidview_native, "__version__", "unknown")
         build_time = getattr(voidview_native, "__build_time__", "unknown")
-        logger.info(f"native 模块: version={version}, build_time={build_time}")
+        module_path = getattr(voidview_native, "__file__", "unknown")
+        logger.info(f"native 模块: version={version}, build_time={build_time}, path={module_path}")
     except ImportError as e:
         logger.warning(f"native 模块未加载: {e}")
     except Exception as e:
         logger.warning(f"获取 native 模块版本失败: {e}")
 
     try:
-        _run_app(args.input_files, sys.argv[1:])
+        _run_app(args.input_files, args.auto_play, sys.argv[1:])
     except KeyboardInterrupt:
         logger.info("用户中断 (Ctrl+C)，程序退出")
         sys.exit(0)
 
 
-def _run_app(input_files: list[str], launch_args: list[str]):
+def _run_app(input_files: list[str], auto_play: bool, launch_args: list[str]):
     """运行 Qt 应用"""
 
     # === 硬件加速和高刷适配配置 (必须在创建 QApplication 之前) ===
@@ -187,7 +193,7 @@ def _run_app(input_files: list[str], launch_args: list[str]):
     setTheme(Theme.AUTO)
 
     # 创建主窗口
-    window = MainWindow(initial_files=input_files, launch_args=launch_args)
+    window = MainWindow(initial_files=input_files, auto_play=auto_play, launch_args=launch_args)
     window.show()
 
     sys.exit(app.exec())

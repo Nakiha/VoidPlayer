@@ -5,6 +5,16 @@
 - 新增python依赖更新 `pyproject.toml`
 - UI控件必须优先使用 PySide6-Fluent-Widgets，保持风格一致
 
+## Native 模块
+
+修改 `native/` 目录下的代码后，必须重新构建并复制产物：
+
+```bash
+cd native/build
+cmake --build . --config Release
+# 产物会自动复制到 player/ 目录
+```
+
 ## 验证
 
 修改后运行 `timeout 1 python run_player.py 2>&1` 检查基础错误

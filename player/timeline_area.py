@@ -1,13 +1,16 @@
 """
 TimelineArea - 时间轴轨道区域
 """
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy, QFrame
 from PySide6.QtCore import Signal, QTimer, Qt
 from qfluentwidgets import SmoothScrollArea
 
 from .track_row import TrackRow
 from .theme_utils import get_color_hex, get_accent_color_hex, ColorKey
+
+if TYPE_CHECKING:
+    from .decoder_pool import MediaInfo
 
 
 class TimelineArea(QWidget):
@@ -90,8 +93,14 @@ class TimelineArea(QWidget):
         # 更新最大高度
         self._update_max_height()
 
-    def add_track(self, index: int, name: str):
-        """添加轨道"""
+    def add_track(self, index: int, name: str, media_info: Optional["MediaInfo"] = None):
+        """添加轨道
+
+        Args:
+            index: 轨道索引
+            name: 文件名/路径
+            media_info: 可选的媒体信息 (包含时长等)
+        """
         # 确保 index 在有效范围内
         while len(self._tracks) < index:
             self._tracks.append(None)

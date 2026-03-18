@@ -1,4 +1,5 @@
 #include "voidview_native/texture_interop.hpp"
+#include "voidview_native/logger.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -12,7 +13,6 @@ extern "C" {
 #include <libavutil/hwcontext.h>
 }
 
-#include <cstdio>
 #include <cstring>
 
 // OpenGL constants
@@ -65,20 +65,20 @@ static bool load_wgl_extensions() {
 
     HDC dc = wglGetCurrentDC();
     if (!dc) {
-        fprintf(stderr, "No WGL context current\n");
+        VV_ERROR("No WGL context current");
         return false;
     }
 
     wglGetExtensionsStringARB = (PFNWGLGETEXTENSIONSSTRINGARBPROC)
         wglGetProcAddress("wglGetExtensionsStringARB");
     if (!wglGetExtensionsStringARB) {
-        fprintf(stderr, "wglGetExtensionsStringARB not available\n");
+        VV_ERROR("wglGetExtensionsStringARB not available");
         return false;
     }
 
     const char* extensions = wglGetExtensionsStringARB(dc);
     if (!extensions || !strstr(extensions, "WGL_NV_DX_interop")) {
-        fprintf(stderr, "WGL_NV_DX_interop not available\n");
+        VV_ERROR("WGL_NV_DX_interop not available");
         return false;
     }
 
@@ -98,11 +98,11 @@ static bool load_wgl_extensions() {
         wglGetProcAddress("wglDXUnlockObjectsNV");
 
     if (!wglDXOpenDeviceNV || !wglDXRegisterObjectNV || !wglDXLockObjectsNV) {
-        fprintf(stderr, "Failed to load WGL_NV_DX_interop functions\n");
+        VV_ERROR("Failed to load WGL_NV_DX_interop functions");
         return false;
     }
 
-    printf("WGL_NV_DX_interop loaded successfully\n");
+    VV_DEBUG("WGL_NV_DX_interop loaded successfully");
     return true;
 }
 #endif
@@ -117,7 +117,7 @@ bool TextureInterop::initialize(ID3D11Device* shared_device) {
     if (initialized_) return true;
 
     if (!shared_device) {
-        fprintf(stderr, "TextureInterop: No D3D11 device provided\n");
+        VV_ERROR("TextureInterop: No D3D11 device provided");
         return false;
     }
 
@@ -129,42 +129,42 @@ bool TextureInterop::initialize(ID3D11Device* shared_device) {
     // Get device context
     d3d11_device_->GetImmediateContext(&d3d11_context_);
     if (!d3d11_context_) {
-        fprintf(stderr, "Failed to get D3D11 context\n");
+        VV_ERROR("Failed to get D3D11 context");
         return false;
     }
 
     // Query video device and context for VideoProcessor
     HRESULT hr = d3d11_device_->QueryInterface(__uuidof(ID3D11VideoDevice), (void**)&video_device_);
     if (FAILED(hr)) {
-        fprintf(stderr, "Failed to query ID3D11VideoDevice: 0x%08X (zero-copy disabled)\n", hr);
+        VV_DEBUG("ID3D11VideoDevice not available (zero-copy disabled): 0x{:08X}", hr);
         video_device_ = nullptr;
     }
 
     hr = d3d11_context_->QueryInterface(__uuidof(ID3D11VideoContext), (void**)&video_context_);
     if (FAILED(hr)) {
-        fprintf(stderr, "Failed to query ID3D11VideoContext: 0x%08X (zero-copy disabled)\n", hr);
+        VV_DEBUG("ID3D11VideoContext not available (zero-copy disabled): 0x{:08X}", hr);
         video_context_ = nullptr;
     }
 
     if (video_device_ && video_context_) {
-        printf("D3D11 VideoProcessor available (zero-copy enabled)\n");
+        VV_DEBUG("D3D11 VideoProcessor available (zero-copy enabled)");
     }
 
-    printf("TextureInterop using FFmpeg's D3D11 device: %p\n", d3d11_device_);
+    VV_DEBUG("TextureInterop using FFmpeg's D3D11 device: {:p}", (void*)d3d11_device_);
 
     // Load WGL extensions
     if (!load_wgl_extensions()) {
-        fprintf(stderr, "WGL_NV_DX_interop not available\n");
+        VV_ERROR("WGL_NV_DX_interop not available");
         return false;
     }
 
     // Open WGL interop device
     wgl_device_ = wglDXOpenDeviceNV(d3d11_device_);
     if (!wgl_device_) {
-        fprintf(stderr, "wglDXOpenDeviceNV failed\n");
+        VV_ERROR("wglDXOpenDeviceNV failed");
         return false;
     }
-    printf("WGL interop device opened\n");
+    VV_DEBUG("WGL interop device opened");
 
     initialized_ = true;
     return true;
@@ -203,17 +203,17 @@ bool TextureInterop::init_gl_resources(int width, int height) {
 
     HRESULT hr = d3d11_device_->CreateTexture2D(&rgba_desc, nullptr, &rgba_texture_);
     if (FAILED(hr)) {
-        fprintf(stderr, "Failed to create shared RGBA texture: 0x%08X\n", hr);
+        VV_ERROR("Failed to create shared RGBA texture: 0x{:08X}", hr);
         return false;
     }
 
-    printf("Created shared D3D11 RGBA texture %p (%dx%d)\n", rgba_texture_, width, height);
+    VV_DEBUG("Created shared D3D11 RGBA texture {:p} ({}x{})", (void*)rgba_texture_, width, height);
 #endif
 
     // Create OpenGL texture
     glGenTextures(1, &gl_texture_rgba_);
     if (!gl_texture_rgba_) {
-        fprintf(stderr, "Failed to create GL texture\n");
+        VV_ERROR("Failed to create GL texture");
         return false;
     }
 
@@ -226,7 +226,7 @@ bool TextureInterop::init_gl_resources(int width, int height) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    printf("Created GL texture %u (%dx%d)\n", gl_texture_rgba_, width, height);
+    VV_DEBUG("Created GL texture {} ({}x{})", gl_texture_rgba_, width, height);
 
     // Register with WGL interop
     if (!wgl_object_) {
@@ -251,10 +251,10 @@ bool TextureInterop::init_gl_resources(int width, int height) {
         );
 
         if (!wgl_object_) {
-            fprintf(stderr, "wglDXRegisterObjectNV failed\n");
+            VV_ERROR("wglDXRegisterObjectNV failed");
             return false;
         }
-        printf("Registered shared texture with OpenGL\n");
+        VV_DEBUG("Registered shared texture with OpenGL");
     }
 
     return true;
@@ -283,7 +283,7 @@ bool TextureInterop::init_video_processor(int width, int height, DXGI_FORMAT inp
 
     HRESULT hr = video_device_->CreateVideoProcessorEnumerator(&content_desc, &video_processor_enum_);
     if (FAILED(hr)) {
-        fprintf(stderr, "CreateVideoProcessorEnumerator failed: 0x%08X\n", hr);
+        VV_DEBUG("CreateVideoProcessorEnumerator failed: 0x{:08X}", hr);
         return false;
     }
 
@@ -291,18 +291,18 @@ bool TextureInterop::init_video_processor(int width, int height, DXGI_FORMAT inp
     UINT flags;
     hr = video_processor_enum_->CheckVideoProcessorFormat(input_format, &flags);
     if (FAILED(hr) || !(flags & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_INPUT)) {
-        fprintf(stderr, "VideoProcessor doesn't support input format: 0x%08X\n", input_format);
+        VV_DEBUG("VideoProcessor doesn't support input format: 0x{:08X}", static_cast<unsigned int>(input_format));
         return false;
     }
 
     // Create video processor
     hr = video_device_->CreateVideoProcessor(video_processor_enum_, 0, &video_processor_);
     if (FAILED(hr)) {
-        fprintf(stderr, "CreateVideoProcessor failed: 0x%08X\n", hr);
+        VV_DEBUG("CreateVideoProcessor failed: 0x{:08X}", hr);
         return false;
     }
 
-    printf("D3D11 VideoProcessor created for %dx%d (format=%d)\n", width, height, input_format);
+    VV_DEBUG("D3D11 VideoProcessor created for {}x{} (format={})", width, height, (int)input_format);
     return true;
 }
 
@@ -321,7 +321,7 @@ bool TextureInterop::convert_nv12_to_rgba_gpu(ID3D11Texture2D* nv12_texture, int
     HRESULT hr = video_device_->CreateVideoProcessorInputView(
         nv12_texture, video_processor_enum_, &input_view_desc, &input_view);
     if (FAILED(hr)) {
-        fprintf(stderr, "CreateVideoProcessorInputView failed: 0x%08X\n", hr);
+        VV_DEBUG("CreateVideoProcessorInputView failed: 0x{:08X}", hr);
         return false;
     }
 
@@ -334,7 +334,7 @@ bool TextureInterop::convert_nv12_to_rgba_gpu(ID3D11Texture2D* nv12_texture, int
     hr = video_device_->CreateVideoProcessorOutputView(
         rgba_texture_, video_processor_enum_, &output_view_desc, &output_view);
     if (FAILED(hr)) {
-        fprintf(stderr, "CreateVideoProcessorOutputView failed: 0x%08X\n", hr);
+        VV_DEBUG("CreateVideoProcessorOutputView failed: 0x{:08X}", hr);
         input_view->Release();
         return false;
     }
@@ -346,7 +346,7 @@ bool TextureInterop::convert_nv12_to_rgba_gpu(ID3D11Texture2D* nv12_texture, int
 
     hr = video_context_->VideoProcessorBlt(video_processor_, output_view, 0, 1, &stream);
     if (FAILED(hr)) {
-        fprintf(stderr, "VideoProcessorBlt failed: 0x%08X\n", hr);
+        VV_DEBUG("VideoProcessorBlt failed: 0x{:08X}", hr);
         input_view->Release();
         output_view->Release();
         return false;
@@ -355,7 +355,7 @@ bool TextureInterop::convert_nv12_to_rgba_gpu(ID3D11Texture2D* nv12_texture, int
     input_view->Release();
     output_view->Release();
 
-    printf("GPU NV12->RGBA conversion successful\n");
+    VV_TRACE("GPU NV12->RGBA conversion successful");
     return true;
 }
 #endif
@@ -363,7 +363,7 @@ bool TextureInterop::convert_nv12_to_rgba_gpu(ID3D11Texture2D* nv12_texture, int
 bool TextureInterop::bind_frame(AVFrame* frame) {
 #ifdef _WIN32
     if (!initialized_ || !frame) {
-        fprintf(stderr, "bind_frame: invalid state\n");
+        VV_ERROR("bind_frame: invalid state");
         return false;
     }
 
@@ -382,14 +382,14 @@ bool TextureInterop::bind_frame(AVFrame* frame) {
     int subresource = static_cast<int>(reinterpret_cast<intptr_t>(frame->data[1]));
 
     if (!nv12_tex) {
-        fprintf(stderr, "No D3D11 texture in frame\n");
+        VV_ERROR("No D3D11 texture in frame");
         return false;
     }
 
     D3D11_TEXTURE2D_DESC desc;
     nv12_tex->GetDesc(&desc);
 
-    printf("Frame: %dx%d, format=%u, subresource=%d\n", width, height, desc.Format, subresource);
+    VV_TRACE("Frame: {}x{}, format={}, subresource={}", width, height, (unsigned)desc.Format, subresource);
 
     // Initialize GL resources
     if (!init_gl_resources(width, height)) {
@@ -402,7 +402,7 @@ bool TextureInterop::bind_frame(AVFrame* frame) {
         // Initialize video processor if needed
         if (!video_processor_) {
             if (!init_video_processor(width, height, desc.Format)) {
-                fprintf(stderr, "VideoProcessor init failed, falling back to CPU\n");
+                VV_DEBUG("VideoProcessor init failed, falling back to CPU");
             }
         }
 
@@ -413,17 +413,17 @@ bool TextureInterop::bind_frame(AVFrame* frame) {
 
     // Fallback to CPU path if GPU failed
     if (!gpu_success) {
-        printf("Using CPU fallback for YUV conversion\n");
+        VV_DEBUG("Using CPU fallback for YUV conversion");
 
         AVFrame* sw_frame = av_frame_alloc();
         if (!sw_frame) {
-            fprintf(stderr, "Failed to allocate software frame\n");
+            VV_ERROR("Failed to allocate software frame");
             return false;
         }
 
         int ret = av_hwframe_transfer_data(sw_frame, frame, 0);
         if (ret < 0) {
-            fprintf(stderr, "av_hwframe_transfer_data failed: %d\n", ret);
+            VV_ERROR("av_hwframe_transfer_data failed: {}", ret);
             av_frame_free(&sw_frame);
             return false;
         }
@@ -448,7 +448,7 @@ bool TextureInterop::bind_frame(AVFrame* frame) {
         ID3D11Texture2D* staging = nullptr;
         HRESULT hr = d3d11_device_->CreateTexture2D(&staging_desc, nullptr, &staging);
         if (FAILED(hr)) {
-            fprintf(stderr, "Failed to create staging texture: 0x%08X\n", hr);
+            VV_ERROR("Failed to create staging texture: 0x{:08X}", hr);
             av_frame_free(&sw_frame);
             return false;
         }
@@ -504,7 +504,7 @@ bool TextureInterop::bind_frame(AVFrame* frame) {
     }
 
     bound_ = true;
-    printf("Frame bound to GL texture %u (locked for GL)\n", gl_texture_rgba_);
+    VV_TRACE("Frame bound to GL texture {} (locked for GL)", gl_texture_rgba_);
     return true;
 #else
     (void)frame;

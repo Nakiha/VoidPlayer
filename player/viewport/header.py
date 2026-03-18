@@ -2,7 +2,7 @@
 MediaHeader - 媒体信息头部控件
 """
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QSizePolicy
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt
 from qfluentwidgets import FluentIcon
 
 from ..widgets import create_tool_button, ElideComboBox
@@ -59,6 +59,7 @@ class MediaHeader(QWidget):
         # 使用 Minimum 策略：允许压缩但不小于 minimumSizeHint
         self.media_combo.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self.media_combo.setMinimumWidth(50)
+        self.media_combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 不拦截快捷键
         self._update_combo_items()
         self.media_combo.currentIndexChanged.connect(self._on_selection_changed)
         self.row1_layout.addWidget(self.media_combo, 1)  # stretch=1 让 ComboBox 占据可用空间

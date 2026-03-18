@@ -18,6 +18,8 @@ from .debug_monitor import DebugMonitorWindow
 from .config import config, Profile
 from .widgets import HighlightSplitter
 from .track_manager import TrackManager
+from .decoder_pool import DecoderPool
+from .shortcuts import ShortcutManager, ShortcutAction
 
 
 class MainWindow(QWidget):
@@ -41,8 +43,15 @@ class MainWindow(QWidget):
         # 唯一数据源
         self._track_manager = TrackManager(self)
 
+        # 解码器池
+        self._decoder_pool = DecoderPool(self)
+
+        # 快捷键管理器
+        self._shortcut_manager = ShortcutManager(self)
+
         self._setup_ui()
         self._connect_signals()
+        self._setup_shortcuts()
         self._load_initial_files(initial_files or [])
 
     def _setup_ui(self):
@@ -142,6 +151,112 @@ class MainWindow(QWidget):
         # 时间轴扩展请求
         self.timeline_area.expand_requested.connect(self._on_timeline_expand_requested)
 
+        # 解码器池信号
+        self._decoder_pool.duration_changed.connect(self._on_duration_changed)
+        self._decoder_pool.position_changed.connect(self._on_position_changed)
+        self._decoder_pool.frame_ready.connect(self._on_frame_ready)
+        self._decoder_pool.eof_reached.connect(self._on_eof_reached)
+        self._decoder_pool.error_occurred.connect(self._on_decoder_error)
+
+        # GL 控件初始化完成信号
+        self.viewport_panel.gl_initialized.connect(self._on_gl_initialized)
+
+    def _setup_shortcuts(self):
+        """设置快捷键"""
+        self._shortcut_manager.setup(self)
+
+        # 播放控制
+        self._shortcut_manager.bind(ShortcutAction.PLAY_PAUSE, self._toggle_play_pause)
+        self._shortcut_manager.bind(ShortcutAction.PREV_FRAME, self._prev_frame)
+        self._shortcut_manager.bind(ShortcutAction.NEXT_FRAME, self._next_frame)
+        self._shortcut_manager.bind(ShortcutAction.SEEK_FORWARD, self._seek_forward)
+        self._shortcut_manager.bind(ShortcutAction.SEEK_BACKWARD, self._seek_backward)
+        self._shortcut_manager.bind(ShortcutAction.TOGGLE_LOOP, self._toggle_loop)
+        self._shortcut_manager.bind(ShortcutAction.TOGGLE_FULLSCREEN, self._toggle_fullscreen)
+
+        # 速度控制
+        self._shortcut_manager.bind(ShortcutAction.SPEED_UP, self._speed_up)
+        self._shortcut_manager.bind(ShortcutAction.SPEED_DOWN, self._speed_down)
+        self._shortcut_manager.bind(ShortcutAction.SPEED_RESET, self._speed_reset)
+
+        # 缩放控制
+        self._shortcut_manager.bind(ShortcutAction.ZOOM_IN, self._zoom_in)
+        self._shortcut_manager.bind(ShortcutAction.ZOOM_OUT, self._zoom_out)
+        self._shortcut_manager.bind(ShortcutAction.ZOOM_RESET, self._zoom_reset)
+
+        # 项目操作
+        self._shortcut_manager.bind(ShortcutAction.ADD_MEDIA, self._on_add_media)
+        self._shortcut_manager.bind(ShortcutAction.NEW_WINDOW, self._on_new_window)
+        self._shortcut_manager.bind(ShortcutAction.TOGGLE_DEBUG_MONITOR, self._show_debug_monitor)
+
+    def _seek_forward(self):
+        """前进 5 秒"""
+        current = self._decoder_pool.position_ms
+        self.seek_to(current + 5000)
+
+    def _seek_backward(self):
+        """后退 5 秒"""
+        current = self._decoder_pool.position_ms
+        self.seek_to(max(0, current - 5000))
+
+    def _toggle_play_pause(self):
+        """切换播放/暂停"""
+        if self._is_playing:
+            self.pause()
+        else:
+            self.play()
+
+    def _prev_frame(self):
+        """上一帧"""
+        self._decoder_pool.prev_frame()
+
+    def _next_frame(self):
+        """下一帧"""
+        self._decoder_pool.next_frame()
+
+    def _toggle_loop(self):
+        """切换循环"""
+        self.controls_bar.loop_btn.toggle()
+
+    def _toggle_fullscreen(self):
+        """切换全屏"""
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+
+    def _speed_up(self):
+        """加速"""
+        idx = self.controls_bar.speed_combo.currentIndex()
+        if idx < self.controls_bar.speed_combo.count() - 1:
+            self.controls_bar.speed_combo.setCurrentIndex(idx + 1)
+
+    def _speed_down(self):
+        """减速"""
+        idx = self.controls_bar.speed_combo.currentIndex()
+        if idx > 0:
+            self.controls_bar.speed_combo.setCurrentIndex(idx - 1)
+
+    def _speed_reset(self):
+        """重置速度"""
+        self.controls_bar.speed_combo.setCurrentIndex(2)  # 1x
+
+    def _zoom_in(self):
+        """放大"""
+        idx = self.controls_bar.zoom_combo.currentIndex()
+        if idx < self.controls_bar.zoom_combo.count() - 1:
+            self.controls_bar.zoom_combo.setCurrentIndex(idx + 1)
+
+    def _zoom_out(self):
+        """缩小"""
+        idx = self.controls_bar.zoom_combo.currentIndex()
+        if idx > 0:
+            self.controls_bar.zoom_combo.setCurrentIndex(idx - 1)
+
+    def _zoom_reset(self):
+        """重置缩放"""
+        self.controls_bar.zoom_combo.setCurrentIndex(2)  # 100%
+
     def _init_splitter_sizes(self):
         """初始化分割器大小比例"""
         total_height = self.v_splitter.height()
@@ -179,12 +294,29 @@ class MainWindow(QWidget):
 
     def _on_source_added(self, index: int, source: str):
         """源添加回调"""
-        self.timeline_area.add_track(index, source)
+        # 添加到解码器池并探测媒体信息
+        if self._decoder_pool.add_track(index, source):
+            track_state = self._decoder_pool.get_track_state(index)
+            if track_state and track_state.media_info:
+                # 传递媒体信息给 timeline
+                self.timeline_area.add_track(index, source, track_state.media_info)
+            else:
+                self.timeline_area.add_track(index, source)
+
+            # 如果 GL 已初始化，立即初始化解码器
+            if self.viewport_panel.gl_widget.is_gl_initialized:
+                self._decoder_pool.initialize_decoder(index)
+                self.viewport_panel.gl_widget.set_decoders(self._decoder_pool.get_decoders())
+        else:
+            # 探测失败也添加 track (显示错误)
+            self.timeline_area.add_track(index, source)
+
         self.viewport_panel.add_slot(source)
         self._update_view_mode_enabled()
 
     def _on_source_removed(self, index: int):
         """源移除回调"""
+        self._decoder_pool.remove_track(index)
         self.timeline_area.remove_track(index)
         self.viewport_panel.remove_slot(index)
         self._update_view_mode_enabled()
@@ -202,11 +334,28 @@ class MainWindow(QWidget):
 
     def _on_sources_reset(self):
         """源重置回调"""
+        self._decoder_pool.clear()
         sources = self._track_manager.sources()
         self.viewport_panel.set_sources(sources)
         self.timeline_area.clear_tracks()
         for i, source in enumerate(sources):
-            self.timeline_area.add_track(i, source)
+            if self._decoder_pool.add_track(i, source):
+                track_state = self._decoder_pool.get_track_state(i)
+                if track_state and track_state.media_info:
+                    self.timeline_area.add_track(i, source, track_state.media_info)
+                else:
+                    self.timeline_area.add_track(i, source)
+
+                # 如果 GL 已初始化，初始化解码器
+                if self.viewport_panel.gl_widget.is_gl_initialized:
+                    self._decoder_pool.initialize_decoder(i)
+            else:
+                self.timeline_area.add_track(i, source)
+
+        # 更新 GL 控件的解码器列表
+        if self.viewport_panel.gl_widget.is_gl_initialized:
+            self.viewport_panel.gl_widget.set_decoders(self._decoder_pool.get_decoders())
+
         self._update_view_mode_enabled()
 
     # ========== 用户操作 ==========
@@ -277,6 +426,52 @@ class MainWindow(QWidget):
         self._debug_monitor.raise_()
         self._debug_monitor.activateWindow()
 
+    # ========== 解码器池回调 ==========
+
+    def _on_duration_changed(self, duration_ms: int):
+        """时长变化"""
+        self.controls_bar.set_duration(duration_ms)
+
+    def _on_position_changed(self, position_ms: int):
+        """播放位置变化"""
+        if self._decoder_pool.duration_ms > 0:
+            position = position_ms / self._decoder_pool.duration_ms
+            self.timeline_area.update_playhead(position)
+        self.controls_bar.set_position(position_ms)
+
+    def _on_frame_ready(self):
+        """帧就绪 - 更新 GL 控件"""
+        self.viewport_panel.gl_widget.update()
+
+    def _on_eof_reached(self):
+        """到达末尾"""
+        self._is_playing = False
+        self.controls_bar.set_playing(False)
+
+    def _on_decoder_error(self, track_index: int, message: str):
+        """解码器错误"""
+        print(f"Decoder error (track {track_index}): {message}")
+
+    def _on_gl_initialized(self):
+        """OpenGL 上下文初始化完成 - 可以初始化解码器了"""
+        # 初始化所有已有轨道的解码器
+        for i in range(self._track_manager.count()):
+            source = self._track_manager.get(i)
+            if source:
+                self._init_decoder(i, source)
+
+    def _init_decoder(self, index: int, source: str):
+        """初始化单个解码器"""
+        # 添加到解码器池
+        if not self._decoder_pool.add_track(index, source):
+            return
+
+        # 初始化解码器 (需要 GL 上下文)
+        if self.viewport_panel.gl_widget.is_gl_initialized:
+            self._decoder_pool.initialize_decoder(index)
+            # 将解码器列表传递给 GL 控件
+            self.viewport_panel.gl_widget.set_decoders(self._decoder_pool.get_decoders())
+
     # ========== 公共 API ==========
 
     def add_media(self, path: str):
@@ -289,8 +484,7 @@ class MainWindow(QWidget):
 
     def set_sync_offset(self, index: int, offset_ms: int):
         """设置时间偏移"""
-        # TODO: 实现偏移逻辑
-        pass
+        self._decoder_pool.set_offset(index, offset_ms)
 
     def set_view_mode(self, mode: ViewMode):
         """切换视图模式"""
@@ -301,18 +495,17 @@ class MainWindow(QWidget):
         """开始播放"""
         self._is_playing = True
         self.controls_bar.set_playing(True)
+        self._decoder_pool.play()
 
     def pause(self):
         """暂停播放"""
         self._is_playing = False
         self.controls_bar.set_playing(False)
+        self._decoder_pool.pause()
 
     def seek_to(self, timestamp_ms: int):
         """跳转到指定时间"""
-        duration = 9600  # 演示时长
-        if duration > 0:
-            position = timestamp_ms / duration
-            self.timeline_area.update_playhead(position)
+        self._decoder_pool.seek_to(timestamp_ms)
 
     def new_project(self):
         """新建项目"""

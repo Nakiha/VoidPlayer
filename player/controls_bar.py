@@ -58,6 +58,7 @@ class ControlsBar(QWidget):
         self.zoom_combo.addItems(["50%", "75%", "100%", "125%", "150%", "200%", "400%"])
         self.zoom_combo.setCurrentIndex(2)   # 默认 100%
         self.zoom_combo.setFixedWidth(80)
+        self.zoom_combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 不拦截快捷键
         self.zoom_combo.currentIndexChanged.connect(self._on_zoom_changed)
         layout.addWidget(self.zoom_combo)
 
@@ -66,6 +67,7 @@ class ControlsBar(QWidget):
         self.speed_combo.addItems(["0.25x", "0.5x", "1x", "1.5x", "2x"])
         self.speed_combo.setCurrentIndex(2)  # 默认 1x
         self.speed_combo.setFixedWidth(70)
+        self.speed_combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 不拦截快捷键
         self.speed_combo.currentIndexChanged.connect(self._on_speed_changed)
         layout.addWidget(self.speed_combo)
 
@@ -107,6 +109,7 @@ class ControlsBar(QWidget):
         self.timeline_slider.setRange(0, 1000)
         self.timeline_slider.setValue(0)  # 初始位置为起点
         self.timeline_slider.setFixedHeight(24)  # 确保滑块手柄完整显示
+        self.timeline_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 不拦截快捷键
         self.timeline_slider.valueChanged.connect(self._on_slider_changed)
         layout.addWidget(self.timeline_slider, 1)
 
@@ -179,6 +182,10 @@ class ControlsBar(QWidget):
             self.timeline_slider.setValue(int(time_ms / self._duration_ms * 1000))
         self.timeline_slider.blockSignals(False)
         self._update_time_display()
+
+    def set_position(self, position_ms: int):
+        """设置当前播放位置 (别名)"""
+        self.set_current_time(position_ms)
 
     def set_playing(self, is_playing: bool):
         """设置播放状态"""

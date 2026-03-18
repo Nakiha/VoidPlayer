@@ -1,9 +1,9 @@
 #include "voidview_native/hardware_decoder.hpp"
 #include "voidview_native/texture_interop.hpp"
+#include "voidview_native/logger.hpp"
 
 #include <algorithm>
 #include <cstring>
-#include <cstdio>
 
 extern "C" {
 #include <libavutil/imgutils.h>
@@ -80,7 +80,7 @@ public:
 
         hw_type_ = hw_type;
         if (!try_hardware_accel()) {
-            fprintf(stderr, "Hardware acceleration failed, using software decode\n");
+            VV_INFO("Hardware acceleration failed, using software decode");
         }
 
         ret = avcodec_open2(codec_ctx_, codec, nullptr);
@@ -110,7 +110,7 @@ public:
             if (ret != 0) {
                 char err[128];
                 av_strerror(ret, err, sizeof(err));
-                fprintf(stderr, "Failed to create %s device: %s\n",
+                VV_DEBUG("Failed to create {} device: {}",
                         av_hwdevice_get_type_name(device_types[i]), err);
                 continue;
             }
@@ -123,8 +123,8 @@ public:
                 if ((config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) &&
                     config->device_type == device_types[i]) {
                     hw_pixel_format_ = config->pix_fmt;
-                    printf("Using hardware pixel format: %d (%s)\n",
-                           hw_pixel_format_, av_hwdevice_get_type_name(device_types[i]));
+                    VV_INFO("Using hardware pixel format: {} ({})",
+                           static_cast<int>(hw_pixel_format_), av_hwdevice_get_type_name(device_types[i]));
                     return true;
                 }
             }
@@ -137,11 +137,10 @@ public:
     }
 
     bool init_texture_interop() {
-        printf("init_texture_interop: entered\n");
-        fflush(stdout);
+        VV_DEBUG("init_texture_interop: entered");
 
         if (!codec_ctx_) {
-            printf("init_texture_interop: no codec_ctx_\n");
+            VV_DEBUG("init_texture_interop: no codec_ctx_");
             return false;
         }
 
@@ -154,17 +153,17 @@ public:
             if (device_ctx->type == AV_HWDEVICE_TYPE_D3D11VA) {
                 AVD3D11VADeviceContext* d3d11va_ctx = (AVD3D11VADeviceContext*)device_ctx->hwctx;
                 d3d11_device = d3d11va_ctx->device;
-                printf("Got D3D11 device from FFmpeg: %p\n", d3d11_device);
+                VV_DEBUG("Got D3D11 device from FFmpeg: {:p}", (void*)d3d11_device);
             }
         }
 
         if (!texture_interop_->initialize(d3d11_device)) {
-            printf("init_texture_interop: TextureInterop::initialize() failed\n");
+            VV_DEBUG("init_texture_interop: TextureInterop::initialize() failed");
             texture_interop_.reset();
             return false;
         }
 
-        printf("init_texture_interop: success\n");
+        VV_DEBUG("init_texture_interop: success");
         return true;
     }
 
@@ -222,8 +221,8 @@ public:
             if (ret == 0) {
                 current_pts_ms_ = calculate_pts();
 
-                printf("Frame decoded: format=%d, hw_format=%d, has_interop=%d\n",
-                       frame_->format, hw_pixel_format_, texture_interop_ ? 1 : 0);
+                VV_TRACE("Frame decoded: format={}, hw_format={}, has_interop={}",
+                       frame_->format, static_cast<int>(hw_pixel_format_), texture_interop_ ? 1 : 0);
 
                 if (frame_->format == hw_pixel_format_ && texture_interop_) {
                     if (!texture_interop_->bind_frame(frame_)) {
@@ -231,7 +230,7 @@ public:
                         return false;
                     }
                     texture_id_ = texture_interop_->get_texture_id();
-                    printf("Texture ID: %u\n", texture_id_);
+                    VV_TRACE("Texture ID: {}", texture_id_);
                 }
 
                 return true;
@@ -334,12 +333,10 @@ bool HardwareDecoder::initialize(int hw_device_type) {
 }
 
 void HardwareDecoder::set_opengl_context(void* gl_context) {
-    printf("set_opengl_context called\n");
-    fflush(stdout);
+    VV_DEBUG("set_opengl_context called");
     impl_->gl_context_ = gl_context;
     bool result = impl_->init_texture_interop();
-    printf("init_texture_interop returned: %d, has_interop=%d\n", result, impl_->texture_interop_ ? 1 : 0);
-    fflush(stdout);
+    VV_DEBUG("init_texture_interop returned: {}, has_interop={}", result, impl_->texture_interop_ ? 1 : 0);
 }
 
 bool HardwareDecoder::decode_next_frame() {

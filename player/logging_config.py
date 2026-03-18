@@ -189,6 +189,12 @@ def setup_logging(
         filter=format_filter,
     )
 
+    # 打印 loguru 配置信息
+    logger.info(
+        f"loguru 日志配置: path={log_file}, rotation={rotation}, "
+        f"retention={retention}, compression={compression or 'none'}"
+    )
+
     # 安装全局异常钩子
     sys.excepthook = _exception_hook
     threading.excepthook = _thread_exception_hook
@@ -208,9 +214,40 @@ def setup_logging(
     # 设置 Qt 消息处理器 (延迟调用，需在 QApplication 创建后)
     _setup_qt_handler()
 
-    logger.info(f"日志系统已初始化，日志目录: {log_dir}")
+    # 配置 native 模块日志
+    _setup_native_logging(log_dir, app_name, level)
 
     return log_dir
+
+
+def _setup_native_logging(log_dir: Path, app_name: str, level: str):
+    """配置 native 模块日志"""
+    try:
+        import voidview_native
+
+        # 映射 loguru 级别到 native 级别
+        level_map = {
+            "TRACE": 0,
+            "DEBUG": 1,
+            "INFO": 2,
+            "SUCCESS": 2,
+            "WARNING": 3,
+            "ERROR": 4,
+            "CRITICAL": 5,
+        }
+        native_level = level_map.get(level.upper(), 2)
+
+        # 初始化 native 日志系统
+        voidview_native.init_logging(native_level)
+
+        # 设置 native 日志文件
+        native_log_path = log_dir / f"{app_name}_native.log"
+        voidview_native.add_file_sink(str(native_log_path))
+
+    except ImportError:
+        pass  # native 模块未安装，忽略
+    except Exception as e:
+        logger.warning(f"配置 native 日志失败: {e}")
 
 
 def get_logger():

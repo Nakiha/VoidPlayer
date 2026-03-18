@@ -10,7 +10,11 @@ class TrackManager(QObject):
 
     作为唯一数据源，所有组件的媒体数据变更都通过此类进行，
     变更后通过信号通知相关组件更新显示。
+
+    限制: 最多支持 MAX_TRACKS (8) 个轨道
     """
+
+    MAX_TRACKS = 8  # 最大轨道数限制
 
     # 信号
     source_added = Signal(int, str)      # index, source
@@ -42,16 +46,22 @@ class TrackManager(QObject):
     # ========== 修改操作 ==========
 
     def set_sources(self, sources: list[str]):
-        """设置源列表 (批量替换)"""
-        self._sources = sources.copy()
+        """设置源列表 (批量替换，最多 MAX_TRACKS 个)"""
+        self._sources = sources[:self.MAX_TRACKS].copy()
         self.sources_reset.emit()
 
     def add_source(self, source: str) -> int:
-        """添加源，返回索引"""
+        """添加源，返回索引 (-1 表示已达到上限)"""
+        if len(self._sources) >= self.MAX_TRACKS:
+            return -1
         index = len(self._sources)
         self._sources.append(source)
         self.source_added.emit(index, source)
         return index
+
+    def can_add(self) -> bool:
+        """是否还能添加更多轨道"""
+        return len(self._sources) < self.MAX_TRACKS
 
     def remove_source(self, index: int) -> bool:
         """移除源"""

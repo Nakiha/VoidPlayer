@@ -42,6 +42,19 @@ message(STATUS "  avcodec: ${AVCODEC_LIBRARY}")
 message(STATUS "  avformat: ${AVFORMAT_LIBRARY}")
 message(STATUS "  avutil: ${AVUTIL_LIBRARY}")
 
+# ==================== spdlog 配置 (header-only) ====================
+
+include(FetchContent)
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG v1.15.2
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(spdlog)
+
+message(STATUS "spdlog: header-only mode")
+
 # ==================== pybind11 配置 ====================
 
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
@@ -50,6 +63,11 @@ find_package(pybind11 CONFIG REQUIRED)
 message(STATUS "Python: ${Python3_VERSION}")
 message(STATUS "pybind11: ${pybind11_VERSION}")
 
+# ==================== 编译时间 ====================
+
+# 获取编译时间
+string(TIMESTAMP BUILD_TIME "%Y-%m-%d %H:%M:%S")
+
 # ==================== 源文件 ====================
 
 set(VOIDVIEW_SOURCES
@@ -57,12 +75,16 @@ set(VOIDVIEW_SOURCES
     src/hardware_decoder.cpp
     src/texture_interop.cpp
     src/frame_queue.cpp
+    src/media_probe.cpp
 )
 
 set(VOIDVIEW_HEADERS
     include/voidview_native/hardware_decoder.hpp
     include/voidview_native/texture_interop.hpp
     include/voidview_native/frame_queue.hpp
+    include/voidview_native/media_probe.hpp
+    include/voidview_native/logger.hpp
+    include/voidview_native/version.hpp
 )
 
 # ==================== 源文件组 ====================
@@ -74,11 +96,19 @@ source_group("Headers" FILES ${VOIDVIEW_HEADERS})
 
 pybind11_add_module(voidview_native ${VOIDVIEW_SOURCES} ${VOIDVIEW_HEADERS})
 
+# 编译时间定义
+target_compile_definitions(voidview_native PRIVATE
+    VOIDVIEW_BUILD_TIME="${BUILD_TIME}"
+)
+
 # 包含目录
 target_include_directories(voidview_native PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${FFMPEG_INCLUDE_DIR}
 )
+
+# 链接 spdlog (header-only)
+target_link_libraries(voidview_native PRIVATE spdlog::spdlog_header_only)
 
 # 链接 FFmpeg
 target_link_libraries(voidview_native PRIVATE
@@ -98,7 +128,7 @@ if(WIN32)
         opengl32
     )
 
-    # 复制 DLL 到输出目录
+    # 复制 FFmpeg DLL 到输出目录
     set(FFMPEG_BIN_DIR "${FFMPEG_ROOT}/bin")
     if(EXISTS "${FFMPEG_BIN_DIR}")
         add_custom_command(TARGET voidview_native POST_BUILD
@@ -108,6 +138,14 @@ if(WIN32)
             COMMENT "Copying FFmpeg DLLs..."
         )
     endif()
+
+    # 复制产物到 player 目录 (重命名为标准名称)
+    add_custom_command(TARGET voidview_native POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:voidview_native>"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../player/voidview_native.pyd"
+        COMMENT "Copying voidview_native.pyd to player directory..."
+    )
 endif()
 
 # ==================== 安装 ====================

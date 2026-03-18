@@ -2,7 +2,7 @@
 ToolBar - 顶部工具栏
 """
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QSpacerItem, QSizePolicy, QGraphicsOpacityEffect
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt
 from qfluentwidgets import (
     PushButton,
     PrimaryPushButton,
@@ -58,6 +58,7 @@ class ToolBar(QWidget):
         # 添加媒体 (绿色主按钮)
         self.add_media_btn = PrimaryPushButton("添加媒体", self)
         self.add_media_btn.setFixedHeight(32)
+        self.add_media_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 不拦截快捷键
         self.add_media_btn.clicked.connect(self.add_media_clicked)
         layout.addWidget(self.add_media_btn)
 
@@ -66,6 +67,7 @@ class ToolBar(QWidget):
         # 新窗口按钮
         self.new_window_btn = PushButton("＋ 新窗口", self)
         self.new_window_btn.setFixedHeight(32)
+        self.new_window_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 不拦截快捷键
         self.new_window_btn.clicked.connect(self.new_window_clicked)
         layout.addWidget(self.new_window_btn)
 

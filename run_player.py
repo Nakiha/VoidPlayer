@@ -6,6 +6,12 @@ VoidPlayer 播放器启动脚本
     python run_player.py --profile perf     # 性能模式 (禁用调试功能)
     python run_player.py --profile debug    # 调试模式 (完整调试功能)
 """
+
+# === 必须在 import PySide6 之前设置 ===
+# 使用 ANGLE 后端 (OpenGL ES -> Direct3D)，避免 NVIDIA 游戏覆盖弹窗
+import os
+os.environ['QT_OPENGL'] = 'angle'
+
 import sys
 import ctypes
 import argparse
@@ -114,6 +120,17 @@ def main():
 
     # 打印配置参数
     logger.info(f"启动配置: profile={config.profile.value}")
+
+    # 打印 native 模块版本信息
+    try:
+        import voidview_native
+        version = getattr(voidview_native, "__version__", "unknown")
+        build_time = getattr(voidview_native, "__build_time__", "unknown")
+        logger.info(f"native 模块: version={version}, build_time={build_time}")
+    except ImportError as e:
+        logger.warning(f"native 模块未加载: {e}")
+    except Exception as e:
+        logger.warning(f"获取 native 模块版本失败: {e}")
 
     try:
         _run_app(args.input_files, sys.argv[1:])

@@ -1,10 +1,14 @@
 #include <pybind11/pybind11.h>
+#include <pybind11/functional.h>
 #include <pybind11/stl.h>
 
 #include "voidview_native/hardware_decoder.hpp"
+#include "voidview_native/decode_worker.hpp"
 #include "voidview_native/media_probe.hpp"
 #include "voidview_native/logger.hpp"
 #include "voidview_native/version.hpp"
+#include "voidview_native/cancel_token.hpp"
+#include "crash_handler.hpp"
 
 extern "C" {
 #include <libavutil/log.h>
@@ -78,6 +82,9 @@ static void init_logging(int level) {
 PYBIND11_MODULE(voidview_native, m) {
     m.doc() = "VoidView Native Module - Hardware Accelerated Video Decoder";
 
+    // 安装崩溃处理器
+    voidview::InstallCrashHandler();
+
     // 版本信息
     m.attr("__version__") = VOIDVIEW_VERSION_STRING;
     m.attr("__build_time__") = VOIDVIEW_BUILD_TIME;
@@ -142,6 +149,16 @@ PYBIND11_MODULE(voidview_native, m) {
           py::arg("url"),
           "Probe media file for information (lightweight, no decoder initialization)");
 
+    // CancelToken class
+    py::class_<voidview::CancelToken, std::shared_ptr<voidview::CancelToken>>(m, "CancelToken")
+        .def(py::init<>(), "Create a new cancel token")
+        .def("cancel", &voidview::CancelToken::cancel,
+             "Request cancellation")
+        .def("is_cancelled", &voidview::CancelToken::is_cancelled,
+             "Check if cancellation was requested")
+        .def("reset", &voidview::CancelToken::reset,
+             "Reset cancellation state for reuse");
+
     // HardwareDecoder class
     py::class_<voidview::HardwareDecoder>(m, "HardwareDecoder")
         .def(py::init<const std::string&>(), py::arg("source_url"),
@@ -166,6 +183,24 @@ PYBIND11_MODULE(voidview_native, m) {
         .def("seek_to_precise", &voidview::HardwareDecoder::seek_to_precise,
              py::arg("timestamp_ms"),
              "Seek to exact frame before timestamp (frame-accurate, slower)")
+
+        // 异步 API - 需要 CancelToken，但不释放 GIL（GIL 释放会导致 Python 对象访问崩溃）
+        // Python 端在后台线程调用，虽然持有 GIL 但不会阻塞 UI 线程
+        .def("decode_next_frame_async", [](voidview::HardwareDecoder& self, voidview::CancelToken& token) {
+            return self.decode_next_frame_async(token);
+        }, py::arg("cancel_token"),
+           "Decode next frame with cancellation support")
+
+        .def("seek_to_precise_async", [](voidview::HardwareDecoder& self, int64_t timestamp_ms, voidview::CancelToken& token) {
+            return self.seek_to_precise_async(timestamp_ms, token);
+        }, py::arg("timestamp_ms"), py::arg("cancel_token"),
+           "Seek to exact frame with cancellation support")
+
+        .def("has_pending_frame", &voidview::HardwareDecoder::has_pending_frame,
+             "Check if there's a pending decoded frame waiting for texture upload")
+
+        .def("upload_pending_frame", &voidview::HardwareDecoder::upload_pending_frame,
+             "Upload pending frame to texture (must be called in GL context)")
 
         .def_property_readonly("texture_id", &voidview::HardwareDecoder::get_texture_id,
              "OpenGL texture ID of current frame")
@@ -193,4 +228,58 @@ PYBIND11_MODULE(voidview_native, m) {
 
         .def_property_readonly("error_message", &voidview::HardwareDecoder::get_error_message,
              "Last error message if any");
+
+    // DecodeWorker class
+    py::class_<voidview::DecodeWorker>(m, "DecodeWorker")
+        .def(py::init<voidview::HardwareDecoder*, int>(),
+             py::arg("decoder"), py::arg("track_index"),
+             "Create a background decode worker for the given decoder")
+
+        .def("set_callback", [](voidview::DecodeWorker& self, py::function callback) {
+            // 包装 Python 回调，需要 acquire GIL
+            self.set_callback([callback](int track_idx, bool success, int64_t pts_ms) {
+                // 回调从 C++ 工作线程调用，需要获取 GIL
+                py::gil_scoped_acquire gil;
+                try {
+                    callback(track_idx, success, pts_ms);
+                } catch (py::error_already_set& e) {
+                    VV_ERROR("DecodeWorker Python callback error: {}", e.what());
+                } catch (const std::exception& e) {
+                    VV_ERROR("DecodeWorker callback exception: {}", e.what());
+                }
+            });
+        }, py::arg("callback"),
+           "Set callback for decode completion (called from worker thread)")
+
+        .def("seek_keyframe", &voidview::DecodeWorker::seek_keyframe,
+             py::arg("timestamp_ms"),
+             "Seek to keyframe (non-blocking, cancels current operation)")
+
+        .def("seek_precise", &voidview::DecodeWorker::seek_precise,
+             py::arg("timestamp_ms"),
+             "Seek to exact frame (non-blocking, cancels current operation)")
+
+        .def("decode_frame", &voidview::DecodeWorker::decode_frame,
+             "Decode next frame (non-blocking)")
+
+        .def("start_decode_loop", &voidview::DecodeWorker::start_decode_loop,
+             "Start continuous decode loop (playback mode)")
+
+        .def("stop_decode_loop", &voidview::DecodeWorker::stop_decode_loop,
+             "Stop continuous decode loop")
+
+        .def("cancel", &voidview::DecodeWorker::cancel,
+             "Cancel current operation")
+
+        .def("stop", &voidview::DecodeWorker::stop,
+             "Stop worker thread")
+
+        .def("has_pending_frame", &voidview::DecodeWorker::has_pending_frame,
+             "Check if there's a pending frame waiting for texture upload")
+
+        .def_property_readonly("decoder", &voidview::DecodeWorker::decoder,
+             "Get associated decoder")
+
+        .def_property_readonly("track_index", &voidview::DecodeWorker::track_index,
+             "Get track index");
 }

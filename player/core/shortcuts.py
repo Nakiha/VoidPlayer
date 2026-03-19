@@ -2,6 +2,7 @@
 ShortcutManager - 全局快捷键管理
 统一管理所有键盘快捷键，避免冲突
 """
+import time
 from enum import Enum, auto
 from typing import Callable, Optional
 from PySide6.QtCore import QObject, Qt
@@ -38,6 +39,7 @@ class ShortcutAction(Enum):
 
     # 其他
     TOGGLE_DEBUG_MONITOR = auto()
+    TOGGLE_STATS = auto()
 
 
 class ShortcutManager(QObject):
@@ -80,7 +82,11 @@ class ShortcutManager(QObject):
 
         # 其他
         ShortcutAction.TOGGLE_DEBUG_MONITOR: ("Ctrl+D", "性能监控"),
+        ShortcutAction.TOGGLE_STATS: ("I", "性能统计"),
     }
+
+    # 防抖间隔 (秒) - 同一快捷键在此时间内只响应一次
+    DEBOUNCE_INTERVAL = 0.15
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -88,6 +94,7 @@ class ShortcutManager(QObject):
         self._callbacks: dict[ShortcutAction, Callable] = {}
         self._enabled: bool = True
         self._action_enabled: dict[ShortcutAction, bool] = {}
+        self._last_trigger_time: dict[ShortcutAction, float] = {}  # 防抖时间戳
 
     def setup(self, parent_widget: QWidget):
         """
@@ -117,6 +124,13 @@ class ShortcutManager(QObject):
 
         if not self._action_enabled.get(action, True):
             return
+
+        # 防抖检查 - 避免按键重复触发
+        now = time.time()
+        last_time = self._last_trigger_time.get(action, 0)
+        if now - last_time < self.DEBOUNCE_INTERVAL:
+            return
+        self._last_trigger_time[action] = now
 
         callback = self._callbacks.get(action)
         if callback:

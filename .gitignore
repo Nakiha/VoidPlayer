@@ -3,6 +3,7 @@ native/build/
 
 # Logs
 logs/
+diagnostics/
 
 # Python
 __pycache__/

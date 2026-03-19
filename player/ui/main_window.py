@@ -3,6 +3,7 @@ MainWindow - 主窗口
 """
 import sys
 import subprocess
+import time
 from typing import Optional
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QFileDialog
 from PySide6.QtCore import Qt, QTimer
@@ -17,8 +18,12 @@ from ..core.config import config, Profile
 from .widgets import HighlightSplitter
 from ..core.track_manager import TrackManager
 from ..core.decoder_pool import DecoderPool
+from ..core.playback_controller import PlaybackController
 from ..core.shortcuts import ShortcutManager, ShortcutAction
 from ..core.signal_bus import signal_bus
+from ..core.logging_config import get_logger
+from ..core.diagnostics import DiagnosticsManager
+from .widgets.stats_overlay import StatsOverlay
 
 
 class MainWindow(QWidget):
@@ -44,10 +49,15 @@ class MainWindow(QWidget):
         # 核心组件
         self._track_manager = TrackManager(self)
         self._decoder_pool = DecoderPool(self)
+        self._playback_controller = PlaybackController(self._decoder_pool, self)
         self._shortcut_manager = ShortcutManager(self)
+
+        # 诊断模块
+        self._diagnostics_manager = DiagnosticsManager(self._decoder_pool, self)
 
         self._setup_ui()
         self._connect_internal_signals()
+        self._setup_diagnostics()
         self._setup_shortcuts()
         self._connect_signal_bus()
         self._load_initial_files(initial_files or [])
@@ -167,6 +177,30 @@ class MainWindow(QWidget):
         dp.eof_reached.connect(self._on_eof_reached)
         dp.error_occurred.connect(self._on_decoder_error)
 
+        # 播放控制器
+        self._playback_controller.frame_tick.connect(lambda: self.viewport_panel.gl_widget.update())
+        self._playback_controller.connect_to_decoder_pool()
+
+        # 帧解码完成信号 -> 通知诊断模块
+        dp.track_frame_decoded.connect(self._playback_controller.on_frame_decoded)
+
+    # ========== 诊断模块设置 ==========
+
+    def _setup_diagnostics(self):
+        """设置诊断模块"""
+        # 创建 StatsWindow (独立窗口)
+        self._stats_window = StatsOverlay()
+
+        # 设置 DiagnosticsManager (连接所有信号)
+        self._stats_window.set_diagnostics_manager(self._diagnostics_manager)
+
+        # 性能警告
+        self._diagnostics_manager.perf_monitor.performance_warning.connect(self._on_performance_warning)
+
+        # 连接 PlaybackController 信号 -> DiagnosticsManager
+        self._playback_controller.frame_requested.connect(self._diagnostics_manager.on_frame_requested)
+        self._playback_controller.frame_completed.connect(self._diagnostics_manager.on_frame_completed)
+
     # ========== SignalBus 连接 ==========
 
     def _connect_signal_bus(self):
@@ -223,8 +257,11 @@ class MainWindow(QWidget):
         sm.bind(ShortcutAction.NEW_WINDOW, self._on_new_window)
         sm.bind(ShortcutAction.TOGGLE_DEBUG_MONITOR, self._show_debug_monitor)
 
+        # 性能统计
+        sm.bind(ShortcutAction.TOGGLE_STATS, self._toggle_stats_overlay)
+
     def _toggle_play_pause(self):
-        if self._is_playing:
+        if self._playback_controller.is_playing:
             self.pause()
         else:
             self.play()
@@ -266,6 +303,8 @@ class MainWindow(QWidget):
             if self.viewport_panel.gl_widget.is_gl_initialized:
                 self._decoder_pool.initialize_decoder(index)
                 self.viewport_panel.gl_widget.set_decoders(self._decoder_pool.get_decoders())
+                # 请求第一帧显示 (即使不播放也要显示首帧)
+                self._decoder_pool.request_frame(index)
         else:
             self.timeline_area.add_track(index, source)
 
@@ -301,6 +340,8 @@ class MainWindow(QWidget):
 
                 if self.viewport_panel.gl_widget.is_gl_initialized:
                     self._decoder_pool.initialize_decoder(i)
+                    # 请求第一帧显示 (即使不播放也要显示首帧)
+                    self._decoder_pool.request_frame(i)
             else:
                 self.timeline_area.add_track(i, source)
 
@@ -324,6 +365,35 @@ class MainWindow(QWidget):
     def _on_decoder_error(self, track_index: int, message: str):
         print(f"Decoder error (track {track_index}): {message}")
 
+    def _toggle_stats_overlay(self):
+        """切换性能统计窗口"""
+        self._stats_window.toggle_window()
+
+    def _on_performance_warning(self, track_index: int, message: str, severity: float):
+        """处理性能警告"""
+        from PySide6.QtWidgets import QMessageBox
+        from PySide6.QtCore import Qt
+
+        # 根据严重程度决定是否显示警告
+        if severity > 0.7:  # 严重瓶颈
+            # 使用非模态消息框，不阻塞播放
+            msg = QMessageBox(self)
+            msg.setWindowTitle("性能警告")
+            msg.setText(f"<b>解码性能不足</b>")
+            msg.setInformativeText(
+                f"{message}\n\n"
+                f"建议操作:\n"
+                f"• 关闭其他占用 CPU/GPU 的程序\n"
+                f"• 降低视频分辨率\n"
+                f"• 禁用其他视频轨道"
+            )
+            msg.setIcon(QMessageBox.Icon.Warning)
+            msg.setWindowFlags(msg.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg.show()  # 非阻塞
+
+            self._logger.warning(f"[PerfWarning] {message}")
+
     def _on_gl_initialized(self):
         for i in range(self._track_manager.count()):
             source = self._track_manager.get(i)
@@ -340,6 +410,8 @@ class MainWindow(QWidget):
         if self.viewport_panel.gl_widget.is_gl_initialized:
             self._decoder_pool.initialize_decoder(index)
             self.viewport_panel.gl_widget.set_decoders(self._decoder_pool.get_decoders())
+            # 请求第一帧显示 (即使不播放也要显示首帧)
+            self._decoder_pool.request_frame(index)
 
     # ========== 用户操作 ==========
 
@@ -434,19 +506,23 @@ class MainWindow(QWidget):
     def play(self):
         self._is_playing = True
         self.controls_bar.set_playing(True)
-        self._decoder_pool.play()
+        self._diagnostics_manager.start()
+        self._playback_controller.play()
 
     def pause(self):
         self._is_playing = False
         self.controls_bar.set_playing(False)
-        self._decoder_pool.pause()
+        self._playback_controller.pause()
+        self._diagnostics_manager.stop()
 
     def seek_to(self, timestamp_ms: int):
         """快速 seek 到关键帧"""
+        get_logger().info(f"[SEEK] MainWindow.seek_to: {timestamp_ms}ms -> DecoderPool.seek_to")
         self._decoder_pool.seek_to(timestamp_ms)
 
     def seek_to_precise(self, timestamp_ms: int):
         """精确 seek 到目标时间之前最近的帧"""
+        get_logger().info(f"[SEEK] MainWindow.seek_to_precise: {timestamp_ms}ms -> DecoderPool.seek_to_precise")
         self._decoder_pool.seek_to_precise(timestamp_ms)
 
     def new_project(self):

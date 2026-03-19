@@ -1,6 +1,7 @@
 """
 ControlsBar - 播放控制条
 """
+import time
 from PySide6.QtWidgets import QWidget, QHBoxLayout
 from PySide6.QtCore import Signal, Qt
 from qfluentwidgets import (
@@ -9,6 +10,8 @@ from qfluentwidgets import (
     ToolTipFilter,
     TransparentToggleToolButton,
 )
+
+from ..core.logging_config import get_logger
 
 from ..theme_utils import get_color_hex, ColorKey
 from .widgets import create_tool_button, TimeLabel, TimelineSlider
@@ -35,6 +38,7 @@ class ControlsBar(QWidget):
         self._is_looping = True
         self._duration_ms = 0  # 总时长，由外部设置
         self._current_ms = 0
+        self._logger = get_logger()
         self.setFixedHeight(40)  # 32px 按钮 + 4px*2 边距 = 40px
         self._update_style()
         self._setup_ui()
@@ -147,15 +151,21 @@ class ControlsBar(QWidget):
 
     def _on_slider_dragging(self, position_us: int):
         """滑块拖动中 - 更新时间显示，发送快速 seek"""
+        t0 = time.perf_counter()
         self._current_ms = position_us // 1000  # 微秒转毫秒
         self._update_time_display()
+        self._logger.info(f"[SEEK] ControlsBar._on_slider_dragging: {self._current_ms}ms, emit seek_requested")
         self.seek_requested.emit(self._current_ms)
+        self._logger.info(f"[SEEK] ControlsBar._on_slider_dragging done: {(time.perf_counter() - t0)*1000:.2f}ms")
 
     def _on_slider_changed(self, position_us: int):
         """滑块位置最终确定 - 发送精确 seek"""
+        t0 = time.perf_counter()
         self._current_ms = position_us // 1000  # 微秒转毫秒
         self._update_time_display()
+        self._logger.info(f"[SEEK] ControlsBar._on_slider_changed: {self._current_ms}ms, emit precise_seek_requested")
         self.precise_seek_requested.emit(self._current_ms)
+        self._logger.info(f"[SEEK] ControlsBar._on_slider_changed done: {(time.perf_counter() - t0)*1000:.2f}ms")
 
     def _on_zoom_changed(self, index: int):
         """缩放变化"""

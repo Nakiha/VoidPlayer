@@ -3,6 +3,9 @@
 #include <string>
 #include <memory>
 #include <cstdint>
+#include <functional>
+
+#include "voidview_native/cancel_token.hpp"
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -67,6 +70,68 @@ public:
      * @return True on success
      */
     bool seek_to_precise(int64_t timestamp_ms);
+
+    // ==================== Async/Cancellable API ====================
+
+    /**
+     * Decode next frame with cancellation support
+     * @param cancel_token Token to check for cancellation
+     * @return True if new frame decoded, false if cancelled or error
+     */
+    bool decode_next_frame_async(CancelToken& cancel_token);
+
+    /**
+     * Seek to exact frame with cancellation support
+     * Checks cancel_token between decode iterations
+     * @param timestamp_ms Target time in milliseconds
+     * @param cancel_token Token to check for cancellation
+     * @return True on success, false if cancelled
+     */
+    bool seek_to_precise_async(int64_t timestamp_ms, CancelToken& cancel_token);
+
+    /**
+     * Check if there's a pending decoded frame waiting for texture upload
+     * Used in async mode: decode thread decodes, GL thread uploads
+     */
+    bool has_pending_frame() const;
+
+    /**
+     * Upload pending frame to texture (must be called in GL context)
+     * @return True if upload succeeded
+     */
+    bool upload_pending_frame();
+
+    // ==================== Internal API (for DecodeWorker) ====================
+
+    /**
+     * Decode next frame without GL upload (can be called from worker thread)
+     * Sets has_pending_frame_ = true on success
+     * @return True if new frame decoded
+     */
+    bool decode_frame_internal();
+
+    /**
+     * Seek to exact frame without GL upload (can be called from worker thread)
+     * Sets has_pending_frame_ = true on success
+     * @param timestamp_ms Target time in milliseconds
+     * @return True on success
+     */
+    bool seek_to_precise_internal(int64_t timestamp_ms);
+
+    /**
+     * Seek to keyframe without GL upload (can be called from worker thread)
+     * @param timestamp_ms Target time in milliseconds
+     * @return True on success
+     */
+    bool seek_to_keyframe_internal(int64_t timestamp_ms);
+
+    /**
+     * Helper for precise seek: seek to frame before target
+     * @param target_ms Target timestamp
+     * @param known_frame_ms Known frame timestamp before target
+     * @return True on success
+     */
+    bool seek_to_frame_before_internal(int64_t target_ms, int64_t known_frame_ms);
 
     // ==================== Properties ====================
 

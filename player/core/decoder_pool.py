@@ -4,13 +4,18 @@ DecoderPool - 多轨道解码器管理器
 负责:
 - 管理多个 HardwareDecoder 实例
 - 提供媒体信息探测 (probe_file)
-- 同步多轨道解码
-- 播放控制 (播放/暂停/seek)
+- 异步解码 (C++ 后台线程，不阻塞 UI)
+- 播放控制 (播放/暂停/seek) - 异步非阻塞
+
+使用 DecodeWorker (C++ 独立线程) 实现非阻塞解码：
+- DecodeWorker 在 C++ 层创建独立线程，不持有 GIL
+- Python 只负责发命令、收结果、上传纹理 (在 GL 线程)
 """
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QObject, Signal, QTimer
+from PySide6.QtCore import QObject, Signal, QMetaObject, Qt, Q_ARG, Slot
 
 from player.native import voidview_native
 from player.core.logging_config import get_logger
@@ -66,6 +71,7 @@ class TrackState:
     path: str
     media_info: MediaInfo | None = None
     decoder: voidview_native.HardwareDecoder | None = None
+    worker: voidview_native.DecodeWorker | None = None  # C++ 后台解码线程
     offset_ms: int = 0  # 同步偏移
     enabled: bool = True  # 是否显示
     current_pts_ms: int = 0
@@ -82,12 +88,24 @@ class DecoderPool(QObject):
     """
     多轨道解码器池
 
+    使用 C++ DecodeWorker 实现非阻塞解码：
+    - DecodeWorker 在 C++ 层创建独立线程，不涉及 Python GIL
+    - Python 主线程只负责：发命令、收结果、上传纹理
+    - UI 不会被解码操作阻塞
+
+    播放控制由 PlaybackController 负责，DecoderPool 只提供:
+    - 解码器管理
+    - 单帧解码请求
+    - Seek 操作
+
     信号:
         frame_ready: 所有活动轨道解码完一帧
         duration_changed: 总时长变化
         position_changed: 播放位置变化 (ms)
         eof_reached: 到达文件末尾
         error_occurred: 发生错误 (index, message)
+        seek_completed: seek 操作完成 (position_ms)
+        track_frame_decoded: 单个轨道帧解码完成 (track_index, pts_ms, success)
     """
 
     MAX_TRACKS = 8
@@ -98,27 +116,20 @@ class DecoderPool(QObject):
     position_changed = Signal(int)  # 播放位置变化 (ms)
     eof_reached = Signal()  # 到达末尾
     error_occurred = Signal(int, str)  # (track_index, message)
+    seek_completed = Signal(int)  # seek 完成 (position_ms)
+    track_frame_decoded = Signal(int, int, bool)  # 单个轨道帧解码完成 (track_index, pts_ms, success)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._tracks: list[TrackState | None] = [None] * self.MAX_TRACKS
         self._track_count = 0
-        self._is_playing = False
         self._current_position_ms = 0
         self._duration_ms = 0  # 所有轨道中最长的时长
         self._logger = get_logger()
 
-        # 延迟 seek 相关
-        self._pending_seek_ms: int | None = None
-        self._pending_seek_is_precise: bool = False
-        self._seek_timer = QTimer(self)
-        self._seek_timer.setSingleShot(True)
-        self._seek_timer.timeout.connect(self._execute_pending_seek)
-
-        # 播放定时器
-        self._play_timer = QTimer(self)
-        self._play_timer.timeout.connect(self._decode_frame)
-        self._frame_interval_ms = 16  # ~60fps，会根据视频帧率调整
+        # Seek 状态跟踪
+        self._pending_seek_count = 0  # 正在进行的 seek 数量
+        self._last_seek_target_ms = 0
 
     # ========== 静态方法: 媒体探测 ==========
 
@@ -159,9 +170,13 @@ class DecoderPool(QObject):
             return
 
         track = self._tracks[index]
-        if track and track.decoder:
+        if track:
+            # 停止并销毁 DecodeWorker
+            if track.worker:
+                track.worker.stop()
+                track.worker = None
             # 解码器会在 track 删除时自动清理
-            pass
+            track.decoder = None
 
         self._tracks[index] = None
         self._track_count = sum(1 for t in self._tracks if t is not None)
@@ -193,6 +208,11 @@ class DecoderPool(QObject):
             decoder.set_opengl_context(0)
 
             track.decoder = decoder
+
+            # 创建 DecodeWorker (C++ 后台线程)
+            worker = voidview_native.DecodeWorker(decoder, index)
+            worker.set_callback(self._on_decode_callback)
+            track.worker = worker
 
             # 更新帧间隔
             if track.media_info.fps > 0:
@@ -226,93 +246,149 @@ class DecoderPool(QObject):
         if track:
             track.enabled = enabled
 
-    # ========== 播放控制 ==========
+    # ========== 播放控制 (由 PlaybackController 调用) ==========
 
-    def play(self):
-        """开始播放"""
-        if self._is_playing:
+    def request_frame(self, index: int):
+        """
+        请求指定轨道解码下一帧
+
+        非阻塞：立即返回，解码完成后通过回调通知
+        """
+        track = self._tracks[index]
+        if not track or not track.enabled or not track.worker or not track.decoder:
             return
 
-        # 确保所有活动轨道的解码器已初始化
+        if track.decoder.eof:
+            return
+
+        track.worker.decode_frame()
+
+    def request_all_frames(self):
+        """请求所有活动轨道解码下一帧"""
         for track in self._tracks:
-            if track and track.enabled and not track.decoder:
-                # 延迟初始化 - 由 GLWidget 在 initializeGL 中调用
-                pass
+            if track and track.enabled and track.worker and track.decoder:
+                if not track.decoder.eof:
+                    track.worker.decode_frame()
 
-        self._is_playing = True
-        self._play_timer.start(self._frame_interval_ms)
+    def cancel_all(self):
+        """取消所有轨道的当前操作"""
+        for track in self._tracks:
+            if track and track.worker:
+                track.worker.cancel()
 
-    def pause(self):
-        """暂停播放"""
-        self._is_playing = False
-        self._play_timer.stop()
-
-    def toggle_play(self):
-        """切换播放/暂停"""
-        if self._is_playing:
-            self.pause()
-        else:
-            self.play()
+    # ========== Seek 操作 ==========
 
     def seek_to(self, position_ms: int):
         """
         快速跳转到指定时间 (关键帧级别)
 
-        使用延迟执行策略：当用户快速连续点击时，
-        只执行最后一次 seek 请求，避免重复 seek 导致卡顿。
+        非阻塞：提交命令到 C++ 后台线程立即返回
         """
         position_ms = max(0, min(position_ms, self._duration_ms))
-        self._schedule_seek(position_ms, is_precise=False)
+        self._logger.info(f"[SEEK] DecoderPool.seek_to: {position_ms}ms (keyframe)")
+        self._execute_seek(position_ms, is_precise=False)
 
     def seek_to_precise(self, position_ms: int):
         """
         精确跳转到指定时间之前的最近帧 (帧级别精确)
 
-        使用延迟执行策略：当用户快速连续点击时，
-        只执行最后一次 seek 请求，避免重复 seek 导致卡顿。
+        非阻塞：提交命令到 C++ 后台线程立即返回
         """
         position_ms = max(0, min(position_ms, self._duration_ms))
-        self._schedule_seek(position_ms, is_precise=True)
+        self._logger.info(f"[SEEK] DecoderPool.seek_to_precise: {position_ms}ms (frame-accurate)")
+        self._execute_seek(position_ms, is_precise=True)
 
-    def _schedule_seek(self, position_ms: int, is_precise: bool):
-        """
-        调度一个延迟 seek 请求
+    def _execute_seek(self, target_ms: int, is_precise: bool):
+        """执行 seek 操作 (非阻塞)"""
+        t0 = time.perf_counter()
 
-        如果已有挂起的请求，新的请求会覆盖它。
-        延迟 50ms 执行，确保连续点击时只执行最后一次。
-        """
-        self._pending_seek_ms = position_ms
-        self._pending_seek_is_precise = is_precise
-        # 重启定时器（如果已经在运行，会重置计时）
-        self._seek_timer.start(50)
-
-    def _execute_pending_seek(self):
-        """执行挂起的 seek 请求"""
-        if self._pending_seek_ms is None:
-            return
-
-        target_ms = self._pending_seek_ms
-        is_precise = self._pending_seek_is_precise
-        self._pending_seek_ms = None
-
-
-        # 执行 seek 操作
+        # 取消之前的 seek
         for track in self._tracks:
-            if not track or not track.decoder or not track.enabled:
+            if track and track.worker:
+                track.worker.cancel()
+
+        # 跟踪正在进行的 seek
+        self._pending_seek_count = 0
+        self._last_seek_target_ms = target_ms
+
+        # 向所有活动轨道提交 seek 命令
+        for track in self._tracks:
+            if not track or not track.decoder or not track.enabled or not track.worker:
                 continue
 
             adjusted_ms = max(0, target_ms + track.offset_ms)
+            self._pending_seek_count += 1
+
             if is_precise:
-                track.decoder.seek_to_precise(adjusted_ms)
+                track.worker.seek_precise(adjusted_ms)
             else:
-                track.decoder.seek_to(adjusted_ms)
+                track.worker.seek_keyframe(adjusted_ms)
 
-        # seek 后立即解码一帧以更新纹理
-        self._decode_frame_after_seek(target_ms)
+        self._logger.info(f"[SEEK] DecoderPool._execute_seek: submitted {self._pending_seek_count} seeks in {(time.perf_counter() - t0)*1000:.2f}ms")
 
-    def _decode_frame_after_seek(self, target_ms: int):
-        """seek 后解码一帧"""
-        any_decoded = False
+    def _on_decode_callback(self, track_index: int, success: bool, pts_ms: int):
+        """
+        解码完成回调 (从 C++ 工作线程调用)
+
+        通过 Qt 信号转发到主线程处理
+        """
+        # 使用 QMetaObject.invokeMethod 转发到主线程
+        QMetaObject.invokeMethod(
+            self,
+            "_handle_decode_result",
+            Qt.ConnectionType.QueuedConnection,
+            Q_ARG(int, track_index),
+            Q_ARG(bool, success),
+            Q_ARG(int, pts_ms)
+        )
+
+    @Slot(int, bool, int)
+    def _handle_decode_result(self, track_index: int, success: bool, pts_ms: int):
+        """在主线程处理解码结果"""
+        track = self._tracks[track_index]
+        if not track:
+            return
+
+        # 发送帧解码完成信号 (用于性能监控)
+        self.track_frame_decoded.emit(track_index, pts_ms, success)
+
+        if success:
+            track.current_pts_ms = pts_ms
+
+            # 上传纹理 (必须在 GL 线程/主线程)
+            if track.decoder and track.decoder.has_pending_frame():
+                track.decoder.upload_pending_frame()
+        else:
+            # 检查是否是 EOF 或错误
+            if track.decoder:
+                if track.decoder.eof:
+                    self._logger.debug(f"Track {track_index} reached EOF")
+                elif track.decoder.has_error:
+                    self.error_occurred.emit(track_index, track.decoder.error_message)
+
+        # 检查是否是 seek 操作完成
+        if self._pending_seek_count > 0:
+            self._pending_seek_count -= 1
+            if self._pending_seek_count == 0:
+                # 所有轨道 seek 完成
+                self._on_all_seek_completed(self._last_seek_target_ms)
+        else:
+            # 播放过程中的帧解码完成
+            self._check_all_tracks_ready()
+
+    def _on_all_seek_completed(self, target_ms: int):
+        """所有轨道 seek 完成"""
+        self._logger.info(f"[SEEK] All seeks completed at {target_ms}ms")
+
+        self._current_position_ms = target_ms
+        self.position_changed.emit(target_ms)
+        self.frame_ready.emit()
+        self.seek_completed.emit(target_ms)
+
+    def _check_all_tracks_ready(self):
+        """检查所有轨道是否都完成了解码"""
+        # 更新位置 (取所有轨道中的最大 PTS)
+        max_pts = 0
 
         for track in self._tracks:
             if not track or not track.enabled or not track.decoder:
@@ -321,43 +397,58 @@ class DecoderPool(QObject):
             if track.decoder.eof:
                 continue
 
-            if track.decoder.decode_next_frame():
-                track.current_pts_ms = track.decoder.current_pts_ms
-                any_decoded = True
-            elif track.decoder.eof:
-                pass
-            elif track.decoder.has_error:
-                self.error_occurred.emit(track.index, track.decoder.error_message)
+            pts = track.current_pts_ms - track.offset_ms
+            max_pts = max(max_pts, pts)
 
-        # 更新位置
-        self._current_position_ms = target_ms
+        self._current_position_ms = max_pts
         self.position_changed.emit(self._current_position_ms)
+        self.frame_ready.emit()
 
-        if any_decoded:
-            self.frame_ready.emit()
+        # 检查是否所有活动轨道都到达 EOF
+        all_eof = True
+        has_active = False
+        for track in self._tracks:
+            if track and track.enabled and track.decoder:
+                has_active = True
+                if not track.decoder.eof:
+                    all_eof = False
+                    break
 
+        if has_active and all_eof:
+            self.eof_reached.emit()
+
+    # ========== 单帧操作 ==========
 
     def step_frame(self):
-        """单步进帧"""
-        self._decode_frame()
+        """单步进帧 (向前一帧)"""
+        self.request_all_frames()
 
     def prev_frame(self):
         """上一帧 - 向后 seek 一帧时间"""
-        if self._frame_interval_ms > 0:
-            new_pos = max(0, self._current_position_ms - self._frame_interval_ms)
+        # 使用第一帧的帧间隔
+        frame_interval = self._get_min_frame_interval()
+        if frame_interval > 0:
+            new_pos = max(0, self._current_position_ms - frame_interval)
             self.seek_to(new_pos)
 
     def next_frame(self):
         """下一帧 - 前进一帧"""
-        if self._frame_interval_ms > 0:
-            new_pos = min(self._duration_ms, self._current_position_ms + self._frame_interval_ms)
+        # 使用第一帧的帧间隔
+        frame_interval = self._get_min_frame_interval()
+        if frame_interval > 0:
+            new_pos = min(self._duration_ms, self._current_position_ms + frame_interval)
             self.seek_to(new_pos)
 
-    # ========== 属性 ==========
+    def _get_min_frame_interval(self) -> int:
+        """获取所有活动轨道中最小的帧间隔 (用于 prev/next_frame)"""
+        min_interval = 16  # 默认 60fps
+        for track in self._tracks:
+            if track and track.enabled and track.media_info and track.media_info.fps > 0:
+                interval = int(1000 / track.media_info.fps)
+                min_interval = min(min_interval, interval)
+        return min_interval
 
-    @property
-    def is_playing(self) -> bool:
-        return self._is_playing
+    # ========== 属性 ==========
 
     @property
     def current_position_ms(self) -> int:
@@ -376,53 +467,6 @@ class DecoderPool(QObject):
 
     # ========== 内部方法 ==========
 
-    def _decode_frame(self):
-        """解码一帧 (所有活动轨道)"""
-        any_decoded = False
-        has_active_track = False
-
-        for track in self._tracks:
-            if not track or not track.enabled:
-                continue
-            if not track.decoder:
-                continue
-
-            has_active_track = True
-
-            if track.decoder.eof:
-                continue
-
-            if track.decoder.decode_next_frame():
-                track.current_pts_ms = track.decoder.current_pts_ms
-                any_decoded = True
-            elif track.decoder.eof:
-                pass  # 到达 EOF
-            elif track.decoder.has_error:
-                self.error_occurred.emit(track.index, track.decoder.error_message)
-
-        if any_decoded:
-            # 更新位置 (取所有轨道中的最大 PTS)
-            max_pts = 0
-            for track in self._tracks:
-                if track and track.decoder and not track.decoder.eof:
-                    pts = track.current_pts_ms - track.offset_ms
-                    max_pts = max(max_pts, pts)
-            self._current_position_ms = max_pts
-            self.position_changed.emit(self._current_position_ms)
-            self.frame_ready.emit()
-
-        # 检查是否所有活动轨道都到达 EOF
-        if has_active_track:
-            all_eof = True
-            for track in self._tracks:
-                if track and track.enabled and track.decoder:
-                    if not track.decoder.eof:
-                        all_eof = False
-                        break
-            if all_eof:
-                self.pause()
-                self.eof_reached.emit()
-
     def _update_duration(self):
         """更新总时长 (所有轨道中最长的)"""
         max_duration = 0
@@ -438,7 +482,11 @@ class DecoderPool(QObject):
 
     def clear(self):
         """清除所有轨道"""
-        self.pause()
+        # 停止所有 DecodeWorker
+        for track in self._tracks:
+            if track and track.worker:
+                track.worker.stop()
+
         self._tracks = [None] * self.MAX_TRACKS
         self._track_count = 0
         self._current_position_ms = 0

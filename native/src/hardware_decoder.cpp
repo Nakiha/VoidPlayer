@@ -465,6 +465,261 @@ public:
         }
     }
 
+    // ==================== 异步/可取消 API ====================
+
+    bool decode_frame_async(CancelToken& cancel_token) {
+        if (!fmt_ctx_ || !codec_ctx_) {
+            return false;
+        }
+
+        while (true) {
+            // 检查取消
+            if (cancel_token.is_cancelled()) {
+                VV_DEBUG("decode_frame_async: cancelled");
+                return false;
+            }
+
+            int ret = av_read_frame(fmt_ctx_, pkt_);
+            if (ret < 0) {
+                if (ret == AVERROR_EOF) {
+                    eof_ = true;
+                    return false;
+                }
+                set_error("Failed to read frame", ret);
+                return false;
+            }
+
+            if (pkt_->stream_index != video_stream_idx_) {
+                av_packet_unref(pkt_);
+                continue;
+            }
+
+            ret = avcodec_send_packet(codec_ctx_, pkt_);
+            av_packet_unref(pkt_);
+
+            if (ret < 0) {
+                set_error("Failed to send packet", ret);
+                return false;
+            }
+
+            ret = avcodec_receive_frame(codec_ctx_, frame_);
+            if (ret == 0) {
+                current_pts_ms_ = calculate_pts();
+                has_pending_frame_ = true;
+                VV_TRACE("Frame decoded async: pts={}ms, pending={}", current_pts_ms_, has_pending_frame_);
+                return true;
+            } else if (ret == AVERROR(EAGAIN)) {
+                continue;
+            } else if (ret == AVERROR_EOF) {
+                eof_ = true;
+                return false;
+            } else {
+                set_error("Failed to receive frame", ret);
+                return false;
+            }
+        }
+    }
+
+    bool seek_frame_precise_async(int64_t timestamp_ms, CancelToken& cancel_token) {
+        if (!fmt_ctx_ || !seekable_) return false;
+
+        AVRational time_base = fmt_ctx_->streams[video_stream_idx_]->time_base;
+        int64_t ts = timestamp_ms * 1000;  // ms -> us
+        int64_t target_ts = av_rescale_q(ts, AV_TIME_BASE_Q, time_base);
+
+        // 检查取消
+        if (cancel_token.is_cancelled()) {
+            VV_DEBUG("seek_frame_precise_async: cancelled before seek");
+            return false;
+        }
+
+        // Step 1: Seek to nearest keyframe before target
+        int ret = av_seek_frame(fmt_ctx_, video_stream_idx_, target_ts, AVSEEK_FLAG_BACKWARD);
+        if (ret < 0) return false;
+
+        avcodec_flush_buffers(codec_ctx_);
+        eof_ = false;
+
+        // Step 2: Decode frames until we reach the target timestamp or later
+        int64_t target_ms = timestamp_ms;
+        int64_t last_valid_pts_ms = -1;
+
+        while (true) {
+            // 每次循环检查取消
+            if (cancel_token.is_cancelled()) {
+                VV_DEBUG("seek_frame_precise_async: cancelled during decode at {}ms", last_valid_pts_ms);
+                return false;
+            }
+
+            ret = av_read_frame(fmt_ctx_, pkt_);
+            if (ret < 0) {
+                if (ret == AVERROR_EOF) {
+                    eof_ = true;
+                    break;
+                }
+                return false;
+            }
+
+            if (pkt_->stream_index != video_stream_idx_) {
+                av_packet_unref(pkt_);
+                continue;
+            }
+
+            ret = avcodec_send_packet(codec_ctx_, pkt_);
+            av_packet_unref(pkt_);
+
+            if (ret < 0 && ret != AVERROR(EAGAIN)) {
+                return false;
+            }
+
+            while (true) {
+                // 内层循环也检查取消
+                if (cancel_token.is_cancelled()) {
+                    VV_DEBUG("seek_frame_precise_async: cancelled in receive loop");
+                    return false;
+                }
+
+                ret = avcodec_receive_frame(codec_ctx_, frame_);
+                if (ret == AVERROR(EAGAIN)) {
+                    break;
+                } else if (ret == AVERROR_EOF) {
+                    eof_ = true;
+                    break;
+                } else if (ret < 0) {
+                    return false;
+                }
+
+                int64_t frame_pts_ms = calculate_pts();
+
+                // If we've passed the target, we need to stop
+                if (frame_pts_ms > target_ms) {
+                    if (last_valid_pts_ms >= 0) {
+                        // 需要重新 seek 获取之前的帧
+                        // 注意：这里也检查取消
+                        if (cancel_token.is_cancelled()) {
+                            return false;
+                        }
+                        return seek_to_frame_before_async(target_ms, last_valid_pts_ms, cancel_token);
+                    }
+                    current_pts_ms_ = frame_pts_ms;
+                    has_pending_frame_ = true;
+                    return true;
+                }
+
+                // This frame is at or before target
+                last_valid_pts_ms = frame_pts_ms;
+                current_pts_ms_ = frame_pts_ms;
+                has_pending_frame_ = true;
+
+                // If exactly at target or very close, we're done
+                if (frame_pts_ms == target_ms || target_ms - frame_pts_ms < 10) {
+                    return true;
+                }
+            }
+
+            if (eof_) break;
+        }
+
+        return last_valid_pts_ms >= 0;
+    }
+
+    bool seek_to_frame_before_async(int64_t target_ms, int64_t known_frame_ms, CancelToken& cancel_token) {
+        AVRational time_base = fmt_ctx_->streams[video_stream_idx_]->time_base;
+        int64_t seek_ts = (known_frame_ms - 50) * 1000;  // 50ms before
+        int64_t target_ts = av_rescale_q(seek_ts, AV_TIME_BASE_Q, time_base);
+
+        if (cancel_token.is_cancelled()) {
+            return false;
+        }
+
+        int ret = av_seek_frame(fmt_ctx_, video_stream_idx_, target_ts, AVSEEK_FLAG_BACKWARD);
+        if (ret < 0) return false;
+
+        avcodec_flush_buffers(codec_ctx_);
+        eof_ = false;
+
+        while (true) {
+            if (cancel_token.is_cancelled()) {
+                return false;
+            }
+
+            ret = av_read_frame(fmt_ctx_, pkt_);
+            if (ret < 0) {
+                if (ret == AVERROR_EOF) {
+                    eof_ = true;
+                    break;
+                }
+                return false;
+            }
+
+            if (pkt_->stream_index != video_stream_idx_) {
+                av_packet_unref(pkt_);
+                continue;
+            }
+
+            ret = avcodec_send_packet(codec_ctx_, pkt_);
+            av_packet_unref(pkt_);
+
+            if (ret < 0 && ret != AVERROR(EAGAIN)) {
+                return false;
+            }
+
+            while (true) {
+                if (cancel_token.is_cancelled()) {
+                    return false;
+                }
+
+                ret = avcodec_receive_frame(codec_ctx_, frame_);
+                if (ret == AVERROR(EAGAIN)) {
+                    break;
+                } else if (ret == AVERROR_EOF || ret < 0) {
+                    break;
+                }
+
+                int64_t frame_pts_ms = calculate_pts();
+
+                if (frame_pts_ms >= target_ms) {
+                    return true;
+                }
+
+                current_pts_ms_ = frame_pts_ms;
+                has_pending_frame_ = true;
+            }
+        }
+
+        return true;
+    }
+
+    bool has_pending_frame() const {
+        return has_pending_frame_;
+    }
+
+    bool upload_pending_frame() {
+        if (!has_pending_frame_ || !frame_) {
+            return false;
+        }
+
+        VV_TRACE("upload_pending_frame: format={}, is_sw={}, has_interop={}",
+               frame_->format, is_software_decode_, texture_interop_ ? 1 : 0);
+
+        if (is_software_decode_) {
+            if (!upload_software_frame(frame_)) {
+                set_error("Failed to upload software frame", 0);
+                return false;
+            }
+            texture_id_ = sw_texture_id_;
+        } else if (frame_->format == hw_pixel_format_ && texture_interop_) {
+            if (!texture_interop_->bind_frame(frame_)) {
+                set_error("Failed to bind hardware frame", 0);
+                return false;
+            }
+            texture_id_ = texture_interop_->get_texture_id();
+        }
+
+        has_pending_frame_ = false;
+        return true;
+    }
+
     bool seek_frame(int64_t timestamp_ms) {
         if (!fmt_ctx_ || !seekable_) return false;
 
@@ -693,6 +948,9 @@ public:
     int sw_buffer_width_ = 0;
     int sw_buffer_height_ = 0;
 
+    // Async decode state
+    bool has_pending_frame_ = false;  // frame_ 中有待上传的帧
+
     int hw_type_ = 0;
 };
 
@@ -730,6 +988,227 @@ bool HardwareDecoder::seek_to(int64_t timestamp_ms) {
 
 bool HardwareDecoder::seek_to_precise(int64_t timestamp_ms) {
     return impl_->seek_frame_precise(timestamp_ms);
+}
+
+// ==================== 异步/可取消 API ====================
+
+bool HardwareDecoder::decode_next_frame_async(CancelToken& cancel_token) {
+    return impl_->decode_frame_async(cancel_token);
+}
+
+bool HardwareDecoder::seek_to_precise_async(int64_t timestamp_ms, CancelToken& cancel_token) {
+    return impl_->seek_frame_precise_async(timestamp_ms, cancel_token);
+}
+
+bool HardwareDecoder::has_pending_frame() const {
+    return impl_->has_pending_frame();
+}
+
+bool HardwareDecoder::upload_pending_frame() {
+    return impl_->upload_pending_frame();
+}
+
+// ==================== Internal API (for DecodeWorker) ====================
+
+bool HardwareDecoder::decode_frame_internal() {
+    // 使用 async 版本的逻辑，但不需要 CancelToken
+    if (!impl_->fmt_ctx_ || !impl_->codec_ctx_) {
+        return false;
+    }
+
+    while (true) {
+        int ret = av_read_frame(impl_->fmt_ctx_, impl_->pkt_);
+        if (ret < 0) {
+            if (ret == AVERROR_EOF) {
+                impl_->eof_ = true;
+                return false;
+            }
+            impl_->set_error("Failed to read frame", ret);
+            return false;
+        }
+
+        if (impl_->pkt_->stream_index != impl_->video_stream_idx_) {
+            av_packet_unref(impl_->pkt_);
+            continue;
+        }
+
+        ret = avcodec_send_packet(impl_->codec_ctx_, impl_->pkt_);
+        av_packet_unref(impl_->pkt_);
+
+        if (ret < 0) {
+            impl_->set_error("Failed to send packet", ret);
+            return false;
+        }
+
+        ret = avcodec_receive_frame(impl_->codec_ctx_, impl_->frame_);
+        if (ret == 0) {
+            impl_->current_pts_ms_ = impl_->calculate_pts();
+            impl_->has_pending_frame_ = true;
+            VV_TRACE("decode_frame_internal: pts={}ms, pending={}",
+                    impl_->current_pts_ms_, impl_->has_pending_frame_);
+            return true;
+        } else if (ret == AVERROR(EAGAIN)) {
+            continue;
+        } else if (ret == AVERROR_EOF) {
+            impl_->eof_ = true;
+            return false;
+        } else {
+            impl_->set_error("Failed to receive frame", ret);
+            return false;
+        }
+    }
+}
+
+bool HardwareDecoder::seek_to_precise_internal(int64_t timestamp_ms) {
+    if (!impl_->fmt_ctx_ || !impl_->seekable_) return false;
+
+    AVRational time_base = impl_->fmt_ctx_->streams[impl_->video_stream_idx_]->time_base;
+    int64_t ts = timestamp_ms * 1000;  // ms -> us
+    int64_t target_ts = av_rescale_q(ts, AV_TIME_BASE_Q, time_base);
+
+    // Step 1: Seek to nearest keyframe before target
+    int ret = av_seek_frame(impl_->fmt_ctx_, impl_->video_stream_idx_, target_ts, AVSEEK_FLAG_BACKWARD);
+    if (ret < 0) return false;
+
+    avcodec_flush_buffers(impl_->codec_ctx_);
+    impl_->eof_ = false;
+
+    // Step 2: Decode frames until we reach the target timestamp or later
+    int64_t target_ms = timestamp_ms;
+    int64_t last_valid_pts_ms = -1;
+
+    while (true) {
+        ret = av_read_frame(impl_->fmt_ctx_, impl_->pkt_);
+        if (ret < 0) {
+            if (ret == AVERROR_EOF) {
+                impl_->eof_ = true;
+                break;
+            }
+            return false;
+        }
+
+        if (impl_->pkt_->stream_index != impl_->video_stream_idx_) {
+            av_packet_unref(impl_->pkt_);
+            continue;
+        }
+
+        ret = avcodec_send_packet(impl_->codec_ctx_, impl_->pkt_);
+        av_packet_unref(impl_->pkt_);
+
+        if (ret < 0 && ret != AVERROR(EAGAIN)) {
+            return false;
+        }
+
+        while (true) {
+            ret = avcodec_receive_frame(impl_->codec_ctx_, impl_->frame_);
+            if (ret == AVERROR(EAGAIN)) {
+                break;
+            } else if (ret == AVERROR_EOF) {
+                impl_->eof_ = true;
+                break;
+            } else if (ret < 0) {
+                return false;
+            }
+
+            int64_t frame_pts_ms = impl_->calculate_pts();
+
+            // If we've passed the target, we need to stop
+            if (frame_pts_ms > target_ms) {
+                if (last_valid_pts_ms >= 0) {
+                    // Seek back to get the previous frame again
+                    return seek_to_frame_before_internal(target_ms, last_valid_pts_ms);
+                }
+                impl_->current_pts_ms_ = frame_pts_ms;
+                impl_->has_pending_frame_ = true;
+                return true;
+            }
+
+            // This frame is at or before target
+            last_valid_pts_ms = frame_pts_ms;
+            impl_->current_pts_ms_ = frame_pts_ms;
+            impl_->has_pending_frame_ = true;
+
+            // If exactly at target or very close, we're done
+            if (frame_pts_ms == target_ms || target_ms - frame_pts_ms < 10) {
+                return true;
+            }
+        }
+
+        if (impl_->eof_) break;
+    }
+
+    return last_valid_pts_ms >= 0;
+}
+
+bool HardwareDecoder::seek_to_keyframe_internal(int64_t timestamp_ms) {
+    if (!impl_->fmt_ctx_ || !impl_->seekable_) return false;
+
+    AVRational time_base = impl_->fmt_ctx_->streams[impl_->video_stream_idx_]->time_base;
+    int64_t ts = timestamp_ms * 1000;
+    int64_t target_ts = av_rescale_q(ts, AV_TIME_BASE_Q, time_base);
+
+    int ret = av_seek_frame(impl_->fmt_ctx_, impl_->video_stream_idx_, target_ts, AVSEEK_FLAG_BACKWARD);
+    if (ret < 0) return false;
+
+    avcodec_flush_buffers(impl_->codec_ctx_);
+    impl_->eof_ = false;
+    return true;
+}
+
+bool HardwareDecoder::seek_to_frame_before_internal(int64_t target_ms, int64_t known_frame_ms) {
+    // Seek to a bit before the known frame time
+    AVRational time_base = impl_->fmt_ctx_->streams[impl_->video_stream_idx_]->time_base;
+    int64_t seek_ts = (known_frame_ms - 50) * 1000;  // 50ms before
+    int64_t seek_target_ts = av_rescale_q(seek_ts, AV_TIME_BASE_Q, time_base);
+
+    int ret = av_seek_frame(impl_->fmt_ctx_, impl_->video_stream_idx_, seek_target_ts, AVSEEK_FLAG_BACKWARD);
+    if (ret < 0) return false;
+
+    avcodec_flush_buffers(impl_->codec_ctx_);
+    impl_->eof_ = false;
+
+    while (true) {
+        ret = av_read_frame(impl_->fmt_ctx_, impl_->pkt_);
+        if (ret < 0) {
+            if (ret == AVERROR_EOF) {
+                impl_->eof_ = true;
+                break;
+            }
+            return false;
+        }
+
+        if (impl_->pkt_->stream_index != impl_->video_stream_idx_) {
+            av_packet_unref(impl_->pkt_);
+            continue;
+        }
+
+        ret = avcodec_send_packet(impl_->codec_ctx_, impl_->pkt_);
+        av_packet_unref(impl_->pkt_);
+
+        if (ret < 0 && ret != AVERROR(EAGAIN)) {
+            return false;
+        }
+
+        while (true) {
+            ret = avcodec_receive_frame(impl_->codec_ctx_, impl_->frame_);
+            if (ret == AVERROR(EAGAIN)) {
+                break;
+            } else if (ret == AVERROR_EOF || ret < 0) {
+                break;
+            }
+
+            int64_t frame_pts_ms = impl_->calculate_pts();
+
+            if (frame_pts_ms >= target_ms) {
+                return true;
+            }
+
+            impl_->current_pts_ms_ = frame_pts_ms;
+            impl_->has_pending_frame_ = true;
+        }
+    }
+
+    return true;
 }
 
 uint32_t HardwareDecoder::get_texture_id() const {

@@ -13,6 +13,8 @@ class ColorKey(StrEnum):
 
     # 背景色
     BG_BASE = "bg_base"
+    BG_SECONDARY = "bg_secondary"
+    BG_TERTIARY = "bg_tertiary"
     BG_TIMELINE = "bg_timeline"
     BG_TRACK_CONTROLS = "bg_track_controls"
     BG_TRACK_ALT = "bg_track_alt"
@@ -22,6 +24,12 @@ class ColorKey(StrEnum):
     # 文字色
     TEXT_PRIMARY = "text_primary"
     TEXT_SECONDARY = "text_secondary"
+
+    # 边框色
+    BORDER = "border"
+
+    # 强调色
+    ACCENT = "accent"
 
     # Chart 图表色
     CHART_BG = "chart_bg"
@@ -36,6 +44,8 @@ class ColorKey(StrEnum):
 _COLOR_DEFINITIONS: dict[ColorKey, QColor | tuple[QColor, QColor]] = {
     # 背景色 - 暗色: #1e1e1e, 亮色: #f3f3f3
     ColorKey.BG_BASE: (QColor(30, 30, 30), QColor(243, 243, 243)),
+    ColorKey.BG_SECONDARY: (QColor(38, 38, 38), QColor(250, 250, 250)),
+    ColorKey.BG_TERTIARY: (QColor(45, 45, 45), QColor(240, 240, 240)),
     ColorKey.BG_TIMELINE: (QColor(30, 30, 30), QColor(243, 243, 243)),
     ColorKey.BG_TRACK_CONTROLS: (QColor(30, 30, 30), QColor(243, 243, 243)),
     ColorKey.BG_TRACK_ALT: (QColor(40, 40, 40), QColor(238, 238, 238)),
@@ -44,6 +54,10 @@ _COLOR_DEFINITIONS: dict[ColorKey, QColor | tuple[QColor, QColor]] = {
     # 文字色
     ColorKey.TEXT_PRIMARY: (QColor(224, 224, 224), QColor(32, 32, 32)),
     ColorKey.TEXT_SECONDARY: (QColor(136, 136, 136), QColor(96, 96, 96)),
+    # 边框色
+    ColorKey.BORDER: (QColor(60, 60, 60), QColor(200, 200, 200)),
+    # 强调色
+    ColorKey.ACCENT: QColor(0, 120, 212),  # 固有色：主题蓝
     # Chart 图表色
     ColorKey.CHART_BG: (QColor(35, 35, 35), QColor(255, 255, 255)),
     ColorKey.CHART_GRID: (QColor(50, 50, 50), QColor(230, 230, 230)),

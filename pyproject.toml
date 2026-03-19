@@ -37,6 +37,7 @@ dependencies = [
 dev = [
     "ruff>=0.1.0",
     "pybind11>=2.11.0",
+    "win11toast>=0.35",
 ]
 
 [project.scripts]

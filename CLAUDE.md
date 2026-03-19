@@ -36,3 +36,8 @@ python build_native.py
 | HighlightSplitter | 悬浮高亮分割器 |
 | ResizableContainer | 可拖动调整大小的容器 |
 | create_tool_button | 创建工具按钮 (修复字体警告) |
+
+## 回复完成通知
+
+**重要, 每次响应用户请求后，必须在回复结束前执行以下命令发送通知:**
+`python notify.py "[简短标题]" "[关键结论/状态]"`

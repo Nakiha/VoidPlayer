@@ -2,117 +2,228 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#include <dbghelp.h>
 #include <cstdio>
-#include <ctime>
-#include <string>
-
-#pragma comment(lib, "dbghelp.lib")
+#include <cstring>
 
 namespace voidview {
 
+// 异步安全的字符串长度
+inline size_t SafeStrLen(const char* s) {
+    size_t len = 0;
+    while (s && s[len]) ++len;
+    return len;
+}
+
+// 异步安全的整数转十六进制字符串
+inline char* SafeU64ToHex(char* buf, size_t bufSize, unsigned __int64 val) {
+    static const char hex[] = "0123456789ABCDEF";
+    if (bufSize < 3) return buf;
+
+    buf[0] = '0';
+    buf[1] = 'x';
+
+    // 从高位开始，找到第一个非零或确定最小位数
+    int startNibble = 60;
+    while (startNibble > 0 && ((val >> startNibble) & 0xF) == 0) {
+        startNibble -= 4;
+    }
+    if (startNibble < 0) startNibble = 0;
+
+    size_t pos = 2;
+    for (int i = startNibble; i >= 0 && pos < bufSize - 1; i -= 4) {
+        buf[pos++] = hex[(val >> i) & 0xF];
+    }
+    buf[pos] = '\0';
+    return buf;
+}
+
+// 异步安全的整数转十进制字符串
+inline char* SafeU32ToDec(char* buf, size_t bufSize, unsigned int val) {
+    if (bufSize < 2) { buf[0] = '\0'; return buf; }
+
+    char tmp[12];
+    int pos = 0;
+    if (val == 0) {
+        tmp[pos++] = '0';
+    } else {
+        while (val > 0 && pos < 11) {
+            tmp[pos++] = '0' + (val % 10);
+            val /= 10;
+        }
+    }
+
+    size_t outPos = 0;
+    while (pos > 0 && outPos < bufSize - 1) {
+        buf[outPos++] = tmp[--pos];
+    }
+    buf[outPos] = '\0';
+    return buf;
+}
+
+// 异步安全的写入
+inline void SafeWrite(HANDLE hFile, const char* str) {
+    DWORD written;
+    WriteFile(hFile, str, static_cast<DWORD>(SafeStrLen(str)), &written, nullptr);
+}
+
+inline void SafeWrite(HANDLE hFile, char ch) {
+    DWORD written;
+    WriteFile(hFile, &ch, 1, &written, nullptr);
+}
+
 inline LONG WINAPI CrashHandler(EXCEPTION_POINTERS* exc) {
-    // 获取当前时间
-    time_t now = time(nullptr);
-    struct tm* t = localtime(&now);
-    char time_buf[64];
-    strftime(time_buf, sizeof(time_buf), "%Y%m%d_%H%M%S", t);
+    // 获取时间 - 使用 Windows API，异步安全
+    SYSTEMTIME st;
+    GetLocalTime(&st);
 
-    // 生成崩溃日志文件名
-    std::string crash_file = "crash_" + std::string(time_buf) + ".log";
+    // 生成文件名
+    char crash_file[MAX_PATH];
+    {
+        char year[8], month[4], day[4], hour[4], minute[4], second[4];
+        SafeU32ToDec(year, sizeof(year), st.wYear);
+        SafeU32ToDec(month, sizeof(month), st.wMonth);
+        SafeU32ToDec(day, sizeof(day), st.wDay);
+        SafeU32ToDec(hour, sizeof(hour), st.wHour);
+        SafeU32ToDec(minute, sizeof(minute), st.wMinute);
+        SafeU32ToDec(second, sizeof(second), st.wSecond);
 
-    FILE* f = fopen(crash_file.c_str(), "w");
-    if (f) {
-        fprintf(f, "=== VoidView Native Crash Report ===\n");
-        fprintf(f, "Time: %s\n", time_buf);
-        fprintf(f, "Exception Code: 0x%08X\n", exc->ExceptionRecord->ExceptionCode);
-        fprintf(f, "Exception Address: 0x%p\n", exc->ExceptionRecord->ExceptionAddress);
-        fprintf(f, "Exception Flags: 0x%08X\n", exc->ExceptionRecord->ExceptionFlags);
+        // 补零
+        char month2[4] = {0}, day2[4] = {0}, hour2[4] = {0}, minute2[4] = {0}, second2[4] = {0};
+        if (st.wMonth < 10) { month2[0] = '0'; month2[1] = month[0]; }
+        else { month2[0] = month[0]; month2[1] = month[1]; }
+        if (st.wDay < 10) { day2[0] = '0'; day2[1] = day[0]; }
+        else { day2[0] = day[0]; day2[1] = day[1]; }
+        if (st.wHour < 10) { hour2[0] = '0'; hour2[1] = hour[0]; }
+        else { hour2[0] = hour[0]; hour2[1] = hour[1]; }
+        if (st.wMinute < 10) { minute2[0] = '0'; minute2[1] = minute[0]; }
+        else { minute2[0] = minute[0]; minute2[1] = minute[1]; }
+        if (st.wSecond < 10) { second2[0] = '0'; second2[1] = second[0]; }
+        else { second2[0] = second[0]; second2[1] = second[1]; }
+
+        // 拼接: crash_YYYYMMDD_HHMMSS.log
+        char* p = crash_file;
+        const char* prefix = "crash_";
+        while (*prefix) *p++ = *prefix++;
+        const char* py = year; while (*py) *p++ = *py++;
+        const char* pm = month2; while (*pm) *p++ = *pm++;
+        const char* pd = day2; while (*pd) *p++ = *pd++;
+        *p++ = '_';
+        const char* ph = hour2; while (*ph) *p++ = *ph++;
+        const char* pmin = minute2; while (*pmin) *p++ = *pmin++;
+        const char* ps = second2; while (*ps) *p++ = *ps++;
+        const char* suffix = ".log";
+        while (*suffix) *p++ = *suffix++;
+        *p = '\0';
+    }
+
+    // 使用 CreateFileW 而非 fopen
+    // 需要转换到宽字符，但 MultiByteToWideChar 不安全
+    // 直接用 ASCII 版本的 CreateFileA
+    HANDLE hFile = CreateFileA(
+        crash_file,
+        GENERIC_WRITE,
+        0,
+        nullptr,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr
+    );
+
+    if (hFile != INVALID_HANDLE_VALUE) {
+        char hexBuf[24];
+        char decBuf[16];
+
+        SafeWrite(hFile, "=== VoidView Native Crash Report ===\n");
+        SafeWrite(hFile, "Time: ");
+        SafeWrite(hFile, crash_file + 6);  // 跳过 "crash_" 前缀
+        SafeWrite(hFile, "\n");
+
+        SafeWrite(hFile, "Exception Code: ");
+        SafeWrite(hFile, SafeU64ToHex(hexBuf, sizeof(hexBuf), exc->ExceptionRecord->ExceptionCode));
+        SafeWrite(hFile, "\n");
+
+        SafeWrite(hFile, "Exception Address: ");
+        SafeWrite(hFile, SafeU64ToHex(hexBuf, sizeof(hexBuf), reinterpret_cast<unsigned __int64>(exc->ExceptionRecord->ExceptionAddress)));
+        SafeWrite(hFile, "\n");
+
+        SafeWrite(hFile, "Exception Flags: ");
+        SafeWrite(hFile, SafeU64ToHex(hexBuf, sizeof(hexBuf), exc->ExceptionRecord->ExceptionFlags));
+        SafeWrite(hFile, "\n");
 
         // 解释常见异常代码
         const char* exc_name = "Unknown";
-        switch (exc->ExceptionRecord->ExceptionCode) {
-            case EXCEPTION_ACCESS_VIOLATION:
-                exc_name = "ACCESS_VIOLATION";
-                // 尝试读取违规地址
-                if (exc->ExceptionRecord->NumberParameters >= 2) {
-                    ULONG_PTR* params = exc->ExceptionRecord->ExceptionInformation;
-                    fprintf(f, "  Access Type: %s\n",
-                        params[0] == 0 ? "Read" :
-                        params[0] == 1 ? "Write" :
-                        params[0] == 8 ? "Execute" : "Unknown");
-                    fprintf(f, "  Access Address: 0x%p\n", (void*)params[1]);
-                }
-                break;
-            case EXCEPTION_STACK_OVERFLOW: exc_name = "STACK_OVERFLOW"; break;
-            case EXCEPTION_INT_DIVIDE_BY_ZERO: exc_name = "INT_DIVIDE_BY_ZERO"; break;
-            case EXCEPTION_PRIV_INSTRUCTION: exc_name = "PRIV_INSTRUCTION"; break;
-            case EXCEPTION_ILLEGAL_INSTRUCTION: exc_name = "ILLEGAL_INSTRUCTION"; break;
+        DWORD code = exc->ExceptionRecord->ExceptionCode;
+
+        if (code == EXCEPTION_ACCESS_VIOLATION) {
+            exc_name = "ACCESS_VIOLATION";
+        } else if (code == EXCEPTION_STACK_OVERFLOW) {
+            exc_name = "STACK_OVERFLOW";
+        } else if (code == EXCEPTION_INT_DIVIDE_BY_ZERO) {
+            exc_name = "INT_DIVIDE_BY_ZERO";
+        } else if (code == EXCEPTION_PRIV_INSTRUCTION) {
+            exc_name = "PRIV_INSTRUCTION";
+        } else if (code == EXCEPTION_ILLEGAL_INSTRUCTION) {
+            exc_name = "ILLEGAL_INSTRUCTION";
         }
-        fprintf(f, "Exception Name: %s\n", exc_name);
+
+        SafeWrite(hFile, "Exception Name: ");
+        SafeWrite(hFile, exc_name);
+        SafeWrite(hFile, "\n");
+
+        // ACCESS_VIOLATION 额外信息
+        if (code == EXCEPTION_ACCESS_VIOLATION && exc->ExceptionRecord->NumberParameters >= 2) {
+            ULONG_PTR* params = exc->ExceptionRecord->ExceptionInformation;
+            SafeWrite(hFile, "  Access Type: ");
+            if (params[0] == 0) SafeWrite(hFile, "Read");
+            else if (params[0] == 1) SafeWrite(hFile, "Write");
+            else if (params[0] == 8) SafeWrite(hFile, "Execute");
+            else SafeWrite(hFile, "Unknown");
+            SafeWrite(hFile, "\n  Access Address: ");
+            SafeWrite(hFile, SafeU64ToHex(hexBuf, sizeof(hexBuf), params[1]));
+            SafeWrite(hFile, "\n");
+        }
 
         // 寄存器状态 (x64)
 #if defined(_M_X64)
-        fprintf(f, "\n--- Registers (x64) ---\n");
-        fprintf(f, "RAX: 0x%016llX  RBX: 0x%016llX\n", exc->ContextRecord->Rax, exc->ContextRecord->Rbx);
-        fprintf(f, "RCX: 0x%016llX  RDX: 0x%016llX\n", exc->ContextRecord->Rcx, exc->ContextRecord->Rdx);
-        fprintf(f, "RSI: 0x%016llX  RDI: 0x%016llX\n", exc->ContextRecord->Rsi, exc->ContextRecord->Rdi);
-        fprintf(f, "RBP: 0x%016llX  RSP: 0x%016llX\n", exc->ContextRecord->Rbp, exc->ContextRecord->Rsp);
-        fprintf(f, "R8:  0x%016llX  R9:  0x%016llX\n", exc->ContextRecord->R8, exc->ContextRecord->R9);
-        fprintf(f, "R10: 0x%016llX  R11: 0x%016llX\n", exc->ContextRecord->R10, exc->ContextRecord->R11);
-        fprintf(f, "R12: 0x%016llX  R13: 0x%016llX\n", exc->ContextRecord->R12, exc->ContextRecord->R13);
-        fprintf(f, "R14: 0x%016llX  R15: 0x%016llX\n", exc->ContextRecord->R14, exc->ContextRecord->R15);
-        fprintf(f, "RIP: 0x%016llX\n", exc->ContextRecord->Rip);
+        SafeWrite(hFile, "\n--- Registers (x64) ---\n");
+
+        auto writeReg = [&](const char* name, unsigned __int64 val) {
+            SafeWrite(hFile, name);
+            SafeWrite(hFile, ": ");
+            SafeWrite(hFile, SafeU64ToHex(hexBuf, sizeof(hexBuf), val));
+            SafeWrite(hFile, "\n");
+        };
+
+        writeReg("RAX", exc->ContextRecord->Rax);
+        writeReg("RBX", exc->ContextRecord->Rbx);
+        writeReg("RCX", exc->ContextRecord->Rcx);
+        writeReg("RDX", exc->ContextRecord->Rdx);
+        writeReg("RSI", exc->ContextRecord->Rsi);
+        writeReg("RDI", exc->ContextRecord->Rdi);
+        writeReg("RBP", exc->ContextRecord->Rbp);
+        writeReg("RSP", exc->ContextRecord->Rsp);
+        writeReg("R8 ", exc->ContextRecord->R8);
+        writeReg("R9 ", exc->ContextRecord->R9);
+        writeReg("R10", exc->ContextRecord->R10);
+        writeReg("R11", exc->ContextRecord->R11);
+        writeReg("R12", exc->ContextRecord->R12);
+        writeReg("R13", exc->ContextRecord->R13);
+        writeReg("R14", exc->ContextRecord->R14);
+        writeReg("R15", exc->ContextRecord->R15);
+        writeReg("RIP", exc->ContextRecord->Rip);
 #endif
 
-        // 堆栈跟踪
-        fprintf(f, "\n--- Stack Trace ---\n");
+        SafeWrite(hFile, "\n--- Stack Trace ---\n");
+        SafeWrite(hFile, "(Stack trace disabled in async-safe mode)\n");
 
-        HANDLE process = GetCurrentProcess();
-        HANDLE thread = GetCurrentThread();
+        CloseHandle(hFile);
 
-        // 初始化 DbgHelp
-        SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
-        if (SymInitialize(process, nullptr, TRUE)) {
-            // 捕获堆栈
-            PVOID stack[64];
-            USHORT frames = CaptureStackBackTrace(
-                2,  // 跳过本函数
-                64,
-                stack,
-                nullptr
-            );
-
-            SYMBOL_INFO* symbol = (SYMBOL_INFO*)malloc(sizeof(SYMBOL_INFO) + 256);
-            if (symbol) {
-                symbol->MaxNameLen = 255;
-                symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
-
-                for (USHORT i = 0; i < frames; i++) {
-                    DWORD64 address = (DWORD64)stack[i];
-
-                    fprintf(f, "[%2d] 0x%016llX ", i, address);
-
-                    if (SymFromAddr(process, address, 0, symbol)) {
-                        fprintf(f, "%s\n", symbol->Name);
-                    } else {
-                        fprintf(f, "(unknown)\n");
-                    }
-                }
-                free(symbol);
-            }
-
-            SymCleanup(process);
-        } else {
-            fprintf(f, "(SymInitialize failed, no stack trace)\n");
-        }
-
-        fclose(f);
-
-        // 也输出到 stderr（如果控制台可见）
-        fprintf(stderr, "\n*** CRASH: %s at 0x%p ***\n", exc_name, exc->ExceptionRecord->ExceptionAddress);
-        fprintf(stderr, "*** See %s for details ***\n", crash_file.c_str());
-        fflush(stderr);
+        // 输出到 Debug 输出
+        OutputDebugStringA("\n*** CRASH: ");
+        OutputDebugStringA(exc_name);
+        OutputDebugStringA(" ***\nSee ");
+        OutputDebugStringA(crash_file);
+        OutputDebugStringA(" for details\n");
     }
 
     return EXCEPTION_CONTINUE_SEARCH;

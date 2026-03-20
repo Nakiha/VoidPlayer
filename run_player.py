@@ -1,14 +1,9 @@
 """
 VoidPlayer 播放器启动脚本
-
-用法:
-    python run_player.py                    # 默认模式 (包含调试功能)
-    python run_player.py --profile perf     # 性能模式 (禁用调试功能)
-    python run_player.py --profile debug    # 调试模式 (完整调试功能)
 """
 
 # === 必须在 import PySide6 之前设置 ===
-# 使用 ANGLE 后端 (OpenGL ES -> Direct3D)，避免 NVIDIA 游戏覆盖弹窗
+# 使用 ANGLE 后端 (OpenGL ES -> Direct3D)
 import os
 os.environ['QT_OPENGL'] = 'angle'
 
@@ -42,6 +37,35 @@ def parse_args():
             raise argparse.ArgumentTypeError(f"无效的 profile: {value} (可选: perf, debug)")
         return val
 
+    def log_level_type(value):
+        """解析日志级别，支持键值对格式: DEBUG 或 default=DEBUG,ffmpeg=INFO"""
+        valid_levels = ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        result = {}
+
+        # 检查是否是键值对格式
+        if "=" in value:
+            pairs = value.split(",")
+            for pair in pairs:
+                if "=" in pair:
+                    key, val = pair.split("=", 1)
+                    key = key.strip().lower()
+                    val = val.strip().upper()
+                    if key not in ("default", "ffmpeg"):
+                        raise argparse.ArgumentTypeError(f"无效的日志类型: {key} (可选: default, ffmpeg)")
+                    if val not in valid_levels:
+                        raise argparse.ArgumentTypeError(f"无效的日志级别: {val} (可选: {', '.join(valid_levels)})")
+                    result[key] = val
+                else:
+                    raise argparse.ArgumentTypeError(f"无效的格式: {pair} (期望: key=value)")
+        else:
+            # 简单格式，仅设置 default
+            val = value.upper()
+            if val not in valid_levels:
+                raise argparse.ArgumentTypeError(f"无效的日志级别: {val} (可选: {', '.join(valid_levels)})")
+            result["default"] = val
+
+        return result
+
     parser.add_argument(
         "--profile", "-p",
         type=profile_type,
@@ -63,6 +87,18 @@ def parse_args():
         "--auto-play",
         action="store_true",
         help="启动完成后自动开始播放"
+    )
+    parser.add_argument(
+        "--log-level", "-l",
+        type=log_level_type,
+        default={},
+        help=(
+            "日志级别，支持格式: "
+            "DEBUG (仅 default), "
+            "default=DEBUG, "
+            "default=DEBUG,ffmpeg=INFO (分别设置). "
+            "默认: default=INFO, ffmpeg=INFO"
+        )
     )
     return parser.parse_args()
 
@@ -106,7 +142,10 @@ def main():
 
     # 初始化日志系统 (开发模式使用项目目录下的 logs 文件夹)
     # 设置 dev_mode=False 使用用户数据目录
-    setup_logging(app_name="voidplayer", dev_mode=True)
+    log_levels = args.log_level
+    default_level = log_levels.get("default", "INFO")
+    ffmpeg_level = log_levels.get("ffmpeg", "INFO")
+    setup_logging(app_name="voidplayer", dev_mode=True, level=default_level, ffmpeg_level=ffmpeg_level)
 
     # 设置全局配置
     profile_map = {

@@ -12,12 +12,12 @@
 namespace voidview {
 
 // 日志格式常量
-// 与 Python loguru 格式对齐: time | level | source - message
-// native 模块使用 [native] 作为 source 标识
+// 与 Python loguru 格式对齐: time | level | file:line - message
+// spdlog %s 是源文件名，%# 是行号，%e 是毫秒
 inline constexpr const char* CONSOLE_PATTERN =
-    "%^%Y-%m-%d %H:%M:%S|%8l|[native] - %v%$";  // 带颜色
+    "%^%Y-%m-%d %H:%M:%S.%e|%8l|[%s:%#] - %v%$";  // 带颜色
 inline constexpr const char* FILE_PATTERN =
-    "%Y-%m-%d %H:%M:%S|%8l|[native] - %v";       // 不带颜色
+    "%Y-%m-%d %H:%M:%S.%e|%8l|[%s:%#] - %v";       // 不带颜色
 
 // 默认轮转配置 (与 Python loguru 对齐)
 inline constexpr size_t DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024;  // 10 MB
@@ -74,6 +74,14 @@ inline int get_log_level() {
     return from_spdlog_level(get_logger()->level());
 }
 
+// 便捷宏 - 使用 source_loc 传递位置信息，让 pattern 中的 %s 和 %# 生效
+#define VV_TRACE(...)    voidview::get_logger()->log(spdlog::source_loc{__FILE__, __LINE__, SPDLOG_FUNCTION}, spdlog::level::trace, __VA_ARGS__)
+#define VV_DEBUG(...)    voidview::get_logger()->log(spdlog::source_loc{__FILE__, __LINE__, SPDLOG_FUNCTION}, spdlog::level::debug, __VA_ARGS__)
+#define VV_INFO(...)     voidview::get_logger()->log(spdlog::source_loc{__FILE__, __LINE__, SPDLOG_FUNCTION}, spdlog::level::info, __VA_ARGS__)
+#define VV_WARN(...)     voidview::get_logger()->log(spdlog::source_loc{__FILE__, __LINE__, SPDLOG_FUNCTION}, spdlog::level::warn, __VA_ARGS__)
+#define VV_ERROR(...)    voidview::get_logger()->log(spdlog::source_loc{__FILE__, __LINE__, SPDLOG_FUNCTION}, spdlog::level::err, __VA_ARGS__)
+#define VV_CRITICAL(...) voidview::get_logger()->log(spdlog::source_loc{__FILE__, __LINE__, SPDLOG_FUNCTION}, spdlog::level::critical, __VA_ARGS__)
+
 // 添加文件落盘 sink (供 Python 调用)
 // log_path: 日志文件完整路径
 // max_size: 最大文件大小 (字节)，默认 10MB
@@ -90,21 +98,12 @@ inline void add_file_sink(
         file_sink->set_pattern(FILE_PATTERN);
         file_sink->set_level(spdlog::level::trace);  // 文件记录所有级别
         get_logger()->sinks().push_back(file_sink);
-        get_logger()->info(
-            "Native log sink added: path={}, max_size={}MB, max_files={}",
-            log_path, max_size / (1024 * 1024), max_files
-        );
+        VV_INFO("Native log sink added: path={}, max_size={}MB, max_files={}, level={}",
+            log_path, max_size / (1024 * 1024), max_files,
+            spdlog::level::to_string_view(get_logger()->level()));
     } catch (const spdlog::spdlog_ex& ex) {
-        get_logger()->error("Failed to add file sink: {}", ex.what());
+        VV_ERROR("Failed to add file sink: {}", ex.what());
     }
 }
-
-// 便捷宏
-#define VV_TRACE(...)    voidview::get_logger()->trace(__VA_ARGS__)
-#define VV_DEBUG(...)    voidview::get_logger()->debug(__VA_ARGS__)
-#define VV_INFO(...)     voidview::get_logger()->info(__VA_ARGS__)
-#define VV_WARN(...)     voidview::get_logger()->warn(__VA_ARGS__)
-#define VV_ERROR(...)    voidview::get_logger()->error(__VA_ARGS__)
-#define VV_CRITICAL(...) voidview::get_logger()->critical(__VA_ARGS__)
 
 } // namespace voidview

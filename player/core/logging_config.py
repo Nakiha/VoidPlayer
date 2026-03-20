@@ -81,6 +81,7 @@ def setup_logging(
     app_name: str = "voidplayer",
     log_dir: Path | None = None,
     level: str = "INFO",
+    ffmpeg_level: str = "INFO",
     rotation: str = "10 MB",
     retention: str = "7 days",
     compression: str = "zip",
@@ -92,7 +93,8 @@ def setup_logging(
     Args:
         app_name: 应用名称，用于日志文件名
         log_dir: 日志目录，None 时自动选择
-        level: 日志级别
+        level: 默认日志级别
+        ffmpeg_level: FFmpeg 日志级别
         rotation: 轮转大小/时间，如 "10 MB", "1 day", "00:00"
         retention: 保留时间，如 "7 days", "1 week"
         compression: 压缩格式，如 "zip", "gz"，空字符串表示不压缩
@@ -152,7 +154,7 @@ def setup_logging(
 
     # 控制台输出格式
     console_format = (
-        "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+        "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
         "<level>{level: <8}</level> | "
         "<cyan>{extra[short_file]}</cyan>:<cyan>{extra[line]}</cyan> - "
         "<level>{message}</level>"
@@ -160,7 +162,7 @@ def setup_logging(
 
     # 文件输出格式 (不带颜色)
     file_format = (
-        "{time:YYYY-MM-DD HH:mm:ss} | "
+        "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
         "{level: <8} | "
         "{extra[short_file]}:{extra[line]} - "
         "{message}"
@@ -191,8 +193,8 @@ def setup_logging(
 
     # 打印 loguru 配置信息
     logger.info(
-        f"loguru 日志配置: path={log_file}, rotation={rotation}, "
-        f"retention={retention}, compression={compression or 'none'}"
+        f"loguru 日志配置: path={log_file}, level={level}, "
+        f"rotation={rotation}, retention={retention}, compression={compression or 'none'}"
     )
 
     # 安装全局异常钩子
@@ -215,12 +217,12 @@ def setup_logging(
     _setup_qt_handler()
 
     # 配置 native 模块日志
-    _setup_native_logging(log_dir, app_name, level)
+    _setup_native_logging(log_dir, app_name, level, ffmpeg_level)
 
     return log_dir
 
 
-def _setup_native_logging(log_dir: Path, app_name: str, level: str):
+def _setup_native_logging(log_dir: Path, app_name: str, level: str, ffmpeg_level: str):
     """配置 native 模块日志"""
     try:
         from player.native import voidview_native
@@ -236,9 +238,10 @@ def _setup_native_logging(log_dir: Path, app_name: str, level: str):
             "CRITICAL": 5,
         }
         native_level = level_map.get(level.upper(), 2)
+        ffmpeg_native_level = level_map.get(ffmpeg_level.upper(), 2)
 
         # 初始化 native 日志系统
-        voidview_native.init_logging(native_level)
+        voidview_native.init_logging(native_level, ffmpeg_native_level)
 
         # 设置 native 日志文件
         native_log_path = log_dir / f"{app_name}_native.log"

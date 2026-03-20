@@ -58,7 +58,7 @@ static void ffmpeg_log_callback(void* ptr, int level, const char* fmt, va_list v
 }
 
 // 初始化日志系统 (Python 端调用)
-static void init_logging(int level) {
+static void init_logging(int level, int ffmpeg_level) {
     // 设置 voidview 日志级别
     voidview::set_log_level(level);
 
@@ -66,17 +66,17 @@ static void init_logging(int level) {
     av_log_set_callback(ffmpeg_log_callback);
 
     // 映射 Python 日志级别到 FFmpeg
-    int ffmpeg_level = AV_LOG_INFO;
-    switch (level) {
-        case 0: ffmpeg_level = AV_LOG_TRACE; break;    // TRACE
-        case 1: ffmpeg_level = AV_LOG_DEBUG; break;    // DEBUG
-        case 2: ffmpeg_level = AV_LOG_INFO; break;     // INFO
-        case 3: ffmpeg_level = AV_LOG_WARNING; break;  // WARN
-        case 4: ffmpeg_level = AV_LOG_ERROR; break;    // ERROR
-        case 5: ffmpeg_level = AV_LOG_FATAL; break;    // CRITICAL
-        case 6: ffmpeg_level = AV_LOG_QUIET; break;    // OFF
+    int av_level = AV_LOG_INFO;
+    switch (ffmpeg_level) {
+        case 0: av_level = AV_LOG_TRACE; break;    // TRACE
+        case 1: av_level = AV_LOG_DEBUG; break;    // DEBUG
+        case 2: av_level = AV_LOG_INFO; break;     // INFO
+        case 3: av_level = AV_LOG_WARNING; break;  // WARN
+        case 4: av_level = AV_LOG_ERROR; break;    // ERROR
+        case 5: av_level = AV_LOG_FATAL; break;    // CRITICAL
+        case 6: av_level = AV_LOG_QUIET; break;    // OFF
     }
-    av_log_set_level(ffmpeg_level);
+    av_log_set_level(av_level);
 }
 
 PYBIND11_MODULE(voidview_native, m) {
@@ -113,7 +113,8 @@ PYBIND11_MODULE(voidview_native, m) {
 
     m.def("init_logging", &init_logging,
           py::arg("level") = 2,
-          "Initialize logging system with specified level (also sets FFmpeg log callback)");
+          py::arg("ffmpeg_level") = 2,
+          "Initialize logging system with specified levels (also sets FFmpeg log callback)");
 
     m.def("add_file_sink", &voidview::add_file_sink,
           py::arg("log_path"),
@@ -220,21 +221,30 @@ PYBIND11_MODULE(voidview_native, m) {
              py::arg("decoder"), py::arg("track_index"),
              "Create a background decode worker for the given decoder")
 
-        .def("set_callback", [](voidview::DecodeWorker& self, py::function callback) {
-            // 包装 Python 回调，需要 acquire GIL
-            self.set_callback([callback](int track_idx, bool success, int64_t pts_ms) {
-                // 回调从 C++ 工作线程调用，需要获取 GIL
-                py::gil_scoped_acquire gil;
-                try {
-                    callback(track_idx, success, pts_ms);
-                } catch (py::error_already_set& e) {
-                    VV_ERROR("DecodeWorker Python callback error: {}", e.what());
-                } catch (const std::exception& e) {
-                    VV_ERROR("DecodeWorker callback exception: {}", e.what());
-                }
-            });
+        .def("set_callback", [](voidview::DecodeWorker& self, std::optional<py::function> callback) {
+            if (callback.has_value() && callback.value().is_none()) {
+                // 清除回调
+                self.set_callback(nullptr);
+            } else if (callback.has_value()) {
+                // 包装 Python 回调，需要 acquire GIL
+                py::function cb = callback.value();
+                self.set_callback([cb](int track_idx, bool success, int64_t pts_ms) {
+                    // 回调从 C++ 工作线程调用，需要获取 GIL
+                    py::gil_scoped_acquire gil;
+                    try {
+                        cb(track_idx, success, pts_ms);
+                    } catch (py::error_already_set& e) {
+                        VV_ERROR("DecodeWorker Python callback error: {}", e.what());
+                    } catch (const std::exception& e) {
+                        VV_ERROR("DecodeWorker callback exception: {}", e.what());
+                    }
+                });
+            } else {
+                // 清除回调
+                self.set_callback(nullptr);
+            }
         }, py::arg("callback"),
-           "Set callback for decode completion (called from worker thread)")
+           "Set callback for decode completion (called from worker thread), pass None to clear")
 
         .def("seek_keyframe", &voidview::DecodeWorker::seek_keyframe,
              py::arg("timestamp_ms"),

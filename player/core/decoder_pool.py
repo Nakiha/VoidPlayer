@@ -173,7 +173,10 @@ class DecoderPool(QObject):
         if track:
             # 停止并销毁 DecodeWorker
             if track.worker:
+                # 先清除回调，防止线程在销毁过程中调用已销毁的对象
+                track.worker.set_callback(None)
                 track.worker.stop()
+                # DecodeWorker 析构函数会 join 线程，确保线程完全退出
                 track.worker = None
             # 解码器会在 track 删除时自动清理
             track.decoder = None
@@ -370,15 +373,19 @@ class DecoderPool(QObject):
 
         通过 Qt 信号转发到主线程处理
         """
-        # 使用 QMetaObject.invokeMethod 转发到主线程
-        QMetaObject.invokeMethod(
-            self,
-            "_handle_decode_result",
-            Qt.ConnectionType.QueuedConnection,
-            Q_ARG(int, track_index),
-            Q_ARG(bool, success),
-            Q_ARG(int, pts_ms)
-        )
+        try:
+            # 使用 QMetaObject.invokeMethod 转发到主线程
+            QMetaObject.invokeMethod(
+                self,
+                "_handle_decode_result",
+                Qt.ConnectionType.QueuedConnection,
+                Q_ARG(int, track_index),
+                Q_ARG(bool, success),
+                Q_ARG(int, pts_ms)
+            )
+        except RuntimeError:
+            # 对象已被销毁 (窗口关闭时)，忽略回调
+            pass
 
     @Slot(int, bool, int)
     def _handle_decode_result(self, track_index: int, success: bool, pts_ms: int):
@@ -533,6 +540,8 @@ class DecoderPool(QObject):
         # 停止所有 DecodeWorker
         for track in self._tracks:
             if track and track.worker:
+                # 先清除回调，防止线程在销毁过程中调用已销毁的对象
+                track.worker.set_callback(None)
                 track.worker.stop()
 
         self._tracks = [None] * self.MAX_TRACKS

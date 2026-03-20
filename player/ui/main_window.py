@@ -392,7 +392,7 @@ class MainWindow(QWidget):
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.show()  # 非阻塞
 
-            self._logger.warning(f"[PerfWarning] {message}")
+            get_logger().warning(f"[PerfWarning] {message}")
 
     def _on_gl_initialized(self):
         for i in range(self._track_manager.count()):
@@ -530,3 +530,15 @@ class MainWindow(QWidget):
 
     def load_sources(self, sources: list[str]):
         self._track_manager.set_sources(sources)
+
+    def closeEvent(self, event):
+        """窗口关闭时清理资源"""
+        # 1. 停止播放
+        self._playback_controller.pause()
+        self._diagnostics_manager.stop()
+
+        # 2. 清理解码器 (停止所有 DecodeWorker 线程)
+        self._decoder_pool.clear()
+
+        # 3. 接受关闭事件
+        event.accept()

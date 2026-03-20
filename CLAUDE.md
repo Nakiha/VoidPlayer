@@ -53,5 +53,10 @@ python run_player.py --mock tests/mock/basic.vpmock
 
 ## 回复完成通知
 
-**重要, 每次响应用户请求后，必须在回复结束前执行以下命令发送通知:**
-`python notify.py "[简短标题]" "[关键结论/状态]"`
+**重要, 每次响应用户请求后，必须按以下步骤发送通知:**
+
+1. 使用 Write 工具写入 `notify_content.json`:
+   ```json
+   {"title": "[简短标题]", "message": "[关键结论/状态]"}
+   ```
+2. 执行 `python notify.py` (命令固定，可加入白名单)

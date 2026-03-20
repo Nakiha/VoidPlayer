@@ -89,6 +89,17 @@ def parse_args():
         help="启动完成后自动开始播放"
     )
     parser.add_argument(
+        "--mock", "-m",
+        type=str,
+        default=None,
+        help="运行自动化测试脚本 (.vpmock 文件)"
+    )
+    parser.add_argument(
+        "--list-actions",
+        action="store_true",
+        help="列出所有可用动作"
+    )
+    parser.add_argument(
         "--log-level", "-l",
         type=log_level_type,
         default={},
@@ -178,14 +189,19 @@ def main():
         logger.warning(f"获取 native 模块版本失败: {e}")
 
     try:
-        _run_app(args.input_files, args.auto_play, sys.argv[1:])
+        _run_app(args.input_files, args.auto_play, sys.argv[1:], args.mock, args.list_actions)
     except KeyboardInterrupt:
         logger.info("用户中断 (Ctrl+C)，程序退出")
         sys.exit(0)
 
 
-def _run_app(input_files: list[str], auto_play: bool, launch_args: list[str]):
+def _run_app(input_files: list[str], auto_play: bool, launch_args: list[str], mock_script: str = None, list_actions: bool = False):
     """运行 Qt 应用"""
+
+    # 列出所有动作并退出
+    if list_actions:
+        _list_available_actions()
+        return
 
     # === 硬件加速和高刷适配配置 (必须在创建 QApplication 之前) ===
 
@@ -232,10 +248,41 @@ def _run_app(input_files: list[str], auto_play: bool, launch_args: list[str]):
     setTheme(Theme.AUTO)
 
     # 创建主窗口
-    window = MainWindow(initial_files=input_files, auto_play=auto_play, launch_args=launch_args)
+    window = MainWindow(
+        initial_files=input_files,
+        auto_play=auto_play,
+        launch_args=launch_args,
+        mock_script=mock_script,
+    )
     window.show()
 
     sys.exit(app.exec())
+
+
+def _list_available_actions():
+    """列出所有可用动作 (从 action_registry 动态读取)"""
+    from player.core.action_types import get_actions_by_category
+    from player.core.action_registry import get_action_metadata
+
+    print("VoidPlayer 可用动作列表:")
+    print("=" * 60)
+
+    actions = get_action_metadata()
+    actions_by_category = get_actions_by_category(actions)
+
+    for category, cat_actions in actions_by_category.items():
+        print(f"\n{category}:")
+        print("-" * 40)
+        for action in cat_actions:
+            print(f"  {action.name:<20} {action.format_params()}")
+            print(f"    {action.description}")
+
+    print("\n" + "=" * 60)
+    print(".vpmock 脚本格式: 时间偏移(秒), 动作名称[, 参数1, 参数2, ...]")
+    print("示例:")
+    print("  1.0, PLAY")
+    print("  3.0, SEEK_TO, 5000")
+    print("  5.0, ADD_TRACK, test/video.mp4")
 
 
 if __name__ == "__main__":

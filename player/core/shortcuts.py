@@ -1,17 +1,20 @@
 """
 ShortcutManager - 全局快捷键管理
-统一管理所有键盘快捷键，避免冲突
+统一管理所有键盘快捷键，作为 ActionDispatcher 的触发源
 """
 import time
 from enum import Enum, auto
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
 from PySide6.QtCore import QObject, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QWidget, QApplication
 
+if TYPE_CHECKING:
+    from .action_dispatcher import ActionDispatcher
+
 
 class ShortcutAction(Enum):
-    """快捷键动作枚举"""
+    """快捷键动作枚举 - 映射到 ActionDispatcher 的动作名称"""
     # 播放控制
     PLAY_PAUSE = auto()
     PREV_FRAME = auto()
@@ -42,47 +45,72 @@ class ShortcutAction(Enum):
     TOGGLE_STATS = auto()
 
 
+# ShortcutAction 到 ActionDispatcher 动作名称的映射
+ACTION_NAME_MAP: dict[ShortcutAction, str] = {
+    ShortcutAction.PLAY_PAUSE: "PLAY_PAUSE",
+    ShortcutAction.PREV_FRAME: "PREV_FRAME",
+    ShortcutAction.NEXT_FRAME: "NEXT_FRAME",
+    ShortcutAction.SEEK_FORWARD: "SEEK_FORWARD",
+    ShortcutAction.SEEK_BACKWARD: "SEEK_BACKWARD",
+    ShortcutAction.TOGGLE_LOOP: "TOGGLE_LOOP",
+    ShortcutAction.TOGGLE_FULLSCREEN: "TOGGLE_FULLSCREEN",
+    ShortcutAction.SPEED_UP: "SPEED_UP",
+    ShortcutAction.SPEED_DOWN: "SPEED_DOWN",
+    ShortcutAction.SPEED_RESET: "SPEED_SET",  # 特殊处理
+    ShortcutAction.ZOOM_IN: "ZOOM_IN",
+    ShortcutAction.ZOOM_OUT: "ZOOM_OUT",
+    ShortcutAction.ZOOM_RESET: "ZOOM_SET",  # 特殊处理
+    ShortcutAction.ADD_MEDIA: "ADD_TRACK",
+    ShortcutAction.NEW_WINDOW: "NEW_WINDOW",
+    ShortcutAction.OPEN_PROJECT: "OPEN_PROJECT",
+    ShortcutAction.SAVE_PROJECT: "SAVE_PROJECT",
+    ShortcutAction.TOGGLE_DEBUG_MONITOR: "TOGGLE_DEBUG_MONITOR",
+    ShortcutAction.TOGGLE_STATS: "TOGGLE_STATS",
+}
+
+
 class ShortcutManager(QObject):
     """
-    快捷键管理器
+    快捷键管理器 - 作为 ActionDispatcher 的触发源
 
     统一管理所有快捷键，支持：
     - 集中定义快捷键绑定
     - 避免快捷键冲突
     - 允许动态启用/禁用快捷键
     - 使用 ApplicationShortcut 上下文确保快捷键始终生效
+    - 触发时通过 ActionDispatcher 分发动作
     """
 
-    # 默认快捷键绑定
-    DEFAULT_BINDINGS: dict[ShortcutAction, tuple[str, str]] = {
+    # 默认快捷键绑定: (快捷键序列, 描述, 默认参数)
+    DEFAULT_BINDINGS: dict[ShortcutAction, tuple[str, str, dict]] = {
         # 播放控制
-        ShortcutAction.PLAY_PAUSE: ("Space", "播放/暂停"),
-        ShortcutAction.PREV_FRAME: ("Left", "上一帧"),
-        ShortcutAction.NEXT_FRAME: ("Right", "下一帧"),
-        ShortcutAction.SEEK_FORWARD: ("Shift+Right", "前进 5 秒"),
-        ShortcutAction.SEEK_BACKWARD: ("Shift+Left", "后退 5 秒"),
-        ShortcutAction.TOGGLE_LOOP: ("L", "切换循环"),
-        ShortcutAction.TOGGLE_FULLSCREEN: ("F", "全屏"),
+        ShortcutAction.PLAY_PAUSE: ("Space", "播放/暂停", {}),
+        ShortcutAction.PREV_FRAME: ("Left", "上一帧", {}),
+        ShortcutAction.NEXT_FRAME: ("Right", "下一帧", {}),
+        ShortcutAction.SEEK_FORWARD: ("Shift+Right", "前进 5 秒", {"delta_ms": 5000}),
+        ShortcutAction.SEEK_BACKWARD: ("Shift+Left", "后退 5 秒", {"delta_ms": 5000}),
+        ShortcutAction.TOGGLE_LOOP: ("L", "切换循环", {}),
+        ShortcutAction.TOGGLE_FULLSCREEN: ("F", "全屏", {}),
 
         # 速度控制
-        ShortcutAction.SPEED_UP: ("]", "加速"),
-        ShortcutAction.SPEED_DOWN: ("[", "减速"),
-        ShortcutAction.SPEED_RESET: ("\\", "重置速度"),
+        ShortcutAction.SPEED_UP: ("]", "加速", {}),
+        ShortcutAction.SPEED_DOWN: ("[", "减速", {}),
+        ShortcutAction.SPEED_RESET: ("\\", "重置速度", {"index": 2}),  # index=2 是 1.0x
 
         # 缩放控制
-        ShortcutAction.ZOOM_IN: ("Ctrl++", "放大"),
-        ShortcutAction.ZOOM_OUT: ("Ctrl+-", "缩小"),
-        ShortcutAction.ZOOM_RESET: ("Ctrl+0", "重置缩放"),
+        ShortcutAction.ZOOM_IN: ("Ctrl++", "放大", {}),
+        ShortcutAction.ZOOM_OUT: ("Ctrl+-", "缩小", {}),
+        ShortcutAction.ZOOM_RESET: ("Ctrl+0", "重置缩放", {"index": 2}),  # index=2 是 100%
 
         # 项目操作
-        ShortcutAction.ADD_MEDIA: ("Ctrl+O", "添加媒体"),
-        ShortcutAction.NEW_WINDOW: ("Ctrl+N", "新窗口"),
-        ShortcutAction.OPEN_PROJECT: ("Ctrl+Shift+O", "打开项目"),
-        ShortcutAction.SAVE_PROJECT: ("Ctrl+S", "保存项目"),
+        ShortcutAction.ADD_MEDIA: ("Ctrl+O", "添加媒体", {}),  # 无参数，触发 resolver
+        ShortcutAction.NEW_WINDOW: ("Ctrl+N", "新窗口", {}),
+        ShortcutAction.OPEN_PROJECT: ("Ctrl+Shift+O", "打开项目", {}),
+        ShortcutAction.SAVE_PROJECT: ("Ctrl+S", "保存项目", {}),
 
         # 其他
-        ShortcutAction.TOGGLE_DEBUG_MONITOR: ("Ctrl+D", "性能监控"),
-        ShortcutAction.TOGGLE_STATS: ("I", "性能统计"),
+        ShortcutAction.TOGGLE_DEBUG_MONITOR: ("Ctrl+D", "性能监控", {}),
+        ShortcutAction.TOGGLE_STATS: ("I", "性能统计", {}),
     }
 
     # 防抖间隔 (秒) - 同一快捷键在此时间内只响应一次
@@ -91,10 +119,15 @@ class ShortcutManager(QObject):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._shortcuts: dict[ShortcutAction, QShortcut] = {}
-        self._callbacks: dict[ShortcutAction, Callable] = {}
+        self._callbacks: dict[ShortcutAction, Callable] = {}  # 保留兼容性
+        self._action_dispatcher: Optional["ActionDispatcher"] = None
         self._enabled: bool = True
         self._action_enabled: dict[ShortcutAction, bool] = {}
         self._last_trigger_time: dict[ShortcutAction, float] = {}  # 防抖时间戳
+
+    def set_action_dispatcher(self, dispatcher: "ActionDispatcher"):
+        """设置 ActionDispatcher (推荐方式)"""
+        self._action_dispatcher = dispatcher
 
     def setup(self, parent_widget: QWidget):
         """
@@ -105,7 +138,7 @@ class ShortcutManager(QObject):
         """
         for action in ShortcutAction:
             if action in self.DEFAULT_BINDINGS:
-                key_sequence, _ = self.DEFAULT_BINDINGS[action]
+                key_sequence, _, _ = self.DEFAULT_BINDINGS[action]
                 self._create_shortcut(action, key_sequence, parent_widget)
                 self._action_enabled[action] = True
 
@@ -132,9 +165,34 @@ class ShortcutManager(QObject):
             return
         self._last_trigger_time[action] = now
 
+        # 优先使用 ActionDispatcher
+        if self._action_dispatcher:
+            self._dispatch_to_action_dispatcher(action)
+            return
+
+        # 回退到传统回调方式 (兼容性)
         callback = self._callbacks.get(action)
         if callback:
             callback()
+
+    def _dispatch_to_action_dispatcher(self, action: ShortcutAction):
+        """通过 ActionDispatcher 分发动作"""
+        if not self._action_dispatcher:
+            return
+
+        action_name = ACTION_NAME_MAP.get(action)
+        if not action_name:
+            return
+
+        # 获取默认参数
+        binding = self.DEFAULT_BINDINGS.get(action)
+        if binding:
+            _, _, default_params = binding
+            try:
+                self._action_dispatcher.dispatch(action_name, **default_params)
+            except Exception as e:
+                from .logging_config import get_logger
+                get_logger().error(f"Shortcut dispatch failed: {action_name} -> {e}")
 
     def bind(self, action: ShortcutAction, callback: Callable):
         """
@@ -170,6 +228,12 @@ class ShortcutManager(QObject):
             return self.DEFAULT_BINDINGS[action][1]
         return ""
 
+    def get_default_params(self, action: ShortcutAction) -> dict:
+        """获取快捷键默认参数"""
+        if action in self.DEFAULT_BINDINGS:
+            return self.DEFAULT_BINDINGS[action][2]
+        return {}
+
     def get_all_shortcuts_info(self) -> list[tuple[str, str]]:
         """
         获取所有快捷键信息 (用于显示帮助/设置)
@@ -180,7 +244,7 @@ class ShortcutManager(QObject):
         result = []
         for action in ShortcutAction:
             if action in self.DEFAULT_BINDINGS:
-                key, desc = self.DEFAULT_BINDINGS[action]
+                key, desc, _ = self.DEFAULT_BINDINGS[action]
                 result.append((key, desc))
         return result
 

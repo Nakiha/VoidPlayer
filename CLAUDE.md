@@ -14,7 +14,10 @@ python build_native.py
 ```
 
 ## 验证
-修改后5秒超时运行 `python run_player.py -i resources/video/NovosobornayaSquare_1920x1080.mp4 -i resources/video/TheaterSquare_1920x1080.mp4 --auto-play` 以检查错误
+修改后运行 mock 测试检查错误：
+```bash
+python run_player.py --mock tests/mock/basic.vpmock
+```
 
 ## UI
 
@@ -35,6 +38,18 @@ python build_native.py
 | HighlightSplitter | 悬浮高亮分割器 |
 | ResizableContainer | 可拖动调整大小的容器 |
 | create_tool_button | 创建工具按钮 (修复字体警告) |
+
+## 新增交互功能
+
+完成一个交互功能时，按清单检查：
+
+1. **动作注册**: `player/core/action_registry.py` 的 `get_action_metadata()` 和 `create_action_registry()`
+2. **快捷键** (如需): `player/core/shortcuts.py` 的枚举、映射、绑定
+3. **Mock 测试**: `tests/mock/` 目录创建或更新测试
+
+详细规范见:
+- [docs/SHORTCUTS.md](docs/SHORTCUTS.md) - 快捷键架构和绑定
+- [docs/MOCK_TESTING.md](docs/MOCK_TESTING.md) - Mock 测试格式和断言
 
 ## 回复完成通知
 

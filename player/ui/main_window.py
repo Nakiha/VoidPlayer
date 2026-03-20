@@ -19,7 +19,10 @@ from .widgets import HighlightSplitter
 from ..core.track_manager import TrackManager
 from ..core.decoder_pool import DecoderPool
 from ..core.playback_controller import PlaybackController
-from ..core.shortcuts import ShortcutManager, ShortcutAction
+from ..core.shortcuts import ShortcutManager
+from ..core.action_dispatcher import ActionDispatcher
+from ..core.action_registry import create_action_registry
+from ..core.automation import AutomationController
 from ..core.signal_bus import signal_bus
 from ..core.logging_config import get_logger
 from ..core.diagnostics import DiagnosticsManager
@@ -37,6 +40,7 @@ class MainWindow(QWidget):
         initial_files: Optional[list[str]] = None,
         auto_play: bool = False,
         launch_args: Optional[list[str]] = None,
+        mock_script: Optional[str] = None,
         parent=None
     ):
         super().__init__(parent)
@@ -45,6 +49,7 @@ class MainWindow(QWidget):
         self._debug_monitor: DebugMonitorWindow | None = None
         self._launch_args = launch_args or []
         self._auto_play = auto_play
+        self._mock_script = mock_script
 
         # 核心组件
         self._track_manager = TrackManager(self)
@@ -52,15 +57,21 @@ class MainWindow(QWidget):
         self._playback_controller = PlaybackController(self._decoder_pool, self)
         self._shortcut_manager = ShortcutManager(self)
 
+        # 动作系统
+        self._action_dispatcher = ActionDispatcher(self)
+        self._automation_controller: AutomationController | None = None
+
         # 诊断模块
         self._diagnostics_manager = DiagnosticsManager(self._decoder_pool, self)
 
         self._setup_ui()
         self._connect_internal_signals()
         self._setup_diagnostics()
+        self._setup_action_system()
         self._setup_shortcuts()
         self._connect_signal_bus()
         self._load_initial_files(initial_files or [])
+        self._setup_automation()
 
     # ========== UI 布局 ==========
 
@@ -216,7 +227,7 @@ class MainWindow(QWidget):
 
         # 视图
         sb.view_mode_changed.connect(self.set_view_mode)
-        sb.fullscreen_toggled.connect(self._toggle_fullscreen)
+        sb.fullscreen_toggled.connect(lambda: self._action_dispatcher.dispatch("TOGGLE_FULLSCREEN"))
 
         # 文件
         sb.media_add_requested.connect(self.add_media)
@@ -228,69 +239,33 @@ class MainWindow(QWidget):
 
     # ========== 快捷键 ==========
 
+    def _setup_action_system(self):
+        """设置动作系统 (ActionDispatcher + Registry)"""
+        # 注册所有动作
+        actions = create_action_registry(self)
+        self._action_dispatcher.register_batch(actions)
+
+        # 将 ActionDispatcher 设置到 ShortcutManager
+        self._shortcut_manager.set_action_dispatcher(self._action_dispatcher)
+
+    def _setup_automation(self):
+        """设置自动化控制器"""
+        if not self._mock_script:
+            return
+
+        self._automation_controller = AutomationController(self._action_dispatcher, self)
+        if self._automation_controller.load_script(self._mock_script):
+            # 延迟启动，等待窗口完全初始化
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(500, self._automation_controller.start)
+
     def _setup_shortcuts(self):
         """设置快捷键"""
         sm = self._shortcut_manager
         sm.setup(self)
 
-        # 播放控制
-        sm.bind(ShortcutAction.PLAY_PAUSE, self._toggle_play_pause)
-        sm.bind(ShortcutAction.PREV_FRAME, self._decoder_pool.prev_frame)
-        sm.bind(ShortcutAction.NEXT_FRAME, self._decoder_pool.next_frame)
-        sm.bind(ShortcutAction.SEEK_FORWARD, lambda: self.seek_to(self._decoder_pool.position_ms + 5000))
-        sm.bind(ShortcutAction.SEEK_BACKWARD, lambda: self.seek_to(max(0, self._decoder_pool.position_ms - 5000)))
-        sm.bind(ShortcutAction.TOGGLE_LOOP, lambda: self.controls_bar.loop_btn.toggle())
-        sm.bind(ShortcutAction.TOGGLE_FULLSCREEN, self._toggle_fullscreen)
-
-        # 速度控制
-        sm.bind(ShortcutAction.SPEED_UP, self._speed_up)
-        sm.bind(ShortcutAction.SPEED_DOWN, self._speed_down)
-        sm.bind(ShortcutAction.SPEED_RESET, lambda: self.controls_bar.speed_combo.setCurrentIndex(2))
-
-        # 缩放控制
-        sm.bind(ShortcutAction.ZOOM_IN, self._zoom_in)
-        sm.bind(ShortcutAction.ZOOM_OUT, self._zoom_out)
-        sm.bind(ShortcutAction.ZOOM_RESET, lambda: self.controls_bar.zoom_combo.setCurrentIndex(2))
-
-        # 项目操作
-        sm.bind(ShortcutAction.ADD_MEDIA, self._on_add_media)
-        sm.bind(ShortcutAction.NEW_WINDOW, self._on_new_window)
-        sm.bind(ShortcutAction.TOGGLE_DEBUG_MONITOR, self._show_debug_monitor)
-
-        # 性能统计
-        sm.bind(ShortcutAction.TOGGLE_STATS, self._toggle_stats_overlay)
-
-    def _toggle_play_pause(self):
-        if self._playback_controller.is_playing:
-            self.pause()
-        else:
-            self.play()
-
-    def _toggle_fullscreen(self):
-        if self.isFullScreen():
-            self.showNormal()
-        else:
-            self.showFullScreen()
-
-    def _speed_up(self):
-        idx = self.controls_bar.speed_combo.currentIndex()
-        if idx < self.controls_bar.speed_combo.count() - 1:
-            self.controls_bar.speed_combo.setCurrentIndex(idx + 1)
-
-    def _speed_down(self):
-        idx = self.controls_bar.speed_combo.currentIndex()
-        if idx > 0:
-            self.controls_bar.speed_combo.setCurrentIndex(idx - 1)
-
-    def _zoom_in(self):
-        idx = self.controls_bar.zoom_combo.currentIndex()
-        if idx < self.controls_bar.zoom_combo.count() - 1:
-            self.controls_bar.zoom_combo.setCurrentIndex(idx + 1)
-
-    def _zoom_out(self):
-        idx = self.controls_bar.zoom_combo.currentIndex()
-        if idx > 0:
-            self.controls_bar.zoom_combo.setCurrentIndex(idx - 1)
+        # 传统回调方式已通过 ActionDispatcher 处理，保留此方法用于兼容
+        # 如果需要使用传统方式，可以使用 sm.bind(action, callback)
 
     # ========== TrackManager 回调 ==========
 
@@ -490,8 +465,8 @@ class MainWindow(QWidget):
 
     # ========== 公共 API ==========
 
-    def add_media(self, path: str):
-        self._track_manager.add_source(path)
+    def add_media(self, file_path: str):
+        self._track_manager.add_source(file_path)
 
     def remove_media(self, index: int):
         self._track_manager.remove_source(index)

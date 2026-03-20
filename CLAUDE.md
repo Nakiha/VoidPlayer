@@ -11,7 +11,6 @@
 
 ```bash
 python build_native.py
-# 产物会自动安装到 Python site-packages 目录
 ```
 
 ## 验证

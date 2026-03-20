@@ -978,26 +978,12 @@ void HardwareDecoder::set_opengl_context(void* gl_context) {
     VV_DEBUG("init_texture_interop returned: {}, has_interop={}", result, impl_->texture_interop_ ? 1 : 0);
 }
 
-bool HardwareDecoder::decode_next_frame() {
-    return impl_->decode_frame();
-}
-
 bool HardwareDecoder::seek_to(int64_t timestamp_ms) {
     return impl_->seek_frame(timestamp_ms);
 }
 
 bool HardwareDecoder::seek_to_precise(int64_t timestamp_ms) {
     return impl_->seek_frame_precise(timestamp_ms);
-}
-
-// ==================== 异步/可取消 API ====================
-
-bool HardwareDecoder::decode_next_frame_async(CancelToken& cancel_token) {
-    return impl_->decode_frame_async(cancel_token);
-}
-
-bool HardwareDecoder::seek_to_precise_async(int64_t timestamp_ms, CancelToken& cancel_token) {
-    return impl_->seek_frame_precise_async(timestamp_ms, cancel_token);
 }
 
 bool HardwareDecoder::has_pending_frame() const {
@@ -1229,6 +1215,35 @@ bool HardwareDecoder::is_seekable() const {
 
 bool HardwareDecoder::is_eof() const {
     return impl_->eof_;
+}
+
+AVFrame* HardwareDecoder::take_pending_frame() {
+    if (!impl_->has_pending_frame_) {
+        return nullptr;
+    }
+
+    // 转移帧所有权
+    AVFrame* frame = impl_->frame_;
+    impl_->frame_ = av_frame_alloc();  // 分配新帧供下次使用
+    impl_->has_pending_frame_ = false;
+
+    VV_TRACE("take_pending_frame: transferred frame pts={}ms", impl_->current_pts_ms_);
+    return frame;
+}
+
+void HardwareDecoder::set_pending_frame(AVFrame* frame) {
+    if (!frame) return;
+
+    // 释放旧帧（如果有）
+    if (impl_->frame_) {
+        av_frame_free(&impl_->frame_);
+    }
+
+    impl_->frame_ = frame;
+    impl_->has_pending_frame_ = true;
+    impl_->current_pts_ms_ = impl_->calculate_pts();
+
+    VV_TRACE("set_pending_frame: set frame pts={}ms", impl_->current_pts_ms_);
 }
 
 bool HardwareDecoder::has_error() const {

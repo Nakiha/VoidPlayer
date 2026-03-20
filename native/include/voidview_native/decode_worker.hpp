@@ -8,6 +8,7 @@
 #include <queue>
 
 #include "voidview_native/hardware_decoder.hpp"
+#include "voidview_native/frame_queue.hpp"
 
 namespace voidview {
 
@@ -18,8 +19,8 @@ enum class DecodeCommandType {
     NONE = 0,
     SEEK_KEYFRAME,      // 快速 seek (关键帧)
     SEEK_PRECISE,       // 精确 seek (帧级)
-    DECODE_FRAME,       // 解码下一帧
-    DECODE_LOOP,        // 持续解码 (播放模式)
+    DECODE_FRAME,       // 解码下一帧 (填充帧缓冲)
+    FILL_BUFFER,        // 填充帧缓冲直到满
     STOP                // 停止线程
 };
 
@@ -85,16 +86,6 @@ public:
     void decode_frame();
 
     /**
-     * 开始持续解码 (播放模式)
-     */
-    void start_decode_loop();
-
-    /**
-     * 停止持续解码
-     */
-    void stop_decode_loop();
-
-    /**
      * 取消当前操作
      */
     void cancel();
@@ -105,9 +96,26 @@ public:
     void stop();
 
     /**
-     * 检查是否有已解码帧等待上传
+     * 从帧队列取一帧 (带超时)
+     * @param timeout_ms 超时时间，-1 表示无限等待
+     * @return 帧的 PTS (ms)，失败返回 -1
      */
-    bool has_pending_frame() const;
+    int64_t pop_frame(int timeout_ms = -1);
+
+    /**
+     * 获取帧队列大小
+     */
+    size_t frame_queue_size() const;
+
+    /**
+     * 清空帧队列
+     */
+    void clear_frame_queue();
+
+    /**
+     * 获取帧队列
+     */
+    FrameQueue* frame_queue() { return &frame_queue_; }
 
     /**
      * 获取关联的解码器
@@ -124,6 +132,7 @@ private:
     void execute_command(const DecodeCommand& cmd);
     void notify_callback(bool success, int64_t pts_ms);
     void push_command(const DecodeCommand& cmd);
+    void fill_frame_buffer();  // 填充帧缓冲
 
     HardwareDecoder* decoder_;
     int track_index_;
@@ -135,9 +144,10 @@ private:
     std::queue<DecodeCommand> command_queue_;
     std::atomic<bool> running_{false};
     std::atomic<bool> cancelled_{false};
-    std::atomic<bool> decode_loop_{false};
 
     DecodeCallback callback_;
+
+    FrameQueue frame_queue_{12};  // 帧缓冲队列
 };
 
 } // namespace voidview

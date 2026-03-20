@@ -173,9 +173,6 @@ PYBIND11_MODULE(voidview_native, m) {
         }, py::arg("gl_context"),
            "Set OpenGL context for texture sharing (pass 0 for current context)")
 
-        .def("decode_next_frame", &voidview::HardwareDecoder::decode_next_frame,
-             "Decode next frame. Returns True if new frame available")
-
         .def("seek_to", &voidview::HardwareDecoder::seek_to,
              py::arg("timestamp_ms"),
              "Seek to timestamp in milliseconds (keyframe-level, fast)")
@@ -183,18 +180,6 @@ PYBIND11_MODULE(voidview_native, m) {
         .def("seek_to_precise", &voidview::HardwareDecoder::seek_to_precise,
              py::arg("timestamp_ms"),
              "Seek to exact frame before timestamp (frame-accurate, slower)")
-
-        // 异步 API - 需要 CancelToken，但不释放 GIL（GIL 释放会导致 Python 对象访问崩溃）
-        // Python 端在后台线程调用，虽然持有 GIL 但不会阻塞 UI 线程
-        .def("decode_next_frame_async", [](voidview::HardwareDecoder& self, voidview::CancelToken& token) {
-            return self.decode_next_frame_async(token);
-        }, py::arg("cancel_token"),
-           "Decode next frame with cancellation support")
-
-        .def("seek_to_precise_async", [](voidview::HardwareDecoder& self, int64_t timestamp_ms, voidview::CancelToken& token) {
-            return self.seek_to_precise_async(timestamp_ms, token);
-        }, py::arg("timestamp_ms"), py::arg("cancel_token"),
-           "Seek to exact frame with cancellation support")
 
         .def("has_pending_frame", &voidview::HardwareDecoder::has_pending_frame,
              "Check if there's a pending decoded frame waiting for texture upload")
@@ -262,20 +247,21 @@ PYBIND11_MODULE(voidview_native, m) {
         .def("decode_frame", &voidview::DecodeWorker::decode_frame,
              "Decode next frame (non-blocking)")
 
-        .def("start_decode_loop", &voidview::DecodeWorker::start_decode_loop,
-             "Start continuous decode loop (playback mode)")
-
-        .def("stop_decode_loop", &voidview::DecodeWorker::stop_decode_loop,
-             "Stop continuous decode loop")
-
         .def("cancel", &voidview::DecodeWorker::cancel,
              "Cancel current operation")
 
         .def("stop", &voidview::DecodeWorker::stop,
              "Stop worker thread")
 
-        .def("has_pending_frame", &voidview::DecodeWorker::has_pending_frame,
-             "Check if there's a pending frame waiting for texture upload")
+        .def("pop_frame", &voidview::DecodeWorker::pop_frame,
+             py::arg("timeout_ms") = -1,
+             "Pop frame from queue, returns PTS in ms or -1 on timeout")
+
+        .def("frame_queue_size", &voidview::DecodeWorker::frame_queue_size,
+             "Get current frame queue size")
+
+        .def("clear_frame_queue", &voidview::DecodeWorker::clear_frame_queue,
+             "Clear the frame queue")
 
         .def_property_readonly("decoder", &voidview::DecodeWorker::decoder,
              "Get associated decoder")

@@ -276,6 +276,44 @@ class DecoderPool(QObject):
             if track and track.worker:
                 track.worker.cancel()
 
+    # ========== 帧缓冲 API (拉取模式) ==========
+
+    def get_frame(self, index: int, timeout_ms: int = 50) -> tuple[bool, int]:
+        """
+        从指定轨道的帧队列取一帧
+
+        Args:
+            index: 轨道索引
+            timeout_ms: 超时时间，-1 表示无限等待
+
+        Returns:
+            (success, pts_ms) - success=False 表示超时或 EOF
+        """
+        track = self._tracks[index]
+        if not track or not track.worker or not track.decoder:
+            return False, 0
+
+        # 从队列取帧
+        pts = track.worker.pop_frame(timeout_ms)
+        if pts < 0:
+            return False, 0
+
+        return True, pts
+
+    def get_frame_queue_size(self, index: int) -> int:
+        """获取指定轨道的帧队列大小"""
+        track = self._tracks[index]
+        if not track or not track.worker:
+            return 0
+        return track.worker.frame_queue_size()
+
+    def request_fill_buffers(self):
+        """请求填充所有轨道的帧缓冲"""
+        for track in self._tracks:
+            if track and track.enabled and track.worker and track.decoder:
+                if not track.decoder.eof:
+                    track.worker.decode_frame()
+
     # ========== Seek 操作 ==========
 
     def seek_to(self, position_ms: int):
@@ -352,7 +390,17 @@ class DecoderPool(QObject):
         # 发送帧解码完成信号 (用于性能监控)
         self.track_frame_decoded.emit(track_index, pts_ms, success)
 
-        if success:
+        # 新流程：帧在队列中，需要从队列取帧
+        has_pending = track.decoder.has_pending_frame() if track.decoder else False
+        queue_size = track.worker.frame_queue_size() if track.worker else 0
+
+        if not has_pending and track.worker and queue_size > 0:
+            pop_success, pop_pts = self.get_frame(track_index, timeout_ms=0)
+            if pop_success:
+                has_pending = True
+                pts_ms = pop_pts
+
+        if success or has_pending:
             track.current_pts_ms = pts_ms
 
             # 上传纹理 (必须在 GL 线程/主线程)

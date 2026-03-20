@@ -51,12 +51,6 @@ public:
     // ==================== Decoding ====================
 
     /**
-     * Decode next frame
-     * @return True if new frame decoded
-     */
-    bool decode_next_frame();
-
-    /**
      * Seek to timestamp (keyframe-level, fast)
      * @param timestamp_ms Target time in milliseconds
      * @return True on success
@@ -70,24 +64,6 @@ public:
      * @return True on success
      */
     bool seek_to_precise(int64_t timestamp_ms);
-
-    // ==================== Async/Cancellable API ====================
-
-    /**
-     * Decode next frame with cancellation support
-     * @param cancel_token Token to check for cancellation
-     * @return True if new frame decoded, false if cancelled or error
-     */
-    bool decode_next_frame_async(CancelToken& cancel_token);
-
-    /**
-     * Seek to exact frame with cancellation support
-     * Checks cancel_token between decode iterations
-     * @param timestamp_ms Target time in milliseconds
-     * @param cancel_token Token to check for cancellation
-     * @return True on success, false if cancelled
-     */
-    bool seek_to_precise_async(int64_t timestamp_ms, CancelToken& cancel_token);
 
     /**
      * Check if there's a pending decoded frame waiting for texture upload
@@ -132,6 +108,21 @@ public:
      * @return True on success
      */
     bool seek_to_frame_before_internal(int64_t target_ms, int64_t known_frame_ms);
+
+    /**
+     * 取出待处理的帧 (转移所有权)
+     * 调用后 has_pending_frame() 返回 false
+     * 用于帧缓冲队列，将帧从解码器转移到队列
+     * @return AVFrame 指针，调用者负责释放
+     */
+    AVFrame* take_pending_frame();
+
+    /**
+     * 设置待处理的帧 (获取所有权)
+     * 用于从帧缓冲队列取帧后设置到解码器进行纹理上传
+     * @param frame AVFrame 指针，解码器获取所有权
+     */
+    void set_pending_frame(AVFrame* frame);
 
     // ==================== Properties ====================
 

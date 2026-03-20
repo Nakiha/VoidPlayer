@@ -18,7 +18,7 @@ namespace voidview {
  */
 class FrameQueue {
 public:
-    explicit FrameQueue(size_t max_size = 4);
+    explicit FrameQueue(size_t max_size = 12);
     ~FrameQueue();
 
     // Disable copy

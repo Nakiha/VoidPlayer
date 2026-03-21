@@ -15,11 +15,8 @@ authors = [
 keywords = ["video", "player", "pyside6"]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "Environment :: X11 Applications :: Qt",
-    "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows",
-    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Multimedia :: Video",
@@ -27,16 +24,17 @@ classifiers = [
 
 dependencies = [
     "PySide6>=6.10.0",
-    "PySide6-Fluent-Widgets>=1.11.0",
+    # Nuitka 兼容版本, API有所不同
+    "PySide6-Fluent-Widgets-Nuitka @ git+https://github.com/Nakiha/PyQt-Fluent-Widgets-Nuitka.git@PySide6_Nuitka",
     "PyOpenGL>=3.1.7",
-    "psutil>=5.9.0",
+    "psutil>=7.2.2",
     "loguru>=0.7.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "ruff>=0.1.0",
-    "pybind11>=2.11.0",
+    "pybind11>=3.0.2",
     "win11toast>=0.35",
 ]
 

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QCloseEvent, QColor
 
-from player.theme_utils import get_color_hex, ColorKey
+from player.ui.theme_utils import get_color_hex, ColorKey
 from player.core.logging_config import get_logger
 
 

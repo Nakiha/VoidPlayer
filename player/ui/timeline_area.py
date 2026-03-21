@@ -4,10 +4,10 @@ TimelineArea - 时间轴轨道区域
 from typing import Optional, TYPE_CHECKING
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy, QFrame
 from PySide6.QtCore import Signal, QTimer, Qt
-from qfluentwidgets import SmoothScrollArea
+from qfluentwidgets_nuitka import SmoothScrollArea
 
 from .track_row import TrackRow
-from ..theme_utils import get_color_hex, get_accent_color_hex, ColorKey
+from .theme_utils import get_color_hex, get_accent_color_hex, ColorKey
 
 if TYPE_CHECKING:
     from ..core.decoder_pool import MediaInfo

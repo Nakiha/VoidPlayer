@@ -5,7 +5,7 @@ from PySide6.QtGui import QCursor, QPainter
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 from PySide6.QtCore import Qt, QPoint, Signal, QEvent
 
-from player.theme_utils import get_accent_color
+from player.ui.theme_utils import get_accent_color
 
 
 class _EdgeOverlay(QWidget):

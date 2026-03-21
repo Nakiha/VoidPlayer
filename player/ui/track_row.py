@@ -4,13 +4,13 @@ TrackRow - 单条轨道控制
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QFrame
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QPainter, QPen
-from qfluentwidgets import (
+from qfluentwidgets_nuitka import (
     TransparentToolButton,
     BodyLabel,
     FluentIcon,
 )
 
-from ..theme_utils import get_color, get_color_hex, get_accent_color, ColorKey
+from .theme_utils import get_color, get_color_hex, get_accent_color, ColorKey
 from .widgets import create_tool_button, OffsetLabel, HighlightSplitter, DraggableElideLabel
 
 # 偏移步进常量

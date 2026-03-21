@@ -10,7 +10,7 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QWidget, QApplication
 
 if TYPE_CHECKING:
-    from .action_dispatcher import ActionDispatcher
+    from .actions import ActionDispatcher
 
 
 class ShortcutAction(Enum):

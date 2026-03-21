@@ -1,12 +1,10 @@
 """
 ActionResolvers - 交互式参数解析器
-
-用于在缺少参数时通过 UI 交互获取参数 (如文件选择器)
 """
-from typing import TYPE_CHECKING, Optional
+from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..ui.main_window import MainWindow
+    from player.ui.main_window import MainWindow
 
 
 def resolve_file_picker(mw: "MainWindow") -> Optional[dict]:

@@ -3,7 +3,7 @@ MediaHeader - 媒体信息头部控件
 """
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QSizePolicy
 from PySide6.QtCore import Signal, Qt
-from qfluentwidgets import FluentIcon
+from qfluentwidgets_nuitka import FluentIcon
 
 from ..widgets import create_tool_button, ElideComboBox
 

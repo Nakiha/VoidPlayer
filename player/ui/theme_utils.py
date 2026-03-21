@@ -4,7 +4,7 @@ ThemeUtils - 主题工具模块
 """
 from enum import StrEnum
 
-from qfluentwidgets import isDarkTheme, themeColor
+from qfluentwidgets_nuitka import isDarkTheme, themeColor
 from PySide6.QtGui import QColor
 
 

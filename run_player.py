@@ -16,7 +16,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QSurfaceFormat
-from qfluentwidgets import setThemeColor, setTheme, Theme
+from qfluentwidgets_nuitka import setThemeColor, setTheme, Theme
 
 from player.core.logging_config import setup_logging, get_logger
 from player.ui.main_window import MainWindow
@@ -260,9 +260,8 @@ def _run_app(input_files: list[str], auto_play: bool, launch_args: list[str], mo
 
 
 def _list_available_actions():
-    """列出所有可用动作 (从 action_registry 动态读取)"""
-    from player.core.action_types import get_actions_by_category
-    from player.core.action_registry import get_action_metadata
+    """列出所有可用动作 (从 actions 动态读取)"""
+    from player.core.actions import get_actions_by_category, get_action_metadata
 
     print("VoidPlayer 可用动作列表:")
     print("=" * 60)

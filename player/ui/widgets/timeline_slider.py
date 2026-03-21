@@ -14,7 +14,7 @@ from PySide6.QtGui import (
     QFontMetrics,
 )
 
-from ...theme_utils import get_color, ColorKey, get_accent_color
+from ..theme_utils import get_color, ColorKey, get_accent_color
 
 
 # 拖动检测阈值 (像素)

@@ -1,10 +1,8 @@
 """
 ActionTypes - 动作系统的数据结构定义
-
-定义 ActionDef 和 ParamDef 数据结构，用于统一动作系统
 """
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 
 class _MissingSentinel:

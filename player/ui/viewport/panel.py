@@ -6,11 +6,11 @@ from .gl_widget import ViewMode
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
 from PySide6.QtCore import Signal, Qt
-from qfluentwidgets import FluentIcon, IconWidget, SubtitleLabel
+from qfluentwidgets_nuitka import FluentIcon, IconWidget, SubtitleLabel
 
 from .gl_widget import MultiTrackGLWidget
 from .header import MediaHeader
-from ...theme_utils import get_color_hex, ColorKey
+from ..theme_utils import get_color_hex, ColorKey
 
 
 class ViewportPanel(QWidget):
@@ -86,7 +86,8 @@ class ViewportPanel(QWidget):
         layout = QVBoxLayout(widget)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        icon = IconWidget(FluentIcon.VIDEO, widget)
+        icon = IconWidget(widget)
+        icon.setIcon(FluentIcon.VIDEO)
         icon.setFixedSize(64, 64)
         layout.addWidget(icon, 0, Qt.AlignmentFlag.AlignCenter)
 

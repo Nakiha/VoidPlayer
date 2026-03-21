@@ -4,7 +4,7 @@ ElideComboBox - 支持文本省略的下拉框控件
 import os
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFontMetrics
-from qfluentwidgets import ComboBox
+from qfluentwidgets_nuitka import ComboBox
 
 
 class ElideComboBox(ComboBox):

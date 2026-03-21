@@ -3,7 +3,7 @@ ElideLabel - 支持文本省略的标签控件
 """
 from PySide6.QtWidgets import QLabel
 from PySide6.QtCore import Qt
-from qfluentwidgets import ToolTipFilter
+from qfluentwidgets_nuitka import ToolTipFilter
 
 
 class ElideLabel(QLabel):

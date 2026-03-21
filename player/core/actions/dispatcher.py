@@ -1,10 +1,12 @@
 """
 ActionDispatcher - 动作分发器
-
-统一的命令执行入口，整合快捷键触发、自动化脚本触发、UI交互触发
 """
-from typing import Any, Optional
-from .action_types import ActionDef, ParamDef, MISSING
+from typing import Any, Optional, TYPE_CHECKING
+
+from .types import ActionDef, ParamDef, MISSING
+
+if TYPE_CHECKING:
+    from player.ui.main_window import MainWindow
 
 
 class ActionDispatcher:
@@ -26,12 +28,6 @@ class ActionDispatcher:
     def dispatch(self, action_name: str, *args, **kwargs) -> Any:
         """
         分发并执行动作
-
-        1. 查找动作定义
-        2. 合并参数 (传入参数 + 默认参数)
-        3. 缺少必要参数时调用 resolver
-        4. 校验参数
-        5. 执行动作
 
         Args:
             action_name: 动作名称

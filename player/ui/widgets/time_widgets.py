@@ -3,7 +3,7 @@
 """
 from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtWidgets import QSizePolicy
-from qfluentwidgets import BodyLabel
+from qfluentwidgets_nuitka import BodyLabel
 
 
 # ========== 工具函数 ==========

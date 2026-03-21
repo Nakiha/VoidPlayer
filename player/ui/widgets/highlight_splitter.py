@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QSplitter, QSplitterHandle, QWidget
 from PySide6.QtCore import Property, QPropertyAnimation, QEasingCurve, Qt, QRect
 from PySide6.QtGui import QColor, QPainter
 
-from ...theme_utils import get_color, ColorKey, get_accent_color
+from ..theme_utils import get_color, ColorKey, get_accent_color
 
 
 class _HighlightOverlay(QWidget):

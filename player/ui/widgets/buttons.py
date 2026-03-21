@@ -1,7 +1,7 @@
 """
 按钮工具函数
 """
-from qfluentwidgets import TransparentToolButton, FluentIcon, ToolTipFilter
+from qfluentwidgets_nuitka import TransparentToolButton, FluentIcon, ToolTipFilter
 
 
 def create_tool_button(icon: FluentIcon, parent=None, size: int = 28, tooltip: str = "") -> TransparentToolButton:
@@ -20,7 +20,8 @@ def create_tool_button(icon: FluentIcon, parent=None, size: int = 28, tooltip: s
     Returns:
         TransparentToolButton 实例
     """
-    btn = TransparentToolButton(icon, parent)
+    btn = TransparentToolButton(parent)
+    btn.setIcon(icon)
     btn.setFixedSize(size, size)
 
     # 修复字体问题: 设置一个有效的字体确保 pointSize > 0

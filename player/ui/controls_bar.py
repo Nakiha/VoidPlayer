@@ -4,16 +4,16 @@ ControlsBar - 播放控制条
 import time
 from PySide6.QtWidgets import QWidget, QHBoxLayout
 from PySide6.QtCore import Signal, Qt
-from qfluentwidgets import (
+from qfluentwidgets_nuitka import (
     ComboBox,
     FluentIcon,
     ToolTipFilter,
     TransparentToggleToolButton,
 )
 
-from ..core.logging_config import get_logger
+from player.core.logging_config import get_logger
 
-from ..theme_utils import get_color_hex, ColorKey
+from .theme_utils import get_color_hex, ColorKey
 from .widgets import create_tool_button, TimeLabel, TimelineSlider
 
 
@@ -91,7 +91,8 @@ class ControlsBar(QWidget):
         layout.addWidget(self.next_frame_btn)
 
         # 循环按钮 (激发式)
-        self.loop_btn = TransparentToggleToolButton(FluentIcon.SYNC, self)
+        self.loop_btn = TransparentToggleToolButton(self)
+        self.loop_btn.setIcon(FluentIcon.SYNC)
         self.loop_btn.setFixedSize(32, 32)
         self.loop_btn.setToolTip("循环播放")
         self.loop_btn.installEventFilter(ToolTipFilter(self.loop_btn, 0))

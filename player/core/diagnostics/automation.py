@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING, Optional, Callable
 
 from PySide6.QtCore import QObject, QTimer
 
-from .logging_config import get_logger
+from player.core.logging_config import get_logger
 
 if TYPE_CHECKING:
-    from .action_dispatcher import ActionDispatcher
+    from player.core.action_dispatcher import ActionDispatcher
 
 
 @dataclass

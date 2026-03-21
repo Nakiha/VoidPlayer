@@ -12,17 +12,16 @@ from .viewport import ViewMode, ViewportPanel
 from .toolbar import ToolBar
 from .controls_bar import ControlsBar
 from .timeline_area import TimelineArea
-from ..theme_utils import get_color_hex, ColorKey
-from ..core.debug_monitor import DebugMonitorWindow
+from .theme_utils import get_color_hex, ColorKey
+from .debug_monitor import DebugMonitorWindow
 from ..core.config import config, Profile
 from .widgets import HighlightSplitter
 from ..core.track_manager import TrackManager
 from ..core.decoder_pool import DecoderPool
 from ..core.playback_controller import PlaybackController
 from ..core.shortcuts import ShortcutManager
-from ..core.action_dispatcher import ActionDispatcher
-from ..core.action_registry import create_action_registry
-from ..core.automation import AutomationController
+from ..core.actions import ActionDispatcher, create_action_registry
+from ..core.diagnostics.automation import AutomationController
 from ..core.signal_bus import signal_bus
 from ..core.logging_config import get_logger
 from ..core.diagnostics import DiagnosticsManager

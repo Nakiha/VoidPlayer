@@ -3,7 +3,7 @@ ToolBar - 顶部工具栏
 """
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QSpacerItem, QSizePolicy, QGraphicsOpacityEffect
 from PySide6.QtCore import Signal, Qt
-from qfluentwidgets import (
+from qfluentwidgets_nuitka import (
     PushButton,
     PrimaryPushButton,
     TransparentToolButton,

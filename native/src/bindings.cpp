@@ -121,6 +121,9 @@ PYBIND11_MODULE(voidview_native, m) {
           py::arg("max_files") = 3,
           "Add file sink for native log output with rotation");
 
+    m.def("add_console_sink", &voidview::add_console_sink,
+          "Add console sink for native log output (call only if console is available)");
+
     // MediaInfo class
     py::class_<voidview::MediaInfo>(m, "MediaInfo")
         .def_readonly("valid", &voidview::MediaInfo::valid)

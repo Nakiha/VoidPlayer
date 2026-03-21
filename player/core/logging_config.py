@@ -14,6 +14,34 @@ from loguru import logger
 _crash_file = None
 
 
+def _is_console_available() -> bool:
+    """检测控制台是否可用（可以安全写入 stderr）
+
+    日志输出到 stderr，所以只需要检测 stderr 是否可用。
+    """
+    if not sys.stderr:
+        return False
+
+    # Windows: 检查 stderr 是否连接到真正的控制台
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            stderr_handle = kernel32.GetStdHandle(0xFFFFFFF4)  # STD_ERROR_HANDLE
+
+            if stderr_handle == -1:  # INVALID_HANDLE_VALUE
+                return False
+
+            # GetConsoleMode 只有在真正的控制台上才会成功
+            mode = ctypes.c_ulong()
+            return kernel32.GetConsoleMode(stderr_handle, ctypes.byref(mode)) != 0
+        except Exception:
+            return False
+
+    # Unix: 检查 stderr 是否是 tty
+    return sys.stderr.isatty()
+
+
 def _setup_qt_handler():
     """设置 Qt 消息处理器"""
     try:
@@ -85,7 +113,6 @@ def setup_logging(
     rotation: str = "10 MB",
     retention: str = "7 days",
     compression: str = "zip",
-    console_output: bool = True,
     dev_mode: bool = False,
 ) -> Path:
     """配置日志系统
@@ -98,7 +125,6 @@ def setup_logging(
         rotation: 轮转大小/时间，如 "10 MB", "1 day", "00:00"
         retention: 保留时间，如 "7 days", "1 week"
         compression: 压缩格式，如 "zip", "gz"，空字符串表示不压缩
-        console_output: 是否输出到控制台
         dev_mode: 开发模式，日志落盘到项目目录的 logs 文件夹
 
     Returns:
@@ -168,8 +194,11 @@ def setup_logging(
         "{message}"
     )
 
-    # 添加控制台处理器
-    if console_output:
+    # 检测控制台是否可用
+    console_available = _is_console_available()
+
+    # 仅在控制台可用时添加控制台处理器
+    if console_available:
         logger.add(
             sys.stderr,
             format=console_format,
@@ -217,12 +246,18 @@ def setup_logging(
     _setup_qt_handler()
 
     # 配置 native 模块日志
-    _setup_native_logging(log_dir, app_name, level, ffmpeg_level)
+    _setup_native_logging(log_dir, app_name, level, ffmpeg_level, console_available)
 
     return log_dir
 
 
-def _setup_native_logging(log_dir: Path, app_name: str, level: str, ffmpeg_level: str):
+def _setup_native_logging(
+    log_dir: Path,
+    app_name: str,
+    level: str,
+    ffmpeg_level: str,
+    console_available: bool
+):
     """配置 native 模块日志"""
     try:
         from player.native import voidview_native
@@ -242,6 +277,10 @@ def _setup_native_logging(log_dir: Path, app_name: str, level: str, ffmpeg_level
 
         # 初始化 native 日志系统
         voidview_native.init_logging(native_level, ffmpeg_native_level)
+
+        # 先添加控制台 sink，这样后续 add_file_sink 的日志也能输出到控制台
+        if console_available:
+            voidview_native.add_console_sink()
 
         # 设置 native 日志文件
         native_log_path = log_dir / f"{app_name}_native.log"

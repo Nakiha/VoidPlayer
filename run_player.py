@@ -151,12 +151,15 @@ def main():
     # 设置 Windows 应用程序 ID (必须在创建 QApplication 之前)
     _set_windows_app_id()
 
-    # 初始化日志系统 (开发模式使用项目目录下的 logs 文件夹)
-    # 设置 dev_mode=False 使用用户数据目录
+    # 初始化日志系统
+    # 开发模式 (dev_mode=True): 使用项目目录下的 logs 文件夹
+    # 打包模式 (dev_mode=False): 使用用户数据目录 AppData/Local/VoidPlayer/logs
+    # Nuitka 打包后 sys.frozen 或 __compiled__ 存在
+    is_frozen = hasattr(sys, 'frozen') or "__compiled__" in globals()
     log_levels = args.log_level
     default_level = log_levels.get("default", "INFO")
     ffmpeg_level = log_levels.get("ffmpeg", "INFO")
-    setup_logging(app_name="voidplayer", dev_mode=True, level=default_level, ffmpeg_level=ffmpeg_level)
+    setup_logging(app_name="voidplayer", dev_mode=not is_frozen, level=default_level, ffmpeg_level=ffmpeg_level)
 
     # 设置全局配置
     profile_map = {

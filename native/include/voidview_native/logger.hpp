@@ -1,5 +1,11 @@
 #pragma once
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/rotating_file_sink.h>
@@ -14,23 +20,48 @@ namespace voidview {
 // 日志格式常量
 // 与 Python loguru 格式对齐: time | level | file:line - message
 // spdlog %s 是源文件名，%# 是行号，%e 是毫秒
+// %-9l: 左对齐 9 字符，与 Python {level: <9} 对齐
 inline constexpr const char* CONSOLE_PATTERN =
-    "%^%Y-%m-%d %H:%M:%S.%e|%8l|[%s:%#] - %v%$";  // 带颜色
+    "%^%Y-%m-%d %H:%M:%S.%e | %-9l| %s:%# - %v%$";  // 带颜色
 inline constexpr const char* FILE_PATTERN =
-    "%Y-%m-%d %H:%M:%S.%e|%8l|[%s:%#] - %v";       // 不带颜色
+    "%Y-%m-%d %H:%M:%S.%e | %-9l| %s:%# - %v";       // 不带颜色
 
 // 默认轮转配置 (与 Python loguru 对齐)
 inline constexpr size_t DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024;  // 10 MB
 inline constexpr size_t DEFAULT_MAX_FILES = 3;  // 保留 3 个轮转文件
 
+// 检查 stdout 是否可用 (避免在 GUI 模式下崩溃)
+inline bool is_stdout_available() {
+#ifdef _WIN32
+    // Windows: 检查是否有控制台窗口
+    // GetStdHandle 返回有效句柄不代表能写入，需要用 WriteConsole 检测
+    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (h == NULL || h == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    // 尝试用 WriteConsole 检测是否是真正的控制台
+    DWORD mode;
+    return GetConsoleMode(h, &mode) != 0;
+#else
+    // Unix: 检查 stdout 是否是 tty
+    return isatty(fileno(stdout)) != 0;
+#endif
+}
+
 // 全局日志器和 sink 列表
 inline std::shared_ptr<spdlog::logger>& get_logger() {
     static std::shared_ptr<spdlog::logger> logger = [] {
-        auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-        console->set_pattern(CONSOLE_PATTERN);
-        auto lg = std::make_shared<spdlog::logger>("voidview", console);
+        auto lg = std::make_shared<spdlog::logger>("voidview");
         lg->set_level(spdlog::level::info);  // 默认 INFO 级别
         lg->flush_on(spdlog::level::warn);
+
+        // 仅在有控制台时添加 console sink
+        if (is_stdout_available()) {
+            auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+            console->set_pattern(CONSOLE_PATTERN);
+            lg->sinks().push_back(console);
+        }
+
         return lg;
     }();
     return logger;

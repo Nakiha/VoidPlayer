@@ -8,7 +8,6 @@
 #include "voidview_native/logger.hpp"
 #include "voidview_native/version.hpp"
 #include "voidview_native/cancel_token.hpp"
-#include "crash_handler.hpp"
 
 extern "C" {
 #include <libavutil/log.h>
@@ -82,8 +81,8 @@ static void init_logging(int level, int ffmpeg_level) {
 PYBIND11_MODULE(voidview_native, m) {
     m.doc() = "VoidView Native Module - Hardware Accelerated Video Decoder";
 
-    // 安装崩溃处理器
-    voidview::InstallCrashHandler();
+    // 注意: 崩溃处理由 Python 端 faulthandler 统一管理
+    // 日志落盘到 voidplayer_crash.log
 
     // 版本信息
     m.attr("__version__") = VOIDVIEW_VERSION_STRING;

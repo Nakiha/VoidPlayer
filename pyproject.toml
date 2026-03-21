@@ -37,6 +37,10 @@ dev = [
     "pybind11>=3.0.2",
     "win11toast>=0.35",
 ]
+build = [
+    "nuitka==4.0.6",
+    "zstandard>=0.23",  # onefile 模式需要
+]
 
 [project.scripts]
 voidplayer = "run_player:main"

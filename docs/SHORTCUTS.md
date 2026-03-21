@@ -99,7 +99,7 @@ DEFAULT_BINDINGS: dict[ShortcutAction, tuple[str, str, dict]] = {
 ### 调试
 | 快捷键 | 动作 | 说明 |
 |--------|------|------|
-| `Ctrl+D` | TOGGLE_DEBUG_MONITOR | 性能监控 |
+| `Ctrl+D` | TOGGLE_MEMORY_WINDOW | 内存监控 |
 | `I` | TOGGLE_STATS | 性能统计 |
 
 ## 快捷键设计原则

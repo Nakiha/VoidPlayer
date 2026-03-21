@@ -1,5 +1,5 @@
 """
-DebugMonitor - 性能监控窗口
+MemoryWindow - 内存监控窗口
 
 零开销设计:
 - 窗口关闭时 = 停止所有监控 = 零开销
@@ -24,8 +24,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QTimer, Qt, QRect
 from PySide6.QtGui import QPainter, QPen, QFont
 
-from .theme_utils import get_color, ColorKey
-from ..ui.widgets import HighlightSplitter
+from player.ui.theme_utils import get_color, ColorKey
+from player.ui.widgets import HighlightSplitter
 
 try:
     import psutil
@@ -425,8 +425,8 @@ class MemorySnapshotWidget(QWidget):
         pass
 
 
-class DebugMonitorWindow(QWidget):
-    """性能监控窗口"""
+class MemoryWindow(QWidget):
+    """内存监控窗口"""
 
     def __init__(self, parent=None, auto_tracemalloc: bool = False):
         super().__init__(parent)

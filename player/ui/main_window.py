@@ -13,7 +13,7 @@ from .toolbar import ToolBar
 from .controls_bar import ControlsBar
 from .timeline_area import TimelineArea
 from .theme_utils import get_color_hex, ColorKey
-from .debug_monitor import DebugMonitorWindow
+from .windows import MemoryWindow, StatsWindow
 from ..core.config import config, Profile
 from .widgets import HighlightSplitter
 from ..core.track_manager import TrackManager
@@ -25,7 +25,6 @@ from ..core.diagnostics.automation import AutomationController
 from ..core.signal_bus import signal_bus
 from ..core.logging_config import get_logger
 from ..core.diagnostics import DiagnosticsManager
-from .widgets.stats_overlay import StatsOverlay
 
 
 class MainWindow(QWidget):
@@ -45,7 +44,7 @@ class MainWindow(QWidget):
         super().__init__(parent)
         self._view_mode = ViewMode.SIDE_BY_SIDE
         self._is_playing = False
-        self._debug_monitor: DebugMonitorWindow | None = None
+        self._memory_window: MemoryWindow | None = None
         self._launch_args = launch_args or []
         self._auto_play = auto_play
         self._mock_script = mock_script
@@ -158,7 +157,7 @@ class MainWindow(QWidget):
         self.toolbar.add_media_clicked.connect(self._on_add_media)
         self.toolbar.new_window_clicked.connect(self._on_new_window)
         if config.profile != Profile.PERF:
-            self.toolbar.debug_monitor_clicked.connect(self._show_debug_monitor)
+            self.toolbar.debug_monitor_clicked.connect(self._show_memory_window)
 
         # 视口面板
         self.viewport_panel.media_remove_clicked.connect(self.remove_media)
@@ -199,7 +198,7 @@ class MainWindow(QWidget):
     def _setup_diagnostics(self):
         """设置诊断模块"""
         # 创建 StatsWindow (独立窗口)
-        self._stats_window = StatsOverlay()
+        self._stats_window = StatsWindow()
 
         # 设置 DiagnosticsManager (连接所有信号)
         self._stats_window.set_diagnostics_manager(self._diagnostics_manager)
@@ -233,7 +232,7 @@ class MainWindow(QWidget):
         sb.media_remove_requested.connect(self.remove_media)
 
         # 调试
-        sb.debug_monitor_requested.connect(self._show_debug_monitor)
+        sb.debug_monitor_requested.connect(self._show_memory_window)
         sb.new_window_requested.connect(self._on_new_window)
 
     # ========== 快捷键 ==========
@@ -428,19 +427,19 @@ class MainWindow(QWidget):
     def _update_view_mode_enabled(self):
         self.toolbar.set_view_mode_enabled(self._track_manager.count() > 0)
 
-    def _show_debug_monitor(self):
-        if self._debug_monitor is None:
-            self._debug_monitor = DebugMonitorWindow(
+    def _show_memory_window(self):
+        if self._memory_window is None:
+            self._memory_window = MemoryWindow(
                 None, auto_tracemalloc=(config.profile == Profile.DEBUG)
             )
 
-        if self._debug_monitor.isMinimized():
-            self._debug_monitor.showNormal()
+        if self._memory_window.isMinimized():
+            self._memory_window.showNormal()
         else:
-            self._debug_monitor.show()
+            self._memory_window.show()
 
-        self._debug_monitor.raise_()
-        self._debug_monitor.activateWindow()
+        self._memory_window.raise_()
+        self._memory_window.activateWindow()
 
     def _on_splitter_moved(self, _pos: int, _index: int):
         sizes = self.v_splitter.sizes()

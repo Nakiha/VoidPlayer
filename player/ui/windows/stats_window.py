@@ -20,6 +20,15 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QCloseEvent, QColor
 
+from pathlib import Path
+
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton,
+    QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox
+)
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFont, QCloseEvent, QColor
+
 from player.ui.theme_utils import get_color_hex, ColorKey
 from player.core.logging_config import get_logger
 
@@ -271,7 +280,3 @@ class StatsWindow(QWidget):
         """导出完成回调"""
         self._export_status_label.setText(f"Exported: {file_path}")
         self._logger.info(f"[StatsWindow] Export completed: {file_path}")
-
-
-# 兼容旧名称
-StatsOverlay = StatsWindow

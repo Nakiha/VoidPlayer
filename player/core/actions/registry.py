@@ -164,8 +164,8 @@ def create_action_registry(mw: "MainWindow") -> list[ActionDef]:
         None, "新建窗口", CATEGORY_VIEW))
 
     # 调试/诊断
-    actions.append(ActionDef("TOGGLE_DEBUG_MONITOR", mw._show_debug_monitor, [],
-        None, "切换调试监控窗口", CATEGORY_DEBUG))
+    actions.append(ActionDef("TOGGLE_MEMORY_WINDOW", mw._show_memory_window, [],
+        None, "切换内存监控窗口", CATEGORY_DEBUG))
     actions.append(ActionDef("TOGGLE_STATS", mw._toggle_stats_overlay, [],
         None, "切换性能统计窗口", CATEGORY_DEBUG))
     actions.append(ActionDef("SCREENSHOT", _save_screenshot(mw),

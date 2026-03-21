@@ -41,7 +41,7 @@ class ShortcutAction(Enum):
     SAVE_PROJECT = auto()
 
     # 其他
-    TOGGLE_DEBUG_MONITOR = auto()
+    TOGGLE_MEMORY_WINDOW = auto()
     TOGGLE_STATS = auto()
 
 
@@ -64,7 +64,7 @@ ACTION_NAME_MAP: dict[ShortcutAction, str] = {
     ShortcutAction.NEW_WINDOW: "NEW_WINDOW",
     ShortcutAction.OPEN_PROJECT: "OPEN_PROJECT",
     ShortcutAction.SAVE_PROJECT: "SAVE_PROJECT",
-    ShortcutAction.TOGGLE_DEBUG_MONITOR: "TOGGLE_DEBUG_MONITOR",
+    ShortcutAction.TOGGLE_MEMORY_WINDOW: "TOGGLE_MEMORY_WINDOW",
     ShortcutAction.TOGGLE_STATS: "TOGGLE_STATS",
 }
 
@@ -109,7 +109,7 @@ class ShortcutManager(QObject):
         ShortcutAction.SAVE_PROJECT: ("Ctrl+S", "保存项目", {}),
 
         # 其他
-        ShortcutAction.TOGGLE_DEBUG_MONITOR: ("Ctrl+D", "性能监控", {}),
+        ShortcutAction.TOGGLE_MEMORY_WINDOW: ("Ctrl+D", "内存监控", {}),
         ShortcutAction.TOGGLE_STATS: ("I", "性能统计", {}),
     }
 

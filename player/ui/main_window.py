@@ -21,6 +21,9 @@ from ..core.decoder_pool import DecoderPool
 from ..core.playback_controller import PlaybackController
 from ..core.shortcuts import ShortcutManager
 from ..core.actions import ActionDispatcher, create_action_registry
+from ..core.actions.viewport_zoom import ViewportZoomAction
+from ..core.actions.viewport_pan import ViewportPanAction
+from ..core.viewport import ViewportManager
 from ..core.diagnostics.automation import AutomationController
 from ..core.signal_bus import signal_bus
 from ..core.logging_config import get_logger
@@ -54,6 +57,11 @@ class MainWindow(QWidget):
         self._decoder_pool = DecoderPool(self)
         self._playback_controller = PlaybackController(self._decoder_pool, self)
         self._shortcut_manager = ShortcutManager(self)
+
+        # Viewport 管理
+        self._viewport_manager = ViewportManager(self)
+        self._viewport_zoom_action = ViewportZoomAction(self._viewport_manager, self)
+        self._viewport_pan_action = ViewportPanAction(self._viewport_manager, self)
 
         # 动作系统
         self._action_dispatcher = ActionDispatcher(self)
@@ -193,6 +201,23 @@ class MainWindow(QWidget):
         # 帧解码完成信号 -> 通知诊断模块
         dp.track_frame_decoded.connect(self._playback_controller.on_frame_decoded)
 
+        # Viewport 缩放/移动
+        gl_widget = self.viewport_panel.gl_widget
+        gl_widget.viewport_wheel_zoom.connect(self._on_viewport_wheel_zoom)
+        gl_widget.viewport_pan_start.connect(self._on_viewport_pan_start)
+        gl_widget.viewport_pan_move.connect(self._on_viewport_pan_move)
+        gl_widget.viewport_pan_end.connect(self._on_viewport_pan_end)
+        gl_widget.viewport_resized.connect(self._on_viewport_resized)
+
+        # ZoomComboBox -> ViewportManager
+        self.controls_bar.zoom_combo.zoom_changed.connect(self._viewport_zoom_action.on_zoom_value_changed)
+
+        # ViewportManager -> ZoomComboBox (更新 fit 值)
+        self._viewport_manager.zoom_changed.connect(self._on_viewport_zoom_changed)
+
+        # ViewportManager -> GLWidget (应用缩放/偏移渲染)
+        self._viewport_manager.viewport_changed.connect(self._on_viewport_changed)
+
     # ========== 诊断模块设置 ==========
 
     def _setup_diagnostics(self):
@@ -220,7 +245,8 @@ class MainWindow(QWidget):
         sb.pause_requested.connect(self.pause)
         sb.seek_requested.connect(self.seek_to)
         sb.speed_changed.connect(self.controls_bar.speed_combo.setCurrentIndex)
-        sb.zoom_changed.connect(self.controls_bar.zoom_combo.setCurrentIndex)
+        # zoom_changed 现在使用 set_zoom_ratio 而不是 setCurrentIndex
+        sb.zoom_changed.connect(lambda ratio: self.controls_bar.zoom_combo.set_zoom_ratio(ratio / 100.0, emit=True))
         sb.loop_toggled.connect(self.controls_bar.loop_btn.setChecked)
 
         # 视图
@@ -278,6 +304,9 @@ class MainWindow(QWidget):
                 self.viewport_panel.gl_widget.set_decoders(self._decoder_pool.get_decoders())
                 # 请求第一帧显示 (即使不播放也要显示首帧)
                 self._decoder_pool.request_frame(index)
+
+                # 更新 ViewportManager track 信息
+                self._update_viewport_tracks()
         else:
             self.timeline_area.add_track(index, source)
 
@@ -290,6 +319,9 @@ class MainWindow(QWidget):
         self.viewport_panel.remove_slot(index)
         self.viewport_panel.gl_widget.set_decoders(self._decoder_pool.get_decoders())
         self._update_view_mode_enabled()
+
+        # 更新 ViewportManager track 信息
+        self._viewport_manager.remove_track(index)
 
     def _on_sources_swapped(self, index1: int, index2: int):
         self.viewport_panel.on_sources_swapped(index1, index2)
@@ -385,6 +417,69 @@ class MainWindow(QWidget):
             self.viewport_panel.gl_widget.set_decoders(self._decoder_pool.get_decoders())
             # 请求第一帧显示 (即使不播放也要显示首帧)
             self._decoder_pool.request_frame(index)
+
+            # 更新 ViewportManager track 信息
+            self._update_viewport_tracks()
+
+    # ========== Viewport 缩放/移动回调 ==========
+
+    def _on_viewport_wheel_zoom(self, delta: int, mouse_x: float, mouse_y: float):
+        """处理滚轮缩放"""
+        self._viewport_zoom_action.on_wheel(delta, mouse_x, mouse_y)
+
+    def _on_viewport_pan_start(self, x: float, y: float):
+        """开始画面移动"""
+        self._viewport_pan_action.on_mouse_press(x, y)
+
+    def _on_viewport_pan_move(self, x: float, y: float):
+        """画面移动中"""
+        self._viewport_pan_action.on_mouse_move(x, y)
+
+    def _on_viewport_pan_end(self):
+        """结束画面移动"""
+        self._viewport_pan_action.on_mouse_release()
+
+    def _on_viewport_resized(self, width: float, height: float):
+        """Viewport 尺寸变化"""
+        from PySide6.QtCore import QSizeF
+        self._viewport_manager.on_widget_resize(QSizeF(width, height))
+
+    def _on_viewport_zoom_changed(self, zoom_ratio: float):
+        """缩放变化回调"""
+        # 更新 ZoomComboBox 显示
+        self.controls_bar.set_zoom_ratio(zoom_ratio)
+
+    def _on_viewport_changed(self):
+        """Viewport 状态变化回调 - 应用到 GLWidget 渲染"""
+        self.viewport_panel.gl_widget.set_viewport_transform(
+            self._viewport_manager.zoom_ratio,
+            self._viewport_manager.view_offset
+        )
+
+    def _update_viewport_tracks(self):
+        """更新 ViewportManager 的 track 信息"""
+        tracks = []
+        track_sizes = [(0, 0)] * 8  # MAX_TRACKS = 8
+
+        for i in range(self._track_manager.count()):
+            track_state = self._decoder_pool.get_track_state(i)
+            if track_state and track_state.media_info:
+                media_info = track_state.media_info
+                w = media_info.width
+                h = media_info.height
+                if w > 0 and h > 0:
+                    tracks.append((i, w, h))
+                    track_sizes[i] = (w, h)
+
+        self._viewport_manager.set_tracks(tracks)
+
+        # 更新 GLWidget 的 track 尺寸信息
+        self.viewport_panel.gl_widget.set_track_sizes(track_sizes)
+
+        # 更新 ZoomComboBox 的 fit 值
+        if tracks:
+            fit_value = self._viewport_manager.get_min_zoom()
+            self.controls_bar.set_fit_value(fit_value)
 
     # ========== 用户操作 ==========
 

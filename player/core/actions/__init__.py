@@ -5,6 +5,8 @@ from .types import ActionDef, ParamDef, MISSING, get_actions_by_category
 from .dispatcher import ActionDispatcher
 from .resolvers import resolve_file_picker, resolve_multi_file_picker, resolve_save_path
 from .registry import create_action_registry, get_action_metadata
+from .viewport_zoom import ViewportZoomAction
+from .viewport_pan import ViewportPanAction
 
 __all__ = [
     # Types
@@ -15,4 +17,7 @@ __all__ = [
     'resolve_file_picker', 'resolve_multi_file_picker', 'resolve_save_path',
     # Registry
     'create_action_registry', 'get_action_metadata',
+    # Viewport Actions
+    'ViewportZoomAction',
+    'ViewportPanAction',
 ]

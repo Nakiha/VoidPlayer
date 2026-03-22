@@ -14,7 +14,7 @@ from qfluentwidgets_nuitka import (
 from player.core.logging_config import get_logger
 
 from .theme_utils import get_color_hex, ColorKey
-from .widgets import create_tool_button, TimeLabel, TimelineSlider
+from .widgets import create_tool_button, TimeLabel, TimelineSlider, ZoomComboBox
 
 
 class ControlsBar(QWidget):
@@ -57,13 +57,10 @@ class ControlsBar(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
-        # 缩放选择
-        self.zoom_combo = ComboBox(self)
-        self.zoom_combo.addItems(["50%", "75%", "100%", "125%", "150%", "200%", "400%"])
-        self.zoom_combo.setCurrentIndex(2)   # 默认 100%
-        self.zoom_combo.setFixedWidth(80)
-        self.zoom_combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 不拦截快捷键
-        self.zoom_combo.currentIndexChanged.connect(self._on_zoom_changed)
+        # 缩放选择 (使用自定义 ZoomComboBox)
+        self.zoom_combo = ZoomComboBox(self)
+        self.zoom_combo.setFocusPolicy(Qt.FocusPolicy.ClickFocus)  # 允许编辑时获取焦点
+        self.zoom_combo.zoom_changed.connect(self._on_zoom_changed)
         layout.addWidget(self.zoom_combo)
 
         # 速度选择
@@ -168,10 +165,26 @@ class ControlsBar(QWidget):
         self.precise_seek_requested.emit(self._current_ms)
         self._logger.info(f"[SEEK] ControlsBar._on_slider_changed done: {(time.perf_counter() - t0)*1000:.2f}ms")
 
-    def _on_zoom_changed(self, index: int):
-        """缩放变化"""
-        zoom_values = [50, 75, 100, 121, 150, 200, 400]
-        self.zoom_changed.emit(zoom_values[index])
+    def _on_zoom_changed(self, zoom_ratio: float):
+        """缩放变化 - zoom_ratio 是比例值 (1.0 = 100%)"""
+        # 转换为百分比发送给外部
+        self.zoom_changed.emit(int(zoom_ratio * 100))
+
+    def set_zoom_ratio(self, ratio: float):
+        """设置缩放比例
+
+        Args:
+            ratio: 缩放比例 (1.0 = 100%)
+        """
+        self.zoom_combo.set_zoom_ratio(ratio, emit=False)
+
+    def set_fit_value(self, fit_value: float):
+        """设置 fit 值
+
+        Args:
+            fit_value: fit 缩放比例
+        """
+        self.zoom_combo.set_fit_value(fit_value)
 
     def _on_speed_changed(self, index: int):
         """速度变化"""

@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
-from PySide6.QtGui import QSurfaceFormat
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtGui import QSurfaceFormat, QMouseEvent
+from PySide6.QtCore import Signal, Qt, QPointF, QSizeF
 from PySide6.QtWidgets import QApplication
 from OpenGL.GL import *
 from loguru import logger
@@ -33,6 +33,7 @@ class MultiTrackGLWidget(QOpenGLWidget):
     - 支持 SPLIT (分屏) 和 SIDE_BY_SIDE (并排) 模式
     - SPLIT 模式支持可拖动分割线
     - 动态 track 顺序
+    - 支持 viewport 缩放和移动事件
     """
 
     MAX_TRACKS = 8
@@ -40,6 +41,13 @@ class MultiTrackGLWidget(QOpenGLWidget):
     # 信号
     split_position_changed = Signal(float)  # 分割线位置变化 (0.0 ~ 1.0)
     gl_initialized = Signal()  # OpenGL 上下文初始化完成，可以初始化解码器
+
+    # Viewport 缩放/移动信号
+    viewport_wheel_zoom = Signal(int, float, float)  # (delta, mouse_x, mouse_y)
+    viewport_pan_start = Signal(float, float)  # (x, y)
+    viewport_pan_move = Signal(float, float)   # (x, y)
+    viewport_pan_end = Signal()
+    viewport_resized = Signal(float, float)    # (width, height)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -60,6 +68,15 @@ class MultiTrackGLWidget(QOpenGLWidget):
         # 分割线拖动状态
         self._dragging_split = False
         self.setMouseTracking(True)
+
+        # Viewport 移动状态
+        self._dragging_pan = False
+        self._pan_button = Qt.MouseButton.MiddleButton  # 中键拖动移动画面
+
+        # Viewport 缩放/偏移状态 (由 ViewportManager 控制)
+        self._zoom_ratio: float = 1.0
+        self._view_offset: QPointF = QPointF(0, 0)
+        self._track_sizes: list[tuple[int, int]] = [(0, 0)] * self.MAX_TRACKS  # 每个 track 的分辨率
 
         # 设置 OpenGL 3.3 Core Profile
         fmt = QSurfaceFormat()
@@ -168,6 +185,24 @@ class MultiTrackGLWidget(QOpenGLWidget):
     def split_position(self) -> float:
         return self._split_position
 
+    # ========== Viewport 缩放/偏移 API ==========
+
+    def set_viewport_transform(self, zoom_ratio: float, view_offset: QPointF):
+        """设置 viewport 缩放和偏移"""
+        self._zoom_ratio = zoom_ratio
+        self._view_offset = view_offset
+        self.update()
+
+    def set_track_sizes(self, sizes: list[tuple[int, int]]):
+        """设置每个 track 的分辨率尺寸
+
+        Args:
+            sizes: [(width, height), ...] 列表，索引对应 track 索引
+        """
+        for i, (w, h) in enumerate(sizes[:self.MAX_TRACKS]):
+            self._track_sizes[i] = (w, h)
+        self.update()
+
     # ========== OpenGL 实现 ==========
 
     def initializeGL(self):
@@ -244,9 +279,22 @@ class MultiTrackGLWidget(QOpenGLWidget):
             loc = glGetUniformLocation(self._shader_program, f"u_aspect_ratios[{i}]")
             glUniform1f(loc, self._aspect_ratios[i])
 
+        # 设置每个 track 的分辨率尺寸
+        for i in range(self.MAX_TRACKS):
+            w, h = self._track_sizes[i]
+            loc = glGetUniformLocation(self._shader_program, f"u_track_sizes[{i}]")
+            glUniform2f(loc, float(w), float(h))
+
         # 设置画布宽高比
         canvas_aspect = self.width() / max(self.height(), 1)
         glUniform1f(glGetUniformLocation(self._shader_program, "u_canvas_aspect"), canvas_aspect)
+
+        # 设置 viewport 缩放和偏移
+        glUniform1f(glGetUniformLocation(self._shader_program, "u_zoom_ratio"), self._zoom_ratio)
+        glUniform2f(
+            glGetUniformLocation(self._shader_program, "u_view_offset"),
+            self._view_offset.x(), self._view_offset.y()
+        )
 
         # 绑定纹理
         for i in range(self.MAX_TRACKS):
@@ -268,20 +316,39 @@ class MultiTrackGLWidget(QOpenGLWidget):
     def resizeGL(self, w, h):
         """调整视口大小"""
         glViewport(0, 0, w, h)
+        # 发出 resize 信号
+        self.viewport_resized.emit(float(w), float(h))
 
     # ========== 分割线拖动 ==========
 
     def mousePressEvent(self, event):
-        """鼠标按下 - 开始拖动分割线"""
+        """鼠标按下 - 开始拖动分割线或画面移动"""
+        # 优先处理分割线拖动
         if self._view_mode == ViewMode.SPLIT and event.button() == Qt.MouseButton.LeftButton:
             if self._is_near_split_line(event.position().x()):
                 self._dragging_split = True
                 QApplication.setOverrideCursor(Qt.CursorShape.SizeHorCursor)
                 return
+
+        # 处理画面移动（中键）
+        if event.button() == self._pan_button:
+            self._dragging_pan = True
+            pos = event.position()
+            self.viewport_pan_start.emit(pos.x(), pos.y())
+            QApplication.setOverrideCursor(Qt.CursorShape.ClosedHandCursor)
+            return
+
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        """鼠标移动 - 拖动分割线或更新光标"""
+        """鼠标移动 - 拖动分割线、画面移动或更新光标"""
+        # 处理画面移动
+        if self._dragging_pan:
+            pos = event.position()
+            self.viewport_pan_move.emit(pos.x(), pos.y())
+            return
+
+        # 处理分割线拖动
         if self._dragging_split:
             new_pos = event.position().x() / self.width()
             self.set_split_position(new_pos)
@@ -295,16 +362,41 @@ class MultiTrackGLWidget(QOpenGLWidget):
 
     def mouseReleaseEvent(self, event):
         """鼠标释放 - 结束拖动"""
+        # 结束画面移动
+        if event.button() == self._pan_button and self._dragging_pan:
+            self._dragging_pan = False
+            self.viewport_pan_end.emit()
+            QApplication.restoreOverrideCursor()
+            return
+
+        # 结束分割线拖动
         if self._dragging_split:
             self._dragging_split = False
             QApplication.restoreOverrideCursor()
             return
         super().mouseReleaseEvent(event)
 
+    def wheelEvent(self, event):
+        """滚轮事件 - 缩放"""
+        # 检查是否有修饰键（如果有则不处理，让父组件处理）
+        modifiers = event.modifiers()
+        if modifiers != Qt.KeyboardModifier.NoModifier:
+            super().wheelEvent(event)
+            return
+
+        # 发出缩放信号
+        delta = event.angleDelta().y()  # 正数=上滚，负数=下滚
+        pos = event.position()
+        self.viewport_wheel_zoom.emit(delta, pos.x(), pos.y())
+        event.accept()
+
     def leaveEvent(self, event):
         """鼠标离开 - 恢复光标"""
         if self._dragging_split:
             self._dragging_split = False
+        if self._dragging_pan:
+            self._dragging_pan = False
+            self.viewport_pan_end.emit()
         QApplication.restoreOverrideCursor()
         super().leaveEvent(event)
 

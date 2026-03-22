@@ -20,6 +20,7 @@ class ColorKey(StrEnum):
     BG_TRACK_ALT = "bg_track_alt"
     BG_CONTROL_GROUP = "bg_control_group"
     BG_CLIP = "bg_clip"
+    BG_COMBO = "bg_combo"  # ComboBox 背景色
 
     # 文字色
     TEXT_PRIMARY = "text_primary"
@@ -50,6 +51,7 @@ _COLOR_DEFINITIONS: dict[ColorKey, QColor | tuple[QColor, QColor]] = {
     ColorKey.BG_TRACK_CONTROLS: (QColor(30, 30, 30), QColor(243, 243, 243)),
     ColorKey.BG_TRACK_ALT: (QColor(40, 40, 40), QColor(238, 238, 238)),
     ColorKey.BG_CONTROL_GROUP: (QColor(45, 45, 45), QColor(230, 230, 230)),
+    ColorKey.BG_COMBO: (QColor(57, 57, 57), QColor(255, 255, 255)),  # #393939 系列
     ColorKey.BG_CLIP: (QColor(64, 68, 85), QColor(180, 185, 200)),
     # 文字色
     ColorKey.TEXT_PRIMARY: (QColor(224, 224, 224), QColor(32, 32, 32)),

@@ -135,11 +135,14 @@ def create_action_registry(mw: "MainWindow") -> list[ActionDef]:
     actions.append(ActionDef("SPEED_SET",
         lambda index: mw.controls_bar.speed_combo.setCurrentIndex(index),
         [ParamDef("index", int)], "设置速度索引", CATEGORY_SPEED_ZOOM))
+
+    # 缩放 (使用 ViewportManager)
     actions.append(ActionDef("ZOOM_IN", _zoom_in(mw), [], "放大", CATEGORY_SPEED_ZOOM))
     actions.append(ActionDef("ZOOM_OUT", _zoom_out(mw), [], "缩小", CATEGORY_SPEED_ZOOM))
-    actions.append(ActionDef("ZOOM_SET",
-        lambda index: mw.controls_bar.zoom_combo.setCurrentIndex(index),
-        [ParamDef("index", int)], "设置缩放索引", CATEGORY_SPEED_ZOOM))
+    actions.append(ActionDef("ZOOM_RESET", _zoom_reset(mw), [], "重置缩放 (Fit)", CATEGORY_SPEED_ZOOM))
+    actions.append(ActionDef("ZOOM_SET_RATIO",
+        lambda ratio: mw.controls_bar.set_zoom_ratio(ratio),
+        [ParamDef("ratio", float)], "设置缩放比例 (1.0 = 100%)", CATEGORY_SPEED_ZOOM))
 
     # 轨道管理
     actions.append(ActionDef("ADD_TRACK", mw.add_media, [ParamDef("file_path", str)],
@@ -223,18 +226,23 @@ def _speed_down(mw):
 
 def _zoom_in(mw):
     def zoom_in():
-        idx = mw.controls_bar.zoom_combo.currentIndex()
-        if idx < mw.controls_bar.zoom_combo.count() - 1:
-            mw.controls_bar.zoom_combo.setCurrentIndex(idx + 1)
+        if hasattr(mw, '_viewport_zoom_action') and mw._viewport_zoom_action:
+            mw._viewport_zoom_action.zoom_in()
     return zoom_in
 
 
 def _zoom_out(mw):
     def zoom_out():
-        idx = mw.controls_bar.zoom_combo.currentIndex()
-        if idx > 0:
-            mw.controls_bar.zoom_combo.setCurrentIndex(idx - 1)
+        if hasattr(mw, '_viewport_zoom_action') and mw._viewport_zoom_action:
+            mw._viewport_zoom_action.zoom_out()
     return zoom_out
+
+
+def _zoom_reset(mw):
+    def zoom_reset():
+        if hasattr(mw, '_viewport_zoom_action') and mw._viewport_zoom_action:
+            mw._viewport_zoom_action.zoom_reset()
+    return zoom_reset
 
 
 def _toggle_fullscreen(mw):

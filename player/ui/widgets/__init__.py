@@ -35,6 +35,9 @@ from .elide_combo import ElideComboBox
 # 时间轴进度条
 from .timeline_slider import TimelineSlider
 
+# 缩放下拉框
+from .zoom_combo_box import ZoomComboBox
+
 __all__ = [
     # 时间工具
     'format_time_seconds',
@@ -56,4 +59,6 @@ __all__ = [
     'ElideComboBox',
     # 时间轴进度条
     'TimelineSlider',
+    # 缩放下拉框
+    'ZoomComboBox',
 ]

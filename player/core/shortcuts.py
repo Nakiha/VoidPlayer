@@ -59,7 +59,7 @@ ACTION_NAME_MAP: dict[ShortcutAction, str] = {
     ShortcutAction.SPEED_RESET: "SPEED_SET",  # 特殊处理
     ShortcutAction.ZOOM_IN: "ZOOM_IN",
     ShortcutAction.ZOOM_OUT: "ZOOM_OUT",
-    ShortcutAction.ZOOM_RESET: "ZOOM_SET",  # 特殊处理
+    ShortcutAction.ZOOM_RESET: "ZOOM_RESET",  # 重置缩放
     ShortcutAction.ADD_MEDIA: "ADD_TRACK",
     ShortcutAction.NEW_WINDOW: "NEW_WINDOW",
     ShortcutAction.OPEN_PROJECT: "OPEN_PROJECT",
@@ -100,7 +100,7 @@ class ShortcutManager(QObject):
         # 缩放控制
         ShortcutAction.ZOOM_IN: ("Ctrl++", "放大", {}),
         ShortcutAction.ZOOM_OUT: ("Ctrl+-", "缩小", {}),
-        ShortcutAction.ZOOM_RESET: ("Ctrl+0", "重置缩放", {"index": 2}),  # index=2 是 100%
+        ShortcutAction.ZOOM_RESET: ("Ctrl+0", "重置缩放 (Fit)", {}),
 
         # 项目操作
         ShortcutAction.ADD_MEDIA: ("Ctrl+O", "添加媒体", {}),  # 无参数，触发 resolver

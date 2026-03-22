@@ -6,6 +6,9 @@ build
 logs/
 diagnostics/
 
+# Screenshots (mock test output)
+screenshots/
+
 # Python
 __pycache__/
 *.py[cod]

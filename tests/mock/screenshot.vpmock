@@ -1,0 +1,9 @@
+# 截图测试
+# 用于远程监视开发效果
+
+0.5, ADD_TRACK, resources/video/h264_9s_1920x1080.mp4
+1.0, PLAY
+2.0, SCREENSHOT_PAGE, screenshots/mock_test.png
+3.0, PAUSE
+3.5, SCREENSHOT_PAGE, screenshots/mock_test_paused.png
+5.0, QUIT, 0

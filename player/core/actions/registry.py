@@ -80,6 +80,8 @@ def get_action_metadata() -> list[ActionDef]:
         ActionDef("TOGGLE_STATS", noop, [], "切换性能统计窗口", CATEGORY_DEBUG),
         ActionDef("SCREENSHOT", noop, [ParamDef("save_path", str, default="")],
                   "保存当前帧截图", CATEGORY_DEBUG),
+        ActionDef("SCREENSHOT_PAGE", noop, [ParamDef("save_path", str)],
+                  "保存整个页面截图 (mock 测试用)", CATEGORY_DEBUG),
 
         # 断言动作
         ActionDef("ASSERT_PLAYING", noop, [], "断言正在播放", CATEGORY_ASSERT),
@@ -170,6 +172,8 @@ def create_action_registry(mw: "MainWindow") -> list[ActionDef]:
         None, "切换性能统计窗口", CATEGORY_DEBUG))
     actions.append(ActionDef("SCREENSHOT", _save_screenshot(mw),
         [ParamDef("save_path", str, default="")], resolve_save_path, "保存当前帧截图", CATEGORY_DEBUG))
+    actions.append(ActionDef("SCREENSHOT_PAGE", _save_page_screenshot(mw),
+        [ParamDef("save_path", str)], None, "保存整个页面截图 (mock 测试用)", CATEGORY_DEBUG))
 
     # 断言动作
     actions.append(ActionDef("ASSERT_PLAYING", _assert_playing(mw), [],
@@ -247,6 +251,30 @@ def _save_screenshot(mw):
         from player.core.logging_config import get_logger
         get_logger().warning(f"SCREENSHOT action not implemented yet: {save_path}")
     return save_screenshot
+
+
+def _save_page_screenshot(mw):
+    """保存整个 MainWindow 的截图"""
+    def save_page_screenshot(save_path: str):
+        from pathlib import Path
+        from player.core.logging_config import get_logger
+
+        logger = get_logger()
+
+        # 确保目录存在
+        path = Path(save_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 使用 Qt 的 grab 功能截取整个窗口
+        pixmap = mw.grab()
+
+        # 保存截图
+        if pixmap.save(str(path)):
+            logger.info(f"Page screenshot saved: {path}")
+        else:
+            logger.error(f"Failed to save page screenshot: {path}")
+
+    return save_page_screenshot
 
 
 class AssertionError(Exception):

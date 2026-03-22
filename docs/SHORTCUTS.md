@@ -9,8 +9,8 @@
 ```
 
 - **ShortcutManager** (`player/core/shortcuts.py`): 管理快捷键绑定和分发
-- **ActionDispatcher** (`player/core/action_dispatcher.py`): 动作分发器
-- **ActionRegistry** (`player/core/action_registry.py`): 动作定义和执行
+- **ActionDispatcher** (`player/core/actions/dispatcher.py`): 动作分发器
+- **ActionRegistry** (`player/core/actions/registry.py`): 动作定义和执行
 
 ## 新增快捷键清单
 
@@ -18,7 +18,7 @@
 
 ### 1. ActionRegistry (必须)
 
-文件: `player/core/action_registry.py`
+文件: `player/core/actions/registry.py`
 
 ```python
 # 在 get_action_metadata() 添加元数据

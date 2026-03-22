@@ -30,7 +30,7 @@
 
 新增交互功能检查清单：
 
-1. 交互注册: `player/core/action_registry.py`
+1. 交互注册: `player/core/actions/registry.py`
 2. 快捷键: `player/core/shortcuts.py`
 3. Mock 测试: `tests/mock/`
 

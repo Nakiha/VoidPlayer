@@ -52,7 +52,8 @@ class TrackContent(QWidget):
 
         painter.setBrush(get_color(ColorKey.BG_CLIP))
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(clip_margin, clip_y, clip_width, clip_height, 2, 2)
+        # 待实现，先移除
+        # painter.drawRoundedRect(clip_margin, clip_y, clip_width, clip_height, 2, 2)
 
         # 绘制播放头
         playhead_x = int(self.width() * self._playhead_position)

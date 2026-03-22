@@ -407,12 +407,15 @@ class DecoderPool(QObject):
                 has_pending = True
                 pts_ms = pop_pts
 
+        texture_uploaded = False
         if success or has_pending:
             track.current_pts_ms = pts_ms
 
             # 上传纹理 (必须在 GL 线程/主线程)
             if track.decoder and track.decoder.has_pending_frame():
-                track.decoder.upload_pending_frame()
+                texture_uploaded = track.decoder.upload_pending_frame()
+                if not texture_uploaded:
+                    self._logger.warning(f"Track {track_index}: texture upload failed")
         else:
             # 检查是否是 EOF 或错误
             if track.decoder:
@@ -479,20 +482,20 @@ class DecoderPool(QObject):
         self.request_all_frames()
 
     def prev_frame(self):
-        """上一帧 - 向后 seek 一帧时间"""
+        """上一帧 - 向后 seek 一帧时间 (精确)"""
         # 使用第一帧的帧间隔
         frame_interval = self._get_min_frame_interval()
         if frame_interval > 0:
             new_pos = max(0, self._current_position_ms - frame_interval)
-            self.seek_to(new_pos)
+            self.seek_to_precise(new_pos)
 
     def next_frame(self):
-        """下一帧 - 前进一帧"""
+        """下一帧 - 前进一帧 (精确)"""
         # 使用第一帧的帧间隔
         frame_interval = self._get_min_frame_interval()
         if frame_interval > 0:
             new_pos = min(self._duration_ms, self._current_position_ms + frame_interval)
-            self.seek_to(new_pos)
+            self.seek_to_precise(new_pos)
 
     def _get_min_frame_interval(self) -> int:
         """获取所有活动轨道中最小的帧间隔 (用于 prev/next_frame)"""

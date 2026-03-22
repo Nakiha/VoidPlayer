@@ -28,6 +28,17 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent
 
 
+def ensure_hooks_path():
+    """确保 git hooks 路径配置正确"""
+    hooks_dir = PROJECT_ROOT / ".githooks"
+    if hooks_dir.exists():
+        subprocess.run(
+            ["git", "config", "core.hooksPath", str(hooks_dir)],
+            check=False,
+            capture_output=True,
+        )
+
+
 def get_version() -> str:
     """从 pyproject.toml 获取版本号"""
     pyproject = PROJECT_ROOT / "pyproject.toml"
@@ -405,6 +416,8 @@ def cmd_all(args):
 
 
 def main():
+    ensure_hooks_path()
+
     parser = argparse.ArgumentParser(
         description="VoidPlayer 统一构建脚本",
         formatter_class=argparse.RawDescriptionHelpFormatter,

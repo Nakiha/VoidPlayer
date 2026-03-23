@@ -18,9 +18,15 @@ def _is_console_available() -> bool:
     """检测控制台是否可用（可以安全写入 stderr）
 
     日志输出到 stderr，所以只需要检测 stderr 是否可用。
+    非打包模式下始终返回 True（开发调试需要日志输出）。
     """
     if not sys.stderr:
         return False
+
+    # 非打包模式：始终启用控制台输出
+    is_frozen = hasattr(sys, 'frozen') or "__compiled__" in globals()
+    if not is_frozen:
+        return True
 
     # Windows: 检查 stderr 是否连接到真正的控制台
     if sys.platform == "win32":

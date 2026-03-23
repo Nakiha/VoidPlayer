@@ -224,6 +224,8 @@ def build_nuitka(onefile: bool = False) -> int:
         "--nofollow-import-to=OpenGL_accelerate",
         "--lto=yes",
         "--deployment",
+        "--python-flag=no_site",      # 移除 site 模块
+        "--python-flag=no_docstrings", # 移除文档字符串
         "--enable-plugin=anti-bloat",
         "--show-progress",
         "--show-memory",
@@ -237,11 +239,14 @@ def build_nuitka(onefile: bool = False) -> int:
         cmd.insert(cmd.index("--windows-console-mode=attach") + 1,
                    f"--windows-icon-from-ico={icon_path}")
 
-    # FFmpeg DLLs
+    # FFmpeg DLLs (排除不需要的库)
     ffmpeg_bin = PROJECT_ROOT / "libs" / "ffmpeg" / "bin"
+    exclude_dlls = {"avfilter", "avdevice", "postproc"}  # 滤镜/设备/后处理
     if ffmpeg_bin.exists():
         for dll in ffmpeg_bin.glob("*.dll"):
-            cmd.append(f"--include-data-file={dll}=libs/ffmpeg/bin/{dll.name}")
+            dll_name = dll.stem.rsplit("-", 1)[0]  # 如 avfilter-11 -> avfilter
+            if dll_name not in exclude_dlls:
+                cmd.append(f"--include-data-file={dll}=libs/ffmpeg/bin/{dll.name}")
 
     # 资源文件
     icons_dir = PROJECT_ROOT / "resources" / "icons"

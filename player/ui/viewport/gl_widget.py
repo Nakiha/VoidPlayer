@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 class ViewMode(IntEnum):
     """视图模式枚举"""
     SIDE_BY_SIDE = 0  # 并排模式 - 所有视频等分显示
-    SPLIT = 1         # 分屏模式 - 只显示前两个，可拖动分割线
+    SPLIT_SCREEN = 1  # 分屏对比模式 - 重叠显示，分割线切换
 
 
 class MultiTrackGLWidget(QOpenGLWidget):
@@ -289,6 +289,12 @@ class MultiTrackGLWidget(QOpenGLWidget):
         canvas_aspect = self.width() / max(self.height(), 1)
         glUniform1f(glGetUniformLocation(self._shader_program, "u_canvas_aspect"), canvas_aspect)
 
+        # 设置画布尺寸 (像素)，用于分割线渲染
+        glUniform2f(
+            glGetUniformLocation(self._shader_program, "u_canvas_size"),
+            float(self.width()), float(self.height())
+        )
+
         # 设置 viewport 缩放和偏移
         glUniform1f(glGetUniformLocation(self._shader_program, "u_zoom_ratio"), self._zoom_ratio)
         glUniform2f(
@@ -324,7 +330,7 @@ class MultiTrackGLWidget(QOpenGLWidget):
     def mousePressEvent(self, event):
         """鼠标按下 - 开始拖动分割线或画面移动"""
         # 优先处理分割线拖动
-        if self._view_mode == ViewMode.SPLIT and event.button() == Qt.MouseButton.LeftButton:
+        if self._view_mode == ViewMode.SPLIT_SCREEN and event.button() == Qt.MouseButton.LeftButton:
             if self._is_near_split_line(event.position().x()):
                 self._dragging_split = True
                 QApplication.setOverrideCursor(Qt.CursorShape.SizeHorCursor)
@@ -353,7 +359,7 @@ class MultiTrackGLWidget(QOpenGLWidget):
             new_pos = event.position().x() / self.width()
             self.set_split_position(new_pos)
             self.split_position_changed.emit(self._split_position)
-        elif self._view_mode == ViewMode.SPLIT:
+        elif self._view_mode == ViewMode.SPLIT_SCREEN:
             if self._is_near_split_line(event.position().x()):
                 QApplication.setOverrideCursor(Qt.CursorShape.SizeHorCursor)
             else:
@@ -403,6 +409,8 @@ class MultiTrackGLWidget(QOpenGLWidget):
     def _is_near_split_line(self, x: float) -> bool:
         """判断是否在分割线附近"""
         if self.width() == 0:
+            return False
+        if self._view_mode != ViewMode.SPLIT_SCREEN:
             return False
         split_x = self._split_position * self.width()
         return abs(x - split_x) < 10  # 10px 容差

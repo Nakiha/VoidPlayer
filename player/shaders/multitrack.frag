@@ -1,15 +1,15 @@
 #version 330 core
 // MultiTrack fragment shader - multi-texture composition
-// Supports SIDE_BY_SIDE (equal split) and SPLIT (draggable divider) modes
+// Supports SIDE_BY_SIDE (equal split) and SPLIT_SCREEN (overlapping with divider) modes
 // Supports viewport zoom and pan
 
 in vec2 v_texCoord;
 in vec2 v_position;
 out vec4 fragColor;
 
-uniform int u_mode;           // 0 = SIDE_BY_SIDE, 1 = SPLIT
+uniform int u_mode;           // 0 = SIDE_BY_SIDE, 1 = SPLIT_SCREEN
 uniform int u_track_count;    // Number of active tracks
-uniform float u_split_pos;    // Split position (0.0 - 1.0) for SPLIT mode
+uniform float u_split_pos;    // Split position (0.0 - 1.0) for SPLIT_SCREEN mode
 uniform int u_order[8];       // Track display order mapping
 
 // 每个 track 的宽高比 (width / height), 0 表示使用画布比例
@@ -21,6 +21,9 @@ uniform vec2 u_track_sizes[8];
 // 画布宽高比
 uniform float u_canvas_aspect;
 
+// 画布尺寸 (像素)
+uniform vec2 u_canvas_size;
+
 // Viewport 缩放和偏移
 uniform float u_zoom_ratio;   // 缩放比例: 1.0 = fit, >1.0 = 放大
 uniform vec2 u_view_offset;   // 视图偏移 (片坐标系, 像素单位)
@@ -29,6 +32,9 @@ uniform sampler2D u_textures[8];  // Up to 8 texture slots
 
 // 背景色 (letterbox/pillarbox)
 const vec4 BG_COLOR = vec4(0.0, 0.0, 0.0, 1.0);
+
+// 分割线颜色 (白色半透明)
+const vec4 DIVIDER_COLOR = vec4(1.0, 1.0, 1.0, 0.8);
 
 vec4 get_texture(int idx, vec2 uv) {
     if (idx == 0) return texture(u_textures[0], uv);
@@ -117,18 +123,16 @@ void main() {
     float slot_aspect;  // 当前 slot 的宽高比
 
     if (u_mode == 1) {
-        // SPLIT mode: show first 2 tracks with draggable divider
+        // SPLIT_SCREEN mode: overlapping display with split divider
+        // 两个视频在同一位置重叠，通过分割线切换显示
         if (v_texCoord.x < u_split_pos) {
-            track_idx = u_order[0];
-            local_uv = vec2(v_texCoord.x / max(u_split_pos, 0.001), v_texCoord.y);
-            // slot 宽高比 = canvas_aspect * split_pos
-            slot_aspect = u_canvas_aspect * u_split_pos;
+            track_idx = u_order[0];  // 左侧显示 track 0
         } else {
-            track_idx = u_order[1];
-            float remain = max(1.0 - u_split_pos, 0.001);
-            local_uv = vec2((v_texCoord.x - u_split_pos) / remain, v_texCoord.y);
-            slot_aspect = u_canvas_aspect * remain;
+            track_idx = u_order[1];  // 右侧显示 track 1
         }
+        // UV 坐标不进行区域分割，使用完整画布坐标
+        local_uv = v_texCoord;
+        slot_aspect = u_canvas_aspect;  // slot 占满整个画布
     } else {
         // SIDE_BY_SIDE mode: equal width 1/N
         int count = max(u_track_count, 1);
@@ -160,5 +164,18 @@ void main() {
         fragColor = BG_COLOR;
     } else {
         fragColor = get_texture(track_idx, tex_uv);
+    }
+
+    // SPLIT_SCREEN 模式下渲染分割线 (2px 宽度)
+    if (u_mode == 1 && u_canvas_size.x > 0.0) {
+        float divider_x = u_split_pos * u_canvas_size.x;  // 分割线像素位置
+        float pixel_x = v_texCoord.x * u_canvas_size.x;   // 当前像素 X 坐标
+        float half_width = 1.0;  // 2px 总宽度，每侧 1px
+
+        if (abs(pixel_x - divider_x) <= half_width) {
+            // 在分割线范围内，混合分割线颜色
+            float alpha = DIVIDER_COLOR.a * (1.0 - abs(pixel_x - divider_x) / half_width);
+            fragColor = vec4(DIVIDER_COLOR.rgb, alpha) * alpha + fragColor * (1.0 - alpha);
+        }
     }
 }

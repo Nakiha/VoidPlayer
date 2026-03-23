@@ -155,7 +155,7 @@ class ViewportPanel(QWidget):
         self._clear_info_layout()
 
         visible_count = len(self._info_items)
-        if self._view_mode == ViewMode.SPLIT:
+        if self._view_mode == ViewMode.SPLIT_SCREEN:
             visible_count = min(2, len(self._info_items))
 
         for i, info in enumerate(self._info_items):

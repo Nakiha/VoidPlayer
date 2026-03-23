@@ -618,12 +618,15 @@ class MainWindow(QWidget):
 
     def closeEvent(self, event):
         """窗口关闭时清理资源"""
-        # 1. 停止播放
+        # 1. 停止 GL 渲染（必须在销毁上下文前）
+        self.viewport_panel.gl_widget.cleanup()
+
+        # 2. 停止播放
         self._playback_controller.pause()
         self._diagnostics_manager.stop()
 
-        # 2. 清理解码器 (停止所有 DecodeWorker 线程)
+        # 3. 清理解码器 (停止所有 DecodeWorker 线程)
         self._decoder_pool.clear()
 
-        # 3. 接受关闭事件
+        # 4. 接受关闭事件
         event.accept()

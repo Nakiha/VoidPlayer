@@ -13,6 +13,17 @@ if TYPE_CHECKING:
     from .actions import ActionDispatcher
 
 
+# 快捷键分类
+SHORTCUT_CATEGORY_PLAYBACK = "播放控制"
+SHORTCUT_CATEGORY_SPEED = "速度控制"
+SHORTCUT_CATEGORY_ZOOM = "缩放控制"
+SHORTCUT_CATEGORY_PROJECT = "项目操作"
+SHORTCUT_CATEGORY_OTHER = "其他"
+
+# ShortcutAction 到分类的映射
+SHORTCUT_CATEGORY_MAP: dict["ShortcutAction", str] = {}
+
+
 class ShortcutAction(Enum):
     """快捷键动作枚举 - 映射到 ActionDispatcher 的动作名称"""
     # 播放控制
@@ -43,6 +54,39 @@ class ShortcutAction(Enum):
     # 其他
     TOGGLE_MEMORY_WINDOW = auto()
     TOGGLE_STATS = auto()
+
+    @property
+    def category(self) -> str:
+        """获取快捷键分类"""
+        return SHORTCUT_CATEGORY_MAP.get(self, SHORTCUT_CATEGORY_OTHER)
+
+
+# 初始化分类映射
+SHORTCUT_CATEGORY_MAP = {
+    ShortcutAction.PLAY_PAUSE: SHORTCUT_CATEGORY_PLAYBACK,
+    ShortcutAction.PREV_FRAME: SHORTCUT_CATEGORY_PLAYBACK,
+    ShortcutAction.NEXT_FRAME: SHORTCUT_CATEGORY_PLAYBACK,
+    ShortcutAction.SEEK_FORWARD: SHORTCUT_CATEGORY_PLAYBACK,
+    ShortcutAction.SEEK_BACKWARD: SHORTCUT_CATEGORY_PLAYBACK,
+    ShortcutAction.TOGGLE_LOOP: SHORTCUT_CATEGORY_PLAYBACK,
+    ShortcutAction.TOGGLE_FULLSCREEN: SHORTCUT_CATEGORY_PLAYBACK,
+
+    ShortcutAction.SPEED_UP: SHORTCUT_CATEGORY_SPEED,
+    ShortcutAction.SPEED_DOWN: SHORTCUT_CATEGORY_SPEED,
+    ShortcutAction.SPEED_RESET: SHORTCUT_CATEGORY_SPEED,
+
+    ShortcutAction.ZOOM_IN: SHORTCUT_CATEGORY_ZOOM,
+    ShortcutAction.ZOOM_OUT: SHORTCUT_CATEGORY_ZOOM,
+    ShortcutAction.ZOOM_RESET: SHORTCUT_CATEGORY_ZOOM,
+
+    ShortcutAction.ADD_MEDIA: SHORTCUT_CATEGORY_PROJECT,
+    ShortcutAction.NEW_WINDOW: SHORTCUT_CATEGORY_PROJECT,
+    ShortcutAction.OPEN_PROJECT: SHORTCUT_CATEGORY_PROJECT,
+    ShortcutAction.SAVE_PROJECT: SHORTCUT_CATEGORY_PROJECT,
+
+    ShortcutAction.TOGGLE_MEMORY_WINDOW: SHORTCUT_CATEGORY_OTHER,
+    ShortcutAction.TOGGLE_STATS: SHORTCUT_CATEGORY_OTHER,
+}
 
 
 # ShortcutAction 到 ActionDispatcher 动作名称的映射
@@ -234,18 +278,18 @@ class ShortcutManager(QObject):
             return self.DEFAULT_BINDINGS[action][2]
         return {}
 
-    def get_all_shortcuts_info(self) -> list[tuple[str, str]]:
+    def get_all_shortcuts_info(self) -> list[tuple[str, str, str]]:
         """
         获取所有快捷键信息 (用于显示帮助/设置)
 
         Returns:
-            [(快捷键, 描述), ...]
+            [(快捷键, 描述, 分类), ...]
         """
         result = []
         for action in ShortcutAction:
             if action in self.DEFAULT_BINDINGS:
                 key, desc, _ = self.DEFAULT_BINDINGS[action]
-                result.append((key, desc))
+                result.append((key, desc, action.category))
         return result
 
     def clear_focus_from_input_widgets(self):

@@ -13,7 +13,7 @@ from .toolbar import ToolBar
 from .controls_bar import ControlsBar
 from .timeline_area import TimelineArea
 from .theme_utils import get_color_hex, ColorKey
-from .windows import MemoryWindow, StatsWindow
+from .windows import MemoryWindow, StatsWindow, SettingsWindow
 from ..core.config import config, Profile
 from .widgets import HighlightSplitter
 from ..core.track_manager import TrackManager
@@ -48,6 +48,7 @@ class MainWindow(QWidget):
         self._view_mode = ViewMode.SIDE_BY_SIDE
         self._is_playing = False
         self._memory_window: MemoryWindow | None = None
+        self._settings_window: SettingsWindow | None = None
         self._launch_args = launch_args or []
         self._auto_play = auto_play
         self._mock_script = mock_script
@@ -166,6 +167,9 @@ class MainWindow(QWidget):
         self.toolbar.new_window_clicked.connect(self._on_new_window)
         if config.profile != Profile.PERF:
             self.toolbar.debug_monitor_clicked.connect(self._show_memory_window)
+
+        # 设置
+        self.toolbar.settings_clicked.connect(self._show_settings_window)
 
         # 视口面板
         self.viewport_panel.media_remove_clicked.connect(self.remove_media)
@@ -535,6 +539,19 @@ class MainWindow(QWidget):
 
         self._memory_window.raise_()
         self._memory_window.activateWindow()
+
+    def _show_settings_window(self):
+        """显示设置窗口"""
+        if self._settings_window is None:
+            self._settings_window = SettingsWindow(self._shortcut_manager, None)
+
+        if self._settings_window.isMinimized():
+            self._settings_window.showNormal()
+        else:
+            self._settings_window.show()
+
+        self._settings_window.raise_()
+        self._settings_window.activateWindow()
 
     def _on_splitter_moved(self, _pos: int, _index: int):
         sizes = self.v_splitter.sizes()

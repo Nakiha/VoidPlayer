@@ -41,16 +41,28 @@ ActionDef("MY_ACTION", fn=mw.my_method,
 class ShortcutAction(Enum):
     MY_ACTION = auto()
 
-# 2. 添加映射
+# 2. 添加分类映射 (用于设置页面显示)
+SHORTCUT_CATEGORY_MAP = {
+    ShortcutAction.MY_ACTION: SHORTCUT_CATEGORY_XXX,  # 选择合适分类
+}
+
+# 3. 添加动作名映射
 ACTION_NAME_MAP: dict[ShortcutAction, str] = {
     ShortcutAction.MY_ACTION: "MY_ACTION",
 }
 
-# 3. 添加绑定
+# 4. 添加绑定 (快捷键, 描述, 默认参数)
 DEFAULT_BINDINGS: dict[ShortcutAction, tuple[str, str, dict]] = {
     ShortcutAction.MY_ACTION: ("Ctrl+M", "我的动作", {"param": 0}),
 }
 ```
+
+**可用分类**:
+- `SHORTCUT_CATEGORY_PLAYBACK` - 播放控制
+- `SHORTCUT_CATEGORY_SPEED` - 速度控制
+- `SHORTCUT_CATEGORY_ZOOM` - 缩放控制
+- `SHORTCUT_CATEGORY_PROJECT` - 项目操作
+- `SHORTCUT_CATEGORY_OTHER` - 其他
 
 ### 3. Mock 测试 (推荐)
 
@@ -79,14 +91,14 @@ DEFAULT_BINDINGS: dict[ShortcutAction, tuple[str, str, dict]] = {
 |--------|------|------|
 | `]` | SPEED_UP | 加速 |
 | `[` | SPEED_DOWN | 减速 |
-| `\` | SPEED_SET | 重置速度 (index=2) |
+| `\` | SPEED_RESET | 重置速度 |
 
 ### 缩放控制
 | 快捷键 | 动作 | 说明 |
 |--------|------|------|
 | `Ctrl++` | ZOOM_IN | 放大 |
 | `Ctrl+-` | ZOOM_OUT | 缩小 |
-| `Ctrl+0` | ZOOM_SET | 重置缩放 (index=2) |
+| `Ctrl+0` | ZOOM_RESET | 重置缩放 (Fit) |
 
 ### 项目操作
 | 快捷键 | 动作 | 说明 |

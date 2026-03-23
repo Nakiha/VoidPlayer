@@ -894,10 +894,13 @@ public:
         AVStream* video_stream = fmt_ctx_->streams[video_stream_idx_];
         AVRational time_base = video_stream->time_base;
 
-        if (frame_->pts != AV_NOPTS_VALUE) {
+        // 对于 H.265 等有 B 帧的编码，frame->pts 可能不是按显示顺序的
+        // best_effort_timestamp 是 FFmpeg 根据多种信息推断的最佳显示时间
+        // 它使用 stream 的 time_base 单位，需要转换
+        if (frame_->best_effort_timestamp != AV_NOPTS_VALUE) {
+            return av_rescale_q(frame_->best_effort_timestamp, time_base, AV_TIME_BASE_Q) / 1000;
+        } else if (frame_->pts != AV_NOPTS_VALUE) {
             return av_rescale_q(frame_->pts, time_base, AV_TIME_BASE_Q) / 1000;
-        } else if (frame_->best_effort_timestamp != AV_NOPTS_VALUE) {
-            return frame_->best_effort_timestamp / 1000;
         }
         return current_pts_ms_;
     }
@@ -999,17 +1002,35 @@ bool HardwareDecoder::upload_pending_frame() {
 bool HardwareDecoder::decode_frame_internal() {
     // 使用 async 版本的逻辑，但不需要 CancelToken
     if (!impl_->fmt_ctx_ || !impl_->codec_ctx_) {
+        VV_DEBUG("decode_frame_internal: no fmt_ctx or codec_ctx");
         return false;
     }
 
     while (true) {
-        int ret = av_read_frame(impl_->fmt_ctx_, impl_->pkt_);
+        // 首先尝试取出已解码的帧（处理之前 send_packet 返回 EAGAIN 的情况）
+        int ret = avcodec_receive_frame(impl_->codec_ctx_, impl_->frame_);
+        if (ret == 0) {
+            impl_->current_pts_ms_ = impl_->calculate_pts();
+            impl_->has_pending_frame_ = true;
+            VV_TRACE("decode_frame_internal: success, pts={}ms, format={}, hw_fmt={}",
+                    impl_->current_pts_ms_, impl_->frame_->format, static_cast<int>(impl_->hw_pixel_format_));
+            return true;
+        } else if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF) {
+            impl_->set_error("Failed to receive frame", ret);
+            VV_WARN("decode_frame_internal: avcodec_receive_frame failed: {}", ret);
+            return false;
+        }
+
+        // receive_frame 返回 EAGAIN，需要发送更多 packet
+        ret = av_read_frame(impl_->fmt_ctx_, impl_->pkt_);
         if (ret < 0) {
             if (ret == AVERROR_EOF) {
+                VV_DEBUG("decode_frame_internal: EOF reached");
                 impl_->eof_ = true;
                 return false;
             }
             impl_->set_error("Failed to read frame", ret);
+            VV_DEBUG("decode_frame_internal: av_read_frame failed: {}", ret);
             return false;
         }
 
@@ -1021,27 +1042,13 @@ bool HardwareDecoder::decode_frame_internal() {
         ret = avcodec_send_packet(impl_->codec_ctx_, impl_->pkt_);
         av_packet_unref(impl_->pkt_);
 
-        if (ret < 0) {
+        if (ret < 0 && ret != AVERROR(EAGAIN)) {
             impl_->set_error("Failed to send packet", ret);
+            VV_DEBUG("decode_frame_internal: avcodec_send_packet failed: {}", ret);
             return false;
         }
-
-        ret = avcodec_receive_frame(impl_->codec_ctx_, impl_->frame_);
-        if (ret == 0) {
-            impl_->current_pts_ms_ = impl_->calculate_pts();
-            impl_->has_pending_frame_ = true;
-            VV_TRACE("decode_frame_internal: pts={}ms, pending={}",
-                    impl_->current_pts_ms_, impl_->has_pending_frame_);
-            return true;
-        } else if (ret == AVERROR(EAGAIN)) {
-            continue;
-        } else if (ret == AVERROR_EOF) {
-            impl_->eof_ = true;
-            return false;
-        } else {
-            impl_->set_error("Failed to receive frame", ret);
-            return false;
-        }
+        // 如果 send_packet 返回 EAGAIN，说明解码器缓冲区满了
+        // 下次循环会先尝试 receive_frame
     }
 }
 

@@ -1,15 +1,15 @@
 """
-MultiTrackGLWidget - 多轨道 OpenGL 渲染控件
-支持分屏模式 (SPLIT) 和并排模式 (SIDE_BY_SIDE)，切换时不销毁 GL 实例
+MultiTrackGLWindow - 多轨道 OpenGL 渲染窗口
+使用 QOpenGLWindow 替代 QOpenGLWidget 以获得更好的性能
 """
 import ctypes
 from enum import IntEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtOpenGLWidgets import QOpenGLWidget
-from PySide6.QtGui import QSurfaceFormat, QMouseEvent
-from PySide6.QtCore import Signal, Qt, QPointF, QSizeF
+from PySide6.QtGui import QSurfaceFormat
+from PySide6.QtCore import Signal, Qt, QPointF, QObject
+from PySide6.QtOpenGL import QOpenGLWindow
 from PySide6.QtWidgets import QApplication
 from OpenGL.GL import *
 from loguru import logger
@@ -24,21 +24,23 @@ class ViewMode(IntEnum):
     SPLIT_SCREEN = 1  # 分屏对比模式 - 重叠显示，分割线切换
 
 
-class MultiTrackGLWidget(QOpenGLWidget):
+class MultiTrackGLWindow(QOpenGLWindow):
     """
-    多轨道 OpenGL 渲染控件
+    多轨道 OpenGL 渲染窗口
 
     特性:
-    - 单一 GL 实例，切换模式不销毁
+    - 使用 QOpenGLWindow 避免 QOpenGLWidget 的 FBO 开销
     - 支持 SPLIT (分屏) 和 SIDE_BY_SIDE (并排) 模式
     - SPLIT 模式支持可拖动分割线
     - 动态 track 顺序
     - 支持 viewport 缩放和移动事件
+
+    注意: QOpenGLWindow 不是 QWidget，需要通过 createWindowContainer() 嵌入
     """
 
     MAX_TRACKS = 8
 
-    # 信号
+    # 信号 (通过 QObject 信号机制)
     split_position_changed = Signal(float)  # 分割线位置变化 (0.0 ~ 1.0)
     gl_initialized = Signal()  # OpenGL 上下文初始化完成，可以初始化解码器
 
@@ -50,7 +52,9 @@ class MultiTrackGLWidget(QOpenGLWidget):
     viewport_resized = Signal(float, float)    # (width, height)
 
     def __init__(self, parent=None):
+        # QOpenGLWindow 的 parent 是 QWindow，不是 QWidget
         super().__init__(parent)
+
         self._view_mode = ViewMode.SIDE_BY_SIDE
         self._split_position = 0.5
         self._track_order = list(range(self.MAX_TRACKS))
@@ -67,7 +71,6 @@ class MultiTrackGLWidget(QOpenGLWidget):
 
         # 分割线拖动状态
         self._dragging_split = False
-        self.setMouseTracking(True)
 
         # Viewport 移动状态
         self._dragging_pan = False
@@ -78,11 +81,15 @@ class MultiTrackGLWidget(QOpenGLWidget):
         self._view_offset: QPointF = QPointF(0, 0)
         self._track_sizes: list[tuple[int, int]] = [(0, 0)] * self.MAX_TRACKS  # 每个 track 的分辨率
 
-        # 设置 OpenGL 3.3 Core Profile
-        fmt = QSurfaceFormat()
-        fmt.setVersion(3, 3)
-        fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
-        QSurfaceFormat.setDefaultFormat(fmt)
+        # 鼠标位置缓存 (用于事件处理)
+        self._last_mouse_pos = QPointF()
+
+        # 关闭标志（程序退出时设置为 True，阻止后续渲染）
+        self._is_closing = False
+
+    def cleanup(self):
+        """清理资源，在窗口关闭前调用"""
+        self._is_closing = True
 
     def _load_shader_source(self, filename: str) -> str:
         """从文件加载 shader 源码"""
@@ -131,22 +138,22 @@ class MultiTrackGLWidget(QOpenGLWidget):
     # ========== 公共 API ==========
 
     def set_view_mode(self, mode: ViewMode):
-        """设置视图模式 (不销毁 GL 实例)"""
+        """设置视图模式"""
         if self._view_mode == mode:
             return
         self._view_mode = mode
-        self.update()
+        self.requestUpdate()
 
     def set_split_position(self, pos: float):
         """设置分割线位置 (0.0 - 1.0)"""
         self._split_position = max(0.05, min(0.95, pos))
-        self.update()
+        self.requestUpdate()
 
     def set_track_order(self, order: list[int]):
         """设置 track 显示顺序"""
         for i, idx in enumerate(order[:self.MAX_TRACKS]):
             self._track_order[i] = idx
-        self.update()
+        self.requestUpdate()
 
     def set_decoders(self, decoders: list["voidview_native.HardwareDecoder | None"]):
         """设置解码器列表
@@ -165,12 +172,12 @@ class MultiTrackGLWidget(QOpenGLWidget):
                         self._aspect_ratios[i] = w / h
                 except Exception as e:
                     logger.error(f"set_decoders[{i}]: Failed to get width/height: {e}")
-        self.update()
+        self.requestUpdate()
 
     def set_track_count(self, count: int):
         """设置活动 track 数量"""
         self._track_count = min(count, self.MAX_TRACKS)
-        self.update()
+        self.requestUpdate()
 
     @property
     def view_mode(self) -> ViewMode:
@@ -191,7 +198,7 @@ class MultiTrackGLWidget(QOpenGLWidget):
         """设置 viewport 缩放和偏移"""
         self._zoom_ratio = zoom_ratio
         self._view_offset = view_offset
-        self.update()
+        self.requestUpdate()
 
     def set_track_sizes(self, sizes: list[tuple[int, int]]):
         """设置每个 track 的分辨率尺寸
@@ -201,12 +208,12 @@ class MultiTrackGLWidget(QOpenGLWidget):
         """
         for i, (w, h) in enumerate(sizes[:self.MAX_TRACKS]):
             self._track_sizes[i] = (w, h)
-        self.update()
+        self.requestUpdate()
 
     # ========== OpenGL 实现 ==========
 
     def initializeGL(self):
-        """初始化 OpenGL 资源"""
+        """初始化 OpenGL 资源 (QOpenGLWindow 方法名)"""
         glClearColor(0.0, 0.0, 0.0, 1.0)
 
         try:
@@ -250,13 +257,15 @@ class MultiTrackGLWidget(QOpenGLWidget):
             self._dummy_textures[i] = tex
 
         self._gl_initialized = True
-        logger.info("MultiTrackGLWidget initialized (GLSL 3.30)")
+        logger.info("MultiTrackGLWindow initialized (GLSL 3.30)")
 
         # 通知可以初始化解码器了
         self.gl_initialized.emit()
 
     def paintGL(self):
-        """绘制帧"""
+        """绘制帧 (QOpenGLWindow 方法名)"""
+        if self._is_closing:
+            return
         glClear(GL_COLOR_BUFFER_BIT)
 
         if not self._shader_program or not self._vao:
@@ -320,15 +329,18 @@ class MultiTrackGLWidget(QOpenGLWidget):
         glUseProgram(0)
 
     def resizeGL(self, w, h):
-        """调整视口大小"""
+        """调整视口大小 (QOpenGLWindow 方法名)"""
+        if self._is_closing:
+            return
         glViewport(0, 0, w, h)
-        # 发出 resize 信号
         self.viewport_resized.emit(float(w), float(h))
 
-    # ========== 分割线拖动 ==========
+    # ========== 鼠标事件 ==========
 
     def mousePressEvent(self, event):
         """鼠标按下 - 开始拖动分割线或画面移动"""
+        self._last_mouse_pos = event.position()
+
         # 优先处理分割线拖动
         if self._view_mode == ViewMode.SPLIT_SCREEN and event.button() == Qt.MouseButton.LeftButton:
             if self._is_near_split_line(event.position().x()):
@@ -348,6 +360,8 @@ class MultiTrackGLWidget(QOpenGLWidget):
 
     def mouseMoveEvent(self, event):
         """鼠标移动 - 拖动分割线、画面移动或更新光标"""
+        self._last_mouse_pos = event.position()
+
         # 处理画面移动
         if self._dragging_pan:
             pos = event.position()
@@ -414,3 +428,7 @@ class MultiTrackGLWidget(QOpenGLWidget):
             return False
         split_x = self._split_position * self.width()
         return abs(x - split_x) < 10  # 10px 容差
+
+
+# 保持向后兼容的别名
+MultiTrackGLWidget = MultiTrackGLWindow

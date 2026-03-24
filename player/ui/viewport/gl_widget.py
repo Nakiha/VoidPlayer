@@ -14,6 +14,9 @@ from PySide6.QtWidgets import QApplication
 from OpenGL.GL import *
 from loguru import logger
 
+# DSA 函数在 OpenGL.GL 中，需要确保加载
+# PyOpenGL 会自动加载 OpenGL 4.5 函数
+
 if TYPE_CHECKING:
     from player.native import voidview_native
 
@@ -67,6 +70,7 @@ class MultiTrackGLWindow(QOpenGLWindow):
         self._vao = None
         self._vbo = None
         self._dummy_textures = [0] * self.MAX_TRACKS
+        self._texture_ids = None  # 用于 multi-bind 的 ctypes 数组
         self._gl_initialized = False
 
         # 分割线拖动状态
@@ -222,7 +226,7 @@ class MultiTrackGLWindow(QOpenGLWindow):
             logger.error(f"Shader initialization failed: {e}")
             return
 
-        # 创建 VAO 和 VBO (全屏四边形)
+        # 创建 VAO 和 VBO (全屏四边形) - DSA 方式
         # position(2) + texcoord(2) per vertex
         vertices = (ctypes.c_float * 16)(
             -1.0, -1.0,  0.0, 0.0,  # 左下
@@ -231,33 +235,46 @@ class MultiTrackGLWindow(QOpenGLWindow):
             -1.0,  1.0,  0.0, 1.0,  # 左上
         )
 
-        self._vao = glGenVertexArrays(1)
-        glBindVertexArray(self._vao)
+        # 创建 VAO (DSA)
+        vao = ctypes.c_uint()
+        glCreateVertexArrays(1, ctypes.byref(vao))
+        self._vao = vao.value
 
-        self._vbo = glGenBuffers(1)
-        glBindBuffer(GL_ARRAY_BUFFER, self._vbo)
-        glBufferData(GL_ARRAY_BUFFER, ctypes.sizeof(vertices), vertices, GL_STATIC_DRAW)
+        # 创建 VBO (DSA)
+        vbo = ctypes.c_uint()
+        glCreateBuffers(1, ctypes.byref(vbo))
+        self._vbo = vbo.value
+        glNamedBufferData(self._vbo, ctypes.sizeof(vertices), vertices, GL_STATIC_DRAW)
+
+        # 设置顶点属性 (DSA)
+        # 绑定 VBO 到 VAO 的 binding point 0
+        glVertexArrayVertexBuffer(self._vao, 0, self._vbo, 0, 16)
 
         # position attribute (location = 0)
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
-        glEnableVertexAttribArray(0)
+        glEnableVertexArrayAttrib(self._vao, 0)
+        glVertexArrayAttribFormat(self._vao, 0, 2, GL_FLOAT, GL_FALSE, 0)
+        glVertexArrayAttribBinding(self._vao, 0, 0)
+
         # texcoord attribute (location = 1)
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(8))
-        glEnableVertexAttribArray(1)
+        glEnableVertexArrayAttrib(self._vao, 1)
+        glVertexArrayAttribFormat(self._vao, 1, 2, GL_FLOAT, GL_FALSE, 8)
+        glVertexArrayAttribBinding(self._vao, 1, 0)
 
-        glBindVertexArray(0)
-
-        # 创建占位黑色纹理
+        # 创建占位黑色纹理 (DSA 方式)
         for i in range(self.MAX_TRACKS):
-            tex = glGenTextures(1)
-            glBindTexture(GL_TEXTURE_2D, tex)
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, bytes([0, 0, 0, 255]))
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-            self._dummy_textures[i] = tex
+            tex = ctypes.c_uint()
+            glCreateTextures(GL_TEXTURE_2D, 1, ctypes.byref(tex))
+            self._dummy_textures[i] = tex.value
+            glTextureStorage2D(self._dummy_textures[i], 1, GL_RGBA8, 1, 1)
+            glTextureSubImage2D(self._dummy_textures[i], 0, 0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, bytes([0, 0, 0, 255]))
+            glTextureParameteri(self._dummy_textures[i], GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+            glTextureParameteri(self._dummy_textures[i], GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+
+        # 预分配 texture IDs 数组用于 multi-bind
+        self._texture_ids = (ctypes.c_uint * self.MAX_TRACKS)()
 
         self._gl_initialized = True
-        logger.info("MultiTrackGLWindow initialized (GLSL 3.30)")
+        logger.info("MultiTrackGLWindow initialized (GLSL 4.50, DSA)")
 
         # 通知可以初始化解码器了
         self.gl_initialized.emit()
@@ -311,15 +328,14 @@ class MultiTrackGLWindow(QOpenGLWindow):
             self._view_offset.x(), self._view_offset.y()
         )
 
-        # 绑定纹理
+        # 绑定纹理 (multi-bind)
         for i in range(self.MAX_TRACKS):
-            glActiveTexture(GL_TEXTURE0 + i)
             decoder = self._decoders[i]
             if decoder and hasattr(decoder, 'texture_id') and decoder.texture_id > 0:
-                glBindTexture(GL_TEXTURE_2D, decoder.texture_id)
+                self._texture_ids[i] = decoder.texture_id
             else:
-                glBindTexture(GL_TEXTURE_2D, self._dummy_textures[i])
-            glUniform1i(glGetUniformLocation(self._shader_program, f"u_textures[{i}]"), i)
+                self._texture_ids[i] = self._dummy_textures[i]
+        glBindTextures(0, self.MAX_TRACKS, self._texture_ids)
 
         # 绘制全屏四边形
         glBindVertexArray(self._vao)

@@ -1,4 +1,4 @@
-#version 330 core
+#version 450 core
 // MultiTrack vertex shader - fullscreen quad
 
 layout(location = 0) in vec2 a_position;

@@ -1,4 +1,4 @@
-#version 330 core
+#version 450 core
 // MultiTrack fragment shader - multi-texture composition
 // Supports SIDE_BY_SIDE (equal split) and SPLIT_SCREEN (overlapping with divider) modes
 // Supports viewport zoom and pan
@@ -37,14 +37,7 @@ const vec4 BG_COLOR = vec4(0.0, 0.0, 0.0, 1.0);
 const vec4 DIVIDER_COLOR = vec4(1.0, 1.0, 1.0, 0.8);
 
 vec4 get_texture(int idx, vec2 uv) {
-    if (idx == 0) return texture(u_textures[0], uv);
-    else if (idx == 1) return texture(u_textures[1], uv);
-    else if (idx == 2) return texture(u_textures[2], uv);
-    else if (idx == 3) return texture(u_textures[3], uv);
-    else if (idx == 4) return texture(u_textures[4], uv);
-    else if (idx == 5) return texture(u_textures[5], uv);
-    else if (idx == 6) return texture(u_textures[6], uv);
-    else return texture(u_textures[7], uv);
+    return texture(u_textures[idx], uv);
 }
 
 // 计算 aspect-fit UV 坐标 (带缩放和偏移)

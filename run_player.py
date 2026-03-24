@@ -2,11 +2,6 @@
 VoidPlayer 播放器启动脚本
 """
 
-# === 必须在 import PySide6 之前设置 ===
-# 使用 ANGLE 后端 (OpenGL ES -> Direct3D)
-import os
-os.environ['QT_OPENGL'] = 'angle'
-
 import sys
 import ctypes
 import argparse
@@ -213,16 +208,14 @@ def _run_app(input_files: list[str], auto_play: bool, launch_args: list[str], mo
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
 
-    # 设置 OpenGL 表面格式
+    # 设置 OpenGL 4.5 Core Profile 表面格式
     fmt = QSurfaceFormat()
+    fmt.setVersion(4, 5)
+    fmt.setProfile(QSurfaceFormat.CoreProfile)
     # 垂直同步: 0=关闭, 1=开启
     # 视频播放器建议开启，避免画面撕裂；高刷显示器会自动适配刷新率
     fmt.setSwapInterval(1)
     QSurfaceFormat.setDefaultFormat(fmt)
-
-    # 在 Windows 上优先使用 ANGLE (DirectX 后端)，比纯 OpenGL 更稳定
-    # 如果 ANGLE 不可用则回退到 OpenGL
-    QApplication.setAttribute(Qt.AA_UseOpenGLES)
 
     app = QApplication(sys.argv)
 

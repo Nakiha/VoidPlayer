@@ -1,0 +1,10 @@
+# Seek Precise 测试
+# 测试精确 seek 是否正常
+
+0.5, ADD_TRACK, resources/video/h264_9s_1920x1080.mp4
+# 不播放，直接精确 seek
+1.5, SEEK_PRECISE, 5000
+# 等待看画面
+3.0, SEEK_PRECISE, 2000
+# 等待看画面
+4.5, QUIT, 0

@@ -36,6 +36,8 @@ def get_action_metadata() -> list[ActionDef]:
         ActionDef("STOP", noop, [], "停止播放并回到开头", CATEGORY_PLAYBACK),
         ActionDef("SEEK_TO", noop, [ParamDef("timestamp_ms", int)],
                   "Seek 到指定时间点 (毫秒)", CATEGORY_PLAYBACK),
+        ActionDef("SEEK_PRECISE", noop, [ParamDef("timestamp_ms", int)],
+                  "精确 Seek 到指定时间之前的最近帧 (毫秒)", CATEGORY_PLAYBACK),
         ActionDef("SEEK_FORWARD", noop, [ParamDef("delta_ms", int, default=5000)],
                   "前进 (毫秒)", CATEGORY_PLAYBACK),
         ActionDef("SEEK_BACKWARD", noop, [ParamDef("delta_ms", int, default=5000)],
@@ -113,6 +115,8 @@ def create_action_registry(mw: "MainWindow") -> list[ActionDef]:
         "停止播放并回到开头", CATEGORY_PLAYBACK))
     actions.append(ActionDef("SEEK_TO", mw.seek_to, [ParamDef("timestamp_ms", int)],
         "Seek 到指定时间点 (毫秒)", CATEGORY_PLAYBACK))
+    actions.append(ActionDef("SEEK_PRECISE", mw.seek_to_precise, [ParamDef("timestamp_ms", int)],
+        "精确 Seek 到指定时间之前的最近帧 (毫秒)", CATEGORY_PLAYBACK))
     actions.append(ActionDef("SEEK_FORWARD",
         lambda delta_ms=5000: mw.seek_to(mw._decoder_pool.position_ms + delta_ms),
         [ParamDef("delta_ms", int, default=5000)], "前进 (毫秒)", CATEGORY_PLAYBACK))

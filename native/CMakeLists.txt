@@ -78,7 +78,7 @@ set(VOIDVIEW_SOURCES
     src/hardware_decoder.cpp
     src/decode_worker.cpp
     src/texture_interop.cpp
-    src/frame_queue.cpp
+    src/bidi_frame_queue.cpp
     src/media_probe.cpp
 )
 
@@ -86,7 +86,7 @@ set(VOIDVIEW_HEADERS
     include/voidview_native/hardware_decoder.hpp
     include/voidview_native/decode_worker.hpp
     include/voidview_native/texture_interop.hpp
-    include/voidview_native/frame_queue.hpp
+    include/voidview_native/bidi_frame_queue.hpp
     include/voidview_native/media_probe.hpp
     include/voidview_native/logger.hpp
     include/voidview_native/version.hpp

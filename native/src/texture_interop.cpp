@@ -367,8 +367,11 @@ bool TextureInterop::bind_frame(AVFrame* frame) {
         return false;
     }
 
+    VV_DEBUG("[bind_frame] START: frame={}x{}, gl_texture_rgba_={}", frame->width, frame->height, gl_texture_rgba_);
+
     // Unlock previous frame if locked
     if (wgl_object_ && bound_) {
+        VV_DEBUG("[bind_frame] Unlocking previous frame");
         HANDLE objects[] = { wgl_object_ };
         wglDXUnlockObjectsNV(wgl_device_, 1, objects);
         bound_ = false;
@@ -500,11 +503,17 @@ bool TextureInterop::bind_frame(AVFrame* frame) {
     // Lock for OpenGL access - keep locked until next frame
     if (wgl_object_) {
         HANDLE objects[] = { wgl_object_ };
-        wglDXLockObjectsNV(wgl_device_, 1, objects);
+        BOOL lock_result = wglDXLockObjectsNV(wgl_device_, 1, objects);
+        VV_DEBUG("[bind_frame] Lock result: {}, gl_texture_rgba_={}", lock_result, gl_texture_rgba_);
     }
 
     bound_ = true;
-    VV_TRACE("Frame bound to GL texture {} (locked for GL)", gl_texture_rgba_);
+
+    // 同步：确保 D3D11 操作完成后再让 OpenGL 读取
+    // 没有这个同步，OpenGL 可能读取到旧的纹理内容
+    glFinish();
+
+    VV_DEBUG("[bind_frame] END: success, gl_texture_rgba_={}", gl_texture_rgba_);
     return true;
 #else
     (void)frame;

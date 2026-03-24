@@ -401,6 +401,8 @@ class DecoderPool(QObject):
         has_pending = track.decoder.has_pending_frame() if track.decoder else False
         queue_size = track.worker.frame_queue_size() if track.worker else 0
 
+        self._logger.debug(f"_handle_decode_result: track={track_index}, success={success}, pts={pts_ms}, has_pending={has_pending}, queue_size={queue_size}")
+
         if not has_pending and track.worker and queue_size > 0:
             pop_success, pop_pts = self.get_frame(track_index, timeout_ms=0)
             if pop_success:
@@ -413,7 +415,9 @@ class DecoderPool(QObject):
 
             # 上传纹理 (必须在 GL 线程/主线程)
             if track.decoder and track.decoder.has_pending_frame():
+                self._logger.debug(f"[SEEK] Uploading texture for track {track_index}, pts={pts_ms}")
                 texture_uploaded = track.decoder.upload_pending_frame()
+                self._logger.debug(f"[SEEK] Texture upload result: {texture_uploaded}")
                 if not texture_uploaded:
                     self._logger.warning(f"Track {track_index}: texture upload failed")
         else:
@@ -482,29 +486,64 @@ class DecoderPool(QObject):
         self.request_all_frames()
 
     def prev_frame(self):
-        """上一帧 - 向后 seek 一帧时间 (精确)"""
-        # 使用第一帧的帧间隔
-        frame_interval = self._get_min_frame_interval()
-        if frame_interval > 0:
-            new_pos = max(0, self._current_position_ms - frame_interval)
-            self.seek_to_precise(new_pos)
+        """上一帧 - 从 history 队列取帧
+
+        使用双向帧队列，O(1) 直接取历史帧
+        如果 history 为空则无法后退
+        """
+        # 尝试从所有轨道取历史帧
+        all_success = True
+        max_pts = 0
+
+        for track in self._tracks:
+            if not track or not track.enabled or not track.worker or not track.decoder:
+                continue
+
+            pts = track.worker.prev_frame()
+            if pts >= 0:
+                # 上传纹理
+                if track.decoder.has_pending_frame():
+                    track.decoder.upload_pending_frame()
+                    track.current_pts_ms = pts
+                max_pts = max(max_pts, pts - track.offset_ms)
+            else:
+                all_success = False
+
+        if all_success:
+            self._current_position_ms = max_pts
+            self.position_changed.emit(self._current_position_ms)
+            self.frame_ready.emit()
 
     def next_frame(self):
-        """下一帧 - 前进一帧 (精确)"""
-        # 使用第一帧的帧间隔
-        frame_interval = self._get_min_frame_interval()
-        if frame_interval > 0:
-            new_pos = min(self._duration_ms, self._current_position_ms + frame_interval)
-            self.seek_to_precise(new_pos)
+        """下一帧 - 从 future 队列取帧
 
-    def _get_min_frame_interval(self) -> int:
-        """获取所有活动轨道中最小的帧间隔 (用于 prev/next_frame)"""
-        min_interval = 16  # 默认 60fps
+        使用双向帧队列，O(1) 直接取未来帧
+        触发填充 future 队列
+        """
+        all_success = True
+        max_pts = 0
+
         for track in self._tracks:
-            if track and track.enabled and track.media_info and track.media_info.fps > 0:
-                interval = int(1000 / track.media_info.fps)
-                min_interval = min(min_interval, interval)
-        return min_interval
+            if not track or not track.enabled or not track.worker or not track.decoder:
+                continue
+
+            pts = track.worker.next_frame()
+            if pts >= 0:
+                # 上传纹理
+                if track.decoder.has_pending_frame():
+                    track.decoder.upload_pending_frame()
+                    track.current_pts_ms = pts
+                max_pts = max(max_pts, pts - track.offset_ms)
+            else:
+                # future 为空，触发解码
+                track.worker.decode_frame()
+                all_success = False
+
+        if all_success:
+            self._current_position_ms = max_pts
+            self.position_changed.emit(self._current_position_ms)
+            self.frame_ready.emit()
+
 
     # ========== 属性 ==========
 

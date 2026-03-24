@@ -699,8 +699,8 @@ public:
             return false;
         }
 
-        VV_TRACE("upload_pending_frame: format={}, is_sw={}, has_interop={}",
-               frame_->format, is_software_decode_, texture_interop_ ? 1 : 0);
+        VV_DEBUG("[upload_pending_frame] START: format={}, is_sw={}, has_interop={}, frame_pts={}",
+               frame_->format, is_software_decode_, texture_interop_ ? 1 : 0, current_pts_ms_);
 
         if (is_software_decode_) {
             if (!upload_software_frame(frame_)) {
@@ -708,15 +708,18 @@ public:
                 return false;
             }
             texture_id_ = sw_texture_id_;
+            VV_DEBUG("[upload_pending_frame] Software path: texture_id_={}", texture_id_);
         } else if (frame_->format == hw_pixel_format_ && texture_interop_) {
             if (!texture_interop_->bind_frame(frame_)) {
                 set_error("Failed to bind hardware frame", 0);
                 return false;
             }
             texture_id_ = texture_interop_->get_texture_id();
+            VV_DEBUG("[upload_pending_frame] Hardware path: texture_id_={}", texture_id_);
         }
 
         has_pending_frame_ = false;
+        VV_DEBUG("[upload_pending_frame] END: success, texture_id_={}, pts={}", texture_id_, current_pts_ms_);
         return true;
     }
 

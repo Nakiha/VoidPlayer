@@ -281,6 +281,12 @@ class MultiTrackGLWindow(QOpenGLWindow):
 
     def paintGL(self):
         """绘制帧 (QOpenGLWindow 方法名)"""
+        from player.core.logging_config import get_logger
+        pts_list = []
+        for i, d in enumerate(self._decoders):
+            if d and d.texture_id > 0:
+                pts_list.append(f"track{i}:{d.current_pts_ms}ms")
+        get_logger().debug(f"[GL] paintGL called, textures={[d.texture_id if d else 0 for d in self._decoders]}, pts={pts_list}")
         if self._is_closing:
             return
         glClear(GL_COLOR_BUFFER_BIT)
@@ -343,6 +349,9 @@ class MultiTrackGLWindow(QOpenGLWindow):
         glBindVertexArray(0)
 
         glUseProgram(0)
+
+        # 强制刷新渲染流水线
+        glFinish()
 
     def resizeGL(self, w, h):
         """调整视口大小 (QOpenGLWindow 方法名)"""

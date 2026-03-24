@@ -275,6 +275,18 @@ PYBIND11_MODULE(voidview_native, m) {
         .def("clear_frame_queue", &voidview::DecodeWorker::clear_frame_queue,
              "Clear the frame queue")
 
+        .def("next_frame", &voidview::DecodeWorker::next_frame,
+             "Move to next frame from future queue, returns PTS in ms or -1 if no future frames")
+
+        .def("prev_frame", &voidview::DecodeWorker::prev_frame,
+             "Move to previous frame from history queue, returns PTS in ms or -1 if no history frames")
+
+        .def("history_size", &voidview::DecodeWorker::history_size,
+             "Get number of frames in history queue")
+
+        .def("future_size", &voidview::DecodeWorker::future_size,
+             "Get number of frames in future queue")
+
         .def_property_readonly("decoder", &voidview::DecodeWorker::decoder,
              "Get associated decoder")
 

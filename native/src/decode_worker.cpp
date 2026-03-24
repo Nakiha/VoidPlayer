@@ -80,23 +80,27 @@ void DecodeWorker::stop() {
 }
 
 int64_t DecodeWorker::pop_frame(int timeout_ms) {
-    // 从帧队列取帧
-    AVFrame* frame = frame_queue_.pop(timeout_ms);
-    if (!frame) {
-        return -1;  // 超时或中止
+    // 使用 move_next 从 future 队列取帧
+    if (!frame_queue_.move_next()) {
+        return -1;  // 没有可用帧
     }
 
-    // 将帧设置回解码器进行纹理上传
+    // 获取当前帧并设置到解码器进行纹理上传
+    AVFrame* frame = frame_queue_.take_current();
+    if (!frame) {
+        return -1;
+    }
+
     decoder_->set_pending_frame(frame);
 
-    // 在 set_pending_frame 之后获取 PTS（此时 decoder 已更新为帧的 PTS）
+    // 在 set_pending_frame 之后获取 PTS
     int64_t pts = decoder_->get_current_pts_ms();
 
-    VV_TRACE("DecodeWorker::pop_frame: got frame from queue, pts={}ms, queue_size={}",
-             pts, frame_queue_.size());
+    VV_TRACE("DecodeWorker::pop_frame: got frame from queue, pts={}ms, future_size={}",
+             pts, frame_queue_.future_size());
 
     // 低水位触发填充
-    if (frame_queue_.size() < 4 && !cancelled_ && running_) {
+    if (frame_queue_.future_size() < 4 && !cancelled_ && running_) {
         std::lock_guard<std::mutex> lock(mutex_);
         command_queue_.push({DecodeCommandType::FILL_BUFFER, 0});
         cv_.notify_one();
@@ -106,7 +110,7 @@ int64_t DecodeWorker::pop_frame(int timeout_ms) {
 }
 
 size_t DecodeWorker::frame_queue_size() const {
-    size_t queue_size = frame_queue_.size();
+    size_t queue_size = frame_queue_.total_size();
     // 还要算上 decoder 中待处理的帧
     if (decoder_ && decoder_->has_pending_frame()) {
         queue_size += 1;
@@ -118,16 +122,76 @@ void DecodeWorker::clear_frame_queue() {
     frame_queue_.clear();
 }
 
+int64_t DecodeWorker::next_frame() {
+    // 前进一帧：从 future 队列取帧
+    if (!frame_queue_.move_next()) {
+        VV_TRACE("DecodeWorker::next_frame: no future frames available");
+        return -1;
+    }
+
+    // 获取当前帧并设置到解码器
+    AVFrame* frame = frame_queue_.take_current();
+    if (!frame) {
+        return -1;
+    }
+
+    decoder_->set_pending_frame(frame);
+    int64_t pts = decoder_->get_current_pts_ms();
+
+    VV_TRACE("DecodeWorker::next_frame: moved to next, pts={}ms, history={}, future={}",
+             pts, frame_queue_.history_size(), frame_queue_.future_size());
+
+    // 触发填充 future 队列
+    if (frame_queue_.future_size() < 4 && !cancelled_ && running_) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        command_queue_.push({DecodeCommandType::FILL_BUFFER, 0});
+        cv_.notify_one();
+    }
+
+    return pts;
+}
+
+int64_t DecodeWorker::prev_frame() {
+    // 后退一帧：从 history 队列取帧
+    if (!frame_queue_.move_prev()) {
+        VV_TRACE("DecodeWorker::prev_frame: no history frames available");
+        return -1;
+    }
+
+    // 获取当前帧并设置到解码器
+    // 使用 take_current_no_history 避免把从 history 取出的帧又保存回 history
+    AVFrame* frame = frame_queue_.take_current_no_history();
+    if (!frame) {
+        return -1;
+    }
+
+    decoder_->set_pending_frame(frame);
+    int64_t pts = decoder_->get_current_pts_ms();
+
+    VV_TRACE("DecodeWorker::prev_frame: moved to prev, pts={}ms, history={}, future={}",
+             pts, frame_queue_.history_size(), frame_queue_.future_size());
+
+    return pts;
+}
+
+size_t DecodeWorker::history_size() const {
+    return frame_queue_.history_size();
+}
+
+size_t DecodeWorker::future_size() const {
+    return frame_queue_.future_size();
+}
+
 void DecodeWorker::fill_frame_buffer() {
     if (!decoder_) return;
 
-    VV_TRACE("DecodeWorker::fill_frame_buffer for track {}, current size={}",
-             track_index_, frame_queue_.size());
+    VV_TRACE("DecodeWorker::fill_frame_buffer for track {}, future_size={}/{}",
+             track_index_, frame_queue_.future_size(), frame_queue_.future_capacity());
 
     int frames_decoded = 0;
 
-    // 持续解码直到队列满
-    while (!frame_queue_.is_full() && !cancelled_ && running_) {
+    // 持续解码直到 future 队列满
+    while (frame_queue_.future_size() < frame_queue_.future_capacity() && !cancelled_ && running_) {
         bool success = decoder_->decode_frame_internal();
         if (!success) {
             if (decoder_->is_eof()) {
@@ -139,19 +203,18 @@ void DecodeWorker::fill_frame_buffer() {
             break;
         }
 
-        // 从 decoder 取出解码帧，放入队列
+        // 从 decoder 取出解码帧，放入 future 队列
         AVFrame* frame = decoder_->take_pending_frame();
         if (frame) {
-            frame_queue_.push(frame);
+            frame_queue_.push_future(frame);
             frames_decoded++;
         }
     }
 
-    VV_TRACE("DecodeWorker::fill_frame_buffer: decoded {} frames, queue_size={}",
-             frames_decoded, frame_queue_.size());
+    VV_TRACE("DecodeWorker::fill_frame_buffer: decoded {} frames, future_size={}",
+             frames_decoded, frame_queue_.future_size());
 
-    // 通知回调（使用队列中第一帧的 PTS，如果有的话）
-    // 这里我们使用 decoder 的当前 PTS（可能不准确，但保持兼容）
+    // 通知回调（使用 decoder 的当前 PTS）
     if (!cancelled_ && frames_decoded > 0) {
         notify_callback(true, decoder_->get_current_pts_ms());
     } else if (!cancelled_) {

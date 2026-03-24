@@ -8,7 +8,7 @@
 #include <queue>
 
 #include "voidview_native/hardware_decoder.hpp"
-#include "voidview_native/frame_queue.hpp"
+#include "voidview_native/bidi_frame_queue.hpp"
 
 namespace voidview {
 
@@ -113,9 +113,33 @@ public:
     void clear_frame_queue();
 
     /**
+     * 前进一帧 (从 future 队列取帧)
+     * 非阻塞，立即从队列取帧
+     * @return 帧的 PTS (ms)，失败返回 -1
+     */
+    int64_t next_frame();
+
+    /**
+     * 后退一帧 (从 history 队列取帧)
+     * 非阻塞，立即从队列取帧
+     * @return 帧的 PTS (ms)，失败返回 -1
+     */
+    int64_t prev_frame();
+
+    /**
+     * 获取历史帧数量
+     */
+    size_t history_size() const;
+
+    /**
+     * 获取未来帧数量
+     */
+    size_t future_size() const;
+
+    /**
      * 获取帧队列
      */
-    FrameQueue* frame_queue() { return &frame_queue_; }
+    BidiFrameQueue* frame_queue() { return &frame_queue_; }
 
     /**
      * 获取关联的解码器
@@ -147,7 +171,7 @@ private:
 
     DecodeCallback callback_;
 
-    FrameQueue frame_queue_{12};  // 帧缓冲队列
+    BidiFrameQueue frame_queue_{4, 12};  // 双向帧缓冲队列 (4 history, 12 future)
 };
 
 } // namespace voidview

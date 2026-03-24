@@ -1,0 +1,13 @@
+# Seek 测试
+# 测试第一次 seek 是否正常显示
+
+0.5, ADD_TRACK, resources/video/h264_9s_1920x1080.mp4
+1.0, PLAY
+# 播放 1 秒
+2.0, PAUSE
+# 等待暂停生效，然后 seek 到 5 秒
+2.2, SEEK_TO, 5000
+# 等待看画面是否变化
+3.5, SEEK_TO, 2000
+# 再次 seek，看画面是否变化
+5.0, QUIT, 0

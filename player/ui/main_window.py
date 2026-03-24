@@ -194,12 +194,12 @@ class MainWindow(QWidget):
         # 解码器池
         dp.duration_changed.connect(self.controls_bar.set_duration)
         dp.position_changed.connect(self._on_position_changed)
-        dp.frame_ready.connect(lambda: self.viewport_panel.gl_widget.update())
+        dp.frame_ready.connect(self._on_frame_ready)
         dp.eof_reached.connect(self._on_eof_reached)
         dp.error_occurred.connect(self._on_decoder_error)
 
         # 播放控制器
-        self._playback_controller.frame_tick.connect(lambda: self.viewport_panel.gl_widget.update())
+        self._playback_controller.frame_tick.connect(lambda: self.viewport_panel.gl_widget.requestUpdate())
         self._playback_controller.connect_to_decoder_pool()
 
         # 帧解码完成信号 -> 通知诊断模块
@@ -366,6 +366,11 @@ class MainWindow(QWidget):
             position = position_ms / self._decoder_pool.duration_ms
             self.timeline_area.update_playhead(position)
         self.controls_bar.set_position(position_ms)
+
+    def _on_frame_ready(self):
+        from player.core.logging_config import get_logger
+        get_logger().info("[SEEK] frame_ready signal received, calling requestUpdate()")
+        self.viewport_panel.gl_widget.requestUpdate()
 
     def _on_eof_reached(self):
         self._is_playing = False

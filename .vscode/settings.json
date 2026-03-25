@@ -14,6 +14,6 @@
         "statusBar.noFolderBackground": "#15158E",
         "statusBar.noFolderForeground": "#FCFCFF"
     },
-    "cmake.sourceDirectory": "${sourceDirectory}/native",
+    "cmake.sourceDirectory": "${workspaceFolder}/native",
     "cmake.buildDirectory": "${sourceDirectory}/build"
 }

@@ -9,6 +9,7 @@ from PySide6.QtCore import Signal, Qt
 from qfluentwidgets_nuitka import FluentIcon, IconWidget, SubtitleLabel, IndeterminateProgressRing
 
 from .header import MediaHeader
+from ...core.signal_bus import signal_bus
 from ..theme_utils import get_color_hex, ColorKey
 
 
@@ -212,14 +213,15 @@ class ViewportPanel(QWidget):
     def _add_slot(self, index: int, current_source: str):
         """创建并添加槽位（info_item）"""
         info_item = MediaHeader(index, self._sources, current_source, self)
+        # 通过 signal_bus 发送请求信号
         info_item.media_changed.connect(
-            lambda slot_idx, media_idx: self.media_swap_requested.emit(slot_idx, media_idx)
+            lambda slot_idx, media_idx: signal_bus.track_swap_requested.emit(slot_idx, media_idx)
         )
         info_item.media_settings_clicked.connect(
-            lambda slot_idx=index: self.media_settings_clicked.emit(slot_idx)
+            lambda slot_idx=index: self.media_settings_clicked.emit(slot_idx)  # 保留本地信号
         )
         info_item.media_remove_clicked.connect(
-            lambda slot_idx=index: self.media_remove_clicked.emit(slot_idx)
+            lambda slot_idx=index: signal_bus.media_remove_requested.emit(slot_idx)
         )
         self._info_items.append(info_item)
 

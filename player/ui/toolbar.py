@@ -11,21 +11,20 @@ from qfluentwidgets_nuitka import (
     FluentIcon,
 )
 
+from player.core.signal_bus import signal_bus
+
 from .viewport import ViewMode
 from .widgets import create_tool_button
 
 
 class ToolBar(QWidget):
-    """顶部工具栏 - 视图模式切换和项目操作"""
+    """顶部工具栏 - 视图模式切换和项目操作
 
-    # 信号
+    通过 signal_bus 发送请求信号。
+    """
+
+    # 内部信号 (用于 MainWindow 的视图模式同步)
     view_mode_changed = Signal(ViewMode)
-    add_media_clicked = Signal()
-    new_window_clicked = Signal()
-    open_project_clicked = Signal()
-    save_project_clicked = Signal()
-    settings_clicked = Signal()
-    debug_monitor_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -59,7 +58,7 @@ class ToolBar(QWidget):
         self.add_media_btn = PrimaryPushButton("添加媒体", self)
         self.add_media_btn.setFixedHeight(32)
         self.add_media_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 不拦截快捷键
-        self.add_media_btn.clicked.connect(self.add_media_clicked)
+        self.add_media_btn.clicked.connect(lambda: signal_bus.media_add_dialog_requested.emit())
         layout.addWidget(self.add_media_btn)
 
         layout.addSpacing(4)
@@ -68,40 +67,51 @@ class ToolBar(QWidget):
         self.new_window_btn = PushButton("＋ 新窗口", self)
         self.new_window_btn.setFixedHeight(32)
         self.new_window_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 不拦截快捷键
-        self.new_window_btn.clicked.connect(self.new_window_clicked)
+        self.new_window_btn.clicked.connect(lambda: signal_bus.new_window_requested.emit())
         layout.addWidget(self.new_window_btn)
 
         layout.addSpacing(4)
 
         # 打开按钮
         self.open_btn = create_tool_button(FluentIcon.FOLDER, self, 32, "打开项目")
-        self.open_btn.clicked.connect(self.open_project_clicked)
+        self.open_btn.clicked.connect(self._on_open_project)
         layout.addWidget(self.open_btn)
 
         layout.addSpacing(4)
 
         # 保存按钮
         self.save_btn = create_tool_button(FluentIcon.SAVE, self, 32, "保存项目")
-        self.save_btn.clicked.connect(self.save_project_clicked)
+        self.save_btn.clicked.connect(self._on_save_project)
         layout.addWidget(self.save_btn)
 
         layout.addSpacing(4)
 
         # 设置按钮
         self.settings_btn = create_tool_button(FluentIcon.SETTING, self, 32, "设置")
-        self.settings_btn.clicked.connect(self.settings_clicked)
+        self.settings_btn.clicked.connect(lambda: signal_bus.settings_requested.emit())
         layout.addWidget(self.settings_btn)
 
         layout.addSpacing(4)
 
         # 性能监控按钮
         self.debug_btn = create_tool_button(FluentIcon.STOP_WATCH, self, 32, "性能监控")
-        self.debug_btn.clicked.connect(self.debug_monitor_clicked)
+        self.debug_btn.clicked.connect(lambda: signal_bus.debug_monitor_requested.emit())
         layout.addWidget(self.debug_btn)
 
     def _on_view_mode_changed(self, mode: ViewMode):
         """视图模式切换"""
         self.view_mode_changed.emit(mode)
+        signal_bus.view_mode_changed.emit(mode)
+
+    def _on_open_project(self):
+        """打开项目"""
+        # TODO: 实现打开项目逻辑
+        pass
+
+    def _on_save_project(self):
+        """保存项目"""
+        # TODO: 实现保存项目逻辑
+        pass
 
     def set_view_mode(self, mode: ViewMode):
         """设置当前视图模式"""

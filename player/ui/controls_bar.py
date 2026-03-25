@@ -12,25 +12,20 @@ from qfluentwidgets_nuitka import (
 )
 
 from player.core.logging_config import get_logger
+from player.core.signal_bus import signal_bus
 
 from .theme_utils import get_color_hex, ColorKey
 from .widgets import create_tool_button, TimeLabel, TimelineSlider, ZoomComboBox
 
 
 class ControlsBar(QWidget):
-    """播放控制条 - 播放控制和时间轴"""
+    """播放控制条 - 播放控制和时间轴
 
-    # 信号
-    play_clicked = Signal()
-    pause_clicked = Signal()
-    prev_frame_clicked = Signal()
-    next_frame_clicked = Signal()
-    loop_toggled = Signal(bool)
-    seek_requested = Signal(int)  # 毫秒，快速 seek (keyframe)
-    precise_seek_requested = Signal(int)  # 毫秒，精确 seek (frame-accurate)
+    通过 signal_bus 发送请求信号，监听状态更新信号。
+    """
+
+    # 内部信号 (仅用于 ZoomComboBox 特殊处理，需要 MainWindow 协调)
     zoom_changed = Signal(int)  # 百分比
-    speed_changed = Signal(float)
-    fullscreen_toggled = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -42,6 +37,7 @@ class ControlsBar(QWidget):
         self.setFixedHeight(40)  # 32px 按钮 + 4px*2 边距 = 40px
         self._update_style()
         self._setup_ui()
+        self._connect_signal_bus()
 
     def _update_style(self):
         """更新背景样式 - 稍亮引导用户操作"""
@@ -74,17 +70,17 @@ class ControlsBar(QWidget):
 
         # 全屏按钮
         self.fullscreen_btn = create_tool_button(FluentIcon.FULL_SCREEN, self, 32, "全屏")
-        self.fullscreen_btn.clicked.connect(self.fullscreen_toggled)
+        self.fullscreen_btn.clicked.connect(lambda: signal_bus.fullscreen_toggled.emit())
         layout.addWidget(self.fullscreen_btn)
 
         # 上一帧按钮
         self.prev_frame_btn = create_tool_button(FluentIcon.LEFT_ARROW, self, 32, "上一帧")
-        self.prev_frame_btn.clicked.connect(self.prev_frame_clicked)
+        self.prev_frame_btn.clicked.connect(lambda: signal_bus.prev_frame_requested.emit())
         layout.addWidget(self.prev_frame_btn)
 
         # 下一帧按钮
         self.next_frame_btn = create_tool_button(FluentIcon.RIGHT_ARROW, self, 32, "下一帧")
-        self.next_frame_btn.clicked.connect(self.next_frame_clicked)
+        self.next_frame_btn.clicked.connect(lambda: signal_bus.next_frame_requested.emit())
         layout.addWidget(self.next_frame_btn)
 
         # 循环按钮 (激发式)
@@ -117,6 +113,14 @@ class ControlsBar(QWidget):
         self._update_controls_enabled()
         self._update_time_display()
 
+    def _connect_signal_bus(self):
+        """连接 signal_bus 信号"""
+        # 监听状态更新
+        signal_bus.duration_updated.connect(self.set_duration)
+        signal_bus.position_updated.connect(self.set_position)
+        signal_bus.playing_state_changed.connect(self.set_playing)
+        signal_bus.loop_toggled.connect(self.loop_btn.setChecked)
+
     def _update_controls_enabled(self):
         """根据是否加载媒体来启用/禁用控件"""
         has_media = self._duration_ms > 0
@@ -134,18 +138,14 @@ class ControlsBar(QWidget):
     def _on_play_clicked(self):
         """播放按钮点击"""
         if self._is_playing:
-            self._is_playing = False
-            self.play_btn.setIcon(FluentIcon.PLAY)
-            self.pause_clicked.emit()
+            signal_bus.pause_requested.emit()
         else:
-            self._is_playing = True
-            self.play_btn.setIcon(FluentIcon.PAUSE)
-            self.play_clicked.emit()
+            signal_bus.play_requested.emit()
 
     def _on_loop_toggled(self, checked: bool):
         """循环按钮状态切换"""
         self._is_looping = checked
-        self.loop_toggled.emit(checked)
+        signal_bus.loop_toggled.emit(checked)
 
     def _on_slider_dragging(self, position_us: int):
         """滑块拖动中 - 更新时间显示，发送快速 seek"""
@@ -153,7 +153,7 @@ class ControlsBar(QWidget):
         self._current_ms = position_us // 1000  # 微秒转毫秒
         self._update_time_display()
         self._logger.info(f"[SEEK] ControlsBar._on_slider_dragging: {self._current_ms}ms, emit seek_requested")
-        self.seek_requested.emit(self._current_ms)
+        signal_bus.seek_requested.emit(self._current_ms)
         self._logger.info(f"[SEEK] ControlsBar._on_slider_dragging done: {(time.perf_counter() - t0)*1000:.2f}ms")
 
     def _on_slider_changed(self, position_us: int):
@@ -162,13 +162,22 @@ class ControlsBar(QWidget):
         self._current_ms = position_us // 1000  # 微秒转毫秒
         self._update_time_display()
         self._logger.info(f"[SEEK] ControlsBar._on_slider_changed: {self._current_ms}ms, emit precise_seek_requested")
-        self.precise_seek_requested.emit(self._current_ms)
+        signal_bus.precise_seek_requested.emit(self._current_ms)
         self._logger.info(f"[SEEK] ControlsBar._on_slider_changed done: {(time.perf_counter() - t0)*1000:.2f}ms")
 
     def _on_zoom_changed(self, zoom_ratio: float):
         """缩放变化 - zoom_ratio 是比例值 (1.0 = 100%)"""
-        # 转换为百分比发送给外部
+        # 转换为百分比发送给外部 (需要 MainWindow 协调 ViewportManager)
         self.zoom_changed.emit(int(zoom_ratio * 100))
+
+    def _on_speed_changed(self, index: int):
+        """速度变化"""
+        speed_values = [0.25, 0.5, 1.0, 1.5, 2.0]
+        signal_bus.speed_changed.emit(speed_values[index])
+
+    def _update_time_display(self):
+        """更新时间显示"""
+        self.time_label.setTime(self._current_ms, self._duration_ms)
 
     def set_zoom_ratio(self, ratio: float):
         """设置缩放比例
@@ -185,15 +194,6 @@ class ControlsBar(QWidget):
             fit_value: fit 缩放比例
         """
         self.zoom_combo.set_fit_value(fit_value)
-
-    def _on_speed_changed(self, index: int):
-        """速度变化"""
-        speed_values = [0.25, 0.5, 1.0, 1.5, 2.0]
-        self.speed_changed.emit(speed_values[index])
-
-    def _update_time_display(self):
-        """更新时间显示"""
-        self.time_label.setTime(self._current_ms, self._duration_ms)
 
     def set_duration(self, duration_ms: int):
         """设置总时长"""

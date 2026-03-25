@@ -8,6 +8,7 @@ from qfluentwidgets_nuitka import SmoothScrollArea
 
 from .track_row import TrackRow
 from .theme_utils import get_color_hex, get_accent_color_hex, ColorKey
+from ..core.signal_bus import signal_bus
 
 if TYPE_CHECKING:
     from ..core.decoder_pool import MediaInfo
@@ -160,19 +161,19 @@ class TimelineArea(QWidget):
 
     def _on_track_remove(self, index: int):
         """轨道移除信号"""
-        self.track_remove_clicked.emit(index)
+        signal_bus.media_remove_requested.emit(index)
 
     def _on_track_visibility(self, index: int, visible: bool):
         """轨道可见性信号"""
-        self.track_visibility_toggled.emit(index, visible)
+        signal_bus.track_visibility_changed.emit(index, visible)
 
     def _on_track_mute(self, index: int, muted: bool):
         """轨道静音信号"""
-        self.track_mute_toggled.emit(index, muted)
+        signal_bus.track_mute_changed.emit(index, muted)
 
     def _on_track_offset(self, index: int, offset_ms: int):
         """轨道偏移信号"""
-        self.track_offset_changed.emit(index, offset_ms)
+        signal_bus.sync_offset_changed.emit(index, offset_ms)
 
     def _on_splitter_moved(self, new_width: int):
         """处理 splitter 拖动 - 同步所有轨道"""
@@ -275,7 +276,7 @@ class TimelineArea(QWidget):
 
         # 只有位置变化才触发重排序请求
         if old_index != new_index:
-            self.track_move_requested.emit(old_index, new_index)
+            signal_bus.track_move_requested.emit(old_index, new_index)
 
     def _calculate_drop_index(self, global_y: int) -> int:
         """根据全局 Y 坐标计算目标索引"""

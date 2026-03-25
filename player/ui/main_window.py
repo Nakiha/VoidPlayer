@@ -31,7 +31,13 @@ from ..core.diagnostics import DiagnosticsManager
 
 
 class MainWindow(QWidget):
-    """主窗口 - 整体布局协调"""
+    """主窗口 - 整体布局协调
+
+    信号流:
+    - UI 组件通过 signal_bus 发送请求信号
+    - MainWindow 监听 signal_bus 并处理业务逻辑
+    - MainWindow 通过 signal_bus 广播状态更新
+    """
 
     # 启动新窗口时要排除的参数黑名单
     NEW_WINDOW_EXCLUDE_ARGS = {"-i", "--input"}
@@ -73,10 +79,10 @@ class MainWindow(QWidget):
 
         self._setup_ui()
         self._connect_internal_signals()
+        self._connect_signal_bus()
         self._setup_diagnostics()
         self._setup_action_system()
         self._setup_shortcuts()
-        self._connect_signal_bus()
         self._load_initial_files(initial_files or [])
         self._setup_automation()
 
@@ -147,52 +153,40 @@ class MainWindow(QWidget):
             top_height = max(total_height - timeline_max, total_height // 2)
             self.v_splitter.setSizes([top_height, total_height - top_height])
 
-    # ========== 内部信号连接 ==========
+    # ========== 内部信号连接 (无法通过 signal_bus 解耦的部分) ==========
 
     def _connect_internal_signals(self):
-        """连接内部组件信号"""
+        """连接内部组件信号
+
+        这些信号不适合通过 signal_bus 解耦：
+        - TrackManager 状态变化 -> 需要协调多个 UI 组件
+        - GL 相关信号 -> 需要特定的初始化顺序
+        - ViewportManager 信号 -> 内部状态协调
+        """
         tm = self._track_manager
         dp = self._decoder_pool
 
-        # TrackManager -> 更新 UI
+        # TrackManager -> 更新 UI (核心数据流，保持直接连接)
         tm.source_added.connect(self._on_source_added)
         tm.source_removed.connect(self._on_source_removed)
         tm.sources_swapped.connect(self._on_sources_swapped)
         tm.sources_reordered.connect(self._on_sources_reordered)
         tm.sources_reset.connect(self._on_sources_reset)
 
-        # 工具栏
+        # 工具栏本地信号 (视图模式同步)
         self.toolbar.view_mode_changed.connect(self.set_view_mode)
-        self.toolbar.add_media_clicked.connect(self._on_add_media)
-        self.toolbar.new_window_clicked.connect(self._on_new_window)
-        if config.profile != Profile.PERF:
-            self.toolbar.debug_monitor_clicked.connect(self._show_memory_window)
 
-        # 设置
-        self.toolbar.settings_clicked.connect(self._show_settings_window)
-
-        # 视口面板
-        self.viewport_panel.media_remove_clicked.connect(self.remove_media)
-        self.viewport_panel.media_swap_requested.connect(tm.swap_sources)
+        # 视口面板本地信号
         self.viewport_panel.gl_initialized.connect(self._on_gl_initialized)
 
-        # 控制条
-        self.controls_bar.play_clicked.connect(self.play)
-        self.controls_bar.pause_clicked.connect(self.pause)
-        self.controls_bar.seek_requested.connect(self.seek_to)
-        self.controls_bar.precise_seek_requested.connect(self.seek_to_precise)
-
-        # 时间轴
-        self.timeline_area.track_remove_clicked.connect(self.remove_media)
-        self.timeline_area.track_offset_changed.connect(self.set_sync_offset)
-        self.timeline_area.track_move_requested.connect(tm.move_source)
+        # 时间轴本地信号
         self.timeline_area.expand_requested.connect(self._on_timeline_expand_requested)
 
         # 分割器
         self.v_splitter.splitterMoved.connect(self._on_splitter_moved)
 
-        # 解码器池
-        dp.duration_changed.connect(self.controls_bar.set_duration)
+        # 解码器池状态 -> 广播到 signal_bus
+        dp.duration_changed.connect(signal_bus.duration_updated.emit)
         dp.position_changed.connect(self._on_position_changed)
         dp.frame_ready.connect(self._on_frame_ready)
         dp.eof_reached.connect(self._on_eof_reached)
@@ -205,7 +199,7 @@ class MainWindow(QWidget):
         # 帧解码完成信号 -> 通知诊断模块
         dp.track_frame_decoded.connect(self._playback_controller.on_frame_decoded)
 
-        # Viewport 缩放/移动
+        # Viewport 缩放/移动 (内部协调)
         gl_widget = self.viewport_panel.gl_widget
         gl_widget.viewport_wheel_zoom.connect(self._on_viewport_wheel_zoom)
         gl_widget.viewport_pan_start.connect(self._on_viewport_pan_start)
@@ -221,6 +215,64 @@ class MainWindow(QWidget):
 
         # ViewportManager -> GLWidget (应用缩放/偏移渲染)
         self._viewport_manager.viewport_changed.connect(self._on_viewport_changed)
+
+    # ========== SignalBus 连接 (跨组件通信) ==========
+
+    def _connect_signal_bus(self):
+        """连接全局信号总线
+
+        请求信号 -> MainWindow 处理
+        """
+        sb = signal_bus
+
+        # ========== 播放控制请求 ==========
+        sb.play_requested.connect(self.play)
+        sb.pause_requested.connect(self.pause)
+        sb.seek_requested.connect(self.seek_to)
+        sb.precise_seek_requested.connect(self.seek_to_precise)
+        sb.prev_frame_requested.connect(self._on_prev_frame)
+        sb.next_frame_requested.connect(self._on_next_frame)
+        sb.loop_toggled.connect(self._on_loop_toggled)
+        sb.speed_changed.connect(self._on_speed_changed)
+
+        # ========== 媒体操作请求 ==========
+        sb.media_add_requested.connect(self.add_media)
+        sb.media_add_dialog_requested.connect(self._on_add_media)
+        sb.media_remove_requested.connect(self.remove_media)
+        sb.track_swap_requested.connect(self._track_manager.swap_sources)
+        sb.track_move_requested.connect(self._track_manager.move_source)
+        sb.sync_offset_changed.connect(self.set_sync_offset)
+
+        # ========== 视图请求 ==========
+        sb.view_mode_changed.connect(self.set_view_mode)
+        sb.fullscreen_toggled.connect(lambda: self._action_dispatcher.dispatch("TOGGLE_FULLSCREEN"))
+
+        # ========== 窗口请求 ==========
+        sb.settings_requested.connect(self._show_settings_window)
+        sb.debug_monitor_requested.connect(self._show_memory_window)
+        sb.new_window_requested.connect(self._on_new_window)
+
+    # ========== 请求处理 ==========
+
+    def _on_prev_frame(self):
+        """上一帧"""
+        self._decoder_pool.prev_frame()
+        self.viewport_panel.gl_widget.requestUpdate()
+
+    def _on_next_frame(self):
+        """下一帧"""
+        self._decoder_pool.next_frame()
+        self.viewport_panel.gl_widget.requestUpdate()
+
+    def _on_loop_toggled(self, enabled: bool):
+        """循环播放切换"""
+        self._playback_controller.set_loop(enabled)
+        # 广播状态
+        signal_bus.loop_toggled.emit(enabled)
+
+    def _on_speed_changed(self, speed: float):
+        """播放速度变化"""
+        self._playback_controller.set_speed(speed)
 
     # ========== 诊断模块设置 ==========
 
@@ -238,32 +290,6 @@ class MainWindow(QWidget):
         # 连接 PlaybackController 信号 -> DiagnosticsManager
         self._playback_controller.frame_requested.connect(self._diagnostics_manager.on_frame_requested)
         self._playback_controller.frame_completed.connect(self._diagnostics_manager.on_frame_completed)
-
-    # ========== SignalBus 连接 ==========
-
-    def _connect_signal_bus(self):
-        """连接全局信号总线"""
-        sb = signal_bus
-        # 播放控制
-        sb.play_requested.connect(self.play)
-        sb.pause_requested.connect(self.pause)
-        sb.seek_requested.connect(self.seek_to)
-        sb.speed_changed.connect(self.controls_bar.speed_combo.setCurrentIndex)
-        # zoom_changed 现在使用 set_zoom_ratio 而不是 setCurrentIndex
-        sb.zoom_changed.connect(lambda ratio: self.controls_bar.zoom_combo.set_zoom_ratio(ratio / 100.0, emit=True))
-        sb.loop_toggled.connect(self.controls_bar.loop_btn.setChecked)
-
-        # 视图
-        sb.view_mode_changed.connect(self.set_view_mode)
-        sb.fullscreen_toggled.connect(lambda: self._action_dispatcher.dispatch("TOGGLE_FULLSCREEN"))
-
-        # 文件
-        sb.media_add_requested.connect(self.add_media)
-        sb.media_remove_requested.connect(self.remove_media)
-
-        # 调试
-        sb.debug_monitor_requested.connect(self._show_memory_window)
-        sb.new_window_requested.connect(self._on_new_window)
 
     # ========== 快捷键 ==========
 
@@ -400,18 +426,24 @@ class MainWindow(QWidget):
         if self._decoder_pool.duration_ms > 0:
             position = position_ms / self._decoder_pool.duration_ms
             self.timeline_area.update_playhead(position)
+            signal_bus.playhead_position_changed.emit(position)
+        # 广播位置更新
+        signal_bus.position_updated.emit(position_ms)
         self.controls_bar.set_position(position_ms)
 
     def _on_frame_ready(self):
-        from player.core.logging_config import get_logger
         self.viewport_panel.gl_widget.requestUpdate()
+        signal_bus.frame_ready.emit()
 
     def _on_eof_reached(self):
         self._is_playing = False
+        signal_bus.playing_state_changed.emit(False)
+        signal_bus.eof_reached.emit()
         self.controls_bar.set_playing(False)
 
     def _on_decoder_error(self, track_index: int, message: str):
-        print(f"Decoder error (track {track_index}): {message}")
+        get_logger().error(f"Decoder error (track {track_index}): {message}")
+        signal_bus.decoder_error.emit(track_index, message)
 
     def _toggle_stats_overlay(self):
         """切换性能统计窗口"""
@@ -629,12 +661,14 @@ class MainWindow(QWidget):
 
     def play(self):
         self._is_playing = True
+        signal_bus.playing_state_changed.emit(True)
         self.controls_bar.set_playing(True)
         self._diagnostics_manager.start()
         self._playback_controller.play()
 
     def pause(self):
         self._is_playing = False
+        signal_bus.playing_state_changed.emit(False)
         self.controls_bar.set_playing(False)
         self._playback_controller.pause()
         self._diagnostics_manager.stop()

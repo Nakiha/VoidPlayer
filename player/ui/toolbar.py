@@ -76,13 +76,14 @@ class ToolBar(QWidget):
         self.open_btn = create_tool_button(FluentIcon.FOLDER, self, 32, "打开项目")
         self.open_btn.clicked.connect(self._on_open_project)
         layout.addWidget(self.open_btn)
-
-        layout.addSpacing(4)
+        #layout.addSpacing(4)
+        self.open_btn.hide()  # TODO: 待实现，0.1.0 临时隐藏
 
         # 保存按钮
         self.save_btn = create_tool_button(FluentIcon.SAVE, self, 32, "保存项目")
         self.save_btn.clicked.connect(self._on_save_project)
         layout.addWidget(self.save_btn)
+        self.save_btn.hide()  # TODO: 待实现，0.1.0 临时隐藏
 
         layout.addSpacing(4)
 

@@ -67,11 +67,13 @@ class ControlsBar(QWidget):
         self.speed_combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 不拦截快捷键
         self.speed_combo.currentIndexChanged.connect(self._on_speed_changed)
         layout.addWidget(self.speed_combo)
+        self.speed_combo.hide()  # TODO: 待实现，0.1.0 临时隐藏
 
         # 全屏按钮
         self.fullscreen_btn = create_tool_button(FluentIcon.FULL_SCREEN, self, 32, "全屏")
         self.fullscreen_btn.clicked.connect(lambda: signal_bus.fullscreen_toggled.emit())
         layout.addWidget(self.fullscreen_btn)
+        self.fullscreen_btn.hide()  # TODO: 待实现，0.1.0 临时隐藏
 
         # 上一帧按钮
         self.prev_frame_btn = create_tool_button(FluentIcon.LEFT_ARROW, self, 32, "上一帧")
@@ -92,6 +94,7 @@ class ControlsBar(QWidget):
         self.loop_btn.setChecked(self._is_looping)
         self.loop_btn.toggled.connect(self._on_loop_toggled)
         layout.addWidget(self.loop_btn)
+        self.loop_btn.hide()  # TODO: 待实现，0.1.0 临时隐藏
 
         # 播放按钮
         self.play_btn = create_tool_button(FluentIcon.PLAY, self, 32, "播放")
@@ -112,6 +115,9 @@ class ControlsBar(QWidget):
         # 初始化控件状态
         self._update_controls_enabled()
         self._update_time_display()
+
+        # 连接时间编辑信号
+        self.time_label.time_edit_finished.connect(self._on_time_edit_finished)
 
     def _connect_signal_bus(self):
         """连接 signal_bus 信号"""
@@ -134,6 +140,7 @@ class ControlsBar(QWidget):
         self.loop_btn.setEnabled(has_media)
         self.play_btn.setEnabled(has_media)
         self.timeline_slider.setEnabled(has_media)
+        self.time_label.setEnabled(has_media)
 
     def _on_play_clicked(self):
         """播放按钮点击"""
@@ -164,6 +171,13 @@ class ControlsBar(QWidget):
         self._logger.info(f"[SEEK] ControlsBar._on_slider_changed: {self._current_ms}ms, emit precise_seek_requested")
         signal_bus.precise_seek_requested.emit(self._current_ms)
         self._logger.info(f"[SEEK] ControlsBar._on_slider_changed done: {(time.perf_counter() - t0)*1000:.2f}ms")
+
+    def _on_time_edit_finished(self, time_ms: int):
+        """时间编辑完成 - 发送精确 seek"""
+        self._current_ms = time_ms
+        self.timeline_slider.set_position(time_ms * 1000)  # 同步更新进度条
+        self._logger.info(f"[SEEK] ControlsBar._on_time_edit_finished: {time_ms}ms, emit precise_seek_requested")
+        signal_bus.precise_seek_requested.emit(time_ms)
 
     def _on_zoom_changed(self, zoom_ratio: float):
         """缩放变化 - zoom_ratio 是比例值 (1.0 = 100%)"""

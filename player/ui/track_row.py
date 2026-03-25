@@ -123,23 +123,28 @@ class TrackRow(QWidget):
         self.visibility_btn = create_tool_button(FluentIcon.VIEW, self, 32, "显示/隐藏视频")
         self.visibility_btn.clicked.connect(self._on_visibility_clicked)
         controls_layout.addWidget(self.visibility_btn)
+        self.visibility_btn.hide()  # TODO: 待实现，0.1.0 临时隐藏
 
         # 静音按钮
         self.mute_btn = create_tool_button(FluentIcon.VOLUME, self, 32, "静音/取消静音")
         self.mute_btn.clicked.connect(self._on_mute_clicked)
         controls_layout.addWidget(self.mute_btn)
+        self.mute_btn.hide()  # TODO: 待实现，0.1.0 临时隐藏
 
         # 偏移控制区
         self.offset_prev_btn = create_tool_button(FluentIcon.LEFT_ARROW, self, 32, f"偏移 -{OFFSET_STEP_LABEL}")
         self.offset_prev_btn.clicked.connect(self._on_offset_decrease)
         controls_layout.addWidget(self.offset_prev_btn)
+        self.offset_prev_btn.hide()  # TODO: 待实现，0.1.0 临时隐藏
 
         self.offset_next_btn = create_tool_button(FluentIcon.RIGHT_ARROW, self, 32, f"偏移 +{OFFSET_STEP_LABEL}")
         self.offset_next_btn.clicked.connect(self._on_offset_increase)
         controls_layout.addWidget(self.offset_next_btn)
+        self.offset_next_btn.hide()  # TODO: 待实现，0.1.0 临时隐藏
 
         self.offset_label = OffsetLabel(self)
         controls_layout.addWidget(self.offset_label)
+        self.offset_label.hide()  # TODO: 待实现，0.1.0 临时隐藏
 
         self.splitter.addWidget(self.controls_panel)
 

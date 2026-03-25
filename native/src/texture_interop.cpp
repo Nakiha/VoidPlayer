@@ -392,9 +392,11 @@ bool TextureInterop::bind_frame(AVFrame* frame) {
     D3D11_TEXTURE2D_DESC desc;
     nv12_tex->GetDesc(&desc);
 
-    VV_TRACE("Frame: {}x{}, format={}, subresource={}", width, height, (unsigned)desc.Format, subresource);
+    VV_DEBUG("Frame: frame->{}x{}, texture={}x{}, format={}, subresource={}",
+             width, height, desc.Width, desc.Height, (unsigned)desc.Format, subresource);
 
-    // Initialize GL resources
+    // Initialize GL resources with video dimensions (not aligned texture dimensions)
+    // 这样着色器中的 UV 计算是正确的
     if (!init_gl_resources(width, height)) {
         return false;
     }
@@ -402,14 +404,34 @@ bool TextureInterop::bind_frame(AVFrame* frame) {
     // Try GPU path first (zero-copy)
     bool gpu_success = false;
     if (video_device_ && video_context_) {
-        // Initialize video processor if needed
+        // Initialize video processor with texture dimensions
+        // VideoProcessor 需要知道输入纹理的实际尺寸
         if (!video_processor_) {
-            if (!init_video_processor(width, height, desc.Format)) {
+            if (!init_video_processor(desc.Width, desc.Height, desc.Format)) {
                 VV_DEBUG("VideoProcessor init failed, falling back to CPU");
             }
         }
 
         if (video_processor_) {
+            // 设置源矩形：只处理 NV12 纹理中的有效视频区域（不包含 padding）
+            RECT src_rect;
+            src_rect.left = 0;
+            src_rect.top = 0;
+            src_rect.right = width;   // 视频实际宽度
+            src_rect.bottom = height; // 视频实际高度
+            video_context_->VideoProcessorSetStreamSourceRect(
+                video_processor_, 0, TRUE, &src_rect);
+
+            // 设置目标矩形：输出到 RGBA 纹理的对应区域
+            // RGBA 纹理尺寸是 width x height，所以目标矩形与源矩形相同
+            RECT dst_rect;
+            dst_rect.left = 0;
+            dst_rect.top = 0;
+            dst_rect.right = width;
+            dst_rect.bottom = height;
+            video_context_->VideoProcessorSetStreamDestRect(
+                video_processor_, 0, TRUE, &dst_rect);
+
             gpu_success = convert_nv12_to_rgba_gpu(nv12_tex, subresource);
         }
     }

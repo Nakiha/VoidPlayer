@@ -2,32 +2,41 @@
 // MultiTrack fragment shader - multi-texture composition
 // Supports SIDE_BY_SIDE (equal split) and SPLIT_SCREEN (overlapping with divider) modes
 // Supports viewport zoom and pan
+// Uses SSBO for uniform data (OpenGL 4.5+)
 
 in vec2 v_texCoord;
 in vec2 v_position;
 out vec4 fragColor;
 
-uniform int u_mode;           // 0 = SIDE_BY_SIDE, 1 = SPLIT_SCREEN
-uniform int u_track_count;    // Number of active tracks
-uniform float u_split_pos;    // Split position (0.0 - 1.0) for SPLIT_SCREEN mode
-uniform int u_order[8];       // Track display order mapping
+// SSBO: ViewData - 所有 uniform 参数打包到一个 buffer
+// std430 布局，与 Python numpy dtype 对应
+// Total size: 168 bytes
+layout(std430, binding = 0) buffer ViewData {
+    // === 固定参数 (offset 0-15) ===
+    int u_mode;            // offset 0: 0 = SIDE_BY_SIDE, 1 = SPLIT_SCREEN
+    int u_track_count;     // offset 4: Number of active tracks
+    float u_split_pos;     // offset 8: Split position (0.0 - 1.0)
+    float u_zoom_ratio;    // offset 12: Zoom ratio (1.0 = fit, >1.0 = zoom in)
 
-// 每个 track 的宽高比 (width / height), 0 表示使用画布比例
-uniform float u_aspect_ratios[8];
+    // === 画布参数 (offset 16-31) ===
+    float u_canvas_aspect; // offset 16: Canvas aspect ratio
+    // padding at offset 20-23 (vec2 needs 8-byte alignment)
+    vec2 u_canvas_size;    // offset 24: Canvas size in pixels
 
-// 每个 track 的分辨率尺寸 (像素)
-uniform vec2 u_track_sizes[8];
+    // === 视图偏移 (offset 32-39) ===
+    vec2 u_view_offset;    // offset 32: View offset in pixel coordinates
 
-// 画布宽高比
-uniform float u_canvas_aspect;
+    // === Track 顺序数组 (offset 40-71) ===
+    int u_order[8];        // offset 40: Track display order mapping
 
-// 画布尺寸 (像素)
-uniform vec2 u_canvas_size;
+    // === Track 宽高比数组 (offset 72-103) ===
+    float u_aspect_ratios[8]; // offset 72: Aspect ratio for each track
 
-// Viewport 缩放和偏移
-uniform float u_zoom_ratio;   // 缩放比例: 1.0 = fit, >1.0 = 放大
-uniform vec2 u_view_offset;   // 视图偏移 (片坐标系, 像素单位)
+    // === Track 分辨率数组 (offset 104-167) ===
+    vec2 u_track_sizes[8]; // offset 104: Resolution size for each track
+};
 
+// sampler 不能放在 SSBO 中，保持为 uniform
 uniform sampler2D u_textures[8];  // Up to 8 texture slots
 
 // 背景色 (letterbox/pillarbox)

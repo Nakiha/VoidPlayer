@@ -1,12 +1,16 @@
 """
 MultiTrackGLWindow - 多轨道 OpenGL 渲染窗口
 使用 QOpenGLWindow 替代 QOpenGLWidget 以获得更好的性能
+使用 SSBO (Shader Storage Buffer Object) 替代传统 glUniform 调用
 """
 import ctypes
+import hashlib
+import os
 from enum import IntEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 from PySide6.QtGui import QSurfaceFormat
 from PySide6.QtCore import Signal, Qt, QPointF, QObject
 from PySide6.QtOpenGL import QOpenGLWindow
@@ -25,6 +29,41 @@ class ViewMode(IntEnum):
     """视图模式枚举"""
     SIDE_BY_SIDE = 0  # 并排模式 - 所有视频等分显示
     SPLIT_SCREEN = 1  # 分屏对比模式 - 重叠显示，分割线切换
+
+
+# SSBO 数据结构 - 匹配 std430 布局
+# 注意：numpy dtype 需要手动对齐以匹配 GLSL std430 规则
+# - 标量 (int32, float32): 4 字节对齐
+# - vec2: 8 字节对齐，由两个 float32 组成
+# - 数组: 元素紧密排列
+# 总大小: 168 bytes
+SSBO_VIEW_DATA_DTYPE = np.dtype([
+    # === 固定参数 (offset 0-15) ===
+    ('u_mode', np.int32),           # offset 0
+    ('u_track_count', np.int32),    # offset 4
+    ('u_split_pos', np.float32),    # offset 8
+    ('u_zoom_ratio', np.float32),   # offset 12
+
+    # === 画布参数 (offset 16-31) ===
+    ('u_canvas_aspect', np.float32),  # offset 16
+    ('_pad_canvas_size', np.float32), # offset 20: padding for vec2 8-byte alignment
+    ('u_canvas_size_x', np.float32),  # offset 24: vec2[0]
+    ('u_canvas_size_y', np.float32),  # offset 28: vec2[1]
+
+    # === 视图偏移 (offset 32-39) ===
+    ('u_view_offset_x', np.float32),  # offset 32: vec2[0]
+    ('u_view_offset_y', np.float32),  # offset 36: vec2[1]
+
+    # === Track 顺序数组 (offset 40-71) ===
+    ('u_order', np.int32, (8,)),      # offset 40
+
+    # === Track 宽高比数组 (offset 72-103) ===
+    ('u_aspect_ratios', np.float32, (8,)),  # offset 72
+
+    # === Track 分辨率数组 (offset 104-167) ===
+    # vec2[8] 在 std430 中是紧密排列的，每个 vec2 8 字节
+    ('u_track_sizes', np.float32, (8, 2)),  # offset 104
+])
 
 
 class MultiTrackGLWindow(QOpenGLWindow):
@@ -69,6 +108,10 @@ class MultiTrackGLWindow(QOpenGLWindow):
         self._shader_program = None
         self._vao = None
         self._vbo = None
+        self._ssbo = None  # Shader Storage Buffer Object
+        self._ssbo_ptr = None  # 持久化映射的指针
+        self._view_data = None  # numpy array view of mapped SSBO memory
+        self._sampler_locs = None  # 缓存的 sampler uniform locations
         self._dummy_textures = [0] * self.MAX_TRACKS
         self._texture_ids = None  # 用于 multi-bind 的 ctypes 数组
         self._gl_initialized = False
@@ -95,9 +138,20 @@ class MultiTrackGLWindow(QOpenGLWindow):
         """清理资源，在窗口关闭前调用"""
         self._is_closing = True
 
+    def _get_app_dir(self) -> Path:
+        """获取应用程序目录（兼容 Nuitka 打包）"""
+        import sys
+        # Nuitka 打包后 __compiled__ 存在
+        if "__compiled__" in globals() or hasattr(sys, 'frozen'):
+            # 打包后：使用可执行文件所在目录
+            return Path(sys.executable).parent
+        else:
+            # 开发模式：使用项目根目录
+            return Path(__file__).parent.parent.parent.parent
+
     def _load_shader_source(self, filename: str) -> str:
-        """从文件加载 shader 源码"""
-        shader_path = Path(__file__).parent.parent.parent / "shaders" / filename
+        """从文件加载 shader 源码（兼容 Nuitka 打包）"""
+        shader_path = self._get_app_dir() / "player" / "shaders" / filename
         with open(shader_path, 'r', encoding='utf-8') as f:
             return f.read()
 
@@ -114,11 +168,147 @@ class MultiTrackGLWindow(QOpenGLWindow):
 
         return shader
 
+    def _get_shader_cache_path(self) -> Path:
+        """获取 shader 缓存目录路径（兼容 Nuitka 打包）"""
+        import sys
+
+        # 打包后使用用户数据目录
+        if "__compiled__" in globals() or hasattr(sys, 'frozen'):
+            # Windows: %LOCALAPPDATA%/VoidPlayer/cache/shaders
+            app_data = Path(os.environ.get('LOCALAPPDATA', Path.home() / 'AppData' / 'Local'))
+            cache_dir = app_data / "VoidPlayer" / "cache" / "shaders"
+        else:
+            # 开发模式：使用项目根目录
+            cache_dir = Path(__file__).parent.parent.parent.parent / "cache" / "shaders"
+
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir
+
+    def _compute_shader_hash(self, vert_source: str, frag_source: str) -> str:
+        """计算 shader 源码的 hash 作为缓存 key"""
+        # 包含 OpenGL 版本和渲染器信息，驱动更新后缓存失效
+        gl_version = glGetString(GL_VERSION).decode() if glGetString(GL_VERSION) else "unknown"
+        gl_renderer = glGetString(GL_RENDERER).decode() if glGetString(GL_RENDERER) else "unknown"
+        combined = f"{vert_source}\n{frag_source}\n{gl_version}\n{gl_renderer}"
+        return hashlib.sha256(combined.encode()).hexdigest()[:16]
+
+    def _try_load_cached_program(self, cache_file: Path) -> int | None:
+        """尝试从缓存加载预编译的 shader program"""
+        if not cache_file.exists():
+            return None
+
+        try:
+            with open(cache_file, "rb") as f:
+                data = f.read()
+
+            # 解析 header: 4 bytes binary format + 4 bytes binary length
+            if len(data) < 8:
+                return None
+
+            binary_format = int.from_bytes(data[:4], "little")
+            binary_length = int.from_bytes(data[4:8], "little")
+            binary_data = data[8:]
+
+            if len(binary_data) != binary_length:
+                logger.debug(f"Cache file size mismatch: expected {binary_length}, got {len(binary_data)}")
+                return None
+
+            # 创建 program 并加载 binary
+            program = glCreateProgram()
+            glProgramBinary(program, binary_format, binary_data, len(binary_data))
+
+            # 检查是否成功
+            if glGetProgramiv(program, GL_LINK_STATUS):
+                logger.info(f"Loaded shader from cache: {cache_file.name}")
+                return program
+            else:
+                glDeleteProgram(program)
+                return None
+
+        except Exception as e:
+            logger.debug(f"Failed to load cached shader: {e}")
+            return None
+
+    def _save_program_cache(self, program: int, cache_file: Path):
+        """保存编译后的 shader program 到缓存"""
+        try:
+            # 检查 program 是否有效
+            if not glIsProgram(program):
+                logger.debug("Invalid program, skip caching")
+                return
+
+            # 确保 program 已链接 - 使用 ctypes 直接调用
+            link_status = ctypes.c_int()
+            glGetProgramiv(program, GL_LINK_STATUS, ctypes.byref(link_status))
+            if not link_status.value:
+                logger.debug("Program not linked, skip caching")
+                return
+
+            # 获取 binary 长度 - 使用 ctypes 直接调用
+            binary_length = ctypes.c_int()
+            glGetProgramiv(program, GL_PROGRAM_BINARY_LENGTH, ctypes.byref(binary_length))
+            length_val = binary_length.value
+            logger.debug(f"Program binary length: {length_val}")
+
+            if not length_val or length_val <= 0:
+                logger.debug(f"Program binary length is {length_val}, skip caching")
+                return
+
+            # 清除之前的 OpenGL 错误
+            while glGetError() != GL_NO_ERROR:
+                pass
+
+            # 准备 buffer
+            binary_data = ctypes.create_string_buffer(length_val)
+            binary_format = ctypes.c_uint()
+            actual_length = ctypes.c_size_t()
+
+            # 调用 glGetProgramBinary
+            glGetProgramBinary(
+                program,
+                length_val,
+                ctypes.byref(actual_length),
+                ctypes.byref(binary_format),
+                binary_data
+            )
+
+            # 检查 OpenGL 错误
+            err = glGetError()
+            if err != GL_NO_ERROR:
+                err_names = {1280: "INVALID_ENUM", 1281: "INVALID_VALUE", 1282: "INVALID_OPERATION"}
+                logger.warning(f"glGetProgramBinary failed: GL_{err_names.get(err, f'ERROR_{err}')}")
+                return
+
+            if actual_length.value == 0:
+                logger.debug("glGetProgramBinary returned 0 bytes")
+                return
+
+            # 写入文件: format(4) + length(4) + data
+            with open(cache_file, "wb") as f:
+                f.write(binary_format.value.to_bytes(4, "little"))
+                f.write(actual_length.value.to_bytes(4, "little"))
+                f.write(binary_data.raw[:actual_length.value])
+
+            logger.info(f"Saved shader cache: {cache_file.name} ({actual_length.value} bytes)")
+
+        except Exception as e:
+            logger.warning(f"Failed to save shader cache: {e}")
+
     def _create_shader_program(self) -> int:
-        """创建并链接 shader 程序"""
+        """创建并链接 shader 程序 (支持预编译缓存)"""
         vert_source = self._load_shader_source("multitrack.vert")
         frag_source = self._load_shader_source("multitrack.frag")
 
+        # 计算 hash 并检查缓存
+        shader_hash = self._compute_shader_hash(vert_source, frag_source)
+        cache_file = self._get_shader_cache_path() / f"multitrack_{shader_hash}.bin"
+
+        # 尝试加载缓存
+        program = self._try_load_cached_program(cache_file)
+        if program:
+            return program
+
+        logger.info("Compiling shaders (cache miss or invalid)")
         vertex_shader = self._compile_shader(vert_source, GL_VERTEX_SHADER)
         fragment_shader = self._compile_shader(frag_source, GL_FRAGMENT_SHADER)
 
@@ -136,6 +326,9 @@ class MultiTrackGLWindow(QOpenGLWindow):
 
         glDeleteShader(vertex_shader)
         glDeleteShader(fragment_shader)
+
+        # 保存到缓存
+        self._save_program_cache(program, cache_file)
 
         return program
 
@@ -216,9 +409,95 @@ class MultiTrackGLWindow(QOpenGLWindow):
 
     # ========== OpenGL 实现 ==========
 
+    def _gl_debug_callback(self, source, msg_type, msg_id, severity, length, message, user_param):
+        """OpenGL Debug Output 回调函数"""
+        # 映射 severity 到日志级别
+        severity_map = {
+            GL_DEBUG_SEVERITY_HIGH: logger.error,
+            GL_DEBUG_SEVERITY_MEDIUM: logger.warning,
+            GL_DEBUG_SEVERITY_LOW: logger.info,
+            GL_DEBUG_SEVERITY_NOTIFICATION: logger.debug,
+        }
+
+        # 映射 type 到可读名称
+        type_names = {
+            GL_DEBUG_TYPE_ERROR: "ERROR",
+            GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: "DEPRECATED",
+            GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR: "UNDEFINED",
+            GL_DEBUG_TYPE_PORTABILITY: "PORTABILITY",
+            GL_DEBUG_TYPE_PERFORMANCE: "PERFORMANCE",
+            GL_DEBUG_TYPE_MARKER: "MARKER",
+            GL_DEBUG_TYPE_PUSH_GROUP: "PUSH_GROUP",
+            GL_DEBUG_TYPE_POP_GROUP: "POP_GROUP",
+            GL_DEBUG_TYPE_OTHER: "OTHER",
+        }
+
+        # 映射 source 到可读名称
+        source_names = {
+            GL_DEBUG_SOURCE_API: "API",
+            GL_DEBUG_SOURCE_WINDOW_SYSTEM: "WINDOW_SYSTEM",
+            GL_DEBUG_SOURCE_SHADER_COMPILER: "SHADER_COMPILER",
+            GL_DEBUG_SOURCE_THIRD_PARTY: "THIRD_PARTY",
+            GL_DEBUG_SOURCE_APPLICATION: "APPLICATION",
+            GL_DEBUG_SOURCE_OTHER: "OTHER",
+        }
+
+        log_func = severity_map.get(severity, logger.debug)
+        type_name = type_names.get(msg_type, f"UNKNOWN({msg_type})")
+        source_name = source_names.get(source, f"UNKNOWN({source})")
+
+        msg_str = ctypes.cast(message, ctypes.c_char_p).value.decode() if message else ""
+
+        # 过滤掉一些通知级别的消息
+        if severity == GL_DEBUG_SEVERITY_NOTIFICATION and "Buffer detailed info" in msg_str:
+            return
+
+        log_func(f"[GL] {source_name}:{type_name}(0x{msg_id:X}): {msg_str}")
+
+    def _setup_debug_output(self):
+        """设置 OpenGL Debug Output (仅 opengl=DEBUG/TRACE 时启用)"""
+        from player.core.config import config
+
+        # 检查是否启用了 OpenGL debug 日志级别
+        if not config.is_opengl_debug_enabled:
+            return
+
+        # 检查是否支持 GL_KHR_debug 或 OpenGL 4.3+
+        version = glGetString(GL_VERSION)
+        if not version:
+            return
+
+        try:
+            # 启用 debug output
+            glEnable(GL_DEBUG_OUTPUT)
+            glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS)  # 同步模式，在调用点立即触发回调
+
+            # 使用 PyOpenGL 提供的 GLDEBUGPROC 类型
+            self._debug_callback = GLDEBUGPROC(self._gl_debug_callback)
+            glDebugMessageCallback(self._debug_callback, None)
+
+            # 配置消息控制：过滤掉通知级别的冗余消息
+            # 只启用 ERROR, DEPRECATED, UNDEFINED, PORTABILITY, PERFORMANCE
+            glDebugMessageControl(GL_DONT_CARE, GL_DEBUG_TYPE_ERROR, GL_DONT_CARE, 0, None, GL_TRUE)
+            glDebugMessageControl(GL_DONT_CARE, GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR, GL_DONT_CARE, 0, None, GL_TRUE)
+            glDebugMessageControl(GL_DONT_CARE, GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR, GL_DONT_CARE, 0, None, GL_TRUE)
+            glDebugMessageControl(GL_DONT_CARE, GL_DEBUG_TYPE_PORTABILITY, GL_DONT_CARE, 0, None, GL_TRUE)
+            glDebugMessageControl(GL_DONT_CARE, GL_DEBUG_TYPE_PERFORMANCE, GL_DONT_CARE, 0, None, GL_TRUE)
+            # 禁用通知类型（通常是冗余的提示）
+            glDebugMessageControl(GL_DONT_CARE, GL_DEBUG_TYPE_OTHER, GL_DONT_CARE, 0, None, GL_FALSE)
+            glDebugMessageControl(GL_DONT_CARE, GL_DEBUG_TYPE_MARKER, GL_DONT_CARE, 0, None, GL_FALSE)
+
+            logger.debug("OpenGL Debug Output enabled (opengl=DEBUG)")
+
+        except Exception as e:
+            logger.debug(f"OpenGL Debug Output not available: {e}")
+
     def initializeGL(self):
         """初始化 OpenGL 资源 (QOpenGLWindow 方法名)"""
         glClearColor(0.0, 0.0, 0.0, 1.0)
+
+        # 设置 Debug Output (开发阶段启用)
+        self._setup_debug_output()
 
         try:
             self._shader_program = self._create_shader_program()
@@ -273,8 +552,46 @@ class MultiTrackGLWindow(QOpenGLWindow):
         # 预分配 texture IDs 数组用于 multi-bind
         self._texture_ids = (ctypes.c_uint * self.MAX_TRACKS)()
 
+        # 创建 SSBO (Shader Storage Buffer Object) - DSA + 持久化映射
+        ssbo = ctypes.c_uint()
+        glCreateBuffers(1, ctypes.byref(ssbo))
+        self._ssbo = ssbo.value
+
+        # 计算 buffer 大小
+        buffer_size = SSBO_VIEW_DATA_DTYPE.itemsize
+
+        # 使用 glNamedBufferStorage 创建不可变存储 + 持久化映射标志
+        # GL_MAP_WRITE_BIT: 允许写入
+        # GL_MAP_PERSISTENT_BIT: 映射在 buffer 生命周期内保持有效
+        # GL_MAP_COHERENT_BIT: 写入对 GPU 立即可见，无需手动 flush
+        flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT
+        glNamedBufferStorage(self._ssbo, buffer_size, None, flags)
+
+        # 持久化映射 - 一次性映射，永久使用
+        self._ssbo_ptr = glMapNamedBufferRange(self._ssbo, 0, buffer_size, flags)
+
+        if self._ssbo_ptr is None:
+            raise RuntimeError("Failed to map SSBO buffer")
+
+        # 创建 numpy 数组视图，直接映射到 GPU 内存
+        # 这样 _view_data 的修改会直接反映到 GPU
+        self._view_data = np.frombuffer(
+            (ctypes.c_byte * buffer_size).from_address(self._ssbo_ptr),
+            dtype=SSBO_VIEW_DATA_DTYPE
+        )
+
+        # 绑定 SSBO 到 binding point 0 (与 shader 中的 binding = 0 对应)
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, self._ssbo)
+
+        # 缓存 sampler uniform locations (sampler 不能放在 SSBO 中)
+        # 一次性获取，避免每帧调用 glGetUniformLocation
+        self._sampler_locs = [
+            glGetUniformLocation(self._shader_program, f"u_textures[{i}]")
+            for i in range(self.MAX_TRACKS)
+        ]
+
         self._gl_initialized = True
-        logger.info("MultiTrackGLWindow initialized (GLSL 4.50, DSA)")
+        logger.info(f"MultiTrackGLWindow initialized (GLSL 4.50, DSA, persistent-mapped SSBO {buffer_size} bytes)")
 
         # 通知可以初始化解码器了
         self.gl_initialized.emit()
@@ -296,49 +613,42 @@ class MultiTrackGLWindow(QOpenGLWindow):
 
         glUseProgram(self._shader_program)
 
-        # 设置 uniform 变量
-        glUniform1i(glGetUniformLocation(self._shader_program, "u_mode"), int(self._view_mode))
-        glUniform1i(glGetUniformLocation(self._shader_program, "u_track_count"), self._track_count)
-        glUniform1f(glGetUniformLocation(self._shader_program, "u_split_pos"), self._split_position)
+        # 更新 SSBO 数据 (一次性更新所有参数)
+        view_data = self._view_data[0]
+        view_data['u_mode'] = int(self._view_mode)
+        view_data['u_track_count'] = self._track_count
+        view_data['u_split_pos'] = self._split_position
+        view_data['u_zoom_ratio'] = self._zoom_ratio
+        view_data['u_canvas_aspect'] = self.width() / max(self.height(), 1)
 
-        # 设置 track 顺序
+        # u_canvas_size (vec2)
+        view_data['u_canvas_size_x'] = float(self.width())
+        view_data['u_canvas_size_y'] = float(self.height())
+
+        # u_view_offset (vec2)
+        view_data['u_view_offset_x'] = self._view_offset.x()
+        view_data['u_view_offset_y'] = self._view_offset.y()
+
+        # u_order 数组
         for i in range(self.MAX_TRACKS):
-            loc = glGetUniformLocation(self._shader_program, f"u_order[{i}]")
-            glUniform1iv(loc, 1, (ctypes.c_int * 1)(self._track_order[i]))
+            view_data['u_order'][i] = self._track_order[i]
 
-        # 设置宽高比
+        # u_aspect_ratios 数组
         for i in range(self.MAX_TRACKS):
-            loc = glGetUniformLocation(self._shader_program, f"u_aspect_ratios[{i}]")
-            glUniform1f(loc, self._aspect_ratios[i])
+            view_data['u_aspect_ratios'][i] = self._aspect_ratios[i]
 
-        # 设置每个 track 的分辨率尺寸
+        # u_track_sizes 数组 (8 x 2)
         for i in range(self.MAX_TRACKS):
             w, h = self._track_sizes[i]
-            loc = glGetUniformLocation(self._shader_program, f"u_track_sizes[{i}]")
-            glUniform2f(loc, float(w), float(h))
+            view_data['u_track_sizes'][i, 0] = float(w)
+            view_data['u_track_sizes'][i, 1] = float(h)
 
-        # 设置画布宽高比
-        canvas_aspect = self.width() / max(self.height(), 1)
-        glUniform1f(glGetUniformLocation(self._shader_program, "u_canvas_aspect"), canvas_aspect)
+        # 注意：由于使用持久化映射 + GL_MAP_COHERENT_BIT，
+        # _view_data 的修改直接反映到 GPU 内存，无需调用 glNamedBufferSubData
 
-        # 设置画布尺寸 (像素)，用于分割线渲染
-        glUniform2f(
-            glGetUniformLocation(self._shader_program, "u_canvas_size"),
-            float(self.width()), float(self.height())
-        )
-
-        # 设置 viewport 缩放和偏移
-        glUniform1f(glGetUniformLocation(self._shader_program, "u_zoom_ratio"), self._zoom_ratio)
-        glUniform2f(
-            glGetUniformLocation(self._shader_program, "u_view_offset"),
-            self._view_offset.x(), self._view_offset.y()
-        )
-
-        # 设置 sampler uniform 对应的纹理单元 (必须在绑定纹理之前)
-        # u_textures[0] -> 纹理单元 0, u_textures[1] -> 纹理单元 1, ...
+        # 设置 sampler uniform (sampler 不能放在 SSBO 中，使用缓存的 location)
         for i in range(self.MAX_TRACKS):
-            loc = glGetUniformLocation(self._shader_program, f"u_textures[{i}]")
-            glUniform1i(loc, i)
+            glUniform1i(self._sampler_locs[i], i)
 
         # 绑定纹理 (multi-bind)
         for i in range(self.MAX_TRACKS):
@@ -355,9 +665,6 @@ class MultiTrackGLWindow(QOpenGLWindow):
         glBindVertexArray(0)
 
         glUseProgram(0)
-
-        # 强制刷新渲染流水线
-        glFinish()
 
     def resizeGL(self, w, h):
         """调整视口大小 (QOpenGLWindow 方法名)"""

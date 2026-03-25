@@ -33,8 +33,9 @@ def parse_args():
         return val
 
     def log_level_type(value):
-        """解析日志级别，支持键值对格式: DEBUG 或 default=DEBUG,ffmpeg=INFO"""
+        """解析日志级别，支持键值对格式: DEBUG 或 default=DEBUG,ffmpeg=INFO,opengl=DEBUG"""
         valid_levels = ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        valid_keys = ("default", "ffmpeg", "opengl")
         result = {}
 
         # 检查是否是键值对格式
@@ -45,8 +46,8 @@ def parse_args():
                     key, val = pair.split("=", 1)
                     key = key.strip().lower()
                     val = val.strip().upper()
-                    if key not in ("default", "ffmpeg"):
-                        raise argparse.ArgumentTypeError(f"无效的日志类型: {key} (可选: default, ffmpeg)")
+                    if key not in valid_keys:
+                        raise argparse.ArgumentTypeError(f"无效的日志类型: {key} (可选: {', '.join(valid_keys)})")
                     if val not in valid_levels:
                         raise argparse.ArgumentTypeError(f"无效的日志级别: {val} (可选: {', '.join(valid_levels)})")
                     result[key] = val
@@ -102,8 +103,9 @@ def parse_args():
             "日志级别，支持格式: "
             "DEBUG (仅 default), "
             "default=DEBUG, "
-            "default=DEBUG,ffmpeg=INFO (分别设置). "
-            "默认: default=INFO, ffmpeg=INFO"
+            "default=DEBUG,ffmpeg=INFO,opengl=DEBUG (分别设置). "
+            "默认: default=INFO, ffmpeg=INFO, opengl=INFO. "
+            "opengl=DEBUG 时启用 GL debug output"
         )
     )
     return parser.parse_args()
@@ -163,6 +165,7 @@ def main():
         "debug": Profile.DEBUG,
     }
     config.profile = profile_map.get(args.profile, Profile.DEFAULT)
+    config.set_log_levels(log_levels)  # 保存日志级别配置
 
     logger = get_logger()
 

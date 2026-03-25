@@ -9,6 +9,9 @@ diagnostics/
 # Screenshots (mock test output)
 screenshots/
 
+# Shader cache (OpenGL program binary)
+cache/
+
 # Python
 __pycache__/
 *.py[cod]

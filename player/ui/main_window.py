@@ -369,7 +369,6 @@ class MainWindow(QWidget):
 
     def _on_frame_ready(self):
         from player.core.logging_config import get_logger
-        get_logger().info("[SEEK] frame_ready signal received, calling requestUpdate()")
         self.viewport_panel.gl_widget.requestUpdate()
 
     def _on_eof_reached(self):

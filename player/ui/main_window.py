@@ -316,6 +316,8 @@ class MainWindow(QWidget):
 
         self.viewport_panel.add_slot(source)
         self._update_view_mode_enabled()
+        # 添加后更新映射 (确保 decoder 索引和 sources 索引对应正确)
+        self._update_gl_track_order()
 
     def _on_source_removed(self, index: int):
         self._decoder_pool.remove_track(index)
@@ -327,13 +329,44 @@ class MainWindow(QWidget):
         # 更新 ViewportManager track 信息
         self._viewport_manager.remove_track(index)
 
+        # 更新 GL 窗口的 track 顺序映射 (删除后 decoder 索引和 sources 索引不一致)
+        self._update_gl_track_order()
+
     def _on_sources_swapped(self, index1: int, index2: int):
         self.viewport_panel.on_sources_swapped(index1, index2)
         self.timeline_area.reorder_track(index1, index2)
+        # 更新 GL 窗口的 track 顺序映射
+        self._update_gl_track_order()
 
     def _on_sources_reordered(self, old_index: int, new_index: int):
         self.viewport_panel.on_source_moved(old_index, new_index)
         self.timeline_area.reorder_track(old_index, new_index)
+        # 更新 GL 窗口的 track 顺序映射
+        self._update_gl_track_order()
+
+    def _update_gl_track_order(self):
+        """计算并更新 slot → decoder 的映射
+
+        当 sources 顺序改变但 decoder 位置不变时，需要通过映射来正确显示。
+        order[slot] = decoder_index 意味着 slot 位置显示 decoder_index 的内容
+        """
+        sources = self._track_manager.sources()
+        decoder_paths = self._decoder_pool.get_decoder_paths()
+
+        # 建立 path → decoder_index 的查找表
+        path_to_decoder = {}
+        for i, path in enumerate(decoder_paths):
+            if path:
+                path_to_decoder[path] = i
+
+        # 计算映射: slot i 应该显示哪个 decoder
+        order = []
+        for slot in range(len(sources)):
+            path = sources[slot]
+            decoder_idx = path_to_decoder.get(path, slot)
+            order.append(decoder_idx)
+
+        self.viewport_panel.set_track_order(order)
 
     def _on_sources_reset(self):
         self._decoder_pool.clear()
@@ -358,6 +391,8 @@ class MainWindow(QWidget):
             self.viewport_panel.gl_widget.set_decoders(self._decoder_pool.get_decoders())
 
         self._update_view_mode_enabled()
+        # 重置后更新映射 (虽然顺序应该一致，但保持调用以确保正确性)
+        self._update_gl_track_order()
 
     # ========== 解码器回调 ==========
 

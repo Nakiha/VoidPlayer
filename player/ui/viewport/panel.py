@@ -366,9 +366,18 @@ class ViewportPanel(QWidget):
 
         self._update_info_layout()
 
-    def _update_gl_track_order(self):
-        """更新 GL 窗口的 track 顺序"""
-        order = list(range(len(self._sources)))
+    def _update_gl_track_order(self, order: list[int] | None = None):
+        """更新 GL 窗口的 track 顺序
+
+        Args:
+            order: slot → decoder 索引的映射，None 表示使用默认顺序
+        """
+        if order is None:
+            order = list(range(len(self._sources)))
+        self._gl_window.set_track_order(order)
+
+    def set_track_order(self, order: list[int]):
+        """设置 track 显示顺序 (由 main_window 调用)"""
         self._gl_window.set_track_order(order)
 
     def set_decoders(self, decoders: list):

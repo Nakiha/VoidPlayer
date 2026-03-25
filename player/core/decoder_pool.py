@@ -231,6 +231,10 @@ class DecoderPool(QObject):
         """获取所有解码器列表 (用于绑定到 GLWidget)"""
         return [t.decoder if t else None for t in self._tracks]
 
+    def get_decoder_paths(self) -> list[str]:
+        """获取所有解码器对应的源路径列表"""
+        return [t.path if t else "" for t in self._tracks]
+
     def get_track_state(self, index: int) -> TrackState | None:
         """获取轨道状态"""
         if 0 <= index < self.MAX_TRACKS:

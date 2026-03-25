@@ -3,7 +3,9 @@
 VoidPlayer 统一构建脚本
 
 用法:
-    python build.py native          # 构建 native 模块
+    python build.py native          # 构建 native 模块 (自动检测编译器)
+    python build.py native -c msvc  # 使用 Visual Studio 编译
+    python build.py native -c ucrt64  # 使用 MSYS2 UCRT64 编译
     python build.py nuitka          # Nuitka 打包
     python build.py package         # 打包分发 (便携版 + 安装包)
     python build.py all             # 完整构建流程
@@ -14,6 +16,7 @@ VoidPlayer 统一构建脚本
 """
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -79,6 +82,55 @@ def detect_vs_generator() -> str:
     return ""
 
 
+def find_msys64_root() -> str | None:
+    """查找 MSYS2 根目录"""
+    # 优先使用环境变量
+    if msys_root := os.environ.get("MSYS2_ROOT"):
+        return msys_root
+
+    # 从 UCRT64_ROOT 推断
+    if ucrt_root := os.environ.get("UCRT64_ROOT"):
+        return str(Path(ucrt_root).parent)
+
+    # 检查默认安装路径
+    default_paths = [
+        Path("C:/msys64"),
+        Path("D:/msys64"),
+    ]
+    for p in default_paths:
+        if p.exists():
+            return str(p)
+
+    return None
+
+
+def find_ucrt64_root() -> str | None:
+    """查找 UCRT64 根目录"""
+    # 优先使用环境变量
+    if ucrt_root := os.environ.get("UCRT64_ROOT"):
+        return ucrt_root
+
+    # 从 MSYS2 根目录推断
+    if msys_root := find_msys64_root():
+        ucrt_path = Path(msys_root) / "ucrt64"
+        if ucrt_path.exists():
+            return str(ucrt_path)
+
+    return None
+
+
+def check_ninja_available(msys_root: str = None) -> bool:
+    """检查 Ninja 是否可用"""
+    if shutil.which("ninja"):
+        return True
+    # 检查 msys64 usr/bin 目录 (ninja 通常安装在这里)
+    if msys_root:
+        ninja_path = Path(msys_root) / "usr" / "bin" / "ninja.exe"
+        if ninja_path.exists():
+            return True
+    return False
+
+
 def remove_path_with_retry(path: Path) -> bool:
     """删除文件/目录，带重试机制"""
     if not path.exists():
@@ -106,22 +158,33 @@ def get_cached_generator(cache_file: Path) -> str | None:
     return None
 
 
-def check_generator_mismatch(build_dir: Path) -> bool:
-    """检查缓存生成器是否与当前环境匹配，不匹配则清理缓存"""
+def check_generator_mismatch(build_dir: Path, expected_generator: str = None) -> bool:
+    """检查缓存生成器是否与当前环境匹配，不匹配则清理缓存
+
+    Args:
+        build_dir: 构建目录
+        expected_generator: 期望的生成器，如果为 None 则自动检测 VS
+    """
     cache_file = build_dir / "CMakeCache.txt"
     cached_generator = get_cached_generator(cache_file)
     if not cached_generator:
         return False
 
-    current_generator = detect_vs_generator()
+    # 如果指定了期望的生成器，使用它；否则自动检测 VS
+    current_generator = expected_generator or detect_vs_generator()
+
     if cached_generator == current_generator:
         # 主项目生成器匹配，但需要检查 _deps 子模块
         return check_deps_generator_mismatch(build_dir, current_generator)
 
-    print(f"=== Generator changed: {cached_generator} -> {current_generator}, cleaning cache ===")
-    for name in ["CMakeCache.txt", "CMakeFiles", "_deps"]:
-        remove_path_with_retry(build_dir / name)
-    return True
+    print(f"=== Generator changed: {cached_generator} -> {current_generator}, cleaning build directory ===")
+    # 直接删除整个 build 目录，避免 _deps 被占用的问题
+    if remove_path_with_retry(build_dir):
+        build_dir.mkdir(parents=True, exist_ok=True)
+        return True
+    else:
+        print("错误: 无法清理 build 目录，请手动删除后重试")
+        return True  # 返回 True 让后续流程报错
 
 
 def check_deps_generator_mismatch(build_dir: Path, expected_generator: str) -> bool:
@@ -135,24 +198,81 @@ def check_deps_generator_mismatch(build_dir: Path, expected_generator: str) -> b
         cache_file = subdirs / "CMakeCache.txt"
         cached_gen = get_cached_generator(cache_file)
         if cached_gen and cached_gen != expected_generator:
-            print(f"=== _deps generator mismatch ({subdirs.name}: {cached_gen} != {expected_generator}), cleaning _deps ===")
-            return remove_path_with_retry(deps_dir)
+            print(f"=== _deps generator mismatch, cleaning build directory ===")
+            # 直接删除整个 build 目录
+            if remove_path_with_retry(build_dir):
+                build_dir.mkdir(parents=True, exist_ok=True)
+                return True
+            else:
+                print("错误: 无法清理 build 目录，请手动删除后重试")
+                return True
 
     return False
 
 
-def build_native() -> int:
-    """构建 native 模块"""
-    build_dir = PROJECT_ROOT / "native" / "build"
+def build_native(compiler: str = "auto") -> int:
+    """构建 native 模块
+
+    Args:
+        compiler: 编译器选择
+            - "auto": 自动检测 (MSVC 优先，回退到 ucrt64)
+            - "msvc": 使用 Visual Studio
+            - "ucrt64": 使用 MSYS2 UCRT64 + MinGW Makefiles
+    """
+    # 为不同编译器使用独立的 build 目录，避免切换时的清理问题
+    build_subdir = "build-msvc" if compiler == "msvc" else ("build-ucrt64" if compiler == "ucrt64" else "build")
+    build_dir = PROJECT_ROOT / "native" / build_subdir
     build_dir.mkdir(parents=True, exist_ok=True)
 
-    check_generator_mismatch(build_dir)
+    # 确定生成器和实际使用的编译器类型
+    generator = None
+    actual_compiler = compiler  # 记录实际使用的编译器类型，用于确定 build 目录
+    env = os.environ.copy()
+
+    if compiler == "msvc":
+        generator = detect_vs_generator()
+        if not generator:
+            print("错误: 未检测到 Visual Studio")
+            return 1
+        print(f"=== 使用 MSVC: {generator} ===")
+    elif compiler == "ucrt64":
+        ucrt_root = find_ucrt64_root()
+        if not ucrt_root:
+            print("错误: 未找到 UCRT64 环境 (请设置 UCRT64_ROOT 环境变量或安装到 C:/msys64)")
+            return 1
+        # 使用 MinGW Makefiles 避免 Ninja 的 MSYS2 sh 路径问题
+        generator = "MinGW Makefiles"
+        env["PATH"] = f"{ucrt_root}/bin;{env.get('PATH', '')}"
+        print(f"=== 使用 UCRT64: {ucrt_root} ===")
+    else:  # auto
+        generator = detect_vs_generator()
+        if generator:
+            actual_compiler = "msvc"
+            print(f"=== 自动检测到 MSVC: {generator} ===")
+        else:
+            ucrt_root = find_ucrt64_root()
+            if ucrt_root:
+                actual_compiler = "ucrt64"
+                generator = "MinGW Makefiles"
+                env["PATH"] = f"{ucrt_root}/bin;{env.get('PATH', '')}"
+                print(f"=== 自动检测到 UCRT64: {ucrt_root} ===")
+            else:
+                print("错误: 未检测到可用的编译器 (MSVC 或 UCRT64)")
+                return 1
+
+    # 为不同编译器使用独立的 build 目录
+    build_subdir = f"build-{actual_compiler}"
+    build_dir = PROJECT_ROOT / "native" / build_subdir
+    build_dir.mkdir(parents=True, exist_ok=True)
+
+    check_generator_mismatch(build_dir, generator)
 
     pybind11_dir = get_pybind11_dir()
     output_dir = get_native_output_dir()
 
     cmake_cmd = [
         "cmake",
+        "-G", generator,
         f"-Dpybind11_DIR={pybind11_dir}",
         f"-DVOIDVIEW_OUTPUT_DIR={output_dir}",
         str(PROJECT_ROOT / "native"),
@@ -162,10 +282,10 @@ def build_native() -> int:
 
     try:
         print(f"=== Configuring (output: {output_dir}) ===")
-        subprocess.run(cmake_cmd, cwd=build_dir, check=True)
+        subprocess.run(cmake_cmd, cwd=build_dir, env=env, check=True)
 
         print("\n=== Building ===")
-        subprocess.run(build_cmd, cwd=build_dir, check=True)
+        subprocess.run(build_cmd, cwd=build_dir, env=env, check=True)
 
         print("\n=== Build completed ===")
         return 0
@@ -376,7 +496,7 @@ def build_installer() -> Path:
 # ============================================================
 
 def cmd_native(args):
-    return build_native()
+    return build_native(compiler=args.compiler)
 
 
 def cmd_nuitka(args):
@@ -426,15 +546,31 @@ def main():
     parser = argparse.ArgumentParser(
         description="VoidPlayer 统一构建脚本",
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""示例:
+  python build.py native                  # 构建 native 模块 (自动检测编译器)
+  python build.py native -c msvc          # 使用 Visual Studio
+  python build.py native -c ucrt64        # 使用 MSYS2 UCRT64
+  python build.py nuitka                  # Nuitka 打包
+  python build.py nuitka --onefile        # Nuitka 单文件打包
+  python build.py package                 # 打包分发 (便携版 + 安装包)
+  python build.py package --portable      # 仅便携版
+  python build.py all                     # 完整构建流程
+""",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # native
     p_native = subparsers.add_parser("native", help="构建 native 模块")
+    p_native.add_argument(
+        "--compiler", "-c",
+        choices=["auto", "msvc", "ucrt64"],
+        default="auto",
+        help="编译器选择: auto (自动检测), msvc (Visual Studio), ucrt64 (MSYS2)"
+    )
 
     # nuitka
     p_nuitka = subparsers.add_parser("nuitka", help="Nuitka 打包")
-    p_nuitka.add_argument("--onefile", action="store_true", help="构建单文件版本")
+    p_nuitka.add_argument("--onefile", action="store_true", help="构建单文件版本 (默认为 standalone)")
 
     # package
     p_package = subparsers.add_parser("package", help="打包分发 (便携版 + 安装包)")

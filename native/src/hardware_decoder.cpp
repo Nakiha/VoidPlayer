@@ -144,12 +144,10 @@ public:
     bool try_hardware_accel() {
         static const AVHWDeviceType device_types[] = {
             AV_HWDEVICE_TYPE_D3D11VA,
-            AV_HWDEVICE_TYPE_CUDA,
             AV_HWDEVICE_TYPE_NONE
         };
 
         for (int i = 0; device_types[i] != AV_HWDEVICE_TYPE_NONE; ++i) {
-            if (hw_type_ == 2 && device_types[i] != AV_HWDEVICE_TYPE_CUDA) continue;
             if (hw_type_ == 1 && device_types[i] != AV_HWDEVICE_TYPE_D3D11VA) continue;
 
             int ret = av_hwdevice_ctx_create(&hw_device_ctx_, device_types[i], nullptr, nullptr, 0);

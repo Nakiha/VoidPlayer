@@ -334,6 +334,12 @@ class MultiTrackGLWindow(QOpenGLWindow):
             self._view_offset.x(), self._view_offset.y()
         )
 
+        # 设置 sampler uniform 对应的纹理单元 (必须在绑定纹理之前)
+        # u_textures[0] -> 纹理单元 0, u_textures[1] -> 纹理单元 1, ...
+        for i in range(self.MAX_TRACKS):
+            loc = glGetUniformLocation(self._shader_program, f"u_textures[{i}]")
+            glUniform1i(loc, i)
+
         # 绑定纹理 (multi-bind)
         for i in range(self.MAX_TRACKS):
             decoder = self._decoders[i]

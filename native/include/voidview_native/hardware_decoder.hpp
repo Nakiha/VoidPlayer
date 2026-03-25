@@ -18,7 +18,7 @@ namespace voidview {
 /**
  * Hardware-accelerated video decoder
  *
- * Wraps FFmpeg hardware decoding, supports D3D11VA and NVDEC.
+ * Wraps FFmpeg hardware decoding, supports D3D11VA.
  */
 class HardwareDecoder {
 public:
@@ -37,7 +37,7 @@ public:
 
     /**
      * Initialize decoder
-     * @param hw_device_type Hardware type: 0=Auto, 1=D3D11VA, 2=NVDEC/CUDA
+     * @param hw_device_type Hardware type: 0=Auto, 1=D3D11VA
      * @return True on success
      */
     bool initialize(int hw_device_type = 0);

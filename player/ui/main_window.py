@@ -1,6 +1,7 @@
 """
 MainWindow - 主窗口
 """
+import random
 import sys
 import subprocess
 import time
@@ -28,6 +29,7 @@ from ..core.diagnostics.automation import AutomationController
 from ..core.signal_bus import signal_bus
 from ..core.logging_config import get_logger
 from ..core.diagnostics import DiagnosticsManager
+from ..window_subtitles import SUBTITLES
 
 
 class MainWindow(QWidget):
@@ -90,7 +92,7 @@ class MainWindow(QWidget):
 
     def _setup_ui(self):
         """设置 UI 布局"""
-        self.setWindowTitle("VoidPlayer - 视频对比播放器")
+        self.setWindowTitle(f"VoidPlayer - {random.choice(SUBTITLES)}")
         self.setMinimumSize(520, 360)
         self.resize(520, 360)
         self.setAcceptDrops(True)

@@ -8,14 +8,14 @@ version = "0.1.0"
 description = "Multi-video playback application"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = {text = "GPL-3.0-or-later"}
 authors = [
     {name = "yorune"}
 ]
 keywords = ["video", "player", "pyside6"]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -48,7 +48,7 @@ build = [
 voidplayer = "run_player:main"
 
 [project.urls]
-Homepage = "https://github.com/yorune/VoidPlayer"
+Homepage = "https://github.com/Nakiha/VoidPlayer"
 
 [tool.setuptools.packages.find]
 include = ["player*"]

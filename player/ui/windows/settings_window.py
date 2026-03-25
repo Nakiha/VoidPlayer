@@ -9,6 +9,7 @@ from qfluentwidgets_nuitka import (
     FluentIcon,
 )
 
+from .about_page import AboutPage
 from .shortcuts_page import ShortcutsPage
 
 if TYPE_CHECKING:
@@ -36,4 +37,13 @@ class SettingsWindow(FluentWindow):
             FluentIcon.SETTING,
             "快捷键",
             NavigationItemPosition.TOP,
+        )
+
+        # 关于页面
+        self.about_page = AboutPage(self)
+        self.addSubInterface(
+            self.about_page,
+            FluentIcon.INFO,
+            "关于",
+            NavigationItemPosition.BOTTOM,
         )

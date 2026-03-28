@@ -1,6 +1,5 @@
 # CMake build
 native/build/
-native/build/
 native/build-ucrt64/
 native/build-msvc/
 build

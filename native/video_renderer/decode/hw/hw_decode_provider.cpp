@@ -1,0 +1,50 @@
+#include "video_renderer/decode/hw/hw_decode_provider.h"
+#include "video_renderer/decode/hw/d3d11va_provider.h"
+#include <spdlog/spdlog.h>
+#include <vector>
+#include <memory>
+
+namespace vr {
+
+HwDecodeInitResult try_hw_decode_providers(
+    void* native_device,
+    const AVCodec* codec,
+    int width,
+    int height,
+    std::recursive_mutex* device_mutex)
+{
+    if (!native_device || !codec) {
+        spdlog::debug("[HWDecode] Skipping: no native device or codec");
+        return {};
+    }
+
+    // Priority-ordered list of hardware decode providers.
+    // To add a new backend, instantiate it here.
+    std::vector<std::unique_ptr<HwDecodeProvider>> providers;
+    providers.push_back(std::make_unique<D3D11VAProvider>());
+    // Future: providers.push_back(std::make_unique<CUDAProvider>());
+    // Future: providers.push_back(std::make_unique<DXVA2Provider>());
+
+    for (auto& provider : providers) {
+        spdlog::info("[HWDecode] Probing {} for codec {}",
+                     provider->name(), codec->name);
+
+        if (!provider->probe(codec)) {
+            spdlog::info("[HWDecode] {} declined (codec not supported)", provider->name());
+            continue;
+        }
+
+        auto result = provider->init(native_device, width, height, device_mutex);
+        if (result.success) {
+            spdlog::info("[HWDecode] {} initialized successfully", provider->name());
+            return result;
+        }
+
+        spdlog::warn("[HWDecode] {} init failed, trying next provider", provider->name());
+    }
+
+    spdlog::info("[HWDecode] No hardware decoder available, will use software decode");
+    return {};
+}
+
+} // namespace vr

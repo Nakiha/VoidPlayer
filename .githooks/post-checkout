@@ -1,6 +1,0 @@
-#!/bin/bash
-# $1=旧HEAD $2=新HEAD $3=1表示创建worktree/clone
-if [ "$3" = "1" ] && [ -f "build.py" ]; then
-    echo "post-checkout: Building native modules for new worktree..."
-    python build.py native
-fi

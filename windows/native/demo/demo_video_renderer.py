@@ -40,10 +40,10 @@ class VideoWindow(QWindow):
         self.overlay_timer.setInterval(100)
         self.overlay_timer.timeout.connect(self._update_overlay)
 
-    def init_renderer(self):
+    def init_renderer(self, video_path: str | None = None):
         config = RendererConfig()
         config.video_paths = [
-            str(VIDEO_DIR / "h265_10s_1920x1080.mp4"),
+            video_path or str(VIDEO_DIR / "h265_10s_1920x1080.mp4"),
         ]
         config.hwnd = int(self.winId())
         config.width = self.width()
@@ -128,13 +128,15 @@ class VideoWindow(QWindow):
 
 
 def main():
+    video_path = sys.argv[1] if len(sys.argv) > 1 else None
+
     app = QApplication(sys.argv)
 
     window = VideoWindow()
     window.show()
     app.processEvents()
 
-    if not window.init_renderer():
+    if not window.init_renderer(video_path):
         return 1
 
     window.renderer.play()

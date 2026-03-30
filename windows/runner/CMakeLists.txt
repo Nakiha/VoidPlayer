@@ -11,6 +11,7 @@ add_executable(${BINARY_NAME} WIN32
   "main.cpp"
   "utils.cpp"
   "win32_window.cpp"
+  "video_renderer_plugin.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
   "Runner.rc"
   "runner.exe.manifest"
@@ -32,9 +33,78 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.
-target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
+target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app flutter_wrapper_plugin)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
+
+# ==================== Native Video Renderer ====================
+
+if(FFMPEG_FOUND)
+
+# Video renderer sources
+set(VR_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/renderer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/logging.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/clock.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/d3d11/device.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/d3d11/texture.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/d3d11/shader.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/decode/demux_thread.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/decode/decode_thread.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/decode/frame_converter.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/decode/hw/hw_decode_provider.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/decode/hw/d3d11va_provider.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/buffer/packet_queue.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/buffer/bidi_ring_buffer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/buffer/track_buffer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/sync/render_sink.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/sync/seek_controller.cpp"
+)
+
+target_sources(${BINARY_NAME} PRIVATE ${VR_SOURCES})
+
+target_include_directories(${BINARY_NAME} PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native"
+    "${FFMPEG_INCLUDE_DIR}"
+)
+
+target_link_libraries(${BINARY_NAME} PRIVATE
+    spdlog::spdlog_header_only
+    ${AVCODEC_LIBRARY}
+    ${AVFORMAT_LIBRARY}
+    ${AVUTIL_LIBRARY}
+    ${SWRESAMPLE_LIBRARY}
+    ${SWSCALE_LIBRARY}
+    dxgi
+    d3d11
+    d3dcompiler
+)
+
+target_compile_definitions(${BINARY_NAME} PRIVATE
+    _CRT_SECURE_NO_WARNINGS
+)
+
+# Copy shaders to build output
+set(VR_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+file(MAKE_DIRECTORY "${VR_SHADER_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/shaders/"
+     DESTINATION "${VR_SHADER_DIR}")
+target_compile_definitions(${BINARY_NAME} PRIVATE
+    VR_SHADER_DIR="${VR_SHADER_DIR}"
+)
+
+# Copy FFmpeg DLLs to build output
+set(FFMPEG_DLL_DIR "${FFMPEG_ROOT}/bin")
+if(EXISTS "${FFMPEG_DLL_DIR}")
+    file(GLOB FFMPEG_DLL_FILES "${FFMPEG_DLL_DIR}/*.dll")
+    foreach(DLL ${FFMPEG_DLL_FILES})
+        add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DLL}" "$<TARGET_FILE_DIR:${BINARY_NAME}>"
+        )
+    endforeach()
+endif()
+
+endif(FFMPEG_FOUND)
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)

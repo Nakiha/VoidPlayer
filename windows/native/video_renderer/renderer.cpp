@@ -1,0 +1,791 @@
+#include "video_renderer/renderer.h"
+#include <spdlog/spdlog.h>
+#include <chrono>
+#include <algorithm>
+#include <windows.h>
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib")
+
+namespace vr {
+
+// Max sleep for responsiveness (allows seek/pause within ~50 ms)
+static constexpr int64_t MAX_SLEEP_US = 50000;
+
+Renderer::Renderer() = default;
+
+Renderer::~Renderer() {
+    shutdown();
+}
+
+bool Renderer::initialize(const RendererConfig& config) {
+    configure_logging(config.log_config);
+
+    // Install crash handler if file path is set
+    if (!config.log_config.file_path.empty()) {
+        std::string crash_dir;
+        auto last_sep = config.log_config.file_path.find_last_of("/\\");
+        if (last_sep != std::string::npos) {
+            crash_dir = config.log_config.file_path.substr(0, last_sep);
+        }
+        install_crash_handler(crash_dir);
+    }
+
+    if (config.video_paths.empty()) {
+        spdlog::error("Renderer: no video paths provided");
+        return false;
+    }
+
+    hwnd_ = config.hwnd;
+    headless_ = config.headless;
+    target_width_ = config.width;
+    target_height_ = config.height;
+
+    d3d_device_ = std::make_unique<D3D11Device>();
+    if (config.headless) {
+        if (!d3d_device_->initialize_headless(config.dxgi_adapter, target_width_, target_height_)) {
+            spdlog::error("Renderer: failed to initialize D3D11 device (headless)");
+            return false;
+        }
+        // Create offscreen BGRA texture for Flutter with DXGI shared handle
+        D3D11_TEXTURE2D_DESC tex_desc = {};
+        tex_desc.Width = static_cast<UINT>(target_width_);
+        tex_desc.Height = static_cast<UINT>(target_height_);
+        tex_desc.MipLevels = 1;
+        tex_desc.ArraySize = 1;
+        tex_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        tex_desc.SampleDesc.Count = 1;
+        tex_desc.Usage = D3D11_USAGE_DEFAULT;
+        tex_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+        tex_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
+        HRESULT hr = d3d_device_->device()->CreateTexture2D(&tex_desc, nullptr, &shared_texture_);
+        if (FAILED(hr)) {
+            spdlog::error("Renderer: failed to create shared texture: HRESULT {:#x}", static_cast<unsigned long>(hr));
+            return false;
+        }
+        hr = d3d_device_->device()->CreateRenderTargetView(shared_texture_.Get(), nullptr, &shared_rtv_);
+        if (FAILED(hr)) {
+            spdlog::error("Renderer: failed to create shared RTV: HRESULT {:#x}", static_cast<unsigned long>(hr));
+            return false;
+        }
+        // Get DXGI shared handle for cross-device sharing with Flutter
+        Microsoft::WRL::ComPtr<IDXGIResource> dxgi_resource;
+        hr = shared_texture_.As(&dxgi_resource);
+        if (SUCCEEDED(hr)) {
+            hr = dxgi_resource->GetSharedHandle(&shared_handle_);
+            if (FAILED(hr)) {
+                spdlog::warn("Renderer: failed to get shared handle: HRESULT {:#x}", static_cast<unsigned long>(hr));
+            }
+        }
+        spdlog::info("Renderer: headless mode, shared texture {}x{} BGRA, handle={}",
+                     target_width_, target_height_, reinterpret_cast<uintptr_t>(shared_handle_));
+    } else {
+        if (!d3d_device_->initialize(hwnd_, target_width_, target_height_)) {
+            spdlog::error("Renderer: failed to initialize D3D11 device");
+            return false;
+        }
+    }
+
+    texture_mgr_ = std::make_unique<TextureManager>(d3d_device_->device(), d3d_device_->context());
+    shader_mgr_ = std::make_unique<ShaderManager>(d3d_device_->device());
+
+    std::string shader_dir = VR_SHADER_DIR;
+    std::string shader_path = shader_dir + "/multitrack.hlsl";
+    if (!shader_mgr_->compile_from_file(shader_path, "VSMain", "PSMain", compiled_shader_)) {
+        spdlog::error("Renderer: failed to compile shaders");
+        return false;
+    }
+
+    // Create constant buffer for shader uniforms (must be 16-byte aligned)
+    // Layout must match multitrack.hlsl cbuffer Constants
+    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 64, compiled_shader_)) {
+        spdlog::error("Renderer: failed to create constant buffer");
+        return false;
+    }
+
+    // Create sampler state
+    D3D11_SAMPLER_DESC sampler_desc = {};
+    sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+    sampler_desc.MinLOD = 0;
+    sampler_desc.MaxLOD = D3D11_FLOAT32_MAX;
+    d3d_device_->device()->CreateSamplerState(&sampler_desc, &sampler_state_);
+
+    // Create vertex buffer (fullscreen quad)
+    struct Vertex { float x, y, u, v; };
+    Vertex quad[] = {
+        {-1, -1, 0, 1},  // bottom-left (UV flipped for D3D)
+        {-1,  1, 0, 0},  // top-left
+        { 1, -1, 1, 1},  // bottom-right
+        { 1,  1, 1, 0},  // top-right
+    };
+    D3D11_BUFFER_DESC vb_desc = {};
+    vb_desc.ByteWidth = sizeof(quad);
+    vb_desc.Usage = D3D11_USAGE_IMMUTABLE;
+    vb_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    vb_desc.CPUAccessFlags = 0;
+    D3D11_SUBRESOURCE_DATA vb_data = {};
+    vb_data.pSysMem = quad;
+    d3d_device_->device()->CreateBuffer(&vb_desc, &vb_data, &vertex_buffer_);
+
+    // Create tracks
+    for (const auto& path : config.video_paths) {
+        auto pipeline = std::make_unique<TrackPipeline>();
+        pipeline->file_path = path;
+        pipeline->seek_controller = std::make_unique<SeekController>();
+        pipeline->packet_queue = std::make_unique<PacketQueue>(100);
+        pipeline->track_buffer = std::make_unique<TrackBuffer>(30, 2);
+        pipeline->demux_thread = std::make_unique<DemuxThread>(
+            path, *pipeline->packet_queue, *pipeline->seek_controller);
+
+        if (!pipeline->demux_thread->start()) {
+            spdlog::error("Renderer: failed to start demux for {}", path);
+            continue;
+        }
+
+        // Stats are populated synchronously in start() before the demux thread spawns
+        const auto& stats = pipeline->demux_thread->stats();
+        if (stats.video_stream_index < 0) {
+            spdlog::error("Renderer: no video stream found in {}", path);
+            continue;
+        }
+
+        // Cache immutable video dimensions
+        pipeline->video_width = stats.width;
+        pipeline->video_height = stats.height;
+        if (stats.width > 0 && stats.height > 0) {
+            pipeline->video_aspect = static_cast<float>(stats.width) / static_cast<float>(stats.height);
+        }
+
+        pipeline->decode_thread = std::make_unique<DecodeThread>(
+            *pipeline->packet_queue,
+            *pipeline->track_buffer,
+            stats.codec_params,
+            stats.time_base
+        );
+
+        if (!pipeline->decode_thread->is_valid()) {
+            spdlog::error("Renderer: decode thread init failed for {}", path);
+            pipeline->demux_thread->stop();
+            continue;
+        }
+
+        // Wire seek callback: DemuxThread notifies DecodeThread after format-level seek
+        pipeline->demux_thread->set_seek_callback(
+            [dt = pipeline->decode_thread.get()](int64_t pts, SeekType type) {
+                dt->notify_seek(pts, type);
+            });
+
+        // Try hardware decode if requested
+        if (config.use_hardware_decode) {
+            pipeline->decode_thread->enable_hardware_decode(d3d_device_->device(),
+                                                            &device_mutex_);
+        }
+
+        if (!pipeline->decode_thread->start()) {
+            spdlog::error("Renderer: failed to start decode for {}", path);
+            pipeline->demux_thread->stop();  // Stop already-started demux thread
+            continue;
+        }
+
+        tracks_.push_back(std::move(pipeline));
+    }
+
+    if (tracks_.empty()) {
+        spdlog::error("Renderer: no valid tracks");
+        return false;
+    }
+
+    // Setup render sink
+    render_sink_ = std::make_unique<RenderSink>(clock_);
+    for (auto& track : tracks_) {
+        render_sink_->add_track(track->track_buffer.get());
+    }
+
+    // Cache duration (immutable after init)
+    for (const auto& track : tracks_) {
+        cached_duration_us_ = std::max(cached_duration_us_,
+            track->demux_thread->stats().duration_us);
+    }
+
+    initialized_ = true;
+    spdlog::info("Renderer: initialized with {} tracks", tracks_.size());
+    return true;
+}
+
+void Renderer::shutdown() {
+    running_ = false;
+    playing_ = false;
+
+    if (render_thread_.joinable()) {
+        render_thread_.join();
+    }
+
+    // Stop all tracks
+    for (auto& track : tracks_) {
+        if (track->decode_thread) track->decode_thread->stop();
+        if (track->demux_thread) track->demux_thread->stop();
+    }
+    tracks_.clear();
+
+    render_sink_.reset();
+    shader_mgr_.reset();
+    texture_mgr_.reset();
+
+    // ComPtr auto-releases — just reset
+    cached_rtv_.Reset();
+    sampler_state_.Reset();
+    vertex_buffer_.Reset();
+
+    if (d3d_device_) {
+        d3d_device_->shutdown();
+        d3d_device_.reset();
+    }
+
+    initialized_ = false;
+    spdlog::info("Renderer: shutdown complete");
+}
+
+void Renderer::play() {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (!initialized_) return;
+
+    clock_.play();
+    playing_ = true;
+
+    if (!running_) {
+        running_ = true;
+        render_thread_ = std::thread(&Renderer::render_loop, this);
+    }
+}
+
+void Renderer::pause() {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    clock_.pause();
+    playing_ = false;
+}
+
+void Renderer::resume() {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    clock_.resume();
+    playing_ = true;
+    spdlog::info("[Renderer] resume() called — playing was now {}", playing_.load());
+}
+void Renderer::seek(int64_t target_pts_us, SeekType type) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    seek_internal(target_pts_us, type);
+}
+
+void Renderer::seek_internal(int64_t target_pts_us, SeekType type) {
+    // Caller must hold state_mutex_
+    spdlog::info("[Renderer] seek_internal: target={:.3f}s, type={}",
+                 target_pts_us / 1e6, type == SeekType::Exact ? "Exact" : "Keyframe");
+    clock_.seek(target_pts_us);
+
+    for (size_t i = 0; i < tracks_.size(); ++i) {
+        auto& track = tracks_[i];
+        // Pause decoder FIRST to prevent stale packets from reaching the codec
+        // (avoids HEVC "Could not find ref" warnings during seek transition)
+        track->decode_thread->set_decode_paused(true);
+        auto buf_count_before = track->track_buffer->total_count();
+        auto pq_size_before = track->packet_queue->size();
+        track->track_buffer->set_state(TrackState::Flushing);
+        track->track_buffer->clear_frames();
+        track->packet_queue->flush();
+        track->seek_controller->request_seek(target_pts_us, type);
+        track->track_buffer->set_state(TrackState::Buffering);
+        spdlog::info("[Renderer] seek_internal: track[{}] cleared (buf={}→{}, pq={}→0), state→Buffering",
+                     i, buf_count_before, track->track_buffer->total_count(), pq_size_before);
+    }
+    preview_drawn_ = false;
+}
+
+void Renderer::step_forward() {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (!initialized_) return;
+
+    clock_.pause();
+    playing_ = false;
+
+    for (auto& track : tracks_) {
+        auto current = track->track_buffer->peek(0);
+        if (!current.has_value()) continue;
+        track->track_buffer->advance();
+        auto next = track->track_buffer->peek(0);
+        if (next.has_value()) {
+            clock_.seek(next->pts_us);
+        }
+    }
+
+    draw_paused_frame("step_forward");
+}
+
+void Renderer::step_backward() {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (!initialized_) return;
+
+    // If any track is still seeking/seeking, don't allow stepping
+    // (prevents retreating to stale frames during async seek)
+    for (auto& track : tracks_) {
+        if (track->track_buffer->state() == TrackState::Buffering) return;
+    }
+
+    clock_.pause();
+    playing_ = false;
+
+    // Check if ALL tracks can retreat (cache hit)
+    bool all_can_retreat = true;
+    for (auto& track : tracks_) {
+        if (!track->track_buffer->can_retreat()) {
+            all_can_retreat = false;
+            break;
+        }
+    }
+
+    if (all_can_retreat) {
+        for (auto& track : tracks_) {
+            track->track_buffer->retreat();
+        }
+        auto frame = tracks_[0]->track_buffer->peek(0);
+        if (frame.has_value()) {
+            clock_.seek(frame->pts_us);
+        }
+        draw_paused_frame("step_backward(retreat)");
+    } else {
+        // Cache miss: exact seek to (current_pts - frame_duration)
+        int64_t dur = compute_frame_duration_us();
+        int64_t target = std::max(int64_t(0),
+            clock_.current_pts_us() - dur);
+        spdlog::info("[Renderer] step_backward exact_seek: pts={:.3f}s, duration={:.3f}ms, target={:.3f}s",
+                     clock_.current_pts_us() / 1e6, dur / 1e3, target / 1e6);
+        seek_internal(target, SeekType::Exact);
+        spdlog::info("[Renderer] step_backward exact_seek done: clock_pts={:.3f}s",
+                     clock_.current_pts_us() / 1e6);
+    }
+}
+
+void Renderer::draw_paused_frame(const char* reason) {
+    PresentDecision decision;
+    decision.current_pts_us = 0;
+    decision.should_present = false;
+    decision.frames.resize(tracks_.size());
+    bool has_frame = false;
+    for (size_t t = 0; t < tracks_.size(); ++t) {
+        auto frame = tracks_[t]->track_buffer->peek(0);
+        if (frame.has_value()) {
+            decision.frames[t] = frame;
+            has_frame = true;
+        }
+    }
+    if (has_frame) {
+        std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+        std::lock_guard<std::mutex> tex_lock(texture_mutex_);
+        draw_frame(decision);
+        if (headless_) {
+            if (frame_callback_) frame_callback_();
+        } else {
+            d3d_device_->present(0);
+        }
+        preview_drawn_ = true;
+        double pts = decision.frames[0].has_value()
+                     ? decision.frames[0]->pts_us / 1e6 : -1.0;
+        spdlog::info("[Renderer] draw_paused_frame({}): pts={:.3f}s", reason, pts);
+    } else {
+        spdlog::info("[Renderer] draw_paused_frame({}): no frame available", reason);
+    }
+}
+
+int64_t Renderer::compute_frame_duration_us() const {
+    if (!tracks_.empty()) {
+        auto frame = tracks_[0]->track_buffer->peek(0);
+        if (frame.has_value() && frame->duration_us > 0) {
+            // Cap to 100ms (minimum ~10fps) to guard against bogus durations
+            return std::min(frame->duration_us, int64_t(100000));
+        }
+    }
+    return 33333; // fallback ~30fps
+}
+
+void Renderer::set_speed(double speed) {
+    clock_.set_speed(speed);
+}
+
+bool Renderer::is_playing() const {
+    return playing_;
+}
+
+bool Renderer::is_initialized() const {
+    return initialized_;
+}
+
+int64_t Renderer::current_pts_us() const {
+    return clock_.current_pts_us();
+}
+
+double Renderer::current_speed() const {
+    return clock_.speed();
+}
+
+size_t Renderer::track_count() const {
+    return tracks_.size();
+}
+
+int64_t Renderer::duration_us() const {
+    return cached_duration_us_;
+}
+
+void Renderer::set_frame_callback(std::function<void()> cb) {
+    frame_callback_ = std::move(cb);
+}
+
+ID3D11Texture2D* Renderer::shared_texture() const {
+    return shared_texture_.Get();
+}
+
+void Renderer::render_loop() {
+    // Raise Windows timer resolution from default ~15.6ms to 1ms,
+    // so sleep_for(16ms) actually wakes up near 16ms instead of 31ms.
+    timeBeginPeriod(1);
+    spdlog::info("[Renderer] Render loop started (timer resolution: 1ms)");
+
+    while (running_) {
+        // Snapshot playing_ under state_mutex_ to avoid torn read
+        // when pause()/resume() modify it concurrently.
+        bool playing_snapshot;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            playing_snapshot = playing_;
+        }
+
+        // Preroll: keep clock paused while any track is still buffering
+        bool any_buffering = false;
+        for (auto& track : tracks_) {
+            if (track->track_buffer->state() == TrackState::Buffering) {
+                any_buffering = true;
+                break;
+            }
+        }
+
+        if (any_buffering && !clock_.is_paused()) {
+            clock_.pause();
+            spdlog::info("[Renderer] Preroll: clock PENDING, some track buffering, "
+                         "(playing={})", playing_snapshot);
+        } else if (!any_buffering && clock_.is_paused() && playing_snapshot) {
+            clock_.resume();
+            preview_drawn_ = false;
+            spdlog::info("[Renderer] === Preroll COMPLETE: all tracks ready, clock resumed, "
+                         "playing_={}, pts={:.3f}s)",
+                         playing_snapshot, clock_.current_pts_us() / 1e6);
+        }
+
+        if (!playing_snapshot || clock_.is_paused()) {
+            // While paused/prerolling, draw current frame if not yet drawn
+            if (!preview_drawn_) {
+                bool has_any_frame = false;
+                PresentDecision preview;
+                preview.current_pts_us = 0;
+                preview.should_present = false;
+                preview.frames.resize(tracks_.size());
+                for (size_t t = 0; t < tracks_.size(); ++t) {
+                    auto frame = tracks_[t]->track_buffer->peek(0);
+                    if (frame.has_value()) {
+                        preview.frames[t] = frame;
+                        has_any_frame = true;
+                    }
+                }
+                if (has_any_frame) {
+                    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+                    std::lock_guard<std::mutex> tex_lock(texture_mutex_);
+                    draw_frame(preview);
+                    if (headless_) {
+                        if (frame_callback_) frame_callback_();
+                    } else {
+                        d3d_device_->present(0);
+                    }
+                    preview_drawn_ = true;
+                    spdlog::info("[Renderer] Paused frame: pts={:.3f}s",
+                                 preview.frames[0].has_value() ? preview.frames[0]->pts_us / 1e6 : -1.0);
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue;
+        }
+
+        auto decision = render_sink_->evaluate();
+
+        if (decision.should_present) {
+            std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+            std::lock_guard<std::mutex> tex_lock(texture_mutex_);
+            draw_frame(decision);
+            if (headless_) {
+                // Flush the GPU command queue so the shared texture content
+                // is guaranteed to be up-to-date before Flutter reads it.
+                // Without this, D3D11 defers execution and Flutter may see
+                // stale data (manifests as heavy frame dropping).
+                d3d_device_->context()->Flush();
+                if (frame_callback_) frame_callback_();
+            } else {
+                d3d_device_->present(0);
+            }
+        }
+
+        // Deadline-based sleep: wake up at the exact wall time when the next
+        // frame should be displayed.  This is drift-free because each sleep
+        // targets an absolute PTS rather than an accumulated relative duration.
+        {
+            int64_t current_pts = clock_.current_pts_us();
+            int64_t next_event_pts = INT64_MAX;
+
+            for (auto& track : tracks_) {
+                auto frame = track->track_buffer->peek(0);
+                if (!frame.has_value()) continue;
+                if (frame->pts_us > current_pts) {
+                    // Future frame — wake when it should start
+                    next_event_pts = std::min(next_event_pts, frame->pts_us);
+                } else {
+                    // Frame being displayed — wake when it expires
+                    next_event_pts = std::min(next_event_pts,
+                                              frame->pts_us + frame->duration_us);
+                }
+            }
+
+            if (next_event_pts != INT64_MAX) {
+                double spd = clock_.speed();
+                if (spd > 0) {
+                    int64_t pts_delta = next_event_pts - current_pts;
+                    int64_t sleep_us = static_cast<int64_t>(pts_delta / spd);
+                    if (sleep_us > 0) {
+                        if (sleep_us > MAX_SLEEP_US) sleep_us = MAX_SLEEP_US;
+                        std::this_thread::sleep_for(std::chrono::microseconds(sleep_us));
+                    }
+                }
+            } else {
+                // No frames available (buffer underflow) — short poll
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }
+    }
+
+    spdlog::info("[Renderer] Render loop ended");
+    timeEndPeriod(1);
+}
+
+void Renderer::draw_frame(const PresentDecision& decision) {
+    auto* ctx = d3d_device_->context();
+
+    // Get or create cached render target view
+    if (!cached_rtv_) {
+        if (headless_ && shared_rtv_) {
+            cached_rtv_ = shared_rtv_;
+        } else {
+            ID3D11Texture2D* back_buffer = nullptr;
+            HRESULT hr = d3d_device_->swap_chain()->GetBuffer(0, __uuidof(ID3D11Texture2D),
+                                                  reinterpret_cast<void**>(&back_buffer));
+            if (FAILED(hr)) {
+                spdlog::error("[Renderer] Failed to get back buffer: HRESULT {:#x}", static_cast<unsigned long>(hr));
+                return;
+            }
+            hr = d3d_device_->device()->CreateRenderTargetView(back_buffer, nullptr, &cached_rtv_);
+            back_buffer->Release();
+            if (FAILED(hr)) {
+                spdlog::error("[Renderer] Failed to create RTV: HRESULT {:#x}", static_cast<unsigned long>(hr));
+                return;
+            }
+        }
+    }
+
+    float clear_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    ctx->ClearRenderTargetView(cached_rtv_.Get(), clear_color);
+    ctx->OMSetRenderTargets(1, cached_rtv_.GetAddressOf(), nullptr);
+
+    // Setup viewport
+    D3D11_VIEWPORT vp = {};
+    vp.Width = static_cast<float>(target_width_);
+    vp.Height = static_cast<float>(target_height_);
+    vp.MinDepth = 0.0f;
+    vp.MaxDepth = 1.0f;
+    ctx->RSSetViewports(1, &vp);
+
+    // Setup input assembler
+    UINT stride = sizeof(float) * 4;
+    UINT offset = 0;
+    ID3D11Buffer* vb = vertex_buffer_.Get();
+    ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    if (compiled_shader_.layout) {
+        ctx->IASetInputLayout(compiled_shader_.layout.Get());
+    }
+
+    // Set shaders
+    ctx->VSSetShader(compiled_shader_.vs.Get(), nullptr, 0);
+    ctx->PSSetShader(compiled_shader_.ps.Get(), nullptr, 0);
+
+    // Update constant buffer
+    // Layout must match HLSL cbuffer Constants in multitrack.hlsl
+    if (compiled_shader_.constant_buffer) {
+        struct Constants {
+            int track_count;        // offset 0
+            float canvas_width;     // offset 4
+            float canvas_height;    // offset 8
+            float _pad0;            // offset 12 (padding to 16-byte boundary)
+            float video_aspect[4];  // offset 16 (16-byte boundary)
+            int nv12_mask;          // offset 32: bit i = track i is NV12
+            float _pad1[3];         // offset 36-47: padding
+            float nv12_uv_scale_y[4]; // offset 48-63: video_h / texture_h
+        };
+        static_assert(sizeof(Constants) == 64, "Constants must be 64 bytes");
+        Constants cb = {};
+        cb.track_count = static_cast<int>(decision.frames.size());
+        cb.canvas_width = static_cast<float>(target_width_);
+        cb.canvas_height = static_cast<float>(target_height_);
+        cb.nv12_mask = 0;
+        for (size_t i = 0; i < decision.frames.size() && i < 4; ++i) {
+            cb.video_aspect[i] = tracks_[i]->video_aspect;
+            if (decision.frames[i].has_value() && decision.frames[i]->is_nv12) {
+                cb.nv12_mask |= (1 << static_cast<int>(i));
+            }
+            cb.nv12_uv_scale_y[i] = tracks_[i]->nv12_uv_scale_y;
+        }
+        ctx->UpdateSubresource(compiled_shader_.constant_buffer.Get(), 0, nullptr, &cb, 0, 0);
+        ctx->PSSetConstantBuffers(0, 1, compiled_shader_.constant_buffer.GetAddressOf());
+    }
+
+    // Set sampler
+    if (sampler_state_) {
+        ID3D11SamplerState* sampler = sampler_state_.Get();
+        ctx->PSSetSamplers(0, 1, &sampler);
+    }
+
+    // Set textures from frames
+    ID3D11ShaderResourceView* srvs[4] = {};           // t0-t3: RGBA (sw) or full NV12 (hw)
+    ID3D11ShaderResourceView* nv12_y_srvs[4] = {};    // t4-t7: NV12 Y plane
+    ID3D11ShaderResourceView* nv12_uv_srvs[4] = {};   // t8-t11: NV12 UV plane
+
+    for (size_t i = 0; i < decision.frames.size() && i < 4; ++i) {
+        if (!decision.frames[i].has_value() || !decision.frames[i]->texture_handle) continue;
+        const auto& frame = decision.frames[i].value();
+        auto& track = tracks_[i];
+
+        if (frame.is_ref && frame.is_nv12) {
+            // D3D11VA NV12 hardware decode: texture_handle is ID3D11Texture2D*
+            // Cache SRVs — only recreate when the hw texture pointer or array index changes.
+            auto* nv12_tex = static_cast<ID3D11Texture2D*>(frame.texture_handle);
+            int array_idx = static_cast<int>(frame.texture_array_index);
+
+            if (track->last_nv12_tex != nv12_tex || track->last_nv12_idx != array_idx) {
+                // Texture or slice changed — recreate SRVs
+                // Also compute UV scale factor to crop alignment padding
+                D3D11_TEXTURE2D_DESC tex_desc = {};
+                nv12_tex->GetDesc(&tex_desc);
+                if (tex_desc.Height > 0 && frame.height > 0 && tex_desc.Height != static_cast<UINT>(frame.height)) {
+                    track->nv12_uv_scale_y = static_cast<float>(frame.height) / static_cast<float>(tex_desc.Height);
+                } else {
+                    track->nv12_uv_scale_y = 1.0f;
+                }
+                track->nv12_y_srv.Reset();
+                track->nv12_uv_srv.Reset();
+
+                D3D11_SHADER_RESOURCE_VIEW_DESC y_desc = {};
+                y_desc.Format = DXGI_FORMAT_R8_UNORM;
+                y_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
+                y_desc.Texture2DArray.MipLevels = 1;
+                y_desc.Texture2DArray.FirstArraySlice = static_cast<UINT>(array_idx);
+                y_desc.Texture2DArray.ArraySize = 1;
+                HRESULT hr = d3d_device_->device()->CreateShaderResourceView(
+                    nv12_tex, &y_desc, &track->nv12_y_srv);
+                if (FAILED(hr)) {
+                    spdlog::error("[Renderer] Failed to create NV12 Y SRV for track {}: {:#x}",
+                                  i, static_cast<unsigned long>(hr));
+                }
+
+                D3D11_SHADER_RESOURCE_VIEW_DESC uv_desc = {};
+                uv_desc.Format = DXGI_FORMAT_R8G8_UNORM;
+                uv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
+                uv_desc.Texture2DArray.MipLevels = 1;
+                uv_desc.Texture2DArray.FirstArraySlice = static_cast<UINT>(array_idx);
+                uv_desc.Texture2DArray.ArraySize = 1;
+                hr = d3d_device_->device()->CreateShaderResourceView(
+                    nv12_tex, &uv_desc, &track->nv12_uv_srv);
+                if (FAILED(hr)) {
+                    spdlog::error("[Renderer] Failed to create NV12 UV SRV for track {}: {:#x}",
+                                  i, static_cast<unsigned long>(hr));
+                }
+
+                track->last_nv12_tex = nv12_tex;
+                track->last_nv12_idx = array_idx;
+            }
+
+            nv12_y_srvs[i] = track->nv12_y_srv.Get();
+            nv12_uv_srvs[i] = track->nv12_uv_srv.Get();
+
+        } else if (frame.is_ref) {
+            // Non-NV12 hardware texture (future use): create single SRV
+            auto* tex = static_cast<ID3D11Texture2D*>(frame.texture_handle);
+            srvs[i] = texture_mgr_->create_srv(tex);
+
+        } else {
+            // Software decode: reuse a pooled RGBA texture
+            int w = frame.width > 0 ? frame.width : target_width_;
+            int h = frame.height > 0 ? frame.height : target_height_;
+
+            // Recreate pool texture if dimensions changed
+            bool need_new_tex = !track->sw_texture;
+            if (track->sw_texture) {
+                D3D11_TEXTURE2D_DESC existing_desc = {};
+                track->sw_texture->GetDesc(&existing_desc);
+                if (static_cast<int>(existing_desc.Width) != w || static_cast<int>(existing_desc.Height) != h) {
+                    need_new_tex = true;
+                }
+            }
+            if (need_new_tex) {
+                track->sw_srv.Reset();
+                track->sw_texture.Attach(texture_mgr_->create_rgba_texture(w, h));
+                if (track->sw_texture) {
+                    track->sw_srv.Attach(texture_mgr_->create_srv(track->sw_texture.Get()));
+                }
+            }
+
+            if (track->sw_texture && track->sw_srv) {
+                int stride = w * 4;
+                texture_mgr_->upload_data(track->sw_texture.Get(),
+                    static_cast<const uint8_t*>(frame.texture_handle),
+                    w, h, stride);
+                srvs[i] = track->sw_srv.Get();
+            }
+        }
+    }
+
+    // Bind SRVs: t0-t3 RGBA, t4-t7 NV12 Y, t8-t11 NV12 UV
+    ctx->PSSetShaderResources(0, 4, srvs);
+    ctx->PSSetShaderResources(4, 4, nv12_y_srvs);
+    ctx->PSSetShaderResources(8, 4, nv12_uv_srvs);
+
+    // Draw
+    ctx->Draw(4, 0);
+
+    // Unbind SRVs before releasing to avoid GPU resource-in-use issues
+    ID3D11ShaderResourceView* null_srvs[4] = {};
+    ctx->PSSetShaderResources(0, 4, null_srvs);
+    ctx->PSSetShaderResources(4, 4, null_srvs);
+    ctx->PSSetShaderResources(8, 4, null_srvs);
+
+    // Cleanup temporary SRVs (only non-ref hw textures created via create_srv)
+    for (size_t i = 0; i < 4; ++i) {
+        // NV12 Y/UV SRVs are cached in TrackPipeline — do not release here.
+        // sw SRVs are also cached — do not release.
+        // Only release SRVs that were created for non-NV12 ref textures.
+        if (srvs[i]) {
+            bool is_cached = false;
+            if (i < tracks_.size()) {
+                is_cached = (srvs[i] == tracks_[i]->sw_srv.Get());
+            }
+            if (!is_cached) {
+                srvs[i]->Release();
+            }
+        }
+    }
+}
+
+} // namespace vr

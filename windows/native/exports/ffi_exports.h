@@ -1,0 +1,84 @@
+#pragma once
+
+#include <stdint.h>
+#include <stddef.h>
+
+#ifdef _WIN32
+#   ifdef NAKI_VR_FFI_BUILDING
+#       define NAKI_VR_FFI_EXPORT __declspec(dllexport)
+#   else
+#       define NAKI_VR_FFI_EXPORT __declspec(dllimport)
+#   endif
+#else
+#   define NAKI_VR_FFI_EXPORT __attribute__((visibility("default")))
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Opaque handle to vr::Renderer */
+typedef void* naki_vr_renderer_t;
+
+/* ---- Config structs ---- */
+
+typedef struct naki_vr_log_config_t {
+    const char* pattern;    /* Default: "[%Y-%m-%d %H:%M:%S.%e] [%l] %v" */
+    const char* file_path;  /* Empty string = no file logging */
+    size_t max_file_size;   /* Default: 5MB, 0 = unlimited */
+    int max_files;          /* Default: 3, 0 = no rotation */
+    int level;              /* spdlog::level::level_enum value: 0=trace..6=off */
+} naki_vr_log_config_t;
+
+typedef struct naki_vr_renderer_config_t {
+    const char** video_paths; /* Null-terminated array of file paths */
+    int64_t hwnd;             /* Window handle (HWND cast to int64_t) */
+    int width;                /* Default: 1920 */
+    int height;               /* Default: 1080 */
+    int use_hardware_decode;  /* 0 = false, 1 = true */
+    naki_vr_log_config_t log_config;
+} naki_vr_renderer_config_t;
+
+/* ---- Lifecycle ---- */
+
+NAKI_VR_FFI_EXPORT naki_vr_renderer_t naki_vr_renderer_create(void);
+NAKI_VR_FFI_EXPORT void naki_vr_renderer_destroy(naki_vr_renderer_t renderer);
+
+NAKI_VR_FFI_EXPORT int naki_vr_renderer_initialize(naki_vr_renderer_t renderer, const naki_vr_renderer_config_t* config);
+NAKI_VR_FFI_EXPORT void naki_vr_renderer_shutdown(naki_vr_renderer_t renderer);
+
+/* ---- Playback ---- */
+
+#define NAKI_VR_SEEK_KEYFRAME 0
+#define NAKI_VR_SEEK_EXACT    1
+
+NAKI_VR_FFI_EXPORT void naki_vr_renderer_play(naki_vr_renderer_t renderer);
+NAKI_VR_FFI_EXPORT void naki_vr_renderer_pause(naki_vr_renderer_t renderer);
+NAKI_VR_FFI_EXPORT void naki_vr_renderer_resume(naki_vr_renderer_t renderer);
+NAKI_VR_FFI_EXPORT void naki_vr_renderer_seek(naki_vr_renderer_t renderer, int64_t target_pts_us);
+NAKI_VR_FFI_EXPORT void naki_vr_renderer_seek_typed(naki_vr_renderer_t renderer, int64_t target_pts_us, int type);
+NAKI_VR_FFI_EXPORT void naki_vr_renderer_set_speed(naki_vr_renderer_t renderer, double speed);
+
+/* ---- Frame stepping (pause + advance/retreat) ---- */
+
+NAKI_VR_FFI_EXPORT void naki_vr_renderer_step_forward(naki_vr_renderer_t renderer);
+NAKI_VR_FFI_EXPORT void naki_vr_renderer_step_backward(naki_vr_renderer_t renderer);
+
+/* ---- Query ---- */
+
+NAKI_VR_FFI_EXPORT int naki_vr_renderer_is_playing(naki_vr_renderer_t renderer);
+NAKI_VR_FFI_EXPORT int naki_vr_renderer_is_initialized(naki_vr_renderer_t renderer);
+NAKI_VR_FFI_EXPORT int64_t naki_vr_renderer_current_pts_us(naki_vr_renderer_t renderer);
+NAKI_VR_FFI_EXPORT double naki_vr_renderer_current_speed(naki_vr_renderer_t renderer);
+NAKI_VR_FFI_EXPORT int naki_vr_renderer_track_count(naki_vr_renderer_t renderer);
+NAKI_VR_FFI_EXPORT int64_t naki_vr_renderer_duration_us(naki_vr_renderer_t renderer);
+
+/* ---- Logging & Crash ---- */
+
+NAKI_VR_FFI_EXPORT void naki_vr_configure_logging(const naki_vr_log_config_t* config);
+NAKI_VR_FFI_EXPORT void naki_vr_install_crash_handler(const char* crash_dir);
+NAKI_VR_FFI_EXPORT void naki_vr_remove_crash_handler(void);
+
+#ifdef __cplusplus
+}
+#endif

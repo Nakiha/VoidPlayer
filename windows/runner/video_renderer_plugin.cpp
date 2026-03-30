@@ -1,0 +1,239 @@
+#include "video_renderer_plugin.h"
+
+#include <flutter_windows.h>
+#include <spdlog/spdlog.h>
+
+// static
+void VideoRendererPlugin::RegisterWithRegistrar(
+    flutter::PluginRegistrarWindows* registrar) {
+    auto channel = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+        registrar->messenger(), "video_renderer",
+        &flutter::StandardMethodCodec::GetInstance());
+
+    auto* texture_registrar = registrar->texture_registrar();
+
+    // Get DXGI adapter from the Flutter view
+    IDXGIAdapter* adapter = nullptr;
+    auto* view = registrar->GetView();
+    if (view) {
+        adapter = view->GetGraphicsAdapter();
+    }
+
+    auto plugin = std::make_unique<VideoRendererPlugin>(texture_registrar, adapter);
+
+    channel->SetMethodCallHandler(
+        [plugin_ptr = plugin.get()](const auto& call, auto result) {
+            plugin_ptr->HandleMethodCall(call, std::move(result));
+        });
+
+    registrar->AddPlugin(std::move(plugin));
+}
+
+VideoRendererPlugin::VideoRendererPlugin(
+    flutter::TextureRegistrar* texture_registrar,
+    IDXGIAdapter* dxgi_adapter)
+    : texture_registrar_(texture_registrar), dxgi_adapter_(dxgi_adapter) {}
+
+VideoRendererPlugin::~VideoRendererPlugin() {
+    if (texture_id_ >= 0 && texture_registrar_) {
+        texture_registrar_->UnregisterTexture(texture_id_);
+        texture_id_ = -1;
+    }
+    if (renderer_) {
+        renderer_->shutdown();
+        renderer_.reset();
+    }
+}
+
+void VideoRendererPlugin::HandleMethodCall(
+    const flutter::MethodCall<flutter::EncodableValue>& method_call,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+
+    const auto& method = method_call.method_name();
+
+    if (method == "createRenderer") {
+        CreateRenderer(method_call.arguments(), std::move(result));
+    } else if (method == "destroyRenderer") {
+        DestroyRenderer(std::move(result));
+    } else if (method == "play") {
+        if (renderer_) renderer_->play();
+        result->Success(flutter::EncodableValue(nullptr));
+    } else if (method == "pause") {
+        if (renderer_) renderer_->pause();
+        result->Success(flutter::EncodableValue(nullptr));
+    } else if (method == "resume") {
+        if (renderer_) renderer_->resume();
+        result->Success(flutter::EncodableValue(nullptr));
+    } else if (method == "seek") {
+        if (renderer_ && method_call.arguments()) {
+            const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+            if (args) {
+                auto it = args->find(flutter::EncodableValue("ptsUs"));
+                if (it != args->end()) {
+                    int64_t pts = std::get<int64_t>(it->second);
+                    renderer_->seek(pts);
+                }
+            }
+        }
+        result->Success(flutter::EncodableValue(nullptr));
+    } else if (method == "setSpeed") {
+        if (renderer_ && method_call.arguments()) {
+            const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+            if (args) {
+                auto it = args->find(flutter::EncodableValue("speed"));
+                if (it != args->end()) {
+                    double speed = std::get<double>(it->second);
+                    renderer_->set_speed(speed);
+                }
+            }
+        }
+        result->Success(flutter::EncodableValue(nullptr));
+    } else if (method == "stepForward") {
+        if (renderer_) renderer_->step_forward();
+        result->Success(flutter::EncodableValue(nullptr));
+    } else if (method == "stepBackward") {
+        if (renderer_) renderer_->step_backward();
+        result->Success(flutter::EncodableValue(nullptr));
+    } else if (method == "currentPts") {
+        int64_t pts = renderer_ ? renderer_->current_pts_us() : 0;
+        result->Success(flutter::EncodableValue(pts));
+    } else if (method == "duration") {
+        int64_t dur = renderer_ ? renderer_->duration_us() : 0;
+        result->Success(flutter::EncodableValue(dur));
+    } else if (method == "isPlaying") {
+        bool playing = renderer_ ? renderer_->is_playing() : false;
+        result->Success(flutter::EncodableValue(playing));
+    } else {
+        result->NotImplemented();
+    }
+}
+
+void VideoRendererPlugin::CreateRenderer(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+
+    if (renderer_) {
+        result->Error("ALREADY_CREATED", "Renderer already exists");
+        return;
+    }
+
+    if (!arguments) {
+        result->Error("INVALID_ARGS", "Arguments required");
+        return;
+    }
+
+    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+    if (!args) {
+        result->Error("INVALID_ARGS", "Arguments must be a map");
+        return;
+    }
+
+    // Extract video paths
+    auto paths_it = args->find(flutter::EncodableValue("videoPaths"));
+    if (paths_it == args->end()) {
+        result->Error("INVALID_ARGS", "videoPaths required");
+        return;
+    }
+    const auto& paths_list = std::get<flutter::EncodableList>(paths_it->second);
+
+    int width = 1920;
+    int height = 1080;
+    auto w_it = args->find(flutter::EncodableValue("width"));
+    auto h_it = args->find(flutter::EncodableValue("height"));
+    if (w_it != args->end()) width = std::get<int>(w_it->second);
+    if (h_it != args->end()) height = std::get<int>(h_it->second);
+
+    // Create renderer in headless mode
+    vr::RendererConfig config;
+    config.headless = true;
+    config.dxgi_adapter = dxgi_adapter_;
+    config.width = width;
+    config.height = height;
+    config.use_hardware_decode = true;
+
+    for (const auto& p : paths_list) {
+        config.video_paths.push_back(std::get<std::string>(p));
+    }
+
+    // Set log config to enable crash handler (minidump will be written next to exe)
+    config.log_config.level = spdlog::level::trace;
+    char exe_path[MAX_PATH];
+    GetModuleFileNameA(nullptr, exe_path, MAX_PATH);
+    std::string exe_dir(exe_path);
+    auto last_sep = exe_dir.find_last_of("\\/");
+    if (last_sep != std::string::npos) exe_dir = exe_dir.substr(0, last_sep);
+    config.log_config.file_path = exe_dir + "\\void_player.log";
+
+    renderer_ = std::make_unique<vr::Renderer>();
+    if (!renderer_->initialize(config)) {
+        renderer_.reset();
+        result->Error("INIT_FAILED", "Failed to initialize renderer");
+        return;
+    }
+
+    // Store actual texture dimensions for the surface descriptor
+    texture_width_ = width;
+    texture_height_ = height;
+
+    // Create GPU surface texture for Flutter using DXGI shared handle
+    surface_descriptor_ = {};
+    surface_descriptor_.struct_size = sizeof(FlutterDesktopGpuSurfaceDescriptor);
+    surface_descriptor_.format = kFlutterDesktopPixelFormatBGRA8888;
+
+    auto gpu_texture = std::make_unique<flutter::GpuSurfaceTexture>(
+        kFlutterDesktopGpuSurfaceTypeDxgiSharedHandle,
+        [this](size_t width, size_t height) -> const FlutterDesktopGpuSurfaceDescriptor* {
+            if (!renderer_) return nullptr;
+
+            HANDLE handle = renderer_->shared_texture_handle();
+            if (!handle) return nullptr;
+
+            surface_descriptor_.handle = handle;
+            surface_descriptor_.width = texture_width_;
+            surface_descriptor_.height = texture_height_;
+            surface_descriptor_.visible_width = texture_width_;
+            surface_descriptor_.visible_height = texture_height_;
+            surface_descriptor_.release_callback = nullptr;
+            surface_descriptor_.release_context = nullptr;
+            return &surface_descriptor_;
+        });
+
+    texture_variant_ = std::make_unique<flutter::TextureVariant>(std::move(*gpu_texture));
+    texture_id_ = texture_registrar_->RegisterTexture(texture_variant_.get());
+
+    if (texture_id_ < 0) {
+        renderer_->shutdown();
+        renderer_.reset();
+        texture_variant_.reset();
+        result->Error("TEXTURE_FAILED", "Failed to register texture");
+        return;
+    }
+
+    // Set frame callback to notify Flutter of new frames
+    renderer_->set_frame_callback([this]() {
+        if (texture_id_ >= 0 && texture_registrar_) {
+            texture_registrar_->MarkTextureFrameAvailable(texture_id_);
+        }
+    });
+
+    spdlog::info("[VideoRendererPlugin] Created renderer, texture_id={}", texture_id_);
+    result->Success(flutter::EncodableValue(texture_id_));
+}
+
+void VideoRendererPlugin::DestroyRenderer(
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+
+    if (texture_id_ >= 0 && texture_registrar_) {
+        texture_registrar_->UnregisterTexture(texture_id_);
+        texture_id_ = -1;
+    }
+    texture_variant_.reset();
+
+    if (renderer_) {
+        renderer_->shutdown();
+        renderer_.reset();
+    }
+
+    spdlog::info("[VideoRendererPlugin] Destroyed renderer");
+    result->Success(flutter::EncodableValue(nullptr));
+}

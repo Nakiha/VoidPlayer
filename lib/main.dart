@@ -1,122 +1,161 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_acrylic/flutter_acrylic.dart';
+import 'package:file_picker/file_picker.dart';
+import 'video_renderer_controller.dart';
 
-void main() {
-  runApp(const MyApp());
+Future<Color> getWindowsAccentColor() async {
+  try {
+    final result = await Process.run('powershell', [
+      '-Command',
+      "(Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\DWM' -Name 'AccentColor').AccentColor"
+    ]);
+    final value = int.parse(result.stdout.trim());
+    final r = value & 0xFF;
+    final g = (value >> 8) & 0xFF;
+    final b = (value >> 16) & 0xFF;
+    return Color.fromARGB(255, r, g, b);
+  } catch (_) {
+    return const Color(0xFF0078D4);
+  }
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Window.initialize();
+  await Window.setEffect(
+    effect: WindowEffect.mica,
+    color: const Color(0xCC222222),
+  );
+  final accentColor = await getWindowsAccentColor();
+  runApp(MyApp(accentColor: accentColor));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final Color accentColor;
+  const MyApp({super.key, required this.accentColor});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Void Player',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: accentColor,
+          brightness: Brightness.light,
+        ),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: accentColor,
+          brightness: Brightness.dark,
+        ),
+      ),
+      themeMode: ThemeMode.system,
+      home: const VideoPlayerPage(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class VideoPlayerPage extends StatefulWidget {
+  const VideoPlayerPage({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<VideoPlayerPage> createState() => _VideoPlayerPageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _VideoPlayerPageState extends State<VideoPlayerPage> {
+  final VideoRendererController _controller = VideoRendererController();
+  int? _textureId;
+  bool _loading = false;
+  String? _error;
 
-  void _incrementCounter() {
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openFile() async {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _loading = true;
+      _error = null;
     });
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.video,
+        allowMultiple: true,
+      );
+      if (result == null || result.files.isEmpty) {
+        setState(() { _loading = false; });
+        return;
+      }
+      final paths = result.files
+          .where((f) => f.path != null)
+          .map((f) => f.path!)
+          .toList();
+      _textureId = await _controller.createRenderer(paths);
+      setState(() {
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('Void Player'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.folder_open),
+            tooltip: 'Open Video',
+            onPressed: _openFile,
+          ),
+        ],
       ),
       body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
-        ),
+        child: _buildBody(),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: _textureId != null
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton(
+                  heroTag: 'play',
+                  onPressed: () => _controller.play(),
+                  child: const Icon(Icons.play_arrow),
+                ),
+                const SizedBox(width: 8),
+                FloatingActionButton(
+                  heroTag: 'pause',
+                  onPressed: () => _controller.pause(),
+                  child: const Icon(Icons.pause),
+                ),
+              ],
+            )
+          : null,
     );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const CircularProgressIndicator();
+    }
+    if (_error != null) {
+      return Text('Error: $_error',
+          style: const TextStyle(color: Colors.red));
+    }
+    if (_textureId != null) {
+      return Texture(textureId: _textureId!);
+    }
+    return const Text('Open a video file to begin');
   }
 }

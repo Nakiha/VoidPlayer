@@ -1,0 +1,41 @@
+#pragma once
+#include "video_renderer/buffer/bidi_ring_buffer.h"
+#include "video_renderer/decode/hw/hw_decode_provider.h"
+#include <cstdint>
+
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libswscale/swscale.h>
+}
+
+struct ID3D11Device;
+struct ID3D11DeviceContext;
+
+namespace vr {
+
+class FrameConverter {
+public:
+    FrameConverter();
+    ~FrameConverter();
+
+    bool init_software(int src_width, int src_height, AVPixelFormat src_format);
+    bool init_hardware(void* d3d_device, void* d3d_context,
+                       int src_width, int src_height,
+                       HwDecodeType hw_type = HwDecodeType::None);
+
+    TextureFrame convert(AVFrame* frame);
+
+    bool is_hardware() const { return is_hw_; }
+
+private:
+    int width_ = 0;
+    int height_ = 0;
+    bool is_hw_ = false;
+    HwDecodeType hw_type_ = HwDecodeType::None;
+    SwsContext* sws_ctx_ = nullptr;
+    AVPixelFormat src_format_ = AV_PIX_FMT_NONE;
+    void* d3d_device_ = nullptr;
+    void* d3d_context_ = nullptr;
+};
+
+} // namespace vr

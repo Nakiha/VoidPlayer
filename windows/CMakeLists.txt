@@ -2,6 +2,37 @@
 cmake_minimum_required(VERSION 3.14)
 project(void_player LANGUAGES CXX)
 
+# ==================== Native Video Renderer Dependencies ====================
+
+include(FetchContent)
+
+# spdlog (header-only, required by video renderer)
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG v1.15.2
+    GIT_SHALLOW TRUE
+)
+set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(spdlog)
+
+# FFmpeg (pre-built at VoidView project)
+set(FFMPEG_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../VoidPlayer/libs/ffmpeg" CACHE PATH "FFmpeg root")
+set(FFMPEG_INCLUDE_DIR "${FFMPEG_ROOT}/include")
+set(FFMPEG_LIB_DIR "${FFMPEG_ROOT}/lib")
+
+if(NOT EXISTS "${FFMPEG_INCLUDE_DIR}/libavcodec/avcodec.h")
+    message(WARNING "FFmpeg headers not found at ${FFMPEG_INCLUDE_DIR} - video renderer will not be built")
+    set(FFMPEG_FOUND FALSE)
+else()
+    set(FFMPEG_FOUND TRUE)
+    find_library(AVCODEC_LIBRARY avcodec PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
+    find_library(AVFORMAT_LIBRARY avformat PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
+    find_library(AVUTIL_LIBRARY avutil PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
+    find_library(SWRESAMPLE_LIBRARY swresample PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
+    find_library(SWSCALE_LIBRARY swscale PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
+endif()
+
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
 set(BINARY_NAME "void_player")
@@ -39,7 +70,7 @@ add_definitions(-DUNICODE -D_UNICODE)
 # of modifying this function.
 function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_features(${TARGET} PUBLIC cxx_std_17)
-  target_compile_options(${TARGET} PRIVATE /W4 /WX /wd"4100")
+  target_compile_options(${TARGET} PRIVATE /W4 /WX /wd"4100" /wd"4244" /wd"4456" /wd"4702")
   target_compile_options(${TARGET} PRIVATE /EHsc)
   target_compile_definitions(${TARGET} PRIVATE "_HAS_EXCEPTIONS=0")
   target_compile_definitions(${TARGET} PRIVATE "$<$<CONFIG:Debug>:_DEBUG>")

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
 import 'package:file_picker/file_picker.dart';
+import 'app_log.dart';
 import 'video_renderer_controller.dart';
 
 Future<Color> getWindowsAccentColor() async {
@@ -20,14 +21,19 @@ Future<Color> getWindowsAccentColor() async {
   }
 }
 
-void main() async {
+void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize logging (parses --log-level from args).
+  await initLogging(args);
+
   await Window.initialize();
   await Window.setEffect(
     effect: WindowEffect.mica,
     color: const Color(0xCC222222),
   );
   final accentColor = await getWindowsAccentColor();
+  log.info('Application starting');
   runApp(MyApp(accentColor: accentColor));
 }
 
@@ -100,6 +106,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         _loading = false;
       });
     } catch (e) {
+      log.warning('Failed to open file: $e');
       setState(() {
         _loading = false;
         _error = e.toString();

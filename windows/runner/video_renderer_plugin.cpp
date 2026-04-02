@@ -3,6 +3,17 @@
 #include <flutter_windows.h>
 #include <spdlog/spdlog.h>
 
+namespace {
+std::string get_exe_dir() {
+    char exe_path[MAX_PATH];
+    GetModuleFileNameA(nullptr, exe_path, MAX_PATH);
+    std::string dir(exe_path);
+    auto last_sep = dir.find_last_of("\\/");
+    if (last_sep != std::string::npos) dir = dir.substr(0, last_sep);
+    return dir;
+}
+} // namespace
+
 // static
 void VideoRendererPlugin::RegisterWithRegistrar(
     flutter::PluginRegistrarWindows* registrar) {
@@ -32,7 +43,20 @@ void VideoRendererPlugin::RegisterWithRegistrar(
 VideoRendererPlugin::VideoRendererPlugin(
     flutter::TextureRegistrar* texture_registrar,
     IDXGIAdapter* dxgi_adapter)
-    : texture_registrar_(texture_registrar), dxgi_adapter_(dxgi_adapter) {}
+    : texture_registrar_(texture_registrar), dxgi_adapter_(dxgi_adapter) {
+    // Initialize native logging with defaults on plugin construction.
+    // This happens before any Dart-side initLogging call, so native logs
+    // (including renderer creation) are always captured.
+    logs_dir_ = get_exe_dir() + "\\logs";
+
+    vr::LogConfig config;
+    config.file_path = logs_dir_ + "\\native.log";
+    config.max_files = 5;
+    vr::configure_logging(config);
+    vr::install_crash_handler(logs_dir_);
+
+    spdlog::info("[VideoRendererPlugin] Plugin constructed, native logging initialized: {}", config.file_path);
+}
 
 VideoRendererPlugin::~VideoRendererPlugin() {
     if (texture_id_ >= 0 && texture_registrar_) {
@@ -51,7 +75,9 @@ void VideoRendererPlugin::HandleMethodCall(
 
     const auto& method = method_call.method_name();
 
-    if (method == "createRenderer") {
+    if (method == "initLogging") {
+        InitLogging(method_call.arguments(), std::move(result));
+    } else if (method == "createRenderer") {
         CreateRenderer(method_call.arguments(), std::move(result));
     } else if (method == "destroyRenderer") {
         DestroyRenderer(std::move(result));
@@ -108,6 +134,42 @@ void VideoRendererPlugin::HandleMethodCall(
     }
 }
 
+void VideoRendererPlugin::InitLogging(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+
+    std::string level_str = "info";
+    std::string logs_dir;
+
+    if (arguments) {
+        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+        if (args) {
+            auto it = args->find(flutter::EncodableValue("logLevel"));
+            if (it != args->end()) {
+                level_str = std::get<std::string>(it->second);
+            }
+            it = args->find(flutter::EncodableValue("logsDir"));
+            if (it != args->end()) {
+                logs_dir = std::get<std::string>(it->second);
+            }
+        }
+    }
+
+    // Parse level string to spdlog level
+    spdlog::level::level_enum level = spdlog::level::from_str(level_str);
+
+    vr::LogConfig config;
+    config.file_path = (logs_dir.empty() ? logs_dir_ : logs_dir) + "\\native.log";
+    config.level = level;
+    config.max_files = 5;
+
+    vr::configure_logging(config);
+
+    spdlog::info("[VideoRendererPlugin] Native logging reconfigured: level={}", level_str);
+
+    result->Success(flutter::EncodableValue(nullptr));
+}
+
 void VideoRendererPlugin::CreateRenderer(
     const flutter::EncodableValue* arguments,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
@@ -154,15 +216,6 @@ void VideoRendererPlugin::CreateRenderer(
     for (const auto& p : paths_list) {
         config.video_paths.push_back(std::get<std::string>(p));
     }
-
-    // Set log config to enable crash handler (minidump will be written next to exe)
-    config.log_config.level = spdlog::level::trace;
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(nullptr, exe_path, MAX_PATH);
-    std::string exe_dir(exe_path);
-    auto last_sep = exe_dir.find_last_of("\\/");
-    if (last_sep != std::string::npos) exe_dir = exe_dir.substr(0, last_sep);
-    config.log_config.file_path = exe_dir + "\\void_player.log";
 
     renderer_ = std::make_unique<vr::Renderer>();
     if (!renderer_->initialize(config)) {

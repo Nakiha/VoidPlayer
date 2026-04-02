@@ -27,6 +27,9 @@ private:
         const flutter::MethodCall<flutter::EncodableValue>& method_call,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
+    void InitLogging(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void CreateRenderer(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
@@ -42,4 +45,5 @@ private:
     IDXGIAdapter* dxgi_adapter_;
     int texture_width_ = 0;
     int texture_height_ = 0;
+    std::string logs_dir_;
 };

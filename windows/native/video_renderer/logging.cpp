@@ -54,12 +54,13 @@ void configure_logging(const LogConfig& config) {
         }
     }
 
-    // Add stderr sink if available (safe for GUI apps)
-    // Console only shows warn and above — debug/trace goes to file only
+    // Add stderr sink if available (safe for GUI apps — stderr_available
+    // returns false when no console is attached, so no crash risk).
+    // Uses the same level as the configured level.
     if (stderr_available()) {
         auto console_sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
         console_sink->set_pattern(config.pattern);
-        console_sink->set_level(spdlog::level::warn);
+        console_sink->set_level(config.level);
         logger->sinks().push_back(std::move(console_sink));
     }
 

@@ -2,6 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
 import 'package:file_picker/file_picker.dart';
+import 'actions/action_registry.dart';
+import 'actions/player_action.dart';
+import 'actions/test_runner.dart';
 import 'app_log.dart';
 import 'video_renderer_controller.dart';
 
@@ -34,7 +37,52 @@ void main(List<String> args) async {
   );
   final accentColor = await getWindowsAccentColor();
   log.info('Application starting');
-  runApp(MyApp(accentColor: accentColor));
+
+  // --test-script mode: run scripted tests without UI interaction.
+  final scriptIdx = args.indexOf('--test-script');
+  if (scriptIdx >= 0 && scriptIdx + 1 < args.length) {
+    final scriptPath = args[scriptIdx + 1];
+    final controller = VideoRendererController();
+    runApp(TestRunnerApp(scriptPath: scriptPath, controller: controller));
+  } else {
+    runApp(MyApp(accentColor: accentColor));
+  }
+}
+
+/// Minimal app wrapper for test script mode.
+class TestRunnerApp extends StatefulWidget {
+  final String scriptPath;
+  final VideoRendererController controller;
+
+  const TestRunnerApp({
+    super.key,
+    required this.scriptPath,
+    required this.controller,
+  });
+
+  @override
+  State<TestRunnerApp> createState() => _TestRunnerAppState();
+}
+
+class _TestRunnerAppState extends State<TestRunnerApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Run test script after first frame is rendered.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      TestRunner(
+        scriptPath: widget.scriptPath,
+        controller: widget.controller,
+      ).run();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(body: Container()), // Minimal shell
+    );
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -58,7 +106,7 @@ class MyApp extends StatelessWidget {
         ),
       ),
       themeMode: ThemeMode.system,
-      home: const VideoPlayerPage(),
+      home: const ActionFocus(child: VideoPlayerPage()),
     );
   }
 }
@@ -75,11 +123,46 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   int? _textureId;
   bool _loading = false;
   String? _error;
+  bool _isPlaying = false;
+  bool _hasStarted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _bindActions();
+  }
 
   @override
   void dispose() {
+    _unbindActions();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _bindActions() {
+    actionRegistry.bind(const TogglePlayPause(), _togglePlayPause);
+    actionRegistry.bind(const StepForward(), () => _controller.stepForward());
+    actionRegistry.bind(const StepBackward(), () => _controller.stepBackward());
+    actionRegistry.bind(const OpenFile(), _openFile);
+  }
+
+  void _unbindActions() {
+    actionRegistry.unbind(const TogglePlayPause().name);
+    actionRegistry.unbind(const StepForward().name);
+    actionRegistry.unbind(const StepBackward().name);
+    actionRegistry.unbind(const OpenFile().name);
+  }
+
+  void _togglePlayPause() {
+    if (_isPlaying) {
+      _controller.pause();
+    } else if (_hasStarted) {
+      _controller.resume();
+    } else {
+      _controller.play();
+      _hasStarted = true;
+    }
+    setState(() { _isPlaying = !_isPlaying; });
   }
 
   Future<void> _openFile() async {
@@ -104,6 +187,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       _textureId = await _controller.createRenderer(paths);
       setState(() {
         _loading = false;
+        _hasStarted = false;
+        _isPlaying = false;
       });
     } catch (e) {
       log.warning('Failed to open file: $e');
@@ -124,7 +209,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           IconButton(
             icon: const Icon(Icons.folder_open),
             tooltip: 'Open Video',
-            onPressed: _openFile,
+            onPressed: () => actionRegistry.execute(const OpenFile().name),
           ),
         ],
       ),
@@ -132,21 +217,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         child: _buildBody(),
       ),
       floatingActionButton: _textureId != null
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FloatingActionButton(
-                  heroTag: 'play',
-                  onPressed: () => _controller.play(),
-                  child: const Icon(Icons.play_arrow),
-                ),
-                const SizedBox(width: 8),
-                FloatingActionButton(
-                  heroTag: 'pause',
-                  onPressed: () => _controller.pause(),
-                  child: const Icon(Icons.pause),
-                ),
-              ],
+          ? FloatingActionButton(
+              heroTag: 'toggle',
+              onPressed: () => actionRegistry.execute(const TogglePlayPause().name),
+              child: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
             )
           : null,
     );

@@ -384,6 +384,7 @@ void Renderer::draw_paused_frame(const char* reason) {
         std::lock_guard<std::mutex> tex_lock(texture_mutex_);
         draw_frame(decision);
         if (headless_) {
+            d3d_device_->context()->Flush();
             if (frame_callback_) frame_callback_();
         } else {
             d3d_device_->present(0);
@@ -500,6 +501,7 @@ void Renderer::render_loop() {
                     std::lock_guard<std::mutex> tex_lock(texture_mutex_);
                     draw_frame(preview);
                     if (headless_) {
+                        d3d_device_->context()->Flush();
                         if (frame_callback_) frame_callback_();
                     } else {
                         d3d_device_->present(0);

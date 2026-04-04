@@ -8,6 +8,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <functional>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -50,6 +51,14 @@ private:
     /// If hw_enabled_ is true and open fails, falls back to software.
     bool open_codec();
 
+    /// Drain remaining frames from the codec (avcodec_send_packet(nullptr) + receive loop).
+    /// If target_us >= 0, frames with pts >= target_us are added to exact_seek_reorder_.
+    /// Sets eof_flushed_ = true.
+    void drain_codec(AVFrame* frame, const std::function<void(AVFrame*)>& rescale_ts, int64_t target_us = -1);
+
+    /// Sort exact_seek_reorder_ by PTS and push all frames to output_buffer_.
+    void flush_reorder_buffer();
+
     PacketQueue& input_queue_;
     TrackBuffer& output_buffer_;
     FrameConverter converter_;
@@ -79,6 +88,7 @@ private:
 
     std::atomic<bool> decode_paused_{false};
     int64_t exact_seek_target_us_ = -1;  // >= 0 when discarding frames before exact seek target
+    std::vector<TextureFrame> exact_seek_reorder_;  // Temp buffer for B-frame PTS reordering
 
     bool eof_flushed_ = false;
     bool post_seek_ = false;      // After seek: transition to Ready after 1 frame instead of full preroll

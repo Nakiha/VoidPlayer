@@ -21,6 +21,20 @@
 
 namespace vr {
 
+/// Layout mode constants (match HLSL defines)
+constexpr int LAYOUT_SIDE_BY_SIDE = 0;
+constexpr int LAYOUT_SPLIT_SCREEN = 1;
+
+/// Layout state — all visual layout parameters in one struct.
+/// Updated atomically via Renderer::apply_layout().
+struct LayoutState {
+    int mode = LAYOUT_SIDE_BY_SIDE;  // 0=SIDE_BY_SIDE, 1=SPLIT_SCREEN
+    float split_pos = 0.5f;          // Split divider position (0.0-1.0)
+    float zoom_ratio = 1.0f;         // 1.0=fit, >1.0=zoom in
+    float view_offset[2] = {0.0f, 0.0f};  // Pan offset in pixel coordinates
+    int order[4] = {0, 1, 2, 3};    // Track display order mapping
+};
+
 struct RendererConfig {
     std::vector<std::string> video_paths;
     void* hwnd = nullptr;
@@ -65,6 +79,14 @@ public:
     size_t track_count() const;
     int64_t duration_us() const;
 
+    // -- Layout control --
+
+    /// Atomically apply layout state and trigger redraw if paused.
+    void apply_layout(const LayoutState& state);
+
+    /// Get a snapshot of the current layout state (thread-safe).
+    LayoutState layout() const;
+
     // -- Headless mode: texture sharing --
 
     /// Set callback invoked after each frame is drawn in headless mode.
@@ -85,6 +107,12 @@ private:
     void draw_paused_frame(const char* reason);
     void seek_internal(int64_t target_pts_us, SeekType type);
     int64_t compute_frame_duration_us() const;
+
+    /// Lock device + texture mutexes, draw frame, present/flush, set preview_drawn_.
+    void present_frame(const PresentDecision& decision);
+
+    /// Check if any frame slot in a PresentDecision has a value.
+    static bool has_any_frame(const PresentDecision& decision);
 
     Clock clock_;
     std::unique_ptr<D3D11Device> d3d_device_;
@@ -140,6 +168,12 @@ private:
     int target_height_ = 1080;
     void* hwnd_ = nullptr;
     int64_t cached_duration_us_ = 0;
+
+    // -- Layout state --
+    LayoutState layout_;
+
+    // -- Cached last frame for redraws (zoom/pan while paused or at EOF) --
+    PresentDecision last_decision_;
 
     // -- Headless mode state --
     bool headless_ = false;

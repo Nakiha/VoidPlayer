@@ -120,7 +120,7 @@ void DemuxThread::run() {
             }
 
             if (seek_callback_) {
-                spdlog::info("[DemuxThread] Invoking seek callback → DecodeThread");
+                spdlog::info("[DemuxThread] Invoking seek callback -> DecodeThread");
                 seek_callback_(req.target_pts_us, req.type);
             }
 

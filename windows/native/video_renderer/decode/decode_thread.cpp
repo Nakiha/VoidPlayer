@@ -1,6 +1,7 @@
 #include "video_renderer/decode/decode_thread.h"
 #include <spdlog/spdlog.h>
 #include <chrono>
+#include <algorithm>
 
 extern "C" {
 #include <libavutil/hwcontext.h>
@@ -229,6 +230,40 @@ void DecodeThread::notify_seek(int64_t target_pts_us, SeekType type) {
     seek_.pending = true;
 }
 
+void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*)>& rescale_ts, int64_t target_us) {
+    auto prev_level = av_log_get_level();
+    av_log_set_level(AV_LOG_ERROR);
+    avcodec_send_packet(codec_ctx_, nullptr);
+    while (avcodec_receive_frame(codec_ctx_, frame) >= 0) {
+        if (target_us >= 0) {
+            rescale_ts(frame);
+            TextureFrame tex_frame = converter_.convert(frame);
+            if (tex_frame.pts_us >= target_us) {
+                exact_seek_reorder_.push_back(std::move(tex_frame));
+            }
+        }
+        av_frame_unref(frame);
+    }
+    avcodec_flush_buffers(codec_ctx_);
+    av_log_set_level(prev_level);
+    eof_flushed_ = true;
+}
+
+void DecodeThread::flush_reorder_buffer() {
+    if (exact_seek_reorder_.empty()) return;
+    std::sort(exact_seek_reorder_.begin(), exact_seek_reorder_.end(),
+              [](const TextureFrame& a, const TextureFrame& b) {
+                  return a.pts_us < b.pts_us;
+              });
+    for (auto& f : exact_seek_reorder_) {
+        output_buffer_.push_frame(std::move(f));
+    }
+    spdlog::info("[DecodeThread] Exact seek reorder: {} frames sorted and pushed",
+                 exact_seek_reorder_.size());
+    exact_seek_reorder_.clear();
+    exact_seek_target_us_ = -1;
+}
+
 void DecodeThread::run() {
     spdlog::info("[DecodeThread] Decode loop started (hw={})", hw_enabled_);
 
@@ -310,8 +345,7 @@ void DecodeThread::run() {
             eof_flushed_ = false;
             decode_paused_.store(false, std::memory_order_release);
             output_buffer_.set_state(TrackState::Buffering);
-            spdlog::info("[DecodeThread] === SEEK DONE: state→Buffering, post_seek fast preroll, waiting for new packets");
-            decode_paused_.store(false, std::memory_order_release);
+            spdlog::info("[DecodeThread] === SEEK DONE: state->Buffering, post_seek fast preroll, waiting for new packets");
             continue;
         }
 
@@ -324,9 +358,28 @@ void DecodeThread::run() {
             // to keep decoding to fill the preroll buffer first.
             if (input_queue_.is_eof() && !eof_flushed_) {
                 if (output_buffer_.state() == TrackState::Buffering) {
-                    spdlog::info("[DecodeThread] EOF seen during Buffering, deferring flush "
-                                 "(buf={}, pq={})",
-                                 output_buffer_.total_count(), input_queue_.size());
+                    // Drain codec for exact seek to flush remaining DPB frames
+                    if (exact_seek_target_us_ >= 0) {
+                        drain_codec(frame, rescale_ts, exact_seek_target_us_);
+                        spdlog::info("[DecodeThread] Exact seek EOF drain: reorder buffer has {} frames",
+                                     exact_seek_reorder_.size());
+                    } else {
+                        eof_flushed_ = true;
+                    }
+
+                    // Flush exact-seek reorder buffer at EOF — no more frames coming.
+                    flush_reorder_buffer();
+                    // Preroll check — may complete if reorder flush added frames
+                    if (post_seek_ && output_buffer_.total_count() >= 1) {
+                        spdlog::info("[DecodeThread] === Preroll complete (EOF): {} frames, state->Ready",
+                                     output_buffer_.total_count());
+                        output_buffer_.set_state(TrackState::Ready);
+                        post_seek_ = false;
+                    } else {
+                        spdlog::info("[DecodeThread] EOF seen during Buffering, deferring codec flush "
+                                     "(buf={}, pq={})",
+                                     output_buffer_.total_count(), input_queue_.size());
+                    }
                 } else {
                     avcodec_send_packet(codec_ctx_, nullptr);
                     while (true) {
@@ -394,7 +447,12 @@ void DecodeThread::run() {
                     av_frame_unref(frame);
                     continue; // Discard intermediate frame
                 }
-                exact_seek_target_us_ = -1; // Target reached, resume normal
+                // Buffer frames for B-frame reordering instead of pushing
+                // immediately — H265 B-frames may be output by the decoder
+                // in non-PTS order (decode order != display order).
+                exact_seek_reorder_.push_back(std::move(tex_frame));
+                av_frame_unref(frame);
+                continue;
             }
 
             output_buffer_.push_frame(std::move(tex_frame));
@@ -404,7 +462,7 @@ void DecodeThread::run() {
                     ? output_buffer_.total_count() >= 1
                     : output_buffer_.has_preroll();
                 if (ready) {
-                    spdlog::info("[DecodeThread] === Preroll complete: {} frames buffered, post_seek={}, state→Ready",
+                    spdlog::info("[DecodeThread] === Preroll complete: {} frames buffered, post_seek={}, state->Ready",
                                  output_buffer_.total_count(), post_seek_);
                     output_buffer_.set_state(TrackState::Ready);
                     post_seek_ = false;
@@ -413,6 +471,66 @@ void DecodeThread::run() {
 
             av_frame_unref(frame);
         }
+
+        // Exact seek B-frame reordering.
+        // H265 outputs frames across MULTIPLE avcodec_send_packet calls due to
+        // DPB reordering delay.  The first frame >= target might be a reference
+        // frame (higher PTS), while B-frames with lower PTS arrive in subsequent
+        // batches.  We accumulate frames and only flush when the lowest PTS in
+        // the buffer is close enough to the target, or at EOF / max count.
+        if (exact_seek_target_us_ >= 0 && !exact_seek_reorder_.empty()) {
+            bool should_flush = false;
+
+            if (input_queue_.is_eof() && input_queue_.size() == 0) {
+                if (!eof_flushed_) {
+                    drain_codec(frame, rescale_ts, exact_seek_target_us_);
+                    spdlog::info("[DecodeThread] Exact seek EOF: codec drain, reorder buffer now has {} frames",
+                                 exact_seek_reorder_.size());
+                }
+                should_flush = true;
+            } else {
+                // Check PTS gap: if the lowest PTS in the buffer is still far
+                // from the target, there may be B-frames with lower PTS stuck
+                // in the DPB that haven't been output yet.
+                auto min_it = std::min_element(exact_seek_reorder_.begin(),
+                    exact_seek_reorder_.end(),
+                    [](const TextureFrame& a, const TextureFrame& b) {
+                        return a.pts_us < b.pts_us;
+                    });
+                int64_t gap = min_it->pts_us - exact_seek_target_us_;
+
+                // Flush when the closest frame is within ~1 frame duration of
+                // target (gap < 17ms for 60fps means the right frame is likely
+                // already in the buffer).  Otherwise keep waiting for B-frames
+                // still in the DPB.  Safety cap at 16 frames.
+                if (gap < 17000 || exact_seek_reorder_.size() >= 16) {
+                    should_flush = true;
+                }
+            }
+
+            if (should_flush) {
+                auto first_pts_before = output_buffer_.peek(0).has_value()
+                    ? output_buffer_.peek(0)->pts_us : -1;
+                flush_reorder_buffer();
+                auto first = output_buffer_.peek(0);
+                spdlog::info("[DecodeThread] Exact seek reorder: frames pushed, first_pts={:.3f}s",
+                             first.has_value() ? first->pts_us / 1e6 : -1.0);
+            }
+        }
+
+        // Preroll check
+        if (output_buffer_.state() == TrackState::Buffering) {
+            bool ready = post_seek_
+                ? output_buffer_.total_count() >= 1
+                : output_buffer_.has_preroll();
+            if (ready) {
+                spdlog::info("[DecodeThread] === Preroll complete: {} frames buffered, post_seek={}, state->Ready",
+                             output_buffer_.total_count(), post_seek_);
+                output_buffer_.set_state(TrackState::Ready);
+                post_seek_ = false;
+            }
+        }
+
         if (frames_produced > 0) {
             spdlog::debug("[DecodeThread] Decoded {} frames, buf_state={}, buf_count={}",
                           frames_produced, static_cast<int>(output_buffer_.state()),

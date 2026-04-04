@@ -23,6 +23,39 @@ PYBIND11_MODULE(video_renderer_native, m) {
         .def_readwrite("max_files", &vr::LogConfig::max_files)
         .def_readwrite("level", &vr::LogConfig::level);
 
+    // LayoutState — atomic layout parameter block
+    py::class_<vr::LayoutState>(m, "LayoutState")
+        .def(py::init<>())
+        .def_readwrite("mode", &vr::LayoutState::mode,
+            "Layout mode: 0=SIDE_BY_SIDE, 1=SPLIT_SCREEN")
+        .def_readwrite("split_pos", &vr::LayoutState::split_pos,
+            "Split divider position (0.0-1.0)")
+        .def_readwrite("zoom_ratio", &vr::LayoutState::zoom_ratio,
+            "Zoom ratio (1.0=fit, >1.0=zoom in)")
+        // view_offset: expose as Python list [x, y]
+        .def_property("view_offset",
+            [](vr::LayoutState& s) -> std::vector<float> {
+                return {s.view_offset[0], s.view_offset[1]};
+            },
+            [](vr::LayoutState& s, const std::vector<float>& v) {
+                if (v.size() >= 2) {
+                    s.view_offset[0] = v[0];
+                    s.view_offset[1] = v[1];
+                }
+            },
+            "Pan offset [x, y] in pixel coordinates")
+        // order: expose as Python list [0, 1, 2, 3]
+        .def_property("order",
+            [](vr::LayoutState& s) -> std::vector<int> {
+                return {s.order[0], s.order[1], s.order[2], s.order[3]};
+            },
+            [](vr::LayoutState& s, const std::vector<int>& v) {
+                for (size_t i = 0; i < 4 && i < v.size(); ++i) {
+                    s.order[i] = v[i];
+                }
+            },
+            "Track display order as list of track indices");
+
     // RendererConfig
     py::class_<vr::RendererConfig>(m, "RendererConfig")
         .def(py::init<>())
@@ -53,7 +86,16 @@ PYBIND11_MODULE(video_renderer_native, m) {
         .def("current_pts_us", &vr::Renderer::current_pts_us)
         .def("current_speed", &vr::Renderer::current_speed)
         .def("track_count", &vr::Renderer::track_count)
-        .def("duration_us", &vr::Renderer::duration_us);
+        .def("duration_us", &vr::Renderer::duration_us)
+        // Layout control
+        .def("apply_layout", &vr::Renderer::apply_layout, py::arg("state"),
+             "Atomically apply layout state and trigger redraw if paused")
+        .def("layout", &vr::Renderer::layout,
+             "Get a snapshot of the current layout state");
+
+    // Layout mode constants
+    m.attr("LAYOUT_SIDE_BY_SIDE") = py::int_(vr::LAYOUT_SIDE_BY_SIDE);
+    m.attr("LAYOUT_SPLIT_SCREEN") = py::int_(vr::LAYOUT_SPLIT_SCREEN);
 
     // Standalone logging functions
     m.def("configure_logging", &vr::configure_logging, py::arg("config"),

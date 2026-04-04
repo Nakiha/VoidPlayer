@@ -97,14 +97,14 @@ bool Renderer::initialize(const RendererConfig& config) {
 
     // Create constant buffer for shader uniforms (must be 16-byte aligned)
     // Layout must match multitrack.hlsl cbuffer Constants
-    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 64, compiled_shader_)) {
+    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 96, compiled_shader_)) {
         spdlog::error("Renderer: failed to create constant buffer");
         return false;
     }
 
     // Create sampler state
     D3D11_SAMPLER_DESC sampler_desc = {};
-    sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    sampler_desc.Filter = D3D11_FILTER_MIN_LINEAR_MAG_MIP_POINT;
     sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
     sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
     sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
@@ -271,7 +271,7 @@ void Renderer::resume() {
     std::lock_guard<std::mutex> lock(state_mutex_);
     clock_.resume();
     playing_ = true;
-    spdlog::info("[Renderer] resume() called — playing was now {}", playing_.load());
+    spdlog::info("[Renderer] resume() called -- playing was now {}", playing_.load());
 }
 void Renderer::seek(int64_t target_pts_us, SeekType type) {
     std::lock_guard<std::mutex> lock(state_mutex_);
@@ -296,74 +296,84 @@ void Renderer::seek_internal(int64_t target_pts_us, SeekType type) {
         track->packet_queue->flush();
         track->seek_controller->request_seek(target_pts_us, type);
         track->track_buffer->set_state(TrackState::Buffering);
-        spdlog::info("[Renderer] seek_internal: track[{}] cleared (buf={}→{}, pq={}→0), state→Buffering",
+        spdlog::info("[Renderer] seek_internal: track[{}] cleared (buf={}->{}, pq={}->0), state->Buffering",
                      i, buf_count_before, track->track_buffer->total_count(), pq_size_before);
     }
     preview_drawn_ = false;
+    last_decision_ = PresentDecision();
 }
 
 void Renderer::step_forward() {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    if (!initialized_) return;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (!initialized_) return;
 
-    clock_.pause();
-    playing_ = false;
+        clock_.pause();
+        playing_ = false;
 
-    for (auto& track : tracks_) {
-        auto current = track->track_buffer->peek(0);
-        if (!current.has_value()) continue;
-        track->track_buffer->advance();
-        auto next = track->track_buffer->peek(0);
-        if (next.has_value()) {
-            clock_.seek(next->pts_us);
+        for (auto& track : tracks_) {
+            auto current = track->track_buffer->peek(0);
+            if (!current.has_value()) continue;
+            track->track_buffer->advance();
+            auto next = track->track_buffer->peek(0);
+            if (next.has_value()) {
+                clock_.seek(next->pts_us);
+            }
         }
     }
-
     draw_paused_frame("step_forward");
 }
 
 void Renderer::step_backward() {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    if (!initialized_) return;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (!initialized_) return;
 
-    // If any track is still seeking/seeking, don't allow stepping
-    // (prevents retreating to stale frames during async seek)
-    for (auto& track : tracks_) {
-        if (track->track_buffer->state() == TrackState::Buffering) return;
-    }
-
-    clock_.pause();
-    playing_ = false;
-
-    // Check if ALL tracks can retreat (cache hit)
-    bool all_can_retreat = true;
-    for (auto& track : tracks_) {
-        if (!track->track_buffer->can_retreat()) {
-            all_can_retreat = false;
-            break;
-        }
-    }
-
-    if (all_can_retreat) {
+        // If any track is still seeking/seeking, don't allow stepping
+        // (prevents retreating to stale frames during async seek)
         for (auto& track : tracks_) {
-            track->track_buffer->retreat();
+            if (track->track_buffer->state() == TrackState::Buffering) return;
         }
-        auto frame = tracks_[0]->track_buffer->peek(0);
-        if (frame.has_value()) {
-            clock_.seek(frame->pts_us);
+
+        clock_.pause();
+        playing_ = false;
+
+        // Check if ALL tracks can retreat (cache hit)
+        bool all_can_retreat = true;
+        for (auto& track : tracks_) {
+            if (!track->track_buffer->can_retreat()) {
+                all_can_retreat = false;
+                break;
+            }
         }
-        draw_paused_frame("step_backward(retreat)");
-    } else {
-        // Cache miss: exact seek to (current_pts - frame_duration)
-        int64_t dur = compute_frame_duration_us();
-        int64_t target = std::max(int64_t(0),
-            clock_.current_pts_us() - dur);
-        spdlog::info("[Renderer] step_backward exact_seek: pts={:.3f}s, duration={:.3f}ms, target={:.3f}s",
-                     clock_.current_pts_us() / 1e6, dur / 1e3, target / 1e6);
-        seek_internal(target, SeekType::Exact);
-        spdlog::info("[Renderer] step_backward exact_seek done: clock_pts={:.3f}s",
-                     clock_.current_pts_us() / 1e6);
+
+        if (all_can_retreat) {
+            for (auto& track : tracks_) {
+                track->track_buffer->retreat();
+            }
+            auto frame = tracks_[0]->track_buffer->peek(0);
+            if (frame.has_value()) {
+                clock_.seek(frame->pts_us);
+            }
+        } else {
+            // Cache miss: exact seek to (current_pts - frame_duration - margin)
+            // Add 1ms margin: frame duration is integer-truncated (e.g. 1/60s → 16666us)
+            // but actual PTS spacing is 16667us, so (pts - dur) overshoots the
+            // previous frame by 1us and exact seek's "< target" check discards it.
+            int64_t dur = compute_frame_duration_us();
+            int64_t target = std::max(int64_t(0),
+                clock_.current_pts_us() - dur - 1000);
+            spdlog::info("[Renderer] step_backward exact_seek: pts={:.3f}s, duration={:.3f}ms, target={:.3f}s",
+                         clock_.current_pts_us() / 1e6, dur / 1e3, target / 1e6);
+            seek_internal(target, SeekType::Exact);
+            spdlog::info("[Renderer] step_backward exact_seek done: clock_pts={:.3f}s",
+                         clock_.current_pts_us() / 1e6);
+            // Don't draw stale frame — seek_internal set preview_drawn_=false,
+            // render loop will draw the new frame when decode completes.
+            return;
+        }
     }
+    draw_paused_frame("step_backward");
 }
 
 void Renderer::draw_paused_frame(const char* reason) {
@@ -379,23 +389,37 @@ void Renderer::draw_paused_frame(const char* reason) {
             has_frame = true;
         }
     }
+    if (!has_frame && has_any_frame(last_decision_)) {
+        decision = last_decision_;
+        has_frame = true;
+    }
     if (has_frame) {
-        std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-        std::lock_guard<std::mutex> tex_lock(texture_mutex_);
-        draw_frame(decision);
-        if (headless_) {
-            d3d_device_->context()->Flush();
-            if (frame_callback_) frame_callback_();
-        } else {
-            d3d_device_->present(0);
-        }
-        preview_drawn_ = true;
+        present_frame(decision);
+        last_decision_ = decision;
         double pts = decision.frames[0].has_value()
                      ? decision.frames[0]->pts_us / 1e6 : -1.0;
         spdlog::info("[Renderer] draw_paused_frame({}): pts={:.3f}s", reason, pts);
-    } else {
-        spdlog::info("[Renderer] draw_paused_frame({}): no frame available", reason);
     }
+}
+
+void Renderer::present_frame(const PresentDecision& decision) {
+    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+    std::lock_guard<std::mutex> tex_lock(texture_mutex_);
+    draw_frame(decision);
+    if (headless_) {
+        d3d_device_->context()->Flush();
+        if (frame_callback_) frame_callback_();
+    } else {
+        d3d_device_->present(0);
+    }
+    preview_drawn_ = true;
+}
+
+bool Renderer::has_any_frame(const PresentDecision& decision) {
+    for (auto& f : decision.frames) {
+        if (f.has_value()) return true;
+    }
+    return false;
 }
 
 int64_t Renderer::compute_frame_duration_us() const {
@@ -484,31 +508,39 @@ void Renderer::render_loop() {
         if (!playing_snapshot || clock_.is_paused()) {
             // While paused/prerolling, draw current frame if not yet drawn
             if (!preview_drawn_) {
-                bool has_any_frame = false;
-                PresentDecision preview;
-                preview.current_pts_us = 0;
-                preview.should_present = false;
-                preview.frames.resize(tracks_.size());
-                for (size_t t = 0; t < tracks_.size(); ++t) {
-                    auto frame = tracks_[t]->track_buffer->peek(0);
-                    if (frame.has_value()) {
-                        preview.frames[t] = frame;
-                        has_any_frame = true;
-                    }
+                bool drawn = false;
+
+                // Try cached last frame first (for layout changes while paused)
+                if (has_any_frame(last_decision_)) {
+                    present_frame(last_decision_);
+                    drawn = true;
+                    spdlog::info("[Renderer] Paused frame (cached): pts={:.3f}s",
+                                 last_decision_.frames[0].has_value() ? last_decision_.frames[0]->pts_us / 1e6 : -1.0);
                 }
-                if (has_any_frame) {
-                    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-                    std::lock_guard<std::mutex> tex_lock(texture_mutex_);
-                    draw_frame(preview);
-                    if (headless_) {
-                        d3d_device_->context()->Flush();
-                        if (frame_callback_) frame_callback_();
-                    } else {
-                        d3d_device_->present(0);
+
+                // No cached frame — try track buffer (initial preview)
+                if (!drawn) {
+                    PresentDecision preview;
+                    preview.current_pts_us = 0;
+                    preview.should_present = false;
+                    preview.frames.resize(tracks_.size());
+                    for (size_t t = 0; t < tracks_.size(); ++t) {
+                        auto frame = tracks_[t]->track_buffer->peek(0);
+                        if (frame.has_value()) {
+                            preview.frames[t] = frame;
+                        }
                     }
-                    preview_drawn_ = true;
-                    spdlog::info("[Renderer] Paused frame: pts={:.3f}s",
-                                 preview.frames[0].has_value() ? preview.frames[0]->pts_us / 1e6 : -1.0);
+                    if (has_any_frame(preview)) {
+                        present_frame(preview);
+                        last_decision_ = preview;
+                        // Sync clock to the actual frame PTS so subsequent
+                        // step_backward computes the correct seek target.
+                        if (preview.frames[0].has_value()) {
+                            clock_.seek(preview.frames[0]->pts_us);
+                        }
+                        spdlog::info("[Renderer] Paused frame: pts={:.3f}s",
+                                     preview.frames[0].has_value() ? preview.frames[0]->pts_us / 1e6 : -1.0);
+                    }
                 }
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -518,18 +550,12 @@ void Renderer::render_loop() {
         auto decision = render_sink_->evaluate();
 
         if (decision.should_present) {
-            std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-            std::lock_guard<std::mutex> tex_lock(texture_mutex_);
-            draw_frame(decision);
-            if (headless_) {
-                // Flush the GPU command queue so the shared texture content
-                // is guaranteed to be up-to-date before Flutter reads it.
-                // Without this, D3D11 defers execution and Flutter may see
-                // stale data (manifests as heavy frame dropping).
-                d3d_device_->context()->Flush();
-                if (frame_callback_) frame_callback_();
-            } else {
-                d3d_device_->present(0);
+            present_frame(decision);
+            last_decision_ = decision;
+        } else if (!preview_drawn_) {
+            // No new frame but layout changed (e.g. zoom/pan at EOF)
+            if (has_any_frame(last_decision_)) {
+                present_frame(last_decision_);
             }
         }
 
@@ -628,21 +654,41 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     // Layout must match HLSL cbuffer Constants in multitrack.hlsl
     if (compiled_shader_.constant_buffer) {
         struct Constants {
-            int track_count;        // offset 0
-            float canvas_width;     // offset 4
-            float canvas_height;    // offset 8
-            float _pad0;            // offset 12 (padding to 16-byte boundary)
-            float video_aspect[4];  // offset 16 (16-byte boundary)
-            int nv12_mask;          // offset 32: bit i = track i is NV12
-            float _pad1[3];         // offset 36-47: padding
-            float nv12_uv_scale_y[4]; // offset 48-63: video_h / texture_h
+            int mode;              // offset 0
+            int track_count;       // offset 4
+            float split_pos;       // offset 8
+            float zoom_ratio;      // offset 12
+            float canvas_width;    // offset 16
+            float canvas_height;   // offset 20
+            float view_offset[2];  // offset 24
+            int order[4];          // offset 32
+            float video_aspect[4]; // offset 48
+            int nv12_mask;         // offset 64
+            float _pad1[3];        // offset 68
+            float nv12_uv_scale_y[4]; // offset 80
         };
-        static_assert(sizeof(Constants) == 64, "Constants must be 64 bytes");
+        static_assert(sizeof(Constants) == 96, "Constants must be 96 bytes");
+
+        // Snapshot layout state atomically
+        LayoutState snap;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            snap = layout_;
+        }
+
         Constants cb = {};
+        cb.mode = snap.mode;
         cb.track_count = static_cast<int>(decision.frames.size());
+        cb.split_pos = snap.split_pos;
+        cb.zoom_ratio = snap.zoom_ratio;
         cb.canvas_width = static_cast<float>(target_width_);
         cb.canvas_height = static_cast<float>(target_height_);
+        cb.view_offset[0] = snap.view_offset[0];
+        cb.view_offset[1] = snap.view_offset[1];
         cb.nv12_mask = 0;
+        for (int i = 0; i < 4; ++i) {
+            cb.order[i] = snap.order[i];
+        }
         for (size_t i = 0; i < decision.frames.size() && i < 4; ++i) {
             cb.video_aspect[i] = tracks_[i]->video_aspect;
             if (decision.frames[i].has_value() && decision.frames[i]->is_nv12) {
@@ -788,6 +834,25 @@ void Renderer::draw_frame(const PresentDecision& decision) {
             }
         }
     }
+}
+
+// -- Layout control --
+void Renderer::apply_layout(const LayoutState& state) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    layout_ = state;
+    // Clamp values for safety
+    layout_.split_pos = std::clamp(layout_.split_pos, 0.0f, 1.0f);
+    layout_.zoom_ratio = std::clamp(layout_.zoom_ratio, 1.0f, 10.0f);
+    for (int i = 0; i < 4; ++i) {
+        layout_.order[i] = std::clamp(layout_.order[i], 0, 3);
+    }
+    // Trigger redraw when paused
+    preview_drawn_ = false;
+}
+
+LayoutState Renderer::layout() const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    return layout_;
 }
 
 } // namespace vr

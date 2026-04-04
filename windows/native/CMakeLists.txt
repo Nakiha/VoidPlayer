@@ -93,7 +93,7 @@ message(STATUS "FFmpeg: avcodec=${AVCODEC_LIBRARY}, avformat=${AVFORMAT_LIBRARY}
 
 # ==================== Test video path ====================
 
-set(VIDEO_TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../resources/video")
+set(VIDEO_TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../resources/video")
 
 # ==================== FFmpeg DLLs to output directory ====================
 

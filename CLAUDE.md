@@ -14,36 +14,28 @@ Windows 端 Flutter 播放器应用，使用 DX11 进行视频渲染，通过 Fl
 
 ### 目标平台
 
-仅 Windows（已移除 android、ios、linux、macos、web 目录）
+仅 Windows
 
-## Native 模块 (C++ 视频渲染引擎)
+## 开发脚本
 
-源码位于 `windows/native/`，基于 FFmpeg + D3D11 的多轨道视频渲染器。
+一站式开发脚本 `dev.py`，替代 `build.py` + `run.py`：
 
-### 文档入口
+```bash
+# 构建
+python dev.py build --native         # 仅构建 native C++ 模块
+# 运行 Flutter
+python dev.py run                    # 运行 (release)
+python dev.py run --debug            # 运行 (debug，支持 hot reload)
+python dev.py run --log-level flutter=DEBUG,native=TRACE   # 传递日志级别
 
-工程文档采用渐进式披露结构，入口文件：
+# Native Demo
+python dev.py demo                   # 运行 PySide6 交互式 demo
 
-- **[windows/native/docs/ARCHITECTURE.md](windows/native/docs/ARCHITECTURE.md)** — 总览 + 子文档索引
-
-### 维护规范
-
-修改 native 模块时遵循红绿灯 TDD：Red → Green → Refactor → **文档同步**。
-
-详见 **[windows/native/docs/MAINTENANCE.md](windows/native/docs/MAINTENANCE.md)**。
-
-## 日志系统
-
-默认所有模块日志级别为 `INFO`。日志文件落盘到 exe 旁的 `logs/` 目录。
-
-### Flutter 侧
-
-启动传参控制日志级别：
-
-```
-void_player.exe --log-level=flutter=DEBUG,native=TRACE,ffmpeg=INFO
+# 测试
+python dev.py test                   # 构建 + 测试 native 模块
 ```
 
-- `flutter`: Flutter (Dart) 层日志，写入 `logs/void_player_YYYY-MM-DD.log`
-- `native`: C++ native 模块日志，写入 `logs/native.log`
-- `ffmpeg`: FFmpeg 库日志（预留,暂未实现）
+## 模块文档
+
+- **Flutter 侧** — 日志系统、交互系统 (Action) 等 → [lib/doc.md](lib/doc.md)
+- **Native 侧** — C++ 视频渲染引擎、架构、维护规范 → [windows/doc.md](windows/doc.md)

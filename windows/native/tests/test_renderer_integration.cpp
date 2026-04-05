@@ -48,7 +48,7 @@ TEST_CASE("Renderer: play and check PTS advances", "[renderer]") {
     destroy_window(static_cast<HWND>(config.hwnd));
 }
 
-TEST_CASE("Renderer: pause and resume", "[renderer]") {
+TEST_CASE("Renderer: pause and play", "[renderer]") {
     Renderer renderer;
 
     RendererConfig config;
@@ -70,10 +70,10 @@ TEST_CASE("Renderer: pause and resume", "[renderer]") {
     // PTS should not advance while paused
     REQUIRE(std::abs(pts_after_wait - pts_at_pause) < 10000);
 
-    renderer.resume();
+    renderer.play();
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    int64_t pts_after_resume = renderer.current_pts_us();
-    REQUIRE(pts_after_resume > pts_at_pause);
+    int64_t pts_after_play = renderer.current_pts_us();
+    REQUIRE(pts_after_play > pts_at_pause);
 
     renderer.shutdown();
     destroy_window(static_cast<HWND>(config.hwnd));

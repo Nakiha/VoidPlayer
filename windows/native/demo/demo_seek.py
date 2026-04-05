@@ -86,7 +86,7 @@ class SeekDemo:
 
         elif self.phase == self.PHASE_STEP_FWD_1:
             print(f"\n[Phase] Play 2 seconds")
-            self.renderer.resume()
+            self.renderer.play()
             self.phase = self.PHASE_PLAY_2S
             self.timer.start(2000)
 
@@ -107,7 +107,7 @@ class SeekDemo:
             print(f"\n=== Demo complete ===")
             self.phase = self.PHASE_DONE
             # Resume briefly then shutdown
-            self.renderer.resume()
+            self.renderer.play()
             self.timer.start(1000)
 
         elif self.phase == self.PHASE_DONE:

@@ -59,8 +59,8 @@ int main(void) {
         CHECK(1, "shutdown on uninitialized renderer (no crash)");
 
         /* Safe operations on uninitialized renderer */
+        naki_vr_renderer_play(r);
         naki_vr_renderer_pause(r);
-        naki_vr_renderer_resume(r);
         naki_vr_renderer_seek(r, 0);
         naki_vr_renderer_set_speed(r, 2.0);
         CHECK(1, "playback ops on uninitialized renderer (no crash)");

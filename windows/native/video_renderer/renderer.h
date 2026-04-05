@@ -63,7 +63,6 @@ public:
 
     void play();
     void pause();
-    void resume();
     void seek(int64_t target_pts_us, SeekType type = SeekType::Keyframe);
     void set_speed(double speed);
 

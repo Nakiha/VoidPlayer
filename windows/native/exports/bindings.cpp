@@ -75,7 +75,6 @@ PYBIND11_MODULE(video_renderer_native, m) {
         .def("shutdown", &vr::Renderer::shutdown)
         .def("play", &vr::Renderer::play)
         .def("pause", &vr::Renderer::pause)
-        .def("resume", &vr::Renderer::resume)
         .def("seek", py::overload_cast<int64_t, vr::SeekType>(&vr::Renderer::seek),
              py::arg("target_pts_us"), py::arg("type") = vr::SeekType::Keyframe)
         .def("set_speed", &vr::Renderer::set_speed, py::arg("speed"))

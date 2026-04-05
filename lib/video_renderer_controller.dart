@@ -86,8 +86,6 @@ class VideoRendererController {
 
   Future<void> pause() => _channel.invokeMethod<void>('pause');
 
-  Future<void> resume() => _channel.invokeMethod<void>('resume');
-
   Future<void> seek(int ptsUs) => _channel.invokeMethod<void>('seek', {
         'ptsUs': ptsUs,
       });

@@ -54,7 +54,6 @@ NAKI_VR_FFI_EXPORT void naki_vr_renderer_shutdown(naki_vr_renderer_t renderer);
 
 NAKI_VR_FFI_EXPORT void naki_vr_renderer_play(naki_vr_renderer_t renderer);
 NAKI_VR_FFI_EXPORT void naki_vr_renderer_pause(naki_vr_renderer_t renderer);
-NAKI_VR_FFI_EXPORT void naki_vr_renderer_resume(naki_vr_renderer_t renderer);
 NAKI_VR_FFI_EXPORT void naki_vr_renderer_seek(naki_vr_renderer_t renderer, int64_t target_pts_us);
 NAKI_VR_FFI_EXPORT void naki_vr_renderer_seek_typed(naki_vr_renderer_t renderer, int64_t target_pts_us, int type);
 NAKI_VR_FFI_EXPORT void naki_vr_renderer_set_speed(naki_vr_renderer_t renderer, double speed);

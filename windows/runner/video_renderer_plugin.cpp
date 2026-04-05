@@ -87,9 +87,6 @@ void VideoRendererPlugin::HandleMethodCall(
     } else if (method == "pause") {
         if (renderer_) renderer_->pause();
         result->Success(flutter::EncodableValue(nullptr));
-    } else if (method == "resume") {
-        if (renderer_) renderer_->resume();
-        result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "seek") {
         if (renderer_ && method_call.arguments()) {
             const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());

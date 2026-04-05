@@ -109,7 +109,7 @@ class VideoWindow(QWindow):
                 self.playing = False
                 print(f"  Pause  @ {self._pts_s():.3f}s")
             else:
-                self.renderer.resume()
+                self.renderer.play()
                 self.playing = True
                 print(f"  Play   @ {self._pts_s():.3f}s")
 

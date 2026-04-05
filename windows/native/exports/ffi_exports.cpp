@@ -59,10 +59,6 @@ void naki_vr_renderer_pause(naki_vr_renderer_t renderer) {
     if (renderer) static_cast<vr::Renderer*>(renderer)->pause();
 }
 
-void naki_vr_renderer_resume(naki_vr_renderer_t renderer) {
-    if (renderer) static_cast<vr::Renderer*>(renderer)->resume();
-}
-
 void naki_vr_renderer_seek(naki_vr_renderer_t renderer, int64_t target_pts_us) {
     if (renderer) static_cast<vr::Renderer*>(renderer)->seek(target_pts_us);
 }

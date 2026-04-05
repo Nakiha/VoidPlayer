@@ -127,7 +127,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   bool _loading = false;
   String? _error;
   bool _isPlaying = false;
-  bool _hasStarted = false;
 
   // Layout state for zoom/pan/split
   LayoutState _layout = const LayoutState();
@@ -201,11 +200,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   void _togglePlayPause() {
     if (_isPlaying) {
       _controller.pause();
-    } else if (_hasStarted) {
-      _controller.resume();
     } else {
       _controller.play();
-      _hasStarted = true;
     }
     setState(() { _isPlaying = !_isPlaying; });
   }
@@ -233,7 +229,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           width: _renderWidth.toInt(), height: _renderHeight.toInt());
       setState(() {
         _loading = false;
-        _hasStarted = false;
         _isPlaying = false;
       });
     } catch (e) {

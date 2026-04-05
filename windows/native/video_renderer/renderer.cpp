@@ -211,6 +211,12 @@ bool Renderer::initialize(const RendererConfig& config) {
     }
 
     initialized_ = true;
+
+    // Start render loop immediately (paused mode).
+    // Decodes and displays first frame, fills buffers, but does not advance playback.
+    running_ = true;
+    render_thread_ = std::thread(&Renderer::render_loop, this);
+
     spdlog::info("Renderer: initialized with {} tracks", tracks_.size());
     return true;
 }
@@ -250,15 +256,10 @@ void Renderer::shutdown() {
 
 void Renderer::play() {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    if (!initialized_) return;
+    if (!initialized_ || playing_) return;
 
-    clock_.play();
+    clock_.resume();
     playing_ = true;
-
-    if (!running_) {
-        running_ = true;
-        render_thread_ = std::thread(&Renderer::render_loop, this);
-    }
 }
 
 void Renderer::pause() {
@@ -267,12 +268,6 @@ void Renderer::pause() {
     playing_ = false;
 }
 
-void Renderer::resume() {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    clock_.resume();
-    playing_ = true;
-    spdlog::info("[Renderer] resume() called -- playing was now {}", playing_.load());
-}
 void Renderer::seek(int64_t target_pts_us, SeekType type) {
     std::lock_guard<std::mutex> lock(state_mutex_);
     seek_internal(target_pts_us, type);

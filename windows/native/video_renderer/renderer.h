@@ -12,6 +12,7 @@
 #include "video_renderer/sync/render_sink.h"
 #include "video_renderer/logging.h"
 #include <vector>
+#include <array>
 #include <string>
 #include <memory>
 #include <thread>
@@ -24,6 +25,14 @@ namespace vr {
 /// Layout mode constants (match HLSL defines)
 constexpr int LAYOUT_SIDE_BY_SIDE = 0;
 constexpr int LAYOUT_SPLIT_SCREEN = 1;
+
+/// Track metadata returned to the UI layer.
+struct TrackInfo {
+    int slot;
+    std::string file_path;
+    int width;
+    int height;
+};
 
 /// Layout state — all visual layout parameters in one struct.
 /// Updated atomically via Renderer::apply_layout().
@@ -78,6 +87,24 @@ public:
     size_t track_count() const;
     int64_t duration_us() const;
 
+    // -- Dynamic track management --
+
+    /// Add a video track at the first empty slot.
+    /// Returns the slot index (0-3), or -1 if all slots are full or init fails.
+    int add_track(const std::string& video_path);
+
+    /// Remove a track by slot index. Stops its pipeline and clears the slot.
+    void remove_track(int slot);
+
+    /// Query whether a slot is occupied.
+    bool has_track(int slot) const;
+
+    /// Get track dimensions for a slot. Returns {0,0} if empty.
+    std::pair<int, int> track_dimensions(int slot) const;
+
+    /// Get metadata for all active tracks.
+    std::vector<TrackInfo> track_infos() const;
+
     // -- Layout control --
 
     /// Atomically apply layout state and trigger redraw if paused.
@@ -101,28 +128,6 @@ public:
     std::mutex& texture_mutex() { return texture_mutex_; }
 
 private:
-    void render_loop();
-    void draw_frame(const PresentDecision& decision);
-    void draw_paused_frame(const char* reason);
-    void seek_internal(int64_t target_pts_us, SeekType type);
-    int64_t compute_frame_duration_us() const;
-
-    /// Lock device + texture mutexes, draw frame, present/flush, set preview_drawn_.
-    void present_frame(const PresentDecision& decision);
-
-    /// Lightweight layout-only redraw (no Flush) for responsive zoom/pan during playback.
-    void redraw_layout();
-
-    /// Check if any frame slot in a PresentDecision has a value.
-    static bool has_any_frame(const PresentDecision& decision);
-
-    Clock clock_;
-    std::unique_ptr<D3D11Device> d3d_device_;
-    std::unique_ptr<TextureManager> texture_mgr_;
-    std::unique_ptr<ShaderManager> shader_mgr_;
-    std::unique_ptr<RenderSink> render_sink_;
-    CompiledShader compiled_shader_;
-
     struct TrackPipeline {
         std::string file_path;
         std::unique_ptr<PacketQueue> packet_queue;
@@ -146,7 +151,44 @@ private:
         float nv12_uv_scale_y = 1.0f;  // video_height / texture_height (alignment padding fix)
     };
 
-    std::vector<std::unique_ptr<TrackPipeline>> tracks_;
+    void render_loop();
+    void draw_frame(const PresentDecision& decision);
+    void draw_paused_frame(const char* reason);
+    void seek_internal(int64_t target_pts_us, SeekType type);
+    int64_t compute_frame_duration_us() const;
+
+    /// Lock device + texture mutexes, draw frame, present/flush, set preview_drawn_.
+    void present_frame(const PresentDecision& decision);
+
+    /// Lightweight layout-only redraw (no Flush) for responsive zoom/pan during playback.
+    void redraw_layout();
+
+    /// Check if any frame slot in a PresentDecision has a value.
+    static bool has_any_frame(const PresentDecision& decision);
+
+    /// Find the first active track slot (for clock reference).
+    /// Returns -1 if no tracks are active.
+    int first_active_track() const;
+
+    /// Find the first empty slot. Returns -1 if all full.
+    int find_empty_slot() const;
+
+    /// Create a TrackPipeline for the given video path.
+    /// Returns nullptr if pipeline init fails (demux/decode errors).
+    std::unique_ptr<TrackPipeline> create_pipeline(const std::string& path,
+                                                     bool hw_decode = true);
+
+    /// Rebuild layout_.order to only reference active (non-null) slots.
+    void rebuild_layout_order();
+
+    Clock clock_;
+    std::unique_ptr<D3D11Device> d3d_device_;
+    std::unique_ptr<TextureManager> texture_mgr_;
+    std::unique_ptr<ShaderManager> shader_mgr_;
+    std::unique_ptr<RenderSink> render_sink_;
+    CompiledShader compiled_shader_;
+
+    std::array<std::unique_ptr<TrackPipeline>, kMaxTracks> tracks_;
 
     // Render resources — ComPtr for automatic COM lifecycle management
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertex_buffer_;
@@ -159,6 +201,7 @@ private:
     std::atomic<bool> playing_{false};
     mutable std::mutex state_mutex_;
     bool preview_drawn_ = false;
+    bool was_buffering_ = false;
 
     // Shared mutex for D3D11 immediate context serialization.
     // Both the render thread and FFmpeg's D3D11VA decode threads must acquire

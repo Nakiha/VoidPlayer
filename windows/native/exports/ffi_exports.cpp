@@ -135,6 +135,22 @@ void naki_vr_renderer_layout(naki_vr_renderer_t renderer, naki_vr_layout_state_t
     for (int i = 0; i < 4; ++i) out_state->order[i] = ls.order[i];
 }
 
+/* ---- Dynamic track management ---- */
+
+int naki_vr_renderer_add_track(naki_vr_renderer_t renderer, const char* video_path) {
+    if (!renderer || !video_path) return -1;
+    return static_cast<vr::Renderer*>(renderer)->add_track(video_path);
+}
+
+void naki_vr_renderer_remove_track(naki_vr_renderer_t renderer, int slot) {
+    if (renderer) static_cast<vr::Renderer*>(renderer)->remove_track(slot);
+}
+
+int naki_vr_renderer_has_track(naki_vr_renderer_t renderer, int slot) {
+    if (!renderer) return 0;
+    return static_cast<vr::Renderer*>(renderer)->has_track(slot) ? 1 : 0;
+}
+
 /* ---- Logging & Crash ---- */
 
 void naki_vr_configure_logging(const naki_vr_log_config_t* config) {

@@ -8,12 +8,14 @@ RenderSink::RenderSink(Clock& clock)
     : clock_(clock)
 {}
 
-void RenderSink::add_track(TrackBuffer* track) {
-    tracks_.push_back(track);
+void RenderSink::set_track(size_t slot, TrackBuffer* track) {
+    if (slot < kMaxTracks) {
+        tracks_[slot] = track;
+    }
 }
 
 void RenderSink::remove_all_tracks() {
-    tracks_.clear();
+    tracks_.fill(nullptr);
 }
 
 PresentDecision RenderSink::evaluate() {
@@ -22,21 +24,16 @@ PresentDecision RenderSink::evaluate() {
     int64_t current_pts_us = clock_.current_pts_us();
     decision.current_pts_us = current_pts_us;
 
-    if (tracks_.empty()) {
-        decision.should_present = false;
-        return decision;
-    }
-
-    decision.frames.resize(tracks_.size());
-
+    bool any_active = false;
     bool any_ready = false;
-
-    for (size_t t = 0; t < tracks_.size(); ++t) {
-        TrackBuffer* track = tracks_[t];
-        if (!track) {
+    for (size_t t = 0; t < kMaxTracks; ++t) {
+        if (!tracks_[t]) {
             decision.frames[t] = std::nullopt;
             continue;
         }
+        any_active = true;
+
+        TrackBuffer* track = tracks_[t];
 
         // 1. Discard expired frames: advance past frames whose display window has passed
         while (true) {
@@ -86,7 +83,7 @@ PresentDecision RenderSink::evaluate() {
         }
     }
 
-    decision.should_present = any_ready;
+    decision.should_present = any_active && any_ready;
     return decision;
 }
 

@@ -16,7 +16,6 @@ TEST_CASE("RenderSink: no tracks returns should_present=false", "[render_sink]")
     PresentDecision decision = sink.evaluate();
 
     REQUIRE(decision.should_present == false);
-    REQUIRE(decision.frames.empty());
 }
 
 TEST_CASE("RenderSink: single track with matching PTS presents", "[render_sink]") {
@@ -32,14 +31,13 @@ TEST_CASE("RenderSink: single track with matching PTS presents", "[render_sink]"
     track.push_frame(frame);
 
     RenderSink sink(clock);
-    sink.add_track(&track);
+    sink.set_track(0, &track);
 
     // Advance mock clock to frame PTS
     mt.t = 1000000;
 
     PresentDecision decision = sink.evaluate();
     REQUIRE(decision.should_present == true);
-    REQUIRE(decision.frames.size() == 1);
     REQUIRE(decision.frames[0].has_value());
     REQUIRE(decision.frames[0]->pts_us == 1000000);
 }
@@ -57,7 +55,7 @@ TEST_CASE("RenderSink: single track with future PTS does not present", "[render_
     track.push_frame(frame);
 
     RenderSink sink(clock);
-    sink.add_track(&track);
+    sink.set_track(0, &track);
 
     // Clock at 2000000, frame at 3000000 - frame is in the future
     mt.t = 2000000;
@@ -88,7 +86,7 @@ TEST_CASE("RenderSink: expired frame is advanced past", "[render_sink]") {
     track.push_frame(frame2);
 
     RenderSink sink(clock);
-    sink.add_track(&track);
+    sink.set_track(0, &track);
 
     // Clock at 2000000, both frames are expired (frame1 ends at 1033000)
     mt.t = 2000000;
@@ -119,14 +117,13 @@ TEST_CASE("RenderSink: two tracks both ready present", "[render_sink]") {
     track2.push_frame(frame2);
 
     RenderSink sink(clock);
-    sink.add_track(&track1);
-    sink.add_track(&track2);
+    sink.set_track(0, &track1);
+    sink.set_track(1, &track2);
 
     mt.t = 1000000;
 
     PresentDecision decision = sink.evaluate();
     REQUIRE(decision.should_present == true);
-    REQUIRE(decision.frames.size() == 2);
     REQUIRE(decision.frames[0].has_value());
     REQUIRE(decision.frames[1].has_value());
     REQUIRE(decision.frames[0]->pts_us == 1000000);
@@ -156,8 +153,8 @@ TEST_CASE("RenderSink: two tracks within tolerance present", "[render_sink]") {
     track2.push_frame(frame2);
 
     RenderSink sink(clock);
-    sink.add_track(&track1);
-    sink.add_track(&track2);
+    sink.set_track(0, &track1);
+    sink.set_track(1, &track2);
 
     mt.t = 1000000;
 
@@ -190,8 +187,8 @@ TEST_CASE("RenderSink: independent present when tracks have different timing", "
     track2.push_frame(frame2);
 
     RenderSink sink(clock);
-    sink.add_track(&track1);
-    sink.add_track(&track2);
+    sink.set_track(0, &track1);
+    sink.set_track(1, &track2);
 
     mt.t = 1000000;
 

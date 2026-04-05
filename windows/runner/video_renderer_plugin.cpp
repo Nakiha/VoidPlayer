@@ -12,6 +12,15 @@ std::string get_exe_dir() {
     if (last_sep != std::string::npos) dir = dir.substr(0, last_sep);
     return dir;
 }
+
+flutter::EncodableMap make_track_map(const vr::TrackInfo& info) {
+    flutter::EncodableMap map;
+    map[flutter::EncodableValue("slot")] = flutter::EncodableValue(info.slot);
+    map[flutter::EncodableValue("path")] = flutter::EncodableValue(info.file_path);
+    map[flutter::EncodableValue("width")] = flutter::EncodableValue(info.width);
+    map[flutter::EncodableValue("height")] = flutter::EncodableValue(info.height);
+    return map;
+}
 } // namespace
 
 // static
@@ -81,6 +90,10 @@ void VideoRendererPlugin::HandleMethodCall(
         CreateRenderer(method_call.arguments(), std::move(result));
     } else if (method == "destroyRenderer") {
         DestroyRenderer(std::move(result));
+    } else if (method == "addTrack") {
+        AddTrack(method_call.arguments(), std::move(result));
+    } else if (method == "removeTrack") {
+        RemoveTrack(method_call.arguments(), std::move(result));
     } else if (method == "play") {
         if (renderer_) renderer_->play();
         result->Success(flutter::EncodableValue(nullptr));
@@ -307,7 +320,20 @@ void VideoRendererPlugin::CreateRenderer(
     });
 
     spdlog::info("[VideoRendererPlugin] Created renderer, texture_id={}", texture_id_);
-    result->Success(flutter::EncodableValue(texture_id_));
+
+    // Build result map with textureId and track info
+    flutter::EncodableMap result_map;
+    result_map[flutter::EncodableValue("textureId")] = flutter::EncodableValue(texture_id_);
+
+    flutter::EncodableList tracks_list;
+    if (renderer_) {
+        for (const auto& info : renderer_->track_infos()) {
+            tracks_list.push_back(flutter::EncodableValue(make_track_map(info)));
+        }
+    }
+    result_map[flutter::EncodableValue("tracks")] = flutter::EncodableValue(tracks_list);
+
+    result->Success(flutter::EncodableValue(result_map));
 }
 
 void VideoRendererPlugin::DestroyRenderer(
@@ -325,5 +351,80 @@ void VideoRendererPlugin::DestroyRenderer(
     }
 
     spdlog::info("[VideoRendererPlugin] Destroyed renderer");
+    result->Success(flutter::EncodableValue(nullptr));
+}
+
+void VideoRendererPlugin::AddTrack(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+
+    if (!renderer_) {
+        result->Error("NO_RENDERER", "Renderer not created");
+        return;
+    }
+    if (!arguments) {
+        result->Error("INVALID_ARGS", "Arguments required");
+        return;
+    }
+
+    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+    if (!args) {
+        result->Error("INVALID_ARGS", "Arguments must be a map");
+        return;
+    }
+
+    auto it = args->find(flutter::EncodableValue("path"));
+    if (it == args->end()) {
+        result->Error("INVALID_ARGS", "path required");
+        return;
+    }
+    const auto& path = std::get<std::string>(it->second);
+
+    int slot = renderer_->add_track(path);
+    if (slot < 0) {
+        result->Error("ADD_FAILED", "Failed to add track");
+        return;
+    }
+
+    auto dims = renderer_->track_dimensions(slot);
+
+    vr::TrackInfo info{slot, path, dims.first, dims.second};
+    spdlog::info("[VideoRendererPlugin] Added track: slot={}, path={}", slot, path);
+    result->Success(flutter::EncodableValue(make_track_map(info)));
+}
+
+void VideoRendererPlugin::RemoveTrack(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+
+    if (!renderer_) {
+        result->Error("NO_RENDERER", "Renderer not created");
+        return;
+    }
+    if (!arguments) {
+        result->Error("INVALID_ARGS", "Arguments required");
+        return;
+    }
+
+    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+    if (!args) {
+        result->Error("INVALID_ARGS", "Arguments must be a map");
+        return;
+    }
+
+    auto it = args->find(flutter::EncodableValue("slot"));
+    if (it == args->end()) {
+        result->Error("INVALID_ARGS", "slot required");
+        return;
+    }
+    int slot = std::get<int>(it->second);
+
+    if (!renderer_->has_track(slot)) {
+        result->Error("INVALID_SLOT", "No track at slot {}", slot);
+        return;
+    }
+
+    renderer_->remove_track(slot);
+    spdlog::info("[VideoRendererPlugin] Removed track: slot={}", slot);
     result->Success(flutter::EncodableValue(nullptr));
 }

@@ -6,6 +6,39 @@ class LayoutMode {
   static const int splitScreen = 1;
 }
 
+/// Track metadata returned from native layer.
+class TrackInfo {
+  final int slot;
+  final String path;
+  final int width;
+  final int height;
+
+  const TrackInfo({
+    required this.slot,
+    required this.path,
+    required this.width,
+    required this.height,
+  });
+
+  factory TrackInfo.fromMap(Map<dynamic, dynamic> map) => TrackInfo(
+        slot: map['slot'] as int,
+        path: map['path'] as String,
+        width: map['width'] as int,
+        height: map['height'] as int,
+      );
+}
+
+/// Result of createRenderer, containing texture ID and initial track info.
+class CreateRendererResult {
+  final int textureId;
+  final List<TrackInfo> tracks;
+
+  const CreateRendererResult({
+    required this.textureId,
+    required this.tracks,
+  });
+}
+
 /// Immutable snapshot of the layout state.
 class LayoutState {
   final int mode;
@@ -69,17 +102,22 @@ class VideoRendererController {
   int? _textureId;
   int? get textureId => _textureId;
 
-  Future<int> createRenderer(
+  Future<CreateRendererResult> createRenderer(
     List<String> videoPaths, {
     int width = 1920,
     int height = 1080,
   }) async {
-    _textureId = await _channel.invokeMethod<int>('createRenderer', {
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>('createRenderer', {
       'videoPaths': videoPaths,
       'width': width,
       'height': height,
     });
-    return _textureId!;
+    _textureId = map?['textureId'] as int?;
+    final tracksList = map?['tracks'] as List<dynamic>? ?? [];
+    return CreateRendererResult(
+      textureId: _textureId!,
+      tracks: tracksList.map((e) => TrackInfo.fromMap(e as Map<dynamic, dynamic>)).toList(),
+    );
   }
 
   Future<void> play() => _channel.invokeMethod<void>('play');
@@ -120,6 +158,19 @@ class VideoRendererController {
     final map = await _channel.invokeMethod<Map<dynamic, dynamic>>('getLayout');
     return LayoutState.fromMap(map ?? {});
   }
+
+  /// Add a video track at the first empty slot.
+  Future<TrackInfo> addTrack(String videoPath) async {
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>('addTrack', {
+      'path': videoPath,
+    });
+    return TrackInfo.fromMap(map!);
+  }
+
+  /// Remove a track by slot index.
+  Future<void> removeTrack(int slot) => _channel.invokeMethod<void>('removeTrack', {
+        'slot': slot,
+      });
 
   Future<void> dispose() async {
     if (_textureId != null) {

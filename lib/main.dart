@@ -226,7 +226,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           .map((f) => f.path!)
           .toList();
       _textureId = await _controller.createRenderer(paths,
-          width: _renderWidth.toInt(), height: _renderHeight.toInt());
+          width: _renderWidth.toInt(), height: _renderHeight.toInt()).then((r) {
+        return r.textureId;
+      });
       setState(() {
         _loading = false;
         _isPlaying = false;

@@ -208,8 +208,8 @@ float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_T
         slot_size_pixels = float2(u_canvas_width / float(count), u_canvas_height);
     }
 
-    // Clamp track index
-    track_idx = clamp(track_idx, 0, max(u_track_count - 1, 0));
+    // Clamp track index to valid range [0, 3]
+    track_idx = clamp(track_idx, 0, 3);
 
     // Get video aspect ratio
     float video_aspect = u_video_aspect[track_idx];

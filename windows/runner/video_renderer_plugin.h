@@ -35,6 +35,12 @@ private:
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void DestroyRenderer(
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void AddTrack(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void RemoveTrack(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
     // State
     std::unique_ptr<vr::Renderer> renderer_;

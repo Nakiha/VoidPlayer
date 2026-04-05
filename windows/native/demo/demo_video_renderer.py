@@ -7,6 +7,9 @@ Keyboard shortcuts:
   Shift+Right  Seek forward 1 second
   Shift+Left   Seek backward 1 second
   M            Toggle SIDE_BY_SIDE / SPLIT_SCREEN mode
+  Up           Remove track with smallest slot ID
+  Down         Add a new track (file picker)
+  E            Swap display order of first two tracks
 
 Mouse controls:
   Left drag    Pan view offset
@@ -24,7 +27,7 @@ for _cfg in ("Release", "Debug"):
         sys.path.insert(0, str(_candidate))
         break
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QFileDialog
 from PySide6.QtGui import QWindow, QKeyEvent, QMouseEvent, QWheelEvent
 from PySide6.QtCore import Qt, QTimer, QPoint
 from video_renderer_native import (
@@ -77,6 +80,7 @@ class VideoWindow(QWindow):
         dur = self.renderer.duration_us() / 1_000_000
         print(f"Tracks: {self.renderer.track_count()}, Duration: {dur:.1f}s")
         print("Shortcuts: Space=Play/Pause | Left/Right=\u00b11frame | Shift+Left/Right=\u00b11s | M=Mode")
+        print("           Up=Remove track | Down=Add track | E=Swap first two tracks")
         print("Mouse: LeftDrag=Pan | Wheel=Zoom | RightDrag=SplitDivider")
         return True
 
@@ -85,6 +89,10 @@ class VideoWindow(QWindow):
 
     def _dur_s(self):
         return self.renderer.duration_us() / 1_000_000
+
+    def _active_slots(self) -> list[int]:
+        """Return sorted list of occupied slot IDs."""
+        return list(range(self.renderer.track_count()))
 
     def _sync_layout(self):
         """Apply current layout state atomically."""
@@ -152,6 +160,30 @@ class VideoWindow(QWindow):
             self._sync_layout()
             mode = MODE_NAMES.get(self.layout.mode, "?")
             print(f"  Mode   \u2192 {mode}")
+
+        elif key == Qt.Key.Key_Up:
+            # Remove rightmost track
+            count = self.renderer.track_count()
+            if count == 0:
+                print("  No tracks to remove")
+            else:
+                slot = count - 1
+                self.renderer.remove_track(slot)
+                self._sync_layout()
+                print(f"  Removed track slot={slot}, remaining: {self._active_slots()}")
+
+        elif key == Qt.Key.Key_Down:
+            # Open file picker and add as new track
+            path, _ = QFileDialog.getOpenFileName(
+                None, "Select Video File", str(VIDEO_DIR),
+                "Video Files (*.mp4 *.mkv *.avi *.mov *.webm);;All Files (*)")
+            if path:
+                slot = self.renderer.add_track(path)
+                if slot >= 0:
+                    self._sync_layout()
+                    print(f"  Added track slot={slot} path={Path(path).name}, slots: {self._active_slots()}")
+                else:
+                    print(f"  Failed to add track: {path}")
 
         else:
             super().keyPressEvent(event)

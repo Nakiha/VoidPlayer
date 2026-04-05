@@ -132,82 +132,39 @@ bool Renderer::initialize(const RendererConfig& config) {
 
     // Create tracks
     for (const auto& path : config.video_paths) {
-        auto pipeline = std::make_unique<TrackPipeline>();
-        pipeline->file_path = path;
-        pipeline->seek_controller = std::make_unique<SeekController>();
-        pipeline->packet_queue = std::make_unique<PacketQueue>(100);
-        pipeline->track_buffer = std::make_unique<TrackBuffer>(30, 2);
-        pipeline->demux_thread = std::make_unique<DemuxThread>(
-            path, *pipeline->packet_queue, *pipeline->seek_controller);
-
-        if (!pipeline->demux_thread->start()) {
-            spdlog::error("Renderer: failed to start demux for {}", path);
+        int slot = find_empty_slot();
+        if (slot < 0) {
+            spdlog::warn("Renderer: skipping {}, max {} tracks", path, kMaxTracks);
             continue;
         }
 
-        // Stats are populated synchronously in start() before the demux thread spawns
-        const auto& stats = pipeline->demux_thread->stats();
-        if (stats.video_stream_index < 0) {
-            spdlog::error("Renderer: no video stream found in {}", path);
-            continue;
-        }
+        auto pipeline = create_pipeline(path, config.use_hardware_decode);
+        if (!pipeline) continue;
 
-        // Cache immutable video dimensions
-        pipeline->video_width = stats.width;
-        pipeline->video_height = stats.height;
-        if (stats.width > 0 && stats.height > 0) {
-            pipeline->video_aspect = static_cast<float>(stats.width) / static_cast<float>(stats.height);
-        }
-
-        pipeline->decode_thread = std::make_unique<DecodeThread>(
-            *pipeline->packet_queue,
-            *pipeline->track_buffer,
-            stats.codec_params,
-            stats.time_base
-        );
-
-        if (!pipeline->decode_thread->is_valid()) {
-            spdlog::error("Renderer: decode thread init failed for {}", path);
-            pipeline->demux_thread->stop();
-            continue;
-        }
-
-        // Wire seek callback: DemuxThread notifies DecodeThread after format-level seek
-        pipeline->demux_thread->set_seek_callback(
-            [dt = pipeline->decode_thread.get()](int64_t pts, SeekType type) {
-                dt->notify_seek(pts, type);
-            });
-
-        // Try hardware decode if requested
-        if (config.use_hardware_decode) {
-            pipeline->decode_thread->enable_hardware_decode(d3d_device_->device(),
-                                                            &device_mutex_);
-        }
-
-        if (!pipeline->decode_thread->start()) {
-            spdlog::error("Renderer: failed to start decode for {}", path);
-            pipeline->demux_thread->stop();  // Stop already-started demux thread
-            continue;
-        }
-
-        tracks_.push_back(std::move(pipeline));
+        tracks_[slot] = std::move(pipeline);
     }
 
-    if (tracks_.empty()) {
+    bool any_track = false;
+    for (const auto& t : tracks_) { if (t) { any_track = true; break; } }
+    if (!any_track) {
         spdlog::error("Renderer: no valid tracks");
         return false;
     }
 
     // Setup render sink
     render_sink_ = std::make_unique<RenderSink>(clock_);
-    for (auto& track : tracks_) {
-        render_sink_->add_track(track->track_buffer.get());
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (tracks_[i]) {
+            render_sink_->set_track(i, tracks_[i]->track_buffer.get());
+        }
     }
 
     // Cache duration (immutable after init)
-    for (const auto& track : tracks_) {
-        cached_duration_us_ = std::max(cached_duration_us_,
-            track->demux_thread->stats().duration_us);
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (tracks_[i]) {
+            cached_duration_us_ = std::max(cached_duration_us_,
+                tracks_[i]->demux_thread->stats().duration_us);
+        }
     }
 
     initialized_ = true;
@@ -217,7 +174,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     running_ = true;
     render_thread_ = std::thread(&Renderer::render_loop, this);
 
-    spdlog::info("Renderer: initialized with {} tracks", tracks_.size());
+    spdlog::info("Renderer: initialized with {} tracks", track_count());
     return true;
 }
 
@@ -230,11 +187,13 @@ void Renderer::shutdown() {
     }
 
     // Stop all tracks
-    for (auto& track : tracks_) {
-        if (track->decode_thread) track->decode_thread->stop();
-        if (track->demux_thread) track->demux_thread->stop();
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (tracks_[i]) {
+            tracks_[i]->decode_thread->stop();
+            tracks_[i]->demux_thread->stop();
+            tracks_[i].reset();
+        }
     }
-    tracks_.clear();
 
     render_sink_.reset();
     shader_mgr_.reset();
@@ -279,7 +238,8 @@ void Renderer::seek_internal(int64_t target_pts_us, SeekType type) {
                  target_pts_us / 1e6, type == SeekType::Exact ? "Exact" : "Keyframe");
     clock_.seek(target_pts_us);
 
-    for (size_t i = 0; i < tracks_.size(); ++i) {
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks_[i]) continue;
         auto& track = tracks_[i];
         // Pause decoder FIRST to prevent stale packets from reaching the codec
         // (avoids HEVC "Could not find ref" warnings during seek transition)
@@ -306,7 +266,9 @@ void Renderer::step_forward() {
         clock_.pause();
         playing_ = false;
 
-        for (auto& track : tracks_) {
+        for (size_t i = 0; i < kMaxTracks; ++i) {
+            if (!tracks_[i]) continue;
+            auto& track = tracks_[i];
             auto current = track->track_buffer->peek(0);
             if (!current.has_value()) continue;
             track->track_buffer->advance();
@@ -326,8 +288,9 @@ void Renderer::step_backward() {
 
         // If any track is still seeking/seeking, don't allow stepping
         // (prevents retreating to stale frames during async seek)
-        for (auto& track : tracks_) {
-            if (track->track_buffer->state() == TrackState::Buffering) return;
+        for (size_t i = 0; i < kMaxTracks; ++i) {
+            if (!tracks_[i]) continue;
+            if (tracks_[i]->track_buffer->state() == TrackState::Buffering) return;
         }
 
         clock_.pause();
@@ -335,20 +298,25 @@ void Renderer::step_backward() {
 
         // Check if ALL tracks can retreat (cache hit)
         bool all_can_retreat = true;
-        for (auto& track : tracks_) {
-            if (!track->track_buffer->can_retreat()) {
+        for (size_t i = 0; i < kMaxTracks; ++i) {
+            if (!tracks_[i]) continue;
+            if (!tracks_[i]->track_buffer->can_retreat()) {
                 all_can_retreat = false;
                 break;
             }
         }
 
         if (all_can_retreat) {
-            for (auto& track : tracks_) {
-                track->track_buffer->retreat();
+            for (size_t i = 0; i < kMaxTracks; ++i) {
+                if (!tracks_[i]) continue;
+                tracks_[i]->track_buffer->retreat();
             }
-            auto frame = tracks_[0]->track_buffer->peek(0);
-            if (frame.has_value()) {
-                clock_.seek(frame->pts_us);
+            int ref = first_active_track();
+            if (ref >= 0) {
+                auto frame = tracks_[ref]->track_buffer->peek(0);
+                if (frame.has_value()) {
+                    clock_.seek(frame->pts_us);
+                }
             }
         } else {
             // Cache miss: exact seek to (current_pts - frame_duration - margin)
@@ -375,9 +343,12 @@ void Renderer::draw_paused_frame(const char* reason) {
     PresentDecision decision;
     decision.current_pts_us = 0;
     decision.should_present = false;
-    decision.frames.resize(tracks_.size());
     bool has_frame = false;
-    for (size_t t = 0; t < tracks_.size(); ++t) {
+    for (size_t t = 0; t < kMaxTracks; ++t) {
+        if (!tracks_[t]) {
+            decision.frames[t] = std::nullopt;
+            continue;
+        }
         auto frame = tracks_[t]->track_buffer->peek(0);
         if (frame.has_value()) {
             decision.frames[t] = frame;
@@ -391,13 +362,15 @@ void Renderer::draw_paused_frame(const char* reason) {
     if (has_frame) {
         present_frame(decision);
         last_decision_ = decision;
-        double pts = decision.frames[0].has_value()
-                     ? decision.frames[0]->pts_us / 1e6 : -1.0;
+        int ref = first_active_track();
+        double pts = (ref >= 0 && decision.frames[ref].has_value())
+                     ? decision.frames[ref]->pts_us / 1e6 : -1.0;
         spdlog::info("[Renderer] draw_paused_frame({}): pts={:.3f}s", reason, pts);
     }
 }
 
 void Renderer::present_frame(const PresentDecision& decision) {
+    spdlog::debug("[present_frame] mode={}", layout_.mode);
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
     std::lock_guard<std::mutex> tex_lock(texture_mutex_);
     draw_frame(decision);
@@ -430,12 +403,20 @@ bool Renderer::has_any_frame(const PresentDecision& decision) {
 }
 
 int64_t Renderer::compute_frame_duration_us() const {
-    if (!tracks_.empty()) {
-        auto frame = tracks_[0]->track_buffer->peek(0);
+    // Use the minimum frame duration across all active tracks (= highest FPS).
+    // This ensures step_backward moves in the finest granularity, so the fastest
+    // track always advances exactly 1 frame; slower tracks hold until they have
+    // a frame at the target PTS.
+    int64_t min_dur = INT64_MAX;
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks_[i]) continue;
+        auto frame = tracks_[i]->track_buffer->peek(0);
         if (frame.has_value() && frame->duration_us > 0) {
-            // Cap to 100ms (minimum ~10fps) to guard against bogus durations
-            return std::min(frame->duration_us, int64_t(100000));
+            min_dur = std::min(min_dur, frame->duration_us);
         }
+    }
+    if (min_dur != INT64_MAX && min_dur <= 100000) {
+        return min_dur;
     }
     return 33333; // fallback ~30fps
 }
@@ -461,7 +442,9 @@ double Renderer::current_speed() const {
 }
 
 size_t Renderer::track_count() const {
-    return tracks_.size();
+    size_t count = 0;
+    for (const auto& t : tracks_) { if (t) ++count; }
+    return count;
 }
 
 int64_t Renderer::duration_us() const {
@@ -493,12 +476,24 @@ void Renderer::render_loop() {
 
         // Preroll: keep clock paused while any track is still buffering
         bool any_buffering = false;
-        for (auto& track : tracks_) {
-            if (track->track_buffer->state() == TrackState::Buffering) {
+        for (size_t i = 0; i < kMaxTracks; ++i) {
+            if (!tracks_[i]) continue;
+            auto buf_state = tracks_[i]->track_buffer->state();
+            if (buf_state == TrackState::Buffering || buf_state == TrackState::Empty) {
                 any_buffering = true;
                 break;
             }
         }
+
+        // Detect Buffering → Ready transition: force preview redraw so the
+        // newly-ready track's first frame appears on screen immediately
+        // (even while paused — matches initialize() behavior).
+        if (was_buffering_ && !any_buffering) {
+            preview_drawn_ = false;
+            last_decision_ = PresentDecision();  // Clear stale cached frames
+            spdlog::info("[Renderer] Preroll transition complete, forcing preview redraw");
+        }
+        was_buffering_ = any_buffering;
 
         if (any_buffering && !clock_.is_paused()) {
             clock_.pause();
@@ -522,31 +517,42 @@ void Renderer::render_loop() {
                     present_frame(last_decision_);
                     drawn = true;
                     spdlog::debug("[Renderer] Paused frame (cached): pts={:.3f}s",
-                                 last_decision_.frames[0].has_value() ? last_decision_.frames[0]->pts_us / 1e6 : -1.0);
+                                 [&]{
+                                     for (auto& f : last_decision_.frames)
+                                         if (f.has_value()) return f->pts_us / 1e6;
+                                     return -1.0;
+                                 }());
                 }
 
                 // No cached frame — try track buffer (initial preview)
+                // Only draw when ALL active tracks have frames, to avoid
+                // flashing black for tracks that haven't finished seeking.
                 if (!drawn) {
                     PresentDecision preview;
                     preview.current_pts_us = 0;
                     preview.should_present = false;
-                    preview.frames.resize(tracks_.size());
-                    for (size_t t = 0; t < tracks_.size(); ++t) {
+                    bool all_active_have_frames = true;
+                    for (size_t t = 0; t < kMaxTracks; ++t) {
+                        if (!tracks_[t]) continue;
                         auto frame = tracks_[t]->track_buffer->peek(0);
                         if (frame.has_value()) {
                             preview.frames[t] = frame;
+                        } else {
+                            all_active_have_frames = false;
                         }
                     }
-                    if (has_any_frame(preview)) {
+                    if (all_active_have_frames && has_any_frame(preview)) {
                         present_frame(preview);
                         last_decision_ = preview;
                         // Sync clock to the actual frame PTS so subsequent
                         // step_backward computes the correct seek target.
-                        if (preview.frames[0].has_value()) {
-                            clock_.seek(preview.frames[0]->pts_us);
+                        int ref = first_active_track();
+                        if (ref >= 0 && preview.frames[ref].has_value()) {
+                            clock_.seek(preview.frames[ref]->pts_us);
                         }
                         spdlog::info("[Renderer] Paused frame: pts={:.3f}s",
-                                     preview.frames[0].has_value() ? preview.frames[0]->pts_us / 1e6 : -1.0);
+                                     ref >= 0 && preview.frames[ref].has_value()
+                                     ? preview.frames[ref]->pts_us / 1e6 : -1.0);
                     }
                 }
             }
@@ -559,9 +565,8 @@ void Renderer::render_loop() {
         if (decision.should_present) {
             // Independent presentation: fill missing tracks from last decision
             // so each track always shows a frame (new or carried over).
-            for (size_t i = 0; i < decision.frames.size(); ++i) {
+            for (size_t i = 0; i < kMaxTracks; ++i) {
                 if (!decision.frames[i].has_value() &&
-                    i < last_decision_.frames.size() &&
                     last_decision_.frames[i].has_value()) {
                     decision.frames[i] = last_decision_.frames[i];
                 }
@@ -582,8 +587,9 @@ void Renderer::render_loop() {
             int64_t current_pts = clock_.current_pts_us();
             int64_t next_event_pts = INT64_MAX;
 
-            for (auto& track : tracks_) {
-                auto frame = track->track_buffer->peek(0);
+            for (size_t i = 0; i < kMaxTracks; ++i) {
+                if (!tracks_[i]) continue;
+                auto frame = tracks_[i]->track_buffer->peek(0);
                 if (!frame.has_value()) continue;
                 if (frame->pts_us > current_pts) {
                     // Future frame — wake when it should start
@@ -695,7 +701,6 @@ void Renderer::draw_frame(const PresentDecision& decision) {
 
         Constants cb = {};
         cb.mode = snap.mode;
-        cb.track_count = static_cast<int>(decision.frames.size());
         cb.split_pos = snap.split_pos;
         cb.zoom_ratio = snap.zoom_ratio;
         cb.canvas_width = static_cast<float>(target_width_);
@@ -706,45 +711,60 @@ void Renderer::draw_frame(const PresentDecision& decision) {
         for (int i = 0; i < 4; ++i) {
             cb.order[i] = snap.order[i];
         }
-        for (size_t i = 0; i < decision.frames.size() && i < 4; ++i) {
+        int active_count = 0;
+        for (size_t i = 0; i < kMaxTracks; ++i) {
+            if (!tracks_[i]) {
+                cb.video_aspect[i] = 1.0f;
+                cb.nv12_uv_scale_y[i] = 1.0f;
+                continue;
+            }
+            ++active_count;
             cb.video_aspect[i] = tracks_[i]->video_aspect;
             if (decision.frames[i].has_value() && decision.frames[i]->is_nv12) {
                 cb.nv12_mask |= (1 << static_cast<int>(i));
             }
             cb.nv12_uv_scale_y[i] = tracks_[i]->nv12_uv_scale_y;
         }
+        cb.track_count = active_count;
 
         // Compute per-track scale for uniform pixel density across all tracks.
         // Find the reference track (highest resolution) and scale other tracks
         // so all videos share the same pixel density (video pixel → screen pixel ratio).
         {
-            int track_n = static_cast<int>(decision.frames.size());
-            int ref_idx = 0;
+            int ref_idx = -1;
             int max_pixels = 0;
-            for (int i = 0; i < track_n && i < 4; ++i) {
+            for (int i = 0; i < 4; ++i) {
+                if (!tracks_[i]) continue;
                 int pixels = tracks_[i]->video_width * tracks_[i]->video_height;
                 if (pixels > max_pixels) {
                     max_pixels = pixels;
                     ref_idx = i;
                 }
             }
+            if (ref_idx < 0) ref_idx = 0;
 
             // Slot dimensions depend on layout mode
             float slot_w = static_cast<float>(target_width_);
             float slot_h = static_cast<float>(target_height_);
-            if (snap.mode != LAYOUT_SPLIT_SCREEN && track_n > 1) {
-                slot_w /= static_cast<float>(track_n);
+            if (snap.mode != LAYOUT_SPLIT_SCREEN && active_count > 1) {
+                slot_w /= static_cast<float>(active_count);
             }
 
             // Reference video density: min(slot_w / ref_w, slot_h / ref_h)
-            float ref_w = static_cast<float>(tracks_[ref_idx]->video_width);
-            float ref_h = static_cast<float>(tracks_[ref_idx]->video_height);
             float ref_density = 1.0f;
-            if (ref_w > 0.0f && ref_h > 0.0f) {
-                ref_density = std::min(slot_w / ref_w, slot_h / ref_h);
+            if (tracks_[ref_idx]) {
+                float ref_w = static_cast<float>(tracks_[ref_idx]->video_width);
+                float ref_h = static_cast<float>(tracks_[ref_idx]->video_height);
+                if (ref_w > 0.0f && ref_h > 0.0f) {
+                    ref_density = std::min(slot_w / ref_w, slot_h / ref_h);
+                }
             }
 
-            for (int i = 0; i < track_n && i < 4; ++i) {
+            for (int i = 0; i < 4; ++i) {
+                if (!tracks_[i]) {
+                    cb.track_scale[i] = 1.0f;
+                    continue;
+                }
                 float tw = static_cast<float>(tracks_[i]->video_width);
                 float th = static_cast<float>(tracks_[i]->video_height);
                 float density = 1.0f;
@@ -752,10 +772,6 @@ void Renderer::draw_frame(const PresentDecision& decision) {
                     density = std::min(slot_w / tw, slot_h / th);
                 }
                 cb.track_scale[i] = (density > 0.0f) ? ref_density / density : 1.0f;
-            }
-            // Unused tracks default to 1.0 (cb is zero-initialized, but set explicitly)
-            for (int i = track_n; i < 4; ++i) {
-                cb.track_scale[i] = 1.0f;
             }
         }
         ctx->UpdateSubresource(compiled_shader_.constant_buffer.Get(), 0, nullptr, &cb, 0, 0);
@@ -773,8 +789,9 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     ID3D11ShaderResourceView* nv12_y_srvs[4] = {};    // t4-t7: NV12 Y plane
     ID3D11ShaderResourceView* nv12_uv_srvs[4] = {};   // t8-t11: NV12 UV plane
 
-    for (size_t i = 0; i < decision.frames.size() && i < 4; ++i) {
+    for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!decision.frames[i].has_value() || !decision.frames[i]->texture_handle) continue;
+        if (!tracks_[i]) continue;
         const auto& frame = decision.frames[i].value();
         auto& track = tracks_[i];
 
@@ -888,7 +905,7 @@ void Renderer::draw_frame(const PresentDecision& decision) {
         // Only release SRVs that were created for non-NV12 ref textures.
         if (srvs[i]) {
             bool is_cached = false;
-            if (i < tracks_.size()) {
+            if (tracks_[i]) {
                 is_cached = (srvs[i] == tracks_[i]->sw_srv.Get());
             }
             if (!is_cached) {
@@ -916,6 +933,231 @@ void Renderer::apply_layout(const LayoutState& state) {
 LayoutState Renderer::layout() const {
     std::lock_guard<std::mutex> lock(state_mutex_);
     return layout_;
+}
+
+// -- Dynamic track management --
+
+int Renderer::first_active_track() const {
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (tracks_[i]) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+void Renderer::rebuild_layout_order() {
+    // Slot ID = display position after compaction, so order is always identity
+    for (int i = 0; i < 4; ++i) {
+        layout_.order[i] = i;
+    }
+}
+
+int Renderer::find_empty_slot() const {
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks_[i]) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+std::unique_ptr<Renderer::TrackPipeline> Renderer::create_pipeline(const std::string& path,
+                                                                      bool hw_decode) {
+    auto pipeline = std::make_unique<TrackPipeline>();
+    pipeline->file_path = path;
+    pipeline->seek_controller = std::make_unique<SeekController>();
+    pipeline->packet_queue = std::make_unique<PacketQueue>(100);
+    pipeline->track_buffer = std::make_unique<TrackBuffer>(30, 2);
+    pipeline->demux_thread = std::make_unique<DemuxThread>(
+        path, *pipeline->packet_queue, *pipeline->seek_controller);
+
+    if (!pipeline->demux_thread->start()) {
+        spdlog::error("Renderer: failed to start demux for {}", path);
+        return nullptr;
+    }
+
+    const auto& stats = pipeline->demux_thread->stats();
+    if (stats.video_stream_index < 0) {
+        spdlog::error("Renderer: no video stream found in {}", path);
+        pipeline->demux_thread->stop();
+        return nullptr;
+    }
+
+    pipeline->video_width = stats.width;
+    pipeline->video_height = stats.height;
+    if (stats.width > 0 && stats.height > 0) {
+        pipeline->video_aspect = static_cast<float>(stats.width) / static_cast<float>(stats.height);
+    }
+
+    pipeline->decode_thread = std::make_unique<DecodeThread>(
+        *pipeline->packet_queue, *pipeline->track_buffer,
+        stats.codec_params, stats.time_base);
+
+    if (!pipeline->decode_thread->is_valid()) {
+        spdlog::error("Renderer: decode thread init failed for {}", path);
+        pipeline->demux_thread->stop();
+        return nullptr;
+    }
+
+    pipeline->demux_thread->set_seek_callback(
+        [dt = pipeline->decode_thread.get()](int64_t pts, SeekType type) {
+            dt->notify_seek(pts, type);
+        });
+
+    if (hw_decode) {
+        std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+        pipeline->decode_thread->enable_hardware_decode(d3d_device_->device(), &device_mutex_);
+    }
+
+    if (!pipeline->decode_thread->start()) {
+        spdlog::error("Renderer: failed to start decode for {}", path);
+        pipeline->demux_thread->stop();
+        return nullptr;
+    }
+
+    return pipeline;
+}
+
+int Renderer::add_track(const std::string& video_path) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (!initialized_) return -1;
+
+    int slot = find_empty_slot();
+    if (slot < 0) {
+        spdlog::warn("Renderer::add_track: no empty slots");
+        return -1;
+    }
+
+    // Pause playback to avoid render loop reading partially-initialized pipeline
+    bool was_playing = playing_.load();
+    if (was_playing) { clock_.pause(); playing_ = false; }
+
+    auto pipeline = create_pipeline(video_path);
+    if (!pipeline) {
+        if (was_playing) { clock_.resume(); playing_ = true; }
+        return -1;
+    }
+
+    // Register with render sink
+    render_sink_->set_track(slot, pipeline->track_buffer.get());
+
+    // Update duration cache
+    cached_duration_us_ = std::max(cached_duration_us_,
+        pipeline->demux_thread->stats().duration_us);
+
+    // Commit: install the pipeline
+    tracks_[slot] = std::move(pipeline);
+
+    // Rebuild layout order (identity mapping — new slot is naturally rightmost)
+    rebuild_layout_order();
+
+    // Seek new track to current clock position so evaluate() can find matching frames.
+    // Without this, the new track starts from PTS=0 and evaluate() discards all its
+    // frames as "expired" when the clock is elsewhere, causing both panels to show
+    // the same old video.
+    int64_t current_pts = clock_.current_pts_us();
+    if (current_pts > 0) {
+        auto& track = tracks_[slot];
+        track->decode_thread->set_decode_paused(true);
+        track->track_buffer->set_state(TrackState::Flushing);
+        track->track_buffer->clear_frames();
+        track->packet_queue->flush();
+        track->seek_controller->request_seek(current_pts, SeekType::Keyframe);
+        track->track_buffer->set_state(TrackState::Buffering);
+        spdlog::info("Renderer::add_track: seeking slot={} to {:.3f}s",
+                     slot, current_pts / 1e6);
+    }
+
+    // Force redraw
+    preview_drawn_ = false;
+    last_decision_ = PresentDecision();
+
+    spdlog::info("Renderer::add_track: slot={} path={}", slot, video_path);
+    return slot;
+}
+
+void Renderer::remove_track(int slot) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (slot < 0 || slot >= static_cast<int>(kMaxTracks)) return;
+    if (!tracks_[slot]) return;
+
+    spdlog::info("Renderer::remove_track: slot={}", slot);
+
+    // Pause playback
+    bool was_playing = playing_.load();
+    if (was_playing) { clock_.pause(); playing_ = false; }
+
+    // Stop the pipeline
+    auto& track = tracks_[slot];
+    track->decode_thread->stop();
+    track->demux_thread->stop();
+
+    // Unregister from render sink
+    render_sink_->set_track(slot, nullptr);
+
+    // Release the pipeline
+    track.reset();
+
+    // Compact: shift tracks_[slot+1..] down to fill the gap
+    for (size_t i = slot; i < kMaxTracks - 1; ++i) {
+        if (!tracks_[i + 1]) break;  // No more tracks to compact
+        tracks_[i] = std::move(tracks_[i + 1]);
+        // Update render sink mapping
+        render_sink_->set_track(i, tracks_[i]->track_buffer.get());
+        render_sink_->set_track(i + 1, nullptr);
+    }
+
+    // Compact last_decision_.frames the same way
+    for (size_t i = slot; i < kMaxTracks - 1; ++i) {
+        last_decision_.frames[i] = std::move(last_decision_.frames[i + 1]);
+    }
+    last_decision_.frames[kMaxTracks - 1] = std::nullopt;
+
+    // Recalculate duration
+    cached_duration_us_ = 0;
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (tracks_[i]) {
+            cached_duration_us_ = std::max(cached_duration_us_,
+                tracks_[i]->demux_thread->stats().duration_us);
+        }
+    }
+
+    // Rebuild layout order (identity mapping after compaction)
+    rebuild_layout_order();
+
+    preview_drawn_ = false;
+
+    // If still have tracks and was playing, resume
+    if (was_playing && first_active_track() >= 0) {
+        clock_.resume();
+        playing_ = true;
+    }
+
+    spdlog::info("Renderer::remove_track: slot={}, compacted, remaining={}", slot, track_count());
+}
+
+bool Renderer::has_track(int slot) const {
+    if (slot < 0 || slot >= static_cast<int>(kMaxTracks)) return false;
+    return tracks_[slot] != nullptr;
+}
+
+std::pair<int, int> Renderer::track_dimensions(int slot) const {
+    if (slot < 0 || slot >= static_cast<int>(kMaxTracks) || !tracks_[slot]) {
+        return {0, 0};
+    }
+    return {tracks_[slot]->video_width, tracks_[slot]->video_height};
+}
+
+std::vector<TrackInfo> Renderer::track_infos() const {
+    std::vector<TrackInfo> infos;
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (tracks_[i]) {
+            infos.push_back({
+                static_cast<int>(i),
+                tracks_[i]->file_path,
+                tracks_[i]->video_width,
+                tracks_[i]->video_height
+            });
+        }
+    }
+    return infos;
 }
 
 } // namespace vr

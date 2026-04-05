@@ -16,8 +16,8 @@ FetchContent_Declare(
 set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(spdlog)
 
-# FFmpeg (pre-built at VoidView project)
-set(FFMPEG_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../VoidPlayer/libs/ffmpeg" CACHE PATH "FFmpeg root")
+# FFmpeg (pre-built, local copy)
+set(FFMPEG_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs/ffmpeg" CACHE PATH "FFmpeg root")
 set(FFMPEG_INCLUDE_DIR "${FFMPEG_ROOT}/include")
 set(FFMPEG_LIB_DIR "${FFMPEG_ROOT}/lib")
 

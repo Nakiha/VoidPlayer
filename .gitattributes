@@ -1,3 +1,9 @@
 resources/video/** filter=lfs diff=lfs merge=lfs -text
 *.mp4 filter=lfs diff=lfs merge=lfs -text
 *.webm filter=lfs diff=lfs merge=lfs -text
+
+# FFmpeg DLLs via LFS
+windows/libs/ffmpeg/bin/*.dll filter=lfs diff=lfs merge=lfs -text
+
+# Exclude libs from language statistics
+windows/libs/** linguist-vendored

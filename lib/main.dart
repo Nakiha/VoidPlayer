@@ -161,6 +161,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     actionRegistry.bind(const StepForward(), () => _controller.stepForward());
     actionRegistry.bind(const StepBackward(), () => _controller.stepBackward());
     actionRegistry.bind(const OpenFile(), _openFile);
+    actionRegistry.bind(const ToggleLayoutMode(), _toggleLayoutMode);
   }
 
   void _unbindActions() {
@@ -168,6 +169,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     actionRegistry.unbind(const StepForward().name);
     actionRegistry.unbind(const StepBackward().name);
     actionRegistry.unbind(const OpenFile().name);
+    actionRegistry.unbind(const ToggleLayoutMode().name);
   }
 
   /// vsync-aligned tick: send layout to native once per display refresh.
@@ -184,6 +186,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   void _scheduleLayoutSync() {
     _layoutDirty = true;
     if (!_layoutTicker.isActive) _layoutTicker.start();
+  }
+
+  void _toggleLayoutMode() {
+    final newMode = _layout.mode == LayoutMode.sideBySide
+        ? LayoutMode.splitScreen
+        : LayoutMode.sideBySide;
+    setState(() {
+      _layout = _layout.copyWith(mode: newMode, zoomRatio: 1.0, viewOffsetX: 0.0, viewOffsetY: 0.0);
+    });
+    _scheduleLayoutSync();
   }
 
   void _togglePlayPause() {

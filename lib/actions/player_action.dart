@@ -40,3 +40,7 @@ class StepBackward extends PlayerAction {
 class OpenFile extends PlayerAction {
   const OpenFile() : super('OPEN_FILE', LogicalKeyboardKey.keyO);
 }
+
+class ToggleLayoutMode extends PlayerAction {
+  const ToggleLayoutMode() : super('TOGGLE_LAYOUT_MODE', LogicalKeyboardKey.keyM);
+}

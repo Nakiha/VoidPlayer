@@ -61,8 +61,11 @@ cbuffer Constants : register(b0) {
     int u_nv12_mask;           // offset 64: bit i set = track i uses NV12
     float3 _pad1;              // offset 68-79
     float4 u_nv12_uv_scale_y;  // offset 80-95: video_h / texture_h
+
+    // === Uniform pixel density (offset 96-111) ===
+    float4 u_track_scale;      // offset 96: per-track scale for uniform pixel density
 };
-// Total: 96 bytes
+// Total: 112 bytes — must match renderer.cpp draw_frame() Constants struct (112 bytes)
 
 // BT.601 YUV -> RGB conversion (standard definition)
 float3 yuv_to_rgb(float y, float2 uv) {
@@ -117,12 +120,14 @@ float4 sample_track(int track_idx, float2 uv) {
 // video_aspect: aspect ratio of the video
 // local_uv: UV within the slot (0-1)
 // slot_size_pixels: slot width and height in pixels
+// track_scale: per-track scale for uniform pixel density (1.0 for reference track)
 // Returns: video texture UV, or sets out_of_bounds=true if outside video area
 float2 calc_aspect_fit_uv(
     float slot_aspect,
     float video_aspect,
     float2 local_uv,
     float2 slot_size_pixels,
+    float track_scale,
     out bool out_of_bounds
 ) {
     out_of_bounds = false;
@@ -131,13 +136,14 @@ float2 calc_aspect_fit_uv(
         return local_uv;
     }
 
-    // 1. Compute fit scale factor
+    // 1. Compute fit scale factor, then apply uniform pixel density
     float fit_scale;
     if (video_aspect > slot_aspect) {
         fit_scale = 1.0 / video_aspect * slot_aspect;
     } else {
         fit_scale = 1.0;
     }
+    fit_scale *= track_scale;
 
     // 2. Apply zoom (zoom_ratio=1.0 is fit, >1.0 is zoom in)
     float display_scale = fit_scale * u_zoom_ratio;
@@ -213,7 +219,8 @@ float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_T
 
     // Calculate aspect-fit UV with zoom and pan
     bool out_of_bounds;
-    float2 tex_uv = calc_aspect_fit_uv(slot_aspect, video_aspect, local_uv, slot_size_pixels, out_of_bounds);
+    float track_scale = u_track_scale[track_idx];
+    float2 tex_uv = calc_aspect_fit_uv(slot_aspect, video_aspect, local_uv, slot_size_pixels, track_scale, out_of_bounds);
 
     if (out_of_bounds) {
         return float4(0.0, 0.0, 0.0, 1.0);

@@ -97,7 +97,7 @@ bool Renderer::initialize(const RendererConfig& config) {
 
     // Create constant buffer for shader uniforms (must be 16-byte aligned)
     // Layout must match multitrack.hlsl cbuffer Constants
-    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 96, compiled_shader_)) {
+    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 112, compiled_shader_)) {
         spdlog::error("Renderer: failed to create constant buffer");
         return false;
     }
@@ -687,8 +687,9 @@ void Renderer::draw_frame(const PresentDecision& decision) {
             int nv12_mask;         // offset 64
             float _pad1[3];        // offset 68
             float nv12_uv_scale_y[4]; // offset 80
+            float track_scale[4];  // offset 96: per-track scale for uniform pixel density
         };
-        static_assert(sizeof(Constants) == 96, "Constants must be 96 bytes");
+        static_assert(sizeof(Constants) == 112, "Constants must be 112 bytes");
 
         // Snapshot layout state atomically
         LayoutState snap;
@@ -716,6 +717,51 @@ void Renderer::draw_frame(const PresentDecision& decision) {
                 cb.nv12_mask |= (1 << static_cast<int>(i));
             }
             cb.nv12_uv_scale_y[i] = tracks_[i]->nv12_uv_scale_y;
+        }
+
+        // Compute per-track scale for uniform pixel density across all tracks.
+        // Find the reference track (highest resolution) and scale other tracks
+        // so all videos share the same pixel density (video pixel → screen pixel ratio).
+        {
+            int track_n = static_cast<int>(decision.frames.size());
+            int ref_idx = 0;
+            int max_pixels = 0;
+            for (int i = 0; i < track_n && i < 4; ++i) {
+                int pixels = tracks_[i]->video_width * tracks_[i]->video_height;
+                if (pixels > max_pixels) {
+                    max_pixels = pixels;
+                    ref_idx = i;
+                }
+            }
+
+            // Slot dimensions depend on layout mode
+            float slot_w = static_cast<float>(target_width_);
+            float slot_h = static_cast<float>(target_height_);
+            if (snap.mode != LAYOUT_SPLIT_SCREEN && track_n > 1) {
+                slot_w /= static_cast<float>(track_n);
+            }
+
+            // Reference video density: min(slot_w / ref_w, slot_h / ref_h)
+            float ref_w = static_cast<float>(tracks_[ref_idx]->video_width);
+            float ref_h = static_cast<float>(tracks_[ref_idx]->video_height);
+            float ref_density = 1.0f;
+            if (ref_w > 0.0f && ref_h > 0.0f) {
+                ref_density = std::min(slot_w / ref_w, slot_h / ref_h);
+            }
+
+            for (int i = 0; i < track_n && i < 4; ++i) {
+                float tw = static_cast<float>(tracks_[i]->video_width);
+                float th = static_cast<float>(tracks_[i]->video_height);
+                float density = 1.0f;
+                if (tw > 0.0f && th > 0.0f) {
+                    density = std::min(slot_w / tw, slot_h / th);
+                }
+                cb.track_scale[i] = (density > 0.0f) ? ref_density / density : 1.0f;
+            }
+            // Unused tracks default to 1.0 (cb is zero-initialized, but set explicitly)
+            for (int i = track_n; i < 4; ++i) {
+                cb.track_scale[i] = 1.0f;
+            }
         }
         ctx->UpdateSubresource(compiled_shader_.constant_buffer.Get(), 0, nullptr, &cb, 0, 0);
         ctx->PSSetConstantBuffers(0, 1, compiled_shader_.constant_buffer.GetAddressOf());

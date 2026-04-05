@@ -35,6 +35,16 @@ static bool stderr_available() {
 void configure_logging(const LogConfig& config) {
     auto logger = spdlog::default_logger();
 
+    // Check SPDLOG_LEVEL env var to override configured level
+    spdlog::level::level_enum effective_level = config.level;
+    const char* env_level = std::getenv("SPDLOG_LEVEL");
+    if (env_level && env_level[0] != '\0') {
+        auto parsed = spdlog::level::from_str(env_level);
+        if (parsed != spdlog::level::off || spdlog::level::to_string_view(spdlog::level::off) == env_level) {
+            effective_level = parsed;
+        }
+    }
+
     // Remove all existing sinks
     logger->sinks().clear();
 
@@ -60,7 +70,7 @@ void configure_logging(const LogConfig& config) {
     if (stderr_available()) {
         auto console_sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
         console_sink->set_pattern(config.pattern);
-        console_sink->set_level(config.level);
+        console_sink->set_level(effective_level);
         logger->sinks().push_back(std::move(console_sink));
     }
 
@@ -73,8 +83,8 @@ void configure_logging(const LogConfig& config) {
     }
 
     // Set level
-    logger->set_level(config.level);
-    spdlog::set_level(config.level);
+    logger->set_level(effective_level);
+    spdlog::set_level(effective_level);
 
     // Flush on warn and above
     logger->flush_on(spdlog::level::warn);

@@ -137,6 +137,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   bool _layoutDirty = false;
   late final Ticker _layoutTicker;
 
+  // Render target dimensions (physical pixels)
+  double _renderWidth = 1920.0;
+  double _renderHeight = 1080.0;
+
   @override
   void initState() {
     super.initState();
@@ -213,7 +217,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           .where((f) => f.path != null)
           .map((f) => f.path!)
           .toList();
-      _textureId = await _controller.createRenderer(paths);
+      _textureId = await _controller.createRenderer(paths,
+          width: _renderWidth.toInt(), height: _renderHeight.toInt());
       setState(() {
         _loading = false;
         _hasStarted = false;
@@ -285,10 +290,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             _lastMousePos = e.position;
 
             if (_panning) {
-              final sensitivity = 1.0 / _layout.zoomRatio.clamp(1.0, 10.0);
+              // Scale logical pixel delta to render target pixel coordinates.
+              // The Texture widget maps render target pixels to widget logical pixels,
+              // so we must convert the mouse delta accordingly for 1:1 tracking.
+              final box = context.findRenderObject() as RenderBox;
+              final scaleX = _renderWidth / box.size.width;
+              final scaleY = _renderHeight / box.size.height;
               _layout = _layout.copyWith(
-                viewOffsetX: _layout.viewOffsetX + delta.dx * sensitivity,
-                viewOffsetY: _layout.viewOffsetY + delta.dy * sensitivity,
+                viewOffsetX: _layout.viewOffsetX + delta.dx * scaleX,
+                viewOffsetY: _layout.viewOffsetY + delta.dy * scaleY,
               );
             }
 

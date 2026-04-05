@@ -26,7 +26,6 @@ public:
 private:
     Clock& clock_;
     std::vector<TrackBuffer*> tracks_;
-    bool debug_logged_ = false;
 };
 
 } // namespace vr

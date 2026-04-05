@@ -562,6 +562,15 @@ void Renderer::render_loop() {
         auto decision = render_sink_->evaluate();
 
         if (decision.should_present) {
+            // Independent presentation: fill missing tracks from last decision
+            // so each track always shows a frame (new or carried over).
+            for (size_t i = 0; i < decision.frames.size(); ++i) {
+                if (!decision.frames[i].has_value() &&
+                    i < last_decision_.frames.size() &&
+                    last_decision_.frames[i].has_value()) {
+                    decision.frames[i] = last_decision_.frames[i];
+                }
+            }
             present_frame(decision);
             last_decision_ = decision;
         } else if (!preview_drawn_) {

@@ -22,20 +22,6 @@ PresentDecision RenderSink::evaluate() {
     int64_t current_pts_us = clock_.current_pts_us();
     decision.current_pts_us = current_pts_us;
 
-    // Debug: log first evaluation
-    if (!debug_logged_ && !tracks_.empty()) {
-        auto peek_frame = tracks_[0]->peek(0);
-        if (peek_frame) {
-            spdlog::debug("[RenderSink] first eval: clock={:.3f}s frame_pts={:.3f}s dur={:.1f}ms",
-                         current_pts_us / 1e6,
-                         peek_frame->pts_us / 1e6,
-                         peek_frame->duration_us / 1e3);
-        } else {
-            spdlog::debug("[RenderSink] first eval: clock={:.3f}s NO FRAME", current_pts_us / 1e6);
-        }
-        debug_logged_ = true;
-    }
-
     if (tracks_.empty()) {
         decision.should_present = false;
         return decision;
@@ -43,13 +29,12 @@ PresentDecision RenderSink::evaluate() {
 
     decision.frames.resize(tracks_.size());
 
-    bool all_ready = true;
+    bool any_ready = false;
 
     for (size_t t = 0; t < tracks_.size(); ++t) {
         TrackBuffer* track = tracks_[t];
         if (!track) {
             decision.frames[t] = std::nullopt;
-            all_ready = false;
             continue;
         }
 
@@ -75,7 +60,6 @@ PresentDecision RenderSink::evaluate() {
         if (!frame.has_value()) {
             // No frame available
             decision.frames[t] = std::nullopt;
-            all_ready = false;
             continue;
         }
 
@@ -84,25 +68,25 @@ PresentDecision RenderSink::evaluate() {
             current_pts_us < frame->pts_us + frame->duration_us) {
             // Frame is in its display window - select it
             decision.frames[t] = frame;
+            any_ready = true;
         }
         // 4. Check if frame is within tolerance of current time
         else if (std::abs(frame->pts_us - current_pts_us) <= PTS_TOLERANCE_US) {
             // Within tolerance - select it
             decision.frames[t] = frame;
+            any_ready = true;
         }
         // 5. Frame is in the future (past tolerance)
         else if (frame->pts_us > current_pts_us + PTS_TOLERANCE_US) {
             decision.frames[t] = std::nullopt;
-            all_ready = false;
         }
         // 6. Frame is in the past, far beyond tolerance — no valid frame
         else {
             decision.frames[t] = std::nullopt;
-            all_ready = false;
         }
     }
 
-    decision.should_present = all_ready;
+    decision.should_present = any_ready;
     return decision;
 }
 

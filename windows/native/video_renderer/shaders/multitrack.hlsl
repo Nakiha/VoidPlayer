@@ -116,11 +116,13 @@ float4 sample_track(int track_idx, float2 uv) {
 // slot_aspect: aspect ratio of the allocated display region
 // video_aspect: aspect ratio of the video
 // local_uv: UV within the slot (0-1)
+// slot_size_pixels: slot width and height in pixels
 // Returns: video texture UV, or sets out_of_bounds=true if outside video area
 float2 calc_aspect_fit_uv(
     float slot_aspect,
     float video_aspect,
     float2 local_uv,
+    float2 slot_size_pixels,
     out bool out_of_bounds
 ) {
     out_of_bounds = false;
@@ -153,10 +155,12 @@ float2 calc_aspect_fit_uv(
     // 5. Normalize to video UV (0-1)
     float2 normalized_uv = display_uv / max(display_size, float2(0.0001, 0.0001));
 
-    // 6. Apply view offset (pixel coords -> UV space)
-    // Both axes negated: mouse drag right shows left content, drag down shows upper content
-    float2 canvas_size = float2(u_canvas_width, u_canvas_height);
-    float2 offset_uv = normalized_uv - u_view_offset / canvas_size;
+    // 6. Apply view offset (pixel coords -> video UV space)
+    // Convert pixel offset to video UV by dividing by the video's displayed size in pixels.
+    // display_size is in slot UV; multiply by slot_size_pixels to get actual pixel dimensions.
+    // This correctly accounts for aspect-fit scaling and zoom.
+    float2 display_pixels = display_size * slot_size_pixels;
+    float2 offset_uv = normalized_uv - u_view_offset / max(display_pixels, float2(0.0001, 0.0001));
 
     // 7. Check bounds
     if (offset_uv.x < 0.0 || offset_uv.x > 1.0 ||
@@ -172,6 +176,7 @@ float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_T
     int track_idx;
     float2 local_uv;
     float slot_aspect;
+    float2 slot_size_pixels;
 
     if (u_mode == MODE_SPLIT_SCREEN) {
         // SPLIT_SCREEN: two overlapping videos, split by divider
@@ -185,6 +190,7 @@ float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_T
         local_uv = texcoord;
         float canvas_aspect = u_canvas_width / u_canvas_height;
         slot_aspect = canvas_aspect;
+        slot_size_pixels = float2(u_canvas_width, u_canvas_height);
     } else {
         // SIDE_BY_SIDE: equal width 1/N split
         int count = max(u_track_count, 1);
@@ -193,6 +199,7 @@ float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_T
         track_idx = u_order[slot];
         local_uv = float2(texcoord.x * float(count) - float(slot), texcoord.y);
         slot_aspect = (u_canvas_width / float(count)) / u_canvas_height;
+        slot_size_pixels = float2(u_canvas_width / float(count), u_canvas_height);
     }
 
     // Clamp track index
@@ -206,7 +213,7 @@ float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_T
 
     // Calculate aspect-fit UV with zoom and pan
     bool out_of_bounds;
-    float2 tex_uv = calc_aspect_fit_uv(slot_aspect, video_aspect, local_uv, out_of_bounds);
+    float2 tex_uv = calc_aspect_fit_uv(slot_aspect, video_aspect, local_uv, slot_size_pixels, out_of_bounds);
 
     if (out_of_bounds) {
         return float4(0.0, 0.0, 0.0, 1.0);

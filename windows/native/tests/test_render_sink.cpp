@@ -167,7 +167,7 @@ TEST_CASE("RenderSink: two tracks within tolerance present", "[render_sink]") {
     REQUIRE(decision.frames[1].has_value());
 }
 
-TEST_CASE("RenderSink: two tracks outside tolerance do not present", "[render_sink]") {
+TEST_CASE("RenderSink: independent present when tracks have different timing", "[render_sink]") {
     MockTimeSource mt{0};
     Clock clock([&mt]() { return mt.t; });
     clock.play();
@@ -196,6 +196,9 @@ TEST_CASE("RenderSink: two tracks outside tolerance do not present", "[render_si
     mt.t = 1000000;
 
     PresentDecision decision = sink.evaluate();
-    // Track 2 is 10ms in the future from clock, beyond tolerance
-    REQUIRE(decision.should_present == false);
+    // Track 1 is in display window → should_present = true (any-ready)
+    // Track 2 is 10ms in the future → nullopt (filled from last_decision_ by renderer)
+    REQUIRE(decision.should_present == true);
+    REQUIRE(decision.frames[0].has_value());
+    REQUIRE(!decision.frames[1].has_value());
 }

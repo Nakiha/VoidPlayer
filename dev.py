@@ -145,11 +145,18 @@ def cmd_demo(args):
         run(build_cmd, cwd=str(NATIVE_DIR))
 
     demo_cmd = [sys.executable, str(DEMO_SCRIPT)]
-    if args.video:
-        demo_cmd.append(str(args.video))
+    demo_cmd.extend(str(v) for v in args.videos)
+
+    # Pass log level as environment variable SPDLOG_LEVEL
+    if args.log_level:
+        import os
+        env = os.environ.copy()
+        env["SPDLOG_LEVEL"] = args.log_level
+    else:
+        env = None
 
     header(f"Run native demo ({build_type})")
-    run(demo_cmd, cwd=str(NATIVE_DIR))
+    run(demo_cmd, cwd=str(NATIVE_DIR), env=env)
 
 
 # ---------------------------------------------------------------------------
@@ -206,8 +213,10 @@ Examples:
     # --- demo ---
     p_demo = sub.add_parser("demo", help="Run native Python demo")
     p_demo.add_argument("--debug", action="store_true", help="Use debug build")
-    p_demo.add_argument("video", nargs="?", default=None,
-                        help="Video file path (optional)")
+    p_demo.add_argument("--log-level", type=str, default=None,
+                        help="Log level, e.g. 'debug' or 'trace'")
+    p_demo.add_argument("videos", nargs="*", default=[],
+                        help="Video file paths (optional, supports multiple)")
 
     # --- test ---
     p_test = sub.add_parser("test", help="Build and run native tests")

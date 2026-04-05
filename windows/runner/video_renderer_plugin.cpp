@@ -129,6 +129,46 @@ void VideoRendererPlugin::HandleMethodCall(
     } else if (method == "isPlaying") {
         bool playing = renderer_ ? renderer_->is_playing() : false;
         result->Success(flutter::EncodableValue(playing));
+    } else if (method == "applyLayout") {
+        if (renderer_ && method_call.arguments()) {
+            const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+            if (args) {
+                vr::LayoutState ls;
+                auto it = args->find(flutter::EncodableValue("mode"));
+                if (it != args->end()) ls.mode = std::get<int>(it->second);
+                it = args->find(flutter::EncodableValue("splitPos"));
+                if (it != args->end()) ls.split_pos = static_cast<float>(std::get<double>(it->second));
+                it = args->find(flutter::EncodableValue("zoomRatio"));
+                if (it != args->end()) ls.zoom_ratio = static_cast<float>(std::get<double>(it->second));
+                it = args->find(flutter::EncodableValue("viewOffsetX"));
+                if (it != args->end()) ls.view_offset[0] = static_cast<float>(std::get<double>(it->second));
+                it = args->find(flutter::EncodableValue("viewOffsetY"));
+                if (it != args->end()) ls.view_offset[1] = static_cast<float>(std::get<double>(it->second));
+                it = args->find(flutter::EncodableValue("order"));
+                if (it != args->end()) {
+                    const auto& order_list = std::get<flutter::EncodableList>(it->second);
+                    for (size_t i = 0; i < 4 && i < order_list.size(); ++i) {
+                        ls.order[i] = std::get<int>(order_list[i]);
+                    }
+                }
+                renderer_->apply_layout(ls);
+            }
+        }
+        result->Success(flutter::EncodableValue(nullptr));
+    } else if (method == "getLayout") {
+        flutter::EncodableMap map;
+        if (renderer_) {
+            auto ls = renderer_->layout();
+            map[flutter::EncodableValue("mode")] = flutter::EncodableValue(ls.mode);
+            map[flutter::EncodableValue("splitPos")] = flutter::EncodableValue(static_cast<double>(ls.split_pos));
+            map[flutter::EncodableValue("zoomRatio")] = flutter::EncodableValue(static_cast<double>(ls.zoom_ratio));
+            map[flutter::EncodableValue("viewOffsetX")] = flutter::EncodableValue(static_cast<double>(ls.view_offset[0]));
+            map[flutter::EncodableValue("viewOffsetY")] = flutter::EncodableValue(static_cast<double>(ls.view_offset[1]));
+            flutter::EncodableList order_list;
+            for (int i = 0; i < 4; ++i) order_list.push_back(flutter::EncodableValue(ls.order[i]));
+            map[flutter::EncodableValue("order")] = flutter::EncodableValue(order_list);
+        }
+        result->Success(flutter::EncodableValue(map));
     } else {
         result->NotImplemented();
     }

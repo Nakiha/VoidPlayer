@@ -509,8 +509,6 @@ void DecodeThread::run() {
             }
 
             if (should_flush) {
-                auto first_pts_before = output_buffer_.peek(0).has_value()
-                    ? output_buffer_.peek(0)->pts_us : -1;
                 flush_reorder_buffer();
                 auto first = output_buffer_.peek(0);
                 spdlog::info("[DecodeThread] Exact seek reorder: frames pushed, first_pts={:.3f}s",

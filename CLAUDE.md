@@ -23,10 +23,11 @@ Windows 端 Flutter 播放器应用，使用 DX11 进行视频渲染，通过 Fl
 ```bash
 # 构建
 python dev.py build --native         # 仅构建 native C++ 模块
+
 # 运行 Flutter
-python dev.py run                    # 运行 (release)
-python dev.py run --debug            # 运行 (debug，支持 hot reload)
-python dev.py run --log-level flutter=DEBUG,native=TRACE   # 传递日志级别
+python dev.py launch                    # 运行 (release)
+python dev.py launch --debug            # 运行 (debug，支持 hot reload)
+python dev.py launch --log-level flutter=DEBUG,native=TRACE   # 传递日志级别
 
 # Native Demo
 python dev.py demo                   # 运行 PySide6 交互式 demo

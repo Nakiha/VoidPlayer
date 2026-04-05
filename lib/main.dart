@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
 import 'package:file_picker/file_picker.dart';
 import 'actions/action_registry.dart';
@@ -118,7 +120,8 @@ class VideoPlayerPage extends StatefulWidget {
   State<VideoPlayerPage> createState() => _VideoPlayerPageState();
 }
 
-class _VideoPlayerPageState extends State<VideoPlayerPage> {
+class _VideoPlayerPageState extends State<VideoPlayerPage>
+    with SingleTickerProviderStateMixin {
   final VideoRendererController _controller = VideoRendererController();
   int? _textureId;
   bool _loading = false;
@@ -126,14 +129,24 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   bool _isPlaying = false;
   bool _hasStarted = false;
 
+  // Layout state for zoom/pan/split
+  LayoutState _layout = const LayoutState();
+  bool _panning = false;
+  bool _splitting = false;
+  Offset _lastMousePos = Offset.zero;
+  bool _layoutDirty = false;
+  late final Ticker _layoutTicker;
+
   @override
   void initState() {
     super.initState();
     _bindActions();
+    _layoutTicker = createTicker(_onLayoutTick);
   }
 
   @override
   void dispose() {
+    _layoutTicker.dispose();
     _unbindActions();
     _controller.dispose();
     super.dispose();
@@ -151,6 +164,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     actionRegistry.unbind(const StepForward().name);
     actionRegistry.unbind(const StepBackward().name);
     actionRegistry.unbind(const OpenFile().name);
+  }
+
+  /// vsync-aligned tick: send layout to native once per display refresh.
+  void _onLayoutTick(Duration elapsed) {
+    if (_layoutDirty) {
+      _layoutDirty = false;
+      _controller.applyLayout(_layout);
+    }
+    // Stop ticker when idle — no point spinning vsync for nothing.
+    if (!_layoutDirty) _layoutTicker.stop();
+  }
+
+  /// Mark layout dirty and ensure ticker is running.
+  void _scheduleLayoutSync() {
+    _layoutDirty = true;
+    if (!_layoutTicker.isActive) _layoutTicker.start();
   }
 
   void _togglePlayPause() {
@@ -235,7 +264,62 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           style: const TextStyle(color: Colors.red));
     }
     if (_textureId != null) {
-      return Texture(textureId: _textureId!);
+      return Builder(builder: (context) {
+        return Listener(
+          onPointerDown: (e) {
+            if ((e.buttons & kPrimaryButton) != 0) {
+              _panning = true;
+              _lastMousePos = e.position;
+            } else if ((e.buttons & kSecondaryButton) != 0) {
+              _splitting = true;
+              _lastMousePos = e.position;
+            }
+          },
+          onPointerUp: (e) {
+            if (_panning) _panning = false;
+            if (_splitting) _splitting = false;
+          },
+          onPointerMove: (e) {
+            if (!_panning && !_splitting) return;
+            final delta = e.position - _lastMousePos;
+            _lastMousePos = e.position;
+
+            if (_panning) {
+              final sensitivity = 1.0 / _layout.zoomRatio.clamp(1.0, 10.0);
+              _layout = _layout.copyWith(
+                viewOffsetX: _layout.viewOffsetX + delta.dx * sensitivity,
+                viewOffsetY: _layout.viewOffsetY + delta.dy * sensitivity,
+              );
+            }
+
+            if (_splitting && _layout.mode == LayoutMode.splitScreen) {
+              final box = context.findRenderObject() as RenderBox;
+              final localX = e.localPosition.dx;
+              _layout = _layout.copyWith(
+                splitPos: (localX / box.size.width).clamp(0.0, 1.0),
+              );
+            }
+
+            _scheduleLayoutSync();
+          },
+          onPointerSignal: (e) {
+            if (e is PointerScrollEvent) {
+              final scrollDelta = e.scrollDelta.dy;
+              if (scrollDelta < 0) {
+                _layout = _layout.copyWith(
+                  zoomRatio: (_layout.zoomRatio * 1.1).clamp(1.0, 10.0),
+                );
+              } else if (scrollDelta > 0) {
+                _layout = _layout.copyWith(
+                  zoomRatio: (_layout.zoomRatio / 1.1).clamp(1.0, 10.0),
+                );
+              }
+              _scheduleLayoutSync();
+            }
+          },
+          child: Texture(textureId: _textureId!),
+        );
+      });
     }
     return const Text('Open a video file to begin');
   }

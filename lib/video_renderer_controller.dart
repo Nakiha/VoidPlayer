@@ -1,5 +1,68 @@
 import 'package:flutter/services.dart';
 
+/// Layout mode constants matching native defines.
+class LayoutMode {
+  static const int sideBySide = 0;
+  static const int splitScreen = 1;
+}
+
+/// Immutable snapshot of the layout state.
+class LayoutState {
+  final int mode;
+  final double splitPos;
+  final double zoomRatio;
+  final double viewOffsetX;
+  final double viewOffsetY;
+  final List<int> order;
+
+  const LayoutState({
+    this.mode = LayoutMode.sideBySide,
+    this.splitPos = 0.5,
+    this.zoomRatio = 1.0,
+    this.viewOffsetX = 0.0,
+    this.viewOffsetY = 0.0,
+    this.order = const [0, 1, 2, 3],
+  });
+
+  Map<String, dynamic> toMap() => {
+        'mode': mode,
+        'splitPos': splitPos,
+        'zoomRatio': zoomRatio,
+        'viewOffsetX': viewOffsetX,
+        'viewOffsetY': viewOffsetY,
+        'order': order,
+      };
+
+  factory LayoutState.fromMap(Map<dynamic, dynamic> map) => LayoutState(
+        mode: map['mode'] as int? ?? LayoutMode.sideBySide,
+        splitPos: (map['splitPos'] as double?) ?? 0.5,
+        zoomRatio: (map['zoomRatio'] as double?) ?? 1.0,
+        viewOffsetX: (map['viewOffsetX'] as double?) ?? 0.0,
+        viewOffsetY: (map['viewOffsetY'] as double?) ?? 0.0,
+        order: (map['order'] as List<dynamic>?)
+                ?.map((e) => e as int)
+                .toList() ??
+            const [0, 1, 2, 3],
+      );
+
+  LayoutState copyWith({
+    int? mode,
+    double? splitPos,
+    double? zoomRatio,
+    double? viewOffsetX,
+    double? viewOffsetY,
+    List<int>? order,
+  }) =>
+      LayoutState(
+        mode: mode ?? this.mode,
+        splitPos: splitPos ?? this.splitPos,
+        zoomRatio: zoomRatio ?? this.zoomRatio,
+        viewOffsetX: viewOffsetX ?? this.viewOffsetX,
+        viewOffsetY: viewOffsetY ?? this.viewOffsetY,
+        order: order ?? this.order,
+      );
+}
+
 class VideoRendererController {
   static const MethodChannel _channel = MethodChannel('video_renderer');
 
@@ -48,6 +111,16 @@ class VideoRendererController {
 
   Future<bool> isPlaying() async {
     return await _channel.invokeMethod<bool>('isPlaying') ?? false;
+  }
+
+  /// Atomically apply layout state and trigger redraw if paused.
+  Future<void> applyLayout(LayoutState state) =>
+      _channel.invokeMethod<void>('applyLayout', state.toMap());
+
+  /// Get a snapshot of the current layout state.
+  Future<LayoutState> getLayout() async {
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>('getLayout');
+    return LayoutState.fromMap(map ?? {});
   }
 
   Future<void> dispose() async {

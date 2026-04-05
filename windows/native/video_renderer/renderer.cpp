@@ -9,7 +9,7 @@
 namespace vr {
 
 // Max sleep for responsiveness (allows seek/pause within ~50 ms)
-static constexpr int64_t MAX_SLEEP_US = 50000;
+static constexpr int64_t MAX_SLEEP_US = 8000;  // 8ms cap → ~120Hz layout response
 
 Renderer::Renderer() = default;
 
@@ -415,6 +415,18 @@ void Renderer::present_frame(const PresentDecision& decision) {
     preview_drawn_ = true;
 }
 
+void Renderer::redraw_layout() {
+    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+    std::lock_guard<std::mutex> tex_lock(texture_mutex_);
+    draw_frame(last_decision_);
+    // Flush required in headless mode: without it the shared texture
+    // may not be updated when Flutter reads it on its next vsync,
+    // adding 1-2 frames of layout latency.
+    d3d_device_->context()->Flush();
+    if (frame_callback_) frame_callback_();
+    preview_drawn_ = true;
+}
+
 bool Renderer::has_any_frame(const PresentDecision& decision) {
     for (auto& f : decision.frames) {
         if (f.has_value()) return true;
@@ -514,7 +526,7 @@ void Renderer::render_loop() {
                 if (has_any_frame(last_decision_)) {
                     present_frame(last_decision_);
                     drawn = true;
-                    spdlog::info("[Renderer] Paused frame (cached): pts={:.3f}s",
+                    spdlog::debug("[Renderer] Paused frame (cached): pts={:.3f}s",
                                  last_decision_.frames[0].has_value() ? last_decision_.frames[0]->pts_us / 1e6 : -1.0);
                 }
 
@@ -553,9 +565,9 @@ void Renderer::render_loop() {
             present_frame(decision);
             last_decision_ = decision;
         } else if (!preview_drawn_) {
-            // No new frame but layout changed (e.g. zoom/pan at EOF)
+            // No new frame but layout changed (e.g. zoom/pan during playback)
             if (has_any_frame(last_decision_)) {
-                present_frame(last_decision_);
+                redraw_layout();
             }
         }
 
@@ -846,7 +858,8 @@ void Renderer::apply_layout(const LayoutState& state) {
     for (int i = 0; i < 4; ++i) {
         layout_.order[i] = std::clamp(layout_.order[i], 0, 3);
     }
-    // Trigger redraw when paused
+    // Trigger redraw — during playback, redraw_layout() handles this
+    // without Flush() to avoid contention with D3D11VA decode threads.
     preview_drawn_ = false;
 }
 

@@ -73,6 +73,22 @@ NAKI_VR_FFI_EXPORT double naki_vr_renderer_current_speed(naki_vr_renderer_t rend
 NAKI_VR_FFI_EXPORT int naki_vr_renderer_track_count(naki_vr_renderer_t renderer);
 NAKI_VR_FFI_EXPORT int64_t naki_vr_renderer_duration_us(naki_vr_renderer_t renderer);
 
+/* ---- Layout ---- */
+
+#define NAKI_VR_LAYOUT_SIDE_BY_SIDE 0
+#define NAKI_VR_LAYOUT_SPLIT_SCREEN 1
+
+typedef struct naki_vr_layout_state_t {
+    int mode;                     /* 0=SIDE_BY_SIDE, 1=SPLIT_SCREEN */
+    float split_pos;              /* Split divider position (0.0-1.0) */
+    float zoom_ratio;             /* 1.0=fit, >1.0=zoom in */
+    float view_offset[2];         /* Pan offset [x, y] in pixel coordinates */
+    int order[4];                 /* Track display order mapping */
+} naki_vr_layout_state_t;
+
+NAKI_VR_FFI_EXPORT void naki_vr_renderer_apply_layout(naki_vr_renderer_t renderer, const naki_vr_layout_state_t* state);
+NAKI_VR_FFI_EXPORT void naki_vr_renderer_layout(naki_vr_renderer_t renderer, naki_vr_layout_state_t* out_state);
+
 /* ---- Logging & Crash ---- */
 
 NAKI_VR_FFI_EXPORT void naki_vr_configure_logging(const naki_vr_log_config_t* config);

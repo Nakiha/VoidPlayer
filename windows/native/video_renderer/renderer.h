@@ -111,6 +111,9 @@ private:
     /// Lock device + texture mutexes, draw frame, present/flush, set preview_drawn_.
     void present_frame(const PresentDecision& decision);
 
+    /// Lightweight layout-only redraw (no Flush) for responsive zoom/pan during playback.
+    void redraw_layout();
+
     /// Check if any frame slot in a PresentDecision has a value.
     static bool has_any_frame(const PresentDecision& decision);
 

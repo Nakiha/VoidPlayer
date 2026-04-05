@@ -5,9 +5,10 @@ Usage examples:
   python dev.py build --debug        # Build native + Flutter (debug)
   python dev.py build --native       # Build native module only
   python dev.py build --flutter      # Build Flutter only
-  python dev.py run                  # Run Flutter app (release)
-  python dev.py run --debug          # Run Flutter app (debug)
-  python dev.py run --log-level flutter=DEBUG,native=TRACE
+  python dev.py run                  # Run Flutter app via flutter run (release)
+  python dev.py run --debug          # Run Flutter app (debug, hot reload)
+  python dev.py launch               # Build + launch exe directly (no resident)
+  python dev.py launch --debug       # Build + launch debug exe
   python dev.py demo [video_path]    # Run native demo
   python dev.py demo --debug [path]  # Run native demo (debug build)
   python dev.py test                 # Build + test native module
@@ -100,6 +101,31 @@ def cmd_run(args):
 
 
 # ---------------------------------------------------------------------------
+# launch — build then run exe directly (no flutter run resident)
+# ---------------------------------------------------------------------------
+
+def cmd_launch(args):
+    """Build Flutter then launch the exe directly."""
+    # Ensure cmd_build has the attributes it expects
+    args.native = False
+    args.flutter = False
+    cmd_build(args)
+
+    build_type = "Debug" if args.debug else "Release"
+    exe = ROOT / "build" / "windows" / "x64" / "runner" / build_type / "void_player.exe"
+    if not exe.exists():
+        print(f"ERROR: exe not found: {exe}")
+        sys.exit(1)
+
+    cmd = [str(exe)]
+    if args.log_level:
+        cmd.append(f"--log-level={args.log_level}")
+
+    header(f"Launch {exe}")
+    subprocess.call(cmd)  # non-checking: user may close window with non-zero exit
+
+
+# ---------------------------------------------------------------------------
 # demo
 # ---------------------------------------------------------------------------
 
@@ -187,11 +213,19 @@ Examples:
     p_test = sub.add_parser("test", help="Build and run native tests")
     p_test.add_argument("--debug", action="store_true", help="Debug build")
 
+    # --- launch ---
+    p_launch = sub.add_parser("launch", help="Build then run exe directly")
+    p_launch.add_argument("--debug", action="store_true", help="Debug build")
+    p_launch.add_argument("--no-test", action="store_true", help="Skip native tests")
+    p_launch.add_argument("--log-level", type=str, default=None,
+                           help="Log level, e.g. 'flutter=DEBUG,native=TRACE'")
+
     args = parser.parse_args()
 
     {
         "build": cmd_build,
         "run": cmd_run,
+        "launch": cmd_launch,
         "demo": cmd_demo,
         "test": cmd_test,
     }[args.command](args)

@@ -114,6 +114,31 @@ int64_t naki_vr_renderer_duration_us(naki_vr_renderer_t renderer) {
     return renderer ? static_cast<vr::Renderer*>(renderer)->duration_us() : 0;
 }
 
+/* ---- Layout ---- */
+
+void naki_vr_renderer_apply_layout(naki_vr_renderer_t renderer, const naki_vr_layout_state_t* state) {
+    if (!renderer || !state) return;
+    vr::LayoutState ls;
+    ls.mode = state->mode;
+    ls.split_pos = state->split_pos;
+    ls.zoom_ratio = state->zoom_ratio;
+    ls.view_offset[0] = state->view_offset[0];
+    ls.view_offset[1] = state->view_offset[1];
+    for (int i = 0; i < 4; ++i) ls.order[i] = state->order[i];
+    static_cast<vr::Renderer*>(renderer)->apply_layout(ls);
+}
+
+void naki_vr_renderer_layout(naki_vr_renderer_t renderer, naki_vr_layout_state_t* out_state) {
+    if (!renderer || !out_state) return;
+    auto ls = static_cast<vr::Renderer*>(renderer)->layout();
+    out_state->mode = ls.mode;
+    out_state->split_pos = ls.split_pos;
+    out_state->zoom_ratio = ls.zoom_ratio;
+    out_state->view_offset[0] = ls.view_offset[0];
+    out_state->view_offset[1] = ls.view_offset[1];
+    for (int i = 0; i < 4; ++i) out_state->order[i] = ls.order[i];
+}
+
 /* ---- Logging & Crash ---- */
 
 void naki_vr_configure_logging(const naki_vr_log_config_t* config) {

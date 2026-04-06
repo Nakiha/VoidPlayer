@@ -89,8 +89,8 @@ PYBIND11_MODULE(video_renderer_native, m) {
         // Dynamic track management
         .def("add_track", &vr::Renderer::add_track, py::arg("video_path"),
              "Add a video track, returns slot index (0-3) or -1 on failure")
-        .def("remove_track", &vr::Renderer::remove_track, py::arg("slot"),
-             "Remove track at given slot")
+        .def("remove_track", &vr::Renderer::remove_track, py::arg("file_id"),
+             "Remove track by file_id")
         .def("has_track", &vr::Renderer::has_track, py::arg("slot"),
              "Check if slot has a track")
         // Layout control

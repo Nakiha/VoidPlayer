@@ -162,15 +162,15 @@ class VideoWindow(QWindow):
             print(f"  Mode   \u2192 {mode}")
 
         elif key == Qt.Key.Key_Up:
-            # Remove rightmost track
-            count = self.renderer.track_count()
-            if count == 0:
+            # Remove rightmost track (by file_id)
+            infos = self.renderer.track_infos()
+            if not infos:
                 print("  No tracks to remove")
             else:
-                slot = count - 1
-                self.renderer.remove_track(slot)
+                info = infos[-1]
+                self.renderer.remove_track(info.file_id)
                 self._sync_layout()
-                print(f"  Removed track slot={slot}, remaining: {self._active_slots()}")
+                print(f"  Removed track file_id={info.file_id} slot={info.slot}, remaining: {self._active_slots()}")
 
         elif key == Qt.Key.Key_Down:
             # Open file picker and add as new track

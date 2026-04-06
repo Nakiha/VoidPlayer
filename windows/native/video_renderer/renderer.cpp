@@ -141,6 +141,7 @@ bool Renderer::initialize(const RendererConfig& config) {
         auto pipeline = create_pipeline(path, config.use_hardware_decode);
         if (!pipeline) continue;
 
+        pipeline->file_id = next_file_id_++;
         tracks_[slot] = std::move(pipeline);
     }
 
@@ -149,6 +150,22 @@ bool Renderer::initialize(const RendererConfig& config) {
     if (!any_track) {
         spdlog::error("Renderer: no valid tracks");
         return false;
+    }
+
+    // Initialize file_id_order_ and slot-based order
+    {
+        int pos = 0;
+        for (size_t i = 0; i < kMaxTracks; ++i) {
+            if (tracks_[i]) {
+                file_id_order_[pos] = tracks_[i]->file_id;
+                layout_.order[pos] = static_cast<int>(i);
+                ++pos;
+            }
+        }
+        for (int i = pos; i < 4; ++i) {
+            file_id_order_[i] = -1;
+            layout_.order[i] = 0;
+        }
     }
 
     // Setup render sink
@@ -1026,13 +1043,19 @@ void Renderer::draw_frame(const PresentDecision& decision) {
 // -- Layout control --
 void Renderer::apply_layout(const LayoutState& state) {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    layout_ = state;
-    // Clamp values for safety
-    layout_.split_pos = std::clamp(layout_.split_pos, 0.0f, 1.0f);
-    layout_.zoom_ratio = std::clamp(layout_.zoom_ratio, 1.0f, 10.0f);
+    layout_.mode = state.mode;
+    layout_.split_pos = std::clamp(state.split_pos, 0.0f, 1.0f);
+    layout_.zoom_ratio = std::clamp(state.zoom_ratio, 1.0f, 10.0f);
+    layout_.view_offset[0] = state.view_offset[0];
+    layout_.view_offset[1] = state.view_offset[1];
+
+    // Translate file_id order → slot order for the shader
     for (int i = 0; i < 4; ++i) {
-        layout_.order[i] = std::clamp(layout_.order[i], 0, 3);
+        file_id_order_[i] = state.order[i];
+        int slot = find_slot_by_file_id(state.order[i]);
+        layout_.order[i] = (slot >= 0) ? slot : 0;
     }
+
     // Trigger redraw — during playback, redraw_layout() handles this
     // without Flush() to avoid contention with D3D11VA decode threads.
     preview_drawn_ = false;
@@ -1040,7 +1063,12 @@ void Renderer::apply_layout(const LayoutState& state) {
 
 LayoutState Renderer::layout() const {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    return layout_;
+    LayoutState result = layout_;
+    // Return file_id order (not slot order) to Flutter
+    for (int i = 0; i < 4; ++i) {
+        result.order[i] = file_id_order_[i];
+    }
+    return result;
 }
 
 // -- Dynamic track management --
@@ -1052,11 +1080,12 @@ int Renderer::first_active_track() const {
     return -1;
 }
 
-void Renderer::rebuild_layout_order() {
-    // Slot ID = display position after compaction, so order is always identity
-    for (int i = 0; i < 4; ++i) {
-        layout_.order[i] = i;
+int Renderer::find_slot_by_file_id(int file_id) const {
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (tracks_[i] && tracks_[i]->file_id == file_id)
+            return static_cast<int>(i);
     }
+    return -1;
 }
 
 int Renderer::find_empty_slot() const {
@@ -1157,10 +1186,17 @@ int Renderer::add_track(const std::string& video_path) {
         pipeline->demux_thread->stats().duration_us);
 
     // Commit: install the pipeline
-    tracks_[slot] = std::move(pipeline);
+    tracks_[slot]->file_id = next_file_id_++;
+    int new_file_id = tracks_[slot]->file_id;
 
-    // Rebuild layout order (identity mapping — new slot is naturally rightmost)
-    rebuild_layout_order();
+    // Append new file_id to the order arrays
+    for (int i = 0; i < 4; ++i) {
+        if (file_id_order_[i] < 0) {
+            file_id_order_[i] = new_file_id;
+            layout_.order[i] = slot;
+            break;
+        }
+    }
 
     // Seek new track to current clock position so evaluate() can find matching frames.
     // Without this, the new track starts from PTS=0 and evaluate() discards all its
@@ -1187,12 +1223,12 @@ int Renderer::add_track(const std::string& video_path) {
     return slot;
 }
 
-void Renderer::remove_track(int slot) {
+void Renderer::remove_track(int file_id) {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    if (slot < 0 || slot >= static_cast<int>(kMaxTracks)) return;
-    if (!tracks_[slot]) return;
+    int slot = find_slot_by_file_id(file_id);
+    if (slot < 0) return;
 
-    spdlog::info("Renderer::remove_track: slot={}", slot);
+    spdlog::info("Renderer::remove_track: file_id={}, slot={}", file_id, slot);
 
     // Pause playback
     bool was_playing = playing_.load();
@@ -1224,6 +1260,21 @@ void Renderer::remove_track(int slot) {
     }
     last_decision_.frames[kMaxTracks - 1] = std::nullopt;
 
+    // Compact file_id_order_: remove the deleted file_id, shift remaining down
+    for (int i = 0; i < 4; ++i) {
+        if (file_id_order_[i] == file_id) {
+            for (int j = i; j < 3; ++j) file_id_order_[j] = file_id_order_[j + 1];
+            file_id_order_[3] = -1;
+            break;
+        }
+    }
+
+    // Re-translate file_id order → slot order after compact
+    for (int i = 0; i < 4; ++i) {
+        int s = find_slot_by_file_id(file_id_order_[i]);
+        layout_.order[i] = (s >= 0) ? s : 0;
+    }
+
     // Recalculate duration
     cached_duration_us_ = 0;
     for (size_t i = 0; i < kMaxTracks; ++i) {
@@ -1233,9 +1284,6 @@ void Renderer::remove_track(int slot) {
         }
     }
 
-    // Rebuild layout order (identity mapping after compaction)
-    rebuild_layout_order();
-
     preview_drawn_ = false;
 
     // If still have tracks and was playing, resume
@@ -1244,7 +1292,7 @@ void Renderer::remove_track(int slot) {
         playing_ = true;
     }
 
-    spdlog::info("Renderer::remove_track: slot={}, compacted, remaining={}", slot, track_count());
+    spdlog::info("Renderer::remove_track: file_id={}, slot={}, remaining={}", file_id, slot, track_count());
 }
 
 bool Renderer::has_track(int slot) const {
@@ -1264,6 +1312,7 @@ std::vector<TrackInfo> Renderer::track_infos() const {
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (tracks_[i]) {
             infos.push_back({
+                tracks_[i]->file_id,
                 static_cast<int>(i),
                 tracks_[i]->file_path,
                 tracks_[i]->video_width,

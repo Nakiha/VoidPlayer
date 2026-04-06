@@ -15,6 +15,7 @@ std::string get_exe_dir() {
 
 flutter::EncodableMap make_track_map(const vr::TrackInfo& info) {
     flutter::EncodableMap map;
+    map[flutter::EncodableValue("fileId")] = flutter::EncodableValue(info.file_id);
     map[flutter::EncodableValue("slot")] = flutter::EncodableValue(info.slot);
     map[flutter::EncodableValue("path")] = flutter::EncodableValue(info.file_path);
     map[flutter::EncodableValue("width")] = flutter::EncodableValue(info.width);
@@ -425,9 +426,14 @@ void VideoRendererPlugin::AddTrack(
     }
 
     auto dims = renderer_->track_dimensions(slot);
-    vr::TrackInfo info{slot, path, dims.first, dims.second};
+    auto infos = renderer_->track_infos();
+    int file_id = 0;
+    for (const auto& ti : infos) {
+        if (ti.slot == slot) { file_id = ti.file_id; break; }
+    }
+    vr::TrackInfo info{file_id, slot, path, dims.first, dims.second};
 
-    spdlog::info("[VideoRendererPlugin] Added track: slot={}, path={}, tracks={}", slot, path, renderer_->track_infos().size());
+    spdlog::info("[VideoRendererPlugin] Added track: file_id={}, slot={}, path={}, tracks={}", file_id, slot, path, renderer_->track_infos().size());
     result->Success(flutter::EncodableValue(make_track_map(info)));
 }
 
@@ -450,19 +456,14 @@ void VideoRendererPlugin::RemoveTrack(
         return;
     }
 
-    auto it = args->find(flutter::EncodableValue("slot"));
+    auto it = args->find(flutter::EncodableValue("fileId"));
     if (it == args->end()) {
-        result->Error("INVALID_ARGS", "slot required");
+        result->Error("INVALID_ARGS", "fileId required");
         return;
     }
-    int slot = std::get<int>(it->second);
+    int file_id = std::get<int>(it->second);
 
-    if (!renderer_->has_track(slot)) {
-        result->Error("INVALID_SLOT", "No track at slot {}", slot);
-        return;
-    }
-
-    renderer_->remove_track(slot);
-    spdlog::info("[VideoRendererPlugin] Removed track: slot={}", slot);
+    renderer_->remove_track(file_id);
+    spdlog::info("[VideoRendererPlugin] Removed track: file_id={}", file_id);
     result->Success(flutter::EncodableValue(nullptr));
 }

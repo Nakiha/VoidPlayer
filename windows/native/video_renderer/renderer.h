@@ -28,6 +28,7 @@ constexpr int LAYOUT_SPLIT_SCREEN = 1;
 
 /// Track metadata returned to the UI layer.
 struct TrackInfo {
+    int file_id;       ///< Stable identifier (auto-incrementing, survives reorder)
     int slot;
     std::string file_path;
     int width;
@@ -93,8 +94,8 @@ public:
     /// Returns the slot index (0-3), or -1 if all slots are full or init fails.
     int add_track(const std::string& video_path);
 
-    /// Remove a track by slot index. Stops its pipeline and clears the slot.
-    void remove_track(int slot);
+    /// Remove a track by file_id. Stops its pipeline, compacts slots.
+    void remove_track(int file_id);
 
     /// Query whether a slot is occupied.
     bool has_track(int slot) const;
@@ -133,6 +134,7 @@ public:
 
 private:
     struct TrackPipeline {
+        int file_id = 0;              ///< Stable identifier assigned by add_track()
         std::string file_path;
         std::unique_ptr<PacketQueue> packet_queue;
         std::unique_ptr<TrackBuffer> track_buffer;
@@ -178,13 +180,13 @@ private:
     /// Find the first empty slot. Returns -1 if all full.
     int find_empty_slot() const;
 
+    /// Find the slot index for a given file_id. Returns -1 if not found.
+    int find_slot_by_file_id(int file_id) const;
+
     /// Create a TrackPipeline for the given video path.
     /// Returns nullptr if pipeline init fails (demux/decode errors).
     std::unique_ptr<TrackPipeline> create_pipeline(const std::string& path,
                                                      bool hw_decode = true);
-
-    /// Rebuild layout_.order to only reference active (non-null) slots.
-    void rebuild_layout_order();
 
     Clock clock_;
     std::unique_ptr<D3D11Device> d3d_device_;
@@ -221,6 +223,8 @@ private:
 
     // -- Layout state --
     LayoutState layout_;
+    int next_file_id_ = 1;                         ///< Auto-incrementing file ID
+    int file_id_order_[4] = {-1, -1, -1, -1};      ///< file_id order from Flutter
 
     // -- Cached last frame for redraws (zoom/pan while paused or at EOF) --
     PresentDecision last_decision_;

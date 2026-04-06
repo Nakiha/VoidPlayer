@@ -8,12 +8,14 @@ class LayoutMode {
 
 /// Track metadata returned from native layer.
 class TrackInfo {
+  final int fileId;
   final int slot;
   final String path;
   final int width;
   final int height;
 
   const TrackInfo({
+    required this.fileId,
     required this.slot,
     required this.path,
     required this.width,
@@ -21,6 +23,7 @@ class TrackInfo {
   });
 
   factory TrackInfo.fromMap(Map<dynamic, dynamic> map) => TrackInfo(
+        fileId: map['fileId'] as int,
         slot: map['slot'] as int,
         path: map['path'] as String,
         width: map['width'] as int,
@@ -173,9 +176,9 @@ class VideoRendererController {
     return TrackInfo.fromMap(map!);
   }
 
-  /// Remove a track by slot index.
-  Future<void> removeTrack(int slot) => _channel.invokeMethod<void>('removeTrack', {
-        'slot': slot,
+  /// Remove a track by file_id.
+  Future<void> removeTrack(int fileId) => _channel.invokeMethod<void>('removeTrack', {
+        'fileId': fileId,
       });
 
   /// Get current track info list.

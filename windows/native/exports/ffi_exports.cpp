@@ -142,8 +142,8 @@ int naki_vr_renderer_add_track(naki_vr_renderer_t renderer, const char* video_pa
     return static_cast<vr::Renderer*>(renderer)->add_track(video_path);
 }
 
-void naki_vr_renderer_remove_track(naki_vr_renderer_t renderer, int slot) {
-    if (renderer) static_cast<vr::Renderer*>(renderer)->remove_track(slot);
+void naki_vr_renderer_remove_track(naki_vr_renderer_t renderer, int file_id) {
+    if (renderer) static_cast<vr::Renderer*>(renderer)->remove_track(file_id);
 }
 
 int naki_vr_renderer_has_track(naki_vr_renderer_t renderer, int slot) {

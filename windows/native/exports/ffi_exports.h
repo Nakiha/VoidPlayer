@@ -75,7 +75,7 @@ NAKI_VR_FFI_EXPORT int64_t naki_vr_renderer_duration_us(naki_vr_renderer_t rende
 /* ---- Dynamic track management ---- */
 
 NAKI_VR_FFI_EXPORT int naki_vr_renderer_add_track(naki_vr_renderer_t renderer, const char* video_path);
-NAKI_VR_FFI_EXPORT void naki_vr_renderer_remove_track(naki_vr_renderer_t renderer, int slot);
+NAKI_VR_FFI_EXPORT void naki_vr_renderer_remove_track(naki_vr_renderer_t renderer, int file_id);
 NAKI_VR_FFI_EXPORT int naki_vr_renderer_has_track(naki_vr_renderer_t renderer, int slot);
 
 /* ---- Layout ---- */

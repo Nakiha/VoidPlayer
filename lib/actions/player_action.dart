@@ -85,10 +85,10 @@ class SetSplitPos extends PlayerAction {
   const SetSplitPos(this.position) : super('SET_SPLIT_POS');
 }
 
-/// Remove a track by slot index.
+/// Remove a track by file_id.
 class RemoveTrackAction extends PlayerAction {
-  final int slot;
-  const RemoveTrackAction(this.slot) : super('REMOVE_TRACK');
+  final int fileId;
+  const RemoveTrackAction(this.fileId) : super('REMOVE_TRACK');
 }
 
 /// Pan the viewport by a delta.

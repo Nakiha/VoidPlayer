@@ -3,10 +3,56 @@ import '../l10n/app_localizations.dart';
 import '../video_renderer_controller.dart';
 import 'track_content.dart';
 
+/// Drag handle with hover highlight and grab cursor.
+class _DragHandle extends StatefulWidget {
+  final int index;
+  const _DragHandle({required this.index});
+
+  @override
+  State<_DragHandle> createState() => _DragHandleState();
+}
+
+class _DragHandleState extends State<_DragHandle> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return MouseRegion(
+      cursor: SystemMouseCursors.grab,
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: ReorderableDragStartListener(
+        index: widget.index,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: 28,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: _hovering
+                ? colorScheme.onSurface.withValues(alpha: 0.08)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Icon(
+            Icons.drag_handle,
+            size: 16,
+            color: _hovering
+                ? colorScheme.onSurface
+                : colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Single track row matching PySide6 TrackRow (40px height).
-/// Horizontal split: controls (320px) + track content (expanded).
+/// Horizontal split: drag handle + controls (320px) + track content (expanded).
 class TrackRow extends StatelessWidget {
   final TrackInfo track;
+  final int index; // display position index for ReorderableListView
   final double playheadPosition; // 0.0 - 1.0
   final VoidCallback onRemove;
   final VoidCallback onToggleVisibility;
@@ -19,6 +65,7 @@ class TrackRow extends StatelessWidget {
   const TrackRow({
     super.key,
     required this.track,
+    required this.index,
     this.playheadPosition = 0.0,
     required this.onRemove,
     required this.onToggleVisibility,
@@ -37,6 +84,8 @@ class TrackRow extends StatelessWidget {
       height: 40,
       child: Row(
         children: [
+          // Drag handle with hover highlight
+          _DragHandle(index: index),
           // Controls panel (320px)
           SizedBox(
             width: 320,
@@ -55,7 +104,8 @@ class TrackRow extends StatelessWidget {
                         size: 16,
                       ),
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+                      constraints:
+                          const BoxConstraints.tightFor(width: 28, height: 28),
                     ),
                   ),
                   // Mute toggle
@@ -69,7 +119,8 @@ class TrackRow extends StatelessWidget {
                         size: 16,
                       ),
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+                      constraints:
+                          const BoxConstraints.tightFor(width: 28, height: 28),
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -91,7 +142,8 @@ class TrackRow extends StatelessWidget {
                       onPressed: () => onOffsetChanged(-10),
                       icon: const Icon(Icons.remove, size: 14),
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+                      constraints:
+                          const BoxConstraints.tightFor(width: 24, height: 24),
                       tooltip: AppLocalizations.of(context)!.offsetBackward,
                     ),
                   ),
@@ -106,7 +158,8 @@ class TrackRow extends StatelessWidget {
                       onPressed: () => onOffsetChanged(10),
                       icon: const Icon(Icons.add, size: 14),
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+                      constraints:
+                          const BoxConstraints.tightFor(width: 24, height: 24),
                       tooltip: AppLocalizations.of(context)!.offsetForward,
                     ),
                   ),
@@ -118,7 +171,8 @@ class TrackRow extends StatelessWidget {
                       onPressed: onRemove,
                       icon: Icon(Icons.close, size: 16, color: colorScheme.error),
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+                      constraints:
+                          const BoxConstraints.tightFor(width: 28, height: 28),
                       tooltip: AppLocalizations.of(context)!.removeTrack,
                     ),
                   ),

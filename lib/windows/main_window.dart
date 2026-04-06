@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import '../app_log.dart';
 import '../video_renderer_controller.dart';
+import '../track_manager.dart';
 import '../actions/action_registry.dart';
 import '../actions/player_action.dart';
 import '../actions/test_runner.dart';
@@ -23,6 +24,7 @@ class MainWindow extends StatefulWidget {
 
 class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   final _controller = VideoRendererController();
+  final _trackManager = TrackManager();
 
   // Renderer state
   int? _textureId;
@@ -31,7 +33,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   int _currentPtsUs = 0;
   int _durationUs = 0;
   LayoutState _layout = const LayoutState();
-  List<TrackInfo> _tracks = [];
 
   // Polling
   Timer? _pollTimer;
@@ -46,6 +47,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _trackManager.addListener(_onTrackManagerChanged);
     _bindActions();
     _startPolling();
     _startLayoutTicker();
@@ -64,8 +66,18 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   void dispose() {
     _pollTimer?.cancel();
     _layoutTicker?.dispose();
+    _trackManager.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  // -- TrackManager listener --
+
+  void _onTrackManagerChanged() {
+    setState(() {
+      _layout = _layout.copyWith(order: _trackManager.order);
+    });
+    _markLayoutDirty();
   }
 
   // -- Action bindings --
@@ -94,7 +106,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     });
     actionRegistry.bind(const RemoveTrackAction(0), (action) {
       final a = action as RemoveTrackAction;
-      _onRemoveTrack(a.slot);
+      _onRemoveTrack(a.fileId);
     });
 
     // Layout
@@ -175,9 +187,9 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
         final res = await _controller.createRenderer([path]);
         setState(() {
           _textureId = res.textureId;
-          _tracks = res.tracks;
           _viewportState = 2;
         });
+        _trackManager.setTracks(res.tracks);
         _layout = await _controller.getLayout();
       } catch (e) {
         log.severe("createRenderer failed: $e");
@@ -186,7 +198,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     } else {
       try {
         final track = await _controller.addTrack(path);
-        setState(() => _tracks = [..._tracks, track]);
+        _trackManager.addTrack(track);
       } catch (e) {
         log.severe("addTrack failed: $e");
       }
@@ -212,9 +224,9 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
         final res = await _controller.createRenderer(paths);
         setState(() {
           _textureId = res.textureId;
-          _tracks = res.tracks;
           _viewportState = 2;
         });
+        _trackManager.setTracks(res.tracks);
         _layout = await _controller.getLayout();
       } catch (e) {
         log.severe("createRenderer failed: $e");
@@ -225,7 +237,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       for (final path in paths) {
         try {
           final track = await _controller.addTrack(path);
-          setState(() => _tracks = [..._tracks, track]);
+          _trackManager.addTrack(track);
         } catch (e) {
           log.severe("addTrack failed: $e");
         }
@@ -327,12 +339,26 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     }
   }
 
-  // -- Timeline callbacks (stubs) --
+  // -- Track operations --
 
-  void _onRemoveTrack(int slot) async {
-    await _controller.removeTrack(slot);
+  void _onRemoveTrack(int fileId) async {
+    await _controller.removeTrack(fileId);
     final tracks = await _controller.getTracks();
-    setState(() => _tracks = tracks);
+    if (tracks.isEmpty) {
+      // Last track removed: destroy renderer, show empty viewport
+      await _controller.dispose();
+      setState(() {
+        _trackManager.clear();
+        _textureId = null;
+        _viewportState = 1; // empty
+        _isPlaying = false;
+        _currentPtsUs = 0;
+        _durationUs = 0;
+        _layout = const LayoutState();
+      });
+    } else {
+      _trackManager.setTracks(tracks);
+    }
   }
 
   void _onToggleVisibility(int slot, bool visible) {
@@ -393,15 +419,16 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
             onSeek: (pts) => _controller.seek(pts),
           ),
           // Timeline area (variable, max 40%)
-          if (_tracks.isNotEmpty)
+          if (_trackManager.count > 0)
             Expanded(
               flex: 0,
               child: TimelineArea(
-                tracks: _tracks,
+                trackManager: _trackManager,
                 playheadPosition: _durationUs > 0
                     ? _currentPtsUs / _durationUs
                     : 0.0,
                 onRemoveTrack: _onRemoveTrack,
+                onReorder: _trackManager.moveTrack,
                 onToggleVisibility: _onToggleVisibility,
                 onToggleMute: _onToggleMute,
                 onOffsetChanged: _onOffsetChanged,

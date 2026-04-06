@@ -15,21 +15,18 @@ class WindowArgs {
   /// Parse CLI args to determine which window type this is.
   ///
   /// Main window (engine #0) receives no desktop_multi_window args.
-  /// Secondary windows receive their type as JSON via createWindow arguments.
+  /// Secondary windows receive args: ["multi_window", "<windowId>", "<json>"]
   static WindowArgs parse(List<String> args) {
-    // Look for multi-window argument pattern.
-    // desktop_multi_window passes args like: --multi-window <windowId> <json>
     for (int i = 0; i < args.length; i++) {
       final arg = args[i];
-      if (arg == '--multi-window' && i + 2 < args.length) {
-        // The JSON argument follows the window ID
+      if (arg == 'multi_window' && i + 2 < args.length) {
         try {
           final config = jsonDecode(args[i + 2]) as Map<String, dynamic>;
           final type = config['type'] as String? ?? WindowArgs.main;
           return WindowArgs._(windowType: type);
         } catch (_) {
           // Not valid JSON, continue looking
- }
+        }
       }
     }
     // Default: main window

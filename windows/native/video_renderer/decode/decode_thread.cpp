@@ -435,6 +435,7 @@ void DecodeThread::run() {
         }
 
         int ret = 0;
+        auto batch_t0 = std::chrono::steady_clock::now();
         if (hw_enabled_ && device_mutex_) {
             std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
             ret = avcodec_send_packet(codec_ctx_, pkt);
@@ -473,6 +474,7 @@ void DecodeThread::run() {
             // Exact seek: discard frames before the target PTS
             if (exact_seek_target_us_ >= 0) {
                 if (tex_frame.pts_us < exact_seek_target_us_) {
+                    perf_.frames_dropped.fetch_add(1, std::memory_order_relaxed);
                     av_frame_unref(frame);
                     continue; // Discard intermediate frame
                 }
@@ -559,8 +561,17 @@ void DecodeThread::run() {
         }
 
         if (frames_produced > 0) {
-            spdlog::debug("[DecodeThread] Decoded {} frames, buf_state={}, buf_count={}",
-                          frames_produced, static_cast<int>(output_buffer_.state()),
+            uint64_t batch_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - batch_t0).count());
+            perf_.frames_decoded.fetch_add(frames_produced, std::memory_order_relaxed);
+            perf_.total_decode_us.fetch_add(batch_us, std::memory_order_relaxed);
+            // Update peak (CAS loop)
+            uint64_t cur_max = perf_.max_decode_us.load(std::memory_order_relaxed);
+            while (batch_us > cur_max &&
+                   !perf_.max_decode_us.compare_exchange_weak(cur_max, batch_us,
+                                                              std::memory_order_relaxed)) {}
+            spdlog::debug("[DecodeThread] Decoded {} frames in {}us, buf_state={}, buf_count={}",
+                          frames_produced, batch_us, static_cast<int>(output_buffer_.state()),
                           output_buffer_.total_count());
         }
     }

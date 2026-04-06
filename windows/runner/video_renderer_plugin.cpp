@@ -24,6 +24,43 @@ flutter::EncodableMap make_track_map(const vr::TrackInfo& info) {
 }
 } // namespace
 
+// Process-global renderer pointer for cross-engine access (e.g. stats window).
+vr::Renderer* g_global_renderer = nullptr;
+
+// ---- dart:ffi diagnostics export ----
+static NakiVrDiagnostics g_diag_snapshot = {};
+
+extern "C" __declspec(dllexport)
+const NakiVrDiagnostics* naki_vr_get_diagnostics() {
+    auto& d = g_diag_snapshot;
+    std::memset(&d, 0, sizeof(d));
+
+    auto* r = g_global_renderer;
+    if (!r) return &d;
+
+    d.playback_time_s = static_cast<double>(r->current_pts_us()) / 1e6;
+    d.is_playing = r->is_playing() ? 1 : 0;
+
+    auto stats = r->track_perf_stats();
+    d.track_count = static_cast<int32_t>(stats.size());
+    for (int i = 0; i < kMaxTracksFFI && i < static_cast<int>(stats.size()); ++i) {
+        const auto& s = stats[i];
+        d.tracks[i].slot            = s.slot;
+        d.tracks[i].file_id         = s.file_id;
+        d.tracks[i].fps             = s.fps;
+        d.tracks[i].avg_decode_ms   = s.avg_decode_ms;
+        d.tracks[i].max_decode_ms   = s.max_decode_ms;
+        d.tracks[i].buffer_count    = static_cast<int32_t>(s.buffer_count);
+        d.tracks[i].buffer_capacity = static_cast<int32_t>(s.buffer_capacity);
+        d.tracks[i].buffer_state    = static_cast<int32_t>(s.buffer_state);
+    }
+    // Mark unused slots
+    for (int i = static_cast<int>(stats.size()); i < kMaxTracksFFI; ++i) {
+        d.tracks[i].slot = -1;
+    }
+    return &d;
+}
+
 // static
 void VideoRendererPlugin::RegisterWithRegistrar(
     flutter::PluginRegistrarWindows* registrar) {
@@ -70,6 +107,7 @@ VideoRendererPlugin::VideoRendererPlugin(
 }
 
 VideoRendererPlugin::~VideoRendererPlugin() {
+    g_global_renderer = nullptr;
     if (texture_id_ >= 0 && texture_registrar_) {
         texture_registrar_->UnregisterTexture(texture_id_);
         texture_id_ = -1;
@@ -199,10 +237,31 @@ void VideoRendererPlugin::HandleMethodCall(
         }
         result->Success(flutter::EncodableValue(tracks_list));
     } else if (method == "getDiagnostics") {
-        // Placeholder diagnostics. Full implementation needs Renderer counters.
+        // Use global renderer so stats window (secondary engine) can query directly
+        auto* diag_renderer = g_global_renderer;
         flutter::EncodableMap map;
-        map[flutter::EncodableValue("playbackTime")] =
-            flutter::EncodableValue(renderer_ ? static_cast<double>(renderer_->current_pts_us()) / 1e6 : 0.0);
+        if (diag_renderer) {
+            map[flutter::EncodableValue("playbackTime")] =
+                flutter::EncodableValue(static_cast<double>(diag_renderer->current_pts_us()) / 1e6);
+            map[flutter::EncodableValue("isPlaying")] =
+                flutter::EncodableValue(diag_renderer->is_playing());
+
+            flutter::EncodableList tracks_list;
+            for (const auto& ts : diag_renderer->track_perf_stats()) {
+                flutter::EncodableMap tm;
+                tm[flutter::EncodableValue("slot")] = flutter::EncodableValue(ts.slot);
+                tm[flutter::EncodableValue("fileId")] = flutter::EncodableValue(ts.file_id);
+
+                tm[flutter::EncodableValue("fps")] = flutter::EncodableValue(ts.fps);
+                tm[flutter::EncodableValue("avgDecodeMs")] = flutter::EncodableValue(ts.avg_decode_ms);
+                tm[flutter::EncodableValue("maxDecodeMs")] = flutter::EncodableValue(ts.max_decode_ms);
+                tm[flutter::EncodableValue("bufferCount")] = flutter::EncodableValue(static_cast<int>(ts.buffer_count));
+                tm[flutter::EncodableValue("bufferCapacity")] = flutter::EncodableValue(static_cast<int>(ts.buffer_capacity));
+                tm[flutter::EncodableValue("bufferState")] = flutter::EncodableValue(static_cast<int>(ts.buffer_state));
+                tracks_list.push_back(flutter::EncodableValue(tm));
+            }
+            map[flutter::EncodableValue("tracks")] = flutter::EncodableValue(tracks_list);
+        }
         result->Success(flutter::EncodableValue(map));
     } else if (method == "getLayout") {
         flutter::EncodableMap map;
@@ -307,7 +366,9 @@ void VideoRendererPlugin::CreateRenderer(
     }
 
     renderer_ = std::make_unique<vr::Renderer>();
+    g_global_renderer = renderer_.get();
     if (!renderer_->initialize(config)) {
+        g_global_renderer = nullptr;
         renderer_.reset();
         result->Error("INIT_FAILED", "Failed to initialize renderer");
         return;
@@ -385,6 +446,7 @@ void VideoRendererPlugin::DestroyRenderer(
     texture_variant_.reset();
 
     if (renderer_) {
+        g_global_renderer = nullptr;
         renderer_->shutdown();
         renderer_.reset();
     }

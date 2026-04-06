@@ -390,7 +390,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
             onAddMedia: _openFile,
             onNewWindow: () => WindowManager.showStatsWindow(),
             onSettings: () => WindowManager.showSettingsWindow(),
-            onDebugMemory: () => WindowManager.showMemoryWindow(),
+            onDebugMemory: () => WindowManager.showStatsWindow(),
             viewModeEnabled: _textureId != null,
           ),
           // Viewport (expanded)

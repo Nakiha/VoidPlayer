@@ -35,6 +35,18 @@ struct TrackInfo {
     int height;
 };
 
+/// Per-track performance stats snapshot.
+struct TrackPerfStats {
+    int slot = -1;
+    int file_id = 0;
+    double fps = 0.0;
+    double avg_decode_ms = 0.0;
+    double max_decode_ms = 0.0;
+    size_t buffer_count = 0;
+    size_t buffer_capacity = 0;
+    TrackState buffer_state = TrackState::Empty;
+};
+
 /// Layout state — all visual layout parameters in one struct.
 /// Updated atomically via Renderer::apply_layout().
 struct LayoutState {
@@ -105,6 +117,9 @@ public:
 
     /// Get metadata for all active tracks.
     std::vector<TrackInfo> track_infos() const;
+
+    /// Get per-track performance stats snapshot (thread-safe).
+    std::vector<TrackPerfStats> track_perf_stats() const;
 
     // -- Layout control --
 
@@ -209,6 +224,11 @@ private:
     mutable std::mutex state_mutex_;
     bool preview_drawn_ = false;
     bool was_buffering_ = false;
+
+    // -- Perf stats baseline for FPS calculation --
+    mutable std::chrono::steady_clock::time_point stats_start_time_;
+    struct PerfBaseline { uint64_t frames = 0; };
+    mutable std::array<PerfBaseline, kMaxTracks> perf_baselines_;
 
     // Shared mutex for D3D11 immediate context serialization.
     // Both the render thread and FFmpeg's D3D11VA decode threads must acquire

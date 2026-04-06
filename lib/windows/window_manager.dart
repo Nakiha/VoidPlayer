@@ -8,56 +8,27 @@ class WindowManager {
 
   static final Map<String, String> _windowIds = {};
 
-  /// Show or focus an existing stats window, or create a new one.
-  static Future<void> showStatsWindow() async {
-    final existing = _windowIds[WindowArgs.stats];
+  static Future<void> _showWindow(String type) async {
+    final existing = _windowIds[type];
     if (existing != null) {
       final ctrl = WindowController.fromWindowId(existing);
       await ctrl.show();
       return;
     }
 
+    final mainCtrl = await WindowController.fromCurrentEngine();
     final ctrl = await WindowController.create(WindowConfiguration(
-      arguments: jsonEncode({'type': WindowArgs.stats}),
+      arguments: jsonEncode({
+        'type': type,
+        'mainWindowId': mainCtrl.windowId,
+      }),
       hiddenAtLaunch: false,
     ));
-    _windowIds[WindowArgs.stats] = ctrl.windowId;
+    _windowIds[type] = ctrl.windowId;
     await ctrl.show();
   }
 
-  /// Show or focus an existing memory window.
-  static Future<void> showMemoryWindow() async {
-    final existing = _windowIds[WindowArgs.memory];
-    if (existing != null) {
-      final ctrl = WindowController.fromWindowId(existing);
-      await ctrl.show();
-      return;
-    }
-
-    final ctrl = await WindowController.create(WindowConfiguration(
-      arguments: jsonEncode({'type': WindowArgs.memory}),
-      hiddenAtLaunch: false,
-    ),
-    );
-    _windowIds[WindowArgs.memory] = ctrl.windowId;
-    await ctrl.show();
-  }
-
-  /// Show or focus an existing settings window.
-  static Future<void> showSettingsWindow() async {
-    final existing = _windowIds[WindowArgs.settings];
-    if (existing != null) {
-      final ctrl = WindowController.fromWindowId(existing);
-      await ctrl.show();
-      return;
-    }
-
-    final ctrl = await WindowController.create(WindowConfiguration(
-      arguments: jsonEncode({'type': WindowArgs.settings}),
-      hiddenAtLaunch: false,
-    ),
-    );
-    _windowIds[WindowArgs.settings] = ctrl.windowId;
-    await ctrl.show();
-  }
+  static Future<void> showStatsWindow() => _showWindow(WindowArgs.stats);
+  static Future<void> showMemoryWindow() => _showWindow(WindowArgs.memory);
+  static Future<void> showSettingsWindow() => _showWindow(WindowArgs.settings);
 }

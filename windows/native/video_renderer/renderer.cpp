@@ -186,6 +186,10 @@ bool Renderer::initialize(const RendererConfig& config) {
 
     initialized_ = true;
 
+    // Initialize perf stats baseline
+    stats_start_time_ = std::chrono::steady_clock::now();
+    for (auto& bl : perf_baselines_) bl.frames = 0;
+
     // Start render loop immediately (paused mode).
     // Decodes and displays first frame, fills buffers, but does not advance playback.
     running_ = true;
@@ -1186,6 +1190,7 @@ int Renderer::add_track(const std::string& video_path) {
         pipeline->demux_thread->stats().duration_us);
 
     // Commit: install the pipeline
+    tracks_[slot] = std::move(pipeline);
     tracks_[slot]->file_id = next_file_id_++;
     int new_file_id = tracks_[slot]->file_id;
 
@@ -1321,6 +1326,48 @@ std::vector<TrackInfo> Renderer::track_infos() const {
         }
     }
     return infos;
+}
+
+std::vector<TrackPerfStats> Renderer::track_perf_stats() const {
+    std::vector<TrackPerfStats> result;
+    auto now = std::chrono::steady_clock::now();
+    double elapsed_s = std::chrono::duration<double>(now - stats_start_time_).count();
+
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks_[i]) continue;
+        const auto& track = tracks_[i];
+        auto snap = track->decode_thread->perf_counters().snapshot();
+
+        TrackPerfStats s;
+        s.slot = static_cast<int>(i);
+        s.file_id = track->file_id;
+        s.buffer_count = track->track_buffer->total_count();
+        s.buffer_capacity = track->track_buffer->preroll_target();
+        s.buffer_state = track->track_buffer->state();
+
+        // Average decode time
+        if (snap.frames_decoded > 0) {
+            s.avg_decode_ms = static_cast<double>(snap.total_decode_us) /
+                              static_cast<double>(snap.frames_decoded) / 1000.0;
+        }
+        s.max_decode_ms = static_cast<double>(snap.max_decode_us) / 1000.0;
+
+        // FPS: delta frames / delta time since last snapshot
+        auto& baseline = perf_baselines_[i];
+        uint64_t delta_frames = snap.frames_decoded - baseline.frames;
+        if (elapsed_s > 0.5) {
+            s.fps = static_cast<double>(delta_frames) / elapsed_s;
+            baseline.frames = snap.frames_decoded;
+        }
+
+        result.push_back(s);
+    }
+
+    // Reset shared timer once after all tracks are processed
+    if (elapsed_s > 0.5) {
+        stats_start_time_ = now;
+    }
+    return result;
 }
 
 } // namespace vr

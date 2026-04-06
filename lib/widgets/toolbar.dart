@@ -88,7 +88,7 @@ class AppToolBar extends StatelessWidget {
             height: 32,
             child: IconButton(
               onPressed: onDebugMemory,
-              icon: const Icon(Icons.memory, size: 18),
+              icon: const Icon(Icons.speed, size: 18),
               tooltip: AppLocalizations.of(context)!.performanceMonitor,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints.tightFor(width: 32, height: 32),

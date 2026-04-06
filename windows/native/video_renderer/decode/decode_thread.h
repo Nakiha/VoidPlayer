@@ -16,6 +16,30 @@ extern "C" {
 
 namespace vr {
 
+/// Performance stats snapshot for a single decode thread.
+struct DecodePerfCounters {
+    std::atomic<uint64_t> frames_decoded{0};       ///< Total frames decoded since start
+    std::atomic<uint64_t> total_decode_us{0};       ///< Cumulative decode time (microseconds)
+    std::atomic<uint64_t> max_decode_us{0};         ///< Peak decode time for a single batch (microseconds)
+    std::atomic<uint64_t> frames_dropped{0};        ///< Frames discarded during exact seek
+
+    /// Snapshot current values (thread-safe).
+    struct Snapshot {
+        uint64_t frames_decoded;
+        uint64_t total_decode_us;
+        uint64_t max_decode_us;
+        uint64_t frames_dropped;
+    };
+    Snapshot snapshot() const {
+        return {
+            frames_decoded.load(std::memory_order_relaxed),
+            total_decode_us.load(std::memory_order_relaxed),
+            max_decode_us.load(std::memory_order_relaxed),
+            frames_dropped.load(std::memory_order_relaxed),
+        };
+    }
+};
+
 class DecodeThread {
 public:
     DecodeThread(PacketQueue& input_queue, TrackBuffer& output_buffer,
@@ -43,6 +67,9 @@ public:
     /// to prevent stale packets from being sent to the codec (avoids HEVC
     /// "Could not find ref" warnings during the seek transition).
     void set_decode_paused(bool paused);
+
+    /// Read-only access to performance counters.
+    const DecodePerfCounters& perf_counters() const { return perf_; }
 
 private:
     void run();
@@ -97,6 +124,7 @@ private:
 
     std::thread thread_;
     std::atomic<bool> running_{false};
+    DecodePerfCounters perf_;
 };
 
 } // namespace vr

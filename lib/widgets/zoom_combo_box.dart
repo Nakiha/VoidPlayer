@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 
 /// Zoom level dropdown matching PySide6 ZoomComboBox (90px width).
 class ZoomComboBox extends StatelessWidget {
@@ -15,13 +16,14 @@ class ZoomComboBox extends StatelessWidget {
     required this.onChanged,
   });
 
-  String _label(double v) {
-    if (v == 0) return 'Fit';
+  String _label(double v, AppLocalizations l) {
+    if (v == 0) return l.zoomFit;
     return '${(v * 100).round()}%';
   }
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
     return SizedBox(
       width: 90,
       height: 32,
@@ -32,10 +34,10 @@ class ZoomComboBox extends StatelessWidget {
         underline: const SizedBox.shrink(),
         style: Theme.of(context).textTheme.bodySmall,
         items: [
-          const DropdownMenuItem(value: 0, child: Text('Fit')),
+          DropdownMenuItem(value: 0, child: Text(l.zoomFit)),
           ...presets.map((v) => DropdownMenuItem(
                 value: v,
-                child: Text(_label(v)),
+                child: Text(_label(v, l)),
               )),
         ],
         onChanged: (v) {

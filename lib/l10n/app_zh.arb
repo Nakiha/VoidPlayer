@@ -1,0 +1,67 @@
+{
+  "@@locale": "zh",
+
+  "appTitle": "Void Player",
+
+  "addMedia": "添加媒体",
+  "newWindow": "新窗口",
+  "settings": "设置",
+  "performanceMonitor": "性能监视器",
+
+  "previousFrame": "上一帧",
+  "pause": "暂停",
+  "play": "播放",
+  "nextFrame": "下一帧",
+
+  "sideBySide": "并排",
+  "splitScreen": "分屏",
+
+  "zoomFit": "适应",
+
+  "initializing": "初始化中...",
+  "emptyHint": "点击\"添加媒体\"或拖拽文件到此处",
+
+  "offsetBackward": "-10ms",
+  "offsetForward": "+10ms",
+  "removeTrack": "移除轨道",
+
+  "statsTitle": "Void Player - 性能统计",
+  "trackStatistics": "轨道统计",
+  "waitingDiagnostics": "等待诊断数据...",
+  "track": "轨道",
+  "fps": "帧率",
+  "target": "目标",
+  "decodeAvg": "解码均值",
+  "decodeMax": "解码峰值",
+  "status": "状态",
+  "bottleneck": "瓶颈!",
+  "ok": "正常",
+  "export": "导出",
+
+  "memoryTitle": "Void Player - 内存监视器",
+  "objectStatistics": "对象统计",
+  "memoryPlaceholder": "连接原生诊断后，内存监控数据将显示在此处。",
+  "snapshot": "快照",
+  "clear": "清空",
+  "statusWaitingData": "状态：等待数据",
+  "noDataYet": "暂无数据",
+
+  "settingsTitle": "Void Player - 设置",
+  "shortcuts": "快捷键",
+  "about": "关于",
+  "keyboardShortcuts": "键盘快捷键",
+  "action": "操作",
+  "shortcut": "快捷键",
+  "versionLabel": "版本 1.0.0",
+  "appDescription": "多轨道视频对比播放器。",
+  "dependencies": "依赖项",
+  "license": "许可证：GPLv3",
+
+  "actionTogglePlay": "播放/暂停",
+  "actionStepForward": "步进",
+  "actionStepBackward": "步退",
+  "actionOpenFile": "打开文件",
+  "actionToggleLayout": "切换布局模式",
+  "actionSeekForward": "快进 (+1s)",
+  "actionSeekBackward": "快退 (-1s)"
+}

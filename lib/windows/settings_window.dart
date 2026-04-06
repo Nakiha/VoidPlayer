@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 
 /// Settings window (secondary window, NavigationRail: Shortcuts | About).
 class SettingsApp extends StatelessWidget {
@@ -8,6 +9,8 @@ class SettingsApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Void Player - Settings',
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF0078D4),
@@ -31,6 +34,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
     return Scaffold(
       body: Row(
         children: [
@@ -40,14 +44,14 @@ class _SettingsPageState extends State<SettingsPage> {
               setState(() => _selectedIndex = index);
             },
             labelType: NavigationRailLabelType.all,
-            destinations: const [
+            destinations: [
               NavigationRailDestination(
-                icon: Icon(Icons.keyboard),
-                label: Text('Shortcuts'),
+                icon: const Icon(Icons.keyboard),
+                label: Text(l.shortcuts),
               ),
               NavigationRailDestination(
-                icon: Icon(Icons.info_outline),
-                label: Text('About'),
+                icon: const Icon(Icons.info_outline),
+                label: Text(l.about),
               ),
             ],
           ),
@@ -73,14 +77,15 @@ class _ShortcutsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l = AppLocalizations.of(context)!;
     final actions = <Map<String, String>>[
-      {'action': 'Toggle Play/Pause', 'key': 'Space'},
-      {'action': 'Step Forward', 'key': 'Arrow Right'},
-      {'action': 'Step Backward', 'key': 'Arrow Left'},
-      {'action': 'Open File', 'key': 'O'},
-      {'action': 'Toggle Layout Mode', 'key': 'M'},
-      {'action': 'Seek Forward (+1s)', 'key': 'Shift + Arrow Right'},
-      {'action': 'Seek Backward (-1s)', 'key': 'Shift + Arrow Left'},
+      {'action': l.actionTogglePlay, 'key': 'Space'},
+      {'action': l.actionStepForward, 'key': 'Arrow Right'},
+      {'action': l.actionStepBackward, 'key': 'Arrow Left'},
+      {'action': l.actionOpenFile, 'key': 'O'},
+      {'action': l.actionToggleLayout, 'key': 'M'},
+      {'action': l.actionSeekForward, 'key': 'Shift + Arrow Right'},
+      {'action': l.actionSeekBackward, 'key': 'Shift + Arrow Left'},
     ];
 
     return Padding(
@@ -88,15 +93,15 @@ class _ShortcutsPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Keyboard Shortcuts', style: theme.textTheme.titleMedium),
+          Text(l.keyboardShortcuts, style: theme.textTheme.titleMedium),
           const SizedBox(height: 16),
           Expanded(
             child: DataTable(
               headingTextStyle: theme.textTheme.labelSmall,
               dataTextStyle: theme.textTheme.bodySmall,
-              columns: const [
-                DataColumn(label: Text('Action')),
-                DataColumn(label: Text('Shortcut')),
+              columns: [
+                DataColumn(label: Text(l.action)),
+                DataColumn(label: Text(l.shortcut)),
               ],
               rows: actions.map((a) => DataRow(cells: [
                     DataCell(Text(a['action']!)),
@@ -126,22 +131,23 @@ class _AboutPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l = AppLocalizations.of(context)!;
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Void Player', style: theme.textTheme.headlineMedium),
+          Text(l.appTitle, style: theme.textTheme.headlineMedium),
           const SizedBox(height: 4),
-          Text('Version 1.0.0',
+          Text(l.versionLabel,
               style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   )),
           const SizedBox(height: 16),
-          Text('A multi-track video comparison player.',
+          Text(l.appDescription,
               style: theme.textTheme.bodyMedium),
           const SizedBox(height: 24),
-          Text('Dependencies', style: theme.textTheme.titleSmall),
+          Text(l.dependencies, style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
           _depItem('Flutter', 'BSD-3-Clause'),
           _depItem('FFmpeg', 'LGPL-2.1+'),
@@ -149,7 +155,7 @@ class _AboutPage extends StatelessWidget {
           _depItem('flutter_acrylic', 'MIT'),
           _depItem('desktop_multi_window', 'MIT'),
           const Spacer(),
-          Text('License: GPLv3',
+          Text(l.license,
               style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   )),

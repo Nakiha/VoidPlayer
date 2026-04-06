@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 
 /// Performance statistics window (secondary window, 500x300).
 class StatsApp extends StatelessWidget {
@@ -9,6 +10,8 @@ class StatsApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Void Player - Stats',
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF0078D4),
@@ -54,6 +57,7 @@ class _StatsPageState extends State<StatsPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l = AppLocalizations.of(context)!;
     return Scaffold(
       body: Padding(
         padding: const EdgeInsets.all(12),
@@ -63,7 +67,7 @@ class _StatsPageState extends State<StatsPage> {
             // Header
             Row(
               children: [
-                Text('Track Statistics',
+                Text(l.trackStatistics,
                     style: theme.textTheme.titleMedium),
               ],
             ),
@@ -72,20 +76,20 @@ class _StatsPageState extends State<StatsPage> {
             Expanded(
               child: _trackStats.isEmpty
                   ? Center(
-                      child: Text('Waiting for diagnostics data...',
+                      child: Text(l.waitingDiagnostics,
                           style: theme.textTheme.bodyMedium?.copyWith(
                                 color: theme.colorScheme.onSurfaceVariant,
                               )))
                   : DataTable(
                       headingTextStyle: theme.textTheme.labelSmall,
                       dataTextStyle: theme.textTheme.bodySmall,
-                      columns: const [
-                        DataColumn(label: Text('Track')),
-                        DataColumn(label: Text('FPS')),
-                        DataColumn(label: Text('Target')),
-                        DataColumn(label: Text('Decode Avg')),
-                        DataColumn(label: Text('Decode Max')),
-                        DataColumn(label: Text('Status')),
+                      columns: [
+                        DataColumn(label: Text(l.track)),
+                        DataColumn(label: Text(l.fps)),
+                        DataColumn(label: Text(l.target)),
+                        DataColumn(label: Text(l.decodeAvg)),
+                        DataColumn(label: Text(l.decodeMax)),
+                        DataColumn(label: Text(l.status)),
                       ],
                       rows: _trackStats.map((stats) {
                         return DataRow(cells: [
@@ -100,8 +104,8 @@ class _StatsPageState extends State<StatsPage> {
                               '${(stats['maxDecodeMs'] ?? 0.0).toStringAsFixed(1)}ms')),
                           DataCell(Text(
                             stats['isBottleneck'] == true
-                                ? 'Bottleneck!'
-                                : 'OK',
+                                ? l.bottleneck
+                                : l.ok,
                             style: TextStyle(
                               color: stats['isBottleneck'] == true
                                   ? Colors.orange
@@ -121,7 +125,7 @@ class _StatsPageState extends State<StatsPage> {
                     // TODO: implement CSV export
                   },
                   icon: const Icon(Icons.download, size: 16),
-                  label: const Text('Export'),
+                  label: Text(AppLocalizations.of(context)!.export),
                 ),
               ],
             ),

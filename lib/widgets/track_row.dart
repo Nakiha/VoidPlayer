@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../video_renderer_controller.dart';
 import 'track_content.dart';
 
@@ -91,7 +92,7 @@ class TrackRow extends StatelessWidget {
                       icon: const Icon(Icons.remove, size: 14),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-                      tooltip: '-10ms',
+                      tooltip: AppLocalizations.of(context)!.offsetBackward,
                     ),
                   ),
                   Text(
@@ -106,7 +107,7 @@ class TrackRow extends StatelessWidget {
                       icon: const Icon(Icons.add, size: 14),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-                      tooltip: '+10ms',
+                      tooltip: AppLocalizations.of(context)!.offsetForward,
                     ),
                   ),
                   // Remove button
@@ -118,7 +119,7 @@ class TrackRow extends StatelessWidget {
                       icon: Icon(Icons.close, size: 16, color: colorScheme.error),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-                      tooltip: 'Remove Track',
+                      tooltip: AppLocalizations.of(context)!.removeTrack,
                     ),
                   ),
                 ],

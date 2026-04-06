@@ -1,0 +1,162 @@
+{
+  "@@locale": "en",
+
+  "appTitle": "Void Player",
+  "@appTitle": { "description": "Application title" },
+
+  "addMedia": "Add Media",
+  "@addMedia": { "description": "Add media button label" },
+
+  "newWindow": "New Window",
+  "@newWindow": { "description": "New window button label" },
+
+  "settings": "Settings",
+  "@settings": { "description": "Settings tooltip/nav label" },
+
+  "performanceMonitor": "Performance Monitor",
+  "@performanceMonitor": { "description": "Performance monitor tooltip" },
+
+  "previousFrame": "Previous Frame",
+  "@previousFrame": { "description": "Step backward tooltip" },
+
+  "pause": "Pause",
+  "@pause": { "description": "Pause tooltip" },
+
+  "play": "Play",
+  "@play": { "description": "Play tooltip" },
+
+  "nextFrame": "Next Frame",
+  "@nextFrame": { "description": "Step forward tooltip" },
+
+  "sideBySide": "Side by Side",
+  "@sideBySide": { "description": "View mode: side by side" },
+
+  "splitScreen": "Split Screen",
+  "@splitScreen": { "description": "View mode: split screen" },
+
+  "zoomFit": "Fit",
+  "@zoomFit": { "description": "Zoom dropdown: fit to view" },
+
+  "initializing": "Initializing...",
+  "@initializing": { "description": "Loading state text" },
+
+  "emptyHint": "Click \"Add Media\" or drag files here",
+  "@emptyHint": { "description": "Empty viewport hint" },
+
+  "offsetBackward": "-10ms",
+  "@offsetBackward": { "description": "Track offset backward tooltip" },
+
+  "offsetForward": "+10ms",
+  "@offsetForward": { "description": "Track offset forward tooltip" },
+
+  "removeTrack": "Remove Track",
+  "@removeTrack": { "description": "Remove track tooltip" },
+
+  "statsTitle": "Void Player - Stats",
+  "@statsTitle": { "description": "Stats window title" },
+
+  "trackStatistics": "Track Statistics",
+  "@trackStatistics": { "description": "Stats page header" },
+
+  "waitingDiagnostics": "Waiting for diagnostics data...",
+  "@waitingDiagnostics": { "description": "Stats empty state" },
+
+  "track": "Track",
+  "@track": { "description": "Table column: track" },
+
+  "fps": "FPS",
+  "@fps": { "description": "Table column: FPS" },
+
+  "target": "Target",
+  "@target": { "description": "Table column: target FPS" },
+
+  "decodeAvg": "Decode Avg",
+  "@decodeAvg": { "description": "Table column: average decode time" },
+
+  "decodeMax": "Decode Max",
+  "@decodeMax": { "description": "Table column: max decode time" },
+
+  "status": "Status",
+  "@status": { "description": "Table column: status" },
+
+  "bottleneck": "Bottleneck!",
+  "@bottleneck": { "description": "Track bottleneck status" },
+
+  "ok": "OK",
+  "@ok": { "description": "Track OK status" },
+
+  "export": "Export",
+  "@export": { "description": "Export button label" },
+
+  "memoryTitle": "Void Player - Memory Monitor",
+  "@memoryTitle": { "description": "Memory window title" },
+
+  "objectStatistics": "Object Statistics",
+  "@objectStatistics": { "description": "Memory page header" },
+
+  "memoryPlaceholder": "Memory monitoring data will appear here\nwhen native diagnostics are connected.",
+  "@memoryPlaceholder": { "description": "Memory page placeholder" },
+
+  "snapshot": "Snapshot",
+  "@snapshot": { "description": "Snapshot button label" },
+
+  "clear": "Clear",
+  "@clear": { "description": "Clear button label" },
+
+  "statusWaitingData": "Status: Waiting for data",
+  "@statusWaitingData": { "description": "Memory status text" },
+
+  "noDataYet": "No data yet",
+  "@noDataYet": { "description": "Chart empty state" },
+
+  "settingsTitle": "Void Player - Settings",
+  "@settingsTitle": { "description": "Settings window title" },
+
+  "shortcuts": "Shortcuts",
+  "@shortcuts": { "description": "Navigation: shortcuts" },
+
+  "about": "About",
+  "@about": { "description": "Navigation: about" },
+
+  "keyboardShortcuts": "Keyboard Shortcuts",
+  "@keyboardShortcuts": { "description": "Shortcuts page title" },
+
+  "action": "Action",
+  "@action": { "description": "Table column: action" },
+
+  "shortcut": "Shortcut",
+  "@shortcut": { "description": "Table column: shortcut key" },
+
+  "versionLabel": "Version 1.0.0",
+  "@versionLabel": { "description": "Version display text" },
+
+  "appDescription": "A multi-track video comparison player.",
+  "@appDescription": { "description": "App description in about page" },
+
+  "dependencies": "Dependencies",
+  "@dependencies": { "description": "Dependencies section title" },
+
+  "license": "License: GPLv3",
+  "@license": { "description": "License text" },
+
+  "actionTogglePlay": "Toggle Play/Pause",
+  "@actionTogglePlay": { "description": "Shortcut action label" },
+
+  "actionStepForward": "Step Forward",
+  "@actionStepForward": { "description": "Shortcut action label" },
+
+  "actionStepBackward": "Step Backward",
+  "@actionStepBackward": { "description": "Shortcut action label" },
+
+  "actionOpenFile": "Open File",
+  "@actionOpenFile": { "description": "Shortcut action label" },
+
+  "actionToggleLayout": "Toggle Layout Mode",
+  "@actionToggleLayout": { "description": "Shortcut action label" },
+
+  "actionSeekForward": "Seek Forward (+1s)",
+  "@actionSeekForward": { "description": "Shortcut action label" },
+
+  "actionSeekBackward": "Seek Backward (-1s)",
+  "@actionSeekBackward": { "description": "Shortcut action label" }
+}

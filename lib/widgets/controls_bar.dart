@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import 'zoom_combo_box.dart';
 import 'time_label.dart';
 import 'timeline_slider.dart';
@@ -48,7 +49,7 @@ class ControlsBar extends StatelessWidget {
             child: IconButton(
               onPressed: onStepBackward,
               icon: const Icon(Icons.skip_previous, size: 18),
-              tooltip: 'Previous Frame',
+              tooltip: AppLocalizations.of(context)!.previousFrame,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints.tightFor(width: 32, height: 32),
             ),
@@ -63,7 +64,7 @@ class ControlsBar extends StatelessWidget {
                 isPlaying ? Icons.pause : Icons.play_arrow,
                 size: 20,
               ),
-              tooltip: isPlaying ? 'Pause' : 'Play',
+              tooltip: isPlaying ? AppLocalizations.of(context)!.pause : AppLocalizations.of(context)!.play,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints.tightFor(width: 32, height: 32),
             ),
@@ -75,7 +76,7 @@ class ControlsBar extends StatelessWidget {
             child: IconButton(
               onPressed: onStepForward,
               icon: const Icon(Icons.skip_next, size: 18),
-              tooltip: 'Next Frame',
+              tooltip: AppLocalizations.of(context)!.nextFrame,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints.tightFor(width: 32, height: 32),
             ),

@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../video_renderer_controller.dart';
 
 /// Three-state viewport matching PySide6 ViewportPanel.
@@ -59,7 +60,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
                 ),
               ),
               const SizedBox(height: 8),
-              Text('Initializing...',
+              Text(AppLocalizations.of(context)!.initializing,
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   )),
@@ -75,7 +76,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
                   size: 64,
                   color: Theme.of(context).colorScheme.onSurfaceVariant),
               const SizedBox(height: 8),
-              Text('Click "Add Media" or drag files here',
+              Text(AppLocalizations.of(context)!.emptyHint,
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   )),

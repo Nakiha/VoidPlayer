@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 
 /// Side-by-side / Split-screen toggle matching PySide6 SegmentedWidget (240x32).
 class ViewModeSelector extends StatelessWidget {
@@ -25,13 +26,13 @@ class ViewModeSelector extends StatelessWidget {
         child: Row(
           children: [
             _Segment(
-              label: 'Side by Side',
+              label: AppLocalizations.of(context)!.sideBySide,
               selected: currentMode == 0,
               borderRadius: const BorderRadius.horizontal(left: Radius.circular(5)),
               onTap: () => onChanged(0),
             ),
             _Segment(
-              label: 'Split Screen',
+              label: AppLocalizations.of(context)!.splitScreen,
               selected: currentMode == 1,
               borderRadius: const BorderRadius.horizontal(right: Radius.circular(5)),
               onTap: () => onChanged(1),

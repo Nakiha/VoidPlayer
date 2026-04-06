@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import 'segmented_widget.dart';
 
 /// Top toolbar matching PySide6 ToolBar (40px height, margins: 4).
@@ -47,7 +48,7 @@ class AppToolBar extends StatelessWidget {
             child: FilledButton.icon(
               onPressed: onAddMedia,
               icon: const Icon(Icons.add, size: 16),
-              label: const Text('Add Media'),
+              label: Text(AppLocalizations.of(context)!.addMedia),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 visualDensity: VisualDensity.compact,
@@ -64,7 +65,7 @@ class AppToolBar extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 visualDensity: VisualDensity.compact,
               ),
-              child: const Text('New Window'),
+              child: Text(AppLocalizations.of(context)!.newWindow),
             ),
           ),
           const SizedBox(width: 4),
@@ -75,7 +76,7 @@ class AppToolBar extends StatelessWidget {
             child: IconButton(
               onPressed: onSettings,
               icon: const Icon(Icons.settings, size: 18),
-              tooltip: 'Settings',
+              tooltip: AppLocalizations.of(context)!.settings,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints.tightFor(width: 32, height: 32),
             ),
@@ -88,7 +89,7 @@ class AppToolBar extends StatelessWidget {
             child: IconButton(
               onPressed: onDebugMemory,
               icon: const Icon(Icons.memory, size: 18),
-              tooltip: 'Performance Monitor',
+              tooltip: AppLocalizations.of(context)!.performanceMonitor,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints.tightFor(width: 32, height: 32),
             ),

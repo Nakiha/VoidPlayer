@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 
 /// Memory/performance monitor window (secondary window, 800x600).
 class MemoryApp extends StatelessWidget {
@@ -9,6 +10,8 @@ class MemoryApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Void Player - Memory Monitor',
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF0078D4),
@@ -54,6 +57,7 @@ class _MemoryPageState extends State<MemoryPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l = AppLocalizations.of(context)!;
     return Scaffold(
       body: Padding(
         padding: const EdgeInsets.all(8),
@@ -68,6 +72,7 @@ class _MemoryPageState extends State<MemoryPage> {
                   data: _memoryHistory,
                   lineColor: theme.colorScheme.primary,
                   bgColor: theme.colorScheme.surfaceContainerLow,
+                  noDataText: l.noDataYet,
                 ),
               ),
             ),
@@ -80,14 +85,13 @@ class _MemoryPageState extends State<MemoryPage> {
                 children: [
                   Padding(
                     padding: const EdgeInsets.all(8),
-                    child: Text('Object Statistics',
+                    child: Text(l.objectStatistics,
                         style: theme.textTheme.titleSmall),
                   ),
                   Expanded(
                     child: Center(
                       child: Text(
-                        'Memory monitoring data will appear here\n'
-                        'when native diagnostics are connected.',
+                        l.memoryPlaceholder,
                         style: theme.textTheme.bodyMedium?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
@@ -107,18 +111,18 @@ class _MemoryPageState extends State<MemoryPage> {
                     onPressed: () {
                       // TODO: implement snapshot
                     },
-                    child: const Text('Snapshot'),
+                    child: Text(l.snapshot),
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton(
                     onPressed: () {
                       setState(() => _memoryHistory.clear());
                     },
-                    child: const Text('Clear'),
+                    child: Text(l.clear),
                   ),
                   const Spacer(),
                   Text(
-                    'Status: Waiting for data',
+                    l.statusWaitingData,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -138,11 +142,13 @@ class _MemoryChartPainter extends CustomPainter {
   final List<double> data;
   final Color lineColor;
   final Color bgColor;
+  final String noDataText;
 
   _MemoryChartPainter({
     required this.data,
     required this.lineColor,
     required this.bgColor,
+    required this.noDataText,
   });
 
   @override
@@ -155,7 +161,7 @@ class _MemoryChartPainter extends CustomPainter {
 
     if (data.isEmpty) {
       final tp = TextPainter(
-        text: const TextSpan(text: 'No data yet', style: TextStyle(color: Colors.grey)),
+        text: TextSpan(text: noDataText, style: const TextStyle(color: Colors.grey)),
         textDirection: TextDirection.ltr,
       );
       tp.layout(maxWidth: size.width - 20);

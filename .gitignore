@@ -48,3 +48,6 @@ app.*.map.json
 /windows/native/build
 /windows/native/dist
 /windows/native/build-msvc
+
+# Generated l10n files (source of truth is .arb)
+lib/l10n/app_localizations*.dart

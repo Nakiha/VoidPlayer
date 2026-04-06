@@ -77,7 +77,7 @@ class TestRunner {
   Future<void> _execute(ScriptInstruction instr) async {
     switch (instr) {
       case ScriptAction(:final action):
-        actionRegistry.execute(action.name);
+        actionRegistry.execute(action.name, action);
 
       case ScriptAssert(:final assertion):
         log.info('TestRunner ${instr.time}: assert ${assertion.runtimeType}');
@@ -111,15 +111,33 @@ class TestRunner {
             'Expected position $ptsUs μs (±${toleranceMs}ms), got $actual μs (diff ${diff ~/ 1000}ms)',
           );
         }
-      case AssertTrackCount():
-        // Track count query not yet in controller API.
-        throw AssertionError('ASSERT_TRACK_COUNT not yet supported');
+      case AssertTrackCount(:final count):
+        final tracks = await controller.getTracks();
+        if (tracks.length != count) {
+          throw AssertionError(
+            'Expected track count $count, got ${tracks.length}',
+          );
+        }
       case AssertDuration(:final ptsUs, :final toleranceMs):
         final actual = await controller.duration();
         final diff = (actual - ptsUs).abs();
         if (diff > toleranceMs * 1000) {
           throw AssertionError(
             'Expected duration $ptsUs μs (±${toleranceMs}ms), got $actual μs',
+          );
+        }
+      case AssertLayoutMode(:final mode):
+        final layout = await controller.getLayout();
+        if (layout.mode != mode) {
+          throw AssertionError(
+            'Expected layout mode $mode, got ${layout.mode}',
+          );
+        }
+      case AssertZoom(:final ratio, :final tolerance):
+        final layout = await controller.getLayout();
+        if ((layout.zoomRatio - ratio).abs() > tolerance) {
+          throw AssertionError(
+            'Expected zoom $ratio (±$tolerance), got ${layout.zoomRatio}',
           );
         }
     }
@@ -178,7 +196,7 @@ List<ScriptInstruction> _parseScript(String path) {
 
 ScriptInstruction? _parseInstruction(Duration time, String cmd, List<String> args, String rawLine) {
   switch (cmd) {
-    // Actions
+    // Actions — playback
     case 'PLAY':
       return ScriptAction(time, const Play());
     case 'PAUSE':
@@ -201,8 +219,50 @@ ScriptInstruction? _parseInstruction(Duration time, String cmd, List<String> arg
       return ScriptAction(time, const StepForward());
     case 'STEP_BACKWARD':
       return ScriptAction(time, const StepBackward());
+
+    // Actions — media
     case 'OPEN_FILE':
       return ScriptAction(time, const OpenFile());
+    case 'ADD_MEDIA':
+      if (args.isEmpty) {
+        log.warning('ADD_MEDIA missing path argument: $rawLine');
+        return null;
+      }
+      return ScriptAction(time, AddMedia(args[0]));
+    case 'REMOVE_TRACK':
+      if (args.isEmpty) {
+        log.warning('REMOVE_TRACK missing slot argument: $rawLine');
+        return null;
+      }
+      return ScriptAction(time, RemoveTrackAction(int.parse(args[0])));
+
+    // Actions — layout
+    case 'SET_ZOOM':
+      if (args.isEmpty) {
+        log.warning('SET_ZOOM missing ratio argument: $rawLine');
+        return null;
+      }
+      return ScriptAction(time, SetZoom(double.parse(args[0])));
+    case 'SET_LAYOUT_MODE':
+      if (args.isEmpty) {
+        log.warning('SET_LAYOUT_MODE missing mode argument: $rawLine');
+        return null;
+      }
+      return ScriptAction(time, SetLayoutMode(int.parse(args[0])));
+    case 'SET_SPLIT_POS':
+      if (args.isEmpty) {
+        log.warning('SET_SPLIT_POS missing position argument: $rawLine');
+        return null;
+      }
+      return ScriptAction(time, SetSplitPos(double.parse(args[0])));
+    case 'TOGGLE_LAYOUT_MODE':
+      return ScriptAction(time, const ToggleLayoutMode());
+    case 'PAN':
+      if (args.length < 2) {
+        log.warning('PAN needs dx and dy arguments: $rawLine');
+        return null;
+      }
+      return ScriptAction(time, Pan(double.parse(args[0]), double.parse(args[1])));
 
     // Waits
     case 'WAIT_PLAYING':
@@ -212,7 +272,7 @@ ScriptInstruction? _parseInstruction(Duration time, String cmd, List<String> arg
       final timeoutMs = args.isNotEmpty ? int.parse(args[0]) : 3000;
       return ScriptWait(time, WaitState.paused, Duration(milliseconds: timeoutMs));
 
-    // Asserts
+    // Asserts — playback
     case 'ASSERT_PLAYING':
       return ScriptAssert(time, const AssertPlaying());
     case 'ASSERT_PAUSED':
@@ -235,6 +295,20 @@ ScriptInstruction? _parseInstruction(Duration time, String cmd, List<String> arg
         return null;
       }
       return ScriptAssert(time, AssertDuration(int.parse(args[0]), int.parse(args[1])));
+
+    // Asserts — layout
+    case 'ASSERT_LAYOUT_MODE':
+      if (args.isEmpty) {
+        log.warning('ASSERT_LAYOUT_MODE missing mode argument: $rawLine');
+        return null;
+      }
+      return ScriptAssert(time, AssertLayoutMode(int.parse(args[0])));
+    case 'ASSERT_ZOOM':
+      if (args.length < 2) {
+        log.warning('ASSERT_ZOOM needs ratio and tolerance: $rawLine');
+        return null;
+      }
+      return ScriptAssert(time, AssertZoom(double.parse(args[0]), double.parse(args[1])));
 
     // Control
     case 'QUIT':

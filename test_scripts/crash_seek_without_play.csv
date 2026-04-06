@@ -1,0 +1,5 @@
+# Crash test: add two videos then seek without playing
+0.5, ADD_MEDIA, resources/video/h266_10s_1920x1080.mp4
+3.0, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+5.0, SEEK_TO, 5000000
+7.0, QUIT, 0

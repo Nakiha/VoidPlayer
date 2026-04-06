@@ -417,7 +417,14 @@ void DecodeThread::run() {
             continue;
         }
 
-        int ret = avcodec_send_packet(codec_ctx_, pkt);
+        int ret = 0;
+        try {
+            ret = avcodec_send_packet(codec_ctx_, pkt);
+        } catch (...) {
+            spdlog::error("[DecodeThread] Exception in avcodec_send_packet, discarding packet");
+            av_packet_free(&pkt);
+            continue;
+        }
         av_packet_free(&pkt);
 
         if (ret < 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF) {

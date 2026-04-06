@@ -65,6 +65,7 @@ VideoRendererPlugin::VideoRendererPlugin(
     vr::install_crash_handler(logs_dir_);
 
     spdlog::info("[VideoRendererPlugin] Plugin constructed, native logging initialized: {}", config.file_path);
+    spdlog::info("[VideoRendererPlugin] Crash handler installed (VEH + SEH), crash dir: {}", logs_dir_);
 }
 
 VideoRendererPlugin::~VideoRendererPlugin() {
@@ -106,8 +107,16 @@ void VideoRendererPlugin::HandleMethodCall(
             if (args) {
                 auto it = args->find(flutter::EncodableValue("ptsUs"));
                 if (it != args->end()) {
-                    int64_t pts = std::get<int64_t>(it->second);
+                    int64_t pts = 0;
+                    // Handle both int (32-bit) and long (64-bit) from Dart
+                    if (std::holds_alternative<int>(it->second)) {
+                        pts = static_cast<int64_t>(std::get<int>(it->second));
+                    } else if (std::holds_alternative<int64_t>(it->second)) {
+                        pts = std::get<int64_t>(it->second);
+                    }
+                    spdlog::info("[VideoRendererPlugin] seek: pts={}μs, renderer alive={}", pts, (bool)renderer_);
                     renderer_->seek(pts);
+                    spdlog::info("[VideoRendererPlugin] seek completed");
                 }
             }
         }
@@ -165,6 +174,20 @@ void VideoRendererPlugin::HandleMethodCall(
             }
         }
         result->Success(flutter::EncodableValue(nullptr));
+    } else if (method == "getTracks") {
+        flutter::EncodableList tracks_list;
+        if (renderer_) {
+            for (const auto& info : renderer_->track_infos()) {
+                tracks_list.push_back(flutter::EncodableValue(make_track_map(info)));
+            }
+        }
+        result->Success(flutter::EncodableValue(tracks_list));
+    } else if (method == "getDiagnostics") {
+        // Placeholder diagnostics. Full implementation needs Renderer counters.
+        flutter::EncodableMap map;
+        map[flutter::EncodableValue("playbackTime")] =
+            flutter::EncodableValue(renderer_ ? static_cast<double>(renderer_->current_pts_us()) / 1e6 : 0.0);
+        result->Success(flutter::EncodableValue(map));
     } else if (method == "getLayout") {
         flutter::EncodableMap map;
         if (renderer_) {
@@ -319,7 +342,7 @@ void VideoRendererPlugin::CreateRenderer(
         }
     });
 
-    spdlog::info("[VideoRendererPlugin] Created renderer, texture_id={}", texture_id_);
+    spdlog::info("[VideoRendererPlugin] Created renderer, texture_id={}, tracks={}", texture_id_, renderer_->track_infos().size());
 
     // Build result map with textureId and track info
     flutter::EncodableMap result_map;
@@ -387,9 +410,9 @@ void VideoRendererPlugin::AddTrack(
     }
 
     auto dims = renderer_->track_dimensions(slot);
-
     vr::TrackInfo info{slot, path, dims.first, dims.second};
-    spdlog::info("[VideoRendererPlugin] Added track: slot={}, path={}", slot, path);
+
+    spdlog::info("[VideoRendererPlugin] Added track: slot={}, path={}, tracks={}", slot, path, renderer_->track_infos().size());
     result->Success(flutter::EncodableValue(make_track_map(info)));
 }
 

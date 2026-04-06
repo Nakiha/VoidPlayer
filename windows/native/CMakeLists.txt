@@ -98,7 +98,7 @@ set(VIDEO_TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../resources/video")
 # ==================== FFmpeg DLLs to output directory ====================
 
 set(FFMPEG_BIN_DIR "${FFMPEG_ROOT}/bin")
-set(OUTPUT_BIN_DIR "${CMAKE_BINARY_DIR}/Release")
+set(OUTPUT_BIN_DIR "${CMAKE_BINARY_DIR}/$<CONFIG>")
 
 # Copy FFmpeg DLLs early via a custom target so they're available
 # before catch_discover_tests runs test exe at build time
@@ -146,8 +146,7 @@ if(BUILD_FFI OR NOT DEFINED BUILD_FFI)
     )
 
     set_target_properties(video_renderer_ffi PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Release"
-        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>"
     )
 
     if(TARGET copy_ffmpeg_dlls)

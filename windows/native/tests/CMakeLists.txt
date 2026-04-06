@@ -17,8 +17,7 @@ add_executable(video_renderer_tests
 )
 
 set_target_properties(video_renderer_tests PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Release"
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>"
 )
 
 if(TARGET copy_ffmpeg_dlls)
@@ -44,8 +43,7 @@ add_executable(test_ffi_c
 )
 
 set_target_properties(test_ffi_c PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Release"
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>"
 )
 
 target_include_directories(test_ffi_c PRIVATE

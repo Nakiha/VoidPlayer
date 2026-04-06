@@ -7,20 +7,24 @@ import 'player_action.dart';
 /// Global action registry instance.
 final actionRegistry = ActionRegistry();
 
+/// Callback type for action handlers. Receives the action instance so
+/// parameterized actions (e.g. [SeekTo], [SetSpeed]) can read their data.
+typedef ActionCallback = void Function(PlayerAction action);
+
 /// Central registry for player actions with keyboard interception.
 ///
 /// [bind] registers an action definition + callback and starts intercepting
 /// its shortcut key. [unbind] removes the callback and stops interception.
 class ActionRegistry {
   final Map<String, PlayerAction> _actions = {};
-  final Map<String, VoidCallback> _callbacks = {};
+  final Map<String, ActionCallback> _callbacks = {};
   final Map<LogicalKeyboardKey, String> _keyMap = {};
 
   /// Bind an action with its callback.
   ///
   /// If the action has a [PlayerAction.shortcut], that key will be intercepted
   /// by [ActionFocus] and routed to this callback.
-  void bind(PlayerAction action, VoidCallback callback) {
+  void bind(PlayerAction action, ActionCallback callback) {
     _actions[action.name] = action;
     _callbacks[action.name] = callback;
     if (action.shortcut != null) {
@@ -39,18 +43,20 @@ class ActionRegistry {
     _callbacks.remove(name);
   }
 
-  /// Execute an action by name.
+  /// Execute an action by name, optionally with an override action instance.
   ///
-  /// Logs every invocation. If the action is not bound, logs a severe warning
-  /// and returns silently.
-  void execute(String name) {
+  /// When called from a keyboard shortcut, [overrideAction] is null and the
+  /// registered default action is used. When called from a test script,
+  /// [overrideAction] carries the script-specified parameters (e.g. seek position).
+  void execute(String name, [PlayerAction? overrideAction]) {
     final callback = _callbacks[name];
     if (callback == null) {
       log.severe('Action "$name" not bound');
       return;
     }
-    log.info('Action: $name');
-    callback();
+    final action = overrideAction ?? _actions[name];
+    log.info('Action: $name${action != overrideAction ? '' : ' (script)'}');
+    callback(action!);
   }
 
   /// Handle a key event from [ActionFocus].

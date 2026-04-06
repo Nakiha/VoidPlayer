@@ -172,6 +172,20 @@ class VideoRendererController {
         'slot': slot,
       });
 
+  /// Get current track info list.
+  Future<List<TrackInfo>> getTracks() async {
+    final list = await _channel.invokeMethod<List<dynamic>>('getTracks');
+    return list
+            ?.map((e) => TrackInfo.fromMap(e as Map<dynamic, dynamic>))
+            .toList() ?? [];
+  }
+
+  /// Get diagnostics data (placeholder, requires native counters).
+  Future<Map<String, dynamic>> getDiagnostics() async {
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>('getDiagnostics');
+    return Map<String, dynamic>.from(map ?? {});
+  }
+
   Future<void> dispose() async {
     if (_textureId != null) {
       await _channel.invokeMethod<void>('destroyRenderer');

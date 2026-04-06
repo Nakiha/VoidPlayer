@@ -44,3 +44,56 @@ class OpenFile extends PlayerAction {
 class ToggleLayoutMode extends PlayerAction {
   const ToggleLayoutMode() : super('TOGGLE_LAYOUT_MODE', LogicalKeyboardKey.keyM);
 }
+
+class NewWindow extends PlayerAction {
+  const NewWindow() : super('NEW_WINDOW', LogicalKeyboardKey.keyN);
+}
+
+class OpenSettings extends PlayerAction {
+  const OpenSettings() : super('OPEN_SETTINGS');
+}
+
+class OpenStats extends PlayerAction {
+  const OpenStats() : super('OPEN_STATS');
+}
+
+class OpenMemory extends PlayerAction {
+  const OpenMemory() : super('OPEN_MEMORY');
+}
+
+/// Add a media file by path (no file-picker dialog).
+class AddMedia extends PlayerAction {
+  final String path;
+  const AddMedia(this.path) : super('ADD_MEDIA');
+}
+
+/// Set zoom ratio directly.
+class SetZoom extends PlayerAction {
+  final double ratio;
+  const SetZoom(this.ratio) : super('SET_ZOOM');
+}
+
+/// Set layout mode explicitly (0=sideBySide, 1=splitScreen).
+class SetLayoutMode extends PlayerAction {
+  final int mode;
+  const SetLayoutMode(this.mode) : super('SET_LAYOUT_MODE');
+}
+
+/// Set split position (0.0–1.0).
+class SetSplitPos extends PlayerAction {
+  final double position;
+  const SetSplitPos(this.position) : super('SET_SPLIT_POS');
+}
+
+/// Remove a track by slot index.
+class RemoveTrackAction extends PlayerAction {
+  final int slot;
+  const RemoveTrackAction(this.slot) : super('REMOVE_TRACK');
+}
+
+/// Pan the viewport by a delta.
+class Pan extends PlayerAction {
+  final double dx;
+  final double dy;
+  const Pan(this.dx, this.dy) : super('PAN');
+}

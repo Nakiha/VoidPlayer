@@ -4,6 +4,7 @@
 
 #include "flutter/generated_plugin_registrant.h"
 #include "video_renderer_plugin.h"
+#include "desktop_multi_window/desktop_multi_window_plugin.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -33,6 +34,20 @@ bool FlutterWindow::OnCreate() {
           ->GetRegistrar<flutter::PluginRegistrarWindows>(
               flutter_controller_->engine()->GetRegistrarForPlugin(
                   "VideoRendererPlugin")));
+
+  // Register plugins for secondary windows created by desktop_multi_window.
+  DesktopMultiWindowSetWindowCreatedCallback([](void *controller) {
+    auto *flutter_view_controller =
+        reinterpret_cast<flutter::FlutterViewController *>(controller);
+    auto *registry = flutter_view_controller->engine();
+    RegisterPlugins(registry);
+    // Register VideoRendererPlugin for each new engine.
+    // Secondary windows won't call createRenderer, so renderer_ stays null.
+    VideoRendererPlugin::RegisterWithRegistrar(
+        flutter::PluginRegistrarManager::GetInstance()
+            ->GetRegistrar<flutter::PluginRegistrarWindows>(
+                registry->GetRegistrarForPlugin("VideoRendererPlugin")));
+  });
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 

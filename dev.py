@@ -120,6 +120,8 @@ def cmd_launch(args):
     cmd = [str(exe)]
     if args.log_level:
         cmd.append(f"--log-level={args.log_level}")
+    if args.test_script:
+        cmd.extend(["--test-script", str(args.test_script)])
 
     header(f"Launch {exe}")
     subprocess.call(cmd)  # non-checking: user may close window with non-zero exit
@@ -228,6 +230,8 @@ Examples:
     p_launch.add_argument("--no-test", action="store_true", help="Skip native tests")
     p_launch.add_argument("--log-level", type=str, default=None,
                            help="Log level, e.g. 'flutter=DEBUG,native=TRACE'")
+    p_launch.add_argument("--test-script", type=str, default=None,
+                           help="Path to CSV test script (passed to app via --test-script)")
 
     args = parser.parse_args()
 

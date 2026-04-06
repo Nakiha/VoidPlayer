@@ -102,6 +102,7 @@ void configure_logging(const LogConfig& config) {
 
 static std::string g_crash_dir;
 static LPTOP_LEVEL_EXCEPTION_FILTER g_prev_filter = nullptr;
+static void* g_vectored_handler = nullptr;
 static bool g_sym_initialized = false;
 
 // Static symbol buffer (large, but safe in crash handler since it's not on the stack)
@@ -423,6 +424,26 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
+/// Vectored Exception Handler — logs the crash but lets other handlers run.
+/// This fires before SetUnhandledExceptionFilter and cannot be overridden.
+static LONG WINAPI vectored_crash_handler(EXCEPTION_POINTERS* ep) {
+    // Only handle true crashes (access violations, etc.), not normal exceptions
+    if (ep && ep->ExceptionRecord) {
+        DWORD code = ep->ExceptionRecord->ExceptionCode;
+        if (code == EXCEPTION_ACCESS_VIOLATION ||
+            code == EXCEPTION_STACK_OVERFLOW ||
+            code == EXCEPTION_ILLEGAL_INSTRUCTION ||
+            code == EXCEPTION_PRIV_INSTRUCTION ||
+            code == EXCEPTION_INT_DIVIDE_BY_ZERO ||
+            code == EXCEPTION_DATATYPE_MISALIGNMENT ||
+            code == 0xE06D7363) { // C++ exception code
+            // Reuse the main crash_handler for logging
+            crash_handler(ep);
+        }
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 #endif // _WIN32
 
 void install_crash_handler(const std::string& crash_dir) {
@@ -456,6 +477,11 @@ void install_crash_handler(const std::string& crash_dir) {
 
     g_prev_filter = SetUnhandledExceptionFilter(crash_handler);
 
+    // Also install Vectored Exception Handler as first-responder.
+    // Unlike SetUnhandledExceptionFilter, VEH cannot be overridden by
+    // frameworks (e.g. Flutter engine) that install their own handlers later.
+    g_vectored_handler = AddVectoredExceptionHandler(1 /* CALL_FIRST */, vectored_crash_handler);
+
     // Also handle pure virtual calls and invalid parameters
     _set_purecall_handler([] {
         if (stderr_available()) {
@@ -483,6 +509,10 @@ void install_crash_handler(const std::string& crash_dir) {
 
 void remove_crash_handler() {
 #ifdef _WIN32
+    if (g_vectored_handler) {
+        RemoveVectoredExceptionHandler(g_vectored_handler);
+        g_vectored_handler = nullptr;
+    }
     if (g_prev_filter) {
         SetUnhandledExceptionFilter(g_prev_filter);
         g_prev_filter = nullptr;

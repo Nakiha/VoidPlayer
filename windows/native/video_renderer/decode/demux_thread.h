@@ -20,6 +20,8 @@ struct DemuxStats {
     int width = 0;
     int height = 0;
     AVRational time_base = {0, 1};
+    int sar_num = 1;
+    int sar_den = 1;
     /// Borrowed pointer into AVStream->codecpar. Valid only while the
     /// DemuxThread's internal AVFormatContext is alive (i.e. after start()
     /// and before stop()). Do NOT free.

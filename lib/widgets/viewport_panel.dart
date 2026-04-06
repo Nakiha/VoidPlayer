@@ -9,13 +9,12 @@ class ViewportPanel extends StatefulWidget {
   final int viewportState; // 0=loading, 1=empty, 2=active
   final String? errorText;
   final LayoutState layout;
-  final double renderWidth;
-  final double renderHeight;
 
   final void Function(Offset delta) onPan;
   final void Function(double normalizedX) onSplit;
   final void Function(double delta) onZoom;
   final void Function(bool panning, bool splitting) onPointerButton;
+  final void Function(int width, int height)? onResize;
 
   const ViewportPanel({
     super.key,
@@ -23,12 +22,11 @@ class ViewportPanel extends StatefulWidget {
     required this.viewportState,
     this.errorText,
     required this.layout,
-    this.renderWidth = 1920.0,
-    this.renderHeight = 1080.0,
     required this.onPan,
     required this.onSplit,
     required this.onZoom,
     required this.onPointerButton,
+    this.onResize,
   });
 
   @override
@@ -39,6 +37,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
   bool _panning = false;
   bool _splitting = false;
   Offset _lastMousePos = Offset.zero;
+  Size _lastReportedSize = Size.zero;
 
   @override
   Widget build(BuildContext context) {
@@ -93,45 +92,56 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (widget.textureId == null) {
       return const SizedBox.shrink();
     }
-    return Listener(
-      onPointerDown: (e) {
-        if ((e.buttons & kPrimaryButton) != 0) {
-          _panning = true;
-          _lastMousePos = e.position;
-          widget.onPointerButton(true, false);
-        } else if ((e.buttons & kSecondaryButton) != 0) {
-          _splitting = true;
-          _lastMousePos = e.position;
-          widget.onPointerButton(false, true);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final h = constraints.maxHeight;
+        final size = Size(w, h);
+        if (size != _lastReportedSize && w > 0 && h > 0) {
+          _lastReportedSize = size;
+          widget.onResize?.call(w.toInt(), h.toInt());
         }
-      },
-      onPointerUp: (e) {
-        _panning = false;
-        _splitting = false;
-        widget.onPointerButton(false, false);
-      },
-      onPointerMove: (e) {
-        if (!_panning && !_splitting) return;
-        final delta = e.position - _lastMousePos;
-        _lastMousePos = e.position;
+        return Listener(
+          onPointerDown: (e) {
+            if ((e.buttons & kPrimaryButton) != 0) {
+              _panning = true;
+              _lastMousePos = e.position;
+              widget.onPointerButton(true, false);
+            } else if ((e.buttons & kSecondaryButton) != 0) {
+              _splitting = true;
+              _lastMousePos = e.position;
+              widget.onPointerButton(false, true);
+            }
+          },
+          onPointerUp: (e) {
+            _panning = false;
+            _splitting = false;
+            widget.onPointerButton(false, false);
+          },
+          onPointerMove: (e) {
+            if (!_panning && !_splitting) return;
+            final delta = e.position - _lastMousePos;
+            _lastMousePos = e.position;
 
-        if (_panning) {
-          widget.onPan(delta);
-        }
+            if (_panning) {
+              widget.onPan(delta);
+            }
 
-        if (_splitting && widget.layout.mode == LayoutMode.splitScreen) {
-          final box = context.findRenderObject() as RenderBox;
-          final localX = e.localPosition.dx;
-          widget.onSplit(localX / box.size.width);
-        }
+            if (_splitting && widget.layout.mode == LayoutMode.splitScreen) {
+              final box = context.findRenderObject() as RenderBox;
+              final localX = e.localPosition.dx;
+              widget.onSplit(localX / box.size.width);
+            }
+          },
+          onPointerSignal: (e) {
+            if (e is PointerScrollEvent) {
+              final scrollDelta = e.scrollDelta.dy;
+              widget.onZoom(scrollDelta);
+            }
+          },
+          child: Texture(textureId: widget.textureId!),
+        );
       },
-      onPointerSignal: (e) {
-        if (e is PointerScrollEvent) {
-          final scrollDelta = e.scrollDelta.dy;
-          widget.onZoom(scrollDelta);
-        }
-      },
-      child: Texture(textureId: widget.textureId!),
     );
   }
 }

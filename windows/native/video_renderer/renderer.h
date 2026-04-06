@@ -127,6 +127,10 @@ public:
     /// Mutex for thread-safe access to shared texture.
     std::mutex& texture_mutex() { return texture_mutex_; }
 
+    /// Resize the offscreen shared texture (headless mode only).
+    /// Recreates the texture, RTV, and shared handle at the new dimensions.
+    void resize(int width, int height);
+
 private:
     struct TrackPipeline {
         std::string file_path;

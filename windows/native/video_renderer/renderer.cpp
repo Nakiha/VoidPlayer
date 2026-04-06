@@ -459,6 +459,73 @@ ID3D11Texture2D* Renderer::shared_texture() const {
     return shared_texture_.Get();
 }
 
+void Renderer::resize(int width, int height) {
+    if (!headless_ || !d3d_device_) return;
+    if (width <= 0 || height <= 0) return;
+    if (width == target_width_ && height == target_height_) return;
+
+    spdlog::info("[Renderer] resize: {}x{} -> {}x{}", target_width_, target_height_, width, height);
+
+    // Create new resources first, then swap under lock.
+    // This ensures the Flutter callback always sees valid state.
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> new_texture;
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> new_rtv;
+    HANDLE new_handle = nullptr;
+
+    {
+        D3D11_TEXTURE2D_DESC tex_desc = {};
+        tex_desc.Width = static_cast<UINT>(width);
+        tex_desc.Height = static_cast<UINT>(height);
+        tex_desc.MipLevels = 1;
+        tex_desc.ArraySize = 1;
+        tex_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        tex_desc.SampleDesc.Count = 1;
+        tex_desc.Usage = D3D11_USAGE_DEFAULT;
+        tex_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+        tex_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
+
+        HRESULT hr = d3d_device_->device()->CreateTexture2D(&tex_desc, nullptr, &new_texture);
+        if (FAILED(hr)) {
+            spdlog::error("[Renderer] resize: failed to create texture: {:#x}", static_cast<unsigned long>(hr));
+            return;
+        }
+
+        hr = d3d_device_->device()->CreateRenderTargetView(new_texture.Get(), nullptr, &new_rtv);
+        if (FAILED(hr)) {
+            spdlog::error("[Renderer] resize: failed to create RTV: {:#x}", static_cast<unsigned long>(hr));
+            return;
+        }
+
+        Microsoft::WRL::ComPtr<IDXGIResource> dxgi_resource;
+        hr = new_texture.As(&dxgi_resource);
+        if (SUCCEEDED(hr)) {
+            hr = dxgi_resource->GetSharedHandle(&new_handle);
+            if (FAILED(hr)) {
+                spdlog::error("[Renderer] resize: failed to get shared handle: {:#x}", static_cast<unsigned long>(hr));
+                return;
+            }
+        }
+    }
+
+    // Swap under both mutexes — render thread may be mid-draw
+    {
+        std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+        std::lock_guard<std::mutex> tex_lock(texture_mutex_);
+
+        target_width_ = width;
+        target_height_ = height;
+        shared_texture_ = std::move(new_texture);
+        shared_rtv_ = std::move(new_rtv);
+        shared_handle_ = new_handle;
+        cached_rtv_.Reset();  // Force re-cache on next draw_frame
+    }
+
+    // Force redraw at new size
+    preview_drawn_ = false;
+    spdlog::info("[Renderer] resize complete: {}x{}, handle={}",
+                 width, height, reinterpret_cast<uintptr_t>(shared_handle_));
+}
+
 void Renderer::render_loop() {
     // Raise Windows timer resolution from default ~15.6ms to 1ms,
     // so sleep_for(16ms) actually wakes up near 16ms instead of 31ms.
@@ -983,7 +1050,10 @@ std::unique_ptr<Renderer::TrackPipeline> Renderer::create_pipeline(const std::st
     pipeline->video_width = stats.width;
     pipeline->video_height = stats.height;
     if (stats.width > 0 && stats.height > 0) {
-        pipeline->video_aspect = static_cast<float>(stats.width) / static_cast<float>(stats.height);
+        float sar = (stats.sar_den > 0)
+            ? static_cast<float>(stats.sar_num) / static_cast<float>(stats.sar_den)
+            : 1.0f;
+        pipeline->video_aspect = (static_cast<float>(stats.width) / static_cast<float>(stats.height)) * sar;
     }
 
     pipeline->decode_thread = std::make_unique<DecodeThread>(

@@ -133,6 +133,12 @@ class VideoRendererController {
         'speed': speed,
       });
 
+  Future<void> resize(int width, int height) =>
+      _channel.invokeMethod<void>('resize', {
+        'width': width,
+        'height': height,
+      });
+
   Future<void> stepForward() => _channel.invokeMethod<void>('stepForward');
 
   Future<void> stepBackward() => _channel.invokeMethod<void>('stepBackward');

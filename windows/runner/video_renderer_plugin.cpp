@@ -121,6 +121,21 @@ void VideoRendererPlugin::HandleMethodCall(
             }
         }
         result->Success(flutter::EncodableValue(nullptr));
+    } else if (method == "resize") {
+        if (renderer_ && method_call.arguments()) {
+            const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+            if (args) {
+                int w = 1920, h = 1080;
+                auto it = args->find(flutter::EncodableValue("width"));
+                if (it != args->end()) w = std::get<int>(it->second);
+                it = args->find(flutter::EncodableValue("height"));
+                if (it != args->end()) h = std::get<int>(it->second);
+                renderer_->resize(w, h);
+                texture_width_ = w;
+                texture_height_ = h;
+            }
+        }
+        result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "setSpeed") {
         if (renderer_ && method_call.arguments()) {
             const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());

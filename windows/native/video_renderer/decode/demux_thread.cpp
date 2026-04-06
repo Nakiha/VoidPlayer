@@ -52,6 +52,12 @@ bool DemuxThread::start() {
     stats_.time_base = stream->time_base;
     stats_.width = stream->codecpar->width;
     stats_.height = stream->codecpar->height;
+    // Extract Sample Aspect Ratio for correct display aspect ratio
+    if (stream->codecpar->sample_aspect_ratio.num > 0 &&
+        stream->codecpar->sample_aspect_ratio.den > 0) {
+        stats_.sar_num = stream->codecpar->sample_aspect_ratio.num;
+        stats_.sar_den = stream->codecpar->sample_aspect_ratio.den;
+    }
 
     if (fmt_ctx_->duration != AV_NOPTS_VALUE) {
         stats_.duration_us = av_rescale_q(fmt_ctx_->duration, {1, AV_TIME_BASE}, {1, 1000000});

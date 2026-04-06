@@ -38,6 +38,11 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   Ticker? _layoutTicker;
   bool _layoutDirty = false;
 
+  // Viewport resize
+  int _viewportWidth = 0;
+  int _viewportHeight = 0;
+  bool _resizeDirty = false;
+
   @override
   void initState() {
     super.initState();
@@ -261,6 +266,13 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     // No-op for now; could show cursor changes etc.
   }
 
+  void _onViewportResize(int width, int height) {
+    if (width == _viewportWidth && height == _viewportHeight) return;
+    _viewportWidth = width;
+    _viewportHeight = height;
+    _resizeDirty = true;
+  }
+
   void _onZoomComboChanged(double value) {
     setState(() {
       _layout = _layout.copyWith(zoomRatio: value);
@@ -274,6 +286,11 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   void _startLayoutTicker() {
     _layoutTicker = createTicker((_) {
+      if (_resizeDirty && _textureId != null &&
+          _viewportWidth > 0 && _viewportHeight > 0) {
+        _resizeDirty = false;
+        _controller.resize(_viewportWidth, _viewportHeight);
+      }
       if (_layoutDirty && _textureId != null) {
         _layoutDirty = false;
         _controller.applyLayout(_layout);
@@ -360,6 +377,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
               onSplit: _onSplit,
               onZoom: _onZoom,
               onPointerButton: _onPointerButton,
+              onResize: _onViewportResize,
             ),
           ),
           // Controls bar (40px)

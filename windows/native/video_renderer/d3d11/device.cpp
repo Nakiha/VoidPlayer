@@ -49,6 +49,21 @@ bool D3D11Device::create_device(IDXGIAdapter* adapter, D3D_DRIVER_TYPE driver_ty
         return false;
     }
 
+    // Enable D3D11 multi-thread protection so the device context can be
+    // safely used from the render thread AND the hardware decode threads
+    // without relying solely on FFmpeg's lock callbacks (which may not
+    // cover all internal D3D11 operations like surface allocation).
+    {
+        Microsoft::WRL::ComPtr<ID3D10Multithread> mt;
+        hr = device_->QueryInterface(__uuidof(ID3D10Multithread), &mt);
+        if (SUCCEEDED(hr) && mt) {
+            mt->SetMultithreadProtected(TRUE);
+            spdlog::info("[D3D11] Multi-thread protection enabled");
+        } else {
+            spdlog::warn("[D3D11] ID3D10Multithread not available, device access not thread-safe");
+        }
+    }
+
     spdlog::info("[D3D11] Device created: driver_type={}, feature_level={}.{}",
                  static_cast<int>(driver_type),
                  static_cast<int>(out_level) >> 12,

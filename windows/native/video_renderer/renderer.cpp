@@ -864,15 +864,56 @@ void Renderer::draw_frame(const PresentDecision& decision) {
 
         if (frame.is_ref && frame.is_nv12) {
             // D3D11VA NV12 hardware decode: texture_handle is ID3D11Texture2D*
-            // Cache SRVs — only recreate when the hw texture pointer or array index changes.
-            auto* nv12_tex = static_cast<ID3D11Texture2D*>(frame.texture_handle);
+            // on the independent decode device. Open shared resource on render device
+            // for cross-device SRV access.
+            auto* decode_tex = static_cast<ID3D11Texture2D*>(frame.texture_handle);
             int array_idx = static_cast<int>(frame.texture_array_index);
 
-            if (track->last_nv12_tex != nv12_tex || track->last_nv12_idx != array_idx) {
-                // Texture or slice changed — recreate SRVs
-                // Also compute UV scale factor to crop alignment padding
+            if (track->last_nv12_tex != decode_tex || track->last_nv12_idx != array_idx) {
+                // Decode texture pointer changed — re-open shared resource on render device
+                if (track->last_nv12_tex != decode_tex) {
+                    track->render_nv12_tex.Reset();
+                    track->nv12_y_srv.Reset();
+                    track->nv12_uv_srv.Reset();
+
+                    // Get DXGI shared handle from decode-side texture
+                    Microsoft::WRL::ComPtr<IDXGIResource> dxgi_res;
+                    HRESULT hr = decode_tex->QueryInterface(__uuidof(IDXGIResource), &dxgi_res);
+                    if (FAILED(hr)) {
+                        spdlog::error("[Renderer] Failed to QI IDXGIResource for track {}: {:#x}",
+                                      i, static_cast<unsigned long>(hr));
+                        track->last_nv12_tex = decode_tex;
+                        track->last_nv12_idx = array_idx;
+                        continue;
+                    }
+
+                    HANDLE shared_handle = nullptr;
+                    hr = dxgi_res->GetSharedHandle(&shared_handle);
+                    if (FAILED(hr)) {
+                        spdlog::error("[Renderer] Failed to get shared handle for track {}: {:#x}",
+                                      i, static_cast<unsigned long>(hr));
+                        track->last_nv12_tex = decode_tex;
+                        track->last_nv12_idx = array_idx;
+                        continue;
+                    }
+
+                    // Open shared texture on render device
+                    hr = d3d_device_->device()->OpenSharedResource(
+                        shared_handle, __uuidof(ID3D11Texture2D),
+                        reinterpret_cast<void**>(track->render_nv12_tex.GetAddressOf()));
+                    if (FAILED(hr)) {
+                        spdlog::error("[Renderer] Failed to open shared NV12 texture for track {}: {:#x}",
+                                      i, static_cast<unsigned long>(hr));
+                        track->last_nv12_tex = decode_tex;
+                        track->last_nv12_idx = array_idx;
+                        continue;
+                    }
+                }
+
+                // Create SRVs on the render-side shared texture
+                ID3D11Texture2D* render_tex = track->render_nv12_tex.Get();
                 D3D11_TEXTURE2D_DESC tex_desc = {};
-                nv12_tex->GetDesc(&tex_desc);
+                render_tex->GetDesc(&tex_desc);
                 if (tex_desc.Height > 0 && frame.height > 0 && tex_desc.Height != static_cast<UINT>(frame.height)) {
                     track->nv12_uv_scale_y = static_cast<float>(frame.height) / static_cast<float>(tex_desc.Height);
                 } else {
@@ -888,7 +929,7 @@ void Renderer::draw_frame(const PresentDecision& decision) {
                 y_desc.Texture2DArray.FirstArraySlice = static_cast<UINT>(array_idx);
                 y_desc.Texture2DArray.ArraySize = 1;
                 HRESULT hr = d3d_device_->device()->CreateShaderResourceView(
-                    nv12_tex, &y_desc, &track->nv12_y_srv);
+                    render_tex, &y_desc, &track->nv12_y_srv);
                 if (FAILED(hr)) {
                     spdlog::error("[Renderer] Failed to create NV12 Y SRV for track {}: {:#x}",
                                   i, static_cast<unsigned long>(hr));
@@ -901,13 +942,13 @@ void Renderer::draw_frame(const PresentDecision& decision) {
                 uv_desc.Texture2DArray.FirstArraySlice = static_cast<UINT>(array_idx);
                 uv_desc.Texture2DArray.ArraySize = 1;
                 hr = d3d_device_->device()->CreateShaderResourceView(
-                    nv12_tex, &uv_desc, &track->nv12_uv_srv);
+                    render_tex, &uv_desc, &track->nv12_uv_srv);
                 if (FAILED(hr)) {
                     spdlog::error("[Renderer] Failed to create NV12 UV SRV for track {}: {:#x}",
                                   i, static_cast<unsigned long>(hr));
                 }
 
-                track->last_nv12_tex = nv12_tex;
+                track->last_nv12_tex = decode_tex;
                 track->last_nv12_idx = array_idx;
             }
 
@@ -1072,8 +1113,11 @@ std::unique_ptr<Renderer::TrackPipeline> Renderer::create_pipeline(const std::st
         });
 
     if (hw_decode) {
-        std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-        pipeline->decode_thread->enable_hardware_decode(d3d_device_->device(), &device_mutex_);
+        // Pass nullptr device — D3D11VA provider will create its own
+        // independent D3D11 device for decoding. This avoids sharing the
+        // render device's immediate context, which causes D3D11VA internal
+        // state corruption on seek (C++ exception from D3D11 runtime).
+        pipeline->decode_thread->enable_hardware_decode(nullptr, nullptr);
     }
 
     if (!pipeline->decode_thread->start()) {

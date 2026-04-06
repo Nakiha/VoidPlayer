@@ -78,6 +78,7 @@ bool DecodeThread::enable_hardware_decode(void* native_device,
     }
 
     native_device_ = native_device;
+    device_mutex_ = device_mutex;
 
     auto result = try_hw_decode_providers(
         native_device, codec_, codec_params_->width, codec_params_->height,
@@ -224,6 +225,7 @@ void DecodeThread::set_decode_paused(bool paused) {
 }
 
 void DecodeThread::notify_seek(int64_t target_pts_us, SeekType type) {
+    cancelled_.store(true, std::memory_order_release);  // Abort in-progress decode
     std::lock_guard<std::mutex> lock(seek_mutex_);
     seek_.target_pts_us = target_pts_us;
     seek_.type = type;
@@ -235,6 +237,10 @@ void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*
     av_log_set_level(AV_LOG_ERROR);
     avcodec_send_packet(codec_ctx_, nullptr);
     while (avcodec_receive_frame(codec_ctx_, frame) >= 0) {
+        if (cancelled_.load(std::memory_order_acquire)) {
+            av_frame_unref(frame);
+            break;
+        }
         if (target_us >= 0) {
             rescale_ts(frame);
             TextureFrame tex_frame = converter_.convert(frame);
@@ -299,6 +305,8 @@ void DecodeThread::run() {
             }
         }
         if (target_us >= 0) {
+            // Reset cancellation flag — this seek is now the active operation
+            cancelled_.store(false, std::memory_order_release);
 
             spdlog::info("[DecodeThread] === SEEK START: target={:.3f}s, type={}, "
                          "input_pq={}, output_buf={}, buf_state={}",
@@ -308,24 +316,27 @@ void DecodeThread::run() {
                          output_buffer_.total_count(),
                          static_cast<int>(output_buffer_.state()));
 
-            // Drain residual frames from codec by entering drain mode,
-            // then flush to exit drain mode (avcodec_send_packet(nullptr)
-            // puts the codec into EOF state; avcodec_flush_buffers resets it).
-            // Suppress av_log during drain — HEVC may emit spurious warnings
-            // about missing references when outputting frames from the old DPB.
-            int drained_frames = 0;
-            {
-                auto prev_level = av_log_get_level();
-                av_log_set_level(AV_LOG_ERROR);
-                avcodec_send_packet(codec_ctx_, nullptr);
-                while (avcodec_receive_frame(codec_ctx_, frame) >= 0) {
-                    av_frame_unref(frame);
-                    ++drained_frames;
-                }
+            // Do NOT flush the hardware codec.
+            // avcodec_flush_buffers releases D3D11VA decoder surfaces back to the
+            // pool, but the D3D11VA internal state can become inconsistent after
+            // flush — the next avcodec_send_packet crashes inside D3D11 with a
+            // C++ exception.  This is a known issue with D3D11VA: the driver-level
+            // video decoder object does not survive flush cleanly.
+            //
+            // Instead, simply skip flush and let the first keyframe from the seek
+            // position reset the DPB.  The DemuxThread has already:
+            //   1) flushed the packet queue (no stale packets)
+            //   2) seeked to a keyframe via av_seek_frame(AVSEEK_FLAG_BACKWARD)
+            // So the first packet sent to the codec will be a keyframe (typically
+            // IDR for H.264/HEVC), which resets the decoder state.
+            //
+            // For software decode, flush is safe and cheap — it just resets the
+            // DPB without touching any hardware state.
+            if (!hw_enabled_) {
                 avcodec_flush_buffers(codec_ctx_);
-                av_log_set_level(prev_level);
             }
-            spdlog::info("[DecodeThread] Seek flush: drained {} residual frames", drained_frames);
+            spdlog::info("[DecodeThread] Seek flush: {}",
+                         hw_enabled_ ? "SKIPPED (D3D11VA unsafe)" : "codec buffers flushed");
 
             // NOTE: Do NOT drain input queue here! The DemuxThread already
             // flushes the queue before seeking and then pushes NEW packets.
@@ -417,13 +428,18 @@ void DecodeThread::run() {
             continue;
         }
 
-        int ret = 0;
-        try {
-            ret = avcodec_send_packet(codec_ctx_, pkt);
-        } catch (...) {
-            spdlog::error("[DecodeThread] Exception in avcodec_send_packet, discarding packet");
+        // Cancel checkpoint: abort if a new seek arrived while we were waiting
+        if (cancelled_.load(std::memory_order_acquire)) {
             av_packet_free(&pkt);
             continue;
+        }
+
+        int ret = 0;
+        if (hw_enabled_ && device_mutex_) {
+            std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
+            ret = avcodec_send_packet(codec_ctx_, pkt);
+        } else {
+            ret = avcodec_send_packet(codec_ctx_, pkt);
         }
         av_packet_free(&pkt);
 
@@ -434,7 +450,13 @@ void DecodeThread::run() {
 
         int frames_produced = 0;
         while (true) {
-            ret = avcodec_receive_frame(codec_ctx_, frame);
+            if (cancelled_.load(std::memory_order_acquire)) break;
+            if (hw_enabled_ && device_mutex_) {
+                std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
+                ret = avcodec_receive_frame(codec_ctx_, frame);
+            } else {
+                ret = avcodec_receive_frame(codec_ctx_, frame);
+            }
             if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
                 break;
             }

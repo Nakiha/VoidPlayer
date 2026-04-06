@@ -115,7 +115,7 @@ void VideoRendererPlugin::HandleMethodCall(
                         pts = std::get<int64_t>(it->second);
                     }
                     spdlog::info("[VideoRendererPlugin] seek: pts={}μs, renderer alive={}", pts, (bool)renderer_);
-                    renderer_->seek(pts);
+                    renderer_->seek(pts, vr::SeekType::Exact);
                     spdlog::info("[VideoRendererPlugin] seek completed");
                 }
             }

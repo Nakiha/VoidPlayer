@@ -150,6 +150,7 @@ private:
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sw_srv;  // SRV for sw texture
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> nv12_y_srv;  // Cached NV12 Y SRV
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> nv12_uv_srv; // Cached NV12 UV SRV
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> render_nv12_tex;  // Opened on render device via DXGI shared
         void* last_nv12_tex = nullptr;  // Pointer to detect when hw texture changes
         int last_nv12_idx = -1;         // Array index to detect when slice changes
         float nv12_uv_scale_y = 1.0f;  // video_height / texture_height (alignment padding fix)

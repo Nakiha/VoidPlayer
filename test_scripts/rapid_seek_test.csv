@@ -1,0 +1,13 @@
+# Rapid seek test: multiple seeks without playing
+0.5, ADD_MEDIA, resources/video/h266_10s_1920x1080.mp4
+3.0, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+5.0, SEEK_TO, 1000000
+5.2, SEEK_TO, 3000000
+5.4, SEEK_TO, 7000000
+5.6, SEEK_TO, 2000000
+5.8, SEEK_TO, 8000000
+6.0, SEEK_TO, 500000
+6.2, SEEK_TO, 9000000
+6.4, SEEK_TO, 4000000
+6.6, SEEK_TO, 1000000
+8.0, QUIT, 0

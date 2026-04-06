@@ -75,6 +75,7 @@ private:
     HwDecodeType hw_type_ = HwDecodeType::None;
     std::unique_ptr<HwDecodeProvider> hw_provider_;  // Holds mutex lifetime
     AVPixelFormat hw_pix_fmt_ = AV_PIX_FMT_NONE;  // Per-instance, avoids global shared state
+    std::recursive_mutex* device_mutex_ = nullptr;  // Shared D3D11 mutex for hw decode serialization
 
     // Seek coordination — protected by seek_mutex_ to avoid torn reads
     // between seek_target / seek_type / seek_pending
@@ -86,6 +87,7 @@ private:
     };
     SeekState seek_;
 
+    std::atomic<bool> cancelled_{false};     // Set by notify_seek() to abort in-progress decode
     std::atomic<bool> decode_paused_{false};
     int64_t exact_seek_target_us_ = -1;  // >= 0 when discarding frames before exact seek target
     std::vector<TextureFrame> exact_seek_reorder_;  // Temp buffer for B-frame PTS reordering

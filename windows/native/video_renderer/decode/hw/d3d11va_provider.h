@@ -2,6 +2,8 @@
 #include "video_renderer/decode/hw/hw_decode_provider.h"
 #include <mutex>
 #include <memory>
+#include <d3d11.h>
+#include <wrl/client.h>
 
 namespace vr {
 
@@ -24,6 +26,12 @@ private:
     // Mutex must outlive the AVBufferRef because FFmpeg calls lock/unlock
     // during context teardown. Held as member to ensure lifetime.
     std::unique_ptr<std::recursive_mutex> device_mutex_;
+
+    // Independent D3D11 device for hardware decoding (created when no external
+    // device is provided). Keeping these alive prevents premature release during
+    // FFmpeg's teardown.
+    Microsoft::WRL::ComPtr<ID3D11Device> own_device_;
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3d_context_;
 
     // Pixel format found during probe (AV_PIX_FMT_D3D11VA_VLD or AV_PIX_FMT_D3D11)
     mutable AVPixelFormat probed_pix_fmt_ = AV_PIX_FMT_NONE;

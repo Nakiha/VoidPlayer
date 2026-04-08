@@ -70,6 +70,9 @@ private:
     void RemoveTrack(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void PickFiles(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
     std::unique_ptr<vr::Renderer> renderer_;
     int64_t texture_id_ = -1;

@@ -1049,7 +1049,7 @@ void Renderer::apply_layout(const LayoutState& state) {
     std::lock_guard<std::mutex> lock(state_mutex_);
     layout_.mode = state.mode;
     layout_.split_pos = std::clamp(state.split_pos, 0.0f, 1.0f);
-    layout_.zoom_ratio = std::clamp(state.zoom_ratio, 1.0f, 10.0f);
+    layout_.zoom_ratio = std::clamp(state.zoom_ratio, 1.0f, 50.0f);
     layout_.view_offset[0] = state.view_offset[0];
     layout_.view_offset[1] = state.view_offset[1];
 

@@ -2,6 +2,12 @@
 
 #include <flutter_windows.h>
 #include <spdlog/spdlog.h>
+#include <shobjidl.h>
+#include <shlwapi.h>
+#include <commdlg.h>
+
+#pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "shell32.lib")
 
 namespace {
 std::string get_exe_dir() {
@@ -263,6 +269,8 @@ void VideoRendererPlugin::HandleMethodCall(
             map[flutter::EncodableValue("tracks")] = flutter::EncodableValue(tracks_list);
         }
         result->Success(flutter::EncodableValue(map));
+    } else if (method == "pickFiles") {
+        PickFiles(method_call.arguments(), std::move(result));
     } else if (method == "getLayout") {
         flutter::EncodableMap map;
         if (renderer_) {
@@ -528,4 +536,79 @@ void VideoRendererPlugin::RemoveTrack(
     renderer_->remove_track(file_id);
     spdlog::info("[VideoRendererPlugin] Removed track: file_id={}", file_id);
     result->Success(flutter::EncodableValue(nullptr));
+}
+
+void VideoRendererPlugin::PickFiles(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+
+    bool allow_multiple = true;
+
+    if (arguments) {
+        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+        if (args) {
+            auto it = args->find(flutter::EncodableValue("allowMultiple"));
+            if (it != args->end()) {
+                allow_multiple = std::get<bool>(it->second);
+            }
+        }
+    }
+
+    // Flutter UI thread already has COM initialized — no CoInitializeEx needed.
+
+    IFileOpenDialog* pfd = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+                          IID_PPV_ARGS(&pfd));
+    if (FAILED(hr)) {
+        // Return empty list (not null) to avoid Dart type cast issues
+        result->Success(flutter::EncodableValue(flutter::EncodableList()));
+        return;
+    }
+
+    FILEOPENDIALOGOPTIONS options = FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST | FOS_NOCHANGEDIR;
+    if (allow_multiple) options |= FOS_ALLOWMULTISELECT;
+    pfd->SetOptions(options);
+
+    // Video file filter
+    COMDLG_FILTERSPEC filterSpec[] = {
+        { L"Video Files", L"*.avi;*.flv;*.mkv;*.mov;*.mp4;*.mpeg;*.webm;*.wmv;*.ts;*.m2ts;*.vob;*.mpg;*.m4v;*.3gp" },
+        { L"All Files", L"*.*" },
+    };
+    pfd->SetFileTypes(2, filterSpec);
+    pfd->SetFileTypeIndex(1);
+
+    HWND hwndOwner = GetActiveWindow();
+
+    hr = pfd->Show(hwndOwner);
+
+    flutter::EncodableList paths_list;
+
+    if (SUCCEEDED(hr)) {
+        IShellItemArray* items = nullptr;
+        hr = pfd->GetResults(&items);
+        if (SUCCEEDED(hr)) {
+            DWORD count = 0;
+            items->GetCount(&count);
+            for (DWORD i = 0; i < count; ++i) {
+                IShellItem* item = nullptr;
+                if (SUCCEEDED(items->GetItemAt(i, &item))) {
+                    LPWSTR name = nullptr;
+                    if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &name))) {
+                        // Convert wide string to UTF-8
+                        std::wstring ws(name);
+                        std::string path(ws.begin(), ws.end());
+                        paths_list.push_back(flutter::EncodableValue(path));
+                        CoTaskMemFree(name);
+                    }
+                    item->Release();
+                }
+            }
+            items->Release();
+        }
+    }
+
+    pfd->Release();
+
+    // Always return a list (empty = cancelled, non-empty = selected files)
+    result->Success(flutter::EncodableValue(paths_list));
 }

@@ -44,6 +44,9 @@ class CreateRendererResult {
 
 /// Immutable snapshot of the layout state.
 class LayoutState {
+  static const double zoomMin = 0.1;
+  static const double zoomMax = 50.0;
+
   final int mode;
   final double splitPos;
   final double zoomRatio;
@@ -200,5 +203,15 @@ class VideoRendererController {
       await _channel.invokeMethod<void>('destroyRenderer');
       _textureId = null;
     }
+  }
+
+  /// Open a native file picker dialog (IFileDialog) and return selected paths.
+  /// Returns null if user cancels.
+  Future<List<String>?> pickFiles({bool allowMultiple = true}) async {
+    final result = await _channel.invokeMethod<List<dynamic>>('pickFiles', {
+      'allowMultiple': allowMultiple,
+    });
+    if (result == null || result.isEmpty) return null;
+    return result.cast<String>();
   }
 }

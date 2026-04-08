@@ -13,7 +13,7 @@ class ViewportPanel extends StatefulWidget {
 
   final void Function(Offset delta) onPan;
   final void Function(double normalizedX) onSplit;
-  final void Function(double delta) onZoom;
+  final void Function(double delta, Offset localPosition) onZoom;
   final void Function(bool panning, bool splitting) onPointerButton;
   final void Function(int width, int height)? onResize;
 
@@ -137,7 +137,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           onPointerSignal: (e) {
             if (e is PointerScrollEvent) {
               final scrollDelta = e.scrollDelta.dy;
-              widget.onZoom(scrollDelta);
+              widget.onZoom(scrollDelta, e.localPosition);
             }
           },
           child: Texture(textureId: widget.textureId!),

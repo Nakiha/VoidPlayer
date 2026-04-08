@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 
-/// Zoom level dropdown matching PySide6 ZoomComboBox (90px width).
+/// Zoom level dropdown using MenuAnchor for a cleaner Material 3 look.
 class ZoomComboBox extends StatelessWidget {
   final double value;
   final ValueChanged<double> onChanged;
@@ -24,26 +24,80 @@ class ZoomComboBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    return SizedBox(
-      width: 90,
-      height: 32,
-      child: DropdownButton<double>(
-        value: presets.contains(value) ? value : null,
-        isDense: true,
-        isExpanded: true,
-        underline: const SizedBox.shrink(),
-        style: Theme.of(context).textTheme.bodySmall,
-        items: [
-          DropdownMenuItem(value: 0, child: Text(l.zoomFit)),
-          ...presets.map((v) => DropdownMenuItem(
-                value: v,
-                child: Text(_label(v, l)),
-              )),
-        ],
-        onChanged: (v) {
-          if (v != null) onChanged(v);
-        },
+    final theme = Theme.of(context);
+    final allValues = [0.0, ...presets];
+    final currentValue = allValues.contains(value) ? value : null;
+
+    return MenuAnchor(
+      alignmentOffset: const Offset(0, 4),
+      style: MenuStyle(
+        backgroundColor: WidgetStatePropertyAll(
+          theme.colorScheme.surfaceContainerHigh,
+        ),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)),
       ),
+      menuChildren: allValues.map((v) {
+        final selected = v == currentValue;
+        return MenuItemButton(
+          leadingIcon: selected
+              ? Icon(Icons.check, size: 16, color: theme.colorScheme.primary)
+              : const SizedBox(width: 16),
+          requestFocusOnHover: false,
+          style: ButtonStyle(
+            padding: WidgetStatePropertyAll(
+              EdgeInsets.only(left: selected ? 8.0 : 12.0, right: 16),
+            ),
+          ),
+          onPressed: () => onChanged(v),
+          child: Text(
+            _label(v, l),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: selected ? theme.colorScheme.primary : null,
+            ),
+          ),
+        );
+      }).toList(),
+      builder: (context, controller, child) {
+        return SizedBox(
+          width: 90,
+          height: 32,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                if (controller.isOpen) {
+                  controller.close();
+                } else {
+                  controller.open();
+                }
+              },
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _label(value, l),
+                        style: theme.textTheme.bodySmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_drop_down,
+                      size: 18,
+                      color: theme.iconTheme.color,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

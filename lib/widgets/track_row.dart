@@ -55,11 +55,7 @@ class TrackRow extends StatelessWidget {
   final int index; // display position index for ReorderableListView
   final double playheadPosition; // 0.0 - 1.0
   final VoidCallback onRemove;
-  final VoidCallback onToggleVisibility;
-  final VoidCallback onToggleMute;
   final ValueChanged<int> onOffsetChanged;
-  final bool isVisible;
-  final bool isMuted;
   final int syncOffsetMs;
 
   const TrackRow({
@@ -68,11 +64,7 @@ class TrackRow extends StatelessWidget {
     required this.index,
     this.playheadPosition = 0.0,
     required this.onRemove,
-    required this.onToggleVisibility,
-    required this.onToggleMute,
     required this.onOffsetChanged,
-    this.isVisible = true,
-    this.isMuted = false,
     this.syncOffsetMs = 0,
   });
 
@@ -93,36 +85,6 @@ class TrackRow extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Row(
                 children: [
-                  // Visibility toggle
-                  SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: IconButton(
-                      onPressed: onToggleVisibility,
-                      icon: Icon(
-                        isVisible ? Icons.visibility : Icons.visibility_off,
-                        size: 16,
-                      ),
-                      padding: EdgeInsets.zero,
-                      constraints:
-                          const BoxConstraints.tightFor(width: 28, height: 28),
-                    ),
-                  ),
-                  // Mute toggle
-                  SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: IconButton(
-                      onPressed: onToggleMute,
-                      icon: Icon(
-                        isMuted ? Icons.volume_off : Icons.volume_up,
-                        size: 16,
-                      ),
-                      padding: EdgeInsets.zero,
-                      constraints:
-                          const BoxConstraints.tightFor(width: 28, height: 28),
-                    ),
-                  ),
                   const SizedBox(width: 4),
                   // File name
                   Expanded(

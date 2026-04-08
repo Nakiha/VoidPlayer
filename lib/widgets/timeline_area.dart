@@ -8,26 +8,18 @@ import 'track_row.dart';
 class TimelineArea extends StatelessWidget {
   final TrackManager trackManager;
   final double playheadPosition; // 0.0 - 1.0
-  final Map<int, bool> visibility;
-  final Map<int, bool> muted;
   final Map<int, int> syncOffsets;
   final ValueChanged<int> onRemoveTrack;
   final void Function(int oldIndex, int newIndex) onReorder;
-  final void Function(int slot, bool visible) onToggleVisibility;
-  final void Function(int slot, bool muted) onToggleMute;
   final void Function(int slot, int offsetMs) onOffsetChanged;
 
   const TimelineArea({
     super.key,
     required this.trackManager,
     this.playheadPosition = 0.0,
-    this.visibility = const {},
-    this.muted = const {},
     this.syncOffsets = const {},
     required this.onRemoveTrack,
     required this.onReorder,
-    required this.onToggleVisibility,
-    required this.onToggleMute,
     required this.onOffsetChanged,
   });
 
@@ -50,14 +42,8 @@ class TimelineArea extends StatelessWidget {
               index: index,
               playheadPosition: playheadPosition,
               onRemove: () => onRemoveTrack(entry.fileId),
-              onToggleVisibility: () =>
-                  onToggleVisibility(entry.slot, !(visibility[entry.slot] ?? true)),
-              onToggleMute: () =>
-                  onToggleMute(entry.slot, !(muted[entry.slot] ?? false)),
               onOffsetChanged: (delta) => onOffsetChanged(
                   entry.slot, (syncOffsets[entry.slot] ?? 0) + delta),
-              isVisible: visibility[entry.slot] ?? true,
-              isMuted: muted[entry.slot] ?? false,
               syncOffsetMs: syncOffsets[entry.slot] ?? 0,
             );
           },

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import '../app_log.dart';
@@ -158,7 +157,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   }
 
   void _setZoom(double ratio) {
-    setState(() => _layout = _layout.copyWith(zoomRatio: ratio.clamp(0.1, 10.0)));
+    setState(() => _layout = _layout.copyWith(zoomRatio: ratio.clamp(LayoutState.zoomMin, LayoutState.zoomMax)));
     _markLayoutDirty();
   }
 
@@ -208,14 +207,8 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   // -- File opening --
 
   void _openFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.video,
-      allowMultiple: true,
-    );
-    if (result == null || result.files.isEmpty) return;
-
-    final paths = result.files.where((f) => f.path != null).map((f) => f.path!).toList();
-    if (paths.isEmpty) return;
+    final paths = await _controller.pickFiles(allowMultiple: true);
+    if (paths == null || paths.isEmpty) return;
 
     if (_textureId == null) {
       // First load: create renderer
@@ -264,11 +257,48 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     _markLayoutDirty();
   }
 
-  void _onZoom(double scrollDelta) {
+  void _onZoom(double scrollDelta, Offset localPos) {
     final factor = scrollDelta > 0 ? 0.9 : 1.1;
+    final newZoom = (_layout.zoomRatio * factor).clamp(LayoutState.zoomMin, LayoutState.zoomMax);
+    final actualFactor = newZoom / _layout.zoomRatio;
+
+    // Fallback if viewport size unknown
+    if (_viewportWidth <= 0 || _viewportHeight <= 0) {
+      setState(() {
+        _layout = _layout.copyWith(zoomRatio: newZoom);
+      });
+      _markLayoutDirty();
+      return;
+    }
+
+    // Compute cursor position in slot-normalized coords and slot pixel size.
+    // Formula: offset_new = factor * offset_old + (1 - factor) * (cursor - 0.5) * slot_pixels
+    double cursorX, cursorY, slotW, slotH;
+
+    if (_layout.mode == LayoutMode.sideBySide) {
+      final n = _trackManager.count > 0 ? _trackManager.count : 1;
+      final nx = localPos.dx / _viewportWidth;
+      final ny = localPos.dy / _viewportHeight;
+      final slotIndex = (nx * n).floor().clamp(0, n - 1);
+      cursorX = nx * n - slotIndex;
+      cursorY = ny;
+      slotW = _viewportWidth / n;
+      slotH = _viewportHeight.toDouble();
+    } else {
+      // Split screen: cursor in full canvas UV
+      cursorX = localPos.dx / _viewportWidth;
+      cursorY = localPos.dy / _viewportHeight;
+      slotW = _viewportWidth.toDouble();
+      slotH = _viewportHeight.toDouble();
+    }
+
     setState(() {
       _layout = _layout.copyWith(
-        zoomRatio: (_layout.zoomRatio * factor).clamp(0.1, 10.0),
+        zoomRatio: newZoom,
+        viewOffsetX: actualFactor * _layout.viewOffsetX +
+            (1 - actualFactor) * (cursorX - 0.5) * slotW,
+        viewOffsetY: actualFactor * _layout.viewOffsetY +
+            (1 - actualFactor) * (cursorY - 0.5) * slotH,
       );
     });
     _markLayoutDirty();
@@ -361,14 +391,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     }
   }
 
-  void _onToggleVisibility(int slot, bool visible) {
-    // TODO: wire to native when visibility toggle is supported
-  }
-
-  void _onToggleMute(int slot, bool muted) {
-    // TODO: wire to native when mute toggle is supported
-  }
-
   void _onOffsetChanged(int slot, int offsetMs) {
     // TODO: wire to native when sync offset is supported
   }
@@ -429,8 +451,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
                     : 0.0,
                 onRemoveTrack: _onRemoveTrack,
                 onReorder: _trackManager.moveTrack,
-                onToggleVisibility: _onToggleVisibility,
-                onToggleMute: _onToggleMute,
                 onOffsetChanged: _onOffsetChanged,
               ),
             ),

@@ -27,6 +27,7 @@ flutter::EncodableMap make_track_map(const vr::TrackInfo& info) {
     map[flutter::EncodableValue("path")] = flutter::EncodableValue(info.file_path);
     map[flutter::EncodableValue("width")] = flutter::EncodableValue(info.width);
     map[flutter::EncodableValue("height")] = flutter::EncodableValue(info.height);
+    map[flutter::EncodableValue("durationUs")] = flutter::EncodableValue(static_cast<int64_t>(info.duration_us));
     return map;
 }
 } // namespace
@@ -496,16 +497,18 @@ void VideoRendererPlugin::AddTrack(
         return;
     }
 
-    auto dims = renderer_->track_dimensions(slot);
     auto infos = renderer_->track_infos();
-    int file_id = 0;
+    const vr::TrackInfo* found = nullptr;
     for (const auto& ti : infos) {
-        if (ti.slot == slot) { file_id = ti.file_id; break; }
+        if (ti.slot == slot) { found = &ti; break; }
     }
-    vr::TrackInfo info{file_id, slot, path, dims.first, dims.second};
+    if (!found) {
+        result->Error("ADD_FAILED", "Track not found after add");
+        return;
+    }
 
-    spdlog::info("[VideoRendererPlugin] Added track: file_id={}, slot={}, path={}, tracks={}", file_id, slot, path, renderer_->track_infos().size());
-    result->Success(flutter::EncodableValue(make_track_map(info)));
+    spdlog::info("[VideoRendererPlugin] Added track: file_id={}, slot={}, path={}, tracks={}", found->file_id, slot, path, renderer_->track_infos().size());
+    result->Success(flutter::EncodableValue(make_track_map(*found)));
 }
 
 void VideoRendererPlugin::RemoveTrack(

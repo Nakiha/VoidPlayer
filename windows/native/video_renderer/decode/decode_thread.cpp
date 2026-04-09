@@ -410,6 +410,11 @@ void DecodeThread::run() {
                         output_buffer_.push_frame(std::move(tex_frame));
                         av_frame_unref(frame);
                     }
+                    // Flush decode device after EOF drain to ensure shared NV12
+                    // textures are visible to the render device.
+                    if (hw_enabled_ && hw_provider_) {
+                        hw_provider_->flush();
+                    }
                     eof_flushed_ = true;
                 }
             }
@@ -494,6 +499,15 @@ void DecodeThread::run() {
             }
 
             output_buffer_.push_frame(std::move(tex_frame));
+
+            // Flush the independent decode device after producing HW frames.
+            // DXGI requires the producing device to call Flush() before the
+            // consuming device (render device) can read shared texture data.
+            // Without this, the render device may see incomplete NV12 data
+            // (upper half content, lower half gray / green) on the first frame.
+            if (hw_enabled_ && hw_provider_ && frames_produced == 1) {
+                hw_provider_->flush();
+            }
 
             if (output_buffer_.state() == TrackState::Buffering) {
                 bool ready = post_seek_

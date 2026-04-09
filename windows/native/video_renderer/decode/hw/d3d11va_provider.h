@@ -19,6 +19,7 @@ public:
     HwDecodeInitResult init(void* native_device, int width, int height,
                             std::recursive_mutex* device_mutex = nullptr) override;
     void shutdown() override;
+    void flush() override;
     HwDecodeType type() const override { return HwDecodeType::D3D11VA; }
     const char* name() const override { return "D3D11VA"; }
 

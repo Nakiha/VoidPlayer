@@ -13,6 +13,7 @@ class TrackInfo {
   final String path;
   final int width;
   final int height;
+  final int durationUs;
 
   const TrackInfo({
     required this.fileId,
@@ -20,6 +21,7 @@ class TrackInfo {
     required this.path,
     required this.width,
     required this.height,
+    this.durationUs = 0,
   });
 
   factory TrackInfo.fromMap(Map<dynamic, dynamic> map) => TrackInfo(
@@ -28,6 +30,7 @@ class TrackInfo {
         path: map['path'] as String,
         width: map['width'] as int,
         height: map['height'] as int,
+        durationUs: map['durationUs'] as int? ?? 0,
       );
 }
 

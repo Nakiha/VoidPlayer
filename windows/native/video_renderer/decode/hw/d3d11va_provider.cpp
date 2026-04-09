@@ -182,4 +182,10 @@ void D3D11VAProvider::shutdown() {
     d3d_context_.Reset();
 }
 
+void D3D11VAProvider::flush() {
+    if (d3d_context_) {
+        d3d_context_->Flush();
+    }
+}
+
 } // namespace vr

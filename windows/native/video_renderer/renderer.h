@@ -33,6 +33,7 @@ struct TrackInfo {
     std::string file_path;
     int width;
     int height;
+    int64_t duration_us = 0;  ///< Track duration in microseconds
 };
 
 /// Per-track performance stats snapshot.

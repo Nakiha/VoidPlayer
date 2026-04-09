@@ -1413,7 +1413,8 @@ std::vector<TrackInfo> Renderer::track_infos() const {
                 static_cast<int>(i),
                 tracks_[i]->file_path,
                 tracks_[i]->video_width,
-                tracks_[i]->video_height
+                tracks_[i]->video_height,
+                tracks_[i]->demux_thread ? tracks_[i]->demux_thread->stats().duration_us : 0
             });
         }
     }

@@ -1,12 +1,22 @@
 import 'package:flutter/material.dart';
 
-/// Clip visualization area inside a TrackRow. CustomPaint with clip rect + playhead.
+/// Clip visualization area inside a TrackRow.
+///
+/// The clip rectangle width is proportional to [durationRatio] (0.0–1.0)
+/// relative to the longest track. [playheadPosition] is already per-track
+/// clamped (0.0–1.0 within this clip's duration).
 class TrackContent extends StatelessWidget {
-  final double playheadPosition; // 0.0 - 1.0
+  /// Ratio of this track's duration to the longest track (0.0–1.0).
+  final double durationRatio;
+
+  /// Per-track clamped playhead position (0.0–1.0 within this clip).
+  final double playheadPosition;
+
   final Color clipColor;
 
   const TrackContent({
     super.key,
+    this.durationRatio = 1.0,
     this.playheadPosition = 0.0,
     this.clipColor = Colors.blueGrey,
   });
@@ -16,7 +26,8 @@ class TrackContent extends StatelessWidget {
     return CustomPaint(
       size: Size.infinite,
       painter: _TrackContentPainter(
-        playheadPosition: playheadPosition,
+        durationRatio: durationRatio.clamp(0.0, 1.0),
+        playheadPosition: playheadPosition.clamp(0.0, 1.0),
         clipColor: clipColor,
         playheadColor: Theme.of(context).colorScheme.primary,
         bgColor: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -26,12 +37,14 @@ class TrackContent extends StatelessWidget {
 }
 
 class _TrackContentPainter extends CustomPainter {
+  final double durationRatio;
   final double playheadPosition;
   final Color clipColor;
   final Color playheadColor;
   final Color bgColor;
 
   _TrackContentPainter({
+    required this.durationRatio,
     required this.playheadPosition,
     required this.clipColor,
     required this.playheadColor,
@@ -46,13 +59,14 @@ class _TrackContentPainter extends CustomPainter {
       Paint()..color = bgColor,
     );
 
-    // Clip rectangle (90% width, centered vertically with padding)
-    const clipWidthRatio = 0.9;
-    final clipWidth = size.width * clipWidthRatio;
-    final clipHeight = size.height - 8;
+    // Clip rectangle: width proportional to duration, 8px margin all sides
+    const margin = 8.0;
+    final clipWidth = (size.width - margin * 2) * durationRatio;
+    final clipHeight = size.height - margin * 2;
+    if (clipWidth <= 0 || clipHeight <= 0) return;
     final clipRect = Rect.fromLTWH(
-      (size.width - clipWidth) / 2,
-      4,
+      margin,
+      margin,
       clipWidth,
       clipHeight,
     );
@@ -66,7 +80,7 @@ class _TrackContentPainter extends CustomPainter {
     );
 
     // Playhead line
-    final playheadX = clipRect.left + clipRect.width * playheadPosition.clamp(0.0, 1.0);
+    final playheadX = clipRect.left + clipRect.width * playheadPosition;
     canvas.drawLine(
       Offset(playheadX, 0),
       Offset(playheadX, size.height),
@@ -78,6 +92,7 @@ class _TrackContentPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _TrackContentPainter oldDelegate) {
-    return oldDelegate.playheadPosition != playheadPosition;
+    return oldDelegate.playheadPosition != playheadPosition ||
+        oldDelegate.durationRatio != durationRatio;
   }
 }

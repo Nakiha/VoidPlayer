@@ -446,9 +446,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
               flex: 0,
               child: TimelineArea(
                 trackManager: _trackManager,
-                playheadPosition: _durationUs > 0
-                    ? _currentPtsUs / _durationUs
-                    : 0.0,
+                currentPtsUs: _currentPtsUs,
                 onRemoveTrack: _onRemoveTrack,
                 onReorder: _trackManager.moveTrack,
                 onOffsetChanged: _onOffsetChanged,

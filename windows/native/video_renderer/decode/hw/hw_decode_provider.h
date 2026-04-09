@@ -45,6 +45,12 @@ public:
     /// Release provider-held resources (not hw_device_ctx, which caller owns).
     virtual void shutdown() = 0;
 
+    /// Flush the hardware decode device context to ensure GPU commands are
+    /// submitted. Required for cross-device shared resource visibility —
+    /// DXGI mandates Flush() on the producing device before the consuming
+    /// device can read shared texture data.
+    virtual void flush() = 0;
+
     virtual HwDecodeType type() const = 0;
     virtual const char* name() const = 0;
 };

@@ -13,8 +13,8 @@ HwDecodeInitResult try_hw_decode_providers(
     int height,
     std::recursive_mutex* device_mutex)
 {
-    if (!native_device || !codec) {
-        spdlog::debug("[HWDecode] Skipping: no native device or codec");
+    if (!codec) {
+        spdlog::debug("[HWDecode] Skipping: no codec");
         return {};
     }
 
@@ -37,6 +37,7 @@ HwDecodeInitResult try_hw_decode_providers(
         auto result = provider->init(native_device, width, height, device_mutex);
         if (result.success) {
             spdlog::info("[HWDecode] {} initialized successfully", provider->name());
+            result.provider = std::move(provider);  // Transfer ownership — provider must outlive hw_device_ctx
             return result;
         }
 

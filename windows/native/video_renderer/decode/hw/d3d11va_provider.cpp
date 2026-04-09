@@ -128,10 +128,12 @@ HwDecodeInitResult D3D11VAProvider::init(void* native_device, int width, int hei
     auto* d3d11_ctx = reinterpret_cast<AVD3D11VADeviceContext*>(dev_ctx->hwctx);
 
     // 2. Populate device context with D3D11 device and context.
-    // The device gets AddRef'd for FFmpeg; the context's lifetime is guaranteed
-    // by our member d3d_context_ (ComPtr keeps it alive until shutdown).
+    // Both must be AddRef'd: FFmpeg's d3d11va_device_uninit() calls Release()
+    // on both device and device_context. Without matching AddRef, the context
+    // would be freed prematurely, causing use-after-free in our shutdown().
     d3d_device->AddRef();
     d3d11_ctx->device = d3d_device;
+    d3d_context_->AddRef();
     d3d11_ctx->device_context = d3d_context_.Get();
 
     // 3. Bind flags: DECODER + SHADER_RESOURCE + SHARED for cross-device texture sharing

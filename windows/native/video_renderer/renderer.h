@@ -138,7 +138,7 @@ public:
     ID3D11Texture2D* shared_texture() const;
 
     /// Get the DXGI shared handle for the offscreen texture.
-    HANDLE shared_texture_handle() const { return shared_handle_; }
+    HANDLE shared_texture_handle() const { return dbuf_.handles[dbuf_.front.load()]; }
 
     /// Mutex for thread-safe access to shared texture.
     std::mutex& texture_mutex() { return texture_mutex_; }
@@ -184,6 +184,15 @@ private:
 
     /// Lightweight layout-only redraw (no Flush) for responsive zoom/pan during playback.
     void redraw_layout();
+
+    /// Issue GPU fence, spin-wait for completion (up to 100ms), then swap front/back.
+    void wait_gpu_and_swap(const char* label);
+
+    /// Create double-buffered shared textures at the given dimensions.
+    bool create_double_buffers(int width, int height,
+                               Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[2],
+                               Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtvs[2],
+                               HANDLE handles[2]);
 
     /// Check if any frame slot in a PresentDecision has a value.
     static bool has_any_frame(const PresentDecision& decision);
@@ -251,9 +260,17 @@ private:
 
     // -- Headless mode state --
     bool headless_ = false;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> shared_texture_;
-    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> shared_rtv_;
-    HANDLE shared_handle_ = nullptr;
+
+    // Double-buffered shared textures: back buffer is the render target,
+    // front buffer is what Flutter reads. Swapped after GPU completion.
+    struct SharedBuffers {
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[2];
+        Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtvs[2];
+        HANDLE handles[2] = {nullptr, nullptr};
+        std::atomic<int> front{0};  // Index Flutter reads from
+    } dbuf_;
+    Microsoft::WRL::ComPtr<ID3D11Query> gpu_fence_;  // GPU-CPU sync
+
     std::mutex texture_mutex_;
     std::function<void()> frame_callback_;
 };

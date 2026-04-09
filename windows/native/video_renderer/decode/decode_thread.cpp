@@ -92,6 +92,7 @@ bool DecodeThread::enable_hardware_decode(void* native_device,
 
     // Store hw device context and provider
     hw_device_ctx_ = result.hw_device_ctx;
+    hw_provider_ = std::move(result.provider);  // Must outlive hw_device_ctx (owns D3D11 mutex + context)
     hw_type_ = result.type;
     hw_enabled_ = true;
     hw_pix_fmt_ = result.hw_pix_fmt;
@@ -103,7 +104,7 @@ bool DecodeThread::enable_hardware_decode(void* native_device,
     // reference frame pool (DPB) and our preroll/render pipeline buffers.
     // Without this, the default pool (20) is too small when preroll frames
     // hold references via av_frame_ref while the decoder also needs surfaces.
-    codec_ctx_->extra_hw_frames = 32;
+    codec_ctx_->extra_hw_frames = 48;
 
     // NOTE: We intentionally do NOT create hw_frames_ctx here.
     // FFmpeg's internal ff_decode_get_hw_frames_ctx() will create one
@@ -209,6 +210,12 @@ void DecodeThread::stop() {
     if (thread_.joinable()) {
         thread_.join();
     }
+    // Release output frames BEFORE freeing hw resources.
+    // TextureFrames hold hw_frame_ref (av_frame_ref) which reference
+    // hw_frames_ctx -> hw_device_ctx. If hw_device_ctx is freed first,
+    // the frame cleanup will access a freed device context (SIGSEGV).
+    output_buffer_.clear_frames();
+
     if (codec_ctx_) {
         avcodec_free_context(&codec_ctx_);
         codec_ctx_ = nullptr;

@@ -44,7 +44,7 @@ class CreateRendererResult {
 
 /// Immutable snapshot of the layout state.
 class LayoutState {
-  static const double zoomMin = 0.1;
+  static const double zoomMin = 1.0;
   static const double zoomMax = 50.0;
 
   final int mode;

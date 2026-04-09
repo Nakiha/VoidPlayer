@@ -1,5 +1,6 @@
 #include "video_renderer_plugin.h"
 
+#include "utils.h"
 #include <flutter_windows.h>
 #include <spdlog/spdlog.h>
 #include <shobjidl.h>
@@ -594,10 +595,10 @@ void VideoRendererPlugin::PickFiles(
                 if (SUCCEEDED(items->GetItemAt(i, &item))) {
                     LPWSTR name = nullptr;
                     if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &name))) {
-                        // Convert wide string to UTF-8
-                        std::wstring ws(name);
-                        std::string path(ws.begin(), ws.end());
-                        paths_list.push_back(flutter::EncodableValue(path));
+                        std::string path = Utf8FromUtf16(name);
+                        if (!path.empty()) {
+                            paths_list.push_back(flutter::EncodableValue(path));
+                        }
                         CoTaskMemFree(name);
                     }
                     item->Release();

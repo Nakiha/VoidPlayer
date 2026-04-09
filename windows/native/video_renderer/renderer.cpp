@@ -18,7 +18,11 @@ Renderer::~Renderer() {
 }
 
 bool Renderer::initialize(const RendererConfig& config) {
-    configure_logging(config.log_config);
+    // Flutter plugin configures logging before initialize().
+    // Skip empty config to avoid clearing all sinks.
+    if (!config.log_config.file_path.empty() || config.log_config.level != spdlog::level::info) {
+        configure_logging(config.log_config);
+    }
 
     // Install crash handler if file path is set
     if (!config.log_config.file_path.empty()) {
@@ -46,38 +50,24 @@ bool Renderer::initialize(const RendererConfig& config) {
             spdlog::error("Renderer: failed to initialize D3D11 device (headless)");
             return false;
         }
-        // Create offscreen BGRA texture for Flutter with DXGI shared handle
-        D3D11_TEXTURE2D_DESC tex_desc = {};
-        tex_desc.Width = static_cast<UINT>(target_width_);
-        tex_desc.Height = static_cast<UINT>(target_height_);
-        tex_desc.MipLevels = 1;
-        tex_desc.ArraySize = 1;
-        tex_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-        tex_desc.SampleDesc.Count = 1;
-        tex_desc.Usage = D3D11_USAGE_DEFAULT;
-        tex_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-        tex_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
-        HRESULT hr = d3d_device_->device()->CreateTexture2D(&tex_desc, nullptr, &shared_texture_);
-        if (FAILED(hr)) {
-            spdlog::error("Renderer: failed to create shared texture: HRESULT {:#x}", static_cast<unsigned long>(hr));
+        if (!create_double_buffers(target_width_, target_height_,
+                                   dbuf_.textures, dbuf_.rtvs, dbuf_.handles)) {
             return false;
         }
-        hr = d3d_device_->device()->CreateRenderTargetView(shared_texture_.Get(), nullptr, &shared_rtv_);
+        dbuf_.front.store(0);
+
+        D3D11_QUERY_DESC fence_desc = {};
+        fence_desc.Query = D3D11_QUERY_EVENT;
+        HRESULT hr = d3d_device_->device()->CreateQuery(&fence_desc, &gpu_fence_);
         if (FAILED(hr)) {
-            spdlog::error("Renderer: failed to create shared RTV: HRESULT {:#x}", static_cast<unsigned long>(hr));
+            spdlog::error("Renderer: failed to create GPU fence: HRESULT {:#x}", static_cast<unsigned long>(hr));
             return false;
         }
-        // Get DXGI shared handle for cross-device sharing with Flutter
-        Microsoft::WRL::ComPtr<IDXGIResource> dxgi_resource;
-        hr = shared_texture_.As(&dxgi_resource);
-        if (SUCCEEDED(hr)) {
-            hr = dxgi_resource->GetSharedHandle(&shared_handle_);
-            if (FAILED(hr)) {
-                spdlog::warn("Renderer: failed to get shared handle: HRESULT {:#x}", static_cast<unsigned long>(hr));
-            }
-        }
-        spdlog::info("Renderer: headless mode, shared texture {}x{} BGRA, handle={}",
-                     target_width_, target_height_, reinterpret_cast<uintptr_t>(shared_handle_));
+
+        spdlog::info("Renderer: headless mode, double-buffered {}x{} BGRA, handles=[{}, {}]",
+                     target_width_, target_height_,
+                     reinterpret_cast<uintptr_t>(dbuf_.handles[0]),
+                     reinterpret_cast<uintptr_t>(dbuf_.handles[1]));
     } else {
         if (!d3d_device_->initialize(hwnd_, target_width_, target_height_)) {
             spdlog::error("Renderer: failed to initialize D3D11 device");
@@ -206,6 +196,11 @@ void Renderer::shutdown() {
     if (render_thread_.joinable()) {
         render_thread_.join();
     }
+
+    // Clear cached frames that may hold hw decode surface references.
+    // Must happen before decode_thread->stop() frees hw_device_ctx,
+    // otherwise hw_frame_ref cleanup will access a freed device context.
+    last_decision_ = PresentDecision();
 
     // Stop all tracks
     for (size_t i = 0; i < kMaxTracks; ++i) {
@@ -390,13 +385,78 @@ void Renderer::draw_paused_frame(const char* reason) {
     }
 }
 
+void Renderer::wait_gpu_and_swap(const char* label) {
+    auto* ctx = d3d_device_->context();
+    ctx->End(gpu_fence_.Get());
+    auto fence_start = std::chrono::steady_clock::now();
+    int spin_count = 0;
+    while (ctx->GetData(gpu_fence_.Get(), nullptr, 0, 0) == S_FALSE) {
+        SwitchToThread();
+        // Check timeout every 256 iterations to reduce steady_clock::now() overhead
+        if (++spin_count >= 256) {
+            spin_count = 0;
+            if (std::chrono::steady_clock::now() - fence_start > std::chrono::milliseconds(100)) {
+                spdlog::warn("[{}] GPU fence timeout after 100ms", label);
+                break;
+            }
+        }
+    }
+    int back = 1 - dbuf_.front.load();
+    dbuf_.front.store(back);
+}
+
+bool Renderer::create_double_buffers(
+    int width, int height,
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[2],
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtvs[2],
+    HANDLE handles[2])
+{
+    D3D11_TEXTURE2D_DESC tex_desc = {};
+    tex_desc.Width = static_cast<UINT>(width);
+    tex_desc.Height = static_cast<UINT>(height);
+    tex_desc.MipLevels = 1;
+    tex_desc.ArraySize = 1;
+    tex_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    tex_desc.SampleDesc.Count = 1;
+    tex_desc.Usage = D3D11_USAGE_DEFAULT;
+    tex_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    tex_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
+
+    for (int i = 0; i < 2; ++i) {
+        HRESULT hr = d3d_device_->device()->CreateTexture2D(&tex_desc, nullptr, &textures[i]);
+        if (FAILED(hr)) {
+            spdlog::error("Renderer: failed to create shared texture[{}]: HRESULT {:#x}", i, static_cast<unsigned long>(hr));
+            return false;
+        }
+        hr = d3d_device_->device()->CreateRenderTargetView(textures[i].Get(), nullptr, &rtvs[i]);
+        if (FAILED(hr)) {
+            spdlog::error("Renderer: failed to create shared RTV[{}]: HRESULT {:#x}", i, static_cast<unsigned long>(hr));
+            return false;
+        }
+        Microsoft::WRL::ComPtr<IDXGIResource> dxgi_resource;
+        hr = textures[i].As(&dxgi_resource);
+        if (SUCCEEDED(hr)) {
+            hr = dxgi_resource->GetSharedHandle(&handles[i]);
+            if (FAILED(hr)) {
+                spdlog::warn("Renderer: failed to get shared handle[{}]: HRESULT {:#x}", i, static_cast<unsigned long>(hr));
+            }
+        }
+    }
+    return true;
+}
+
 void Renderer::present_frame(const PresentDecision& decision) {
     spdlog::debug("[present_frame] mode={}", layout_.mode);
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
     std::lock_guard<std::mutex> tex_lock(texture_mutex_);
+    if (headless_) {
+        int back = 1 - dbuf_.front.load();
+        if (cached_rtv_ != dbuf_.rtvs[back])
+            cached_rtv_ = dbuf_.rtvs[back];
+    }
     draw_frame(decision);
     if (headless_) {
-        d3d_device_->context()->Flush();
+        wait_gpu_and_swap("present_frame");
         if (frame_callback_) frame_callback_();
     } else {
         d3d_device_->present(0);
@@ -407,11 +467,17 @@ void Renderer::present_frame(const PresentDecision& decision) {
 void Renderer::redraw_layout() {
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
     std::lock_guard<std::mutex> tex_lock(texture_mutex_);
+    if (headless_) {
+        int back = 1 - dbuf_.front.load();
+        if (cached_rtv_ != dbuf_.rtvs[back])
+            cached_rtv_ = dbuf_.rtvs[back];
+    }
     draw_frame(last_decision_);
-    // Flush required in headless mode: without it the shared texture
-    // may not be updated when Flutter reads it on its next vsync,
-    // adding 1-2 frames of layout latency.
-    d3d_device_->context()->Flush();
+    if (headless_) {
+        wait_gpu_and_swap("redraw_layout");
+    } else {
+        d3d_device_->context()->Flush();
+    }
     if (frame_callback_) frame_callback_();
     preview_drawn_ = true;
 }
@@ -477,7 +543,7 @@ void Renderer::set_frame_callback(std::function<void()> cb) {
 }
 
 ID3D11Texture2D* Renderer::shared_texture() const {
-    return shared_texture_.Get();
+    return dbuf_.textures[dbuf_.front.load()].Get();
 }
 
 void Renderer::resize(int width, int height) {
@@ -487,46 +553,13 @@ void Renderer::resize(int width, int height) {
 
     spdlog::info("[Renderer] resize: {}x{} -> {}x{}", target_width_, target_height_, width, height);
 
-    // Create new resources first, then swap under lock.
-    // This ensures the Flutter callback always sees valid state.
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> new_texture;
-    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> new_rtv;
-    HANDLE new_handle = nullptr;
+    // Create new double-buffered resources first, then swap under lock.
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> new_textures[2];
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> new_rtvs[2];
+    HANDLE new_handles[2] = {nullptr, nullptr};
 
-    {
-        D3D11_TEXTURE2D_DESC tex_desc = {};
-        tex_desc.Width = static_cast<UINT>(width);
-        tex_desc.Height = static_cast<UINT>(height);
-        tex_desc.MipLevels = 1;
-        tex_desc.ArraySize = 1;
-        tex_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-        tex_desc.SampleDesc.Count = 1;
-        tex_desc.Usage = D3D11_USAGE_DEFAULT;
-        tex_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-        tex_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
-
-        HRESULT hr = d3d_device_->device()->CreateTexture2D(&tex_desc, nullptr, &new_texture);
-        if (FAILED(hr)) {
-            spdlog::error("[Renderer] resize: failed to create texture: {:#x}", static_cast<unsigned long>(hr));
-            return;
-        }
-
-        hr = d3d_device_->device()->CreateRenderTargetView(new_texture.Get(), nullptr, &new_rtv);
-        if (FAILED(hr)) {
-            spdlog::error("[Renderer] resize: failed to create RTV: {:#x}", static_cast<unsigned long>(hr));
-            return;
-        }
-
-        Microsoft::WRL::ComPtr<IDXGIResource> dxgi_resource;
-        hr = new_texture.As(&dxgi_resource);
-        if (SUCCEEDED(hr)) {
-            hr = dxgi_resource->GetSharedHandle(&new_handle);
-            if (FAILED(hr)) {
-                spdlog::error("[Renderer] resize: failed to get shared handle: {:#x}", static_cast<unsigned long>(hr));
-                return;
-            }
-        }
-    }
+    if (!create_double_buffers(width, height, new_textures, new_rtvs, new_handles))
+        return;
 
     // Swap under both mutexes — render thread may be mid-draw
     {
@@ -535,16 +568,21 @@ void Renderer::resize(int width, int height) {
 
         target_width_ = width;
         target_height_ = height;
-        shared_texture_ = std::move(new_texture);
-        shared_rtv_ = std::move(new_rtv);
-        shared_handle_ = new_handle;
+        for (int i = 0; i < 2; ++i) {
+            dbuf_.textures[i] = std::move(new_textures[i]);
+            dbuf_.rtvs[i] = std::move(new_rtvs[i]);
+            dbuf_.handles[i] = new_handles[i];
+        }
+        dbuf_.front.store(0);
         cached_rtv_.Reset();  // Force re-cache on next draw_frame
     }
 
     // Force redraw at new size
     preview_drawn_ = false;
-    spdlog::info("[Renderer] resize complete: {}x{}, handle={}",
-                 width, height, reinterpret_cast<uintptr_t>(shared_handle_));
+    spdlog::info("[Renderer] resize complete: {}x{}, handles=[{}, {}]",
+                 width, height,
+                 reinterpret_cast<uintptr_t>(dbuf_.handles[0]),
+                 reinterpret_cast<uintptr_t>(dbuf_.handles[1]));
 }
 
 void Renderer::render_loop() {
@@ -552,6 +590,11 @@ void Renderer::render_loop() {
     // so sleep_for(16ms) actually wakes up near 16ms instead of 31ms.
     timeBeginPeriod(1);
     spdlog::info("[Renderer] Render loop started (timer resolution: 1ms)");
+
+    // Periodic diagnostics — log buffer state every 2 seconds
+    auto diag_time = std::chrono::steady_clock::now();
+    int64_t diag_last_pts = 0;
+    constexpr auto diag_interval = std::chrono::seconds(2);
 
     while (running_) {
         // Snapshot playing_ under state_mutex_ to avoid torn read
@@ -650,6 +693,28 @@ void Renderer::render_loop() {
 
         auto decision = render_sink_->evaluate();
 
+        // Periodic diagnostics
+        {
+            auto now = std::chrono::steady_clock::now();
+            if (now - diag_time >= diag_interval) {
+                diag_time = now;
+                int64_t pts = clock_.current_pts_us();
+                int64_t pts_delta = pts - diag_last_pts;
+                diag_last_pts = pts;
+                for (size_t i = 0; i < kMaxTracks; ++i) {
+                    if (!tracks_[i]) continue;
+                    auto buf_count = tracks_[i]->track_buffer->total_count();
+                    auto buf_cap = tracks_[i]->track_buffer->preroll_target();
+                    auto buf_state = tracks_[i]->track_buffer->state();
+                    spdlog::info("[diag] track[{}]: pts={:.3f}s delta={:.1f}ms "
+                                 "buf={}/{} state={} playing={}",
+                                 i, pts / 1e6, pts_delta / 1e3,
+                                 buf_count, buf_cap,
+                                 static_cast<int>(buf_state), playing_snapshot);
+                }
+            }
+        }
+
         if (decision.should_present) {
             // Independent presentation: fill missing tracks from last decision
             // so each track always shows a frame (new or carried over).
@@ -665,6 +730,32 @@ void Renderer::render_loop() {
             // No new frame but layout changed (e.g. zoom/pan during playback)
             if (has_any_frame(last_decision_)) {
                 redraw_layout();
+            }
+        }
+
+        // Frame-driven clock: when buffer is empty, clamp clock to the
+        // end of the last presented frame so PTS doesn't run ahead.
+        {
+            bool buffer_empty = true;
+            int64_t max_end_pts = 0;
+            for (size_t i = 0; i < kMaxTracks; ++i) {
+                if (!tracks_[i]) continue;
+                if (tracks_[i]->track_buffer->peek(0).has_value()) {
+                    buffer_empty = false;
+                    // No need to check further — one non-empty buffer is enough
+                    break;
+                }
+                if (last_decision_.frames[i].has_value()) {
+                    max_end_pts = std::max(max_end_pts,
+                        last_decision_.frames[i]->pts_us +
+                        last_decision_.frames[i]->duration_us);
+                }
+            }
+            if (buffer_empty && max_end_pts > 0) {
+                int64_t current = clock_.current_pts_us();
+                if (current > max_end_pts) {
+                    clock_.seek(max_end_pts);
+                }
             }
         }
 
@@ -715,8 +806,9 @@ void Renderer::draw_frame(const PresentDecision& decision) {
 
     // Get or create cached render target view
     if (!cached_rtv_) {
-        if (headless_ && shared_rtv_) {
-            cached_rtv_ = shared_rtv_;
+        if (headless_ && dbuf_.rtvs[0]) {
+            int back = 1 - dbuf_.front.load();
+            cached_rtv_ = dbuf_.rtvs[back];
         } else {
             ID3D11Texture2D* back_buffer = nullptr;
             HRESULT hr = d3d_device_->swap_chain()->GetBuffer(0, __uuidof(ID3D11Texture2D),
@@ -1105,7 +1197,7 @@ std::unique_ptr<Renderer::TrackPipeline> Renderer::create_pipeline(const std::st
     pipeline->file_path = path;
     pipeline->seek_controller = std::make_unique<SeekController>();
     pipeline->packet_queue = std::make_unique<PacketQueue>(100);
-    pipeline->track_buffer = std::make_unique<TrackBuffer>(30, 2);
+    pipeline->track_buffer = std::make_unique<TrackBuffer>(8, 2);
     pipeline->demux_thread = std::make_unique<DemuxThread>(
         path, *pipeline->packet_queue, *pipeline->seek_controller);
 

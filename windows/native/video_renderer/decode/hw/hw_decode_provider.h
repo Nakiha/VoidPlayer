@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <mutex>
+#include <memory>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -16,13 +17,6 @@ enum class HwDecodeType {
     CUDA,
     DXVA2,
     Vulkan,
-};
-
-struct HwDecodeInitResult {
-    bool success = false;
-    AVBufferRef* hw_device_ctx = nullptr;   // Ownership transferred to caller
-    AVPixelFormat hw_pix_fmt = AV_PIX_FMT_NONE;
-    HwDecodeType type = HwDecodeType::None;
 };
 
 /// Abstract interface for hardware decode providers.
@@ -43,6 +37,8 @@ public:
     ///                       Must outlive the hw_device_ctx. When provided, the provider
     ///                       uses it instead of creating (and destroying) its own.
     /// @return Result with hw_device_ctx on success, or success=false on failure.
+    struct HwDecodeInitResult;
+
     virtual HwDecodeInitResult init(void* native_device, int width, int height,
                                     std::recursive_mutex* device_mutex = nullptr) = 0;
 
@@ -52,6 +48,19 @@ public:
     virtual HwDecodeType type() const = 0;
     virtual const char* name() const = 0;
 };
+
+/// Result of hardware decode initialization. Defined outside the class to allow
+/// the unique_ptr<HwDecodeProvider> member (class is complete at this point).
+struct HwDecodeProvider::HwDecodeInitResult {
+    bool success = false;
+    AVBufferRef* hw_device_ctx = nullptr;   // Ownership transferred to caller
+    AVPixelFormat hw_pix_fmt = AV_PIX_FMT_NONE;
+    HwDecodeType type = HwDecodeType::None;
+    std::unique_ptr<HwDecodeProvider> provider;  // Must outlive hw_device_ctx (owns mutex, device context)
+};
+
+/// Convenience alias to avoid repeating the qualified name.
+using HwDecodeInitResult = HwDecodeProvider::HwDecodeInitResult;
 
 /// Factory: try each registered provider in priority order, return first success.
 HwDecodeInitResult try_hw_decode_providers(

@@ -304,9 +304,11 @@ void Renderer::step_backward() {
 
         // If any track is still seeking/seeking, don't allow stepping
         // (prevents retreating to stale frames during async seek)
+        // Exception: tracks past their duration (Ready + no frames) don't block.
         for (size_t i = 0; i < kMaxTracks; ++i) {
             if (!tracks_[i]) continue;
-            if (tracks_[i]->track_buffer->state() == TrackState::Buffering) return;
+            auto& buf = tracks_[i]->track_buffer;
+            if (buf->state() == TrackState::Buffering) return;
         }
 
         clock_.pause();
@@ -668,6 +670,9 @@ void Renderer::render_loop() {
                         auto frame = tracks_[t]->track_buffer->peek(0);
                         if (frame.has_value()) {
                             preview.frames[t] = frame;
+                        } else if (tracks_[t]->track_buffer->state() == TrackState::Ready) {
+                            // Track is Ready but has no frames — past its duration (EOF).
+                            // Don't block preview drawing for other tracks.
                         } else {
                             all_active_have_frames = false;
                         }

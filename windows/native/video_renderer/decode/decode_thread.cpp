@@ -387,8 +387,10 @@ void DecodeThread::run() {
 
                     // Flush exact-seek reorder buffer at EOF — no more frames coming.
                     flush_reorder_buffer();
-                    // Preroll check — may complete if reorder flush added frames
-                    if (post_seek_ && output_buffer_.total_count() >= 1) {
+                    // Preroll check — may complete if reorder flush added frames.
+                    // Even with 0 frames, transition to Ready: the seek target is past
+                    // this track's duration, no frames will ever arrive here.
+                    if (post_seek_) {
                         spdlog::info("[DecodeThread] === Preroll complete (EOF): {} frames, state->Ready",
                                      output_buffer_.total_count());
                         output_buffer_.set_state(TrackState::Ready);

@@ -64,8 +64,18 @@ cbuffer Constants : register(b0) {
 
     // === Uniform pixel density (offset 96-111) ===
     float4 u_track_scale;      // offset 96: per-track scale for uniform pixel density
+
+    // === Precomputed display params (offset 112-207) ===
+    // Computed on CPU from video_aspect, slot_aspect, zoom_ratio, track_scale, view_offset.
+    // The pixel shader uses these directly, avoiding per-pixel recomputation.
+    float4 u_display_offset_x;    // offset 112: display_offset.x for track 0-3
+    float4 u_display_offset_y;    // offset 128: display_offset.y for track 0-3
+    float4 u_inv_display_size_x;  // offset 144: 1/display_size.x for track 0-3
+    float4 u_inv_display_size_y;  // offset 160: 1/display_size.y for track 0-3
+    float4 u_view_offset_uv_x;   // offset 176: view_offset_uv.x for track 0-3
+    float4 u_view_offset_uv_y;   // offset 192: view_offset_uv.y for track 0-3
 };
-// Total: 112 bytes — must match renderer.cpp draw_frame() Constants struct (112 bytes)
+// Total: 208 bytes — must match renderer.cpp draw_frame() Constants struct (208 bytes)
 
 // BT.601 YUV -> RGB conversion (standard definition)
 float3 yuv_to_rgb(float y, float2 uv) {
@@ -115,60 +125,22 @@ float4 sample_track(int track_idx, float2 uv) {
     return color;
 }
 
-// Calculate aspect-fit UV with zoom and pan.
-// slot_aspect: aspect ratio of the allocated display region
-// video_aspect: aspect ratio of the video
-// local_uv: UV within the slot (0-1)
-// slot_size_pixels: slot width and height in pixels
-// track_scale: per-track scale for uniform pixel density (1.0 for reference track)
+// Calculate texture UV from slot-local UV using precomputed per-track constants.
+// All heavy math (fit_scale, display_size, zoom, pan) is done on the CPU side.
 // Returns: video texture UV, or sets out_of_bounds=true if outside video area
 float2 calc_aspect_fit_uv(
-    float slot_aspect,
-    float video_aspect,
     float2 local_uv,
-    float2 slot_size_pixels,
-    float track_scale,
+    int track_idx,
     out bool out_of_bounds
 ) {
     out_of_bounds = false;
 
-    if (video_aspect <= 0.0 || slot_aspect <= 0.0) {
-        return local_uv;
-    }
+    float2 display_offset = float2(u_display_offset_x[track_idx], u_display_offset_y[track_idx]);
+    float2 inv_display_size = float2(u_inv_display_size_x[track_idx], u_inv_display_size_y[track_idx]);
+    float2 view_offset_uv = float2(u_view_offset_uv_x[track_idx], u_view_offset_uv_y[track_idx]);
 
-    // 1. Compute fit scale factor, then apply uniform pixel density
-    float fit_scale;
-    if (video_aspect > slot_aspect) {
-        fit_scale = 1.0 / video_aspect * slot_aspect;
-    } else {
-        fit_scale = 1.0;
-    }
-    fit_scale *= track_scale;
+    float2 offset_uv = (local_uv - display_offset) * inv_display_size - view_offset_uv;
 
-    // 2. Apply zoom (zoom_ratio=1.0 is fit, >1.0 is zoom in)
-    float display_scale = fit_scale * u_zoom_ratio;
-
-    // 3. Compute display region within slot (centered)
-    float2 display_size = float2(
-        video_aspect * display_scale / slot_aspect,
-        display_scale
-    );
-    float2 display_offset = (float2(1.0, 1.0) - display_size) * 0.5;
-
-    // 4. Map local UV to display UV
-    float2 display_uv = local_uv - display_offset;
-
-    // 5. Normalize to video UV (0-1)
-    float2 normalized_uv = display_uv / max(display_size, float2(0.0001, 0.0001));
-
-    // 6. Apply view offset (pixel coords -> video UV space)
-    // Convert pixel offset to video UV by dividing by the video's displayed size in pixels.
-    // display_size is in slot UV; multiply by slot_size_pixels to get actual pixel dimensions.
-    // This correctly accounts for aspect-fit scaling and zoom.
-    float2 display_pixels = display_size * slot_size_pixels;
-    float2 offset_uv = normalized_uv - u_view_offset / max(display_pixels, float2(0.0001, 0.0001));
-
-    // 7. Check bounds
     if (offset_uv.x < 0.0 || offset_uv.x > 1.0 ||
         offset_uv.y < 0.0 || offset_uv.y > 1.0) {
         out_of_bounds = true;
@@ -181,46 +153,31 @@ float2 calc_aspect_fit_uv(
 float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_TARGET {
     int track_idx;
     float2 local_uv;
-    float slot_aspect;
-    float2 slot_size_pixels;
 
     if (u_mode == MODE_SPLIT_SCREEN) {
         // SPLIT_SCREEN: two overlapping videos, split by divider
-        // Only uses first 2 tracks from u_order
         if (texcoord.x < u_split_pos) {
             track_idx = u_order[0];
         } else {
             track_idx = u_order[1];
         }
-        // UV covers full canvas (no region splitting)
         local_uv = texcoord;
-        float canvas_aspect = u_canvas_width / u_canvas_height;
-        slot_aspect = canvas_aspect;
-        slot_size_pixels = float2(u_canvas_width, u_canvas_height);
     } else {
         // SIDE_BY_SIDE: equal width 1/N split
         int count = max(u_track_count, 1);
-        int slot = int(texcoord.x * float(count));
+        float scaled_x = texcoord.x * float(count);
+        int slot = int(scaled_x);
         slot = clamp(slot, 0, count - 1);
         track_idx = u_order[slot];
-        local_uv = float2(texcoord.x * float(count) - float(slot), texcoord.y);
-        slot_aspect = (u_canvas_width / float(count)) / u_canvas_height;
-        slot_size_pixels = float2(u_canvas_width / float(count), u_canvas_height);
+        local_uv = float2(scaled_x - float(slot), texcoord.y);
     }
 
     // Clamp track index to valid range [0, 3]
     track_idx = clamp(track_idx, 0, 3);
 
-    // Get video aspect ratio
-    float video_aspect = u_video_aspect[track_idx];
-    if (video_aspect <= 0.0) {
-        video_aspect = slot_aspect;
-    }
-
-    // Calculate aspect-fit UV with zoom and pan
+    // Calculate aspect-fit UV using precomputed per-track constants
     bool out_of_bounds;
-    float track_scale = u_track_scale[track_idx];
-    float2 tex_uv = calc_aspect_fit_uv(slot_aspect, video_aspect, local_uv, slot_size_pixels, track_scale, out_of_bounds);
+    float2 tex_uv = calc_aspect_fit_uv(local_uv, track_idx, out_of_bounds);
 
     if (out_of_bounds) {
         return float4(0.0, 0.0, 0.0, 1.0);

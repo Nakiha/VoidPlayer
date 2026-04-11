@@ -87,7 +87,7 @@ bool Renderer::initialize(const RendererConfig& config) {
 
     // Create constant buffer for shader uniforms (must be 16-byte aligned)
     // Layout must match multitrack.hlsl cbuffer Constants
-    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 112, compiled_shader_)) {
+    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 208, compiled_shader_)) {
         spdlog::error("Renderer: failed to create constant buffer");
         return false;
     }
@@ -874,8 +874,16 @@ void Renderer::draw_frame(const PresentDecision& decision) {
             float _pad1[3];        // offset 68
             float nv12_uv_scale_y[4]; // offset 80
             float track_scale[4];  // offset 96: per-track scale for uniform pixel density
+
+            // Precomputed per-track display params (offset 112-207)
+            float display_offset_x[4];     // offset 112
+            float display_offset_y[4];     // offset 128
+            float inv_display_size_x[4];   // offset 144
+            float inv_display_size_y[4];   // offset 160
+            float view_offset_uv_x[4];    // offset 176
+            float view_offset_uv_y[4];    // offset 192
         };
-        static_assert(sizeof(Constants) == 112, "Constants must be 112 bytes");
+        static_assert(sizeof(Constants) == 208, "Constants must be 208 bytes");
 
         // Snapshot layout state atomically
         LayoutState snap;
@@ -957,6 +965,48 @@ void Renderer::draw_frame(const PresentDecision& decision) {
                     density = std::min(slot_w / tw, slot_h / th);
                 }
                 cb.track_scale[i] = (density > 0.0f) ? ref_density / density : 1.0f;
+            }
+        }
+
+        // Precompute per-track display constants (moves heavy math from pixel shader to CPU)
+        {
+            float slot_w = static_cast<float>(target_width_);
+            float slot_h = static_cast<float>(target_height_);
+            if (snap.mode != LAYOUT_SPLIT_SCREEN && active_count > 1) {
+                slot_w /= static_cast<float>(active_count);
+            }
+            float slot_aspect = (slot_h > 0.0f) ? slot_w / slot_h : 1.0f;
+
+            for (int i = 0; i < 4; ++i) {
+                float video_aspect = cb.video_aspect[i];
+                if (video_aspect <= 0.0f) video_aspect = slot_aspect;
+
+                // Aspect-fit scale
+                float fit_scale = (video_aspect > slot_aspect)
+                    ? slot_aspect / video_aspect : 1.0f;
+                fit_scale *= cb.track_scale[i];
+
+                // Apply zoom
+                float display_scale = fit_scale * snap.zoom_ratio;
+
+                // Display size in slot UV space
+                float ds_x = (slot_aspect > 0.0f)
+                    ? video_aspect * display_scale / slot_aspect : display_scale;
+                float ds_y = display_scale;
+
+                // Display offset (centering)
+                cb.display_offset_x[i] = (1.0f - ds_x) * 0.5f;
+                cb.display_offset_y[i] = (1.0f - ds_y) * 0.5f;
+
+                // Inverse display size (for fast division in shader)
+                cb.inv_display_size_x[i] = (fabsf(ds_x) > 1e-4f) ? 1.0f / ds_x : 0.0f;
+                cb.inv_display_size_y[i] = (fabsf(ds_y) > 1e-4f) ? 1.0f / ds_y : 0.0f;
+
+                // View offset in video UV space
+                float dp_x = ds_x * slot_w;
+                float dp_y = ds_y * slot_h;
+                cb.view_offset_uv_x[i] = (fabsf(dp_x) > 1e-4f) ? snap.view_offset[0] / dp_x : 0.0f;
+                cb.view_offset_uv_y[i] = (fabsf(dp_y) > 1e-4f) ? snap.view_offset[1] / dp_y : 0.0f;
             }
         }
         ctx->UpdateSubresource(compiled_shader_.constant_buffer.Get(), 0, nullptr, &cb, 0, 0);

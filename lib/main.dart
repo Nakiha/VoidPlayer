@@ -1,8 +1,11 @@
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
+import 'package:window_manager/window_manager.dart';
 import 'l10n/app_localizations.dart';
 import 'app_log.dart';
+import 'config/app_config.dart';
 import 'actions/action_registry.dart';
 import 'windows/window_args.dart';
 import 'windows/main_window.dart';
@@ -23,6 +26,29 @@ Future<Color> getWindowsAccentColor() async {
     return Color.fromARGB(255, r, g, b);
   } catch (_) {
     return const Color(0xFF0078D4);
+  }
+}
+
+/// Checks whether [rect] overlaps with any connected display.
+bool _isRectOnScreen(Rect rect) {
+  for (final display in PlatformDispatcher.instance.displays) {
+    final w = display.size.width / display.devicePixelRatio;
+    final h = display.size.height / display.devicePixelRatio;
+    if (rect.overlaps(Rect.fromLTWH(0, 0, w, h))) return true;
+  }
+  return false;
+}
+
+/// Handles the close button: saves window state then closes normally.
+class _CloseHandler with WindowListener {
+  @override
+  void onWindowClose() async {
+    windowManager.removeListener(this);
+    final bounds = await windowManager.getBounds();
+    AppConfig.instance.windowRect = bounds;
+    await AppConfig.instance.save();
+    await windowManager.setPreventClose(false);
+    await windowManager.close();
   }
 }
 
@@ -51,12 +77,34 @@ void main(List<String> args) async {
       runApp(const SettingsApp());
       break;
     default:
-      // Main window: apply Mica effect and launch player.
+      await AppConfig.initialize();
+
+      // window_manager needs ensureInitialized() to capture the native HWND.
+      // Without it, all subsequent calls (setSize, center, show…) operate on
+      // an invalid handle and silently fail or hang.
+      await windowManager.ensureInitialized();
+
+      final savedRect = AppConfig.instance.windowRect;
+      if (savedRect != null && _isRectOnScreen(savedRect)) {
+        await windowManager.setSize(savedRect.size);
+        await windowManager.setPosition(savedRect.topLeft);
+      } else {
+        await windowManager.setSize(const Size(1280, 720));
+        await windowManager.center();
+      }
+
       await Window.initialize();
       await Window.setEffect(
         effect: WindowEffect.mica,
         color: const Color(0xCC222222),
       );
+
+      await windowManager.setPreventClose(true);
+      final closeHandler = _CloseHandler();
+      windowManager.addListener(closeHandler);
+
+      await windowManager.show();
+
       final accentColor = await getWindowsAccentColor();
       log.info('Application starting (main window)');
       runApp(MyApp(accentColor: accentColor, testScriptPath: testScriptPath));

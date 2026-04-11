@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import '../app_log.dart';
@@ -43,6 +44,9 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   int _viewportWidth = 0;
   int _viewportHeight = 0;
   bool _resizeDirty = false;
+
+  // Drag-drop
+  bool _dragging = false;
 
   @override
   void initState() {
@@ -177,39 +181,9 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     _markLayoutDirty();
   }
 
-  /// Add media by path (used by test scripts, bypasses file picker).
-  void _addMediaByPath(String path) async {
-    if (path.isEmpty) return;
-
-    if (_textureId == null) {
-      setState(() => _viewportState = 0);
-      try {
-        final res = await _controller.createRenderer([path]);
-        setState(() {
-          _textureId = res.textureId;
-          _viewportState = 2;
-        });
-        _trackManager.setTracks(res.tracks);
-        _layout = await _controller.getLayout();
-      } catch (e) {
-        log.severe("createRenderer failed: $e");
-        setState(() => _viewportState = 1);
-      }
-    } else {
-      try {
-        final track = await _controller.addTrack(path);
-        _trackManager.addTrack(track);
-      } catch (e) {
-        log.severe("addTrack failed: $e");
-      }
-    }
-  }
-
-  // -- File opening --
-
-  void _openFile() async {
-    final paths = await _controller.pickFiles(allowMultiple: true);
-    if (paths == null || paths.isEmpty) return;
+  /// Load media files by paths (shared by file picker, drag-drop, and test scripts).
+  void _loadMediaPaths(List<String> paths) async {
+    if (paths.isEmpty) return;
 
     if (_textureId == null) {
       // First load: create renderer
@@ -237,6 +211,20 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
         }
       }
     }
+  }
+
+  /// Add media by path (used by test scripts, bypasses file picker).
+  void _addMediaByPath(String path) {
+    if (path.isEmpty) return;
+    _loadMediaPaths([path]);
+  }
+
+  // -- File opening --
+
+  void _openFile() async {
+    final paths = await _controller.pickFiles(allowMultiple: true);
+    if (paths == null || paths.isEmpty) return;
+    _loadMediaPaths(paths);
   }
 
   // -- Viewport interaction --
@@ -404,71 +392,103 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        children: [
-          // Toolbar (40px)
-          AppToolBar(
-            viewMode: _layout.mode,
-            onViewModeChanged: (mode) {
-              setState(() => _layout = _layout.copyWith(mode: mode));
-              _markLayoutDirty();
-            },
-            onAddMedia: _openFile,
-            onNewWindow: () => WindowManager.showStatsWindow(),
-            onSettings: () => WindowManager.showSettingsWindow(),
-            onDebugMemory: () => WindowManager.showStatsWindow(),
-            viewModeEnabled: _textureId != null,
-          ),
-          // Viewport (expanded)
-          Expanded(
-            child: ViewportPanel(
-              textureId: _textureId,
-              viewportState: _viewportState,
-              layout: _layout,
-              onPan: _onPan,
-              onSplit: _onSplit,
-              onZoom: _onZoom,
-              onPointerButton: _onPointerButton,
-              onResize: _onViewportResize,
+    return DropTarget(
+      onDragEntered: (_) { if (!_dragging) setState(() => _dragging = true); },
+      onDragExited: (_) { if (_dragging) setState(() => _dragging = false); },
+      onDragDone: (details) {
+        setState(() => _dragging = false);
+        final paths = details.files
+            .map((f) => f.path)
+            .where((p) => p.isNotEmpty)
+            .toList();
+        if (paths.isNotEmpty) _loadMediaPaths(paths);
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            Column(
+              children: [
+                // Toolbar (40px)
+                AppToolBar(
+                  viewMode: _layout.mode,
+                  onViewModeChanged: (mode) {
+                    setState(() => _layout = _layout.copyWith(mode: mode));
+                    _markLayoutDirty();
+                  },
+                  onAddMedia: _openFile,
+                  onNewWindow: () => WindowManager.showStatsWindow(),
+                  onSettings: () => WindowManager.showSettingsWindow(),
+                  onDebugMemory: () => WindowManager.showStatsWindow(),
+                  viewModeEnabled: _textureId != null,
+                ),
+                // Viewport (expanded)
+                Expanded(
+                  child: ViewportPanel(
+                    textureId: _textureId,
+                    viewportState: _viewportState,
+                    layout: _layout,
+                    onPan: _onPan,
+                    onSplit: _onSplit,
+                    onZoom: _onZoom,
+                    onPointerButton: _onPointerButton,
+                    onResize: _onViewportResize,
+                  ),
+                ),
+                // Media header bar (per-track source combo + actions)
+                if (_trackManager.count > 0)
+                  MediaHeaderBar(
+                    entries: _trackManager.entries,
+                    onMediaSwapped: _onMediaSwapped,
+                    onRemoveClicked: (slotIndex) {
+                      if (slotIndex < _trackManager.count) {
+                        _onRemoveTrack(_trackManager.entries[slotIndex].fileId);
+                      }
+                    },
+                  ),
+                // Controls bar (40px)
+                if (_trackManager.count > 0)
+                  ControlsBar(
+                    zoomRatio: _layout.zoomRatio,
+                    onZoomChanged: _onZoomComboChanged,
+                    isPlaying: _isPlaying,
+                    onTogglePlay: _togglePlayPause,
+                    onStepForward: () => _controller.stepForward(),
+                    onStepBackward: () => _controller.stepBackward(),
+                    currentPtsUs: _currentPtsUs,
+                    durationUs: _durationUs,
+                    onSeek: (pts) => _controller.seek(pts),
+                  ),
+                // Timeline area (variable, max 40%)
+                if (_trackManager.count > 0)
+                  Expanded(
+                    flex: 0,
+                    child: TimelineArea(
+                      trackManager: _trackManager,
+                      currentPtsUs: _currentPtsUs,
+                      onRemoveTrack: _onRemoveTrack,
+                      onReorder: _trackManager.moveTrack,
+                      onOffsetChanged: _onOffsetChanged,
+                    ),
+                  ),
+              ],
             ),
-          ),
-          // Media header bar (per-track source combo + actions)
-          if (_trackManager.count > 0)
-            MediaHeaderBar(
-              entries: _trackManager.entries,
-              onMediaSwapped: _onMediaSwapped,
-              onRemoveClicked: (slotIndex) {
-                if (slotIndex < _trackManager.count) {
-                  _onRemoveTrack(_trackManager.entries[slotIndex].fileId);
-                }
-              },
-            ),
-          // Controls bar (40px)
-          ControlsBar(
-            zoomRatio: _layout.zoomRatio,
-            onZoomChanged: _onZoomComboChanged,
-            isPlaying: _isPlaying,
-            onTogglePlay: _togglePlayPause,
-            onStepForward: () => _controller.stepForward(),
-            onStepBackward: () => _controller.stepBackward(),
-            currentPtsUs: _currentPtsUs,
-            durationUs: _durationUs,
-            onSeek: (pts) => _controller.seek(pts),
-          ),
-          // Timeline area (variable, max 40%)
-          if (_trackManager.count > 0)
-            Expanded(
-              flex: 0,
-              child: TimelineArea(
-                trackManager: _trackManager,
-                currentPtsUs: _currentPtsUs,
-                onRemoveTrack: _onRemoveTrack,
-                onReorder: _trackManager.moveTrack,
-                onOffsetChanged: _onOffsetChanged,
+            // Drag overlay
+            if (_dragging)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+                        width: 3,
+                      ),
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                    ),
+                  ),
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

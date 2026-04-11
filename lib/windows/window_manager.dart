@@ -11,9 +11,14 @@ class WindowManager {
   static Future<void> _showWindow(String type) async {
     final existing = _windowIds[type];
     if (existing != null) {
-      final ctrl = WindowController.fromWindowId(existing);
-      await ctrl.show();
-      return;
+      try {
+        final ctrl = WindowController.fromWindowId(existing);
+        await ctrl.show();
+        return;
+      } catch (_) {
+        // Window was closed by user — stale ID, recreate.
+        _windowIds.remove(type);
+      }
     }
 
     final mainCtrl = await WindowController.fromCurrentEngine();

@@ -68,13 +68,20 @@ void main(List<String> args) async {
 
   switch (windowArgs.windowType) {
     case WindowArgs.stats:
-      runApp(const StatsApp());
-      break;
     case WindowArgs.memory:
-      runApp(const MemoryApp());
-      break;
     case WindowArgs.settings:
-      runApp(const SettingsApp());
+      await Window.initialize();
+      await Window.setEffect(
+        effect: WindowEffect.mica,
+        color: const Color(0xCC222222),
+      );
+      final app = switch (windowArgs.windowType) {
+        WindowArgs.stats => const StatsApp(),
+        WindowArgs.memory => const MemoryApp(),
+        WindowArgs.settings => const SettingsApp(),
+        _ => throw StateError('unreachable'),
+      };
+      runApp(app);
       break;
     default:
       await AppConfig.initialize();

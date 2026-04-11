@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../actions/player_action.dart';
+import '../l10n/action_labels.dart';
 import '../l10n/app_localizations.dart';
 
 /// Settings window (secondary window, NavigationRail: Shortcuts | About).
@@ -78,15 +80,6 @@ class _ShortcutsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l = AppLocalizations.of(context)!;
-    final actions = <Map<String, String>>[
-      {'action': l.actionTogglePlay, 'key': 'Space'},
-      {'action': l.actionStepForward, 'key': 'Arrow Right'},
-      {'action': l.actionStepBackward, 'key': 'Arrow Left'},
-      {'action': l.actionOpenFile, 'key': 'O'},
-      {'action': l.actionToggleLayout, 'key': 'M'},
-      {'action': l.actionSeekForward, 'key': 'Shift + Arrow Right'},
-      {'action': l.actionSeekBackward, 'key': 'Shift + Arrow Left'},
-    ];
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -103,15 +96,15 @@ class _ShortcutsPage extends StatelessWidget {
                 DataColumn(label: Text(l.action)),
                 DataColumn(label: Text(l.shortcut)),
               ],
-              rows: actions.map((a) => DataRow(cells: [
-                    DataCell(Text(a['action']!)),
+              rows: PlayerAction.shortcutEntries.map((e) => DataRow(cells: [
+                    DataCell(Text(resolveActionLabel(e.labelKey, l))),
                     DataCell(Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
                         color: theme.colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: Text(a['key']!,
+                      child: Text(e.shortcutLabel,
                           style: theme.textTheme.bodySmall?.copyWith(
                                 fontFamily: 'monospace',
                               )),

@@ -1,10 +1,28 @@
 import 'package:flutter/services.dart';
 
+/// A shortcut entry for display in the settings UI.
+typedef ShortcutEntry = ({String labelKey, String shortcutLabel});
+
 /// User actions that can be triggered by shortcuts, buttons, or test scripts.
 sealed class PlayerAction {
   final String name;
   final LogicalKeyboardKey? shortcut;
   const PlayerAction(this.name, [this.shortcut]);
+
+  /// All keyboard shortcuts for display in the settings UI.
+  ///
+  /// When adding a new action with a shortcut, append an entry here so the
+  /// settings window picks it up automatically.  [labelKey] must match a key
+  /// defined in `app_*.arb`; [shortcutLabel] is the human-readable key label.
+  static const List<ShortcutEntry> shortcutEntries = [
+    (labelKey: 'actionTogglePlay', shortcutLabel: 'Space'),
+    (labelKey: 'actionStepForward', shortcutLabel: '→'),
+    (labelKey: 'actionStepBackward', shortcutLabel: '←'),
+    (labelKey: 'actionOpenFile', shortcutLabel: 'O'),
+    (labelKey: 'actionToggleLayout', shortcutLabel: 'M'),
+    (labelKey: 'actionSeekForward', shortcutLabel: 'Shift + →'),
+    (labelKey: 'actionSeekBackward', shortcutLabel: 'Shift + ←'),
+  ];
 }
 
 class TogglePlayPause extends PlayerAction {

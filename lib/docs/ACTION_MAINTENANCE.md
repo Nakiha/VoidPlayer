@@ -5,10 +5,16 @@
 ### 新增 Action
 
 1. 在 `lib/actions/player_action.dart` 中添加新的 sealed subclass
-2. 在 `main.dart`（或对应初始化位置）调用 `actionRegistry.register()`
-3. 在 UI 控件的 `initState` 中 `bind`，`dispose` 中 `unbind`
-4. 如需快捷键，在构造函数中传入 `LogicalKeyboardKey`
-5. 更新本文档的 [Action 清单](#action-清单)
+2. 在 `lib/windows/main_window.dart` 的 `_bindActions()` 中调用 `actionRegistry.bind(action, callback)`
+3. 如需快捷键，在构造函数中传入 `LogicalKeyboardKey`，并完成下面的「新增快捷键」步骤
+
+### 新增快捷键
+
+快捷键会自动显示在设置窗口中，只需修改以下三处（设置窗口代码无需改动）：
+
+1. `lib/actions/player_action.dart` — 在 `shortcutEntries` 静态列表追加一行 `(labelKey: 'actionXxx', shortcutLabel: '按键名')`
+2. `lib/l10n/app_en.arb` / `app_zh.arb` — 添加对应的 l10n 条目（key 与 `labelKey` 一致）
+3. `lib/l10n/action_labels.dart` — `resolveActionLabel()` 的 switch 中加一个 case
 
 ### 新增 Assert
 
@@ -18,45 +24,30 @@
 
 ### 修改快捷键
 
-直接修改 `PlayerAction` 构造函数中的 `defaultShortcut` 参数。注册表会在 `register` 时自动更新 `_keyMap` 反向索引。无需修改其他代码。
+直接修改 `PlayerAction` 构造函数中的 `LogicalKeyboardKey` 参数。`ActionRegistry.bind()` 会自动更新 `_keyMap` 反向索引。如果快捷键的显示名也变了，同步修改 `shortcutEntries` 中的 `shortcutLabel`。
 
 ### 移除 Action
 
 1. 删除 sealed subclass
-2. 移除所有 `bind` / `unbind` 调用
+2. 移除 `_bindActions()` 中对应的 `bind` 调用
 3. 移除对应的 UI 触发点
-4. 更新文档清单
+4. 如有快捷键，移除 `shortcutEntries` 中的对应条目、`.arb` 中的 l10n 条目、`action_labels.dart` 中的 case
 
 ## 注意事项
 
 ### 按键冲突
 
-同一个 `LogicalKeyboardKey` 只能绑定到一个 Action。如果注册时发现冲突，`register` 应抛出 `ArgumentError`。
+同一个 `LogicalKeyboardKey` 只能绑定到一个 Action。`ActionRegistry` 的 `_keyMap` 是一对一映射，后绑定的会覆盖先绑定的。
 
 ### EditableText 穿透
 
 `ActionFocus` 默认在焦点位于 `EditableText`（`TextField`、`TextFormField` 等）时放行所有按键。如果未来有输入控件需要部分拦截，需要修改 `handleKey` 中的判断逻辑。
 
-### 弹窗中控件
+### 多窗口注意事项
 
-弹窗内的控件（如 `PageUp`/`PageDown` 滚动列表）遵循同样的懒绑定模式：
+设置窗口等子窗口由 `desktop_multi_window` 创建，运行在独立 Dart isolate 中，无法访问主窗口的 `actionRegistry`。快捷键显示使用 `PlayerAction.shortcutEntries` 静态列表，不依赖运行时注册状态。
 
-```dart
-// 弹窗 widget
-@override
-void initState() {
-  super.initState();
-  actionRegistry.bind('PAGE_DOWN', _onPageDown);
-}
-
-@override
-void dispose() {
-  actionRegistry.unbind('PAGE_DOWN');
-  super.dispose();
-}
-```
-
-控件未渲染时 callback 为 null，按键不会被拦截，也不会报错。
+另外，`window_manager` 插件的全局 method-channel 指针在多引擎场景下会冲突，因此子窗口不应注册该插件（见 `flutter_window.cpp` 中的 `DesktopMultiWindowSetWindowCreatedCallback`）。
 
 ### 测试脚本
 
@@ -73,13 +64,25 @@ void dispose() {
 
 | Action | 快捷键 | 说明 |
 |--------|--------|------|
-| `PLAY` | Space | 播放 |
+| `TOGGLE_PLAY_PAUSE` | Space | 播放/暂停 |
+| `PLAY` | — | 播放 |
 | `PAUSE` | — | 暂停 |
 | `SEEK_TO` | — | 跳转到指定 PTS（μs） |
 | `SET_SPEED` | — | 设置倍速 |
 | `STEP_FORWARD` | → | 逐帧前进 |
 | `STEP_BACKWARD` | ← | 逐帧后退 |
 | `OPEN_FILE` | O | 打开文件 |
+| `ADD_MEDIA` | — | 按路径添加媒体 |
+| `REMOVE_TRACK` | — | 按 fileId 移除轨道 |
+| `TOGGLE_LAYOUT_MODE` | M | 切换布局模式 |
+| `SET_LAYOUT_MODE` | — | 设置布局模式（0=并排, 1=分屏） |
+| `SET_ZOOM` | — | 设置缩放比例 |
+| `SET_SPLIT_POS` | — | 设置分屏位置（0.0–1.0） |
+| `PAN` | — | 视口平移 |
+| `NEW_WINDOW` | N | 新建窗口 |
+| `OPEN_SETTINGS` | — | 打开设置窗口 |
+| `OPEN_STATS` | — | 打开统计窗口 |
+| `OPEN_MEMORY` | — | 打开内存窗口 |
 
 ## Assert 清单
 
@@ -99,7 +102,8 @@ void dispose() {
 |------|------|
 | [ACTION_DESIGN.md](ACTION_DESIGN.md) | 类型体系、组件设计、脚本格式 |
 | [ACTION_MAINTENANCE.md](ACTION_MAINTENANCE.md) | 本文档：修改流程、注意事项、清单 |
-| `lib/actions/player_action.dart` | PlayerAction sealed class |
+| `lib/actions/player_action.dart` | PlayerAction sealed class + `shortcutEntries` 显示列表 |
 | `lib/actions/player_assert.dart` | PlayerAssert sealed class |
 | `lib/actions/action_registry.dart` | ActionRegistry + ActionFocus |
 | `lib/actions/test_runner.dart` | 脚本解析 + TestRunner |
+| `lib/l10n/action_labels.dart` | `resolveActionLabel()` — labelKey → l10n 映射 |

@@ -11,6 +11,7 @@ import 'window_manager.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/viewport_panel.dart';
 import '../widgets/controls_bar.dart';
+import '../widgets/media_header.dart';
 import '../widgets/timeline_area.dart';
 
 class MainWindow extends StatefulWidget {
@@ -391,6 +392,10 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     }
   }
 
+  void _onMediaSwapped(int slotIndex, int targetTrackIndex) {
+    _trackManager.moveTrack(slotIndex, targetTrackIndex);
+  }
+
   void _onOffsetChanged(int slot, int offsetMs) {
     // TODO: wire to native when sync offset is supported
   }
@@ -428,6 +433,17 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
               onResize: _onViewportResize,
             ),
           ),
+          // Media header bar (per-track source combo + actions)
+          if (_trackManager.count > 0)
+            MediaHeaderBar(
+              entries: _trackManager.entries,
+              onMediaSwapped: _onMediaSwapped,
+              onRemoveClicked: (slotIndex) {
+                if (slotIndex < _trackManager.count) {
+                  _onRemoveTrack(_trackManager.entries[slotIndex].fileId);
+                }
+              },
+            ),
           // Controls bar (40px)
           ControlsBar(
             zoomRatio: _layout.zoomRatio,

@@ -1,0 +1,4 @@
+[submodule "tools/vtm"]
+	path = tools/vtm
+	url = git@github.com:Nakiha/VTM-VoidPlayer.git
+	branch = voidplayer-patches

@@ -72,7 +72,7 @@ class _Segment extends StatelessWidget {
           alignment: Alignment.center,
           child: Text(
             label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
                   color: selected ? colorScheme.onPrimary : colorScheme.onSurface,
                 ),
           ),

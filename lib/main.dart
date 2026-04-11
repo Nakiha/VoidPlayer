@@ -83,6 +83,7 @@ void main(List<String> args) async {
       // Without it, all subsequent calls (setSize, center, show…) operate on
       // an invalid handle and silently fail or hang.
       await windowManager.ensureInitialized();
+      await windowManager.setMinimumSize(const Size(520, 360));
 
       final savedRect = AppConfig.instance.windowRect;
       if (savedRect != null && _isRectOnScreen(savedRect)) {

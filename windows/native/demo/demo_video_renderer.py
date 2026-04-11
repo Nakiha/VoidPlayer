@@ -35,7 +35,7 @@ from video_renderer_native import (
     LAYOUT_SIDE_BY_SIDE, LAYOUT_SPLIT_SCREEN,
 )
 
-VIDEO_DIR = Path(__file__).resolve().parent.parent.parent / "resources" / "video"
+VIDEO_DIR = Path(__file__).resolve().parent.parent.parent.parent / "resources" / "video"
 MODE_NAMES = {LAYOUT_SIDE_BY_SIDE: "SideBySide", LAYOUT_SPLIT_SCREEN: "SplitScreen"}
 
 

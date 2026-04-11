@@ -274,7 +274,7 @@ def cmd_vtm_build(_args):
 
 
 def cmd_vtm_analyze(args):
-    """Generate .vbs1 binary stats for a video file."""
+    """Generate .vbs2 binary stats, .vbi NALU index, and .vbt timestamps for a video file."""
     if not VTM_DECODER.exists():
         print("DecoderApp not found. Building first...")
         cmd_vtm_build(args)
@@ -284,14 +284,17 @@ def cmd_vtm_analyze(args):
         print(f"ERROR: video not found: {video_path}")
         sys.exit(1)
 
-    # Output path: same directory as video, .vbs1 extension
-    output_path = video_path.with_suffix(".vbs1")
+    # Output paths
+    vbs2_path = video_path.with_suffix(".vbs2")
+    vbi_path = video_path.with_suffix(".vbi")
+    vbt_path = video_path.with_suffix(".vbt")
 
     # Extract raw VVC if needed
     raw_path = _extract_raw_vvc(video_path)
 
-    header(f"Generate VBS1 stats for {video_path.name}")
-    print(f"  Output: {output_path}")
+    # --- Step 1: VBS2 (VTM DecoderApp) ---
+    header(f"Generate VBS2 stats for {video_path.name}")
+    print(f"  Output: {vbs2_path}")
 
     # Convert Windows path to MSYS2 POSIX path: D:/Code/Foo -> /d/Code/Foo
     def to_msys(p: Path) -> str:
@@ -300,7 +303,7 @@ def cmd_vtm_analyze(args):
 
     decoder_cmd = (
         f'export PATH={UCRT64_BIN}:$PATH && '
-        f'export VTM_BINARY_STATS="{to_msys(output_path)}" && '
+        f'export VTM_BINARY_STATS="{to_msys(vbs2_path)}" && '
         f'"{to_msys(VTM_DECODER)}" '
         f'-b "{to_msys(raw_path)}" '
         f'--TraceFile=/dev/null '
@@ -309,12 +312,27 @@ def cmd_vtm_analyze(args):
     )
     run([MSYS2_BASH, "-lc", decoder_cmd], use_shell=False)
 
-    if output_path.exists():
-        size_mb = output_path.stat().st_size / (1024 * 1024)
-        print(f"\n  Done: {output_path} ({size_mb:.1f} MB)")
+    if vbs2_path.exists():
+        size_mb = vbs2_path.stat().st_size / (1024 * 1024)
+        print(f"\n  Done: {vbs2_path} ({size_mb:.1f} MB)")
     else:
-        print(f"\n  ERROR: output file not created: {output_path}")
+        print(f"\n  ERROR: output file not created: {vbs2_path}")
         sys.exit(1)
+
+    # --- Step 2: VBI (NALU index) ---
+    header(f"Generate NALU index for {raw_path.name}")
+    from tools.vvc_nalu_indexer import index_nalus
+    vbi_result = index_nalus(str(raw_path), str(vbi_path), verbose=True)
+
+    # --- Step 3: VBT (timestamps) ---
+    header(f"Extract timestamps from {video_path.name}")
+    from tools.vvc_timestamp_extractor import extract_timestamps
+    vbt_result = extract_timestamps(str(video_path), str(vbt_path), verbose=True)
+
+    print(f"\n  Analysis complete:")
+    print(f"    VBS2: {vbs2_path}")
+    print(f"    VBI:  {vbi_path}")
+    print(f"    VBT:  {vbt_path}")
 # ---------------------------------------------------------------------------
 
 def main():

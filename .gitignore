@@ -55,4 +55,7 @@ lib/l10n/app_localizations*.dart
 # VTM build/test artifacts
 *.vtmbmsstats
 *.vbs1
+*.vbs2
+*.vbi
+*.vbt
 resources/video/*.vvc

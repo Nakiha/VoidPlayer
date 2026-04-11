@@ -587,11 +587,17 @@ void Renderer::resize(int width, int height) {
             dbuf_.handles[i] = new_handles[i];
         }
         dbuf_.front.store(0);
-        cached_rtv_.Reset();  // Force re-cache on next draw_frame
+
+        // Flutter reads the front buffer on the next frame — must not be uninitialized.
+        int back = 1 - dbuf_.front.load();
+        cached_rtv_ = dbuf_.rtvs[back];
+        cached_rtv_ = dbuf_.rtvs[back];
+        draw_frame(last_decision_);
+        wait_gpu_and_swap("resize");
+        if (frame_callback_) frame_callback_();
+        preview_drawn_ = true;
     }
 
-    // Force redraw at new size
-    preview_drawn_ = false;
     spdlog::info("[Renderer] resize complete: {}x{}, handles=[{}, {}]",
                  width, height,
                  reinterpret_cast<uintptr_t>(dbuf_.handles[0]),

@@ -7,7 +7,7 @@ class ZoomComboBox extends StatelessWidget {
   final ValueChanged<double> onChanged;
 
   static const List<double> presets = [
-    0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 5.0, 10.0,
+    1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 5.0, 10.0,
   ];
 
   const ZoomComboBox({
@@ -17,7 +17,6 @@ class ZoomComboBox extends StatelessWidget {
   });
 
   String _label(double v, AppLocalizations l) {
-    if (v == 0) return l.zoomFit;
     return '${(v * 100).round()}%';
   }
 
@@ -25,8 +24,7 @@ class ZoomComboBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
-    final allValues = [0.0, ...presets];
-    final currentValue = allValues.contains(value) ? value : null;
+    final currentValue = presets.contains(value) ? value : null;
 
     return MenuAnchor(
       alignmentOffset: const Offset(0, 4),
@@ -39,7 +37,7 @@ class ZoomComboBox extends StatelessWidget {
         ),
         padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)),
       ),
-      menuChildren: allValues.map((v) {
+      menuChildren: presets.map((v) {
         final selected = v == currentValue;
         return MenuItemButton(
           leadingIcon: selected

@@ -256,6 +256,20 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   void _onZoom(double scrollDelta, Offset localPos) {
     final factor = scrollDelta > 0 ? 0.9 : 1.1;
     final newZoom = (_layout.zoomRatio * factor).clamp(LayoutState.zoomMin, LayoutState.zoomMax);
+
+    // Zoomed out to floor (100%) — reset viewport offset to origin
+    if (newZoom == LayoutState.zoomMin && factor < 1.0) {
+      setState(() {
+        _layout = _layout.copyWith(
+          zoomRatio: newZoom,
+          viewOffsetX: 0,
+          viewOffsetY: 0,
+        );
+      });
+      _markLayoutDirty();
+      return;
+    }
+
     final actualFactor = newZoom / _layout.zoomRatio;
 
     // Fallback if viewport size unknown

@@ -77,6 +77,13 @@ bool DecodeThread::enable_hardware_decode(void* native_device,
         return false;
     }
 
+    // VP9 D3D11VA produces corrupted frames (solid brown blocks) and crashes
+    // on seek — the driver-level VP9 video decoder object is unreliable.
+    if (codec_params_->codec_id == AV_CODEC_ID_VP9) {
+        spdlog::info("[DecodeThread] Skipping D3D11VA for VP9 (known driver issues)");
+        return false;
+    }
+
     native_device_ = native_device;
     device_mutex_ = device_mutex;
 
@@ -257,9 +264,15 @@ void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*
         }
         av_frame_unref(frame);
     }
-    avcodec_flush_buffers(codec_ctx_);
+    safe_flush_codec();
     av_log_set_level(prev_level);
     eof_flushed_ = true;
+}
+
+void DecodeThread::safe_flush_codec() {
+    if (!hw_enabled_) {
+        avcodec_flush_buffers(codec_ctx_);
+    }
 }
 
 void DecodeThread::flush_reorder_buffer() {
@@ -323,25 +336,9 @@ void DecodeThread::run() {
                          output_buffer_.total_count(),
                          static_cast<int>(output_buffer_.state()));
 
-            // Do NOT flush the hardware codec.
-            // avcodec_flush_buffers releases D3D11VA decoder surfaces back to the
-            // pool, but the D3D11VA internal state can become inconsistent after
-            // flush — the next avcodec_send_packet crashes inside D3D11 with a
-            // C++ exception.  This is a known issue with D3D11VA: the driver-level
-            // video decoder object does not survive flush cleanly.
-            //
-            // Instead, simply skip flush and let the first keyframe from the seek
-            // position reset the DPB.  The DemuxThread has already:
-            //   1) flushed the packet queue (no stale packets)
-            //   2) seeked to a keyframe via av_seek_frame(AVSEEK_FLAG_BACKWARD)
-            // So the first packet sent to the codec will be a keyframe (typically
-            // IDR for H.264/HEVC), which resets the decoder state.
-            //
-            // For software decode, flush is safe and cheap — it just resets the
-            // DPB without touching any hardware state.
-            if (!hw_enabled_) {
-                avcodec_flush_buffers(codec_ctx_);
-            }
+            // D3D11VA driver bug: avcodec_flush_buffers corrupts state and crashes
+            // on the next send_packet. Let the first post-seek keyframe reset the DPB.
+            safe_flush_codec();
             spdlog::info("[DecodeThread] Seek flush: {}",
                          hw_enabled_ ? "SKIPPED (D3D11VA unsafe)" : "codec buffers flushed");
 

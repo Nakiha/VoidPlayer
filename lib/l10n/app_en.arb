@@ -34,9 +34,6 @@
   "splitScreen": "Split Screen",
   "@splitScreen": { "description": "View mode: split screen" },
 
-  "zoomFit": "Fit",
-  "@zoomFit": { "description": "Zoom dropdown: fit to view" },
-
   "initializing": "Initializing...",
   "@initializing": { "description": "Loading state text" },
 

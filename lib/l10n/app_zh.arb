@@ -16,8 +16,6 @@
   "sideBySide": "并排",
   "splitScreen": "分屏",
 
-  "zoomFit": "适应",
-
   "initializing": "初始化中...",
   "emptyHint": "点击\"添加媒体\"或拖拽文件到此处",
 

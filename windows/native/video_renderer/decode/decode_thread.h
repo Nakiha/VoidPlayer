@@ -86,6 +86,9 @@ private:
     /// Sort exact_seek_reorder_ by PTS and push all frames to output_buffer_.
     void flush_reorder_buffer();
 
+    /// Flush codec buffers — skipped for hardware decode (D3D11VA driver bug).
+    void safe_flush_codec();
+
     PacketQueue& input_queue_;
     TrackBuffer& output_buffer_;
     FrameConverter converter_;

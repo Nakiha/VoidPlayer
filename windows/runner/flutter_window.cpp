@@ -5,6 +5,9 @@
 #include "flutter/generated_plugin_registrant.h"
 #include "video_renderer_plugin.h"
 #include "desktop_multi_window/desktop_multi_window_plugin.h"
+#include <desktop_drop/desktop_drop_plugin.h>
+#include <flutter_acrylic/flutter_acrylic_plugin.h>
+#include <screen_retriever_windows/screen_retriever_windows_plugin_c_api.h>
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -36,11 +39,26 @@ bool FlutterWindow::OnCreate() {
                   "VideoRendererPlugin")));
 
   // Register plugins for secondary windows created by desktop_multi_window.
+  //
+  // NOTE: window_manager is intentionally excluded.  Its native plugin stores a
+  // global static method-channel pointer that is overwritten each time the
+  // plugin is constructed.  If a secondary window triggers that constructor the
+  // channel is repointed to the secondary engine, so the main window's
+  // WM_CLOSE event is emitted on the wrong channel and the Dart-side
+  // onWindowClose listener never fires.  Combined with setPreventClose(true)
+  // on the main window, WM_CLOSE is swallowed entirely and the close button
+  // becomes unresponsive.
   DesktopMultiWindowSetWindowCreatedCallback([](void *controller) {
     auto *flutter_view_controller =
         reinterpret_cast<flutter::FlutterViewController *>(controller);
     auto *registry = flutter_view_controller->engine();
-    RegisterPlugins(registry);
+    DesktopDropPluginRegisterWithRegistrar(
+        registry->GetRegistrarForPlugin("DesktopDropPlugin"));
+    FlutterAcrylicPluginRegisterWithRegistrar(
+        registry->GetRegistrarForPlugin("FlutterAcrylicPlugin"));
+    ScreenRetrieverWindowsPluginCApiRegisterWithRegistrar(
+        registry->GetRegistrarForPlugin(
+            "ScreenRetrieverWindowsPluginCApi"));
     // Register VideoRendererPlugin for each new engine.
     // Secondary windows won't call createRenderer, so renderer_ stays null.
     VideoRendererPlugin::RegisterWithRegistrar(

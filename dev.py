@@ -12,8 +12,11 @@ Usage examples:
   python dev.py demo [video_path]    # Run native demo
   python dev.py demo --debug [path]  # Run native demo (debug build)
   python dev.py test                 # Build + test native module
+  python dev.py vtm build            # Build VTM DecoderApp
+  python dev.py vtm analyze video.mp4  # Generate .vbs1 binary stats for a video
 """
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -23,6 +26,14 @@ NATIVE_DIR = ROOT / "windows" / "native"
 NATIVE_BUILD_PY = NATIVE_DIR / "build.py"
 NATIVE_BUILD_DIR = NATIVE_DIR / "build-msvc"
 DEMO_SCRIPT = NATIVE_DIR / "demo" / "demo_video_renderer.py"
+
+VTM_DIR = ROOT / "tools" / "vtm"
+VTM_BUILD_DIR = VTM_DIR / "build"
+VTM_DECODER = VTM_DIR / "bin" / "mgwmake" / "gcc-mingw-14.2" / "x86_64" / "release" / "DecoderApp.exe"
+
+# MSYS2 paths for VTM build (MinGW GCC toolchain)
+MSYS2_BASH = r"C:\msys64\usr\bin\bash.exe"
+UCRT64_BIN = r"/ucrt64/bin"
 
 
 def header(title: str):
@@ -34,7 +45,9 @@ def header(title: str):
 def run(cmd, **kwargs):
     cmd_str = ' '.join(str(c) for c in cmd)
     print(f"> {cmd_str}")
-    subprocess.check_call(cmd, shell=True, **kwargs)
+    # Use shell=True only for simple commands, not when invoking bash directly
+    use_shell = kwargs.pop("use_shell", True)
+    subprocess.check_call(cmd, shell=use_shell, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +190,131 @@ def cmd_test(args):
 
 
 # ---------------------------------------------------------------------------
-# CLI
+# vtm — VTM DecoderApp build & analyze
+# ---------------------------------------------------------------------------
+
+def _ensure_submodule():
+    """Ensure tools/vtm submodule is initialized and on voidplayer-patches."""
+    if not (VTM_DIR / ".git").exists():
+        print("VTM submodule not initialized. Running git submodule update...")
+        run(["git", "submodule", "update", "--init", "--remote", "tools/vtm"])
+    # Verify branch
+    result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True, text=True, cwd=str(VTM_DIR)
+    )
+    branch = result.stdout.strip()
+    if branch != "voidplayer-patches":
+        print(f"WARNING: VTM submodule on branch '{branch}', expected 'voidplayer-patches'")
+
+
+def _extract_raw_vvc(video_path: Path) -> Path:
+    """Extract raw VVC bitstream from container (mp4/mkv/etc)."""
+    raw_path = video_path.with_suffix(".vvc")
+    if raw_path.exists():
+        print(f"  Reusing existing raw bitstream: {raw_path}")
+        return raw_path
+    print(f"  Extracting raw VVC bitstream from {video_path.name}...")
+    run([
+        "ffmpeg", "-y", "-i", str(video_path),
+        "-c:v", "copy", "-bsf:v", "vvc_mp4toannexb",
+        "-f", "rawvideo", str(raw_path),
+    ])
+    return raw_path
+
+
+def cmd_vtm(args):
+    """Build VTM DecoderApp or generate binary stats."""
+    _ensure_submodule()
+
+    if args.vtm_action == "build":
+        cmd_vtm_build(args)
+    elif args.vtm_action == "analyze":
+        if not args.video:
+            print("ERROR: 'vtm analyze' requires a video file path")
+            sys.exit(1)
+        cmd_vtm_analyze(args)
+    else:
+        print(f"Unknown vtm action: {args.vtm_action}")
+        sys.exit(1)
+
+
+def cmd_vtm_build(_args):
+    """Build VTM DecoderApp with DTrace + VBS1 support."""
+    VTM_BUILD_DIR.mkdir(parents=True, exist_ok=True)
+
+    build_type = "Release"  # VTM always release (debug is very slow)
+
+    header(f"Configure VTM ({build_type})")
+    cmake_cmd = [
+        "cmake", str(VTM_DIR),
+        "-G", "MinGW Makefiles",
+        f"-DCMAKE_BUILD_TYPE={build_type}",
+    ]
+    run(cmake_cmd, cwd=str(VTM_BUILD_DIR))
+
+    header(f"Build VTM DecoderApp ({build_type})")
+    # Run via MSYS2 bash to get proper MinGW GCC environment
+    nproc = os.cpu_count() or 4
+    # Convert Windows path to MSYS2 POSIX: D:/Code -> /d/Code
+    build_posix = VTM_BUILD_DIR.as_posix()
+    build_msys = "/" + build_posix[0].lower() + build_posix[2:]
+    make_cmd = (
+        f'export PATH={UCRT64_BIN}:$PATH && '
+        f'cd {build_msys} && '
+        f'mingw32-make DecoderApp -j{nproc}'
+    )
+    run([MSYS2_BASH, "-lc", make_cmd], use_shell=False)
+
+    if VTM_DECODER.exists():
+        size_mb = VTM_DECODER.stat().st_size / (1024 * 1024)
+        print(f"\n  DecoderApp built: {VTM_DECODER} ({size_mb:.1f} MB)")
+    else:
+        print(f"\n  WARNING: DecoderApp not found at {VTM_DECODER}")
+
+
+def cmd_vtm_analyze(args):
+    """Generate .vbs1 binary stats for a video file."""
+    if not VTM_DECODER.exists():
+        print("DecoderApp not found. Building first...")
+        cmd_vtm_build(args)
+
+    video_path = Path(args.video).resolve()
+    if not video_path.exists():
+        print(f"ERROR: video not found: {video_path}")
+        sys.exit(1)
+
+    # Output path: same directory as video, .vbs1 extension
+    output_path = video_path.with_suffix(".vbs1")
+
+    # Extract raw VVC if needed
+    raw_path = _extract_raw_vvc(video_path)
+
+    header(f"Generate VBS1 stats for {video_path.name}")
+    print(f"  Output: {output_path}")
+
+    # Convert Windows path to MSYS2 POSIX path: D:/Code/Foo -> /d/Code/Foo
+    def to_msys(p: Path) -> str:
+        s = p.as_posix()          # e.g. D:/Code/Foo
+        return "/" + s[0].lower() + s[2:]  # strip colon: /d/Code/Foo
+
+    decoder_cmd = (
+        f'export PATH={UCRT64_BIN}:$PATH && '
+        f'export VTM_BINARY_STATS="{to_msys(output_path)}" && '
+        f'"{to_msys(VTM_DECODER)}" '
+        f'-b "{to_msys(raw_path)}" '
+        f'--TraceFile=/dev/null '
+        f'--TraceRule="D_BLOCK_STATISTICS_CODED:poc>=0" '
+        f'-o /dev/null'
+    )
+    run([MSYS2_BASH, "-lc", decoder_cmd], use_shell=False)
+
+    if output_path.exists():
+        size_mb = output_path.stat().st_size / (1024 * 1024)
+        print(f"\n  Done: {output_path} ({size_mb:.1f} MB)")
+    else:
+        print(f"\n  ERROR: output file not created: {output_path}")
+        sys.exit(1)
 # ---------------------------------------------------------------------------
 
 def main():
@@ -195,6 +332,8 @@ Examples:
   python dev.py demo                 Run native demo
   python dev.py demo video.mp4       Run native demo with custom video
   python dev.py test                 Build + test native module
+  python dev.py vtm build            Build VTM DecoderApp (MinGW)
+  python dev.py vtm analyze video.mp4  Generate .vbs1 binary stats
 """,
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -233,6 +372,13 @@ Examples:
     p_launch.add_argument("--test-script", type=str, default=None,
                            help="Path to CSV test script (passed to app via --test-script)")
 
+    # --- vtm ---
+    p_vtm = sub.add_parser("vtm", help="VTM DecoderApp: build & H.266 analysis")
+    p_vtm.add_argument("vtm_action", choices=["build", "analyze"],
+                       help="'build' to compile DecoderApp, 'analyze' to generate .vbs1 stats")
+    p_vtm.add_argument("video", nargs="?", default=None,
+                       help="Video file path (required for 'analyze')")
+
     args = parser.parse_args()
 
     {
@@ -241,6 +387,7 @@ Examples:
         "launch": cmd_launch,
         "demo": cmd_demo,
         "test": cmd_test,
+        "vtm": cmd_vtm,
     }[args.command](args)
 
 

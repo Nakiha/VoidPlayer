@@ -12,7 +12,10 @@ class TimelineArea extends StatefulWidget {
   final void Function(int oldIndex, int newIndex) onReorder;
   final void Function(int slot, int offsetMs) onOffsetChanged;
   final ValueChanged<int> onRemoveTrack;
-  final Map<int, int> syncOffsets;
+  final Map<int, int> syncOffsets; // slot -> offset in microseconds
+  final int maxEffectiveDurationUs;
+  final int hoverPtsUs;
+  final bool sliderHovering;
 
   const TimelineArea({
     super.key,
@@ -22,6 +25,9 @@ class TimelineArea extends StatefulWidget {
     required this.onOffsetChanged,
     required this.onRemoveTrack,
     this.syncOffsets = const {},
+    this.maxEffectiveDurationUs = 0,
+    this.hoverPtsUs = 0,
+    this.sliderHovering = false,
   });
 
   @override
@@ -39,15 +45,7 @@ class _TimelineAreaState extends State<TimelineArea> {
 
   @override
   Widget build(BuildContext context) {
-    final entries = widget.trackManager.entries;
-
-    // Compute max duration across all tracks
-    int maxDurationUs = 0;
-    for (final e in entries) {
-      if (e.info.durationUs > maxDurationUs) {
-        maxDurationUs = e.info.durationUs;
-      }
-    }
+    final maxEffectiveDurationUs = widget.maxEffectiveDurationUs;
 
     return LayoutBuilder(builder: (context, constraints) {
       final maxHeight = constraints.maxHeight;
@@ -62,16 +60,23 @@ class _TimelineAreaState extends State<TimelineArea> {
           itemBuilder: (context, index) {
             final entry = widget.trackManager.entries[index];
             final trackDuration = entry.info.durationUs;
+            final offsetUs = widget.syncOffsets[entry.info.slot] ?? 0;
 
-            // Duration ratio: how long this clip is relative to the longest
-            final durationRatio =
-                maxDurationUs > 0 ? trackDuration / maxDurationUs : 1.0;
+            // Clip ratio: original duration relative to max effective duration
+            final clipRatio = maxEffectiveDurationUs > 0
+                ? (trackDuration / maxEffectiveDurationUs).clamp(0.0, 1.0)
+                : 1.0;
 
-            // Per-track clamped playhead: cap at track's own duration
+            // Offset ratio: where the clip block starts
+            final offsetRatio = maxEffectiveDurationUs > 0
+                ? (offsetUs / maxEffectiveDurationUs).clamp(0.0, 1.0)
+                : 0.0;
+
+            // Per-track playhead: global time → track internal time
             double playheadPosition = 0.0;
             if (trackDuration > 0) {
-              playheadPosition =
-                  (widget.currentPtsUs / trackDuration).clamp(0.0, 1.0);
+              final localTime = widget.currentPtsUs - offsetUs;
+              playheadPosition = (localTime / trackDuration).clamp(0.0, 1.0);
             }
 
             return TrackRow(
@@ -79,13 +84,19 @@ class _TimelineAreaState extends State<TimelineArea> {
               track: entry.info,
               index: index,
               playheadPosition: playheadPosition,
-              durationRatio: durationRatio,
+              durationRatio: clipRatio,
+              offsetRatio: offsetRatio,
               onRemove: () => widget.onRemoveTrack(entry.fileId),
               onOffsetChanged: (delta) => widget.onOffsetChanged(
-                  entry.slot, (widget.syncOffsets[entry.slot] ?? 0) + delta),
-              syncOffsetMs: widget.syncOffsets[entry.slot] ?? 0,
+                  entry.info.slot, delta),
+              syncOffsetMs: offsetUs ~/ 1000,
               controlsWidth: _controlsWidth,
               onControlsWidthChanged: _onControlsWidthChanged,
+              hoverPtsUs: widget.hoverPtsUs,
+              sliderHovering: widget.sliderHovering,
+              trackDurationUs: trackDuration,
+              offsetUs: offsetUs,
+              maxEffectiveDurationUs: maxEffectiveDurationUs,
             );
           },
         ),

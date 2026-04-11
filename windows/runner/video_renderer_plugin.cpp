@@ -142,6 +142,8 @@ void VideoRendererPlugin::HandleMethodCall(
         AddTrack(method_call.arguments(), std::move(result));
     } else if (method == "removeTrack") {
         RemoveTrack(method_call.arguments(), std::move(result));
+    } else if (method == "setTrackOffset") {
+        SetTrackOffset(method_call.arguments(), std::move(result));
     } else if (method == "play") {
         if (renderer_) renderer_->play();
         result->Success(flutter::EncodableValue(nullptr));
@@ -539,6 +541,37 @@ void VideoRendererPlugin::RemoveTrack(
 
     renderer_->remove_track(file_id);
     spdlog::info("[VideoRendererPlugin] Removed track: file_id={}", file_id);
+    result->Success(flutter::EncodableValue(nullptr));
+}
+
+void VideoRendererPlugin::SetTrackOffset(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+
+    if (!renderer_ || !arguments) {
+        result->Error("INVALID", "Renderer not created or no arguments");
+        return;
+    }
+    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+    if (!args) {
+        result->Error("INVALID_ARGS", "Arguments must be a map");
+        return;
+    }
+
+    int file_id = 0;
+    int64_t offset_us = 0;
+    auto it = args->find(flutter::EncodableValue("fileId"));
+    if (it != args->end()) file_id = std::get<int>(it->second);
+    it = args->find(flutter::EncodableValue("offsetUs"));
+    if (it != args->end()) {
+        if (std::holds_alternative<int>(it->second))
+            offset_us = static_cast<int64_t>(std::get<int>(it->second));
+        else if (std::holds_alternative<int64_t>(it->second))
+            offset_us = std::get<int64_t>(it->second);
+    }
+
+    renderer_->set_track_offset(file_id, offset_us);
+    spdlog::info("[VideoRendererPlugin] setTrackOffset: file_id={}, offset_us={}", file_id, offset_us);
     result->Success(flutter::EncodableValue(nullptr));
 }
 

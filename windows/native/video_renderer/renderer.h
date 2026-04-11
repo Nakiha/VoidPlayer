@@ -122,6 +122,10 @@ public:
     /// Get per-track performance stats snapshot (thread-safe).
     std::vector<TrackPerfStats> track_perf_stats() const;
 
+    /// Set per-track sync offset in microseconds.
+    /// Positive = delayed start (blank lead-in), negative = early start (skip beginning).
+    void set_track_offset(int file_id, int64_t offset_us);
+
     // -- Layout control --
 
     /// Atomically apply layout state and trigger redraw if paused.
@@ -152,6 +156,7 @@ private:
     struct TrackPipeline {
         int file_id = 0;              ///< Stable identifier assigned by add_track()
         std::string file_path;
+        int64_t offset_us = 0;        ///< Per-track sync offset in microseconds
         std::unique_ptr<PacketQueue> packet_queue;
         std::unique_ptr<TrackBuffer> track_buffer;
         std::unique_ptr<DemuxThread> demux_thread;

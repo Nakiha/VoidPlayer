@@ -15,6 +15,7 @@ class ControlsBar extends StatelessWidget {
   final int currentPtsUs;
   final int durationUs;
   final ValueChanged<int> onSeek;
+  final void Function(int hoverUs, bool hovering)? onHoverChanged;
 
   const ControlsBar({
     super.key,
@@ -27,6 +28,7 @@ class ControlsBar extends StatelessWidget {
     required this.currentPtsUs,
     required this.durationUs,
     required this.onSeek,
+    this.onHoverChanged,
   });
 
   @override
@@ -91,6 +93,7 @@ class ControlsBar extends StatelessWidget {
               currentUs: currentPtsUs,
               durationUs: durationUs,
               onSeek: onSeek,
+              onHoverChanged: onHoverChanged,
             ),
           ),
         ],

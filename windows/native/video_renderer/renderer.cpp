@@ -257,6 +257,8 @@ void Renderer::seek_internal(int64_t target_pts_us, SeekType type) {
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks_[i]) continue;
         auto& track = tracks_[i];
+        // Per-track target: subtract this track's sync offset
+        int64_t track_target = std::max(target_pts_us - track->offset_us, int64_t(0));
         // Pause decoder FIRST to prevent stale packets from reaching the codec
         // (avoids HEVC "Could not find ref" warnings during seek transition)
         track->decode_thread->set_decode_paused(true);
@@ -265,10 +267,10 @@ void Renderer::seek_internal(int64_t target_pts_us, SeekType type) {
         track->track_buffer->set_state(TrackState::Flushing);
         track->track_buffer->clear_frames();
         track->packet_queue->flush();
-        track->seek_controller->request_seek(target_pts_us, type);
+        track->seek_controller->request_seek(track_target, type);
         track->track_buffer->set_state(TrackState::Buffering);
-        spdlog::info("[Renderer] seek_internal: track[{}] cleared (buf={}->{}, pq={}->0), state->Buffering",
-                     i, buf_count_before, track->track_buffer->total_count(), pq_size_before);
+        spdlog::info("[Renderer] seek_internal: track[{}] cleared (buf={}->{}, pq={}->0), state->Buffering, target={:.3f}s",
+                     i, buf_count_before, track->track_buffer->total_count(), pq_size_before, track_target / 1e6);
     }
     preview_drawn_ = false;
     last_decision_ = PresentDecision();
@@ -540,6 +542,15 @@ int64_t Renderer::duration_us() const {
     return cached_duration_us_;
 }
 
+void Renderer::set_track_offset(int file_id, int64_t offset_us) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    int slot = find_slot_by_file_id(file_id);
+    if (slot < 0 || !tracks_[slot]) return;
+    tracks_[slot]->offset_us = offset_us;
+    render_sink_->set_track_offset(slot, offset_us);
+    preview_drawn_ = false;
+}
+
 void Renderer::set_frame_callback(std::function<void()> cb) {
     frame_callback_ = std::move(cb);
 }
@@ -723,10 +734,15 @@ void Renderer::render_loop() {
         if (decision.should_present) {
             // Independent presentation: fill missing tracks from last decision
             // so each track always shows a frame (new or carried over).
+            // Only carry over if the track is still within its effective window.
             for (size_t i = 0; i < kMaxTracks; ++i) {
                 if (!decision.frames[i].has_value() &&
-                    last_decision_.frames[i].has_value()) {
-                    decision.frames[i] = last_decision_.frames[i];
+                    last_decision_.frames[i].has_value() && tracks_[i]) {
+                    int64_t effective_pts = decision.current_pts_us - tracks_[i]->offset_us;
+                    int64_t track_dur = tracks_[i]->demux_thread->stats().duration_us;
+                    if (effective_pts >= 0 && effective_pts <= track_dur) {
+                        decision.frames[i] = last_decision_.frames[i];
+                    }
                 }
             }
             present_frame(decision);
@@ -1331,6 +1347,7 @@ int Renderer::add_track(const std::string& video_path) {
 
     // Register with render sink
     render_sink_->set_track(slot, pipeline->track_buffer.get());
+    render_sink_->set_track_offset(slot, 0);
 
     // Update duration cache
     cached_duration_us_ = std::max(cached_duration_us_,
@@ -1357,14 +1374,15 @@ int Renderer::add_track(const std::string& video_path) {
     int64_t current_pts = clock_.current_pts_us();
     if (current_pts > 0) {
         auto& track = tracks_[slot];
+        int64_t track_target = std::max(current_pts - track->offset_us, int64_t(0));
         track->decode_thread->set_decode_paused(true);
         track->track_buffer->set_state(TrackState::Flushing);
         track->track_buffer->clear_frames();
         track->packet_queue->flush();
-        track->seek_controller->request_seek(current_pts, SeekType::Keyframe);
+        track->seek_controller->request_seek(track_target, SeekType::Keyframe);
         track->track_buffer->set_state(TrackState::Buffering);
-        spdlog::info("Renderer::add_track: seeking slot={} to {:.3f}s",
-                     slot, current_pts / 1e6);
+        spdlog::info("Renderer::add_track: seeking slot={} to {:.3f}s (offset={:.3f}s)",
+                     slot, track_target / 1e6, track->offset_us / 1e6);
     }
 
     // Force redraw
@@ -1401,8 +1419,9 @@ void Renderer::remove_track(int file_id) {
     for (size_t i = slot; i < kMaxTracks - 1; ++i) {
         if (!tracks_[i + 1]) break;  // No more tracks to compact
         tracks_[i] = std::move(tracks_[i + 1]);
-        // Update render sink mapping
+        // Update render sink mapping (track buffer + offset)
         render_sink_->set_track(i, tracks_[i]->track_buffer.get());
+        render_sink_->set_track_offset(i, tracks_[i]->offset_us);
         render_sink_->set_track(i + 1, nullptr);
     }
 

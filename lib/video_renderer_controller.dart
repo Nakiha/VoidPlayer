@@ -187,6 +187,13 @@ class VideoRendererController {
         'fileId': fileId,
       });
 
+  /// Set per-track sync offset in microseconds.
+  Future<void> setTrackOffset({required int fileId, required int offsetUs}) =>
+      _channel.invokeMethod<void>('setTrackOffset', {
+        'fileId': fileId,
+        'offsetUs': offsetUs,
+      });
+
   /// Get current track info list.
   Future<List<TrackInfo>> getTracks() async {
     final list = await _channel.invokeMethod<List<dynamic>>('getTracks');

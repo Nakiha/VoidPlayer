@@ -18,6 +18,12 @@ void RenderSink::remove_all_tracks() {
     tracks_.fill(nullptr);
 }
 
+void RenderSink::set_track_offset(size_t slot, int64_t offset_us) {
+    if (slot < kMaxTracks) {
+        track_offsets_[slot] = offset_us;
+    }
+}
+
 PresentDecision RenderSink::evaluate() {
     PresentDecision decision;
 
@@ -34,6 +40,7 @@ PresentDecision RenderSink::evaluate() {
         any_active = true;
 
         TrackBuffer* track = tracks_[t];
+        int64_t effective_pts = current_pts_us - track_offsets_[t];
 
         // 1. Discard expired frames: advance past frames whose display window has passed
         while (true) {
@@ -42,7 +49,7 @@ PresentDecision RenderSink::evaluate() {
                 break;
             }
             // Frame is expired if its end time has passed
-            if (frame->pts_us + frame->duration_us <= current_pts_us) {
+            if (frame->pts_us + frame->duration_us <= effective_pts) {
                 if (!track->advance()) {
                     break; // Cannot advance further
                 }
@@ -61,20 +68,20 @@ PresentDecision RenderSink::evaluate() {
         }
 
         // 3. Check if frame is in the display window
-        if (frame->pts_us <= current_pts_us &&
-            current_pts_us < frame->pts_us + frame->duration_us) {
+        if (frame->pts_us <= effective_pts &&
+            effective_pts < frame->pts_us + frame->duration_us) {
             // Frame is in its display window - select it
             decision.frames[t] = frame;
             any_ready = true;
         }
         // 4. Check if frame is within tolerance of current time
-        else if (std::abs(frame->pts_us - current_pts_us) <= PTS_TOLERANCE_US) {
+        else if (std::abs(frame->pts_us - effective_pts) <= PTS_TOLERANCE_US) {
             // Within tolerance - select it
             decision.frames[t] = frame;
             any_ready = true;
         }
         // 5. Frame is in the future (past tolerance)
-        else if (frame->pts_us > current_pts_us + PTS_TOLERANCE_US) {
+        else if (frame->pts_us > effective_pts + PTS_TOLERANCE_US) {
             decision.frames[t] = std::nullopt;
         }
         // 6. Frame is in the past, far beyond tolerance — no valid frame

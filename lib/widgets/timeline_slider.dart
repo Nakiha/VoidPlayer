@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/time_format.dart';
 
 /// TimelineSlider with hover tooltip, matching PySide6 TimelineSlider behavior.
 ///
@@ -11,12 +12,14 @@ class TimelineSlider extends StatefulWidget {
   final int currentUs;
   final int durationUs;
   final ValueChanged<int> onSeek;
+  final void Function(int hoverUs, bool hovering)? onHoverChanged;
 
   const TimelineSlider({
     super.key,
     required this.currentUs,
     required this.durationUs,
     required this.onSeek,
+    this.onHoverChanged,
   });
 
   @override
@@ -49,14 +52,21 @@ class _TimelineSliderState extends State<TimelineSlider> {
       onPointerCancel: (_) {},
       onPointerHover: (event) {
         setState(() => _hoverX = event.localPosition.dx);
+        _reportHover(event.localPosition.dx);
       },
       child: MouseRegion(
         opaque: false,
-        onEnter: (event) => setState(() {
-          _hovering = true;
-          _hoverX = event.localPosition.dx;
-        }),
-        onExit: (_) => setState(() => _hovering = false),
+        onEnter: (event) {
+          setState(() {
+            _hovering = true;
+            _hoverX = event.localPosition.dx;
+          });
+          _reportHover(event.localPosition.dx);
+        },
+        onExit: (_) {
+          setState(() => _hovering = false);
+          widget.onHoverChanged?.call(0, false);
+        },
         cursor: SystemMouseCursors.click,
         child: Stack(
           clipBehavior: Clip.none,
@@ -120,14 +130,14 @@ class _TimelineSliderState extends State<TimelineSlider> {
     return ((x / width).clamp(0.0, 1.0) * widget.durationUs).round();
   }
 
-  /// Format microseconds to MM:SS.ss (centiseconds, matching PySide6).
-  static String _formatTime(int us) {
-    final totalSeconds = us / 1000000.0;
-    final minutes = totalSeconds.toInt() ~/ 60;
-    final seconds = totalSeconds - minutes * 60;
-    return '${minutes.toString().padLeft(2, '0')}:'
-        '${seconds.toStringAsFixed(2).padLeft(5, '0')}';
+  void _reportHover(double localX) {
+    final box = context.findRenderObject() as RenderBox;
+    final x = localX.clamp(0.0, box.size.width);
+    widget.onHoverChanged?.call(_xToUs(x, box.size.width), true);
   }
+
+  /// Format microseconds to MM:SS.ss (centiseconds, matching PySide6).
+  static String _formatTime(int us) => formatTimePad2(us);
 }
 
 /// Paints the slider track: inactive background + active progress fill.

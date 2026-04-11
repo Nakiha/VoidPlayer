@@ -35,6 +35,13 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   int _durationUs = 0;
   LayoutState _layout = const LayoutState();
 
+  // Per-track sync offsets: slot -> offset in microseconds
+  Map<int, int> _syncOffsets = {};
+
+  // Slider hover state for cross-track indicator
+  int _hoverPtsUs = 0;
+  bool _sliderHovering = false;
+
   // Polling
   Timer? _pollTimer;
   Ticker? _layoutTicker;
@@ -361,6 +368,13 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   // -- Track operations --
 
   void _onRemoveTrack(int fileId) async {
+    // Capture slot before removal for offset cleanup
+    final entry = _trackManager.entries.firstWhere(
+      (e) => e.fileId == fileId,
+      orElse: () => throw StateError('No track with fileId $fileId'),
+    );
+    final slot = entry.info.slot;
+
     await _controller.removeTrack(fileId);
     final tracks = await _controller.getTracks();
     if (tracks.isEmpty) {
@@ -374,9 +388,13 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
         _currentPtsUs = 0;
         _durationUs = 0;
         _layout = const LayoutState();
+        _syncOffsets = {};
       });
     } else {
       _trackManager.setTracks(tracks);
+      setState(() {
+        _syncOffsets = Map.from(_syncOffsets)..remove(slot);
+      });
     }
   }
 
@@ -384,8 +402,43 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     _trackManager.moveTrack(slotIndex, targetTrackIndex);
   }
 
-  void _onOffsetChanged(int slot, int offsetMs) {
-    // TODO: wire to native when sync offset is supported
+  void _onOffsetChanged(int slot, int deltaMs) async {
+    final currentOffsetUs = _syncOffsets[slot] ?? 0;
+    final newOffsetUs = currentOffsetUs + deltaMs * 1000; // ms -> us
+
+    // Find the fileId for this slot
+    final entry = _trackManager.entries.firstWhere(
+      (e) => e.info.slot == slot,
+      orElse: () => throw StateError('No track at slot $slot'),
+    );
+
+    await _controller.setTrackOffset(
+      fileId: entry.fileId,
+      offsetUs: newOffsetUs,
+    );
+
+    setState(() {
+      _syncOffsets = Map.from(_syncOffsets)..[slot] = newOffsetUs;
+    });
+  }
+
+  void _onSliderHover(int hoverUs, bool hovering) {
+    if (_hoverPtsUs == hoverUs && _sliderHovering == hovering) return;
+    setState(() {
+      _hoverPtsUs = hoverUs;
+      _sliderHovering = hovering;
+    });
+  }
+
+  /// Effective max duration accounting for per-track offsets.
+  int get _effectiveDurationUs {
+    int maxEffective = _durationUs;
+    for (final entry in _trackManager.entries) {
+      final offsetUs = _syncOffsets[entry.info.slot] ?? 0;
+      final effective = entry.info.durationUs + offsetUs;
+      if (effective > maxEffective) maxEffective = effective;
+    }
+    return maxEffective;
   }
 
   // -- Build --
@@ -455,8 +508,9 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
                     onStepForward: () => _controller.stepForward(),
                     onStepBackward: () => _controller.stepBackward(),
                     currentPtsUs: _currentPtsUs,
-                    durationUs: _durationUs,
+                    durationUs: _effectiveDurationUs,
                     onSeek: (pts) => _controller.seek(pts),
+                    onHoverChanged: _onSliderHover,
                   ),
                 // Timeline area (variable, max 40%)
                 if (_trackManager.count > 0)
@@ -468,6 +522,10 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
                       onRemoveTrack: _onRemoveTrack,
                       onReorder: _trackManager.moveTrack,
                       onOffsetChanged: _onOffsetChanged,
+                      syncOffsets: _syncOffsets,
+                      maxEffectiveDurationUs: _effectiveDurationUs,
+                      hoverPtsUs: _hoverPtsUs,
+                      sliderHovering: _sliderHovering,
                     ),
                   ),
               ],

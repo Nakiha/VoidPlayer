@@ -25,11 +25,15 @@ public:
 
     void remove_all_tracks();
 
+    /// Set per-track sync offset in microseconds.
+    void set_track_offset(size_t slot, int64_t offset_us);
+
     PresentDecision evaluate();
 
 private:
     Clock& clock_;
     std::array<TrackBuffer*, kMaxTracks> tracks_{};
+    std::array<int64_t, kMaxTracks> track_offsets_{};
 };
 
 } // namespace vr

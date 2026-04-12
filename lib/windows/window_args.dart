@@ -1,16 +1,23 @@
 import 'dart:convert';
+import 'dart:ui';
 
 /// Window type constants and argument parsing for multi-window routing.
 class WindowArgs {
   final String windowType;
+  final int? _accentColorValue;
 
-  const WindowArgs._({required this.windowType});
+  const WindowArgs._({required this.windowType, int? accentColorValue})
+      : _accentColorValue = accentColorValue;
 
   /// Window type constants
   static const String main = 'main';
   static const String stats = 'stats';
   static const String memory = 'memory';
   static const String settings = 'settings';
+
+  /// The accent color passed from the main window, or fallback.
+  Color get accentColor =>
+      _accentColorValue != null ? Color(_accentColorValue) : const Color(0xFF0078D4);
 
   /// Parse CLI args to determine which window type this is.
   ///
@@ -23,13 +30,14 @@ class WindowArgs {
         try {
           final config = jsonDecode(args[i + 2]) as Map<String, dynamic>;
           final type = config['type'] as String? ?? WindowArgs.main;
-          return WindowArgs._(windowType: type);
+          final accentColor = config['accentColor'] as int?;
+          return WindowArgs._(windowType: type, accentColorValue: accentColor);
         } catch (_) {
           // Not valid JSON, continue looking
         }
       }
     }
     // Default: main window
-    return WindowArgs._(windowType: WindowArgs.main);
+    return const WindowArgs._(windowType: WindowArgs.main);
   }
 }

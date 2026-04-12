@@ -45,7 +45,8 @@ final _getDiag = DynamicLibrary.executable()
 // ---- UI ----
 
 class StatsApp extends StatelessWidget {
-  const StatsApp({super.key});
+  final Color accentColor;
+  const StatsApp({super.key, required this.accentColor});
 
   @override
   Widget build(BuildContext context) {
@@ -55,7 +56,7 @@ class StatsApp extends StatelessWidget {
       supportedLocales: AppLocalizations.supportedLocales,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0078D4),
+          seedColor: accentColor,
           brightness: Brightness.dark,
         ),
       ),

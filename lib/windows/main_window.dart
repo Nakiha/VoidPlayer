@@ -323,6 +323,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     _viewportWidth = width;
     _viewportHeight = height;
     _resizeDirty = true;
+    _layoutTicker?.start();
   }
 
   void _onZoomComboChanged(double value) {
@@ -334,7 +335,10 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   // -- Layout sync --
 
-  void _markLayoutDirty() => _layoutDirty = true;
+  void _markLayoutDirty() {
+    _layoutDirty = true;
+    _layoutTicker?.start();
+  }
 
   void _startLayoutTicker() {
     _layoutTicker = createTicker((_) {
@@ -347,8 +351,11 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
         _layoutDirty = false;
         _controller.applyLayout(_layout);
       }
+      if (!_resizeDirty && !_layoutDirty) {
+        _layoutTicker?.stop();
+      }
     });
-    _layoutTicker!.start();
+    // Don't start here — will start on first dirty mark.
   }
 
   // -- Polling --
@@ -369,10 +376,14 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
         _controller.isPlaying(),
       ]);
       if (!mounted) return;
+      final pts = results[0] as int;
+      final dur = results[1] as int;
+      final playing = results[2] as bool;
+      if (pts == _currentPtsUs && dur == _durationUs && playing == _isPlaying) return;
       setState(() {
-        _currentPtsUs = results[0] as int;
-        _durationUs = results[1] as int;
-        _isPlaying = results[2] as bool;
+        _currentPtsUs = pts;
+        _durationUs = dur;
+        _isPlaying = playing;
       });
     } catch (_) {
       // Renderer may be disposed

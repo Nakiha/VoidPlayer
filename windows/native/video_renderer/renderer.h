@@ -188,6 +188,10 @@ private:
     /// Lock device + texture mutexes, draw frame, present/flush, set preview_drawn_.
     void present_frame(const PresentDecision& decision);
 
+    /// Headless-only: select back buffer RTV, draw, swap, notify Flutter.
+    /// Caller must hold both device_mutex_ and texture_mutex_.
+    void draw_headless_and_publish(const PresentDecision& decision, const char* label);
+
     /// Lightweight layout-only redraw (no Flush) for responsive zoom/pan during playback.
     void redraw_layout();
 

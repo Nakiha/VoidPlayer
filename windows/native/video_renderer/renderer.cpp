@@ -449,41 +449,39 @@ bool Renderer::create_double_buffers(
     return true;
 }
 
+void Renderer::draw_headless_and_publish(const PresentDecision& decision, const char* label) {
+    int back = 1 - dbuf_.front.load();
+    cached_rtv_ = dbuf_.rtvs[back];
+    draw_frame(decision);
+    wait_gpu_and_swap(label);
+    if (frame_callback_) frame_callback_();
+    preview_drawn_ = true;
+}
+
 void Renderer::present_frame(const PresentDecision& decision) {
     spdlog::debug("[present_frame] mode={}", layout_.mode);
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
     std::lock_guard<std::mutex> tex_lock(texture_mutex_);
     if (headless_) {
-        int back = 1 - dbuf_.front.load();
-        if (cached_rtv_ != dbuf_.rtvs[back])
-            cached_rtv_ = dbuf_.rtvs[back];
-    }
-    draw_frame(decision);
-    if (headless_) {
-        wait_gpu_and_swap("present_frame");
-        if (frame_callback_) frame_callback_();
+        draw_headless_and_publish(decision, "present_frame");
     } else {
+        draw_frame(decision);
         d3d_device_->present(0);
+        preview_drawn_ = true;
     }
-    preview_drawn_ = true;
 }
 
 void Renderer::redraw_layout() {
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
     std::lock_guard<std::mutex> tex_lock(texture_mutex_);
     if (headless_) {
-        int back = 1 - dbuf_.front.load();
-        if (cached_rtv_ != dbuf_.rtvs[back])
-            cached_rtv_ = dbuf_.rtvs[back];
-    }
-    draw_frame(last_decision_);
-    if (headless_) {
-        wait_gpu_and_swap("redraw_layout");
+        draw_headless_and_publish(last_decision_, "redraw_layout");
     } else {
+        draw_frame(last_decision_);
         d3d_device_->context()->Flush();
+        if (frame_callback_) frame_callback_();
+        preview_drawn_ = true;
     }
-    if (frame_callback_) frame_callback_();
-    preview_drawn_ = true;
 }
 
 bool Renderer::has_any_frame(const PresentDecision& decision) {
@@ -589,13 +587,7 @@ void Renderer::resize(int width, int height) {
         dbuf_.front.store(0);
 
         // Flutter reads the front buffer on the next frame — must not be uninitialized.
-        int back = 1 - dbuf_.front.load();
-        cached_rtv_ = dbuf_.rtvs[back];
-        cached_rtv_ = dbuf_.rtvs[back];
-        draw_frame(last_decision_);
-        wait_gpu_and_swap("resize");
-        if (frame_callback_) frame_callback_();
-        preview_drawn_ = true;
+        draw_headless_and_publish(last_decision_, "resize");
     }
 
     spdlog::info("[Renderer] resize complete: {}x{}, handles=[{}, {}]",

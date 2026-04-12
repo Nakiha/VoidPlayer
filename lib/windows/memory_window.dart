@@ -4,7 +4,8 @@ import '../l10n/app_localizations.dart';
 
 /// Memory/performance monitor window (secondary window, 800x600).
 class MemoryApp extends StatelessWidget {
-  const MemoryApp({super.key});
+  final Color accentColor;
+  const MemoryApp({super.key, required this.accentColor});
 
   @override
   Widget build(BuildContext context) {
@@ -14,7 +15,7 @@ class MemoryApp extends StatelessWidget {
       supportedLocales: AppLocalizations.supportedLocales,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0078D4),
+          seedColor: accentColor,
           brightness: Brightness.dark,
         ),
       ),

@@ -1,6 +1,9 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <commctrl.h>
+
+#pragma comment(lib, "comctl32.lib")
 
 #include "flutter/generated_plugin_registrant.h"
 #include "video_renderer_plugin.h"
@@ -8,6 +11,25 @@
 #include <desktop_drop/desktop_drop_plugin.h>
 #include <flutter_acrylic/flutter_acrylic_plugin.h>
 #include <screen_retriever_windows/screen_retriever_windows_plugin_c_api.h>
+
+// Minimum size applied to secondary windows (matches main window).
+static constexpr int kSecondaryMinWidth = 520;
+static constexpr int kSecondaryMinHeight = 360;
+
+static LRESULT CALLBACK SecondaryWindowSubclassProc(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+    UINT_PTR /*uidSubclass*/, DWORD_PTR /*dwRefData*/) {
+  if (msg == WM_GETMINMAXINFO) {
+    auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
+    mmi->ptMinTrackSize.x = kSecondaryMinWidth;
+    mmi->ptMinTrackSize.y = kSecondaryMinHeight;
+    return 0;
+  }
+  if (msg == WM_NCDESTROY) {
+    RemoveWindowSubclass(hwnd, SecondaryWindowSubclassProc, 0);
+  }
+  return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -65,6 +87,15 @@ bool FlutterWindow::OnCreate() {
         flutter::PluginRegistrarManager::GetInstance()
             ->GetRegistrar<flutter::PluginRegistrarWindows>(
                 registry->GetRegistrarForPlugin("VideoRendererPlugin")));
+
+    // Apply minimum size constraint to the secondary top-level window.
+    auto *view = flutter_view_controller->view();
+    if (view) {
+      HWND top_level = GetAncestor(view->GetNativeWindow(), GA_ROOT);
+      if (top_level) {
+        SetWindowSubclass(top_level, SecondaryWindowSubclassProc, 0, 0);
+      }
+    }
   });
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());

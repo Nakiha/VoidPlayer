@@ -8,6 +8,9 @@ class WindowManager {
 
   static final Map<String, String> _windowIds = {};
 
+  /// Accent color set by the main window, passed to all secondary windows.
+  static int accentColorValue = 0xFF0078D4;
+
   static Future<void> _showWindow(String type) async {
     final existing = _windowIds[type];
     if (existing != null) {
@@ -26,6 +29,7 @@ class WindowManager {
       arguments: jsonEncode({
         'type': type,
         'mainWindowId': mainCtrl.windowId,
+        'accentColor': accentColorValue,
       }),
       hiddenAtLaunch: false,
     ));

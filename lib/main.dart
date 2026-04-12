@@ -2,12 +2,13 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:window_manager/window_manager.dart' hide WindowManager;
 import 'l10n/app_localizations.dart';
 import 'app_log.dart';
 import 'config/app_config.dart';
 import 'actions/action_registry.dart';
 import 'windows/window_args.dart';
+import 'windows/window_manager.dart';
 import 'windows/main_window.dart';
 import 'windows/stats_window.dart';
 import 'windows/memory_window.dart';
@@ -75,10 +76,11 @@ void main(List<String> args) async {
         effect: WindowEffect.mica,
         color: const Color(0xCC222222),
       );
+      final accentColor = windowArgs.accentColor;
       final app = switch (windowArgs.windowType) {
-        WindowArgs.stats => const StatsApp(),
-        WindowArgs.memory => const MemoryApp(),
-        WindowArgs.settings => const SettingsApp(),
+        WindowArgs.stats => StatsApp(accentColor: accentColor),
+        WindowArgs.memory => MemoryApp(accentColor: accentColor),
+        WindowArgs.settings => SettingsApp(accentColor: accentColor),
         _ => throw StateError('unreachable'),
       };
       runApp(app);
@@ -114,6 +116,7 @@ void main(List<String> args) async {
       await windowManager.show();
 
       final accentColor = await getWindowsAccentColor();
+      WindowManager.accentColorValue = accentColor.toARGB32();
       log.info('Application starting (main window)');
       runApp(MyApp(accentColor: accentColor, testScriptPath: testScriptPath));
   }

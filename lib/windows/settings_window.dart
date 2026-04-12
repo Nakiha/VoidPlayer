@@ -5,7 +5,8 @@ import '../l10n/app_localizations.dart';
 
 /// Settings window (secondary window, NavigationRail: Shortcuts | About).
 class SettingsApp extends StatelessWidget {
-  const SettingsApp({super.key});
+  final Color accentColor;
+  const SettingsApp({super.key, required this.accentColor});
 
   @override
   Widget build(BuildContext context) {
@@ -15,7 +16,7 @@ class SettingsApp extends StatelessWidget {
       supportedLocales: AppLocalizations.supportedLocales,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0078D4),
+          seedColor: accentColor,
           brightness: Brightness.dark,
         ),
       ),
@@ -81,39 +82,76 @@ class _ShortcutsPage extends StatelessWidget {
     final theme = Theme.of(context);
     final l = AppLocalizations.of(context)!;
 
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(l.keyboardShortcuts, style: theme.textTheme.titleMedium),
-          const SizedBox(height: 16),
-          Expanded(
-            child: DataTable(
-              headingTextStyle: theme.textTheme.labelSmall,
-              dataTextStyle: theme.textTheme.bodySmall,
-              columns: [
-                DataColumn(label: Text(l.action)),
-                DataColumn(label: Text(l.shortcut)),
-              ],
-              rows: PlayerAction.shortcutEntries.map((e) => DataRow(cells: [
-                    DataCell(Text(resolveActionLabel(e.labelKey, l))),
-                    DataCell(Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(4),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: Text(l.keyboardShortcuts, style: theme.textTheme.titleMedium),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(8, 0, 16, 16),
+            child: Table(
+              columnWidths: const {
+                0: FlexColumnWidth(),
+                1: IntrinsicColumnWidth(),
+              },
+              defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+              children: [
+                // Header
+                TableRow(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(l.action,
+                          style: theme.textTheme.labelSmall),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(l.shortcut,
+                          style: theme.textTheme.labelSmall),
+                    ),
+                  ],
+                ),
+                // Divider
+                TableRow(children: [
+                  Divider(height: 1, color: theme.dividerColor),
+                  Divider(height: 1, color: theme.dividerColor),
+                ]),
+                // Data rows
+                ...PlayerAction.shortcutEntries.map((e) => TableRow(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      child: Text(resolveActionLabel(e.labelKey, l),
+                          style: theme.textTheme.bodySmall),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(e.shortcutLabel,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                                  fontFamily: 'monospace',
+                                )),
                       ),
-                      child: Text(e.shortcutLabel,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                                fontFamily: 'monospace',
-                              )),
-                    )),
-                  ])).toList(),
+                    ),
+                  ],
+                )),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

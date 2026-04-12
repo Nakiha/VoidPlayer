@@ -5,8 +5,9 @@ import 'dart:ui';
 class WindowArgs {
   final String windowType;
   final int? _accentColorValue;
+  final String? hash;
 
-  const WindowArgs._({required this.windowType, int? accentColorValue})
+  const WindowArgs._({required this.windowType, int? accentColorValue, this.hash})
       : _accentColorValue = accentColorValue;
 
   /// Window type constants
@@ -14,6 +15,7 @@ class WindowArgs {
   static const String stats = 'stats';
   static const String memory = 'memory';
   static const String settings = 'settings';
+  static const String analysis = 'analysis';
 
   /// The accent color passed from the main window, or fallback.
   Color get accentColor =>
@@ -31,7 +33,8 @@ class WindowArgs {
           final config = jsonDecode(args[i + 2]) as Map<String, dynamic>;
           final type = config['type'] as String? ?? WindowArgs.main;
           final accentColor = config['accentColor'] as int?;
-          return WindowArgs._(windowType: type, accentColorValue: accentColor);
+          final hash = config['hash'] as String?;
+          return WindowArgs._(windowType: type, accentColorValue: accentColor, hash: hash);
         } catch (_) {
           // Not valid JSON, continue looking
         }

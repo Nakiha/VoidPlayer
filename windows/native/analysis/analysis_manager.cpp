@@ -12,7 +12,11 @@ bool AnalysisManager::load(const std::string& vbs2_path,
                             const std::string& vbt_path) {
     unload();
 
-    if (!vbs2_.open(vbs2_path)) return false;
+    // VBS2 is optional (requires VTM decoder instrumentation)
+    if (!vbs2_path.empty()) {
+        vbs2_.open(vbs2_path);  // failure is OK
+    }
+
     if (!vbi_.open(vbi_path)) { vbs2_.close(); return false; }
     if (!vbt_.open(vbt_path)) { vbs2_.close(); vbi_.close(); return false; }
 

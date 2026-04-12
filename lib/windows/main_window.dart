@@ -14,6 +14,8 @@ import '../widgets/viewport_panel.dart';
 import '../widgets/controls_bar.dart';
 import '../widgets/media_header.dart';
 import '../widgets/timeline_area.dart';
+import '../widgets/analysis_panel.dart';
+import '../analysis/analysis_manager.dart';
 
 class MainWindow extends StatefulWidget {
   final String? testScriptPath;
@@ -144,6 +146,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     actionRegistry.bind(const OpenSettings(), (_) => WindowManager.showSettingsWindow());
     actionRegistry.bind(const OpenStats(), (_) => WindowManager.showStatsWindow());
     actionRegistry.bind(const OpenMemory(), (_) => WindowManager.showMemoryWindow());
+    actionRegistry.bind(const OpenAnalysis(), (_) => _triggerAnalysis());
   }
 
   void _togglePlayPause() async {
@@ -153,6 +156,16 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       await _controller.play();
     }
     setState(() => _isPlaying = !_isPlaying);
+  }
+
+  Future<void> _triggerAnalysis() async {
+    final mgr = AnalysisManager.instance;
+    for (final entry in _trackManager.entries) {
+      final hash = await mgr.ensureAndLoad(entry.path);
+      if (hash != null) {
+        WindowManager.showAnalysisWindow(hash);
+      }
+    }
   }
 
   void _toggleLayoutMode() {
@@ -569,6 +582,11 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
                     ),
                   ),
                 ),
+              ),
+            // Analysis floating button (only when video is loaded)
+            if (_viewportState == 2)
+              AnalysisPanel(
+                onTriggerAnalysis: _triggerAnalysis,
               ),
           ],
         ),

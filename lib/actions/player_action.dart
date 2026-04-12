@@ -79,6 +79,10 @@ class OpenMemory extends PlayerAction {
   const OpenMemory() : super('OPEN_MEMORY');
 }
 
+class OpenAnalysis extends PlayerAction {
+  const OpenAnalysis() : super('OPEN_ANALYSIS', LogicalKeyboardKey.keyA);
+}
+
 /// Add a media file by path (no file-picker dialog).
 class AddMedia extends PlayerAction {
   final String path;

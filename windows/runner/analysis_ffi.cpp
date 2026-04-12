@@ -1,6 +1,7 @@
 #include "analysis_ffi.h"
 #include "analysis/analysis_manager.h"
 
+#include <windows.h>
 #include <cstring>
 #include <algorithm>
 
@@ -109,4 +110,86 @@ void naki_analysis_set_overlay(const NakiOverlayState* state) {
     overlay.show_cu_grid = state->show_cu_grid != 0;
     overlay.show_pred_mode = state->show_pred_mode != 0;
     overlay.show_qp_heatmap = state->show_qp_heatmap != 0;
+}
+
+// ---- Analysis generation ----
+
+static std::string get_exe_dir() {
+    char exe_path[MAX_PATH];
+    GetModuleFileNameA(nullptr, exe_path, MAX_PATH);
+    std::string dir(exe_path);
+    auto last_sep = dir.find_last_of("\\/");
+    if (last_sep != std::string::npos) dir = dir.substr(0, last_sep);
+    return dir;
+}
+
+static int run_command(const std::string& cmd) {
+    STARTUPINFOA si = { sizeof(si) };
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi = {};
+
+    // CreateProcess needs a mutable command line
+    std::string cmdline = cmd;
+    if (!CreateProcessA(
+            nullptr, cmdline.data(),
+            nullptr, nullptr, FALSE,
+            CREATE_NO_WINDOW,
+            nullptr, nullptr, &si, &pi)) {
+        return -1;
+    }
+
+    WaitForSingleObject(pi.hProcess, INFINITE);
+
+    DWORD exit_code = 1;
+    GetExitCodeProcess(pi.hProcess, &exit_code);
+
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return static_cast<int>(exit_code);
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_generate(const char* video_path, const char* hash) {
+    std::string exe_dir = get_exe_dir();
+    std::string data_dir = exe_dir + "\\data";
+
+    // Ensure data directory exists
+    CreateDirectoryA(data_dir.c_str(), nullptr);
+
+    std::string vbi_out = data_dir + "\\" + hash + ".vbi";
+    std::string vbt_out = data_dir + "\\" + hash + ".vbt";
+
+    // Locate Python tools next to the exe
+    std::string indexer = exe_dir + "\\tools\\vvc_nalu_indexer.py";
+    std::string extractor = exe_dir + "\\tools\\vvc_timestamp_extractor.py";
+
+    // Check tools exist
+    if (GetFileAttributesA(indexer.c_str()) == INVALID_FILE_ATTRIBUTES ||
+        GetFileAttributesA(extractor.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        return 0;
+    }
+
+    // Run NALU indexer: python3 tools/vvc_nalu_indexer.py <video> -o <output>
+    std::string cmd1 = "python3 \"" + indexer + "\" \"" + std::string(video_path) + "\" -o \"" + vbi_out + "\"";
+    if (run_command(cmd1) != 0) {
+        // Try python (Windows may not have python3 alias)
+        cmd1 = "python \"" + indexer + "\" \"" + std::string(video_path) + "\" -o \"" + vbi_out + "\"";
+        if (run_command(cmd1) != 0) return 0;
+    }
+
+    // Run timestamp extractor: python3 tools/vvc_timestamp_extractor.py <video> -o <output>
+    std::string cmd2 = "python3 \"" + extractor + "\" \"" + std::string(video_path) + "\" -o \"" + vbt_out + "\"";
+    if (run_command(cmd2) != 0) {
+        cmd2 = "python \"" + extractor + "\" \"" + std::string(video_path) + "\" -o \"" + vbt_out + "\"";
+        if (run_command(cmd2) != 0) return 0;
+    }
+
+    // Verify outputs exist
+    if (GetFileAttributesA(vbi_out.c_str()) == INVALID_FILE_ATTRIBUTES ||
+        GetFileAttributesA(vbt_out.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        return 0;
+    }
+
+    return 1;
 }

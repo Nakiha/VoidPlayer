@@ -111,6 +111,9 @@ typedef _GetNalusDart = int Function(Pointer<NakiNaluInfo>, int);
 typedef _SetOverlayNative = Void Function(Pointer<NakiOverlayState>);
 typedef _SetOverlayDart = void Function(Pointer<NakiOverlayState>);
 
+typedef _GenerateNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef _GenerateDart = int Function(Pointer<Utf8>, Pointer<Utf8>);
+
 // ===========================================================================
 // Native symbol lookup
 // ===========================================================================
@@ -127,6 +130,8 @@ final _getNalus =
     _dl.lookupFunction<_GetNalusNative, _GetNalusDart>('naki_analysis_get_nalus');
 final _setOverlay =
     _dl.lookupFunction<_SetOverlayNative, _SetOverlayDart>('naki_analysis_set_overlay');
+final _generate =
+    _dl.lookupFunction<_GenerateNative, _GenerateDart>('naki_analysis_generate');
 
 // ===========================================================================
 // High-level API
@@ -196,6 +201,21 @@ class AnalysisFfi {
       _setOverlay(state);
     } finally {
       calloc.free(state);
+    }
+  }
+
+  /// Generate analysis files (VBI + VBT) for a video.
+  /// [videoPath] is the source video file.
+  /// [hash] is used as the base name for output files (data/{hash}.vbi etc.)
+  /// Returns true on success.
+  static bool generateAnalysis(String videoPath, String hash) {
+    final video = videoPath.toNativeUtf8(allocator: calloc);
+    final hashStr = hash.toNativeUtf8(allocator: calloc);
+    try {
+      return _generate(video, hashStr) != 0;
+    } finally {
+      calloc.free(video);
+      calloc.free(hashStr);
     }
   }
 }

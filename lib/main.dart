@@ -13,6 +13,7 @@ import 'windows/main_window.dart';
 import 'windows/stats_window.dart';
 import 'windows/memory_window.dart';
 import 'windows/settings_window.dart';
+import 'windows/analysis_window.dart';
 
 Future<Color> getWindowsAccentColor() async {
   try {
@@ -71,6 +72,7 @@ void main(List<String> args) async {
     case WindowArgs.stats:
     case WindowArgs.memory:
     case WindowArgs.settings:
+    case WindowArgs.analysis:
       await Window.initialize();
       await Window.setEffect(
         effect: WindowEffect.mica,
@@ -81,6 +83,7 @@ void main(List<String> args) async {
         WindowArgs.stats => StatsApp(accentColor: accentColor),
         WindowArgs.memory => MemoryApp(accentColor: accentColor),
         WindowArgs.settings => SettingsApp(accentColor: accentColor),
+        WindowArgs.analysis => AnalysisApp(accentColor: accentColor, hash: windowArgs.hash!),
         _ => throw StateError('unreachable'),
       };
       runApp(app);

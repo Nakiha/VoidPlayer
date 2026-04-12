@@ -32,6 +32,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   // Renderer state
   int? _textureId;
   int _viewportState = 1; // 0=loading, 1=empty, 2=active
+  bool _analysisToolbarVisible = false;
   bool _isPlaying = false;
   int _currentPtsUs = 0;
   int _durationUs = 0;
@@ -146,7 +147,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     actionRegistry.bind(const OpenSettings(), (_) => WindowManager.showSettingsWindow());
     actionRegistry.bind(const OpenStats(), (_) => WindowManager.showStatsWindow());
     actionRegistry.bind(const OpenMemory(), (_) => WindowManager.showMemoryWindow());
-    actionRegistry.bind(const OpenAnalysis(), (_) => _triggerAnalysis());
+    actionRegistry.bind(const OpenAnalysis(), (_) => _toggleAnalysisToolbar());
   }
 
   void _togglePlayPause() async {
@@ -166,6 +167,10 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
         WindowManager.showAnalysisWindow(hash);
       }
     }
+  }
+
+  void _toggleAnalysisToolbar() {
+    setState(() => _analysisToolbarVisible = !_analysisToolbarVisible);
   }
 
   void _toggleLayoutMode() {
@@ -583,9 +588,11 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
                   ),
                 ),
               ),
-            // Analysis floating button (only when video is loaded)
+            // Analysis floating toolbar (only when video is loaded)
             if (_viewportState == 2)
-              AnalysisPanel(
+              AnalysisToolbar(
+                visible: _analysisToolbarVisible,
+                onHide: () => setState(() => _analysisToolbarVisible = false),
                 onTriggerAnalysis: _triggerAnalysis,
               ),
           ],

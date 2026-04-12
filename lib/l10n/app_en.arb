@@ -155,5 +155,65 @@
   "@actionSeekForward": { "description": "Shortcut action label" },
 
   "actionSeekBackward": "Seek Backward (-1s)",
-  "@actionSeekBackward": { "description": "Shortcut action label" }
+  "@actionSeekBackward": { "description": "Shortcut action label" },
+
+  "actionOpenAnalysis": "Toggle Analysis Toolbar",
+  "@actionOpenAnalysis": { "description": "Shortcut action label" },
+
+  "analysisClickToAnalyze": "Click to analyze",
+  "@analysisClickToAnalyze": { "description": "Analysis toolbar tooltip when idle" },
+
+  "analysisGeneratingFor": "Generating report for {name}...",
+  "@analysisGeneratingFor": { "description": "Analysis toolbar tooltip when generating", "placeholders": { "name": { "type": "String" } } },
+
+  "analysisErrorUnknown": "Unknown error",
+  "@analysisErrorUnknown": { "description": "Analysis toolbar tooltip on unknown error" },
+
+  "analysisTitle": "Void Player - Bitstream Analysis",
+  "@analysisTitle": { "description": "Analysis window title" },
+
+  "analysisRefPyramid": "Reference Pyramid",
+  "@analysisRefPyramid": { "description": "Tab label for reference pyramid" },
+
+  "analysisFrameTrend": "Frame Trend",
+  "@analysisFrameTrend": { "description": "Tab label for frame trend chart" },
+
+  "analysisNaluBrowser": "NALU Browser",
+  "@analysisNaluBrowser": { "description": "NALU browser section" },
+
+  "analysisNaluDetail": "NALU Detail",
+  "@analysisNaluDetail": { "description": "NALU detail section" },
+
+  "analysisPtsOrder": "PTS Order",
+  "@analysisPtsOrder": { "description": "PTS order toggle label" },
+
+  "analysisDtsOrder": "DTS Order",
+  "@analysisDtsOrder": { "description": "DTS order toggle label" },
+
+  "analysisNoFrameData": "No frame data",
+  "@analysisNoFrameData": { "description": "Empty state for frame panels" },
+
+  "analysisNoNaluData": "No NALU data",
+  "@analysisNoNaluData": { "description": "Empty state for NALU browser" },
+
+  "analysisSelectNalu": "Select a NALU",
+  "@analysisSelectNalu": { "description": "Empty state for NALU detail" },
+
+  "analysisType": "Type",
+  "@analysisType": { "description": "NALU detail field label" },
+
+  "analysisTemporalId": "Temporal ID",
+  "@analysisTemporalId": { "description": "NALU detail field label" },
+
+  "analysisLayerId": "Layer ID",
+  "@analysisLayerId": { "description": "NALU detail field label" },
+
+  "analysisOffset": "Offset",
+  "@analysisOffset": { "description": "NALU detail field label" },
+
+  "analysisSize": "Size",
+  "@analysisSize": { "description": "NALU detail field label" },
+
+  "analysisBytes": "{count} bytes",
+  "@analysisBytes": { "description": "Size in bytes", "placeholders": { "count": { "type": "int" } } }
 }

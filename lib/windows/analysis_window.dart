@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../analysis/analysis_cache.dart';
 import '../analysis/analysis_ffi.dart';
 import '../analysis/nalu_types.dart';
+import '../l10n/app_localizations.dart';
 
 // ===========================================================================
 // Analysis Window — secondary Flutter window for bitstream visualization
@@ -24,6 +25,8 @@ class AnalysisApp extends StatelessWidget {
         colorSchemeSeed: accentColor,
         useMaterial3: true,
       ),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AnalysisPage(hash: hash),
     );
   }
@@ -114,6 +117,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l = AppLocalizations.of(context)!;
     return Scaffold(
       body: Column(
         children: [
@@ -130,12 +134,14 @@ class _AnalysisPageState extends State<AnalysisPage> {
                 _OrderToggle(
                   ptsOrder: _ptsOrder,
                   onChanged: (v) => setState(() => _ptsOrder = v),
+                  l: l,
                 ),
                 const Spacer(),
                 // Tab bar
                 _TabBar(
                   selectedTab: _selectedTab,
                   onTabChanged: (i) => setState(() => _selectedTab = i),
+                  l: l,
                 ),
               ],
             ),
@@ -145,9 +151,15 @@ class _AnalysisPageState extends State<AnalysisPage> {
             flex: 4,
             child: _selectedTab == 0
                 ? _ReferencePyramidView(
-                    frames: _sortedFrames, currentIdx: _summary?.currentFrameIdx ?? -1)
+                    frames: _sortedFrames,
+                    currentIdx: _summary?.currentFrameIdx ?? -1,
+                    l: l,
+                  )
                 : _FrameTrendView(
-                    frames: _sortedFrames, currentIdx: _summary?.currentFrameIdx ?? -1),
+                    frames: _sortedFrames,
+                    currentIdx: _summary?.currentFrameIdx ?? -1,
+                    l: l,
+                  ),
           ),
           const Divider(height: 1),
           // Bottom: NALU browser + detail (60%)
@@ -162,6 +174,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                     nalus: _nalus,
                     selectedIdx: _selectedNaluIdx,
                     onSelected: (i) => setState(() => _selectedNaluIdx = i),
+                    l: l,
                   ),
                 ),
                 const VerticalDivider(width: 1),
@@ -173,6 +186,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                         ? _nalus[_selectedNaluIdx!]
                         : null,
                     frames: _frames,
+                    l: l,
                   ),
                 ),
               ],
@@ -191,18 +205,19 @@ class _AnalysisPageState extends State<AnalysisPage> {
 class _OrderToggle extends StatelessWidget {
   final bool ptsOrder;
   final ValueChanged<bool> onChanged;
-  const _OrderToggle({required this.ptsOrder, required this.onChanged});
+  final AppLocalizations l;
+  const _OrderToggle({required this.ptsOrder, required this.onChanged, required this.l});
 
   @override
   Widget build(BuildContext context) {
     return SegmentedButton<bool>(
-      segments: const [
-        ButtonSegment(value: true, label: Text('PTS')),
-        ButtonSegment(value: false, label: Text('DTS')),
+      segments: [
+        ButtonSegment(value: true, label: Text(l.analysisPtsOrder)),
+        ButtonSegment(value: false, label: Text(l.analysisDtsOrder)),
       ],
       selected: {ptsOrder},
       onSelectionChanged: (s) => onChanged(s.first),
-      style: ButtonStyle(
+      style: const ButtonStyle(
         visualDensity: VisualDensity.compact,
         textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
       ),
@@ -213,18 +228,19 @@ class _OrderToggle extends StatelessWidget {
 class _TabBar extends StatelessWidget {
   final int selectedTab;
   final ValueChanged<int> onTabChanged;
-  const _TabBar({required this.selectedTab, required this.onTabChanged});
+  final AppLocalizations l;
+  const _TabBar({required this.selectedTab, required this.onTabChanged, required this.l});
 
   @override
   Widget build(BuildContext context) {
     return SegmentedButton<int>(
-      segments: const [
-        ButtonSegment(value: 0, label: Text('Ref Pyramid')),
-        ButtonSegment(value: 1, label: Text('Frame Trend')),
+      segments: [
+        ButtonSegment(value: 0, label: Text(l.analysisRefPyramid)),
+        ButtonSegment(value: 1, label: Text(l.analysisFrameTrend)),
       ],
       selected: {selectedTab},
       onSelectionChanged: (s) => onTabChanged(s.first),
-      style: ButtonStyle(
+      style: const ButtonStyle(
         visualDensity: VisualDensity.compact,
         textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
       ),
@@ -233,18 +249,19 @@ class _TabBar extends StatelessWidget {
 }
 
 // ===========================================================================
-// Reference Pyramid (placeholder — CustomPainter in next step)
+// Reference Pyramid
 // ===========================================================================
 
 class _ReferencePyramidView extends StatelessWidget {
   final List<NakiFrameInfo> frames;
   final int currentIdx;
-  const _ReferencePyramidView({required this.frames, required this.currentIdx});
+  final AppLocalizations l;
+  const _ReferencePyramidView({required this.frames, required this.currentIdx, required this.l});
 
   @override
   Widget build(BuildContext context) {
     if (frames.isEmpty) {
-      return const Center(child: Text('No frame data'));
+      return Center(child: Text(l.analysisNoFrameData));
     }
     return CustomPaint(
       painter: _RefPyramidPainter(frames: frames, currentIdx: currentIdx),
@@ -273,7 +290,6 @@ class _RefPyramidPainter extends CustomPainter {
       final x = i * barW;
       final tid = f.temporalId.clamp(0, maxTid);
 
-      // Color by slice type: I=red, P=blue, B=green
       paint.color = switch (f.sliceType) {
         2 => f.keyframe == 1 ? const Color(0xFFFF5252) : const Color(0xFFE53935),
         1 => const Color(0xFF42A5F5),
@@ -284,7 +300,6 @@ class _RefPyramidPainter extends CustomPainter {
       final h = rowH - 1;
       canvas.drawRect(Rect.fromLTWH(x, y, barW - 1, h), paint);
 
-      // Current frame cursor
       if (i == currentIdx) {
         final cursorPaint = Paint()
           ..color = const Color(0xFFFFFFFF)
@@ -304,18 +319,19 @@ class _RefPyramidPainter extends CustomPainter {
 }
 
 // ===========================================================================
-// Frame Trend (placeholder — CustomPainter in next step)
+// Frame Trend
 // ===========================================================================
 
 class _FrameTrendView extends StatelessWidget {
   final List<NakiFrameInfo> frames;
   final int currentIdx;
-  const _FrameTrendView({required this.frames, required this.currentIdx});
+  final AppLocalizations l;
+  const _FrameTrendView({required this.frames, required this.currentIdx, required this.l});
 
   @override
   Widget build(BuildContext context) {
     if (frames.isEmpty) {
-      return const Center(child: Text('No frame data'));
+      return Center(child: Text(l.analysisNoFrameData));
     }
     return CustomPaint(
       painter: _FrameTrendPainter(frames: frames, currentIdx: currentIdx),
@@ -335,11 +351,10 @@ class _FrameTrendPainter extends CustomPainter {
     if (frames.isEmpty) return;
 
     final barW = (size.width / frames.length).clamp(2.0, 20.0);
-    final upperH = size.height * 0.6; // packet size
-    final lowerH = size.height * 0.35; // QP
+    final upperH = size.height * 0.6;
+    final lowerH = size.height * 0.35;
     final gap = size.height * 0.05;
 
-    // Find max packet size for scaling
     int maxPacketSize = 1;
     for (final f in frames) {
       if (f.packetSize > maxPacketSize) maxPacketSize = f.packetSize;
@@ -351,7 +366,6 @@ class _FrameTrendPainter extends CustomPainter {
       ..strokeWidth = 1.5
       ..color = const Color(0xFFFFB74D);
 
-    // Draw packet size bars
     for (var i = 0; i < frames.length; i++) {
       final f = frames[i];
       final x = i * barW;
@@ -361,22 +375,14 @@ class _FrameTrendPainter extends CustomPainter {
           ? const Color(0xFFFF5252)
           : const Color(0xFF42A5F5);
 
-      canvas.drawRect(
-        Rect.fromLTWH(x, upperH - h, barW - 1, h),
-        barPaint,
-      );
+      canvas.drawRect(Rect.fromLTWH(x, upperH - h, barW - 1, h), barPaint);
 
-      // Keyframe marker
       if (f.keyframe == 1) {
         final markerPaint = Paint()..color = const Color(0xFFFFD54F);
-        canvas.drawRect(
-          Rect.fromLTWH(x, upperH - h - 3, barW - 1, 2),
-          markerPaint,
-        );
+        canvas.drawRect(Rect.fromLTWH(x, upperH - h - 3, barW - 1, 2), markerPaint);
       }
     }
 
-    // Draw QP line
     final qpPath = Path();
     for (var i = 0; i < frames.length; i++) {
       final f = frames[i];
@@ -390,7 +396,6 @@ class _FrameTrendPainter extends CustomPainter {
     }
     canvas.drawPath(qpPath, qpPaint);
 
-    // Current frame cursor
     if (currentIdx >= 0 && currentIdx < frames.length) {
       final cx = currentIdx * barW + barW / 2;
       final cursorPaint = Paint()
@@ -413,17 +418,19 @@ class _NaluBrowserView extends StatelessWidget {
   final List<NakiNaluInfo> nalus;
   final int? selectedIdx;
   final ValueChanged<int> onSelected;
+  final AppLocalizations l;
 
   const _NaluBrowserView({
     required this.nalus,
     required this.selectedIdx,
     required this.onSelected,
+    required this.l,
   });
 
   @override
   Widget build(BuildContext context) {
     if (nalus.isEmpty) {
-      return const Center(child: Text('No NALU data'));
+      return Center(child: Text(l.analysisNoNaluData));
     }
     return LayoutBuilder(builder: (context, constraints) {
       return CustomPaint(
@@ -453,7 +460,6 @@ class _NaluBrowserPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (nalus.isEmpty) return;
 
-    // Find max size for scaling
     int maxSize = 1;
     for (final n in nalus) {
       if (n.size > maxSize) maxSize = n.size;
@@ -463,12 +469,11 @@ class _NaluBrowserPainter extends CustomPainter {
     const rowH = 20.0;
     double x = 0;
     double y = 2;
-    final minBlockW = 3.0;
-    final maxBlockW = 80.0;
+    const minBlockW = 3.0;
+    const maxBlockW = 80.0;
 
     for (var i = 0; i < nalus.length; i++) {
       final n = nalus[i];
-      // Logarithmic scale for width
       final logScale = (n.size / maxSize);
       final blockW = (minBlockW + logScale * (maxBlockW - minBlockW)).clamp(minBlockW, maxBlockW);
 
@@ -478,13 +483,11 @@ class _NaluBrowserPainter extends CustomPainter {
         if (y + rowH > size.height) break;
       }
 
-      // Color by NAL type
       paint.color = Color(naluTypeColor(n.nalType));
 
       final rect = Rect.fromLTWH(x, y, blockW, rowH);
       canvas.drawRect(rect, paint);
 
-      // Selected highlight
       if (i == selectedIdx) {
         final borderPaint = Paint()
           ..style = PaintingStyle.stroke
@@ -493,7 +496,6 @@ class _NaluBrowserPainter extends CustomPainter {
         canvas.drawRect(rect, borderPaint);
       }
 
-      // Keyframe border
       if (n.flags & 0x04 != 0) {
         final kfPaint = Paint()
           ..style = PaintingStyle.stroke
@@ -518,24 +520,25 @@ class _NaluBrowserPainter extends CustomPainter {
 class _NaluDetailView extends StatelessWidget {
   final NakiNaluInfo? nalu;
   final List<NakiFrameInfo> frames;
+  final AppLocalizations l;
 
-  const _NaluDetailView({required this.nalu, required this.frames});
+  const _NaluDetailView({required this.nalu, required this.frames, required this.l});
 
   @override
   Widget build(BuildContext context) {
     if (nalu == null) {
-      return const Center(child: Text('Select a NALU'));
+      return Center(child: Text(l.analysisSelectNalu));
     }
     final n = nalu!;
     final theme = Theme.of(context);
     final ts = theme.textTheme.bodySmall!;
 
     final items = <_DetailRow>[
-      _DetailRow('Type', '${h266NaluTypeName(n.nalType)} (${n.nalType})'),
-      _DetailRow('Temporal ID', '${n.temporalId}'),
-      _DetailRow('Layer ID', '${n.layerId}'),
-      _DetailRow('Offset', '${n.offset}'),
-      _DetailRow('Size', '${n.size} bytes'),
+      _DetailRow(l.analysisType, '${h266NaluTypeName(n.nalType)} (${n.nalType})'),
+      _DetailRow(l.analysisTemporalId, '${n.temporalId}'),
+      _DetailRow(l.analysisLayerId, '${n.layerId}'),
+      _DetailRow(l.analysisOffset, '${n.offset}'),
+      _DetailRow(l.analysisSize, l.analysisBytes(n.size)),
       _DetailRow('VCL', '${(n.flags & 0x01) != 0}'),
       _DetailRow('Slice', '${(n.flags & 0x02) != 0}'),
       _DetailRow('Keyframe', '${(n.flags & 0x04) != 0}'),
@@ -546,7 +549,7 @@ class _NaluDetailView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('NALU Detail', style: theme.textTheme.titleSmall),
+          Text(l.analysisNaluDetail, style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
           ...items.map((r) => Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),

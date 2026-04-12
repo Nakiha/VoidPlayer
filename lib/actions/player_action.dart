@@ -7,7 +7,8 @@ typedef ShortcutEntry = ({String labelKey, String shortcutLabel});
 sealed class PlayerAction {
   final String name;
   final LogicalKeyboardKey? shortcut;
-  const PlayerAction(this.name, [this.shortcut]);
+  final bool requireControl;
+  const PlayerAction(this.name, [this.shortcut, this.requireControl = false]);
 
   /// All keyboard shortcuts for display in the settings UI.
   ///
@@ -80,7 +81,7 @@ class OpenMemory extends PlayerAction {
 }
 
 class OpenAnalysis extends PlayerAction {
-  const OpenAnalysis() : super('OPEN_ANALYSIS', LogicalKeyboardKey.keyA);
+  const OpenAnalysis() : super('OPEN_ANALYSIS', LogicalKeyboardKey.backquote, true);
 }
 
 /// Add a media file by path (no file-picker dialog).

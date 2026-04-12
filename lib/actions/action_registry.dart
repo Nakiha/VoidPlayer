@@ -19,6 +19,7 @@ class ActionRegistry {
   final Map<String, PlayerAction> _actions = {};
   final Map<String, ActionCallback> _callbacks = {};
   final Map<LogicalKeyboardKey, String> _keyMap = {};
+  final Set<LogicalKeyboardKey> _requireControl = {};
 
   /// Bind an action with its callback.
   ///
@@ -29,6 +30,9 @@ class ActionRegistry {
     _callbacks[action.name] = callback;
     if (action.shortcut != null) {
       _keyMap[action.shortcut!] = action.name;
+      if (action.requireControl) {
+        _requireControl.add(action.shortcut!);
+      }
     }
   }
 
@@ -39,6 +43,7 @@ class ActionRegistry {
     final action = _actions.remove(name);
     if (action?.shortcut != null) {
       _keyMap.remove(action!.shortcut);
+      _requireControl.remove(action!.shortcut);
     }
     _callbacks.remove(name);
   }
@@ -71,6 +76,11 @@ class ActionRegistry {
 
     final actionName = _keyMap[event.logicalKey];
     if (actionName == null) return KeyEventResult.ignored;
+
+    // Check if this action requires Ctrl to be held
+    final needsCtrl = _requireControl.contains(event.logicalKey);
+    final ctrlHeld = HardwareKeyboard.instance.isControlPressed;
+    if (needsCtrl != ctrlHeld) return KeyEventResult.ignored;
 
     final callback = _callbacks[actionName];
     if (callback == null) return KeyEventResult.ignored;

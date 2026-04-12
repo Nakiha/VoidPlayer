@@ -61,5 +61,27 @@
   "actionOpenFile": "打开文件",
   "actionToggleLayout": "切换布局模式",
   "actionSeekForward": "快进 (+1s)",
-  "actionSeekBackward": "快退 (-1s)"
+  "actionSeekBackward": "快退 (-1s)",
+
+  "actionOpenAnalysis": "切换分析工具栏",
+
+  "analysisClickToAnalyze": "点击以分析",
+  "analysisGeneratingFor": "正在为 {name} 生成分析报告...",
+  "analysisErrorUnknown": "未知错误",
+  "analysisTitle": "Void Player - 码流分析",
+  "analysisRefPyramid": "参考金字塔",
+  "analysisFrameTrend": "帧趋势",
+  "analysisNaluBrowser": "NALU 浏览器",
+  "analysisNaluDetail": "NALU 详情",
+  "analysisPtsOrder": "PTS 序",
+  "analysisDtsOrder": "DTS 序",
+  "analysisNoFrameData": "无帧数据",
+  "analysisNoNaluData": "无 NALU 数据",
+  "analysisSelectNalu": "选择一个 NALU",
+  "analysisType": "类型",
+  "analysisTemporalId": "时间层 ID",
+  "analysisLayerId": "空间层 ID",
+  "analysisOffset": "偏移",
+  "analysisSize": "大小",
+  "analysisBytes": "{count} 字节"
 }

@@ -1,39 +1,71 @@
 import 'package:flutter/material.dart';
 import '../analysis/analysis_manager.dart';
+import '../l10n/app_localizations.dart';
 
-/// Floating analysis button on the viewport.
+/// Figma-style floating toolbar, toggled with Ctrl+`.
 ///
-/// Three visual states:
-/// - **idle**: 36x36 circle icon button (analytics icon) — click triggers analysis
-/// - **generating**: 36x36 circular progress indicator, not clickable; hover shows tooltip
-/// - **error**: 36x36 red exclamation icon — hover shows error message; click to retry
-class AnalysisPanel extends StatefulWidget {
+/// Appears as a rounded rectangle with a hide button on the left and
+/// tool buttons on the right. Currently has only the analysis button.
+class AnalysisToolbar extends StatefulWidget {
+  /// Whether the toolbar is currently visible.
+  final bool visible;
+
+  /// Called when the user wants to hide the toolbar.
+  final VoidCallback onHide;
+
   /// Called when the user triggers analysis for all current tracks.
-  /// The callback should iterate tracks, call AnalysisManager.ensureAndLoad for each,
-  /// and open analysis windows for successful ones.
   final Future<void> Function() onTriggerAnalysis;
 
-  const AnalysisPanel({
+  const AnalysisToolbar({
     super.key,
+    required this.visible,
+    required this.onHide,
     required this.onTriggerAnalysis,
   });
 
   @override
-  State<AnalysisPanel> createState() => _AnalysisPanelState();
+  State<AnalysisToolbar> createState() => _AnalysisToolbarState();
 }
 
-class _AnalysisPanelState extends State<AnalysisPanel> {
-  bool _hovering = false;
+class _AnalysisToolbarState extends State<AnalysisToolbar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<Offset> _offset;
 
   @override
   void initState() {
     super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+    _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _offset = Tween<Offset>(
+      begin: const Offset(0, -0.3),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+
     AnalysisManager.instance.addListener(_onStateChanged);
+    if (widget.visible) _controller.value = 1.0;
+  }
+
+  @override
+  void didUpdateWidget(covariant AnalysisToolbar old) {
+    super.didUpdateWidget(old);
+    if (widget.visible != old.visible) {
+      if (widget.visible) {
+        _controller.forward();
+      } else {
+        _controller.reverse();
+      }
+    }
   }
 
   @override
   void dispose() {
     AnalysisManager.instance.removeListener(_onStateChanged);
+    _controller.dispose();
     super.dispose();
   }
 
@@ -43,104 +75,133 @@ class _AnalysisPanelState extends State<AnalysisPanel> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_controller.isAnimating && !widget.visible && _controller.isDismissed) {
+      return const SizedBox.shrink();
+    }
+
+    final theme = Theme.of(context);
     final mgr = AnalysisManager.instance;
     final isWorking = mgr.state == AnalysisState.computingHash ||
         mgr.state == AnalysisState.generating ||
         mgr.state == AnalysisState.loading;
     final isError = mgr.state == AnalysisState.error;
 
-    return Positioned(
-      right: 8,
-      top: 8,
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovering = true),
-        onExit: (_) => setState(() => _hovering = false),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            // Tooltip on hover
-            if (_hovering) _buildTooltip(context, mgr, isWorking, isError),
-            const SizedBox(height: 4),
-            // The button itself
-            _buildButton(context, isWorking, isError),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildButton(BuildContext context, bool isWorking, bool isError) {
-    final theme = Theme.of(context);
-    const size = 36.0;
-
-    if (isWorking) {
-      return SizedBox(
-        width: size,
-        height: size,
-        child: CircularProgressIndicator(
-          strokeWidth: 2.5,
-          color: theme.colorScheme.primary,
-        ),
-      );
-    }
-
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Material(
-        elevation: 2,
-        borderRadius: BorderRadius.circular(size / 2),
-        color: isError
-            ? theme.colorScheme.errorContainer
-            : theme.colorScheme.surfaceContainerHigh.withValues(alpha: 0.9),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(size / 2),
-          onTap: isWorking ? null : _onTap,
-          child: Icon(
-            isError ? Icons.error_outline : Icons.analytics_outlined,
-            size: 18,
-            color: isError
-                ? theme.colorScheme.onErrorContainer
-                : theme.colorScheme.onSurfaceVariant,
+    return FadeTransition(
+      opacity: _opacity,
+      child: SlideTransition(
+        position: _offset,
+        child: Positioned(
+          right: 8,
+          top: 8,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            color: theme.colorScheme.surfaceContainerHigh.withValues(alpha: 0.92),
+            child: Tooltip(
+              message: _tooltipText(context, mgr, isWorking, isError),
+              preferBelow: false,
+              waitDuration: const Duration(milliseconds: 400),
+              child: Container(
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Hide button
+                    SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: IconButton(
+                        onPressed: widget.onHide,
+                        icon: Icon(
+                          Icons.chevron_left,
+                          size: 18,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+                        tooltip: null,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    // Separator
+                    Container(width: 1, height: 20, color: theme.colorScheme.outlineVariant),
+                    const SizedBox(width: 4),
+                    // Analysis button
+                    _AnalysisButton(
+                      isWorking: isWorking,
+                      isError: isError,
+                      onTap: _onTap,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildTooltip(
-      BuildContext context, AnalysisManager mgr, bool isWorking, bool isError) {
-    final theme = Theme.of(context);
-    String text;
+  String _tooltipText(BuildContext context, AnalysisManager mgr, bool isWorking, bool isError) {
+    final l = AppLocalizations.of(context)!;
     if (isWorking) {
       final name = mgr.generatingFileName ?? '...';
-      text = 'Generating report for $name...';
+      return l.analysisGeneratingFor(name);
     } else if (isError) {
-      text = mgr.errorMessage ?? 'Unknown error';
+      return mgr.errorMessage ?? l.analysisErrorUnknown;
     } else {
-      text = 'Click to analyze';
+      return l.analysisClickToAnalyze;
     }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.inverseSurface.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      constraints: const BoxConstraints(maxWidth: 240),
-      child: Text(
-        text,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onInverseSurface,
-        ),
-        overflow: TextOverflow.ellipsis,
-        maxLines: 2,
-      ),
-    );
   }
 
   void _onTap() {
     widget.onTriggerAnalysis();
+  }
+}
+
+/// The analysis tool button inside the toolbar.
+/// Shows a progress indicator when generating, error icon on error.
+class _AnalysisButton extends StatelessWidget {
+  final bool isWorking;
+  final bool isError;
+  final VoidCallback onTap;
+
+  const _AnalysisButton({
+    required this.isWorking,
+    required this.isError,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    if (isWorking) {
+      return const SizedBox(
+        width: 28,
+        height: 28,
+        child: Padding(
+          padding: EdgeInsets.all(4),
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: 28,
+      height: 28,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: onTap,
+        child: Icon(
+          isError ? Icons.error_outline : Icons.analytics_outlined,
+          size: 18,
+          color: isError
+              ? theme.colorScheme.error
+              : theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
   }
 }

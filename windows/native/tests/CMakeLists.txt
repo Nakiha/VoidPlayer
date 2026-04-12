@@ -14,6 +14,7 @@ add_executable(video_renderer_tests
     test_d3d11_shader.cpp
     test_render_sink.cpp
     test_renderer_integration.cpp
+    test_analysis_parsers.cpp
 )
 
 set_target_properties(video_renderer_tests PROPERTIES
@@ -26,6 +27,7 @@ endif()
 
 target_link_libraries(video_renderer_tests PRIVATE
     video_renderer_lib
+    analysis_lib
     Catch2::Catch2WithMain
     spdlog::spdlog_header_only
 )

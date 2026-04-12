@@ -120,6 +120,7 @@ endif()
 
 enable_testing()
 add_subdirectory(video_renderer)
+add_subdirectory(analysis)
 
 if(BUILD_TESTS)
     add_subdirectory(tests)

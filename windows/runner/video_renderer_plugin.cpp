@@ -1,4 +1,5 @@
 #include "video_renderer_plugin.h"
+#include "analysis_ffi.h"
 
 #include "utils.h"
 #include <flutter_windows.h>
@@ -112,6 +113,11 @@ VideoRendererPlugin::VideoRendererPlugin(
 
     spdlog::info("[VideoRendererPlugin] Plugin constructed, native logging initialized: {}", config.file_path);
     spdlog::info("[VideoRendererPlugin] Crash handler installed (VEH + SEH), crash dir: {}", logs_dir_);
+
+    // Register PTS callback for analysis FFI (avoids analysis_ffi depending on Renderer)
+    naki_analysis_register_pts_callback([]() -> int64_t {
+        return g_global_renderer ? g_global_renderer->current_pts_us() : 0;
+    });
 }
 
 VideoRendererPlugin::~VideoRendererPlugin() {

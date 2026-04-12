@@ -12,6 +12,7 @@ add_executable(${BINARY_NAME} WIN32
   "utils.cpp"
   "win32_window.cpp"
   "video_renderer_plugin.cpp"
+  "analysis_ffi.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
   "Runner.rc"
   "runner.exe.manifest"
@@ -61,7 +62,15 @@ set(VR_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/sync/seek_controller.cpp"
 )
 
-target_sources(${BINARY_NAME} PRIVATE ${VR_SOURCES})
+# Analysis library sources
+set(ANALYSIS_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/parsers/vbt_parser.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/parsers/vbi_parser.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/parsers/vbs2_parser.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/analysis_manager.cpp"
+)
+
+target_sources(${BINARY_NAME} PRIVATE ${VR_SOURCES} ${ANALYSIS_SOURCES})
 
 target_include_directories(${BINARY_NAME} PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../native"

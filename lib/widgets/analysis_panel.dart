@@ -86,13 +86,13 @@ class _AnalysisToolbarState extends State<AnalysisToolbar>
         mgr.state == AnalysisState.loading;
     final isError = mgr.state == AnalysisState.error;
 
-    return FadeTransition(
-      opacity: _opacity,
-      child: SlideTransition(
-        position: _offset,
-        child: Positioned(
-          right: 8,
-          top: 8,
+    return Positioned(
+      right: 8,
+      top: 8,
+      child: FadeTransition(
+        opacity: _opacity,
+        child: SlideTransition(
+          position: _offset,
           child: Material(
             elevation: 4,
             borderRadius: BorderRadius.circular(8),

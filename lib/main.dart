@@ -7,6 +7,7 @@ import 'l10n/app_localizations.dart';
 import 'app_log.dart';
 import 'config/app_config.dart';
 import 'actions/action_registry.dart';
+import 'windows/win32ffi.dart';
 import 'windows/window_args.dart';
 import 'windows/window_manager.dart';
 import 'windows/main_window.dart';
@@ -41,14 +42,38 @@ bool _isRectOnScreen(Rect rect) {
   return false;
 }
 
-/// Handles the close button: saves window state then closes normally.
+/// Applies the initial position/size for a secondary window via FFI.
+///
+/// Must be called **before** `runApp()` so that Flutter's rendering surface
+/// is initialized at the correct size from the very first frame.
+void _applySecondaryWindowRect(WindowArgs windowArgs) {
+  final rect = windowArgs.initialRect;
+  if (rect == null) return;
+  final hwnd = Win32FFI.getForegroundWindow();
+  if (hwnd != 0) {
+    Win32FFI.moveWindow(
+      hwnd,
+      rect.left.toInt(),
+      rect.top.toInt(),
+      rect.width.toInt(),
+      rect.height.toInt(),
+    );
+  }
+}
+
+/// Handles the close button: saves all window state, closes secondary
+/// windows, then closes the main window.
 class _CloseHandler with WindowListener {
   @override
   void onWindowClose() async {
     windowManager.removeListener(this);
+    // Save main window rect.
     final bounds = await windowManager.getBounds();
     AppConfig.instance.windowRect = bounds;
     await AppConfig.instance.save();
+    // Close all secondary windows *before* closing the main window to
+    // prevent native crash (stack overflow in naki_analysis_unload).
+    await WindowManager.closeAllSecondaryWindows();
     await windowManager.setPreventClose(false);
     await windowManager.close();
   }
@@ -86,6 +111,8 @@ void main(List<String> args) async {
         WindowArgs.analysis => AnalysisApp(accentColor: accentColor, hash: windowArgs.hash!),
         _ => throw StateError('unreachable'),
       };
+      // Apply initial position/size before the first frame renders.
+      _applySecondaryWindowRect(windowArgs);
       runApp(app);
       break;
     default:

@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'dart:ui';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
+import '../config/app_config.dart';
+import 'win32ffi.dart';
 import 'window_args.dart';
 
-/// Manages secondary window lifecycle.
+/// Manages secondary window lifecycle: creation, positioning, and shutdown.
 class WindowManager {
   WindowManager._();
 
@@ -11,7 +14,50 @@ class WindowManager {
   /// Accent color set by the main window, passed to all secondary windows.
   static int accentColorValue = 0xFF0078D4;
 
+  // -----------------------------------------------------------------------
+  // Public API
+  // -----------------------------------------------------------------------
+
+  static Future<void> showStatsWindow() => _showWindow(WindowArgs.stats);
+  static Future<void> showMemoryWindow() => _showWindow(WindowArgs.memory);
+  static Future<void> showSettingsWindow() => _showWindow(WindowArgs.settings);
+
+  /// Show an analysis window for a specific video hash.
+  /// Each hash opens a separate window.
+  static Future<void> showAnalysisWindow(String hash) =>
+      _showKeyedWindow(WindowArgs.analysis, hash, extraConfig: {'hash': hash});
+
+  /// Saves all secondary window positions to config, then closes them.
+  ///
+  /// Must be called from the main window's close handler *before* the main
+  /// window itself is closed.
+  static Future<void> closeAllSecondaryWindows() async {
+    // 1. Save positions of all currently-open secondary windows.
+    await _saveAllPositions();
+
+    // 2. Find all secondary windows by class name and send WM_CLOSE.
+    final hwnds = Win32FFI.findSecondaryWindows();
+    if (hwnds.isEmpty) return;
+
+    for (final hwnd in hwnds) {
+      Win32FFI.postClose(hwnd);
+    }
+
+    // 3. Wait for windows to actually close (up to ~2 s).
+    for (int i = 0; i < 20; i++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (hwnds.every((h) => !Win32FFI.isWindow(h))) break;
+    }
+
+    _windowIds.clear();
+  }
+
+  // -----------------------------------------------------------------------
+  // Internals
+  // -----------------------------------------------------------------------
+
   static Future<void> _showWindow(String type) async {
+    // Check for an existing window of this type.
     final existing = _windowIds[type];
     if (existing != null) {
       try {
@@ -24,12 +70,19 @@ class WindowManager {
       }
     }
 
+    // Compute the initial rect (from saved config or cascade from parent).
+    final rect = await _computeWindowRect(type);
+
     final mainCtrl = await WindowController.fromCurrentEngine();
     final ctrl = await WindowController.create(WindowConfiguration(
       arguments: jsonEncode({
         'type': type,
         'mainWindowId': mainCtrl.windowId,
         'accentColor': accentColorValue,
+        'x': rect.left.toInt(),
+        'y': rect.top.toInt(),
+        'width': rect.width.toInt(),
+        'height': rect.height.toInt(),
       }),
       hiddenAtLaunch: false,
     ));
@@ -52,11 +105,18 @@ class WindowManager {
       }
     }
 
+    // Compute the initial rect for keyed windows too.
+    final rect = await _computeWindowRect(type);
+
     final mainCtrl = await WindowController.fromCurrentEngine();
     final config = <String, dynamic>{
       'type': type,
       'mainWindowId': mainCtrl.windowId,
       'accentColor': accentColorValue,
+      'x': rect.left.toInt(),
+      'y': rect.top.toInt(),
+      'width': rect.width.toInt(),
+      'height': rect.height.toInt(),
     };
     if (extraConfig != null) config.addAll(extraConfig);
 
@@ -68,12 +128,50 @@ class WindowManager {
     await ctrl.show();
   }
 
-  static Future<void> showStatsWindow() => _showWindow(WindowArgs.stats);
-  static Future<void> showMemoryWindow() => _showWindow(WindowArgs.memory);
-  static Future<void> showSettingsWindow() => _showWindow(WindowArgs.settings);
+  /// Computes the initial position and size for a secondary window:
+  /// 1. Try the saved rect from config (if still on-screen).
+  /// 2. Otherwise cascade from the main (parent) window.
+  static Future<Rect> _computeWindowRect(String type) async {
+    final (defaultW, defaultH) =
+        WindowArgs.defaultSizes[type] ?? (800, 600);
 
-  /// Show an analysis window for a specific video hash.
-  /// Each hash opens a separate window.
-  static Future<void> showAnalysisWindow(String hash) =>
-      _showKeyedWindow(WindowArgs.analysis, hash, extraConfig: {'hash': hash});
+    // Try saved position.
+    final saved = AppConfig.instance.secondaryWindowRect(type);
+    if (saved != null && Win32FFI.isRectOnScreen(saved)) {
+      return saved;
+    }
+
+    // Cascade from the main window.
+    final parentHwnd = Win32FFI.findWindow(
+      className: kMainWindowClass,
+    );
+    if (parentHwnd != 0) {
+      final parentRect = Win32FFI.getWindowRect(parentHwnd);
+      final monitorArea = Win32FFI.getMonitorWorkArea(parentHwnd);
+      return Win32FFI.cascadePosition(
+        parentRect, monitorArea,
+        defaultWidth: defaultW,
+        defaultHeight: defaultH,
+      );
+    }
+
+    // Fallback.
+    return Rect.fromLTWH(100, 100, defaultW.toDouble(), defaultH.toDouble());
+  }
+
+  /// Queries all open secondary windows and saves their rects to config.
+  static Future<void> _saveAllPositions() async {
+    final hwnds = Win32FFI.findSecondaryWindows();
+    for (final hwnd in hwnds) {
+      final title = Win32FFI.getWindowText(hwnd);
+      for (final entry in WindowArgs.windowTitles.entries) {
+        if (title.contains(entry.value)) {
+          final rect = Win32FFI.getWindowRect(hwnd);
+          AppConfig.instance.setSecondaryWindowRect(entry.key, rect);
+          break;
+        }
+      }
+    }
+    await AppConfig.instance.save();
+  }
 }

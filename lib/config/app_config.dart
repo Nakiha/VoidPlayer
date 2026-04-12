@@ -85,6 +85,43 @@ class AppConfig {
   }
 
   // ---------------------------------------------------------------------------
+  // Secondary window section
+  // ---------------------------------------------------------------------------
+
+  static const _windowsKey = 'windows';
+
+  /// Returns the saved window [Rect] for a secondary window [type], or `null`.
+  Rect? secondaryWindowRect(String type) {
+    final w = _data[_windowsKey];
+    if (w is! Map<String, dynamic>) return null;
+    final win = w[type];
+    if (win is! Map<String, dynamic>) return null;
+    if (!_rectKeys.every((k) => win[k] is num)) return null;
+    return Rect.fromLTWH(
+      (win['x'] as num).toDouble(),
+      (win['y'] as num).toDouble(),
+      (win['width'] as num).toDouble(),
+      (win['height'] as num).toDouble(),
+    );
+  }
+
+  /// Saves a secondary window [Rect] for [type]. Pass `null` to clear.
+  void setSecondaryWindowRect(String type, Rect? rect) {
+    final windows = _data.putIfAbsent(_windowsKey, () => <String, dynamic>{})
+        as Map<String, dynamic>;
+    if (rect == null) {
+      windows.remove(type);
+    } else {
+      windows[type] = {
+        'x': rect.left,
+        'y': rect.top,
+        'width': rect.width,
+        'height': rect.height,
+      };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Generic access for future sections (shortcuts, preferences, …)
   // ---------------------------------------------------------------------------
 

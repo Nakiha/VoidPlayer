@@ -96,6 +96,19 @@ bool FlutterWindow::OnCreate() {
         SetWindowSubclass(top_level, SecondaryWindowSubclassProc, 0, 0);
       }
     }
+
+    // Show window after first frame renders to prevent white flash.
+    flutter_view_controller->engine()->SetNextFrameCallback(
+        [flutter_view_controller]() {
+          auto *v = flutter_view_controller->view();
+          if (v) {
+            HWND top_level = GetAncestor(v->GetNativeWindow(), GA_ROOT);
+            if (top_level) {
+              ShowWindow(top_level, SW_SHOWNORMAL);
+            }
+          }
+        });
+    flutter_view_controller->ForceRedraw();
   });
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());

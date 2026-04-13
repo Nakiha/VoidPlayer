@@ -18,10 +18,6 @@ public:
     explicit ShaderManager(ID3D11Device* device);
     ~ShaderManager() = default;
 
-    bool compile_from_file(const std::string& hlsl_path,
-                           const std::string& vs_entry, const std::string& ps_entry,
-                           CompiledShader& out);
-
     bool compile_from_source(const std::string& source,
                              const std::string& vs_entry, const std::string& ps_entry,
                              CompiledShader& out);

@@ -21,6 +21,7 @@ add_library(video_renderer_lib STATIC ${VR_SOURCES})
 
 target_include_directories(video_renderer_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_CURRENT_BINARY_DIR}
     ${FFMPEG_INCLUDE_DIR}
 )
 
@@ -36,10 +37,10 @@ target_link_libraries(video_renderer_lib PUBLIC
     d3dcompiler
 )
 
-# Copy shaders to build output and use build-relative path for deployment
-set(VR_SHADER_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
-file(MAKE_DIRECTORY "${VR_SHADER_BUILD_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/shaders/" DESTINATION "${VR_SHADER_BUILD_DIR}")
-target_compile_definitions(video_renderer_lib PRIVATE
-    VR_SHADER_DIR="${VR_SHADER_BUILD_DIR}"
+# Embed shader source into binary (no runtime file dependency)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/multitrack.hlsl" MULTITRACK_HLSL)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/embedded_shaders.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/embedded_shaders.h"
+    @ONLY
 )

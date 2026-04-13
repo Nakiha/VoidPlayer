@@ -1,6 +1,4 @@
 #include "shader.h"
-#include <fstream>
-#include <sstream>
 #include <spdlog/spdlog.h>
 
 namespace vr {
@@ -43,24 +41,6 @@ bool ShaderManager::compile_stage(const std::string& source, const std::string& 
     spdlog::debug("Compiled shader stage: {} / {} ({} bytes)",
                   target, entry, (*out_blob)->GetBufferSize());
     return true;
-}
-
-bool ShaderManager::compile_from_file(const std::string& hlsl_path,
-                                       const std::string& vs_entry,
-                                       const std::string& ps_entry,
-                                       CompiledShader& out) {
-    std::ifstream file(hlsl_path);
-    if (!file.is_open()) {
-        spdlog::error("Failed to open shader file: {}", hlsl_path);
-        return false;
-    }
-
-    std::stringstream ss;
-    ss << file.rdbuf();
-    std::string source = ss.str();
-
-    spdlog::info("Compiling shader from file: {}", hlsl_path);
-    return compile_from_source(source, vs_entry, ps_entry, out);
 }
 
 bool ShaderManager::compile_from_source(const std::string& source,

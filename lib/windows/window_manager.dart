@@ -84,10 +84,9 @@ class WindowManager {
         'width': rect.width.toInt(),
         'height': rect.height.toInt(),
       }),
-      hiddenAtLaunch: false,
+      hiddenAtLaunch: true,
     ));
     _windowIds[type] = ctrl.windowId;
-    await ctrl.show();
   }
 
   /// Show a keyed window — each unique [key] gets its own window.
@@ -122,10 +121,9 @@ class WindowManager {
 
     final ctrl = await WindowController.create(WindowConfiguration(
       arguments: jsonEncode(config),
-      hiddenAtLaunch: false,
+      hiddenAtLaunch: true,
     ));
     _windowIds[fullKey] = ctrl.windowId;
-    await ctrl.show();
   }
 
   /// Computes the initial position and size for a secondary window:

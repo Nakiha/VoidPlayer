@@ -1,0 +1,7 @@
+#pragma once
+// Auto-generated from multitrack.hlsl — do not edit
+namespace vr {
+constexpr const char kMultitrackHlsl[] = R"__SHADER__(
+@MULTITRACK_HLSL@
+)__SHADER__";
+} // namespace vr

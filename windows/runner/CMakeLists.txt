@@ -74,6 +74,7 @@ target_sources(${BINARY_NAME} PRIVATE ${VR_SOURCES} ${ANALYSIS_SOURCES})
 
 target_include_directories(${BINARY_NAME} PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../native"
+    "${CMAKE_CURRENT_BINARY_DIR}"
     "${FFMPEG_INCLUDE_DIR}"
 )
 
@@ -93,13 +94,12 @@ target_compile_definitions(${BINARY_NAME} PRIVATE
     _CRT_SECURE_NO_WARNINGS
 )
 
-# Copy shaders to build output
-set(VR_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
-file(MAKE_DIRECTORY "${VR_SHADER_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/shaders/"
-     DESTINATION "${VR_SHADER_DIR}")
-target_compile_definitions(${BINARY_NAME} PRIVATE
-    VR_SHADER_DIR="${VR_SHADER_DIR}"
+# Embed shader source into binary (no runtime file dependency)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/shaders/multitrack.hlsl" MULTITRACK_HLSL)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/shaders/embedded_shaders.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/embedded_shaders.h"
+    @ONLY
 )
 
 # Copy FFmpeg DLLs to build output

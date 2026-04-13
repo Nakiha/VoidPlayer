@@ -1,4 +1,5 @@
 #include "video_renderer/renderer.h"
+#include "embedded_shaders.h"
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <algorithm>
@@ -78,9 +79,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     texture_mgr_ = std::make_unique<TextureManager>(d3d_device_->device(), d3d_device_->context());
     shader_mgr_ = std::make_unique<ShaderManager>(d3d_device_->device());
 
-    std::string shader_dir = VR_SHADER_DIR;
-    std::string shader_path = shader_dir + "/multitrack.hlsl";
-    if (!shader_mgr_->compile_from_file(shader_path, "VSMain", "PSMain", compiled_shader_)) {
+    if (!shader_mgr_->compile_from_source(kMultitrackHlsl, "VSMain", "PSMain", compiled_shader_)) {
         spdlog::error("Renderer: failed to compile shaders");
         return false;
     }

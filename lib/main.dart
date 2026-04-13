@@ -143,12 +143,15 @@ void main(List<String> args) async {
       final closeHandler = _CloseHandler();
       windowManager.addListener(closeHandler);
 
-      await windowManager.show();
-
       final accentColor = await getWindowsAccentColor();
       WindowManager.accentColorValue = accentColor.toARGB32();
       log.info('Application starting (main window)');
       runApp(MyApp(accentColor: accentColor, testScriptPath: testScriptPath));
+
+      // Show window after first frame renders to prevent white flash on slow PCs.
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await windowManager.show();
+      });
   }
 }
 

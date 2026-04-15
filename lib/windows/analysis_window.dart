@@ -115,7 +115,6 @@ class _AnalysisPageState extends State<AnalysisPage> {
     // Load via FFI (analysis files may already be loaded from main window)
     final s = AnalysisFfi.summary;
     if (s.loaded == 0) {
-      // Need to load — VBS2 is optional
       AnalysisFfi.load(vbs2, vbi, vbt);
     }
     _readData();
@@ -162,7 +161,9 @@ class _AnalysisPageState extends State<AnalysisPage> {
     if (s.loaded == 0) return;
     if (_summary != null &&
         s.currentFrameIdx == _summary!.currentFrameIdx &&
-        s.frameCount == _summary!.frameCount) return;
+        s.frameCount == _summary!.frameCount) {
+      return;
+    }
     _summary = s;
     if (mounted) {
       setState(() {});

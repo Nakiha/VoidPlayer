@@ -437,6 +437,30 @@ static LONG WINAPI vectored_crash_handler(EXCEPTION_POINTERS* ep) {
             code == EXCEPTION_INT_DIVIDE_BY_ZERO ||
             code == EXCEPTION_DATATYPE_MISALIGNMENT ||
             code == 0xE06D7363) { // C++ exception code
+            // For stack overflow: use minimal logging to avoid recursive overflow.
+            // The main crash_handler allocates 16KB on stack which will trigger
+            // another stack overflow if the stack is already exhausted.
+            if (code == EXCEPTION_STACK_OVERFLOW) {
+                // Minimal write — no large stack allocations
+                if (!g_crash_dir.empty()) {
+                    char filepath[MAX_PATH];
+                    int fppos = 0;
+                    fppos = safe_append(filepath, fppos, sizeof(filepath), g_crash_dir.c_str());
+                    fppos = safe_append(filepath, fppos, sizeof(filepath), "\\crash_stack_overflow.log");
+                    HANDLE hFile = CreateFileA(filepath, GENERIC_WRITE, 0, nullptr,
+                        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                    if (hFile != INVALID_HANDLE_VALUE) {
+                        const char* msg = "=== VoidPlayer Native Crash (Stack Overflow) ===\n"
+                            "Exception: EXCEPTION_STACK_OVERFLOW\n"
+                            "Full stack trace unavailable (stack too deep for safe capture)\n"
+                            "=== End Crash Log ===\n";
+                        DWORD written = 0;
+                        WriteFile(hFile, msg, static_cast<DWORD>(strlen(msg)), &written, nullptr);
+                        CloseHandle(hFile);
+                    }
+                }
+                return EXCEPTION_CONTINUE_SEARCH;
+            }
             // Reuse the main crash_handler for logging
             crash_handler(ep);
         }

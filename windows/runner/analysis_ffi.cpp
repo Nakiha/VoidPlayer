@@ -322,7 +322,7 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_generate(const char* video_path, const char* hash) {
     std::string exe_dir = get_exe_dir();
-    std::string data_dir = exe_dir + "\\data";
+    std::string data_dir = exe_dir + "\\cache";
 
     spdlog::info("[Analysis] generate: video_path={}, hash={}", video_path, hash);
     spdlog::info("[Analysis] exe_dir={}", exe_dir);
@@ -346,18 +346,11 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
         spdlog::info("[Analysis] extract_raw_vvc ok={}", demux_ok);
 
         if (demux_ok && GetFileAttributesA(tmp_vvc.c_str()) != INVALID_FILE_ATTRIBUTES) {
-            // Set environment variables for DecoderApp
+            // Set VTM_BINARY_STATS env var for DecoderApp
             ScopedEnvVars env;
             env.set("VTM_BINARY_STATS", vbs2_out);
 
-            // Add ucrt64/bin to PATH for MinGW DLL resolution
-            const char* ucrt64_bin = "C:\\msys64\\ucrt64\\bin";
-            if (GetFileAttributesA(ucrt64_bin) != INVALID_FILE_ATTRIBUTES) {
-                std::string new_path = std::string(ucrt64_bin) + ";" + get_env_var("PATH");
-                env.set("PATH", new_path);
-            }
-
-            // Run DecoderApp directly via CreateProcess (no MSYS2 bash)
+            // Run DecoderApp (MinGW DLLs are installed alongside it in tools/vtm/)
             std::string cmd = "\"" + decoder_path + "\" -b \"" + tmp_vvc +
                 "\" --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
             spdlog::info("[Analysis] vtm cmd: {}", cmd);

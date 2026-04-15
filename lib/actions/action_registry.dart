@@ -43,7 +43,7 @@ class ActionRegistry {
     final action = _actions.remove(name);
     if (action?.shortcut != null) {
       _keyMap.remove(action!.shortcut);
-      _requireControl.remove(action!.shortcut);
+      _requireControl.remove(action.shortcut);
     }
     _callbacks.remove(name);
   }

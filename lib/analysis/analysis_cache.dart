@@ -2,11 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 
-/// Manages the on-disk analysis cache in <exe_dir>/data/.
+/// Manages the on-disk analysis cache in <exe_dir>/cache/.
 ///
 /// Cache structure:
 /// ```
-/// data/
+/// cache/
 ///   analysis_index.json   ← { "entries": { "<hash>": { "name": "...", "path": "...", "time": "..." } } }
 ///   <hash>.vbs2
 ///   <hash>.vbi
@@ -19,7 +19,7 @@ class AnalysisCache {
 
   static String _resolveDataDir() {
     final exeDir = p.dirname(Platform.resolvedExecutable);
-    return p.join(exeDir, 'data');
+    return p.join(exeDir, 'cache');
   }
 
   // ---- Path helpers ----

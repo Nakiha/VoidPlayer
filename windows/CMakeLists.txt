@@ -138,10 +138,15 @@ install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
 
-# VTM DecoderApp (optional — VBS2 generation)
+# VTM DecoderApp + MinGW runtime DLLs (optional — VBS2 generation)
 set(VTM_DECODER "${CMAKE_CURRENT_SOURCE_DIR}/../tools/vtm/bin/mgwmake/gcc-mingw-14.2/x86_64/release/DecoderApp.exe")
 if(EXISTS "${VTM_DECODER}")
   install(FILES "${VTM_DECODER}"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/tools/vtm"
+    COMPONENT Runtime)
+  # MinGW runtime DLLs (libgcc_s_seh-1.dll, libstdc++-6.dll)
+  file(GLOB VTM_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/../tools/vtm/*.dll")
+  install(FILES ${VTM_DLLS}
     DESTINATION "${CMAKE_INSTALL_PREFIX}/tools/vtm"
     COMPONENT Runtime)
 endif()

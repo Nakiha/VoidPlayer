@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
+import '../app_log.dart';
 import 'analysis_cache.dart';
 import 'analysis_ffi.dart';
 
@@ -15,6 +16,22 @@ enum AnalysisState {
   error,
 }
 
+/// Localizable error stored as a typed key + positional args.
+///
+/// The UI resolves these via [AppLocalizations]; the manager never holds
+/// translated strings.
+enum AnalysisErrorKey {
+  hashFailed,
+  unsupported,
+  loadFailed,
+}
+
+class AnalysisError {
+  final AnalysisErrorKey key;
+  final List<String> args;
+  const AnalysisError(this.key, [this.args = const []]);
+}
+
 /// Dart-side state machine for the analysis generation + loading flow.
 ///
 /// The UI (AnalysisPanel) listens to this via [ChangeNotifier] to show
@@ -24,12 +41,12 @@ class AnalysisManager extends ChangeNotifier {
   static final AnalysisManager instance = AnalysisManager._();
 
   AnalysisState _state = AnalysisState.idle;
-  String? _errorMessage;
+  AnalysisError? _error;
   String? _generatingFileName;
   String? _loadedHash;
 
   AnalysisState get state => _state;
-  String? get errorMessage => _errorMessage;
+  AnalysisError? get error => _error;
   String? get generatingFileName => _generatingFileName;
   String? get loadedHash => _loadedHash;
   bool get isLoaded => _state == AnalysisState.loaded;
@@ -38,39 +55,42 @@ class AnalysisManager extends ChangeNotifier {
   /// Returns the hash on success, null on failure.
   Future<String?> ensureAndLoad(String videoPath) async {
     final fileName = p.basename(videoPath);
+    log.info('[Analysis] ensureAndLoad: videoPath=$videoPath');
 
-    // Step 1: compute hash
     _setState(AnalysisState.computingHash);
     final String hash;
     try {
       hash = await _computeHash(videoPath);
+      log.info('[Analysis] hash=$hash');
     } catch (e) {
-      _setError('Failed to hash file: $e');
+      log.severe('[Analysis] hash failed: $e');
+      _setError(AnalysisErrorKey.hashFailed, ['$e']);
       return null;
     }
 
-    // Step 2: check cache
     if (AnalysisCache.hasEntry(hash)) {
-      // Step 5 (cached path): load directly
+      log.info('[Analysis] cache hit for $hash, loading from cache');
       return _loadFromCache(hash, fileName, videoPath);
     }
+    log.info('[Analysis] cache miss, will generate');
 
-    // Step 3: generate
     _state = AnalysisState.generating;
     _generatingFileName = fileName;
-    _errorMessage = null;
+    _error = null;
     notifyListeners();
 
+    log.info('[Analysis] calling FFI generateAnalysis(videoPath=$videoPath, hash=$hash)');
     final ok = AnalysisFfi.generateAnalysis(videoPath, hash);
     if (!ok) {
-      _setError('Unsupported codec or generation failed for $fileName');
+      log.severe('[Analysis] generateAnalysis returned false');
+      _setError(AnalysisErrorKey.unsupported, [fileName]);
       return null;
     }
+    log.info('[Analysis] generateAnalysis succeeded');
 
-    // Step 4: write index
     await AnalysisCache.addEntry(hash, fileName, videoPath);
+    log.info('[Analysis] index entry saved');
 
-    // Step 5: load
     return _loadFromCache(hash, fileName, videoPath);
   }
 
@@ -82,13 +102,16 @@ class AnalysisManager extends ChangeNotifier {
 
     // VBS2 is optional — pass empty string if file doesn't exist
     final vbs2Arg = File(vbs2).existsSync() ? vbs2 : '';
+    log.info('[Analysis] loading: vbs2=${vbs2Arg.isNotEmpty ? vbs2Arg : "(skip)"}, vbi=$vbi, vbt=$vbt');
     final ok = AnalysisFfi.load(vbs2Arg, vbi, vbt);
     if (!ok) {
-      _setError('Failed to load analysis for $name');
+      log.severe('[Analysis] FFI load returned false');
+      _setError(AnalysisErrorKey.loadFailed, [name]);
       return null;
     }
 
     _loadedHash = hash;
+    log.info('[Analysis] loaded successfully, hash=$hash');
     _setState(AnalysisState.loaded);
     return hash;
   }
@@ -105,14 +128,14 @@ class AnalysisManager extends ChangeNotifier {
 
   void _setState(AnalysisState s) {
     _state = s;
-    _errorMessage = null;
+    _error = null;
     _generatingFileName = null;
     notifyListeners();
   }
 
-  void _setError(String msg) {
+  void _setError(AnalysisErrorKey key, [List<String> args = const []]) {
     _state = AnalysisState.error;
-    _errorMessage = msg;
+    _error = AnalysisError(key, args);
     _generatingFileName = null;
     notifyListeners();
   }

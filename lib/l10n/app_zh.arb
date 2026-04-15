@@ -83,5 +83,11 @@
   "analysisLayerId": "空间层 ID",
   "analysisOffset": "偏移",
   "analysisSize": "大小",
-  "analysisBytes": "{count} 字节"
+  "analysisBytes": "{count} 字节",
+
+  "analysisErrorHashFailed": "文件哈希失败: {error}",
+  "analysisErrorUnsupported": "不支持的编码格式或生成失败: {name}",
+  "analysisErrorLoadFailed": "加载分析数据失败: {name}",
+
+  "analysisFilterHint": "按类型、名称或 #序号筛选"
 }

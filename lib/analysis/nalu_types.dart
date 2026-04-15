@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 /// H.266 / VVC NAL unit type name lookup.
 /// Based on ITU-T H.266 Table 7-7.
 String h266NaluTypeName(int type) => switch (type) {
@@ -63,4 +65,12 @@ int naluTypeColor(int type) => switch (type) {
       23 || 24 => 0xFFAB47BC, // SEI — purple
       20 => 0xFF8D6E63, // AUD — brown
       _ => 0xFF616161, // unknown — dark grey
+    };
+
+/// Decoration color for NALU list items: I=red, P=green, B=blue, other=grey.
+Color naluTypeDecorColor(int type) => switch (type) {
+      7 || 8 || 9 || 10 => const Color(0xFFFF5252), // IDR/CRA/GDR — I-frame
+      0 || 1 => const Color(0xFF66BB6A),             // TRAIL/STSA — P-frame
+      2 || 3 => const Color(0xFF42A5F5),             // RADL/RASL — B-frame
+      _ => const Color(0xFF757575),                  // non-VCL
     };

@@ -137,3 +137,11 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
+
+# VTM DecoderApp (optional — VBS2 generation)
+set(VTM_DECODER "${CMAKE_CURRENT_SOURCE_DIR}/../tools/vtm/bin/mgwmake/gcc-mingw-14.2/x86_64/release/DecoderApp.exe")
+if(EXISTS "${VTM_DECODER}")
+  install(FILES "${VTM_DECODER}"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/tools/vtm"
+    COMPONENT Runtime)
+endif()

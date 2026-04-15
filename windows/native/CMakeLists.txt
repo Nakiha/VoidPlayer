@@ -264,7 +264,7 @@ endif() # BUILD_PYTHON
 # ==================== Config Summary ====================
 
 message(STATUS "")
-message(STATUS "=== Video Renderer Native Build ===")
+message(STATUS "=== VoidPlayer Native Build ===")
 message(STATUS "  Generator: ${CMAKE_GENERATOR}")
 message(STATUS "  FFmpeg: ${FFMPEG_ROOT}")
 message(STATUS "  Test videos: ${VIDEO_TEST_DIR}")

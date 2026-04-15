@@ -42,7 +42,7 @@ class _AnalysisToolbarState extends State<AnalysisToolbar>
     );
     _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
     _offset = Tween<Offset>(
-      begin: const Offset(0, -0.3),
+      begin: const Offset(0, 0.3),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
 
@@ -87,53 +87,56 @@ class _AnalysisToolbarState extends State<AnalysisToolbar>
     final isError = mgr.state == AnalysisState.error;
 
     return Positioned(
-      right: 8,
-      top: 8,
-      child: FadeTransition(
-        opacity: _opacity,
-        child: SlideTransition(
-          position: _offset,
-          child: Material(
-            elevation: 4,
-            borderRadius: BorderRadius.circular(8),
-            color: theme.colorScheme.surfaceContainerHigh.withValues(alpha: 0.92),
-            child: Tooltip(
-              message: _tooltipText(context, mgr, isWorking, isError),
-              preferBelow: false,
-              waitDuration: const Duration(milliseconds: 400),
-              child: Container(
-                height: 36,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Hide button
-                    SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: IconButton(
-                        onPressed: widget.onHide,
-                        icon: Icon(
-                          Icons.chevron_left,
-                          size: 18,
-                          color: theme.colorScheme.onSurfaceVariant,
+      bottom: 160,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: FadeTransition(
+          opacity: _opacity,
+          child: SlideTransition(
+            position: _offset,
+            child: Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(8),
+              color: theme.colorScheme.surfaceContainerHigh.withValues(alpha: 0.92),
+              child: Tooltip(
+                message: _tooltipText(context, mgr, isWorking, isError),
+                preferBelow: false,
+                waitDuration: const Duration(milliseconds: 400),
+                child: Container(
+                  height: 36,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Hide button
+                      SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: IconButton(
+                          onPressed: widget.onHide,
+                          icon: Icon(
+                            Icons.keyboard_arrow_down,
+                            size: 18,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+                          tooltip: null,
                         ),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-                        tooltip: null,
                       ),
-                    ),
-                    const SizedBox(width: 2),
-                    // Separator
-                    Container(width: 1, height: 20, color: theme.colorScheme.outlineVariant),
-                    const SizedBox(width: 4),
-                    // Analysis button
-                    _AnalysisButton(
-                      isWorking: isWorking,
-                      isError: isError,
-                      onTap: _onTap,
-                    ),
-                  ],
+                      const SizedBox(width: 2),
+                      // Separator
+                      Container(width: 1, height: 20, color: theme.colorScheme.outlineVariant),
+                      const SizedBox(width: 4),
+                      // Analysis button
+                      _AnalysisButton(
+                        isWorking: isWorking,
+                        isError: isError,
+                        onTap: _onTap,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -149,10 +152,20 @@ class _AnalysisToolbarState extends State<AnalysisToolbar>
       final name = mgr.generatingFileName ?? '...';
       return l.analysisGeneratingFor(name);
     } else if (isError) {
-      return mgr.errorMessage ?? l.analysisErrorUnknown;
+      return _resolveError(l, mgr);
     } else {
       return l.analysisClickToAnalyze;
     }
+  }
+
+  static String _resolveError(AppLocalizations l, AnalysisManager mgr) {
+    final e = mgr.error;
+    if (e == null) return l.analysisErrorUnknown;
+    return switch (e.key) {
+      AnalysisErrorKey.hashFailed => l.analysisErrorHashFailed(e.args.firstOrNull ?? ''),
+      AnalysisErrorKey.unsupported => l.analysisErrorUnsupported(e.args.firstOrNull ?? ''),
+      AnalysisErrorKey.loadFailed => l.analysisErrorLoadFailed(e.args.firstOrNull ?? ''),
+    };
   }
 
   void _onTap() {

@@ -134,6 +134,60 @@ final _generate =
     _dl.lookupFunction<_GenerateNative, _GenerateDart>('naki_analysis_generate');
 
 // ===========================================================================
+// Pure Dart data classes — copies of FFI struct fields, safe after free
+// ===========================================================================
+
+class FrameInfo {
+  final int poc;
+  final int temporalId;
+  final int sliceType;
+  final int nalType;
+  final int avgQp;
+  final int numRefL0;
+  final int numRefL1;
+  final List<int> refPocsL0;
+  final List<int> refPocsL1;
+  final int pts;
+  final int dts;
+  final int packetSize;
+  final int keyframe;
+
+  FrameInfo({
+    required this.poc,
+    required this.temporalId,
+    required this.sliceType,
+    required this.nalType,
+    required this.avgQp,
+    required this.numRefL0,
+    required this.numRefL1,
+    required this.refPocsL0,
+    required this.refPocsL1,
+    required this.pts,
+    required this.dts,
+    required this.packetSize,
+    required this.keyframe,
+  });
+}
+
+class NaluInfo {
+  final int offset;
+  final int size;
+  final int nalType;
+  final int temporalId;
+  final int layerId;
+  final int flags;
+
+  NaluInfo({
+    required this.offset,
+    required this.size,
+    required this.nalType,
+    required this.temporalId,
+    required this.layerId,
+    required this.flags,
+  });
+}
+
+// ===========================================================================
 // High-level API
 // ===========================================================================
 
@@ -160,28 +214,59 @@ class AnalysisFfi {
   static NakiAnalysisSummary get summary => _getSummary().ref;
 
   /// Read all frame info into a Dart list.
-  static List<NakiFrameInfo> get frames {
+  /// Returns plain Dart objects (safe after the FFI buffer is freed).
+  static List<FrameInfo> get frames {
     final s = summary;
     if (s.loaded == 0) return [];
     final count = s.frameCount;
+    if (count == 0) return [];
     final ptr = calloc<NakiFrameInfo>(count);
     try {
       final actual = _getFrames(ptr, count);
-      return List.generate(actual, (i) => ptr[i]);
+      return List.generate(actual, (i) {
+        final f = ptr[i];
+        return FrameInfo(
+          poc: f.poc,
+          temporalId: f.temporalId,
+          sliceType: f.sliceType,
+          nalType: f.nalType,
+          avgQp: f.avgQp,
+          numRefL0: f.numRefL0,
+          numRefL1: f.numRefL1,
+          refPocsL0: List.generate(15, (j) => f.refPocsL0[j]),
+          refPocsL1: List.generate(15, (j) => f.refPocsL1[j]),
+          pts: f.pts,
+          dts: f.dts,
+          packetSize: f.packetSize,
+          keyframe: f.keyframe,
+        );
+      });
     } finally {
       calloc.free(ptr);
     }
   }
 
   /// Read all NALU info into a Dart list.
-  static List<NakiNaluInfo> get nalus {
+  /// Returns plain Dart objects (safe after the FFI buffer is freed).
+  static List<NaluInfo> get nalus {
     final s = summary;
     if (s.loaded == 0) return [];
     final count = s.naluCount;
+    if (count == 0) return [];
     final ptr = calloc<NakiNaluInfo>(count);
     try {
       final actual = _getNalus(ptr, count);
-      return List.generate(actual, (i) => ptr[i]);
+      return List.generate(actual, (i) {
+        final n = ptr[i];
+        return NaluInfo(
+          offset: n.offset,
+          size: n.size,
+          nalType: n.nalType,
+          temporalId: n.temporalId,
+          layerId: n.layerId,
+          flags: n.flags,
+        );
+      });
     } finally {
       calloc.free(ptr);
     }

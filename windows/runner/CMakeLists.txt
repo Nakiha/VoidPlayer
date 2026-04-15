@@ -68,6 +68,7 @@ set(ANALYSIS_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/parsers/vbi_parser.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/parsers/vbs2_parser.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/analysis_manager.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/generators/analysis_generator.cpp"
 )
 
 target_sources(${BINARY_NAME} PRIVATE ${VR_SOURCES} ${ANALYSIS_SOURCES})

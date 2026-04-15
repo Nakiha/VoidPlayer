@@ -215,5 +215,17 @@
   "@analysisSize": { "description": "NALU detail field label" },
 
   "analysisBytes": "{count} bytes",
-  "@analysisBytes": { "description": "Size in bytes", "placeholders": { "count": { "type": "int" } } }
+  "@analysisBytes": { "description": "Size in bytes", "placeholders": { "count": { "type": "int" } } },
+
+  "analysisErrorHashFailed": "Failed to hash file: {error}",
+  "@analysisErrorHashFailed": { "description": "Error: file hashing failed", "placeholders": { "error": { "type": "String" } } },
+
+  "analysisErrorUnsupported": "Unsupported codec or generation failed for {name}",
+  "@analysisErrorUnsupported": { "description": "Error: codec not supported or generation failed", "placeholders": { "name": { "type": "String" } } },
+
+  "analysisErrorLoadFailed": "Failed to load analysis for {name}",
+  "@analysisErrorLoadFailed": { "description": "Error: failed to load cached analysis", "placeholders": { "name": { "type": "String" } } },
+
+  "analysisFilterHint": "Filter by type, name or #id",
+  "@analysisFilterHint": { "description": "Placeholder text for NALU filter search bar" }
 }

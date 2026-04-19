@@ -79,9 +79,74 @@ class _CloseHandler with WindowListener {
   }
 }
 
+/// Runs the analysis window as a standalone process (no multi-engine).
+///
+/// Launched via `void_player.exe --standalone-analysis --hash=xxx ...`.
+/// Uses `window_manager` directly instead of `desktop_multi_window`,
+/// giving the analysis window its own D3D11 device and avoiding the
+/// Flutter multi-engine crash.
+Future<void> _runStandaloneAnalysis(List<String> args) async {
+  String? hash, fileName;
+  int x = 100, y = 100, width = 800, height = 600;
+  int accentColorValue = 0xFF0078D4;
+
+  for (final arg in args) {
+    if (arg.startsWith('--hash=')) hash = arg.substring(7);
+    else if (arg.startsWith('--fileName=')) fileName = arg.substring(11);
+    else if (arg.startsWith('--x=')) x = int.tryParse(arg.substring(4)) ?? 100;
+    else if (arg.startsWith('--y=')) y = int.tryParse(arg.substring(4)) ?? 100;
+    else if (arg.startsWith('--width=')) width = int.tryParse(arg.substring(8)) ?? 800;
+    else if (arg.startsWith('--height=')) height = int.tryParse(arg.substring(9)) ?? 600;
+    else if (arg.startsWith('--accentColor=')) {
+      accentColorValue = int.tryParse(arg.substring(14)) ?? 0xFF0078D4;
+    }
+  }
+
+  if (hash == null) {
+    log.severe('[StandaloneAnalysis] --hash is required');
+    exit(1);
+  }
+
+  log.info('[StandaloneAnalysis] starting: hash=$hash, fileName=$fileName');
+
+  await windowManager.ensureInitialized();
+  await windowManager.setSize(Size(width.toDouble(), height.toDouble()));
+  await windowManager.setPosition(Offset(x.toDouble(), y.toDouble()));
+  await windowManager.setMinimumSize(const Size(400, 300));
+
+  await Window.initialize();
+  await Window.setEffect(
+    effect: WindowEffect.mica,
+    color: const Color(0xCC222222),
+  );
+
+  // Set native window title.
+  final hwnd = Win32FFI.getForegroundWindow();
+  if (hwnd != 0) {
+    final title = fileName != null
+        ? 'Void Player - $fileName'
+        : 'Void Player - Analysis';
+    Win32FFI.setWindowText(hwnd, title);
+  }
+
+  final accentColor = Color(accentColorValue);
+  runApp(AnalysisApp(accentColor: accentColor, hash: hash, fileName: fileName));
+
+  // Show window after first frame to prevent white flash.
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    await windowManager.show();
+  });
+}
+
 void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   await initLogging(args);
+
+  // Standalone analysis window (separate process — avoids Flutter multi-engine D3D11 crash).
+  if (args.contains('--standalone-analysis')) {
+    await _runStandaloneAnalysis(args);
+    return;
+  }
 
   // Extract --test-script path (if any) before window routing.
   String? testScriptPath;

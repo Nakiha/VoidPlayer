@@ -186,9 +186,10 @@ class _AnalysisPageState extends State<AnalysisPage> {
 
   void _rebuildSortedFramesCache() {
     _sortedFramesCache = List<FrameInfo>.from(_frames);
-    if (!_ptsOrder) {
-      _sortedFramesCache.sort((a, b) => a.dts.compareTo(b.dts));
+    if (_ptsOrder) {
+      _sortedFramesCache.sort((a, b) => a.pts.compareTo(b.pts));
     }
+    // else: keep original order (= DTS / decode order from C++)
   }
 
   @override
@@ -248,10 +249,15 @@ class _AnalysisPageState extends State<AnalysisPage> {
                 : _FrameTrendView(
                     frames: _sortedFrames,
                     currentIdx: _summary?.currentFrameIdx ?? -1,
+                    selectedFrameIdx: _selectedFrameIdx,
                     viewStart: _chartOffset,
                     viewEnd: _chartOffset + _visibleFrameCount,
                     onZoom: _chartZoom,
                     onPan: _chartPan,
+                    onFrameSelected: (i) => setState(() {
+                      _selectedFrameIdx = i;
+                      _selectedNaluIdx = i != null ? _frameToNaluIdx(i) : null;
+                    }),
                     l: l,
                   ),
           ),
@@ -290,6 +296,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                             nalu: _selectedNaluIdx != null && _selectedNaluIdx! < _nalus.length
                                 ? _nalus[_selectedNaluIdx!]
                                 : null,
+                            frameIdx: _selectedFrameIdx,
                             frames: _frames,
                             l: l,
                           ),
@@ -650,6 +657,13 @@ class _RefPyramidPainter extends CustomPainter {
       }
     }
 
+    // Helper: get fill color for a frame's circle (same logic as circle drawing)
+    Color frameFillColor(FrameInfo f) {
+      if (f.sliceType == 2) return const Color(0xFFFF4D4F); // I: red
+      if (f.sliceType == 0 && f.numRefL1 > 0) return const Color(0xFF1890FF); // B bidir: blue
+      return const Color(0xFF52C41A); // B uni / P: green
+    }
+
     // Draw all visible arrows
     for (var i = visibleStart; i < visibleEnd; i++) {
       if (!positions.containsKey(i)) continue;
@@ -664,18 +678,16 @@ class _RefPyramidPainter extends CustomPainter {
 
       for (var j = 0; j < f.numRefL0 && j < f.refPocsL0.length; j++) {
         final ri = nearestRefIdx(f.refPocsL0[j], i);
-        if (ri != null) {
-          _drawArrow(canvas, from, posFor(ri),
-              const Color(0xFF73D13D).withValues(alpha: arrowAlpha),
-              lineW, circleR);
+        if (ri != null && ri < frames.length) {
+          final arrowColor = frameFillColor(frames[ri]).withValues(alpha: arrowAlpha);
+          _drawArrow(canvas, from, posFor(ri), arrowColor, lineW, circleR);
         }
       }
       for (var j = 0; j < f.numRefL1 && j < f.refPocsL1.length; j++) {
         final ri = nearestRefIdx(f.refPocsL1[j], i);
-        if (ri != null) {
-          _drawArrow(canvas, from, posFor(ri),
-              const Color(0xFF40A9FF).withValues(alpha: arrowAlpha),
-              lineW, circleR);
+        if (ri != null && ri < frames.length) {
+          final arrowColor = frameFillColor(frames[ri]).withValues(alpha: arrowAlpha);
+          _drawArrow(canvas, from, posFor(ri), arrowColor, lineW, circleR);
         }
       }
     }
@@ -716,17 +728,23 @@ class _RefPyramidPainter extends CustomPainter {
       final isSelected = i == selectedFrameIdx;
       final isRelated = related.contains(i);
 
+      // VBS2 slice_type: 0=B, 1=P, 2=I (see binary_types.h)
+      // B with l1=0 (unidirectional) uses green color but still labeled B
       final Color fill, stroke;
-      switch (f.sliceType) {
-        case 2:
-          fill = const Color(0xFFFF4D4F);
-          stroke = const Color(0xFFCF1322);
-        case 0:
-          fill = const Color(0xFF52C41A);
-          stroke = const Color(0xFF389E0D);
-        default:
-          fill = const Color(0xFFE6F7FF);
-          stroke = const Color(0xFF1890FF);
+      if (f.sliceType == 2) {
+        fill = const Color(0xFFFF4D4F);
+        stroke = const Color(0xFFCF1322);
+      } else if (f.sliceType == 0 && f.numRefL1 > 0) {
+        fill = const Color(0xFFE6F7FF);
+        stroke = const Color(0xFF1890FF);
+      } else if (f.sliceType == 0) {
+        // B with l1==0 (unidirectional): green color
+        fill = const Color(0xFF52C41A);
+        stroke = const Color(0xFF389E0D);
+      } else {
+        // P (sliceType==1)
+        fill = const Color(0xFF52C41A);
+        stroke = const Color(0xFF389E0D);
       }
 
       final sw2 = isSelected ? 4.5 : (isRelated ? 3.5 : 2.5);
@@ -739,11 +757,15 @@ class _RefPyramidPainter extends CustomPainter {
       canvas.drawCircle(pos, r, _strokePaint);
 
       if (circleR >= 8) {
-        final tp = switch (f.sliceType) {
-          2 => labelI!,
-          0 => labelP!,
-          _ => labelB!,
-        };
+        // Label: always show actual slice type (I/P/B), color distinguishes ref direction
+        final TextPainter tp;
+        if (f.sliceType == 2) {
+          tp = labelI!;
+        } else if (f.sliceType == 0) {
+          tp = labelB!;
+        } else {
+          tp = labelP!;
+        }
         tp.paint(canvas, pos - Offset(tp.width / 2, tp.height / 2));
       }
     }
@@ -793,54 +815,100 @@ class _RefPyramidPainter extends CustomPainter {
 // Frame Trend — zoomable / pannable bar chart
 // ===========================================================================
 
-class _FrameTrendView extends StatelessWidget {
+class _FrameTrendView extends StatefulWidget {
   final List<FrameInfo> frames;
   final int currentIdx;
+  final int? selectedFrameIdx;
   final double viewStart;
   final double viewEnd;
   final ValueChanged<double> onZoom;
   final ValueChanged<double> onPan;
+  final ValueChanged<int?> onFrameSelected;
   final AppLocalizations l;
   const _FrameTrendView({
     required this.frames,
     required this.currentIdx,
+    required this.selectedFrameIdx,
     required this.viewStart,
     required this.viewEnd,
     required this.onZoom,
     required this.onPan,
+    required this.onFrameSelected,
     required this.l,
   });
 
   @override
+  State<_FrameTrendView> createState() => _FrameTrendViewState();
+}
+
+class _FrameTrendViewState extends State<_FrameTrendView> {
+  double? _hoverX; // null = not hovering
+
+  @override
   Widget build(BuildContext context) {
-    if (frames.isEmpty) {
-      return Center(child: Text(l.analysisNoFrameData));
+    final w = widget;
+    if (w.frames.isEmpty) {
+      return Center(child: Text(w.l.analysisNoFrameData));
     }
     return Column(
       children: [
         Expanded(
-          child: Listener(
-            onPointerSignal: (signal) {
-              if (signal is PointerScrollEvent) {
-                onZoom(signal.scrollDelta.dy);
-              }
-            },
-            child: CustomPaint(
-              painter: _FrameTrendPainter(
-                frames: frames,
-                currentIdx: currentIdx,
-                viewStart: viewStart,
-                viewEnd: viewEnd,
+          child: MouseRegion(
+            onExit: (_) => setState(() => _hoverX = null),
+            child: Listener(
+              onPointerSignal: (signal) {
+                if (signal is PointerScrollEvent) {
+                  w.onZoom(signal.scrollDelta.dy);
+                }
+              },
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapUp: (details) {
+                  final labelW = 36.0;
+                  final box = context.findRenderObject() as RenderBox;
+                  final localX = box.globalToLocal(details.globalPosition).dx;
+                  final chartW = box.size.width - labelW;
+                  if (chartW <= 0 || localX < labelW) {
+                    w.onFrameSelected(null);
+                    return;
+                  }
+                  final span = w.viewEnd - w.viewStart;
+                  final idx = (w.viewStart + ((localX - labelW) / chartW) * span).round()
+                      .clamp(0, w.frames.length - 1);
+                  w.onFrameSelected(w.selectedFrameIdx == idx ? null : idx);
+                },
+                onPanUpdate: (details) {
+                  final box = context.findRenderObject() as RenderBox;
+                  final local = box.globalToLocal(details.globalPosition);
+                  setState(() => _hoverX = local.dx);
+                },
+                child: MouseRegion(
+                  onHover: (e) {
+                    final box = context.findRenderObject() as RenderBox;
+                    final local = box.globalToLocal(e.position);
+                    setState(() => _hoverX = local.dx);
+                  },
+                  child: CustomPaint(
+                    painter: _FrameTrendPainter(
+                      frames: w.frames,
+                      currentIdx: w.currentIdx,
+                      selectedFrameIdx: w.selectedFrameIdx,
+                      viewStart: w.viewStart,
+                      viewEnd: w.viewEnd,
+                      hoverX: _hoverX,
+                    ),
+                    size: Size.infinite,
+                  ),
+                ),
               ),
-              size: Size.infinite,
             ),
           ),
         ),
         _ChartScrollbar(
-          total: frames.length.toDouble(),
-          viewStart: viewStart,
-          viewEnd: viewEnd,
-          onPan: onPan,
+          total: w.frames.length.toDouble(),
+          viewStart: w.viewStart,
+          viewEnd: w.viewEnd,
+          onPan: w.onPan,
         ),
       ],
     );
@@ -850,14 +918,18 @@ class _FrameTrendView extends StatelessWidget {
 class _FrameTrendPainter extends CustomPainter {
   final List<FrameInfo> frames;
   final int currentIdx;
+  final int? selectedFrameIdx;
   final double viewStart;
   final double viewEnd;
+  final double? hoverX;
 
   _FrameTrendPainter({
     required this.frames,
     required this.currentIdx,
+    required this.selectedFrameIdx,
     required this.viewStart,
     required this.viewEnd,
+    this.hoverX,
   });
 
   @override
@@ -869,73 +941,195 @@ class _FrameTrendPainter extends CustomPainter {
     if (visibleStart >= visibleEnd) return;
 
     final count = visibleEnd - visibleStart;
-    final barW = (size.width / count).clamp(2.0, 40.0);
     final span = viewEnd - viewStart;
-    final upperH = size.height * 0.6;
-    final lowerH = size.height * 0.35;
-    final gap = size.height * 0.05;
 
+    // Layout: same labelW as pyramid (36px) left column
+    final labelW = 36.0;
+    final chartW = size.width - labelW;
+    final upperH = size.height * 0.58;
+    final lowerH = size.height * 0.32;
+    final gapH = size.height * 0.05;
+    final lowerTop = upperH + gapH;
+
+    final barW = (chartW / count).clamp(2.0, 40.0);
+
+    // Find range for visible frames
     int maxPacketSize = 1;
+    int minQp = 63, maxQp = 0;
     for (var i = visibleStart; i < visibleEnd; i++) {
       if (frames[i].packetSize > maxPacketSize) maxPacketSize = frames[i].packetSize;
+      if (frames[i].avgQp < minQp) minQp = frames[i].avgQp;
+      if (frames[i].avgQp > maxQp) maxQp = frames[i].avgQp;
+    }
+    final qpLow = (minQp / 5).floor() * 5;
+    final qpHigh = ((maxQp / 5).floor() + 1) * 5;
+    final qpRange = (qpHigh - qpLow).clamp(5, 63);
+
+    // Label style — same as pyramid level labels
+    const labelStyle = TextStyle(
+      color: Color(0xFFFFFFFF), fontSize: 10,
+      fontWeight: FontWeight.w600, letterSpacing: 0.5,
+    );
+    final gridPaint = Paint()
+      ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.06)
+      ..strokeWidth = 0.5;
+
+    // --- Packet size axis labels (upper) ---
+    // Only bottom (0) and top (max) to keep it minimal like pyramid
+    final sizeLabels = [
+      (0.0, _formatBytes(0)),
+      (0.5, _formatBytes((maxPacketSize * 0.5).round())),
+      (1.0, _formatBytes(maxPacketSize)),
+    ];
+    for (final (yFrac, text) in sizeLabels) {
+      final y = upperH * (1 - yFrac);
+      canvas.drawLine(Offset(labelW, y), Offset(size.width, y), gridPaint);
+      final tp = TextPainter(
+        text: TextSpan(text: text, style: labelStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      // Clamp to avoid clipping at top
+      final drawY = (y - tp.height / 2).clamp(0.0, upperH - tp.height);
+      tp.paint(canvas, Offset(4, drawY));
     }
 
-    final barPaint = Paint()..style = PaintingStyle.fill;
-    final qpPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..color = const Color(0xFFFFB74D);
+    // --- QP axis labels (lower) ---
+    final qpLabels = [
+      (0.0, qpLow),
+      (0.5, (qpLow + qpHigh) ~/ 2),
+      (1.0, qpHigh),
+    ];
+    for (final (yFrac, value) in qpLabels) {
+      final y = lowerTop + lowerH * (1 - yFrac);
+      canvas.drawLine(Offset(labelW, y), Offset(size.width, y), gridPaint);
+      final tp = TextPainter(
+        text: TextSpan(text: '$value', style: labelStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final drawY = (y - tp.height / 2).clamp(lowerTop, lowerTop + lowerH - tp.height);
+      tp.paint(canvas, Offset(4, drawY));
+    }
 
+    // --- Frame size bars ---
+    final barPaint = Paint()..style = PaintingStyle.fill;
+    final selStroke = Paint()
+      ..color = const Color(0xFFFFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
     for (var i = visibleStart; i < visibleEnd; i++) {
       final f = frames[i];
       final frac = (i - viewStart) / span;
-      final x = frac * size.width;
+      final x = labelW + frac * chartW;
       final h = (f.packetSize / maxPacketSize) * upperH;
 
       barPaint.color = f.keyframe == 1
           ? const Color(0xFFFF5252)
           : const Color(0xFF42A5F5);
-      canvas.drawRect(Rect.fromLTWH(x, upperH - h, barW - 1, h), barPaint);
+      final rect = Rect.fromLTWH(x, upperH - h, barW - 1, h);
+      canvas.drawRect(rect, barPaint);
 
-      if (f.keyframe == 1) {
-        canvas.drawRect(
-          Rect.fromLTWH(x, upperH - h - 3, barW - 1, 2),
-          Paint()..color = const Color(0xFFFFD54F),
-        );
+      if (i == selectedFrameIdx) {
+        canvas.drawRect(rect.inflate(1), selStroke);
       }
     }
 
-    // QP line
+    // --- QP line ---
+    final qpPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..color = const Color(0xFFFFB74D);
     final qpPath = Path();
     bool first = true;
     for (var i = visibleStart; i < visibleEnd; i++) {
       final f = frames[i];
       final frac = (i - viewStart) / span;
-      final x = frac * size.width + barW / 2;
-      final y = upperH + gap + (f.avgQp / 63.0) * lowerH;
+      final x = labelW + frac * chartW + barW / 2;
+      final y = lowerTop + lowerH * (1 - (f.avgQp - qpLow) / qpRange);
       if (first) { qpPath.moveTo(x, y); first = false; }
       else { qpPath.lineTo(x, y); }
     }
     canvas.drawPath(qpPath, qpPaint);
 
-    // Cursor
+    // --- Playback cursor ---
     if (currentIdx >= 0 && currentIdx < frames.length) {
       final frac = (currentIdx - viewStart) / span;
-      final cx = frac * size.width;
+      final cx = labelW + frac * chartW;
       canvas.drawLine(
         Offset(cx, 0), Offset(cx, size.height),
-        Paint()..color = const Color(0xFFFFFFFF).withValues(alpha: 0.7)
+        Paint()..color = const Color(0xFFFFFFFF).withValues(alpha: 0.5)
           ..strokeWidth = 1,
       );
     }
+
+    // --- Hover crosshair + tooltip ---
+    if (hoverX != null && hoverX! >= labelW) {
+      final relX = hoverX! - labelW;
+      final frameFrac = relX / chartW;
+      final frameIdx = (viewStart + frameFrac * span).round()
+          .clamp(visibleStart, visibleEnd - 1);
+
+      final crossX = labelW + ((frameIdx - viewStart) / span) * chartW + barW / 2;
+      canvas.drawLine(
+        Offset(crossX, 0), Offset(crossX, size.height),
+        Paint()..color = const Color(0xFFFFFFFF).withValues(alpha: 0.3)
+          ..strokeWidth = 1,
+      );
+
+      final f = frames[frameIdx];
+      final sliceLabel = switch (f.sliceType) {
+        2 => 'I', 1 => 'P', _ => f.numRefL1 > 0 ? 'B' : 'B(uni)',
+      };
+      final lines = [
+        '#$frameIdx  $sliceLabel  POC ${f.poc}',
+        'Size: ${_formatBytes(f.packetSize)}',
+        'QP: ${f.avgQp}',
+      ];
+      final tipStyle = const TextStyle(color: Color(0xFFFFFFFF), fontSize: 10);
+      final tipPainters = lines.map((l) => TextPainter(
+        text: TextSpan(text: l, style: tipStyle),
+        textDirection: TextDirection.ltr,
+      )..layout()).toList();
+      final tipW = tipPainters.map((t) => t.width).reduce((a, b) => a > b ? a : b) + 12;
+      final tipH = tipPainters.fold(0.0, (sum, t) => sum + t.height) + 10;
+
+      var tipX = crossX + 8;
+      if (tipX + tipW > size.width) tipX = crossX - tipW - 8;
+      final tipY = 4.0;
+
+      final bgPaint = Paint()..color = const Color(0xCC1A1A2E);
+      final rrect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(tipX, tipY, tipW, tipH), const Radius.circular(4));
+      canvas.drawRRect(rrect, bgPaint);
+      canvas.drawRRect(rrect, Paint()
+        ..color = const Color(0x44FFFFFF)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.5);
+
+      var offsetY = tipY + 5;
+      for (final tp in tipPainters) {
+        tp.paint(canvas, Offset(tipX + 6, offsetY));
+        offsetY += tp.height;
+      }
+    }
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes <= 0) return '0 B';
+    if (bytes < 1024) return '$bytes B';
+    final kb = bytes / 1024;
+    if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
+    final mb = kb / 1024;
+    return '${mb.toStringAsFixed(1)} MB';
   }
 
   @override
   bool shouldRepaint(covariant _FrameTrendPainter old) =>
       frames.length != old.frames.length ||
       currentIdx != old.currentIdx ||
+      selectedFrameIdx != old.selectedFrameIdx ||
       viewStart != old.viewStart ||
-      viewEnd != old.viewEnd;
+      viewEnd != old.viewEnd ||
+      hoverX != old.hoverX;
 }
 
 // ===========================================================================
@@ -1213,10 +1407,11 @@ class _NaluBrowserViewState extends State<_NaluBrowserView> {
 
 class _NaluDetailView extends StatelessWidget {
   final NaluInfo? nalu;
+  final int? frameIdx;
   final List<FrameInfo> frames;
   final AppLocalizations l;
 
-  const _NaluDetailView({required this.nalu, required this.frames, required this.l});
+  const _NaluDetailView({required this.nalu, this.frameIdx, required this.frames, required this.l});
 
   @override
   Widget build(BuildContext context) {
@@ -1226,7 +1421,9 @@ class _NaluDetailView extends StatelessWidget {
     final n = nalu!;
     final theme = Theme.of(context);
     final ts = theme.textTheme.bodySmall!;
+    final labelColor = theme.colorScheme.onSurfaceVariant;
 
+    // NALU-level info
     final items = <_DetailRow>[
       _DetailRow(l.analysisType, '${h266NaluTypeName(n.nalType)} (${n.nalType})'),
       _DetailRow(l.analysisTemporalId, '${n.temporalId}'),
@@ -1238,29 +1435,73 @@ class _NaluDetailView extends StatelessWidget {
       _DetailRow('Keyframe', '${(n.flags & 0x04) != 0}'),
     ];
 
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
+    // Frame-level info from VBS2 (when this NALU corresponds to a frame)
+    final frameItems = <_DetailRow>[];
+    if (frameIdx != null && frameIdx! >= 0 && frameIdx! < frames.length) {
+      final f = frames[frameIdx!];
+      final sliceName = switch (f.sliceType) {
+        2 => 'I',
+        1 => 'P',
+        _ => f.numRefL1 > 0 ? 'B' : 'B (uni)', // unidirectional B
+      };
+      final nalName = {
+        0: 'TRAIL', 1: 'STSA', 2: 'RADL', 7: 'IDR_W_RADL', 8: 'IDR_N_LP',
+        20: 'AUD',
+      }[f.nalType] ?? '${f.nalType}';
+
+      frameItems.addAll([
+        _DetailRow('Slice', '$sliceName (${f.sliceType})'),
+        _DetailRow('NAL Unit', '$nalName (${f.nalType})'),
+        _DetailRow('POC', '${f.poc}'),
+        _DetailRow('Avg QP', '${f.avgQp}'),
+        _DetailRow('Temporal ID', '${f.temporalId}'),
+        _DetailRow('Ref L0', f.numRefL0 > 0 ? f.refPocsL0.take(f.numRefL0).join(', ') : '-'),
+        _DetailRow('Ref L1', f.numRefL1 > 0 ? f.refPocsL1.take(f.numRefL1).join(', ') : '-'),
+        _DetailRow('Pkt Size', l.analysisBytes(f.packetSize)),
+        _DetailRow('PTS', '${f.pts}'),
+        _DetailRow('DTS', '${f.dts}'),
+      ]);
+    }
+
+    Widget section(String title, List<_DetailRow> rows) {
+      if (rows.isEmpty) return const SizedBox.shrink();
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(l.analysisNaluDetail, style: theme.textTheme.titleSmall),
-          const SizedBox(height: 8),
-          ...items.map((r) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 80,
-                      child: Text(r.label,
-                          style: ts.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant)),
-                    ),
-                    Expanded(child: Text(r.value, style: ts)),
-                  ],
+          Text(title, style: theme.textTheme.titleSmall),
+          const SizedBox(height: 4),
+          ...rows.map((r) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 1.5),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 80,
+                  child: Text(r.label, style: ts.copyWith(color: labelColor)),
                 ),
-              )),
+                Expanded(child: Text(r.value, style: ts)),
+              ],
+            ),
+          )),
         ],
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            section(l.analysisNaluDetail, items),
+            if (frameItems.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Divider(height: 1),
+              const SizedBox(height: 8),
+              section('Frame Info', frameItems),
+            ],
+          ],
+        ),
       ),
     );
   }

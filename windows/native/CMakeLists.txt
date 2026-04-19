@@ -95,6 +95,10 @@ message(STATUS "FFmpeg: avcodec=${AVCODEC_LIBRARY}, avformat=${AVFORMAT_LIBRARY}
 
 set(VIDEO_TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../resources/video")
 
+# VTM DecoderApp path for analysis tests (generates VBS2 statistics)
+set(VTM_DECODER_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/vtm/bin/mgwmake/gcc-mingw-14.2/x86_64/release/DecoderApp.exe")
+set(VTM_DLL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/vtm")
+
 # ==================== FFmpeg DLLs to output directory ====================
 
 set(FFMPEG_BIN_DIR "${FFMPEG_ROOT}/bin")

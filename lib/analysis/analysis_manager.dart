@@ -52,6 +52,9 @@ class AnalysisManager extends ChangeNotifier {
   String? get loadedHash => _loadedHash;
   bool get isLoaded => _state == AnalysisState.loaded;
 
+  /// Compute file hash (lightweight, reads first 1 MB only).
+  static Future<String> computeHash(String videoPath) => _computeHash(videoPath);
+
   /// Full flow: compute hash → check cache → generate if needed → load.
   /// Returns the hash on success, null on failure.
   Future<String?> ensureAndLoad(String videoPath) async {

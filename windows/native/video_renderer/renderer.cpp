@@ -599,7 +599,7 @@ void Renderer::render_loop() {
     // Raise Windows timer resolution from default ~15.6ms to 1ms,
     // so sleep_for(16ms) actually wakes up near 16ms instead of 31ms.
     timeBeginPeriod(1);
-    spdlog::info("[Renderer] Render loop started (timer resolution: 1ms)");
+    spdlog::info("[Renderer] Render loop started (timer resolution: 1ms), tid={}", GetCurrentThreadId());
 
     // Periodic diagnostics — log buffer state every 2 seconds
     auto diag_time = std::chrono::steady_clock::now();

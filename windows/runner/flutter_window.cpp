@@ -3,6 +3,7 @@
 #include <optional>
 #include <commctrl.h>
 #include <spdlog/spdlog.h>
+#include <unordered_map>
 
 #include "utils.h"
 
@@ -18,6 +19,12 @@
 // Minimum size applied to secondary windows (matches main window).
 static constexpr int kSecondaryMinWidth = 520;
 static constexpr int kSecondaryMinHeight = 360;
+
+// Timer ID and registry for delayed secondary window ForceRedraw.
+// Delaying avoids a crash in Flutter's D3D11 multi-engine rendering pipeline
+// when the first frame is rendered before the secondary engine is fully initialized.
+static constexpr UINT_PTR kForceRedrawTimerId = 0x4001;
+static std::unordered_map<HWND, flutter::FlutterViewController*> g_pending_redraw;
 
 static LRESULT CALLBACK SecondaryWindowSubclassProc(
     HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
@@ -40,7 +47,18 @@ static LRESULT CALLBACK SecondaryWindowSubclassProc(
     return 0;
   }
   if (msg == WM_NCDESTROY) {
+    g_pending_redraw.erase(hwnd);
     RemoveWindowSubclass(hwnd, SecondaryWindowSubclassProc, 0);
+  }
+  if (msg == WM_TIMER && wParam == kForceRedrawTimerId) {
+    KillTimer(hwnd, kForceRedrawTimerId);
+    auto it = g_pending_redraw.find(hwnd);
+    if (it != g_pending_redraw.end()) {
+      auto* ctrl = it->second;
+      g_pending_redraw.erase(it);
+      ctrl->ForceRedraw();
+    }
+    return 0;
   }
   return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
@@ -106,25 +124,27 @@ bool FlutterWindow::OnCreate() {
 
     // Apply minimum size constraint to the secondary top-level window.
     auto *view = flutter_view_controller->view();
-    if (view) {
-      HWND top_level = GetAncestor(view->GetNativeWindow(), GA_ROOT);
-      if (top_level) {
-        SetWindowSubclass(top_level, SecondaryWindowSubclassProc, 0, 0);
-      }
-    }
+    HWND top_level = view ? GetAncestor(view->GetNativeWindow(), GA_ROOT) : nullptr;
 
-    // Show window after first frame renders to prevent white flash.
-    flutter_view_controller->engine()->SetNextFrameCallback(
-        [flutter_view_controller]() {
-          auto *v = flutter_view_controller->view();
-          if (v) {
-            HWND top_level = GetAncestor(v->GetNativeWindow(), GA_ROOT);
-            if (top_level) {
-              ShowWindow(top_level, SW_SHOWNORMAL);
+    if (top_level) {
+      SetWindowSubclass(top_level, SecondaryWindowSubclassProc, 0, 0);
+
+      // Show window after first frame renders to prevent white flash.
+      flutter_view_controller->engine()->SetNextFrameCallback(
+          [flutter_view_controller]() {
+            auto *v = flutter_view_controller->view();
+            if (v) {
+              HWND tl = GetAncestor(v->GetNativeWindow(), GA_ROOT);
+              if (tl) {
+                ShowWindow(tl, SW_SHOWNORMAL);
+              }
             }
-          }
-        });
-    flutter_view_controller->ForceRedraw();
+          });
+      // Delay ForceRedraw to avoid crashing in Flutter's D3D11 multi-engine
+      // rendering pipeline during secondary engine initialization.
+      g_pending_redraw[top_level] = flutter_view_controller;
+      SetTimer(top_level, kForceRedrawTimerId, 300, nullptr);
+    }
   });
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());

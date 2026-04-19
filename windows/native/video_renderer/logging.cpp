@@ -283,6 +283,21 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
     }
 
     // Stack trace using DbgHelp
+    pos = safe_append(logbuf, pos, sizeof(logbuf), "\nCrashing thread ID: ");
+    {
+        DWORD tid = GetCurrentThreadId();
+        char tid_str[16];
+        int tp = 0;
+        if (tid == 0) { tid_str[tp++] = '0'; }
+        else {
+            char tmp[16]; int t = 0;
+            while (tid > 0) { tmp[t++] = '0' + (tid % 10); tid /= 10; }
+            while (t > 0) tid_str[tp++] = tmp[--t];
+        }
+        tid_str[tp] = '\0';
+        pos = safe_append(logbuf, pos, sizeof(logbuf), tid_str);
+        pos = safe_append(logbuf, pos, sizeof(logbuf), "\n");
+    }
     pos = safe_append(logbuf, pos, sizeof(logbuf), "\nStack Trace:\n");
 
     if (g_sym_initialized) {

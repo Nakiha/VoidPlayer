@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import '../app_log.dart';
@@ -12,6 +14,9 @@ class WindowManager {
 
   static final Map<String, String> _windowIds = {};
 
+  /// Analysis processes spawned as separate processes (keyed by hash).
+  static final Map<String, Process> _analysisProcesses = {};
+
   /// Accent color set by the main window, passed to all secondary windows.
   static int accentColorValue = 0xFF0078D4;
 
@@ -24,10 +29,9 @@ class WindowManager {
   static Future<void> showSettingsWindow() => _showWindow(WindowArgs.settings);
 
   /// Show an analysis window for a specific video hash.
-  /// Each hash opens a separate window.
+  /// Each hash opens a separate process to avoid Flutter's D3D11 multi-engine crash.
   static Future<void> showAnalysisWindow(String hash, {String? fileName}) =>
-      _showKeyedWindow(WindowArgs.analysis, hash,
-          extraConfig: {'hash': hash, if (fileName != null) 'fileName': fileName});
+      _spawnAnalysisProcess(hash, fileName: fileName);
 
   /// Saves all secondary window positions to config, then closes them.
   ///
@@ -39,20 +43,28 @@ class WindowManager {
 
     // 2. Find all secondary windows by class name and send WM_CLOSE.
     final hwnds = Win32FFI.findSecondaryWindows();
-    if (hwnds.isEmpty) return;
-
     for (final hwnd in hwnds) {
       Win32FFI.forceClose(hwnd);
     }
 
-    // 3. Wait for windows to actually close (up to ~2 s).
+    // 3. Wait for secondary windows to actually close (up to ~2 s).
     for (int i = 0; i < 20; i++) {
       await Future.delayed(const Duration(milliseconds: 100));
       if (hwnds.every((h) => !Win32FFI.isWindow(h))) break;
     }
 
     _windowIds.clear();
+
+    // 4. Kill any spawned analysis processes.
+    for (final process in _analysisProcesses.values) {
+      process.kill();
+    }
+    _analysisProcesses.clear();
   }
+
+  /// Compute the initial rect for a secondary window of the given [type].
+  /// Public so that main_window.dart can use it for process-spawned windows.
+  static Future<Rect> computeWindowRect(String type) => _computeWindowRect(type);
 
   // -----------------------------------------------------------------------
   // Internals
@@ -67,6 +79,53 @@ class WindowManager {
     }
     return false;
   }
+
+  // --- Analysis process spawning ---
+
+  static Future<void> _spawnAnalysisProcess(String hash, {String? fileName}) async {
+    // If a process for this hash is already running, don't spawn another.
+    final existing = _analysisProcesses[hash];
+    if (existing != null) {
+      // Check if the process is still alive.
+      final exitCode = existing.exitCode;
+      if (exitCode == null) {
+        log.info('[WindowManager] analysis process for $hash still running, skipping');
+        return;
+      }
+      _analysisProcesses.remove(hash);
+    }
+
+    final rect = await _computeWindowRect(WindowArgs.analysis);
+    final exe = Platform.resolvedExecutable;
+
+    final args = <String>[
+      '--standalone-analysis',
+      '--hash=$hash',
+      '--x=${rect.left.toInt()}',
+      '--y=${rect.top.toInt()}',
+      '--width=${rect.width.toInt()}',
+      '--height=${rect.height.toInt()}',
+      '--accentColor=$accentColorValue',
+      if (fileName != null) '--fileName=$fileName',
+    ];
+
+    log.info('[WindowManager] spawning analysis process: $args');
+    final process = await Process.start(exe, args);
+    _analysisProcesses[hash] = process;
+
+    // Log stderr for debugging.
+    process.stderr.transform(utf8.decoder).listen((data) {
+      log.warning('[AnalysisProcess:$hash] stderr: $data');
+    });
+
+    // Clean up when process exits.
+    process.exitCode.then((code) {
+      log.info('[WindowManager] analysis process for $hash exited with code $code');
+      _analysisProcesses.remove(hash);
+    });
+  }
+
+  // --- desktop_multi_window secondary windows (stats/settings/memory) ---
 
   static Future<void> _showWindow(String type) async {
     // Check for an existing window of this type.
@@ -92,61 +151,25 @@ class WindowManager {
 
     final mainCtrl = await WindowController.fromCurrentEngine();
     log.info('[WindowManager] creating "$type" window, rect=$rect, mainWindowId=${mainCtrl.windowId}');
-    final ctrl = await WindowController.create(WindowConfiguration(
-      arguments: jsonEncode({
-        'type': type,
-        'mainWindowId': mainCtrl.windowId,
-        'accentColor': accentColorValue,
-        'x': rect.left.toInt(),
-        'y': rect.top.toInt(),
-        'width': rect.width.toInt(),
-        'height': rect.height.toInt(),
-      }),
-      hiddenAtLaunch: true,
-    ));
-    _windowIds[type] = ctrl.windowId;
-    log.info('[WindowManager] "$type" created with id=${ctrl.windowId}');
-  }
-
-  /// Show a keyed window — each unique [key] gets its own window.
-  static Future<void> _showKeyedWindow(String type, String key,
-      {Map<String, dynamic>? extraConfig}) async {
-    final fullKey = '${type}_$key';
-    final existing = _windowIds[fullKey];
-    if (existing != null) {
-      try {
-        log.info('[WindowManager] "$fullKey" already exists (id=$existing), calling show()');
-        final ctrl = WindowController.fromWindowId(existing);
-        await ctrl.show();
-        return;
-      } catch (e, stack) {
-        log.warning('[WindowManager] "$fullKey" show() failed for id=$existing: $e\n$stack');
-        _windowIds.remove(fullKey);
-      }
+    try {
+      final ctrl = await WindowController.create(WindowConfiguration(
+        arguments: jsonEncode({
+          'type': type,
+          'mainWindowId': mainCtrl.windowId,
+          'accentColor': accentColorValue,
+          'x': rect.left.toInt(),
+          'y': rect.top.toInt(),
+          'width': rect.width.toInt(),
+          'height': rect.height.toInt(),
+        }),
+        hiddenAtLaunch: true,
+      ));
+      _windowIds[type] = ctrl.windowId;
+      log.info('[WindowManager] "$type" created with id=${ctrl.windowId}');
+    } finally {
+      // Small delay for the engine to stabilize.
+      await Future.delayed(const Duration(milliseconds: 100));
     }
-
-    // Compute the initial rect for keyed windows too.
-    final rect = await _computeWindowRect(type);
-
-    final mainCtrl = await WindowController.fromCurrentEngine();
-    log.info('[WindowManager] creating "$fullKey" window, rect=$rect, mainWindowId=${mainCtrl.windowId}');
-    final config = <String, dynamic>{
-      'type': type,
-      'mainWindowId': mainCtrl.windowId,
-      'accentColor': accentColorValue,
-      'x': rect.left.toInt(),
-      'y': rect.top.toInt(),
-      'width': rect.width.toInt(),
-      'height': rect.height.toInt(),
-    };
-    if (extraConfig != null) config.addAll(extraConfig);
-
-    final ctrl = await WindowController.create(WindowConfiguration(
-      arguments: jsonEncode(config),
-      hiddenAtLaunch: true,
-    ));
-    _windowIds[fullKey] = ctrl.windowId;
-    log.info('[WindowManager] "$fullKey" created with id=${ctrl.windowId}');
   }
 
   /// Computes the initial position and size for a secondary window:

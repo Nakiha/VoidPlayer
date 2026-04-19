@@ -190,30 +190,24 @@ class _AnalysisButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    if (isWorking) {
-      return const SizedBox(
-        width: 28,
-        height: 28,
-        child: Padding(
-          padding: EdgeInsets.all(4),
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    }
-
     return SizedBox(
       width: 28,
       height: 28,
       child: InkWell(
         borderRadius: BorderRadius.circular(4),
-        onTap: onTap,
-        child: Icon(
-          isError ? Icons.error_outline : Icons.analytics_outlined,
-          size: 18,
-          color: isError
-              ? theme.colorScheme.error
-              : theme.colorScheme.onSurfaceVariant,
-        ),
+        onTap: isWorking ? null : onTap,
+        child: isWorking
+            ? const Padding(
+                padding: EdgeInsets.all(4),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(
+                isError ? Icons.error_outline : Icons.analytics_outlined,
+                size: 18,
+                color: isError
+                    ? theme.colorScheme.error
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
       ),
     );
   }

@@ -56,6 +56,11 @@ typedef _GetWindowTextWNative = Int32 Function(
 typedef _GetWindowTextWDart = int Function(
     int hWnd, Pointer<Utf16> lpString, int nMaxCount);
 
+typedef _SetWindowTextWNative = Int32 Function(
+    IntPtr hWnd, Pointer<Utf16> lpString);
+typedef _SetWindowTextWDart = int Function(
+    int hWnd, Pointer<Utf16> lpString);
+
 typedef _GetCurrentProcessIdNative = Uint32 Function();
 typedef _GetCurrentProcessIdDart = int Function();
 
@@ -168,6 +173,10 @@ final _getWindowTextW =
     _user32.lookupFunction<_GetWindowTextWNative, _GetWindowTextWDart>(
         'GetWindowTextW');
 
+final _setWindowTextW =
+    _user32.lookupFunction<_SetWindowTextWNative, _SetWindowTextWDart>(
+        'SetWindowTextW');
+
 final _getCurrentProcessId =
     _kernel32.lookupFunction<_GetCurrentProcessIdNative, _GetCurrentProcessIdDart>(
         'GetCurrentProcessId');
@@ -246,6 +255,16 @@ class Win32FFI {
     }
   }
 
+  /// Sets the window title.
+  static void setWindowText(int hwnd, String text) {
+    final ptr = text.toNativeUtf16();
+    try {
+      _setWindowTextW(hwnd, ptr);
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
   /// Moves and resizes the window in one call.
   static void moveWindow(int hwnd, int x, int y, int w, int h) {
     _moveWindow(hwnd, x, y, w, h, 1);
@@ -282,6 +301,13 @@ class Win32FFI {
   /// Posts `WM_CLOSE` to the window (graceful close request).
   static void postClose(int hwnd) {
     _postMessageW(hwnd, _wmClose, 0, 0);
+  }
+
+  /// Posts `WM_CLOSE` with `wParam=1` to signal forced close (app shutdown).
+  /// The secondary window's subclass proc checks `wParam` and allows
+  /// normal destruction instead of hiding.
+  static void forceClose(int hwnd) {
+    _postMessageW(hwnd, _wmClose, 1, 0);
   }
 
   /// Returns the current process ID.

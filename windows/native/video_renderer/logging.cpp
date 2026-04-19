@@ -183,8 +183,9 @@ static void get_timestamp_filename(char* buf, int bufsize) {
 }
 
 static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
-    // Build crash log content in a stack buffer
-    char logbuf[16384];
+    // Use a static buffer — heap may be corrupted during a crash.
+    // Safe in practice: only one crash handler runs at a time (process is dying).
+    static char logbuf[16384];
     int pos = 0;
 
     pos = safe_append(logbuf, pos, sizeof(logbuf),
@@ -472,6 +473,10 @@ static LONG WINAPI vectored_crash_handler(EXCEPTION_POINTERS* ep) {
 
 void install_crash_handler(const std::string& crash_dir) {
 #ifdef _WIN32
+    static bool s_installed = false;
+    if (s_installed) return;
+    s_installed = true;
+
     g_crash_dir = crash_dir;
 
     // Pre-initialize DbgHelp symbol handler so crash handler can resolve symbols.

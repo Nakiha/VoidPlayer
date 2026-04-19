@@ -1,6 +1,7 @@
 #include "analysis_ffi.h"
 #include "analysis/analysis_manager.h"
 #include "analysis/generators/analysis_generator.h"
+#include "utils.h"
 
 #include <spdlog/spdlog.h>
 #include <windows.h>
@@ -29,12 +30,16 @@ static NakiAnalysisSummary g_analysis_summary = {};
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_load(const char* vbs2_path, const char* vbi_path, const char* vbt_path) {
+    static int load_count = 0;
+    LogStackUsage(fmt::format("analysis_load #{}", ++load_count).c_str());
     auto& mgr = vr::analysis::AnalysisManager::instance();
     return mgr.load(vbs2_path, vbi_path, vbt_path) ? 1 : 0;
 }
 
 extern "C" __declspec(dllexport)
 void naki_analysis_unload() {
+    static int unload_count = 0;
+    LogStackUsage(fmt::format("analysis_unload #{}", ++unload_count).c_str());
     vr::analysis::AnalysisManager::instance().unload();
 }
 
@@ -73,7 +78,25 @@ int32_t naki_analysis_get_frames(NakiFrameInfo* out, int32_t max_count) {
     auto& mgr = vr::analysis::AnalysisManager::instance();
     if (!mgr.is_loaded()) return 0;
 
-    int count = std::min(max_count, std::min(mgr.vbs2().frame_count(), mgr.vbt().packet_count()));
+    int vbs2_count = mgr.vbs2().frame_count();
+    int vbt_count = mgr.vbt().packet_count();
+
+    // Fallback: no VBS2 — fill from VBT only (no slice_type / QP / refs)
+    if (vbs2_count == 0) {
+        int count = std::min(max_count, vbt_count);
+        for (int i = 0; i < count; i++) {
+            const auto& pkt = mgr.vbt().entry(i);
+            auto& f = out[i];
+            std::memset(&f, 0, sizeof(f));
+            f.pts = pkt.pts;
+            f.dts = pkt.dts;
+            f.packet_size = static_cast<int32_t>(pkt.size);
+            f.keyframe = (pkt.flags & 0x01) ? 1 : 0;
+        }
+        return count;
+    }
+
+    int count = std::min(max_count, std::min(vbs2_count, vbt_count));
     for (int i = 0; i < count; i++) {
         auto fh = mgr.vbs2().read_frame_header(i);
         const auto& pkt = mgr.vbt().entry(i);
@@ -135,18 +158,35 @@ static std::string get_exe_dir() {
 }
 
 // Run a command via CreateProcess. Returns exit code, or -1 on CreateProcess failure.
-static int run_command(const std::string& cmd) {
+// If log_path is non-empty, stdout+stderr are redirected to that file.
+static int run_command(const std::string& cmd, const std::string& log_path = {}) {
     STARTUPINFOA si = { sizeof(si) };
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
     PROCESS_INFORMATION pi = {};
+
+    SECURITY_ATTRIBUTES sa = { sizeof(sa), nullptr, TRUE };  // inheritable
+    HANDLE hLogFile = INVALID_HANDLE_VALUE;
+
+    if (!log_path.empty()) {
+        hLogFile = CreateFileA(log_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
+                               &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hLogFile != INVALID_HANDLE_VALUE) {
+            si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+            si.hStdOutput = hLogFile;
+            si.hStdError = hLogFile;
+            si.wShowWindow = SW_HIDE;
+        }
+    } else {
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+    }
 
     std::string cmdline = cmd;
     if (!CreateProcessA(
             nullptr, cmdline.data(),
-            nullptr, nullptr, FALSE,
+            nullptr, nullptr, TRUE,
             CREATE_NO_WINDOW,
             nullptr, nullptr, &si, &pi)) {
+        if (hLogFile != INVALID_HANDLE_VALUE) CloseHandle(hLogFile);
         return -1;
     }
 
@@ -157,6 +197,7 @@ static int run_command(const std::string& cmd) {
 
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
+    if (hLogFile != INVALID_HANDLE_VALUE) CloseHandle(hLogFile);
     return static_cast<int>(exit_code);
 }
 
@@ -350,11 +391,24 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
             ScopedEnvVars env;
             env.set("VTM_BINARY_STATS", vbs2_out);
 
+            // Build VTM log path: logs/vtm_<timestamp>_<hash>.log
+            std::string logs_dir = exe_dir + "\\logs";
+            CreateDirectoryA(logs_dir.c_str(), nullptr);
+            SYSTEMTIME st;
+            GetLocalTime(&st);
+            char vtm_log_name[128];
+            snprintf(vtm_log_name, sizeof(vtm_log_name),
+                     "vtm_%04d-%02d-%02d_%02d%02d%02d_%s.log",
+                     st.wYear, st.wMonth, st.wDay,
+                     st.wHour, st.wMinute, st.wSecond, hash);
+            std::string vtm_log_path = logs_dir + "\\" + vtm_log_name;
+
             // Run DecoderApp (MinGW DLLs are installed alongside it in tools/vtm/)
             std::string cmd = "\"" + decoder_path + "\" -b \"" + tmp_vvc +
                 "\" --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
             spdlog::info("[Analysis] vtm cmd: {}", cmd);
-            int vtm_rc = run_command(cmd);
+            spdlog::info("[Analysis] vtm log: {}", vtm_log_path);
+            int vtm_rc = run_command(cmd, vtm_log_path);
             spdlog::info("[Analysis] vtm exit_code={}", vtm_rc);
 
             // Clean up temp .vvc

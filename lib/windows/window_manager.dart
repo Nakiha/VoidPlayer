@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:ui';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
+import '../app_log.dart';
 import '../config/app_config.dart';
 import 'win32ffi.dart';
 import 'window_args.dart';
@@ -24,8 +25,9 @@ class WindowManager {
 
   /// Show an analysis window for a specific video hash.
   /// Each hash opens a separate window.
-  static Future<void> showAnalysisWindow(String hash) =>
-      _showKeyedWindow(WindowArgs.analysis, hash, extraConfig: {'hash': hash});
+  static Future<void> showAnalysisWindow(String hash, {String? fileName}) =>
+      _showKeyedWindow(WindowArgs.analysis, hash,
+          extraConfig: {'hash': hash, if (fileName != null) 'fileName': fileName});
 
   /// Saves all secondary window positions to config, then closes them.
   ///
@@ -40,7 +42,7 @@ class WindowManager {
     if (hwnds.isEmpty) return;
 
     for (final hwnd in hwnds) {
-      Win32FFI.postClose(hwnd);
+      Win32FFI.forceClose(hwnd);
     }
 
     // 3. Wait for windows to actually close (up to ~2 s).
@@ -56,17 +58,32 @@ class WindowManager {
   // Internals
   // -----------------------------------------------------------------------
 
+  /// Check whether a secondary window of [type] is still alive by title.
+  static bool _isSecondaryWindowAlive(String type) {
+    final title = WindowArgs.windowTitles[type];
+    if (title == null) return false;
+    for (final hwnd in Win32FFI.findSecondaryWindows()) {
+      if (Win32FFI.getWindowText(hwnd).contains(title)) return true;
+    }
+    return false;
+  }
+
   static Future<void> _showWindow(String type) async {
     // Check for an existing window of this type.
     final existing = _windowIds[type];
     if (existing != null) {
-      try {
-        final ctrl = WindowController.fromWindowId(existing);
-        await ctrl.show();
-        return;
-      } catch (_) {
-        // Window was closed by user — stale ID, recreate.
+      if (!_isSecondaryWindowAlive(type)) {
+        log.info('[WindowManager] "$type" closed by user, removing stale id=$existing');
         _windowIds.remove(type);
+      } else {
+        try {
+          final ctrl = WindowController.fromWindowId(existing);
+          await ctrl.show();
+          return;
+        } catch (e, stack) {
+          log.warning('[WindowManager] "$type" show() failed for id=$existing: $e\n$stack');
+          _windowIds.remove(type);
+        }
       }
     }
 
@@ -74,6 +91,7 @@ class WindowManager {
     final rect = await _computeWindowRect(type);
 
     final mainCtrl = await WindowController.fromCurrentEngine();
+    log.info('[WindowManager] creating "$type" window, rect=$rect, mainWindowId=${mainCtrl.windowId}');
     final ctrl = await WindowController.create(WindowConfiguration(
       arguments: jsonEncode({
         'type': type,
@@ -87,6 +105,7 @@ class WindowManager {
       hiddenAtLaunch: true,
     ));
     _windowIds[type] = ctrl.windowId;
+    log.info('[WindowManager] "$type" created with id=${ctrl.windowId}');
   }
 
   /// Show a keyed window — each unique [key] gets its own window.
@@ -96,10 +115,12 @@ class WindowManager {
     final existing = _windowIds[fullKey];
     if (existing != null) {
       try {
+        log.info('[WindowManager] "$fullKey" already exists (id=$existing), calling show()');
         final ctrl = WindowController.fromWindowId(existing);
         await ctrl.show();
         return;
-      } catch (_) {
+      } catch (e, stack) {
+        log.warning('[WindowManager] "$fullKey" show() failed for id=$existing: $e\n$stack');
         _windowIds.remove(fullKey);
       }
     }
@@ -108,6 +129,7 @@ class WindowManager {
     final rect = await _computeWindowRect(type);
 
     final mainCtrl = await WindowController.fromCurrentEngine();
+    log.info('[WindowManager] creating "$fullKey" window, rect=$rect, mainWindowId=${mainCtrl.windowId}');
     final config = <String, dynamic>{
       'type': type,
       'mainWindowId': mainCtrl.windowId,
@@ -124,6 +146,7 @@ class WindowManager {
       hiddenAtLaunch: true,
     ));
     _windowIds[fullKey] = ctrl.windowId;
+    log.info('[WindowManager] "$fullKey" created with id=${ctrl.windowId}');
   }
 
   /// Computes the initial position and size for a secondary window:

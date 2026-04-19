@@ -13,13 +13,14 @@ import '../l10n/app_localizations.dart';
 class AnalysisApp extends StatelessWidget {
   final Color accentColor;
   final String hash;
+  final String? fileName;
 
-  const AnalysisApp({super.key, required this.accentColor, required this.hash});
+  const AnalysisApp({super.key, required this.accentColor, required this.hash, this.fileName});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Void Player - Analysis',
+      title: fileName != null ? 'Void Player - $fileName' : 'Void Player - Analysis',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,

@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -80,7 +81,7 @@ class AnalysisManager extends ChangeNotifier {
     notifyListeners();
 
     log.info('[Analysis] calling FFI generateAnalysis(videoPath=$videoPath, hash=$hash)');
-    final ok = AnalysisFfi.generateAnalysis(videoPath, hash);
+    final ok = await Isolate.run(() => AnalysisFfi.generateAnalysis(videoPath, hash));
     if (!ok) {
       log.severe('[Analysis] generateAnalysis returned false');
       _setError(AnalysisErrorKey.unsupported, [fileName]);

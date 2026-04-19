@@ -98,6 +98,7 @@ void main(List<String> args) async {
     case WindowArgs.memory:
     case WindowArgs.settings:
     case WindowArgs.analysis:
+      log.info('[SecondaryWindow] type=${windowArgs.windowType}, initializing...');
       await Window.initialize();
       await Window.setEffect(
         effect: WindowEffect.mica,
@@ -108,11 +109,22 @@ void main(List<String> args) async {
         WindowArgs.stats => StatsApp(accentColor: accentColor),
         WindowArgs.memory => MemoryApp(accentColor: accentColor),
         WindowArgs.settings => SettingsApp(accentColor: accentColor),
-        WindowArgs.analysis => AnalysisApp(accentColor: accentColor, hash: windowArgs.hash!),
+        WindowArgs.analysis => AnalysisApp(accentColor: accentColor, hash: windowArgs.hash!, fileName: windowArgs.fileName),
         _ => throw StateError('unreachable'),
       };
       // Apply initial position/size before the first frame renders.
       _applySecondaryWindowRect(windowArgs);
+      // Set native window title (desktop_multi_window doesn't provide this).
+      final hwnd = Win32FFI.getForegroundWindow();
+      if (hwnd != 0) {
+        final title = switch (windowArgs.windowType) {
+          WindowArgs.analysis => windowArgs.fileName != null
+              ? 'Void Player - ${windowArgs.fileName}'
+              : 'Void Player - Analysis',
+          _ => WindowArgs.windowTitles[windowArgs.windowType] ?? 'Void Player',
+        };
+        Win32FFI.setWindowText(hwnd, title);
+      }
       runApp(app);
       break;
     default:

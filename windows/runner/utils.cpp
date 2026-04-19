@@ -4,6 +4,8 @@
 #include <io.h>
 #include <stdio.h>
 #include <windows.h>
+#include <processthreadsapi.h>
+#include <spdlog/spdlog.h>
 
 #include <iostream>
 
@@ -62,4 +64,16 @@ std::string Utf8FromUtf16(const wchar_t* utf16_string) {
     return std::string();
   }
   return utf8_string;
+}
+
+void LogStackUsage(const char* label) {
+  ULONG_PTR lo, hi;
+  GetCurrentThreadStackLimits(&lo, &hi);
+  size_t committed = hi - lo;
+  size_t used = hi - reinterpret_cast<ULONG_PTR>(&lo);
+  spdlog::info("[Stack] {} | tid={} | committed={:.2f}MB used={:.2f}KB ({:.1f}%)",
+               label, GetCurrentThreadId(),
+               committed / (1024.0 * 1024.0),
+               used / 1024.0,
+               committed > 0 ? used * 100.0 / committed : 0.0);
 }

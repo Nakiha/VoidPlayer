@@ -2,6 +2,9 @@
 
 #include <optional>
 #include <commctrl.h>
+#include <spdlog/spdlog.h>
+
+#include "utils.h"
 
 #pragma comment(lib, "comctl32.lib")
 
@@ -23,6 +26,17 @@ static LRESULT CALLBACK SecondaryWindowSubclassProc(
     auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
     mmi->ptMinTrackSize.x = kSecondaryMinWidth;
     mmi->ptMinTrackSize.y = kSecondaryMinHeight;
+    return 0;
+  }
+  if (msg == WM_CLOSE) {
+    if (wParam == 1) {
+      // Force close (app shutdown) — allow default processing to destroy window
+      spdlog::info("[SecondaryWindow] force close: hwnd={:#x}", (uintptr_t)hwnd);
+      return DefSubclassProc(hwnd, msg, wParam, lParam);
+    }
+    // User clicked X — hide instead of destroy to keep engine alive
+    spdlog::info("[SecondaryWindow] user close → hide: hwnd={:#x}", (uintptr_t)hwnd);
+    ShowWindow(hwnd, SW_HIDE);
     return 0;
   }
   if (msg == WM_NCDESTROY) {
@@ -71,6 +85,9 @@ bool FlutterWindow::OnCreate() {
   // on the main window, WM_CLOSE is swallowed entirely and the close button
   // becomes unresponsive.
   DesktopMultiWindowSetWindowCreatedCallback([](void *controller) {
+    static int create_count = 0;
+    LogStackUsage(fmt::format("secondary_window_create #{}", ++create_count).c_str());
+
     auto *flutter_view_controller =
         reinterpret_cast<flutter::FlutterViewController *>(controller);
     auto *registry = flutter_view_controller->engine();
@@ -81,12 +98,11 @@ bool FlutterWindow::OnCreate() {
     ScreenRetrieverWindowsPluginCApiRegisterWithRegistrar(
         registry->GetRegistrarForPlugin(
             "ScreenRetrieverWindowsPluginCApi"));
-    // Register VideoRendererPlugin for each new engine.
-    // Secondary windows won't call createRenderer, so renderer_ stays null.
-    VideoRendererPlugin::RegisterWithRegistrar(
-        flutter::PluginRegistrarManager::GetInstance()
-            ->GetRegistrar<flutter::PluginRegistrarWindows>(
-                registry->GetRegistrarForPlugin("VideoRendererPlugin")));
+    // VideoRendererPlugin is intentionally NOT registered for secondary
+    // windows.  Secondary windows only use dart:ffi (AnalysisFfi) — they
+    // don't need the method channel or texture bridge.  Registering the
+    // plugin crashes when the main window's render loop is actively
+    // updating textures (Dart_InvokeClosure on invalid closure).
 
     // Apply minimum size constraint to the secondary top-level window.
     auto *view = flutter_view_controller->view();

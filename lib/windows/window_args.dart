@@ -6,12 +6,14 @@ class WindowArgs {
   final String windowType;
   final int? _accentColorValue;
   final String? hash;
+  final String? fileName;
   final Rect? _initialRect;
 
   const WindowArgs._({
     required this.windowType,
     int? accentColorValue,
     this.hash,
+    this.fileName,
     Rect? initialRect,
   })  : _accentColorValue = accentColorValue,
         _initialRect = initialRect;
@@ -59,6 +61,7 @@ class WindowArgs {
           final type = config['type'] as String? ?? WindowArgs.main;
           final accentColor = config['accentColor'] as int?;
           final hash = config['hash'] as String?;
+          final fileName = config['fileName'] as String?;
 
           // Parse initial position/size if present.
           Rect? initialRect;
@@ -76,6 +79,7 @@ class WindowArgs {
             windowType: type,
             accentColorValue: accentColor,
             hash: hash,
+            fileName: fileName,
             initialRect: initialRect,
           );
         } catch (_) {

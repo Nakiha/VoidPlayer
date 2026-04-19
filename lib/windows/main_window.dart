@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:path/path.dart' as p;
 import '../app_log.dart';
 import '../video_renderer_controller.dart';
 import '../track_manager.dart';
@@ -164,7 +165,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     for (final entry in _trackManager.entries) {
       final hash = await mgr.ensureAndLoad(entry.path);
       if (hash != null) {
-        WindowManager.showAnalysisWindow(hash);
+        WindowManager.showAnalysisWindow(hash, fileName: p.basename(entry.path));
       }
     }
   }

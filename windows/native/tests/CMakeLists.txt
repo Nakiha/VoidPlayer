@@ -61,7 +61,6 @@ target_link_libraries(analysis_tests PRIVATE
 target_compile_definitions(analysis_tests PRIVATE
     VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
     VTM_DECODER_PATH="${VTM_DECODER_PATH}"
-    VTM_DLL_DIR="${VTM_DLL_DIR}"
 )
 
 add_test(NAME analysis_tests COMMAND analysis_tests)

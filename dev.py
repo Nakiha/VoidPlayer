@@ -17,6 +17,7 @@ Usage examples:
 """
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -29,11 +30,18 @@ DEMO_SCRIPT = NATIVE_DIR / "demo" / "demo_video_renderer.py"
 
 VTM_DIR = ROOT / "tools" / "vtm"
 VTM_BUILD_DIR = VTM_DIR / "build"
-VTM_DECODER = VTM_DIR / "bin" / "mgwmake" / "gcc-mingw-14.2" / "x86_64" / "release" / "DecoderApp.exe"
 
-# MSYS2 paths for VTM build (MinGW GCC toolchain)
-MSYS2_BASH = r"C:\msys64\usr\bin\bash.exe"
-UCRT64_BIN = r"/ucrt64/bin"
+
+def _find_vtm_decoder() -> Path:
+    """Find DecoderApp.exe under bin/vs*/ — MSVC output varies by VS version."""
+    bin_dir = VTM_DIR / "bin"
+    if bin_dir.exists():
+        for p in sorted(bin_dir.rglob("DecoderApp.exe"), reverse=True):
+            return p
+    return bin_dir / "DecoderApp.exe"
+
+
+VTM_DECODER = _find_vtm_decoder()
 
 
 def header(title: str):
@@ -240,31 +248,27 @@ def cmd_vtm(args):
 
 
 def cmd_vtm_build(_args):
-    """Build VTM DecoderApp with DTrace + VBS1 support."""
+    """Build VTM DecoderApp with MSVC (static runtime, no DLL dependencies)."""
+    # Clean old MinGW build if present
+    cache = VTM_BUILD_DIR / "CMakeCache.txt"
+    if cache.exists():
+        content = cache.read_text(errors="ignore")
+        if "MinGW" in content:
+            print("  Cleaning old MinGW build...")
+            shutil.rmtree(VTM_BUILD_DIR)
+
     VTM_BUILD_DIR.mkdir(parents=True, exist_ok=True)
 
-    build_type = "Release"  # VTM always release (debug is very slow)
-
-    header(f"Configure VTM ({build_type})")
+    header("Configure VTM (MSVC, static runtime)")
     cmake_cmd = [
-        "cmake", str(VTM_DIR),
-        "-G", "MinGW Makefiles",
-        f"-DCMAKE_BUILD_TYPE={build_type}",
+        "cmake", "-B", str(VTM_BUILD_DIR), "-S", str(VTM_DIR),
+        "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded",
+        "-DCMAKE_CXX_FLAGS=/wd4819",
     ]
-    run(cmake_cmd, cwd=str(VTM_BUILD_DIR))
+    run(cmake_cmd)
 
-    header(f"Build VTM DecoderApp ({build_type})")
-    # Run via MSYS2 bash to get proper MinGW GCC environment
-    nproc = os.cpu_count() or 4
-    # Convert Windows path to MSYS2 POSIX: D:/Code -> /d/Code
-    build_posix = VTM_BUILD_DIR.as_posix()
-    build_msys = "/" + build_posix[0].lower() + build_posix[2:]
-    make_cmd = (
-        f'export PATH={UCRT64_BIN}:$PATH && '
-        f'cd {build_msys} && '
-        f'mingw32-make DecoderApp -j{nproc}'
-    )
-    run([MSYS2_BASH, "-lc", make_cmd], use_shell=False)
+    header("Build VTM DecoderApp (Release)")
+    run(["cmake", "--build", str(VTM_BUILD_DIR), "--config", "Release", "--target", "DecoderApp"])
 
     if VTM_DECODER.exists():
         size_mb = VTM_DECODER.stat().st_size / (1024 * 1024)
@@ -274,7 +278,7 @@ def cmd_vtm_build(_args):
 
 
 def cmd_vtm_analyze(args):
-    """Generate .vbs2 binary stats, .vbi NALU index, and .vbt timestamps for a video file."""
+    """Generate .vbs2 binary stats for a video file."""
     if not VTM_DECODER.exists():
         print("DecoderApp not found. Building first...")
         cmd_vtm_build(args)
@@ -284,33 +288,22 @@ def cmd_vtm_analyze(args):
         print(f"ERROR: video not found: {video_path}")
         sys.exit(1)
 
-    # Output paths
     vbs2_path = video_path.with_suffix(".vbs2")
-    vbi_path = video_path.with_suffix(".vbi")
-    vbt_path = video_path.with_suffix(".vbt")
-
-    # Extract raw VVC if needed
     raw_path = _extract_raw_vvc(video_path)
 
-    # --- Step 1: VBS2 (VTM DecoderApp) ---
     header(f"Generate VBS2 stats for {video_path.name}")
     print(f"  Output: {vbs2_path}")
 
-    # Convert Windows path to MSYS2 POSIX path: D:/Code/Foo -> /d/Code/Foo
-    def to_msys(p: Path) -> str:
-        s = p.as_posix()          # e.g. D:/Code/Foo
-        return "/" + s[0].lower() + s[2:]  # strip colon: /d/Code/Foo
+    env = os.environ.copy()
+    env["VTM_BINARY_STATS"] = str(vbs2_path)
 
-    decoder_cmd = (
-        f'export PATH={UCRT64_BIN}:$PATH && '
-        f'export VTM_BINARY_STATS="{to_msys(vbs2_path)}" && '
-        f'"{to_msys(VTM_DECODER)}" '
-        f'-b "{to_msys(raw_path)}" '
-        f'--TraceFile=/dev/null '
-        f'--TraceRule="D_BLOCK_STATISTICS_CODED:poc>=0" '
-        f'-o /dev/null'
-    )
-    run([MSYS2_BASH, "-lc", decoder_cmd], use_shell=False)
+    run([
+        str(VTM_DECODER),
+        "-b", str(raw_path),
+        "--TraceFile=NUL",
+        '--TraceRule=D_BLOCK_STATISTICS_CODED:poc>=0',
+        "-o", "NUL",
+    ], env=env)
 
     if vbs2_path.exists():
         size_mb = vbs2_path.stat().st_size / (1024 * 1024)
@@ -319,20 +312,8 @@ def cmd_vtm_analyze(args):
         print(f"\n  ERROR: output file not created: {vbs2_path}")
         sys.exit(1)
 
-    # --- Step 2: VBI (NALU index) ---
-    header(f"Generate NALU index for {raw_path.name}")
-    from tools.vvc_nalu_indexer import index_nalus
-    vbi_result = index_nalus(str(raw_path), str(vbi_path), verbose=True)
-
-    # --- Step 3: VBT (timestamps) ---
-    header(f"Extract timestamps from {video_path.name}")
-    from tools.vvc_timestamp_extractor import extract_timestamps
-    vbt_result = extract_timestamps(str(video_path), str(vbt_path), verbose=True)
-
     print(f"\n  Analysis complete:")
     print(f"    VBS2: {vbs2_path}")
-    print(f"    VBI:  {vbi_path}")
-    print(f"    VBT:  {vbt_path}")
 # ---------------------------------------------------------------------------
 
 def main():

@@ -136,8 +136,14 @@ class _ViewportPanelState extends State<ViewportPanel> {
           },
           onPointerSignal: (e) {
             if (e is PointerScrollEvent) {
-              final scrollDelta = e.scrollDelta.dy;
-              widget.onZoom(scrollDelta, e.localPosition);
+              widget.onZoom(e.scrollDelta.dy, e.localPosition);
+            }
+          },
+          onPointerPanZoomUpdate: (e) {
+            // Trackpad two-finger scroll → zoom
+            final panDelta = e.pan.dy;
+            if (panDelta != 0.0) {
+              widget.onZoom(panDelta, e.localPosition);
             }
           },
           child: Texture(textureId: widget.textureId!),

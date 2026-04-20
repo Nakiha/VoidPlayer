@@ -22,10 +22,6 @@ extern "C" {
 #define VTM_DECODER_PATH ""
 #endif
 
-#ifndef VTM_DLL_DIR
-#define VTM_DLL_DIR ""
-#endif
-
 static const std::string kTestVideo = std::string(VIDEO_TEST_DIR) + "/h266_10s_1920x1080.mp4";
 
 // ============================================================================
@@ -304,15 +300,6 @@ bool AnalysisTestData::generate_vbs2() {
 
     ScopedEnvVars env;
     env.set("VTM_BINARY_STATS", vbs2_path_);
-
-    // Add MinGW DLL directory to PATH (libgcc_s_seh-1.dll, libstdc++-6.dll)
-    std::string dll_dir = VTM_DLL_DIR;
-    if (!dll_dir.empty() && std::filesystem::exists(dll_dir)) {
-        std::string current_path = get_env_var("PATH");
-        std::string new_path = dll_dir + ";" + current_path;
-        env.set("PATH", new_path);
-        spdlog::info("[TestData] added DLL dir to PATH: {}", dll_dir);
-    }
 
     std::string cmd = "\"" + decoder_path + "\" -b \"" + raw_vvc_path_ +
         "\" --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";

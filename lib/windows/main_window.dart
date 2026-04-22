@@ -103,7 +103,10 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     actionRegistry.bind(const Play(), (_) => _controller.play());
     actionRegistry.bind(const Pause(), (_) => _controller.pause());
     actionRegistry.bind(const StepForward(), (_) => _controller.stepForward());
-    actionRegistry.bind(const StepBackward(), (_) => _controller.stepBackward());
+    actionRegistry.bind(
+      const StepBackward(),
+      (_) => _controller.stepBackward(),
+    );
     actionRegistry.bind(const SeekTo(0), (action) {
       final a = action as SeekTo;
       _controller.seek(a.ptsUs);
@@ -144,10 +147,22 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     });
 
     // Window management
-    actionRegistry.bind(const NewWindow(), (_) => WindowManager.showStatsWindow());
-    actionRegistry.bind(const OpenSettings(), (_) => WindowManager.showSettingsWindow());
-    actionRegistry.bind(const OpenStats(), (_) => WindowManager.showStatsWindow());
-    actionRegistry.bind(const OpenMemory(), (_) => WindowManager.showMemoryWindow());
+    actionRegistry.bind(
+      const NewWindow(),
+      (_) => WindowManager.showStatsWindow(),
+    );
+    actionRegistry.bind(
+      const OpenSettings(),
+      (_) => WindowManager.showSettingsWindow(),
+    );
+    actionRegistry.bind(
+      const OpenStats(),
+      (_) => WindowManager.showStatsWindow(),
+    );
+    actionRegistry.bind(
+      const OpenMemory(),
+      (_) => WindowManager.showMemoryWindow(),
+    );
     actionRegistry.bind(const OpenAnalysis(), (_) => _toggleAnalysisToolbar());
   }
 
@@ -165,7 +180,10 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     for (final entry in _trackManager.entries) {
       final hash = await mgr.ensureAndLoad(entry.path);
       if (hash != null) {
-        await WindowManager.showAnalysisWindow(hash, fileName: p.basename(entry.path));
+        await WindowManager.showAnalysisWindow(
+          hash,
+          fileName: p.basename(entry.path),
+        );
       }
     }
   }
@@ -188,7 +206,11 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   }
 
   void _setZoom(double ratio) {
-    setState(() => _layout = _layout.copyWith(zoomRatio: ratio.clamp(LayoutState.zoomMin, LayoutState.zoomMax)));
+    setState(
+      () => _layout = _layout.copyWith(
+        zoomRatio: ratio.clamp(LayoutState.zoomMin, LayoutState.zoomMax),
+      ),
+    );
     _markLayoutDirty();
   }
 
@@ -215,7 +237,13 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       // First load: create renderer
       setState(() => _viewportState = 0);
       try {
-        final res = await _controller.createRenderer(paths);
+        final initialWidth = _viewportWidth > 0 ? _viewportWidth : 1920;
+        final initialHeight = _viewportHeight > 0 ? _viewportHeight : 1080;
+        final res = await _controller.createRenderer(
+          paths,
+          width: initialWidth,
+          height: initialHeight,
+        );
         setState(() {
           _textureId = res.textureId;
           _viewportState = 2;
@@ -274,7 +302,10 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   void _onZoom(double scrollDelta, Offset localPos) {
     final factor = scrollDelta > 0 ? 0.9 : 1.1;
-    final newZoom = (_layout.zoomRatio * factor).clamp(LayoutState.zoomMin, LayoutState.zoomMax);
+    final newZoom = (_layout.zoomRatio * factor).clamp(
+      LayoutState.zoomMin,
+      LayoutState.zoomMax,
+    );
 
     // Zoomed out to floor (100%) — reset viewport offset to origin
     if (newZoom == LayoutState.zoomMin && factor < 1.0) {
@@ -324,9 +355,11 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     setState(() {
       _layout = _layout.copyWith(
         zoomRatio: newZoom,
-        viewOffsetX: actualFactor * _layout.viewOffsetX +
+        viewOffsetX:
+            actualFactor * _layout.viewOffsetX +
             (1 - actualFactor) * (cursorX - 0.5) * slotW,
-        viewOffsetY: actualFactor * _layout.viewOffsetY +
+        viewOffsetY:
+            actualFactor * _layout.viewOffsetY +
             (1 - actualFactor) * (cursorY - 0.5) * slotH,
       );
     });
@@ -361,8 +394,10 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   void _startLayoutTicker() {
     _layoutTicker = createTicker((_) {
-      if (_resizeDirty && _textureId != null &&
-          _viewportWidth > 0 && _viewportHeight > 0) {
+      if (_resizeDirty &&
+          _textureId != null &&
+          _viewportWidth > 0 &&
+          _viewportHeight > 0) {
         _resizeDirty = false;
         _controller.resize(_viewportWidth, _viewportHeight);
       }
@@ -398,7 +433,9 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       final pts = results[0] as int;
       final dur = results[1] as int;
       final playing = results[2] as bool;
-      if (pts == _currentPtsUs && dur == _durationUs && playing == _isPlaying) return;
+      if (pts == _currentPtsUs && dur == _durationUs && playing == _isPlaying) {
+        return;
+      }
       setState(() {
         _currentPtsUs = pts;
         _durationUs = dur;
@@ -490,8 +527,12 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return DropTarget(
-      onDragEntered: (_) { if (!_dragging) setState(() => _dragging = true); },
-      onDragExited: (_) { if (_dragging) setState(() => _dragging = false); },
+      onDragEntered: (_) {
+        if (!_dragging) setState(() => _dragging = true);
+      },
+      onDragExited: (_) {
+        if (_dragging) setState(() => _dragging = false);
+      },
       onDragDone: (details) {
         setState(() => _dragging = false);
         final paths = details.files
@@ -581,10 +622,14 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
                   child: Container(
                     decoration: BoxDecoration(
                       border: Border.all(
-                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.5),
                         width: 3,
                       ),
-                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.08),
                     ),
                   ),
                 ),

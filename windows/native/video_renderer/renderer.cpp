@@ -51,8 +51,8 @@ bool Renderer::initialize(const RendererConfig& config) {
             spdlog::error("Renderer: failed to initialize D3D11 device (headless)");
             return false;
         }
-        if (!create_double_buffers(target_width_, target_height_,
-                                   dbuf_.textures, dbuf_.rtvs, dbuf_.handles)) {
+        if (!create_shared_buffers(target_width_, target_height_,
+                                    dbuf_.textures, dbuf_.rtvs, dbuf_.handles)) {
             return false;
         }
         dbuf_.front.store(0);
@@ -65,10 +65,11 @@ bool Renderer::initialize(const RendererConfig& config) {
             return false;
         }
 
-        spdlog::info("Renderer: headless mode, double-buffered {}x{} BGRA, handles=[{}, {}]",
+        spdlog::info("Renderer: headless mode, triple-buffered {}x{} BGRA, handles=[{}, {}, {}]",
                      target_width_, target_height_,
                      reinterpret_cast<uintptr_t>(dbuf_.handles[0]),
-                     reinterpret_cast<uintptr_t>(dbuf_.handles[1]));
+                     reinterpret_cast<uintptr_t>(dbuf_.handles[1]),
+                     reinterpret_cast<uintptr_t>(dbuf_.handles[2]));
     } else {
         if (!d3d_device_->initialize(hwnd_, target_width_, target_height_)) {
             spdlog::error("Renderer: failed to initialize D3D11 device");
@@ -388,14 +389,18 @@ void Renderer::draw_paused_frame(const char* reason) {
     }
 }
 
-void Renderer::wait_gpu_and_swap(const char* label) {
+int Renderer::pick_free_buffer() const {
+    int front = dbuf_.front.load();
+    return (front + 2) % SharedBuffers::kCount;
+}
+
+void Renderer::wait_gpu_and_swap(int back, const char* label) {
     auto* ctx = d3d_device_->context();
     ctx->End(gpu_fence_.Get());
     auto fence_start = std::chrono::steady_clock::now();
     int spin_count = 0;
     while (ctx->GetData(gpu_fence_.Get(), nullptr, 0, 0) == S_FALSE) {
         SwitchToThread();
-        // Check timeout every 256 iterations to reduce steady_clock::now() overhead
         if (++spin_count >= 256) {
             spin_count = 0;
             if (std::chrono::steady_clock::now() - fence_start > std::chrono::milliseconds(100)) {
@@ -404,15 +409,14 @@ void Renderer::wait_gpu_and_swap(const char* label) {
             }
         }
     }
-    int back = 1 - dbuf_.front.load();
     dbuf_.front.store(back);
 }
 
-bool Renderer::create_double_buffers(
+bool Renderer::create_shared_buffers(
     int width, int height,
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[2],
-    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtvs[2],
-    HANDLE handles[2])
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[],
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtvs[],
+    HANDLE handles[])
 {
     D3D11_TEXTURE2D_DESC tex_desc = {};
     tex_desc.Width = static_cast<UINT>(width);
@@ -425,7 +429,7 @@ bool Renderer::create_double_buffers(
     tex_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
     tex_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
 
-    for (int i = 0; i < 2; ++i) {
+    for (int i = 0; i < SharedBuffers::kCount; ++i) {
         HRESULT hr = d3d_device_->device()->CreateTexture2D(&tex_desc, nullptr, &textures[i]);
         if (FAILED(hr)) {
             spdlog::error("Renderer: failed to create shared texture[{}]: HRESULT {:#x}", i, static_cast<unsigned long>(hr));
@@ -449,10 +453,10 @@ bool Renderer::create_double_buffers(
 }
 
 void Renderer::draw_headless_and_publish(const PresentDecision& decision, const char* label) {
-    int back = 1 - dbuf_.front.load();
+    int back = pick_free_buffer();
     cached_rtv_ = dbuf_.rtvs[back];
     draw_frame(decision);
-    wait_gpu_and_swap(label);
+    wait_gpu_and_swap(back, label);
     if (frame_callback_) frame_callback_();
     preview_drawn_ = true;
 }
@@ -559,40 +563,53 @@ ID3D11Texture2D* Renderer::shared_texture() const {
 void Renderer::resize(int width, int height) {
     if (!headless_ || !d3d_device_) return;
     if (width <= 0 || height <= 0) return;
+    pending_width_.store(width);
+    pending_height_.store(height);
+}
+
+void Renderer::do_resize(int width, int height) {
     if (width == target_width_ && height == target_height_) return;
 
     spdlog::info("[Renderer] resize: {}x{} -> {}x{}", target_width_, target_height_, width, height);
 
-    // Create new double-buffered resources first, then swap under lock.
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> new_textures[2];
-    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> new_rtvs[2];
-    HANDLE new_handles[2] = {nullptr, nullptr};
+    // Create new triple-buffered resources first, then swap under lock.
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> new_textures[SharedBuffers::kCount];
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> new_rtvs[SharedBuffers::kCount];
+    HANDLE new_handles[SharedBuffers::kCount] = {};
 
-    if (!create_double_buffers(width, height, new_textures, new_rtvs, new_handles))
+    if (!create_shared_buffers(width, height, new_textures, new_rtvs, new_handles))
         return;
 
-    // Swap under both mutexes — render thread may be mid-draw
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
         std::lock_guard<std::mutex> tex_lock(texture_mutex_);
 
+        PendingBuffers old;
+        for (int i = 0; i < SharedBuffers::kCount; ++i) {
+            old.textures[i] = std::move(dbuf_.textures[i]);
+            old.handles[i] = dbuf_.handles[i];
+        }
+        old.expire_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+        pending_destroy_.push_back(std::move(old));
+        has_pending_destroy_.store(true);
+
         target_width_ = width;
         target_height_ = height;
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < SharedBuffers::kCount; ++i) {
             dbuf_.textures[i] = std::move(new_textures[i]);
             dbuf_.rtvs[i] = std::move(new_rtvs[i]);
             dbuf_.handles[i] = new_handles[i];
         }
         dbuf_.front.store(0);
 
-        // Flutter reads the front buffer on the next frame — must not be uninitialized.
         draw_headless_and_publish(last_decision_, "resize");
     }
 
-    spdlog::info("[Renderer] resize complete: {}x{}, handles=[{}, {}]",
+    spdlog::info("[Renderer] resize complete: {}x{}, handles=[{}, {}, {}]",
                  width, height,
                  reinterpret_cast<uintptr_t>(dbuf_.handles[0]),
-                 reinterpret_cast<uintptr_t>(dbuf_.handles[1]));
+                 reinterpret_cast<uintptr_t>(dbuf_.handles[1]),
+                 reinterpret_cast<uintptr_t>(dbuf_.handles[2]));
 }
 
 void Renderer::render_loop() {
@@ -607,6 +624,39 @@ void Renderer::render_loop() {
     constexpr auto diag_interval = std::chrono::seconds(2);
 
     while (running_) {
+        // Process pending resize (debounced — at most ~30Hz).
+        {
+            int pw = pending_width_.exchange(0);
+            int ph = pending_height_.exchange(0);
+            if (pw > 0 && ph > 0) {
+                auto now = std::chrono::steady_clock::now();
+                if (now - last_resize_time_ >= std::chrono::milliseconds(33)) {
+                    do_resize(pw, ph);
+                    last_resize_time_ = now;
+                } else {
+                    // Too soon — re-queue so the next iteration can pick it up.
+                    // Write back only if no newer resize arrived in the meantime.
+                    int expected = 0;
+                    pending_width_.compare_exchange_strong(expected, pw);
+                    expected = 0;
+                    pending_height_.compare_exchange_strong(expected, ph);
+                }
+            }
+        }
+
+        // Clean up expired pending buffers from previous resizes.
+        if (has_pending_destroy_.exchange(false)) {
+            std::lock_guard<std::mutex> lock(texture_mutex_);
+            auto now = std::chrono::steady_clock::now();
+            pending_destroy_.erase(
+                std::remove_if(pending_destroy_.begin(), pending_destroy_.end(),
+                    [&](const PendingBuffers& pb) { return now >= pb.expire_time; }),
+                pending_destroy_.end());
+            if (!pending_destroy_.empty()) {
+                has_pending_destroy_.store(true);
+            }
+        }
+
         // Snapshot playing_ under state_mutex_ to avoid torn read
         // when pause()/resume() modify it concurrently.
         bool playing_snapshot;
@@ -815,6 +865,13 @@ void Renderer::render_loop() {
         }
     }
 
+    // Flush any pending resize before exiting.
+    {
+        int pw = pending_width_.exchange(0);
+        int ph = pending_height_.exchange(0);
+        if (pw > 0 && ph > 0) do_resize(pw, ph);
+    }
+
     spdlog::info("[Renderer] Render loop ended");
     timeEndPeriod(1);
 }
@@ -825,7 +882,7 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     // Get or create cached render target view
     if (!cached_rtv_) {
         if (headless_ && dbuf_.rtvs[0]) {
-            int back = 1 - dbuf_.front.load();
+            int back = (dbuf_.front.load() + 1) % SharedBuffers::kCount;
             cached_rtv_ = dbuf_.rtvs[back];
         } else {
             ID3D11Texture2D* back_buffer = nullptr;

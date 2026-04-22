@@ -38,54 +38,90 @@ class _ViewportPanelState extends State<ViewportPanel> {
   bool _panning = false;
   bool _splitting = false;
   Offset _lastMousePos = Offset.zero;
-  Size _lastReportedSize = Size.zero;
+  Size _lastReportedLogicalSize = Size.zero;
+  double _lastReportedDevicePixelRatio = 0.0;
+
+  void _maybeReportResize(
+    BuildContext context, {
+    required double logicalWidth,
+    required double logicalHeight,
+  }) {
+    final logicalSize = Size(logicalWidth, logicalHeight);
+    final devicePixelRatio = View.of(context).devicePixelRatio;
+    if ((logicalSize != _lastReportedLogicalSize ||
+            devicePixelRatio != _lastReportedDevicePixelRatio) &&
+        logicalWidth > 0 &&
+        logicalHeight > 0) {
+      _lastReportedLogicalSize = logicalSize;
+      _lastReportedDevicePixelRatio = devicePixelRatio;
+      widget.onResize?.call(
+        (logicalWidth * devicePixelRatio).round(),
+        (logicalHeight * devicePixelRatio).round(),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return IndexedStack(
-      index: widget.viewportState,
-      sizing: StackFit.expand,
-      children: [
-        // State 0: Loading
-        Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 48,
-                height: 48,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _maybeReportResize(
+          context,
+          logicalWidth: constraints.maxWidth,
+          logicalHeight: constraints.maxHeight,
+        );
+        return IndexedStack(
+          index: widget.viewportState,
+          sizing: StackFit.expand,
+          children: [
+            // State 0: Loading
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    AppLocalizations.of(context)!.initializing,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text(AppLocalizations.of(context)!.initializing,
-                  style: TextStyle(
+            ),
+            // State 1: Empty
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.videocam_outlined,
+                    size: 64,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  )),
-            ],
-          ),
-        ),
-        // State 1: Empty
-        Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.videocam_outlined,
-                  size: 64,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
-              const SizedBox(height: 8),
-              Text(AppLocalizations.of(context)!.emptyHint,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  )),
-            ],
-          ),
-        ),
-        // State 2: Active (Texture + mouse listener)
-        _buildActiveViewport(context),
-      ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    AppLocalizations.of(context)!.emptyHint,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // State 2: Active (Texture + mouse listener)
+            _buildActiveViewport(context),
+          ],
+        );
+      },
     );
   }
 
@@ -93,17 +129,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (widget.textureId == null) {
       return const SizedBox.shrink();
     }
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final w = constraints.maxWidth;
-        final h = constraints.maxHeight;
-        final size = Size(w, h);
-        if (size != _lastReportedSize && w > 0 && h > 0) {
-          _lastReportedSize = size;
-          widget.onResize?.call(w.toInt(), h.toInt());
-        }
-        return Listener(
-          onPointerDown: (e) {
+    return Listener(
+      onPointerDown: (e) {
             if ((e.buttons & kPrimaryButton) != 0) {
               _panning = true;
               _lastMousePos = e.position;
@@ -148,7 +175,5 @@ class _ViewportPanelState extends State<ViewportPanel> {
           },
           child: Texture(textureId: widget.textureId!),
         );
-      },
-    );
   }
 }

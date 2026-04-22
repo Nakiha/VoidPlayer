@@ -142,6 +142,10 @@ public:
     /// Get the shared offscreen texture (headless mode only).
     ID3D11Texture2D* shared_texture() const;
 
+    /// Get actual texture dimensions (may lag behind resize request).
+    int texture_width() const { return target_width_; }
+    int texture_height() const { return target_height_; }
+
     /// Get the DXGI shared handle for the offscreen texture.
     HANDLE shared_texture_handle() const { return dbuf_.handles[dbuf_.front.load()]; }
 
@@ -149,7 +153,7 @@ public:
     std::mutex& texture_mutex() { return texture_mutex_; }
 
     /// Resize the offscreen shared texture (headless mode only).
-    /// Recreates the texture, RTV, and shared handle at the new dimensions.
+    /// Stores pending dimensions; render loop applies at controlled rate.
     void resize(int width, int height);
 
 private:
@@ -185,6 +189,9 @@ private:
     void seek_internal(int64_t target_pts_us, SeekType type);
     int64_t compute_frame_duration_us() const;
 
+    /// Apply pending resize on the render thread.
+    void do_resize(int width, int height);
+
     /// Lock device + texture mutexes, draw frame, present/flush, set preview_drawn_.
     void present_frame(const PresentDecision& decision);
 
@@ -196,13 +203,16 @@ private:
     void redraw_layout();
 
     /// Issue GPU fence, spin-wait for completion (up to 100ms), then swap front/back.
-    void wait_gpu_and_swap(const char* label);
+    void wait_gpu_and_swap(int back, const char* label);
 
-    /// Create double-buffered shared textures at the given dimensions.
-    bool create_double_buffers(int width, int height,
-                               Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[2],
-                               Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtvs[2],
-                               HANDLE handles[2]);
+    /// Create triple-buffered shared textures at the given dimensions.
+    bool create_shared_buffers(int width, int height,
+                               Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[],
+                               Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtvs[],
+                               HANDLE handles[]);
+
+    /// Find a buffer that is neither front nor held by Flutter.
+    int pick_free_buffer() const;
 
     /// Check if any frame slot in a PresentDecision has a value.
     static bool has_any_frame(const PresentDecision& decision);
@@ -271,18 +281,34 @@ private:
     // -- Headless mode state --
     bool headless_ = false;
 
-    // Double-buffered shared textures: back buffer is the render target,
-    // front buffer is what Flutter reads. Swapped after GPU completion.
+    // Triple-buffered shared textures: renderer draws to a free buffer,
+    // Flutter reads from front. Third buffer avoids renderer overwriting
+    // a buffer Flutter is still reading (the root cause of black flashes).
     struct SharedBuffers {
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[2];
-        Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtvs[2];
-        HANDLE handles[2] = {nullptr, nullptr};
-        std::atomic<int> front{0};  // Index Flutter reads from
+        static constexpr int kCount = 3;
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[kCount];
+        Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtvs[kCount];
+        HANDLE handles[kCount] = {};
+        std::atomic<int> front{0};
     } dbuf_;
     Microsoft::WRL::ComPtr<ID3D11Query> gpu_fence_;  // GPU-CPU sync
 
+    // Old shared buffers kept alive during resize until Flutter releases them.
+    struct PendingBuffers {
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[SharedBuffers::kCount];
+        HANDLE handles[SharedBuffers::kCount] = {};
+        std::chrono::steady_clock::time_point expire_time;
+    };
+    std::vector<PendingBuffers> pending_destroy_;
+    std::atomic<bool> has_pending_destroy_{false};
+
     std::mutex texture_mutex_;
     std::function<void()> frame_callback_;
+
+    // Resize debounce: store pending dimensions, render loop applies at controlled rate.
+    std::atomic<int> pending_width_{0};
+    std::atomic<int> pending_height_{0};
+    std::chrono::steady_clock::time_point last_resize_time_{};
 };
 
 } // namespace vr

@@ -186,8 +186,6 @@ void VideoRendererPlugin::HandleMethodCall(
                 it = args->find(flutter::EncodableValue("height"));
                 if (it != args->end()) h = std::get<int>(it->second);
                 renderer_->resize(w, h);
-                texture_width_ = w;
-                texture_height_ = h;
             }
         }
         result->Success(flutter::EncodableValue(nullptr));
@@ -392,10 +390,6 @@ void VideoRendererPlugin::CreateRenderer(
         return;
     }
 
-    // Store actual texture dimensions for the surface descriptor
-    texture_width_ = width;
-    texture_height_ = height;
-
     // Create GPU surface texture for Flutter using DXGI shared handle
     surface_descriptor_ = {};
     surface_descriptor_.struct_size = sizeof(FlutterDesktopGpuSurfaceDescriptor);
@@ -410,10 +404,10 @@ void VideoRendererPlugin::CreateRenderer(
             if (!handle) return nullptr;
 
             surface_descriptor_.handle = handle;
-            surface_descriptor_.width = texture_width_;
-            surface_descriptor_.height = texture_height_;
-            surface_descriptor_.visible_width = texture_width_;
-            surface_descriptor_.visible_height = texture_height_;
+            surface_descriptor_.width = static_cast<size_t>(renderer_->texture_width());
+            surface_descriptor_.height = static_cast<size_t>(renderer_->texture_height());
+            surface_descriptor_.visible_width = surface_descriptor_.width;
+            surface_descriptor_.visible_height = surface_descriptor_.height;
             surface_descriptor_.release_callback = nullptr;
             surface_descriptor_.release_context = nullptr;
             return &surface_descriptor_;

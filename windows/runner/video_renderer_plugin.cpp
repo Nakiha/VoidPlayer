@@ -169,7 +169,7 @@ void VideoRendererPlugin::HandleMethodCall(
                     } else if (std::holds_alternative<int64_t>(it->second)) {
                         pts = std::get<int64_t>(it->second);
                     }
-                    spdlog::info("[VideoRendererPlugin] seek: pts={}μs, renderer alive={}", pts, (bool)renderer_);
+                    spdlog::info("[VideoRendererPlugin] seek: pts={}us, renderer alive={}", pts, (bool)renderer_);
                     renderer_->seek(pts, vr::SeekType::Exact);
                     spdlog::info("[VideoRendererPlugin] seek completed");
                 }

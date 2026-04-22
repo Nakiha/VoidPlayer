@@ -18,7 +18,7 @@ Windows 端 Flutter 播放器应用，使用 DX11 进行视频渲染，通过 Fl
 
 ## 开发脚本
 
-一站式开发脚本 `dev.py`，替代 `build.py` + `run.py`：
+一站式开发脚本 `dev.py`
 
 ```bash
 # 构建

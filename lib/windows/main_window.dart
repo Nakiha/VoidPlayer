@@ -246,10 +246,16 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
         );
         setState(() {
           _textureId = res.textureId;
-          _viewportState = 2;
         });
         _trackManager.setTracks(res.tracks);
         _layout = await _controller.getLayout();
+        await WidgetsBinding.instance.endOfFrame;
+        if (!mounted) return;
+        if (_viewportWidth > 0 && _viewportHeight > 0) {
+          await _controller.resize(_viewportWidth, _viewportHeight);
+        }
+        if (!mounted) return;
+        setState(() => _viewportState = 2);
       } catch (e) {
         log.severe("createRenderer failed: $e");
         setState(() => _viewportState = 1);

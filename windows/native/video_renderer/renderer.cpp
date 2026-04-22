@@ -985,14 +985,33 @@ void Renderer::draw_frame(const PresentDecision& decision) {
             cb.video_aspect[i] = tracks_[i]->video_aspect;
             if (decision.frames[i].has_value() && decision.frames[i]->is_nv12) {
                 cb.nv12_mask |= (1 << static_cast<int>(i));
+                const auto& frame = decision.frames[i].value();
+                if (frame.texture_handle && frame.height > 0) {
+                    auto* decode_tex = static_cast<ID3D11Texture2D*>(frame.texture_handle);
+                    D3D11_TEXTURE2D_DESC tex_desc = {};
+                    decode_tex->GetDesc(&tex_desc);
+                    if (tex_desc.Height > 0 &&
+                        tex_desc.Height != static_cast<UINT>(frame.height)) {
+                        cb.nv12_uv_scale_y[i] =
+                            static_cast<float>(frame.height) /
+                            static_cast<float>(tex_desc.Height);
+                        tracks_[i]->nv12_uv_scale_y = cb.nv12_uv_scale_y[i];
+                    } else {
+                        cb.nv12_uv_scale_y[i] = 1.0f;
+                        tracks_[i]->nv12_uv_scale_y = 1.0f;
+                    }
+                } else {
+                    cb.nv12_uv_scale_y[i] = tracks_[i]->nv12_uv_scale_y;
+                }
+            } else {
+                cb.nv12_uv_scale_y[i] = tracks_[i]->nv12_uv_scale_y;
             }
-            cb.nv12_uv_scale_y[i] = tracks_[i]->nv12_uv_scale_y;
         }
         cb.track_count = active_count;
 
         // Compute per-track scale for uniform pixel density across all tracks.
         // Find the reference track (highest resolution) and scale other tracks
-        // so all videos share the same pixel density (video pixel → screen pixel ratio).
+        // so all videos share the same pixel density (video pixel -> screen pixel ratio).
         {
             int ref_idx = -1;
             int max_pixels = 0;
@@ -1439,9 +1458,10 @@ int Renderer::add_track(const std::string& video_path) {
                      slot, track_target / 1e6, track->offset_us / 1e6);
     }
 
-    // Force redraw
+    // Force redraw, but keep already-presented frames from existing tracks so
+    // they remain visible while the new track is still buffering/soft-decoding.
     preview_drawn_ = false;
-    last_decision_ = PresentDecision();
+    last_decision_.frames[slot] = std::nullopt;
 
     spdlog::info("Renderer::add_track: slot={} path={}", slot, video_path);
     return slot;

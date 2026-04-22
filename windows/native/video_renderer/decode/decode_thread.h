@@ -89,6 +89,10 @@ private:
     /// Flush codec buffers — skipped for hardware decode (D3D11VA driver bug).
     void safe_flush_codec();
 
+    /// Flush decode-device writes so the render device can safely sample the
+    /// first hardware frame after startup/seek.
+    void flush_hw_visibility_if_needed();
+
     PacketQueue& input_queue_;
     TrackBuffer& output_buffer_;
     FrameConverter converter_;
@@ -124,6 +128,7 @@ private:
 
     bool eof_flushed_ = false;
     bool post_seek_ = false;      // After seek: transition to Ready after 1 frame instead of full preroll
+    bool hw_visibility_flush_pending_ = false;
 
     std::thread thread_;
     std::atomic<bool> running_{false};

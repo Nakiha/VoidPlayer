@@ -9,6 +9,15 @@ extern "C" {
 
 namespace vr {
 
+namespace {
+size_t post_seek_preroll_target(bool hw_enabled) {
+    // Hardware-decoded seek/add-track previews are more stable if we wait for
+    // one extra frame before exposing the paused preview. Some GPU/driver
+    // combinations can produce a partially-ready first post-seek frame.
+    return hw_enabled ? size_t(2) : size_t(1);
+}
+}  // namespace
+
 // get_format callback for hardware decode negotiation.
 // Reads the preferred hw pixel format from opaque pointer (per-instance).
 static enum AVPixelFormat get_hw_format(AVCodecContext* ctx,
@@ -205,6 +214,7 @@ bool DecodeThread::start() {
     }
 
     output_buffer_.set_state(TrackState::Buffering);
+    hw_visibility_flush_pending_ = hw_enabled_;
     running_.store(true);
     thread_ = std::thread(&DecodeThread::run, this);
     return true;
@@ -275,12 +285,24 @@ void DecodeThread::safe_flush_codec() {
     }
 }
 
+void DecodeThread::flush_hw_visibility_if_needed() {
+    if (!hw_enabled_ || !hw_provider_ || !hw_visibility_flush_pending_) {
+        return;
+    }
+    hw_provider_->flush();
+    hw_visibility_flush_pending_ = false;
+}
+
 void DecodeThread::flush_reorder_buffer() {
     if (exact_seek_reorder_.empty()) return;
     std::sort(exact_seek_reorder_.begin(), exact_seek_reorder_.end(),
               [](const TextureFrame& a, const TextureFrame& b) {
                   return a.pts_us < b.pts_us;
               });
+    // Make the decode-device writes visible before exposing reordered frames
+    // to the render thread; otherwise the paused preview can sample a
+    // partially-written first seek frame.
+    flush_hw_visibility_if_needed();
     for (auto& f : exact_seek_reorder_) {
         output_buffer_.push_frame(std::move(f));
     }
@@ -313,6 +335,12 @@ void DecodeThread::run() {
     };
 
     while (running_.load()) {
+        auto preroll_ready = [&] {
+            return post_seek_
+                ? output_buffer_.total_count() >= post_seek_preroll_target(hw_enabled_)
+                : output_buffer_.has_preroll();
+        };
+
         // Handle seek notification — atomically take the pending seek
         int64_t target_us = -1;
         SeekType seek_type = SeekType::Keyframe;
@@ -356,6 +384,7 @@ void DecodeThread::run() {
 
             // Fast preroll after seek: only need 1 frame to resume display
             post_seek_ = true;
+            hw_visibility_flush_pending_ = hw_enabled_;
 
             eof_flushed_ = false;
             decode_paused_.store(false, std::memory_order_release);
@@ -497,22 +526,23 @@ void DecodeThread::run() {
                 continue;
             }
 
-            output_buffer_.push_frame(std::move(tex_frame));
-
-            // Flush the independent decode device after producing HW frames.
-            // DXGI requires the producing device to call Flush() before the
-            // consuming device (render device) can read shared texture data.
-            // Without this, the render device may see incomplete NV12 data
-            // (upper half content, lower half gray / green) on the first frame.
-            if (hw_enabled_ && hw_provider_ && frames_produced == 1) {
-                hw_provider_->flush();
+            // Flush the independent decode device after the first visible HW
+            // frame on startup and after seek/add-track transitions. Without
+            // this, the render device can sample a partially-written NV12
+            // surface, which shows up as green or missing regions.
+            if (frames_produced == 1 &&
+                perf_.frames_decoded.load(std::memory_order_relaxed) == 0) {
+                hw_visibility_flush_pending_ = hw_enabled_;
             }
 
+            // The flush must happen before push_frame() publishes this frame
+            // to the render thread, otherwise the paused preview path can win
+            // the race and draw an incomplete surface.
+            flush_hw_visibility_if_needed();
+            output_buffer_.push_frame(std::move(tex_frame));
+
             if (output_buffer_.state() == TrackState::Buffering) {
-                bool ready = post_seek_
-                    ? output_buffer_.total_count() >= 1
-                    : output_buffer_.has_preroll();
-                if (ready) {
+                if (preroll_ready()) {
                     spdlog::info("[DecodeThread] === Preroll complete: {} frames buffered, post_seek={}, state->Ready",
                                  output_buffer_.total_count(), post_seek_);
                     output_buffer_.set_state(TrackState::Ready);
@@ -569,10 +599,7 @@ void DecodeThread::run() {
 
         // Preroll check
         if (output_buffer_.state() == TrackState::Buffering) {
-            bool ready = post_seek_
-                ? output_buffer_.total_count() >= 1
-                : output_buffer_.has_preroll();
-            if (ready) {
+            if (preroll_ready()) {
                 spdlog::info("[DecodeThread] === Preroll complete: {} frames buffered, post_seek={}, state->Ready",
                              output_buffer_.total_count(), post_seek_);
                 output_buffer_.set_state(TrackState::Ready);

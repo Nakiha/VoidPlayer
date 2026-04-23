@@ -30,3 +30,19 @@ void_player.exe --log-level=flutter=DEBUG,native=TRACE,ffmpeg=INFO
 3. **绑定回调**: 控件 `initState` 中 `actionRegistry.bind(action, callback)`，`dispose` 中 `unbind(name)`
 4. **UI 触发点**: 按钮等通过 `actionRegistry.execute('ACTION_NAME')` 触发
 5. **测试脚本**: 如需 mock 测试，在 `lib/actions/test_runner.dart` 的 `_parseInstruction` 中添加指令解析
+6. **闭环验证**: 优先补/改 `test_scripts/*.csv`，然后执行 `python dev.py ui-test test_scripts/smoke_basic.csv` 或对应脚本
+
+### UI 自动化回归
+
+当前项目已经支持通过启动参数 `--test-script <csv>` 在主窗口启动后自动执行脚本，`dev.py` 已封装为：
+
+```bash
+python dev.py ui-test test_scripts/smoke_basic.csv
+```
+
+建议约定：
+
+- 通用冒烟回归放在 `test_scripts/smoke_basic.csv`
+- 某个 bug 的复现/防回归单独放一条 `test_scripts/*.csv`
+- 修改 Action / 播放控制 / 主窗口交互后，至少跑一条相关脚本
+- 如果脚本覆盖不了，优先补 Action / Assert / 启动参数，而不是退回纯人工验证

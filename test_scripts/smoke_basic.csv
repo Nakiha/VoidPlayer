@@ -1,0 +1,13 @@
+# Basic smoke test for agent self-verification.
+# Expected runtime: about 8 seconds.
+0.5, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+2.5, ASSERT_TRACK_COUNT, 1
+3.0, PLAY
+4.0, WAIT_PLAYING, 3000
+4.2, ASSERT_PLAYING
+5.0, PAUSE
+5.5, WAIT_PAUSED, 3000
+5.7, ASSERT_PAUSED
+6.0, SEEK_TO, 3000000
+6.5, ASSERT_POSITION, 3000000, 300
+8.0, QUIT, 0

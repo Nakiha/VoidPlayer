@@ -57,6 +57,8 @@
 - 注释：`#` 开头的行
 - 空行：忽略
 - 测试退出码：`QUIT` 指令的参数，0 表示通过
+- 推荐入口：`python dev.py ui-test test_scripts/smoke_basic.csv`
+- 自动化脚本优先使用 `ADD_MEDIA`，不要用会弹系统对话框的 `OPEN_FILE`
 
 ## Action 清单
 
@@ -83,6 +85,7 @@
 | `OPEN_SETTINGS` | — | 打开设置窗口 |
 | `OPEN_STATS` | — | 打开统计窗口 |
 | `OPEN_MEMORY` | — | 打开内存窗口 |
+| `OPEN_ANALYSIS` | Ctrl + ` | 打开分析工具栏 |
 
 ## Assert 清单
 
@@ -95,6 +98,8 @@
 | `ASSERT_POSITION` | ptsUs, toleranceMs | 断言播放位置 |
 | `ASSERT_TRACK_COUNT` | count | 断言轨道数量 |
 | `ASSERT_DURATION` | ptsUs, toleranceMs | 断言总时长 |
+| `ASSERT_LAYOUT_MODE` | mode | 断言布局模式 |
+| `ASSERT_ZOOM` | ratio, tolerance | 断言缩放比例 |
 
 ## 文件清单
 

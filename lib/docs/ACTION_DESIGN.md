@@ -164,15 +164,17 @@ FloatingActionButton(
 ### 示例
 
 ```csv
-0.0, OPEN_FILE, test_video.mp4
-0.5, WAIT_PLAYING, 3000
-1.0, ASSERT_PLAYING
-2.0, PAUSE
-2.5, ASSERT_PAUSED
-3.0, SEEK_TO, 5000000
-3.5, ASSERT_POSITION, 5000000, 100000
-5.0, PLAY
-10.0, QUIT, 0
+0.5, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+2.5, ASSERT_TRACK_COUNT, 1
+3.0, PLAY
+4.0, WAIT_PLAYING, 3000
+4.2, ASSERT_PLAYING
+5.0, PAUSE
+5.5, WAIT_PAUSED, 3000
+5.7, ASSERT_PAUSED
+6.0, SEEK_TO, 3000000
+6.5, ASSERT_POSITION, 3000000, 300
+8.0, QUIT, 0
 ```
 
 ### TestRunner
@@ -188,6 +190,17 @@ class TestRunner {
 ```
 
 执行：解析脚本 → 按时间调度 → Action 调 controller / Assert 读状态 / Wait 轮询 → QUIT 退出。
+
+### 推荐执行方式
+
+```bash
+python dev.py ui-test test_scripts/smoke_basic.csv
+```
+
+说明：
+
+- `OPEN_FILE` 会弹系统文件选择框，不适合自动化；自动化脚本应优先使用 `ADD_MEDIA`
+- 脚本中的媒体路径按启动工作目录解析，推荐写仓库相对路径，如 `resources/video/...`
 
 ## 文件结构（规划）
 

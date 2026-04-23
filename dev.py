@@ -182,6 +182,39 @@ def cmd_test(args):
 
 
 # ---------------------------------------------------------------------------
+# ui-test
+# ---------------------------------------------------------------------------
+
+def cmd_ui_test(args):
+    """Launch the app with a CSV script and use process exit code as result."""
+    script_path = Path(args.script).resolve()
+    if not script_path.exists():
+        print(f"ERROR: test script not found: {script_path}")
+        sys.exit(1)
+
+    exe = app_exe_path(args.debug)
+
+    if args.build or not exe.exists():
+        flutter_build(args.debug)
+
+    if not exe.exists():
+        print(f"ERROR: exe not found: {exe}")
+        sys.exit(1)
+
+    cmd = [str(exe), "--test-script", str(script_path)]
+    if args.log_level:
+        cmd.append(f"--log-level={args.log_level}")
+
+    header(f"UI test {script_path.name}")
+    result = subprocess.call(cmd, cwd=str(ROOT))
+    if result != 0:
+        print(f"\nUI test failed with exit code {result}")
+        sys.exit(result)
+
+    print("\nUI test passed.")
+
+
+# ---------------------------------------------------------------------------
 # vtm — VTM DecoderApp build & analyze
 # ---------------------------------------------------------------------------
 
@@ -316,6 +349,7 @@ Examples:
   python dev.py launch --build
   python dev.py demo
   python dev.py test
+  python dev.py ui-test test_scripts/smoke_basic.csv
   python dev.py vtm build
   python dev.py vtm analyze video.mp4
 """,
@@ -357,6 +391,14 @@ Examples:
     p_test = sub.add_parser("test", help="Build and run native standalone tests")
     p_test.add_argument("--debug", action="store_true", help="Debug build")
 
+    # --- ui-test ---
+    p_ui_test = sub.add_parser("ui-test", help="Launch the app with a CSV UI test script")
+    p_ui_test.add_argument("script", help="Path to CSV test script")
+    p_ui_test.add_argument("--debug", action="store_true", help="Debug build")
+    p_ui_test.add_argument("--build", action="store_true", help="Build Flutter app before launch")
+    p_ui_test.add_argument("--log-level", type=str, default=None,
+                           help="Log level, e.g. 'flutter=DEBUG,native=TRACE'")
+
     # --- vtm ---
     p_vtm = sub.add_parser("vtm", help="VTM DecoderApp: build & H.266 analysis")
     p_vtm.add_argument("vtm_action", choices=["build", "analyze"],
@@ -376,6 +418,7 @@ Examples:
         "launch": cmd_launch,
         "demo": cmd_demo,
         "test": cmd_test,
+        "ui-test": cmd_ui_test,
         "vtm": cmd_vtm,
     }[args.command](args)
 

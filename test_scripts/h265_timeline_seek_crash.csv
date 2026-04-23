@@ -1,0 +1,16 @@
+# Repro for: load a single H.265 file, then click the timeline several times.
+# The repeated SEEK_TO commands approximate rapid progress-bar clicks.
+0.5, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+2.5, ASSERT_TRACK_COUNT, 1
+3.0, SEEK_TO, 1000000
+3.2, SEEK_TO, 3500000
+3.4, SEEK_TO, 7000000
+3.6, SEEK_TO, 1500000
+3.8, SEEK_TO, 8500000
+4.0, SEEK_TO, 2500000
+4.2, SEEK_TO, 6000000
+4.4, SEEK_TO, 500000
+4.6, SEEK_TO, 9000000
+4.8, SEEK_TO, 4200000
+5.2, ASSERT_POSITION, 4200000, 500
+6.5, QUIT, 0

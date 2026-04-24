@@ -1125,6 +1125,150 @@ void Renderer::render_loop() {
     timeEndPeriod(1);
 }
 
+bool Renderer::prepare_nv12_frame_srv(TrackPipeline& track,
+                                      const TextureFrame& frame,
+                                      size_t slot,
+                                      ID3D11ShaderResourceView*& y_srv,
+                                      ID3D11ShaderResourceView*& uv_srv) {
+    auto* decode_tex = static_cast<ID3D11Texture2D*>(frame.texture_handle);
+    if (!decode_tex) {
+        return false;
+    }
+
+    const int array_idx = static_cast<int>(frame.texture_array_index);
+    if (array_idx < 0) {
+        spdlog::error("[Renderer] Invalid NV12 array index for track {}: {}",
+                      slot, array_idx);
+        return false;
+    }
+
+    if (track.last_nv12_tex != decode_tex) {
+        track.render_nv12_tex.Reset();
+        track.last_nv12_tex = nullptr;
+
+        Microsoft::WRL::ComPtr<IDXGIResource> dxgi_res;
+        HRESULT hr = decode_tex->QueryInterface(__uuidof(IDXGIResource), &dxgi_res);
+        if (FAILED(hr)) {
+            spdlog::error("[Renderer] Failed to QI IDXGIResource for track {}: {:#x}",
+                          slot, static_cast<unsigned long>(hr));
+            return false;
+        }
+
+        HANDLE shared_handle = nullptr;
+        hr = dxgi_res->GetSharedHandle(&shared_handle);
+        if (FAILED(hr)) {
+            spdlog::error("[Renderer] Failed to get shared handle for track {}: {:#x}",
+                          slot, static_cast<unsigned long>(hr));
+            return false;
+        }
+
+        hr = d3d_device_->device()->OpenSharedResource(
+            shared_handle, __uuidof(ID3D11Texture2D),
+            reinterpret_cast<void**>(track.render_nv12_tex.GetAddressOf()));
+        if (FAILED(hr)) {
+            spdlog::error("[Renderer] Failed to open shared NV12 texture for track {}: {:#x}",
+                          slot, static_cast<unsigned long>(hr));
+            return false;
+        }
+
+        track.last_nv12_tex = decode_tex;
+    }
+
+    if (!track.render_nv12_tex) {
+        return false;
+    }
+
+    D3D11_TEXTURE2D_DESC src_desc = {};
+    track.render_nv12_tex->GetDesc(&src_desc);
+    if (static_cast<UINT>(array_idx) >= src_desc.ArraySize) {
+        spdlog::error("[Renderer] NV12 array index out of range for track {}: idx={}, array_size={}",
+                      slot, array_idx, src_desc.ArraySize);
+        return false;
+    }
+
+    bool need_copy_tex = !track.render_nv12_copy_tex;
+    if (track.render_nv12_copy_tex) {
+        D3D11_TEXTURE2D_DESC copy_desc = {};
+        track.render_nv12_copy_tex->GetDesc(&copy_desc);
+        need_copy_tex =
+            copy_desc.Width != src_desc.Width ||
+            copy_desc.Height != src_desc.Height ||
+            copy_desc.Format != src_desc.Format;
+    }
+
+    if (need_copy_tex) {
+        track.render_nv12_copy_tex.Reset();
+        track.nv12_y_srv.Reset();
+        track.nv12_uv_srv.Reset();
+
+        D3D11_TEXTURE2D_DESC copy_desc = src_desc;
+        copy_desc.ArraySize = 1;
+        copy_desc.Usage = D3D11_USAGE_DEFAULT;
+        copy_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        copy_desc.CPUAccessFlags = 0;
+        copy_desc.MiscFlags = 0;
+
+        HRESULT hr = d3d_device_->device()->CreateTexture2D(
+            &copy_desc, nullptr, &track.render_nv12_copy_tex);
+        if (FAILED(hr) || !track.render_nv12_copy_tex) {
+            spdlog::error("[Renderer] Failed to create renderer-owned NV12 texture for track {}: {:#x}",
+                          slot, static_cast<unsigned long>(hr));
+            return false;
+        }
+
+        D3D11_SHADER_RESOURCE_VIEW_DESC y_desc = {};
+        y_desc.Format = DXGI_FORMAT_R8_UNORM;
+        y_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+        y_desc.Texture2D.MipLevels = 1;
+        hr = d3d_device_->device()->CreateShaderResourceView(
+            track.render_nv12_copy_tex.Get(), &y_desc, &track.nv12_y_srv);
+        if (FAILED(hr)) {
+            spdlog::error("[Renderer] Failed to create NV12 Y SRV for track {}: {:#x}",
+                          slot, static_cast<unsigned long>(hr));
+            track.render_nv12_copy_tex.Reset();
+            return false;
+        }
+
+        D3D11_SHADER_RESOURCE_VIEW_DESC uv_desc = {};
+        uv_desc.Format = DXGI_FORMAT_R8G8_UNORM;
+        uv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+        uv_desc.Texture2D.MipLevels = 1;
+        hr = d3d_device_->device()->CreateShaderResourceView(
+            track.render_nv12_copy_tex.Get(), &uv_desc, &track.nv12_uv_srv);
+        if (FAILED(hr)) {
+            spdlog::error("[Renderer] Failed to create NV12 UV SRV for track {}: {:#x}",
+                          slot, static_cast<unsigned long>(hr));
+            track.render_nv12_copy_tex.Reset();
+            track.nv12_y_srv.Reset();
+            return false;
+        }
+
+        spdlog::debug("[Renderer] Created renderer-owned NV12 texture for track {} ({}x{}, format={})",
+                      slot, src_desc.Width, src_desc.Height, static_cast<int>(src_desc.Format));
+    }
+
+    d3d_device_->context()->CopySubresourceRegion(
+        track.render_nv12_copy_tex.Get(),
+        0,
+        0, 0, 0,
+        track.render_nv12_tex.Get(),
+        D3D11CalcSubresource(0, static_cast<UINT>(array_idx), 1),
+        nullptr);
+
+    if (src_desc.Height > 0 && frame.height > 0 &&
+        src_desc.Height != static_cast<UINT>(frame.height)) {
+        track.nv12_uv_scale_y =
+            static_cast<float>(frame.height) / static_cast<float>(src_desc.Height);
+    } else {
+        track.nv12_uv_scale_y = 1.0f;
+    }
+
+    track.last_nv12_idx = array_idx;
+    y_srv = track.nv12_y_srv.Get();
+    uv_srv = track.nv12_uv_srv.Get();
+    return y_srv && uv_srv;
+}
+
 void Renderer::draw_frame(const PresentDecision& decision) {
     auto* ctx = d3d_device_->context();
 
@@ -1369,97 +1513,10 @@ void Renderer::draw_frame(const PresentDecision& decision) {
         auto& track = tracks_[i];
 
         if (frame.is_ref && frame.is_nv12) {
-            // D3D11VA NV12 hardware decode: texture_handle is ID3D11Texture2D*
-            // on the independent decode device. Open shared resource on render device
-            // for cross-device SRV access.
-            auto* decode_tex = static_cast<ID3D11Texture2D*>(frame.texture_handle);
-            int array_idx = static_cast<int>(frame.texture_array_index);
-
-            if (track->last_nv12_tex != decode_tex || track->last_nv12_idx != array_idx) {
-                // Decode texture pointer changed — re-open shared resource on render device
-                if (track->last_nv12_tex != decode_tex) {
-                    track->render_nv12_tex.Reset();
-                    track->nv12_y_srv.Reset();
-                    track->nv12_uv_srv.Reset();
-
-                    // Get DXGI shared handle from decode-side texture
-                    Microsoft::WRL::ComPtr<IDXGIResource> dxgi_res;
-                    HRESULT hr = decode_tex->QueryInterface(__uuidof(IDXGIResource), &dxgi_res);
-                    if (FAILED(hr)) {
-                        spdlog::error("[Renderer] Failed to QI IDXGIResource for track {}: {:#x}",
-                                      i, static_cast<unsigned long>(hr));
-                        track->last_nv12_tex = decode_tex;
-                        track->last_nv12_idx = array_idx;
-                        continue;
-                    }
-
-                    HANDLE shared_handle = nullptr;
-                    hr = dxgi_res->GetSharedHandle(&shared_handle);
-                    if (FAILED(hr)) {
-                        spdlog::error("[Renderer] Failed to get shared handle for track {}: {:#x}",
-                                      i, static_cast<unsigned long>(hr));
-                        track->last_nv12_tex = decode_tex;
-                        track->last_nv12_idx = array_idx;
-                        continue;
-                    }
-
-                    // Open shared texture on render device
-                    hr = d3d_device_->device()->OpenSharedResource(
-                        shared_handle, __uuidof(ID3D11Texture2D),
-                        reinterpret_cast<void**>(track->render_nv12_tex.GetAddressOf()));
-                    if (FAILED(hr)) {
-                        spdlog::error("[Renderer] Failed to open shared NV12 texture for track {}: {:#x}",
-                                      i, static_cast<unsigned long>(hr));
-                        track->last_nv12_tex = decode_tex;
-                        track->last_nv12_idx = array_idx;
-                        continue;
-                    }
-                }
-
-                // Create SRVs on the render-side shared texture
-                ID3D11Texture2D* render_tex = track->render_nv12_tex.Get();
-                D3D11_TEXTURE2D_DESC tex_desc = {};
-                render_tex->GetDesc(&tex_desc);
-                if (tex_desc.Height > 0 && frame.height > 0 && tex_desc.Height != static_cast<UINT>(frame.height)) {
-                    track->nv12_uv_scale_y = static_cast<float>(frame.height) / static_cast<float>(tex_desc.Height);
-                } else {
-                    track->nv12_uv_scale_y = 1.0f;
-                }
-                track->nv12_y_srv.Reset();
-                track->nv12_uv_srv.Reset();
-
-                D3D11_SHADER_RESOURCE_VIEW_DESC y_desc = {};
-                y_desc.Format = DXGI_FORMAT_R8_UNORM;
-                y_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
-                y_desc.Texture2DArray.MipLevels = 1;
-                y_desc.Texture2DArray.FirstArraySlice = static_cast<UINT>(array_idx);
-                y_desc.Texture2DArray.ArraySize = 1;
-                HRESULT hr = d3d_device_->device()->CreateShaderResourceView(
-                    render_tex, &y_desc, &track->nv12_y_srv);
-                if (FAILED(hr)) {
-                    spdlog::error("[Renderer] Failed to create NV12 Y SRV for track {}: {:#x}",
-                                  i, static_cast<unsigned long>(hr));
-                }
-
-                D3D11_SHADER_RESOURCE_VIEW_DESC uv_desc = {};
-                uv_desc.Format = DXGI_FORMAT_R8G8_UNORM;
-                uv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
-                uv_desc.Texture2DArray.MipLevels = 1;
-                uv_desc.Texture2DArray.FirstArraySlice = static_cast<UINT>(array_idx);
-                uv_desc.Texture2DArray.ArraySize = 1;
-                hr = d3d_device_->device()->CreateShaderResourceView(
-                    render_tex, &uv_desc, &track->nv12_uv_srv);
-                if (FAILED(hr)) {
-                    spdlog::error("[Renderer] Failed to create NV12 UV SRV for track {}: {:#x}",
-                                  i, static_cast<unsigned long>(hr));
-                }
-
-                track->last_nv12_tex = decode_tex;
-                track->last_nv12_idx = array_idx;
-            }
-
-            nv12_y_srvs[i] = track->nv12_y_srv.Get();
-            nv12_uv_srvs[i] = track->nv12_uv_srv.Get();
+            // D3D11VA surfaces belong to FFmpeg's decoder pool. Copy the
+            // selected array slice into a renderer-owned NV12 texture before
+            // sampling so seek/recreate can recycle decoder surfaces safely.
+            prepare_nv12_frame_srv(*track, frame, i, nv12_y_srvs[i], nv12_uv_srvs[i]);
 
         } else if (frame.is_ref) {
             // Non-NV12 hardware texture (future use): create single SRV

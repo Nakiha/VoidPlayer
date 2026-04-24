@@ -105,6 +105,9 @@ private:
     /// Publish the selected exact-seek preview frame and pause decode if needed.
     void publish_exact_seek_frame(TextureFrame frame);
 
+    /// Pick the closest collected frame before the exact seek target and publish it.
+    bool publish_best_exact_seek_frame();
+
     /// Flush codec buffers after seek.
     void safe_flush_codec();
 

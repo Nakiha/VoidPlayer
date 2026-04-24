@@ -338,6 +338,12 @@ TEST_CASE("Renderer: headless HEVC paused exact seek updates captured frame", "[
 
     REQUIRE(seek_1s.hash != seek_3_5s.hash);
 
+    renderer.step_forward();
+    auto after_step_forward =
+        wait_for_changed_non_black_capture(renderer, seek_3_5s.hash);
+    require_visual_frame(after_step_forward);
+    REQUIRE(after_step_forward.hash != seek_3_5s.hash);
+
     renderer.shutdown();
 }
 

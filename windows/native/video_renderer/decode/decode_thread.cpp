@@ -10,6 +10,10 @@ extern "C" {
 namespace vr {
 
 namespace {
+constexpr int64_t kExactSeekLookbehindUs = 500000;  // Keep up to 0.5s before target.
+constexpr int64_t kExactSeekLeadUs = 250000;        // HEVC B-frames can appear long after refs.
+constexpr size_t kExactSeekReorderPublishFrames = 64;
+
 size_t post_seek_preroll_target(bool hw_enabled) {
     // Hardware-decoded seek/add-track previews are more stable if we wait for
     // one extra frame before exposing the paused preview. Some GPU/driver
@@ -356,7 +360,7 @@ void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*
             rescale_ts(frame);
             flush_hw_before_conversion_if_needed();
             TextureFrame tex_frame = converter_.convert(frame);
-            if (tex_frame.pts_us >= target_us) {
+            if (tex_frame.pts_us >= target_us - kExactSeekLookbehindUs) {
                 exact_seek_reorder_.push_back(std::move(tex_frame));
             }
         }
@@ -427,6 +431,40 @@ void DecodeThread::publish_exact_seek_frame(TextureFrame frame) {
                  pts / 1e6);
 }
 
+bool DecodeThread::publish_best_exact_seek_frame() {
+    if (exact_seek_target_us_ < 0 || exact_seek_reorder_.empty()) {
+        return false;
+    }
+
+    std::sort(exact_seek_reorder_.begin(), exact_seek_reorder_.end(),
+              [](const TextureFrame& a, const TextureFrame& b) {
+                  return a.pts_us < b.pts_us;
+              });
+
+    size_t selected = 0;
+    bool found_before_target = false;
+    for (size_t i = 0; i < exact_seek_reorder_.size(); ++i) {
+        if (exact_seek_reorder_[i].pts_us < exact_seek_target_us_) {
+            selected = i;
+            found_before_target = true;
+        } else {
+            break;
+        }
+    }
+
+    if (!found_before_target) {
+        selected = 0;
+    }
+
+    const int64_t selected_pts = exact_seek_reorder_[selected].pts_us;
+    const size_t collected = exact_seek_reorder_.size();
+    TextureFrame frame = std::move(exact_seek_reorder_[selected]);
+    spdlog::info("[DecodeThread] Exact seek reorder: selected pts={:.3f}s from {} frames (target={:.3f}s)",
+                 selected_pts / 1e6, collected, exact_seek_target_us_ / 1e6);
+    publish_exact_seek_frame(std::move(frame));
+    return true;
+}
+
 void DecodeThread::run() {
     spdlog::info("[DecodeThread] Decode loop started (hw={})", hw_enabled_);
 
@@ -436,14 +474,6 @@ void DecodeThread::run() {
         output_buffer_.set_state(TrackState::Error);
         return;
     }
-    AVFrame* exact_seek_candidate_frame = av_frame_alloc();
-    if (!exact_seek_candidate_frame) {
-        spdlog::error("[DecodeThread] Failed to allocate exact seek candidate frame");
-        av_frame_free(&frame);
-        output_buffer_.set_state(TrackState::Error);
-        return;
-    }
-
     // Rescale frame timestamps from stream time_base to microseconds
     auto rescale_ts = [&](AVFrame* f) {
         if (f->pts != AV_NOPTS_VALUE) {
@@ -488,7 +518,6 @@ void DecodeThread::run() {
 
             av_frame_unref(frame);
             exact_seek_reorder_.clear();
-            av_frame_unref(exact_seek_candidate_frame);
 
             const bool fresh_codec_seek =
                 perf_.frames_decoded.load(std::memory_order_relaxed) == 0 &&
@@ -554,12 +583,9 @@ void DecodeThread::run() {
                         eof_flushed_ = true;
                     }
 
-                    // Flush exact-seek candidate/reorder buffer at EOF — no more frames coming.
-                    if (exact_seek_target_us_ >= 0 && exact_seek_candidate_frame->buf[0]) {
-                        flush_hw_before_conversion_if_needed();
-                        TextureFrame tex_frame = converter_.convert(exact_seek_candidate_frame);
-                        publish_exact_seek_frame(std::move(tex_frame));
-                        av_frame_unref(exact_seek_candidate_frame);
+                    // Flush exact-seek reorder buffer at EOF — no more frames coming.
+                    if (exact_seek_target_us_ >= 0) {
+                        publish_best_exact_seek_frame();
                     } else {
                         flush_reorder_buffer();
                     }
@@ -694,32 +720,41 @@ void DecodeThread::run() {
 
             rescale_ts(frame);
 
-            // Exact seek: keep only the last displayable frame before the
-            // requested target, then publish it once the target has been
-            // crossed. This mirrors normal playback from the keyframe without
-            // pushing intermediate frames through the render queue.
+            // Exact seek: collect a small PTS window around the target, then
+            // publish the closest frame before target. HEVC can output B-frames
+            // after a later reference frame, so publishing on the first
+            // frame >= target can incorrectly jump back to the keyframe.
             if (exact_seek_target_us_ >= 0) {
-                if (frame->pts < exact_seek_target_us_) {
-                    av_frame_unref(exact_seek_candidate_frame);
-                    const int ref_ret = av_frame_ref(exact_seek_candidate_frame, frame);
-                    if (ref_ret < 0) {
-                        spdlog::warn("[DecodeThread] Exact seek candidate ref failed: {:#x}",
-                                     static_cast<unsigned>(ref_ret));
-                    }
+                if (frame->pts < exact_seek_target_us_ - kExactSeekLookbehindUs) {
                     perf_.frames_dropped.fetch_add(1, std::memory_order_relaxed);
                     av_frame_unref(frame);
                     continue;
                 }
-                AVFrame* preview_frame = exact_seek_candidate_frame->buf[0]
-                    ? exact_seek_candidate_frame
-                    : frame;
+
                 flush_hw_before_conversion_if_needed();
-                TextureFrame tex_frame = converter_.convert(preview_frame);
+                TextureFrame tex_frame = converter_.convert(frame);
                 ++frames_produced;
-                publish_exact_seek_frame(std::move(tex_frame));
-                av_frame_unref(exact_seek_candidate_frame);
+                exact_seek_reorder_.push_back(std::move(tex_frame));
+
+                bool has_frame_at_or_after_target = false;
+                int64_t max_pts = -1;
+                for (const auto& f : exact_seek_reorder_) {
+                    has_frame_at_or_after_target =
+                        has_frame_at_or_after_target ||
+                        f.pts_us >= exact_seek_target_us_;
+                    max_pts = std::max(max_pts, f.pts_us);
+                }
+
+                if (has_frame_at_or_after_target &&
+                    (exact_seek_reorder_.size() >= kExactSeekReorderPublishFrames ||
+                     max_pts >= exact_seek_target_us_ + kExactSeekLeadUs)) {
+                    publish_best_exact_seek_frame();
+                    av_frame_unref(frame);
+                    break;
+                }
+
                 av_frame_unref(frame);
-                break;
+                continue;
             }
 
             flush_hw_before_conversion_if_needed();
@@ -756,14 +791,11 @@ void DecodeThread::run() {
             av_frame_unref(frame);
         }
 
-        // Exact seek B-frame reordering.
-        // H265 outputs frames across MULTIPLE avcodec_send_packet calls due to
-        // DPB reordering delay.  The first frame >= target might be a reference
-        // frame (higher PTS), while B-frames with lower PTS arrive in subsequent
-        // batches.  We accumulate frames and only flush when the lowest PTS in
-        // the buffer is close enough to the target, or at EOF / max count.
+        // Exact seek B-frame reordering fallback. The receive loop normally
+        // publishes once enough frames are collected, but EOF/drain can also
+        // make the buffer ready here.
         if (exact_seek_target_us_ >= 0 && !exact_seek_reorder_.empty()) {
-            bool should_flush = false;
+            bool should_publish = false;
 
             if (input_queue_.is_eof() && input_queue_.size() == 0) {
                 if (!eof_flushed_) {
@@ -771,29 +803,25 @@ void DecodeThread::run() {
                     spdlog::info("[DecodeThread] Exact seek EOF: codec drain, reorder buffer now has {} frames",
                                  exact_seek_reorder_.size());
                 }
-                should_flush = true;
+                should_publish = true;
             } else {
-                // Check PTS gap: if the lowest PTS in the buffer is still far
-                // from the target, there may be B-frames with lower PTS stuck
-                // in the DPB that haven't been output yet.
-                auto min_it = std::min_element(exact_seek_reorder_.begin(),
-                    exact_seek_reorder_.end(),
-                    [](const TextureFrame& a, const TextureFrame& b) {
-                        return a.pts_us < b.pts_us;
-                    });
-                int64_t gap = min_it->pts_us - exact_seek_target_us_;
-
-                // Flush when the closest frame is within ~1 frame duration of
-                // target (gap < 17ms for 60fps means the right frame is likely
-                // already in the buffer).  Otherwise keep waiting for B-frames
-                // still in the DPB.  Safety cap at 16 frames.
-                if (gap < 17000 || exact_seek_reorder_.size() >= 16) {
-                    should_flush = true;
+                bool has_frame_at_or_after_target = false;
+                int64_t max_pts = -1;
+                for (const auto& f : exact_seek_reorder_) {
+                    has_frame_at_or_after_target =
+                        has_frame_at_or_after_target ||
+                        f.pts_us >= exact_seek_target_us_;
+                    max_pts = std::max(max_pts, f.pts_us);
+                }
+                if (has_frame_at_or_after_target &&
+                    (exact_seek_reorder_.size() >= kExactSeekReorderPublishFrames ||
+                     max_pts >= exact_seek_target_us_ + kExactSeekLeadUs)) {
+                    should_publish = true;
                 }
             }
 
-            if (should_flush) {
-                flush_reorder_buffer();
+            if (should_publish) {
+                publish_best_exact_seek_frame();
                 auto first = output_buffer_.peek(0);
                 spdlog::info("[DecodeThread] Exact seek reorder: frames pushed, first_pts={:.3f}s",
                              first.has_value() ? first->pts_us / 1e6 : -1.0);
@@ -837,7 +865,6 @@ void DecodeThread::run() {
     }
 
     output_buffer_.set_state(TrackState::Flushing);
-    av_frame_free(&exact_seek_candidate_frame);
     av_frame_free(&frame);
     spdlog::info("[DecodeThread] Decode loop ended");
 }

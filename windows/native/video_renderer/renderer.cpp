@@ -440,19 +440,65 @@ void Renderer::step_forward() {
         std::lock_guard<std::mutex> lock(state_mutex_);
         if (!initialized_) return;
 
+        // If any track is still seeking, don't step from a half-updated buffer.
+        for (size_t i = 0; i < kMaxTracks; ++i) {
+            if (!tracks_[i]) continue;
+            auto& buf = tracks_[i]->track_buffer;
+            if (buf->state() == TrackState::Buffering) return;
+        }
+
         clock_.pause();
         playing_ = false;
 
+        bool all_can_advance = true;
+        bool has_active_track = false;
         for (size_t i = 0; i < kMaxTracks; ++i) {
             if (!tracks_[i]) continue;
-            auto& track = tracks_[i];
-            auto current = track->track_buffer->peek(0);
-            if (!current.has_value()) continue;
-            track->track_buffer->advance();
-            auto next = track->track_buffer->peek(0);
-            if (next.has_value()) {
-                clock_.seek(next->pts_us);
+            has_active_track = true;
+            auto& buffer = tracks_[i]->track_buffer;
+            if (!buffer->peek(0).has_value() ||
+                !buffer->peek(1).has_value()) {
+                all_can_advance = false;
+                break;
             }
+        }
+
+        if (has_active_track && all_can_advance) {
+            for (size_t i = 0; i < kMaxTracks; ++i) {
+                if (!tracks_[i]) continue;
+                tracks_[i]->track_buffer->advance();
+            }
+            int ref = first_active_track();
+            if (ref >= 0) {
+                auto frame = tracks_[ref]->track_buffer->peek(0);
+                if (frame.has_value()) {
+                    clock_.seek(frame->pts_us);
+                }
+            }
+        } else {
+            // Paused exact seek intentionally stops decode after the preview frame.
+            // When there is no cached next frame, synthesize a one-frame forward step
+            // by exact-seeking from the currently visible PTS, not the requested clock
+            // PTS, so visual stepping remains frame-by-frame after HEVC HW seeks.
+            int64_t base_pts = clock_.current_pts_us();
+            int ref = first_active_track();
+            if (ref >= 0) {
+                auto frame = tracks_[ref]->track_buffer->peek(0);
+                if (frame.has_value()) {
+                    base_pts = frame->pts_us;
+                }
+            }
+            int64_t dur = compute_frame_duration_us();
+            int64_t target = base_pts + dur + 1000;
+            if (cached_duration_us_ > 0) {
+                target = std::min(target, cached_duration_us_);
+            }
+            spdlog::info("[Renderer] step_forward exact_seek: visible_pts={:.3f}s, clock_pts={:.3f}s, duration={:.3f}ms, target={:.3f}s",
+                         base_pts / 1e6, clock_.current_pts_us() / 1e6, dur / 1e3, target / 1e6);
+            seek_internal(target, SeekType::Exact);
+            spdlog::info("[Renderer] step_forward exact_seek done: clock_pts={:.3f}s",
+                         clock_.current_pts_us() / 1e6);
+            return;
         }
     }
     draw_paused_frame("step_forward");

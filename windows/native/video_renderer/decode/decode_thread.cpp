@@ -92,13 +92,6 @@ bool DecodeThread::enable_hardware_decode(void* native_device,
         return false;
     }
 
-    // VP9 D3D11VA produces corrupted frames (solid brown blocks) and crashes
-    // on seek — the driver-level VP9 video decoder object is unreliable.
-    if (codec_params_->codec_id == AV_CODEC_ID_VP9) {
-        spdlog::info("[DecodeThread] Skipping D3D11VA for VP9 (known driver issues)");
-        return false;
-    }
-
     native_device_ = native_device;
     device_mutex_ = device_mutex;
 
@@ -242,7 +235,11 @@ const AVCodec* DecodeThread::preferred_software_decoder() const {
 }
 
 bool DecodeThread::hardware_output_downloads_to_cpu() const {
-    return codec_params_ && codec_params_->codec_id == AV_CODEC_ID_AV1;
+    if (!codec_params_) {
+        return false;
+    }
+    return codec_params_->codec_id == AV_CODEC_ID_AV1 ||
+           codec_params_->codec_id == AV_CODEC_ID_VP9;
 }
 
 bool DecodeThread::hardware_surfaces_are_renderer_owned() const {

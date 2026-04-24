@@ -166,6 +166,16 @@ class TestRunner {
             'Expected zoom $ratio (±$tolerance), got ${layout.zoomRatio}',
           );
         }
+      case AssertViewOffset(:final x, :final y, :final tolerance):
+        final layout = await controller.getLayout();
+        final dx = (layout.viewOffsetX - x).abs();
+        final dy = (layout.viewOffsetY - y).abs();
+        if (dx > tolerance || dy > tolerance) {
+          throw AssertionError(
+            'Expected view offset ($x, $y) (±$tolerance), '
+            'got (${layout.viewOffsetX}, ${layout.viewOffsetY})',
+          );
+        }
       case AssertCaptureEquals(:final expectedCapture, :final actualCapture):
         final expected = _captures[expectedCapture];
         final actual = _captures[actualCapture];
@@ -454,6 +464,19 @@ ScriptInstruction? _parseInstruction(
       return ScriptAssert(
         time,
         AssertZoom(double.parse(args[0]), double.parse(args[1])),
+      );
+    case 'ASSERT_VIEW_OFFSET':
+      if (args.length < 3) {
+        log.warning('ASSERT_VIEW_OFFSET needs x, y and tolerance: $rawLine');
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertViewOffset(
+          double.parse(args[0]),
+          double.parse(args[1]),
+          double.parse(args[2]),
+        ),
       );
     case 'ASSERT_CAPTURE_EQUALS':
       if (args.length < 2) {

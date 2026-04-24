@@ -37,7 +37,7 @@ class ViewportPanel extends StatefulWidget {
 class _ViewportPanelState extends State<ViewportPanel> {
   bool _panning = false;
   bool _splitting = false;
-  Offset _lastMousePos = Offset.zero;
+  Offset _lastMouseLocalPos = Offset.zero;
   Size _lastReportedLogicalSize = Size.zero;
   double _lastReportedDevicePixelRatio = 0.0;
 
@@ -129,51 +129,53 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (widget.textureId == null) {
       return const SizedBox.shrink();
     }
+    final devicePixelRatio = View.of(context).devicePixelRatio;
     return Listener(
       onPointerDown: (e) {
-            if ((e.buttons & kPrimaryButton) != 0) {
-              _panning = true;
-              _lastMousePos = e.position;
-              widget.onPointerButton(true, false);
-            } else if ((e.buttons & kSecondaryButton) != 0) {
-              _splitting = true;
-              _lastMousePos = e.position;
-              widget.onPointerButton(false, true);
-            }
-          },
-          onPointerUp: (e) {
-            _panning = false;
-            _splitting = false;
-            widget.onPointerButton(false, false);
-          },
-          onPointerMove: (e) {
-            if (!_panning && !_splitting) return;
-            final delta = e.position - _lastMousePos;
-            _lastMousePos = e.position;
+        if ((e.buttons & kPrimaryButton) != 0) {
+          _panning = true;
+          _lastMouseLocalPos = e.localPosition;
+          widget.onPointerButton(true, false);
+        } else if ((e.buttons & kSecondaryButton) != 0) {
+          _splitting = true;
+          _lastMouseLocalPos = e.localPosition;
+          widget.onPointerButton(false, true);
+        }
+      },
+      onPointerUp: (e) {
+        _panning = false;
+        _splitting = false;
+        widget.onPointerButton(false, false);
+      },
+      onPointerMove: (e) {
+        if (!_panning && !_splitting) return;
+        final logicalDelta = e.localPosition - _lastMouseLocalPos;
+        final physicalDelta = logicalDelta * devicePixelRatio;
+        _lastMouseLocalPos = e.localPosition;
 
-            if (_panning) {
-              widget.onPan(delta);
-            }
+        if (_panning) {
+          widget.onPan(physicalDelta);
+        }
 
-            if (_splitting && widget.layout.mode == LayoutMode.splitScreen) {
-              final box = context.findRenderObject() as RenderBox;
-              final localX = e.localPosition.dx;
-              widget.onSplit(localX / box.size.width);
-            }
-          },
-          onPointerSignal: (e) {
-            if (e is PointerScrollEvent) {
-              widget.onZoom(e.scrollDelta.dy, e.localPosition);
-            }
-          },
-          onPointerPanZoomUpdate: (e) {
-            // Trackpad two-finger scroll → zoom
-            final panDelta = e.pan.dy;
-            if (panDelta != 0.0) {
-              widget.onZoom(panDelta, e.localPosition);
-            }
-          },
-          child: Texture(textureId: widget.textureId!),
-        );
+        if (_splitting && widget.layout.mode == LayoutMode.splitScreen) {
+          final box = context.findRenderObject() as RenderBox;
+          final localX = e.localPosition.dx;
+          widget.onSplit(localX / box.size.width);
+        }
+      },
+      onPointerSignal: (e) {
+        if (e is PointerScrollEvent) {
+          widget.onZoom(e.scrollDelta.dy, e.localPosition * devicePixelRatio);
+        }
+      },
+      onPointerPanZoomUpdate: (e) {
+        // Trackpad two-finger scroll → zoom
+        final panDelta = e.pan.dy;
+        if (panDelta != 0.0) {
+          widget.onZoom(panDelta, e.localPosition * devicePixelRatio);
+        }
+      },
+      child: Texture(textureId: widget.textureId!),
+    );
   }
 }

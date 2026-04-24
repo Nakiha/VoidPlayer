@@ -39,6 +39,13 @@ class AssertZoom extends PlayerAssert {
   const AssertZoom(this.ratio, this.tolerance);
 }
 
+class AssertViewOffset extends PlayerAssert {
+  final double x;
+  final double y;
+  final double tolerance;
+  const AssertViewOffset(this.x, this.y, this.tolerance);
+}
+
 class AssertCaptureEquals extends PlayerAssert {
   final String expectedCapture;
   final String actualCapture;

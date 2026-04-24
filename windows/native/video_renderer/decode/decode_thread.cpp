@@ -13,6 +13,7 @@ namespace {
 constexpr int64_t kExactSeekLookbehindUs = 500000;  // Keep up to 0.5s before target.
 constexpr int64_t kExactSeekLeadUs = 250000;        // HEVC B-frames can appear long after refs.
 constexpr size_t kExactSeekReorderPublishFrames = 64;
+constexpr size_t kExactSeekPreviewWindowFrames = 4;
 
 size_t post_seek_preroll_target(bool hw_enabled) {
     // Hardware-decoded seek/add-track previews are more stable if we wait for
@@ -416,10 +417,19 @@ void DecodeThread::flush_reorder_buffer() {
     exact_seek_target_us_ = -1;
 }
 
-void DecodeThread::publish_exact_seek_frame(TextureFrame frame) {
+void DecodeThread::publish_exact_seek_window(size_t selected) {
+    if (selected >= exact_seek_reorder_.size()) {
+        return;
+    }
+
     flush_hw_visibility_if_needed();
-    const int64_t pts = frame.pts_us;
-    output_buffer_.push_frame(std::move(frame));
+    const int64_t pts = exact_seek_reorder_[selected].pts_us;
+    const size_t end = std::min(exact_seek_reorder_.size(),
+                                selected + kExactSeekPreviewWindowFrames);
+    const size_t published = end - selected;
+    for (size_t i = selected; i < end; ++i) {
+        output_buffer_.push_frame(std::move(exact_seek_reorder_[i]));
+    }
     output_buffer_.set_state(TrackState::Ready);
     if (pause_after_preroll_.load(std::memory_order_acquire)) {
         decode_paused_.store(true, std::memory_order_release);
@@ -427,8 +437,8 @@ void DecodeThread::publish_exact_seek_frame(TextureFrame frame) {
     post_seek_ = false;
     exact_seek_target_us_ = -1;
     exact_seek_reorder_.clear();
-    spdlog::info("[DecodeThread] Exact seek drain: preview frame ready pts={:.3f}s, state->Ready",
-                 pts / 1e6);
+    spdlog::info("[DecodeThread] Exact seek drain: preview frame ready pts={:.3f}s, published={} frames, state->Ready",
+                 pts / 1e6, published);
 }
 
 bool DecodeThread::publish_best_exact_seek_frame() {
@@ -458,10 +468,9 @@ bool DecodeThread::publish_best_exact_seek_frame() {
 
     const int64_t selected_pts = exact_seek_reorder_[selected].pts_us;
     const size_t collected = exact_seek_reorder_.size();
-    TextureFrame frame = std::move(exact_seek_reorder_[selected]);
     spdlog::info("[DecodeThread] Exact seek reorder: selected pts={:.3f}s from {} frames (target={:.3f}s)",
                  selected_pts / 1e6, collected, exact_seek_target_us_ / 1e6);
-    publish_exact_seek_frame(std::move(frame));
+    publish_exact_seek_window(selected);
     return true;
 }
 

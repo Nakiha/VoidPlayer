@@ -193,6 +193,8 @@ private:
     void render_loop();
     void draw_frame(const PresentDecision& decision);
     void draw_paused_frame(const char* reason);
+    bool build_step_forward_decision_locked(PresentDecision& decision) const;
+    void discard_step_forward_consumed_frames_locked(const PresentDecision& decision);
     void seek_internal(int64_t target_pts_us,
                        SeekType type,
                        bool allow_deferred = true,

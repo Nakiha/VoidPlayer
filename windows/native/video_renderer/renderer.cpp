@@ -13,6 +13,7 @@ namespace vr {
 // Max sleep for responsiveness (allows seek/pause within ~50 ms)
 static constexpr int64_t MAX_SLEEP_US = 8000;  // 8ms cap → ~120Hz layout response
 static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250);
+static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
 
 Renderer::Renderer() = default;
 
@@ -435,7 +436,86 @@ void Renderer::mark_paused_hevc_seek_preview_drawn_locked() {
     }
 }
 
+bool Renderer::build_step_forward_decision_locked(PresentDecision& decision) const {
+    decision = PresentDecision();
+    decision.current_pts_us = clock_.current_pts_us();
+    const int64_t frame_duration_us = compute_frame_duration_us();
+    const int64_t max_step_gap_us = frame_duration_us + frame_duration_us / 2 + 2000;
+
+    bool any_active = false;
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks_[i]) {
+            decision.frames[i] = std::nullopt;
+            continue;
+        }
+        any_active = true;
+
+        int64_t base_pts = decision.current_pts_us - tracks_[i]->offset_us;
+        if (last_decision_.frames[i].has_value()) {
+            base_pts = last_decision_.frames[i]->pts_us;
+        } else if (auto current = tracks_[i]->track_buffer->peek(0); current.has_value()) {
+            base_pts = current->pts_us;
+        }
+
+        std::optional<TextureFrame> best;
+        auto& buffer = tracks_[i]->track_buffer;
+        const size_t total = buffer->total_count();
+        for (size_t offset = 0; offset < total; ++offset) {
+            auto frame = buffer->peek(static_cast<int>(offset));
+            if (!frame.has_value() || frame->pts_us <= base_pts) {
+                continue;
+            }
+            if (!best.has_value() || frame->pts_us < best->pts_us) {
+                best = frame;
+            }
+        }
+
+        if (!best.has_value()) {
+            decision = PresentDecision();
+            return false;
+        }
+        if (frame_duration_us > 0 && best->pts_us - base_pts > max_step_gap_us) {
+            decision = PresentDecision();
+            return false;
+        }
+        decision.frames[i] = best;
+    }
+
+    decision.should_present = any_active;
+    return decision.should_present;
+}
+
+void Renderer::discard_step_forward_consumed_frames_locked(const PresentDecision& decision) {
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks_[i]) continue;
+
+        int64_t keep_after_pts = clock_.current_pts_us() - tracks_[i]->offset_us;
+        if (decision.frames[i].has_value()) {
+            keep_after_pts = decision.frames[i]->pts_us;
+        } else if (last_decision_.frames[i].has_value()) {
+            keep_after_pts = last_decision_.frames[i]->pts_us;
+        }
+
+        auto& buffer = tracks_[i]->track_buffer;
+        while (true) {
+            auto frame = buffer->peek(0);
+            if (!frame.has_value() || frame->pts_us > keep_after_pts) {
+                break;
+            }
+            if (!buffer->advance()) {
+                break;
+            }
+        }
+    }
+}
+
 void Renderer::step_forward() {
+    PresentDecision step_decision;
+    bool have_step_decision = false;
+    bool need_decode_wait = false;
+    bool need_exact_seek = false;
+    int64_t exact_seek_target = 0;
+
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
         if (!initialized_) return;
@@ -450,58 +530,96 @@ void Renderer::step_forward() {
         clock_.pause();
         playing_ = false;
 
-        bool all_can_advance = true;
-        bool has_active_track = false;
-        for (size_t i = 0; i < kMaxTracks; ++i) {
-            if (!tracks_[i]) continue;
-            has_active_track = true;
-            auto& buffer = tracks_[i]->track_buffer;
-            if (!buffer->peek(0).has_value() ||
-                !buffer->peek(1).has_value()) {
-                all_can_advance = false;
-                break;
-            }
-        }
-
-        if (has_active_track && all_can_advance) {
-            for (size_t i = 0; i < kMaxTracks; ++i) {
-                if (!tracks_[i]) continue;
-                tracks_[i]->track_buffer->advance();
-            }
+        if (build_step_forward_decision_locked(step_decision)) {
+            discard_step_forward_consumed_frames_locked(step_decision);
             int ref = first_active_track();
             if (ref >= 0) {
-                auto frame = tracks_[ref]->track_buffer->peek(0);
+                auto& frame = step_decision.frames[ref];
                 if (frame.has_value()) {
-                    clock_.seek(frame->pts_us);
+                    clock_.seek(frame->pts_us + tracks_[ref]->offset_us);
                 }
             }
+            have_step_decision = true;
         } else {
-            // Paused exact seek intentionally stops decode after the preview frame.
-            // When there is no cached next frame, synthesize a one-frame forward step
-            // by exact-seeking from the currently visible PTS, not the requested clock
-            // PTS, so visual stepping remains frame-by-frame after HEVC HW seeks.
+            discard_step_forward_consumed_frames_locked(last_decision_);
+            for (size_t i = 0; i < kMaxTracks; ++i) {
+                if (!tracks_[i]) continue;
+                tracks_[i]->decode_thread->set_decode_paused(false);
+            }
+            need_decode_wait = true;
+        }
+    }
+
+    if (need_decode_wait) {
+        const auto deadline = std::chrono::steady_clock::now() + kStepForwardDecodeWait;
+        while (std::chrono::steady_clock::now() < deadline) {
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                if (!initialized_) return;
+                if (build_step_forward_decision_locked(step_decision)) {
+                    for (size_t i = 0; i < kMaxTracks; ++i) {
+                        if (!tracks_[i]) continue;
+                        tracks_[i]->decode_thread->set_decode_paused(true);
+                    }
+                    discard_step_forward_consumed_frames_locked(step_decision);
+                    int ref = first_active_track();
+                    if (ref >= 0) {
+                        auto& frame = step_decision.frames[ref];
+                        if (frame.has_value()) {
+                            clock_.seek(frame->pts_us + tracks_[ref]->offset_us);
+                        }
+                    }
+                    have_step_decision = true;
+                    break;
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+
+        if (!have_step_decision) {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            if (!initialized_) return;
+            for (size_t i = 0; i < kMaxTracks; ++i) {
+                if (!tracks_[i]) continue;
+                tracks_[i]->decode_thread->set_decode_paused(true);
+            }
+
             int64_t base_pts = clock_.current_pts_us();
             int ref = first_active_track();
             if (ref >= 0) {
-                auto frame = tracks_[ref]->track_buffer->peek(0);
-                if (frame.has_value()) {
-                    base_pts = frame->pts_us;
+                if (last_decision_.frames[ref].has_value()) {
+                    base_pts = last_decision_.frames[ref]->pts_us + tracks_[ref]->offset_us;
+                } else if (auto frame = tracks_[ref]->track_buffer->peek(0); frame.has_value()) {
+                    base_pts = frame->pts_us + tracks_[ref]->offset_us;
                 }
             }
             int64_t dur = compute_frame_duration_us();
-            int64_t target = base_pts + dur + 1000;
+            exact_seek_target = base_pts + dur + 1000;
             if (cached_duration_us_ > 0) {
-                target = std::min(target, cached_duration_us_);
+                exact_seek_target = std::min(exact_seek_target, cached_duration_us_);
             }
             spdlog::info("[Renderer] step_forward exact_seek: visible_pts={:.3f}s, clock_pts={:.3f}s, duration={:.3f}ms, target={:.3f}s",
-                         base_pts / 1e6, clock_.current_pts_us() / 1e6, dur / 1e3, target / 1e6);
-            seek_internal(target, SeekType::Exact);
-            spdlog::info("[Renderer] step_forward exact_seek done: clock_pts={:.3f}s",
-                         clock_.current_pts_us() / 1e6);
-            return;
+                         base_pts / 1e6, clock_.current_pts_us() / 1e6, dur / 1e3, exact_seek_target / 1e6);
+            need_exact_seek = true;
         }
     }
-    draw_paused_frame("step_forward");
+
+    if (have_step_decision) {
+        present_frame(step_decision);
+        last_decision_ = step_decision;
+        int ref = first_active_track();
+        double pts = (ref >= 0 && step_decision.frames[ref].has_value())
+                     ? step_decision.frames[ref]->pts_us / 1e6 : -1.0;
+        spdlog::info("[Renderer] draw_paused_frame(step_forward): pts={:.3f}s", pts);
+        return;
+    }
+
+    if (need_exact_seek) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        seek_internal(exact_seek_target, SeekType::Exact);
+        spdlog::info("[Renderer] step_forward exact_seek done: clock_pts={:.3f}s",
+                     clock_.current_pts_us() / 1e6);
+    }
 }
 
 void Renderer::step_backward() {

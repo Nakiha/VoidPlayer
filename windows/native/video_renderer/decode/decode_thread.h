@@ -102,8 +102,8 @@ private:
     /// Sort exact_seek_reorder_ by PTS and push all frames to output_buffer_.
     void flush_reorder_buffer();
 
-    /// Publish the selected exact-seek preview frame and pause decode if needed.
-    void publish_exact_seek_frame(TextureFrame frame);
+    /// Publish the selected exact-seek preview frame plus later decoded frames.
+    void publish_exact_seek_window(size_t selected);
 
     /// Pick the closest collected frame before the exact seek target and publish it.
     bool publish_best_exact_seek_frame();

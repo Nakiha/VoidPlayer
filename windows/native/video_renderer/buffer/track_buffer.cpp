@@ -33,6 +33,12 @@ void TrackBuffer::abort() {
     push_cv_.notify_all();
 }
 
+void TrackBuffer::reset() {
+    aborted_.store(false);
+    ring_.clear();
+    push_cv_.notify_all();
+}
+
 void TrackBuffer::clear_frames() {
     ring_.clear();
     // Notify decode thread that slots have been freed

@@ -67,9 +67,13 @@ public:
     /// to prevent stale packets from being sent to the codec (avoids HEVC
     /// "Could not find ref" warnings during the seek transition).
     void set_decode_paused(bool paused);
+    void set_pause_after_preroll(bool enabled);
 
     /// Read-only access to performance counters.
     const DecodePerfCounters& perf_counters() const { return perf_; }
+
+    bool is_hardware_decode_enabled() const { return hw_enabled_; }
+    AVCodecID codec_id() const { return codec_params_ ? codec_params_->codec_id : AV_CODEC_ID_NONE; }
 
 private:
     void run();
@@ -86,7 +90,7 @@ private:
     /// Sort exact_seek_reorder_ by PTS and push all frames to output_buffer_.
     void flush_reorder_buffer();
 
-    /// Flush codec buffers — skipped for hardware decode (D3D11VA driver bug).
+    /// Flush codec buffers after seek.
     void safe_flush_codec();
 
     /// Flush decode-device writes so the render device can safely sample the
@@ -123,6 +127,7 @@ private:
 
     std::atomic<bool> cancelled_{false};     // Set by notify_seek() to abort in-progress decode
     std::atomic<bool> decode_paused_{false};
+    std::atomic<bool> pause_after_preroll_{false};
     int64_t exact_seek_target_us_ = -1;  // >= 0 when discarding frames before exact seek target
     std::vector<TextureFrame> exact_seek_reorder_;  // Temp buffer for B-frame PTS reordering
 

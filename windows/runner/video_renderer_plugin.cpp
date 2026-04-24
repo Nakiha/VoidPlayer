@@ -7,9 +7,22 @@
 #include <shobjidl.h>
 #include <shlwapi.h>
 #include <commdlg.h>
+#include <wincodec.h>
+#include <vector>
+#include <sstream>
+#include <iomanip>
+
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavutil/avutil.h>
+#include <libswresample/swresample.h>
+#include <libswscale/swscale.h>
+}
 
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "windowscodecs.lib")
 
 namespace {
 std::string get_exe_dir() {
@@ -30,6 +43,116 @@ flutter::EncodableMap make_track_map(const vr::TrackInfo& info) {
     map[flutter::EncodableValue("height")] = flutter::EncodableValue(info.height);
     map[flutter::EncodableValue("durationUs")] = flutter::EncodableValue(static_cast<int64_t>(info.duration_us));
     return map;
+}
+
+std::string format_ffmpeg_version(unsigned version) {
+    return std::to_string((version >> 16) & 0xFF) + "." +
+           std::to_string((version >> 8) & 0xFF) + "." +
+           std::to_string(version & 0xFF);
+}
+
+void log_ffmpeg_runtime_versions() {
+    spdlog::info(
+        "[FFmpeg] av_version_info={} avcodec={} avformat={} avutil={} swscale={} swresample={}",
+        av_version_info(),
+        format_ffmpeg_version(avcodec_version()),
+        format_ffmpeg_version(avformat_version()),
+        format_ffmpeg_version(avutil_version()),
+        format_ffmpeg_version(swscale_version()),
+        format_ffmpeg_version(swresample_version()));
+}
+
+std::wstring Utf16FromUtf8(const std::string& utf8) {
+    if (utf8.empty()) return {};
+    const int length = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
+    if (length <= 0) return {};
+    std::wstring wide(static_cast<size_t>(length), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, wide.data(), length);
+    wide.resize(static_cast<size_t>(length - 1));
+    return wide;
+}
+
+std::string Fnv1a64Hex(const std::vector<uint8_t>& bytes) {
+    uint64_t hash = 14695981039346656037ull;
+    for (uint8_t byte : bytes) {
+        hash ^= byte;
+        hash *= 1099511628211ull;
+    }
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0') << std::setw(16) << hash;
+    return oss.str();
+}
+
+bool SaveBgraToPng(const std::vector<uint8_t>& bgra, int width, int height, const std::string& path) {
+    if (bgra.empty() || width <= 0 || height <= 0 || path.empty()) {
+        return false;
+    }
+
+    Microsoft::WRL::ComPtr<IWICImagingFactory> factory;
+    HRESULT hr = CoCreateInstance(
+        CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+        IID_PPV_ARGS(&factory));
+    if (FAILED(hr) || !factory) {
+        return false;
+    }
+
+    Microsoft::WRL::ComPtr<IWICStream> stream;
+    hr = factory->CreateStream(&stream);
+    if (FAILED(hr) || !stream) {
+        return false;
+    }
+
+    const auto wide_path = Utf16FromUtf8(path);
+    hr = stream->InitializeFromFilename(wide_path.c_str(), GENERIC_WRITE);
+    if (FAILED(hr)) {
+        return false;
+    }
+
+    Microsoft::WRL::ComPtr<IWICBitmapEncoder> encoder;
+    hr = factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder);
+    if (FAILED(hr) || !encoder) {
+        return false;
+    }
+    hr = encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache);
+    if (FAILED(hr)) {
+        return false;
+    }
+
+    Microsoft::WRL::ComPtr<IWICBitmapFrameEncode> frame;
+    Microsoft::WRL::ComPtr<IPropertyBag2> props;
+    hr = encoder->CreateNewFrame(&frame, &props);
+    if (FAILED(hr) || !frame) {
+        return false;
+    }
+    hr = frame->Initialize(props.Get());
+    if (FAILED(hr)) {
+        return false;
+    }
+    hr = frame->SetSize(static_cast<UINT>(width), static_cast<UINT>(height));
+    if (FAILED(hr)) {
+        return false;
+    }
+
+    WICPixelFormatGUID pixel_format = GUID_WICPixelFormat32bppBGRA;
+    hr = frame->SetPixelFormat(&pixel_format);
+    if (FAILED(hr)) {
+        return false;
+    }
+
+    const UINT stride = static_cast<UINT>(width * 4);
+    const UINT image_size = stride * static_cast<UINT>(height);
+    hr = frame->WritePixels(
+        static_cast<UINT>(height), stride, image_size,
+        const_cast<BYTE*>(bgra.data()));
+    if (FAILED(hr)) {
+        return false;
+    }
+    hr = frame->Commit();
+    if (FAILED(hr)) {
+        return false;
+    }
+    hr = encoder->Commit();
+    return SUCCEEDED(hr);
 }
 } // namespace
 
@@ -113,6 +236,7 @@ VideoRendererPlugin::VideoRendererPlugin(
 
     spdlog::info("[VideoRendererPlugin] Plugin constructed, native logging initialized: {}", config.file_path);
     spdlog::info("[VideoRendererPlugin] Crash handler installed (VEH + SEH), crash dir: {}", logs_dir_);
+    log_ffmpeg_runtime_versions();
 
     // Register PTS callback for analysis FFI (avoids analysis_ffi depending on Renderer)
     naki_analysis_register_pts_callback([]() -> int64_t {
@@ -279,6 +403,8 @@ void VideoRendererPlugin::HandleMethodCall(
         result->Success(flutter::EncodableValue(map));
     } else if (method == "pickFiles") {
         PickFiles(method_call.arguments(), std::move(result));
+    } else if (method == "captureViewport") {
+        CaptureViewport(method_call.arguments(), std::move(result));
     } else if (method == "getLayout") {
         flutter::EncodableMap map;
         if (renderer_) {
@@ -648,4 +774,48 @@ void VideoRendererPlugin::PickFiles(
 
     // Always return a list (empty = cancelled, non-empty = selected files)
     result->Success(flutter::EncodableValue(paths_list));
+}
+
+void VideoRendererPlugin::CaptureViewport(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+
+    if (!renderer_) {
+        result->Error("NO_RENDERER", "Renderer not created");
+        return;
+    }
+
+    std::string output_path;
+    if (arguments) {
+        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+        if (args) {
+            auto it = args->find(flutter::EncodableValue("outputPath"));
+            if (it != args->end() && std::holds_alternative<std::string>(it->second)) {
+                output_path = std::get<std::string>(it->second);
+            }
+        }
+    }
+
+    std::vector<uint8_t> bgra;
+    int width = 0;
+    int height = 0;
+    if (!renderer_->capture_front_buffer(bgra, width, height)) {
+        result->Error("CAPTURE_FAILED", "Failed to capture viewport");
+        return;
+    }
+
+    const std::string hash = Fnv1a64Hex(bgra);
+    if (!output_path.empty() && !SaveBgraToPng(bgra, width, height, output_path)) {
+        result->Error("CAPTURE_SAVE_FAILED", "Failed to save viewport PNG");
+        return;
+    }
+
+    flutter::EncodableMap map;
+    map[flutter::EncodableValue("hash")] = flutter::EncodableValue(hash);
+    map[flutter::EncodableValue("width")] = flutter::EncodableValue(width);
+    map[flutter::EncodableValue("height")] = flutter::EncodableValue(height);
+    if (!output_path.empty()) {
+        map[flutter::EncodableValue("outputPath")] = flutter::EncodableValue(output_path);
+    }
+    result->Success(flutter::EncodableValue(map));
 }

@@ -16,6 +16,29 @@ import 'windows/memory_window.dart';
 import 'windows/settings_window.dart';
 import 'windows/analysis_window.dart';
 
+({double width, double height})? _parseTestWindowHeader(String scriptPath) {
+  try {
+    final file = File(scriptPath);
+    if (!file.existsSync()) return null;
+    for (final rawLine in file.readAsLinesSync()) {
+      final line = rawLine.trim();
+      if (!line.startsWith('@')) continue;
+      final parts = line.split(',').map((s) => s.trim()).toList();
+      if (parts.isEmpty) continue;
+      final key = parts.first.toUpperCase();
+      if (key == '@WINDOW' && parts.length >= 3) {
+        return (
+          width: double.parse(parts[1]),
+          height: double.parse(parts[2]),
+        );
+      }
+    }
+  } catch (_) {
+    // Ignore malformed test header and fall back to normal config handling.
+  }
+  return null;
+}
+
 Future<Color> getWindowsAccentColor() async {
   try {
     final result = await Process.run('powershell', [
@@ -154,6 +177,9 @@ void main(List<String> args) async {
   if (scriptIdx >= 0 && scriptIdx + 1 < args.length) {
     testScriptPath = args[scriptIdx + 1];
   }
+  final testWindow = testScriptPath != null
+      ? _parseTestWindowHeader(testScriptPath)
+      : null;
 
   // Determine window type from arguments.
   final windowArgs = WindowArgs.parse(args);
@@ -202,7 +228,10 @@ void main(List<String> args) async {
       await windowManager.setMinimumSize(const Size(520, 360));
 
       final savedRect = AppConfig.instance.windowRect;
-      if (savedRect != null && _isRectOnScreen(savedRect)) {
+      if (testWindow != null) {
+        await windowManager.setSize(Size(testWindow.width, testWindow.height));
+        await windowManager.center();
+      } else if (savedRect != null && _isRectOnScreen(savedRect)) {
         await windowManager.setSize(savedRect.size);
         await windowManager.setPosition(savedRect.topLeft);
       } else {

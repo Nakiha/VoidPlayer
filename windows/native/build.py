@@ -45,6 +45,8 @@ def test(build_dir: Path, build_type: str):
         "ctest",
         "--test-dir", str(build_dir),
         "--build-config", build_type,
+        "-V",
+        "--timeout", "180",
         "--output-on-failure",
     ])
 
@@ -68,34 +70,34 @@ def main():
                         help="Build in Debug mode (no optimization, with PDB debug symbols)")
     args = parser.parse_args()
 
-    script_dir = Path(__file__).parent
-    build_dir = script_dir / "build-msvc"
+    script_dir = Path(__file__).resolve().parent
+    build_dir = (script_dir / "build-msvc").resolve()
     build_type = "Debug" if args.debug else "Release"
 
     if args.benchmarks_only:
-        print("Configuring...")
+        print("Configuring...", flush=True)
         configure(build_dir, script_dir)
 
-        print(f"Building ({build_type})...")
+        print(f"Building ({build_type})...", flush=True)
         build(build_dir, build_type)
 
-        print("Running benchmarks...")
+        print("Running benchmarks...", flush=True)
         benchmark(build_dir, build_type)
-        print("Done.")
+        print("Done.", flush=True)
         return
 
     if not args.test_only:
-        print("Configuring...")
+        print("Configuring...", flush=True)
         configure(build_dir, script_dir)
 
-        print(f"Building ({build_type})...")
+        print(f"Building ({build_type})...", flush=True)
         build(build_dir, build_type)
 
     if not args.build_only:
-        print("Running tests...")
+        print("Running tests...", flush=True)
         test(build_dir, build_type)
 
-    print("Done.")
+    print("Done.", flush=True)
 
 
 if __name__ == "__main__":

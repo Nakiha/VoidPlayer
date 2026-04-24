@@ -38,6 +38,8 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   int _currentPtsUs = 0;
   int _durationUs = 0;
   LayoutState _layout = const LayoutState();
+  int? _pendingSeekUs;
+  DateTime? _pendingSeekAt;
 
   // Per-track sync offsets: slot -> offset in microseconds
   Map<int, int> _syncOffsets = {};
@@ -109,7 +111,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     );
     actionRegistry.bind(const SeekTo(0), (action) {
       final a = action as SeekTo;
-      _controller.seek(a.ptsUs);
+      _seekTo(a.ptsUs);
     });
     actionRegistry.bind(const SetSpeed(1.0), (action) {
       final a = action as SetSpeed;
@@ -173,6 +175,15 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       await _controller.play();
     }
     setState(() => _isPlaying = !_isPlaying);
+  }
+
+  void _seekTo(int ptsUs) {
+    setState(() {
+      _currentPtsUs = ptsUs;
+      _pendingSeekUs = ptsUs;
+      _pendingSeekAt = DateTime.now();
+    });
+    _controller.seek(ptsUs);
   }
 
   Future<void> _triggerAnalysis() async {
@@ -436,9 +447,25 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
         _controller.isPlaying(),
       ]);
       if (!mounted) return;
-      final pts = results[0] as int;
+      var pts = results[0] as int;
       final dur = results[1] as int;
       final playing = results[2] as bool;
+      final pendingSeekUs = _pendingSeekUs;
+      if (pendingSeekUs != null) {
+        final seekAge = _pendingSeekAt == null
+            ? Duration.zero
+            : DateTime.now().difference(_pendingSeekAt!);
+        final settled = (pts - pendingSeekUs).abs() <= 50000;
+        if (settled) {
+          _pendingSeekUs = null;
+          _pendingSeekAt = null;
+        } else if (seekAge < const Duration(milliseconds: 1500)) {
+          pts = pendingSeekUs;
+        } else {
+          _pendingSeekUs = null;
+          _pendingSeekAt = null;
+        }
+      }
       if (pts == _currentPtsUs && dur == _durationUs && playing == _isPlaying) {
         return;
       }
@@ -600,7 +627,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
                     onStepBackward: () => _controller.stepBackward(),
                     currentPtsUs: _currentPtsUs,
                     durationUs: _effectiveDurationUs,
-                    onSeek: (pts) => _controller.seek(pts),
+                    onSeek: _seekTo,
                     onHoverChanged: _onSliderHover,
                   ),
                 // Timeline area (variable, max 40%)

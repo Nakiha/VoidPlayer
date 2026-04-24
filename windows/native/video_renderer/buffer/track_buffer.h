@@ -25,6 +25,9 @@ public:
     // Abort: unblock any waiting push (called on shutdown/seek)
     void abort();
 
+    // Reset after abort so the buffer can be reused.
+    void reset();
+
     // Clear all buffered frames (used during seek to discard stale data)
     void clear_frames();
 

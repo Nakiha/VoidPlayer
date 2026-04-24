@@ -86,12 +86,12 @@ void configure_logging(const LogConfig& config) {
     logger->set_level(effective_level);
     spdlog::set_level(effective_level);
 
-    // Flush on warn and above
-    logger->flush_on(spdlog::level::warn);
-    spdlog::flush_on(spdlog::level::warn);
+    // Flush every info log so crash-adjacent traces are persisted to disk.
+    logger->flush_on(spdlog::level::info);
+    spdlog::flush_on(spdlog::level::info);
 
-    // Flush every 3 seconds
-    spdlog::flush_every(std::chrono::seconds(3));
+    // Keep a background flush as a fallback for sinks that buffer internally.
+    spdlog::flush_every(std::chrono::seconds(1));
 }
 
 // ============================================================

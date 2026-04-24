@@ -16,6 +16,12 @@ size_t post_seek_preroll_target(bool hw_enabled) {
     // combinations can produce a partially-ready first post-seek frame.
     return hw_enabled ? size_t(2) : size_t(1);
 }
+
+bool log_codec_exception(const char* stage, AVCodecID codec_id, bool hw_enabled) {
+    spdlog::error("[DecodeThread] Unhandled exception during {} (codec_id={}, hw={})",
+                  stage, static_cast<int>(codec_id), hw_enabled);
+    return false;
+}
 }  // namespace
 
 // get_format callback for hardware decode negotiation.
@@ -23,18 +29,17 @@ size_t post_seek_preroll_target(bool hw_enabled) {
 static enum AVPixelFormat get_hw_format(AVCodecContext* ctx,
                                          const enum AVPixelFormat* pix_fmts) {
     auto* preferred = static_cast<AVPixelFormat*>(ctx->opaque);
-    // Prefer D3D11VA_VLD over D3D11 when both are available.
     AVPixelFormat fallback = AV_PIX_FMT_NONE;
     for (const enum AVPixelFormat* p = pix_fmts; *p != AV_PIX_FMT_NONE; ++p) {
         if (preferred && *p == *preferred) {
             return *p;
         }
-        if (*p == AV_PIX_FMT_D3D11VA_VLD) {
+        if (*p == AV_PIX_FMT_D3D11) {
             fallback = *p;
         }
     }
     if (fallback != AV_PIX_FMT_NONE) {
-        spdlog::info("[DecodeThread] get_format: using D3D11VA_VLD fallback");
+        spdlog::info("[DecodeThread] get_format: using D3D11 fallback");
         return fallback;
     }
     spdlog::warn("[DecodeThread] HW pixel format not available in get_format, returning NONE");
@@ -221,31 +226,45 @@ bool DecodeThread::start() {
 }
 
 void DecodeThread::stop() {
+    spdlog::info("[DecodeThread] stop() begin");
     running_.store(false);
+    cancelled_.store(true, std::memory_order_release);
+    input_queue_.clear_eof();
     input_queue_.abort();   // Unblock blocking pop
     output_buffer_.abort(); // Unblock blocking push_frame
     if (thread_.joinable()) {
+        spdlog::info("[DecodeThread] stop() waiting for decode thread join");
         thread_.join();
+        spdlog::info("[DecodeThread] stop() decode thread joined");
     }
     // Release output frames BEFORE freeing hw resources.
     // TextureFrames hold hw_frame_ref (av_frame_ref) which reference
     // hw_frames_ctx -> hw_device_ctx. If hw_device_ctx is freed first,
     // the frame cleanup will access a freed device context (SIGSEGV).
+    spdlog::info("[DecodeThread] stop() clearing output frames");
     output_buffer_.clear_frames();
+    spdlog::info("[DecodeThread] stop() output frames cleared");
 
     if (codec_ctx_) {
+        spdlog::info("[DecodeThread] stop() freeing codec context");
         avcodec_free_context(&codec_ctx_);
         codec_ctx_ = nullptr;
     }
     if (hw_device_ctx_) {
+        spdlog::info("[DecodeThread] stop() releasing hw device context");
         av_buffer_unref(&hw_device_ctx_);
         hw_device_ctx_ = nullptr;
     }
     hw_provider_.reset();
+    spdlog::info("[DecodeThread] stop() end");
 }
 
 void DecodeThread::set_decode_paused(bool paused) {
     decode_paused_.store(paused, std::memory_order_release);
+}
+
+void DecodeThread::set_pause_after_preroll(bool enabled) {
+    pause_after_preroll_.store(enabled, std::memory_order_release);
 }
 
 void DecodeThread::notify_seek(int64_t target_pts_us, SeekType type) {
@@ -259,7 +278,15 @@ void DecodeThread::notify_seek(int64_t target_pts_us, SeekType type) {
 void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*)>& rescale_ts, int64_t target_us) {
     auto prev_level = av_log_get_level();
     av_log_set_level(AV_LOG_ERROR);
-    avcodec_send_packet(codec_ctx_, nullptr);
+    try {
+        avcodec_send_packet(codec_ctx_, nullptr);
+    } catch (...) {
+        output_buffer_.set_state(TrackState::Error);
+        running_.store(false, std::memory_order_release);
+        log_codec_exception("drain/send_packet", codec_id(), hw_enabled_);
+        av_log_set_level(prev_level);
+        return;
+    }
     while (avcodec_receive_frame(codec_ctx_, frame) >= 0) {
         if (cancelled_.load(std::memory_order_acquire)) {
             av_frame_unref(frame);
@@ -280,8 +307,12 @@ void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*
 }
 
 void DecodeThread::safe_flush_codec() {
-    if (!hw_enabled_) {
-        avcodec_flush_buffers(codec_ctx_);
+    if (!codec_ctx_) {
+        return;
+    }
+    avcodec_flush_buffers(codec_ctx_);
+    if (hw_enabled_ && hw_provider_) {
+        hw_provider_->flush();
     }
 }
 
@@ -364,11 +395,11 @@ void DecodeThread::run() {
                          output_buffer_.total_count(),
                          static_cast<int>(output_buffer_.state()));
 
-            // D3D11VA driver bug: avcodec_flush_buffers corrupts state and crashes
-            // on the next send_packet. Let the first post-seek keyframe reset the DPB.
+            av_frame_unref(frame);
+            exact_seek_reorder_.clear();
+
             safe_flush_codec();
-            spdlog::info("[DecodeThread] Seek flush: {}",
-                         hw_enabled_ ? "SKIPPED (D3D11VA unsafe)" : "codec buffers flushed");
+            spdlog::info("[DecodeThread] Seek flush: codec buffers flushed (hw={})", hw_enabled_);
 
             // NOTE: Do NOT drain input queue here! The DemuxThread already
             // flushes the queue before seeking and then pushes NEW packets.
@@ -393,9 +424,22 @@ void DecodeThread::run() {
             continue;
         }
 
+        // Fully pause decode consumption so the packet queue preserves packets
+        // and the demux thread stops at backpressure instead of racing to EOF.
+        if (decode_paused_.load(std::memory_order_acquire) &&
+            output_buffer_.state() != TrackState::Flushing) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue;
+        }
+
         // Non-blocking pop with short sleep — allows seek_pending to be checked promptly
         AVPacket* pkt = input_queue_.try_pop();
         if (!pkt) {
+            if (!running_.load(std::memory_order_acquire) ||
+                cancelled_.load(std::memory_order_acquire)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
             // EOF flush: drain codec once when the producer signals EOF.
             // Skip during Buffering (post-seek preroll) — the DemuxThread may
             // signal EOF very quickly after seek (file is cached), but we need
@@ -427,9 +471,26 @@ void DecodeThread::run() {
                                      output_buffer_.total_count(), input_queue_.size());
                     }
                 } else {
-                    avcodec_send_packet(codec_ctx_, nullptr);
+                    try {
+                        avcodec_send_packet(codec_ctx_, nullptr);
+                    } catch (...) {
+                        output_buffer_.set_state(TrackState::Error);
+                        decode_paused_.store(true, std::memory_order_release);
+                        running_.store(false, std::memory_order_release);
+                        log_codec_exception("eof_drain/send_packet", codec_id(), hw_enabled_);
+                        break;
+                    }
                     while (true) {
-                        int ret = avcodec_receive_frame(codec_ctx_, frame);
+                        int ret = 0;
+                        try {
+                            ret = avcodec_receive_frame(codec_ctx_, frame);
+                        } catch (...) {
+                            output_buffer_.set_state(TrackState::Error);
+                            decode_paused_.store(true, std::memory_order_release);
+                            running_.store(false, std::memory_order_release);
+                            log_codec_exception("eof_drain/receive_frame", codec_id(), hw_enabled_);
+                            ret = AVERROR_EXTERNAL;
+                        }
                         if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
                         if (ret < 0) break;
 
@@ -476,11 +537,20 @@ void DecodeThread::run() {
 
         int ret = 0;
         auto batch_t0 = std::chrono::steady_clock::now();
-        if (hw_enabled_ && device_mutex_) {
-            std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
-            ret = avcodec_send_packet(codec_ctx_, pkt);
-        } else {
-            ret = avcodec_send_packet(codec_ctx_, pkt);
+        try {
+            if (hw_enabled_ && device_mutex_) {
+                std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
+                ret = avcodec_send_packet(codec_ctx_, pkt);
+            } else {
+                ret = avcodec_send_packet(codec_ctx_, pkt);
+            }
+        } catch (...) {
+            av_packet_free(&pkt);
+            output_buffer_.set_state(TrackState::Error);
+            decode_paused_.store(true, std::memory_order_release);
+            running_.store(false, std::memory_order_release);
+            log_codec_exception("send_packet", codec_id(), hw_enabled_);
+            break;
         }
         av_packet_free(&pkt);
 
@@ -492,11 +562,20 @@ void DecodeThread::run() {
         int frames_produced = 0;
         while (true) {
             if (cancelled_.load(std::memory_order_acquire)) break;
-            if (hw_enabled_ && device_mutex_) {
-                std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
-                ret = avcodec_receive_frame(codec_ctx_, frame);
-            } else {
-                ret = avcodec_receive_frame(codec_ctx_, frame);
+            try {
+                if (hw_enabled_ && device_mutex_) {
+                    std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
+                    ret = avcodec_receive_frame(codec_ctx_, frame);
+                } else {
+                    ret = avcodec_receive_frame(codec_ctx_, frame);
+                }
+            } catch (...) {
+                output_buffer_.set_state(TrackState::Error);
+                decode_paused_.store(true, std::memory_order_release);
+                running_.store(false, std::memory_order_release);
+                log_codec_exception("receive_frame", codec_id(), hw_enabled_);
+                ret = AVERROR_EXTERNAL;
+                break;
             }
             if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
                 break;
@@ -546,6 +625,9 @@ void DecodeThread::run() {
                     spdlog::info("[DecodeThread] === Preroll complete: {} frames buffered, post_seek={}, state->Ready",
                                  output_buffer_.total_count(), post_seek_);
                     output_buffer_.set_state(TrackState::Ready);
+                    if (pause_after_preroll_.load(std::memory_order_acquire)) {
+                        decode_paused_.store(true, std::memory_order_release);
+                    }
                     post_seek_ = false;
                 }
             }
@@ -603,6 +685,9 @@ void DecodeThread::run() {
                 spdlog::info("[DecodeThread] === Preroll complete: {} frames buffered, post_seek={}, state->Ready",
                              output_buffer_.total_count(), post_seek_);
                 output_buffer_.set_state(TrackState::Ready);
+                if (pause_after_preroll_.load(std::memory_order_acquire)) {
+                    decode_paused_.store(true, std::memory_order_release);
+                }
                 post_seek_ = false;
             }
         }

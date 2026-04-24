@@ -13,6 +13,63 @@ extern "C" {
 
 namespace vr {
 
+namespace {
+bool ensure_shared_decode_device(Microsoft::WRL::ComPtr<ID3D11Device>& device,
+                                 Microsoft::WRL::ComPtr<ID3D11DeviceContext>& context) {
+    static Microsoft::WRL::ComPtr<ID3D11Device> s_device;
+    static Microsoft::WRL::ComPtr<ID3D11DeviceContext> s_context;
+    static std::once_flag s_once;
+    static bool s_ok = false;
+
+    std::call_once(s_once, [] {
+        D3D_FEATURE_LEVEL feature_levels[] = {
+            D3D_FEATURE_LEVEL_11_0,
+            D3D_FEATURE_LEVEL_10_1,
+            D3D_FEATURE_LEVEL_10_0,
+        };
+
+        UINT create_flags = D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
+        D3D_DRIVER_TYPE driver_types[] = {
+            D3D_DRIVER_TYPE_HARDWARE,
+            D3D_DRIVER_TYPE_WARP,
+        };
+
+        HRESULT hr = E_FAIL;
+        for (auto dt : driver_types) {
+            hr = D3D11CreateDevice(
+                nullptr, dt, nullptr, create_flags,
+                feature_levels, ARRAYSIZE(feature_levels),
+                D3D11_SDK_VERSION,
+                s_device.GetAddressOf(),
+                nullptr, s_context.GetAddressOf());
+            if (SUCCEEDED(hr)) break;
+        }
+
+        s_ok = SUCCEEDED(hr) && s_device && s_context;
+        if (s_ok) {
+            spdlog::info("[D3D11VA] Created shared independent D3D11 decode device");
+        } else {
+            spdlog::error("[D3D11VA] Failed to create shared independent D3D11 decode device");
+            s_device.Reset();
+            s_context.Reset();
+        }
+    });
+
+    if (!s_ok) {
+        return false;
+    }
+
+    device = s_device;
+    context = s_context;
+    return true;
+}
+
+std::recursive_mutex& shared_decode_mutex() {
+    static std::recursive_mutex s_mutex;
+    return s_mutex;
+}
+}  // namespace
+
 // Lock/unlock callbacks for FFmpeg's AVD3D11VADeviceContext.
 static void d3d11va_lock(void* lock_ctx) {
     auto* mtx = static_cast<std::recursive_mutex*>(lock_ctx);
@@ -52,13 +109,12 @@ bool D3D11VAProvider::probe(const AVCodec* codec) const {
         }
     }
 
-    // Prefer D3D11VA_VLD over D3D11.
-    if (found_vld != AV_PIX_FMT_NONE) {
-        probed_pix_fmt_ = found_vld;
-        return true;
-    }
     if (found_d3d11 != AV_PIX_FMT_NONE) {
         probed_pix_fmt_ = found_d3d11;
+        return true;
+    }
+    if (found_vld != AV_PIX_FMT_NONE) {
+        probed_pix_fmt_ = found_vld;
         return true;
     }
     return false;
@@ -77,39 +133,15 @@ HwDecodeInitResult D3D11VAProvider::init(void* native_device, int width, int hei
 
     if (native_device) {
         d3d_device = static_cast<ID3D11Device*>(native_device);
+        d3d_device->GetImmediateContext(&d3d_context_);
+        uses_shared_device_ = false;
     } else {
-        // Create our own D3D11 device for hardware decoding
-        D3D_FEATURE_LEVEL feature_levels[] = {
-            D3D_FEATURE_LEVEL_11_0,
-            D3D_FEATURE_LEVEL_10_1,
-            D3D_FEATURE_LEVEL_10_0,
-        };
-
-        UINT create_flags = D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
-        D3D_DRIVER_TYPE driver_types[] = {
-            D3D_DRIVER_TYPE_HARDWARE,
-            D3D_DRIVER_TYPE_WARP,
-        };
-
-        HRESULT hr = E_FAIL;
-        for (auto dt : driver_types) {
-            hr = D3D11CreateDevice(
-                nullptr, dt, nullptr, create_flags,
-                feature_levels, ARRAYSIZE(feature_levels),
-                D3D11_SDK_VERSION,
-                own_device_.GetAddressOf(),
-                nullptr, nullptr);
-            if (SUCCEEDED(hr)) break;
-        }
-
-        if (FAILED(hr) || !own_device_) {
-            spdlog::error("[D3D11VA] Failed to create independent D3D11 device");
+        if (!ensure_shared_decode_device(own_device_, d3d_context_)) {
             return result;
         }
-
-        own_device_->GetImmediateContext(&d3d_context_);
         d3d_device = own_device_.Get();
-        spdlog::info("[D3D11VA] Created independent D3D11 device for decode");
+        uses_shared_device_ = true;
+        spdlog::info("[D3D11VA] Reusing shared independent D3D11 decode device");
     }
 
     if (!d3d_device) {
@@ -143,14 +175,22 @@ HwDecodeInitResult D3D11VAProvider::init(void* native_device, int width, int hei
     // 4. Thread safety: recursive mutex for D3D11 device access serialization
     if (device_mutex) {
         device_mutex_.reset();  // Don't own, use external
+        active_mutex_ = device_mutex;
         d3d11_ctx->lock = d3d11va_lock;
         d3d11_ctx->unlock = d3d11va_unlock;
         d3d11_ctx->lock_ctx = device_mutex;
-    } else {
-        device_mutex_ = std::make_unique<std::recursive_mutex>();
+    } else if (uses_shared_device_) {
+        device_mutex_.reset();
+        active_mutex_ = &shared_decode_mutex();
         d3d11_ctx->lock = d3d11va_lock;
         d3d11_ctx->unlock = d3d11va_unlock;
-        d3d11_ctx->lock_ctx = device_mutex_.get();
+        d3d11_ctx->lock_ctx = active_mutex_;
+    } else {
+        device_mutex_ = std::make_unique<std::recursive_mutex>();
+        active_mutex_ = device_mutex_.get();
+        d3d11_ctx->lock = d3d11va_lock;
+        d3d11_ctx->unlock = d3d11va_unlock;
+        d3d11_ctx->lock_ctx = active_mutex_;
     }
 
     // 5. Initialize the hardware device context
@@ -159,6 +199,8 @@ HwDecodeInitResult D3D11VAProvider::init(void* native_device, int width, int hei
         spdlog::error("[D3D11VA] av_hwdevice_ctx_init failed: {}", ret);
         av_buffer_unref(&hw_dev_ref);
         device_mutex_.reset();
+        active_mutex_ = nullptr;
+        uses_shared_device_ = false;
         own_device_.Reset();
         d3d_context_.Reset();
         return result;
@@ -178,13 +220,34 @@ void D3D11VAProvider::shutdown() {
     // device_mutex_ is kept alive until provider destruction to ensure
     // FFmpeg's teardown lock/unlock callbacks remain valid.
     // AVBufferRef (hw_device_ctx) ownership was transferred to caller.
+    if (d3d_context_) {
+        if (active_mutex_) {
+            std::unique_lock<std::recursive_mutex> lock(*active_mutex_);
+            if (!uses_shared_device_) {
+                d3d_context_->ClearState();
+            }
+            d3d_context_->Flush();
+        } else {
+            if (!uses_shared_device_) {
+                d3d_context_->ClearState();
+            }
+            d3d_context_->Flush();
+        }
+    }
     own_device_.Reset();
     d3d_context_.Reset();
+    active_mutex_ = nullptr;
+    uses_shared_device_ = false;
 }
 
 void D3D11VAProvider::flush() {
     if (d3d_context_) {
-        d3d_context_->Flush();
+        if (active_mutex_) {
+            std::unique_lock<std::recursive_mutex> lock(*active_mutex_);
+            d3d_context_->Flush();
+        } else {
+            d3d_context_->Flush();
+        }
     }
 }
 

@@ -38,3 +38,21 @@ class AssertZoom extends PlayerAssert {
   final double tolerance;
   const AssertZoom(this.ratio, this.tolerance);
 }
+
+class AssertCaptureEquals extends PlayerAssert {
+  final String expectedCapture;
+  final String actualCapture;
+  const AssertCaptureEquals(this.expectedCapture, this.actualCapture);
+}
+
+class AssertCaptureChanged extends PlayerAssert {
+  final String beforeCapture;
+  final String afterCapture;
+  const AssertCaptureChanged(this.beforeCapture, this.afterCapture);
+}
+
+class AssertCaptureHash extends PlayerAssert {
+  final String capture;
+  final String hash;
+  const AssertCaptureHash(this.capture, this.hash);
+}

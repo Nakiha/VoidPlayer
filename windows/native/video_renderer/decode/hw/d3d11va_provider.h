@@ -27,6 +27,8 @@ private:
     // Mutex must outlive the AVBufferRef because FFmpeg calls lock/unlock
     // during context teardown. Held as member to ensure lifetime.
     std::unique_ptr<std::recursive_mutex> device_mutex_;
+    std::recursive_mutex* active_mutex_ = nullptr;
+    bool uses_shared_device_ = false;
 
     // Independent D3D11 device for hardware decoding (created when no external
     // device is provided). Keeping these alive prevents premature release during

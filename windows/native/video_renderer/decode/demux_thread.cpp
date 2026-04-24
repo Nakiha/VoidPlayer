@@ -74,14 +74,19 @@ bool DemuxThread::start() {
 }
 
 void DemuxThread::stop() {
+    spdlog::info("[DemuxThread] stop() begin for {}", file_path_);
     running_.store(false);
     output_queue_.abort();
     if (thread_.joinable()) {
+        spdlog::info("[DemuxThread] stop() waiting for join: {}", file_path_);
         thread_.join();
+        spdlog::info("[DemuxThread] stop() joined: {}", file_path_);
     }
     if (fmt_ctx_) {
+        spdlog::info("[DemuxThread] stop() closing input: {}", file_path_);
         avformat_close_input(&fmt_ctx_);
     }
+    spdlog::info("[DemuxThread] stop() end for {}", file_path_);
 }
 
 void DemuxThread::set_seek_callback(SeekCallback cb) {
@@ -122,6 +127,9 @@ void DemuxThread::run() {
                 spdlog::error("[DemuxThread] av_seek_frame FAILED: target={:.3f}s, ret={:#x}",
                              req.target_pts_us / 1e6, static_cast<unsigned>(seek_ret));
             } else {
+                // Clear demuxer EOF/read-ahead state so av_read_frame() starts
+                // producing packets again after seeks from end-of-file.
+                avformat_flush(fmt_ctx_);
                 spdlog::info("[DemuxThread] av_seek_frame OK: target={:.3f}s", req.target_pts_us / 1e6);
             }
 

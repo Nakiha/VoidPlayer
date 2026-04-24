@@ -71,14 +71,14 @@ def native_build(debug: bool, test: bool = True):
     build_type = "Debug" if debug else "Release"
 
     header(f"Build native standalone ({build_type})")
-    build_cmd = [sys.executable, str(NATIVE_BUILD_PY), "--build-only"]
+    build_cmd = [sys.executable, "-u", str(NATIVE_BUILD_PY), "--build-only"]
     if debug:
         build_cmd.append("--debug")
     run(build_cmd, cwd=str(NATIVE_DIR))
 
     if test:
         header(f"Test native standalone ({build_type})")
-        test_cmd = [sys.executable, str(NATIVE_BUILD_PY), "--test-only"]
+        test_cmd = [sys.executable, "-u", str(NATIVE_BUILD_PY), "--test-only"]
         if debug:
             test_cmd.append("--debug")
         run(test_cmd, cwd=str(NATIVE_DIR))

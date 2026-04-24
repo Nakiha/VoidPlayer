@@ -45,6 +45,27 @@ class CreateRendererResult {
   });
 }
 
+class ViewportCapture {
+  final String hash;
+  final int width;
+  final int height;
+  final String? outputPath;
+
+  const ViewportCapture({
+    required this.hash,
+    required this.width,
+    required this.height,
+    this.outputPath,
+  });
+
+  factory ViewportCapture.fromMap(Map<dynamic, dynamic> map) => ViewportCapture(
+        hash: map['hash'] as String,
+        width: map['width'] as int,
+        height: map['height'] as int,
+        outputPath: map['outputPath'] as String?,
+      );
+}
+
 /// Immutable snapshot of the layout state.
 class LayoutState {
   static const double zoomMin = 1.0;
@@ -147,6 +168,13 @@ class VideoRendererController {
         'width': width,
         'height': height,
       });
+
+  Future<ViewportCapture> captureViewport({String? outputPath}) async {
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>('captureViewport', {
+      if (outputPath != null) 'outputPath': outputPath,
+    });
+    return ViewportCapture.fromMap(map!);
+  }
 
   Future<void> stepForward() => _channel.invokeMethod<void>('stepForward');
 

@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <algorithm>
+#include <cstring>
 #include <windows.h>
 #include <mmsystem.h>
 #pragma comment(lib, "winmm.lib")
@@ -11,6 +12,7 @@ namespace vr {
 
 // Max sleep for responsiveness (allows seek/pause within ~50 ms)
 static constexpr int64_t MAX_SLEEP_US = 8000;  // 8ms cap → ~120Hz layout response
+static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(1000);
 
 Renderer::Renderer() = default;
 
@@ -130,6 +132,7 @@ bool Renderer::initialize(const RendererConfig& config) {
 
         auto pipeline = create_pipeline(path, config.use_hardware_decode);
         if (!pipeline) continue;
+        pipeline->decode_thread->set_pause_after_preroll(true);
 
         pipeline->file_id = next_file_id_++;
         tracks_[slot] = std::move(pipeline);
@@ -190,11 +193,14 @@ bool Renderer::initialize(const RendererConfig& config) {
 }
 
 void Renderer::shutdown() {
+    spdlog::info("Renderer: shutdown begin");
     running_ = false;
     playing_ = false;
 
     if (render_thread_.joinable()) {
+        spdlog::info("Renderer: waiting for render thread join");
         render_thread_.join();
+        spdlog::info("Renderer: render thread joined");
     }
 
     // Clear cached frames that may hold hw decode surface references.
@@ -205,8 +211,12 @@ void Renderer::shutdown() {
     // Stop all tracks
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (tracks_[i]) {
+            spdlog::info("Renderer: stopping track[{}] decode ({})", i, tracks_[i]->file_path);
             tracks_[i]->decode_thread->stop();
+            spdlog::info("Renderer: track[{}] decode stopped", i);
+            spdlog::info("Renderer: stopping track[{}] demux ({})", i, tracks_[i]->file_path);
             tracks_[i]->demux_thread->stop();
+            spdlog::info("Renderer: track[{}] demux stopped", i);
             tracks_[i].reset();
         }
     }
@@ -232,13 +242,27 @@ void Renderer::shutdown() {
 void Renderer::play() {
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (!initialized_ || playing_) return;
+    deferred_paused_hevc_seek_.pending = false;
+    paused_hevc_seek_in_flight_ = false;
+    paused_hevc_initial_settle_done_ = false;
+    paused_hevc_seek_settle_until_ = std::chrono::steady_clock::time_point{};
 
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks_[i]) continue;
+        tracks_[i]->decode_thread->set_pause_after_preroll(false);
+    }
+    set_decode_paused_for_all_tracks(false);
     clock_.resume();
     playing_ = true;
 }
 
 void Renderer::pause() {
     std::lock_guard<std::mutex> lock(state_mutex_);
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks_[i]) continue;
+        tracks_[i]->decode_thread->set_pause_after_preroll(true);
+    }
+    set_decode_paused_for_all_tracks(true);
     clock_.pause();
     playing_ = false;
 }
@@ -248,15 +272,22 @@ void Renderer::seek(int64_t target_pts_us, SeekType type) {
     seek_internal(target_pts_us, type);
 }
 
-void Renderer::seek_internal(int64_t target_pts_us, SeekType type) {
+void Renderer::seek_internal(int64_t target_pts_us,
+                             SeekType type,
+                             bool allow_deferred,
+                             bool force_recreate_paused_hevc) {
     // Caller must hold state_mutex_
     spdlog::info("[Renderer] seek_internal: target={:.3f}s, type={}",
                  target_pts_us / 1e6, type == SeekType::Exact ? "Exact" : "Keyframe");
     clock_.seek(target_pts_us);
+    if (allow_deferred && should_defer_paused_hevc_seek_locked(target_pts_us, type)) {
+        return;
+    }
 
+    bool applied_seek = false;
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks_[i]) continue;
-        auto& track = tracks_[i];
+        auto* track = tracks_[i].get();
         // Per-track target: subtract this track's sync offset
         int64_t track_target = std::max(target_pts_us - track->offset_us, int64_t(0));
         // Pause decoder FIRST to prevent stale packets from reaching the codec
@@ -264,16 +295,148 @@ void Renderer::seek_internal(int64_t target_pts_us, SeekType type) {
         track->decode_thread->set_decode_paused(true);
         auto buf_count_before = track->track_buffer->total_count();
         auto pq_size_before = track->packet_queue->size();
+        const auto buffer_state_before = track->track_buffer->state();
         track->track_buffer->set_state(TrackState::Flushing);
         track->track_buffer->clear_frames();
         track->packet_queue->flush();
-        track->seek_controller->request_seek(track_target, type);
-        track->track_buffer->set_state(TrackState::Buffering);
-        spdlog::info("[Renderer] seek_internal: track[{}] cleared (buf={}->{}, pq={}->0), state->Buffering, target={:.3f}s",
+        const bool is_hevc_hw_seek =
+            track->decode_thread->is_hardware_decode_enabled() &&
+            track->decode_thread->codec_id() == AV_CODEC_ID_HEVC;
+        const bool paused_seek = !playing_.load();
+        const SeekType track_seek_type =
+            (is_hevc_hw_seek && paused_seek && type == SeekType::Exact)
+                ? SeekType::Keyframe
+                : type;
+        if (track_seek_type != type) {
+            spdlog::info("[Renderer] seek_internal: using keyframe seek for paused HEVC HW track[{}] "
+                         "(requested exact target={:.3f}s)",
+                         i, track_target / 1e6);
+        }
+        const bool seek_transition_active =
+            buffer_state_before == TrackState::Flushing ||
+            buffer_state_before == TrackState::Buffering;
+        const bool recreated_decode_only = false;
+        const bool should_recreate_hevc_pipeline =
+            is_hevc_hw_seek &&
+            ((!paused_seek && !seek_transition_active) ||
+             (paused_seek &&
+              !track->recreated_for_paused_hevc_seek &&
+              (!seek_transition_active || force_recreate_paused_hevc)));
+        const bool recreated_for_seek =
+            should_recreate_hevc_pipeline &&
+            recreate_pipeline_for_seek(i, track_target, track_seek_type);
+        if (is_hevc_hw_seek &&
+            !paused_seek &&
+            !seek_transition_active &&
+            !recreated_decode_only &&
+            !recreated_for_seek) {
+            track->track_buffer->set_state(TrackState::Error);
+            continue;
+        }
+        if (is_hevc_hw_seek && seek_transition_active) {
+            spdlog::info("[Renderer] seek_internal: track[{}] coalescing HEVC HW seek during transition "
+                         "(buf_state_before={}, target={:.3f}s)",
+                         i, static_cast<int>(buffer_state_before), track_target / 1e6);
+        }
+        track = tracks_[i].get();
+        track->decode_thread->set_pause_after_preroll(paused_seek);
+        if (!recreated_decode_only && !recreated_for_seek) {
+            track->seek_controller->request_seek(track_target, track_seek_type);
+        }
+        applied_seek = true;
+        spdlog::info("[Renderer] seek_internal: track[{}] cleared (buf={}->{}, pq={}->0), state->Flushing, target={:.3f}s",
                      i, buf_count_before, track->track_buffer->total_count(), pq_size_before, track_target / 1e6);
     }
-    preview_drawn_ = false;
-    last_decision_ = PresentDecision();
+    if (applied_seek) {
+        preview_drawn_ = false;
+        last_decision_ = PresentDecision();
+    }
+}
+
+bool Renderer::should_defer_paused_hevc_seek_locked(int64_t target_pts_us, SeekType type) {
+    if (playing_.load() || type != SeekType::Exact) {
+        return false;
+    }
+
+    bool has_hevc_hw_track = false;
+    for (const auto& track : tracks_) {
+        if (!track) continue;
+        if (track->decode_thread->is_hardware_decode_enabled() &&
+            track->decode_thread->codec_id() == AV_CODEC_ID_HEVC) {
+            has_hevc_hw_track = true;
+            break;
+        }
+    }
+    if (!has_hevc_hw_track) {
+        return false;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (!paused_hevc_seek_in_flight_ && now >= paused_hevc_seek_settle_until_) {
+        paused_hevc_seek_in_flight_ = true;
+        deferred_paused_hevc_seek_.pending = false;
+        return false;
+    }
+
+    deferred_paused_hevc_seek_.pending = true;
+    deferred_paused_hevc_seek_.target_pts_us = target_pts_us;
+    deferred_paused_hevc_seek_.type = type;
+    spdlog::info("[Renderer] Deferring paused HEVC HW seek to {:.3f}s (in_flight={}, settle_remaining_ms={})",
+                 target_pts_us / 1e6,
+                 paused_hevc_seek_in_flight_,
+                 now < paused_hevc_seek_settle_until_
+                     ? static_cast<long long>(
+                           std::chrono::duration_cast<std::chrono::milliseconds>(
+                               paused_hevc_seek_settle_until_ - now).count())
+                     : 0LL);
+    return true;
+}
+
+bool Renderer::apply_deferred_paused_hevc_seek_locked() {
+    if (playing_.load() ||
+        !deferred_paused_hevc_seek_.pending ||
+        paused_hevc_seek_in_flight_ ||
+        std::chrono::steady_clock::now() < paused_hevc_seek_settle_until_) {
+        return false;
+    }
+
+    auto deferred = deferred_paused_hevc_seek_;
+    deferred_paused_hevc_seek_.pending = false;
+    paused_hevc_seek_in_flight_ = true;
+    spdlog::info("[Renderer] Applying deferred paused HEVC HW seek to {:.3f}s",
+                 deferred.target_pts_us / 1e6);
+    seek_internal(deferred.target_pts_us, deferred.type, false, true);
+    return true;
+}
+
+void Renderer::mark_paused_hevc_seek_preview_drawn_locked() {
+    bool has_hevc_hw_track = false;
+    for (const auto& track : tracks_) {
+        if (!track) continue;
+        if (track->decode_thread->is_hardware_decode_enabled() &&
+            track->decode_thread->codec_id() == AV_CODEC_ID_HEVC) {
+            has_hevc_hw_track = true;
+            break;
+        }
+    }
+    if (!has_hevc_hw_track) {
+        return;
+    }
+
+    if (paused_hevc_seek_in_flight_) {
+        paused_hevc_seek_in_flight_ = false;
+        paused_hevc_seek_settle_until_ = std::chrono::steady_clock::now() + kPausedHevcSeekSettleDelay;
+        spdlog::info("[Renderer] Paused HEVC HW seek preview ready, settle window {}ms",
+                     static_cast<long long>(kPausedHevcSeekSettleDelay.count()));
+        return;
+    }
+
+    if (!paused_hevc_initial_settle_done_) {
+        paused_hevc_initial_settle_done_ = true;
+        paused_hevc_seek_settle_until_ = std::chrono::steady_clock::now() + kPausedHevcSeekSettleDelay;
+        spdlog::info("[Renderer] Initial paused HEVC HW preview ready, settle window {}ms",
+                     static_cast<long long>(kPausedHevcSeekSettleDelay.count()));
+    }
 }
 
 void Renderer::step_forward() {
@@ -487,11 +650,76 @@ void Renderer::redraw_layout() {
     }
 }
 
+bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
+    if (!headless_ || !d3d_device_) {
+        return false;
+    }
+
+    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+    std::lock_guard<std::mutex> tex_lock(texture_mutex_);
+
+    const int front = dbuf_.front.load();
+    auto source = dbuf_.textures[front];
+    if (!source) {
+        return false;
+    }
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    source->GetDesc(&desc);
+    width = static_cast<int>(desc.Width);
+    height = static_cast<int>(desc.Height);
+
+    D3D11_TEXTURE2D_DESC staging_desc = desc;
+    staging_desc.Usage = D3D11_USAGE_STAGING;
+    staging_desc.BindFlags = 0;
+    staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    staging_desc.MiscFlags = 0;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
+    HRESULT hr = d3d_device_->device()->CreateTexture2D(&staging_desc, nullptr, &staging);
+    if (FAILED(hr) || !staging) {
+        spdlog::error("[Renderer] capture_front_buffer: failed to create staging texture: {:#x}",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
+    auto* ctx = d3d_device_->context();
+    ctx->CopyResource(staging.Get(), source.Get());
+    ctx->Flush();
+
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    hr = ctx->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+    if (FAILED(hr)) {
+        spdlog::error("[Renderer] capture_front_buffer: Map failed: {:#x}",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
+    bgra.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
+    const auto* src = static_cast<const uint8_t*>(mapped.pData);
+    const size_t dst_stride = static_cast<size_t>(width) * 4;
+    for (int y = 0; y < height; ++y) {
+        std::memcpy(bgra.data() + static_cast<size_t>(y) * dst_stride,
+                    src + static_cast<size_t>(y) * mapped.RowPitch,
+                    dst_stride);
+    }
+
+    ctx->Unmap(staging.Get(), 0);
+    return true;
+}
+
 bool Renderer::has_any_frame(const PresentDecision& decision) {
     for (auto& f : decision.frames) {
         if (f.has_value()) return true;
     }
     return false;
+}
+
+void Renderer::set_decode_paused_for_all_tracks(bool paused) {
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks_[i]) continue;
+        tracks_[i]->decode_thread->set_decode_paused(paused);
+    }
 }
 
 int64_t Renderer::compute_frame_duration_us() const {
@@ -624,6 +852,14 @@ void Renderer::render_loop() {
     constexpr auto diag_interval = std::chrono::seconds(2);
 
     while (running_) {
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            if (apply_deferred_paused_hevc_seek_locked()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+        }
+
         // Process pending resize (debounced — at most ~30Hz).
         {
             int pw = pending_width_.exchange(0);
@@ -670,7 +906,9 @@ void Renderer::render_loop() {
         for (size_t i = 0; i < kMaxTracks; ++i) {
             if (!tracks_[i]) continue;
             auto buf_state = tracks_[i]->track_buffer->state();
-            if (buf_state == TrackState::Buffering || buf_state == TrackState::Empty) {
+            if (buf_state == TrackState::Buffering ||
+                buf_state == TrackState::Empty ||
+                buf_state == TrackState::Flushing) {
                 any_buffering = true;
                 break;
             }
@@ -691,6 +929,7 @@ void Renderer::render_loop() {
             spdlog::info("[Renderer] Preroll: clock PENDING, some track buffering, "
                          "(playing={})", playing_snapshot);
         } else if (!any_buffering && clock_.is_paused() && playing_snapshot) {
+            set_decode_paused_for_all_tracks(false);
             clock_.resume();
             preview_drawn_ = false;
             spdlog::info("[Renderer] === Preroll COMPLETE: all tracks ready, clock resumed, "
@@ -723,21 +962,31 @@ void Renderer::render_loop() {
                     preview.current_pts_us = 0;
                     preview.should_present = false;
                     bool all_active_have_frames = true;
+                    bool all_active_ready = true;
                     for (size_t t = 0; t < kMaxTracks; ++t) {
                         if (!tracks_[t]) continue;
+                        const auto state = tracks_[t]->track_buffer->state();
+                        if (state != TrackState::Ready) {
+                            all_active_ready = false;
+                        }
                         auto frame = tracks_[t]->track_buffer->peek(0);
                         if (frame.has_value()) {
                             preview.frames[t] = frame;
-                        } else if (tracks_[t]->track_buffer->state() == TrackState::Ready) {
+                        } else if (state == TrackState::Ready) {
                             // Track is Ready but has no frames — past its duration (EOF).
                             // Don't block preview drawing for other tracks.
                         } else {
                             all_active_have_frames = false;
                         }
                     }
-                    if (all_active_have_frames && has_any_frame(preview)) {
+                    if (all_active_ready && all_active_have_frames && has_any_frame(preview)) {
                         present_frame(preview);
                         last_decision_ = preview;
+                        if (!playing_snapshot) {
+                            set_decode_paused_for_all_tracks(true);
+                            std::lock_guard<std::mutex> lock(state_mutex_);
+                            mark_paused_hevc_seek_preview_drawn_locked();
+                        }
                         // Sync clock to the actual frame PTS so subsequent
                         // step_backward computes the correct seek target.
                         int ref = first_active_track();
@@ -1336,10 +1585,15 @@ int Renderer::find_empty_slot() const {
 }
 
 std::unique_ptr<Renderer::TrackPipeline> Renderer::create_pipeline(const std::string& path,
-                                                                      bool hw_decode) {
+                                                                      bool hw_decode,
+                                                                      const SeekRequest* initial_seek) {
     auto pipeline = std::make_unique<TrackPipeline>();
     pipeline->file_path = path;
+    pipeline->use_hardware_decode = hw_decode;
     pipeline->seek_controller = std::make_unique<SeekController>();
+    if (initial_seek) {
+        pipeline->seek_controller->request_seek(initial_seek->target_pts_us, initial_seek->type);
+    }
     pipeline->packet_queue = std::make_unique<PacketQueue>(100);
     pipeline->track_buffer = std::make_unique<TrackBuffer>(8, 2);
     pipeline->demux_thread = std::make_unique<DemuxThread>(
@@ -1398,6 +1652,87 @@ std::unique_ptr<Renderer::TrackPipeline> Renderer::create_pipeline(const std::st
     return pipeline;
 }
 
+bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, SeekType type) {
+    auto& current = tracks_[slot];
+    if (!current) {
+        return false;
+    }
+
+    spdlog::info("[Renderer] Recreating pipeline for {}", current->file_path);
+
+    const auto file_path = current->file_path;
+    const auto file_id = current->file_id;
+    const auto offset_us = current->offset_us;
+    const auto use_hardware_decode = current->use_hardware_decode;
+
+    current->decode_thread->stop();
+    current->demux_thread->stop();
+    render_sink_->set_track(slot, nullptr);
+    current.reset();
+
+    // Give the driver a brief moment to retire the previous D3D11VA decoder
+    // objects before constructing a fresh hardware pipeline on the same file.
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+    const SeekRequest initial_seek{target_pts_us, type};
+    auto replacement = create_pipeline(file_path, use_hardware_decode, &initial_seek);
+    if (!replacement) {
+        spdlog::error("[Renderer] Failed to recreate pipeline for {}", file_path);
+        return false;
+    }
+
+    replacement->file_id = file_id;
+    replacement->offset_us = offset_us;
+    replacement->recreated_for_paused_hevc_seek = true;
+
+    render_sink_->set_track(slot, replacement->track_buffer.get());
+    render_sink_->set_track_offset(slot, offset_us);
+    tracks_[slot] = std::move(replacement);
+    return true;
+}
+
+bool Renderer::recreate_decode_thread_for_seek(size_t slot, int64_t target_pts_us, SeekType type) {
+    auto& track = tracks_[slot];
+    if (!track) {
+        return false;
+    }
+
+    spdlog::info("[Renderer] Recreating decode thread for paused seek on {}", track->file_path);
+
+    track->decode_thread->stop();
+    track->packet_queue->reset();
+    track->packet_queue->flush();
+    track->packet_queue->clear_eof();
+    track->track_buffer->reset();
+    track->track_buffer->set_state(TrackState::Flushing);
+
+    const auto& stats = track->demux_thread->stats();
+    auto replacement = std::make_unique<DecodeThread>(
+        *track->packet_queue, *track->track_buffer, stats.codec_params, stats.time_base);
+    if (!replacement->is_valid()) {
+        spdlog::error("[Renderer] Failed to recreate decode thread for {}", track->file_path);
+        return false;
+    }
+
+    track->demux_thread->set_seek_callback(
+        [dt = replacement.get()](int64_t pts, SeekType seek_type) {
+            dt->notify_seek(pts, seek_type);
+        });
+
+    if (track->use_hardware_decode) {
+        replacement->enable_hardware_decode(nullptr, nullptr);
+    }
+
+    if (!replacement->start()) {
+        spdlog::error("[Renderer] Failed to start recreated decode thread for {}", track->file_path);
+        return false;
+    }
+
+    track->decode_thread = std::move(replacement);
+    track->seek_controller->request_seek(target_pts_us, type);
+    return true;
+}
+
 int Renderer::add_track(const std::string& video_path) {
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (!initialized_) return -1;
@@ -1417,6 +1752,7 @@ int Renderer::add_track(const std::string& video_path) {
         if (was_playing) { clock_.resume(); playing_ = true; }
         return -1;
     }
+    pipeline->decode_thread->set_pause_after_preroll(!was_playing);
 
     // Register with render sink
     render_sink_->set_track(slot, pipeline->track_buffer.get());

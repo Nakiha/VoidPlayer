@@ -120,3 +120,15 @@ class Pan extends PlayerAction {
   final double dy;
   const Pan(this.dx, this.dy) : super('PAN');
 }
+
+class SetRenderSize extends PlayerAction {
+  final int width;
+  final int height;
+  const SetRenderSize(this.width, this.height) : super('SET_RENDER_SIZE');
+}
+
+class CaptureViewportAction extends PlayerAction {
+  final String nameId;
+  final String? outputPath;
+  const CaptureViewportAction(this.nameId, {this.outputPath}) : super('CAPTURE_VIEWPORT');
+}

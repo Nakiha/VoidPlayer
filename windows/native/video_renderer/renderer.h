@@ -17,6 +17,7 @@
 #include <memory>
 #include <thread>
 #include <atomic>
+#include <vector>
 #include <mutex>  // IWYU pragma: keep
 #include <wrl/client.h>
 
@@ -156,6 +157,9 @@ public:
     /// Stores pending dimensions; render loop applies at controlled rate.
     void resize(int width, int height);
 
+    /// Capture the currently published headless frame as packed BGRA bytes.
+    bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
+
 private:
     struct TrackPipeline {
         int file_id = 0;              ///< Stable identifier assigned by add_track()
@@ -166,6 +170,8 @@ private:
         std::unique_ptr<DemuxThread> demux_thread;
         std::unique_ptr<DecodeThread> decode_thread;
         std::unique_ptr<SeekController> seek_controller;
+        bool use_hardware_decode = true;
+        bool recreated_for_paused_hevc_seek = false;
 
         // Cached video dimensions (immutable after init)
         int video_width = 0;
@@ -186,8 +192,15 @@ private:
     void render_loop();
     void draw_frame(const PresentDecision& decision);
     void draw_paused_frame(const char* reason);
-    void seek_internal(int64_t target_pts_us, SeekType type);
+    void seek_internal(int64_t target_pts_us,
+                       SeekType type,
+                       bool allow_deferred = true,
+                       bool force_recreate_paused_hevc = false);
     int64_t compute_frame_duration_us() const;
+    void set_decode_paused_for_all_tracks(bool paused);
+    bool should_defer_paused_hevc_seek_locked(int64_t target_pts_us, SeekType type);
+    bool apply_deferred_paused_hevc_seek_locked();
+    void mark_paused_hevc_seek_preview_drawn_locked();
 
     /// Apply pending resize on the render thread.
     void do_resize(int width, int height);
@@ -230,7 +243,14 @@ private:
     /// Create a TrackPipeline for the given video path.
     /// Returns nullptr if pipeline init fails (demux/decode errors).
     std::unique_ptr<TrackPipeline> create_pipeline(const std::string& path,
-                                                     bool hw_decode = true);
+                                                     bool hw_decode = true,
+                                                     const SeekRequest* initial_seek = nullptr);
+
+    /// Recreate a track pipeline so seek starts with a fresh demux/decode epoch.
+    bool recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, SeekType type);
+
+    /// Recreate only the decode thread/hardware decoder while keeping demux alive.
+    bool recreate_decode_thread_for_seek(size_t slot, int64_t target_pts_us, SeekType type);
 
     Clock clock_;
     std::unique_ptr<D3D11Device> d3d_device_;
@@ -253,6 +273,15 @@ private:
     mutable std::mutex state_mutex_;
     bool preview_drawn_ = false;
     bool was_buffering_ = false;
+    struct DeferredSeekRequest {
+        bool pending = false;
+        int64_t target_pts_us = 0;
+        SeekType type = SeekType::Keyframe;
+    };
+    DeferredSeekRequest deferred_paused_hevc_seek_;
+    bool paused_hevc_seek_in_flight_ = false;
+    bool paused_hevc_initial_settle_done_ = false;
+    std::chrono::steady_clock::time_point paused_hevc_seek_settle_until_{};
 
     // -- Perf stats baseline for FPS calculation --
     mutable std::chrono::steady_clock::time_point stats_start_time_;

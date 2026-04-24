@@ -35,6 +35,7 @@ target_compile_definitions(video_renderer_tests PRIVATE
 )
 
 add_test(NAME video_renderer_tests COMMAND video_renderer_tests)
+set_tests_properties(video_renderer_tests PROPERTIES TIMEOUT 180)
 
 # ==================== Analysis Tests ====================
 
@@ -64,6 +65,7 @@ target_compile_definitions(analysis_tests PRIVATE
 )
 
 add_test(NAME analysis_tests COMMAND analysis_tests)
+set_tests_properties(analysis_tests PROPERTIES TIMEOUT 180)
 
 # ==================== C FFI Validation ====================
 
@@ -89,3 +91,4 @@ if(TARGET copy_ffmpeg_dlls)
 endif()
 
 add_test(NAME test_ffi_c COMMAND test_ffi_c)
+set_tests_properties(test_ffi_c PROPERTIES TIMEOUT 30)

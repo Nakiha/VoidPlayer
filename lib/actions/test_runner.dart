@@ -40,6 +40,7 @@ class ScriptQuit extends ScriptInstruction {
 class TestRunner {
   final String scriptPath;
   final VideoRendererController controller;
+  final _captures = <String, ViewportCapture>{};
 
   TestRunner({required this.scriptPath, required this.controller});
 
@@ -77,7 +78,7 @@ class TestRunner {
   Future<void> _execute(ScriptInstruction instr) async {
     switch (instr) {
       case ScriptAction(:final action):
-        actionRegistry.execute(action.name, action);
+        await _executeAction(action);
 
       case ScriptAssert(:final assertion):
         log.info('TestRunner ${instr.time}: assert ${assertion.runtimeType}');
@@ -90,6 +91,23 @@ class TestRunner {
       case ScriptQuit(:final exitCode):
         log.info('TestRunner ${instr.time}: QUIT $exitCode');
         exit(exitCode);
+    }
+  }
+
+  Future<void> _executeAction(PlayerAction action) async {
+    switch (action) {
+      case SetRenderSize(:final width, :final height):
+        log.info('TestRunner: SET_RENDER_SIZE ${width}x$height');
+        await controller.resize(width, height);
+      case CaptureViewportAction(:final nameId, :final outputPath):
+        final capture = await controller.captureViewport(outputPath: outputPath);
+        _captures[nameId] = capture;
+        log.info(
+          'TestRunner: CAPTURE_VIEWPORT $nameId hash=${capture.hash} ${capture.width}x${capture.height}'
+          '${capture.outputPath != null ? ' -> ${capture.outputPath}' : ''}',
+        );
+      default:
+        actionRegistry.execute(action.name, action);
     }
   }
 
@@ -140,6 +158,44 @@ class TestRunner {
             'Expected zoom $ratio (±$tolerance), got ${layout.zoomRatio}',
           );
         }
+      case AssertCaptureEquals(:final expectedCapture, :final actualCapture):
+        final expected = _captures[expectedCapture];
+        final actual = _captures[actualCapture];
+        if (expected == null || actual == null) {
+          throw AssertionError(
+            'Missing capture(s) for ASSERT_CAPTURE_EQUALS: $expectedCapture / $actualCapture',
+          );
+        }
+        if (expected.hash != actual.hash) {
+          throw AssertionError(
+            'Expected capture $actualCapture to equal $expectedCapture, '
+            'got ${actual.hash} != ${expected.hash}',
+          );
+        }
+      case AssertCaptureChanged(:final beforeCapture, :final afterCapture):
+        final before = _captures[beforeCapture];
+        final after = _captures[afterCapture];
+        if (before == null || after == null) {
+          throw AssertionError(
+            'Missing capture(s) for ASSERT_CAPTURE_CHANGED: $beforeCapture / $afterCapture',
+          );
+        }
+        if (before.hash == after.hash) {
+          throw AssertionError(
+            'Expected capture $afterCapture to differ from $beforeCapture, '
+            'but both hashes are ${before.hash}',
+          );
+        }
+      case AssertCaptureHash(:final capture, :final hash):
+        final actual = _captures[capture];
+        if (actual == null) {
+          throw AssertionError('Missing capture for ASSERT_CAPTURE_HASH: $capture');
+        }
+        if (actual.hash != hash) {
+          throw AssertionError(
+            'Expected capture $capture hash=$hash, got ${actual.hash}',
+          );
+        }
     }
   }
 
@@ -174,7 +230,7 @@ List<ScriptInstruction> _parseScript(String path) {
 
   for (var i = 0; i < lines.length; i++) {
     final line = lines[i].trim();
-    if (line.isEmpty || line.startsWith('#')) continue;
+    if (line.isEmpty || line.startsWith('#') || line.startsWith('@')) continue;
 
     final parts = line.split(',').map((s) => s.trim()).toList();
     if (parts.length < 2) {
@@ -263,6 +319,21 @@ ScriptInstruction? _parseInstruction(Duration time, String cmd, List<String> arg
         return null;
       }
       return ScriptAction(time, Pan(double.parse(args[0]), double.parse(args[1])));
+    case 'SET_RENDER_SIZE':
+      if (args.length < 2) {
+        log.warning('SET_RENDER_SIZE needs width and height arguments: $rawLine');
+        return null;
+      }
+      return ScriptAction(time, SetRenderSize(int.parse(args[0]), int.parse(args[1])));
+    case 'CAPTURE_VIEWPORT':
+      if (args.isEmpty) {
+        log.warning('CAPTURE_VIEWPORT needs a capture name: $rawLine');
+        return null;
+      }
+      return ScriptAction(
+        time,
+        CaptureViewportAction(args[0], outputPath: args.length >= 2 ? args[1] : null),
+      );
 
     // Waits
     case 'WAIT_PLAYING':
@@ -309,6 +380,24 @@ ScriptInstruction? _parseInstruction(Duration time, String cmd, List<String> arg
         return null;
       }
       return ScriptAssert(time, AssertZoom(double.parse(args[0]), double.parse(args[1])));
+    case 'ASSERT_CAPTURE_EQUALS':
+      if (args.length < 2) {
+        log.warning('ASSERT_CAPTURE_EQUALS needs expected and actual capture names: $rawLine');
+        return null;
+      }
+      return ScriptAssert(time, AssertCaptureEquals(args[0], args[1]));
+    case 'ASSERT_CAPTURE_CHANGED':
+      if (args.length < 2) {
+        log.warning('ASSERT_CAPTURE_CHANGED needs before and after capture names: $rawLine');
+        return null;
+      }
+      return ScriptAssert(time, AssertCaptureChanged(args[0], args[1]));
+    case 'ASSERT_CAPTURE_HASH':
+      if (args.length < 2) {
+        log.warning('ASSERT_CAPTURE_HASH needs capture name and hash: $rawLine');
+        return null;
+      }
+      return ScriptAssert(time, AssertCaptureHash(args[0], args[1]));
 
     // Control
     case 'QUIT':

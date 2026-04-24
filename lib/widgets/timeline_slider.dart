@@ -37,19 +37,20 @@ class _TimelineSliderState extends State<TimelineSlider> {
 
   bool _hovering = false;
   double _hoverX = 0.0;
+  bool _dragging = false;
+  int? _dragPreviewUs;
 
   @override
   Widget build(BuildContext context) {
     final accentColor = Theme.of(context).colorScheme.primary;
-    final inactiveColor =
-        Theme.of(context).colorScheme.surfaceContainerHighest;
+    final inactiveColor = Theme.of(context).colorScheme.surfaceContainerHighest;
 
     return Listener(
       behavior: HitTestBehavior.opaque,
-      onPointerDown: (e) => _handleSeek(e.localPosition.dx),
-      onPointerMove: (e) => _handleSeek(e.localPosition.dx),
-      onPointerUp: (e) => _handleSeek(e.localPosition.dx),
-      onPointerCancel: (_) {},
+      onPointerDown: (event) => _beginDrag(event.localPosition.dx),
+      onPointerMove: (event) => _updateDrag(event.localPosition.dx),
+      onPointerUp: (event) => _commitDrag(event.localPosition.dx),
+      onPointerCancel: (_) => _cancelDrag(),
       onPointerHover: (event) {
         setState(() => _hoverX = event.localPosition.dx);
         _reportHover(event.localPosition.dx);
@@ -76,7 +77,10 @@ class _TimelineSliderState extends State<TimelineSlider> {
               child: CustomPaint(
                 painter: _TrackPainter(
                   value: widget.durationUs > 0
-                      ? (widget.currentUs / widget.durationUs).clamp(0.0, 1.0)
+                      ? (((_dragging ? _dragPreviewUs : widget.currentUs) ??
+                                    0) /
+                                widget.durationUs)
+                            .clamp(0.0, 1.0)
                       : 0.0,
                   trackHeight: _trackHeight,
                   trackRadius: _trackRadius,
@@ -118,11 +122,44 @@ class _TimelineSliderState extends State<TimelineSlider> {
     );
   }
 
-  void _handleSeek(double localX) {
+  void _beginDrag(double localX) {
+    final previewUs = _updatePreview(localX);
+    setState(() {
+      _dragging = true;
+      _dragPreviewUs = previewUs;
+    });
+  }
+
+  void _updateDrag(double localX) {
+    if (!_dragging) return;
+    final previewUs = _updatePreview(localX);
+    setState(() => _dragPreviewUs = previewUs);
+  }
+
+  void _commitDrag(double localX) {
+    final targetUs = _updatePreview(localX);
+    setState(() {
+      _dragging = false;
+      _dragPreviewUs = null;
+    });
+    widget.onSeek(targetUs);
+  }
+
+  void _cancelDrag() {
+    if (!_dragging) return;
+    setState(() {
+      _dragging = false;
+      _dragPreviewUs = null;
+    });
+  }
+
+  int _updatePreview(double localX) {
     final box = context.findRenderObject() as RenderBox;
     final x = localX.clamp(0.0, box.size.width);
     setState(() => _hoverX = x);
-    widget.onSeek(_xToUs(x, box.size.width));
+    final previewUs = _xToUs(x, box.size.width);
+    widget.onHoverChanged?.call(previewUs, true);
+    return previewUs;
   }
 
   int _xToUs(double x, double width) {

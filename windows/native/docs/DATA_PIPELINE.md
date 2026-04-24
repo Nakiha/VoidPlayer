@@ -1,105 +1,79 @@
 # 数据管线
 
-> 本文档描述帧数据从文件到屏幕的完整路径。
+> 本文档描述帧数据从文件到屏幕的当前路径。
 
 ## 总览
 
 ```
-┌─────────┐     ┌────────────┐     ┌─────────────┐
-│  File    │────▶│  DemuxThread│────▶│ PacketQueue  │
-│ (mkv/mp4)│     │  AVPacket   │     │ (100 slots)  │
-└─────────┘     │  PTS=μs     │     └──────┬──────┘
-                └────────────┘            │
-                                          ▼
-                ┌────────────┐     ┌─────────────┐
-                │DecodeThread│◀────│ PacketQueue  │
-                │  AVFrame   │     └─────────────┘
-                └──────┬─────┘
-                       │
-                       ▼
-                ┌──────────────┐     ┌──────────────────────┐
-                │FrameConverter│────▶│    TextureFrame       │
-                │              │     │  pts_us / duration_us │
-                └──────────────┘     │  texture_handle       │
-                                     │  is_nv12 / is_ref     │
-                                     │  hw_frame_ref         │
-                                     │  cpu_data             │
-                                     └──────────┬───────────┘
-                                                │
-                       ▼
-                ┌──────────────────┐     ┌─────────────┐
-                │ BidiRingBuffer   │────▶│ RenderSink  │
-                │ (TrackBuffer)    │     │ evaluate()  │
-                └──────────────────┘     └──────┬──────┘
-                                                │
-                                                ▼
-                                         ┌─────────────┐
-                                         │ D3D11 Present│
-                                         └─────────────┘
+File
+  -> DemuxThread
+  -> PacketQueue
+  -> DecodeThread
+  -> FrameConverter
+  -> TrackBuffer / BidiRingBuffer
+  -> RenderSink
+  -> Renderer D3D11 draw
+  -> SwapChain 或 headless shared texture
 ```
 
-## 帧格式变迁
+全链路时间戳使用微秒。DemuxThread 将 stream time base 转为 `{1, 1000000}` 后写入 packet/frame。
 
-| 阶段 | 格式 | 说明 |
-|------|------|------|
-| Demux 输出 | AVPacket | 压缩数据，PTS 已转微秒 |
-| Decode 输出 | AVFrame | YUV420P（软解）或 NV12（硬解 D3D11VA） |
-| FrameConverter 输出 | TextureFrame | 统一封装，见下表 |
-
-## TextureFrame 字段
+## TextureFrame
 
 ```cpp
 struct TextureFrame {
-    int64_t pts_us;                       // 显示时间戳（微秒）
-    int64_t duration_us;                  // 帧持续时间（微秒）
-    int width, height;                    // 帧尺寸
-    bool is_ref;                          // true = 引用硬解纹理，不持有
-    void* texture_handle;                 // ID3D11Texture2D*（类型擦除）
-    bool is_nv12;                         // true = NV12（硬解零拷贝）
-    int texture_array_index;              // D3D11VA 纹理数组索引
-    shared_ptr<void> hw_frame_ref;        // AVFrame 引用，防止 pool 回收
-    shared_ptr<vector<uint8_t>> cpu_data; // 软解 RGBA 数据（上传前）
+    int64_t pts_us;
+    int64_t duration_us;
+    int width, height;
+    bool is_ref;
+    void* texture_handle;
+    bool is_nv12;
+    int texture_array_index;
+    shared_ptr<void> hw_frame_ref;
+    shared_ptr<vector<uint8_t>> cpu_data;
 };
 ```
 
-## 两条路径
+字段含义：
 
-### 软解路径（拷贝）
+- `cpu_data` 持有软件路径或 hwdownload 路径产生的 RGBA 数据。
+- `is_nv12=true` 表示 `texture_handle` 指向 D3D11VA NV12 texture，`texture_array_index` 指定 array slice。
+- `hw_frame_ref` 持有 `AVFrame` 引用，保证 decoder surface 在 renderer 使用期间不被 FFmpeg pool 回收。
 
-```
-AVFrame(YUV420P) → sws_scale() → RGBA CPU buffer → D3D11 Upload → ID3D11Texture2D
-```
+## 三条输出路径
 
-- 每帧有一次 CPU→GPU 拷贝
-- 适用于所有编码格式
-- cpu_data 持有 RGBA 数据
+| 路径 | 典型 codec | 数据流 | 特点 |
+|------|------------|--------|------|
+| 软件解码 | fallback、部分不支持硬解的 codec | `AVFrame -> sws_scale -> RGBA CPU -> D3D11 upload` | 最稳，CPU 成本高 |
+| 硬解 hwdownload | AV1、VP9 | `D3D11VA decode -> av_hwframe_transfer_data -> RGBA CPU -> D3D11 upload` | 仍是硬解，避免直接采样驱动差异导致黑/灰帧 |
+| 硬解 renderer-owned NV12 | H.264、H.265 等 | `D3D11VA NV12 -> renderer-owned NV12 texture -> shader NV12->RGB` | CPU 拷贝少，性能路径 |
 
-### 硬解路径（零拷贝）
+## Renderer 上屏
 
-```
-AVFrame(D3D11VA NV12) → 提取 texture 引用 → 直接创建 SRV → Shader NV12→RGB
-```
+Renderer 通过 `RenderSink::evaluate()` 选择每轨应该显示的帧。根据 `TextureFrame` 类型执行：
 
-- 无 CPU 拷贝，GPU 纹理直接绑定
-- `is_nv12 = true`, `is_ref = true`
-- `hw_frame_ref` 持有 AVFrame 引用防止 FFmpeg pool 回收
-- Shader 内完成 BT.601 NV12→RGB 转换
-- 需 `device_mutex` 序列化 D3D11 Context 访问
+- RGBA CPU 数据：上传/复用 `sw_texture` 后按 RGBA 采样。
+- NV12 硬解数据：复制 decoder surface 的目标 array slice 到 renderer-owned NV12 texture，再创建 Y/UV SRV 采样。
 
-## PTS 变换
+复制到 renderer-owned NV12 texture 是当前硬解稳定性的关键点：seek 或 pipeline recreate 后 FFmpeg decoder surface 可以被安全回收，不会被 Flutter/renderer 长时间引用。
 
-```
-文件时间基 (AVStream.time_base, 如 1/30000)
-  → av_rescale_q(pts, stream->time_base, {1, 1000000})
-  → 微秒 (int64_t)
-  → 全链路统一使用微秒
-```
+## Headless / Flutter Texture
 
-## 内存估算（1080p 单轨）
+Flutter 主窗口使用 headless renderer，不直接 Present 到 SwapChain。Renderer 绘制到三缓冲 shared BGRA texture：
 
-| 资源 | 大小 |
-|------|------|
-| PacketQueue（100 slots）| ~1 MB |
-| 软解 RGBA 帧（6帧） | ~48 MB（8MB×6） |
-| 硬解 NV12 帧（4帧） | ~24 MB（6MB×4） |
-| D3D11 纹理池 | ~8 MB |
+- native 持有 3 个 shared texture 和 handle。
+- renderer 总是写入非 front 且 Flutter 未持有的 buffer。
+- 绘制完成后切换 front handle，并通过 callback 通知 Flutter Texture 更新。
+- resize 时旧 shared buffers 会延迟保活，避免 Flutter 仍在读取时被释放导致黑闪。
+
+测试中的 `CAPTURE_VIEWPORT` 读取当前 front buffer，计算 hash、平均亮度和非黑像素占比，用于 UI 回归。
+
+## 内存估算
+
+| 资源 | 1080p 量级 |
+|------|-----------|
+| PacketQueue 100 slots | 约 1 MB，取决于压缩码率 |
+| RGBA 帧 | 约 8 MB/帧 |
+| NV12 帧 | 约 3 MB/帧 |
+| Headless BGRA 三缓冲 | 约 24 MB |
+| renderer-owned NV12 texture | 每轨约 3 MB，可随尺寸变化重建 |

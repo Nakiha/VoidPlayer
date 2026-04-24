@@ -3,150 +3,105 @@
 ## 管线组成
 
 ```
-File → [DemuxThread] → PacketQueue → [DecodeThread] → TrackBuffer
+File -> DemuxThread -> PacketQueue -> DecodeThread -> FrameConverter -> TrackBuffer
 ```
 
 ## DemuxThread
 
 头文件: `decode/demux_thread.h`
 
-### 职责
+职责：
 
-- 打开视频文件（avformat_open_input）
-- 查找视频 stream（AVMEDIA_TYPE_VIDEO）
-- PTS 转微秒：`av_rescale_q(pts, time_base, {1,1000000})`
-- 读取 AVPacket 写入 PacketQueue
-- 轮询 SeekController 处理 pending seek
-
-### 统计信息 (DemuxStats)
-
-```cpp
-struct DemuxStats {
-    int64_t duration_us;      // 视频总时长
-    int width, height;        // 分辨率
-    AVCodecID codec_id;       // 编码格式
-    AVRational time_base;     // 流时间基
-    AVRational frame_rate;    // 帧率
-};
-```
-
-### Seek 处理
-
-DemuxThread 在每次循环检查 SeekController：
-
-```
-if (seek_ctrl_.has_pending_seek()) {
-    req = seek_ctrl_.take_pending();
-    av_seek_frame(..., req.target_pts_us, flags);
-    packet_queue_.flush();       // 丢弃旧 packet
-}
-```
-
----
+- 打开视频文件并选择 `AVMEDIA_TYPE_VIDEO` stream
+- 将 stream PTS 转成微秒：`av_rescale_q(pts, time_base, {1, 1000000})`
+- 读取 `AVPacket` 写入 `PacketQueue`
+- 轮询 `SeekController`，执行 `av_seek_frame` 后 flush packet queue
+- EOF 后等待 seek，而不是让线程立即失去复用机会
 
 ## DecodeThread
 
 头文件: `decode/decode_thread.h`
 
-### 职责
+职责：
 
-- 从 PacketQueue 消费 AVPacket
-- 调用 FFmpeg 解码器（硬解/软解）
-- 通过 FrameConverter 统一输出 TextureFrame
-- 写入 TrackBuffer
+- 创建并打开 FFmpeg decoder
+- 在 `start()` 前尝试 `enable_hardware_decode()`
+- 消费 `PacketQueue`，输出 `TextureFrame`
+- 维护 seek 后 preroll、exact seek discard/reorder、pause-after-preroll
+- 写入 `TrackBuffer`，驱动 renderer 从 Buffering 进入 Ready
 
-### 硬件解码启用
+### Decoder 选择
+
+- AV1 优先使用 FFmpeg 原生 `av1` decoder 进行 D3D11VA 协商；硬解不可用时，软件回退优先 `libdav1d`。
+- VP9 不再跳过 D3D11VA；支持硬解的机器会先走 VP9 D3D11VA，失败再回退软件。
+- 其他 codec 使用 `avcodec_find_decoder(codec_id)`，硬解失败时回退同 decoder 的软件路径。
+
+### 硬解启用
 
 ```cpp
-// 必须在 start() 之前调用
-bool enable_hardware_decode(void* native_device,   // ID3D11Device*
+bool enable_hardware_decode(void* native_device,
                             std::recursive_mutex* device_mutex = nullptr);
 ```
 
-失败时自动回退软解。
+`avcodec_open2()` 延迟到 `start()` 中执行，确保 `hw_device_ctx`、`get_format` 和 `extra_hw_frames` 已经设置好。
 
-### Seek 协调
+硬解成功后存在两种输出路径：
 
-收到 `notify_seek()` 后：
-1. 排空当前 PacketQueue 中的旧 packet
-2. 丢弃所有已解码但 PTS 不匹配的帧
-3. 从新位置继续解码
+| Codec/路径 | `FrameConverter` | 说明 |
+|------------|------------------|------|
+| H.264/H.265 等 renderer-owned surface | `download_to_cpu=false` | D3D11VA NV12 surface 进入 renderer，renderer 复制到自有 NV12 texture 后 shader 采样 |
+| AV1/VP9 hwdownload | `download_to_cpu=true` | D3D11VA 负责解码，`av_hwframe_transfer_data` 下载到 CPU，再 sws 转 RGBA 上传 |
 
----
+`extra_hw_frames=48` 只给 renderer-owned surface 路径配置。AV1/VP9 hwdownload 会尽快释放 decoder surface，强行扩大池子反而可能在部分驱动上产生黑帧。
 
 ## FrameConverter
 
 头文件: `decode/frame_converter.h`
 
-根据初始化路径分为两条管线：
+```cpp
+bool init_software(int src_w, int src_h, AVPixelFormat src_fmt);
+bool init_hardware(void* d3d_device, void* d3d_context,
+                   int src_w, int src_h, HwDecodeType hw_type,
+                   bool download_to_cpu);
+```
 
 ### 软件路径
 
-```cpp
-bool init_software(int src_w, int src_h, AVPixelFormat src_fmt);
-// 内部创建 SwsContext (sws_scale)
+```
+AVFrame(YUV/etc) -> sws_scale -> RGBA CPU buffer -> TextureFrame(cpu_data)
 ```
 
-```
-AVFrame(YUV420P/etc) → sws_scale() → RGBA buffer → TextureFrame
-```
-
-### 硬件路径
-
-```cpp
-bool init_hardware(void* d3d_device, void* d3d_context,
-                   int src_w, int src_h, HwDecodeType hw_type);
-```
+### 硬解 hwdownload 路径
 
 ```
-AVFrame(D3D11VA) → 提取 ID3D11Texture2D 引用 → TextureFrame(is_nv12=true)
+AVFrame(D3D11VA) -> av_hwframe_transfer_data -> sws_scale -> RGBA CPU buffer
 ```
 
-无 CPU 拷贝。`hw_frame_ref` 持有 AVFrame 引用防止 pool 回收。
+用于 AV1/VP9。它不是软件解码；只是上屏前把硬解结果转成稳定的 RGBA 上传路径。
 
----
+### 硬解 renderer-owned 路径
 
-## HwDecodeProvider 接口
-
-头文件: `decode/hw/hw_decode_provider.h`
-
-抽象硬件解码提供者，支持扩展。
-
-```cpp
-class HwDecodeProvider {
-    virtual bool probe(const AVCodec* codec) const = 0;
-    virtual HwDecodeInitResult init(void* native_device, int w, int h,
-                                     recursive_mutex* mutex) = 0;
-    virtual void shutdown() = 0;
-    virtual HwDecodeType type() const = 0;
-};
+```
+AVFrame(D3D11VA NV12) -> TextureFrame(is_nv12, hw_frame_ref) -> renderer copy/sampling
 ```
 
-### HwDecodeType 枚举
+`hw_frame_ref` 通过 `av_frame_ref` 持有 FFmpeg frame，避免 render thread 使用时 decoder pool 提前复用该 surface。
 
-| 值 | 说明 |
-|-----|------|
-| None | 未启用 |
-| D3D11VA | Windows D3D11 硬解（已实现） |
-| CUDA | NVIDIA CUDA（预留） |
-| DXVA2 | legacy（预留） |
-| Vulkan | 跨平台（预留） |
-
-### D3D11VAProvider
+## D3D11VAProvider
 
 头文件: `decode/hw/d3d11va_provider.h`
 
-当前唯一实现：
-- `probe()` 检查 codec 是否支持 D3D11VA
-- `init()` 创建 `AVBufferRef* hw_device_ctx`
-- 线程安全：通过 `recursive_mutex` 序列化 D3D11 访问
+- `probe()` 根据 decoder `AVCodecHWConfig` 检查 D3D11VA 支持。
+- AV1/VP9 hwdownload 路径让 FFmpeg 自己创建 D3D11VA device/context，以匹配 FFmpeg CLI 的稳定路径。
+- H.264/H.265 等零拷贝路径使用独立 decode device，并创建带 `DECODER|SHADER_RESOURCE|MISC_SHARED` 的 surface。
+- D3D11 immediate context 通过 mutex 串行化，避免解码和渲染线程并发访问导致驱动内部状态损坏。
 
-### 工厂函数
+## Seek 内的解码行为
 
-```cpp
-HwDecodeInitResult try_hw_decode_providers(
-    void* native_device, const AVCodec* codec,
-    int w, int h, recursive_mutex* mutex);
-```
+`notify_seek()` 后 DecodeThread 会进入 Buffering：
 
-按优先级尝试所有已注册 Provider，失败返回 `{success=false}`。
+1. 清理旧输出帧和 exact seek 临时状态。
+2. 非 fresh codec seek 时 flush codec buffer。
+3. Exact seek 丢弃目标前的帧，并保留目标前最后一帧作为暂停预览候选。
+4. 硬解 exact seek 会轻微 pacing，避免 paused HEVC burst feeding 触发驱动不稳定。
+5. post-seek preroll 达到阈值后设置 Ready。

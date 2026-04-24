@@ -1,100 +1,85 @@
 # 构建与测试
 
-## 构建系统
+## 入口命令
 
-### CMake 目标
+项目根目录下优先使用 `dev.py`，它会串起 native 构建、CTest 和 Flutter 侧需要的产物复制。
+
+```bash
+python dev.py build --native
+python dev.py test
+python dev.py ui-test test_scripts/smoke_basic.csv
+```
+
+Native 子目录也可以单独运行：
+
+```bash
+python windows/native/build.py
+python windows/native/build.py --build-only
+python windows/native/build.py --test-only
+python windows/native/build.py --benchmarks-only
+python windows/native/build.py --debug
+```
+
+## CMake 目标
 
 | 目标 | 类型 | 说明 |
 |------|------|------|
-| video_renderer_lib | STATIC | 核心管线库 |
-| video_renderer_ffi | SHARED | C FFI DLL（naki_vr_*） |
-| video_renderer_native | MODULE | Python 扩展 (.pyd) |
-| video_renderer_tests | EXE | Catch2 单元测试 |
-| test_ffi_c | EXE | C FFI 验证 |
-| probe_hw | EXE | 硬件能力探测 |
-| pipeline_bench | EXE | 性能基准 |
+| `video_renderer_lib` | STATIC | 核心渲染/解码/同步管线 |
+| `video_renderer_ffi` | SHARED | C FFI DLL，导出 `naki_vr_*` |
+| `video_renderer_native` | MODULE | Python 扩展 `.pyd`，供 demo/脚本调用 |
+| `video_renderer_tests` | EXE | Catch2 renderer 单元/集成测试 |
+| `analysis_tests` | EXE | H.266 分析数据、VBI/VBT 解析与生成测试 |
+| `test_ffi_c` | EXE | C ABI smoke test |
+| `probe_hw` | EXE | 硬件能力探测，存在 `probe_hw.cpp` 时构建 |
+| `pipeline_bench` | EXE | 解复用/解码/上传/Present 基准 |
 
-### 依赖 (FetchContent)
+## 依赖
 
-| 依赖 | 版本 | 用途 |
+| 依赖 | 来源 | 用途 |
 |------|------|------|
-| spdlog | v1.15.2 | 日志 |
-| Catch2 | v3.8.1 | 测试框架 |
-| pybind11 | find_package | Python 绑定 |
-| FFmpeg | 外部 `../libs/ffmpeg` | 解码 |
+| FFmpeg | `windows/libs/ffmpeg` | demux、软解、D3D11VA 硬解、hwdownload |
+| spdlog | 本地 `_deps` 优先，缺失时 FetchContent | native 日志 |
+| Catch2 | 本地 `_deps` 优先，缺失时 FetchContent | C++ 测试 |
+| pybind11 | `find_package` | Python 绑定 |
+| VTM DecoderApp | `windows/native/tools/vtm` | analysis 测试生成 VBS2 |
 
-### 构建脚本
+## `python dev.py test` 实际覆盖
 
-```bash
-python native/build.py                 # 完整构建 + 测试
-python native/build.py --build-only    # 仅构建
-python native/build.py --test-only     # 仅测试
-python native/build.py --benchmarks-only  # 仅基准
-python native/build.py --debug         # Debug 构建
-```
+`dev.py test` 会先构建 native Release，再执行 `windows/native/build.py --test-only`，当前 CTest 包含 3 个测试目标。
 
----
+| CTest | 覆盖 |
+|------|------|
+| `video_renderer_tests` | Clock、PacketQueue、TrackBuffer、DemuxThread、DecodeThread、FrameConverter、D3D11 device/texture/shader、RenderSink、Renderer integration |
+| `analysis_tests` | H.266 分析模块，VBI/VBT 生成与解析，测试数据生成/清理 |
+| `test_ffi_c` | 未初始化 renderer、空指针、基础 lifecycle、C ABI 可调用性 |
 
-## 测试
+测试视频默认来自 `resources/video`，CMake 通过 `VIDEO_TEST_DIR` 注入。
 
-框架: Catch2 v3 (`Catch2WithMain`)
+## UI 回归测试
 
-### 测试文件
+影响 Flutter 控制流、FFI action、主窗口交互、seek/上屏视觉结果时，native 测试不够，需要补跑 `dev.py ui-test`。
 
-| 文件 | 测试目标 |
-|------|---------|
-| test_clock | 时钟精度、暂停恢复、倍速 |
-| test_packet_queue | 有界队列、abort、EOF |
-| test_bidi_ring_buffer | 双向 peek/advance/retreat |
-| test_track_buffer | 状态转换、Preroll |
-| test_demux_thread | 启停、DemuxStats |
-| test_decode_thread | 初始化、硬解/软解 |
-| test_frame_converter | YUV→RGBA、NV12 |
-| test_d3d11_device | 设备创建、SwapChain |
-| test_d3d11_texture | 纹理创建、上传 |
-| test_d3d11_shader | HLSL 编译 |
-| test_render_sink | 上屏决策逻辑 |
-| test_renderer_integration | 端到端播放 |
-| test_ffi_c | C FFI ABI 验证 |
+当前与 renderer 相关的重点脚本：
 
-### 测试视频
+| 脚本 | 目的 |
+|------|------|
+| `test_scripts/h265_seek_visual_regression.csv` | HEVC 硬解 seek 后非黑帧且画面变化 |
+| `test_scripts/av1_not_black_regression.csv` | AV1 硬解 hwdownload 添加/seek 非黑帧 |
+| `test_scripts/vp9_not_black_regression.csv` | VP9 硬解 hwdownload 添加/seek 非黑帧且 hash 变化 |
 
-环境变量 `VIDEO_TEST_DIR` 指向 `../resources/video`。
-
----
-
-## 性能基准
+## 基准
 
 可执行文件: `pipeline_bench.exe`
 
-### 阶段
-
 | 基准 | 测量内容 |
 |------|---------|
-| bench_demux_only | 解复帧率 |
-| bench_demux_decode | 解复+软解 |
-| bench_demux_decode_sws | + sws_scale YUV→RGBA |
-| bench_demux_decode_sws_d3d11 | + D3D11 纹理上传（新建） |
-| bench_demux_decode_sws_d3d11_reuse | + D3D11 纹理上传（池化） |
-| bench_full_pipeline | 完整管线含 Present |
-
-输出: FPS、ms/frame、瓶颈定位。
-
----
+| `bench_demux_only` | 解复用吞吐 |
+| `bench_demux_decode` | 解复用 + 解码 |
+| `bench_demux_decode_sws` | 软件转换到 RGBA |
+| `bench_demux_decode_sws_d3d11` | RGBA 上传到 D3D11 |
+| `bench_demux_decode_sws_d3d11_reuse` | 纹理复用上传 |
+| `bench_full_pipeline` | 完整管线含 Present |
 
 ## Demo
 
-### demo_video_renderer.py
-
-交互式 PySide6 窗口，键盘控制：
-
-| 按键 | 功能 |
-|------|------|
-| Space | 播放/暂停 |
-| ←/→ | 逐帧后退/前进 |
-| Shift+←/→ | ±1s Seek |
-| 标题栏 | 实时 PTS 显示 |
-
-### demo_seek.py
-
-自动化演示：播放 3s → seek 回退 → 逐帧后退 → 逐帧前进 → 播放 2s → seek 前进。
+`demo_video_renderer.py` 是 PySide6 交互式 demo；`demo_seek.py` 是 seek/逐帧的自动演示。日常播放器行为验证优先使用 `dev.py launch` 和 `dev.py ui-test`。

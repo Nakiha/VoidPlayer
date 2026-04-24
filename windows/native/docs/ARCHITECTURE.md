@@ -11,6 +11,8 @@ C++ DLL 视频渲染引擎，基于 FFmpeg demux + D3D11VA 硬解/软解，为 V
 - 逐帧前进/后退
 - I 帧 Seek / 精确 Seek
 - 倍速播放（保持时钟连续性）
+- Headless 三缓冲 shared texture，上屏到 Flutter Texture
+- 自动化截图/hash 验证入口（通过 Flutter action 调用 native front buffer capture）
 
 ## 目录结构
 
@@ -24,7 +26,7 @@ native/
 │   ├── clock.h/cpp                 # PTS 时钟（可注入时间源）
 │   ├── logging.h/cpp               # spdlog 配置 + 崩溃处理
 │   ├── d3d11/                      # D3D11 后端
-│   │   ├── device.h/cpp            # 设备 / SwapChain / Present
+│   │   ├── device.h/cpp            # 设备 / SwapChain / Headless render target
 │   │   ├── texture.h/cpp           # 纹理创建、上传、池化
 │   │   └── shader.h/cpp            # HLSL 编译管理
 │   ├── decode/                     # 解码管线
@@ -78,12 +80,20 @@ Renderer                          # 主入口，生命周期管理
 Video File
   → [DemuxThread] → AVPacket (PTS=μs)
     → [PacketQueue] →
-      → [DecodeThread] → AVFrame (YUV/NV12)
+      → [DecodeThread] → AVFrame (YUV/D3D11VA)
         → [FrameConverter] → TextureFrame
           → [TrackBuffer/BidiRingBuffer] →
             → [RenderSink] → PresentDecision
-              → [D3D11 Present]
+              → [D3D11 Draw] → SwapChain 或 Headless Shared Texture
 ```
+
+## 当前硬解路径
+
+| 路径 | 典型 codec | 说明 |
+|------|------------|------|
+| D3D11VA renderer-owned NV12 | H.264/H.265 | decoder surface copy 到 renderer-owned NV12 texture，再由 shader 采样 |
+| D3D11VA hwdownload | AV1/VP9 | 硬解后 `av_hwframe_transfer_data` 到 CPU RGBA，再走上传路径 |
+| 软件 fallback | 硬解不可用/打开失败 | AV1 软件 fallback 优先 `libdav1d` |
 
 ## 详细文档索引
 

@@ -4,114 +4,75 @@
 
 头文件: `d3d11/device.h`
 
-封装 ID3D11Device + ImmediateContext + SwapChain。
+封装 `ID3D11Device`、ImmediateContext，以及可选 SwapChain/headless render target。
 
 ```cpp
-class D3D11Device {
-    bool initialize(void* hwnd, int width, int height);
-    void shutdown();
-    void resize(int width, int height);
-    void present(int sync_interval = 1);
-
-    ID3D11Device* device();
-    ID3D11DeviceContext* context();
-    IDXGISwapChain* swap_chain();
-};
+bool initialize(void* hwnd, int width, int height);
+bool initialize_headless(IDXGIAdapter* adapter, int width, int height);
+void shutdown();
+void resize(int width, int height);
+void present(int sync_interval = 1);
 ```
 
-### 创建参数
+当前 Flutter 主窗口走 headless 模式，native demo/standalone 可使用窗口模式。
 
-- Debug 模式启用 D3D11 Debug Layer
-- SwapChain 格式：DXGI_FORMAT_R8G8B8A8_UNORM
-- 默认 VSync：sync_interval = 1
+## Headless shared texture
 
----
+Renderer 在 headless 模式下创建三缓冲 BGRA shared texture：
 
-## 纹理管理
-
-头文件: `d3d11/texture.h`
-
-### 创建纹理
-
-```cpp
-ID3D11Texture2D* create_rgba_texture(device, width, height);
+```
+draw back buffer -> swap front index -> Flutter opens shared handle -> Texture widget displays
 ```
 
-### 上传（软解路径）
+设计目标：
 
-```cpp
-void upload_rgba_data(context, texture, data, row_pitch, height);
+- 避免 renderer 覆盖 Flutter 正在读取的 buffer。
+- resize 时保留旧 buffers 一小段时间，避免句柄悬空。
+- `capture_front_buffer()` 可以把当前 front buffer 读回 BGRA，用于 UI 自动化截图/hash。
+
+## 纹理路径
+
+### RGBA 上传路径
+
+来源包括软件解码和 AV1/VP9 硬解 hwdownload：
+
+```
+RGBA CPU buffer -> UpdateSubresource -> RGBA texture -> shader sample
 ```
 
-CPU RGBA 数据 → GPU 纹理，每帧一次 UpdateSubresource。
+### NV12 硬解路径
 
-### 纹理池
+H.264/H.265 等 renderer-owned surface 路径：
 
-软解时复用纹理避免每帧创建/销毁。FrameConverter 的 TextureFrame 复用已有纹理槽。
+```
+D3D11VA texture array slice
+  -> CopySubresourceRegion 到 renderer-owned NV12 texture
+  -> 创建 Y plane / UV plane SRV
+  -> shader NV12->RGB
+```
 
----
+这里不是直接长期持有 decoder surface。复制一次 slice 能让 FFmpeg decode pool 在 seek/recreate 后安全复用 surface，避免跨线程/跨生命周期引用。
 
 ## ShaderManager
 
 头文件: `d3d11/shader.h`
 
-HLSL 着色器编译管理。
+HLSL shader 内嵌到构建产物，运行时编译并绑定：
 
-```cpp
-class ShaderManager {
-    bool compile_from_file(const char* hlsl_path);
-    void bind(ID3D11DeviceContext* ctx);
-};
-```
+- RGBA 纹理采样
+- NV12 Y/UV 双平面采样
+- 单轨/双轨/四宫格布局
+- 宽高比和 letterbox
 
----
+## D3D11VA device 策略
 
-## multitrack.hlsl
+| 路径 | Device/context 策略 |
+|------|---------------------|
+| H.264/H.265 renderer-owned NV12 | 使用独立 decode device，surface 带 `DECODER|SHADER_RESOURCE|MISC_SHARED` |
+| AV1/VP9 hwdownload | 让 FFmpeg 创建 D3D11VA device/context，匹配 CLI hwaccel 行为 |
 
-路径: `video_renderer/shaders/multitrack.hlsl`
-
-### 功能
-
-- 顶点着色器：全屏四边形
-- 像素着色器：
-  - RGBA 纹理采样（软解）
-  - NV12 双平面采样 + BT.601 YUV→RGB（硬解零拷贝）
-  - 1-4 轨道布局（单画面 / 左右 / 2×2）
-  - 宽高比校正 + Letterbox
-
-### NV12 零拷贝路径
-
-```
-D3D11VA 解码输出
-  → ID3D11Texture2D (NV12, 纹理数组)
-  → 创建 SRV (ShaderResourceView)
-  → Shader 直接采样 Y 和 UV 平面
-  → BT.601 转换为 RGB
-  → 无 CPU 拷贝
-```
-
-### D3D11VA 纹理数组对齐
-
-D3D11VA 输出为纹理数组，每帧位于不同 index：
-- `texture_array_index` 指定帧在数组中的索引
-- SRV 创建时需绑定正确的 array slice
-
-### 布局模式
-
-| 轨道数 | 布局 |
-|--------|------|
-| 1 | 全屏单画面 |
-| 2 | 左右 1/2 |
-| 3-4 | 2×2 网格 |
-
----
+D3D11 immediate context 必须串行化。decode provider 会设置 lock/unlock callback，renderer 侧也用 device mutex 保护 draw/copy/flush。
 
 ## Present
 
-```cpp
-device_.present(sync_interval);
-// sync_interval = 1: VSync
-// sync_interval = 0: 立即呈现
-```
-
-Render 线程独占 ImmediateContext，无需额外同步。
+窗口模式调用 `IDXGISwapChain::Present(sync_interval, 0)`；headless 模式不调用 SwapChain Present，而是绘制到 shared texture 并触发 Flutter texture callback。

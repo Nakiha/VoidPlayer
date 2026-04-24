@@ -1,3 +1,5 @@
+// ignore_for_file: unused_field
+
 import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 
@@ -25,6 +27,7 @@ final class NakiAnalysisSummary extends Struct {
   @Int32()
   external int currentFrameIdx;
 
+  // Reserved native ABI padding.
   @Array(7)
   external Array<Int32> _reserved;
 }
@@ -59,6 +62,7 @@ final class NakiFrameInfo extends Struct {
   @Int32()
   external int keyframe;
 
+  // Reserved native ABI padding.
   @Array(2)
   external Array<Int32> _reserved;
 }
@@ -86,6 +90,7 @@ final class NakiOverlayState extends Struct {
   @Int32()
   external int showQpHeatmap;
   @Int32()
+  // Reserved native ABI padding.
   external int _reserved;
 }
 
@@ -93,7 +98,8 @@ final class NakiOverlayState extends Struct {
 // FFI function typedefs
 // ===========================================================================
 
-typedef _LoadNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _LoadNative =
+    Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _LoadDart = int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
 
 typedef _UnloadNative = Void Function();
@@ -121,17 +127,24 @@ typedef _GenerateDart = int Function(Pointer<Utf8>, Pointer<Utf8>);
 final _dl = DynamicLibrary.executable();
 
 final _load = _dl.lookupFunction<_LoadNative, _LoadDart>('naki_analysis_load');
-final _unload = _dl.lookupFunction<_UnloadNative, _UnloadDart>('naki_analysis_unload');
-final _getSummary =
-    _dl.lookupFunction<_GetSummaryNative, _GetSummaryDart>('naki_analysis_get_summary');
-final _getFrames =
-    _dl.lookupFunction<_GetFramesNative, _GetFramesDart>('naki_analysis_get_frames');
-final _getNalus =
-    _dl.lookupFunction<_GetNalusNative, _GetNalusDart>('naki_analysis_get_nalus');
-final _setOverlay =
-    _dl.lookupFunction<_SetOverlayNative, _SetOverlayDart>('naki_analysis_set_overlay');
-final _generate =
-    _dl.lookupFunction<_GenerateNative, _GenerateDart>('naki_analysis_generate');
+final _unload = _dl.lookupFunction<_UnloadNative, _UnloadDart>(
+  'naki_analysis_unload',
+);
+final _getSummary = _dl.lookupFunction<_GetSummaryNative, _GetSummaryDart>(
+  'naki_analysis_get_summary',
+);
+final _getFrames = _dl.lookupFunction<_GetFramesNative, _GetFramesDart>(
+  'naki_analysis_get_frames',
+);
+final _getNalus = _dl.lookupFunction<_GetNalusNative, _GetNalusDart>(
+  'naki_analysis_get_nalus',
+);
+final _setOverlay = _dl.lookupFunction<_SetOverlayNative, _SetOverlayDart>(
+  'naki_analysis_set_overlay',
+);
+final _generate = _dl.lookupFunction<_GenerateNative, _GenerateDart>(
+  'naki_analysis_generate',
+);
 
 // ===========================================================================
 // Pure Dart data classes — copies of FFI struct fields, safe after free

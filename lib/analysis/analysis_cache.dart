@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 
-/// Manages the on-disk analysis cache in <exe_dir>/cache/.
+/// Manages the on-disk analysis cache in `exe_dir/cache`.
 ///
 /// Cache structure:
 /// ```
@@ -55,7 +55,11 @@ class AnalysisCache {
     );
   }
 
-  static Future<void> addEntry(String hash, String name, String videoPath) async {
+  static Future<void> addEntry(
+    String hash,
+    String name,
+    String videoPath,
+  ) async {
     final index = loadIndex();
     final entries = index['entries'] as Map<String, dynamic>;
     entries[hash] = {

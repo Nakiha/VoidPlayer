@@ -27,10 +27,7 @@ import 'windows/analysis_window.dart';
       if (parts.isEmpty) continue;
       final key = parts.first.toUpperCase();
       if (key == '@WINDOW' && parts.length >= 3) {
-        return (
-          width: double.parse(parts[1]),
-          height: double.parse(parts[2]),
-        );
+        return (width: double.parse(parts[1]), height: double.parse(parts[2]));
       }
     }
   } catch (_) {
@@ -114,13 +111,19 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
   int accentColorValue = 0xFF0078D4;
 
   for (final arg in args) {
-    if (arg.startsWith('--hash=')) hash = arg.substring(7);
-    else if (arg.startsWith('--fileName=')) fileName = arg.substring(11);
-    else if (arg.startsWith('--x=')) x = int.tryParse(arg.substring(4)) ?? 100;
-    else if (arg.startsWith('--y=')) y = int.tryParse(arg.substring(4)) ?? 100;
-    else if (arg.startsWith('--width=')) width = int.tryParse(arg.substring(8)) ?? 800;
-    else if (arg.startsWith('--height=')) height = int.tryParse(arg.substring(9)) ?? 600;
-    else if (arg.startsWith('--accentColor=')) {
+    if (arg.startsWith('--hash=')) {
+      hash = arg.substring(7);
+    } else if (arg.startsWith('--fileName=')) {
+      fileName = arg.substring(11);
+    } else if (arg.startsWith('--x=')) {
+      x = int.tryParse(arg.substring(4)) ?? 100;
+    } else if (arg.startsWith('--y=')) {
+      y = int.tryParse(arg.substring(4)) ?? 100;
+    } else if (arg.startsWith('--width=')) {
+      width = int.tryParse(arg.substring(8)) ?? 800;
+    } else if (arg.startsWith('--height=')) {
+      height = int.tryParse(arg.substring(9)) ?? 600;
+    } else if (arg.startsWith('--accentColor=')) {
       accentColorValue = int.tryParse(arg.substring(14)) ?? 0xFF0078D4;
     }
   }
@@ -189,7 +192,9 @@ void main(List<String> args) async {
     case WindowArgs.memory:
     case WindowArgs.settings:
     case WindowArgs.analysis:
-      log.info('[SecondaryWindow] type=${windowArgs.windowType}, initializing...');
+      log.info(
+        '[SecondaryWindow] type=${windowArgs.windowType}, initializing...',
+      );
       await Window.initialize();
       await Window.setEffect(
         effect: WindowEffect.mica,
@@ -200,7 +205,11 @@ void main(List<String> args) async {
         WindowArgs.stats => StatsApp(accentColor: accentColor),
         WindowArgs.memory => MemoryApp(accentColor: accentColor),
         WindowArgs.settings => SettingsApp(accentColor: accentColor),
-        WindowArgs.analysis => AnalysisApp(accentColor: accentColor, hash: windowArgs.hash!, fileName: windowArgs.fileName),
+        WindowArgs.analysis => AnalysisApp(
+          accentColor: accentColor,
+          hash: windowArgs.hash!,
+          fileName: windowArgs.fileName,
+        ),
         _ => throw StateError('unreachable'),
       };
       // Apply initial position/size before the first frame renders.
@@ -209,9 +218,10 @@ void main(List<String> args) async {
       final hwnd = Win32FFI.getForegroundWindow();
       if (hwnd != 0) {
         final title = switch (windowArgs.windowType) {
-          WindowArgs.analysis => windowArgs.fileName != null
-              ? 'Void Player - ${windowArgs.fileName}'
-              : 'Void Player - Analysis',
+          WindowArgs.analysis =>
+            windowArgs.fileName != null
+                ? 'Void Player - ${windowArgs.fileName}'
+                : 'Void Player - Analysis',
           _ => WindowArgs.windowTitles[windowArgs.windowType] ?? 'Void Player',
         };
         Win32FFI.setWindowText(hwnd, title);
@@ -285,9 +295,7 @@ class MyApp extends StatelessWidget {
         ),
       ),
       themeMode: ThemeMode.system,
-      home: ActionFocus(
-        child: MainWindow(testScriptPath: testScriptPath),
-      ),
+      home: ActionFocus(child: MainWindow(testScriptPath: testScriptPath)),
     );
   }
 }

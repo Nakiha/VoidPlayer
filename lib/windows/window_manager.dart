@@ -64,7 +64,8 @@ class WindowManager {
 
   /// Compute the initial rect for a secondary window of the given [type].
   /// Public so that main_window.dart can use it for process-spawned windows.
-  static Future<Rect> computeWindowRect(String type) => _computeWindowRect(type);
+  static Future<Rect> computeWindowRect(String type) =>
+      _computeWindowRect(type);
 
   // -----------------------------------------------------------------------
   // Internals
@@ -82,17 +83,16 @@ class WindowManager {
 
   // --- Analysis process spawning ---
 
-  static Future<void> _spawnAnalysisProcess(String hash, {String? fileName}) async {
+  static Future<void> _spawnAnalysisProcess(
+    String hash, {
+    String? fileName,
+  }) async {
     // If a process for this hash is already running, don't spawn another.
-    final existing = _analysisProcesses[hash];
-    if (existing != null) {
-      // Check if the process is still alive.
-      final exitCode = existing.exitCode;
-      if (exitCode == null) {
-        log.info('[WindowManager] analysis process for $hash still running, skipping');
-        return;
-      }
-      _analysisProcesses.remove(hash);
+    if (_analysisProcesses.containsKey(hash)) {
+      log.info(
+        '[WindowManager] analysis process for $hash still running, skipping',
+      );
+      return;
     }
 
     final rect = await _computeWindowRect(WindowArgs.analysis);
@@ -120,7 +120,9 @@ class WindowManager {
 
     // Clean up when process exits.
     process.exitCode.then((code) {
-      log.info('[WindowManager] analysis process for $hash exited with code $code');
+      log.info(
+        '[WindowManager] analysis process for $hash exited with code $code',
+      );
       _analysisProcesses.remove(hash);
     });
   }
@@ -132,7 +134,9 @@ class WindowManager {
     final existing = _windowIds[type];
     if (existing != null) {
       if (!_isSecondaryWindowAlive(type)) {
-        log.info('[WindowManager] "$type" closed by user, removing stale id=$existing');
+        log.info(
+          '[WindowManager] "$type" closed by user, removing stale id=$existing',
+        );
         _windowIds.remove(type);
       } else {
         try {
@@ -140,7 +144,9 @@ class WindowManager {
           await ctrl.show();
           return;
         } catch (e, stack) {
-          log.warning('[WindowManager] "$type" show() failed for id=$existing: $e\n$stack');
+          log.warning(
+            '[WindowManager] "$type" show() failed for id=$existing: $e\n$stack',
+          );
           _windowIds.remove(type);
         }
       }
@@ -150,20 +156,24 @@ class WindowManager {
     final rect = await _computeWindowRect(type);
 
     final mainCtrl = await WindowController.fromCurrentEngine();
-    log.info('[WindowManager] creating "$type" window, rect=$rect, mainWindowId=${mainCtrl.windowId}');
+    log.info(
+      '[WindowManager] creating "$type" window, rect=$rect, mainWindowId=${mainCtrl.windowId}',
+    );
     try {
-      final ctrl = await WindowController.create(WindowConfiguration(
-        arguments: jsonEncode({
-          'type': type,
-          'mainWindowId': mainCtrl.windowId,
-          'accentColor': accentColorValue,
-          'x': rect.left.toInt(),
-          'y': rect.top.toInt(),
-          'width': rect.width.toInt(),
-          'height': rect.height.toInt(),
-        }),
-        hiddenAtLaunch: true,
-      ));
+      final ctrl = await WindowController.create(
+        WindowConfiguration(
+          arguments: jsonEncode({
+            'type': type,
+            'mainWindowId': mainCtrl.windowId,
+            'accentColor': accentColorValue,
+            'x': rect.left.toInt(),
+            'y': rect.top.toInt(),
+            'width': rect.width.toInt(),
+            'height': rect.height.toInt(),
+          }),
+          hiddenAtLaunch: true,
+        ),
+      );
       _windowIds[type] = ctrl.windowId;
       log.info('[WindowManager] "$type" created with id=${ctrl.windowId}');
     } finally {
@@ -176,8 +186,7 @@ class WindowManager {
   /// 1. Try the saved rect from config (if still on-screen).
   /// 2. Otherwise cascade from the main (parent) window.
   static Future<Rect> _computeWindowRect(String type) async {
-    final (defaultW, defaultH) =
-        WindowArgs.defaultSizes[type] ?? (800, 600);
+    final (defaultW, defaultH) = WindowArgs.defaultSizes[type] ?? (800, 600);
 
     // Try saved position.
     final saved = AppConfig.instance.secondaryWindowRect(type);
@@ -186,14 +195,13 @@ class WindowManager {
     }
 
     // Cascade from the main window.
-    final parentHwnd = Win32FFI.findWindow(
-      className: kMainWindowClass,
-    );
+    final parentHwnd = Win32FFI.findWindow(className: kMainWindowClass);
     if (parentHwnd != 0) {
       final parentRect = Win32FFI.getWindowRect(parentHwnd);
       final monitorArea = Win32FFI.getMonitorWorkArea(parentHwnd);
       return Win32FFI.cascadePosition(
-        parentRect, monitorArea,
+        parentRect,
+        monitorArea,
         defaultWidth: defaultW,
         defaultHeight: defaultH,
       );

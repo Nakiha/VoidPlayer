@@ -25,13 +25,13 @@ class TrackInfo {
   });
 
   factory TrackInfo.fromMap(Map<dynamic, dynamic> map) => TrackInfo(
-        fileId: map['fileId'] as int,
-        slot: map['slot'] as int,
-        path: map['path'] as String,
-        width: map['width'] as int,
-        height: map['height'] as int,
-        durationUs: map['durationUs'] as int? ?? 0,
-      );
+    fileId: map['fileId'] as int,
+    slot: map['slot'] as int,
+    path: map['path'] as String,
+    width: map['width'] as int,
+    height: map['height'] as int,
+    durationUs: map['durationUs'] as int? ?? 0,
+  );
 }
 
 /// Result of createRenderer, containing texture ID and initial track info.
@@ -39,10 +39,7 @@ class CreateRendererResult {
   final int textureId;
   final List<TrackInfo> tracks;
 
-  const CreateRendererResult({
-    required this.textureId,
-    required this.tracks,
-  });
+  const CreateRendererResult({required this.textureId, required this.tracks});
 }
 
 class ViewportCapture {
@@ -63,13 +60,13 @@ class ViewportCapture {
   });
 
   factory ViewportCapture.fromMap(Map<dynamic, dynamic> map) => ViewportCapture(
-        hash: map['hash'] as String,
-        width: map['width'] as int,
-        height: map['height'] as int,
-        avgLuma: (map['avgLuma'] as num?)?.toDouble() ?? 0.0,
-        nonBlackRatio: (map['nonBlackRatio'] as num?)?.toDouble() ?? 0.0,
-        outputPath: map['outputPath'] as String?,
-      );
+    hash: map['hash'] as String,
+    width: map['width'] as int,
+    height: map['height'] as int,
+    avgLuma: (map['avgLuma'] as num?)?.toDouble() ?? 0.0,
+    nonBlackRatio: (map['nonBlackRatio'] as num?)?.toDouble() ?? 0.0,
+    outputPath: map['outputPath'] as String?,
+  );
 }
 
 /// Immutable snapshot of the layout state.
@@ -94,25 +91,24 @@ class LayoutState {
   });
 
   Map<String, dynamic> toMap() => {
-        'mode': mode,
-        'splitPos': splitPos,
-        'zoomRatio': zoomRatio,
-        'viewOffsetX': viewOffsetX,
-        'viewOffsetY': viewOffsetY,
-        'order': order,
-      };
+    'mode': mode,
+    'splitPos': splitPos,
+    'zoomRatio': zoomRatio,
+    'viewOffsetX': viewOffsetX,
+    'viewOffsetY': viewOffsetY,
+    'order': order,
+  };
 
   factory LayoutState.fromMap(Map<dynamic, dynamic> map) => LayoutState(
-        mode: map['mode'] as int? ?? LayoutMode.sideBySide,
-        splitPos: (map['splitPos'] as double?) ?? 0.5,
-        zoomRatio: (map['zoomRatio'] as double?) ?? 1.0,
-        viewOffsetX: (map['viewOffsetX'] as double?) ?? 0.0,
-        viewOffsetY: (map['viewOffsetY'] as double?) ?? 0.0,
-        order: (map['order'] as List<dynamic>?)
-                ?.map((e) => e as int)
-                .toList() ??
-            const [0, 1, 2, 3],
-      );
+    mode: map['mode'] as int? ?? LayoutMode.sideBySide,
+    splitPos: (map['splitPos'] as double?) ?? 0.5,
+    zoomRatio: (map['zoomRatio'] as double?) ?? 1.0,
+    viewOffsetX: (map['viewOffsetX'] as double?) ?? 0.0,
+    viewOffsetY: (map['viewOffsetY'] as double?) ?? 0.0,
+    order:
+        (map['order'] as List<dynamic>?)?.map((e) => e as int).toList() ??
+        const [0, 1, 2, 3],
+  );
 
   LayoutState copyWith({
     int? mode,
@@ -121,15 +117,14 @@ class LayoutState {
     double? viewOffsetX,
     double? viewOffsetY,
     List<int>? order,
-  }) =>
-      LayoutState(
-        mode: mode ?? this.mode,
-        splitPos: splitPos ?? this.splitPos,
-        zoomRatio: zoomRatio ?? this.zoomRatio,
-        viewOffsetX: viewOffsetX ?? this.viewOffsetX,
-        viewOffsetY: viewOffsetY ?? this.viewOffsetY,
-        order: order ?? this.order,
-      );
+  }) => LayoutState(
+    mode: mode ?? this.mode,
+    splitPos: splitPos ?? this.splitPos,
+    zoomRatio: zoomRatio ?? this.zoomRatio,
+    viewOffsetX: viewOffsetX ?? this.viewOffsetX,
+    viewOffsetY: viewOffsetY ?? this.viewOffsetY,
+    order: order ?? this.order,
+  );
 }
 
 class VideoRendererController {
@@ -143,16 +138,17 @@ class VideoRendererController {
     int width = 1920,
     int height = 1080,
   }) async {
-    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>('createRenderer', {
-      'videoPaths': videoPaths,
-      'width': width,
-      'height': height,
-    });
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'createRenderer',
+      {'videoPaths': videoPaths, 'width': width, 'height': height},
+    );
     _textureId = map?['textureId'] as int?;
     final tracksList = map?['tracks'] as List<dynamic>? ?? [];
     return CreateRendererResult(
       textureId: _textureId!,
-      tracks: tracksList.map((e) => TrackInfo.fromMap(e as Map<dynamic, dynamic>)).toList(),
+      tracks: tracksList
+          .map((e) => TrackInfo.fromMap(e as Map<dynamic, dynamic>))
+          .toList(),
     );
   }
 
@@ -160,25 +156,24 @@ class VideoRendererController {
 
   Future<void> pause() => _channel.invokeMethod<void>('pause');
 
-  Future<void> seek(int ptsUs) => _channel.invokeMethod<void>('seek', {
-        'ptsUs': ptsUs,
-      });
+  Future<void> seek(int ptsUs) =>
+      _channel.invokeMethod<void>('seek', {'ptsUs': ptsUs});
 
   Future<void> setSpeed(double speed) =>
-      _channel.invokeMethod<void>('setSpeed', {
-        'speed': speed,
-      });
+      _channel.invokeMethod<void>('setSpeed', {'speed': speed});
 
   Future<void> resize(int width, int height) =>
-      _channel.invokeMethod<void>('resize', {
-        'width': width,
-        'height': height,
-      });
+      _channel.invokeMethod<void>('resize', {'width': width, 'height': height});
 
   Future<ViewportCapture> captureViewport({String? outputPath}) async {
-    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>('captureViewport', {
-      if (outputPath != null) 'outputPath': outputPath,
-    });
+    final args = <String, dynamic>{};
+    if (outputPath != null) {
+      args['outputPath'] = outputPath;
+    }
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'captureViewport',
+      args,
+    );
     return ViewportCapture.fromMap(map!);
   }
 
@@ -217,9 +212,8 @@ class VideoRendererController {
   }
 
   /// Remove a track by file_id.
-  Future<void> removeTrack(int fileId) => _channel.invokeMethod<void>('removeTrack', {
-        'fileId': fileId,
-      });
+  Future<void> removeTrack(int fileId) =>
+      _channel.invokeMethod<void>('removeTrack', {'fileId': fileId});
 
   /// Set per-track sync offset in microseconds.
   Future<void> setTrackOffset({required int fileId, required int offsetUs}) =>
@@ -233,12 +227,15 @@ class VideoRendererController {
     final list = await _channel.invokeMethod<List<dynamic>>('getTracks');
     return list
             ?.map((e) => TrackInfo.fromMap(e as Map<dynamic, dynamic>))
-            .toList() ?? [];
+            .toList() ??
+        [];
   }
 
   /// Get diagnostics data (placeholder, requires native counters).
   Future<Map<String, dynamic>> getDiagnostics() async {
-    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>('getDiagnostics');
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'getDiagnostics',
+    );
     return Map<String, dynamic>.from(map ?? {});
   }
 

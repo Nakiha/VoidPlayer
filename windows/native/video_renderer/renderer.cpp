@@ -1698,7 +1698,8 @@ std::unique_ptr<Renderer::TrackPipeline> Renderer::create_pipeline(const std::st
         // Pass nullptr device — D3D11VA provider will create its own
         // independent D3D11 device for decoding. This avoids sharing the
         // render device's immediate context, which causes D3D11VA internal
-        // state corruption on seek (C++ exception from D3D11 runtime).
+        // state corruption on HEVC seek. AV1 currently downloads hardware
+        // frames before upload, so it does not need render-device sharing.
         pipeline->decode_thread->enable_hardware_decode(nullptr, nullptr);
     }
 

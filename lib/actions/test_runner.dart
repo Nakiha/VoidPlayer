@@ -104,6 +104,8 @@ class TestRunner {
         _captures[nameId] = capture;
         log.info(
           'TestRunner: CAPTURE_VIEWPORT $nameId hash=${capture.hash} ${capture.width}x${capture.height}'
+          ' avgLuma=${capture.avgLuma.toStringAsFixed(2)}'
+          ' nonBlack=${capture.nonBlackRatio.toStringAsFixed(4)}'
           '${capture.outputPath != null ? ' -> ${capture.outputPath}' : ''}',
         );
       default:
@@ -194,6 +196,19 @@ class TestRunner {
         if (actual.hash != hash) {
           throw AssertionError(
             'Expected capture $capture hash=$hash, got ${actual.hash}',
+          );
+        }
+      case AssertCaptureNotBlack(:final capture, :final minNonBlackRatio, :final minAvgLuma):
+        final actual = _captures[capture];
+        if (actual == null) {
+          throw AssertionError('Missing capture for ASSERT_CAPTURE_NOT_BLACK: $capture');
+        }
+        if (actual.nonBlackRatio < minNonBlackRatio || actual.avgLuma < minAvgLuma) {
+          throw AssertionError(
+            'Expected capture $capture to be non-black '
+            '(nonBlack>=${minNonBlackRatio.toStringAsFixed(4)}, avgLuma>=${minAvgLuma.toStringAsFixed(2)}), '
+            'got nonBlack=${actual.nonBlackRatio.toStringAsFixed(4)}, '
+            'avgLuma=${actual.avgLuma.toStringAsFixed(2)}, hash=${actual.hash}',
           );
         }
     }
@@ -398,6 +413,19 @@ ScriptInstruction? _parseInstruction(Duration time, String cmd, List<String> arg
         return null;
       }
       return ScriptAssert(time, AssertCaptureHash(args[0], args[1]));
+    case 'ASSERT_CAPTURE_NOT_BLACK':
+      if (args.isEmpty) {
+        log.warning('ASSERT_CAPTURE_NOT_BLACK needs capture name: $rawLine');
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertCaptureNotBlack(
+          args[0],
+          minNonBlackRatio: args.length >= 2 ? double.parse(args[1]) : 0.01,
+          minAvgLuma: args.length >= 3 ? double.parse(args[2]) : 4.0,
+        ),
+      );
 
     // Control
     case 'QUIT':

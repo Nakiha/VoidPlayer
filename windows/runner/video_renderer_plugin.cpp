@@ -83,6 +83,39 @@ std::string Fnv1a64Hex(const std::vector<uint8_t>& bytes) {
     return oss.str();
 }
 
+struct CaptureStats {
+    double avg_luma = 0.0;
+    double non_black_ratio = 0.0;
+};
+
+CaptureStats ComputeCaptureStats(const std::vector<uint8_t>& bgra) {
+    CaptureStats stats;
+    const size_t pixel_count = bgra.size() / 4;
+    if (pixel_count == 0) {
+        return stats;
+    }
+
+    uint64_t luma_sum = 0;
+    size_t non_black = 0;
+    for (size_t i = 0; i < pixel_count; ++i) {
+        const size_t off = i * 4;
+        const uint8_t b = bgra[off + 0];
+        const uint8_t g = bgra[off + 1];
+        const uint8_t r = bgra[off + 2];
+        const int luma = (77 * static_cast<int>(r) +
+                          150 * static_cast<int>(g) +
+                          29 * static_cast<int>(b)) >> 8;
+        luma_sum += static_cast<uint64_t>(luma);
+        if (r > 8 || g > 8 || b > 8) {
+            ++non_black;
+        }
+    }
+
+    stats.avg_luma = static_cast<double>(luma_sum) / static_cast<double>(pixel_count);
+    stats.non_black_ratio = static_cast<double>(non_black) / static_cast<double>(pixel_count);
+    return stats;
+}
+
 bool SaveBgraToPng(const std::vector<uint8_t>& bgra, int width, int height, const std::string& path) {
     if (bgra.empty() || width <= 0 || height <= 0 || path.empty()) {
         return false;
@@ -805,6 +838,7 @@ void VideoRendererPlugin::CaptureViewport(
     }
 
     const std::string hash = Fnv1a64Hex(bgra);
+    const CaptureStats stats = ComputeCaptureStats(bgra);
     if (!output_path.empty() && !SaveBgraToPng(bgra, width, height, output_path)) {
         result->Error("CAPTURE_SAVE_FAILED", "Failed to save viewport PNG");
         return;
@@ -814,6 +848,8 @@ void VideoRendererPlugin::CaptureViewport(
     map[flutter::EncodableValue("hash")] = flutter::EncodableValue(hash);
     map[flutter::EncodableValue("width")] = flutter::EncodableValue(width);
     map[flutter::EncodableValue("height")] = flutter::EncodableValue(height);
+    map[flutter::EncodableValue("avgLuma")] = flutter::EncodableValue(stats.avg_luma);
+    map[flutter::EncodableValue("nonBlackRatio")] = flutter::EncodableValue(stats.non_black_ratio);
     if (!output_path.empty()) {
         map[flutter::EncodableValue("outputPath")] = flutter::EncodableValue(output_path);
     }

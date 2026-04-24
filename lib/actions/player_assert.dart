@@ -56,3 +56,14 @@ class AssertCaptureHash extends PlayerAssert {
   final String hash;
   const AssertCaptureHash(this.capture, this.hash);
 }
+
+class AssertCaptureNotBlack extends PlayerAssert {
+  final String capture;
+  final double minNonBlackRatio;
+  final double minAvgLuma;
+  const AssertCaptureNotBlack(
+    this.capture, {
+    this.minNonBlackRatio = 0.01,
+    this.minAvgLuma = 4.0,
+  });
+}

@@ -88,6 +88,7 @@ D3D11VAProvider::~D3D11VAProvider() {
 bool D3D11VAProvider::probe(const AVCodec* codec) const {
     if (!codec) return false;
 
+    probed_codec_id_ = codec->id;
     AVPixelFormat found_vld = AV_PIX_FMT_NONE;
     AVPixelFormat found_d3d11 = AV_PIX_FMT_NONE;
 
@@ -123,6 +124,36 @@ bool D3D11VAProvider::probe(const AVCodec* codec) const {
 HwDecodeInitResult D3D11VAProvider::init(void* native_device, int width, int height,
                                           std::recursive_mutex* device_mutex) {
     HwDecodeInitResult result;
+
+    // AV1 uses hardware decode + hwdownload before renderer upload. Let
+    // FFmpeg create the D3D11VA device/context exactly like the CLI hwaccel
+    // path; manually populated D3D11VA contexts can produce black AV1 transfer
+    // frames on some drivers even though decode succeeds.
+    if (probed_codec_id_ == AV_CODEC_ID_AV1 && !native_device) {
+        AVBufferRef* hw_dev_ref = nullptr;
+        int ret = av_hwdevice_ctx_create(&hw_dev_ref, AV_HWDEVICE_TYPE_D3D11VA,
+                                         nullptr, nullptr, 0);
+        if (ret < 0 || !hw_dev_ref) {
+            spdlog::error("[D3D11VA] av_hwdevice_ctx_create failed for AV1: {}", ret);
+            return result;
+        }
+
+        auto* dev_ctx = reinterpret_cast<AVHWDeviceContext*>(hw_dev_ref->data);
+        auto* d3d11_ctx = reinterpret_cast<AVD3D11VADeviceContext*>(dev_ctx->hwctx);
+        own_device_ = d3d11_ctx->device;
+        d3d_context_ = d3d11_ctx->device_context;
+        uses_shared_device_ = true;
+        active_mutex_ = nullptr;
+
+        spdlog::info("[D3D11VA] Device context initialized by FFmpeg for AV1 hwdownload ({}x{})",
+                     width, height);
+
+        result.success = true;
+        result.hw_device_ctx = hw_dev_ref;
+        result.hw_pix_fmt = (probed_pix_fmt_ != AV_PIX_FMT_NONE) ? probed_pix_fmt_ : AV_PIX_FMT_D3D11;
+        result.type = HwDecodeType::D3D11VA;
+        return result;
+    }
 
     // If no external device provided, create our own independent D3D11 device.
     // This is critical for stability — sharing the render device's immediate context
@@ -168,9 +199,18 @@ HwDecodeInitResult D3D11VAProvider::init(void* native_device, int width, int hei
     d3d_context_->AddRef();
     d3d11_ctx->device_context = d3d_context_.Get();
 
-    // 3. Bind flags: DECODER + SHADER_RESOURCE + SHARED for cross-device texture sharing
-    d3d11_ctx->BindFlags = D3D11_BIND_DECODER | D3D11_BIND_SHADER_RESOURCE;
-    d3d11_ctx->MiscFlags = D3D11_RESOURCE_MISC_SHARED;
+    // 3. Bind flags: direct renderer sampling needs shared shader-resource
+    // decode surfaces. AV1 currently uses hwdownload before upload; on some
+    // drivers AV1 D3D11VA surfaces created with SHADER_RESOURCE|SHARED decode
+    // successfully but transfer out as black frames, so keep them decoder-only.
+    const bool decoder_only_surfaces = probed_codec_id_ == AV_CODEC_ID_AV1;
+    if (decoder_only_surfaces) {
+        d3d11_ctx->BindFlags = D3D11_BIND_DECODER;
+        d3d11_ctx->MiscFlags = 0;
+    } else {
+        d3d11_ctx->BindFlags = D3D11_BIND_DECODER | D3D11_BIND_SHADER_RESOURCE;
+        d3d11_ctx->MiscFlags = D3D11_RESOURCE_MISC_SHARED;
+    }
 
     // 4. Thread safety: recursive mutex for D3D11 device access serialization
     if (device_mutex) {
@@ -206,8 +246,11 @@ HwDecodeInitResult D3D11VAProvider::init(void* native_device, int width, int hei
         return result;
     }
 
-    spdlog::info("[D3D11VA] Device context initialized ({}x{}, BindFlags=DECODER|SHADER_RESOURCE|MISC_SHARED)",
-                 width, height);
+    spdlog::info("[D3D11VA] Device context initialized ({}x{}, BindFlags={}, MiscFlags={:#x})",
+                 width,
+                 height,
+                 decoder_only_surfaces ? "DECODER" : "DECODER|SHADER_RESOURCE",
+                 static_cast<unsigned int>(d3d11_ctx->MiscFlags));
 
     result.success = true;
     result.hw_device_ctx = hw_dev_ref;

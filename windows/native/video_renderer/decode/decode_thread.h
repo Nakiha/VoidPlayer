@@ -88,6 +88,12 @@ private:
     /// Preferred software fallback decoder. For AV1 this is libdav1d when available.
     const AVCodec* preferred_software_decoder() const;
 
+    /// Whether hardware frames are downloaded before being published.
+    bool hardware_output_downloads_to_cpu() const;
+
+    /// Whether decoded hardware surfaces can be held by the render queue.
+    bool hardware_surfaces_are_renderer_owned() const;
+
     /// Drain remaining frames from the codec (avcodec_send_packet(nullptr) + receive loop).
     /// If target_us >= 0, frames with pts >= target_us are added to exact_seek_reorder_.
     /// Sets eof_flushed_ = true.
@@ -105,6 +111,9 @@ private:
     /// Flush decode-device writes so the render device can safely sample the
     /// first hardware frame after startup/seek.
     void flush_hw_visibility_if_needed();
+
+    /// Flush decode-device writes before CPU-downloading a hardware frame.
+    void flush_hw_before_conversion_if_needed();
 
     PacketQueue& input_queue_;
     TrackBuffer& output_buffer_;

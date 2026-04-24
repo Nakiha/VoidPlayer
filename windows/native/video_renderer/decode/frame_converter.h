@@ -21,19 +21,23 @@ public:
     bool init_software(int src_width, int src_height, AVPixelFormat src_format);
     bool init_hardware(void* d3d_device, void* d3d_context,
                        int src_width, int src_height,
-                       HwDecodeType hw_type = HwDecodeType::None);
+                       HwDecodeType hw_type = HwDecodeType::None,
+                       bool download_to_cpu = false);
 
     TextureFrame convert(AVFrame* frame);
 
     bool is_hardware() const { return is_hw_; }
+    bool downloads_hardware_to_cpu() const { return is_hw_ && download_hw_to_cpu_; }
 
 private:
     int width_ = 0;
     int height_ = 0;
     bool is_hw_ = false;
+    bool download_hw_to_cpu_ = false;
     HwDecodeType hw_type_ = HwDecodeType::None;
     SwsContext* sws_ctx_ = nullptr;
     AVPixelFormat src_format_ = AV_PIX_FMT_NONE;
+    AVPixelFormat downloaded_format_ = AV_PIX_FMT_NONE;
     void* d3d_device_ = nullptr;
     void* d3d_context_ = nullptr;
 };

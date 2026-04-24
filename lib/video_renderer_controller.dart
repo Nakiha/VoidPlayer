@@ -49,12 +49,16 @@ class ViewportCapture {
   final String hash;
   final int width;
   final int height;
+  final double avgLuma;
+  final double nonBlackRatio;
   final String? outputPath;
 
   const ViewportCapture({
     required this.hash,
     required this.width,
     required this.height,
+    required this.avgLuma,
+    required this.nonBlackRatio,
     this.outputPath,
   });
 
@@ -62,6 +66,8 @@ class ViewportCapture {
         hash: map['hash'] as String,
         width: map['width'] as int,
         height: map['height'] as int,
+        avgLuma: (map['avgLuma'] as num?)?.toDouble() ?? 0.0,
+        nonBlackRatio: (map['nonBlackRatio'] as num?)?.toDouble() ?? 0.0,
         outputPath: map['outputPath'] as String?,
       );
 }

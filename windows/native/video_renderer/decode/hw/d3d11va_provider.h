@@ -38,6 +38,7 @@ private:
 
     // Pixel format found during probe (AV_PIX_FMT_D3D11VA_VLD or AV_PIX_FMT_D3D11)
     mutable AVPixelFormat probed_pix_fmt_ = AV_PIX_FMT_NONE;
+    mutable AVCodecID probed_codec_id_ = AV_CODEC_ID_NONE;
 };
 
 } // namespace vr

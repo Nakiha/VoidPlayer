@@ -127,11 +127,13 @@ bool DecodeThread::enable_hardware_decode(void* native_device,
     // Set hw_device_ctx on codec context BEFORE opening
     codec_ctx_->hw_device_ctx = av_buffer_ref(hw_device_ctx_);
 
-    // Increase the hw frame pool size to accommodate both the decoder's
-    // reference frame pool (DPB) and our preroll/render pipeline buffers.
-    // Without this, the default pool (20) is too small when preroll frames
-    // hold references via av_frame_ref while the decoder also needs surfaces.
-    codec_ctx_->extra_hw_frames = 48;
+    // Increase the hw frame pool only when decoded hardware surfaces can be
+    // held by the render queue. Hwdownload paths release decoder surfaces
+    // immediately after transfer; forcing a large D3D11VA pool there is both
+    // unnecessary and can produce black transfer frames on some AV1 drivers.
+    if (hardware_surfaces_are_renderer_owned()) {
+        codec_ctx_->extra_hw_frames = 48;
+    }
 
     // NOTE: We intentionally do NOT create hw_frames_ctx here.
     // FFmpeg's internal ff_decode_get_hw_frames_ctx() will create one
@@ -239,6 +241,14 @@ const AVCodec* DecodeThread::preferred_software_decoder() const {
     return codec_;
 }
 
+bool DecodeThread::hardware_output_downloads_to_cpu() const {
+    return codec_params_ && codec_params_->codec_id == AV_CODEC_ID_AV1;
+}
+
+bool DecodeThread::hardware_surfaces_are_renderer_owned() const {
+    return hw_enabled_ && !hardware_output_downloads_to_cpu();
+}
+
 bool DecodeThread::start() {
     if (!codec_ctx_) {
         spdlog::error("[DecodeThread] Cannot start: codec not initialized");
@@ -260,7 +270,8 @@ bool DecodeThread::start() {
     if (hw_enabled_) {
         conv_ok = converter_.init_hardware(native_device_, nullptr,
                                            codec_ctx_->width, codec_ctx_->height,
-                                           hw_type_);
+                                           hw_type_,
+                                           hardware_output_downloads_to_cpu());
     } else {
         conv_ok = converter_.init_software(codec_ctx_->width, codec_ctx_->height,
                                            codec_ctx_->pix_fmt);
@@ -346,6 +357,7 @@ void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*
         }
         if (target_us >= 0) {
             rescale_ts(frame);
+            flush_hw_before_conversion_if_needed();
             TextureFrame tex_frame = converter_.convert(frame);
             if (tex_frame.pts_us >= target_us) {
                 exact_seek_reorder_.push_back(std::move(tex_frame));
@@ -370,6 +382,14 @@ void DecodeThread::safe_flush_codec() {
 
 void DecodeThread::flush_hw_visibility_if_needed() {
     if (!hw_enabled_ || !hw_provider_ || !hw_visibility_flush_pending_) {
+        return;
+    }
+    hw_provider_->flush();
+    hw_visibility_flush_pending_ = false;
+}
+
+void DecodeThread::flush_hw_before_conversion_if_needed() {
+    if (!hw_enabled_ || !hw_provider_ || !converter_.downloads_hardware_to_cpu()) {
         return;
     }
     hw_provider_->flush();
@@ -539,6 +559,7 @@ void DecodeThread::run() {
 
                     // Flush exact-seek candidate/reorder buffer at EOF — no more frames coming.
                     if (exact_seek_target_us_ >= 0 && exact_seek_candidate_frame->buf[0]) {
+                        flush_hw_before_conversion_if_needed();
                         TextureFrame tex_frame = converter_.convert(exact_seek_candidate_frame);
                         publish_exact_seek_frame(std::move(tex_frame));
                         av_frame_unref(exact_seek_candidate_frame);
@@ -583,6 +604,7 @@ void DecodeThread::run() {
                         if (ret < 0) break;
 
                         rescale_ts(frame);
+                        flush_hw_before_conversion_if_needed();
                         TextureFrame tex_frame = converter_.convert(frame);
                         output_buffer_.push_frame(std::move(tex_frame));
                         av_frame_unref(frame);
@@ -694,6 +716,7 @@ void DecodeThread::run() {
                 AVFrame* preview_frame = exact_seek_candidate_frame->buf[0]
                     ? exact_seek_candidate_frame
                     : frame;
+                flush_hw_before_conversion_if_needed();
                 TextureFrame tex_frame = converter_.convert(preview_frame);
                 ++frames_produced;
                 publish_exact_seek_frame(std::move(tex_frame));
@@ -702,6 +725,7 @@ void DecodeThread::run() {
                 break;
             }
 
+            flush_hw_before_conversion_if_needed();
             TextureFrame tex_frame = converter_.convert(frame);
             ++frames_produced;
 

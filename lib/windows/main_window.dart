@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/gestures.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -29,6 +30,8 @@ class MainWindow extends StatefulWidget {
 class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   final _controller = VideoRendererController();
   final _trackManager = TrackManager();
+  final _timelineSliderKey = GlobalKey();
+  int _testPointerId = 9000;
 
   // Renderer state
   int? _textureId;
@@ -113,6 +116,10 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       final a = action as SeekTo;
       _seekTo(a.ptsUs);
     });
+    actionRegistry.bind(const ClickTimelineFraction(0), (action) {
+      final a = action as ClickTimelineFraction;
+      _clickTimelineFraction(a.fraction);
+    });
     actionRegistry.bind(const SetSpeed(1.0), (action) {
       final a = action as SetSpeed;
       _controller.setSpeed(a.speed);
@@ -184,6 +191,36 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       _pendingSeekAt = DateTime.now();
     });
     _controller.seek(ptsUs);
+  }
+
+  void _clickTimelineFraction(double fraction) {
+    final context = _timelineSliderKey.currentContext;
+    if (context == null) {
+      throw StateError('Timeline slider is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Timeline slider has no render box');
+    }
+
+    final clamped = fraction.clamp(0.0, 1.0).toDouble();
+    final local = Offset(
+      renderObject.size.width * clamped,
+      renderObject.size.height / 2,
+    );
+    final global = renderObject.localToGlobal(local);
+    final pointer = _testPointerId++;
+
+    log.info(
+      'Test action: CLICK_TIMELINE_FRACTION ${clamped.toStringAsFixed(4)} '
+      'at global=(${global.dx.toStringAsFixed(1)}, ${global.dy.toStringAsFixed(1)})',
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerDownEvent(pointer: pointer, position: global),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerUpEvent(pointer: pointer, position: global),
+    );
   }
 
   Future<void> _triggerAnalysis() async {
@@ -619,6 +656,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
                 // Controls bar (40px)
                 if (_trackManager.count > 0)
                   ControlsBar(
+                    timelineKey: _timelineSliderKey,
                     zoomRatio: _layout.zoomRatio,
                     onZoomChanged: _onZoomComboChanged,
                     isPlaying: _isPlaying,

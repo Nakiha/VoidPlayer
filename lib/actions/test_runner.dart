@@ -52,7 +52,9 @@ class TestRunner {
       exit(1);
     }
 
-    log.info('TestRunner: running ${instructions.length} instructions from $scriptPath');
+    log.info(
+      'TestRunner: running ${instructions.length} instructions from $scriptPath',
+    );
 
     final sw = Stopwatch()..start();
 
@@ -85,7 +87,9 @@ class TestRunner {
         await _executeAssert(assertion);
 
       case ScriptWait(:final state, :final timeout):
-        log.info('TestRunner ${instr.time}: WAIT_${state.name.toUpperCase()} ${timeout.inMilliseconds}ms');
+        log.info(
+          'TestRunner ${instr.time}: WAIT_${state.name.toUpperCase()} ${timeout.inMilliseconds}ms',
+        );
         await _executeWait(state, timeout);
 
       case ScriptQuit(:final exitCode):
@@ -100,7 +104,9 @@ class TestRunner {
         log.info('TestRunner: SET_RENDER_SIZE ${width}x$height');
         await controller.resize(width, height);
       case CaptureViewportAction(:final nameId, :final outputPath):
-        final capture = await controller.captureViewport(outputPath: outputPath);
+        final capture = await controller.captureViewport(
+          outputPath: outputPath,
+        );
         _captures[nameId] = capture;
         log.info(
           'TestRunner: CAPTURE_VIEWPORT $nameId hash=${capture.hash} ${capture.width}x${capture.height}'
@@ -191,19 +197,28 @@ class TestRunner {
       case AssertCaptureHash(:final capture, :final hash):
         final actual = _captures[capture];
         if (actual == null) {
-          throw AssertionError('Missing capture for ASSERT_CAPTURE_HASH: $capture');
+          throw AssertionError(
+            'Missing capture for ASSERT_CAPTURE_HASH: $capture',
+          );
         }
         if (actual.hash != hash) {
           throw AssertionError(
             'Expected capture $capture hash=$hash, got ${actual.hash}',
           );
         }
-      case AssertCaptureNotBlack(:final capture, :final minNonBlackRatio, :final minAvgLuma):
+      case AssertCaptureNotBlack(
+        :final capture,
+        :final minNonBlackRatio,
+        :final minAvgLuma,
+      ):
         final actual = _captures[capture];
         if (actual == null) {
-          throw AssertionError('Missing capture for ASSERT_CAPTURE_NOT_BLACK: $capture');
+          throw AssertionError(
+            'Missing capture for ASSERT_CAPTURE_NOT_BLACK: $capture',
+          );
         }
-        if (actual.nonBlackRatio < minNonBlackRatio || actual.avgLuma < minAvgLuma) {
+        if (actual.nonBlackRatio < minNonBlackRatio ||
+            actual.avgLuma < minAvgLuma) {
           throw AssertionError(
             'Expected capture $capture to be non-black '
             '(nonBlack>=${minNonBlackRatio.toStringAsFixed(4)}, avgLuma>=${minAvgLuma.toStringAsFixed(2)}), '
@@ -219,12 +234,14 @@ class TestRunner {
     while (sw.elapsed < timeout) {
       final satisfied = switch (state) {
         WaitState.playing => await controller.isPlaying(),
-        WaitState.paused  => !await controller.isPlaying(),
+        WaitState.paused => !await controller.isPlaying(),
       };
       if (satisfied) return;
       await Future.delayed(const Duration(milliseconds: 50));
     }
-    throw AssertionError('WAIT_${state.name.toUpperCase()} timed out after ${timeout.inMilliseconds}ms');
+    throw AssertionError(
+      'WAIT_${state.name.toUpperCase()} timed out after ${timeout.inMilliseconds}ms',
+    );
   }
 }
 
@@ -253,7 +270,9 @@ List<ScriptInstruction> _parseScript(String path) {
       continue;
     }
 
-    final time = Duration(milliseconds: (double.parse(parts[0]) * 1000).round());
+    final time = Duration(
+      milliseconds: (double.parse(parts[0]) * 1000).round(),
+    );
     final cmd = parts[1].toUpperCase();
 
     final instr = _parseInstruction(time, cmd, parts.sublist(2), line);
@@ -265,7 +284,12 @@ List<ScriptInstruction> _parseScript(String path) {
   return instructions;
 }
 
-ScriptInstruction? _parseInstruction(Duration time, String cmd, List<String> args, String rawLine) {
+ScriptInstruction? _parseInstruction(
+  Duration time,
+  String cmd,
+  List<String> args,
+  String rawLine,
+) {
   switch (cmd) {
     // Actions — playback
     case 'PLAY':
@@ -280,6 +304,14 @@ ScriptInstruction? _parseInstruction(Duration time, String cmd, List<String> arg
         return null;
       }
       return ScriptAction(time, SeekTo(int.parse(args[0])));
+    case 'CLICK_TIMELINE_FRACTION':
+      if (args.isEmpty) {
+        log.warning(
+          'CLICK_TIMELINE_FRACTION missing fraction argument: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAction(time, ClickTimelineFraction(double.parse(args[0])));
     case 'SET_SPEED':
       if (args.isEmpty) {
         log.warning('SET_SPEED missing speed argument: $rawLine');
@@ -333,13 +365,21 @@ ScriptInstruction? _parseInstruction(Duration time, String cmd, List<String> arg
         log.warning('PAN needs dx and dy arguments: $rawLine');
         return null;
       }
-      return ScriptAction(time, Pan(double.parse(args[0]), double.parse(args[1])));
+      return ScriptAction(
+        time,
+        Pan(double.parse(args[0]), double.parse(args[1])),
+      );
     case 'SET_RENDER_SIZE':
       if (args.length < 2) {
-        log.warning('SET_RENDER_SIZE needs width and height arguments: $rawLine');
+        log.warning(
+          'SET_RENDER_SIZE needs width and height arguments: $rawLine',
+        );
         return null;
       }
-      return ScriptAction(time, SetRenderSize(int.parse(args[0]), int.parse(args[1])));
+      return ScriptAction(
+        time,
+        SetRenderSize(int.parse(args[0]), int.parse(args[1])),
+      );
     case 'CAPTURE_VIEWPORT':
       if (args.isEmpty) {
         log.warning('CAPTURE_VIEWPORT needs a capture name: $rawLine');
@@ -347,16 +387,27 @@ ScriptInstruction? _parseInstruction(Duration time, String cmd, List<String> arg
       }
       return ScriptAction(
         time,
-        CaptureViewportAction(args[0], outputPath: args.length >= 2 ? args[1] : null),
+        CaptureViewportAction(
+          args[0],
+          outputPath: args.length >= 2 ? args[1] : null,
+        ),
       );
 
     // Waits
     case 'WAIT_PLAYING':
       final timeoutMs = args.isNotEmpty ? int.parse(args[0]) : 3000;
-      return ScriptWait(time, WaitState.playing, Duration(milliseconds: timeoutMs));
+      return ScriptWait(
+        time,
+        WaitState.playing,
+        Duration(milliseconds: timeoutMs),
+      );
     case 'WAIT_PAUSED':
       final timeoutMs = args.isNotEmpty ? int.parse(args[0]) : 3000;
-      return ScriptWait(time, WaitState.paused, Duration(milliseconds: timeoutMs));
+      return ScriptWait(
+        time,
+        WaitState.paused,
+        Duration(milliseconds: timeoutMs),
+      );
 
     // Asserts — playback
     case 'ASSERT_PLAYING':
@@ -368,7 +419,10 @@ ScriptInstruction? _parseInstruction(Duration time, String cmd, List<String> arg
         log.warning('ASSERT_POSITION needs ptsUs and toleranceMs: $rawLine');
         return null;
       }
-      return ScriptAssert(time, AssertPosition(int.parse(args[0]), int.parse(args[1])));
+      return ScriptAssert(
+        time,
+        AssertPosition(int.parse(args[0]), int.parse(args[1])),
+      );
     case 'ASSERT_TRACK_COUNT':
       if (args.isEmpty) {
         log.warning('ASSERT_TRACK_COUNT missing count argument: $rawLine');
@@ -380,7 +434,10 @@ ScriptInstruction? _parseInstruction(Duration time, String cmd, List<String> arg
         log.warning('ASSERT_DURATION needs ptsUs and toleranceMs: $rawLine');
         return null;
       }
-      return ScriptAssert(time, AssertDuration(int.parse(args[0]), int.parse(args[1])));
+      return ScriptAssert(
+        time,
+        AssertDuration(int.parse(args[0]), int.parse(args[1])),
+      );
 
     // Asserts — layout
     case 'ASSERT_LAYOUT_MODE':
@@ -394,22 +451,31 @@ ScriptInstruction? _parseInstruction(Duration time, String cmd, List<String> arg
         log.warning('ASSERT_ZOOM needs ratio and tolerance: $rawLine');
         return null;
       }
-      return ScriptAssert(time, AssertZoom(double.parse(args[0]), double.parse(args[1])));
+      return ScriptAssert(
+        time,
+        AssertZoom(double.parse(args[0]), double.parse(args[1])),
+      );
     case 'ASSERT_CAPTURE_EQUALS':
       if (args.length < 2) {
-        log.warning('ASSERT_CAPTURE_EQUALS needs expected and actual capture names: $rawLine');
+        log.warning(
+          'ASSERT_CAPTURE_EQUALS needs expected and actual capture names: $rawLine',
+        );
         return null;
       }
       return ScriptAssert(time, AssertCaptureEquals(args[0], args[1]));
     case 'ASSERT_CAPTURE_CHANGED':
       if (args.length < 2) {
-        log.warning('ASSERT_CAPTURE_CHANGED needs before and after capture names: $rawLine');
+        log.warning(
+          'ASSERT_CAPTURE_CHANGED needs before and after capture names: $rawLine',
+        );
         return null;
       }
       return ScriptAssert(time, AssertCaptureChanged(args[0], args[1]));
     case 'ASSERT_CAPTURE_HASH':
       if (args.length < 2) {
-        log.warning('ASSERT_CAPTURE_HASH needs capture name and hash: $rawLine');
+        log.warning(
+          'ASSERT_CAPTURE_HASH needs capture name and hash: $rawLine',
+        );
         return null;
       }
       return ScriptAssert(time, AssertCaptureHash(args[0], args[1]));

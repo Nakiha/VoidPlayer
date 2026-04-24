@@ -16,6 +16,7 @@ class ControlsBar extends StatelessWidget {
   final int durationUs;
   final ValueChanged<int> onSeek;
   final void Function(int hoverUs, bool hovering)? onHoverChanged;
+  final Key? timelineKey;
 
   const ControlsBar({
     super.key,
@@ -29,6 +30,7 @@ class ControlsBar extends StatelessWidget {
     required this.durationUs,
     required this.onSeek,
     this.onHoverChanged,
+    this.timelineKey,
   });
 
   @override
@@ -39,10 +41,7 @@ class ControlsBar extends StatelessWidget {
       child: Row(
         children: [
           // Zoom combo
-          ZoomComboBox(
-            value: zoomRatio,
-            onChanged: onZoomChanged,
-          ),
+          ZoomComboBox(value: zoomRatio, onChanged: onZoomChanged),
           const SizedBox(width: 4),
           // Step backward
           SizedBox(
@@ -62,11 +61,10 @@ class ControlsBar extends StatelessWidget {
             height: 32,
             child: IconButton(
               onPressed: onTogglePlay,
-              icon: Icon(
-                isPlaying ? Icons.pause : Icons.play_arrow,
-                size: 20,
-              ),
-              tooltip: isPlaying ? AppLocalizations.of(context)!.pause : AppLocalizations.of(context)!.play,
+              icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow, size: 20),
+              tooltip: isPlaying
+                  ? AppLocalizations.of(context)!.pause
+                  : AppLocalizations.of(context)!.play,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints.tightFor(width: 32, height: 32),
             ),
@@ -90,6 +88,7 @@ class ControlsBar extends StatelessWidget {
           // Timeline slider (expanded)
           Expanded(
             child: TimelineSlider(
+              key: timelineKey,
               currentUs: currentPtsUs,
               durationUs: durationUs,
               onSeek: onSeek,

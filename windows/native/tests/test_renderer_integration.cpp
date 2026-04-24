@@ -3,6 +3,8 @@
 #include "video_renderer/renderer.h"
 #include <thread>
 #include <chrono>
+#include <cstdint>
+#include <filesystem>
 #include <dxgi.h>
 
 using namespace vr;
@@ -22,6 +24,99 @@ static IDXGIAdapter* get_default_adapter() {
     if (FAILED(hr)) return nullptr;
 
     return adapter.Get();
+}
+
+struct CaptureStats {
+    uint64_t hash = 1469598103934665603ull;
+    double avg_luma = 0.0;
+    double non_black_ratio = 0.0;
+    int width = 0;
+    int height = 0;
+};
+
+static CaptureStats analyze_bgra(const std::vector<uint8_t>& bgra, int width, int height) {
+    CaptureStats stats;
+    stats.width = width;
+    stats.height = height;
+    if (bgra.empty() || width <= 0 || height <= 0) return stats;
+
+    uint64_t luma_sum = 0;
+    size_t non_black = 0;
+    const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+    for (size_t i = 0; i < pixels; ++i) {
+        const size_t off = i * 4;
+        const uint8_t b = bgra[off + 0];
+        const uint8_t g = bgra[off + 1];
+        const uint8_t r = bgra[off + 2];
+        stats.hash ^= b;
+        stats.hash *= 1099511628211ull;
+        stats.hash ^= g;
+        stats.hash *= 1099511628211ull;
+        stats.hash ^= r;
+        stats.hash *= 1099511628211ull;
+        const int luma = (77 * r + 150 * g + 29 * b) >> 8;
+        luma_sum += static_cast<uint64_t>(luma);
+        if (r > 8 || g > 8 || b > 8) {
+            ++non_black;
+        }
+    }
+    stats.avg_luma = static_cast<double>(luma_sum) / static_cast<double>(pixels);
+    stats.non_black_ratio = static_cast<double>(non_black) / static_cast<double>(pixels);
+    return stats;
+}
+
+static CaptureStats wait_for_non_black_capture(Renderer& renderer,
+                                               std::chrono::milliseconds timeout =
+                                                   std::chrono::milliseconds(5000)) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    CaptureStats latest;
+    while (std::chrono::steady_clock::now() < deadline) {
+        std::vector<uint8_t> bgra;
+        int width = 0;
+        int height = 0;
+        if (renderer.capture_front_buffer(bgra, width, height)) {
+            latest = analyze_bgra(bgra, width, height);
+            if (latest.non_black_ratio >= 0.01 && latest.avg_luma >= 4.0) {
+                return latest;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    return latest;
+}
+
+static CaptureStats wait_for_changed_non_black_capture(Renderer& renderer,
+                                                       uint64_t previous_hash,
+                                                       std::chrono::milliseconds timeout =
+                                                           std::chrono::milliseconds(5000)) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    CaptureStats latest;
+    while (std::chrono::steady_clock::now() < deadline) {
+        std::vector<uint8_t> bgra;
+        int width = 0;
+        int height = 0;
+        if (renderer.capture_front_buffer(bgra, width, height)) {
+            latest = analyze_bgra(bgra, width, height);
+            if (latest.hash != previous_hash &&
+                latest.non_black_ratio >= 0.01 &&
+                latest.avg_luma >= 4.0) {
+                return latest;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    return latest;
+}
+
+static void require_visual_frame(const CaptureStats& stats) {
+    INFO("capture " << stats.width << "x" << stats.height
+                    << " avg_luma=" << stats.avg_luma
+                    << " non_black=" << stats.non_black_ratio
+                    << " hash=" << stats.hash);
+    REQUIRE(stats.width > 0);
+    REQUIRE(stats.height > 0);
+    REQUIRE(stats.non_black_ratio >= 0.01);
+    REQUIRE(stats.avg_luma >= 4.0);
 }
 
 // =============================================================================
@@ -211,4 +306,72 @@ TEST_CASE("Renderer: headless hw decode multi-track", "[renderer][hw]") {
     REQUIRE(renderer.track_count() == 2);
 
     renderer.shutdown();
+}
+
+TEST_CASE("Renderer: headless HEVC paused exact seek updates captured frame", "[renderer][hw][seek][visual]") {
+    auto* adapter = get_default_adapter();
+    REQUIRE(adapter != nullptr);
+
+    Renderer renderer;
+
+    RendererConfig config;
+    config.video_paths = { video_test_dir() + "/h265_10s_1920x1080.mp4" };
+    config.headless = true;
+    config.dxgi_adapter = adapter;
+    config.width = 1280;
+    config.height = 720;
+    config.use_hardware_decode = true;
+
+    REQUIRE(renderer.initialize(config));
+
+    auto initial = wait_for_non_black_capture(renderer);
+    require_visual_frame(initial);
+
+    renderer.seek(1000000, SeekType::Exact);
+    auto seek_1s = wait_for_changed_non_black_capture(renderer, initial.hash);
+    require_visual_frame(seek_1s);
+    REQUIRE(seek_1s.hash != initial.hash);
+
+    renderer.seek(3500000, SeekType::Exact);
+    auto seek_3_5s = wait_for_changed_non_black_capture(renderer, seek_1s.hash);
+    require_visual_frame(seek_3_5s);
+
+    REQUIRE(seek_1s.hash != seek_3_5s.hash);
+
+    renderer.shutdown();
+}
+
+TEST_CASE("Renderer: headless AV1 and VP9 produce visual frames", "[renderer][hw][visual]") {
+    auto* adapter = get_default_adapter();
+    REQUIRE(adapter != nullptr);
+
+    const std::vector<std::string> files = {
+        video_test_dir() + "/av1_10s_1920x1080.webm",
+        video_test_dir() + "/vp9_10s_1920x1080.webm",
+    };
+
+    for (const auto& file : files) {
+        INFO("file=" << file);
+        REQUIRE(std::filesystem::exists(file));
+
+        Renderer renderer;
+        RendererConfig config;
+        config.video_paths = { file };
+        config.headless = true;
+        config.dxgi_adapter = adapter;
+        config.width = 1280;
+        config.height = 720;
+        config.use_hardware_decode = true;
+
+        REQUIRE(renderer.initialize(config));
+        auto initial = wait_for_non_black_capture(renderer);
+        require_visual_frame(initial);
+
+        renderer.seek(3500000, SeekType::Exact);
+        auto after_seek = wait_for_changed_non_black_capture(renderer, initial.hash);
+        require_visual_frame(after_seek);
+        REQUIRE(initial.hash != after_seek.hash);
+
+        renderer.shutdown();
+    }
 }

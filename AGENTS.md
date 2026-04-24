@@ -41,6 +41,7 @@ python dev.py test                   # 构建 + 测试 native 模块
 
 - 修改 **Flutter UI / Action / 窗口交互 / 播放控制流程** 后，优先使用 `test_scripts/*.csv` 做一次自动化闭环验证，而不是只做静态阅读。
 - 首选命令：`python dev.py ui-test test_scripts/smoke_basic.csv`
+- 修改 timeline / seek / 硬解上屏相关逻辑时，优先补跑更贴近真实点击路径的 `python dev.py ui-test test_scripts/h265_timeline_click_visual_regression.csv`，而不是只跑直接调用 native seek 的脚本。
 - 如果本次改动影响特定交互，应顺手新增或更新一条对应的 `test_scripts/*.csv`，再执行它完成验证。
 - 如果自动化脚本无法覆盖本次改动，需要在最终说明里明确写出阻塞点，以及还缺少哪个 Action / Assert / 启动参数。
 - 修改 native C++ 模块时，仍应至少运行 `python dev.py test`；如果改动同时影响主窗口交互，补跑一条 UI 脚本。

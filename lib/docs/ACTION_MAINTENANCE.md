@@ -59,6 +59,7 @@
 - 测试退出码：`QUIT` 指令的参数，0 表示通过
 - 推荐入口：`python dev.py ui-test test_scripts/smoke_basic.csv`
 - 自动化脚本优先使用 `ADD_MEDIA`，不要用会弹系统对话框的 `OPEN_FILE`
+- timeline/seek 回归优先使用 `CLICK_TIMELINE_FRACTION` 覆盖真实 slider pointer 路径；`SEEK_TO` 只覆盖直接调用 seek action 的路径。
 
 ## Action 清单
 
@@ -70,6 +71,7 @@
 | `PLAY` | — | 播放 |
 | `PAUSE` | — | 暂停 |
 | `SEEK_TO` | — | 跳转到指定 PTS（μs） |
+| `CLICK_TIMELINE_FRACTION` | — | 按比例点击 controls bar 的 timeline slider，走真实 pointer/onSeek 路径 |
 | `SET_SPEED` | — | 设置倍速 |
 | `STEP_FORWARD` | → | 逐帧前进 |
 | `STEP_BACKWARD` | ← | 逐帧后退 |
@@ -100,6 +102,10 @@
 | `ASSERT_DURATION` | ptsUs, toleranceMs | 断言总时长 |
 | `ASSERT_LAYOUT_MODE` | mode | 断言布局模式 |
 | `ASSERT_ZOOM` | ratio, tolerance | 断言缩放比例 |
+| `ASSERT_CAPTURE_EQUALS` | expected, actual | 断言两次 viewport 截图 hash 相同 |
+| `ASSERT_CAPTURE_CHANGED` | before, after | 断言两次 viewport 截图 hash 不同 |
+| `ASSERT_CAPTURE_HASH` | capture, hash | 断言截图 hash |
+| `ASSERT_CAPTURE_NOT_BLACK` | capture, minNonBlackRatio?, minAvgLuma? | 断言截图不是黑帧 |
 
 ## 文件清单
 

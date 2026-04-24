@@ -154,7 +154,7 @@ FloatingActionButton(
 
 | 类别 | 指令 | 说明 |
 |------|------|------|
-| Action | `PLAY`, `PAUSE`, `SEEK_TO ptsUs`, `SET_SPEED speed`, ... | 对应 PlayerAction，调用 controller |
+| Action | `PLAY`, `PAUSE`, `SEEK_TO ptsUs`, `CLICK_TIMELINE_FRACTION fraction`, `SET_SPEED speed`, ... | 对应 PlayerAction，调用 controller 或真实 UI 交互路径 |
 | Wait | `WAIT_PLAYING timeoutMs`, `WAIT_PAUSED timeoutMs` | 轮询状态直到满足或超时 |
 | Assert | `ASSERT_PLAYING`, `ASSERT_POSITION ptsUs toleranceMs`, ... | 断言当前状态，失败则 throw |
 | Control | `QUIT exitCode` | 退出测试 |
@@ -200,6 +200,7 @@ python dev.py ui-test test_scripts/smoke_basic.csv
 说明：
 
 - `OPEN_FILE` 会弹系统文件选择框，不适合自动化；自动化脚本应优先使用 `ADD_MEDIA`
+- `SEEK_TO` 直接调用 seek action，适合验证 native seek；`CLICK_TIMELINE_FRACTION` 会向 timeline slider 派发 pointer down/up，更适合复现手动点击进度条的问题
 - 脚本中的媒体路径按启动工作目录解析，推荐写仓库相对路径，如 `resources/video/...`
 
 ## 文件结构（规划）

@@ -27,7 +27,8 @@ sealed class PlayerAction {
 }
 
 class TogglePlayPause extends PlayerAction {
-  const TogglePlayPause() : super('TOGGLE_PLAY_PAUSE', LogicalKeyboardKey.space);
+  const TogglePlayPause()
+    : super('TOGGLE_PLAY_PAUSE', LogicalKeyboardKey.space);
 }
 
 class Play extends PlayerAction {
@@ -41,6 +42,11 @@ class Pause extends PlayerAction {
 class SeekTo extends PlayerAction {
   final int ptsUs;
   const SeekTo(this.ptsUs) : super('SEEK_TO');
+}
+
+class ClickTimelineFraction extends PlayerAction {
+  final double fraction;
+  const ClickTimelineFraction(this.fraction) : super('CLICK_TIMELINE_FRACTION');
 }
 
 class SetSpeed extends PlayerAction {
@@ -61,7 +67,8 @@ class OpenFile extends PlayerAction {
 }
 
 class ToggleLayoutMode extends PlayerAction {
-  const ToggleLayoutMode() : super('TOGGLE_LAYOUT_MODE', LogicalKeyboardKey.keyM);
+  const ToggleLayoutMode()
+    : super('TOGGLE_LAYOUT_MODE', LogicalKeyboardKey.keyM);
 }
 
 class NewWindow extends PlayerAction {
@@ -81,7 +88,8 @@ class OpenMemory extends PlayerAction {
 }
 
 class OpenAnalysis extends PlayerAction {
-  const OpenAnalysis() : super('OPEN_ANALYSIS', LogicalKeyboardKey.backquote, true);
+  const OpenAnalysis()
+    : super('OPEN_ANALYSIS', LogicalKeyboardKey.backquote, true);
 }
 
 /// Add a media file by path (no file-picker dialog).
@@ -130,5 +138,6 @@ class SetRenderSize extends PlayerAction {
 class CaptureViewportAction extends PlayerAction {
   final String nameId;
   final String? outputPath;
-  const CaptureViewportAction(this.nameId, {this.outputPath}) : super('CAPTURE_VIEWPORT');
+  const CaptureViewportAction(this.nameId, {this.outputPath})
+    : super('CAPTURE_VIEWPORT');
 }

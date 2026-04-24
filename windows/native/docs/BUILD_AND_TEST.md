@@ -49,7 +49,7 @@ python windows/native/build.py --debug
 
 | CTest | 覆盖 |
 |------|------|
-| `video_renderer_tests` | Clock、PacketQueue、TrackBuffer、DemuxThread、DecodeThread、FrameConverter、D3D11 device/texture/shader、RenderSink、Renderer integration |
+| `video_renderer_tests` | Clock、PacketQueue、TrackBuffer、DemuxThread、DecodeThread、FrameConverter、D3D11 device/texture/shader、RenderSink、Renderer integration，并包含 headless front-buffer capture 的 HEVC/AV1/VP9 视觉回归 |
 | `analysis_tests` | H.266 分析模块，VBI/VBT 生成与解析，测试数据生成/清理 |
 | `test_ffi_c` | 未初始化 renderer、空指针、基础 lifecycle、C ABI 可调用性 |
 
@@ -64,6 +64,7 @@ python windows/native/build.py --debug
 | 脚本 | 目的 |
 |------|------|
 | `test_scripts/h265_seek_visual_regression.csv` | HEVC 硬解 seek 后非黑帧且画面变化 |
+| `test_scripts/h265_timeline_click_visual_regression.csv` | 通过真实 timeline pointer 点击触发 HEVC seek，验证非黑帧且画面变化 |
 | `test_scripts/av1_not_black_regression.csv` | AV1 硬解 hwdownload 添加/seek 非黑帧 |
 | `test_scripts/vp9_not_black_regression.csv` | VP9 硬解 hwdownload 添加/seek 非黑帧且 hash 变化 |
 

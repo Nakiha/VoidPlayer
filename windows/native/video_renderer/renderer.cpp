@@ -12,7 +12,7 @@ namespace vr {
 
 // Max sleep for responsiveness (allows seek/pause within ~50 ms)
 static constexpr int64_t MAX_SLEEP_US = 8000;  // 8ms cap → ~120Hz layout response
-static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(1000);
+static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250);
 
 Renderer::Renderer() = default;
 
@@ -303,15 +303,7 @@ void Renderer::seek_internal(int64_t target_pts_us,
             track->decode_thread->is_hardware_decode_enabled() &&
             track->decode_thread->codec_id() == AV_CODEC_ID_HEVC;
         const bool paused_seek = !playing_.load();
-        const SeekType track_seek_type =
-            (is_hevc_hw_seek && paused_seek && type == SeekType::Exact)
-                ? SeekType::Keyframe
-                : type;
-        if (track_seek_type != type) {
-            spdlog::info("[Renderer] seek_internal: using keyframe seek for paused HEVC HW track[{}] "
-                         "(requested exact target={:.3f}s)",
-                         i, track_target / 1e6);
-        }
+        const SeekType track_seek_type = type;
         const bool seek_transition_active =
             buffer_state_before == TrackState::Flushing ||
             buffer_state_before == TrackState::Buffering;
@@ -320,6 +312,10 @@ void Renderer::seek_internal(int64_t target_pts_us,
             is_hevc_hw_seek &&
             ((!paused_seek && !seek_transition_active) ||
              (paused_seek &&
+              type == SeekType::Exact &&
+              (!seek_transition_active || force_recreate_paused_hevc)) ||
+             (paused_seek &&
+              type != SeekType::Exact &&
               !track->recreated_for_paused_hevc_seek &&
               (!seek_transition_active || force_recreate_paused_hevc)));
         const bool recreated_for_seek =
@@ -982,15 +978,21 @@ void Renderer::render_loop() {
                     if (all_active_ready && all_active_have_frames && has_any_frame(preview)) {
                         present_frame(preview);
                         last_decision_ = preview;
+                        bool preserve_requested_clock = false;
                         if (!playing_snapshot) {
                             set_decode_paused_for_all_tracks(true);
                             std::lock_guard<std::mutex> lock(state_mutex_);
+                            preserve_requested_clock = paused_hevc_seek_in_flight_;
                             mark_paused_hevc_seek_preview_drawn_locked();
                         }
-                        // Sync clock to the actual frame PTS so subsequent
-                        // step_backward computes the correct seek target.
+                        // For paused HEVC HW exact seeks, keep the logical
+                        // clock at the user's requested target. The decoded
+                        // preview can land on the nearest displayable frame,
+                        // but the timeline should not visually snap backward.
                         int ref = first_active_track();
-                        if (ref >= 0 && preview.frames[ref].has_value()) {
+                        if (!preserve_requested_clock &&
+                            ref >= 0 &&
+                            preview.frames[ref].has_value()) {
                             clock_.seek(preview.frames[ref]->pts_us);
                         }
                         spdlog::info("[Renderer] Paused frame: pts={:.3f}s",

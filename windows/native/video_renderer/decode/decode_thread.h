@@ -82,6 +82,12 @@ private:
     /// If hw_enabled_ is true and open fails, falls back to software.
     bool open_codec();
 
+    /// Recreate codec_ctx_ for the requested decoder and copy stream params.
+    bool reset_codec_context(const AVCodec* codec);
+
+    /// Preferred software fallback decoder. For AV1 this is libdav1d when available.
+    const AVCodec* preferred_software_decoder() const;
+
     /// Drain remaining frames from the codec (avcodec_send_packet(nullptr) + receive loop).
     /// If target_us >= 0, frames with pts >= target_us are added to exact_seek_reorder_.
     /// Sets eof_flushed_ = true.
@@ -89,6 +95,9 @@ private:
 
     /// Sort exact_seek_reorder_ by PTS and push all frames to output_buffer_.
     void flush_reorder_buffer();
+
+    /// Publish the selected exact-seek preview frame and pause decode if needed.
+    void publish_exact_seek_frame(TextureFrame frame);
 
     /// Flush codec buffers after seek.
     void safe_flush_codec();

@@ -53,7 +53,17 @@ DecodeThread::DecodeThread(PacketQueue& input_queue, TrackBuffer& output_buffer,
     , codec_params_(codec_params)
     , time_base_(time_base)
 {
-    codec_ = avcodec_find_decoder(codec_params->codec_id);
+    codec_ = nullptr;
+    if (codec_params->codec_id == AV_CODEC_ID_AV1) {
+        codec_ = avcodec_find_decoder_by_name("av1");
+        if (codec_) {
+            spdlog::info("[DecodeThread] AV1: using native decoder first for hardware negotiation "
+                         "(libdav1d remains software fallback)");
+        }
+    }
+    if (!codec_) {
+        codec_ = avcodec_find_decoder(codec_params->codec_id);
+    }
     if (!codec_) {
         spdlog::error("[DecodeThread] No decoder found for codec_id={}",
                       static_cast<int>(codec_params->codec_id));
@@ -62,16 +72,7 @@ DecodeThread::DecodeThread(PacketQueue& input_queue, TrackBuffer& output_buffer,
 
     spdlog::info("[DecodeThread] Using decoder: {}", codec_->name);
 
-    codec_ctx_ = avcodec_alloc_context3(codec_);
-    if (!codec_ctx_) {
-        spdlog::error("[DecodeThread] Failed to allocate codec context");
-        return;
-    }
-
-    int ret = avcodec_parameters_to_context(codec_ctx_, codec_params);
-    if (ret < 0) {
-        spdlog::error("[DecodeThread] Failed to copy codec parameters: {:#x}", static_cast<unsigned>(ret));
-        avcodec_free_context(&codec_ctx_);
+    if (!reset_codec_context(codec_)) {
         return;
     }
 
@@ -108,6 +109,11 @@ bool DecodeThread::enable_hardware_decode(void* native_device,
     if (!result.success) {
         spdlog::info("[DecodeThread] Hardware decode not available, will use software");
         hw_enabled_ = false;
+        const AVCodec* sw_codec = preferred_software_decoder();
+        if (sw_codec && sw_codec != codec_) {
+            spdlog::info("[DecodeThread] Switching decoder to {} for software fallback", sw_codec->name);
+            reset_codec_context(sw_codec);
+        }
         return false;
     }
 
@@ -143,6 +149,16 @@ bool DecodeThread::enable_hardware_decode(void* native_device,
 }
 
 bool DecodeThread::open_codec() {
+    if (!hw_enabled_) {
+        const AVCodec* sw_codec = preferred_software_decoder();
+        if (sw_codec && sw_codec != codec_) {
+            spdlog::info("[DecodeThread] Using decoder: {} (software fallback)", sw_codec->name);
+            if (!reset_codec_context(sw_codec)) {
+                return false;
+            }
+        }
+    }
+
     int ret = avcodec_open2(codec_ctx_, codec_, nullptr);
     if (ret == 0) return true;
 
@@ -159,22 +175,15 @@ bool DecodeThread::open_codec() {
         hw_enabled_ = false;
         hw_pix_fmt_ = AV_PIX_FMT_NONE;
 
-        // Recreate codec context without hw
-        avcodec_free_context(&codec_ctx_);
-        codec_ctx_ = avcodec_alloc_context3(codec_);
-        if (!codec_ctx_) {
-            spdlog::error("[DecodeThread] Failed to allocate sw codec context");
+        const AVCodec* sw_codec = preferred_software_decoder();
+        if (sw_codec && sw_codec != codec_) {
+            spdlog::info("[DecodeThread] Switching decoder to {} for software fallback", sw_codec->name);
+        }
+        if (!reset_codec_context(sw_codec ? sw_codec : codec_)) {
             return false;
         }
 
-        int ret2 = avcodec_parameters_to_context(codec_ctx_, codec_params_);
-        if (ret2 < 0) {
-            spdlog::error("[DecodeThread] Failed to copy params for sw fallback");
-            avcodec_free_context(&codec_ctx_);
-            return false;
-        }
-
-        ret2 = avcodec_open2(codec_ctx_, codec_, nullptr);
+        int ret2 = avcodec_open2(codec_ctx_, codec_, nullptr);
         if (ret2 < 0) {
             spdlog::error("[DecodeThread] Software fallback also failed: {:#x}", static_cast<unsigned>(ret2));
             return false;
@@ -185,6 +194,49 @@ bool DecodeThread::open_codec() {
     }
 
     return false;
+}
+
+bool DecodeThread::reset_codec_context(const AVCodec* codec) {
+    if (!codec) {
+        spdlog::error("[DecodeThread] Cannot allocate codec context: decoder is null");
+        return false;
+    }
+
+    if (codec_ctx_) {
+        avcodec_free_context(&codec_ctx_);
+    }
+
+    codec_ = codec;
+    codec_ctx_ = avcodec_alloc_context3(codec_);
+    if (!codec_ctx_) {
+        spdlog::error("[DecodeThread] Failed to allocate codec context for {}", codec_->name);
+        return false;
+    }
+
+    int ret = avcodec_parameters_to_context(codec_ctx_, codec_params_);
+    if (ret < 0) {
+        spdlog::error("[DecodeThread] Failed to copy codec parameters for {}: {:#x}",
+                      codec_->name, static_cast<unsigned>(ret));
+        avcodec_free_context(&codec_ctx_);
+        return false;
+    }
+
+    return true;
+}
+
+const AVCodec* DecodeThread::preferred_software_decoder() const {
+    if (!codec_params_) {
+        return codec_;
+    }
+
+    if (codec_params_->codec_id == AV_CODEC_ID_AV1) {
+        const AVCodec* dav1d = avcodec_find_decoder_by_name("libdav1d");
+        if (dav1d) {
+            return dav1d;
+        }
+    }
+
+    return codec_;
 }
 
 bool DecodeThread::start() {
@@ -343,12 +395,34 @@ void DecodeThread::flush_reorder_buffer() {
     exact_seek_target_us_ = -1;
 }
 
+void DecodeThread::publish_exact_seek_frame(TextureFrame frame) {
+    flush_hw_visibility_if_needed();
+    const int64_t pts = frame.pts_us;
+    output_buffer_.push_frame(std::move(frame));
+    output_buffer_.set_state(TrackState::Ready);
+    if (pause_after_preroll_.load(std::memory_order_acquire)) {
+        decode_paused_.store(true, std::memory_order_release);
+    }
+    post_seek_ = false;
+    exact_seek_target_us_ = -1;
+    exact_seek_reorder_.clear();
+    spdlog::info("[DecodeThread] Exact seek drain: preview frame ready pts={:.3f}s, state->Ready",
+                 pts / 1e6);
+}
+
 void DecodeThread::run() {
     spdlog::info("[DecodeThread] Decode loop started (hw={})", hw_enabled_);
 
     AVFrame* frame = av_frame_alloc();
     if (!frame) {
         spdlog::error("[DecodeThread] Failed to allocate frame");
+        output_buffer_.set_state(TrackState::Error);
+        return;
+    }
+    AVFrame* exact_seek_candidate_frame = av_frame_alloc();
+    if (!exact_seek_candidate_frame) {
+        spdlog::error("[DecodeThread] Failed to allocate exact seek candidate frame");
+        av_frame_free(&frame);
         output_buffer_.set_state(TrackState::Error);
         return;
     }
@@ -397,9 +471,17 @@ void DecodeThread::run() {
 
             av_frame_unref(frame);
             exact_seek_reorder_.clear();
+            av_frame_unref(exact_seek_candidate_frame);
 
-            safe_flush_codec();
-            spdlog::info("[DecodeThread] Seek flush: codec buffers flushed (hw={})", hw_enabled_);
+            const bool fresh_codec_seek =
+                perf_.frames_decoded.load(std::memory_order_relaxed) == 0 &&
+                output_buffer_.total_count() == 0;
+            if (fresh_codec_seek) {
+                spdlog::info("[DecodeThread] Seek flush: skipped for fresh codec (hw={})", hw_enabled_);
+            } else {
+                safe_flush_codec();
+                spdlog::info("[DecodeThread] Seek flush: codec buffers flushed (hw={})", hw_enabled_);
+            }
 
             // NOTE: Do NOT drain input queue here! The DemuxThread already
             // flushes the queue before seeking and then pushes NEW packets.
@@ -455,8 +537,14 @@ void DecodeThread::run() {
                         eof_flushed_ = true;
                     }
 
-                    // Flush exact-seek reorder buffer at EOF — no more frames coming.
-                    flush_reorder_buffer();
+                    // Flush exact-seek candidate/reorder buffer at EOF — no more frames coming.
+                    if (exact_seek_target_us_ >= 0 && exact_seek_candidate_frame->buf[0]) {
+                        TextureFrame tex_frame = converter_.convert(exact_seek_candidate_frame);
+                        publish_exact_seek_frame(std::move(tex_frame));
+                        av_frame_unref(exact_seek_candidate_frame);
+                    } else {
+                        flush_reorder_buffer();
+                    }
                     // Preroll check — may complete if reorder flush added frames.
                     // Even with 0 frames, transition to Ready: the seek target is past
                     // this track's duration, no frames will ever arrive here.
@@ -587,23 +675,35 @@ void DecodeThread::run() {
 
             rescale_ts(frame);
 
-            TextureFrame tex_frame = converter_.convert(frame);
-            ++frames_produced;
-
-            // Exact seek: discard frames before the target PTS
+            // Exact seek: keep only the last displayable frame before the
+            // requested target, then publish it once the target has been
+            // crossed. This mirrors normal playback from the keyframe without
+            // pushing intermediate frames through the render queue.
             if (exact_seek_target_us_ >= 0) {
-                if (tex_frame.pts_us < exact_seek_target_us_) {
+                if (frame->pts < exact_seek_target_us_) {
+                    av_frame_unref(exact_seek_candidate_frame);
+                    const int ref_ret = av_frame_ref(exact_seek_candidate_frame, frame);
+                    if (ref_ret < 0) {
+                        spdlog::warn("[DecodeThread] Exact seek candidate ref failed: {:#x}",
+                                     static_cast<unsigned>(ref_ret));
+                    }
                     perf_.frames_dropped.fetch_add(1, std::memory_order_relaxed);
                     av_frame_unref(frame);
-                    continue; // Discard intermediate frame
+                    continue;
                 }
-                // Buffer frames for B-frame reordering instead of pushing
-                // immediately — H265 B-frames may be output by the decoder
-                // in non-PTS order (decode order != display order).
-                exact_seek_reorder_.push_back(std::move(tex_frame));
+                AVFrame* preview_frame = exact_seek_candidate_frame->buf[0]
+                    ? exact_seek_candidate_frame
+                    : frame;
+                TextureFrame tex_frame = converter_.convert(preview_frame);
+                ++frames_produced;
+                publish_exact_seek_frame(std::move(tex_frame));
+                av_frame_unref(exact_seek_candidate_frame);
                 av_frame_unref(frame);
-                continue;
+                break;
             }
+
+            TextureFrame tex_frame = converter_.convert(frame);
+            ++frames_produced;
 
             // Flush the independent decode device after the first visible HW
             // frame on startup and after seek/add-track transitions. Without
@@ -692,6 +792,13 @@ void DecodeThread::run() {
             }
         }
 
+        // D3D11VA HEVC exact seek is sensitive to burst-feeding packets while
+        // paused. Playback naturally paces this path through render/clock
+        // consumption; mirror a tiny amount of that pacing during drain mode.
+        if (exact_seek_target_us_ >= 0 && hw_enabled_) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
         if (frames_produced > 0) {
             uint64_t batch_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - batch_t0).count());
@@ -709,6 +816,7 @@ void DecodeThread::run() {
     }
 
     output_buffer_.set_state(TrackState::Flushing);
+    av_frame_free(&exact_seek_candidate_frame);
     av_frame_free(&frame);
     spdlog::info("[DecodeThread] Decode loop ended");
 }

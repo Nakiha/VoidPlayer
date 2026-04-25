@@ -41,46 +41,8 @@ target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 # ==================== Native Video Renderer ====================
 
 if(FFMPEG_FOUND)
-
-include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/NativeSources.cmake")
-
-target_sources(${BINARY_NAME} PRIVATE ${VOID_RENDERER_SOURCES} ${VOID_ANALYSIS_SOURCES})
-
-target_include_directories(${BINARY_NAME} PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native"
-    "${CMAKE_CURRENT_BINARY_DIR}"
-    "${FFMPEG_INCLUDE_DIR}"
-)
-
-target_link_libraries(${BINARY_NAME} PRIVATE
-    spdlog::spdlog_header_only
-    ${AVCODEC_LIBRARY}
-    ${AVFORMAT_LIBRARY}
-    ${AVUTIL_LIBRARY}
-    ${SWRESAMPLE_LIBRARY}
-    ${SWSCALE_LIBRARY}
-    dxgi
-    d3d11
-    d3dcompiler
-)
-
-target_compile_definitions(${BINARY_NAME} PRIVATE
-    _CRT_SECURE_NO_WARNINGS
-)
-
-void_configure_renderer_shaders("${CMAKE_CURRENT_BINARY_DIR}")
-
-# Copy FFmpeg DLLs to build output
-set(FFMPEG_DLL_DIR "${FFMPEG_ROOT}/bin")
-if(EXISTS "${FFMPEG_DLL_DIR}")
-    file(GLOB FFMPEG_DLL_FILES "${FFMPEG_DLL_DIR}/*.dll")
-    foreach(DLL ${FFMPEG_DLL_FILES})
-        add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DLL}" "$<TARGET_FILE_DIR:${BINARY_NAME}>"
-        )
-    endforeach()
-endif()
-
+  include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/FlutterNativeTarget.cmake")
+  void_configure_flutter_native_target(${BINARY_NAME} "${CMAKE_CURRENT_BINARY_DIR}")
 endif(FFMPEG_FOUND)
 
 # Run the Flutter tool portions of the build. This must not be removed.

@@ -28,7 +28,7 @@ Examples:
   python dev.py launch --build
   python dev.py demo
   python dev.py test
-  python dev.py ui-test test_scripts/smoke_basic.csv
+  python dev.py ui-test ui_tests/smoke_basic.csv
   python dev.py vtm build
   python dev.py vtm analyze video.mp4
 """,

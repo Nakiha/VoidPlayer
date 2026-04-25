@@ -84,4 +84,6 @@ VBS2 生成由 VTM DecoderApp 外部进程完成（可选），通过 `analysis_
 - `test_analysis_parsers.cpp` — VBT/VBI/VBS2 解析器测试
 - `test_analysis_generator.cpp` — VBI+VBT 生成测试（从 H.266 MP4 实际生成并验证）
 
+Python 格式回归测试位于 `native/analysis/tests/python/`，用于直接校验已生成的 VBS2/VBI/VBT 文件结构。
+
 运行：`python dev.py test`

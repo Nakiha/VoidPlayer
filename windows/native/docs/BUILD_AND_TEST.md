@@ -7,7 +7,7 @@
 ```bash
 python dev.py build --native
 python dev.py test
-python dev.py ui-test test_scripts/smoke_basic.csv
+python dev.py ui-test ui_tests/smoke_basic.csv
 ```
 
 Native 子目录也可以单独运行：
@@ -68,6 +68,12 @@ python windows/native/build.py
 
 测试视频默认来自 `resources/video`，CMake 通过 `VIDEO_TEST_DIR` 注入。
 
+补充的 Python analysis 格式回归位于 `windows/native/analysis/tests/python/`，用于直接校验已生成的 VBS2/VBI/VBT 文件：
+
+```bash
+python -m pytest windows/native/analysis/tests/python/test_analysis_formats.py -v
+```
+
 ## UI 回归测试
 
 影响 Flutter 控制流、FFI action、主窗口交互、seek/上屏视觉结果时，native 测试不够，需要补跑 `dev.py ui-test`。
@@ -76,10 +82,10 @@ python windows/native/build.py
 
 | 脚本 | 目的 |
 |------|------|
-| `test_scripts/h265_seek_visual_regression.csv` | HEVC 硬解 seek 后非黑帧且画面变化 |
-| `test_scripts/h265_timeline_click_visual_regression.csv` | 通过真实 timeline pointer 点击触发 HEVC seek，验证非黑帧且画面变化 |
-| `test_scripts/av1_not_black_regression.csv` | AV1 硬解 hwdownload 添加/seek 非黑帧 |
-| `test_scripts/vp9_not_black_regression.csv` | VP9 硬解 hwdownload 添加/seek 非黑帧且 hash 变化 |
+| `ui_tests/h265_seek_visual_regression.csv` | HEVC 硬解 seek 后非黑帧且画面变化 |
+| `ui_tests/h265_timeline_click_visual_regression.csv` | 通过真实 timeline pointer 点击触发 HEVC seek，验证非黑帧且画面变化 |
+| `ui_tests/av1_not_black_regression.csv` | AV1 硬解 hwdownload 添加/seek 非黑帧 |
+| `ui_tests/vp9_not_black_regression.csv` | VP9 硬解 hwdownload 添加/seek 非黑帧且 hash 变化 |
 
 ## 基准
 

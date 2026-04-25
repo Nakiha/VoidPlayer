@@ -57,7 +57,7 @@
 - 注释：`#` 开头的行
 - 空行：忽略
 - 测试退出码：`QUIT` 指令的参数，0 表示通过
-- 推荐入口：`python dev.py ui-test test_scripts/smoke_basic.csv`
+- 推荐入口：`python dev.py ui-test ui_tests/smoke_basic.csv`
 - 自动化脚本优先使用 `ADD_MEDIA`，不要用会弹系统对话框的 `OPEN_FILE`
 - timeline/seek 回归优先使用 `CLICK_TIMELINE_FRACTION` 覆盖真实 slider pointer 路径；`SEEK_TO` 只覆盖直接调用 seek action 的路径。
 

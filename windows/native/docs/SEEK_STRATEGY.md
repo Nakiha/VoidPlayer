@@ -88,5 +88,5 @@ DecodeThread
 Seek 相关 native 改动至少跑 `python dev.py test`。如果影响主窗口上屏，补跑对应 UI 脚本，例如：
 
 ```bash
-python dev.py ui-test test_scripts/h265_seek_visual_regression.csv
+python dev.py ui-test ui_tests/h265_seek_visual_regression.csv
 ```

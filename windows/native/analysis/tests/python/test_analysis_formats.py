@@ -1,6 +1,6 @@
 """Tests for VBS2, VBI, and VBT binary format parsers.
 
-Run: python -m pytest tests/test_analysis.py -v
+Run: python -m pytest windows/native/analysis/tests/python/test_analysis_formats.py -v
 
 These tests validate the binary output files produced by:
   python dev.py vtm analyze resources/video/h266_10s_1920x1080.mp4
@@ -8,10 +8,9 @@ These tests validate the binary output files produced by:
 import struct
 import pytest
 from pathlib import Path
-from collections import Counter
 
 # Test video paths
-VIDEO_DIR = Path(__file__).parent.parent / "resources" / "video"
+VIDEO_DIR = Path(__file__).resolve().parents[5] / "resources" / "video"
 TEST_VIDEO = VIDEO_DIR / "h266_10s_1920x1080.mp4"
 VBS2_FILE = VIDEO_DIR / "h266_10s_1920x1080.vbs2"
 VBI_FILE = VIDEO_DIR / "h266_10s_1920x1080.vbi"

@@ -11,10 +11,13 @@ from .process import header, run
 
 
 def ensure_submodule() -> None:
-    """Ensure tools/vtm submodule is initialized and on voidplayer-patches."""
+    """Ensure the analysis VTM submodule is initialized and on voidplayer-patches."""
     if not (VTM_DIR / ".git").exists():
         print("VTM submodule not initialized. Running git submodule update...")
-        run(["git", "submodule", "update", "--init", "--remote", "tools/vtm"], cwd=str(ROOT))
+        run([
+            "git", "submodule", "update", "--init", "--remote",
+            "windows/native/analysis/vendor/vtm",
+        ], cwd=str(ROOT))
 
     result = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],

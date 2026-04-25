@@ -126,7 +126,7 @@ install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
 
 # VTM DecoderApp (optional — VBS2 generation, MSVC static runtime, no DLLs needed)
 file(GLOB_RECURSE VTM_DECODER_GLOB
-    "${CMAKE_CURRENT_SOURCE_DIR}/../tools/vtm/bin/vs*/DecoderApp.exe")
+    "${CMAKE_CURRENT_SOURCE_DIR}/native/analysis/vendor/vtm/bin/vs*/DecoderApp.exe")
 if(VTM_DECODER_GLOB)
   list(GET VTM_DECODER_GLOB 0 VTM_DECODER)
   install(FILES "${VTM_DECODER}"

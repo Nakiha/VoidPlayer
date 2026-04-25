@@ -55,7 +55,7 @@ python windows/native/build.py
 | spdlog | 本地 `_deps` 优先，缺失时 FetchContent | native 日志 |
 | Catch2 | 本地 `_deps` 优先，缺失时 FetchContent | C++ 测试 |
 | pybind11 | `find_package` | Python 绑定 |
-| VTM DecoderApp | `windows/native/tools/vtm` | analysis 测试生成 VBS2 |
+| VTM DecoderApp | `windows/native/analysis/vendor/vtm` | analysis 测试生成 VBS2 |
 
 ## `python dev.py test` 实际覆盖
 

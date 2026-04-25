@@ -403,7 +403,7 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
                      st.wHour, st.wMinute, st.wSecond, hash);
             std::string vtm_log_path = logs_dir + "\\" + vtm_log_name;
 
-            // Run DecoderApp (MinGW DLLs are installed alongside it in tools/vtm/)
+            // Run DecoderApp from the installed runtime tools/vtm directory.
             std::string cmd = "\"" + decoder_path + "\" -b \"" + tmp_vvc +
                 "\" --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
             spdlog::info("[Analysis] vtm cmd: {}", cmd);

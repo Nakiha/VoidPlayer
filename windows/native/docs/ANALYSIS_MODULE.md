@@ -20,7 +20,8 @@ analysis/
 │   └── analysis_generator.cpp  # FFmpeg 单趟实现
 ├── tools/
 │   └── analysis_generate.cpp   # AnalysisGenerator 命令行入口
-└── tests/python/               # Python 落盘格式回归
+├── tests/python/               # Python 落盘格式回归
+└── vendor/vtm/                 # 第三方 VTM 子仓库，生成 VBS2
 ```
 
 ## 二进制格式

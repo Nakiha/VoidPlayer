@@ -26,7 +26,7 @@ clock=34ms:  track[0] pts=33ms ✓ (窗口内)  track[1] pts=50ms ✗ (未来帧
 |------|------|
 | `sync/render_sink.cpp` | `all_ready` → `any_ready`，选中帧时设 `any_ready = true` |
 | `renderer.cpp` render_loop | `present_frame()` 前从 `last_decision_` 填充缺帧轨道 |
-| `tests/test_render_sink.cpp` | "outside tolerance" 测试改为验证独立上屏行为 |
+| `tests/renderer/test_render_sink.cpp` | "outside tolerance" 测试改为验证独立上屏行为 |
 
 ### render_sink.cpp 改动
 

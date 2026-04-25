@@ -79,7 +79,7 @@ VBS2 生成由 VTM DecoderApp 外部进程完成（可选），通过 `analysis_
 
 ## 测试
 
-独立测试目标 `analysis_tests`（Catch2），位于 `native/tests/`：
+独立测试目标 `analysis_tests`（Catch2），位于 `native/tests/analysis/`：
 
 - `test_analysis_parsers.cpp` — VBT/VBI/VBS2 解析器测试
 - `test_analysis_generator.cpp` — VBI+VBT 生成测试（从 H.266 MP4 实际生成并验证）

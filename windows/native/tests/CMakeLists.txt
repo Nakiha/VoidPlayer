@@ -1,19 +1,19 @@
 # ==================== Video Renderer Tests ====================
 
 add_executable(video_renderer_tests
-    test_utils.cpp
-    test_clock.cpp
-    test_packet_queue.cpp
-    test_bidi_ring_buffer.cpp
-    test_track_buffer.cpp
-    test_demux_thread.cpp
-    test_frame_converter.cpp
-    test_decode_thread.cpp
-    test_d3d11_device.cpp
-    test_d3d11_texture.cpp
-    test_d3d11_shader.cpp
-    test_render_sink.cpp
-    test_renderer_integration.cpp
+    renderer/test_utils.cpp
+    renderer/test_clock.cpp
+    renderer/test_packet_queue.cpp
+    renderer/test_bidi_ring_buffer.cpp
+    renderer/test_track_buffer.cpp
+    renderer/test_demux_thread.cpp
+    renderer/test_frame_converter.cpp
+    renderer/test_decode_thread.cpp
+    renderer/test_d3d11_device.cpp
+    renderer/test_d3d11_texture.cpp
+    renderer/test_d3d11_shader.cpp
+    renderer/test_render_sink.cpp
+    renderer/test_renderer_integration.cpp
 )
 
 set_target_properties(video_renderer_tests PROPERTIES
@@ -30,6 +30,10 @@ target_link_libraries(video_renderer_tests PRIVATE
     spdlog::spdlog_header_only
 )
 
+target_include_directories(video_renderer_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/renderer"
+)
+
 target_compile_definitions(video_renderer_tests PRIVATE
     VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
 )
@@ -40,9 +44,9 @@ set_tests_properties(video_renderer_tests PROPERTIES TIMEOUT 180)
 # ==================== Analysis Tests ====================
 
 add_executable(analysis_tests
-    test_analysis_parsers.cpp
-    test_analysis_generator.cpp
-    test_analysis_data.cpp
+    analysis/test_analysis_parsers.cpp
+    analysis/test_analysis_generator.cpp
+    analysis/test_analysis_data.cpp
 )
 
 set_target_properties(analysis_tests PROPERTIES
@@ -59,6 +63,10 @@ target_link_libraries(analysis_tests PRIVATE
     spdlog::spdlog_header_only
 )
 
+target_include_directories(analysis_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis"
+)
+
 target_compile_definitions(analysis_tests PRIVATE
     VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
     VTM_DECODER_PATH="${VTM_DECODER_PATH}"
@@ -70,7 +78,7 @@ set_tests_properties(analysis_tests PROPERTIES TIMEOUT 180)
 # ==================== C FFI Validation ====================
 
 add_executable(test_ffi_c
-    test_ffi_c.c
+    ffi/test_ffi_c.c
 )
 
 set_target_properties(test_ffi_c PROPERTIES

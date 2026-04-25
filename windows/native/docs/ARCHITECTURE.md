@@ -21,10 +21,11 @@ native/
 ├── CMakeLists.txt                  # 主构建配置
 ├── build.py                        # Python 构建脚本
 ├── probe_hw.cpp                    # 硬件能力探测工具
+├── common/
+│   └── logging.h/cpp               # spdlog 配置 + 崩溃处理
 ├── video_renderer/                 # 核心静态库
 │   ├── renderer.h/cpp              # 渲染器主入口
 │   ├── clock.h/cpp                 # PTS 时钟（可注入时间源）
-│   ├── common/logging.h/cpp        # spdlog 配置 + 崩溃处理
 │   ├── d3d11/                      # D3D11 后端
 │   │   ├── device.h/cpp            # 设备 / SwapChain / Headless render target
 │   │   ├── texture.h/cpp           # 纹理创建、上传、池化
@@ -50,6 +51,9 @@ native/
 │   ├── bindings.cpp                # pybind11 绑定
 │   └── __init__.py
 ├── tests/                          # Catch2 单元测试
+│   ├── renderer/
+│   ├── analysis/
+│   └── ffi/
 ├── benchmarks/                     # 管线性能基准
 └── demo/                           # Python 交互式 Demo
 ```

@@ -31,7 +31,7 @@ int main(void) {
         naki_vr_log_config_t cfg;
         memset(&cfg, 0, sizeof(cfg));
         cfg.pattern = "[%l] %v";
-        cfg.level = 2; /* spdlog::level::warn */
+        cfg.level = 3; /* spdlog::level::warn */
         cfg.max_file_size = 1024;
         cfg.max_files = 1;
         naki_vr_configure_logging(&cfg);

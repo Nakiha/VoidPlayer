@@ -1,6 +1,7 @@
 # ==================== Video Renderer Tests ====================
 
 add_executable(video_renderer_tests
+    test_main.cpp
     renderer/test_utils.cpp
     renderer/test_clock.cpp
     renderer/test_packet_queue.cpp
@@ -26,7 +27,7 @@ endif()
 
 target_link_libraries(video_renderer_tests PRIVATE
     video_renderer_lib
-    Catch2::Catch2WithMain
+    Catch2::Catch2
     spdlog::spdlog_header_only
 )
 
@@ -44,6 +45,7 @@ set_tests_properties(video_renderer_tests PROPERTIES TIMEOUT 180)
 # ==================== Analysis Tests ====================
 
 add_executable(analysis_tests
+    test_main.cpp
     analysis/test_analysis_parsers.cpp
     analysis/test_analysis_generator.cpp
     analysis/test_analysis_data.cpp
@@ -59,7 +61,7 @@ endif()
 
 target_link_libraries(analysis_tests PRIVATE
     analysis_lib
-    Catch2::Catch2WithMain
+    Catch2::Catch2
     spdlog::spdlog_header_only
 )
 

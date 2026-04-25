@@ -16,22 +16,8 @@ FetchContent_Declare(
 set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(spdlog)
 
-# FFmpeg (pre-built, local copy)
-set(FFMPEG_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs/ffmpeg" CACHE PATH "FFmpeg root")
-set(FFMPEG_INCLUDE_DIR "${FFMPEG_ROOT}/include")
-set(FFMPEG_LIB_DIR "${FFMPEG_ROOT}/lib")
-
-if(NOT EXISTS "${FFMPEG_INCLUDE_DIR}/libavcodec/avcodec.h")
-    message(WARNING "FFmpeg headers not found at ${FFMPEG_INCLUDE_DIR} - video renderer will not be built")
-    set(FFMPEG_FOUND FALSE)
-else()
-    set(FFMPEG_FOUND TRUE)
-    find_library(AVCODEC_LIBRARY avcodec PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
-    find_library(AVFORMAT_LIBRARY avformat PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
-    find_library(AVUTIL_LIBRARY avutil PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
-    find_library(SWRESAMPLE_LIBRARY swresample PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
-    find_library(SWSCALE_LIBRARY swscale PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
-endif()
+set(VOID_FFMPEG_REQUIRED OFF)
+include("${CMAKE_CURRENT_SOURCE_DIR}/native/cmake/FFmpeg.cmake")
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.

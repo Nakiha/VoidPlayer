@@ -1,10 +1,26 @@
-set(FFMPEG_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../libs/ffmpeg" CACHE PATH "FFmpeg root directory")
+include_guard(GLOBAL)
+
+if(NOT DEFINED VOID_NATIVE_DIR)
+    get_filename_component(VOID_NATIVE_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+endif()
+
+if(NOT DEFINED VOID_FFMPEG_REQUIRED)
+    set(VOID_FFMPEG_REQUIRED ON)
+endif()
+
+set(FFMPEG_ROOT "${VOID_NATIVE_DIR}/../libs/ffmpeg" CACHE PATH "FFmpeg root directory")
 set(FFMPEG_INCLUDE_DIR "${FFMPEG_ROOT}/include")
 set(FFMPEG_LIB_DIR "${FFMPEG_ROOT}/lib")
 set(FFMPEG_BIN_DIR "${FFMPEG_ROOT}/bin")
 
 if(NOT EXISTS "${FFMPEG_INCLUDE_DIR}/libavcodec/avcodec.h")
-    message(FATAL_ERROR "FFmpeg headers not found at ${FFMPEG_INCLUDE_DIR}")
+    if(VOID_FFMPEG_REQUIRED)
+        message(FATAL_ERROR "FFmpeg headers not found at ${FFMPEG_INCLUDE_DIR}")
+    else()
+        message(WARNING "FFmpeg headers not found at ${FFMPEG_INCLUDE_DIR} - video renderer will not be built")
+        set(FFMPEG_FOUND FALSE)
+        return()
+    endif()
 endif()
 
 find_library(AVCODEC_LIBRARY avcodec PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
@@ -13,4 +29,5 @@ find_library(AVUTIL_LIBRARY avutil PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUI
 find_library(SWRESAMPLE_LIBRARY swresample PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
 find_library(SWSCALE_LIBRARY swscale PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
 
+set(FFMPEG_FOUND TRUE)
 message(STATUS "FFmpeg: avcodec=${AVCODEC_LIBRARY}, avformat=${AVFORMAT_LIBRARY}")

@@ -179,21 +179,26 @@ float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_T
     bool out_of_bounds;
     float2 tex_uv = calc_aspect_fit_uv(local_uv, track_idx, out_of_bounds);
 
-    if (out_of_bounds) {
-        return float4(0.0, 0.0, 0.0, 1.0);
-    }
+    float4 color = out_of_bounds
+        ? float4(0.0, 0.0, 0.0, 1.0)
+        : sample_track(track_idx, tex_uv);
 
-    float4 color = sample_track(track_idx, tex_uv);
-
-    // SPLIT_SCREEN: render divider line (2px width)
+    // SPLIT_SCREEN: render a hard inverted divider. Alpha-blended inversion
+    // turns mid-tone footage into a gray seam, so keep the core fully inverted.
     if (u_mode == MODE_SPLIT_SCREEN && u_canvas_width > 0.0) {
         float divider_x = u_split_pos * u_canvas_width;
         float pixel_x = texcoord.x * u_canvas_width;
-        float half_width = 1.0;
+        float dist = abs(pixel_x - divider_x);
+        float core_width = 1.25;
+        float edge_width = 0.75;
 
-        if (abs(pixel_x - divider_x) <= half_width) {
-            float alpha = 0.8 * (1.0 - abs(pixel_x - divider_x) / half_width);
-            color = float4(1.0, 1.0, 1.0, alpha) * alpha + color * (1.0 - alpha);
+        if (dist <= core_width + edge_width) {
+            float alpha = (dist <= core_width)
+                ? 1.0
+                : 1.0 - ((dist - core_width) / edge_width);
+            float3 divider_color = 1.0 - color.rgb;
+            color.rgb = divider_color * alpha + color.rgb * (1.0 - alpha);
+            color.a = 1.0;
         }
     }
 

@@ -189,6 +189,13 @@ class TestRunner {
             'Expected zoom $ratio (±$tolerance), got ${layout.zoomRatio}',
           );
         }
+      case AssertSplitPos(:final position, :final tolerance):
+        final layout = await controller.getLayout();
+        if ((layout.splitPos - position).abs() > tolerance) {
+          throw AssertionError(
+            'Expected split position $position (±$tolerance), got ${layout.splitPos}',
+          );
+        }
       case AssertViewOffset(:final x, :final y, :final tolerance):
         final layout = await controller.getLayout();
         final dx = (layout.viewOffsetX - x).abs();
@@ -600,6 +607,15 @@ ScriptInstruction? _parseInstruction(
       return ScriptAssert(
         time,
         AssertZoom(double.parse(args[0]), double.parse(args[1])),
+      );
+    case 'ASSERT_SPLIT_POS':
+      if (args.length < 2) {
+        log.warning('ASSERT_SPLIT_POS needs position and tolerance: $rawLine');
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertSplitPos(double.parse(args[0]), double.parse(args[1])),
       );
     case 'ASSERT_VIEW_OFFSET':
       if (args.length < 3) {

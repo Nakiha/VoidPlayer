@@ -16,70 +16,100 @@ import 'package:ffi/ffi.dart';
 typedef _GetForegroundWindowNative = IntPtr Function();
 typedef _GetForegroundWindowDart = int Function();
 
-typedef _FindWindowWNative = IntPtr Function(
-    Pointer<Utf16> lpClassName, Pointer<Utf16> lpWindowName);
-typedef _FindWindowWDart = int Function(
-    Pointer<Utf16> lpClassName, Pointer<Utf16> lpWindowName);
+typedef _FindWindowWNative =
+    IntPtr Function(Pointer<Utf16> lpClassName, Pointer<Utf16> lpWindowName);
+typedef _FindWindowWDart =
+    int Function(Pointer<Utf16> lpClassName, Pointer<Utf16> lpWindowName);
 
-typedef _GetWindowRectNative = Int32 Function(
-    IntPtr hWnd, Pointer<RECT> lpRect);
+typedef _GetWindowRectNative =
+    Int32 Function(IntPtr hWnd, Pointer<RECT> lpRect);
 typedef _GetWindowRectDart = int Function(int hWnd, Pointer<RECT> lpRect);
 
-typedef _MoveWindowNative = Int32 Function(
-    IntPtr hWnd, Int32 X, Int32 Y, Int32 nWidth, Int32 nHeight, Int32 bRepaint);
-typedef _MoveWindowDart = int Function(
-    int hWnd, int X, int Y, int nWidth, int nHeight, int bRepaint);
+typedef _MoveWindowNative =
+    Int32 Function(
+      IntPtr hWnd,
+      Int32 X,
+      Int32 Y,
+      Int32 nWidth,
+      Int32 nHeight,
+      Int32 bRepaint,
+    );
+typedef _MoveWindowDart =
+    int Function(int hWnd, int X, int Y, int nWidth, int nHeight, int bRepaint);
 
-typedef _SetWindowPosNative = Int32 Function(IntPtr hWnd, IntPtr hWndInsertAfter,
-    Int32 X, Int32 Y, Int32 cx, Int32 cy, Uint32 uFlags);
-typedef _SetWindowPosDart = int Function(int hWnd, int hWndInsertAfter,
-    int X, int Y, int cx, int cy, int uFlags);
+typedef _SetWindowPosNative =
+    Int32 Function(
+      IntPtr hWnd,
+      IntPtr hWndInsertAfter,
+      Int32 X,
+      Int32 Y,
+      Int32 cx,
+      Int32 cy,
+      Uint32 uFlags,
+    );
+typedef _SetWindowPosDart =
+    int Function(
+      int hWnd,
+      int hWndInsertAfter,
+      int X,
+      int Y,
+      int cx,
+      int cy,
+      int uFlags,
+    );
 
 typedef _MonitorFromWindowNative = IntPtr Function(IntPtr hwnd, Uint32 dwFlags);
 typedef _MonitorFromWindowDart = int Function(int hwnd, int dwFlags);
 
-typedef _GetMonitorInfoWNative = Int32 Function(
-    IntPtr hMonitor, Pointer<MONITORINFO> lpmi);
-typedef _GetMonitorInfoWDart = int Function(
-    int hMonitor, Pointer<MONITORINFO> lpmi);
+typedef _GetMonitorInfoWNative =
+    Int32 Function(IntPtr hMonitor, Pointer<MONITORINFO> lpmi);
+typedef _GetMonitorInfoWDart =
+    int Function(int hMonitor, Pointer<MONITORINFO> lpmi);
 
 typedef _IsWindowNative = Int32 Function(IntPtr hWnd);
 typedef _IsWindowDart = int Function(int hWnd);
 
-typedef _PostMessageWNative = Int32 Function(
-    IntPtr hWnd, Uint32 msg, IntPtr wParam, IntPtr lParam);
-typedef _PostMessageWDart = int Function(
-    int hWnd, int msg, int wParam, int lParam);
+typedef _PostMessageWNative =
+    Int32 Function(IntPtr hWnd, Uint32 msg, IntPtr wParam, IntPtr lParam);
+typedef _PostMessageWDart =
+    int Function(int hWnd, int msg, int wParam, int lParam);
 
-typedef _GetWindowTextWNative = Int32 Function(
-    IntPtr hWnd, Pointer<Utf16> lpString, Int32 nMaxCount);
-typedef _GetWindowTextWDart = int Function(
-    int hWnd, Pointer<Utf16> lpString, int nMaxCount);
+typedef _GetWindowTextWNative =
+    Int32 Function(IntPtr hWnd, Pointer<Utf16> lpString, Int32 nMaxCount);
+typedef _GetWindowTextWDart =
+    int Function(int hWnd, Pointer<Utf16> lpString, int nMaxCount);
 
-typedef _SetWindowTextWNative = Int32 Function(
-    IntPtr hWnd, Pointer<Utf16> lpString);
-typedef _SetWindowTextWDart = int Function(
-    int hWnd, Pointer<Utf16> lpString);
+typedef _SetWindowTextWNative =
+    Int32 Function(IntPtr hWnd, Pointer<Utf16> lpString);
+typedef _SetWindowTextWDart = int Function(int hWnd, Pointer<Utf16> lpString);
 
 typedef _GetCurrentProcessIdNative = Uint32 Function();
 typedef _GetCurrentProcessIdDart = int Function();
 
-typedef _GetWindowThreadProcessIdNative = Uint32 Function(
-    IntPtr hWnd, Pointer<Uint32> lpdwProcessId);
-typedef _GetWindowThreadProcessIdDart = int Function(
-    int hWnd, Pointer<Uint32> lpdwProcessId);
+typedef _GetWindowThreadProcessIdNative =
+    Uint32 Function(IntPtr hWnd, Pointer<Uint32> lpdwProcessId);
+typedef _GetWindowThreadProcessIdDart =
+    int Function(int hWnd, Pointer<Uint32> lpdwProcessId);
 
-typedef _GetClassNameWNative = Int32 Function(
-    IntPtr hWnd, Pointer<Utf16> lpClassName, Int32 nMaxCount);
-typedef _GetClassNameWDart = int Function(
-    int hWnd, Pointer<Utf16> lpClassName, int nMaxCount);
+typedef _GetClassNameWNative =
+    Int32 Function(IntPtr hWnd, Pointer<Utf16> lpClassName, Int32 nMaxCount);
+typedef _GetClassNameWDart =
+    int Function(int hWnd, Pointer<Utf16> lpClassName, int nMaxCount);
 
-typedef _EnumWindowsNative = Int32 Function(
-    Pointer<NativeFunction<_EnumWindowsCallbackNative>>, IntPtr lParam);
-typedef _EnumWindowsDart = int Function(
-    Pointer<NativeFunction<_EnumWindowsCallbackNative>>, int lParam);
-typedef _EnumWindowsCallbackNative = Int32 Function(
-    IntPtr hWnd, IntPtr lParam);
+typedef _EnumWindowsNative =
+    Int32 Function(
+      Pointer<NativeFunction<_EnumWindowsCallbackNative>>,
+      IntPtr lParam,
+    );
+typedef _EnumWindowsDart =
+    int Function(
+      Pointer<NativeFunction<_EnumWindowsCallbackNative>>,
+      int lParam,
+    );
+typedef _EnumWindowsCallbackNative = Int32 Function(IntPtr hWnd, IntPtr lParam);
+
+typedef _GetAsyncKeyStateNative = Int16 Function(Int32 vKey);
+typedef _GetAsyncKeyStateDart = int Function(int vKey);
 
 // ---------------------------------------------------------------------------
 // Structs
@@ -96,11 +126,11 @@ final class RECT extends Struct {
   external int bottom;
 
   Rect toDartRect() => Rect.fromLTWH(
-        left.toDouble(),
-        top.toDouble(),
-        (right - left).toDouble(),
-        (bottom - top).toDouble(),
-      );
+    left.toDouble(),
+    top.toDouble(),
+    (right - left).toDouble(),
+    (bottom - top).toDouble(),
+  );
 }
 
 /// sizeof(MONITORINFO) = 4 + 16 + 16 + 4 = 40 bytes.
@@ -122,6 +152,8 @@ const int _swpNoActivate = 0x0010;
 const int _swpShowWindow = 0x0040;
 const int _monitorDefaultToNearest = 0x00000002;
 const int _wmClose = 0x0010;
+const int _vkLButton = 0x01;
+const int _vkRButton = 0x02;
 
 /// Window class name used by `desktop_multi_window` for secondary windows.
 const String kSecondaryWindowClass = 'FLUTTER_MULTI_WINDOW_WIN32_WINDOW';
@@ -138,59 +170,70 @@ final _kernel32 = DynamicLibrary.open('kernel32.dll');
 
 final _getForegroundWindow = _user32
     .lookupFunction<_GetForegroundWindowNative, _GetForegroundWindowDart>(
-        'GetForegroundWindow');
+      'GetForegroundWindow',
+    );
 
-final _findWindowW =
-    _user32.lookupFunction<_FindWindowWNative, _FindWindowWDart>('FindWindowW');
+final _findWindowW = _user32
+    .lookupFunction<_FindWindowWNative, _FindWindowWDart>('FindWindowW');
 
-final _getWindowRect =
-    _user32.lookupFunction<_GetWindowRectNative, _GetWindowRectDart>(
-        'GetWindowRect');
+final _getWindowRect = _user32
+    .lookupFunction<_GetWindowRectNative, _GetWindowRectDart>('GetWindowRect');
 
-final _moveWindow =
-    _user32.lookupFunction<_MoveWindowNative, _MoveWindowDart>('MoveWindow');
+final _moveWindow = _user32.lookupFunction<_MoveWindowNative, _MoveWindowDart>(
+  'MoveWindow',
+);
 
-final _setWindowPos =
-    _user32.lookupFunction<_SetWindowPosNative, _SetWindowPosDart>(
-        'SetWindowPos');
+final _setWindowPos = _user32
+    .lookupFunction<_SetWindowPosNative, _SetWindowPosDart>('SetWindowPos');
 
-final _monitorFromWindow =
-    _user32.lookupFunction<_MonitorFromWindowNative, _MonitorFromWindowDart>(
-        'MonitorFromWindow');
+final _monitorFromWindow = _user32
+    .lookupFunction<_MonitorFromWindowNative, _MonitorFromWindowDart>(
+      'MonitorFromWindow',
+    );
 
-final _getMonitorInfoW =
-    _user32.lookupFunction<_GetMonitorInfoWNative, _GetMonitorInfoWDart>(
-        'GetMonitorInfoW');
+final _getMonitorInfoW = _user32
+    .lookupFunction<_GetMonitorInfoWNative, _GetMonitorInfoWDart>(
+      'GetMonitorInfoW',
+    );
 
-final _isWindow =
-    _user32.lookupFunction<_IsWindowNative, _IsWindowDart>('IsWindow');
+final _isWindow = _user32.lookupFunction<_IsWindowNative, _IsWindowDart>(
+  'IsWindow',
+);
 
-final _postMessageW =
-    _user32.lookupFunction<_PostMessageWNative, _PostMessageWDart>(
-        'PostMessageW');
+final _postMessageW = _user32
+    .lookupFunction<_PostMessageWNative, _PostMessageWDart>('PostMessageW');
 
-final _getWindowTextW =
-    _user32.lookupFunction<_GetWindowTextWNative, _GetWindowTextWDart>(
-        'GetWindowTextW');
+final _getWindowTextW = _user32
+    .lookupFunction<_GetWindowTextWNative, _GetWindowTextWDart>(
+      'GetWindowTextW',
+    );
 
-final _setWindowTextW =
-    _user32.lookupFunction<_SetWindowTextWNative, _SetWindowTextWDart>(
-        'SetWindowTextW');
+final _setWindowTextW = _user32
+    .lookupFunction<_SetWindowTextWNative, _SetWindowTextWDart>(
+      'SetWindowTextW',
+    );
 
-final _getCurrentProcessId =
-    _kernel32.lookupFunction<_GetCurrentProcessIdNative, _GetCurrentProcessIdDart>(
-        'GetCurrentProcessId');
+final _getCurrentProcessId = _kernel32
+    .lookupFunction<_GetCurrentProcessIdNative, _GetCurrentProcessIdDart>(
+      'GetCurrentProcessId',
+    );
 
-final _getWindowThreadProcessId = _user32.lookupFunction<
-    _GetWindowThreadProcessIdNative,
-    _GetWindowThreadProcessIdDart>('GetWindowThreadProcessId');
+final _getWindowThreadProcessId = _user32
+    .lookupFunction<
+      _GetWindowThreadProcessIdNative,
+      _GetWindowThreadProcessIdDart
+    >('GetWindowThreadProcessId');
 
-final _getClassNameW =
-    _user32.lookupFunction<_GetClassNameWNative, _GetClassNameWDart>(
-        'GetClassNameW');
+final _getClassNameW = _user32
+    .lookupFunction<_GetClassNameWNative, _GetClassNameWDart>('GetClassNameW');
 
-final _enumWindows =
-    _user32.lookupFunction<_EnumWindowsNative, _EnumWindowsDart>('EnumWindows');
+final _enumWindows = _user32
+    .lookupFunction<_EnumWindowsNative, _EnumWindowsDart>('EnumWindows');
+
+final _getAsyncKeyState = _user32
+    .lookupFunction<_GetAsyncKeyStateNative, _GetAsyncKeyStateDart>(
+      'GetAsyncKeyState',
+    );
 
 // ---------------------------------------------------------------------------
 // Global state for EnumWindows callback (top-level for Pointer.fromFunction)
@@ -203,7 +246,9 @@ int _enumSecondaryWindowsCallback(int hwnd, int lParam) {
   final clsBuf = calloc.allocate<Utf16>(512);
   try {
     final len = _getClassNameW(hwnd, clsBuf.cast<Utf16>(), 256);
-    if (len > 0 && clsBuf.cast<Utf16>().toDartString(length: len) == kSecondaryWindowClass) {
+    if (len > 0 &&
+        clsBuf.cast<Utf16>().toDartString(length: len) ==
+            kSecondaryWindowClass) {
       final pidBuf = calloc.allocate<Uint32>(4);
       try {
         _getWindowThreadProcessId(hwnd, pidBuf.cast<Uint32>());
@@ -271,8 +316,14 @@ class Win32FFI {
   }
 
   /// Positions and optionally resizes the window without changing Z-order.
-  static void setWindowPos(int hwnd, int x, int y, int w, int h,
-      {bool show = false}) {
+  static void setWindowPos(
+    int hwnd,
+    int x,
+    int y,
+    int w,
+    int h, {
+    bool show = false,
+  }) {
     _setWindowPos(
       hwnd,
       0, // HWND_TOP
@@ -313,13 +364,19 @@ class Win32FFI {
   /// Returns the current process ID.
   static int getCurrentProcessId() => _getCurrentProcessId();
 
+  /// Returns whether the left mouse button is currently physically down.
+  static bool isLeftMouseButtonDown() =>
+      (_getAsyncKeyState(_vkLButton) & 0x8000) != 0;
+
+  /// Returns whether the right mouse button is currently physically down.
+  static bool isRightMouseButtonDown() =>
+      (_getAsyncKeyState(_vkRButton) & 0x8000) != 0;
+
   /// Finds a window by class name and/or title.
   /// Pass `null` for either parameter to act as a wildcard.
   static int findWindow({String? className, String? title}) {
-    final clsPtr =
-        className != null ? className.toNativeUtf16() : nullptr;
-    final titlePtr =
-        title != null ? title.toNativeUtf16() : nullptr;
+    final clsPtr = className != null ? className.toNativeUtf16() : nullptr;
+    final titlePtr = title != null ? title.toNativeUtf16() : nullptr;
     try {
       return _findWindowW(clsPtr, titlePtr);
     } finally {
@@ -334,7 +391,9 @@ class Win32FFI {
     _enumResult.clear();
     _enumTargetPid = getCurrentProcessId();
     final callback = Pointer.fromFunction<_EnumWindowsCallbackNative>(
-        _enumSecondaryWindowsCallback, 0);
+      _enumSecondaryWindowsCallback,
+      0,
+    );
     _enumWindows(callback, 0);
     return List.unmodifiable(_enumResult);
   }
@@ -369,7 +428,11 @@ class Win32FFI {
     if (y < screenTop) y = screenTop;
 
     return Rect.fromLTWH(
-        x.toDouble(), y.toDouble(), w.toDouble(), h.toDouble());
+      x.toDouble(),
+      y.toDouble(),
+      w.toDouble(),
+      h.toDouble(),
+    );
   }
 
   /// Clamps [rect] so it stays fully inside [monitorWorkArea].

@@ -39,6 +39,12 @@ class AssertZoom extends PlayerAssert {
   const AssertZoom(this.ratio, this.tolerance);
 }
 
+class AssertSplitPos extends PlayerAssert {
+  final double position;
+  final double tolerance;
+  const AssertSplitPos(this.position, this.tolerance);
+}
+
 class AssertViewOffset extends PlayerAssert {
   final double x;
   final double y;

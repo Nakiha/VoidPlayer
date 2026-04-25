@@ -105,6 +105,7 @@
 | `ASSERT_DURATION` | ptsUs, toleranceMs | 断言总时长 |
 | `ASSERT_LAYOUT_MODE` | mode | 断言布局模式 |
 | `ASSERT_ZOOM` | ratio, tolerance | 断言缩放比例 |
+| `ASSERT_SPLIT_POS` | position, tolerance | 断言分屏分割线位置 |
 | `ASSERT_VIEW_OFFSET` | x, y, tolerance | 断言视口平移偏移 |
 | `ASSERT_VIEW_CENTER_STABLE` | baseline, tolerance | 断言当前归一化视图中心与 `STORE_VIEW_CENTER` 基线一致 |
 | `ASSERT_CAPTURE_EQUALS` | expected, actual | 断言两次 viewport 截图 hash 相同 |

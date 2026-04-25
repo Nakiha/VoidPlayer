@@ -1,5 +1,6 @@
 #include "analysis_ffi.h"
 #include "analysis/analysis_manager.h"
+#include "analysis/generators/bitstream_indexer.h"
 #include "analysis/generators/analysis_generator.h"
 #include "utils.h"
 
@@ -155,6 +156,28 @@ static std::string get_exe_dir() {
     auto last_sep = dir.find_last_of("\\/");
     if (last_sep != std::string::npos) dir = dir.substr(0, last_sep);
     return dir;
+}
+
+static VbiCodec detect_analysis_codec(const char* video_path) {
+    AVFormatContext* fmt_ctx = nullptr;
+    int ret = avformat_open_input(&fmt_ctx, video_path, nullptr, nullptr);
+    if (ret >= 0) {
+        ret = avformat_find_stream_info(fmt_ctx, nullptr);
+        if (ret >= 0) {
+            for (unsigned i = 0; i < fmt_ctx->nb_streams; i++) {
+                const auto* codecpar = fmt_ctx->streams[i]->codecpar;
+                if (codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+                    VbiCodec codec = vr::analysis::BitstreamIndexer::codec_from_ffmpeg_id(
+                        codecpar->codec_id);
+                    avformat_close_input(&fmt_ctx);
+                    if (codec != VbiCodec::Unknown) return codec;
+                    return vr::analysis::BitstreamIndexer::codec_from_path(video_path);
+                }
+            }
+        }
+        avformat_close_input(&fmt_ctx);
+    }
+    return vr::analysis::BitstreamIndexer::codec_from_path(video_path);
 }
 
 // Run a command via CreateProcess. Returns exit code, or -1 on CreateProcess failure.
@@ -373,11 +396,13 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
     CreateDirectoryA(data_dir.c_str(), nullptr);
 
     // ---- Step 0: VBS2 via VTM DecoderApp (optional) ----
+    VbiCodec source_codec = detect_analysis_codec(video_path);
     std::string decoder_path = exe_dir + "\\tools\\vtm\\DecoderApp.exe";
     bool decoder_exists = GetFileAttributesA(decoder_path.c_str()) != INVALID_FILE_ATTRIBUTES;
-    spdlog::info("[Analysis] decoder={} exists={}", decoder_path, decoder_exists);
+    spdlog::info("[Analysis] decoder={} exists={}, codec={}",
+                 decoder_path, decoder_exists, static_cast<int>(source_codec));
 
-    if (decoder_exists) {
+    if (decoder_exists && source_codec == VbiCodec::VVC) {
         std::string vbs2_out = data_dir + "\\" + hash + ".vbs2";
 
         // Extract raw VVC bitstream via FFmpeg C API (no subprocess)
@@ -423,6 +448,8 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
             spdlog::warn("[Analysis] raw VVC extraction failed, skipping VBS2 generation");
             DeleteFileA(tmp_vvc.c_str());
         }
+    } else if (decoder_exists) {
+        spdlog::info("[Analysis] skipping VBS2: VTM block statistics are VVC-only");
     }
 
     // ---- Step 1+2: VBI + VBT via C++ FFmpeg (single pass) ----

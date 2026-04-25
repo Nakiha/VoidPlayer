@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 # Add build output directory so video_renderer_native.pyd can be found
-_build_dir = Path(__file__).resolve().parent.parent / "build-msvc"
+_build_dir = Path(__file__).resolve().parents[2] / "build-msvc"
 for _cfg in ("Release", "Debug"):
     _candidate = _build_dir / _cfg
     if _candidate.is_dir():
@@ -15,7 +15,7 @@ from PySide6.QtGui import QWindow
 from PySide6.QtCore import QTimer
 from video_renderer_native import Renderer, RendererConfig, SeekType
 
-VIDEO_DIR = Path(__file__).resolve().parent.parent.parent / "resources" / "video"
+VIDEO_DIR = Path(__file__).resolve().parents[4] / "resources" / "video"
 
 
 class SeekDemo:

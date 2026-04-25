@@ -14,7 +14,7 @@ if(TARGET video_renderer_ffi)
             "$<TARGET_FILE_DIR:video_renderer_ffi>/$<TARGET_FILE_PREFIX:video_renderer_ffi>$<TARGET_FILE_BASE_NAME:video_renderer_ffi>.lib"
             "${DIST_DIR}/ffi/"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/exports/ffi_exports.h"
+            "${CMAKE_CURRENT_SOURCE_DIR}/video_renderer/exports/ffi_exports.h"
             "${DIST_DIR}/ffi/"
         COMMENT "Installing FFI artifacts to dist/ffi/..."
     )
@@ -27,7 +27,7 @@ if(BUILD_PYTHON AND TARGET video_renderer_native)
             "$<TARGET_FILE:video_renderer_native>"
             "${DIST_DIR}/python/"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/exports/__init__.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/video_renderer/exports/__init__.py"
             "${DIST_DIR}/python/video_renderer/__init__.py"
         COMMENT "Installing Python artifacts to dist/python/..."
     )

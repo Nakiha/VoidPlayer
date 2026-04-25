@@ -2,7 +2,7 @@
 
 ## C FFI
 
-头文件: `exports/ffi_exports.h`
+头文件: `video_renderer/exports/ffi_exports.h`
 
 所有导出函数使用 `naki_vr_` 前缀，通过宏 `NAKI_VR_FFI_EXPORT` 控制导出。
 
@@ -53,7 +53,7 @@ typedef struct naki_vr_renderer_config_t {
 
 ## Python 绑定
 
-文件: `exports/bindings.cpp`
+文件: `video_renderer/exports/bindings.cpp`
 
 使用 pybind11 绑定，导出类：
 

@@ -83,7 +83,7 @@ python windows/native/build.py
 
 ## 基准
 
-可执行文件: `pipeline_bench.exe`。日常构建默认跳过 benchmarks；需要运行时使用：
+可执行文件: `pipeline_bench.exe`，源码位于 `video_renderer/benchmarks/`。日常构建默认跳过 benchmarks；需要运行时使用：
 
 ```bash
 python windows/native/build.py --benchmarks-only
@@ -100,4 +100,4 @@ python windows/native/build.py --benchmarks-only
 
 ## Demo
 
-`demo_video_renderer.py` 是 PySide6 交互式 demo；`demo_seek.py` 是 seek/逐帧的自动演示。日常播放器行为验证优先使用 `dev.py launch` 和 `dev.py ui-test`。
+`video_renderer/demo/demo_video_renderer.py` 是 PySide6 交互式 demo；`video_renderer/demo/demo_seek.py` 是 seek/逐帧的自动演示。日常播放器行为验证优先使用 `dev.py launch` 和 `dev.py ui-test`。

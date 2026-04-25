@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 NATIVE_DIR = ROOT / "windows" / "native"
 NATIVE_BUILD_PY = NATIVE_DIR / "build.py"
 NATIVE_BUILD_DIR = NATIVE_DIR / "build-msvc"
-DEMO_SCRIPT = NATIVE_DIR / "demo" / "demo_video_renderer.py"
+DEMO_SCRIPT = NATIVE_DIR / "video_renderer" / "demo" / "demo_video_renderer.py"
 
 VTM_DIR = ROOT / "tools" / "vtm"
 VTM_BUILD_DIR = VTM_DIR / "build"

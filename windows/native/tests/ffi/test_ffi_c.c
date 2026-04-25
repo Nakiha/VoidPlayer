@@ -5,7 +5,7 @@
  * called without a valid HWND / initialized renderer.
  */
 
-#include "exports/ffi_exports.h"
+#include "video_renderer/exports/ffi_exports.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

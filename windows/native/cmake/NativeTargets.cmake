@@ -1,6 +1,6 @@
 if(BUILD_FFI OR NOT DEFINED BUILD_FFI)
     add_library(video_renderer_ffi SHARED
-        exports/ffi_exports.cpp
+        video_renderer/exports/ffi_exports.cpp
     )
 
     target_include_directories(video_renderer_ffi PRIVATE
@@ -27,7 +27,7 @@ endif()
 
 if(BUILD_PYTHON)
     pybind11_add_module(video_renderer_native
-        exports/bindings.cpp
+        video_renderer/exports/bindings.cpp
     )
 
     target_link_libraries(video_renderer_native PRIVATE

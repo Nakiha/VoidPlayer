@@ -19,3 +19,7 @@ target_link_libraries(video_renderer_lib PUBLIC
 )
 
 void_configure_renderer_shaders("${CMAKE_CURRENT_BINARY_DIR}")
+
+if(BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
+endif()

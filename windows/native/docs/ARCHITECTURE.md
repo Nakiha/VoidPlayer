@@ -26,6 +26,9 @@ native/
 ├── video_renderer/                 # 核心静态库
 │   ├── renderer.h/cpp              # 渲染器主入口
 │   ├── clock.h/cpp                 # PTS 时钟（可注入时间源）
+│   ├── exports/                    # renderer 的 FFI / pybind11 导出
+│   ├── demo/                       # renderer Python 交互式 Demo
+│   ├── benchmarks/                 # renderer 管线性能基准
 │   ├── d3d11/                      # D3D11 后端
 │   │   ├── device.h/cpp            # 设备 / SwapChain / Headless render target
 │   │   ├── texture.h/cpp           # 纹理创建、上传、池化
@@ -46,16 +49,11 @@ native/
 │   │   └── seek_controller.h/cpp   # Seek 协调
 │   └── shaders/
 │       └── multitrack.hlsl         # RGBA + NV12 着色器
-├── exports/                        # FFI 层
-│   ├── ffi_exports.h/cpp           # C FFI (naki_vr_*)
-│   ├── bindings.cpp                # pybind11 绑定
-│   └── __init__.py
 ├── tests/                          # Catch2 单元测试
 │   ├── renderer/
 │   ├── analysis/
 │   └── ffi/
-├── benchmarks/                     # 管线性能基准
-└── demo/                           # Python 交互式 Demo
+└── docs/
 ```
 
 ## 类层级

@@ -1,4 +1,4 @@
-#include "exports/ffi_exports.h"
+#include "video_renderer/exports/ffi_exports.h"
 #include "video_renderer/renderer.h"
 #include "common/logging.h"
 #include <cstring>

@@ -3,7 +3,7 @@
 Usage examples: see python dev.py -h
 """
 
-from tools.dev.cli import main
+from scripts.dev.cli import main
 
 
 if __name__ == "__main__":

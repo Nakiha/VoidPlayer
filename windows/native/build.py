@@ -35,7 +35,15 @@ def resolve_ffmpeg_root(script_dir: Path, explicit_root: str | None) -> Path:
     )
 
 
-def configure(build_dir: Path, script_dir: Path, ffmpeg_root: Path):
+def configure(
+    build_dir: Path,
+    script_dir: Path,
+    ffmpeg_root: Path,
+    build_benchmarks: bool = False,
+    build_tests: bool = True,
+    build_python: bool = True,
+    build_ffi: bool = True,
+):
     import pybind11
     pybind11_dir = pybind11.get_cmake_dir()
 
@@ -45,6 +53,10 @@ def configure(build_dir: Path, script_dir: Path, ffmpeg_root: Path):
         "-S", str(script_dir),
         f"-Dpybind11_DIR={pybind11_dir}",
         f"-DFFMPEG_ROOT={ffmpeg_root}",
+        f"-DBUILD_BENCHMARKS={'ON' if build_benchmarks else 'OFF'}",
+        f"-DBUILD_TESTS={'ON' if build_tests else 'OFF'}",
+        f"-DBUILD_PYTHON={'ON' if build_python else 'OFF'}",
+        f"-DBUILD_FFI={'ON' if build_ffi else 'OFF'}",
     ]
 
     subprocess.check_call(cmake_args)
@@ -72,7 +84,7 @@ def test(build_dir: Path, build_type: str):
 
 def benchmark(build_dir: Path, build_type: str):
     exe = build_dir / build_type / "pipeline_bench.exe"
-    video = build_dir.parent.parent / "resources" / "video" / "h264_9s_1920x1080.mp4"
+    video = build_dir.parents[2] / "resources" / "video" / "h264_9s_1920x1080.mp4"
     subprocess.check_call([str(exe), str(video)])
 
 
@@ -98,7 +110,15 @@ def main():
 
     if args.benchmarks_only:
         print("Configuring...", flush=True)
-        configure(build_dir, script_dir, ffmpeg_root)
+        configure(
+            build_dir,
+            script_dir,
+            ffmpeg_root,
+            build_benchmarks=True,
+            build_tests=False,
+            build_python=False,
+            build_ffi=False,
+        )
 
         print(f"Building ({build_type})...", flush=True)
         build(build_dir, build_type)

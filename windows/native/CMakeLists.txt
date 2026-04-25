@@ -27,6 +27,11 @@ enable_testing()
 add_subdirectory(video_renderer)
 add_subdirectory(analysis)
 
+option(BUILD_BENCHMARKS "Build native benchmark executables" OFF)
+if(BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
+endif()
+
 if(BUILD_TESTS)
     add_subdirectory(tests)
 endif()

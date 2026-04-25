@@ -44,7 +44,7 @@ python windows/native/build.py
 | `analysis_tests` | EXE | H.266 分析数据、VBI/VBT 解析与生成测试 |
 | `test_ffi_c` | EXE | C ABI smoke test |
 | `probe_hw` | EXE | 硬件能力探测，存在 `probe_hw.cpp` 时构建 |
-| `pipeline_bench` | EXE | 解复用/解码/上传/Present 基准 |
+| `pipeline_bench` | EXE | 解复用/解码/上传/Present 基准，`BUILD_BENCHMARKS=ON` 时构建 |
 
 ## 依赖
 
@@ -83,7 +83,11 @@ python windows/native/build.py
 
 ## 基准
 
-可执行文件: `pipeline_bench.exe`
+可执行文件: `pipeline_bench.exe`。日常构建默认跳过 benchmarks；需要运行时使用：
+
+```bash
+python windows/native/build.py --benchmarks-only
+```
 
 | 基准 | 测量内容 |
 |------|---------|

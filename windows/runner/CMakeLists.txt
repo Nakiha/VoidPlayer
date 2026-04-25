@@ -42,36 +42,9 @@ target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 if(FFMPEG_FOUND)
 
-# Video renderer sources
-set(VR_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/renderer.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/common/logging.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/clock.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/d3d11/device.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/d3d11/texture.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/d3d11/shader.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/decode/demux_thread.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/decode/decode_thread.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/decode/frame_converter.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/decode/hw/hw_decode_provider.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/decode/hw/d3d11va_provider.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/buffer/packet_queue.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/buffer/bidi_ring_buffer.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/buffer/track_buffer.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/sync/render_sink.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/sync/seek_controller.cpp"
-)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/NativeSources.cmake")
 
-# Analysis library sources
-set(ANALYSIS_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/parsers/vbt_parser.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/parsers/vbi_parser.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/parsers/vbs2_parser.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/analysis_manager.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/generators/analysis_generator.cpp"
-)
-
-target_sources(${BINARY_NAME} PRIVATE ${VR_SOURCES} ${ANALYSIS_SOURCES})
+target_sources(${BINARY_NAME} PRIVATE ${VOID_RENDERER_SOURCES} ${VOID_ANALYSIS_SOURCES})
 
 target_include_directories(${BINARY_NAME} PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../native"
@@ -95,13 +68,7 @@ target_compile_definitions(${BINARY_NAME} PRIVATE
     _CRT_SECURE_NO_WARNINGS
 )
 
-# Embed shader source into binary (no runtime file dependency)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/shaders/multitrack.hlsl" MULTITRACK_HLSL)
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/shaders/embedded_shaders.h.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/embedded_shaders.h"
-    @ONLY
-)
+void_configure_renderer_shaders("${CMAKE_CURRENT_BINARY_DIR}")
 
 # Copy FFmpeg DLLs to build output
 set(FFMPEG_DLL_DIR "${FFMPEG_ROOT}/bin")

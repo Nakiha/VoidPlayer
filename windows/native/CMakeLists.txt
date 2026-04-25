@@ -19,6 +19,7 @@ endif()
 
 include(cmake/Dependencies.cmake)
 include(cmake/FFmpeg.cmake)
+include(cmake/NativeSources.cmake)
 include(cmake/TestAssets.cmake)
 include(cmake/RuntimeArtifacts.cmake)
 

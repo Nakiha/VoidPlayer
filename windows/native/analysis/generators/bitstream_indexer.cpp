@@ -357,4 +357,51 @@ bool BitstreamIndexer::index_raw_file(const std::string& path,
     return !index.entries.empty();
 }
 
+bool BitstreamIndexer::write_annex_b_file(const std::string& path,
+                                          VbiCodec codec,
+                                          const std::string& output_path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return false;
+
+    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                               std::istreambuf_iterator<char>());
+    if (bytes.empty()) return false;
+
+    if (codec == VbiCodec::Unknown) {
+        codec = codec_from_path(path);
+    }
+    if (codec != VbiCodec::H264 && codec != VbiCodec::HEVC && codec != VbiCodec::VVC) {
+        return false;
+    }
+
+    std::ofstream out(output_path, std::ios::binary);
+    if (!out) return false;
+
+    if (is_annex_b(bytes.data(), static_cast<int>(bytes.size()))) {
+        out.write(reinterpret_cast<const char*>(bytes.data()),
+                  static_cast<std::streamsize>(bytes.size()));
+        return out.good();
+    }
+
+    static const uint8_t kStartCode4[] = {0, 0, 0, 1};
+    int pos = 0;
+    uint64_t total_written = 0;
+    while (pos + 4 <= static_cast<int>(bytes.size())) {
+        const uint32_t unit_len = (static_cast<uint32_t>(bytes[pos]) << 24) |
+                                  (static_cast<uint32_t>(bytes[pos + 1]) << 16) |
+                                  (static_cast<uint32_t>(bytes[pos + 2]) << 8) |
+                                  static_cast<uint32_t>(bytes[pos + 3]);
+        if (unit_len == 0 || unit_len > static_cast<uint32_t>(bytes.size() - pos - 4)) {
+            break;
+        }
+        out.write(reinterpret_cast<const char*>(kStartCode4), sizeof(kStartCode4));
+        out.write(reinterpret_cast<const char*>(bytes.data() + pos + 4),
+                  static_cast<std::streamsize>(unit_len));
+        total_written += sizeof(kStartCode4) + unit_len;
+        pos += 4 + static_cast<int>(unit_len);
+    }
+
+    return total_written > 0 && out.good();
+}
+
 } // namespace vr::analysis

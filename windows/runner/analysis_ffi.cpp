@@ -379,6 +379,15 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
     avformat_close_input(&fmt_ctx);
     out.close();
 
+    if (total_written == 0) {
+        spdlog::info("[Analysis] extract_raw_vvc: FFmpeg produced no packets, trying raw Annex-B fallback");
+        if (vr::analysis::BitstreamIndexer::write_annex_b_file(
+                video_path, VbiCodec::VVC, out_path)) {
+            std::ifstream fallback(out_path, std::ios::binary | std::ios::ate);
+            total_written = fallback ? static_cast<size_t>(fallback.tellg()) : 0;
+        }
+    }
+
     spdlog::info("[Analysis] extract_raw_vvc: {} packets, {} bytes written", pkt_count, total_written);
     return total_written > 0 && out.good();
 }

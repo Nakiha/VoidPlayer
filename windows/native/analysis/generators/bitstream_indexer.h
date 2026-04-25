@@ -30,6 +30,10 @@ public:
     static bool index_raw_file(const std::string& path,
                                VbiCodec codec,
                                BitstreamIndex& index);
+
+    static bool write_annex_b_file(const std::string& path,
+                                   VbiCodec codec,
+                                   const std::string& output_path);
 };
 
 } // namespace vr::analysis

@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "analysis/generators/analysis_generator.h"
+#include "analysis/generators/bitstream_indexer.h"
 #include "analysis/parsers/vbt_parser.h"
 #include "analysis/parsers/vbi_parser.h"
 
@@ -238,6 +239,29 @@ TEST_CASE("AnalysisGenerator: resources video samples produce VBI2 and VBT", "[a
         for (int i = 0; i < vbt.packet_count(); i++) {
             REQUIRE(vbt.entry(i).size > 0);
         }
+    }
+
+    std::filesystem::remove_all(tmp);
+}
+
+TEST_CASE("BitstreamIndexer: converts length-prefixed VVC sample to Annex-B", "[analysis][generator][resources]") {
+    const std::string lbp_video = test_dir + "/h266_10s_1920x1080_lbp.vvc";
+    if (!std::filesystem::exists(lbp_video)) return;
+
+    auto tmp = make_temp_dir();
+    const std::string annex_b = tmp + "/lbp_annexb.vvc";
+    REQUIRE(vr::analysis::BitstreamIndexer::write_annex_b_file(
+        lbp_video, VbiCodec::VVC, annex_b));
+
+    {
+        std::ifstream in(annex_b, std::ios::binary);
+        REQUIRE(in.good());
+        char start_code[4] = {};
+        in.read(start_code, sizeof(start_code));
+        REQUIRE(start_code[0] == 0);
+        REQUIRE(start_code[1] == 0);
+        REQUIRE(start_code[2] == 0);
+        REQUIRE(start_code[3] == 1);
     }
 
     std::filesystem::remove_all(tmp);

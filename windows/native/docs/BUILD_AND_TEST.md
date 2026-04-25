@@ -42,6 +42,7 @@ python windows/native/build.py
 | `video_renderer_native` | MODULE | Python 扩展 `.pyd`，供 demo/脚本调用 |
 | `video_renderer_tests` | EXE | Catch2 renderer 单元/集成测试 |
 | `analysis_tests` | EXE | H.266 分析数据、VBI/VBT 解析与生成测试 |
+| `analysis_generate` | EXE | AnalysisGenerator 命令行入口，供 Python 格式回归生成 VBI/VBT |
 | `test_ffi_c` | EXE | C ABI smoke test |
 | `probe_hw` | EXE | 硬件能力探测，存在 `probe_hw.cpp` 时构建 |
 | `pipeline_bench` | EXE | 解复用/解码/上传/Present 基准，`BUILD_BENCHMARKS=ON` 时构建 |
@@ -58,7 +59,7 @@ python windows/native/build.py
 
 ## `python dev.py test` 实际覆盖
 
-`dev.py test` 会先构建 native Release，再执行 `windows/native/build.py --test-only`，当前 CTest 包含 3 个测试目标。
+`dev.py test` 会先构建 native Release，再执行 `windows/native/build.py --test-only`。当前包含 CTest 的 3 个测试目标，随后执行 Python analysis 格式回归。
 
 | CTest | 覆盖 |
 |------|------|
@@ -68,7 +69,7 @@ python windows/native/build.py
 
 测试视频默认来自 `resources/video`，CMake 通过 `VIDEO_TEST_DIR` 注入。
 
-补充的 Python analysis 格式回归位于 `windows/native/analysis/tests/python/`，用于直接校验已生成的 VBS2/VBI/VBT 文件：
+补充的 Python analysis 格式回归位于 `windows/native/analysis/tests/python/`，用于校验 VBS2/VBI/VBT 落盘格式。它会把测试视频复制到临时目录，使用 `analysis_generate.exe` 生成 VBI/VBT，再调用 `python dev.py vtm analyze` 生成 VBS2/VVC，最后清理临时文件。
 
 ```bash
 python -m pytest windows/native/analysis/tests/python/test_analysis_formats.py -v

@@ -2,6 +2,7 @@
 import argparse
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -71,7 +72,7 @@ def build(build_dir: Path, build_type: str):
     ])
 
 
-def test(build_dir: Path, build_type: str):
+def test(build_dir: Path, build_type: str, script_dir: Path):
     subprocess.check_call([
         "ctest",
         "--test-dir", str(build_dir),
@@ -80,6 +81,18 @@ def test(build_dir: Path, build_type: str):
         "--timeout", "180",
         "--output-on-failure",
     ])
+
+    repo_root = script_dir.parents[1]
+    analysis_test = script_dir / "analysis" / "tests" / "python" / "test_analysis_formats.py"
+    analysis_generate = build_dir / build_type / "analysis_generate.exe"
+    env = os.environ.copy()
+    env["VOID_ANALYSIS_GENERATE_EXE"] = str(analysis_generate)
+    subprocess.check_call([
+        sys.executable,
+        "-m", "pytest",
+        str(analysis_test),
+        "-q",
+    ], cwd=repo_root, env=env)
 
 
 def benchmark(build_dir: Path, build_type: str):
@@ -137,7 +150,7 @@ def main():
 
     if not args.build_only:
         print("Running tests...", flush=True)
-        test(build_dir, build_type)
+        test(build_dir, build_type, script_dir)
 
     print("Done.", flush=True)
 

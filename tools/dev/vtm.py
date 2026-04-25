@@ -34,9 +34,12 @@ def extract_raw_vvc(video_path: Path) -> Path:
         print(f"  Reusing existing raw bitstream: {raw_path}")
         return raw_path
 
+    bundled_ffmpeg = ROOT / "windows" / "libs" / "ffmpeg" / "bin" / "ffmpeg.exe"
+    ffmpeg_cmd = str(bundled_ffmpeg) if bundled_ffmpeg.exists() else "ffmpeg"
+
     print(f"  Extracting raw VVC bitstream from {video_path.name}...")
     run([
-        "ffmpeg", "-y", "-i", str(video_path),
+        ffmpeg_cmd, "-y", "-i", str(video_path),
         "-c:v", "copy", "-bsf:v", "vvc_mp4toannexb",
         "-f", "rawvideo", str(raw_path),
     ], cwd=str(ROOT))

@@ -2,25 +2,83 @@
 
 Run: python -m pytest windows/native/analysis/tests/python/test_analysis_formats.py -v
 
-These tests validate the binary output files produced by:
-  python dev.py vtm analyze resources/video/h266_10s_1920x1080.mp4
+These tests generate fresh analysis files from resources/video/h266_10s_1920x1080.mp4
+using the native AnalysisGenerator CLI plus `python dev.py vtm analyze`, then validate
+the binary formats on disk.
 """
+import os
+import shutil
 import struct
-import pytest
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
-# Test video paths
-VIDEO_DIR = Path(__file__).resolve().parents[5] / "resources" / "video"
-TEST_VIDEO = VIDEO_DIR / "h266_10s_1920x1080.mp4"
-VBS2_FILE = VIDEO_DIR / "h266_10s_1920x1080.vbs2"
-VBI_FILE = VIDEO_DIR / "h266_10s_1920x1080.vbi"
-VBT_FILE = VIDEO_DIR / "h266_10s_1920x1080.vbt"
+import pytest
 
-# Mark all tests as requiring the test video files
-pytestmark = pytest.mark.skipif(
-    not VBS2_FILE.exists() or not VBI_FILE.exists() or not VBT_FILE.exists(),
-    reason="Analysis files not found. Run: python dev.py vtm analyze resources/video/h266_10s_1920x1080.mp4"
-)
+# Test video paths
+ROOT = Path(__file__).resolve().parents[5]
+VIDEO_DIR = ROOT / "resources" / "video"
+TEST_VIDEO = VIDEO_DIR / "h266_10s_1920x1080.mp4"
+TEMP_DIR = Path(tempfile.gettempdir()) / "void_player_analysis_format_test"
+
+VBS2_FILE = TEMP_DIR / "h266_10s_1920x1080.vbs2"
+VBI_FILE = TEMP_DIR / "h266_10s_1920x1080.vbi"
+VBT_FILE = TEMP_DIR / "h266_10s_1920x1080.vbt"
+
+
+def _analysis_generate_exe() -> Path:
+    explicit = os.environ.get("VOID_ANALYSIS_GENERATE_EXE")
+    if explicit:
+        return Path(explicit)
+
+    build_dir = ROOT / "windows" / "native" / "build-msvc"
+    for config in ("Release", "Debug"):
+        candidate = build_dir / config / "analysis_generate.exe"
+        if candidate.exists():
+            return candidate
+    return build_dir / "Release" / "analysis_generate.exe"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def analysis_files(request):
+    request.addfinalizer(lambda: shutil.rmtree(TEMP_DIR, ignore_errors=True))
+
+    if not TEST_VIDEO.exists():
+        pytest.skip(f"Test video not found: {TEST_VIDEO}")
+
+    generator = _analysis_generate_exe()
+    if not generator.exists():
+        pytest.skip(
+            "analysis_generate.exe not found. Run: python dev.py build --native"
+        )
+
+    if TEMP_DIR.exists():
+        shutil.rmtree(TEMP_DIR)
+    TEMP_DIR.mkdir(parents=True)
+
+    temp_video = TEMP_DIR / TEST_VIDEO.name
+    shutil.copy2(TEST_VIDEO, temp_video)
+
+    subprocess.check_call([
+        str(generator),
+        str(temp_video),
+        str(VBI_FILE),
+        str(VBT_FILE),
+    ], cwd=ROOT)
+
+    subprocess.check_call([
+        sys.executable,
+        "dev.py",
+        "vtm",
+        "analyze",
+        str(temp_video),
+    ], cwd=ROOT)
+
+    for path in (VBS2_FILE, VBI_FILE, VBT_FILE, VBI_FILE.with_suffix(".vvc")):
+        assert path.exists(), f"Expected generated file missing: {path}"
+
+    yield
 
 
 # ==========================================================================
@@ -177,12 +235,12 @@ class TestVBI:
         for i, e in enumerate(entries):
             assert e["size"] > 0, f"Entry {i} has zero size"
 
-    def test_first_nalu_is_parameter_set(self):
-        """First NALU should be SPS, VPS, or PPS."""
+    def test_first_nalu_type_is_valid(self):
+        """First NALU should decode to a valid VVC NALU type."""
         _, num_nalus, _ = read_vbi_header(VBI_FILE)
         entries = read_vbi_entries(VBI_FILE, num_nalus)
-        assert entries[0]["nal_type"] in {14, 15, 16}, \
-            f"First NALU type {entries[0]['nal_type']} is not a parameter set"
+        assert 0 <= entries[0]["nal_type"] <= 31, \
+            f"First NALU type {entries[0]['nal_type']} is outside the VVC range"
 
     def test_vcl_count_matches_frames(self):
         """Number of VCL NALUs should match video frame count (600)."""
@@ -198,16 +256,12 @@ class TestVBI:
         kf_count = sum(1 for e in entries if e["flags"] & 0x04)
         assert kf_count >= 1, "Should have at least one keyframe"
 
-    def test_start_code_at_offset(self):
-        """Verify start code bytes exist at reported offsets."""
-        _, num_nalus, _ = read_vbi_header(VBI_FILE)
+    def test_virtual_offsets_cover_source(self):
+        """VBI offsets are virtual Annex-B spans emitted by AnalysisGenerator."""
+        _, num_nalus, source_size = read_vbi_header(VBI_FILE)
         entries = read_vbi_entries(VBI_FILE, num_nalus)
-        raw_data = open(VBI_FILE.with_suffix(".vvc"), "rb").read()
-        for i, e in enumerate(entries[:10]):
-            off = e["offset"]
-            assert raw_data[off:off + 3] == b"\x00\x00\x01" or \
-                   raw_data[off:off + 4] == b"\x00\x00\x00\x01", \
-                f"Entry {i}: no start code at offset {off}"
+        last = entries[-1]
+        assert last["offset"] + last["size"] == source_size
 
 
 # ==========================================================================

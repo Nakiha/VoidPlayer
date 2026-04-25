@@ -15,9 +15,12 @@ analysis/
 │   ├── vbs2_parser.h/cpp       # VBS2 — VTM 帧级 CU 统计
 │   ├── vbi_parser.h/cpp        # VBI  — NALU 索引
 │   └── vbt_parser.h/cpp        # VBT  — 时间戳/关键帧
-└── generators/                 # 二进制文件生成器
-    ├── analysis_generator.h    # VBI+VBT 生成接口
-    └── analysis_generator.cpp  # FFmpeg 单趟实现
+├── generators/                 # 二进制文件生成器
+│   ├── analysis_generator.h    # VBI+VBT 生成接口
+│   └── analysis_generator.cpp  # FFmpeg 单趟实现
+├── tools/
+│   └── analysis_generate.cpp   # AnalysisGenerator 命令行入口
+└── tests/python/               # Python 落盘格式回归
 ```
 
 ## 二进制格式
@@ -84,6 +87,10 @@ VBS2 生成由 VTM DecoderApp 外部进程完成（可选），通过 `analysis_
 - `test_analysis_parsers.cpp` — VBT/VBI/VBS2 解析器测试
 - `test_analysis_generator.cpp` — VBI+VBT 生成测试（从 H.266 MP4 实际生成并验证）
 
-Python 格式回归测试位于 `native/analysis/tests/python/`，用于直接校验已生成的 VBS2/VBI/VBT 文件结构。
+Python 格式回归测试位于 `native/analysis/tests/python/`，用于生成并校验 VBS2/VBI/VBT 文件结构：
+
+- `analysis_generate.exe` 生成 VBI/VBT
+- `python dev.py vtm analyze` 生成 VBS2/VVC
+- pytest 解析文件并校验 header、索引、NALU、帧统计等格式约束
 
 运行：`python dev.py test`

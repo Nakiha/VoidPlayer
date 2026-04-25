@@ -20,3 +20,19 @@ endif()
 target_link_libraries(analysis_lib PUBLIC
     spdlog::spdlog_header_only
 )
+
+add_executable(analysis_generate
+    tools/analysis_generate.cpp
+)
+
+target_link_libraries(analysis_generate PRIVATE
+    analysis_lib
+)
+
+set_target_properties(analysis_generate PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>"
+)
+
+if(TARGET copy_ffmpeg_dlls)
+    add_dependencies(analysis_generate copy_ffmpeg_dlls)
+endif()

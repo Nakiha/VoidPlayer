@@ -76,24 +76,54 @@ inline constexpr size_t VBS2_CU_SIZE_INTER = sizeof(Vbs2CuCommon) + sizeof(Vbs2C
 inline constexpr size_t VBS2_CU_SIZE_INTRA = sizeof(Vbs2CuCommon) + sizeof(Vbs2CuIntra);  // 12
 
 // ===========================================================================
-// VBI — NALU index
+// VBI — bitstream unit index
 // ===========================================================================
 
-struct VbiHeader {
+enum class VbiCodec : uint16_t {
+    Unknown = 0,
+    H264    = 1,
+    HEVC    = 2,
+    VVC     = 3,
+    AV1     = 4,
+    VP9     = 5,
+    MPEG2   = 6,
+};
+
+enum class VbiUnitKind : uint16_t {
+    Unknown   = 0,
+    Nalu      = 1,
+    Obu       = 2,
+    StartCode = 3,
+    Packet    = 4,
+};
+
+struct VbiLegacyHeader {
     char     magic[4];       // "VBI1"
     uint32_t num_nalus;
     uint32_t source_size;
     uint32_t reserved;
 };
-static_assert(sizeof(VbiHeader) == 16);
+static_assert(sizeof(VbiLegacyHeader) == 16);
+
+struct VbiHeader {
+    char     magic[4];       // "VBI2"
+    uint16_t version;        // 2
+    uint16_t codec;          // VbiCodec
+    uint16_t unit_kind;      // VbiUnitKind
+    uint16_t header_size;    // sizeof(VbiHeader)
+    uint32_t num_units;
+    uint64_t source_size;
+    uint8_t  reserved[32];
+};
+static_assert(sizeof(VbiHeader) == 56);
 
 struct VbiEntry {
     uint64_t offset;         // byte offset of start code in source file
     uint32_t size;           // bytes from start code to next start code
-    uint8_t  nal_type;       // 5-bit NalUnitType
+    uint8_t  nal_type;       // codec-specific unit type (kept for ABI compatibility)
     uint8_t  temporal_id;
     uint8_t  layer_id;
-    uint8_t  flags;          // bit0: isVCL, bit1: isSlice, bit2: isKeyframe
+    uint8_t  flags;          // bit0: isVCL/coded unit, bit1: isSlice, bit2: isKeyframe
 };
 static_assert(sizeof(VbiEntry) == 16);
 

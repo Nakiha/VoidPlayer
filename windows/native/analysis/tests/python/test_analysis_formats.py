@@ -193,15 +193,38 @@ class TestVBS2:
 def read_vbi_header(path):
     with open(path, "rb") as f:
         magic = f.read(4)
-        num_nalus, source_size, reserved = struct.unpack("<III", f.read(12))
-    return magic, num_nalus, source_size
+        if magic == b"VBI1":
+            num_units, source_size, _ = struct.unpack("<III", f.read(12))
+            return {
+                "magic": magic,
+                "version": 1,
+                "codec": 3,      # VVC
+                "unit_kind": 1,  # NALU
+                "header_size": 16,
+                "num_units": num_units,
+                "source_size": source_size,
+            }
+        if magic == b"VBI2":
+            version, codec, unit_kind, header_size, num_units, source_size = struct.unpack(
+                "<HHHHIQ", f.read(20)
+            )
+            return {
+                "magic": magic,
+                "version": version,
+                "codec": codec,
+                "unit_kind": unit_kind,
+                "header_size": header_size,
+                "num_units": num_units,
+                "source_size": source_size,
+            }
+    raise AssertionError(f"Unsupported VBI magic: {magic!r}")
 
 
-def read_vbi_entries(path, num_nalus):
+def read_vbi_entries(path, header):
     entries = []
     with open(path, "rb") as f:
-        f.seek(16)
-        for _ in range(num_nalus):
+        f.seek(header["header_size"])
+        for _ in range(header["num_units"]):
             raw = f.read(16)
             offset, size = struct.unpack("<QI", raw[0:12])
             nal_type, tid, layer_id, flags = struct.unpack("<BBBB", raw[12:16])
@@ -214,54 +237,57 @@ def read_vbi_entries(path, num_nalus):
 
 class TestVBI:
     def test_header_magic(self):
-        magic, _, _ = read_vbi_header(VBI_FILE)
-        assert magic == b"VBI1"
+        header = read_vbi_header(VBI_FILE)
+        assert header["magic"] == b"VBI2"
+        assert header["version"] == 2
+        assert header["codec"] == 3      # VVC
+        assert header["unit_kind"] == 1  # NALU
 
     def test_nalu_count_reasonable(self):
         """Should have at least as many NALUs as video frames."""
-        _, num_nalus, _ = read_vbi_header(VBI_FILE)
-        assert num_nalus >= 600  # 10s * 60fps
+        header = read_vbi_header(VBI_FILE)
+        assert header["num_units"] >= 600  # 10s * 60fps
 
     def test_offsets_strictly_increasing(self):
-        _, num_nalus, _ = read_vbi_header(VBI_FILE)
-        entries = read_vbi_entries(VBI_FILE, num_nalus)
+        header = read_vbi_header(VBI_FILE)
+        entries = read_vbi_entries(VBI_FILE, header)
         for i in range(1, len(entries)):
             assert entries[i]["offset"] > entries[i - 1]["offset"], \
                 f"Entry {i} offset not > entry {i-1}"
 
     def test_sizes_positive(self):
-        _, num_nalus, _ = read_vbi_header(VBI_FILE)
-        entries = read_vbi_entries(VBI_FILE, num_nalus)
+        header = read_vbi_header(VBI_FILE)
+        entries = read_vbi_entries(VBI_FILE, header)
         for i, e in enumerate(entries):
             assert e["size"] > 0, f"Entry {i} has zero size"
 
     def test_first_nalu_type_is_valid(self):
         """First NALU should decode to a valid VVC NALU type."""
-        _, num_nalus, _ = read_vbi_header(VBI_FILE)
-        entries = read_vbi_entries(VBI_FILE, num_nalus)
+        header = read_vbi_header(VBI_FILE)
+        entries = read_vbi_entries(VBI_FILE, header)
         assert 0 <= entries[0]["nal_type"] <= 31, \
             f"First NALU type {entries[0]['nal_type']} is outside the VVC range"
 
     def test_vcl_count_matches_frames(self):
         """Number of VCL NALUs should match video frame count (600)."""
-        _, num_nalus, _ = read_vbi_header(VBI_FILE)
-        entries = read_vbi_entries(VBI_FILE, num_nalus)
+        header = read_vbi_header(VBI_FILE)
+        entries = read_vbi_entries(VBI_FILE, header)
         vcl_count = sum(1 for e in entries if e["flags"] & 0x01)
         assert vcl_count == 600, f"Expected 600 VCL NALUs, got {vcl_count}"
 
     def test_keyframe_count(self):
         """Should have keyframe NALUs."""
-        _, num_nalus, _ = read_vbi_header(VBI_FILE)
-        entries = read_vbi_entries(VBI_FILE, num_nalus)
+        header = read_vbi_header(VBI_FILE)
+        entries = read_vbi_entries(VBI_FILE, header)
         kf_count = sum(1 for e in entries if e["flags"] & 0x04)
         assert kf_count >= 1, "Should have at least one keyframe"
 
     def test_virtual_offsets_cover_source(self):
         """VBI offsets are virtual Annex-B spans emitted by AnalysisGenerator."""
-        _, num_nalus, source_size = read_vbi_header(VBI_FILE)
-        entries = read_vbi_entries(VBI_FILE, num_nalus)
+        header = read_vbi_header(VBI_FILE)
+        entries = read_vbi_entries(VBI_FILE, header)
         last = entries[-1]
-        assert last["offset"] + last["size"] == source_size
+        assert last["offset"] + last["size"] == header["source_size"]
 
 
 # ==========================================================================

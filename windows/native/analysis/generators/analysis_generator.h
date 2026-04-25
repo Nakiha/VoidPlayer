@@ -5,12 +5,12 @@
 
 namespace vr::analysis {
 
-/// Single-pass VBI + VBT generator using FFmpeg.
+/// Single-pass VBI2 + VBT generator using FFmpeg.
 /// Opens the video file, iterates all video packets, and writes both
 /// binary index files in one pass — no Python, no subprocess calls.
 class AnalysisGenerator {
 public:
-    /// Generate VBI (NALU index) and VBT (timestamps) files.
+    /// Generate VBI2 (codec-specific bitstream unit index) and VBT files.
     /// Both files are written in a single FFmpeg pass.
     /// Returns true if at least VBT was generated successfully.
     static bool generate(const std::string& video_path,

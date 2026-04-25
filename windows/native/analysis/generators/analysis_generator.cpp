@@ -1,5 +1,6 @@
 #include "analysis/generators/analysis_generator.h"
 
+#include "analysis/generators/bitstream_indexer.h"
 #include "analysis/parsers/binary_types.h"
 
 #include <spdlog/spdlog.h>
@@ -11,161 +12,10 @@ extern "C" {
 
 #include <cstring>
 #include <fstream>
+#include <utility>
 #include <vector>
 
 namespace vr::analysis {
-
-// VVC NALU type classification (matches Python vvc_nalu_indexer.py exactly)
-static constexpr uint8_t VBI_FLAG_IS_VCL      = 0x01;
-static constexpr uint8_t VBI_FLAG_IS_SLICE    = 0x02;
-static constexpr uint8_t VBI_FLAG_IS_KEYFRAME = 0x04;
-
-static bool isVclType(uint8_t nal_type)  { return nal_type <= 11; }
-static bool isSliceType(uint8_t nal_type) {
-    return nal_type == 0 || nal_type == 1 || nal_type == 2 || nal_type == 3 ||
-           nal_type == 7 || nal_type == 8 || nal_type == 9 || nal_type == 10;
-}
-static bool isKeyframeType(uint8_t nal_type) {
-    return nal_type == 7 || nal_type == 8 || nal_type == 9;
-}
-
-// Parse 2-byte VVC NALU header. Returns false if too short.
-static bool parseVvcNaluHeader(const uint8_t* data, int remaining,
-                               uint8_t& nal_type, uint8_t& temporal_id,
-                               uint8_t& layer_id) {
-    if (remaining < 2) return false;
-    uint8_t b0 = data[0], b1 = data[1];
-    layer_id    = b0 & 0x3F;
-    nal_type    = (b1 >> 3) & 0x1F;
-    uint8_t tid_plus1 = b1 & 0x07;
-    temporal_id = (tid_plus1 > 0) ? (tid_plus1 - 1) : 0;
-    return true;
-}
-
-// Parse NALUs from Annex B data within a single packet.
-// Appends entries to `nalu_entries` and advances `virtual_offset`.
-static void parseAnnexBNalus(const uint8_t* data, int data_len,
-                             std::vector<VbiEntry>& nalu_entries,
-                             uint64_t& virtual_offset) {
-    // Collect start code positions
-    std::vector<int> start_positions;
-    int i = 0;
-    while (i < data_len - 3) {
-        if (data[i] == 0 && data[i + 1] == 0) {
-            if (data[i + 2] == 1) {
-                start_positions.push_back(i);
-                i += 3;
-                continue;
-            }
-            if (i < data_len - 4 && data[i + 2] == 0 && data[i + 3] == 1) {
-                start_positions.push_back(i);
-                i += 4;
-                continue;
-            }
-        }
-        i++;
-    }
-
-    for (size_t idx = 0; idx < start_positions.size(); idx++) {
-        int sc_pos = start_positions[idx];
-
-        // Determine start code length
-        int sc_len = 3;
-        if (sc_pos + 4 <= data_len &&
-            data[sc_pos] == 0 && data[sc_pos + 1] == 0 &&
-            data[sc_pos + 2] == 0 && data[sc_pos + 3] == 1) {
-            sc_len = 4;
-        }
-
-        // NALU size: from this start code to the next (or end of data)
-        int nalu_size;
-        if (idx + 1 < start_positions.size()) {
-            nalu_size = start_positions[idx + 1] - sc_pos;
-        } else {
-            nalu_size = data_len - sc_pos;
-        }
-
-        // Parse VVC NALU header (2 bytes after start code)
-        int hdr_offset = sc_pos + sc_len;
-        uint8_t nal_type = 31, temporal_id = 0, layer_id = 0;
-        if (hdr_offset + 2 <= data_len) {
-            parseVvcNaluHeader(data + hdr_offset, data_len - hdr_offset,
-                               nal_type, temporal_id, layer_id);
-        }
-
-        // Compute flags
-        uint8_t flags = 0;
-        if (isVclType(nal_type))      flags |= VBI_FLAG_IS_VCL;
-        if (isSliceType(nal_type))    flags |= VBI_FLAG_IS_SLICE;
-        if (isKeyframeType(nal_type)) flags |= VBI_FLAG_IS_KEYFRAME;
-
-        VbiEntry entry{};
-        entry.offset      = virtual_offset;
-        entry.size        = static_cast<uint32_t>(nalu_size);
-        entry.nal_type    = nal_type;
-        entry.temporal_id = temporal_id;
-        entry.layer_id    = layer_id;
-        entry.flags       = flags;
-        nalu_entries.push_back(entry);
-
-        virtual_offset += static_cast<uint64_t>(nalu_size);
-    }
-}
-
-// Parse NALUs from length-prefixed (MP4/MKV container) data within a single packet.
-// Appends entries to `nalu_entries` and advances `virtual_offset`.
-static void parseLengthPrefixedNalus(const uint8_t* data, int data_len,
-                                     std::vector<VbiEntry>& nalu_entries,
-                                     uint64_t& virtual_offset) {
-    int pos = 0;
-    while (pos + 4 < data_len) {
-        // 4-byte big-endian NALU length
-        uint32_t nalu_len = (static_cast<uint32_t>(data[pos]) << 24) |
-                            (static_cast<uint32_t>(data[pos + 1]) << 16) |
-                            (static_cast<uint32_t>(data[pos + 2]) << 8) |
-                            static_cast<uint32_t>(data[pos + 3]);
-
-        if (nalu_len == 0 || pos + 4 + static_cast<int>(nalu_len) > data_len) {
-            break; // Invalid or truncated
-        }
-
-        const uint8_t* nalu_data = data + pos + 4;
-        uint8_t nal_type = 31, temporal_id = 0, layer_id = 0;
-        if (static_cast<int>(nalu_len) >= 2) {
-            parseVvcNaluHeader(nalu_data, static_cast<int>(nalu_len),
-                               nal_type, temporal_id, layer_id);
-        }
-
-        uint8_t flags = 0;
-        if (isVclType(nal_type))      flags |= VBI_FLAG_IS_VCL;
-        if (isSliceType(nal_type))    flags |= VBI_FLAG_IS_SLICE;
-        if (isKeyframeType(nal_type)) flags |= VBI_FLAG_IS_KEYFRAME;
-
-        // In virtual Annex B, each NALU has a 4-byte start code + nalu data
-        uint32_t virtual_size = 4 + nalu_len;
-
-        VbiEntry entry{};
-        entry.offset      = virtual_offset;
-        entry.size        = virtual_size;
-        entry.nal_type    = nal_type;
-        entry.temporal_id = temporal_id;
-        entry.layer_id    = layer_id;
-        entry.flags       = flags;
-        nalu_entries.push_back(entry);
-
-        virtual_offset += virtual_size;
-        pos += 4 + static_cast<int>(nalu_len);
-    }
-}
-
-// Detect if packet data is Annex B (starts with 00 00 01 or 00 00 00 01)
-static bool isAnnexB(const uint8_t* data, int len) {
-    if (len >= 4 && data[0] == 0 && data[1] == 0 && data[2] == 0 && data[3] == 1)
-        return true;
-    if (len >= 3 && data[0] == 0 && data[1] == 0 && data[2] == 1)
-        return true;
-    return false;
-}
 
 // Write binary VBT file
 static bool writeVbt(const std::string& path,
@@ -191,24 +41,68 @@ static bool writeVbt(const std::string& path,
 
 // Write binary VBI file
 static bool writeVbi(const std::string& path,
-                     const std::vector<VbiEntry>& entries,
-                     uint32_t source_size) {
+                     const BitstreamIndex& index) {
     std::ofstream out(path, std::ios::binary);
     if (!out) return false;
 
     VbiHeader hdr{};
     hdr.magic[0] = 'V'; hdr.magic[1] = 'B';
-    hdr.magic[2] = 'I'; hdr.magic[3] = '1';
-    hdr.num_nalus   = static_cast<uint32_t>(entries.size());
-    hdr.source_size = source_size;
-    hdr.reserved    = 0;
+    hdr.magic[2] = 'I'; hdr.magic[3] = '2';
+    hdr.version     = 2;
+    hdr.codec       = static_cast<uint16_t>(index.codec);
+    hdr.unit_kind   = static_cast<uint16_t>(index.unit_kind);
+    hdr.header_size = sizeof(VbiHeader);
+    hdr.num_units   = static_cast<uint32_t>(index.entries.size());
+    hdr.source_size = index.source_size;
     out.write(reinterpret_cast<const char*>(&hdr), sizeof(VbiHeader));
 
-    for (const auto& e : entries) {
+    for (const auto& e : index.entries) {
         out.write(reinterpret_cast<const char*>(&e), sizeof(VbiEntry));
     }
 
     return out.good();
+}
+
+static void synthesize_vbt_from_index(const BitstreamIndex& index,
+                                      std::vector<VbtEntry>& pkt_entries,
+                                      int32_t& tb_num,
+                                      int32_t& tb_den) {
+    tb_num = 1;
+    tb_den = 60;
+    int32_t poc = 0;
+    for (const auto& unit : index.entries) {
+        if ((unit.flags & VBI_FLAG_IS_VCL) == 0) continue;
+        VbtEntry entry{};
+        entry.pts = poc;
+        entry.dts = poc;
+        entry.poc = poc++;
+        entry.size = unit.size;
+        entry.duration = 1;
+        entry.flags = (unit.flags & VBI_FLAG_IS_KEYFRAME) ? VBT_FLAG_KEYFRAME : 0;
+        pkt_entries.push_back(entry);
+    }
+}
+
+static bool generateRawOnly(const std::string& video_path,
+                            const std::string& vbi_path,
+                            const std::string& vbt_path) {
+    BitstreamIndex index;
+    if (!BitstreamIndexer::index_raw_file(video_path, VbiCodec::Unknown, index)) {
+        return false;
+    }
+
+    std::vector<VbtEntry> packets;
+    int32_t tb_num = 1;
+    int32_t tb_den = 60;
+    synthesize_vbt_from_index(index, packets, tb_num, tb_den);
+    if (packets.empty()) {
+        spdlog::warn("[AnalysisGen] raw fallback found no coded units: {}", video_path);
+    }
+
+    if (!writeVbt(vbt_path, packets, tb_num, tb_den)) {
+        return false;
+    }
+    return writeVbi(vbi_path, index);
 }
 
 // ---------------------------------------------------------------
@@ -222,14 +116,14 @@ bool AnalysisGenerator::generate(const std::string& video_path,
     int ret = avformat_open_input(&fmt_ctx, video_path.c_str(), nullptr, nullptr);
     if (ret < 0) {
         spdlog::error("[AnalysisGen] avformat_open_input failed: {:#x}", static_cast<unsigned>(ret));
-        return false;
+        return generateRawOnly(video_path, vbi_path, vbt_path);
     }
 
     ret = avformat_find_stream_info(fmt_ctx, nullptr);
     if (ret < 0) {
         spdlog::error("[AnalysisGen] avformat_find_stream_info failed: {:#x}", static_cast<unsigned>(ret));
         avformat_close_input(&fmt_ctx);
-        return false;
+        return generateRawOnly(video_path, vbi_path, vbt_path);
     }
 
     // Find video stream
@@ -243,20 +137,26 @@ bool AnalysisGenerator::generate(const std::string& video_path,
     if (video_idx < 0) {
         spdlog::error("[AnalysisGen] no video stream found");
         avformat_close_input(&fmt_ctx);
-        return false;
+        return generateRawOnly(video_path, vbi_path, vbt_path);
     }
 
     AVRational time_base = fmt_ctx->streams[video_idx]->time_base;
     int32_t tb_num = time_base.num;
     int32_t tb_den = time_base.den;
+    VbiCodec codec = BitstreamIndexer::codec_from_ffmpeg_id(
+        fmt_ctx->streams[video_idx]->codecpar->codec_id);
+    if (codec == VbiCodec::Unknown) {
+        codec = BitstreamIndexer::codec_from_path(video_path);
+    }
 
-    spdlog::info("[AnalysisGen] video stream {}: time_base={}/{}",
-                 video_idx, tb_num, tb_den);
+    spdlog::info("[AnalysisGen] video stream {}: time_base={}/{}, codec={}",
+                 video_idx, tb_num, tb_den, static_cast<int>(codec));
 
     // Single-pass: collect VBI and VBT data
-    std::vector<VbiEntry> nalu_entries;
+    BitstreamIndex bitstream_index;
+    bitstream_index.codec = codec;
+    bitstream_index.unit_kind = BitstreamIndexer::unit_kind_for_codec(codec);
     std::vector<VbtEntry> pkt_entries;
-    uint64_t virtual_offset = 0; // Virtual Annex B byte offset for VBI
     int32_t seq_poc = 0;         // Sequential POC for VBT
 
     AVPacket* pkt = av_packet_alloc();
@@ -291,13 +191,14 @@ bool AnalysisGenerator::generate(const std::string& video_path,
             pkt_entries.push_back(entry);
         }
 
-        // --- VBI: parse NALUs from packet data ---
+        // --- VBI2: parse codec-specific bitstream units from packet data ---
         if (pkt->data && pkt->size > 0) {
-            if (isAnnexB(pkt->data, pkt->size)) {
-                parseAnnexBNalus(pkt->data, pkt->size, nalu_entries, virtual_offset);
-            } else {
-                parseLengthPrefixedNalus(pkt->data, pkt->size, nalu_entries, virtual_offset);
-            }
+            BitstreamIndexer::append_packet(
+                codec,
+                pkt->data,
+                pkt->size,
+                (pkt->flags & AV_PKT_FLAG_KEY) != 0,
+                bitstream_index);
         }
 
         av_packet_unref(pkt);
@@ -306,8 +207,18 @@ bool AnalysisGenerator::generate(const std::string& video_path,
     av_packet_free(&pkt);
     avformat_close_input(&fmt_ctx);
 
-    spdlog::info("[AnalysisGen] scanned {} packets, {} NALUs",
-                 pkt_entries.size(), nalu_entries.size());
+    if (pkt_entries.empty()) {
+        BitstreamIndex raw_index;
+        if (BitstreamIndexer::index_raw_file(video_path, codec, raw_index)) {
+            bitstream_index = std::move(raw_index);
+            synthesize_vbt_from_index(bitstream_index, pkt_entries, tb_num, tb_den);
+            spdlog::info("[AnalysisGen] raw fallback synthesized {} packets from {} units",
+                         pkt_entries.size(), bitstream_index.entries.size());
+        }
+    }
+
+    spdlog::info("[AnalysisGen] scanned {} packets, {} bitstream units",
+                 pkt_entries.size(), bitstream_index.entries.size());
 
     // Write VBT
     bool vbt_ok = writeVbt(vbt_path, pkt_entries, tb_num, tb_den);
@@ -318,12 +229,12 @@ bool AnalysisGenerator::generate(const std::string& video_path,
     spdlog::info("[AnalysisGen] wrote VBT: {} ({} entries)", vbt_path, pkt_entries.size());
 
     // Write VBI
-    bool vbi_ok = writeVbi(vbi_path, nalu_entries, static_cast<uint32_t>(virtual_offset));
+    bool vbi_ok = writeVbi(vbi_path, bitstream_index);
     if (!vbi_ok) {
         spdlog::warn("[AnalysisGen] failed to write VBI: {}", vbi_path);
         // VBI is optional — return true if VBT was written
     } else {
-        spdlog::info("[AnalysisGen] wrote VBI: {} ({} entries)", vbi_path, nalu_entries.size());
+        spdlog::info("[AnalysisGen] wrote VBI: {} ({} entries)", vbi_path, bitstream_index.entries.size());
     }
 
     return vbt_ok;

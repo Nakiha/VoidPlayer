@@ -14,6 +14,9 @@ public:
 
     const VbiHeader& header() const { return header_; }
     int nalu_count() const { return static_cast<int>(entries_.size()); }
+    int unit_count() const { return static_cast<int>(entries_.size()); }
+    VbiCodec codec() const { return static_cast<VbiCodec>(header_.codec); }
+    VbiUnitKind unit_kind() const { return static_cast<VbiUnitKind>(header_.unit_kind); }
 
     const VbiEntry& entry(int i) const { return entries_[i]; }
     const std::vector<VbiEntry>& entries() const { return entries_; }

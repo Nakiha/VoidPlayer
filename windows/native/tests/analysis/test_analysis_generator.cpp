@@ -60,7 +60,10 @@ TEST_CASE("AnalysisGenerator: generates VBI and VBT from H.266 MP4", "[analysis]
     REQUIRE(bh.magic[0] == 'V');
     REQUIRE(bh.magic[1] == 'B');
     REQUIRE(bh.magic[2] == 'I');
-    REQUIRE(bh.magic[3] == '1');
+    REQUIRE(bh.magic[3] == '2');
+    REQUIRE(bh.version == 2);
+    REQUIRE(vbi.codec() == VbiCodec::VVC);
+    REQUIRE(vbi.unit_kind() == VbiUnitKind::Nalu);
     REQUIRE(vbi.nalu_count() >= 600);
     REQUIRE(bh.source_size > 0);
 

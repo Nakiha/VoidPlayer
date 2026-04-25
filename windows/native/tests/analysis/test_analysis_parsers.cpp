@@ -105,7 +105,10 @@ TEST_CASE("VBI: open and header", "[analysis][vbi]") {
     REQUIRE(h.magic[0] == 'V');
     REQUIRE(h.magic[1] == 'B');
     REQUIRE(h.magic[2] == 'I');
-    REQUIRE(h.magic[3] == '1');
+    REQUIRE(h.magic[3] == '2');
+    REQUIRE(h.version == 2);
+    REQUIRE(vbi.codec() == VbiCodec::VVC);
+    REQUIRE(vbi.unit_kind() == VbiUnitKind::Nalu);
     REQUIRE(vbi.nalu_count() >= 600);
     REQUIRE(h.source_size > 0);
 }

@@ -1,7 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include "video_renderer/renderer.h"
-#include "video_renderer/logging.h"
+#include "common/logging.h"
 #include <cstdint>
 
 namespace py = pybind11;

@@ -1,6 +1,6 @@
 set(VR_SOURCES
     renderer.cpp
-    logging.cpp
+    ../common/logging.cpp
     clock.cpp
     d3d11/device.cpp
     d3d11/texture.cpp

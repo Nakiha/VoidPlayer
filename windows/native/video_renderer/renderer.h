@@ -10,7 +10,7 @@
 #include "video_renderer/buffer/track_buffer.h"
 #include "video_renderer/sync/seek_controller.h"
 #include "video_renderer/sync/render_sink.h"
-#include "video_renderer/logging.h"
+#include "common/logging.h"
 #include <vector>
 #include <array>
 #include <string>

@@ -24,7 +24,7 @@ native/
 ├── video_renderer/                 # 核心静态库
 │   ├── renderer.h/cpp              # 渲染器主入口
 │   ├── clock.h/cpp                 # PTS 时钟（可注入时间源）
-│   ├── logging.h/cpp               # spdlog 配置 + 崩溃处理
+│   ├── common/logging.h/cpp        # spdlog 配置 + 崩溃处理
 │   ├── d3d11/                      # D3D11 后端
 │   │   ├── device.h/cpp            # 设备 / SwapChain / Headless render target
 │   │   ├── texture.h/cpp           # 纹理创建、上传、池化

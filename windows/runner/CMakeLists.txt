@@ -45,7 +45,7 @@ if(FFMPEG_FOUND)
 # Video renderer sources
 set(VR_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/renderer.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/logging.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/common/logging.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/clock.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/d3d11/device.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/video_renderer/d3d11/texture.cpp"

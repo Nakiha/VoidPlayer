@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <cstdio>
+#include <vector>
 
 static const std::string test_dir = VIDEO_TEST_DIR;
 static const std::string h266_video = test_dir + "/h266_10s_1920x1080.mp4";
@@ -187,6 +188,57 @@ TEST_CASE("AnalysisGenerator: nonexistent input returns false", "[analysis][gene
     // Output files should not exist
     REQUIRE_FALSE(std::filesystem::exists(vbi_path));
     REQUIRE_FALSE(std::filesystem::exists(vbt_path));
+
+    std::filesystem::remove_all(tmp);
+}
+
+TEST_CASE("AnalysisGenerator: resources video samples produce VBI2 and VBT", "[analysis][generator][resources]") {
+    struct SampleCase {
+        const char* name;
+        VbiCodec codec;
+        VbiUnitKind unit_kind;
+        int min_units;
+        int expected_packets;
+    };
+
+    const std::vector<SampleCase> samples = {
+        {"av1_10s_1920x1080.webm",       VbiCodec::AV1,   VbiUnitKind::Obu,       600, 600},
+        {"h264_9s_1920x1080.mp4",        VbiCodec::H264,  VbiUnitKind::Nalu,      600, 600},
+        {"h265_10s_1920x1080.mp4",       VbiCodec::HEVC,  VbiUnitKind::Nalu,      600, 600},
+        {"h266_10s_1920x1080_lbp.vvc",   VbiCodec::VVC,   VbiUnitKind::Nalu,      600, 600},
+        {"h266_10s_1920x1080.mp4",       VbiCodec::VVC,   VbiUnitKind::Nalu,      600, 600},
+        {"h266_10s_1920x1080.vvc",       VbiCodec::VVC,   VbiUnitKind::Nalu,      600, 600},
+        {"mpeg2_10s_1280x720.ts",        VbiCodec::MPEG2, VbiUnitKind::StartCode, 600, 600},
+        {"vp9_10s_1920x1080.webm",       VbiCodec::VP9,   VbiUnitKind::Packet,    600, 600},
+    };
+
+    auto tmp = make_temp_dir();
+
+    for (const auto& sample : samples) {
+        const std::string video = test_dir + "/" + sample.name;
+        if (!std::filesystem::exists(video)) continue;
+
+        const std::string base = std::string(sample.name);
+        const std::string vbi_path = tmp + "/" + base + ".vbi";
+        const std::string vbt_path = tmp + "/" + base + ".vbt";
+
+        REQUIRE(vr::analysis::AnalysisGenerator::generate(video, vbi_path, vbt_path));
+
+        vr::analysis::VbiFile vbi;
+        REQUIRE(vbi.open(vbi_path));
+        REQUIRE(vbi.header().magic[3] == '2');
+        REQUIRE(vbi.codec() == sample.codec);
+        REQUIRE(vbi.unit_kind() == sample.unit_kind);
+        REQUIRE(vbi.unit_count() >= sample.min_units);
+        REQUIRE(vbi.header().source_size > 0);
+
+        vr::analysis::VbtFile vbt;
+        REQUIRE(vbt.open(vbt_path));
+        REQUIRE(vbt.packet_count() == sample.expected_packets);
+        for (int i = 0; i < vbt.packet_count(); i++) {
+            REQUIRE(vbt.entry(i).size > 0);
+        }
+    }
 
     std::filesystem::remove_all(tmp);
 }

@@ -1,12 +1,41 @@
 """Build script for video_renderer_native module."""
 import argparse
-import subprocess
-import sys
 import os
+import subprocess
 from pathlib import Path
 
 
-def configure(build_dir: Path, script_dir: Path):
+def is_ffmpeg_root(path: Path) -> bool:
+    return (path / "include" / "libavcodec" / "avcodec.h").exists()
+
+
+def resolve_ffmpeg_root(script_dir: Path, explicit_root: str | None) -> Path:
+    candidates: list[Path] = []
+
+    if explicit_root:
+        candidates.append(Path(explicit_root))
+
+    for env_name in ("FFMPEG_ROOT", "FFMPEG_DIR"):
+        env_value = os.environ.get(env_name)
+        if env_value:
+            candidates.append(Path(env_value))
+
+    candidates.append(script_dir.parent / "libs" / "ffmpeg")
+
+    for candidate in candidates:
+        resolved = candidate.expanduser().resolve()
+        if is_ffmpeg_root(resolved):
+            return resolved
+
+    checked = "\n  - ".join(str(path.expanduser().resolve()) for path in candidates)
+    raise FileNotFoundError(
+        "FFmpeg headers were not found. Checked:\n"
+        f"  - {checked}\n"
+        "Provide a valid FFmpeg root with --ffmpeg-root or FFMPEG_ROOT."
+    )
+
+
+def configure(build_dir: Path, script_dir: Path, ffmpeg_root: Path):
     import pybind11
     pybind11_dir = pybind11.get_cmake_dir()
 
@@ -15,18 +44,8 @@ def configure(build_dir: Path, script_dir: Path):
         "-B", str(build_dir),
         "-S", str(script_dir),
         f"-Dpybind11_DIR={pybind11_dir}",
+        f"-DFFMPEG_ROOT={ffmpeg_root}",
     ]
-
-    # Auto-detect FFmpeg from sibling project if not at default location
-    default_ffmpeg = script_dir.parent / "libs" / "ffmpeg"
-    if not (default_ffmpeg / "include" / "libavcodec" / "avcodec.h").exists():
-        for candidate in [
-            Path("D:/Code/yorune/VoidPlayer/libs/ffmpeg"),
-            Path("D:/Code/yorune/VoidView/libs/ffmpeg"),
-        ]:
-            if (candidate / "include" / "libavcodec" / "avcodec.h").exists():
-                cmake_args.append(f"-DFFMPEG_ROOT={candidate}")
-                break
 
     subprocess.check_call(cmake_args)
 
@@ -68,15 +87,18 @@ def main():
                       help="Only compile and run pipeline benchmarks")
     parser.add_argument("--debug", action="store_true",
                         help="Build in Debug mode (no optimization, with PDB debug symbols)")
+    parser.add_argument("--ffmpeg-root", type=str, default=None,
+                        help="Path to an FFmpeg root containing include/ and lib/")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
     build_dir = (script_dir / "build-msvc").resolve()
     build_type = "Debug" if args.debug else "Release"
+    ffmpeg_root = resolve_ffmpeg_root(script_dir, args.ffmpeg_root)
 
     if args.benchmarks_only:
         print("Configuring...", flush=True)
-        configure(build_dir, script_dir)
+        configure(build_dir, script_dir, ffmpeg_root)
 
         print(f"Building ({build_type})...", flush=True)
         build(build_dir, build_type)
@@ -88,7 +110,7 @@ def main():
 
     if not args.test_only:
         print("Configuring...", flush=True)
-        configure(build_dir, script_dir)
+        configure(build_dir, script_dir, ffmpeg_root)
 
         print(f"Building ({build_type})...", flush=True)
         build(build_dir, build_type)

@@ -7,6 +7,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <dbghelp.h>
+#include <cstdlib>
 #include <cstdio>
 #include <ctime>
 #include <cstring>
@@ -107,6 +108,21 @@ static bool g_sym_initialized = false;
 
 // Static symbol buffer (large, but safe in crash handler since it's not on the stack)
 static BYTE g_symbol_buf[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)];
+
+static std::string default_symbol_cache_dir(const std::string& crash_dir) {
+    const char* env_cache = std::getenv("VOIDPLAYER_SYMBOL_CACHE");
+    if (env_cache && env_cache[0] != '\0') {
+        return env_cache;
+    }
+
+    char local_app_data[MAX_PATH];
+    DWORD len = GetEnvironmentVariableA("LOCALAPPDATA", local_app_data, MAX_PATH);
+    if (len > 0 && len < MAX_PATH) {
+        return std::string(local_app_data) + "\\VoidPlayer\\Symbols";
+    }
+
+    return crash_dir.empty() ? "symbols" : crash_dir + "\\symbols";
+}
 
 // Async-signal-safe integer to string conversion
 static int safe_itoa(int64_t value, char* buf, int bufsize) {
@@ -506,7 +522,9 @@ void install_crash_handler(const std::string& crash_dir) {
     auto last_sep = exe_dir.find_last_of("\\/");
     if (last_sep != std::string::npos) exe_dir = exe_dir.substr(0, last_sep);
 
-    std::string sym_path = exe_dir + ";" + crash_dir + ";srv*C:\\Symbols*https://msdl.microsoft.com/download/symbols";
+    std::string symbol_cache_dir = default_symbol_cache_dir(crash_dir);
+    std::string sym_path = exe_dir + ";" + crash_dir + ";srv*" + symbol_cache_dir +
+        "*https://msdl.microsoft.com/download/symbols";
     if (SymInitialize(hProcess, sym_path.c_str(), TRUE)) {
         g_sym_initialized = true;
         if (stderr_available()) {

@@ -20,6 +20,19 @@ python windows/native/build.py --benchmarks-only
 python windows/native/build.py --debug
 ```
 
+如果 FFmpeg 不在默认的 `windows/libs/ffmpeg`，可以显式指定：
+
+```bash
+python windows/native/build.py --ffmpeg-root <ffmpeg-root>
+```
+
+PowerShell 中也可以用环境变量：
+
+```powershell
+$env:FFMPEG_ROOT = "<ffmpeg-root>"
+python windows/native/build.py
+```
+
 ## CMake 目标
 
 | 目标 | 类型 | 说明 |

@@ -509,6 +509,95 @@ void Renderer::discard_step_forward_consumed_frames_locked(const PresentDecision
     }
 }
 
+std::pair<float, float> Renderer::display_pixel_size_for_layout_locked(
+    int width, int height, const LayoutState& layout) const {
+    if (width <= 0 || height <= 0) {
+        return {0.0f, 0.0f};
+    }
+
+    int active_count = 0;
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (tracks_[i]) ++active_count;
+    }
+    if (active_count == 0) {
+        return {static_cast<float>(width), static_cast<float>(height)};
+    }
+
+    int track_idx = -1;
+    for (int display = 0; display < 4; ++display) {
+        int candidate = layout.order[display];
+        if (candidate >= 0 && candidate < static_cast<int>(kMaxTracks) && tracks_[candidate]) {
+            track_idx = candidate;
+            break;
+        }
+    }
+    if (track_idx < 0) {
+        for (int i = 0; i < static_cast<int>(kMaxTracks); ++i) {
+            if (tracks_[i]) {
+                track_idx = i;
+                break;
+            }
+        }
+    }
+    if (track_idx < 0 || !tracks_[track_idx]) {
+        return {static_cast<float>(width), static_cast<float>(height)};
+    }
+
+    float slot_w = static_cast<float>(width);
+    float slot_h = static_cast<float>(height);
+    if (layout.mode != LAYOUT_SPLIT_SCREEN && active_count > 1) {
+        slot_w /= static_cast<float>(active_count);
+    }
+    const float slot_aspect = (slot_h > 0.0f) ? slot_w / slot_h : 1.0f;
+
+    int ref_idx = -1;
+    int max_pixels = 0;
+    for (int i = 0; i < static_cast<int>(kMaxTracks); ++i) {
+        if (!tracks_[i]) continue;
+        int pixels = tracks_[i]->video_width * tracks_[i]->video_height;
+        if (pixels > max_pixels) {
+            max_pixels = pixels;
+            ref_idx = i;
+        }
+    }
+    if (ref_idx < 0 || !tracks_[ref_idx]) {
+        ref_idx = track_idx;
+    }
+
+    float ref_density = 1.0f;
+    const float ref_w = static_cast<float>(tracks_[ref_idx]->video_width);
+    const float ref_h = static_cast<float>(tracks_[ref_idx]->video_height);
+    if (ref_w > 0.0f && ref_h > 0.0f) {
+        ref_density = std::min(slot_w / ref_w, slot_h / ref_h);
+    }
+
+    const float track_w = static_cast<float>(tracks_[track_idx]->video_width);
+    const float track_h = static_cast<float>(tracks_[track_idx]->video_height);
+    float track_density = 1.0f;
+    if (track_w > 0.0f && track_h > 0.0f) {
+        track_density = std::min(slot_w / track_w, slot_h / track_h);
+    }
+    const float track_scale = (track_density > 0.0f) ? ref_density / track_density : 1.0f;
+
+    float video_aspect = tracks_[track_idx]->video_aspect;
+    if (video_aspect <= 0.0f) {
+        video_aspect = (track_h > 0.0f) ? track_w / track_h : slot_aspect;
+    }
+    if (video_aspect <= 0.0f) {
+        video_aspect = slot_aspect;
+    }
+
+    float fit_scale = (video_aspect > slot_aspect)
+        ? slot_aspect / video_aspect : 1.0f;
+    fit_scale *= track_scale;
+    const float display_scale = fit_scale * layout.zoom_ratio;
+    const float ds_x = (slot_aspect > 0.0f)
+        ? video_aspect * display_scale / slot_aspect : display_scale;
+    const float ds_y = display_scale;
+
+    return {ds_x * slot_w, ds_y * slot_h};
+}
+
 void Renderer::step_forward() {
     PresentDecision step_decision;
     bool have_step_decision = false;
@@ -959,6 +1048,19 @@ void Renderer::do_resize(int width, int height) {
     if (width == target_width_ && height == target_height_) return;
 
     spdlog::info("[Renderer] resize: {}x{} -> {}x{}", target_width_, target_height_, width, height);
+
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        const auto old_display = display_pixel_size_for_layout_locked(
+            target_width_, target_height_, layout_);
+        const auto new_display = display_pixel_size_for_layout_locked(width, height, layout_);
+        if (old_display.first > 1e-4f && new_display.first > 1e-4f) {
+            layout_.view_offset[0] *= new_display.first / old_display.first;
+        }
+        if (old_display.second > 1e-4f && new_display.second > 1e-4f) {
+            layout_.view_offset[1] *= new_display.second / old_display.second;
+        }
+    }
 
     // Create new triple-buffered resources first, then swap under lock.
     Microsoft::WRL::ComPtr<ID3D11Texture2D> new_textures[SharedBuffers::kCount];

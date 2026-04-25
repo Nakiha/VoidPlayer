@@ -141,3 +141,16 @@ class CaptureViewportAction extends PlayerAction {
   const CaptureViewportAction(this.nameId, {this.outputPath})
     : super('CAPTURE_VIEWPORT');
 }
+
+class WindowMaximize extends PlayerAction {
+  const WindowMaximize() : super('WINDOW_MAXIMIZE');
+}
+
+class WindowRestore extends PlayerAction {
+  const WindowRestore() : super('WINDOW_RESTORE');
+}
+
+class StoreViewCenter extends PlayerAction {
+  final String nameId;
+  const StoreViewCenter(this.nameId) : super('STORE_VIEW_CENTER');
+}

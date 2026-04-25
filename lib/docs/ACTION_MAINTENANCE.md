@@ -83,6 +83,9 @@
 | `SET_ZOOM` | — | 设置缩放比例 |
 | `SET_SPLIT_POS` | — | 设置分屏位置（0.0–1.0） |
 | `PAN` | — | 视口平移 |
+| `WINDOW_MAXIMIZE` | — | 测试脚本专用：最大化主窗口 |
+| `WINDOW_RESTORE` | — | 测试脚本专用：恢复主窗口 |
+| `STORE_VIEW_CENTER` | — | 测试脚本专用：记录归一化视图中心基线 |
 | `NEW_WINDOW` | N | 新建窗口 |
 | `OPEN_SETTINGS` | — | 打开设置窗口 |
 | `OPEN_STATS` | — | 打开统计窗口 |
@@ -103,6 +106,7 @@
 | `ASSERT_LAYOUT_MODE` | mode | 断言布局模式 |
 | `ASSERT_ZOOM` | ratio, tolerance | 断言缩放比例 |
 | `ASSERT_VIEW_OFFSET` | x, y, tolerance | 断言视口平移偏移 |
+| `ASSERT_VIEW_CENTER_STABLE` | baseline, tolerance | 断言当前归一化视图中心与 `STORE_VIEW_CENTER` 基线一致 |
 | `ASSERT_CAPTURE_EQUALS` | expected, actual | 断言两次 viewport 截图 hash 相同 |
 | `ASSERT_CAPTURE_CHANGED` | before, after | 断言两次 viewport 截图 hash 不同 |
 | `ASSERT_CAPTURE_HASH` | capture, hash | 断言截图 hash |

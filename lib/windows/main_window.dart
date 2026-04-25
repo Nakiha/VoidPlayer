@@ -60,6 +60,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   int _viewportWidth = 0;
   int _viewportHeight = 0;
   bool _resizeDirty = false;
+  bool _layoutFlushInProgress = false;
 
   // Drag-drop
   bool _dragging = false;
@@ -349,7 +350,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   void _onSplit(double normalizedX) {
     setState(() {
-      _layout = _layout.copyWith(splitPos: normalizedX.clamp(0.1, 0.9));
+      _layout = _layout.copyWith(splitPos: normalizedX.clamp(0.0, 1.0));
     });
     _markLayoutDirty();
   }
@@ -448,22 +449,55 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   void _startLayoutTicker() {
     _layoutTicker = createTicker((_) {
-      if (_resizeDirty &&
-          _textureId != null &&
-          _viewportWidth > 0 &&
-          _viewportHeight > 0) {
-        _resizeDirty = false;
-        _controller.resize(_viewportWidth, _viewportHeight);
-      }
-      if (_layoutDirty && _textureId != null) {
-        _layoutDirty = false;
-        _controller.applyLayout(_layout);
-      }
-      if (!_resizeDirty && !_layoutDirty) {
-        _layoutTicker?.stop();
-      }
+      unawaited(_flushPendingLayout());
     });
     // Don't start here — will start on first dirty mark.
+  }
+
+  Future<void> _flushPendingLayout() async {
+    if (_layoutFlushInProgress) return;
+    if (_textureId == null) {
+      _resizeDirty = false;
+      _layoutDirty = false;
+      _layoutTicker?.stop();
+      return;
+    }
+
+    _layoutFlushInProgress = true;
+    try {
+      while (mounted && (_resizeDirty || _layoutDirty)) {
+        if (_layoutDirty) {
+          final layout = _layout;
+          _layoutDirty = false;
+          await _controller.applyLayout(layout);
+          if (!mounted) return;
+        }
+
+        if (_resizeDirty && _viewportWidth > 0 && _viewportHeight > 0) {
+          final width = _viewportWidth;
+          final height = _viewportHeight;
+          _resizeDirty = false;
+          await _controller.resize(width, height);
+          if (!mounted) return;
+          if (!_layoutDirty) {
+            final layout = await _controller.getLayout();
+            if (!mounted) return;
+            setState(() => _layout = layout);
+          }
+        } else if (_resizeDirty) {
+          _resizeDirty = false;
+        }
+      }
+    } finally {
+      _layoutFlushInProgress = false;
+      if (mounted) {
+        if (_resizeDirty || _layoutDirty) {
+          _layoutTicker?.start();
+        } else {
+          _layoutTicker?.stop();
+        }
+      }
+    }
   }
 
   // -- Polling --

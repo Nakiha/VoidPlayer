@@ -201,6 +201,7 @@ python dev.py ui-test test_scripts/smoke_basic.csv
 
 - `OPEN_FILE` 会弹系统文件选择框，不适合自动化；自动化脚本应优先使用 `ADD_MEDIA`
 - `SEEK_TO` 直接调用 seek action，适合验证 native seek；`CLICK_TIMELINE_FRACTION` 会向 timeline slider 派发 pointer down/up，更适合复现手动点击进度条的问题
+- 窗口尺寸/最大化回归优先使用 `@WINDOW` 固定初始窗体，再用 `WINDOW_MAXIMIZE` / `WINDOW_RESTORE` 覆盖真实窗口事件路径；如需跨显示器稳定比较画面中心，可先 `STORE_VIEW_CENTER`，再用 `ASSERT_VIEW_CENTER_STABLE` 校验归一化视图中心。
 - 脚本中的媒体路径按启动工作目录解析，推荐写仓库相对路径，如 `resources/video/...`
 
 ## 文件结构（规划）

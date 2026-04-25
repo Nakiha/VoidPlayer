@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
+
+import 'package:window_manager/window_manager.dart' as wm;
 
 import '../app_log.dart';
 import 'action_registry.dart';
@@ -36,11 +39,18 @@ class ScriptQuit extends ScriptInstruction {
   const ScriptQuit(super.time, this.exitCode);
 }
 
+class _ViewCenterMetric {
+  final double x;
+  final double y;
+  const _ViewCenterMetric(this.x, this.y);
+}
+
 /// Parses a test script file and runs instructions on a timeline.
 class TestRunner {
   final String scriptPath;
   final VideoRendererController controller;
   final _captures = <String, ViewportCapture>{};
+  final _viewCenterBaselines = <String, _ViewCenterMetric>{};
 
   TestRunner({required this.scriptPath, required this.controller});
 
@@ -114,6 +124,19 @@ class TestRunner {
           ' nonBlack=${capture.nonBlackRatio.toStringAsFixed(4)}'
           '${capture.outputPath != null ? ' -> ${capture.outputPath}' : ''}',
         );
+      case WindowMaximize():
+        log.info('TestRunner: WINDOW_MAXIMIZE');
+        await wm.windowManager.maximize();
+      case WindowRestore():
+        log.info('TestRunner: WINDOW_RESTORE');
+        await wm.windowManager.restore();
+      case StoreViewCenter(:final nameId):
+        final metric = await _currentViewCenterMetric();
+        _viewCenterBaselines[nameId] = metric;
+        log.info(
+          'TestRunner: STORE_VIEW_CENTER $nameId '
+          'normalized=(${metric.x.toStringAsFixed(6)}, ${metric.y.toStringAsFixed(6)})',
+        );
       default:
         actionRegistry.execute(action.name, action);
     }
@@ -174,6 +197,24 @@ class TestRunner {
           throw AssertionError(
             'Expected view offset ($x, $y) (±$tolerance), '
             'got (${layout.viewOffsetX}, ${layout.viewOffsetY})',
+          );
+        }
+      case AssertViewCenterStable(:final baseline, :final tolerance):
+        final expected = _viewCenterBaselines[baseline];
+        if (expected == null) {
+          throw AssertionError(
+            'Missing baseline for ASSERT_VIEW_CENTER_STABLE: $baseline',
+          );
+        }
+        final actual = await _currentViewCenterMetric();
+        final dx = (actual.x - expected.x).abs();
+        final dy = (actual.y - expected.y).abs();
+        if (dx > tolerance || dy > tolerance) {
+          throw AssertionError(
+            'Expected normalized view center to match $baseline '
+            '(±$tolerance), got '
+            '(${actual.x.toStringAsFixed(6)}, ${actual.y.toStringAsFixed(6)}) '
+            'vs (${expected.x.toStringAsFixed(6)}, ${expected.y.toStringAsFixed(6)})',
           );
         }
       case AssertCaptureEquals(:final expectedCapture, :final actualCapture):
@@ -252,6 +293,91 @@ class TestRunner {
     throw AssertionError(
       'WAIT_${state.name.toUpperCase()} timed out after ${timeout.inMilliseconds}ms',
     );
+  }
+
+  Future<_ViewCenterMetric> _currentViewCenterMetric() async {
+    final layout = await controller.getLayout();
+    final tracks = await controller.getTracks();
+    final capture = await controller.captureViewport();
+    final display = _displayPixelSizeForLayout(
+      width: capture.width,
+      height: capture.height,
+      layout: layout,
+      tracks: tracks,
+    );
+    final x = display.width.abs() > 1e-4
+        ? layout.viewOffsetX / display.width
+        : 0.0;
+    final y = display.height.abs() > 1e-4
+        ? layout.viewOffsetY / display.height
+        : 0.0;
+    return _ViewCenterMetric(x, y);
+  }
+
+  ({double width, double height}) _displayPixelSizeForLayout({
+    required int width,
+    required int height,
+    required LayoutState layout,
+    required List<TrackInfo> tracks,
+  }) {
+    if (width <= 0 || height <= 0 || tracks.isEmpty) {
+      return (width: width.toDouble(), height: height.toDouble());
+    }
+
+    TrackInfo? track;
+    for (final fileId in layout.order) {
+      for (final candidate in tracks) {
+        if (candidate.fileId == fileId) {
+          track = candidate;
+          break;
+        }
+      }
+      if (track != null) break;
+    }
+    track ??= tracks.first;
+
+    var slotW = width.toDouble();
+    final slotH = height.toDouble();
+    if (layout.mode != LayoutMode.splitScreen && tracks.length > 1) {
+      slotW /= tracks.length;
+    }
+    final slotAspect = slotH > 0 ? slotW / slotH : 1.0;
+
+    var refTrack = tracks.first;
+    var maxPixels = 0;
+    for (final candidate in tracks) {
+      final pixels = candidate.width * candidate.height;
+      if (pixels > maxPixels) {
+        maxPixels = pixels;
+        refTrack = candidate;
+      }
+    }
+
+    final refW = refTrack.width.toDouble();
+    final refH = refTrack.height.toDouble();
+    final refDensity = refW > 0 && refH > 0
+        ? math.min(slotW / refW, slotH / refH)
+        : 1.0;
+
+    final trackW = track.width.toDouble();
+    final trackH = track.height.toDouble();
+    final trackDensity = trackW > 0 && trackH > 0
+        ? math.min(slotW / trackW, slotH / trackH)
+        : 1.0;
+    final trackScale = trackDensity > 0 ? refDensity / trackDensity : 1.0;
+
+    var videoAspect = trackH > 0 ? trackW / trackH : slotAspect;
+    if (videoAspect <= 0) videoAspect = slotAspect;
+
+    var fitScale = videoAspect > slotAspect ? slotAspect / videoAspect : 1.0;
+    fitScale *= trackScale;
+    final displayScale = fitScale * layout.zoomRatio;
+    final dsX = slotAspect > 0
+        ? videoAspect * displayScale / slotAspect
+        : displayScale;
+    final dsY = displayScale;
+
+    return (width: dsX * slotW, height: dsY * slotH);
   }
 }
 
@@ -402,6 +528,16 @@ ScriptInstruction? _parseInstruction(
           outputPath: args.length >= 2 ? args[1] : null,
         ),
       );
+    case 'WINDOW_MAXIMIZE':
+      return ScriptAction(time, const WindowMaximize());
+    case 'WINDOW_RESTORE':
+      return ScriptAction(time, const WindowRestore());
+    case 'STORE_VIEW_CENTER':
+      if (args.isEmpty) {
+        log.warning('STORE_VIEW_CENTER needs a baseline name: $rawLine');
+        return null;
+      }
+      return ScriptAction(time, StoreViewCenter(args[0]));
 
     // Waits
     case 'WAIT_PLAYING':
@@ -477,6 +613,17 @@ ScriptInstruction? _parseInstruction(
           double.parse(args[1]),
           double.parse(args[2]),
         ),
+      );
+    case 'ASSERT_VIEW_CENTER_STABLE':
+      if (args.length < 2) {
+        log.warning(
+          'ASSERT_VIEW_CENTER_STABLE needs baseline and tolerance: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertViewCenterStable(args[0], double.parse(args[1])),
       );
     case 'ASSERT_CAPTURE_EQUALS':
       if (args.length < 2) {

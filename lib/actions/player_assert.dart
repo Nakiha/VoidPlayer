@@ -46,6 +46,12 @@ class AssertViewOffset extends PlayerAssert {
   const AssertViewOffset(this.x, this.y, this.tolerance);
 }
 
+class AssertViewCenterStable extends PlayerAssert {
+  final String baseline;
+  final double tolerance;
+  const AssertViewCenterStable(this.baseline, this.tolerance);
+}
+
 class AssertCaptureEquals extends PlayerAssert {
   final String expectedCapture;
   final String actualCapture;

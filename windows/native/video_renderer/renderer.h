@@ -195,6 +195,8 @@ private:
     void draw_paused_frame(const char* reason);
     bool build_step_forward_decision_locked(PresentDecision& decision) const;
     void discard_step_forward_consumed_frames_locked(const PresentDecision& decision);
+    std::pair<float, float> display_pixel_size_for_layout_locked(
+        int width, int height, const LayoutState& layout) const;
     void seek_internal(int64_t target_pts_us,
                        SeekType type,
                        bool allow_deferred = true,

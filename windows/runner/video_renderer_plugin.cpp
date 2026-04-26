@@ -8,6 +8,7 @@
 #include <shlwapi.h>
 #include <commdlg.h>
 #include <wincodec.h>
+#include <cstring>
 #include <vector>
 #include <sstream>
 #include <iomanip>
@@ -32,6 +33,42 @@ std::string get_exe_dir() {
     auto last_sep = dir.find_last_of("\\/");
     if (last_sep != std::string::npos) dir = dir.substr(0, last_sep);
     return dir;
+}
+
+std::string sanitize_log_file_name(std::string name) {
+    if (name.empty()) return name;
+    for (auto& ch : name) {
+        switch (ch) {
+        case '\\':
+        case '/':
+        case ':':
+        case '*':
+        case '?':
+        case '"':
+        case '<':
+        case '>':
+        case '|':
+            ch = '_';
+            break;
+        default:
+            break;
+        }
+    }
+    return name;
+}
+
+std::string current_process_role() {
+    const char* command_line = GetCommandLineA();
+    if (command_line && strstr(command_line, "--standalone-analysis") != nullptr) {
+        return "analysis";
+    }
+    return "main";
+}
+
+std::string default_native_log_file_name() {
+    std::ostringstream name;
+    name << "native_" << current_process_role() << "_" << GetCurrentProcessId() << ".log";
+    return name.str();
 }
 
 flutter::EncodableMap make_track_map(const vr::TrackInfo& info) {
@@ -260,9 +297,10 @@ VideoRendererPlugin::VideoRendererPlugin(
     // This happens before any Dart-side initLogging call, so native logs
     // (including renderer creation) are always captured.
     logs_dir_ = get_exe_dir() + "\\logs";
+    log_file_name_ = default_native_log_file_name();
 
     vr::LogConfig config;
-    config.file_path = logs_dir_ + "\\native.log";
+    config.file_path = logs_dir_ + "\\" + log_file_name_;
     config.max_files = 5;
     vr::configure_logging(config);
     vr::install_crash_handler(logs_dir_);
@@ -463,6 +501,7 @@ void VideoRendererPlugin::InitLogging(
 
     std::string level_str = "info";
     std::string logs_dir;
+    std::string log_file_name;
 
     if (arguments) {
         const auto* args = std::get_if<flutter::EncodableMap>(arguments);
@@ -475,6 +514,10 @@ void VideoRendererPlugin::InitLogging(
             if (it != args->end()) {
                 logs_dir = std::get<std::string>(it->second);
             }
+            it = args->find(flutter::EncodableValue("logFileName"));
+            if (it != args->end()) {
+                log_file_name = sanitize_log_file_name(std::get<std::string>(it->second));
+            }
         }
     }
 
@@ -482,13 +525,23 @@ void VideoRendererPlugin::InitLogging(
     spdlog::level::level_enum level = spdlog::level::from_str(level_str);
 
     vr::LogConfig config;
-    config.file_path = (logs_dir.empty() ? logs_dir_ : logs_dir) + "\\native.log";
+    if (!logs_dir.empty()) {
+        logs_dir_ = logs_dir;
+    }
+    if (!log_file_name.empty()) {
+        log_file_name_ = log_file_name;
+    } else if (log_file_name_.empty()) {
+        log_file_name_ = default_native_log_file_name();
+    }
+    config.file_path = logs_dir_ + "\\" + log_file_name_;
     config.level = level;
     config.max_files = 5;
 
     vr::configure_logging(config);
 
-    spdlog::info("[VideoRendererPlugin] Native logging reconfigured: level={}", level_str);
+    spdlog::info(
+        "[VideoRendererPlugin] Native logging reconfigured: level={}, file={}",
+        level_str, config.file_path);
 
     result->Success(flutter::EncodableValue(nullptr));
 }

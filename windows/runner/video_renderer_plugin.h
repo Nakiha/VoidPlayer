@@ -87,4 +87,5 @@ private:
     flutter::TextureRegistrar* texture_registrar_;
     IDXGIAdapter* dxgi_adapter_;
     std::string logs_dir_;
+    std::string log_file_name_;
 };

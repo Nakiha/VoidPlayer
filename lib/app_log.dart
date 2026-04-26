@@ -33,28 +33,31 @@ class LogConfig {
   final Level native;
   final Level ffmpeg;
   final String logsDir;
+  final String processRole;
 
   const LogConfig({
     required this.flutter,
     required this.native,
     required this.ffmpeg,
     required this.logsDir,
+    required this.processRole,
   });
 
   /// Default config: INFO for all modules, logs next to exe.
-  static LogConfig get defaults {
+  static LogConfig defaultsFor(List<String> args) {
     final exeDir = _exeDir();
     return LogConfig(
       flutter: Level.INFO,
       native: Level.INFO,
       ffmpeg: Level.INFO,
       logsDir: p.join(exeDir, 'logs'),
+      processRole: _processRoleFromArgs(args),
     );
   }
 
   /// Parse --log-level argument like "flutter=DEBUG,native=INFO,ffmpeg=INFO"
   static LogConfig parse(List<String> args) {
-    var config = defaults;
+    var config = defaultsFor(args);
 
     for (final arg in args) {
       if (!arg.startsWith('--log-level=')) continue;
@@ -78,11 +81,29 @@ class LogConfig {
   LogConfig _withLevel(LogModule module, Level level) {
     switch (module) {
       case LogModule.flutter:
-        return LogConfig(flutter: level, native: native, ffmpeg: ffmpeg, logsDir: logsDir);
+        return LogConfig(
+          flutter: level,
+          native: native,
+          ffmpeg: ffmpeg,
+          logsDir: logsDir,
+          processRole: processRole,
+        );
       case LogModule.native:
-        return LogConfig(flutter: flutter, native: level, ffmpeg: ffmpeg, logsDir: logsDir);
+        return LogConfig(
+          flutter: flutter,
+          native: level,
+          ffmpeg: ffmpeg,
+          logsDir: logsDir,
+          processRole: processRole,
+        );
       case LogModule.ffmpeg:
-        return LogConfig(flutter: flutter, native: native, ffmpeg: level, logsDir: logsDir);
+        return LogConfig(
+          flutter: flutter,
+          native: native,
+          ffmpeg: level,
+          logsDir: logsDir,
+          processRole: processRole,
+        );
     }
   }
 
@@ -98,6 +119,9 @@ class LogConfig {
     if (native <= Level.SEVERE) return 'err';
     return 'off';
   }
+
+  String get flutterLogPrefix => 'void_player_${processRole}_$pid';
+  String get nativeLogFileName => 'native_${processRole}_$pid.log';
 }
 
 // ---------------------------------------------------------------------------
@@ -132,19 +156,25 @@ Future<LogConfig> initLogging(List<String> args) async {
   _root.onRecord.listen(_dispatchRecord);
 
   FlutterError.onError = (details) {
-    _root.warning('Flutter error: ${details.exceptionAsString()}\n${details.stack}');
+    _root.warning(
+      'Flutter error: ${details.exceptionAsString()}\n${details.stack}',
+    );
   };
 
   Isolate.current.addErrorListener(
     RawReceivePort((pair) async {
       final List<dynamic> errorAndStack = pair as List<dynamic>;
-      _root.severe('Isolate error: ${errorAndStack.first}\n${errorAndStack.last}');
+      _root.severe(
+        'Isolate error: ${errorAndStack.first}\n${errorAndStack.last}',
+      );
     }).sendPort,
   );
 
-  _root.info('Logging initialized: flutter=${_logConfig.flutter.name}, '
-      'native=${_logConfig.nativeLevelName}, ffmpeg=${_logConfig.ffmpeg.name}, '
-      'logsDir=${_logConfig.logsDir}');
+  _root.info(
+    'Logging initialized: flutter=${_logConfig.flutter.name}, '
+    'native=${_logConfig.nativeLevelName}, ffmpeg=${_logConfig.ffmpeg.name}, '
+    'logsDir=${_logConfig.logsDir}, role=${_logConfig.processRole}, pid=$pid',
+  );
 
   // Forward native log config to C++ side via MethodChannel.
   // Fire-and-forget — native plugin already initialized with defaults
@@ -163,6 +193,9 @@ Future<void> _configureNativeLogging() async {
     await channel.invokeMethod<void>('initLogging', {
       'logLevel': _logConfig.nativeLevelName,
       'logsDir': _logConfig.logsDir,
+      'logFileName': _logConfig.nativeLogFileName,
+      'processRole': _logConfig.processRole,
+      'processId': pid,
     });
   } catch (_) {
     // Plugin not registered yet or not available — native defaults are fine.
@@ -175,7 +208,7 @@ Future<void> _configureNativeLogging() async {
 
 const String _kLogPrefix = 'void_player_';
 const int _kMaxFileSize = 5 * 1024 * 1024; // 5 MB
-const int _kMaxFiles = 5;
+const int _kMaxFiles = 30;
 
 RandomAccessFile? _raf;
 int _currentFileSize = 0;
@@ -221,7 +254,7 @@ void _ensureLogOpen() {
   _raf = null;
   _cachedDateStr = dateStr;
 
-  final logName = '$_kLogPrefix$dateStr.log';
+  final logName = '${_logConfig.flutterLogPrefix}_$dateStr.log';
   final logPath = p.join(_logConfig.logsDir, logName);
 
   final file = File(logPath);
@@ -242,8 +275,7 @@ void _cleanOldLogs(String logsDir) {
 
   if (logFiles.length <= _kMaxFiles) return;
 
-  logFiles.sort((a, b) =>
-      a.lastModifiedSync().compareTo(b.lastModifiedSync()));
+  logFiles.sort((a, b) => a.lastModifiedSync().compareTo(b.lastModifiedSync()));
 
   final toDelete = logFiles.length - _kMaxFiles;
   for (int i = 0; i < toDelete; i++) {
@@ -308,8 +340,9 @@ String _formatRecord(LogRecord record) {
   final logger = record.loggerName != '' ? ' [${record.loggerName}]' : '';
   final msg = record.message;
   final error = record.error != null ? '\n  Error: ${record.error}' : '';
-  final stack =
-      record.stackTrace != null ? '\n  Stack: ${record.stackTrace}' : '';
+  final stack = record.stackTrace != null
+      ? '\n  Stack: ${record.stackTrace}'
+      : '';
   return '[$ts] $level$logger: $msg$error$stack';
 }
 
@@ -348,4 +381,11 @@ Level? _parseLevel(String s) {
 String _exeDir() {
   final exePath = Platform.resolvedExecutable;
   return p.dirname(exePath);
+}
+
+String _processRoleFromArgs(List<String> args) {
+  if (args.any((arg) => arg == '--standalone-analysis')) {
+    return 'analysis';
+  }
+  return 'main';
 }

@@ -453,12 +453,14 @@ class _AnalysisPageState extends State<AnalysisPage> {
   List<FrameInfo> _frames = [];
   List<NaluInfo> _nalus = [];
   List<FrameInfo> _sortedFramesCache = [];
+  List<int> _sortedFrameOriginalIndicesCache = [];
+  List<int> _frameToSortedPosition = [];
+  Map<int, List<int>> _sortedPocToIndices = {};
   NakiAnalysisSummary? _summary;
   Timer? _pollTimer;
   bool _testStarted = false;
 
   // Precomputed mappings rebuilt when data loads
-  Map<int, List<int>> _pocToIndices = {};
   List<int> _frameToNalu = []; // frameIdx → naluIdx
   List<int?> _naluToFrame = []; // naluIdx → frameIdx (null if non-VCL)
 
@@ -613,6 +615,27 @@ class _AnalysisPageState extends State<AnalysisPage> {
           );
         }
 
+      case _AnalysisTestCommand.assertSelectedFrameVisible:
+        log.info(
+          'AnalysisTestRunner ${instr.time}: '
+          'ASSERT_ANALYSIS_SELECTED_FRAME_VISIBLE',
+        );
+        final idx = _selectedFrameIdx;
+        if (idx == null || idx < 0 || idx >= _frames.length) {
+          throw AssertionError(
+            'Expected selected frame, got selected=$idx frames=${_frames.length}',
+          );
+        }
+        final sortedIdx = _sortedPositionForFrameIdx(idx);
+        if (sortedIdx == null ||
+            sortedIdx < _chartOffset ||
+            sortedIdx >= _chartOffset + _visibleFrameCount) {
+          throw AssertionError(
+            'Expected selected frame $idx (sorted=$sortedIdx) inside chart '
+            'range [$_chartOffset, ${_chartOffset + _visibleFrameCount})',
+          );
+        }
+
       case _AnalysisTestCommand.assertCounts:
         final frames = instr.intArg(0);
         final packets = instr.intArg(1);
@@ -678,12 +701,10 @@ class _AnalysisPageState extends State<AnalysisPage> {
         }
         if (mounted) {
           setState(() {
-            _selectedNaluIdx = idx;
-            _selectedFrameIdx = _naluToFrameIdx(idx);
+            _selectNalu(idx);
           });
         } else {
-          _selectedNaluIdx = idx;
-          _selectedFrameIdx = _naluToFrameIdx(idx);
+          _selectNalu(idx);
         }
 
       case _AnalysisTestCommand.assertDetailVisible:
@@ -772,12 +793,6 @@ class _AnalysisPageState extends State<AnalysisPage> {
   }
 
   void _rebuildDerivedState() {
-    // POC → indices map
-    _pocToIndices = <int, List<int>>{};
-    for (var i = 0; i < _frames.length; i++) {
-      (_pocToIndices[_frames[i].poc] ??= []).add(i);
-    }
-
     // Frame ↔ NALU mappings (single pass)
     _frameToNalu = List<int>.filled(_frames.length, -1);
     _naluToFrame = List<int?>.filled(_nalus.length, null);
@@ -821,14 +836,76 @@ class _AnalysisPageState extends State<AnalysisPage> {
   }
 
   List<FrameInfo> get _sortedFrames => _sortedFramesCache;
+  int? get _selectedSortedFrameIdx => _selectedFrameIdx == null
+      ? null
+      : _sortedPositionForFrameIdx(_selectedFrameIdx!);
+  int get _currentSortedFrameIdx {
+    final idx = _summary?.currentFrameIdx ?? -1;
+    return _sortedPositionForFrameIdx(idx) ?? -1;
+  }
+
   AnalysisCodec get _codec => analysisCodecFromValue(_summary?.codec ?? 0);
 
   void _rebuildSortedFramesCache() {
-    _sortedFramesCache = List<FrameInfo>.from(_frames);
+    final order = List<int>.generate(_frames.length, (i) => i);
     if (_ptsOrder) {
-      _sortedFramesCache.sort((a, b) => a.pts.compareTo(b.pts));
+      order.sort((a, b) => _frames[a].pts.compareTo(_frames[b].pts));
     }
     // else: keep original order (= DTS / decode order from C++)
+    _sortedFrameOriginalIndicesCache = order;
+    _sortedFramesCache = [for (final idx in order) _frames[idx]];
+    _frameToSortedPosition = List<int>.filled(_frames.length, -1);
+    _sortedPocToIndices = <int, List<int>>{};
+    for (var sortedIdx = 0; sortedIdx < order.length; sortedIdx++) {
+      final originalIdx = order[sortedIdx];
+      _frameToSortedPosition[originalIdx] = sortedIdx;
+      (_sortedPocToIndices[_frames[originalIdx].poc] ??= []).add(sortedIdx);
+    }
+    _clampChartOffset();
+  }
+
+  int? _sortedPositionForFrameIdx(int frameIdx) {
+    if (frameIdx < 0 || frameIdx >= _frameToSortedPosition.length) return null;
+    final sortedIdx = _frameToSortedPosition[frameIdx];
+    return sortedIdx >= 0 ? sortedIdx : null;
+  }
+
+  int? _originalFrameIdxAtSortedPosition(int sortedIdx) {
+    if (sortedIdx < 0 || sortedIdx >= _sortedFrameOriginalIndicesCache.length) {
+      return null;
+    }
+    return _sortedFrameOriginalIndicesCache[sortedIdx];
+  }
+
+  void _centerChartOnFrame(int frameIdx) {
+    final sortedIdx = _sortedPositionForFrameIdx(frameIdx);
+    if (sortedIdx == null) return;
+    _chartOffset = sortedIdx - _visibleFrameCount / 2 + 0.5;
+    _clampChartOffset();
+  }
+
+  void _centerChartOnSelectedFrame() {
+    final idx = _selectedFrameIdx;
+    if (idx != null) _centerChartOnFrame(idx);
+  }
+
+  void _selectFrame(int? frameIdx, {bool centerChart = false}) {
+    _selectedFrameIdx = frameIdx;
+    _selectedNaluIdx = frameIdx != null ? _frameToNaluIdx(frameIdx) : null;
+    if (centerChart && frameIdx != null) _centerChartOnFrame(frameIdx);
+  }
+
+  void _selectChartFrame(int? sortedIdx) {
+    _selectFrame(
+      sortedIdx != null ? _originalFrameIdxAtSortedPosition(sortedIdx) : null,
+    );
+  }
+
+  void _selectNalu(int? naluIdx) {
+    _selectedNaluIdx = naluIdx;
+    final frameIdx = naluIdx != null ? _naluToFrameIdx(naluIdx) : null;
+    _selectedFrameIdx = frameIdx;
+    if (frameIdx != null) _centerChartOnFrame(frameIdx);
   }
 
   @override
@@ -838,13 +915,10 @@ class _AnalysisPageState extends State<AnalysisPage> {
     final topChart = _selectedTab == 0
         ? _ReferencePyramidView(
             frames: _sortedFrames,
-            currentIdx: _summary?.currentFrameIdx ?? -1,
-            selectedFrameIdx: _selectedFrameIdx,
-            pocToIndices: _pocToIndices,
-            onFrameSelected: (i) => setState(() {
-              _selectedFrameIdx = i;
-              _selectedNaluIdx = i != null ? _frameToNaluIdx(i) : null;
-            }),
+            currentIdx: _currentSortedFrameIdx,
+            selectedFrameIdx: _selectedSortedFrameIdx,
+            pocToIndices: _sortedPocToIndices,
+            onFrameSelected: (i) => setState(() => _selectChartFrame(i)),
             viewStart: _chartOffset,
             viewEnd: _chartOffset + _visibleFrameCount,
             onZoom: _chartZoom,
@@ -853,8 +927,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
           )
         : _FrameTrendView(
             frames: _sortedFrames,
-            currentIdx: _summary?.currentFrameIdx ?? -1,
-            selectedFrameIdx: _selectedFrameIdx,
+            currentIdx: _currentSortedFrameIdx,
+            selectedFrameIdx: _selectedSortedFrameIdx,
             viewStart: _chartOffset,
             viewEnd: _chartOffset + _visibleFrameCount,
             frameSizeAxisZoom: _frameSizeAxisZoom,
@@ -862,10 +936,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
             onZoom: _chartZoom,
             onAxisZoom: _frameTrendAxisZoom,
             onPan: _chartPan,
-            onFrameSelected: (i) => setState(() {
-              _selectedFrameIdx = i;
-              _selectedNaluIdx = i != null ? _frameToNaluIdx(i) : null;
-            }),
+            onFrameSelected: (i) => setState(() => _selectChartFrame(i)),
             l: l,
           );
     final bottomPanel = LayoutBuilder(
@@ -883,10 +954,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                     nalus: _nalus,
                     codec: _codec,
                     selectedIdx: _selectedNaluIdx,
-                    onSelected: (i) => setState(() {
-                      _selectedNaluIdx = i;
-                      _selectedFrameIdx = _naluToFrameIdx(i);
-                    }),
+                    onSelected: (i) => setState(() => _selectNalu(i)),
                     filter: _naluFilter,
                     onFilterChanged: (v) => setState(() => _naluFilter = v),
                   ),
@@ -939,6 +1007,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                   onChanged: (v) => setState(() {
                     _ptsOrder = v;
                     _rebuildSortedFramesCache();
+                    _centerChartOnSelectedFrame();
                   }),
                   l: l,
                 ),
@@ -1597,6 +1666,11 @@ class _RefPyramidPainter extends CustomPainter {
       _strokePaint.color = stroke;
       _strokePaint.strokeWidth = sw2;
       canvas.drawCircle(pos, r, _strokePaint);
+      if (isSelected) {
+        _strokePaint.color = const Color(0xFFFFFFFF);
+        _strokePaint.strokeWidth = 2.0;
+        canvas.drawCircle(pos, r + sw2 / 2 + 1.5, _strokePaint);
+      }
 
       if (circleR >= 8) {
         // Label: always show actual slice type (I/P/B), color distinguishes ref direction
@@ -2326,12 +2400,74 @@ class _NaluBrowserView extends StatefulWidget {
 }
 
 class _NaluBrowserViewState extends State<_NaluBrowserView> {
+  static const _itemExtent = 28.0;
   final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleScrollSelectedIntoView();
+  }
+
+  @override
+  void didUpdateWidget(covariant _NaluBrowserView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selectedIdx != oldWidget.selectedIdx ||
+        widget.filter != oldWidget.filter ||
+        widget.nalus.length != oldWidget.nalus.length) {
+      _scheduleScrollSelectedIntoView();
+    }
+  }
 
   @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();
+  }
+
+  List<int> _visibleIndices() {
+    final filter = widget.filter.toLowerCase();
+    return [
+      for (var i = 0; i < widget.nalus.length; i++)
+        if (filter.isEmpty ||
+            bitstreamUnitTypeName(
+              widget.codec,
+              widget.nalus[i].nalType,
+            ).toLowerCase().contains(filter) ||
+            '#$i'.contains(filter) ||
+            '${widget.nalus[i].nalType}'.contains(filter))
+          i,
+    ];
+  }
+
+  void _scheduleScrollSelectedIntoView() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final selectedIdx = widget.selectedIdx;
+      if (selectedIdx == null) return;
+      final displayIndex = _visibleIndices().indexOf(selectedIdx);
+      if (displayIndex < 0) return;
+
+      final position = _scrollController.position;
+      final itemTop = displayIndex * _itemExtent;
+      final itemBottom = itemTop + _itemExtent;
+      final viewportTop = position.pixels;
+      final viewportBottom = viewportTop + position.viewportDimension;
+
+      double? target;
+      if (itemTop < viewportTop) {
+        target = itemTop;
+      } else if (itemBottom > viewportBottom) {
+        target = itemBottom - position.viewportDimension;
+      }
+      if (target == null) return;
+
+      _scrollController.jumpTo(
+        target
+            .clamp(position.minScrollExtent, position.maxScrollExtent)
+            .toDouble(),
+      );
+    });
   }
 
   @override
@@ -2343,26 +2479,7 @@ class _NaluBrowserViewState extends State<_NaluBrowserView> {
     }
     final theme = Theme.of(context);
     final filter = widget.filter.toLowerCase();
-
-    // Build filtered index map: visible[i] = original index
-    final visible = <int>[];
-    for (var i = 0; i < widget.nalus.length; i++) {
-      if (filter.isEmpty) {
-        visible.add(i);
-      } else {
-        final n = widget.nalus[i];
-        final name = bitstreamUnitTypeName(
-          widget.codec,
-          n.nalType,
-        ).toLowerCase();
-        final idStr = '#$i';
-        if (name.contains(filter) ||
-            idStr.contains(filter) ||
-            '${n.nalType}'.contains(filter)) {
-          visible.add(i);
-        }
-      }
-    }
+    final visible = _visibleIndices();
 
     return Column(
       children: [
@@ -2423,7 +2540,7 @@ class _NaluBrowserViewState extends State<_NaluBrowserView> {
           child: ListView.builder(
             controller: _scrollController,
             itemCount: visible.length,
-            itemExtent: 28,
+            itemExtent: _itemExtent,
             itemBuilder: (context, displayIndex) {
               final origIdx = visible[displayIndex];
               final n = widget.nalus[origIdx];
@@ -2621,6 +2738,7 @@ enum _AnalysisTestCommand {
   assertCodec,
   assertNaluName,
   assertSelectedFrame,
+  assertSelectedFrameVisible,
   setTab,
   assertTab,
   setOrder,
@@ -2686,6 +2804,8 @@ List<_AnalysisTestInstruction> _parseAnalysisTestScript(String path) {
       'ASSERT_ANALYSIS_NALU_NAME' => _AnalysisTestCommand.assertNaluName,
       'ASSERT_ANALYSIS_SELECTED_FRAME' =>
         _AnalysisTestCommand.assertSelectedFrame,
+      'ASSERT_ANALYSIS_SELECTED_FRAME_VISIBLE' =>
+        _AnalysisTestCommand.assertSelectedFrameVisible,
       'SET_ANALYSIS_TAB' => _AnalysisTestCommand.setTab,
       'ASSERT_ANALYSIS_TAB' => _AnalysisTestCommand.assertTab,
       'SET_ANALYSIS_ORDER' => _AnalysisTestCommand.setOrder,

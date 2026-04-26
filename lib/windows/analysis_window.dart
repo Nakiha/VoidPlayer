@@ -1210,6 +1210,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
         return Stack(
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 SizedBox(
                   width: browserW,
@@ -3361,17 +3362,20 @@ class _NaluDetailView extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.all(12),
       child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            section(l.analysisNaluDetail, items),
-            if (frameItems.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              const Divider(height: 1),
-              const SizedBox(height: 8),
-              section('Frame Info', frameItems),
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              section(l.analysisNaluDetail, items),
+              if (frameItems.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+                section('Frame Info', frameItems),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

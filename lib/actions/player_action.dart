@@ -87,11 +87,6 @@ class OpenMemory extends PlayerAction {
   const OpenMemory() : super('OPEN_MEMORY');
 }
 
-class OpenAnalysis extends PlayerAction {
-  const OpenAnalysis()
-    : super('OPEN_ANALYSIS', LogicalKeyboardKey.backquote, true);
-}
-
 class RunAnalysis extends PlayerAction {
   const RunAnalysis() : super('RUN_ANALYSIS');
 }

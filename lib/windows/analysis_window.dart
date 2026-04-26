@@ -3372,7 +3372,7 @@ class _NaluDetailView extends StatelessWidget {
                 const SizedBox(height: 12),
                 const Divider(height: 1),
                 const SizedBox(height: 8),
-                section('Frame Info', frameItems),
+                section(l.analysisFrameInfo, frameItems),
               ],
             ],
           ),

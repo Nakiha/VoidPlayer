@@ -16,7 +16,6 @@ import '../widgets/viewport_panel.dart';
 import '../widgets/controls_bar.dart';
 import '../widgets/media_header.dart';
 import '../widgets/timeline_area.dart';
-import '../widgets/analysis_panel.dart';
 import '../analysis/analysis_manager.dart';
 import 'analysis_ipc.dart';
 
@@ -40,7 +39,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   // Renderer state
   int? _textureId;
   int _viewportState = 1; // 0=loading, 1=empty, 2=active
-  bool _analysisToolbarVisible = false;
   bool _isPlaying = false;
   int _currentPtsUs = 0;
   int _durationUs = 0;
@@ -179,7 +177,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       const OpenMemory(),
       (_) => WindowManager.showMemoryWindow(),
     );
-    actionRegistry.bind(const OpenAnalysis(), (_) => _toggleAnalysisToolbar());
     actionRegistry.bind(const RunAnalysis(), (_) => _triggerAnalysis());
   }
 
@@ -281,10 +278,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
     if (serial != _analysisSnapshotSerial) return;
     _analysisIpcServer.publishTracks(tracks);
-  }
-
-  void _toggleAnalysisToolbar() {
-    setState(() => _analysisToolbarVisible = !_analysisToolbarVisible);
   }
 
   void _toggleLayoutMode() {
@@ -704,10 +697,11 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
                     _markLayoutDirty();
                   },
                   onAddMedia: _openFile,
-                  onNewWindow: () => WindowManager.showStatsWindow(),
+                  onAnalysis: _triggerAnalysis,
+                  onProfiler: () => WindowManager.showStatsWindow(),
                   onSettings: () => WindowManager.showSettingsWindow(),
-                  onDebugMemory: () => WindowManager.showStatsWindow(),
                   viewModeEnabled: _textureId != null,
+                  analysisEnabled: _trackManager.count > 0,
                 ),
                 // Viewport (expanded)
                 Expanded(
@@ -784,13 +778,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
                     ),
                   ),
                 ),
-              ),
-            // Analysis floating toolbar (only when video is loaded)
-            if (_viewportState == 2)
-              AnalysisToolbar(
-                visible: _analysisToolbarVisible,
-                onHide: () => setState(() => _analysisToolbarVisible = false),
-                onTriggerAnalysis: _triggerAnalysis,
               ),
           ],
         ),

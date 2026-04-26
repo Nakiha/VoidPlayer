@@ -157,9 +157,6 @@
   "actionSeekBackward": "Seek Backward (-1s)",
   "@actionSeekBackward": { "description": "Shortcut action label" },
 
-  "actionOpenAnalysis": "Toggle Analysis Toolbar",
-  "@actionOpenAnalysis": { "description": "Shortcut action label" },
-
   "analysisClickToAnalyze": "Click to analyze",
   "@analysisClickToAnalyze": { "description": "Analysis toolbar tooltip when idle" },
 
@@ -189,6 +186,9 @@
 
   "analysisNaluDetail": "NALU Detail",
   "@analysisNaluDetail": { "description": "NALU detail section" },
+
+  "analysisFrameInfo": "Frame Info",
+  "@analysisFrameInfo": { "description": "Frame info section in NALU detail" },
 
   "analysisPtsOrder": "PTS Order",
   "@analysisPtsOrder": { "description": "PTS order toggle label" },

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../analysis/analysis_manager.dart';
 import '../l10n/app_localizations.dart';
 import 'segmented_widget.dart';
 
@@ -7,20 +8,22 @@ class AppToolBar extends StatelessWidget {
   final int viewMode; // 0=sideBySide, 1=splitScreen
   final ValueChanged<int> onViewModeChanged;
   final VoidCallback onAddMedia;
-  final VoidCallback onNewWindow;
+  final Future<void> Function() onAnalysis;
+  final VoidCallback onProfiler;
   final VoidCallback onSettings;
-  final VoidCallback onDebugMemory;
   final bool viewModeEnabled;
+  final bool analysisEnabled;
 
   const AppToolBar({
     super.key,
     required this.viewMode,
     required this.onViewModeChanged,
     required this.onAddMedia,
-    required this.onNewWindow,
+    required this.onAnalysis,
+    required this.onProfiler,
     required this.onSettings,
-    required this.onDebugMemory,
     this.viewModeEnabled = false,
+    this.analysisEnabled = false,
   });
 
   @override
@@ -56,16 +59,19 @@ class AppToolBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
-          // New Window button
+          // Analysis button
+          _AnalysisButton(enabled: analysisEnabled, onPressed: onAnalysis),
+          const SizedBox(width: 4),
+          // Profiler button
           SizedBox(
+            width: 32,
             height: 32,
-            child: OutlinedButton(
-              onPressed: onNewWindow,
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                visualDensity: VisualDensity.compact,
-              ),
-              child: Text(AppLocalizations.of(context)!.newWindow),
+            child: IconButton(
+              onPressed: onProfiler,
+              icon: const Icon(Icons.speed, size: 18),
+              tooltip: AppLocalizations.of(context)!.performanceMonitor,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
             ),
           ),
           const SizedBox(width: 4),
@@ -81,21 +87,81 @@ class AppToolBar extends StatelessWidget {
               constraints: const BoxConstraints.tightFor(width: 32, height: 32),
             ),
           ),
-          const SizedBox(width: 4),
-          // Debug / Memory monitor button
-          SizedBox(
-            width: 32,
-            height: 32,
-            child: IconButton(
-              onPressed: onDebugMemory,
-              icon: const Icon(Icons.speed, size: 18),
-              tooltip: AppLocalizations.of(context)!.performanceMonitor,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-            ),
-          ),
         ],
       ),
     );
+  }
+}
+
+class _AnalysisButton extends StatelessWidget {
+  final bool enabled;
+  final Future<void> Function() onPressed;
+
+  const _AnalysisButton({required this.enabled, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final mgr = AnalysisManager.instance;
+    return ListenableBuilder(
+      listenable: mgr,
+      builder: (context, _) {
+        final theme = Theme.of(context);
+        final isWorking =
+            mgr.state == AnalysisState.computingHash ||
+            mgr.state == AnalysisState.generating ||
+            mgr.state == AnalysisState.loading;
+        final isError = mgr.state == AnalysisState.error;
+
+        return SizedBox(
+          width: 32,
+          height: 32,
+          child: IconButton(
+            onPressed: !enabled || isWorking ? null : () => onPressed(),
+            icon: isWorking
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    isError ? Icons.error_outline : Icons.analytics_outlined,
+                    size: 18,
+                    color: isError ? theme.colorScheme.error : null,
+                  ),
+            tooltip: _tooltipText(context, mgr, isWorking, isError),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          ),
+        );
+      },
+    );
+  }
+
+  String _tooltipText(
+    BuildContext context,
+    AnalysisManager mgr,
+    bool isWorking,
+    bool isError,
+  ) {
+    final l = AppLocalizations.of(context)!;
+    if (isWorking) {
+      return l.analysisGeneratingFor(mgr.generatingFileName ?? '...');
+    }
+    if (isError) {
+      final e = mgr.error;
+      if (e == null) return l.analysisErrorUnknown;
+      return switch (e.key) {
+        AnalysisErrorKey.hashFailed => l.analysisErrorHashFailed(
+          e.args.firstOrNull ?? '',
+        ),
+        AnalysisErrorKey.unsupported => l.analysisErrorUnsupported(
+          e.args.firstOrNull ?? '',
+        ),
+        AnalysisErrorKey.loadFailed => l.analysisErrorLoadFailed(
+          e.args.firstOrNull ?? '',
+        ),
+      };
+    }
+    return l.analysisClickToAnalyze;
   }
 }

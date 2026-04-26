@@ -63,8 +63,6 @@
   "actionSeekForward": "快进 (+1s)",
   "actionSeekBackward": "快退 (-1s)",
 
-  "actionOpenAnalysis": "切换分析工具栏",
-
   "analysisClickToAnalyze": "点击以分析",
   "analysisGeneratingFor": "正在为 {name} 生成分析报告...",
   "analysisErrorUnknown": "未知错误",
@@ -75,6 +73,7 @@
   "analysisSplitMode": "分屏",
   "analysisNaluBrowser": "NALU 浏览器",
   "analysisNaluDetail": "NALU 详情",
+  "analysisFrameInfo": "帧信息",
   "analysisPtsOrder": "PTS 序",
   "analysisDtsOrder": "DTS 序",
   "analysisNoFrameData": "无帧数据",

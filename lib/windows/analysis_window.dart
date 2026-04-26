@@ -1333,24 +1333,34 @@ class _RefPyramidPainter extends CustomPainter {
     final numLevels = maxTid + 1;
     final rowH = size.height / numLevels;
     final labelW = _analysisChartLabelW;
-    final usableW = size.width - labelW;
+    final usableW = (size.width - labelW).clamp(0.0, double.infinity);
     final span = viewEnd - viewStart;
     final circleR = (rowH * 0.3).clamp(6.0, 20.0);
     final plotRect = Rect.fromLTWH(labelW, 0, usableW, size.height);
+    final centerPad = circleR + 2;
+    final centerW = (usableW - centerPad * 2).clamp(1.0, double.infinity);
 
     final positions = <int, Offset>{}; // globalIdx → position
     for (var i = visibleStart; i < visibleEnd; i++) {
       final frac = (i - viewStart) / span;
-      final x = labelW + frac * usableW;
+      final x = labelW + centerPad + frac * centerW;
       final y = size.height - (frames[i].temporalId + 0.5) * rowH;
       positions[i] = Offset(x, y);
     }
     frameRects = [
-      for (final e in positions.entries)
-        (
-          e.key,
-          Rect.fromCircle(center: e.value, radius: circleR).intersect(plotRect),
-        ),
+      for (final e in positions.entries) ...[
+        if (Rect.fromCircle(
+          center: e.value,
+          radius: circleR,
+        ).overlaps(plotRect))
+          (
+            e.key,
+            Rect.fromCircle(
+              center: e.value,
+              radius: circleR,
+            ).intersect(plotRect),
+          ),
+      ],
     ];
 
     // --- Level backgrounds ---
@@ -1407,7 +1417,7 @@ class _RefPyramidPainter extends CustomPainter {
     Offset posFor(int idx) {
       if (positions.containsKey(idx)) return positions[idx]!;
       final frac = (idx - viewStart) / span;
-      final x = labelW + frac * usableW;
+      final x = labelW + centerPad + frac * centerW;
       final y = size.height - (frames[idx].temporalId + 0.5) * rowH;
       return Offset(x, y);
     }

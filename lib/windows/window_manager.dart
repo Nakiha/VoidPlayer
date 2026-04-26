@@ -138,7 +138,7 @@ class WindowManager {
       return;
     }
 
-    final rect = initialRect ?? await _computeWindowRect(WindowArgs.analysis);
+    final rect = initialRect ?? await _computeAnalysisWindowRect();
     final exe = Platform.resolvedExecutable;
     final scriptPath = analysisTestScriptPath;
     _analysisExitCodes.remove(key);
@@ -190,7 +190,7 @@ class WindowManager {
       return;
     }
 
-    final rect = await _computeWindowRect(WindowArgs.analysis);
+    final rect = await _computeAnalysisWindowRect();
     final exe = Platform.resolvedExecutable;
     final scriptPath = analysisTestScriptPath;
     _analysisExitCodes.remove(key);
@@ -227,6 +227,9 @@ class WindowManager {
 
   static String _analysisProcessKey(String fallback) =>
       analysisIpcPort != null ? 'workspace:ipc' : fallback;
+
+  static Future<Rect> _computeAnalysisWindowRect() =>
+      _computeWindowRect(WindowArgs.analysis, useSavedPosition: false);
 
   // --- desktop_multi_window secondary windows (stats/settings/memory) ---
 
@@ -286,13 +289,18 @@ class WindowManager {
   /// Computes the initial position and size for a secondary window:
   /// 1. Try the saved rect from config (if still on-screen).
   /// 2. Otherwise cascade from the main (parent) window.
-  static Future<Rect> _computeWindowRect(String type) async {
+  static Future<Rect> _computeWindowRect(
+    String type, {
+    bool useSavedPosition = true,
+  }) async {
     final (defaultW, defaultH) = WindowArgs.defaultSizes[type] ?? (800, 600);
 
     // Try saved position.
-    final saved = AppConfig.instance.secondaryWindowRect(type);
-    if (saved != null && Win32FFI.isRectOnScreen(saved)) {
-      return saved;
+    if (useSavedPosition) {
+      final saved = AppConfig.instance.secondaryWindowRect(type);
+      if (saved != null && Win32FFI.isRectOnScreen(saved)) {
+        return saved;
+      }
     }
 
     // Cascade from the main window.
@@ -303,6 +311,7 @@ class WindowManager {
       return Win32FFI.cascadePosition(
         parentRect,
         monitorArea,
+        offset: type == WindowArgs.analysis ? Win32FFI.titleBarOffset() : 32,
         defaultWidth: defaultW,
         defaultHeight: defaultH,
       );

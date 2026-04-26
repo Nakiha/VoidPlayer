@@ -119,6 +119,9 @@ typedef _SetWindowLongPtrWNative =
 typedef _SetWindowLongPtrWDart =
     int Function(int hWnd, int nIndex, int dwNewLong);
 
+typedef _GetSystemMetricsNative = Int32 Function(Int32 nIndex);
+typedef _GetSystemMetricsDart = int Function(int nIndex);
+
 // ---------------------------------------------------------------------------
 // Structs
 // ---------------------------------------------------------------------------
@@ -165,6 +168,9 @@ const int _monitorDefaultToNearest = 0x00000002;
 const int _wmClose = 0x0010;
 const int _vkLButton = 0x01;
 const int _vkRButton = 0x02;
+const int _smCyCaption = 4;
+const int _smCyFrame = 33;
+const int _smCyPaddedBorder = 92;
 const int _gwlExStyle = -20;
 const int _wsExToolWindow = 0x00000080;
 const int _wsExAppWindow = 0x00040000;
@@ -257,6 +263,11 @@ final _getWindowLongPtrW = _user32
 final _setWindowLongPtrW = _user32
     .lookupFunction<_SetWindowLongPtrWNative, _SetWindowLongPtrWDart>(
       'SetWindowLongPtrW',
+    );
+
+final _getSystemMetrics = _user32
+    .lookupFunction<_GetSystemMetricsNative, _GetSystemMetricsDart>(
+      'GetSystemMetrics',
     );
 
 // ---------------------------------------------------------------------------
@@ -421,6 +432,16 @@ class Win32FFI {
   /// Returns whether the right mouse button is currently physically down.
   static bool isRightMouseButtonDown() =>
       (_getAsyncKeyState(_vkRButton) & 0x8000) != 0;
+
+  /// Approximate top non-client height for an overlapped window.
+  static int titleBarOffset() {
+    final raw =
+        _getSystemMetrics(_smCyCaption) +
+        _getSystemMetrics(_smCyFrame) +
+        _getSystemMetrics(_smCyPaddedBorder);
+    if (raw <= 0) return 32;
+    return raw.clamp(24, 64).toInt();
+  }
 
   /// Finds a window by class name and/or title.
   /// Pass `null` for either parameter to act as a wildcard.

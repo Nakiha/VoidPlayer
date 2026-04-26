@@ -1,4 +1,4 @@
-# Main window should spawn one analysis process per loaded track.
+# Main window should spawn one workspace analysis process for all loaded tracks.
 @WINDOW, 1280, 720
 0.2, SET_ANALYSIS_TEST_SCRIPT, ui_tests/analysis_child_smoke.csv
 0.5, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
@@ -6,6 +6,6 @@
 1.5, ADD_MEDIA, resources/video/h266_10s_1920x1080.mp4
 4.0, ASSERT_TRACK_COUNT, 3
 4.2, RUN_ANALYSIS
-5.0, WAIT_ANALYSIS_PROCESS_COUNT, 3, 120000
-6.0, ASSERT_ANALYSIS_PROCESS_COUNT, 3
+5.0, WAIT_ANALYSIS_PROCESS_COUNT, 1, 120000
+6.0, ASSERT_ANALYSIS_PROCESS_COUNT, 1
 10.0, QUIT, 0

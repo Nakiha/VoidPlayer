@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
 import 'dart:ui';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import '../app_log.dart';
@@ -50,15 +49,7 @@ class WindowManager {
       return;
     }
 
-    final rects = await _computeAnalysisBatchRects(windows.length);
-    for (var i = 0; i < windows.length; i++) {
-      final window = windows[i];
-      await _spawnAnalysisProcess(
-        window.hash,
-        fileName: window.fileName,
-        initialRect: rects[i],
-      );
-    }
+    await _spawnAnalysisWorkspaceProcess(windows);
   }
 
   static int get analysisProcessCount => _analysisProcesses.length;
@@ -179,78 +170,48 @@ class WindowManager {
     });
   }
 
-  static Future<List<Rect>> _computeAnalysisBatchRects(int count) async {
-    if (count <= 0) return const [];
-
-    final (defaultW, defaultH) =
-        WindowArgs.defaultSizes[WindowArgs.analysis] ?? (1000, 700);
-    var baseWidth = defaultW.toDouble();
-    var baseHeight = defaultH.toDouble();
-    final saved = AppConfig.instance.secondaryWindowRect(WindowArgs.analysis);
-    if (saved != null && Win32FFI.isRectOnScreen(saved)) {
-      baseWidth = saved.width;
-      baseHeight = saved.height;
-    }
-
-    final workArea = _currentMonitorWorkArea();
-    const gap = 16.0;
-    const minWidth = 520.0;
-    const minHeight = 420.0;
-
-    final columns = _analysisGridColumns(count);
-    final rows = (count / columns).ceil();
-    final cellWidth = (workArea.width - gap * (columns - 1)) / columns;
-    final cellHeight = (workArea.height - gap * (rows - 1)) / rows;
-    final width = cellWidth >= minWidth
-        ? math.min(baseWidth, cellWidth).clamp(minWidth, cellWidth)
-        : cellWidth;
-    final height = cellHeight >= minHeight
-        ? math.min(baseHeight, cellHeight).clamp(minHeight, cellHeight)
-        : cellHeight;
-
-    final rects = <Rect>[];
-    for (var i = 0; i < count; i++) {
-      final row = i ~/ columns;
-      final col = i % columns;
-      final cellLeft = workArea.left + col * (cellWidth + gap);
-      final cellTop = workArea.top + row * (cellHeight + gap);
-      final x = cellLeft + (cellWidth - width) / 2;
-      final y = cellTop + (cellHeight - height) / 2;
-      rects.add(
-        Win32FFI.ensureOnScreen(
-          Rect.fromLTWH(x, y, width.toDouble(), height.toDouble()),
-          workArea,
-        ),
+  static Future<void> _spawnAnalysisWorkspaceProcess(
+    List<AnalysisWindowRequest> windows,
+  ) async {
+    final key = 'workspace:${windows.map((w) => w.hash).join('|')}';
+    if (_analysisProcesses.containsKey(key)) {
+      log.info(
+        '[WindowManager] analysis workspace for ${windows.length} tracks still running, skipping',
       );
+      return;
     }
 
-    return rects;
-  }
+    final rect = await _computeWindowRect(WindowArgs.analysis);
+    final exe = Platform.resolvedExecutable;
+    final scriptPath = analysisTestScriptPath;
+    _analysisExitCodes.remove(key);
 
-  static int _analysisGridColumns(int count) {
-    if (count <= 2) return count;
-    if (count <= 4) return 2;
-    return math.sqrt(count).ceil();
-  }
+    final args = <String>[
+      '--standalone-analysis',
+      for (final window in windows) '--hash=${window.hash}',
+      '--x=${rect.left.toInt()}',
+      '--y=${rect.top.toInt()}',
+      '--width=${rect.width.toInt()}',
+      '--height=${rect.height.toInt()}',
+      '--accentColor=$accentColorValue',
+      for (final window in windows) '--fileName=${window.fileName ?? ''}',
+      if (scriptPath != null) ...['--test-script', scriptPath],
+      if (silentUiTest) '--silent-ui-test',
+    ];
 
-  static Rect _currentMonitorWorkArea() {
-    final parentHwnd = Win32FFI.findWindow(className: kMainWindowClass);
-    if (parentHwnd != 0) {
-      return Win32FFI.getMonitorWorkArea(parentHwnd);
-    }
+    log.info('[WindowManager] spawning analysis workspace process: $args');
+    final process = await Process.start(exe, args);
+    _analysisProcesses[key] = process;
 
-    final views = PlatformDispatcher.instance.displays;
-    if (views.isNotEmpty) {
-      final display = views.first;
-      return Rect.fromLTWH(
-        0,
-        0,
-        display.size.width / display.devicePixelRatio,
-        display.size.height / display.devicePixelRatio,
-      );
-    }
+    process.stderr.transform(utf8.decoder).listen((data) {
+      log.warning('[AnalysisWorkspaceProcess] stderr: $data');
+    });
 
-    return const Rect.fromLTWH(0, 0, 1280, 720);
+    process.exitCode.then((code) {
+      log.info('[WindowManager] analysis workspace exited with code $code');
+      _analysisProcesses.remove(key);
+      _analysisExitCodes[key] = code;
+    });
   }
 
   // --- desktop_multi_window secondary windows (stats/settings/memory) ---

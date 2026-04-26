@@ -119,7 +119,9 @@ class _CloseHandler with WindowListener {
 /// giving the analysis window its own D3D11 device and avoiding the
 /// Flutter multi-engine crash.
 Future<void> _runStandaloneAnalysis(List<String> args) async {
-  String? hash, fileName, testScriptPath;
+  final hashes = <String>[];
+  final fileNames = <String?>[];
+  String? testScriptPath;
   final silentUiTest = _hasFlag(args, '--silent-ui-test');
   int x = 100, y = 100, width = 800, height = 600;
   int accentColorValue = 0xFF0078D4;
@@ -127,9 +129,10 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
   for (var i = 0; i < args.length; i++) {
     final arg = args[i];
     if (arg.startsWith('--hash=')) {
-      hash = arg.substring(7);
+      hashes.add(arg.substring(7));
     } else if (arg.startsWith('--fileName=')) {
-      fileName = arg.substring(11);
+      final name = arg.substring(11);
+      fileNames.add(name.isEmpty ? null : name);
     } else if (arg == '--test-script' && i + 1 < args.length) {
       testScriptPath = args[++i];
     } else if (arg.startsWith('--test-script=')) {
@@ -147,13 +150,13 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
     }
   }
 
-  if (hash == null) {
+  if (hashes.isEmpty) {
     log.severe('[StandaloneAnalysis] --hash is required');
     exit(1);
   }
 
   log.info(
-    '[StandaloneAnalysis] starting: hash=$hash, fileName=$fileName, '
+    '[StandaloneAnalysis] starting: hashes=$hashes, fileNames=$fileNames, '
     'silentUiTest=$silentUiTest',
   );
 
@@ -171,21 +174,32 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
   // Set native window title.
   final hwnd = Win32FFI.getForegroundWindow();
   if (hwnd != 0) {
-    final title = fileName != null
-        ? 'Void Player - $fileName'
+    final title = hashes.length == 1 && fileNames.isNotEmpty
+        ? 'Void Player - ${fileNames.first}'
         : 'Void Player - Analysis';
     Win32FFI.setWindowText(hwnd, title);
   }
 
   final accentColor = Color(accentColorValue);
-  runApp(
-    AnalysisApp(
-      accentColor: accentColor,
-      hash: hash,
-      fileName: fileName,
-      testScriptPath: testScriptPath,
-    ),
-  );
+  if (hashes.length == 1) {
+    runApp(
+      AnalysisApp(
+        accentColor: accentColor,
+        hash: hashes.first,
+        fileName: fileNames.isNotEmpty ? fileNames.first : null,
+        testScriptPath: testScriptPath,
+      ),
+    );
+  } else {
+    runApp(
+      AnalysisWorkspaceApp(
+        accentColor: accentColor,
+        hashes: hashes,
+        fileNames: fileNames,
+        testScriptPath: testScriptPath,
+      ),
+    );
+  }
 
   // Show window after first frame to prevent white flash.
   WidgetsBinding.instance.addPostFrameCallback((_) async {

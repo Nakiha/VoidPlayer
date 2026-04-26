@@ -45,12 +45,202 @@ class AnalysisApp extends StatelessWidget {
   }
 }
 
+class AnalysisWorkspaceApp extends StatelessWidget {
+  final Color accentColor;
+  final List<String> hashes;
+  final List<String?> fileNames;
+  final String? testScriptPath;
+
+  const AnalysisWorkspaceApp({
+    super.key,
+    required this.accentColor,
+    required this.hashes,
+    required this.fileNames,
+    this.testScriptPath,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Void Player - Analysis',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        colorSchemeSeed: accentColor,
+        useMaterial3: true,
+      ),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: _AnalysisWorkspacePage(
+        entries: [
+          for (var i = 0; i < hashes.length; i++)
+            _AnalysisWorkspaceEntry(
+              hash: hashes[i],
+              fileName: i < fileNames.length ? fileNames[i] : null,
+            ),
+        ],
+        testScriptPath: testScriptPath,
+      ),
+    );
+  }
+}
+
+class _AnalysisWorkspaceEntry {
+  final String hash;
+  final String? fileName;
+
+  const _AnalysisWorkspaceEntry({required this.hash, this.fileName});
+}
+
+class _AnalysisWorkspacePage extends StatefulWidget {
+  final List<_AnalysisWorkspaceEntry> entries;
+  final String? testScriptPath;
+
+  const _AnalysisWorkspacePage({required this.entries, this.testScriptPath});
+
+  @override
+  State<_AnalysisWorkspacePage> createState() => _AnalysisWorkspacePageState();
+}
+
+class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
+  int _selected = 0;
+  bool _splitView = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = widget.entries;
+    if (entries.isEmpty) {
+      return const Scaffold(body: SizedBox.shrink());
+    }
+    final theme = Theme.of(context);
+    final selected = _selected.clamp(0, entries.length - 1);
+
+    return Scaffold(
+      body: Column(
+        children: [
+          Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: theme.dividerColor)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemBuilder: (context, index) {
+                      final entry = entries[index];
+                      final active = index == selected;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: FilledButton.tonal(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: active
+                                ? theme.colorScheme.primaryContainer
+                                : theme.colorScheme.surfaceContainerHighest,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: () => setState(() => _selected = index),
+                          child: Text(
+                            entry.fileName ?? 'Track ${index + 1}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      );
+                    },
+                    separatorBuilder: (_, _) => const SizedBox(width: 6),
+                    itemCount: entries.length,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('Tabs')),
+                    ButtonSegment(value: true, label: Text('Split')),
+                  ],
+                  selected: {_splitView},
+                  onSelectionChanged: (v) =>
+                      setState(() => _splitView = v.first),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _splitView
+                ? _AnalysisSplitView(entries: entries)
+                : AnalysisPage(
+                    key: ValueKey('analysis-${entries[selected].hash}'),
+                    hash: entries[selected].hash,
+                    testScriptPath: selected == 0
+                        ? widget.testScriptPath
+                        : null,
+                    pollSummary: false,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnalysisSplitView extends StatelessWidget {
+  final List<_AnalysisWorkspaceEntry> entries;
+
+  const _AnalysisSplitView({required this.entries});
+
+  @override
+  Widget build(BuildContext context) {
+    final count = entries.length;
+    final columns = count <= 2 ? count : 2;
+    final rows = (count / columns).ceil();
+
+    return Column(
+      children: [
+        for (var row = 0; row < rows; row++)
+          Expanded(
+            child: Row(
+              children: [
+                for (var col = 0; col < columns; col++)
+                  Expanded(child: _splitCell(row * columns + col)),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _splitCell(int index) {
+    if (index >= entries.length) return const SizedBox.shrink();
+    final entry = entries[index];
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        border: Border(
+          right: BorderSide(color: Color(0x33222222)),
+          bottom: BorderSide(color: Color(0x33222222)),
+        ),
+      ),
+      child: AnalysisPage(
+        key: ValueKey('analysis-split-${entry.hash}'),
+        hash: entry.hash,
+        pollSummary: false,
+      ),
+    );
+  }
+}
+
 // ===========================================================================
 
 class AnalysisPage extends StatefulWidget {
   final String hash;
   final String? testScriptPath;
-  const AnalysisPage({super.key, required this.hash, this.testScriptPath});
+  final bool pollSummary;
+  const AnalysisPage({
+    super.key,
+    required this.hash,
+    this.testScriptPath,
+    this.pollSummary = true,
+  });
 
   @override
   State<AnalysisPage> createState() => _AnalysisPageState();
@@ -113,10 +303,12 @@ class _AnalysisPageState extends State<AnalysisPage> {
   void initState() {
     super.initState();
     _loadData();
-    _pollTimer = Timer.periodic(
-      const Duration(milliseconds: 200),
-      (_) => _poll(),
-    );
+    if (widget.pollSummary) {
+      _pollTimer = Timer.periodic(
+        const Duration(milliseconds: 200),
+        (_) => _poll(),
+      );
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final scriptPath = widget.testScriptPath;
       if (scriptPath != null && !_testStarted) {
@@ -138,11 +330,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
     final vbi = AnalysisCache.vbiPath(hash);
     final vbt = AnalysisCache.vbtPath(hash);
 
-    // Load via FFI (analysis files may already be loaded from main window)
-    final s = AnalysisFfi.summary;
-    if (s.loaded == 0) {
-      AnalysisFfi.load(vbs2, vbi, vbt);
-    }
+    AnalysisFfi.load(vbs2, vbi, vbt);
     _readData();
   }
 

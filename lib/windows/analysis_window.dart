@@ -153,6 +153,9 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
 
     void applySnapshot() {
       _entries = entries;
+      if (entries.length <= 1) {
+        _splitView = false;
+      }
       _selected = entries.isEmpty
           ? 0
           : nextSelected >= 0
@@ -174,12 +177,14 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
       return const Scaffold(body: SizedBox.shrink());
     }
     final selected = _selected.clamp(0, entries.length - 1);
+    final modeToggleEnabled = entries.length > 1;
 
     return Scaffold(
       body: _splitView
           ? _AnalysisSplitView(
               entries: entries,
               splitView: _splitView,
+              modeToggleEnabled: modeToggleEnabled,
               selectedIndex: selected,
               onModeChanged: (value) => setState(() => _splitView = value),
               onSelected: (index) => setState(() => _selected = index),
@@ -190,6 +195,7 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
               selected: true,
               showModeToggle: true,
               splitView: _splitView,
+              modeToggleEnabled: modeToggleEnabled,
               onModeChanged: (value) => setState(() => _splitView = value),
               child: AnalysisPage(
                 key: ValueKey('analysis-${entries[selected].hash}'),
@@ -205,6 +211,7 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
 class _AnalysisSplitView extends StatelessWidget {
   final List<_AnalysisWorkspaceEntry> entries;
   final bool splitView;
+  final bool modeToggleEnabled;
   final int selectedIndex;
   final ValueChanged<bool> onModeChanged;
   final ValueChanged<int> onSelected;
@@ -212,6 +219,7 @@ class _AnalysisSplitView extends StatelessWidget {
   const _AnalysisSplitView({
     required this.entries,
     required this.splitView,
+    required this.modeToggleEnabled,
     required this.selectedIndex,
     required this.onModeChanged,
     required this.onSelected,
@@ -252,6 +260,7 @@ class _AnalysisSplitView extends StatelessWidget {
         selected: index == selectedIndex,
         showModeToggle: index == 0,
         splitView: splitView,
+        modeToggleEnabled: modeToggleEnabled,
         onModeChanged: onModeChanged,
         onSelected: () => onSelected(index),
         child: AnalysisPage(
@@ -270,6 +279,7 @@ class _AnalysisTrackPane extends StatelessWidget {
   final bool selected;
   final bool showModeToggle;
   final bool splitView;
+  final bool modeToggleEnabled;
   final ValueChanged<bool> onModeChanged;
   final VoidCallback? onSelected;
   final Widget child;
@@ -280,6 +290,7 @@ class _AnalysisTrackPane extends StatelessWidget {
     required this.selected,
     required this.showModeToggle,
     required this.splitView,
+    required this.modeToggleEnabled,
     required this.onModeChanged,
     required this.child,
     this.onSelected,
@@ -308,6 +319,7 @@ class _AnalysisTrackPane extends StatelessWidget {
                 maintainState: true,
                 child: _AnalysisWorkspaceModeToggle(
                   splitView: splitView,
+                  enabled: modeToggleEnabled,
                   onChanged: onModeChanged,
                 ),
               ),
@@ -341,22 +353,26 @@ class _AnalysisTrackPane extends StatelessWidget {
 
 class _AnalysisWorkspaceModeToggle extends StatelessWidget {
   final bool splitView;
+  final bool enabled;
   final ValueChanged<bool> onChanged;
 
   const _AnalysisWorkspaceModeToggle({
     required this.splitView,
+    required this.enabled,
     required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
     return ViewModeSelector(
       currentMode: splitView ? 1 : 0,
       onChanged: (value) => onChanged(value == 1),
-      firstLabel: 'Tabs',
-      secondLabel: 'Split',
+      firstLabel: l.analysisTabsMode,
+      secondLabel: l.analysisSplitMode,
       width: 124,
       height: 30,
+      enabled: enabled,
     );
   }
 }

@@ -71,6 +71,8 @@
   "analysisTitle": "Void Player - 码流分析",
   "analysisRefPyramid": "参考金字塔",
   "analysisFrameTrend": "帧趋势",
+  "analysisTabsMode": "标签页",
+  "analysisSplitMode": "分屏",
   "analysisNaluBrowser": "NALU 浏览器",
   "analysisNaluDetail": "NALU 详情",
   "analysisPtsOrder": "PTS 序",

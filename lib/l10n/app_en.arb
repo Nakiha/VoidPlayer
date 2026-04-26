@@ -178,6 +178,12 @@
   "analysisFrameTrend": "Frame Trend",
   "@analysisFrameTrend": { "description": "Tab label for frame trend chart" },
 
+  "analysisTabsMode": "Tabs",
+  "@analysisTabsMode": { "description": "Analysis workspace mode: show one track at a time" },
+
+  "analysisSplitMode": "Split",
+  "@analysisSplitMode": { "description": "Analysis workspace mode: show tracks in split view" },
+
   "analysisNaluBrowser": "NALU Browser",
   "@analysisNaluBrowser": { "description": "NALU browser section" },
 

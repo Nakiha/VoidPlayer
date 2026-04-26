@@ -9,6 +9,7 @@ class ViewModeSelector extends StatelessWidget {
   final String? secondLabel;
   final double width;
   final double height;
+  final bool enabled;
 
   const ViewModeSelector({
     super.key,
@@ -18,38 +19,46 @@ class ViewModeSelector extends StatelessWidget {
     this.secondLabel,
     this.width = 240,
     this.height = 32,
+    this.enabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: width,
-      height: height,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: colorScheme.outlineVariant),
-        ),
-        child: Row(
-          children: [
-            _Segment(
-              label: firstLabel ?? AppLocalizations.of(context)!.sideBySide,
-              selected: currentMode == 0,
-              borderRadius: const BorderRadius.horizontal(
-                left: Radius.circular(5),
-              ),
-              onTap: () => onChanged(0),
+    return Opacity(
+      opacity: enabled ? 1 : 0.5,
+      child: IgnorePointer(
+        ignoring: !enabled,
+        child: SizedBox(
+          width: width,
+          height: height,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: colorScheme.outlineVariant),
             ),
-            _Segment(
-              label: secondLabel ?? AppLocalizations.of(context)!.splitScreen,
-              selected: currentMode == 1,
-              borderRadius: const BorderRadius.horizontal(
-                right: Radius.circular(5),
-              ),
-              onTap: () => onChanged(1),
+            child: Row(
+              children: [
+                _Segment(
+                  label: firstLabel ?? AppLocalizations.of(context)!.sideBySide,
+                  selected: currentMode == 0,
+                  borderRadius: const BorderRadius.horizontal(
+                    left: Radius.circular(5),
+                  ),
+                  onTap: () => onChanged(0),
+                ),
+                _Segment(
+                  label:
+                      secondLabel ?? AppLocalizations.of(context)!.splitScreen,
+                  selected: currentMode == 1,
+                  borderRadius: const BorderRadius.horizontal(
+                    right: Radius.circular(5),
+                  ),
+                  onTap: () => onChanged(1),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

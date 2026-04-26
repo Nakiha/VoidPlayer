@@ -1303,8 +1303,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
             // Top chart and bottom NALU/detail area share a draggable divider.
             child: LayoutBuilder(
               builder: (context, constraints) {
-                const dividerH = 10.0;
-                final available = (constraints.maxHeight - dividerH).clamp(
+                const dividerHitH = 10.0;
+                final available = constraints.maxHeight.clamp(
                   0.0,
                   double.infinity,
                 );
@@ -1320,11 +1320,31 @@ class _AnalysisPageState extends State<AnalysisPage> {
                   maxTop,
                 );
                 final bottomH = available - topH;
-                return Column(
+                final dividerTop = (topH - dividerHitH / 2).clamp(
+                  0.0,
+                  (available - dividerHitH).clamp(0.0, double.infinity),
+                );
+                return Stack(
                   children: [
-                    SizedBox(height: topH, child: topChart),
-                    SizedBox(
-                      height: dividerH,
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 0,
+                      height: topH,
+                      child: topChart,
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: topH,
+                      height: bottomH,
+                      child: bottomPanel,
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: dividerTop,
+                      height: dividerHitH,
                       child: _ResizableHDivider(
                         position: topH,
                         minPosition: minTop,

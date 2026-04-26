@@ -26,9 +26,11 @@ final class NakiAnalysisSummary extends Struct {
   external int timeBaseDen;
   @Int32()
   external int currentFrameIdx;
+  @Int32()
+  external int codec;
 
   // Reserved native ABI padding.
-  @Array(7)
+  @Array(6)
   external Array<Int32> _reserved;
 }
 

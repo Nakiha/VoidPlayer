@@ -539,6 +539,41 @@ class _AnalysisPageState extends State<AnalysisPage> {
         );
         _assertAnalysisMinCounts(minFrames, minPackets, minNalus);
 
+      case _AnalysisTestCommand.assertCodec:
+        final expected = _parseAnalysisCodec(instr.stringArg(0));
+        final actual = _codec;
+        log.info(
+          'AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_CODEC '
+          '${analysisCodecName(expected)}',
+        );
+        if (actual != expected) {
+          throw AssertionError(
+            'Expected codec ${analysisCodecName(expected)}, '
+            'got ${analysisCodecName(actual)}',
+          );
+        }
+
+      case _AnalysisTestCommand.assertNaluName:
+        final idx = instr.intArg(0);
+        final expected = instr.stringArg(1);
+        log.info(
+          'AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_NALU_NAME '
+          '$idx $expected',
+        );
+        if (idx < 0 || idx >= _nalus.length) {
+          throw AssertionError(
+            'NALU index $idx out of range; nalus=${_nalus.length}',
+          );
+        }
+        final actual = bitstreamUnitTypeName(_codec, _nalus[idx].nalType);
+        if (actual != expected) {
+          throw AssertionError(
+            'Expected NALU #$idx name $expected, got $actual '
+            '(codec=${analysisCodecName(_codec)}, '
+            'type=${_nalus[idx].nalType})',
+          );
+        }
+
       case _AnalysisTestCommand.assertCounts:
         final frames = instr.intArg(0);
         final packets = instr.intArg(1);
@@ -747,6 +782,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
   }
 
   List<FrameInfo> get _sortedFrames => _sortedFramesCache;
+  AnalysisCodec get _codec => analysisCodecFromValue(_summary?.codec ?? 0);
 
   void _rebuildSortedFramesCache() {
     _sortedFramesCache = List<FrameInfo>.from(_frames);
@@ -844,6 +880,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                           width: browserW,
                           child: _NaluBrowserView(
                             nalus: _nalus,
+                            codec: _codec,
                             selectedIdx: _selectedNaluIdx,
                             onSelected: (i) => setState(() {
                               _selectedNaluIdx = i;
@@ -869,6 +906,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                                 : null,
                             frameIdx: _selectedFrameIdx,
                             frames: _frames,
+                            codec: _codec,
                             l: l,
                           ),
                         ),
@@ -1921,6 +1959,7 @@ class _ScrollbarPainter extends CustomPainter {
 
 class _NaluBrowserView extends StatefulWidget {
   final List<NaluInfo> nalus;
+  final AnalysisCodec codec;
   final int? selectedIdx;
   final ValueChanged<int> onSelected;
   final String filter;
@@ -1928,6 +1967,7 @@ class _NaluBrowserView extends StatefulWidget {
 
   const _NaluBrowserView({
     required this.nalus,
+    required this.codec,
     required this.selectedIdx,
     required this.onSelected,
     required this.filter,
@@ -1964,7 +2004,10 @@ class _NaluBrowserViewState extends State<_NaluBrowserView> {
         visible.add(i);
       } else {
         final n = widget.nalus[i];
-        final name = h266NaluTypeName(n.nalType).toLowerCase();
+        final name = bitstreamUnitTypeName(
+          widget.codec,
+          n.nalType,
+        ).toLowerCase();
         final idStr = '#$i';
         if (name.contains(filter) ||
             idStr.contains(filter) ||
@@ -2050,7 +2093,11 @@ class _NaluBrowserViewState extends State<_NaluBrowserView> {
                       Container(
                         width: 4,
                         height: 28,
-                        color: naluTypeDecorColor(n.nalType),
+                        color: bitstreamUnitDecorColor(
+                          widget.codec,
+                          n.nalType,
+                          flags: n.flags,
+                        ),
                       ),
                       const SizedBox(width: 8),
                       // Index
@@ -2080,7 +2127,7 @@ class _NaluBrowserViewState extends State<_NaluBrowserView> {
                       // Type name
                       Expanded(
                         child: Text(
-                          h266NaluTypeName(n.nalType),
+                          bitstreamUnitTypeName(widget.codec, n.nalType),
                           style: theme.textTheme.bodySmall,
                         ),
                       ),
@@ -2104,12 +2151,14 @@ class _NaluDetailView extends StatelessWidget {
   final NaluInfo? nalu;
   final int? frameIdx;
   final List<FrameInfo> frames;
+  final AnalysisCodec codec;
   final AppLocalizations l;
 
   const _NaluDetailView({
     required this.nalu,
     this.frameIdx,
     required this.frames,
+    required this.codec,
     required this.l,
   });
 
@@ -2127,7 +2176,7 @@ class _NaluDetailView extends StatelessWidget {
     final items = <_DetailRow>[
       _DetailRow(
         l.analysisType,
-        '${h266NaluTypeName(n.nalType)} (${n.nalType})',
+        '${bitstreamUnitTypeName(codec, n.nalType)} (${n.nalType})',
       ),
       _DetailRow(l.analysisTemporalId, '${n.temporalId}'),
       _DetailRow(l.analysisLayerId, '${n.layerId}'),
@@ -2147,16 +2196,7 @@ class _NaluDetailView extends StatelessWidget {
         1 => 'P',
         _ => f.numRefL1 > 0 ? 'B' : 'B (uni)', // unidirectional B
       };
-      final nalName =
-          {
-            0: 'TRAIL',
-            1: 'STSA',
-            2: 'RADL',
-            7: 'IDR_W_RADL',
-            8: 'IDR_N_LP',
-            20: 'AUD',
-          }[f.nalType] ??
-          '${f.nalType}';
+      final nalName = bitstreamUnitTypeName(codec, f.nalType);
 
       frameItems.addAll([
         _DetailRow('Slice', '$sliceName (${f.sliceType})'),
@@ -2235,6 +2275,8 @@ enum _AnalysisTestCommand {
   assertLoaded,
   assertCounts,
   assertMinCounts,
+  assertCodec,
+  assertNaluName,
   setTab,
   assertTab,
   setOrder,
@@ -2296,6 +2338,8 @@ List<_AnalysisTestInstruction> _parseAnalysisTestScript(String path) {
       'ASSERT_ANALYSIS_LOADED' => _AnalysisTestCommand.assertLoaded,
       'ASSERT_ANALYSIS_COUNTS' => _AnalysisTestCommand.assertCounts,
       'ASSERT_ANALYSIS_MIN_COUNTS' => _AnalysisTestCommand.assertMinCounts,
+      'ASSERT_ANALYSIS_CODEC' => _AnalysisTestCommand.assertCodec,
+      'ASSERT_ANALYSIS_NALU_NAME' => _AnalysisTestCommand.assertNaluName,
       'SET_ANALYSIS_TAB' => _AnalysisTestCommand.setTab,
       'ASSERT_ANALYSIS_TAB' => _AnalysisTestCommand.assertTab,
       'SET_ANALYSIS_ORDER' => _AnalysisTestCommand.setOrder,
@@ -2345,5 +2389,28 @@ bool _parseAnalysisOrder(String value) {
       return false;
     default:
       throw ArgumentError('Unknown analysis order: $value');
+  }
+}
+
+AnalysisCodec _parseAnalysisCodec(String value) {
+  switch (value.trim().toLowerCase()) {
+    case 'h264':
+    case 'avc':
+      return AnalysisCodec.h264;
+    case 'h265':
+    case 'hevc':
+      return AnalysisCodec.hevc;
+    case 'h266':
+    case 'vvc':
+      return AnalysisCodec.vvc;
+    case 'av1':
+      return AnalysisCodec.av1;
+    case 'vp9':
+      return AnalysisCodec.vp9;
+    case 'mpeg2':
+    case 'mpeg-2':
+      return AnalysisCodec.mpeg2;
+    default:
+      return AnalysisCodec.unknown;
   }
 }

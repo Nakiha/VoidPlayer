@@ -14,7 +14,8 @@ struct NakiAnalysisSummary {
     int32_t time_base_num;
     int32_t time_base_den;
     int32_t current_frame_idx;  // derived from current PTS via VBT
-    int32_t _reserved[7];
+    int32_t codec;              // VbiCodec
+    int32_t _reserved[6];
 };
 
 // Merged frame info: VBS2 frame header + VBT packet data

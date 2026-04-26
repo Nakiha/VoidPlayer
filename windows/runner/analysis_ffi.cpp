@@ -66,6 +66,7 @@ const NakiAnalysisSummary* naki_analysis_get_summary() {
     s.video_height = vbs2.header().height;
     s.time_base_num = vbt.header().time_base_num;
     s.time_base_den = vbt.header().time_base_den;
+    s.codec = static_cast<int32_t>(vbi.codec());
 
     // Derive current frame from renderer PTS
     if (g_get_current_pts_us) {

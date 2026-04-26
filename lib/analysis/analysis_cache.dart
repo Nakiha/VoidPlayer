@@ -30,7 +30,27 @@ class AnalysisCache {
 
   static bool filesExist(String hash) {
     // VBS2 is optional (requires VTM decoder)
-    return File(vbiPath(hash)).existsSync() && File(vbtPath(hash)).existsSync();
+    return _isVbi2(vbiPath(hash)) && File(vbtPath(hash)).existsSync();
+  }
+
+  static bool _isVbi2(String path) {
+    final file = File(path);
+    if (!file.existsSync()) return false;
+    try {
+      final raf = file.openSync();
+      try {
+        final header = raf.readSync(4);
+        return header.length == 4 &&
+            header[0] == 0x56 &&
+            header[1] == 0x42 &&
+            header[2] == 0x49 &&
+            header[3] == 0x32;
+      } finally {
+        raf.closeSync();
+      }
+    } catch (_) {
+      return false;
+    }
   }
 
   static File get indexFile => File(p.join(dataDir, 'analysis_index.json'));

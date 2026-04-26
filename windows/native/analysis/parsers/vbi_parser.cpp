@@ -31,7 +31,7 @@ bool VbiFile::open(const std::string& path) {
         header_.magic[2] = 'I';
         header_.magic[3] = '1';
         header_.version = 1;
-        header_.codec = static_cast<uint16_t>(VbiCodec::VVC);
+        header_.codec = static_cast<uint16_t>(VbiCodec::Unknown);
         header_.unit_kind = static_cast<uint16_t>(VbiUnitKind::Nalu);
         header_.header_size = sizeof(VbiLegacyHeader);
         header_.num_units = legacy.num_nalus;

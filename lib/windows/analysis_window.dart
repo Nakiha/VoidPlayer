@@ -131,6 +131,7 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
   int _selected = 0;
   bool _splitView = false;
   late List<_AnalysisWorkspaceEntry> _entries;
+  final _splitLayout = AnalysisSplitLayoutController();
 
   @override
   void initState() {
@@ -144,6 +145,7 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
   void dispose() {
     widget.ipcClient?.removeListener(_onIpcTracksChanged);
     widget.ipcClient?.dispose();
+    _splitLayout.dispose();
     super.dispose();
   }
 
@@ -198,6 +200,7 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
               splitView: _splitView,
               modeToggleEnabled: modeToggleEnabled,
               selectedIndex: selected,
+              layoutController: _splitLayout,
               onModeChanged: (value) => setState(() => _splitView = value),
               onSelected: (index) => setState(() => _selected = index),
             )
@@ -412,6 +415,7 @@ class _AnalysisSplitView extends StatelessWidget {
   final bool splitView;
   final bool modeToggleEnabled;
   final int selectedIndex;
+  final AnalysisSplitLayoutController layoutController;
   final ValueChanged<bool> onModeChanged;
   final ValueChanged<int> onSelected;
 
@@ -420,6 +424,7 @@ class _AnalysisSplitView extends StatelessWidget {
     required this.splitView,
     required this.modeToggleEnabled,
     required this.selectedIndex,
+    required this.layoutController,
     required this.onModeChanged,
     required this.onSelected,
   });
@@ -486,9 +491,32 @@ class _AnalysisSplitView extends StatelessWidget {
           key: ValueKey('analysis-split-${entry.hash}'),
           hash: entry.hash,
           pollSummary: false,
+          splitLayoutController: layoutController,
         ),
       ),
     );
+  }
+}
+
+class AnalysisSplitLayoutController extends ChangeNotifier {
+  double _topPanelFraction = 0.40;
+  double _naluBrowserFraction = 0.42;
+
+  double get topPanelFraction => _topPanelFraction;
+  double get naluBrowserFraction => _naluBrowserFraction;
+
+  void setTopPanelFraction(double value) {
+    final next = value.clamp(0.0, 1.0);
+    if ((next - _topPanelFraction).abs() < 0.0001) return;
+    _topPanelFraction = next;
+    notifyListeners();
+  }
+
+  void setNaluBrowserFraction(double value) {
+    final next = value.clamp(0.0, 1.0);
+    if ((next - _naluBrowserFraction).abs() < 0.0001) return;
+    _naluBrowserFraction = next;
+    notifyListeners();
   }
 }
 
@@ -594,11 +622,14 @@ class AnalysisPage extends StatefulWidget {
   final String hash;
   final String? testScriptPath;
   final bool pollSummary;
+  final AnalysisSplitLayoutController? splitLayoutController;
+
   const AnalysisPage({
     super.key,
     required this.hash,
     this.testScriptPath,
     this.pollSummary = true,
+    this.splitLayoutController,
   });
 
   @override
@@ -678,6 +709,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
   @override
   void initState() {
     super.initState();
+    widget.splitLayoutController?.addListener(_onSplitLayoutChanged);
     _loadData();
     if (widget.pollSummary) {
       _pollTimer = Timer.periodic(
@@ -695,9 +727,23 @@ class _AnalysisPageState extends State<AnalysisPage> {
   }
 
   @override
+  void didUpdateWidget(covariant AnalysisPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.splitLayoutController != widget.splitLayoutController) {
+      oldWidget.splitLayoutController?.removeListener(_onSplitLayoutChanged);
+      widget.splitLayoutController?.addListener(_onSplitLayoutChanged);
+    }
+  }
+
+  @override
   void dispose() {
+    widget.splitLayoutController?.removeListener(_onSplitLayoutChanged);
     _pollTimer?.cancel();
     super.dispose();
+  }
+
+  void _onSplitLayoutChanged() {
+    if (mounted) setState(() {});
   }
 
   void _loadData() {
@@ -1156,7 +1202,11 @@ class _AnalysisPageState extends State<AnalysisPage> {
       builder: (context, constraints) {
         final totalW = constraints.maxWidth;
         final maxBrowserW = totalW - 120; // leave room for detail
-        final browserW = _naluBrowserWidth.clamp(120.0, maxBrowserW);
+        final layoutController = widget.splitLayoutController;
+        final requestedBrowserW = layoutController != null
+            ? totalW * layoutController.naluBrowserFraction
+            : _naluBrowserWidth;
+        final browserW = requestedBrowserW.clamp(120.0, maxBrowserW);
         return Stack(
           children: [
             Row(
@@ -1195,7 +1245,16 @@ class _AnalysisPageState extends State<AnalysisPage> {
               width: 9,
               child: _ResizableVDivider(
                 position: browserW,
-                onPositionChanged: (v) => setState(() => _naluBrowserWidth = v),
+                onPositionChanged: (v) {
+                  final clamped = v.clamp(120.0, maxBrowserW);
+                  if (layoutController != null) {
+                    layoutController.setNaluBrowserFraction(
+                      totalW <= 0 ? 0.0 : clamped / totalW,
+                    );
+                  } else {
+                    setState(() => _naluBrowserWidth = clamped);
+                  }
+                },
               ),
             ),
           ],
@@ -1253,7 +1312,10 @@ class _AnalysisPageState extends State<AnalysisPage> {
                 final minTop = compact ? available * 0.28 : 120.0;
                 final minBottom = compact ? available * 0.28 : 170.0;
                 final maxTop = (available - minBottom).clamp(minTop, available);
-                final topH = (available * _topPanelFraction).clamp(
+                final layoutController = widget.splitLayoutController;
+                final topPanelFraction =
+                    layoutController?.topPanelFraction ?? _topPanelFraction;
+                final topH = (available * topPanelFraction).clamp(
                   minTop,
                   maxTop,
                 );
@@ -1267,10 +1329,17 @@ class _AnalysisPageState extends State<AnalysisPage> {
                         position: topH,
                         minPosition: minTop,
                         maxPosition: maxTop,
-                        onPositionChanged: (nextTop) => setState(() {
+                        onPositionChanged: (nextTop) {
                           if (available <= 0) return;
-                          _topPanelFraction = nextTop / available;
-                        }),
+                          final nextFraction = nextTop / available;
+                          if (layoutController != null) {
+                            layoutController.setTopPanelFraction(nextFraction);
+                          } else {
+                            setState(() {
+                              _topPanelFraction = nextFraction;
+                            });
+                          }
+                        },
                       ),
                     ),
                     SizedBox(height: bottomH, child: bottomPanel),

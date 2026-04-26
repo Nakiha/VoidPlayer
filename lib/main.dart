@@ -15,6 +15,7 @@ import 'windows/stats_window.dart';
 import 'windows/memory_window.dart';
 import 'windows/settings_window.dart';
 import 'windows/analysis_window.dart';
+import 'windows/analysis_ipc.dart';
 
 ({double width, double height})? _parseTestWindowHeader(String scriptPath) {
   try {
@@ -125,6 +126,8 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
   final silentUiTest = _hasFlag(args, '--silent-ui-test');
   int x = 100, y = 100, width = 800, height = 600;
   int accentColorValue = 0xFF0078D4;
+  int? analysisIpcPort;
+  String? analysisIpcToken;
 
   for (var i = 0; i < args.length; i++) {
     final arg = args[i];
@@ -147,6 +150,10 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
       height = int.tryParse(arg.substring(9)) ?? 600;
     } else if (arg.startsWith('--accentColor=')) {
       accentColorValue = int.tryParse(arg.substring(14)) ?? 0xFF0078D4;
+    } else if (arg.startsWith('--analysis-ipc-port=')) {
+      analysisIpcPort = int.tryParse(arg.substring(20));
+    } else if (arg.startsWith('--analysis-ipc-token=')) {
+      analysisIpcToken = arg.substring(21);
     }
   }
 
@@ -181,7 +188,14 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
   }
 
   final accentColor = Color(accentColorValue);
-  if (hashes.length == 1) {
+  final analysisIpcClient = analysisIpcPort != null && analysisIpcToken != null
+      ? await AnalysisIpcClient.connect(
+          port: analysisIpcPort,
+          token: analysisIpcToken,
+        )
+      : null;
+
+  if (hashes.length == 1 && analysisIpcClient == null) {
     runApp(
       AnalysisApp(
         accentColor: accentColor,
@@ -197,6 +211,7 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
         hashes: hashes,
         fileNames: fileNames,
         testScriptPath: testScriptPath,
+        ipcClient: analysisIpcClient,
       ),
     );
   }

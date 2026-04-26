@@ -7,6 +7,7 @@ import '../analysis/analysis_cache.dart';
 import '../analysis/analysis_ffi.dart';
 import '../analysis/nalu_types.dart';
 import '../l10n/app_localizations.dart';
+import 'analysis_ipc.dart';
 
 // ===========================================================================
 // Analysis Window — secondary Flutter window for bitstream visualization
@@ -50,6 +51,7 @@ class AnalysisWorkspaceApp extends StatelessWidget {
   final List<String> hashes;
   final List<String?> fileNames;
   final String? testScriptPath;
+  final AnalysisIpcClient? ipcClient;
 
   const AnalysisWorkspaceApp({
     super.key,
@@ -57,6 +59,7 @@ class AnalysisWorkspaceApp extends StatelessWidget {
     required this.hashes,
     required this.fileNames,
     this.testScriptPath,
+    this.ipcClient,
   });
 
   @override
@@ -80,6 +83,7 @@ class AnalysisWorkspaceApp extends StatelessWidget {
             ),
         ],
         testScriptPath: testScriptPath,
+        ipcClient: ipcClient,
       ),
     );
   }
@@ -90,13 +94,21 @@ class _AnalysisWorkspaceEntry {
   final String? fileName;
 
   const _AnalysisWorkspaceEntry({required this.hash, this.fileName});
+
+  factory _AnalysisWorkspaceEntry.fromIpcTrack(AnalysisIpcTrack track) =>
+      _AnalysisWorkspaceEntry(hash: track.hash, fileName: track.fileName);
 }
 
 class _AnalysisWorkspacePage extends StatefulWidget {
   final List<_AnalysisWorkspaceEntry> entries;
   final String? testScriptPath;
+  final AnalysisIpcClient? ipcClient;
 
-  const _AnalysisWorkspacePage({required this.entries, this.testScriptPath});
+  const _AnalysisWorkspacePage({
+    required this.entries,
+    this.testScriptPath,
+    this.ipcClient,
+  });
 
   @override
   State<_AnalysisWorkspacePage> createState() => _AnalysisWorkspacePageState();
@@ -105,10 +117,58 @@ class _AnalysisWorkspacePage extends StatefulWidget {
 class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
   int _selected = 0;
   bool _splitView = false;
+  late List<_AnalysisWorkspaceEntry> _entries;
+
+  @override
+  void initState() {
+    super.initState();
+    _entries = widget.entries;
+    widget.ipcClient?.addListener(_onIpcTracksChanged);
+    _onIpcTracksChanged();
+  }
+
+  @override
+  void dispose() {
+    widget.ipcClient?.removeListener(_onIpcTracksChanged);
+    widget.ipcClient?.dispose();
+    super.dispose();
+  }
+
+  void _onIpcTracksChanged() {
+    final client = widget.ipcClient;
+    if (client == null || !client.hasSnapshot) return;
+    final selectedHash = _entries.isNotEmpty
+        ? _entries[_selected.clamp(0, _entries.length - 1)].hash
+        : null;
+    final entries = [
+      for (final track in client.tracks)
+        if (track.hash.isNotEmpty) _AnalysisWorkspaceEntry.fromIpcTrack(track),
+    ];
+    final nextSelected = selectedHash == null
+        ? entries.isEmpty
+              ? 0
+              : _selected.clamp(0, entries.length - 1)
+        : entries.indexWhere((entry) => entry.hash == selectedHash);
+
+    void applySnapshot() {
+      _entries = entries;
+      _selected = entries.isEmpty
+          ? 0
+          : nextSelected >= 0
+          ? nextSelected
+          : _selected.clamp(0, entries.length - 1);
+    }
+
+    if (!mounted) {
+      applySnapshot();
+      return;
+    }
+    setState(applySnapshot);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final entries = widget.entries;
+    final entries = _entries;
     if (entries.isEmpty) {
       return const Scaffold(body: SizedBox.shrink());
     }

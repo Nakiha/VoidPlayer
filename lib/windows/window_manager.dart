@@ -21,6 +21,8 @@ class WindowManager {
   static final Map<String, int> _analysisExitCodes = {};
   static String? analysisTestScriptPath;
   static bool silentUiTest = false;
+  static int? analysisIpcPort;
+  static String? analysisIpcToken;
 
   /// Accent color set by the main window, passed to all secondary windows.
   static int accentColorValue = 0xFF0078D4;
@@ -97,6 +99,8 @@ class WindowManager {
     }
     _analysisProcesses.clear();
     _analysisExitCodes.clear();
+    analysisIpcPort = null;
+    analysisIpcToken = null;
   }
 
   /// Compute the initial rect for a secondary window of the given [type].
@@ -125,10 +129,11 @@ class WindowManager {
     String? fileName,
     Rect? initialRect,
   }) async {
-    // If a process for this hash is already running, don't spawn another.
-    if (_analysisProcesses.containsKey(hash)) {
+    final key = _analysisProcessKey(hash);
+    // If a process for this hash/workspace is already running, don't spawn another.
+    if (_analysisProcesses.containsKey(key)) {
       log.info(
-        '[WindowManager] analysis process for $hash still running, skipping',
+        '[WindowManager] analysis process for $key still running, skipping',
       );
       return;
     }
@@ -136,7 +141,7 @@ class WindowManager {
     final rect = initialRect ?? await _computeWindowRect(WindowArgs.analysis);
     final exe = Platform.resolvedExecutable;
     final scriptPath = analysisTestScriptPath;
-    _analysisExitCodes.remove(hash);
+    _analysisExitCodes.remove(key);
 
     final args = <String>[
       '--standalone-analysis',
@@ -148,32 +153,36 @@ class WindowManager {
       '--accentColor=$accentColorValue',
       if (fileName != null) '--fileName=$fileName',
       if (scriptPath != null) ...['--test-script', scriptPath],
+      if (analysisIpcPort != null) '--analysis-ipc-port=$analysisIpcPort',
+      if (analysisIpcToken != null) '--analysis-ipc-token=$analysisIpcToken',
       if (silentUiTest) '--silent-ui-test',
     ];
 
     log.info('[WindowManager] spawning analysis process: $args');
     final process = await Process.start(exe, args);
-    _analysisProcesses[hash] = process;
+    _analysisProcesses[key] = process;
 
     // Log stderr for debugging.
     process.stderr.transform(utf8.decoder).listen((data) {
-      log.warning('[AnalysisProcess:$hash] stderr: $data');
+      log.warning('[AnalysisProcess:$key] stderr: $data');
     });
 
     // Clean up when process exits.
     process.exitCode.then((code) {
       log.info(
-        '[WindowManager] analysis process for $hash exited with code $code',
+        '[WindowManager] analysis process for $key exited with code $code',
       );
-      _analysisProcesses.remove(hash);
-      _analysisExitCodes[hash] = code;
+      _analysisProcesses.remove(key);
+      _analysisExitCodes[key] = code;
     });
   }
 
   static Future<void> _spawnAnalysisWorkspaceProcess(
     List<AnalysisWindowRequest> windows,
   ) async {
-    final key = 'workspace:${windows.map((w) => w.hash).join('|')}';
+    final key = _analysisProcessKey(
+      'workspace:${windows.map((w) => w.hash).join('|')}',
+    );
     if (_analysisProcesses.containsKey(key)) {
       log.info(
         '[WindowManager] analysis workspace for ${windows.length} tracks still running, skipping',
@@ -196,6 +205,8 @@ class WindowManager {
       '--accentColor=$accentColorValue',
       for (final window in windows) '--fileName=${window.fileName ?? ''}',
       if (scriptPath != null) ...['--test-script', scriptPath],
+      if (analysisIpcPort != null) '--analysis-ipc-port=$analysisIpcPort',
+      if (analysisIpcToken != null) '--analysis-ipc-token=$analysisIpcToken',
       if (silentUiTest) '--silent-ui-test',
     ];
 
@@ -213,6 +224,9 @@ class WindowManager {
       _analysisExitCodes[key] = code;
     });
   }
+
+  static String _analysisProcessKey(String fallback) =>
+      analysisIpcPort != null ? 'workspace:ipc' : fallback;
 
   // --- desktop_multi_window secondary windows (stats/settings/memory) ---
 

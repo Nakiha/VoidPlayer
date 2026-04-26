@@ -227,15 +227,14 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   Future<void> _triggerAnalysis() async {
     final mgr = AnalysisManager.instance;
+    final windows = <AnalysisWindowRequest>[];
     for (final entry in _trackManager.entries) {
       final hash = await mgr.ensureAndLoad(entry.path);
       if (hash != null) {
-        await WindowManager.showAnalysisWindow(
-          hash,
-          fileName: p.basename(entry.path),
-        );
+        windows.add((hash: hash, fileName: p.basename(entry.path)));
       }
     }
+    await WindowManager.showAnalysisWindows(windows);
   }
 
   void _toggleAnalysisToolbar() {

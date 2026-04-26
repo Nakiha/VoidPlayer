@@ -1362,7 +1362,6 @@ class _AnalysisPageState extends State<AnalysisPage> {
                         },
                       ),
                     ),
-                    SizedBox(height: bottomH, child: bottomPanel),
                   ],
                 );
               },

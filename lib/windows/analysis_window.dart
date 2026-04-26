@@ -147,11 +147,15 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
                               ),
                               onPressed: () =>
                                   setState(() => _selected = index),
-                              child: Text(
-                                '${index + 1}. ${entries[index].fileName ?? 'Track ${index + 1}'}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                softWrap: false,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  '${index + 1}. ${entries[index].fileName ?? 'Track ${index + 1}'}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  softWrap: false,
+                                  textAlign: TextAlign.left,
+                                ),
                               ),
                             ),
                           ),

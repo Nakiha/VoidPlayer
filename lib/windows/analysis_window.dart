@@ -172,92 +172,49 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
     if (entries.isEmpty) {
       return const Scaffold(body: SizedBox.shrink());
     }
-    final theme = Theme.of(context);
     final selected = _selected.clamp(0, entries.length - 1);
 
     return Scaffold(
-      body: Column(
-        children: [
-          Container(
-            height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: theme.dividerColor)),
+      body: _splitView
+          ? _AnalysisSplitView(
+              entries: entries,
+              splitView: _splitView,
+              selectedIndex: selected,
+              onModeChanged: (value) => setState(() => _splitView = value),
+              onSelected: (index) => setState(() => _selected = index),
+            )
+          : _AnalysisTrackPane(
+              entry: entries[selected],
+              index: selected,
+              selected: true,
+              showModeToggle: true,
+              splitView: _splitView,
+              onModeChanged: (value) => setState(() => _splitView = value),
+              child: AnalysisPage(
+                key: ValueKey('analysis-${entries[selected].hash}'),
+                hash: entries[selected].hash,
+                testScriptPath: selected == 0 ? widget.testScriptPath : null,
+                pollSummary: false,
+              ),
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      for (var index = 0; index < entries.length; index++) ...[
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            child: FilledButton.tonal(
-                              style: FilledButton.styleFrom(
-                                alignment: Alignment.centerLeft,
-                                backgroundColor: index == selected
-                                    ? theme.colorScheme.primaryContainer
-                                    : theme.colorScheme.surfaceContainerHighest,
-                                minimumSize: const Size(0, 32),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                ),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                visualDensity: VisualDensity.compact,
-                              ),
-                              onPressed: () =>
-                                  setState(() => _selected = index),
-                              child: Text(
-                                '${index + 1}. ${entries[index].fileName ?? 'Track ${index + 1}'}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                softWrap: false,
-                              ),
-                            ),
-                          ),
-                        ),
-                        if (index != entries.length - 1)
-                          const SizedBox(width: 6),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(value: false, label: Text('Tabs')),
-                    ButtonSegment(value: true, label: Text('Split')),
-                  ],
-                  selected: {_splitView},
-                  onSelectionChanged: (v) =>
-                      setState(() => _splitView = v.first),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: _splitView
-                ? _AnalysisSplitView(entries: entries)
-                : AnalysisPage(
-                    key: ValueKey('analysis-${entries[selected].hash}'),
-                    hash: entries[selected].hash,
-                    testScriptPath: selected == 0
-                        ? widget.testScriptPath
-                        : null,
-                    pollSummary: false,
-                  ),
-          ),
-        ],
-      ),
     );
   }
 }
 
 class _AnalysisSplitView extends StatelessWidget {
   final List<_AnalysisWorkspaceEntry> entries;
+  final bool splitView;
+  final int selectedIndex;
+  final ValueChanged<bool> onModeChanged;
+  final ValueChanged<int> onSelected;
 
-  const _AnalysisSplitView({required this.entries});
+  const _AnalysisSplitView({
+    required this.entries,
+    required this.splitView,
+    required this.selectedIndex,
+    required this.onModeChanged,
+    required this.onSelected,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -272,7 +229,7 @@ class _AnalysisSplitView extends StatelessWidget {
             child: Row(
               children: [
                 for (var col = 0; col < columns; col++)
-                  Expanded(child: _splitCell(row * columns + col)),
+                  Expanded(child: _splitCell(context, row * columns + col)),
               ],
             ),
           ),
@@ -280,20 +237,128 @@ class _AnalysisSplitView extends StatelessWidget {
     );
   }
 
-  Widget _splitCell(int index) {
+  Widget _splitCell(BuildContext context, int index) {
     if (index >= entries.length) return const SizedBox.shrink();
     final entry = entries[index];
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        border: Border(
-          right: BorderSide(color: Color(0x33222222)),
-          bottom: BorderSide(color: Color(0x33222222)),
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: _AnalysisTrackPane(
+        entry: entry,
+        index: index,
+        selected: index == selectedIndex,
+        showModeToggle: index == 0,
+        splitView: splitView,
+        onModeChanged: onModeChanged,
+        onSelected: () => onSelected(index),
+        child: AnalysisPage(
+          key: ValueKey('analysis-split-${entry.hash}'),
+          hash: entry.hash,
+          pollSummary: false,
         ),
       ),
-      child: AnalysisPage(
-        key: ValueKey('analysis-split-${entry.hash}'),
-        hash: entry.hash,
-        pollSummary: false,
+    );
+  }
+}
+
+class _AnalysisTrackPane extends StatelessWidget {
+  final _AnalysisWorkspaceEntry entry;
+  final int index;
+  final bool selected;
+  final bool showModeToggle;
+  final bool splitView;
+  final ValueChanged<bool> onModeChanged;
+  final VoidCallback? onSelected;
+  final Widget child;
+
+  const _AnalysisTrackPane({
+    required this.entry,
+    required this.index,
+    required this.selected,
+    required this.showModeToggle,
+    required this.splitView,
+    required this.onModeChanged,
+    required this.child,
+    this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      children: [
+        Container(
+          height: 42,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.18)
+                : theme.colorScheme.surface.withValues(alpha: 0.18),
+            border: Border(bottom: BorderSide(color: theme.dividerColor)),
+          ),
+          child: Row(
+            children: [
+              Visibility(
+                visible: showModeToggle,
+                maintainAnimation: true,
+                maintainSize: true,
+                maintainState: true,
+                child: _AnalysisWorkspaceModeToggle(
+                  splitView: splitView,
+                  onChanged: onModeChanged,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: InkWell(
+                  onTap: onSelected,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '${index + 1}. ${entry.fileName ?? 'Track ${index + 1}'}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: theme.colorScheme.onSurface,
+                        fontWeight: selected ? FontWeight.w600 : null,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(child: child),
+      ],
+    );
+  }
+}
+
+class _AnalysisWorkspaceModeToggle extends StatelessWidget {
+  final bool splitView;
+  final ValueChanged<bool> onChanged;
+
+  const _AnalysisWorkspaceModeToggle({
+    required this.splitView,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SegmentedButton<bool>(
+      segments: const [
+        ButtonSegment(value: false, label: Text('Tabs')),
+        ButtonSegment(value: true, label: Text('Split')),
+      ],
+      selected: {splitView},
+      onSelectionChanged: (value) => onChanged(value.first),
+      style: const ButtonStyle(
+        visualDensity: VisualDensity.compact,
+        textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
       ),
     );
   }

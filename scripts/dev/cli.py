@@ -11,6 +11,7 @@ from .flutter_app import (
     cmd_test,
     cmd_ui_test,
 )
+from .analysis_resize_stress import cmd_analysis_resize_stress
 from .vtm import cmd_vtm
 
 
@@ -29,6 +30,7 @@ Examples:
   python dev.py demo
   python dev.py test
   python dev.py ui-test ui_tests/smoke_basic.csv
+  python dev.py analysis-resize-stress
   python dev.py vtm build
   python dev.py vtm analyze video.mp4
 """,
@@ -74,6 +76,19 @@ Examples:
     p_ui_test.add_argument("--visible", action="store_true",
                            help="Show and focus test windows instead of using silent no-activate mode")
 
+    p_analysis_resize = sub.add_parser(
+        "analysis-resize-stress",
+        help="Launch standalone analysis and stress-resize its window",
+    )
+    p_analysis_resize.add_argument("--debug", action="store_true", help="Use Debug build")
+    p_analysis_resize.add_argument("--build", action="store_true", help="Build Flutter app before test")
+    p_analysis_resize.add_argument("--hash", type=str, default=None,
+                                   help="Analysis cache hash to open (default: pick a cached entry)")
+    p_analysis_resize.add_argument("--rounds", type=int, default=5,
+                                   help="Number of resize rounds")
+    p_analysis_resize.add_argument("--visible", action="store_true",
+                                   help="Show and focus the analysis window instead of silent mode")
+
     p_vtm = sub.add_parser("vtm", help="VTM DecoderApp: build & H.266 analysis")
     p_vtm.add_argument("vtm_action", choices=["build", "analyze"],
                        help="'build' to compile DecoderApp, 'analyze' to generate .vbs2 stats")
@@ -99,5 +114,6 @@ def main() -> None:
         "demo": cmd_demo,
         "test": cmd_test,
         "ui-test": cmd_ui_test,
+        "analysis-resize-stress": cmd_analysis_resize_stress,
         "vtm": cmd_vtm,
     }[args.command](args)

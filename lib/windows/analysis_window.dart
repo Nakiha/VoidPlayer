@@ -320,56 +320,79 @@ class _AnalysisTrackTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: SizedBox(
-        height: _analysisHeaderControlHeight,
-        child: Material(
-          color: selected
-              ? theme.colorScheme.primary.withValues(alpha: 0.10)
-              : Colors.transparent,
+      child: _AnalysisTrackTitleButton(
+        entry: entry,
+        index: index,
+        selected: selected,
+        onTap: selected ? null : onTap,
+      ),
+    );
+  }
+}
+
+class _AnalysisTrackTitleButton extends StatelessWidget {
+  final _AnalysisWorkspaceEntry entry;
+  final int index;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  const _AnalysisTrackTitleButton({
+    required this.entry,
+    required this.index,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      height: _analysisHeaderControlHeight,
+      child: Material(
+        color: selected
+            ? theme.colorScheme.primary.withValues(alpha: 0.10)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
           borderRadius: BorderRadius.circular(4),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(4),
-            onTap: selected ? null : onTap,
-            child: Stack(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      '${index + 1}. ${entry.fileName ?? 'Track ${index + 1}'}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: false,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: selected
-                            ? theme.colorScheme.onSurface
-                            : theme.colorScheme.onSurfaceVariant,
-                        fontWeight: selected ? FontWeight.w600 : null,
-                      ),
+          onTap: onTap,
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${index + 1}. ${entry.fileName ?? 'Track ${index + 1}'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: selected
+                          ? theme.colorScheme.onSurface
+                          : theme.colorScheme.onSurfaceVariant,
+                      fontWeight: selected ? FontWeight.w600 : null,
                     ),
                   ),
                 ),
-                if (selected)
-                  Positioned(
-                    left: 10,
-                    right: 10,
-                    bottom: 2,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withValues(
-                          alpha: 0.52,
-                        ),
-                        borderRadius: BorderRadius.circular(1),
-                      ),
-                      child: const SizedBox(height: 2),
+              ),
+              if (selected)
+                Positioned(
+                  left: 10,
+                  right: 10,
+                  bottom: 2,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.52),
+                      borderRadius: BorderRadius.circular(1),
                     ),
+                    child: const SizedBox(height: 2),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
       ),
@@ -407,7 +430,16 @@ class _AnalysisSplitView extends StatelessWidget {
             child: Row(
               children: [
                 for (var col = 0; col < columns; col++)
-                  Expanded(child: _splitCell(context, row * columns + col)),
+                  Expanded(
+                    child: _splitCell(
+                      context,
+                      row * columns + col,
+                      row: row,
+                      col: col,
+                      rows: rows,
+                      columns: columns,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -415,13 +447,24 @@ class _AnalysisSplitView extends StatelessWidget {
     );
   }
 
-  Widget _splitCell(BuildContext context, int index) {
+  Widget _splitCell(
+    BuildContext context,
+    int index, {
+    required int row,
+    required int col,
+    required int rows,
+    required int columns,
+  }) {
     if (index >= entries.length) return const SizedBox.shrink();
     final entry = entries[index];
     final theme = Theme.of(context);
+    final divider = BorderSide(color: theme.colorScheme.outlineVariant);
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        border: Border(
+          right: col < columns - 1 ? divider : BorderSide.none,
+          bottom: row < rows - 1 ? divider : BorderSide.none,
+        ),
       ),
       child: _AnalysisTrackPane(
         entry: entry,
@@ -490,20 +533,13 @@ class _AnalysisTrackPane extends StatelessWidget {
                 const SizedBox(width: _analysisHeaderGap),
               ],
               Expanded(
-                child: InkWell(
-                  onTap: onSelected,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      '${index + 1}. ${entry.fileName ?? 'Track ${index + 1}'}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: false,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: theme.colorScheme.onSurface,
-                        fontWeight: selected ? FontWeight.w600 : null,
-                      ),
-                    ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: _AnalysisTrackTitleButton(
+                    entry: entry,
+                    index: index,
+                    selected: selected,
+                    onTap: onSelected,
                   ),
                 ),
               ),

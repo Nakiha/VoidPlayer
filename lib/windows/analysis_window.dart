@@ -407,6 +407,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
   double _chartOffset = 0.0;
   double _frameSizeAxisZoom = 1.0;
   double _qpAxisZoom = 1.0;
+  double _topPanelFraction = 0.40;
 
   void _chartZoom(double scrollDelta) {
     setState(() {
@@ -834,6 +835,92 @@ class _AnalysisPageState extends State<AnalysisPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l = AppLocalizations.of(context)!;
+    final topChart = _selectedTab == 0
+        ? _ReferencePyramidView(
+            frames: _sortedFrames,
+            currentIdx: _summary?.currentFrameIdx ?? -1,
+            selectedFrameIdx: _selectedFrameIdx,
+            pocToIndices: _pocToIndices,
+            onFrameSelected: (i) => setState(() {
+              _selectedFrameIdx = i;
+              _selectedNaluIdx = i != null ? _frameToNaluIdx(i) : null;
+            }),
+            viewStart: _chartOffset,
+            viewEnd: _chartOffset + _visibleFrameCount,
+            onZoom: _chartZoom,
+            onPan: _chartPan,
+            l: l,
+          )
+        : _FrameTrendView(
+            frames: _sortedFrames,
+            currentIdx: _summary?.currentFrameIdx ?? -1,
+            selectedFrameIdx: _selectedFrameIdx,
+            viewStart: _chartOffset,
+            viewEnd: _chartOffset + _visibleFrameCount,
+            frameSizeAxisZoom: _frameSizeAxisZoom,
+            qpAxisZoom: _qpAxisZoom,
+            onZoom: _chartZoom,
+            onAxisZoom: _frameTrendAxisZoom,
+            onPan: _chartPan,
+            onFrameSelected: (i) => setState(() {
+              _selectedFrameIdx = i;
+              _selectedNaluIdx = i != null ? _frameToNaluIdx(i) : null;
+            }),
+            l: l,
+          );
+    final bottomPanel = LayoutBuilder(
+      builder: (context, constraints) {
+        final totalW = constraints.maxWidth;
+        final maxBrowserW = totalW - 120; // leave room for detail
+        final browserW = _naluBrowserWidth.clamp(120.0, maxBrowserW);
+        return Stack(
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: browserW,
+                  child: _NaluBrowserView(
+                    nalus: _nalus,
+                    codec: _codec,
+                    selectedIdx: _selectedNaluIdx,
+                    onSelected: (i) => setState(() {
+                      _selectedNaluIdx = i;
+                      _selectedFrameIdx = _naluToFrameIdx(i);
+                    }),
+                    filter: _naluFilter,
+                    onFilterChanged: (v) => setState(() => _naluFilter = v),
+                  ),
+                ),
+                Container(width: 1, color: theme.colorScheme.outlineVariant),
+                Expanded(
+                  child: _NaluDetailView(
+                    nalu:
+                        _selectedNaluIdx != null &&
+                            _selectedNaluIdx! < _nalus.length
+                        ? _nalus[_selectedNaluIdx!]
+                        : null,
+                    frameIdx: _selectedFrameIdx,
+                    frames: _frames,
+                    codec: _codec,
+                    l: l,
+                  ),
+                ),
+              ],
+            ),
+            Positioned(
+              left: browserW - 4,
+              top: 0,
+              bottom: 0,
+              width: 9,
+              child: _ResizableVDivider(
+                position: browserW,
+                onPositionChanged: (v) => setState(() => _naluBrowserWidth = v),
+              ),
+            ),
+          ],
+        );
+      },
+    );
     return Scaffold(
       body: Column(
         children: [
@@ -865,106 +952,38 @@ class _AnalysisPageState extends State<AnalysisPage> {
               ],
             ),
           ),
-          // Top panel: ref pyramid or frame trend (40%)
           Expanded(
-            flex: 4,
-            child: _selectedTab == 0
-                ? _ReferencePyramidView(
-                    frames: _sortedFrames,
-                    currentIdx: _summary?.currentFrameIdx ?? -1,
-                    selectedFrameIdx: _selectedFrameIdx,
-                    pocToIndices: _pocToIndices,
-                    onFrameSelected: (i) => setState(() {
-                      _selectedFrameIdx = i;
-                      _selectedNaluIdx = i != null ? _frameToNaluIdx(i) : null;
-                    }),
-                    viewStart: _chartOffset,
-                    viewEnd: _chartOffset + _visibleFrameCount,
-                    onZoom: _chartZoom,
-                    onPan: _chartPan,
-                    l: l,
-                  )
-                : _FrameTrendView(
-                    frames: _sortedFrames,
-                    currentIdx: _summary?.currentFrameIdx ?? -1,
-                    selectedFrameIdx: _selectedFrameIdx,
-                    viewStart: _chartOffset,
-                    viewEnd: _chartOffset + _visibleFrameCount,
-                    frameSizeAxisZoom: _frameSizeAxisZoom,
-                    qpAxisZoom: _qpAxisZoom,
-                    onZoom: _chartZoom,
-                    onAxisZoom: _frameTrendAxisZoom,
-                    onPan: _chartPan,
-                    onFrameSelected: (i) => setState(() {
-                      _selectedFrameIdx = i;
-                      _selectedNaluIdx = i != null ? _frameToNaluIdx(i) : null;
-                    }),
-                    l: l,
-                  ),
-          ),
-          const Divider(height: 1),
-          // Bottom: NALU browser + detail (60%) — draggable splitter
-          Expanded(
-            flex: 6,
+            // Top chart and bottom NALU/detail area share a draggable divider.
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final totalW = constraints.maxWidth;
-                final maxBrowserW =
-                    totalW - 120; // leave at least 120px for detail
-                final browserW = _naluBrowserWidth.clamp(120.0, maxBrowserW);
-                return Stack(
+                const dividerH = 10.0;
+                final available = (constraints.maxHeight - dividerH).clamp(
+                  0.0,
+                  double.infinity,
+                );
+                final compact = available < 280;
+                final minTop = compact ? available * 0.28 : 120.0;
+                final minBottom = compact ? available * 0.28 : 170.0;
+                final maxTop = (available - minBottom).clamp(minTop, available);
+                final topH = (available * _topPanelFraction).clamp(
+                  minTop,
+                  maxTop,
+                );
+                final bottomH = available - topH;
+                return Column(
                   children: [
-                    Row(
-                      children: [
-                        // NALU browser
-                        SizedBox(
-                          width: browserW,
-                          child: _NaluBrowserView(
-                            nalus: _nalus,
-                            codec: _codec,
-                            selectedIdx: _selectedNaluIdx,
-                            onSelected: (i) => setState(() {
-                              _selectedNaluIdx = i;
-                              _selectedFrameIdx = _naluToFrameIdx(i);
-                            }),
-                            filter: _naluFilter,
-                            onFilterChanged: (v) =>
-                                setState(() => _naluFilter = v),
-                          ),
-                        ),
-                        // Visual-only divider line
-                        Container(
-                          width: 1,
-                          color: theme.colorScheme.outlineVariant,
-                        ),
-                        // NALU detail
-                        Expanded(
-                          child: _NaluDetailView(
-                            nalu:
-                                _selectedNaluIdx != null &&
-                                    _selectedNaluIdx! < _nalus.length
-                                ? _nalus[_selectedNaluIdx!]
-                                : null,
-                            frameIdx: _selectedFrameIdx,
-                            frames: _frames,
-                            codec: _codec,
-                            l: l,
-                          ),
-                        ),
-                      ],
-                    ),
-                    // Draggable splitter hit area
-                    Positioned(
-                      left: browserW - 4,
-                      top: 0,
-                      bottom: 0,
-                      width: 9,
-                      child: _ResizableVDivider(
-                        position: browserW,
-                        onPositionChanged: (v) =>
-                            setState(() => _naluBrowserWidth = v),
+                    SizedBox(height: topH, child: topChart),
+                    SizedBox(
+                      height: dividerH,
+                      child: _ResizableHDivider(
+                        onDelta: (dy) => setState(() {
+                          if (available <= 0) return;
+                          final nextTop = (topH + dy).clamp(minTop, maxTop);
+                          _topPanelFraction = nextTop / available;
+                        }),
                       ),
                     ),
+                    SizedBox(height: bottomH, child: bottomPanel),
                   ],
                 );
               },
@@ -1135,10 +1154,54 @@ class _ResizableVDividerState extends State<_ResizableVDivider> {
   }
 }
 
+class _ResizableHDivider extends StatefulWidget {
+  final ValueChanged<double> onDelta;
+
+  const _ResizableHDivider({required this.onDelta});
+
+  @override
+  State<_ResizableHDivider> createState() => _ResizableHDividerState();
+}
+
+class _ResizableHDividerState extends State<_ResizableHDivider> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragUpdate: (details) => widget.onDelta(details.delta.dy),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.resizeRow,
+        onEnter: (_) => setState(() => _hovering = true),
+        onExit: (_) => setState(() => _hovering = false),
+        child: ColoredBox(
+          color: theme.dividerColor.withValues(alpha: _hovering ? 0.45 : 0.28),
+          child: Center(
+            child: Container(
+              width: 44,
+              height: _hovering ? 3 : 2,
+              decoration: BoxDecoration(
+                color: _hovering
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurface.withValues(alpha: 0.28),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ===========================================================================
 // Reference Pyramid — circle nodes + reference arrows + level backgrounds
 // Supports zoom (scroll wheel) and pan (scrollbar).
 // ===========================================================================
+
+const double _analysisChartLabelW = 66.0;
 
 class _ReferencePyramidView extends StatefulWidget {
   final List<FrameInfo> frames;
@@ -1269,10 +1332,11 @@ class _RefPyramidPainter extends CustomPainter {
     }
     final numLevels = maxTid + 1;
     final rowH = size.height / numLevels;
-    final labelW = 36.0;
+    final labelW = _analysisChartLabelW;
     final usableW = size.width - labelW;
     final span = viewEnd - viewStart;
     final circleR = (rowH * 0.3).clamp(6.0, 20.0);
+    final plotRect = Rect.fromLTWH(labelW, 0, usableW, size.height);
 
     final positions = <int, Offset>{}; // globalIdx → position
     for (var i = visibleStart; i < visibleEnd; i++) {
@@ -1283,7 +1347,10 @@ class _RefPyramidPainter extends CustomPainter {
     }
     frameRects = [
       for (final e in positions.entries)
-        (e.key, Rect.fromCircle(center: e.value, radius: circleR)),
+        (
+          e.key,
+          Rect.fromCircle(center: e.value, radius: circleR).intersect(plotRect),
+        ),
     ];
 
     // --- Level backgrounds ---
@@ -1306,6 +1373,16 @@ class _RefPyramidPainter extends CustomPainter {
       )..layout();
       tp.paint(canvas, Offset(4, top + rowH / 2 - tp.height / 2));
     }
+    canvas.drawLine(
+      Offset(labelW, 0),
+      Offset(labelW, size.height),
+      Paint()
+        ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.10)
+        ..strokeWidth = 1,
+    );
+
+    canvas.save();
+    canvas.clipRect(plotRect);
     // --- Current playback cursor ---
     if (currentIdx >= 0 && positions.containsKey(currentIdx)) {
       final cx = positions[currentIdx]!.dx;
@@ -1487,6 +1564,7 @@ class _RefPyramidPainter extends CustomPainter {
         tp.paint(canvas, pos - Offset(tp.width / 2, tp.height / 2));
       }
     }
+    canvas.restore();
   }
 
   void _drawArrow(
@@ -1539,7 +1617,7 @@ class _RefPyramidPainter extends CustomPainter {
 // Frame Trend — zoomable / pannable bar chart
 // ===========================================================================
 
-const double _frameTrendLabelW = 66.0;
+const double _frameTrendLabelW = _analysisChartLabelW;
 
 enum _FrameTrendAxis { frameSize, qp }
 
@@ -1710,6 +1788,7 @@ class _FrameTrendPainter extends CustomPainter {
     final lowerH = size.height * 0.32;
     final gapH = size.height * 0.05;
     final lowerTop = upperH + gapH;
+    final plotRect = Rect.fromLTWH(labelW, 0, chartW, size.height);
 
     final barW = (chartW / count).clamp(2.0, 40.0);
 
@@ -1761,6 +1840,13 @@ class _FrameTrendPainter extends CustomPainter {
       ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.06)
       ..strokeWidth = 0.5;
     canvas.drawLine(Offset(labelW, 0), Offset(labelW, size.height), axisPaint);
+    canvas.drawLine(
+      Offset(0, upperH + gapH / 2),
+      Offset(size.width, upperH + gapH / 2),
+      Paint()
+        ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.14)
+        ..strokeWidth = 1.0,
+    );
 
     // --- Packet size axis labels (upper) ---
     // Only bottom (0) and top (max) to keep it minimal like pyramid
@@ -1797,6 +1883,9 @@ class _FrameTrendPainter extends CustomPainter {
       );
       tp.paint(canvas, Offset(labelW - 4 - tp.width, drawY));
     }
+
+    canvas.save();
+    canvas.clipRect(plotRect);
 
     // --- Frame size bars ---
     final barPaint = Paint()..style = PaintingStyle.fill;
@@ -1926,6 +2015,7 @@ class _FrameTrendPainter extends CustomPainter {
         offsetY += tp.height;
       }
     }
+    canvas.restore();
   }
 
   static TextPainter _axisLabelPainter(
@@ -2056,6 +2146,7 @@ class _ScrollbarPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (total <= 0) return;
+    const minThumbW = 44.0;
 
     // Track
     canvas.drawRect(
@@ -2064,11 +2155,17 @@ class _ScrollbarPainter extends CustomPainter {
     );
 
     // Thumb
-    final left = (viewStart / total) * size.width;
-    final right = (viewEnd / total) * size.width;
+    final rawLeft = (viewStart / total) * size.width;
+    final rawRight = (viewEnd / total) * size.width;
+    final rawW = (rawRight - rawLeft).clamp(0.0, size.width);
+    final thumbW = size.width <= minThumbW
+        ? size.width
+        : rawW.clamp(minThumbW, size.width);
+    final center = (rawLeft + rawRight) / 2;
+    final left = (center - thumbW / 2).clamp(0.0, size.width - thumbW);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromLTWH(left, 0, right - left, size.height),
+        Rect.fromLTWH(left, 0, thumbW, size.height),
         const Radius.circular(3),
       ),
       Paint()..color = thumbColor,

@@ -304,7 +304,10 @@ class WindowManager {
     }
 
     // Cascade from the main window.
-    final parentHwnd = Win32FFI.findWindow(className: kMainWindowClass);
+    final parentHwnds = Win32FFI.findCurrentProcessWindowsByClass(
+      kMainWindowClass,
+    );
+    final parentHwnd = parentHwnds.isNotEmpty ? parentHwnds.first : 0;
     if (parentHwnd != 0) {
       final parentRect = Win32FFI.getWindowRect(parentHwnd);
       final monitorArea = Win32FFI.getMonitorWorkArea(parentHwnd);

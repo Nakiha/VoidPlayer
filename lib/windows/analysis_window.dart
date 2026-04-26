@@ -405,6 +405,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
   // Zoom / scroll state for top chart panel
   double _visibleFrameCount = 10;
   double _chartOffset = 0.0;
+  double _frameSizeAxisZoom = 1.0;
+  double _qpAxisZoom = 1.0;
 
   void _chartZoom(double scrollDelta) {
     setState(() {
@@ -424,6 +426,18 @@ class _AnalysisPageState extends State<AnalysisPage> {
     setState(() {
       _chartOffset = newOffset;
       _clampChartOffset();
+    });
+  }
+
+  void _frameTrendAxisZoom(_FrameTrendAxis axis, double scrollDelta) {
+    setState(() {
+      final factor = scrollDelta > 0 ? 0.85 : 1.18;
+      switch (axis) {
+        case _FrameTrendAxis.frameSize:
+          _frameSizeAxisZoom = (_frameSizeAxisZoom * factor).clamp(0.25, 12.0);
+        case _FrameTrendAxis.qp:
+          _qpAxisZoom = (_qpAxisZoom * factor).clamp(0.5, 8.0);
+      }
     });
   }
 
@@ -876,7 +890,10 @@ class _AnalysisPageState extends State<AnalysisPage> {
                     selectedFrameIdx: _selectedFrameIdx,
                     viewStart: _chartOffset,
                     viewEnd: _chartOffset + _visibleFrameCount,
+                    frameSizeAxisZoom: _frameSizeAxisZoom,
+                    qpAxisZoom: _qpAxisZoom,
                     onZoom: _chartZoom,
+                    onAxisZoom: _frameTrendAxisZoom,
                     onPan: _chartPan,
                     onFrameSelected: (i) => setState(() {
                       _selectedFrameIdx = i;
@@ -1522,13 +1539,20 @@ class _RefPyramidPainter extends CustomPainter {
 // Frame Trend — zoomable / pannable bar chart
 // ===========================================================================
 
+const double _frameTrendLabelW = 66.0;
+
+enum _FrameTrendAxis { frameSize, qp }
+
 class _FrameTrendView extends StatefulWidget {
   final List<FrameInfo> frames;
   final int currentIdx;
   final int? selectedFrameIdx;
   final double viewStart;
   final double viewEnd;
+  final double frameSizeAxisZoom;
+  final double qpAxisZoom;
   final ValueChanged<double> onZoom;
+  final void Function(_FrameTrendAxis axis, double scrollDelta) onAxisZoom;
   final ValueChanged<double> onPan;
   final ValueChanged<int?> onFrameSelected;
   final AppLocalizations l;
@@ -1538,7 +1562,10 @@ class _FrameTrendView extends StatefulWidget {
     required this.selectedFrameIdx,
     required this.viewStart,
     required this.viewEnd,
+    required this.frameSizeAxisZoom,
+    required this.qpAxisZoom,
     required this.onZoom,
+    required this.onAxisZoom,
     required this.onPan,
     required this.onFrameSelected,
     required this.l,
@@ -1560,53 +1587,74 @@ class _FrameTrendViewState extends State<_FrameTrendView> {
     return Column(
       children: [
         Expanded(
-          child: MouseRegion(
-            onExit: (_) => setState(() => _hoverX = null),
-            child: Listener(
-              onPointerSignal: (signal) {
-                if (signal is PointerScrollEvent) {
-                  w.onZoom(signal.scrollDelta.dy);
-                }
-              },
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTapUp: (details) {
-                  final labelW = 36.0;
-                  final box = context.findRenderObject() as RenderBox;
-                  final localX = box.globalToLocal(details.globalPosition).dx;
-                  final chartW = box.size.width - labelW;
-                  if (chartW <= 0 || localX < labelW) {
-                    w.onFrameSelected(null);
-                    return;
+          child: Builder(
+            builder: (chartContext) => MouseRegion(
+              onExit: (_) => setState(() => _hoverX = null),
+              child: Listener(
+                onPointerSignal: (signal) {
+                  if (signal is PointerScrollEvent) {
+                    final box = chartContext.findRenderObject() as RenderBox;
+                    final local = box.globalToLocal(signal.position);
+                    final upperH = box.size.height * 0.58;
+                    final lowerTop = upperH + box.size.height * 0.05;
+                    final lowerH = box.size.height * 0.32;
+                    if (local.dx < _frameTrendLabelW) {
+                      if (local.dy <= upperH) {
+                        w.onAxisZoom(
+                          _FrameTrendAxis.frameSize,
+                          signal.scrollDelta.dy,
+                        );
+                      } else if (local.dy >= lowerTop &&
+                          local.dy <= lowerTop + lowerH) {
+                        w.onAxisZoom(_FrameTrendAxis.qp, signal.scrollDelta.dy);
+                      }
+                    } else {
+                      w.onZoom(signal.scrollDelta.dy);
+                    }
                   }
-                  final span = w.viewEnd - w.viewStart;
-                  final idx =
-                      (w.viewStart + ((localX - labelW) / chartW) * span)
-                          .round()
-                          .clamp(0, w.frames.length - 1);
-                  w.onFrameSelected(w.selectedFrameIdx == idx ? null : idx);
                 },
-                onPanUpdate: (details) {
-                  final box = context.findRenderObject() as RenderBox;
-                  final local = box.globalToLocal(details.globalPosition);
-                  setState(() => _hoverX = local.dx);
-                },
-                child: MouseRegion(
-                  onHover: (e) {
-                    final box = context.findRenderObject() as RenderBox;
-                    final local = box.globalToLocal(e.position);
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: (details) {
+                    final box = chartContext.findRenderObject() as RenderBox;
+                    final localX = box.globalToLocal(details.globalPosition).dx;
+                    final chartW = box.size.width - _frameTrendLabelW;
+                    if (chartW <= 0 || localX < _frameTrendLabelW) {
+                      w.onFrameSelected(null);
+                      return;
+                    }
+                    final span = w.viewEnd - w.viewStart;
+                    final idx =
+                        (w.viewStart +
+                                ((localX - _frameTrendLabelW) / chartW) * span)
+                            .round()
+                            .clamp(0, w.frames.length - 1);
+                    w.onFrameSelected(w.selectedFrameIdx == idx ? null : idx);
+                  },
+                  onPanUpdate: (details) {
+                    final box = chartContext.findRenderObject() as RenderBox;
+                    final local = box.globalToLocal(details.globalPosition);
                     setState(() => _hoverX = local.dx);
                   },
-                  child: CustomPaint(
-                    painter: _FrameTrendPainter(
-                      frames: w.frames,
-                      currentIdx: w.currentIdx,
-                      selectedFrameIdx: w.selectedFrameIdx,
-                      viewStart: w.viewStart,
-                      viewEnd: w.viewEnd,
-                      hoverX: _hoverX,
+                  child: MouseRegion(
+                    onHover: (e) {
+                      final box = chartContext.findRenderObject() as RenderBox;
+                      final local = box.globalToLocal(e.position);
+                      setState(() => _hoverX = local.dx);
+                    },
+                    child: CustomPaint(
+                      painter: _FrameTrendPainter(
+                        frames: w.frames,
+                        currentIdx: w.currentIdx,
+                        selectedFrameIdx: w.selectedFrameIdx,
+                        viewStart: w.viewStart,
+                        viewEnd: w.viewEnd,
+                        frameSizeAxisZoom: w.frameSizeAxisZoom,
+                        qpAxisZoom: w.qpAxisZoom,
+                        hoverX: _hoverX,
+                      ),
+                      size: Size.infinite,
                     ),
-                    size: Size.infinite,
                   ),
                 ),
               ),
@@ -1630,6 +1678,8 @@ class _FrameTrendPainter extends CustomPainter {
   final int? selectedFrameIdx;
   final double viewStart;
   final double viewEnd;
+  final double frameSizeAxisZoom;
+  final double qpAxisZoom;
   final double? hoverX;
 
   _FrameTrendPainter({
@@ -1638,6 +1688,8 @@ class _FrameTrendPainter extends CustomPainter {
     required this.selectedFrameIdx,
     required this.viewStart,
     required this.viewEnd,
+    required this.frameSizeAxisZoom,
+    required this.qpAxisZoom,
     this.hoverX,
   });
 
@@ -1652,8 +1704,7 @@ class _FrameTrendPainter extends CustomPainter {
     final count = visibleEnd - visibleStart;
     final span = viewEnd - viewStart;
 
-    // Layout: same labelW as pyramid (36px) left column
-    final labelW = 36.0;
+    final labelW = _frameTrendLabelW;
     final chartW = size.width - labelW;
     final upperH = size.height * 0.58;
     final lowerH = size.height * 0.32;
@@ -1672,9 +1723,29 @@ class _FrameTrendPainter extends CustomPainter {
       if (frames[i].avgQp < minQp) minQp = frames[i].avgQp;
       if (frames[i].avgQp > maxQp) maxQp = frames[i].avgQp;
     }
-    final qpLow = (minQp / 5).floor() * 5;
-    final qpHigh = ((maxQp / 5).floor() + 1) * 5;
-    final qpRange = (qpHigh - qpLow).clamp(5, 63);
+    final autoSizeMax = maxPacketSize.toDouble().clamp(1.0, double.infinity);
+    final sizeAxisMax = (autoSizeMax / frameSizeAxisZoom).clamp(
+      1.0,
+      double.infinity,
+    );
+
+    final autoQpLow = (minQp / 5).floor() * 5.0;
+    final autoQpHigh = ((maxQp / 5).floor() + 1) * 5.0;
+    final autoQpRange = (autoQpHigh - autoQpLow).clamp(5.0, 63.0);
+    final qpRange = (autoQpRange / qpAxisZoom).clamp(1.0, 63.0);
+    final qpCenter = ((minQp + maxQp) / 2).clamp(0.0, 63.0);
+    var qpLow = qpCenter - qpRange / 2;
+    var qpHigh = qpCenter + qpRange / 2;
+    if (qpLow < 0) {
+      qpHigh -= qpLow;
+      qpLow = 0;
+    }
+    if (qpHigh > 63) {
+      qpLow -= qpHigh - 63;
+      qpHigh = 63;
+      if (qpLow < 0) qpLow = 0;
+    }
+    final effectiveQpRange = (qpHigh - qpLow).clamp(1.0, 63.0);
 
     // Label style — same as pyramid level labels
     const labelStyle = TextStyle(
@@ -1683,47 +1754,48 @@ class _FrameTrendPainter extends CustomPainter {
       fontWeight: FontWeight.w600,
       letterSpacing: 0.5,
     );
+    final axisPaint = Paint()
+      ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.10)
+      ..strokeWidth = 1.0;
     final gridPaint = Paint()
       ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.06)
       ..strokeWidth = 0.5;
+    canvas.drawLine(Offset(labelW, 0), Offset(labelW, size.height), axisPaint);
 
     // --- Packet size axis labels (upper) ---
     // Only bottom (0) and top (max) to keep it minimal like pyramid
     final sizeLabels = [
       (0.0, _formatBytes(0)),
-      (0.5, _formatBytes((maxPacketSize * 0.5).round())),
-      (1.0, _formatBytes(maxPacketSize)),
+      (0.5, _formatBytes((sizeAxisMax * 0.5).round())),
+      (1.0, _formatBytes(sizeAxisMax.round())),
     ];
     for (final (yFrac, text) in sizeLabels) {
       final y = upperH * (1 - yFrac);
       canvas.drawLine(Offset(labelW, y), Offset(size.width, y), gridPaint);
-      final tp = TextPainter(
-        text: TextSpan(text: text, style: labelStyle),
-        textDirection: TextDirection.ltr,
-      )..layout();
+      final tp = _axisLabelPainter(
+        _byteAxisLabelLines(text),
+        labelStyle,
+        labelW - 8,
+      );
       // Clamp to avoid clipping at top
       final drawY = (y - tp.height / 2).clamp(0.0, upperH - tp.height);
-      tp.paint(canvas, Offset(4, drawY));
+      tp.paint(canvas, Offset(labelW - 4 - tp.width, drawY));
     }
 
     // --- QP axis labels (lower) ---
-    final qpLabels = [
-      (0.0, qpLow),
-      (0.5, (qpLow + qpHigh) ~/ 2),
-      (1.0, qpHigh),
-    ];
+    final qpLabels = [(0.0, qpLow), (0.5, (qpLow + qpHigh) / 2), (1.0, qpHigh)];
     for (final (yFrac, value) in qpLabels) {
       final y = lowerTop + lowerH * (1 - yFrac);
       canvas.drawLine(Offset(labelW, y), Offset(size.width, y), gridPaint);
       final tp = TextPainter(
-        text: TextSpan(text: '$value', style: labelStyle),
+        text: TextSpan(text: _formatQpLabel(value), style: labelStyle),
         textDirection: TextDirection.ltr,
       )..layout();
       final drawY = (y - tp.height / 2).clamp(
         lowerTop,
         lowerTop + lowerH - tp.height,
       );
-      tp.paint(canvas, Offset(4, drawY));
+      tp.paint(canvas, Offset(labelW - 4 - tp.width, drawY));
     }
 
     // --- Frame size bars ---
@@ -1736,7 +1808,7 @@ class _FrameTrendPainter extends CustomPainter {
       final f = frames[i];
       final frac = (i - viewStart) / span;
       final x = labelW + frac * chartW;
-      final h = (f.packetSize / maxPacketSize) * upperH;
+      final h = ((f.packetSize / sizeAxisMax).clamp(0.0, 1.0)) * upperH;
 
       barPaint.color = f.keyframe == 1
           ? const Color(0xFFFF5252)
@@ -1760,7 +1832,11 @@ class _FrameTrendPainter extends CustomPainter {
       final f = frames[i];
       final frac = (i - viewStart) / span;
       final x = labelW + frac * chartW + barW / 2;
-      final y = lowerTop + lowerH * (1 - (f.avgQp - qpLow) / qpRange);
+      final normalizedQp = ((f.avgQp - qpLow) / effectiveQpRange).clamp(
+        0.0,
+        1.0,
+      );
+      final y = lowerTop + lowerH * (1 - normalizedQp);
       if (first) {
         qpPath.moveTo(x, y);
         first = false;
@@ -1852,6 +1928,33 @@ class _FrameTrendPainter extends CustomPainter {
     }
   }
 
+  static TextPainter _axisLabelPainter(
+    List<String> lines,
+    TextStyle style,
+    double maxWidth,
+  ) {
+    return TextPainter(
+      text: TextSpan(text: lines.join('\n'), style: style),
+      textAlign: TextAlign.right,
+      textDirection: TextDirection.ltr,
+      maxLines: lines.length,
+    )..layout(maxWidth: maxWidth);
+  }
+
+  static List<String> _byteAxisLabelLines(String text) {
+    final parts = text.split(' ');
+    if (parts.length == 2 && parts[0] != '0') {
+      return [parts[0], parts[1]];
+    }
+    return [text];
+  }
+
+  static String _formatQpLabel(double value) {
+    final rounded = value.roundToDouble();
+    if ((value - rounded).abs() < 0.05) return '${rounded.toInt()}';
+    return value.toStringAsFixed(1);
+  }
+
   static String _formatBytes(int bytes) {
     if (bytes <= 0) return '0 B';
     if (bytes < 1024) return '$bytes B';
@@ -1868,6 +1971,8 @@ class _FrameTrendPainter extends CustomPainter {
       selectedFrameIdx != old.selectedFrameIdx ||
       viewStart != old.viewStart ||
       viewEnd != old.viewEnd ||
+      frameSizeAxisZoom != old.frameSizeAxisZoom ||
+      qpAxisZoom != old.qpAxisZoom ||
       hoverX != old.hoverX;
 }
 

@@ -44,6 +44,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   int? _textureId;
   int _viewportState = 1; // 0=loading, 1=empty, 2=active
   bool _isPlaying = false;
+  double _playbackSpeed = 1.0;
   int _currentPtsUs = 0;
   int _durationUs = 0;
   LayoutState _layout = const LayoutState();
@@ -65,6 +66,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   // Polling
   Timer? _pollTimer;
+  Timer? _loopBoundaryTimer;
   Ticker? _layoutTicker;
   bool _layoutDirty = false;
 
@@ -98,6 +100,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _loopBoundaryTimer?.cancel();
     _layoutTicker?.dispose();
     unawaited(_analysisIpcServer.dispose());
     _trackManager.dispose();
@@ -120,8 +123,8 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   void _bindActions() {
     // Playback
     actionRegistry.bind(const TogglePlayPause(), (_) => _togglePlayPause());
-    actionRegistry.bind(const Play(), (_) => _controller.play());
-    actionRegistry.bind(const Pause(), (_) => _controller.pause());
+    actionRegistry.bind(const Play(), (_) => _play());
+    actionRegistry.bind(const Pause(), (_) => _pause());
     actionRegistry.bind(const StepForward(), (_) => _controller.stepForward());
     actionRegistry.bind(
       const StepBackward(),
@@ -137,7 +140,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     });
     actionRegistry.bind(const SetSpeed(1.0), (action) {
       final a = action as SetSpeed;
-      _controller.setSpeed(a.speed);
+      _setSpeed(a.speed);
     });
 
     // Media
@@ -204,14 +207,33 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   void _togglePlayPause() async {
     if (_isPlaying) {
-      await _controller.pause();
+      await _pause();
     } else {
-      if (_loopRangeEnabled && !_currentPtsInsideLoopRange) {
-        _seekTo(_resolvedLoopStartUs);
-      }
-      await _controller.play();
+      await _play();
     }
-    setState(() => _isPlaying = !_isPlaying);
+  }
+
+  Future<void> _play() async {
+    if (_loopRangeEnabled && !_currentPtsInsideLoopRange) {
+      _seekTo(_resolvedLoopStartUs);
+    }
+    await _controller.play();
+    if (!mounted) return;
+    setState(() => _isPlaying = true);
+    _scheduleLoopBoundaryTimer();
+  }
+
+  Future<void> _pause() async {
+    await _controller.pause();
+    if (!mounted) return;
+    _cancelLoopBoundaryTimer();
+    setState(() => _isPlaying = false);
+  }
+
+  void _setSpeed(double speed) {
+    _playbackSpeed = speed > 0 ? speed : 1.0;
+    _controller.setSpeed(speed);
+    _scheduleLoopBoundaryTimer();
   }
 
   void _seekTo(int ptsUs) {
@@ -221,6 +243,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       _pendingSeekAt = DateTime.now();
     });
     _controller.seek(ptsUs);
+    _scheduleLoopBoundaryTimer(fromPtsUs: ptsUs);
   }
 
   double get _timelineStartWidth =>
@@ -605,6 +628,56 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     );
   }
 
+  void _cancelLoopBoundaryTimer() {
+    _loopBoundaryTimer?.cancel();
+    _loopBoundaryTimer = null;
+  }
+
+  void _scheduleLoopBoundaryTimer({int? fromPtsUs}) {
+    _cancelLoopBoundaryTimer();
+    if (!_loopRangeEnabled ||
+        !_isPlaying ||
+        _playbackSpeed <= 0 ||
+        _resolvedLoopEndUs <= _resolvedLoopStartUs) {
+      return;
+    }
+
+    final startUs = _resolvedLoopStartUs;
+    final endUs = _resolvedLoopEndUs;
+    final baseUs = (fromPtsUs ?? _pendingSeekUs ?? _currentPtsUs)
+        .clamp(startUs, endUs)
+        .toInt();
+    final remainingUs = endUs - baseUs;
+    final delayUs = (remainingUs / _playbackSpeed).round();
+    final delay = Duration(microseconds: delayUs.clamp(0, 1 << 31).toInt());
+    _loopBoundaryTimer = Timer(delay, _onLoopBoundaryTimer);
+  }
+
+  void _onLoopBoundaryTimer() async {
+    _loopBoundaryTimer = null;
+    if (!_loopRangeEnabled ||
+        !_isPlaying ||
+        _resolvedLoopEndUs <= _resolvedLoopStartUs) {
+      return;
+    }
+
+    final startUs = _resolvedLoopStartUs;
+    final endUs = _resolvedLoopEndUs;
+    var pts = _pendingSeekUs ?? _currentPtsUs;
+    try {
+      pts = await _controller.currentPts();
+    } catch (_) {
+      // Renderer may be disposed; fall back to the UI state below.
+    }
+    if (!mounted || !_loopRangeEnabled || !_isPlaying) return;
+
+    if (pts < endUs - 12000) {
+      _scheduleLoopBoundaryTimer(fromPtsUs: pts);
+      return;
+    }
+    _seekTo(startUs);
+  }
+
   void _pollState() async {
     if (_textureId == null) return;
     try {
@@ -649,6 +722,11 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
         _durationUs = dur;
         _isPlaying = playing;
       });
+      if (playing) {
+        _scheduleLoopBoundaryTimer(fromPtsUs: pts);
+      } else {
+        _cancelLoopBoundaryTimer();
+      }
     } catch (_) {
       // Renderer may be disposed
     }
@@ -669,6 +747,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     if (tracks.isEmpty) {
       // Last track removed: destroy renderer, show empty viewport
       await _controller.dispose();
+      _cancelLoopBoundaryTimer();
       setState(() {
         _trackManager.clear();
         _textureId = null;
@@ -737,9 +816,11 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       setState(() => _loopRangeEnabled = true);
       await _controller.pause();
       if (!mounted) return;
+      _cancelLoopBoundaryTimer();
       setState(() => _isPlaying = false);
       _seekTo(_resolvedLoopStartUs);
     } else {
+      _cancelLoopBoundaryTimer();
       setState(() => _loopRangeEnabled = false);
     }
   }
@@ -761,10 +842,12 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       _loopStartUs = clampedStartUs;
       _loopEndUs = clampedEndUs;
     });
+    _scheduleLoopBoundaryTimer();
 
     if (seekToStart && _loopRangeEnabled) {
       await _controller.pause();
       if (!mounted) return;
+      _cancelLoopBoundaryTimer();
       setState(() => _isPlaying = false);
       _seekTo(_resolvedLoopStartUs);
     }

@@ -36,6 +36,19 @@ import 'windows/analysis_window.dart';
   return null;
 }
 
+bool _hasFlag(List<String> args, String name) =>
+    args.any((arg) => arg == name || arg.startsWith('$name='));
+
+Future<void> _showWindowForMode({required bool silent}) async {
+  if (silent) {
+    final hwnds = Win32FFI.findCurrentProcessWindowsByClass(kMainWindowClass);
+    for (final hwnd in hwnds) {
+      Win32FFI.hideFromTaskbar(hwnd);
+    }
+  }
+  await windowManager.show(inactive: silent);
+}
+
 Future<Color> getWindowsAccentColor() async {
   try {
     final result = await Process.run('powershell', [
@@ -107,6 +120,7 @@ class _CloseHandler with WindowListener {
 /// Flutter multi-engine crash.
 Future<void> _runStandaloneAnalysis(List<String> args) async {
   String? hash, fileName, testScriptPath;
+  final silentUiTest = _hasFlag(args, '--silent-ui-test');
   int x = 100, y = 100, width = 800, height = 600;
   int accentColorValue = 0xFF0078D4;
 
@@ -138,7 +152,10 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
     exit(1);
   }
 
-  log.info('[StandaloneAnalysis] starting: hash=$hash, fileName=$fileName');
+  log.info(
+    '[StandaloneAnalysis] starting: hash=$hash, fileName=$fileName, '
+    'silentUiTest=$silentUiTest',
+  );
 
   await windowManager.ensureInitialized();
   await windowManager.setSize(Size(width.toDouble(), height.toDouble()));
@@ -172,7 +189,7 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
 
   // Show window after first frame to prevent white flash.
   WidgetsBinding.instance.addPostFrameCallback((_) async {
-    await windowManager.show();
+    await _showWindowForMode(silent: silentUiTest);
   });
 }
 
@@ -188,6 +205,7 @@ void main(List<String> args) async {
 
   // Extract --test-script path (if any) before window routing.
   String? testScriptPath;
+  final silentUiTest = _hasFlag(args, '--silent-ui-test');
   final scriptIdx = args.indexOf('--test-script');
   if (scriptIdx >= 0 && scriptIdx + 1 < args.length) {
     testScriptPath = args[scriptIdx + 1];
@@ -242,6 +260,7 @@ void main(List<String> args) async {
       break;
     default:
       await AppConfig.initialize();
+      WindowManager.silentUiTest = silentUiTest;
 
       // window_manager needs ensureInitialized() to capture the native HWND.
       // Without it, all subsequent calls (setSize, center, show…) operate on
@@ -273,12 +292,14 @@ void main(List<String> args) async {
 
       final accentColor = await getWindowsAccentColor();
       WindowManager.accentColorValue = accentColor.toARGB32();
-      log.info('Application starting (main window)');
+      log.info(
+        'Application starting (main window), silentUiTest=$silentUiTest',
+      );
       runApp(MyApp(accentColor: accentColor, testScriptPath: testScriptPath));
 
       // Show window after first frame renders to prevent white flash on slow PCs.
       WidgetsBinding.instance.addPostFrameCallback((_) async {
-        await windowManager.show();
+        await _showWindowForMode(silent: silentUiTest);
       });
   }
 }

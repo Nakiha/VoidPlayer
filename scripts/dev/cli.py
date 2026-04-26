@@ -71,6 +71,8 @@ Examples:
     p_ui_test.add_argument("--build", action="store_true", help="Build Flutter app before launch")
     p_ui_test.add_argument("--log-level", type=str, default=None,
                            help="Log level, e.g. 'flutter=DEBUG,native=TRACE'")
+    p_ui_test.add_argument("--visible", action="store_true",
+                           help="Show and focus test windows instead of using silent no-activate mode")
 
     p_vtm = sub.add_parser("vtm", help="VTM DecoderApp: build & H.266 analysis")
     p_vtm.add_argument("vtm_action", choices=["build", "analyze"],

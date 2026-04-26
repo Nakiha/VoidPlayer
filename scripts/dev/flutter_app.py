@@ -110,6 +110,8 @@ def cmd_ui_test(args) -> None:
         sys.exit(1)
 
     cmd = [str(exe), "--test-script", str(script_path)]
+    if not args.visible:
+        cmd.append("--silent-ui-test")
     if args.log_level:
         cmd.append(f"--log-level={args.log_level}")
 

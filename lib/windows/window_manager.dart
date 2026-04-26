@@ -18,6 +18,7 @@ class WindowManager {
   static final Map<String, Process> _analysisProcesses = {};
   static final Map<String, int> _analysisExitCodes = {};
   static String? analysisTestScriptPath;
+  static bool silentUiTest = false;
 
   /// Accent color set by the main window, passed to all secondary windows.
   static int accentColorValue = 0xFF0078D4;
@@ -130,6 +131,7 @@ class WindowManager {
       '--accentColor=$accentColorValue',
       if (fileName != null) '--fileName=$fileName',
       if (scriptPath != null) ...['--test-script', scriptPath],
+      if (silentUiTest) '--silent-ui-test',
     ];
 
     log.info('[WindowManager] spawning analysis process: $args');

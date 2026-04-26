@@ -111,6 +111,14 @@ typedef _EnumWindowsCallbackNative = Int32 Function(IntPtr hWnd, IntPtr lParam);
 typedef _GetAsyncKeyStateNative = Int16 Function(Int32 vKey);
 typedef _GetAsyncKeyStateDart = int Function(int vKey);
 
+typedef _GetWindowLongPtrWNative = IntPtr Function(IntPtr hWnd, Int32 nIndex);
+typedef _GetWindowLongPtrWDart = int Function(int hWnd, int nIndex);
+
+typedef _SetWindowLongPtrWNative =
+    IntPtr Function(IntPtr hWnd, Int32 nIndex, IntPtr dwNewLong);
+typedef _SetWindowLongPtrWDart =
+    int Function(int hWnd, int nIndex, int dwNewLong);
+
 // ---------------------------------------------------------------------------
 // Structs
 // ---------------------------------------------------------------------------
@@ -148,12 +156,18 @@ final class MONITORINFO extends Struct {
 // ---------------------------------------------------------------------------
 
 const int _swpNoZOrder = 0x0004;
+const int _swpNoMove = 0x0002;
+const int _swpNoSize = 0x0001;
 const int _swpNoActivate = 0x0010;
 const int _swpShowWindow = 0x0040;
+const int _swpFrameChanged = 0x0020;
 const int _monitorDefaultToNearest = 0x00000002;
 const int _wmClose = 0x0010;
 const int _vkLButton = 0x01;
 const int _vkRButton = 0x02;
+const int _gwlExStyle = -20;
+const int _wsExToolWindow = 0x00000080;
+const int _wsExAppWindow = 0x00040000;
 
 /// Window class name used by `desktop_multi_window` for secondary windows.
 const String kSecondaryWindowClass = 'FLUTTER_MULTI_WINDOW_WIN32_WINDOW';
@@ -235,20 +249,35 @@ final _getAsyncKeyState = _user32
       'GetAsyncKeyState',
     );
 
+final _getWindowLongPtrW = _user32
+    .lookupFunction<_GetWindowLongPtrWNative, _GetWindowLongPtrWDart>(
+      'GetWindowLongPtrW',
+    );
+
+final _setWindowLongPtrW = _user32
+    .lookupFunction<_SetWindowLongPtrWNative, _SetWindowLongPtrWDart>(
+      'SetWindowLongPtrW',
+    );
+
 // ---------------------------------------------------------------------------
 // Global state for EnumWindows callback (top-level for Pointer.fromFunction)
 // ---------------------------------------------------------------------------
 
 final List<int> _enumResult = [];
 int _enumTargetPid = 0;
+String? _enumClassFilter;
 
 int _enumSecondaryWindowsCallback(int hwnd, int lParam) {
   final clsBuf = calloc.allocate<Utf16>(512);
   try {
     final len = _getClassNameW(hwnd, clsBuf.cast<Utf16>(), 256);
-    if (len > 0 &&
-        clsBuf.cast<Utf16>().toDartString(length: len) ==
-            kSecondaryWindowClass) {
+    final className = len > 0
+        ? clsBuf.cast<Utf16>().toDartString(length: len)
+        : '';
+    final matchesClass = _enumClassFilter != null
+        ? className == _enumClassFilter
+        : true;
+    if (matchesClass) {
       final pidBuf = calloc.allocate<Uint32>(4);
       try {
         _getWindowThreadProcessId(hwnd, pidBuf.cast<Uint32>());
@@ -335,6 +364,27 @@ class Win32FFI {
     );
   }
 
+  /// Removes the window from the taskbar without hiding its rendering surface.
+  static void hideFromTaskbar(int hwnd) {
+    if (!isWindow(hwnd)) return;
+    final style = _getWindowLongPtrW(hwnd, _gwlExStyle);
+    final nextStyle = (style & ~_wsExAppWindow) | _wsExToolWindow;
+    _setWindowLongPtrW(hwnd, _gwlExStyle, nextStyle);
+    _setWindowPos(
+      hwnd,
+      0,
+      0,
+      0,
+      0,
+      0,
+      _swpNoMove |
+          _swpNoSize |
+          _swpNoZOrder |
+          _swpNoActivate |
+          _swpFrameChanged,
+    );
+  }
+
   /// Returns the usable work-area rect of the monitor that contains [hwnd].
   static Rect getMonitorWorkArea(int hwnd) {
     final monitor = _monitorFromWindow(hwnd, _monitorDefaultToNearest);
@@ -390,11 +440,27 @@ class Win32FFI {
   static List<int> findSecondaryWindows() {
     _enumResult.clear();
     _enumTargetPid = getCurrentProcessId();
+    _enumClassFilter = kSecondaryWindowClass;
     final callback = Pointer.fromFunction<_EnumWindowsCallbackNative>(
       _enumSecondaryWindowsCallback,
       0,
     );
     _enumWindows(callback, 0);
+    _enumClassFilter = null;
+    return List.unmodifiable(_enumResult);
+  }
+
+  /// Finds top-level windows with [className] belonging to this process.
+  static List<int> findCurrentProcessWindowsByClass(String className) {
+    _enumResult.clear();
+    _enumTargetPid = getCurrentProcessId();
+    _enumClassFilter = className;
+    final callback = Pointer.fromFunction<_EnumWindowsCallbackNative>(
+      _enumSecondaryWindowsCallback,
+      0,
+    );
+    _enumWindows(callback, 0);
+    _enumClassFilter = null;
     return List.unmodifiable(_enumResult);
   }
 

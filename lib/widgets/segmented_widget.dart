@@ -10,6 +10,7 @@ class ViewModeSelector extends StatelessWidget {
   final double width;
   final double height;
   final bool enabled;
+  final FontWeight? labelFontWeight;
 
   const ViewModeSelector({
     super.key,
@@ -20,6 +21,7 @@ class ViewModeSelector extends StatelessWidget {
     this.width = 240,
     this.height = 32,
     this.enabled = true,
+    this.labelFontWeight,
   });
 
   @override
@@ -45,6 +47,7 @@ class ViewModeSelector extends StatelessWidget {
                   borderRadius: const BorderRadius.horizontal(
                     left: Radius.circular(5),
                   ),
+                  labelFontWeight: labelFontWeight,
                   onTap: () => onChanged(0),
                 ),
                 _Segment(
@@ -54,6 +57,7 @@ class ViewModeSelector extends StatelessWidget {
                   borderRadius: const BorderRadius.horizontal(
                     right: Radius.circular(5),
                   ),
+                  labelFontWeight: labelFontWeight,
                   onTap: () => onChanged(1),
                 ),
               ],
@@ -69,12 +73,14 @@ class _Segment extends StatelessWidget {
   final String label;
   final bool selected;
   final BorderRadius borderRadius;
+  final FontWeight? labelFontWeight;
   final VoidCallback onTap;
 
   const _Segment({
     required this.label,
     required this.selected,
     required this.borderRadius,
+    this.labelFontWeight,
     required this.onTap,
   });
 
@@ -95,6 +101,7 @@ class _Segment extends StatelessWidget {
             label,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
               color: selected ? colorScheme.onPrimary : colorScheme.onSurface,
+              fontWeight: labelFontWeight,
             ),
           ),
         ),

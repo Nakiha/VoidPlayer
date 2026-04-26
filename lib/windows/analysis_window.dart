@@ -14,6 +14,11 @@ import 'analysis_ipc.dart';
 // Analysis Window — secondary Flutter window for bitstream visualization
 // ===========================================================================
 
+const double _analysisHeaderHeight = 40;
+const double _analysisHeaderControlHeight = 32;
+const double _analysisHeaderGap = 4;
+const EdgeInsets _analysisHeaderPadding = EdgeInsets.all(4);
+
 class AnalysisApp extends StatelessWidget {
   final Color accentColor;
   final String hash;
@@ -265,8 +270,8 @@ class _AnalysisTabsHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      height: 48,
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+      height: _analysisHeaderHeight,
+      padding: _analysisHeaderPadding,
       decoration: BoxDecoration(
         color: theme.colorScheme.primaryContainer.withValues(alpha: 0.18),
         border: Border(bottom: BorderSide(color: theme.dividerColor)),
@@ -278,7 +283,7 @@ class _AnalysisTabsHeader extends StatelessWidget {
             enabled: modeToggleEnabled,
             onChanged: onModeChanged,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: _analysisHeaderGap),
           Expanded(
             child: Row(
               children: [
@@ -319,7 +324,7 @@ class _AnalysisTrackTab extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: SizedBox(
-        height: 34,
+        height: _analysisHeaderControlHeight,
         child: Material(
           color: selected
               ? theme.colorScheme.primary.withValues(alpha: 0.10)
@@ -352,7 +357,7 @@ class _AnalysisTrackTab extends StatelessWidget {
                   Positioned(
                     left: 10,
                     right: 10,
-                    bottom: 3,
+                    bottom: 2,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: theme.colorScheme.primary.withValues(
@@ -466,8 +471,8 @@ class _AnalysisTrackPane extends StatelessWidget {
     return Column(
       children: [
         Container(
-          height: 42,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          height: _analysisHeaderHeight,
+          padding: _analysisHeaderPadding,
           decoration: BoxDecoration(
             color: selected
                 ? theme.colorScheme.primaryContainer.withValues(alpha: 0.18)
@@ -482,7 +487,7 @@ class _AnalysisTrackPane extends StatelessWidget {
                   enabled: modeToggleEnabled,
                   onChanged: onModeChanged,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: _analysisHeaderGap),
               ],
               Expanded(
                 child: InkWell(
@@ -525,14 +530,17 @@ class _AnalysisWorkspaceModeToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    return ViewModeSelector(
-      currentMode: splitView ? 1 : 0,
-      onChanged: (value) => onChanged(value == 1),
-      firstLabel: l.analysisTabsMode,
-      secondLabel: l.analysisSplitMode,
-      width: 124,
-      height: 30,
-      enabled: enabled,
+    return ExcludeSemantics(
+      child: ViewModeSelector(
+        currentMode: splitView ? 1 : 0,
+        onChanged: (value) => onChanged(value == 1),
+        firstLabel: l.analysisTabsMode,
+        secondLabel: l.analysisSplitMode,
+        width: 124,
+        height: _analysisHeaderControlHeight,
+        enabled: enabled,
+        labelFontWeight: FontWeight.w700,
+      ),
     );
   }
 }
@@ -1156,29 +1164,35 @@ class _AnalysisPageState extends State<AnalysisPage> {
         children: [
           // Top bar: order toggle + tab bar
           Container(
-            height: 40,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            height: _analysisHeaderHeight,
+            padding: _analysisHeaderPadding,
             decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: theme.dividerColor)),
             ),
             child: Row(
               children: [
                 // Order toggle
-                _OrderToggle(
-                  ptsOrder: _ptsOrder,
-                  onChanged: (v) => setState(() {
-                    _ptsOrder = v;
-                    _rebuildSortedFramesCache();
-                    _centerChartOnSelectedFrame();
-                  }),
-                  l: l,
+                SizedBox(
+                  height: _analysisHeaderControlHeight,
+                  child: _OrderToggle(
+                    ptsOrder: _ptsOrder,
+                    onChanged: (v) => setState(() {
+                      _ptsOrder = v;
+                      _rebuildSortedFramesCache();
+                      _centerChartOnSelectedFrame();
+                    }),
+                    l: l,
+                  ),
                 ),
                 const Spacer(),
                 // Tab bar
-                _TabBar(
-                  selectedTab: _selectedTab,
-                  onTabChanged: (i) => setState(() => _selectedTab = i),
-                  l: l,
+                SizedBox(
+                  height: _analysisHeaderControlHeight,
+                  child: _TabBar(
+                    selectedTab: _selectedTab,
+                    onTabChanged: (i) => setState(() => _selectedTab = i),
+                    l: l,
+                  ),
                 ),
               ],
             ),
@@ -1244,17 +1258,25 @@ class _OrderToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SegmentedButton<bool>(
-      showSelectedIcon: false,
-      segments: [
-        ButtonSegment(value: true, label: Text(l.analysisPtsOrder)),
-        ButtonSegment(value: false, label: Text(l.analysisDtsOrder)),
-      ],
-      selected: {ptsOrder},
-      onSelectionChanged: (s) => onChanged(s.first),
-      style: const ButtonStyle(
-        visualDensity: VisualDensity.compact,
-        textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
+    return ExcludeSemantics(
+      child: SegmentedButton<bool>(
+        showSelectedIcon: false,
+        segments: [
+          ButtonSegment(value: true, label: Text(l.analysisPtsOrder)),
+          ButtonSegment(value: false, label: Text(l.analysisDtsOrder)),
+        ],
+        selected: {ptsOrder},
+        onSelectionChanged: (s) => onChanged(s.first),
+        style: const ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          textStyle: WidgetStatePropertyAll(
+            TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+          fixedSize: WidgetStatePropertyAll(
+            Size.fromHeight(_analysisHeaderControlHeight),
+          ),
+        ),
       ),
     );
   }
@@ -1272,39 +1294,44 @@ class _TabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SegmentedButton<int>(
-      showSelectedIcon: false,
-      segments: [
-        ButtonSegment(
-          value: 0,
-          label: Tooltip(
-            message: l.analysisRefPyramid,
-            child: const SizedBox(
-              width: 28,
-              height: 20,
-              child: _AnalysisViewIcon(_AnalysisViewIconKind.pyramid),
+    return ExcludeSemantics(
+      child: SegmentedButton<int>(
+        showSelectedIcon: false,
+        segments: [
+          ButtonSegment(
+            value: 0,
+            label: Tooltip(
+              message: l.analysisRefPyramid,
+              child: const SizedBox(
+                width: 28,
+                height: 20,
+                child: _AnalysisViewIcon(_AnalysisViewIconKind.pyramid),
+              ),
             ),
           ),
-        ),
-        ButtonSegment(
-          value: 1,
-          label: Tooltip(
-            message: l.analysisFrameTrend,
-            child: const SizedBox(
-              width: 28,
-              height: 20,
-              child: _AnalysisViewIcon(_AnalysisViewIconKind.trend),
+          ButtonSegment(
+            value: 1,
+            label: Tooltip(
+              message: l.analysisFrameTrend,
+              child: const SizedBox(
+                width: 28,
+                height: 20,
+                child: _AnalysisViewIcon(_AnalysisViewIconKind.trend),
+              ),
             ),
           ),
+        ],
+        selected: {selectedTab},
+        onSelectionChanged: (s) => onTabChanged(s.first),
+        style: const ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 7)),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
+          fixedSize: WidgetStatePropertyAll(
+            Size.fromHeight(_analysisHeaderControlHeight),
+          ),
         ),
-      ],
-      selected: {selectedTab},
-      onSelectionChanged: (s) => onTabChanged(s.first),
-      style: const ButtonStyle(
-        visualDensity: VisualDensity.compact,
-        padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 7)),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
       ),
     );
   }

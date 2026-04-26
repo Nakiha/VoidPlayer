@@ -1304,6 +1304,20 @@ String _formatCompactAxisValue(int value) {
   return '$value';
 }
 
+List<double> _axisTickFractionsForHeight(
+  double height, {
+  int minTicks = 2,
+  int maxTicks = 5,
+  double minGap = 44.0,
+}) {
+  if (height <= 0) return const [];
+  final tickCount = ((height / minGap).floor() + 1)
+      .clamp(minTicks, maxTicks)
+      .toInt();
+  if (tickCount <= 1) return const [0.0];
+  return [for (var i = 0; i < tickCount; i++) i / (tickCount - 1)];
+}
+
 void _drawFrameXAxis({
   required Canvas canvas,
   required Size size,
@@ -1580,11 +1594,15 @@ class _RefPyramidPainter extends CustomPainter {
     ];
 
     // --- Level backgrounds ---
+    final levelLabelStep = rowH >= 16 ? 1 : (16 / rowH).ceil();
     for (var tid = 0; tid <= maxTid; tid++) {
       final top = chartH - (tid + 1) * rowH;
       final alpha = 0.03 + (maxTid - tid) * 0.025;
       _bgPaint.color = const Color(0xFFFFFFFF).withValues(alpha: alpha);
       canvas.drawRect(Rect.fromLTWH(0, top, size.width, rowH), _bgPaint);
+      final showLevelLabel =
+          tid == 0 || tid == maxTid || tid % levelLabelStep == 0;
+      if (!showLevelLabel) continue;
       final tp = TextPainter(
         text: TextSpan(
           text: 'L$tid',
@@ -1597,7 +1615,11 @@ class _RefPyramidPainter extends CustomPainter {
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      tp.paint(canvas, Offset(4, top + rowH / 2 - tp.height / 2));
+      final drawY = (top + rowH / 2 - tp.height / 2).clamp(
+        0.0,
+        chartH - tp.height,
+      );
+      tp.paint(canvas, Offset(4, drawY));
     }
     canvas.drawLine(
       Offset(labelW, 0),
@@ -2187,13 +2209,8 @@ class _FrameTrendPainter extends CustomPainter {
     );
 
     // --- Packet size axis labels (upper) ---
-    // Only bottom (0) and top (max) to keep it minimal like pyramid
-    final sizeLabels = [
-      (0.0, _formatBytes(0)),
-      (0.5, _formatBytes((sizeAxisMax * 0.5).round())),
-      (1.0, _formatBytes(sizeAxisMax.round())),
-    ];
-    for (final (yFrac, text) in sizeLabels) {
+    for (final yFrac in _axisTickFractionsForHeight(upperH, maxTicks: 4)) {
+      final text = _formatBytes((sizeAxisMax * yFrac).round());
       final y = upperH * (1 - yFrac);
       canvas.drawLine(Offset(labelW, y), Offset(size.width, y), gridPaint);
       final tp = _axisLabelPainter(
@@ -2207,8 +2224,8 @@ class _FrameTrendPainter extends CustomPainter {
     }
 
     // --- QP axis labels (lower) ---
-    final qpLabels = [(0.0, qpLow), (0.5, (qpLow + qpHigh) / 2), (1.0, qpHigh)];
-    for (final (yFrac, value) in qpLabels) {
+    for (final yFrac in _axisTickFractionsForHeight(lowerH, maxTicks: 4)) {
+      final value = qpLow + effectiveQpRange * yFrac;
       final y = lowerTop + lowerH * (1 - yFrac);
       canvas.drawLine(Offset(labelW, y), Offset(size.width, y), gridPaint);
       final tp = TextPainter(

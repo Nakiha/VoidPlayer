@@ -19,6 +19,19 @@ const double _analysisHeaderControlHeight = 32;
 const double _analysisHeaderGap = 4;
 const EdgeInsets _analysisHeaderPadding = EdgeInsets.all(4);
 
+ThemeData _analysisTheme(Color accentColor) {
+  return ThemeData(
+    brightness: Brightness.dark,
+    colorSchemeSeed: accentColor,
+    useMaterial3: true,
+    tooltipTheme: const TooltipThemeData(excludeFromSemantics: true),
+  );
+}
+
+Widget _silenceAnalysisSemantics(BuildContext context, Widget? child) {
+  return ExcludeSemantics(child: child ?? const SizedBox.shrink());
+}
+
 class AnalysisApp extends StatelessWidget {
   final Color accentColor;
   final String hash;
@@ -40,11 +53,8 @@ class AnalysisApp extends StatelessWidget {
           ? 'Void Player - $fileName'
           : 'Void Player - Analysis',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        colorSchemeSeed: accentColor,
-        useMaterial3: true,
-      ),
+      theme: _analysisTheme(accentColor),
+      builder: _silenceAnalysisSemantics,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: AnalysisPage(hash: hash, testScriptPath: testScriptPath),
@@ -73,11 +83,8 @@ class AnalysisWorkspaceApp extends StatelessWidget {
     return MaterialApp(
       title: 'Void Player - Analysis',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        colorSchemeSeed: accentColor,
-        useMaterial3: true,
-      ),
+      theme: _analysisTheme(accentColor),
+      builder: _silenceAnalysisSemantics,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: _AnalysisWorkspacePage(

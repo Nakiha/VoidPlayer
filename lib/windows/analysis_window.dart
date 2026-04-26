@@ -921,6 +921,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
             onFrameSelected: (i) => setState(() => _selectChartFrame(i)),
             viewStart: _chartOffset,
             viewEnd: _chartOffset + _visibleFrameCount,
+            ptsOrder: _ptsOrder,
             onZoom: _chartZoom,
             onPan: _chartPan,
             l: l,
@@ -933,6 +934,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
             viewEnd: _chartOffset + _visibleFrameCount,
             frameSizeAxisZoom: _frameSizeAxisZoom,
             qpAxisZoom: _qpAxisZoom,
+            ptsOrder: _ptsOrder,
             onZoom: _chartZoom,
             onAxisZoom: _frameTrendAxisZoom,
             onPan: _chartPan,
@@ -1293,6 +1295,107 @@ class _ResizableHDividerState extends State<_ResizableHDivider> {
 // ===========================================================================
 
 const double _analysisChartLabelW = 66.0;
+const double _analysisChartXAxisH = 34.0;
+
+String _formatCompactAxisValue(int value) {
+  final abs = value.abs();
+  if (abs >= 1000000) return '${(value / 1000000).toStringAsFixed(1)}M';
+  if (abs >= 1000) return '${(value / 1000).toStringAsFixed(1)}K';
+  return '$value';
+}
+
+void _drawFrameXAxis({
+  required Canvas canvas,
+  required Size size,
+  required double axisTop,
+  required double labelW,
+  required List<FrameInfo> frames,
+  required int visibleStart,
+  required int visibleEnd,
+  required bool ptsOrder,
+  required double Function(int frameIdx) xForFrame,
+}) {
+  if (axisTop >= size.height || visibleStart >= visibleEnd) return;
+
+  final axisH = size.height - axisTop;
+  if (axisH < 26) return;
+
+  final plotLeft = labelW;
+  final plotRight = size.width;
+  final plotW = (plotRight - plotLeft).clamp(0.0, double.infinity);
+  if (plotW <= 0) return;
+
+  final axisPaint = Paint()
+    ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.12)
+    ..strokeWidth = 1.0;
+  final tickPaint = Paint()
+    ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.10)
+    ..strokeWidth = 1.0;
+  canvas.drawLine(Offset(0, axisTop), Offset(size.width, axisTop), axisPaint);
+  canvas.drawLine(
+    Offset(labelW, axisTop),
+    Offset(labelW, size.height),
+    axisPaint,
+  );
+
+  const labelStyle = TextStyle(
+    color: Color(0xFFFFFFFF),
+    fontSize: 10,
+    fontWeight: FontWeight.w600,
+  );
+  const valueStyle = TextStyle(color: Color(0xCCFFFFFF), fontSize: 10);
+  final axisName = ptsOrder ? 'PTS' : 'DTS';
+  final leftTp = TextPainter(
+    text: TextSpan(
+      children: [
+        const TextSpan(text: 'Index\n', style: labelStyle),
+        TextSpan(text: axisName, style: valueStyle),
+      ],
+    ),
+    textAlign: TextAlign.right,
+    textDirection: TextDirection.ltr,
+  )..layout(maxWidth: labelW - 8);
+  leftTp.paint(canvas, Offset(labelW - leftTp.width - 6, axisTop + 4));
+
+  final visibleCount = visibleEnd - visibleStart;
+  final maxTicks = visibleCount == 1
+      ? 1
+      : (plotW / 92).floor().clamp(2, visibleCount);
+  final step = (visibleCount / maxTicks).ceil().clamp(1, visibleCount);
+
+  var lastRight = plotLeft - 8;
+  for (var i = visibleStart; i < visibleEnd; i += step) {
+    if (i < 0 || i >= frames.length) continue;
+    final x = xForFrame(i);
+    if (x < plotLeft || x > plotRight) continue;
+
+    final f = frames[i];
+    final value = ptsOrder ? f.pts : f.dts;
+    final line1 = '#$i';
+    final line2 = _formatCompactAxisValue(value);
+    final tickTp = TextPainter(
+      text: TextSpan(
+        children: [
+          TextSpan(text: '$line1\n', style: labelStyle),
+          TextSpan(text: line2, style: valueStyle),
+        ],
+      ),
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final minDrawX = plotLeft + 2;
+    final maxDrawX = (plotRight - tickTp.width - 2).clamp(
+      minDrawX,
+      double.infinity,
+    );
+    final drawX = (x - tickTp.width / 2).clamp(minDrawX, maxDrawX);
+    if (drawX < lastRight + 8) continue;
+
+    canvas.drawLine(Offset(x, axisTop), Offset(x, axisTop + 4), tickPaint);
+    tickTp.paint(canvas, Offset(drawX, axisTop + 4));
+    lastRight = drawX + tickTp.width;
+  }
+}
 
 class _ReferencePyramidView extends StatefulWidget {
   final List<FrameInfo> frames;
@@ -1302,6 +1405,7 @@ class _ReferencePyramidView extends StatefulWidget {
   final ValueChanged<int?> onFrameSelected;
   final double viewStart;
   final double viewEnd;
+  final bool ptsOrder;
   final ValueChanged<double> onZoom;
   final ValueChanged<double> onPan;
   final AppLocalizations l;
@@ -1313,6 +1417,7 @@ class _ReferencePyramidView extends StatefulWidget {
     required this.onFrameSelected,
     required this.viewStart,
     required this.viewEnd,
+    required this.ptsOrder,
     required this.onZoom,
     required this.onPan,
     required this.l,
@@ -1371,6 +1476,7 @@ class _ReferencePyramidViewState extends State<_ReferencePyramidView> {
                       pocToIndices: widget.pocToIndices,
                       viewStart: widget.viewStart,
                       viewEnd: widget.viewEnd,
+                      ptsOrder: widget.ptsOrder,
                       hoverPosition: _hoverPosition,
                     ),
                     size: Size.infinite,
@@ -1398,6 +1504,7 @@ class _RefPyramidPainter extends CustomPainter {
   final Map<int, List<int>> pocToIndices;
   final double viewStart;
   final double viewEnd;
+  final bool ptsOrder;
   final Offset? hoverPosition;
 
   /// Populated during paint() — used by parent for hit-testing.
@@ -1410,6 +1517,7 @@ class _RefPyramidPainter extends CustomPainter {
     required this.pocToIndices,
     required this.viewStart,
     required this.viewEnd,
+    required this.ptsOrder,
     this.hoverPosition,
   });
 
@@ -1436,13 +1544,15 @@ class _RefPyramidPainter extends CustomPainter {
     for (var i = visibleStart; i < visibleEnd; i++) {
       if (frames[i].temporalId > maxTid) maxTid = frames[i].temporalId;
     }
+    final axisH = size.height >= 96 ? _analysisChartXAxisH : 0.0;
+    final chartH = (size.height - axisH).clamp(1.0, double.infinity);
     final numLevels = maxTid + 1;
-    final rowH = size.height / numLevels;
+    final rowH = chartH / numLevels;
     final labelW = _analysisChartLabelW;
     final usableW = (size.width - labelW).clamp(0.0, double.infinity);
     final span = viewEnd - viewStart;
     final circleR = (rowH * 0.3).clamp(6.0, 20.0);
-    final plotRect = Rect.fromLTWH(labelW, 0, usableW, size.height);
+    final plotRect = Rect.fromLTWH(labelW, 0, usableW, chartH);
     final centerPad = circleR + 2;
     final centerW = (usableW - centerPad * 2).clamp(1.0, double.infinity);
 
@@ -1450,7 +1560,7 @@ class _RefPyramidPainter extends CustomPainter {
     for (var i = visibleStart; i < visibleEnd; i++) {
       final frac = (i - viewStart) / span;
       final x = labelW + centerPad + frac * centerW;
-      final y = size.height - (frames[i].temporalId + 0.5) * rowH;
+      final y = chartH - (frames[i].temporalId + 0.5) * rowH;
       positions[i] = Offset(x, y);
     }
     frameRects = [
@@ -1471,7 +1581,7 @@ class _RefPyramidPainter extends CustomPainter {
 
     // --- Level backgrounds ---
     for (var tid = 0; tid <= maxTid; tid++) {
-      final top = size.height - (tid + 1) * rowH;
+      final top = chartH - (tid + 1) * rowH;
       final alpha = 0.03 + (maxTid - tid) * 0.025;
       _bgPaint.color = const Color(0xFFFFFFFF).withValues(alpha: alpha);
       canvas.drawRect(Rect.fromLTWH(0, top, size.width, rowH), _bgPaint);
@@ -1491,7 +1601,7 @@ class _RefPyramidPainter extends CustomPainter {
     }
     canvas.drawLine(
       Offset(labelW, 0),
-      Offset(labelW, size.height),
+      Offset(labelW, chartH),
       Paint()
         ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.10)
         ..strokeWidth = 1,
@@ -1504,7 +1614,7 @@ class _RefPyramidPainter extends CustomPainter {
       final cx = positions[currentIdx]!.dx;
       _cursorPaint.color = const Color(0xFFFFFFFF).withValues(alpha: 0.15);
       _cursorPaint.strokeWidth = 1;
-      canvas.drawLine(Offset(cx, 0), Offset(cx, size.height), _cursorPaint);
+      canvas.drawLine(Offset(cx, 0), Offset(cx, chartH), _cursorPaint);
     }
 
     // --- Reference arrows ---
@@ -1524,7 +1634,7 @@ class _RefPyramidPainter extends CustomPainter {
       if (positions.containsKey(idx)) return positions[idx]!;
       final frac = (idx - viewStart) / span;
       final x = labelW + centerPad + frac * centerW;
-      final y = size.height - (frames[idx].temporalId + 0.5) * rowH;
+      final y = chartH - (frames[idx].temporalId + 0.5) * rowH;
       return Offset(x, y);
     }
 
@@ -1687,6 +1797,21 @@ class _RefPyramidPainter extends CustomPainter {
     }
     _drawHoverTooltip(canvas, size, plotRect, positions, circleR);
     canvas.restore();
+
+    _drawFrameXAxis(
+      canvas: canvas,
+      size: size,
+      axisTop: chartH,
+      labelW: labelW,
+      frames: frames,
+      visibleStart: visibleStart,
+      visibleEnd: visibleEnd,
+      ptsOrder: ptsOrder,
+      xForFrame: (idx) {
+        final frac = (idx - viewStart) / span;
+        return labelW + centerPad + frac * centerW;
+      },
+    );
   }
 
   void _drawHoverTooltip(
@@ -1719,6 +1844,8 @@ class _RefPyramidPainter extends CustomPainter {
       '#$frameIdx  $sliceLabel  POC ${f.poc}',
       'Size: ${_FrameTrendPainter._formatBytes(f.packetSize)}',
       'QP: ${f.avgQp}',
+      'PTS: ${f.pts}',
+      'DTS: ${f.dts}',
     ];
     const tipStyle = TextStyle(color: Color(0xFFFFFFFF), fontSize: 10);
     final tipPainters = lines
@@ -1805,6 +1932,7 @@ class _RefPyramidPainter extends CustomPainter {
       selectedFrameIdx != old.selectedFrameIdx ||
       viewStart != old.viewStart ||
       viewEnd != old.viewEnd ||
+      ptsOrder != old.ptsOrder ||
       hoverPosition != old.hoverPosition;
 }
 
@@ -1824,6 +1952,7 @@ class _FrameTrendView extends StatefulWidget {
   final double viewEnd;
   final double frameSizeAxisZoom;
   final double qpAxisZoom;
+  final bool ptsOrder;
   final ValueChanged<double> onZoom;
   final void Function(_FrameTrendAxis axis, double scrollDelta) onAxisZoom;
   final ValueChanged<double> onPan;
@@ -1837,6 +1966,7 @@ class _FrameTrendView extends StatefulWidget {
     required this.viewEnd,
     required this.frameSizeAxisZoom,
     required this.qpAxisZoom,
+    required this.ptsOrder,
     required this.onZoom,
     required this.onAxisZoom,
     required this.onPan,
@@ -1868,9 +1998,16 @@ class _FrameTrendViewState extends State<_FrameTrendView> {
                   if (signal is PointerScrollEvent) {
                     final box = chartContext.findRenderObject() as RenderBox;
                     final local = box.globalToLocal(signal.position);
-                    final upperH = box.size.height * 0.58;
-                    final lowerTop = upperH + box.size.height * 0.05;
-                    final lowerH = box.size.height * 0.32;
+                    final axisH = box.size.height >= 96
+                        ? _analysisChartXAxisH
+                        : 0.0;
+                    final chartH = (box.size.height - axisH).clamp(
+                      1.0,
+                      double.infinity,
+                    );
+                    final upperH = chartH * 0.58;
+                    final lowerTop = upperH + chartH * 0.05;
+                    final lowerH = chartH * 0.32;
                     if (local.dx < _frameTrendLabelW) {
                       if (local.dy <= upperH) {
                         w.onAxisZoom(
@@ -1924,6 +2061,7 @@ class _FrameTrendViewState extends State<_FrameTrendView> {
                         viewEnd: w.viewEnd,
                         frameSizeAxisZoom: w.frameSizeAxisZoom,
                         qpAxisZoom: w.qpAxisZoom,
+                        ptsOrder: w.ptsOrder,
                         hoverX: _hoverX,
                       ),
                       size: Size.infinite,
@@ -1953,6 +2091,7 @@ class _FrameTrendPainter extends CustomPainter {
   final double viewEnd;
   final double frameSizeAxisZoom;
   final double qpAxisZoom;
+  final bool ptsOrder;
   final double? hoverX;
 
   _FrameTrendPainter({
@@ -1963,6 +2102,7 @@ class _FrameTrendPainter extends CustomPainter {
     required this.viewEnd,
     required this.frameSizeAxisZoom,
     required this.qpAxisZoom,
+    required this.ptsOrder,
     this.hoverX,
   });
 
@@ -1977,13 +2117,16 @@ class _FrameTrendPainter extends CustomPainter {
     final count = visibleEnd - visibleStart;
     final span = viewEnd - viewStart;
 
+    final axisH = size.height >= 96 ? _analysisChartXAxisH : 0.0;
+    final chartH = (size.height - axisH).clamp(1.0, double.infinity);
     final labelW = _frameTrendLabelW;
-    final chartW = size.width - labelW;
-    final upperH = size.height * 0.58;
-    final lowerH = size.height * 0.32;
-    final gapH = size.height * 0.05;
+    final chartW = (size.width - labelW).clamp(0.0, double.infinity);
+    if (chartW <= 0) return;
+    final upperH = chartH * 0.58;
+    final lowerH = chartH * 0.32;
+    final gapH = chartH * 0.05;
     final lowerTop = upperH + gapH;
-    final plotRect = Rect.fromLTWH(labelW, 0, chartW, size.height);
+    final plotRect = Rect.fromLTWH(labelW, 0, chartW, chartH);
 
     final barW = (chartW / count).clamp(2.0, 40.0);
 
@@ -2034,7 +2177,7 @@ class _FrameTrendPainter extends CustomPainter {
     final gridPaint = Paint()
       ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.06)
       ..strokeWidth = 0.5;
-    canvas.drawLine(Offset(labelW, 0), Offset(labelW, size.height), axisPaint);
+    canvas.drawLine(Offset(labelW, 0), Offset(labelW, chartH), axisPaint);
     canvas.drawLine(
       Offset(0, upperH + gapH / 2),
       Offset(size.width, upperH + gapH / 2),
@@ -2136,7 +2279,7 @@ class _FrameTrendPainter extends CustomPainter {
       final cx = labelW + frac * chartW;
       canvas.drawLine(
         Offset(cx, 0),
-        Offset(cx, size.height),
+        Offset(cx, chartH),
         Paint()
           ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.5)
           ..strokeWidth = 1,
@@ -2156,7 +2299,7 @@ class _FrameTrendPainter extends CustomPainter {
           labelW + ((frameIdx - viewStart) / span) * chartW + barW / 2;
       canvas.drawLine(
         Offset(crossX, 0),
-        Offset(crossX, size.height),
+        Offset(crossX, chartH),
         Paint()
           ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.3)
           ..strokeWidth = 1,
@@ -2172,6 +2315,8 @@ class _FrameTrendPainter extends CustomPainter {
         '#$frameIdx  $sliceLabel  POC ${f.poc}',
         'Size: ${_formatBytes(f.packetSize)}',
         'QP: ${f.avgQp}',
+        'PTS: ${f.pts}',
+        'DTS: ${f.dts}',
       ];
       final tipStyle = const TextStyle(color: Color(0xFFFFFFFF), fontSize: 10);
       final tipPainters = lines
@@ -2211,6 +2356,21 @@ class _FrameTrendPainter extends CustomPainter {
       }
     }
     canvas.restore();
+
+    _drawFrameXAxis(
+      canvas: canvas,
+      size: size,
+      axisTop: chartH,
+      labelW: labelW,
+      frames: frames,
+      visibleStart: visibleStart,
+      visibleEnd: visibleEnd,
+      ptsOrder: ptsOrder,
+      xForFrame: (idx) {
+        final frac = (idx - viewStart) / span;
+        return labelW + frac * chartW + barW / 2;
+      },
+    );
   }
 
   static TextPainter _axisLabelPainter(
@@ -2258,6 +2418,7 @@ class _FrameTrendPainter extends CustomPainter {
       viewEnd != old.viewEnd ||
       frameSizeAxisZoom != old.frameSizeAxisZoom ||
       qpAxisZoom != old.qpAxisZoom ||
+      ptsOrder != old.ptsOrder ||
       hoverX != old.hoverX;
 }
 

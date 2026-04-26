@@ -12,6 +12,13 @@ set(FFMPEG_ROOT "${VOID_NATIVE_DIR}/../libs/ffmpeg" CACHE PATH "FFmpeg root dire
 set(FFMPEG_INCLUDE_DIR "${FFMPEG_ROOT}/include")
 set(FFMPEG_LIB_DIR "${FFMPEG_ROOT}/lib")
 set(FFMPEG_BIN_DIR "${FFMPEG_ROOT}/bin")
+set(FFMPEG_RUNTIME_DLL_PATTERNS
+    "avcodec-*.dll"
+    "avformat-*.dll"
+    "avutil-*.dll"
+    "swresample-*.dll"
+    "swscale-*.dll"
+)
 
 if(NOT EXISTS "${FFMPEG_INCLUDE_DIR}/libavcodec/avcodec.h")
     if(VOID_FFMPEG_REQUIRED)
@@ -31,3 +38,15 @@ find_library(SWSCALE_LIBRARY swscale PATHS ${FFMPEG_LIB_DIR} NO_DEFAULT_PATH REQ
 
 set(FFMPEG_FOUND TRUE)
 message(STATUS "FFmpeg: avcodec=${AVCODEC_LIBRARY}, avformat=${AVFORMAT_LIBRARY}")
+
+function(void_collect_ffmpeg_runtime_dlls out_var)
+    set(_dlls "")
+    if(EXISTS "${FFMPEG_BIN_DIR}")
+        foreach(_pattern ${FFMPEG_RUNTIME_DLL_PATTERNS})
+            file(GLOB _matches "${FFMPEG_BIN_DIR}/${_pattern}")
+            list(APPEND _dlls ${_matches})
+        endforeach()
+        list(REMOVE_DUPLICATES _dlls)
+    endif()
+    set(${out_var} "${_dlls}" PARENT_SCOPE)
+endfunction()

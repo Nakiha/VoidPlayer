@@ -13,6 +13,9 @@ class TimelineSlider extends StatefulWidget {
   final int durationUs;
   final ValueChanged<int> onSeek;
   final void Function(int hoverUs, bool hovering)? onHoverChanged;
+  final List<int> markerUs;
+  final int? seekMinUs;
+  final int? seekMaxUs;
 
   const TimelineSlider({
     super.key,
@@ -20,6 +23,9 @@ class TimelineSlider extends StatefulWidget {
     required this.durationUs,
     required this.onSeek,
     this.onHoverChanged,
+    this.markerUs = const [],
+    this.seekMinUs,
+    this.seekMaxUs,
   });
 
   @override
@@ -44,6 +50,9 @@ class _TimelineSliderState extends State<TimelineSlider> {
   Widget build(BuildContext context) {
     final accentColor = Theme.of(context).colorScheme.primary;
     final inactiveColor = Theme.of(context).colorScheme.surfaceContainerHighest;
+    final markerTooltipColor = Theme.of(
+      context,
+    ).colorScheme.surfaceContainerHighest;
 
     return Listener(
       behavior: HitTestBehavior.opaque,
@@ -89,8 +98,10 @@ class _TimelineSliderState extends State<TimelineSlider> {
                 ),
               ),
             ),
-            // Tooltip (positioned above the track)
-            if (_hovering && widget.durationUs > 0)
+            // Fixed loop markers + hover tooltip (positioned above the track)
+            if (((_hovering && widget.durationUs > 0) ||
+                    widget.markerUs.isNotEmpty) &&
+                widget.durationUs > 0)
               Positioned(
                 top: -(_tooltipHeight + _triangleSize + _tooltipOffset),
                 left: 0,
@@ -100,12 +111,33 @@ class _TimelineSliderState extends State<TimelineSlider> {
                     builder: (context, constraints) {
                       final width = constraints.maxWidth;
                       final clampedX = _hoverX.clamp(0.0, width);
+                      final tooltipSize = Size(
+                        width,
+                        _tooltipHeight + _triangleSize,
+                      );
+                      final markers = widget.markerUs
+                          .where((us) => us >= 0 && us <= widget.durationUs)
+                          .map(
+                            (us) => _TooltipEntry(
+                              x: _usToX(us, width),
+                              text: _formatTime(us),
+                              color: markerTooltipColor,
+                            ),
+                          )
+                          .toList();
+                      if (_hovering) {
+                        markers.add(
+                          _TooltipEntry(
+                            x: clampedX,
+                            text: _formatTime(_xToUs(clampedX, width)),
+                            color: accentColor,
+                          ),
+                        );
+                      }
                       return CustomPaint(
-                        size: Size(width, _tooltipHeight + _triangleSize),
+                        size: tooltipSize,
                         painter: _TooltipPainter(
-                          hoverX: clampedX,
-                          text: _formatTime(_xToUs(clampedX, width)),
-                          accentColor: accentColor,
+                          entries: markers,
                           tooltipHeight: _tooltipHeight,
                           tooltipPadding: _tooltipPadding,
                           tooltipRadius: _tooltipRadius,
@@ -157,7 +189,7 @@ class _TimelineSliderState extends State<TimelineSlider> {
     final box = context.findRenderObject() as RenderBox;
     final x = localX.clamp(0.0, box.size.width);
     setState(() => _hoverX = x);
-    final previewUs = _xToUs(x, box.size.width);
+    final previewUs = _clampSeekUs(_xToUs(x, box.size.width));
     widget.onHoverChanged?.call(previewUs, true);
     return previewUs;
   }
@@ -165,6 +197,19 @@ class _TimelineSliderState extends State<TimelineSlider> {
   int _xToUs(double x, double width) {
     if (width <= 0 || widget.durationUs <= 0) return 0;
     return ((x / width).clamp(0.0, 1.0) * widget.durationUs).round();
+  }
+
+  double _usToX(int us, double width) {
+    if (width <= 0 || widget.durationUs <= 0) return 0;
+    return (us / widget.durationUs).clamp(0.0, 1.0) * width;
+  }
+
+  int _clampSeekUs(int us) {
+    final minUs = widget.seekMinUs?.clamp(0, widget.durationUs).toInt() ?? 0;
+    final maxUs =
+        widget.seekMaxUs?.clamp(minUs, widget.durationUs).toInt() ??
+        widget.durationUs;
+    return us.clamp(minUs, maxUs).toInt();
   }
 
   void _reportHover(double localX) {
@@ -222,20 +267,28 @@ class _TrackPainter extends CustomPainter {
       old.inactiveColor != inactiveColor;
 }
 
-/// Paints the hover tooltip: accent-color rounded rect + downward triangle + time text.
-class _TooltipPainter extends CustomPainter {
-  final double hoverX;
+class _TooltipEntry {
+  final double x;
   final String text;
-  final Color accentColor;
+  final Color color;
+
+  const _TooltipEntry({
+    required this.x,
+    required this.text,
+    required this.color,
+  });
+}
+
+/// Paints time tooltips used by hover and fixed range markers.
+class _TooltipPainter extends CustomPainter {
+  final List<_TooltipEntry> entries;
   final double tooltipHeight;
   final double tooltipPadding;
   final double tooltipRadius;
   final double triangleSize;
 
   _TooltipPainter({
-    required this.hoverX,
-    required this.text,
-    required this.accentColor,
+    required this.entries,
     required this.tooltipHeight,
     required this.tooltipPadding,
     required this.tooltipRadius,
@@ -244,54 +297,68 @@ class _TooltipPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (text.isEmpty) return;
+    if (entries.isEmpty) return;
 
-    // Measure text
-    final textColor = _getTextColor(accentColor);
-    final textSpan = TextSpan(
-      text: text,
-      style: TextStyle(color: textColor, fontSize: 12),
-    );
-    final textPainter = TextPainter(
-      text: textSpan,
-      textDirection: TextDirection.ltr,
-    )..layout();
+    for (final entry in entries) {
+      if (entry.text.isEmpty) continue;
 
-    final textWidth = textPainter.width;
-    final tooltipWidth = textWidth + tooltipPadding * 2;
+      // Measure text
+      final textColor = _getTextColor(entry.color);
+      final textSpan = TextSpan(
+        text: entry.text,
+        style: TextStyle(color: textColor, fontSize: 12),
+      );
+      final textPainter = TextPainter(
+        text: textSpan,
+        textDirection: TextDirection.ltr,
+      )..layout();
 
-    // Tooltip X: centered on hoverX, clamped to bounds
-    var tooltipX = hoverX - tooltipWidth / 2;
-    tooltipX = tooltipX.clamp(0.0, size.width - tooltipWidth);
+      final textWidth = textPainter.width;
+      final tooltipWidth = textWidth + tooltipPadding * 2;
 
-    // Background (rounded rect)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(tooltipX, 0, tooltipWidth, tooltipHeight),
-        Radius.circular(tooltipRadius),
-      ),
-      Paint()..color = accentColor,
-    );
+      // Tooltip X: centered on marker, clamped to bounds
+      var tooltipX = entry.x - tooltipWidth / 2;
+      tooltipX = tooltipX.clamp(0.0, size.width - tooltipWidth);
+      final tooltipRect = Rect.fromLTWH(
+        tooltipX,
+        0,
+        tooltipWidth,
+        tooltipHeight,
+      );
 
-    // Downward triangle pointing to hoverX
-    final half = triangleSize / 2;
-    canvas.drawPath(
-      Path()
-        ..moveTo(hoverX, tooltipHeight + triangleSize) // bottom point
-        ..lineTo(hoverX - half, tooltipHeight) // top-left
-        ..lineTo(hoverX + half, tooltipHeight) // top-right
-        ..close(),
-      Paint()..color = accentColor,
-    );
+      // Background (rounded rect)
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(tooltipRect, Radius.circular(tooltipRadius)),
+        Paint()..color = entry.color,
+      );
 
-    // Text (centered in tooltip)
-    textPainter.paint(
-      canvas,
-      Offset(
-        tooltipX + (tooltipWidth - textWidth) / 2,
-        (tooltipHeight - textPainter.height) / 2,
-      ),
-    );
+      // Downward triangle. Near the viewport edges, keep the triangle inside
+      // the rounded rect's safe interior so it is not half-clipped.
+      final half = triangleSize / 2;
+      final triangleX = entry.x
+          .clamp(
+            tooltipRect.left + tooltipRadius + half,
+            tooltipRect.right - tooltipRadius - half,
+          )
+          .toDouble();
+      canvas.drawPath(
+        Path()
+          ..moveTo(triangleX, tooltipHeight + triangleSize)
+          ..lineTo(triangleX - half, tooltipHeight - 0.5)
+          ..lineTo(triangleX + half, tooltipHeight - 0.5)
+          ..close(),
+        Paint()..color = entry.color,
+      );
+
+      // Text (centered in tooltip)
+      textPainter.paint(
+        canvas,
+        Offset(
+          tooltipX + (tooltipWidth - textWidth) / 2,
+          (tooltipHeight - textPainter.height) / 2,
+        ),
+      );
+    }
   }
 
   static Color _getTextColor(Color bg) {
@@ -301,8 +368,5 @@ class _TooltipPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _TooltipPainter old) =>
-      old.hoverX != hoverX ||
-      old.text != text ||
-      old.accentColor != accentColor;
+  bool shouldRepaint(covariant _TooltipPainter old) => old.entries != entries;
 }

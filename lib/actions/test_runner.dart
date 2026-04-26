@@ -192,6 +192,13 @@ class TestRunner {
             'Expected position $ptsUs μs (±${toleranceMs}ms), got $actual μs (diff ${diff ~/ 1000}ms)',
           );
         }
+      case AssertPositionRange(:final minUs, :final maxUs):
+        final actual = await controller.currentPts();
+        if (actual < minUs || actual > maxUs) {
+          throw AssertionError(
+            'Expected position in [$minUs, $maxUs] μs, got $actual μs',
+          );
+        }
       case AssertTrackCount(:final count):
         final tracks = await controller.getTracks();
         if (tracks.length != count) {
@@ -521,6 +528,35 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAction(time, RemoveTrackAction(int.parse(args[0])));
+    case 'ADJUST_TRACK_OFFSET':
+      if (args.length < 2) {
+        log.warning(
+          'ADJUST_TRACK_OFFSET needs slot and deltaMs arguments: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAction(
+        time,
+        AdjustTrackOffset(int.parse(args[0]), int.parse(args[1])),
+      );
+    case 'SET_LOOP_ENABLED':
+      if (args.isEmpty) {
+        log.warning('SET_LOOP_ENABLED missing enabled argument: $rawLine');
+        return null;
+      }
+      return ScriptAction(
+        time,
+        SetLoopEnabled(args[0] == '1' || args[0].toLowerCase() == 'true'),
+      );
+    case 'SET_LOOP_RANGE':
+      if (args.length < 2) {
+        log.warning('SET_LOOP_RANGE needs startUs and endUs: $rawLine');
+        return null;
+      }
+      return ScriptAction(
+        time,
+        SetLoopRange(int.parse(args[0]), int.parse(args[1])),
+      );
 
     // Actions — layout
     case 'SET_ZOOM':
@@ -637,6 +673,15 @@ ScriptInstruction? _parseInstruction(
       return ScriptAssert(
         time,
         AssertPosition(int.parse(args[0]), int.parse(args[1])),
+      );
+    case 'ASSERT_POSITION_RANGE':
+      if (args.length < 2) {
+        log.warning('ASSERT_POSITION_RANGE needs minUs and maxUs: $rawLine');
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertPositionRange(int.parse(args[0]), int.parse(args[1])),
       );
     case 'ASSERT_TRACK_COUNT':
       if (args.isEmpty) {

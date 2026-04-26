@@ -25,6 +25,10 @@ class TrackContent extends StatelessWidget {
   final int trackDurationUs;
   final int offsetUs;
   final int maxEffectiveDurationUs;
+  final List<int> markerPtsUs;
+  final bool loopRangeEnabled;
+  final int loopStartUs;
+  final int loopEndUs;
 
   const TrackContent({
     super.key,
@@ -37,6 +41,10 @@ class TrackContent extends StatelessWidget {
     this.trackDurationUs = 0,
     this.offsetUs = 0,
     this.maxEffectiveDurationUs = 0,
+    this.markerPtsUs = const [],
+    this.loopRangeEnabled = false,
+    this.loopStartUs = 0,
+    this.loopEndUs = 0,
   });
 
   @override
@@ -55,6 +63,11 @@ class TrackContent extends StatelessWidget {
         trackDurationUs: trackDurationUs,
         offsetUs: offsetUs,
         maxEffectiveDurationUs: maxEffectiveDurationUs,
+        markerPtsUs: markerPtsUs,
+        loopRangeEnabled: loopRangeEnabled,
+        loopStartUs: loopStartUs,
+        loopEndUs: loopEndUs,
+        rangeColor: Theme.of(context).colorScheme.primary,
       ),
     );
   }
@@ -74,6 +87,11 @@ class _TrackContentPainter extends CustomPainter {
   final int trackDurationUs;
   final int offsetUs;
   final int maxEffectiveDurationUs;
+  final List<int> markerPtsUs;
+  final bool loopRangeEnabled;
+  final int loopStartUs;
+  final int loopEndUs;
+  final Color rangeColor;
 
   _TrackContentPainter({
     required this.durationRatio,
@@ -87,6 +105,11 @@ class _TrackContentPainter extends CustomPainter {
     required this.trackDurationUs,
     required this.offsetUs,
     required this.maxEffectiveDurationUs,
+    required this.markerPtsUs,
+    required this.loopRangeEnabled,
+    required this.loopStartUs,
+    required this.loopEndUs,
+    required this.rangeColor,
   });
 
   @override
@@ -105,13 +128,35 @@ class _TrackContentPainter extends CustomPainter {
     final clipWidth = drawableWidth * durationRatio;
     final clipHeight = size.height - margin * 2;
     if (clipWidth <= 0 || clipHeight <= 0) return;
-    final clipRect = Rect.fromLTWH(
-      clipX,
-      margin,
-      clipWidth,
-      clipHeight,
+    final clipRect = Rect.fromLTWH(clipX, margin, clipWidth, clipHeight);
+    canvas.drawRect(
+      clipRect,
+      Paint()..color = clipColor.withValues(alpha: 0.3),
     );
-    canvas.drawRect(clipRect, Paint()..color = clipColor.withValues(alpha: 0.3));
+
+    if (loopRangeEnabled && trackDurationUs > 0 && loopEndUs > loopStartUs) {
+      final trackStartUs = offsetUs;
+      final trackEndUs = offsetUs + trackDurationUs;
+      final selectedStartUs = loopStartUs
+          .clamp(trackStartUs, trackEndUs)
+          .toInt();
+      final selectedEndUs = loopEndUs.clamp(trackStartUs, trackEndUs).toInt();
+      if (selectedEndUs > selectedStartUs) {
+        final startRatio = (selectedStartUs - trackStartUs) / trackDurationUs;
+        final endRatio = (selectedEndUs - trackStartUs) / trackDurationUs;
+        final highlightRect = Rect.fromLTRB(
+          clipRect.left + clipRect.width * startRatio,
+          clipRect.top,
+          clipRect.left + clipRect.width * endRatio,
+          clipRect.bottom,
+        );
+        canvas.drawRect(
+          highlightRect,
+          Paint()..color = rangeColor.withValues(alpha: 0.16),
+        );
+      }
+    }
+
     canvas.drawRect(
       clipRect,
       Paint()
@@ -130,40 +175,67 @@ class _TrackContentPainter extends CustomPainter {
         ..strokeWidth = 1.5,
     );
 
-    // Hover dashed line + local time label
-    if (sliderHovering && maxEffectiveDurationUs > 0) {
-      final hoverGlobalRatio = (hoverPtsUs / maxEffectiveDurationUs).clamp(0.0, 1.0);
-      var hoverX = margin + drawableWidth * hoverGlobalRatio;
-      // Clamp hover line within the clip rect bounds
-      hoverX = hoverX.clamp(clipRect.left, clipRect.right);
-
-      // Draw dashed vertical line
-      final dashPaint = Paint()
-        ..color = playheadColor.withValues(alpha: 0.5)
-        ..strokeWidth = 1.0;
-
-      double y = 0;
-      while (y < size.height) {
-        final endY = (y + 4.0).clamp(0.0, size.height);
-        canvas.drawLine(Offset(hoverX, y), Offset(hoverX, endY), dashPaint);
-        y += 7.0;
-      }
-
-      // Local time label — clamp local time to track bounds for display
-      final localTimeUs = (hoverPtsUs - offsetUs).clamp(0, trackDurationUs);
-      final label = formatTimeShort(localTimeUs);
-      final textSpan = TextSpan(
-        text: label,
-        style: TextStyle(color: playheadColor.withValues(alpha: 0.8), fontSize: 9),
+    final markers = <int>[...markerPtsUs, if (sliderHovering) hoverPtsUs];
+    for (final markerUs in markers) {
+      _drawTimeMarker(
+        canvas: canvas,
+        size: size,
+        clipRect: clipRect,
+        margin: margin,
+        drawableWidth: drawableWidth,
+        markerPtsUs: markerUs,
       );
-      final tp = TextPainter(
-        text: textSpan,
-        textDirection: TextDirection.ltr,
-      )..layout();
-      // Position label to the right of the dashed line, clamped to bounds
-      final labelX = (hoverX + 4).clamp(clipX, size.width - tp.width - 4);
-      tp.paint(canvas, Offset(labelX, margin));
     }
+  }
+
+  void _drawTimeMarker({
+    required Canvas canvas,
+    required Size size,
+    required Rect clipRect,
+    required double margin,
+    required double drawableWidth,
+    required int markerPtsUs,
+  }) {
+    if (maxEffectiveDurationUs <= 0) return;
+
+    final markerGlobalRatio = (markerPtsUs / maxEffectiveDurationUs).clamp(
+      0.0,
+      1.0,
+    );
+    var markerX = margin + drawableWidth * markerGlobalRatio;
+    // Clamp marker line within the clip rect bounds
+    markerX = markerX.clamp(clipRect.left, clipRect.right);
+
+    // Draw dashed vertical line
+    final dashPaint = Paint()
+      ..color = playheadColor.withValues(alpha: 0.5)
+      ..strokeWidth = 1.0;
+
+    double y = 0;
+    while (y < size.height) {
+      final endY = (y + 4.0).clamp(0.0, size.height);
+      canvas.drawLine(Offset(markerX, y), Offset(markerX, endY), dashPaint);
+      y += 7.0;
+    }
+
+    // Local time label — clamp local time to track bounds for display
+    final localTimeUs = (markerPtsUs - offsetUs).clamp(0, trackDurationUs);
+    final label = formatTimeShort(localTimeUs);
+    final textSpan = TextSpan(
+      text: label,
+      style: TextStyle(
+        color: playheadColor.withValues(alpha: 0.8),
+        fontSize: 9,
+      ),
+    );
+    final tp = TextPainter(text: textSpan, textDirection: TextDirection.ltr)
+      ..layout();
+    // Position label to the right of the dashed line, clamped to bounds
+    final labelX = (markerX + 4).clamp(
+      clipRect.left,
+      size.width - tp.width - 4,
+    );
+    tp.paint(canvas, Offset(labelX, margin));
   }
 
   @override
@@ -178,6 +250,11 @@ class _TrackContentPainter extends CustomPainter {
         oldDelegate.playheadColor != playheadColor ||
         oldDelegate.trackDurationUs != trackDurationUs ||
         oldDelegate.offsetUs != offsetUs ||
-        oldDelegate.maxEffectiveDurationUs != maxEffectiveDurationUs;
+        oldDelegate.maxEffectiveDurationUs != maxEffectiveDurationUs ||
+        oldDelegate.markerPtsUs != markerPtsUs ||
+        oldDelegate.loopRangeEnabled != loopRangeEnabled ||
+        oldDelegate.loopStartUs != loopStartUs ||
+        oldDelegate.loopEndUs != loopEndUs ||
+        oldDelegate.rangeColor != rangeColor;
   }
 }

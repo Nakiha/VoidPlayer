@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../video_renderer_controller.dart';
+import 'drag_excess_tracker.dart';
 import 'track_content.dart';
 
 /// Drag handle with hover highlight and grab cursor.
@@ -70,7 +71,7 @@ class _ResizableDivider extends StatefulWidget {
 
 class _ResizableDividerState extends State<_ResizableDivider> {
   bool _hovering = false;
-  double _excess = 0.0;
+  final _dragTracker = DragExcessTracker();
   late double _effectiveWidth;
 
   @override
@@ -83,20 +84,22 @@ class _ResizableDividerState extends State<_ResizableDivider> {
   void didUpdateWidget(covariant _ResizableDivider oldWidget) {
     super.didUpdateWidget(oldWidget);
     _effectiveWidth = widget.controlsWidth;
+    _dragTracker.sync(_effectiveWidth);
   }
 
   void _onDragStart(_) {
-    _excess = 0.0;
     _effectiveWidth = widget.controlsWidth;
+    _dragTracker.start(_effectiveWidth);
   }
 
   void _onDragUpdate(DragUpdateDetails details) {
-    final desired = _effectiveWidth + _excess + details.delta.dx;
     const minW = 160.0, maxW = 600.0;
-    final clamped = desired.clamp(minW, maxW);
-    _excess = desired - clamped;
-    _effectiveWidth = clamped;
-    widget.onWidthChanged(clamped);
+    _effectiveWidth = _dragTracker.update(
+      delta: details.delta.dx,
+      min: minW,
+      max: maxW,
+    );
+    widget.onWidthChanged(_effectiveWidth);
   }
 
   @override
@@ -142,6 +145,10 @@ class TrackRow extends StatelessWidget {
   final int trackDurationUs;
   final int offsetUs;
   final int maxEffectiveDurationUs;
+  final List<int> markerPtsUs;
+  final bool loopRangeEnabled;
+  final int loopStartUs;
+  final int loopEndUs;
 
   const TrackRow({
     super.key,
@@ -160,6 +167,10 @@ class TrackRow extends StatelessWidget {
     this.trackDurationUs = 0,
     this.offsetUs = 0,
     this.maxEffectiveDurationUs = 0,
+    this.markerPtsUs = const [],
+    this.loopRangeEnabled = false,
+    this.loopStartUs = 0,
+    this.loopEndUs = 0,
   });
 
   @override
@@ -203,8 +214,10 @@ class TrackRow extends StatelessWidget {
                           onPressed: () => onOffsetChanged(-10),
                           icon: const Icon(Icons.remove, size: 14),
                           padding: EdgeInsets.zero,
-                          constraints:
-                              const BoxConstraints.tightFor(width: 24, height: 24),
+                          constraints: const BoxConstraints.tightFor(
+                            width: 24,
+                            height: 24,
+                          ),
                           tooltip: AppLocalizations.of(context)!.offsetBackward,
                         ),
                       ),
@@ -219,8 +232,10 @@ class TrackRow extends StatelessWidget {
                           onPressed: () => onOffsetChanged(10),
                           icon: const Icon(Icons.add, size: 14),
                           padding: EdgeInsets.zero,
-                          constraints:
-                              const BoxConstraints.tightFor(width: 24, height: 24),
+                          constraints: const BoxConstraints.tightFor(
+                            width: 24,
+                            height: 24,
+                          ),
                           tooltip: AppLocalizations.of(context)!.offsetForward,
                         ),
                       ),
@@ -230,10 +245,16 @@ class TrackRow extends StatelessWidget {
                         height: 28,
                         child: IconButton(
                           onPressed: onRemove,
-                          icon: Icon(Icons.close, size: 16, color: colorScheme.error),
+                          icon: Icon(
+                            Icons.close,
+                            size: 16,
+                            color: colorScheme.error,
+                          ),
                           padding: EdgeInsets.zero,
-                          constraints:
-                              const BoxConstraints.tightFor(width: 28, height: 28),
+                          constraints: const BoxConstraints.tightFor(
+                            width: 28,
+                            height: 28,
+                          ),
                           tooltip: AppLocalizations.of(context)!.removeTrack,
                         ),
                       ),
@@ -255,6 +276,10 @@ class TrackRow extends StatelessWidget {
                   trackDurationUs: trackDurationUs,
                   offsetUs: offsetUs,
                   maxEffectiveDurationUs: maxEffectiveDurationUs,
+                  markerPtsUs: markerPtsUs,
+                  loopRangeEnabled: loopRangeEnabled,
+                  loopStartUs: loopStartUs,
+                  loopEndUs: loopEndUs,
                 ),
               ),
             ],
@@ -282,12 +307,7 @@ class TrackRow extends StatelessWidget {
   }
 
   Color _trackColor(int slot) {
-    const colors = [
-      Colors.blue,
-      Colors.orange,
-      Colors.green,
-      Colors.purple,
-    ];
+    const colors = [Colors.blue, Colors.orange, Colors.green, Colors.purple];
     return colors[slot % colors.length];
   }
 }
@@ -299,10 +319,7 @@ class _OffsetField extends StatefulWidget {
   final int valueMs;
   final ValueChanged<int> onChanged;
 
-  const _OffsetField({
-    required this.valueMs,
-    required this.onChanged,
-  });
+  const _OffsetField({required this.valueMs, required this.onChanged});
 
   @override
   State<_OffsetField> createState() => _OffsetFieldState();
@@ -320,8 +337,7 @@ class _OffsetFieldState extends State<_OffsetField> {
     _focusNode.addListener(_onFocusChange);
   }
 
-  String _displayText() =>
-      '${widget.valueMs >= 0 ? '+' : ''}${widget.valueMs}';
+  String _displayText() => '${widget.valueMs >= 0 ? '+' : ''}${widget.valueMs}';
 
   @override
   void didUpdateWidget(covariant _OffsetField oldWidget) {
@@ -387,7 +403,10 @@ class _OffsetFieldState extends State<_OffsetField> {
         cursorHeight: textStyle.fontSize,
         decoration: InputDecoration(
           isDense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 4,
+            vertical: 5,
+          ),
           border: border,
           enabledBorder: border,
           focusedBorder: OutlineInputBorder(

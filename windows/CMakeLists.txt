@@ -110,6 +110,15 @@ install(DIRECTORY "${NATIVE_ASSETS_DIR}"
    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
    COMPONENT Runtime)
 
+install(CODE "
+  file(GLOB _void_unused_ffmpeg_dlls
+    \"${INSTALL_BUNDLE_LIB_DIR}/avfilter-*.dll\"
+    \"${INSTALL_BUNDLE_LIB_DIR}/avdevice-*.dll\")
+  if(_void_unused_ffmpeg_dlls)
+    file(REMOVE \${_void_unused_ffmpeg_dlls})
+  endif()
+  " COMPONENT Runtime)
+
 # Fully re-copy the assets directory on each build to avoid having stale files
 # from a previous install.
 set(FLUTTER_ASSET_DIR_NAME "flutter_assets")

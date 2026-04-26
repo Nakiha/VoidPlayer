@@ -22,6 +22,7 @@
   "offsetBackward": "-10ms",
   "offsetForward": "+10ms",
   "removeTrack": "移除轨道",
+  "loopRange": "循环区间",
 
   "statsTitle": "Void Player - 性能统计",
   "trackStatistics": "轨道统计",

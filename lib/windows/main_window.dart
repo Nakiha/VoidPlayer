@@ -14,6 +14,7 @@ import 'window_manager.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/viewport_panel.dart';
 import '../widgets/controls_bar.dart';
+import '../widgets/loop_range_bar.dart';
 import '../widgets/media_header.dart';
 import '../widgets/timeline_area.dart';
 import '../analysis/analysis_manager.dart';
@@ -28,6 +29,9 @@ class MainWindow extends StatefulWidget {
 }
 
 class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
+  static const double _trackDragHandleWidth = 28.0;
+  static const double _trackDividerWidth = 1.0;
+
   final _controller = VideoRendererController();
   final _trackManager = TrackManager();
   final _analysisIpcServer = AnalysisIpcServer();
@@ -48,6 +52,12 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   // Per-track sync offsets: slot -> offset in microseconds
   Map<int, int> _syncOffsets = {};
+
+  // Shared timeline alignment + loop range state
+  double _timelineControlsWidth = 320;
+  bool _loopRangeEnabled = false;
+  int _loopStartUs = 0;
+  int _loopEndUs = 0;
 
   // Slider hover state for cross-track indicator
   int _hoverPtsUs = 0;
@@ -140,6 +150,18 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       final a = action as RemoveTrackAction;
       _onRemoveTrack(a.fileId);
     });
+    actionRegistry.bind(const AdjustTrackOffset(0, 0), (action) {
+      final a = action as AdjustTrackOffset;
+      _onOffsetChanged(a.slot, a.deltaMs);
+    });
+    actionRegistry.bind(const SetLoopEnabled(false), (action) {
+      final a = action as SetLoopEnabled;
+      _setLoopRangeEnabled(a.enabled);
+    });
+    actionRegistry.bind(const SetLoopRange(0, 0), (action) {
+      final a = action as SetLoopRange;
+      _setLoopRange(a.startUs, a.endUs, seekToStart: _loopRangeEnabled);
+    });
 
     // Layout
     actionRegistry.bind(const ToggleLayoutMode(), (_) => _toggleLayoutMode());
@@ -184,6 +206,9 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     if (_isPlaying) {
       await _controller.pause();
     } else {
+      if (_loopRangeEnabled && !_currentPtsInsideLoopRange) {
+        _seekTo(_resolvedLoopStartUs);
+      }
       await _controller.play();
     }
     setState(() => _isPlaying = !_isPlaying);
@@ -196,6 +221,38 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       _pendingSeekAt = DateTime.now();
     });
     _controller.seek(ptsUs);
+  }
+
+  double get _timelineStartWidth =>
+      _trackDragHandleWidth + _timelineControlsWidth + _trackDividerWidth;
+
+  int get _resolvedLoopStartUs =>
+      _loopStartUs.clamp(0, _effectiveDurationUs).toInt();
+
+  int get _resolvedLoopEndUs {
+    final effectiveDurationUs = _effectiveDurationUs;
+    if (effectiveDurationUs <= 0) return 0;
+    final defaultEndUs = _loopEndUs <= 0 ? effectiveDurationUs : _loopEndUs;
+    return defaultEndUs
+        .clamp(_resolvedLoopStartUs, effectiveDurationUs)
+        .toInt();
+  }
+
+  List<int> get _loopMarkerPtsUs {
+    if (!_loopRangeEnabled || _effectiveDurationUs <= 0) return const [];
+    return [_resolvedLoopStartUs, _resolvedLoopEndUs];
+  }
+
+  bool get _currentPtsInsideLoopRange {
+    if (!_loopRangeEnabled) return true;
+    final startUs = _resolvedLoopStartUs;
+    final endUs = _resolvedLoopEndUs;
+    return _currentPtsUs >= startUs && _currentPtsUs < endUs;
+  }
+
+  void _setTimelineControlsWidth(double width) {
+    if (_timelineControlsWidth == width) return;
+    setState(() => _timelineControlsWidth = width);
   }
 
   void _clickTimelineFraction(double fraction) {
@@ -576,6 +633,14 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
           _pendingSeekAt = null;
         }
       }
+      if (_loopRangeEnabled &&
+          playing &&
+          _pendingSeekUs == null &&
+          _resolvedLoopEndUs > _resolvedLoopStartUs &&
+          pts >= _resolvedLoopEndUs) {
+        _seekTo(_resolvedLoopStartUs);
+        return;
+      }
       if (pts == _currentPtsUs && dur == _durationUs && playing == _isPlaying) {
         return;
       }
@@ -613,6 +678,9 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
         _durationUs = 0;
         _layout = const LayoutState();
         _syncOffsets = {};
+        _loopRangeEnabled = false;
+        _loopStartUs = 0;
+        _loopEndUs = 0;
       });
     } else {
       _trackManager.setTracks(tracks);
@@ -640,10 +708,75 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       fileId: entry.fileId,
       offsetUs: newOffsetUs,
     );
+    if (!mounted) return;
 
     setState(() {
       _syncOffsets = Map.from(_syncOffsets)..[slot] = newOffsetUs;
     });
+    await _refreshTracksAtCurrentPosition();
+  }
+
+  Future<void> _refreshTracksAtCurrentPosition() async {
+    var targetUs = _pendingSeekUs ?? _currentPtsUs;
+    if (_pendingSeekUs == null) {
+      try {
+        targetUs = await _controller.currentPts();
+      } catch (_) {
+        targetUs = _currentPtsUs;
+      }
+    }
+    if (!mounted) return;
+
+    final clampedTargetUs = targetUs.clamp(0, _effectiveDurationUs).toInt();
+    _seekTo(clampedTargetUs);
+  }
+
+  void _setLoopRangeEnabled(bool enabled) async {
+    if (enabled) {
+      _ensureLoopRangeInitialized();
+      setState(() => _loopRangeEnabled = true);
+      await _controller.pause();
+      if (!mounted) return;
+      setState(() => _isPlaying = false);
+      _seekTo(_resolvedLoopStartUs);
+    } else {
+      setState(() => _loopRangeEnabled = false);
+    }
+  }
+
+  void _setLoopRange(int startUs, int endUs, {bool seekToStart = false}) async {
+    final effectiveDurationUs = _effectiveDurationUs;
+    final minRangeUs = effectiveDurationUs > 10000 ? 10000 : 0;
+    final clampedStartUs = startUs
+        .clamp(
+          0,
+          (effectiveDurationUs - minRangeUs).clamp(0, effectiveDurationUs),
+        )
+        .toInt();
+    final clampedEndUs = endUs
+        .clamp(clampedStartUs + minRangeUs, effectiveDurationUs)
+        .toInt();
+
+    setState(() {
+      _loopStartUs = clampedStartUs;
+      _loopEndUs = clampedEndUs;
+    });
+
+    if (seekToStart && _loopRangeEnabled) {
+      await _controller.pause();
+      if (!mounted) return;
+      setState(() => _isPlaying = false);
+      _seekTo(_resolvedLoopStartUs);
+    }
+  }
+
+  void _ensureLoopRangeInitialized() {
+    final effectiveDurationUs = _effectiveDurationUs;
+    if (effectiveDurationUs <= 0) return;
+    if (_loopEndUs <= _loopStartUs || _loopEndUs > effectiveDurationUs) {
+      _loopStartUs = _loopStartUs.clamp(0, effectiveDurationUs).toInt();
+      _loopEndUs = effectiveDurationUs;
+    }
   }
 
   void _onSliderHover(int hoverUs, bool hovering) {
@@ -731,6 +864,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
                 if (_trackManager.count > 0)
                   ControlsBar(
                     timelineKey: _timelineSliderKey,
+                    timelineStartWidth: _timelineStartWidth,
                     zoomRatio: _layout.zoomRatio,
                     onZoomChanged: _onZoomComboChanged,
                     isPlaying: _isPlaying,
@@ -741,6 +875,27 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
                     durationUs: _effectiveDurationUs,
                     onSeek: _seekTo,
                     onHoverChanged: _onSliderHover,
+                    markerUs: _loopMarkerPtsUs,
+                    seekMinUs: _loopRangeEnabled ? _resolvedLoopStartUs : null,
+                    seekMaxUs: _loopRangeEnabled ? _resolvedLoopEndUs : null,
+                  ),
+                if (_trackManager.count > 0)
+                  LoopRangeBar(
+                    timelineStartWidth: _timelineStartWidth,
+                    enabled: _loopRangeEnabled,
+                    startUs: _resolvedLoopStartUs,
+                    endUs: _resolvedLoopEndUs,
+                    durationUs: _effectiveDurationUs,
+                    onEnabledChanged: _setLoopRangeEnabled,
+                    onRangeChanged: (startUs, endUs) =>
+                        _setLoopRange(startUs, endUs),
+                    onRangeChangeEnd: _loopRangeEnabled
+                        ? () => _setLoopRange(
+                            _resolvedLoopStartUs,
+                            _resolvedLoopEndUs,
+                            seekToStart: true,
+                          )
+                        : null,
                   ),
                 // Timeline area (variable, max 40%)
                 if (_trackManager.count > 0)
@@ -756,6 +911,12 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
                       maxEffectiveDurationUs: _effectiveDurationUs,
                       hoverPtsUs: _hoverPtsUs,
                       sliderHovering: _sliderHovering,
+                      controlsWidth: _timelineControlsWidth,
+                      onControlsWidthChanged: _setTimelineControlsWidth,
+                      markerPtsUs: _loopMarkerPtsUs,
+                      loopRangeEnabled: _loopRangeEnabled,
+                      loopStartUs: _resolvedLoopStartUs,
+                      loopEndUs: _resolvedLoopEndUs,
                     ),
                   ),
               ],

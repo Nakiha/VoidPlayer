@@ -121,6 +121,25 @@ class RemoveTrackAction extends PlayerAction {
   const RemoveTrackAction(this.fileId) : super('REMOVE_TRACK');
 }
 
+/// Adjust a track sync offset by delta milliseconds.
+class AdjustTrackOffset extends PlayerAction {
+  final int slot;
+  final int deltaMs;
+  const AdjustTrackOffset(this.slot, this.deltaMs)
+    : super('ADJUST_TRACK_OFFSET');
+}
+
+class SetLoopEnabled extends PlayerAction {
+  final bool enabled;
+  const SetLoopEnabled(this.enabled) : super('SET_LOOP_ENABLED');
+}
+
+class SetLoopRange extends PlayerAction {
+  final int startUs;
+  final int endUs;
+  const SetLoopRange(this.startUs, this.endUs) : super('SET_LOOP_RANGE');
+}
+
 /// Pan the viewport by a delta.
 class Pan extends PlayerAction {
   final double dx;

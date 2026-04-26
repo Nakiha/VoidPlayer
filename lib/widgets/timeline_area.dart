@@ -16,6 +16,12 @@ class TimelineArea extends StatefulWidget {
   final int maxEffectiveDurationUs;
   final int hoverPtsUs;
   final bool sliderHovering;
+  final double controlsWidth;
+  final ValueChanged<double> onControlsWidthChanged;
+  final List<int> markerPtsUs;
+  final bool loopRangeEnabled;
+  final int loopStartUs;
+  final int loopEndUs;
 
   const TimelineArea({
     super.key,
@@ -28,6 +34,12 @@ class TimelineArea extends StatefulWidget {
     this.maxEffectiveDurationUs = 0,
     this.hoverPtsUs = 0,
     this.sliderHovering = false,
+    this.controlsWidth = 320,
+    required this.onControlsWidthChanged,
+    this.markerPtsUs = const [],
+    this.loopRangeEnabled = false,
+    this.loopStartUs = 0,
+    this.loopEndUs = 0,
   });
 
   @override
@@ -35,72 +47,72 @@ class TimelineArea extends StatefulWidget {
 }
 
 class _TimelineAreaState extends State<TimelineArea> {
-  double _controlsWidth = 320;
-
-  void _onControlsWidthChanged(double width) {
-    setState(() {
-      _controlsWidth = width;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final maxEffectiveDurationUs = widget.maxEffectiveDurationUs;
 
-    return LayoutBuilder(builder: (context, constraints) {
-      final maxHeight = constraints.maxHeight;
-      final targetHeight =
-          (widget.trackManager.count * 40.0).clamp(0.0, maxHeight);
-      return SizedBox(
-        height: targetHeight,
-        child: ReorderableListView.builder(
-          buildDefaultDragHandles: false,
-          itemCount: widget.trackManager.count,
-          onReorder: widget.onReorder,
-          itemBuilder: (context, index) {
-            final entry = widget.trackManager.entries[index];
-            final trackDuration = entry.info.durationUs;
-            final offsetUs = widget.syncOffsets[entry.info.slot] ?? 0;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxHeight = constraints.maxHeight;
+        final targetHeight = (widget.trackManager.count * 40.0).clamp(
+          0.0,
+          maxHeight,
+        );
+        return SizedBox(
+          height: targetHeight,
+          child: ReorderableListView.builder(
+            buildDefaultDragHandles: false,
+            itemCount: widget.trackManager.count,
+            onReorder: widget.onReorder,
+            itemBuilder: (context, index) {
+              final entry = widget.trackManager.entries[index];
+              final trackDuration = entry.info.durationUs;
+              final offsetUs = widget.syncOffsets[entry.info.slot] ?? 0;
 
-            // Clip ratio: original duration relative to max effective duration
-            final clipRatio = maxEffectiveDurationUs > 0
-                ? (trackDuration / maxEffectiveDurationUs).clamp(0.0, 1.0)
-                : 1.0;
+              // Clip ratio: original duration relative to max effective duration
+              final clipRatio = maxEffectiveDurationUs > 0
+                  ? (trackDuration / maxEffectiveDurationUs).clamp(0.0, 1.0)
+                  : 1.0;
 
-            // Offset ratio: where the clip block starts
-            final offsetRatio = maxEffectiveDurationUs > 0
-                ? (offsetUs / maxEffectiveDurationUs).clamp(0.0, 1.0)
-                : 0.0;
+              // Offset ratio: where the clip block starts
+              final offsetRatio = maxEffectiveDurationUs > 0
+                  ? (offsetUs / maxEffectiveDurationUs).clamp(0.0, 1.0)
+                  : 0.0;
 
-            // Per-track playhead: global time → track internal time
-            double playheadPosition = 0.0;
-            if (trackDuration > 0) {
-              final localTime = widget.currentPtsUs - offsetUs;
-              playheadPosition = (localTime / trackDuration).clamp(0.0, 1.0);
-            }
+              // Per-track playhead: global time → track internal time
+              double playheadPosition = 0.0;
+              if (trackDuration > 0) {
+                final localTime = widget.currentPtsUs - offsetUs;
+                playheadPosition = (localTime / trackDuration).clamp(0.0, 1.0);
+              }
 
-            return TrackRow(
-              key: ValueKey(entry.fileId),
-              track: entry.info,
-              index: index,
-              playheadPosition: playheadPosition,
-              durationRatio: clipRatio,
-              offsetRatio: offsetRatio,
-              onRemove: () => widget.onRemoveTrack(entry.fileId),
-              onOffsetChanged: (delta) => widget.onOffsetChanged(
-                  entry.info.slot, delta),
-              syncOffsetMs: offsetUs ~/ 1000,
-              controlsWidth: _controlsWidth,
-              onControlsWidthChanged: _onControlsWidthChanged,
-              hoverPtsUs: widget.hoverPtsUs,
-              sliderHovering: widget.sliderHovering,
-              trackDurationUs: trackDuration,
-              offsetUs: offsetUs,
-              maxEffectiveDurationUs: maxEffectiveDurationUs,
-            );
-          },
-        ),
-      );
-    });
+              return TrackRow(
+                key: ValueKey(entry.fileId),
+                track: entry.info,
+                index: index,
+                playheadPosition: playheadPosition,
+                durationRatio: clipRatio,
+                offsetRatio: offsetRatio,
+                onRemove: () => widget.onRemoveTrack(entry.fileId),
+                onOffsetChanged: (delta) =>
+                    widget.onOffsetChanged(entry.info.slot, delta),
+                syncOffsetMs: offsetUs ~/ 1000,
+                controlsWidth: widget.controlsWidth,
+                onControlsWidthChanged: widget.onControlsWidthChanged,
+                hoverPtsUs: widget.hoverPtsUs,
+                sliderHovering: widget.sliderHovering,
+                trackDurationUs: trackDuration,
+                offsetUs: offsetUs,
+                maxEffectiveDurationUs: maxEffectiveDurationUs,
+                markerPtsUs: widget.markerPtsUs,
+                loopRangeEnabled: widget.loopRangeEnabled,
+                loopStartUs: widget.loopStartUs,
+                loopEndUs: widget.loopEndUs,
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 }

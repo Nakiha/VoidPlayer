@@ -33,7 +33,7 @@ if(BUILD_PYTHON AND TARGET video_renderer_native)
     )
 
     if(EXISTS "${FFMPEG_BIN_DIR}")
-        file(GLOB FFMPEG_DLL_FILES "${FFMPEG_BIN_DIR}/*.dll")
+        void_collect_ffmpeg_runtime_dlls(FFMPEG_DLL_FILES)
         set(DIST_DLL_COPY_CMDS "")
         foreach(DLL ${FFMPEG_DLL_FILES})
             list(APPEND DIST_DLL_COPY_CMDS
@@ -41,6 +41,9 @@ if(BUILD_PYTHON AND TARGET video_renderer_native)
         endforeach()
         add_custom_target(copy_ffmpeg_to_dist ALL
             COMMAND ${CMAKE_COMMAND} -E make_directory "${DIST_DIR}/python"
+            COMMAND ${CMAKE_COMMAND}
+                -DVOID_FFMPEG_RUNTIME_DIR="${DIST_DIR}/python"
+                -P "${VOID_NATIVE_DIR}/cmake/RemoveUnusedFFmpegDlls.cmake"
             ${DIST_DLL_COPY_CMDS}
             COMMENT "Copying FFmpeg DLLs to dist/python/..."
         )

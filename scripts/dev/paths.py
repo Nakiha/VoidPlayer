@@ -25,7 +25,13 @@ def find_vtm_decoder() -> Path:
 
 VTM_DECODER = find_vtm_decoder()
 
+WINDOWS_BUILD_DIR = ROOT / "build" / "windows" / "x64" / "runner"
+WINDOWS_PACKAGE_DIR = ROOT / "build" / "package" / "windows"
+WINDOWS_PACKAGE_STAGE_DIR = WINDOWS_PACKAGE_DIR / "VoidPlayer"
+WINDOWS_INSTALLER_DIR = WINDOWS_PACKAGE_DIR / "installer"
+WINDOWS_INNO_SCRIPT = ROOT / "installer" / "windows" / "VoidPlayer.iss"
+
 
 def app_exe_path(debug: bool) -> Path:
     build_type = "Debug" if debug else "Release"
-    return ROOT / "build" / "windows" / "x64" / "runner" / build_type / "void_player.exe"
+    return WINDOWS_BUILD_DIR / build_type / "void_player.exe"

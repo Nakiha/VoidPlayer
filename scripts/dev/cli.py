@@ -12,6 +12,7 @@ from .flutter_app import (
     cmd_ui_test,
 )
 from .analysis_resize_stress import cmd_analysis_resize_stress
+from .package import cmd_package
 from .vtm import cmd_vtm
 
 
@@ -29,6 +30,8 @@ Examples:
   python dev.py launch --build
   python dev.py demo
   python dev.py test
+  python dev.py package
+  python dev.py package --installer
   python dev.py ui-test ui_tests/smoke_basic.csv
   python dev.py analysis-resize-stress
   python dev.py vtm build
@@ -66,6 +69,15 @@ Examples:
 
     p_test = sub.add_parser("test", help="Build and run native standalone tests")
     p_test.add_argument("--debug", action="store_true", help="Debug build")
+
+    p_package = sub.add_parser("package", help="Build and stage clean Windows installer input")
+    p_package.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)
+    p_package.add_argument("--no-build", action="store_true",
+                           help="Skip Flutter build and stage the existing clean Release output")
+    p_package.add_argument("--installer", action="store_true",
+                           help="Compile the Inno Setup installer after staging")
+    p_package.add_argument("--iscc", type=str, default=None,
+                           help="Path to ISCC.exe (defaults to PATH/common Inno Setup locations)")
 
     p_ui_test = sub.add_parser("ui-test", help="Launch the app with a CSV UI test script")
     p_ui_test.add_argument("script", help="Path to CSV test script")
@@ -113,6 +125,7 @@ def main() -> None:
         "launch": cmd_launch,
         "demo": cmd_demo,
         "test": cmd_test,
+        "package": cmd_package,
         "ui-test": cmd_ui_test,
         "analysis-resize-stress": cmd_analysis_resize_stress,
         "vtm": cmd_vtm,

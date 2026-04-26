@@ -49,6 +49,9 @@
   "removeTrack": "Remove Track",
   "@removeTrack": { "description": "Remove track tooltip" },
 
+  "loopRange": "Loop range",
+  "@loopRange": { "description": "Loop range toggle label" },
+
   "statsTitle": "Void Player - Stats",
   "@statsTitle": { "description": "Stats window title" },
 

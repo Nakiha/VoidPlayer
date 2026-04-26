@@ -85,17 +85,32 @@ int32_t naki_analysis_get_frames(NakiFrameInfo* out, int32_t max_count) {
     int vbs2_count = mgr.vbs2().frame_count();
     int vbt_count = mgr.vbt().packet_count();
 
-    // Fallback: no VBS2 — fill from VBT only (no slice_type / QP / refs)
+    // Fallback: no VBS2 — combine VBT timing with VBI VCL metadata.
+    // Slice P/B needs codec-specific slice-header parsing; without VBS2 we only
+    // promote keyframes to I and treat other coded frames as forward-coded.
     if (vbs2_count == 0) {
         int count = std::min(max_count, vbt_count);
+        const auto vcl_nalus = mgr.vbi().find_vcl_nalus();
         for (int i = 0; i < count; i++) {
             const auto& pkt = mgr.vbt().entry(i);
             auto& f = out[i];
             std::memset(&f, 0, sizeof(f));
+            f.poc = i;
+            f.slice_type = 1;
             f.pts = pkt.pts;
             f.dts = pkt.dts;
             f.packet_size = static_cast<int32_t>(pkt.size);
             f.keyframe = (pkt.flags & 0x01) ? 1 : 0;
+
+            if (i < static_cast<int>(vcl_nalus.size())) {
+                const auto& nalu = mgr.vbi().entry(vcl_nalus[i]);
+                f.temporal_id = nalu.temporal_id;
+                f.nal_type = nalu.nal_type;
+                f.keyframe = (nalu.flags & VBI_FLAG_IS_KEYFRAME) ? 1 : f.keyframe;
+            }
+            if (f.keyframe != 0) {
+                f.slice_type = 2;
+            }
         }
         return count;
     }

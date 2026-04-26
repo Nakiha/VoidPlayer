@@ -574,6 +574,30 @@ class _AnalysisPageState extends State<AnalysisPage> {
           );
         }
 
+      case _AnalysisTestCommand.assertSelectedFrame:
+        final expectedSlice = instr.stringArg(0);
+        final expectedNalName = instr.stringArg(1);
+        log.info(
+          'AnalysisTestRunner ${instr.time}: '
+          'ASSERT_ANALYSIS_SELECTED_FRAME $expectedSlice $expectedNalName',
+        );
+        final idx = _selectedFrameIdx;
+        if (idx == null || idx < 0 || idx >= _frames.length) {
+          throw AssertionError(
+            'Expected selected frame, got selected=$idx frames=${_frames.length}',
+          );
+        }
+        final f = _frames[idx];
+        final actualSlice = _frameSliceName(f);
+        final actualNalName = bitstreamUnitTypeName(_codec, f.nalType);
+        if (actualSlice != expectedSlice || actualNalName != expectedNalName) {
+          throw AssertionError(
+            'Expected selected frame $expectedSlice/$expectedNalName, '
+            'got $actualSlice/$actualNalName '
+            '(frame=$idx, slice=${f.sliceType}, nal=${f.nalType})',
+          );
+        }
+
       case _AnalysisTestCommand.assertCounts:
         final frames = instr.intArg(0);
         final packets = instr.intArg(1);
@@ -2191,11 +2215,7 @@ class _NaluDetailView extends StatelessWidget {
     final frameItems = <_DetailRow>[];
     if (frameIdx != null && frameIdx! >= 0 && frameIdx! < frames.length) {
       final f = frames[frameIdx!];
-      final sliceName = switch (f.sliceType) {
-        2 => 'I',
-        1 => 'P',
-        _ => f.numRefL1 > 0 ? 'B' : 'B (uni)', // unidirectional B
-      };
+      final sliceName = _frameSliceName(f);
       final nalName = bitstreamUnitTypeName(codec, f.nalType);
 
       frameItems.addAll([
@@ -2277,6 +2297,7 @@ enum _AnalysisTestCommand {
   assertMinCounts,
   assertCodec,
   assertNaluName,
+  assertSelectedFrame,
   setTab,
   assertTab,
   setOrder,
@@ -2340,6 +2361,8 @@ List<_AnalysisTestInstruction> _parseAnalysisTestScript(String path) {
       'ASSERT_ANALYSIS_MIN_COUNTS' => _AnalysisTestCommand.assertMinCounts,
       'ASSERT_ANALYSIS_CODEC' => _AnalysisTestCommand.assertCodec,
       'ASSERT_ANALYSIS_NALU_NAME' => _AnalysisTestCommand.assertNaluName,
+      'ASSERT_ANALYSIS_SELECTED_FRAME' =>
+        _AnalysisTestCommand.assertSelectedFrame,
       'SET_ANALYSIS_TAB' => _AnalysisTestCommand.setTab,
       'ASSERT_ANALYSIS_TAB' => _AnalysisTestCommand.assertTab,
       'SET_ANALYSIS_ORDER' => _AnalysisTestCommand.setOrder,
@@ -2391,6 +2414,12 @@ bool _parseAnalysisOrder(String value) {
       throw ArgumentError('Unknown analysis order: $value');
   }
 }
+
+String _frameSliceName(FrameInfo f) => switch (f.sliceType) {
+  2 => 'I',
+  1 => 'P',
+  _ => f.numRefL1 > 0 ? 'B' : 'B (uni)',
+};
 
 AnalysisCodec _parseAnalysisCodec(String value) {
   switch (value.trim().toLowerCase()) {

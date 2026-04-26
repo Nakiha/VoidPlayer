@@ -127,30 +127,39 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
             child: Row(
               children: [
                 Expanded(
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemBuilder: (context, index) {
-                      final entry = entries[index];
-                      final active = index == selected;
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: FilledButton.tonal(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: active
-                                ? theme.colorScheme.primaryContainer
-                                : theme.colorScheme.surfaceContainerHighest,
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          onPressed: () => setState(() => _selected = index),
-                          child: Text(
-                            entry.fileName ?? 'Track ${index + 1}',
-                            overflow: TextOverflow.ellipsis,
+                  child: Row(
+                    children: [
+                      for (var index = 0; index < entries.length; index++) ...[
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: FilledButton.tonal(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: index == selected
+                                    ? theme.colorScheme.primaryContainer
+                                    : theme.colorScheme.surfaceContainerHighest,
+                                minimumSize: const Size(0, 32),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: () =>
+                                  setState(() => _selected = index),
+                              child: Text(
+                                '${index + 1}. ${entries[index].fileName ?? 'Track ${index + 1}'}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                softWrap: false,
+                              ),
+                            ),
                           ),
                         ),
-                      );
-                    },
-                    separatorBuilder: (_, _) => const SizedBox(width: 6),
-                    itemCount: entries.length,
+                        if (index != entries.length - 1)
+                          const SizedBox(width: 6),
+                      ],
+                    ],
                   ),
                 ),
                 const SizedBox(width: 8),

@@ -807,6 +807,15 @@ int Renderer::pick_free_buffer() const {
 }
 
 void Renderer::wait_gpu_and_swap(int back, const char* label) {
+    wait_gpu_idle(label);
+    dbuf_.front.store(back);
+}
+
+void Renderer::wait_gpu_idle(const char* label) {
+    if (!gpu_fence_) {
+        d3d_device_->context()->Flush();
+        return;
+    }
     auto* ctx = d3d_device_->context();
     ctx->End(gpu_fence_.Get());
     auto fence_start = std::chrono::steady_clock::now();
@@ -821,7 +830,6 @@ void Renderer::wait_gpu_and_swap(int back, const char* label) {
             }
         }
     }
-    dbuf_.front.store(back);
 }
 
 bool Renderer::create_shared_buffers(
@@ -1410,7 +1418,8 @@ bool Renderer::prepare_nv12_frame_srv(TrackPipeline& track,
         return false;
     }
 
-    if (track.last_nv12_tex != decode_tex) {
+    const bool opened_new_shared_resource = track.last_nv12_tex != decode_tex;
+    if (opened_new_shared_resource) {
         track.render_nv12_tex.Reset();
         track.last_nv12_tex = nullptr;
 
@@ -1464,6 +1473,7 @@ bool Renderer::prepare_nv12_frame_srv(TrackPipeline& track,
             copy_desc.Format != src_desc.Format;
     }
 
+    const bool created_new_copy_texture = need_copy_tex;
     if (need_copy_tex) {
         track.render_nv12_copy_tex.Reset();
         track.nv12_y_srv.Reset();
@@ -1515,13 +1525,26 @@ bool Renderer::prepare_nv12_frame_srv(TrackPipeline& track,
                       slot, src_desc.Width, src_desc.Height, static_cast<int>(src_desc.Format));
     }
 
-    d3d_device_->context()->CopySubresourceRegion(
-        track.render_nv12_copy_tex.Get(),
-        0,
-        0, 0, 0,
-        track.render_nv12_tex.Get(),
-        D3D11CalcSubresource(0, static_cast<UINT>(array_idx), 1),
-        nullptr);
+    auto copy_nv12_slice = [&] {
+        d3d_device_->context()->CopySubresourceRegion(
+            track.render_nv12_copy_tex.Get(),
+            0,
+            0, 0, 0,
+            track.render_nv12_tex.Get(),
+            D3D11CalcSubresource(0, static_cast<UINT>(array_idx), 1),
+            nullptr);
+    };
+    copy_nv12_slice();
+
+    if (opened_new_shared_resource || created_new_copy_texture) {
+        // Some D3D11VA drivers expose a partially populated NV12 array slice
+        // on the first cross-device copy immediately after OpenSharedResource
+        // and SRV creation. Prime the renderer-owned texture with a fenced
+        // copy, then issue and fence the copy sampled by this first draw.
+        wait_gpu_idle("prepare_nv12_frame_srv");
+        copy_nv12_slice();
+        wait_gpu_idle("prepare_nv12_frame_srv");
+    }
 
     if (src_desc.Height > 0 && frame.height > 0 &&
         src_desc.Height != static_cast<UINT>(frame.height)) {

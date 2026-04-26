@@ -528,15 +528,11 @@ void DecodeThread::run() {
             av_frame_unref(frame);
             exact_seek_reorder_.clear();
 
-            const bool fresh_codec_seek =
-                perf_.frames_decoded.load(std::memory_order_relaxed) == 0 &&
-                output_buffer_.total_count() == 0;
-            if (fresh_codec_seek) {
-                spdlog::info("[DecodeThread] Seek flush: skipped for fresh codec (hw={})", hw_enabled_);
-            } else {
-                safe_flush_codec();
-                spdlog::info("[DecodeThread] Seek flush: codec buffers flushed (hw={})", hw_enabled_);
-            }
+            // Always reset codec state on seek. During add-track initial seek,
+            // demux can race ahead and the decoder may have already accepted
+            // packets even though no frames have been published yet.
+            safe_flush_codec();
+            spdlog::info("[DecodeThread] Seek flush: codec buffers flushed (hw={})", hw_enabled_);
 
             // NOTE: Do NOT drain input queue here! The DemuxThread already
             // flushes the queue before seeking and then pushes NEW packets.

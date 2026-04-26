@@ -223,6 +223,9 @@ private:
     /// Issue GPU fence, spin-wait for completion (up to 100ms), then swap front/back.
     void wait_gpu_and_swap(int back, const char* label);
 
+    /// Issue GPU fence and spin-wait for completion without publishing buffers.
+    void wait_gpu_idle(const char* label);
+
     /// Create triple-buffered shared textures at the given dimensions.
     bool create_shared_buffers(int width, int height,
                                Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[],

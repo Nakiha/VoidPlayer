@@ -265,8 +265,8 @@ class _AnalysisTabsHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      height: 48,
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
       decoration: BoxDecoration(
         color: theme.colorScheme.primaryContainer.withValues(alpha: 0.18),
         border: Border(bottom: BorderSide(color: theme.dividerColor)),
@@ -318,30 +318,52 @@ class _AnalysisTrackTab extends StatelessWidget {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: Material(
-        color: selected
-            ? theme.colorScheme.primary.withValues(alpha: 0.22)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(4),
-        child: InkWell(
+      child: SizedBox(
+        height: 34,
+        child: Material(
+          color: selected
+              ? theme.colorScheme.primary.withValues(alpha: 0.10)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(4),
-          onTap: selected ? null : onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '${index + 1}. ${entry.fileName ?? 'Track ${index + 1}'}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                softWrap: false,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: selected
-                      ? theme.colorScheme.onSurface
-                      : theme.colorScheme.onSurfaceVariant,
-                  fontWeight: selected ? FontWeight.w600 : null,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(4),
+            onTap: selected ? null : onTap,
+            child: Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '${index + 1}. ${entry.fileName ?? 'Track ${index + 1}'}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: selected
+                            ? theme.colorScheme.onSurface
+                            : theme.colorScheme.onSurfaceVariant,
+                        fontWeight: selected ? FontWeight.w600 : null,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+                if (selected)
+                  Positioned(
+                    left: 10,
+                    right: 10,
+                    bottom: 3,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withValues(
+                          alpha: 0.52,
+                        ),
+                        borderRadius: BorderRadius.circular(1),
+                      ),
+                      child: const SizedBox(height: 2),
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
@@ -1258,8 +1280,8 @@ class _TabBar extends StatelessWidget {
           label: Tooltip(
             message: l.analysisRefPyramid,
             child: const SizedBox(
-              width: 34,
-              height: 24,
+              width: 28,
+              height: 20,
               child: _AnalysisViewIcon(_AnalysisViewIconKind.pyramid),
             ),
           ),
@@ -1269,8 +1291,8 @@ class _TabBar extends StatelessWidget {
           label: Tooltip(
             message: l.analysisFrameTrend,
             child: const SizedBox(
-              width: 34,
-              height: 24,
+              width: 28,
+              height: 20,
               child: _AnalysisViewIcon(_AnalysisViewIconKind.trend),
             ),
           ),
@@ -1280,7 +1302,7 @@ class _TabBar extends StatelessWidget {
       onSelectionChanged: (s) => onTabChanged(s.first),
       style: const ButtonStyle(
         visualDensity: VisualDensity.compact,
-        padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 8)),
+        padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 7)),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
       ),
@@ -1316,11 +1338,11 @@ class _AnalysisViewIconPainter extends CustomPainter {
     final stroke = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8
+      ..strokeWidth = 1.35
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
     final fill = Paint()
-      ..color = color
+      ..color = color.withValues(alpha: 0.92)
       ..style = PaintingStyle.fill;
 
     switch (kind) {
@@ -1334,17 +1356,17 @@ class _AnalysisViewIconPainter extends CustomPainter {
         canvas.drawLine(p1, p3, stroke);
         canvas.drawLine(p2, p3, stroke..color = color.withValues(alpha: 0.55));
         for (final p in [p0, p1, p2, p3]) {
-          canvas.drawCircle(p, 3.0, fill);
+          canvas.drawCircle(p, 2.25, fill);
         }
 
       case _AnalysisViewIconKind.trend:
         final baseY = size.height * 0.76;
-        final barW = size.width * 0.12;
+        final barW = size.width * 0.085;
         final xs = [
-          size.width * 0.18,
-          size.width * 0.38,
-          size.width * 0.58,
-          size.width * 0.78,
+          size.width * 0.20,
+          size.width * 0.40,
+          size.width * 0.60,
+          size.width * 0.80,
         ];
         final hs = [
           size.height * 0.30,

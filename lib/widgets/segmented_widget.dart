@@ -5,19 +5,27 @@ import '../l10n/app_localizations.dart';
 class ViewModeSelector extends StatelessWidget {
   final int currentMode; // 0=sideBySide, 1=splitScreen
   final ValueChanged<int> onChanged;
+  final String? firstLabel;
+  final String? secondLabel;
+  final double width;
+  final double height;
 
   const ViewModeSelector({
     super.key,
     required this.currentMode,
     required this.onChanged,
+    this.firstLabel,
+    this.secondLabel,
+    this.width = 240,
+    this.height = 32,
   });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return SizedBox(
-      width: 240,
-      height: 32,
+      width: width,
+      height: height,
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(6),
@@ -26,15 +34,19 @@ class ViewModeSelector extends StatelessWidget {
         child: Row(
           children: [
             _Segment(
-              label: AppLocalizations.of(context)!.sideBySide,
+              label: firstLabel ?? AppLocalizations.of(context)!.sideBySide,
               selected: currentMode == 0,
-              borderRadius: const BorderRadius.horizontal(left: Radius.circular(5)),
+              borderRadius: const BorderRadius.horizontal(
+                left: Radius.circular(5),
+              ),
               onTap: () => onChanged(0),
             ),
             _Segment(
-              label: AppLocalizations.of(context)!.splitScreen,
+              label: secondLabel ?? AppLocalizations.of(context)!.splitScreen,
               selected: currentMode == 1,
-              borderRadius: const BorderRadius.horizontal(right: Radius.circular(5)),
+              borderRadius: const BorderRadius.horizontal(
+                right: Radius.circular(5),
+              ),
               onTap: () => onChanged(1),
             ),
           ],
@@ -73,8 +85,8 @@ class _Segment extends StatelessWidget {
           child: Text(
             label,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: selected ? colorScheme.onPrimary : colorScheme.onSurface,
-                ),
+              color: selected ? colorScheme.onPrimary : colorScheme.onSurface,
+            ),
           ),
         ),
       ),

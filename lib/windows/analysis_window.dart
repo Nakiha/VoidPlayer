@@ -7,6 +7,7 @@ import '../analysis/analysis_cache.dart';
 import '../analysis/analysis_ffi.dart';
 import '../analysis/nalu_types.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/segmented_widget.dart';
 import 'analysis_ipc.dart';
 
 // ===========================================================================
@@ -349,17 +350,13 @@ class _AnalysisWorkspaceModeToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SegmentedButton<bool>(
-      segments: const [
-        ButtonSegment(value: false, label: Text('Tabs')),
-        ButtonSegment(value: true, label: Text('Split')),
-      ],
-      selected: {splitView},
-      onSelectionChanged: (value) => onChanged(value.first),
-      style: const ButtonStyle(
-        visualDensity: VisualDensity.compact,
-        textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
-      ),
+    return ViewModeSelector(
+      currentMode: splitView ? 1 : 0,
+      onChanged: (value) => onChanged(value == 1),
+      firstLabel: 'Tabs',
+      secondLabel: 'Split',
+      width: 124,
+      height: 30,
     );
   }
 }
@@ -901,6 +898,7 @@ class _OrderToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SegmentedButton<bool>(
+      showSelectedIcon: false,
       segments: [
         ButtonSegment(value: true, label: Text(l.analysisPtsOrder)),
         ButtonSegment(value: false, label: Text(l.analysisDtsOrder)),
@@ -928,15 +926,43 @@ class _TabBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SegmentedButton<int>(
+      showSelectedIcon: false,
       segments: [
-        ButtonSegment(value: 0, label: Text(l.analysisRefPyramid)),
-        ButtonSegment(value: 1, label: Text(l.analysisFrameTrend)),
+        ButtonSegment(
+          value: 0,
+          label: _StableSegmentLabel(l.analysisRefPyramid),
+        ),
+        ButtonSegment(
+          value: 1,
+          label: _StableSegmentLabel(l.analysisFrameTrend),
+        ),
       ],
       selected: {selectedTab},
       onSelectionChanged: (s) => onTabChanged(s.first),
       style: const ButtonStyle(
         visualDensity: VisualDensity.compact,
         textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
+      ),
+    );
+  }
+}
+
+class _StableSegmentLabel extends StatelessWidget {
+  final String text;
+
+  const _StableSegmentLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 128,
+      child: Center(
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          softWrap: false,
+        ),
       ),
     );
   }

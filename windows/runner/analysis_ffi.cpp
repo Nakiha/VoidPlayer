@@ -57,8 +57,10 @@ const NakiAnalysisSummary* naki_analysis_get_summary() {
     const auto& vbi = mgr.vbi();
     const auto& vbt = mgr.vbt();
 
-    s.frame_count = vbs2.frame_count();
-    s.packet_count = vbt.packet_count();
+    const int vbs2_frame_count = vbs2.frame_count();
+    const int vbt_packet_count = vbt.packet_count();
+    s.frame_count = vbs2_frame_count > 0 ? vbs2_frame_count : vbt_packet_count;
+    s.packet_count = vbt_packet_count;
     s.nalu_count = vbi.nalu_count();
     s.video_width = vbs2.header().width;
     s.video_height = vbs2.header().height;

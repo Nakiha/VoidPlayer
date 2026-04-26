@@ -86,3 +86,8 @@ class AssertCaptureNotBlack extends PlayerAssert {
     this.minAvgLuma = 4.0,
   });
 }
+
+class AssertAnalysisProcessCount extends PlayerAssert {
+  final int count;
+  const AssertAnalysisProcessCount(this.count);
+}

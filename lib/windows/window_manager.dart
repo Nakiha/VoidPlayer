@@ -16,6 +16,8 @@ class WindowManager {
 
   /// Analysis processes spawned as separate processes (keyed by hash).
   static final Map<String, Process> _analysisProcesses = {};
+  static final Map<String, int> _analysisExitCodes = {};
+  static String? analysisTestScriptPath;
 
   /// Accent color set by the main window, passed to all secondary windows.
   static int accentColorValue = 0xFF0078D4;
@@ -32,6 +34,23 @@ class WindowManager {
   /// Each hash opens a separate process to avoid Flutter's D3D11 multi-engine crash.
   static Future<void> showAnalysisWindow(String hash, {String? fileName}) =>
       _spawnAnalysisProcess(hash, fileName: fileName);
+
+  static int get analysisProcessCount => _analysisProcesses.length;
+
+  static Map<String, int> get analysisExitCodes =>
+      Map.unmodifiable(_analysisExitCodes);
+
+  static Future<bool> waitForAnalysisProcessCount(
+    int count,
+    Duration timeout,
+  ) async {
+    final sw = Stopwatch()..start();
+    while (sw.elapsed < timeout) {
+      if (_analysisProcesses.length == count) return true;
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    return _analysisProcesses.length == count;
+  }
 
   /// Saves all secondary window positions to config, then closes them.
   ///
@@ -60,6 +79,7 @@ class WindowManager {
       process.kill();
     }
     _analysisProcesses.clear();
+    _analysisExitCodes.clear();
   }
 
   /// Compute the initial rect for a secondary window of the given [type].
@@ -97,6 +117,8 @@ class WindowManager {
 
     final rect = await _computeWindowRect(WindowArgs.analysis);
     final exe = Platform.resolvedExecutable;
+    final scriptPath = analysisTestScriptPath;
+    _analysisExitCodes.remove(hash);
 
     final args = <String>[
       '--standalone-analysis',
@@ -107,6 +129,7 @@ class WindowManager {
       '--height=${rect.height.toInt()}',
       '--accentColor=$accentColorValue',
       if (fileName != null) '--fileName=$fileName',
+      if (scriptPath != null) ...['--test-script', scriptPath],
     ];
 
     log.info('[WindowManager] spawning analysis process: $args');
@@ -124,6 +147,7 @@ class WindowManager {
         '[WindowManager] analysis process for $hash exited with code $code',
       );
       _analysisProcesses.remove(hash);
+      _analysisExitCodes[hash] = code;
     });
   }
 

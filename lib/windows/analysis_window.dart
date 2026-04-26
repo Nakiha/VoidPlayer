@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import '../app_log.dart';
 import '../analysis/analysis_cache.dart';
 import '../analysis/analysis_ffi.dart';
 import '../analysis/nalu_types.dart';
@@ -14,13 +16,22 @@ class AnalysisApp extends StatelessWidget {
   final Color accentColor;
   final String hash;
   final String? fileName;
+  final String? testScriptPath;
 
-  const AnalysisApp({super.key, required this.accentColor, required this.hash, this.fileName});
+  const AnalysisApp({
+    super.key,
+    required this.accentColor,
+    required this.hash,
+    this.fileName,
+    this.testScriptPath,
+  });
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: fileName != null ? 'Void Player - $fileName' : 'Void Player - Analysis',
+      title: fileName != null
+          ? 'Void Player - $fileName'
+          : 'Void Player - Analysis',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -29,7 +40,7 @@ class AnalysisApp extends StatelessWidget {
       ),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: AnalysisPage(hash: hash),
+      home: AnalysisPage(hash: hash, testScriptPath: testScriptPath),
     );
   }
 }
@@ -38,7 +49,8 @@ class AnalysisApp extends StatelessWidget {
 
 class AnalysisPage extends StatefulWidget {
   final String hash;
-  const AnalysisPage({super.key, required this.hash});
+  final String? testScriptPath;
+  const AnalysisPage({super.key, required this.hash, this.testScriptPath});
 
   @override
   State<AnalysisPage> createState() => _AnalysisPageState();
@@ -60,8 +72,10 @@ class _AnalysisPageState extends State<AnalysisPage> {
     setState(() {
       final factor = scrollDelta > 0 ? 1.18 : 0.85;
       final oldCount = _visibleFrameCount;
-      _visibleFrameCount = (_visibleFrameCount * factor)
-          .clamp(3.0, _sortedFrames.length.toDouble());
+      _visibleFrameCount = (_visibleFrameCount * factor).clamp(
+        3.0,
+        _sortedFrames.length.toDouble(),
+      );
       final center = _chartOffset + oldCount / 2;
       _chartOffset = center - _visibleFrameCount / 2;
       _clampChartOffset();
@@ -76,7 +90,10 @@ class _AnalysisPageState extends State<AnalysisPage> {
   }
 
   void _clampChartOffset() {
-    final max = (_sortedFrames.length - _visibleFrameCount).clamp(0.0, double.infinity);
+    final max = (_sortedFrames.length - _visibleFrameCount).clamp(
+      0.0,
+      double.infinity,
+    );
     _chartOffset = _chartOffset.clamp(0.0, max);
   }
 
@@ -85,6 +102,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
   List<FrameInfo> _sortedFramesCache = [];
   NakiAnalysisSummary? _summary;
   Timer? _pollTimer;
+  bool _testStarted = false;
 
   // Precomputed mappings rebuilt when data loads
   Map<int, List<int>> _pocToIndices = {};
@@ -99,6 +117,13 @@ class _AnalysisPageState extends State<AnalysisPage> {
       const Duration(milliseconds: 200),
       (_) => _poll(),
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final scriptPath = widget.testScriptPath;
+      if (scriptPath != null && !_testStarted) {
+        _testStarted = true;
+        unawaited(_runAnalysisTestScript(scriptPath));
+      }
+    });
   }
 
   @override
@@ -119,6 +144,209 @@ class _AnalysisPageState extends State<AnalysisPage> {
       AnalysisFfi.load(vbs2, vbi, vbt);
     }
     _readData();
+  }
+
+  Future<void> _runAnalysisTestScript(String scriptPath) async {
+    final instructions = _parseAnalysisTestScript(scriptPath);
+    if (instructions.isEmpty) {
+      log.severe('AnalysisTestRunner: empty script: $scriptPath');
+      exit(1);
+    }
+
+    log.info(
+      'AnalysisTestRunner: running ${instructions.length} instructions from $scriptPath',
+    );
+
+    final sw = Stopwatch()..start();
+    for (final instr in instructions) {
+      final waitMs = instr.time.inMilliseconds - sw.elapsedMilliseconds;
+      if (waitMs > 0) {
+        await Future.delayed(Duration(milliseconds: waitMs));
+      }
+
+      try {
+        await _executeAnalysisInstruction(instr);
+      } catch (e, stack) {
+        log.severe('AnalysisTestRunner FAIL at ${instr.time}: $e\n$stack');
+        exit(1);
+      }
+    }
+
+    log.severe('AnalysisTestRunner: script ended without QUIT instruction');
+    exit(1);
+  }
+
+  Future<void> _executeAnalysisInstruction(
+    _AnalysisTestInstruction instr,
+  ) async {
+    switch (instr.command) {
+      case _AnalysisTestCommand.waitLoaded:
+        final timeout = Duration(
+          milliseconds: instr.intArg(0, defaultValue: 10000),
+        );
+        log.info(
+          'AnalysisTestRunner ${instr.time}: WAIT_ANALYSIS_LOADED ${timeout.inMilliseconds}ms',
+        );
+        await _waitForAnalysisLoaded(timeout);
+
+      case _AnalysisTestCommand.assertLoaded:
+        log.info('AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_LOADED');
+        _assertAnalysisLoaded();
+
+      case _AnalysisTestCommand.assertMinCounts:
+        final minFrames = instr.intArg(0);
+        final minPackets = instr.intArg(1);
+        final minNalus = instr.intArg(2);
+        log.info(
+          'AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_MIN_COUNTS '
+          '$minFrames $minPackets $minNalus',
+        );
+        _assertAnalysisMinCounts(minFrames, minPackets, minNalus);
+
+      case _AnalysisTestCommand.assertCounts:
+        final frames = instr.intArg(0);
+        final packets = instr.intArg(1);
+        final nalus = instr.intArg(2);
+        log.info(
+          'AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_COUNTS '
+          '$frames $packets $nalus',
+        );
+        _assertAnalysisCounts(frames, packets, nalus);
+
+      case _AnalysisTestCommand.setTab:
+        final tab = _parseAnalysisTab(instr.stringArg(0));
+        log.info('AnalysisTestRunner ${instr.time}: SET_ANALYSIS_TAB $tab');
+        if (mounted) {
+          setState(() => _selectedTab = tab);
+        } else {
+          _selectedTab = tab;
+        }
+
+      case _AnalysisTestCommand.assertTab:
+        final tab = _parseAnalysisTab(instr.stringArg(0));
+        log.info('AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_TAB $tab');
+        if (_selectedTab != tab) {
+          throw AssertionError('Expected tab $tab, got $_selectedTab');
+        }
+
+      case _AnalysisTestCommand.setOrder:
+        final ptsOrder = _parseAnalysisOrder(instr.stringArg(0));
+        log.info(
+          'AnalysisTestRunner ${instr.time}: SET_ANALYSIS_ORDER '
+          '${ptsOrder ? 'PTS' : 'DTS'}',
+        );
+        if (mounted) {
+          setState(() {
+            _ptsOrder = ptsOrder;
+            _rebuildSortedFramesCache();
+          });
+        } else {
+          _ptsOrder = ptsOrder;
+          _rebuildSortedFramesCache();
+        }
+
+      case _AnalysisTestCommand.assertOrder:
+        final ptsOrder = _parseAnalysisOrder(instr.stringArg(0));
+        log.info(
+          'AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_ORDER '
+          '${ptsOrder ? 'PTS' : 'DTS'}',
+        );
+        if (_ptsOrder != ptsOrder) {
+          throw AssertionError(
+            'Expected order ${ptsOrder ? 'PTS' : 'DTS'}, '
+            'got ${_ptsOrder ? 'PTS' : 'DTS'}',
+          );
+        }
+
+      case _AnalysisTestCommand.selectNalu:
+        final idx = instr.intArg(0);
+        log.info('AnalysisTestRunner ${instr.time}: SELECT_ANALYSIS_NALU $idx');
+        if (idx < 0 || idx >= _nalus.length) {
+          throw AssertionError(
+            'NALU index $idx out of range; nalus=${_nalus.length}',
+          );
+        }
+        if (mounted) {
+          setState(() {
+            _selectedNaluIdx = idx;
+            _selectedFrameIdx = _naluToFrameIdx(idx);
+          });
+        } else {
+          _selectedNaluIdx = idx;
+          _selectedFrameIdx = _naluToFrameIdx(idx);
+        }
+
+      case _AnalysisTestCommand.assertDetailVisible:
+        log.info(
+          'AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_DETAIL_VISIBLE',
+        );
+        final idx = _selectedNaluIdx;
+        if (idx == null || idx < 0 || idx >= _nalus.length) {
+          throw AssertionError(
+            'Expected selected NALU detail, got selected=$idx '
+            'nalus=${_nalus.length}',
+          );
+        }
+
+      case _AnalysisTestCommand.quit:
+        final exitCode = instr.intArg(0, defaultValue: 0);
+        log.info('AnalysisTestRunner ${instr.time}: QUIT $exitCode');
+        exit(exitCode);
+    }
+  }
+
+  Future<void> _waitForAnalysisLoaded(Duration timeout) async {
+    final sw = Stopwatch()..start();
+    while (sw.elapsed < timeout) {
+      _readData();
+      if (_isAnalysisLoaded) return;
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    throw AssertionError(
+      'WAIT_ANALYSIS_LOADED timed out after ${timeout.inMilliseconds}ms; '
+      'loaded=${_summary?.loaded ?? 0}, frames=${_frames.length}, '
+      'packets=${_summary?.packetCount ?? 0}, nalus=${_nalus.length}',
+    );
+  }
+
+  bool get _isAnalysisLoaded =>
+      (_summary?.loaded ?? 0) != 0 && (_frames.isNotEmpty || _nalus.isNotEmpty);
+
+  void _assertAnalysisLoaded() {
+    if (!_isAnalysisLoaded) {
+      throw AssertionError(
+        'Expected analysis loaded; loaded=${_summary?.loaded ?? 0}, '
+        'frames=${_frames.length}, packets=${_summary?.packetCount ?? 0}, '
+        'nalus=${_nalus.length}',
+      );
+    }
+  }
+
+  void _assertAnalysisMinCounts(int minFrames, int minPackets, int minNalus) {
+    _assertAnalysisLoaded();
+    final packets = _summary?.packetCount ?? 0;
+    if (_frames.length < minFrames ||
+        packets < minPackets ||
+        _nalus.length < minNalus) {
+      throw AssertionError(
+        'Expected analysis counts >= ($minFrames, $minPackets, $minNalus), '
+        'got frames=${_frames.length}, packets=$packets, nalus=${_nalus.length}',
+      );
+    }
+  }
+
+  void _assertAnalysisCounts(int frames, int packets, int nalus) {
+    _assertAnalysisLoaded();
+    final actualPackets = _summary?.packetCount ?? 0;
+    if (_frames.length != frames ||
+        actualPackets != packets ||
+        _nalus.length != nalus) {
+      throw AssertionError(
+        'Expected analysis counts ($frames, $packets, $nalus), '
+        'got frames=${_frames.length}, packets=$actualPackets, '
+        'nalus=${_nalus.length}',
+      );
+    }
   }
 
   void _readData() {
@@ -212,9 +440,9 @@ class _AnalysisPageState extends State<AnalysisPage> {
                 _OrderToggle(
                   ptsOrder: _ptsOrder,
                   onChanged: (v) => setState(() {
-                  _ptsOrder = v;
-                  _rebuildSortedFramesCache();
-                }),
+                    _ptsOrder = v;
+                    _rebuildSortedFramesCache();
+                  }),
                   l: l,
                 ),
                 const Spacer(),
@@ -268,7 +496,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final totalW = constraints.maxWidth;
-                final maxBrowserW = totalW - 120; // leave at least 120px for detail
+                final maxBrowserW =
+                    totalW - 120; // leave at least 120px for detail
                 final browserW = _naluBrowserWidth.clamp(120.0, maxBrowserW);
                 return Stack(
                   children: [
@@ -285,15 +514,21 @@ class _AnalysisPageState extends State<AnalysisPage> {
                               _selectedFrameIdx = _naluToFrameIdx(i);
                             }),
                             filter: _naluFilter,
-                            onFilterChanged: (v) => setState(() => _naluFilter = v),
+                            onFilterChanged: (v) =>
+                                setState(() => _naluFilter = v),
                           ),
                         ),
                         // Visual-only divider line
-                        Container(width: 1, color: theme.colorScheme.outlineVariant),
+                        Container(
+                          width: 1,
+                          color: theme.colorScheme.outlineVariant,
+                        ),
                         // NALU detail
                         Expanded(
                           child: _NaluDetailView(
-                            nalu: _selectedNaluIdx != null && _selectedNaluIdx! < _nalus.length
+                            nalu:
+                                _selectedNaluIdx != null &&
+                                    _selectedNaluIdx! < _nalus.length
                                 ? _nalus[_selectedNaluIdx!]
                                 : null,
                             frameIdx: _selectedFrameIdx,
@@ -311,7 +546,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
                       width: 9,
                       child: _ResizableVDivider(
                         position: browserW,
-                        onPositionChanged: (v) => setState(() => _naluBrowserWidth = v),
+                        onPositionChanged: (v) =>
+                            setState(() => _naluBrowserWidth = v),
                       ),
                     ),
                   ],
@@ -333,7 +569,11 @@ class _OrderToggle extends StatelessWidget {
   final bool ptsOrder;
   final ValueChanged<bool> onChanged;
   final AppLocalizations l;
-  const _OrderToggle({required this.ptsOrder, required this.onChanged, required this.l});
+  const _OrderToggle({
+    required this.ptsOrder,
+    required this.onChanged,
+    required this.l,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -356,7 +596,11 @@ class _TabBar extends StatelessWidget {
   final int selectedTab;
   final ValueChanged<int> onTabChanged;
   final AppLocalizations l;
-  const _TabBar({required this.selectedTab, required this.onTabChanged, required this.l});
+  const _TabBar({
+    required this.selectedTab,
+    required this.onTabChanged,
+    required this.l,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -383,7 +627,10 @@ class _ResizableVDivider extends StatefulWidget {
   final double position;
   final ValueChanged<double> onPositionChanged;
 
-  const _ResizableVDivider({required this.position, required this.onPositionChanged});
+  const _ResizableVDivider({
+    required this.position,
+    required this.onPositionChanged,
+  });
 
   @override
   State<_ResizableVDivider> createState() => _ResizableVDividerState();
@@ -605,8 +852,11 @@ class _RefPyramidPainter extends CustomPainter {
         text: TextSpan(
           text: 'L$tid',
           style: const TextStyle(
-              color: Color(0xFFFFFFFF), fontSize: 10,
-              fontWeight: FontWeight.w600, letterSpacing: 0.5),
+            color: Color(0xFFFFFFFF),
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
+          ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
@@ -660,7 +910,9 @@ class _RefPyramidPainter extends CustomPainter {
     // Helper: get fill color for a frame's circle (same logic as circle drawing)
     Color frameFillColor(FrameInfo f) {
       if (f.sliceType == 2) return const Color(0xFFFF4D4F); // I: red
-      if (f.sliceType == 0 && f.numRefL1 > 0) return const Color(0xFF1890FF); // B bidir: blue
+      if (f.sliceType == 0 && f.numRefL1 > 0) {
+        return const Color(0xFF1890FF); // B bidir: blue
+      }
       return const Color(0xFF52C41A); // B uni / P: green
     }
 
@@ -671,22 +923,29 @@ class _RefPyramidPainter extends CustomPainter {
       if (f.numRefL0 == 0 && f.numRefL1 == 0) continue;
       final from = positions[i]!;
 
-      final isSelLine = selectedFrameIdx != null &&
+      final isSelLine =
+          selectedFrameIdx != null &&
           (i == selectedFrameIdx || selectedRefs.contains(i));
       final lineW = isSelLine ? 2.5 : 1.0;
-      final arrowAlpha = isSelLine ? 1.0 : (selectedFrameIdx != null ? 0.2 : 0.5);
+      final arrowAlpha = isSelLine
+          ? 1.0
+          : (selectedFrameIdx != null ? 0.2 : 0.5);
 
       for (var j = 0; j < f.numRefL0 && j < f.refPocsL0.length; j++) {
         final ri = nearestRefIdx(f.refPocsL0[j], i);
         if (ri != null && ri < frames.length) {
-          final arrowColor = frameFillColor(frames[ri]).withValues(alpha: arrowAlpha);
+          final arrowColor = frameFillColor(
+            frames[ri],
+          ).withValues(alpha: arrowAlpha);
           _drawArrow(canvas, from, posFor(ri), arrowColor, lineW, circleR);
         }
       }
       for (var j = 0; j < f.numRefL1 && j < f.refPocsL1.length; j++) {
         final ri = nearestRefIdx(f.refPocsL1[j], i);
         if (ri != null && ri < frames.length) {
-          final arrowColor = frameFillColor(frames[ri]).withValues(alpha: arrowAlpha);
+          final arrowColor = frameFillColor(
+            frames[ri],
+          ).withValues(alpha: arrowAlpha);
           _drawArrow(canvas, from, posFor(ri), arrowColor, lineW, circleR);
         }
       }
@@ -702,21 +961,36 @@ class _RefPyramidPainter extends CustomPainter {
     TextPainter? labelI, labelP, labelB;
     if (circleR >= 8) {
       labelI = TextPainter(
-        text: const TextSpan(text: 'I',
-            style: TextStyle(color: Color(0xFFFFFFFF), fontSize: 14,
-                fontWeight: FontWeight.bold)),
+        text: const TextSpan(
+          text: 'I',
+          style: TextStyle(
+            color: Color(0xFFFFFFFF),
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         textDirection: TextDirection.ltr,
       )..layout();
       labelP = TextPainter(
-        text: const TextSpan(text: 'P',
-            style: TextStyle(color: Color(0xFFFFFFFF), fontSize: 14,
-                fontWeight: FontWeight.bold)),
+        text: const TextSpan(
+          text: 'P',
+          style: TextStyle(
+            color: Color(0xFFFFFFFF),
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         textDirection: TextDirection.ltr,
       )..layout();
       labelB = TextPainter(
-        text: const TextSpan(text: 'B',
-            style: TextStyle(color: Color(0xFF0050B3), fontSize: 14,
-                fontWeight: FontWeight.bold)),
+        text: const TextSpan(
+          text: 'B',
+          style: TextStyle(
+            color: Color(0xFF0050B3),
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         textDirection: TextDirection.ltr,
       )..layout();
     }
@@ -771,8 +1045,14 @@ class _RefPyramidPainter extends CustomPainter {
     }
   }
 
-  void _drawArrow(Canvas canvas, Offset from, Offset to, Color color,
-      double strokeWidth, double circleR) {
+  void _drawArrow(
+    Canvas canvas,
+    Offset from,
+    Offset to,
+    Color color,
+    double strokeWidth,
+    double circleR,
+  ) {
     final delta = to - from;
     final dist = delta.distance;
     if (dist < circleR * 2 + 2) return;
@@ -873,8 +1153,10 @@ class _FrameTrendViewState extends State<_FrameTrendView> {
                     return;
                   }
                   final span = w.viewEnd - w.viewStart;
-                  final idx = (w.viewStart + ((localX - labelW) / chartW) * span).round()
-                      .clamp(0, w.frames.length - 1);
+                  final idx =
+                      (w.viewStart + ((localX - labelW) / chartW) * span)
+                          .round()
+                          .clamp(0, w.frames.length - 1);
                   w.onFrameSelected(w.selectedFrameIdx == idx ? null : idx);
                 },
                 onPanUpdate: (details) {
@@ -957,7 +1239,9 @@ class _FrameTrendPainter extends CustomPainter {
     int maxPacketSize = 1;
     int minQp = 63, maxQp = 0;
     for (var i = visibleStart; i < visibleEnd; i++) {
-      if (frames[i].packetSize > maxPacketSize) maxPacketSize = frames[i].packetSize;
+      if (frames[i].packetSize > maxPacketSize) {
+        maxPacketSize = frames[i].packetSize;
+      }
       if (frames[i].avgQp < minQp) minQp = frames[i].avgQp;
       if (frames[i].avgQp > maxQp) maxQp = frames[i].avgQp;
     }
@@ -967,8 +1251,10 @@ class _FrameTrendPainter extends CustomPainter {
 
     // Label style — same as pyramid level labels
     const labelStyle = TextStyle(
-      color: Color(0xFFFFFFFF), fontSize: 10,
-      fontWeight: FontWeight.w600, letterSpacing: 0.5,
+      color: Color(0xFFFFFFFF),
+      fontSize: 10,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.5,
     );
     final gridPaint = Paint()
       ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.06)
@@ -1006,7 +1292,10 @@ class _FrameTrendPainter extends CustomPainter {
         text: TextSpan(text: '$value', style: labelStyle),
         textDirection: TextDirection.ltr,
       )..layout();
-      final drawY = (y - tp.height / 2).clamp(lowerTop, lowerTop + lowerH - tp.height);
+      final drawY = (y - tp.height / 2).clamp(
+        lowerTop,
+        lowerTop + lowerH - tp.height,
+      );
       tp.paint(canvas, Offset(4, drawY));
     }
 
@@ -1045,8 +1334,12 @@ class _FrameTrendPainter extends CustomPainter {
       final frac = (i - viewStart) / span;
       final x = labelW + frac * chartW + barW / 2;
       final y = lowerTop + lowerH * (1 - (f.avgQp - qpLow) / qpRange);
-      if (first) { qpPath.moveTo(x, y); first = false; }
-      else { qpPath.lineTo(x, y); }
+      if (first) {
+        qpPath.moveTo(x, y);
+        first = false;
+      } else {
+        qpPath.lineTo(x, y);
+      }
     }
     canvas.drawPath(qpPath, qpPaint);
 
@@ -1055,8 +1348,10 @@ class _FrameTrendPainter extends CustomPainter {
       final frac = (currentIdx - viewStart) / span;
       final cx = labelW + frac * chartW;
       canvas.drawLine(
-        Offset(cx, 0), Offset(cx, size.height),
-        Paint()..color = const Color(0xFFFFFFFF).withValues(alpha: 0.5)
+        Offset(cx, 0),
+        Offset(cx, size.height),
+        Paint()
+          ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.5)
           ..strokeWidth = 1,
       );
     }
@@ -1065,19 +1360,26 @@ class _FrameTrendPainter extends CustomPainter {
     if (hoverX != null && hoverX! >= labelW) {
       final relX = hoverX! - labelW;
       final frameFrac = relX / chartW;
-      final frameIdx = (viewStart + frameFrac * span).round()
-          .clamp(visibleStart, visibleEnd - 1);
+      final frameIdx = (viewStart + frameFrac * span).round().clamp(
+        visibleStart,
+        visibleEnd - 1,
+      );
 
-      final crossX = labelW + ((frameIdx - viewStart) / span) * chartW + barW / 2;
+      final crossX =
+          labelW + ((frameIdx - viewStart) / span) * chartW + barW / 2;
       canvas.drawLine(
-        Offset(crossX, 0), Offset(crossX, size.height),
-        Paint()..color = const Color(0xFFFFFFFF).withValues(alpha: 0.3)
+        Offset(crossX, 0),
+        Offset(crossX, size.height),
+        Paint()
+          ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.3)
           ..strokeWidth = 1,
       );
 
       final f = frames[frameIdx];
       final sliceLabel = switch (f.sliceType) {
-        2 => 'I', 1 => 'P', _ => f.numRefL1 > 0 ? 'B' : 'B(uni)',
+        2 => 'I',
+        1 => 'P',
+        _ => f.numRefL1 > 0 ? 'B' : 'B(uni)',
       };
       final lines = [
         '#$frameIdx  $sliceLabel  POC ${f.poc}',
@@ -1085,11 +1387,16 @@ class _FrameTrendPainter extends CustomPainter {
         'QP: ${f.avgQp}',
       ];
       final tipStyle = const TextStyle(color: Color(0xFFFFFFFF), fontSize: 10);
-      final tipPainters = lines.map((l) => TextPainter(
-        text: TextSpan(text: l, style: tipStyle),
-        textDirection: TextDirection.ltr,
-      )..layout()).toList();
-      final tipW = tipPainters.map((t) => t.width).reduce((a, b) => a > b ? a : b) + 12;
+      final tipPainters = lines
+          .map(
+            (l) => TextPainter(
+              text: TextSpan(text: l, style: tipStyle),
+              textDirection: TextDirection.ltr,
+            )..layout(),
+          )
+          .toList();
+      final tipW =
+          tipPainters.map((t) => t.width).reduce((a, b) => a > b ? a : b) + 12;
       final tipH = tipPainters.fold(0.0, (sum, t) => sum + t.height) + 10;
 
       var tipX = crossX + 8;
@@ -1098,12 +1405,17 @@ class _FrameTrendPainter extends CustomPainter {
 
       final bgPaint = Paint()..color = const Color(0xCC1A1A2E);
       final rrect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(tipX, tipY, tipW, tipH), const Radius.circular(4));
+        Rect.fromLTWH(tipX, tipY, tipW, tipH),
+        const Radius.circular(4),
+      );
       canvas.drawRRect(rrect, bgPaint);
-      canvas.drawRRect(rrect, Paint()
-        ..color = const Color(0x44FFFFFF)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.5);
+      canvas.drawRRect(
+        rrect,
+        Paint()
+          ..color = const Color(0x44FFFFFF)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 0.5,
+      );
 
       var offsetY = tipY + 5;
       for (final tp in tipPainters) {
@@ -1233,7 +1545,9 @@ class _ScrollbarPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ScrollbarPainter old) =>
-      viewStart != old.viewStart || viewEnd != old.viewEnd || total != old.total;
+      viewStart != old.viewStart ||
+      viewEnd != old.viewEnd ||
+      total != old.total;
 }
 
 // ===========================================================================
@@ -1271,7 +1585,9 @@ class _NaluBrowserViewState extends State<_NaluBrowserView> {
   @override
   Widget build(BuildContext context) {
     if (widget.nalus.isEmpty) {
-      return Center(child: Text(AppLocalizations.of(context)!.analysisNoNaluData));
+      return Center(
+        child: Text(AppLocalizations.of(context)!.analysisNoNaluData),
+      );
     }
     final theme = Theme.of(context);
     final filter = widget.filter.toLowerCase();
@@ -1285,7 +1601,9 @@ class _NaluBrowserViewState extends State<_NaluBrowserView> {
         final n = widget.nalus[i];
         final name = h266NaluTypeName(n.nalType).toLowerCase();
         final idStr = '#$i';
-        if (name.contains(filter) || idStr.contains(filter) || '${n.nalType}'.contains(filter)) {
+        if (name.contains(filter) ||
+            idStr.contains(filter) ||
+            '${n.nalType}'.contains(filter)) {
           visible.add(i);
         }
       }
@@ -1302,12 +1620,24 @@ class _NaluBrowserViewState extends State<_NaluBrowserView> {
             decoration: InputDecoration(
               hintText: AppLocalizations.of(context)!.analysisFilterHint,
               hintStyle: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                color: theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: 0.5,
+                ),
               ),
-              prefixIcon: Icon(Icons.search, size: 14, color: theme.colorScheme.onSurfaceVariant),
-              prefixIconConstraints: const BoxConstraints(minWidth: 20, minHeight: 0),
+              prefixIcon: Icon(
+                Icons.search,
+                size: 14,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              prefixIconConstraints: const BoxConstraints(
+                minWidth: 20,
+                minHeight: 0,
+              ),
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 4,
+                vertical: 6,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(4),
                 borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
@@ -1411,7 +1741,12 @@ class _NaluDetailView extends StatelessWidget {
   final List<FrameInfo> frames;
   final AppLocalizations l;
 
-  const _NaluDetailView({required this.nalu, this.frameIdx, required this.frames, required this.l});
+  const _NaluDetailView({
+    required this.nalu,
+    this.frameIdx,
+    required this.frames,
+    required this.l,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1425,7 +1760,10 @@ class _NaluDetailView extends StatelessWidget {
 
     // NALU-level info
     final items = <_DetailRow>[
-      _DetailRow(l.analysisType, '${h266NaluTypeName(n.nalType)} (${n.nalType})'),
+      _DetailRow(
+        l.analysisType,
+        '${h266NaluTypeName(n.nalType)} (${n.nalType})',
+      ),
       _DetailRow(l.analysisTemporalId, '${n.temporalId}'),
       _DetailRow(l.analysisLayerId, '${n.layerId}'),
       _DetailRow(l.analysisOffset, '${n.offset}'),
@@ -1444,10 +1782,16 @@ class _NaluDetailView extends StatelessWidget {
         1 => 'P',
         _ => f.numRefL1 > 0 ? 'B' : 'B (uni)', // unidirectional B
       };
-      final nalName = {
-        0: 'TRAIL', 1: 'STSA', 2: 'RADL', 7: 'IDR_W_RADL', 8: 'IDR_N_LP',
-        20: 'AUD',
-      }[f.nalType] ?? '${f.nalType}';
+      final nalName =
+          {
+            0: 'TRAIL',
+            1: 'STSA',
+            2: 'RADL',
+            7: 'IDR_W_RADL',
+            8: 'IDR_N_LP',
+            20: 'AUD',
+          }[f.nalType] ??
+          '${f.nalType}';
 
       frameItems.addAll([
         _DetailRow('Slice', '$sliceName (${f.sliceType})'),
@@ -1455,8 +1799,14 @@ class _NaluDetailView extends StatelessWidget {
         _DetailRow('POC', '${f.poc}'),
         _DetailRow('Avg QP', '${f.avgQp}'),
         _DetailRow('Temporal ID', '${f.temporalId}'),
-        _DetailRow('Ref L0', f.numRefL0 > 0 ? f.refPocsL0.take(f.numRefL0).join(', ') : '-'),
-        _DetailRow('Ref L1', f.numRefL1 > 0 ? f.refPocsL1.take(f.numRefL1).join(', ') : '-'),
+        _DetailRow(
+          'Ref L0',
+          f.numRefL0 > 0 ? f.refPocsL0.take(f.numRefL0).join(', ') : '-',
+        ),
+        _DetailRow(
+          'Ref L1',
+          f.numRefL1 > 0 ? f.refPocsL1.take(f.numRefL1).join(', ') : '-',
+        ),
         _DetailRow('Pkt Size', l.analysisBytes(f.packetSize)),
         _DetailRow('PTS', '${f.pts}'),
         _DetailRow('DTS', '${f.dts}'),
@@ -1470,19 +1820,21 @@ class _NaluDetailView extends StatelessWidget {
         children: [
           Text(title, style: theme.textTheme.titleSmall),
           const SizedBox(height: 4),
-          ...rows.map((r) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 1.5),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: 80,
-                  child: Text(r.label, style: ts.copyWith(color: labelColor)),
-                ),
-                Expanded(child: Text(r.value, style: ts)),
-              ],
+          ...rows.map(
+            (r) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 1.5),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 80,
+                    child: Text(r.label, style: ts.copyWith(color: labelColor)),
+                  ),
+                  Expanded(child: Text(r.value, style: ts)),
+                ],
+              ),
             ),
-          )),
+          ),
         ],
       );
     }
@@ -1511,4 +1863,122 @@ class _DetailRow {
   final String label;
   final String value;
   const _DetailRow(this.label, this.value);
+}
+
+enum _AnalysisTestCommand {
+  waitLoaded,
+  assertLoaded,
+  assertCounts,
+  assertMinCounts,
+  setTab,
+  assertTab,
+  setOrder,
+  assertOrder,
+  selectNalu,
+  assertDetailVisible,
+  quit,
+}
+
+class _AnalysisTestInstruction {
+  final Duration time;
+  final _AnalysisTestCommand command;
+  final List<String> args;
+
+  const _AnalysisTestInstruction(this.time, this.command, this.args);
+
+  String stringArg(int index, {String? defaultValue}) {
+    if (index < args.length && args[index].isNotEmpty) return args[index];
+    if (defaultValue != null) return defaultValue;
+    throw ArgumentError('Missing argument $index for $command');
+  }
+
+  int intArg(int index, {int? defaultValue}) {
+    if (index < args.length && args[index].isNotEmpty) {
+      return int.parse(args[index]);
+    }
+    if (defaultValue != null) return defaultValue;
+    throw ArgumentError('Missing integer argument $index for $command');
+  }
+}
+
+List<_AnalysisTestInstruction> _parseAnalysisTestScript(String path) {
+  final file = File(path);
+  if (!file.existsSync()) {
+    log.severe('Analysis test script not found: $path');
+    return [];
+  }
+
+  final instructions = <_AnalysisTestInstruction>[];
+  final lines = file.readAsLinesSync();
+
+  for (var i = 0; i < lines.length; i++) {
+    final line = lines[i].trim();
+    if (line.isEmpty || line.startsWith('#') || line.startsWith('@')) continue;
+
+    final parts = line.split(',').map((s) => s.trim()).toList();
+    if (parts.length < 2) {
+      log.warning('Analysis test line ${i + 1}: invalid format: $line');
+      continue;
+    }
+
+    final time = Duration(
+      milliseconds: (double.parse(parts[0]) * 1000).round(),
+    );
+    final cmd = parts[1].toUpperCase();
+    final args = parts.sublist(2);
+    final command = switch (cmd) {
+      'WAIT_ANALYSIS_LOADED' => _AnalysisTestCommand.waitLoaded,
+      'ASSERT_ANALYSIS_LOADED' => _AnalysisTestCommand.assertLoaded,
+      'ASSERT_ANALYSIS_COUNTS' => _AnalysisTestCommand.assertCounts,
+      'ASSERT_ANALYSIS_MIN_COUNTS' => _AnalysisTestCommand.assertMinCounts,
+      'SET_ANALYSIS_TAB' => _AnalysisTestCommand.setTab,
+      'ASSERT_ANALYSIS_TAB' => _AnalysisTestCommand.assertTab,
+      'SET_ANALYSIS_ORDER' => _AnalysisTestCommand.setOrder,
+      'ASSERT_ANALYSIS_ORDER' => _AnalysisTestCommand.assertOrder,
+      'SELECT_ANALYSIS_NALU' => _AnalysisTestCommand.selectNalu,
+      'ASSERT_ANALYSIS_DETAIL_VISIBLE' =>
+        _AnalysisTestCommand.assertDetailVisible,
+      'QUIT' => _AnalysisTestCommand.quit,
+      _ => null,
+    };
+
+    if (command == null) {
+      log.warning('Unknown analysis test command: $cmd');
+      continue;
+    }
+    instructions.add(_AnalysisTestInstruction(time, command, args));
+  }
+
+  instructions.sort((a, b) => a.time.compareTo(b.time));
+  return instructions;
+}
+
+int _parseAnalysisTab(String value) {
+  switch (value.trim().toLowerCase()) {
+    case '0':
+    case 'ref':
+    case 'reference':
+    case 'ref_pyramid':
+    case 'reference_pyramid':
+      return 0;
+    case '1':
+    case 'trend':
+    case 'frame_trend':
+      return 1;
+    default:
+      throw ArgumentError('Unknown analysis tab: $value');
+  }
+}
+
+bool _parseAnalysisOrder(String value) {
+  switch (value.trim().toLowerCase()) {
+    case 'pts':
+      return true;
+    case 'dts':
+    case 'decode':
+    case 'decode_order':
+      return false;
+    default:
+      throw ArgumentError('Unknown analysis order: $value');
+  }
 }

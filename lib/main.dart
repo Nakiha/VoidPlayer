@@ -106,15 +106,20 @@ class _CloseHandler with WindowListener {
 /// giving the analysis window its own D3D11 device and avoiding the
 /// Flutter multi-engine crash.
 Future<void> _runStandaloneAnalysis(List<String> args) async {
-  String? hash, fileName;
+  String? hash, fileName, testScriptPath;
   int x = 100, y = 100, width = 800, height = 600;
   int accentColorValue = 0xFF0078D4;
 
-  for (final arg in args) {
+  for (var i = 0; i < args.length; i++) {
+    final arg = args[i];
     if (arg.startsWith('--hash=')) {
       hash = arg.substring(7);
     } else if (arg.startsWith('--fileName=')) {
       fileName = arg.substring(11);
+    } else if (arg == '--test-script' && i + 1 < args.length) {
+      testScriptPath = args[++i];
+    } else if (arg.startsWith('--test-script=')) {
+      testScriptPath = arg.substring(14);
     } else if (arg.startsWith('--x=')) {
       x = int.tryParse(arg.substring(4)) ?? 100;
     } else if (arg.startsWith('--y=')) {
@@ -156,7 +161,14 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
   }
 
   final accentColor = Color(accentColorValue);
-  runApp(AnalysisApp(accentColor: accentColor, hash: hash, fileName: fileName));
+  runApp(
+    AnalysisApp(
+      accentColor: accentColor,
+      hash: hash,
+      fileName: fileName,
+      testScriptPath: testScriptPath,
+    ),
+  );
 
   // Show window after first frame to prevent white flash.
   WidgetsBinding.instance.addPostFrameCallback((_) async {

@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "analysis/generators/analysis_generator.h"
 #include "analysis/generators/bitstream_indexer.h"
+#include "analysis/analysis_manager.h"
 #include "analysis/parsers/vbt_parser.h"
 #include "analysis/parsers/vbi_parser.h"
 
@@ -241,6 +242,27 @@ TEST_CASE("AnalysisGenerator: resources video samples produce VBI2 and VBT", "[a
         }
     }
 
+    std::filesystem::remove_all(tmp);
+}
+
+TEST_CASE("AnalysisManager: current frame handles high-denominator time bases", "[analysis][manager][resources]") {
+    const std::string h265_video = test_dir + "/h265_10s_1920x1080.mp4";
+    if (!std::filesystem::exists(h265_video)) return;
+
+    auto tmp = make_temp_dir();
+    const std::string vbi_path = tmp + "/h265.vbi";
+    const std::string vbt_path = tmp + "/h265.vbt";
+
+    REQUIRE(vr::analysis::AnalysisGenerator::generate(h265_video, vbi_path, vbt_path));
+
+    auto& mgr = vr::analysis::AnalysisManager::instance();
+    REQUIRE(mgr.load("", vbi_path, vbt_path));
+    REQUIRE(mgr.vbt().header().time_base_den > 1000000);
+
+    REQUIRE(mgr.current_frame_idx(0) >= 0);
+    REQUIRE(mgr.current_frame_idx(1000000) >= 0);
+
+    mgr.unload();
     std::filesystem::remove_all(tmp);
 }
 

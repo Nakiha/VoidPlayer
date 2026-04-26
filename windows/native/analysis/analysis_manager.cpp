@@ -1,5 +1,7 @@
 #include "analysis/analysis_manager.h"
 
+#include <limits>
+
 namespace vr::analysis {
 
 AnalysisManager& AnalysisManager::instance() {
@@ -36,9 +38,16 @@ int AnalysisManager::current_frame_idx(int64_t pts_us) const {
     if (!loaded_) return -1;
     // Convert microseconds to time_base units
     const auto& h = vbt_.header();
-    if (h.time_base_den == 0) return -1;
-    int64_t pts_tb = pts_us * h.time_base_num / (1000000LL / h.time_base_den);
-    return vbt_.packet_at_pts(pts_tb);
+    if (h.time_base_num == 0 || h.time_base_den == 0) return -1;
+    const long double pts_tb =
+        static_cast<long double>(pts_us) *
+        static_cast<long double>(h.time_base_den) /
+        (static_cast<long double>(h.time_base_num) * 1000000.0L);
+    if (pts_tb < static_cast<long double>(std::numeric_limits<int64_t>::min()) ||
+        pts_tb > static_cast<long double>(std::numeric_limits<int64_t>::max())) {
+        return -1;
+    }
+    return vbt_.packet_at_pts(static_cast<int64_t>(pts_tb));
 }
 
 } // namespace vr::analysis

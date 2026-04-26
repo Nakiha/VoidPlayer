@@ -1,0 +1,9 @@
+# Main window should generate H.265 analysis, spawn one child process, and keep it alive.
+@WINDOW, 1280, 720
+0.2, SET_ANALYSIS_TEST_SCRIPT, ui_tests/analysis_child_smoke.csv
+0.5, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+3.0, ASSERT_TRACK_COUNT, 1
+3.2, RUN_ANALYSIS
+4.0, WAIT_ANALYSIS_PROCESS_COUNT, 1, 45000
+5.0, ASSERT_ANALYSIS_PROCESS_COUNT, 1
+8.0, QUIT, 0

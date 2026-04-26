@@ -174,6 +174,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       (_) => WindowManager.showMemoryWindow(),
     );
     actionRegistry.bind(const OpenAnalysis(), (_) => _toggleAnalysisToolbar());
+    actionRegistry.bind(const RunAnalysis(), (_) => _triggerAnalysis());
   }
 
   void _togglePlayPause() async {

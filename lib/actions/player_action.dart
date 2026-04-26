@@ -92,6 +92,10 @@ class OpenAnalysis extends PlayerAction {
     : super('OPEN_ANALYSIS', LogicalKeyboardKey.backquote, true);
 }
 
+class RunAnalysis extends PlayerAction {
+  const RunAnalysis() : super('RUN_ANALYSIS');
+}
+
 /// Add a media file by path (no file-picker dialog).
 class AddMedia extends PlayerAction {
   final String path;

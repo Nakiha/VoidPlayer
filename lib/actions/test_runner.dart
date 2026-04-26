@@ -7,6 +7,7 @@ import 'package:window_manager/window_manager.dart' as wm;
 import '../app_log.dart';
 import 'action_registry.dart';
 import '../video_renderer_controller.dart';
+import '../windows/window_manager.dart';
 import 'player_action.dart';
 import 'player_assert.dart';
 
@@ -33,6 +34,17 @@ class ScriptWait extends ScriptInstruction {
 }
 
 enum WaitState { playing, paused }
+
+class ScriptWaitAnalysisProcessCount extends ScriptInstruction {
+  final int count;
+  final Duration timeout;
+  const ScriptWaitAnalysisProcessCount(super.time, this.count, this.timeout);
+}
+
+class ScriptSetAnalysisTestScript extends ScriptInstruction {
+  final String path;
+  const ScriptSetAnalysisTestScript(super.time, this.path);
+}
 
 class ScriptQuit extends ScriptInstruction {
   final int exitCode;
@@ -102,8 +114,28 @@ class TestRunner {
         );
         await _executeWait(state, timeout);
 
+      case ScriptWaitAnalysisProcessCount(:final count, :final timeout):
+        log.info(
+          'TestRunner ${instr.time}: WAIT_ANALYSIS_PROCESS_COUNT $count ${timeout.inMilliseconds}ms',
+        );
+        final ok = await WindowManager.waitForAnalysisProcessCount(
+          count,
+          timeout,
+        );
+        if (!ok) {
+          throw AssertionError(
+            'Expected $count analysis process(es), got '
+            '${WindowManager.analysisProcessCount}; exits=${WindowManager.analysisExitCodes}',
+          );
+        }
+
+      case ScriptSetAnalysisTestScript(:final path):
+        log.info('TestRunner ${instr.time}: SET_ANALYSIS_TEST_SCRIPT $path');
+        WindowManager.analysisTestScriptPath = path;
+
       case ScriptQuit(:final exitCode):
         log.info('TestRunner ${instr.time}: QUIT $exitCode');
+        await WindowManager.closeAllSecondaryWindows();
         exit(exitCode);
     }
   }
@@ -282,6 +314,14 @@ class TestRunner {
             '(nonBlack>=${minNonBlackRatio.toStringAsFixed(4)}, avgLuma>=${minAvgLuma.toStringAsFixed(2)}), '
             'got nonBlack=${actual.nonBlackRatio.toStringAsFixed(4)}, '
             'avgLuma=${actual.avgLuma.toStringAsFixed(2)}, hash=${actual.hash}',
+          );
+        }
+      case AssertAnalysisProcessCount(:final count):
+        final actual = WindowManager.analysisProcessCount;
+        if (actual != count) {
+          throw AssertionError(
+            'Expected analysis process count $count, got $actual; '
+            'exits=${WindowManager.analysisExitCodes}',
           );
         }
     }
@@ -545,6 +585,9 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAction(time, StoreViewCenter(args[0]));
+    case 'RUN_ANALYSIS':
+    case 'TRIGGER_ANALYSIS':
+      return ScriptAction(time, const RunAnalysis());
 
     // Waits
     case 'WAIT_PLAYING':
@@ -561,6 +604,25 @@ ScriptInstruction? _parseInstruction(
         WaitState.paused,
         Duration(milliseconds: timeoutMs),
       );
+    case 'WAIT_ANALYSIS_PROCESS_COUNT':
+      if (args.isEmpty) {
+        log.warning(
+          'WAIT_ANALYSIS_PROCESS_COUNT missing count argument: $rawLine',
+        );
+        return null;
+      }
+      final timeoutMs = args.length >= 2 ? int.parse(args[1]) : 10000;
+      return ScriptWaitAnalysisProcessCount(
+        time,
+        int.parse(args[0]),
+        Duration(milliseconds: timeoutMs),
+      );
+    case 'SET_ANALYSIS_TEST_SCRIPT':
+      if (args.isEmpty) {
+        log.warning('SET_ANALYSIS_TEST_SCRIPT missing path argument: $rawLine');
+        return null;
+      }
+      return ScriptSetAnalysisTestScript(time, args[0]);
 
     // Asserts — playback
     case 'ASSERT_PLAYING':
@@ -678,6 +740,14 @@ ScriptInstruction? _parseInstruction(
           minAvgLuma: args.length >= 3 ? double.parse(args[2]) : 4.0,
         ),
       );
+    case 'ASSERT_ANALYSIS_PROCESS_COUNT':
+      if (args.isEmpty) {
+        log.warning(
+          'ASSERT_ANALYSIS_PROCESS_COUNT missing count argument: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(time, AssertAnalysisProcessCount(int.parse(args[0])));
 
     // Control
     case 'QUIT':

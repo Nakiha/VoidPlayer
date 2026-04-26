@@ -1660,20 +1660,34 @@ class _RefPyramidPainter extends CustomPainter {
       return Offset(x, y);
     }
 
+    bool endpointVisible(int idx) {
+      if (idx < 0 || idx >= frames.length) return false;
+      return Rect.fromCircle(
+        center: posFor(idx),
+        radius: circleR,
+      ).overlaps(plotRect);
+    }
+
+    List<int> refsFor(int sourceIdx) {
+      final f = frames[sourceIdx];
+      final refs = <int>[];
+      for (var j = 0; j < f.numRefL0 && j < f.refPocsL0.length; j++) {
+        final ri = nearestRefIdx(f.refPocsL0[j], sourceIdx);
+        if (ri != null && ri >= 0 && ri < frames.length) refs.add(ri);
+      }
+      for (var j = 0; j < f.numRefL1 && j < f.refPocsL1.length; j++) {
+        final ri = nearestRefIdx(f.refPocsL1[j], sourceIdx);
+        if (ri != null && ri >= 0 && ri < frames.length) refs.add(ri);
+      }
+      return refs;
+    }
+
     // Collect selected frame's references for highlighting
     final Set<int> selectedRefs = {};
     if (selectedFrameIdx != null &&
-        selectedFrameIdx! < frames.length &&
-        positions.containsKey(selectedFrameIdx)) {
-      final sf = frames[selectedFrameIdx!];
-      for (var j = 0; j < sf.numRefL0 && j < sf.refPocsL0.length; j++) {
-        final ri = nearestRefIdx(sf.refPocsL0[j], selectedFrameIdx!);
-        if (ri != null && positions.containsKey(ri)) selectedRefs.add(ri);
-      }
-      for (var j = 0; j < sf.numRefL1 && j < sf.refPocsL1.length; j++) {
-        final ri = nearestRefIdx(sf.refPocsL1[j], selectedFrameIdx!);
-        if (ri != null && positions.containsKey(ri)) selectedRefs.add(ri);
-      }
+        selectedFrameIdx! >= 0 &&
+        selectedFrameIdx! < frames.length) {
+      selectedRefs.addAll(refsFor(selectedFrameIdx!));
     }
 
     // Helper: get fill color for a frame's circle (same logic as circle drawing)
@@ -1685,38 +1699,42 @@ class _RefPyramidPainter extends CustomPainter {
       return const Color(0xFF52C41A); // B uni / P: green
     }
 
-    // Draw all visible arrows
-    for (var i = visibleStart; i < visibleEnd; i++) {
-      if (!positions.containsKey(i)) continue;
+    // Draw reference edges that affect the viewport. This includes offscreen
+    // sources/targets when the other endpoint is visible, preventing lines from
+    // popping in only when an offscreen source node enters the viewport.
+    final drawnEdges = <String>{};
+    for (var i = 0; i < frames.length; i++) {
       final f = frames[i];
       if (f.numRefL0 == 0 && f.numRefL1 == 0) continue;
-      final from = positions[i]!;
+      final from = posFor(i);
+      final sourceVisible = endpointVisible(i);
 
-      final isSelLine =
-          selectedFrameIdx != null &&
-          (i == selectedFrameIdx || selectedRefs.contains(i));
-      final lineW = isSelLine ? 2.5 : 1.0;
-      final arrowAlpha = isSelLine
-          ? 1.0
-          : (selectedFrameIdx != null ? 0.2 : 0.5);
+      for (final ri in refsFor(i)) {
+        final edgeKey = '$i:$ri';
+        if (!drawnEdges.add(edgeKey)) continue;
 
-      for (var j = 0; j < f.numRefL0 && j < f.refPocsL0.length; j++) {
-        final ri = nearestRefIdx(f.refPocsL0[j], i);
-        if (ri != null && ri < frames.length) {
-          final arrowColor = frameFillColor(
-            frames[ri],
-          ).withValues(alpha: arrowAlpha);
-          _drawArrow(canvas, from, posFor(ri), arrowColor, lineW, circleR);
-        }
-      }
-      for (var j = 0; j < f.numRefL1 && j < f.refPocsL1.length; j++) {
-        final ri = nearestRefIdx(f.refPocsL1[j], i);
-        if (ri != null && ri < frames.length) {
-          final arrowColor = frameFillColor(
-            frames[ri],
-          ).withValues(alpha: arrowAlpha);
-          _drawArrow(canvas, from, posFor(ri), arrowColor, lineW, circleR);
-        }
+        final to = posFor(ri);
+        final targetVisible = endpointVisible(ri);
+        final isSelLine =
+            selectedFrameIdx != null &&
+            (i == selectedFrameIdx ||
+                ri == selectedFrameIdx ||
+                selectedRefs.contains(i) ||
+                selectedRefs.contains(ri));
+        if (!sourceVisible && !targetVisible && !isSelLine) continue;
+        if (!_segmentIntersectsRect(from, to, plotRect)) continue;
+
+        final lineW = isSelLine
+            ? 2.5
+            : (sourceVisible && targetVisible ? 1 : 0.8);
+        final baseAlpha = sourceVisible && targetVisible ? 0.5 : 0.36;
+        final arrowAlpha = isSelLine
+            ? 1.0
+            : (selectedFrameIdx != null ? baseAlpha * 0.4 : baseAlpha);
+        final arrowColor = frameFillColor(
+          frames[ri],
+        ).withValues(alpha: arrowAlpha);
+        _drawArrow(canvas, from, to, arrowColor, lineW.toDouble(), circleR);
       }
     }
     // --- Frame circles ---
@@ -1945,6 +1963,53 @@ class _RefPyramidPainter extends CustomPainter {
         ..close(),
       _arrowHeadPaint,
     );
+  }
+
+  bool _segmentIntersectsRect(Offset a, Offset b, Rect rect) {
+    if (rect.contains(a) || rect.contains(b)) return true;
+    final left = a.dx < b.dx ? a.dx : b.dx;
+    final right = a.dx > b.dx ? a.dx : b.dx;
+    final top = a.dy < b.dy ? a.dy : b.dy;
+    final bottom = a.dy > b.dy ? a.dy : b.dy;
+    if (right < rect.left ||
+        left > rect.right ||
+        bottom < rect.top ||
+        top > rect.bottom) {
+      return false;
+    }
+
+    final topLeft = rect.topLeft;
+    final topRight = rect.topRight;
+    final bottomRight = rect.bottomRight;
+    final bottomLeft = rect.bottomLeft;
+    return _segmentsIntersect(a, b, topLeft, topRight) ||
+        _segmentsIntersect(a, b, topRight, bottomRight) ||
+        _segmentsIntersect(a, b, bottomRight, bottomLeft) ||
+        _segmentsIntersect(a, b, bottomLeft, topLeft);
+  }
+
+  bool _segmentsIntersect(Offset a, Offset b, Offset c, Offset d) {
+    final o1 = _orientation(a, b, c);
+    final o2 = _orientation(a, b, d);
+    final o3 = _orientation(c, d, a);
+    final o4 = _orientation(c, d, b);
+    if (o1 == 0 && _onSegment(a, c, b)) return true;
+    if (o2 == 0 && _onSegment(a, d, b)) return true;
+    if (o3 == 0 && _onSegment(c, a, d)) return true;
+    if (o4 == 0 && _onSegment(c, b, d)) return true;
+    return (o1 > 0) != (o2 > 0) && (o3 > 0) != (o4 > 0);
+  }
+
+  double _orientation(Offset a, Offset b, Offset c) {
+    final v = (b.dy - a.dy) * (c.dx - b.dx) - (b.dx - a.dx) * (c.dy - b.dy);
+    return v.abs() < 0.0001 ? 0 : v;
+  }
+
+  bool _onSegment(Offset a, Offset b, Offset c) {
+    return b.dx <= (a.dx > c.dx ? a.dx : c.dx) + 0.0001 &&
+        b.dx + 0.0001 >= (a.dx < c.dx ? a.dx : c.dx) &&
+        b.dy <= (a.dy > c.dy ? a.dy : c.dy) + 0.0001 &&
+        b.dy + 0.0001 >= (a.dy < c.dy ? a.dy : c.dy);
   }
 
   @override

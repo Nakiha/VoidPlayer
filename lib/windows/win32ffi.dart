@@ -340,6 +340,35 @@ class Win32FFI {
     }
   }
 
+  /// Returns the window class name as a Dart string.
+  static String getWindowClassName(int hwnd) {
+    final buf = calloc.allocate<Utf16>(1024);
+    try {
+      final len = _getClassNameW(hwnd, buf.cast<Utf16>(), 512);
+      return len > 0 ? buf.cast<Utf16>().toDartString(length: len) : '';
+    } finally {
+      calloc.free(buf);
+    }
+  }
+
+  /// Returns the owning process id for [hwnd], or 0 if it cannot be read.
+  static int getWindowProcessId(int hwnd) {
+    final pidBuf = calloc.allocate<Uint32>(4);
+    try {
+      _getWindowThreadProcessId(hwnd, pidBuf.cast<Uint32>());
+      return pidBuf.cast<Uint32>().value;
+    } finally {
+      calloc.free(pidBuf);
+    }
+  }
+
+  /// Returns whether [hwnd] is a top-level window of this process with [className].
+  static bool isCurrentProcessWindowOfClass(int hwnd, String className) {
+    if (!isWindow(hwnd)) return false;
+    return getWindowProcessId(hwnd) == getCurrentProcessId() &&
+        getWindowClassName(hwnd) == className;
+  }
+
   /// Sets the window title.
   static void setWindowText(int hwnd, String text) {
     final ptr = text.toNativeUtf16();

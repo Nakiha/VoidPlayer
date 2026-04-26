@@ -231,6 +231,24 @@ class WindowManager {
   static Future<Rect> _computeAnalysisWindowRect() =>
       _computeWindowRect(WindowArgs.analysis, useSavedPosition: false);
 
+  static int _findMainWindowHwnd() {
+    final foregroundHwnd = Win32FFI.getForegroundWindow();
+    if (Win32FFI.isCurrentProcessWindowOfClass(
+      foregroundHwnd,
+      kMainWindowClass,
+    )) {
+      return foregroundHwnd;
+    }
+
+    final hwnds = Win32FFI.findCurrentProcessWindowsByClass(kMainWindowClass);
+    for (final hwnd in hwnds) {
+      if (Win32FFI.getWindowText(hwnd) == 'Void Player') {
+        return hwnd;
+      }
+    }
+    return hwnds.isNotEmpty ? hwnds.first : 0;
+  }
+
   // --- desktop_multi_window secondary windows (stats/settings/memory) ---
 
   static Future<void> _showWindow(String type) async {
@@ -304,17 +322,26 @@ class WindowManager {
     }
 
     // Cascade from the main window.
-    final parentHwnds = Win32FFI.findCurrentProcessWindowsByClass(
-      kMainWindowClass,
-    );
-    final parentHwnd = parentHwnds.isNotEmpty ? parentHwnds.first : 0;
+    final parentHwnd = _findMainWindowHwnd();
     if (parentHwnd != 0) {
       final parentRect = Win32FFI.getWindowRect(parentHwnd);
       final monitorArea = Win32FFI.getMonitorWorkArea(parentHwnd);
+      final offset = type == WindowArgs.analysis
+          ? Win32FFI.titleBarOffset()
+          : 32;
+      if (type == WindowArgs.analysis) {
+        log.info(
+          '[WindowManager] analysis anchor hwnd=$parentHwnd, '
+          'title="${Win32FFI.getWindowText(parentHwnd)}", '
+          'rect=(${parentRect.left.toInt()}, ${parentRect.top.toInt()}, '
+          '${parentRect.width.toInt()}x${parentRect.height.toInt()}), '
+          'offset=$offset',
+        );
+      }
       return Win32FFI.cascadePosition(
         parentRect,
         monitorArea,
-        offset: type == WindowArgs.analysis ? Win32FFI.titleBarOffset() : 32,
+        offset: offset,
         defaultWidth: defaultW,
         defaultHeight: defaultH,
       );

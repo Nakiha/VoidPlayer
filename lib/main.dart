@@ -50,6 +50,18 @@ Future<void> _showWindowForMode({required bool silent}) async {
   await windowManager.show(inactive: silent);
 }
 
+int _currentFlutterRunnerHwnd() {
+  final hwnds = Win32FFI.findCurrentProcessWindowsByClass(kMainWindowClass);
+  if (hwnds.isNotEmpty) return hwnds.first;
+  final foregroundHwnd = Win32FFI.getForegroundWindow();
+  return Win32FFI.isCurrentProcessWindowOfClass(
+        foregroundHwnd,
+        kMainWindowClass,
+      )
+      ? foregroundHwnd
+      : 0;
+}
+
 Future<Color> getWindowsAccentColor() async {
   try {
     final result = await Process.run('powershell', [
@@ -168,8 +180,21 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
   );
 
   await windowManager.ensureInitialized();
-  await windowManager.setSize(Size(width.toDouble(), height.toDouble()));
-  await windowManager.setPosition(Offset(x.toDouble(), y.toDouble()));
+  final initialHwnd = _currentFlutterRunnerHwnd();
+  if (initialHwnd != 0) {
+    Win32FFI.moveWindow(initialHwnd, x, y, width, height);
+    log.info(
+      '[StandaloneAnalysis] applied initial rect via Win32: '
+      'hwnd=$initialHwnd, x=$x, y=$y, width=$width, height=$height',
+    );
+  } else {
+    await windowManager.setSize(Size(width.toDouble(), height.toDouble()));
+    await windowManager.setPosition(Offset(x.toDouble(), y.toDouble()));
+    log.warning(
+      '[StandaloneAnalysis] initial HWND unavailable, '
+      'falling back to window_manager position',
+    );
+  }
   await windowManager.setMinimumSize(const Size(400, 300));
 
   await Window.initialize();
@@ -179,7 +204,7 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
   );
 
   // Set native window title.
-  final hwnd = Win32FFI.getForegroundWindow();
+  final hwnd = initialHwnd != 0 ? initialHwnd : _currentFlutterRunnerHwnd();
   if (hwnd != 0) {
     final title = hashes.length == 1 && fileNames.isNotEmpty
         ? 'Void Player - ${fileNames.first}'

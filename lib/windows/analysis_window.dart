@@ -189,14 +189,13 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
               onModeChanged: (value) => setState(() => _splitView = value),
               onSelected: (index) => setState(() => _selected = index),
             )
-          : _AnalysisTrackPane(
-              entry: entries[selected],
-              index: selected,
-              selected: true,
-              showModeToggle: true,
+          : _AnalysisTabbedView(
+              entries: entries,
+              selectedIndex: selected,
               splitView: _splitView,
               modeToggleEnabled: modeToggleEnabled,
               onModeChanged: (value) => setState(() => _splitView = value),
+              onSelected: (index) => setState(() => _selected = index),
               child: AnalysisPage(
                 key: ValueKey('analysis-${entries[selected].hash}'),
                 hash: entries[selected].hash,
@@ -204,6 +203,149 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
                 pollSummary: false,
               ),
             ),
+    );
+  }
+}
+
+class _AnalysisTabbedView extends StatelessWidget {
+  final List<_AnalysisWorkspaceEntry> entries;
+  final int selectedIndex;
+  final bool splitView;
+  final bool modeToggleEnabled;
+  final ValueChanged<bool> onModeChanged;
+  final ValueChanged<int> onSelected;
+  final Widget child;
+
+  const _AnalysisTabbedView({
+    required this.entries,
+    required this.selectedIndex,
+    required this.splitView,
+    required this.modeToggleEnabled,
+    required this.onModeChanged,
+    required this.onSelected,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _AnalysisTabsHeader(
+          entries: entries,
+          selectedIndex: selectedIndex,
+          splitView: splitView,
+          modeToggleEnabled: modeToggleEnabled,
+          onModeChanged: onModeChanged,
+          onSelected: onSelected,
+        ),
+        Expanded(child: child),
+      ],
+    );
+  }
+}
+
+class _AnalysisTabsHeader extends StatelessWidget {
+  final List<_AnalysisWorkspaceEntry> entries;
+  final int selectedIndex;
+  final bool splitView;
+  final bool modeToggleEnabled;
+  final ValueChanged<bool> onModeChanged;
+  final ValueChanged<int> onSelected;
+
+  const _AnalysisTabsHeader({
+    required this.entries,
+    required this.selectedIndex,
+    required this.splitView,
+    required this.modeToggleEnabled,
+    required this.onModeChanged,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.18),
+        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+      ),
+      child: Row(
+        children: [
+          _AnalysisWorkspaceModeToggle(
+            splitView: splitView,
+            enabled: modeToggleEnabled,
+            onChanged: onModeChanged,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Row(
+              children: [
+                for (var i = 0; i < entries.length; i++)
+                  Expanded(
+                    child: _AnalysisTrackTab(
+                      entry: entries[i],
+                      index: i,
+                      selected: i == selectedIndex,
+                      onTap: () => onSelected(i),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnalysisTrackTab extends StatelessWidget {
+  final _AnalysisWorkspaceEntry entry;
+  final int index;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _AnalysisTrackTab({
+    required this.entry,
+    required this.index,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Material(
+        color: selected
+            ? theme.colorScheme.primary.withValues(alpha: 0.22)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(4),
+          onTap: selected ? null : onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '${index + 1}. ${entry.fileName ?? 'Track ${index + 1}'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: selected
+                      ? theme.colorScheme.onSurface
+                      : theme.colorScheme.onSurfaceVariant,
+                  fontWeight: selected ? FontWeight.w600 : null,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -312,18 +454,14 @@ class _AnalysisTrackPane extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Visibility(
-                visible: showModeToggle,
-                maintainAnimation: true,
-                maintainSize: true,
-                maintainState: true,
-                child: _AnalysisWorkspaceModeToggle(
+              if (showModeToggle) ...[
+                _AnalysisWorkspaceModeToggle(
                   splitView: splitView,
                   enabled: modeToggleEnabled,
                   onChanged: onModeChanged,
                 ),
-              ),
-              const SizedBox(width: 8),
+                const SizedBox(width: 8),
+              ],
               Expanded(
                 child: InkWell(
                   onTap: onSelected,
@@ -1117,42 +1255,124 @@ class _TabBar extends StatelessWidget {
       segments: [
         ButtonSegment(
           value: 0,
-          label: _StableSegmentLabel(l.analysisRefPyramid),
+          label: Tooltip(
+            message: l.analysisRefPyramid,
+            child: const SizedBox(
+              width: 34,
+              height: 24,
+              child: _AnalysisViewIcon(_AnalysisViewIconKind.pyramid),
+            ),
+          ),
         ),
         ButtonSegment(
           value: 1,
-          label: _StableSegmentLabel(l.analysisFrameTrend),
+          label: Tooltip(
+            message: l.analysisFrameTrend,
+            child: const SizedBox(
+              width: 34,
+              height: 24,
+              child: _AnalysisViewIcon(_AnalysisViewIconKind.trend),
+            ),
+          ),
         ),
       ],
       selected: {selectedTab},
       onSelectionChanged: (s) => onTabChanged(s.first),
       style: const ButtonStyle(
         visualDensity: VisualDensity.compact,
+        padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 8)),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
       ),
     );
   }
 }
 
-class _StableSegmentLabel extends StatelessWidget {
-  final String text;
+enum _AnalysisViewIconKind { pyramid, trend }
 
-  const _StableSegmentLabel(this.text);
+class _AnalysisViewIcon extends StatelessWidget {
+  final _AnalysisViewIconKind kind;
+
+  const _AnalysisViewIcon(this.kind);
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 128,
-      child: Center(
-        child: Text(
-          text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          softWrap: false,
-        ),
-      ),
-    );
+    final color =
+        IconTheme.of(context).color ??
+        DefaultTextStyle.of(context).style.color ??
+        Theme.of(context).colorScheme.onSurface;
+    return CustomPaint(painter: _AnalysisViewIconPainter(kind, color));
   }
+}
+
+class _AnalysisViewIconPainter extends CustomPainter {
+  final _AnalysisViewIconKind kind;
+  final Color color;
+
+  const _AnalysisViewIconPainter(this.kind, this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final fill = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    switch (kind) {
+      case _AnalysisViewIconKind.pyramid:
+        final p0 = Offset(size.width * 0.18, size.height * 0.76);
+        final p1 = Offset(size.width * 0.42, size.height * 0.46);
+        final p2 = Offset(size.width * 0.68, size.height * 0.22);
+        final p3 = Offset(size.width * 0.84, size.height * 0.58);
+        canvas.drawLine(p0, p1, stroke);
+        canvas.drawLine(p1, p2, stroke);
+        canvas.drawLine(p1, p3, stroke);
+        canvas.drawLine(p2, p3, stroke..color = color.withValues(alpha: 0.55));
+        for (final p in [p0, p1, p2, p3]) {
+          canvas.drawCircle(p, 3.0, fill);
+        }
+
+      case _AnalysisViewIconKind.trend:
+        final baseY = size.height * 0.76;
+        final barW = size.width * 0.12;
+        final xs = [
+          size.width * 0.18,
+          size.width * 0.38,
+          size.width * 0.58,
+          size.width * 0.78,
+        ];
+        final hs = [
+          size.height * 0.30,
+          size.height * 0.50,
+          size.height * 0.24,
+          size.height * 0.60,
+        ];
+        for (var i = 0; i < xs.length; i++) {
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(xs[i], baseY - hs[i], barW, hs[i]),
+              const Radius.circular(1.5),
+            ),
+            fill,
+          );
+        }
+        final line = Path()
+          ..moveTo(size.width * 0.12, size.height * 0.64)
+          ..lineTo(size.width * 0.35, size.height * 0.54)
+          ..lineTo(size.width * 0.56, size.height * 0.62)
+          ..lineTo(size.width * 0.86, size.height * 0.36);
+        canvas.drawPath(line, stroke);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _AnalysisViewIconPainter oldDelegate) =>
+      kind != oldDelegate.kind || color != oldDelegate.color;
 }
 
 // ===========================================================================
@@ -1263,6 +1483,7 @@ class _ResizableHDividerState extends State<_ResizableHDivider> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onVerticalDragStart: _onDragStart,
@@ -1275,11 +1496,11 @@ class _ResizableHDividerState extends State<_ResizableHDivider> {
           child: Center(
             child: SizedBox(
               width: double.infinity,
-              height: _hovering ? 2 : 0,
+              height: _hovering ? 2 : 1,
               child: ColoredBox(
                 color: _hovering
-                    ? Theme.of(context).colorScheme.primary
-                    : Colors.transparent,
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.outlineVariant,
               ),
             ),
           ),
@@ -1682,12 +1903,21 @@ class _RefPyramidPainter extends CustomPainter {
       return refs;
     }
 
-    // Collect selected frame's references for highlighting
-    final Set<int> selectedRefs = {};
+    // Collect the selected frame's transitive reference chain for highlighting.
+    final selectedChainEdges = <String>{};
+    final selectedChainNodes = <int>{};
     if (selectedFrameIdx != null &&
         selectedFrameIdx! >= 0 &&
         selectedFrameIdx! < frames.length) {
-      selectedRefs.addAll(refsFor(selectedFrameIdx!));
+      void visitReferenceChain(int sourceIdx) {
+        if (!selectedChainNodes.add(sourceIdx)) return;
+        for (final refIdx in refsFor(sourceIdx)) {
+          selectedChainEdges.add('$sourceIdx:$refIdx');
+          visitReferenceChain(refIdx);
+        }
+      }
+
+      visitReferenceChain(selectedFrameIdx!);
     }
 
     // Helper: get fill color for a frame's circle (same logic as circle drawing)
@@ -1716,11 +1946,7 @@ class _RefPyramidPainter extends CustomPainter {
         final to = posFor(ri);
         final targetVisible = endpointVisible(ri);
         final isSelLine =
-            selectedFrameIdx != null &&
-            (i == selectedFrameIdx ||
-                ri == selectedFrameIdx ||
-                selectedRefs.contains(i) ||
-                selectedRefs.contains(ri));
+            selectedFrameIdx != null && selectedChainEdges.contains(edgeKey);
         if (!sourceVisible && !targetVisible && !isSelLine) continue;
         if (!_segmentIntersectsRect(from, to, plotRect)) continue;
 
@@ -1740,8 +1966,7 @@ class _RefPyramidPainter extends CustomPainter {
     // --- Frame circles ---
     final related = <int>{};
     if (selectedFrameIdx != null) {
-      related.add(selectedFrameIdx!);
-      related.addAll(selectedRefs);
+      related.addAll(selectedChainNodes);
     }
 
     // Cache label TextPainters (only 3 variants: I, P, B)

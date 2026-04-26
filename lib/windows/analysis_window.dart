@@ -135,6 +135,7 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
                             padding: const EdgeInsets.symmetric(vertical: 6),
                             child: FilledButton.tonal(
                               style: FilledButton.styleFrom(
+                                alignment: Alignment.centerLeft,
                                 backgroundColor: index == selected
                                     ? theme.colorScheme.primaryContainer
                                     : theme.colorScheme.surfaceContainerHighest,
@@ -147,15 +148,11 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
                               ),
                               onPressed: () =>
                                   setState(() => _selected = index),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  '${index + 1}. ${entries[index].fileName ?? 'Track ${index + 1}'}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  softWrap: false,
-                                  textAlign: TextAlign.left,
-                                ),
+                              child: Text(
+                                '${index + 1}. ${entries[index].fileName ?? 'Track ${index + 1}'}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                softWrap: false,
                               ),
                             ),
                           ),

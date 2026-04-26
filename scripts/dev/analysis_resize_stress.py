@@ -11,6 +11,7 @@ from ctypes import wintypes
 from pathlib import Path
 
 from .paths import ROOT, app_exe_path
+from .ui_lock import gui_test_lock
 
 
 WM_CLOSE = 0x0010
@@ -218,13 +219,14 @@ def run_analysis_resize_stress(
 
 def cmd_analysis_resize_stress(args) -> None:
     try:
-        run_analysis_resize_stress(
-            debug=args.debug,
-            build=args.build,
-            requested_hash=args.hash,
-            rounds=args.rounds,
-            visible=args.visible,
-        )
+        with gui_test_lock("analysis-resize-stress"):
+            run_analysis_resize_stress(
+                debug=args.debug,
+                build=args.build,
+                requested_hash=args.hash,
+                rounds=args.rounds,
+                visible=args.visible,
+            )
     except Exception as exc:  # noqa: BLE001 - dev command should print concise failures.
         print(f"Analysis resize stress failed: {exc}")
         sys.exit(1)

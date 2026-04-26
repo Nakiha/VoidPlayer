@@ -3005,69 +3005,75 @@ class _NaluBrowserViewState extends State<_NaluBrowserView> {
           ),
         // List
         Expanded(
-          child: ListView.builder(
-            controller: _scrollController,
-            itemCount: visible.length,
-            itemExtent: _itemExtent,
-            itemBuilder: (context, displayIndex) {
-              final origIdx = visible[displayIndex];
-              final n = widget.nalus[origIdx];
-              final selected = origIdx == widget.selectedIdx;
-              return InkWell(
-                onTap: () => widget.onSelected(origIdx),
-                child: Container(
-                  color: selected
-                      ? theme.colorScheme.primary.withValues(alpha: 0.15)
-                      : null,
-                  child: Row(
-                    children: [
-                      // Decorative color bar
-                      Container(
-                        width: 4,
-                        height: 28,
-                        color: bitstreamUnitDecorColor(
-                          widget.codec,
-                          n.nalType,
-                          flags: n.flags,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // Index
-                      SizedBox(
-                        width: 40,
-                        child: Text(
-                          '#$origIdx',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                            fontFeatures: [const FontFeature.tabularFigures()],
+          child: ExcludeSemantics(
+            child: ListView.builder(
+              controller: _scrollController,
+              itemCount: visible.length,
+              itemExtent: _itemExtent,
+              itemBuilder: (context, displayIndex) {
+                final origIdx = visible[displayIndex];
+                final n = widget.nalus[origIdx];
+                final selected = origIdx == widget.selectedIdx;
+                return InkWell(
+                  onTap: () => widget.onSelected(origIdx),
+                  child: Container(
+                    color: selected
+                        ? theme.colorScheme.primary.withValues(alpha: 0.15)
+                        : null,
+                    child: Row(
+                      children: [
+                        // Decorative color bar
+                        Container(
+                          width: 4,
+                          height: 28,
+                          color: bitstreamUnitDecorColor(
+                            widget.codec,
+                            n.nalType,
+                            flags: n.flags,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      // Type number
-                      SizedBox(
-                        width: 24,
-                        child: Text(
-                          '${n.nalType}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                            fontFeatures: [const FontFeature.tabularFigures()],
+                        const SizedBox(width: 8),
+                        // Index
+                        SizedBox(
+                          width: 40,
+                          child: Text(
+                            '#$origIdx',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontFeatures: [
+                                const FontFeature.tabularFigures(),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      // Type name
-                      Expanded(
-                        child: Text(
-                          bitstreamUnitTypeName(widget.codec, n.nalType),
-                          style: theme.textTheme.bodySmall,
+                        const SizedBox(width: 6),
+                        // Type number
+                        SizedBox(
+                          width: 24,
+                          child: Text(
+                            '${n.nalType}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontFeatures: [
+                                const FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 6),
+                        // Type name
+                        Expanded(
+                          child: Text(
+                            bitstreamUnitTypeName(widget.codec, n.nalType),
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ],

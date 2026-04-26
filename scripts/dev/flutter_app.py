@@ -8,6 +8,7 @@ from pathlib import Path
 from .native import native_build
 from .paths import DEMO_SCRIPT, NATIVE_BUILD_DIR, NATIVE_DIR, ROOT, app_exe_path
 from .process import header, run
+from .ui_lock import gui_test_lock
 
 
 def flutter_build(debug: bool) -> None:
@@ -50,6 +51,19 @@ def cmd_run(args) -> None:
 
 def cmd_launch(args) -> None:
     """Launch exe directly; build Flutter first only if requested or missing."""
+    if args.test_script:
+        try:
+            with gui_test_lock("launch --test-script"):
+                _cmd_launch(args)
+        except RuntimeError as exc:
+            print(f"Launch test failed: {exc}")
+            sys.exit(1)
+        return
+
+    _cmd_launch(args)
+
+
+def _cmd_launch(args) -> None:
     exe = app_exe_path(args.debug)
 
     if args.build or not exe.exists():
@@ -95,6 +109,15 @@ def cmd_test(args) -> None:
 
 def cmd_ui_test(args) -> None:
     """Launch the app with a CSV script and use process exit code as result."""
+    try:
+        with gui_test_lock("ui-test"):
+            _cmd_ui_test(args)
+    except RuntimeError as exc:
+        print(f"UI test failed: {exc}")
+        sys.exit(1)
+
+
+def _cmd_ui_test(args) -> None:
     script_path = Path(args.script).resolve()
     if not script_path.exists():
         print(f"ERROR: test script not found: {script_path}")

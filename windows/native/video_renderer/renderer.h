@@ -89,6 +89,7 @@ public:
     void pause();
     void seek(int64_t target_pts_us, SeekType type = SeekType::Keyframe);
     void set_speed(double speed);
+    void set_loop_range(bool enabled, int64_t start_us, int64_t end_us);
 
     // Frame stepping (pause + advance/retreat)
     void step_forward();
@@ -205,6 +206,7 @@ private:
     void set_decode_paused_for_all_tracks(bool paused);
     bool should_defer_paused_hevc_seek_locked(int64_t target_pts_us, SeekType type);
     bool apply_deferred_paused_hevc_seek_locked();
+    bool apply_loop_range_locked();
     void mark_paused_hevc_seek_preview_drawn_locked();
 
     /// Apply pending resize on the render thread.
@@ -297,6 +299,12 @@ private:
     bool paused_hevc_seek_in_flight_ = false;
     bool paused_hevc_initial_settle_done_ = false;
     std::chrono::steady_clock::time_point paused_hevc_seek_settle_until_{};
+    struct LoopRangeState {
+        bool enabled = false;
+        int64_t start_us = 0;
+        int64_t end_us = 0;
+    };
+    LoopRangeState loop_range_;
 
     // -- Perf stats baseline for FPS calculation --
     mutable std::chrono::steady_clock::time_point stats_start_time_;

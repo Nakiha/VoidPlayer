@@ -273,6 +273,20 @@ void Renderer::seek(int64_t target_pts_us, SeekType type) {
     seek_internal(target_pts_us, type);
 }
 
+void Renderer::set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (!enabled || end_us <= start_us) {
+        loop_range_ = LoopRangeState();
+        spdlog::info("[Renderer] loop range disabled");
+        return;
+    }
+    loop_range_.enabled = true;
+    loop_range_.start_us = std::max<int64_t>(0, start_us);
+    loop_range_.end_us = std::max(loop_range_.start_us, end_us);
+    spdlog::info("[Renderer] loop range enabled: {:.3f}s -> {:.3f}s",
+                 loop_range_.start_us / 1e6, loop_range_.end_us / 1e6);
+}
+
 void Renderer::seek_internal(int64_t target_pts_us,
                              SeekType type,
                              bool allow_deferred,
@@ -403,6 +417,25 @@ bool Renderer::apply_deferred_paused_hevc_seek_locked() {
     spdlog::info("[Renderer] Applying deferred paused HEVC HW seek to {:.3f}s",
                  deferred.target_pts_us / 1e6);
     seek_internal(deferred.target_pts_us, deferred.type, false, true);
+    return true;
+}
+
+bool Renderer::apply_loop_range_locked() {
+    if (!playing_.load() ||
+        !loop_range_.enabled ||
+        loop_range_.end_us <= loop_range_.start_us ||
+        clock_.is_paused()) {
+        return false;
+    }
+
+    const int64_t pts = clock_.current_pts_us();
+    if (pts < loop_range_.end_us) {
+        return false;
+    }
+
+    spdlog::info("[Renderer] loop range boundary: pts={:.3f}s, seeking to {:.3f}s",
+                 pts / 1e6, loop_range_.start_us / 1e6);
+    seek_internal(loop_range_.start_us, SeekType::Exact);
     return true;
 }
 
@@ -1125,6 +1158,10 @@ void Renderer::render_loop() {
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             if (apply_deferred_paused_hevc_seek_locked()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+            if (apply_loop_range_locked()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 continue;
             }

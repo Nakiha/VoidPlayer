@@ -162,6 +162,16 @@ class VideoRendererController {
   Future<void> setSpeed(double speed) =>
       _channel.invokeMethod<void>('setSpeed', {'speed': speed});
 
+  Future<void> setLoopRange({
+    required bool enabled,
+    required int startUs,
+    required int endUs,
+  }) => _channel.invokeMethod<void>('setLoopRange', {
+    'enabled': enabled,
+    'startUs': startUs,
+    'endUs': endUs,
+  });
+
   Future<void> resize(int width, int height) =>
       _channel.invokeMethod<void>('resize', {'width': width, 'height': height});
 

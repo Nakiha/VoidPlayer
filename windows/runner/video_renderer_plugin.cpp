@@ -345,6 +345,8 @@ void VideoRendererPlugin::HandleMethodCall(
         RemoveTrack(method_call.arguments(), std::move(result));
     } else if (method == "setTrackOffset") {
         SetTrackOffset(method_call.arguments(), std::move(result));
+    } else if (method == "setLoopRange") {
+        SetLoopRange(method_call.arguments(), std::move(result));
     } else if (method == "play") {
         if (renderer_) renderer_->play();
         result->Success(flutter::EncodableValue(nullptr));
@@ -784,6 +786,44 @@ void VideoRendererPlugin::SetTrackOffset(
 
     renderer_->set_track_offset(file_id, offset_us);
     spdlog::info("[VideoRendererPlugin] setTrackOffset: file_id={}, offset_us={}", file_id, offset_us);
+    result->Success(flutter::EncodableValue(nullptr));
+}
+
+void VideoRendererPlugin::SetLoopRange(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+
+    if (!renderer_ || !arguments) {
+        result->Error("INVALID", "Renderer not created or no arguments");
+        return;
+    }
+    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+    if (!args) {
+        result->Error("INVALID_ARGS", "Arguments must be a map");
+        return;
+    }
+
+    bool enabled = false;
+    int64_t start_us = 0;
+    int64_t end_us = 0;
+    auto it = args->find(flutter::EncodableValue("enabled"));
+    if (it != args->end()) enabled = std::get<bool>(it->second);
+    it = args->find(flutter::EncodableValue("startUs"));
+    if (it != args->end()) {
+        if (std::holds_alternative<int>(it->second))
+            start_us = static_cast<int64_t>(std::get<int>(it->second));
+        else if (std::holds_alternative<int64_t>(it->second))
+            start_us = std::get<int64_t>(it->second);
+    }
+    it = args->find(flutter::EncodableValue("endUs"));
+    if (it != args->end()) {
+        if (std::holds_alternative<int>(it->second))
+            end_us = static_cast<int64_t>(std::get<int>(it->second));
+        else if (std::holds_alternative<int64_t>(it->second))
+            end_us = std::get<int64_t>(it->second);
+    }
+
+    renderer_->set_loop_range(enabled, start_us, end_us);
     result->Success(flutter::EncodableValue(nullptr));
 }
 

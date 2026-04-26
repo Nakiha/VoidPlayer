@@ -57,6 +57,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   // Shared timeline alignment + loop range state
   double _timelineControlsWidth = 320;
   bool _loopRangeEnabled = false;
+  bool _nativeLoopRangeSynced = false;
   int _loopStartUs = 0;
   int _loopEndUs = 0;
 
@@ -234,6 +235,31 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     _playbackSpeed = speed > 0 ? speed : 1.0;
     _controller.setSpeed(speed);
     _scheduleLoopBoundaryTimer();
+  }
+
+  void _syncNativeLoopRange() {
+    final enabled = _loopRangeEnabled;
+    final startUs = _resolvedLoopStartUs;
+    final endUs = _resolvedLoopEndUs;
+    _nativeLoopRangeSynced = false;
+    unawaited(
+      _controller
+          .setLoopRange(enabled: enabled, startUs: startUs, endUs: endUs)
+          .then((_) {
+            if (!mounted) return;
+            _nativeLoopRangeSynced = enabled;
+            if (_nativeLoopRangeSynced) {
+              _cancelLoopBoundaryTimer();
+            } else {
+              _scheduleLoopBoundaryTimer();
+            }
+          })
+          .catchError((_) {
+            if (!mounted) return;
+            _nativeLoopRangeSynced = false;
+            _scheduleLoopBoundaryTimer();
+          }),
+    );
   }
 
   void _seekTo(int ptsUs) {
@@ -636,6 +662,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   void _scheduleLoopBoundaryTimer({int? fromPtsUs}) {
     _cancelLoopBoundaryTimer();
     if (!_loopRangeEnabled ||
+        _nativeLoopRangeSynced ||
         !_isPlaying ||
         _playbackSpeed <= 0 ||
         _resolvedLoopEndUs <= _resolvedLoopStartUs) {
@@ -758,6 +785,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
         _layout = const LayoutState();
         _syncOffsets = {};
         _loopRangeEnabled = false;
+        _nativeLoopRangeSynced = false;
         _loopStartUs = 0;
         _loopEndUs = 0;
       });
@@ -814,6 +842,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     if (enabled) {
       _ensureLoopRangeInitialized();
       setState(() => _loopRangeEnabled = true);
+      _syncNativeLoopRange();
       await _controller.pause();
       if (!mounted) return;
       _cancelLoopBoundaryTimer();
@@ -822,6 +851,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     } else {
       _cancelLoopBoundaryTimer();
       setState(() => _loopRangeEnabled = false);
+      _syncNativeLoopRange();
     }
   }
 
@@ -842,6 +872,9 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       _loopStartUs = clampedStartUs;
       _loopEndUs = clampedEndUs;
     });
+    if (_loopRangeEnabled) {
+      _syncNativeLoopRange();
+    }
     _scheduleLoopBoundaryTimer();
 
     if (seekToStart && _loopRangeEnabled) {

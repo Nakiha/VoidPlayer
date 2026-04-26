@@ -976,9 +976,11 @@ class _AnalysisPageState extends State<AnalysisPage> {
                     SizedBox(
                       height: dividerH,
                       child: _ResizableHDivider(
-                        onDelta: (dy) => setState(() {
+                        position: topH,
+                        minPosition: minTop,
+                        maxPosition: maxTop,
+                        onPositionChanged: (nextTop) => setState(() {
                           if (available <= 0) return;
-                          final nextTop = (topH + dy).clamp(minTop, maxTop);
                           _topPanelFraction = nextTop / available;
                         }),
                       ),
@@ -1155,9 +1157,17 @@ class _ResizableVDividerState extends State<_ResizableVDivider> {
 }
 
 class _ResizableHDivider extends StatefulWidget {
-  final ValueChanged<double> onDelta;
+  final double position;
+  final double minPosition;
+  final double maxPosition;
+  final ValueChanged<double> onPositionChanged;
 
-  const _ResizableHDivider({required this.onDelta});
+  const _ResizableHDivider({
+    required this.position,
+    required this.minPosition,
+    required this.maxPosition,
+    required this.onPositionChanged,
+  });
 
   @override
   State<_ResizableHDivider> createState() => _ResizableHDividerState();
@@ -1165,28 +1175,40 @@ class _ResizableHDivider extends StatefulWidget {
 
 class _ResizableHDividerState extends State<_ResizableHDivider> {
   bool _hovering = false;
+  double _dragStartGlobalY = 0.0;
+  double _dragStartPosition = 0.0;
+
+  void _onDragStart(DragStartDetails details) {
+    _dragStartGlobalY = details.globalPosition.dy;
+    _dragStartPosition = widget.position;
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    final desired =
+        _dragStartPosition + details.globalPosition.dy - _dragStartGlobalY;
+    final clamped = desired.clamp(widget.minPosition, widget.maxPosition);
+    widget.onPositionChanged(clamped);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onVerticalDragUpdate: (details) => widget.onDelta(details.delta.dy),
+      onVerticalDragStart: _onDragStart,
+      onVerticalDragUpdate: _onDragUpdate,
       child: MouseRegion(
         cursor: SystemMouseCursors.resizeRow,
         onEnter: (_) => setState(() => _hovering = true),
         onExit: (_) => setState(() => _hovering = false),
-        child: ColoredBox(
-          color: theme.dividerColor.withValues(alpha: _hovering ? 0.45 : 0.28),
+        child: SizedBox.expand(
           child: Center(
-            child: Container(
-              width: 44,
-              height: _hovering ? 3 : 2,
-              decoration: BoxDecoration(
+            child: SizedBox(
+              width: double.infinity,
+              height: _hovering ? 2 : 0,
+              child: ColoredBox(
                 color: _hovering
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.onSurface.withValues(alpha: 0.28),
-                borderRadius: BorderRadius.circular(2),
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.transparent,
               ),
             ),
           ),
@@ -1233,6 +1255,7 @@ class _ReferencePyramidView extends StatefulWidget {
 
 class _ReferencePyramidViewState extends State<_ReferencePyramidView> {
   _RefPyramidPainter? _lastPainter;
+  Offset? _hoverPosition;
 
   @override
   Widget build(BuildContext context) {
@@ -1262,16 +1285,28 @@ class _ReferencePyramidViewState extends State<_ReferencePyramidView> {
                 }
                 widget.onFrameSelected(null);
               },
-              child: CustomPaint(
-                painter: _lastPainter = _RefPyramidPainter(
-                  frames: widget.frames,
-                  currentIdx: widget.currentIdx,
-                  selectedFrameIdx: widget.selectedFrameIdx,
-                  pocToIndices: widget.pocToIndices,
-                  viewStart: widget.viewStart,
-                  viewEnd: widget.viewEnd,
+              child: Builder(
+                builder: (chartContext) => MouseRegion(
+                  onExit: (_) => setState(() => _hoverPosition = null),
+                  onHover: (event) {
+                    final box = chartContext.findRenderObject() as RenderBox;
+                    setState(() {
+                      _hoverPosition = box.globalToLocal(event.position);
+                    });
+                  },
+                  child: CustomPaint(
+                    painter: _lastPainter = _RefPyramidPainter(
+                      frames: widget.frames,
+                      currentIdx: widget.currentIdx,
+                      selectedFrameIdx: widget.selectedFrameIdx,
+                      pocToIndices: widget.pocToIndices,
+                      viewStart: widget.viewStart,
+                      viewEnd: widget.viewEnd,
+                      hoverPosition: _hoverPosition,
+                    ),
+                    size: Size.infinite,
+                  ),
                 ),
-                size: Size.infinite,
               ),
             ),
           ),
@@ -1294,6 +1329,7 @@ class _RefPyramidPainter extends CustomPainter {
   final Map<int, List<int>> pocToIndices;
   final double viewStart;
   final double viewEnd;
+  final Offset? hoverPosition;
 
   /// Populated during paint() — used by parent for hit-testing.
   List<(int, Rect)> frameRects = [];
@@ -1305,6 +1341,7 @@ class _RefPyramidPainter extends CustomPainter {
     required this.pocToIndices,
     required this.viewStart,
     required this.viewEnd,
+    this.hoverPosition,
   });
 
   // Pre-allocated Paint objects — reused across draw calls within paint()
@@ -1574,7 +1611,80 @@ class _RefPyramidPainter extends CustomPainter {
         tp.paint(canvas, pos - Offset(tp.width / 2, tp.height / 2));
       }
     }
+    _drawHoverTooltip(canvas, size, plotRect, positions, circleR);
     canvas.restore();
+  }
+
+  void _drawHoverTooltip(
+    Canvas canvas,
+    Size size,
+    Rect plotRect,
+    Map<int, Offset> positions,
+    double circleR,
+  ) {
+    final hover = hoverPosition;
+    if (hover == null || !plotRect.contains(hover)) return;
+
+    int? frameIdx;
+    for (final (idx, rect) in frameRects) {
+      if (rect.contains(hover)) {
+        frameIdx = idx;
+        break;
+      }
+    }
+    if (frameIdx == null || frameIdx < 0 || frameIdx >= frames.length) return;
+
+    final f = frames[frameIdx];
+    final pos = positions[frameIdx] ?? hover;
+    final sliceLabel = switch (f.sliceType) {
+      2 => 'I',
+      1 => 'P',
+      _ => f.numRefL1 > 0 ? 'B' : 'B(uni)',
+    };
+    final lines = [
+      '#$frameIdx  $sliceLabel  POC ${f.poc}',
+      'Size: ${_FrameTrendPainter._formatBytes(f.packetSize)}',
+      'QP: ${f.avgQp}',
+    ];
+    const tipStyle = TextStyle(color: Color(0xFFFFFFFF), fontSize: 10);
+    final tipPainters = lines
+        .map(
+          (line) => TextPainter(
+            text: TextSpan(text: line, style: tipStyle),
+            textDirection: TextDirection.ltr,
+          )..layout(),
+        )
+        .toList();
+    final tipW =
+        tipPainters.map((t) => t.width).reduce((a, b) => a > b ? a : b) + 12;
+    final tipH = tipPainters.fold(0.0, (sum, t) => sum + t.height) + 10;
+
+    var tipX = pos.dx + circleR + 8;
+    if (tipX + tipW > plotRect.right) tipX = pos.dx - circleR - tipW - 8;
+    final minTipX = plotRect.left + 4;
+    final maxTipX = (plotRect.right - tipW - 4).clamp(minTipX, double.infinity);
+    tipX = tipX.clamp(minTipX, maxTipX);
+    final maxTipY = (size.height - tipH - 4).clamp(4.0, double.infinity);
+    final tipY = (pos.dy - tipH - circleR - 8).clamp(4.0, maxTipY);
+
+    final rrect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(tipX, tipY, tipW, tipH),
+      const Radius.circular(4),
+    );
+    canvas.drawRRect(rrect, Paint()..color = const Color(0xCC1A1A2E));
+    canvas.drawRRect(
+      rrect,
+      Paint()
+        ..color = const Color(0x44FFFFFF)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.5,
+    );
+
+    var offsetY = tipY + 5;
+    for (final tp in tipPainters) {
+      tp.paint(canvas, Offset(tipX + 6, offsetY));
+      offsetY += tp.height;
+    }
   }
 
   void _drawArrow(
@@ -1620,7 +1730,8 @@ class _RefPyramidPainter extends CustomPainter {
       currentIdx != old.currentIdx ||
       selectedFrameIdx != old.selectedFrameIdx ||
       viewStart != old.viewStart ||
-      viewEnd != old.viewEnd;
+      viewEnd != old.viewEnd ||
+      hoverPosition != old.hoverPosition;
 }
 
 // ===========================================================================

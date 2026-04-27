@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:path/path.dart' as p;
 import '../app_log.dart';
+import '../startup_options.dart';
 import '../video_renderer_controller.dart';
 import '../track_manager.dart';
 import '../actions/action_registry.dart';
@@ -30,7 +31,13 @@ part 'main_window_tracks.dart';
 
 class MainWindow extends StatefulWidget {
   final String? testScriptPath;
-  const MainWindow({super.key, this.testScriptPath});
+  final StartupOptions startupOptions;
+
+  const MainWindow({
+    super.key,
+    this.testScriptPath,
+    this.startupOptions = const StartupOptions(),
+  });
 
   @override
   State<MainWindow> createState() => _MainWindowState();
@@ -66,6 +73,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   double _timelineControlsWidth = 320;
   bool _loopRangeEnabled = false;
   bool _nativeLoopRangeSynced = false;
+  bool _startupLoopRangeApplied = false;
   int _loopStartUs = 0;
   int _loopEndUs = 0;
 

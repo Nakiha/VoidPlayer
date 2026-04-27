@@ -18,6 +18,7 @@ extension _MainWindowMediaLoading on _MainWindowState {
         _setTextureId(res.textureId);
         _trackManager.setTracks(res.tracks);
         _layout = await _controller.getLayout();
+        _applyStartupLoopRangeIfReady();
         await WidgetsBinding.instance.endOfFrame;
         if (!mounted) return;
         if (_viewportWidth > 0 && _viewportHeight > 0) {
@@ -34,6 +35,7 @@ extension _MainWindowMediaLoading on _MainWindowState {
         try {
           final track = await _controller.addTrack(path);
           _trackManager.addTrack(track);
+          _applyStartupLoopRangeIfReady();
         } catch (e) {
           log.severe("addTrack failed: $e");
         }

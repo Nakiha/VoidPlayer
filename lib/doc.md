@@ -16,6 +16,26 @@ void_player.exe --log-level=flutter=DEBUG,native=TRACE,ffmpeg=INFO
 - `native`: C++ native 模块日志，写入 `logs/native.log`
 - `ffmpeg`: FFmpeg 库日志（预留,暂未实现）
 
+## 启动参数
+
+主窗口当前支持：
+
+- `--log-level=flutter=DEBUG,native=TRACE,ffmpeg=INFO`: 覆盖日志级别。
+- `--test-script <csv>`: 主窗口启动后执行 UI 自动化脚本。
+- `--silent-ui-test`: UI 自动化时隐藏/不激活测试窗口，通常由 `dev.py ui-test` 注入。
+- `--loop-range=<start>:<end>`: 启动后首次加载媒体时启用 loop range。无单位数值按秒解析，也支持 `s`、`ms`、`us` 后缀，例如 `--loop-range=1.5s:4s`。
+- `--loop-range-us=<startUs>:<endUs>`: 与上面等价，但无单位数值按微秒解析，方便脚本和调试，例如 `--loop-range-us=1500000:4000000`。
+
+独立分析窗口/内部窗口路由还会使用这些内部参数：
+
+- `--standalone-analysis`
+- `--hash=<hash>`，可重复传入
+- `--fileName=<name>`，可重复传入
+- `--x=<px>` / `--y=<px>` / `--width=<px>` / `--height=<px>`
+- `--accentColor=<argbInt>`
+- `--analysis-ipc-port=<port>` / `--analysis-ipc-token=<token>`
+- `multi_window <windowId> <json>`: `desktop_multi_window` 的 secondary window 路由参数。
+
 ## 交互 (Action)
 
 统一管理快捷键、UI 按钮、测试脚本的操作抽象层

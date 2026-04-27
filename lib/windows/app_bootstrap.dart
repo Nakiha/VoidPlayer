@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart' hide WindowManager;
 import '../app.dart';
 import '../app_log.dart';
 import '../config/app_config.dart';
+import '../startup_options.dart';
 import 'analysis_ipc.dart';
 import 'analysis_window.dart';
 import 'memory_window.dart';
@@ -259,6 +260,10 @@ Future<void> runVoidPlayer(List<String> args) async {
       : null;
 
   final windowArgs = WindowArgs.parse(args);
+  final startupOptions = StartupOptions.parse(args);
+  for (final warning in startupOptions.warnings) {
+    log.warning(warning);
+  }
 
   switch (windowArgs.windowType) {
     case WindowArgs.stats:
@@ -337,6 +342,7 @@ Future<void> runVoidPlayer(List<String> args) async {
         VoidPlayerApp(
           accentColor: accentColor,
           testScriptPath: testScriptPath,
+          startupOptions: startupOptions,
         ),
       );
 

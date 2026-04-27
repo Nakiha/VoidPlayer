@@ -2,16 +2,19 @@ import 'package:flutter/material.dart';
 
 import 'actions/action_registry.dart';
 import 'l10n/app_localizations.dart';
+import 'startup_options.dart';
 import 'windows/main_window.dart';
 
 class VoidPlayerApp extends StatelessWidget {
   final Color accentColor;
   final String? testScriptPath;
+  final StartupOptions startupOptions;
 
   const VoidPlayerApp({
     super.key,
     required this.accentColor,
     this.testScriptPath,
+    this.startupOptions = const StartupOptions(),
   });
 
   @override
@@ -33,7 +36,12 @@ class VoidPlayerApp extends StatelessWidget {
         ),
       ),
       themeMode: ThemeMode.system,
-      home: ActionFocus(child: MainWindow(testScriptPath: testScriptPath)),
+      home: ActionFocus(
+        child: MainWindow(
+          testScriptPath: testScriptPath,
+          startupOptions: startupOptions,
+        ),
+      ),
     );
   }
 }

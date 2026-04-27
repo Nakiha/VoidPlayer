@@ -222,6 +222,21 @@ extension _MainWindowPlayback on _MainWindowState {
     }
   }
 
+  void _applyStartupLoopRangeIfReady() {
+    if (_startupLoopRangeApplied || _trackManager.isEmpty) return;
+
+    final range = widget.startupOptions.loopRange;
+    if (range == null) return;
+
+    final effectiveDurationUs = _effectiveDurationUs;
+    if (effectiveDurationUs <= 0) return;
+
+    _startupLoopRangeApplied = true;
+    log.info('Applying startup loop range: ${range.startUs}:${range.endUs} us');
+    _setLoopRange(range.startUs, range.endUs);
+    _setLoopRangeEnabled(true);
+  }
+
   void _setLoopRange(int startUs, int endUs, {bool seekToStart = false}) async {
     final effectiveDurationUs = _effectiveDurationUs;
     final minRangeUs = effectiveDurationUs > 10000 ? 10000 : 0;

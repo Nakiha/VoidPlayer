@@ -1,4 +1,5 @@
 #pragma once
+#include "video_renderer/frame/frame_storage.h"
 #include <vector>
 #include <mutex>
 #include <optional>
@@ -17,6 +18,7 @@ struct TextureFrame {
     // Owns CPU-side RGBA data; shared_ptr enables safe cross-thread sharing
     // and automatic cleanup when all references are gone.
     std::shared_ptr<std::vector<uint8_t>> cpu_data;
+    FrameStorage storage;
 
     // Hardware decode metadata (D3D11VA NV12)
     bool is_nv12 = false;               // true if NV12 D3D11VA frame
@@ -27,6 +29,17 @@ struct TextureFrame {
     // still has a TextureFrame pointing to it. Released automatically via
     // shared_ptr deleter (calls av_frame_free or av_buffer_unref).
     std::shared_ptr<void> hw_frame_ref;
+
+    FrameStorageKind storage_kind() const { return frame_storage_kind(storage); }
+    const CpuRgbaFrameStorage* cpu_rgba_storage() const {
+        return std::get_if<CpuRgbaFrameStorage>(&storage);
+    }
+    const D3D11Nv12FrameStorage* d3d11_nv12_storage() const {
+        return std::get_if<D3D11Nv12FrameStorage>(&storage);
+    }
+    const D3D11TextureFrameStorage* d3d11_texture_storage() const {
+        return std::get_if<D3D11TextureFrameStorage>(&storage);
+    }
 };
 
 class BidiRingBuffer {

@@ -147,6 +147,10 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
         result.cpu_data = rgba_buf;
         result.texture_handle = rgba_buf->data();
         result.is_ref = false;
+        result.storage = CpuRgbaFrameStorage{
+            rgba_buf,
+            static_cast<int>(stride),
+        };
         av_frame_free(&sw_frame);
     } else if (is_hw_) {
         // frame->data[0] = ID3D11Texture2D*, frame->data[1] = array index (intptr_t)
@@ -173,6 +177,19 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
             } else {
                 spdlog::warn("[FrameConverter] Failed to ref hw frame, texture may be recycled early");
                 if (ref_frame) av_frame_free(&ref_frame);
+            }
+
+            if (result.is_nv12) {
+                result.storage = D3D11Nv12FrameStorage{
+                    static_cast<ID3D11Texture2D*>(result.texture_handle),
+                    result.texture_array_index,
+                    result.hw_frame_ref,
+                };
+            } else {
+                result.storage = D3D11TextureFrameStorage{
+                    static_cast<ID3D11Texture2D*>(result.texture_handle),
+                    result.hw_frame_ref,
+                };
             }
         }
     } else {
@@ -208,6 +225,10 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
         result.cpu_data = rgba_buf;
         result.texture_handle = rgba_buf->data();
         result.is_ref = false;
+        result.storage = CpuRgbaFrameStorage{
+            rgba_buf,
+            static_cast<int>(stride),
+        };
     }
 
     return result;

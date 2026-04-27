@@ -52,6 +52,10 @@ TEST_CASE("FrameConverter: convert white YUV420P frame", "[frame_converter]") {
     REQUIRE(result.pts_us == 0);
     REQUIRE(result.texture_handle != nullptr);
     REQUIRE(result.is_ref == false);
+    REQUIRE(result.storage_kind() == FrameStorageKind::CpuRgba);
+    REQUIRE(result.cpu_rgba_storage() != nullptr);
+    REQUIRE(result.cpu_rgba_storage()->data == result.cpu_data);
+    REQUIRE(result.cpu_rgba_storage()->stride == 64 * 4);
 
     // Verify RGBA output is white (all 0xFF) for at least the first few pixels
     uint8_t* rgba = static_cast<uint8_t*>(result.texture_handle);
@@ -91,6 +95,9 @@ TEST_CASE("FrameConverter: convert preserves PTS", "[frame_converter]") {
     TextureFrame result = converter.convert(frame);
     REQUIRE(result.pts_us == 123456);
     REQUIRE(result.texture_handle != nullptr);
+    REQUIRE(result.storage_kind() == FrameStorageKind::CpuRgba);
+    REQUIRE(result.cpu_rgba_storage() != nullptr);
+    REQUIRE(result.cpu_rgba_storage()->data == result.cpu_data);
 
     // cpu_data shared_ptr handles RGBA buffer lifetime
     av_frame_free(&frame);
@@ -102,4 +109,23 @@ TEST_CASE("FrameConverter: init_hardware sets hardware mode", "[frame_converter]
     bool ok = converter.init_hardware(nullptr, nullptr, 1920, 1080);
     REQUIRE(ok == true);
     REQUIRE(converter.is_hardware() == true);
+}
+
+TEST_CASE("TextureFrame: storage exposes D3D11 NV12 metadata", "[frame_storage]") {
+    TextureFrame frame;
+    auto* texture = reinterpret_cast<ID3D11Texture2D*>(0x1234);
+    auto ref = std::shared_ptr<void>(reinterpret_cast<void*>(0x5678), [](void*) {});
+
+    frame.texture_handle = texture;
+    frame.is_ref = true;
+    frame.is_nv12 = true;
+    frame.texture_array_index = 7;
+    frame.hw_frame_ref = ref;
+    frame.storage = D3D11Nv12FrameStorage{texture, 7, ref};
+
+    REQUIRE(frame.storage_kind() == FrameStorageKind::D3D11Nv12);
+    REQUIRE(frame.d3d11_nv12_storage() != nullptr);
+    REQUIRE(frame.d3d11_nv12_storage()->texture == texture);
+    REQUIRE(frame.d3d11_nv12_storage()->array_index == 7);
+    REQUIRE(frame.d3d11_nv12_storage()->frame_ref == ref);
 }

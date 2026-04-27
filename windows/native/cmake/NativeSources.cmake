@@ -7,6 +7,7 @@ set(VOID_RENDERER_SOURCES
     "${VOID_NATIVE_DIR}/common/logging.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/clock.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/d3d11/device.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/d3d11/frame_presenter.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/d3d11/texture.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/d3d11/shader.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/demux_thread.cpp"

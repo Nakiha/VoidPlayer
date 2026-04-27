@@ -4,6 +4,7 @@
 #include <cstring>
 #include "test_utils.h"
 #include "video_renderer/d3d11/device.h"
+#include "video_renderer/d3d11/frame_presenter.h"
 #include "video_renderer/d3d11/texture.h"
 
 using namespace vr::test;
@@ -155,5 +156,58 @@ TEST_CASE("TextureManager creates reusable NV12 copy resources", "[d3d11][textur
     REQUIRE(tm.ensure_nv12_copy_resources(source.Get(), copy, y_srv, uv_srv, &created));
     REQUIRE_FALSE(created);
 
+    cleanup_test_device(dev, hwnd);
+}
+
+TEST_CASE("D3D11FramePresenter prepares cached software frame SRV", "[d3d11][frame_presenter]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::TextureManager tm(dev->device(), dev->context());
+    vr::D3D11FramePresenter presenter(&tm, dev->context());
+
+    const int width = 32;
+    const int height = 16;
+    auto pixels = std::make_shared<std::vector<uint8_t>>(width * height * 4, 255);
+
+    vr::TextureFrame frame;
+    frame.width = width;
+    frame.height = height;
+    frame.cpu_data = pixels;
+    frame.texture_handle = pixels->data();
+    frame.storage = vr::CpuRgbaFrameStorage{pixels, width * 4};
+
+    vr::D3D11PreparedFrame prepared;
+    REQUIRE(presenter.prepare_frame(
+        0, frame, 1920, 1080, [](const char*) {}, prepared));
+    REQUIRE(prepared.rgba_srv != nullptr);
+    REQUIRE_FALSE(prepared.release_rgba_srv);
+    REQUIRE(prepared.nv12_y_srv == nullptr);
+    REQUIRE(prepared.nv12_uv_srv == nullptr);
+
+    presenter.reset_all();
+    cleanup_test_device(dev, hwnd);
+}
+
+TEST_CASE("D3D11FramePresenter marks direct texture SRV as temporary", "[d3d11][frame_presenter]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::TextureManager tm(dev->device(), dev->context());
+    vr::D3D11FramePresenter presenter(&tm, dev->context());
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+    texture.Attach(tm.create_rgba_texture(32, 16));
+    REQUIRE(texture != nullptr);
+
+    vr::TextureFrame frame;
+    frame.is_ref = true;
+    frame.texture_handle = texture.Get();
+
+    vr::D3D11PreparedFrame prepared;
+    REQUIRE(presenter.prepare_frame(
+        0, frame, 1920, 1080, [](const char*) {}, prepared));
+    REQUIRE(prepared.rgba_srv != nullptr);
+    REQUIRE(prepared.release_rgba_srv);
+
+    if (prepared.release_rgba_srv && prepared.rgba_srv) {
+        prepared.rgba_srv->Release();
+    }
     cleanup_test_device(dev, hwnd);
 }

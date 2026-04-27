@@ -1,5 +1,6 @@
 #include "video_renderer/renderer.h"
 #include "embedded_shaders.h"
+#include "video_renderer/d3d11/frame_presenter.h"
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <algorithm>
@@ -81,6 +82,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     }
 
     texture_mgr_ = std::make_unique<TextureManager>(d3d_device_->device(), d3d_device_->context());
+    frame_presenter_ = std::make_unique<D3D11FramePresenter>(texture_mgr_.get(), d3d_device_->context());
     shader_mgr_ = std::make_unique<ShaderManager>(d3d_device_->device());
 
     if (!shader_mgr_->compile_from_source(kMultitrackHlsl, "VSMain", "PSMain", compiled_shader_)) {
@@ -224,6 +226,7 @@ void Renderer::shutdown() {
 
     render_sink_.reset();
     shader_mgr_.reset();
+    frame_presenter_.reset();
     texture_mgr_.reset();
 
     // ComPtr auto-releases — just reset
@@ -1438,96 +1441,6 @@ void Renderer::render_loop() {
     timeEndPeriod(1);
 }
 
-bool Renderer::prepare_nv12_frame_srv(TrackPipeline& track,
-                                      const TextureFrame& frame,
-                                      size_t slot,
-                                      ID3D11ShaderResourceView*& y_srv,
-                                      ID3D11ShaderResourceView*& uv_srv) {
-    auto* decode_tex = static_cast<ID3D11Texture2D*>(frame.texture_handle);
-    if (!decode_tex) {
-        return false;
-    }
-
-    const int array_idx = static_cast<int>(frame.texture_array_index);
-    if (array_idx < 0) {
-        spdlog::error("[Renderer] Invalid NV12 array index for track {}: {}",
-                      slot, array_idx);
-        return false;
-    }
-
-    const bool opened_new_shared_resource = track.last_nv12_tex != decode_tex;
-    if (opened_new_shared_resource) {
-        track.render_nv12_tex.Reset();
-        track.last_nv12_tex = nullptr;
-
-        if (!texture_mgr_->open_shared_texture(decode_tex, track.render_nv12_tex)) {
-            spdlog::error("[Renderer] Failed to open shared NV12 texture for track {}",
-                          slot);
-            return false;
-        }
-
-        track.last_nv12_tex = decode_tex;
-    }
-
-    if (!track.render_nv12_tex) {
-        return false;
-    }
-
-    D3D11_TEXTURE2D_DESC src_desc = {};
-    track.render_nv12_tex->GetDesc(&src_desc);
-    if (static_cast<UINT>(array_idx) >= src_desc.ArraySize) {
-        spdlog::error("[Renderer] NV12 array index out of range for track {}: idx={}, array_size={}",
-                      slot, array_idx, src_desc.ArraySize);
-        return false;
-    }
-
-    bool created_new_copy_texture = false;
-    if (!texture_mgr_->ensure_nv12_copy_resources(
-            track.render_nv12_tex.Get(),
-            track.render_nv12_copy_tex,
-            track.nv12_y_srv,
-            track.nv12_uv_srv,
-            &created_new_copy_texture)) {
-        spdlog::error("[Renderer] Failed to prepare renderer-owned NV12 resources for track {}",
-                      slot);
-        return false;
-    }
-
-    auto copy_nv12_slice = [&] {
-        d3d_device_->context()->CopySubresourceRegion(
-            track.render_nv12_copy_tex.Get(),
-            0,
-            0, 0, 0,
-            track.render_nv12_tex.Get(),
-            D3D11CalcSubresource(0, static_cast<UINT>(array_idx), 1),
-            nullptr);
-    };
-    copy_nv12_slice();
-
-    if (opened_new_shared_resource || created_new_copy_texture) {
-        // Some D3D11VA drivers expose a partially populated NV12 array slice
-        // on the first cross-device copy immediately after OpenSharedResource
-        // and SRV creation. Prime the renderer-owned texture with a fenced
-        // copy, then issue and fence the copy sampled by this first draw.
-        wait_gpu_idle("prepare_nv12_frame_srv");
-        copy_nv12_slice();
-        wait_gpu_idle("prepare_nv12_frame_srv");
-    }
-
-    if (src_desc.Height > 0 && frame.height > 0 &&
-        src_desc.Height != static_cast<UINT>(frame.height)) {
-        track.nv12_uv_scale_y =
-            static_cast<float>(frame.height) / static_cast<float>(src_desc.Height);
-    } else {
-        track.nv12_uv_scale_y = 1.0f;
-    }
-
-    track.last_nv12_idx = array_idx;
-    y_srv = track.nv12_y_srv.Get();
-    uv_srv = track.nv12_uv_srv.Get();
-    return y_srv && uv_srv;
-}
-
 void Renderer::draw_frame(const PresentDecision& decision) {
     auto* ctx = d3d_device_->context();
 
@@ -1578,6 +1491,34 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     // Set shaders
     ctx->VSSetShader(compiled_shader_.vs.Get(), nullptr, 0);
     ctx->PSSetShader(compiled_shader_.ps.Get(), nullptr, 0);
+
+    ID3D11ShaderResourceView* srvs[4] = {};           // t0-t3: RGBA (sw) or full NV12 (hw)
+    ID3D11ShaderResourceView* nv12_y_srvs[4] = {};    // t4-t7: NV12 Y plane
+    ID3D11ShaderResourceView* nv12_uv_srvs[4] = {};   // t8-t11: NV12 UV plane
+    bool release_srvs[4] = {};
+    if (frame_presenter_) {
+        for (size_t i = 0; i < kMaxTracks; ++i) {
+            if (!decision.frames[i].has_value() || !decision.frames[i]->texture_handle) continue;
+            if (!tracks_[i]) continue;
+
+            D3D11PreparedFrame prepared;
+            const bool prepared_ok = frame_presenter_->prepare_frame(
+                i,
+                decision.frames[i].value(),
+                target_width_,
+                target_height_,
+                [this](const char* label) { wait_gpu_idle(label); },
+                prepared);
+            if (!prepared_ok) {
+                continue;
+            }
+
+            srvs[i] = prepared.rgba_srv;
+            nv12_y_srvs[i] = prepared.nv12_y_srv;
+            nv12_uv_srvs[i] = prepared.nv12_uv_srv;
+            release_srvs[i] = prepared.release_rgba_srv;
+        }
+    }
 
     // Update constant buffer
     // Layout must match HLSL cbuffer Constants in multitrack.hlsl
@@ -1637,26 +1578,13 @@ void Renderer::draw_frame(const PresentDecision& decision) {
             cb.video_aspect[i] = tracks_[i]->video_aspect;
             if (decision.frames[i].has_value() && decision.frames[i]->is_nv12) {
                 cb.nv12_mask |= (1 << static_cast<int>(i));
-                const auto& frame = decision.frames[i].value();
-                if (frame.texture_handle && frame.height > 0) {
-                    auto* decode_tex = static_cast<ID3D11Texture2D*>(frame.texture_handle);
-                    D3D11_TEXTURE2D_DESC tex_desc = {};
-                    decode_tex->GetDesc(&tex_desc);
-                    if (tex_desc.Height > 0 &&
-                        tex_desc.Height != static_cast<UINT>(frame.height)) {
-                        cb.nv12_uv_scale_y[i] =
-                            static_cast<float>(frame.height) /
-                            static_cast<float>(tex_desc.Height);
-                        tracks_[i]->nv12_uv_scale_y = cb.nv12_uv_scale_y[i];
-                    } else {
-                        cb.nv12_uv_scale_y[i] = 1.0f;
-                        tracks_[i]->nv12_uv_scale_y = 1.0f;
-                    }
-                } else {
-                    cb.nv12_uv_scale_y[i] = tracks_[i]->nv12_uv_scale_y;
-                }
+                cb.nv12_uv_scale_y[i] = frame_presenter_
+                    ? frame_presenter_->nv12_uv_scale_y(i)
+                    : 1.0f;
             } else {
-                cb.nv12_uv_scale_y[i] = tracks_[i]->nv12_uv_scale_y;
+                cb.nv12_uv_scale_y[i] = frame_presenter_
+                    ? frame_presenter_->nv12_uv_scale_y(i)
+                    : 1.0f;
             }
         }
         cb.track_count = active_count;
@@ -1760,60 +1688,6 @@ void Renderer::draw_frame(const PresentDecision& decision) {
         ctx->PSSetSamplers(0, 1, &sampler);
     }
 
-    // Set textures from frames
-    ID3D11ShaderResourceView* srvs[4] = {};           // t0-t3: RGBA (sw) or full NV12 (hw)
-    ID3D11ShaderResourceView* nv12_y_srvs[4] = {};    // t4-t7: NV12 Y plane
-    ID3D11ShaderResourceView* nv12_uv_srvs[4] = {};   // t8-t11: NV12 UV plane
-
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!decision.frames[i].has_value() || !decision.frames[i]->texture_handle) continue;
-        if (!tracks_[i]) continue;
-        const auto& frame = decision.frames[i].value();
-        auto& track = tracks_[i];
-
-        if (frame.is_ref && frame.is_nv12) {
-            // D3D11VA surfaces belong to FFmpeg's decoder pool. Copy the
-            // selected array slice into a renderer-owned NV12 texture before
-            // sampling so seek/recreate can recycle decoder surfaces safely.
-            prepare_nv12_frame_srv(*track, frame, i, nv12_y_srvs[i], nv12_uv_srvs[i]);
-
-        } else if (frame.is_ref) {
-            // Non-NV12 hardware texture (future use): create single SRV
-            auto* tex = static_cast<ID3D11Texture2D*>(frame.texture_handle);
-            srvs[i] = texture_mgr_->create_srv(tex);
-
-        } else {
-            // Software decode: reuse a pooled RGBA texture
-            int w = frame.width > 0 ? frame.width : target_width_;
-            int h = frame.height > 0 ? frame.height : target_height_;
-
-            // Recreate pool texture if dimensions changed
-            bool need_new_tex = !track->sw_texture;
-            if (track->sw_texture) {
-                D3D11_TEXTURE2D_DESC existing_desc = {};
-                track->sw_texture->GetDesc(&existing_desc);
-                if (static_cast<int>(existing_desc.Width) != w || static_cast<int>(existing_desc.Height) != h) {
-                    need_new_tex = true;
-                }
-            }
-            if (need_new_tex) {
-                track->sw_srv.Reset();
-                track->sw_texture.Attach(texture_mgr_->create_rgba_texture(w, h));
-                if (track->sw_texture) {
-                    track->sw_srv.Attach(texture_mgr_->create_srv(track->sw_texture.Get()));
-                }
-            }
-
-            if (track->sw_texture && track->sw_srv) {
-                int stride = w * 4;
-                texture_mgr_->upload_data(track->sw_texture.Get(),
-                    static_cast<const uint8_t*>(frame.texture_handle),
-                    w, h, stride);
-                srvs[i] = track->sw_srv.Get();
-            }
-        }
-    }
-
     // Bind SRVs: t0-t3 RGBA, t4-t7 NV12 Y, t8-t11 NV12 UV
     ctx->PSSetShaderResources(0, 4, srvs);
     ctx->PSSetShaderResources(4, 4, nv12_y_srvs);
@@ -1828,19 +1702,10 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     ctx->PSSetShaderResources(4, 4, null_srvs);
     ctx->PSSetShaderResources(8, 4, null_srvs);
 
-    // Cleanup temporary SRVs (only non-ref hw textures created via create_srv)
+    // Cleanup temporary SRVs (only non-NV12 ref textures created via create_srv)
     for (size_t i = 0; i < 4; ++i) {
-        // NV12 Y/UV SRVs are cached in TrackPipeline — do not release here.
-        // sw SRVs are also cached — do not release.
-        // Only release SRVs that were created for non-NV12 ref textures.
-        if (srvs[i]) {
-            bool is_cached = false;
-            if (tracks_[i]) {
-                is_cached = (srvs[i] == tracks_[i]->sw_srv.Get());
-            }
-            if (!is_cached) {
-                srvs[i]->Release();
-            }
+        if (release_srvs[i] && srvs[i]) {
+            srvs[i]->Release();
         }
     }
 }
@@ -1985,6 +1850,9 @@ bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, Se
     current->decode_thread->stop();
     current->demux_thread->stop();
     render_sink_->set_track(slot, nullptr);
+    if (frame_presenter_) {
+        frame_presenter_->reset_track(slot);
+    }
     current.reset();
 
     // Give the driver a brief moment to retire the previous D3D11VA decoder
@@ -2022,6 +1890,9 @@ bool Renderer::recreate_decode_thread_for_seek(size_t slot, int64_t target_pts_u
     track->packet_queue->clear_eof();
     track->track_buffer->reset();
     track->track_buffer->set_state(TrackState::Flushing);
+    if (frame_presenter_) {
+        frame_presenter_->reset_track(slot);
+    }
 
     const auto& stats = track->demux_thread->stats();
     auto replacement = std::make_unique<DecodeThread>(
@@ -2080,6 +1951,9 @@ int Renderer::add_track(const std::string& video_path) {
         pipeline->demux_thread->stats().duration_us);
 
     // Commit: install the pipeline
+    if (frame_presenter_) {
+        frame_presenter_->reset_track(slot);
+    }
     tracks_[slot] = std::move(pipeline);
     tracks_[slot]->file_id = next_file_id_++;
     int new_file_id = tracks_[slot]->file_id;
@@ -2140,12 +2014,18 @@ void Renderer::remove_track(int file_id) {
     render_sink_->set_track(slot, nullptr);
 
     // Release the pipeline
+    if (frame_presenter_) {
+        frame_presenter_->reset_track(slot);
+    }
     track.reset();
 
     // Compact: shift tracks_[slot+1..] down to fill the gap
     for (size_t i = slot; i < kMaxTracks - 1; ++i) {
         if (!tracks_[i + 1]) break;  // No more tracks to compact
         tracks_[i] = std::move(tracks_[i + 1]);
+        if (frame_presenter_) {
+            frame_presenter_->move_track(i + 1, i);
+        }
         // Update render sink mapping (track buffer + offset)
         render_sink_->set_track(i, tracks_[i]->track_buffer.get());
         render_sink_->set_track_offset(i, tracks_[i]->offset_us);

@@ -23,6 +23,8 @@
 
 namespace vr {
 
+class D3D11FramePresenter;
+
 /// Layout mode constants (match HLSL defines)
 constexpr int LAYOUT_SIDE_BY_SIDE = 0;
 constexpr int LAYOUT_SPLIT_SCREEN = 1;
@@ -179,16 +181,6 @@ private:
         int video_height = 0;
         float video_aspect = 16.0f / 9.0f;
 
-        // Cached render resources (reused across frames to avoid per-frame allocation)
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> sw_texture;       // Pooled RGBA upload texture
-        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sw_srv;  // SRV for sw texture
-        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> nv12_y_srv;  // Cached NV12 Y SRV
-        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> nv12_uv_srv; // Cached NV12 UV SRV
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> render_nv12_tex;  // Opened decoder surface on render device
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> render_nv12_copy_tex; // Renderer-owned NV12 sample texture
-        void* last_nv12_tex = nullptr;  // Pointer to detect when hw texture changes
-        int last_nv12_idx = -1;         // Array index to detect when slice changes
-        float nv12_uv_scale_y = 1.0f;  // video_height / texture_height (alignment padding fix)
     };
 
     void render_loop();
@@ -240,13 +232,6 @@ private:
     /// Check if any frame slot in a PresentDecision has a value.
     static bool has_any_frame(const PresentDecision& decision);
 
-    /// Prepare renderer-owned SRVs for a D3D11VA NV12 frame.
-    bool prepare_nv12_frame_srv(TrackPipeline& track,
-                                const TextureFrame& frame,
-                                size_t slot,
-                                ID3D11ShaderResourceView*& y_srv,
-                                ID3D11ShaderResourceView*& uv_srv);
-
     /// Find the first active track slot (for clock reference).
     /// Returns -1 if no tracks are active.
     int first_active_track() const;
@@ -272,6 +257,7 @@ private:
     Clock clock_;
     std::unique_ptr<D3D11Device> d3d_device_;
     std::unique_ptr<TextureManager> texture_mgr_;
+    std::unique_ptr<D3D11FramePresenter> frame_presenter_;
     std::unique_ptr<ShaderManager> shader_mgr_;
     std::unique_ptr<RenderSink> render_sink_;
     CompiledShader compiled_shader_;

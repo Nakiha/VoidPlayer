@@ -1,5 +1,6 @@
 #include "texture.h"
 #include <cstring>
+#include <dxgi.h>
 #include <spdlog/spdlog.h>
 
 namespace vr {
@@ -100,6 +101,127 @@ ID3D11ShaderResourceView* TextureManager::create_srv(ID3D11Texture2D* texture) {
 
     spdlog::debug("Created shader resource view for texture");
     return srv;
+}
+
+bool TextureManager::open_shared_texture(
+    ID3D11Texture2D* source,
+    Microsoft::WRL::ComPtr<ID3D11Texture2D>& opened) {
+    opened.Reset();
+    if (!device_ || !source) {
+        spdlog::error("open_shared_texture: invalid arguments (device={}, source={})",
+                      static_cast<void*>(device_), static_cast<void*>(source));
+        return false;
+    }
+
+    Microsoft::WRL::ComPtr<IDXGIResource> dxgi_res;
+    HRESULT hr = source->QueryInterface(__uuidof(IDXGIResource), &dxgi_res);
+    if (FAILED(hr)) {
+        spdlog::error("Failed to query IDXGIResource: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
+    HANDLE shared_handle = nullptr;
+    hr = dxgi_res->GetSharedHandle(&shared_handle);
+    if (FAILED(hr)) {
+        spdlog::error("Failed to get shared texture handle: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
+    hr = device_->OpenSharedResource(
+        shared_handle, __uuidof(ID3D11Texture2D),
+        reinterpret_cast<void**>(opened.GetAddressOf()));
+    if (FAILED(hr)) {
+        spdlog::error("Failed to open shared texture: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
+    return opened != nullptr;
+}
+
+bool TextureManager::ensure_nv12_copy_resources(
+    ID3D11Texture2D* source,
+    Microsoft::WRL::ComPtr<ID3D11Texture2D>& copy_texture,
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& y_srv,
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& uv_srv,
+    bool* created_new) {
+    if (created_new) {
+        *created_new = false;
+    }
+    if (!device_ || !source) {
+        spdlog::error("ensure_nv12_copy_resources: invalid arguments (device={}, source={})",
+                      static_cast<void*>(device_), static_cast<void*>(source));
+        return false;
+    }
+
+    D3D11_TEXTURE2D_DESC src_desc = {};
+    source->GetDesc(&src_desc);
+
+    bool need_copy_tex = !copy_texture;
+    if (copy_texture) {
+        D3D11_TEXTURE2D_DESC copy_desc = {};
+        copy_texture->GetDesc(&copy_desc);
+        need_copy_tex =
+            copy_desc.Width != src_desc.Width ||
+            copy_desc.Height != src_desc.Height ||
+            copy_desc.Format != src_desc.Format;
+    }
+
+    if (!need_copy_tex) {
+        return y_srv && uv_srv;
+    }
+
+    copy_texture.Reset();
+    y_srv.Reset();
+    uv_srv.Reset();
+
+    D3D11_TEXTURE2D_DESC copy_desc = src_desc;
+    copy_desc.ArraySize = 1;
+    copy_desc.Usage = D3D11_USAGE_DEFAULT;
+    copy_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    copy_desc.CPUAccessFlags = 0;
+    copy_desc.MiscFlags = 0;
+
+    HRESULT hr = device_->CreateTexture2D(&copy_desc, nullptr, &copy_texture);
+    if (FAILED(hr) || !copy_texture) {
+        spdlog::error("Failed to create NV12 copy texture: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC y_desc = {};
+    y_desc.Format = DXGI_FORMAT_R8_UNORM;
+    y_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    y_desc.Texture2D.MipLevels = 1;
+    hr = device_->CreateShaderResourceView(copy_texture.Get(), &y_desc, &y_srv);
+    if (FAILED(hr)) {
+        spdlog::error("Failed to create NV12 Y SRV: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        copy_texture.Reset();
+        return false;
+    }
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC uv_desc = {};
+    uv_desc.Format = DXGI_FORMAT_R8G8_UNORM;
+    uv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    uv_desc.Texture2D.MipLevels = 1;
+    hr = device_->CreateShaderResourceView(copy_texture.Get(), &uv_desc, &uv_srv);
+    if (FAILED(hr)) {
+        spdlog::error("Failed to create NV12 UV SRV: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        copy_texture.Reset();
+        y_srv.Reset();
+        return false;
+    }
+
+    if (created_new) {
+        *created_new = true;
+    }
+    spdlog::debug("Created NV12 copy texture ({}x{}, format={})",
+                  src_desc.Width, src_desc.Height, static_cast<int>(src_desc.Format));
+    return true;
 }
 
 } // namespace vr

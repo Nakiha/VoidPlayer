@@ -1460,28 +1460,9 @@ bool Renderer::prepare_nv12_frame_srv(TrackPipeline& track,
         track.render_nv12_tex.Reset();
         track.last_nv12_tex = nullptr;
 
-        Microsoft::WRL::ComPtr<IDXGIResource> dxgi_res;
-        HRESULT hr = decode_tex->QueryInterface(__uuidof(IDXGIResource), &dxgi_res);
-        if (FAILED(hr)) {
-            spdlog::error("[Renderer] Failed to QI IDXGIResource for track {}: {:#x}",
-                          slot, static_cast<unsigned long>(hr));
-            return false;
-        }
-
-        HANDLE shared_handle = nullptr;
-        hr = dxgi_res->GetSharedHandle(&shared_handle);
-        if (FAILED(hr)) {
-            spdlog::error("[Renderer] Failed to get shared handle for track {}: {:#x}",
-                          slot, static_cast<unsigned long>(hr));
-            return false;
-        }
-
-        hr = d3d_device_->device()->OpenSharedResource(
-            shared_handle, __uuidof(ID3D11Texture2D),
-            reinterpret_cast<void**>(track.render_nv12_tex.GetAddressOf()));
-        if (FAILED(hr)) {
-            spdlog::error("[Renderer] Failed to open shared NV12 texture for track {}: {:#x}",
-                          slot, static_cast<unsigned long>(hr));
+        if (!texture_mgr_->open_shared_texture(decode_tex, track.render_nv12_tex)) {
+            spdlog::error("[Renderer] Failed to open shared NV12 texture for track {}",
+                          slot);
             return false;
         }
 
@@ -1500,66 +1481,16 @@ bool Renderer::prepare_nv12_frame_srv(TrackPipeline& track,
         return false;
     }
 
-    bool need_copy_tex = !track.render_nv12_copy_tex;
-    if (track.render_nv12_copy_tex) {
-        D3D11_TEXTURE2D_DESC copy_desc = {};
-        track.render_nv12_copy_tex->GetDesc(&copy_desc);
-        need_copy_tex =
-            copy_desc.Width != src_desc.Width ||
-            copy_desc.Height != src_desc.Height ||
-            copy_desc.Format != src_desc.Format;
-    }
-
-    const bool created_new_copy_texture = need_copy_tex;
-    if (need_copy_tex) {
-        track.render_nv12_copy_tex.Reset();
-        track.nv12_y_srv.Reset();
-        track.nv12_uv_srv.Reset();
-
-        D3D11_TEXTURE2D_DESC copy_desc = src_desc;
-        copy_desc.ArraySize = 1;
-        copy_desc.Usage = D3D11_USAGE_DEFAULT;
-        copy_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        copy_desc.CPUAccessFlags = 0;
-        copy_desc.MiscFlags = 0;
-
-        HRESULT hr = d3d_device_->device()->CreateTexture2D(
-            &copy_desc, nullptr, &track.render_nv12_copy_tex);
-        if (FAILED(hr) || !track.render_nv12_copy_tex) {
-            spdlog::error("[Renderer] Failed to create renderer-owned NV12 texture for track {}: {:#x}",
-                          slot, static_cast<unsigned long>(hr));
-            return false;
-        }
-
-        D3D11_SHADER_RESOURCE_VIEW_DESC y_desc = {};
-        y_desc.Format = DXGI_FORMAT_R8_UNORM;
-        y_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-        y_desc.Texture2D.MipLevels = 1;
-        hr = d3d_device_->device()->CreateShaderResourceView(
-            track.render_nv12_copy_tex.Get(), &y_desc, &track.nv12_y_srv);
-        if (FAILED(hr)) {
-            spdlog::error("[Renderer] Failed to create NV12 Y SRV for track {}: {:#x}",
-                          slot, static_cast<unsigned long>(hr));
-            track.render_nv12_copy_tex.Reset();
-            return false;
-        }
-
-        D3D11_SHADER_RESOURCE_VIEW_DESC uv_desc = {};
-        uv_desc.Format = DXGI_FORMAT_R8G8_UNORM;
-        uv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-        uv_desc.Texture2D.MipLevels = 1;
-        hr = d3d_device_->device()->CreateShaderResourceView(
-            track.render_nv12_copy_tex.Get(), &uv_desc, &track.nv12_uv_srv);
-        if (FAILED(hr)) {
-            spdlog::error("[Renderer] Failed to create NV12 UV SRV for track {}: {:#x}",
-                          slot, static_cast<unsigned long>(hr));
-            track.render_nv12_copy_tex.Reset();
-            track.nv12_y_srv.Reset();
-            return false;
-        }
-
-        spdlog::debug("[Renderer] Created renderer-owned NV12 texture for track {} ({}x{}, format={})",
-                      slot, src_desc.Width, src_desc.Height, static_cast<int>(src_desc.Format));
+    bool created_new_copy_texture = false;
+    if (!texture_mgr_->ensure_nv12_copy_resources(
+            track.render_nv12_tex.Get(),
+            track.render_nv12_copy_tex,
+            track.nv12_y_srv,
+            track.nv12_uv_srv,
+            &created_new_copy_texture)) {
+        spdlog::error("[Renderer] Failed to prepare renderer-owned NV12 resources for track {}",
+                      slot);
+        return false;
     }
 
     auto copy_nv12_slice = [&] {

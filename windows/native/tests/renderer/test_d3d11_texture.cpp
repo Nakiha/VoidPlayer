@@ -84,3 +84,76 @@ TEST_CASE("TextureManager texture format is R8G8B8A8_UNORM", "[d3d11][texture]")
     tex->Release();
     cleanup_test_device(dev, hwnd);
 }
+
+TEST_CASE("TextureManager opens shared texture resources", "[d3d11][texture]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::TextureManager tm(dev->device(), dev->context());
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = 64;
+    desc.Height = 64;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> shared_tex;
+    REQUIRE(SUCCEEDED(dev->device()->CreateTexture2D(&desc, nullptr, &shared_tex)));
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> opened;
+    REQUIRE(tm.open_shared_texture(shared_tex.Get(), opened));
+    REQUIRE(opened != nullptr);
+
+    D3D11_TEXTURE2D_DESC opened_desc = {};
+    opened->GetDesc(&opened_desc);
+    REQUIRE(opened_desc.Width == desc.Width);
+    REQUIRE(opened_desc.Height == desc.Height);
+    REQUIRE(opened_desc.Format == desc.Format);
+
+    cleanup_test_device(dev, hwnd);
+}
+
+TEST_CASE("TextureManager creates reusable NV12 copy resources", "[d3d11][texture]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::TextureManager tm(dev->device(), dev->context());
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = 128;
+    desc.Height = 64;
+    desc.MipLevels = 1;
+    desc.ArraySize = 4;
+    desc.Format = DXGI_FORMAT_NV12;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_DECODER | D3D11_BIND_SHADER_RESOURCE;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> source;
+    REQUIRE(SUCCEEDED(dev->device()->CreateTexture2D(&desc, nullptr, &source)));
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> copy;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> y_srv;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> uv_srv;
+    bool created = false;
+
+    REQUIRE(tm.ensure_nv12_copy_resources(source.Get(), copy, y_srv, uv_srv, &created));
+    REQUIRE(created);
+    REQUIRE(copy != nullptr);
+    REQUIRE(y_srv != nullptr);
+    REQUIRE(uv_srv != nullptr);
+
+    D3D11_TEXTURE2D_DESC copy_desc = {};
+    copy->GetDesc(&copy_desc);
+    REQUIRE(copy_desc.Width == desc.Width);
+    REQUIRE(copy_desc.Height == desc.Height);
+    REQUIRE(copy_desc.Format == desc.Format);
+    REQUIRE(copy_desc.ArraySize == 1);
+
+    created = true;
+    REQUIRE(tm.ensure_nv12_copy_resources(source.Get(), copy, y_srv, uv_srv, &created));
+    REQUIRE_FALSE(created);
+
+    cleanup_test_device(dev, hwnd);
+}

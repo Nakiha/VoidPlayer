@@ -22,6 +22,7 @@ import 'analysis_ipc.dart';
 import 'native_file_picker.dart';
 
 part 'main_window_actions.dart';
+part 'main_window_media.dart';
 
 class MainWindow extends StatefulWidget {
   final String? testScriptPath;
@@ -120,6 +121,14 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     });
     _markLayoutDirty();
     unawaited(_publishAnalysisTrackSnapshot());
+  }
+
+  void _setViewportState(int state) {
+    setState(() => _viewportState = state);
+  }
+
+  void _setTextureId(int textureId) {
+    setState(() => _textureId = textureId);
   }
 
   void _togglePlayPause() async {
@@ -337,64 +346,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       );
     });
     _markLayoutDirty();
-  }
-
-  /// Load media files by paths (shared by file picker, drag-drop, and test scripts).
-  void _loadMediaPaths(List<String> paths) async {
-    if (paths.isEmpty) return;
-
-    if (_textureId == null) {
-      // First load: create renderer
-      setState(() => _viewportState = 0);
-      try {
-        final initialWidth = _viewportWidth > 0 ? _viewportWidth : 1920;
-        final initialHeight = _viewportHeight > 0 ? _viewportHeight : 1080;
-        final res = await _controller.createRenderer(
-          paths,
-          width: initialWidth,
-          height: initialHeight,
-        );
-        setState(() {
-          _textureId = res.textureId;
-        });
-        _trackManager.setTracks(res.tracks);
-        _layout = await _controller.getLayout();
-        await WidgetsBinding.instance.endOfFrame;
-        if (!mounted) return;
-        if (_viewportWidth > 0 && _viewportHeight > 0) {
-          await _controller.resize(_viewportWidth, _viewportHeight);
-        }
-        if (!mounted) return;
-        setState(() => _viewportState = 2);
-      } catch (e) {
-        log.severe("createRenderer failed: $e");
-        setState(() => _viewportState = 1);
-      }
-    } else {
-      // Subsequent adds: add tracks
-      for (final path in paths) {
-        try {
-          final track = await _controller.addTrack(path);
-          _trackManager.addTrack(track);
-        } catch (e) {
-          log.severe("addTrack failed: $e");
-        }
-      }
-    }
-  }
-
-  /// Add media by path (used by test scripts, bypasses file picker).
-  void _addMediaByPath(String path) {
-    if (path.isEmpty) return;
-    _loadMediaPaths([path]);
-  }
-
-  // -- File opening --
-
-  void _openFile() async {
-    final paths = await WindowsNativeFilePicker.pickFiles(allowMultiple: true);
-    if (paths == null || paths.isEmpty) return;
-    _loadMediaPaths(paths);
   }
 
   // -- Viewport interaction --

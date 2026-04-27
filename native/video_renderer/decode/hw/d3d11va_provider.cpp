@@ -14,59 +14,43 @@ extern "C" {
 namespace vr {
 
 namespace {
-bool ensure_shared_decode_device(Microsoft::WRL::ComPtr<ID3D11Device>& device,
-                                 Microsoft::WRL::ComPtr<ID3D11DeviceContext>& context) {
-    static Microsoft::WRL::ComPtr<ID3D11Device> s_device;
-    static Microsoft::WRL::ComPtr<ID3D11DeviceContext> s_context;
-    static std::once_flag s_once;
-    static bool s_ok = false;
+bool create_independent_decode_device(Microsoft::WRL::ComPtr<ID3D11Device>& device,
+                                      Microsoft::WRL::ComPtr<ID3D11DeviceContext>& context) {
+    D3D_FEATURE_LEVEL feature_levels[] = {
+        D3D_FEATURE_LEVEL_11_0,
+        D3D_FEATURE_LEVEL_10_1,
+        D3D_FEATURE_LEVEL_10_0,
+    };
 
-    std::call_once(s_once, [] {
-        D3D_FEATURE_LEVEL feature_levels[] = {
-            D3D_FEATURE_LEVEL_11_0,
-            D3D_FEATURE_LEVEL_10_1,
-            D3D_FEATURE_LEVEL_10_0,
-        };
+    UINT create_flags = D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
+    D3D_DRIVER_TYPE driver_types[] = {
+        D3D_DRIVER_TYPE_HARDWARE,
+        D3D_DRIVER_TYPE_WARP,
+    };
 
-        UINT create_flags = D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
-        D3D_DRIVER_TYPE driver_types[] = {
-            D3D_DRIVER_TYPE_HARDWARE,
-            D3D_DRIVER_TYPE_WARP,
-        };
+    HRESULT hr = E_FAIL;
+    for (auto dt : driver_types) {
+        hr = D3D11CreateDevice(
+            nullptr, dt, nullptr, create_flags,
+            feature_levels, ARRAYSIZE(feature_levels),
+            D3D11_SDK_VERSION,
+            device.GetAddressOf(),
+            nullptr, context.GetAddressOf());
+        if (SUCCEEDED(hr)) break;
 
-        HRESULT hr = E_FAIL;
-        for (auto dt : driver_types) {
-            hr = D3D11CreateDevice(
-                nullptr, dt, nullptr, create_flags,
-                feature_levels, ARRAYSIZE(feature_levels),
-                D3D11_SDK_VERSION,
-                s_device.GetAddressOf(),
-                nullptr, s_context.GetAddressOf());
-            if (SUCCEEDED(hr)) break;
-        }
-
-        s_ok = SUCCEEDED(hr) && s_device && s_context;
-        if (s_ok) {
-            spdlog::info("[D3D11VA] Created shared independent D3D11 decode device");
-        } else {
-            spdlog::error("[D3D11VA] Failed to create shared independent D3D11 decode device");
-            s_device.Reset();
-            s_context.Reset();
-        }
-    });
-
-    if (!s_ok) {
-        return false;
+        device.Reset();
+        context.Reset();
     }
 
-    device = s_device;
-    context = s_context;
-    return true;
-}
+    if (SUCCEEDED(hr) && device && context) {
+        spdlog::info("[D3D11VA] Created independent D3D11 decode device");
+        return true;
+    }
 
-std::recursive_mutex& shared_decode_mutex() {
-    static std::recursive_mutex s_mutex;
-    return s_mutex;
+    spdlog::error("[D3D11VA] Failed to create independent D3D11 decode device");
+    device.Reset();
+    context.Reset();
+    return false;
 }
 }  // namespace
 
@@ -174,12 +158,11 @@ HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
         d3d_device->GetImmediateContext(&d3d_context_);
         uses_shared_device_ = false;
     } else {
-        if (!ensure_shared_decode_device(own_device_, d3d_context_)) {
+        if (!create_independent_decode_device(own_device_, d3d_context_)) {
             return result;
         }
         d3d_device = own_device_.Get();
-        uses_shared_device_ = true;
-        spdlog::info("[D3D11VA] Reusing shared independent D3D11 decode device");
+        uses_shared_device_ = false;
     }
 
     if (!d3d_device) {
@@ -227,12 +210,6 @@ HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
         d3d11_ctx->lock = d3d11va_lock;
         d3d11_ctx->unlock = d3d11va_unlock;
         d3d11_ctx->lock_ctx = device_mutex;
-    } else if (uses_shared_device_) {
-        device_mutex_.reset();
-        active_mutex_ = &shared_decode_mutex();
-        d3d11_ctx->lock = d3d11va_lock;
-        d3d11_ctx->unlock = d3d11va_unlock;
-        d3d11_ctx->lock_ctx = active_mutex_;
     } else {
         device_mutex_ = std::make_unique<std::recursive_mutex>();
         active_mutex_ = device_mutex_.get();

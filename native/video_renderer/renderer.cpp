@@ -318,9 +318,6 @@ void Renderer::seek_internal(int64_t target_pts_us,
             is_hevc_hw_seek &&
             ((!paused_seek && !seek_transition_active) ||
              (paused_seek &&
-              type == SeekType::Exact &&
-              (!seek_transition_active || force_recreate_paused_hevc)) ||
-             (paused_seek &&
               type != SeekType::Exact &&
               !track->recreated_for_paused_hevc_seek &&
               (!seek_transition_active || force_recreate_paused_hevc)));

@@ -25,6 +25,7 @@ part 'main_window_actions.dart';
 part 'main_window_analysis.dart';
 part 'main_window_layout.dart';
 part 'main_window_media.dart';
+part 'main_window_tracks.dart';
 
 class MainWindow extends StatefulWidget {
   final String? testScriptPath;
@@ -139,6 +140,35 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   void _updateLayout(LayoutState Function(LayoutState current) update) {
     setState(() => _layout = update(_layout));
+  }
+
+  void _resetAfterLastTrackRemoved() {
+    setState(() {
+      _trackManager.clear();
+      _textureId = null;
+      _viewportState = 1;
+      _isPlaying = false;
+      _currentPtsUs = 0;
+      _durationUs = 0;
+      _layout = const LayoutState();
+      _syncOffsets = {};
+      _loopRangeEnabled = false;
+      _nativeLoopRangeSynced = false;
+      _loopStartUs = 0;
+      _loopEndUs = 0;
+    });
+  }
+
+  void _removeSyncOffset(int slot) {
+    setState(() {
+      _syncOffsets = Map.from(_syncOffsets)..remove(slot);
+    });
+  }
+
+  void _setSyncOffset(int slot, int offsetUs) {
+    setState(() {
+      _syncOffsets = Map.from(_syncOffsets)..[slot] = offsetUs;
+    });
   }
 
   void _togglePlayPause() async {
@@ -383,85 +413,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     }
   }
 
-  // -- Track operations --
-
-  void _onRemoveTrack(int fileId) async {
-    // Capture slot before removal for offset cleanup
-    final entry = _trackManager.entries.firstWhere(
-      (e) => e.fileId == fileId,
-      orElse: () => throw StateError('No track with fileId $fileId'),
-    );
-    final slot = entry.info.slot;
-
-    await _controller.removeTrack(fileId);
-    final tracks = await _controller.getTracks();
-    if (tracks.isEmpty) {
-      // Last track removed: destroy renderer, show empty viewport
-      await _controller.dispose();
-      _cancelLoopBoundaryTimer();
-      setState(() {
-        _trackManager.clear();
-        _textureId = null;
-        _viewportState = 1; // empty
-        _isPlaying = false;
-        _currentPtsUs = 0;
-        _durationUs = 0;
-        _layout = const LayoutState();
-        _syncOffsets = {};
-        _loopRangeEnabled = false;
-        _nativeLoopRangeSynced = false;
-        _loopStartUs = 0;
-        _loopEndUs = 0;
-      });
-    } else {
-      _trackManager.setTracks(tracks);
-      setState(() {
-        _syncOffsets = Map.from(_syncOffsets)..remove(slot);
-      });
-    }
-  }
-
-  void _onMediaSwapped(int slotIndex, int targetTrackIndex) {
-    _trackManager.moveTrack(slotIndex, targetTrackIndex);
-  }
-
-  void _onOffsetChanged(int slot, int deltaMs) async {
-    final currentOffsetUs = _syncOffsets[slot] ?? 0;
-    final newOffsetUs = currentOffsetUs + deltaMs * 1000; // ms -> us
-
-    // Find the fileId for this slot
-    final entry = _trackManager.entries.firstWhere(
-      (e) => e.info.slot == slot,
-      orElse: () => throw StateError('No track at slot $slot'),
-    );
-
-    await _controller.setTrackOffset(
-      fileId: entry.fileId,
-      offsetUs: newOffsetUs,
-    );
-    if (!mounted) return;
-
-    setState(() {
-      _syncOffsets = Map.from(_syncOffsets)..[slot] = newOffsetUs;
-    });
-    await _refreshTracksAtCurrentPosition();
-  }
-
-  Future<void> _refreshTracksAtCurrentPosition() async {
-    var targetUs = _pendingSeekUs ?? _currentPtsUs;
-    if (_pendingSeekUs == null) {
-      try {
-        targetUs = await _controller.currentPts();
-      } catch (_) {
-        targetUs = _currentPtsUs;
-      }
-    }
-    if (!mounted) return;
-
-    final clampedTargetUs = targetUs.clamp(0, _effectiveDurationUs).toInt();
-    _seekTo(clampedTargetUs);
-  }
-
   void _setLoopRangeEnabled(bool enabled) async {
     if (enabled) {
       _ensureLoopRangeInitialized();
@@ -525,17 +476,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       _hoverPtsUs = hoverUs;
       _sliderHovering = hovering;
     });
-  }
-
-  /// Effective max duration accounting for per-track offsets.
-  int get _effectiveDurationUs {
-    int maxEffective = _durationUs;
-    for (final entry in _trackManager.entries) {
-      final offsetUs = _syncOffsets[entry.info.slot] ?? 0;
-      final effective = entry.info.durationUs + offsetUs;
-      if (effective > maxEffective) maxEffective = effective;
-    }
-    return maxEffective;
   }
 
   // -- Build --

@@ -16,6 +16,8 @@ namespace vr {
 static constexpr int64_t MAX_SLEEP_US = 8000;  // 8ms cap → ~120Hz layout response
 static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250);
 static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
+static constexpr size_t kTrackForwardDepth = 4;
+static constexpr size_t kTrackBackwardDepth = 1;
 
 Renderer::Renderer() = default;
 
@@ -1626,7 +1628,11 @@ std::unique_ptr<Renderer::TrackPipeline> Renderer::create_pipeline(const std::st
         pipeline->seek_controller->request_seek(initial_seek->target_pts_us, initial_seek->type);
     }
     pipeline->packet_queue = std::make_unique<PacketQueue>(100);
-    pipeline->track_buffer = std::make_unique<TrackBuffer>(8, 2);
+    pipeline->track_buffer = std::make_unique<TrackBuffer>(kTrackForwardDepth, kTrackBackwardDepth);
+    spdlog::info("Renderer: track buffer depth forward={}, backward={}, max_cached={}",
+                 kTrackForwardDepth,
+                 kTrackBackwardDepth,
+                 kTrackForwardDepth + 1);
     pipeline->demux_thread = std::make_unique<DemuxThread>(
         path, *pipeline->packet_queue, *pipeline->seek_controller);
 

@@ -10,10 +10,9 @@ extern "C" {
 namespace vr {
 
 namespace {
-constexpr int64_t kExactSeekLookbehindUs = 500000;  // Keep up to 0.5s before target.
-constexpr int64_t kExactSeekLeadUs = 250000;        // HEVC B-frames can appear long after refs.
-constexpr size_t kExactSeekReorderPublishFrames = 64;
+constexpr int64_t kExactSeekLookbehindUs = 250000;  // Keep a small B-frame window before target.
 constexpr size_t kExactSeekPreviewWindowFrames = 4;
+constexpr int kRendererOwnedHwExtraFrames = 0;
 
 size_t post_seek_preroll_target(bool hw_enabled) {
     // Hardware-decoded seek/add-track previews are more stable if we wait for
@@ -135,7 +134,9 @@ bool DecodeThread::enable_hardware_decode(void* native_device,
     // immediately after transfer; forcing a large D3D11VA pool there is both
     // unnecessary and can produce black transfer frames on some AV1 drivers.
     if (hardware_surfaces_are_renderer_owned()) {
-        codec_ctx_->extra_hw_frames = 48;
+        codec_ctx_->extra_hw_frames = kRendererOwnedHwExtraFrames;
+        spdlog::info("[DecodeThread] Renderer-owned hardware frame pool extra_hw_frames={}",
+                     codec_ctx_->extra_hw_frames);
     }
 
     // NOTE: We intentionally do NOT create hw_frames_ctx here.
@@ -364,10 +365,11 @@ void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*
         }
         if (target_us >= 0) {
             rescale_ts(frame);
-            flush_hw_before_conversion_if_needed();
-            TextureFrame tex_frame = converter_.convert(frame);
-            if (tex_frame.pts_us >= target_us - kExactSeekLookbehindUs) {
-                exact_seek_reorder_.push_back(std::move(tex_frame));
+            if (frame->pts >= target_us - kExactSeekLookbehindUs) {
+                auto candidate = make_exact_seek_candidate(frame);
+                if (candidate.frame) {
+                    collect_exact_seek_candidate(std::move(candidate));
+                }
             }
         }
         av_frame_unref(frame);
@@ -395,8 +397,11 @@ void DecodeThread::flush_hw_visibility_if_needed() {
     hw_visibility_flush_pending_ = false;
 }
 
-void DecodeThread::flush_hw_before_conversion_if_needed() {
-    if (!hw_enabled_ || !hw_provider_ || !converter_.downloads_hardware_to_cpu()) {
+void DecodeThread::flush_hw_before_publish_if_needed(bool force_for_shared_surface) {
+    if (!hw_enabled_ || !hw_provider_) {
+        return;
+    }
+    if (!force_for_shared_surface && !converter_.downloads_hardware_to_cpu()) {
         return;
     }
     hw_provider_->flush();
@@ -404,22 +409,83 @@ void DecodeThread::flush_hw_before_conversion_if_needed() {
 }
 
 void DecodeThread::flush_reorder_buffer() {
+    exact_seek_pending_frames_.clear();
+    drain_decoder_before_next_packet_ = false;
     if (exact_seek_reorder_.empty()) return;
-    std::sort(exact_seek_reorder_.begin(), exact_seek_reorder_.end(),
-              [](const TextureFrame& a, const TextureFrame& b) {
-                  return a.pts_us < b.pts_us;
-              });
     // Make the decode-device writes visible before exposing reordered frames
     // to the render thread; otherwise the paused preview can sample a
     // partially-written first seek frame.
     flush_hw_visibility_if_needed();
     for (auto& f : exact_seek_reorder_) {
-        output_buffer_.push_frame(std::move(f));
+        if (!f.frame) {
+            continue;
+        }
+        flush_hw_before_publish_if_needed(true);
+        TextureFrame tex_frame = converter_.convert(f.frame.get());
+        output_buffer_.push_frame(std::move(tex_frame));
     }
-    spdlog::info("[DecodeThread] Exact seek reorder: {} frames sorted and pushed",
+    spdlog::info("[DecodeThread] Exact seek reorder: {} frames pushed",
                  exact_seek_reorder_.size());
     exact_seek_reorder_.clear();
     exact_seek_target_us_ = -1;
+}
+
+DecodeThread::ExactSeekCandidate DecodeThread::make_exact_seek_candidate(AVFrame* frame) const {
+    AVFrame* cloned = av_frame_clone(frame);
+    if (!cloned) {
+        spdlog::error("[DecodeThread] Failed to clone exact-seek candidate frame");
+        return {};
+    }
+    return ExactSeekCandidate{
+        frame->pts,
+        std::shared_ptr<AVFrame>(cloned, [](AVFrame* f) {
+            av_frame_free(&f);
+        }),
+    };
+}
+
+void DecodeThread::collect_exact_seek_candidate(ExactSeekCandidate candidate) {
+    if (!candidate.frame) {
+        return;
+    }
+    // FFmpeg receive_frame() has already applied codec reorder for display
+    // order. While still before the target, only the latest pre-target frame
+    // can be selected, so drop older pre-target candidates immediately.
+    if (exact_seek_target_us_ >= 0 && candidate.pts_us < exact_seek_target_us_) {
+        exact_seek_reorder_.clear();
+    }
+    exact_seek_reorder_.push_back(std::move(candidate));
+}
+
+void DecodeThread::log_hw_frame_context_once(const AVFrame* frame) {
+    if (!hw_enabled_ || hw_frames_ctx_logged_ || !frame || !frame->hw_frames_ctx) {
+        return;
+    }
+    auto* frames_ctx = reinterpret_cast<AVHWFramesContext*>(frame->hw_frames_ctx->data);
+    if (!frames_ctx) {
+        return;
+    }
+    spdlog::info("[DecodeThread] HW frames ctx: format={}, sw_format={}, {}x{}, initial_pool_size={}, extra_hw_frames={}",
+                 static_cast<int>(frames_ctx->format),
+                 static_cast<int>(frames_ctx->sw_format),
+                 frames_ctx->width,
+                 frames_ctx->height,
+                 frames_ctx->initial_pool_size,
+                 codec_ctx_ ? codec_ctx_->extra_hw_frames : 0);
+    hw_frames_ctx_logged_ = true;
+}
+
+bool DecodeThread::exact_seek_preview_window_ready() const {
+    if (exact_seek_target_us_ < 0 || exact_seek_reorder_.empty()) {
+        return false;
+    }
+    if (exact_seek_reorder_.back().pts_us < exact_seek_target_us_) {
+        return false;
+    }
+    if (exact_seek_reorder_.size() < kExactSeekPreviewWindowFrames) {
+        return false;
+    }
+    return true;
 }
 
 void DecodeThread::publish_exact_seek_window(size_t selected) {
@@ -433,7 +499,21 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
                                 selected + kExactSeekPreviewWindowFrames);
     const size_t published = end - selected;
     for (size_t i = selected; i < end; ++i) {
-        output_buffer_.push_frame(std::move(exact_seek_reorder_[i]));
+        if (!exact_seek_reorder_[i].frame) {
+            continue;
+        }
+        if (i == selected && hw_enabled_ && hw_provider_) {
+            hw_provider_->wait_idle();
+            hw_visibility_flush_pending_ = false;
+        } else {
+            flush_hw_before_publish_if_needed(true);
+        }
+        TextureFrame tex_frame = converter_.convert(exact_seek_reorder_[i].frame.get());
+        output_buffer_.push_frame(std::move(tex_frame));
+    }
+    exact_seek_pending_frames_.clear();
+    for (size_t i = end; i < exact_seek_reorder_.size(); ++i) {
+        exact_seek_pending_frames_.push_back(std::move(exact_seek_reorder_[i]));
     }
     output_buffer_.set_state(TrackState::Ready);
     if (pause_after_preroll_.load(std::memory_order_acquire)) {
@@ -441,20 +521,16 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
     }
     post_seek_ = false;
     exact_seek_target_us_ = -1;
+    drain_decoder_before_next_packet_ = true;
     exact_seek_reorder_.clear();
-    spdlog::info("[DecodeThread] Exact seek drain: preview frame ready pts={:.3f}s, published={} frames, state->Ready",
-                 pts / 1e6, published);
+    spdlog::info("[DecodeThread] Exact seek drain: preview frame ready pts={:.3f}s, published={} frames, pending={} frames, state->Ready",
+                 pts / 1e6, published, exact_seek_pending_frames_.size());
 }
 
 bool DecodeThread::publish_best_exact_seek_frame() {
     if (exact_seek_target_us_ < 0 || exact_seek_reorder_.empty()) {
         return false;
     }
-
-    std::sort(exact_seek_reorder_.begin(), exact_seek_reorder_.end(),
-              [](const TextureFrame& a, const TextureFrame& b) {
-                  return a.pts_us < b.pts_us;
-              });
 
     size_t selected = 0;
     bool found_before_target = false;
@@ -477,6 +553,20 @@ bool DecodeThread::publish_best_exact_seek_frame() {
                  selected_pts / 1e6, collected, exact_seek_target_us_ / 1e6);
     publish_exact_seek_window(selected);
     return true;
+}
+
+void DecodeThread::publish_pending_exact_seek_frames() {
+    if (exact_seek_pending_frames_.empty()) {
+        return;
+    }
+    auto candidate = std::move(exact_seek_pending_frames_.front());
+    exact_seek_pending_frames_.pop_front();
+    if (!candidate.frame) {
+        return;
+    }
+    flush_hw_before_publish_if_needed(true);
+    TextureFrame frame = converter_.convert(candidate.frame.get());
+    output_buffer_.push_frame(std::move(frame));
 }
 
 void DecodeThread::run() {
@@ -532,6 +622,8 @@ void DecodeThread::run() {
 
             av_frame_unref(frame);
             exact_seek_reorder_.clear();
+            exact_seek_pending_frames_.clear();
+            drain_decoder_before_next_packet_ = false;
 
             // Always reset codec state on seek. During add-track initial seek,
             // demux can race ahead and the decoder may have already accepted
@@ -559,6 +651,68 @@ void DecodeThread::run() {
             decode_paused_.store(false, std::memory_order_release);
             output_buffer_.set_state(TrackState::Buffering);
             spdlog::info("[DecodeThread] === SEEK DONE: state->Buffering, post_seek fast preroll, waiting for new packets");
+            continue;
+        }
+
+        if (!exact_seek_pending_frames_.empty() &&
+            !decode_paused_.load(std::memory_order_acquire) &&
+            output_buffer_.state() != TrackState::Flushing) {
+            publish_pending_exact_seek_frames();
+            continue;
+        }
+
+        if (drain_decoder_before_next_packet_ &&
+            !decode_paused_.load(std::memory_order_acquire) &&
+            output_buffer_.state() != TrackState::Flushing) {
+            int drained = 0;
+            while (true) {
+                if (cancelled_.load(std::memory_order_acquire) ||
+                    output_buffer_.state() == TrackState::Flushing) {
+                    drain_decoder_before_next_packet_ = false;
+                    break;
+                }
+
+                int ret = 0;
+                try {
+                    if (hw_enabled_ && device_mutex_) {
+                        std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
+                        ret = avcodec_receive_frame(codec_ctx_, frame);
+                    } else {
+                        ret = avcodec_receive_frame(codec_ctx_, frame);
+                    }
+                } catch (...) {
+                    output_buffer_.set_state(TrackState::Error);
+                    decode_paused_.store(true, std::memory_order_release);
+                    running_.store(false, std::memory_order_release);
+                    log_codec_exception("post_exact_seek_drain/receive_frame", codec_id(), hw_enabled_);
+                    ret = AVERROR_EXTERNAL;
+                }
+
+                if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+                    drain_decoder_before_next_packet_ = false;
+                    break;
+                }
+                if (ret < 0) {
+                    drain_decoder_before_next_packet_ = false;
+                    break;
+                }
+
+                rescale_ts(frame);
+                log_hw_frame_context_once(frame);
+                flush_hw_before_publish_if_needed(true);
+                TextureFrame tex_frame = converter_.convert(frame);
+                output_buffer_.push_frame(std::move(tex_frame));
+                av_frame_unref(frame);
+                ++drained;
+
+                if (decode_paused_.load(std::memory_order_acquire) ||
+                    output_buffer_.state() == TrackState::Flushing) {
+                    break;
+                }
+            }
+            if (drained > 0) {
+                perf_.frames_decoded.fetch_add(drained, std::memory_order_relaxed);
+            }
             continue;
         }
 
@@ -637,7 +791,8 @@ void DecodeThread::run() {
                         if (ret < 0) break;
 
                         rescale_ts(frame);
-                        flush_hw_before_conversion_if_needed();
+                        log_hw_frame_context_once(frame);
+                        flush_hw_before_publish_if_needed();
                         TextureFrame tex_frame = converter_.convert(frame);
                         output_buffer_.push_frame(std::move(tex_frame));
                         av_frame_unref(frame);
@@ -729,11 +884,11 @@ void DecodeThread::run() {
             }
 
             rescale_ts(frame);
+            log_hw_frame_context_once(frame);
 
-            // Exact seek: collect a small PTS window around the target, then
-            // publish the closest frame before target. HEVC can output B-frames
-            // after a later reference frame, so publishing on the first
-            // frame >= target can incorrectly jump back to the keyframe.
+            // Exact seek: FFmpeg returns frames in display order after codec
+            // reordering. Keep only the latest frame before target, then a
+            // tiny preview window after it.
             if (exact_seek_target_us_ >= 0) {
                 if (frame->pts < exact_seek_target_us_ - kExactSeekLookbehindUs) {
                     perf_.frames_dropped.fetch_add(1, std::memory_order_relaxed);
@@ -741,23 +896,13 @@ void DecodeThread::run() {
                     continue;
                 }
 
-                flush_hw_before_conversion_if_needed();
-                TextureFrame tex_frame = converter_.convert(frame);
+                auto candidate = make_exact_seek_candidate(frame);
                 ++frames_produced;
-                exact_seek_reorder_.push_back(std::move(tex_frame));
-
-                bool has_frame_at_or_after_target = false;
-                int64_t max_pts = -1;
-                for (const auto& f : exact_seek_reorder_) {
-                    has_frame_at_or_after_target =
-                        has_frame_at_or_after_target ||
-                        f.pts_us >= exact_seek_target_us_;
-                    max_pts = std::max(max_pts, f.pts_us);
+                if (candidate.frame) {
+                    collect_exact_seek_candidate(std::move(candidate));
                 }
 
-                if (has_frame_at_or_after_target &&
-                    (exact_seek_reorder_.size() >= kExactSeekReorderPublishFrames ||
-                     max_pts >= exact_seek_target_us_ + kExactSeekLeadUs)) {
+                if (exact_seek_preview_window_ready()) {
                     publish_best_exact_seek_frame();
                     av_frame_unref(frame);
                     break;
@@ -767,7 +912,7 @@ void DecodeThread::run() {
                 continue;
             }
 
-            flush_hw_before_conversion_if_needed();
+            flush_hw_before_publish_if_needed();
             TextureFrame tex_frame = converter_.convert(frame);
             ++frames_produced;
 
@@ -815,17 +960,7 @@ void DecodeThread::run() {
                 }
                 should_publish = true;
             } else {
-                bool has_frame_at_or_after_target = false;
-                int64_t max_pts = -1;
-                for (const auto& f : exact_seek_reorder_) {
-                    has_frame_at_or_after_target =
-                        has_frame_at_or_after_target ||
-                        f.pts_us >= exact_seek_target_us_;
-                    max_pts = std::max(max_pts, f.pts_us);
-                }
-                if (has_frame_at_or_after_target &&
-                    (exact_seek_reorder_.size() >= kExactSeekReorderPublishFrames ||
-                     max_pts >= exact_seek_target_us_ + kExactSeekLeadUs)) {
+                if (exact_seek_preview_window_ready()) {
                     should_publish = true;
                 }
             }

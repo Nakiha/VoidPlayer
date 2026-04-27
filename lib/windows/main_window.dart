@@ -52,6 +52,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   final _analysisIpcServer = AnalysisIpcServer();
   final _analysisHashesByFileId = <int, String>{};
   final _timelineSliderKey = GlobalKey();
+  final _loopRangeBarKey = GlobalKey();
   int _testPointerId = 9000;
   int _analysisSnapshotSerial = 0;
 
@@ -306,6 +307,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
                   ),
                 if (_trackManager.count > 0)
                   LoopRangeBar(
+                    key: _loopRangeBarKey,
                     timelineStartWidth: _timelineStartWidth,
                     enabled: _loopRangeEnabled,
                     startUs: _resolvedLoopStartUs,

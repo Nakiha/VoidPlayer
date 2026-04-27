@@ -1,5 +1,7 @@
 #include "video_renderer/decode/hw/d3d11va_provider.h"
 #include <spdlog/spdlog.h>
+#include <chrono>
+#include <thread>
 
 // D3D11 headers
 #include <d3d11.h>
@@ -276,6 +278,49 @@ void D3D11VAProvider::flush() {
         } else {
             d3d_context_->Flush();
         }
+    }
+}
+
+void D3D11VAProvider::wait_idle() {
+    if (!own_device_ && !d3d_context_) {
+        return;
+    }
+    auto wait_impl = [&] {
+        if (!d3d_context_) {
+            return;
+        }
+        Microsoft::WRL::ComPtr<ID3D11Device> device;
+        if (own_device_) {
+            device = own_device_;
+        } else {
+            d3d_context_->GetDevice(&device);
+        }
+        if (!device) {
+            d3d_context_->Flush();
+            return;
+        }
+
+        D3D11_QUERY_DESC query_desc = {};
+        query_desc.Query = D3D11_QUERY_EVENT;
+        Microsoft::WRL::ComPtr<ID3D11Query> query;
+        HRESULT hr = device->CreateQuery(&query_desc, &query);
+        if (FAILED(hr) || !query) {
+            d3d_context_->Flush();
+            return;
+        }
+
+        d3d_context_->End(query.Get());
+        d3d_context_->Flush();
+        while (d3d_context_->GetData(query.Get(), nullptr, 0, 0) == S_FALSE) {
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+    };
+
+    if (active_mutex_) {
+        std::unique_lock<std::recursive_mutex> lock(*active_mutex_);
+        wait_impl();
+    } else {
+        wait_impl();
     }
 }
 

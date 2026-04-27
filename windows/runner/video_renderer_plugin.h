@@ -7,6 +7,7 @@
 
 #include "video_renderer/renderer.h"
 
+#include <cstdint>
 #include <memory>
 #include <mutex>
 
@@ -33,6 +34,9 @@ struct NakiVrDiagnostics {
     double   playback_time_s;
     int32_t  is_playing;
     int32_t  track_count;
+    uint64_t process_working_set_bytes;
+    uint64_t process_private_bytes;
+    uint64_t dedicated_video_memory_bytes;
     NakiVrTrackStats tracks[kMaxTracksFFI];
 };
 

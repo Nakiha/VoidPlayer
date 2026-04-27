@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <functional>
+#include <deque>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -76,6 +77,11 @@ public:
     AVCodecID codec_id() const { return codec_params_ ? codec_params_->codec_id : AV_CODEC_ID_NONE; }
 
 private:
+    struct ExactSeekCandidate {
+        int64_t pts_us = 0;
+        std::shared_ptr<AVFrame> frame;
+    };
+
     void run();
 
     /// Attempt to open codec. Returns true on success.
@@ -99,14 +105,29 @@ private:
     /// Sets eof_flushed_ = true.
     void drain_codec(AVFrame* frame, const std::function<void(AVFrame*)>& rescale_ts, int64_t target_us = -1);
 
-    /// Sort exact_seek_reorder_ by PTS and push all frames to output_buffer_.
+    /// Push currently collected exact-seek frames in decoder presentation order.
     void flush_reorder_buffer();
+
+    /// Keep an exact-seek candidate alive without converting its pixels yet.
+    ExactSeekCandidate make_exact_seek_candidate(AVFrame* frame) const;
+
+    /// Add a candidate in decoder presentation order, retaining only the last pre-target frame.
+    void collect_exact_seek_candidate(ExactSeekCandidate candidate);
+
+    /// Whether the collected stream-ordered candidates are enough to publish preview.
+    bool exact_seek_preview_window_ready() const;
 
     /// Publish the selected exact-seek preview frame plus later decoded frames.
     void publish_exact_seek_window(size_t selected);
 
     /// Pick the closest collected frame before the exact seek target and publish it.
     bool publish_best_exact_seek_frame();
+
+    /// Push decoded exact-seek frames that did not fit in the initial preview window.
+    void publish_pending_exact_seek_frames();
+
+    /// Log the FFmpeg hardware frame pool geometry once it is materialized.
+    void log_hw_frame_context_once(const AVFrame* frame);
 
     /// Flush codec buffers after seek.
     void safe_flush_codec();
@@ -115,8 +136,8 @@ private:
     /// first hardware frame after startup/seek.
     void flush_hw_visibility_if_needed();
 
-    /// Flush decode-device writes before CPU-downloading a hardware frame.
-    void flush_hw_before_conversion_if_needed();
+    /// Flush decode-device writes before publishing a hardware frame.
+    void flush_hw_before_publish_if_needed(bool force_for_shared_surface = false);
 
     PacketQueue& input_queue_;
     TrackBuffer& output_buffer_;
@@ -135,6 +156,7 @@ private:
     std::unique_ptr<HwDecodeProvider> hw_provider_;  // Holds mutex lifetime
     AVPixelFormat hw_pix_fmt_ = AV_PIX_FMT_NONE;  // Per-instance, avoids global shared state
     std::recursive_mutex* device_mutex_ = nullptr;  // Shared D3D11 mutex for hw decode serialization
+    bool hw_frames_ctx_logged_ = false;
 
     // Seek coordination — protected by seek_mutex_ to avoid torn reads
     // between seek_target / seek_type / seek_pending
@@ -150,7 +172,9 @@ private:
     std::atomic<bool> decode_paused_{false};
     std::atomic<bool> pause_after_preroll_{false};
     int64_t exact_seek_target_us_ = -1;  // >= 0 when discarding frames before exact seek target
-    std::vector<TextureFrame> exact_seek_reorder_;  // Temp buffer for B-frame PTS reordering
+    std::vector<ExactSeekCandidate> exact_seek_reorder_;  // Stream-ordered exact-seek candidates
+    std::deque<ExactSeekCandidate> exact_seek_pending_frames_;  // Post-preview frames for smooth play
+    bool drain_decoder_before_next_packet_ = false;
 
     bool eof_flushed_ = false;
     bool post_seek_ = false;      // After seek: transition to Ready after 1 frame instead of full preroll

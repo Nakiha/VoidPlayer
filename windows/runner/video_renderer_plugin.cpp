@@ -8,6 +8,9 @@
 #include <shlwapi.h>
 #include <commdlg.h>
 #include <wincodec.h>
+#include <dxgi1_4.h>
+#include <psapi.h>
+#include <wrl/client.h>
 #include <cstring>
 #include <vector>
 #include <sstream>
@@ -24,6 +27,8 @@ extern "C" {
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "windowscodecs.lib")
+#pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "psapi.lib")
 
 namespace {
 std::string get_exe_dir() {
@@ -124,6 +129,63 @@ struct CaptureStats {
     double avg_luma = 0.0;
     double non_black_ratio = 0.0;
 };
+
+struct ProcessMemoryUsage {
+    uint64_t working_set_bytes = 0;
+    uint64_t private_bytes = 0;
+};
+
+ProcessMemoryUsage QueryProcessMemoryUsage() {
+    ProcessMemoryUsage usage;
+    PROCESS_MEMORY_COUNTERS_EX counters = {};
+    counters.cb = sizeof(counters);
+    if (GetProcessMemoryInfo(
+            GetCurrentProcess(),
+            reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters),
+            sizeof(counters))) {
+        usage.working_set_bytes = static_cast<uint64_t>(counters.WorkingSetSize);
+        usage.private_bytes = static_cast<uint64_t>(counters.PrivateUsage);
+    }
+    return usage;
+}
+
+uint64_t QueryDedicatedVideoMemoryUsage() {
+    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+    HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
+    if (FAILED(hr) || !factory) {
+        return 0;
+    }
+
+    uint64_t total_usage = 0;
+    for (UINT index = 0;; ++index) {
+        Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+        hr = factory->EnumAdapters1(index, &adapter);
+        if (hr == DXGI_ERROR_NOT_FOUND) {
+            break;
+        }
+        if (FAILED(hr) || !adapter) {
+            continue;
+        }
+
+        DXGI_ADAPTER_DESC1 desc = {};
+        if (SUCCEEDED(adapter->GetDesc1(&desc)) &&
+            (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0) {
+            continue;
+        }
+
+        Microsoft::WRL::ComPtr<IDXGIAdapter3> adapter3;
+        if (FAILED(adapter.As(&adapter3)) || !adapter3) {
+            continue;
+        }
+
+        DXGI_QUERY_VIDEO_MEMORY_INFO info = {};
+        if (SUCCEEDED(adapter3->QueryVideoMemoryInfo(
+                0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) {
+            total_usage += static_cast<uint64_t>(info.CurrentUsage);
+        }
+    }
+    return total_usage;
+}
 
 CaptureStats ComputeCaptureStats(const std::vector<uint8_t>& bgra) {
     CaptureStats stats;
@@ -236,6 +298,10 @@ extern "C" __declspec(dllexport)
 const NakiVrDiagnostics* naki_vr_get_diagnostics() {
     auto& d = g_diag_snapshot;
     std::memset(&d, 0, sizeof(d));
+    const auto process_memory = QueryProcessMemoryUsage();
+    d.process_working_set_bytes = process_memory.working_set_bytes;
+    d.process_private_bytes = process_memory.private_bytes;
+    d.dedicated_video_memory_bytes = QueryDedicatedVideoMemoryUsage();
 
     auto* r = g_global_renderer;
     if (!r) return &d;
@@ -451,6 +517,13 @@ void VideoRendererPlugin::HandleMethodCall(
         // Use global renderer so stats window (secondary engine) can query directly
         auto* diag_renderer = g_global_renderer;
         flutter::EncodableMap map;
+        const auto process_memory = QueryProcessMemoryUsage();
+        map[flutter::EncodableValue("processRssBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(process_memory.working_set_bytes));
+        map[flutter::EncodableValue("processPrivateBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(process_memory.private_bytes));
+        map[flutter::EncodableValue("dedicatedGpuUsageBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(QueryDedicatedVideoMemoryUsage()));
         if (diag_renderer) {
             map[flutter::EncodableValue("playbackTime")] =
                 flutter::EncodableValue(static_cast<double>(diag_renderer->current_pts_us()) / 1e6);

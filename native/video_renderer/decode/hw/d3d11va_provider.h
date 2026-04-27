@@ -19,6 +19,7 @@ public:
     HwDecodeInitResult init(const HwDecodeInitParams& params) override;
     void shutdown() override;
     void flush() override;
+    void wait_idle() override;
     HwDecodeType type() const override { return HwDecodeType::D3D11VA; }
     const char* name() const override { return "D3D11VA"; }
 

@@ -31,6 +31,12 @@ final class NakiVrDiagnostics extends Struct {
   external int isPlaying;
   @Int32()
   external int trackCount;
+  @Uint64()
+  external int processWorkingSetBytes;
+  @Uint64()
+  external int processPrivateBytes;
+  @Uint64()
+  external int dedicatedVideoMemoryBytes;
 
   @Array(4)
   external Array<NakiVrTrackStats> tracks;
@@ -97,15 +103,17 @@ class _StatsPageState extends State<StatsPage> {
     for (int i = 0; i < count && i < 4; i++) {
       final t = d.tracks[i];
       if (t.slot < 0) continue;
-      list.add(_TrackRow(
-        fileId: t.fileId,
-        fps: t.fps,
-        avgDecodeMs: t.avgDecodeMs,
-        maxDecodeMs: t.maxDecodeMs,
-        bufferCount: t.bufferCount,
-        bufferCapacity: t.bufferCapacity,
-        bufferState: t.bufferState,
-      ));
+      list.add(
+        _TrackRow(
+          fileId: t.fileId,
+          fps: t.fps,
+          avgDecodeMs: t.avgDecodeMs,
+          maxDecodeMs: t.maxDecodeMs,
+          bufferCount: t.bufferCount,
+          bufferCapacity: t.bufferCapacity,
+          bufferState: t.bufferState,
+        ),
+      );
     }
     if (!mounted) return;
     if (_tracksEqual(_tracks, list)) return;
@@ -144,9 +152,13 @@ class _StatsPageState extends State<StatsPage> {
             Expanded(
               child: _tracks.isEmpty
                   ? Center(
-                      child: Text(l.waitingDiagnostics,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant)))
+                      child: Text(
+                        l.waitingDiagnostics,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    )
                   : DataTable(
                       headingTextStyle: theme.textTheme.labelSmall,
                       dataTextStyle: theme.textTheme.bodySmall,
@@ -158,19 +170,36 @@ class _StatsPageState extends State<StatsPage> {
                         DataColumn(label: Text(l.decodeMax)),
                         DataColumn(label: Text(l.status)),
                       ],
-                      rows: _tracks.map((t) => DataRow(cells: [
-                        DataCell(Text('${t.fileId}')),
-                        DataCell(Text(t.fps.toStringAsFixed(1))),
-                        DataCell(Text('${t.bufferCount}/${t.bufferCapacity}')),
-                        DataCell(Text('${t.avgDecodeMs.toStringAsFixed(1)}ms')),
-                        DataCell(Text('${t.maxDecodeMs.toStringAsFixed(1)}ms')),
-                        DataCell(Text(
-                          t.bufferState == 1 ? l.bottleneck : l.ok,
-                          style: TextStyle(
-                            color: t.bufferState == 1 ? Colors.orange : Colors.green,
-                          ),
-                        )),
-                      ])).toList()),
+                      rows: _tracks
+                          .map(
+                            (t) => DataRow(
+                              cells: [
+                                DataCell(Text('${t.fileId}')),
+                                DataCell(Text(t.fps.toStringAsFixed(1))),
+                                DataCell(
+                                  Text('${t.bufferCount}/${t.bufferCapacity}'),
+                                ),
+                                DataCell(
+                                  Text('${t.avgDecodeMs.toStringAsFixed(1)}ms'),
+                                ),
+                                DataCell(
+                                  Text('${t.maxDecodeMs.toStringAsFixed(1)}ms'),
+                                ),
+                                DataCell(
+                                  Text(
+                                    t.bufferState == 1 ? l.bottleneck : l.ok,
+                                    style: TextStyle(
+                                      color: t.bufferState == 1
+                                          ? Colors.orange
+                                          : Colors.green,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                          .toList(),
+                    ),
             ),
           ],
         ),

@@ -46,6 +46,10 @@ extension _MainWindowActionBindings on _MainWindowState {
       final a = action as SetLoopRange;
       _setLoopRange(a.startUs, a.endUs, seekToStart: _loopRangeEnabled);
     });
+    actionRegistry.bind(const DragLoopHandle('end', 0), (action) {
+      final a = action as DragLoopHandle;
+      _dragLoopHandle(a.handle, a.targetUs, steps: a.steps);
+    });
 
     // Layout
     actionRegistry.bind(const ToggleLayoutMode(), (_) => _toggleLayoutMode());

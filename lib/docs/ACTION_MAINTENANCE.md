@@ -72,6 +72,7 @@
 | `PAUSE` | — | 暂停 |
 | `SEEK_TO` | — | 跳转到指定 PTS（μs） |
 | `CLICK_TIMELINE_FRACTION` | — | 按比例点击 controls bar 的 timeline slider，走真实 pointer/onSeek 路径 |
+| `DRAG_LOOP_HANDLE` | — | 测试脚本专用：拖动循环区间 start/end handle，走真实 pointer/onRangeChanged/onRangeChangeEnd 路径 |
 | `SET_SPEED` | — | 设置倍速 |
 | `STEP_FORWARD` | → | 逐帧前进 |
 | `STEP_BACKWARD` | ← | 逐帧后退 |
@@ -86,6 +87,7 @@
 | `WINDOW_MAXIMIZE` | — | 测试脚本专用：最大化主窗口 |
 | `WINDOW_RESTORE` | — | 测试脚本专用：恢复主窗口 |
 | `STORE_VIEW_CENTER` | — | 测试脚本专用：记录归一化视图中心基线 |
+| `STORE_RESOURCE_USAGE` | — | 测试脚本专用：记录进程 RSS / 专用显存基线 |
 | `NEW_WINDOW` | N | 新建窗口 |
 | `OPEN_SETTINGS` | — | 打开设置窗口 |
 | `OPEN_STATS` | — | 打开统计窗口 |
@@ -112,6 +114,9 @@
 | `ASSERT_CAPTURE_CHANGED` | before, after | 断言两次 viewport 截图 hash 不同 |
 | `ASSERT_CAPTURE_HASH` | capture, hash | 断言截图 hash |
 | `ASSERT_CAPTURE_NOT_BLACK` | capture, minNonBlackRatio?, minAvgLuma? | 断言截图不是黑帧 |
+| `ASSERT_TRACK_BUFFER_COUNT_BELOW` | maxCount | 断言所有轨道当前缓存帧数不超过阈值 |
+| `ASSERT_RESOURCE_USAGE_BELOW` | maxRssMb, maxDedicatedGpuMb | 断言当前进程 RSS / 专用显存不超过阈值 |
+| `ASSERT_RESOURCE_USAGE_DELTA_BELOW` | baseline, maxRssDeltaMb, maxDedicatedGpuDeltaMb | 断言相对 `STORE_RESOURCE_USAGE` 基线的 RSS / 专用显存增量不超过阈值 |
 
 ## 文件清单
 

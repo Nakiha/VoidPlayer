@@ -61,6 +61,11 @@ public:
     /// device can read shared texture data.
     virtual void flush() = 0;
 
+    /// Block until previously submitted decode-device work is complete.
+    /// Use sparingly for paused exact-seek previews where a deterministic
+    /// still frame matters more than throughput.
+    virtual void wait_idle() { flush(); }
+
     virtual HwDecodeType type() const = 0;
     virtual const char* name() const = 0;
 };

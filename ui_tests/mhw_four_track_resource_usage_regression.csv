@@ -1,0 +1,11 @@
+@WINDOW,1900,1068
+
+0.0,STORE_RESOURCE_USAGE,baseline
+0.2,ADD_MEDIA,C:\Users\12967\Videos\Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本.mp4
+1.8,ADD_MEDIA,C:\Users\12967\Videos\Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本.mp4
+3.4,ADD_MEDIA,C:\Users\12967\Videos\Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本.mp4
+5.0,ADD_MEDIA,C:\Users\12967\Videos\Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本.mp4
+7.8,ASSERT_TRACK_COUNT,4
+7.9,ASSERT_TRACK_BUFFER_COUNT_BELOW,5
+8.0,ASSERT_RESOURCE_USAGE_DELTA_BELOW,baseline,900,2500
+8.2,QUIT,0

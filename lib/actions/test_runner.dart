@@ -57,12 +57,22 @@ class _ViewCenterMetric {
   const _ViewCenterMetric(this.x, this.y);
 }
 
+class _ResourceUsageMetric {
+  final int rssBytes;
+  final int dedicatedGpuBytes;
+  const _ResourceUsageMetric({
+    required this.rssBytes,
+    required this.dedicatedGpuBytes,
+  });
+}
+
 /// Parses a test script file and runs instructions on a timeline.
 class TestRunner {
   final String scriptPath;
   final VideoRendererController controller;
   final _captures = <String, ViewportCapture>{};
   final _viewCenterBaselines = <String, _ViewCenterMetric>{};
+  final _resourceBaselines = <String, _ResourceUsageMetric>{};
 
   TestRunner({required this.scriptPath, required this.controller});
 
@@ -168,6 +178,14 @@ class TestRunner {
         log.info(
           'TestRunner: STORE_VIEW_CENTER $nameId '
           'normalized=(${metric.x.toStringAsFixed(6)}, ${metric.y.toStringAsFixed(6)})',
+        );
+      case StoreResourceUsage(:final nameId):
+        final metric = await _currentResourceUsageMetric();
+        _resourceBaselines[nameId] = metric;
+        log.info(
+          'TestRunner: STORE_RESOURCE_USAGE $nameId '
+          'rss=${_formatMb(metric.rssBytes)}MB '
+          'dedicatedGpu=${_formatMb(metric.dedicatedGpuBytes)}MB',
         );
       default:
         actionRegistry.execute(action.name, action);
@@ -331,6 +349,58 @@ class TestRunner {
             'exits=${WindowManager.analysisExitCodes}',
           );
         }
+      case AssertTrackBufferCountBelow(:final maxCount):
+        final diagnostics = await controller.getDiagnostics();
+        final tracks = diagnostics['tracks'] as List<dynamic>? ?? const [];
+        for (final rawTrack in tracks) {
+          final track = rawTrack as Map<dynamic, dynamic>;
+          final bufferCount = track['bufferCount'] as int? ?? 0;
+          final slot = track['slot'] as int? ?? -1;
+          if (bufferCount > maxCount) {
+            throw AssertionError(
+              'Expected track[$slot] bufferCount <= $maxCount, got $bufferCount',
+            );
+          }
+        }
+      case AssertResourceUsageBelow(:final maxRssMb, :final maxDedicatedGpuMb):
+        final actual = await _currentResourceUsageMetric();
+        _assertResourceMetricAvailable(actual, maxDedicatedGpuMb);
+        final rssMb = _bytesToMb(actual.rssBytes);
+        final gpuMb = _bytesToMb(actual.dedicatedGpuBytes);
+        if (rssMb > maxRssMb || gpuMb > maxDedicatedGpuMb) {
+          throw AssertionError(
+            'Expected resource usage <= rss=${maxRssMb.toStringAsFixed(1)}MB, '
+            'dedicatedGpu=${maxDedicatedGpuMb.toStringAsFixed(1)}MB; '
+            'got rss=${rssMb.toStringAsFixed(1)}MB, '
+            'dedicatedGpu=${gpuMb.toStringAsFixed(1)}MB',
+          );
+        }
+      case AssertResourceUsageDeltaBelow(
+        :final baseline,
+        :final maxRssDeltaMb,
+        :final maxDedicatedGpuDeltaMb,
+      ):
+        final expected = _resourceBaselines[baseline];
+        if (expected == null) {
+          throw AssertionError(
+            'Missing baseline for ASSERT_RESOURCE_USAGE_DELTA_BELOW: $baseline',
+          );
+        }
+        final actual = await _currentResourceUsageMetric();
+        _assertResourceMetricAvailable(actual, maxDedicatedGpuDeltaMb);
+        final rssDeltaMb = _bytesToMb(actual.rssBytes - expected.rssBytes);
+        final gpuDeltaMb = _bytesToMb(
+          actual.dedicatedGpuBytes - expected.dedicatedGpuBytes,
+        );
+        if (rssDeltaMb > maxRssDeltaMb || gpuDeltaMb > maxDedicatedGpuDeltaMb) {
+          throw AssertionError(
+            'Expected resource delta from $baseline <= '
+            'rss=${maxRssDeltaMb.toStringAsFixed(1)}MB, '
+            'dedicatedGpu=${maxDedicatedGpuDeltaMb.toStringAsFixed(1)}MB; '
+            'got rss=${rssDeltaMb.toStringAsFixed(1)}MB, '
+            'dedicatedGpu=${gpuDeltaMb.toStringAsFixed(1)}MB',
+          );
+        }
     }
   }
 
@@ -367,6 +437,31 @@ class TestRunner {
         : 0.0;
     return _ViewCenterMetric(x, y);
   }
+
+  Future<_ResourceUsageMetric> _currentResourceUsageMetric() async {
+    final diagnostics = await controller.getDiagnostics();
+    final rssBytes =
+        diagnostics['processRssBytes'] as int? ?? ProcessInfo.currentRss;
+    final dedicatedGpuBytes =
+        diagnostics['dedicatedGpuUsageBytes'] as int? ?? 0;
+    return _ResourceUsageMetric(
+      rssBytes: rssBytes,
+      dedicatedGpuBytes: dedicatedGpuBytes,
+    );
+  }
+
+  void _assertResourceMetricAvailable(
+    _ResourceUsageMetric metric,
+    double gpuThresholdMb,
+  ) {
+    if (gpuThresholdMb >= 0 && metric.dedicatedGpuBytes <= 0) {
+      throw AssertionError('Dedicated GPU memory metric is unavailable');
+    }
+  }
+
+  static double _bytesToMb(int bytes) => bytes / 1024.0 / 1024.0;
+
+  static String _formatMb(int bytes) => _bytesToMb(bytes).toStringAsFixed(1);
 
   ({double width, double height}) _displayPixelSizeForLayout({
     required int width,
@@ -557,6 +652,21 @@ ScriptInstruction? _parseInstruction(
         time,
         SetLoopRange(int.parse(args[0]), int.parse(args[1])),
       );
+    case 'DRAG_LOOP_HANDLE':
+      if (args.length < 2) {
+        log.warning(
+          'DRAG_LOOP_HANDLE needs handle and targetUs arguments: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAction(
+        time,
+        DragLoopHandle(
+          args[0],
+          int.parse(args[1]),
+          steps: args.length >= 3 ? int.parse(args[2]) : 12,
+        ),
+      );
 
     // Actions — layout
     case 'SET_ZOOM':
@@ -621,6 +731,12 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAction(time, StoreViewCenter(args[0]));
+    case 'STORE_RESOURCE_USAGE':
+      if (args.isEmpty) {
+        log.warning('STORE_RESOURCE_USAGE needs a baseline name: $rawLine');
+        return null;
+      }
+      return ScriptAction(time, StoreResourceUsage(args[0]));
     case 'RUN_ANALYSIS':
     case 'TRIGGER_ANALYSIS':
       return ScriptAction(time, const RunAnalysis());
@@ -793,6 +909,43 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAssert(time, AssertAnalysisProcessCount(int.parse(args[0])));
+    case 'ASSERT_TRACK_BUFFER_COUNT_BELOW':
+      if (args.isEmpty) {
+        log.warning(
+          'ASSERT_TRACK_BUFFER_COUNT_BELOW missing maxCount argument: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertTrackBufferCountBelow(int.parse(args[0])),
+      );
+    case 'ASSERT_RESOURCE_USAGE_BELOW':
+      if (args.length < 2) {
+        log.warning(
+          'ASSERT_RESOURCE_USAGE_BELOW needs maxRssMb and maxDedicatedGpuMb: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertResourceUsageBelow(double.parse(args[0]), double.parse(args[1])),
+      );
+    case 'ASSERT_RESOURCE_USAGE_DELTA_BELOW':
+      if (args.length < 3) {
+        log.warning(
+          'ASSERT_RESOURCE_USAGE_DELTA_BELOW needs baseline, maxRssDeltaMb and maxDedicatedGpuDeltaMb: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertResourceUsageDeltaBelow(
+          args[0],
+          double.parse(args[1]),
+          double.parse(args[2]),
+        ),
+      );
 
     // Control
     case 'QUIT':

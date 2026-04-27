@@ -140,6 +140,14 @@ class SetLoopRange extends PlayerAction {
   const SetLoopRange(this.startUs, this.endUs) : super('SET_LOOP_RANGE');
 }
 
+class DragLoopHandle extends PlayerAction {
+  final String handle;
+  final int targetUs;
+  final int steps;
+  const DragLoopHandle(this.handle, this.targetUs, {this.steps = 12})
+    : super('DRAG_LOOP_HANDLE');
+}
+
 /// Pan the viewport by a delta.
 class Pan extends PlayerAction {
   final double dx;
@@ -171,4 +179,9 @@ class WindowRestore extends PlayerAction {
 class StoreViewCenter extends PlayerAction {
   final String nameId;
   const StoreViewCenter(this.nameId) : super('STORE_VIEW_CENTER');
+}
+
+class StoreResourceUsage extends PlayerAction {
+  final String nameId;
+  const StoreResourceUsage(this.nameId) : super('STORE_RESOURCE_USAGE');
 }

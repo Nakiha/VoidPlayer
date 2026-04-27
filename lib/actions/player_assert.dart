@@ -97,3 +97,25 @@ class AssertAnalysisProcessCount extends PlayerAssert {
   final int count;
   const AssertAnalysisProcessCount(this.count);
 }
+
+class AssertTrackBufferCountBelow extends PlayerAssert {
+  final int maxCount;
+  const AssertTrackBufferCountBelow(this.maxCount);
+}
+
+class AssertResourceUsageBelow extends PlayerAssert {
+  final double maxRssMb;
+  final double maxDedicatedGpuMb;
+  const AssertResourceUsageBelow(this.maxRssMb, this.maxDedicatedGpuMb);
+}
+
+class AssertResourceUsageDeltaBelow extends PlayerAssert {
+  final String baseline;
+  final double maxRssDeltaMb;
+  final double maxDedicatedGpuDeltaMb;
+  const AssertResourceUsageDeltaBelow(
+    this.baseline,
+    this.maxRssDeltaMb,
+    this.maxDedicatedGpuDeltaMb,
+  );
+}

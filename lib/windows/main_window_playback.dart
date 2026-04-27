@@ -332,8 +332,14 @@ extension _MainWindowPlayback on _MainWindowState {
     _setLoopRangeEnabled(true);
   }
 
-  void _setLoopRange(int startUs, int endUs, {bool seekToStart = false}) async {
+  void _setLoopRange(
+    int startUs,
+    int endUs, {
+    bool seekToStart = false,
+    bool seekOnlyIfStartChanged = false,
+  }) async {
     final effectiveDurationUs = _effectiveDurationUs;
+    final previousStartUs = _resolvedLoopStartUs;
     final minRangeUs = effectiveDurationUs > 10000 ? 10000 : 0;
     final clampedStartUs = startUs
         .clamp(
@@ -351,7 +357,9 @@ extension _MainWindowPlayback on _MainWindowState {
     }
     _scheduleLoopBoundaryTimer();
 
-    if (seekToStart && _loopRangeEnabled) {
+    if (seekToStart &&
+        _loopRangeEnabled &&
+        (!seekOnlyIfStartChanged || clampedStartUs != previousStartUs)) {
       await _controller.pause();
       if (!mounted) return;
       _cancelLoopBoundaryTimer();

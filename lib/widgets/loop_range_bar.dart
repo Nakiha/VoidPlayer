@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import 'drag_excess_tracker.dart';
 
+enum LoopRangeHandle { start, end }
+
 /// Loop range editor aligned to the shared timeline content column.
 class LoopRangeBar extends StatelessWidget {
   final double timelineStartWidth;
@@ -12,7 +14,7 @@ class LoopRangeBar extends StatelessWidget {
   final int durationUs;
   final ValueChanged<bool> onEnabledChanged;
   final void Function(int startUs, int endUs) onRangeChanged;
-  final VoidCallback? onRangeChangeEnd;
+  final ValueChanged<LoopRangeHandle>? onRangeChangeEnd;
 
   const LoopRangeBar({
     super.key,
@@ -140,8 +142,6 @@ class _CompactSwitch extends StatelessWidget {
   }
 }
 
-enum _LoopHandle { start, end }
-
 class _LoopRangeTimeline extends StatefulWidget {
   static const double _margin = 8.0;
   static const double _trackHeight = 4.0;
@@ -153,7 +153,7 @@ class _LoopRangeTimeline extends StatefulWidget {
   final int endUs;
   final int durationUs;
   final void Function(int startUs, int endUs) onRangeChanged;
-  final VoidCallback? onRangeChangeEnd;
+  final ValueChanged<LoopRangeHandle>? onRangeChangeEnd;
 
   const _LoopRangeTimeline({
     required this.enabled,
@@ -208,7 +208,7 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
             _buildHandle(
               context: context,
               left: startX - _LoopRangeTimeline._handleSize / 2,
-              handle: _LoopHandle.start,
+              handle: LoopRangeHandle.start,
               currentX: startX,
               otherX: endX,
               drawableWidth: drawableWidth,
@@ -216,7 +216,7 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
             _buildHandle(
               context: context,
               left: endX - _LoopRangeTimeline._handleSize / 2,
-              handle: _LoopHandle.end,
+              handle: LoopRangeHandle.end,
               currentX: endX,
               otherX: startX,
               drawableWidth: drawableWidth,
@@ -230,7 +230,7 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
   Widget _buildHandle({
     required BuildContext context,
     required double left,
-    required _LoopHandle handle,
+    required LoopRangeHandle handle,
     required double currentX,
     required double otherX,
     required double drawableWidth,
@@ -254,8 +254,8 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
                 drawableWidth: drawableWidth,
               )
             : null,
-        onHorizontalDragEnd: (_) => widget.onRangeChangeEnd?.call(),
-        onHorizontalDragCancel: widget.onRangeChangeEnd,
+        onHorizontalDragEnd: (_) => widget.onRangeChangeEnd?.call(handle),
+        onHorizontalDragCancel: () => widget.onRangeChangeEnd?.call(handle),
         child: MouseRegion(
           cursor: widget.durationUs > 0
               ? SystemMouseCursors.resizeLeftRight
@@ -279,7 +279,7 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
   }
 
   void _dragHandle({
-    required _LoopHandle handle,
+    required LoopRangeHandle handle,
     required double dx,
     required double otherX,
     required double drawableWidth,
@@ -296,14 +296,14 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
     final tracker = _trackerFor(handle);
 
     switch (handle) {
-      case _LoopHandle.start:
+      case LoopRangeHandle.start:
         final nextX = tracker.update(
           delta: dx,
           min: _LoopRangeTimeline._margin,
           max: otherX - minRangePx,
         );
         nextStart = _xToUs(nextX, drawableWidth).clamp(0, nextEnd).toInt();
-      case _LoopHandle.end:
+      case LoopRangeHandle.end:
         final nextX = tracker.update(
           delta: dx,
           min: otherX + minRangePx,
@@ -340,10 +340,10 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
     return (localX / drawableWidth * widget.durationUs).round();
   }
 
-  DragExcessTracker _trackerFor(_LoopHandle handle) {
+  DragExcessTracker _trackerFor(LoopRangeHandle handle) {
     return switch (handle) {
-      _LoopHandle.start => _startTracker,
-      _LoopHandle.end => _endTracker,
+      LoopRangeHandle.start => _startTracker,
+      LoopRangeHandle.end => _endTracker,
     };
   }
 }

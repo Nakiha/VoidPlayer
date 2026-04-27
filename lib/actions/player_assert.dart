@@ -119,3 +119,9 @@ class AssertResourceUsageDeltaBelow extends PlayerAssert {
     this.maxDedicatedGpuDeltaMb,
   );
 }
+
+class AssertNativeSeekCountDelta extends PlayerAssert {
+  final String baseline;
+  final int expectedDelta;
+  const AssertNativeSeekCountDelta(this.baseline, this.expectedDelta);
+}

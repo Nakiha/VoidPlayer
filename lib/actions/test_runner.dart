@@ -73,6 +73,7 @@ class TestRunner {
   final _captures = <String, ViewportCapture>{};
   final _viewCenterBaselines = <String, _ViewCenterMetric>{};
   final _resourceBaselines = <String, _ResourceUsageMetric>{};
+  final _nativeSeekCountBaselines = <String, int>{};
 
   TestRunner({required this.scriptPath, required this.controller});
 
@@ -187,6 +188,10 @@ class TestRunner {
           'rss=${_formatMb(metric.rssBytes)}MB '
           'dedicatedGpu=${_formatMb(metric.dedicatedGpuBytes)}MB',
         );
+      case StoreNativeSeekCount(:final nameId):
+        final count = _currentNativeSeekCount();
+        _nativeSeekCountBaselines[nameId] = count;
+        log.info('TestRunner: STORE_NATIVE_SEEK_COUNT $nameId count=$count');
       default:
         actionRegistry.execute(action.name, action);
     }
@@ -401,6 +406,21 @@ class TestRunner {
             'dedicatedGpu=${gpuDeltaMb.toStringAsFixed(1)}MB',
           );
         }
+      case AssertNativeSeekCountDelta(:final baseline, :final expectedDelta):
+        final expected = _nativeSeekCountBaselines[baseline];
+        if (expected == null) {
+          throw AssertionError(
+            'Missing baseline for ASSERT_NATIVE_SEEK_COUNT_DELTA: $baseline',
+          );
+        }
+        final actual = _currentNativeSeekCount();
+        final delta = actual - expected;
+        if (delta != expectedDelta) {
+          throw AssertionError(
+            'Expected native seek count delta from $baseline to be '
+            '$expectedDelta, got $delta (baseline=$expected, actual=$actual)',
+          );
+        }
     }
   }
 
@@ -448,6 +468,19 @@ class TestRunner {
       rssBytes: rssBytes,
       dedicatedGpuBytes: dedicatedGpuBytes,
     );
+  }
+
+  int _currentNativeSeekCount() {
+    final file = File(
+      '${logConfig.logsDir}${Platform.pathSeparator}${logConfig.nativeLogFileName}',
+    );
+    if (!file.existsSync()) {
+      throw StateError('Native log file not found: ${file.path}');
+    }
+    final text = file.readAsStringSync();
+    return RegExp(
+      RegExp.escape('[VideoRendererPlugin] seek:'),
+    ).allMatches(text).length;
   }
 
   void _assertResourceMetricAvailable(
@@ -737,6 +770,12 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAction(time, StoreResourceUsage(args[0]));
+    case 'STORE_NATIVE_SEEK_COUNT':
+      if (args.isEmpty) {
+        log.warning('STORE_NATIVE_SEEK_COUNT needs a baseline name: $rawLine');
+        return null;
+      }
+      return ScriptAction(time, StoreNativeSeekCount(args[0]));
     case 'RUN_ANALYSIS':
     case 'TRIGGER_ANALYSIS':
       return ScriptAction(time, const RunAnalysis());
@@ -945,6 +984,17 @@ ScriptInstruction? _parseInstruction(
           double.parse(args[1]),
           double.parse(args[2]),
         ),
+      );
+    case 'ASSERT_NATIVE_SEEK_COUNT_DELTA':
+      if (args.length < 2) {
+        log.warning(
+          'ASSERT_NATIVE_SEEK_COUNT_DELTA needs baseline and expectedDelta: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertNativeSeekCountDelta(args[0], int.parse(args[1])),
       );
 
     // Control

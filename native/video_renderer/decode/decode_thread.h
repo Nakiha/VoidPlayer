@@ -10,6 +10,7 @@
 #include <mutex>
 #include <functional>
 #include <deque>
+#include <optional>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -80,6 +81,7 @@ private:
     struct ExactSeekCandidate {
         int64_t pts_us = 0;
         std::shared_ptr<AVFrame> frame;
+        std::optional<TextureFrame> stable_frame;
     };
 
     void run();
@@ -113,6 +115,9 @@ private:
 
     /// Add a candidate in decoder presentation order, retaining only the last pre-target frame.
     void collect_exact_seek_candidate(ExactSeekCandidate candidate);
+
+    /// Snapshot a candidate that may become the paused exact-seek preview.
+    void snapshot_exact_seek_candidate_if_needed(ExactSeekCandidate& candidate);
 
     /// Whether the collected stream-ordered candidates are enough to publish preview.
     bool exact_seek_preview_window_ready() const;

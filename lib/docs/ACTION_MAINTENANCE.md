@@ -88,6 +88,7 @@
 | `WINDOW_RESTORE` | — | 测试脚本专用：恢复主窗口 |
 | `STORE_VIEW_CENTER` | — | 测试脚本专用：记录归一化视图中心基线 |
 | `STORE_RESOURCE_USAGE` | — | 测试脚本专用：记录进程 RSS / 专用显存基线 |
+| `STORE_NATIVE_SEEK_COUNT` | — | 测试脚本专用：记录当前 native 插件 seek 日志计数 |
 | `NEW_WINDOW` | N | 新建窗口 |
 | `OPEN_SETTINGS` | — | 打开设置窗口 |
 | `OPEN_STATS` | — | 打开统计窗口 |
@@ -117,6 +118,7 @@
 | `ASSERT_TRACK_BUFFER_COUNT_BELOW` | maxCount | 断言所有轨道当前缓存帧数不超过阈值 |
 | `ASSERT_RESOURCE_USAGE_BELOW` | maxRssMb, maxDedicatedGpuMb | 断言当前进程 RSS / 专用显存不超过阈值 |
 | `ASSERT_RESOURCE_USAGE_DELTA_BELOW` | baseline, maxRssDeltaMb, maxDedicatedGpuDeltaMb | 断言相对 `STORE_RESOURCE_USAGE` 基线的 RSS / 专用显存增量不超过阈值 |
+| `ASSERT_NATIVE_SEEK_COUNT_DELTA` | baseline, expectedDelta | 断言相对 `STORE_NATIVE_SEEK_COUNT` 基线的 native 插件 seek 次数增量 |
 
 ## 文件清单
 

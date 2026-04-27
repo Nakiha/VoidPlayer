@@ -44,7 +44,12 @@ extension _MainWindowActionBindings on _MainWindowState {
     });
     actionRegistry.bind(const SetLoopRange(0, 0), (action) {
       final a = action as SetLoopRange;
-      _setLoopRange(a.startUs, a.endUs, seekToStart: _loopRangeEnabled);
+      _setLoopRange(
+        a.startUs,
+        a.endUs,
+        seekToStart: _loopRangeEnabled,
+        seekOnlyIfStartChanged: true,
+      );
     });
     actionRegistry.bind(const DragLoopHandle('end', 0), (action) {
       final a = action as DragLoopHandle;

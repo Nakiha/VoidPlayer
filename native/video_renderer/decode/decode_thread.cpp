@@ -444,6 +444,16 @@ DecodeThread::ExactSeekCandidate DecodeThread::make_exact_seek_candidate(AVFrame
     };
 }
 
+void DecodeThread::snapshot_exact_seek_candidate_if_needed(ExactSeekCandidate& candidate) {
+    if (!candidate.frame || !hw_enabled_ || converter_.downloads_hardware_to_cpu()) {
+        return;
+    }
+    auto stable = converter_.snapshot_hardware_frame(candidate.frame.get());
+    if (stable.has_value() && stable->texture_handle) {
+        candidate.stable_frame = std::move(stable);
+    }
+}
+
 void DecodeThread::collect_exact_seek_candidate(ExactSeekCandidate candidate) {
     if (!candidate.frame) {
         return;
@@ -453,6 +463,15 @@ void DecodeThread::collect_exact_seek_candidate(ExactSeekCandidate candidate) {
     // can be selected, so drop older pre-target candidates immediately.
     if (exact_seek_target_us_ >= 0 && candidate.pts_us < exact_seek_target_us_) {
         exact_seek_reorder_.clear();
+    } else if (exact_seek_target_us_ >= 0 && exact_seek_reorder_.empty()) {
+        // If the target lands before the first displayable frame, that first
+        // post-target candidate becomes the preview.
+        snapshot_exact_seek_candidate_if_needed(candidate);
+    } else if (exact_seek_target_us_ >= 0 &&
+               !exact_seek_reorder_.empty() &&
+               exact_seek_reorder_.back().pts_us < exact_seek_target_us_ &&
+               !exact_seek_reorder_.back().stable_frame.has_value()) {
+        snapshot_exact_seek_candidate_if_needed(exact_seek_reorder_.back());
     }
     exact_seek_reorder_.push_back(std::move(candidate));
 }
@@ -508,7 +527,14 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
         } else {
             flush_hw_before_publish_if_needed(true);
         }
-        TextureFrame tex_frame = converter_.convert(exact_seek_reorder_[i].frame.get());
+        TextureFrame tex_frame;
+        if (i == selected &&
+            exact_seek_reorder_[i].stable_frame.has_value() &&
+            exact_seek_reorder_[i].stable_frame->texture_handle) {
+            tex_frame = *exact_seek_reorder_[i].stable_frame;
+        } else {
+            tex_frame = converter_.convert(exact_seek_reorder_[i].frame.get());
+        }
         output_buffer_.push_frame(std::move(tex_frame));
     }
     exact_seek_pending_frames_.clear();

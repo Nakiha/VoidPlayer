@@ -306,6 +306,11 @@ void Renderer::seek_internal(int64_t target_pts_us,
         const auto buffer_state_before = track->track_buffer->state();
         track->track_buffer->set_state(TrackState::Flushing);
         track->track_buffer->clear_frames();
+        if (frame_presenter_) {
+            // Seek invalidates the decoder surface epoch; reopen shared NV12
+            // resources when the new exact-seek frame arrives.
+            frame_presenter_->reset_track(i);
+        }
         track->packet_queue->flush();
         const bool is_hevc_hw_seek =
             track->decode_thread->is_hardware_decode_enabled() &&

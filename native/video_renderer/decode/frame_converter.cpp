@@ -1,6 +1,10 @@
 #include "video_renderer/decode/frame_converter.h"
 #include <spdlog/spdlog.h>
+#include <chrono>
 #include <cstring>
+#include <thread>
+#include <d3d11.h>
+#include <wrl/client.h>
 
 extern "C" {
 #include <libavutil/frame.h>
@@ -8,6 +12,46 @@ extern "C" {
 }
 
 namespace vr {
+
+namespace {
+struct D3D11SnapshotFrameRef {
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+};
+
+void wait_d3d11_context_idle(ID3D11Device* device, ID3D11DeviceContext* context) {
+    if (!context) {
+        return;
+    }
+    if (!device) {
+        context->Flush();
+        return;
+    }
+
+    D3D11_QUERY_DESC query_desc = {};
+    query_desc.Query = D3D11_QUERY_EVENT;
+    Microsoft::WRL::ComPtr<ID3D11Query> query;
+    HRESULT hr = device->CreateQuery(&query_desc, &query);
+    if (FAILED(hr) || !query) {
+        context->Flush();
+        return;
+    }
+
+    context->End(query.Get());
+    context->Flush();
+    const auto start = std::chrono::steady_clock::now();
+    while ((hr = context->GetData(query.Get(), nullptr, 0, 0)) == S_FALSE) {
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
+        if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(100)) {
+            spdlog::warn("[FrameConverter] D3D11 snapshot fence timeout after 100ms");
+            break;
+        }
+    }
+    if (FAILED(hr)) {
+        spdlog::warn("[FrameConverter] D3D11 snapshot fence GetData failed: {:#x}",
+                     static_cast<unsigned long>(hr));
+    }
+}
+}  // namespace
 
 FrameConverter::FrameConverter()
 {}
@@ -231,6 +275,83 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
         };
     }
 
+    return result;
+}
+
+std::optional<TextureFrame> FrameConverter::snapshot_hardware_frame(AVFrame* frame) {
+    if (!is_hw_ || download_hw_to_cpu_ || hw_type_ != HwDecodeType::D3D11VA ||
+        !frame || !frame->data[0]) {
+        return std::nullopt;
+    }
+
+    auto* source = reinterpret_cast<ID3D11Texture2D*>(frame->data[0]);
+    const int array_idx = static_cast<int>(reinterpret_cast<intptr_t>(frame->data[1]));
+    if (array_idx < 0) {
+        return std::nullopt;
+    }
+
+    D3D11_TEXTURE2D_DESC source_desc = {};
+    source->GetDesc(&source_desc);
+    if (static_cast<UINT>(array_idx) >= source_desc.ArraySize) {
+        spdlog::warn("[FrameConverter] D3D11 snapshot array index out of range: idx={}, array_size={}",
+                     array_idx, source_desc.ArraySize);
+        return std::nullopt;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D11Device> device;
+    source->GetDevice(&device);
+    if (!device) {
+        return std::nullopt;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+    device->GetImmediateContext(&context);
+    if (!context) {
+        return std::nullopt;
+    }
+
+    D3D11_TEXTURE2D_DESC snapshot_desc = source_desc;
+    snapshot_desc.ArraySize = 1;
+    snapshot_desc.Usage = D3D11_USAGE_DEFAULT;
+    snapshot_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    snapshot_desc.CPUAccessFlags = 0;
+    snapshot_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> snapshot;
+    HRESULT hr = device->CreateTexture2D(&snapshot_desc, nullptr, &snapshot);
+    if (FAILED(hr) || !snapshot) {
+        spdlog::warn("[FrameConverter] Failed to create D3D11 exact-seek snapshot: {:#x}",
+                     static_cast<unsigned long>(hr));
+        return std::nullopt;
+    }
+
+    context->CopySubresourceRegion(
+        snapshot.Get(),
+        0,
+        0, 0, 0,
+        source,
+        D3D11CalcSubresource(0, static_cast<UINT>(array_idx), source_desc.MipLevels),
+        nullptr);
+    wait_d3d11_context_idle(device.Get(), context.Get());
+
+    auto snapshot_ref = std::make_shared<D3D11SnapshotFrameRef>();
+    snapshot_ref->texture = snapshot;
+
+    TextureFrame result;
+    result.pts_us = frame->pts;
+    result.duration_us = frame->duration;
+    result.width = frame->width;
+    result.height = frame->height;
+    result.is_ref = true;
+    result.texture_handle = snapshot.Get();
+    result.is_nv12 = true;
+    result.texture_array_index = 0;
+    result.hw_frame_ref = snapshot_ref;
+    result.storage = D3D11Nv12FrameStorage{
+        snapshot.Get(),
+        0,
+        result.hw_frame_ref,
+    };
     return result;
 }
 

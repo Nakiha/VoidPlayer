@@ -317,10 +317,10 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
                     onRangeChanged: (startUs, endUs) =>
                         _setLoopRange(startUs, endUs),
                     onRangeChangeEnd: _loopRangeEnabled
-                        ? () => _setLoopRange(
+                        ? (handle) => _setLoopRange(
                             _resolvedLoopStartUs,
                             _resolvedLoopEndUs,
-                            seekToStart: true,
+                            seekToStart: handle == LoopRangeHandle.start,
                           )
                         : null,
                   ),

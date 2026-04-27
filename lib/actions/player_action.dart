@@ -185,3 +185,8 @@ class StoreResourceUsage extends PlayerAction {
   final String nameId;
   const StoreResourceUsage(this.nameId) : super('STORE_RESOURCE_USAGE');
 }
+
+class StoreNativeSeekCount extends PlayerAction {
+  final String nameId;
+  const StoreNativeSeekCount(this.nameId) : super('STORE_NATIVE_SEEK_COUNT');
+}

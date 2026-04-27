@@ -2,6 +2,7 @@
 #include "video_renderer/buffer/bidi_ring_buffer.h"
 #include "video_renderer/decode/hw/hw_decode_provider.h"
 #include <cstdint>
+#include <optional>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -25,6 +26,7 @@ public:
                        bool download_to_cpu = false);
 
     TextureFrame convert(AVFrame* frame);
+    std::optional<TextureFrame> snapshot_hardware_frame(AVFrame* frame);
 
     bool is_hardware() const { return is_hw_; }
     bool downloads_hardware_to_cpu() const { return is_hw_ && download_hw_to_cpu_; }

@@ -19,6 +19,22 @@ enum class HwDecodeType {
     Vulkan,
 };
 
+enum class RenderBackendType {
+    Unknown = 0,
+    D3D11,
+    Metal,
+    Vulkan,
+};
+
+struct HwDecodeInitParams {
+    RenderBackendType backend = RenderBackendType::D3D11;
+    void* render_device = nullptr;
+    void* shared_context = nullptr;
+    int width = 0;
+    int height = 0;
+    std::recursive_mutex* device_mutex = nullptr;
+};
+
 /// Abstract interface for hardware decode providers.
 /// Each backend (D3D11VA, CUDA, etc.) implements this interface.
 /// The factory function try_hw_decode_providers() probes providers in priority order.
@@ -30,17 +46,11 @@ public:
     virtual bool probe(const AVCodec* codec) const = 0;
 
     /// Initialize the hardware device context for decoding.
-    /// @param native_device  Platform-specific device (e.g. ID3D11Device*)
-    /// @param width          Video frame width
-    /// @param height         Video frame height
-    /// @param device_mutex   Optional mutex for D3D11 immediate context serialization.
-    ///                       Must outlive the hw_device_ctx. When provided, the provider
-    ///                       uses it instead of creating (and destroying) its own.
+    /// @param params Platform-specific render device/context and synchronization.
     /// @return Result with hw_device_ctx on success, or success=false on failure.
     struct HwDecodeInitResult;
 
-    virtual HwDecodeInitResult init(void* native_device, int width, int height,
-                                    std::recursive_mutex* device_mutex = nullptr) = 0;
+    virtual HwDecodeInitResult init(const HwDecodeInitParams& params) = 0;
 
     /// Release provider-held resources (not hw_device_ctx, which caller owns).
     virtual void shutdown() = 0;
@@ -70,10 +80,7 @@ using HwDecodeInitResult = HwDecodeProvider::HwDecodeInitResult;
 
 /// Factory: try each registered provider in priority order, return first success.
 HwDecodeInitResult try_hw_decode_providers(
-    void* native_device,
     const AVCodec* codec,
-    int width,
-    int height,
-    std::recursive_mutex* device_mutex = nullptr);
+    const HwDecodeInitParams& params);
 
 } // namespace vr

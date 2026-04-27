@@ -100,9 +100,14 @@ bool DecodeThread::enable_hardware_decode(void* native_device,
     native_device_ = native_device;
     device_mutex_ = device_mutex;
 
-    auto result = try_hw_decode_providers(
-        native_device, codec_, codec_params_->width, codec_params_->height,
-        device_mutex);
+    HwDecodeInitParams hw_params;
+    hw_params.backend = RenderBackendType::D3D11;
+    hw_params.render_device = native_device;
+    hw_params.width = codec_params_->width;
+    hw_params.height = codec_params_->height;
+    hw_params.device_mutex = device_mutex;
+
+    auto result = try_hw_decode_providers(codec_, hw_params);
 
     if (!result.success) {
         spdlog::info("[DecodeThread] Hardware decode not available, will use software");

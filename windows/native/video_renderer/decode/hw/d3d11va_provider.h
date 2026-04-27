@@ -16,8 +16,7 @@ public:
     D3D11VAProvider& operator=(const D3D11VAProvider&) = delete;
 
     bool probe(const AVCodec* codec) const override;
-    HwDecodeInitResult init(void* native_device, int width, int height,
-                            std::recursive_mutex* device_mutex = nullptr) override;
+    HwDecodeInitResult init(const HwDecodeInitParams& params) override;
     void shutdown() override;
     void flush() override;
     HwDecodeType type() const override { return HwDecodeType::D3D11VA; }

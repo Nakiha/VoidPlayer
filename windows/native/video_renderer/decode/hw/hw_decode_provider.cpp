@@ -7,11 +7,8 @@
 namespace vr {
 
 HwDecodeInitResult try_hw_decode_providers(
-    void* native_device,
     const AVCodec* codec,
-    int width,
-    int height,
-    std::recursive_mutex* device_mutex)
+    const HwDecodeInitParams& params)
 {
     if (!codec) {
         spdlog::debug("[HWDecode] Skipping: no codec");
@@ -34,7 +31,7 @@ HwDecodeInitResult try_hw_decode_providers(
             continue;
         }
 
-        auto result = provider->init(native_device, width, height, device_mutex);
+        auto result = provider->init(params);
         if (result.success) {
             spdlog::info("[HWDecode] {} initialized successfully", provider->name());
             result.provider = std::move(provider);  // Transfer ownership — provider must outlive hw_device_ctx

@@ -121,9 +121,12 @@ bool D3D11VAProvider::probe(const AVCodec* codec) const {
     return false;
 }
 
-HwDecodeInitResult D3D11VAProvider::init(void* native_device, int width, int height,
-                                          std::recursive_mutex* device_mutex) {
+HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
     HwDecodeInitResult result;
+    void* native_device = params.render_device;
+    const int width = params.width;
+    const int height = params.height;
+    std::recursive_mutex* device_mutex = params.device_mutex;
 
     // AV1/VP9 use hardware decode + hwdownload before renderer upload. Let
     // FFmpeg create the D3D11VA device/context exactly like the CLI hwaccel

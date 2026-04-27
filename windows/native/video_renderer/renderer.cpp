@@ -1,6 +1,7 @@
 #include "video_renderer/renderer.h"
 #include "embedded_shaders.h"
 #include "video_renderer/d3d11/frame_presenter.h"
+#include "video_renderer/d3d11/headless_output.h"
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <algorithm>
@@ -55,25 +56,11 @@ bool Renderer::initialize(const RendererConfig& config) {
             spdlog::error("Renderer: failed to initialize D3D11 device (headless)");
             return false;
         }
-        if (!create_shared_buffers(target_width_, target_height_,
-                                    dbuf_.textures, dbuf_.rtvs, dbuf_.handles)) {
+        headless_output_ = std::make_unique<D3D11HeadlessOutput>();
+        if (!headless_output_->initialize(d3d_device_->device(), d3d_device_->context(),
+                                          target_width_, target_height_)) {
             return false;
         }
-        dbuf_.front.store(0);
-
-        D3D11_QUERY_DESC fence_desc = {};
-        fence_desc.Query = D3D11_QUERY_EVENT;
-        HRESULT hr = d3d_device_->device()->CreateQuery(&fence_desc, &gpu_fence_);
-        if (FAILED(hr)) {
-            spdlog::error("Renderer: failed to create GPU fence: HRESULT {:#x}", static_cast<unsigned long>(hr));
-            return false;
-        }
-
-        spdlog::info("Renderer: headless mode, triple-buffered {}x{} BGRA, handles=[{}, {}, {}]",
-                     target_width_, target_height_,
-                     reinterpret_cast<uintptr_t>(dbuf_.handles[0]),
-                     reinterpret_cast<uintptr_t>(dbuf_.handles[1]),
-                     reinterpret_cast<uintptr_t>(dbuf_.handles[2]));
     } else {
         if (!d3d_device_->initialize(hwnd_, target_width_, target_height_)) {
             spdlog::error("Renderer: failed to initialize D3D11 device");
@@ -231,6 +218,7 @@ void Renderer::shutdown() {
 
     // ComPtr auto-releases — just reset
     cached_rtv_.Reset();
+    headless_output_.reset();
     sampler_state_.Reset();
     vertex_buffer_.Reset();
 
@@ -837,90 +825,28 @@ void Renderer::draw_paused_frame(const char* reason) {
     }
 }
 
-int Renderer::pick_free_buffer() const {
-    int front = dbuf_.front.load();
-    return (front + 2) % SharedBuffers::kCount;
-}
-
-void Renderer::wait_gpu_and_swap(int back, const char* label) {
-    wait_gpu_idle(label);
-    dbuf_.front.store(back);
-}
-
 void Renderer::wait_gpu_idle(const char* label) {
-    if (!gpu_fence_) {
+    if (headless_output_) {
+        headless_output_->wait_gpu_idle(label);
+    } else if (d3d_device_) {
         d3d_device_->context()->Flush();
-        return;
     }
-    auto* ctx = d3d_device_->context();
-    ctx->End(gpu_fence_.Get());
-    auto fence_start = std::chrono::steady_clock::now();
-    int spin_count = 0;
-    while (ctx->GetData(gpu_fence_.Get(), nullptr, 0, 0) == S_FALSE) {
-        SwitchToThread();
-        if (++spin_count >= 256) {
-            spin_count = 0;
-            if (std::chrono::steady_clock::now() - fence_start > std::chrono::milliseconds(100)) {
-                spdlog::warn("[{}] GPU fence timeout after 100ms", label);
-                break;
-            }
-        }
-    }
-}
-
-bool Renderer::create_shared_buffers(
-    int width, int height,
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[],
-    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtvs[],
-    HANDLE handles[])
-{
-    D3D11_TEXTURE2D_DESC tex_desc = {};
-    tex_desc.Width = static_cast<UINT>(width);
-    tex_desc.Height = static_cast<UINT>(height);
-    tex_desc.MipLevels = 1;
-    tex_desc.ArraySize = 1;
-    tex_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-    tex_desc.SampleDesc.Count = 1;
-    tex_desc.Usage = D3D11_USAGE_DEFAULT;
-    tex_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-    tex_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
-
-    for (int i = 0; i < SharedBuffers::kCount; ++i) {
-        HRESULT hr = d3d_device_->device()->CreateTexture2D(&tex_desc, nullptr, &textures[i]);
-        if (FAILED(hr)) {
-            spdlog::error("Renderer: failed to create shared texture[{}]: HRESULT {:#x}", i, static_cast<unsigned long>(hr));
-            return false;
-        }
-        hr = d3d_device_->device()->CreateRenderTargetView(textures[i].Get(), nullptr, &rtvs[i]);
-        if (FAILED(hr)) {
-            spdlog::error("Renderer: failed to create shared RTV[{}]: HRESULT {:#x}", i, static_cast<unsigned long>(hr));
-            return false;
-        }
-        Microsoft::WRL::ComPtr<IDXGIResource> dxgi_resource;
-        hr = textures[i].As(&dxgi_resource);
-        if (SUCCEEDED(hr)) {
-            hr = dxgi_resource->GetSharedHandle(&handles[i]);
-            if (FAILED(hr)) {
-                spdlog::warn("Renderer: failed to get shared handle[{}]: HRESULT {:#x}", i, static_cast<unsigned long>(hr));
-            }
-        }
-    }
-    return true;
 }
 
 void Renderer::draw_headless_and_publish(const PresentDecision& decision, const char* label) {
-    int back = pick_free_buffer();
-    cached_rtv_ = dbuf_.rtvs[back];
+    if (!headless_output_) {
+        return;
+    }
+    cached_rtv_ = headless_output_->begin_frame();
     draw_frame(decision);
-    wait_gpu_and_swap(back, label);
-    if (frame_callback_) frame_callback_();
+    headless_output_->publish_frame(label);
     preview_drawn_ = true;
 }
 
 void Renderer::present_frame(const PresentDecision& decision) {
     spdlog::debug("[present_frame] mode={}", layout_.mode);
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-    std::lock_guard<std::mutex> tex_lock(texture_mutex_);
+    std::lock_guard<std::mutex> tex_lock(texture_mutex());
     if (headless_) {
         draw_headless_and_publish(decision, "present_frame");
     } else {
@@ -932,73 +858,24 @@ void Renderer::present_frame(const PresentDecision& decision) {
 
 void Renderer::redraw_layout() {
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-    std::lock_guard<std::mutex> tex_lock(texture_mutex_);
+    std::lock_guard<std::mutex> tex_lock(texture_mutex());
     if (headless_) {
         draw_headless_and_publish(last_decision_, "redraw_layout");
     } else {
         draw_frame(last_decision_);
         d3d_device_->context()->Flush();
-        if (frame_callback_) frame_callback_();
         preview_drawn_ = true;
     }
 }
 
 bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
-    if (!headless_ || !d3d_device_) {
+    if (!headless_ || !headless_output_) {
         return false;
     }
 
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-    std::lock_guard<std::mutex> tex_lock(texture_mutex_);
-
-    const int front = dbuf_.front.load();
-    auto source = dbuf_.textures[front];
-    if (!source) {
-        return false;
-    }
-
-    D3D11_TEXTURE2D_DESC desc = {};
-    source->GetDesc(&desc);
-    width = static_cast<int>(desc.Width);
-    height = static_cast<int>(desc.Height);
-
-    D3D11_TEXTURE2D_DESC staging_desc = desc;
-    staging_desc.Usage = D3D11_USAGE_STAGING;
-    staging_desc.BindFlags = 0;
-    staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-    staging_desc.MiscFlags = 0;
-
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
-    HRESULT hr = d3d_device_->device()->CreateTexture2D(&staging_desc, nullptr, &staging);
-    if (FAILED(hr) || !staging) {
-        spdlog::error("[Renderer] capture_front_buffer: failed to create staging texture: {:#x}",
-                      static_cast<unsigned long>(hr));
-        return false;
-    }
-
-    auto* ctx = d3d_device_->context();
-    ctx->CopyResource(staging.Get(), source.Get());
-    ctx->Flush();
-
-    D3D11_MAPPED_SUBRESOURCE mapped = {};
-    hr = ctx->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
-    if (FAILED(hr)) {
-        spdlog::error("[Renderer] capture_front_buffer: Map failed: {:#x}",
-                      static_cast<unsigned long>(hr));
-        return false;
-    }
-
-    bgra.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
-    const auto* src = static_cast<const uint8_t*>(mapped.pData);
-    const size_t dst_stride = static_cast<size_t>(width) * 4;
-    for (int y = 0; y < height; ++y) {
-        std::memcpy(bgra.data() + static_cast<size_t>(y) * dst_stride,
-                    src + static_cast<size_t>(y) * mapped.RowPitch,
-                    dst_stride);
-    }
-
-    ctx->Unmap(staging.Get(), 0);
-    return true;
+    std::lock_guard<std::mutex> tex_lock(texture_mutex());
+    return headless_output_->capture_front_buffer(bgra, width, height);
 }
 
 bool Renderer::has_any_frame(const PresentDecision& decision) {
@@ -1074,11 +951,21 @@ void Renderer::set_track_offset(int file_id, int64_t offset_us) {
 }
 
 void Renderer::set_frame_callback(std::function<void()> cb) {
-    frame_callback_ = std::move(cb);
+    if (headless_output_) {
+        headless_output_->set_frame_callback(std::move(cb));
+    }
 }
 
 ID3D11Texture2D* Renderer::shared_texture() const {
-    return dbuf_.textures[dbuf_.front.load()].Get();
+    return headless_output_ ? headless_output_->shared_texture() : nullptr;
+}
+
+HANDLE Renderer::shared_texture_handle() const {
+    return headless_output_ ? headless_output_->shared_texture_handle() : nullptr;
+}
+
+std::mutex& Renderer::texture_mutex() {
+    return headless_output_ ? headless_output_->texture_mutex() : texture_mutex_fallback_;
 }
 
 void Renderer::resize(int width, int height) {
@@ -1106,44 +993,18 @@ void Renderer::do_resize(int width, int height) {
         }
     }
 
-    // Create new triple-buffered resources first, then swap under lock.
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> new_textures[SharedBuffers::kCount];
-    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> new_rtvs[SharedBuffers::kCount];
-    HANDLE new_handles[SharedBuffers::kCount] = {};
-
-    if (!create_shared_buffers(width, height, new_textures, new_rtvs, new_handles))
-        return;
-
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-        std::lock_guard<std::mutex> tex_lock(texture_mutex_);
-
-        PendingBuffers old;
-        for (int i = 0; i < SharedBuffers::kCount; ++i) {
-            old.textures[i] = std::move(dbuf_.textures[i]);
-            old.handles[i] = dbuf_.handles[i];
+        std::lock_guard<std::mutex> tex_lock(texture_mutex());
+        if (!headless_output_ || !headless_output_->resize(width, height)) {
+            return;
         }
-        old.expire_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
-        pending_destroy_.push_back(std::move(old));
-        has_pending_destroy_.store(true);
 
         target_width_ = width;
         target_height_ = height;
-        for (int i = 0; i < SharedBuffers::kCount; ++i) {
-            dbuf_.textures[i] = std::move(new_textures[i]);
-            dbuf_.rtvs[i] = std::move(new_rtvs[i]);
-            dbuf_.handles[i] = new_handles[i];
-        }
-        dbuf_.front.store(0);
 
         draw_headless_and_publish(last_decision_, "resize");
     }
-
-    spdlog::info("[Renderer] resize complete: {}x{}, handles=[{}, {}, {}]",
-                 width, height,
-                 reinterpret_cast<uintptr_t>(dbuf_.handles[0]),
-                 reinterpret_cast<uintptr_t>(dbuf_.handles[1]),
-                 reinterpret_cast<uintptr_t>(dbuf_.handles[2]));
 }
 
 void Renderer::render_loop() {
@@ -1190,17 +1051,8 @@ void Renderer::render_loop() {
             }
         }
 
-        // Clean up expired pending buffers from previous resizes.
-        if (has_pending_destroy_.exchange(false)) {
-            std::lock_guard<std::mutex> lock(texture_mutex_);
-            auto now = std::chrono::steady_clock::now();
-            pending_destroy_.erase(
-                std::remove_if(pending_destroy_.begin(), pending_destroy_.end(),
-                    [&](const PendingBuffers& pb) { return now >= pb.expire_time; }),
-                pending_destroy_.end());
-            if (!pending_destroy_.empty()) {
-                has_pending_destroy_.store(true);
-            }
+        if (headless_output_) {
+            headless_output_->cleanup_expired_pending_buffers();
         }
 
         // Snapshot playing_ under state_mutex_ to avoid torn read
@@ -1446,10 +1298,7 @@ void Renderer::draw_frame(const PresentDecision& decision) {
 
     // Get or create cached render target view
     if (!cached_rtv_) {
-        if (headless_ && dbuf_.rtvs[0]) {
-            int back = (dbuf_.front.load() + 1) % SharedBuffers::kCount;
-            cached_rtv_ = dbuf_.rtvs[back];
-        } else {
+        if (!headless_) {
             ID3D11Texture2D* back_buffer = nullptr;
             HRESULT hr = d3d_device_->swap_chain()->GetBuffer(0, __uuidof(ID3D11Texture2D),
                                                   reinterpret_cast<void**>(&back_buffer));
@@ -1464,6 +1313,10 @@ void Renderer::draw_frame(const PresentDecision& decision) {
                 return;
             }
         }
+    }
+
+    if (!cached_rtv_) {
+        return;
     }
 
     float clear_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};

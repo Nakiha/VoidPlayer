@@ -5,6 +5,7 @@
 #include "test_utils.h"
 #include "video_renderer/d3d11/device.h"
 #include "video_renderer/d3d11/frame_presenter.h"
+#include "video_renderer/d3d11/headless_output.h"
 #include "video_renderer/d3d11/texture.h"
 
 using namespace vr::test;
@@ -209,5 +210,49 @@ TEST_CASE("D3D11FramePresenter marks direct texture SRV as temporary", "[d3d11][
     if (prepared.release_rgba_srv && prepared.rgba_srv) {
         prepared.rgba_srv->Release();
     }
+    cleanup_test_device(dev, hwnd);
+}
+
+TEST_CASE("D3D11HeadlessOutput initializes shared texture buffers", "[d3d11][headless_output]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::D3D11HeadlessOutput output;
+
+    REQUIRE(output.initialize(dev->device(), dev->context(), 320, 240));
+    REQUIRE(output.shared_texture() != nullptr);
+    REQUIRE(output.shared_texture_handle() != nullptr);
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    output.shared_texture()->GetDesc(&desc);
+    REQUIRE(desc.Width == 320);
+    REQUIRE(desc.Height == 240);
+    REQUIRE(desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM);
+
+    output.shutdown();
+    cleanup_test_device(dev, hwnd);
+}
+
+TEST_CASE("D3D11HeadlessOutput publishes and resizes buffers", "[d3d11][headless_output]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::D3D11HeadlessOutput output;
+    REQUIRE(output.initialize(dev->device(), dev->context(), 320, 240));
+
+    int callback_count = 0;
+    output.set_frame_callback([&] { ++callback_count; });
+
+    REQUIRE(output.begin_frame() != nullptr);
+    output.publish_frame("headless_output_test");
+    REQUIRE(callback_count == 1);
+
+    REQUIRE(output.resize(640, 360));
+    REQUIRE(output.shared_texture() != nullptr);
+    REQUIRE(output.shared_texture_handle() != nullptr);
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    output.shared_texture()->GetDesc(&desc);
+    REQUIRE(desc.Width == 640);
+    REQUIRE(desc.Height == 360);
+
+    output.cleanup_expired_pending_buffers();
+    output.shutdown();
     cleanup_test_device(dev, hwnd);
 }

@@ -15,7 +15,8 @@ class StartupOptions {
     StartupLoopRange? loopRange;
     final warnings = <String>[];
 
-    for (final arg in args) {
+    for (var i = 0; i < args.length; i++) {
+      final arg = args[i];
       try {
         if (arg.startsWith('--loop-range-us=')) {
           loopRange = _parseRange(
@@ -27,6 +28,14 @@ class StartupOptions {
             arg.substring('--loop-range='.length),
             defaultUnit: _TimeUnit.seconds,
           );
+        } else if (arg == '--deep-link' && i + 1 < args.length) {
+          final parsed = _parseDeepLink(args[++i]);
+          loopRange = parsed.loopRange ?? loopRange;
+          warnings.addAll(parsed.warnings);
+        } else if (arg.startsWith('--deep-link=')) {
+          final parsed = _parseDeepLink(arg.substring('--deep-link='.length));
+          loopRange = parsed.loopRange ?? loopRange;
+          warnings.addAll(parsed.warnings);
         }
       } catch (e) {
         warnings.add('Ignored invalid startup argument "$arg": $e');
@@ -35,6 +44,52 @@ class StartupOptions {
 
     return StartupOptions(loopRange: loopRange, warnings: warnings);
   }
+}
+
+StartupOptions _parseDeepLink(String value) {
+  final warnings = <String>[];
+  final uri = Uri.tryParse(value);
+  if (uri == null || uri.scheme.toLowerCase() != 'voidplayer') {
+    return StartupOptions(
+      warnings: ['Ignored unsupported deep link: "$value"'],
+    );
+  }
+
+  final version = uri.host.toLowerCase();
+  final action = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : '';
+  if (version != 'v1' || action != 'open') {
+    return StartupOptions(
+      warnings: ['Ignored unsupported deep link route: "$value"'],
+    );
+  }
+
+  StartupLoopRange? loopRange;
+  try {
+    final query = uri.queryParameters;
+    final rangeValue = query['loopRange'] ?? query['loop-range'];
+    if (rangeValue != null) {
+      loopRange = _parseRange(rangeValue, defaultUnit: _TimeUnit.seconds);
+    } else if (query['loopStart'] != null && query['loopEnd'] != null) {
+      final startUs = _parseTimeUs(
+        query['loopStart']!,
+        defaultUnit: _TimeUnit.seconds,
+      );
+      final endUs = _parseTimeUs(
+        query['loopEnd']!,
+        defaultUnit: _TimeUnit.seconds,
+      );
+      if (startUs < 0 || endUs <= startUs) {
+        throw FormatException(
+          'expected 0 <= loopStart < loopEnd, got $startUs:$endUs us',
+        );
+      }
+      loopRange = StartupLoopRange(startUs: startUs, endUs: endUs);
+    }
+  } catch (e) {
+    warnings.add('Ignored invalid deep link "$value": $e');
+  }
+
+  return StartupOptions(loopRange: loopRange, warnings: warnings);
 }
 
 enum _TimeUnit { seconds, milliseconds, microseconds }

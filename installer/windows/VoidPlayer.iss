@@ -57,6 +57,12 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\voidplayer"; ValueType: string; ValueData: "URL:VoidPlayer Protocol"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\voidplayer"; ValueName: "URL Protocol"; ValueType: string; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\voidplayer\DefaultIcon"; ValueType: string; ValueData: "{app}\{#AppExeName},0"
+Root: HKCU; Subkey: "Software\Classes\voidplayer\shell\open\command"; ValueType: string; ValueData: """{app}\{#AppExeName}"" --deep-link ""%1"""
+
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(AppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 

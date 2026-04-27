@@ -16,7 +16,7 @@ def ensure_submodule() -> None:
         print("VTM submodule not initialized. Running git submodule update...")
         run([
             "git", "submodule", "update", "--init", "--remote",
-            "windows/native/analysis/vendor/vtm",
+            "native/analysis/vendor/vtm",
         ], cwd=str(ROOT))
 
     result = subprocess.run(

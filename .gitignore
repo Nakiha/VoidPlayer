@@ -45,7 +45,11 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Windows native build artifacts
+# Native build artifacts
+/native/build
+/native/dist
+/native/build-msvc
+/native/_deps
 /windows/native/build
 /windows/native/dist
 /windows/native/build-msvc

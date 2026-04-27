@@ -1,4 +1,4 @@
-[submodule "windows/native/analysis/vendor/vtm"]
-	path = windows/native/analysis/vendor/vtm
+[submodule "native/analysis/vendor/vtm"]
+	path = native/analysis/vendor/vtm
 	url = git@github.com:Nakiha/VTM-VoidPlayer.git
 	branch = voidplayer-patches

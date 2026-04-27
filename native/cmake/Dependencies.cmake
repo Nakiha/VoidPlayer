@@ -1,7 +1,7 @@
 include(FetchContent)
 
 # spdlog (header-only): try the Flutter build cache first, fallback to FetchContent.
-set(SPDLOG_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../build/windows/x64/_deps/spdlog-src")
+set(SPDLOG_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build/windows/x64/_deps/spdlog-src")
 if(EXISTS "${SPDLOG_LOCAL_DIR}/include/spdlog/spdlog.h")
     message(STATUS "Using local spdlog from: ${SPDLOG_LOCAL_DIR}")
     add_library(spdlog_header_only INTERFACE)

@@ -13,24 +13,24 @@ python dev.py ui-test ui_tests/smoke_basic.csv
 Native 子目录也可以单独运行：
 
 ```bash
-python windows/native/build.py
-python windows/native/build.py --build-only
-python windows/native/build.py --test-only
-python windows/native/build.py --benchmarks-only
-python windows/native/build.py --debug
+python native/build.py
+python native/build.py --build-only
+python native/build.py --test-only
+python native/build.py --benchmarks-only
+python native/build.py --debug
 ```
 
 如果 FFmpeg 不在默认的 `windows/libs/ffmpeg`，可以显式指定：
 
 ```bash
-python windows/native/build.py --ffmpeg-root <ffmpeg-root>
+python native/build.py --ffmpeg-root <ffmpeg-root>
 ```
 
 PowerShell 中也可以用环境变量：
 
 ```powershell
 $env:FFMPEG_ROOT = "<ffmpeg-root>"
-python windows/native/build.py
+python native/build.py
 ```
 
 ## CMake 目标
@@ -55,11 +55,11 @@ python windows/native/build.py
 | spdlog | 本地 `_deps` 优先，缺失时 FetchContent | native 日志 |
 | Catch2 | 本地 `_deps` 优先，缺失时 FetchContent | C++ 测试 |
 | pybind11 | `find_package` | Python 绑定 |
-| VTM DecoderApp | `windows/native/analysis/vendor/vtm` | analysis 测试生成 VBS2 |
+| VTM DecoderApp | `native/analysis/vendor/vtm` | analysis 测试生成 VBS2 |
 
 ## `python dev.py test` 实际覆盖
 
-`dev.py test` 会先构建 native Release，再执行 `windows/native/build.py --test-only`。当前包含 CTest 的 3 个测试目标，随后执行 Python analysis 格式回归。
+`dev.py test` 会先构建 native Release，再执行 `native/build.py --test-only`。当前包含 CTest 的 3 个测试目标，随后执行 Python analysis 格式回归。
 
 | CTest | 覆盖 |
 |------|------|
@@ -69,10 +69,10 @@ python windows/native/build.py
 
 测试视频默认来自 `resources/video`，CMake 通过 `VIDEO_TEST_DIR` 注入。
 
-补充的 Python analysis 格式回归位于 `windows/native/analysis/tests/python/`，用于校验 VBS2/VBI/VBT 落盘格式。它会把测试视频复制到临时目录，使用 `analysis_generate.exe` 生成 VBI/VBT，再调用 `python dev.py vtm analyze` 生成 VBS2/VVC，最后清理临时文件。
+补充的 Python analysis 格式回归位于 `native/analysis/tests/python/`，用于校验 VBS2/VBI/VBT 落盘格式。它会把测试视频复制到临时目录，使用 `analysis_generate.exe` 生成 VBI/VBT，再调用 `python dev.py vtm analyze` 生成 VBS2/VVC，最后清理临时文件。
 
 ```bash
-python -m pytest windows/native/analysis/tests/python/test_analysis_formats.py -v
+python -m pytest native/analysis/tests/python/test_analysis_formats.py -v
 ```
 
 ## UI 回归测试
@@ -93,7 +93,7 @@ python -m pytest windows/native/analysis/tests/python/test_analysis_formats.py -
 可执行文件: `pipeline_bench.exe`，源码位于 `video_renderer/benchmarks/`。日常构建默认跳过 benchmarks；需要运行时使用：
 
 ```bash
-python windows/native/build.py --benchmarks-only
+python native/build.py --benchmarks-only
 ```
 
 | 基准 | 测量内容 |

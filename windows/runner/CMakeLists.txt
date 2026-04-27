@@ -44,7 +44,7 @@ target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 # ==================== Native Video Renderer ====================
 
 if(FFMPEG_FOUND)
-  include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/FlutterNativeTarget.cmake")
+  include("${CMAKE_CURRENT_SOURCE_DIR}/../../native/cmake/FlutterNativeTarget.cmake")
   void_configure_flutter_native_target(${BINARY_NAME} "${CMAKE_CURRENT_BINARY_DIR}")
 endif(FFMPEG_FOUND)
 

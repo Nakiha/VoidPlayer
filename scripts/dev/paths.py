@@ -5,12 +5,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-NATIVE_DIR = ROOT / "windows" / "native"
+NATIVE_DIR = ROOT / "native"
 NATIVE_BUILD_PY = NATIVE_DIR / "build.py"
 NATIVE_BUILD_DIR = NATIVE_DIR / "build-msvc"
 DEMO_SCRIPT = NATIVE_DIR / "video_renderer" / "demo" / "demo_video_renderer.py"
 
-VTM_DIR = ROOT / "windows" / "native" / "analysis" / "vendor" / "vtm"
+VTM_DIR = ROOT / "native" / "analysis" / "vendor" / "vtm"
 VTM_BUILD_DIR = VTM_DIR / "build"
 
 

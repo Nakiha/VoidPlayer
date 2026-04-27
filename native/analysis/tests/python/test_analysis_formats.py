@@ -1,6 +1,6 @@
 """Tests for VBS2, VBI, and VBT binary format parsers.
 
-Run: python -m pytest windows/native/analysis/tests/python/test_analysis_formats.py -v
+Run: python -m pytest native/analysis/tests/python/test_analysis_formats.py -v
 
 These tests generate fresh analysis files from resources/video/h266_10s_1920x1080.mp4
 using the native AnalysisGenerator CLI plus `python dev.py vtm analyze`, then validate

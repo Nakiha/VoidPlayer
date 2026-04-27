@@ -21,7 +21,7 @@ def resolve_ffmpeg_root(script_dir: Path, explicit_root: str | None) -> Path:
         if env_value:
             candidates.append(Path(env_value))
 
-    candidates.append(script_dir.parent / "libs" / "ffmpeg")
+    candidates.append(script_dir.parent / "windows" / "libs" / "ffmpeg")
 
     for candidate in candidates:
         resolved = candidate.expanduser().resolve()
@@ -82,7 +82,7 @@ def test(build_dir: Path, build_type: str, script_dir: Path):
         "--output-on-failure",
     ])
 
-    repo_root = script_dir.parents[1]
+    repo_root = script_dir.parent
     analysis_test = script_dir / "analysis" / "tests" / "python" / "test_analysis_formats.py"
     analysis_generate = build_dir / build_type / "analysis_generate.exe"
     env = os.environ.copy()
@@ -97,7 +97,7 @@ def test(build_dir: Path, build_type: str, script_dir: Path):
 
 def benchmark(build_dir: Path, build_type: str):
     exe = build_dir / build_type / "pipeline_bench.exe"
-    video = build_dir.parents[2] / "resources" / "video" / "h264_9s_1920x1080.mp4"
+    video = build_dir.parents[1] / "resources" / "video" / "h264_9s_1920x1080.mp4"
     subprocess.check_call([str(exe), str(video)])
 
 

@@ -12,8 +12,9 @@ File
   -> FrameConverter
   -> TrackBuffer / BidiRingBuffer
   -> RenderSink
+  -> D3D11FramePresenter
   -> Renderer D3D11 draw
-  -> SwapChain 或 headless shared texture
+  -> SwapChain 或 D3D11HeadlessOutput shared texture
 ```
 
 全链路时间戳使用微秒。DemuxThread 将 stream time base 转为 `{1, 1000000}` 后写入 packet/frame。
@@ -27,6 +28,7 @@ struct TextureFrame {
     int width, height;
     bool is_ref;
     void* texture_handle;
+    FrameStorage storage;
     bool is_nv12;
     int texture_array_index;
     shared_ptr<void> hw_frame_ref;
@@ -36,9 +38,10 @@ struct TextureFrame {
 
 字段含义：
 
-- `cpu_data` 持有软件路径或 hwdownload 路径产生的 RGBA 数据。
-- `is_nv12=true` 表示 `texture_handle` 指向 D3D11VA NV12 texture，`texture_array_index` 指定 array slice。
-- `hw_frame_ref` 持有 `AVFrame` 引用，保证 decoder surface 在 renderer 使用期间不被 FFmpeg pool 回收。
+- `storage` 是当前主路径，使用 `FrameStorage` variant 区分 `CpuRgba`、`D3D11Nv12`、`D3D11Texture`。
+- `cpu_data`、`texture_handle`、`is_nv12`、`texture_array_index`、`hw_frame_ref` 仍保留为兼容字段，便于迁移期间的测试和旧调用点。
+- `CpuRgbaFrameStorage` 持有软件路径或 hwdownload 路径产生的 RGBA 数据。
+- `D3D11Nv12FrameStorage` 指向 D3D11VA NV12 texture 和 array slice，并持有 frame ref，保证 decoder surface 在 renderer 使用期间不被 FFmpeg pool 回收。
 
 ## 三条输出路径
 
@@ -50,16 +53,16 @@ struct TextureFrame {
 
 ## Renderer 上屏
 
-Renderer 通过 `RenderSink::evaluate()` 选择每轨应该显示的帧。根据 `TextureFrame` 类型执行：
+Renderer 通过 `RenderSink::evaluate()` 选择每轨应该显示的帧。`D3D11FramePresenter` 根据 `TextureFrame::storage` 类型执行：
 
-- RGBA CPU 数据：上传/复用 `sw_texture` 后按 RGBA 采样。
+- RGBA CPU 数据：上传/复用每轨 RGBA texture 后按 RGBA 采样。
 - NV12 硬解数据：复制 decoder surface 的目标 array slice 到 renderer-owned NV12 texture，再创建 Y/UV SRV 采样。
 
 复制到 renderer-owned NV12 texture 是当前硬解稳定性的关键点：seek 或 pipeline recreate 后 FFmpeg decoder surface 可以被安全回收，不会被 Flutter/renderer 长时间引用。
 
 ## Headless / Flutter Texture
 
-Flutter 主窗口使用 headless renderer，不直接 Present 到 SwapChain。Renderer 绘制到三缓冲 shared BGRA texture：
+Flutter 主窗口使用 headless renderer，不直接 Present 到 SwapChain。`D3D11HeadlessOutput` 管理三缓冲 shared BGRA texture：
 
 - native 持有 3 个 shared texture 和 handle。
 - renderer 总是写入非 front 且 Flutter 未持有的 buffer。

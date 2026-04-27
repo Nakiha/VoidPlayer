@@ -46,3 +46,13 @@ python dev.py ui-test ui_tests/smoke_basic.csv
 - 某个 bug 的复现/防回归单独放一条 `ui_tests/*.csv`
 - 修改 Action / 播放控制 / 主窗口交互后，至少跑一条相关脚本
 - 如果脚本覆盖不了，优先补 Action / Assert / 启动参数，而不是退回纯人工验证
+
+## Windows 平台层
+
+Windows 专属的 Dart 实现集中在 `lib/windows/`：
+
+- `win32ffi.dart`: raw Win32 FFI，负责窗口查找、移动、关闭、鼠标按键状态等。
+- `window_manager.dart`: secondary window / analysis process 生命周期协调。
+- `native_file_picker.dart`: Windows IFileDialog 的 MethodChannel wrapper。通用 `VideoRendererController` 不再包含文件选择器逻辑，只保留 renderer 控制 API。
+
+跨平台整理时，优先把新平台实现放到明确的平台层，再由主窗口组合调用；不要把 Win32 / MethodChannel 细节塞回通用 controller。

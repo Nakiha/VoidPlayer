@@ -30,8 +30,10 @@ native/
 │   ├── demo/                       # renderer Python 交互式 Demo
 │   ├── benchmarks/                 # renderer 管线性能基准
 │   ├── d3d11/                      # D3D11 后端
-│   │   ├── device.h/cpp            # 设备 / SwapChain / Headless render target
-│   │   ├── texture.h/cpp           # 纹理创建、上传、池化
+│   │   ├── device.h/cpp            # 设备 / SwapChain
+│   │   ├── texture.h/cpp           # 纹理创建、上传、池化、shared texture 打开
+│   │   ├── frame_presenter.h/cpp   # TextureFrame -> D3D11 SRV 准备
+│   │   ├── headless_output.h/cpp   # Flutter shared texture 三缓冲输出
 │   │   └── shader.h/cpp            # HLSL 编译管理
 │   ├── decode/                     # 解码管线
 │   │   ├── demux_thread.h/cpp      # Demux 线程
@@ -61,8 +63,10 @@ native/
 ```
 Renderer                          # 主入口，生命周期管理
 ├── Clock                         # 可注入时间源，PTS 时钟
-├── D3D11Device                   # GPU 设备 + SwapChain
+├── D3D11Device                   # GPU 设备 + 可选窗口 SwapChain
 ├── ShaderManager                 # HLSL 编译
+├── D3D11FramePresenter           # 每轨 frame 的 SRV/上传/NV12 copy 缓存
+├── D3D11HeadlessOutput           # Flutter Texture shared handle 三缓冲
 ├── RenderSink                    # 上屏决策，PTS 对齐
 │
 └── TrackPipeline[N]              # 每路视频一个
@@ -86,7 +90,8 @@ Video File
         → [FrameConverter] → TextureFrame
           → [TrackBuffer/BidiRingBuffer] →
             → [RenderSink] → PresentDecision
-              → [D3D11 Draw] → SwapChain 或 Headless Shared Texture
+              → [D3D11FramePresenter] → [D3D11 Draw]
+                → SwapChain 或 D3D11HeadlessOutput shared texture
 ```
 
 ## 当前硬解路径

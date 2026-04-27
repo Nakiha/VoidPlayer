@@ -4,7 +4,7 @@
 
 头文件: `d3d11/device.h`
 
-封装 `ID3D11Device`、ImmediateContext，以及可选 SwapChain/headless render target。
+封装 `ID3D11Device`、ImmediateContext，以及窗口模式下的可选 SwapChain。
 
 ```cpp
 bool initialize(void* hwnd, int width, int height);
@@ -18,7 +18,7 @@ void present(int sync_interval = 1);
 
 ## Headless shared texture
 
-Renderer 在 headless 模式下创建三缓冲 BGRA shared texture：
+`D3D11HeadlessOutput` 在 headless 模式下创建三缓冲 BGRA shared texture：
 
 ```
 draw back buffer -> swap front index -> Flutter opens shared handle -> Texture widget displays
@@ -30,7 +30,11 @@ draw back buffer -> swap front index -> Flutter opens shared handle -> Texture w
 - resize 时保留旧 buffers 一小段时间，避免句柄悬空。
 - `capture_front_buffer()` 可以把当前 front buffer 读回 BGRA，用于 UI 自动化截图/hash。
 
+Renderer 只负责在持有 device/texture mutex 后调用 `begin_frame()`、绘制、`publish_frame()`；shared handle、GPU fence、resize pending buffers 和 capture 逻辑都收敛在 `D3D11HeadlessOutput`。
+
 ## 纹理路径
+
+`D3D11FramePresenter` 负责把 `TextureFrame` 准备成 shader 可采样资源，并持有每轨的 RGBA upload texture、NV12 renderer-owned texture、Y/UV SRV 等缓存。Renderer 的 draw 阶段只消费准备好的 SRV 和 metadata。
 
 ### RGBA 上传路径
 

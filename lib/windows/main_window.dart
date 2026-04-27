@@ -19,6 +19,7 @@ import '../widgets/media_header.dart';
 import '../widgets/timeline_area.dart';
 import '../analysis/analysis_manager.dart';
 import 'analysis_ipc.dart';
+import 'native_file_picker.dart';
 
 class MainWindow extends StatefulWidget {
   final String? testScriptPath;
@@ -476,7 +477,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   // -- File opening --
 
   void _openFile() async {
-    final paths = await _controller.pickFiles(allowMultiple: true);
+    final paths = await WindowsNativeFilePicker.pickFiles(allowMultiple: true);
     if (paths == null || paths.isEmpty) return;
     _loadMediaPaths(paths);
   }

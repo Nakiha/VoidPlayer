@@ -255,14 +255,4 @@ class VideoRendererController {
       _textureId = null;
     }
   }
-
-  /// Open a native file picker dialog (IFileDialog) and return selected paths.
-  /// Returns null if user cancels.
-  Future<List<String>?> pickFiles({bool allowMultiple = true}) async {
-    final result = await _channel.invokeMethod<List<dynamic>>('pickFiles', {
-      'allowMultiple': allowMultiple,
-    });
-    if (result == null || result.isEmpty) return null;
-    return result.cast<String>();
-  }
 }

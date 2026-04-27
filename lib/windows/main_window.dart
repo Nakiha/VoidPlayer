@@ -22,6 +22,7 @@ import 'analysis_ipc.dart';
 import 'native_file_picker.dart';
 
 part 'main_window_actions.dart';
+part 'main_window_layout.dart';
 part 'main_window_media.dart';
 
 class MainWindow extends StatefulWidget {
@@ -129,6 +130,14 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   void _setTextureId(int textureId) {
     setState(() => _textureId = textureId);
+  }
+
+  void _replaceLayout(LayoutState layout) {
+    setState(() => _layout = layout);
+  }
+
+  void _updateLayout(LayoutState Function(LayoutState current) update) {
+    setState(() => _layout = update(_layout));
   }
 
   void _togglePlayPause() async {
@@ -309,207 +318,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
     if (serial != _analysisSnapshotSerial) return;
     _analysisIpcServer.publishTracks(tracks);
-  }
-
-  void _toggleLayoutMode() {
-    _setLayoutMode(
-      _layout.mode == LayoutMode.sideBySide
-          ? LayoutMode.splitScreen
-          : LayoutMode.sideBySide,
-    );
-  }
-
-  void _setLayoutMode(int mode) {
-    setState(() => _layout = _layout.copyWith(mode: mode));
-    _markLayoutDirty();
-  }
-
-  void _setZoom(double ratio) {
-    setState(
-      () => _layout = _layout.copyWith(
-        zoomRatio: ratio.clamp(LayoutState.zoomMin, LayoutState.zoomMax),
-      ),
-    );
-    _markLayoutDirty();
-  }
-
-  void _setSplitPos(double pos) {
-    setState(() => _layout = _layout.copyWith(splitPos: pos.clamp(0.0, 1.0)));
-    _markLayoutDirty();
-  }
-
-  void _panByDelta(double dx, double dy) {
-    setState(() {
-      _layout = _layout.copyWith(
-        viewOffsetX: _layout.viewOffsetX + dx,
-        viewOffsetY: _layout.viewOffsetY + dy,
-      );
-    });
-    _markLayoutDirty();
-  }
-
-  // -- Viewport interaction --
-
-  void _onPan(Offset delta) {
-    setState(() {
-      _layout = _layout.copyWith(
-        viewOffsetX: _layout.viewOffsetX + delta.dx,
-        viewOffsetY: _layout.viewOffsetY + delta.dy,
-      );
-    });
-    _markLayoutDirty();
-  }
-
-  void _onSplit(double normalizedX) {
-    setState(() {
-      _layout = _layout.copyWith(splitPos: normalizedX.clamp(0.0, 1.0));
-    });
-    _markLayoutDirty();
-  }
-
-  void _onZoom(double scrollDelta, Offset localPos) {
-    final factor = scrollDelta > 0 ? 0.9 : 1.1;
-    final newZoom = (_layout.zoomRatio * factor).clamp(
-      LayoutState.zoomMin,
-      LayoutState.zoomMax,
-    );
-
-    // Zoomed out to floor (100%) — reset viewport offset to origin
-    if (newZoom == LayoutState.zoomMin && factor < 1.0) {
-      setState(() {
-        _layout = _layout.copyWith(
-          zoomRatio: newZoom,
-          viewOffsetX: 0,
-          viewOffsetY: 0,
-        );
-      });
-      _markLayoutDirty();
-      return;
-    }
-
-    final actualFactor = newZoom / _layout.zoomRatio;
-
-    // Fallback if viewport size unknown
-    if (_viewportWidth <= 0 || _viewportHeight <= 0) {
-      setState(() {
-        _layout = _layout.copyWith(zoomRatio: newZoom);
-      });
-      _markLayoutDirty();
-      return;
-    }
-
-    // Compute cursor position in slot-normalized coords and slot pixel size.
-    // Formula: offset_new = factor * offset_old + (1 - factor) * (cursor - 0.5) * slot_pixels
-    double cursorX, cursorY, slotW, slotH;
-
-    if (_layout.mode == LayoutMode.sideBySide) {
-      final n = _trackManager.count > 0 ? _trackManager.count : 1;
-      final nx = localPos.dx / _viewportWidth;
-      final ny = localPos.dy / _viewportHeight;
-      final slotIndex = (nx * n).floor().clamp(0, n - 1);
-      cursorX = nx * n - slotIndex;
-      cursorY = ny;
-      slotW = _viewportWidth / n;
-      slotH = _viewportHeight.toDouble();
-    } else {
-      // Split screen: cursor in full canvas UV
-      cursorX = localPos.dx / _viewportWidth;
-      cursorY = localPos.dy / _viewportHeight;
-      slotW = _viewportWidth.toDouble();
-      slotH = _viewportHeight.toDouble();
-    }
-
-    setState(() {
-      _layout = _layout.copyWith(
-        zoomRatio: newZoom,
-        viewOffsetX:
-            actualFactor * _layout.viewOffsetX +
-            (1 - actualFactor) * (cursorX - 0.5) * slotW,
-        viewOffsetY:
-            actualFactor * _layout.viewOffsetY +
-            (1 - actualFactor) * (cursorY - 0.5) * slotH,
-      );
-    });
-    _markLayoutDirty();
-  }
-
-  void _onPointerButton(bool panning, bool splitting) {
-    // No-op for now; could show cursor changes etc.
-  }
-
-  void _onViewportResize(int width, int height) {
-    if (width == _viewportWidth && height == _viewportHeight) return;
-    _viewportWidth = width;
-    _viewportHeight = height;
-    _resizeDirty = true;
-    _layoutTicker?.start();
-  }
-
-  void _onZoomComboChanged(double value) {
-    setState(() {
-      _layout = _layout.copyWith(zoomRatio: value);
-    });
-    _markLayoutDirty();
-  }
-
-  // -- Layout sync --
-
-  void _markLayoutDirty() {
-    _layoutDirty = true;
-    _layoutTicker?.start();
-  }
-
-  void _startLayoutTicker() {
-    _layoutTicker = createTicker((_) {
-      unawaited(_flushPendingLayout());
-    });
-    // Don't start here — will start on first dirty mark.
-  }
-
-  Future<void> _flushPendingLayout() async {
-    if (_layoutFlushInProgress) return;
-    if (_textureId == null) {
-      _resizeDirty = false;
-      _layoutDirty = false;
-      _layoutTicker?.stop();
-      return;
-    }
-
-    _layoutFlushInProgress = true;
-    try {
-      while (mounted && (_resizeDirty || _layoutDirty)) {
-        if (_layoutDirty) {
-          final layout = _layout;
-          _layoutDirty = false;
-          await _controller.applyLayout(layout);
-          if (!mounted) return;
-        }
-
-        if (_resizeDirty && _viewportWidth > 0 && _viewportHeight > 0) {
-          final width = _viewportWidth;
-          final height = _viewportHeight;
-          _resizeDirty = false;
-          await _controller.resize(width, height);
-          if (!mounted) return;
-          if (!_layoutDirty) {
-            final layout = await _controller.getLayout();
-            if (!mounted) return;
-            setState(() => _layout = layout);
-          }
-        } else if (_resizeDirty) {
-          _resizeDirty = false;
-        }
-      }
-    } finally {
-      _layoutFlushInProgress = false;
-      if (mounted) {
-        if (_resizeDirty || _layoutDirty) {
-          _layoutTicker?.start();
-        } else {
-          _layoutTicker?.stop();
-        }
-      }
-    }
   }
 
   // -- Polling --

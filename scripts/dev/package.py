@@ -16,6 +16,7 @@ from .paths import (
     WINDOWS_INSTALLER_DIR,
     WINDOWS_PACKAGE_DIR,
     WINDOWS_PACKAGE_STAGE_DIR,
+    WINDOWS_RELEASE_DOCS_DIR,
 )
 from .process import header, run
 
@@ -81,6 +82,7 @@ def cmd_package(args) -> None:
 
     print(f"Copy package input: {release_dir} -> {stage_dir}")
     shutil.copytree(release_dir, stage_dir)
+    _copy_release_docs(stage_dir)
 
     removed = _remove_build_only_artifacts(stage_dir)
     _assert_no_mutable_artifacts(stage_dir, "package staging")
@@ -149,6 +151,15 @@ def _remove_build_only_artifacts(root: Path) -> int:
             path.unlink()
             removed += 1
     return removed
+
+
+def _copy_release_docs(stage_dir: Path) -> None:
+    if not WINDOWS_RELEASE_DOCS_DIR.exists():
+        return
+
+    docs_dest = stage_dir / "docs"
+    print(f"Copy release docs: {WINDOWS_RELEASE_DOCS_DIR} -> {docs_dest}")
+    shutil.copytree(WINDOWS_RELEASE_DOCS_DIR, docs_dest, dirs_exist_ok=True)
 
 
 def _assert_no_build_only_artifacts(root: Path) -> None:

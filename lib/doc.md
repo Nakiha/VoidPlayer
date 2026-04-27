@@ -18,7 +18,7 @@ void_player.exe --log-level=flutter=DEBUG,native=TRACE,ffmpeg=INFO
 
 ## 启动参数
 
-面向 release / GUI 用户的启动参数说明维护在 [../release/gui.md](../release/gui.md)。
+面向 release / GUI 用户的启动参数说明维护在 [../installer/windows/docs/gui.md](../installer/windows/docs/gui.md)，打包时会复制到 release staging 的 `docs/gui.md`。
 
 ## 交互 (Action)
 

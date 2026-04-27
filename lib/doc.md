@@ -55,4 +55,17 @@ Windows 专属的 Dart 实现集中在 `lib/windows/`：
 - `window_manager.dart`: secondary window / analysis process 生命周期协调。
 - `native_file_picker.dart`: Windows IFileDialog 的 MethodChannel wrapper。通用 `VideoRendererController` 不再包含文件选择器逻辑，只保留 renderer 控制 API。
 
+### 主窗口拆分
+
+`main_window.dart` 保留 `State` 字段、生命周期和 widget composition；成片行为拆到同 library 的 part 文件：
+
+- `main_window_actions.dart`: ActionRegistry 绑定表。
+- `main_window_media.dart`: 打开文件、拖拽、ADD_MEDIA 共享的 media loading 流程。
+- `main_window_layout.dart`: viewport pan/zoom/split、resize、layout flush。
+- `main_window_playback.dart`: play/pause/seek、polling、loop range、timeline hover/click。
+- `main_window_tracks.dart`: track remove/reorder/offset 和 effective duration。
+- `main_window_analysis.dart`: analysis hash、IPC snapshot、analysis window trigger。
+
+这些 part 文件暂时共享 `_MainWindowState` 的私有字段，目的是先划清工程边界而不引入状态管理框架；后续如果某块继续膨胀，再把对应 part 提升成独立 controller/session。
+
 跨平台整理时，优先把新平台实现放到明确的平台层，再由主窗口组合调用；不要把 Win32 / MethodChannel 细节塞回通用 controller。

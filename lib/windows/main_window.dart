@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:path/path.dart' as p;
@@ -14,6 +13,8 @@ import 'window_manager.dart';
 import '../analysis/analysis_manager.dart';
 import '../widgets/loop_range_bar.dart';
 import 'analysis_ipc.dart';
+import 'main_window_state.dart' as main_state;
+import 'main_window_test_hooks.dart' as main_hooks;
 import 'main_window_view.dart';
 import 'native_file_picker.dart';
 
@@ -22,8 +23,6 @@ part 'main_window_analysis.dart';
 part 'main_window_layout.dart';
 part 'main_window_media.dart';
 part 'main_window_playback.dart';
-part 'main_window_state.dart';
-part 'main_window_test_hooks.dart';
 part 'main_window_tracks.dart';
 
 class MainWindow extends StatefulWidget {
@@ -51,10 +50,11 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   final _analysisHashesByFileId = <int, String>{};
   final _timelineSliderKey = GlobalKey();
   final _loopRangeBarKey = GlobalKey();
-  late final MainWindowTestHarness _testHarness;
+  late final main_hooks.MainWindowTestHarness _testHarness;
   int _analysisSnapshotSerial = 0;
 
-  MainWindowStateModel _state = const MainWindowStateModel();
+  main_state.MainWindowStateModel _state =
+      const main_state.MainWindowStateModel();
   int _loopRangeSyncSerial = 0;
 
   // Polling
@@ -70,7 +70,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _testHarness = MainWindowTestHarness(
+    _testHarness = main_hooks.MainWindowTestHarness(
       timelineSliderKey: _timelineSliderKey,
       loopRangeBarKey: _loopRangeBarKey,
       timelineStartWidth: () => _timelineStartWidth,

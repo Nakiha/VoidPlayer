@@ -1,4 +1,4 @@
-part of 'main_window.dart';
+import '../video_renderer_controller.dart';
 
 const Object _mainWindowStateUnset = Object();
 

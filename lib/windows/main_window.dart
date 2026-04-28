@@ -39,20 +39,23 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   late final MainWindowLayoutCoordinator _layoutCoordinator;
   late final MainWindowMediaCoordinator _mediaCoordinator;
   late final MainWindowPlaybackCoordinator _playbackCoordinator;
-
-  main_state.MainWindowStateModel _state =
-      const main_state.MainWindowStateModel();
+  late final main_state.MainWindowStateStore _stateStore;
 
   @override
   void initState() {
     super.initState();
+    _stateStore = main_state.MainWindowStateStore(
+      notifyListeners: () {
+        if (mounted) setState(() {});
+      },
+    );
     _layoutCoordinator = MainWindowLayoutCoordinator(
       vsync: this,
       controller: _controller,
       mounted: () => mounted,
       textureId: () => _textureId,
       layout: () => _layout,
-      setLayout: (layout) => setState(() => _layout = layout),
+      setLayout: _stateStore.setLayout,
       trackCount: () => _trackManager.count,
     );
     _analysisCoordinator = MainWindowAnalysisCoordinator(
@@ -67,28 +70,28 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       effectiveDurationUs: () => _mediaCoordinator.effectiveDurationUs,
       timelineControlsWidth: () => _timelineControlsWidth,
       isPlaying: () => _isPlaying,
-      setPlaying: _setPlaying,
+      setPlaying: _stateStore.setPlaying,
       playbackSpeed: () => _playbackSpeed,
-      setPlaybackSpeed: _setPlaybackSpeed,
+      setPlaybackSpeed: _stateStore.setPlaybackSpeed,
       currentPtsUs: () => _currentPtsUs,
       durationUs: () => _durationUs,
       pendingSeekUs: () => _pendingSeekUs,
       pendingSeekAt: () => _pendingSeekAt,
-      setSeekPreview: _setSeekPreview,
-      setPendingSeek: _setPendingSeekState,
-      setPolledPlaybackState: _setPolledPlaybackState,
+      setSeekPreview: _stateStore.setSeekPreview,
+      setPendingSeek: _stateStore.setPendingSeek,
+      setPolledPlaybackState: _stateStore.setPolledPlaybackState,
       loopRangeEnabled: () => _loopRangeEnabled,
-      setLoopRangeEnabledState: _setLoopRangeEnabledState,
+      setLoopRangeEnabledState: _stateStore.setLoopRangeEnabled,
       nativeLoopRangeSynced: () => _nativeLoopRangeSynced,
-      setNativeLoopRangeSynced: _setNativeLoopRangeSynced,
+      setNativeLoopRangeSynced: _stateStore.setNativeLoopRangeSynced,
       startupLoopRangeApplied: () => _startupLoopRangeApplied,
-      setStartupLoopRangeApplied: _setStartupLoopRangeApplied,
+      setStartupLoopRangeApplied: _stateStore.setStartupLoopRangeApplied,
       loopStartUs: () => _loopStartUs,
       loopEndUs: () => _loopEndUs,
-      setLoopRangeState: _setLoopRangeState,
+      setLoopRangeState: _stateStore.setLoopRange,
       hoverPtsUs: () => _hoverPtsUs,
       sliderHovering: () => _sliderHovering,
-      setSliderHoverState: _setSliderHoverState,
+      setSliderHoverState: _stateStore.setSliderHover,
     );
     _mediaCoordinator = MainWindowMediaCoordinator(
       controller: _controller,
@@ -96,11 +99,11 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       layoutCoordinator: _layoutCoordinator,
       mounted: () => mounted,
       textureId: () => _textureId,
-      setViewportState: _setViewportState,
-      setTextureId: _setTextureId,
-      setLayout: (layout) => setState(() => _layout = layout),
+      setViewportState: _stateStore.setViewportState,
+      setTextureId: _stateStore.setTextureId,
+      setLayout: _stateStore.setLayout,
       syncOffsets: () => _syncOffsets,
-      setSyncOffsets: (offsets) => setState(() => _syncOffsets = offsets),
+      setSyncOffsets: _stateStore.setSyncOffsets,
       durationUs: () => _durationUs,
       pendingSeekUs: () => _pendingSeekUs,
       currentPtsUs: () => _currentPtsUs,
@@ -181,6 +184,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   void dispose() {
     _playbackCoordinator.dispose();
     _layoutCoordinator.dispose();
+    _stateStore.dispose();
     unawaited(_analysisCoordinator.dispose());
     _trackManager.dispose();
     unawaited(_controller.dispose());
@@ -190,168 +194,38 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   // -- TrackManager listener --
 
   void _onTrackManagerChanged() {
-    setState(() {
-      _layout = _layout.copyWith(order: _trackManager.order);
-    });
+    _stateStore.setLayout(_layout.copyWith(order: _trackManager.order));
     _layoutCoordinator.markLayoutDirty();
     unawaited(_analysisCoordinator.publishTrackSnapshot());
   }
 
-  void _setViewportState(int state) {
-    setState(() => _viewportState = state);
-  }
-
-  void _setTextureId(int textureId) {
-    setState(() => _textureId = textureId);
-  }
-
   void _resetAfterLastTrackRemoved() {
-    setState(() {
-      _trackManager.clear();
-      _textureId = null;
-      _viewportState = 1;
-      _isPlaying = false;
-      _currentPtsUs = 0;
-      _durationUs = 0;
-      _layout = const LayoutState();
-      _syncOffsets = {};
-      _loopRangeEnabled = false;
-      _nativeLoopRangeSynced = false;
-      _loopStartUs = 0;
-      _loopEndUs = 0;
-    });
+    _trackManager.clear();
+    _stateStore.resetAfterLastTrackRemoved();
     _playbackCoordinator.invalidateLoopRangeSync();
   }
 
-  void _setPlaying(bool playing) {
-    setState(() => _isPlaying = playing);
-  }
-
-  void _setPlaybackSpeed(double speed) {
-    setState(() => _playbackSpeed = speed);
-  }
-
-  void _setSeekPreview(int ptsUs) {
-    setState(() {
-      _currentPtsUs = ptsUs;
-      _pendingSeekUs = ptsUs;
-      _pendingSeekAt = DateTime.now();
-    });
-  }
-
-  void _setPendingSeekState(int? ptsUs, DateTime? at) {
-    setState(() {
-      _pendingSeekUs = ptsUs;
-      _pendingSeekAt = at;
-    });
-  }
-
-  void _setTimelineControlsWidth(double width) {
-    if (_timelineControlsWidth == width) return;
-    setState(() => _timelineControlsWidth = width);
-  }
-
-  void _setPolledPlaybackState(int ptsUs, int durationUs, bool playing) {
-    setState(() {
-      _currentPtsUs = ptsUs;
-      _durationUs = durationUs;
-      _isPlaying = playing;
-    });
-  }
-
-  void _setLoopRangeEnabledState(bool enabled) {
-    setState(() => _loopRangeEnabled = enabled);
-  }
-
-  void _setNativeLoopRangeSynced(bool synced) {
-    setState(() => _nativeLoopRangeSynced = synced);
-  }
-
-  void _setStartupLoopRangeApplied(bool applied) {
-    setState(() => _startupLoopRangeApplied = applied);
-  }
-
-  void _setLoopRangeState(int startUs, int endUs) {
-    setState(() {
-      _loopStartUs = startUs;
-      _loopEndUs = endUs;
-    });
-  }
-
-  void _setSliderHoverState(int hoverUs, bool hovering) {
-    setState(() {
-      _hoverPtsUs = hoverUs;
-      _sliderHovering = hovering;
-    });
-  }
+  main_state.MainWindowStateModel get _state => _stateStore.value;
 
   int? get _textureId => _state.textureId;
-  set _textureId(int? value) => _state = _state.copyWith(textureId: value);
-
   int get _viewportState => _state.viewportState;
-  set _viewportState(int value) =>
-      _state = _state.copyWith(viewportState: value);
-
   bool get _isPlaying => _state.isPlaying;
-  set _isPlaying(bool value) => _state = _state.copyWith(isPlaying: value);
-
   double get _playbackSpeed => _state.playbackSpeed;
-  set _playbackSpeed(double value) =>
-      _state = _state.copyWith(playbackSpeed: value);
-
   int get _currentPtsUs => _state.currentPtsUs;
-  set _currentPtsUs(int value) => _state = _state.copyWith(currentPtsUs: value);
-
   int get _durationUs => _state.durationUs;
-  set _durationUs(int value) => _state = _state.copyWith(durationUs: value);
-
   LayoutState get _layout => _state.layout;
-  set _layout(LayoutState value) => _state = _state.copyWith(layout: value);
-
   int? get _pendingSeekUs => _state.pendingSeekUs;
-  set _pendingSeekUs(int? value) =>
-      _state = _state.copyWith(pendingSeekUs: value);
-
   DateTime? get _pendingSeekAt => _state.pendingSeekAt;
-  set _pendingSeekAt(DateTime? value) =>
-      _state = _state.copyWith(pendingSeekAt: value);
-
   Map<int, int> get _syncOffsets => _state.syncOffsets;
-  set _syncOffsets(Map<int, int> value) =>
-      _state = _state.copyWith(syncOffsets: value);
-
   double get _timelineControlsWidth => _state.timelineControlsWidth;
-  set _timelineControlsWidth(double value) =>
-      _state = _state.copyWith(timelineControlsWidth: value);
-
   bool get _loopRangeEnabled => _state.loopRangeEnabled;
-  set _loopRangeEnabled(bool value) =>
-      _state = _state.copyWith(loopRangeEnabled: value);
-
   bool get _nativeLoopRangeSynced => _state.nativeLoopRangeSynced;
-  set _nativeLoopRangeSynced(bool value) =>
-      _state = _state.copyWith(nativeLoopRangeSynced: value);
-
   bool get _startupLoopRangeApplied => _state.startupLoopRangeApplied;
-  set _startupLoopRangeApplied(bool value) =>
-      _state = _state.copyWith(startupLoopRangeApplied: value);
-
   int get _loopStartUs => _state.loopStartUs;
-  set _loopStartUs(int value) => _state = _state.copyWith(loopStartUs: value);
-
   int get _loopEndUs => _state.loopEndUs;
-  set _loopEndUs(int value) => _state = _state.copyWith(loopEndUs: value);
-
   int get _hoverPtsUs => _state.hoverPtsUs;
-  set _hoverPtsUs(int value) => _state = _state.copyWith(hoverPtsUs: value);
-
   bool get _sliderHovering => _state.sliderHovering;
-  set _sliderHovering(bool value) =>
-      _state = _state.copyWith(sliderHovering: value);
-
   bool get _dragging => _state.dragging;
-  set _dragging(bool value) => _state = _state.copyWith(dragging: value);
-
   int get _effectiveDurationUs => _mediaCoordinator.effectiveDurationUs;
   double get _timelineStartWidth => _playbackCoordinator.timelineStartWidth;
   int get _resolvedLoopStartUs => _playbackCoordinator.resolvedLoopStartUs;
@@ -365,18 +239,18 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     return MainWindowView(
       dragging: _dragging,
       onFilesDropped: (paths) {
-        setState(() => _dragging = false);
+        _stateStore.setDragging(false);
         unawaited(_mediaCoordinator.loadMediaPaths(paths));
       },
       onDragEntered: () {
-        if (!_dragging) setState(() => _dragging = true);
+        if (!_dragging) _stateStore.setDragging(true);
       },
       onDragExited: () {
-        if (_dragging) setState(() => _dragging = false);
+        if (_dragging) _stateStore.setDragging(false);
       },
       viewMode: _layout.mode,
       onViewModeChanged: (mode) {
-        setState(() => _layout = _layout.copyWith(mode: mode));
+        _stateStore.setLayout(_layout.copyWith(mode: mode));
         _layoutCoordinator.markLayoutDirty();
       },
       onAddMedia: _mediaCoordinator.openFile,
@@ -433,7 +307,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       hoverPtsUs: _hoverPtsUs,
       sliderHovering: _sliderHovering,
       controlsWidth: _timelineControlsWidth,
-      onControlsWidthChanged: _setTimelineControlsWidth,
+      onControlsWidthChanged: _stateStore.setTimelineControlsWidth,
     );
   }
 }

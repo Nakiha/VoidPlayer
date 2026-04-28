@@ -58,13 +58,13 @@ class ActionRegistry {
   final Map<String, PlayerAction> _actions = {};
 
   /// name → callback
-  final Map<String, VoidCallback> _callbacks = {};
+  final Map<String, ActionCallback> _callbacks = {};
 
   /// LogicalKey → action name（反向索引，bind/unbind 时维护）
   final Map<LogicalKeyboardKey, String> _keyMap = {};
 
   /// 绑定 action + callback，同时索引快捷键
-  void bind(PlayerAction action, VoidCallback callback);
+  void bind(PlayerAction action, ActionCallback callback);
 
   /// 解绑，移除 callback 和快捷键索引
   void unbind(String name);
@@ -225,15 +225,14 @@ lib/
 
 ```
 main.dart
-  ├─ MyApp
-  │   └─ ActionFocus           ← 全局按键拦截，常驻
-  │       └─ VideoPlayerPage
-  │           └─ initState → bind / dispose → unbind
-  │           └─ Button → execute('PLAY')
-  │
-  └─ --test-script 模式
-      └─ TestRunnerApp
-          └─ TestRunner         ← 绕过 UI 直接调 controller
+  └─ App bootstrap
+      └─ ActionFocus                ← 全局按键拦截，常驻
+          └─ MainWindow
+              └─ MainWindowController
+                  ├─ start → actionCoordinator.bind()
+                  ├─ dispose → actionCoordinator.dispose() → unbind
+                  └─ TestRunner (--test-script) → actionRegistry.execute(...)
 ```
 
-Action 层位于 UI 和 Controller 之间。Controller 本身不依赖 Action。
+Action 层位于 UI 和 coordinator 之间。主窗口通过 `MainWindowActionCoordinator`
+集中绑定，避免 widget 分散管理全局 action 生命周期。

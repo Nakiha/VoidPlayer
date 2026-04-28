@@ -5,8 +5,10 @@
 ### 新增 Action
 
 1. 在 `lib/actions/player_action.dart` 中添加新的 sealed subclass
-2. 在 `lib/windows/main_window.dart` 的 `_bindActions()` 中调用 `actionRegistry.bind(action, callback)`
+2. 在 `lib/windows/main_window_actions.dart` 中通过 `MainWindowActionBinder` 绑定 callback
 3. 如需快捷键，在构造函数中传入 `LogicalKeyboardKey`，并完成下面的「新增快捷键」步骤
+4. 如需自动化脚本触发，在 `lib/actions/test_runner.dart` 中补指令解析
+5. 更新本文档的 Action 清单
 
 ### 新增快捷键
 
@@ -29,11 +31,21 @@
 ### 移除 Action
 
 1. 删除 sealed subclass
-2. 移除 `_bindActions()` 中对应的 `bind` 调用
+2. 移除 `MainWindowActionBinder.bind()` 中对应的绑定
 3. 移除对应的 UI 触发点
 4. 如有快捷键，移除 `shortcutEntries` 中的对应条目、`.arb` 中的 l10n 条目、`action_labels.dart` 中的 case
 
 ## 注意事项
+
+### 绑定生命周期
+
+主窗口 Action 由 `MainWindowActionCoordinator` 持有生命周期：
+
+- `MainWindowController.start()` 调用 `actionCoordinator.bind()`
+- `MainWindowController.dispose()` 调用 `actionCoordinator.dispose()`
+- `MainWindowActionBinder` 记录自己绑定过的 action name，并在 unbind 时逐个释放
+
+不要在 widget build 或临时对象里直接绑定全局 action。新增绑定必须保证有对应 unbind。
 
 ### 按键冲突
 
@@ -84,6 +96,8 @@
 | `SET_ZOOM` | — | 设置缩放比例 |
 | `SET_SPLIT_POS` | — | 设置分屏位置（0.0–1.0） |
 | `PAN` | — | 视口平移 |
+| `SET_RENDER_SIZE` | — | 测试脚本专用：设置 renderer 输出尺寸 |
+| `CAPTURE_VIEWPORT` | — | 测试脚本专用：抓取 viewport hash / 截图 |
 | `WINDOW_MAXIMIZE` | — | 测试脚本专用：最大化主窗口 |
 | `WINDOW_RESTORE` | — | 测试脚本专用：恢复主窗口 |
 | `STORE_VIEW_CENTER` | — | 测试脚本专用：记录归一化视图中心基线 |
@@ -93,7 +107,7 @@
 | `OPEN_SETTINGS` | — | 打开设置窗口 |
 | `OPEN_STATS` | — | 打开统计窗口 |
 | `OPEN_MEMORY` | — | 打开内存窗口 |
-| `OPEN_ANALYSIS` | Ctrl + ` | 打开分析工具栏 |
+| `RUN_ANALYSIS` | — | 触发 analysis 流程 |
 
 ## Assert 清单
 
@@ -130,4 +144,5 @@
 | `lib/actions/player_assert.dart` | PlayerAssert sealed class |
 | `lib/actions/action_registry.dart` | ActionRegistry + ActionFocus |
 | `lib/actions/test_runner.dart` | 脚本解析 + TestRunner |
+| `lib/windows/main_window_actions.dart` | 主窗口 Action 绑定表和 bind/unbind 生命周期 |
 | `lib/l10n/action_labels.dart` | `resolveActionLabel()` — labelKey → l10n 映射 |

@@ -4,6 +4,18 @@
 
 ## 入口
 
+纯 Dart / Flutter 单元测试：
+
+```bash
+flutter test
+```
+
+或只跑某个目录：
+
+```bash
+flutter test test/unit
+```
+
 推荐统一使用 `dev.py`：
 
 ```bash
@@ -11,6 +23,28 @@ python dev.py ui-test ui_tests/smoke_basic.csv
 ```
 
 `ui-test` 会启动 app，并通过 `--test-script <csv>` 让 `TestRunner` 在主窗口启动后执行脚本。
+
+## 测试目录约定
+
+```text
+test/
+└── unit/               # 不启动真实窗口的 Dart/Flutter 单元测试
+
+ui_tests/               # 启动真实 app 的 CSV GUI 自动化脚本
+```
+
+适合放进 `test/unit/` 的内容：
+
+- 参数解析、纯函数、数据模型、payload 校验
+- 不依赖真实 Win32 窗口
+- 不依赖 native renderer 实例
+- 不需要真实 pointer/keyboard 路径
+
+适合放进 `ui_tests/` 的内容：
+
+- timeline / loop range / viewport 的真实交互路径
+- renderer 上屏、截图/hash、窗口 resize
+- Action + TestRunner 端到端行为
 
 ## CSV 脚本格式
 

@@ -8,8 +8,12 @@ extension _MainWindowMediaLoading on _MainWindowState {
     if (_textureId == null) {
       _setViewportState(0);
       try {
-        final initialWidth = _viewportWidth > 0 ? _viewportWidth : 1920;
-        final initialHeight = _viewportHeight > 0 ? _viewportHeight : 1080;
+        final initialWidth = _layoutCoordinator.viewportWidth > 0
+            ? _layoutCoordinator.viewportWidth
+            : 1920;
+        final initialHeight = _layoutCoordinator.viewportHeight > 0
+            ? _layoutCoordinator.viewportHeight
+            : 1080;
         final res = await _controller.createRenderer(
           paths,
           width: initialWidth,
@@ -21,8 +25,12 @@ extension _MainWindowMediaLoading on _MainWindowState {
         _applyStartupLoopRangeIfReady();
         await WidgetsBinding.instance.endOfFrame;
         if (!mounted) return;
-        if (_viewportWidth > 0 && _viewportHeight > 0) {
-          await _controller.resize(_viewportWidth, _viewportHeight);
+        if (_layoutCoordinator.viewportWidth > 0 &&
+            _layoutCoordinator.viewportHeight > 0) {
+          await _controller.resize(
+            _layoutCoordinator.viewportWidth,
+            _layoutCoordinator.viewportHeight,
+          );
         }
         if (!mounted) return;
         _setViewportState(2);

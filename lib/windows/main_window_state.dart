@@ -21,8 +21,6 @@ class MainWindowStateModel {
   final int loopEndUs;
   final int hoverPtsUs;
   final bool sliderHovering;
-  final int viewportWidth;
-  final int viewportHeight;
   final bool dragging;
 
   const MainWindowStateModel({
@@ -44,8 +42,6 @@ class MainWindowStateModel {
     this.loopEndUs = 0,
     this.hoverPtsUs = 0,
     this.sliderHovering = false,
-    this.viewportWidth = 0,
-    this.viewportHeight = 0,
     this.dragging = false,
   });
 
@@ -68,8 +64,6 @@ class MainWindowStateModel {
     int? loopEndUs,
     int? hoverPtsUs,
     bool? sliderHovering,
-    int? viewportWidth,
-    int? viewportHeight,
     bool? dragging,
   }) {
     return MainWindowStateModel(
@@ -100,8 +94,6 @@ class MainWindowStateModel {
       loopEndUs: loopEndUs ?? this.loopEndUs,
       hoverPtsUs: hoverPtsUs ?? this.hoverPtsUs,
       sliderHovering: sliderHovering ?? this.sliderHovering,
-      viewportWidth: viewportWidth ?? this.viewportWidth,
-      viewportHeight: viewportHeight ?? this.viewportHeight,
       dragging: dragging ?? this.dragging,
     );
   }

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:path/path.dart' as p;
 import '../app_log.dart';
 import '../startup_options.dart';
@@ -12,13 +11,13 @@ import '../analysis/analysis_manager.dart';
 import '../widgets/loop_range_bar.dart';
 import 'analysis_ipc.dart';
 import 'main_window_actions.dart';
+import 'main_window_layout.dart';
 import 'main_window_state.dart' as main_state;
 import 'main_window_test_hooks.dart' as main_hooks;
 import 'main_window_view.dart';
 import 'native_file_picker.dart';
 
 part 'main_window_analysis.dart';
-part 'main_window_layout.dart';
 part 'main_window_media.dart';
 part 'main_window_playback.dart';
 part 'main_window_tracks.dart';
@@ -40,7 +39,6 @@ class MainWindow extends StatefulWidget {
 class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   static const double _trackDragHandleWidth = 28.0;
   static const double _trackDividerWidth = 1.0;
-  static const Duration _viewportResizeDebounce = Duration(milliseconds: 80);
 
   final _controller = VideoRendererController();
   final _trackManager = TrackManager();
@@ -49,6 +47,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   final _timelineSliderKey = GlobalKey();
   final _loopRangeBarKey = GlobalKey();
   late final main_hooks.MainWindowTestHarness _testHarness;
+  late final MainWindowLayoutCoordinator _layoutCoordinator;
   int _analysisSnapshotSerial = 0;
 
   main_state.MainWindowStateModel _state =
@@ -58,16 +57,19 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   // Polling
   Timer? _pollTimer;
   Timer? _loopBoundaryTimer;
-  Ticker? _layoutTicker;
-  bool _layoutDirty = false;
-
-  bool _resizeDirty = false;
-  bool _layoutFlushInProgress = false;
-  Timer? _resizeDebounceTimer;
 
   @override
   void initState() {
     super.initState();
+    _layoutCoordinator = MainWindowLayoutCoordinator(
+      vsync: this,
+      controller: _controller,
+      mounted: () => mounted,
+      textureId: () => _textureId,
+      layout: () => _layout,
+      setLayout: (layout) => setState(() => _layout = layout),
+      trackCount: () => _trackManager.count,
+    );
     _testHarness = main_hooks.MainWindowTestHarness(
       timelineSliderKey: _timelineSliderKey,
       loopRangeBarKey: _loopRangeBarKey,
@@ -79,7 +81,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     _trackManager.addListener(_onTrackManagerChanged);
     _bindActions();
     _startPolling();
-    _startLayoutTicker();
     _maybeStartTestRunner();
   }
 
@@ -101,11 +102,11 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       isLoopRangeEnabled: () => _loopRangeEnabled,
       setLoopRange: _setLoopRange,
       dragLoopHandle: _testHarness.dragLoopHandle,
-      toggleLayoutMode: _toggleLayoutMode,
-      setLayoutMode: _setLayoutMode,
-      setZoom: _setZoom,
-      setSplitPos: _setSplitPos,
-      panByDelta: _panByDelta,
+      toggleLayoutMode: _layoutCoordinator.toggleLayoutMode,
+      setLayoutMode: _layoutCoordinator.setLayoutMode,
+      setZoom: _layoutCoordinator.setZoom,
+      setSplitPos: _layoutCoordinator.setSplitPos,
+      panByDelta: _layoutCoordinator.panByDelta,
       openNewWindow: WindowManager.showStatsWindow,
       openSettings: WindowManager.showSettingsWindow,
       openStats: WindowManager.showStatsWindow,
@@ -126,8 +127,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   void dispose() {
     _pollTimer?.cancel();
     _loopBoundaryTimer?.cancel();
-    _resizeDebounceTimer?.cancel();
-    _layoutTicker?.dispose();
+    _layoutCoordinator.dispose();
     unawaited(_analysisIpcServer.dispose());
     _trackManager.dispose();
     unawaited(_controller.dispose());
@@ -140,7 +140,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     setState(() {
       _layout = _layout.copyWith(order: _trackManager.order);
     });
-    _markLayoutDirty();
+    _layoutCoordinator.markLayoutDirty();
     unawaited(_publishAnalysisTrackSnapshot());
   }
 
@@ -150,14 +150,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   void _setTextureId(int textureId) {
     setState(() => _textureId = textureId);
-  }
-
-  void _replaceLayout(LayoutState layout) {
-    setState(() => _layout = layout);
-  }
-
-  void _updateLayout(LayoutState Function(LayoutState current) update) {
-    setState(() => _layout = update(_layout));
   }
 
   void _resetAfterLastTrackRemoved() {
@@ -297,14 +289,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   set _sliderHovering(bool value) =>
       _state = _state.copyWith(sliderHovering: value);
 
-  int get _viewportWidth => _state.viewportWidth;
-  set _viewportWidth(int value) =>
-      _state = _state.copyWith(viewportWidth: value);
-
-  int get _viewportHeight => _state.viewportHeight;
-  set _viewportHeight(int value) =>
-      _state = _state.copyWith(viewportHeight: value);
-
   bool get _dragging => _state.dragging;
   set _dragging(bool value) => _state = _state.copyWith(dragging: value);
 
@@ -327,7 +311,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       viewMode: _layout.mode,
       onViewModeChanged: (mode) {
         setState(() => _layout = _layout.copyWith(mode: mode));
-        _markLayoutDirty();
+        _layoutCoordinator.markLayoutDirty();
       },
       onAddMedia: _openFile,
       onAnalysis: _triggerAnalysis,
@@ -338,17 +322,17 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       textureId: _textureId,
       viewportState: _viewportState,
       layout: _layout,
-      onPan: _onPan,
-      onSplit: _onSplit,
-      onZoom: _onZoom,
-      onPointerButton: _onPointerButton,
-      onResize: _onViewportResize,
+      onPan: _layoutCoordinator.onPan,
+      onSplit: _layoutCoordinator.onSplit,
+      onZoom: _layoutCoordinator.onZoom,
+      onPointerButton: _layoutCoordinator.onPointerButton,
+      onResize: _layoutCoordinator.onViewportResize,
       trackManager: _trackManager,
       onMediaSwapped: _onMediaSwapped,
       onRemoveTrack: _onRemoveTrack,
       timelineSliderKey: _timelineSliderKey,
       timelineStartWidth: _timelineStartWidth,
-      onZoomChanged: _onZoomComboChanged,
+      onZoomChanged: _layoutCoordinator.onZoomComboChanged,
       isPlaying: _isPlaying,
       onTogglePlay: _togglePlayPause,
       onStepForward: () => _controller.stepForward(),

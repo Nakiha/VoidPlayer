@@ -1,54 +1,98 @@
-part of 'main_window.dart';
+import 'dart:async';
 
-extension _MainWindowLayout on _MainWindowState {
-  void _toggleLayoutMode() {
-    _setLayoutMode(
-      _layout.mode == LayoutMode.sideBySide
+import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+
+import '../video_renderer_controller.dart';
+
+class MainWindowLayoutCoordinator {
+  static const Duration viewportResizeDebounce = Duration(milliseconds: 80);
+
+  final TickerProvider vsync;
+  final VideoRendererController controller;
+  final bool Function() mounted;
+  final int? Function() textureId;
+  final LayoutState Function() layout;
+  final void Function(LayoutState layout) setLayout;
+  final int Function() trackCount;
+
+  Ticker? _ticker;
+  Timer? _resizeDebounceTimer;
+  bool _layoutDirty = false;
+  bool _resizeDirty = false;
+  bool _flushInProgress = false;
+
+  int viewportWidth = 0;
+  int viewportHeight = 0;
+
+  MainWindowLayoutCoordinator({
+    required this.vsync,
+    required this.controller,
+    required this.mounted,
+    required this.textureId,
+    required this.layout,
+    required this.setLayout,
+    required this.trackCount,
+  }) {
+    _ticker = vsync.createTicker((_) {
+      unawaited(flushPendingLayout());
+    });
+  }
+
+  void dispose() {
+    _resizeDebounceTimer?.cancel();
+    _ticker?.dispose();
+  }
+
+  void toggleLayoutMode() {
+    setLayoutMode(
+      layout().mode == LayoutMode.sideBySide
           ? LayoutMode.splitScreen
           : LayoutMode.sideBySide,
     );
   }
 
-  void _setLayoutMode(int mode) {
+  void setLayoutMode(int mode) {
     _updateLayout((layout) => layout.copyWith(mode: mode));
-    _markLayoutDirty();
+    markLayoutDirty();
   }
 
-  void _setZoom(double ratio) {
+  void setZoom(double ratio) {
     _updateLayout(
       (layout) => layout.copyWith(
         zoomRatio: ratio.clamp(LayoutState.zoomMin, LayoutState.zoomMax),
       ),
     );
-    _markLayoutDirty();
+    markLayoutDirty();
   }
 
-  void _setSplitPos(double pos) {
+  void setSplitPos(double pos) {
     _updateLayout((layout) => layout.copyWith(splitPos: pos.clamp(0.0, 1.0)));
-    _markLayoutDirty();
+    markLayoutDirty();
   }
 
-  void _panByDelta(double dx, double dy) {
+  void panByDelta(double dx, double dy) {
     _updateLayout(
       (layout) => layout.copyWith(
         viewOffsetX: layout.viewOffsetX + dx,
         viewOffsetY: layout.viewOffsetY + dy,
       ),
     );
-    _markLayoutDirty();
+    markLayoutDirty();
   }
 
-  void _onPan(Offset delta) {
-    _panByDelta(delta.dx, delta.dy);
+  void onPan(Offset delta) {
+    panByDelta(delta.dx, delta.dy);
   }
 
-  void _onSplit(double normalizedX) {
-    _setSplitPos(normalizedX);
+  void onSplit(double normalizedX) {
+    setSplitPos(normalizedX);
   }
 
-  void _onZoom(double scrollDelta, Offset localPos) {
+  void onZoom(double scrollDelta, Offset localPos) {
+    final currentLayout = layout();
     final factor = scrollDelta > 0 ? 0.9 : 1.1;
-    final newZoom = (_layout.zoomRatio * factor).clamp(
+    final newZoom = (currentLayout.zoomRatio * factor).clamp(
       LayoutState.zoomMin,
       LayoutState.zoomMax,
     );
@@ -58,34 +102,33 @@ extension _MainWindowLayout on _MainWindowState {
         (layout) =>
             layout.copyWith(zoomRatio: newZoom, viewOffsetX: 0, viewOffsetY: 0),
       );
-      _markLayoutDirty();
+      markLayoutDirty();
       return;
     }
 
-    final actualFactor = newZoom / _layout.zoomRatio;
+    final actualFactor = newZoom / currentLayout.zoomRatio;
 
-    if (_viewportWidth <= 0 || _viewportHeight <= 0) {
+    if (viewportWidth <= 0 || viewportHeight <= 0) {
       _updateLayout((layout) => layout.copyWith(zoomRatio: newZoom));
-      _markLayoutDirty();
+      markLayoutDirty();
       return;
     }
 
-    // Compute cursor position in slot-normalized coords and slot pixel size.
     double cursorX, cursorY, slotW, slotH;
-    if (_layout.mode == LayoutMode.sideBySide) {
-      final n = _trackManager.count > 0 ? _trackManager.count : 1;
-      final nx = localPos.dx / _viewportWidth;
-      final ny = localPos.dy / _viewportHeight;
+    if (currentLayout.mode == LayoutMode.sideBySide) {
+      final n = trackCount() > 0 ? trackCount() : 1;
+      final nx = localPos.dx / viewportWidth;
+      final ny = localPos.dy / viewportHeight;
       final slotIndex = (nx * n).floor().clamp(0, n - 1);
       cursorX = nx * n - slotIndex;
       cursorY = ny;
-      slotW = _viewportWidth / n;
-      slotH = _viewportHeight.toDouble();
+      slotW = viewportWidth / n;
+      slotH = viewportHeight.toDouble();
     } else {
-      cursorX = localPos.dx / _viewportWidth;
-      cursorY = localPos.dy / _viewportHeight;
-      slotW = _viewportWidth.toDouble();
-      slotH = _viewportHeight.toDouble();
+      cursorX = localPos.dx / viewportWidth;
+      cursorY = localPos.dy / viewportHeight;
+      slotW = viewportWidth.toDouble();
+      slotH = viewportHeight.toDouble();
     }
 
     _updateLayout(
@@ -99,88 +142,86 @@ extension _MainWindowLayout on _MainWindowState {
             (1 - actualFactor) * (cursorY - 0.5) * slotH,
       ),
     );
-    _markLayoutDirty();
+    markLayoutDirty();
   }
 
-  void _onPointerButton(bool panning, bool splitting) {
-    // No-op for now; could show cursor changes etc.
+  void onPointerButton(bool panning, bool splitting) {
+    // Reserved for cursor or mode hints.
   }
 
-  void _onViewportResize(int width, int height) {
-    if (width == _viewportWidth && height == _viewportHeight) return;
-    _viewportWidth = width;
-    _viewportHeight = height;
+  void onViewportResize(int width, int height) {
+    if (width == viewportWidth && height == viewportHeight) return;
+    viewportWidth = width;
+    viewportHeight = height;
     _resizeDebounceTimer?.cancel();
-    _resizeDebounceTimer = Timer(_MainWindowState._viewportResizeDebounce, () {
-      if (!mounted) return;
+    _resizeDebounceTimer = Timer(viewportResizeDebounce, () {
+      if (!mounted()) return;
       _markResizeDirty();
     });
   }
 
+  void onZoomComboChanged(double value) {
+    _updateLayout((layout) => layout.copyWith(zoomRatio: value));
+    markLayoutDirty();
+  }
+
+  void markLayoutDirty() {
+    _layoutDirty = true;
+    _ticker?.start();
+  }
+
   void _markResizeDirty() {
     _resizeDirty = true;
-    _layoutTicker?.start();
+    _ticker?.start();
   }
 
-  void _onZoomComboChanged(double value) {
-    _updateLayout((layout) => layout.copyWith(zoomRatio: value));
-    _markLayoutDirty();
-  }
-
-  void _markLayoutDirty() {
-    _layoutDirty = true;
-    _layoutTicker?.start();
-  }
-
-  void _startLayoutTicker() {
-    _layoutTicker = createTicker((_) {
-      unawaited(_flushPendingLayout());
-    });
-  }
-
-  Future<void> _flushPendingLayout() async {
-    if (_layoutFlushInProgress) return;
-    if (_textureId == null) {
+  Future<void> flushPendingLayout() async {
+    if (_flushInProgress) return;
+    if (textureId() == null) {
       _resizeDirty = false;
       _layoutDirty = false;
-      _layoutTicker?.stop();
+      _ticker?.stop();
       return;
     }
 
-    _layoutFlushInProgress = true;
+    _flushInProgress = true;
     try {
-      while (mounted && (_resizeDirty || _layoutDirty)) {
+      while (mounted() && (_resizeDirty || _layoutDirty)) {
         if (_layoutDirty) {
-          final layout = _layout;
+          final nextLayout = layout();
           _layoutDirty = false;
-          await _controller.applyLayout(layout);
-          if (!mounted) return;
+          await controller.applyLayout(nextLayout);
+          if (!mounted()) return;
         }
 
-        if (_resizeDirty && _viewportWidth > 0 && _viewportHeight > 0) {
-          final width = _viewportWidth;
-          final height = _viewportHeight;
+        if (_resizeDirty && viewportWidth > 0 && viewportHeight > 0) {
+          final width = viewportWidth;
+          final height = viewportHeight;
           _resizeDirty = false;
-          await _controller.resize(width, height);
-          if (!mounted) return;
+          await controller.resize(width, height);
+          if (!mounted()) return;
           if (!_layoutDirty) {
-            final layout = await _controller.getLayout();
-            if (!mounted) return;
-            _replaceLayout(layout);
+            final nextLayout = await controller.getLayout();
+            if (!mounted()) return;
+            setLayout(nextLayout);
           }
         } else if (_resizeDirty) {
           _resizeDirty = false;
         }
       }
     } finally {
-      _layoutFlushInProgress = false;
-      if (mounted) {
+      _flushInProgress = false;
+      if (mounted()) {
         if (_resizeDirty || _layoutDirty) {
-          _layoutTicker?.start();
+          _ticker?.start();
         } else {
-          _layoutTicker?.stop();
+          _ticker?.stop();
         }
       }
     }
+  }
+
+  void _updateLayout(LayoutState Function(LayoutState current) update) {
+    setLayout(update(layout()));
   }
 }

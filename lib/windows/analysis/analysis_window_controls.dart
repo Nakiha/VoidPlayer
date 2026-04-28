@@ -1,14 +1,18 @@
-part of 'analysis_window.dart';
+import 'package:flutter/material.dart';
+
+import '../../l10n/app_localizations.dart';
+import 'analysis_window_style.dart';
 
 // ===========================================================================
 // Top bar widgets
 // ===========================================================================
 
-class _OrderToggle extends StatelessWidget {
+class AnalysisOrderToggle extends StatelessWidget {
   final bool ptsOrder;
   final ValueChanged<bool> onChanged;
   final AppLocalizations l;
-  const _OrderToggle({
+  const AnalysisOrderToggle({
+    super.key,
     required this.ptsOrder,
     required this.onChanged,
     required this.l,
@@ -32,7 +36,7 @@ class _OrderToggle extends StatelessWidget {
             TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
           ),
           fixedSize: WidgetStatePropertyAll(
-            Size.fromHeight(_analysisHeaderControlHeight),
+            Size.fromHeight(analysisHeaderControlHeight),
           ),
         ),
       ),
@@ -40,11 +44,12 @@ class _OrderToggle extends StatelessWidget {
   }
 }
 
-class _TabBar extends StatelessWidget {
+class AnalysisViewTabBar extends StatelessWidget {
   final int selectedTab;
   final ValueChanged<int> onTabChanged;
   final AppLocalizations l;
-  const _TabBar({
+  const AnalysisViewTabBar({
+    super.key,
     required this.selectedTab,
     required this.onTabChanged,
     required this.l,
@@ -87,7 +92,7 @@ class _TabBar extends StatelessWidget {
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
           fixedSize: WidgetStatePropertyAll(
-            Size.fromHeight(_analysisHeaderControlHeight),
+            Size.fromHeight(analysisHeaderControlHeight),
           ),
         ),
       ),
@@ -186,20 +191,22 @@ class _AnalysisViewIconPainter extends CustomPainter {
 // Resizable vertical divider (drag to change left panel width)
 // ===========================================================================
 
-class _ResizableVDivider extends StatefulWidget {
+class AnalysisResizableVDivider extends StatefulWidget {
   final double position;
   final ValueChanged<double> onPositionChanged;
 
-  const _ResizableVDivider({
+  const AnalysisResizableVDivider({
+    super.key,
     required this.position,
     required this.onPositionChanged,
   });
 
   @override
-  State<_ResizableVDivider> createState() => _ResizableVDividerState();
+  State<AnalysisResizableVDivider> createState() =>
+      _AnalysisResizableVDividerState();
 }
 
-class _ResizableVDividerState extends State<_ResizableVDivider> {
+class _AnalysisResizableVDividerState extends State<AnalysisResizableVDivider> {
   bool _hovering = false;
   double _excess = 0.0;
   late double _effectivePos;
@@ -211,7 +218,7 @@ class _ResizableVDividerState extends State<_ResizableVDivider> {
   }
 
   @override
-  void didUpdateWidget(covariant _ResizableVDivider oldWidget) {
+  void didUpdateWidget(covariant AnalysisResizableVDivider oldWidget) {
     super.didUpdateWidget(oldWidget);
     _effectivePos = widget.position;
   }
@@ -254,13 +261,14 @@ class _ResizableVDividerState extends State<_ResizableVDivider> {
   }
 }
 
-class _ResizableHDivider extends StatefulWidget {
+class AnalysisResizableHDivider extends StatefulWidget {
   final double position;
   final double minPosition;
   final double maxPosition;
   final ValueChanged<double> onPositionChanged;
 
-  const _ResizableHDivider({
+  const AnalysisResizableHDivider({
+    super.key,
     required this.position,
     required this.minPosition,
     required this.maxPosition,
@@ -268,10 +276,11 @@ class _ResizableHDivider extends StatefulWidget {
   });
 
   @override
-  State<_ResizableHDivider> createState() => _ResizableHDividerState();
+  State<AnalysisResizableHDivider> createState() =>
+      _AnalysisResizableHDividerState();
 }
 
-class _ResizableHDividerState extends State<_ResizableHDivider> {
+class _AnalysisResizableHDividerState extends State<AnalysisResizableHDivider> {
   bool _hovering = false;
   double _dragStartGlobalY = 0.0;
   double _dragStartPosition = 0.0;

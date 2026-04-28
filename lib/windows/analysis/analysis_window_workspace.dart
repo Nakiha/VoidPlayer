@@ -1,34 +1,42 @@
-part of 'analysis_window.dart';
+import 'package:flutter/material.dart';
 
-class _AnalysisWorkspaceEntry {
+import '../../l10n/app_localizations.dart';
+import '../../widgets/segmented_widget.dart';
+import 'analysis_ipc.dart';
+import 'analysis_split_layout_controller.dart';
+import 'analysis_window_page.dart';
+import 'analysis_window_style.dart';
+
+class AnalysisWorkspaceEntry {
   final String hash;
   final String? fileName;
 
-  const _AnalysisWorkspaceEntry({required this.hash, this.fileName});
+  const AnalysisWorkspaceEntry({required this.hash, this.fileName});
 
-  factory _AnalysisWorkspaceEntry.fromIpcTrack(AnalysisIpcTrack track) =>
-      _AnalysisWorkspaceEntry(hash: track.hash, fileName: track.fileName);
+  factory AnalysisWorkspaceEntry.fromIpcTrack(AnalysisIpcTrack track) =>
+      AnalysisWorkspaceEntry(hash: track.hash, fileName: track.fileName);
 }
 
-class _AnalysisWorkspacePage extends StatefulWidget {
-  final List<_AnalysisWorkspaceEntry> entries;
+class AnalysisWorkspacePage extends StatefulWidget {
+  final List<AnalysisWorkspaceEntry> entries;
   final String? testScriptPath;
   final AnalysisIpcClient? ipcClient;
 
-  const _AnalysisWorkspacePage({
+  const AnalysisWorkspacePage({
+    super.key,
     required this.entries,
     this.testScriptPath,
     this.ipcClient,
   });
 
   @override
-  State<_AnalysisWorkspacePage> createState() => _AnalysisWorkspacePageState();
+  State<AnalysisWorkspacePage> createState() => _AnalysisWorkspacePageState();
 }
 
-class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
+class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   int _selected = 0;
   bool _splitView = false;
-  late List<_AnalysisWorkspaceEntry> _entries;
+  late List<AnalysisWorkspaceEntry> _entries;
   final _splitLayout = AnalysisSplitLayoutController();
 
   @override
@@ -55,7 +63,7 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
         : null;
     final entries = [
       for (final track in client.tracks)
-        if (track.hash.isNotEmpty) _AnalysisWorkspaceEntry.fromIpcTrack(track),
+        if (track.hash.isNotEmpty) AnalysisWorkspaceEntry.fromIpcTrack(track),
     ];
     final nextSelected = selectedHash == null
         ? entries.isEmpty
@@ -121,7 +129,7 @@ class _AnalysisWorkspacePageState extends State<_AnalysisWorkspacePage> {
 }
 
 class _AnalysisTabbedView extends StatelessWidget {
-  final List<_AnalysisWorkspaceEntry> entries;
+  final List<AnalysisWorkspaceEntry> entries;
   final int selectedIndex;
   final bool splitView;
   final bool modeToggleEnabled;
@@ -158,7 +166,7 @@ class _AnalysisTabbedView extends StatelessWidget {
 }
 
 class _AnalysisTabsHeader extends StatelessWidget {
-  final List<_AnalysisWorkspaceEntry> entries;
+  final List<AnalysisWorkspaceEntry> entries;
   final int selectedIndex;
   final bool splitView;
   final bool modeToggleEnabled;
@@ -178,8 +186,8 @@ class _AnalysisTabsHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      height: _analysisHeaderHeight,
-      padding: _analysisHeaderPadding,
+      height: analysisHeaderHeight,
+      padding: analysisHeaderPadding,
       decoration: BoxDecoration(
         color: theme.colorScheme.primaryContainer.withValues(alpha: 0.18),
         border: Border(bottom: BorderSide(color: theme.dividerColor)),
@@ -191,7 +199,7 @@ class _AnalysisTabsHeader extends StatelessWidget {
             enabled: modeToggleEnabled,
             onChanged: onModeChanged,
           ),
-          const SizedBox(width: _analysisHeaderGap),
+          const SizedBox(width: analysisHeaderGap),
           Expanded(
             child: Row(
               children: [
@@ -214,7 +222,7 @@ class _AnalysisTabsHeader extends StatelessWidget {
 }
 
 class _AnalysisTrackTab extends StatelessWidget {
-  final _AnalysisWorkspaceEntry entry;
+  final AnalysisWorkspaceEntry entry;
   final int index;
   final bool selected;
   final VoidCallback onTap;
@@ -241,7 +249,7 @@ class _AnalysisTrackTab extends StatelessWidget {
 }
 
 class _AnalysisTrackTitleButton extends StatelessWidget {
-  final _AnalysisWorkspaceEntry entry;
+  final AnalysisWorkspaceEntry entry;
   final int index;
   final bool selected;
   final VoidCallback? onTap;
@@ -257,7 +265,7 @@ class _AnalysisTrackTitleButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return SizedBox(
-      height: _analysisHeaderControlHeight,
+      height: analysisHeaderControlHeight,
       child: Material(
         color: selected
             ? theme.colorScheme.primary.withValues(alpha: 0.10)
@@ -309,7 +317,7 @@ class _AnalysisTrackTitleButton extends StatelessWidget {
 }
 
 class _AnalysisSplitView extends StatelessWidget {
-  final List<_AnalysisWorkspaceEntry> entries;
+  final List<AnalysisWorkspaceEntry> entries;
   final bool splitView;
   final bool modeToggleEnabled;
   final int selectedIndex;
@@ -396,30 +404,8 @@ class _AnalysisSplitView extends StatelessWidget {
   }
 }
 
-class AnalysisSplitLayoutController extends ChangeNotifier {
-  double _topPanelFraction = 0.40;
-  double _naluBrowserFraction = 0.42;
-
-  double get topPanelFraction => _topPanelFraction;
-  double get naluBrowserFraction => _naluBrowserFraction;
-
-  void setTopPanelFraction(double value) {
-    final next = value.clamp(0.0, 1.0);
-    if ((next - _topPanelFraction).abs() < 0.0001) return;
-    _topPanelFraction = next;
-    notifyListeners();
-  }
-
-  void setNaluBrowserFraction(double value) {
-    final next = value.clamp(0.0, 1.0);
-    if ((next - _naluBrowserFraction).abs() < 0.0001) return;
-    _naluBrowserFraction = next;
-    notifyListeners();
-  }
-}
-
 class _AnalysisTrackPane extends StatelessWidget {
-  final _AnalysisWorkspaceEntry entry;
+  final AnalysisWorkspaceEntry entry;
   final int index;
   final bool selected;
   final bool showModeToggle;
@@ -447,8 +433,8 @@ class _AnalysisTrackPane extends StatelessWidget {
     return Column(
       children: [
         Container(
-          height: _analysisHeaderHeight,
-          padding: _analysisHeaderPadding,
+          height: analysisHeaderHeight,
+          padding: analysisHeaderPadding,
           decoration: BoxDecoration(
             color: selected
                 ? theme.colorScheme.primaryContainer.withValues(alpha: 0.18)
@@ -463,7 +449,7 @@ class _AnalysisTrackPane extends StatelessWidget {
                   enabled: modeToggleEnabled,
                   onChanged: onModeChanged,
                 ),
-                const SizedBox(width: _analysisHeaderGap),
+                const SizedBox(width: analysisHeaderGap),
               ],
               Expanded(
                 child: Padding(
@@ -506,7 +492,7 @@ class _AnalysisWorkspaceModeToggle extends StatelessWidget {
         firstLabel: l.analysisTabsMode,
         secondLabel: l.analysisSplitMode,
         width: 124,
-        height: _analysisHeaderControlHeight,
+        height: analysisHeaderControlHeight,
         enabled: enabled,
         labelFontWeight: FontWeight.w700,
       ),

@@ -16,6 +16,10 @@ Analysis 相关 Flutter 代码集中在 `lib/windows/analysis/`：
 | `analysis_window_controls.dart` | order/tab controls、analysis view icon、resizable dividers |
 | `analysis_window_test_runner.dart` | analysis 子窗体 CSV 指令解析和断言执行 |
 | `analysis_ipc.dart` | 主窗口和 analysis workspace process 之间的 track snapshot IPC |
+| `analysis_test_host.dart` | test runner 访问页面状态的窄接口 |
+| `analysis_split_layout_controller.dart` | workspace split view 共享布局比例 |
+| `analysis_window_style.dart` | analysis header/control 尺寸常量 |
+| `analysis_frame_utils.dart` | frame/slice 显示 helper |
 
 ## 边界
 
@@ -25,6 +29,8 @@ Analysis 相关 Flutter 代码集中在 `lib/windows/analysis/`：
 - NALU 列表/详情归 `analysis_window_nalu.dart`。
 - 主窗口触发 analysis 的流程在 `lib/windows/main/main_window_analysis.dart`；跨进程生命周期在 `lib/windows/window_manager.dart`。
 - analysis 子窗体脚本只放 analysis 专属指令，不复用主窗口 `PlayerAction`。
+- Analysis 文件之间使用普通 `import`，不要重新引入 `part` / `part of` 来共享私有状态。跨文件需要访问页面状态时，优先补窄接口或 view model。
+- `analysis_window_test_runner.dart` 只能通过 `AnalysisTestHost` 访问 page state，避免测试 DSL 再次和 `_AnalysisPageState` 私有字段耦合。
 
 ## 测试选择
 

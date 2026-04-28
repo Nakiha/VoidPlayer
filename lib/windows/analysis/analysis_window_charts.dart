@@ -1,4 +1,8 @@
-part of 'analysis_window.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
+
+import '../../analysis/analysis_ffi.dart';
+import '../../l10n/app_localizations.dart';
 
 // ===========================================================================
 // Reference Pyramid — circle nodes + reference arrows + level backgrounds
@@ -122,7 +126,7 @@ void _drawFrameXAxis({
   }
 }
 
-class _ReferencePyramidView extends StatefulWidget {
+class AnalysisReferencePyramidView extends StatefulWidget {
   final List<FrameInfo> frames;
   final int currentIdx;
   final int? selectedFrameIdx;
@@ -134,7 +138,8 @@ class _ReferencePyramidView extends StatefulWidget {
   final ValueChanged<double> onZoom;
   final ValueChanged<double> onPan;
   final AppLocalizations l;
-  const _ReferencePyramidView({
+  const AnalysisReferencePyramidView({
+    super.key,
     required this.frames,
     required this.currentIdx,
     required this.selectedFrameIdx,
@@ -149,10 +154,12 @@ class _ReferencePyramidView extends StatefulWidget {
   });
 
   @override
-  State<_ReferencePyramidView> createState() => _ReferencePyramidViewState();
+  State<AnalysisReferencePyramidView> createState() =>
+      _AnalysisReferencePyramidViewState();
 }
 
-class _ReferencePyramidViewState extends State<_ReferencePyramidView> {
+class _AnalysisReferencePyramidViewState
+    extends State<AnalysisReferencePyramidView> {
   _RefPyramidPainter? _lastPainter;
   Offset? _hoverPosition;
 
@@ -744,9 +751,9 @@ class _RefPyramidPainter extends CustomPainter {
 
 const double _frameTrendLabelW = _analysisChartLabelW;
 
-enum _FrameTrendAxis { frameSize, qp }
+enum AnalysisFrameTrendAxis { frameSize, qp }
 
-class _FrameTrendView extends StatefulWidget {
+class AnalysisFrameTrendView extends StatefulWidget {
   final List<FrameInfo> frames;
   final int currentIdx;
   final int? selectedFrameIdx;
@@ -756,11 +763,13 @@ class _FrameTrendView extends StatefulWidget {
   final double qpAxisZoom;
   final bool ptsOrder;
   final ValueChanged<double> onZoom;
-  final void Function(_FrameTrendAxis axis, double scrollDelta) onAxisZoom;
+  final void Function(AnalysisFrameTrendAxis axis, double scrollDelta)
+  onAxisZoom;
   final ValueChanged<double> onPan;
   final ValueChanged<int?> onFrameSelected;
   final AppLocalizations l;
-  const _FrameTrendView({
+  const AnalysisFrameTrendView({
+    super.key,
     required this.frames,
     required this.currentIdx,
     required this.selectedFrameIdx,
@@ -777,10 +786,10 @@ class _FrameTrendView extends StatefulWidget {
   });
 
   @override
-  State<_FrameTrendView> createState() => _FrameTrendViewState();
+  State<AnalysisFrameTrendView> createState() => _AnalysisFrameTrendViewState();
 }
 
-class _FrameTrendViewState extends State<_FrameTrendView> {
+class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
   double? _hoverX; // null = not hovering
 
   @override
@@ -813,12 +822,15 @@ class _FrameTrendViewState extends State<_FrameTrendView> {
                     if (local.dx < _frameTrendLabelW) {
                       if (local.dy <= upperH) {
                         w.onAxisZoom(
-                          _FrameTrendAxis.frameSize,
+                          AnalysisFrameTrendAxis.frameSize,
                           signal.scrollDelta.dy,
                         );
                       } else if (local.dy >= lowerTop &&
                           local.dy <= lowerTop + lowerH) {
-                        w.onAxisZoom(_FrameTrendAxis.qp, signal.scrollDelta.dy);
+                        w.onAxisZoom(
+                          AnalysisFrameTrendAxis.qp,
+                          signal.scrollDelta.dy,
+                        );
                       }
                     } else {
                       w.onZoom(signal.scrollDelta.dy);

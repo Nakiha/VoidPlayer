@@ -1,10 +1,15 @@
-part of 'analysis_window.dart';
+import 'package:flutter/material.dart';
+
+import '../../analysis/analysis_ffi.dart';
+import '../../analysis/nalu_types.dart';
+import '../../l10n/app_localizations.dart';
+import 'analysis_frame_utils.dart';
 
 // ===========================================================================
 // NALU Browser — search bar + scrollable list
 // ===========================================================================
 
-class _NaluBrowserView extends StatefulWidget {
+class AnalysisNaluBrowserView extends StatefulWidget {
   final List<NaluInfo> nalus;
   final AnalysisCodec codec;
   final int? selectedIdx;
@@ -12,7 +17,8 @@ class _NaluBrowserView extends StatefulWidget {
   final String filter;
   final ValueChanged<String> onFilterChanged;
 
-  const _NaluBrowserView({
+  const AnalysisNaluBrowserView({
+    super.key,
     required this.nalus,
     required this.codec,
     required this.selectedIdx,
@@ -22,10 +28,11 @@ class _NaluBrowserView extends StatefulWidget {
   });
 
   @override
-  State<_NaluBrowserView> createState() => _NaluBrowserViewState();
+  State<AnalysisNaluBrowserView> createState() =>
+      _AnalysisNaluBrowserViewState();
 }
 
-class _NaluBrowserViewState extends State<_NaluBrowserView> {
+class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
   static const _itemExtent = 28.0;
   final _scrollController = ScrollController();
 
@@ -36,7 +43,7 @@ class _NaluBrowserViewState extends State<_NaluBrowserView> {
   }
 
   @override
-  void didUpdateWidget(covariant _NaluBrowserView oldWidget) {
+  void didUpdateWidget(covariant AnalysisNaluBrowserView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.selectedIdx != oldWidget.selectedIdx ||
         widget.filter != oldWidget.filter ||
@@ -243,14 +250,15 @@ class _NaluBrowserViewState extends State<_NaluBrowserView> {
 // NALU Detail
 // ===========================================================================
 
-class _NaluDetailView extends StatelessWidget {
+class AnalysisNaluDetailView extends StatelessWidget {
   final NaluInfo? nalu;
   final int? frameIdx;
   final List<FrameInfo> frames;
   final AnalysisCodec codec;
   final AppLocalizations l;
 
-  const _NaluDetailView({
+  const AnalysisNaluDetailView({
+    super.key,
     required this.nalu,
     this.frameIdx,
     required this.frames,
@@ -287,7 +295,7 @@ class _NaluDetailView extends StatelessWidget {
     final frameItems = <_DetailRow>[];
     if (frameIdx != null && frameIdx! >= 0 && frameIdx! < frames.length) {
       final f = frames[frameIdx!];
-      final sliceName = _frameSliceName(f);
+      final sliceName = analysisFrameSliceName(f);
       final nalName = bitstreamUnitTypeName(codec, f.nalType);
 
       frameItems.addAll([

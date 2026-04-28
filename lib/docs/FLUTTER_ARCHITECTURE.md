@@ -45,6 +45,8 @@ lib/
 │   │   ├── analysis_window_nalu.dart
 │   │   ├── analysis_window_controls.dart
 │   │   ├── analysis_window_test_runner.dart
+│   │   ├── analysis_test_host.dart
+│   │   ├── analysis_split_layout_controller.dart
 │   │   └── analysis_ipc.dart
 │   ├── app_bootstrap.dart         # 多窗口启动参数分发
 │   └── window_manager.dart        # desktop_multi_window / Win32 窗口协调
@@ -139,4 +141,4 @@ View 层只做布局和控件组合。
 
 ## Analysis UI
 
-Analysis 窗口代码集中在 `lib/windows/analysis/`。`analysis_window.dart` 只保留 app entry 和主题壳；页面状态、workspace、chart painter、NALU browser/detail、测试脚本 runner 分文件维护。修改 analysis UI 时优先参考 [ANALYSIS_WINDOW_ARCHITECTURE.md](ANALYSIS_WINDOW_ARCHITECTURE.md)，并从 `ui_tests/analysis/` 选择主窗口 spawn 或子窗体脚本做闭环验证。
+Analysis 窗口代码集中在 `lib/windows/analysis/`。`analysis_window.dart` 只保留 app entry 和主题壳；页面状态、workspace、chart painter、NALU browser/detail、测试脚本 runner 分文件维护，并使用普通 `import` 连接，禁止重新引入 `part` / `part of`。修改 analysis UI 时优先参考 [ANALYSIS_WINDOW_ARCHITECTURE.md](ANALYSIS_WINDOW_ARCHITECTURE.md)，并从 `ui_tests/analysis/` 选择主窗口 spawn 或子窗体脚本做闭环验证。

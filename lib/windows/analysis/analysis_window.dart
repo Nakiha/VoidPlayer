@@ -1,30 +1,12 @@
-import 'dart:async';
-import 'dart:io';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import '../../app_log.dart';
-import '../../analysis/analysis_cache.dart';
-import '../../analysis/analysis_ffi.dart';
-import '../../analysis/nalu_types.dart';
 import '../../l10n/app_localizations.dart';
-import '../../widgets/segmented_widget.dart';
 import 'analysis_ipc.dart';
-
-part 'analysis_window_workspace.dart';
-part 'analysis_window_controls.dart';
-part 'analysis_window_charts.dart';
-part 'analysis_window_nalu.dart';
-part 'analysis_window_test_runner.dart';
-part 'analysis_window_page.dart';
+import 'analysis_window_page.dart';
+import 'analysis_window_workspace.dart';
 
 // ===========================================================================
 // Analysis Window — secondary Flutter window for bitstream visualization
 // ===========================================================================
-
-const double _analysisHeaderHeight = 40;
-const double _analysisHeaderControlHeight = 32;
-const double _analysisHeaderGap = 4;
-const EdgeInsets _analysisHeaderPadding = EdgeInsets.all(4);
 
 ThemeData _analysisTheme(Color accentColor) {
   return ThemeData(
@@ -94,10 +76,10 @@ class AnalysisWorkspaceApp extends StatelessWidget {
       builder: _silenceAnalysisSemantics,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: _AnalysisWorkspacePage(
+      home: AnalysisWorkspacePage(
         entries: [
           for (var i = 0; i < hashes.length; i++)
-            _AnalysisWorkspaceEntry(
+            AnalysisWorkspaceEntry(
               hash: hashes[i],
               fileName: i < fileNames.length ? fileNames[i] : null,
             ),

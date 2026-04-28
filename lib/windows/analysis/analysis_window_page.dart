@@ -1,4 +1,18 @@
-part of 'analysis_window.dart';
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../../analysis/analysis_cache.dart';
+import '../../analysis/analysis_ffi.dart';
+import '../../analysis/nalu_types.dart';
+import '../../l10n/app_localizations.dart';
+import 'analysis_split_layout_controller.dart';
+import 'analysis_test_host.dart';
+import 'analysis_window_charts.dart';
+import 'analysis_window_controls.dart';
+import 'analysis_window_nalu.dart';
+import 'analysis_window_style.dart';
+import 'analysis_window_test_runner.dart';
 
 class AnalysisPage extends StatefulWidget {
   final String hash;
@@ -15,10 +29,11 @@ class AnalysisPage extends StatefulWidget {
   });
 
   @override
-  State<AnalysisPage> createState() => _AnalysisPageState();
+  State<AnalysisPage> createState() => AnalysisPageState();
 }
 
-class _AnalysisPageState extends State<AnalysisPage> {
+class AnalysisPageState extends State<AnalysisPage>
+    implements AnalysisTestHost {
   int _selectedTab = 0; // 0=ref pyramid, 1=frame trend
   bool _ptsOrder = true;
   int? _selectedNaluIdx;
@@ -54,13 +69,13 @@ class _AnalysisPageState extends State<AnalysisPage> {
     });
   }
 
-  void _frameTrendAxisZoom(_FrameTrendAxis axis, double scrollDelta) {
+  void _frameTrendAxisZoom(AnalysisFrameTrendAxis axis, double scrollDelta) {
     setState(() {
       final factor = scrollDelta > 0 ? 0.85 : 1.18;
       switch (axis) {
-        case _FrameTrendAxis.frameSize:
+        case AnalysisFrameTrendAxis.frameSize:
           _frameSizeAxisZoom = (_frameSizeAxisZoom * factor).clamp(0.25, 12.0);
-        case _FrameTrendAxis.qp:
+        case AnalysisFrameTrendAxis.qp:
           _qpAxisZoom = (_qpAxisZoom * factor).clamp(0.5, 8.0);
       }
     });
@@ -103,7 +118,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
       final scriptPath = widget.testScriptPath;
       if (scriptPath != null && !_testStarted) {
         _testStarted = true;
-        unawaited(_runAnalysisTestScript(scriptPath));
+        unawaited(runAnalysisTestScript(scriptPath));
       }
     });
   }
@@ -128,7 +143,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
     if (mounted) setState(() {});
   }
 
-  void _updateAnalysisTestState(VoidCallback update) {
+  @override
+  void updateAnalysisTestState(VoidCallback update) {
     if (mounted) {
       setState(update);
     } else {
@@ -202,6 +218,60 @@ class _AnalysisPageState extends State<AnalysisPage> {
   }
 
   List<FrameInfo> get _sortedFrames => _sortedFramesCache;
+
+  @override
+  List<FrameInfo> get analysisFrames => _frames;
+
+  @override
+  List<NaluInfo> get analysisNalus => _nalus;
+
+  @override
+  NakiAnalysisSummary? get analysisSummary => _summary;
+
+  @override
+  AnalysisCodec get analysisCodec => _codec;
+
+  @override
+  int? get selectedAnalysisFrameIdx => _selectedFrameIdx;
+
+  @override
+  int? get selectedAnalysisNaluIdx => _selectedNaluIdx;
+
+  @override
+  double get analysisChartOffset => _chartOffset;
+
+  @override
+  double get analysisVisibleFrameCount => _visibleFrameCount;
+
+  @override
+  int get analysisSelectedTab => _selectedTab;
+
+  @override
+  bool get analysisPtsOrder => _ptsOrder;
+
+  @override
+  void readAnalysisDataForTest() => _readData();
+
+  @override
+  bool get isAnalysisLoaded =>
+      (_summary?.loaded ?? 0) != 0 && (_frames.isNotEmpty || _nalus.isNotEmpty);
+
+  @override
+  void setAnalysisTabForTest(int tab) {
+    _selectedTab = tab;
+  }
+
+  @override
+  void setAnalysisOrderForTest(bool ptsOrder) {
+    _ptsOrder = ptsOrder;
+    _rebuildSortedFramesCache();
+  }
+
+  @override
+  void selectAnalysisNaluForTest(int naluIdx) {
+    _selectNalu(naluIdx);
+  }
+
   int? get _selectedSortedFrameIdx => _selectedFrameIdx == null
       ? null
       : _sortedPositionForFrameIdx(_selectedFrameIdx!);
@@ -229,6 +299,10 @@ class _AnalysisPageState extends State<AnalysisPage> {
     }
     _clampChartOffset();
   }
+
+  @override
+  int? sortedPositionForFrameIdx(int frameIdx) =>
+      _sortedPositionForFrameIdx(frameIdx);
 
   int? _sortedPositionForFrameIdx(int frameIdx) {
     if (frameIdx < 0 || frameIdx >= _frameToSortedPosition.length) return null;
@@ -279,7 +353,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
     final theme = Theme.of(context);
     final l = AppLocalizations.of(context)!;
     final topChart = _selectedTab == 0
-        ? _ReferencePyramidView(
+        ? AnalysisReferencePyramidView(
             frames: _sortedFrames,
             currentIdx: _currentSortedFrameIdx,
             selectedFrameIdx: _selectedSortedFrameIdx,
@@ -292,7 +366,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
             onPan: _chartPan,
             l: l,
           )
-        : _FrameTrendView(
+        : AnalysisFrameTrendView(
             frames: _sortedFrames,
             currentIdx: _currentSortedFrameIdx,
             selectedFrameIdx: _selectedSortedFrameIdx,
@@ -323,7 +397,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
               children: [
                 SizedBox(
                   width: browserW,
-                  child: _NaluBrowserView(
+                  child: AnalysisNaluBrowserView(
                     nalus: _nalus,
                     codec: _codec,
                     selectedIdx: _selectedNaluIdx,
@@ -334,7 +408,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                 ),
                 Container(width: 1, color: theme.colorScheme.outlineVariant),
                 Expanded(
-                  child: _NaluDetailView(
+                  child: AnalysisNaluDetailView(
                     nalu:
                         _selectedNaluIdx != null &&
                             _selectedNaluIdx! < _nalus.length
@@ -353,7 +427,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
               top: 0,
               bottom: 0,
               width: 9,
-              child: _ResizableVDivider(
+              child: AnalysisResizableVDivider(
                 position: browserW,
                 onPositionChanged: (v) {
                   final clamped = v.clamp(120.0, maxBrowserW);
@@ -376,8 +450,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
         children: [
           // Top bar: order toggle + tab bar
           Container(
-            height: _analysisHeaderHeight,
-            padding: _analysisHeaderPadding,
+            height: analysisHeaderHeight,
+            padding: analysisHeaderPadding,
             decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: theme.dividerColor)),
             ),
@@ -385,8 +459,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
               children: [
                 // Order toggle
                 SizedBox(
-                  height: _analysisHeaderControlHeight,
-                  child: _OrderToggle(
+                  height: analysisHeaderControlHeight,
+                  child: AnalysisOrderToggle(
                     ptsOrder: _ptsOrder,
                     onChanged: (v) => setState(() {
                       _ptsOrder = v;
@@ -399,8 +473,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
                 const Spacer(),
                 // Tab bar
                 SizedBox(
-                  height: _analysisHeaderControlHeight,
-                  child: _TabBar(
+                  height: analysisHeaderControlHeight,
+                  child: AnalysisViewTabBar(
                     selectedTab: _selectedTab,
                     onTabChanged: (i) => setState(() => _selectedTab = i),
                     l: l,
@@ -455,7 +529,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                       right: 0,
                       top: dividerTop,
                       height: dividerHitH,
-                      child: _ResizableHDivider(
+                      child: AnalysisResizableHDivider(
                         position: topH,
                         minPosition: minTop,
                         maxPosition: maxTop,

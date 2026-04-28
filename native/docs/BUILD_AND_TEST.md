@@ -7,6 +7,7 @@
 ```bash
 python dev.py build --native
 python dev.py test
+python dev.py test --native-only
 python dev.py ui-test ui_tests/smoke_basic.csv
 ```
 
@@ -59,7 +60,13 @@ python native/build.py
 
 ## `python dev.py test` 实际覆盖
 
-`dev.py test` 会先构建 native Release，再执行 `native/build.py --test-only`。当前包含 CTest 的 3 个测试目标，随后执行 Python analysis 格式回归。
+`dev.py test` 会先执行 Flutter 单元测试，然后构建 native Release，再执行 `native/build.py --test-only`。当前 native 部分包含 CTest 的 3 个测试目标，随后执行 Python analysis 格式回归。
+
+如果只想运行 native 部分，可以使用：
+
+```bash
+python dev.py test --native-only
+```
 
 | CTest | 覆盖 |
 |------|------|

@@ -7,14 +7,22 @@
 纯 Dart / Flutter 单元测试：
 
 ```bash
-flutter test
+python dev.py test --flutter-only
 ```
 
-或只跑某个目录：
+这会执行：
 
 ```bash
 flutter test test/unit
 ```
+
+完整测试入口：
+
+```bash
+python dev.py test
+```
+
+`dev.py test` 默认先跑 Flutter 单元测试，再构建并执行 native standalone tests。
 
 推荐统一使用 `dev.py`：
 
@@ -164,6 +172,7 @@ Flutter UI / Action / 窗口交互改动提交前：
 
 ```bash
 flutter analyze
+python dev.py test --flutter-only
 python dev.py ui-test ui_tests/smoke_basic.csv
 ```
 

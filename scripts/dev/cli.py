@@ -30,6 +30,8 @@ Examples:
   python dev.py launch --build
   python dev.py demo
   python dev.py test
+  python dev.py test --flutter-only
+  python dev.py test --native-only
   python dev.py package
   python dev.py package --installer
   python dev.py ui-test ui_tests/smoke_basic.csv
@@ -67,8 +69,15 @@ Examples:
     p_demo.add_argument("videos", nargs="*", default=[],
                         help="Video file paths (optional, supports multiple)")
 
-    p_test = sub.add_parser("test", help="Build and run native standalone tests")
+    p_test = sub.add_parser(
+        "test",
+        help="Run Flutter unit tests and native standalone tests",
+    )
     p_test.add_argument("--debug", action="store_true", help="Debug build")
+    p_test.add_argument("--flutter-only", action="store_true",
+                        help="Run only Flutter unit tests")
+    p_test.add_argument("--native-only", action="store_true",
+                        help="Run only native standalone tests")
 
     p_package = sub.add_parser("package", help="Build and stage clean Windows installer input")
     p_package.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)

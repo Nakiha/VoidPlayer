@@ -22,6 +22,12 @@ def flutter_build(debug: bool) -> None:
     run(cmd, cwd=str(ROOT))
 
 
+def flutter_unit_test() -> None:
+    """Run Flutter/Dart unit tests that do not launch the Windows app."""
+    header("Test Flutter unit")
+    run(["flutter", "test", "test/unit"], cwd=str(ROOT))
+
+
 def cmd_build(args) -> None:
     """Build native standalone module and/or Flutter app."""
     if args.native and args.flutter:
@@ -103,8 +109,16 @@ def cmd_demo(args) -> None:
 
 
 def cmd_test(args) -> None:
-    """Build and run native standalone tests."""
-    native_build(args.debug, test=True)
+    """Run Flutter unit tests and native standalone tests."""
+    if args.flutter_only and args.native_only:
+        print("ERROR: --flutter-only and --native-only are mutually exclusive")
+        sys.exit(1)
+
+    if not args.native_only:
+        flutter_unit_test()
+
+    if not args.flutter_only:
+        native_build(args.debug, test=True)
 
 
 def cmd_ui_test(args) -> None:

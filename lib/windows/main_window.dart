@@ -45,11 +45,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _stateStore = main_state.MainWindowStateStore(
-      notifyListeners: () {
-        if (mounted) setState(() {});
-      },
-    );
+    _stateStore = main_state.MainWindowStateStore();
     _layoutCoordinator = MainWindowLayoutCoordinator(
       vsync: this,
       controller: _controller,
@@ -202,6 +198,13 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: _stateStore,
+      builder: (context, _) => _buildView(context),
+    );
+  }
+
+  Widget _buildView(BuildContext context) {
     return MainWindowView(
       dragging: _dragging,
       onFilesDropped: (paths) {

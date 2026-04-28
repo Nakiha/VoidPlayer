@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../video_renderer_controller.dart';
 
 const Object _mainWindowStateUnset = Object();
@@ -99,18 +101,16 @@ class MainWindowStateModel {
   }
 }
 
-class MainWindowStateStore {
-  final void Function() notifyListeners;
-
+class MainWindowStateStore extends ChangeNotifier {
   MainWindowStateModel _value = const MainWindowStateModel();
   bool _disposed = false;
 
-  MainWindowStateStore({required this.notifyListeners});
-
   MainWindowStateModel get value => _value;
 
+  @override
   void dispose() {
     _disposed = true;
+    super.dispose();
   }
 
   void _set(MainWindowStateModel next) {

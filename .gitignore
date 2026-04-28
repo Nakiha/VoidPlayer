@@ -64,4 +64,7 @@ lib/l10n/app_localizations*.dart
 *.vbs2
 *.vbi
 *.vbt
-resources/video/*.vvc
+*.vvc
+
+# resources/ contains checked-in test fixtures only. Generated analysis assets
+# should be written under build/ (for example build/vtm_analysis/), not resources/.

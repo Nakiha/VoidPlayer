@@ -91,7 +91,7 @@ VBS2 生成由 VTM DecoderApp 外部进程完成（可选），通过 `analysis_
 Python 格式回归测试位于 `native/analysis/tests/python/`，用于生成并校验 VBS2/VBI/VBT 文件结构：
 
 - `analysis_generate.exe` 生成 VBI/VBT
-- `python dev.py vtm analyze` 生成 VBS2/VVC
+- `python dev.py vtm analyze` 生成 VBS2/VVC。`resources/` 是只读 fixture 区；直接分析 `resources/video/...` 时，生成物写入 `build/vtm_analysis/<视频名>/`。
 - pytest 解析文件并校验 header、索引、NALU、帧统计等格式约束
 
 运行：`python dev.py test`

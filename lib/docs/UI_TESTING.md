@@ -161,6 +161,7 @@ analysis_ipc_track_updates.csv
 脚本内容建议：
 
 - 固定媒体路径，优先使用 `resources/video/...`
+- `resources/` 是只读 fixture 区，测试和工具不得把生成物写回这里
 - 先 `ADD_MEDIA`，避免 `OPEN_FILE` 弹系统对话框
 - 对视觉结果优先使用 capture/hash/assert
 - 对交互副作用优先使用显式 Assert，而不是只等待

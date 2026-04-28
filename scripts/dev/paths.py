@@ -12,6 +12,7 @@ DEMO_SCRIPT = NATIVE_DIR / "video_renderer" / "demo" / "demo_video_renderer.py"
 
 VTM_DIR = ROOT / "native" / "analysis" / "vendor" / "vtm"
 VTM_BUILD_DIR = VTM_DIR / "build"
+VTM_ANALYSIS_DIR = ROOT / "build" / "vtm_analysis"
 
 
 def find_vtm_decoder() -> Path:

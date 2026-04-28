@@ -112,7 +112,7 @@ Examples:
 
     p_vtm = sub.add_parser("vtm", help="VTM DecoderApp: build & H.266 analysis")
     p_vtm.add_argument("vtm_action", choices=["build", "analyze"],
-                       help="'build' to compile DecoderApp, 'analyze' to generate .vbs2 stats")
+                       help="'build' to compile DecoderApp, 'analyze' to generate .vbs2/.vvc stats")
     p_vtm.add_argument("video", nargs="?", default=None,
                        help="Video file path (required for 'analyze')")
 

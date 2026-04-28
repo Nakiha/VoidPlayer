@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .paths import ROOT, VTM_BUILD_DIR, VTM_DECODER, VTM_DIR
+from .paths import ROOT, VTM_ANALYSIS_DIR, VTM_BUILD_DIR, VTM_DECODER, VTM_DIR
 from .process import header, run
 
 
@@ -30,9 +30,33 @@ def ensure_submodule() -> None:
         print(f"WARNING: VTM submodule on branch '{branch}', expected 'voidplayer-patches'")
 
 
-def extract_raw_vvc(video_path: Path) -> Path:
+def is_relative_to(path: Path, parent: Path) -> bool:
+    """Return whether path is inside parent, compatible with older Python."""
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def analysis_output_dir(video_path: Path) -> Path:
+    """Choose where generated VTM artifacts should be written.
+
+    Repository fixtures under resources/ are read-only by convention. When a
+    fixture is analyzed directly, keep generated VVC/VBS2 artifacts under
+    build/. If the caller already copied the video to a temp directory, write
+    alongside that temp input so the caller can clean the whole directory.
+    """
+    resources_dir = ROOT / "resources"
+    if is_relative_to(video_path, resources_dir):
+        return VTM_ANALYSIS_DIR / video_path.stem
+    return video_path.parent
+
+
+def extract_raw_vvc(video_path: Path, output_dir: Path) -> Path:
     """Extract raw VVC bitstream from container (mp4/mkv/etc)."""
-    raw_path = video_path.with_suffix(".vvc")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    raw_path = output_dir / f"{video_path.stem}.vvc"
     if raw_path.exists():
         print(f"  Reusing existing raw bitstream: {raw_path}")
         return raw_path
@@ -106,10 +130,13 @@ def cmd_vtm_analyze(args) -> None:
         print(f"ERROR: video not found: {video_path}")
         sys.exit(1)
 
-    vbs2_path = video_path.with_suffix(".vbs2")
-    raw_path = extract_raw_vvc(video_path)
+    output_dir = analysis_output_dir(video_path)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    vbs2_path = output_dir / f"{video_path.stem}.vbs2"
+    raw_path = extract_raw_vvc(video_path, output_dir)
 
     header(f"Generate VBS2 stats for {video_path.name}")
+    print(f"  Artifact dir: {output_dir}")
     print(f"  Output: {vbs2_path}")
 
     env = os.environ.copy()

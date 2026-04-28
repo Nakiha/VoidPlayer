@@ -75,6 +75,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   bool _loopRangeEnabled = false;
   bool _nativeLoopRangeSynced = false;
   bool _startupLoopRangeApplied = false;
+  int _loopRangeSyncSerial = 0;
   int _loopStartUs = 0;
   int _loopEndUs = 0;
 
@@ -122,7 +123,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     _layoutTicker?.dispose();
     unawaited(_analysisIpcServer.dispose());
     _trackManager.dispose();
-    _controller.dispose();
+    unawaited(_controller.dispose());
     super.dispose();
   }
 
@@ -164,6 +165,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       _syncOffsets = {};
       _loopRangeEnabled = false;
       _nativeLoopRangeSynced = false;
+      _loopRangeSyncSerial++;
       _loopStartUs = 0;
       _loopEndUs = 0;
     });

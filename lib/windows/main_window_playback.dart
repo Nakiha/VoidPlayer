@@ -11,7 +11,8 @@ extension _MainWindowPlayback on _MainWindowState {
 
   Future<void> _play() async {
     if (_loopRangeEnabled && !_currentPtsInsideLoopRange) {
-      _seekTo(_resolvedLoopStartUs);
+      await _seekToAsync(_resolvedLoopStartUs);
+      if (!mounted) return;
     }
     await _controller.play();
     if (!mounted) return;
@@ -28,13 +29,18 @@ extension _MainWindowPlayback on _MainWindowState {
 
   void _setSpeed(double speed) {
     _playbackSpeed = speed > 0 ? speed : 1.0;
-    _controller.setSpeed(speed);
+    unawaited(_controller.setSpeed(speed));
     _scheduleLoopBoundaryTimer();
   }
 
   void _seekTo(int ptsUs) {
+    unawaited(_seekToAsync(ptsUs).catchError((_) {}));
+  }
+
+  Future<void> _seekToAsync(int ptsUs) async {
     _setSeekPreview(ptsUs);
-    _controller.seek(ptsUs);
+    await _controller.seek(ptsUs);
+    if (!mounted) return;
     _scheduleLoopBoundaryTimer(fromPtsUs: ptsUs);
   }
 
@@ -372,12 +378,13 @@ extension _MainWindowPlayback on _MainWindowState {
     final enabled = _loopRangeEnabled;
     final startUs = _resolvedLoopStartUs;
     final endUs = _resolvedLoopEndUs;
+    final serial = ++_loopRangeSyncSerial;
     _nativeLoopRangeSynced = false;
     unawaited(
       _controller
           .setLoopRange(enabled: enabled, startUs: startUs, endUs: endUs)
           .then((_) {
-            if (!mounted) return;
+            if (!mounted || serial != _loopRangeSyncSerial) return;
             _nativeLoopRangeSynced = enabled;
             if (_nativeLoopRangeSynced) {
               _cancelLoopBoundaryTimer();
@@ -386,7 +393,7 @@ extension _MainWindowPlayback on _MainWindowState {
             }
           })
           .catchError((_) {
-            if (!mounted) return;
+            if (!mounted || serial != _loopRangeSyncSerial) return;
             _nativeLoopRangeSynced = false;
             _scheduleLoopBoundaryTimer();
           }),

@@ -131,51 +131,107 @@ class VideoRendererController {
   static const MethodChannel _channel = MethodChannel('video_renderer');
 
   int? _textureId;
+  bool _disposed = false;
+
   int? get textureId => _textureId;
+
+  void _ensureAlive() {
+    if (_disposed) {
+      throw StateError('VideoRendererController is disposed');
+    }
+  }
+
+  Map<dynamic, dynamic> _requireMap(Map<dynamic, dynamic>? map, String method) {
+    if (map == null) {
+      throw StateError('$method returned invalid payload: null');
+    }
+    return map;
+  }
+
+  TrackInfo _trackInfoFromValue(Object? value, String context) {
+    if (value is! Map) {
+      throw StateError('$context returned invalid track payload: $value');
+    }
+    return TrackInfo.fromMap(Map<dynamic, dynamic>.from(value));
+  }
 
   Future<CreateRendererResult> createRenderer(
     List<String> videoPaths, {
     int width = 1920,
     int height = 1080,
   }) async {
+    _ensureAlive();
     final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
       'createRenderer',
       {'videoPaths': videoPaths, 'width': width, 'height': height},
     );
-    _textureId = map?['textureId'] as int?;
-    final tracksList = map?['tracks'] as List<dynamic>? ?? [];
+    _ensureAlive();
+    final payload = _requireMap(map, 'createRenderer');
+    final textureId = payload['textureId'];
+    if (textureId is! int) {
+      throw StateError(
+        'createRenderer returned invalid textureId: ${payload['textureId']}',
+      );
+    }
+    final tracksValue = payload['tracks'];
+    if (tracksValue != null && tracksValue is! List) {
+      throw StateError(
+        'createRenderer returned invalid tracks payload: $tracksValue',
+      );
+    }
+    final tracksList = tracksValue as List<dynamic>? ?? [];
+    _textureId = textureId;
     return CreateRendererResult(
-      textureId: _textureId!,
+      textureId: textureId,
       tracks: tracksList
-          .map((e) => TrackInfo.fromMap(e as Map<dynamic, dynamic>))
+          .map((e) => _trackInfoFromValue(e, 'createRenderer'))
           .toList(),
     );
   }
 
-  Future<void> play() => _channel.invokeMethod<void>('play');
+  Future<void> play() {
+    _ensureAlive();
+    return _channel.invokeMethod<void>('play');
+  }
 
-  Future<void> pause() => _channel.invokeMethod<void>('pause');
+  Future<void> pause() {
+    _ensureAlive();
+    return _channel.invokeMethod<void>('pause');
+  }
 
-  Future<void> seek(int ptsUs) =>
-      _channel.invokeMethod<void>('seek', {'ptsUs': ptsUs});
+  Future<void> seek(int ptsUs) {
+    _ensureAlive();
+    return _channel.invokeMethod<void>('seek', {'ptsUs': ptsUs});
+  }
 
-  Future<void> setSpeed(double speed) =>
-      _channel.invokeMethod<void>('setSpeed', {'speed': speed});
+  Future<void> setSpeed(double speed) {
+    _ensureAlive();
+    return _channel.invokeMethod<void>('setSpeed', {'speed': speed});
+  }
 
   Future<void> setLoopRange({
     required bool enabled,
     required int startUs,
     required int endUs,
-  }) => _channel.invokeMethod<void>('setLoopRange', {
-    'enabled': enabled,
-    'startUs': startUs,
-    'endUs': endUs,
-  });
+  }) {
+    _ensureAlive();
+    return _channel.invokeMethod<void>('setLoopRange', {
+      'enabled': enabled,
+      'startUs': startUs,
+      'endUs': endUs,
+    });
+  }
 
-  Future<void> resize(int width, int height) =>
-      _channel.invokeMethod<void>('resize', {'width': width, 'height': height});
+  Future<void> resize(int width, int height) {
+    _ensureAlive();
+    return _channel.invokeMethod<void>('resize', {
+      'width': width,
+      'height': height,
+    });
+  }
 
   Future<ViewportCapture> captureViewport({String? outputPath}) async {
+    _ensureAlive();
     final args = <String, dynamic>{};
     if (outputPath != null) {
       args['outputPath'] = outputPath;
@@ -184,65 +240,81 @@ class VideoRendererController {
       'captureViewport',
       args,
     );
-    return ViewportCapture.fromMap(map!);
+    return ViewportCapture.fromMap(_requireMap(map, 'captureViewport'));
   }
 
-  Future<void> stepForward() => _channel.invokeMethod<void>('stepForward');
+  Future<void> stepForward() {
+    _ensureAlive();
+    return _channel.invokeMethod<void>('stepForward');
+  }
 
-  Future<void> stepBackward() => _channel.invokeMethod<void>('stepBackward');
+  Future<void> stepBackward() {
+    _ensureAlive();
+    return _channel.invokeMethod<void>('stepBackward');
+  }
 
   Future<int> currentPts() async {
+    _ensureAlive();
     return await _channel.invokeMethod<int>('currentPts') ?? 0;
   }
 
   Future<int> duration() async {
+    _ensureAlive();
     return await _channel.invokeMethod<int>('duration') ?? 0;
   }
 
   Future<bool> isPlaying() async {
+    _ensureAlive();
     return await _channel.invokeMethod<bool>('isPlaying') ?? false;
   }
 
   /// Atomically apply layout state and trigger redraw if paused.
-  Future<void> applyLayout(LayoutState state) =>
-      _channel.invokeMethod<void>('applyLayout', state.toMap());
+  Future<void> applyLayout(LayoutState state) {
+    _ensureAlive();
+    return _channel.invokeMethod<void>('applyLayout', state.toMap());
+  }
 
   /// Get a snapshot of the current layout state.
   Future<LayoutState> getLayout() async {
+    _ensureAlive();
     final map = await _channel.invokeMethod<Map<dynamic, dynamic>>('getLayout');
     return LayoutState.fromMap(map ?? {});
   }
 
   /// Add a video track at the first empty slot.
   Future<TrackInfo> addTrack(String videoPath) async {
+    _ensureAlive();
     final map = await _channel.invokeMethod<Map<dynamic, dynamic>>('addTrack', {
       'path': videoPath,
     });
-    return TrackInfo.fromMap(map!);
+    return _trackInfoFromValue(_requireMap(map, 'addTrack'), 'addTrack');
   }
 
   /// Remove a track by file_id.
-  Future<void> removeTrack(int fileId) =>
-      _channel.invokeMethod<void>('removeTrack', {'fileId': fileId});
+  Future<void> removeTrack(int fileId) {
+    _ensureAlive();
+    return _channel.invokeMethod<void>('removeTrack', {'fileId': fileId});
+  }
 
   /// Set per-track sync offset in microseconds.
-  Future<void> setTrackOffset({required int fileId, required int offsetUs}) =>
-      _channel.invokeMethod<void>('setTrackOffset', {
-        'fileId': fileId,
-        'offsetUs': offsetUs,
-      });
+  Future<void> setTrackOffset({required int fileId, required int offsetUs}) {
+    _ensureAlive();
+    return _channel.invokeMethod<void>('setTrackOffset', {
+      'fileId': fileId,
+      'offsetUs': offsetUs,
+    });
+  }
 
   /// Get current track info list.
   Future<List<TrackInfo>> getTracks() async {
+    _ensureAlive();
     final list = await _channel.invokeMethod<List<dynamic>>('getTracks');
-    return list
-            ?.map((e) => TrackInfo.fromMap(e as Map<dynamic, dynamic>))
-            .toList() ??
-        [];
+    return list?.map((e) => _trackInfoFromValue(e, 'getTracks')).toList() ?? [];
   }
 
   /// Get diagnostics data (placeholder, requires native counters).
   Future<Map<String, dynamic>> getDiagnostics() async {
+    _ensureAlive();
     final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
       'getDiagnostics',
     );
@@ -250,9 +322,12 @@ class VideoRendererController {
   }
 
   Future<void> dispose() async {
-    if (_textureId != null) {
+    if (_disposed) return;
+    _disposed = true;
+    final textureId = _textureId;
+    _textureId = null;
+    if (textureId != null) {
       await _channel.invokeMethod<void>('destroyRenderer');
-      _textureId = null;
     }
   }
 }

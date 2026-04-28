@@ -5,7 +5,7 @@
 ### 新增 Action
 
 1. 在 `lib/actions/player_action.dart` 中添加新的 sealed subclass
-2. 在 `lib/windows/main_window_actions.dart` 中通过 `MainWindowActionBinder` 绑定 callback
+2. 在 `lib/windows/main/main_window_actions.dart` 中通过 `MainWindowActionBinder` 绑定 callback
 3. 如需快捷键，在构造函数中传入 `LogicalKeyboardKey`，并完成下面的「新增快捷键」步骤
 4. 如需自动化脚本触发，在 `lib/actions/test_runner.dart` 中补指令解析
 5. 更新本文档的 Action 清单
@@ -69,7 +69,7 @@
 - 注释：`#` 开头的行
 - 空行：忽略
 - 测试退出码：`QUIT` 指令的参数，0 表示通过
-- 推荐入口：`python dev.py ui-test ui_tests/smoke_basic.csv`
+- 推荐入口：`python dev.py ui-test ui_tests/smoke/basic.csv`
 - 自动化脚本优先使用 `ADD_MEDIA`，不要用会弹系统对话框的 `OPEN_FILE`
 - timeline/seek 回归优先使用 `CLICK_TIMELINE_FRACTION` 覆盖真实 slider pointer 路径；`SEEK_TO` 只覆盖直接调用 seek action 的路径。
 
@@ -144,5 +144,5 @@
 | `lib/actions/player_assert.dart` | PlayerAssert sealed class |
 | `lib/actions/action_registry.dart` | ActionRegistry + ActionFocus |
 | `lib/actions/test_runner.dart` | 脚本解析 + TestRunner |
-| `lib/windows/main_window_actions.dart` | 主窗口 Action 绑定表和 bind/unbind 生命周期 |
+| `lib/windows/main/main_window_actions.dart` | 主窗口 Action 绑定表和 bind/unbind 生命周期 |
 | `lib/l10n/action_labels.dart` | `resolveActionLabel()` — labelKey → l10n 映射 |

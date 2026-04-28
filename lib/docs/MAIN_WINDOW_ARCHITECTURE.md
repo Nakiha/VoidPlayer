@@ -32,16 +32,16 @@ MainWindowView
 
 | 文件 | 职责 |
 |------|------|
-| `main_window.dart` | 薄 widget shell，不放业务 |
-| `main_window_controller.dart` | facade，装配和协调各 coordinator |
-| `main_window_state.dart` | `MainWindowStateModel` + `MainWindowStateStore` |
-| `main_window_view.dart` | 纯 view，吃 `MainWindowViewModel` 和 `MainWindowViewActions` |
-| `main_window_actions.dart` | ActionRegistry 绑定/解绑生命周期 |
-| `main_window_playback.dart` | play/pause/seek、polling、loop range、timeline hover |
-| `main_window_layout.dart` | viewport resize debounce、pan/zoom/split、native layout flush |
-| `main_window_media.dart` | open/add/remove media、track offset、effective duration |
-| `main_window_analysis.dart` | analysis IPC snapshot 和 analysis window trigger |
-| `main_window_test_hooks.dart` | UI 自动化专用 pointer simulation |
+| `lib/windows/main/main_window.dart` | 薄 widget shell，不放业务 |
+| `lib/windows/main/main_window_controller.dart` | facade，装配和协调各 coordinator |
+| `lib/windows/main/main_window_state.dart` | `MainWindowStateModel` + `MainWindowStateStore` |
+| `lib/windows/main/main_window_view.dart` | 纯 view，吃 `MainWindowViewModel` 和 `MainWindowViewActions` |
+| `lib/windows/main/main_window_actions.dart` | ActionRegistry 绑定/解绑生命周期 |
+| `lib/windows/main/main_window_playback.dart` | play/pause/seek、polling、loop range、timeline hover |
+| `lib/windows/main/main_window_layout.dart` | viewport resize debounce、pan/zoom/split、native layout flush |
+| `lib/windows/main/main_window_media.dart` | open/add/remove media、track offset、effective duration |
+| `lib/windows/main/main_window_analysis.dart` | analysis IPC snapshot 和 analysis window trigger |
+| `lib/windows/main/main_window_test_hooks.dart` | UI 自动化专用 pointer simulation |
 
 ## 生命周期
 
@@ -224,25 +224,25 @@ Native / User event
 - View 是否只吃 view model/actions？
 - coordinator 是否有 dispose/timer 清理？
 - 是否影响 `VideoRendererController` 调用时序？
-- 是否补了对应 `ui_tests/*.csv` 或说明覆盖缺口？
+- 是否补了对应 `ui_tests/` 功能目录下的 CSV 或说明覆盖缺口？
 
 修改后至少运行：
 
 ```bash
 flutter analyze
-python dev.py ui-test ui_tests/smoke_basic.csv
+python dev.py ui-test ui_tests/smoke/basic.csv
 ```
 
 影响 timeline / seek / loop range：
 
 ```bash
-python dev.py ui-test ui_tests/h265_timeline_click_visual_regression.csv
-python dev.py ui-test ui_tests/h265_loop_range_enable_regression.csv
+python dev.py ui-test ui_tests/timeline/h265_timeline_click_visual_regression.csv
+python dev.py ui-test ui_tests/loop/h265_loop_range_enable_regression.csv
 ```
 
 影响 viewport / layout：
 
 ```bash
-python dev.py ui-test ui_tests/viewport_resize_center_regression.csv
-python dev.py ui-test ui_tests/viewport_pan_layout_regression.csv
+python dev.py ui-test ui_tests/viewport/viewport_resize_center_regression.csv
+python dev.py ui-test ui_tests/viewport/viewport_pan_layout_regression.csv
 ```

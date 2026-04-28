@@ -5,7 +5,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
-import '../app_log.dart';
+import '../../app_log.dart';
 
 class AnalysisIpcTrack {
   final int fileId;

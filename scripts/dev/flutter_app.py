@@ -132,10 +132,11 @@ def cmd_ui_test(args) -> None:
 
 
 def _cmd_ui_test(args) -> None:
-    script_path = Path(args.script).resolve()
-    if not script_path.exists():
-        print(f"ERROR: test script not found: {script_path}")
-        sys.exit(1)
+    script_paths = [Path(script).resolve() for script in args.scripts]
+    for script_path in script_paths:
+        if not script_path.exists():
+            print(f"ERROR: test script not found: {script_path}")
+            sys.exit(1)
 
     exe = app_exe_path(args.debug)
 
@@ -146,16 +147,19 @@ def _cmd_ui_test(args) -> None:
         print(f"ERROR: exe not found: {exe}")
         sys.exit(1)
 
-    cmd = [str(exe), "--test-script", str(script_path)]
-    if not args.visible:
-        cmd.append("--silent-ui-test")
-    if args.log_level:
-        cmd.append(f"--log-level={args.log_level}")
+    total = len(script_paths)
+    for index, script_path in enumerate(script_paths, start=1):
+        cmd = [str(exe), "--test-script", str(script_path)]
+        if not args.visible:
+            cmd.append("--silent-ui-test")
+        if args.log_level:
+            cmd.append(f"--log-level={args.log_level}")
 
-    header(f"UI test {script_path.name}")
-    result = subprocess.call(cmd, cwd=str(ROOT))
-    if result != 0:
-        print(f"\nUI test failed with exit code {result}")
-        sys.exit(result)
+        label = script_path.relative_to(ROOT) if script_path.is_relative_to(ROOT) else script_path
+        header(f"UI test {index}/{total} {label}")
+        result = subprocess.call(cmd, cwd=str(ROOT))
+        if result != 0:
+            print(f"\nUI test failed with exit code {result}: {label}")
+            sys.exit(result)
 
-    print("\nUI test passed.")
+    print(f"\nUI test batch passed ({total} script{'s' if total != 1 else ''}).")

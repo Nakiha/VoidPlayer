@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-import '../video_renderer_controller.dart';
+import '../../video_renderer_controller.dart';
 
 const Object _mainWindowStateUnset = Object();
 

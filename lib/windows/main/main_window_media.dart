@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
-import '../app_log.dart';
-import '../track_manager.dart';
-import '../video_renderer_controller.dart';
+import '../../app_log.dart';
+import '../../track_manager.dart';
+import '../../video_renderer_controller.dart';
 import 'main_window_layout.dart';
-import 'native_file_picker.dart';
+import '../native_file_picker.dart';
 
 class MainWindowMediaCoordinator {
   final VideoRendererController controller;

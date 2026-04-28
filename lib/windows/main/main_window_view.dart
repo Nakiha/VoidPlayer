@@ -1,14 +1,14 @@
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 
-import '../track_manager.dart';
-import '../video_renderer_controller.dart';
-import '../widgets/controls_bar.dart';
-import '../widgets/loop_range_bar.dart';
-import '../widgets/media_header.dart';
-import '../widgets/timeline_area.dart';
-import '../widgets/toolbar.dart';
-import '../widgets/viewport_panel.dart';
+import '../../track_manager.dart';
+import '../../video_renderer_controller.dart';
+import '../../widgets/controls_bar.dart';
+import '../../widgets/loop_range_bar.dart';
+import '../../widgets/media_header.dart';
+import '../../widgets/timeline_area.dart';
+import '../../widgets/toolbar.dart';
+import '../../widgets/viewport_panel.dart';
 
 class MainWindowViewModel {
   final bool dragging;

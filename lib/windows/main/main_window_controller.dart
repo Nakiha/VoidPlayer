@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../actions/test_runner.dart';
-import '../startup_options.dart';
-import '../track_manager.dart';
-import '../video_renderer_controller.dart';
-import '../widgets/loop_range_bar.dart';
+import '../../actions/test_runner.dart';
+import '../../startup_options.dart';
+import '../../track_manager.dart';
+import '../../video_renderer_controller.dart';
+import '../../widgets/loop_range_bar.dart';
 import 'main_window_actions.dart';
 import 'main_window_analysis.dart';
 import 'main_window_layout.dart';
@@ -15,7 +15,7 @@ import 'main_window_playback.dart';
 import 'main_window_state.dart';
 import 'main_window_test_hooks.dart';
 import 'main_window_view.dart';
-import 'window_manager.dart';
+import '../window_manager.dart';
 
 class MainWindowController {
   final TickerProvider vsync;

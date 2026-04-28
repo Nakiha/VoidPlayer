@@ -27,10 +27,14 @@ python dev.py test
 推荐统一使用 `dev.py`：
 
 ```bash
-python dev.py ui-test ui_tests/smoke_basic.csv
+python dev.py ui-test ui_tests/smoke/basic.csv
 ```
 
-`ui-test` 会启动 app，并通过 `--test-script <csv>` 让 `TestRunner` 在主窗口启动后执行脚本。
+`ui-test` 会启动 app，并通过 `--test-script <csv>` 让 `TestRunner` 在主窗口启动后执行脚本。命令可以一次传多个 CSV，`dev.py` 会按传参顺序逐个启动 app 验证，任意一个失败就停止。
+
+```bash
+python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
+```
 
 ## 测试目录约定
 
@@ -39,6 +43,15 @@ test/
 └── unit/               # 不启动真实窗口的 Dart/Flutter 单元测试
 
 ui_tests/               # 启动真实 app 的 CSV GUI 自动化脚本
+├── smoke/              # 快速主窗口 sanity check
+├── analysis/           # analysis spawn / 子窗体 / IPC
+├── timeline/           # timeline 真实 pointer/click 路径
+├── seek/               # 直接 seek / step / rapid seek
+├── loop/               # loop range 行为
+├── viewport/           # resize / maximize / pan / zoom / split layout
+├── track/              # 轨道级刷新和 offset
+├── codec/              # codec 解码和非黑屏 smoke
+└── local/              # 依赖个人绝对路径的非通用脚本
 ```
 
 适合放进 `test/unit/` 的内容：
@@ -69,47 +82,68 @@ ui_tests/               # 启动真实 app 的 CSV GUI 自动化脚本
 - 空行和 `#` 开头的行会被忽略
 - `QUIT, 0` 表示通过并退出
 
-## 选择脚本
+## 目录语义
+
+`ui_tests/README.md` 是目录层面的入口说明。下一次选择脚本时，先看改动影响哪个目录，再从该目录里选最贴近的 CSV。
+
+| 目录 | 什么时候看这里 |
+|------|----------------|
+| `smoke/` | 通用 UI 改动、先确认 app 能启动和基础播放路径。 |
+| `analysis/` | `lib/windows/analysis/`、主窗体生成 analysis、spawn analysis 窗体、analysis IPC track 更新。 |
+| `timeline/` | 用户真实点击/拖动 timeline，尤其是 timeline seek、重复点击、防崩溃。 |
+| `seek/` | 直接 seek、step forward、rapid seek、seek 后位置稳定。 |
+| `loop/` | loop range 开关、start/end handle、loop 尾帧稳定。 |
+| `viewport/` | 窗口 resize/maximize、画面 pan/zoom、split screen 边界。 |
+| `track/` | 轨道 offset、多轨刷新、轨道级状态变更。 |
+| `codec/` | AV1/VP9/H.265 等 codec 上屏和非黑屏 smoke。 |
+| `local/` | 依赖个人绝对路径或大型私有素材，只在本机复现特定问题时使用。 |
+
+analysis 目录里有两类脚本：
+
+- `spawn_*.csv` / `ipc_*.csv` 从主窗口执行，覆盖生成 analysis、spawn/reuse analysis workspace、track 更新同步。
+- `child_*.csv` 在 analysis 子窗体内执行，是主窗口脚本通过 `SET_ANALYSIS_TEST_SCRIPT` 传进去的辅助脚本，不是普通主窗口 smoke。
+
+## 常用入口
 
 通用改动：
 
 ```bash
-python dev.py ui-test ui_tests/smoke_basic.csv
+python dev.py ui-test ui_tests/smoke/basic.csv
 ```
 
 timeline / seek / 播放控制：
 
 ```bash
-python dev.py ui-test ui_tests/h265_timeline_click_visual_regression.csv
-python dev.py ui-test ui_tests/h265_seek_position_no_snapback.csv
+python dev.py ui-test ui_tests/timeline/h265_timeline_click_visual_regression.csv
+python dev.py ui-test ui_tests/seek/h265_seek_position_no_snapback.csv
 ```
 
 loop range：
 
 ```bash
-python dev.py ui-test ui_tests/h265_loop_range_enable_regression.csv
-python dev.py ui-test ui_tests/h265_loop_range_end_change_frame_hash_regression.csv
+python dev.py ui-test ui_tests/loop/h265_loop_range_enable_regression.csv
+python dev.py ui-test ui_tests/loop/h265_loop_range_end_change_frame_hash_regression.csv
 ```
 
 track offset / 多轨刷新：
 
 ```bash
-python dev.py ui-test ui_tests/h265_track_offset_refresh_visual_regression.csv
+python dev.py ui-test ui_tests/track/h265_track_offset_refresh_visual_regression.csv
 ```
 
 viewport / layout / resize：
 
 ```bash
-python dev.py ui-test ui_tests/viewport_resize_center_regression.csv
-python dev.py ui-test ui_tests/viewport_pan_layout_regression.csv
-python dev.py ui-test ui_tests/split_screen_edges_regression.csv
+python dev.py ui-test ui_tests/viewport/viewport_resize_center_regression.csv
+python dev.py ui-test ui_tests/viewport/viewport_pan_layout_regression.csv
+python dev.py ui-test ui_tests/viewport/split_screen_edges_regression.csv
 ```
 
-analysis IPC 相关：
+analysis 相关：
 
 ```bash
-python dev.py ui-test ui_tests/analysis_ipc_track_updates.csv
-python dev.py ui-test ui_tests/analysis_spawn_h265.csv
+python dev.py ui-test ui_tests/analysis/spawn_h265.csv
+python dev.py ui-test ui_tests/analysis/ipc_track_updates.csv
 ```
 
 ## 什么时候必须补测试
@@ -128,7 +162,7 @@ python dev.py ui-test ui_tests/analysis_spawn_h265.csv
 
 1. `PlayerAction` 或 `PlayerAssert`
 2. `TestRunner` 指令解析
-3. `ui_tests/*.csv`
+3. `ui_tests/` 对应功能目录下的 CSV
 
 只有当自动化暂时不可行时，最终说明必须写清楚缺口，例如缺少哪个 Action、Assert 或启动参数。
 
@@ -147,15 +181,15 @@ python dev.py ui-test ui_tests/analysis_spawn_h265.csv
 脚本命名：
 
 ```text
-<feature>_<scenario>_regression.csv
+<area>/<scenario>_regression.csv
 ```
 
 示例：
 
 ```text
-h265_timeline_double_click_guard.csv
-viewport_resize_center_regression.csv
-analysis_ipc_track_updates.csv
+timeline/h265_timeline_double_click_guard.csv
+viewport/viewport_resize_center_regression.csv
+analysis/ipc_track_updates.csv
 ```
 
 脚本内容建议：
@@ -174,7 +208,7 @@ Flutter UI / Action / 窗口交互改动提交前：
 ```bash
 flutter analyze
 python dev.py test --flutter-only
-python dev.py ui-test ui_tests/smoke_basic.csv
+python dev.py ui-test ui_tests/smoke/basic.csv
 ```
 
 再按影响面补跑对应脚本。最终说明列出实际跑过的脚本；如果没跑某个应跑脚本，要说明原因。

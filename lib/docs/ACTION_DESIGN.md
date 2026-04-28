@@ -194,7 +194,7 @@ class TestRunner {
 ### 推荐执行方式
 
 ```bash
-python dev.py ui-test ui_tests/smoke_basic.csv
+python dev.py ui-test ui_tests/smoke/basic.csv
 ```
 
 说明：

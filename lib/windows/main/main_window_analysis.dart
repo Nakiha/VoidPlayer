@@ -1,9 +1,9 @@
 import 'package:path/path.dart' as p;
 
-import '../analysis/analysis_manager.dart';
-import '../track_manager.dart';
-import 'analysis_ipc.dart';
-import 'window_manager.dart';
+import '../../analysis/analysis_manager.dart';
+import '../../track_manager.dart';
+import '../analysis/analysis_ipc.dart';
+import '../window_manager.dart';
 
 class MainWindowAnalysisCoordinator {
   final TrackManager trackManager;

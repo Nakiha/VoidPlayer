@@ -1,0 +1,426 @@
+part of 'analysis_window.dart';
+
+extension _AnalysisPageTestRunner on _AnalysisPageState {
+  Future<void> _runAnalysisTestScript(String scriptPath) async {
+    final instructions = _parseAnalysisTestScript(scriptPath);
+    if (instructions.isEmpty) {
+      log.severe('AnalysisTestRunner: empty script: $scriptPath');
+      exit(1);
+    }
+
+    log.info(
+      'AnalysisTestRunner: running ${instructions.length} instructions from $scriptPath',
+    );
+
+    final sw = Stopwatch()..start();
+    for (final instr in instructions) {
+      final waitMs = instr.time.inMilliseconds - sw.elapsedMilliseconds;
+      if (waitMs > 0) {
+        await Future.delayed(Duration(milliseconds: waitMs));
+      }
+
+      try {
+        await _executeAnalysisInstruction(instr);
+      } catch (e, stack) {
+        log.severe('AnalysisTestRunner FAIL at ${instr.time}: $e\n$stack');
+        exit(1);
+      }
+    }
+
+    log.severe('AnalysisTestRunner: script ended without QUIT instruction');
+    exit(1);
+  }
+
+  Future<void> _executeAnalysisInstruction(
+    _AnalysisTestInstruction instr,
+  ) async {
+    switch (instr.command) {
+      case _AnalysisTestCommand.waitLoaded:
+        final timeout = Duration(
+          milliseconds: instr.intArg(0, defaultValue: 10000),
+        );
+        log.info(
+          'AnalysisTestRunner ${instr.time}: WAIT_ANALYSIS_LOADED ${timeout.inMilliseconds}ms',
+        );
+        await _waitForAnalysisLoaded(timeout);
+
+      case _AnalysisTestCommand.assertLoaded:
+        log.info('AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_LOADED');
+        _assertAnalysisLoaded();
+
+      case _AnalysisTestCommand.assertMinCounts:
+        final minFrames = instr.intArg(0);
+        final minPackets = instr.intArg(1);
+        final minNalus = instr.intArg(2);
+        log.info(
+          'AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_MIN_COUNTS '
+          '$minFrames $minPackets $minNalus',
+        );
+        _assertAnalysisMinCounts(minFrames, minPackets, minNalus);
+
+      case _AnalysisTestCommand.assertCodec:
+        final expected = _parseAnalysisCodec(instr.stringArg(0));
+        final actual = _codec;
+        log.info(
+          'AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_CODEC '
+          '${analysisCodecName(expected)}',
+        );
+        if (actual != expected) {
+          throw AssertionError(
+            'Expected codec ${analysisCodecName(expected)}, '
+            'got ${analysisCodecName(actual)}',
+          );
+        }
+
+      case _AnalysisTestCommand.assertNaluName:
+        final idx = instr.intArg(0);
+        final expected = instr.stringArg(1);
+        log.info(
+          'AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_NALU_NAME '
+          '$idx $expected',
+        );
+        if (idx < 0 || idx >= _nalus.length) {
+          throw AssertionError(
+            'NALU index $idx out of range; nalus=${_nalus.length}',
+          );
+        }
+        final actual = bitstreamUnitTypeName(_codec, _nalus[idx].nalType);
+        if (actual != expected) {
+          throw AssertionError(
+            'Expected NALU #$idx name $expected, got $actual '
+            '(codec=${analysisCodecName(_codec)}, '
+            'type=${_nalus[idx].nalType})',
+          );
+        }
+
+      case _AnalysisTestCommand.assertSelectedFrame:
+        final expectedSlice = instr.stringArg(0);
+        final expectedNalName = instr.stringArg(1);
+        log.info(
+          'AnalysisTestRunner ${instr.time}: '
+          'ASSERT_ANALYSIS_SELECTED_FRAME $expectedSlice $expectedNalName',
+        );
+        final idx = _selectedFrameIdx;
+        if (idx == null || idx < 0 || idx >= _frames.length) {
+          throw AssertionError(
+            'Expected selected frame, got selected=$idx frames=${_frames.length}',
+          );
+        }
+        final f = _frames[idx];
+        final actualSlice = _frameSliceName(f);
+        final actualNalName = bitstreamUnitTypeName(_codec, f.nalType);
+        if (actualSlice != expectedSlice || actualNalName != expectedNalName) {
+          throw AssertionError(
+            'Expected selected frame $expectedSlice/$expectedNalName, '
+            'got $actualSlice/$actualNalName '
+            '(frame=$idx, slice=${f.sliceType}, nal=${f.nalType})',
+          );
+        }
+
+      case _AnalysisTestCommand.assertSelectedFrameVisible:
+        log.info(
+          'AnalysisTestRunner ${instr.time}: '
+          'ASSERT_ANALYSIS_SELECTED_FRAME_VISIBLE',
+        );
+        final idx = _selectedFrameIdx;
+        if (idx == null || idx < 0 || idx >= _frames.length) {
+          throw AssertionError(
+            'Expected selected frame, got selected=$idx frames=${_frames.length}',
+          );
+        }
+        final sortedIdx = _sortedPositionForFrameIdx(idx);
+        if (sortedIdx == null ||
+            sortedIdx < _chartOffset ||
+            sortedIdx >= _chartOffset + _visibleFrameCount) {
+          throw AssertionError(
+            'Expected selected frame $idx (sorted=$sortedIdx) inside chart '
+            'range [$_chartOffset, ${_chartOffset + _visibleFrameCount})',
+          );
+        }
+
+      case _AnalysisTestCommand.assertCounts:
+        final frames = instr.intArg(0);
+        final packets = instr.intArg(1);
+        final nalus = instr.intArg(2);
+        log.info(
+          'AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_COUNTS '
+          '$frames $packets $nalus',
+        );
+        _assertAnalysisCounts(frames, packets, nalus);
+
+      case _AnalysisTestCommand.setTab:
+        final tab = _parseAnalysisTab(instr.stringArg(0));
+        log.info('AnalysisTestRunner ${instr.time}: SET_ANALYSIS_TAB $tab');
+        _updateAnalysisTestState(() => _selectedTab = tab);
+
+      case _AnalysisTestCommand.assertTab:
+        final tab = _parseAnalysisTab(instr.stringArg(0));
+        log.info('AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_TAB $tab');
+        if (_selectedTab != tab) {
+          throw AssertionError('Expected tab $tab, got $_selectedTab');
+        }
+
+      case _AnalysisTestCommand.setOrder:
+        final ptsOrder = _parseAnalysisOrder(instr.stringArg(0));
+        log.info(
+          'AnalysisTestRunner ${instr.time}: SET_ANALYSIS_ORDER '
+          '${ptsOrder ? 'PTS' : 'DTS'}',
+        );
+        _updateAnalysisTestState(() {
+          _ptsOrder = ptsOrder;
+          _rebuildSortedFramesCache();
+        });
+
+      case _AnalysisTestCommand.assertOrder:
+        final ptsOrder = _parseAnalysisOrder(instr.stringArg(0));
+        log.info(
+          'AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_ORDER '
+          '${ptsOrder ? 'PTS' : 'DTS'}',
+        );
+        if (_ptsOrder != ptsOrder) {
+          throw AssertionError(
+            'Expected order ${ptsOrder ? 'PTS' : 'DTS'}, '
+            'got ${_ptsOrder ? 'PTS' : 'DTS'}',
+          );
+        }
+
+      case _AnalysisTestCommand.selectNalu:
+        final idx = instr.intArg(0);
+        log.info('AnalysisTestRunner ${instr.time}: SELECT_ANALYSIS_NALU $idx');
+        if (idx < 0 || idx >= _nalus.length) {
+          throw AssertionError(
+            'NALU index $idx out of range; nalus=${_nalus.length}',
+          );
+        }
+        _updateAnalysisTestState(() => _selectNalu(idx));
+
+      case _AnalysisTestCommand.assertDetailVisible:
+        log.info(
+          'AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_DETAIL_VISIBLE',
+        );
+        final idx = _selectedNaluIdx;
+        if (idx == null || idx < 0 || idx >= _nalus.length) {
+          throw AssertionError(
+            'Expected selected NALU detail, got selected=$idx '
+            'nalus=${_nalus.length}',
+          );
+        }
+
+      case _AnalysisTestCommand.quit:
+        final exitCode = instr.intArg(0, defaultValue: 0);
+        log.info('AnalysisTestRunner ${instr.time}: QUIT $exitCode');
+        exit(exitCode);
+    }
+  }
+
+  Future<void> _waitForAnalysisLoaded(Duration timeout) async {
+    final sw = Stopwatch()..start();
+    while (sw.elapsed < timeout) {
+      _readData();
+      if (_isAnalysisLoaded) return;
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    throw AssertionError(
+      'WAIT_ANALYSIS_LOADED timed out after ${timeout.inMilliseconds}ms; '
+      'loaded=${_summary?.loaded ?? 0}, frames=${_frames.length}, '
+      'packets=${_summary?.packetCount ?? 0}, nalus=${_nalus.length}',
+    );
+  }
+
+  bool get _isAnalysisLoaded =>
+      (_summary?.loaded ?? 0) != 0 && (_frames.isNotEmpty || _nalus.isNotEmpty);
+
+  void _assertAnalysisLoaded() {
+    if (!_isAnalysisLoaded) {
+      throw AssertionError(
+        'Expected analysis loaded; loaded=${_summary?.loaded ?? 0}, '
+        'frames=${_frames.length}, packets=${_summary?.packetCount ?? 0}, '
+        'nalus=${_nalus.length}',
+      );
+    }
+  }
+
+  void _assertAnalysisMinCounts(int minFrames, int minPackets, int minNalus) {
+    _assertAnalysisLoaded();
+    final packets = _summary?.packetCount ?? 0;
+    if (_frames.length < minFrames ||
+        packets < minPackets ||
+        _nalus.length < minNalus) {
+      throw AssertionError(
+        'Expected analysis counts >= ($minFrames, $minPackets, $minNalus), '
+        'got frames=${_frames.length}, packets=$packets, nalus=${_nalus.length}',
+      );
+    }
+  }
+
+  void _assertAnalysisCounts(int frames, int packets, int nalus) {
+    _assertAnalysisLoaded();
+    final actualPackets = _summary?.packetCount ?? 0;
+    if (_frames.length != frames ||
+        actualPackets != packets ||
+        _nalus.length != nalus) {
+      throw AssertionError(
+        'Expected analysis counts ($frames, $packets, $nalus), '
+        'got frames=${_frames.length}, packets=$actualPackets, '
+        'nalus=${_nalus.length}',
+      );
+    }
+  }
+}
+
+enum _AnalysisTestCommand {
+  waitLoaded,
+  assertLoaded,
+  assertCounts,
+  assertMinCounts,
+  assertCodec,
+  assertNaluName,
+  assertSelectedFrame,
+  assertSelectedFrameVisible,
+  setTab,
+  assertTab,
+  setOrder,
+  assertOrder,
+  selectNalu,
+  assertDetailVisible,
+  quit,
+}
+
+class _AnalysisTestInstruction {
+  final Duration time;
+  final _AnalysisTestCommand command;
+  final List<String> args;
+
+  const _AnalysisTestInstruction(this.time, this.command, this.args);
+
+  String stringArg(int index, {String? defaultValue}) {
+    if (index < args.length && args[index].isNotEmpty) return args[index];
+    if (defaultValue != null) return defaultValue;
+    throw ArgumentError('Missing argument $index for $command');
+  }
+
+  int intArg(int index, {int? defaultValue}) {
+    if (index < args.length && args[index].isNotEmpty) {
+      return int.parse(args[index]);
+    }
+    if (defaultValue != null) return defaultValue;
+    throw ArgumentError('Missing integer argument $index for $command');
+  }
+}
+
+List<_AnalysisTestInstruction> _parseAnalysisTestScript(String path) {
+  final file = File(path);
+  if (!file.existsSync()) {
+    log.severe('Analysis test script not found: $path');
+    return [];
+  }
+
+  final instructions = <_AnalysisTestInstruction>[];
+  final lines = file.readAsLinesSync();
+
+  for (var i = 0; i < lines.length; i++) {
+    final line = lines[i].trim();
+    if (line.isEmpty || line.startsWith('#') || line.startsWith('@')) continue;
+
+    final parts = line.split(',').map((s) => s.trim()).toList();
+    if (parts.length < 2) {
+      log.warning('Analysis test line ${i + 1}: invalid format: $line');
+      continue;
+    }
+
+    final time = Duration(
+      milliseconds: (double.parse(parts[0]) * 1000).round(),
+    );
+    final cmd = parts[1].toUpperCase();
+    final args = parts.sublist(2);
+    final command = switch (cmd) {
+      'WAIT_ANALYSIS_LOADED' => _AnalysisTestCommand.waitLoaded,
+      'ASSERT_ANALYSIS_LOADED' => _AnalysisTestCommand.assertLoaded,
+      'ASSERT_ANALYSIS_COUNTS' => _AnalysisTestCommand.assertCounts,
+      'ASSERT_ANALYSIS_MIN_COUNTS' => _AnalysisTestCommand.assertMinCounts,
+      'ASSERT_ANALYSIS_CODEC' => _AnalysisTestCommand.assertCodec,
+      'ASSERT_ANALYSIS_NALU_NAME' => _AnalysisTestCommand.assertNaluName,
+      'ASSERT_ANALYSIS_SELECTED_FRAME' =>
+        _AnalysisTestCommand.assertSelectedFrame,
+      'ASSERT_ANALYSIS_SELECTED_FRAME_VISIBLE' =>
+        _AnalysisTestCommand.assertSelectedFrameVisible,
+      'SET_ANALYSIS_TAB' => _AnalysisTestCommand.setTab,
+      'ASSERT_ANALYSIS_TAB' => _AnalysisTestCommand.assertTab,
+      'SET_ANALYSIS_ORDER' => _AnalysisTestCommand.setOrder,
+      'ASSERT_ANALYSIS_ORDER' => _AnalysisTestCommand.assertOrder,
+      'SELECT_ANALYSIS_NALU' => _AnalysisTestCommand.selectNalu,
+      'ASSERT_ANALYSIS_DETAIL_VISIBLE' =>
+        _AnalysisTestCommand.assertDetailVisible,
+      'QUIT' => _AnalysisTestCommand.quit,
+      _ => null,
+    };
+
+    if (command == null) {
+      log.warning('Unknown analysis test command: $cmd');
+      continue;
+    }
+    instructions.add(_AnalysisTestInstruction(time, command, args));
+  }
+
+  instructions.sort((a, b) => a.time.compareTo(b.time));
+  return instructions;
+}
+
+int _parseAnalysisTab(String value) {
+  switch (value.trim().toLowerCase()) {
+    case '0':
+    case 'ref':
+    case 'reference':
+    case 'ref_pyramid':
+    case 'reference_pyramid':
+      return 0;
+    case '1':
+    case 'trend':
+    case 'frame_trend':
+      return 1;
+    default:
+      throw ArgumentError('Unknown analysis tab: $value');
+  }
+}
+
+bool _parseAnalysisOrder(String value) {
+  switch (value.trim().toLowerCase()) {
+    case 'pts':
+      return true;
+    case 'dts':
+    case 'decode':
+    case 'decode_order':
+      return false;
+    default:
+      throw ArgumentError('Unknown analysis order: $value');
+  }
+}
+
+String _frameSliceName(FrameInfo f) => switch (f.sliceType) {
+  2 => 'I',
+  1 => 'P',
+  _ => f.numRefL1 > 0 ? 'B' : 'B (uni)',
+};
+
+AnalysisCodec _parseAnalysisCodec(String value) {
+  switch (value.trim().toLowerCase()) {
+    case 'h264':
+    case 'avc':
+      return AnalysisCodec.h264;
+    case 'h265':
+    case 'hevc':
+      return AnalysisCodec.hevc;
+    case 'h266':
+    case 'vvc':
+      return AnalysisCodec.vvc;
+    case 'av1':
+      return AnalysisCodec.av1;
+    case 'vp9':
+      return AnalysisCodec.vp9;
+    case 'mpeg2':
+    case 'mpeg-2':
+      return AnalysisCodec.mpeg2;
+    default:
+      return AnalysisCodec.unknown;
+  }
+}

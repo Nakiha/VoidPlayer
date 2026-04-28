@@ -13,7 +13,7 @@ MethodChannel 调用编排，以及 DX11 texture 的 Flutter 侧展示。
 - UI 只组合 widget 和 view model，不直接承载播放/布局业务。
 - 主窗口业务由 `MainWindowController` 组合多个 coordinator。
 - Native 渲染与解码能力通过 `VideoRendererController` 暴露，Flutter 层不直接处理帧数据。
-- Windows 专属能力集中在 `lib/windows/`，避免散落到通用 UI 控件里。
+- Windows 专属能力集中在 `lib/windows/`，其中主窗口在 `lib/windows/main/`，analysis 窗口在 `lib/windows/analysis/`，跨窗口基础设施留在 `lib/windows/` 根目录。
 
 ## 详细文档索引
 
@@ -21,9 +21,10 @@ MethodChannel 调用编排，以及 DX11 texture 的 Flutter 侧展示。
 |------|------|
 | [Flutter 架构](docs/FLUTTER_ARCHITECTURE.md) | Flutter 层分层、目录、依赖规则、功能开发流程 |
 | [主窗口架构](docs/MAIN_WINDOW_ARCHITECTURE.md) | `MainWindowController`、state store、coordinator、view model 的职责 |
+| [Analysis 窗口架构](docs/ANALYSIS_WINDOW_ARCHITECTURE.md) | analysis app/page/workspace/chart/NALU/test runner 的职责边界 |
 | [Action 设计](docs/ACTION_DESIGN.md) | 快捷键、UI 按钮、测试脚本共用的 Action 抽象 |
 | [Action 维护](docs/ACTION_MAINTENANCE.md) | 新增/修改/移除 Action 与 Assert 的维护清单 |
-| [UI 自动化测试](docs/UI_TESTING.md) | `ui_tests/*.csv` 使用规范、回归选择、补测试规则 |
+| [UI 自动化测试](docs/UI_TESTING.md) | `ui_tests/` 目录分区、回归选择、补测试规则 |
 
 ## 常用开发命令
 
@@ -32,11 +33,11 @@ MethodChannel 调用编排，以及 DX11 texture 的 Flutter 侧展示。
 flutter analyze
 
 # 主窗口基础 UI 回归
-python dev.py ui-test ui_tests/smoke_basic.csv
+python dev.py ui-test ui_tests/smoke/basic.csv
 
 # timeline / seek / loop range 真实点击路径回归
-python dev.py ui-test ui_tests/h265_timeline_click_visual_regression.csv
-python dev.py ui-test ui_tests/h265_loop_range_enable_regression.csv
+python dev.py ui-test ui_tests/timeline/h265_timeline_click_visual_regression.csv
+python dev.py ui-test ui_tests/loop/h265_loop_range_enable_regression.csv
 ```
 
 更多测试选择见 [docs/UI_TESTING.md](docs/UI_TESTING.md)。

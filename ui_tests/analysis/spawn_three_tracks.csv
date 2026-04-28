@@ -1,6 +1,6 @@
 # Main window should spawn one workspace analysis process for all loaded tracks.
 @WINDOW, 1280, 720
-0.2, SET_ANALYSIS_TEST_SCRIPT, ui_tests/analysis_child_smoke.csv
+0.2, SET_ANALYSIS_TEST_SCRIPT, ui_tests/analysis/child_smoke.csv
 0.5, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
 1.0, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
 1.5, ADD_MEDIA, resources/video/h266_10s_1920x1080.mp4

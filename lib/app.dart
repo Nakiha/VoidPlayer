@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'actions/action_registry.dart';
 import 'l10n/app_localizations.dart';
 import 'startup_options.dart';
-import 'windows/main_window.dart';
+import 'windows/main/main_window.dart';
 
 class VoidPlayerApp extends StatelessWidget {
   final Color accentColor;

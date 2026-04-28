@@ -28,7 +28,7 @@ python dev.py build --native         # 仅构建 native C++ 模块
 python dev.py launch                    # 运行 (release)
 python dev.py launch --debug            # 运行 (debug，支持 hot reload)
 python dev.py launch --log-level flutter=DEBUG,native=TRACE   # 传递日志级别
-python dev.py ui-test ui_tests/smoke_basic.csv                # 启动 app 并执行 UI 自动化脚本
+python dev.py ui-test ui_tests/smoke/basic.csv                # 启动 app 并执行 UI 自动化脚本
 
 # Native Demo
 python dev.py demo                   # 运行 PySide6 交互式 demo
@@ -41,10 +41,12 @@ python dev.py test --native-only     # 仅 native 构建/测试
 
 ## Agent 工作约定
 
-- 修改 **Flutter UI / Action / 窗口交互 / 播放控制流程** 后，优先使用 `ui_tests/*.csv` 做一次自动化闭环验证，而不是只做静态阅读。
-- 首选命令：`python dev.py ui-test ui_tests/smoke_basic.csv`
-- 修改 timeline / seek / 硬解上屏相关逻辑时，优先补跑更贴近真实点击路径的 `python dev.py ui-test ui_tests/h265_timeline_click_visual_regression.csv`，而不是只跑直接调用 native seek 的脚本。
-- 如果本次改动影响特定交互，应顺手新增或更新一条对应的 `ui_tests/*.csv`，再执行它完成验证。
+- 修改 **Flutter UI / Action / 窗口交互 / 播放控制流程** 后，优先使用 `ui_tests/` 下对应目录的 CSV 做一次自动化闭环验证，而不是只做静态阅读；`dev.py ui-test` 可以一次传多个 CSV 并顺序执行。
+- 通用 smoke 首选命令：`python dev.py ui-test ui_tests/smoke/basic.csv`
+- `ui_tests/analysis/` 覆盖主窗体 spawn analysis 窗体、analysis 子窗体脚本、IPC track 更新；修改 `lib/windows/analysis/` 或 analysis 启动/IPC 流程时优先从这里选脚本，而不是只跑 smoke。
+- `ui_tests/timeline/` 覆盖真实 timeline pointer/click 路径；修改 timeline / seek / 硬解上屏相关逻辑时，优先选这里的真实点击路径脚本，而不是只跑直接调用 native seek 的脚本。
+- `ui_tests/seek/` 覆盖直接 seek / step / rapid seek；`ui_tests/loop/` 覆盖 loop range；`ui_tests/viewport/` 覆盖窗口尺寸、pan/zoom、split 布局；`ui_tests/track/` 覆盖轨道级修改；`ui_tests/codec/` 覆盖 codec 上屏 smoke；`ui_tests/local/` 是依赖个人绝对路径的非通用回归。
+- 如果本次改动影响特定交互，应顺手新增或更新一条对应目录下的 `ui_tests/**/*.csv`，再执行它完成验证。
 - 如果自动化脚本无法覆盖本次改动，需要在最终说明里明确写出阻塞点，以及还缺少哪个 Action / Assert / 启动参数。
 - 修改纯 Dart 逻辑时，至少运行 `python dev.py test --flutter-only`。
 - 修改 native C++ 模块时，仍应至少运行 `python dev.py test` 或 `python dev.py test --native-only`；如果改动同时影响主窗口交互，补跑一条 UI 脚本。

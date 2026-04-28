@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import '../app_log.dart';
-import '../startup_options.dart';
-import '../track_manager.dart';
-import '../video_renderer_controller.dart';
+import '../../app_log.dart';
+import '../../startup_options.dart';
+import '../../track_manager.dart';
+import '../../video_renderer_controller.dart';
 
 class MainWindowPlaybackCoordinator {
   static const double trackDragHandleWidth = 28.0;

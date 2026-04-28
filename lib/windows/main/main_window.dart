@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../startup_options.dart';
+import '../../startup_options.dart';
 import 'main_window_controller.dart';
 import 'main_window_view.dart';
 

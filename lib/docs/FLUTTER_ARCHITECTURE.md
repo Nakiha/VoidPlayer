@@ -27,15 +27,26 @@ lib/
 ├── l10n/                          # 本地化资源和 action label 映射
 ├── widgets/                       # 可复用 UI 控件
 ├── windows/                       # Windows 专属窗口、平台交互和主窗口编排
-│   ├── main_window.dart           # 薄 StatefulWidget shell
-│   ├── main_window_controller.dart# 主窗口 facade，组合 coordinator
-│   ├── main_window_state.dart     # immutable state model + listenable store
-│   ├── main_window_view.dart      # 纯 view，吃 view model + actions
-│   ├── main_window_actions.dart   # Action 绑定生命周期
-│   ├── main_window_media.dart     # 打开/添加/移除媒体和轨道刷新
-│   ├── main_window_layout.dart    # viewport pan/zoom/split/resize flush
-│   ├── main_window_playback.dart  # play/pause/seek/poll/loop range
-│   ├── main_window_analysis.dart  # analysis IPC snapshot 和窗口触发
+│   ├── main/                      # 主播放器窗口 shell/controller/coordinators/view
+│   │   ├── main_window.dart       # 薄 StatefulWidget shell
+│   │   ├── main_window_controller.dart
+│   │   ├── main_window_state.dart
+│   │   ├── main_window_view.dart
+│   │   ├── main_window_actions.dart
+│   │   ├── main_window_media.dart
+│   │   ├── main_window_layout.dart
+│   │   ├── main_window_playback.dart
+│   │   └── main_window_analysis.dart
+│   ├── analysis/                  # analysis 窗口 app/page/widgets/charts/IPC
+│   │   ├── analysis_window.dart   # analysis app entry
+│   │   ├── analysis_window_page.dart
+│   │   ├── analysis_window_workspace.dart
+│   │   ├── analysis_window_charts.dart
+│   │   ├── analysis_window_nalu.dart
+│   │   ├── analysis_window_controls.dart
+│   │   ├── analysis_window_test_runner.dart
+│   │   └── analysis_ipc.dart
+│   ├── app_bootstrap.dart         # 多窗口启动参数分发
 │   └── window_manager.dart        # desktop_multi_window / Win32 窗口协调
 ├── video_renderer_controller.dart # native MethodChannel API wrapper
 └── main.dart                      # app bootstrap 入口
@@ -128,4 +139,4 @@ View 层只做布局和控件组合。
 
 ## Analysis UI
 
-`analysis_window.dart` 当前体量较大，但它不是主播放器 UI 这轮清理的重点。除非主窗口架构或 Action/TestRunner 变更影响 analysis，否则不要在播放器主线清理中主动重构 analysis。analysis 后续需要堆功能时，应单独开一轮文档和拆分。
+Analysis 窗口代码集中在 `lib/windows/analysis/`。`analysis_window.dart` 只保留 app entry 和主题壳；页面状态、workspace、chart painter、NALU browser/detail、测试脚本 runner 分文件维护。修改 analysis UI 时优先参考 [ANALYSIS_WINDOW_ARCHITECTURE.md](ANALYSIS_WINDOW_ARCHITECTURE.md)，并从 `ui_tests/analysis/` 选择主窗口 spawn 或子窗体脚本做闭环验证。

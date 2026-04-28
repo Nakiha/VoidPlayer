@@ -34,7 +34,7 @@ Examples:
   python dev.py test --native-only
   python dev.py package
   python dev.py package --installer
-  python dev.py ui-test ui_tests/smoke_basic.csv
+  python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
   python dev.py analysis-resize-stress
   python dev.py vtm build
   python dev.py vtm analyze video.mp4
@@ -89,7 +89,7 @@ Examples:
                            help="Path to ISCC.exe (defaults to PATH/common Inno Setup locations)")
 
     p_ui_test = sub.add_parser("ui-test", help="Launch the app with a CSV UI test script")
-    p_ui_test.add_argument("script", help="Path to CSV test script")
+    p_ui_test.add_argument("scripts", nargs="+", help="Path(s) to CSV test script(s)")
     p_ui_test.add_argument("--debug", action="store_true", help="Debug build")
     p_ui_test.add_argument("--build", action="store_true", help="Build Flutter app before launch")
     p_ui_test.add_argument("--log-level", type=str, default=None,

@@ -1,7 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-import '../app_log.dart';
+import '../../app_log.dart';
 
 class MainWindowTestHarness {
   final GlobalKey timelineSliderKey;

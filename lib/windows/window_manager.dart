@@ -104,7 +104,7 @@ class WindowManager {
   }
 
   /// Compute the initial rect for a secondary window of the given [type].
-  /// Public so that main_window.dart can use it for process-spawned windows.
+  /// Public so that main/main_window.dart can use it for process-spawned windows.
   static Future<Rect> computeWindowRect(String type) =>
       _computeWindowRect(type);
 

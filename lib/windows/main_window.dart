@@ -39,6 +39,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   late final MainWindowLayoutCoordinator _layoutCoordinator;
   late final MainWindowMediaCoordinator _mediaCoordinator;
   late final MainWindowPlaybackCoordinator _playbackCoordinator;
+  late final MainWindowActionCoordinator _actionCoordinator;
   late final main_state.MainWindowStateStore _stateStore;
 
   @override
@@ -121,55 +122,19 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       resolvedLoopStartUs: () => _resolvedLoopStartUs,
       resolvedLoopEndUs: () => _resolvedLoopEndUs,
     );
+    _actionCoordinator = MainWindowActionCoordinator(
+      controller: _controller,
+      playbackCoordinator: _playbackCoordinator,
+      mediaCoordinator: _mediaCoordinator,
+      layoutCoordinator: _layoutCoordinator,
+      analysisCoordinator: _analysisCoordinator,
+      testHarness: _testHarness,
+      isLoopRangeEnabled: () => _loopRangeEnabled,
+    );
     _trackManager.addListener(_onTrackManagerChanged);
-    _bindActions();
+    _actionCoordinator.bind();
     _playbackCoordinator.startPolling();
     _maybeStartTestRunner();
-  }
-
-  void _bindActions() {
-    MainWindowActionBinder(
-      togglePlayPause: _playbackCoordinator.togglePlayPause,
-      play: _playbackCoordinator.play,
-      pause: _playbackCoordinator.pause,
-      stepForward: _controller.stepForward,
-      stepBackward: _controller.stepBackward,
-      seekTo: _playbackCoordinator.seekTo,
-      clickTimelineFraction: _testHarness.clickTimelineFraction,
-      setSpeed: _playbackCoordinator.setSpeed,
-      openFile: _mediaCoordinator.openFile,
-      addMediaByPath: _mediaCoordinator.addMediaByPath,
-      removeTrack: _mediaCoordinator.removeTrack,
-      adjustTrackOffset: _mediaCoordinator.onOffsetChanged,
-      setLoopRangeEnabled: (enabled) =>
-          unawaited(_playbackCoordinator.setLoopRangeEnabled(enabled)),
-      isLoopRangeEnabled: () => _loopRangeEnabled,
-      setLoopRange:
-          (
-            startUs,
-            endUs, {
-            seekToStart = false,
-            seekOnlyIfStartChanged = false,
-          }) => unawaited(
-            _playbackCoordinator.setLoopRange(
-              startUs,
-              endUs,
-              seekToStart: seekToStart,
-              seekOnlyIfStartChanged: seekOnlyIfStartChanged,
-            ),
-          ),
-      dragLoopHandle: _testHarness.dragLoopHandle,
-      toggleLayoutMode: _layoutCoordinator.toggleLayoutMode,
-      setLayoutMode: _layoutCoordinator.setLayoutMode,
-      setZoom: _layoutCoordinator.setZoom,
-      setSplitPos: _layoutCoordinator.setSplitPos,
-      panByDelta: _layoutCoordinator.panByDelta,
-      openNewWindow: WindowManager.showStatsWindow,
-      openSettings: WindowManager.showSettingsWindow,
-      openStats: WindowManager.showStatsWindow,
-      openMemory: WindowManager.showMemoryWindow,
-      runAnalysis: _analysisCoordinator.triggerAnalysis,
-    ).bind();
   }
 
   void _maybeStartTestRunner() {

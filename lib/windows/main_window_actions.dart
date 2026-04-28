@@ -1,5 +1,79 @@
+import 'dart:async';
+
 import '../actions/action_registry.dart';
 import '../actions/player_action.dart';
+import '../video_renderer_controller.dart';
+import 'main_window_analysis.dart';
+import 'main_window_layout.dart';
+import 'main_window_media.dart';
+import 'main_window_playback.dart';
+import 'main_window_test_hooks.dart';
+import 'window_manager.dart';
+
+class MainWindowActionCoordinator {
+  final VideoRendererController controller;
+  final MainWindowPlaybackCoordinator playbackCoordinator;
+  final MainWindowMediaCoordinator mediaCoordinator;
+  final MainWindowLayoutCoordinator layoutCoordinator;
+  final MainWindowAnalysisCoordinator analysisCoordinator;
+  final MainWindowTestHarness testHarness;
+  final bool Function() isLoopRangeEnabled;
+
+  const MainWindowActionCoordinator({
+    required this.controller,
+    required this.playbackCoordinator,
+    required this.mediaCoordinator,
+    required this.layoutCoordinator,
+    required this.analysisCoordinator,
+    required this.testHarness,
+    required this.isLoopRangeEnabled,
+  });
+
+  void bind() {
+    MainWindowActionBinder(
+      togglePlayPause: playbackCoordinator.togglePlayPause,
+      play: playbackCoordinator.play,
+      pause: playbackCoordinator.pause,
+      stepForward: controller.stepForward,
+      stepBackward: controller.stepBackward,
+      seekTo: playbackCoordinator.seekTo,
+      clickTimelineFraction: testHarness.clickTimelineFraction,
+      setSpeed: playbackCoordinator.setSpeed,
+      openFile: mediaCoordinator.openFile,
+      addMediaByPath: mediaCoordinator.addMediaByPath,
+      removeTrack: mediaCoordinator.removeTrack,
+      adjustTrackOffset: mediaCoordinator.onOffsetChanged,
+      setLoopRangeEnabled: (enabled) =>
+          unawaited(playbackCoordinator.setLoopRangeEnabled(enabled)),
+      isLoopRangeEnabled: isLoopRangeEnabled,
+      setLoopRange:
+          (
+            startUs,
+            endUs, {
+            seekToStart = false,
+            seekOnlyIfStartChanged = false,
+          }) => unawaited(
+            playbackCoordinator.setLoopRange(
+              startUs,
+              endUs,
+              seekToStart: seekToStart,
+              seekOnlyIfStartChanged: seekOnlyIfStartChanged,
+            ),
+          ),
+      dragLoopHandle: testHarness.dragLoopHandle,
+      toggleLayoutMode: layoutCoordinator.toggleLayoutMode,
+      setLayoutMode: layoutCoordinator.setLayoutMode,
+      setZoom: layoutCoordinator.setZoom,
+      setSplitPos: layoutCoordinator.setSplitPos,
+      panByDelta: layoutCoordinator.panByDelta,
+      openNewWindow: WindowManager.showStatsWindow,
+      openSettings: WindowManager.showSettingsWindow,
+      openStats: WindowManager.showStatsWindow,
+      openMemory: WindowManager.showMemoryWindow,
+      runAnalysis: analysisCoordinator.triggerAnalysis,
+    ).bind();
+  }
+}
 
 class MainWindowActionBinder {
   final void Function() togglePlayPause;

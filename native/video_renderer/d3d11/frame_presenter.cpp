@@ -193,8 +193,8 @@ bool D3D11FramePresenter::prepare_texture_frame(const TextureFrame& frame,
         return false;
     }
     auto* tex = static_cast<ID3D11Texture2D*>(frame.texture_handle);
-    out.rgba_srv = texture_manager_->create_srv(tex);
-    out.release_rgba_srv = out.rgba_srv != nullptr;
+    out.owned_rgba_srv.Attach(texture_manager_->create_srv(tex));
+    out.rgba_srv = out.owned_rgba_srv.Get();
     return out.rgba_srv != nullptr;
 }
 

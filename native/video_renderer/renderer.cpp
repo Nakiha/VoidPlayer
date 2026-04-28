@@ -1352,28 +1352,26 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     ID3D11ShaderResourceView* srvs[4] = {};           // t0-t3: RGBA (sw) or full NV12 (hw)
     ID3D11ShaderResourceView* nv12_y_srvs[4] = {};    // t4-t7: NV12 Y plane
     ID3D11ShaderResourceView* nv12_uv_srvs[4] = {};   // t8-t11: NV12 UV plane
-    bool release_srvs[4] = {};
+    std::array<D3D11PreparedFrame, kMaxTracks> prepared_frames;
     if (frame_presenter_) {
         for (size_t i = 0; i < kMaxTracks; ++i) {
             if (!decision.frames[i].has_value() || !decision.frames[i]->texture_handle) continue;
             if (!tracks_[i]) continue;
 
-            D3D11PreparedFrame prepared;
             const bool prepared_ok = frame_presenter_->prepare_frame(
                 i,
                 decision.frames[i].value(),
                 target_width_,
                 target_height_,
                 [this](const char* label) { wait_gpu_idle(label); },
-                prepared);
+                prepared_frames[i]);
             if (!prepared_ok) {
                 continue;
             }
 
-            srvs[i] = prepared.rgba_srv;
-            nv12_y_srvs[i] = prepared.nv12_y_srv;
-            nv12_uv_srvs[i] = prepared.nv12_uv_srv;
-            release_srvs[i] = prepared.release_rgba_srv;
+            srvs[i] = prepared_frames[i].rgba_srv;
+            nv12_y_srvs[i] = prepared_frames[i].nv12_y_srv;
+            nv12_uv_srvs[i] = prepared_frames[i].nv12_uv_srv;
         }
     }
 
@@ -1559,12 +1557,7 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     ctx->PSSetShaderResources(4, 4, null_srvs);
     ctx->PSSetShaderResources(8, 4, null_srvs);
 
-    // Cleanup temporary SRVs (only non-NV12 ref textures created via create_srv)
-    for (size_t i = 0; i < 4; ++i) {
-        if (release_srvs[i] && srvs[i]) {
-            srvs[i]->Release();
-        }
-    }
+    // Temporary direct-texture SRVs are owned by prepared_frames until draw returns.
 }
 
 // -- Layout control --

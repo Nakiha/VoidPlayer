@@ -48,6 +48,11 @@ bool TextureManager::upload_data(ID3D11Texture2D* texture, const uint8_t* data,
                        static_cast<void*>(context_));
         return false;
     }
+    if (width <= 0 || height <= 0 || stride < width * 4) {
+        spdlog::error("upload_data: invalid geometry (width={}, height={}, stride={})",
+                      width, height, stride);
+        return false;
+    }
 
     D3D11_MAPPED_SUBRESOURCE mapped = {};
     HRESULT hr = context_->Map(texture, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);

@@ -4,6 +4,7 @@
 #include "video_renderer/d3d11/texture.h"
 #include <array>
 #include <functional>
+#include <wrl/client.h>
 
 namespace vr {
 
@@ -11,7 +12,7 @@ struct D3D11PreparedFrame {
     ID3D11ShaderResourceView* rgba_srv = nullptr;
     ID3D11ShaderResourceView* nv12_y_srv = nullptr;
     ID3D11ShaderResourceView* nv12_uv_srv = nullptr;
-    bool release_rgba_srv = false;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> owned_rgba_srv;
 };
 
 class D3D11FramePresenter {

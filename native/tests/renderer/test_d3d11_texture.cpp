@@ -52,6 +52,24 @@ TEST_CASE("TextureManager upload data and verify first pixel", "[d3d11][texture]
     cleanup_test_device(dev, hwnd);
 }
 
+TEST_CASE("TextureManager rejects invalid upload geometry", "[d3d11][texture]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::TextureManager tm(dev->device(), dev->context());
+
+    const int width = 64;
+    const int height = 64;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> tex;
+    tex.Attach(tm.create_rgba_texture(width, height));
+    REQUIRE(tex != nullptr);
+
+    std::vector<uint8_t> data(width * height * 4, 0);
+    REQUIRE_FALSE(tm.upload_data(tex.Get(), data.data(), width, height, width * 4 - 1));
+    REQUIRE_FALSE(tm.upload_data(tex.Get(), data.data(), 0, height, width * 4));
+    REQUIRE_FALSE(tm.upload_data(tex.Get(), data.data(), width, 0, width * 4));
+
+    cleanup_test_device(dev, hwnd);
+}
+
 TEST_CASE("TextureManager creates SRV", "[d3d11][texture]") {
     auto [dev, hwnd] = create_test_device();
     vr::TextureManager tm(dev->device(), dev->context());
@@ -180,7 +198,7 @@ TEST_CASE("D3D11FramePresenter prepares cached software frame SRV", "[d3d11][fra
     REQUIRE(presenter.prepare_frame(
         0, frame, 1920, 1080, [](const char*) {}, prepared));
     REQUIRE(prepared.rgba_srv != nullptr);
-    REQUIRE_FALSE(prepared.release_rgba_srv);
+    REQUIRE(prepared.owned_rgba_srv.Get() == nullptr);
     REQUIRE(prepared.nv12_y_srv == nullptr);
     REQUIRE(prepared.nv12_uv_srv == nullptr);
 
@@ -188,7 +206,7 @@ TEST_CASE("D3D11FramePresenter prepares cached software frame SRV", "[d3d11][fra
     cleanup_test_device(dev, hwnd);
 }
 
-TEST_CASE("D3D11FramePresenter marks direct texture SRV as temporary", "[d3d11][frame_presenter]") {
+TEST_CASE("D3D11FramePresenter owns direct texture SRV", "[d3d11][frame_presenter]") {
     auto [dev, hwnd] = create_test_device();
     vr::TextureManager tm(dev->device(), dev->context());
     vr::D3D11FramePresenter presenter(&tm, dev->context());
@@ -205,11 +223,8 @@ TEST_CASE("D3D11FramePresenter marks direct texture SRV as temporary", "[d3d11][
     REQUIRE(presenter.prepare_frame(
         0, frame, 1920, 1080, [](const char*) {}, prepared));
     REQUIRE(prepared.rgba_srv != nullptr);
-    REQUIRE(prepared.release_rgba_srv);
+    REQUIRE(prepared.owned_rgba_srv.Get() == prepared.rgba_srv);
 
-    if (prepared.release_rgba_srv && prepared.rgba_srv) {
-        prepared.rgba_srv->Release();
-    }
     cleanup_test_device(dev, hwnd);
 }
 

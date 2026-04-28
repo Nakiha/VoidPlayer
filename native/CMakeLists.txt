@@ -26,14 +26,21 @@ include(cmake/RuntimeArtifacts.cmake)
 option(BUILD_BENCHMARKS "Build native benchmark executables" OFF)
 
 enable_testing()
-add_subdirectory(video_renderer)
 add_subdirectory(analysis)
 
-if(BUILD_TESTS)
+if(WIN32)
+    add_subdirectory(video_renderer)
+else()
+    message(STATUS "video_renderer disabled: D3D11 backend is Windows-only")
+endif()
+
+if(WIN32 AND BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-include(cmake/NativeTargets.cmake)
+if(WIN32)
+    include(cmake/NativeTargets.cmake)
+endif()
 include(cmake/NativeInstall.cmake)
 
 message(STATUS "")

@@ -205,8 +205,40 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   }
 
   Widget _buildView(BuildContext context) {
-    return MainWindowView(
+    return MainWindowView(model: _viewModel, actions: _viewActions);
+  }
+
+  MainWindowViewModel get _viewModel {
+    return MainWindowViewModel(
       dragging: _dragging,
+      viewMode: _layout.mode,
+      viewModeEnabled: _textureId != null,
+      analysisEnabled: _trackManager.count > 0,
+      textureId: _textureId,
+      viewportState: _viewportState,
+      layout: _layout,
+      trackManager: _trackManager,
+      timelineSliderKey: _timelineSliderKey,
+      timelineStartWidth: _timelineStartWidth,
+      isPlaying: _isPlaying,
+      currentPtsUs: _currentPtsUs,
+      durationUs: _mediaCoordinator.effectiveDurationUs,
+      markerUs: _loopMarkerPtsUs,
+      seekMinUs: _loopRangeEnabled ? _resolvedLoopStartUs : null,
+      seekMaxUs: _loopRangeEnabled ? _resolvedLoopEndUs : null,
+      loopRangeBarKey: _loopRangeBarKey,
+      loopRangeEnabled: _loopRangeEnabled,
+      loopStartUs: _resolvedLoopStartUs,
+      loopEndUs: _resolvedLoopEndUs,
+      syncOffsets: _syncOffsets,
+      hoverPtsUs: _hoverPtsUs,
+      sliderHovering: _sliderHovering,
+      controlsWidth: _timelineControlsWidth,
+    );
+  }
+
+  MainWindowViewActions get _viewActions {
+    return MainWindowViewActions(
       onFilesDropped: (paths) {
         _stateStore.setDragging(false);
         unawaited(_mediaCoordinator.loadMediaPaths(paths));
@@ -217,7 +249,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       onDragExited: () {
         if (_dragging) _stateStore.setDragging(false);
       },
-      viewMode: _layout.mode,
       onViewModeChanged: (mode) {
         _stateStore.setLayout(_layout.copyWith(mode: mode));
         _layoutCoordinator.markLayoutDirty();
@@ -226,37 +257,19 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       onAnalysis: _analysisCoordinator.triggerAnalysis,
       onProfiler: () => WindowManager.showStatsWindow(),
       onSettings: () => WindowManager.showSettingsWindow(),
-      viewModeEnabled: _textureId != null,
-      analysisEnabled: _trackManager.count > 0,
-      textureId: _textureId,
-      viewportState: _viewportState,
-      layout: _layout,
       onPan: _layoutCoordinator.onPan,
       onSplit: _layoutCoordinator.onSplit,
       onZoom: _layoutCoordinator.onZoom,
       onPointerButton: _layoutCoordinator.onPointerButton,
       onResize: _layoutCoordinator.onViewportResize,
-      trackManager: _trackManager,
       onMediaSwapped: _mediaCoordinator.onMediaSwapped,
       onRemoveTrack: _mediaCoordinator.removeTrack,
-      timelineSliderKey: _timelineSliderKey,
-      timelineStartWidth: _timelineStartWidth,
       onZoomChanged: _layoutCoordinator.onZoomComboChanged,
-      isPlaying: _isPlaying,
       onTogglePlay: _playbackCoordinator.togglePlayPause,
       onStepForward: () => _controller.stepForward(),
       onStepBackward: () => _controller.stepBackward(),
-      currentPtsUs: _currentPtsUs,
-      durationUs: _mediaCoordinator.effectiveDurationUs,
       onSeek: _playbackCoordinator.seekTo,
       onSliderHover: _playbackCoordinator.onSliderHover,
-      markerUs: _loopMarkerPtsUs,
-      seekMinUs: _loopRangeEnabled ? _resolvedLoopStartUs : null,
-      seekMaxUs: _loopRangeEnabled ? _resolvedLoopEndUs : null,
-      loopRangeBarKey: _loopRangeBarKey,
-      loopRangeEnabled: _loopRangeEnabled,
-      loopStartUs: _resolvedLoopStartUs,
-      loopEndUs: _resolvedLoopEndUs,
       onLoopRangeEnabledChanged: (enabled) =>
           unawaited(_playbackCoordinator.setLoopRangeEnabled(enabled)),
       onLoopRangeChanged: (startUs, endUs) =>
@@ -272,10 +285,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
           : null,
       onReorder: _trackManager.moveTrack,
       onOffsetChanged: _mediaCoordinator.onOffsetChanged,
-      syncOffsets: _syncOffsets,
-      hoverPtsUs: _hoverPtsUs,
-      sliderHovering: _sliderHovering,
-      controlsWidth: _timelineControlsWidth,
       onControlsWidthChanged: _stateStore.setTimelineControlsWidth,
     );
   }

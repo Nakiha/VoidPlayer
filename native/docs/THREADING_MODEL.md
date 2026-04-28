@@ -80,7 +80,10 @@ Deadline-based sleep 保证长时间播放无累积漂移。
 | Clock | mutable mutex | 查询/更新瞬间 |
 | SeekController | mutex + atomic | request/take 瞬间 |
 | D3D11 Context | recursive_mutex（硬解时共享） | decode 期间 |
+| Headless shared texture | texture_mutex | shared handle 查询、front 切换、resize、capture |
 | TrackBuffer state | mutex | 状态变更瞬间 |
+
+Headless 输出路径的锁顺序固定为 `device_mutex -> texture_mutex`。`D3D11HeadlessOutput::*_locked()` 方法要求调用方已持有 `texture_mutex()`；不要在这些方法内部再反向获取 `device_mutex`。
 
 ## 线程间通信
 

@@ -67,7 +67,7 @@ Flutter 主窗口使用 headless renderer，不直接 Present 到 SwapChain。`D
 - native 持有 3 个 shared texture 和 handle。
 - renderer 总是写入非 front 且 Flutter 未持有的 buffer。
 - 绘制完成后切换 front handle，并通过 callback 通知 Flutter Texture 更新。
-- resize 时旧 shared buffers 会延迟保活，避免 Flutter 仍在读取时被释放导致黑闪。
+- resize 时旧 shared buffers 会延迟保活，避免 Flutter 仍在读取时被释放导致黑闪；当前这是固定延迟的 best-effort 保护，不是消费者 ack 后再释放的严格 lifetime 协议。
 
 测试中的 `CAPTURE_VIEWPORT` 读取当前 front buffer，计算 hash、平均亮度和非黑像素占比，用于 UI 回归。
 

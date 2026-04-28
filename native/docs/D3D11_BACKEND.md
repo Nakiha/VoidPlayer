@@ -27,10 +27,12 @@ draw back buffer -> swap front index -> Flutter opens shared handle -> Texture w
 设计目标：
 
 - 避免 renderer 覆盖 Flutter 正在读取的 buffer。
-- resize 时保留旧 buffers 一小段时间，避免句柄悬空。
+- resize 时旧 buffers 会按 `kPendingBufferRetireDelay` 延迟保活，降低 Flutter texture callback 仍在读取旧 handle 时的黑闪风险。
 - `capture_front_buffer()` 可以把当前 front buffer 读回 BGRA，用于 UI 自动化截图/hash。
 
-Renderer 只负责在持有 device/texture mutex 后调用 `begin_frame()`、绘制、`publish_frame()`；shared handle、GPU fence、resize pending buffers 和 capture 逻辑都收敛在 `D3D11HeadlessOutput`。
+Renderer 只负责在持有 device/texture mutex 后调用 `begin_frame_locked()`、绘制、`publish_frame_locked()`；shared handle、GPU fence、resize pending buffers 和 capture 逻辑都收敛在 `D3D11HeadlessOutput`。
+
+`D3D11HeadlessOutput` 中带 `_locked` 后缀的 public 方法都要求调用方已经持有 `texture_mutex()`。当前锁顺序固定为 `device_mutex -> texture_mutex`。`Renderer::shared_texture()`、`Renderer::shared_texture_handle()` 和 `Renderer::capture_front_buffer()` 是对外安全入口，会短暂持有 texture mutex。延迟释放旧 buffers 只是 best-effort 保活，不是严格的 Flutter handle ack 协议。
 
 ## 纹理路径
 
@@ -72,8 +74,9 @@ HLSL shader 内嵌到构建产物，运行时编译并绑定：
 
 | 路径 | Device/context 策略 |
 |------|---------------------|
-| H.264/H.265 renderer-owned NV12 | 使用独立 decode device，surface 带 `DECODER|SHADER_RESOURCE|MISC_SHARED` |
-| AV1/VP9 hwdownload | 让 FFmpeg 创建 D3D11VA device/context，匹配 CLI hwaccel 行为 |
+| H.264/H.265 renderer-owned NV12 | `DecodeDeviceMode::IndependentDevice`，使用独立 decode device，surface 带 `DECODER|SHADER_RESOURCE|MISC_SHARED` |
+| AV1/VP9 hwdownload | `DecodeDeviceMode::FfmpegOwnedHwDownloadDevice`，让 FFmpeg 创建 D3D11VA device/context，匹配 CLI hwaccel 行为 |
+| 诊断/实验 | `DecodeDeviceMode::SharedRenderDevice`，显式传入 render device；默认路径禁止依赖“传 nullptr”语义 |
 
 D3D11 immediate context 必须串行化。decode provider 会设置 lock/unlock callback，renderer 侧也用 device mutex 保护 draw/copy/flush。
 

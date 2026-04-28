@@ -39,9 +39,18 @@ File -> DemuxThread -> PacketQueue -> DecodeThread -> FrameConverter -> TrackBuf
 ### 硬解启用
 
 ```cpp
-bool enable_hardware_decode(void* native_device,
+bool enable_hardware_decode(DecodeDeviceMode mode = DecodeDeviceMode::IndependentDevice,
+                            void* render_device = nullptr,
                             std::recursive_mutex* device_mutex = nullptr);
 ```
+
+`DecodeDeviceMode` 显式表达硬解设备策略：
+
+| Mode | 用途 |
+|------|------|
+| `IndependentDevice` | H.264/H.265 等 renderer-owned NV12 路径，默认创建独立 D3D11 decode device |
+| `FfmpegOwnedHwDownloadDevice` | AV1/VP9 hwdownload 路径，由 FFmpeg 自行创建 D3D11VA device/context |
+| `SharedRenderDevice` | 诊断/实验用，必须显式传入 render device；不作为默认稳定路径 |
 
 `avcodec_open2()` 延迟到 `start()` 中执行，确保 `hw_device_ctx`、`get_format` 和 `extra_hw_frames` 已经设置好。
 
@@ -92,8 +101,9 @@ AVFrame(D3D11VA NV12) -> TextureFrame(is_nv12, hw_frame_ref) -> renderer copy/sa
 头文件: `decode/hw/d3d11va_provider.h`
 
 - `probe()` 根据 decoder `AVCodecHWConfig` 检查 D3D11VA 支持。
-- AV1/VP9 hwdownload 路径让 FFmpeg 自己创建 D3D11VA device/context，以匹配 FFmpeg CLI 的稳定路径。
-- H.264/H.265 等零拷贝路径使用独立 decode device，并创建带 `DECODER|SHADER_RESOURCE|MISC_SHARED` 的 surface。
+- AV1/VP9 hwdownload 路径使用 `FfmpegOwnedHwDownloadDevice`，让 FFmpeg 自己创建 D3D11VA device/context，以匹配 FFmpeg CLI 的稳定路径。
+- H.264/H.265 等 renderer-owned 路径使用 `IndependentDevice`，创建独立 decode device 和带 `DECODER|SHADER_RESOURCE|MISC_SHARED` 的 surface。
+- `SharedRenderDevice` 会记录 warn 日志，仅用于诊断共享 render device 的历史问题，不应作为常规播放路径。
 - D3D11 immediate context 通过 mutex 串行化，避免解码和渲染线程并发访问导致驱动内部状态损坏。
 
 ## Seek 内的解码行为

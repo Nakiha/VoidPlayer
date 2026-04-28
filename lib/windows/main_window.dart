@@ -27,6 +27,7 @@ part 'main_window_analysis.dart';
 part 'main_window_layout.dart';
 part 'main_window_media.dart';
 part 'main_window_playback.dart';
+part 'main_window_state.dart';
 part 'main_window_test_hooks.dart';
 part 'main_window_tracks.dart';
 
@@ -58,32 +59,8 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   late final MainWindowTestHarness _testHarness;
   int _analysisSnapshotSerial = 0;
 
-  // Renderer state
-  int? _textureId;
-  int _viewportState = 1; // 0=loading, 1=empty, 2=active
-  bool _isPlaying = false;
-  double _playbackSpeed = 1.0;
-  int _currentPtsUs = 0;
-  int _durationUs = 0;
-  LayoutState _layout = const LayoutState();
-  int? _pendingSeekUs;
-  DateTime? _pendingSeekAt;
-
-  // Per-track sync offsets: slot -> offset in microseconds
-  Map<int, int> _syncOffsets = {};
-
-  // Shared timeline alignment + loop range state
-  double _timelineControlsWidth = 320;
-  bool _loopRangeEnabled = false;
-  bool _nativeLoopRangeSynced = false;
-  bool _startupLoopRangeApplied = false;
+  MainWindowStateModel _state = const MainWindowStateModel();
   int _loopRangeSyncSerial = 0;
-  int _loopStartUs = 0;
-  int _loopEndUs = 0;
-
-  // Slider hover state for cross-track indicator
-  int _hoverPtsUs = 0;
-  bool _sliderHovering = false;
 
   // Polling
   Timer? _pollTimer;
@@ -91,15 +68,9 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   Ticker? _layoutTicker;
   bool _layoutDirty = false;
 
-  // Viewport resize
-  int _viewportWidth = 0;
-  int _viewportHeight = 0;
   bool _resizeDirty = false;
   bool _layoutFlushInProgress = false;
   Timer? _resizeDebounceTimer;
-
-  // Drag-drop
-  bool _dragging = false;
 
   @override
   void initState() {
@@ -237,6 +208,81 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       _sliderHovering = hovering;
     });
   }
+
+  int? get _textureId => _state.textureId;
+  set _textureId(int? value) => _state = _state.copyWith(textureId: value);
+
+  int get _viewportState => _state.viewportState;
+  set _viewportState(int value) =>
+      _state = _state.copyWith(viewportState: value);
+
+  bool get _isPlaying => _state.isPlaying;
+  set _isPlaying(bool value) => _state = _state.copyWith(isPlaying: value);
+
+  double get _playbackSpeed => _state.playbackSpeed;
+  set _playbackSpeed(double value) =>
+      _state = _state.copyWith(playbackSpeed: value);
+
+  int get _currentPtsUs => _state.currentPtsUs;
+  set _currentPtsUs(int value) => _state = _state.copyWith(currentPtsUs: value);
+
+  int get _durationUs => _state.durationUs;
+  set _durationUs(int value) => _state = _state.copyWith(durationUs: value);
+
+  LayoutState get _layout => _state.layout;
+  set _layout(LayoutState value) => _state = _state.copyWith(layout: value);
+
+  int? get _pendingSeekUs => _state.pendingSeekUs;
+  set _pendingSeekUs(int? value) =>
+      _state = _state.copyWith(pendingSeekUs: value);
+
+  DateTime? get _pendingSeekAt => _state.pendingSeekAt;
+  set _pendingSeekAt(DateTime? value) =>
+      _state = _state.copyWith(pendingSeekAt: value);
+
+  Map<int, int> get _syncOffsets => _state.syncOffsets;
+  set _syncOffsets(Map<int, int> value) =>
+      _state = _state.copyWith(syncOffsets: value);
+
+  double get _timelineControlsWidth => _state.timelineControlsWidth;
+  set _timelineControlsWidth(double value) =>
+      _state = _state.copyWith(timelineControlsWidth: value);
+
+  bool get _loopRangeEnabled => _state.loopRangeEnabled;
+  set _loopRangeEnabled(bool value) =>
+      _state = _state.copyWith(loopRangeEnabled: value);
+
+  bool get _nativeLoopRangeSynced => _state.nativeLoopRangeSynced;
+  set _nativeLoopRangeSynced(bool value) =>
+      _state = _state.copyWith(nativeLoopRangeSynced: value);
+
+  bool get _startupLoopRangeApplied => _state.startupLoopRangeApplied;
+  set _startupLoopRangeApplied(bool value) =>
+      _state = _state.copyWith(startupLoopRangeApplied: value);
+
+  int get _loopStartUs => _state.loopStartUs;
+  set _loopStartUs(int value) => _state = _state.copyWith(loopStartUs: value);
+
+  int get _loopEndUs => _state.loopEndUs;
+  set _loopEndUs(int value) => _state = _state.copyWith(loopEndUs: value);
+
+  int get _hoverPtsUs => _state.hoverPtsUs;
+  set _hoverPtsUs(int value) => _state = _state.copyWith(hoverPtsUs: value);
+
+  bool get _sliderHovering => _state.sliderHovering;
+  set _sliderHovering(bool value) =>
+      _state = _state.copyWith(sliderHovering: value);
+
+  int get _viewportWidth => _state.viewportWidth;
+  set _viewportWidth(int value) =>
+      _state = _state.copyWith(viewportWidth: value);
+
+  int get _viewportHeight => _state.viewportHeight;
+  set _viewportHeight(int value) =>
+      _state = _state.copyWith(viewportHeight: value);
+
+  bool get _dragging => _state.dragging;
+  set _dragging(bool value) => _state = _state.copyWith(dragging: value);
 
   // -- Build --
 

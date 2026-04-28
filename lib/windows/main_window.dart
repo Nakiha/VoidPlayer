@@ -46,6 +46,7 @@ class MainWindow extends StatefulWidget {
 class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   static const double _trackDragHandleWidth = 28.0;
   static const double _trackDividerWidth = 1.0;
+  static const Duration _viewportResizeDebounce = Duration(milliseconds: 80);
 
   final _controller = VideoRendererController();
   final _trackManager = TrackManager();
@@ -94,6 +95,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   int _viewportHeight = 0;
   bool _resizeDirty = false;
   bool _layoutFlushInProgress = false;
+  Timer? _resizeDebounceTimer;
 
   // Drag-drop
   bool _dragging = false;
@@ -120,6 +122,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   void dispose() {
     _pollTimer?.cancel();
     _loopBoundaryTimer?.cancel();
+    _resizeDebounceTimer?.cancel();
     _layoutTicker?.dispose();
     unawaited(_analysisIpcServer.dispose());
     _trackManager.dispose();

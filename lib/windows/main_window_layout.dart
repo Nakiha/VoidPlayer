@@ -24,9 +24,7 @@ extension _MainWindowLayout on _MainWindowState {
   }
 
   void _setSplitPos(double pos) {
-    _updateLayout(
-      (layout) => layout.copyWith(splitPos: pos.clamp(0.0, 1.0)),
-    );
+    _updateLayout((layout) => layout.copyWith(splitPos: pos.clamp(0.0, 1.0)));
     _markLayoutDirty();
   }
 
@@ -57,11 +55,8 @@ extension _MainWindowLayout on _MainWindowState {
 
     if (newZoom == LayoutState.zoomMin && factor < 1.0) {
       _updateLayout(
-        (layout) => layout.copyWith(
-          zoomRatio: newZoom,
-          viewOffsetX: 0,
-          viewOffsetY: 0,
-        ),
+        (layout) =>
+            layout.copyWith(zoomRatio: newZoom, viewOffsetX: 0, viewOffsetY: 0),
       );
       _markLayoutDirty();
       return;
@@ -115,6 +110,14 @@ extension _MainWindowLayout on _MainWindowState {
     if (width == _viewportWidth && height == _viewportHeight) return;
     _viewportWidth = width;
     _viewportHeight = height;
+    _resizeDebounceTimer?.cancel();
+    _resizeDebounceTimer = Timer(_MainWindowState._viewportResizeDebounce, () {
+      if (!mounted) return;
+      _markResizeDirty();
+    });
+  }
+
+  void _markResizeDirty() {
     _resizeDirty = true;
     _layoutTicker?.start();
   }

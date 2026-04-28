@@ -12,15 +12,13 @@ import '../widgets/loop_range_bar.dart';
 import 'analysis_ipc.dart';
 import 'main_window_actions.dart';
 import 'main_window_layout.dart';
+import 'main_window_media.dart';
 import 'main_window_state.dart' as main_state;
 import 'main_window_test_hooks.dart' as main_hooks;
 import 'main_window_view.dart';
-import 'native_file_picker.dart';
 
 part 'main_window_analysis.dart';
-part 'main_window_media.dart';
 part 'main_window_playback.dart';
-part 'main_window_tracks.dart';
 
 class MainWindow extends StatefulWidget {
   final String? testScriptPath;
@@ -48,6 +46,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   final _loopRangeBarKey = GlobalKey();
   late final main_hooks.MainWindowTestHarness _testHarness;
   late final MainWindowLayoutCoordinator _layoutCoordinator;
+  late final MainWindowMediaCoordinator _mediaCoordinator;
   int _analysisSnapshotSerial = 0;
 
   main_state.MainWindowStateModel _state =
@@ -69,6 +68,25 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       layout: () => _layout,
       setLayout: (layout) => setState(() => _layout = layout),
       trackCount: () => _trackManager.count,
+    );
+    _mediaCoordinator = MainWindowMediaCoordinator(
+      controller: _controller,
+      trackManager: _trackManager,
+      layoutCoordinator: _layoutCoordinator,
+      mounted: () => mounted,
+      textureId: () => _textureId,
+      setViewportState: _setViewportState,
+      setTextureId: _setTextureId,
+      setLayout: (layout) => setState(() => _layout = layout),
+      syncOffsets: () => _syncOffsets,
+      setSyncOffsets: (offsets) => setState(() => _syncOffsets = offsets),
+      durationUs: () => _durationUs,
+      pendingSeekUs: () => _pendingSeekUs,
+      currentPtsUs: () => _currentPtsUs,
+      applyStartupLoopRangeIfReady: _applyStartupLoopRangeIfReady,
+      cancelLoopBoundaryTimer: _cancelLoopBoundaryTimer,
+      resetAfterLastTrackRemoved: _resetAfterLastTrackRemoved,
+      seekTo: _seekTo,
     );
     _testHarness = main_hooks.MainWindowTestHarness(
       timelineSliderKey: _timelineSliderKey,
@@ -94,10 +112,10 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       seekTo: _seekTo,
       clickTimelineFraction: _testHarness.clickTimelineFraction,
       setSpeed: _setSpeed,
-      openFile: _openFile,
-      addMediaByPath: _addMediaByPath,
-      removeTrack: _onRemoveTrack,
-      adjustTrackOffset: _onOffsetChanged,
+      openFile: _mediaCoordinator.openFile,
+      addMediaByPath: _mediaCoordinator.addMediaByPath,
+      removeTrack: _mediaCoordinator.removeTrack,
+      adjustTrackOffset: _mediaCoordinator.onOffsetChanged,
       setLoopRangeEnabled: _setLoopRangeEnabled,
       isLoopRangeEnabled: () => _loopRangeEnabled,
       setLoopRange: _setLoopRange,
@@ -167,18 +185,6 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       _loopRangeSyncSerial++;
       _loopStartUs = 0;
       _loopEndUs = 0;
-    });
-  }
-
-  void _removeSyncOffset(int slot) {
-    setState(() {
-      _syncOffsets = Map.from(_syncOffsets)..remove(slot);
-    });
-  }
-
-  void _setSyncOffset(int slot, int offsetUs) {
-    setState(() {
-      _syncOffsets = Map.from(_syncOffsets)..[slot] = offsetUs;
     });
   }
 
@@ -292,6 +298,8 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   bool get _dragging => _state.dragging;
   set _dragging(bool value) => _state = _state.copyWith(dragging: value);
 
+  int get _effectiveDurationUs => _mediaCoordinator.effectiveDurationUs;
+
   // -- Build --
 
   @override
@@ -300,7 +308,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       dragging: _dragging,
       onFilesDropped: (paths) {
         setState(() => _dragging = false);
-        _loadMediaPaths(paths);
+        unawaited(_mediaCoordinator.loadMediaPaths(paths));
       },
       onDragEntered: () {
         if (!_dragging) setState(() => _dragging = true);
@@ -313,7 +321,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
         setState(() => _layout = _layout.copyWith(mode: mode));
         _layoutCoordinator.markLayoutDirty();
       },
-      onAddMedia: _openFile,
+      onAddMedia: _mediaCoordinator.openFile,
       onAnalysis: _triggerAnalysis,
       onProfiler: () => WindowManager.showStatsWindow(),
       onSettings: () => WindowManager.showSettingsWindow(),
@@ -328,8 +336,8 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       onPointerButton: _layoutCoordinator.onPointerButton,
       onResize: _layoutCoordinator.onViewportResize,
       trackManager: _trackManager,
-      onMediaSwapped: _onMediaSwapped,
-      onRemoveTrack: _onRemoveTrack,
+      onMediaSwapped: _mediaCoordinator.onMediaSwapped,
+      onRemoveTrack: _mediaCoordinator.removeTrack,
       timelineSliderKey: _timelineSliderKey,
       timelineStartWidth: _timelineStartWidth,
       onZoomChanged: _layoutCoordinator.onZoomComboChanged,
@@ -338,7 +346,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       onStepForward: () => _controller.stepForward(),
       onStepBackward: () => _controller.stepBackward(),
       currentPtsUs: _currentPtsUs,
-      durationUs: _effectiveDurationUs,
+      durationUs: _mediaCoordinator.effectiveDurationUs,
       onSeek: _seekTo,
       onSliderHover: _onSliderHover,
       markerUs: _loopMarkerPtsUs,
@@ -358,7 +366,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
             )
           : null,
       onReorder: _trackManager.moveTrack,
-      onOffsetChanged: _onOffsetChanged,
+      onOffsetChanged: _mediaCoordinator.onOffsetChanged,
       syncOffsets: _syncOffsets,
       hoverPtsUs: _hoverPtsUs,
       sliderHovering: _sliderHovering,

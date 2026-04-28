@@ -27,6 +27,7 @@ part 'main_window_analysis.dart';
 part 'main_window_layout.dart';
 part 'main_window_media.dart';
 part 'main_window_playback.dart';
+part 'main_window_test_hooks.dart';
 part 'main_window_tracks.dart';
 
 class MainWindow extends StatefulWidget {
@@ -54,7 +55,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   final _analysisHashesByFileId = <int, String>{};
   final _timelineSliderKey = GlobalKey();
   final _loopRangeBarKey = GlobalKey();
-  int _testPointerId = 9000;
+  late final MainWindowTestHarness _testHarness;
   int _analysisSnapshotSerial = 0;
 
   // Renderer state
@@ -103,6 +104,14 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _testHarness = MainWindowTestHarness(
+      timelineSliderKey: _timelineSliderKey,
+      loopRangeBarKey: _loopRangeBarKey,
+      timelineStartWidth: () => _timelineStartWidth,
+      effectiveDurationUs: () => _effectiveDurationUs,
+      resolvedLoopStartUs: () => _resolvedLoopStartUs,
+      resolvedLoopEndUs: () => _resolvedLoopEndUs,
+    );
     _trackManager.addListener(_onTrackManagerChanged);
     _bindActions();
     _startPolling();

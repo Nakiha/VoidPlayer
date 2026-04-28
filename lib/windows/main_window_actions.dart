@@ -17,7 +17,7 @@ extension _MainWindowActionBindings on _MainWindowState {
     });
     actionRegistry.bind(const ClickTimelineFraction(0), (action) {
       final a = action as ClickTimelineFraction;
-      _clickTimelineFraction(a.fraction);
+      _testHarness.clickTimelineFraction(a.fraction);
     });
     actionRegistry.bind(const SetSpeed(1.0), (action) {
       final a = action as SetSpeed;
@@ -53,7 +53,7 @@ extension _MainWindowActionBindings on _MainWindowState {
     });
     actionRegistry.bind(const DragLoopHandle('end', 0), (action) {
       final a = action as DragLoopHandle;
-      _dragLoopHandle(a.handle, a.targetUs, steps: a.steps);
+      _testHarness.dragLoopHandle(a.handle, a.targetUs, steps: a.steps);
     });
 
     // Layout

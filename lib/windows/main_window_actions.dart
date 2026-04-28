@@ -19,7 +19,9 @@ class MainWindowActionCoordinator {
   final MainWindowTestHarness testHarness;
   final bool Function() isLoopRangeEnabled;
 
-  const MainWindowActionCoordinator({
+  MainWindowActionBinder? _binder;
+
+  MainWindowActionCoordinator({
     required this.controller,
     required this.playbackCoordinator,
     required this.mediaCoordinator,
@@ -30,7 +32,8 @@ class MainWindowActionCoordinator {
   });
 
   void bind() {
-    MainWindowActionBinder(
+    _binder?.unbind();
+    _binder = MainWindowActionBinder(
       togglePlayPause: playbackCoordinator.togglePlayPause,
       play: playbackCoordinator.play,
       pause: playbackCoordinator.pause,
@@ -71,7 +74,12 @@ class MainWindowActionCoordinator {
       openStats: WindowManager.showStatsWindow,
       openMemory: WindowManager.showMemoryWindow,
       runAnalysis: analysisCoordinator.triggerAnalysis,
-    ).bind();
+    )..bind();
+  }
+
+  void dispose() {
+    _binder?.unbind();
+    _binder = null;
   }
 }
 
@@ -112,7 +120,9 @@ class MainWindowActionBinder {
   final void Function() openMemory;
   final Future<void> Function() runAnalysis;
 
-  const MainWindowActionBinder({
+  final List<String> _boundActionNames = [];
+
+  MainWindowActionBinder({
     required this.togglePlayPause,
     required this.play,
     required this.pause,
@@ -142,42 +152,43 @@ class MainWindowActionBinder {
   });
 
   void bind() {
-    actionRegistry.bind(const TogglePlayPause(), (_) => togglePlayPause());
-    actionRegistry.bind(const Play(), (_) => play());
-    actionRegistry.bind(const Pause(), (_) => pause());
-    actionRegistry.bind(const StepForward(), (_) => stepForward());
-    actionRegistry.bind(const StepBackward(), (_) => stepBackward());
-    actionRegistry.bind(const SeekTo(0), (action) {
+    unbind();
+    _bind(const TogglePlayPause(), (_) => togglePlayPause());
+    _bind(const Play(), (_) => play());
+    _bind(const Pause(), (_) => pause());
+    _bind(const StepForward(), (_) => stepForward());
+    _bind(const StepBackward(), (_) => stepBackward());
+    _bind(const SeekTo(0), (action) {
       final a = action as SeekTo;
       seekTo(a.ptsUs);
     });
-    actionRegistry.bind(const ClickTimelineFraction(0), (action) {
+    _bind(const ClickTimelineFraction(0), (action) {
       final a = action as ClickTimelineFraction;
       clickTimelineFraction(a.fraction);
     });
-    actionRegistry.bind(const SetSpeed(1.0), (action) {
+    _bind(const SetSpeed(1.0), (action) {
       final a = action as SetSpeed;
       setSpeed(a.speed);
     });
 
-    actionRegistry.bind(const OpenFile(), (_) => openFile());
-    actionRegistry.bind(const AddMedia(''), (action) {
+    _bind(const OpenFile(), (_) => openFile());
+    _bind(const AddMedia(''), (action) {
       final a = action as AddMedia;
       addMediaByPath(a.path);
     });
-    actionRegistry.bind(const RemoveTrackAction(0), (action) {
+    _bind(const RemoveTrackAction(0), (action) {
       final a = action as RemoveTrackAction;
       removeTrack(a.fileId);
     });
-    actionRegistry.bind(const AdjustTrackOffset(0, 0), (action) {
+    _bind(const AdjustTrackOffset(0, 0), (action) {
       final a = action as AdjustTrackOffset;
       adjustTrackOffset(a.slot, a.deltaMs);
     });
-    actionRegistry.bind(const SetLoopEnabled(false), (action) {
+    _bind(const SetLoopEnabled(false), (action) {
       final a = action as SetLoopEnabled;
       setLoopRangeEnabled(a.enabled);
     });
-    actionRegistry.bind(const SetLoopRange(0, 0), (action) {
+    _bind(const SetLoopRange(0, 0), (action) {
       final a = action as SetLoopRange;
       setLoopRange(
         a.startUs,
@@ -186,33 +197,45 @@ class MainWindowActionBinder {
         seekOnlyIfStartChanged: true,
       );
     });
-    actionRegistry.bind(const DragLoopHandle('end', 0), (action) {
+    _bind(const DragLoopHandle('end', 0), (action) {
       final a = action as DragLoopHandle;
       dragLoopHandle(a.handle, a.targetUs, steps: a.steps);
     });
 
-    actionRegistry.bind(const ToggleLayoutMode(), (_) => toggleLayoutMode());
-    actionRegistry.bind(const SetLayoutMode(0), (action) {
+    _bind(const ToggleLayoutMode(), (_) => toggleLayoutMode());
+    _bind(const SetLayoutMode(0), (action) {
       final a = action as SetLayoutMode;
       setLayoutMode(a.mode);
     });
-    actionRegistry.bind(const SetZoom(1.0), (action) {
+    _bind(const SetZoom(1.0), (action) {
       final a = action as SetZoom;
       setZoom(a.ratio);
     });
-    actionRegistry.bind(const SetSplitPos(0.5), (action) {
+    _bind(const SetSplitPos(0.5), (action) {
       final a = action as SetSplitPos;
       setSplitPos(a.position);
     });
-    actionRegistry.bind(const Pan(0, 0), (action) {
+    _bind(const Pan(0, 0), (action) {
       final a = action as Pan;
       panByDelta(a.dx, a.dy);
     });
 
-    actionRegistry.bind(const NewWindow(), (_) => openNewWindow());
-    actionRegistry.bind(const OpenSettings(), (_) => openSettings());
-    actionRegistry.bind(const OpenStats(), (_) => openStats());
-    actionRegistry.bind(const OpenMemory(), (_) => openMemory());
-    actionRegistry.bind(const RunAnalysis(), (_) => runAnalysis());
+    _bind(const NewWindow(), (_) => openNewWindow());
+    _bind(const OpenSettings(), (_) => openSettings());
+    _bind(const OpenStats(), (_) => openStats());
+    _bind(const OpenMemory(), (_) => openMemory());
+    _bind(const RunAnalysis(), (_) => runAnalysis());
+  }
+
+  void unbind() {
+    for (final name in _boundActionNames.reversed) {
+      actionRegistry.unbind(name);
+    }
+    _boundActionNames.clear();
+  }
+
+  void _bind(PlayerAction action, ActionCallback callback) {
+    actionRegistry.bind(action, callback);
+    _boundActionNames.add(action.name);
   }
 }

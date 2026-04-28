@@ -147,6 +147,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _actionCoordinator.dispose();
     _playbackCoordinator.dispose();
     _layoutCoordinator.dispose();
     _stateStore.dispose();

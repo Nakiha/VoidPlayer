@@ -1,42 +1,55 @@
-part of 'main_window.dart';
+import 'package:path/path.dart' as p;
 
-extension _MainWindowAnalysis on _MainWindowState {
-  Future<void> _triggerAnalysis() async {
-    if (_trackManager.isEmpty) return;
+import '../analysis/analysis_manager.dart';
+import '../track_manager.dart';
+import 'analysis_ipc.dart';
+import 'window_manager.dart';
+
+class MainWindowAnalysisCoordinator {
+  final TrackManager trackManager;
+  final AnalysisIpcServer _ipcServer = AnalysisIpcServer();
+  final Map<int, String> _hashesByFileId = <int, String>{};
+
+  int _snapshotSerial = 0;
+
+  MainWindowAnalysisCoordinator({required this.trackManager});
+
+  Future<void> dispose() => _ipcServer.dispose();
+
+  Future<void> triggerAnalysis() async {
+    if (trackManager.isEmpty) return;
     final mgr = AnalysisManager.instance;
     final windows = <AnalysisWindowRequest>[];
-    await _analysisIpcServer.start();
-    WindowManager.analysisIpcPort = _analysisIpcServer.port;
-    WindowManager.analysisIpcToken = _analysisIpcServer.token;
-    for (final entry in _trackManager.entries) {
+    await _ipcServer.start();
+    WindowManager.analysisIpcPort = _ipcServer.port;
+    WindowManager.analysisIpcToken = _ipcServer.token;
+    for (final entry in trackManager.entries) {
       final hash = await mgr.ensureAndLoad(entry.path);
       if (hash != null) {
-        _analysisHashesByFileId[entry.fileId] = hash;
+        _hashesByFileId[entry.fileId] = hash;
         windows.add((hash: hash, fileName: p.basename(entry.path)));
       }
     }
-    await _publishAnalysisTrackSnapshot();
+    await publishTrackSnapshot();
     await WindowManager.showAnalysisWindows(windows);
   }
 
-  Future<void> _publishAnalysisTrackSnapshot() async {
-    if (!_analysisIpcServer.isStarted) return;
-    final serial = ++_analysisSnapshotSerial;
+  Future<void> publishTrackSnapshot() async {
+    if (!_ipcServer.isStarted) return;
+    final serial = ++_snapshotSerial;
     final mgr = AnalysisManager.instance;
     final tracks = <AnalysisIpcTrack>[];
-    final liveFileIds = _trackManager.entries.map((e) => e.fileId).toSet();
-    _analysisHashesByFileId.removeWhere(
-      (fileId, _) => !liveFileIds.contains(fileId),
-    );
+    final liveFileIds = trackManager.entries.map((e) => e.fileId).toSet();
+    _hashesByFileId.removeWhere((fileId, _) => !liveFileIds.contains(fileId));
 
-    for (final entry in _trackManager.entries) {
-      var hash = _analysisHashesByFileId[entry.fileId];
+    for (final entry in trackManager.entries) {
+      var hash = _hashesByFileId[entry.fileId];
       if (hash == null) {
         hash = await mgr.ensureAndLoad(entry.path);
         if (hash == null) continue;
-        _analysisHashesByFileId[entry.fileId] = hash;
+        _hashesByFileId[entry.fileId] = hash;
       }
-      if (serial != _analysisSnapshotSerial) return;
+      if (serial != _snapshotSerial) return;
       tracks.add(
         AnalysisIpcTrack(
           fileId: entry.fileId,
@@ -49,7 +62,7 @@ extension _MainWindowAnalysis on _MainWindowState {
       );
     }
 
-    if (serial != _analysisSnapshotSerial) return;
-    _analysisIpcServer.publishTracks(tracks);
+    if (serial != _snapshotSerial) return;
+    _ipcServer.publishTracks(tracks);
   }
 }

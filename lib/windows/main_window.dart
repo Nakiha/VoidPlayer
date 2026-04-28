@@ -1,15 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as p;
 import '../app_log.dart';
 import '../startup_options.dart';
 import '../video_renderer_controller.dart';
 import '../track_manager.dart';
 import '../actions/test_runner.dart';
 import 'window_manager.dart';
-import '../analysis/analysis_manager.dart';
 import '../widgets/loop_range_bar.dart';
-import 'analysis_ipc.dart';
+import 'main_window_analysis.dart';
 import 'main_window_actions.dart';
 import 'main_window_layout.dart';
 import 'main_window_media.dart';
@@ -17,7 +15,6 @@ import 'main_window_state.dart' as main_state;
 import 'main_window_test_hooks.dart' as main_hooks;
 import 'main_window_view.dart';
 
-part 'main_window_analysis.dart';
 part 'main_window_playback.dart';
 
 class MainWindow extends StatefulWidget {
@@ -40,14 +37,12 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   final _controller = VideoRendererController();
   final _trackManager = TrackManager();
-  final _analysisIpcServer = AnalysisIpcServer();
-  final _analysisHashesByFileId = <int, String>{};
   final _timelineSliderKey = GlobalKey();
   final _loopRangeBarKey = GlobalKey();
+  late final MainWindowAnalysisCoordinator _analysisCoordinator;
   late final main_hooks.MainWindowTestHarness _testHarness;
   late final MainWindowLayoutCoordinator _layoutCoordinator;
   late final MainWindowMediaCoordinator _mediaCoordinator;
-  int _analysisSnapshotSerial = 0;
 
   main_state.MainWindowStateModel _state =
       const main_state.MainWindowStateModel();
@@ -68,6 +63,9 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       layout: () => _layout,
       setLayout: (layout) => setState(() => _layout = layout),
       trackCount: () => _trackManager.count,
+    );
+    _analysisCoordinator = MainWindowAnalysisCoordinator(
+      trackManager: _trackManager,
     );
     _mediaCoordinator = MainWindowMediaCoordinator(
       controller: _controller,
@@ -129,7 +127,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       openSettings: WindowManager.showSettingsWindow,
       openStats: WindowManager.showStatsWindow,
       openMemory: WindowManager.showMemoryWindow,
-      runAnalysis: _triggerAnalysis,
+      runAnalysis: _analysisCoordinator.triggerAnalysis,
     ).bind();
   }
 
@@ -146,7 +144,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     _pollTimer?.cancel();
     _loopBoundaryTimer?.cancel();
     _layoutCoordinator.dispose();
-    unawaited(_analysisIpcServer.dispose());
+    unawaited(_analysisCoordinator.dispose());
     _trackManager.dispose();
     unawaited(_controller.dispose());
     super.dispose();
@@ -159,7 +157,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       _layout = _layout.copyWith(order: _trackManager.order);
     });
     _layoutCoordinator.markLayoutDirty();
-    unawaited(_publishAnalysisTrackSnapshot());
+    unawaited(_analysisCoordinator.publishTrackSnapshot());
   }
 
   void _setViewportState(int state) {
@@ -322,7 +320,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
         _layoutCoordinator.markLayoutDirty();
       },
       onAddMedia: _mediaCoordinator.openFile,
-      onAnalysis: _triggerAnalysis,
+      onAnalysis: _analysisCoordinator.triggerAnalysis,
       onProfiler: () => WindowManager.showStatsWindow(),
       onSettings: () => WindowManager.showSettingsWindow(),
       viewModeEnabled: _textureId != null,

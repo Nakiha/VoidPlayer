@@ -48,6 +48,6 @@ python dev.py test                   # 构建 + 测试 native 模块
 
 ## 模块文档
 
-- **Flutter 侧** — 日志系统、交互系统 (Action) 等 → [lib/doc.md](lib/doc.md)
-- **Windows 平台侧** — Flutter runner、Win32 宿主、FFmpeg Windows bundle → [windows/doc.md](windows/doc.md)
-- **Native 侧** — C++ 视频渲染/解码/分析模块、架构、维护规范 → [native/docs/ARCHITECTURE.md](native/docs/ARCHITECTURE.md)
+- **Flutter / Dart 层** — UI 架构、主窗口 controller/coordinator、Action、UI 自动化 → [lib/doc.md](lib/doc.md)
+- **Windows 宿主层** — Flutter runner、Win32 窗口宿主、Texture plugin / MethodChannel 桥接 → [windows/doc.md](windows/doc.md)
+- **Native C++ 层** — C++ 视频渲染/解码/分析模块、架构、维护规范 → [native/docs/ARCHITECTURE.md](native/docs/ARCHITECTURE.md)

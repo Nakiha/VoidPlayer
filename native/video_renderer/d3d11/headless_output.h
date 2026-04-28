@@ -14,6 +14,7 @@ namespace vr {
 class D3D11HeadlessOutput {
 public:
     static constexpr int kBufferCount = 3;
+    static constexpr auto kPendingBufferRetireDelay = std::chrono::milliseconds(500);
 
     D3D11HeadlessOutput() = default;
     ~D3D11HeadlessOutput() = default;
@@ -21,17 +22,19 @@ public:
     bool initialize(ID3D11Device* device, ID3D11DeviceContext* context, int width, int height);
     void shutdown();
 
-    ID3D11Texture2D* shared_texture() const;
-    HANDLE shared_texture_handle() const;
-    std::mutex& texture_mutex() { return texture_mutex_; }
+    // Methods with the _locked suffix require callers to hold texture_mutex().
+    // Renderer keeps lock ordering as device_mutex -> texture_mutex.
+    ID3D11Texture2D* shared_texture_locked() const;
+    HANDLE shared_texture_handle_locked() const;
+    std::mutex& texture_mutex() const { return texture_mutex_; }
 
-    ID3D11RenderTargetView* begin_frame();
-    void publish_frame(const char* label);
+    ID3D11RenderTargetView* begin_frame_locked();
+    void publish_frame_locked(const char* label);
     void wait_gpu_idle(const char* label);
 
-    bool resize(int width, int height);
+    bool resize_locked(int width, int height);
     void cleanup_expired_pending_buffers();
-    bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
+    bool capture_front_buffer_locked(std::vector<uint8_t>& bgra, int& width, int& height);
 
     void set_frame_callback(std::function<void()> cb);
 
@@ -62,7 +65,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D11Query> gpu_fence_;
     std::vector<PendingBuffers> pending_destroy_;
     std::atomic<bool> has_pending_destroy_{false};
-    std::mutex texture_mutex_;
+    mutable std::mutex texture_mutex_;
     std::function<void()> frame_callback_;
     int current_back_ = 0;
 };

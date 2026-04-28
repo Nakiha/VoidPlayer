@@ -57,20 +57,20 @@ void D3D11HeadlessOutput::shutdown() {
     has_pending_destroy_.store(false);
 }
 
-ID3D11Texture2D* D3D11HeadlessOutput::shared_texture() const {
+ID3D11Texture2D* D3D11HeadlessOutput::shared_texture_locked() const {
     return buffers_.textures[buffers_.front.load()].Get();
 }
 
-HANDLE D3D11HeadlessOutput::shared_texture_handle() const {
+HANDLE D3D11HeadlessOutput::shared_texture_handle_locked() const {
     return buffers_.handles[buffers_.front.load()];
 }
 
-ID3D11RenderTargetView* D3D11HeadlessOutput::begin_frame() {
+ID3D11RenderTargetView* D3D11HeadlessOutput::begin_frame_locked() {
     current_back_ = pick_free_buffer();
     return buffers_.rtvs[current_back_].Get();
 }
 
-void D3D11HeadlessOutput::publish_frame(const char* label) {
+void D3D11HeadlessOutput::publish_frame_locked(const char* label) {
     wait_gpu_idle(label);
     buffers_.front.store(current_back_);
     if (frame_callback_) {
@@ -102,7 +102,7 @@ void D3D11HeadlessOutput::wait_gpu_idle(const char* label) {
     }
 }
 
-bool D3D11HeadlessOutput::resize(int width, int height) {
+bool D3D11HeadlessOutput::resize_locked(int width, int height) {
     Microsoft::WRL::ComPtr<ID3D11Texture2D> new_textures[kBufferCount];
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> new_rtvs[kBufferCount];
     HANDLE new_handles[kBufferCount] = {};
@@ -115,7 +115,9 @@ bool D3D11HeadlessOutput::resize(int width, int height) {
         old.textures[i] = std::move(buffers_.textures[i]);
         old.handles[i] = buffers_.handles[i];
     }
-    old.expire_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    // Best-effort grace period for Flutter texture callbacks that may still be
+    // reading the old shared handle. This is not a strict lifetime protocol.
+    old.expire_time = std::chrono::steady_clock::now() + kPendingBufferRetireDelay;
     pending_destroy_.push_back(std::move(old));
     has_pending_destroy_.store(true);
 
@@ -150,9 +152,9 @@ void D3D11HeadlessOutput::cleanup_expired_pending_buffers() {
     }
 }
 
-bool D3D11HeadlessOutput::capture_front_buffer(std::vector<uint8_t>& bgra,
-                                               int& width,
-                                               int& height) {
+bool D3D11HeadlessOutput::capture_front_buffer_locked(std::vector<uint8_t>& bgra,
+                                                      int& width,
+                                                      int& height) {
     if (!device_ || !context_) {
         return false;
     }
@@ -207,6 +209,7 @@ bool D3D11HeadlessOutput::capture_front_buffer(std::vector<uint8_t>& bgra,
 }
 
 void D3D11HeadlessOutput::set_frame_callback(std::function<void()> cb) {
+    std::lock_guard<std::mutex> lock(texture_mutex_);
     frame_callback_ = std::move(cb);
 }
 

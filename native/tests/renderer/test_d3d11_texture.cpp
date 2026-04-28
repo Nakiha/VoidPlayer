@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <vector>
 #include <cstring>
+#include <mutex>
 #include "test_utils.h"
 #include "video_renderer/d3d11/device.h"
 #include "video_renderer/d3d11/frame_presenter.h"
@@ -233,11 +234,14 @@ TEST_CASE("D3D11HeadlessOutput initializes shared texture buffers", "[d3d11][hea
     vr::D3D11HeadlessOutput output;
 
     REQUIRE(output.initialize(dev->device(), dev->context(), 320, 240));
-    REQUIRE(output.shared_texture() != nullptr);
-    REQUIRE(output.shared_texture_handle() != nullptr);
 
     D3D11_TEXTURE2D_DESC desc = {};
-    output.shared_texture()->GetDesc(&desc);
+    {
+        std::lock_guard<std::mutex> lock(output.texture_mutex());
+        REQUIRE(output.shared_texture_locked() != nullptr);
+        REQUIRE(output.shared_texture_handle_locked() != nullptr);
+        output.shared_texture_locked()->GetDesc(&desc);
+    }
     REQUIRE(desc.Width == 320);
     REQUIRE(desc.Height == 240);
     REQUIRE(desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM);
@@ -254,16 +258,21 @@ TEST_CASE("D3D11HeadlessOutput publishes and resizes buffers", "[d3d11][headless
     int callback_count = 0;
     output.set_frame_callback([&] { ++callback_count; });
 
-    REQUIRE(output.begin_frame() != nullptr);
-    output.publish_frame("headless_output_test");
+    {
+        std::lock_guard<std::mutex> lock(output.texture_mutex());
+        REQUIRE(output.begin_frame_locked() != nullptr);
+        output.publish_frame_locked("headless_output_test");
+    }
     REQUIRE(callback_count == 1);
 
-    REQUIRE(output.resize(640, 360));
-    REQUIRE(output.shared_texture() != nullptr);
-    REQUIRE(output.shared_texture_handle() != nullptr);
-
     D3D11_TEXTURE2D_DESC desc = {};
-    output.shared_texture()->GetDesc(&desc);
+    {
+        std::lock_guard<std::mutex> lock(output.texture_mutex());
+        REQUIRE(output.resize_locked(640, 360));
+        REQUIRE(output.shared_texture_locked() != nullptr);
+        REQUIRE(output.shared_texture_handle_locked() != nullptr);
+        output.shared_texture_locked()->GetDesc(&desc);
+    }
     REQUIRE(desc.Width == 640);
     REQUIRE(desc.Height == 360);
 

@@ -155,7 +155,7 @@ public:
     HANDLE shared_texture_handle() const;
 
     /// Mutex for thread-safe access to shared texture.
-    std::mutex& texture_mutex();
+    std::mutex& texture_mutex() const;
 
     /// Resize the offscreen shared texture (headless mode only).
     /// Stores pending dimensions; render loop applies at controlled rate.

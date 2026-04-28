@@ -841,9 +841,9 @@ void Renderer::draw_headless_and_publish(const PresentDecision& decision, const 
     if (!headless_output_) {
         return;
     }
-    cached_rtv_ = headless_output_->begin_frame();
+    cached_rtv_ = headless_output_->begin_frame_locked();
     draw_frame(decision);
-    headless_output_->publish_frame(label);
+    headless_output_->publish_frame_locked(label);
     preview_drawn_ = true;
 }
 
@@ -879,7 +879,7 @@ bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int&
 
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
     std::lock_guard<std::mutex> tex_lock(texture_mutex());
-    return headless_output_->capture_front_buffer(bgra, width, height);
+    return headless_output_->capture_front_buffer_locked(bgra, width, height);
 }
 
 bool Renderer::has_any_frame(const PresentDecision& decision) {
@@ -961,14 +961,22 @@ void Renderer::set_frame_callback(std::function<void()> cb) {
 }
 
 ID3D11Texture2D* Renderer::shared_texture() const {
-    return headless_output_ ? headless_output_->shared_texture() : nullptr;
+    if (!headless_output_) {
+        return nullptr;
+    }
+    std::lock_guard<std::mutex> lock(texture_mutex());
+    return headless_output_->shared_texture_locked();
 }
 
 HANDLE Renderer::shared_texture_handle() const {
-    return headless_output_ ? headless_output_->shared_texture_handle() : nullptr;
+    if (!headless_output_) {
+        return nullptr;
+    }
+    std::lock_guard<std::mutex> lock(texture_mutex());
+    return headless_output_->shared_texture_handle_locked();
 }
 
-std::mutex& Renderer::texture_mutex() {
+std::mutex& Renderer::texture_mutex() const {
     return headless_output_ ? headless_output_->texture_mutex() : texture_mutex_fallback_;
 }
 
@@ -1000,7 +1008,7 @@ void Renderer::do_resize(int width, int height) {
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
         std::lock_guard<std::mutex> tex_lock(texture_mutex());
-        if (!headless_output_ || !headless_output_->resize(width, height)) {
+        if (!headless_output_ || !headless_output_->resize_locked(width, height)) {
             return;
         }
 

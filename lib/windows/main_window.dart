@@ -6,19 +6,17 @@ import '../app_log.dart';
 import '../startup_options.dart';
 import '../video_renderer_controller.dart';
 import '../track_manager.dart';
-import '../actions/action_registry.dart';
-import '../actions/player_action.dart';
 import '../actions/test_runner.dart';
 import 'window_manager.dart';
 import '../analysis/analysis_manager.dart';
 import '../widgets/loop_range_bar.dart';
 import 'analysis_ipc.dart';
+import 'main_window_actions.dart';
 import 'main_window_state.dart' as main_state;
 import 'main_window_test_hooks.dart' as main_hooks;
 import 'main_window_view.dart';
 import 'native_file_picker.dart';
 
-part 'main_window_actions.dart';
 part 'main_window_analysis.dart';
 part 'main_window_layout.dart';
 part 'main_window_media.dart';
@@ -83,6 +81,37 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     _startPolling();
     _startLayoutTicker();
     _maybeStartTestRunner();
+  }
+
+  void _bindActions() {
+    MainWindowActionBinder(
+      togglePlayPause: _togglePlayPause,
+      play: _play,
+      pause: _pause,
+      stepForward: _controller.stepForward,
+      stepBackward: _controller.stepBackward,
+      seekTo: _seekTo,
+      clickTimelineFraction: _testHarness.clickTimelineFraction,
+      setSpeed: _setSpeed,
+      openFile: _openFile,
+      addMediaByPath: _addMediaByPath,
+      removeTrack: _onRemoveTrack,
+      adjustTrackOffset: _onOffsetChanged,
+      setLoopRangeEnabled: _setLoopRangeEnabled,
+      isLoopRangeEnabled: () => _loopRangeEnabled,
+      setLoopRange: _setLoopRange,
+      dragLoopHandle: _testHarness.dragLoopHandle,
+      toggleLayoutMode: _toggleLayoutMode,
+      setLayoutMode: _setLayoutMode,
+      setZoom: _setZoom,
+      setSplitPos: _setSplitPos,
+      panByDelta: _panByDelta,
+      openNewWindow: WindowManager.showStatsWindow,
+      openSettings: WindowManager.showSettingsWindow,
+      openStats: WindowManager.showStatsWindow,
+      openMemory: WindowManager.showMemoryWindow,
+      runAnalysis: _triggerAnalysis,
+    ).bind();
   }
 
   void _maybeStartTestRunner() {

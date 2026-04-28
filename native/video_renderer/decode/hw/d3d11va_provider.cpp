@@ -109,7 +109,8 @@ bool D3D11VAProvider::probe(const AVCodec* codec) const {
 
 HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
     HwDecodeInitResult result;
-    void* native_device = params.render_device;
+    void* native_device =
+        params.device_mode == DecodeDeviceMode::SharedRenderDevice ? params.render_device : nullptr;
     const int width = params.width;
     const int height = params.height;
     std::recursive_mutex* device_mutex = params.device_mutex;
@@ -119,8 +120,7 @@ HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
     // path; manually populated D3D11VA contexts can produce black transfer
     // frames on some drivers even though decode succeeds.
     const bool ffmpeg_owned_hwdownload_device =
-        (probed_codec_id_ == AV_CODEC_ID_AV1 || probed_codec_id_ == AV_CODEC_ID_VP9) &&
-        !native_device;
+        params.device_mode == DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
     if (ffmpeg_owned_hwdownload_device) {
         AVBufferRef* hw_dev_ref = nullptr;
         int ret = av_hwdevice_ctx_create(&hw_dev_ref, AV_HWDEVICE_TYPE_D3D11VA,
@@ -158,7 +158,8 @@ HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
     if (native_device) {
         d3d_device = static_cast<ID3D11Device*>(native_device);
         d3d_device->GetImmediateContext(&d3d_context_);
-        uses_shared_device_ = false;
+        uses_shared_device_ = true;
+        spdlog::warn("[D3D11VA] Shared render device mode enabled; use only for diagnostics");
     } else {
         if (!create_independent_decode_device(own_device_, d3d_context_)) {
             return result;
@@ -196,7 +197,7 @@ HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
     // drivers D3D11VA surfaces created with SHADER_RESOURCE|SHARED decode
     // successfully but transfer out as black frames, so keep them decoder-only.
     const bool decoder_only_surfaces =
-        probed_codec_id_ == AV_CODEC_ID_AV1 || probed_codec_id_ == AV_CODEC_ID_VP9;
+        params.device_mode == DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
     if (decoder_only_surfaces) {
         d3d11_ctx->BindFlags = D3D11_BIND_DECODER;
         d3d11_ctx->MiscFlags = 0;

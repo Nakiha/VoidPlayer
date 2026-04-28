@@ -52,11 +52,14 @@ public:
     /// If false, start() will always fail — caller should not use this instance.
     bool is_valid() const { return codec_ctx_ != nullptr; }
 
-    /// Enable hardware decode using the given native device.
+    /// Enable hardware decode using an explicit decode device strategy.
     /// Must be called before start(). On failure, falls back to software.
+    /// @param mode  Decode device ownership and sharing policy.
+    /// @param render_device  Required only for SharedRenderDevice.
     /// @param device_mutex  Shared mutex for D3D11 immediate context serialization.
     ///                      Must outlive this DecodeThread.
-    bool enable_hardware_decode(void* native_device,
+    bool enable_hardware_decode(DecodeDeviceMode mode = DecodeDeviceMode::IndependentDevice,
+                                void* render_device = nullptr,
                                 std::recursive_mutex* device_mutex = nullptr);
 
     bool start();
@@ -155,6 +158,7 @@ private:
 
     // Hardware decode state
     void* native_device_ = nullptr;
+    DecodeDeviceMode decode_device_mode_ = DecodeDeviceMode::IndependentDevice;
     AVBufferRef* hw_device_ctx_ = nullptr;   // Owned, from provider
     bool hw_enabled_ = false;
     HwDecodeType hw_type_ = HwDecodeType::None;

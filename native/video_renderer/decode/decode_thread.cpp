@@ -26,6 +26,18 @@ bool log_codec_exception(const char* stage, AVCodecID codec_id, bool hw_enabled)
                   stage, static_cast<int>(codec_id), hw_enabled);
     return false;
 }
+
+const char* decode_device_mode_name(DecodeDeviceMode mode) {
+    switch (mode) {
+    case DecodeDeviceMode::IndependentDevice:
+        return "IndependentDevice";
+    case DecodeDeviceMode::SharedRenderDevice:
+        return "SharedRenderDevice";
+    case DecodeDeviceMode::FfmpegOwnedHwDownloadDevice:
+        return "FfmpegOwnedHwDownloadDevice";
+    }
+    return "Unknown";
+}
 }  // namespace
 
 // get_format callback for hardware decode negotiation.
@@ -89,22 +101,33 @@ DecodeThread::~DecodeThread() {
     stop();
 }
 
-bool DecodeThread::enable_hardware_decode(void* native_device,
+bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
+                                           void* render_device,
                                            std::recursive_mutex* device_mutex) {
     if (!codec_ctx_ || !codec_) {
         spdlog::warn("[DecodeThread] Cannot enable hw decode: codec not initialized");
         return false;
     }
 
-    native_device_ = native_device;
+    if (mode == DecodeDeviceMode::SharedRenderDevice && !render_device) {
+        spdlog::warn("[DecodeThread] SharedRenderDevice requested without render_device");
+        return false;
+    }
+
+    decode_device_mode_ = mode;
+    native_device_ = (mode == DecodeDeviceMode::SharedRenderDevice) ? render_device : nullptr;
     device_mutex_ = device_mutex;
 
     HwDecodeInitParams hw_params;
     hw_params.backend = RenderBackendType::D3D11;
-    hw_params.render_device = native_device;
+    hw_params.device_mode = mode;
+    hw_params.render_device = render_device;
     hw_params.width = codec_params_->width;
     hw_params.height = codec_params_->height;
     hw_params.device_mutex = device_mutex;
+
+    spdlog::info("[DecodeThread] Hardware decode device mode: {}",
+                 decode_device_mode_name(mode));
 
     auto result = try_hw_decode_providers(codec_, hw_params);
 
@@ -246,11 +269,8 @@ const AVCodec* DecodeThread::preferred_software_decoder() const {
 }
 
 bool DecodeThread::hardware_output_downloads_to_cpu() const {
-    if (!codec_params_) {
-        return false;
-    }
-    return codec_params_->codec_id == AV_CODEC_ID_AV1 ||
-           codec_params_->codec_id == AV_CODEC_ID_VP9;
+    return hw_enabled_ &&
+           decode_device_mode_ == DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
 }
 
 bool DecodeThread::hardware_surfaces_are_renderer_owned() const {

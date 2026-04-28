@@ -19,6 +19,13 @@ static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
 static constexpr size_t kTrackForwardDepth = 4;
 static constexpr size_t kTrackBackwardDepth = 1;
 
+DecodeDeviceMode default_decode_device_mode(AVCodecID codec_id) {
+    if (codec_id == AV_CODEC_ID_AV1 || codec_id == AV_CODEC_ID_VP9) {
+        return DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
+    }
+    return DecodeDeviceMode::IndependentDevice;
+}
+
 Renderer::Renderer() = default;
 
 Renderer::~Renderer() {
@@ -1679,12 +1686,10 @@ std::unique_ptr<Renderer::TrackPipeline> Renderer::create_pipeline(const std::st
         });
 
     if (hw_decode) {
-        // Pass nullptr device — D3D11VA provider will create its own
-        // independent D3D11 device for decoding. This avoids sharing the
-        // render device's immediate context, which causes D3D11VA internal
-        // state corruption on HEVC seek. AV1 currently downloads hardware
-        // frames before upload, so it does not need render-device sharing.
-        pipeline->decode_thread->enable_hardware_decode(nullptr, nullptr);
+        // Use an explicit policy so stable codecs stay on an independent
+        // decode device, while AV1/VP9 keep the FFmpeg-owned hwdownload path.
+        pipeline->decode_thread->enable_hardware_decode(
+            default_decode_device_mode(stats.codec_params->codec_id));
     }
 
     if (!pipeline->decode_thread->start()) {
@@ -1770,7 +1775,8 @@ bool Renderer::recreate_decode_thread_for_seek(size_t slot, int64_t target_pts_u
         });
 
     if (track->use_hardware_decode) {
-        replacement->enable_hardware_decode(nullptr, nullptr);
+        replacement->enable_hardware_decode(
+            default_decode_device_mode(stats.codec_params->codec_id));
     }
 
     if (!replacement->start()) {

@@ -26,8 +26,15 @@ enum class RenderBackendType {
     Vulkan,
 };
 
+enum class DecodeDeviceMode {
+    IndependentDevice,
+    SharedRenderDevice,
+    FfmpegOwnedHwDownloadDevice,
+};
+
 struct HwDecodeInitParams {
     RenderBackendType backend = RenderBackendType::D3D11;
+    DecodeDeviceMode device_mode = DecodeDeviceMode::IndependentDevice;
     void* render_device = nullptr;
     void* shared_context = nullptr;
     int width = 0;

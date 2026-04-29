@@ -3,6 +3,7 @@
 import argparse
 import sys
 
+from .config import load_dev_config
 from .flutter_app import (
     cmd_build,
     cmd_demo,
@@ -120,6 +121,7 @@ Examples:
 
 
 def main() -> None:
+    load_dev_config()
     parser = build_parser()
 
     if len(sys.argv) == 1:

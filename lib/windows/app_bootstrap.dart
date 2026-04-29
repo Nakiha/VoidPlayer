@@ -110,6 +110,7 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
   final fileNames = <String?>[];
   String? testScriptPath;
   final silentUiTest = _hasFlag(args, '--silent-ui-test');
+  final dcompAlphaProbe = _hasFlag(args, '--dcomp-alpha-probe');
   int x = 100, y = 100, width = 800, height = 600;
   int accentColorValue = 0xFF0078D4;
   int? analysisIpcPort;
@@ -173,9 +174,12 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
 
   await Window.initialize();
   await Window.setEffect(
-    effect: WindowEffect.mica,
-    color: const Color(0xCC222222),
+    effect: dcompAlphaProbe ? WindowEffect.transparent : WindowEffect.mica,
+    color: dcompAlphaProbe ? const Color(0x00000000) : const Color(0xCC222222),
   );
+  if (dcompAlphaProbe) {
+    await windowManager.setBackgroundColor(Colors.transparent);
+  }
 
   final hwnd = initialHwnd != 0 ? initialHwnd : _currentFlutterRunnerHwnd();
   if (hwnd != 0) {
@@ -227,6 +231,7 @@ Future<void> runVoidPlayer(List<String> args) async {
 
   String? testScriptPath;
   final silentUiTest = _hasFlag(args, '--silent-ui-test');
+  final dcompAlphaProbe = _hasFlag(args, '--dcomp-alpha-probe');
   final scriptIdx = args.indexOf('--test-script');
   if (scriptIdx >= 0 && scriptIdx + 1 < args.length) {
     testScriptPath = args[scriptIdx + 1];
@@ -260,9 +265,12 @@ Future<void> runVoidPlayer(List<String> args) async {
 
   await Window.initialize();
   await Window.setEffect(
-    effect: WindowEffect.mica,
-    color: const Color(0xCC222222),
+    effect: dcompAlphaProbe ? WindowEffect.transparent : WindowEffect.mica,
+    color: dcompAlphaProbe ? const Color(0x00000000) : const Color(0xCC222222),
   );
+  if (dcompAlphaProbe) {
+    await windowManager.setBackgroundColor(Colors.transparent);
+  }
 
   await windowManager.setPreventClose(true);
   final closeHandler = _CloseHandler();
@@ -276,6 +284,7 @@ Future<void> runVoidPlayer(List<String> args) async {
       accentColor: accentColor,
       testScriptPath: testScriptPath,
       startupOptions: startupOptions,
+      dcompAlphaProbe: dcompAlphaProbe,
     ),
   );
 

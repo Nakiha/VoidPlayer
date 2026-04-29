@@ -3,6 +3,7 @@ import '../../l10n/app_localizations.dart';
 import 'analysis_ipc_client.dart';
 import 'analysis_window_page.dart';
 import 'analysis_window_workspace.dart';
+import 'analysis_workspace_models.dart';
 
 // ===========================================================================
 // Analysis window app entry for bitstream visualization.

@@ -13,7 +13,11 @@ Analysis 相关 Flutter 代码集中在 `lib/windows/analysis/`：
 | `analysis_page_controller.dart` | 单页数据加载、summary polling、派生状态、选择/zoom/filter 状态 |
 | `analysis_page_state.dart` | 单页 view model、view actions、共享页面枚举 |
 | `analysis_page_view.dart` | 单页页面布局编排，组装 chart、NALU browser/detail、split controls |
-| `analysis_window_workspace.dart` | 多 track workspace、tab/split view、workspace header |
+| `analysis_window_workspace.dart` | 多 track workspace 薄入口、IPC snapshot 合并、选中/模式状态 |
+| `analysis_workspace_models.dart` | workspace entry model / IPC track 转换 |
+| `analysis_workspace_tabs.dart` | workspace tab header、track tab、title button |
+| `analysis_workspace_split.dart` | workspace split grid、track pane |
+| `analysis_workspace_mode_toggle.dart` | tabs/split 模式切换控件 |
 | `analysis_window_charts.dart` | chart 兼容导出入口 |
 | `analysis_chart_common.dart` | chart 共用尺寸、坐标轴绘制、scrollbar、格式化 helper |
 | `analysis_reference_pyramid.dart` | reference pyramid chart、painter、hover/click 交互 |

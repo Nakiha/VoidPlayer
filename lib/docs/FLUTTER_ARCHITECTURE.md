@@ -41,6 +41,10 @@ lib/
 │   │   ├── analysis_window.dart   # analysis app entry
 │   │   ├── analysis_window_page.dart
 │   │   ├── analysis_window_workspace.dart
+│   │   ├── analysis_workspace_models.dart
+│   │   ├── analysis_workspace_tabs.dart
+│   │   ├── analysis_workspace_split.dart
+│   │   ├── analysis_workspace_mode_toggle.dart
 │   │   ├── analysis_window_charts.dart
 │   │   ├── analysis_window_nalu.dart
 │   │   ├── analysis_window_controls.dart

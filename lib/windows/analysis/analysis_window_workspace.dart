@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../widgets/segmented_widget.dart';
-import 'analysis_ipc.dart';
+import 'analysis_ipc_client.dart';
+import 'analysis_ipc_models.dart';
 import 'analysis_split_layout_controller.dart';
 import 'analysis_window_page.dart';
 import 'analysis_window_style.dart';

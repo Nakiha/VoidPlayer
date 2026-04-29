@@ -47,7 +47,10 @@ lib/
 │   │   ├── analysis_window_test_runner.dart
 │   │   ├── analysis_test_host.dart
 │   │   ├── analysis_split_layout_controller.dart
-│   │   └── analysis_ipc.dart
+│   │   ├── analysis_ipc.dart
+│   │   ├── analysis_ipc_models.dart
+│   │   ├── analysis_ipc_server.dart
+│   │   └── analysis_ipc_client.dart
 │   ├── app_bootstrap.dart         # 主窗口和 standalone analysis 启动分发
 │   └── window_manager.dart        # analysis 进程 / Win32 窗口协调
 ├── video_renderer_controller.dart # native MethodChannel API wrapper

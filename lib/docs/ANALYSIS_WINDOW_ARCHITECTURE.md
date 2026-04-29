@@ -14,11 +14,17 @@ Analysis 相关 Flutter 代码集中在 `lib/windows/analysis/`：
 | `analysis_page_state.dart` | 单页 view model、view actions、共享页面枚举 |
 | `analysis_page_view.dart` | 单页页面布局编排，组装 chart、NALU browser/detail、split controls |
 | `analysis_window_workspace.dart` | 多 track workspace、tab/split view、workspace header |
-| `analysis_window_charts.dart` | reference pyramid、frame trend、chart scrollbar、chart painters |
+| `analysis_window_charts.dart` | chart 兼容导出入口 |
+| `analysis_chart_common.dart` | chart 共用尺寸、坐标轴绘制、scrollbar、格式化 helper |
+| `analysis_reference_pyramid.dart` | reference pyramid chart、painter、hover/click 交互 |
+| `analysis_frame_trend.dart` | frame trend chart、painter、axis zoom、hover/click 交互 |
 | `analysis_window_nalu.dart` | NALU browser、filter、detail panel |
 | `analysis_window_controls.dart` | order/tab controls、analysis view icon、resizable dividers |
 | `analysis_window_test_runner.dart` | analysis 子窗体 CSV 指令解析和断言执行 |
-| `analysis_ipc.dart` | 主窗口和 analysis workspace process 之间的 track snapshot IPC |
+| `analysis_ipc.dart` | IPC 兼容导出入口 |
+| `analysis_ipc_models.dart` | IPC track DTO / JSON 转换 |
+| `analysis_ipc_server.dart` | 主窗口持有的 analysis IPC server |
+| `analysis_ipc_client.dart` | analysis 子进程持有的 IPC client |
 | `analysis_test_host.dart` | test runner 访问页面状态的窄接口 |
 | `analysis_split_layout_controller.dart` | workspace split view 共享布局比例 |
 | `analysis_window_style.dart` | analysis header/control 尺寸常量 |
@@ -28,9 +34,10 @@ Analysis 相关 Flutter 代码集中在 `lib/windows/analysis/`：
 
 - `analysis_window.dart` 保持薄入口，不放页面状态和交互逻辑。
 - `analysis_window_page.dart` 保持薄壳，不放页面级数据状态；状态和交互逻辑归 `analysis_page_controller.dart`。
-- 图表绘制和 hit-test 逻辑归 `analysis_window_charts.dart`。
+- 图表绘制和 hit-test 逻辑按图表类型拆分；共享坐标轴/scrollbar 逻辑归 `analysis_chart_common.dart`。
 - NALU 列表/详情归 `analysis_window_nalu.dart`。
 - 主窗口触发 analysis 的流程在 `lib/windows/main/main_window_analysis.dart`；跨进程生命周期在 `lib/windows/window_manager.dart`。
+- 主窗口只依赖 `analysis_ipc_server.dart` / `analysis_ipc_models.dart`；analysis 子进程只依赖 `analysis_ipc_client.dart` / `analysis_ipc_models.dart`。
 - analysis 子窗体脚本只放 analysis 专属指令，不复用主窗口 `PlayerAction`。
 - Analysis 文件之间使用普通 `import`，不要重新引入 `part` / `part of` 来共享私有状态。跨文件需要访问页面状态时，优先补窄接口或 view model。
 - `analysis_window_test_runner.dart` 只能通过 `AnalysisTestHost` 访问 page state，避免测试 DSL 再次和 `_AnalysisPageState` 私有字段耦合。

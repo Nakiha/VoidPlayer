@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .paths import ROOT, VTM_ANALYSIS_DIR, VTM_BUILD_DIR, VTM_DECODER, VTM_DIR
+from .paths import ROOT, VTM_ANALYSIS_DIR, VTM_BUILD_DIR, VTM_DIR, find_vtm_decoder
 from .process import header, run
 
 
@@ -112,18 +112,25 @@ def cmd_vtm_build() -> None:
         "cmake", "--build", str(VTM_BUILD_DIR), "--config", "Release", "--target", "DecoderApp",
     ], cwd=str(ROOT))
 
-    if VTM_DECODER.exists():
-        size_mb = VTM_DECODER.stat().st_size / (1024 * 1024)
-        print(f"\n  DecoderApp built: {VTM_DECODER} ({size_mb:.1f} MB)")
+    decoder = find_vtm_decoder()
+    if decoder.exists():
+        size_mb = decoder.stat().st_size / (1024 * 1024)
+        print(f"\n  DecoderApp built: {decoder} ({size_mb:.1f} MB)")
     else:
-        print(f"\n  WARNING: DecoderApp not found at {VTM_DECODER}")
+        print(f"\n  WARNING: DecoderApp not found under {VTM_DIR / 'bin'}")
 
 
 def cmd_vtm_analyze(args) -> None:
     """Generate .vbs2 binary stats for a video file."""
-    if not VTM_DECODER.exists():
+    decoder = find_vtm_decoder()
+    if not decoder.exists():
         print("DecoderApp not found. Building first...")
         cmd_vtm_build()
+        decoder = find_vtm_decoder()
+
+    if not decoder.exists():
+        print(f"ERROR: DecoderApp not found under {VTM_DIR / 'bin'}")
+        sys.exit(1)
 
     video_path = Path(args.video).resolve()
     if not video_path.exists():
@@ -143,7 +150,7 @@ def cmd_vtm_analyze(args) -> None:
     env["VTM_BINARY_STATS"] = str(vbs2_path)
 
     run([
-        str(VTM_DECODER),
+        str(decoder),
         "-b", str(raw_path),
         "--TraceFile=NUL",
         "--TraceRule=D_BLOCK_STATISTICS_CODED:poc>=0",

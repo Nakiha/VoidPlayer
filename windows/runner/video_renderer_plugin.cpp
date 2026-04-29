@@ -12,9 +12,11 @@
 #include <psapi.h>
 #include <wrl/client.h>
 #include <cstring>
+#include <exception>
 #include <vector>
 #include <sstream>
 #include <iomanip>
+#include <variant>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -31,6 +33,37 @@ extern "C" {
 #pragma comment(lib, "psapi.lib")
 
 namespace {
+using PluginResult = flutter::MethodResult<flutter::EncodableValue>;
+
+void ReportMethodException(
+    PluginResult* result,
+    const std::string& method,
+    const char* code,
+    const std::string& message) {
+    spdlog::warn("[VideoRendererPlugin] {} failed with {}: {}", method, code, message);
+    if (result) {
+        result->Error(code, message);
+    }
+}
+
+void ReportMethodException(
+    PluginResult* result,
+    const std::string& method,
+    const std::bad_variant_access& e) {
+    ReportMethodException(result, method, "BAD_ARGS", e.what());
+}
+
+void ReportMethodException(
+    PluginResult* result,
+    const std::string& method,
+    const std::exception& e) {
+    ReportMethodException(result, method, "NATIVE_EXCEPTION", e.what());
+}
+
+void ReportUnknownMethodException(PluginResult* result, const std::string& method) {
+    ReportMethodException(result, method, "NATIVE_EXCEPTION", "Unknown native exception");
+}
+
 std::string get_exe_dir() {
     char exe_path[MAX_PATH];
     GetModuleFileNameA(nullptr, exe_path, MAX_PATH);
@@ -398,6 +431,7 @@ void VideoRendererPlugin::HandleMethodCall(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     const auto& method = method_call.method_name();
+    try {
 
     if (method == "initLogging") {
         InitLogging(method_call.arguments(), std::move(result));
@@ -568,12 +602,20 @@ void VideoRendererPlugin::HandleMethodCall(
     } else {
         result->NotImplemented();
     }
+    } catch (const std::bad_variant_access& e) {
+        ReportMethodException(result.get(), method, e);
+    } catch (const std::exception& e) {
+        ReportMethodException(result.get(), method, e);
+    } catch (...) {
+        ReportUnknownMethodException(result.get(), method);
+    }
 }
 
 void VideoRendererPlugin::InitLogging(
     const flutter::EncodableValue* arguments,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
+    try {
     std::string level_str = "info";
     std::string logs_dir;
     std::string log_file_name;
@@ -619,12 +661,20 @@ void VideoRendererPlugin::InitLogging(
         level_str, config.file_path);
 
     result->Success(flutter::EncodableValue(nullptr));
+    } catch (const std::bad_variant_access& e) {
+        ReportMethodException(result.get(), "initLogging", e);
+    } catch (const std::exception& e) {
+        ReportMethodException(result.get(), "initLogging", e);
+    } catch (...) {
+        ReportUnknownMethodException(result.get(), "initLogging");
+    }
 }
 
 void VideoRendererPlugin::CreateRenderer(
     const flutter::EncodableValue* arguments,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
+    try {
     if (renderer_) {
         result->Error("ALREADY_CREATED", "Renderer already exists");
         return;
@@ -733,11 +783,19 @@ void VideoRendererPlugin::CreateRenderer(
     result_map[flutter::EncodableValue("tracks")] = flutter::EncodableValue(tracks_list);
 
     result->Success(flutter::EncodableValue(result_map));
+    } catch (const std::bad_variant_access& e) {
+        ReportMethodException(result.get(), "createRenderer", e);
+    } catch (const std::exception& e) {
+        ReportMethodException(result.get(), "createRenderer", e);
+    } catch (...) {
+        ReportUnknownMethodException(result.get(), "createRenderer");
+    }
 }
 
 void VideoRendererPlugin::DestroyRenderer(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
+    try {
     if (texture_id_ >= 0 && texture_registrar_) {
         texture_registrar_->UnregisterTexture(texture_id_);
         texture_id_ = -1;
@@ -752,12 +810,18 @@ void VideoRendererPlugin::DestroyRenderer(
 
     spdlog::info("[VideoRendererPlugin] Destroyed renderer");
     result->Success(flutter::EncodableValue(nullptr));
+    } catch (const std::exception& e) {
+        ReportMethodException(result.get(), "destroyRenderer", e);
+    } catch (...) {
+        ReportUnknownMethodException(result.get(), "destroyRenderer");
+    }
 }
 
 void VideoRendererPlugin::AddTrack(
     const flutter::EncodableValue* arguments,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
+    try {
     if (!renderer_) {
         result->Error("NO_RENDERER", "Renderer not created");
         return;
@@ -798,12 +862,20 @@ void VideoRendererPlugin::AddTrack(
 
     spdlog::info("[VideoRendererPlugin] Added track: file_id={}, slot={}, path={}, tracks={}", found->file_id, slot, path, renderer_->track_infos().size());
     result->Success(flutter::EncodableValue(make_track_map(*found)));
+    } catch (const std::bad_variant_access& e) {
+        ReportMethodException(result.get(), "addTrack", e);
+    } catch (const std::exception& e) {
+        ReportMethodException(result.get(), "addTrack", e);
+    } catch (...) {
+        ReportUnknownMethodException(result.get(), "addTrack");
+    }
 }
 
 void VideoRendererPlugin::RemoveTrack(
     const flutter::EncodableValue* arguments,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
+    try {
     if (!renderer_) {
         result->Error("NO_RENDERER", "Renderer not created");
         return;
@@ -829,12 +901,20 @@ void VideoRendererPlugin::RemoveTrack(
     renderer_->remove_track(file_id);
     spdlog::info("[VideoRendererPlugin] Removed track: file_id={}", file_id);
     result->Success(flutter::EncodableValue(nullptr));
+    } catch (const std::bad_variant_access& e) {
+        ReportMethodException(result.get(), "removeTrack", e);
+    } catch (const std::exception& e) {
+        ReportMethodException(result.get(), "removeTrack", e);
+    } catch (...) {
+        ReportUnknownMethodException(result.get(), "removeTrack");
+    }
 }
 
 void VideoRendererPlugin::SetTrackOffset(
     const flutter::EncodableValue* arguments,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
+    try {
     if (!renderer_ || !arguments) {
         result->Error("INVALID", "Renderer not created or no arguments");
         return;
@@ -860,12 +940,20 @@ void VideoRendererPlugin::SetTrackOffset(
     renderer_->set_track_offset(file_id, offset_us);
     spdlog::info("[VideoRendererPlugin] setTrackOffset: file_id={}, offset_us={}", file_id, offset_us);
     result->Success(flutter::EncodableValue(nullptr));
+    } catch (const std::bad_variant_access& e) {
+        ReportMethodException(result.get(), "setTrackOffset", e);
+    } catch (const std::exception& e) {
+        ReportMethodException(result.get(), "setTrackOffset", e);
+    } catch (...) {
+        ReportUnknownMethodException(result.get(), "setTrackOffset");
+    }
 }
 
 void VideoRendererPlugin::SetLoopRange(
     const flutter::EncodableValue* arguments,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
+    try {
     if (!renderer_ || !arguments) {
         result->Error("INVALID", "Renderer not created or no arguments");
         return;
@@ -898,12 +986,20 @@ void VideoRendererPlugin::SetLoopRange(
 
     renderer_->set_loop_range(enabled, start_us, end_us);
     result->Success(flutter::EncodableValue(nullptr));
+    } catch (const std::bad_variant_access& e) {
+        ReportMethodException(result.get(), "setLoopRange", e);
+    } catch (const std::exception& e) {
+        ReportMethodException(result.get(), "setLoopRange", e);
+    } catch (...) {
+        ReportUnknownMethodException(result.get(), "setLoopRange");
+    }
 }
 
 void VideoRendererPlugin::PickFiles(
     const flutter::EncodableValue* arguments,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
+    try {
     bool allow_multiple = true;
 
     if (arguments) {
@@ -973,12 +1069,20 @@ void VideoRendererPlugin::PickFiles(
 
     // Always return a list (empty = cancelled, non-empty = selected files)
     result->Success(flutter::EncodableValue(paths_list));
+    } catch (const std::bad_variant_access& e) {
+        ReportMethodException(result.get(), "pickFiles", e);
+    } catch (const std::exception& e) {
+        ReportMethodException(result.get(), "pickFiles", e);
+    } catch (...) {
+        ReportUnknownMethodException(result.get(), "pickFiles");
+    }
 }
 
 void VideoRendererPlugin::CaptureViewport(
     const flutter::EncodableValue* arguments,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
+    try {
     if (!renderer_) {
         result->Error("NO_RENDERER", "Renderer not created");
         return;
@@ -1020,4 +1124,11 @@ void VideoRendererPlugin::CaptureViewport(
         map[flutter::EncodableValue("outputPath")] = flutter::EncodableValue(output_path);
     }
     result->Success(flutter::EncodableValue(map));
+    } catch (const std::bad_variant_access& e) {
+        ReportMethodException(result.get(), "captureViewport", e);
+    } catch (const std::exception& e) {
+        ReportMethodException(result.get(), "captureViewport", e);
+    } catch (...) {
+        ReportUnknownMethodException(result.get(), "captureViewport");
+    }
 }

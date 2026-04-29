@@ -7,6 +7,9 @@ import 'l10n/app_localizations.dart';
 import 'startup_options.dart';
 import 'windows/main/main_window.dart';
 
+const _dcompKeyColor = Color(0xFF00FFFF);
+const _dcompProbePanelColor = Color(0xFF242428);
+
 class VoidPlayerApp extends StatelessWidget {
   final Color accentColor;
   final String? testScriptPath;
@@ -63,7 +66,7 @@ class _DCompAlphaHoleProbePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF00FFFF),
+      backgroundColor: _dcompProbePanelColor,
       body: LayoutBuilder(
         builder: (context, constraints) {
           final holeWidth = math.max(
@@ -177,11 +180,8 @@ class _HoleBackdropPainter extends CustomPainter {
       width: holeWidth,
       height: holeHeight,
     );
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = const Color(0xFF00FFFF),
-    );
-    canvas.drawRect(hole, Paint()..color = const Color(0xFF00FFFF));
+    canvas.drawRect(Offset.zero & size, Paint()..color = _dcompProbePanelColor);
+    canvas.drawRect(hole, Paint()..color = _dcompKeyColor);
   }
 
   @override

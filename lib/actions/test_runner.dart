@@ -146,7 +146,7 @@ class TestRunner {
 
       case ScriptQuit(:final exitCode):
         log.info('TestRunner ${instr.time}: QUIT $exitCode');
-        await WindowManager.closeAllSecondaryWindows();
+        await WindowManager.closeAllAnalysisWindows();
         exit(exitCode);
     }
   }

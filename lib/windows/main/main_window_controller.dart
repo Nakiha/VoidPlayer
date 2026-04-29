@@ -15,7 +15,6 @@ import 'main_window_playback.dart';
 import 'main_window_state.dart';
 import 'main_window_test_hooks.dart';
 import 'main_window_view.dart';
-import '../window_manager.dart';
 
 class MainWindowController {
   final TickerProvider vsync;
@@ -90,6 +89,7 @@ class MainWindowController {
       sliderHovering: _sliderHovering,
       controlsWidth: _timelineControlsWidth,
       profilerVisible: _profilerVisible,
+      settingsVisible: _settingsVisible,
     );
   }
 
@@ -113,7 +113,8 @@ class MainWindowController {
       onAnalysis: analysisCoordinator.triggerAnalysis,
       onProfiler: () => stateStore.setProfilerVisible(!_profilerVisible),
       onCloseProfiler: () => stateStore.setProfilerVisible(false),
-      onSettings: () => WindowManager.showSettingsWindow(),
+      onSettings: () => stateStore.setSettingsVisible(!_settingsVisible),
+      onCloseSettings: () => stateStore.setSettingsVisible(false),
       onPan: layoutCoordinator.onPan,
       onSplit: layoutCoordinator.onSplit,
       onZoom: layoutCoordinator.onZoom,
@@ -228,6 +229,7 @@ class MainWindowController {
       testHarness: testHarness,
       isLoopRangeEnabled: () => _loopRangeEnabled,
       showProfilerOverlay: () => stateStore.setProfilerVisible(true),
+      showSettingsDialog: () => stateStore.setSettingsVisible(true),
     );
   }
 
@@ -272,6 +274,7 @@ class MainWindowController {
   bool get _sliderHovering => _state.sliderHovering;
   bool get _dragging => _state.dragging;
   bool get _profilerVisible => _state.profilerVisible;
+  bool get _settingsVisible => _state.settingsVisible;
   double get _timelineStartWidth => playbackCoordinator.timelineStartWidth;
   int get _resolvedLoopStartUs => playbackCoordinator.resolvedLoopStartUs;
   int get _resolvedLoopEndUs => playbackCoordinator.resolvedLoopEndUs;

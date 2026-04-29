@@ -8,7 +8,6 @@ import 'main_window_layout.dart';
 import 'main_window_media.dart';
 import 'main_window_playback.dart';
 import 'main_window_test_hooks.dart';
-import '../window_manager.dart';
 
 class MainWindowActionCoordinator {
   final VideoRendererController controller;
@@ -19,6 +18,7 @@ class MainWindowActionCoordinator {
   final MainWindowTestHarness testHarness;
   final bool Function() isLoopRangeEnabled;
   final void Function() showProfilerOverlay;
+  final void Function() showSettingsDialog;
 
   MainWindowActionBinder? _binder;
 
@@ -31,6 +31,7 @@ class MainWindowActionCoordinator {
     required this.testHarness,
     required this.isLoopRangeEnabled,
     required this.showProfilerOverlay,
+    required this.showSettingsDialog,
   });
 
   void bind() {
@@ -72,7 +73,7 @@ class MainWindowActionCoordinator {
       setSplitPos: layoutCoordinator.setSplitPos,
       panByDelta: layoutCoordinator.panByDelta,
       openNewWindow: showProfilerOverlay,
-      openSettings: WindowManager.showSettingsWindow,
+      openSettings: showSettingsDialog,
       openStats: showProfilerOverlay,
       openMemory: showProfilerOverlay,
       runAnalysis: analysisCoordinator.triggerAnalysis,

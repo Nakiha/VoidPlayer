@@ -5,7 +5,7 @@ import 'analysis_window_page.dart';
 import 'analysis_window_workspace.dart';
 
 // ===========================================================================
-// Analysis Window — secondary Flutter window for bitstream visualization
+// Analysis window app entry for bitstream visualization.
 // ===========================================================================
 
 ThemeData _analysisTheme(Color accentColor) {

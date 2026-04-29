@@ -25,6 +25,7 @@ class MainWindowStateModel {
   final bool sliderHovering;
   final bool dragging;
   final bool profilerVisible;
+  final bool settingsVisible;
 
   const MainWindowStateModel({
     this.textureId,
@@ -47,6 +48,7 @@ class MainWindowStateModel {
     this.sliderHovering = false,
     this.dragging = false,
     this.profilerVisible = false,
+    this.settingsVisible = false,
   });
 
   MainWindowStateModel copyWith({
@@ -70,6 +72,7 @@ class MainWindowStateModel {
     bool? sliderHovering,
     bool? dragging,
     bool? profilerVisible,
+    bool? settingsVisible,
   }) {
     return MainWindowStateModel(
       textureId: textureId == _mainWindowStateUnset
@@ -101,6 +104,7 @@ class MainWindowStateModel {
       sliderHovering: sliderHovering ?? this.sliderHovering,
       dragging: dragging ?? this.dragging,
       profilerVisible: profilerVisible ?? this.profilerVisible,
+      settingsVisible: settingsVisible ?? this.settingsVisible,
     );
   }
 }
@@ -220,5 +224,9 @@ class MainWindowStateStore extends ChangeNotifier {
 
   void setProfilerVisible(bool visible) {
     _set(_value.copyWith(profilerVisible: visible));
+  }
+
+  void setSettingsVisible(bool visible) {
+    _set(_value.copyWith(settingsVisible: visible));
   }
 }

@@ -55,11 +55,11 @@
 
 `ActionFocus` 默认在焦点位于 `EditableText`（`TextField`、`TextFormField` 等）时放行所有按键。如果未来有输入控件需要部分拦截，需要修改 `handleKey` 中的判断逻辑。
 
-### 多窗口注意事项
+### 窗口注意事项
 
-设置窗口等子窗口由 `desktop_multi_window` 创建，运行在独立 Dart isolate 中，无法访问主窗口的 `actionRegistry`。快捷键显示使用 `PlayerAction.shortcutEntries` 静态列表，不依赖运行时注册状态。
+设置、统计、内存入口都在主窗口内显示，不再创建额外 Flutter engine。快捷键显示使用 `PlayerAction.shortcutEntries` 静态列表，不依赖运行时注册状态。
 
-另外，`window_manager` 插件的全局 method-channel 指针在多引擎场景下会冲突，因此子窗口不应注册该插件（见 `flutter_window.cpp` 中的 `DesktopMultiWindowSetWindowCreatedCallback`）。
+Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track 状态；不要重新引入同进程多 engine 窗口方案。
 
 ### 测试脚本
 
@@ -103,10 +103,10 @@
 | `STORE_VIEW_CENTER` | — | 测试脚本专用：记录归一化视图中心基线 |
 | `STORE_RESOURCE_USAGE` | — | 测试脚本专用：记录进程 RSS / 专用显存基线 |
 | `STORE_NATIVE_SEEK_COUNT` | — | 测试脚本专用：记录当前 native 插件 seek 日志计数 |
-| `NEW_WINDOW` | N | 新建窗口 |
-| `OPEN_SETTINGS` | — | 打开设置窗口 |
-| `OPEN_STATS` | — | 打开统计窗口 |
-| `OPEN_MEMORY` | — | 打开内存窗口 |
+| `NEW_WINDOW` | N | 打开主窗口内性能浮层（兼容旧入口） |
+| `OPEN_SETTINGS` | — | 打开主窗口设置对话框 |
+| `OPEN_STATS` | — | 打开主窗口性能浮层 |
+| `OPEN_MEMORY` | — | 打开主窗口性能浮层 |
 | `RUN_ANALYSIS` | — | 触发 analysis 流程 |
 
 ## Assert 清单

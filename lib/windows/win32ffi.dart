@@ -1,8 +1,5 @@
-/// Minimal Win32 FFI bindings for secondary window management.
-///
-/// Since `window_manager` cannot be used in secondary windows (it stores a
-/// global static method-channel pointer that would break the main window's
-/// close handler), we use raw FFI to position/resize/close those windows.
+/// Minimal Win32 FFI bindings for window discovery, positioning, and input
+/// state checks.
 library;
 
 import 'dart:ffi';
@@ -68,11 +65,6 @@ typedef _GetMonitorInfoWDart =
 
 typedef _IsWindowNative = Int32 Function(IntPtr hWnd);
 typedef _IsWindowDart = int Function(int hWnd);
-
-typedef _PostMessageWNative =
-    Int32 Function(IntPtr hWnd, Uint32 msg, IntPtr wParam, IntPtr lParam);
-typedef _PostMessageWDart =
-    int Function(int hWnd, int msg, int wParam, int lParam);
 
 typedef _GetWindowTextWNative =
     Int32 Function(IntPtr hWnd, Pointer<Utf16> lpString, Int32 nMaxCount);
@@ -165,7 +157,6 @@ const int _swpNoActivate = 0x0010;
 const int _swpShowWindow = 0x0040;
 const int _swpFrameChanged = 0x0020;
 const int _monitorDefaultToNearest = 0x00000002;
-const int _wmClose = 0x0010;
 const int _vkLButton = 0x01;
 const int _vkRButton = 0x02;
 const int _smCyCaption = 4;
@@ -174,9 +165,6 @@ const int _smCyPaddedBorder = 92;
 const int _gwlExStyle = -20;
 const int _wsExToolWindow = 0x00000080;
 const int _wsExAppWindow = 0x00040000;
-
-/// Window class name used by `desktop_multi_window` for secondary windows.
-const String kSecondaryWindowClass = 'FLUTTER_MULTI_WINDOW_WIN32_WINDOW';
 
 /// Window class name used by the Flutter runner for the main window.
 const String kMainWindowClass = 'FLUTTER_RUNNER_WIN32_WINDOW';
@@ -219,9 +207,6 @@ final _getMonitorInfoW = _user32
 final _isWindow = _user32.lookupFunction<_IsWindowNative, _IsWindowDart>(
   'IsWindow',
 );
-
-final _postMessageW = _user32
-    .lookupFunction<_PostMessageWNative, _PostMessageWDart>('PostMessageW');
 
 final _getWindowTextW = _user32
     .lookupFunction<_GetWindowTextWNative, _GetWindowTextWDart>(
@@ -278,7 +263,7 @@ final List<int> _enumResult = [];
 int _enumTargetPid = 0;
 String? _enumClassFilter;
 
-int _enumSecondaryWindowsCallback(int hwnd, int lParam) {
+int _enumCurrentProcessWindowsCallback(int hwnd, int lParam) {
   final clsBuf = calloc.allocate<Utf16>(512);
   try {
     final len = _getClassNameW(hwnd, clsBuf.cast<Utf16>(), 256);
@@ -439,18 +424,6 @@ class Win32FFI {
     }
   }
 
-  /// Posts `WM_CLOSE` to the window (graceful close request).
-  static void postClose(int hwnd) {
-    _postMessageW(hwnd, _wmClose, 0, 0);
-  }
-
-  /// Posts `WM_CLOSE` with `wParam=1` to signal forced close (app shutdown).
-  /// The secondary window's subclass proc checks `wParam` and allows
-  /// normal destruction instead of hiding.
-  static void forceClose(int hwnd) {
-    _postMessageW(hwnd, _wmClose, 1, 0);
-  }
-
   /// Returns the current process ID.
   static int getCurrentProcessId() => _getCurrentProcessId();
 
@@ -485,28 +458,13 @@ class Win32FFI {
     }
   }
 
-  /// Enumerates all top-level secondary windows (class
-  /// `FLUTTER_MULTI_WINDOW_WIN32_WINDOW`) belonging to this process.
-  static List<int> findSecondaryWindows() {
-    _enumResult.clear();
-    _enumTargetPid = getCurrentProcessId();
-    _enumClassFilter = kSecondaryWindowClass;
-    final callback = Pointer.fromFunction<_EnumWindowsCallbackNative>(
-      _enumSecondaryWindowsCallback,
-      0,
-    );
-    _enumWindows(callback, 0);
-    _enumClassFilter = null;
-    return List.unmodifiable(_enumResult);
-  }
-
   /// Finds top-level windows with [className] belonging to this process.
   static List<int> findCurrentProcessWindowsByClass(String className) {
     _enumResult.clear();
     _enumTargetPid = getCurrentProcessId();
     _enumClassFilter = className;
     final callback = Pointer.fromFunction<_EnumWindowsCallbackNative>(
-      _enumSecondaryWindowsCallback,
+      _enumCurrentProcessWindowsCallback,
       0,
     );
     _enumWindows(callback, 0);
@@ -518,7 +476,7 @@ class Win32FFI {
   // Position helpers
   // -----------------------------------------------------------------------
 
-  /// Computes a cascaded position for a child window relative to [parentRect],
+  /// Computes a cascaded position for a related window relative to [parentRect],
   /// clamped within [monitorWorkArea].
   static Rect cascadePosition(
     Rect parentRect,

@@ -10,6 +10,7 @@ import '../../widgets/media_header.dart';
 import '../../widgets/timeline_area.dart';
 import '../../widgets/toolbar.dart';
 import '../../widgets/viewport_panel.dart';
+import '../settings_window.dart';
 import '../stats_window.dart';
 
 class MainWindowViewModel {
@@ -38,6 +39,7 @@ class MainWindowViewModel {
   final bool sliderHovering;
   final double controlsWidth;
   final bool profilerVisible;
+  final bool settingsVisible;
 
   const MainWindowViewModel({
     required this.dragging,
@@ -65,6 +67,7 @@ class MainWindowViewModel {
     required this.sliderHovering,
     required this.controlsWidth,
     required this.profilerVisible,
+    required this.settingsVisible,
   });
 }
 
@@ -78,6 +81,7 @@ class MainWindowViewActions {
   final VoidCallback onProfiler;
   final VoidCallback onCloseProfiler;
   final VoidCallback onSettings;
+  final VoidCallback onCloseSettings;
   final ValueChanged<Offset> onPan;
   final ValueChanged<double> onSplit;
   final void Function(double scrollDelta, Offset localPos) onZoom;
@@ -108,6 +112,7 @@ class MainWindowViewActions {
     required this.onProfiler,
     required this.onCloseProfiler,
     required this.onSettings,
+    required this.onCloseSettings,
     required this.onPan,
     required this.onSplit,
     required this.onZoom,
@@ -272,8 +277,40 @@ class MainWindowView extends StatelessWidget {
                   ),
                 ),
               ),
+            if (model.settingsVisible)
+              Positioned.fill(
+                child: _ModalScrim(
+                  onDismiss: actions.onCloseSettings,
+                  child: _SettingsDialog(onClose: actions.onCloseSettings),
+                ),
+              ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ModalScrim extends StatelessWidget {
+  final VoidCallback onDismiss;
+  final Widget child;
+
+  const _ModalScrim({required this.onDismiss, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.32),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onDismiss,
+            ),
+          ),
+          Center(child: child),
+        ],
       ),
     );
   }
@@ -318,6 +355,63 @@ class _ProfilerOverlay extends StatelessWidget {
           const Divider(height: 1),
           const Expanded(child: StatsPage()),
         ],
+      ),
+    );
+  }
+}
+
+class _SettingsDialog extends StatelessWidget {
+  final VoidCallback onClose;
+
+  const _SettingsDialog({required this.onClose});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(
+        maxWidth: 760,
+        maxHeight: 560,
+        minWidth: 520,
+      ),
+      child: Material(
+        elevation: 16,
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            SizedBox(
+              height: 44,
+              child: Row(
+                children: [
+                  const SizedBox(width: 12),
+                  Icon(
+                    Icons.settings,
+                    size: 18,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      AppLocalizations.of(context)!.settings,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: onClose,
+                    icon: const Icon(Icons.close, size: 18),
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).closeButtonTooltip,
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            const Expanded(child: SettingsPage()),
+          ],
+        ),
       ),
     );
   }

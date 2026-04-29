@@ -11,9 +11,7 @@ import '../config/app_config.dart';
 import '../startup_options.dart';
 import 'analysis/analysis_ipc.dart';
 import 'analysis/analysis_window.dart';
-import 'settings_window.dart';
 import 'win32ffi.dart';
-import 'window_args.dart';
 import 'window_manager.dart';
 
 ({double width, double height})? _parseTestWindowHeader(String scriptPath) {
@@ -87,27 +85,8 @@ bool _isRectOnScreen(Rect rect) {
   return false;
 }
 
-/// Applies the initial position/size for a secondary window via FFI.
-///
-/// Must be called before `runApp()` so Flutter's rendering surface is
-/// initialized at the correct size from the very first frame.
-void _applySecondaryWindowRect(WindowArgs windowArgs) {
-  final rect = windowArgs.initialRect;
-  if (rect == null) return;
-  final hwnd = Win32FFI.getForegroundWindow();
-  if (hwnd != 0) {
-    Win32FFI.moveWindow(
-      hwnd,
-      rect.left.toInt(),
-      rect.top.toInt(),
-      rect.width.toInt(),
-      rect.height.toInt(),
-    );
-  }
-}
-
-/// Handles the close button: saves all window state, closes secondary
-/// windows, then closes the main window.
+/// Handles the close button: saves window state, closes analysis processes,
+/// then closes the main window.
 class _CloseHandler with WindowListener {
   @override
   void onWindowClose() async {
@@ -115,18 +94,17 @@ class _CloseHandler with WindowListener {
     final bounds = await windowManager.getBounds();
     AppConfig.instance.windowRect = bounds;
     await AppConfig.instance.save();
-    await WindowManager.closeAllSecondaryWindows();
+    await WindowManager.closeAllAnalysisWindows();
     await windowManager.setPreventClose(false);
     await windowManager.close();
   }
 }
 
-/// Runs the analysis window as a standalone process (no multi-engine).
+/// Runs the analysis window as a standalone process.
 ///
 /// Launched via `void_player.exe --standalone-analysis --hash=xxx ...`.
-/// Uses `window_manager` directly instead of `desktop_multi_window`, giving the
-/// analysis window its own D3D11 device and avoiding the Flutter multi-engine
-/// crash.
+/// This gives the analysis window its own D3D11 device and keeps it isolated
+/// from the main window renderer.
 Future<void> _runStandaloneAnalysis(List<String> args) async {
   final hashes = <String>[];
   final fileNames = <String?>[];
@@ -257,81 +235,51 @@ Future<void> runVoidPlayer(List<String> args) async {
       ? _parseTestWindowHeader(testScriptPath)
       : null;
 
-  final windowArgs = WindowArgs.parse(args);
   final startupOptions = StartupOptions.parse(args);
   for (final warning in startupOptions.warnings) {
     log.warning(warning);
   }
 
-  switch (windowArgs.windowType) {
-    case WindowArgs.settings:
-      log.info(
-        '[SecondaryWindow] type=${windowArgs.windowType}, initializing...',
-      );
-      await Window.initialize();
-      await Window.setEffect(
-        effect: WindowEffect.mica,
-        color: const Color(0xCC222222),
-      );
-      final accentColor = windowArgs.accentColor;
-      final app = switch (windowArgs.windowType) {
-        WindowArgs.settings => SettingsApp(accentColor: accentColor),
-        _ => throw StateError('unreachable'),
-      };
-      _applySecondaryWindowRect(windowArgs);
-      final hwnd = Win32FFI.getForegroundWindow();
-      if (hwnd != 0) {
-        final title = switch (windowArgs.windowType) {
-          _ => WindowArgs.windowTitles[windowArgs.windowType] ?? 'Void Player',
-        };
-        Win32FFI.setWindowText(hwnd, title);
-      }
-      runApp(app);
-      break;
-    default:
-      await AppConfig.initialize();
-      WindowManager.silentUiTest = silentUiTest;
+  await AppConfig.initialize();
+  WindowManager.silentUiTest = silentUiTest;
 
-      await windowManager.ensureInitialized();
-      await windowManager.setMinimumSize(const Size(520, 360));
+  await windowManager.ensureInitialized();
+  await windowManager.setMinimumSize(const Size(520, 360));
 
-      final savedRect = AppConfig.instance.windowRect;
-      if (testWindow != null) {
-        await windowManager.setSize(Size(testWindow.width, testWindow.height));
-        await windowManager.center();
-      } else if (savedRect != null && _isRectOnScreen(savedRect)) {
-        await windowManager.setSize(savedRect.size);
-        await windowManager.setPosition(savedRect.topLeft);
-      } else {
-        await windowManager.setSize(const Size(1280, 720));
-        await windowManager.center();
-      }
-
-      await Window.initialize();
-      await Window.setEffect(
-        effect: WindowEffect.mica,
-        color: const Color(0xCC222222),
-      );
-
-      await windowManager.setPreventClose(true);
-      final closeHandler = _CloseHandler();
-      windowManager.addListener(closeHandler);
-
-      final accentColor = await _getWindowsAccentColor();
-      WindowManager.accentColorValue = accentColor.toARGB32();
-      log.info(
-        'Application starting (main window), silentUiTest=$silentUiTest',
-      );
-      runApp(
-        VoidPlayerApp(
-          accentColor: accentColor,
-          testScriptPath: testScriptPath,
-          startupOptions: startupOptions,
-        ),
-      );
-
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        await _showWindowForMode(silent: silentUiTest);
-      });
+  final savedRect = AppConfig.instance.windowRect;
+  if (testWindow != null) {
+    await windowManager.setSize(Size(testWindow.width, testWindow.height));
+    await windowManager.center();
+  } else if (savedRect != null && _isRectOnScreen(savedRect)) {
+    await windowManager.setSize(savedRect.size);
+    await windowManager.setPosition(savedRect.topLeft);
+  } else {
+    await windowManager.setSize(const Size(1280, 720));
+    await windowManager.center();
   }
+
+  await Window.initialize();
+  await Window.setEffect(
+    effect: WindowEffect.mica,
+    color: const Color(0xCC222222),
+  );
+
+  await windowManager.setPreventClose(true);
+  final closeHandler = _CloseHandler();
+  windowManager.addListener(closeHandler);
+
+  final accentColor = await _getWindowsAccentColor();
+  WindowManager.accentColorValue = accentColor.toARGB32();
+  log.info('Application starting (main window), silentUiTest=$silentUiTest');
+  runApp(
+    VoidPlayerApp(
+      accentColor: accentColor,
+      testScriptPath: testScriptPath,
+      startupOptions: startupOptions,
+    ),
+  );
+
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    await _showWindowForMode(silent: silentUiTest);
+  });
 }

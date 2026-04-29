@@ -3,28 +3,6 @@ import '../actions/player_action.dart';
 import '../l10n/action_labels.dart';
 import '../l10n/app_localizations.dart';
 
-/// Settings window (secondary window, NavigationRail: Shortcuts | About).
-class SettingsApp extends StatelessWidget {
-  final Color accentColor;
-  const SettingsApp({super.key, required this.accentColor});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Void Player - Settings',
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: accentColor,
-          brightness: Brightness.dark,
-        ),
-      ),
-      home: const SettingsPage(),
-    );
-  }
-}
-
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -38,38 +16,33 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    return Scaffold(
-      body: Row(
-        children: [
-          NavigationRail(
-            selectedIndex: _selectedIndex,
-            onDestinationSelected: (index) {
-              setState(() => _selectedIndex = index);
-            },
-            labelType: NavigationRailLabelType.all,
-            destinations: [
-              NavigationRailDestination(
-                icon: const Icon(Icons.keyboard),
-                label: Text(l.shortcuts),
-              ),
-              NavigationRailDestination(
-                icon: const Icon(Icons.info_outline),
-                label: Text(l.about),
-              ),
-            ],
-          ),
-          const VerticalDivider(thickness: 1, width: 1),
-          Expanded(
-            child: IndexedStack(
-              index: _selectedIndex,
-              children: const [
-                _ShortcutsPage(),
-                _AboutPage(),
-              ],
+    return Row(
+      children: [
+        NavigationRail(
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: (index) {
+            setState(() => _selectedIndex = index);
+          },
+          labelType: NavigationRailLabelType.all,
+          destinations: [
+            NavigationRailDestination(
+              icon: const Icon(Icons.keyboard),
+              label: Text(l.shortcuts),
             ),
+            NavigationRailDestination(
+              icon: const Icon(Icons.info_outline),
+              label: Text(l.about),
+            ),
+          ],
+        ),
+        const VerticalDivider(thickness: 1, width: 1),
+        Expanded(
+          child: IndexedStack(
+            index: _selectedIndex,
+            children: const [_ShortcutsPage(), _AboutPage()],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -105,48 +78,63 @@ class _ShortcutsPage extends StatelessWidget {
                   children: [
                     Padding(
                       padding: const EdgeInsets.all(8),
-                      child: Text(l.action,
-                          style: theme.textTheme.labelSmall),
+                      child: Text(l.action, style: theme.textTheme.labelSmall),
                     ),
                     Padding(
                       padding: const EdgeInsets.all(8),
-                      child: Text(l.shortcut,
-                          style: theme.textTheme.labelSmall),
+                      child: Text(
+                        l.shortcut,
+                        style: theme.textTheme.labelSmall,
+                      ),
                     ),
                   ],
                 ),
                 // Divider
-                TableRow(children: [
-                  Divider(height: 1, color: theme.dividerColor),
-                  Divider(height: 1, color: theme.dividerColor),
-                ]),
-                // Data rows
-                ...PlayerAction.shortcutEntries.map((e) => TableRow(
+                TableRow(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      child: Text(resolveActionLabel(e.labelKey, l),
-                          style: theme.textTheme.bodySmall),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(e.shortcutLabel,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                                  fontFamily: 'monospace',
-                                )),
-                      ),
-                    ),
+                    Divider(height: 1, color: theme.dividerColor),
+                    Divider(height: 1, color: theme.dividerColor),
                   ],
-                )),
+                ),
+                // Data rows
+                ...PlayerAction.shortcutEntries.map(
+                  (e) => TableRow(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        child: Text(
+                          resolveActionLabel(e.labelKey, l),
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            e.shortcutLabel,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -170,13 +158,14 @@ class _AboutPage extends StatelessWidget {
         children: [
           Text(l.appTitle, style: theme.textTheme.headlineMedium),
           const SizedBox(height: 4),
-          Text(l.versionLabel,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  )),
+          Text(
+            l.versionLabel,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
           const SizedBox(height: 16),
-          Text(l.appDescription,
-              style: theme.textTheme.bodyMedium),
+          Text(l.appDescription, style: theme.textTheme.bodyMedium),
           const SizedBox(height: 24),
           Text(l.dependencies, style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
@@ -184,12 +173,14 @@ class _AboutPage extends StatelessWidget {
           _depItem('FFmpeg', 'LGPL-2.1+'),
           _depItem('Direct3D 11', 'MIT'),
           _depItem('flutter_acrylic', 'MIT'),
-          _depItem('desktop_multi_window', 'MIT'),
+          _depItem('window_manager', 'MIT'),
           const Spacer(),
-          Text(l.license,
-              style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  )),
+          Text(
+            l.license,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
         ],
       ),
     );
@@ -200,15 +191,11 @@ class _AboutPage extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         children: [
-          SizedBox(
-            width: 180,
-            child: Text(name),
+          SizedBox(width: 180, child: Text(name)),
+          Text(
+            license,
+            style: TextStyle(color: Colors.grey[400], fontSize: 12),
           ),
-          Text(license,
-              style: TextStyle(
-                color: Colors.grey[400],
-                fontSize: 12,
-              )),
         ],
       ),
     );

@@ -7,7 +7,7 @@
 Flutter 层是 Windows 桌面播放器 UI 和 native 渲染引擎之间的编排层，负责：
 
 - 主窗口 UI、timeline、loop range、轨道列表和 viewport 交互
-- 多窗口协调：设置、统计、内存、analysis 子窗口
+- 窗口协调：主窗口内设置/统计/内存浮层，以及独立进程 analysis 窗口
 - Action 系统：快捷键、按钮、测试脚本共用同一套操作入口
 - UI 自动化脚本和截图/hash 回归闭环
 - 通过 `VideoRendererController` 调用 native MethodChannel
@@ -48,8 +48,8 @@ lib/
 │   │   ├── analysis_test_host.dart
 │   │   ├── analysis_split_layout_controller.dart
 │   │   └── analysis_ipc.dart
-│   ├── app_bootstrap.dart         # 多窗口启动参数分发
-│   └── window_manager.dart        # desktop_multi_window / Win32 窗口协调
+│   ├── app_bootstrap.dart         # 主窗口和 standalone analysis 启动分发
+│   └── window_manager.dart        # analysis 进程 / Win32 窗口协调
 ├── video_renderer_controller.dart # native MethodChannel API wrapper
 └── main.dart                      # app bootstrap 入口
 ```
@@ -64,7 +64,7 @@ MainWindowController
 Coordinators
   ↓ 调用 VideoRendererController、TrackManager、WindowManager
 Platform / Native bridge
-  ↓ MethodChannel / Win32 FFI / desktop_multi_window
+  ↓ MethodChannel / Win32 FFI / analysis IPC
 Native renderer
 ```
 

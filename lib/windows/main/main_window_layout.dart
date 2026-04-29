@@ -21,6 +21,7 @@ class MainWindowLayoutCoordinator {
   bool _layoutDirty = false;
   bool _resizeDirty = false;
   bool _flushInProgress = false;
+  bool _disposed = false;
 
   int viewportWidth = 0;
   int viewportHeight = 0;
@@ -40,11 +41,14 @@ class MainWindowLayoutCoordinator {
   }
 
   void dispose() {
+    _disposed = true;
     _resizeDebounceTimer?.cancel();
     _ticker?.dispose();
+    _ticker = null;
   }
 
   void toggleLayoutMode() {
+    if (_disposed) return;
     setLayoutMode(
       layout().mode == LayoutMode.sideBySide
           ? LayoutMode.splitScreen
@@ -53,11 +57,13 @@ class MainWindowLayoutCoordinator {
   }
 
   void setLayoutMode(int mode) {
+    if (_disposed) return;
     _updateLayout((layout) => layout.copyWith(mode: mode));
     markLayoutDirty();
   }
 
   void setZoom(double ratio) {
+    if (_disposed) return;
     _updateLayout(
       (layout) => layout.copyWith(
         zoomRatio: ratio.clamp(LayoutState.zoomMin, LayoutState.zoomMax),
@@ -67,11 +73,13 @@ class MainWindowLayoutCoordinator {
   }
 
   void setSplitPos(double pos) {
+    if (_disposed) return;
     _updateLayout((layout) => layout.copyWith(splitPos: pos.clamp(0.0, 1.0)));
     markLayoutDirty();
   }
 
   void panByDelta(double dx, double dy) {
+    if (_disposed) return;
     _updateLayout(
       (layout) => layout.copyWith(
         viewOffsetX: layout.viewOffsetX + dx,
@@ -90,6 +98,7 @@ class MainWindowLayoutCoordinator {
   }
 
   void onZoom(double scrollDelta, Offset localPos) {
+    if (_disposed) return;
     final currentLayout = layout();
     final factor = scrollDelta > 0 ? 0.9 : 1.1;
     final newZoom = (currentLayout.zoomRatio * factor).clamp(
@@ -150,33 +159,37 @@ class MainWindowLayoutCoordinator {
   }
 
   void onViewportResize(int width, int height) {
+    if (_disposed) return;
     if (width == viewportWidth && height == viewportHeight) return;
     viewportWidth = width;
     viewportHeight = height;
     _resizeDebounceTimer?.cancel();
     _resizeDebounceTimer = Timer(viewportResizeDebounce, () {
-      if (!mounted()) return;
+      if (_disposed || !mounted()) return;
       _markResizeDirty();
     });
   }
 
   void onZoomComboChanged(double value) {
+    if (_disposed) return;
     _updateLayout((layout) => layout.copyWith(zoomRatio: value));
     markLayoutDirty();
   }
 
   void markLayoutDirty() {
+    if (_disposed) return;
     _layoutDirty = true;
     _ticker?.start();
   }
 
   void _markResizeDirty() {
+    if (_disposed) return;
     _resizeDirty = true;
     _ticker?.start();
   }
 
   Future<void> flushPendingLayout() async {
-    if (_flushInProgress) return;
+    if (_disposed || _flushInProgress) return;
     if (textureId() == null) {
       _resizeDirty = false;
       _layoutDirty = false;
@@ -186,12 +199,12 @@ class MainWindowLayoutCoordinator {
 
     _flushInProgress = true;
     try {
-      while (mounted() && (_resizeDirty || _layoutDirty)) {
+      while (!_disposed && mounted() && (_resizeDirty || _layoutDirty)) {
         if (_layoutDirty) {
           final nextLayout = layout();
           _layoutDirty = false;
           await controller.applyLayout(nextLayout);
-          if (!mounted()) return;
+          if (_disposed || !mounted()) return;
         }
 
         if (_resizeDirty && viewportWidth > 0 && viewportHeight > 0) {
@@ -199,10 +212,10 @@ class MainWindowLayoutCoordinator {
           final height = viewportHeight;
           _resizeDirty = false;
           await controller.resize(width, height);
-          if (!mounted()) return;
+          if (_disposed || !mounted()) return;
           if (!_layoutDirty) {
             final nextLayout = await controller.getLayout();
-            if (!mounted()) return;
+            if (_disposed || !mounted()) return;
             setLayout(nextLayout);
           }
         } else if (_resizeDirty) {
@@ -211,7 +224,7 @@ class MainWindowLayoutCoordinator {
       }
     } finally {
       _flushInProgress = false;
-      if (mounted()) {
+      if (!_disposed && mounted()) {
         if (_resizeDirty || _layoutDirty) {
           _ticker?.start();
         } else {

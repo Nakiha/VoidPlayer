@@ -26,6 +26,8 @@ class MainWindowMediaCoordinator {
   final VoidCallback cancelLoopBoundaryTimer;
   final VoidCallback resetAfterLastTrackRemoved;
   final void Function(int ptsUs) seekTo;
+  Future<void>? _loadInFlight;
+  bool _disposed = false;
 
   MainWindowMediaCoordinator({
     required this.controller,
@@ -47,8 +49,31 @@ class MainWindowMediaCoordinator {
     required this.seekTo,
   });
 
-  Future<void> loadMediaPaths(List<String> paths) async {
-    if (paths.isEmpty) return;
+  void dispose() {
+    _disposed = true;
+  }
+
+  bool get _alive => !_disposed && mounted();
+
+  Future<void> loadMediaPaths(List<String> paths) {
+    if (paths.isEmpty) return Future.value();
+    if (_disposed) return Future.value();
+
+    final previous = _loadInFlight;
+    late final Future<void> next;
+    next = (previous == null ? Future.value() : previous.catchError((_) {}))
+        .then((_) => _loadMediaPathsImpl(paths))
+        .whenComplete(() {
+          if (identical(_loadInFlight, next)) {
+            _loadInFlight = null;
+          }
+        });
+    _loadInFlight = next;
+    return next;
+  }
+
+  Future<void> _loadMediaPathsImpl(List<String> paths) async {
+    if (!_alive) return;
 
     if (textureId() == null) {
       setViewportState(0);
@@ -64,12 +89,15 @@ class MainWindowMediaCoordinator {
           width: initialWidth,
           height: initialHeight,
         );
+        if (!_alive) return;
         setTextureId(res.textureId);
         trackManager.setTracks(res.tracks);
-        setLayout(await controller.getLayout());
+        final nativeLayout = await controller.getLayout();
+        if (!_alive) return;
+        setLayout(nativeLayout);
         applyStartupLoopRangeIfReady();
         await WidgetsBinding.instance.endOfFrame;
-        if (!mounted()) return;
+        if (!_alive) return;
         if (layoutCoordinator.viewportWidth > 0 &&
             layoutCoordinator.viewportHeight > 0) {
           await controller.resize(
@@ -77,16 +105,18 @@ class MainWindowMediaCoordinator {
             layoutCoordinator.viewportHeight,
           );
         }
-        if (!mounted()) return;
+        if (!_alive) return;
         setViewportState(2);
       } catch (e) {
         log.severe("createRenderer failed: $e");
-        setViewportState(1);
+        if (_alive) setViewportState(1);
       }
     } else {
       for (final path in paths) {
+        if (!_alive) return;
         try {
           final track = await controller.addTrack(path);
+          if (!_alive) return;
           trackManager.addTrack(track);
           applyStartupLoopRangeIfReady();
         } catch (e) {
@@ -108,21 +138,29 @@ class MainWindowMediaCoordinator {
   }
 
   Future<void> removeTrack(int fileId) async {
-    final entry = trackManager.entries.firstWhere(
-      (e) => e.fileId == fileId,
-      orElse: () => throw StateError('No track with fileId $fileId'),
-    );
-    final slot = entry.info.slot;
+    if (!_alive) return;
+    try {
+      final entry = trackManager.entries.firstWhere(
+        (e) => e.fileId == fileId,
+        orElse: () => throw StateError('No track with fileId $fileId'),
+      );
+      final slot = entry.info.slot;
 
-    await controller.removeTrack(fileId);
-    final tracks = await controller.getTracks();
-    if (tracks.isEmpty) {
-      await controller.dispose();
-      cancelLoopBoundaryTimer();
-      resetAfterLastTrackRemoved();
-    } else {
-      trackManager.setTracks(tracks);
-      removeSyncOffset(slot);
+      await controller.removeTrack(fileId);
+      if (!_alive) return;
+      final tracks = await controller.getTracks();
+      if (!_alive) return;
+      if (tracks.isEmpty) {
+        await controller.dispose();
+        if (!_alive) return;
+        cancelLoopBoundaryTimer();
+        resetAfterLastTrackRemoved();
+      } else {
+        trackManager.setTracks(tracks);
+        removeSyncOffset(slot);
+      }
+    } catch (e) {
+      if (_alive) log.severe("removeTrack failed: $e");
     }
   }
 

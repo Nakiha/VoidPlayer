@@ -132,8 +132,12 @@ class VideoRendererController {
 
   int? _textureId;
   bool _disposed = false;
+  Future<CreateRendererResult>? _createInFlight;
+  Future<void>? _disposeFuture;
 
   int? get textureId => _textureId;
+  bool get isDisposed => _disposed;
+  bool get hasRenderer => _textureId != null;
 
   void _ensureAlive() {
     if (_disposed) {
@@ -159,13 +163,34 @@ class VideoRendererController {
     List<String> videoPaths, {
     int width = 1920,
     int height = 1080,
-  }) async {
+  }) {
     _ensureAlive();
+    if (_textureId != null) {
+      throw StateError('Renderer already created');
+    }
+    final existing = _createInFlight;
+    if (existing != null) return existing;
+
+    late final Future<CreateRendererResult> future;
+    future = _createRendererImpl(videoPaths, width: width, height: height)
+        .whenComplete(() {
+          if (identical(_createInFlight, future)) {
+            _createInFlight = null;
+          }
+        });
+    _createInFlight = future;
+    return future;
+  }
+
+  Future<CreateRendererResult> _createRendererImpl(
+    List<String> videoPaths, {
+    required int width,
+    required int height,
+  }) async {
     final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
       'createRenderer',
       {'videoPaths': videoPaths, 'width': width, 'height': height},
     );
-    _ensureAlive();
     final payload = _requireMap(map, 'createRenderer');
     final textureId = payload['textureId'];
     if (textureId is! int) {
@@ -181,12 +206,14 @@ class VideoRendererController {
     }
     final tracksList = tracksValue as List<dynamic>? ?? [];
     _textureId = textureId;
-    return CreateRendererResult(
+    final result = CreateRendererResult(
       textureId: textureId,
       tracks: tracksList
           .map((e) => _trackInfoFromValue(e, 'createRenderer'))
           .toList(),
     );
+    _ensureAlive();
+    return result;
   }
 
   Future<void> play() {
@@ -322,8 +349,21 @@ class VideoRendererController {
   }
 
   Future<void> dispose() async {
-    if (_disposed) return;
+    final existing = _disposeFuture;
+    if (existing != null) return existing;
+    _disposeFuture = _disposeImpl();
+    return _disposeFuture!;
+  }
+
+  Future<void> _disposeImpl() async {
+    if (_disposed && _textureId == null) return;
     _disposed = true;
+    final creating = _createInFlight;
+    if (creating != null) {
+      try {
+        await creating;
+      } catch (_) {}
+    }
     final textureId = _textureId;
     _textureId = null;
     if (textureId != null) {

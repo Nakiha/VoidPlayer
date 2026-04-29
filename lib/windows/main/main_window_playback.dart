@@ -43,6 +43,8 @@ class MainWindowPlaybackCoordinator {
 
   Timer? _pollTimer;
   Timer? _loopBoundaryTimer;
+  bool _disposed = false;
+  int _pollSerial = 0;
   int _loopRangeSyncSerial = 0;
 
   MainWindowPlaybackCoordinator({
@@ -79,11 +81,15 @@ class MainWindowPlaybackCoordinator {
   });
 
   void dispose() {
+    _disposed = true;
+    _pollSerial++;
+    _loopRangeSyncSerial++;
     _pollTimer?.cancel();
     _loopBoundaryTimer?.cancel();
   }
 
   void startPolling() {
+    if (_disposed) return;
     _pollTimer = Timer.periodic(
       const Duration(milliseconds: 200),
       (_) => _pollState(),
@@ -95,6 +101,7 @@ class MainWindowPlaybackCoordinator {
   }
 
   void togglePlayPause() {
+    if (_disposed) return;
     if (isPlaying()) {
       unawaited(pause());
     } else {
@@ -103,37 +110,44 @@ class MainWindowPlaybackCoordinator {
   }
 
   Future<void> play() async {
+    if (_disposed) return;
     if (loopRangeEnabled() && !_currentPtsInsideLoopRange) {
       await _seekToAsync(resolvedLoopStartUs);
-      if (!mounted()) return;
+      if (_disposed || !mounted()) return;
     }
     await controller.play();
-    if (!mounted()) return;
+    if (_disposed || !mounted()) return;
     setPlaying(true);
     scheduleLoopBoundaryTimer();
   }
 
   Future<void> pause() async {
+    if (_disposed) return;
     await controller.pause();
-    if (!mounted()) return;
+    if (_disposed || !mounted()) return;
     cancelLoopBoundaryTimer();
     setPlaying(false);
   }
 
   void setSpeed(double speed) {
-    setPlaybackSpeed(speed > 0 ? speed : 1.0);
-    unawaited(controller.setSpeed(speed));
+    if (_disposed) return;
+    final clamped = speed > 0 ? speed : 1.0;
+    setPlaybackSpeed(clamped);
+    unawaited(controller.setSpeed(clamped));
     scheduleLoopBoundaryTimer();
   }
 
   void seekTo(int ptsUs) {
+    if (_disposed) return;
     unawaited(_seekToAsync(ptsUs).catchError((_) {}));
   }
 
   Future<void> _seekToAsync(int ptsUs) async {
+    if (_disposed) return;
+    _pollSerial++;
     setSeekPreview(ptsUs);
     await controller.seek(ptsUs);
-    if (!mounted()) return;
+    if (_disposed || !mounted()) return;
     scheduleLoopBoundaryTimer(fromPtsUs: ptsUs);
   }
 
@@ -169,7 +183,8 @@ class MainWindowPlaybackCoordinator {
 
   void scheduleLoopBoundaryTimer({int? fromPtsUs}) {
     cancelLoopBoundaryTimer();
-    if (!loopRangeEnabled() ||
+    if (_disposed ||
+        !loopRangeEnabled() ||
         nativeLoopRangeSynced() ||
         !isPlaying() ||
         playbackSpeed() <= 0 ||
@@ -190,6 +205,7 @@ class MainWindowPlaybackCoordinator {
 
   Future<void> _onLoopBoundaryTimer() async {
     _loopBoundaryTimer = null;
+    if (_disposed) return;
     if (!loopRangeEnabled() ||
         !isPlaying() ||
         resolvedLoopEndUs <= resolvedLoopStartUs) {
@@ -203,7 +219,7 @@ class MainWindowPlaybackCoordinator {
       pts = await controller.currentPts();
     } catch (_) {}
 
-    if (!mounted() || !loopRangeEnabled() || !isPlaying()) return;
+    if (_disposed || !mounted() || !loopRangeEnabled() || !isPlaying()) return;
     if (pts < endUs - 12000) {
       scheduleLoopBoundaryTimer(fromPtsUs: pts);
       return;
@@ -212,14 +228,15 @@ class MainWindowPlaybackCoordinator {
   }
 
   Future<void> _pollState() async {
-    if (textureId() == null) return;
+    if (_disposed || textureId() == null) return;
+    final serial = ++_pollSerial;
     try {
       final results = await Future.wait([
         controller.currentPts(),
         controller.duration(),
         controller.isPlaying(),
       ]);
-      if (!mounted()) return;
+      if (_disposed || !mounted() || serial != _pollSerial) return;
 
       var pts = results[0] as int;
       final dur = results[1] as int;
@@ -264,12 +281,13 @@ class MainWindowPlaybackCoordinator {
   }
 
   Future<void> setLoopRangeEnabled(bool enabled) async {
+    if (_disposed) return;
     if (enabled) {
       _ensureLoopRangeInitialized();
       setLoopRangeEnabledState(true);
       _syncNativeLoopRange();
       await controller.pause();
-      if (!mounted()) return;
+      if (_disposed || !mounted()) return;
       cancelLoopBoundaryTimer();
       setPlaying(false);
       seekTo(resolvedLoopStartUs);
@@ -281,6 +299,7 @@ class MainWindowPlaybackCoordinator {
   }
 
   void applyStartupLoopRangeIfReady() {
+    if (_disposed) return;
     if (startupLoopRangeApplied() || trackManager.isEmpty) return;
     final range = startupOptions.loopRange;
     if (range == null) return;
@@ -299,6 +318,7 @@ class MainWindowPlaybackCoordinator {
     bool seekToStart = false,
     bool seekOnlyIfStartChanged = false,
   }) async {
+    if (_disposed) return;
     final durationUs = effectiveDurationUs();
     final previousStartUs = resolvedLoopStartUs;
     final minRangeUs = durationUs > 10000 ? 10000 : 0;
@@ -316,7 +336,7 @@ class MainWindowPlaybackCoordinator {
         loopRangeEnabled() &&
         (!seekOnlyIfStartChanged || clampedStartUs != previousStartUs)) {
       await controller.pause();
-      if (!mounted()) return;
+      if (_disposed || !mounted()) return;
       cancelLoopBoundaryTimer();
       setPlaying(false);
       seekTo(resolvedLoopStartUs);
@@ -324,6 +344,7 @@ class MainWindowPlaybackCoordinator {
   }
 
   void _syncNativeLoopRange() {
+    if (_disposed) return;
     final enabled = loopRangeEnabled();
     final startUs = resolvedLoopStartUs;
     final endUs = resolvedLoopEndUs;
@@ -333,7 +354,9 @@ class MainWindowPlaybackCoordinator {
       controller
           .setLoopRange(enabled: enabled, startUs: startUs, endUs: endUs)
           .then((_) {
-            if (!mounted() || serial != _loopRangeSyncSerial) return;
+            if (_disposed || !mounted() || serial != _loopRangeSyncSerial) {
+              return;
+            }
             setNativeLoopRangeSynced(enabled);
             if (enabled) {
               cancelLoopBoundaryTimer();
@@ -342,7 +365,9 @@ class MainWindowPlaybackCoordinator {
             }
           })
           .catchError((_) {
-            if (!mounted() || serial != _loopRangeSyncSerial) return;
+            if (_disposed || !mounted() || serial != _loopRangeSyncSerial) {
+              return;
+            }
             setNativeLoopRangeSynced(false);
             scheduleLoopBoundaryTimer();
           }),
@@ -359,6 +384,7 @@ class MainWindowPlaybackCoordinator {
   }
 
   void onSliderHover(int hoverUs, bool hovering) {
+    if (_disposed) return;
     if (hoverPtsUs() == hoverUs && sliderHovering() == hovering) return;
     setSliderHoverState(hoverUs, hovering);
   }

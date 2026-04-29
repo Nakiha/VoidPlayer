@@ -55,6 +55,7 @@ class MainWindowController {
   void dispose() {
     actionCoordinator.dispose();
     playbackCoordinator.dispose();
+    mediaCoordinator.dispose();
     layoutCoordinator.dispose();
     stateStore.dispose();
     unawaited(analysisCoordinator.dispose());

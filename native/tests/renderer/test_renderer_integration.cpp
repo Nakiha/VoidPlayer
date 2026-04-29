@@ -143,6 +143,52 @@ TEST_CASE("Renderer: initialize with single H264 file", "[renderer]") {
     destroy_window(static_cast<HWND>(config.hwnd));
 }
 
+TEST_CASE("Renderer: duplicate initialize is rejected without tearing down the running renderer", "[renderer]") {
+    Renderer renderer;
+
+    RendererConfig config;
+    config.video_paths = { video_test_dir() + "/h264_9s_1920x1080.mp4" };
+    config.hwnd = create_hidden_window(640, 480);
+    config.width = 640;
+    config.height = 480;
+    config.use_hardware_decode = false;
+
+    REQUIRE(renderer.initialize(config));
+    REQUIRE_FALSE(renderer.initialize(config));
+    REQUIRE(renderer.is_initialized());
+    REQUIRE(renderer.track_count() == 1);
+
+    renderer.shutdown();
+    REQUIRE_FALSE(renderer.is_initialized());
+    destroy_window(static_cast<HWND>(config.hwnd));
+}
+
+TEST_CASE("Renderer: failed initialize rolls back resources and allows retry", "[renderer]") {
+    Renderer renderer;
+
+    RendererConfig bad_config;
+    bad_config.video_paths = { video_test_dir() + "/missing-video.mp4" };
+    bad_config.hwnd = create_hidden_window(640, 480);
+    bad_config.width = 640;
+    bad_config.height = 480;
+    bad_config.use_hardware_decode = false;
+
+    REQUIRE_FALSE(renderer.initialize(bad_config));
+    REQUIRE_FALSE(renderer.is_initialized());
+    REQUIRE(renderer.track_count() == 0);
+
+    RendererConfig good_config = bad_config;
+    good_config.video_paths = { video_test_dir() + "/h264_9s_1920x1080.mp4" };
+
+    REQUIRE(renderer.initialize(good_config));
+    REQUIRE(renderer.is_initialized());
+    REQUIRE(renderer.track_count() == 1);
+
+    renderer.shutdown();
+    REQUIRE_FALSE(renderer.is_initialized());
+    destroy_window(static_cast<HWND>(bad_config.hwnd));
+}
+
 TEST_CASE("Renderer: play and check PTS advances", "[renderer]") {
     Renderer renderer;
 

@@ -6,6 +6,7 @@
 #include <chrono>
 #include <algorithm>
 #include <cstring>
+#include <exception>
 #include <windows.h>
 #include <mmsystem.h>
 #pragma comment(lib, "winmm.lib")
@@ -33,6 +34,8 @@ Renderer::~Renderer() {
 }
 
 bool Renderer::initialize(const RendererConfig& config) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+
     // Flutter plugin configures logging before initialize().
     // Skip empty config to avoid clearing all sinks.
     if (!config.log_config.file_path.empty() || config.log_config.level != spdlog::level::info) {
@@ -49,10 +52,21 @@ bool Renderer::initialize(const RendererConfig& config) {
         install_crash_handler(crash_dir);
     }
 
+    std::lock_guard<std::mutex> state_lock(state_mutex_);
+    if (initialized_.load() || running_.load() || render_thread_.joinable()) {
+        spdlog::warn("Renderer: initialize called while already initialized or running");
+        return false;
+    }
+
     if (config.video_paths.empty()) {
         spdlog::error("Renderer: no video paths provided");
         return false;
     }
+
+    auto fail = [this]() {
+        release_resources_locked();
+        return false;
+    };
 
     hwnd_ = config.hwnd;
     headless_ = config.headless;
@@ -63,17 +77,17 @@ bool Renderer::initialize(const RendererConfig& config) {
     if (config.headless) {
         if (!d3d_device_->initialize_headless(config.dxgi_adapter, target_width_, target_height_)) {
             spdlog::error("Renderer: failed to initialize D3D11 device (headless)");
-            return false;
+            return fail();
         }
         headless_output_ = std::make_unique<D3D11HeadlessOutput>();
         if (!headless_output_->initialize(d3d_device_->device(), d3d_device_->context(),
                                           target_width_, target_height_)) {
-            return false;
+            return fail();
         }
     } else {
         if (!d3d_device_->initialize(hwnd_, target_width_, target_height_)) {
             spdlog::error("Renderer: failed to initialize D3D11 device");
-            return false;
+            return fail();
         }
     }
 
@@ -83,14 +97,14 @@ bool Renderer::initialize(const RendererConfig& config) {
 
     if (!shader_mgr_->compile_from_source(kMultitrackHlsl, "VSMain", "PSMain", compiled_shader_)) {
         spdlog::error("Renderer: failed to compile shaders");
-        return false;
+        return fail();
     }
 
     // Create constant buffer for shader uniforms (must be 16-byte aligned)
     // Layout must match multitrack.hlsl cbuffer Constants
     if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 208, compiled_shader_)) {
         spdlog::error("Renderer: failed to create constant buffer");
-        return false;
+        return fail();
     }
 
     // Create sampler state
@@ -141,7 +155,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     for (const auto& t : tracks_) { if (t) { any_track = true; break; } }
     if (!any_track) {
         spdlog::error("Renderer: no valid tracks");
-        return false;
+        return fail();
     }
 
     // Initialize file_id_order_ and slot-based order
@@ -185,22 +199,71 @@ bool Renderer::initialize(const RendererConfig& config) {
     // Start render loop immediately (paused mode).
     // Decodes and displays first frame, fills buffers, but does not advance playback.
     running_ = true;
-    render_thread_ = std::thread(&Renderer::render_loop, this);
+    try {
+        render_thread_ = std::thread(&Renderer::render_loop, this);
+    } catch (const std::exception& e) {
+        spdlog::error("Renderer: failed to start render thread: {}", e.what());
+        running_ = false;
+        initialized_ = false;
+        return fail();
+    }
 
     spdlog::info("Renderer: initialized with {} tracks", track_count());
     return true;
 }
 
 void Renderer::shutdown() {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+
+    bool has_resources = false;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        for (const auto& track : tracks_) {
+            if (track) {
+                has_resources = true;
+                break;
+            }
+        }
+        has_resources = has_resources ||
+                        d3d_device_ ||
+                        texture_mgr_ ||
+                        frame_presenter_ ||
+                        headless_output_ ||
+                        shader_mgr_ ||
+                        render_sink_ ||
+                        sampler_state_ ||
+                        vertex_buffer_ ||
+                        cached_rtv_ ||
+                        initialized_.load() ||
+                        running_.load() ||
+                        render_thread_.joinable();
+        if (!has_resources) {
+            return;
+        }
+
+        running_ = false;
+        playing_ = false;
+    }
+
     spdlog::info("Renderer: shutdown begin");
-    running_ = false;
-    playing_ = false;
 
     if (render_thread_.joinable()) {
         spdlog::info("Renderer: waiting for render thread join");
         render_thread_.join();
         spdlog::info("Renderer: render thread joined");
     }
+
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        release_resources_locked();
+    }
+
+    spdlog::info("Renderer: shutdown complete");
+}
+
+void Renderer::release_resources_locked() {
+    running_ = false;
+    playing_ = false;
 
     // Clear cached frames that may hold hw decode surface references.
     // Must happen before decode_thread->stop() frees hw_device_ctx,
@@ -236,11 +299,37 @@ void Renderer::shutdown() {
         d3d_device_.reset();
     }
 
+    hwnd_ = nullptr;
+    headless_ = false;
+    target_width_ = 1920;
+    target_height_ = 1080;
+    cached_duration_us_ = 0;
+    next_file_id_ = 1;
+    layout_ = LayoutState();
+    for (int i = 0; i < 4; ++i) {
+        file_id_order_[i] = -1;
+    }
+    preview_drawn_ = false;
+    was_buffering_ = false;
+    deferred_paused_hevc_seek_ = DeferredSeekRequest();
+    paused_hevc_seek_in_flight_ = false;
+    paused_hevc_initial_settle_done_ = false;
+    paused_hevc_seek_settle_until_ = std::chrono::steady_clock::time_point{};
+    loop_range_ = LoopRangeState();
+    pending_width_.store(0);
+    pending_height_.store(0);
+    last_resize_time_ = std::chrono::steady_clock::time_point{};
+    stats_start_time_ = std::chrono::steady_clock::time_point{};
+    for (auto& bl : perf_baselines_) bl.frames = 0;
+    clock_.pause();
+    clock_.seek(0);
+    clock_.set_speed(1.0);
+
     initialized_ = false;
-    spdlog::info("Renderer: shutdown complete");
 }
 
 void Renderer::play() {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (!initialized_ || playing_) return;
     deferred_paused_hevc_seek_.pending = false;
@@ -258,6 +347,7 @@ void Renderer::play() {
 }
 
 void Renderer::pause() {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks_[i]) continue;
@@ -269,11 +359,13 @@ void Renderer::pause() {
 }
 
 void Renderer::seek(int64_t target_pts_us, SeekType type) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
     seek_internal(target_pts_us, type);
 }
 
 void Renderer::set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (!enabled || end_us <= start_us) {
         loop_range_ = LoopRangeState();
@@ -634,6 +726,7 @@ std::pair<float, float> Renderer::display_pixel_size_for_layout_locked(
 }
 
 void Renderer::step_forward() {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     PresentDecision step_decision;
     bool have_step_decision = false;
     bool need_decode_wait = false;
@@ -747,6 +840,7 @@ void Renderer::step_forward() {
 }
 
 void Renderer::step_backward() {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
         if (!initialized_) return;
@@ -880,6 +974,7 @@ void Renderer::redraw_layout() {
 }
 
 bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (!headless_ || !headless_output_) {
         return false;
     }
@@ -923,6 +1018,7 @@ int64_t Renderer::compute_frame_duration_us() const {
 }
 
 void Renderer::set_speed(double speed) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     clock_.set_speed(speed);
 }
 
@@ -953,6 +1049,7 @@ int64_t Renderer::duration_us() const {
 }
 
 void Renderer::set_track_offset(int file_id, int64_t offset_us) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
     int slot = find_slot_by_file_id(file_id);
     if (slot < 0 || !tracks_[slot]) return;
@@ -962,12 +1059,14 @@ void Renderer::set_track_offset(int file_id, int64_t offset_us) {
 }
 
 void Renderer::set_frame_callback(std::function<void()> cb) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (headless_output_) {
         headless_output_->set_frame_callback(std::move(cb));
     }
 }
 
 ID3D11Texture2D* Renderer::shared_texture() const {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (!headless_output_) {
         return nullptr;
     }
@@ -976,6 +1075,7 @@ ID3D11Texture2D* Renderer::shared_texture() const {
 }
 
 HANDLE Renderer::shared_texture_handle() const {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (!headless_output_) {
         return nullptr;
     }
@@ -988,6 +1088,7 @@ std::mutex& Renderer::texture_mutex() const {
 }
 
 void Renderer::resize(int width, int height) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (!headless_ || !d3d_device_) return;
     if (width <= 0 || height <= 0) return;
     pending_width_.store(width);
@@ -1577,6 +1678,7 @@ void Renderer::draw_frame(const PresentDecision& decision) {
 
 // -- Layout control --
 void Renderer::apply_layout(const LayoutState& state) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
     layout_.mode = state.mode;
     layout_.split_pos = std::clamp(state.split_pos, 0.0f, 1.0f);
@@ -1790,6 +1892,7 @@ bool Renderer::recreate_decode_thread_for_seek(size_t slot, int64_t target_pts_u
 }
 
 int Renderer::add_track(const std::string& video_path) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (!initialized_) return -1;
 
@@ -1863,6 +1966,7 @@ int Renderer::add_track(const std::string& video_path) {
 }
 
 void Renderer::remove_track(int file_id) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
     int slot = find_slot_by_file_id(file_id);
     if (slot < 0) return;

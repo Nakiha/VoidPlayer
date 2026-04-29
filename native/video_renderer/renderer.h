@@ -243,6 +243,10 @@ private:
     /// Recreate only the decode thread/hardware decoder while keeping demux alive.
     bool recreate_decode_thread_for_seek(size_t slot, int64_t target_pts_us, SeekType type);
 
+    /// Release all owned renderer resources after the render thread has stopped.
+    /// Caller must hold state_mutex_.
+    void release_resources_locked();
+
     Clock clock_;
     std::unique_ptr<D3D11Device> d3d_device_;
     std::unique_ptr<TextureManager> texture_mgr_;
@@ -263,6 +267,7 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<bool> initialized_{false};
     std::atomic<bool> playing_{false};
+    mutable std::mutex lifecycle_mutex_;
     mutable std::mutex state_mutex_;
     bool preview_drawn_ = false;
     bool was_buffering_ = false;

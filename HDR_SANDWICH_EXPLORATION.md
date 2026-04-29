@@ -12,6 +12,25 @@ Flutter 控件覆盖能力。
 .\build\windows\x64\runner\Debug\void_player.exe --dcomp-alpha-probe
 ```
 
+HDR/SDR 混合 probe 启动方式：
+
+```powershell
+.\build\windows\x64\runner\Debug\void_player.exe --dcomp-hdr-sdr-mix-probe
+```
+
+这个 probe 仍然使用 Flutter color-key 洞把 native surface 暴露出来，但洞内的
+native DirectComposition tree 多了一层真正的 SDR alpha overlay：
+
+```text
+Native child HWND
+  HDR visual: R16G16B16A16_FLOAT, scRGB, alpha IGNORE
+  SDR overlay visual: B8G8R8A8_UNORM, premultiplied alpha
+```
+
+它用于验证 Windows/DWM 对 “SDR premultiplied-alpha visual over FP16 HDR
+visual” 的合成表现。它不等价于 Flutter embedder 真 alpha，因为 SDR overlay
+是 native D3D shader 画出来的，不是 Flutter 的 ANGLE/Skia surface。
+
 窗口层级是：
 
 1. 最外层 Win32 host HWND，保留 Mica / DWM backdrop。
@@ -100,6 +119,42 @@ Flutter 控件建议避免直接画在 key 色背景上。最终 probe 采用的
 4. DComp child HWND 使用 `WS_EX_NOREDIRECTIONBITMAP`
    - 根据 topmost 设置不同，要么 HDR surface 不见，要么 Flutter UI 仍然被压住。
 
+5. `CreateSurfaceFromHwnd(flutter_hwnd)` 终极尝试
+   - 新增 probe 启动方式：
+
+     ```powershell
+     .\build\windows\x64\runner\Debug\void_player.exe --dcomp-surface-probe
+     ```
+
+   - 结构改为 host HWND 上挂一个 topmost DirectComposition target：
+
+     ```text
+     Host HWND with Mica
+       DirectComposition visual tree
+         HDR FP16/scRGB swapchain visual
+         Flutter child HWND surface visual from CreateSurfaceFromHwnd
+     ```
+
+   - FlutterView child HWND 设置 `WS_EX_LAYERED + LWA_ALPHA`，不再使用 color key。
+   - DComp 侧调用 `CreateSurfaceFromHwnd(flutter_hwnd)` 成功，随后对原
+     FlutterView child HWND 设置 `DWMWA_CLOAK`，避免原 child HWND 再直接绘制。
+   - API 层全部成功：
+
+     ```text
+     CreateTargetForHwnd target=<host> topmost=1
+     CreateSurfaceFromHwnd flutter=<flutter> hr=0x00000000
+     Flutter surface visual SetContent hr=0x00000000
+     SurfaceProbe DwmCloak hwnd=<flutter> cloaked=1 hr=0x00000000
+     ```
+
+   - 实际截图：`build/dcomp_surface_probe_final_capture.png`。
+   - 结果：Flutter UI 可以作为 DComp visual 出现在上层，但 Flutter 透明洞区域变成
+     黑色/不透明，没有透出下方 HDR swapchain。半透明 Flutter 控件自身能显示，
+     但它是叠在 opaque black clear 上，而不是真正 source-over 到 HDR visual。
+   - 额外变体：只设置 `WS_EX_LAYERED`、不调用 `SetLayeredWindowAttributes`
+     时，`CreateSurfaceFromHwnd` 仍可成功，但 wrapped Flutter surface 整块黑掉，
+     连 Flutter UI 都不显示。截图：`build/dcomp_surface_probe_no_lwa_capture.png`。
+
 当前判断：stock Windows Flutter HWND composition 下，很难得到以下真 alpha
 顺序：
 
@@ -107,8 +162,10 @@ Flutter 控件建议避免直接画在 key 色背景上。最终 probe 采用的
 Mica backdrop -> native HDR DComp surface -> Flutter true-alpha UI
 ```
 
-这更像是 Windows HWND / DirectComposition / Flutter swapchain 的 airspace 限制，
-不是简单漏了某个 Win32 style。
+这更像是 Windows HWND / DirectComposition / Flutter swapchain 的 airspace /
+opaque swapchain 限制，不是简单漏了某个 Win32 style。`CreateSurfaceFromHwnd`
+能把 Flutter child HWND 包进 DComp visual tree，但 stock Flutter Windows surface
+没有提供可用于 DComp source-over 的 per-pixel alpha。
 
 ## 推荐方向
 
@@ -137,7 +194,8 @@ Flutter controls = normal colors, avoid cyan key color
 如果未来要追求真正 per-pixel alpha，可能需要更大的工程路径：
 
 - 把 Flutter UI 和 video surface 放进同一个 DirectComposition visual tree。
-- patch Windows Flutter embedder，暴露 Flutter swapchain / visual 的排序能力。
+- patch Windows Flutter embedder，让 Flutter Windows surface 以 premultiplied alpha
+  swapchain/visual 输出，并暴露 Flutter swapchain / visual 的排序能力。
 - 或者用独立 top-level transparent overlay window 承载 Flutter UI，再处理输入、
   焦点、z-order、DPI、多屏和窗口同步问题。
 

@@ -31,10 +31,18 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   const bool dcomp_alpha_probe =
       std::find(command_line_arguments.begin(), command_line_arguments.end(),
                 "--dcomp-alpha-probe") != command_line_arguments.end();
+  const bool dcomp_surface_probe =
+      std::find(command_line_arguments.begin(), command_line_arguments.end(),
+                "--dcomp-surface-probe") != command_line_arguments.end();
+  const bool dcomp_hdr_sdr_mix_probe =
+      std::find(command_line_arguments.begin(), command_line_arguments.end(),
+                "--dcomp-hdr-sdr-mix-probe") !=
+      command_line_arguments.end();
 
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
-  FlutterWindow window(project, dcomp_alpha_probe);
+  FlutterWindow window(project, dcomp_alpha_probe, dcomp_surface_probe,
+                       dcomp_hdr_sdr_mix_probe);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
   if (!window.Create(L"Void Player", origin, size)) {

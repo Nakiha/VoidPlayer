@@ -53,6 +53,38 @@ float4 PSMain(VsOut input) : SV_TARGET {
   }
   return float4(0.0, 8.0, 0.0, 1.0);
 }
+
+float RoundedRectAlpha(float2 p, float2 center, float2 half_size, float radius, float feather) {
+  float2 q = abs(p - center) - half_size + radius;
+  float dist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+  return 1.0 - smoothstep(-feather, feather, dist);
+}
+
+float4 Premul(float3 color, float alpha) {
+  return float4(color * alpha, alpha);
+}
+
+float4 PSSdrOverlay(VsOut input) : SV_TARGET {
+  float2 p = input.uv;
+  float4 out_color = float4(0.0, 0.0, 0.0, 0.0);
+
+  float a_panel = RoundedRectAlpha(p, float2(0.50, 0.52), float2(0.33, 0.18), 0.035, 0.006) * 0.52;
+  out_color = Premul(float3(1.0, 1.0, 1.0), a_panel);
+
+  float a_scrim = RoundedRectAlpha(p, float2(0.50, 0.77), float2(0.43, 0.055), 0.018, 0.004) * 0.42;
+  float4 scrim = Premul(float3(0.0, 0.0, 0.0), a_scrim);
+  out_color = scrim + out_color * (1.0 - scrim.a);
+
+  float a_hot = RoundedRectAlpha(p, float2(0.33, 0.52), float2(0.14, 0.065), 0.018, 0.004) * 0.88;
+  float4 hot = Premul(float3(1.0, 0.12, 0.33), a_hot);
+  out_color = hot + out_color * (1.0 - hot.a);
+
+  float a_edge = RoundedRectAlpha(p, float2(0.70, 0.52), float2(0.12, 0.09), 0.040, 0.010) * 0.30;
+  float4 edge = Premul(float3(0.0, 0.85, 1.0), a_edge);
+  out_color = edge + out_color * (1.0 - edge.a);
+
+  return out_color;
+}
 )";
 
 std::string HrString(HRESULT hr) {
@@ -201,6 +233,9 @@ bool DCompAlphaProbe::Initialize(HWND target_hwnd,
   ResetProbeLog();
   hwnd_ = target_hwnd;
   timer_hwnd_ = timer_hwnd ? timer_hwnd : target_hwnd;
+  flutter_surface_hwnd_ = nullptr;
+  compose_flutter_surface_ = false;
+  compose_sdr_overlay_ = false;
   if (!hwnd_) {
     ProbeLog("Initialize failed: target HWND is null.");
     return false;
@@ -229,16 +264,97 @@ bool DCompAlphaProbe::Initialize(HWND target_hwnd,
   return true;
 }
 
+bool DCompAlphaProbe::InitializeWithSdrOverlay(HWND target_hwnd,
+                                               HWND timer_hwnd,
+                                               bool topmost) {
+  ResetProbeLog();
+  hwnd_ = target_hwnd;
+  timer_hwnd_ = timer_hwnd ? timer_hwnd : target_hwnd;
+  flutter_surface_hwnd_ = nullptr;
+  compose_flutter_surface_ = false;
+  compose_sdr_overlay_ = true;
+  if (!hwnd_) {
+    ProbeLog("InitializeWithSdrOverlay failed: target HWND is null.");
+    return false;
+  }
+
+  RECT rect{};
+  GetClientRect(hwnd_, &rect);
+  UpdateVisualRect(rect);
+  ProbeLog("InitializeWithSdrOverlay target_hwnd=" + PtrString(hwnd_) +
+           " timer_hwnd=" + PtrString(timer_hwnd_) +
+           " topmost=" + std::to_string(topmost ? 1 : 0) +
+           " visual=" + std::to_string(width_) + "x" +
+           std::to_string(height_) + " offset=" + std::to_string(offset_x_) +
+           "," + std::to_string(offset_y_));
+
+  if (!CreateDevice() || !CreateShaders() || !CreateSwapChain(width_, height_) ||
+      !CreateSdrOverlaySwapChain(width_, height_) ||
+      !CreateComposition(hwnd_, topmost)) {
+    ProbeLog("InitializeWithSdrOverlay failed; shutting down probe.");
+    Shutdown();
+    return false;
+  }
+
+  Render();
+  SetTimer(timer_hwnd_, kProbeTimerId, kProbeTimerMs, nullptr);
+  ProbeLog("InitializeWithSdrOverlay succeeded; timer armed.");
+  return true;
+}
+
+bool DCompAlphaProbe::InitializeWithFlutterSurface(HWND target_hwnd,
+                                                   HWND flutter_hwnd,
+                                                   HWND timer_hwnd) {
+  ResetProbeLog();
+  hwnd_ = target_hwnd;
+  timer_hwnd_ = timer_hwnd ? timer_hwnd : target_hwnd;
+  flutter_surface_hwnd_ = flutter_hwnd;
+  compose_flutter_surface_ = true;
+  compose_sdr_overlay_ = false;
+  if (!hwnd_ || !flutter_surface_hwnd_) {
+    ProbeLog("InitializeWithFlutterSurface failed: required HWND is null.");
+    return false;
+  }
+
+  RECT rect{};
+  GetClientRect(hwnd_, &rect);
+  UpdateVisualRect(rect);
+  ProbeLog("InitializeWithFlutterSurface target_hwnd=" + PtrString(hwnd_) +
+           " flutter_hwnd=" + PtrString(flutter_surface_hwnd_) +
+           " timer_hwnd=" + PtrString(timer_hwnd_) +
+           " visual=" + std::to_string(width_) + "x" +
+           std::to_string(height_) + " offset=" + std::to_string(offset_x_) +
+           "," + std::to_string(offset_y_));
+
+  if (!CreateDevice() || !CreateShaders() || !CreateSwapChain(width_, height_) ||
+      !CreateComposition(hwnd_, true)) {
+    ProbeLog("InitializeWithFlutterSurface failed; shutting down probe.");
+    Shutdown();
+    return false;
+  }
+
+  Render();
+  SetTimer(timer_hwnd_, kProbeTimerId, kProbeTimerMs, nullptr);
+  ProbeLog("InitializeWithFlutterSurface succeeded; timer armed.");
+  return true;
+}
+
 void DCompAlphaProbe::Shutdown() {
   ProbeLog("Shutdown.");
   if (timer_hwnd_) {
     KillTimer(timer_hwnd_, kProbeTimerId);
   }
   rtv_.Reset();
+  sdr_overlay_rtv_.Reset();
   swap_chain_.Reset();
+  sdr_overlay_swap_chain_.Reset();
   pixel_shader_.Reset();
+  sdr_overlay_pixel_shader_.Reset();
   vertex_shader_.Reset();
   video_visual_.Reset();
+  sdr_overlay_visual_.Reset();
+  flutter_visual_.Reset();
+  flutter_surface_.Reset();
   root_visual_.Reset();
   dcomp_target_.Reset();
   dcomp_device_.Reset();
@@ -247,6 +363,9 @@ void DCompAlphaProbe::Shutdown() {
   d3d_device_.Reset();
   hwnd_ = nullptr;
   timer_hwnd_ = nullptr;
+  flutter_surface_hwnd_ = nullptr;
+  compose_flutter_surface_ = false;
+  compose_sdr_overlay_ = false;
 }
 
 void DCompAlphaProbe::Resize(const RECT& client_rect) {
@@ -257,11 +376,22 @@ void DCompAlphaProbe::Resize(const RECT& client_rect) {
 
   UpdateVisualRect(client_rect);
   rtv_.Reset();
+  sdr_overlay_rtv_.Reset();
   HRESULT hr = swap_chain_->ResizeBuffers(0, width_, height_, DXGI_FORMAT_UNKNOWN, 0);
   if (FAILED(hr)) {
     ProbeLog("ResizeBuffers failed " + std::to_string(width_) + "x" +
              std::to_string(height_) + " hr=" + HrString(hr));
     return;
+  }
+  if (sdr_overlay_swap_chain_) {
+    hr = sdr_overlay_swap_chain_->ResizeBuffers(
+        0, width_, height_, DXGI_FORMAT_UNKNOWN, 0);
+    if (FAILED(hr)) {
+      ProbeLog("SDR overlay ResizeBuffers failed " +
+               std::to_string(width_) + "x" + std::to_string(height_) +
+               " hr=" + HrString(hr));
+      return;
+    }
   }
   ProbeLog("ResizeBuffers succeeded " + std::to_string(width_) + "x" +
            std::to_string(height_) + " offset=" + std::to_string(offset_x_) +
@@ -271,6 +401,10 @@ void DCompAlphaProbe::Resize(const RECT& client_rect) {
     video_visual_->SetOffsetX(static_cast<float>(offset_x_));
     video_visual_->SetOffsetY(static_cast<float>(offset_y_));
   }
+  if (sdr_overlay_visual_) {
+    sdr_overlay_visual_->SetOffsetX(static_cast<float>(offset_x_));
+    sdr_overlay_visual_->SetOffsetY(static_cast<float>(offset_y_));
+  }
   Render();
 }
 
@@ -278,7 +412,20 @@ void DCompAlphaProbe::Render() {
   if (!d3d_device_ || !d3d_context_ || !swap_chain_) {
     return;
   }
+  RenderHdrSurface();
+  if (compose_sdr_overlay_) {
+    RenderSdrOverlaySurface();
+  }
+  if (dcomp_device_) {
+    const HRESULT hr = dcomp_device_->Commit();
+    if (FAILED(hr)) {
+      ProbeLog("DComposition Commit failed hr=" + HrString(hr));
+    }
+  }
+  color_flip_ = !color_flip_;
+}
 
+void DCompAlphaProbe::RenderHdrSurface() {
   if (!rtv_) {
     Microsoft::WRL::ComPtr<ID3D11Texture2D> back_buffer;
     HRESULT hr = swap_chain_->GetBuffer(0, IID_PPV_ARGS(&back_buffer));
@@ -311,13 +458,50 @@ void DCompAlphaProbe::Render() {
   if (FAILED(present_hr)) {
     ProbeLog("Present failed hr=" + HrString(present_hr));
   }
-  if (dcomp_device_) {
-    const HRESULT hr = dcomp_device_->Commit();
-    if (FAILED(hr)) {
-      ProbeLog("DComposition Commit failed hr=" + HrString(hr));
-    }
+}
+
+void DCompAlphaProbe::RenderSdrOverlaySurface() {
+  if (!sdr_overlay_swap_chain_ || !sdr_overlay_pixel_shader_) {
+    return;
   }
-  color_flip_ = !color_flip_;
+
+  if (!sdr_overlay_rtv_) {
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> back_buffer;
+    HRESULT hr = sdr_overlay_swap_chain_->GetBuffer(
+        0, IID_PPV_ARGS(&back_buffer));
+    if (FAILED(hr) || !back_buffer) {
+      ProbeLog("SDR overlay GetBuffer failed hr=" + HrString(hr));
+      return;
+    }
+    hr = d3d_device_->CreateRenderTargetView(
+        back_buffer.Get(), nullptr, &sdr_overlay_rtv_);
+    if (FAILED(hr)) {
+      ProbeLog("SDR overlay CreateRenderTargetView failed hr=" + HrString(hr));
+      return;
+    }
+    ProbeLog("SDR overlay CreateRenderTargetView succeeded.");
+  }
+
+  D3D11_VIEWPORT viewport{};
+  viewport.Width = static_cast<float>(width_);
+  viewport.Height = static_cast<float>(height_);
+  viewport.MinDepth = 0.0f;
+  viewport.MaxDepth = 1.0f;
+
+  const FLOAT clear[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  d3d_context_->OMSetRenderTargets(1, sdr_overlay_rtv_.GetAddressOf(),
+                                   nullptr);
+  d3d_context_->ClearRenderTargetView(sdr_overlay_rtv_.Get(), clear);
+  d3d_context_->RSSetViewports(1, &viewport);
+  d3d_context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  d3d_context_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
+  d3d_context_->PSSetShader(sdr_overlay_pixel_shader_.Get(), nullptr, 0);
+  d3d_context_->Draw(3, 0);
+
+  const HRESULT present_hr = sdr_overlay_swap_chain_->Present(1, 0);
+  if (FAILED(present_hr)) {
+    ProbeLog("SDR overlay Present failed hr=" + HrString(present_hr));
+  }
 }
 
 bool DCompAlphaProbe::CreateDevice() {
@@ -447,6 +631,29 @@ bool DCompAlphaProbe::CreateShaders() {
     return false;
   }
 
+  Microsoft::WRL::ComPtr<ID3DBlob> sdr_ps_blob;
+  errors.Reset();
+  hr = D3DCompile(kHdrProbeShader,
+                  std::strlen(kHdrProbeShader),
+                  nullptr,
+                  nullptr,
+                  nullptr,
+                  "PSSdrOverlay",
+                  "ps_5_0",
+                  flags,
+                  0,
+                  &sdr_ps_blob,
+                  &errors);
+  if (FAILED(hr) || !sdr_ps_blob) {
+    std::string error_text =
+        errors ? std::string(static_cast<const char*>(errors->GetBufferPointer()),
+                             errors->GetBufferSize())
+               : std::string();
+    ProbeLog("Compile PSSdrOverlay failed hr=" + HrString(hr) + " " +
+             error_text);
+    return false;
+  }
+
   hr = d3d_device_->CreateVertexShader(vs_blob->GetBufferPointer(),
                                        vs_blob->GetBufferSize(),
                                        nullptr,
@@ -462,10 +669,19 @@ bool DCompAlphaProbe::CreateShaders() {
                                       &pixel_shader_);
   if (FAILED(hr) || !pixel_shader_) {
     ProbeLog("CreatePixelShader failed hr=" + HrString(hr));
+    return false;
+  }
+
+  hr = d3d_device_->CreatePixelShader(sdr_ps_blob->GetBufferPointer(),
+                                      sdr_ps_blob->GetBufferSize(),
+                                      nullptr,
+                                      &sdr_overlay_pixel_shader_);
+  if (FAILED(hr) || !sdr_overlay_pixel_shader_) {
+    ProbeLog("Create SDR overlay pixel shader failed hr=" + HrString(hr));
   } else {
     ProbeLog("HDR probe shaders created.");
   }
-  return SUCCEEDED(hr) && pixel_shader_;
+  return SUCCEEDED(hr) && sdr_overlay_pixel_shader_;
 }
 
 bool DCompAlphaProbe::CreateSwapChain(int width, int height) {
@@ -519,6 +735,33 @@ bool DCompAlphaProbe::CreateSwapChain(int width, int height) {
   return true;
 }
 
+bool DCompAlphaProbe::CreateSdrOverlaySwapChain(int width, int height) {
+  DXGI_SWAP_CHAIN_DESC1 desc{};
+  desc.Width = static_cast<UINT>(width);
+  desc.Height = static_cast<UINT>(height);
+  desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+  desc.Stereo = FALSE;
+  desc.SampleDesc.Count = 1;
+  desc.SampleDesc.Quality = 0;
+  desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+  desc.BufferCount = 2;
+  desc.Scaling = DXGI_SCALING_STRETCH;
+  desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+  desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+
+  ProbeLog("Create SDR overlay swapchain request "
+           "format=B8G8R8A8_UNORM buffers=2 alpha=PREMULTIPLIED size=" +
+           std::to_string(width) + "x" + std::to_string(height));
+  HRESULT hr = dxgi_factory_->CreateSwapChainForComposition(
+      d3d_device_.Get(), &desc, nullptr, &sdr_overlay_swap_chain_);
+  if (FAILED(hr) || !sdr_overlay_swap_chain_) {
+    ProbeLog("Create SDR overlay swapchain failed hr=" + HrString(hr));
+    return false;
+  }
+  ProbeLog("Create SDR overlay swapchain succeeded.");
+  return true;
+}
+
 bool DCompAlphaProbe::CreateComposition(HWND target_hwnd, bool topmost) {
   Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
   HRESULT hr = d3d_device_.As(&dxgi_device);
@@ -560,9 +803,55 @@ bool DCompAlphaProbe::CreateComposition(HWND target_hwnd, bool topmost) {
   }
 
   video_visual_->SetContent(swap_chain_.Get());
+  video_visual_->SetCompositeMode(DCOMPOSITION_COMPOSITE_MODE_SOURCE_OVER);
   video_visual_->SetOffsetX(static_cast<float>(offset_x_));
   video_visual_->SetOffsetY(static_cast<float>(offset_y_));
   root_visual_->AddVisual(video_visual_.Get(), FALSE, nullptr);
+
+  if (compose_sdr_overlay_) {
+    hr = dcomp_device_->CreateVisual(&sdr_overlay_visual_);
+    if (FAILED(hr) || !sdr_overlay_visual_) {
+      ProbeLog("Create SDR overlay visual failed hr=" + HrString(hr));
+      return false;
+    }
+    hr = sdr_overlay_visual_->SetContent(sdr_overlay_swap_chain_.Get());
+    if (FAILED(hr)) {
+      ProbeLog("SDR overlay visual SetContent failed hr=" + HrString(hr));
+      return false;
+    }
+    sdr_overlay_visual_->SetCompositeMode(DCOMPOSITION_COMPOSITE_MODE_SOURCE_OVER);
+    sdr_overlay_visual_->SetOffsetX(static_cast<float>(offset_x_));
+    sdr_overlay_visual_->SetOffsetY(static_cast<float>(offset_y_));
+    root_visual_->AddVisual(sdr_overlay_visual_.Get(), TRUE,
+                            video_visual_.Get());
+    ProbeLog("SDR premultiplied overlay visual added above HDR visual.");
+  }
+
+  if (compose_flutter_surface_) {
+    hr = dcomp_device_->CreateSurfaceFromHwnd(flutter_surface_hwnd_,
+                                              &flutter_surface_);
+    ProbeLog("CreateSurfaceFromHwnd flutter=" +
+             PtrString(flutter_surface_hwnd_) + " hr=" + HrString(hr));
+    if (FAILED(hr) || !flutter_surface_) {
+      return false;
+    }
+
+    hr = dcomp_device_->CreateVisual(&flutter_visual_);
+    if (FAILED(hr) || !flutter_visual_) {
+      ProbeLog("Create Flutter surface visual failed hr=" + HrString(hr));
+      return false;
+    }
+
+    hr = flutter_visual_->SetContent(flutter_surface_.Get());
+    ProbeLog("Flutter surface visual SetContent hr=" + HrString(hr));
+    if (FAILED(hr)) {
+      return false;
+    }
+    flutter_visual_->SetCompositeMode(DCOMPOSITION_COMPOSITE_MODE_SOURCE_OVER);
+    root_visual_->AddVisual(flutter_visual_.Get(), TRUE, video_visual_.Get());
+    ProbeLog("Flutter surface visual added above HDR visual.");
+  }
+
   dcomp_target_->SetRoot(root_visual_.Get());
   hr = dcomp_device_->Commit();
   ProbeLog("Initial DComposition Commit hr=" + HrString(hr));

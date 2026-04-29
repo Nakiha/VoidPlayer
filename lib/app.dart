@@ -15,6 +15,8 @@ class VoidPlayerApp extends StatelessWidget {
   final String? testScriptPath;
   final StartupOptions startupOptions;
   final bool dcompAlphaProbe;
+  final bool dcompSurfaceProbe;
+  final bool dcompHdrSdrMixProbe;
 
   const VoidPlayerApp({
     super.key,
@@ -22,14 +24,18 @@ class VoidPlayerApp extends StatelessWidget {
     this.testScriptPath,
     this.startupOptions = const StartupOptions(),
     this.dcompAlphaProbe = false,
+    this.dcompSurfaceProbe = false,
+    this.dcompHdrSdrMixProbe = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final dcompProbe =
+        dcompAlphaProbe || dcompSurfaceProbe || dcompHdrSdrMixProbe;
     return MaterialApp(
-      title: dcompAlphaProbe ? 'Void Player DComp Probe' : 'Void Player',
-      color: dcompAlphaProbe ? Colors.transparent : null,
-      debugShowCheckedModeBanner: !dcompAlphaProbe,
+      title: dcompProbe ? 'Void Player DComp Probe' : 'Void Player',
+      color: dcompProbe ? Colors.transparent : null,
+      debugShowCheckedModeBanner: !dcompProbe,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       theme: ThemeData(
@@ -37,18 +43,21 @@ class VoidPlayerApp extends StatelessWidget {
           seedColor: accentColor,
           brightness: Brightness.light,
         ),
-        scaffoldBackgroundColor: dcompAlphaProbe ? Colors.transparent : null,
+        scaffoldBackgroundColor: dcompProbe ? Colors.transparent : null,
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: accentColor,
           brightness: Brightness.dark,
         ),
-        scaffoldBackgroundColor: dcompAlphaProbe ? Colors.transparent : null,
+        scaffoldBackgroundColor: dcompProbe ? Colors.transparent : null,
       ),
-      themeMode: dcompAlphaProbe ? ThemeMode.dark : ThemeMode.system,
-      home: dcompAlphaProbe
-          ? const _DCompAlphaHoleProbePage()
+      themeMode: dcompProbe ? ThemeMode.dark : ThemeMode.system,
+      home: dcompProbe
+          ? _DCompAlphaHoleProbePage(
+              colorKeyMode: dcompAlphaProbe || dcompHdrSdrMixProbe,
+              hdrSdrMixMode: dcompHdrSdrMixProbe,
+            )
           : ActionFocus(
               child: MainWindow(
                 testScriptPath: testScriptPath,
@@ -60,7 +69,13 @@ class VoidPlayerApp extends StatelessWidget {
 }
 
 class _DCompAlphaHoleProbePage extends StatefulWidget {
-  const _DCompAlphaHoleProbePage();
+  const _DCompAlphaHoleProbePage({
+    required this.colorKeyMode,
+    required this.hdrSdrMixMode,
+  });
+
+  final bool colorKeyMode;
+  final bool hdrSdrMixMode;
 
   @override
   State<_DCompAlphaHoleProbePage> createState() =>
@@ -83,7 +98,9 @@ class _DCompAlphaHoleProbePageState extends State<_DCompAlphaHoleProbePage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: _dcompProbePanelColor,
+      backgroundColor: widget.colorKeyMode
+          ? _dcompProbePanelColor
+          : Colors.transparent,
       body: LayoutBuilder(
         builder: (context, constraints) {
           final holeWidth = math.max(
@@ -114,6 +131,7 @@ class _DCompAlphaHoleProbePageState extends State<_DCompAlphaHoleProbePage> {
                     painter: _HoleBackdropPainter(
                       holeWidth: holeWidth,
                       holeHeight: holeHeight,
+                      colorKeyMode: widget.colorKeyMode,
                     ),
                   ),
                 ),
@@ -204,7 +222,9 @@ class _DCompAlphaHoleProbePageState extends State<_DCompAlphaHoleProbePage> {
                         vertical: 10,
                       ),
                       child: Text(
-                        'DComp HDR probe',
+                        widget.hdrSdrMixMode
+                            ? 'DComp HDR/SDR mix probe'
+                            : 'DComp HDR probe',
                         style: theme.textTheme.titleMedium,
                       ),
                     ),
@@ -240,7 +260,9 @@ class _DCompAlphaHoleProbePageState extends State<_DCompAlphaHoleProbePage> {
                     child: Text(
                       'Native DirectComposition FP16/scRGB bands: dark grid, '
                       'SDR white 1.0, HDR white 4.0, HDR green 8.0. '
-                      'Pink control is Flutter UI above the native surface.',
+                      'Pink control is Flutter UI above the native surface. '
+                      'HDR/SDR mix probe adds a native SDR premultiplied '
+                      'alpha overlay inside the DComp tree.',
                     ),
                   ),
                 ),
@@ -328,10 +350,12 @@ class _HoleBackdropPainter extends CustomPainter {
   const _HoleBackdropPainter({
     required this.holeWidth,
     required this.holeHeight,
+    required this.colorKeyMode,
   });
 
   final double holeWidth;
   final double holeHeight;
+  final bool colorKeyMode;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -340,13 +364,31 @@ class _HoleBackdropPainter extends CustomPainter {
       width: holeWidth,
       height: holeHeight,
     );
-    canvas.drawRect(Offset.zero & size, Paint()..color = _dcompProbePanelColor);
-    canvas.drawRect(hole, Paint()..color = _dcompKeyColor);
+    if (colorKeyMode) {
+      canvas.drawRect(
+        Offset.zero & size,
+        Paint()..color = _dcompProbePanelColor,
+      );
+      canvas.drawRect(hole, Paint()..color = _dcompKeyColor);
+      return;
+    }
+
+    final panelPath = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(Offset.zero & size)
+      ..addRRect(RRect.fromRectAndRadius(hole, const Radius.circular(24)));
+    canvas.drawPath(
+      panelPath,
+      Paint()
+        ..color = _dcompProbePanelColor
+        ..isAntiAlias = true,
+    );
   }
 
   @override
   bool shouldRepaint(_HoleBackdropPainter oldDelegate) {
     return oldDelegate.holeWidth != holeWidth ||
-        oldDelegate.holeHeight != holeHeight;
+        oldDelegate.holeHeight != holeHeight ||
+        oldDelegate.colorKeyMode != colorKeyMode;
   }
 }

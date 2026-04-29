@@ -229,6 +229,8 @@ Future<void> runVoidPlayer(List<String> args) async {
   String? testScriptPath;
   final silentUiTest = _hasFlag(args, '--silent-ui-test');
   final dcompAlphaProbe = _hasFlag(args, '--dcomp-alpha-probe');
+  final dcompSurfaceProbe = _hasFlag(args, '--dcomp-surface-probe');
+  final dcompHdrSdrMixProbe = _hasFlag(args, '--dcomp-hdr-sdr-mix-probe');
   final scriptIdx = args.indexOf('--test-script');
   if (scriptIdx >= 0 && scriptIdx + 1 < args.length) {
     testScriptPath = args[scriptIdx + 1];
@@ -279,6 +281,8 @@ Future<void> runVoidPlayer(List<String> args) async {
       testScriptPath: testScriptPath,
       startupOptions: startupOptions,
       dcompAlphaProbe: dcompAlphaProbe,
+      dcompSurfaceProbe: dcompSurfaceProbe,
+      dcompHdrSdrMixProbe: dcompHdrSdrMixProbe,
     ),
   );
 

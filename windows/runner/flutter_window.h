@@ -14,7 +14,9 @@ class FlutterWindow : public Win32Window {
  public:
   // Creates a new FlutterWindow hosting a Flutter view running |project|.
   explicit FlutterWindow(const flutter::DartProject& project,
-                         bool dcomp_alpha_probe = false);
+                         bool dcomp_alpha_probe = false,
+                         bool dcomp_surface_probe = false,
+                         bool dcomp_hdr_sdr_mix_probe = false);
   virtual ~FlutterWindow();
 
  protected:
@@ -32,6 +34,8 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
 
   bool dcomp_alpha_probe_enabled_ = false;
+  bool dcomp_surface_probe_enabled_ = false;
+  bool dcomp_hdr_sdr_mix_probe_enabled_ = false;
   HWND dcomp_probe_hwnd_ = nullptr;
 
   // Experimental DirectComposition alpha-hole probe.

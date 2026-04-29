@@ -27,6 +27,10 @@ namespace {
 #define DWMWA_SYSTEMBACKDROP_TYPE 38
 #endif
 
+#ifndef DWMWA_CLOAK
+#define DWMWA_CLOAK 13
+#endif
+
 constexpr wchar_t kDCompProbeWindowClass[] = L"VOID_PLAYER_DCOMP_PROBE";
 constexpr DWORD kDwmSystemBackdropMainWindow = 2;
 
@@ -103,11 +107,24 @@ void ApplyProbeMicaBackdrop(HWND hwnd, const char* stage) {
                  " systemBackdropMainWindow=" + HrString(backdrop_hr));
 }
 
+void SetProbeCloak(HWND hwnd, bool cloaked, const char* stage) {
+  BOOL value = cloaked ? TRUE : FALSE;
+  HRESULT hr = DwmSetWindowAttribute(hwnd, DWMWA_CLOAK, &value, sizeof(value));
+  WindowProbeLog(std::string(stage) + " DwmCloak hwnd=" + PtrString(hwnd) +
+                 " cloaked=" + std::to_string(cloaked ? 1 : 0) +
+                 " hr=" + HrString(hr));
+}
+
 }  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project,
-                             bool dcomp_alpha_probe)
-    : project_(project), dcomp_alpha_probe_enabled_(dcomp_alpha_probe) {}
+                             bool dcomp_alpha_probe,
+                             bool dcomp_surface_probe,
+                             bool dcomp_hdr_sdr_mix_probe)
+    : project_(project),
+      dcomp_alpha_probe_enabled_(dcomp_alpha_probe),
+      dcomp_surface_probe_enabled_(dcomp_surface_probe),
+      dcomp_hdr_sdr_mix_probe_enabled_(dcomp_hdr_sdr_mix_probe) {}
 
 FlutterWindow::~FlutterWindow() {}
 
@@ -143,8 +160,13 @@ bool FlutterWindow::OnCreate() {
   BOOL dcomp_child_created = FALSE;
   BOOL dcomp_child_positioned = FALSE;
   BOOL flutter_child_positioned = FALSE;
-  if (dcomp_alpha_probe_enabled_) {
+  const bool any_dcomp_probe =
+      dcomp_alpha_probe_enabled_ || dcomp_surface_probe_enabled_ ||
+      dcomp_hdr_sdr_mix_probe_enabled_;
+  if (any_dcomp_probe) {
     ApplyProbeMicaBackdrop(GetHandle(), "OnCreate");
+  }
+  if (dcomp_alpha_probe_enabled_ || dcomp_hdr_sdr_mix_probe_enabled_) {
     RegisterDCompProbeWindowClass();
     RECT rect = GetClientArea();
     dcomp_probe_hwnd_ = CreateWindowEx(
@@ -156,7 +178,7 @@ bool FlutterWindow::OnCreate() {
 
   SetChildContent(flutter_hwnd);
 
-  if (dcomp_alpha_probe_enabled_) {
+  if (dcomp_alpha_probe_enabled_ || dcomp_hdr_sdr_mix_probe_enabled_) {
     LONG_PTR ex_style = GetWindowLongPtr(flutter_hwnd, GWL_EXSTYLE);
     SetWindowLongPtr(flutter_hwnd, GWL_EXSTYLE, ex_style | WS_EX_LAYERED);
     flutter_color_key_ok =
@@ -178,6 +200,18 @@ bool FlutterWindow::OnCreate() {
           SetWindowPos(flutter_hwnd, HWND_TOP, 0, 0, 0, 0,
                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
+  }
+  if (dcomp_surface_probe_enabled_) {
+    LONG_PTR ex_style = GetWindowLongPtr(flutter_hwnd, GWL_EXSTYLE);
+    SetWindowLongPtr(flutter_hwnd, GWL_EXSTYLE, ex_style | WS_EX_LAYERED);
+    flutter_color_key_ok =
+        SetLayeredWindowAttributes(flutter_hwnd, 0, 255, LWA_ALPHA);
+    SetWindowPos(GetHandle(), nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                     SWP_FRAMECHANGED);
+    SetWindowPos(flutter_hwnd, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                     SWP_FRAMECHANGED);
   }
 
   bool native_probe_initialized = false;
@@ -205,9 +239,44 @@ bool FlutterWindow::OnCreate() {
                    " nativeProbeInitialized=" +
                    std::to_string(native_probe_initialized ? 1 : 0));
   }
+  if (dcomp_hdr_sdr_mix_probe_enabled_) {
+    dcomp_alpha_probe_ = std::make_unique<DCompAlphaProbe>();
+    native_probe_initialized =
+        dcomp_alpha_probe_->InitializeWithSdrOverlay(
+            dcomp_probe_hwnd_ ? dcomp_probe_hwnd_ : flutter_hwnd, GetHandle(),
+            true);
+    WindowProbeLog("hdrSdrMixProbe host=" + PtrString(GetHandle()) +
+                   " flutter=" + PtrString(flutter_hwnd) +
+                   " dcomp_child=" + PtrString(dcomp_probe_hwnd_) +
+                   " flutterColorKey=" +
+                   std::to_string(flutter_color_key_ok ? 1 : 0) +
+                   " dcompChildCreated=" +
+                   std::to_string(dcomp_child_created ? 1 : 0) +
+                   " dcompChildPositioned=" +
+                   std::to_string(dcomp_child_positioned ? 1 : 0) +
+                   " nativeProbeInitialized=" +
+                   std::to_string(native_probe_initialized ? 1 : 0));
+  }
+  if (dcomp_surface_probe_enabled_) {
+    dcomp_alpha_probe_ = std::make_unique<DCompAlphaProbe>();
+    native_probe_initialized = dcomp_alpha_probe_->InitializeWithFlutterSurface(
+        GetHandle(), flutter_hwnd, GetHandle());
+    if (native_probe_initialized) {
+      SetProbeCloak(flutter_hwnd, true, "SurfaceProbe");
+    }
+    WindowProbeLog("surfaceProbe host=" + PtrString(GetHandle()) +
+                   " flutter=" + PtrString(flutter_hwnd) +
+                   " hostDwm=" + HrString(host_dwm_hr) +
+                   " flutterDwm=" + HrString(flutter_dwm_hr) +
+                   " flutterLayeredAlpha=" +
+                   std::to_string(flutter_color_key_ok ? 1 : 0) +
+                   " nativeProbeInitialized=" +
+                   std::to_string(native_probe_initialized ? 1 : 0));
+  }
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    if (dcomp_alpha_probe_enabled_) {
+    if (dcomp_alpha_probe_enabled_ || dcomp_surface_probe_enabled_ ||
+        dcomp_hdr_sdr_mix_probe_enabled_) {
       ApplyProbeMicaBackdrop(GetHandle(), "FirstFrame");
     }
     this->Show();
@@ -222,6 +291,11 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  if (dcomp_surface_probe_enabled_ && flutter_controller_ &&
+      flutter_controller_->view()) {
+    SetProbeCloak(flutter_controller_->view()->GetNativeWindow(), false,
+                  "OnDestroy");
+  }
   if (dcomp_alpha_probe_) {
     dcomp_alpha_probe_->Shutdown();
     dcomp_alpha_probe_ = nullptr;
@@ -265,6 +339,13 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                      SWP_NOACTIVATE);
         SetWindowPos(flutter_hwnd, HWND_TOP, 0, 0, 0, 0,
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+      }
+      if (dcomp_surface_probe_enabled_ && flutter_controller_ &&
+          flutter_controller_->view()) {
+        RECT rect = GetClientArea();
+        HWND flutter_hwnd = flutter_controller_->view()->GetNativeWindow();
+        MoveWindow(flutter_hwnd, rect.left, rect.top, rect.right - rect.left,
+                   rect.bottom - rect.top, TRUE);
       }
       if (dcomp_alpha_probe_) {
         RECT rect = GetClientArea();

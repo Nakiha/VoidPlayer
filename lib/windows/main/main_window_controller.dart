@@ -71,7 +71,7 @@ class MainWindowController {
       textureId: _textureId,
       viewportState: _viewportState,
       layout: _layout,
-      trackManager: trackManager,
+      tracks: trackManager.entries,
       timelineSliderKey: timelineSliderKey,
       timelineStartWidth: _timelineStartWidth,
       isPlaying: _isPlaying,

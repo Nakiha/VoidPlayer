@@ -21,7 +21,7 @@ class MainWindowViewModel {
   final int? textureId;
   final int viewportState;
   final LayoutState layout;
-  final TrackManager trackManager;
+  final List<TrackEntry> tracks;
   final GlobalKey timelineSliderKey;
   final double timelineStartWidth;
   final bool isPlaying;
@@ -49,7 +49,7 @@ class MainWindowViewModel {
     required this.textureId,
     required this.viewportState,
     required this.layout,
-    required this.trackManager,
+    required this.tracks,
     required this.timelineSliderKey,
     required this.timelineStartWidth,
     required this.isPlaying,
@@ -180,19 +180,17 @@ class MainWindowView extends StatelessWidget {
                     onResize: actions.onResize,
                   ),
                 ),
-                if (model.trackManager.count > 0)
+                if (model.tracks.isNotEmpty)
                   MediaHeaderBar(
-                    entries: model.trackManager.entries,
+                    entries: model.tracks,
                     onMediaSwapped: actions.onMediaSwapped,
                     onRemoveClicked: (slotIndex) {
-                      if (slotIndex < model.trackManager.count) {
-                        actions.onRemoveTrack(
-                          model.trackManager.entries[slotIndex].fileId,
-                        );
+                      if (slotIndex < model.tracks.length) {
+                        actions.onRemoveTrack(model.tracks[slotIndex].fileId);
                       }
                     },
                   ),
-                if (model.trackManager.count > 0)
+                if (model.tracks.isNotEmpty)
                   ControlsBar(
                     timelineKey: model.timelineSliderKey,
                     timelineStartWidth: model.timelineStartWidth,
@@ -210,7 +208,7 @@ class MainWindowView extends StatelessWidget {
                     seekMinUs: model.seekMinUs,
                     seekMaxUs: model.seekMaxUs,
                   ),
-                if (model.trackManager.count > 0)
+                if (model.tracks.isNotEmpty)
                   LoopRangeBar(
                     key: model.loopRangeBarKey,
                     timelineStartWidth: model.timelineStartWidth,
@@ -222,11 +220,11 @@ class MainWindowView extends StatelessWidget {
                     onRangeChanged: actions.onLoopRangeChanged,
                     onRangeChangeEnd: actions.onLoopRangeChangeEnd,
                   ),
-                if (model.trackManager.count > 0)
+                if (model.tracks.isNotEmpty)
                   Expanded(
                     flex: 0,
                     child: TimelineArea(
-                      trackManager: model.trackManager,
+                      entries: model.tracks,
                       currentPtsUs: model.currentPtsUs,
                       onRemoveTrack: actions.onRemoveTrack,
                       onReorder: actions.onReorder,

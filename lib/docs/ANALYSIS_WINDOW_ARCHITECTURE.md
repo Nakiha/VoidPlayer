@@ -9,7 +9,10 @@ Analysis 相关 Flutter 代码集中在 `lib/windows/analysis/`：
 | 文件 | 职责 |
 |------|------|
 | `analysis_window.dart` | analysis app entry、主题、本地化、`AnalysisApp` / `AnalysisWorkspaceApp` |
-| `analysis_window_page.dart` | 单个 analysis page 的数据加载、派生状态、选择状态、页面布局编排 |
+| `analysis_window_page.dart` | 单个 analysis page 的薄入口、生命周期、test host 委托 |
+| `analysis_page_controller.dart` | 单页数据加载、summary polling、派生状态、选择/zoom/filter 状态 |
+| `analysis_page_state.dart` | 单页 view model、view actions、共享页面枚举 |
+| `analysis_page_view.dart` | 单页页面布局编排，组装 chart、NALU browser/detail、split controls |
 | `analysis_window_workspace.dart` | 多 track workspace、tab/split view、workspace header |
 | `analysis_window_charts.dart` | reference pyramid、frame trend、chart scrollbar、chart painters |
 | `analysis_window_nalu.dart` | NALU browser、filter、detail panel |
@@ -24,7 +27,7 @@ Analysis 相关 Flutter 代码集中在 `lib/windows/analysis/`：
 ## 边界
 
 - `analysis_window.dart` 保持薄入口，不放页面状态和交互逻辑。
-- `analysis_window_page.dart` 可以协调页面级状态，但不要继续塞 chart painter、NALU list 或 workspace UI。
+- `analysis_window_page.dart` 保持薄壳，不放页面级数据状态；状态和交互逻辑归 `analysis_page_controller.dart`。
 - 图表绘制和 hit-test 逻辑归 `analysis_window_charts.dart`。
 - NALU 列表/详情归 `analysis_window_nalu.dart`。
 - 主窗口触发 analysis 的流程在 `lib/windows/main/main_window_analysis.dart`；跨进程生命周期在 `lib/windows/window_manager.dart`。

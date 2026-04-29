@@ -7,7 +7,7 @@ import 'track_row.dart';
 /// Supports drag-to-reorder via [ReorderableListView].
 /// Dragging any row's divider resizes all rows synchronously.
 class TimelineArea extends StatefulWidget {
-  final TrackManager trackManager;
+  final List<TrackEntry> entries;
   final int currentPtsUs;
   final void Function(int oldIndex, int newIndex) onReorder;
   final void Function(int slot, int offsetMs) onOffsetChanged;
@@ -25,7 +25,7 @@ class TimelineArea extends StatefulWidget {
 
   const TimelineArea({
     super.key,
-    required this.trackManager,
+    required this.entries,
     this.currentPtsUs = 0,
     required this.onReorder,
     required this.onOffsetChanged,
@@ -54,7 +54,7 @@ class _TimelineAreaState extends State<TimelineArea> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxHeight = constraints.maxHeight;
-        final targetHeight = (widget.trackManager.count * 40.0).clamp(
+        final targetHeight = (widget.entries.length * 40.0).clamp(
           0.0,
           maxHeight,
         );
@@ -62,10 +62,10 @@ class _TimelineAreaState extends State<TimelineArea> {
           height: targetHeight,
           child: ReorderableListView.builder(
             buildDefaultDragHandles: false,
-            itemCount: widget.trackManager.count,
+            itemCount: widget.entries.length,
             onReorder: widget.onReorder,
             itemBuilder: (context, index) {
-              final entry = widget.trackManager.entries[index];
+              final entry = widget.entries[index];
               final trackDuration = entry.info.durationUs;
               final offsetUs = widget.syncOffsets[entry.info.slot] ?? 0;
 

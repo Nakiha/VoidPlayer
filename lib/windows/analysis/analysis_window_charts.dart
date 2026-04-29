@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../analysis/analysis_ffi.dart';
 import '../../l10n/app_localizations.dart';
+import 'analysis_page_state.dart';
 
 // ===========================================================================
 // Reference Pyramid — circle nodes + reference arrows + level backgrounds
@@ -750,8 +751,6 @@ class _RefPyramidPainter extends CustomPainter {
 // ===========================================================================
 
 const double _frameTrendLabelW = _analysisChartLabelW;
-
-enum AnalysisFrameTrendAxis { frameSize, qp }
 
 class AnalysisFrameTrendView extends StatefulWidget {
   final List<FrameInfo> frames;

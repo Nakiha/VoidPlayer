@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <memory>
 #include <cstdint>
+#include <atomic>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -25,7 +26,7 @@ public:
     // Non-blocking pop. Returns nullptr if empty or aborted.
     AVPacket* try_pop();
 
-    // Flush: discard all queued packets
+    // Flush: discard queued packets and clear EOF state.
     void flush();
 
     // Abort: unblock all waiters

@@ -119,7 +119,6 @@ void DemuxThread::run() {
                          output_queue_.size());
 
             output_queue_.flush();
-            output_queue_.clear_eof();
 
             int64_t target_tb = av_rescale_q(req.target_pts_us, {1, 1000000}, stats_.time_base);
             int seek_ret = av_seek_frame(fmt_ctx_, stream_idx, target_tb, AVSEEK_FLAG_BACKWARD);

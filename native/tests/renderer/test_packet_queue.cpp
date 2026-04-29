@@ -75,12 +75,15 @@ TEST_CASE("PacketQueue: abort wakes pusher", "[packet_queue]") {
 
 TEST_CASE("PacketQueue: reset after abort", "[packet_queue]") {
     PacketQueue pq(10);
+    pq.signal_eof();
     pq.abort();
     REQUIRE(pq.is_aborted() == true);
+    REQUIRE(pq.is_eof() == true);
 
     pq.reset();
     REQUIRE(pq.is_aborted() == false);
     REQUIRE(pq.empty() == true);
+    REQUIRE(pq.is_eof() == false);
 
     // Should be reusable
     auto* pkt = av_packet_alloc();
@@ -97,9 +100,12 @@ TEST_CASE("PacketQueue: flush discards all packets", "[packet_queue]") {
     for (int i = 0; i < 5; ++i) {
         pq.push(av_packet_alloc());
     }
+    pq.signal_eof();
     REQUIRE(pq.size() == 5);
+    REQUIRE(pq.is_eof() == true);
 
     pq.flush();
     REQUIRE(pq.empty() == true);
     REQUIRE(pq.size() == 0);
+    REQUIRE(pq.is_eof() == false);
 }

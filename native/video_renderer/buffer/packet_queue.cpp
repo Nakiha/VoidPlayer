@@ -52,6 +52,7 @@ void PacketQueue::flush() {
     while (!queue_.empty()) {
         queue_.pop();
     }
+    eof_.store(false, std::memory_order_release);
     not_full_.notify_all();
 }
 
@@ -68,6 +69,7 @@ void PacketQueue::reset() {
         queue_.pop();
     }
     aborted_ = false;
+    eof_.store(false, std::memory_order_release);
     not_full_.notify_all();
 }
 

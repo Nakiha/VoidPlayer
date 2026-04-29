@@ -1856,7 +1856,6 @@ bool Renderer::recreate_decode_thread_for_seek(size_t slot, int64_t target_pts_u
     track->decode_thread->stop();
     track->packet_queue->reset();
     track->packet_queue->flush();
-    track->packet_queue->clear_eof();
     track->track_buffer->reset();
     track->track_buffer->set_state(TrackState::Flushing);
     if (frame_presenter_) {

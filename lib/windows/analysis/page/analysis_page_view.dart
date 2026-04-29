@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-import '../../l10n/app_localizations.dart';
+import '../../../l10n/app_localizations.dart';
+import '../charts/analysis_charts.dart';
+import '../widgets/analysis_split_layout_controller.dart';
+import '../widgets/analysis_controls.dart';
+import '../widgets/analysis_nalu.dart';
+import '../widgets/analysis_style.dart';
 import 'analysis_page_state.dart';
-import 'analysis_split_layout_controller.dart';
-import 'analysis_window_charts.dart';
-import 'analysis_window_controls.dart';
-import 'analysis_window_nalu.dart';
-import 'analysis_window_style.dart';
 
 class AnalysisPageView extends StatelessWidget {
   final AnalysisPageViewModel model;

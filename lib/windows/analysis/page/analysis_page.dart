@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../analysis/analysis_ffi.dart';
-import '../../analysis/nalu_types.dart';
+import '../../../analysis/analysis_ffi.dart';
+import '../../../analysis/nalu_types.dart';
+import '../testing/analysis_test_host.dart';
+import '../testing/analysis_test_runner.dart';
+import '../widgets/analysis_split_layout_controller.dart';
 import 'analysis_page_controller.dart';
 import 'analysis_page_view.dart';
-import 'analysis_split_layout_controller.dart';
-import 'analysis_test_host.dart';
-import 'analysis_window_test_runner.dart';
 
 class AnalysisPage extends StatefulWidget {
   final String hash;

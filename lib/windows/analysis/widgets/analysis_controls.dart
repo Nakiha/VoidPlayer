@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../l10n/app_localizations.dart';
-import 'analysis_window_style.dart';
+import '../../../l10n/app_localizations.dart';
+import 'analysis_style.dart';
 
 // ===========================================================================
 // Top bar widgets

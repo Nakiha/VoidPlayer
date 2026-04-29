@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import '../../app_log.dart';
+import '../../../app_log.dart';
 import 'analysis_ipc_models.dart';
 
 class AnalysisIpcServer {

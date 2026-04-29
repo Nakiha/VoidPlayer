@@ -6,45 +6,37 @@
 
 Analysis 相关 Flutter 代码集中在 `lib/windows/analysis/`：
 
-| 文件 | 职责 |
+```text
+analysis/
+├── analysis_window.dart           # app entry、theme/localization、AnalysisApp / AnalysisWorkspaceApp
+├── page/                          # 单个 analysis 页面状态和布局
+├── workspace/                     # 多 track workspace、tabs/split 模式
+├── charts/                        # reference pyramid / frame trend 图表
+├── widgets/                       # NALU、controls、style、split layout 等页面 widget
+├── ipc/                           # main process 与 analysis process 的 track snapshot IPC
+└── testing/                       # analysis 子窗体测试 host 和 CSV runner
+```
+
+| 目录 | 职责 |
 |------|------|
-| `analysis_window.dart` | analysis app entry、主题、本地化、`AnalysisApp` / `AnalysisWorkspaceApp` |
-| `analysis_window_page.dart` | 单个 analysis page 的薄入口、生命周期、test host 委托 |
-| `analysis_page_controller.dart` | 单页数据加载、summary polling、派生状态、选择/zoom/filter 状态 |
-| `analysis_page_state.dart` | 单页 view model、view actions、共享页面枚举 |
-| `analysis_page_view.dart` | 单页页面布局编排，组装 chart、NALU browser/detail、split controls |
-| `analysis_window_workspace.dart` | 多 track workspace 薄入口、IPC snapshot 合并、选中/模式状态 |
-| `analysis_workspace_models.dart` | workspace entry model / IPC track 转换 |
-| `analysis_workspace_tabs.dart` | workspace tab header、track tab、title button |
-| `analysis_workspace_split.dart` | workspace split grid、track pane |
-| `analysis_workspace_mode_toggle.dart` | tabs/split 模式切换控件 |
-| `analysis_window_charts.dart` | chart 兼容导出入口 |
-| `analysis_chart_common.dart` | chart 共用尺寸、坐标轴绘制、scrollbar、格式化 helper |
-| `analysis_reference_pyramid.dart` | reference pyramid chart、painter、hover/click 交互 |
-| `analysis_frame_trend.dart` | frame trend chart、painter、axis zoom、hover/click 交互 |
-| `analysis_window_nalu.dart` | NALU browser、filter、detail panel |
-| `analysis_window_controls.dart` | order/tab controls、analysis view icon、resizable dividers |
-| `analysis_window_test_runner.dart` | analysis 子窗体 CSV 指令解析和断言执行 |
-| `analysis_ipc.dart` | IPC 兼容导出入口 |
-| `analysis_ipc_models.dart` | IPC track DTO / JSON 转换 |
-| `analysis_ipc_server.dart` | 主窗口持有的 analysis IPC server |
-| `analysis_ipc_client.dart` | analysis 子进程持有的 IPC client |
-| `analysis_test_host.dart` | test runner 访问页面状态的窄接口 |
-| `analysis_split_layout_controller.dart` | workspace split view 共享布局比例 |
-| `analysis_window_style.dart` | analysis header/control 尺寸常量 |
-| `analysis_frame_utils.dart` | frame/slice 显示 helper |
+| `page/` | 单页生命周期、数据加载、派生状态、view model/actions、页面布局编排 |
+| `workspace/` | 多 track workspace 薄入口、IPC snapshot 合并、tabs/split header/pane |
+| `charts/` | chart 兼容导出入口、共享坐标轴/scrollbar、各图表 painter 与交互 |
+| `widgets/` | NALU browser/detail、order/tab controls、analysis style、split layout controller、frame helper |
+| `ipc/` | IPC model/server/client；main 侧只依赖 server/model，analysis 子进程只依赖 client/model |
+| `testing/` | test runner 访问页面状态的窄接口和 analysis 子窗体 CSV 指令 |
 
 ## 边界
 
 - `analysis_window.dart` 保持薄入口，不放页面状态和交互逻辑。
-- `analysis_window_page.dart` 保持薄壳，不放页面级数据状态；状态和交互逻辑归 `analysis_page_controller.dart`。
-- 图表绘制和 hit-test 逻辑按图表类型拆分；共享坐标轴/scrollbar 逻辑归 `analysis_chart_common.dart`。
-- NALU 列表/详情归 `analysis_window_nalu.dart`。
+- `page/analysis_page.dart` 保持薄壳，不放页面级数据状态；状态和交互逻辑归 `page/analysis_page_controller.dart`。
+- 图表绘制和 hit-test 逻辑按图表类型拆分；共享坐标轴/scrollbar 逻辑归 `charts/analysis_chart_common.dart`。
+- NALU 列表/详情归 `widgets/analysis_nalu.dart`。
 - 主窗口触发 analysis 的流程在 `lib/windows/main/main_window_analysis.dart`；跨进程生命周期在 `lib/windows/window_manager.dart`。
-- 主窗口只依赖 `analysis_ipc_server.dart` / `analysis_ipc_models.dart`；analysis 子进程只依赖 `analysis_ipc_client.dart` / `analysis_ipc_models.dart`。
+- 主窗口只依赖 `ipc/analysis_ipc_server.dart` / `ipc/analysis_ipc_models.dart`；analysis 子进程只依赖 `ipc/analysis_ipc_client.dart` / `ipc/analysis_ipc_models.dart`。
 - analysis 子窗体脚本只放 analysis 专属指令，不复用主窗口 `PlayerAction`。
 - Analysis 文件之间使用普通 `import`，不要重新引入 `part` / `part of` 来共享私有状态。跨文件需要访问页面状态时，优先补窄接口或 view model。
-- `analysis_window_test_runner.dart` 只能通过 `AnalysisTestHost` 访问 page state，避免测试 DSL 再次和 `_AnalysisPageState` 私有字段耦合。
+- `testing/analysis_test_runner.dart` 只能通过 `AnalysisTestHost` 访问 page state，避免测试 DSL 再次和 `_AnalysisPageState` 私有字段耦合。
 
 ## 测试选择
 
@@ -54,6 +46,6 @@ Analysis UI 改动不应只跑 `ui_tests/smoke/basic.csv`。
 
 - 修改主窗口触发、spawn、workspace track 更新：跑 `spawn_*.csv` 或 `ipc_*.csv`。
 - 修改 analysis 子窗体页面、chart、NALU detail、order/tab 行为：通过主窗口 `spawn_*.csv` 带 `child_*.csv` 验证。
-- 新增 analysis 子窗体交互时，优先扩展 `analysis_window_test_runner.dart` 和 `ui_tests/analysis/child_*.csv`。
+- 新增 analysis 子窗体交互时，优先扩展 `testing/analysis_test_runner.dart` 和 `ui_tests/analysis/child_*.csv`。
 
 `child_*.csv` 是由父脚本通过 `SET_ANALYSIS_TEST_SCRIPT` 传给 analysis 子窗体的辅助脚本，不是普通主窗口脚本。

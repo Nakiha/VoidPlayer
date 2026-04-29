@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 
-import '../../analysis/analysis_ffi.dart';
-import '../../analysis/nalu_types.dart';
+import '../../../analysis/analysis_ffi.dart';
+import '../../../analysis/nalu_types.dart';
 
 abstract class AnalysisTestHost {
   bool get mounted;

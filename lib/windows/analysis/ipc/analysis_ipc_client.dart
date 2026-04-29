@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
-import '../../app_log.dart';
+import '../../../app_log.dart';
 import 'analysis_ipc_models.dart';
 
 class AnalysisIpcClient extends ChangeNotifier {

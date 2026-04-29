@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'analysis_window_style.dart';
+import '../widgets/analysis_style.dart';
 import 'analysis_workspace_mode_toggle.dart';
 import 'analysis_workspace_models.dart';
 

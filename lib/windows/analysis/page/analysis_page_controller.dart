@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../../analysis/analysis_cache.dart';
-import '../../analysis/analysis_ffi.dart';
-import '../../analysis/nalu_types.dart';
+import '../../../analysis/analysis_cache.dart';
+import '../../../analysis/analysis_ffi.dart';
+import '../../../analysis/nalu_types.dart';
 import 'analysis_page_state.dart';
 
 class AnalysisPageController extends ChangeNotifier {

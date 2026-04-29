@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
-import '../../app_log.dart';
-import '../../analysis/nalu_types.dart';
-import 'analysis_frame_utils.dart';
+import '../../../app_log.dart';
+import '../../../analysis/nalu_types.dart';
+import '../widgets/analysis_frame_utils.dart';
 import 'analysis_test_host.dart';
 
 extension AnalysisPageTestRunner on AnalysisTestHost {

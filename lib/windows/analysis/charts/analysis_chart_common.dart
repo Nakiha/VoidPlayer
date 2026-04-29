@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../analysis/analysis_ffi.dart';
+import '../../../analysis/analysis_ffi.dart';
 
 const double analysisChartLabelW = 66.0;
 const double analysisChartXAxisH = 34.0;

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../analysis/analysis_ffi.dart';
-import '../../analysis/nalu_types.dart';
-import '../../l10n/app_localizations.dart';
+import '../../../analysis/analysis_ffi.dart';
+import '../../../analysis/nalu_types.dart';
+import '../../../l10n/app_localizations.dart';
 import 'analysis_frame_utils.dart';
 
 // ===========================================================================

@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
-import '../../analysis/analysis_ffi.dart';
-import '../../analysis/nalu_types.dart';
+import '../../../analysis/analysis_ffi.dart';
+import '../../../analysis/nalu_types.dart';
 
 enum AnalysisFrameTrendAxis { frameSize, qp }
 

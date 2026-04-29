@@ -37,24 +37,14 @@ lib/
 │   │   ├── main_window_layout.dart
 │   │   ├── main_window_playback.dart
 │   │   └── main_window_analysis.dart
-│   ├── analysis/                  # analysis 窗口 app/page/widgets/charts/IPC
+│   ├── analysis/                  # analysis 窗口 app entry 和 feature 子模块
 │   │   ├── analysis_window.dart   # analysis app entry
-│   │   ├── analysis_window_page.dart
-│   │   ├── analysis_window_workspace.dart
-│   │   ├── analysis_workspace_models.dart
-│   │   ├── analysis_workspace_tabs.dart
-│   │   ├── analysis_workspace_split.dart
-│   │   ├── analysis_workspace_mode_toggle.dart
-│   │   ├── analysis_window_charts.dart
-│   │   ├── analysis_window_nalu.dart
-│   │   ├── analysis_window_controls.dart
-│   │   ├── analysis_window_test_runner.dart
-│   │   ├── analysis_test_host.dart
-│   │   ├── analysis_split_layout_controller.dart
-│   │   ├── analysis_ipc.dart
-│   │   ├── analysis_ipc_models.dart
-│   │   ├── analysis_ipc_server.dart
-│   │   └── analysis_ipc_client.dart
+│   │   ├── page/                  # 单页 controller/state/view
+│   │   ├── workspace/             # 多 track workspace tabs/split
+│   │   ├── charts/                # reference pyramid / frame trend
+│   │   ├── widgets/               # NALU、controls、style、split layout
+│   │   ├── ipc/                   # analysis IPC model/server/client
+│   │   └── testing/               # analysis 子窗体测试 host/runner
 │   ├── app_bootstrap.dart         # 主窗口和 standalone analysis 启动分发
 │   └── window_manager.dart        # analysis 进程 / Win32 窗口协调
 ├── video_renderer_controller.dart # native MethodChannel API wrapper

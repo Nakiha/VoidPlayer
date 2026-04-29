@@ -1,8 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-import '../../analysis/analysis_ffi.dart';
-import '../../l10n/app_localizations.dart';
+import '../../../analysis/analysis_ffi.dart';
+import '../../../l10n/app_localizations.dart';
 import 'analysis_chart_common.dart';
 
 // Reference pyramid chart: circle nodes plus reference arrows.

@@ -1,10 +1,10 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-import '../../analysis/analysis_ffi.dart';
-import '../../l10n/app_localizations.dart';
+import '../../../analysis/analysis_ffi.dart';
+import '../../../l10n/app_localizations.dart';
+import '../page/analysis_page_state.dart';
 import 'analysis_chart_common.dart';
-import 'analysis_page_state.dart';
 
 // Frame Trend — zoomable / pannable bar chart
 // ===========================================================================

@@ -9,7 +9,7 @@ import '../app.dart';
 import '../app_log.dart';
 import '../config/app_config.dart';
 import '../startup_options.dart';
-import 'analysis/analysis_ipc_client.dart';
+import 'analysis/ipc/analysis_ipc_client.dart';
 import 'analysis/analysis_window.dart';
 import 'win32ffi.dart';
 import 'window_manager.dart';

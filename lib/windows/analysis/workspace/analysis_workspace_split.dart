@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'analysis_split_layout_controller.dart';
-import 'analysis_window_page.dart';
-import 'analysis_window_style.dart';
+import '../page/analysis_page.dart';
+import '../widgets/analysis_split_layout_controller.dart';
+import '../widgets/analysis_style.dart';
 import 'analysis_workspace_mode_toggle.dart';
 import 'analysis_workspace_models.dart';
 import 'analysis_workspace_tabs.dart';

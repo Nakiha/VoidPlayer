@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../l10n/app_localizations.dart';
-import '../../widgets/segmented_widget.dart';
-import 'analysis_window_style.dart';
+import '../../../l10n/app_localizations.dart';
+import '../../../widgets/segmented_widget.dart';
+import '../widgets/analysis_style.dart';
 
 class AnalysisWorkspaceModeToggle extends StatelessWidget {
   final bool splitView;

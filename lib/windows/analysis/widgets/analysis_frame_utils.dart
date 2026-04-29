@@ -1,4 +1,4 @@
-import '../../analysis/analysis_ffi.dart';
+import '../../../analysis/analysis_ffi.dart';
 
 String analysisFrameSliceName(FrameInfo frame) => switch (frame.sliceType) {
   2 => 'I',

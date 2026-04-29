@@ -1,4 +1,4 @@
-import 'analysis_ipc_models.dart';
+import '../ipc/analysis_ipc_models.dart';
 
 class AnalysisWorkspaceEntry {
   final String hash;

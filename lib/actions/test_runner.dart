@@ -742,6 +742,14 @@ ScriptInstruction? _parseInstruction(
         time,
         SetRenderSize(int.parse(args[0]), int.parse(args[1])),
       );
+    case 'NEW_WINDOW':
+      return ScriptAction(time, const NewWindow());
+    case 'OPEN_SETTINGS':
+      return ScriptAction(time, const OpenSettings());
+    case 'OPEN_STATS':
+      return ScriptAction(time, const OpenStats());
+    case 'OPEN_MEMORY':
+      return ScriptAction(time, const OpenMemory());
     case 'CAPTURE_VIEWPORT':
       if (args.isEmpty) {
         log.warning('CAPTURE_VIEWPORT needs a capture name: $rawLine');

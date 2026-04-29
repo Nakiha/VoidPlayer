@@ -48,28 +48,7 @@ typedef _GetDiagDart = Pointer<NakiVrDiagnostics> Function();
 final _getDiag = DynamicLibrary.executable()
     .lookupFunction<_GetDiagNative, _GetDiagDart>('naki_vr_get_diagnostics');
 
-// ---- UI ----
-
-class StatsApp extends StatelessWidget {
-  final Color accentColor;
-  const StatsApp({super.key, required this.accentColor});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Void Player - Stats',
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: accentColor,
-          brightness: Brightness.dark,
-        ),
-      ),
-      home: const StatsPage(),
-    );
-  }
-}
+// ---- UI panel ----
 
 class StatsPage extends StatefulWidget {
   const StatsPage({super.key});
@@ -141,25 +120,26 @@ class _StatsPageState extends State<StatsPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l = AppLocalizations.of(context)!;
-    return Scaffold(
-      body: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(l.trackStatistics, style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Expanded(
-              child: _tracks.isEmpty
-                  ? Center(
-                      child: Text(
-                        l.waitingDiagnostics,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(l.trackStatistics, style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Expanded(
+            child: _tracks.isEmpty
+                ? Center(
+                    child: Text(
+                      l.waitingDiagnostics,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
-                    )
-                  : DataTable(
+                    ),
+                  )
+                : SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
                       headingTextStyle: theme.textTheme.labelSmall,
                       dataTextStyle: theme.textTheme.bodySmall,
                       columns: [
@@ -200,9 +180,9 @@ class _StatsPageState extends State<StatsPage> {
                           )
                           .toList(),
                     ),
-            ),
-          ],
-        ),
+                  ),
+          ),
+        ],
       ),
     );
   }

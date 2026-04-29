@@ -18,6 +18,7 @@ class MainWindowActionCoordinator {
   final MainWindowAnalysisCoordinator analysisCoordinator;
   final MainWindowTestHarness testHarness;
   final bool Function() isLoopRangeEnabled;
+  final void Function() showProfilerOverlay;
 
   MainWindowActionBinder? _binder;
 
@@ -29,6 +30,7 @@ class MainWindowActionCoordinator {
     required this.analysisCoordinator,
     required this.testHarness,
     required this.isLoopRangeEnabled,
+    required this.showProfilerOverlay,
   });
 
   void bind() {
@@ -69,10 +71,10 @@ class MainWindowActionCoordinator {
       setZoom: layoutCoordinator.setZoom,
       setSplitPos: layoutCoordinator.setSplitPos,
       panByDelta: layoutCoordinator.panByDelta,
-      openNewWindow: WindowManager.showStatsWindow,
+      openNewWindow: showProfilerOverlay,
       openSettings: WindowManager.showSettingsWindow,
-      openStats: WindowManager.showStatsWindow,
-      openMemory: WindowManager.showMemoryWindow,
+      openStats: showProfilerOverlay,
+      openMemory: showProfilerOverlay,
       runAnalysis: analysisCoordinator.triggerAnalysis,
     )..bind();
   }

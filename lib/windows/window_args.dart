@@ -15,19 +15,18 @@ class WindowArgs {
     this.hash,
     this.fileName,
     Rect? initialRect,
-  })  : _accentColorValue = accentColorValue,
-        _initialRect = initialRect;
+  }) : _accentColorValue = accentColorValue,
+       _initialRect = initialRect;
 
   /// Window type constants
   static const String main = 'main';
-  static const String stats = 'stats';
-  static const String memory = 'memory';
   static const String settings = 'settings';
   static const String analysis = 'analysis';
 
   /// The accent color passed from the main window, or fallback.
-  Color get accentColor =>
-      _accentColorValue != null ? Color(_accentColorValue) : const Color(0xFF0078D4);
+  Color get accentColor => _accentColorValue != null
+      ? Color(_accentColorValue)
+      : const Color(0xFF0078D4);
 
   /// The initial position/size passed from the main window, or `null`.
   Rect? get initialRect => _initialRect;
@@ -35,16 +34,12 @@ class WindowArgs {
   /// Window titles for identifying secondary windows.
   static const Map<String, String> windowTitles = {
     settings: 'Void Player - Settings',
-    stats: 'Void Player - Stats',
-    memory: 'Void Player - Memory Monitor',
     analysis: 'Void Player - Analysis',
   };
 
   /// Default sizes for each window type.
   static const Map<String, (int, int)> defaultSizes = {
     settings: (700, 500),
-    stats: (800, 600),
-    memory: (800, 600),
     analysis: (1000, 700),
   };
 
@@ -71,7 +66,10 @@ class WindowArgs {
           final h = config['height'];
           if (x is num && y is num && w is num && h is num) {
             initialRect = Rect.fromLTWH(
-              x.toDouble(), y.toDouble(), w.toDouble(), h.toDouble(),
+              x.toDouble(),
+              y.toDouble(),
+              w.toDouble(),
+              h.toDouble(),
             );
           }
 

@@ -24,6 +24,7 @@ class MainWindowStateModel {
   final int hoverPtsUs;
   final bool sliderHovering;
   final bool dragging;
+  final bool profilerVisible;
 
   const MainWindowStateModel({
     this.textureId,
@@ -45,6 +46,7 @@ class MainWindowStateModel {
     this.hoverPtsUs = 0,
     this.sliderHovering = false,
     this.dragging = false,
+    this.profilerVisible = false,
   });
 
   MainWindowStateModel copyWith({
@@ -67,6 +69,7 @@ class MainWindowStateModel {
     int? hoverPtsUs,
     bool? sliderHovering,
     bool? dragging,
+    bool? profilerVisible,
   }) {
     return MainWindowStateModel(
       textureId: textureId == _mainWindowStateUnset
@@ -97,6 +100,7 @@ class MainWindowStateModel {
       hoverPtsUs: hoverPtsUs ?? this.hoverPtsUs,
       sliderHovering: sliderHovering ?? this.sliderHovering,
       dragging: dragging ?? this.dragging,
+      profilerVisible: profilerVisible ?? this.profilerVisible,
     );
   }
 }
@@ -212,5 +216,9 @@ class MainWindowStateStore extends ChangeNotifier {
 
   void setDragging(bool dragging) {
     _set(_value.copyWith(dragging: dragging));
+  }
+
+  void setProfilerVisible(bool visible) {
+    _set(_value.copyWith(profilerVisible: visible));
   }
 }

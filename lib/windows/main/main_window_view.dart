@@ -1,6 +1,7 @@
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../track_manager.dart';
 import '../../video_renderer_controller.dart';
 import '../../widgets/controls_bar.dart';
@@ -9,6 +10,7 @@ import '../../widgets/media_header.dart';
 import '../../widgets/timeline_area.dart';
 import '../../widgets/toolbar.dart';
 import '../../widgets/viewport_panel.dart';
+import '../stats_window.dart';
 
 class MainWindowViewModel {
   final bool dragging;
@@ -35,6 +37,7 @@ class MainWindowViewModel {
   final int hoverPtsUs;
   final bool sliderHovering;
   final double controlsWidth;
+  final bool profilerVisible;
 
   const MainWindowViewModel({
     required this.dragging,
@@ -61,6 +64,7 @@ class MainWindowViewModel {
     required this.hoverPtsUs,
     required this.sliderHovering,
     required this.controlsWidth,
+    required this.profilerVisible,
   });
 }
 
@@ -72,6 +76,7 @@ class MainWindowViewActions {
   final VoidCallback onAddMedia;
   final Future<void> Function() onAnalysis;
   final VoidCallback onProfiler;
+  final VoidCallback onCloseProfiler;
   final VoidCallback onSettings;
   final ValueChanged<Offset> onPan;
   final ValueChanged<double> onSplit;
@@ -101,6 +106,7 @@ class MainWindowViewActions {
     required this.onAddMedia,
     required this.onAnalysis,
     required this.onProfiler,
+    required this.onCloseProfiler,
     required this.onSettings,
     required this.onPan,
     required this.onSplit,
@@ -252,8 +258,66 @@ class MainWindowView extends StatelessWidget {
                   ),
                 ),
               ),
+            if (model.profilerVisible)
+              Positioned(
+                top: 48,
+                right: 12,
+                bottom: 12,
+                left: 12,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 640),
+                    child: _ProfilerOverlay(onClose: actions.onCloseProfiler),
+                  ),
+                ),
+              ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ProfilerOverlay extends StatelessWidget {
+  final VoidCallback onClose;
+
+  const _ProfilerOverlay({required this.onClose});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      elevation: 12,
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          SizedBox(
+            height: 40,
+            child: Row(
+              children: [
+                const SizedBox(width: 12),
+                Icon(Icons.speed, size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    AppLocalizations.of(context)!.performanceMonitor,
+                    style: theme.textTheme.titleSmall,
+                  ),
+                ),
+                IconButton(
+                  onPressed: onClose,
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          const Expanded(child: StatsPage()),
+        ],
       ),
     );
   }

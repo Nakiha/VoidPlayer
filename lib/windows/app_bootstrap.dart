@@ -11,9 +11,7 @@ import '../config/app_config.dart';
 import '../startup_options.dart';
 import 'analysis/analysis_ipc.dart';
 import 'analysis/analysis_window.dart';
-import 'memory_window.dart';
 import 'settings_window.dart';
-import 'stats_window.dart';
 import 'win32ffi.dart';
 import 'window_args.dart';
 import 'window_manager.dart';
@@ -266,10 +264,7 @@ Future<void> runVoidPlayer(List<String> args) async {
   }
 
   switch (windowArgs.windowType) {
-    case WindowArgs.stats:
-    case WindowArgs.memory:
     case WindowArgs.settings:
-    case WindowArgs.analysis:
       log.info(
         '[SecondaryWindow] type=${windowArgs.windowType}, initializing...',
       );
@@ -280,24 +275,13 @@ Future<void> runVoidPlayer(List<String> args) async {
       );
       final accentColor = windowArgs.accentColor;
       final app = switch (windowArgs.windowType) {
-        WindowArgs.stats => StatsApp(accentColor: accentColor),
-        WindowArgs.memory => MemoryApp(accentColor: accentColor),
         WindowArgs.settings => SettingsApp(accentColor: accentColor),
-        WindowArgs.analysis => AnalysisApp(
-          accentColor: accentColor,
-          hash: windowArgs.hash!,
-          fileName: windowArgs.fileName,
-        ),
         _ => throw StateError('unreachable'),
       };
       _applySecondaryWindowRect(windowArgs);
       final hwnd = Win32FFI.getForegroundWindow();
       if (hwnd != 0) {
         final title = switch (windowArgs.windowType) {
-          WindowArgs.analysis =>
-            windowArgs.fileName != null
-                ? 'Void Player - ${windowArgs.fileName}'
-                : 'Void Player - Analysis',
           _ => WindowArgs.windowTitles[windowArgs.windowType] ?? 'Void Player',
         };
         Win32FFI.setWindowText(hwnd, title);

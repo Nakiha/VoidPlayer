@@ -89,6 +89,7 @@ class MainWindowController {
       hoverPtsUs: _hoverPtsUs,
       sliderHovering: _sliderHovering,
       controlsWidth: _timelineControlsWidth,
+      profilerVisible: _profilerVisible,
     );
   }
 
@@ -110,7 +111,8 @@ class MainWindowController {
       },
       onAddMedia: mediaCoordinator.openFile,
       onAnalysis: analysisCoordinator.triggerAnalysis,
-      onProfiler: () => WindowManager.showStatsWindow(),
+      onProfiler: () => stateStore.setProfilerVisible(!_profilerVisible),
+      onCloseProfiler: () => stateStore.setProfilerVisible(false),
       onSettings: () => WindowManager.showSettingsWindow(),
       onPan: layoutCoordinator.onPan,
       onSplit: layoutCoordinator.onSplit,
@@ -225,6 +227,7 @@ class MainWindowController {
       analysisCoordinator: analysisCoordinator,
       testHarness: testHarness,
       isLoopRangeEnabled: () => _loopRangeEnabled,
+      showProfilerOverlay: () => stateStore.setProfilerVisible(true),
     );
   }
 
@@ -268,6 +271,7 @@ class MainWindowController {
   int get _hoverPtsUs => _state.hoverPtsUs;
   bool get _sliderHovering => _state.sliderHovering;
   bool get _dragging => _state.dragging;
+  bool get _profilerVisible => _state.profilerVisible;
   double get _timelineStartWidth => playbackCoordinator.timelineStartWidth;
   int get _resolvedLoopStartUs => playbackCoordinator.resolvedLoopStartUs;
   int get _resolvedLoopEndUs => playbackCoordinator.resolvedLoopEndUs;

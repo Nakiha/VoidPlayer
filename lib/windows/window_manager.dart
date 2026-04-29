@@ -31,8 +31,6 @@ class WindowManager {
   // Public API
   // -----------------------------------------------------------------------
 
-  static Future<void> showStatsWindow() => _showWindow(WindowArgs.stats);
-  static Future<void> showMemoryWindow() => _showWindow(WindowArgs.memory);
   static Future<void> showSettingsWindow() => _showWindow(WindowArgs.settings);
 
   /// Show an analysis window for a specific video hash.
@@ -249,7 +247,7 @@ class WindowManager {
     return hwnds.isNotEmpty ? hwnds.first : 0;
   }
 
-  // --- desktop_multi_window secondary windows (stats/settings/memory) ---
+  // --- desktop_multi_window secondary windows (settings only) ---
 
   static Future<void> _showWindow(String type) async {
     // Check for an existing window of this type.

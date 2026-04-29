@@ -174,12 +174,9 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
 
   await Window.initialize();
   await Window.setEffect(
-    effect: dcompAlphaProbe ? WindowEffect.transparent : WindowEffect.mica,
-    color: dcompAlphaProbe ? const Color(0x00000000) : const Color(0xCC222222),
+    effect: WindowEffect.mica,
+    color: const Color(0xCC222222),
   );
-  if (dcompAlphaProbe) {
-    await windowManager.setBackgroundColor(Colors.transparent);
-  }
 
   final hwnd = initialHwnd != 0 ? initialHwnd : _currentFlutterRunnerHwnd();
   if (hwnd != 0) {
@@ -265,12 +262,9 @@ Future<void> runVoidPlayer(List<String> args) async {
 
   await Window.initialize();
   await Window.setEffect(
-    effect: dcompAlphaProbe ? WindowEffect.transparent : WindowEffect.mica,
-    color: dcompAlphaProbe ? const Color(0x00000000) : const Color(0xCC222222),
+    effect: WindowEffect.mica,
+    color: const Color(0xCC222222),
   );
-  if (dcompAlphaProbe) {
-    await windowManager.setBackgroundColor(Colors.transparent);
-  }
 
   await windowManager.setPreventClose(true);
   final closeHandler = _CloseHandler();

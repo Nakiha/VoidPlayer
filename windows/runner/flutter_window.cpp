@@ -15,7 +15,20 @@
 
 namespace {
 
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
+
+#ifndef DWMWA_USE_HOSTBACKDROPBRUSH
+#define DWMWA_USE_HOSTBACKDROPBRUSH 17
+#endif
+
+#ifndef DWMWA_SYSTEMBACKDROP_TYPE
+#define DWMWA_SYSTEMBACKDROP_TYPE 38
+#endif
+
 constexpr wchar_t kDCompProbeWindowClass[] = L"VOID_PLAYER_DCOMP_PROBE";
+constexpr DWORD kDwmSystemBackdropMainWindow = 2;
 
 LRESULT CALLBACK DCompProbeWndProc(HWND hwnd,
                                    UINT message,
@@ -34,8 +47,7 @@ void RegisterDCompProbeWindowClass() {
   window_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
   window_class.lpszClassName = kDCompProbeWindowClass;
   window_class.hInstance = GetModuleHandle(nullptr);
-  window_class.hbrBackground =
-      reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+  window_class.hbrBackground = nullptr;
   window_class.lpfnWndProc = DCompProbeWndProc;
   RegisterClass(&window_class);
   registered = true;
@@ -64,6 +76,31 @@ void WindowProbeLog(const std::string& message) {
   if (file.is_open()) {
     file << line << "\n";
   }
+}
+
+void ApplyProbeMicaBackdrop(HWND hwnd, const char* stage) {
+  MARGINS margins = {-1, -1, -1, -1};
+  HRESULT extend_frame_hr = DwmExtendFrameIntoClientArea(hwnd, &margins);
+
+  BOOL dark_mode = TRUE;
+  HRESULT dark_hr = DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                                         &dark_mode, sizeof(dark_mode));
+
+  BOOL host_backdrop = TRUE;
+  HRESULT host_backdrop_hr =
+      DwmSetWindowAttribute(hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, &host_backdrop,
+                            sizeof(host_backdrop));
+
+  DWORD backdrop = kDwmSystemBackdropMainWindow;
+  HRESULT backdrop_hr =
+      DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop,
+                            sizeof(backdrop));
+
+  WindowProbeLog(std::string(stage) + " ApplyProbeMicaBackdrop hwnd=" +
+                 PtrString(hwnd) + " extendFrame=" +
+                 HrString(extend_frame_hr) + " dark=" + HrString(dark_hr) +
+                 " hostBackdropBrush=" + HrString(host_backdrop_hr) +
+                 " systemBackdropMainWindow=" + HrString(backdrop_hr));
 }
 
 }  // namespace
@@ -107,14 +144,7 @@ bool FlutterWindow::OnCreate() {
   BOOL dcomp_child_positioned = FALSE;
   BOOL flutter_child_positioned = FALSE;
   if (dcomp_alpha_probe_enabled_) {
-    MARGINS margins = {-1, -1, -1, -1};
-    host_dwm_hr = DwmExtendFrameIntoClientArea(GetHandle(), &margins);
-    flutter_dwm_hr = DwmExtendFrameIntoClientArea(flutter_hwnd, &margins);
-    LONG_PTR host_ex_style = GetWindowLongPtr(GetHandle(), GWL_EXSTYLE);
-    SetWindowLongPtr(GetHandle(), GWL_EXSTYLE, host_ex_style | WS_EX_LAYERED);
-    host_color_key_ok =
-        SetLayeredWindowAttributes(GetHandle(), RGB(0, 255, 255), 255,
-                                   LWA_COLORKEY);
+    ApplyProbeMicaBackdrop(GetHandle(), "OnCreate");
     RegisterDCompProbeWindowClass();
     RECT rect = GetClientArea();
     dcomp_probe_hwnd_ = CreateWindowEx(
@@ -177,6 +207,9 @@ bool FlutterWindow::OnCreate() {
   }
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
+    if (dcomp_alpha_probe_enabled_) {
+      ApplyProbeMicaBackdrop(GetHandle(), "FirstFrame");
+    }
     this->Show();
   });
 

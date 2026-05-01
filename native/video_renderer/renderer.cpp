@@ -5,6 +5,7 @@
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <windows.h>
@@ -1027,6 +1028,51 @@ int64_t Renderer::compute_frame_duration_us() const {
     return 33333; // fallback ~30fps
 }
 
+int64_t Renderer::effective_duration_us_locked() const {
+    int64_t duration_us = cached_duration_us_;
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks_[i] || !tracks_[i]->demux_thread) continue;
+        const int64_t track_duration_us =
+            tracks_[i]->demux_thread->stats().duration_us;
+        if (track_duration_us <= 0) continue;
+        duration_us = std::max(duration_us, track_duration_us + tracks_[i]->offset_us);
+    }
+    return std::max<int64_t>(0, duration_us);
+}
+
+bool Renderer::settle_eof_locked(int64_t max_presented_end_us) {
+    if (!playing_.load() || max_presented_end_us <= 0) {
+        return false;
+    }
+
+    const int64_t duration_us = effective_duration_us_locked();
+    const int64_t current_us = clock_.current_pts_us();
+    const int64_t frame_duration_us = compute_frame_duration_us();
+    const int64_t eof_tolerance_us =
+        std::max<int64_t>(frame_duration_us + 2000, 5000);
+
+    int64_t end_us = max_presented_end_us;
+    if (duration_us > 0 &&
+        std::llabs(duration_us - max_presented_end_us) <= eof_tolerance_us) {
+        end_us = duration_us;
+    }
+
+    if (current_us + eof_tolerance_us < end_us) {
+        return false;
+    }
+
+    set_decode_paused_for_all_tracks(true);
+    clock_.seek(end_us);
+    clock_.pause();
+    playing_ = false;
+    preview_drawn_ = true;
+    spdlog::info("[Renderer] EOF reached: clock fixed at {:.3f}s (last_frame_end={:.3f}s, duration={:.3f}s)",
+                 end_us / 1e6,
+                 max_presented_end_us / 1e6,
+                 duration_us / 1e6);
+    return true;
+}
+
 void Renderer::set_speed(double speed) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     clock_.set_speed(speed);
@@ -1377,6 +1423,7 @@ void Renderer::render_loop() {
         // Frame-driven clock: when buffer is empty, clamp clock to the
         // end of the last presented frame so PTS doesn't run ahead.
         {
+            std::lock_guard<std::mutex> lock(state_mutex_);
             bool buffer_empty = true;
             int64_t max_end_pts = 0;
             for (size_t i = 0; i < kMaxTracks; ++i) {
@@ -1396,6 +1443,10 @@ void Renderer::render_loop() {
                 int64_t current = clock_.current_pts_us();
                 if (current > max_end_pts) {
                     clock_.seek(max_end_pts);
+                }
+                if (settle_eof_locked(max_end_pts)) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    continue;
                 }
             }
         }

@@ -261,6 +261,14 @@ private:
     /// Caller must hold state_mutex_.
     void release_resources_locked();
 
+    /// Resolve the logical playback end across active tracks.
+    /// Caller must hold state_mutex_.
+    int64_t effective_duration_us_locked() const;
+
+    /// Stop playback at EOF once all buffers are drained.
+    /// Caller must hold state_mutex_.
+    bool settle_eof_locked(int64_t max_presented_end_us);
+
     Clock clock_;
     std::unique_ptr<D3D11Device> d3d_device_;
     std::unique_ptr<TextureManager> texture_mgr_;

@@ -1,0 +1,10 @@
+# EOF should settle playback instead of leaving the native clock running
+# around the last-frame/duration boundary.
+0.5, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+1.5, ASSERT_DURATION, 9999956, 20
+2.0, PLAY
+2.5, WAIT_PLAYING, 3000
+13.5, WAIT_PAUSED, 3000
+13.7, ASSERT_PAUSED
+13.8, ASSERT_POSITION, 9999956, 80
+14.0, QUIT, 0

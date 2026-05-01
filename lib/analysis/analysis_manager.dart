@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../app_log.dart';
+import '../config/app_config.dart';
 import 'analysis_cache.dart';
 import 'analysis_ffi.dart';
 import 'file_hash.dart';
@@ -15,7 +16,12 @@ enum AnalysisState { idle, computingHash, generating, loading, loaded, error }
 ///
 /// The UI resolves these via [AppLocalizations]; the manager never holds
 /// translated strings.
-enum AnalysisErrorKey { hashFailed, unsupported, loadFailed }
+enum AnalysisErrorKey {
+  hashFailed,
+  unsupported,
+  loadFailed,
+  cacheLimitExceeded,
+}
 
 class AnalysisError {
   final AnalysisErrorKey key;
@@ -68,6 +74,24 @@ class AnalysisManager extends ChangeNotifier {
       return _loadFromCache(hash, fileName, videoPath);
     }
     log.info('[Analysis] cache miss, will generate');
+
+    final maxCacheBytes = AppConfig.isInitialized
+        ? AppConfig.instance.analysisCacheMaxBytes
+        : 0;
+    if (maxCacheBytes > 0) {
+      final snapshot = await AnalysisCache.snapshot(maxBytes: maxCacheBytes);
+      if (snapshot.isOverLimit) {
+        log.warning(
+          '[Analysis] cache limit reached: '
+          'current=${snapshot.totalBytes}, max=$maxCacheBytes',
+        );
+        _setError(AnalysisErrorKey.cacheLimitExceeded, [
+          AnalysisCache.formatBytes(snapshot.totalBytes),
+          AnalysisCache.formatBytes(maxCacheBytes),
+        ]);
+        return null;
+      }
+    }
 
     _state = AnalysisState.generating;
     _generatingFileName = fileName;

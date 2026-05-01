@@ -115,6 +115,9 @@
   "shortcuts": "Shortcuts",
   "@shortcuts": { "description": "Navigation: shortcuts" },
 
+  "cache": "Cache",
+  "@cache": { "description": "Navigation: cache settings" },
+
   "about": "About",
   "@about": { "description": "Navigation: about" },
 
@@ -138,6 +141,42 @@
 
   "license": "License: GPLv3",
   "@license": { "description": "License text" },
+
+  "refresh": "Refresh",
+  "@refresh": { "description": "Refresh button tooltip" },
+
+  "save": "Save",
+  "@save": { "description": "Save button tooltip" },
+
+  "cacheMaxLimit": "Maximum cache size",
+  "@cacheMaxLimit": { "description": "Analysis cache maximum size setting label" },
+
+  "cacheUnlimitedHint": "0 means unlimited",
+  "@cacheUnlimitedHint": { "description": "Analysis cache unlimited setting hint" },
+
+  "cacheUsageWithLimit": "{used} / {limit}",
+  "@cacheUsageWithLimit": { "description": "Analysis cache usage with limit", "placeholders": { "used": { "type": "String" }, "limit": { "type": "String" } } },
+
+  "cacheUsageUnlimited": "{used} used",
+  "@cacheUsageUnlimited": { "description": "Analysis cache usage without limit", "placeholders": { "used": { "type": "String" } } },
+
+  "cacheRemaining": "{size} remaining",
+  "@cacheRemaining": { "description": "Analysis cache remaining capacity", "placeholders": { "size": { "type": "String" } } },
+
+  "cacheLimitReached": "Cache limit reached. New analysis generation is paused.",
+  "@cacheLimitReached": { "description": "Analysis cache over limit warning" },
+
+  "cachePerVideo": "Per-video cache",
+  "@cachePerVideo": { "description": "Analysis cache per-video section title" },
+
+  "cacheNoEntries": "No analysis cache entries yet",
+  "@cacheNoEntries": { "description": "Analysis cache empty state" },
+
+  "cacheEntryBreakdown": "VBS2 {vbs2}  VBI {vbi}  VBT {vbt}",
+  "@cacheEntryBreakdown": { "description": "Analysis cache entry file-size breakdown", "placeholders": { "vbs2": { "type": "String" }, "vbi": { "type": "String" }, "vbt": { "type": "String" } } },
+
+  "cacheUnindexed": "Unindexed cache files",
+  "@cacheUnindexed": { "description": "Analysis cache files not represented by the index" },
 
   "actionTogglePlay": "Toggle Play/Pause",
   "@actionTogglePlay": { "description": "Shortcut action label" },
@@ -234,6 +273,9 @@
 
   "analysisErrorLoadFailed": "Failed to load analysis for {name}",
   "@analysisErrorLoadFailed": { "description": "Error: failed to load cached analysis", "placeholders": { "name": { "type": "String" } } },
+
+  "analysisErrorCacheLimitExceeded": "Analysis cache is full ({used} / {limit}). Raise the limit or clear cache files before generating more VTM data.",
+  "@analysisErrorCacheLimitExceeded": { "description": "Error: analysis cache limit exceeded", "placeholders": { "used": { "type": "String" }, "limit": { "type": "String" } } },
 
   "analysisFilterHint": "Filter by type, name or #id",
   "@analysisFilterHint": { "description": "Placeholder text for NALU filter search bar" }

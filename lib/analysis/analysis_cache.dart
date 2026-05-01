@@ -2,6 +2,59 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 
+class AnalysisCacheEntryStats {
+  final String hash;
+  final String name;
+  final String? videoPath;
+  final int videoBytes;
+  final int vbs2Bytes;
+  final int vbiBytes;
+  final int vbtBytes;
+  final DateTime? cachedAt;
+  final bool complete;
+
+  const AnalysisCacheEntryStats({
+    required this.hash,
+    required this.name,
+    required this.videoPath,
+    required this.videoBytes,
+    required this.vbs2Bytes,
+    required this.vbiBytes,
+    required this.vbtBytes,
+    required this.cachedAt,
+    required this.complete,
+  });
+
+  int get cacheBytes => vbs2Bytes + vbiBytes + vbtBytes;
+}
+
+class AnalysisCacheSnapshot {
+  final String path;
+  final int totalBytes;
+  final int indexedBytes;
+  final int unindexedBytes;
+  final int maxBytes;
+  final List<AnalysisCacheEntryStats> entries;
+
+  const AnalysisCacheSnapshot({
+    required this.path,
+    required this.totalBytes,
+    required this.indexedBytes,
+    required this.unindexedBytes,
+    required this.maxBytes,
+    required this.entries,
+  });
+
+  bool get hasLimit => maxBytes > 0;
+  bool get isOverLimit => hasLimit && totalBytes >= maxBytes;
+  int get remainingBytes =>
+      hasLimit ? (maxBytes - totalBytes).clamp(0, maxBytes) : 0;
+  double get usageFraction {
+    if (!hasLimit) return 0;
+    return (totalBytes / maxBytes).clamp(0.0, 1.0);
+  }
+}
+
 /// Manages the on-disk analysis cache in `exe_dir/cache`.
 ///
 /// Cache structure:
@@ -54,6 +107,100 @@ class AnalysisCache {
   }
 
   static File get indexFile => File(p.join(dataDir, 'analysis_index.json'));
+
+  static Future<AnalysisCacheSnapshot> snapshot({int maxBytes = 0}) async {
+    return scan(maxBytes: maxBytes);
+  }
+
+  static AnalysisCacheSnapshot scan({int maxBytes = 0}) {
+    final dir = Directory(dataDir);
+    if (!dir.existsSync()) {
+      return AnalysisCacheSnapshot(
+        path: dataDir,
+        totalBytes: 0,
+        indexedBytes: 0,
+        unindexedBytes: 0,
+        maxBytes: maxBytes,
+        entries: const [],
+      );
+    }
+
+    var totalBytes = 0;
+    for (final entity in dir.listSync(recursive: false, followLinks: false)) {
+      if (entity is File) {
+        try {
+          totalBytes += entity.lengthSync();
+        } catch (_) {
+          // Best-effort stats; skip files that disappear during scanning.
+        }
+      }
+    }
+
+    final index = loadIndex();
+    final rawEntries = index['entries'];
+    final entries = <AnalysisCacheEntryStats>[];
+    var indexedBytes = 0;
+
+    if (rawEntries is Map<String, dynamic>) {
+      for (final item in rawEntries.entries) {
+        final hash = item.key;
+        final value = item.value;
+        if (value is! Map<String, dynamic>) continue;
+
+        final vbs2 = _fileLength(vbs2Path(hash));
+        final vbi = _fileLength(vbiPath(hash));
+        final vbt = _fileLength(vbtPath(hash));
+        final cacheBytes = vbs2 + vbi + vbt;
+        indexedBytes += cacheBytes;
+
+        entries.add(
+          AnalysisCacheEntryStats(
+            hash: hash,
+            name: value['name'] as String? ?? hash,
+            videoPath: value['path'] as String?,
+            videoBytes: (value['size'] as num?)?.toInt() ?? 0,
+            vbs2Bytes: vbs2,
+            vbiBytes: vbi,
+            vbtBytes: vbt,
+            cachedAt: DateTime.tryParse(value['time'] as String? ?? ''),
+            complete:
+                _isVbi2(vbiPath(hash)) && File(vbtPath(hash)).existsSync(),
+          ),
+        );
+      }
+    }
+
+    entries.sort((a, b) => b.cacheBytes.compareTo(a.cacheBytes));
+    return AnalysisCacheSnapshot(
+      path: dataDir,
+      totalBytes: totalBytes,
+      indexedBytes: indexedBytes,
+      unindexedBytes: (totalBytes - indexedBytes).clamp(0, totalBytes),
+      maxBytes: maxBytes,
+      entries: entries,
+    );
+  }
+
+  static int _fileLength(String path) {
+    try {
+      final file = File(path);
+      return file.existsSync() ? file.lengthSync() : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  static String formatBytes(int bytes) {
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var value = bytes.toDouble();
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit++;
+    }
+    if (unit == 0) return '$bytes B';
+    return '${value.toStringAsFixed(value >= 10 ? 1 : 2)} ${units[unit]}';
+  }
 
   // ---- Index operations ----
 

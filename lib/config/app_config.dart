@@ -17,6 +17,7 @@ class AppConfig {
   AppConfig._();
 
   static AppConfig? _instance;
+  static bool get isInitialized => _instance != null;
   static AppConfig get instance => _instance!;
 
   late final File _file;
@@ -91,5 +92,23 @@ class AppConfig {
   Map<String, dynamic> section(String name) {
     return _data.putIfAbsent(name, () => <String, dynamic>{})
         as Map<String, dynamic>;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Preferences section
+  // ---------------------------------------------------------------------------
+
+  static const _preferencesKey = 'preferences';
+  static const _analysisCacheMaxBytesKey = 'analysisCacheMaxBytes';
+
+  /// Maximum analysis cache size in bytes. A value of 0 means unlimited.
+  int get analysisCacheMaxBytes {
+    final value = section(_preferencesKey)[_analysisCacheMaxBytesKey];
+    if (value is num && value >= 0) return value.toInt();
+    return 0;
+  }
+
+  set analysisCacheMaxBytes(int value) {
+    section(_preferencesKey)[_analysisCacheMaxBytesKey] = value < 0 ? 0 : value;
   }
 }

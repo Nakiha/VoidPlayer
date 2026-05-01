@@ -116,7 +116,22 @@ class _AnalysisButton extends StatelessWidget {
           width: 32,
           height: 32,
           child: IconButton(
-            onPressed: !enabled || isWorking ? null : () => onPressed(),
+            onPressed: !enabled || isWorking
+                ? null
+                : () async {
+                    await onPressed();
+                    if (!context.mounted) return;
+                    final error = mgr.error;
+                    if (error?.key == AnalysisErrorKey.cacheLimitExceeded) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            _tooltipText(context, mgr, false, true),
+                          ),
+                        ),
+                      );
+                    }
+                  },
             icon: isWorking
                 ? const SizedBox(
                     width: 18,
@@ -160,6 +175,11 @@ class _AnalysisButton extends StatelessWidget {
         AnalysisErrorKey.loadFailed => l.analysisErrorLoadFailed(
           e.args.firstOrNull ?? '',
         ),
+        AnalysisErrorKey.cacheLimitExceeded =>
+          l.analysisErrorCacheLimitExceeded(
+            e.args.isNotEmpty ? e.args[0] : '',
+            e.args.length > 1 ? e.args[1] : '',
+          ),
       };
     }
     return l.analysisClickToAnalyze;

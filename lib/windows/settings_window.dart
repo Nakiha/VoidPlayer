@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../actions/player_action.dart';
 import '../l10n/action_labels.dart';
 import '../l10n/app_localizations.dart';
+import 'settings/cache_settings_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -30,6 +31,10 @@ class _SettingsPageState extends State<SettingsPage> {
               label: Text(l.shortcuts),
             ),
             NavigationRailDestination(
+              icon: const Icon(Icons.storage),
+              label: Text(l.cache),
+            ),
+            NavigationRailDestination(
               icon: const Icon(Icons.info_outline),
               label: Text(l.about),
             ),
@@ -39,7 +44,11 @@ class _SettingsPageState extends State<SettingsPage> {
         Expanded(
           child: IndexedStack(
             index: _selectedIndex,
-            children: const [_ShortcutsPage(), _AboutPage()],
+            children: const [
+              _ShortcutsPage(),
+              CacheSettingsPage(),
+              _AboutPage(),
+            ],
           ),
         ),
       ],

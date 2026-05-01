@@ -47,6 +47,7 @@
 
   "settingsTitle": "Void Player - 设置",
   "shortcuts": "快捷键",
+  "cache": "缓存",
   "about": "关于",
   "keyboardShortcuts": "键盘快捷键",
   "action": "操作",
@@ -55,6 +56,18 @@
   "appDescription": "多轨道视频对比播放器。",
   "dependencies": "依赖项",
   "license": "许可证：GPLv3",
+  "refresh": "刷新",
+  "save": "保存",
+  "cacheMaxLimit": "最大缓存大小",
+  "cacheUnlimitedHint": "0 表示不限",
+  "cacheUsageWithLimit": "{used} / {limit}",
+  "cacheUsageUnlimited": "已使用 {used}",
+  "cacheRemaining": "剩余 {size}",
+  "cacheLimitReached": "缓存已达到上限，新的分析生成已暂停。",
+  "cachePerVideo": "每个视频的缓存",
+  "cacheNoEntries": "暂无分析缓存",
+  "cacheEntryBreakdown": "VBS2 {vbs2}  VBI {vbi}  VBT {vbt}",
+  "cacheUnindexed": "未索引的缓存文件",
 
   "actionTogglePlay": "播放/暂停",
   "actionStepForward": "步进",
@@ -90,6 +103,7 @@
   "analysisErrorHashFailed": "文件哈希失败: {error}",
   "analysisErrorUnsupported": "不支持的编码格式或生成失败: {name}",
   "analysisErrorLoadFailed": "加载分析数据失败: {name}",
+  "analysisErrorCacheLimitExceeded": "分析缓存已满（{used} / {limit}）。请调高上限或清理缓存后再生成新的 VTM 数据。",
 
   "analysisFilterHint": "按类型、名称或 #序号筛选"
 }

@@ -46,10 +46,16 @@ const char* decode_device_mode_name(DecodeDeviceMode mode) {
 // C++ catch(...) does NOT catch these cross-module SEH exceptions. We use
 // __try/__except instead, which requires the function to have no C++ objects
 // with destructors.
+//
+// MUST be __declspec(noinline): MSVC's x64 table-based EH requires each
+// __try/__except to live in its own RUNTIME_FUNCTION entry.  If the compiler
+// inlines these wrappers into a caller that also has C++ objects, the SEH
+// scope is lost and the exception leaks through uncaught.
 
 // Sentinel: value is negative and outside FFmpeg's AVERROR range.
 constexpr int kSehCaught = AVERROR_EXTERNAL;
 
+__declspec(noinline)
 int seh_send_packet(AVCodecContext* ctx, const AVPacket* pkt) {
     __try {
         return avcodec_send_packet(ctx, pkt);
@@ -61,6 +67,7 @@ int seh_send_packet(AVCodecContext* ctx, const AVPacket* pkt) {
     }
 }
 
+__declspec(noinline)
 int seh_receive_frame(AVCodecContext* ctx, AVFrame* frame) {
     __try {
         return avcodec_receive_frame(ctx, frame);

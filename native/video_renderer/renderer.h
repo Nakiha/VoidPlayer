@@ -80,6 +80,13 @@ struct RendererConfig {
     LogConfig log_config;
 };
 
+struct SharedTextureSnapshot {
+    ID3D11Texture2D* texture = nullptr;  ///< AddRef'd; caller must Release().
+    HANDLE handle = nullptr;
+    int width = 0;
+    int height = 0;
+};
+
 class Renderer {
 public:
     Renderer();
@@ -153,6 +160,10 @@ public:
 
     /// Get the DXGI shared handle for the offscreen texture.
     HANDLE shared_texture_handle() const;
+
+    /// Acquire the current headless texture and shared handle as one snapshot.
+    /// The returned texture is AddRef'd and must be released by the caller.
+    bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const;
 
     /// Mutex for thread-safe access to shared texture.
     std::mutex& texture_mutex() const;

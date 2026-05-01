@@ -42,7 +42,6 @@ bool D3D11HeadlessOutput::initialize(ID3D11Device* device,
 
 void D3D11HeadlessOutput::shutdown() {
     std::lock_guard<std::mutex> lock(texture_mutex_);
-    pending_destroy_.clear();
     for (int i = 0; i < kBufferCount; ++i) {
         buffers_.textures[i].Reset();
         buffers_.rtvs[i].Reset();
@@ -54,7 +53,6 @@ void D3D11HeadlessOutput::shutdown() {
     current_back_ = 0;
     device_ = nullptr;
     context_ = nullptr;
-    has_pending_destroy_.store(false);
 }
 
 ID3D11Texture2D* D3D11HeadlessOutput::shared_texture_locked() const {
@@ -110,17 +108,6 @@ bool D3D11HeadlessOutput::resize_locked(int width, int height) {
         return false;
     }
 
-    PendingBuffers old;
-    for (int i = 0; i < kBufferCount; ++i) {
-        old.textures[i] = std::move(buffers_.textures[i]);
-        old.handles[i] = buffers_.handles[i];
-    }
-    // Best-effort grace period for Flutter texture callbacks that may still be
-    // reading the old shared handle. This is not a strict lifetime protocol.
-    old.expire_time = std::chrono::steady_clock::now() + kPendingBufferRetireDelay;
-    pending_destroy_.push_back(std::move(old));
-    has_pending_destroy_.store(true);
-
     for (int i = 0; i < kBufferCount; ++i) {
         buffers_.textures[i] = std::move(new_textures[i]);
         buffers_.rtvs[i] = std::move(new_rtvs[i]);
@@ -138,18 +125,10 @@ bool D3D11HeadlessOutput::resize_locked(int width, int height) {
 }
 
 void D3D11HeadlessOutput::cleanup_expired_pending_buffers() {
-    if (!has_pending_destroy_.exchange(false)) {
-        return;
-    }
-    std::lock_guard<std::mutex> lock(texture_mutex_);
-    auto now = std::chrono::steady_clock::now();
-    pending_destroy_.erase(
-        std::remove_if(pending_destroy_.begin(), pending_destroy_.end(),
-                       [&](const PendingBuffers& pb) { return now >= pb.expire_time; }),
-        pending_destroy_.end());
-    if (!pending_destroy_.empty()) {
-        has_pending_destroy_.store(true);
-    }
+    // Kept as a no-op compatibility hook for the render loop. Flutter texture
+    // callbacks now AddRef the exact texture they publish and release it via
+    // FlutterDesktopGpuSurfaceDescriptor::release_callback after the engine has
+    // opened the shared handle.
 }
 
 bool D3D11HeadlessOutput::capture_front_buffer_locked(std::vector<uint8_t>& bgra,

@@ -4,7 +4,6 @@
 #include <windows.h>
 #include <wrl/client.h>
 #include <atomic>
-#include <chrono>
 #include <functional>
 #include <mutex>
 #include <vector>
@@ -14,7 +13,6 @@ namespace vr {
 class D3D11HeadlessOutput {
 public:
     static constexpr int kBufferCount = 3;
-    static constexpr auto kPendingBufferRetireDelay = std::chrono::milliseconds(500);
 
     D3D11HeadlessOutput() = default;
     ~D3D11HeadlessOutput() = default;
@@ -46,12 +44,6 @@ private:
         std::atomic<int> front{0};
     };
 
-    struct PendingBuffers {
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[kBufferCount];
-        HANDLE handles[kBufferCount] = {};
-        std::chrono::steady_clock::time_point expire_time;
-    };
-
     bool create_shared_buffers(int width,
                                int height,
                                Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[],
@@ -63,8 +55,6 @@ private:
     ID3D11DeviceContext* context_ = nullptr;
     SharedBuffers buffers_;
     Microsoft::WRL::ComPtr<ID3D11Query> gpu_fence_;
-    std::vector<PendingBuffers> pending_destroy_;
-    std::atomic<bool> has_pending_destroy_{false};
     mutable std::mutex texture_mutex_;
     std::function<void()> frame_callback_;
     int current_back_ = 0;

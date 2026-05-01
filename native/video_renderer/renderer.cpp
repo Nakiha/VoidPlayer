@@ -1093,6 +1093,32 @@ HANDLE Renderer::shared_texture_handle() const {
     return headless_output_->shared_texture_handle_locked();
 }
 
+bool Renderer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
+    snapshot = {};
+
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    if (!headless_output_) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(texture_mutex());
+    ID3D11Texture2D* texture = headless_output_->shared_texture_locked();
+    HANDLE handle = headless_output_->shared_texture_handle_locked();
+    if (!texture || !handle) {
+        return false;
+    }
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    texture->GetDesc(&desc);
+    texture->AddRef();
+
+    snapshot.texture = texture;
+    snapshot.handle = handle;
+    snapshot.width = static_cast<int>(desc.Width);
+    snapshot.height = static_cast<int>(desc.Height);
+    return true;
+}
+
 std::mutex& Renderer::texture_mutex() const {
     return headless_output_ ? headless_output_->texture_mutex() : texture_mutex_fallback_;
 }

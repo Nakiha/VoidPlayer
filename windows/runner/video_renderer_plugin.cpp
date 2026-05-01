@@ -17,6 +17,7 @@
 #include <sstream>
 #include <iomanip>
 #include <variant>
+#include <new>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -167,6 +168,21 @@ struct ProcessMemoryUsage {
     uint64_t working_set_bytes = 0;
     uint64_t private_bytes = 0;
 };
+
+struct FlutterTextureReleaseContext {
+    ID3D11Texture2D* texture = nullptr;
+};
+
+void ReleaseFlutterTexture(void* release_context) {
+    auto* context = static_cast<FlutterTextureReleaseContext*>(release_context);
+    if (!context) {
+        return;
+    }
+    if (context->texture) {
+        context->texture->Release();
+    }
+    delete context;
+}
 
 ProcessMemoryUsage QueryProcessMemoryUsage() {
     ProcessMemoryUsage usage;
@@ -753,16 +769,22 @@ void VideoRendererPlugin::CreateRenderer(
         [this](size_t width, size_t height) -> const FlutterDesktopGpuSurfaceDescriptor* {
             if (!renderer_) return nullptr;
 
-            HANDLE handle = renderer_->shared_texture_handle();
-            if (!handle) return nullptr;
+            vr::SharedTextureSnapshot snapshot;
+            if (!renderer_->acquire_shared_texture(snapshot)) return nullptr;
 
-            surface_descriptor_.handle = handle;
-            surface_descriptor_.width = static_cast<size_t>(renderer_->texture_width());
-            surface_descriptor_.height = static_cast<size_t>(renderer_->texture_height());
+            auto* release_context = new (std::nothrow) FlutterTextureReleaseContext{snapshot.texture};
+            if (!release_context) {
+                snapshot.texture->Release();
+                return nullptr;
+            }
+
+            surface_descriptor_.handle = snapshot.handle;
+            surface_descriptor_.width = static_cast<size_t>(snapshot.width);
+            surface_descriptor_.height = static_cast<size_t>(snapshot.height);
             surface_descriptor_.visible_width = surface_descriptor_.width;
             surface_descriptor_.visible_height = surface_descriptor_.height;
-            surface_descriptor_.release_callback = nullptr;
-            surface_descriptor_.release_context = nullptr;
+            surface_descriptor_.release_callback = ReleaseFlutterTexture;
+            surface_descriptor_.release_context = release_context;
             return &surface_descriptor_;
         });
 

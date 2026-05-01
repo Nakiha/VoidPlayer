@@ -8,6 +8,8 @@ namespace vr::analysis {
 
 bool VbtFile::open(const std::string& path) {
     entries_.clear();
+    pts_sorted_indices_.clear();
+    header_ = {};
 
     std::ifstream f(path, std::ios::binary);
     if (!f) return false;
@@ -37,27 +39,44 @@ bool VbtFile::open(const std::string& path) {
                static_cast<std::streamsize>(header_.num_packets * sizeof(VbtEntry)));
         if (!f) {
             entries_.clear();
+            pts_sorted_indices_.clear();
             return false;
         }
     }
+
+    pts_sorted_indices_.reserve(entries_.size());
+    for (int i = 0; i < static_cast<int>(entries_.size()); ++i) {
+        pts_sorted_indices_.push_back(i);
+    }
+    std::sort(pts_sorted_indices_.begin(), pts_sorted_indices_.end(),
+              [this](int a, int b) {
+                  if (entries_[a].pts != entries_[b].pts) {
+                      return entries_[a].pts < entries_[b].pts;
+                  }
+                  return a < b;
+              });
 
     return true;
 }
 
 void VbtFile::close() {
     entries_.clear();
+    pts_sorted_indices_.clear();
     header_ = {};
 }
 
 int VbtFile::packet_at_pts(int64_t pts) const {
-    if (entries_.empty()) return -1;
+    if (entries_.empty() || pts_sorted_indices_.empty()) return -1;
 
     // Upper bound: first entry with pts > target
-    auto it = std::upper_bound(entries_.begin(), entries_.end(), pts,
-        [](int64_t val, const VbtEntry& e) { return val < e.pts; });
+    auto it = std::upper_bound(pts_sorted_indices_.begin(), pts_sorted_indices_.end(), pts,
+        [this](int64_t val, int packet_index) {
+            return val < entries_[packet_index].pts;
+        });
 
-    if (it == entries_.begin()) return 0;
-    return static_cast<int>(std::distance(entries_.begin(), it) - 1);
+    if (it == pts_sorted_indices_.begin()) return pts_sorted_indices_.front();
+    --it;
+    return *it;
 }
 
 std::vector<int> VbtFile::keyframe_indices() const {

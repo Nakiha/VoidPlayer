@@ -5,6 +5,9 @@
 #include "analysis/parsers/vbs2_parser.h"
 #include "test_analysis_data.h"
 
+#include <filesystem>
+#include <fstream>
+
 // ===========================================================================
 // VBT Tests
 // ===========================================================================
@@ -88,6 +91,55 @@ TEST_CASE("VBT: packet_at_pts binary search", "[analysis][vbt]") {
     // PTS equal to first packet's PTS
     int64_t pts0 = vbt.entry(0).pts;
     REQUIRE(vbt.packet_at_pts(pts0) == 0);
+}
+
+TEST_CASE("VBT: packet_at_pts supports non-monotonic PTS order", "[analysis][vbt]") {
+    auto path = std::filesystem::temp_directory_path() / "voidplayer_unsorted_pts.vbt";
+
+    VbtHeader header{};
+    header.magic[0] = 'V';
+    header.magic[1] = 'B';
+    header.magic[2] = 'T';
+    header.magic[3] = '1';
+    header.num_packets = 4;
+    header.time_base_num = 1;
+    header.time_base_den = 1000;
+
+    VbtEntry entries[4]{};
+    entries[0].pts = 0;
+    entries[0].dts = 0;
+    entries[0].poc = 0;
+    entries[0].size = 100;
+    entries[1].pts = 3000;
+    entries[1].dts = 1000;
+    entries[1].poc = 1;
+    entries[1].size = 100;
+    entries[2].pts = 1000;
+    entries[2].dts = 2000;
+    entries[2].poc = 2;
+    entries[2].size = 100;
+    entries[3].pts = 2000;
+    entries[3].dts = 3000;
+    entries[3].poc = 3;
+    entries[3].size = 100;
+
+    {
+        std::ofstream out(path, std::ios::binary);
+        REQUIRE(out);
+        out.write(reinterpret_cast<const char*>(&header), sizeof(header));
+        out.write(reinterpret_cast<const char*>(entries), sizeof(entries));
+        REQUIRE(out.good());
+    }
+
+    vr::analysis::VbtFile vbt;
+    REQUIRE(vbt.open(path.string()));
+
+    REQUIRE(vbt.packet_at_pts(0) == 0);
+    REQUIRE(vbt.packet_at_pts(1500) == 2);
+    REQUIRE(vbt.packet_at_pts(2500) == 3);
+    REQUIRE(vbt.packet_at_pts(3000) == 1);
+
+    std::filesystem::remove(path);
 }
 
 // ===========================================================================

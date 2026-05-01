@@ -27,6 +27,7 @@ public:
 private:
     VbtHeader header_{};
     std::vector<VbtEntry> entries_;
+    std::vector<int> pts_sorted_indices_;
 };
 
 } // namespace vr::analysis

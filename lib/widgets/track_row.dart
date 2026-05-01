@@ -37,7 +37,7 @@ class _DragHandleState extends State<_DragHandle> {
             borderRadius: BorderRadius.circular(4),
           ),
           child: Icon(
-            Icons.drag_handle,
+            Icons.drag_indicator,
             size: 16,
             color: _hovering
                 ? colorScheme.onSurface

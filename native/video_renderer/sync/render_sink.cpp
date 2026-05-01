@@ -48,6 +48,15 @@ PresentDecision RenderSink::evaluate() {
             if (!frame.has_value()) {
                 break;
             }
+            // Zero-duration frames: advance only when the next frame's PTS has arrived
+            if (frame->duration_us == 0) {
+                auto next = track->peek(1);
+                if (next.has_value() && next->pts_us <= effective_pts) {
+                    if (!track->advance()) break;
+                    continue;
+                }
+                break;
+            }
             // Frame is expired if its end time has passed
             if (frame->pts_us + frame->duration_us <= effective_pts) {
                 if (!track->advance()) {
@@ -69,7 +78,7 @@ PresentDecision RenderSink::evaluate() {
 
         // 3. Check if frame is in the display window
         if (frame->pts_us <= effective_pts &&
-            effective_pts < frame->pts_us + frame->duration_us) {
+            (frame->duration_us == 0 || effective_pts < frame->pts_us + frame->duration_us)) {
             // Frame is in its display window - select it
             decision.frames[t] = frame;
             any_ready = true;

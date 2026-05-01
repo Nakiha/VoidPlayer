@@ -312,8 +312,21 @@ void D3D11VAProvider::wait_idle() {
 
         d3d_context_->End(query.Get());
         d3d_context_->Flush();
+        auto wait_start = std::chrono::steady_clock::now();
+        constexpr auto kTimeout = std::chrono::milliseconds(200);
         while (d3d_context_->GetData(query.Get(), nullptr, 0, 0) == S_FALSE) {
             std::this_thread::sleep_for(std::chrono::microseconds(100));
+            if (std::chrono::steady_clock::now() - wait_start > kTimeout) {
+                spdlog::warn("[D3D11VA] wait_idle timeout after {}ms, device may be hung",
+                             static_cast<int>(kTimeout.count()));
+                // Check for device removed
+                HRESULT dr = device->GetDeviceRemovedReason();
+                if (FAILED(dr)) {
+                    spdlog::error("[D3D11VA] device removed: HRESULT {:#x}",
+                                  static_cast<unsigned long>(dr));
+                }
+                break;
+            }
         }
     };
 

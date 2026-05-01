@@ -322,7 +322,13 @@ bool SaveBgraToPng(const std::vector<uint8_t>& bgra, int width, int height, cons
 } // namespace
 
 // Process-global renderer pointer for cross-engine access (e.g. stats window).
-vr::Renderer* g_global_renderer = nullptr;
+std::weak_ptr<vr::Renderer> g_renderer_weak;
+std::mutex g_renderer_mutex;
+
+std::shared_ptr<vr::Renderer> pin_global_renderer() {
+    std::lock_guard lock(g_renderer_mutex);
+    return g_renderer_weak.lock();
+}
 
 // ---- dart:ffi diagnostics export ----
 static NakiVrDiagnostics g_diag_snapshot = {};
@@ -336,7 +342,7 @@ const NakiVrDiagnostics* naki_vr_get_diagnostics() {
     d.process_private_bytes = process_memory.private_bytes;
     d.dedicated_video_memory_bytes = QueryDedicatedVideoMemoryUsage();
 
-    auto* r = g_global_renderer;
+    auto r = pin_global_renderer();
     if (!r) return &d;
 
     d.playback_time_s = static_cast<double>(r->current_pts_us()) / 1e6;
@@ -410,12 +416,16 @@ VideoRendererPlugin::VideoRendererPlugin(
 
     // Register PTS callback for analysis FFI (avoids analysis_ffi depending on Renderer)
     naki_analysis_register_pts_callback([]() -> int64_t {
-        return g_global_renderer ? g_global_renderer->current_pts_us() : 0;
+        auto r = pin_global_renderer();
+        return r ? r->current_pts_us() : 0;
     });
 }
 
 VideoRendererPlugin::~VideoRendererPlugin() {
-    g_global_renderer = nullptr;
+    {
+        std::lock_guard lock(g_renderer_mutex);
+        g_renderer_weak.reset();
+    }
     if (texture_id_ >= 0 && texture_registrar_) {
         texture_registrar_->UnregisterTexture(texture_id_);
         texture_id_ = -1;
@@ -549,7 +559,7 @@ void VideoRendererPlugin::HandleMethodCall(
         result->Success(flutter::EncodableValue(tracks_list));
     } else if (method == "getDiagnostics") {
         // Use global renderer so stats window (secondary engine) can query directly
-        auto* diag_renderer = g_global_renderer;
+        auto diag_renderer = pin_global_renderer();
         flutter::EncodableMap map;
         const auto process_memory = QueryProcessMemoryUsage();
         map[flutter::EncodableValue("processRssBytes")] =
@@ -718,10 +728,16 @@ void VideoRendererPlugin::CreateRenderer(
         config.video_paths.push_back(std::get<std::string>(p));
     }
 
-    renderer_ = std::make_unique<vr::Renderer>();
-    g_global_renderer = renderer_.get();
+    renderer_ = std::make_shared<vr::Renderer>();
+    {
+        std::lock_guard lock(g_renderer_mutex);
+        g_renderer_weak = renderer_;
+    }
     if (!renderer_->initialize(config)) {
-        g_global_renderer = nullptr;
+        {
+            std::lock_guard lock(g_renderer_mutex);
+            g_renderer_weak.reset();
+        }
         renderer_.reset();
         result->Error("INIT_FAILED", "Failed to initialize renderer");
         return;
@@ -803,7 +819,10 @@ void VideoRendererPlugin::DestroyRenderer(
     texture_variant_.reset();
 
     if (renderer_) {
-        g_global_renderer = nullptr;
+        {
+            std::lock_guard lock(g_renderer_mutex);
+            g_renderer_weak.reset();
+        }
         renderer_->shutdown();
         renderer_.reset();
     }

@@ -13,7 +13,11 @@
 
 /// Process-global renderer pointer — allows any engine's plugin to query stats.
 namespace vr { class Renderer; }
-extern vr::Renderer* g_global_renderer;
+extern std::weak_ptr<vr::Renderer> g_renderer_weak;
+extern std::mutex g_renderer_mutex;
+
+/// Pin the global renderer into a shared_ptr. Returns nullptr if not alive.
+std::shared_ptr<vr::Renderer> pin_global_renderer();
 
 /// ---- dart:ffi flat struct for diagnostics (no heap, no string) ----
 
@@ -87,7 +91,7 @@ private:
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-    std::unique_ptr<vr::Renderer> renderer_;
+    std::shared_ptr<vr::Renderer> renderer_;
     int64_t texture_id_ = -1;
     std::unique_ptr<flutter::TextureVariant> texture_variant_;
     FlutterDesktopGpuSurfaceDescriptor surface_descriptor_ = {};

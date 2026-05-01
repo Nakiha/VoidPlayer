@@ -8,6 +8,7 @@
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
+#include <libavcodec/bsf.h>
 }
 
 #include <cstring>
@@ -105,6 +106,79 @@ static bool generateRawOnly(const std::string& video_path,
     return writeVbi(vbi_path, index);
 }
 
+static const char* annex_b_bsf_name(VbiCodec codec) {
+    switch (codec) {
+    case VbiCodec::H264: return "h264_mp4toannexb";
+    case VbiCodec::HEVC: return "hevc_mp4toannexb";
+    case VbiCodec::VVC:  return "vvc_mp4toannexb";
+    default:             return nullptr;
+    }
+}
+
+static AVBSFContext* create_annex_b_bsf(AVStream* stream, VbiCodec codec) {
+    const char* name = annex_b_bsf_name(codec);
+    if (!name || !stream || !stream->codecpar) return nullptr;
+
+    const AVBitStreamFilter* filter = av_bsf_get_by_name(name);
+    if (!filter) {
+        spdlog::warn("[AnalysisGen] bitstream filter {} unavailable; parsing packets directly", name);
+        return nullptr;
+    }
+
+    AVBSFContext* bsf = nullptr;
+    int ret = av_bsf_alloc(filter, &bsf);
+    if (ret < 0 || !bsf) {
+        spdlog::warn("[AnalysisGen] av_bsf_alloc({}) failed: {:#x}", name, static_cast<unsigned>(ret));
+        return nullptr;
+    }
+
+    ret = avcodec_parameters_copy(bsf->par_in, stream->codecpar);
+    if (ret < 0) {
+        spdlog::warn("[AnalysisGen] avcodec_parameters_copy({}) failed: {:#x}",
+                     name, static_cast<unsigned>(ret));
+        av_bsf_free(&bsf);
+        return nullptr;
+    }
+    bsf->time_base_in = stream->time_base;
+
+    ret = av_bsf_init(bsf);
+    if (ret < 0) {
+        spdlog::warn("[AnalysisGen] av_bsf_init({}) failed: {:#x}", name, static_cast<unsigned>(ret));
+        av_bsf_free(&bsf);
+        return nullptr;
+    }
+
+    spdlog::info("[AnalysisGen] using {} for VBI Annex-B indexing", name);
+    return bsf;
+}
+
+static void append_filtered_packets(AVBSFContext* bsf,
+                                    AVPacket* filtered_pkt,
+                                    VbiCodec codec,
+                                    BitstreamIndex& bitstream_index) {
+    if (!bsf || !filtered_pkt) return;
+    while (true) {
+        int ret = av_bsf_receive_packet(bsf, filtered_pkt);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+            break;
+        }
+        if (ret < 0) {
+            spdlog::warn("[AnalysisGen] av_bsf_receive_packet failed: {:#x}",
+                         static_cast<unsigned>(ret));
+            break;
+        }
+        if (filtered_pkt->data && filtered_pkt->size > 0) {
+            BitstreamIndexer::append_packet(
+                codec,
+                filtered_pkt->data,
+                filtered_pkt->size,
+                (filtered_pkt->flags & AV_PKT_FLAG_KEY) != 0,
+                bitstream_index);
+        }
+        av_packet_unref(filtered_pkt);
+    }
+}
+
 // ---------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------
@@ -158,9 +232,18 @@ bool AnalysisGenerator::generate(const std::string& video_path,
     bitstream_index.unit_kind = BitstreamIndexer::unit_kind_for_codec(codec);
     std::vector<VbtEntry> pkt_entries;
     int32_t seq_poc = 0;         // Sequential POC for VBT
+    AVBSFContext* annex_b_bsf = create_annex_b_bsf(fmt_ctx->streams[video_idx], codec);
 
     AVPacket* pkt = av_packet_alloc();
     if (!pkt) {
+        if (annex_b_bsf) av_bsf_free(&annex_b_bsf);
+        avformat_close_input(&fmt_ctx);
+        return false;
+    }
+    AVPacket* filtered_pkt = av_packet_alloc();
+    if (!filtered_pkt) {
+        av_packet_free(&pkt);
+        if (annex_b_bsf) av_bsf_free(&annex_b_bsf);
         avformat_close_input(&fmt_ctx);
         return false;
     }
@@ -191,8 +274,29 @@ bool AnalysisGenerator::generate(const std::string& video_path,
             pkt_entries.push_back(entry);
         }
 
-        // --- VBI2: parse codec-specific bitstream units from packet data ---
-        if (pkt->data && pkt->size > 0) {
+        // --- VBI2: parse codec-specific bitstream units from packet data.
+        // MP4 stores H.264/H.265/H.266 samples as length-prefixed NAL units,
+        // with a per-stream length size in extradata. Route those codecs
+        // through FFmpeg's Annex-B filters so VBI indexing sees stable start
+        // codes and parameter sets instead of guessing the length field width.
+        if (annex_b_bsf) {
+            int send_ret = av_bsf_send_packet(annex_b_bsf, pkt);
+            if (send_ret >= 0) {
+                append_filtered_packets(annex_b_bsf, filtered_pkt, codec, bitstream_index);
+            } else {
+                spdlog::warn("[AnalysisGen] av_bsf_send_packet failed: {:#x}; parsing packet directly",
+                             static_cast<unsigned>(send_ret));
+                if (pkt->data && pkt->size > 0) {
+                    BitstreamIndexer::append_packet(
+                        codec,
+                        pkt->data,
+                        pkt->size,
+                        (pkt->flags & AV_PKT_FLAG_KEY) != 0,
+                        bitstream_index);
+                }
+                av_packet_unref(pkt);
+            }
+        } else if (pkt->data && pkt->size > 0) {
             BitstreamIndexer::append_packet(
                 codec,
                 pkt->data,
@@ -204,7 +308,14 @@ bool AnalysisGenerator::generate(const std::string& video_path,
         av_packet_unref(pkt);
     }
 
+    if (annex_b_bsf) {
+        av_bsf_send_packet(annex_b_bsf, nullptr);
+        append_filtered_packets(annex_b_bsf, filtered_pkt, codec, bitstream_index);
+    }
+
+    av_packet_free(&filtered_pkt);
     av_packet_free(&pkt);
+    if (annex_b_bsf) av_bsf_free(&annex_b_bsf);
     avformat_close_input(&fmt_ctx);
 
     if (pkt_entries.empty()) {

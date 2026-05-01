@@ -245,6 +245,49 @@ TEST_CASE("AnalysisGenerator: resources video samples produce VBI2 and VBT", "[a
     std::filesystem::remove_all(tmp);
 }
 
+TEST_CASE("AnalysisGenerator: MP4 parameter sets are indexed", "[analysis][generator][resources]") {
+    struct SampleCase {
+        const char* name;
+        VbiCodec codec;
+        std::vector<uint8_t> required_nal_types;
+    };
+
+    const std::vector<SampleCase> samples = {
+        {"h264_9s_1920x1080.mp4",  VbiCodec::H264, {7, 8}},
+        {"h265_10s_1920x1080.mp4", VbiCodec::HEVC, {32, 33, 34}},
+    };
+
+    auto tmp = make_temp_dir();
+
+    for (const auto& sample : samples) {
+        const std::string video = test_dir + "/" + sample.name;
+        if (!std::filesystem::exists(video)) continue;
+
+        const std::string base = std::string(sample.name);
+        const std::string vbi_path = tmp + "/" + base + ".vbi";
+        const std::string vbt_path = tmp + "/" + base + ".vbt";
+
+        REQUIRE(vr::analysis::AnalysisGenerator::generate(video, vbi_path, vbt_path));
+
+        vr::analysis::VbiFile vbi;
+        REQUIRE(vbi.open(vbi_path));
+        REQUIRE(vbi.codec() == sample.codec);
+
+        for (uint8_t required_type : sample.required_nal_types) {
+            bool found = false;
+            for (int i = 0; i < vbi.nalu_count(); ++i) {
+                if (vbi.entry(i).nal_type == required_type) {
+                    found = true;
+                    break;
+                }
+            }
+            REQUIRE(found);
+        }
+    }
+
+    std::filesystem::remove_all(tmp);
+}
+
 TEST_CASE("AnalysisManager: current frame handles high-denominator time bases", "[analysis][manager][resources]") {
     const std::string h265_video = test_dir + "/h265_10s_1920x1080.mp4";
     if (!std::filesystem::exists(h265_video)) return;

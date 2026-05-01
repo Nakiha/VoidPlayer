@@ -241,13 +241,13 @@ class _LimitEditor extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         SizedBox(
-          width: 48,
-          height: 48,
+          width: 42,
+          height: 42,
           child: FilledButton(
             onPressed: onSave,
             style: FilledButton.styleFrom(
-              fixedSize: const Size(48, 48),
-              minimumSize: const Size(48, 48),
+              fixedSize: const Size(42, 42),
+              minimumSize: const Size(42, 42),
               padding: EdgeInsets.zero,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),

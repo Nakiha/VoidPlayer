@@ -42,6 +42,21 @@ TEST_CASE("PacketQueue: try_pop on empty returns nullptr", "[packet_queue]") {
     REQUIRE(pq.empty() == true);
 }
 
+TEST_CASE("PacketQueue: try_push returns false when full", "[packet_queue]") {
+    PacketQueue pq(1);
+    auto* p1 = av_packet_alloc(); p1->pts = 1;
+    auto* p2 = av_packet_alloc(); p2->pts = 2;
+    REQUIRE(pq.try_push(p1) == true);
+    REQUIRE(pq.try_push(p2) == false);
+    REQUIRE(pq.size() == 1);
+    av_packet_free(&p2);
+
+    auto* popped = pq.pop();
+    REQUIRE(popped != nullptr);
+    REQUIRE(popped->pts == 1);
+    av_packet_free(&popped);
+}
+
 TEST_CASE("PacketQueue: abort wakes popper", "[packet_queue]") {
     PacketQueue pq(10);
 

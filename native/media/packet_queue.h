@@ -20,6 +20,9 @@ public:
     // Push a packet (takes ownership). Blocks if full. Returns false if aborted.
     bool push(AVPacket* pkt);
 
+    // Push a packet without blocking. Takes ownership only on success.
+    bool try_push(AVPacket* pkt);
+
     // Pop a packet (caller takes ownership). Blocks if empty. Returns nullptr if aborted.
     AVPacket* pop();
 

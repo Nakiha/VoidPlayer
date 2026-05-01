@@ -27,6 +27,15 @@ bool PacketQueue::push(AVPacket* pkt) {
     return true;
 }
 
+bool PacketQueue::try_push(AVPacket* pkt) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (aborted_ || queue_.size() >= capacity_) return false;
+    auto ptr = PacketPtr(pkt, &packet_deleter);
+    queue_.push(std::move(ptr));
+    not_empty_.notify_one();
+    return true;
+}
+
 AVPacket* PacketQueue::pop() {
     std::unique_lock<std::mutex> lock(mutex_);
     not_empty_.wait(lock, [this]() { return !queue_.empty() || aborted_; });

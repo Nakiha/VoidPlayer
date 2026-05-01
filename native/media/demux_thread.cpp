@@ -276,7 +276,10 @@ void DemuxThread::run() {
                 continue;
             }
 
-            if (!route.queue->push(out)) {
+            const bool pushed = route.optional
+                ? route.queue->try_push(out)
+                : route.queue->push(out);
+            if (!pushed) {
                 av_packet_free(&out);
                 // Queue aborted or full — don't permanently exit, just drop this packet
                 continue;

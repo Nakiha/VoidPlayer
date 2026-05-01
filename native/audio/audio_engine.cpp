@@ -351,6 +351,7 @@ private:
     void render(int16_t* dst, size_t frames) {
         if (!playing_.load()) {
             std::memset(dst, 0, frames * kOutputChannels * sizeof(int16_t));
+            discard_unheard(frames, kNoTrack, kNoTrack);
             return;
         }
 

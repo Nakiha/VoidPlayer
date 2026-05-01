@@ -146,6 +146,12 @@ class MainWindowPlaybackCoordinator {
     if (_disposed) return;
     _pollSerial++;
     setSeekPreview(ptsUs);
+    if (isPlaying()) {
+      cancelLoopBoundaryTimer();
+      await controller.pause();
+      if (_disposed || !mounted()) return;
+      setPlaying(false);
+    }
     await controller.seek(ptsUs);
     if (_disposed || !mounted()) return;
     scheduleLoopBoundaryTimer(fromPtsUs: ptsUs);

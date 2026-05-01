@@ -182,7 +182,7 @@ FloatingActionButton(
 ```dart
 class TestRunner {
   final String scriptPath;
-  final VideoRendererController controller;
+  final NativePlayerController controller;
 
   /// 从 CLI 参数 --test-script <path> 触发
   Future<void> run();

@@ -460,9 +460,9 @@ void VideoRendererPlugin::HandleMethodCall(
 
     if (method == "initLogging") {
         InitLogging(method_call.arguments(), std::move(result));
-    } else if (method == "createPlayer" || method == "createRenderer") {
+    } else if (method == "createPlayer") {
         CreatePlayer(method_call.arguments(), std::move(result));
-    } else if (method == "destroyPlayer" || method == "destroyRenderer") {
+    } else if (method == "destroyPlayer") {
         DestroyPlayer(std::move(result));
     } else if (method == "addTrack") {
         AddTrack(method_call.arguments(), std::move(result));

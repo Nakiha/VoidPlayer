@@ -10,7 +10,7 @@ import 'main_window_playback.dart';
 import 'main_window_test_hooks.dart';
 
 class MainWindowActionCoordinator {
-  final VideoRendererController controller;
+  final NativePlayerController controller;
   final MainWindowPlaybackCoordinator playbackCoordinator;
   final MainWindowMediaCoordinator mediaCoordinator;
   final MainWindowLayoutCoordinator layoutCoordinator;

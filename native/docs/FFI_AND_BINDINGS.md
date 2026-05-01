@@ -9,7 +9,7 @@
 ### 句柄类型
 
 ```c
-typedef void* naki_vr_renderer_t;  // 不透明句柄
+typedef void* naki_vr_player_t;  // 不透明句柄
 ```
 
 ### 配置结构
@@ -23,13 +23,13 @@ typedef struct naki_vr_log_config_t {
     int level;                  // spdlog 级别: 0=trace..6=off
 } naki_vr_log_config_t;
 
-typedef struct naki_vr_renderer_config_t {
+typedef struct naki_vr_player_config_t {
     const char** video_paths;   // NULL 终止的文件路径数组
     int64_t hwnd;               // 窗口句柄
     int width, height;          // 初始尺寸
     int use_hardware_decode;    // 0=软解, 1=硬解
     naki_vr_log_config_t log_config;
-} naki_vr_renderer_config_t;
+} naki_vr_player_config_t;
 ```
 
 ### API 分类
@@ -59,6 +59,8 @@ typedef struct naki_vr_renderer_config_t {
 
 | Python 类 | C++ 对应 |
 |-----------|---------|
+| `NativePlayer` | `vr::NativePlayer` |
+| `NativePlayerConfig` | `vr::NativePlayerConfig` |
 | `Renderer` | `vr::Renderer` |
 | `RendererConfig` | `vr::RendererConfig` |
 | `LogConfig` | `vr::LogConfig` |

@@ -11,7 +11,7 @@ class MainWindowLayoutCoordinator {
   static const Duration viewportResizeDebounce = Duration(milliseconds: 80);
 
   final TickerProvider vsync;
-  final VideoRendererController controller;
+  final NativePlayerController controller;
   final bool Function() mounted;
   final int? Function() textureId;
   final LayoutState Function() layout;

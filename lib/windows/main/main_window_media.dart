@@ -10,7 +10,7 @@ import 'main_window_layout.dart';
 import '../native_file_picker.dart';
 
 class MainWindowMediaCoordinator {
-  final VideoRendererController controller;
+  final NativePlayerController controller;
   final TrackManager trackManager;
   final MainWindowLayoutCoordinator layoutCoordinator;
   final bool Function() mounted;
@@ -113,7 +113,7 @@ class MainWindowMediaCoordinator {
         if (!_alive) return;
         setViewportState(2);
       } catch (e) {
-        log.severe("createRenderer failed: $e");
+        log.severe("createPlayer failed: $e");
         if (_alive) setViewportState(1);
       }
     } else {
@@ -157,7 +157,7 @@ class MainWindowMediaCoordinator {
       final tracks = await controller.getTracks();
       if (!_alive) return;
       if (tracks.isEmpty) {
-        await controller.destroyRendererOnly();
+        await controller.destroyPlayerOnly();
         if (!_alive) return;
         cancelLoopBoundaryTimer();
         resetAfterLastTrackRemoved();

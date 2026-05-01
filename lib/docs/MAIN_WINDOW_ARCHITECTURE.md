@@ -8,7 +8,7 @@
 MainWindow (StatefulWidget shell)
   └── MainWindowController
       ├── MainWindowStateStore
-      ├── VideoRendererController
+      ├── NativePlayerController
       ├── TrackManager
       ├── MainWindowPlaybackCoordinator
       ├── MainWindowLayoutCoordinator
@@ -61,7 +61,7 @@ MainWindow.dispose
       → state store dispose
       → analysis IPC dispose
       → track manager dispose
-      → renderer dispose
+      → native player dispose
 ```
 
 原则：
@@ -69,7 +69,7 @@ MainWindow.dispose
 - 所有全局注册都必须有对应释放点。
 - `ActionRegistry` 绑定由 `MainWindowActionCoordinator` 持有生命周期。
 - timer/ticker 由对应 coordinator 持有和释放。
-- `VideoRendererController.dispose()` 是 fire-and-forget，但 controller public API 已有 disposed guard。
+- `NativePlayerController.dispose()` 是 fire-and-forget，但 controller public API 已有 disposed guard。
 
 ## 状态流
 
@@ -223,7 +223,7 @@ Native / User event
 - 是否需要 Action 或测试脚本指令？
 - View 是否只吃 view model/actions？
 - coordinator 是否有 dispose/timer 清理？
-- 是否影响 `VideoRendererController` 调用时序？
+- 是否影响 `NativePlayerController` 调用时序？
 - 是否补了对应 `ui_tests/` 功能目录下的 CSV 或说明覆盖缺口？
 
 修改后至少运行：

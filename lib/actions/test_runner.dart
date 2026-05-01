@@ -69,7 +69,7 @@ class _ResourceUsageMetric {
 /// Parses a test script file and runs instructions on a timeline.
 class TestRunner {
   final String scriptPath;
-  final VideoRendererController controller;
+  final NativePlayerController controller;
   final _captures = <String, ViewportCapture>{};
   final _viewCenterBaselines = <String, _ViewCenterMetric>{};
   final _resourceBaselines = <String, _ResourceUsageMetric>{};

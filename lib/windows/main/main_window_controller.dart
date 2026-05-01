@@ -20,7 +20,7 @@ class MainWindowController {
   final StartupOptions startupOptions;
   final bool Function() mounted;
 
-  final VideoRendererController renderer = VideoRendererController();
+  final NativePlayerController player = NativePlayerController();
   final TrackManager trackManager = TrackManager();
   final MainWindowStateStore stateStore = MainWindowStateStore();
   final GlobalKey timelineSliderKey = GlobalKey();
@@ -59,13 +59,13 @@ class MainWindowController {
     stateStore.dispose();
     fireAndLog('dispose analysis coordinator', analysisCoordinator.dispose());
     trackManager.dispose();
-    fireAndLog('dispose renderer', renderer.dispose());
+    fireAndLog('dispose player', player.dispose());
   }
 
   void setViewportBackgroundColor(Color color) {
     fireAndLog(
       'set viewport background color',
-      renderer.setViewportBackgroundColor(color.toARGB32()),
+      player.setViewportBackgroundColor(color.toARGB32()),
     );
   }
 
@@ -136,8 +136,8 @@ class MainWindowController {
       onRemoveTrack: mediaCoordinator.removeTrack,
       onZoomChanged: layoutCoordinator.onZoomComboChanged,
       onTogglePlay: playbackCoordinator.togglePlayPause,
-      onStepForward: () => renderer.stepForward(),
-      onStepBackward: () => renderer.stepBackward(),
+      onStepForward: () => player.stepForward(),
+      onStepBackward: () => player.stepBackward(),
       onSeek: playbackCoordinator.seekTo,
       onSliderHover: playbackCoordinator.onSliderHover,
       onLoopRangeEnabledChanged: (enabled) => fireAndLog(
@@ -168,13 +168,13 @@ class MainWindowController {
   void _toggleTrackAudio(int fileId) {
     final next = _audibleTrackFileId == fileId ? null : fileId;
     stateStore.setAudibleTrackFileId(next);
-    fireAndLog('set audible track', renderer.setAudibleTrack(next));
+    fireAndLog('set audible track', player.setAudibleTrack(next));
   }
 
   void _initCoordinators() {
     layoutCoordinator = MainWindowLayoutCoordinator(
       vsync: vsync,
-      controller: renderer,
+      controller: player,
       mounted: mounted,
       textureId: () => _textureId,
       layout: () => _layout,
@@ -186,7 +186,7 @@ class MainWindowController {
       trackManager: trackManager,
     );
     playbackCoordinator = MainWindowPlaybackCoordinator(
-      controller: renderer,
+      controller: player,
       trackManager: trackManager,
       startupOptions: startupOptions,
       mounted: mounted,
@@ -218,7 +218,7 @@ class MainWindowController {
       setSliderHoverState: stateStore.setSliderHover,
     );
     mediaCoordinator = MainWindowMediaCoordinator(
-      controller: renderer,
+      controller: player,
       trackManager: trackManager,
       layoutCoordinator: layoutCoordinator,
       mounted: mounted,
@@ -250,7 +250,7 @@ class MainWindowController {
       resolvedLoopEndUs: () => _resolvedLoopEndUs,
     );
     actionCoordinator = MainWindowActionCoordinator(
-      controller: renderer,
+      controller: player,
       playbackCoordinator: playbackCoordinator,
       mediaCoordinator: mediaCoordinator,
       layoutCoordinator: layoutCoordinator,
@@ -265,7 +265,7 @@ class MainWindowController {
   void _maybeStartTestRunner(String? path) {
     if (path == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      TestRunner(scriptPath: path, controller: renderer).run();
+      TestRunner(scriptPath: path, controller: player).run();
     });
   }
 

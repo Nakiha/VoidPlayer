@@ -40,7 +40,7 @@ class TrackManager with ChangeNotifier {
     return result;
   }
 
-  /// Replace all tracks at once (after [createRenderer] or [getTracks]).
+  /// Replace all tracks at once (after [createPlayer] or [getTracks]).
   void setTracks(List<TrackInfo> tracks) {
     _entries = tracks.map((t) => TrackEntry(t)).toList();
     notifyListeners();

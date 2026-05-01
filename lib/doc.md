@@ -12,7 +12,7 @@ MethodChannel 调用编排，以及 DX11 texture 的 Flutter 侧展示。
 
 - UI 只组合 widget 和 view model，不直接承载播放/布局业务。
 - 主窗口业务由 `MainWindowController` 组合多个 coordinator。
-- Native 渲染与解码能力通过 `VideoRendererController` 暴露，Flutter 层不直接处理帧数据。
+- Native 播放、渲染与解码能力通过 `NativePlayerController` 暴露，Flutter 层不直接处理帧数据。
 - Windows 专属能力集中在 `lib/windows/`，其中主窗口在 `lib/windows/main/`，analysis 窗口在 `lib/windows/analysis/`，跨窗口基础设施留在 `lib/windows/` 根目录。
 
 ## 详细文档索引

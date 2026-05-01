@@ -34,13 +34,12 @@ class TrackInfo {
   );
 }
 
-/// Result of createPlayer/createRenderer, containing texture ID and initial
-/// track info.
-class CreateRendererResult {
+/// Result of createPlayer, containing texture ID and initial track info.
+class CreatePlayerResult {
   final int textureId;
   final List<TrackInfo> tracks;
 
-  const CreateRendererResult({required this.textureId, required this.tracks});
+  const CreatePlayerResult({required this.textureId, required this.tracks});
 }
 
 class ViewportCapture {
@@ -128,14 +127,12 @@ class LayoutState {
   );
 }
 
-typedef CreatePlayerResult = CreateRendererResult;
-
 class NativePlayerController {
   static const MethodChannel _channel = MethodChannel('video_renderer');
 
   int? _textureId;
   bool _disposed = false;
-  Future<CreateRendererResult>? _createInFlight;
+  Future<CreatePlayerResult>? _createInFlight;
   Future<void>? _destroyInFlight;
   Future<void>? _disposeFuture;
   int? _viewportBackgroundColor;
@@ -143,7 +140,6 @@ class NativePlayerController {
   int? get textureId => _textureId;
   bool get isDisposed => _disposed;
   bool get hasPlayer => _textureId != null;
-  bool get hasRenderer => hasPlayer;
 
   void _ensureAlive() {
     if (_disposed) {
@@ -165,12 +161,6 @@ class NativePlayerController {
     return TrackInfo.fromMap(Map<dynamic, dynamic>.from(value));
   }
 
-  Future<CreateRendererResult> createRenderer(
-    List<String> videoPaths, {
-    int width = 1920,
-    int height = 1080,
-  }) => createPlayer(videoPaths, width: width, height: height);
-
   Future<CreatePlayerResult> createPlayer(
     List<String> videoPaths, {
     int width = 1920,
@@ -183,7 +173,7 @@ class NativePlayerController {
     final existing = _createInFlight;
     if (existing != null) return existing;
 
-    late final Future<CreateRendererResult> future;
+    late final Future<CreatePlayerResult> future;
     future = _createPlayerImpl(videoPaths, width: width, height: height)
         .whenComplete(() {
           if (identical(_createInFlight, future)) {
@@ -223,7 +213,7 @@ class NativePlayerController {
     }
     final tracksList = tracksValue as List<dynamic>? ?? [];
     _textureId = textureId;
-    final result = CreateRendererResult(
+    final result = CreatePlayerResult(
       textureId: textureId,
       tracks: tracksList
           .map((e) => _trackInfoFromValue(e, 'createPlayer'))
@@ -359,13 +349,8 @@ class NativePlayerController {
     return _channel.invokeMethod<void>('removeTrack', {'fileId': fileId});
   }
 
-  /// Destroy the native renderer and texture while keeping this controller
-  /// reusable for a future [createRenderer] call.
-  Future<void> destroyRendererOnly() {
-    _ensureAlive();
-    return destroyPlayerOnly();
-  }
-
+  /// Destroy the native player and texture while keeping this controller
+  /// reusable for a future [createPlayer] call.
   Future<void> destroyPlayerOnly() {
     _ensureAlive();
     return _destroyPlayer(markDisposed: false);
@@ -435,8 +420,4 @@ class NativePlayerController {
       await _channel.invokeMethod<void>('destroyPlayer');
     }
   }
-}
-
-class VideoRendererController extends NativePlayerController {
-  VideoRendererController() : super();
 }

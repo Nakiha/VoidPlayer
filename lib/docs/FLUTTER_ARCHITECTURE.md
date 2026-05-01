@@ -10,7 +10,7 @@ Flutter 层是 Windows 桌面播放器 UI 和 native 渲染引擎之间的编排
 - 窗口协调：主窗口内设置/统计/内存浮层，以及独立进程 analysis 窗口
 - Action 系统：快捷键、按钮、测试脚本共用同一套操作入口
 - UI 自动化脚本和截图/hash 回归闭环
-- 通过 `VideoRendererController` 调用 native MethodChannel
+- 通过 `NativePlayerController` 调用 native MethodChannel
 
 Flutter 层不负责：
 
@@ -59,7 +59,7 @@ Widgets / Views
 MainWindowController
   ↓ 组合 state store / coordinators / services
 Coordinators
-  ↓ 调用 VideoRendererController、TrackManager、WindowManager
+  ↓ 调用 NativePlayerController、TrackManager、WindowManager
 Platform / Native bridge
   ↓ MethodChannel / Win32 FFI / analysis IPC
 Native renderer
@@ -71,7 +71,7 @@ View 层只做布局和控件组合。
 
 规则：
 
-- 不直接调用 `VideoRendererController`。
+- 不直接调用 `NativePlayerController`。
 - 不保存播放、seek、layout 等业务状态。
 - 不读取 native 状态。
 - 通过 `MainWindowViewModel` 读数据，通过 `MainWindowViewActions` 发事件。
@@ -106,12 +106,12 @@ View 层只做布局和控件组合。
 
 ### Platform / Native bridge
 
-`VideoRendererController` 是 Dart 层唯一的 renderer MethodChannel wrapper。Windows 专属能力放在 `lib/windows/`。
+`NativePlayerController` 是 Dart 层唯一的 native player MethodChannel wrapper。Windows 专属能力放在 `lib/windows/`。
 
 规则：
 
 - 文件选择器、窗口句柄、Win32 FFI 不要进入通用 widgets。
-- 新 native 方法要在 `VideoRendererController` 做 payload 校验和 disposed guard。
+- 新 native 方法要在 `NativePlayerController` 做 payload 校验和 disposed guard。
 - 影响上屏/seek/resize 的改动必须配套 UI 自动化脚本。
 
 ## 开发流程

@@ -9,7 +9,7 @@ class MainWindowPlaybackCoordinator {
   static const double trackDragHandleWidth = 28.0;
   static const double trackDividerWidth = 1.0;
 
-  final VideoRendererController controller;
+  final NativePlayerController controller;
   final TrackManager trackManager;
   final StartupOptions startupOptions;
   final bool Function() mounted;

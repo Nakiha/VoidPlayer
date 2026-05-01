@@ -644,8 +644,7 @@ static LONG WINAPI vectored_crash_handler(EXCEPTION_POINTERS* ep) {
             code == EXCEPTION_ILLEGAL_INSTRUCTION ||
             code == EXCEPTION_PRIV_INSTRUCTION ||
             code == EXCEPTION_INT_DIVIDE_BY_ZERO ||
-            code == EXCEPTION_DATATYPE_MISALIGNMENT ||
-            code == 0xE06D7363) { // C++ exception code
+            code == EXCEPTION_DATATYPE_MISALIGNMENT) {
             // For stack overflow: use minimal logging to avoid recursive overflow.
             // The main crash_handler allocates 16KB on stack which will trigger
             // another stack overflow if the stack is already exhausted.

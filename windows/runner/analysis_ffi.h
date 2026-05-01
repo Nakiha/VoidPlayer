@@ -75,7 +75,7 @@ void naki_analysis_set_overlay(const NakiOverlayState* state);
 void naki_analysis_register_pts_callback(int64_t (*cb)());
 
 /// Generate analysis files (VBI + VBT) for a video file.
-/// Writes to <exe_dir>/data/<hash>.{vbi,vbt}.
+/// Writes to <exe_dir>/cache/<hash>.{vbi,vbt}.
 /// Returns 1 on success, 0 on failure (unsupported codec, tool not found, etc.)
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_generate(const char* video_path, const char* hash);

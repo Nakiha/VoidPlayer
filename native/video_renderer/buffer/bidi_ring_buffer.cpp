@@ -38,7 +38,7 @@ std::optional<TextureFrame> BidiRingBuffer::peek(int offset) const {
         // Backward: offset = -1 means one step back
         size_t back = static_cast<size_t>(-offset);
         // How far can we go back? Limited by backward_depth and how much we've advanced
-        if (back > backward_depth_) return std::nullopt;
+        if (back > backward_depth_ || back > total_advanced_) return std::nullopt;
         // read_idx - back (wrapping)
         size_t idx = (read_idx_ + capacity_ - back) % capacity_;
         // Check that this index is actually behind write boundary
@@ -63,7 +63,7 @@ bool BidiRingBuffer::advance() {
 bool BidiRingBuffer::retreat() {
     std::lock_guard<std::mutex> lock(mutex_);
     // Cannot retreat if no frames to go back to
-    if (retreated_ >= backward_depth_) return false;
+    if (retreated_ >= backward_depth_ || retreated_ >= total_advanced_) return false;
     // The frame we want to retreat to must exist:
     // read_idx points to current frame. Going back means we need a slot before read_idx.
     // But we also need count_ + retreated_ + 1 <= capacity_ (we're re-exposing a frame).

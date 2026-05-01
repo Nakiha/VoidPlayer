@@ -79,6 +79,7 @@ const NakiAnalysisSummary* naki_analysis_get_summary() {
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_get_frames(NakiFrameInfo* out, int32_t max_count) {
+    if (!out || max_count <= 0) return 0;
     auto& mgr = vr::analysis::AnalysisManager::instance();
     if (!mgr.is_loaded()) return 0;
 
@@ -140,6 +141,7 @@ int32_t naki_analysis_get_frames(NakiFrameInfo* out, int32_t max_count) {
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_get_nalus(NakiNaluInfo* out, int32_t max_count) {
+    if (!out || max_count <= 0) return 0;
     auto& mgr = vr::analysis::AnalysisManager::instance();
     if (!mgr.is_loaded()) return 0;
 
@@ -159,6 +161,7 @@ int32_t naki_analysis_get_nalus(NakiNaluInfo* out, int32_t max_count) {
 
 extern "C" __declspec(dllexport)
 void naki_analysis_set_overlay(const NakiOverlayState* state) {
+    if (!state) return;
     auto& overlay = vr::analysis::AnalysisManager::instance().overlay;
     overlay.show_cu_grid = state->show_cu_grid != 0;
     overlay.show_pred_mode = state->show_pred_mode != 0;

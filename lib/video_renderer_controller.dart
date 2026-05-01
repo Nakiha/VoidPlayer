@@ -135,6 +135,7 @@ class VideoRendererController {
   Future<CreateRendererResult>? _createInFlight;
   Future<void>? _destroyInFlight;
   Future<void>? _disposeFuture;
+  int? _viewportBackgroundColor;
 
   int? get textureId => _textureId;
   bool get isDisposed => _disposed;
@@ -218,6 +219,10 @@ class VideoRendererController {
           .map((e) => _trackInfoFromValue(e, 'createRenderer'))
           .toList(),
     );
+    final backgroundColor = _viewportBackgroundColor;
+    if (backgroundColor != null) {
+      await setViewportBackgroundColor(backgroundColor);
+    }
     _ensureAlive();
     return result;
   }
@@ -260,6 +265,14 @@ class VideoRendererController {
     return _channel.invokeMethod<void>('resize', {
       'width': width,
       'height': height,
+    });
+  }
+
+  Future<void> setViewportBackgroundColor(int colorValue) {
+    _ensureAlive();
+    _viewportBackgroundColor = colorValue;
+    return _channel.invokeMethod<void>('setViewportBackgroundColor', {
+      'color': colorValue,
     });
   }
 

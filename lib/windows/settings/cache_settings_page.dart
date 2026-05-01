@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../../analysis/analysis_cache.dart';
 import '../../config/app_config.dart';
 import '../../l10n/app_localizations.dart';
+import 'settings_page_style.dart';
 
 class CacheSettingsPage extends StatefulWidget {
   const CacheSettingsPage({super.key});
@@ -53,34 +54,30 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    final theme = Theme.of(context);
     final snapshot = _snapshot;
 
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: SettingsPageStyle.pagePadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Text(l.cache, style: theme.textTheme.titleMedium),
-              const Spacer(),
-              IconButton(
-                onPressed: _loading ? null : _refresh,
-                icon: const Icon(Icons.refresh, size: 18),
-                tooltip: l.refresh,
-              ),
-            ],
+          SettingsPageTitle(
+            text: l.cache,
+            trailing: IconButton(
+              onPressed: _loading ? null : _refresh,
+              icon: const Icon(Icons.refresh, size: 18),
+              tooltip: l.refresh,
+            ),
           ),
           const SizedBox(height: 4),
           if (snapshot != null) _CachePathRow(path: snapshot.path),
-          const SizedBox(height: 16),
+          SettingsPageStyle.contentGap,
           _LimitEditor(
             controller: _limitController,
             focusNode: _limitFocusNode,
             onSubmitted: () => _saveLimit(),
           ),
-          const SizedBox(height: 16),
+          SettingsPageStyle.contentGap,
           if (snapshot == null)
             const LinearProgressIndicator()
           else
@@ -285,7 +282,6 @@ class _CachePathRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    final theme = Theme.of(context);
     return Row(
       children: [
         Expanded(
@@ -293,9 +289,7 @@ class _CachePathRow extends StatelessWidget {
             path,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+            style: SettingsPageStyle.secondary(context),
           ),
         ),
         const SizedBox(width: 8),
@@ -367,7 +361,6 @@ class _CacheListHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    final theme = Theme.of(context);
     final hasSelection = selectedCount > 0;
     return SizedBox(
       height: 32,
@@ -376,7 +369,7 @@ class _CacheListHeader extends StatelessWidget {
           Expanded(
             child: Text(
               l.cachePerVideo,
-              style: theme.textTheme.titleSmall,
+              style: SettingsPageStyle.sectionTitle(context),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -384,9 +377,7 @@ class _CacheListHeader extends StatelessWidget {
           if (hasSelection) ...[
             Text(
               l.cacheSelectedCount(selectedCount),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              style: SettingsPageStyle.secondary(context),
             ),
             const SizedBox(width: 8),
             _SmallPathButton(
@@ -442,7 +433,7 @@ class _UsageSummary extends StatelessWidget {
                     : l.cacheUsageUnlimited(
                         AnalysisCache.formatBytes(snapshot.totalBytes),
                       ),
-                style: theme.textTheme.bodyMedium,
+                style: SettingsPageStyle.body(context),
               ),
             ),
           ],
@@ -461,11 +452,13 @@ class _UsageSummary extends StatelessWidget {
                 : l.cacheRemaining(
                     AnalysisCache.formatBytes(snapshot.remainingBytes),
                   ),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: overLimit
-                  ? theme.colorScheme.error
-                  : theme.colorScheme.onSurfaceVariant,
-            ),
+            style:
+                theme.textTheme.bodyMedium?.copyWith(
+                  color: overLimit
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.onSurfaceVariant,
+                ) ??
+                SettingsPageStyle.secondary(context),
           ),
         ],
       ],

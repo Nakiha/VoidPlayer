@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../actions/player_action.dart';
 import '../l10n/action_labels.dart';
 import '../l10n/app_localizations.dart';
+import 'settings/appearance_settings_page.dart';
 import 'settings/cache_settings_page.dart';
+import 'settings/settings_page_style.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -18,6 +20,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         NavigationRail(
           selectedIndex: _selectedIndex,
@@ -31,6 +34,10 @@ class _SettingsPageState extends State<SettingsPage> {
               label: Text(l.shortcuts),
             ),
             NavigationRailDestination(
+              icon: const Icon(Icons.palette_outlined),
+              label: Text(l.appearance),
+            ),
+            NavigationRailDestination(
               icon: const Icon(Icons.storage),
               label: Text(l.cache),
             ),
@@ -41,18 +48,18 @@ class _SettingsPageState extends State<SettingsPage> {
           ],
         ),
         const VerticalDivider(thickness: 1, width: 1),
-        Expanded(
-          child: IndexedStack(
-            index: _selectedIndex,
-            children: const [
-              _ShortcutsPage(),
-              CacheSettingsPage(),
-              _AboutPage(),
-            ],
-          ),
-        ),
+        Expanded(child: _buildSelectedPage()),
       ],
     );
+  }
+
+  Widget _buildSelectedPage() {
+    return switch (_selectedIndex) {
+      0 => const _ShortcutsPage(),
+      1 => const AppearanceSettingsPage(),
+      2 => const CacheSettingsPage(),
+      _ => const _AboutPage(),
+    };
   }
 }
 
@@ -69,9 +76,9 @@ class _ShortcutsPage extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: Text(l.keyboardShortcuts, style: theme.textTheme.titleMedium),
+          child: SettingsPageTitle(text: l.keyboardShortcuts),
         ),
-        const SizedBox(height: 8),
+        SettingsPageStyle.compactGap,
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(8, 0, 16, 16),
@@ -87,13 +94,16 @@ class _ShortcutsPage extends StatelessWidget {
                   children: [
                     Padding(
                       padding: const EdgeInsets.all(8),
-                      child: Text(l.action, style: theme.textTheme.labelSmall),
+                      child: Text(
+                        l.action,
+                        style: SettingsPageStyle.tableHeader(context),
+                      ),
                     ),
                     Padding(
                       padding: const EdgeInsets.all(8),
                       child: Text(
                         l.shortcut,
-                        style: theme.textTheme.labelSmall,
+                        style: SettingsPageStyle.tableHeader(context),
                       ),
                     ),
                   ],
@@ -112,22 +122,22 @@ class _ShortcutsPage extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
-                          vertical: 4,
+                          vertical: 6,
                         ),
                         child: Text(
                           resolveActionLabel(e.labelKey, l),
-                          style: theme.textTheme.bodySmall,
+                          style: SettingsPageStyle.body(context),
                         ),
                       ),
                       Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
-                          vertical: 4,
+                          vertical: 6,
                         ),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
+                            horizontal: 10,
+                            vertical: 4,
                           ),
                           decoration: BoxDecoration(
                             color: theme.colorScheme.surfaceContainerHighest,
@@ -135,9 +145,7 @@ class _ShortcutsPage extends StatelessWidget {
                           ),
                           child: Text(
                             e.shortcutLabel,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              fontFamily: 'monospace',
-                            ),
+                            style: SettingsPageStyle.shortcutKey(context),
                           ),
                         ),
                       ),
@@ -158,55 +166,48 @@ class _AboutPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final l = AppLocalizations.of(context)!;
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: SettingsPageStyle.pagePadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(l.appTitle, style: theme.textTheme.headlineMedium),
+          SettingsPageTitle(text: l.appTitle),
           const SizedBox(height: 4),
-          Text(
-            l.versionLabel,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(l.appDescription, style: theme.textTheme.bodyMedium),
+          Text(l.versionLabel, style: SettingsPageStyle.secondary(context)),
+          SettingsPageStyle.contentGap,
+          Text(l.appDescription, style: SettingsPageStyle.body(context)),
           const SizedBox(height: 24),
-          Text(l.dependencies, style: theme.textTheme.titleSmall),
-          const SizedBox(height: 8),
+          Text(l.dependencies, style: SettingsPageStyle.sectionTitle(context)),
+          SettingsPageStyle.compactGap,
           _depItem('Flutter', 'BSD-3-Clause'),
           _depItem('FFmpeg', 'LGPL-2.1+'),
           _depItem('Direct3D 11', 'MIT'),
           _depItem('flutter_acrylic', 'MIT'),
           _depItem('window_manager', 'MIT'),
           const Spacer(),
-          Text(
-            l.license,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
+          Text(l.license, style: SettingsPageStyle.secondary(context)),
         ],
       ),
     );
   }
 
   Widget _depItem(String name, String license) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          SizedBox(width: 180, child: Text(name)),
-          Text(
-            license,
-            style: TextStyle(color: Colors.grey[400], fontSize: 12),
+    return Builder(
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 180,
+                child: Text(name, style: SettingsPageStyle.body(context)),
+              ),
+              Text(license, style: SettingsPageStyle.secondary(context)),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

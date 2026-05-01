@@ -61,6 +61,13 @@ class MainWindowController {
     fireAndLog('dispose renderer', renderer.dispose());
   }
 
+  void setViewportBackgroundColor(Color color) {
+    fireAndLog(
+      'set viewport background color',
+      renderer.setViewportBackgroundColor(color.toARGB32()),
+    );
+  }
+
   MainWindowViewModel get viewModel {
     return MainWindowViewModel(
       dragging: _dragging,

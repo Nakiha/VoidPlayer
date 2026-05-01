@@ -102,7 +102,7 @@ bool Renderer::initialize(const RendererConfig& config) {
 
     // Create constant buffer for shader uniforms (must be 16-byte aligned)
     // Layout must match multitrack.hlsl cbuffer Constants
-    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 208, compiled_shader_)) {
+    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 224, compiled_shader_)) {
         spdlog::error("Renderer: failed to create constant buffer");
         return fail();
     }
@@ -1475,7 +1475,13 @@ void Renderer::draw_frame(const PresentDecision& decision) {
         return;
     }
 
-    float clear_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    float clear_color[4] = {};
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        for (int i = 0; i < 4; ++i) {
+            clear_color[i] = background_color_[i];
+        }
+    }
     ctx->ClearRenderTargetView(cached_rtv_.Get(), clear_color);
     ctx->OMSetRenderTargets(1, cached_rtv_.GetAddressOf(), nullptr);
 
@@ -1552,8 +1558,9 @@ void Renderer::draw_frame(const PresentDecision& decision) {
             float inv_display_size_y[4];   // offset 160
             float view_offset_uv_x[4];    // offset 176
             float view_offset_uv_y[4];    // offset 192
+            float background_color[4];     // offset 208
         };
-        static_assert(sizeof(Constants) == 208, "Constants must be 208 bytes");
+        static_assert(sizeof(Constants) == 224, "Constants must be 224 bytes");
 
         // Snapshot layout state atomically
         LayoutState snap;
@@ -1571,6 +1578,12 @@ void Renderer::draw_frame(const PresentDecision& decision) {
         cb.view_offset[0] = snap.view_offset[0];
         cb.view_offset[1] = snap.view_offset[1];
         cb.nv12_mask = 0;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            for (int i = 0; i < 4; ++i) {
+                cb.background_color[i] = background_color_[i];
+            }
+        }
         for (int i = 0; i < 4; ++i) {
             cb.order[i] = snap.order[i];
         }
@@ -1731,6 +1744,16 @@ void Renderer::apply_layout(const LayoutState& state) {
 
     // Trigger redraw — during playback, redraw_layout() handles this
     // without Flush() to avoid contention with D3D11VA decode threads.
+    preview_drawn_ = false;
+}
+
+void Renderer::set_background_color(float r, float g, float b, float a) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    background_color_[0] = std::clamp(r, 0.0f, 1.0f);
+    background_color_[1] = std::clamp(g, 0.0f, 1.0f);
+    background_color_[2] = std::clamp(b, 0.0f, 1.0f);
+    background_color_[3] = std::clamp(a, 0.0f, 1.0f);
     preview_drawn_ = false;
 }
 

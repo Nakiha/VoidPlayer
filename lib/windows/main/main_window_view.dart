@@ -261,27 +261,46 @@ class MainWindowView extends StatelessWidget {
                   ),
                 ),
               ),
-            if (model.profilerVisible)
-              Positioned(
-                top: 48,
-                right: 12,
-                bottom: 12,
-                left: 12,
-                child: Align(
+            Positioned(
+              top: 48,
+              right: 12,
+              bottom: 12,
+              left: 12,
+              child: _AnimatedOverlaySlot(
+                visible: model.profilerVisible,
+                builder: (context) => Align(
                   alignment: Alignment.centerRight,
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 640),
                     child: _ProfilerOverlay(onClose: actions.onCloseProfiler),
                   ),
                 ),
+                transitionBuilder: (context, animation, child) {
+                  final offset = Tween<Offset>(
+                    begin: const Offset(0.04, 0),
+                    end: Offset.zero,
+                  ).animate(animation);
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(position: offset, child: child),
+                  );
+                },
               ),
-            if (model.settingsVisible)
-              Positioned.fill(
-                child: _ModalScrim(
-                  onDismiss: actions.onCloseSettings,
-                  child: _SettingsDialog(onClose: actions.onCloseSettings),
-                ),
+            ),
+            Positioned.fill(
+              child: _AnimatedOverlaySlot(
+                visible: model.settingsVisible,
+                builder: (context) =>
+                    _SettingsDialog(onClose: actions.onCloseSettings),
+                transitionBuilder: (context, animation, child) {
+                  return _ModalScrim(
+                    animation: animation,
+                    onDismiss: actions.onCloseSettings,
+                    child: child,
+                  );
+                },
               ),
+            ),
           ],
         ),
       ),
@@ -289,26 +308,116 @@ class MainWindowView extends StatelessWidget {
   }
 }
 
-class _ModalScrim extends StatelessWidget {
-  final VoidCallback onDismiss;
-  final Widget child;
+typedef _OverlayTransitionBuilder =
+    Widget Function(
+      BuildContext context,
+      Animation<double> animation,
+      Widget child,
+    );
 
-  const _ModalScrim({required this.onDismiss, required this.child});
+class _AnimatedOverlaySlot extends StatefulWidget {
+  final bool visible;
+  final WidgetBuilder builder;
+  final _OverlayTransitionBuilder transitionBuilder;
+
+  const _AnimatedOverlaySlot({
+    required this.visible,
+    required this.builder,
+    required this.transitionBuilder,
+  });
+
+  @override
+  State<_AnimatedOverlaySlot> createState() => _AnimatedOverlaySlotState();
+}
+
+class _AnimatedOverlaySlotState extends State<_AnimatedOverlaySlot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _animation;
+  bool _shouldBuild = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _shouldBuild = widget.visible;
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 180),
+      reverseDuration: const Duration(milliseconds: 140),
+    );
+    _animation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    if (widget.visible) {
+      _controller.value = 1;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimatedOverlaySlot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.visible == oldWidget.visible) return;
+    if (widget.visible) {
+      setState(() => _shouldBuild = true);
+      _controller.forward();
+    } else {
+      _controller.reverse().whenComplete(() {
+        if (!mounted || widget.visible) return;
+        setState(() => _shouldBuild = false);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.black.withValues(alpha: 0.32),
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onDismiss,
+    if (!_shouldBuild) return const SizedBox.shrink();
+    return widget.transitionBuilder(
+      context,
+      _animation,
+      widget.builder(context),
+    );
+  }
+}
+
+class _ModalScrim extends StatelessWidget {
+  final Animation<double> animation;
+  final VoidCallback onDismiss;
+  final Widget child;
+
+  const _ModalScrim({
+    required this.animation,
+    required this.onDismiss,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scale = Tween<double>(begin: 0.96, end: 1).animate(animation);
+    return FadeTransition(
+      opacity: animation,
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.32),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onDismiss,
+              ),
             ),
-          ),
-          Center(child: child),
-        ],
+            Center(
+              child: ScaleTransition(scale: scale, child: child),
+            ),
+          ],
+        ),
       ),
     );
   }

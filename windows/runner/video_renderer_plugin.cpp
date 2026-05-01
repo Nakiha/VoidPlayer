@@ -512,6 +512,28 @@ void VideoRendererPlugin::HandleMethodCall(
             }
         }
         result->Success(flutter::EncodableValue(nullptr));
+    } else if (method == "setViewportBackgroundColor") {
+        if (renderer_ && method_call.arguments()) {
+            const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+            if (args) {
+                auto it = args->find(flutter::EncodableValue("color"));
+                if (it != args->end()) {
+                    int64_t raw = 0;
+                    if (std::holds_alternative<int>(it->second)) {
+                        raw = static_cast<int64_t>(std::get<int>(it->second));
+                    } else if (std::holds_alternative<int64_t>(it->second)) {
+                        raw = std::get<int64_t>(it->second);
+                    }
+                    const uint32_t color = static_cast<uint32_t>(raw);
+                    const float a = static_cast<float>((color >> 24) & 0xFF) / 255.0f;
+                    const float r = static_cast<float>((color >> 16) & 0xFF) / 255.0f;
+                    const float g = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
+                    const float b = static_cast<float>(color & 0xFF) / 255.0f;
+                    renderer_->set_background_color(r, g, b, a);
+                }
+            }
+        }
+        result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "setSpeed") {
         if (renderer_ && method_call.arguments()) {
             const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());

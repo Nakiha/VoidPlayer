@@ -100,6 +100,9 @@ class AppConfig {
 
   static const _preferencesKey = 'preferences';
   static const _analysisCacheMaxBytesKey = 'analysisCacheMaxBytes';
+  static const _themeModeKey = 'themeMode';
+  static const _accentColorModeKey = 'accentColorMode';
+  static const _customAccentColorKey = 'customAccentColor';
   static const _defaultAnalysisCacheMaxBytes = 1024 * 1024 * 1024;
 
   /// Maximum analysis cache size in bytes. A value of 0 means unlimited.
@@ -111,5 +114,36 @@ class AppConfig {
 
   set analysisCacheMaxBytes(int value) {
     section(_preferencesKey)[_analysisCacheMaxBytesKey] = value < 0 ? 0 : value;
+  }
+
+  String get themeModePreference {
+    final value = section(_preferencesKey)[_themeModeKey];
+    return value == 'light' || value == 'dark' ? value as String : 'system';
+  }
+
+  set themeModePreference(String value) {
+    section(_preferencesKey)[_themeModeKey] =
+        value == 'light' || value == 'dark' ? value : 'system';
+  }
+
+  String get accentColorPreference {
+    final value = section(_preferencesKey)[_accentColorModeKey];
+    return value == 'custom' ? 'custom' : 'system';
+  }
+
+  set accentColorPreference(String value) {
+    section(_preferencesKey)[_accentColorModeKey] = value == 'custom'
+        ? 'custom'
+        : 'system';
+  }
+
+  int get customAccentColorValue {
+    final value = section(_preferencesKey)[_customAccentColorKey];
+    if (value is num) return value.toInt();
+    return 0xFF0078D4;
+  }
+
+  set customAccentColorValue(int value) {
+    section(_preferencesKey)[_customAccentColorKey] = value;
   }
 }

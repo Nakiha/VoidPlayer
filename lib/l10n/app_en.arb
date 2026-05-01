@@ -121,6 +121,9 @@
   "shortcuts": "Shortcuts",
   "@shortcuts": { "description": "Navigation: shortcuts" },
 
+  "appearance": "Appearance",
+  "@appearance": { "description": "Navigation: appearance settings" },
+
   "cache": "Cache",
   "@cache": { "description": "Navigation: cache settings" },
 
@@ -150,6 +153,36 @@
 
   "refresh": "Refresh",
   "@refresh": { "description": "Refresh button tooltip" },
+
+  "appearanceMode": "Choose mode",
+  "@appearanceMode": { "description": "Theme mode setting label" },
+
+  "followSystem": "Follow system",
+  "@followSystem": { "description": "Use system preference option" },
+
+  "lightMode": "Light",
+  "@lightMode": { "description": "Light theme mode option" },
+
+  "darkMode": "Dark",
+  "@darkMode": { "description": "Dark theme mode option" },
+
+  "themeColor": "Theme color",
+  "@themeColor": { "description": "Theme accent color setting label" },
+
+  "custom": "Custom",
+  "@custom": { "description": "Custom option label" },
+
+  "customThemeColor": "Custom theme color",
+  "@customThemeColor": { "description": "Custom theme color picker title" },
+
+  "hue": "Hue",
+  "@hue": { "description": "Hue slider label" },
+
+  "saturation": "Saturation",
+  "@saturation": { "description": "Saturation slider label" },
+
+  "brightness": "Brightness",
+  "@brightness": { "description": "Brightness slider label" },
 
   "cacheMaxLimit": "Maximum cache size (0 = unlimited)",
   "@cacheMaxLimit": { "description": "Analysis cache maximum size setting label" },

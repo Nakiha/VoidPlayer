@@ -143,6 +143,9 @@ public:
     /// Atomically apply layout state and trigger redraw if paused.
     void apply_layout(const LayoutState& state);
 
+    /// Set the viewport fill color used outside video bounds.
+    void set_background_color(float r, float g, float b, float a);
+
     /// Get a snapshot of the current layout state (thread-safe).
     LayoutState layout() const;
 
@@ -280,6 +283,7 @@ private:
     std::atomic<bool> playing_{false};
     mutable std::mutex lifecycle_mutex_;
     mutable std::mutex state_mutex_;
+    float background_color_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     bool preview_drawn_ = false;
     bool was_buffering_ = false;
     struct DeferredSeekRequest {

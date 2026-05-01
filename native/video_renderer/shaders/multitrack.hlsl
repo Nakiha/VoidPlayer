@@ -74,8 +74,9 @@ cbuffer Constants : register(b0) {
     float4 u_inv_display_size_y;  // offset 160: 1/display_size.y for track 0-3
     float4 u_view_offset_uv_x;   // offset 176: view_offset_uv.x for track 0-3
     float4 u_view_offset_uv_y;   // offset 192: view_offset_uv.y for track 0-3
+    float4 u_background_color;   // offset 208: viewport fill outside video bounds
 };
-// Total: 208 bytes — must match renderer.cpp draw_frame() Constants struct (208 bytes)
+// Total: 224 bytes — must match renderer.cpp draw_frame() Constants struct (224 bytes)
 
 // BT.601 YUV -> RGB conversion (standard definition)
 float3 yuv_to_rgb(float y, float2 uv) {
@@ -180,7 +181,7 @@ float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_T
     float2 tex_uv = calc_aspect_fit_uv(local_uv, track_idx, out_of_bounds);
 
     float4 color = out_of_bounds
-        ? float4(0.0, 0.0, 0.0, 1.0)
+        ? u_background_color
         : sample_track(track_idx, tex_uv);
 
     // SPLIT_SCREEN: render a hard inverted divider. Alpha-blended inversion

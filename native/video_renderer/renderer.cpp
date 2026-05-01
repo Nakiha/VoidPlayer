@@ -116,7 +116,12 @@ bool Renderer::initialize(const RendererConfig& config) {
     sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
     sampler_desc.MinLOD = 0;
     sampler_desc.MaxLOD = D3D11_FLOAT32_MAX;
-    d3d_device_->device()->CreateSamplerState(&sampler_desc, &sampler_state_);
+    HRESULT hr = d3d_device_->device()->CreateSamplerState(&sampler_desc, &sampler_state_);
+    if (FAILED(hr) || !sampler_state_) {
+        spdlog::error("Renderer: CreateSamplerState failed: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        return fail();
+    }
 
     // Create vertex buffer (fullscreen quad)
     struct Vertex { float x, y, u, v; };
@@ -133,7 +138,12 @@ bool Renderer::initialize(const RendererConfig& config) {
     vb_desc.CPUAccessFlags = 0;
     D3D11_SUBRESOURCE_DATA vb_data = {};
     vb_data.pSysMem = quad;
-    d3d_device_->device()->CreateBuffer(&vb_desc, &vb_data, &vertex_buffer_);
+    hr = d3d_device_->device()->CreateBuffer(&vb_desc, &vb_data, &vertex_buffer_);
+    if (FAILED(hr) || !vertex_buffer_) {
+        spdlog::error("Renderer: CreateBuffer(vertex) failed: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        return fail();
+    }
 
     // Create tracks
     for (const auto& path : config.video_paths) {

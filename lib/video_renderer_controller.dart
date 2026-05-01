@@ -133,6 +133,7 @@ class VideoRendererController {
   int? _textureId;
   bool _disposed = false;
   Future<CreateRendererResult>? _createInFlight;
+  Future<void>? _destroyInFlight;
   Future<void>? _disposeFuture;
 
   int? get textureId => _textureId;
@@ -187,6 +188,11 @@ class VideoRendererController {
     required int width,
     required int height,
   }) async {
+    final destroying = _destroyInFlight;
+    if (destroying != null) {
+      await destroying;
+      _ensureAlive();
+    }
     final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
       'createRenderer',
       {'videoPaths': videoPaths, 'width': width, 'height': height},
@@ -323,6 +329,13 @@ class VideoRendererController {
     return _channel.invokeMethod<void>('removeTrack', {'fileId': fileId});
   }
 
+  /// Destroy the native renderer and texture while keeping this controller
+  /// reusable for a future [createRenderer] call.
+  Future<void> destroyRendererOnly() {
+    _ensureAlive();
+    return _destroyRenderer(markDisposed: false);
+  }
+
   /// Set per-track sync offset in microseconds.
   Future<void> setTrackOffset({required int fileId, required int offsetUs}) {
     _ensureAlive();
@@ -351,13 +364,30 @@ class VideoRendererController {
   Future<void> dispose() async {
     final existing = _disposeFuture;
     if (existing != null) return existing;
-    _disposeFuture = _disposeImpl();
+    _disposed = true;
+    _disposeFuture = _destroyRenderer(markDisposed: true);
     return _disposeFuture!;
   }
 
-  Future<void> _disposeImpl() async {
-    if (_disposed && _textureId == null) return;
-    _disposed = true;
+  Future<void> _destroyRenderer({required bool markDisposed}) {
+    if (markDisposed) {
+      _disposed = true;
+    } else {
+      _ensureAlive();
+    }
+    final existing = _destroyInFlight;
+    if (existing != null) return existing;
+    late final Future<void> future;
+    future = _destroyRendererImpl().whenComplete(() {
+      if (identical(_destroyInFlight, future)) {
+        _destroyInFlight = null;
+      }
+    });
+    _destroyInFlight = future;
+    return future;
+  }
+
+  Future<void> _destroyRendererImpl() async {
     final creating = _createInFlight;
     if (creating != null) {
       try {

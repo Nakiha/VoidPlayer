@@ -151,7 +151,7 @@ class MainWindowMediaCoordinator {
       final tracks = await controller.getTracks();
       if (!_alive) return;
       if (tracks.isEmpty) {
-        await controller.dispose();
+        await controller.destroyRendererOnly();
         if (!_alive) return;
         cancelLoopBoundaryTimer();
         resetAfterLastTrackRemoved();

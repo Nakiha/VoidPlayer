@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <limits>
 
 namespace vr::analysis {
 
@@ -18,7 +19,18 @@ bool VbtFile::open(const std::string& path) {
         return false;
     }
 
-    // Read all entries
+    // Read all entries — validate bounds first
+    constexpr uint32_t kMaxPackets = 10'000'000;
+    if (header_.num_packets > kMaxPackets) return false;
+    size_t entries_bytes = static_cast<size_t>(header_.num_packets) * sizeof(VbtEntry);
+    f.seekg(0, std::ios::end);
+    auto file_size = f.tellg();
+    f.seekg(sizeof(VbtHeader));
+    if (file_size < 0 ||
+        static_cast<std::streamoff>(entries_bytes) > file_size - static_cast<std::streamoff>(sizeof(VbtHeader))) {
+        return false;
+    }
+
     entries_.resize(header_.num_packets);
     if (header_.num_packets > 0) {
         f.read(reinterpret_cast<char*>(entries_.data()),

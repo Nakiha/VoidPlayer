@@ -1,6 +1,7 @@
 #include "analysis/parsers/vbs2_parser.h"
 
 #include <fstream>
+#include <limits>
 
 namespace vr::analysis {
 
@@ -18,7 +19,19 @@ bool Vbs2File::open(const std::string& path) {
         return false;
     }
 
-    // Read frame index
+    // Read frame index — validate bounds first
+    constexpr uint32_t kMaxFrames = 10'000'000;
+    if (header_.num_frames > kMaxFrames) return false;
+    size_t index_bytes = static_cast<size_t>(header_.num_frames) * sizeof(Vbs2IndexEntry);
+    file_.seekg(0, std::ios::end);
+    auto file_size = file_.tellg();
+    if (file_size < 0 || header_.index_offset < 0 ||
+        static_cast<std::streamoff>(header_.index_offset) > file_size ||
+        static_cast<std::streamoff>(index_bytes) > file_size - static_cast<std::streamoff>(header_.index_offset)) {
+        file_.close();
+        return false;
+    }
+
     file_.seekg(header_.index_offset);
     index_.resize(header_.num_frames);
     if (header_.num_frames > 0) {

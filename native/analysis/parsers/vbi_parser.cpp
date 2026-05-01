@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <limits>
 
 namespace vr::analysis {
 
@@ -52,7 +53,18 @@ bool VbiFile::open(const std::string& path) {
         return false;
     }
 
-    // Read all entries
+    // Read all entries — validate bounds first
+    constexpr uint32_t kMaxUnits = 10'000'000;
+    if (header_.num_units > kMaxUnits) return false;
+    size_t entries_bytes = static_cast<size_t>(header_.num_units) * sizeof(VbiEntry);
+    f.seekg(0, std::ios::end);
+    auto file_size = f.tellg();
+    f.seekg(static_cast<std::streamoff>(header_.header_size));
+    if (file_size < 0 ||
+        static_cast<std::streamoff>(entries_bytes) > file_size - static_cast<std::streamoff>(header_.header_size)) {
+        return false;
+    }
+
     entries_.resize(header_.num_units);
     if (header_.num_units > 0) {
         f.read(reinterpret_cast<char*>(entries_.data()),

@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../analysis/analysis_cache.dart';
 import '../../config/app_config.dart';
@@ -62,15 +64,7 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
             ],
           ),
           const SizedBox(height: 4),
-          if (snapshot != null)
-            Text(
-              snapshot.path,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
+          if (snapshot != null) _CachePathRow(path: snapshot.path),
           const SizedBox(height: 16),
           _LimitEditor(controller: _limitController, onSave: _saveLimit),
           const SizedBox(height: 16),
@@ -144,29 +138,111 @@ class _LimitEditor extends StatelessWidget {
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
-          child: TextField(
-            controller: controller,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              labelText: l.cacheMaxLimit,
-              helperText: l.cacheUnlimitedHint,
-              suffixText: 'MB',
-              border: const OutlineInputBorder(),
-              isDense: true,
+          child: SizedBox(
+            height: 48,
+            child: TextField(
+              controller: controller,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: InputDecoration(
+                labelText: l.cacheMaxLimit,
+                suffixText: 'MB',
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+              onSubmitted: (_) => onSave(),
             ),
-            onSubmitted: (_) => onSave(),
           ),
         ),
         const SizedBox(width: 8),
-        IconButton.filled(
-          onPressed: onSave,
-          icon: const Icon(Icons.save, size: 18),
-          tooltip: l.save,
+        SizedBox(
+          width: 48,
+          height: 48,
+          child: IconButton.filled(
+            onPressed: onSave,
+            icon: const Icon(Icons.save, size: 18),
+            tooltip: l.save,
+          ),
         ),
       ],
+    );
+  }
+}
+
+class _CachePathRow extends StatelessWidget {
+  final String path;
+
+  const _CachePathRow({required this.path});
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            path,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        _SmallPathButton(
+          icon: Icons.copy,
+          tooltip: l.copyCachePath,
+          onPressed: () {
+            unawaited(Clipboard.setData(ClipboardData(text: path)));
+          },
+        ),
+        const SizedBox(width: 4),
+        _SmallPathButton(
+          icon: Icons.folder_open,
+          tooltip: l.openCachePath,
+          onPressed: () {
+            unawaited(_openPath(path));
+          },
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openPath(String path) async {
+    await Directory(path).create(recursive: true);
+    await Process.start('explorer.exe', [path]);
+  }
+}
+
+class _SmallPathButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  const _SmallPathButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 32,
+      height: 32,
+      child: IconButton(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        tooltip: tooltip,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+      ),
     );
   }
 }

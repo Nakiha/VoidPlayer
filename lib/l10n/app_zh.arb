@@ -58,8 +58,7 @@
   "license": "许可证：GPLv3",
   "refresh": "刷新",
   "save": "保存",
-  "cacheMaxLimit": "最大缓存大小",
-  "cacheUnlimitedHint": "0 表示不限",
+  "cacheMaxLimit": "最大缓存大小 (0 表示无限制)",
   "cacheUsageWithLimit": "{used} / {limit}",
   "cacheUsageUnlimited": "已使用 {used}",
   "cacheRemaining": "剩余 {size}",
@@ -68,6 +67,8 @@
   "cacheNoEntries": "暂无分析缓存",
   "cacheEntryBreakdown": "VBS2 {vbs2}  VBI {vbi}  VBT {vbt}",
   "cacheUnindexed": "未索引的缓存文件",
+  "copyCachePath": "复制缓存路径",
+  "openCachePath": "打开缓存目录",
 
   "actionTogglePlay": "播放/暂停",
   "actionStepForward": "步进",

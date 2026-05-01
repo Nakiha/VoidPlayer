@@ -100,12 +100,13 @@ class AppConfig {
 
   static const _preferencesKey = 'preferences';
   static const _analysisCacheMaxBytesKey = 'analysisCacheMaxBytes';
+  static const _defaultAnalysisCacheMaxBytes = 1024 * 1024 * 1024;
 
   /// Maximum analysis cache size in bytes. A value of 0 means unlimited.
   int get analysisCacheMaxBytes {
     final value = section(_preferencesKey)[_analysisCacheMaxBytesKey];
     if (value is num && value >= 0) return value.toInt();
-    return 0;
+    return _defaultAnalysisCacheMaxBytes;
   }
 
   set analysisCacheMaxBytes(int value) {

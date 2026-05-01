@@ -243,10 +243,21 @@ class _LimitEditor extends StatelessWidget {
         SizedBox(
           width: 48,
           height: 48,
-          child: IconButton.filled(
+          child: FilledButton(
             onPressed: onSave,
-            icon: const Icon(Icons.save, size: 18),
-            tooltip: l.save,
+            style: FilledButton.styleFrom(
+              fixedSize: const Size(48, 48),
+              minimumSize: const Size(48, 48),
+              padding: EdgeInsets.zero,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Tooltip(
+              message: l.save,
+              child: const Icon(Icons.save, size: 18),
+            ),
           ),
         ),
       ],

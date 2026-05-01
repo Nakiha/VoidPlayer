@@ -49,8 +49,7 @@ class MainWindowActionCoordinator {
       addMediaByPath: mediaCoordinator.addMediaByPath,
       removeTrack: mediaCoordinator.removeTrack,
       adjustTrackOffset: mediaCoordinator.onOffsetChanged,
-      setLoopRangeEnabled: (enabled) =>
-          unawaited(playbackCoordinator.setLoopRangeEnabled(enabled)),
+      setLoopRangeEnabled: playbackCoordinator.setLoopRangeEnabled,
       isLoopRangeEnabled: isLoopRangeEnabled,
       setLoopRange:
           (
@@ -58,13 +57,11 @@ class MainWindowActionCoordinator {
             endUs, {
             seekToStart = false,
             seekOnlyIfStartChanged = false,
-          }) => unawaited(
-            playbackCoordinator.setLoopRange(
-              startUs,
-              endUs,
-              seekToStart: seekToStart,
-              seekOnlyIfStartChanged: seekOnlyIfStartChanged,
-            ),
+          }) => playbackCoordinator.setLoopRange(
+            startUs,
+            endUs,
+            seekToStart: seekToStart,
+            seekOnlyIfStartChanged: seekOnlyIfStartChanged,
           ),
       dragLoopHandle: testHarness.dragLoopHandle,
       toggleLayoutMode: layoutCoordinator.toggleLayoutMode,
@@ -96,13 +93,13 @@ class MainWindowActionBinder {
   final void Function(double fraction) clickTimelineFraction;
   final void Function(double speed) setSpeed;
 
-  final void Function() openFile;
+  final FutureOr<void> Function() openFile;
   final void Function(String path) addMediaByPath;
-  final void Function(int fileId) removeTrack;
-  final void Function(int slot, int deltaMs) adjustTrackOffset;
-  final void Function(bool enabled) setLoopRangeEnabled;
+  final FutureOr<void> Function(int fileId) removeTrack;
+  final FutureOr<void> Function(int slot, int deltaMs) adjustTrackOffset;
+  final FutureOr<void> Function(bool enabled) setLoopRangeEnabled;
   final bool Function() isLoopRangeEnabled;
-  final void Function(
+  final FutureOr<void> Function(
     int startUs,
     int endUs, {
     bool seekToStart,
@@ -181,19 +178,19 @@ class MainWindowActionBinder {
     });
     _bind(const RemoveTrackAction(0), (action) {
       final a = action as RemoveTrackAction;
-      removeTrack(a.fileId);
+      return removeTrack(a.fileId);
     });
     _bind(const AdjustTrackOffset(0, 0), (action) {
       final a = action as AdjustTrackOffset;
-      adjustTrackOffset(a.slot, a.deltaMs);
+      return adjustTrackOffset(a.slot, a.deltaMs);
     });
     _bind(const SetLoopEnabled(false), (action) {
       final a = action as SetLoopEnabled;
-      setLoopRangeEnabled(a.enabled);
+      return setLoopRangeEnabled(a.enabled);
     });
     _bind(const SetLoopRange(0, 0), (action) {
       final a = action as SetLoopRange;
-      setLoopRange(
+      return setLoopRange(
         a.startUs,
         a.endUs,
         seekToStart: isLoopRangeEnabled(),

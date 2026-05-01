@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
 
 class MainWindowLayoutCoordinator {
@@ -36,7 +37,7 @@ class MainWindowLayoutCoordinator {
     required this.trackCount,
   }) {
     _ticker = vsync.createTicker((_) {
-      unawaited(flushPendingLayout());
+      fireAndLog('flush pending layout', flushPendingLayout());
     });
   }
 

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app_log.dart';
+import '../utils/async_guard.dart';
 import 'player_action.dart';
 
 /// Global action registry instance.
@@ -9,7 +12,7 @@ final actionRegistry = ActionRegistry();
 
 /// Callback type for action handlers. Receives the action instance so
 /// parameterized actions (e.g. [SeekTo], [SetSpeed]) can read their data.
-typedef ActionCallback = void Function(PlayerAction action);
+typedef ActionCallback = FutureOr<void> Function(PlayerAction action);
 
 /// Central registry for player actions with keyboard interception.
 ///
@@ -61,7 +64,14 @@ class ActionRegistry {
     }
     final action = overrideAction ?? _actions[name];
     log.info('Action: $name${action != overrideAction ? '' : ' (script)'}');
-    callback(action!);
+    try {
+      final result = callback(action!);
+      if (result is Future) {
+        fireAndLog('Action "$name"', result.then((_) {}));
+      }
+    } catch (error, stack) {
+      log.severe('Action "$name" failed', error, stack);
+    }
   }
 
   /// Handle a key event from [ActionFocus].

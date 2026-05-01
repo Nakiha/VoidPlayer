@@ -1,10 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../actions/test_runner.dart';
 import '../../startup_options.dart';
 import '../../track_manager.dart';
+import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
 import '../../widgets/loop_range_bar.dart';
 import 'main_window_actions.dart';
@@ -57,9 +56,9 @@ class MainWindowController {
     mediaCoordinator.dispose();
     layoutCoordinator.dispose();
     stateStore.dispose();
-    unawaited(analysisCoordinator.dispose());
+    fireAndLog('dispose analysis coordinator', analysisCoordinator.dispose());
     trackManager.dispose();
-    unawaited(renderer.dispose());
+    fireAndLog('dispose renderer', renderer.dispose());
   }
 
   MainWindowViewModel get viewModel {
@@ -97,7 +96,10 @@ class MainWindowController {
     return MainWindowViewActions(
       onFilesDropped: (paths) {
         stateStore.setDragging(false);
-        unawaited(mediaCoordinator.loadMediaPaths(paths));
+        fireAndLog(
+          'load dropped media',
+          mediaCoordinator.loadMediaPaths(paths),
+        );
       },
       onDragEntered: () {
         if (!_dragging) stateStore.setDragging(true);
@@ -128,12 +130,17 @@ class MainWindowController {
       onStepBackward: () => renderer.stepBackward(),
       onSeek: playbackCoordinator.seekTo,
       onSliderHover: playbackCoordinator.onSliderHover,
-      onLoopRangeEnabledChanged: (enabled) =>
-          unawaited(playbackCoordinator.setLoopRangeEnabled(enabled)),
-      onLoopRangeChanged: (startUs, endUs) =>
-          unawaited(playbackCoordinator.setLoopRange(startUs, endUs)),
+      onLoopRangeEnabledChanged: (enabled) => fireAndLog(
+        'set loop range enabled',
+        playbackCoordinator.setLoopRangeEnabled(enabled),
+      ),
+      onLoopRangeChanged: (startUs, endUs) => fireAndLog(
+        'set loop range',
+        playbackCoordinator.setLoopRange(startUs, endUs),
+      ),
       onLoopRangeChangeEnd: _loopRangeEnabled
-          ? (handle) => unawaited(
+          ? (handle) => fireAndLog(
+              'finish loop range change',
               playbackCoordinator.setLoopRange(
                 _resolvedLoopStartUs,
                 _resolvedLoopEndUs,
@@ -243,7 +250,10 @@ class MainWindowController {
   void _onTrackManagerChanged() {
     stateStore.setLayout(_layout.copyWith(order: trackManager.order));
     layoutCoordinator.markLayoutDirty();
-    unawaited(analysisCoordinator.publishTrackSnapshot());
+    fireAndLog(
+      'publish analysis track snapshot',
+      analysisCoordinator.publishTrackSnapshot(),
+    );
   }
 
   void _resetAfterLastTrackRemoved() {

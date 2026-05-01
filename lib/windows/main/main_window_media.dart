@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../app_log.dart';
 import '../../track_manager.dart';
+import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
 import 'main_window_layout.dart';
 import '../native_file_picker.dart';
@@ -128,7 +129,7 @@ class MainWindowMediaCoordinator {
 
   void addMediaByPath(String path) {
     if (path.isEmpty) return;
-    unawaited(loadMediaPaths([path]));
+    fireAndLog('add media by path', loadMediaPaths([path]));
   }
 
   Future<void> openFile() async {

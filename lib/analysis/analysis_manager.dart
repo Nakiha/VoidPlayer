@@ -7,25 +7,15 @@ import 'package:path/path.dart' as p;
 import '../app_log.dart';
 import 'analysis_cache.dart';
 import 'analysis_ffi.dart';
+import 'file_hash.dart';
 
-enum AnalysisState {
-  idle,
-  computingHash,
-  generating,
-  loading,
-  loaded,
-  error,
-}
+enum AnalysisState { idle, computingHash, generating, loading, loaded, error }
 
 /// Localizable error stored as a typed key + positional args.
 ///
 /// The UI resolves these via [AppLocalizations]; the manager never holds
 /// translated strings.
-enum AnalysisErrorKey {
-  hashFailed,
-  unsupported,
-  loadFailed,
-}
+enum AnalysisErrorKey { hashFailed, unsupported, loadFailed }
 
 class AnalysisError {
   final AnalysisErrorKey key;
@@ -52,8 +42,9 @@ class AnalysisManager extends ChangeNotifier {
   String? get loadedHash => _loadedHash;
   bool get isLoaded => _state == AnalysisState.loaded;
 
-  /// Compute file hash (lightweight, reads first 1 MB only).
-  static Future<String> computeHash(String videoPath) => _computeHash(videoPath);
+  /// Compute a full-file SHA-256 cache key.
+  static Future<String> computeHash(String videoPath) =>
+      _computeHash(videoPath);
 
   /// Full flow: compute hash → check cache → generate if needed → load.
   /// Returns the hash on success, null on failure.
@@ -72,7 +63,7 @@ class AnalysisManager extends ChangeNotifier {
       return null;
     }
 
-    if (AnalysisCache.hasEntry(hash)) {
+    if (AnalysisCache.hasEntry(hash, videoPath: videoPath)) {
       log.info('[Analysis] cache hit for $hash, loading from cache');
       return _loadFromCache(hash, fileName, videoPath);
     }
@@ -83,8 +74,12 @@ class AnalysisManager extends ChangeNotifier {
     _error = null;
     notifyListeners();
 
-    log.info('[Analysis] calling FFI generateAnalysis(videoPath=$videoPath, hash=$hash)');
-    final ok = await Isolate.run(() => AnalysisFfi.generateAnalysis(videoPath, hash));
+    log.info(
+      '[Analysis] calling FFI generateAnalysis(videoPath=$videoPath, hash=$hash)',
+    );
+    final ok = await Isolate.run(
+      () => AnalysisFfi.generateAnalysis(videoPath, hash),
+    );
     if (!ok) {
       log.severe('[Analysis] generateAnalysis returned false');
       _setError(AnalysisErrorKey.unsupported, [fileName]);
@@ -106,7 +101,9 @@ class AnalysisManager extends ChangeNotifier {
 
     // VBS2 is optional — pass empty string if file doesn't exist
     final vbs2Arg = File(vbs2).existsSync() ? vbs2 : '';
-    log.info('[Analysis] loading: vbs2=${vbs2Arg.isNotEmpty ? vbs2Arg : "(skip)"}, vbi=$vbi, vbt=$vbt');
+    log.info(
+      '[Analysis] loading: vbs2=${vbs2Arg.isNotEmpty ? vbs2Arg : "(skip)"}, vbi=$vbi, vbt=$vbt',
+    );
     final ok = AnalysisFfi.load(vbs2Arg, vbi, vbt);
     if (!ok) {
       log.severe('[Analysis] FFI load returned false');
@@ -144,36 +141,5 @@ class AnalysisManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// SHA-256 of the first 1 MB of the file, returned as hex string.
-  static Future<String> _computeHash(String path) async {
-    const int chunkSize = 1024 * 1024; // 1 MB
-    final file = File(path);
-    // Read-first-chunk synchronously for simplicity (file is local SSD).
-    final Uint8List bytes;
-    final raf = await file.open();
-    try {
-      bytes = await raf.read(chunkSize);
-    } finally {
-      await raf.close();
-    }
-
-    // Simple FNV-1a 128-bit hash (no external dependency needed).
-    // For cache purposes this is sufficient — collisions extremely unlikely.
-    return _fnv1aHex(bytes);
-  }
-
-  /// FNV-1a inspired hex digest. Not cryptographic but collision-resistant
-  /// enough for a local file cache.
-  static String _fnv1aHex(Uint8List data) {
-    // Use two 64-bit FNV-1a passes with different offsets for 128-bit result
-    int h1 = 0xcbf29ce484222325;
-    int h2 = 0x100000001b3;
-    for (final b in data) {
-      h1 ^= b;
-      h1 = (h1 * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF;
-      h2 ^= b;
-      h2 = (h2 * 0xcbf29ce484222325) & 0xFFFFFFFFFFFFFFFF;
-    }
-    return '${h1.toRadixString(16).padLeft(16, '0')}${h2.toRadixString(16).padLeft(16, '0')}';
-  }
+  static Future<String> _computeHash(String path) => computeFileSha256(path);
 }

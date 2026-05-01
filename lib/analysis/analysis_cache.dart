@@ -7,7 +7,7 @@ import 'package:path/path.dart' as p;
 /// Cache structure:
 /// ```
 /// cache/
-///   analysis_index.json   ← { "entries": { "<hash>": { "name": "...", "path": "...", "time": "..." } } }
+///   analysis_index.json
 ///   <hash>.vbs2
 ///   <hash>.vbi
 ///   <hash>.vbt
@@ -85,14 +85,32 @@ class AnalysisCache {
     entries[hash] = {
       'name': name,
       'path': videoPath,
+      'size': await File(videoPath).length(),
+      'mtime': (await File(videoPath).lastModified()).toIso8601String(),
       'time': DateTime.now().toIso8601String(),
     };
     await saveIndex(index);
   }
 
-  static bool hasEntry(String hash) {
+  static bool hasEntry(String hash, {String? videoPath}) {
     final index = loadIndex();
     final entries = index['entries'] as Map<String, dynamic>;
-    return entries.containsKey(hash) && filesExist(hash);
+    if (!entries.containsKey(hash) || !filesExist(hash)) return false;
+    if (videoPath == null) return true;
+
+    final entry = entries[hash];
+    if (entry is! Map<String, dynamic>) return false;
+    final file = File(videoPath);
+    if (!file.existsSync()) return false;
+    final size = entry['size'];
+    final mtime = entry['mtime'];
+    if (size is! int || mtime is! String) return false;
+
+    try {
+      return file.lengthSync() == size &&
+          file.lastModifiedSync().toIso8601String() == mtime;
+    } catch (_) {
+      return false;
+    }
   }
 }

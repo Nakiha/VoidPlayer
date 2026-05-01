@@ -40,6 +40,12 @@ python dev.py test --native-only     # 仅 native 构建/测试
 
 ## Agent 工作约定
 
+### Native C++ 构建 & Flutter 重编译
+
+- **`python dev.py build --native` 只构建独立 native 模块**（Python pybind 扩展 + 静态库 + FFI DLL），**不会重新编译 Flutter Windows runner**。Flutter runner 通过自己的 CMake（`windows/runner/CMakeLists.txt`）把 `native/` 下的 C++ 源文件直接编译进 `void_player.exe`。
+- **修改 `native/` 下的 C++ 代码后，必须执行 `flutter build windows --release`（或 `dev.py ui-test --build`）才能把变更编译进最终程序**。只跑 `dev.py build --native` 然后跑 UI 测试，测试的是旧代码。
+- 验证流程：`dev.py build --native`（跑 native 单元测试）→ `flutter build windows --release`（编译进 Flutter exe）→ `dev.py ui-test`（UI 回归）。
+
 ### 验证优先级
 
 - 修改 **Flutter UI / Action / 窗口交互 / 播放控制流程 / 主窗口 coordinator 生命周期** 后，必须优先使用 `ui_tests/` 下对应目录的 CSV 做一次自动化闭环验证，而不是只跑 Flutter 单元测试或只做静态阅读；`dev.py ui-test` 可以一次传多个 CSV 并顺序执行；添加 `--build` 可以顺带构建 flutter 程序

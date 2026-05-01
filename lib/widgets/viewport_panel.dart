@@ -16,7 +16,7 @@ class ViewportPanel extends StatefulWidget {
   final void Function(double normalizedX) onSplit;
   final void Function(double delta, Offset localPosition) onZoom;
   final void Function(bool panning, bool splitting) onPointerButton;
-  final void Function(int width, int height)? onResize;
+  final void Function(int width, int height, double devicePixelRatio)? onResize;
 
   const ViewportPanel({
     super.key,
@@ -128,6 +128,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
       widget.onResize?.call(
         (logicalWidth * devicePixelRatio).round(),
         (logicalHeight * devicePixelRatio).round(),
+        devicePixelRatio,
       );
     }
   }

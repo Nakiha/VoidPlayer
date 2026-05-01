@@ -9,6 +9,7 @@ import '../../video_renderer_controller.dart';
 
 class MainWindowLayoutCoordinator {
   static const Duration viewportResizeDebounce = Duration(milliseconds: 80);
+  static const double timelineTrackRowLogicalHeight = 40.0;
 
   final TickerProvider vsync;
   final NativePlayerController controller;
@@ -28,6 +29,7 @@ class MainWindowLayoutCoordinator {
 
   int viewportWidth = 0;
   int viewportHeight = 0;
+  double viewportDevicePixelRatio = 1.0;
 
   MainWindowLayoutCoordinator({
     required this.vsync,
@@ -162,8 +164,11 @@ class MainWindowLayoutCoordinator {
     // Reserved for cursor or mode hints.
   }
 
-  void onViewportResize(int width, int height) {
+  void onViewportResize(int width, int height, double devicePixelRatio) {
     if (_disposed) return;
+    if (devicePixelRatio > 0) {
+      viewportDevicePixelRatio = devicePixelRatio;
+    }
     if (width == viewportWidth && height == viewportHeight) return;
     final previousWidth = viewportWidth;
     final previousHeight = viewportHeight;
@@ -177,6 +182,40 @@ class MainWindowLayoutCoordinator {
       if (_disposed || !mounted()) return;
       _markResizeDirty();
     });
+  }
+
+  Future<void> preemptTimelineTrackCountChange({
+    required int previousCount,
+    required int nextCount,
+  }) async {
+    if (_disposed || textureId() == null) return;
+    if (previousCount <= 0 || nextCount <= 0 || previousCount == nextCount) {
+      return;
+    }
+    if (viewportWidth <= 0 || viewportHeight <= 0) return;
+
+    final rowDelta = nextCount - previousCount;
+    final heightDelta =
+        (rowDelta * timelineTrackRowLogicalHeight * viewportDevicePixelRatio)
+            .round();
+    if (heightDelta == 0) return;
+
+    final nextHeight = (viewportHeight - heightDelta).clamp(1, 1 << 30).toInt();
+    if (nextHeight == viewportHeight) return;
+
+    final previousWidth = viewportWidth;
+    final previousHeight = viewportHeight;
+    _resizeDebounceTimer?.cancel();
+    _resizeDebounceTimer = null;
+    _resizeDirty = false;
+    _rescaleViewOffsetForResize(
+      previousWidth,
+      previousHeight,
+      previousWidth,
+      nextHeight,
+    );
+    viewportHeight = nextHeight;
+    await controller.resize(viewportWidth, viewportHeight);
   }
 
   void onZoomComboChanged(double value) {

@@ -90,7 +90,7 @@ class MainWindowViewActions {
   final ValueChanged<double> onSplit;
   final void Function(double scrollDelta, Offset localPos) onZoom;
   final void Function(bool panning, bool splitting) onPointerButton;
-  final void Function(int width, int height) onResize;
+  final void Function(int width, int height, double devicePixelRatio) onResize;
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
   final ValueChanged<int> onRemoveTrack;
   final ValueChanged<double> onZoomChanged;

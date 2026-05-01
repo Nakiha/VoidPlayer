@@ -120,7 +120,13 @@ class MainWindowMediaCoordinator {
       for (final path in paths) {
         if (!_alive) return;
         try {
+          final previousTrackCount = trackManager.count;
           final track = await controller.addTrack(path);
+          if (!_alive) return;
+          await layoutCoordinator.preemptTimelineTrackCountChange(
+            previousCount: previousTrackCount,
+            nextCount: previousTrackCount + 1,
+          );
           if (!_alive) return;
           trackManager.addTrack(track);
           applyStartupLoopRangeIfReady();
@@ -162,6 +168,12 @@ class MainWindowMediaCoordinator {
         cancelLoopBoundaryTimer();
         resetAfterLastTrackRemoved();
       } else {
+        final previousTrackCount = trackManager.count;
+        await layoutCoordinator.preemptTimelineTrackCountChange(
+          previousCount: previousTrackCount,
+          nextCount: tracks.length,
+        );
+        if (!_alive) return;
         trackManager.setTracks(tracks);
         removeSyncOffset(slot);
         if (wasAudible) {

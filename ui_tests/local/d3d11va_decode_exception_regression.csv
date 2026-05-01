@@ -1,0 +1,12 @@
+# Reproduce D3D11 decode crash: C++ exception during avcodec_send_packet
+# after adding track and seeking on user's specific video file.
+# Stack: CxxThrowException -> D3D11 internals -> avcodec_send_packet
+@WINDOW,1280,720
+
+0.0,ADD_MEDIA,C:\Users\Nakiha\Videos\2024-03-24 02-51-23.mkv
+1.5,ASSERT_TRACK_COUNT,1
+2.0,SEEK_TO,500000
+3.0,SEEK_TO,4000000
+4.0,SEEK_TO,20000000
+5.0,ASSERT_POSITION,20000000,500000
+5.5,QUIT,0

@@ -2,6 +2,7 @@
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <algorithm>
+#include <windows.h>
 
 extern "C" {
 #include <libavutil/hwcontext.h>
@@ -38,6 +39,39 @@ const char* decode_device_mode_name(DecodeDeviceMode mode) {
     }
     return "Unknown";
 }
+
+// SEH-safe wrappers for FFmpeg codec calls.
+// D3D11 internals can throw C++ exceptions (0xE06D7363) that propagate through
+// avcodec_send_packet / avcodec_receive_frame. Under /EHsc (the project default),
+// C++ catch(...) does NOT catch these cross-module SEH exceptions. We use
+// __try/__except instead, which requires the function to have no C++ objects
+// with destructors.
+
+// Sentinel: value is negative and outside FFmpeg's AVERROR range.
+constexpr int kSehCaught = AVERROR_EXTERNAL;
+
+int seh_send_packet(AVCodecContext* ctx, const AVPacket* pkt) {
+    __try {
+        return avcodec_send_packet(ctx, pkt);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        DWORD code = GetExceptionCode();
+        spdlog::error("[DecodeThread] SEH exception in avcodec_send_packet: {:#x}",
+                      static_cast<unsigned long>(code));
+        return kSehCaught;
+    }
+}
+
+int seh_receive_frame(AVCodecContext* ctx, AVFrame* frame) {
+    __try {
+        return avcodec_receive_frame(ctx, frame);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        DWORD code = GetExceptionCode();
+        spdlog::error("[DecodeThread] SEH exception in avcodec_receive_frame: {:#x}",
+                      static_cast<unsigned long>(code));
+        return kSehCaught;
+    }
+}
+
 }  // namespace
 
 // get_format callback for hardware decode negotiation.
@@ -369,16 +403,18 @@ void DecodeThread::notify_seek(int64_t target_pts_us, SeekType type) {
 void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*)>& rescale_ts, int64_t target_us) {
     auto prev_level = av_log_get_level();
     av_log_set_level(AV_LOG_ERROR);
-    try {
-        avcodec_send_packet(codec_ctx_, nullptr);
-    } catch (...) {
-        output_buffer_.set_state(TrackState::Error);
-        running_.store(false, std::memory_order_release);
-        log_codec_exception("drain/send_packet", codec_id(), hw_enabled_);
+    int send_ret = seh_send_packet(codec_ctx_, nullptr);
+    if (send_ret < 0 && send_ret != AVERROR(EAGAIN) && send_ret != AVERROR_EOF) {
+        if (send_ret == kSehCaught) {
+            output_buffer_.set_state(TrackState::Error);
+            running_.store(false, std::memory_order_release);
+        }
         av_log_set_level(prev_level);
         return;
     }
-    while (avcodec_receive_frame(codec_ctx_, frame) >= 0) {
+    while (true) {
+        int recv_ret = seh_receive_frame(codec_ctx_, frame);
+        if (recv_ret < 0) break;
         if (cancelled_.load(std::memory_order_acquire)) {
             av_frame_unref(frame);
             break;
@@ -719,18 +755,16 @@ void DecodeThread::run() {
                 }
 
                 int ret = 0;
-                try {
-                    if (hw_enabled_ && device_mutex_) {
-                        std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
-                        ret = avcodec_receive_frame(codec_ctx_, frame);
-                    } else {
-                        ret = avcodec_receive_frame(codec_ctx_, frame);
-                    }
-                } catch (...) {
+                if (hw_enabled_ && device_mutex_) {
+                    std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
+                    ret = seh_receive_frame(codec_ctx_, frame);
+                } else {
+                    ret = seh_receive_frame(codec_ctx_, frame);
+                }
+                if (ret == kSehCaught) {
                     output_buffer_.set_state(TrackState::Error);
                     decode_paused_.store(true, std::memory_order_release);
                     running_.store(false, std::memory_order_release);
-                    log_codec_exception("post_exact_seek_drain/receive_frame", codec_id(), hw_enabled_);
                     ret = AVERROR_EXTERNAL;
                 }
 
@@ -813,25 +847,22 @@ void DecodeThread::run() {
                                      output_buffer_.total_count(), input_queue_.size());
                     }
                 } else {
-                    try {
-                        avcodec_send_packet(codec_ctx_, nullptr);
-                    } catch (...) {
-                        output_buffer_.set_state(TrackState::Error);
-                        decode_paused_.store(true, std::memory_order_release);
-                        running_.store(false, std::memory_order_release);
-                        log_codec_exception("eof_drain/send_packet", codec_id(), hw_enabled_);
-                        break;
-                    }
-                    while (true) {
-                        int ret = 0;
-                        try {
-                            ret = avcodec_receive_frame(codec_ctx_, frame);
-                        } catch (...) {
+                    int send_ret = seh_send_packet(codec_ctx_, nullptr);
+                    if (send_ret < 0 && send_ret != AVERROR(EAGAIN) && send_ret != AVERROR_EOF) {
+                        if (send_ret == kSehCaught) {
                             output_buffer_.set_state(TrackState::Error);
                             decode_paused_.store(true, std::memory_order_release);
                             running_.store(false, std::memory_order_release);
-                            log_codec_exception("eof_drain/receive_frame", codec_id(), hw_enabled_);
-                            ret = AVERROR_EXTERNAL;
+                        }
+                        break;
+                    }
+                    while (true) {
+                        int ret = seh_receive_frame(codec_ctx_, frame);
+                        if (ret == kSehCaught) {
+                            output_buffer_.set_state(TrackState::Error);
+                            decode_paused_.store(true, std::memory_order_release);
+                            running_.store(false, std::memory_order_release);
+                            break;
                         }
                         if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
                         if (ret < 0) break;
@@ -881,19 +912,19 @@ void DecodeThread::run() {
 
         int ret = 0;
         auto batch_t0 = std::chrono::steady_clock::now();
-        try {
+        {
             if (hw_enabled_ && device_mutex_) {
                 std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
-                ret = avcodec_send_packet(codec_ctx_, pkt);
+                ret = seh_send_packet(codec_ctx_, pkt);
             } else {
-                ret = avcodec_send_packet(codec_ctx_, pkt);
+                ret = seh_send_packet(codec_ctx_, pkt);
             }
-        } catch (...) {
+        }
+        if (ret == kSehCaught) {
             av_packet_free(&pkt);
             output_buffer_.set_state(TrackState::Error);
             decode_paused_.store(true, std::memory_order_release);
             running_.store(false, std::memory_order_release);
-            log_codec_exception("send_packet", codec_id(), hw_enabled_);
             break;
         }
         av_packet_free(&pkt);
@@ -906,18 +937,16 @@ void DecodeThread::run() {
         int frames_produced = 0;
         while (true) {
             if (cancelled_.load(std::memory_order_acquire)) break;
-            try {
-                if (hw_enabled_ && device_mutex_) {
-                    std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
-                    ret = avcodec_receive_frame(codec_ctx_, frame);
-                } else {
-                    ret = avcodec_receive_frame(codec_ctx_, frame);
-                }
-            } catch (...) {
+            if (hw_enabled_ && device_mutex_) {
+                std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
+                ret = seh_receive_frame(codec_ctx_, frame);
+            } else {
+                ret = seh_receive_frame(codec_ctx_, frame);
+            }
+            if (ret == kSehCaught) {
                 output_buffer_.set_state(TrackState::Error);
                 decode_paused_.store(true, std::memory_order_release);
                 running_.store(false, std::memory_order_release);
-                log_codec_exception("receive_frame", codec_id(), hw_enabled_);
                 ret = AVERROR_EXTERNAL;
                 break;
             }

@@ -11,6 +11,8 @@ class TimelineArea extends StatefulWidget {
   final int currentPtsUs;
   final void Function(int oldIndex, int newIndex) onReorder;
   final void Function(int slot, int offsetMs) onOffsetChanged;
+  final ValueChanged<int> onToggleTrackAudio;
+  final int? audibleTrackFileId;
   final ValueChanged<int> onRemoveTrack;
   final Map<int, int> syncOffsets; // slot -> offset in microseconds
   final int maxEffectiveDurationUs;
@@ -29,6 +31,8 @@ class TimelineArea extends StatefulWidget {
     this.currentPtsUs = 0,
     required this.onReorder,
     required this.onOffsetChanged,
+    required this.onToggleTrackAudio,
+    this.audibleTrackFileId,
     required this.onRemoveTrack,
     this.syncOffsets = const {},
     this.maxEffectiveDurationUs = 0,
@@ -96,6 +100,8 @@ class _TimelineAreaState extends State<TimelineArea> {
                 onRemove: () => widget.onRemoveTrack(entry.fileId),
                 onOffsetChanged: (delta) =>
                     widget.onOffsetChanged(entry.info.slot, delta),
+                onToggleAudio: () => widget.onToggleTrackAudio(entry.fileId),
+                isAudible: widget.audibleTrackFileId == entry.fileId,
                 syncOffsetMs: offsetUs ~/ 1000,
                 controlsWidth: widget.controlsWidth,
                 onControlsWidthChanged: widget.onControlsWidthChanged,

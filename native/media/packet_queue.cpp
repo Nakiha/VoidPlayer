@@ -1,4 +1,4 @@
-#include "video_renderer/buffer/packet_queue.h"
+#include "media/packet_queue.h"
 #include <spdlog/spdlog.h>
 
 namespace vr {

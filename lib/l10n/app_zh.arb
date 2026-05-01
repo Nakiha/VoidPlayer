@@ -21,6 +21,8 @@
 
   "offsetBackward": "-10ms",
   "offsetForward": "+10ms",
+  "muteTrackAudio": "静音轨道",
+  "playTrackAudio": "播放轨道声音",
   "removeTrack": "移除轨道",
   "loopRange": "循环区间",
 

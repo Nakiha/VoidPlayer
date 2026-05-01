@@ -46,6 +46,12 @@
   "offsetForward": "+10ms",
   "@offsetForward": { "description": "Track offset forward tooltip" },
 
+  "muteTrackAudio": "Mute Track",
+  "@muteTrackAudio": { "description": "Mute track audio tooltip" },
+
+  "playTrackAudio": "Play Track Audio",
+  "@playTrackAudio": { "description": "Play track audio tooltip" },
+
   "removeTrack": "Remove Track",
   "@removeTrack": { "description": "Remove track tooltip" },
 

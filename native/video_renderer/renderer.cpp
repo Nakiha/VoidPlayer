@@ -73,6 +73,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     headless_ = config.headless;
     target_width_ = config.width;
     target_height_ = config.height;
+    audio_engine_ = std::make_unique<AudioEngine>();
 
     d3d_device_ = std::make_unique<D3D11Device>();
     if (config.headless) {
@@ -159,6 +160,8 @@ bool Renderer::initialize(const RendererConfig& config) {
         pipeline->decode_thread->set_pause_after_preroll(true);
 
         pipeline->file_id = next_file_id_++;
+        configure_track_seek_callback(*pipeline);
+        register_track_audio(*pipeline);
         tracks_[slot] = std::move(pipeline);
     }
 
@@ -284,6 +287,7 @@ void Renderer::release_resources_locked() {
     // Stop all tracks
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (tracks_[i]) {
+            unregister_track_audio(tracks_[i]->file_id);
             spdlog::info("Renderer: stopping track[{}] decode ({})", i, tracks_[i]->file_path);
             tracks_[i]->decode_thread->stop();
             spdlog::info("Renderer: track[{}] decode stopped", i);
@@ -295,6 +299,10 @@ void Renderer::release_resources_locked() {
     }
 
     render_sink_.reset();
+    if (audio_engine_) {
+        audio_engine_->clear();
+        audio_engine_.reset();
+    }
     shader_mgr_.reset();
     frame_presenter_.reset();
     texture_mgr_.reset();
@@ -353,6 +361,7 @@ void Renderer::play() {
         tracks_[i]->decode_thread->set_pause_after_preroll(false);
     }
     set_decode_paused_for_all_tracks(false);
+    if (audio_engine_) audio_engine_->play();
     clock_.resume();
     playing_ = true;
 }
@@ -365,6 +374,7 @@ void Renderer::pause() {
         tracks_[i]->decode_thread->set_pause_after_preroll(true);
     }
     set_decode_paused_for_all_tracks(true);
+    if (audio_engine_) audio_engine_->pause();
     clock_.pause();
     playing_ = false;
 }
@@ -390,6 +400,21 @@ void Renderer::set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
                  loop_range_.start_us / 1e6, loop_range_.end_us / 1e6);
 }
 
+void Renderer::set_audible_track(int file_id) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (!audio_engine_) return;
+    if (file_id >= 0 && find_slot_by_file_id(file_id) < 0) {
+        file_id = -1;
+    }
+    audio_engine_->set_active_track(file_id);
+}
+
+int Renderer::audible_track() const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    return audio_engine_ ? audio_engine_->active_track() : -1;
+}
+
 void Renderer::seek_internal(int64_t target_pts_us,
                              SeekType type,
                              bool allow_deferred,
@@ -411,6 +436,9 @@ void Renderer::seek_internal(int64_t target_pts_us,
         // Pause decoder FIRST to prevent stale packets from reaching the codec
         // (avoids HEVC "Could not find ref" warnings during seek transition)
         track->decode_thread->set_decode_paused(true);
+        if (audio_engine_) {
+            audio_engine_->set_track_decode_paused(track->file_id, true);
+        }
         auto buf_count_before = track->track_buffer->total_count();
         auto pq_size_before = track->packet_queue->size();
         const auto buffer_state_before = track->track_buffer->state();
@@ -422,6 +450,9 @@ void Renderer::seek_internal(int64_t target_pts_us,
             frame_presenter_->reset_track(i);
         }
         track->packet_queue->flush();
+        if (track->audio_packet_queue) {
+            track->audio_packet_queue->flush();
+        }
         const bool is_hevc_hw_seek =
             track->decode_thread->is_hardware_decode_enabled() &&
             track->decode_thread->codec_id() == AV_CODEC_ID_HEVC;
@@ -1006,6 +1037,47 @@ void Renderer::set_decode_paused_for_all_tracks(bool paused) {
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks_[i]) continue;
         tracks_[i]->decode_thread->set_decode_paused(paused);
+    }
+    if (audio_engine_) {
+        audio_engine_->set_all_decode_paused(paused);
+    }
+}
+
+void Renderer::configure_track_seek_callback(TrackPipeline& track) {
+    auto* dt = track.decode_thread.get();
+    const int file_id = track.file_id;
+    track.demux_thread->set_seek_callback(
+        [this, dt, file_id](int64_t pts, SeekType type) {
+            dt->notify_seek(pts, type);
+            if (audio_engine_) {
+                audio_engine_->notify_seek(file_id, pts, type);
+            }
+        });
+}
+
+void Renderer::register_track_audio(TrackPipeline& track) {
+    if (!audio_engine_ ||
+        !track.audio_packet_queue ||
+        !track.demux_thread ||
+        track.file_id <= 0) {
+        return;
+    }
+    const auto& stats = track.demux_thread->stats();
+    if (stats.audio_stream_index < 0 || !stats.audio_codec_params) {
+        return;
+    }
+    if (!audio_engine_->add_track(
+            track.file_id,
+            *track.audio_packet_queue,
+            stats.audio_codec_params,
+            stats.audio_time_base)) {
+        spdlog::warn("[Renderer] Failed to start audio decoder for file_id={}", track.file_id);
+    }
+}
+
+void Renderer::unregister_track_audio(int file_id) {
+    if (audio_engine_ && file_id > 0) {
+        audio_engine_->remove_track(file_id);
     }
 }
 
@@ -1853,13 +1925,16 @@ std::unique_ptr<Renderer::TrackPipeline> Renderer::create_pipeline(const std::st
         pipeline->seek_controller->request_seek(initial_seek->target_pts_us, initial_seek->type);
     }
     pipeline->packet_queue = std::make_unique<PacketQueue>(100);
+    pipeline->audio_packet_queue = std::make_unique<PacketQueue>(100);
     pipeline->track_buffer = std::make_unique<TrackBuffer>(kTrackForwardDepth, kTrackBackwardDepth);
     spdlog::info("Renderer: track buffer depth forward={}, backward={}, max_cached={}",
                  kTrackForwardDepth,
                  kTrackBackwardDepth,
                  kTrackForwardDepth + 1);
     pipeline->demux_thread = std::make_unique<DemuxThread>(
-        path, *pipeline->packet_queue, *pipeline->seek_controller);
+        path, *pipeline->seek_controller);
+    pipeline->demux_thread->add_output(DemuxStreamKind::Video, *pipeline->packet_queue);
+    pipeline->demux_thread->add_optional_output(DemuxStreamKind::Audio, *pipeline->audio_packet_queue);
 
     if (!pipeline->demux_thread->start()) {
         spdlog::error("Renderer: failed to start demux for {}", path);
@@ -1926,6 +2001,7 @@ bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, Se
     const auto offset_us = current->offset_us;
     const auto use_hardware_decode = current->use_hardware_decode;
 
+    unregister_track_audio(file_id);
     current->decode_thread->stop();
     current->demux_thread->stop();
     render_sink_->set_track(slot, nullptr);
@@ -1948,6 +2024,8 @@ bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, Se
     replacement->file_id = file_id;
     replacement->offset_us = offset_us;
     replacement->recreated_for_paused_hevc_seek = true;
+    configure_track_seek_callback(*replacement);
+    register_track_audio(*replacement);
 
     render_sink_->set_track(slot, replacement->track_buffer.get());
     render_sink_->set_track_offset(slot, offset_us);
@@ -1980,9 +2058,13 @@ bool Renderer::recreate_decode_thread_for_seek(size_t slot, int64_t target_pts_u
         return false;
     }
 
+    const int file_id = track->file_id;
     track->demux_thread->set_seek_callback(
-        [dt = replacement.get()](int64_t pts, SeekType seek_type) {
+        [this, dt = replacement.get(), file_id](int64_t pts, SeekType seek_type) {
             dt->notify_seek(pts, seek_type);
+            if (audio_engine_) {
+                audio_engine_->notify_seek(file_id, pts, seek_type);
+            }
         });
 
     if (track->use_hardware_decode) {
@@ -2037,6 +2119,8 @@ int Renderer::add_track(const std::string& video_path) {
     tracks_[slot] = std::move(pipeline);
     tracks_[slot]->file_id = next_file_id_++;
     int new_file_id = tracks_[slot]->file_id;
+    configure_track_seek_callback(*tracks_[slot]);
+    register_track_audio(*tracks_[slot]);
 
     // Append new file_id to the order arrays
     for (int i = 0; i < 4; ++i) {
@@ -2059,6 +2143,12 @@ int Renderer::add_track(const std::string& video_path) {
         track->track_buffer->set_state(TrackState::Flushing);
         track->track_buffer->clear_frames();
         track->packet_queue->flush();
+        if (track->audio_packet_queue) {
+            track->audio_packet_queue->flush();
+        }
+        if (audio_engine_) {
+            audio_engine_->set_track_decode_paused(track->file_id, true);
+        }
         track->seek_controller->request_seek(track_target, SeekType::Keyframe);
         track->track_buffer->set_state(TrackState::Buffering);
         spdlog::info("Renderer::add_track: seeking slot={} to {:.3f}s (offset={:.3f}s)",
@@ -2088,6 +2178,7 @@ void Renderer::remove_track(int file_id) {
 
     // Stop the pipeline
     auto& track = tracks_[slot];
+    unregister_track_audio(track->file_id);
     track->decode_thread->stop();
     track->demux_thread->stop();
 

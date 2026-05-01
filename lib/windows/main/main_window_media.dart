@@ -23,6 +23,8 @@ class MainWindowMediaCoordinator {
   final int Function() durationUs;
   final int? Function() pendingSeekUs;
   final int Function() currentPtsUs;
+  final int? Function() audibleTrackFileId;
+  final void Function(int? fileId) setAudibleTrackFileId;
   final VoidCallback applyStartupLoopRangeIfReady;
   final VoidCallback cancelLoopBoundaryTimer;
   final VoidCallback resetAfterLastTrackRemoved;
@@ -44,6 +46,8 @@ class MainWindowMediaCoordinator {
     required this.durationUs,
     required this.pendingSeekUs,
     required this.currentPtsUs,
+    required this.audibleTrackFileId,
+    required this.setAudibleTrackFileId,
     required this.applyStartupLoopRangeIfReady,
     required this.cancelLoopBoundaryTimer,
     required this.resetAfterLastTrackRemoved,
@@ -146,6 +150,7 @@ class MainWindowMediaCoordinator {
         orElse: () => throw StateError('No track with fileId $fileId'),
       );
       final slot = entry.info.slot;
+      final wasAudible = audibleTrackFileId() == fileId;
 
       await controller.removeTrack(fileId);
       if (!_alive) return;
@@ -159,6 +164,10 @@ class MainWindowMediaCoordinator {
       } else {
         trackManager.setTracks(tracks);
         removeSyncOffset(slot);
+        if (wasAudible) {
+          setAudibleTrackFileId(null);
+          await controller.setAudibleTrack(null);
+        }
       }
     } catch (e) {
       if (_alive) log.severe("removeTrack failed: $e");

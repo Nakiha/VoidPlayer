@@ -37,6 +37,7 @@ target_include_directories(video_renderer_tests PRIVATE
 
 target_compile_definitions(video_renderer_tests PRIVATE
     VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
+    FFMPEG_EXE_PATH="${FFMPEG_ROOT}/bin/ffmpeg.exe"
 )
 
 add_test(NAME video_renderer_tests COMMAND video_renderer_tests)

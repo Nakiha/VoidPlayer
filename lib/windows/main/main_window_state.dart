@@ -26,6 +26,7 @@ class MainWindowStateModel {
   final bool dragging;
   final bool profilerVisible;
   final bool settingsVisible;
+  final int? audibleTrackFileId;
 
   const MainWindowStateModel({
     this.textureId,
@@ -49,6 +50,7 @@ class MainWindowStateModel {
     this.dragging = false,
     this.profilerVisible = false,
     this.settingsVisible = false,
+    this.audibleTrackFileId,
   });
 
   MainWindowStateModel copyWith({
@@ -73,6 +75,7 @@ class MainWindowStateModel {
     bool? dragging,
     bool? profilerVisible,
     bool? settingsVisible,
+    Object? audibleTrackFileId = _mainWindowStateUnset,
   }) {
     return MainWindowStateModel(
       textureId: textureId == _mainWindowStateUnset
@@ -105,6 +108,9 @@ class MainWindowStateModel {
       dragging: dragging ?? this.dragging,
       profilerVisible: profilerVisible ?? this.profilerVisible,
       settingsVisible: settingsVisible ?? this.settingsVisible,
+      audibleTrackFileId: audibleTrackFileId == _mainWindowStateUnset
+          ? this.audibleTrackFileId
+          : audibleTrackFileId as int?,
     );
   }
 }
@@ -157,6 +163,7 @@ class MainWindowStateStore extends ChangeNotifier {
         nativeLoopRangeSynced: false,
         loopStartUs: 0,
         loopEndUs: 0,
+        audibleTrackFileId: null,
       ),
     );
   }
@@ -228,5 +235,9 @@ class MainWindowStateStore extends ChangeNotifier {
 
   void setSettingsVisible(bool visible) {
     _set(_value.copyWith(settingsVisible: visible));
+  }
+
+  void setAudibleTrackFileId(int? fileId) {
+    _set(_value.copyWith(audibleTrackFileId: fileId));
   }
 }

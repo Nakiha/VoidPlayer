@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "video_renderer/buffer/packet_queue.h"
+#include "media/packet_queue.h"
 #include <thread>
 #include <chrono>
 

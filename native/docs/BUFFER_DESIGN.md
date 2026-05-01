@@ -11,7 +11,7 @@ DemuxThread → PacketQueue → DecodeThread → TrackBuffer → RenderThread
 
 ## PacketQueue
 
-头文件: `buffer/packet_queue.h`
+头文件: `media/packet_queue.h`
 
 有界阻塞队列，传递 AVPacket 所有权。
 

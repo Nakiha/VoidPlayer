@@ -1,14 +1,15 @@
 #pragma once
+#include "audio/audio_engine.h"
 #include "video_renderer/clock.h"
 #include "video_renderer/d3d11/device.h"
 #include "video_renderer/d3d11/texture.h"
 #include "video_renderer/d3d11/shader.h"
-#include "video_renderer/decode/demux_thread.h"
+#include "media/demux_thread.h"
 #include "video_renderer/decode/decode_thread.h"
 #include "video_renderer/decode/frame_converter.h"
-#include "video_renderer/buffer/packet_queue.h"
+#include "media/packet_queue.h"
 #include "video_renderer/buffer/track_buffer.h"
-#include "video_renderer/sync/seek_controller.h"
+#include "media/seek_controller.h"
 #include "video_renderer/sync/render_sink.h"
 #include "common/logging.h"
 #include <vector>
@@ -100,6 +101,8 @@ public:
     void seek(int64_t target_pts_us, SeekType type = SeekType::Keyframe);
     void set_speed(double speed);
     void set_loop_range(bool enabled, int64_t start_us, int64_t end_us);
+    void set_audible_track(int file_id);
+    int audible_track() const;
 
     // Frame stepping (pause + advance/retreat)
     void step_forward();
@@ -184,6 +187,7 @@ private:
         std::string file_path;
         int64_t offset_us = 0;        ///< Per-track sync offset in microseconds
         std::unique_ptr<PacketQueue> packet_queue;
+        std::unique_ptr<PacketQueue> audio_packet_queue;
         std::unique_ptr<TrackBuffer> track_buffer;
         std::unique_ptr<DemuxThread> demux_thread;
         std::unique_ptr<DecodeThread> decode_thread;
@@ -211,6 +215,9 @@ private:
                        bool force_recreate_paused_hevc = false);
     int64_t compute_frame_duration_us() const;
     void set_decode_paused_for_all_tracks(bool paused);
+    void configure_track_seek_callback(TrackPipeline& track);
+    void register_track_audio(TrackPipeline& track);
+    void unregister_track_audio(int file_id);
     bool should_defer_paused_hevc_seek_locked(int64_t target_pts_us, SeekType type);
     bool apply_deferred_paused_hevc_seek_locked();
     bool apply_loop_range_locked();
@@ -270,6 +277,7 @@ private:
     bool settle_eof_locked(int64_t max_presented_end_us);
 
     Clock clock_;
+    std::unique_ptr<AudioEngine> audio_engine_;
     std::unique_ptr<D3D11Device> d3d_device_;
     std::unique_ptr<TextureManager> texture_mgr_;
     std::unique_ptr<D3D11FramePresenter> frame_presenter_;

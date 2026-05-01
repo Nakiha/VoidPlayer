@@ -1,9 +1,9 @@
 #pragma once
-#include "video_renderer/buffer/packet_queue.h"
+#include "media/packet_queue.h"
 #include "video_renderer/buffer/track_buffer.h"
 #include "video_renderer/decode/frame_converter.h"
 #include "video_renderer/decode/hw/hw_decode_provider.h"
-#include "video_renderer/sync/seek_controller.h"
+#include "media/seek_controller.h"
 #include <thread>
 #include <atomic>
 #include <memory>

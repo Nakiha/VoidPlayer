@@ -137,6 +137,8 @@ class TrackRow extends StatelessWidget {
   final double offsetRatio; // clip start offset ratio
   final VoidCallback onRemove;
   final ValueChanged<int> onOffsetChanged;
+  final VoidCallback onToggleAudio;
+  final bool isAudible;
   final int syncOffsetMs;
   final double controlsWidth;
   final ValueChanged<double> onControlsWidthChanged;
@@ -159,6 +161,8 @@ class TrackRow extends StatelessWidget {
     this.offsetRatio = 0.0,
     required this.onRemove,
     required this.onOffsetChanged,
+    required this.onToggleAudio,
+    this.isAudible = false,
     this.syncOffsetMs = 0,
     this.controlsWidth = 320,
     required this.onControlsWidthChanged,
@@ -206,6 +210,28 @@ class TrackRow extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 4),
+                      SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: IconButton(
+                          onPressed: onToggleAudio,
+                          icon: Icon(
+                            isAudible ? Icons.volume_up : Icons.volume_off,
+                            size: 15,
+                            color: isAudible
+                                ? colorScheme.primary
+                                : colorScheme.onSurfaceVariant,
+                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 24,
+                            height: 24,
+                          ),
+                          tooltip: isAudible
+                              ? AppLocalizations.of(context)!.muteTrackAudio
+                              : AppLocalizations.of(context)!.playTrackAudio,
+                        ),
+                      ),
                       // Offset controls
                       SizedBox(
                         width: 24,

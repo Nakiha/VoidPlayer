@@ -473,6 +473,23 @@ void VideoRendererPlugin::HandleMethodCall(
         SetTrackOffset(method_call.arguments(), std::move(result));
     } else if (method == "setLoopRange") {
         SetLoopRange(method_call.arguments(), std::move(result));
+    } else if (method == "setAudibleTrack") {
+        if (renderer_ && method_call.arguments()) {
+            const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+            if (args) {
+                auto it = args->find(flutter::EncodableValue("fileId"));
+                if (it != args->end()) {
+                    int64_t file_id = -1;
+                    if (std::holds_alternative<int>(it->second)) {
+                        file_id = static_cast<int64_t>(std::get<int>(it->second));
+                    } else if (std::holds_alternative<int64_t>(it->second)) {
+                        file_id = std::get<int64_t>(it->second);
+                    }
+                    renderer_->set_audible_track(static_cast<int>(file_id));
+                }
+            }
+        }
+        result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "play") {
         if (renderer_) renderer_->play();
         result->Success(flutter::EncodableValue(nullptr));

@@ -17,12 +17,12 @@ struct SeekRequest {
 };
 
 /// Thread-safe seek request coordinator.
-/// The Renderer submits requests, the DemuxThread polls and executes them.
+/// The playback owner submits requests; the media demux thread polls and executes them.
 class SeekController {
 public:
     SeekController();
 
-    /// Submit a seek request (called from any thread, typically Renderer).
+    /// Submit a seek request (called from any thread, typically the playback owner).
     void request_seek(int64_t target_pts_us, SeekType type);
 
     /// Check if a seek request is pending (lock-free, for polling).

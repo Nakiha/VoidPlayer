@@ -2,7 +2,7 @@
 
 ## SeekController
 
-头文件: `sync/seek_controller.h`
+头文件: `media/seek_controller.h`
 
 Renderer 写入 seek 请求，DemuxThread 消费。
 

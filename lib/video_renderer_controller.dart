@@ -260,6 +260,13 @@ class VideoRendererController {
     });
   }
 
+  Future<void> setAudibleTrack(int? fileId) {
+    _ensureAlive();
+    return _channel.invokeMethod<void>('setAudibleTrack', {
+      'fileId': fileId ?? -1,
+    });
+  }
+
   Future<void> resize(int width, int height) {
     _ensureAlive();
     return _channel.invokeMethod<void>('resize', {

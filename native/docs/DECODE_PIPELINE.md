@@ -8,13 +8,14 @@ File -> DemuxThread -> PacketQueue -> DecodeThread -> FrameConverter -> TrackBuf
 
 ## DemuxThread
 
-头文件: `decode/demux_thread.h`
+头文件: `media/demux_thread.h`
 
 职责：
 
-- 打开视频文件并选择 `AVMEDIA_TYPE_VIDEO` stream
-- 将 stream PTS 转成微秒：`av_rescale_q(pts, time_base, {1, 1000000})`
-- 读取 `AVPacket` 写入 `PacketQueue`
+- 打开媒体输入并发现 video/audio stream
+- 按 `DemuxStreamKind` 将 `AVPacket` 分发到已注册的 `PacketQueue`
+- audio route 当前只选择第一个 `AVMEDIA_TYPE_AUDIO` stream，其他音轨 packet 会被丢弃
+- 保持 packet 原始 stream time base；DecodeThread 在 frame 输出时转成微秒
 - 轮询 `SeekController`，执行 `av_seek_frame` 后 flush packet queue
 - EOF 后等待 seek，而不是让线程立即失去复用机会
 

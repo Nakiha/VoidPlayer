@@ -1,4 +1,4 @@
-#include "video_renderer/sync/seek_controller.h"
+#include "media/seek_controller.h"
 #include <spdlog/spdlog.h>
 
 namespace vr {

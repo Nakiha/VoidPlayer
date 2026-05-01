@@ -41,6 +41,7 @@ class MainWindowViewModel {
   final double controlsWidth;
   final bool profilerVisible;
   final bool settingsVisible;
+  final int? audibleTrackFileId;
 
   const MainWindowViewModel({
     required this.dragging,
@@ -70,6 +71,7 @@ class MainWindowViewModel {
     required this.controlsWidth,
     required this.profilerVisible,
     required this.settingsVisible,
+    required this.audibleTrackFileId,
   });
 }
 
@@ -102,6 +104,7 @@ class MainWindowViewActions {
   final ValueChanged<LoopRangeHandle>? onLoopRangeChangeEnd;
   final void Function(int oldIndex, int newIndex) onReorder;
   final void Function(int slot, int offsetMs) onOffsetChanged;
+  final ValueChanged<int> onToggleTrackAudio;
   final ValueChanged<double> onControlsWidthChanged;
 
   const MainWindowViewActions({
@@ -133,6 +136,7 @@ class MainWindowViewActions {
     required this.onLoopRangeChangeEnd,
     required this.onReorder,
     required this.onOffsetChanged,
+    required this.onToggleTrackAudio,
     required this.onControlsWidthChanged,
   });
 }
@@ -232,6 +236,8 @@ class MainWindowView extends StatelessWidget {
                       onRemoveTrack: actions.onRemoveTrack,
                       onReorder: actions.onReorder,
                       onOffsetChanged: actions.onOffsetChanged,
+                      onToggleTrackAudio: actions.onToggleTrackAudio,
+                      audibleTrackFileId: model.audibleTrackFileId,
                       syncOffsets: model.syncOffsets,
                       maxEffectiveDurationUs: model.durationUs,
                       hoverPtsUs: model.hoverPtsUs,

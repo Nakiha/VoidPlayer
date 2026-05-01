@@ -17,7 +17,7 @@ File
   -> SwapChain 或 D3D11HeadlessOutput shared texture
 ```
 
-全链路时间戳使用微秒。DemuxThread 将 stream time base 转为 `{1, 1000000}` 后写入 packet/frame。
+DemuxThread 保留 packet 的 stream time base。DecodeThread 在解码出 frame 后将时间戳转为微秒，之后 renderer 管线统一使用微秒。
 
 ## TextureFrame
 

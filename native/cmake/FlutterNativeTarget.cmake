@@ -24,6 +24,7 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
         dxgi
         d3d11
         d3dcompiler
+        winmm
     )
 
     target_compile_definitions(${target_name} PRIVATE

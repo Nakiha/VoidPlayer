@@ -23,6 +23,12 @@ native/
 ├── probe_hw.cpp                    # 硬件能力探测工具
 ├── common/
 │   └── logging.h/cpp               # spdlog 配置 + 崩溃处理
+├── media/                          # 容器读取 / stream 分发（renderer 与 audio 共享）
+│   ├── demux_thread.h/cpp          # FFmpeg demux + packet route
+│   ├── packet_queue.h/cpp          # AVPacket 线程安全队列
+│   └── seek_controller.h/cpp       # Seek 请求协调
+├── audio/
+│   └── audio_engine.h/cpp          # 音频解码 + WinMM 输出（单 audible track）
 ├── video_renderer/                 # 核心静态库
 │   ├── renderer.h/cpp              # 渲染器主入口
 │   ├── clock.h/cpp                 # PTS 时钟（可注入时间源）
@@ -36,19 +42,16 @@ native/
 │   │   ├── headless_output.h/cpp   # Flutter shared texture 三缓冲输出
 │   │   └── shader.h/cpp            # HLSL 编译管理
 │   ├── decode/                     # 解码管线
-│   │   ├── demux_thread.h/cpp      # Demux 线程
 │   │   ├── decode_thread.h/cpp     # Decode 线程
 │   │   ├── frame_converter.h/cpp   # AVFrame → TextureFrame
 │   │   └── hw/                     # 硬件解码 Provider
 │   │       ├── hw_decode_provider.h/cpp
 │   │       └── d3d11va_provider.h/cpp
 │   ├── buffer/                     # 帧缓冲
-│   │   ├── packet_queue.h/cpp      # AVPacket 线程安全队列
 │   │   ├── bidi_ring_buffer.h/cpp  # 双向环形缓冲
 │   │   └── track_buffer.h/cpp      # 轨道状态 + Preroll
 │   ├── sync/                       # 同步
-│   │   ├── render_sink.h/cpp       # 上屏决策
-│   │   └── seek_controller.h/cpp   # Seek 协调
+│   │   └── render_sink.h/cpp       # 上屏决策
 │   └── shaders/
 │       └── multitrack.hlsl         # RGBA + NV12 着色器
 ├── tests/                          # Catch2 单元测试
@@ -73,7 +76,7 @@ Renderer                          # 主入口，生命周期管理
     ├── PacketQueue               # AVPacket 有界阻塞队列
     ├── TrackBuffer               # 状态机 + Preroll
     │   └── BidiRingBuffer        # 双向环形缓冲
-    ├── DemuxThread               # 文件读取线程
+    ├── DemuxThread               # media 层文件读取 / packet 分发线程
     ├── DecodeThread              # 解码线程
     │   └── FrameConverter        # YUV→RGBA / NV12 包装
     │   └── HwDecodeProvider?     # 硬解（可选）
@@ -84,7 +87,7 @@ Renderer                          # 主入口，生命周期管理
 
 ```
 Video File
-  → [DemuxThread] → AVPacket (PTS=μs)
+  → [DemuxThread] → AVPacket (stream time_base)
     → [PacketQueue] →
       → [DecodeThread] → AVFrame (YUV/D3D11VA)
         → [FrameConverter] → TextureFrame

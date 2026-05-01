@@ -16,6 +16,7 @@ target_link_libraries(video_renderer_lib PUBLIC
     dxgi
     d3d11
     d3dcompiler
+    winmm
 )
 
 void_configure_renderer_shaders("${CMAKE_CURRENT_BINARY_DIR}")

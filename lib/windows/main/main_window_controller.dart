@@ -98,6 +98,7 @@ class MainWindowController {
       controlsWidth: _timelineControlsWidth,
       profilerVisible: _profilerVisible,
       settingsVisible: _settingsVisible,
+      audibleTrackFileId: _audibleTrackFileId,
     );
   }
 
@@ -159,8 +160,15 @@ class MainWindowController {
           : null,
       onReorder: trackManager.moveTrack,
       onOffsetChanged: mediaCoordinator.onOffsetChanged,
+      onToggleTrackAudio: _toggleTrackAudio,
       onControlsWidthChanged: stateStore.setTimelineControlsWidth,
     );
+  }
+
+  void _toggleTrackAudio(int fileId) {
+    final next = _audibleTrackFileId == fileId ? null : fileId;
+    stateStore.setAudibleTrackFileId(next);
+    fireAndLog('set audible track', renderer.setAudibleTrack(next));
   }
 
   void _initCoordinators() {
@@ -223,6 +231,8 @@ class MainWindowController {
       durationUs: () => _durationUs,
       pendingSeekUs: () => _pendingSeekUs,
       currentPtsUs: () => _currentPtsUs,
+      audibleTrackFileId: () => _audibleTrackFileId,
+      setAudibleTrackFileId: stateStore.setAudibleTrackFileId,
       applyStartupLoopRangeIfReady:
           playbackCoordinator.applyStartupLoopRangeIfReady,
       cancelLoopBoundaryTimer: playbackCoordinator.cancelLoopBoundaryTimer,
@@ -297,6 +307,7 @@ class MainWindowController {
   bool get _dragging => _state.dragging;
   bool get _profilerVisible => _state.profilerVisible;
   bool get _settingsVisible => _state.settingsVisible;
+  int? get _audibleTrackFileId => _state.audibleTrackFileId;
   double get _timelineStartWidth => playbackCoordinator.timelineStartWidth;
   int get _resolvedLoopStartUs => playbackCoordinator.resolvedLoopStartUs;
   int get _resolvedLoopEndUs => playbackCoordinator.resolvedLoopEndUs;

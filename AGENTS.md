@@ -28,14 +28,13 @@ python dev.py build --native         # 仅构建 native C++ 模块
 python dev.py launch                    # 运行 (release)
 python dev.py launch --debug            # 运行 (debug，支持 hot reload)
 python dev.py launch --log-level flutter=DEBUG,native=TRACE   # 传递日志级别
-python dev.py ui-test ui_tests/smoke/basic.csv                # 启动 app 并执行 UI 自动化脚本
 
 # Native Demo
 python dev.py demo                   # 运行 PySide6 交互式 demo
 
 # 测试
+python dev.py ui-test ui_tests/smoke/basic.csv                # 启动 app 并执行 UI 自动化脚本
 python dev.py test                   # Flutter 单元测试 + native 构建/测试
-python dev.py test --flutter-only    # 仅 Flutter 单元测试
 python dev.py test --native-only     # 仅 native 构建/测试
 ```
 
@@ -43,9 +42,9 @@ python dev.py test --native-only     # 仅 native 构建/测试
 
 ### 验证优先级
 
-- 修改 **Flutter UI / Action / 窗口交互 / 播放控制流程 / 主窗口 coordinator 生命周期** 后，必须优先使用 `ui_tests/` 下对应目录的 CSV 做一次自动化闭环验证，而不是只跑 Flutter 单元测试或只做静态阅读；`dev.py ui-test` 可以一次传多个 CSV 并顺序执行。
+- 修改 **Flutter UI / Action / 窗口交互 / 播放控制流程 / 主窗口 coordinator 生命周期** 后，必须优先使用 `ui_tests/` 下对应目录的 CSV 做一次自动化闭环验证，而不是只跑 Flutter 单元测试或只做静态阅读；`dev.py ui-test` 可以一次传多个 CSV 并顺序执行；添加 `--build` 可以顺带构建 flutter 程序
 - 通用 smoke 首选命令：`python dev.py ui-test ui_tests/smoke/basic.csv`。如果本次改动涉及加载、播放、seek、layout、track、analysis 等具体路径，应在 smoke 之外追加对应目录脚本。
-- `python dev.py test --flutter-only` 只适合作为 **纯 Dart 非 UI 逻辑** 的补充验证，例如参数解析、纯数据模型、无窗口/无 native 调用的工具函数；它不能替代主窗口或播放交互的 UI 自动化。
+- `python dev.py test --flutter-only` 目前不能作为任何flutter侧修改测试，因为只验证了app link的拉起效果，并且作为重native重gpu交互的程序flutter单侧单元测试的实际效果非常有限
 
 ### UI 自动化选择
 

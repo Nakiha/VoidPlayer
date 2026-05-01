@@ -59,7 +59,6 @@
   "dependencies": "依赖项",
   "license": "许可证：GPLv3",
   "refresh": "刷新",
-  "save": "保存",
   "cacheMaxLimit": "最大缓存大小 (0 表示无限制)",
   "cacheUsageWithLimit": "{used} / {limit}",
   "cacheUsageUnlimited": "已使用 {used}",

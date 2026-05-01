@@ -151,9 +151,6 @@
   "refresh": "Refresh",
   "@refresh": { "description": "Refresh button tooltip" },
 
-  "save": "Save",
-  "@save": { "description": "Save button tooltip" },
-
   "cacheMaxLimit": "Maximum cache size (0 = unlimited)",
   "@cacheMaxLimit": { "description": "Analysis cache maximum size setting label" },
 

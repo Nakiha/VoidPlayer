@@ -17,6 +17,7 @@ class CacheSettingsPage extends StatefulWidget {
 
 class _CacheSettingsPageState extends State<CacheSettingsPage> {
   late final TextEditingController _limitController;
+  late final FocusNode _limitFocusNode;
   Timer? _refreshTimer;
   AnalysisCacheSnapshot? _snapshot;
   final Set<String> _selectedHashes = <String>{};
@@ -29,6 +30,7 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
     _limitController = TextEditingController(
       text: _limitInputFromBytes(AppConfig.instance.analysisCacheMaxBytes),
     );
+    _limitFocusNode = FocusNode()..addListener(_onLimitFocusChanged);
     _refresh();
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 1),
@@ -39,6 +41,11 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    if (_limitFocusNode.hasFocus) {
+      unawaited(_saveLimit(refresh: false));
+    }
+    _limitFocusNode.removeListener(_onLimitFocusChanged);
+    _limitFocusNode.dispose();
     _limitController.dispose();
     super.dispose();
   }
@@ -68,7 +75,11 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
           const SizedBox(height: 4),
           if (snapshot != null) _CachePathRow(path: snapshot.path),
           const SizedBox(height: 16),
-          _LimitEditor(controller: _limitController, onSave: _saveLimit),
+          _LimitEditor(
+            controller: _limitController,
+            focusNode: _limitFocusNode,
+            onSubmitted: () => _saveLimit(),
+          ),
           const SizedBox(height: 16),
           if (snapshot == null)
             const LinearProgressIndicator()
@@ -130,14 +141,21 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
     }
   }
 
-  Future<void> _saveLimit() async {
-    final valueMb = double.tryParse(_limitController.text.trim());
-    final bytes = valueMb == null || valueMb <= 0
-        ? 0
-        : (valueMb * 1024 * 1024).round();
+  void _onLimitFocusChanged() {
+    if (!_limitFocusNode.hasFocus) {
+      unawaited(_saveLimit());
+    }
+  }
+
+  Future<void> _saveLimit({bool refresh = true}) async {
+    final valueMb = int.tryParse(_limitController.text.trim()) ?? 0;
+    if (_limitController.text != '$valueMb') {
+      _limitController.text = '$valueMb';
+    }
+    final bytes = valueMb <= 0 ? 0 : valueMb * 1024 * 1024;
     AppConfig.instance.analysisCacheMaxBytes = bytes;
     await AppConfig.instance.save();
-    await _refresh();
+    if (refresh && mounted) await _refresh();
   }
 
   static String _limitInputFromBytes(int bytes) {
@@ -211,56 +229,33 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
 
 class _LimitEditor extends StatelessWidget {
   final TextEditingController controller;
-  final Future<void> Function() onSave;
+  final FocusNode focusNode;
+  final VoidCallback onSubmitted;
 
-  const _LimitEditor({required this.controller, required this.onSave});
+  const _LimitEditor({
+    required this.controller,
+    required this.focusNode,
+    required this.onSubmitted,
+  });
 
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: SizedBox(
-            height: 48,
-            child: TextField(
-              controller: controller,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: InputDecoration(
-                labelText: l.cacheMaxLimit,
-                suffixText: 'MB',
-                border: const OutlineInputBorder(),
-                isDense: true,
-              ),
-              onSubmitted: (_) => onSave(),
-            ),
-          ),
+    return SizedBox(
+      height: 48,
+      child: TextField(
+        controller: controller,
+        focusNode: focusNode,
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        decoration: InputDecoration(
+          labelText: l.cacheMaxLimit,
+          suffixText: 'MB',
+          border: const OutlineInputBorder(),
+          isDense: true,
         ),
-        const SizedBox(width: 8),
-        SizedBox(
-          width: 42,
-          height: 42,
-          child: FilledButton(
-            onPressed: onSave,
-            style: FilledButton.styleFrom(
-              fixedSize: const Size(42, 42),
-              minimumSize: const Size(42, 42),
-              padding: EdgeInsets.zero,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Tooltip(
-              message: l.save,
-              child: const Icon(Icons.save, size: 18),
-            ),
-          ),
-        ),
-      ],
+        onSubmitted: (_) => onSubmitted(),
+      ),
     );
   }
 }

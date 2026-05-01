@@ -1475,13 +1475,14 @@ void Renderer::render_loop() {
         if (decision.should_present) {
             // Independent presentation: fill missing tracks from last decision
             // so each track always shows a frame (new or carried over).
-            // Only carry over if the track is still within its effective window.
+            // Once a track has started, keep carrying its last frame even after
+            // that track reaches EOF. This lets shorter tracks freeze on their
+            // final image while longer tracks continue playing.
             for (size_t i = 0; i < kMaxTracks; ++i) {
                 if (!decision.frames[i].has_value() &&
                     last_decision_.frames[i].has_value() && tracks_[i]) {
                     int64_t effective_pts = decision.current_pts_us - tracks_[i]->offset_us;
-                    int64_t track_dur = tracks_[i]->demux_thread->stats().duration_us;
-                    if (effective_pts >= 0 && effective_pts <= track_dur) {
+                    if (effective_pts >= 0) {
                         decision.frames[i] = last_decision_.frames[i];
                     }
                 }

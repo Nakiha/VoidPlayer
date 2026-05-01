@@ -29,6 +29,10 @@ native/
 │   └── seek_controller.h/cpp       # Seek 请求协调
 ├── audio/
 │   └── audio_engine.h/cpp          # 音频解码 + WinMM 输出（单 audible track）
+├── player/
+│   └── native_player.h/cpp         # native 播放 facade，平级拥有 playback + renderer
+├── playback/
+│   └── playback_controller.h/cpp   # 播放级控制，拥有 Clock + AudioEngine
 ├── video_renderer/                 # 核心静态库
 │   ├── renderer.h/cpp              # 渲染器主入口
 │   ├── clock.h/cpp                 # PTS 时钟（可注入时间源）

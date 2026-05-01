@@ -28,7 +28,12 @@ DecodeDeviceMode default_decode_device_mode(AVCodecID codec_id) {
     return DecodeDeviceMode::IndependentDevice;
 }
 
-Renderer::Renderer() = default;
+Renderer::Renderer()
+    : owned_playback_(std::make_unique<PlaybackController>())
+    , playback_(owned_playback_.get()) {}
+
+Renderer::Renderer(PlaybackController& playback)
+    : playback_(&playback) {}
 
 Renderer::~Renderer() {
     shutdown();
@@ -73,7 +78,11 @@ bool Renderer::initialize(const RendererConfig& config) {
     headless_ = config.headless;
     target_width_ = config.width;
     target_height_ = config.height;
-    audio_engine_ = std::make_unique<AudioEngine>();
+    playback_session_started_by_renderer_ = false;
+    if (!playback_->audio_engine()) {
+        playback_->start_session();
+        playback_session_started_by_renderer_ = true;
+    }
 
     d3d_device_ = std::make_unique<D3D11Device>();
     if (config.headless) {
@@ -189,7 +198,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     }
 
     // Setup render sink
-    render_sink_ = std::make_unique<RenderSink>(clock_);
+    render_sink_ = std::make_unique<RenderSink>(playback_->clock());
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (tracks_[i]) {
             render_sink_->set_track(i, tracks_[i]->track_buffer.get());
@@ -299,9 +308,9 @@ void Renderer::release_resources_locked() {
     }
 
     render_sink_.reset();
-    if (audio_engine_) {
-        audio_engine_->clear();
-        audio_engine_.reset();
+    if (playback_ && playback_session_started_by_renderer_) {
+        playback_->stop_session();
+        playback_session_started_by_renderer_ = false;
     }
     shader_mgr_.reset();
     frame_presenter_.reset();
@@ -340,10 +349,6 @@ void Renderer::release_resources_locked() {
     last_resize_time_ = std::chrono::steady_clock::time_point{};
     stats_start_time_ = std::chrono::steady_clock::time_point{};
     for (auto& bl : perf_baselines_) bl.frames = 0;
-    clock_.pause();
-    clock_.seek(0);
-    clock_.set_speed(1.0);
-
     initialized_ = false;
 }
 
@@ -361,8 +366,7 @@ void Renderer::play() {
         tracks_[i]->decode_thread->set_pause_after_preroll(false);
     }
     set_decode_paused_for_all_tracks(false);
-    if (audio_engine_) audio_engine_->play();
-    clock_.resume();
+    playback_->play();
     playing_ = true;
 }
 
@@ -374,8 +378,7 @@ void Renderer::pause() {
         tracks_[i]->decode_thread->set_pause_after_preroll(true);
     }
     set_decode_paused_for_all_tracks(true);
-    if (audio_engine_) audio_engine_->pause();
-    clock_.pause();
+    playback_->pause();
     playing_ = false;
 }
 
@@ -403,16 +406,16 @@ void Renderer::set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
 void Renderer::set_audible_track(int file_id) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
-    if (!audio_engine_) return;
+    if (!playback_->audio_engine()) return;
     if (file_id >= 0 && find_slot_by_file_id(file_id) < 0) {
         file_id = -1;
     }
-    audio_engine_->set_active_track(file_id);
+    playback_->audio_engine()->set_active_track(file_id);
 }
 
 int Renderer::audible_track() const {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    return audio_engine_ ? audio_engine_->active_track() : -1;
+    return playback_->audio_engine() ? playback_->audio_engine()->active_track() : -1;
 }
 
 void Renderer::seek_internal(int64_t target_pts_us,
@@ -422,7 +425,7 @@ void Renderer::seek_internal(int64_t target_pts_us,
     // Caller must hold state_mutex_
     spdlog::info("[Renderer] seek_internal: target={:.3f}s, type={}",
                  target_pts_us / 1e6, type == SeekType::Exact ? "Exact" : "Keyframe");
-    clock_.seek(target_pts_us);
+    playback_->seek_clock(target_pts_us);
     if (allow_deferred && should_defer_paused_hevc_seek_locked(target_pts_us, type)) {
         return;
     }
@@ -436,8 +439,8 @@ void Renderer::seek_internal(int64_t target_pts_us,
         // Pause decoder FIRST to prevent stale packets from reaching the codec
         // (avoids HEVC "Could not find ref" warnings during seek transition)
         track->decode_thread->set_decode_paused(true);
-        if (audio_engine_) {
-            audio_engine_->set_track_decode_paused(track->file_id, true);
+        if (playback_->audio_engine()) {
+            playback_->audio_engine()->set_track_decode_paused(track->file_id, true);
         }
         auto buf_count_before = track->track_buffer->total_count();
         auto pq_size_before = track->packet_queue->size();
@@ -560,11 +563,11 @@ bool Renderer::apply_loop_range_locked() {
     if (!playing_.load() ||
         !loop_range_.enabled ||
         loop_range_.end_us <= loop_range_.start_us ||
-        clock_.is_paused()) {
+        playback_->clock().is_paused()) {
         return false;
     }
 
-    const int64_t pts = clock_.current_pts_us();
+    const int64_t pts = playback_->clock().current_pts_us();
     if (pts < loop_range_.end_us) {
         return false;
     }
@@ -607,7 +610,7 @@ void Renderer::mark_paused_hevc_seek_preview_drawn_locked() {
 
 bool Renderer::build_step_forward_decision_locked(PresentDecision& decision) const {
     decision = PresentDecision();
-    decision.current_pts_us = clock_.current_pts_us();
+    decision.current_pts_us = playback_->clock().current_pts_us();
     const int64_t frame_duration_us = compute_frame_duration_us();
     const int64_t max_step_gap_us = frame_duration_us + frame_duration_us / 2 + 2000;
 
@@ -658,7 +661,7 @@ void Renderer::discard_step_forward_consumed_frames_locked(const PresentDecision
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks_[i]) continue;
 
-        int64_t keep_after_pts = clock_.current_pts_us() - tracks_[i]->offset_us;
+        int64_t keep_after_pts = playback_->clock().current_pts_us() - tracks_[i]->offset_us;
         if (decision.frames[i].has_value()) {
             keep_after_pts = decision.frames[i]->pts_us;
         } else if (last_decision_.frames[i].has_value()) {
@@ -786,7 +789,7 @@ void Renderer::step_forward() {
             if (buf->state() == TrackState::Buffering) return;
         }
 
-        clock_.pause();
+        playback_->clock().pause();
         playing_ = false;
 
         if (build_step_forward_decision_locked(step_decision)) {
@@ -795,7 +798,7 @@ void Renderer::step_forward() {
             if (ref >= 0) {
                 auto& frame = step_decision.frames[ref];
                 if (frame.has_value()) {
-                    clock_.seek(frame->pts_us + tracks_[ref]->offset_us);
+                    playback_->clock().seek(frame->pts_us + tracks_[ref]->offset_us);
                 }
             }
             have_step_decision = true;
@@ -825,7 +828,7 @@ void Renderer::step_forward() {
                     if (ref >= 0) {
                         auto& frame = step_decision.frames[ref];
                         if (frame.has_value()) {
-                            clock_.seek(frame->pts_us + tracks_[ref]->offset_us);
+                            playback_->clock().seek(frame->pts_us + tracks_[ref]->offset_us);
                         }
                     }
                     have_step_decision = true;
@@ -843,7 +846,7 @@ void Renderer::step_forward() {
                 tracks_[i]->decode_thread->set_decode_paused(true);
             }
 
-            int64_t base_pts = clock_.current_pts_us();
+            int64_t base_pts = playback_->clock().current_pts_us();
             int ref = first_active_track();
             if (ref >= 0) {
                 if (last_decision_.frames[ref].has_value()) {
@@ -858,7 +861,7 @@ void Renderer::step_forward() {
                 exact_seek_target = std::min(exact_seek_target, cached_duration_us_);
             }
             spdlog::info("[Renderer] step_forward exact_seek: visible_pts={:.3f}s, clock_pts={:.3f}s, duration={:.3f}ms, target={:.3f}s",
-                         base_pts / 1e6, clock_.current_pts_us() / 1e6, dur / 1e3, exact_seek_target / 1e6);
+                         base_pts / 1e6, playback_->clock().current_pts_us() / 1e6, dur / 1e3, exact_seek_target / 1e6);
             need_exact_seek = true;
         }
     }
@@ -877,7 +880,7 @@ void Renderer::step_forward() {
         std::lock_guard<std::mutex> lock(state_mutex_);
         seek_internal(exact_seek_target, SeekType::Exact);
         spdlog::info("[Renderer] step_forward exact_seek done: clock_pts={:.3f}s",
-                     clock_.current_pts_us() / 1e6);
+                     playback_->clock().current_pts_us() / 1e6);
     }
 }
 
@@ -896,7 +899,7 @@ void Renderer::step_backward() {
             if (buf->state() == TrackState::Buffering) return;
         }
 
-        clock_.pause();
+        playback_->clock().pause();
         playing_ = false;
 
         // Check if ALL tracks can retreat (cache hit)
@@ -918,7 +921,7 @@ void Renderer::step_backward() {
             if (ref >= 0) {
                 auto frame = tracks_[ref]->track_buffer->peek(0);
                 if (frame.has_value()) {
-                    clock_.seek(frame->pts_us);
+                    playback_->clock().seek(frame->pts_us);
                 }
             }
         } else {
@@ -928,12 +931,12 @@ void Renderer::step_backward() {
             // previous frame by 1us and exact seek's "< target" check discards it.
             int64_t dur = compute_frame_duration_us();
             int64_t target = std::max(int64_t(0),
-                clock_.current_pts_us() - dur - 1000);
+                playback_->clock().current_pts_us() - dur - 1000);
             spdlog::info("[Renderer] step_backward exact_seek: pts={:.3f}s, duration={:.3f}ms, target={:.3f}s",
-                         clock_.current_pts_us() / 1e6, dur / 1e3, target / 1e6);
+                         playback_->clock().current_pts_us() / 1e6, dur / 1e3, target / 1e6);
             seek_internal(target, SeekType::Exact);
             spdlog::info("[Renderer] step_backward exact_seek done: clock_pts={:.3f}s",
-                         clock_.current_pts_us() / 1e6);
+                         playback_->clock().current_pts_us() / 1e6);
             // Don't draw stale frame — seek_internal set preview_drawn_=false,
             // render loop will draw the new frame when decode completes.
             return;
@@ -1038,8 +1041,8 @@ void Renderer::set_decode_paused_for_all_tracks(bool paused) {
         if (!tracks_[i]) continue;
         tracks_[i]->decode_thread->set_decode_paused(paused);
     }
-    if (audio_engine_) {
-        audio_engine_->set_all_decode_paused(paused);
+    if (playback_->audio_engine()) {
+        playback_->audio_engine()->set_all_decode_paused(paused);
     }
 }
 
@@ -1049,14 +1052,14 @@ void Renderer::configure_track_seek_callback(TrackPipeline& track) {
     track.demux_thread->set_seek_callback(
         [this, dt, file_id](int64_t pts, SeekType type) {
             dt->notify_seek(pts, type);
-            if (audio_engine_) {
-                audio_engine_->notify_seek(file_id, pts, type);
+            if (playback_->audio_engine()) {
+                playback_->audio_engine()->notify_seek(file_id, pts, type);
             }
         });
 }
 
 void Renderer::register_track_audio(TrackPipeline& track) {
-    if (!audio_engine_ ||
+    if (!playback_->audio_engine() ||
         !track.audio_packet_queue ||
         !track.demux_thread ||
         track.file_id <= 0) {
@@ -1066,7 +1069,7 @@ void Renderer::register_track_audio(TrackPipeline& track) {
     if (stats.audio_stream_index < 0 || !stats.audio_codec_params) {
         return;
     }
-    if (!audio_engine_->add_track(
+    if (!playback_->audio_engine()->add_track(
             track.file_id,
             *track.audio_packet_queue,
             stats.audio_codec_params,
@@ -1076,8 +1079,8 @@ void Renderer::register_track_audio(TrackPipeline& track) {
 }
 
 void Renderer::unregister_track_audio(int file_id) {
-    if (audio_engine_ && file_id > 0) {
-        audio_engine_->remove_track(file_id);
+    if (playback_->audio_engine() && file_id > 0) {
+        playback_->audio_engine()->remove_track(file_id);
     }
 }
 
@@ -1118,7 +1121,7 @@ bool Renderer::settle_eof_locked(int64_t max_presented_end_us) {
     }
 
     const int64_t duration_us = effective_duration_us_locked();
-    const int64_t current_us = clock_.current_pts_us();
+    const int64_t current_us = playback_->clock().current_pts_us();
     const int64_t frame_duration_us = compute_frame_duration_us();
     const int64_t eof_tolerance_us =
         std::max<int64_t>(frame_duration_us + 2000, 5000);
@@ -1134,8 +1137,8 @@ bool Renderer::settle_eof_locked(int64_t max_presented_end_us) {
     }
 
     set_decode_paused_for_all_tracks(true);
-    clock_.seek(end_us);
-    clock_.pause();
+    playback_->clock().seek(end_us);
+    playback_->clock().pause();
     playing_ = false;
     preview_drawn_ = true;
     spdlog::info("[Renderer] EOF reached: clock fixed at {:.3f}s (last_frame_end={:.3f}s, duration={:.3f}s)",
@@ -1147,7 +1150,7 @@ bool Renderer::settle_eof_locked(int64_t max_presented_end_us) {
 
 void Renderer::set_speed(double speed) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    clock_.set_speed(speed);
+    playback_->set_speed(speed);
 }
 
 bool Renderer::is_playing() const {
@@ -1159,11 +1162,11 @@ bool Renderer::is_initialized() const {
 }
 
 int64_t Renderer::current_pts_us() const {
-    return clock_.current_pts_us();
+    return playback_->clock().current_pts_us();
 }
 
 double Renderer::current_speed() const {
-    return clock_.speed();
+    return playback_->speed();
 }
 
 size_t Renderer::track_count() const {
@@ -1360,20 +1363,20 @@ void Renderer::render_loop() {
         }
         was_buffering_ = any_buffering;
 
-        if (any_buffering && !clock_.is_paused()) {
-            clock_.pause();
+        if (any_buffering && !playback_->clock().is_paused()) {
+            playback_->clock().pause();
             spdlog::info("[Renderer] Preroll: clock PENDING, some track buffering, "
                          "(playing={})", playing_snapshot);
-        } else if (!any_buffering && clock_.is_paused() && playing_snapshot) {
+        } else if (!any_buffering && playback_->clock().is_paused() && playing_snapshot) {
             set_decode_paused_for_all_tracks(false);
-            clock_.resume();
+            playback_->clock().resume();
             preview_drawn_ = false;
             spdlog::info("[Renderer] === Preroll COMPLETE: all tracks ready, clock resumed, "
                          "playing_={}, pts={:.3f}s)",
-                         playing_snapshot, clock_.current_pts_us() / 1e6);
+                         playing_snapshot, playback_->clock().current_pts_us() / 1e6);
         }
 
-        if (!playing_snapshot || clock_.is_paused()) {
+        if (!playing_snapshot || playback_->clock().is_paused()) {
             // While paused/prerolling, draw current frame if not yet drawn
             if (!preview_drawn_) {
                 bool drawn = false;
@@ -1433,7 +1436,7 @@ void Renderer::render_loop() {
                         if (!preserve_requested_clock &&
                             ref >= 0 &&
                             preview.frames[ref].has_value()) {
-                            clock_.seek(preview.frames[ref]->pts_us);
+                            playback_->clock().seek(preview.frames[ref]->pts_us);
                         }
                         spdlog::info("[Renderer] Paused frame: pts={:.3f}s",
                                      ref >= 0 && preview.frames[ref].has_value()
@@ -1452,7 +1455,7 @@ void Renderer::render_loop() {
             auto now = std::chrono::steady_clock::now();
             if (now - diag_time >= diag_interval) {
                 diag_time = now;
-                int64_t pts = clock_.current_pts_us();
+                int64_t pts = playback_->clock().current_pts_us();
                 int64_t pts_delta = pts - diag_last_pts;
                 diag_last_pts = pts;
                 for (size_t i = 0; i < kMaxTracks; ++i) {
@@ -1512,9 +1515,9 @@ void Renderer::render_loop() {
                 }
             }
             if (buffer_empty && max_end_pts > 0) {
-                int64_t current = clock_.current_pts_us();
+                int64_t current = playback_->clock().current_pts_us();
                 if (current > max_end_pts) {
-                    clock_.seek(max_end_pts);
+                    playback_->clock().seek(max_end_pts);
                 }
                 if (settle_eof_locked(max_end_pts)) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -1527,7 +1530,7 @@ void Renderer::render_loop() {
         // frame should be displayed.  This is drift-free because each sleep
         // targets an absolute PTS rather than an accumulated relative duration.
         {
-            int64_t current_pts = clock_.current_pts_us();
+            int64_t current_pts = playback_->clock().current_pts_us();
             int64_t next_event_pts = INT64_MAX;
 
             for (size_t i = 0; i < kMaxTracks; ++i) {
@@ -1545,7 +1548,7 @@ void Renderer::render_loop() {
             }
 
             if (next_event_pts != INT64_MAX) {
-                double spd = clock_.speed();
+                double spd = playback_->clock().speed();
                 if (spd > 0) {
                     int64_t pts_delta = next_event_pts - current_pts;
                     int64_t sleep_us = static_cast<int64_t>(pts_delta / spd);
@@ -2062,8 +2065,8 @@ bool Renderer::recreate_decode_thread_for_seek(size_t slot, int64_t target_pts_u
     track->demux_thread->set_seek_callback(
         [this, dt = replacement.get(), file_id](int64_t pts, SeekType seek_type) {
             dt->notify_seek(pts, seek_type);
-            if (audio_engine_) {
-                audio_engine_->notify_seek(file_id, pts, seek_type);
+            if (playback_->audio_engine()) {
+                playback_->audio_engine()->notify_seek(file_id, pts, seek_type);
             }
         });
 
@@ -2095,11 +2098,17 @@ int Renderer::add_track(const std::string& video_path) {
 
     // Pause playback to avoid render loop reading partially-initialized pipeline
     bool was_playing = playing_.load();
-    if (was_playing) { clock_.pause(); playing_ = false; }
+    if (was_playing) {
+        playback_->pause();
+        playing_ = false;
+    }
 
     auto pipeline = create_pipeline(video_path);
     if (!pipeline) {
-        if (was_playing) { clock_.resume(); playing_ = true; }
+        if (was_playing) {
+            playback_->play();
+            playing_ = true;
+        }
         return -1;
     }
     pipeline->decode_thread->set_pause_after_preroll(!was_playing);
@@ -2135,7 +2144,7 @@ int Renderer::add_track(const std::string& video_path) {
     // Without this, the new track starts from PTS=0 and evaluate() discards all its
     // frames as "expired" when the clock is elsewhere, causing both panels to show
     // the same old video.
-    int64_t current_pts = clock_.current_pts_us();
+    int64_t current_pts = playback_->clock().current_pts_us();
     if (current_pts > 0) {
         auto& track = tracks_[slot];
         int64_t track_target = std::max(current_pts - track->offset_us, int64_t(0));
@@ -2146,8 +2155,8 @@ int Renderer::add_track(const std::string& video_path) {
         if (track->audio_packet_queue) {
             track->audio_packet_queue->flush();
         }
-        if (audio_engine_) {
-            audio_engine_->set_track_decode_paused(track->file_id, true);
+        if (playback_->audio_engine()) {
+            playback_->audio_engine()->set_track_decode_paused(track->file_id, true);
         }
         track->seek_controller->request_seek(track_target, SeekType::Keyframe);
         track->track_buffer->set_state(TrackState::Buffering);
@@ -2174,7 +2183,10 @@ void Renderer::remove_track(int file_id) {
 
     // Pause playback
     bool was_playing = playing_.load();
-    if (was_playing) { clock_.pause(); playing_ = false; }
+    if (was_playing) {
+        playback_->pause();
+        playing_ = false;
+    }
 
     // Stop the pipeline
     auto& track = tracks_[slot];
@@ -2238,7 +2250,7 @@ void Renderer::remove_track(int file_id) {
 
     // If still have tracks and was playing, resume
     if (was_playing && first_active_track() >= 0) {
-        clock_.resume();
+        playback_->play();
         playing_ = true;
     }
 

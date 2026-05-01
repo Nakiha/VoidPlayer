@@ -1,6 +1,5 @@
 #pragma once
-#include "audio/audio_engine.h"
-#include "video_renderer/clock.h"
+#include "playback/playback_controller.h"
 #include "video_renderer/d3d11/device.h"
 #include "video_renderer/d3d11/texture.h"
 #include "video_renderer/d3d11/shader.h"
@@ -91,6 +90,7 @@ struct SharedTextureSnapshot {
 class Renderer {
 public:
     Renderer();
+    explicit Renderer(PlaybackController& playback);
     ~Renderer();
 
     bool initialize(const RendererConfig& config);
@@ -276,8 +276,9 @@ private:
     /// Caller must hold state_mutex_.
     bool settle_eof_locked(int64_t max_presented_end_us);
 
-    Clock clock_;
-    std::unique_ptr<AudioEngine> audio_engine_;
+    std::unique_ptr<PlaybackController> owned_playback_;
+    PlaybackController* playback_ = nullptr;
+    bool playback_session_started_by_renderer_ = false;
     std::unique_ptr<D3D11Device> d3d_device_;
     std::unique_ptr<TextureManager> texture_mgr_;
     std::unique_ptr<D3D11FramePresenter> frame_presenter_;

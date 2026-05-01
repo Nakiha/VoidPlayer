@@ -6,6 +6,8 @@ set(VOID_RENDERER_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"
     "${VOID_NATIVE_DIR}/common/logging.cpp"
     "${VOID_NATIVE_DIR}/audio/audio_engine.cpp"
+    "${VOID_NATIVE_DIR}/player/native_player.cpp"
+    "${VOID_NATIVE_DIR}/playback/playback_controller.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/clock.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/d3d11/device.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/d3d11/frame_presenter.cpp"

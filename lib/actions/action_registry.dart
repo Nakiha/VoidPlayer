@@ -102,7 +102,26 @@ class ActionRegistry {
   bool _focusIsEditableText() {
     final primary = WidgetsBinding.instance.focusManager.primaryFocus;
     if (primary == null) return false;
-    return primary.context?.widget is EditableText;
+    final context = primary.context;
+    if (context == null) return false;
+    if (context.widget is EditableText) return true;
+    if (context.findAncestorWidgetOfExactType<EditableText>() != null) {
+      return true;
+    }
+    if (context is! Element) return false;
+
+    var found = false;
+    void visit(Element element) {
+      if (found) return;
+      if (element.widget is EditableText) {
+        found = true;
+        return;
+      }
+      element.visitChildElements(visit);
+    }
+
+    context.visitChildElements(visit);
+    return found;
   }
 }
 

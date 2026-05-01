@@ -247,7 +247,7 @@ class _LimitEditor extends StatelessWidget {
         controller: controller,
         focusNode: focusNode,
         keyboardType: TextInputType.number,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        inputFormatters: const [_DigitsOnlyTextInputFormatter()],
         decoration: InputDecoration(
           labelText: l.cacheMaxLimit,
           suffixText: 'MB',
@@ -257,6 +257,23 @@ class _LimitEditor extends StatelessWidget {
         onSubmitted: (_) => onSubmitted(),
       ),
     );
+  }
+}
+
+class _DigitsOnlyTextInputFormatter extends TextInputFormatter {
+  const _DigitsOnlyTextInputFormatter();
+
+  static final _digitsOnly = RegExp(r'^\d*$');
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (_digitsOnly.hasMatch(newValue.text)) {
+      return newValue.copyWith(composing: TextRange.empty);
+    }
+    return oldValue.copyWith(composing: TextRange.empty);
   }
 }
 

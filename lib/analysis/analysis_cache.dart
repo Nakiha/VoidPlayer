@@ -55,6 +55,20 @@ class AnalysisCacheSnapshot {
   }
 }
 
+class AnalysisCacheDeleteResult {
+  final List<String> deletedHashes;
+  final Map<String, List<String>> failuresByHash;
+
+  const AnalysisCacheDeleteResult({
+    required this.deletedHashes,
+    required this.failuresByHash,
+  });
+
+  int get deletedCount => deletedHashes.length;
+  int get failedCount => failuresByHash.length;
+  bool get hasFailures => failuresByHash.isNotEmpty;
+}
+
 /// Manages the on-disk analysis cache in `exe_dir/cache`.
 ///
 /// Cache structure:
@@ -237,6 +251,51 @@ class AnalysisCache {
       'time': DateTime.now().toIso8601String(),
     };
     await saveIndex(index);
+  }
+
+  static Future<AnalysisCacheDeleteResult> deleteEntries(
+    Iterable<String> hashes,
+  ) async {
+    final uniqueHashes = hashes.toSet();
+    final index = loadIndex();
+    final rawEntries = index['entries'];
+    final entries = rawEntries is Map<String, dynamic>
+        ? rawEntries
+        : <String, dynamic>{};
+
+    final deletedHashes = <String>[];
+    final failuresByHash = <String, List<String>>{};
+
+    for (final hash in uniqueHashes) {
+      final failures = <String>[];
+      for (final path in [vbs2Path(hash), vbiPath(hash), vbtPath(hash)]) {
+        final file = File(path);
+        try {
+          if (file.existsSync()) await file.delete();
+        } on FileSystemException catch (e) {
+          failures.add(e.path ?? path);
+        } catch (_) {
+          failures.add(path);
+        }
+      }
+
+      if (failures.isEmpty) {
+        entries.remove(hash);
+        deletedHashes.add(hash);
+      } else {
+        failuresByHash[hash] = failures;
+      }
+    }
+
+    if (deletedHashes.isNotEmpty) {
+      index['entries'] = entries;
+      await saveIndex(index);
+    }
+
+    return AnalysisCacheDeleteResult(
+      deletedHashes: deletedHashes,
+      failuresByHash: failuresByHash,
+    );
   }
 
   static bool hasEntry(String hash, {String? videoPath}) {

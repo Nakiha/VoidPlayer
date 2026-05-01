@@ -103,6 +103,12 @@
   "clear": "Clear",
   "@clear": { "description": "Clear button label" },
 
+  "cancel": "Cancel",
+  "@cancel": { "description": "Cancel button label" },
+
+  "delete": "Delete",
+  "@delete": { "description": "Delete button label" },
+
   "statusWaitingData": "Status: Waiting for data",
   "@statusWaitingData": { "description": "Memory status text" },
 
@@ -163,7 +169,7 @@
   "cacheLimitReached": "Cache limit reached. New analysis generation is paused.",
   "@cacheLimitReached": { "description": "Analysis cache over limit warning" },
 
-  "cachePerVideo": "Per-video cache",
+  "cachePerVideo": "Video analysis cache",
   "@cachePerVideo": { "description": "Analysis cache per-video section title" },
 
   "cacheNoEntries": "No analysis cache entries yet",
@@ -180,6 +186,24 @@
 
   "openCachePath": "Open cache folder",
   "@openCachePath": { "description": "Open analysis cache folder tooltip" },
+
+  "cacheSelectedCount": "{count} selected",
+  "@cacheSelectedCount": { "description": "Selected analysis cache item count", "placeholders": { "count": { "type": "int" } } },
+
+  "cancelSelection": "Cancel selection",
+  "@cancelSelection": { "description": "Cancel cache list selection tooltip" },
+
+  "deleteSelectedCache": "Delete selected cache",
+  "@deleteSelectedCache": { "description": "Delete selected analysis cache action" },
+
+  "cacheDeleteConfirmMessage": "Delete {count} selected analysis cache item(s)? Analysis windows may block files they are currently using.",
+  "@cacheDeleteConfirmMessage": { "description": "Confirm deleting selected analysis cache entries", "placeholders": { "count": { "type": "int" } } },
+
+  "cacheDeleted": "Deleted {count} cache item(s).",
+  "@cacheDeleted": { "description": "Analysis cache delete success message", "placeholders": { "count": { "type": "int" } } },
+
+  "cacheDeleteFailed": "Could not delete {count} cache item(s). They may be open in an analysis window or still being generated.",
+  "@cacheDeleteFailed": { "description": "Analysis cache delete failure message", "placeholders": { "count": { "type": "int" } } },
 
   "actionTogglePlay": "Toggle Play/Pause",
   "@actionTogglePlay": { "description": "Shortcut action label" },

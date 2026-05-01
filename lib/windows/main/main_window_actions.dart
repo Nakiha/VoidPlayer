@@ -64,6 +64,7 @@ class MainWindowActionCoordinator {
             seekOnlyIfStartChanged: seekOnlyIfStartChanged,
           ),
       dragLoopHandle: testHarness.dragLoopHandle,
+      dragSplitHandle: testHarness.dragSplitHandle,
       toggleLayoutMode: layoutCoordinator.toggleLayoutMode,
       setLayoutMode: layoutCoordinator.setLayoutMode,
       setZoom: layoutCoordinator.setZoom,
@@ -107,6 +108,7 @@ class MainWindowActionBinder {
   })
   setLoopRange;
   final void Function(String handle, int targetUs, {int steps}) dragLoopHandle;
+  final void Function(double targetFraction, {int steps}) dragSplitHandle;
 
   final void Function() toggleLayoutMode;
   final void Function(int mode) setLayoutMode;
@@ -139,6 +141,7 @@ class MainWindowActionBinder {
     required this.isLoopRangeEnabled,
     required this.setLoopRange,
     required this.dragLoopHandle,
+    required this.dragSplitHandle,
     required this.toggleLayoutMode,
     required this.setLayoutMode,
     required this.setZoom,
@@ -200,6 +203,10 @@ class MainWindowActionBinder {
     _bind(const DragLoopHandle('end', 0), (action) {
       final a = action as DragLoopHandle;
       dragLoopHandle(a.handle, a.targetUs, steps: a.steps);
+    });
+    _bind(const DragSplitHandle(0.5), (action) {
+      final a = action as DragSplitHandle;
+      dragSplitHandle(a.targetFraction, steps: a.steps);
     });
 
     _bind(const ToggleLayoutMode(), (_) => toggleLayoutMode());

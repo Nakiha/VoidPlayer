@@ -104,8 +104,10 @@ class ActionRegistry {
     if (primary == null) return false;
     final context = primary.context;
     if (context == null) return false;
-    if (context.widget is EditableText) return true;
-    if (context.findAncestorWidgetOfExactType<EditableText>() != null) {
+    final widget = context.widget;
+    if (widget is EditableText && widget.focusNode == primary) return true;
+    final ancestor = context.findAncestorWidgetOfExactType<EditableText>();
+    if (ancestor != null && ancestor.focusNode == primary) {
       return true;
     }
     if (context is! Element) return false;
@@ -113,7 +115,8 @@ class ActionRegistry {
     var found = false;
     void visit(Element element) {
       if (found) return;
-      if (element.widget is EditableText) {
+      final widget = element.widget;
+      if (widget is EditableText && widget.focusNode == primary) {
         found = true;
         return;
       }

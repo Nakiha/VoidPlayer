@@ -22,6 +22,7 @@ class MainWindowViewModel {
   final int viewportState;
   final LayoutState layout;
   final List<TrackEntry> tracks;
+  final GlobalKey viewportKey;
   final GlobalKey timelineSliderKey;
   final double timelineStartWidth;
   final bool isPlaying;
@@ -50,6 +51,7 @@ class MainWindowViewModel {
     required this.viewportState,
     required this.layout,
     required this.tracks,
+    required this.viewportKey,
     required this.timelineSliderKey,
     required this.timelineStartWidth,
     required this.isPlaying,
@@ -170,6 +172,7 @@ class MainWindowView extends StatelessWidget {
                 ),
                 Expanded(
                   child: ViewportPanel(
+                    key: model.viewportKey,
                     textureId: model.textureId,
                     viewportState: model.viewportState,
                     layout: model.layout,

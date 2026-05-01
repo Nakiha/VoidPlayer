@@ -700,6 +700,18 @@ ScriptInstruction? _parseInstruction(
           steps: args.length >= 3 ? int.parse(args[2]) : 12,
         ),
       );
+    case 'DRAG_SPLIT_HANDLE':
+      if (args.isEmpty) {
+        log.warning('DRAG_SPLIT_HANDLE needs target fraction: $rawLine');
+        return null;
+      }
+      return ScriptAction(
+        time,
+        DragSplitHandle(
+          double.parse(args[0]),
+          steps: args.length >= 2 ? int.parse(args[1]) : 12,
+        ),
+      );
 
     // Actions — layout
     case 'SET_ZOOM':

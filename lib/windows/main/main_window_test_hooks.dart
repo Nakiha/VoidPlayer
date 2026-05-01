@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import '../../app_log.dart';
 
 class MainWindowTestHarness {
+  final GlobalKey viewportKey;
   final GlobalKey timelineSliderKey;
   final GlobalKey loopRangeBarKey;
+  final double Function() splitPosition;
   final double Function() timelineStartWidth;
   final int Function() effectiveDurationUs;
   final int Function() resolvedLoopStartUs;
@@ -14,8 +16,10 @@ class MainWindowTestHarness {
   int _pointerId = 9000;
 
   MainWindowTestHarness({
+    required this.viewportKey,
     required this.timelineSliderKey,
     required this.loopRangeBarKey,
+    required this.splitPosition,
     required this.timelineStartWidth,
     required this.effectiveDurationUs,
     required this.resolvedLoopStartUs,
@@ -49,6 +53,64 @@ class MainWindowTestHarness {
     );
     GestureBinding.instance.handlePointerEvent(
       PointerUpEvent(pointer: pointer, position: global),
+    );
+  }
+
+  void dragSplitHandle(double targetFraction, {int steps = 12}) {
+    final context = viewportKey.currentContext;
+    if (context == null) {
+      throw StateError('Viewport is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Viewport has no render box');
+    }
+
+    final startFraction = splitPosition().clamp(0.0, 1.0).toDouble();
+    final clampedTarget = targetFraction.clamp(0.0, 1.0).toDouble();
+    final y = renderObject.size.height / 2;
+    final start = renderObject.localToGlobal(
+      Offset(renderObject.size.width * startFraction, y),
+    );
+    final end = renderObject.localToGlobal(
+      Offset(renderObject.size.width * clampedTarget, y),
+    );
+    final count = steps <= 0 ? 1 : steps;
+    final pointer = _pointerId++;
+    var previous = start;
+
+    log.info(
+      'Test action: DRAG_SPLIT_HANDLE '
+      '${startFraction.toStringAsFixed(4)}->${clampedTarget.toStringAsFixed(4)} '
+      'steps=$count global=(${start.dx.toStringAsFixed(1)}, ${start.dy.toStringAsFixed(1)})'
+      '->(${end.dx.toStringAsFixed(1)}, ${end.dy.toStringAsFixed(1)})',
+    );
+
+    GestureBinding.instance.handlePointerEvent(
+      PointerDownEvent(
+        pointer: pointer,
+        position: start,
+        buttons: kPrimaryButton,
+      ),
+    );
+    for (var i = 1; i <= count; i++) {
+      final t = i / count;
+      final next = Offset(
+        start.dx + (end.dx - start.dx) * t,
+        start.dy + (end.dy - start.dy) * t,
+      );
+      GestureBinding.instance.handlePointerEvent(
+        PointerMoveEvent(
+          pointer: pointer,
+          position: next,
+          delta: next - previous,
+          buttons: kPrimaryButton,
+        ),
+      );
+      previous = next;
+    }
+    GestureBinding.instance.handlePointerEvent(
+      PointerUpEvent(pointer: pointer, position: end),
     );
   }
 

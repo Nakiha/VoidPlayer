@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../../utils/async_guard.dart';
+import '../../track_manager.dart';
 import '../../video_renderer_controller.dart';
 
 class MainWindowLayoutCoordinator {
@@ -16,6 +17,7 @@ class MainWindowLayoutCoordinator {
   final LayoutState Function() layout;
   final void Function(LayoutState layout) setLayout;
   final int Function() trackCount;
+  final List<TrackEntry> Function() tracks;
 
   Ticker? _ticker;
   Timer? _resizeDebounceTimer;
@@ -35,6 +37,7 @@ class MainWindowLayoutCoordinator {
     required this.layout,
     required this.setLayout,
     required this.trackCount,
+    required this.tracks,
   }) {
     _ticker = vsync.createTicker((_) {
       fireAndLog('flush pending layout', flushPendingLayout());
@@ -162,6 +165,11 @@ class MainWindowLayoutCoordinator {
   void onViewportResize(int width, int height) {
     if (_disposed) return;
     if (width == viewportWidth && height == viewportHeight) return;
+    final previousWidth = viewportWidth;
+    final previousHeight = viewportHeight;
+    if (previousWidth > 0 && previousHeight > 0) {
+      _rescaleViewOffsetForResize(previousWidth, previousHeight, width, height);
+    }
     viewportWidth = width;
     viewportHeight = height;
     _resizeDebounceTimer?.cancel();
@@ -201,13 +209,6 @@ class MainWindowLayoutCoordinator {
     _flushInProgress = true;
     try {
       while (!_disposed && mounted() && (_resizeDirty || _layoutDirty)) {
-        if (_layoutDirty) {
-          final nextLayout = layout();
-          _layoutDirty = false;
-          await controller.applyLayout(nextLayout);
-          if (_disposed || !mounted()) return;
-        }
-
         if (_resizeDirty && viewportWidth > 0 && viewportHeight > 0) {
           final width = viewportWidth;
           final height = viewportHeight;
@@ -221,6 +222,13 @@ class MainWindowLayoutCoordinator {
           }
         } else if (_resizeDirty) {
           _resizeDirty = false;
+        }
+
+        if (_layoutDirty) {
+          final nextLayout = layout();
+          _layoutDirty = false;
+          await controller.applyLayout(nextLayout);
+          if (_disposed || !mounted()) return;
         }
       }
     } finally {
@@ -237,5 +245,95 @@ class MainWindowLayoutCoordinator {
 
   void _updateLayout(LayoutState Function(LayoutState current) update) {
     setLayout(update(layout()));
+  }
+
+  void _rescaleViewOffsetForResize(
+    int oldWidth,
+    int oldHeight,
+    int newWidth,
+    int newHeight,
+  ) {
+    final current = layout();
+    final oldDisplay = _displayPixelSizeForLayout(oldWidth, oldHeight, current);
+    final newDisplay = _displayPixelSizeForLayout(newWidth, newHeight, current);
+    if (oldDisplay == Size.zero || newDisplay == Size.zero) return;
+
+    var nextOffsetX = current.viewOffsetX;
+    var nextOffsetY = current.viewOffsetY;
+    if (oldDisplay.width.abs() > 1e-4 && newDisplay.width.abs() > 1e-4) {
+      nextOffsetX *= newDisplay.width / oldDisplay.width;
+    }
+    if (oldDisplay.height.abs() > 1e-4 && newDisplay.height.abs() > 1e-4) {
+      nextOffsetY *= newDisplay.height / oldDisplay.height;
+    }
+    if (nextOffsetX == current.viewOffsetX &&
+        nextOffsetY == current.viewOffsetY) {
+      return;
+    }
+    _updateLayout(
+      (layout) =>
+          layout.copyWith(viewOffsetX: nextOffsetX, viewOffsetY: nextOffsetY),
+    );
+  }
+
+  Size _displayPixelSizeForLayout(int width, int height, LayoutState layout) {
+    if (width <= 0 || height <= 0) return Size.zero;
+    final activeTracks = tracks();
+    if (activeTracks.isEmpty) {
+      return Size(width.toDouble(), height.toDouble());
+    }
+
+    TrackEntry track = activeTracks.first;
+    for (final fileId in layout.order) {
+      final index = activeTracks.indexWhere((entry) => entry.fileId == fileId);
+      if (index >= 0) {
+        track = activeTracks[index];
+        break;
+      }
+    }
+
+    var slotWidth = width.toDouble();
+    final slotHeight = height.toDouble();
+    if (layout.mode != LayoutMode.splitScreen && activeTracks.length > 1) {
+      slotWidth /= activeTracks.length;
+    }
+    final slotAspect = slotHeight > 0 ? slotWidth / slotHeight : 1.0;
+
+    var refTrack = activeTracks.first;
+    var maxPixels = 0;
+    for (final entry in activeTracks) {
+      final pixels = entry.info.width * entry.info.height;
+      if (pixels > maxPixels) {
+        maxPixels = pixels;
+        refTrack = entry;
+      }
+    }
+
+    double densityFor(TrackEntry entry) {
+      final videoWidth = entry.info.width.toDouble();
+      final videoHeight = entry.info.height.toDouble();
+      if (videoWidth <= 0 || videoHeight <= 0) return 1.0;
+      return (slotWidth / videoWidth) < (slotHeight / videoHeight)
+          ? slotWidth / videoWidth
+          : slotHeight / videoHeight;
+    }
+
+    final trackDensity = densityFor(track);
+    final refDensity = densityFor(refTrack);
+    final trackScale = trackDensity > 0 ? refDensity / trackDensity : 1.0;
+
+    final videoWidth = track.info.width.toDouble();
+    final videoHeight = track.info.height.toDouble();
+    var videoAspect = videoHeight > 0 ? videoWidth / videoHeight : slotAspect;
+    if (videoAspect <= 0) videoAspect = slotAspect;
+
+    var fitScale = videoAspect > slotAspect ? slotAspect / videoAspect : 1.0;
+    fitScale *= trackScale;
+    final displayScale = fitScale * layout.zoomRatio;
+    final dsX = slotAspect > 0
+        ? videoAspect * displayScale / slotAspect
+        : displayScale;
+    final dsY = displayScale;
+    return Size(dsX * slotWidth, dsY * slotHeight);
   }
 }

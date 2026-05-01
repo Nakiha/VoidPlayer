@@ -36,13 +36,18 @@ class ViewportPanel extends StatefulWidget {
 }
 
 class _ViewportPanelState extends State<ViewportPanel> {
+  static const double _splitHandlePhysicalWidth = 4.0;
+
   bool _panning = false;
   bool _splitting = false;
+  bool _splitHandleDragging = false;
   Offset _lastMouseLocalPos = Offset.zero;
   Size _lastReportedLogicalSize = Size.zero;
   double _lastReportedDevicePixelRatio = 0.0;
 
   void _syncDragButtons(int buttons, Offset localPosition) {
+    if (_splitHandleDragging) return;
+
     final wantsPan =
         (buttons & kPrimaryButton) != 0 || Win32FFI.isLeftMouseButtonDown();
     final wantsSplit =
@@ -70,6 +75,28 @@ class _ViewportPanelState extends State<ViewportPanel> {
     final box = context.findRenderObject() as RenderBox;
     if (box.size.width <= 0) return;
     widget.onSplit(localX / box.size.width);
+  }
+
+  void _startSplitHandleDrag(BuildContext context, double viewportLocalX) {
+    _splitHandleDragging = true;
+    _splitting = true;
+    _panning = false;
+    _lastMouseLocalPos = Offset(viewportLocalX, 0);
+    widget.onPointerButton(false, true);
+    _updateSplitFromLocalX(context, viewportLocalX);
+  }
+
+  void _updateSplitHandleDrag(BuildContext context, double viewportLocalX) {
+    if (!_splitHandleDragging) return;
+    _lastMouseLocalPos = Offset(viewportLocalX, 0);
+    _updateSplitFromLocalX(context, viewportLocalX);
+  }
+
+  void _endSplitHandleDrag() {
+    if (!_splitHandleDragging) return;
+    _splitHandleDragging = false;
+    _splitting = false;
+    widget.onPointerButton(false, false);
   }
 
   void _clampSplitOnExit(BuildContext context, Offset localPosition) {
@@ -217,7 +244,65 @@ class _ViewportPanelState extends State<ViewportPanel> {
             widget.onZoom(panDelta, e.localPosition * devicePixelRatio);
           }
         },
-        child: Texture(textureId: widget.textureId!),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Texture(textureId: widget.textureId!),
+            if (widget.layout.mode == LayoutMode.splitScreen)
+              _buildSplitHandle(context, devicePixelRatio),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSplitHandle(BuildContext context, double devicePixelRatio) {
+    final viewportContext = context;
+    final logicalWidth = (_splitHandlePhysicalWidth / devicePixelRatio).clamp(
+      2.0,
+      4.0,
+    );
+    return Positioned.fill(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final left =
+              constraints.maxWidth * widget.layout.splitPos - logicalWidth / 2;
+          return Stack(
+            children: [
+              Positioned(
+                left: left,
+                top: 0,
+                bottom: 0,
+                width: logicalWidth,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.resizeColumn,
+                  child: Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerDown: (event) {
+                      if ((event.buttons & kPrimaryButton) == 0) return;
+                      _startSplitHandleDrag(
+                        viewportContext,
+                        left + event.localPosition.dx,
+                      );
+                    },
+                    onPointerMove: (event) {
+                      if ((event.buttons & kPrimaryButton) == 0) {
+                        _endSplitHandleDrag();
+                        return;
+                      }
+                      _updateSplitHandleDrag(
+                        viewportContext,
+                        left + event.localPosition.dx,
+                      );
+                    },
+                    onPointerUp: (_) => _endSplitHandleDrag(),
+                    onPointerCancel: (_) => _endSplitHandleDrag(),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

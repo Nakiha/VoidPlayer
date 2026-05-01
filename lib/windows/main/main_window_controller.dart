@@ -25,6 +25,7 @@ class MainWindowController {
   final MainWindowStateStore stateStore = MainWindowStateStore();
   final GlobalKey timelineSliderKey = GlobalKey();
   final GlobalKey loopRangeBarKey = GlobalKey();
+  final GlobalKey viewportKey = GlobalKey();
 
   late final MainWindowAnalysisCoordinator analysisCoordinator;
   late final MainWindowTestHarness testHarness;
@@ -78,6 +79,7 @@ class MainWindowController {
       viewportState: _viewportState,
       layout: _layout,
       tracks: trackManager.entries,
+      viewportKey: viewportKey,
       timelineSliderKey: timelineSliderKey,
       timelineStartWidth: _timelineStartWidth,
       isPlaying: _isPlaying,
@@ -170,6 +172,7 @@ class MainWindowController {
       layout: () => _layout,
       setLayout: stateStore.setLayout,
       trackCount: () => trackManager.count,
+      tracks: () => trackManager.entries,
     );
     analysisCoordinator = MainWindowAnalysisCoordinator(
       trackManager: trackManager,
@@ -227,8 +230,10 @@ class MainWindowController {
       seekTo: playbackCoordinator.seekTo,
     );
     testHarness = MainWindowTestHarness(
+      viewportKey: viewportKey,
       timelineSliderKey: timelineSliderKey,
       loopRangeBarKey: loopRangeBarKey,
+      splitPosition: () => _layout.splitPos,
       timelineStartWidth: () => _timelineStartWidth,
       effectiveDurationUs: () => mediaCoordinator.effectiveDurationUs,
       resolvedLoopStartUs: () => _resolvedLoopStartUs,

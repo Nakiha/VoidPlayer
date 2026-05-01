@@ -122,6 +122,29 @@ typedef _SetOverlayDart = void Function(Pointer<NakiOverlayState>);
 typedef _GenerateNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef _GenerateDart = int Function(Pointer<Utf8>, Pointer<Utf8>);
 
+typedef _OpenNative =
+    Pointer<Void> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _OpenDart =
+    Pointer<Void> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+
+typedef _CloseNative = Void Function(Pointer<Void>);
+typedef _CloseDart = void Function(Pointer<Void>);
+
+typedef _HandleGetSummaryNative =
+    Pointer<NakiAnalysisSummary> Function(Pointer<Void>);
+typedef _HandleGetSummaryDart =
+    Pointer<NakiAnalysisSummary> Function(Pointer<Void>);
+
+typedef _HandleGetFramesNative =
+    Int32 Function(Pointer<Void>, Pointer<NakiFrameInfo>, Int32);
+typedef _HandleGetFramesDart =
+    int Function(Pointer<Void>, Pointer<NakiFrameInfo>, int);
+
+typedef _HandleGetNalusNative =
+    Int32 Function(Pointer<Void>, Pointer<NakiNaluInfo>, Int32);
+typedef _HandleGetNalusDart =
+    int Function(Pointer<Void>, Pointer<NakiNaluInfo>, int);
+
 // ===========================================================================
 // Native symbol lookup
 // ===========================================================================
@@ -147,6 +170,22 @@ final _setOverlay = _dl.lookupFunction<_SetOverlayNative, _SetOverlayDart>(
 final _generate = _dl.lookupFunction<_GenerateNative, _GenerateDart>(
   'naki_analysis_generate',
 );
+final _open = _dl.lookupFunction<_OpenNative, _OpenDart>('naki_analysis_open');
+final _close = _dl.lookupFunction<_CloseNative, _CloseDart>(
+  'naki_analysis_close',
+);
+final _handleGetSummary = _dl
+    .lookupFunction<_HandleGetSummaryNative, _HandleGetSummaryDart>(
+      'naki_analysis_handle_get_summary',
+    );
+final _handleGetFrames = _dl
+    .lookupFunction<_HandleGetFramesNative, _HandleGetFramesDart>(
+      'naki_analysis_handle_get_frames',
+    );
+final _handleGetNalus = _dl
+    .lookupFunction<_HandleGetNalusNative, _HandleGetNalusDart>(
+      'naki_analysis_handle_get_nalus',
+    );
 
 // ===========================================================================
 // Pure Dart data classes — copies of FFI struct fields, safe after free
@@ -241,6 +280,112 @@ class AnalysisSummary {
   );
 }
 
+const _emptySummary = AnalysisSummary(
+  loaded: 0,
+  frameCount: 0,
+  packetCount: 0,
+  naluCount: 0,
+  videoWidth: 0,
+  videoHeight: 0,
+  timeBaseNum: 0,
+  timeBaseDen: 0,
+  currentFrameIdx: -1,
+  codec: 0,
+);
+
+FrameInfo _frameInfoAt(Pointer<NakiFrameInfo> ptr, int i) {
+  final f = ptr[i];
+  return FrameInfo(
+    poc: f.poc,
+    temporalId: f.temporalId,
+    sliceType: f.sliceType,
+    nalType: f.nalType,
+    avgQp: f.avgQp,
+    numRefL0: f.numRefL0,
+    numRefL1: f.numRefL1,
+    refPocsL0: List.generate(15, (j) => f.refPocsL0[j]),
+    refPocsL1: List.generate(15, (j) => f.refPocsL1[j]),
+    pts: f.pts,
+    dts: f.dts,
+    packetSize: f.packetSize,
+    keyframe: f.keyframe,
+  );
+}
+
+NaluInfo _naluInfoAt(Pointer<NakiNaluInfo> ptr, int i) {
+  final n = ptr[i];
+  return NaluInfo(
+    offset: n.offset,
+    size: n.size,
+    nalType: n.nalType,
+    temporalId: n.temporalId,
+    layerId: n.layerId,
+    flags: n.flags,
+  );
+}
+
+class AnalysisSession {
+  Pointer<Void> _handle;
+
+  AnalysisSession._(this._handle);
+
+  static AnalysisSession? open(
+    String vbs2Path,
+    String vbiPath,
+    String vbtPath,
+  ) {
+    final vbs2 = vbs2Path.toNativeUtf8(allocator: calloc);
+    final vbi = vbiPath.toNativeUtf8(allocator: calloc);
+    final vbt = vbtPath.toNativeUtf8(allocator: calloc);
+    try {
+      final handle = _open(vbs2, vbi, vbt);
+      if (handle == nullptr) return null;
+      return AnalysisSession._(handle);
+    } finally {
+      calloc.free(vbs2);
+      calloc.free(vbi);
+      calloc.free(vbt);
+    }
+  }
+
+  bool get isOpen => _handle != nullptr;
+
+  void close() {
+    if (_handle == nullptr) return;
+    _close(_handle);
+    _handle = nullptr;
+  }
+
+  AnalysisSummary get summary {
+    if (_handle == nullptr) return _emptySummary;
+    return AnalysisSummary.fromNative(_handleGetSummary(_handle).ref);
+  }
+
+  List<FrameInfo> get frames {
+    final s = summary;
+    if (s.loaded == 0 || s.frameCount == 0 || _handle == nullptr) return [];
+    final ptr = calloc<NakiFrameInfo>(s.frameCount);
+    try {
+      final actual = _handleGetFrames(_handle, ptr, s.frameCount);
+      return List.generate(actual, (i) => _frameInfoAt(ptr, i));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  List<NaluInfo> get nalus {
+    final s = summary;
+    if (s.loaded == 0 || s.naluCount == 0 || _handle == nullptr) return [];
+    final ptr = calloc<NakiNaluInfo>(s.naluCount);
+    try {
+      final actual = _handleGetNalus(_handle, ptr, s.naluCount);
+      return List.generate(actual, (i) => _naluInfoAt(ptr, i));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+}
+
 // ===========================================================================
 // High-level API
 // ===========================================================================
@@ -278,24 +423,7 @@ class AnalysisFfi {
     final ptr = calloc<NakiFrameInfo>(count);
     try {
       final actual = _getFrames(ptr, count);
-      return List.generate(actual, (i) {
-        final f = ptr[i];
-        return FrameInfo(
-          poc: f.poc,
-          temporalId: f.temporalId,
-          sliceType: f.sliceType,
-          nalType: f.nalType,
-          avgQp: f.avgQp,
-          numRefL0: f.numRefL0,
-          numRefL1: f.numRefL1,
-          refPocsL0: List.generate(15, (j) => f.refPocsL0[j]),
-          refPocsL1: List.generate(15, (j) => f.refPocsL1[j]),
-          pts: f.pts,
-          dts: f.dts,
-          packetSize: f.packetSize,
-          keyframe: f.keyframe,
-        );
-      });
+      return List.generate(actual, (i) => _frameInfoAt(ptr, i));
     } finally {
       calloc.free(ptr);
     }
@@ -311,17 +439,7 @@ class AnalysisFfi {
     final ptr = calloc<NakiNaluInfo>(count);
     try {
       final actual = _getNalus(ptr, count);
-      return List.generate(actual, (i) {
-        final n = ptr[i];
-        return NaluInfo(
-          offset: n.offset,
-          size: n.size,
-          nalType: n.nalType,
-          temporalId: n.temporalId,
-          layerId: n.layerId,
-          flags: n.flags,
-        );
-      });
+      return List.generate(actual, (i) => _naluInfoAt(ptr, i));
     } finally {
       calloc.free(ptr);
     }

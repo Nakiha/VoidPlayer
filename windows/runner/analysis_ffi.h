@@ -52,6 +52,8 @@ struct NakiOverlayState {
     int32_t _reserved;
 };
 
+using NakiAnalysisHandle = void*;
+
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_load(const char* vbs2_path, const char* vbi_path, const char* vbt_path);
 
@@ -69,6 +71,21 @@ int32_t naki_analysis_get_nalus(NakiNaluInfo* out, int32_t max_count);
 
 extern "C" __declspec(dllexport)
 void naki_analysis_set_overlay(const NakiOverlayState* state);
+
+extern "C" __declspec(dllexport)
+NakiAnalysisHandle naki_analysis_open(const char* vbs2_path, const char* vbi_path, const char* vbt_path);
+
+extern "C" __declspec(dllexport)
+void naki_analysis_close(NakiAnalysisHandle handle);
+
+extern "C" __declspec(dllexport)
+const NakiAnalysisSummary* naki_analysis_handle_get_summary(NakiAnalysisHandle handle);
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_handle_get_frames(NakiAnalysisHandle handle, NakiFrameInfo* out, int32_t max_count);
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_handle_get_nalus(NakiAnalysisHandle handle, NakiNaluInfo* out, int32_t max_count);
 
 // Register a callback that returns the current playback PTS in microseconds.
 // Called by video_renderer_plugin during initialization.

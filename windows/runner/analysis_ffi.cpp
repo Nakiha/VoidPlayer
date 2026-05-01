@@ -9,6 +9,7 @@
 #include <cstring>
 #include <algorithm>
 #include <fstream>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -29,28 +30,24 @@ void naki_analysis_register_pts_callback(int64_t (*cb)()) {
 // ---- dart:ffi analysis exports ----
 static NakiAnalysisSummary g_analysis_summary = {};
 
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_load(const char* vbs2_path, const char* vbi_path, const char* vbt_path) {
-    static int load_count = 0;
-    LogStackUsage(fmt::format("analysis_load #{}", ++load_count).c_str());
-    auto& mgr = vr::analysis::AnalysisManager::instance();
-    return mgr.load(vbs2_path, vbi_path, vbt_path) ? 1 : 0;
+namespace {
+
+const char* safe_cstr(const char* value) {
+    return value ? value : "";
 }
 
-extern "C" __declspec(dllexport)
-void naki_analysis_unload() {
-    static int unload_count = 0;
-    LogStackUsage(fmt::format("analysis_unload #{}", ++unload_count).c_str());
-    vr::analysis::AnalysisManager::instance().unload();
+struct AnalysisHandleState {
+    vr::analysis::AnalysisManager manager;
+    NakiAnalysisSummary summary{};
+};
+
+AnalysisHandleState* as_analysis_handle(NakiAnalysisHandle handle) {
+    return static_cast<AnalysisHandleState*>(handle);
 }
 
-extern "C" __declspec(dllexport)
-const NakiAnalysisSummary* naki_analysis_get_summary() {
-    auto& s = g_analysis_summary;
+void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSummary& s) {
     std::memset(&s, 0, sizeof(s));
-
-    auto& mgr = vr::analysis::AnalysisManager::instance();
-    if (!mgr.is_loaded()) return &s;
+    if (!mgr.is_loaded()) return;
 
     s.loaded = 1;
     const auto& vbs2 = mgr.vbs2();
@@ -68,19 +65,16 @@ const NakiAnalysisSummary* naki_analysis_get_summary() {
     s.time_base_den = vbt.header().time_base_den;
     s.codec = static_cast<int32_t>(vbi.codec());
 
-    // Derive current frame from renderer PTS
     if (g_get_current_pts_us) {
         int64_t pts_us = g_get_current_pts_us();
         s.current_frame_idx = mgr.current_frame_idx(pts_us);
     }
-
-    return &s;
 }
 
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_get_frames(NakiFrameInfo* out, int32_t max_count) {
+int32_t fill_analysis_frames(vr::analysis::AnalysisManager& mgr,
+                             NakiFrameInfo* out,
+                             int32_t max_count) {
     if (!out || max_count <= 0) return 0;
-    auto& mgr = vr::analysis::AnalysisManager::instance();
     if (!mgr.is_loaded()) return 0;
 
     int vbs2_count = mgr.vbs2().frame_count();
@@ -122,6 +116,7 @@ int32_t naki_analysis_get_frames(NakiFrameInfo* out, int32_t max_count) {
         const auto& pkt = mgr.vbt().entry(i);
 
         auto& f = out[i];
+        std::memset(&f, 0, sizeof(f));
         f.poc = fh.poc;
         f.temporal_id = fh.temporal_id;
         f.slice_type = fh.slice_type;
@@ -139,10 +134,10 @@ int32_t naki_analysis_get_frames(NakiFrameInfo* out, int32_t max_count) {
     return count;
 }
 
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_get_nalus(NakiNaluInfo* out, int32_t max_count) {
+int32_t fill_analysis_nalus(vr::analysis::AnalysisManager& mgr,
+                            NakiNaluInfo* out,
+                            int32_t max_count) {
     if (!out || max_count <= 0) return 0;
-    auto& mgr = vr::analysis::AnalysisManager::instance();
     if (!mgr.is_loaded()) return 0;
 
     int count = std::min(max_count, mgr.vbi().nalu_count());
@@ -159,6 +154,43 @@ int32_t naki_analysis_get_nalus(NakiNaluInfo* out, int32_t max_count) {
     return count;
 }
 
+} // namespace
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_load(const char* vbs2_path, const char* vbi_path, const char* vbt_path) {
+    static int load_count = 0;
+    LogStackUsage(fmt::format("analysis_load #{}", ++load_count).c_str());
+    auto& mgr = vr::analysis::AnalysisManager::instance();
+    return mgr.load(safe_cstr(vbs2_path), safe_cstr(vbi_path), safe_cstr(vbt_path)) ? 1 : 0;
+}
+
+extern "C" __declspec(dllexport)
+void naki_analysis_unload() {
+    static int unload_count = 0;
+    LogStackUsage(fmt::format("analysis_unload #{}", ++unload_count).c_str());
+    vr::analysis::AnalysisManager::instance().unload();
+}
+
+extern "C" __declspec(dllexport)
+const NakiAnalysisSummary* naki_analysis_get_summary() {
+    auto& s = g_analysis_summary;
+    auto& mgr = vr::analysis::AnalysisManager::instance();
+    fill_analysis_summary(mgr, s);
+    return &s;
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_get_frames(NakiFrameInfo* out, int32_t max_count) {
+    auto& mgr = vr::analysis::AnalysisManager::instance();
+    return fill_analysis_frames(mgr, out, max_count);
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_get_nalus(NakiNaluInfo* out, int32_t max_count) {
+    auto& mgr = vr::analysis::AnalysisManager::instance();
+    return fill_analysis_nalus(mgr, out, max_count);
+}
+
 extern "C" __declspec(dllexport)
 void naki_analysis_set_overlay(const NakiOverlayState* state) {
     if (!state) return;
@@ -166,6 +198,45 @@ void naki_analysis_set_overlay(const NakiOverlayState* state) {
     overlay.show_cu_grid = state->show_cu_grid != 0;
     overlay.show_pred_mode = state->show_pred_mode != 0;
     overlay.show_qp_heatmap = state->show_qp_heatmap != 0;
+}
+
+extern "C" __declspec(dllexport)
+NakiAnalysisHandle naki_analysis_open(const char* vbs2_path, const char* vbi_path, const char* vbt_path) {
+    auto* handle = new (std::nothrow) AnalysisHandleState();
+    if (!handle) return nullptr;
+    if (!handle->manager.load(safe_cstr(vbs2_path), safe_cstr(vbi_path), safe_cstr(vbt_path))) {
+        delete handle;
+        return nullptr;
+    }
+    return handle;
+}
+
+extern "C" __declspec(dllexport)
+void naki_analysis_close(NakiAnalysisHandle handle) {
+    delete as_analysis_handle(handle);
+}
+
+extern "C" __declspec(dllexport)
+const NakiAnalysisSummary* naki_analysis_handle_get_summary(NakiAnalysisHandle handle) {
+    auto* state = as_analysis_handle(handle);
+    if (!state) {
+        std::memset(&g_analysis_summary, 0, sizeof(g_analysis_summary));
+        return &g_analysis_summary;
+    }
+    fill_analysis_summary(state->manager, state->summary);
+    return &state->summary;
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_handle_get_frames(NakiAnalysisHandle handle, NakiFrameInfo* out, int32_t max_count) {
+    auto* state = as_analysis_handle(handle);
+    return state ? fill_analysis_frames(state->manager, out, max_count) : 0;
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_handle_get_nalus(NakiAnalysisHandle handle, NakiNaluInfo* out, int32_t max_count) {
+    auto* state = as_analysis_handle(handle);
+    return state ? fill_analysis_nalus(state->manager, out, max_count) : 0;
 }
 
 // ---- Analysis generation ----

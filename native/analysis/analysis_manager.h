@@ -9,6 +9,7 @@ namespace vr::analysis {
 
 class AnalysisManager {
 public:
+    AnalysisManager() = default;
     static AnalysisManager& instance();
 
     // Load specific analysis files (paths provided by Flutter)
@@ -36,7 +37,6 @@ public:
     int current_frame_idx(int64_t pts_us) const;
 
 private:
-    AnalysisManager() = default;
     Vbs2File vbs2_;
     VbiFile vbi_;
     VbtFile vbt_;

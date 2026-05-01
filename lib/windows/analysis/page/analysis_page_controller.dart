@@ -31,6 +31,7 @@ class AnalysisPageController extends ChangeNotifier {
   List<int> _frameToSortedPosition = [];
   Map<int, List<int>> _sortedPocToIndices = {};
   AnalysisSummary? _summary;
+  AnalysisSession? _session;
   Timer? _pollTimer;
 
   List<int> _frameToNalu = [];
@@ -112,6 +113,8 @@ class AnalysisPageController extends ChangeNotifier {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _session?.close();
+    _session = null;
     super.dispose();
   }
 
@@ -204,17 +207,21 @@ class AnalysisPageController extends ChangeNotifier {
   }
 
   void readData() {
-    final s = AnalysisFfi.summary;
+    final session = _session;
+    if (session == null || !session.isOpen) return;
+    final s = session.summary;
     if (s.loaded == 0) return;
     _summary = s;
-    _frames = AnalysisFfi.frames;
-    _nalus = AnalysisFfi.nalus;
+    _frames = session.frames;
+    _nalus = session.nalus;
     _rebuildDerivedState();
     notifyListeners();
   }
 
   void poll() {
-    final s = AnalysisFfi.summary;
+    final session = _session;
+    if (session == null || !session.isOpen) return;
+    final s = session.summary;
     if (s.loaded == 0) return;
     if (_summary != null &&
         s.currentFrameIdx == _summary!.currentFrameIdx &&
@@ -236,7 +243,8 @@ class AnalysisPageController extends ChangeNotifier {
     final vbi = AnalysisCache.vbiPath(hash);
     final vbt = AnalysisCache.vbtPath(hash);
 
-    AnalysisFfi.load(vbs2, vbi, vbt);
+    _session?.close();
+    _session = AnalysisSession.open(vbs2, vbi, vbt);
     readData();
   }
 

@@ -203,19 +203,28 @@ class MainWindowLayoutCoordinator {
     final nextHeight = (viewportHeight - heightDelta).clamp(1, 1 << 30).toInt();
     if (nextHeight == viewportHeight) return;
 
+    await preemptViewportResize(width: viewportWidth, height: nextHeight);
+  }
+
+  Future<void> preemptViewportResize({
+    required int width,
+    required int height,
+  }) async {
+    if (_disposed || textureId() == null) return;
+    if (width <= 0 || height <= 0) return;
+    if (width == viewportWidth && height == viewportHeight) return;
+
     final previousWidth = viewportWidth;
     final previousHeight = viewportHeight;
     _resizeDebounceTimer?.cancel();
     _resizeDebounceTimer = null;
     _resizeDirty = false;
-    _rescaleViewOffsetForResize(
-      previousWidth,
-      previousHeight,
-      previousWidth,
-      nextHeight,
-    );
-    viewportHeight = nextHeight;
-    await controller.resize(viewportWidth, viewportHeight);
+    if (previousWidth > 0 && previousHeight > 0) {
+      _rescaleViewOffsetForResize(previousWidth, previousHeight, width, height);
+    }
+    viewportWidth = width;
+    viewportHeight = height;
+    await controller.resize(width, height);
   }
 
   void onZoomComboChanged(double value) {

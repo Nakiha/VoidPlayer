@@ -41,6 +41,8 @@ class MainWindowViewModel {
   final double controlsWidth;
   final bool profilerVisible;
   final bool settingsVisible;
+  final bool fullScreen;
+  final bool fullScreenControlsVisible;
   final int? audibleTrackFileId;
 
   const MainWindowViewModel({
@@ -71,6 +73,8 @@ class MainWindowViewModel {
     required this.controlsWidth,
     required this.profilerVisible,
     required this.settingsVisible,
+    required this.fullScreen,
+    required this.fullScreenControlsVisible,
     required this.audibleTrackFileId,
   });
 }
@@ -94,6 +98,9 @@ class MainWindowViewActions {
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
   final ValueChanged<int> onRemoveTrack;
   final ValueChanged<double> onZoomChanged;
+  final VoidCallback onToggleFullScreen;
+  final VoidCallback onFullScreenPointerActivity;
+  final void Function(bool hovering) onFullScreenControlsHoverChanged;
   final VoidCallback onTogglePlay;
   final VoidCallback onStepForward;
   final VoidCallback onStepBackward;
@@ -126,6 +133,9 @@ class MainWindowViewActions {
     required this.onMediaSwapped,
     required this.onRemoveTrack,
     required this.onZoomChanged,
+    required this.onToggleFullScreen,
+    required this.onFullScreenPointerActivity,
+    required this.onFullScreenControlsHoverChanged,
     required this.onTogglePlay,
     required this.onStepForward,
     required this.onStepBackward,
@@ -164,16 +174,17 @@ class MainWindowView extends StatelessWidget {
           children: [
             Column(
               children: [
-                AppToolBar(
-                  viewMode: model.viewMode,
-                  onViewModeChanged: actions.onViewModeChanged,
-                  onAddMedia: actions.onAddMedia,
-                  onAnalysis: actions.onAnalysis,
-                  onProfiler: actions.onProfiler,
-                  onSettings: actions.onSettings,
-                  viewModeEnabled: model.viewModeEnabled,
-                  analysisEnabled: model.analysisEnabled,
-                ),
+                if (!model.fullScreen)
+                  AppToolBar(
+                    viewMode: model.viewMode,
+                    onViewModeChanged: actions.onViewModeChanged,
+                    onAddMedia: actions.onAddMedia,
+                    onAnalysis: actions.onAnalysis,
+                    onProfiler: actions.onProfiler,
+                    onSettings: actions.onSettings,
+                    viewModeEnabled: model.viewModeEnabled,
+                    analysisEnabled: model.analysisEnabled,
+                  ),
                 Expanded(
                   child: ViewportPanel(
                     key: model.viewportKey,
@@ -187,35 +198,11 @@ class MainWindowView extends StatelessWidget {
                     onResize: actions.onResize,
                   ),
                 ),
-                if (model.tracks.isNotEmpty)
-                  MediaHeaderBar(
-                    entries: model.tracks,
-                    onMediaSwapped: actions.onMediaSwapped,
-                    onRemoveClicked: (slotIndex) {
-                      if (slotIndex < model.tracks.length) {
-                        actions.onRemoveTrack(model.tracks[slotIndex].fileId);
-                      }
-                    },
-                  ),
-                if (model.tracks.isNotEmpty)
-                  ControlsBar(
-                    timelineKey: model.timelineSliderKey,
-                    timelineStartWidth: model.timelineStartWidth,
-                    zoomRatio: model.layout.zoomRatio,
-                    onZoomChanged: actions.onZoomChanged,
-                    isPlaying: model.isPlaying,
-                    onTogglePlay: actions.onTogglePlay,
-                    onStepForward: actions.onStepForward,
-                    onStepBackward: actions.onStepBackward,
-                    currentPtsUs: model.currentPtsUs,
-                    durationUs: model.durationUs,
-                    onSeek: actions.onSeek,
-                    onHoverChanged: actions.onSliderHover,
-                    markerUs: model.markerUs,
-                    seekMinUs: model.seekMinUs,
-                    seekMaxUs: model.seekMaxUs,
-                  ),
-                if (model.tracks.isNotEmpty)
+                if (!model.fullScreen && model.tracks.isNotEmpty)
+                  _MediaHeaderForModel(model: model, actions: actions),
+                if (!model.fullScreen && model.tracks.isNotEmpty)
+                  _ControlsBarForModel(model: model, actions: actions),
+                if (!model.fullScreen && model.tracks.isNotEmpty)
                   LoopRangeBar(
                     key: model.loopRangeBarKey,
                     timelineStartWidth: model.timelineStartWidth,
@@ -227,7 +214,7 @@ class MainWindowView extends StatelessWidget {
                     onRangeChanged: actions.onLoopRangeChanged,
                     onRangeChangeEnd: actions.onLoopRangeChangeEnd,
                   ),
-                if (model.tracks.isNotEmpty)
+                if (!model.fullScreen && model.tracks.isNotEmpty)
                   Expanded(
                     flex: 0,
                     child: TimelineArea(
@@ -252,6 +239,34 @@ class MainWindowView extends StatelessWidget {
                   ),
               ],
             ),
+            if (model.fullScreen)
+              Positioned.fill(
+                child: MouseRegion(
+                  opaque: false,
+                  onHover: (_) => actions.onFullScreenPointerActivity(),
+                ),
+              ),
+            if (model.fullScreen && model.tracks.isNotEmpty)
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 12,
+                child: _AnimatedOverlaySlot(
+                  visible: model.fullScreenControlsVisible,
+                  builder: (context) =>
+                      _FullScreenControls(model: model, actions: actions),
+                  transitionBuilder: (context, animation, child) {
+                    final offset = Tween<Offset>(
+                      begin: const Offset(0, 0.18),
+                      end: Offset.zero,
+                    ).animate(animation);
+                    return FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(position: offset, child: child),
+                    );
+                  },
+                ),
+              ),
             if (model.dragging)
               Positioned.fill(
                 child: IgnorePointer(
@@ -311,6 +326,94 @@ class MainWindowView extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MediaHeaderForModel extends StatelessWidget {
+  final MainWindowViewModel model;
+  final MainWindowViewActions actions;
+
+  const _MediaHeaderForModel({required this.model, required this.actions});
+
+  @override
+  Widget build(BuildContext context) {
+    return MediaHeaderBar(
+      entries: model.tracks,
+      onMediaSwapped: actions.onMediaSwapped,
+      onRemoveClicked: (slotIndex) {
+        if (slotIndex < model.tracks.length) {
+          actions.onRemoveTrack(model.tracks[slotIndex].fileId);
+        }
+      },
+    );
+  }
+}
+
+class _ControlsBarForModel extends StatelessWidget {
+  final MainWindowViewModel model;
+  final MainWindowViewActions actions;
+
+  const _ControlsBarForModel({required this.model, required this.actions});
+
+  @override
+  Widget build(BuildContext context) {
+    return ControlsBar(
+      timelineKey: model.timelineSliderKey,
+      timelineStartWidth: model.timelineStartWidth,
+      zoomRatio: model.layout.zoomRatio,
+      onZoomChanged: actions.onZoomChanged,
+      isPlaying: model.isPlaying,
+      isFullScreen: model.fullScreen,
+      onToggleFullScreen: actions.onToggleFullScreen,
+      onTogglePlay: actions.onTogglePlay,
+      onStepForward: actions.onStepForward,
+      onStepBackward: actions.onStepBackward,
+      currentPtsUs: model.currentPtsUs,
+      durationUs: model.durationUs,
+      onSeek: actions.onSeek,
+      onHoverChanged: actions.onSliderHover,
+      markerUs: model.markerUs,
+      seekMinUs: model.seekMinUs,
+      seekMaxUs: model.seekMaxUs,
+    );
+  }
+}
+
+class _FullScreenControls extends StatelessWidget {
+  final MainWindowViewModel model;
+  final MainWindowViewActions actions;
+
+  const _FullScreenControls({required this.model, required this.actions});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return MouseRegion(
+      onEnter: (_) => actions.onFullScreenControlsHoverChanged(true),
+      onExit: (_) => actions.onFullScreenControlsHoverChanged(false),
+      child: Material(
+        color: Colors.transparent,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colorScheme.surface.withValues(alpha: 0.86),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.72),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _MediaHeaderForModel(model: model, actions: actions),
+                _ControlsBarForModel(model: model, actions: actions),
+              ],
+            ),
+          ),
         ),
       ),
     );

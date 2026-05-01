@@ -28,6 +28,12 @@
   "nextFrame": "Next Frame",
   "@nextFrame": { "description": "Step forward tooltip" },
 
+  "enterFullScreen": "Enter Full Screen",
+  "@enterFullScreen": { "description": "Enter fullscreen tooltip" },
+
+  "exitFullScreen": "Exit Full Screen",
+  "@exitFullScreen": { "description": "Exit fullscreen tooltip" },
+
   "sideBySide": "Side by Side",
   "@sideBySide": { "description": "View mode: side by side" },
 
@@ -261,6 +267,12 @@
 
   "actionSeekBackward": "Seek Backward (-1s)",
   "@actionSeekBackward": { "description": "Shortcut action label" },
+
+  "actionToggleFullScreen": "Toggle Full Screen",
+  "@actionToggleFullScreen": { "description": "Shortcut action label" },
+
+  "actionExitFullScreen": "Exit Full Screen",
+  "@actionExitFullScreen": { "description": "Shortcut action label" },
 
   "analysisClickToAnalyze": "Click to analyze",
   "@analysisClickToAnalyze": { "description": "Analysis toolbar tooltip when idle" },

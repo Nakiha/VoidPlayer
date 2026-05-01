@@ -7,14 +7,17 @@ class ZoomComboBox extends StatelessWidget {
   final ValueChanged<double> onChanged;
 
   static const List<double> presets = [
-    1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 5.0, 10.0,
+    1.0,
+    1.25,
+    1.5,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    10.0,
   ];
 
-  const ZoomComboBox({
-    super.key,
-    required this.value,
-    required this.onChanged,
-  });
+  const ZoomComboBox({super.key, required this.value, required this.onChanged});
 
   String _label(double v, AppLocalizations l) {
     return '${(v * 100).round()}%';
@@ -35,7 +38,9 @@ class ZoomComboBox extends StatelessWidget {
         shape: WidgetStatePropertyAll(
           RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
-        padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(vertical: 4),
+        ),
       ),
       menuChildren: presets.map((v) {
         final selected = v == currentValue;
@@ -60,7 +65,7 @@ class ZoomComboBox extends StatelessWidget {
       }).toList(),
       builder: (context, controller, child) {
         return SizedBox(
-          width: 90,
+          width: 76,
           height: 32,
           child: Material(
             color: Colors.transparent,

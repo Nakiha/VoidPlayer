@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../../actions/test_runner.dart';
 import '../../startup_options.dart';
@@ -16,6 +19,11 @@ import 'main_window_test_hooks.dart';
 import 'main_window_view.dart';
 
 class MainWindowController {
+  static const double _toolbarLogicalHeight = 40.0;
+  static const double _mediaHeaderLogicalHeight = 32.0;
+  static const double _controlsBarLogicalHeight = 40.0;
+  static const double _loopRangeBarLogicalHeight = 40.0;
+
   final TickerProvider vsync;
   final StartupOptions startupOptions;
   final bool Function() mounted;
@@ -26,6 +34,7 @@ class MainWindowController {
   final GlobalKey timelineSliderKey = GlobalKey();
   final GlobalKey loopRangeBarKey = GlobalKey();
   final GlobalKey viewportKey = GlobalKey();
+  Timer? _fullScreenControlsTimer;
 
   late final MainWindowAnalysisCoordinator analysisCoordinator;
   late final MainWindowTestHarness testHarness;
@@ -52,6 +61,7 @@ class MainWindowController {
   }
 
   void dispose() {
+    _fullScreenControlsTimer?.cancel();
     actionCoordinator.dispose();
     playbackCoordinator.dispose();
     mediaCoordinator.dispose();
@@ -98,6 +108,8 @@ class MainWindowController {
       controlsWidth: _timelineControlsWidth,
       profilerVisible: _profilerVisible,
       settingsVisible: _settingsVisible,
+      fullScreen: _fullScreen,
+      fullScreenControlsVisible: _fullScreenControlsVisible,
       audibleTrackFileId: _audibleTrackFileId,
     );
   }
@@ -135,6 +147,9 @@ class MainWindowController {
       onMediaSwapped: mediaCoordinator.onMediaSwapped,
       onRemoveTrack: mediaCoordinator.removeTrack,
       onZoomChanged: layoutCoordinator.onZoomComboChanged,
+      onToggleFullScreen: _toggleFullScreen,
+      onFullScreenPointerActivity: _showFullScreenControlsTemporarily,
+      onFullScreenControlsHoverChanged: _setFullScreenControlsHovering,
       onTogglePlay: playbackCoordinator.togglePlayPause,
       onStepForward: () => player.stepForward(),
       onStepBackward: () => player.stepBackward(),
@@ -169,6 +184,125 @@ class MainWindowController {
     final next = _audibleTrackFileId == fileId ? null : fileId;
     stateStore.setAudibleTrackFileId(next);
     fireAndLog('set audible track', player.setAudibleTrack(next));
+  }
+
+  void _toggleFullScreen() {
+    fireAndLog('toggle full screen', _setFullScreen(!_fullScreen));
+  }
+
+  void _exitFullScreen() {
+    if (!_fullScreen) return;
+    fireAndLog('exit full screen', _setFullScreen(false));
+  }
+
+  Future<void> _setFullScreen(bool fullScreen) async {
+    _fullScreenControlsTimer?.cancel();
+    final initialBounds = await windowManager.getBounds();
+    await windowManager.setFullScreen(fullScreen);
+    if (!mounted()) return;
+    await _waitForWindowBoundsToSettle(
+      initialBounds: initialBounds,
+      fullScreen: fullScreen,
+    );
+    if (!mounted()) return;
+    final settledBounds = await windowManager.getBounds();
+    await _preemptFullScreenViewportResize(
+      windowBounds: settledBounds,
+      fullScreen: fullScreen,
+    );
+    if (!mounted()) return;
+    stateStore.setFullScreen(fullScreen);
+    if (fullScreen) {
+      _scheduleFullScreenControlsHide();
+    }
+  }
+
+  Future<void> _waitForWindowBoundsToSettle({
+    required Rect initialBounds,
+    required bool fullScreen,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    var previous = initialBounds;
+    var stableSamples = 0;
+
+    while (stopwatch.elapsed < const Duration(milliseconds: 500)) {
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      final current = await windowManager.getBounds();
+      final fullScreenApplied = await windowManager.isFullScreen();
+      final boundsChanged = !_sameWindowBounds(current, initialBounds);
+      final boundsStable = _sameWindowBounds(current, previous);
+
+      stableSamples = boundsStable ? stableSamples + 1 : 0;
+      previous = current;
+
+      if (fullScreenApplied == fullScreen &&
+          (boundsChanged ||
+              stopwatch.elapsed > const Duration(milliseconds: 80)) &&
+          stableSamples >= 2) {
+        break;
+      }
+    }
+  }
+
+  bool _sameWindowBounds(Rect a, Rect b) {
+    return (a.left - b.left).abs() < 0.5 &&
+        (a.top - b.top).abs() < 0.5 &&
+        (a.width - b.width).abs() < 0.5 &&
+        (a.height - b.height).abs() < 0.5;
+  }
+
+  Future<void> _preemptFullScreenViewportResize({
+    required Rect windowBounds,
+    required bool fullScreen,
+  }) async {
+    final dpr = layoutCoordinator.viewportDevicePixelRatio;
+    if (dpr <= 0) return;
+
+    final viewportLogicalWidth = windowBounds.width;
+    final viewportLogicalHeight = fullScreen
+        ? windowBounds.height
+        : (windowBounds.height - _nonFullScreenChromeLogicalHeight).clamp(
+            1.0,
+            double.infinity,
+          );
+    await layoutCoordinator.preemptViewportResize(
+      width: (viewportLogicalWidth * dpr).round(),
+      height: (viewportLogicalHeight * dpr).round(),
+    );
+  }
+
+  double get _nonFullScreenChromeLogicalHeight {
+    if (trackManager.count <= 0) return _toolbarLogicalHeight;
+    return _toolbarLogicalHeight +
+        _mediaHeaderLogicalHeight +
+        _controlsBarLogicalHeight +
+        _loopRangeBarLogicalHeight +
+        trackManager.count *
+            MainWindowLayoutCoordinator.timelineTrackRowLogicalHeight;
+  }
+
+  void _showFullScreenControlsTemporarily() {
+    if (!_fullScreen) return;
+    stateStore.setFullScreenControlsVisible(true);
+    _scheduleFullScreenControlsHide();
+  }
+
+  void _setFullScreenControlsHovering(bool hovering) {
+    if (!_fullScreen) return;
+    if (hovering) {
+      _fullScreenControlsTimer?.cancel();
+      stateStore.setFullScreenControlsVisible(true);
+    } else {
+      _scheduleFullScreenControlsHide();
+    }
+  }
+
+  void _scheduleFullScreenControlsHide() {
+    _fullScreenControlsTimer?.cancel();
+    _fullScreenControlsTimer = Timer(const Duration(seconds: 1), () {
+      if (!_fullScreen || !mounted()) return;
+      stateStore.setFullScreenControlsVisible(false);
+    });
   }
 
   void _initCoordinators() {
@@ -259,6 +393,8 @@ class MainWindowController {
       isLoopRangeEnabled: () => _loopRangeEnabled,
       showProfilerOverlay: () => stateStore.setProfilerVisible(true),
       showSettingsDialog: () => stateStore.setSettingsVisible(true),
+      toggleFullScreen: _toggleFullScreen,
+      exitFullScreen: _exitFullScreen,
     );
   }
 
@@ -279,6 +415,12 @@ class MainWindowController {
   }
 
   void _resetAfterLastTrackRemoved() {
+    if (_fullScreen) {
+      fireAndLog(
+        'exit full screen after last track removed',
+        _setFullScreen(false),
+      );
+    }
     trackManager.clear();
     stateStore.resetAfterLastTrackRemoved();
     playbackCoordinator.invalidateLoopRangeSync();
@@ -307,6 +449,8 @@ class MainWindowController {
   bool get _dragging => _state.dragging;
   bool get _profilerVisible => _state.profilerVisible;
   bool get _settingsVisible => _state.settingsVisible;
+  bool get _fullScreen => _state.fullScreen;
+  bool get _fullScreenControlsVisible => _state.fullScreenControlsVisible;
   int? get _audibleTrackFileId => _state.audibleTrackFileId;
   double get _timelineStartWidth => playbackCoordinator.timelineStartWidth;
   int get _resolvedLoopStartUs => playbackCoordinator.resolvedLoopStartUs;

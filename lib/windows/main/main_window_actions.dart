@@ -19,6 +19,8 @@ class MainWindowActionCoordinator {
   final bool Function() isLoopRangeEnabled;
   final void Function() showProfilerOverlay;
   final void Function() showSettingsDialog;
+  final void Function() toggleFullScreen;
+  final void Function() exitFullScreen;
 
   MainWindowActionBinder? _binder;
 
@@ -32,6 +34,8 @@ class MainWindowActionCoordinator {
     required this.isLoopRangeEnabled,
     required this.showProfilerOverlay,
     required this.showSettingsDialog,
+    required this.toggleFullScreen,
+    required this.exitFullScreen,
   });
 
   void bind() {
@@ -70,6 +74,8 @@ class MainWindowActionCoordinator {
       setZoom: layoutCoordinator.setZoom,
       setSplitPos: layoutCoordinator.setSplitPos,
       panByDelta: layoutCoordinator.panByDelta,
+      toggleFullScreen: toggleFullScreen,
+      exitFullScreen: exitFullScreen,
       openNewWindow: showProfilerOverlay,
       openSettings: showSettingsDialog,
       openStats: showProfilerOverlay,
@@ -115,6 +121,8 @@ class MainWindowActionBinder {
   final void Function(double ratio) setZoom;
   final void Function(double position) setSplitPos;
   final void Function(double dx, double dy) panByDelta;
+  final void Function() toggleFullScreen;
+  final void Function() exitFullScreen;
 
   final void Function() openNewWindow;
   final void Function() openSettings;
@@ -147,6 +155,8 @@ class MainWindowActionBinder {
     required this.setZoom,
     required this.setSplitPos,
     required this.panByDelta,
+    required this.toggleFullScreen,
+    required this.exitFullScreen,
     required this.openNewWindow,
     required this.openSettings,
     required this.openStats,
@@ -226,6 +236,8 @@ class MainWindowActionBinder {
       final a = action as Pan;
       panByDelta(a.dx, a.dy);
     });
+    _bind(const ToggleFullScreen(), (_) => toggleFullScreen());
+    _bind(const ExitFullScreen(), (_) => exitFullScreen());
 
     _bind(const NewWindow(), (_) => openNewWindow());
     _bind(const OpenSettings(), (_) => openSettings());

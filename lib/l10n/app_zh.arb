@@ -12,6 +12,8 @@
   "pause": "暂停",
   "play": "播放",
   "nextFrame": "下一帧",
+  "enterFullScreen": "进入全屏",
+  "exitFullScreen": "退出全屏",
 
   "sideBySide": "并排",
   "splitScreen": "分屏",
@@ -97,6 +99,8 @@
   "actionToggleLayout": "切换布局模式",
   "actionSeekForward": "快进 (+1s)",
   "actionSeekBackward": "快退 (-1s)",
+  "actionToggleFullScreen": "切换全屏",
+  "actionExitFullScreen": "退出全屏",
 
   "analysisClickToAnalyze": "点击以分析",
   "analysisGeneratingFor": "正在为 {name} 生成分析报告...",

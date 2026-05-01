@@ -26,6 +26,8 @@ class MainWindowStateModel {
   final bool dragging;
   final bool profilerVisible;
   final bool settingsVisible;
+  final bool fullScreen;
+  final bool fullScreenControlsVisible;
   final int? audibleTrackFileId;
 
   const MainWindowStateModel({
@@ -50,6 +52,8 @@ class MainWindowStateModel {
     this.dragging = false,
     this.profilerVisible = false,
     this.settingsVisible = false,
+    this.fullScreen = false,
+    this.fullScreenControlsVisible = false,
     this.audibleTrackFileId,
   });
 
@@ -75,6 +79,8 @@ class MainWindowStateModel {
     bool? dragging,
     bool? profilerVisible,
     bool? settingsVisible,
+    bool? fullScreen,
+    bool? fullScreenControlsVisible,
     Object? audibleTrackFileId = _mainWindowStateUnset,
   }) {
     return MainWindowStateModel(
@@ -108,6 +114,9 @@ class MainWindowStateModel {
       dragging: dragging ?? this.dragging,
       profilerVisible: profilerVisible ?? this.profilerVisible,
       settingsVisible: settingsVisible ?? this.settingsVisible,
+      fullScreen: fullScreen ?? this.fullScreen,
+      fullScreenControlsVisible:
+          fullScreenControlsVisible ?? this.fullScreenControlsVisible,
       audibleTrackFileId: audibleTrackFileId == _mainWindowStateUnset
           ? this.audibleTrackFileId
           : audibleTrackFileId as int?,
@@ -163,6 +172,8 @@ class MainWindowStateStore extends ChangeNotifier {
         nativeLoopRangeSynced: false,
         loopStartUs: 0,
         loopEndUs: 0,
+        fullScreen: false,
+        fullScreenControlsVisible: false,
         audibleTrackFileId: null,
       ),
     );
@@ -235,6 +246,20 @@ class MainWindowStateStore extends ChangeNotifier {
 
   void setSettingsVisible(bool visible) {
     _set(_value.copyWith(settingsVisible: visible));
+  }
+
+  void setFullScreen(bool fullScreen) {
+    _set(
+      _value.copyWith(
+        fullScreen: fullScreen,
+        fullScreenControlsVisible: fullScreen,
+      ),
+    );
+  }
+
+  void setFullScreenControlsVisible(bool visible) {
+    if (_value.fullScreenControlsVisible == visible) return;
+    _set(_value.copyWith(fullScreenControlsVisible: visible));
   }
 
   void setAudibleTrackFileId(int? fileId) {

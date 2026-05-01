@@ -23,6 +23,8 @@ sealed class PlayerAction {
     (labelKey: 'actionToggleLayout', shortcutLabel: 'M'),
     (labelKey: 'actionSeekForward', shortcutLabel: 'Shift + →'),
     (labelKey: 'actionSeekBackward', shortcutLabel: 'Shift + ←'),
+    (labelKey: 'actionToggleFullScreen', shortcutLabel: 'F11'),
+    (labelKey: 'actionExitFullScreen', shortcutLabel: 'Esc'),
   ];
 }
 
@@ -69,6 +71,15 @@ class OpenFile extends PlayerAction {
 class ToggleLayoutMode extends PlayerAction {
   const ToggleLayoutMode()
     : super('TOGGLE_LAYOUT_MODE', LogicalKeyboardKey.keyM);
+}
+
+class ToggleFullScreen extends PlayerAction {
+  const ToggleFullScreen()
+    : super('TOGGLE_FULL_SCREEN', LogicalKeyboardKey.f11);
+}
+
+class ExitFullScreen extends PlayerAction {
+  const ExitFullScreen() : super('EXIT_FULL_SCREEN', LogicalKeyboardKey.escape);
 }
 
 class NewWindow extends PlayerAction {

@@ -5,19 +5,19 @@
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
 
-#include "video_renderer/renderer.h"
+#include "player/native_player.h"
 
 #include <cstdint>
 #include <memory>
 #include <mutex>
 
-/// Process-global renderer pointer — allows any engine's plugin to query stats.
-namespace vr { class Renderer; }
-extern std::weak_ptr<vr::Renderer> g_renderer_weak;
-extern std::mutex g_renderer_mutex;
+/// Process-global player pointer — allows any engine's plugin to query stats.
+namespace vr { class NativePlayer; }
+extern std::weak_ptr<vr::NativePlayer> g_player_weak;
+extern std::mutex g_player_mutex;
 
-/// Pin the global renderer into a shared_ptr. Returns nullptr if not alive.
-std::shared_ptr<vr::Renderer> pin_global_renderer();
+/// Pin the global player into a shared_ptr. Returns nullptr if not alive.
+std::shared_ptr<vr::NativePlayer> pin_global_player();
 
 /// ---- dart:ffi flat struct for diagnostics (no heap, no string) ----
 
@@ -67,10 +67,10 @@ private:
     void InitLogging(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
-    void CreateRenderer(
+    void CreatePlayer(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
-    void DestroyRenderer(
+    void DestroyPlayer(
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void AddTrack(
         const flutter::EncodableValue* arguments,
@@ -91,7 +91,7 @@ private:
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-    std::shared_ptr<vr::Renderer> renderer_;
+    std::shared_ptr<vr::NativePlayer> player_;
     int64_t texture_id_ = -1;
     std::unique_ptr<flutter::TextureVariant> texture_variant_;
     FlutterDesktopGpuSurfaceDescriptor surface_descriptor_ = {};

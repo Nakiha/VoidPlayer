@@ -183,7 +183,6 @@ void ReleaseFlutterTexture(void* release_context) {
     }
     delete context;
 }
-
 ProcessMemoryUsage QueryProcessMemoryUsage() {
     ProcessMemoryUsage usage;
     PROCESS_MEMORY_COUNTERS_EX counters = {};
@@ -337,13 +336,13 @@ bool SaveBgraToPng(const std::vector<uint8_t>& bgra, int width, int height, cons
 }
 } // namespace
 
-// Process-global renderer pointer for cross-engine access (e.g. stats window).
-std::weak_ptr<vr::Renderer> g_renderer_weak;
-std::mutex g_renderer_mutex;
+// Process-global player pointer for cross-engine access (e.g. stats window).
+std::weak_ptr<vr::NativePlayer> g_player_weak;
+std::mutex g_player_mutex;
 
-std::shared_ptr<vr::Renderer> pin_global_renderer() {
-    std::lock_guard lock(g_renderer_mutex);
-    return g_renderer_weak.lock();
+std::shared_ptr<vr::NativePlayer> pin_global_player() {
+    std::lock_guard lock(g_player_mutex);
+    return g_player_weak.lock();
 }
 
 // ---- dart:ffi diagnostics export ----
@@ -358,7 +357,7 @@ const NakiVrDiagnostics* naki_vr_get_diagnostics() {
     d.process_private_bytes = process_memory.private_bytes;
     d.dedicated_video_memory_bytes = QueryDedicatedVideoMemoryUsage();
 
-    auto r = pin_global_renderer();
+    auto r = pin_global_player();
     if (!r) return &d;
 
     d.playback_time_s = static_cast<double>(r->current_pts_us()) / 1e6;
@@ -416,7 +415,7 @@ VideoRendererPlugin::VideoRendererPlugin(
     : texture_registrar_(texture_registrar), dxgi_adapter_(dxgi_adapter) {
     // Initialize native logging with defaults on plugin construction.
     // This happens before any Dart-side initLogging call, so native logs
-    // (including renderer creation) are always captured.
+    // (including player creation) are always captured.
     logs_dir_ = get_exe_dir() + "\\logs";
     log_file_name_ = default_native_log_file_name();
 
@@ -430,25 +429,25 @@ VideoRendererPlugin::VideoRendererPlugin(
     spdlog::info("[VideoRendererPlugin] Crash handler installed (VEH + SEH), crash dir: {}", logs_dir_);
     log_ffmpeg_runtime_versions();
 
-    // Register PTS callback for analysis FFI (avoids analysis_ffi depending on Renderer)
+    // Register PTS callback for analysis FFI (avoids analysis_ffi depending on NativePlayer)
     naki_analysis_register_pts_callback([]() -> int64_t {
-        auto r = pin_global_renderer();
+        auto r = pin_global_player();
         return r ? r->current_pts_us() : 0;
     });
 }
 
 VideoRendererPlugin::~VideoRendererPlugin() {
     {
-        std::lock_guard lock(g_renderer_mutex);
-        g_renderer_weak.reset();
+        std::lock_guard lock(g_player_mutex);
+        g_player_weak.reset();
     }
     if (texture_id_ >= 0 && texture_registrar_) {
         texture_registrar_->UnregisterTexture(texture_id_);
         texture_id_ = -1;
     }
-    if (renderer_) {
-        renderer_->shutdown();
-        renderer_.reset();
+    if (player_) {
+        player_->shutdown();
+        player_.reset();
     }
 }
 
@@ -461,10 +460,10 @@ void VideoRendererPlugin::HandleMethodCall(
 
     if (method == "initLogging") {
         InitLogging(method_call.arguments(), std::move(result));
-    } else if (method == "createRenderer") {
-        CreateRenderer(method_call.arguments(), std::move(result));
-    } else if (method == "destroyRenderer") {
-        DestroyRenderer(std::move(result));
+    } else if (method == "createPlayer" || method == "createRenderer") {
+        CreatePlayer(method_call.arguments(), std::move(result));
+    } else if (method == "destroyPlayer" || method == "destroyRenderer") {
+        DestroyPlayer(std::move(result));
     } else if (method == "addTrack") {
         AddTrack(method_call.arguments(), std::move(result));
     } else if (method == "removeTrack") {
@@ -474,7 +473,7 @@ void VideoRendererPlugin::HandleMethodCall(
     } else if (method == "setLoopRange") {
         SetLoopRange(method_call.arguments(), std::move(result));
     } else if (method == "setAudibleTrack") {
-        if (renderer_ && method_call.arguments()) {
+        if (player_ && method_call.arguments()) {
             const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
             if (args) {
                 auto it = args->find(flutter::EncodableValue("fileId"));
@@ -485,19 +484,19 @@ void VideoRendererPlugin::HandleMethodCall(
                     } else if (std::holds_alternative<int64_t>(it->second)) {
                         file_id = std::get<int64_t>(it->second);
                     }
-                    renderer_->set_audible_track(static_cast<int>(file_id));
+                    player_->set_audible_track(static_cast<int>(file_id));
                 }
             }
         }
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "play") {
-        if (renderer_) renderer_->play();
+        if (player_) player_->play();
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "pause") {
-        if (renderer_) renderer_->pause();
+        if (player_) player_->pause();
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "seek") {
-        if (renderer_ && method_call.arguments()) {
+        if (player_ && method_call.arguments()) {
             const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
             if (args) {
                 auto it = args->find(flutter::EncodableValue("ptsUs"));
@@ -509,15 +508,15 @@ void VideoRendererPlugin::HandleMethodCall(
                     } else if (std::holds_alternative<int64_t>(it->second)) {
                         pts = std::get<int64_t>(it->second);
                     }
-                    spdlog::info("[VideoRendererPlugin] seek: pts={}us, renderer alive={}", pts, (bool)renderer_);
-                    renderer_->seek(pts, vr::SeekType::Exact);
+                    spdlog::info("[VideoRendererPlugin] seek: pts={}us, player alive={}", pts, (bool)player_);
+                    player_->seek(pts, vr::SeekType::Exact);
                     spdlog::info("[VideoRendererPlugin] seek completed");
                 }
             }
         }
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "resize") {
-        if (renderer_ && method_call.arguments()) {
+        if (player_ && method_call.arguments()) {
             const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
             if (args) {
                 int w = 1920, h = 1080;
@@ -525,12 +524,12 @@ void VideoRendererPlugin::HandleMethodCall(
                 if (it != args->end()) w = std::get<int>(it->second);
                 it = args->find(flutter::EncodableValue("height"));
                 if (it != args->end()) h = std::get<int>(it->second);
-                renderer_->resize(w, h);
+                player_->resize(w, h);
             }
         }
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "setViewportBackgroundColor") {
-        if (renderer_ && method_call.arguments()) {
+        if (player_ && method_call.arguments()) {
             const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
             if (args) {
                 auto it = args->find(flutter::EncodableValue("color"));
@@ -546,40 +545,40 @@ void VideoRendererPlugin::HandleMethodCall(
                     const float r = static_cast<float>((color >> 16) & 0xFF) / 255.0f;
                     const float g = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
                     const float b = static_cast<float>(color & 0xFF) / 255.0f;
-                    renderer_->set_background_color(r, g, b, a);
+                    player_->set_background_color(r, g, b, a);
                 }
             }
         }
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "setSpeed") {
-        if (renderer_ && method_call.arguments()) {
+        if (player_ && method_call.arguments()) {
             const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
             if (args) {
                 auto it = args->find(flutter::EncodableValue("speed"));
                 if (it != args->end()) {
                     double speed = std::get<double>(it->second);
-                    renderer_->set_speed(speed);
+                    player_->set_speed(speed);
                 }
             }
         }
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "stepForward") {
-        if (renderer_) renderer_->step_forward();
+        if (player_) player_->step_forward();
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "stepBackward") {
-        if (renderer_) renderer_->step_backward();
+        if (player_) player_->step_backward();
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "currentPts") {
-        int64_t pts = renderer_ ? renderer_->current_pts_us() : 0;
+        int64_t pts = player_ ? player_->current_pts_us() : 0;
         result->Success(flutter::EncodableValue(pts));
     } else if (method == "duration") {
-        int64_t dur = renderer_ ? renderer_->duration_us() : 0;
+        int64_t dur = player_ ? player_->duration_us() : 0;
         result->Success(flutter::EncodableValue(dur));
     } else if (method == "isPlaying") {
-        bool playing = renderer_ ? renderer_->is_playing() : false;
+        bool playing = player_ ? player_->is_playing() : false;
         result->Success(flutter::EncodableValue(playing));
     } else if (method == "applyLayout") {
-        if (renderer_ && method_call.arguments()) {
+        if (player_ && method_call.arguments()) {
             const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
             if (args) {
                 vr::LayoutState ls;
@@ -600,21 +599,21 @@ void VideoRendererPlugin::HandleMethodCall(
                         ls.order[i] = std::get<int>(order_list[i]);
                     }
                 }
-                renderer_->apply_layout(ls);
+                player_->apply_layout(ls);
             }
         }
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "getTracks") {
         flutter::EncodableList tracks_list;
-        if (renderer_) {
-            for (const auto& info : renderer_->track_infos()) {
+        if (player_) {
+            for (const auto& info : player_->track_infos()) {
                 tracks_list.push_back(flutter::EncodableValue(make_track_map(info)));
             }
         }
         result->Success(flutter::EncodableValue(tracks_list));
     } else if (method == "getDiagnostics") {
-        // Use global renderer so stats window (secondary engine) can query directly
-        auto diag_renderer = pin_global_renderer();
+        // Use global player so stats window (secondary engine) can query directly.
+        auto diag_player = pin_global_player();
         flutter::EncodableMap map;
         const auto process_memory = QueryProcessMemoryUsage();
         map[flutter::EncodableValue("processRssBytes")] =
@@ -623,14 +622,14 @@ void VideoRendererPlugin::HandleMethodCall(
             flutter::EncodableValue(static_cast<int64_t>(process_memory.private_bytes));
         map[flutter::EncodableValue("dedicatedGpuUsageBytes")] =
             flutter::EncodableValue(static_cast<int64_t>(QueryDedicatedVideoMemoryUsage()));
-        if (diag_renderer) {
+        if (diag_player) {
             map[flutter::EncodableValue("playbackTime")] =
-                flutter::EncodableValue(static_cast<double>(diag_renderer->current_pts_us()) / 1e6);
+                flutter::EncodableValue(static_cast<double>(diag_player->current_pts_us()) / 1e6);
             map[flutter::EncodableValue("isPlaying")] =
-                flutter::EncodableValue(diag_renderer->is_playing());
+                flutter::EncodableValue(diag_player->is_playing());
 
             flutter::EncodableList tracks_list;
-            for (const auto& ts : diag_renderer->track_perf_stats()) {
+            for (const auto& ts : diag_player->track_perf_stats()) {
                 flutter::EncodableMap tm;
                 tm[flutter::EncodableValue("slot")] = flutter::EncodableValue(ts.slot);
                 tm[flutter::EncodableValue("fileId")] = flutter::EncodableValue(ts.file_id);
@@ -652,8 +651,8 @@ void VideoRendererPlugin::HandleMethodCall(
         CaptureViewport(method_call.arguments(), std::move(result));
     } else if (method == "getLayout") {
         flutter::EncodableMap map;
-        if (renderer_) {
-            auto ls = renderer_->layout();
+        if (player_) {
+            auto ls = player_->layout();
             map[flutter::EncodableValue("mode")] = flutter::EncodableValue(ls.mode);
             map[flutter::EncodableValue("splitPos")] = flutter::EncodableValue(static_cast<double>(ls.split_pos));
             map[flutter::EncodableValue("zoomRatio")] = flutter::EncodableValue(static_cast<double>(ls.zoom_ratio));
@@ -735,13 +734,13 @@ void VideoRendererPlugin::InitLogging(
     }
 }
 
-void VideoRendererPlugin::CreateRenderer(
+void VideoRendererPlugin::CreatePlayer(
     const flutter::EncodableValue* arguments,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     try {
-    if (renderer_) {
-        result->Error("ALREADY_CREATED", "Renderer already exists");
+    if (player_) {
+        result->Error("ALREADY_CREATED", "Player already exists");
         return;
     }
 
@@ -771,7 +770,7 @@ void VideoRendererPlugin::CreateRenderer(
     if (w_it != args->end()) width = std::get<int>(w_it->second);
     if (h_it != args->end()) height = std::get<int>(h_it->second);
 
-    // Create renderer in headless mode
+    // Create player in headless mode
     vr::RendererConfig config;
     config.headless = true;
     config.dxgi_adapter = dxgi_adapter_;
@@ -783,18 +782,18 @@ void VideoRendererPlugin::CreateRenderer(
         config.video_paths.push_back(std::get<std::string>(p));
     }
 
-    renderer_ = std::make_shared<vr::Renderer>();
+    player_ = std::make_shared<vr::NativePlayer>();
     {
-        std::lock_guard lock(g_renderer_mutex);
-        g_renderer_weak = renderer_;
+        std::lock_guard lock(g_player_mutex);
+        g_player_weak = player_;
     }
-    if (!renderer_->initialize(config)) {
+    if (!player_->initialize(config)) {
         {
-            std::lock_guard lock(g_renderer_mutex);
-            g_renderer_weak.reset();
+            std::lock_guard lock(g_player_mutex);
+            g_player_weak.reset();
         }
-        renderer_.reset();
-        result->Error("INIT_FAILED", "Failed to initialize renderer");
+        player_.reset();
+        result->Error("INIT_FAILED", "Failed to initialize player");
         return;
     }
 
@@ -806,10 +805,10 @@ void VideoRendererPlugin::CreateRenderer(
     auto gpu_texture = std::make_unique<flutter::GpuSurfaceTexture>(
         kFlutterDesktopGpuSurfaceTypeDxgiSharedHandle,
         [this](size_t width, size_t height) -> const FlutterDesktopGpuSurfaceDescriptor* {
-            if (!renderer_) return nullptr;
+            if (!player_) return nullptr;
 
             vr::SharedTextureSnapshot snapshot;
-            if (!renderer_->acquire_shared_texture(snapshot)) return nullptr;
+            if (!player_->acquire_shared_texture(snapshot)) return nullptr;
 
             auto* release_context = new (std::nothrow) FlutterTextureReleaseContext{snapshot.texture};
             if (!release_context) {
@@ -831,29 +830,29 @@ void VideoRendererPlugin::CreateRenderer(
     texture_id_ = texture_registrar_->RegisterTexture(texture_variant_.get());
 
     if (texture_id_ < 0) {
-        renderer_->shutdown();
-        renderer_.reset();
+        player_->shutdown();
+        player_.reset();
         texture_variant_.reset();
         result->Error("TEXTURE_FAILED", "Failed to register texture");
         return;
     }
 
     // Set frame callback to notify Flutter of new frames
-    renderer_->set_frame_callback([this]() {
+    player_->set_frame_callback([this]() {
         if (texture_id_ >= 0 && texture_registrar_) {
             texture_registrar_->MarkTextureFrameAvailable(texture_id_);
         }
     });
 
-    spdlog::info("[VideoRendererPlugin] Created renderer, texture_id={}, tracks={}", texture_id_, renderer_->track_infos().size());
+    spdlog::info("[VideoRendererPlugin] Created player, texture_id={}, tracks={}", texture_id_, player_->track_infos().size());
 
     // Build result map with textureId and track info
     flutter::EncodableMap result_map;
     result_map[flutter::EncodableValue("textureId")] = flutter::EncodableValue(texture_id_);
 
     flutter::EncodableList tracks_list;
-    if (renderer_) {
-        for (const auto& info : renderer_->track_infos()) {
+    if (player_) {
+        for (const auto& info : player_->track_infos()) {
             tracks_list.push_back(flutter::EncodableValue(make_track_map(info)));
         }
     }
@@ -861,15 +860,15 @@ void VideoRendererPlugin::CreateRenderer(
 
     result->Success(flutter::EncodableValue(result_map));
     } catch (const std::bad_variant_access& e) {
-        ReportMethodException(result.get(), "createRenderer", e);
+        ReportMethodException(result.get(), "CreatePlayer", e);
     } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "createRenderer", e);
+        ReportMethodException(result.get(), "CreatePlayer", e);
     } catch (...) {
-        ReportUnknownMethodException(result.get(), "createRenderer");
+        ReportUnknownMethodException(result.get(), "CreatePlayer");
     }
 }
 
-void VideoRendererPlugin::DestroyRenderer(
+void VideoRendererPlugin::DestroyPlayer(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     try {
@@ -879,21 +878,21 @@ void VideoRendererPlugin::DestroyRenderer(
     }
     texture_variant_.reset();
 
-    if (renderer_) {
+    if (player_) {
         {
-            std::lock_guard lock(g_renderer_mutex);
-            g_renderer_weak.reset();
+            std::lock_guard lock(g_player_mutex);
+            g_player_weak.reset();
         }
-        renderer_->shutdown();
-        renderer_.reset();
+        player_->shutdown();
+        player_.reset();
     }
 
-    spdlog::info("[VideoRendererPlugin] Destroyed renderer");
+    spdlog::info("[VideoRendererPlugin] Destroyed player");
     result->Success(flutter::EncodableValue(nullptr));
     } catch (const std::exception& e) {
-        ReportMethodException(result.get(), "destroyRenderer", e);
+        ReportMethodException(result.get(), "DestroyPlayer", e);
     } catch (...) {
-        ReportUnknownMethodException(result.get(), "destroyRenderer");
+        ReportUnknownMethodException(result.get(), "DestroyPlayer");
     }
 }
 
@@ -902,8 +901,8 @@ void VideoRendererPlugin::AddTrack(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     try {
-    if (!renderer_) {
-        result->Error("NO_RENDERER", "Renderer not created");
+    if (!player_) {
+        result->Error("NO_PLAYER", "Player not created");
         return;
     }
     if (!arguments) {
@@ -924,13 +923,13 @@ void VideoRendererPlugin::AddTrack(
     }
     const auto& path = std::get<std::string>(it->second);
 
-    int slot = renderer_->add_track(path);
+    int slot = player_->add_track(path);
     if (slot < 0) {
         result->Error("ADD_FAILED", "Failed to add track");
         return;
     }
 
-    auto infos = renderer_->track_infos();
+    auto infos = player_->track_infos();
     const vr::TrackInfo* found = nullptr;
     for (const auto& ti : infos) {
         if (ti.slot == slot) { found = &ti; break; }
@@ -940,7 +939,7 @@ void VideoRendererPlugin::AddTrack(
         return;
     }
 
-    spdlog::info("[VideoRendererPlugin] Added track: file_id={}, slot={}, path={}, tracks={}", found->file_id, slot, path, renderer_->track_infos().size());
+    spdlog::info("[VideoRendererPlugin] Added track: file_id={}, slot={}, path={}, tracks={}", found->file_id, slot, path, player_->track_infos().size());
     result->Success(flutter::EncodableValue(make_track_map(*found)));
     } catch (const std::bad_variant_access& e) {
         ReportMethodException(result.get(), "addTrack", e);
@@ -956,8 +955,8 @@ void VideoRendererPlugin::RemoveTrack(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     try {
-    if (!renderer_) {
-        result->Error("NO_RENDERER", "Renderer not created");
+    if (!player_) {
+        result->Error("NO_PLAYER", "Player not created");
         return;
     }
     if (!arguments) {
@@ -978,7 +977,7 @@ void VideoRendererPlugin::RemoveTrack(
     }
     int file_id = std::get<int>(it->second);
 
-    renderer_->remove_track(file_id);
+    player_->remove_track(file_id);
     spdlog::info("[VideoRendererPlugin] Removed track: file_id={}", file_id);
     result->Success(flutter::EncodableValue(nullptr));
     } catch (const std::bad_variant_access& e) {
@@ -995,8 +994,8 @@ void VideoRendererPlugin::SetTrackOffset(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     try {
-    if (!renderer_ || !arguments) {
-        result->Error("INVALID", "Renderer not created or no arguments");
+    if (!player_ || !arguments) {
+        result->Error("INVALID", "Player not created or no arguments");
         return;
     }
     const auto* args = std::get_if<flutter::EncodableMap>(arguments);
@@ -1017,7 +1016,7 @@ void VideoRendererPlugin::SetTrackOffset(
             offset_us = std::get<int64_t>(it->second);
     }
 
-    renderer_->set_track_offset(file_id, offset_us);
+    player_->set_track_offset(file_id, offset_us);
     spdlog::info("[VideoRendererPlugin] setTrackOffset: file_id={}, offset_us={}", file_id, offset_us);
     result->Success(flutter::EncodableValue(nullptr));
     } catch (const std::bad_variant_access& e) {
@@ -1034,8 +1033,8 @@ void VideoRendererPlugin::SetLoopRange(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     try {
-    if (!renderer_ || !arguments) {
-        result->Error("INVALID", "Renderer not created or no arguments");
+    if (!player_ || !arguments) {
+        result->Error("INVALID", "Player not created or no arguments");
         return;
     }
     const auto* args = std::get_if<flutter::EncodableMap>(arguments);
@@ -1064,7 +1063,7 @@ void VideoRendererPlugin::SetLoopRange(
             end_us = std::get<int64_t>(it->second);
     }
 
-    renderer_->set_loop_range(enabled, start_us, end_us);
+    player_->set_loop_range(enabled, start_us, end_us);
     result->Success(flutter::EncodableValue(nullptr));
     } catch (const std::bad_variant_access& e) {
         ReportMethodException(result.get(), "setLoopRange", e);
@@ -1163,8 +1162,8 @@ void VideoRendererPlugin::CaptureViewport(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     try {
-    if (!renderer_) {
-        result->Error("NO_RENDERER", "Renderer not created");
+    if (!player_) {
+        result->Error("NO_PLAYER", "Player not created");
         return;
     }
 
@@ -1182,7 +1181,7 @@ void VideoRendererPlugin::CaptureViewport(
     std::vector<uint8_t> bgra;
     int width = 0;
     int height = 0;
-    if (!renderer_->capture_front_buffer(bgra, width, height)) {
+    if (!player_->capture_front_buffer(bgra, width, height)) {
         result->Error("CAPTURE_FAILED", "Failed to capture viewport");
         return;
     }

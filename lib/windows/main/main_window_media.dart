@@ -89,7 +89,7 @@ class MainWindowMediaCoordinator {
         final initialHeight = layoutCoordinator.viewportHeight > 0
             ? layoutCoordinator.viewportHeight
             : 1080;
-        final res = await controller.createRenderer(
+        final res = await controller.createPlayer(
           paths,
           width: initialWidth,
           height: initialHeight,

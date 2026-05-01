@@ -63,10 +63,30 @@ int main(void) {
         naki_vr_renderer_pause(r);
         naki_vr_renderer_seek(r, 0);
         naki_vr_renderer_set_speed(r, 2.0);
+        naki_vr_renderer_set_loop_range(r, 0, 0, 0);
+        naki_vr_renderer_set_audible_track(r, -1);
+        naki_vr_renderer_set_track_offset(r, 1, 0);
         CHECK(1, "playback ops on uninitialized renderer (no crash)");
 
         naki_vr_renderer_destroy(r);
         CHECK(1, "naki_vr_renderer_destroy");
+    }
+
+    /* ---- player aliases ---- */
+    {
+        naki_vr_player_t p = naki_vr_player_create();
+        CHECK(p != NULL, "naki_vr_player_create returns non-NULL");
+        CHECK(naki_vr_player_current_pts_us(p) == 0, "player current_pts_us == 0 (fresh)");
+        naki_vr_player_play(p);
+        naki_vr_player_pause(p);
+        naki_vr_player_seek(p, 0);
+        naki_vr_player_set_speed(p, 1.0);
+        naki_vr_player_set_loop_range(p, 0, 0, 0);
+        naki_vr_player_set_audible_track(p, -1);
+        naki_vr_player_set_track_offset(p, 1, 0);
+        CHECK(1, "player aliases on uninitialized player (no crash)");
+        naki_vr_player_destroy(p);
+        CHECK(1, "naki_vr_player_destroy");
     }
 
     /* ---- NULL safety ---- */

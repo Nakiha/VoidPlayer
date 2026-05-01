@@ -34,7 +34,8 @@ class TrackInfo {
   );
 }
 
-/// Result of createRenderer, containing texture ID and initial track info.
+/// Result of createPlayer/createRenderer, containing texture ID and initial
+/// track info.
 class CreateRendererResult {
   final int textureId;
   final List<TrackInfo> tracks;
@@ -127,7 +128,9 @@ class LayoutState {
   );
 }
 
-class VideoRendererController {
+typedef CreatePlayerResult = CreateRendererResult;
+
+class NativePlayerController {
   static const MethodChannel _channel = MethodChannel('video_renderer');
 
   int? _textureId;
@@ -139,11 +142,12 @@ class VideoRendererController {
 
   int? get textureId => _textureId;
   bool get isDisposed => _disposed;
-  bool get hasRenderer => _textureId != null;
+  bool get hasPlayer => _textureId != null;
+  bool get hasRenderer => hasPlayer;
 
   void _ensureAlive() {
     if (_disposed) {
-      throw StateError('VideoRendererController is disposed');
+      throw StateError('NativePlayerController is disposed');
     }
   }
 
@@ -165,16 +169,22 @@ class VideoRendererController {
     List<String> videoPaths, {
     int width = 1920,
     int height = 1080,
+  }) => createPlayer(videoPaths, width: width, height: height);
+
+  Future<CreatePlayerResult> createPlayer(
+    List<String> videoPaths, {
+    int width = 1920,
+    int height = 1080,
   }) {
     _ensureAlive();
     if (_textureId != null) {
-      throw StateError('Renderer already created');
+      throw StateError('Player already created');
     }
     final existing = _createInFlight;
     if (existing != null) return existing;
 
     late final Future<CreateRendererResult> future;
-    future = _createRendererImpl(videoPaths, width: width, height: height)
+    future = _createPlayerImpl(videoPaths, width: width, height: height)
         .whenComplete(() {
           if (identical(_createInFlight, future)) {
             _createInFlight = null;
@@ -184,7 +194,7 @@ class VideoRendererController {
     return future;
   }
 
-  Future<CreateRendererResult> _createRendererImpl(
+  Future<CreatePlayerResult> _createPlayerImpl(
     List<String> videoPaths, {
     required int width,
     required int height,
@@ -195,20 +205,20 @@ class VideoRendererController {
       _ensureAlive();
     }
     final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-      'createRenderer',
+      'createPlayer',
       {'videoPaths': videoPaths, 'width': width, 'height': height},
     );
-    final payload = _requireMap(map, 'createRenderer');
+    final payload = _requireMap(map, 'createPlayer');
     final textureId = payload['textureId'];
     if (textureId is! int) {
       throw StateError(
-        'createRenderer returned invalid textureId: ${payload['textureId']}',
+        'createPlayer returned invalid textureId: ${payload['textureId']}',
       );
     }
     final tracksValue = payload['tracks'];
     if (tracksValue != null && tracksValue is! List) {
       throw StateError(
-        'createRenderer returned invalid tracks payload: $tracksValue',
+        'createPlayer returned invalid tracks payload: $tracksValue',
       );
     }
     final tracksList = tracksValue as List<dynamic>? ?? [];
@@ -216,7 +226,7 @@ class VideoRendererController {
     final result = CreateRendererResult(
       textureId: textureId,
       tracks: tracksList
-          .map((e) => _trackInfoFromValue(e, 'createRenderer'))
+          .map((e) => _trackInfoFromValue(e, 'createPlayer'))
           .toList(),
     );
     final backgroundColor = _viewportBackgroundColor;
@@ -353,7 +363,12 @@ class VideoRendererController {
   /// reusable for a future [createRenderer] call.
   Future<void> destroyRendererOnly() {
     _ensureAlive();
-    return _destroyRenderer(markDisposed: false);
+    return destroyPlayerOnly();
+  }
+
+  Future<void> destroyPlayerOnly() {
+    _ensureAlive();
+    return _destroyPlayer(markDisposed: false);
   }
 
   /// Set per-track sync offset in microseconds.
@@ -385,11 +400,11 @@ class VideoRendererController {
     final existing = _disposeFuture;
     if (existing != null) return existing;
     _disposed = true;
-    _disposeFuture = _destroyRenderer(markDisposed: true);
+    _disposeFuture = _destroyPlayer(markDisposed: true);
     return _disposeFuture!;
   }
 
-  Future<void> _destroyRenderer({required bool markDisposed}) {
+  Future<void> _destroyPlayer({required bool markDisposed}) {
     if (markDisposed) {
       _disposed = true;
     } else {
@@ -398,7 +413,7 @@ class VideoRendererController {
     final existing = _destroyInFlight;
     if (existing != null) return existing;
     late final Future<void> future;
-    future = _destroyRendererImpl().whenComplete(() {
+    future = _destroyPlayerImpl().whenComplete(() {
       if (identical(_destroyInFlight, future)) {
         _destroyInFlight = null;
       }
@@ -407,7 +422,7 @@ class VideoRendererController {
     return future;
   }
 
-  Future<void> _destroyRendererImpl() async {
+  Future<void> _destroyPlayerImpl() async {
     final creating = _createInFlight;
     if (creating != null) {
       try {
@@ -417,7 +432,11 @@ class VideoRendererController {
     final textureId = _textureId;
     _textureId = null;
     if (textureId != null) {
-      await _channel.invokeMethod<void>('destroyRenderer');
+      await _channel.invokeMethod<void>('destroyPlayer');
     }
   }
+}
+
+class VideoRendererController extends NativePlayerController {
+  VideoRendererController() : super();
 }

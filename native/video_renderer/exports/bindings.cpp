@@ -1,5 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include "player/native_player.h"
 #include "video_renderer/renderer.h"
 #include "common/logging.h"
 #include <cstdint>
@@ -78,6 +79,9 @@ PYBIND11_MODULE(video_renderer_native, m) {
         .def("seek", py::overload_cast<int64_t, vr::SeekType>(&vr::Renderer::seek),
              py::arg("target_pts_us"), py::arg("type") = vr::SeekType::Keyframe)
         .def("set_speed", &vr::Renderer::set_speed, py::arg("speed"))
+        .def("set_loop_range", &vr::Renderer::set_loop_range,
+             py::arg("enabled"), py::arg("start_us"), py::arg("end_us"))
+        .def("set_audible_track", &vr::Renderer::set_audible_track, py::arg("file_id"))
         .def("step_forward", &vr::Renderer::step_forward)
         .def("step_backward", &vr::Renderer::step_backward)
         .def("is_playing", &vr::Renderer::is_playing)
@@ -93,11 +97,42 @@ PYBIND11_MODULE(video_renderer_native, m) {
              "Remove track by file_id")
         .def("has_track", &vr::Renderer::has_track, py::arg("slot"),
              "Check if slot has a track")
+        .def("set_track_offset", &vr::Renderer::set_track_offset,
+             py::arg("file_id"), py::arg("offset_us"))
         // Layout control
         .def("apply_layout", &vr::Renderer::apply_layout, py::arg("state"),
              "Atomically apply layout state and trigger redraw if paused")
         .def("layout", &vr::Renderer::layout,
              "Get a snapshot of the current layout state");
+
+    // NativePlayer
+    py::class_<vr::NativePlayer>(m, "NativePlayer")
+        .def(py::init<>())
+        .def("initialize", &vr::NativePlayer::initialize, py::arg("config"))
+        .def("shutdown", &vr::NativePlayer::shutdown)
+        .def("play", &vr::NativePlayer::play)
+        .def("pause", &vr::NativePlayer::pause)
+        .def("seek", py::overload_cast<int64_t, vr::SeekType>(&vr::NativePlayer::seek),
+             py::arg("target_pts_us"), py::arg("type") = vr::SeekType::Keyframe)
+        .def("set_speed", &vr::NativePlayer::set_speed, py::arg("speed"))
+        .def("set_loop_range", &vr::NativePlayer::set_loop_range,
+             py::arg("enabled"), py::arg("start_us"), py::arg("end_us"))
+        .def("set_audible_track", &vr::NativePlayer::set_audible_track, py::arg("file_id"))
+        .def("step_forward", &vr::NativePlayer::step_forward)
+        .def("step_backward", &vr::NativePlayer::step_backward)
+        .def("is_playing", &vr::NativePlayer::is_playing)
+        .def("is_initialized", &vr::NativePlayer::is_initialized)
+        .def("current_pts_us", &vr::NativePlayer::current_pts_us)
+        .def("current_speed", &vr::NativePlayer::current_speed)
+        .def("track_count", &vr::NativePlayer::track_count)
+        .def("duration_us", &vr::NativePlayer::duration_us)
+        .def("add_track", &vr::NativePlayer::add_track, py::arg("video_path"))
+        .def("remove_track", &vr::NativePlayer::remove_track, py::arg("file_id"))
+        .def("has_track", &vr::NativePlayer::has_track, py::arg("slot"))
+        .def("set_track_offset", &vr::NativePlayer::set_track_offset,
+             py::arg("file_id"), py::arg("offset_us"))
+        .def("apply_layout", &vr::NativePlayer::apply_layout, py::arg("state"))
+        .def("layout", &vr::NativePlayer::layout);
 
     // Layout mode constants
     m.attr("LAYOUT_SIDE_BY_SIDE") = py::int_(vr::LAYOUT_SIDE_BY_SIDE);

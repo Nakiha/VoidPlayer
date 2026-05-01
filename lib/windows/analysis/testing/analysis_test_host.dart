@@ -7,7 +7,7 @@ abstract class AnalysisTestHost {
   bool get mounted;
   List<FrameInfo> get analysisFrames;
   List<NaluInfo> get analysisNalus;
-  NakiAnalysisSummary? get analysisSummary;
+  AnalysisSummary? get analysisSummary;
   AnalysisCodec get analysisCodec;
   int? get selectedAnalysisFrameIdx;
   int? get selectedAnalysisNaluIdx;

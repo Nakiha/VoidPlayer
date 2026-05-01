@@ -202,6 +202,45 @@ class NaluInfo {
   });
 }
 
+class AnalysisSummary {
+  final int loaded;
+  final int frameCount;
+  final int packetCount;
+  final int naluCount;
+  final int videoWidth;
+  final int videoHeight;
+  final int timeBaseNum;
+  final int timeBaseDen;
+  final int currentFrameIdx;
+  final int codec;
+
+  const AnalysisSummary({
+    required this.loaded,
+    required this.frameCount,
+    required this.packetCount,
+    required this.naluCount,
+    required this.videoWidth,
+    required this.videoHeight,
+    required this.timeBaseNum,
+    required this.timeBaseDen,
+    required this.currentFrameIdx,
+    required this.codec,
+  });
+
+  factory AnalysisSummary.fromNative(NakiAnalysisSummary s) => AnalysisSummary(
+    loaded: s.loaded,
+    frameCount: s.frameCount,
+    packetCount: s.packetCount,
+    naluCount: s.naluCount,
+    videoWidth: s.videoWidth,
+    videoHeight: s.videoHeight,
+    timeBaseNum: s.timeBaseNum,
+    timeBaseDen: s.timeBaseDen,
+    currentFrameIdx: s.currentFrameIdx,
+    codec: s.codec,
+  );
+}
+
 // ===========================================================================
 // High-level API
 // ===========================================================================
@@ -226,7 +265,8 @@ class AnalysisFfi {
   static void unload() => _unload();
 
   /// Get analysis summary snapshot.
-  static NakiAnalysisSummary get summary => _getSummary().ref;
+  static AnalysisSummary get summary =>
+      AnalysisSummary.fromNative(_getSummary().ref);
 
   /// Read all frame info into a Dart list.
   /// Returns plain Dart objects (safe after the FFI buffer is freed).

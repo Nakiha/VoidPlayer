@@ -30,7 +30,7 @@ class AnalysisPageController extends ChangeNotifier {
   List<int> _sortedFrameOriginalIndicesCache = [];
   List<int> _frameToSortedPosition = [];
   Map<int, List<int>> _sortedPocToIndices = {};
-  NakiAnalysisSummary? _summary;
+  AnalysisSummary? _summary;
   Timer? _pollTimer;
 
   List<int> _frameToNalu = [];
@@ -79,7 +79,7 @@ class AnalysisPageController extends ChangeNotifier {
 
   List<FrameInfo> get frames => _frames;
   List<NaluInfo> get nalus => _nalus;
-  NakiAnalysisSummary? get summary => _summary;
+  AnalysisSummary? get summary => _summary;
   AnalysisCodec get codec => analysisCodecFromValue(_summary?.codec ?? 0);
   int? get selectedFrameIdx => _selectedFrameIdx;
   int? get selectedNaluIdx => _selectedNaluIdx;

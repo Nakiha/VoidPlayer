@@ -116,7 +116,7 @@ class AnalysisPageState extends State<AnalysisPage>
   List<NaluInfo> get analysisNalus => _controller.nalus;
 
   @override
-  NakiAnalysisSummary? get analysisSummary => _controller.summary;
+  AnalysisSummary? get analysisSummary => _controller.summary;
 
   @override
   AnalysisCodec get analysisCodec => _controller.codec;

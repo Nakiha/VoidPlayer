@@ -21,7 +21,7 @@ class AnalysisPageViewModel {
   final List<NaluInfo> nalus;
   final List<FrameInfo> sortedFrames;
   final Map<int, List<int>> sortedPocToIndices;
-  final NakiAnalysisSummary? summary;
+  final AnalysisSummary? summary;
   final AnalysisCodec codec;
   final int? selectedSortedFrameIdx;
   final int currentSortedFrameIdx;

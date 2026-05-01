@@ -14,6 +14,7 @@ def ensure_analysis_test_tools() -> None:
 
     header("Prepare VTM DecoderApp for analysis tests")
     print("VTM DecoderApp missing; building it before native tests...")
+    print("Tip: set VTM_DECODER_APP=C:\\path\\to\\DecoderApp.exe to reuse a prebuilt VTM.")
 
     from .vtm import cmd_vtm_build, ensure_submodule
 

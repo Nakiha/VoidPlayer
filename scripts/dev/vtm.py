@@ -9,15 +9,32 @@ from pathlib import Path
 from .paths import ROOT, VTM_ANALYSIS_DIR, VTM_BUILD_DIR, VTM_DIR, find_vtm_decoder
 from .process import header, run
 
+VTM_SUBMODULE_PATH = "native/analysis/vendor/vtm"
+
+
+def vtm_source_ready() -> bool:
+    """Return whether the VTM source checkout looks usable."""
+    return (VTM_DIR / "CMakeLists.txt").is_file()
+
 
 def ensure_submodule() -> None:
-    """Ensure the analysis VTM submodule is initialized and on voidplayer-patches."""
-    if not (VTM_DIR / ".git").exists():
-        print("VTM submodule not initialized. Running git submodule update...")
+    """Ensure the analysis VTM submodule has a usable source checkout."""
+    if not vtm_source_ready():
+        print("VTM source tree missing or incomplete. Running git submodule update...")
         run([
-            "git", "submodule", "update", "--init", "--remote",
-            "native/analysis/vendor/vtm",
+            "git", "submodule", "update", "--init", "--recursive", "--checkout",
+            VTM_SUBMODULE_PATH,
         ], cwd=str(ROOT))
+
+    if not vtm_source_ready():
+        print(
+            "\nERROR: VTM source tree is still incomplete after submodule update.\n"
+            f"Expected: {VTM_DIR / 'CMakeLists.txt'}\n"
+            "Try one of:\n"
+            f"  git submodule update --init --recursive --checkout {VTM_SUBMODULE_PATH}\n"
+            "  set VTM_DECODER_APP=C:\\path\\to\\DecoderApp.exe\n"
+        )
+        sys.exit(1)
 
     result = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
@@ -26,7 +43,7 @@ def ensure_submodule() -> None:
         cwd=str(VTM_DIR),
     )
     branch = result.stdout.strip()
-    if branch != "voidplayer-patches":
+    if branch not in ("voidplayer-patches", "HEAD"):
         print(f"WARNING: VTM submodule on branch '{branch}', expected 'voidplayer-patches'")
 
 
@@ -91,6 +108,8 @@ def cmd_vtm(args) -> None:
 
 def cmd_vtm_build() -> None:
     """Build VTM DecoderApp with MSVC (static runtime, no DLL dependencies)."""
+    ensure_submodule()
+
     cache = VTM_BUILD_DIR / "CMakeCache.txt"
     if cache.exists():
         content = cache.read_text(errors="ignore")

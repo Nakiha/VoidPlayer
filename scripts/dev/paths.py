@@ -1,5 +1,6 @@
 """Shared paths for VoidPlayer development commands."""
 
+import os
 from pathlib import Path
 
 
@@ -17,6 +18,10 @@ VTM_ANALYSIS_DIR = ROOT / "build" / "vtm_analysis"
 
 def find_vtm_decoder() -> Path:
     """Find DecoderApp.exe under bin/vs*/; MSVC output varies by VS version."""
+    override = os.environ.get("VTM_DECODER_APP")
+    if override:
+        return Path(override)
+
     bin_dir = VTM_DIR / "bin"
     if bin_dir.exists():
         for path in sorted(bin_dir.rglob("DecoderApp.exe"), reverse=True):

@@ -42,7 +42,7 @@ set(VOID_RENDERER_SHADER_TEMPLATE
 
 function(void_apply_native_compile_options target_name)
     if(MSVC)
-        target_compile_options(${target_name} PRIVATE /utf-8 /W4 /permissive- /EHsc)
+        target_compile_options(${target_name} PRIVATE /utf-8 /W4 /WX /permissive- /EHsc)
     endif()
 endfunction()
 

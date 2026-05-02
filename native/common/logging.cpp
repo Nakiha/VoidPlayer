@@ -8,6 +8,7 @@
 #endif
 
 #include "common/logging.h"
+#include "common/win_utf8.h"
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/base_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -32,16 +33,6 @@
 namespace vr {
 
 #ifdef _WIN32
-
-static std::wstring utf16_from_utf8(const std::string& utf8) {
-    if (utf8.empty()) return {};
-    const int length = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
-    if (length <= 0) return {};
-    std::wstring wide(static_cast<size_t>(length), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, wide.data(), length);
-    wide.resize(static_cast<size_t>(length - 1));
-    return wide;
-}
 
 static void configure_windows_utf8_console() {
     SetConsoleOutputCP(CP_UTF8);
@@ -134,7 +125,7 @@ template <typename Mutex>
 class utf8_file_sink final : public spdlog::sinks::base_sink<Mutex> {
 public:
     explicit utf8_file_sink(const std::string& path) {
-        const auto wide_path = utf16_from_utf8(path);
+        const auto wide_path = win_utf8::utf16_from_utf8(path);
         if (wide_path.empty()) {
             throw spdlog::spdlog_ex("UTF-8 log path is empty or invalid");
         }
@@ -292,10 +283,9 @@ static std::string default_symbol_cache_dir(const std::string& crash_dir) {
         return env_cache;
     }
 
-    char local_app_data[MAX_PATH];
-    DWORD len = GetEnvironmentVariableA("LOCALAPPDATA", local_app_data, MAX_PATH);
-    if (len > 0 && len < MAX_PATH) {
-        return std::string(local_app_data) + "\\VoidPlayer\\Symbols";
+    const auto local_app_data = win_utf8::get_env_utf8(L"LOCALAPPDATA");
+    if (!local_app_data.empty()) {
+        return local_app_data + "\\VoidPlayer\\Symbols";
     }
 
     return crash_dir.empty() ? "symbols" : crash_dir + "\\symbols";
@@ -692,11 +682,7 @@ void install_crash_handler(const std::string& crash_dir) {
     SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
 
     // Build symbol search path: exe directory + crash directory + default
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(nullptr, exe_path, MAX_PATH);
-    std::string exe_dir(exe_path);
-    auto last_sep = exe_dir.find_last_of("\\/");
-    if (last_sep != std::string::npos) exe_dir = exe_dir.substr(0, last_sep);
+    std::string exe_dir = win_utf8::module_directory_utf8();
 
     std::string symbol_cache_dir = default_symbol_cache_dir(crash_dir);
     std::string sym_path = exe_dir + ";" + crash_dir + ";srv*" + symbol_cache_dir +

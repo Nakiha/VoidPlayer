@@ -2,6 +2,7 @@
 
 #include "analysis/generators/bitstream_indexer.h"
 #include "analysis/parsers/binary_types.h"
+#include "common/win_utf8.h"
 
 #include <spdlog/spdlog.h>
 
@@ -22,7 +23,7 @@ namespace vr::analysis {
 static bool writeVbt(const std::string& path,
                      const std::vector<VbtEntry>& entries,
                      int32_t time_base_num, int32_t time_base_den) {
-    std::ofstream out(path, std::ios::binary);
+    std::ofstream out(win_utf8::path_from_utf8(path), std::ios::binary);
     if (!out) return false;
 
     VbtHeader hdr{};
@@ -43,7 +44,7 @@ static bool writeVbt(const std::string& path,
 // Write binary VBI file
 static bool writeVbi(const std::string& path,
                      const BitstreamIndex& index) {
-    std::ofstream out(path, std::ios::binary);
+    std::ofstream out(win_utf8::path_from_utf8(path), std::ios::binary);
     if (!out) return false;
 
     VbiHeader hdr{};

@@ -1,4 +1,5 @@
 #include "analysis/parsers/vbs2_parser.h"
+#include "common/win_utf8.h"
 
 #include <fstream>
 #include <limits>
@@ -37,7 +38,7 @@ bool validate_index_entry(const Vbs2IndexEntry& idx,
 bool Vbs2File::open(const std::string& path) {
     index_.clear();
 
-    file_.open(path, std::ios::binary);
+    file_.open(win_utf8::path_from_utf8(path), std::ios::binary);
     if (!file_) return false;
 
     // Read header

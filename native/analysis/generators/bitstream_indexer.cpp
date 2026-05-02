@@ -1,4 +1,5 @@
 #include "analysis/generators/bitstream_indexer.h"
+#include "common/win_utf8.h"
 
 extern "C" {
 #include <libavcodec/codec_id.h>
@@ -338,7 +339,7 @@ void BitstreamIndexer::append_packet(VbiCodec codec,
 bool BitstreamIndexer::index_raw_file(const std::string& path,
                                       VbiCodec codec,
                                       BitstreamIndex& index) {
-    std::ifstream in(path, std::ios::binary);
+    std::ifstream in(win_utf8::path_from_utf8(path), std::ios::binary);
     if (!in) return false;
 
     std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
@@ -360,7 +361,7 @@ bool BitstreamIndexer::index_raw_file(const std::string& path,
 bool BitstreamIndexer::write_annex_b_file(const std::string& path,
                                           VbiCodec codec,
                                           const std::string& output_path) {
-    std::ifstream in(path, std::ios::binary);
+    std::ifstream in(win_utf8::path_from_utf8(path), std::ios::binary);
     if (!in) return false;
 
     std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
@@ -374,7 +375,7 @@ bool BitstreamIndexer::write_annex_b_file(const std::string& path,
         return false;
     }
 
-    std::ofstream out(output_path, std::ios::binary);
+    std::ofstream out(win_utf8::path_from_utf8(output_path), std::ios::binary);
     if (!out) return false;
 
     if (is_annex_b(bytes.data(), static_cast<int>(bytes.size()))) {

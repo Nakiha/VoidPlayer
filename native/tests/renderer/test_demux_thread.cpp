@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "test_utils.h"
+#include "common/win_utf8.h"
 #include "media/demux_thread.h"
 #include "media/seek_controller.h"
 #include <thread>
@@ -115,6 +116,33 @@ TEST_CASE("DemuxThread: open h264 file and verify stats", "[demux_thread]") {
     REQUIRE(s.codec_params != nullptr);
 
     demux.stop();
+}
+
+TEST_CASE("DemuxThread: opens UTF-8 paths with non-ASCII characters",
+          "[demux_thread][unicode]") {
+    namespace fs = std::filesystem;
+    const fs::path source = fs::path(get_h264_path());
+    if (!fs::exists(source)) return;
+
+    const fs::path tmp =
+        fs::temp_directory_path() / fs::u8path("void_player_demux_unicode_路径_テスト");
+    fs::remove_all(tmp);
+    fs::create_directories(tmp);
+
+    const fs::path video_path = tmp / fs::u8path("输入_動画.mp4");
+    fs::copy_file(source, video_path, fs::copy_options::overwrite_existing);
+
+    PacketQueue pq(200);
+    SeekController sc;
+    DemuxThread demux(vr::win_utf8::path_to_utf8(video_path), pq, sc);
+
+    REQUIRE(demux.start());
+    REQUIRE(demux.stats().video_stream_index >= 0);
+    REQUIRE(demux.stats().width == 1920);
+    REQUIRE(demux.stats().height == 1080);
+
+    demux.stop();
+    fs::remove_all(tmp);
 }
 
 TEST_CASE("DemuxThread: drained packets have correct stream_index",

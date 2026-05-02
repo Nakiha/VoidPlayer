@@ -1,4 +1,5 @@
 #include "analysis/parsers/vbi_parser.h"
+#include "common/win_utf8.h"
 
 #include <algorithm>
 #include <cstring>
@@ -11,7 +12,7 @@ bool VbiFile::open(const std::string& path) {
     entries_.clear();
     header_ = {};
 
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(win_utf8::path_from_utf8(path), std::ios::binary);
     if (!f) return false;
 
     char magic[4] = {};

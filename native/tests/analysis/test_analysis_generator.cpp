@@ -4,6 +4,7 @@
 #include "analysis/analysis_manager.h"
 #include "analysis/parsers/vbt_parser.h"
 #include "analysis/parsers/vbi_parser.h"
+#include "common/win_utf8.h"
 
 #include <filesystem>
 #include <fstream>
@@ -192,6 +193,38 @@ TEST_CASE("AnalysisGenerator: nonexistent input returns false", "[analysis][gene
     REQUIRE_FALSE(std::filesystem::exists(vbt_path));
 
     std::filesystem::remove_all(tmp);
+}
+
+TEST_CASE("AnalysisGenerator: accepts UTF-8 paths with non-ASCII characters",
+          "[analysis][generator][unicode]") {
+    namespace fs = std::filesystem;
+    const fs::path source = fs::path(test_dir) / "h264_9s_1920x1080.mp4";
+    if (!fs::exists(source)) return;
+
+    const fs::path tmp =
+        fs::temp_directory_path() / fs::u8path("void_player_unicode_路径_テスト");
+    fs::remove_all(tmp);
+    fs::create_directories(tmp);
+
+    const fs::path video_path = tmp / fs::u8path("输入_動画.mp4");
+    const fs::path vbi_path = tmp / fs::u8path("结果.vbi");
+    const fs::path vbt_path = tmp / fs::u8path("结果.vbt");
+    fs::copy_file(source, video_path, fs::copy_options::overwrite_existing);
+
+    REQUIRE(vr::analysis::AnalysisGenerator::generate(
+        vr::win_utf8::path_to_utf8(video_path),
+        vr::win_utf8::path_to_utf8(vbi_path),
+        vr::win_utf8::path_to_utf8(vbt_path)));
+
+    vr::analysis::VbiFile vbi;
+    REQUIRE(vbi.open(vr::win_utf8::path_to_utf8(vbi_path)));
+    REQUIRE(vbi.nalu_count() > 0);
+
+    vr::analysis::VbtFile vbt;
+    REQUIRE(vbt.open(vr::win_utf8::path_to_utf8(vbt_path)));
+    REQUIRE(vbt.packet_count() > 0);
+
+    fs::remove_all(tmp);
 }
 
 TEST_CASE("AnalysisGenerator: resources video samples produce VBI2 and VBT", "[analysis][generator][resources]") {

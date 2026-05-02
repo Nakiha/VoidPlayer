@@ -1,4 +1,5 @@
 #include "analysis/parsers/vbt_parser.h"
+#include "common/win_utf8.h"
 
 #include <algorithm>
 #include <fstream>
@@ -11,7 +12,7 @@ bool VbtFile::open(const std::string& path) {
     pts_sorted_indices_.clear();
     header_ = {};
 
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(win_utf8::path_from_utf8(path), std::ios::binary);
     if (!f) return false;
 
     // Read header

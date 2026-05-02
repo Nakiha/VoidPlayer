@@ -1,6 +1,7 @@
 #include "video_renderer_plugin.h"
 #include "analysis_ffi.h"
 
+#include "common/win_utf8.h"
 #include "utils.h"
 #include <flutter_windows.h>
 #include <spdlog/spdlog.h>
@@ -12,6 +13,7 @@
 #include <psapi.h>
 #include <wrl/client.h>
 #include <cstring>
+#include <cwchar>
 #include <exception>
 #include <vector>
 #include <sstream>
@@ -66,12 +68,7 @@ void ReportUnknownMethodException(PluginResult* result, const std::string& metho
 }
 
 std::string get_exe_dir() {
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(nullptr, exe_path, MAX_PATH);
-    std::string dir(exe_path);
-    auto last_sep = dir.find_last_of("\\/");
-    if (last_sep != std::string::npos) dir = dir.substr(0, last_sep);
-    return dir;
+    return vr::win_utf8::module_directory_utf8();
 }
 
 std::string sanitize_log_file_name(std::string name) {
@@ -97,8 +94,8 @@ std::string sanitize_log_file_name(std::string name) {
 }
 
 std::string current_process_role() {
-    const char* command_line = GetCommandLineA();
-    if (command_line && strstr(command_line, "--standalone-analysis") != nullptr) {
+    const wchar_t* command_line = GetCommandLineW();
+    if (command_line && wcsstr(command_line, L"--standalone-analysis") != nullptr) {
         return "analysis";
     }
     return "main";
@@ -136,16 +133,6 @@ void log_ffmpeg_runtime_versions() {
         format_ffmpeg_version(avutil_version()),
         format_ffmpeg_version(swscale_version()),
         format_ffmpeg_version(swresample_version()));
-}
-
-std::wstring Utf16FromUtf8(const std::string& utf8) {
-    if (utf8.empty()) return {};
-    const int length = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
-    if (length <= 0) return {};
-    std::wstring wide(static_cast<size_t>(length), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, wide.data(), length);
-    wide.resize(static_cast<size_t>(length - 1));
-    return wide;
 }
 
 std::string Fnv1a64Hex(const std::vector<uint8_t>& bytes) {
@@ -282,7 +269,7 @@ bool SaveBgraToPng(const std::vector<uint8_t>& bgra, int width, int height, cons
         return false;
     }
 
-    const auto wide_path = Utf16FromUtf8(path);
+    const auto wide_path = vr::win_utf8::utf16_from_utf8(path);
     hr = stream->InitializeFromFilename(wide_path.c_str(), GENERIC_WRITE);
     if (FAILED(hr)) {
         return false;

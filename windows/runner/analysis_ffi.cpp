@@ -2,6 +2,7 @@
 #include "analysis/analysis_manager.h"
 #include "analysis/generators/bitstream_indexer.h"
 #include "analysis/generators/analysis_generator.h"
+#include "common/win_utf8.h"
 #include "utils.h"
 
 #include <spdlog/spdlog.h>
@@ -315,12 +316,7 @@ int32_t naki_analysis_handle_get_nalus_range(NakiAnalysisHandle handle, int32_t 
 // ---- Analysis generation ----
 
 static std::string get_exe_dir() {
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(nullptr, exe_path, MAX_PATH);
-    std::string dir(exe_path);
-    auto last_sep = dir.find_last_of("\\/");
-    if (last_sep != std::string::npos) dir = dir.substr(0, last_sep);
-    return dir;
+    return vr::win_utf8::module_directory_utf8();
 }
 
 static VbiCodec detect_analysis_codec(const char* video_path) {
@@ -348,14 +344,15 @@ static VbiCodec detect_analysis_codec(const char* video_path) {
 // Run a command via CreateProcess. Returns exit code, or -1 on CreateProcess failure.
 // If log_path is non-empty, stdout+stderr are redirected to that file.
 static int run_command(const std::string& cmd, const std::string& log_path = {}) {
-    STARTUPINFOA si = { sizeof(si) };
+    STARTUPINFOW si = { sizeof(si) };
     PROCESS_INFORMATION pi = {};
 
     SECURITY_ATTRIBUTES sa = { sizeof(sa), nullptr, TRUE };  // inheritable
     HANDLE hLogFile = INVALID_HANDLE_VALUE;
 
     if (!log_path.empty()) {
-        hLogFile = CreateFileA(log_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
+        const auto wide_log_path = vr::win_utf8::utf16_from_utf8(log_path);
+        hLogFile = CreateFileW(wide_log_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
                                &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (hLogFile != INVALID_HANDLE_VALUE) {
             si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
@@ -368,8 +365,12 @@ static int run_command(const std::string& cmd, const std::string& log_path = {})
         si.wShowWindow = SW_HIDE;
     }
 
-    std::string cmdline = cmd;
-    if (!CreateProcessA(
+    std::wstring cmdline = vr::win_utf8::utf16_from_utf8(cmd);
+    if (cmdline.empty()) {
+        if (hLogFile != INVALID_HANDLE_VALUE) CloseHandle(hLogFile);
+        return -1;
+    }
+    if (!CreateProcessW(
             nullptr, cmdline.data(),
             nullptr, nullptr, TRUE,
             CREATE_NO_WINDOW,
@@ -389,28 +390,23 @@ static int run_command(const std::string& cmd, const std::string& log_path = {})
     return static_cast<int>(exit_code);
 }
 
-// Get a Windows env variable value as std::string.
-static std::string get_env_var(const char* name) {
-    char buf[32768];
-    DWORD len = GetEnvironmentVariableA(name, buf, sizeof(buf));
-    return (len > 0 && len < sizeof(buf)) ? std::string(buf, len) : std::string();
-}
-
 // RAII helper: temporarily set env vars, restore on destruction.
 struct ScopedEnvVars {
     std::vector<std::pair<std::string, std::string>> saved;
 
     void set(const char* name, const std::string& value) {
-        saved.emplace_back(name, get_env_var(name));
-        SetEnvironmentVariableA(name, value.c_str());
+        auto wide_name = vr::win_utf8::utf16_from_utf8(name);
+        saved.emplace_back(name, vr::win_utf8::get_env_utf8(wide_name.c_str()));
+        vr::win_utf8::set_env_utf8(wide_name.c_str(), value);
     }
 
     ~ScopedEnvVars() {
         for (auto it = saved.rbegin(); it != saved.rend(); ++it) {
+            auto wide_name = vr::win_utf8::utf16_from_utf8(it->first);
             if (it->second.empty()) {
-                SetEnvironmentVariableA(it->first.c_str(), nullptr);
+                SetEnvironmentVariableW(wide_name.c_str(), nullptr);
             } else {
-                SetEnvironmentVariableA(it->first.c_str(), it->second.c_str());
+                vr::win_utf8::set_env_utf8(wide_name.c_str(), it->second);
             }
         }
     }
@@ -449,7 +445,7 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
         return false;
     }
 
-    std::ofstream out(out_path, std::ios::binary);
+    std::ofstream out(vr::win_utf8::path_from_utf8(out_path), std::ios::binary);
     if (!out) {
         spdlog::error("[Analysis] extract_raw_vvc: cannot create {}", out_path);
         avformat_close_input(&fmt_ctx);
@@ -548,7 +544,8 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
         spdlog::info("[Analysis] extract_raw_vvc: FFmpeg produced no packets, trying raw Annex-B fallback");
         if (vr::analysis::BitstreamIndexer::write_annex_b_file(
                 video_path, VbiCodec::VVC, out_path)) {
-            std::ifstream fallback(out_path, std::ios::binary | std::ios::ate);
+            std::ifstream fallback(vr::win_utf8::path_from_utf8(out_path),
+                                   std::ios::binary | std::ios::ate);
             total_written = fallback ? static_cast<size_t>(fallback.tellg()) : 0;
         }
     }
@@ -567,12 +564,12 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
     spdlog::info("[Analysis] data_dir={}", data_dir);
 
     // Ensure data directory exists
-    CreateDirectoryA(data_dir.c_str(), nullptr);
+    vr::win_utf8::create_directory_utf8(data_dir);
 
     // ---- Step 0: VBS2 via VTM DecoderApp (optional) ----
     VbiCodec source_codec = detect_analysis_codec(video_path);
     std::string decoder_path = exe_dir + "\\tools\\vtm\\DecoderApp.exe";
-    bool decoder_exists = GetFileAttributesA(decoder_path.c_str()) != INVALID_FILE_ATTRIBUTES;
+    bool decoder_exists = vr::win_utf8::file_exists_utf8(decoder_path);
     spdlog::info("[Analysis] decoder={} exists={}, codec={}",
                  decoder_path, decoder_exists, static_cast<int>(source_codec));
 
@@ -585,14 +582,14 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
         bool demux_ok = extract_raw_vvc(video_path, tmp_vvc);
         spdlog::info("[Analysis] extract_raw_vvc ok={}", demux_ok);
 
-        if (demux_ok && GetFileAttributesA(tmp_vvc.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        if (demux_ok && vr::win_utf8::file_exists_utf8(tmp_vvc)) {
             // Set VTM_BINARY_STATS env var for DecoderApp
             ScopedEnvVars env;
             env.set("VTM_BINARY_STATS", vbs2_out);
 
             // Build VTM log path: logs/vtm_<timestamp>_<hash>.log
             std::string logs_dir = exe_dir + "\\logs";
-            CreateDirectoryA(logs_dir.c_str(), nullptr);
+            vr::win_utf8::create_directory_utf8(logs_dir);
             SYSTEMTIME st;
             GetLocalTime(&st);
             char vtm_log_name[128];
@@ -611,16 +608,16 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
             spdlog::info("[Analysis] vtm exit_code={}", vtm_rc);
 
             // Clean up temp .vvc
-            DeleteFileA(tmp_vvc.c_str());
+            vr::win_utf8::delete_file_utf8(tmp_vvc);
 
-            bool vbs2_ok = GetFileAttributesA(vbs2_out.c_str()) != INVALID_FILE_ATTRIBUTES;
+            bool vbs2_ok = vr::win_utf8::file_exists_utf8(vbs2_out);
             spdlog::info("[Analysis] vbs2_out={} exists={}", vbs2_out, vbs2_ok);
             if (!vbs2_ok) {
                 spdlog::warn("[Analysis] VBS2 generation failed, continuing without VBS2");
             }
         } else {
             spdlog::warn("[Analysis] raw VVC extraction failed, skipping VBS2 generation");
-            DeleteFileA(tmp_vvc.c_str());
+            vr::win_utf8::delete_file_utf8(tmp_vvc);
         }
     } else if (decoder_exists) {
         spdlog::info("[Analysis] skipping VBS2: VTM block statistics are VVC-only");
@@ -636,8 +633,8 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
     }
 
     // Verify outputs exist
-    bool vbi_ok = GetFileAttributesA(vbi_out.c_str()) != INVALID_FILE_ATTRIBUTES;
-    bool vbt_ok = GetFileAttributesA(vbt_out.c_str()) != INVALID_FILE_ATTRIBUTES;
+    bool vbi_ok = vr::win_utf8::file_exists_utf8(vbi_out);
+    bool vbt_ok = vr::win_utf8::file_exists_utf8(vbt_out);
     spdlog::info("[Analysis] vbi_out={} exists={}", vbi_out, vbi_ok);
     spdlog::info("[Analysis] vbt_out={} exists={}", vbt_out, vbt_ok);
     if (!vbi_ok || !vbt_ok) {

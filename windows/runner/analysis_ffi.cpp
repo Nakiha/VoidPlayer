@@ -636,11 +636,71 @@ struct ScopedEnvVars {
     }
 };
 
+class RawVvcSink {
+public:
+    virtual ~RawVvcSink() = default;
+    virtual bool write(const uint8_t* data, size_t size) = 0;
+    virtual bool finish() { return true; }
+};
+
+class FileRawVvcSink : public RawVvcSink {
+public:
+    explicit FileRawVvcSink(const std::string& path)
+        : path_(path),
+          out_(vr::win_utf8::path_from_utf8(path), std::ios::binary) {}
+
+    bool is_open() const { return out_.is_open(); }
+
+    bool write(const uint8_t* data, size_t size) override {
+        out_.write(reinterpret_cast<const char*>(data),
+                   static_cast<std::streamsize>(size));
+        return out_.good();
+    }
+
+    bool finish() override {
+        out_.close();
+        return !out_.fail();
+    }
+
+    const std::string& path() const { return path_; }
+
+private:
+    std::string path_;
+    std::ofstream out_;
+};
+
+class HandleRawVvcSink : public RawVvcSink {
+public:
+    explicit HandleRawVvcSink(HANDLE handle) : handle_(handle) {}
+
+    bool write(const uint8_t* data, size_t size) override {
+        size_t offset = 0;
+        while (offset < size) {
+            const DWORD chunk = static_cast<DWORD>(
+                std::min<size_t>(size - offset, 1u << 20));
+            DWORD written = 0;
+            if (!WriteFile(handle_, data + offset, chunk, &written, nullptr)) {
+                spdlog::warn("[Analysis] write to VTM stdin failed: error={}",
+                             GetLastError());
+                return false;
+            }
+            if (written == 0) {
+                return false;
+            }
+            offset += written;
+        }
+        return true;
+    }
+
+private:
+    HANDLE handle_;
+};
+
 // Extract raw VVC Annex B bitstream from a video file using FFmpeg C API.
 // Uses vvc_mp4toannexb BSF for proper container→Annex B conversion
 // (handles extradata with parameter sets, AUD insertion, etc.).
 // Falls back to manual conversion if BSF unavailable.
-static bool extract_raw_vvc(const std::string& video_path, const std::string& out_path) {
+static bool extract_raw_vvc_to_sink(const std::string& video_path, RawVvcSink& sink) {
     FfmpegOpenTimeout timeout;
     AVFormatContext* fmt_ctx = alloc_format_context_with_timeout(timeout, std::chrono::seconds(30));
     if (!fmt_ctx) {
@@ -673,13 +733,6 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
     }
     if (video_idx < 0) {
         spdlog::error("[Analysis] extract_raw_vvc: no video stream found");
-        avformat_close_input(&fmt_ctx);
-        return false;
-    }
-
-    std::ofstream out(vr::win_utf8::path_from_utf8(out_path), std::ios::binary);
-    if (!out) {
-        spdlog::error("[Analysis] extract_raw_vvc: cannot create {}", out_path);
         avformat_close_input(&fmt_ctx);
         return false;
     }
@@ -733,7 +786,13 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
                 continue;
             }
             while (av_bsf_receive_packet(bsf_ctx, pkt) == 0) {
-                out.write(reinterpret_cast<const char*>(pkt->data), pkt->size);
+                if (!sink.write(pkt->data, static_cast<size_t>(pkt->size))) {
+                    av_packet_unref(pkt);
+                    av_packet_free(&pkt);
+                    av_bsf_free(&bsf_ctx);
+                    avformat_close_input(&fmt_ctx);
+                    return false;
+                }
                 total_written += static_cast<size_t>(pkt->size);
                 av_packet_unref(pkt);
             }
@@ -743,7 +802,13 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
 
             if ((len >= 4 && data[0] == 0 && data[1] == 0 && data[2] == 0 && data[3] == 1) ||
                 (len >= 3 && data[0] == 0 && data[1] == 0 && data[2] == 1)) {
-                out.write(reinterpret_cast<const char*>(data), len);
+                if (!sink.write(data, static_cast<size_t>(len))) {
+                    av_packet_unref(pkt);
+                    av_packet_free(&pkt);
+                    if (bsf_ctx) av_bsf_free(&bsf_ctx);
+                    avformat_close_input(&fmt_ctx);
+                    return false;
+                }
                 total_written += static_cast<size_t>(len);
             } else {
                 int pos = 0;
@@ -758,9 +823,14 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
                         static_cast<uint64_t>(nalu_len) > static_cast<uint64_t>(remaining)) {
                         break;
                     }
-                    out.write(reinterpret_cast<const char*>(kStartCode4), 4);
-                    out.write(reinterpret_cast<const char*>(data + payload_pos),
-                              static_cast<std::streamsize>(nalu_len));
+                    if (!sink.write(kStartCode4, 4) ||
+                        !sink.write(data + payload_pos, static_cast<size_t>(nalu_len))) {
+                        av_packet_unref(pkt);
+                        av_packet_free(&pkt);
+                        if (bsf_ctx) av_bsf_free(&bsf_ctx);
+                        avformat_close_input(&fmt_ctx);
+                        return false;
+                    }
                     total_written += 4 + static_cast<size_t>(nalu_len);
                     pos = payload_pos + static_cast<int>(nalu_len);
                 }
@@ -773,7 +843,13 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
     if (use_bsf) {
         av_bsf_send_packet(bsf_ctx, nullptr);
         while (av_bsf_receive_packet(bsf_ctx, pkt) == 0) {
-            out.write(reinterpret_cast<const char*>(pkt->data), pkt->size);
+            if (!sink.write(pkt->data, static_cast<size_t>(pkt->size))) {
+                av_packet_unref(pkt);
+                av_packet_free(&pkt);
+                av_bsf_free(&bsf_ctx);
+                avformat_close_input(&fmt_ctx);
+                return false;
+            }
             total_written += static_cast<size_t>(pkt->size);
             av_packet_unref(pkt);
         }
@@ -782,20 +858,105 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
     av_packet_free(&pkt);
     if (bsf_ctx) av_bsf_free(&bsf_ctx);
     avformat_close_input(&fmt_ctx);
-    out.close();
 
-    if (total_written == 0) {
+    const bool finished = sink.finish();
+    spdlog::info("[Analysis] extract_raw_vvc: {} packets, {} bytes written",
+                 pkt_count, total_written);
+    return total_written > 0 && finished;
+}
+
+static bool extract_raw_vvc(const std::string& video_path, const std::string& out_path) {
+    FileRawVvcSink sink(out_path);
+    if (!sink.is_open()) {
+        spdlog::error("[Analysis] extract_raw_vvc: cannot create {}", out_path);
+        return false;
+    }
+
+    bool ok = extract_raw_vvc_to_sink(video_path, sink);
+    if (!ok) {
         spdlog::info("[Analysis] extract_raw_vvc: FFmpeg produced no packets, trying raw Annex-B fallback");
         if (vr::analysis::BitstreamIndexer::write_annex_b_file(
                 video_path, VbiCodec::VVC, out_path)) {
             std::ifstream fallback(vr::win_utf8::path_from_utf8(out_path),
                                    std::ios::binary | std::ios::ate);
-            total_written = fallback ? static_cast<size_t>(fallback.tellg()) : 0;
+            const size_t total_written = fallback ? static_cast<size_t>(fallback.tellg()) : 0;
+            ok = total_written > 0;
         }
     }
+    return ok;
+}
 
-    spdlog::info("[Analysis] extract_raw_vvc: {} packets, {} bytes written", pkt_count, total_written);
-    return total_written > 0 && out.good();
+static int run_vtm_stdin_command(const std::string& cmd,
+                                 const std::string& log_path,
+                                 const std::string& video_path) {
+    STARTUPINFOW si = { sizeof(si) };
+    PROCESS_INFORMATION pi = {};
+    SECURITY_ATTRIBUTES sa = { sizeof(sa), nullptr, TRUE };
+
+    HANDLE hLogFile = INVALID_HANDLE_VALUE;
+    if (!log_path.empty()) {
+        const auto wide_log_path = vr::win_utf8::utf16_from_utf8(log_path);
+        hLogFile = CreateFileW(wide_log_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
+                               &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    }
+
+    HANDLE stdin_read = nullptr;
+    HANDLE stdin_write = nullptr;
+    if (!CreatePipe(&stdin_read, &stdin_write, &sa, 0)) {
+        if (hLogFile != INVALID_HANDLE_VALUE) CloseHandle(hLogFile);
+        return -1;
+    }
+    SetHandleInformation(stdin_write, HANDLE_FLAG_INHERIT, 0);
+
+    si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    si.hStdInput = stdin_read;
+    si.hStdOutput = hLogFile != INVALID_HANDLE_VALUE
+        ? hLogFile
+        : GetStdHandle(STD_OUTPUT_HANDLE);
+    si.hStdError = hLogFile != INVALID_HANDLE_VALUE
+        ? hLogFile
+        : GetStdHandle(STD_ERROR_HANDLE);
+    si.wShowWindow = SW_HIDE;
+
+    std::wstring cmdline = vr::win_utf8::utf16_from_utf8(cmd);
+    if (cmdline.empty()) {
+        CloseHandle(stdin_read);
+        CloseHandle(stdin_write);
+        if (hLogFile != INVALID_HANDLE_VALUE) CloseHandle(hLogFile);
+        return -1;
+    }
+
+    if (!CreateProcessW(
+            nullptr, cmdline.data(),
+            nullptr, nullptr, TRUE,
+            CREATE_NO_WINDOW,
+            nullptr, nullptr, &si, &pi)) {
+        CloseHandle(stdin_read);
+        CloseHandle(stdin_write);
+        if (hLogFile != INVALID_HANDLE_VALUE) CloseHandle(hLogFile);
+        return -1;
+    }
+
+    CloseHandle(stdin_read);
+
+    HandleRawVvcSink sink(stdin_write);
+    const bool wrote = extract_raw_vvc_to_sink(video_path, sink);
+    CloseHandle(stdin_write);
+
+    if (!wrote) {
+        spdlog::warn("[Analysis] VTM stdin feed failed, terminating DecoderApp");
+        TerminateProcess(pi.hProcess, 1);
+    }
+
+    WaitForSingleObject(pi.hProcess, INFINITE);
+
+    DWORD exit_code = 1;
+    GetExitCodeProcess(pi.hProcess, &exit_code);
+
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    if (hLogFile != INVALID_HANDLE_VALUE) CloseHandle(hLogFile);
+    return wrote ? static_cast<int>(exit_code) : -1;
 }
 
 extern "C" __declspec(dllexport)
@@ -825,49 +986,64 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
 
     if (decoder_exists && source_codec == VbiCodec::VVC) {
         std::string vbs3_out = data_dir + "\\" + hash + ".tmp.vbs3";
+        vr::win_utf8::delete_file_utf8(vbs3_out);
 
-        // Extract raw VVC bitstream via FFmpeg C API (no subprocess)
-        std::string tmp_vvc = data_dir + "\\" + hash + ".tmp.vvc";
-        spdlog::info("[Analysis] extracting raw VVC to {}", tmp_vvc);
-        bool demux_ok = extract_raw_vvc(video_path, tmp_vvc);
-        spdlog::info("[Analysis] extract_raw_vvc ok={}", demux_ok);
+        ScopedEnvVars env;
+        env.set("VTM_BINARY_STATS", vbs3_out);
+        env.set("VTM_BINARY_STATS_FORMAT", "VBS3");
+        env.set("VOID_VTM_STDIN_WINDOW_BYTES", "67108864");
+        env.set("VOID_VTM_STDIN_WINDOW_NALUS", "4096");
+        env.set("VOID_VTM_STDIN_HARD_CAP_BYTES", "268435456");
 
-        if (demux_ok && vr::win_utf8::file_exists_utf8(tmp_vvc)) {
-            ScopedEnvVars env;
-            env.set("VTM_BINARY_STATS", vbs3_out);
-            env.set("VTM_BINARY_STATS_FORMAT", "VBS3");
+        // Build VTM log path: logs/vtm_<timestamp>_<hash>.log
+        std::string logs_dir = exe_dir + "\\logs";
+        vr::win_utf8::create_directory_utf8(logs_dir);
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        char vtm_log_name[128];
+        snprintf(vtm_log_name, sizeof(vtm_log_name),
+                 "vtm_%04d-%02d-%02d_%02d%02d%02d_%s.log",
+                 st.wYear, st.wMonth, st.wDay,
+                 st.wHour, st.wMinute, st.wSecond, hash);
+        std::string vtm_log_path = logs_dir + "\\" + vtm_log_name;
 
-            // Build VTM log path: logs/vtm_<timestamp>_<hash>.log
-            std::string logs_dir = exe_dir + "\\logs";
-            vr::win_utf8::create_directory_utf8(logs_dir);
-            SYSTEMTIME st;
-            GetLocalTime(&st);
-            char vtm_log_name[128];
-            snprintf(vtm_log_name, sizeof(vtm_log_name),
-                     "vtm_%04d-%02d-%02d_%02d%02d%02d_%s.log",
-                     st.wYear, st.wMonth, st.wDay,
-                     st.wHour, st.wMinute, st.wSecond, hash);
-            std::string vtm_log_path = logs_dir + "\\" + vtm_log_name;
+        // Run DecoderApp from the installed runtime tools/vtm directory.
+        std::string cmd = "\"" + decoder_path +
+            "\" -b - --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
+        spdlog::info("[Analysis] vtm stdin cmd: {}", cmd);
+        spdlog::info("[Analysis] vtm log: {}", vtm_log_path);
+        int vtm_rc = run_vtm_stdin_command(cmd, vtm_log_path, video_path);
+        spdlog::info("[Analysis] vtm stdin exit_code={}", vtm_rc);
 
-            // Run DecoderApp from the installed runtime tools/vtm directory.
-            std::string cmd = "\"" + decoder_path + "\" -b \"" + tmp_vvc +
-                "\" --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
-            spdlog::info("[Analysis] vtm cmd: {}", cmd);
-            spdlog::info("[Analysis] vtm log: {}", vtm_log_path);
-            int vtm_rc = run_command(cmd, vtm_log_path);
-            spdlog::info("[Analysis] vtm exit_code={}", vtm_rc);
+        bool vbs3_ok = vtm_rc == 0 && vr::win_utf8::file_exists_utf8(vbs3_out);
+        if (!vbs3_ok) {
+            spdlog::warn("[Analysis] VTM stdin generation failed, falling back to temp VVC file");
+            vr::win_utf8::delete_file_utf8(vbs3_out);
 
-            // Clean up temp .vvc
-            vr::win_utf8::delete_file_utf8(tmp_vvc);
+            std::string tmp_vvc = data_dir + "\\" + hash + ".tmp.vvc";
+            spdlog::info("[Analysis] extracting raw VVC to {}", tmp_vvc);
+            bool demux_ok = extract_raw_vvc(video_path, tmp_vvc);
+            spdlog::info("[Analysis] extract_raw_vvc ok={}", demux_ok);
 
-            bool vbs3_ok = vr::win_utf8::file_exists_utf8(vbs3_out);
-            spdlog::info("[Analysis] vbs3_out={} exists={}", vbs3_out, vbs3_ok);
-            if (!vbs3_ok) {
-                spdlog::warn("[Analysis] VBS3 generation failed, continuing without VBS3");
+            if (demux_ok && vr::win_utf8::file_exists_utf8(tmp_vvc)) {
+                std::string fallback_cmd = "\"" + decoder_path + "\" -b \"" + tmp_vvc +
+                    "\" --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
+                spdlog::info("[Analysis] vtm fallback cmd: {}", fallback_cmd);
+                int fallback_rc = run_command(fallback_cmd, vtm_log_path);
+                spdlog::info("[Analysis] vtm fallback exit_code={}", fallback_rc);
+                vr::win_utf8::delete_file_utf8(tmp_vvc);
+                vbs3_ok = fallback_rc == 0 && vr::win_utf8::file_exists_utf8(vbs3_out);
+            } else {
+                spdlog::warn("[Analysis] raw VVC extraction failed, skipping VBS3 generation");
+                vr::win_utf8::delete_file_utf8(tmp_vvc);
             }
+        }
+
+        spdlog::info("[Analysis] vbs3_out={} exists={}", vbs3_out, vbs3_ok);
+        if (!vbs3_ok) {
+            spdlog::warn("[Analysis] VBS3 generation failed, continuing without VBS3");
         } else {
-            spdlog::warn("[Analysis] raw VVC extraction failed, skipping VBS3 generation");
-            vr::win_utf8::delete_file_utf8(tmp_vvc);
+            vr::win_utf8::delete_file_utf8(data_dir + "\\" + hash + ".tmp.vvc");
         }
     } else if (decoder_exists) {
         spdlog::info("[Analysis] skipping VBS3: VTM block statistics are VVC-only");

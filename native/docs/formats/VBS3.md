@@ -1,8 +1,9 @@
-# VBS3 Format Draft
+# VBS3 Format
 
 VBS3 is the planned successor to VBS2 for VTM-derived block statistics. It is
-not implemented yet; this document defines the target contract for the native
-reader and the instrumented VTM writer.
+currently written by the instrumented VTM `DecoderApp` when
+`VTM_BINARY_STATS_FORMAT=VBS3` is set. The native analysis reader is not wired
+to VBS3 yet.
 
 ## Why VBS3 Exists
 
@@ -37,8 +38,8 @@ overlay needs them.
 ## Producer And Reader
 
 - Producer: instrumented VTM `DecoderApp`
-- Proposed writer switch: `VTM_BINARY_STATS=<path>` plus either `.vbs3`
-  extension detection or `VTM_BINARY_STATS_FORMAT=VBS3`
+- Writer switch: `VTM_BINARY_STATS=<path>` plus
+  `VTM_BINARY_STATS_FORMAT=VBS3`
 - Proposed reader: `vr::analysis::Vbs3File`
 - File extension: `.vbs3`
 - Magic: `VBS3`
@@ -191,10 +192,9 @@ Current flow:
   offset
 - `finalize()` appends `Vbs2IndexEntry[]` and patches the VBS2 header
 
-For VBS3, the cleanest migration is to generalize `BinaryStatsState` into a
-format-aware writer:
+VBS3 generation generalizes `BinaryStatsState` into a format-aware writer:
 
-- choose VBS2 or VBS3 by `.vbs3` extension or `VTM_BINARY_STATS_FORMAT`
+- choose VBS2 or VBS3 by `VTM_BINARY_STATS_FORMAT`
 - keep the current CU extraction loop
 - use `_ftelli64` / `_fseeki64` on Windows for section offsets
 - stream `CUBL` first while collecting `Vbs3FrameSummary` and

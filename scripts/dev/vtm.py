@@ -140,7 +140,7 @@ def cmd_vtm_build() -> None:
 
 
 def cmd_vtm_analyze(args) -> None:
-    """Generate .vbs2 binary stats for a video file."""
+    """Generate VBS binary stats for a video file."""
     decoder = find_vtm_decoder()
     if not decoder.exists():
         print("DecoderApp not found. Building first...")
@@ -158,15 +158,17 @@ def cmd_vtm_analyze(args) -> None:
 
     output_dir = analysis_output_dir(video_path)
     output_dir.mkdir(parents=True, exist_ok=True)
-    vbs2_path = output_dir / f"{video_path.stem}.vbs2"
+    stats_format = getattr(args, "format", "vbs2")
+    stats_path = output_dir / f"{video_path.stem}.{stats_format}"
     raw_path = extract_raw_vvc(video_path, output_dir)
 
-    header(f"Generate VBS2 stats for {video_path.name}")
+    header(f"Generate {stats_format.upper()} stats for {video_path.name}")
     print(f"  Artifact dir: {output_dir}")
-    print(f"  Output: {vbs2_path}")
+    print(f"  Output: {stats_path}")
 
     env = os.environ.copy()
-    env["VTM_BINARY_STATS"] = str(vbs2_path)
+    env["VTM_BINARY_STATS"] = str(stats_path)
+    env["VTM_BINARY_STATS_FORMAT"] = stats_format.upper()
 
     run([
         str(decoder),
@@ -176,9 +178,9 @@ def cmd_vtm_analyze(args) -> None:
         "-o", "NUL",
     ], cwd=str(ROOT), env=env)
 
-    if vbs2_path.exists():
-        size_mb = vbs2_path.stat().st_size / (1024 * 1024)
-        print(f"\n  Done: {vbs2_path} ({size_mb:.1f} MB)")
+    if stats_path.exists():
+        size_mb = stats_path.stat().st_size / (1024 * 1024)
+        print(f"\n  Done: {stats_path} ({size_mb:.1f} MB)")
     else:
-        print(f"\n  ERROR: output file not created: {vbs2_path}")
+        print(f"\n  ERROR: output file not created: {stats_path}")
         sys.exit(1)

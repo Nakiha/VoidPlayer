@@ -83,7 +83,7 @@ def test(build_dir: Path, build_type: str, script_dir: Path):
     ])
 
     repo_root = script_dir.parent
-    analysis_test = script_dir / "analysis" / "tests" / "python" / "test_analysis_formats.py"
+    analysis_test = script_dir / "analysis" / "tests" / "python" / "formats"
     analysis_generate = build_dir / build_type / "analysis_generate.exe"
     env = os.environ.copy()
     env["VOID_ANALYSIS_GENERATE_EXE"] = str(analysis_generate)

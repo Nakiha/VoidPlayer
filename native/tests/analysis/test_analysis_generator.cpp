@@ -2,6 +2,7 @@
 #include "analysis/generators/analysis_generator.h"
 #include "analysis/generators/bitstream_indexer.h"
 #include "analysis/analysis_manager.h"
+#include "analysis/parsers/analysis_container.h"
 #include "analysis/parsers/vbt_parser.h"
 #include "analysis/parsers/vbi_parser.h"
 #include "common/win_utf8.h"
@@ -328,11 +329,13 @@ TEST_CASE("AnalysisManager: current frame handles high-denominator time bases", 
     auto tmp = make_temp_dir();
     const std::string vbi_path = tmp + "/h265.vbi";
     const std::string vbt_path = tmp + "/h265.vbt";
+    const std::string vac_path = tmp + "/h265.vac";
 
     REQUIRE(vr::analysis::AnalysisGenerator::generate(h265_video, vbi_path, vbt_path));
+    REQUIRE(vr::analysis::write_analysis_container(vac_path, "", vbi_path, vbt_path));
 
     auto& mgr = vr::analysis::AnalysisManager::instance();
-    REQUIRE(mgr.load("", vbi_path, vbt_path));
+    REQUIRE(mgr.load(vac_path));
     REQUIRE(mgr.vbt().header().time_base_den > 1000000);
 
     REQUIRE(mgr.current_frame_idx(0) >= 0);

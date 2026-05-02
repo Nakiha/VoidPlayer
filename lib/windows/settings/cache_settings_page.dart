@@ -501,11 +501,7 @@ class _CacheEntryTile extends StatelessWidget {
       title: Text(entry.name, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         [
-          l.cacheEntryBreakdown(
-            AnalysisCache.formatBytes(entry.vbs3Bytes),
-            AnalysisCache.formatBytes(entry.vbiBytes),
-            AnalysisCache.formatBytes(entry.vbtBytes),
-          ),
+          l.cacheEntryBreakdown(AnalysisCache.formatBytes(entry.analysisBytes)),
           if (entry.videoPath != null) entry.videoPath!,
         ].join('\n'),
         maxLines: 2,

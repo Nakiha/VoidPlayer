@@ -110,7 +110,7 @@ def _pick_analysis_hash(debug: bool, requested_hash: str | None) -> tuple[str, s
         for key, value in entries.items():
             if not isinstance(key, str) or not isinstance(value, dict):
                 continue
-            if not (cache / f"{key}.vbi").exists() or not (cache / f"{key}.vbt").exists():
+            if not (cache / f"{key}.vac").exists():
                 continue
             yield key, value
 
@@ -120,7 +120,7 @@ def _pick_analysis_hash(debug: bool, requested_hash: str | None) -> tuple[str, s
 
     # Prefer entries with VBS3 because the pyramid view is the historically
     # riskiest resize path.
-    items.sort(key=lambda item: (not (cache / f"{item[0]}.vbs3").exists(), item[0]))
+    items.sort(key=lambda item: item[0])
     chosen_hash, meta = items[0]
     file_name = meta.get("name") if isinstance(meta.get("name"), str) else None
     return chosen_hash, file_name

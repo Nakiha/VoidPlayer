@@ -8,9 +8,7 @@ class AnalysisCacheEntryStats {
   final String name;
   final String? videoPath;
   final int videoBytes;
-  final int vbs3Bytes;
-  final int vbiBytes;
-  final int vbtBytes;
+  final int analysisBytes;
   final DateTime? cachedAt;
   final bool complete;
 
@@ -19,14 +17,12 @@ class AnalysisCacheEntryStats {
     required this.name,
     required this.videoPath,
     required this.videoBytes,
-    required this.vbs3Bytes,
-    required this.vbiBytes,
-    required this.vbtBytes,
+    required this.analysisBytes,
     required this.cachedAt,
     required this.complete,
   });
 
-  int get cacheBytes => vbs3Bytes + vbiBytes + vbtBytes;
+  int get cacheBytes => analysisBytes;
 }
 
 class AnalysisCacheSnapshot {
@@ -76,9 +72,7 @@ class AnalysisCacheDeleteResult {
 /// ```
 /// cache/
 ///   analysis_index.json
-///   <hash>.vbs3
-///   <hash>.vbi
-///   <hash>.vbt
+///   <hash>.vac
 /// ```
 class AnalysisCache {
   AnalysisCache._();
@@ -92,43 +86,27 @@ class AnalysisCache {
 
   // ---- Path helpers ----
 
-  static String vbs3Path(String hash) => p.join(dataDir, '$hash.vbs3');
-  static String vbiPath(String hash) => p.join(dataDir, '$hash.vbi');
-  static String vbtPath(String hash) => p.join(dataDir, '$hash.vbt');
+  static String analysisPath(String hash) => p.join(dataDir, '$hash.vac');
 
-  static bool filesExist(String hash) {
-    final vbi = vbiPath(hash);
-    final codec = _vbi2Codec(vbi);
-    if (codec == null) return false;
-    if (!File(vbtPath(hash)).existsSync()) return false;
-    if (codec == _vbiCodecVvc && !File(vbs3Path(hash)).existsSync()) {
-      return false;
-    }
-    return true;
-  }
+  static bool filesExist(String hash) => _isVac1(analysisPath(hash));
 
-  static const int _vbiCodecVvc = 3;
-
-  static int? _vbi2Codec(String path) {
+  static bool _isVac1(String path) {
     final file = File(path);
-    if (!file.existsSync()) return null;
+    if (!file.existsSync()) return false;
     try {
       final raf = file.openSync();
       try {
-        final header = raf.readSync(8);
-        if (header.length == 8 &&
+        final header = raf.readSync(4);
+        return header.length == 4 &&
             header[0] == 0x56 &&
-            header[1] == 0x42 &&
-            header[2] == 0x49 &&
-            header[3] == 0x32) {
-          return header[6] | (header[7] << 8);
-        }
-        return null;
+            header[1] == 0x41 &&
+            header[2] == 0x43 &&
+            header[3] == 0x31;
       } finally {
         raf.closeSync();
       }
     } catch (_) {
-      return null;
+      return false;
     }
   }
 
@@ -173,10 +151,7 @@ class AnalysisCache {
         final value = item.value;
         if (value is! Map<String, dynamic>) continue;
 
-        final vbs3 = _fileLength(vbs3Path(hash));
-        final vbi = _fileLength(vbiPath(hash));
-        final vbt = _fileLength(vbtPath(hash));
-        final cacheBytes = vbs3 + vbi + vbt;
+        final cacheBytes = _fileLength(analysisPath(hash));
         indexedBytes += cacheBytes;
 
         entries.add(
@@ -185,9 +160,7 @@ class AnalysisCache {
             name: value['name'] as String? ?? hash,
             videoPath: value['path'] as String?,
             videoBytes: (value['size'] as num?)?.toInt() ?? 0,
-            vbs3Bytes: vbs3,
-            vbiBytes: vbi,
-            vbtBytes: vbt,
+            analysisBytes: cacheBytes,
             cachedAt: DateTime.tryParse(value['time'] as String? ?? ''),
             complete: filesExist(hash),
           ),
@@ -287,7 +260,13 @@ class AnalysisCache {
 
     for (final hash in uniqueHashes) {
       final failures = <String>[];
-      for (final path in [vbs3Path(hash), vbiPath(hash), vbtPath(hash)]) {
+      for (final path in [
+        analysisPath(hash),
+        p.join(dataDir, '$hash.vbs3'),
+        p.join(dataDir, '$hash.vbi'),
+        p.join(dataDir, '$hash.vbt'),
+        p.join(dataDir, '$hash.vbs2'),
+      ]) {
         final file = File(path);
         try {
           if (file.existsSync()) await file.delete();

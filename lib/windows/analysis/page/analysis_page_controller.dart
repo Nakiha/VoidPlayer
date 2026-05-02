@@ -290,9 +290,7 @@ class AnalysisPageController extends ChangeNotifier {
   }
 
   void _loadData() {
-    final vbs3 = AnalysisCache.vbs3Path(hash);
-    final vbi = AnalysisCache.vbiPath(hash);
-    final vbt = AnalysisCache.vbtPath(hash);
+    final analysisPath = AnalysisCache.analysisPath(hash);
 
     _session?.close();
     _frames = const [];
@@ -305,7 +303,7 @@ class AnalysisPageController extends ChangeNotifier {
     _sortedFrameOriginalIndicesCache = const [];
     _frameToSortedPosition = {};
     _sortedPocToIndices = {};
-    _session = AnalysisSession.open(vbs3, vbi, vbt);
+    _session = AnalysisSession.open(analysisPath);
     readData();
   }
 

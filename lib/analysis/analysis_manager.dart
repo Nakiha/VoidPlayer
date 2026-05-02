@@ -1,5 +1,4 @@
 import 'dart:isolate';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -191,16 +190,10 @@ class AnalysisManager extends ChangeNotifier {
   }) async {
     final serial = ++_loadSerial;
     _setState(AnalysisState.loading);
-    final vbs3 = AnalysisCache.vbs3Path(hash);
-    final vbi = AnalysisCache.vbiPath(hash);
-    final vbt = AnalysisCache.vbtPath(hash);
+    final analysisPath = AnalysisCache.analysisPath(hash);
 
-    // VBS3 is optional because VTM block statistics are currently VVC-only.
-    final vbs3Arg = File(vbs3).existsSync() ? vbs3 : '';
-    log.info(
-      '[Analysis] loading: vbs3=${vbs3Arg.isNotEmpty ? vbs3Arg : "(skip)"}, vbi=$vbi, vbt=$vbt',
-    );
-    final ok = AnalysisFfi.load(vbs3Arg, vbi, vbt);
+    log.info('[Analysis] loading: analysis=$analysisPath');
+    final ok = AnalysisFfi.load(analysisPath);
     if (!_isLoadCurrent(serial)) return false;
     if (!ok) {
       log.severe('[Analysis] FFI load returned false');

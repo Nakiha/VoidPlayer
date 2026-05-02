@@ -18,6 +18,7 @@ public:
     const std::string& vbt_path()   const { return vbt_path_; }
     const std::string& vbi_path()   const { return vbi_path_; }
     const std::string& vbs3_path()  const { return vbs3_path_; }
+    const std::string& vac_path()   const { return vac_path_; }
 
     // Remove generated temp directory. Called via atexit.
     void cleanup();
@@ -28,11 +29,13 @@ private:
     bool generate_vbi_vbt();
     bool extract_raw_vvc();
     bool generate_vbs3();
+    bool generate_container();
 
     std::string temp_dir_;
     std::string vbt_path_;
     std::string vbi_path_;
     std::string vbs3_path_;
+    std::string vac_path_;
     std::string raw_vvc_path_;
     bool ok_ = false;
     bool cleaned_up_ = false;

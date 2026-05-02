@@ -12,10 +12,7 @@ TEST_CASE("analysis FFI handle returns empty data after close",
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    NakiAnalysisHandle handle = naki_analysis_open(
-        data.vbs3_path().c_str(),
-        data.vbi_path().c_str(),
-        data.vbt_path().c_str());
+    NakiAnalysisHandle handle = naki_analysis_open(data.vac_path().c_str());
     REQUIRE(handle != nullptr);
 
     const NakiAnalysisSummary* loaded = naki_analysis_handle_get_summary(handle);
@@ -42,10 +39,7 @@ TEST_CASE("analysis FFI handle close is safe while readers are active",
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    NakiAnalysisHandle handle = naki_analysis_open(
-        data.vbs3_path().c_str(),
-        data.vbi_path().c_str(),
-        data.vbt_path().c_str());
+    NakiAnalysisHandle handle = naki_analysis_open(data.vac_path().c_str());
     REQUIRE(handle != nullptr);
 
     std::atomic<bool> stop{false};
@@ -91,10 +85,7 @@ TEST_CASE("analysis FFI handle exposes frame mappings and buckets",
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    NakiAnalysisHandle handle = naki_analysis_open(
-        data.vbs3_path().c_str(),
-        data.vbi_path().c_str(),
-        data.vbt_path().c_str());
+    NakiAnalysisHandle handle = naki_analysis_open(data.vac_path().c_str());
     REQUIRE(handle != nullptr);
 
     const auto* summary = naki_analysis_handle_get_summary(handle);

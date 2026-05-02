@@ -124,9 +124,8 @@ final class NakiOverlayState extends Struct {
 // FFI function typedefs
 // ===========================================================================
 
-typedef _LoadNative =
-    Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _LoadDart = int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _LoadNative = Int32 Function(Pointer<Utf8>);
+typedef _LoadDart = int Function(Pointer<Utf8>);
 
 typedef _UnloadNative = Void Function();
 typedef _UnloadDart = void Function();
@@ -156,10 +155,8 @@ typedef _SetOverlayDart = void Function(Pointer<NakiOverlayState>);
 typedef _GenerateNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef _GenerateDart = int Function(Pointer<Utf8>, Pointer<Utf8>);
 
-typedef _OpenNative =
-    Pointer<Void> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _OpenDart =
-    Pointer<Void> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _OpenNative = Pointer<Void> Function(Pointer<Utf8>);
+typedef _OpenDart = Pointer<Void> Function(Pointer<Utf8>);
 
 typedef _CloseNative = Void Function(Pointer<Void>);
 typedef _CloseDart = void Function(Pointer<Void>);
@@ -443,22 +440,14 @@ class AnalysisSession {
 
   AnalysisSession._(this._handle);
 
-  static AnalysisSession? open(
-    String vbs3Path,
-    String vbiPath,
-    String vbtPath,
-  ) {
-    final vbs3 = vbs3Path.toNativeUtf8(allocator: calloc);
-    final vbi = vbiPath.toNativeUtf8(allocator: calloc);
-    final vbt = vbtPath.toNativeUtf8(allocator: calloc);
+  static AnalysisSession? open(String analysisPath) {
+    final analysis = analysisPath.toNativeUtf8(allocator: calloc);
     try {
-      final handle = _open(vbs3, vbi, vbt);
+      final handle = _open(analysis);
       if (handle == nullptr) return null;
       return AnalysisSession._(handle);
     } finally {
-      calloc.free(vbs3);
-      calloc.free(vbi);
-      calloc.free(vbt);
+      calloc.free(analysis);
     }
   }
 
@@ -571,18 +560,14 @@ class AnalysisSession {
 // ===========================================================================
 
 class AnalysisFfi {
-  /// Load analysis files from specific paths.
+  /// Load an analysis container from a specific path.
   /// Returns true on success.
-  static bool load(String vbs3Path, String vbiPath, String vbtPath) {
-    final vbs3 = vbs3Path.toNativeUtf8(allocator: calloc);
-    final vbi = vbiPath.toNativeUtf8(allocator: calloc);
-    final vbt = vbtPath.toNativeUtf8(allocator: calloc);
+  static bool load(String analysisPath) {
+    final analysis = analysisPath.toNativeUtf8(allocator: calloc);
     try {
-      return _load(vbs3, vbi, vbt) != 0;
+      return _load(analysis) != 0;
     } finally {
-      calloc.free(vbs3);
-      calloc.free(vbi);
-      calloc.free(vbt);
+      calloc.free(analysis);
     }
   }
 
@@ -704,9 +689,9 @@ class AnalysisFfi {
     }
   }
 
-  /// Generate analysis files (VBS3 + VBI + VBT) for a video.
+  /// Generate an analysis container for a video.
   /// [videoPath] is the source video file.
-  /// [hash] is used as the base name for output files (data/{hash}.vbi etc.)
+  /// [hash] is used as the base name for the output container.
   /// Returns true on success.
   static bool generateAnalysis(String videoPath, String hash) {
     final video = videoPath.toNativeUtf8(allocator: calloc);

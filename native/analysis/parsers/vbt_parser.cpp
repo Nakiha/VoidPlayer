@@ -8,6 +8,16 @@
 namespace vr::analysis {
 
 bool VbtFile::open(const std::string& path) {
+    close();
+    std::ifstream f(win_utf8::path_from_utf8(path), std::ios::binary | std::ios::ate);
+    if (!f) return false;
+    const auto size = f.tellg();
+    if (size < 0) return false;
+    f.close();
+    return open_region(path, 0, static_cast<uint64_t>(size));
+}
+
+bool VbtFile::open_region(const std::string& path, uint64_t offset, uint64_t size) {
     entries_.clear();
     pts_sorted_indices_.clear();
     header_ = {};
@@ -16,6 +26,7 @@ bool VbtFile::open(const std::string& path) {
     if (!f) return false;
 
     // Read header
+    f.seekg(static_cast<std::streamoff>(offset));
     f.read(reinterpret_cast<char*>(&header_), sizeof(VbtHeader));
     if (!f || header_.magic[0] != 'V' || header_.magic[1] != 'B' ||
              header_.magic[2] != 'T' || header_.magic[3] != '1') {
@@ -26,14 +37,11 @@ bool VbtFile::open(const std::string& path) {
     constexpr uint32_t kMaxPackets = 10'000'000;
     if (header_.num_packets > kMaxPackets) return false;
     size_t entries_bytes = static_cast<size_t>(header_.num_packets) * sizeof(VbtEntry);
-    f.seekg(0, std::ios::end);
-    auto file_size = f.tellg();
-    f.seekg(sizeof(VbtHeader));
-    if (file_size < 0 ||
-        static_cast<std::streamoff>(entries_bytes) > file_size - static_cast<std::streamoff>(sizeof(VbtHeader))) {
+    if (size < sizeof(VbtHeader) || entries_bytes > size - sizeof(VbtHeader)) {
         return false;
     }
 
+    f.seekg(static_cast<std::streamoff>(offset + sizeof(VbtHeader)));
     entries_.resize(header_.num_packets);
     if (header_.num_packets > 0) {
         f.read(reinterpret_cast<char*>(entries_.data()),

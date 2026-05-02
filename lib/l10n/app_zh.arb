@@ -85,7 +85,7 @@
   "cacheLimitReached": "缓存已达到上限，新的分析生成已暂停。",
   "cachePerVideo": "视频分析数据缓存",
   "cacheNoEntries": "暂无分析缓存",
-  "cacheEntryBreakdown": "VBS3 {vbs3}  VBI {vbi}  VBT {vbt}",
+  "cacheEntryBreakdown": "分析 {analysis}",
   "cacheUnindexed": "未索引的缓存文件",
   "copyCachePath": "复制缓存路径",
   "openCachePath": "打开缓存目录",

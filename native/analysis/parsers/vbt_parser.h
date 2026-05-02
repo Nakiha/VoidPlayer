@@ -10,6 +10,7 @@ namespace vr::analysis {
 class VbtFile {
 public:
     bool open(const std::string& path);
+    bool open_region(const std::string& path, uint64_t offset, uint64_t size);
     void close();
 
     const VbtHeader& header() const { return header_; }

@@ -27,6 +27,7 @@ set(VOID_RENDERER_SOURCES
 )
 
 set(VOID_ANALYSIS_SOURCES
+    "${VOID_NATIVE_DIR}/analysis/parsers/analysis_container.cpp"
     "${VOID_NATIVE_DIR}/analysis/parsers/vbt_parser.cpp"
     "${VOID_NATIVE_DIR}/analysis/parsers/vbi_parser.cpp"
     "${VOID_NATIVE_DIR}/analysis/parsers/vbs3_parser.cpp"

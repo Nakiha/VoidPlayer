@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
+#include "analysis/parsers/analysis_container.h"
 #include "analysis/parsers/vbt_parser.h"
 #include "analysis/parsers/vbi_parser.h"
 #include "analysis/parsers/vbs3_parser.h"
@@ -7,6 +8,40 @@
 
 #include <filesystem>
 #include <fstream>
+
+// ===========================================================================
+// VAC1 Container Tests
+// ===========================================================================
+
+TEST_CASE("VAC1: open and embedded sections", "[analysis][vac]") {
+    auto& data = AnalysisTestData::instance();
+    REQUIRE(data.ensure());
+
+    vr::analysis::AnalysisContainerFile vac;
+    REQUIRE(vac.open(data.vac_path()));
+    REQUIRE(vac.header().magic[0] == 'V');
+    REQUIRE(vac.header().magic[1] == 'A');
+    REQUIRE(vac.header().magic[2] == 'C');
+    REQUIRE(vac.header().magic[3] == '1');
+    REQUIRE(vac.section("VBS3") != nullptr);
+    REQUIRE(vac.section("VBI2") != nullptr);
+    REQUIRE(vac.section("VBT1") != nullptr);
+
+    vr::analysis::VbtFile vbt;
+    const auto* vbt_section = vac.section("VBT1");
+    REQUIRE(vbt.open_region(vac.path(), vbt_section->offset, vbt_section->size));
+    REQUIRE(vbt.packet_count() > 0);
+
+    vr::analysis::VbiFile vbi;
+    const auto* vbi_section = vac.section("VBI2");
+    REQUIRE(vbi.open_region(vac.path(), vbi_section->offset, vbi_section->size));
+    REQUIRE(vbi.nalu_count() > 0);
+
+    vr::analysis::Vbs3File vbs3;
+    const auto* vbs3_section = vac.section("VBS3");
+    REQUIRE(vbs3.open_region(vac.path(), vbs3_section->offset, vbs3_section->size));
+    REQUIRE(vbs3.frame_count() > 0);
+}
 
 // ===========================================================================
 // VBT Tests

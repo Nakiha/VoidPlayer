@@ -9,18 +9,22 @@ AnalysisManager& AnalysisManager::instance() {
     return mgr;
 }
 
-bool AnalysisManager::load(const std::string& vbs3_path,
-                            const std::string& vbi_path,
-                            const std::string& vbt_path) {
+bool AnalysisManager::load(const std::string& analysis_path) {
     unload();
 
-    // VBS3 is optional because VTM block statistics are currently VVC-only.
-    if (!vbs3_path.empty()) {
-        vbs3_.open(vbs3_path);  // failure is OK; VBI/VBT fallback remains available
-    }
+    if (!container_.open(analysis_path)) return false;
 
-    if (!vbi_.open(vbi_path)) { vbs3_.close(); return false; }
-    if (!vbt_.open(vbt_path)) { vbs3_.close(); vbi_.close(); return false; }
+    const auto* vbi = container_.section("VBI2");
+    const auto* vbt = container_.section("VBT1");
+    if (!vbi || !vbt) { unload(); return false; }
+
+    const auto& path = container_.path();
+    if (!vbi_.open_region(path, vbi->offset, vbi->size)) { unload(); return false; }
+    if (!vbt_.open_region(path, vbt->offset, vbt->size)) { unload(); return false; }
+
+    if (const auto* vbs3 = container_.section("VBS3")) {
+        vbs3_.open_region(path, vbs3->offset, vbs3->size);
+    }
 
     loaded_ = true;
     return true;
@@ -30,6 +34,7 @@ void AnalysisManager::unload() {
     vbs3_.close();
     vbi_.close();
     vbt_.close();
+    container_.close();
     loaded_ = false;
     overlay.show_cu_grid.store(false, std::memory_order_release);
     overlay.show_pred_mode.store(false, std::memory_order_release);

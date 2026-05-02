@@ -2,6 +2,7 @@
 #include "analysis/analysis_manager.h"
 #include "analysis/generators/bitstream_indexer.h"
 #include "analysis/generators/analysis_generator.h"
+#include "analysis/parsers/analysis_container.h"
 #include "common/win_utf8.h"
 #include "utils.h"
 
@@ -341,12 +342,12 @@ int32_t fill_analysis_frame_buckets(vr::analysis::AnalysisManager& mgr,
 } // namespace
 
 extern "C" __declspec(dllexport)
-int32_t naki_analysis_load(const char* vbs3_path, const char* vbi_path, const char* vbt_path) {
+int32_t naki_analysis_load(const char* analysis_path) {
     static int load_count = 0;
     std::lock_guard<std::mutex> lock(g_analysis_mutex);
     LogStackUsage(fmt::format("analysis_load #{}", ++load_count).c_str());
     auto& mgr = vr::analysis::AnalysisManager::instance();
-    return mgr.load(safe_cstr(vbs3_path), safe_cstr(vbi_path), safe_cstr(vbt_path)) ? 1 : 0;
+    return mgr.load(safe_cstr(analysis_path)) ? 1 : 0;
 }
 
 extern "C" __declspec(dllexport)
@@ -426,11 +427,11 @@ void naki_analysis_set_overlay(const NakiOverlayState* state) {
 }
 
 extern "C" __declspec(dllexport)
-NakiAnalysisHandle naki_analysis_open(const char* vbs3_path, const char* vbi_path, const char* vbt_path) {
+NakiAnalysisHandle naki_analysis_open(const char* analysis_path) {
     try {
         auto state = std::shared_ptr<AnalysisHandleState>(new (std::nothrow) AnalysisHandleState());
         if (!state) return nullptr;
-        if (!state->manager.load(safe_cstr(vbs3_path), safe_cstr(vbi_path), safe_cstr(vbt_path))) {
+        if (!state->manager.load(safe_cstr(analysis_path))) {
             return nullptr;
         }
         auto handle = register_analysis_handle(state);
@@ -823,7 +824,7 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
                  decoder_path, decoder_exists, static_cast<int>(source_codec));
 
     if (decoder_exists && source_codec == VbiCodec::VVC) {
-        std::string vbs3_out = data_dir + "\\" + hash + ".vbs3";
+        std::string vbs3_out = data_dir + "\\" + hash + ".tmp.vbs3";
 
         // Extract raw VVC bitstream via FFmpeg C API (no subprocess)
         std::string tmp_vvc = data_dir + "\\" + hash + ".tmp.vvc";
@@ -872,12 +873,23 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
         spdlog::info("[Analysis] skipping VBS3: VTM block statistics are VVC-only");
     }
 
+    std::string vbs3_tmp = data_dir + "\\" + hash + ".tmp.vbs3";
+    if (source_codec == VbiCodec::VVC && !vr::win_utf8::file_exists_utf8(vbs3_tmp)) {
+        spdlog::error("[Analysis] VVC analysis requires VBS3, but no VBS3 section was generated");
+        vr::win_utf8::delete_file_utf8(vbs3_tmp);
+        return 0;
+    }
+
     // ---- Step 1+2: VBI + VBT via C++ FFmpeg (single pass) ----
-    std::string vbi_out = data_dir + "\\" + hash + ".vbi";
-    std::string vbt_out = data_dir + "\\" + hash + ".vbt";
+    std::string vbi_out = data_dir + "\\" + hash + ".tmp.vbi";
+    std::string vbt_out = data_dir + "\\" + hash + ".tmp.vbt";
+    std::string vac_out = data_dir + "\\" + hash + ".vac";
 
     if (!vr::analysis::AnalysisGenerator::generate(video_path, vbi_out, vbt_out)) {
         spdlog::error("[Analysis] C++ generator failed");
+        vr::win_utf8::delete_file_utf8(vbs3_tmp);
+        vr::win_utf8::delete_file_utf8(vbi_out);
+        vr::win_utf8::delete_file_utf8(vbt_out);
         return 0;
     }
 
@@ -888,6 +900,31 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
     spdlog::info("[Analysis] vbt_out={} exists={}", vbt_out, vbt_ok);
     if (!vbi_ok || !vbt_ok) {
         spdlog::error("[Analysis] output files missing after generation");
+        vr::win_utf8::delete_file_utf8(vbs3_tmp);
+        vr::win_utf8::delete_file_utf8(vbi_out);
+        vr::win_utf8::delete_file_utf8(vbt_out);
+        return 0;
+    }
+
+    const std::string vbs3_section = vr::win_utf8::file_exists_utf8(vbs3_tmp) ? vbs3_tmp : "";
+    if (!vr::analysis::write_analysis_container(vac_out, vbs3_section, vbi_out, vbt_out)) {
+        spdlog::error("[Analysis] failed to write analysis container: {}", vac_out);
+        vr::win_utf8::delete_file_utf8(vbs3_tmp);
+        vr::win_utf8::delete_file_utf8(vbi_out);
+        vr::win_utf8::delete_file_utf8(vbt_out);
+        return 0;
+    }
+
+    vr::win_utf8::delete_file_utf8(vbs3_tmp);
+    vr::win_utf8::delete_file_utf8(vbi_out);
+    vr::win_utf8::delete_file_utf8(vbt_out);
+    vr::win_utf8::delete_file_utf8(data_dir + "\\" + hash + ".vbs3");
+    vr::win_utf8::delete_file_utf8(data_dir + "\\" + hash + ".vbi");
+    vr::win_utf8::delete_file_utf8(data_dir + "\\" + hash + ".vbt");
+    vr::win_utf8::delete_file_utf8(data_dir + "\\" + hash + ".vbs2");
+
+    if (!vr::win_utf8::file_exists_utf8(vac_out)) {
+        spdlog::error("[Analysis] container missing after generation: {}", vac_out);
         return 0;
     }
 

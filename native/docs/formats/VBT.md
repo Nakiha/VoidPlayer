@@ -1,7 +1,8 @@
 # VBT Format
 
-VBT stores packet timing and keyframe metadata for analysis views. Files use
-the `.vbt` extension and currently carry the `VBT1` magic.
+VBT stores packet timing and keyframe metadata for analysis views. Runtime cache
+stores VBT as a `VBT1` section inside [VAC](VAC.md). Standalone `.vbt` files are
+still produced by tests and developer tools.
 
 The authoritative C++ layout is defined in
 `native/analysis/parsers/binary_types.h`. All fields are little-endian and the
@@ -11,7 +12,8 @@ on-disk structs are packed with `#pragma pack(push, 1)`.
 
 - Producer: `vr::analysis::AnalysisGenerator`
 - Reader: `vr::analysis::VbtFile`
-- File extension: `.vbt`
+- Runtime container section: `VBT1`
+- Standalone test/tool extension: `.vbt`
 - Current magic: `VBT1`
 
 `VbtFile::open()` reads all entries into memory and builds a PTS-sorted index
@@ -64,4 +66,5 @@ Flags:
 
 - PTS is not guaranteed to be monotonic in file order. Use `VbtFile::packet_at_pts()` for time lookup.
 - `poc` is currently a scan-order ordinal, not a codec POC parsed from the bitstream.
-- VBT is required for analysis loading. VBS data is optional.
+- VAC loading requires VBT and VBI sections. VBS3 is optional for non-VVC
+  packet/NALU analysis.

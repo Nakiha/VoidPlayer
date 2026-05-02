@@ -45,18 +45,32 @@ bool validate_summary(const Vbs3FrameSummary& summary, uint32_t index, size_t cu
 
 bool Vbs3File::open(const std::string& path) {
     close();
+    std::ifstream f(win_utf8::path_from_utf8(path), std::ios::binary | std::ios::ate);
+    if (!f) return false;
+    const auto size = f.tellg();
+    if (size < 0) return false;
+    f.close();
+    return open_region(path, 0, static_cast<uint64_t>(size));
+}
+
+bool Vbs3File::open_region(const std::string& path, uint64_t offset, uint64_t size) {
+    close();
 
     file_.open(win_utf8::path_from_utf8(path), std::ios::binary);
     if (!file_) return false;
 
     file_.seekg(0, std::ios::end);
-    auto file_size_pos = file_.tellg();
-    if (file_size_pos < 0) {
+    const auto file_size_pos = file_.tellg();
+    if (file_size_pos < 0 ||
+        offset > static_cast<uint64_t>(file_size_pos) ||
+        size > static_cast<uint64_t>(file_size_pos) - offset) {
         close();
         return false;
     }
-    const uint64_t file_size = static_cast<uint64_t>(file_size_pos);
-    file_.seekg(0, std::ios::beg);
+    const uint64_t file_size = size;
+    base_offset_ = offset;
+    region_size_ = size;
+    file_.seekg(static_cast<std::streamoff>(base_offset_));
 
     file_.read(reinterpret_cast<char*>(&header_), sizeof(Vbs3Header));
     if (!file_ || header_.magic[0] != 'V' || header_.magic[1] != 'B' ||
@@ -79,7 +93,7 @@ bool Vbs3File::open(const std::string& path) {
     }
 
     sections_.resize(header_.section_count);
-    file_.seekg(static_cast<std::streamoff>(header_.section_table_offset));
+    file_.seekg(static_cast<std::streamoff>(base_offset_ + header_.section_table_offset));
     file_.read(reinterpret_cast<char*>(sections_.data()),
                static_cast<std::streamsize>(sections_.size() * sizeof(Vbs3SectionEntry)));
     if (!file_) {
@@ -105,14 +119,14 @@ bool Vbs3File::open(const std::string& path) {
     }
 
     summaries_.resize(fsum->entry_count);
-    file_.seekg(static_cast<std::streamoff>(fsum->offset));
+    file_.seekg(static_cast<std::streamoff>(base_offset_ + fsum->offset));
     if (!summaries_.empty()) {
         file_.read(reinterpret_cast<char*>(summaries_.data()),
                    static_cast<std::streamsize>(summaries_.size() * sizeof(Vbs3FrameSummary)));
     }
 
     cu_index_.resize(cuid->entry_count);
-    file_.seekg(static_cast<std::streamoff>(cuid->offset));
+    file_.seekg(static_cast<std::streamoff>(base_offset_ + cuid->offset));
     if (!cu_index_.empty()) {
         file_.read(reinterpret_cast<char*>(cu_index_.data()),
                    static_cast<std::streamsize>(cu_index_.size() * sizeof(Vbs3CuIndexEntry)));
@@ -147,6 +161,8 @@ bool Vbs3File::open(const std::string& path) {
 
 void Vbs3File::close() {
     file_.close();
+    base_offset_ = 0;
+    region_size_ = 0;
     sections_.clear();
     summaries_.clear();
     cu_index_.clear();
@@ -182,8 +198,8 @@ Vbs3FrameData Vbs3File::read_frame(int frame_idx) const {
     }
 
     file_.clear();
-    file_.seekg(static_cast<std::streamoff>(cu_blob_offset_ + idx.offset));
-    const auto frame_end = cu_blob_offset_ + idx.offset + idx.byte_size;
+    file_.seekg(static_cast<std::streamoff>(base_offset_ + cu_blob_offset_ + idx.offset));
+    const auto frame_end = base_offset_ + cu_blob_offset_ + idx.offset + idx.byte_size;
 
     result.cus.reserve(idx.cu_count);
     for (uint32_t i = 0; i < idx.cu_count; ++i) {

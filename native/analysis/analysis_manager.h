@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/parsers/analysis_container.h"
 #include "analysis/parsers/vbs3_parser.h"
 #include "analysis/parsers/vbi_parser.h"
 #include "analysis/parsers/vbt_parser.h"
@@ -13,10 +14,7 @@ public:
     AnalysisManager() = default;
     static AnalysisManager& instance();
 
-    // Load specific analysis files (paths provided by Flutter)
-    bool load(const std::string& vbs3_path,
-              const std::string& vbi_path,
-              const std::string& vbt_path);
+    bool load(const std::string& analysis_path);
     void unload();
     bool is_loaded() const { return loaded_; }
 
@@ -38,6 +36,7 @@ public:
     int current_frame_idx(int64_t pts_us) const;
 
 private:
+    AnalysisContainerFile container_;
     Vbs3File vbs3_;
     VbiFile vbi_;
     VbtFile vbt_;

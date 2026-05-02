@@ -6,7 +6,7 @@
 
 struct NakiAnalysisSummary {
     int32_t loaded;             // 0 or 1
-    int32_t frame_count;        // VBS3 when present, otherwise VBT
+    int32_t frame_count;        // VBS3 when present
     int32_t packet_count;       // VBT
     int32_t nalu_count;         // VBI
     int32_t video_width;
@@ -68,7 +68,7 @@ struct NakiOverlayState {
 using NakiAnalysisHandle = void*;
 
 extern "C" __declspec(dllexport)
-int32_t naki_analysis_load(const char* vbs3_path, const char* vbi_path, const char* vbt_path);
+int32_t naki_analysis_load(const char* analysis_path);
 
 extern "C" __declspec(dllexport)
 void naki_analysis_unload();
@@ -101,7 +101,7 @@ extern "C" __declspec(dllexport)
 void naki_analysis_set_overlay(const NakiOverlayState* state);
 
 extern "C" __declspec(dllexport)
-NakiAnalysisHandle naki_analysis_open(const char* vbs3_path, const char* vbi_path, const char* vbt_path);
+NakiAnalysisHandle naki_analysis_open(const char* analysis_path);
 
 extern "C" __declspec(dllexport)
 void naki_analysis_close(NakiAnalysisHandle handle);
@@ -134,8 +134,8 @@ int32_t naki_analysis_handle_get_frame_buckets(NakiAnalysisHandle handle, int32_
 // Called by video_renderer_plugin during initialization.
 void naki_analysis_register_pts_callback(int64_t (*cb)());
 
-/// Generate analysis files (VBS3 + VBI + VBT) for a video file.
-/// Writes to <exe_dir>/cache/<hash>.{vbs3,vbi,vbt}.
+/// Generate an analysis container for a video file.
+/// Writes to <exe_dir>/cache/<hash>.vac.
 /// Returns 1 on success, 0 on failure (unsupported codec, tool not found, etc.)
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_generate(const char* video_path, const char* hash);

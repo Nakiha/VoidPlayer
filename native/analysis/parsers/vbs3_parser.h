@@ -25,6 +25,7 @@ struct Vbs3FrameData {
 class Vbs3File {
 public:
     bool open(const std::string& path);
+    bool open_region(const std::string& path, uint64_t offset, uint64_t size);
     void close();
 
     const Vbs3Header& header() const { return header_; }
@@ -38,6 +39,8 @@ public:
 
 private:
     mutable std::ifstream file_;
+    uint64_t base_offset_ = 0;
+    uint64_t region_size_ = 0;
     Vbs3Header header_{};
     std::vector<Vbs3SectionEntry> sections_;
     std::vector<Vbs3FrameSummary> summaries_;

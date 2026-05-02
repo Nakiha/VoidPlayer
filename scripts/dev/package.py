@@ -45,6 +45,7 @@ MUTABLE_FILE_PATTERNS = {
     "*.dmp",
     "*.log",
     "*.tmp",
+    "*.vac",
     "*.vbi",
     "*.vbs1",
     "*.vbs2",

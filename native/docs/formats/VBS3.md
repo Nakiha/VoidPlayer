@@ -1,8 +1,9 @@
 # VBS3 Format
 
-VBS3 is the current native VBS format for VTM-derived block statistics. It is
-written by the instrumented VTM `DecoderApp` when `VTM_BINARY_STATS_FORMAT=VBS3`
-is set, and read by `vr::analysis::Vbs3File`.
+VBS3 is the current native VBS payload format for VTM-derived block statistics.
+Runtime cache stores VBS3 as a section inside [VAC](VAC.md). It is written by
+the instrumented VTM `DecoderApp` when `VTM_BINARY_STATS_FORMAT=VBS3` is set,
+and read by `vr::analysis::Vbs3File`.
 
 ## Why VBS3 Exists
 
@@ -26,8 +27,10 @@ overlay needs them.
 
 ## Compatibility Goals
 
-- Keep VBI and VBT semantics unchanged. VBS3 is still optional.
-- Native runtime reads `.vbs3`; `.vbs2` is legacy and is not used as a fallback.
+- Keep VBI and VBT semantics unchanged. VBS3 remains optional for non-VVC
+  packet/NALU analysis.
+- Native runtime reads VBS3 from VAC; `.vbs2` is legacy and is not used as a
+  fallback.
 - Keep frame order aligned with VBT packet/frame order used by the current
   analysis FFI.
 - Keep the first CU payload revision close to VBS2 so the VTM-side writer can
@@ -40,7 +43,8 @@ overlay needs them.
 - Writer switch: `VTM_BINARY_STATS=<path>` plus
   `VTM_BINARY_STATS_FORMAT=VBS3`
 - Reader: `vr::analysis::Vbs3File`
-- File extension: `.vbs3`
+- Runtime container section: `VBS3`
+- Standalone test/tool extension: `.vbs3`
 - Magic: `VBS3`
 
 ## Layout

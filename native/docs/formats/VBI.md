@@ -1,8 +1,8 @@
 # VBI Format
 
-VBI stores bitstream-unit index records used by analysis views. Files use the
-`.vbi` extension. The extension is stable across format revisions; the on-disk
-magic distinguishes legacy `VBI1` from current `VBI2`.
+VBI stores bitstream-unit index records used by analysis views. Runtime cache
+stores VBI as a `VBI2` section inside [VAC](VAC.md). Standalone `.vbi` files are
+still produced by tests and developer tools.
 
 The authoritative C++ layout is defined in
 `native/analysis/parsers/binary_types.h`. All fields are little-endian and the
@@ -12,7 +12,8 @@ on-disk structs are packed with `#pragma pack(push, 1)`.
 
 - Producer: `vr::analysis::AnalysisGenerator`
 - Reader: `vr::analysis::VbiFile`
-- File extension: `.vbi`
+- Runtime container section: `VBI2`
+- Standalone test/tool extension: `.vbi`
 - Supported magic: `VBI1` legacy, `VBI2` current
 - Current writer magic: `VBI2`
 

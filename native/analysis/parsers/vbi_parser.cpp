@@ -9,12 +9,23 @@
 namespace vr::analysis {
 
 bool VbiFile::open(const std::string& path) {
+    close();
+    std::ifstream f(win_utf8::path_from_utf8(path), std::ios::binary | std::ios::ate);
+    if (!f) return false;
+    const auto size = f.tellg();
+    if (size < 0) return false;
+    f.close();
+    return open_region(path, 0, static_cast<uint64_t>(size));
+}
+
+bool VbiFile::open_region(const std::string& path, uint64_t offset, uint64_t size) {
     entries_.clear();
     header_ = {};
 
     std::ifstream f(win_utf8::path_from_utf8(path), std::ios::binary);
     if (!f) return false;
 
+    f.seekg(static_cast<std::streamoff>(offset));
     char magic[4] = {};
     f.read(magic, sizeof(magic));
     if (!f || magic[0] != 'V' || magic[1] != 'B' || magic[2] != 'I') {
@@ -58,14 +69,11 @@ bool VbiFile::open(const std::string& path) {
     constexpr uint32_t kMaxUnits = 10'000'000;
     if (header_.num_units > kMaxUnits) return false;
     size_t entries_bytes = static_cast<size_t>(header_.num_units) * sizeof(VbiEntry);
-    f.seekg(0, std::ios::end);
-    auto file_size = f.tellg();
-    f.seekg(static_cast<std::streamoff>(header_.header_size));
-    if (file_size < 0 ||
-        static_cast<std::streamoff>(entries_bytes) > file_size - static_cast<std::streamoff>(header_.header_size)) {
+    if (size < header_.header_size || entries_bytes > size - header_.header_size) {
         return false;
     }
 
+    f.seekg(static_cast<std::streamoff>(offset + header_.header_size));
     entries_.resize(header_.num_units);
     if (header_.num_units > 0) {
         f.read(reinterpret_cast<char*>(entries_.data()),

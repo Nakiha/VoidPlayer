@@ -17,10 +17,10 @@
 namespace {
 
 struct RestoredWindowBounds {
-  int x;
-  int y;
-  int width;
-  int height;
+  double x;
+  double y;
+  double width;
+  double height;
 };
 
 std::filesystem::path GetConfigPath() {
@@ -64,8 +64,10 @@ std::optional<std::string> ExtractWindowJson(const std::string& json) {
 }
 
 bool IsOnScreen(const RestoredWindowBounds& bounds) {
-  RECT rect = {bounds.x, bounds.y, bounds.x + bounds.width,
-               bounds.y + bounds.height};
+  RECT rect = {static_cast<LONG>(std::round(bounds.x)),
+               static_cast<LONG>(std::round(bounds.y)),
+               static_cast<LONG>(std::round(bounds.x + bounds.width)),
+               static_cast<LONG>(std::round(bounds.y + bounds.height))};
   return MonitorFromRect(&rect, MONITOR_DEFAULTTONULL) != nullptr;
 }
 
@@ -90,12 +92,7 @@ std::optional<RestoredWindowBounds> LoadRestoredWindowBounds() {
     return std::nullopt;
   }
 
-  RestoredWindowBounds bounds = {
-      static_cast<int>(std::round(*x)),
-      static_cast<int>(std::round(*y)),
-      static_cast<int>(std::round(*width)),
-      static_cast<int>(std::round(*height)),
-  };
+  RestoredWindowBounds bounds = {*x, *y, *width, *height};
   if (!IsOnScreen(bounds)) {
     return std::nullopt;
   }

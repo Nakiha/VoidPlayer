@@ -109,6 +109,12 @@ int _currentFlutterRunnerHwnd() {
 
 Color _getWindowsAccentColor() => Color(Win32FFI.getDwmAccentColorArgb());
 
+bool _isRestorableMainWindowRect(Rect? rect) {
+  if (rect == null) return false;
+  if (rect.width < 520 || rect.height < 360) return false;
+  return Win32FFI.isRectOnScreen(rect);
+}
+
 Future<void> _showWindowForModeWithTrace({
   required bool silent,
   required _StartupTrace trace,
@@ -117,64 +123,26 @@ Future<void> _showWindowForModeWithTrace({
   trace.mark('show requested');
 }
 
-Rect _centeredRect(Rect area, Size size) {
-  return Rect.fromLTWH(
-    area.left + (area.width - size.width) / 2,
-    area.top + (area.height - size.height) / 2,
-    size.width,
-    size.height,
-  );
-}
-
 Future<void> _applyInitialMainWindowBounds({
   required ({double width, double height})? testWindow,
 }) async {
   final trace = _StepTrace('bounds');
-  final hwnd = _currentFlutterRunnerHwnd();
-  trace.mark('HWND resolved');
-  if (hwnd == 0) {
-    log.warning(
-      '[Startup] main HWND unavailable; falling back to window_manager bounds',
-    );
-    await _applyInitialMainWindowBoundsWithWindowManager(testWindow);
-    trace.mark('window_manager fallback applied');
-    return;
-  }
-
-  final savedRect = AppConfig.instance.windowRect;
-  trace.mark('saved rect read');
-  final workArea = Win32FFI.getMonitorWorkArea(hwnd);
-  trace.mark('monitor work area read');
-  final Rect targetRect;
   if (testWindow != null) {
-    targetRect = _centeredRect(
-      workArea,
-      Size(testWindow.width, testWindow.height),
-    );
-  } else if (savedRect != null && Win32FFI.isRectOnScreen(savedRect)) {
-    targetRect = savedRect;
-  } else {
-    targetRect = _centeredRect(workArea, const Size(1280, 720));
-  }
-  trace.mark('target rect selected');
-
-  final currentRect = Win32FFI.getWindowRect(hwnd);
-  if ((currentRect.left - targetRect.left).abs() <= 2 &&
-      (currentRect.top - targetRect.top).abs() <= 2 &&
-      (currentRect.width - targetRect.width).abs() <= 2 &&
-      (currentRect.height - targetRect.height).abs() <= 2) {
-    trace.mark('MoveWindow skipped');
+    await _applyInitialMainWindowBoundsWithWindowManager(testWindow);
+    trace.mark('test bounds applied');
     return;
   }
 
-  Win32FFI.moveWindow(
-    hwnd,
-    targetRect.left.round(),
-    targetRect.top.round(),
-    targetRect.width.round(),
-    targetRect.height.round(),
-  );
-  trace.mark('MoveWindow applied');
+  if (_isRestorableMainWindowRect(AppConfig.instance.windowRect)) {
+    // The runner consumes window_manager's saved logical bounds before Flutter
+    // starts. Reapplying them here via Win32 would mix logical and physical
+    // coordinate systems on non-100% DPI displays.
+    trace.mark('restored bounds kept');
+    return;
+  }
+
+  await _applyInitialMainWindowBoundsWithWindowManager(null);
+  trace.mark('default bounds applied');
 }
 
 Future<void> _applyInitialMainWindowBoundsWithWindowManager(

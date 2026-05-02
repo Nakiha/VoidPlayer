@@ -1,5 +1,6 @@
 #include "win32_window.h"
 
+#include <cmath>
 #include <dwmapi.h>
 #include <flutter_windows.h>
 
@@ -33,8 +34,8 @@ using EnableNonClientDpiScaling = BOOL __stdcall(HWND hwnd);
 
 // Scale helper to convert logical scaler values to physical using passed in
 // scale factor
-int Scale(int source, double scale_factor) {
-  return static_cast<int>(source * scale_factor);
+int Scale(double source, double scale_factor) {
+  return static_cast<int>(std::round(source * scale_factor));
 }
 
 // Dynamically loads the |EnableNonClientDpiScaling| from the User32 module.
@@ -150,18 +151,26 @@ bool Win32Window::Create(const std::wstring& title,
 }
 
 bool Win32Window::CreateWithBounds(const std::wstring& title,
-                                   int x,
-                                   int y,
-                                   int width,
-                                   int height) {
+                                   double x,
+                                   double y,
+                                   double width,
+                                   double height) {
   Destroy();
 
   const wchar_t* window_class =
       WindowClassRegistrar::GetInstance()->GetWindowClass();
 
+  const POINT target_point = {static_cast<LONG>(std::round(x)),
+                              static_cast<LONG>(std::round(y))};
+  HMONITOR monitor = MonitorFromPoint(target_point, MONITOR_DEFAULTTONEAREST);
+  UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
+  double scale_factor = dpi / 96.0;
+
   HWND window = CreateWindow(
-      window_class, title.c_str(), WS_OVERLAPPEDWINDOW, x, y, width, height,
-      nullptr, nullptr, GetModuleHandle(nullptr), this);
+      window_class, title.c_str(), WS_OVERLAPPEDWINDOW,
+      Scale(x, scale_factor), Scale(y, scale_factor),
+      Scale(width, scale_factor), Scale(height, scale_factor), nullptr,
+      nullptr, GetModuleHandle(nullptr), this);
 
   if (!window) {
     return false;

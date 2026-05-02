@@ -21,6 +21,7 @@ class MainWindowActionCoordinator {
   final void Function() showSettingsDialog;
   final void Function() toggleFullScreen;
   final void Function() exitFullScreen;
+  final void Function() openNewWindow;
 
   MainWindowActionBinder? _binder;
 
@@ -36,6 +37,7 @@ class MainWindowActionCoordinator {
     required this.showSettingsDialog,
     required this.toggleFullScreen,
     required this.exitFullScreen,
+    required this.openNewWindow,
   });
 
   void bind() {
@@ -52,7 +54,7 @@ class MainWindowActionCoordinator {
       openFile: mediaCoordinator.openFile,
       addMediaByPath: mediaCoordinator.addMediaByPath,
       removeTrack: mediaCoordinator.removeTrack,
-      adjustTrackOffset: mediaCoordinator.onOffsetChanged,
+      adjustTrackOffset: mediaCoordinator.onOffsetChangedForSlot,
       setLoopRangeEnabled: playbackCoordinator.setLoopRangeEnabled,
       isLoopRangeEnabled: isLoopRangeEnabled,
       setLoopRange:
@@ -76,7 +78,7 @@ class MainWindowActionCoordinator {
       panByDelta: layoutCoordinator.panByDelta,
       toggleFullScreen: toggleFullScreen,
       exitFullScreen: exitFullScreen,
-      openNewWindow: showProfilerOverlay,
+      openNewWindow: openNewWindow,
       openSettings: showSettingsDialog,
       openStats: showProfilerOverlay,
       openMemory: showProfilerOverlay,

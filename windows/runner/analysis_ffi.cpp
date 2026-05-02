@@ -35,6 +35,7 @@ void naki_analysis_register_pts_callback(int64_t (*cb)()) {
 namespace {
 
 std::mutex g_analysis_mutex;
+std::mutex g_analysis_generate_mutex;
 
 const char* safe_cstr(const char* value) {
     return value ? value : "";
@@ -628,6 +629,7 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_generate(const char* video_path, const char* hash) {
+    std::lock_guard<std::mutex> lock(g_analysis_generate_mutex);
     std::string exe_dir = get_exe_dir();
     std::string data_dir = exe_dir + "\\cache";
 

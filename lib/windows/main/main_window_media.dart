@@ -151,11 +151,10 @@ class MainWindowMediaCoordinator {
   Future<void> removeTrack(int fileId) async {
     if (!_alive) return;
     try {
-      final entry = trackManager.entries.firstWhere(
+      trackManager.entries.firstWhere(
         (e) => e.fileId == fileId,
         orElse: () => throw StateError('No track with fileId $fileId'),
       );
-      final slot = entry.info.slot;
       final wasAudible = audibleTrackFileId() == fileId;
 
       await controller.removeTrack(fileId);
@@ -175,7 +174,7 @@ class MainWindowMediaCoordinator {
         );
         if (!_alive) return;
         trackManager.setTracks(tracks);
-        removeSyncOffset(slot);
+        removeSyncOffset(fileId);
         if (wasAudible) {
           setAudibleTrackFileId(null);
           await controller.setAudibleTrack(null);
@@ -190,14 +189,14 @@ class MainWindowMediaCoordinator {
     trackManager.moveTrack(slotIndex, targetTrackIndex);
   }
 
-  Future<void> onOffsetChanged(int slot, int deltaMs) async {
+  Future<void> onOffsetChanged(int fileId, int deltaMs) async {
     if (!_alive) return;
-    final currentOffsetUs = syncOffsets()[slot] ?? 0;
+    final currentOffsetUs = syncOffsets()[fileId] ?? 0;
     final newOffsetUs = currentOffsetUs + deltaMs * 1000;
 
     final entry = trackManager.entries.firstWhere(
-      (e) => e.info.slot == slot,
-      orElse: () => throw StateError('No track at slot $slot'),
+      (e) => e.fileId == fileId,
+      orElse: () => throw StateError('No track with fileId $fileId'),
     );
 
     await controller.setTrackOffset(
@@ -206,8 +205,17 @@ class MainWindowMediaCoordinator {
     );
     if (!_alive) return;
 
-    setSyncOffset(slot, newOffsetUs);
+    setSyncOffset(fileId, newOffsetUs);
     await refreshTracksAtCurrentPosition();
+  }
+
+  Future<void> onOffsetChangedForSlot(int slot, int deltaMs) async {
+    if (!_alive) return;
+    final entry = trackManager.entries.firstWhere(
+      (e) => e.info.slot == slot,
+      orElse: () => throw StateError('No track at slot $slot'),
+    );
+    await onOffsetChanged(entry.fileId, deltaMs);
   }
 
   Future<void> refreshTracksAtCurrentPosition() async {
@@ -229,18 +237,18 @@ class MainWindowMediaCoordinator {
   int get effectiveDurationUs {
     int maxEffective = durationUs();
     for (final entry in trackManager.entries) {
-      final offsetUs = syncOffsets()[entry.info.slot] ?? 0;
+      final offsetUs = syncOffsets()[entry.fileId] ?? 0;
       final effective = entry.info.durationUs + offsetUs;
       if (effective > maxEffective) maxEffective = effective;
     }
     return maxEffective;
   }
 
-  void removeSyncOffset(int slot) {
-    setSyncOffsets(Map.from(syncOffsets())..remove(slot));
+  void removeSyncOffset(int fileId) {
+    setSyncOffsets(Map.from(syncOffsets())..remove(fileId));
   }
 
-  void setSyncOffset(int slot, int offsetUs) {
-    setSyncOffsets(Map.from(syncOffsets())..[slot] = offsetUs);
+  void setSyncOffset(int fileId, int offsetUs) {
+    setSyncOffsets(Map.from(syncOffsets())..[fileId] = offsetUs);
   }
 }

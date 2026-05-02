@@ -45,13 +45,19 @@ class _ViewportPanelState extends State<ViewportPanel> {
   Size _lastReportedLogicalSize = Size.zero;
   double _lastReportedDevicePixelRatio = 0.0;
 
-  void _syncDragButtons(int buttons, Offset localPosition) {
+  void _syncDragButtons(
+    int buttons,
+    Offset localPosition, {
+    bool allowWin32Recovery = false,
+  }) {
     if (_splitHandleDragging) return;
 
-    final wantsPan =
-        (buttons & kPrimaryButton) != 0 || Win32FFI.isLeftMouseButtonDown();
-    final wantsSplit =
-        (buttons & kSecondaryButton) != 0 || Win32FFI.isRightMouseButtonDown();
+    var wantsPan = (buttons & kPrimaryButton) != 0;
+    var wantsSplit = (buttons & kSecondaryButton) != 0;
+    if (!wantsPan && !wantsSplit && allowWin32Recovery && buttons == 0) {
+      wantsPan = Win32FFI.isLeftMouseButtonDown();
+      wantsSplit = Win32FFI.isRightMouseButtonDown();
+    }
 
     if (!wantsPan && !wantsSplit) {
       if (_panning || _splitting) {
@@ -204,7 +210,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
     }
     final devicePixelRatio = View.of(context).devicePixelRatio;
     return MouseRegion(
-      onEnter: (e) => _syncDragButtons(e.buttons, e.localPosition),
+      onEnter: (e) => _syncDragButtons(
+        e.buttons,
+        e.localPosition,
+        allowWin32Recovery: true,
+      ),
       onExit: (e) => _clampSplitOnExit(context, e.localPosition),
       onHover: (e) {
         _syncDragButtons(e.buttons, e.localPosition);
@@ -216,13 +226,21 @@ class _ViewportPanelState extends State<ViewportPanel> {
           _updateSplitFromLocalX(context, e.localPosition.dx);
         },
         onPointerUp: (e) {
-          _syncDragButtons(e.buttons, e.localPosition);
+          _syncDragButtons(
+            e.buttons,
+            e.localPosition,
+            allowWin32Recovery: true,
+          );
         },
         onPointerCancel: (_) {
-          _syncDragButtons(0, _lastMouseLocalPos);
+          _syncDragButtons(0, _lastMouseLocalPos, allowWin32Recovery: true);
         },
         onPointerMove: (e) {
-          _syncDragButtons(e.buttons, e.localPosition);
+          _syncDragButtons(
+            e.buttons,
+            e.localPosition,
+            allowWin32Recovery: _panning || _splitting,
+          );
           if (!_panning && !_splitting) return;
           final logicalDelta = e.localPosition - _lastMouseLocalPos;
           final physicalDelta = logicalDelta * devicePixelRatio;

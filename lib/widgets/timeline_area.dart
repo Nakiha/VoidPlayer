@@ -14,7 +14,7 @@ class TimelineArea extends StatefulWidget {
   final ValueChanged<int> onToggleTrackAudio;
   final int? audibleTrackFileId;
   final ValueChanged<int> onRemoveTrack;
-  final Map<int, int> syncOffsets; // slot -> offset in microseconds
+  final Map<int, int> syncOffsets; // fileId -> offset in microseconds
   final int maxEffectiveDurationUs;
   final int hoverPtsUs;
   final bool sliderHovering;
@@ -71,7 +71,7 @@ class _TimelineAreaState extends State<TimelineArea> {
             itemBuilder: (context, index) {
               final entry = widget.entries[index];
               final trackDuration = entry.info.durationUs;
-              final offsetUs = widget.syncOffsets[entry.info.slot] ?? 0;
+              final offsetUs = widget.syncOffsets[entry.fileId] ?? 0;
 
               // Clip ratio: original duration relative to max effective duration
               final clipRatio = maxEffectiveDurationUs > 0
@@ -99,7 +99,7 @@ class _TimelineAreaState extends State<TimelineArea> {
                 offsetRatio: offsetRatio,
                 onRemove: () => widget.onRemoveTrack(entry.fileId),
                 onOffsetChanged: (delta) =>
-                    widget.onOffsetChanged(entry.info.slot, delta),
+                    widget.onOffsetChanged(entry.fileId, delta),
                 onToggleAudio: () => widget.onToggleTrackAudio(entry.fileId),
                 isAudible: widget.audibleTrackFileId == entry.fileId,
                 syncOffsetMs: offsetUs ~/ 1000,

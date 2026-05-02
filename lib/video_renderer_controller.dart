@@ -171,6 +171,18 @@ class NativePlayerController {
     }
   }
 
+  void _ensurePlayer(String method) {
+    _ensureAlive();
+    if (_textureId == null) {
+      throw StateError('$method called before createPlayer');
+    }
+  }
+
+  bool _hasPlayerForCommand() {
+    _ensureAlive();
+    return _textureId != null;
+  }
+
   Map<dynamic, dynamic> _requireMap(Map<dynamic, dynamic>? map, String method) {
     if (map == null) {
       throw StateError('$method returned invalid payload: null');
@@ -257,22 +269,22 @@ class NativePlayerController {
   }
 
   Future<void> play() {
-    _ensureAlive();
+    if (!_hasPlayerForCommand()) return Future.value();
     return _channel.invokeMethod<void>('play');
   }
 
   Future<void> pause() {
-    _ensureAlive();
+    if (!_hasPlayerForCommand()) return Future.value();
     return _channel.invokeMethod<void>('pause');
   }
 
   Future<void> seek(int ptsUs) {
-    _ensureAlive();
+    if (!_hasPlayerForCommand()) return Future.value();
     return _channel.invokeMethod<void>('seek', {'ptsUs': ptsUs});
   }
 
   Future<void> setSpeed(double speed) {
-    _ensureAlive();
+    if (!_hasPlayerForCommand()) return Future.value();
     return _channel.invokeMethod<void>('setSpeed', {'speed': speed});
   }
 
@@ -281,7 +293,7 @@ class NativePlayerController {
     required int startUs,
     required int endUs,
   }) {
-    _ensureAlive();
+    if (!_hasPlayerForCommand()) return Future.value();
     return _channel.invokeMethod<void>('setLoopRange', {
       'enabled': enabled,
       'startUs': startUs,
@@ -290,14 +302,14 @@ class NativePlayerController {
   }
 
   Future<void> setAudibleTrack(int? fileId) {
-    _ensureAlive();
+    if (!_hasPlayerForCommand()) return Future.value();
     return _channel.invokeMethod<void>('setAudibleTrack', {
       'fileId': fileId ?? -1,
     });
   }
 
   Future<void> resize(int width, int height) {
-    _ensureAlive();
+    if (!_hasPlayerForCommand()) return Future.value();
     return _channel.invokeMethod<void>('resize', {
       'width': width,
       'height': height,
@@ -307,13 +319,14 @@ class NativePlayerController {
   Future<void> setViewportBackgroundColor(int colorValue) {
     _ensureAlive();
     _viewportBackgroundColor = colorValue;
+    if (_textureId == null) return Future.value();
     return _channel.invokeMethod<void>('setViewportBackgroundColor', {
       'color': colorValue,
     });
   }
 
   Future<ViewportCapture> captureViewport({String? outputPath}) async {
-    _ensureAlive();
+    _ensurePlayer('captureViewport');
     final args = <String, dynamic>{};
     if (outputPath != null) {
       args['outputPath'] = outputPath;
@@ -326,46 +339,46 @@ class NativePlayerController {
   }
 
   Future<void> stepForward() {
-    _ensureAlive();
+    if (!_hasPlayerForCommand()) return Future.value();
     return _channel.invokeMethod<void>('stepForward');
   }
 
   Future<void> stepBackward() {
-    _ensureAlive();
+    if (!_hasPlayerForCommand()) return Future.value();
     return _channel.invokeMethod<void>('stepBackward');
   }
 
   Future<int> currentPts() async {
-    _ensureAlive();
+    if (!_hasPlayerForCommand()) return 0;
     return await _channel.invokeMethod<int>('currentPts') ?? 0;
   }
 
   Future<int> duration() async {
-    _ensureAlive();
+    if (!_hasPlayerForCommand()) return 0;
     return await _channel.invokeMethod<int>('duration') ?? 0;
   }
 
   Future<bool> isPlaying() async {
-    _ensureAlive();
+    if (!_hasPlayerForCommand()) return false;
     return await _channel.invokeMethod<bool>('isPlaying') ?? false;
   }
 
   /// Atomically apply layout state and trigger redraw if paused.
   Future<void> applyLayout(LayoutState state) {
-    _ensureAlive();
+    if (!_hasPlayerForCommand()) return Future.value();
     return _channel.invokeMethod<void>('applyLayout', state.toMap());
   }
 
   /// Get a snapshot of the current layout state.
   Future<LayoutState> getLayout() async {
-    _ensureAlive();
+    _ensurePlayer('getLayout');
     final map = await _channel.invokeMethod<Map<dynamic, dynamic>>('getLayout');
     return LayoutState.fromMap(map ?? {});
   }
 
   /// Add a video track at the first empty slot.
   Future<TrackInfo> addTrack(String videoPath) async {
-    _ensureAlive();
+    _ensurePlayer('addTrack');
     final map = await _channel.invokeMethod<Map<dynamic, dynamic>>('addTrack', {
       'path': videoPath,
     });
@@ -374,7 +387,7 @@ class NativePlayerController {
 
   /// Remove a track by file_id.
   Future<void> removeTrack(int fileId) {
-    _ensureAlive();
+    _ensurePlayer('removeTrack');
     return _channel.invokeMethod<void>('removeTrack', {'fileId': fileId});
   }
 
@@ -387,7 +400,7 @@ class NativePlayerController {
 
   /// Set per-track sync offset in microseconds.
   Future<void> setTrackOffset({required int fileId, required int offsetUs}) {
-    _ensureAlive();
+    _ensurePlayer('setTrackOffset');
     return _channel.invokeMethod<void>('setTrackOffset', {
       'fileId': fileId,
       'offsetUs': offsetUs,
@@ -396,14 +409,14 @@ class NativePlayerController {
 
   /// Get current track info list.
   Future<List<TrackInfo>> getTracks() async {
-    _ensureAlive();
+    if (!_hasPlayerForCommand()) return const [];
     final list = await _channel.invokeMethod<List<dynamic>>('getTracks');
     return list?.map((e) => _trackInfoFromValue(e, 'getTracks')).toList() ?? [];
   }
 
   /// Get diagnostics data (placeholder, requires native counters).
   Future<Map<String, dynamic>> getDiagnostics() async {
-    _ensureAlive();
+    if (!_hasPlayerForCommand()) return const {};
     final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
       'getDiagnostics',
     );

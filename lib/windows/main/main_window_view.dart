@@ -37,7 +37,7 @@ class MainWindowViewModel {
   final bool loopRangeEnabled;
   final int loopStartUs;
   final int loopEndUs;
-  final Map<int, int> syncOffsets;
+  final Map<int, int> syncOffsets; // fileId -> offset in microseconds
   final ValueListenable<TimelineHoverState> timelineHoverListenable;
   final double controlsWidth;
   final bool profilerVisible;

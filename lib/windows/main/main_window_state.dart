@@ -14,7 +14,7 @@ class MainWindowStateModel {
   final LayoutState layout;
   final int? pendingSeekUs;
   final DateTime? pendingSeekAt;
-  final Map<int, int> syncOffsets;
+  final Map<int, int> syncOffsets; // fileId -> offset in microseconds
   final double timelineControlsWidth;
   final bool loopRangeEnabled;
   final bool nativeLoopRangeSynced;

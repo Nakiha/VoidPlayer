@@ -29,6 +29,14 @@ class ActionRegistry {
   /// If the action has a [PlayerAction.shortcut], that key will be intercepted
   /// by [ActionFocus] and routed to this callback.
   void bind(PlayerAction action, ActionCallback callback) {
+    final old = _actions[action.name];
+    if (old?.shortcut != null && old!.shortcut != action.shortcut) {
+      if (_keyMap[old.shortcut] == action.name) {
+        _keyMap.remove(old.shortcut);
+        _requireControl.remove(old.shortcut);
+      }
+    }
+
     _actions[action.name] = action;
     _callbacks[action.name] = callback;
     if (action.shortcut != null) {
@@ -42,6 +50,8 @@ class ActionRegistry {
       _keyMap[action.shortcut!] = action.name;
       if (action.requireControl) {
         _requireControl.add(action.shortcut!);
+      } else {
+        _requireControl.remove(action.shortcut!);
       }
     }
   }

@@ -41,8 +41,10 @@ class AnalysisManager extends ChangeNotifier {
   AnalysisError? _error;
   String? _generatingFileName;
   String? _loadedHash;
-  final Map<String, Future<String?>> _ensureInFlightByPath = {};
-  int _requestSerial = 0;
+  final Map<String, Future<String?>> _ensureGeneratedInFlightByPath = {};
+  int _stateSerial = 0;
+  int _loadSerial = 0;
+  Future<void> _generateQueue = Future<void>.value();
 
   AnalysisState get state => _state;
   AnalysisError? get error => _error;
@@ -54,45 +56,60 @@ class AnalysisManager extends ChangeNotifier {
   static Future<String> computeHash(String videoPath) =>
       _computeHash(videoPath);
 
-  /// Full flow: compute hash → check cache → generate if needed → load.
-  /// Returns the hash on success, null on failure.
-  Future<String?> ensureAndLoad(String videoPath) {
-    final existing = _ensureInFlightByPath[videoPath];
+  /// Ensure the cache files for [videoPath] exist.
+  ///
+  /// Generation is deduplicated by path and is intentionally independent from
+  /// the current native loaded session. Starting analysis for another file
+  /// must not invalidate a generation already running for this one.
+  Future<String?> ensureGenerated(String videoPath) {
+    final existing = _ensureGeneratedInFlightByPath[videoPath];
     if (existing != null) return existing;
 
     late final Future<String?> future;
-    final serial = ++_requestSerial;
-    future = _ensureAndLoadImpl(videoPath, serial).whenComplete(() {
-      if (identical(_ensureInFlightByPath[videoPath], future)) {
-        _ensureInFlightByPath.remove(videoPath);
+    future = _ensureGeneratedImpl(videoPath).whenComplete(() {
+      if (identical(_ensureGeneratedInFlightByPath[videoPath], future)) {
+        _ensureGeneratedInFlightByPath.remove(videoPath);
       }
     });
-    _ensureInFlightByPath[videoPath] = future;
+    _ensureGeneratedInFlightByPath[videoPath] = future;
     return future;
   }
 
-  Future<String?> _ensureAndLoadImpl(String videoPath, int serial) async {
-    final fileName = p.basename(videoPath);
-    log.info('[Analysis] ensureAndLoad: videoPath=$videoPath');
+  /// Full flow: compute hash → check cache → generate if needed → load.
+  /// Returns the hash on success, null on failure.
+  Future<String?> ensureAndLoad(String videoPath) async {
+    final hash = await ensureGenerated(videoPath);
+    if (hash == null) return null;
+    final loaded = await loadAnalysisHash(
+      hash,
+      name: p.basename(videoPath),
+      path: videoPath,
+    );
+    return loaded ? hash : null;
+  }
 
-    if (!_isCurrent(serial)) return null;
-    _setState(AnalysisState.computingHash);
+  Future<String?> _ensureGeneratedImpl(String videoPath) async {
+    final fileName = p.basename(videoPath);
+    final stateSerial = ++_stateSerial;
+    log.info('[Analysis] ensureGenerated: videoPath=$videoPath');
+
+    _setStateIfCurrent(stateSerial, AnalysisState.computingHash);
     final String hash;
     try {
       hash = await _computeHash(videoPath);
-      if (!_isCurrent(serial)) return null;
       log.info('[Analysis] hash=$hash');
     } catch (e) {
       log.severe('[Analysis] hash failed: $e');
-      if (_isCurrent(serial)) {
+      if (_isStateCurrent(stateSerial)) {
         _setError(AnalysisErrorKey.hashFailed, ['$e']);
       }
       return null;
     }
 
     if (AnalysisCache.hasEntry(hash, videoPath: videoPath)) {
-      log.info('[Analysis] cache hit for $hash, loading from cache');
-      return _loadFromCache(hash, fileName, videoPath, serial);
+      log.info('[Analysis] cache hit for $hash');
+      await AnalysisCache.addEntry(hash, fileName, videoPath);
+      return hash;
     }
     log.info('[Analysis] cache miss, will generate');
 
@@ -101,7 +118,6 @@ class AnalysisManager extends ChangeNotifier {
         : 0;
     if (maxCacheBytes > 0) {
       final snapshot = await AnalysisCache.snapshot(maxBytes: maxCacheBytes);
-      if (!_isCurrent(serial)) return null;
       if (snapshot.isOverLimit) {
         log.warning(
           '[Analysis] cache limit reached: '
@@ -114,23 +130,23 @@ class AnalysisManager extends ChangeNotifier {
         return null;
       }
     }
-    if (!_isCurrent(serial)) return null;
 
-    _state = AnalysisState.generating;
-    _generatingFileName = fileName;
-    _error = null;
-    notifyListeners();
+    if (_isStateCurrent(stateSerial)) {
+      _state = AnalysisState.generating;
+      _generatingFileName = fileName;
+      _error = null;
+      notifyListeners();
+    }
 
     log.info(
       '[Analysis] calling FFI generateAnalysis(videoPath=$videoPath, hash=$hash)',
     );
-    final ok = await Isolate.run(
-      () => AnalysisFfi.generateAnalysis(videoPath, hash),
-    );
-    if (!_isCurrent(serial)) return null;
+    final ok = await _generateAnalysisSerialized(videoPath, hash);
     if (!ok) {
       log.severe('[Analysis] generateAnalysis returned false');
-      _setError(AnalysisErrorKey.unsupported, [fileName]);
+      if (_isStateCurrent(stateSerial)) {
+        _setError(AnalysisErrorKey.unsupported, [fileName]);
+      }
       return null;
     }
     log.info('[Analysis] generateAnalysis succeeded');
@@ -138,16 +154,25 @@ class AnalysisManager extends ChangeNotifier {
     await AnalysisCache.addEntry(hash, fileName, videoPath);
     log.info('[Analysis] index entry saved');
 
-    return _loadFromCache(hash, fileName, videoPath, serial);
+    if (maxCacheBytes > 0) {
+      final snapshot = await AnalysisCache.snapshot(maxBytes: maxCacheBytes);
+      if (snapshot.isOverLimit) {
+        log.warning(
+          '[Analysis] cache exceeded after generation: '
+          'current=${snapshot.totalBytes}, max=$maxCacheBytes',
+        );
+      }
+    }
+
+    return hash;
   }
 
-  Future<String?> _loadFromCache(
-    String hash,
-    String name,
-    String path,
-    int serial,
-  ) async {
-    if (!_isCurrent(serial)) return null;
+  Future<bool> loadAnalysisHash(
+    String hash, {
+    required String name,
+    required String path,
+  }) async {
+    final serial = ++_loadSerial;
     _setState(AnalysisState.loading);
     final vbs2 = AnalysisCache.vbs2Path(hash);
     final vbi = AnalysisCache.vbiPath(hash);
@@ -159,22 +184,23 @@ class AnalysisManager extends ChangeNotifier {
       '[Analysis] loading: vbs2=${vbs2Arg.isNotEmpty ? vbs2Arg : "(skip)"}, vbi=$vbi, vbt=$vbt',
     );
     final ok = AnalysisFfi.load(vbs2Arg, vbi, vbt);
-    if (!_isCurrent(serial)) return null;
+    if (!_isLoadCurrent(serial)) return false;
     if (!ok) {
       log.severe('[Analysis] FFI load returned false');
       _setError(AnalysisErrorKey.loadFailed, [name]);
-      return null;
+      return false;
     }
 
     _loadedHash = hash;
     log.info('[Analysis] loaded successfully, hash=$hash');
     _setState(AnalysisState.loaded);
-    return hash;
+    return true;
   }
 
   void unload() {
-    _requestSerial++;
-    _ensureInFlightByPath.clear();
+    _stateSerial++;
+    _loadSerial++;
+    _ensureGeneratedInFlightByPath.clear();
     if (_state == AnalysisState.loaded) {
       AnalysisFfi.unload();
     }
@@ -198,7 +224,24 @@ class AnalysisManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool _isCurrent(int serial) => serial == _requestSerial;
+  void _setStateIfCurrent(int serial, AnalysisState state) {
+    if (_isStateCurrent(serial)) _setState(state);
+  }
+
+  bool _isStateCurrent(int serial) => serial == _stateSerial;
+  bool _isLoadCurrent(int serial) => serial == _loadSerial;
+
+  Future<bool> _generateAnalysisSerialized(String videoPath, String hash) {
+    final previous = _generateQueue;
+    final task = previous
+        .catchError((_) {})
+        .then(
+          (_) =>
+              Isolate.run(() => AnalysisFfi.generateAnalysis(videoPath, hash)),
+        );
+    _generateQueue = task.then<void>((_) {}, onError: (_) {});
+    return task;
+  }
 
   static Future<String> _computeHash(String path) => computeFileSha256(path);
 }

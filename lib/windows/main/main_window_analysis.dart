@@ -11,40 +11,49 @@ class MainWindowAnalysisCoordinator {
   final AnalysisIpcServer _ipcServer = AnalysisIpcServer();
   final Map<int, String> _hashesByFileId = <int, String>{};
 
-  int _snapshotSerial = 0;
-  Future<void>? _triggerInFlight;
+  int _opSerial = 0;
+  bool _disposed = false;
+  Future<void>? _operationInFlight;
 
   MainWindowAnalysisCoordinator({required this.trackManager});
 
-  Future<void> dispose() => _ipcServer.dispose();
-
-  Future<void> triggerAnalysis() {
-    return _triggerInFlight ??= _triggerAnalysisImpl().whenComplete(() {
-      _triggerInFlight = null;
-    });
+  Future<void> dispose() async {
+    _disposed = true;
+    _opSerial++;
+    await _ipcServer.dispose();
   }
 
-  Future<void> _triggerAnalysisImpl() async {
+  Future<void> triggerAnalysis() {
+    return _enqueueOperation(_triggerAnalysisImpl);
+  }
+
+  Future<void> _triggerAnalysisImpl(int serial) async {
     if (trackManager.isEmpty) return;
     final mgr = AnalysisManager.instance;
     final windows = <AnalysisWindowRequest>[];
     await _ipcServer.start();
+    if (!_alive(serial)) return;
     WindowManager.analysisIpcPort = _ipcServer.port;
     WindowManager.analysisIpcToken = _ipcServer.token;
     for (final entry in trackManager.entries) {
       final hash = await mgr.ensureAndLoad(entry.path);
+      if (!_alive(serial)) return;
       if (hash != null) {
         _hashesByFileId[entry.fileId] = hash;
         windows.add((hash: hash, fileName: p.basename(entry.path)));
       }
     }
-    await publishTrackSnapshot();
+    await _publishTrackSnapshotImpl(serial);
+    if (!_alive(serial)) return;
     await WindowManager.showAnalysisWindows(windows);
   }
 
   Future<void> publishTrackSnapshot() async {
+    return _enqueueOperation(_publishTrackSnapshotImpl);
+  }
+
+  Future<void> _publishTrackSnapshotImpl(int serial) async {
     if (!_ipcServer.isStarted) return;
-    final serial = ++_snapshotSerial;
     final mgr = AnalysisManager.instance;
     final tracks = <AnalysisIpcTrack>[];
     final liveFileIds = trackManager.entries.map((e) => e.fileId).toSet();
@@ -54,10 +63,11 @@ class MainWindowAnalysisCoordinator {
       var hash = _hashesByFileId[entry.fileId];
       if (hash == null) {
         hash = await mgr.ensureAndLoad(entry.path);
+        if (!_alive(serial)) return;
         if (hash == null) continue;
         _hashesByFileId[entry.fileId] = hash;
       }
-      if (serial != _snapshotSerial) return;
+      if (!_alive(serial)) return;
       tracks.add(
         AnalysisIpcTrack(
           fileId: entry.fileId,
@@ -70,7 +80,29 @@ class MainWindowAnalysisCoordinator {
       );
     }
 
-    if (serial != _snapshotSerial) return;
+    if (!_alive(serial)) return;
     _ipcServer.publishTracks(tracks);
   }
+
+  Future<void> _enqueueOperation(Future<void> Function(int serial) operation) {
+    if (_disposed) return Future.value();
+    final serial = ++_opSerial;
+    final previous = _operationInFlight;
+    late final Future<void> future;
+    future = (previous ?? Future<void>.value())
+        .catchError((_) {})
+        .then((_) async {
+          if (!_alive(serial)) return;
+          await operation(serial);
+        })
+        .whenComplete(() {
+          if (identical(_operationInFlight, future)) {
+            _operationInFlight = null;
+          }
+        });
+    _operationInFlight = future;
+    return future;
+  }
+
+  bool _alive(int serial) => !_disposed && serial == _opSerial;
 }

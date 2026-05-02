@@ -122,7 +122,8 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
                         (w.viewStart +
                                 ((localX - _frameTrendLabelW) / chartW) * span)
                             .round()
-                            .clamp(0, w.frames.length - 1);
+                            .clamp(0, w.frames.length - 1)
+                            .toInt();
                     w.onFrameSelected(w.selectedFrameIdx == idx ? null : idx);
                   },
                   onPanUpdate: (details) {
@@ -194,8 +195,8 @@ class _FrameTrendPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (frames.isEmpty) return;
 
-    final visibleStart = viewStart.floor().clamp(0, frames.length - 1);
-    final visibleEnd = (viewEnd.ceil() + 1).clamp(0, frames.length);
+    final visibleStart = viewStart.floor().clamp(0, frames.length - 1).toInt();
+    final visibleEnd = (viewEnd.ceil() + 1).clamp(0, frames.length).toInt();
     if (visibleStart >= visibleEnd) return;
 
     final count = visibleEnd - visibleStart;
@@ -374,10 +375,10 @@ class _FrameTrendPainter extends CustomPainter {
     if (hoverX != null && hoverX! >= labelW) {
       final relX = hoverX! - labelW;
       final frameFrac = relX / chartW;
-      final frameIdx = (viewStart + frameFrac * span).round().clamp(
-        visibleStart,
-        visibleEnd - 1,
-      );
+      final frameIdx = (viewStart + frameFrac * span)
+          .round()
+          .clamp(visibleStart, visibleEnd - 1)
+          .toInt();
 
       final crossX =
           labelW +

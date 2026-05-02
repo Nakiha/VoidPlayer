@@ -115,14 +115,14 @@ class ActionRegistry {
     final actionName = _keyMap[event.logicalKey];
     if (actionName == null) return false;
     final action = _actions[actionName];
-    if (event is KeyRepeatEvent && action?.repeatable != true) {
-      return true;
-    }
 
     // Check if this action requires Ctrl to be held
     final needsCtrl = _requireControl.contains(event.logicalKey);
     final ctrlHeld = HardwareKeyboard.instance.isControlPressed;
     if (needsCtrl != ctrlHeld) return false;
+    if (event is KeyRepeatEvent && action?.repeatable != true) {
+      return true;
+    }
 
     final callback = _callbacks[actionName];
     if (callback == null) return false;

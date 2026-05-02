@@ -24,6 +24,9 @@ def flutter_build(debug: bool) -> None:
 
 def flutter_unit_test() -> None:
     """Run Flutter/Dart unit tests that do not launch the Windows app."""
+    header("Analyze Flutter")
+    run(["flutter", "analyze"], cwd=str(ROOT))
+
     header("Test Flutter unit")
     run(["flutter", "test", "test/unit"], cwd=str(ROOT))
 

@@ -36,7 +36,7 @@ class MainWindowAnalysisCoordinator {
     WindowManager.analysisIpcPort = _ipcServer.port;
     WindowManager.analysisIpcToken = _ipcServer.token;
     for (final entry in trackManager.entries) {
-      final hash = await mgr.ensureAndLoad(entry.path);
+      final hash = await mgr.ensureGenerated(entry.path);
       if (!_alive(serial)) return;
       if (hash != null) {
         _hashesByFileId[entry.fileId] = hash;
@@ -62,7 +62,7 @@ class MainWindowAnalysisCoordinator {
     for (final entry in trackManager.entries) {
       var hash = _hashesByFileId[entry.fileId];
       if (hash == null) {
-        hash = await mgr.ensureAndLoad(entry.path);
+        hash = await mgr.ensureGenerated(entry.path);
         if (!_alive(serial)) return;
         if (hash == null) continue;
         _hashesByFileId[entry.fileId] = hash;

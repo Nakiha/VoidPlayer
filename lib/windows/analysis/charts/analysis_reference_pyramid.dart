@@ -342,8 +342,8 @@ class _RefPyramidPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (frames.isEmpty) return;
 
-    final visibleStart = viewStart.floor().clamp(0, frames.length - 1);
-    final visibleEnd = (viewEnd.ceil() + 1).clamp(0, frames.length);
+    final visibleStart = viewStart.floor().clamp(0, frames.length - 1).toInt();
+    final visibleEnd = (viewEnd.ceil() + 1).clamp(0, frames.length).toInt();
     if (visibleStart >= visibleEnd) return;
 
     // --- Layout ---
@@ -634,10 +634,10 @@ class _RefPyramidPainter extends CustomPainter {
       0.0,
       1.0,
     );
-    final frameIdx = (viewStart + frameFrac * span).round().clamp(
-      visibleStart,
-      visibleEnd - 1,
-    );
+    final frameIdx = (viewStart + frameFrac * span)
+        .round()
+        .clamp(visibleStart, visibleEnd - 1)
+        .toInt();
     if (frameIdx < 0 || frameIdx >= frames.length) return;
 
     final f = frames[frameIdx];

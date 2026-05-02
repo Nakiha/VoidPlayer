@@ -1,4 +1,5 @@
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
@@ -12,6 +13,7 @@ import '../../widgets/toolbar.dart';
 import '../../widgets/viewport_panel.dart';
 import '../settings_window.dart';
 import '../stats_window.dart';
+import 'main_window_state.dart';
 
 class MainWindowViewModel {
   final bool dragging;
@@ -36,8 +38,7 @@ class MainWindowViewModel {
   final int loopStartUs;
   final int loopEndUs;
   final Map<int, int> syncOffsets;
-  final int hoverPtsUs;
-  final bool sliderHovering;
+  final ValueListenable<TimelineHoverState> timelineHoverListenable;
   final double controlsWidth;
   final bool profilerVisible;
   final bool settingsVisible;
@@ -68,8 +69,7 @@ class MainWindowViewModel {
     required this.loopStartUs,
     required this.loopEndUs,
     required this.syncOffsets,
-    required this.hoverPtsUs,
-    required this.sliderHovering,
+    required this.timelineHoverListenable,
     required this.controlsWidth,
     required this.profilerVisible,
     required this.settingsVisible,
@@ -217,24 +217,27 @@ class MainWindowView extends StatelessWidget {
                 if (!model.fullScreen && model.tracks.isNotEmpty)
                   Expanded(
                     flex: 0,
-                    child: TimelineArea(
-                      entries: model.tracks,
-                      currentPtsUs: model.currentPtsUs,
-                      onRemoveTrack: actions.onRemoveTrack,
-                      onReorder: actions.onReorder,
-                      onOffsetChanged: actions.onOffsetChanged,
-                      onToggleTrackAudio: actions.onToggleTrackAudio,
-                      audibleTrackFileId: model.audibleTrackFileId,
-                      syncOffsets: model.syncOffsets,
-                      maxEffectiveDurationUs: model.durationUs,
-                      hoverPtsUs: model.hoverPtsUs,
-                      sliderHovering: model.sliderHovering,
-                      controlsWidth: model.controlsWidth,
-                      onControlsWidthChanged: actions.onControlsWidthChanged,
-                      markerPtsUs: model.markerUs,
-                      loopRangeEnabled: model.loopRangeEnabled,
-                      loopStartUs: model.loopStartUs,
-                      loopEndUs: model.loopEndUs,
+                    child: ValueListenableBuilder<TimelineHoverState>(
+                      valueListenable: model.timelineHoverListenable,
+                      builder: (context, hover, _) => TimelineArea(
+                        entries: model.tracks,
+                        currentPtsUs: model.currentPtsUs,
+                        onRemoveTrack: actions.onRemoveTrack,
+                        onReorder: actions.onReorder,
+                        onOffsetChanged: actions.onOffsetChanged,
+                        onToggleTrackAudio: actions.onToggleTrackAudio,
+                        audibleTrackFileId: model.audibleTrackFileId,
+                        syncOffsets: model.syncOffsets,
+                        maxEffectiveDurationUs: model.durationUs,
+                        hoverPtsUs: hover.hoverPtsUs,
+                        sliderHovering: hover.sliderHovering,
+                        controlsWidth: model.controlsWidth,
+                        onControlsWidthChanged: actions.onControlsWidthChanged,
+                        markerPtsUs: model.markerUs,
+                        loopRangeEnabled: model.loopRangeEnabled,
+                        loopStartUs: model.loopStartUs,
+                        loopEndUs: model.loopEndUs,
+                      ),
                     ),
                   ),
               ],

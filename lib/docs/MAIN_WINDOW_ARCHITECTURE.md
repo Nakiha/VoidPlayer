@@ -8,6 +8,7 @@
 MainWindow (StatefulWidget shell)
   └── MainWindowController
       ├── MainWindowStateStore
+      ├── TimelineHoverState ValueNotifier
       ├── NativePlayerController
       ├── TrackManager
       ├── MainWindowPlaybackCoordinator
@@ -34,7 +35,7 @@ MainWindowView
 |------|------|
 | `lib/windows/main/main_window.dart` | 薄 widget shell，不放业务 |
 | `lib/windows/main/main_window_controller.dart` | facade，装配和协调各 coordinator |
-| `lib/windows/main/main_window_state.dart` | `MainWindowStateModel` + `MainWindowStateStore` |
+| `lib/windows/main/main_window_state.dart` | `MainWindowStateModel` + `MainWindowStateStore`，以及高频局部 listenable state |
 | `lib/windows/main/main_window_view.dart` | 纯 view，吃 `MainWindowViewModel` 和 `MainWindowViewActions` |
 | `lib/windows/main/main_window_actions.dart` | ActionRegistry 绑定/解绑生命周期 |
 | `lib/windows/main/main_window_playback.dart` | play/pause/seek、polling、loop range、timeline hover |
@@ -83,6 +84,15 @@ Native / User event
   → MainWindowView
 ```
 
+高频共享视觉状态可以绕开主 store：
+
+```text
+Timeline slider hover
+  → MainWindowPlaybackCoordinator
+  → TimelineHoverState ValueNotifier
+  → TimelineArea ValueListenableBuilder
+```
+
 `MainWindowStateModel` 保存主窗口共享 UI 状态：
 
 - texture / viewport 状态
@@ -90,7 +100,10 @@ Native / User event
 - layout snapshot
 - track sync offsets
 - loop range 状态
-- timeline hover / drag overlay 状态
+- drag overlay 状态
+
+`TimelineHoverState` 是特例：它需要从 controls bar 传到 track list，用于跨轨道 hover marker；
+但鼠标移动频率高，不应触发主窗口 `ListenableBuilder` 重建 toolbar / viewport / overlay。
 
 规则：
 
@@ -98,6 +111,7 @@ Native / User event
 - 不在 `MainWindowView` 或子 widget 中写共享状态。
 - 新字段加入 state model 后，必须同时补 copyWith 和 store 写入方法。
 - 如果字段只属于某个 widget 的局部视觉状态，不要放进主窗口 store。
+- 高频但需要跨区域共享的视觉状态，优先使用区域级 `Listenable`，只让实际消费区 rebuild。
 
 ## Coordinator 所有权
 
@@ -108,6 +122,7 @@ Native / User event
 - polling timer
 - Dart fallback loop boundary timer
 - loop range sync serial
+- timeline hover notifier
 
 负责：
 
@@ -115,7 +130,7 @@ Native / User event
 - native playback state polling
 - loop range enable/range sync
 - startup loop range
-- timeline hover state
+- timeline hover state 更新，但不写入 `MainWindowStateStore`
 
 新增播放控制功能优先放这里。
 

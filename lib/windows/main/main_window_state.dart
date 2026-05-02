@@ -21,8 +21,6 @@ class MainWindowStateModel {
   final bool startupLoopRangeApplied;
   final int loopStartUs;
   final int loopEndUs;
-  final int hoverPtsUs;
-  final bool sliderHovering;
   final bool dragging;
   final bool profilerVisible;
   final bool settingsVisible;
@@ -47,8 +45,6 @@ class MainWindowStateModel {
     this.startupLoopRangeApplied = false,
     this.loopStartUs = 0,
     this.loopEndUs = 0,
-    this.hoverPtsUs = 0,
-    this.sliderHovering = false,
     this.dragging = false,
     this.profilerVisible = false,
     this.settingsVisible = false,
@@ -74,8 +70,6 @@ class MainWindowStateModel {
     bool? startupLoopRangeApplied,
     int? loopStartUs,
     int? loopEndUs,
-    int? hoverPtsUs,
-    bool? sliderHovering,
     bool? dragging,
     bool? profilerVisible,
     bool? settingsVisible,
@@ -109,8 +103,6 @@ class MainWindowStateModel {
           startupLoopRangeApplied ?? this.startupLoopRangeApplied,
       loopStartUs: loopStartUs ?? this.loopStartUs,
       loopEndUs: loopEndUs ?? this.loopEndUs,
-      hoverPtsUs: hoverPtsUs ?? this.hoverPtsUs,
-      sliderHovering: sliderHovering ?? this.sliderHovering,
       dragging: dragging ?? this.dragging,
       profilerVisible: profilerVisible ?? this.profilerVisible,
       settingsVisible: settingsVisible ?? this.settingsVisible,
@@ -248,13 +240,6 @@ class MainWindowStateStore extends ChangeNotifier {
     _set(_value.copyWith(loopStartUs: startUs, loopEndUs: endUs));
   }
 
-  void setSliderHover(int hoverUs, bool hovering) {
-    if (_value.hoverPtsUs == hoverUs && _value.sliderHovering == hovering) {
-      return;
-    }
-    _set(_value.copyWith(hoverPtsUs: hoverUs, sliderHovering: hovering));
-  }
-
   void setDragging(bool dragging) {
     if (_value.dragging == dragging) return;
     _set(_value.copyWith(dragging: dragging));
@@ -292,4 +277,21 @@ class MainWindowStateStore extends ChangeNotifier {
     if (_value.audibleTrackFileId == fileId) return;
     _set(_value.copyWith(audibleTrackFileId: fileId));
   }
+}
+
+class TimelineHoverState {
+  final int hoverPtsUs;
+  final bool sliderHovering;
+
+  const TimelineHoverState({this.hoverPtsUs = 0, this.sliderHovering = false});
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TimelineHoverState &&
+          other.hoverPtsUs == hoverPtsUs &&
+          other.sliderHovering == sliderHovering;
+
+  @override
+  int get hashCode => Object.hash(hoverPtsUs, sliderHovering);
 }

@@ -31,6 +31,9 @@ class MainWindowController {
   final NativePlayerController player = NativePlayerController();
   final TrackManager trackManager = TrackManager();
   final MainWindowStateStore stateStore = MainWindowStateStore();
+  final ValueNotifier<TimelineHoverState> timelineHoverNotifier = ValueNotifier(
+    const TimelineHoverState(),
+  );
   final GlobalKey timelineSliderKey = GlobalKey();
   final GlobalKey loopRangeBarKey = GlobalKey();
   final GlobalKey viewportKey = GlobalKey();
@@ -68,6 +71,7 @@ class MainWindowController {
     playbackCoordinator.dispose();
     mediaCoordinator.dispose();
     layoutCoordinator.dispose();
+    timelineHoverNotifier.dispose();
     stateStore.dispose();
     fireAndLog('dispose analysis coordinator', analysisCoordinator.dispose());
     trackManager.dispose();
@@ -105,8 +109,7 @@ class MainWindowController {
       loopStartUs: _resolvedLoopStartUs,
       loopEndUs: _resolvedLoopEndUs,
       syncOffsets: _syncOffsets,
-      hoverPtsUs: _hoverPtsUs,
-      sliderHovering: _sliderHovering,
+      timelineHoverListenable: timelineHoverNotifier,
       controlsWidth: _timelineControlsWidth,
       profilerVisible: _profilerVisible,
       settingsVisible: _settingsVisible,
@@ -350,9 +353,9 @@ class MainWindowController {
       loopStartUs: () => _loopStartUs,
       loopEndUs: () => _loopEndUs,
       setLoopRangeState: stateStore.setLoopRange,
-      hoverPtsUs: () => _hoverPtsUs,
-      sliderHovering: () => _sliderHovering,
-      setSliderHoverState: stateStore.setSliderHover,
+      hoverPtsUs: () => timelineHoverNotifier.value.hoverPtsUs,
+      sliderHovering: () => timelineHoverNotifier.value.sliderHovering,
+      setSliderHoverState: _setTimelineHover,
     );
     mediaCoordinator = MainWindowMediaCoordinator(
       controller: player,
@@ -431,6 +434,15 @@ class MainWindowController {
 
   MainWindowStateModel get _state => stateStore.value;
 
+  void _setTimelineHover(int hoverUs, bool hovering) {
+    final next = TimelineHoverState(
+      hoverPtsUs: hoverUs,
+      sliderHovering: hovering,
+    );
+    if (timelineHoverNotifier.value == next) return;
+    timelineHoverNotifier.value = next;
+  }
+
   int? get _textureId => _state.textureId;
   int get _viewportState => _state.viewportState;
   bool get _isPlaying => _state.isPlaying;
@@ -447,8 +459,6 @@ class MainWindowController {
   bool get _startupLoopRangeApplied => _state.startupLoopRangeApplied;
   int get _loopStartUs => _state.loopStartUs;
   int get _loopEndUs => _state.loopEndUs;
-  int get _hoverPtsUs => _state.hoverPtsUs;
-  bool get _sliderHovering => _state.sliderHovering;
   bool get _dragging => _state.dragging;
   bool get _profilerVisible => _state.profilerVisible;
   bool get _settingsVisible => _state.settingsVisible;

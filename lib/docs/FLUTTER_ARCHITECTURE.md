@@ -103,6 +103,7 @@ View 层只做布局和控件组合。
 - coordinator 通过 getter closure 读取当前 state，通过 store callback 写状态。
 - UI 通过 `ListenableBuilder` 响应 store 变化。
 - 需要新增 UI 状态时，先判断状态归属：主窗口 UI 状态放 store，临时控件 hover/drag 可留在具体 widget，native 资源状态留 native/controller。
+- 高频但需要跨区域共享的视觉状态不要放进主 store；优先用区域级 `Listenable` 精准刷新消费区，例如 timeline hover 只刷新 track list。
 
 ### Platform / Native bridge
 

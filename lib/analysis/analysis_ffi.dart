@@ -110,11 +110,13 @@ typedef _UnloadDart = void Function();
 typedef _GetSummaryNative = Pointer<NakiAnalysisSummary> Function();
 typedef _GetSummaryDart = Pointer<NakiAnalysisSummary> Function();
 
-typedef _GetFramesNative = Int32 Function(Pointer<NakiFrameInfo>, Int32);
-typedef _GetFramesDart = int Function(Pointer<NakiFrameInfo>, int);
+typedef _GetFramesRangeNative =
+    Int32 Function(Int32, Pointer<NakiFrameInfo>, Int32);
+typedef _GetFramesRangeDart = int Function(int, Pointer<NakiFrameInfo>, int);
 
-typedef _GetNalusNative = Int32 Function(Pointer<NakiNaluInfo>, Int32);
-typedef _GetNalusDart = int Function(Pointer<NakiNaluInfo>, int);
+typedef _GetNalusRangeNative =
+    Int32 Function(Int32, Pointer<NakiNaluInfo>, Int32);
+typedef _GetNalusRangeDart = int Function(int, Pointer<NakiNaluInfo>, int);
 
 typedef _SetOverlayNative = Void Function(Pointer<NakiOverlayState>);
 typedef _SetOverlayDart = void Function(Pointer<NakiOverlayState>);
@@ -135,15 +137,15 @@ typedef _HandleGetSummaryNative =
 typedef _HandleGetSummaryDart =
     Pointer<NakiAnalysisSummary> Function(Pointer<Void>);
 
-typedef _HandleGetFramesNative =
-    Int32 Function(Pointer<Void>, Pointer<NakiFrameInfo>, Int32);
-typedef _HandleGetFramesDart =
-    int Function(Pointer<Void>, Pointer<NakiFrameInfo>, int);
+typedef _HandleGetFramesRangeNative =
+    Int32 Function(Pointer<Void>, Int32, Pointer<NakiFrameInfo>, Int32);
+typedef _HandleGetFramesRangeDart =
+    int Function(Pointer<Void>, int, Pointer<NakiFrameInfo>, int);
 
-typedef _HandleGetNalusNative =
-    Int32 Function(Pointer<Void>, Pointer<NakiNaluInfo>, Int32);
-typedef _HandleGetNalusDart =
-    int Function(Pointer<Void>, Pointer<NakiNaluInfo>, int);
+typedef _HandleGetNalusRangeNative =
+    Int32 Function(Pointer<Void>, Int32, Pointer<NakiNaluInfo>, Int32);
+typedef _HandleGetNalusRangeDart =
+    int Function(Pointer<Void>, int, Pointer<NakiNaluInfo>, int);
 
 // ===========================================================================
 // Native symbol lookup
@@ -158,12 +160,14 @@ final _unload = _dl.lookupFunction<_UnloadNative, _UnloadDart>(
 final _getSummary = _dl.lookupFunction<_GetSummaryNative, _GetSummaryDart>(
   'naki_analysis_get_summary',
 );
-final _getFrames = _dl.lookupFunction<_GetFramesNative, _GetFramesDart>(
-  'naki_analysis_get_frames',
-);
-final _getNalus = _dl.lookupFunction<_GetNalusNative, _GetNalusDart>(
-  'naki_analysis_get_nalus',
-);
+final _getFramesRange = _dl
+    .lookupFunction<_GetFramesRangeNative, _GetFramesRangeDart>(
+      'naki_analysis_get_frames_range',
+    );
+final _getNalusRange = _dl
+    .lookupFunction<_GetNalusRangeNative, _GetNalusRangeDart>(
+      'naki_analysis_get_nalus_range',
+    );
 final _setOverlay = _dl.lookupFunction<_SetOverlayNative, _SetOverlayDart>(
   'naki_analysis_set_overlay',
 );
@@ -178,13 +182,13 @@ final _handleGetSummary = _dl
     .lookupFunction<_HandleGetSummaryNative, _HandleGetSummaryDart>(
       'naki_analysis_handle_get_summary',
     );
-final _handleGetFrames = _dl
-    .lookupFunction<_HandleGetFramesNative, _HandleGetFramesDart>(
-      'naki_analysis_handle_get_frames',
+final _handleGetFramesRange = _dl
+    .lookupFunction<_HandleGetFramesRangeNative, _HandleGetFramesRangeDart>(
+      'naki_analysis_handle_get_frames_range',
     );
-final _handleGetNalus = _dl
-    .lookupFunction<_HandleGetNalusNative, _HandleGetNalusDart>(
-      'naki_analysis_handle_get_nalus',
+final _handleGetNalusRange = _dl
+    .lookupFunction<_HandleGetNalusRangeNative, _HandleGetNalusRangeDart>(
+      'naki_analysis_handle_get_nalus_range',
     );
 
 // ===========================================================================
@@ -365,14 +369,23 @@ class AnalysisSession {
 
   List<FrameInfo> get frames {
     final s = summary;
+    return framesRange(0, s.loaded == 0 ? 0 : s.frameCount);
+  }
+
+  List<FrameInfo> framesRange(int start, int count) {
+    final s = summary;
     if (s.loaded == 0 || s.frameCount == 0 || _handle == nullptr) return [];
-    final ptr = calloc<NakiFrameInfo>(s.frameCount);
+    if (start < 0 || count <= 0 || start >= s.frameCount) return [];
+    final safeCount = count.clamp(0, s.frameCount - start).toInt();
+    if (safeCount <= 0) return [];
+    final ptr = calloc<NakiFrameInfo>(safeCount);
     try {
-      final actual = _handleGetFrames(
+      final actual = _handleGetFramesRange(
         _handle,
+        start,
         ptr,
-        s.frameCount,
-      ).clamp(0, s.frameCount).toInt();
+        safeCount,
+      ).clamp(0, safeCount).toInt();
       return List.generate(actual, (i) => _frameInfoAt(ptr, i));
     } finally {
       calloc.free(ptr);
@@ -381,14 +394,23 @@ class AnalysisSession {
 
   List<NaluInfo> get nalus {
     final s = summary;
+    return nalusRange(0, s.loaded == 0 ? 0 : s.naluCount);
+  }
+
+  List<NaluInfo> nalusRange(int start, int count) {
+    final s = summary;
     if (s.loaded == 0 || s.naluCount == 0 || _handle == nullptr) return [];
-    final ptr = calloc<NakiNaluInfo>(s.naluCount);
+    if (start < 0 || count <= 0 || start >= s.naluCount) return [];
+    final safeCount = count.clamp(0, s.naluCount - start).toInt();
+    if (safeCount <= 0) return [];
+    final ptr = calloc<NakiNaluInfo>(safeCount);
     try {
-      final actual = _handleGetNalus(
+      final actual = _handleGetNalusRange(
         _handle,
+        start,
         ptr,
-        s.naluCount,
-      ).clamp(0, s.naluCount).toInt();
+        safeCount,
+      ).clamp(0, safeCount).toInt();
       return List.generate(actual, (i) => _naluInfoAt(ptr, i));
     } finally {
       calloc.free(ptr);
@@ -430,12 +452,23 @@ class AnalysisFfi {
   /// Returns plain Dart objects (safe after the FFI buffer is freed).
   static List<FrameInfo> get frames {
     final s = summary;
-    if (s.loaded == 0) return [];
-    final count = s.frameCount;
-    if (count == 0) return [];
-    final ptr = calloc<NakiFrameInfo>(count);
+    return framesRange(0, s.loaded == 0 ? 0 : s.frameCount);
+  }
+
+  /// Read a bounded frame range into Dart objects.
+  static List<FrameInfo> framesRange(int start, int count) {
+    final s = summary;
+    if (s.loaded == 0 || s.frameCount == 0) return [];
+    if (start < 0 || count <= 0 || start >= s.frameCount) return [];
+    final safeCount = count.clamp(0, s.frameCount - start).toInt();
+    if (safeCount <= 0) return [];
+    final ptr = calloc<NakiFrameInfo>(safeCount);
     try {
-      final actual = _getFrames(ptr, count).clamp(0, count).toInt();
+      final actual = _getFramesRange(
+        start,
+        ptr,
+        safeCount,
+      ).clamp(0, safeCount).toInt();
       return List.generate(actual, (i) => _frameInfoAt(ptr, i));
     } finally {
       calloc.free(ptr);
@@ -446,12 +479,23 @@ class AnalysisFfi {
   /// Returns plain Dart objects (safe after the FFI buffer is freed).
   static List<NaluInfo> get nalus {
     final s = summary;
-    if (s.loaded == 0) return [];
-    final count = s.naluCount;
-    if (count == 0) return [];
-    final ptr = calloc<NakiNaluInfo>(count);
+    return nalusRange(0, s.loaded == 0 ? 0 : s.naluCount);
+  }
+
+  /// Read a bounded NALU range into Dart objects.
+  static List<NaluInfo> nalusRange(int start, int count) {
+    final s = summary;
+    if (s.loaded == 0 || s.naluCount == 0) return [];
+    if (start < 0 || count <= 0 || start >= s.naluCount) return [];
+    final safeCount = count.clamp(0, s.naluCount - start).toInt();
+    if (safeCount <= 0) return [];
+    final ptr = calloc<NakiNaluInfo>(safeCount);
     try {
-      final actual = _getNalus(ptr, count).clamp(0, count).toInt();
+      final actual = _getNalusRange(
+        start,
+        ptr,
+        safeCount,
+      ).clamp(0, safeCount).toInt();
       return List.generate(actual, (i) => _naluInfoAt(ptr, i));
     } finally {
       calloc.free(ptr);

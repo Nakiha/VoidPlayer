@@ -67,7 +67,13 @@ extern "C" __declspec(dllexport)
 int32_t naki_analysis_get_frames(NakiFrameInfo* out, int32_t max_count);
 
 extern "C" __declspec(dllexport)
+int32_t naki_analysis_get_frames_range(int32_t start, NakiFrameInfo* out, int32_t max_count);
+
+extern "C" __declspec(dllexport)
 int32_t naki_analysis_get_nalus(NakiNaluInfo* out, int32_t max_count);
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_get_nalus_range(int32_t start, NakiNaluInfo* out, int32_t max_count);
 
 extern "C" __declspec(dllexport)
 void naki_analysis_set_overlay(const NakiOverlayState* state);
@@ -85,7 +91,13 @@ extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_frames(NakiAnalysisHandle handle, NakiFrameInfo* out, int32_t max_count);
 
 extern "C" __declspec(dllexport)
+int32_t naki_analysis_handle_get_frames_range(NakiAnalysisHandle handle, int32_t start, NakiFrameInfo* out, int32_t max_count);
+
+extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_nalus(NakiAnalysisHandle handle, NakiNaluInfo* out, int32_t max_count);
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_handle_get_nalus_range(NakiAnalysisHandle handle, int32_t start, NakiNaluInfo* out, int32_t max_count);
 
 // Register a callback that returns the current playback PTS in microseconds.
 // Called by video_renderer_plugin during initialization.

@@ -8,6 +8,11 @@ import '../../../analysis/nalu_types.dart';
 import 'analysis_page_state.dart';
 
 class AnalysisPageController extends ChangeNotifier {
+  static const int _frameReadChunk = 2048;
+  static const int _naluReadChunk = 4096;
+  static const int _maxResidentFrames = 20000;
+  static const int _maxResidentNalus = 50000;
+
   final String hash;
   final bool pollSummary;
 
@@ -212,8 +217,8 @@ class AnalysisPageController extends ChangeNotifier {
     final s = session.summary;
     if (s.loaded == 0) return;
     _summary = s;
-    _frames = session.frames;
-    _nalus = session.nalus;
+    _frames = _readFrames(session, s.frameCount);
+    _nalus = _readNalus(session, s.naluCount);
     _rebuildDerivedState();
     notifyListeners();
   }
@@ -246,6 +251,58 @@ class AnalysisPageController extends ChangeNotifier {
     _session?.close();
     _session = AnalysisSession.open(vbs2, vbi, vbt);
     readData();
+  }
+
+  List<FrameInfo> _readFrames(AnalysisSession session, int total) {
+    final count = total.clamp(0, _maxResidentFrames).toInt();
+    if (count == 0) return const [];
+    return _readFrameRangeInChunks(session, 0, count);
+  }
+
+  List<NaluInfo> _readNalus(AnalysisSession session, int total) {
+    final count = total.clamp(0, _maxResidentNalus).toInt();
+    if (count == 0) return const [];
+    return _readNaluRangeInChunks(session, 0, count);
+  }
+
+  List<FrameInfo> _readFrameRangeInChunks(
+    AnalysisSession session,
+    int start,
+    int count,
+  ) {
+    final result = <FrameInfo>[];
+    var offset = start;
+    var remaining = count;
+    while (remaining > 0) {
+      final chunk = remaining > _frameReadChunk ? _frameReadChunk : remaining;
+      final frames = session.framesRange(offset, chunk);
+      if (frames.isEmpty) break;
+      result.addAll(frames);
+      offset += frames.length;
+      remaining -= frames.length;
+      if (frames.length < chunk) break;
+    }
+    return result;
+  }
+
+  List<NaluInfo> _readNaluRangeInChunks(
+    AnalysisSession session,
+    int start,
+    int count,
+  ) {
+    final result = <NaluInfo>[];
+    var offset = start;
+    var remaining = count;
+    while (remaining > 0) {
+      final chunk = remaining > _naluReadChunk ? _naluReadChunk : remaining;
+      final nalus = session.nalusRange(offset, chunk);
+      if (nalus.isEmpty) break;
+      result.addAll(nalus);
+      offset += nalus.length;
+      remaining -= nalus.length;
+      if (nalus.length < chunk) break;
+    }
+    return result;
   }
 
   void _rebuildDerivedState() {

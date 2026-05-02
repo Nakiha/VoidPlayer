@@ -9,6 +9,7 @@
 #include <windows.h>
 #include <cstring>
 #include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <limits>
 #include <new>
@@ -51,6 +52,36 @@ struct AnalysisHandleState {
 std::mutex g_handle_registry_mutex;
 std::unordered_map<uintptr_t, std::shared_ptr<AnalysisHandleState>> g_handle_registry;
 std::atomic<uintptr_t> g_next_handle_id{1};
+
+struct FfmpegOpenTimeout {
+    int64_t deadline_ns = 0;
+};
+
+int64_t steady_clock_ns() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+int ffmpeg_interrupt_callback(void* opaque) {
+    auto* timeout = static_cast<FfmpegOpenTimeout*>(opaque);
+    if (!timeout || timeout->deadline_ns <= 0) {
+        return 0;
+    }
+    return steady_clock_ns() > timeout->deadline_ns ? 1 : 0;
+}
+
+AVFormatContext* alloc_format_context_with_timeout(FfmpegOpenTimeout& timeout,
+                                                   std::chrono::seconds duration) {
+    AVFormatContext* fmt_ctx = avformat_alloc_context();
+    if (!fmt_ctx) {
+        return nullptr;
+    }
+    timeout.deadline_ns = steady_clock_ns() +
+        std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+    fmt_ctx->interrupt_callback.callback = &ffmpeg_interrupt_callback;
+    fmt_ctx->interrupt_callback.opaque = &timeout;
+    return fmt_ctx;
+}
 
 NakiAnalysisHandle encode_analysis_handle(uintptr_t id) {
     return reinterpret_cast<NakiAnalysisHandle>(id);
@@ -532,10 +563,15 @@ static std::string get_exe_dir() {
 }
 
 static VbiCodec detect_analysis_codec(const char* video_path) {
-    AVFormatContext* fmt_ctx = nullptr;
+    FfmpegOpenTimeout timeout;
+    AVFormatContext* fmt_ctx = alloc_format_context_with_timeout(timeout, std::chrono::seconds(30));
+    if (!fmt_ctx) {
+        return vr::analysis::BitstreamIndexer::codec_from_path(video_path);
+    }
     int ret = avformat_open_input(&fmt_ctx, video_path, nullptr, nullptr);
     if (ret >= 0) {
         ret = avformat_find_stream_info(fmt_ctx, nullptr);
+        timeout.deadline_ns = 0;
         if (ret >= 0) {
             for (unsigned i = 0; i < fmt_ctx->nb_streams; i++) {
                 const auto* codecpar = fmt_ctx->streams[i]->codecpar;
@@ -549,6 +585,9 @@ static VbiCodec detect_analysis_codec(const char* video_path) {
             }
         }
         avformat_close_input(&fmt_ctx);
+    } else {
+        timeout.deadline_ns = 0;
+        if (fmt_ctx) avformat_close_input(&fmt_ctx);
     }
     return vr::analysis::BitstreamIndexer::codec_from_path(video_path);
 }
@@ -629,14 +668,22 @@ struct ScopedEnvVars {
 // (handles extradata with parameter sets, AUD insertion, etc.).
 // Falls back to manual conversion if BSF unavailable.
 static bool extract_raw_vvc(const std::string& video_path, const std::string& out_path) {
-    AVFormatContext* fmt_ctx = nullptr;
+    FfmpegOpenTimeout timeout;
+    AVFormatContext* fmt_ctx = alloc_format_context_with_timeout(timeout, std::chrono::seconds(30));
+    if (!fmt_ctx) {
+        spdlog::error("[Analysis] extract_raw_vvc: failed to allocate format context");
+        return false;
+    }
     int ret = avformat_open_input(&fmt_ctx, video_path.c_str(), nullptr, nullptr);
     if (ret < 0) {
+        timeout.deadline_ns = 0;
         spdlog::error("[Analysis] extract_raw_vvc: open failed: {:#x}", static_cast<unsigned>(ret));
+        if (fmt_ctx) avformat_close_input(&fmt_ctx);
         return false;
     }
 
     ret = avformat_find_stream_info(fmt_ctx, nullptr);
+    timeout.deadline_ns = 0;
     if (ret < 0) {
         spdlog::error("[Analysis] extract_raw_vvc: find_stream_info failed: {:#x}", static_cast<unsigned>(ret));
         avformat_close_input(&fmt_ctx);

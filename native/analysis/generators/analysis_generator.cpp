@@ -13,11 +13,46 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <fstream>
 #include <vector>
 
 namespace vr::analysis {
+
+namespace {
+
+struct FfmpegOpenTimeout {
+    int64_t deadline_ns = 0;
+};
+
+int64_t steady_clock_ns() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+int ffmpeg_interrupt_callback(void* opaque) {
+    auto* timeout = static_cast<FfmpegOpenTimeout*>(opaque);
+    if (!timeout || timeout->deadline_ns <= 0) {
+        return 0;
+    }
+    return steady_clock_ns() > timeout->deadline_ns ? 1 : 0;
+}
+
+AVFormatContext* alloc_format_context_with_timeout(FfmpegOpenTimeout& timeout,
+                                                   std::chrono::seconds duration) {
+    AVFormatContext* fmt_ctx = avformat_alloc_context();
+    if (!fmt_ctx) {
+        return nullptr;
+    }
+    timeout.deadline_ns = steady_clock_ns() +
+        std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+    fmt_ctx->interrupt_callback.callback = &ffmpeg_interrupt_callback;
+    fmt_ctx->interrupt_callback.opaque = &timeout;
+    return fmt_ctx;
+}
+
+} // namespace
 
 class VbtStreamWriter {
 public:
@@ -300,14 +335,22 @@ static bool append_index_to_writer(BitstreamIndex& index, VbiStreamWriter& write
 bool AnalysisGenerator::generate(const std::string& video_path,
                                  const std::string& vbi_path,
                                  const std::string& vbt_path) {
-    AVFormatContext* fmt_ctx = nullptr;
+    FfmpegOpenTimeout timeout;
+    AVFormatContext* fmt_ctx = alloc_format_context_with_timeout(timeout, std::chrono::seconds(30));
+    if (!fmt_ctx) {
+        spdlog::error("[AnalysisGen] failed to allocate format context");
+        return generateRawOnly(video_path, vbi_path, vbt_path);
+    }
     int ret = avformat_open_input(&fmt_ctx, video_path.c_str(), nullptr, nullptr);
     if (ret < 0) {
+        timeout.deadline_ns = 0;
         spdlog::error("[AnalysisGen] avformat_open_input failed: {:#x}", static_cast<unsigned>(ret));
+        if (fmt_ctx) avformat_close_input(&fmt_ctx);
         return generateRawOnly(video_path, vbi_path, vbt_path);
     }
 
     ret = avformat_find_stream_info(fmt_ctx, nullptr);
+    timeout.deadline_ns = 0;
     if (ret < 0) {
         spdlog::error("[AnalysisGen] avformat_find_stream_info failed: {:#x}", static_cast<unsigned>(ret));
         avformat_close_input(&fmt_ctx);

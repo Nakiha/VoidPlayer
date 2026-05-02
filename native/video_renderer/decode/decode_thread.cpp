@@ -409,15 +409,12 @@ void DecodeThread::notify_seek(int64_t target_pts_us, SeekType type) {
 }
 
 void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*)>& rescale_ts, int64_t target_us) {
-    auto prev_level = av_log_get_level();
-    av_log_set_level(AV_LOG_ERROR);
     int send_ret = seh_send_packet(codec_ctx_, nullptr);
     if (send_ret < 0 && send_ret != AVERROR(EAGAIN) && send_ret != AVERROR_EOF) {
         if (send_ret == kSehCaught) {
             output_buffer_.set_state(TrackState::Error);
             running_.store(false, std::memory_order_release);
         }
-        av_log_set_level(prev_level);
         return;
     }
     while (true) {
@@ -439,7 +436,6 @@ void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*
         av_frame_unref(frame);
     }
     safe_flush_codec();
-    av_log_set_level(prev_level);
     eof_flushed_ = true;
 }
 

@@ -12,9 +12,11 @@
 #include <dxgi1_4.h>
 #include <psapi.h>
 #include <wrl/client.h>
+#include <chrono>
 #include <cstring>
 #include <cwchar>
 #include <exception>
+#include <mutex>
 #include <vector>
 #include <sstream>
 #include <iomanip>
@@ -185,10 +187,27 @@ ProcessMemoryUsage QueryProcessMemoryUsage() {
 }
 
 uint64_t QueryDedicatedVideoMemoryUsage() {
+    using Clock = std::chrono::steady_clock;
+    static std::mutex cache_mutex;
+    static Clock::time_point last_query{};
+    static uint64_t cached_usage = 0;
+    static constexpr auto kCacheTtl = std::chrono::seconds(2);
+
+    const auto now = Clock::now();
+    {
+        std::lock_guard lock(cache_mutex);
+        if (last_query != Clock::time_point{} && now - last_query < kCacheTtl) {
+            return cached_usage;
+        }
+    }
+
     Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
     HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
     if (FAILED(hr) || !factory) {
-        return 0;
+        std::lock_guard lock(cache_mutex);
+        last_query = now;
+        cached_usage = 0;
+        return cached_usage;
     }
 
     uint64_t total_usage = 0;
@@ -219,7 +238,10 @@ uint64_t QueryDedicatedVideoMemoryUsage() {
             total_usage += static_cast<uint64_t>(info.CurrentUsage);
         }
     }
-    return total_usage;
+    std::lock_guard lock(cache_mutex);
+    last_query = now;
+    cached_usage = total_usage;
+    return cached_usage;
 }
 
 CaptureStats ComputeCaptureStats(const std::vector<uint8_t>& bgra) {

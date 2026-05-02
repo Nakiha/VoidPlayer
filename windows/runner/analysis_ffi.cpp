@@ -630,6 +630,11 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_generate(const char* video_path, const char* hash) {
     std::lock_guard<std::mutex> lock(g_analysis_generate_mutex);
+    if (!video_path || video_path[0] == '\0' || !hash || hash[0] == '\0') {
+        spdlog::error("[Analysis] generate: video_path and hash must be non-empty");
+        return 0;
+    }
+
     std::string exe_dir = get_exe_dir();
     std::string data_dir = exe_dir + "\\cache";
 

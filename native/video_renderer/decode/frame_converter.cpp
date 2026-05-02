@@ -292,6 +292,11 @@ bool FrameConverter::init_hardware(void* d3d_device, void* d3d_context,
 
 TextureFrame FrameConverter::convert(AVFrame* frame) {
     TextureFrame result;
+    if (!frame) {
+        spdlog::error("[FrameConverter] convert called with null AVFrame");
+        return result;
+    }
+
     result.pts_us = frame->pts;
     result.duration_us = frame->duration;
     result.width = frame->width;

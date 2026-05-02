@@ -4,6 +4,13 @@
 
 namespace vr {
 
+namespace {
+int64_t steady_clock_ns() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+}
+
 DemuxThread::DemuxThread(const std::string& file_path,
                          SeekController& seek_controller)
     : file_path_(file_path)
@@ -30,7 +37,10 @@ bool DemuxThread::start() {
         return false;
     }
     running_.store(true, std::memory_order_release);
-    open_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    open_deadline_ns_.store(
+        steady_clock_ns() + std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::seconds(15)).count(),
+        std::memory_order_release);
     fmt_ctx_->interrupt_callback.callback = &DemuxThread::interrupt_callback;
     fmt_ctx_->interrupt_callback.opaque = this;
 
@@ -42,7 +52,7 @@ bool DemuxThread::start() {
         spdlog::error("[DemuxThread] Failed to open input: {}", file_path_);
         running_.store(false, std::memory_order_release);
         avformat_close_input(&fmt_ctx_);
-        open_deadline_ = {};
+        open_deadline_ns_.store(0, std::memory_order_release);
         return false;
     }
     ret = avformat_find_stream_info(fmt_ctx_, nullptr);
@@ -50,10 +60,10 @@ bool DemuxThread::start() {
         spdlog::error("[DemuxThread] Failed to find stream info");
         running_.store(false, std::memory_order_release);
         avformat_close_input(&fmt_ctx_);
-        open_deadline_ = {};
+        open_deadline_ns_.store(0, std::memory_order_release);
         return false;
     }
-    open_deadline_ = {};
+    open_deadline_ns_.store(0, std::memory_order_release);
 
     // Locate the first video stream. Audio is discovered now too, but it is
     // only routed when an audio output queue is registered by the owner.
@@ -74,6 +84,7 @@ bool DemuxThread::start() {
         spdlog::error("[DemuxThread] No output routes registered for {}", file_path_);
         running_.store(false, std::memory_order_release);
         avformat_close_input(&fmt_ctx_);
+        open_deadline_ns_.store(0, std::memory_order_release);
         return false;
     }
 
@@ -112,6 +123,7 @@ bool DemuxThread::start() {
             spdlog::error("[DemuxThread] Requested output stream is missing in {}", file_path_);
             running_.store(false, std::memory_order_release);
             avformat_close_input(&fmt_ctx_);
+            open_deadline_ns_.store(0, std::memory_order_release);
             return false;
         }
     }
@@ -131,9 +143,8 @@ int DemuxThread::interrupt_callback(void* opaque) {
     if (!self->running_.load(std::memory_order_acquire)) {
         return 1;
     }
-    const auto deadline = self->open_deadline_;
-    if (deadline != std::chrono::steady_clock::time_point{} &&
-        std::chrono::steady_clock::now() > deadline) {
+    const int64_t deadline = self->open_deadline_ns_.load(std::memory_order_acquire);
+    if (deadline > 0 && steady_clock_ns() > deadline) {
         return 1;
     }
     return 0;
@@ -142,6 +153,7 @@ int DemuxThread::interrupt_callback(void* opaque) {
 void DemuxThread::stop() {
     spdlog::info("[DemuxThread] stop() begin for {}", file_path_);
     running_.store(false);
+    open_deadline_ns_.store(0, std::memory_order_release);
     abort_outputs();
     if (thread_.joinable()) {
         spdlog::info("[DemuxThread] stop() waiting for join: {}", file_path_);

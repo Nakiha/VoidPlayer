@@ -165,8 +165,14 @@ public:
     ID3D11Texture2D* shared_texture() const;
 
     /// Get actual texture dimensions (may lag behind resize request).
-    int texture_width() const { return target_width_; }
-    int texture_height() const { return target_height_; }
+    int texture_width() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return target_width_;
+    }
+    int texture_height() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return target_height_;
+    }
 
     /// Get the DXGI shared handle for the offscreen texture.
     HANDLE shared_texture_handle() const;

@@ -410,7 +410,10 @@ private:
     }
 
     void run() {
-        if (!open_device()) return;
+        if (!open_device()) {
+            running_.store(false);
+            return;
+        }
         const size_t bytes = kOutputBufferFrames * kOutputChannels * sizeof(int16_t);
         std::array<std::vector<int16_t>, kOutputBufferCount> sample_buffers;
         std::array<WAVEHDR, kOutputBufferCount> headers = {};

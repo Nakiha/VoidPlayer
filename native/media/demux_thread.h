@@ -81,7 +81,7 @@ private:
     std::string file_path_;
     SeekController& seek_controller_;
     AVFormatContext* fmt_ctx_ = nullptr;
-    std::chrono::steady_clock::time_point open_deadline_{};
+    std::atomic<int64_t> open_deadline_ns_{0};
     DemuxStats stats_;
     std::vector<OutputRoute> output_routes_;
     std::thread thread_;

@@ -486,13 +486,12 @@ bool AnalysisGenerator::generate(const std::string& video_path,
     // Write VBI
     bool vbi_ok = vbi_writer.finish();
     if (!vbi_ok) {
-        spdlog::warn("[AnalysisGen] failed to write VBI: {}", vbi_path);
-        // VBI is optional — return true if VBT was written
+        spdlog::error("[AnalysisGen] failed to write VBI: {}", vbi_path);
     } else {
         spdlog::info("[AnalysisGen] wrote VBI: {} ({} entries)", vbi_path, vbi_writer.count());
     }
 
-    return vbt_ok;
+    return vbt_ok && vbi_ok;
 }
 
 } // namespace vr::analysis

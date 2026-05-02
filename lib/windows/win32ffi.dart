@@ -124,6 +124,27 @@ typedef _SetWindowLongPtrWDart =
 typedef _GetSystemMetricsNative = Int32 Function(Int32 nIndex);
 typedef _GetSystemMetricsDart = int Function(int nIndex);
 
+typedef _RegGetValueWNative =
+    Int32 Function(
+      IntPtr hkey,
+      Pointer<Utf16> lpSubKey,
+      Pointer<Utf16> lpValue,
+      Uint32 dwFlags,
+      Pointer<Uint32> pdwType,
+      Pointer<Void> pvData,
+      Pointer<Uint32> pcbData,
+    );
+typedef _RegGetValueWDart =
+    int Function(
+      int hkey,
+      Pointer<Utf16> lpSubKey,
+      Pointer<Utf16> lpValue,
+      int dwFlags,
+      Pointer<Uint32> pdwType,
+      Pointer<Void> pvData,
+      Pointer<Uint32> pcbData,
+    );
+
 // ---------------------------------------------------------------------------
 // Structs
 // ---------------------------------------------------------------------------
@@ -177,6 +198,9 @@ const int _smCyPaddedBorder = 92;
 const int _gwlExStyle = -20;
 const int _wsExToolWindow = 0x00000080;
 const int _wsExAppWindow = 0x00040000;
+const int _errorSuccess = 0;
+const int _hkeyCurrentUser = -2147483647; // reinterpret_cast<HKEY>(0x80000001)
+const int _rrfRtRegDword = 0x00000010;
 
 /// Window class name used by the Flutter runner for the main window.
 const String kMainWindowClass = 'FLUTTER_RUNNER_WIN32_WINDOW';
@@ -187,6 +211,7 @@ const String kMainWindowClass = 'FLUTTER_RUNNER_WIN32_WINDOW';
 
 final _user32 = DynamicLibrary.open('user32.dll');
 final _kernel32 = DynamicLibrary.open('kernel32.dll');
+final _advapi32 = DynamicLibrary.open('advapi32.dll');
 
 final _getForegroundWindow = _user32
     .lookupFunction<_GetForegroundWindowNative, _GetForegroundWindowDart>(
@@ -280,6 +305,9 @@ final _getSystemMetrics = _user32
     .lookupFunction<_GetSystemMetricsNative, _GetSystemMetricsDart>(
       'GetSystemMetrics',
     );
+
+final _regGetValueW = _advapi32
+    .lookupFunction<_RegGetValueWNative, _RegGetValueWDart>('RegGetValueW');
 
 // ---------------------------------------------------------------------------
 // Global state for EnumWindows callback (top-level for Pointer.fromFunction)
@@ -485,6 +513,39 @@ class Win32FFI {
         _getSystemMetrics(_smCyPaddedBorder);
     if (raw <= 0) return 32;
     return raw.clamp(24, 64).toInt();
+  }
+
+  /// Returns the Windows DWM accent color as an ARGB value.
+  static int getDwmAccentColorArgb({int fallback = 0xFF0078D4}) {
+    final subKey = r'Software\Microsoft\Windows\DWM'.toNativeUtf16();
+    final valueName = 'AccentColor'.toNativeUtf16();
+    final type = calloc<Uint32>();
+    final data = calloc<Uint32>();
+    final dataSize = calloc<Uint32>();
+    try {
+      dataSize.value = 4;
+      final status = _regGetValueW(
+        _hkeyCurrentUser,
+        subKey,
+        valueName,
+        _rrfRtRegDword,
+        type,
+        data.cast<Void>(),
+        dataSize,
+      );
+      if (status != _errorSuccess) return fallback;
+      final value = data.value;
+      final r = value & 0xFF;
+      final g = (value >> 8) & 0xFF;
+      final b = (value >> 16) & 0xFF;
+      return 0xFF000000 | (r << 16) | (g << 8) | b;
+    } finally {
+      calloc.free(subKey);
+      calloc.free(valueName);
+      calloc.free(type);
+      calloc.free(data);
+      calloc.free(dataSize);
+    }
   }
 
   /// Finds a window by class name and/or title.

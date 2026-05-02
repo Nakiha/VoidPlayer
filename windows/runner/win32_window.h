@@ -36,6 +36,14 @@ class Win32Window {
   // |Show| is called. Returns true if the window was created successfully.
   bool Create(const std::wstring& title, const Point& origin, const Size& size);
 
+  // Creates a win32 window with exact physical bounds. Use when bounds were
+  // restored from Win32/window-manager state and have already been resolved.
+  bool CreateWithBounds(const std::wstring& title,
+                        int x,
+                        int y,
+                        int width,
+                        int height);
+
   // Show the current window. Returns true if the window was successfully shown.
   bool Show();
 

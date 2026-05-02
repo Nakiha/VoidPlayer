@@ -1,5 +1,6 @@
 #include "video_renderer_plugin.h"
 #include "analysis_ffi.h"
+#include "startup_trace.h"
 
 #include "common/win_utf8.h"
 #include "utils.h"
@@ -488,6 +489,7 @@ VideoRendererPlugin::VideoRendererPlugin(
     config.file_path = logs_dir_ + "\\" + log_file_name_;
     config.max_files = 5;
     vr::configure_logging(config);
+    RunnerStartupTraceFlush();
     vr::install_crash_handler(logs_dir_);
 
     spdlog::info("[VideoRendererPlugin] Plugin constructed, native logging initialized: {}", config.file_path);

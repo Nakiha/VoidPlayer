@@ -149,6 +149,29 @@ bool Win32Window::Create(const std::wstring& title,
   return OnCreate();
 }
 
+bool Win32Window::CreateWithBounds(const std::wstring& title,
+                                   int x,
+                                   int y,
+                                   int width,
+                                   int height) {
+  Destroy();
+
+  const wchar_t* window_class =
+      WindowClassRegistrar::GetInstance()->GetWindowClass();
+
+  HWND window = CreateWindow(
+      window_class, title.c_str(), WS_OVERLAPPEDWINDOW, x, y, width, height,
+      nullptr, nullptr, GetModuleHandle(nullptr), this);
+
+  if (!window) {
+    return false;
+  }
+
+  UpdateTheme(window);
+
+  return OnCreate();
+}
+
 bool Win32Window::Show() {
   return ShowWindow(window_handle_, SW_SHOWNORMAL);
 }

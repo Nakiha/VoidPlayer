@@ -41,6 +41,39 @@ const MethodChannel _windowBootstrapChannel = MethodChannel(
   'void_player/window_bootstrap',
 );
 
+class _StartupTrace {
+  final Stopwatch _total = Stopwatch()..start();
+  final Stopwatch _step = Stopwatch()..start();
+
+  void mark(String label) {
+    log.info(
+      '[Startup] $label: +${_step.elapsedMilliseconds}ms, '
+      'total=${_total.elapsedMilliseconds}ms',
+    );
+    _step
+      ..reset()
+      ..start();
+  }
+}
+
+class _StepTrace {
+  final String name;
+  final Stopwatch _total = Stopwatch()..start();
+  final Stopwatch _step = Stopwatch()..start();
+
+  _StepTrace(this.name);
+
+  void mark(String label) {
+    log.info(
+      '[Startup:$name] $label: +${_step.elapsedMilliseconds}ms, '
+      'total=${_total.elapsedMilliseconds}ms',
+    );
+    _step
+      ..reset()
+      ..start();
+  }
+}
+
 Future<void> _showWindowForMode({required bool silent}) async {
   if (silent) {
     final hwnds = Win32FFI.findCurrentProcessWindowsByClass(kMainWindowClass);
@@ -74,19 +107,89 @@ int _currentFlutterRunnerHwnd() {
       : 0;
 }
 
-Future<Color> _getWindowsAccentColor() async {
-  try {
-    final result = await Process.run('powershell', [
-      '-Command',
-      "(Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\DWM' -Name 'AccentColor').AccentColor",
-    ]).timeout(const Duration(milliseconds: 500));
-    final value = int.parse(result.stdout.trim());
-    final r = value & 0xFF;
-    final g = (value >> 8) & 0xFF;
-    final b = (value >> 16) & 0xFF;
-    return Color.fromARGB(255, r, g, b);
-  } catch (_) {
-    return const Color(0xFF0078D4);
+Color _getWindowsAccentColor() => Color(Win32FFI.getDwmAccentColorArgb());
+
+Future<void> _showWindowForModeWithTrace({
+  required bool silent,
+  required _StartupTrace trace,
+}) async {
+  await _showWindowForMode(silent: silent);
+  trace.mark('show requested');
+}
+
+Rect _centeredRect(Rect area, Size size) {
+  return Rect.fromLTWH(
+    area.left + (area.width - size.width) / 2,
+    area.top + (area.height - size.height) / 2,
+    size.width,
+    size.height,
+  );
+}
+
+Future<void> _applyInitialMainWindowBounds({
+  required ({double width, double height})? testWindow,
+}) async {
+  final trace = _StepTrace('bounds');
+  final hwnd = _currentFlutterRunnerHwnd();
+  trace.mark('HWND resolved');
+  if (hwnd == 0) {
+    log.warning(
+      '[Startup] main HWND unavailable; falling back to window_manager bounds',
+    );
+    await _applyInitialMainWindowBoundsWithWindowManager(testWindow);
+    trace.mark('window_manager fallback applied');
+    return;
+  }
+
+  final savedRect = AppConfig.instance.windowRect;
+  trace.mark('saved rect read');
+  final workArea = Win32FFI.getMonitorWorkArea(hwnd);
+  trace.mark('monitor work area read');
+  final Rect targetRect;
+  if (testWindow != null) {
+    targetRect = _centeredRect(
+      workArea,
+      Size(testWindow.width, testWindow.height),
+    );
+  } else if (savedRect != null && Win32FFI.isRectOnScreen(savedRect)) {
+    targetRect = savedRect;
+  } else {
+    targetRect = _centeredRect(workArea, const Size(1280, 720));
+  }
+  trace.mark('target rect selected');
+
+  final currentRect = Win32FFI.getWindowRect(hwnd);
+  if ((currentRect.left - targetRect.left).abs() <= 2 &&
+      (currentRect.top - targetRect.top).abs() <= 2 &&
+      (currentRect.width - targetRect.width).abs() <= 2 &&
+      (currentRect.height - targetRect.height).abs() <= 2) {
+    trace.mark('MoveWindow skipped');
+    return;
+  }
+
+  Win32FFI.moveWindow(
+    hwnd,
+    targetRect.left.round(),
+    targetRect.top.round(),
+    targetRect.width.round(),
+    targetRect.height.round(),
+  );
+  trace.mark('MoveWindow applied');
+}
+
+Future<void> _applyInitialMainWindowBoundsWithWindowManager(
+  ({double width, double height})? testWindow,
+) async {
+  final savedRect = AppConfig.instance.windowRect;
+  if (testWindow != null) {
+    await windowManager.setSize(Size(testWindow.width, testWindow.height));
+    await windowManager.center();
+  } else if (savedRect != null && Win32FFI.isRectOnScreen(savedRect)) {
+    await windowManager.setSize(savedRect.size);
+    await windowManager.setPosition(savedRect.topLeft);
+  } else {
+    await windowManager.setSize(const Size(1280, 720));
+    await windowManager.center();
   }
 }
 
@@ -230,6 +333,7 @@ Future<void> runVoidPlayer(List<String> args) async {
     return;
   }
 
+  final startupTrace = _StartupTrace();
   String? testScriptPath;
   final silentUiTest = _hasFlag(args, '--silent-ui-test');
   final scriptIdx = args.indexOf('--test-script');
@@ -244,37 +348,34 @@ Future<void> runVoidPlayer(List<String> args) async {
   for (final warning in startupOptions.warnings) {
     log.warning(warning);
   }
+  startupTrace.mark('arguments parsed');
 
   await AppConfig.initialize();
   WindowManager.silentUiTest = silentUiTest;
+  startupTrace.mark('config initialized');
 
   await windowManager.ensureInitialized();
   await windowManager.setMinimumSize(const Size(520, 360));
+  startupTrace.mark('window manager initialized');
 
-  final savedRect = AppConfig.instance.windowRect;
-  if (testWindow != null) {
-    await windowManager.setSize(Size(testWindow.width, testWindow.height));
-    await windowManager.center();
-  } else if (savedRect != null && Win32FFI.isRectOnScreen(savedRect)) {
-    await windowManager.setSize(savedRect.size);
-    await windowManager.setPosition(savedRect.topLeft);
-  } else {
-    await windowManager.setSize(const Size(1280, 720));
-    await windowManager.center();
-  }
+  await _applyInitialMainWindowBounds(testWindow: testWindow);
+  startupTrace.mark('window bounds applied');
 
   await Window.initialize();
   await Window.setEffect(
     effect: WindowEffect.mica,
     color: const Color(0xCC222222),
   );
+  startupTrace.mark('window effect applied');
 
   await windowManager.setPreventClose(true);
   final closeHandler = _CloseHandler();
   windowManager.addListener(closeHandler);
+  startupTrace.mark('close handler installed');
 
-  final accentColor = await _getWindowsAccentColor();
+  final accentColor = _getWindowsAccentColor();
   WindowManager.accentColorValue = accentColor.toARGB32();
+  startupTrace.mark('accent color loaded');
   log.info('Application starting (main window), silentUiTest=$silentUiTest');
   runApp(
     VoidPlayerApp(
@@ -283,8 +384,12 @@ Future<void> runVoidPlayer(List<String> args) async {
       startupOptions: startupOptions,
     ),
   );
+  startupTrace.mark('runApp called');
 
   WidgetsBinding.instance.addPostFrameCallback((_) async {
-    await _showWindowForMode(silent: silentUiTest);
+    await _showWindowForModeWithTrace(
+      silent: silentUiTest,
+      trace: startupTrace,
+    );
   });
 }

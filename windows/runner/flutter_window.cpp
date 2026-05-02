@@ -4,6 +4,7 @@
 #include <variant>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "startup_trace.h"
 #include "video_renderer_plugin.h"
 
 namespace {
@@ -34,21 +35,26 @@ FlutterWindow::FlutterWindow(const flutter::DartProject& project)
 FlutterWindow::~FlutterWindow() {}
 
 bool FlutterWindow::OnCreate() {
+  RunnerStartupTraceMark("FlutterWindow OnCreate entered");
   if (!Win32Window::OnCreate()) {
     return false;
   }
+  RunnerStartupTraceMark("base OnCreate completed");
 
   RECT frame = GetClientArea();
+  RunnerStartupTraceMark("client area resolved");
 
   // The size here must match the window dimensions to avoid unnecessary surface
   // creation / destruction in the startup path.
   flutter_controller_ = std::make_unique<flutter::FlutterViewController>(
       frame.right - frame.left, frame.bottom - frame.top, project_);
+  RunnerStartupTraceMark("FlutterViewController created");
   // Ensure that basic setup of the controller was successful.
   if (!flutter_controller_->engine() || !flutter_controller_->view()) {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  RunnerStartupTraceMark("generated plugins registered");
 
   // Register video renderer plugin (built into runner, not a pub package)
   VideoRendererPlugin::RegisterWithRegistrar(
@@ -56,8 +62,10 @@ bool FlutterWindow::OnCreate() {
           ->GetRegistrar<flutter::PluginRegistrarWindows>(
               flutter_controller_->engine()->GetRegistrarForPlugin(
                   "VideoRendererPlugin")));
+  RunnerStartupTraceMark("video renderer plugin registered");
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  RunnerStartupTraceMark("Flutter child content attached");
 
   bootstrap_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
@@ -83,6 +91,7 @@ bool FlutterWindow::OnCreate() {
         flutter_controller_->ForceRedraw();
         result->Success();
       });
+  RunnerStartupTraceMark("bootstrap channel installed");
 
   return true;
 }

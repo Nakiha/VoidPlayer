@@ -51,6 +51,9 @@ add_executable(analysis_tests
     analysis/test_analysis_parsers.cpp
     analysis/test_analysis_generator.cpp
     analysis/test_analysis_data.cpp
+    analysis/test_analysis_ffi_handles.cpp
+    analysis/test_analysis_ffi_stubs.cpp
+    ../../windows/runner/analysis_ffi.cpp
 )
 void_apply_native_compile_options(analysis_tests)
 
@@ -70,6 +73,7 @@ target_link_libraries(analysis_tests PRIVATE
 
 target_include_directories(analysis_tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../windows/runner"
 )
 
 target_compile_definitions(analysis_tests PRIVATE

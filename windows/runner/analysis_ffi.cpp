@@ -11,8 +11,11 @@
 #include <algorithm>
 #include <fstream>
 #include <new>
+#include <atomic>
 #include <mutex>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 extern "C" {
@@ -40,10 +43,61 @@ const char* safe_cstr(const char* value) {
 struct AnalysisHandleState {
     vr::analysis::AnalysisManager manager;
     std::mutex mutex;
+    bool closed = false;
 };
 
-AnalysisHandleState* as_analysis_handle(NakiAnalysisHandle handle) {
-    return static_cast<AnalysisHandleState*>(handle);
+std::mutex g_handle_registry_mutex;
+std::unordered_map<uintptr_t, std::shared_ptr<AnalysisHandleState>> g_handle_registry;
+std::atomic<uintptr_t> g_next_handle_id{1};
+
+NakiAnalysisHandle encode_analysis_handle(uintptr_t id) {
+    return reinterpret_cast<NakiAnalysisHandle>(id);
+}
+
+uintptr_t decode_analysis_handle(NakiAnalysisHandle handle) {
+    return reinterpret_cast<uintptr_t>(handle);
+}
+
+std::shared_ptr<AnalysisHandleState> pin_analysis_handle(NakiAnalysisHandle handle) {
+    const uintptr_t id = decode_analysis_handle(handle);
+    if (id == 0) return nullptr;
+    std::lock_guard<std::mutex> lock(g_handle_registry_mutex);
+    auto it = g_handle_registry.find(id);
+    return it != g_handle_registry.end() ? it->second : nullptr;
+}
+
+NakiAnalysisHandle register_analysis_handle(std::shared_ptr<AnalysisHandleState> state) {
+    if (!state) return nullptr;
+    try {
+        uintptr_t id = g_next_handle_id.fetch_add(1, std::memory_order_relaxed);
+        if (id == 0) {
+            id = g_next_handle_id.fetch_add(1, std::memory_order_relaxed);
+        }
+        {
+            std::lock_guard<std::mutex> lock(g_handle_registry_mutex);
+            while (id == 0 || g_handle_registry.find(id) != g_handle_registry.end()) {
+                id = g_next_handle_id.fetch_add(1, std::memory_order_relaxed);
+            }
+            g_handle_registry.emplace(id, std::move(state));
+        }
+        return encode_analysis_handle(id);
+    } catch (const std::exception& e) {
+        spdlog::error("[analysis_ffi] failed to register analysis handle: {}", e.what());
+    } catch (...) {
+        spdlog::error("[analysis_ffi] failed to register analysis handle: unknown exception");
+    }
+    return nullptr;
+}
+
+std::shared_ptr<AnalysisHandleState> unregister_analysis_handle(NakiAnalysisHandle handle) {
+    const uintptr_t id = decode_analysis_handle(handle);
+    if (id == 0) return nullptr;
+    std::lock_guard<std::mutex> lock(g_handle_registry_mutex);
+    auto it = g_handle_registry.find(id);
+    if (it == g_handle_registry.end()) return nullptr;
+    auto state = std::move(it->second);
+    g_handle_registry.erase(it);
+    return state;
 }
 
 void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSummary& s) {
@@ -254,63 +308,81 @@ void naki_analysis_set_overlay(const NakiOverlayState* state) {
 
 extern "C" __declspec(dllexport)
 NakiAnalysisHandle naki_analysis_open(const char* vbs2_path, const char* vbi_path, const char* vbt_path) {
-    auto* handle = new (std::nothrow) AnalysisHandleState();
-    if (!handle) return nullptr;
-    if (!handle->manager.load(safe_cstr(vbs2_path), safe_cstr(vbi_path), safe_cstr(vbt_path))) {
-        delete handle;
-        return nullptr;
+    try {
+        auto state = std::shared_ptr<AnalysisHandleState>(new (std::nothrow) AnalysisHandleState());
+        if (!state) return nullptr;
+        if (!state->manager.load(safe_cstr(vbs2_path), safe_cstr(vbi_path), safe_cstr(vbt_path))) {
+            return nullptr;
+        }
+        auto handle = register_analysis_handle(state);
+        if (!handle) {
+            state->manager.unload();
+        }
+        return handle;
+    } catch (const std::exception& e) {
+        spdlog::error("[analysis_ffi] naki_analysis_open failed: {}", e.what());
+    } catch (...) {
+        spdlog::error("[analysis_ffi] naki_analysis_open failed: unknown exception");
     }
-    return handle;
+    return nullptr;
 }
 
 extern "C" __declspec(dllexport)
 void naki_analysis_close(NakiAnalysisHandle handle) {
-    delete as_analysis_handle(handle);
+    auto state = unregister_analysis_handle(handle);
+    if (!state) return;
+    std::lock_guard<std::mutex> lock(state->mutex);
+    state->closed = true;
+    state->manager.unload();
 }
 
 extern "C" __declspec(dllexport)
 const NakiAnalysisSummary* naki_analysis_handle_get_summary(NakiAnalysisHandle handle) {
     thread_local NakiAnalysisSummary summary{};
-    auto* state = as_analysis_handle(handle);
+    auto state = pin_analysis_handle(handle);
     if (!state) {
         std::memset(&summary, 0, sizeof(summary));
         return &summary;
     }
     std::lock_guard<std::mutex> lock(state->mutex);
-    fill_analysis_summary(state->manager, summary);
+    if (state->closed) {
+        std::memset(&summary, 0, sizeof(summary));
+    } else {
+        fill_analysis_summary(state->manager, summary);
+    }
     return &summary;
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_frames(NakiAnalysisHandle handle, NakiFrameInfo* out, int32_t max_count) {
-    auto* state = as_analysis_handle(handle);
+    auto state = pin_analysis_handle(handle);
     if (!state) return 0;
     std::lock_guard<std::mutex> lock(state->mutex);
-    return state ? fill_analysis_frames(state->manager, out, max_count) : 0;
+    return state->closed ? 0 : fill_analysis_frames(state->manager, out, max_count);
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_frames_range(NakiAnalysisHandle handle, int32_t start, NakiFrameInfo* out, int32_t max_count) {
-    auto* state = as_analysis_handle(handle);
+    auto state = pin_analysis_handle(handle);
     if (!state) return 0;
     std::lock_guard<std::mutex> lock(state->mutex);
-    return state ? fill_analysis_frames_range(state->manager, start, out, max_count) : 0;
+    return state->closed ? 0 : fill_analysis_frames_range(state->manager, start, out, max_count);
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_nalus(NakiAnalysisHandle handle, NakiNaluInfo* out, int32_t max_count) {
-    auto* state = as_analysis_handle(handle);
+    auto state = pin_analysis_handle(handle);
     if (!state) return 0;
     std::lock_guard<std::mutex> lock(state->mutex);
-    return state ? fill_analysis_nalus(state->manager, out, max_count) : 0;
+    return state->closed ? 0 : fill_analysis_nalus(state->manager, out, max_count);
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_nalus_range(NakiAnalysisHandle handle, int32_t start, NakiNaluInfo* out, int32_t max_count) {
-    auto* state = as_analysis_handle(handle);
+    auto state = pin_analysis_handle(handle);
     if (!state) return 0;
     std::lock_guard<std::mutex> lock(state->mutex);
-    return state ? fill_analysis_nalus_range(state->manager, start, out, max_count) : 0;
+    return state->closed ? 0 : fill_analysis_nalus_range(state->manager, start, out, max_count);
 }
 
 // ---- Analysis generation ----

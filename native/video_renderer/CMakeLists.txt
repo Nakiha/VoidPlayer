@@ -1,8 +1,11 @@
 add_library(video_renderer_lib STATIC ${VOID_RENDERER_SOURCES})
+void_apply_native_compile_options(video_renderer_lib)
 
 target_include_directories(video_renderer_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${CMAKE_CURRENT_BINARY_DIR}
+)
+target_include_directories(video_renderer_lib SYSTEM PUBLIC
     ${FFMPEG_INCLUDE_DIR}
 )
 

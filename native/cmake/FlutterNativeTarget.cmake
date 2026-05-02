@@ -11,6 +11,8 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
     target_include_directories(${target_name} PRIVATE
         "${VOID_NATIVE_DIR}"
         "${generated_include_dir}"
+    )
+    target_include_directories(${target_name} SYSTEM PRIVATE
         "${FFMPEG_INCLUDE_DIR}"
     )
 

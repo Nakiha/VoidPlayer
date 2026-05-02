@@ -40,6 +40,12 @@ set(VOID_RENDERER_SHADER_SOURCE
 set(VOID_RENDERER_SHADER_TEMPLATE
     "${VOID_NATIVE_DIR}/video_renderer/shaders/embedded_shaders.h.in")
 
+function(void_apply_native_compile_options target_name)
+    if(MSVC)
+        target_compile_options(${target_name} PRIVATE /utf-8 /W4 /permissive- /EHsc)
+    endif()
+endfunction()
+
 function(void_configure_renderer_shaders output_dir)
     file(READ "${VOID_RENDERER_SHADER_SOURCE}" MULTITRACK_HLSL)
     configure_file(

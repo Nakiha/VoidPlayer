@@ -39,6 +39,7 @@ target_compile_definitions(video_renderer_tests PRIVATE
     VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
     FFMPEG_EXE_PATH="${FFMPEG_ROOT}/bin/ffmpeg.exe"
 )
+void_apply_native_compile_options(video_renderer_tests)
 
 add_test(NAME video_renderer_tests COMMAND video_renderer_tests)
 set_tests_properties(video_renderer_tests PROPERTIES TIMEOUT 180)
@@ -51,6 +52,7 @@ add_executable(analysis_tests
     analysis/test_analysis_generator.cpp
     analysis/test_analysis_data.cpp
 )
+void_apply_native_compile_options(analysis_tests)
 
 set_target_properties(analysis_tests PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>"

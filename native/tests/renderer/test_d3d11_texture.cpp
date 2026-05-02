@@ -187,7 +187,9 @@ TEST_CASE("D3D11FramePresenter prepares cached software frame SRV", "[d3d11][fra
 
     const int width = 32;
     const int height = 16;
-    auto pixels = std::make_shared<std::vector<uint8_t>>(width * height * 4, 255);
+    auto pixels = std::make_shared<std::vector<uint8_t>>(
+        width * height * 4,
+        static_cast<uint8_t>(255));
 
     vr::TextureFrame frame;
     frame.width = width;

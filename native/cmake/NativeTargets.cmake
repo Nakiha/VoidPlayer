@@ -2,6 +2,7 @@ if(BUILD_FFI OR NOT DEFINED BUILD_FFI)
     add_library(video_renderer_ffi SHARED
         video_renderer/exports/ffi_exports.cpp
     )
+    void_apply_native_compile_options(video_renderer_ffi)
 
     target_include_directories(video_renderer_ffi PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -29,6 +30,7 @@ if(BUILD_PYTHON)
     pybind11_add_module(video_renderer_native
         video_renderer/exports/bindings.cpp
     )
+    void_apply_native_compile_options(video_renderer_native)
 
     target_link_libraries(video_renderer_native PRIVATE
         video_renderer_lib
@@ -42,6 +44,7 @@ endif()
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/probe_hw.cpp")
     add_executable(probe_hw probe_hw.cpp)
+    void_apply_native_compile_options(probe_hw)
     target_link_libraries(probe_hw PRIVATE ${AVCODEC_LIBRARY} ${AVUTIL_LIBRARY})
     target_include_directories(probe_hw PRIVATE "${FFMPEG_INCLUDE_DIR}")
     if(TARGET copy_ffmpeg_dlls)

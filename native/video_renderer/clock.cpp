@@ -21,7 +21,8 @@ int64_t Clock::get_time_us() const {
 int64_t Clock::current_pts_us() const {
     std::lock_guard<std::mutex> lock(mutex_);
     if (paused_) {
-        return base_pts_us_ + (pause_time_us_ - base_time_us_) * speed_;
+        return base_pts_us_ +
+            static_cast<int64_t>((pause_time_us_ - base_time_us_) * speed_);
     }
     int64_t now = get_time_us();
     return base_pts_us_ + static_cast<int64_t>((now - base_time_us_) * speed_);

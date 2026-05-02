@@ -1,4 +1,5 @@
 add_library(analysis_lib STATIC ${VOID_ANALYSIS_SOURCES})
+void_apply_native_compile_options(analysis_lib)
 
 target_include_directories(analysis_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
@@ -6,7 +7,7 @@ target_include_directories(analysis_lib PUBLIC
 
 # AnalysisGenerator uses FFmpeg C API (avformat, avcodec)
 if(FFMPEG_INCLUDE_DIR)
-    target_include_directories(analysis_lib PUBLIC "${FFMPEG_INCLUDE_DIR}")
+    target_include_directories(analysis_lib SYSTEM PUBLIC "${FFMPEG_INCLUDE_DIR}")
 endif()
 
 if(AVFORMAT_LIBRARY)
@@ -24,6 +25,7 @@ target_link_libraries(analysis_lib PUBLIC
 add_executable(analysis_generate
     tools/analysis_generate.cpp
 )
+void_apply_native_compile_options(analysis_generate)
 
 target_link_libraries(analysis_generate PRIVATE
     analysis_lib

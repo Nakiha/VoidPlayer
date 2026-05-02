@@ -723,6 +723,10 @@ void install_crash_handler(const std::string& crash_dir) {
         unsigned int line,
         uintptr_t reserved
     ) {
+        (void)expression;
+        (void)function;
+        (void)file;
+        (void)reserved;
         if (stderr_available()) {
             fprintf(stderr, "[CRASH] Invalid parameter: line %u\n", line);
         }

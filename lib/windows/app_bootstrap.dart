@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
 import 'package:window_manager/window_manager.dart' hide WindowManager;
 
@@ -36,6 +37,10 @@ import 'window_manager.dart';
 bool _hasFlag(List<String> args, String name) =>
     args.any((arg) => arg == name || arg.startsWith('$name='));
 
+const MethodChannel _windowBootstrapChannel = MethodChannel(
+  'void_player/window_bootstrap',
+);
+
 Future<void> _showWindowForMode({required bool silent}) async {
   if (silent) {
     final hwnds = Win32FFI.findCurrentProcessWindowsByClass(kMainWindowClass);
@@ -43,7 +48,18 @@ Future<void> _showWindowForMode({required bool silent}) async {
       Win32FFI.hideFromTaskbar(hwnd);
     }
   }
-  await windowManager.show(inactive: silent);
+  try {
+    await _windowBootstrapChannel.invokeMethod<void>('showAfterNextFrame', {
+      'inactive': silent,
+    });
+  } catch (error, stackTrace) {
+    log.warning(
+      '[WindowBootstrap] native frame-gated show failed; falling back',
+      error,
+      stackTrace,
+    );
+    await windowManager.show(inactive: silent);
+  }
 }
 
 int _currentFlutterRunnerHwnd() {

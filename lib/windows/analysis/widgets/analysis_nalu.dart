@@ -11,21 +11,27 @@ import 'analysis_frame_utils.dart';
 
 class AnalysisNaluBrowserView extends StatefulWidget {
   final List<NaluInfo> nalus;
+  final int naluIndexBase;
+  final int totalNalus;
   final AnalysisCodec codec;
   final int? selectedIdx;
   final ValueChanged<int> onSelected;
+  final void Function(int start, int count) onWindowRequested;
   final String filter;
   final ValueChanged<String> onFilterChanged;
 
   const AnalysisNaluBrowserView({
     super.key,
     required this.nalus,
+    this.naluIndexBase = 0,
+    int? totalNalus,
     required this.codec,
     required this.selectedIdx,
     required this.onSelected,
+    required this.onWindowRequested,
     required this.filter,
     required this.onFilterChanged,
-  });
+  }) : totalNalus = totalNalus ?? nalus.length;
 
   @override
   State<AnalysisNaluBrowserView> createState() =>
@@ -44,6 +50,7 @@ class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_requestVisibleWindow);
     _scheduleScrollSelectedIntoView();
   }
 
@@ -52,15 +59,26 @@ class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
     super.didUpdateWidget(oldWidget);
     if (widget.selectedIdx != oldWidget.selectedIdx ||
         widget.filter != oldWidget.filter ||
-        widget.nalus.length != oldWidget.nalus.length) {
+        widget.nalus.length != oldWidget.nalus.length ||
+        widget.naluIndexBase != oldWidget.naluIndexBase ||
+        widget.totalNalus != oldWidget.totalNalus) {
       _scheduleScrollSelectedIntoView();
     }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_requestVisibleWindow);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _requestVisibleWindow() {
+    if (!_scrollController.hasClients || widget.filter.isNotEmpty) return;
+    final position = _scrollController.position;
+    final first = (position.pixels / _itemExtent).floor();
+    final count = (position.viewportDimension / _itemExtent).ceil() + 24;
+    widget.onWindowRequested(first, count);
   }
 
   List<int> _visibleIndices() {
@@ -82,9 +100,9 @@ class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
       for (var i = 0; i < widget.nalus.length; i++)
         if (filter.isEmpty ||
             _cachedTypeNamesLower[i].contains(filter) ||
-            '#$i'.contains(filter) ||
+            '#${i + widget.naluIndexBase}'.contains(filter) ||
             '${widget.nalus[i].nalType}'.contains(filter))
-          i,
+          i + widget.naluIndexBase,
     ];
     return _cachedVisibleIndices;
   }
@@ -121,7 +139,7 @@ class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.nalus.isEmpty) {
+    if (widget.totalNalus == 0 || widget.nalus.isEmpty) {
       return Center(
         child: Text(AppLocalizations.of(context)!.analysisNoNaluData),
       );
@@ -129,6 +147,7 @@ class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
     final theme = Theme.of(context);
     final filter = widget.filter.toLowerCase();
     final visible = _visibleIndices();
+    final itemCount = filter.isEmpty ? widget.totalNalus : visible.length;
 
     return Column(
       children: [
@@ -177,7 +196,7 @@ class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                '${visible.length} / ${widget.nalus.length}',
+                '${visible.length} / ${widget.totalNalus}',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -189,11 +208,20 @@ class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
           child: ExcludeSemantics(
             child: ListView.builder(
               controller: _scrollController,
-              itemCount: visible.length,
+              itemCount: itemCount,
               itemExtent: _itemExtent,
               itemBuilder: (context, displayIndex) {
-                final origIdx = visible[displayIndex];
-                final n = widget.nalus[origIdx];
+                final origIdx = filter.isEmpty
+                    ? displayIndex
+                    : visible[displayIndex];
+                final localIdx = origIdx - widget.naluIndexBase;
+                if (localIdx < 0 || localIdx >= widget.nalus.length) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) widget.onWindowRequested(origIdx, 1);
+                  });
+                  return const SizedBox.shrink();
+                }
+                final n = widget.nalus[localIdx];
                 final selected = origIdx == widget.selectedIdx;
                 return InkWell(
                   onTap: () => widget.onSelected(origIdx),
@@ -269,6 +297,7 @@ class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
 class AnalysisNaluDetailView extends StatelessWidget {
   final NaluInfo? nalu;
   final int? frameIdx;
+  final int frameIndexBase;
   final List<FrameInfo> frames;
   final AnalysisCodec codec;
   final AppLocalizations l;
@@ -277,6 +306,7 @@ class AnalysisNaluDetailView extends StatelessWidget {
     super.key,
     required this.nalu,
     this.frameIdx,
+    this.frameIndexBase = 0,
     required this.frames,
     required this.codec,
     required this.l,
@@ -309,8 +339,10 @@ class AnalysisNaluDetailView extends StatelessWidget {
 
     // Frame-level info from VBS2 (when this NALU corresponds to a frame)
     final frameItems = <_DetailRow>[];
-    if (frameIdx != null && frameIdx! >= 0 && frameIdx! < frames.length) {
-      final f = frames[frameIdx!];
+    if (frameIdx != null &&
+        frameIdx! >= frameIndexBase &&
+        frameIdx! < frameIndexBase + frames.length) {
+      final f = frames[frameIdx! - frameIndexBase];
       final sliceName = analysisFrameSliceName(f);
       final nalName = bitstreamUnitTypeName(codec, f.nalType);
 

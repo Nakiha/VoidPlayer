@@ -13,6 +13,8 @@ const double _frameTrendLabelW = analysisChartLabelW;
 
 class AnalysisFrameTrendView extends StatefulWidget {
   final List<FrameInfo> frames;
+  final int frameIndexBase;
+  final int totalFrames;
   final int currentIdx;
   final int? selectedFrameIdx;
   final double viewStart;
@@ -29,6 +31,8 @@ class AnalysisFrameTrendView extends StatefulWidget {
   const AnalysisFrameTrendView({
     super.key,
     required this.frames,
+    this.frameIndexBase = 0,
+    int? totalFrames,
     required this.currentIdx,
     required this.selectedFrameIdx,
     required this.viewStart,
@@ -41,7 +45,7 @@ class AnalysisFrameTrendView extends StatefulWidget {
     required this.onPan,
     required this.onFrameSelected,
     required this.l,
-  });
+  }) : totalFrames = totalFrames ?? frames.length;
 
   @override
   State<AnalysisFrameTrendView> createState() => _AnalysisFrameTrendViewState();
@@ -53,7 +57,7 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
   @override
   Widget build(BuildContext context) {
     final w = widget;
-    if (w.frames.isEmpty) {
+    if (w.totalFrames == 0 || w.frames.isEmpty) {
       return Center(child: Text(w.l.analysisNoFrameData));
     }
     return Column(
@@ -84,7 +88,7 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
                         scrollDeltaY: signal.scrollDelta.dy,
                         viewStart: w.viewStart,
                         viewEnd: w.viewEnd,
-                        total: w.frames.length.toDouble(),
+                        total: w.totalFrames.toDouble(),
                         onPan: w.onPan,
                       );
                     } else if (local.dx < _frameTrendLabelW) {
@@ -122,7 +126,7 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
                         (w.viewStart +
                                 ((localX - _frameTrendLabelW) / chartW) * span)
                             .round()
-                            .clamp(0, w.frames.length - 1)
+                            .clamp(0, w.totalFrames - 1)
                             .toInt();
                     w.onFrameSelected(w.selectedFrameIdx == idx ? null : idx);
                   },
@@ -140,6 +144,8 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
                     child: CustomPaint(
                       painter: _FrameTrendPainter(
                         frames: w.frames,
+                        frameIndexBase: w.frameIndexBase,
+                        totalFrames: w.totalFrames,
                         currentIdx: w.currentIdx,
                         selectedFrameIdx: w.selectedFrameIdx,
                         viewStart: w.viewStart,
@@ -158,7 +164,7 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
           ),
         ),
         AnalysisChartScrollbar(
-          total: w.frames.length.toDouble(),
+          total: w.totalFrames.toDouble(),
           viewStart: w.viewStart,
           viewEnd: w.viewEnd,
           onPan: w.onPan,
@@ -170,6 +176,8 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
 
 class _FrameTrendPainter extends CustomPainter {
   final List<FrameInfo> frames;
+  final int frameIndexBase;
+  final int totalFrames;
   final int currentIdx;
   final int? selectedFrameIdx;
   final double viewStart;
@@ -181,6 +189,8 @@ class _FrameTrendPainter extends CustomPainter {
 
   _FrameTrendPainter({
     required this.frames,
+    required this.frameIndexBase,
+    required this.totalFrames,
     required this.currentIdx,
     required this.selectedFrameIdx,
     required this.viewStart,
@@ -193,10 +203,17 @@ class _FrameTrendPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (frames.isEmpty) return;
+    if (totalFrames == 0 || frames.isEmpty) return;
 
-    final visibleStart = viewStart.floor().clamp(0, frames.length - 1).toInt();
-    final visibleEnd = (viewEnd.ceil() + 1).clamp(0, frames.length).toInt();
+    final windowStart = frameIndexBase;
+    final windowEnd = frameIndexBase + frames.length;
+    final visibleStart = viewStart
+        .floor()
+        .clamp(windowStart, windowEnd - 1)
+        .toInt();
+    final visibleEnd = (viewEnd.ceil() + 1)
+        .clamp(windowStart, windowEnd)
+        .toInt();
     if (visibleStart >= visibleEnd) return;
 
     final count = visibleEnd - visibleStart;
@@ -221,11 +238,12 @@ class _FrameTrendPainter extends CustomPainter {
     int maxPacketSize = 1;
     int minQp = 63, maxQp = 0;
     for (var i = visibleStart; i < visibleEnd; i++) {
-      if (frames[i].packetSize > maxPacketSize) {
-        maxPacketSize = frames[i].packetSize;
+      final f = frames[i - frameIndexBase];
+      if (f.packetSize > maxPacketSize) {
+        maxPacketSize = f.packetSize;
       }
-      if (frames[i].avgQp < minQp) minQp = frames[i].avgQp;
-      if (frames[i].avgQp > maxQp) maxQp = frames[i].avgQp;
+      if (f.avgQp < minQp) minQp = f.avgQp;
+      if (f.avgQp > maxQp) maxQp = f.avgQp;
     }
     final autoSizeMax = maxPacketSize.toDouble().clamp(1.0, double.infinity);
     final sizeAxisMax = (autoSizeMax / frameSizeAxisZoom).clamp(
@@ -314,7 +332,7 @@ class _FrameTrendPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
     for (var i = visibleStart; i < visibleEnd; i++) {
-      final f = frames[i];
+      final f = frames[i - frameIndexBase];
       final frac = (i - viewStart) / span;
       final x = labelW + contentPad + frac * contentW;
       final h = ((f.packetSize / sizeAxisMax).clamp(0.0, 1.0)) * upperH;
@@ -338,7 +356,7 @@ class _FrameTrendPainter extends CustomPainter {
     final qpPath = Path();
     bool first = true;
     for (var i = visibleStart; i < visibleEnd; i++) {
-      final f = frames[i];
+      final f = frames[i - frameIndexBase];
       final frac = (i - viewStart) / span;
       final x = labelW + contentPad + frac * contentW + barW / 2;
       final normalizedQp = ((f.avgQp - qpLow) / effectiveQpRange).clamp(
@@ -359,7 +377,7 @@ class _FrameTrendPainter extends CustomPainter {
     final cursorIdx = selectedFrameIdx != null && selectedFrameIdx! >= 0
         ? selectedFrameIdx!
         : currentIdx;
-    if (cursorIdx >= 0 && cursorIdx < frames.length) {
+    if (cursorIdx >= windowStart && cursorIdx < windowEnd) {
       final frac = (cursorIdx - viewStart) / span;
       final cx = labelW + contentPad + frac * contentW + barW / 2;
       canvas.drawLine(
@@ -393,7 +411,7 @@ class _FrameTrendPainter extends CustomPainter {
           ..strokeWidth = 1,
       );
 
-      final f = frames[frameIdx];
+      final f = frames[frameIdx - frameIndexBase];
       final sliceLabel = switch (f.sliceType) {
         2 => 'I',
         1 => 'P',
@@ -451,11 +469,12 @@ class _FrameTrendPainter extends CustomPainter {
       axisTop: chartH,
       labelW: labelW,
       frames: frames,
-      visibleStart: visibleStart,
-      visibleEnd: visibleEnd,
+      visibleStart: visibleStart - frameIndexBase,
+      visibleEnd: visibleEnd - frameIndexBase,
       ptsOrder: ptsOrder,
       xForFrame: (idx) {
-        final frac = (idx - viewStart) / span;
+        final frameIdx = idx + frameIndexBase;
+        final frac = (frameIdx - viewStart) / span;
         return labelW + contentPad + frac * contentW + barW / 2;
       },
     );
@@ -491,6 +510,8 @@ class _FrameTrendPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _FrameTrendPainter old) =>
       frames.length != old.frames.length ||
+      frameIndexBase != old.frameIndexBase ||
+      totalFrames != old.totalFrames ||
       currentIdx != old.currentIdx ||
       selectedFrameIdx != old.selectedFrameIdx ||
       viewStart != old.viewStart ||

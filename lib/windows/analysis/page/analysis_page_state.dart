@@ -18,7 +18,11 @@ class AnalysisPageViewModel {
   final double qpAxisZoom;
   final double topPanelFraction;
   final List<FrameInfo> frames;
+  final int frameIndexBase;
+  final int totalFrameCount;
   final List<NaluInfo> nalus;
+  final int naluIndexBase;
+  final int totalNaluCount;
   final List<FrameInfo> sortedFrames;
   final Map<int, List<int>> sortedPocToIndices;
   final AnalysisSummary? summary;
@@ -39,7 +43,11 @@ class AnalysisPageViewModel {
     required this.qpAxisZoom,
     required this.topPanelFraction,
     required this.frames,
+    required this.frameIndexBase,
+    required this.totalFrameCount,
     required this.nalus,
+    required this.naluIndexBase,
+    required this.totalNaluCount,
     required this.sortedFrames,
     required this.sortedPocToIndices,
     required this.summary,
@@ -58,6 +66,7 @@ class AnalysisPageActions {
   onAxisZoom;
   final ValueChanged<int?> onChartFrameSelected;
   final ValueChanged<int?> onNaluSelected;
+  final void Function(int start, int count) onNaluWindowRequested;
   final ValueChanged<String> onNaluFilterChanged;
   final ValueChanged<double> onNaluBrowserWidthChanged;
   final ValueChanged<double> onTopPanelFractionChanged;
@@ -70,6 +79,7 @@ class AnalysisPageActions {
     required this.onAxisZoom,
     required this.onChartFrameSelected,
     required this.onNaluSelected,
+    required this.onNaluWindowRequested,
     required this.onNaluFilterChanged,
     required this.onNaluBrowserWidthChanged,
     required this.onTopPanelFractionChanged,

@@ -10,8 +10,8 @@ import 'analysis_page_state.dart';
 class AnalysisPageController extends ChangeNotifier {
   static const int _frameReadChunk = 2048;
   static const int _naluReadChunk = 4096;
-  static const int _maxResidentFrames = 20000;
-  static const int _maxResidentNalus = 50000;
+  static const int _frameBlockSize = 4096;
+  static const int _naluBlockSize = 8192;
 
   final String hash;
   final bool pollSummary;
@@ -31,9 +31,11 @@ class AnalysisPageController extends ChangeNotifier {
 
   List<FrameInfo> _frames = [];
   List<NaluInfo> _nalus = [];
+  int _frameWindowStart = 0;
+  int _naluWindowStart = 0;
   List<FrameInfo> _sortedFramesCache = [];
   List<int> _sortedFrameOriginalIndicesCache = [];
-  List<int> _frameToSortedPosition = [];
+  Map<int, int> _frameToSortedPosition = {};
   Map<int, List<int>> _sortedPocToIndices = {};
   AnalysisSummary? _summary;
   AnalysisSession? _session;
@@ -58,7 +60,11 @@ class AnalysisPageController extends ChangeNotifier {
       qpAxisZoom: _qpAxisZoom,
       topPanelFraction: _topPanelFraction,
       frames: _frames,
+      frameIndexBase: _frameWindowStart,
+      totalFrameCount: _summary?.frameCount ?? _frames.length,
       nalus: _nalus,
+      naluIndexBase: _naluWindowStart,
+      totalNaluCount: _summary?.naluCount ?? _nalus.length,
       sortedFrames: _sortedFramesCache,
       sortedPocToIndices: _sortedPocToIndices,
       summary: _summary,
@@ -77,6 +83,7 @@ class AnalysisPageController extends ChangeNotifier {
       onAxisZoom: frameTrendAxisZoom,
       onChartFrameSelected: selectChartFrame,
       onNaluSelected: selectNalu,
+      onNaluWindowRequested: requestNaluWindow,
       onNaluFilterChanged: setNaluFilter,
       onNaluBrowserWidthChanged: setNaluBrowserWidth,
       onTopPanelFractionChanged: setTopPanelFraction,
@@ -94,7 +101,8 @@ class AnalysisPageController extends ChangeNotifier {
   int get selectedTab => _selectedTab;
   bool get ptsOrder => _ptsOrder;
   bool get isLoaded =>
-      (_summary?.loaded ?? 0) != 0 && (_frames.isNotEmpty || _nalus.isNotEmpty);
+      (_summary?.loaded ?? 0) != 0 &&
+      ((_summary?.frameCount ?? 0) > 0 || (_summary?.naluCount ?? 0) > 0);
 
   int? get selectedSortedFrameIdx => _selectedFrameIdx == null
       ? null
@@ -146,24 +154,26 @@ class AnalysisPageController extends ChangeNotifier {
   void selectNaluForTest(int naluIdx) => selectNalu(naluIdx);
 
   void chartZoom(double scrollDelta) {
-    final maxCount = _sortedFramesCache.length.toDouble();
+    final maxCount = (_summary?.frameCount ?? _frames.length).toDouble();
     if (maxCount <= 0) return;
     final minCount = maxCount < 3.0 ? maxCount : 3.0;
     final factor = scrollDelta > 0 ? 1.18 : 0.85;
     final oldCount = _visibleFrameCount;
     _visibleFrameCount = (_visibleFrameCount * factor).clamp(
       minCount,
-      maxCount,
+      maxCount < _frameBlockSize ? maxCount : _frameBlockSize.toDouble(),
     );
     final center = _chartOffset + oldCount / 2;
     _chartOffset = center - _visibleFrameCount / 2;
     _clampChartOffset();
+    _ensureFrameWindowForChart();
     notifyListeners();
   }
 
   void chartPan(double newOffset) {
     _chartOffset = newOffset;
     _clampChartOffset();
+    _ensureFrameWindowForChart();
     notifyListeners();
   }
 
@@ -187,9 +197,21 @@ class AnalysisPageController extends ChangeNotifier {
 
   void selectNalu(int? naluIdx) {
     _selectedNaluIdx = naluIdx;
+    if (naluIdx != null) {
+      _ensureNaluWindowForIndex(naluIdx);
+    }
     final frameIdx = naluIdx != null ? _naluToFrameIdx(naluIdx) : null;
+    if (frameIdx != null) {
+      _ensureFrameWindowForIndex(frameIdx);
+    }
     _selectedFrameIdx = frameIdx;
     if (frameIdx != null) _centerChartOnFrame(frameIdx);
+    notifyListeners();
+  }
+
+  void requestNaluWindow(int start, int count) {
+    _loadNaluWindowForRange(start, count);
+    _rebuildDerivedState();
     notifyListeners();
   }
 
@@ -217,8 +239,14 @@ class AnalysisPageController extends ChangeNotifier {
     final s = session.summary;
     if (s.loaded == 0) return;
     _summary = s;
-    _frames = _readFrames(session, s.frameCount);
-    _nalus = _readNalus(session, s.naluCount);
+    _visibleFrameCount = _visibleFrameCount.clamp(
+      s.frameCount > 0 ? 1.0 : 0.0,
+      s.frameCount < _frameBlockSize
+          ? s.frameCount.toDouble()
+          : _frameBlockSize.toDouble(),
+    );
+    _loadFrameWindowForRange(_chartOffset.floor(), _visibleFrameCount.ceil());
+    _loadNaluWindowForRange(_selectedNaluIdx ?? 0, 1);
     _rebuildDerivedState();
     notifyListeners();
   }
@@ -238,9 +266,7 @@ class AnalysisPageController extends ChangeNotifier {
   }
 
   int? sortedPositionForFrameIdx(int frameIdx) {
-    if (frameIdx < 0 || frameIdx >= _frameToSortedPosition.length) return null;
-    final sortedIdx = _frameToSortedPosition[frameIdx];
-    return sortedIdx >= 0 ? sortedIdx : null;
+    return _frameToSortedPosition[frameIdx];
   }
 
   void _loadData() {
@@ -249,20 +275,16 @@ class AnalysisPageController extends ChangeNotifier {
     final vbt = AnalysisCache.vbtPath(hash);
 
     _session?.close();
+    _frames = const [];
+    _nalus = const [];
+    _frameWindowStart = 0;
+    _naluWindowStart = 0;
+    _sortedFramesCache = const [];
+    _sortedFrameOriginalIndicesCache = const [];
+    _frameToSortedPosition = {};
+    _sortedPocToIndices = {};
     _session = AnalysisSession.open(vbs2, vbi, vbt);
     readData();
-  }
-
-  List<FrameInfo> _readFrames(AnalysisSession session, int total) {
-    final count = total.clamp(0, _maxResidentFrames).toInt();
-    if (count == 0) return const [];
-    return _readFrameRangeInChunks(session, 0, count);
-  }
-
-  List<NaluInfo> _readNalus(AnalysisSession session, int total) {
-    final count = total.clamp(0, _maxResidentNalus).toInt();
-    if (count == 0) return const [];
-    return _readNaluRangeInChunks(session, 0, count);
   }
 
   List<FrameInfo> _readFrameRangeInChunks(
@@ -283,6 +305,85 @@ class AnalysisPageController extends ChangeNotifier {
       if (frames.length < chunk) break;
     }
     return result;
+  }
+
+  void _ensureFrameWindowForChart() {
+    _loadFrameWindowForRange(_chartOffset.floor(), _visibleFrameCount.ceil());
+    _rebuildDerivedState();
+  }
+
+  void _ensureFrameWindowForIndex(int frameIdx) {
+    _loadFrameWindowForRange(frameIdx, 1);
+    _rebuildDerivedState();
+  }
+
+  void _ensureNaluWindowForIndex(int naluIdx) {
+    _loadNaluWindowForRange(naluIdx, 1);
+    _rebuildDerivedState();
+  }
+
+  void _loadFrameWindowForRange(int start, int count) {
+    final session = _session;
+    final total = _summary?.frameCount ?? 0;
+    if (session == null || !session.isOpen || total <= 0) {
+      _frames = const [];
+      _frameWindowStart = 0;
+      return;
+    }
+
+    final range = _residentRange(
+      start: start,
+      count: count,
+      total: total,
+      blockSize: _frameBlockSize,
+    );
+    if (range == null) return;
+    final (nextStart, nextCount) = range;
+    if (_frameWindowStart == nextStart && _frames.length == nextCount) return;
+    _frameWindowStart = nextStart;
+    _frames = _readFrameRangeInChunks(session, nextStart, nextCount);
+  }
+
+  void _loadNaluWindowForRange(int start, int count) {
+    final session = _session;
+    final total = _summary?.naluCount ?? 0;
+    if (session == null || !session.isOpen || total <= 0) {
+      _nalus = const [];
+      _naluWindowStart = 0;
+      return;
+    }
+
+    final range = _residentRange(
+      start: start,
+      count: count,
+      total: total,
+      blockSize: _naluBlockSize,
+    );
+    if (range == null) return;
+    final (nextStart, nextCount) = range;
+    if (_naluWindowStart == nextStart && _nalus.length == nextCount) return;
+    _naluWindowStart = nextStart;
+    _nalus = _readNaluRangeInChunks(session, nextStart, nextCount);
+  }
+
+  (int start, int count)? _residentRange({
+    required int start,
+    required int count,
+    required int total,
+    required int blockSize,
+  }) {
+    if (total <= 0) return null;
+    final safeStart = start.clamp(0, total - 1).toInt();
+    final safeEnd = (safeStart + count).clamp(safeStart + 1, total).toInt();
+    final blockStart = (safeStart ~/ blockSize - 1).clamp(0, total).toInt();
+    final blockEnd = ((safeEnd + blockSize - 1) ~/ blockSize + 1)
+        .clamp(0, (total + blockSize - 1) ~/ blockSize)
+        .toInt();
+    final residentStart = (blockStart * blockSize).clamp(0, total).toInt();
+    final residentEnd = (blockEnd * blockSize)
+        .clamp(residentStart, total)
+        .toInt();
+    return (residentStart, residentEnd - residentStart);
   }
 
   List<NaluInfo> _readNaluRangeInChunks(
@@ -308,11 +409,12 @@ class AnalysisPageController extends ChangeNotifier {
   void _rebuildDerivedState() {
     _frameToNalu = List<int>.filled(_frames.length, -1);
     _naluToFrame = List<int?>.filled(_nalus.length, null);
-    var vclIdx = 0;
+    var vclIdx = _naluWindowStart;
     for (var i = 0; i < _nalus.length; i++) {
       if ((_nalus[i].flags & 0x01) != 0) {
-        if (vclIdx < _frames.length) {
-          _frameToNalu[vclIdx] = i;
+        final frameLocalIdx = vclIdx - _frameWindowStart;
+        if (frameLocalIdx >= 0 && frameLocalIdx < _frames.length) {
+          _frameToNalu[frameLocalIdx] = _naluWindowStart + i;
           _naluToFrame[i] = vclIdx;
         }
         vclIdx++;
@@ -327,34 +429,41 @@ class AnalysisPageController extends ChangeNotifier {
     if (_ptsOrder) {
       order.sort((a, b) => _frames[a].pts.compareTo(_frames[b].pts));
     }
-    _sortedFrameOriginalIndicesCache = order;
+    _sortedFrameOriginalIndicesCache = [
+      for (final idx in order) _frameWindowStart + idx,
+    ];
     _sortedFramesCache = [for (final idx in order) _frames[idx]];
-    _frameToSortedPosition = List<int>.filled(_frames.length, -1);
+    _frameToSortedPosition = <int, int>{};
     _sortedPocToIndices = <int, List<int>>{};
     for (var sortedIdx = 0; sortedIdx < order.length; sortedIdx++) {
-      final originalIdx = order[sortedIdx];
-      _frameToSortedPosition[originalIdx] = sortedIdx;
-      (_sortedPocToIndices[_frames[originalIdx].poc] ??= []).add(sortedIdx);
+      final originalIdx = _frameWindowStart + order[sortedIdx];
+      final displayIdx = _frameWindowStart + sortedIdx;
+      _frameToSortedPosition[originalIdx] = displayIdx;
+      final frame = _frames[order[sortedIdx]];
+      (_sortedPocToIndices[frame.poc] ??= []).add(displayIdx);
     }
     _clampChartOffset();
   }
 
   int? _frameToNaluIdx(int frameIdx) {
-    if (frameIdx < 0 || frameIdx >= _frameToNalu.length) return null;
-    final v = _frameToNalu[frameIdx];
+    final localIdx = frameIdx - _frameWindowStart;
+    if (localIdx < 0 || localIdx >= _frameToNalu.length) return null;
+    final v = _frameToNalu[localIdx];
     return v >= 0 ? v : null;
   }
 
   int? _naluToFrameIdx(int naluIdx) {
-    if (naluIdx < 0 || naluIdx >= _naluToFrame.length) return null;
-    return _naluToFrame[naluIdx];
+    final localIdx = naluIdx - _naluWindowStart;
+    if (localIdx < 0 || localIdx >= _naluToFrame.length) return null;
+    return _naluToFrame[localIdx];
   }
 
   int? _originalFrameIdxAtSortedPosition(int sortedIdx) {
-    if (sortedIdx < 0 || sortedIdx >= _sortedFrameOriginalIndicesCache.length) {
+    final localIdx = sortedIdx - _frameWindowStart;
+    if (localIdx < 0 || localIdx >= _sortedFrameOriginalIndicesCache.length) {
       return null;
     }
-    return _sortedFrameOriginalIndicesCache[sortedIdx];
+    return _sortedFrameOriginalIndicesCache[localIdx];
   }
 
   void _selectFrame(int? frameIdx, {bool centerChart = false}) {
@@ -376,10 +485,9 @@ class AnalysisPageController extends ChangeNotifier {
   }
 
   void _clampChartOffset() {
-    final max = (_sortedFramesCache.length - _visibleFrameCount).clamp(
-      0.0,
-      double.infinity,
-    );
+    final total = (_summary?.frameCount ?? _sortedFramesCache.length)
+        .toDouble();
+    final max = (total - _visibleFrameCount).clamp(0.0, double.infinity);
     _chartOffset = _chartOffset.clamp(0.0, max);
   }
 }

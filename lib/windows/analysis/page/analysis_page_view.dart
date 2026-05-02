@@ -27,6 +27,8 @@ class AnalysisPageView extends StatelessWidget {
     final topChart = model.selectedTab == 0
         ? AnalysisReferencePyramidView(
             frames: model.sortedFrames,
+            frameIndexBase: model.frameIndexBase,
+            totalFrames: model.totalFrameCount,
             currentIdx: model.currentSortedFrameIdx,
             selectedFrameIdx: model.selectedSortedFrameIdx,
             pocToIndices: model.sortedPocToIndices,
@@ -40,6 +42,8 @@ class AnalysisPageView extends StatelessWidget {
           )
         : AnalysisFrameTrendView(
             frames: model.sortedFrames,
+            frameIndexBase: model.frameIndexBase,
+            totalFrames: model.totalFrameCount,
             currentIdx: model.currentSortedFrameIdx,
             selectedFrameIdx: model.selectedSortedFrameIdx,
             viewStart: model.chartOffset,
@@ -71,9 +75,12 @@ class AnalysisPageView extends StatelessWidget {
                   width: browserW,
                   child: AnalysisNaluBrowserView(
                     nalus: model.nalus,
+                    naluIndexBase: model.naluIndexBase,
+                    totalNalus: model.totalNaluCount,
                     codec: model.codec,
                     selectedIdx: model.selectedNaluIdx,
                     onSelected: actions.onNaluSelected,
+                    onWindowRequested: actions.onNaluWindowRequested,
                     filter: model.naluFilter,
                     onFilterChanged: actions.onNaluFilterChanged,
                   ),
@@ -82,10 +89,14 @@ class AnalysisPageView extends StatelessWidget {
                   child: AnalysisNaluDetailView(
                     nalu:
                         model.selectedNaluIdx != null &&
-                            model.selectedNaluIdx! < model.nalus.length
-                        ? model.nalus[model.selectedNaluIdx!]
+                            model.selectedNaluIdx! >= model.naluIndexBase &&
+                            model.selectedNaluIdx! <
+                                model.naluIndexBase + model.nalus.length
+                        ? model.nalus[model.selectedNaluIdx! -
+                              model.naluIndexBase]
                         : null,
                     frameIdx: model.selectedFrameIdx,
+                    frameIndexBase: model.frameIndexBase,
                     frames: model.frames,
                     codec: model.codec,
                     l: l,

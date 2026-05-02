@@ -9,6 +9,8 @@ import 'analysis_chart_common.dart';
 
 class AnalysisReferencePyramidView extends StatefulWidget {
   final List<FrameInfo> frames;
+  final int frameIndexBase;
+  final int totalFrames;
   final int currentIdx;
   final int? selectedFrameIdx;
   final Map<int, List<int>> pocToIndices;
@@ -22,6 +24,8 @@ class AnalysisReferencePyramidView extends StatefulWidget {
   const AnalysisReferencePyramidView({
     super.key,
     required this.frames,
+    this.frameIndexBase = 0,
+    int? totalFrames,
     required this.currentIdx,
     required this.selectedFrameIdx,
     required this.pocToIndices,
@@ -32,7 +36,7 @@ class AnalysisReferencePyramidView extends StatefulWidget {
     required this.onZoom,
     required this.onPan,
     required this.l,
-  });
+  }) : totalFrames = totalFrames ?? frames.length;
 
   @override
   State<AnalysisReferencePyramidView> createState() =>
@@ -53,6 +57,7 @@ class _AnalysisReferencePyramidViewState
     _referenceCache = _FrameReferenceCache.build(
       widget.frames,
       widget.pocToIndices,
+      widget.frameIndexBase,
     );
     _rebuildSelectedChain();
   }
@@ -61,10 +66,12 @@ class _AnalysisReferencePyramidViewState
   void didUpdateWidget(covariant AnalysisReferencePyramidView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(widget.frames, oldWidget.frames) ||
-        !identical(widget.pocToIndices, oldWidget.pocToIndices)) {
+        !identical(widget.pocToIndices, oldWidget.pocToIndices) ||
+        widget.frameIndexBase != oldWidget.frameIndexBase) {
       _referenceCache = _FrameReferenceCache.build(
         widget.frames,
         widget.pocToIndices,
+        widget.frameIndexBase,
       );
       _cachedSelectedFrameIdx = null;
     }
@@ -78,8 +85,8 @@ class _AnalysisReferencePyramidViewState
     _cachedSelectedFrameIdx = widget.selectedFrameIdx;
     final selectedFrameIdx = widget.selectedFrameIdx;
     if (selectedFrameIdx == null ||
-        selectedFrameIdx < 0 ||
-        selectedFrameIdx >= widget.frames.length) {
+        selectedFrameIdx < widget.frameIndexBase ||
+        selectedFrameIdx >= widget.frameIndexBase + widget.frames.length) {
       _selectedChainEdges = const {};
       _selectedChainNodes = const {};
       return;
@@ -103,12 +110,14 @@ class _AnalysisReferencePyramidViewState
 
   int? _frameIndexAtChartPosition(Offset local, Size size) {
     if (widget.frames.isEmpty) return null;
+    final windowStart = widget.frameIndexBase;
+    final windowEnd = widget.frameIndexBase + widget.frames.length;
     final visibleStart = widget.viewStart
         .floor()
-        .clamp(0, widget.frames.length - 1)
+        .clamp(windowStart, windowEnd - 1)
         .toInt();
     final visibleEnd = (widget.viewEnd.ceil() + 1)
-        .clamp(0, widget.frames.length)
+        .clamp(windowStart, windowEnd)
         .toInt();
     if (visibleStart >= visibleEnd) return null;
 
@@ -121,8 +130,9 @@ class _AnalysisReferencePyramidViewState
 
     var maxTid = 0;
     for (var i = visibleStart; i < visibleEnd; i++) {
-      if (widget.frames[i].temporalId > maxTid) {
-        maxTid = widget.frames[i].temporalId;
+      final f = widget.frames[i - widget.frameIndexBase];
+      if (f.temporalId > maxTid) {
+        maxTid = f.temporalId;
       }
     }
     final rowH = chartH / (maxTid + 1);
@@ -144,7 +154,7 @@ class _AnalysisReferencePyramidViewState
 
   @override
   Widget build(BuildContext context) {
-    if (widget.frames.isEmpty) {
+    if (widget.totalFrames == 0 || widget.frames.isEmpty) {
       return Center(child: Text(widget.l.analysisNoFrameData));
     }
     return Column(
@@ -167,7 +177,7 @@ class _AnalysisReferencePyramidViewState
                     scrollDeltaY: signal.scrollDelta.dy,
                     viewStart: widget.viewStart,
                     viewEnd: widget.viewEnd,
-                    total: widget.frames.length.toDouble(),
+                    total: widget.totalFrames.toDouble(),
                     onPan: widget.onPan,
                   );
                 } else {
@@ -201,6 +211,8 @@ class _AnalysisReferencePyramidViewState
                   child: CustomPaint(
                     painter: _RefPyramidPainter(
                       frames: widget.frames,
+                      frameIndexBase: widget.frameIndexBase,
+                      totalFrames: widget.totalFrames,
                       referenceCache: _referenceCache,
                       currentIdx: widget.currentIdx,
                       selectedFrameIdx: widget.selectedFrameIdx,
@@ -219,7 +231,7 @@ class _AnalysisReferencePyramidViewState
           ),
         ),
         AnalysisChartScrollbar(
-          total: widget.frames.length.toDouble(),
+          total: widget.totalFrames.toDouble(),
           viewStart: widget.viewStart,
           viewEnd: widget.viewEnd,
           onPan: widget.onPan,
@@ -230,8 +242,8 @@ class _AnalysisReferencePyramidViewState
 }
 
 class _FrameReferenceCache {
-  final List<List<int>> refsByIndex;
-  final List<List<int>> sourcesByRefIndex;
+  final Map<int, List<int>> refsByIndex;
+  final Map<int, List<int>> sourcesByRefIndex;
 
   const _FrameReferenceCache({
     required this.refsByIndex,
@@ -241,6 +253,7 @@ class _FrameReferenceCache {
   factory _FrameReferenceCache.build(
     List<FrameInfo> frames,
     Map<int, List<int>> pocToIndices,
+    int frameIndexBase,
   ) {
     int? nearestRefIdx(int refPoc, int sourceIdx) {
       final indices = pocToIndices[refPoc];
@@ -252,59 +265,59 @@ class _FrameReferenceCache {
       return best;
     }
 
-    final refsByIndex = List<List<int>>.generate(
-      frames.length,
-      (_) => const <int>[],
-      growable: false,
-    );
-    final sourcesByRefIndex = List<List<int>>.generate(
-      frames.length,
-      (_) => <int>[],
-      growable: false,
-    );
+    final refsByIndex = <int, List<int>>{};
+    final sourcesByRefIndex = <int, List<int>>{};
 
     for (var i = 0; i < frames.length; i++) {
       final f = frames[i];
+      final sourceIdx = frameIndexBase + i;
       if (f.numRefL0 == 0 && f.numRefL1 == 0) continue;
       final refs = <int>{};
       for (var j = 0; j < f.numRefL0 && j < f.refPocsL0.length; j++) {
-        final ri = nearestRefIdx(f.refPocsL0[j], i);
-        if (ri != null && ri >= 0 && ri < frames.length) refs.add(ri);
+        final ri = nearestRefIdx(f.refPocsL0[j], sourceIdx);
+        if (ri != null &&
+            ri >= frameIndexBase &&
+            ri < frameIndexBase + frames.length) {
+          refs.add(ri);
+        }
       }
       for (var j = 0; j < f.numRefL1 && j < f.refPocsL1.length; j++) {
-        final ri = nearestRefIdx(f.refPocsL1[j], i);
-        if (ri != null && ri >= 0 && ri < frames.length) refs.add(ri);
+        final ri = nearestRefIdx(f.refPocsL1[j], sourceIdx);
+        if (ri != null &&
+            ri >= frameIndexBase &&
+            ri < frameIndexBase + frames.length) {
+          refs.add(ri);
+        }
       }
       if (refs.isEmpty) continue;
       final refList = List<int>.unmodifiable(refs);
-      refsByIndex[i] = refList;
+      refsByIndex[sourceIdx] = refList;
       for (final refIdx in refList) {
-        sourcesByRefIndex[refIdx].add(i);
+        (sourcesByRefIndex[refIdx] ??= <int>[]).add(sourceIdx);
       }
     }
 
     return _FrameReferenceCache(
       refsByIndex: refsByIndex,
-      sourcesByRefIndex: [
-        for (final sources in sourcesByRefIndex)
-          List<int>.unmodifiable(sources),
-      ],
+      sourcesByRefIndex: sourcesByRefIndex.map(
+        (idx, sources) => MapEntry(idx, List<int>.unmodifiable(sources)),
+      ),
     );
   }
 
   List<int> refsFor(int idx) {
-    if (idx < 0 || idx >= refsByIndex.length) return const [];
-    return refsByIndex[idx];
+    return refsByIndex[idx] ?? const [];
   }
 
   List<int> sourcesForRef(int idx) {
-    if (idx < 0 || idx >= sourcesByRefIndex.length) return const [];
-    return sourcesByRefIndex[idx];
+    return sourcesByRefIndex[idx] ?? const [];
   }
 }
 
 class _RefPyramidPainter extends CustomPainter {
   final List<FrameInfo> frames;
+  final int frameIndexBase;
+  final int totalFrames;
   final _FrameReferenceCache referenceCache;
   final int currentIdx;
   final int? selectedFrameIdx;
@@ -317,6 +330,8 @@ class _RefPyramidPainter extends CustomPainter {
 
   _RefPyramidPainter({
     required this.frames,
+    required this.frameIndexBase,
+    required this.totalFrames,
     required this.referenceCache,
     required this.currentIdx,
     required this.selectedFrameIdx,
@@ -340,16 +355,24 @@ class _RefPyramidPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (frames.isEmpty) return;
+    if (totalFrames == 0 || frames.isEmpty) return;
 
-    final visibleStart = viewStart.floor().clamp(0, frames.length - 1).toInt();
-    final visibleEnd = (viewEnd.ceil() + 1).clamp(0, frames.length).toInt();
+    final windowStart = frameIndexBase;
+    final windowEnd = frameIndexBase + frames.length;
+    final visibleStart = viewStart
+        .floor()
+        .clamp(windowStart, windowEnd - 1)
+        .toInt();
+    final visibleEnd = (viewEnd.ceil() + 1)
+        .clamp(windowStart, windowEnd)
+        .toInt();
     if (visibleStart >= visibleEnd) return;
 
     // --- Layout ---
     int maxTid = 0;
     for (var i = visibleStart; i < visibleEnd; i++) {
-      if (frames[i].temporalId > maxTid) maxTid = frames[i].temporalId;
+      final f = frames[i - frameIndexBase];
+      if (f.temporalId > maxTid) maxTid = f.temporalId;
     }
     final axisH = size.height >= 96 ? analysisChartXAxisH : 0.0;
     final chartH = (size.height - axisH).clamp(1.0, double.infinity);
@@ -367,7 +390,7 @@ class _RefPyramidPainter extends CustomPainter {
     for (var i = visibleStart; i < visibleEnd; i++) {
       final frac = (i - viewStart) / span;
       final x = labelW + centerPad + frac * centerW;
-      final y = chartH - (frames[i].temporalId + 0.5) * rowH;
+      final y = chartH - (frames[i - frameIndexBase].temporalId + 0.5) * rowH;
       positions[i] = Offset(x, y);
     }
     // --- Level backgrounds ---
@@ -422,14 +445,16 @@ class _RefPyramidPainter extends CustomPainter {
 
     Offset posFor(int idx) {
       if (positions.containsKey(idx)) return positions[idx]!;
+      final localIdx = idx - frameIndexBase;
+      if (localIdx < 0 || localIdx >= frames.length) return Offset.zero;
       final frac = (idx - viewStart) / span;
       final x = labelW + centerPad + frac * centerW;
-      final y = chartH - (frames[idx].temporalId + 0.5) * rowH;
+      final y = chartH - (frames[localIdx].temporalId + 0.5) * rowH;
       return Offset(x, y);
     }
 
     bool endpointVisible(int idx) {
-      if (idx < 0 || idx >= frames.length) return false;
+      if (idx < windowStart || idx >= windowEnd) return false;
       return Rect.fromCircle(
         center: posFor(idx),
         radius: circleR,
@@ -479,7 +504,7 @@ class _RefPyramidPainter extends CustomPainter {
             ? 1.0
             : (selectedFrameIdx != null ? baseAlpha * 0.4 : baseAlpha);
         final arrowColor = frameFillColor(
-          frames[ri],
+          frames[ri - frameIndexBase],
         ).withValues(alpha: arrowAlpha);
         _drawArrow(canvas, from, to, arrowColor, lineW.toDouble(), circleR);
       }
@@ -531,7 +556,7 @@ class _RefPyramidPainter extends CustomPainter {
     for (final entry in positions.entries) {
       final i = entry.key;
       final pos = entry.value;
-      final f = frames[i];
+      final f = frames[i - frameIndexBase];
       final isSelected = i == selectedFrameIdx;
       final isRelated = related.contains(i);
 
@@ -603,11 +628,12 @@ class _RefPyramidPainter extends CustomPainter {
       axisTop: chartH,
       labelW: labelW,
       frames: frames,
-      visibleStart: visibleStart,
-      visibleEnd: visibleEnd,
+      visibleStart: visibleStart - frameIndexBase,
+      visibleEnd: visibleEnd - frameIndexBase,
       ptsOrder: ptsOrder,
       xForFrame: (idx) {
-        final frac = (idx - viewStart) / span;
+        final frameIdx = idx + frameIndexBase;
+        final frac = (frameIdx - viewStart) / span;
         return labelW + centerPad + frac * centerW;
       },
     );
@@ -638,9 +664,12 @@ class _RefPyramidPainter extends CustomPainter {
         .round()
         .clamp(visibleStart, visibleEnd - 1)
         .toInt();
-    if (frameIdx < 0 || frameIdx >= frames.length) return;
+    if (frameIdx < frameIndexBase ||
+        frameIdx >= frameIndexBase + frames.length) {
+      return;
+    }
 
-    final f = frames[frameIdx];
+    final f = frames[frameIdx - frameIndexBase];
     final pos =
         positions[frameIdx] ??
         Offset(
@@ -795,6 +824,8 @@ class _RefPyramidPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _RefPyramidPainter old) =>
       frames.length != old.frames.length ||
+      frameIndexBase != old.frameIndexBase ||
+      totalFrames != old.totalFrames ||
       referenceCache != old.referenceCache ||
       currentIdx != old.currentIdx ||
       selectedFrameIdx != old.selectedFrameIdx ||

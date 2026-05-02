@@ -457,7 +457,20 @@ class _RefPyramidPainter extends CustomPainter {
         tp.paint(canvas, pos - Offset(tp.width / 2, tp.height / 2));
       }
     }
-    _drawHoverTooltip(canvas, size, plotRect, positions, circleR);
+    _drawHoverOverlay(
+      canvas,
+      size,
+      plotRect,
+      positions,
+      circleR,
+      labelW,
+      centerPad,
+      centerW,
+      span,
+      chartH,
+      visibleStart,
+      visibleEnd,
+    );
     canvas.restore();
 
     drawFrameXAxis(
@@ -476,27 +489,48 @@ class _RefPyramidPainter extends CustomPainter {
     );
   }
 
-  void _drawHoverTooltip(
+  void _drawHoverOverlay(
     Canvas canvas,
     Size size,
     Rect plotRect,
     Map<int, Offset> positions,
     double circleR,
+    double labelW,
+    double centerPad,
+    double centerW,
+    double span,
+    double chartH,
+    int visibleStart,
+    int visibleEnd,
   ) {
     final hover = hoverPosition;
     if (hover == null || !plotRect.contains(hover)) return;
 
-    int? frameIdx;
-    for (final (idx, rect) in frameRects) {
-      if (rect.contains(hover)) {
-        frameIdx = idx;
-        break;
-      }
-    }
-    if (frameIdx == null || frameIdx < 0 || frameIdx >= frames.length) return;
+    final frameFrac = ((hover.dx - labelW - centerPad) / centerW).clamp(
+      0.0,
+      1.0,
+    );
+    final frameIdx = (viewStart + frameFrac * span).round().clamp(
+      visibleStart,
+      visibleEnd - 1,
+    );
+    if (frameIdx < 0 || frameIdx >= frames.length) return;
 
     final f = frames[frameIdx];
-    final pos = positions[frameIdx] ?? hover;
+    final pos =
+        positions[frameIdx] ??
+        Offset(
+          labelW + centerPad + ((frameIdx - viewStart) / span) * centerW,
+          hover.dy,
+        );
+    canvas.drawLine(
+      Offset(pos.dx, 0),
+      Offset(pos.dx, chartH),
+      Paint()
+        ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.3)
+        ..strokeWidth = 1,
+    );
+
     final sliceLabel = switch (f.sliceType) {
       2 => 'I',
       1 => 'P',

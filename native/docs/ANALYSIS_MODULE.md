@@ -26,15 +26,15 @@ analysis/
 
 ## 二进制格式
 
-三种自定义二进制格式，均使用 `#pragma pack(push, 1)` 紧凑排列，小端序：
+Analysis 使用三类自定义二进制格式，均为小端序，结构体使用
+`#pragma pack(push, 1)` 紧凑排列。结构体定义及 `static_assert` 尺寸校验见
+`analysis/parsers/binary_types.h`。
 
-| 格式 | 用途 | Header | Entry | 产出方 |
-|------|------|--------|-------|--------|
-| **VBI** | NALU 索引 | 16B (magic "VBI1" + num_nalus + source_size) | 16B (offset + size + nal_type + tid + layer_id + flags) | `AnalysisGenerator` |
-| **VBT** | 时间戳 | 32B (magic "VBT1" + num_packets + time_base) | 32B (pts + dts + poc + size + duration + flags) | `AnalysisGenerator` |
-| **VBS2** | CU 统计 | 16B (magic "VBS2" + width/height + num_frames) | 134B frame header + 变长 CU records | VTM DecoderApp（外部工具） |
+独立格式文档：
 
-结构体定义及 `static_assert` 尺寸校验见 `parsers/binary_types.h`。
+- [VBT](formats/VBT.md) — `.vbt`，packet 时间戳/关键帧元数据，当前 magic `VBT1`
+- [VBI](formats/VBI.md) — `.vbi`，bitstream unit 索引；扩展名保持 `.vbi`，当前写入格式为 `VBI2`，兼容读取 legacy `VBI1`
+- [VBS](formats/VBS.md) — `.vbs2`，VTM block statistics / CU 统计，当前 magic `VBS2`
 
 ## 生成管线
 
@@ -46,17 +46,11 @@ analysis/
 avformat_open_input → avformat_find_stream_info → av_read_frame 循环
   │
   ├── VBT: 从 AVPacket 提取 pts/dts/size/duration/keyframe
-  │
-  └── VBI: 解析 packet data 中的 NALU
-       ├── Annex B (start code 00 00 00 01) → 扫描 start code
-       └── Length-prefixed (MP4/MKV 容器) → 读 4B BE 长度前缀
-       └── 解析 2B VVC NALU header → nal_type/temporal_id/layer_id/flags
+  └── VBI: 按 codec 解析 bitstream unit
+       ├── H.264/HEVC/VVC: 优先通过 FFmpeg Annex-B bitstream filter 稳定化 packet
+       ├── AV1/VP9/MPEG2: 按对应 bitstream unit 规则索引
+       └── 写入 codec/unit_kind/offset/size/type/flags
 ```
-
-NALU 分类：
-- **VCL** (flags bit0): nal_type 0-11
-- **Slice** (flags bit1): 0,1,2,3,7,8,9,10
-- **Keyframe** (flags bit2): 7,8,9 (IDR_W_RADL, IDR_N_LP, CRA)
 
 VBS2 生成由 VTM DecoderApp 外部进程完成（可选），通过 `analysis_ffi.cpp` 调用。
 

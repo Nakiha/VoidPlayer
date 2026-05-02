@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import '../preferences/playback_preferences.dart';
 
 /// Manages reading and writing `config.json` located next to the executable.
 ///
@@ -103,6 +104,7 @@ class AppConfig {
   static const _themeModeKey = 'themeMode';
   static const _accentColorModeKey = 'accentColorMode';
   static const _customAccentColorKey = 'customAccentColor';
+  static const _seekAfterJumpBehaviorKey = 'seekAfterJumpBehavior';
   static const _defaultAnalysisCacheMaxBytes = 1024 * 1024 * 1024;
 
   /// Maximum analysis cache size in bytes. A value of 0 means unlimited.
@@ -145,5 +147,14 @@ class AppConfig {
 
   set customAccentColorValue(int value) {
     section(_preferencesKey)[_customAccentColorKey] = value;
+  }
+
+  SeekAfterJumpBehavior get seekAfterJumpBehavior {
+    final value = section(_preferencesKey)[_seekAfterJumpBehaviorKey];
+    return SeekAfterJumpBehavior.fromStorage(value is String ? value : '');
+  }
+
+  set seekAfterJumpBehavior(SeekAfterJumpBehavior value) {
+    section(_preferencesKey)[_seekAfterJumpBehaviorKey] = value.storageValue;
   }
 }

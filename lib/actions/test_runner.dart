@@ -5,6 +5,8 @@ import 'dart:math' as math;
 import 'package:window_manager/window_manager.dart' as wm;
 
 import '../app_log.dart';
+import '../config/app_config.dart';
+import '../preferences/playback_preferences.dart';
 import 'action_registry.dart';
 import '../video_renderer_controller.dart';
 import '../windows/window_manager.dart';
@@ -44,6 +46,11 @@ class ScriptWaitAnalysisProcessCount extends ScriptInstruction {
 class ScriptSetAnalysisTestScript extends ScriptInstruction {
   final String path;
   const ScriptSetAnalysisTestScript(super.time, this.path);
+}
+
+class ScriptSetSeekAfterJumpBehavior extends ScriptInstruction {
+  final SeekAfterJumpBehavior behavior;
+  const ScriptSetSeekAfterJumpBehavior(super.time, this.behavior);
 }
 
 class ScriptQuit extends ScriptInstruction {
@@ -143,6 +150,13 @@ class TestRunner {
       case ScriptSetAnalysisTestScript(:final path):
         log.info('TestRunner ${instr.time}: SET_ANALYSIS_TEST_SCRIPT $path');
         WindowManager.analysisTestScriptPath = path;
+
+      case ScriptSetSeekAfterJumpBehavior(:final behavior):
+        log.info(
+          'TestRunner ${instr.time}: SET_SEEK_AFTER_JUMP_BEHAVIOR ${behavior.storageValue}',
+        );
+        AppConfig.instance.seekAfterJumpBehavior = behavior;
+        await AppConfig.instance.save();
 
       case ScriptQuit(:final exitCode):
         log.info('TestRunner ${instr.time}: QUIT $exitCode');
@@ -834,6 +848,15 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptSetAnalysisTestScript(time, args[0]);
+    case 'SET_SEEK_AFTER_JUMP_BEHAVIOR':
+      if (args.isEmpty) {
+        log.warning(
+          'SET_SEEK_AFTER_JUMP_BEHAVIOR missing behavior argument: $rawLine',
+        );
+        return null;
+      }
+      final behavior = SeekAfterJumpBehavior.fromStorage(args[0]);
+      return ScriptSetSeekAfterJumpBehavior(time, behavior);
 
     // Asserts — playback
     case 'ASSERT_PLAYING':

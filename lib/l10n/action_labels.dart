@@ -16,6 +16,8 @@ String resolveActionLabel(String labelKey, AppLocalizations l) {
     'actionToggleLayout' => l.actionToggleLayout,
     'actionSeekForward' => l.actionSeekForward,
     'actionSeekBackward' => l.actionSeekBackward,
+    'actionToggleFullScreen' => l.actionToggleFullScreen,
+    'actionExitFullScreen' => l.actionExitFullScreen,
     _ => labelKey,
   };
 }

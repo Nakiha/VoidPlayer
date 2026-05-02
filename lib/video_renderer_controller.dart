@@ -219,6 +219,11 @@ class NativePlayerController {
           .map((e) => _trackInfoFromValue(e, 'createPlayer'))
           .toList(),
     );
+    if (_disposed) {
+      _textureId = null;
+      await _channel.invokeMethod<void>('destroyPlayer');
+      throw StateError('NativePlayerController is disposed');
+    }
     final backgroundColor = _viewportBackgroundColor;
     if (backgroundColor != null) {
       await setViewportBackgroundColor(backgroundColor);

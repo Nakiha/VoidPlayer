@@ -7,8 +7,6 @@ import '../../l10n/app_localizations.dart';
 import '../../theme/app_appearance.dart';
 import 'settings_page_style.dart';
 
-const double _appearanceComboWidth = 260;
-
 class AppearanceSettingsPage extends StatelessWidget {
   const AppearanceSettingsPage({super.key});
 
@@ -39,7 +37,7 @@ class _AppearanceSettingsContent extends StatelessWidget {
         children: [
           SettingsPageTitle(text: l.appearance),
           SettingsPageStyle.contentGap,
-          _ComboRow<AppThemePreference>(
+          SettingsComboRow<AppThemePreference>(
             label: l.appearanceMode,
             icon: Icons.contrast,
             value: controller.themePreference,
@@ -54,7 +52,7 @@ class _AppearanceSettingsContent extends StatelessWidget {
             },
           ),
           SettingsPageStyle.contentGap,
-          _ComboRow<AppAccentPreference>(
+          SettingsComboRow<AppAccentPreference>(
             label: l.themeColor,
             icon: Icons.palette_outlined,
             value: controller.accentPreference,
@@ -85,156 +83,6 @@ class _AppearanceSettingsContent extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ComboRow<T> extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final T value;
-  final List<T> items;
-  final String Function(T value) labelFor;
-  final ValueChanged<T> onChanged;
-
-  const _ComboRow({
-    required this.label,
-    required this.icon,
-    required this.value,
-    required this.items,
-    required this.labelFor,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 36),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: theme.colorScheme.primary),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              label,
-              style: SettingsPageStyle.body(context),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 16),
-          SizedBox(
-            width: _appearanceComboWidth,
-            child: _SettingsMenuCombo<T>(
-              value: value,
-              items: items,
-              labelFor: labelFor,
-              onChanged: onChanged,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SettingsMenuCombo<T> extends StatelessWidget {
-  final T value;
-  final List<T> items;
-  final String Function(T value) labelFor;
-  final ValueChanged<T> onChanged;
-
-  const _SettingsMenuCombo({
-    required this.value,
-    required this.items,
-    required this.labelFor,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return MenuAnchor(
-      alignmentOffset: const Offset(0, 4),
-      style: MenuStyle(
-        backgroundColor: WidgetStatePropertyAll(
-          theme.colorScheme.surfaceContainerHigh,
-        ),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-        padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(vertical: 4),
-        ),
-      ),
-      menuChildren: [
-        for (final item in items)
-          MenuItemButton(
-            leadingIcon: item == value
-                ? Icon(Icons.check, size: 16, color: theme.colorScheme.primary)
-                : const SizedBox(width: 16),
-            requestFocusOnHover: false,
-            style: ButtonStyle(
-              padding: WidgetStatePropertyAll(
-                EdgeInsets.only(left: item == value ? 8.0 : 12.0, right: 16),
-              ),
-            ),
-            onPressed: () => onChanged(item),
-            child: SizedBox(
-              width: 160,
-              child: Text(
-                labelFor(item),
-                style: SettingsPageStyle.body(context)?.copyWith(
-                  color: item == value ? theme.colorScheme.primary : null,
-                ),
-              ),
-            ),
-          ),
-      ],
-      builder: (context, controller, child) {
-        return SizedBox(
-          height: 36,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () {
-                if (controller.isOpen) {
-                  controller.close();
-                } else {
-                  controller.open();
-                }
-              },
-              borderRadius: BorderRadius.circular(6),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border.all(color: theme.colorScheme.outlineVariant),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          labelFor(value),
-                          style: SettingsPageStyle.body(context),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Icon(
-                        Icons.arrow_drop_down,
-                        size: 20,
-                        color: theme.iconTheme.color,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }

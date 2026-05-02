@@ -136,6 +136,9 @@
   "appearance": "Appearance",
   "@appearance": { "description": "Navigation: appearance settings" },
 
+  "preferences": "Preferences",
+  "@preferences": { "description": "Navigation: general preferences" },
+
   "cache": "Cache",
   "@cache": { "description": "Navigation: cache settings" },
 
@@ -195,6 +198,15 @@
 
   "brightness": "Brightness",
   "@brightness": { "description": "Brightness slider label" },
+
+  "seekAfterJumpBehavior": "Player behavior after seeking",
+  "@seekAfterJumpBehavior": { "description": "Seek behavior preference label" },
+
+  "seekBehaviorForcePause": "Force pause",
+  "@seekBehaviorForcePause": { "description": "Seek behavior option: always pause after seek" },
+
+  "seekBehaviorKeepPreviousState": "Keep previous state",
+  "@seekBehaviorKeepPreviousState": { "description": "Seek behavior option: keep playing if player was playing before seek" },
 
   "cacheMaxLimit": "Maximum cache size (0 = unlimited)",
   "@cacheMaxLimit": { "description": "Analysis cache maximum size setting label" },

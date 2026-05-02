@@ -125,11 +125,12 @@ class _ViewportPanelState extends State<ViewportPanel> {
         logicalHeight > 0) {
       _lastReportedLogicalSize = logicalSize;
       _lastReportedDevicePixelRatio = devicePixelRatio;
-      widget.onResize?.call(
-        (logicalWidth * devicePixelRatio).round(),
-        (logicalHeight * devicePixelRatio).round(),
-        devicePixelRatio,
-      );
+      final physicalWidth = (logicalWidth * devicePixelRatio).round();
+      final physicalHeight = (logicalHeight * devicePixelRatio).round();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        widget.onResize?.call(physicalWidth, physicalHeight, devicePixelRatio);
+      });
     }
   }
 

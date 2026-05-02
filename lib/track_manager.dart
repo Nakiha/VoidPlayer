@@ -61,15 +61,18 @@ class TrackManager with ChangeNotifier {
 
   /// Move a track from [oldIndex] to [newIndex] in the display order (drag reorder).
   ///
-  /// [newIndex] follows Flutter's ReorderableListView convention: it refers to
-  /// the index in the list AFTER the item has been conceptually removed from
-  /// [oldIndex]. This means [newIndex] can equal `_entries.length - 1` (append).
+  /// [newIndex] follows Flutter's ReorderableListView convention: when moving
+  /// an item down, the reported destination still includes the removed item.
   void moveTrack(int oldIndex, int newIndex) {
-    if (oldIndex == newIndex) return;
     if (oldIndex < 0 || oldIndex >= _entries.length) return;
+    var target = newIndex;
+    if (oldIndex < target) {
+      target -= 1;
+    }
+    if (oldIndex == target) return;
+
     final entry = _entries.removeAt(oldIndex);
-    // After removal the list is shorter; clamp newIndex to valid insert range.
-    final clamped = newIndex.clamp(0, _entries.length);
+    final clamped = target.clamp(0, _entries.length).toInt();
     _entries.insert(clamped, entry);
     notifyListeners();
   }

@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import '../../app_log.dart';
+import '../../config/app_config.dart';
+import '../../preferences/playback_preferences.dart';
 import '../../startup_options.dart';
 import '../../track_manager.dart';
 import '../../video_renderer_controller.dart';
@@ -44,7 +46,9 @@ class MainWindowPlaybackCoordinator {
   Timer? _pollTimer;
   Timer? _loopBoundaryTimer;
   bool _disposed = false;
+  bool _resumeAfterSeek = false;
   int _pollSerial = 0;
+  int _seekSerial = 0;
   int _loopRangeSyncSerial = 0;
 
   MainWindowPlaybackCoordinator({
@@ -111,6 +115,7 @@ class MainWindowPlaybackCoordinator {
 
   Future<void> play() async {
     if (_disposed) return;
+    _resumeAfterSeek = false;
     if (loopRangeEnabled() && !_currentPtsInsideLoopRange) {
       await _seekToAsync(resolvedLoopStartUs);
       if (_disposed || !mounted()) return;
@@ -123,6 +128,8 @@ class MainWindowPlaybackCoordinator {
 
   Future<void> pause() async {
     if (_disposed) return;
+    _resumeAfterSeek = false;
+    _seekSerial++;
     await controller.pause();
     if (_disposed || !mounted()) return;
     cancelLoopBoundaryTimer();
@@ -144,9 +151,16 @@ class MainWindowPlaybackCoordinator {
 
   Future<void> _seekToAsync(int ptsUs) async {
     if (_disposed) return;
+    final seekSerial = ++_seekSerial;
     _pollSerial++;
     setSeekPreview(ptsUs);
-    if (isPlaying()) {
+    final behavior = AppConfig.instance.seekAfterJumpBehavior;
+    final wasPlaying = isPlaying();
+    final shouldResume =
+        behavior == SeekAfterJumpBehavior.keepPreviousState &&
+        (wasPlaying || _resumeAfterSeek);
+    if (wasPlaying) {
+      _resumeAfterSeek = behavior == SeekAfterJumpBehavior.keepPreviousState;
       cancelLoopBoundaryTimer();
       await controller.pause();
       if (_disposed || !mounted()) return;
@@ -154,6 +168,16 @@ class MainWindowPlaybackCoordinator {
     }
     await controller.seek(ptsUs);
     if (_disposed || !mounted()) return;
+
+    if (seekSerial != _seekSerial) return;
+
+    final resume = shouldResume && _resumeAfterSeek;
+    _resumeAfterSeek = false;
+    if (resume) {
+      await controller.play();
+      if (_disposed || !mounted() || seekSerial != _seekSerial) return;
+      setPlaying(true);
+    }
     scheduleLoopBoundaryTimer(fromPtsUs: ptsUs);
   }
 

@@ -29,6 +29,11 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   late List<AnalysisWorkspaceEntry> _entries;
   final _splitLayout = AnalysisSplitLayoutController();
 
+  int _clampIndex(int value, int length) {
+    if (length <= 0) return 0;
+    return value.clamp(0, length - 1).toInt();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -49,7 +54,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     final client = widget.ipcClient;
     if (client == null || !client.hasSnapshot) return;
     final selectedHash = _entries.isNotEmpty
-        ? _entries[_selected.clamp(0, _entries.length - 1)].hash
+        ? _entries[_clampIndex(_selected, _entries.length)].hash
         : null;
     final entries = [
       for (final track in client.tracks)
@@ -58,7 +63,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     final nextSelected = selectedHash == null
         ? entries.isEmpty
               ? 0
-              : _selected.clamp(0, entries.length - 1)
+              : _clampIndex(_selected, entries.length)
         : entries.indexWhere((entry) => entry.hash == selectedHash);
 
     void applySnapshot() {
@@ -70,7 +75,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
           ? 0
           : nextSelected >= 0
           ? nextSelected
-          : _selected.clamp(0, entries.length - 1);
+          : _clampIndex(_selected, entries.length);
     }
 
     if (!mounted) {
@@ -86,7 +91,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     if (entries.isEmpty) {
       return const Scaffold(body: SizedBox.shrink());
     }
-    final selected = _selected.clamp(0, entries.length - 1);
+    final selected = _clampIndex(_selected, entries.length);
     final modeToggleEnabled = entries.length > 1;
 
     return Scaffold(

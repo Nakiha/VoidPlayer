@@ -4,6 +4,7 @@ import '../l10n/action_labels.dart';
 import '../l10n/app_localizations.dart';
 import 'settings/appearance_settings_page.dart';
 import 'settings/cache_settings_page.dart';
+import 'settings/preferences_settings_page.dart';
 import 'settings/settings_page_style.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -38,6 +39,10 @@ class _SettingsPageState extends State<SettingsPage> {
               label: Text(l.appearance),
             ),
             NavigationRailDestination(
+              icon: const Icon(Icons.tune),
+              label: Text(l.preferences),
+            ),
+            NavigationRailDestination(
               icon: const Icon(Icons.storage),
               label: Text(l.cache),
             ),
@@ -57,7 +62,8 @@ class _SettingsPageState extends State<SettingsPage> {
     return switch (_selectedIndex) {
       0 => const _ShortcutsPage(),
       1 => const AppearanceSettingsPage(),
-      2 => const CacheSettingsPage(),
+      2 => const PreferencesSettingsPage(),
+      3 => const CacheSettingsPage(),
       _ => const _AboutPage(),
     };
   }

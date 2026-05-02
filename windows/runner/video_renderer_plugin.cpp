@@ -16,6 +16,7 @@
 #include <cstring>
 #include <cwchar>
 #include <exception>
+#include <cmath>
 #include <mutex>
 #include <vector>
 #include <sstream>
@@ -354,6 +355,34 @@ std::shared_ptr<vr::NativePlayer> pin_global_player() {
     return g_player_weak.lock();
 }
 
+bool read_int64_arg(const flutter::EncodableValue& value, int64_t& out) {
+    if (std::holds_alternative<int>(value)) {
+        out = static_cast<int64_t>(std::get<int>(value));
+        return true;
+    }
+    if (std::holds_alternative<int64_t>(value)) {
+        out = std::get<int64_t>(value);
+        return true;
+    }
+    return false;
+}
+
+bool read_double_arg(const flutter::EncodableValue& value, double& out) {
+    if (std::holds_alternative<double>(value)) {
+        out = std::get<double>(value);
+        return true;
+    }
+    if (std::holds_alternative<int>(value)) {
+        out = static_cast<double>(std::get<int>(value));
+        return true;
+    }
+    if (std::holds_alternative<int64_t>(value)) {
+        out = static_cast<double>(std::get<int64_t>(value));
+        return true;
+    }
+    return false;
+}
+
 extern "C" __declspec(dllexport)
 const NakiVrDiagnostics* naki_vr_get_diagnostics() {
     thread_local NakiVrDiagnostics d{};
@@ -463,6 +492,13 @@ void VideoRendererPlugin::HandleMethodCall(
 
     const auto& method = method_call.method_name();
     try {
+    auto require_player = [&]() -> bool {
+        if (!player_) {
+            result->Error("NO_PLAYER", "Player not created");
+            return false;
+        }
+        return true;
+    };
 
     if (method == "initLogging") {
         InitLogging(method_call.arguments(), std::move(result));
@@ -496,83 +532,110 @@ void VideoRendererPlugin::HandleMethodCall(
         }
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "play") {
-        if (player_) player_->play();
+        if (!require_player()) return;
+        player_->play();
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "pause") {
-        if (player_) player_->pause();
+        if (!require_player()) return;
+        player_->pause();
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "seek") {
-        if (player_ && method_call.arguments()) {
-            const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
-            if (args) {
-                auto it = args->find(flutter::EncodableValue("ptsUs"));
-                if (it != args->end()) {
-                    int64_t pts = 0;
-                    // Handle both int (32-bit) and long (64-bit) from Dart
-                    if (std::holds_alternative<int>(it->second)) {
-                        pts = static_cast<int64_t>(std::get<int>(it->second));
-                    } else if (std::holds_alternative<int64_t>(it->second)) {
-                        pts = std::get<int64_t>(it->second);
-                    }
-                    spdlog::info("[VideoRendererPlugin] seek: pts={}us, player alive={}", pts, (bool)player_);
-                    player_->seek(pts, vr::SeekType::Exact);
-                    spdlog::info("[VideoRendererPlugin] seek completed");
-                }
-            }
+        if (!require_player()) return;
+        if (!method_call.arguments()) {
+            result->Error("INVALID_ARGS", "Arguments required");
+            return;
         }
+        const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+        if (!args) {
+            result->Error("INVALID_ARGS", "Arguments must be a map");
+            return;
+        }
+        auto it = args->find(flutter::EncodableValue("ptsUs"));
+        int64_t pts = 0;
+        if (it == args->end() || !read_int64_arg(it->second, pts) || pts < 0) {
+            result->Error("BAD_ARGS", "ptsUs must be a non-negative integer");
+            return;
+        }
+        spdlog::info("[VideoRendererPlugin] seek: pts={}us", pts);
+        player_->seek(pts, vr::SeekType::Exact);
+        spdlog::info("[VideoRendererPlugin] seek completed");
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "resize") {
-        if (player_ && method_call.arguments()) {
-            const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
-            if (args) {
-                int w = 1920, h = 1080;
-                auto it = args->find(flutter::EncodableValue("width"));
-                if (it != args->end()) w = std::get<int>(it->second);
-                it = args->find(flutter::EncodableValue("height"));
-                if (it != args->end()) h = std::get<int>(it->second);
-                player_->resize(w, h);
-            }
+        if (!require_player()) return;
+        if (!method_call.arguments()) {
+            result->Error("INVALID_ARGS", "Arguments required");
+            return;
         }
+        const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+        if (!args) {
+            result->Error("INVALID_ARGS", "Arguments must be a map");
+            return;
+        }
+        int w = 1920, h = 1080;
+        auto it = args->find(flutter::EncodableValue("width"));
+        if (it != args->end()) w = std::get<int>(it->second);
+        it = args->find(flutter::EncodableValue("height"));
+        if (it != args->end()) h = std::get<int>(it->second);
+        if (w <= 0 || h <= 0 || w > 16384 || h > 16384) {
+            result->Error("BAD_ARGS", "Invalid viewport size");
+            return;
+        }
+        player_->resize(w, h);
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "setViewportBackgroundColor") {
-        if (player_ && method_call.arguments()) {
-            const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
-            if (args) {
-                auto it = args->find(flutter::EncodableValue("color"));
-                if (it != args->end()) {
-                    int64_t raw = 0;
-                    if (std::holds_alternative<int>(it->second)) {
-                        raw = static_cast<int64_t>(std::get<int>(it->second));
-                    } else if (std::holds_alternative<int64_t>(it->second)) {
-                        raw = std::get<int64_t>(it->second);
-                    }
-                    const uint32_t color = static_cast<uint32_t>(raw);
-                    const float a = static_cast<float>((color >> 24) & 0xFF) / 255.0f;
-                    const float r = static_cast<float>((color >> 16) & 0xFF) / 255.0f;
-                    const float g = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
-                    const float b = static_cast<float>(color & 0xFF) / 255.0f;
-                    player_->set_background_color(r, g, b, a);
-                }
-            }
+        if (!require_player()) return;
+        if (!method_call.arguments()) {
+            result->Error("INVALID_ARGS", "Arguments required");
+            return;
         }
+        const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+        if (!args) {
+            result->Error("INVALID_ARGS", "Arguments must be a map");
+            return;
+        }
+        auto it = args->find(flutter::EncodableValue("color"));
+        int64_t raw = 0;
+        if (it == args->end() || !read_int64_arg(it->second, raw)) {
+            result->Error("BAD_ARGS", "color must be an integer");
+            return;
+        }
+        const uint32_t color = static_cast<uint32_t>(raw);
+        const float a = static_cast<float>((color >> 24) & 0xFF) / 255.0f;
+        const float r = static_cast<float>((color >> 16) & 0xFF) / 255.0f;
+        const float g = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
+        const float b = static_cast<float>(color & 0xFF) / 255.0f;
+        player_->set_background_color(r, g, b, a);
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "setSpeed") {
-        if (player_ && method_call.arguments()) {
-            const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
-            if (args) {
-                auto it = args->find(flutter::EncodableValue("speed"));
-                if (it != args->end()) {
-                    double speed = std::get<double>(it->second);
-                    player_->set_speed(speed);
-                }
-            }
+        if (!require_player()) return;
+        if (!method_call.arguments()) {
+            result->Error("INVALID_ARGS", "Arguments required");
+            return;
         }
+        const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+        if (!args) {
+            result->Error("INVALID_ARGS", "Arguments must be a map");
+            return;
+        }
+        auto it = args->find(flutter::EncodableValue("speed"));
+        double speed = 0.0;
+        if (it == args->end() || !read_double_arg(it->second, speed)) {
+            result->Error("BAD_ARGS", "speed must be a number");
+            return;
+        }
+        if (!std::isfinite(speed) || speed <= 0.0 || speed > 16.0) {
+            result->Error("BAD_ARGS", "Invalid playback speed");
+            return;
+        }
+        player_->set_speed(speed);
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "stepForward") {
-        if (player_) player_->step_forward();
+        if (!require_player()) return;
+        player_->step_forward();
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "stepBackward") {
-        if (player_) player_->step_backward();
+        if (!require_player()) return;
+        player_->step_backward();
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "currentPts") {
         int64_t pts = player_ ? player_->current_pts_us() : 0;
@@ -584,30 +647,35 @@ void VideoRendererPlugin::HandleMethodCall(
         bool playing = player_ ? player_->is_playing() : false;
         result->Success(flutter::EncodableValue(playing));
     } else if (method == "applyLayout") {
-        if (player_ && method_call.arguments()) {
-            const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
-            if (args) {
-                vr::LayoutState ls;
-                auto it = args->find(flutter::EncodableValue("mode"));
-                if (it != args->end()) ls.mode = std::get<int>(it->second);
-                it = args->find(flutter::EncodableValue("splitPos"));
-                if (it != args->end()) ls.split_pos = static_cast<float>(std::get<double>(it->second));
-                it = args->find(flutter::EncodableValue("zoomRatio"));
-                if (it != args->end()) ls.zoom_ratio = static_cast<float>(std::get<double>(it->second));
-                it = args->find(flutter::EncodableValue("viewOffsetX"));
-                if (it != args->end()) ls.view_offset[0] = static_cast<float>(std::get<double>(it->second));
-                it = args->find(flutter::EncodableValue("viewOffsetY"));
-                if (it != args->end()) ls.view_offset[1] = static_cast<float>(std::get<double>(it->second));
-                it = args->find(flutter::EncodableValue("order"));
-                if (it != args->end()) {
-                    const auto& order_list = std::get<flutter::EncodableList>(it->second);
-                    for (size_t i = 0; i < 4 && i < order_list.size(); ++i) {
-                        ls.order[i] = std::get<int>(order_list[i]);
-                    }
-                }
-                player_->apply_layout(ls);
+        if (!require_player()) return;
+        if (!method_call.arguments()) {
+            result->Error("INVALID_ARGS", "Arguments required");
+            return;
+        }
+        const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+        if (!args) {
+            result->Error("INVALID_ARGS", "Arguments must be a map");
+            return;
+        }
+        vr::LayoutState ls;
+        auto it = args->find(flutter::EncodableValue("mode"));
+        if (it != args->end()) ls.mode = std::get<int>(it->second);
+        it = args->find(flutter::EncodableValue("splitPos"));
+        if (it != args->end()) ls.split_pos = static_cast<float>(std::get<double>(it->second));
+        it = args->find(flutter::EncodableValue("zoomRatio"));
+        if (it != args->end()) ls.zoom_ratio = static_cast<float>(std::get<double>(it->second));
+        it = args->find(flutter::EncodableValue("viewOffsetX"));
+        if (it != args->end()) ls.view_offset[0] = static_cast<float>(std::get<double>(it->second));
+        it = args->find(flutter::EncodableValue("viewOffsetY"));
+        if (it != args->end()) ls.view_offset[1] = static_cast<float>(std::get<double>(it->second));
+        it = args->find(flutter::EncodableValue("order"));
+        if (it != args->end()) {
+            const auto& order_list = std::get<flutter::EncodableList>(it->second);
+            for (size_t i = 0; i < 4 && i < order_list.size(); ++i) {
+                ls.order[i] = std::get<int>(order_list[i]);
             }
         }
+        player_->apply_layout(ls);
         result->Success(flutter::EncodableValue(nullptr));
     } else if (method == "getTracks") {
         flutter::EncodableList tracks_list;
@@ -768,6 +836,10 @@ void VideoRendererPlugin::CreatePlayer(
         return;
     }
     const auto& paths_list = std::get<flutter::EncodableList>(paths_it->second);
+    if (paths_list.empty()) {
+        result->Error("BAD_ARGS", "videoPaths must not be empty");
+        return;
+    }
 
     int width = 1920;
     int height = 1080;
@@ -775,6 +847,10 @@ void VideoRendererPlugin::CreatePlayer(
     auto h_it = args->find(flutter::EncodableValue("height"));
     if (w_it != args->end()) width = std::get<int>(w_it->second);
     if (h_it != args->end()) height = std::get<int>(h_it->second);
+    if (width <= 0 || height <= 0 || width > 16384 || height > 16384) {
+        result->Error("BAD_ARGS", "Invalid viewport size");
+        return;
+    }
 
     // Create player in headless mode
     vr::RendererConfig config;
@@ -785,7 +861,12 @@ void VideoRendererPlugin::CreatePlayer(
     config.use_hardware_decode = true;
 
     for (const auto& p : paths_list) {
-        config.video_paths.push_back(std::get<std::string>(p));
+        const auto& path = std::get<std::string>(p);
+        if (path.empty()) {
+            result->Error("BAD_ARGS", "video path must not be empty");
+            return;
+        }
+        config.video_paths.push_back(path);
     }
 
     player_ = std::make_shared<vr::NativePlayer>();
@@ -1000,8 +1081,12 @@ void VideoRendererPlugin::SetTrackOffset(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     try {
-    if (!player_ || !arguments) {
-        result->Error("INVALID", "Player not created or no arguments");
+    if (!player_) {
+        result->Error("NO_PLAYER", "Player not created");
+        return;
+    }
+    if (!arguments) {
+        result->Error("INVALID_ARGS", "Arguments required");
         return;
     }
     const auto* args = std::get_if<flutter::EncodableMap>(arguments);
@@ -1010,19 +1095,20 @@ void VideoRendererPlugin::SetTrackOffset(
         return;
     }
 
-    int file_id = 0;
+    int64_t file_id = 0;
     int64_t offset_us = 0;
     auto it = args->find(flutter::EncodableValue("fileId"));
-    if (it != args->end()) file_id = std::get<int>(it->second);
+    if (it == args->end() || !read_int64_arg(it->second, file_id)) {
+        result->Error("BAD_ARGS", "fileId must be an integer");
+        return;
+    }
     it = args->find(flutter::EncodableValue("offsetUs"));
-    if (it != args->end()) {
-        if (std::holds_alternative<int>(it->second))
-            offset_us = static_cast<int64_t>(std::get<int>(it->second));
-        else if (std::holds_alternative<int64_t>(it->second))
-            offset_us = std::get<int64_t>(it->second);
+    if (it == args->end() || !read_int64_arg(it->second, offset_us)) {
+        result->Error("BAD_ARGS", "offsetUs must be an integer");
+        return;
     }
 
-    player_->set_track_offset(file_id, offset_us);
+    player_->set_track_offset(static_cast<int>(file_id), offset_us);
     spdlog::info("[VideoRendererPlugin] setTrackOffset: file_id={}, offset_us={}", file_id, offset_us);
     result->Success(flutter::EncodableValue(nullptr));
     } catch (const std::bad_variant_access& e) {
@@ -1039,8 +1125,12 @@ void VideoRendererPlugin::SetLoopRange(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     try {
-    if (!player_ || !arguments) {
-        result->Error("INVALID", "Player not created or no arguments");
+    if (!player_) {
+        result->Error("NO_PLAYER", "Player not created");
+        return;
+    }
+    if (!arguments) {
+        result->Error("INVALID_ARGS", "Arguments required");
         return;
     }
     const auto* args = std::get_if<flutter::EncodableMap>(arguments);
@@ -1055,18 +1145,18 @@ void VideoRendererPlugin::SetLoopRange(
     auto it = args->find(flutter::EncodableValue("enabled"));
     if (it != args->end()) enabled = std::get<bool>(it->second);
     it = args->find(flutter::EncodableValue("startUs"));
-    if (it != args->end()) {
-        if (std::holds_alternative<int>(it->second))
-            start_us = static_cast<int64_t>(std::get<int>(it->second));
-        else if (std::holds_alternative<int64_t>(it->second))
-            start_us = std::get<int64_t>(it->second);
+    if (it != args->end() && !read_int64_arg(it->second, start_us)) {
+        result->Error("BAD_ARGS", "startUs must be an integer");
+        return;
     }
     it = args->find(flutter::EncodableValue("endUs"));
-    if (it != args->end()) {
-        if (std::holds_alternative<int>(it->second))
-            end_us = static_cast<int64_t>(std::get<int>(it->second));
-        else if (std::holds_alternative<int64_t>(it->second))
-            end_us = std::get<int64_t>(it->second);
+    if (it != args->end() && !read_int64_arg(it->second, end_us)) {
+        result->Error("BAD_ARGS", "endUs must be an integer");
+        return;
+    }
+    if (enabled && (start_us < 0 || end_us <= start_us)) {
+        result->Error("BAD_ARGS", "Invalid loop range");
+        return;
     }
 
     player_->set_loop_range(enabled, start_us, end_us);

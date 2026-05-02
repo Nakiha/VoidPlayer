@@ -6,9 +6,10 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <fstream>
-#include <iterator>
+#include <limits>
 
 namespace vr::analysis {
 
@@ -251,6 +252,231 @@ std::string lowercase_extension(const std::string& path) {
     return ext;
 }
 
+void parse_unit_header(VbiCodec codec,
+                       const uint8_t* data,
+                       int len,
+                       bool key_packet,
+                       VbiEntry& entry) {
+    switch (codec) {
+    case VbiCodec::H264:
+        parse_h264(data, len, key_packet, entry);
+        break;
+    case VbiCodec::HEVC:
+        parse_hevc(data, len, key_packet, entry);
+        break;
+    case VbiCodec::VVC:
+        parse_vvc(data, len, key_packet, entry);
+        break;
+    case VbiCodec::MPEG2:
+        if (len > 0) {
+            entry.nal_type = data[0];
+            if (data[0] == 0x00 || (data[0] >= 0x01 && data[0] <= 0xAF)) {
+                entry.flags |= VBI_FLAG_IS_VCL;
+            }
+            if (data[0] >= 0x01 && data[0] <= 0xAF) {
+                entry.flags |= VBI_FLAG_IS_SLICE;
+            }
+            if (data[0] == 0x00 && len >= 3) {
+                const uint16_t bits = static_cast<uint16_t>((data[1] << 8) | data[2]);
+                const uint8_t picture_coding_type = (bits >> 3) & 0x07;
+                if (picture_coding_type == 1) {
+                    entry.flags |= VBI_FLAG_IS_KEYFRAME;
+                }
+            }
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+void append_streamed_unit(VbiCodec codec,
+                          const std::vector<uint8_t>& header,
+                          uint64_t unit_size,
+                          BitstreamIndex& index) {
+    if (unit_size == 0 || unit_size > std::numeric_limits<uint32_t>::max()) {
+        return;
+    }
+
+    VbiEntry entry{};
+    entry.offset = index.source_size;
+    entry.size = static_cast<uint32_t>(unit_size);
+    parse_unit_header(codec,
+                      header.data(),
+                      static_cast<int>(header.size()),
+                      false,
+                      entry);
+    index.entries.push_back(entry);
+    index.source_size += entry.size;
+}
+
+bool index_annex_b_stream(std::ifstream& in, VbiCodec codec, BitstreamIndex& index) {
+    constexpr size_t kChunkSize = 64 * 1024;
+    constexpr size_t kHeaderBytes = 16;
+    std::array<uint8_t, kChunkSize> chunk{};
+
+    bool has_current = false;
+    int current_prefix = 0;
+    uint64_t current_size = 0;
+    int zero_count = 0;
+    std::vector<uint8_t> header;
+    header.reserve(kHeaderBytes);
+
+    while (in) {
+        in.read(reinterpret_cast<char*>(chunk.data()), static_cast<std::streamsize>(chunk.size()));
+        const auto read = in.gcount();
+        if (read <= 0) break;
+
+        for (std::streamsize i = 0; i < read; ++i) {
+            const uint8_t byte = chunk[static_cast<size_t>(i)];
+            const int zeros_before = zero_count;
+            if (has_current) {
+                ++current_size;
+            }
+
+            const bool start_code = byte == 1 && zeros_before >= 2;
+            if (start_code) {
+                const int prefix = zeros_before >= 3 ? 4 : 3;
+                if (has_current && current_size >= static_cast<uint64_t>(prefix)) {
+                    current_size -= static_cast<uint64_t>(prefix);
+                    if (current_size > static_cast<uint64_t>(current_prefix)) {
+                        append_streamed_unit(codec, header, current_size, index);
+                    }
+                }
+
+                has_current = true;
+                current_prefix = prefix;
+                current_size = static_cast<uint64_t>(prefix);
+                header.clear();
+                zero_count = 0;
+                continue;
+            }
+
+            if (byte == 0) {
+                ++zero_count;
+            } else {
+                zero_count = 0;
+            }
+
+            if (has_current && current_size > static_cast<uint64_t>(current_prefix) &&
+                header.size() < kHeaderBytes) {
+                header.push_back(byte);
+            }
+        }
+    }
+
+    if (has_current && current_size > static_cast<uint64_t>(current_prefix)) {
+        append_streamed_unit(codec, header, current_size, index);
+    }
+    return !index.entries.empty();
+}
+
+bool read_exact(std::istream& in, void* data, std::streamsize size) {
+    in.read(static_cast<char*>(data), size);
+    return in.gcount() == size;
+}
+
+bool skip_exact(std::istream& in, uint64_t size) {
+    constexpr size_t kChunkSize = 64 * 1024;
+    std::array<char, kChunkSize> scratch{};
+    while (size > 0) {
+        const auto to_read = static_cast<std::streamsize>(
+            std::min<uint64_t>(size, scratch.size()));
+        if (!read_exact(in, scratch.data(), to_read)) {
+            return false;
+        }
+        size -= static_cast<uint64_t>(to_read);
+    }
+    return true;
+}
+
+std::vector<uint8_t> read_prefix(std::istream& in, size_t max_bytes) {
+    std::vector<uint8_t> prefix(max_bytes);
+    in.read(reinterpret_cast<char*>(prefix.data()), static_cast<std::streamsize>(prefix.size()));
+    prefix.resize(static_cast<size_t>(std::max<std::streamsize>(0, in.gcount())));
+    return prefix;
+}
+
+uint32_t read_be32(const uint8_t bytes[4]) {
+    return (static_cast<uint32_t>(bytes[0]) << 24) |
+           (static_cast<uint32_t>(bytes[1]) << 16) |
+           (static_cast<uint32_t>(bytes[2]) << 8) |
+           static_cast<uint32_t>(bytes[3]);
+}
+
+bool index_length_prefixed_stream(std::ifstream& in, VbiCodec codec, BitstreamIndex& index) {
+    constexpr size_t kHeaderBytes = 16;
+    uint8_t len_bytes[4] = {};
+    while (read_exact(in, len_bytes, sizeof(len_bytes))) {
+        const uint32_t unit_len = read_be32(len_bytes);
+        if (unit_len == 0) break;
+
+        std::vector<uint8_t> header(std::min<size_t>(unit_len, kHeaderBytes));
+        if (!header.empty() &&
+            !read_exact(in, header.data(), static_cast<std::streamsize>(header.size()))) {
+            return false;
+        }
+
+        const uint64_t remaining = static_cast<uint64_t>(unit_len) - header.size();
+        if (!skip_exact(in, remaining)) return false;
+
+        append_streamed_unit(codec, header, static_cast<uint64_t>(unit_len) + 4, index);
+    }
+
+    return !index.entries.empty();
+}
+
+bool copy_stream(std::istream& in, std::ostream& out, const uint8_t* prefix, size_t prefix_size) {
+    constexpr size_t kChunkSize = 64 * 1024;
+    std::array<char, kChunkSize> chunk{};
+    uint64_t total = 0;
+
+    if (prefix && prefix_size > 0) {
+        out.write(reinterpret_cast<const char*>(prefix), static_cast<std::streamsize>(prefix_size));
+        total += prefix_size;
+    }
+
+    while (in) {
+        in.read(chunk.data(), static_cast<std::streamsize>(chunk.size()));
+        const auto read = in.gcount();
+        if (read <= 0) break;
+        out.write(chunk.data(), read);
+        total += static_cast<uint64_t>(read);
+        if (!out) return false;
+    }
+    return total > 0 && out.good();
+}
+
+bool write_length_prefixed_as_annex_b(std::ifstream& in, std::ofstream& out) {
+    constexpr size_t kChunkSize = 64 * 1024;
+    static constexpr uint8_t kStartCode4[] = {0, 0, 0, 1};
+    std::array<char, kChunkSize> chunk{};
+    uint8_t len_bytes[4] = {};
+    uint64_t total_written = 0;
+
+    while (read_exact(in, len_bytes, sizeof(len_bytes))) {
+        uint64_t remaining = read_be32(len_bytes);
+        if (remaining == 0) break;
+
+        out.write(reinterpret_cast<const char*>(kStartCode4), sizeof(kStartCode4));
+        total_written += sizeof(kStartCode4);
+
+        while (remaining > 0) {
+            const auto to_read = static_cast<std::streamsize>(
+                std::min<uint64_t>(remaining, chunk.size()));
+            if (!read_exact(in, chunk.data(), to_read)) {
+                return false;
+            }
+            out.write(chunk.data(), to_read);
+            if (!out) return false;
+            remaining -= static_cast<uint64_t>(to_read);
+            total_written += static_cast<uint64_t>(to_read);
+        }
+    }
+
+    return total_written > 0 && out.good();
+}
+
 } // namespace
 
 VbiCodec BitstreamIndexer::codec_from_ffmpeg_id(int codec_id) {
@@ -342,10 +568,6 @@ bool BitstreamIndexer::index_raw_file(const std::string& path,
     std::ifstream in(win_utf8::path_from_utf8(path), std::ios::binary);
     if (!in) return false;
 
-    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
-                               std::istreambuf_iterator<char>());
-    if (bytes.empty()) return false;
-
     if (codec == VbiCodec::Unknown) {
         codec = codec_from_path(path);
     }
@@ -354,8 +576,18 @@ bool BitstreamIndexer::index_raw_file(const std::string& path,
     }
 
     index = {};
-    append_packet(codec, bytes.data(), static_cast<int>(bytes.size()), false, index);
-    return !index.entries.empty();
+    index.codec = codec;
+    index.unit_kind = unit_kind_for_codec(codec);
+
+    const auto prefix = read_prefix(in, 4);
+    if (prefix.empty()) return false;
+    in.clear();
+    in.seekg(0, std::ios::beg);
+
+    if (is_annex_b(prefix.data(), static_cast<int>(prefix.size()))) {
+        return index_annex_b_stream(in, codec, index);
+    }
+    return index_length_prefixed_stream(in, codec, index);
 }
 
 bool BitstreamIndexer::write_annex_b_file(const std::string& path,
@@ -363,10 +595,6 @@ bool BitstreamIndexer::write_annex_b_file(const std::string& path,
                                           const std::string& output_path) {
     std::ifstream in(win_utf8::path_from_utf8(path), std::ios::binary);
     if (!in) return false;
-
-    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
-                               std::istreambuf_iterator<char>());
-    if (bytes.empty()) return false;
 
     if (codec == VbiCodec::Unknown) {
         codec = codec_from_path(path);
@@ -378,31 +606,15 @@ bool BitstreamIndexer::write_annex_b_file(const std::string& path,
     std::ofstream out(win_utf8::path_from_utf8(output_path), std::ios::binary);
     if (!out) return false;
 
-    if (is_annex_b(bytes.data(), static_cast<int>(bytes.size()))) {
-        out.write(reinterpret_cast<const char*>(bytes.data()),
-                  static_cast<std::streamsize>(bytes.size()));
-        return out.good();
+    const auto prefix = read_prefix(in, 4);
+    if (prefix.empty()) return false;
+    if (is_annex_b(prefix.data(), static_cast<int>(prefix.size()))) {
+        return copy_stream(in, out, prefix.data(), prefix.size());
     }
 
-    static const uint8_t kStartCode4[] = {0, 0, 0, 1};
-    int pos = 0;
-    uint64_t total_written = 0;
-    while (pos + 4 <= static_cast<int>(bytes.size())) {
-        const uint32_t unit_len = (static_cast<uint32_t>(bytes[pos]) << 24) |
-                                  (static_cast<uint32_t>(bytes[pos + 1]) << 16) |
-                                  (static_cast<uint32_t>(bytes[pos + 2]) << 8) |
-                                  static_cast<uint32_t>(bytes[pos + 3]);
-        if (unit_len == 0 || unit_len > static_cast<uint32_t>(bytes.size() - pos - 4)) {
-            break;
-        }
-        out.write(reinterpret_cast<const char*>(kStartCode4), sizeof(kStartCode4));
-        out.write(reinterpret_cast<const char*>(bytes.data() + pos + 4),
-                  static_cast<std::streamsize>(unit_len));
-        total_written += sizeof(kStartCode4) + unit_len;
-        pos += 4 + static_cast<int>(unit_len);
-    }
-
-    return total_written > 0 && out.good();
+    in.clear();
+    in.seekg(0, std::ios::beg);
+    return write_length_prefixed_as_annex_b(in, out);
 }
 
 } // namespace vr::analysis

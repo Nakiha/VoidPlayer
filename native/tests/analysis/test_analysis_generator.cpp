@@ -364,3 +364,35 @@ TEST_CASE("BitstreamIndexer: converts length-prefixed VVC sample to Annex-B", "[
 
     std::filesystem::remove_all(tmp);
 }
+
+TEST_CASE("BitstreamIndexer: streams Annex-B raw files across chunk boundaries",
+          "[analysis][generator][streaming]") {
+    namespace fs = std::filesystem;
+    auto tmp = make_temp_dir();
+    const fs::path raw_path = fs::path(tmp) / "chunk_boundary.h264";
+
+    {
+        std::ofstream out(raw_path, std::ios::binary);
+        REQUIRE(out.good());
+        const std::vector<uint8_t> first = {0, 0, 0, 1, 0x67, 0x42, 0x00, 0x1f};
+        out.write(reinterpret_cast<const char*>(first.data()),
+                  static_cast<std::streamsize>(first.size()));
+        std::vector<uint8_t> filler(70 * 1024, 0x55);
+        out.write(reinterpret_cast<const char*>(filler.data()),
+                  static_cast<std::streamsize>(filler.size()));
+        const std::vector<uint8_t> second = {0, 0, 0, 1, 0x65, 0x88, 0x84};
+        out.write(reinterpret_cast<const char*>(second.data()),
+                  static_cast<std::streamsize>(second.size()));
+    }
+
+    vr::analysis::BitstreamIndex index;
+    REQUIRE(vr::analysis::BitstreamIndexer::index_raw_file(
+        raw_path.string(), VbiCodec::H264, index));
+    REQUIRE(index.entries.size() == 2);
+    REQUIRE(index.entries[0].offset == 0);
+    REQUIRE(index.entries[0].nal_type == 7);
+    REQUIRE(index.entries[1].nal_type == 5);
+    REQUIRE(index.entries[1].flags & VBI_FLAG_IS_KEYFRAME);
+
+    std::filesystem::remove_all(tmp);
+}

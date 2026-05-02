@@ -14,9 +14,8 @@ are kept for format archaeology only; they are not current runtime APIs.
 - File extension: `.vbs2`
 - Legacy magic: `VBS2`
 
-VBS3 data is optional at runtime. Analysis loading can proceed with VBI + VBT
-only, in which case frame data falls back to packet timing and VCL unit
-metadata.
+VBI + VBT can still be loaded without VBS3 for packet/NALU views, but frame
+summary and bucket APIs require VBS3 and do not synthesize frame rows from VBI.
 
 ## VBS2 Layout
 

@@ -164,7 +164,8 @@ void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSumma
 int effective_frame_count(vr::analysis::AnalysisManager& mgr) {
     const int vbs3_count = mgr.vbs3().frame_count();
     const int vbt_count = mgr.vbt().packet_count();
-    return vbs3_count > 0 ? std::min(vbs3_count, vbt_count) : vbt_count;
+    if (vbs3_count <= 0 || vbt_count <= 0) return 0;
+    return std::min(vbs3_count, vbt_count);
 }
 
 int32_t fill_analysis_frames_range(vr::analysis::AnalysisManager& mgr,
@@ -207,35 +208,8 @@ bool fill_analysis_frame_at(vr::analysis::AnalysisManager& mgr,
                             NakiFrameInfo& f) {
     if (!mgr.is_loaded() || source_index < 0) return false;
 
-    int vbs3_count = mgr.vbs3().frame_count();
     int total_count = effective_frame_count(mgr);
     if (source_index >= total_count) return false;
-
-    // Fallback: no vbs3 — combine VBT timing with VBI VCL metadata.
-    // Slice P/B needs codec-specific slice-header parsing; without vbs3 we only
-    // promote keyframes to I and treat other coded frames as forward-coded.
-    if (vbs3_count == 0) {
-        const auto vcl_nalus = mgr.vbi().find_vcl_nalus();
-        const auto& pkt = mgr.vbt().entry(source_index);
-        std::memset(&f, 0, sizeof(f));
-        f.poc = source_index;
-        f.slice_type = 1;
-        f.pts = pkt.pts;
-        f.dts = pkt.dts;
-        f.packet_size = static_cast<int32_t>(pkt.size);
-        f.keyframe = (pkt.flags & 0x01) ? 1 : 0;
-
-        if (source_index < static_cast<int>(vcl_nalus.size())) {
-            const auto& nalu = mgr.vbi().entry(vcl_nalus[source_index]);
-            f.temporal_id = nalu.temporal_id;
-            f.nal_type = nalu.nal_type;
-            f.keyframe = (nalu.flags & VBI_FLAG_IS_KEYFRAME) ? 1 : f.keyframe;
-        }
-        if (f.keyframe != 0) {
-            f.slice_type = 2;
-        }
-        return true;
-    }
 
     auto fh = mgr.vbs3().read_frame_summary(source_index);
     const auto& pkt = mgr.vbt().entry(source_index);
@@ -326,9 +300,7 @@ int32_t fill_analysis_frame_buckets(vr::analysis::AnalysisManager& mgr,
     if (!out || max_count <= 0 || bucket_size <= 0) return 0;
     if (!mgr.is_loaded() || start < 0) return 0;
 
-    int vbs3_count = mgr.vbs3().frame_count();
-    int vbt_count = mgr.vbt().packet_count();
-    int total_count = vbs3_count > 0 ? std::min(vbs3_count, vbt_count) : vbt_count;
+    int total_count = effective_frame_count(mgr);
     if (start >= total_count) return 0;
 
     int produced = 0;

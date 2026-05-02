@@ -704,7 +704,7 @@ class AnalysisFfi {
     }
   }
 
-  /// Generate analysis files (VBI + VBT) for a video.
+  /// Generate analysis files (VBS3 + VBI + VBT) for a video.
   /// [videoPath] is the source video file.
   /// [hash] is used as the base name for output files (data/{hash}.vbi etc.)
   /// Returns true on success.

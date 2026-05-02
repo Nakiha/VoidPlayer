@@ -97,27 +97,38 @@ class AnalysisCache {
   static String vbtPath(String hash) => p.join(dataDir, '$hash.vbt');
 
   static bool filesExist(String hash) {
-    // VBS3 is optional because VTM block statistics are currently VVC-only.
-    return _isVbi2(vbiPath(hash)) && File(vbtPath(hash)).existsSync();
+    final vbi = vbiPath(hash);
+    final codec = _vbi2Codec(vbi);
+    if (codec == null) return false;
+    if (!File(vbtPath(hash)).existsSync()) return false;
+    if (codec == _vbiCodecVvc && !File(vbs3Path(hash)).existsSync()) {
+      return false;
+    }
+    return true;
   }
 
-  static bool _isVbi2(String path) {
+  static const int _vbiCodecVvc = 3;
+
+  static int? _vbi2Codec(String path) {
     final file = File(path);
-    if (!file.existsSync()) return false;
+    if (!file.existsSync()) return null;
     try {
       final raf = file.openSync();
       try {
-        final header = raf.readSync(4);
-        return header.length == 4 &&
+        final header = raf.readSync(8);
+        if (header.length == 8 &&
             header[0] == 0x56 &&
             header[1] == 0x42 &&
             header[2] == 0x49 &&
-            header[3] == 0x32;
+            header[3] == 0x32) {
+          return header[6] | (header[7] << 8);
+        }
+        return null;
       } finally {
         raf.closeSync();
       }
     } catch (_) {
-      return false;
+      return null;
     }
   }
 
@@ -178,8 +189,7 @@ class AnalysisCache {
             vbiBytes: vbi,
             vbtBytes: vbt,
             cachedAt: DateTime.tryParse(value['time'] as String? ?? ''),
-            complete:
-                _isVbi2(vbiPath(hash)) && File(vbtPath(hash)).existsSync(),
+            complete: filesExist(hash),
           ),
         );
       }

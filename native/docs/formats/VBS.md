@@ -1,22 +1,22 @@
-# VBS Format
+# VBS Legacy Format
 
 VBS stores VTM-derived block statistics used for frame-level and CU-level
-analysis. The current on-disk version is VBS2 and uses the `.vbs2` extension.
-The planned indexed successor is documented in [VBS3](VBS3.md).
+analysis. This document describes the retired VBS2 `.vbs2` layout. The native
+runtime now reads [VBS3](VBS3.md) and no longer ships a VBS2 reader.
 
-The authoritative C++ layout is defined in
-`native/analysis/parsers/binary_types.h`. All fields are little-endian and the
-on-disk structs are packed with `#pragma pack(push, 1)`.
+The historical C++ reader used packed little-endian structs. The names below
+are kept for format archaeology only; they are not current runtime APIs.
 
 ## Producer And Reader
 
-- Producer: instrumented VTM `DecoderApp` launched by `naki_analysis_generate`
-- Reader: `vr::analysis::Vbs2File`
+- Producer: instrumented VTM `DecoderApp`
+- Reader: removed; use `vr::analysis::Vbs3File`
 - File extension: `.vbs2`
-- Current magic: `VBS2`
+- Legacy magic: `VBS2`
 
-VBS data is optional. Analysis loading can proceed with VBI + VBT only, in
-which case frame data falls back to packet timing and VCL unit metadata.
+VBS3 data is optional at runtime. Analysis loading can proceed with VBI + VBT
+only, in which case frame data falls back to packet timing and VCL unit
+metadata.
 
 ## VBS2 Layout
 
@@ -127,10 +127,10 @@ reader.
 
 ## Notes
 
-- `Vbs2File::open()` reads the frame index and validates each indexed frame
-  header, but it does not load all CU records into memory.
-- `read_frame_header(i)` seeks directly to the indexed frame header.
-- `read_frame(i)` seeks to the indexed frame and reads the full CU payload.
+- the removed `Vbs2File::open()` reader read the frame index and validated each
+  indexed frame header, but it did not load all CU records into memory.
+- `read_frame_header(i)` sought directly to the indexed frame header.
+- `read_frame(i)` sought to the indexed frame and read the full CU payload.
 - VBS2 does not contain a compact frame-summary table or CU-level secondary
   index. This is the main reason large analysis files are expensive for UI
   range and bucket workflows.

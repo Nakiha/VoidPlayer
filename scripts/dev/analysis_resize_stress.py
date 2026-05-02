@@ -118,9 +118,9 @@ def _pick_analysis_hash(debug: bool, requested_hash: str | None) -> tuple[str, s
     if not items:
         raise RuntimeError(f"No usable analysis cache entries in {cache}")
 
-    # Prefer entries with VBS2 because the pyramid view is the historically
+    # Prefer entries with VBS3 because the pyramid view is the historically
     # riskiest resize path.
-    items.sort(key=lambda item: (not (cache / f"{item[0]}.vbs2").exists(), item[0]))
+    items.sort(key=lambda item: (not (cache / f"{item[0]}.vbs3").exists(), item[0]))
     chosen_hash, meta = items[0]
     file_name = meta.get("name") if isinstance(meta.get("name"), str) else None
     return chosen_hash, file_name

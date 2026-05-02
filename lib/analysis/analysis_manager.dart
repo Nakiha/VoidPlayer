@@ -191,16 +191,16 @@ class AnalysisManager extends ChangeNotifier {
   }) async {
     final serial = ++_loadSerial;
     _setState(AnalysisState.loading);
-    final vbs2 = AnalysisCache.vbs2Path(hash);
+    final vbs3 = AnalysisCache.vbs3Path(hash);
     final vbi = AnalysisCache.vbiPath(hash);
     final vbt = AnalysisCache.vbtPath(hash);
 
-    // VBS2 is optional — pass empty string if file doesn't exist
-    final vbs2Arg = File(vbs2).existsSync() ? vbs2 : '';
+    // VBS3 is optional because VTM block statistics are currently VVC-only.
+    final vbs3Arg = File(vbs3).existsSync() ? vbs3 : '';
     log.info(
-      '[Analysis] loading: vbs2=${vbs2Arg.isNotEmpty ? vbs2Arg : "(skip)"}, vbi=$vbi, vbt=$vbt',
+      '[Analysis] loading: vbs3=${vbs3Arg.isNotEmpty ? vbs3Arg : "(skip)"}, vbi=$vbi, vbt=$vbt',
     );
-    final ok = AnalysisFfi.load(vbs2Arg, vbi, vbt);
+    final ok = AnalysisFfi.load(vbs3Arg, vbi, vbt);
     if (!_isLoadCurrent(serial)) return false;
     if (!ok) {
       log.severe('[Analysis] FFI load returned false');

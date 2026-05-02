@@ -8,7 +8,7 @@ class AnalysisCacheEntryStats {
   final String name;
   final String? videoPath;
   final int videoBytes;
-  final int vbs2Bytes;
+  final int vbs3Bytes;
   final int vbiBytes;
   final int vbtBytes;
   final DateTime? cachedAt;
@@ -19,14 +19,14 @@ class AnalysisCacheEntryStats {
     required this.name,
     required this.videoPath,
     required this.videoBytes,
-    required this.vbs2Bytes,
+    required this.vbs3Bytes,
     required this.vbiBytes,
     required this.vbtBytes,
     required this.cachedAt,
     required this.complete,
   });
 
-  int get cacheBytes => vbs2Bytes + vbiBytes + vbtBytes;
+  int get cacheBytes => vbs3Bytes + vbiBytes + vbtBytes;
 }
 
 class AnalysisCacheSnapshot {
@@ -76,7 +76,7 @@ class AnalysisCacheDeleteResult {
 /// ```
 /// cache/
 ///   analysis_index.json
-///   <hash>.vbs2
+///   <hash>.vbs3
 ///   <hash>.vbi
 ///   <hash>.vbt
 /// ```
@@ -92,12 +92,12 @@ class AnalysisCache {
 
   // ---- Path helpers ----
 
-  static String vbs2Path(String hash) => p.join(dataDir, '$hash.vbs2');
+  static String vbs3Path(String hash) => p.join(dataDir, '$hash.vbs3');
   static String vbiPath(String hash) => p.join(dataDir, '$hash.vbi');
   static String vbtPath(String hash) => p.join(dataDir, '$hash.vbt');
 
   static bool filesExist(String hash) {
-    // VBS2 is optional (requires VTM decoder)
+    // VBS3 is optional because VTM block statistics are currently VVC-only.
     return _isVbi2(vbiPath(hash)) && File(vbtPath(hash)).existsSync();
   }
 
@@ -162,10 +162,10 @@ class AnalysisCache {
         final value = item.value;
         if (value is! Map<String, dynamic>) continue;
 
-        final vbs2 = _fileLength(vbs2Path(hash));
+        final vbs3 = _fileLength(vbs3Path(hash));
         final vbi = _fileLength(vbiPath(hash));
         final vbt = _fileLength(vbtPath(hash));
-        final cacheBytes = vbs2 + vbi + vbt;
+        final cacheBytes = vbs3 + vbi + vbt;
         indexedBytes += cacheBytes;
 
         entries.add(
@@ -174,7 +174,7 @@ class AnalysisCache {
             name: value['name'] as String? ?? hash,
             videoPath: value['path'] as String?,
             videoBytes: (value['size'] as num?)?.toInt() ?? 0,
-            vbs2Bytes: vbs2,
+            vbs3Bytes: vbs3,
             vbiBytes: vbi,
             vbtBytes: vbt,
             cachedAt: DateTime.tryParse(value['time'] as String? ?? ''),
@@ -277,7 +277,7 @@ class AnalysisCache {
 
     for (final hash in uniqueHashes) {
       final failures = <String>[];
-      for (final path in [vbs2Path(hash), vbiPath(hash), vbtPath(hash)]) {
+      for (final path in [vbs3Path(hash), vbiPath(hash), vbtPath(hash)]) {
         final file = File(path);
         try {
           if (file.existsSync()) await file.delete();

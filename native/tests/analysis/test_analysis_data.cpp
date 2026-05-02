@@ -131,7 +131,7 @@ bool AnalysisTestData::ensure() {
 
         vbi_path_  = temp_dir_ + "/test.vbi";
         vbt_path_  = temp_dir_ + "/test.vbt";
-        vbs2_path_ = temp_dir_ + "/test.vbs2";
+        vbs3_path_ = temp_dir_ + "/test.vbs3";
         raw_vvc_path_ = temp_dir_ + "/test.vvc";
 
         // Step 1: VBI + VBT via C++ AnalysisGenerator
@@ -140,8 +140,8 @@ bool AnalysisTestData::ensure() {
         // Step 2: Raw VVC extraction via FFmpeg C API
         if (!extract_raw_vvc()) return;
 
-        // Step 3: VBS2 via VTM DecoderApp
-        if (!generate_vbs2()) return;
+        // Step 3: VBS3 via VTM DecoderApp
+        if (!generate_vbs3()) return;
 
         ok_ = true;
         std::atexit(atexit_cleanup);
@@ -286,7 +286,7 @@ bool AnalysisTestData::extract_raw_vvc() {
     return total_written > 0 && std::filesystem::exists(raw_vvc_path_);
 }
 
-bool AnalysisTestData::generate_vbs2() {
+bool AnalysisTestData::generate_vbs3() {
 #ifdef _WIN32
     std::string decoder_path = VTM_DECODER_PATH;
 
@@ -296,10 +296,11 @@ bool AnalysisTestData::generate_vbs2() {
         return false;
     }
 
-    spdlog::info("[TestData] generating VBS2 via VTM DecoderApp...");
+    spdlog::info("[TestData] generating VBS3 via VTM DecoderApp...");
 
     ScopedEnvVars env;
-    env.set("VTM_BINARY_STATS", vbs2_path_);
+    env.set("VTM_BINARY_STATS", vbs3_path_);
+    env.set("VTM_BINARY_STATS_FORMAT", "VBS3");
 
     std::string cmd = "\"" + decoder_path + "\" -b \"" + raw_vvc_path_ +
         "\" --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
@@ -307,16 +308,16 @@ bool AnalysisTestData::generate_vbs2() {
     int rc = run_command(cmd);
     spdlog::info("[TestData] VTM DecoderApp exit_code={}", rc);
 
-    if (!std::filesystem::exists(vbs2_path_)) {
-        spdlog::error("[TestData] VBS2 file not generated");
+    if (!std::filesystem::exists(vbs3_path_)) {
+        spdlog::error("[TestData] VBS3 file not generated");
         return false;
     }
 
-    auto size = std::filesystem::file_size(vbs2_path_);
-    spdlog::info("[TestData] VBS2 generated: {} bytes", size);
+    auto size = std::filesystem::file_size(vbs3_path_);
+    spdlog::info("[TestData] VBS3 generated: {} bytes", size);
     return true;
 #else
-    spdlog::error("[TestData] VBS2 generation only supported on Windows");
+    spdlog::error("[TestData] VBS3 generation only supported on Windows");
     return false;
 #endif
 }

@@ -444,19 +444,19 @@ class AnalysisSession {
   AnalysisSession._(this._handle);
 
   static AnalysisSession? open(
-    String vbs2Path,
+    String vbs3Path,
     String vbiPath,
     String vbtPath,
   ) {
-    final vbs2 = vbs2Path.toNativeUtf8(allocator: calloc);
+    final vbs3 = vbs3Path.toNativeUtf8(allocator: calloc);
     final vbi = vbiPath.toNativeUtf8(allocator: calloc);
     final vbt = vbtPath.toNativeUtf8(allocator: calloc);
     try {
-      final handle = _open(vbs2, vbi, vbt);
+      final handle = _open(vbs3, vbi, vbt);
       if (handle == nullptr) return null;
       return AnalysisSession._(handle);
     } finally {
-      calloc.free(vbs2);
+      calloc.free(vbs3);
       calloc.free(vbi);
       calloc.free(vbt);
     }
@@ -573,14 +573,14 @@ class AnalysisSession {
 class AnalysisFfi {
   /// Load analysis files from specific paths.
   /// Returns true on success.
-  static bool load(String vbs2Path, String vbiPath, String vbtPath) {
-    final vbs2 = vbs2Path.toNativeUtf8(allocator: calloc);
+  static bool load(String vbs3Path, String vbiPath, String vbtPath) {
+    final vbs3 = vbs3Path.toNativeUtf8(allocator: calloc);
     final vbi = vbiPath.toNativeUtf8(allocator: calloc);
     final vbt = vbtPath.toNativeUtf8(allocator: calloc);
     try {
-      return _load(vbs2, vbi, vbt) != 0;
+      return _load(vbs3, vbi, vbt) != 0;
     } finally {
-      calloc.free(vbs2);
+      calloc.free(vbs3);
       calloc.free(vbi);
       calloc.free(vbt);
     }

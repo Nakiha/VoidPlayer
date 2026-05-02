@@ -13,7 +13,7 @@ TEST_CASE("analysis FFI handle returns empty data after close",
     REQUIRE(data.ensure());
 
     NakiAnalysisHandle handle = naki_analysis_open(
-        data.vbs2_path().c_str(),
+        data.vbs3_path().c_str(),
         data.vbi_path().c_str(),
         data.vbt_path().c_str());
     REQUIRE(handle != nullptr);
@@ -43,7 +43,7 @@ TEST_CASE("analysis FFI handle close is safe while readers are active",
     REQUIRE(data.ensure());
 
     NakiAnalysisHandle handle = naki_analysis_open(
-        data.vbs2_path().c_str(),
+        data.vbs3_path().c_str(),
         data.vbi_path().c_str(),
         data.vbt_path().c_str());
     REQUIRE(handle != nullptr);
@@ -92,7 +92,7 @@ TEST_CASE("analysis FFI handle exposes frame mappings and buckets",
     REQUIRE(data.ensure());
 
     NakiAnalysisHandle handle = naki_analysis_open(
-        data.vbs2_path().c_str(),
+        data.vbs3_path().c_str(),
         data.vbi_path().c_str(),
         data.vbt_path().c_str());
     REQUIRE(handle != nullptr);

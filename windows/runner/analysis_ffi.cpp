@@ -141,7 +141,7 @@ void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSumma
     if (!mgr.is_loaded()) return;
 
     s.loaded = 1;
-    const auto& vbs2 = mgr.vbs2();
+    const auto& vbs3 = mgr.vbs3();
     const auto& vbi = mgr.vbi();
     const auto& vbt = mgr.vbt();
 
@@ -149,8 +149,8 @@ void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSumma
     s.frame_count = effective_frame_count(mgr);
     s.packet_count = vbt_packet_count;
     s.nalu_count = vbi.nalu_count();
-    s.video_width = vbs2.header().width;
-    s.video_height = vbs2.header().height;
+    s.video_width = vbs3.header().width;
+    s.video_height = vbs3.header().height;
     s.time_base_num = vbt.header().time_base_num;
     s.time_base_den = vbt.header().time_base_den;
     s.codec = static_cast<int32_t>(vbi.codec());
@@ -162,9 +162,9 @@ void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSumma
 }
 
 int effective_frame_count(vr::analysis::AnalysisManager& mgr) {
-    const int vbs2_count = mgr.vbs2().frame_count();
+    const int vbs3_count = mgr.vbs3().frame_count();
     const int vbt_count = mgr.vbt().packet_count();
-    return vbs2_count > 0 ? std::min(vbs2_count, vbt_count) : vbt_count;
+    return vbs3_count > 0 ? std::min(vbs3_count, vbt_count) : vbt_count;
 }
 
 int32_t fill_analysis_frames_range(vr::analysis::AnalysisManager& mgr,
@@ -207,14 +207,14 @@ bool fill_analysis_frame_at(vr::analysis::AnalysisManager& mgr,
                             NakiFrameInfo& f) {
     if (!mgr.is_loaded() || source_index < 0) return false;
 
-    int vbs2_count = mgr.vbs2().frame_count();
+    int vbs3_count = mgr.vbs3().frame_count();
     int total_count = effective_frame_count(mgr);
     if (source_index >= total_count) return false;
 
-    // Fallback: no VBS2 — combine VBT timing with VBI VCL metadata.
-    // Slice P/B needs codec-specific slice-header parsing; without VBS2 we only
+    // Fallback: no vbs3 — combine VBT timing with VBI VCL metadata.
+    // Slice P/B needs codec-specific slice-header parsing; without vbs3 we only
     // promote keyframes to I and treat other coded frames as forward-coded.
-    if (vbs2_count == 0) {
+    if (vbs3_count == 0) {
         const auto vcl_nalus = mgr.vbi().find_vcl_nalus();
         const auto& pkt = mgr.vbt().entry(source_index);
         std::memset(&f, 0, sizeof(f));
@@ -237,7 +237,7 @@ bool fill_analysis_frame_at(vr::analysis::AnalysisManager& mgr,
         return true;
     }
 
-    auto fh = mgr.vbs2().read_frame_header(source_index);
+    auto fh = mgr.vbs3().read_frame_summary(source_index);
     const auto& pkt = mgr.vbt().entry(source_index);
 
     std::memset(&f, 0, sizeof(f));
@@ -326,9 +326,9 @@ int32_t fill_analysis_frame_buckets(vr::analysis::AnalysisManager& mgr,
     if (!out || max_count <= 0 || bucket_size <= 0) return 0;
     if (!mgr.is_loaded() || start < 0) return 0;
 
-    int vbs2_count = mgr.vbs2().frame_count();
+    int vbs3_count = mgr.vbs3().frame_count();
     int vbt_count = mgr.vbt().packet_count();
-    int total_count = vbs2_count > 0 ? std::min(vbs2_count, vbt_count) : vbt_count;
+    int total_count = vbs3_count > 0 ? std::min(vbs3_count, vbt_count) : vbt_count;
     if (start >= total_count) return 0;
 
     int produced = 0;
@@ -369,12 +369,12 @@ int32_t fill_analysis_frame_buckets(vr::analysis::AnalysisManager& mgr,
 } // namespace
 
 extern "C" __declspec(dllexport)
-int32_t naki_analysis_load(const char* vbs2_path, const char* vbi_path, const char* vbt_path) {
+int32_t naki_analysis_load(const char* vbs3_path, const char* vbi_path, const char* vbt_path) {
     static int load_count = 0;
     std::lock_guard<std::mutex> lock(g_analysis_mutex);
     LogStackUsage(fmt::format("analysis_load #{}", ++load_count).c_str());
     auto& mgr = vr::analysis::AnalysisManager::instance();
-    return mgr.load(safe_cstr(vbs2_path), safe_cstr(vbi_path), safe_cstr(vbt_path)) ? 1 : 0;
+    return mgr.load(safe_cstr(vbs3_path), safe_cstr(vbi_path), safe_cstr(vbt_path)) ? 1 : 0;
 }
 
 extern "C" __declspec(dllexport)
@@ -454,11 +454,11 @@ void naki_analysis_set_overlay(const NakiOverlayState* state) {
 }
 
 extern "C" __declspec(dllexport)
-NakiAnalysisHandle naki_analysis_open(const char* vbs2_path, const char* vbi_path, const char* vbt_path) {
+NakiAnalysisHandle naki_analysis_open(const char* vbs3_path, const char* vbi_path, const char* vbt_path) {
     try {
         auto state = std::shared_ptr<AnalysisHandleState>(new (std::nothrow) AnalysisHandleState());
         if (!state) return nullptr;
-        if (!state->manager.load(safe_cstr(vbs2_path), safe_cstr(vbi_path), safe_cstr(vbt_path))) {
+        if (!state->manager.load(safe_cstr(vbs3_path), safe_cstr(vbi_path), safe_cstr(vbt_path))) {
             return nullptr;
         }
         auto handle = register_analysis_handle(state);
@@ -843,7 +843,7 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
     // Ensure data directory exists
     vr::win_utf8::create_directory_utf8(data_dir);
 
-    // ---- Step 0: VBS2 via VTM DecoderApp (optional) ----
+    // ---- Step 0: VBS3 via VTM DecoderApp (optional) ----
     VbiCodec source_codec = detect_analysis_codec(video_path);
     std::string decoder_path = exe_dir + "\\tools\\vtm\\DecoderApp.exe";
     bool decoder_exists = vr::win_utf8::file_exists_utf8(decoder_path);
@@ -851,7 +851,7 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
                  decoder_path, decoder_exists, static_cast<int>(source_codec));
 
     if (decoder_exists && source_codec == VbiCodec::VVC) {
-        std::string vbs2_out = data_dir + "\\" + hash + ".vbs2";
+        std::string vbs3_out = data_dir + "\\" + hash + ".vbs3";
 
         // Extract raw VVC bitstream via FFmpeg C API (no subprocess)
         std::string tmp_vvc = data_dir + "\\" + hash + ".tmp.vvc";
@@ -860,9 +860,9 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
         spdlog::info("[Analysis] extract_raw_vvc ok={}", demux_ok);
 
         if (demux_ok && vr::win_utf8::file_exists_utf8(tmp_vvc)) {
-            // Set VTM_BINARY_STATS env var for DecoderApp
             ScopedEnvVars env;
-            env.set("VTM_BINARY_STATS", vbs2_out);
+            env.set("VTM_BINARY_STATS", vbs3_out);
+            env.set("VTM_BINARY_STATS_FORMAT", "VBS3");
 
             // Build VTM log path: logs/vtm_<timestamp>_<hash>.log
             std::string logs_dir = exe_dir + "\\logs";
@@ -887,17 +887,17 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
             // Clean up temp .vvc
             vr::win_utf8::delete_file_utf8(tmp_vvc);
 
-            bool vbs2_ok = vr::win_utf8::file_exists_utf8(vbs2_out);
-            spdlog::info("[Analysis] vbs2_out={} exists={}", vbs2_out, vbs2_ok);
-            if (!vbs2_ok) {
-                spdlog::warn("[Analysis] VBS2 generation failed, continuing without VBS2");
+            bool vbs3_ok = vr::win_utf8::file_exists_utf8(vbs3_out);
+            spdlog::info("[Analysis] vbs3_out={} exists={}", vbs3_out, vbs3_ok);
+            if (!vbs3_ok) {
+                spdlog::warn("[Analysis] VBS3 generation failed, continuing without VBS3");
             }
         } else {
-            spdlog::warn("[Analysis] raw VVC extraction failed, skipping VBS2 generation");
+            spdlog::warn("[Analysis] raw VVC extraction failed, skipping VBS3 generation");
             vr::win_utf8::delete_file_utf8(tmp_vvc);
         }
     } else if (decoder_exists) {
-        spdlog::info("[Analysis] skipping VBS2: VTM block statistics are VVC-only");
+        spdlog::info("[Analysis] skipping VBS3: VTM block statistics are VVC-only");
     }
 
     // ---- Step 1+2: VBI + VBT via C++ FFmpeg (single pass) ----

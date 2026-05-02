@@ -337,7 +337,7 @@ class AnalysisNaluDetailView extends StatelessWidget {
       _DetailRow('Keyframe', '${(n.flags & 0x04) != 0}'),
     ];
 
-    // Frame-level info from VBS2 (when this NALU corresponds to a frame)
+    // Frame-level info from VBS3 (when this NALU corresponds to a frame)
     final frameItems = <_DetailRow>[];
     if (frameIdx != null &&
         frameIdx! >= frameIndexBase &&

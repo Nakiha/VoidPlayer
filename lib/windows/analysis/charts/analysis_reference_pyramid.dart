@@ -560,7 +560,7 @@ class _RefPyramidPainter extends CustomPainter {
       final isSelected = i == selectedFrameIdx;
       final isRelated = related.contains(i);
 
-      // VBS2 slice_type: 0=B, 1=P, 2=I (see binary_types.h)
+      // VBS3 slice_type: 0=B, 1=P, 2=I (see binary_types.h)
       // B with l1=0 (unidirectional) uses green color but still labeled B
       final Color fill, stroke;
       if (f.sliceType == 2) {

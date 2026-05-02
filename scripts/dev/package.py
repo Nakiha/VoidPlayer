@@ -48,6 +48,7 @@ MUTABLE_FILE_PATTERNS = {
     "*.vbi",
     "*.vbs1",
     "*.vbs2",
+    "*.vbs3",
     "*.vbt",
 }
 

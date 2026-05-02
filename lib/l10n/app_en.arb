@@ -229,8 +229,8 @@
   "cacheNoEntries": "No analysis cache entries yet",
   "@cacheNoEntries": { "description": "Analysis cache empty state" },
 
-  "cacheEntryBreakdown": "VBS2 {vbs2}  VBI {vbi}  VBT {vbt}",
-  "@cacheEntryBreakdown": { "description": "Analysis cache entry file-size breakdown", "placeholders": { "vbs2": { "type": "String" }, "vbi": { "type": "String" }, "vbt": { "type": "String" } } },
+  "cacheEntryBreakdown": "VBS3 {vbs3}  VBI {vbi}  VBT {vbt}",
+  "@cacheEntryBreakdown": { "description": "Analysis cache entry file-size breakdown", "placeholders": { "vbs3": { "type": "String" }, "vbi": { "type": "String" }, "vbt": { "type": "String" } } },
 
   "cacheUnindexed": "Unindexed cache files",
   "@cacheUnindexed": { "description": "Analysis cache files not represented by the index" },

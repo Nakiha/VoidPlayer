@@ -502,7 +502,7 @@ class _CacheEntryTile extends StatelessWidget {
       subtitle: Text(
         [
           l.cacheEntryBreakdown(
-            AnalysisCache.formatBytes(entry.vbs2Bytes),
+            AnalysisCache.formatBytes(entry.vbs3Bytes),
             AnalysisCache.formatBytes(entry.vbiBytes),
             AnalysisCache.formatBytes(entry.vbtBytes),
           ),

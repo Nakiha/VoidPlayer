@@ -9,25 +9,25 @@ AnalysisManager& AnalysisManager::instance() {
     return mgr;
 }
 
-bool AnalysisManager::load(const std::string& vbs2_path,
+bool AnalysisManager::load(const std::string& vbs3_path,
                             const std::string& vbi_path,
                             const std::string& vbt_path) {
     unload();
 
-    // VBS2 is optional (requires VTM decoder instrumentation)
-    if (!vbs2_path.empty()) {
-        vbs2_.open(vbs2_path);  // failure is OK
+    // VBS3 is optional because VTM block statistics are currently VVC-only.
+    if (!vbs3_path.empty()) {
+        vbs3_.open(vbs3_path);  // failure is OK; VBI/VBT fallback remains available
     }
 
-    if (!vbi_.open(vbi_path)) { vbs2_.close(); return false; }
-    if (!vbt_.open(vbt_path)) { vbs2_.close(); vbi_.close(); return false; }
+    if (!vbi_.open(vbi_path)) { vbs3_.close(); return false; }
+    if (!vbt_.open(vbt_path)) { vbs3_.close(); vbi_.close(); return false; }
 
     loaded_ = true;
     return true;
 }
 
 void AnalysisManager::unload() {
-    vbs2_.close();
+    vbs3_.close();
     vbi_.close();
     vbt_.close();
     loaded_ = false;

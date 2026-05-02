@@ -60,7 +60,7 @@ def analysis_output_dir(video_path: Path) -> Path:
     """Choose where generated VTM artifacts should be written.
 
     Repository fixtures under resources/ are read-only by convention. When a
-    fixture is analyzed directly, keep generated VVC/VBS2 artifacts under
+    fixture is analyzed directly, keep generated VVC/vbs3 artifacts under
     build/. If the caller already copied the video to a temp directory, write
     alongside that temp input so the caller can clean the whole directory.
     """
@@ -158,7 +158,7 @@ def cmd_vtm_analyze(args) -> None:
 
     output_dir = analysis_output_dir(video_path)
     output_dir.mkdir(parents=True, exist_ok=True)
-    stats_format = getattr(args, "format", "vbs2")
+    stats_format = getattr(args, "format", "vbs3")
     stats_path = output_dir / f"{video_path.stem}.{stats_format}"
     raw_path = extract_raw_vvc(video_path, output_dir)
 

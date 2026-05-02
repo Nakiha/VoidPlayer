@@ -1,9 +1,8 @@
 # VBS3 Format
 
-VBS3 is the planned successor to VBS2 for VTM-derived block statistics. It is
-currently written by the instrumented VTM `DecoderApp` when
-`VTM_BINARY_STATS_FORMAT=VBS3` is set. The native analysis reader is not wired
-to VBS3 yet.
+VBS3 is the current native VBS format for VTM-derived block statistics. It is
+written by the instrumented VTM `DecoderApp` when `VTM_BINARY_STATS_FORMAT=VBS3`
+is set, and read by `vr::analysis::Vbs3File`.
 
 ## Why VBS3 Exists
 
@@ -28,7 +27,7 @@ overlay needs them.
 ## Compatibility Goals
 
 - Keep VBI and VBT semantics unchanged. VBS3 is still optional.
-- Prefer `.vbs3` when present, with `.vbs2` fallback during migration.
+- Native runtime reads `.vbs3`; `.vbs2` is legacy and is not used as a fallback.
 - Keep frame order aligned with VBT packet/frame order used by the current
   analysis FFI.
 - Keep the first CU payload revision close to VBS2 so the VTM-side writer can
@@ -40,7 +39,7 @@ overlay needs them.
 - Producer: instrumented VTM `DecoderApp`
 - Writer switch: `VTM_BINARY_STATS=<path>` plus
   `VTM_BINARY_STATS_FORMAT=VBS3`
-- Proposed reader: `vr::analysis::Vbs3File`
+- Reader: `vr::analysis::Vbs3File`
 - File extension: `.vbs3`
 - Magic: `VBS3`
 
@@ -152,13 +151,13 @@ of the file.
 
 ## CU Blob
 
-The first VBS3 CU payload revision should reuse the current VBS2 variable CU
+The first VBS3 CU payload revision reuses the legacy VBS2 variable CU
 records:
 
 ```text
-Vbs2CuCommon
-optional Vbs2CuIntra when pred_mode == 1
-optional Vbs2CuInter when pred_mode == 0
+VbsCuCommon
+optional VbsCuIntra when pred_mode == 1
+optional VbsCuInter when pred_mode == 0
 ```
 
 This keeps the initial VTM writer change small: the extraction code that fills
@@ -178,24 +177,20 @@ levels can coexist.
 
 ## Generation Notes For The VTM Subrepo
 
-The current VBS2 generator lives in:
+The format-aware VTM writer lives in:
 
 `native/analysis/vendor/vtm/source/Lib/CommonLib/dtrace_blockstatistics.cpp`
 
-Current flow:
+Shared flow:
 
 - `binaryStatsPath()` reads `VTM_BINARY_STATS`
-- global `BinaryStatsState g_binStats` opens the output file
-- `beginFrame()` writes a placeholder `Vbs2FrameHeader`
+- `binaryStatsFormat()` reads `VTM_BINARY_STATS_FORMAT`
+- global `BinaryStatsState g_binStats` opens the selected writer
 - `writeAllCodedDataBinary()` appends CU records while traversing CUs
-- `endFrame()` patches `num_cus` and `avg_qp`, then records a 32-bit frame
-  offset
-- `finalize()` appends `Vbs2IndexEntry[]` and patches the VBS2 header
 
-VBS3 generation generalizes `BinaryStatsState` into a format-aware writer:
+VBS3 generation uses the same CU extraction loop with a VBS3 writer:
 
 - choose VBS2 or VBS3 by `VTM_BINARY_STATS_FORMAT`
-- keep the current CU extraction loop
 - use `_ftelli64` / `_fseeki64` on Windows for section offsets
 - stream `CUBL` first while collecting `Vbs3FrameSummary` and
   `Vbs3CuIndexEntry` rows in memory

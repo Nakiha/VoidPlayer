@@ -2,7 +2,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include "analysis/parsers/vbt_parser.h"
 #include "analysis/parsers/vbi_parser.h"
-#include "analysis/parsers/vbs2_parser.h"
+#include "analysis/parsers/vbs3_parser.h"
 #include "test_analysis_data.h"
 
 #include <filesystem>
@@ -207,67 +207,68 @@ TEST_CASE("VBI: VCL and keyframe counts", "[analysis][vbi]") {
 }
 
 // ===========================================================================
-// VBS2 Tests
+// VBS3 Tests
 // ===========================================================================
 
-TEST_CASE("VBS2: open and header", "[analysis][vbs2]") {
+TEST_CASE("VBS3: open and header", "[analysis][vbs3]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs2File vbs2;
-    REQUIRE(vbs2.open(data.vbs2_path()));
+    vr::analysis::Vbs3File vbs3;
+    REQUIRE(vbs3.open(data.vbs3_path()));
 
-    auto& h = vbs2.header();
+    auto& h = vbs3.header();
     REQUIRE(h.magic[0] == 'V');
     REQUIRE(h.magic[1] == 'B');
     REQUIRE(h.magic[2] == 'S');
-    REQUIRE(h.magic[3] == '2');
+    REQUIRE(h.magic[3] == '3');
+    REQUIRE(h.version_major == 3);
     REQUIRE(h.width == 1920);
     REQUIRE(h.height == 1080);
-    REQUIRE(vbs2.frame_count() >= 100);
+    REQUIRE(vbs3.frame_count() >= 100);
 }
 
-TEST_CASE("VBS2: failed reopen clears previous header", "[analysis][vbs2]") {
+TEST_CASE("VBS3: failed reopen clears previous header", "[analysis][vbs3]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs2File vbs2;
-    REQUIRE(vbs2.open(data.vbs2_path()));
-    REQUIRE(vbs2.header().width == 1920);
+    vr::analysis::Vbs3File vbs3;
+    REQUIRE(vbs3.open(data.vbs3_path()));
+    REQUIRE(vbs3.header().width == 1920);
 
     const auto missing_path =
-        std::filesystem::temp_directory_path() / "voidplayer_missing_reopen.vbs2";
+        std::filesystem::temp_directory_path() / "voidplayer_missing_reopen.vbs3";
     std::filesystem::remove(missing_path);
-    REQUIRE(vbs2.open(missing_path.string()) == false);
-    REQUIRE(vbs2.frame_count() == 0);
-    REQUIRE(vbs2.header().width == 0);
-    REQUIRE(vbs2.header().height == 0);
+    REQUIRE(vbs3.open(missing_path.string()) == false);
+    REQUIRE(vbs3.frame_count() == 0);
+    REQUIRE(vbs3.header().width == 0);
+    REQUIRE(vbs3.header().height == 0);
 }
 
-TEST_CASE("VBS2: first frame is I-slice (IDR)", "[analysis][vbs2]") {
+TEST_CASE("VBS3: first frame is I-slice (IDR)", "[analysis][vbs3]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs2File vbs2;
-    REQUIRE(vbs2.open(data.vbs2_path()));
+    vr::analysis::Vbs3File vbs3;
+    REQUIRE(vbs3.open(data.vbs3_path()));
 
-    auto fh = vbs2.read_frame_header(0);
+    auto fh = vbs3.read_frame_summary(0);
     REQUIRE(fh.slice_type == 2); // I-slice
     REQUIRE(fh.num_ref_l0 == 0);
     REQUIRE(fh.num_ref_l1 == 0);
 }
 
-TEST_CASE("VBS2: read full frame with CU records", "[analysis][vbs2]") {
+TEST_CASE("VBS3: read full frame with CU records", "[analysis][vbs3]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs2File vbs2;
-    REQUIRE(vbs2.open(data.vbs2_path()));
+    vr::analysis::Vbs3File vbs3;
+    REQUIRE(vbs3.open(data.vbs3_path()));
 
-    auto frame = vbs2.read_frame(0);
-    REQUIRE(frame.header.poc >= 0);
+    auto frame = vbs3.read_frame(0);
+    REQUIRE(frame.summary.poc >= 0);
     REQUIRE(frame.cus.size() > 0);
-    REQUIRE(static_cast<int>(frame.cus.size()) == frame.header.num_cus);
+    REQUIRE(static_cast<int>(frame.cus.size()) == static_cast<int>(frame.summary.num_cus));
 
     // All CUs should have valid pred_mode
     for (const auto& cu : frame.cus) {
@@ -276,16 +277,16 @@ TEST_CASE("VBS2: read full frame with CU records", "[analysis][vbs2]") {
     }
 }
 
-TEST_CASE("VBS2: inter frames have references", "[analysis][vbs2]") {
+TEST_CASE("VBS3: inter frames have references", "[analysis][vbs3]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs2File vbs2;
-    REQUIRE(vbs2.open(data.vbs2_path()));
+    vr::analysis::Vbs3File vbs3;
+    REQUIRE(vbs3.open(data.vbs3_path()));
 
     int inter_with_refs = 0;
-    for (int i = 1; i < std::min(50, vbs2.frame_count()); i++) {
-        auto fh = vbs2.read_frame_header(i);
+    for (int i = 1; i < std::min(50, vbs3.frame_count()); i++) {
+        auto fh = vbs3.read_frame_summary(i);
         if (fh.slice_type != 2) { // not I-slice
             if (fh.num_ref_l0 > 0 || fh.num_ref_l1 > 0) {
                 inter_with_refs++;
@@ -295,44 +296,44 @@ TEST_CASE("VBS2: inter frames have references", "[analysis][vbs2]") {
     REQUIRE(inter_with_refs > 0);
 }
 
-TEST_CASE("VBS2: avg QP in valid range", "[analysis][vbs2]") {
+TEST_CASE("VBS3: avg QP in valid range", "[analysis][vbs3]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs2File vbs2;
-    REQUIRE(vbs2.open(data.vbs2_path()));
+    vr::analysis::Vbs3File vbs3;
+    REQUIRE(vbs3.open(data.vbs3_path()));
 
-    for (int i = 0; i < std::min(20, vbs2.frame_count()); i++) {
-        auto fh = vbs2.read_frame_header(i);
+    for (int i = 0; i < std::min(20, vbs3.frame_count()); i++) {
+        auto fh = vbs3.read_frame_summary(i);
         REQUIRE(fh.avg_qp <= 63);
     }
 }
 
-TEST_CASE("VBS2: read_all_frame_headers", "[analysis][vbs2]") {
+TEST_CASE("VBS3: read_all_frame_summaries", "[analysis][vbs3]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs2File vbs2;
-    REQUIRE(vbs2.open(data.vbs2_path()));
+    vr::analysis::Vbs3File vbs3;
+    REQUIRE(vbs3.open(data.vbs3_path()));
 
-    auto headers = vbs2.read_all_frame_headers();
-    REQUIRE(static_cast<int>(headers.size()) == vbs2.frame_count());
+    auto summaries = vbs3.read_all_frame_summaries();
+    REQUIRE(static_cast<int>(summaries.size()) == vbs3.frame_count());
 
     // Verify temporal IDs are in reasonable range
-    for (const auto& fh : headers) {
+    for (const auto& fh : summaries) {
         REQUIRE(fh.temporal_id <= 6);
     }
 }
 
-TEST_CASE("VBS2: temporal ID range", "[analysis][vbs2]") {
+TEST_CASE("VBS3: temporal ID range", "[analysis][vbs3]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs2File vbs2;
-    REQUIRE(vbs2.open(data.vbs2_path()));
+    vr::analysis::Vbs3File vbs3;
+    REQUIRE(vbs3.open(data.vbs3_path()));
 
-    for (int i = 0; i < std::min(30, vbs2.frame_count()); i++) {
-        auto fh = vbs2.read_frame_header(i);
+    for (int i = 0; i < std::min(30, vbs3.frame_count()); i++) {
+        auto fh = vbs3.read_frame_summary(i);
         REQUIRE(fh.temporal_id <= 6);
     }
 }

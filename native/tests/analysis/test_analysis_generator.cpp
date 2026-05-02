@@ -396,3 +396,47 @@ TEST_CASE("BitstreamIndexer: streams Annex-B raw files across chunk boundaries",
 
     std::filesystem::remove_all(tmp);
 }
+
+TEST_CASE("BitstreamIndexer: streams raw entries through callback",
+          "[analysis][generator][streaming]") {
+    namespace fs = std::filesystem;
+    auto tmp = make_temp_dir();
+    const fs::path raw_path = fs::path(tmp) / "callback_stream.h265";
+
+    {
+        std::ofstream out(raw_path, std::ios::binary);
+        REQUIRE(out.good());
+        const std::vector<uint8_t> first = {0, 0, 0, 1, 0x40, 0x01, 0x0c};
+        const std::vector<uint8_t> second = {0, 0, 0, 1, 0x26, 0x01, 0xaf};
+        out.write(reinterpret_cast<const char*>(first.data()),
+                  static_cast<std::streamsize>(first.size()));
+        out.write(reinterpret_cast<const char*>(second.data()),
+                  static_cast<std::streamsize>(second.size()));
+    }
+
+    size_t count = 0;
+    uint64_t source_size = 0;
+    VbiCodec resolved = VbiCodec::Unknown;
+    REQUIRE(vr::analysis::BitstreamIndexer::index_raw_file_streaming(
+        raw_path.string(),
+        VbiCodec::HEVC,
+        [&](const VbiEntry& entry) {
+            if (count == 0) {
+                REQUIRE(entry.offset == 0);
+                REQUIRE(entry.nal_type == 32);
+            }
+            if (count == 1) {
+                REQUIRE(entry.nal_type == 19);
+                REQUIRE(entry.flags & VBI_FLAG_IS_KEYFRAME);
+            }
+            ++count;
+            return true;
+        },
+        &resolved,
+        &source_size));
+    REQUIRE(resolved == VbiCodec::HEVC);
+    REQUIRE(count == 2);
+    REQUIRE(source_size == fs::file_size(raw_path));
+
+    std::filesystem::remove_all(tmp);
+}

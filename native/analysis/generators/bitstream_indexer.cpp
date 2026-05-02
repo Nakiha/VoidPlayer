@@ -310,12 +310,61 @@ void append_streamed_unit(VbiCodec codec,
     index.source_size += entry.size;
 }
 
+bool emit_streamed_unit(VbiCodec codec,
+                        const std::vector<uint8_t>& header,
+                        uint64_t unit_size,
+                        uint64_t& source_size,
+                        const BitstreamIndexer::VbiEntrySink& sink) {
+    if (!sink || unit_size == 0 || unit_size > std::numeric_limits<uint32_t>::max()) {
+        return true;
+    }
+
+    VbiEntry entry{};
+    entry.offset = source_size;
+    entry.size = static_cast<uint32_t>(unit_size);
+    parse_unit_header(codec,
+                      header.data(),
+                      static_cast<int>(header.size()),
+                      false,
+                      entry);
+    source_size += entry.size;
+    return sink(entry);
+}
+
+bool index_annex_b_stream_to_sink(std::ifstream& in,
+                                  VbiCodec codec,
+                                  const BitstreamIndexer::VbiEntrySink& sink,
+                                  uint64_t& source_size);
+
+bool index_length_prefixed_stream_to_sink(std::ifstream& in,
+                                          VbiCodec codec,
+                                          const BitstreamIndexer::VbiEntrySink& sink,
+                                          uint64_t& source_size);
+
 bool index_annex_b_stream(std::ifstream& in, VbiCodec codec, BitstreamIndex& index) {
+    uint64_t source_size = index.source_size;
+    const bool ok = index_annex_b_stream_to_sink(
+        in,
+        codec,
+        [&index](const VbiEntry& entry) {
+            index.entries.push_back(entry);
+            return true;
+        },
+        source_size);
+    index.source_size = source_size;
+    return ok;
+}
+
+bool index_annex_b_stream_to_sink(std::ifstream& in,
+                                  VbiCodec codec,
+                                  const BitstreamIndexer::VbiEntrySink& sink,
+                                  uint64_t& source_size) {
     constexpr size_t kChunkSize = 64 * 1024;
     constexpr size_t kHeaderBytes = 16;
     std::array<uint8_t, kChunkSize> chunk{};
 
     bool has_current = false;
+    bool emitted_any = false;
     int current_prefix = 0;
     uint64_t current_size = 0;
     int zero_count = 0;
@@ -340,7 +389,10 @@ bool index_annex_b_stream(std::ifstream& in, VbiCodec codec, BitstreamIndex& ind
                 if (has_current && current_size >= static_cast<uint64_t>(prefix)) {
                     current_size -= static_cast<uint64_t>(prefix);
                     if (current_size > static_cast<uint64_t>(current_prefix)) {
-                        append_streamed_unit(codec, header, current_size, index);
+                        if (!emit_streamed_unit(codec, header, current_size, source_size, sink)) {
+                            return false;
+                        }
+                        emitted_any = true;
                     }
                 }
 
@@ -366,9 +418,12 @@ bool index_annex_b_stream(std::ifstream& in, VbiCodec codec, BitstreamIndex& ind
     }
 
     if (has_current && current_size > static_cast<uint64_t>(current_prefix)) {
-        append_streamed_unit(codec, header, current_size, index);
+        if (!emit_streamed_unit(codec, header, current_size, source_size, sink)) {
+            return false;
+        }
+        emitted_any = true;
     }
-    return !index.entries.empty();
+    return emitted_any;
 }
 
 bool read_exact(std::istream& in, void* data, std::streamsize size) {
@@ -405,7 +460,25 @@ uint32_t read_be32(const uint8_t bytes[4]) {
 }
 
 bool index_length_prefixed_stream(std::ifstream& in, VbiCodec codec, BitstreamIndex& index) {
+    uint64_t source_size = index.source_size;
+    const bool ok = index_length_prefixed_stream_to_sink(
+        in,
+        codec,
+        [&index](const VbiEntry& entry) {
+            index.entries.push_back(entry);
+            return true;
+        },
+        source_size);
+    index.source_size = source_size;
+    return ok;
+}
+
+bool index_length_prefixed_stream_to_sink(std::ifstream& in,
+                                          VbiCodec codec,
+                                          const BitstreamIndexer::VbiEntrySink& sink,
+                                          uint64_t& source_size) {
     constexpr size_t kHeaderBytes = 16;
+    bool emitted_any = false;
     uint8_t len_bytes[4] = {};
     while (read_exact(in, len_bytes, sizeof(len_bytes))) {
         const uint32_t unit_len = read_be32(len_bytes);
@@ -420,10 +493,14 @@ bool index_length_prefixed_stream(std::ifstream& in, VbiCodec codec, BitstreamIn
         const uint64_t remaining = static_cast<uint64_t>(unit_len) - header.size();
         if (!skip_exact(in, remaining)) return false;
 
-        append_streamed_unit(codec, header, static_cast<uint64_t>(unit_len) + 4, index);
+        if (!emit_streamed_unit(
+                codec, header, static_cast<uint64_t>(unit_len) + 4, source_size, sink)) {
+            return false;
+        }
+        emitted_any = true;
     }
 
-    return !index.entries.empty();
+    return emitted_any;
 }
 
 bool copy_stream(std::istream& in, std::ostream& out, const uint8_t* prefix, size_t prefix_size) {
@@ -565,6 +642,29 @@ void BitstreamIndexer::append_packet(VbiCodec codec,
 bool BitstreamIndexer::index_raw_file(const std::string& path,
                                       VbiCodec codec,
                                       BitstreamIndex& index) {
+    index = {};
+    VbiCodec resolved = VbiCodec::Unknown;
+    const bool ok = index_raw_file_streaming(
+        path,
+        codec,
+        [&index](const VbiEntry& entry) {
+            index.entries.push_back(entry);
+            return true;
+        },
+        &resolved,
+        &index.source_size);
+    if (ok) {
+        index.codec = resolved;
+        index.unit_kind = unit_kind_for_codec(resolved);
+    }
+    return ok;
+}
+
+bool BitstreamIndexer::index_raw_file_streaming(const std::string& path,
+                                                VbiCodec codec,
+                                                const VbiEntrySink& sink,
+                                                VbiCodec* resolved_codec,
+                                                uint64_t* source_size) {
     std::ifstream in(win_utf8::path_from_utf8(path), std::ios::binary);
     if (!in) return false;
 
@@ -575,19 +675,22 @@ bool BitstreamIndexer::index_raw_file(const std::string& path,
         return false;
     }
 
-    index = {};
-    index.codec = codec;
-    index.unit_kind = unit_kind_for_codec(codec);
-
     const auto prefix = read_prefix(in, 4);
     if (prefix.empty()) return false;
     in.clear();
     in.seekg(0, std::ios::beg);
 
-    if (is_annex_b(prefix.data(), static_cast<int>(prefix.size()))) {
-        return index_annex_b_stream(in, codec, index);
+    uint64_t local_source_size = 0;
+    uint64_t& total_size = source_size ? *source_size : local_source_size;
+    total_size = 0;
+
+    const bool ok = is_annex_b(prefix.data(), static_cast<int>(prefix.size()))
+        ? index_annex_b_stream_to_sink(in, codec, sink, total_size)
+        : index_length_prefixed_stream_to_sink(in, codec, sink, total_size);
+    if (ok && resolved_codec) {
+        *resolved_codec = codec;
     }
-    return index_length_prefixed_stream(in, codec, index);
+    return ok;
 }
 
 bool BitstreamIndexer::write_annex_b_file(const std::string& path,

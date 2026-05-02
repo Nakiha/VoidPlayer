@@ -3,6 +3,7 @@
 #include "analysis/parsers/binary_types.h"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -17,6 +18,8 @@ struct BitstreamIndex {
 
 class BitstreamIndexer {
 public:
+    using VbiEntrySink = std::function<bool(const VbiEntry&)>;
+
     static VbiCodec codec_from_ffmpeg_id(int codec_id);
     static VbiCodec codec_from_path(const std::string& path);
     static VbiUnitKind unit_kind_for_codec(VbiCodec codec);
@@ -30,6 +33,12 @@ public:
     static bool index_raw_file(const std::string& path,
                                VbiCodec codec,
                                BitstreamIndex& index);
+
+    static bool index_raw_file_streaming(const std::string& path,
+                                         VbiCodec codec,
+                                         const VbiEntrySink& sink,
+                                         VbiCodec* resolved_codec = nullptr,
+                                         uint64_t* source_size = nullptr);
 
     static bool write_annex_b_file(const std::string& path,
                                    VbiCodec codec,

@@ -26,7 +26,6 @@ class MainWindowLayoutCoordinator {
   bool _resizeDirty = false;
   bool _flushInProgress = false;
   bool _disposed = false;
-  int _viewportResizeSuppressionDepth = 0;
 
   int viewportWidth = 0;
   int viewportHeight = 0;
@@ -165,12 +164,16 @@ class MainWindowLayoutCoordinator {
     // Reserved for cursor or mode hints.
   }
 
-  void onViewportResize(int width, int height, double devicePixelRatio) {
+  void onViewportResize(
+    int width,
+    int height,
+    double devicePixelRatio, {
+    bool immediate = false,
+  }) {
     if (_disposed) return;
     if (devicePixelRatio > 0) {
       viewportDevicePixelRatio = devicePixelRatio;
     }
-    if (_viewportResizeSuppressionDepth > 0) return;
     if (width == viewportWidth && height == viewportHeight) return;
     final previousWidth = viewportWidth;
     final previousHeight = viewportHeight;
@@ -180,6 +183,11 @@ class MainWindowLayoutCoordinator {
     viewportWidth = width;
     viewportHeight = height;
     _resizeDebounceTimer?.cancel();
+    if (immediate) {
+      _resizeDebounceTimer = null;
+      _markResizeDirty();
+      return;
+    }
     _resizeDebounceTimer = Timer(viewportResizeDebounce, () {
       if (_disposed || !mounted()) return;
       _markResizeDirty();
@@ -227,19 +235,6 @@ class MainWindowLayoutCoordinator {
     viewportWidth = width;
     viewportHeight = height;
     await controller.resize(width, height);
-  }
-
-  void beginViewportResizeSuppression() {
-    if (_disposed) return;
-    _viewportResizeSuppressionDepth++;
-    _resizeDebounceTimer?.cancel();
-    _resizeDebounceTimer = null;
-    _resizeDirty = false;
-  }
-
-  void endViewportResizeSuppression() {
-    if (_viewportResizeSuppressionDepth <= 0) return;
-    _viewportResizeSuppressionDepth--;
   }
 
   void onZoomComboChanged(double value) {

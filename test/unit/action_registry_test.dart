@@ -37,6 +37,38 @@ void main() {
     expect(triggerCount, 1);
   });
 
+  testWidgets('shortcuts work when primary focus leaves ActionFocus subtree', (
+    tester,
+  ) async {
+    var triggerCount = 0;
+    actionRegistry.bind(const ToggleLayoutMode(), (_) {
+      triggerCount++;
+    });
+    final outsideFocusNode = FocusNode();
+    addTearDown(outsideFocusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Row(
+          children: [
+            const ActionFocus(child: SizedBox.shrink()),
+            Focus(
+              focusNode: outsideFocusNode,
+              child: const SizedBox(width: 10, height: 10),
+            ),
+          ],
+        ),
+      ),
+    );
+    outsideFocusNode.requestFocus();
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyM);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyM);
+
+    expect(triggerCount, 1);
+  });
+
   testWidgets('shortcuts pass through while editing text', (tester) async {
     var triggerCount = 0;
     actionRegistry.bind(const ToggleLayoutMode(), (_) {

@@ -98,30 +98,37 @@ class ActionRegistry {
   /// Returns [KeyEventResult.handled] to swallow the key, or
   /// [KeyEventResult.ignored] to let Flutter process it normally.
   KeyEventResult handleKey(FocusNode node, KeyEvent event) {
+    return handleKeyEvent(event)
+        ? KeyEventResult.handled
+        : KeyEventResult.ignored;
+  }
+
+  /// Handle a key event from Flutter's global keyboard dispatcher.
+  bool handleKeyEvent(KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
-      return KeyEventResult.ignored;
+      return false;
     }
 
     // Pass through all keys when an EditableText has focus.
-    if (_focusIsEditableText()) return KeyEventResult.ignored;
+    if (_focusIsEditableText()) return false;
 
     final actionName = _keyMap[event.logicalKey];
-    if (actionName == null) return KeyEventResult.ignored;
+    if (actionName == null) return false;
     final action = _actions[actionName];
     if (event is KeyRepeatEvent && action?.repeatable != true) {
-      return KeyEventResult.handled;
+      return true;
     }
 
     // Check if this action requires Ctrl to be held
     final needsCtrl = _requireControl.contains(event.logicalKey);
     final ctrlHeld = HardwareKeyboard.instance.isControlPressed;
-    if (needsCtrl != ctrlHeld) return KeyEventResult.ignored;
+    if (needsCtrl != ctrlHeld) return false;
 
     final callback = _callbacks[actionName];
-    if (callback == null) return KeyEventResult.ignored;
+    if (callback == null) return false;
 
     execute(actionName);
-    return KeyEventResult.handled;
+    return true;
   }
 
   bool _focusIsEditableText() {
@@ -155,20 +162,45 @@ class ActionRegistry {
 
 /// A widget that intercepts registered shortcut keys globally.
 ///
-/// Place this above your page content in the widget tree. It uses a [Focus]
-/// widget with [autofocus] so it captures key events before Flutter's
-/// default handlers (focus traversal, button activation, etc.).
-class ActionFocus extends StatelessWidget {
+/// Place this above your page content in the widget tree. It registers with
+/// [HardwareKeyboard] so window-level shortcuts keep working even if native
+/// fullscreen transitions or overlays temporarily move primary focus away from
+/// this subtree.
+class ActionFocus extends StatefulWidget {
   final Widget child;
 
   const ActionFocus({super.key, required this.child});
 
   @override
+  State<ActionFocus> createState() => _ActionFocusState();
+}
+
+class _ActionFocusState extends State<ActionFocus> {
+  late final FocusNode _focusNode = FocusNode(debugLabel: 'ActionFocus');
+
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_handleGlobalKeyEvent);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _focusNode.hasFocus) return;
+      _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleGlobalKeyEvent);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  bool _handleGlobalKeyEvent(KeyEvent event) {
+    return actionRegistry.handleKeyEvent(event);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Focus(
-      autofocus: true,
-      onKeyEvent: actionRegistry.handleKey,
-      child: child,
-    );
+    return Focus(focusNode: _focusNode, autofocus: true, child: widget.child);
   }
 }

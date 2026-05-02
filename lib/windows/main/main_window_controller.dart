@@ -19,11 +19,6 @@ import 'main_window_test_hooks.dart';
 import 'main_window_view.dart';
 
 class MainWindowController {
-  static const double _toolbarLogicalHeight = 40.0;
-  static const double _mediaHeaderLogicalHeight = 32.0;
-  static const double _controlsBarLogicalHeight = 40.0;
-  static const double _loopRangeBarLogicalHeight = 40.0;
-
   final TickerProvider vsync;
   final StartupOptions startupOptions;
   final bool Function() mounted;
@@ -39,6 +34,10 @@ class MainWindowController {
   final GlobalKey viewportKey = GlobalKey();
   Timer? _fullScreenControlsTimer;
   int _fullScreenSerial = 0;
+  bool? _pendingFullScreen;
+  bool _fullScreenUiResizePending = false;
+  int? _windowedViewportWidth;
+  int? _windowedViewportHeight;
 
   late final MainWindowAnalysisCoordinator analysisCoordinator;
   late final MainWindowTestHarness testHarness;
@@ -150,7 +149,13 @@ class MainWindowController {
       onSplit: layoutCoordinator.onSplit,
       onZoom: layoutCoordinator.onZoom,
       onPointerButton: layoutCoordinator.onPointerButton,
-      onResize: layoutCoordinator.onViewportResize,
+      onResize: (width, height, devicePixelRatio) =>
+          layoutCoordinator.onViewportResize(
+            width,
+            height,
+            devicePixelRatio,
+            immediate: _fullScreenUiResizePending,
+          ),
       onMediaSwapped: mediaCoordinator.onMediaSwapped,
       onRemoveTrack: mediaCoordinator.removeTrack,
       onZoomChanged: layoutCoordinator.onZoomComboChanged,
@@ -190,131 +195,94 @@ class MainWindowController {
   }
 
   void _toggleFullScreen() {
-    _fullScreenSerial++;
-    fireAndLog('toggle full screen', _setFullScreen(!_fullScreen));
+    final currentTarget = _pendingFullScreen ?? _fullScreen;
+    _requestFullScreen(!currentTarget, reason: 'toggle full screen');
   }
 
   void _exitFullScreen() {
-    if (!_fullScreen) return;
-    _fullScreenSerial++;
-    fireAndLog('exit full screen', _setFullScreen(false));
+    final currentTarget = _pendingFullScreen ?? _fullScreen;
+    if (!currentTarget) return;
+    _requestFullScreen(false, reason: 'exit full screen');
   }
 
-  Future<void> _setFullScreen(bool fullScreen) async {
-    final serial = _fullScreenSerial;
+  void _requestFullScreen(bool fullScreen, {required String reason}) {
+    _fullScreenSerial++;
+    _pendingFullScreen = fullScreen;
+    fireAndLog(reason, _setFullScreen(fullScreen, _fullScreenSerial));
+  }
+
+  Future<void> _setFullScreen(bool fullScreen, int serial) async {
     _fullScreenControlsTimer?.cancel();
-    layoutCoordinator.beginViewportResizeSuppression();
     try {
       if (fullScreen) {
-        stateStore.setFullScreen(true);
-        await WidgetsBinding.instance.endOfFrame;
-        if (!mounted() || serial != _fullScreenSerial) return;
+        _rememberWindowedViewportSize();
       }
-
-      final initialBounds = await windowManager.getBounds();
+      // Switch the native window first so the Flutter fullscreen chrome never
+      // renders inside the old, non-fullscreen bounds.
       await windowManager.setFullScreen(fullScreen);
       if (!mounted() || serial != _fullScreenSerial) return;
-      await _waitForWindowBoundsToSettle(
-        initialBounds: initialBounds,
-        fullScreen: fullScreen,
-      );
-      if (!mounted() || serial != _fullScreenSerial) return;
-
-      if (!fullScreen) {
-        stateStore.setFullScreen(false);
+      if (fullScreen) {
+        await _preemptFullScreenViewportResize();
+      } else {
+        await _preemptWindowedViewportResize();
       }
+      if (!mounted() || serial != _fullScreenSerial) return;
+      _fullScreenUiResizePending = true;
+      stateStore.setFullScreen(fullScreen);
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted() || serial != _fullScreenSerial) return;
-
-      final settledBounds = await windowManager.getBounds();
-      await _preemptFullScreenViewportResize(
-        windowBounds: settledBounds,
-        fullScreen: fullScreen,
-      );
+      await _preemptMeasuredViewportResize();
       if (!mounted() || serial != _fullScreenSerial) return;
       if (fullScreen) {
         _scheduleFullScreenControlsHide();
       }
     } finally {
-      layoutCoordinator.endViewportResizeSuppression();
-    }
-  }
-
-  Future<void> _waitForWindowBoundsToSettle({
-    required Rect initialBounds,
-    required bool fullScreen,
-  }) async {
-    final stopwatch = Stopwatch()..start();
-    var previous = initialBounds;
-    var stableSamples = 0;
-
-    while (stopwatch.elapsed < const Duration(milliseconds: 500)) {
-      await Future<void>.delayed(const Duration(milliseconds: 16));
-      final current = await windowManager.getBounds();
-      final fullScreenApplied = await windowManager.isFullScreen();
-      final boundsChanged = !_sameWindowBounds(current, initialBounds);
-      final boundsStable = _sameWindowBounds(current, previous);
-
-      stableSamples = boundsStable ? stableSamples + 1 : 0;
-      previous = current;
-
-      if (fullScreenApplied == fullScreen &&
-          (boundsChanged ||
-              stopwatch.elapsed > const Duration(milliseconds: 80)) &&
-          stableSamples >= 2) {
-        break;
+      if (serial == _fullScreenSerial) {
+        _fullScreenUiResizePending = false;
+        _pendingFullScreen = null;
       }
     }
   }
 
-  bool _sameWindowBounds(Rect a, Rect b) {
-    return (a.left - b.left).abs() < 0.5 &&
-        (a.top - b.top).abs() < 0.5 &&
-        (a.width - b.width).abs() < 0.5 &&
-        (a.height - b.height).abs() < 0.5;
+  void _rememberWindowedViewportSize() {
+    if (layoutCoordinator.viewportWidth <= 0 ||
+        layoutCoordinator.viewportHeight <= 0) {
+      return;
+    }
+    _windowedViewportWidth = layoutCoordinator.viewportWidth;
+    _windowedViewportHeight = layoutCoordinator.viewportHeight;
   }
 
-  Future<void> _preemptFullScreenViewportResize({
-    required Rect windowBounds,
-    required bool fullScreen,
-  }) async {
+  Future<void> _preemptFullScreenViewportResize() async {
     final dpr = layoutCoordinator.viewportDevicePixelRatio;
     if (dpr <= 0) return;
-
-    final measuredSize = _measuredViewportSize();
-    final viewportLogicalWidth = measuredSize?.width ?? windowBounds.width;
-    final viewportLogicalHeight =
-        measuredSize?.height ??
-        (fullScreen
-            ? windowBounds.height
-            : (windowBounds.height - _nonFullScreenChromeLogicalHeight).clamp(
-                1.0,
-                double.infinity,
-              ));
+    final bounds = await windowManager.getBounds();
     await layoutCoordinator.preemptViewportResize(
-      width: (viewportLogicalWidth * dpr).round(),
-      height: (viewportLogicalHeight * dpr).round(),
+      width: (bounds.width * dpr).round(),
+      height: (bounds.height * dpr).round(),
     );
   }
 
-  Size? _measuredViewportSize() {
-    final context = viewportKey.currentContext;
-    if (context == null) return null;
-    final renderObject = context.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
-    final size = renderObject.size;
-    if (size.width <= 0 || size.height <= 0) return null;
-    return size;
+  Future<void> _preemptWindowedViewportResize() async {
+    final width = _windowedViewportWidth;
+    final height = _windowedViewportHeight;
+    if (width == null || height == null) return;
+    await layoutCoordinator.preemptViewportResize(width: width, height: height);
   }
 
-  double get _nonFullScreenChromeLogicalHeight {
-    if (trackManager.count <= 0) return _toolbarLogicalHeight;
-    return _toolbarLogicalHeight +
-        _mediaHeaderLogicalHeight +
-        _controlsBarLogicalHeight +
-        _loopRangeBarLogicalHeight +
-        trackManager.count *
-            MainWindowLayoutCoordinator.timelineTrackRowLogicalHeight;
+  Future<void> _preemptMeasuredViewportResize() async {
+    final context = viewportKey.currentContext;
+    if (context == null) return;
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return;
+    final size = renderObject.size;
+    if (size.width <= 0 || size.height <= 0) return;
+    final dpr = View.of(context).devicePixelRatio;
+    if (dpr <= 0) return;
+    await layoutCoordinator.preemptViewportResize(
+      width: (size.width * dpr).round(),
+      height: (size.height * dpr).round(),
+    );
   }
 
   void _showFullScreenControlsTemporarily() {
@@ -453,9 +421,9 @@ class MainWindowController {
 
   void _resetAfterLastTrackRemoved() {
     if (_fullScreen) {
-      fireAndLog(
-        'exit full screen after last track removed',
-        _setFullScreen(false),
+      _requestFullScreen(
+        false,
+        reason: 'exit full screen after last track removed',
       );
     }
     trackManager.clear();

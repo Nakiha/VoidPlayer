@@ -203,23 +203,40 @@ class MainWindowController {
   Future<void> _setFullScreen(bool fullScreen) async {
     final serial = _fullScreenSerial;
     _fullScreenControlsTimer?.cancel();
-    final initialBounds = await windowManager.getBounds();
-    await windowManager.setFullScreen(fullScreen);
-    if (!mounted() || serial != _fullScreenSerial) return;
-    await _waitForWindowBoundsToSettle(
-      initialBounds: initialBounds,
-      fullScreen: fullScreen,
-    );
-    if (!mounted() || serial != _fullScreenSerial) return;
-    final settledBounds = await windowManager.getBounds();
-    await _preemptFullScreenViewportResize(
-      windowBounds: settledBounds,
-      fullScreen: fullScreen,
-    );
-    if (!mounted() || serial != _fullScreenSerial) return;
-    stateStore.setFullScreen(fullScreen);
-    if (fullScreen) {
-      _scheduleFullScreenControlsHide();
+    layoutCoordinator.beginViewportResizeSuppression();
+    try {
+      if (fullScreen) {
+        stateStore.setFullScreen(true);
+        await WidgetsBinding.instance.endOfFrame;
+        if (!mounted() || serial != _fullScreenSerial) return;
+      }
+
+      final initialBounds = await windowManager.getBounds();
+      await windowManager.setFullScreen(fullScreen);
+      if (!mounted() || serial != _fullScreenSerial) return;
+      await _waitForWindowBoundsToSettle(
+        initialBounds: initialBounds,
+        fullScreen: fullScreen,
+      );
+      if (!mounted() || serial != _fullScreenSerial) return;
+
+      if (!fullScreen) {
+        stateStore.setFullScreen(false);
+      }
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted() || serial != _fullScreenSerial) return;
+
+      final settledBounds = await windowManager.getBounds();
+      await _preemptFullScreenViewportResize(
+        windowBounds: settledBounds,
+        fullScreen: fullScreen,
+      );
+      if (!mounted() || serial != _fullScreenSerial) return;
+      if (fullScreen) {
+        _scheduleFullScreenControlsHide();
+      }
+    } finally {
+      layoutCoordinator.endViewportResizeSuppression();
     }
   }
 
@@ -264,17 +281,30 @@ class MainWindowController {
     final dpr = layoutCoordinator.viewportDevicePixelRatio;
     if (dpr <= 0) return;
 
-    final viewportLogicalWidth = windowBounds.width;
-    final viewportLogicalHeight = fullScreen
-        ? windowBounds.height
-        : (windowBounds.height - _nonFullScreenChromeLogicalHeight).clamp(
-            1.0,
-            double.infinity,
-          );
+    final measuredSize = _measuredViewportSize();
+    final viewportLogicalWidth = measuredSize?.width ?? windowBounds.width;
+    final viewportLogicalHeight =
+        measuredSize?.height ??
+        (fullScreen
+            ? windowBounds.height
+            : (windowBounds.height - _nonFullScreenChromeLogicalHeight).clamp(
+                1.0,
+                double.infinity,
+              ));
     await layoutCoordinator.preemptViewportResize(
       width: (viewportLogicalWidth * dpr).round(),
       height: (viewportLogicalHeight * dpr).round(),
     );
+  }
+
+  Size? _measuredViewportSize() {
+    final context = viewportKey.currentContext;
+    if (context == null) return null;
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
+    final size = renderObject.size;
+    if (size.width <= 0 || size.height <= 0) return null;
+    return size;
   }
 
   double get _nonFullScreenChromeLogicalHeight {
@@ -401,6 +431,7 @@ class MainWindowController {
       showSettingsDialog: () => stateStore.setSettingsVisible(true),
       toggleFullScreen: _toggleFullScreen,
       exitFullScreen: _exitFullScreen,
+      openNewWindow: () {},
     );
   }
 

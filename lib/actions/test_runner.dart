@@ -748,6 +748,10 @@ ScriptInstruction? _parseInstruction(
       return ScriptAction(time, SetSplitPos(double.parse(args[0])));
     case 'TOGGLE_LAYOUT_MODE':
       return ScriptAction(time, const ToggleLayoutMode());
+    case 'TOGGLE_FULL_SCREEN':
+      return ScriptAction(time, const ToggleFullScreen());
+    case 'EXIT_FULL_SCREEN':
+      return ScriptAction(time, const ExitFullScreen());
     case 'PAN':
       if (args.length < 2) {
         log.warning('PAN needs dx and dy arguments: $rawLine');

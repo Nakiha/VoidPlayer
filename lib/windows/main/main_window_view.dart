@@ -244,6 +244,7 @@ class MainWindowView extends StatelessWidget {
             ),
             if (model.fullScreen)
               Positioned.fill(
+                key: const ValueKey('fullScreenPointerCapture'),
                 child: MouseRegion(
                   opaque: false,
                   onHover: (_) => actions.onFullScreenPointerActivity(),
@@ -251,6 +252,7 @@ class MainWindowView extends StatelessWidget {
               ),
             if (model.fullScreen && model.tracks.isNotEmpty)
               Positioned(
+                key: const ValueKey('fullScreenControlsOverlay'),
                 left: 12,
                 right: 12,
                 bottom: 12,
@@ -289,6 +291,7 @@ class MainWindowView extends StatelessWidget {
                 ),
               ),
             Positioned(
+              key: const ValueKey('profilerOverlay'),
               top: 48,
               right: 12,
               bottom: 12,
@@ -315,6 +318,7 @@ class MainWindowView extends StatelessWidget {
               ),
             ),
             Positioned.fill(
+              key: const ValueKey('settingsOverlay'),
               child: _AnimatedOverlaySlot(
                 visible: model.settingsVisible,
                 builder: (context) =>

@@ -113,7 +113,7 @@ bool Renderer::initialize(const RendererConfig& config) {
 
     // Create constant buffer for shader uniforms (must be 16-byte aligned)
     // Layout must match multitrack.hlsl cbuffer Constants
-    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 224, compiled_shader_)) {
+    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 288, compiled_shader_)) {
         spdlog::error("Renderer: failed to create constant buffer");
         return fail();
     }
@@ -1707,8 +1707,12 @@ void Renderer::draw_frame(const PresentDecision& decision) {
             float view_offset_uv_x[4];    // offset 176
             float view_offset_uv_y[4];    // offset 192
             float background_color[4];     // offset 208
+            int color_range[4];            // offset 224
+            int color_matrix[4];           // offset 240
+            int color_transfer[4];         // offset 256
+            int color_primaries[4];        // offset 272
         };
-        static_assert(sizeof(Constants) == 224, "Constants must be 224 bytes");
+        static_assert(sizeof(Constants) == 288, "Constants must be 288 bytes");
 
         // Snapshot layout state atomically
         LayoutState snap;
@@ -1740,10 +1744,35 @@ void Renderer::draw_frame(const PresentDecision& decision) {
             if (!tracks_[i]) {
                 cb.video_aspect[i] = 1.0f;
                 cb.nv12_uv_scale_y[i] = 1.0f;
+                cb.color_range[i] = VIDEO_COLOR_RANGE_LIMITED;
+                cb.color_matrix[i] = VIDEO_COLOR_MATRIX_BT709;
+                cb.color_transfer[i] = VIDEO_COLOR_TRANSFER_SDR;
+                cb.color_primaries[i] = VIDEO_COLOR_PRIMARIES_BT709;
                 continue;
             }
             ++active_count;
             cb.video_aspect[i] = tracks_[i]->video_aspect;
+            const VideoColorInfo color = decision.frames[i].has_value()
+                ? decision.frames[i]->color
+                : VideoColorInfo{};
+            cb.color_range[i] = color.range != VIDEO_COLOR_RANGE_UNKNOWN
+                ? color.range
+                : VIDEO_COLOR_RANGE_LIMITED;
+            cb.color_matrix[i] = color.matrix != VIDEO_COLOR_MATRIX_UNKNOWN
+                ? color.matrix
+                : (tracks_[i]->video_width >= 1280 || tracks_[i]->video_height > 576
+                    ? VIDEO_COLOR_MATRIX_BT709
+                    : VIDEO_COLOR_MATRIX_BT601);
+            cb.color_transfer[i] = color.transfer != VIDEO_COLOR_TRANSFER_UNKNOWN
+                ? color.transfer
+                : VIDEO_COLOR_TRANSFER_SDR;
+            cb.color_primaries[i] = color.primaries != VIDEO_COLOR_PRIMARIES_UNKNOWN
+                ? color.primaries
+                : (cb.color_matrix[i] == VIDEO_COLOR_MATRIX_BT2020_NCL
+                    ? VIDEO_COLOR_PRIMARIES_BT2020
+                    : (cb.color_matrix[i] == VIDEO_COLOR_MATRIX_BT601
+                        ? VIDEO_COLOR_PRIMARIES_BT601
+                        : VIDEO_COLOR_PRIMARIES_BT709));
             if (decision.frames[i].has_value() && decision.frames[i]->is_nv12) {
                 cb.nv12_mask |= (1 << static_cast<int>(i));
                 cb.nv12_uv_scale_y[i] = frame_presenter_

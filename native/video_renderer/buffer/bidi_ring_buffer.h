@@ -23,6 +23,7 @@ struct TextureFrame {
     // Hardware decode metadata (D3D11VA NV12)
     bool is_nv12 = false;               // true if NV12 D3D11VA frame
     int texture_array_index = 0;        // Texture2DArray slice index
+    VideoColorInfo color;
 
     // Holds a reference to the underlying AVFrame/hw buffer. Prevents the
     // decoder from reusing the frame pool slot while the render thread

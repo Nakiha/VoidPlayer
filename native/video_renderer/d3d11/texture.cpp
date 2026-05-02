@@ -196,8 +196,18 @@ bool TextureManager::ensure_nv12_copy_resources(
         return false;
     }
 
+    DXGI_FORMAT y_format = DXGI_FORMAT_R8_UNORM;
+    DXGI_FORMAT uv_format = DXGI_FORMAT_R8G8_UNORM;
+    if (src_desc.Format == DXGI_FORMAT_P010 || src_desc.Format == DXGI_FORMAT_P016) {
+        y_format = DXGI_FORMAT_R16_UNORM;
+        uv_format = DXGI_FORMAT_R16G16_UNORM;
+    } else if (src_desc.Format != DXGI_FORMAT_NV12) {
+        spdlog::warn("Preparing planar copy resources for unexpected format={}",
+                     static_cast<int>(src_desc.Format));
+    }
+
     D3D11_SHADER_RESOURCE_VIEW_DESC y_desc = {};
-    y_desc.Format = DXGI_FORMAT_R8_UNORM;
+    y_desc.Format = y_format;
     y_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     y_desc.Texture2D.MipLevels = 1;
     hr = device_->CreateShaderResourceView(copy_texture.Get(), &y_desc, &y_srv);
@@ -209,7 +219,7 @@ bool TextureManager::ensure_nv12_copy_resources(
     }
 
     D3D11_SHADER_RESOURCE_VIEW_DESC uv_desc = {};
-    uv_desc.Format = DXGI_FORMAT_R8G8_UNORM;
+    uv_desc.Format = uv_format;
     uv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     uv_desc.Texture2D.MipLevels = 1;
     hr = device_->CreateShaderResourceView(copy_texture.Get(), &uv_desc, &uv_srv);

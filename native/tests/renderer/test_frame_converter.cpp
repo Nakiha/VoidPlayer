@@ -156,6 +156,58 @@ TEST_CASE("FrameConverter: software conversion follows dynamic frame geometry",
     av_frame_free(&second);
 }
 
+TEST_CASE("FrameConverter: propagates color metadata", "[frame_converter][color]") {
+    FrameConverter converter;
+    REQUIRE(converter.init_software(1920, 1080, AV_PIX_FMT_YUV420P));
+
+    AVFrame* frame = make_yuv420_frame(1920, 1080, 3000);
+    frame->color_range = AVCOL_RANGE_MPEG;
+    frame->colorspace = AVCOL_SPC_BT709;
+    frame->color_trc = AVCOL_TRC_BT709;
+    frame->color_primaries = AVCOL_PRI_BT709;
+
+    TextureFrame result = converter.convert(frame);
+    REQUIRE(result.texture_handle != nullptr);
+    REQUIRE(result.color.range == VIDEO_COLOR_RANGE_LIMITED);
+    REQUIRE(result.color.matrix == VIDEO_COLOR_MATRIX_BT709);
+    REQUIRE(result.color.transfer == VIDEO_COLOR_TRANSFER_SDR);
+    REQUIRE(result.color.primaries == VIDEO_COLOR_PRIMARIES_BT709);
+
+    av_frame_free(&frame);
+}
+
+TEST_CASE("FrameConverter: maps HDR transfer metadata", "[frame_converter][color]") {
+    FrameConverter converter;
+    REQUIRE(converter.init_software(3840, 2160, AV_PIX_FMT_YUV420P10LE));
+
+    AVFrame* frame = av_frame_alloc();
+    REQUIRE(frame != nullptr);
+    frame->format = AV_PIX_FMT_YUV420P10LE;
+    frame->width = 64;
+    frame->height = 64;
+    frame->pts = 4000;
+    frame->color_range = AVCOL_RANGE_MPEG;
+    frame->colorspace = AVCOL_SPC_BT2020_NCL;
+    frame->color_trc = AVCOL_TRC_SMPTE2084;
+    frame->color_primaries = AVCOL_PRI_BT2020;
+    REQUIRE(av_frame_get_buffer(frame, 0) >= 0);
+    for (int p = 0; p < 3; ++p) {
+        const int h = p == 0 ? frame->height : frame->height / 2;
+        for (int y = 0; y < h; ++y) {
+            memset(frame->data[p] + y * frame->linesize[p], 0, frame->linesize[p]);
+        }
+    }
+
+    TextureFrame result = converter.convert(frame);
+    REQUIRE(result.texture_handle != nullptr);
+    REQUIRE(result.color.range == VIDEO_COLOR_RANGE_LIMITED);
+    REQUIRE(result.color.matrix == VIDEO_COLOR_MATRIX_BT2020_NCL);
+    REQUIRE(result.color.transfer == VIDEO_COLOR_TRANSFER_PQ);
+    REQUIRE(result.color.primaries == VIDEO_COLOR_PRIMARIES_BT2020);
+
+    av_frame_free(&frame);
+}
+
 TEST_CASE("FrameConverter: init_hardware sets hardware mode", "[frame_converter]") {
     FrameConverter converter;
     std::recursive_mutex device_mutex;

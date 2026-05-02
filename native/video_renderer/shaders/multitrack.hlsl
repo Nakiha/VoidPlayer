@@ -29,6 +29,25 @@ VSOutput VSMain(VSInput input) {
 #define MODE_SIDE_BY_SIDE 0
 #define MODE_SPLIT_SCREEN 1
 
+#define COLOR_RANGE_UNKNOWN 0
+#define COLOR_RANGE_LIMITED 1
+#define COLOR_RANGE_FULL 2
+
+#define COLOR_MATRIX_UNKNOWN 0
+#define COLOR_MATRIX_BT601 1
+#define COLOR_MATRIX_BT709 2
+#define COLOR_MATRIX_BT2020_NCL 3
+
+#define COLOR_TRANSFER_UNKNOWN 0
+#define COLOR_TRANSFER_SDR 1
+#define COLOR_TRANSFER_PQ 2
+#define COLOR_TRANSFER_HLG 3
+
+#define COLOR_PRIMARIES_UNKNOWN 0
+#define COLOR_PRIMARIES_BT601 1
+#define COLOR_PRIMARIES_BT709 2
+#define COLOR_PRIMARIES_BT2020 3
+
 // RGBA textures (software decode path)
 Texture2D u_textures[4] : register(t0);
 SamplerState u_sampler : register(s0);
@@ -75,17 +94,108 @@ cbuffer Constants : register(b0) {
     float4 u_view_offset_uv_x;   // offset 176: view_offset_uv.x for track 0-3
     float4 u_view_offset_uv_y;   // offset 192: view_offset_uv.y for track 0-3
     float4 u_background_color;   // offset 208: viewport fill outside video bounds
+    int4 u_color_range;          // offset 224: VideoColorRange per track
+    int4 u_color_matrix;         // offset 240: VideoColorMatrix per track
+    int4 u_color_transfer;       // offset 256: VideoColorTransfer per track
+    int4 u_color_primaries;      // offset 272: VideoColorPrimaries per track
 };
-// Total: 224 bytes — must match renderer.cpp draw_frame() Constants struct (224 bytes)
+// Total: 288 bytes — must match renderer.cpp draw_frame() Constants struct (288 bytes)
 
-// BT.601 YUV -> RGB conversion (standard definition)
-float3 yuv_to_rgb(float y, float2 uv) {
-    float cb = uv.x - 0.5;
-    float cr = uv.y - 0.5;
-    float r = saturate(y + 1.402 * cr);
-    float g = saturate(y - 0.344136 * cb - 0.714136 * cr);
-    float b = saturate(y + 1.772 * cb);
-    return float3(r, g, b);
+float3 linear_to_srgb(float3 x) {
+    x = max(x, 0.0);
+    float3 lo = x * 12.92;
+    float3 hi = 1.055 * pow(x, 1.0 / 2.4) - 0.055;
+    return lerp(lo, hi, step(0.0031308, x));
+}
+
+float3 srgb_to_linear(float3 x) {
+    x = saturate(x);
+    float3 lo = x / 12.92;
+    float3 hi = pow((x + 0.055) / 1.055, 2.4);
+    return lerp(lo, hi, step(0.04045, x));
+}
+
+float3 convert_linear_primaries_to_bt709(float3 rgb, int primaries) {
+    if (primaries == COLOR_PRIMARIES_BT2020) {
+        return float3(
+            1.6605 * rgb.r - 0.5876 * rgb.g - 0.0728 * rgb.b,
+           -0.1246 * rgb.r + 1.1329 * rgb.g - 0.0083 * rgb.b,
+           -0.0182 * rgb.r - 0.1006 * rgb.g + 1.1187 * rgb.b);
+    }
+    return rgb;
+}
+
+float3 pq_to_linear_nits(float3 x) {
+    x = saturate(x);
+    const float m1 = 0.1593017578125;  // 2610 / 16384
+    const float m2 = 78.84375;         // 2523 / 32
+    const float c1 = 0.8359375;        // 3424 / 4096
+    const float c2 = 18.8515625;       // 2413 / 128
+    const float c3 = 18.6875;          // 2392 / 128
+    float3 p = pow(x, 1.0 / m2);
+    float3 num = max(p - c1, 0.0);
+    float3 den = max(c2 - c3 * p, 1e-6);
+    return pow(num / den, 1.0 / m1) * 10000.0;
+}
+
+float3 hlg_to_linear(float3 x) {
+    x = saturate(x);
+    const float a = 0.17883277;
+    const float b = 0.28466892;
+    const float c = 0.55991073;
+    float3 lo = (x * x) / 3.0;
+    float3 hi = (exp((x - c) / a) + b) / 12.0;
+    return lerp(lo, hi, step(0.5, x));
+}
+
+float3 tone_map_to_sdr(float3 rgb, int transfer, int primaries) {
+    if (transfer == COLOR_TRANSFER_PQ) {
+        float3 lin = pq_to_linear_nits(rgb) / 203.0;
+        lin = convert_linear_primaries_to_bt709(lin, primaries);
+        return saturate(linear_to_srgb(lin / (1.0 + lin)));
+    }
+    if (transfer == COLOR_TRANSFER_HLG) {
+        float3 lin = hlg_to_linear(rgb) * 4.0;
+        lin = convert_linear_primaries_to_bt709(lin, primaries);
+        return saturate(linear_to_srgb(lin / (1.0 + lin)));
+    }
+    if (primaries == COLOR_PRIMARIES_BT2020) {
+        float3 lin = convert_linear_primaries_to_bt709(srgb_to_linear(rgb), primaries);
+        return saturate(linear_to_srgb(lin));
+    }
+    return saturate(rgb);
+}
+
+float3 yuv_to_rgb(float y, float2 uv, int range, int color_matrix, int transfer, int primaries) {
+    float y_full = y;
+    float2 cbcr = uv - 0.5;
+
+    if (range != COLOR_RANGE_FULL) {
+        y_full = (y - (16.0 / 255.0)) * (255.0 / 219.0);
+        cbcr *= (255.0 / 224.0);
+    }
+
+    float cb = cbcr.x;
+    float cr = cbcr.y;
+    float3 rgb;
+    if (color_matrix == COLOR_MATRIX_BT2020_NCL) {
+        rgb = float3(
+            y_full + 1.4746 * cr,
+            y_full - 0.164553 * cb - 0.571353 * cr,
+            y_full + 1.8814 * cb);
+    } else if (color_matrix == COLOR_MATRIX_BT709 || color_matrix == COLOR_MATRIX_UNKNOWN) {
+        rgb = float3(
+            y_full + 1.5748 * cr,
+            y_full - 0.187324 * cb - 0.468124 * cr,
+            y_full + 1.8556 * cb);
+    } else {
+        rgb = float3(
+            y_full + 1.402 * cr,
+            y_full - 0.344136 * cb - 0.714136 * cr,
+            y_full + 1.772 * cb);
+    }
+
+    return tone_map_to_sdr(rgb, transfer, primaries);
 }
 
 // Sample a track's texture and return RGBA color.
@@ -114,7 +224,15 @@ float4 sample_track(int track_idx, float2 uv) {
             uv_color = u_textures_uv[3].Sample(u_sampler, scaled_uv);
         }
 
-        return float4(yuv_to_rgb(y, uv_color), 1.0);
+        return float4(
+            yuv_to_rgb(
+                y,
+                uv_color,
+                u_color_range[track_idx],
+                u_color_matrix[track_idx],
+                u_color_transfer[track_idx],
+                u_color_primaries[track_idx]),
+            1.0);
     }
 
     // RGBA software decode path

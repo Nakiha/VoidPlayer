@@ -9,6 +9,40 @@ struct ID3D11Texture2D;
 
 namespace vr {
 
+enum VideoColorRange : int {
+    VIDEO_COLOR_RANGE_UNKNOWN = 0,
+    VIDEO_COLOR_RANGE_LIMITED = 1,
+    VIDEO_COLOR_RANGE_FULL = 2,
+};
+
+enum VideoColorMatrix : int {
+    VIDEO_COLOR_MATRIX_UNKNOWN = 0,
+    VIDEO_COLOR_MATRIX_BT601 = 1,
+    VIDEO_COLOR_MATRIX_BT709 = 2,
+    VIDEO_COLOR_MATRIX_BT2020_NCL = 3,
+};
+
+enum VideoColorTransfer : int {
+    VIDEO_COLOR_TRANSFER_UNKNOWN = 0,
+    VIDEO_COLOR_TRANSFER_SDR = 1,
+    VIDEO_COLOR_TRANSFER_PQ = 2,
+    VIDEO_COLOR_TRANSFER_HLG = 3,
+};
+
+enum VideoColorPrimaries : int {
+    VIDEO_COLOR_PRIMARIES_UNKNOWN = 0,
+    VIDEO_COLOR_PRIMARIES_BT601 = 1,
+    VIDEO_COLOR_PRIMARIES_BT709 = 2,
+    VIDEO_COLOR_PRIMARIES_BT2020 = 3,
+};
+
+struct VideoColorInfo {
+    int range = VIDEO_COLOR_RANGE_UNKNOWN;
+    int matrix = VIDEO_COLOR_MATRIX_UNKNOWN;
+    int transfer = VIDEO_COLOR_TRANSFER_UNKNOWN;
+    int primaries = VIDEO_COLOR_PRIMARIES_UNKNOWN;
+};
+
 struct CpuRgbaFrameStorage {
     std::shared_ptr<std::vector<uint8_t>> data;
     int stride = 0;

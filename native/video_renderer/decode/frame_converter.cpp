@@ -9,11 +9,120 @@
 extern "C" {
 #include <libavutil/frame.h>
 #include <libavutil/hwcontext.h>
+#include <libavutil/pixdesc.h>
 }
 
 namespace vr {
 
 namespace {
+VideoColorRange map_color_range(AVColorRange range) {
+    switch (range) {
+    case AVCOL_RANGE_JPEG:
+        return VIDEO_COLOR_RANGE_FULL;
+    case AVCOL_RANGE_MPEG:
+        return VIDEO_COLOR_RANGE_LIMITED;
+    default:
+        return VIDEO_COLOR_RANGE_UNKNOWN;
+    }
+}
+
+VideoColorMatrix map_color_matrix(AVColorSpace space) {
+    switch (space) {
+    case AVCOL_SPC_BT709:
+        return VIDEO_COLOR_MATRIX_BT709;
+    case AVCOL_SPC_BT470BG:
+    case AVCOL_SPC_SMPTE170M:
+    case AVCOL_SPC_SMPTE240M:
+        return VIDEO_COLOR_MATRIX_BT601;
+    case AVCOL_SPC_BT2020_NCL:
+    case AVCOL_SPC_BT2020_CL:
+        return VIDEO_COLOR_MATRIX_BT2020_NCL;
+    default:
+        return VIDEO_COLOR_MATRIX_UNKNOWN;
+    }
+}
+
+VideoColorTransfer map_color_transfer(AVColorTransferCharacteristic transfer) {
+    switch (transfer) {
+    case AVCOL_TRC_SMPTE2084:
+        return VIDEO_COLOR_TRANSFER_PQ;
+    case AVCOL_TRC_ARIB_STD_B67:
+        return VIDEO_COLOR_TRANSFER_HLG;
+    case AVCOL_TRC_BT709:
+    case AVCOL_TRC_GAMMA22:
+    case AVCOL_TRC_GAMMA28:
+    case AVCOL_TRC_SMPTE170M:
+    case AVCOL_TRC_SMPTE240M:
+    case AVCOL_TRC_IEC61966_2_1:
+    case AVCOL_TRC_BT2020_10:
+    case AVCOL_TRC_BT2020_12:
+        return VIDEO_COLOR_TRANSFER_SDR;
+    default:
+        return VIDEO_COLOR_TRANSFER_UNKNOWN;
+    }
+}
+
+VideoColorPrimaries map_color_primaries(AVColorPrimaries primaries) {
+    switch (primaries) {
+    case AVCOL_PRI_BT709:
+        return VIDEO_COLOR_PRIMARIES_BT709;
+    case AVCOL_PRI_BT470BG:
+    case AVCOL_PRI_SMPTE170M:
+    case AVCOL_PRI_SMPTE240M:
+        return VIDEO_COLOR_PRIMARIES_BT601;
+    case AVCOL_PRI_BT2020:
+        return VIDEO_COLOR_PRIMARIES_BT2020;
+    default:
+        return VIDEO_COLOR_PRIMARIES_UNKNOWN;
+    }
+}
+
+VideoColorInfo color_info_from_frame(const AVFrame* frame) {
+    VideoColorInfo info;
+    if (!frame) {
+        return info;
+    }
+
+    info.range = map_color_range(frame->color_range);
+    info.matrix = map_color_matrix(frame->colorspace);
+    info.transfer = map_color_transfer(frame->color_trc);
+    info.primaries = map_color_primaries(frame->color_primaries);
+
+    // FFmpeg often leaves screen recordings partially unspecified. Pick the
+    // same conservative defaults most players use for YUV video.
+    if (info.range == VIDEO_COLOR_RANGE_UNKNOWN) {
+        info.range = VIDEO_COLOR_RANGE_LIMITED;
+    }
+    if (info.matrix == VIDEO_COLOR_MATRIX_UNKNOWN) {
+        info.matrix = frame->width >= 1280 || frame->height > 576
+            ? VIDEO_COLOR_MATRIX_BT709
+            : VIDEO_COLOR_MATRIX_BT601;
+    }
+    if (info.transfer == VIDEO_COLOR_TRANSFER_UNKNOWN) {
+        info.transfer = VIDEO_COLOR_TRANSFER_SDR;
+    }
+    if (info.primaries == VIDEO_COLOR_PRIMARIES_UNKNOWN) {
+        info.primaries = info.matrix == VIDEO_COLOR_MATRIX_BT2020_NCL
+            ? VIDEO_COLOR_PRIMARIES_BT2020
+            : (info.matrix == VIDEO_COLOR_MATRIX_BT601
+                ? VIDEO_COLOR_PRIMARIES_BT601
+                : VIDEO_COLOR_PRIMARIES_BT709);
+    }
+    return info;
+}
+
+int sws_colorspace_for_matrix(int matrix) {
+    switch (matrix) {
+    case VIDEO_COLOR_MATRIX_BT709:
+        return SWS_CS_ITU709;
+    case VIDEO_COLOR_MATRIX_BT2020_NCL:
+        return SWS_CS_BT2020;
+    case VIDEO_COLOR_MATRIX_BT601:
+    default:
+        return SWS_CS_DEFAULT;
+    }
+}
+
 struct D3D11SnapshotFrameRef {
     Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
 };
@@ -68,9 +177,11 @@ void FrameConverter::reset_sws_context() {
     sws_src_width_ = 0;
     sws_src_height_ = 0;
     sws_src_format_ = AV_PIX_FMT_NONE;
+    sws_color_ = {};
 }
 
-bool FrameConverter::ensure_sws_context(int src_width, int src_height, AVPixelFormat src_format) {
+bool FrameConverter::ensure_sws_context(int src_width, int src_height, AVPixelFormat src_format,
+                                        const VideoColorInfo& color) {
     if (src_width <= 0 || src_height <= 0 || src_format == AV_PIX_FMT_NONE) {
         spdlog::error("[FrameConverter] Invalid SwsContext request ({}x{}, format={})",
                       src_width, src_height, static_cast<int>(src_format));
@@ -80,7 +191,11 @@ bool FrameConverter::ensure_sws_context(int src_width, int src_height, AVPixelFo
     if (sws_ctx_ &&
         sws_src_width_ == src_width &&
         sws_src_height_ == src_height &&
-        sws_src_format_ == src_format) {
+        sws_src_format_ == src_format &&
+        sws_color_.range == color.range &&
+        sws_color_.matrix == color.matrix &&
+        sws_color_.transfer == color.transfer &&
+        sws_color_.primaries == color.primaries) {
         return true;
     }
 
@@ -97,11 +212,26 @@ bool FrameConverter::ensure_sws_context(int src_width, int src_height, AVPixelFo
         return false;
     }
 
+    const int* coeffs = sws_getCoefficients(sws_colorspace_for_matrix(color.matrix));
+    const int src_range = color.range == VIDEO_COLOR_RANGE_FULL ? 1 : 0;
+    const int dst_range = 1;
+    if (sws_setColorspaceDetails(
+            sws_ctx_,
+            coeffs,
+            src_range,
+            coeffs,
+            dst_range,
+            0, 1 << 16, 1 << 16) < 0) {
+        spdlog::warn("[FrameConverter] Failed to set SwsContext colorspace details");
+    }
+
     sws_src_width_ = src_width;
     sws_src_height_ = src_height;
     sws_src_format_ = src_format;
-    spdlog::info("[FrameConverter] SwsContext initialized ({}x{}, format={})",
-                 src_width, src_height, static_cast<int>(src_format));
+    sws_color_ = color;
+    spdlog::info("[FrameConverter] SwsContext initialized ({}x{}, format={}, range={}, matrix={})",
+                 src_width, src_height, static_cast<int>(src_format),
+                 color.range, color.matrix);
     return true;
 }
 
@@ -118,7 +248,16 @@ bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat 
     d3d_context_ = nullptr;
     device_mutex_ = nullptr;
 
-    if (!ensure_sws_context(src_width, src_height, src_format)) {
+    VideoColorInfo default_color;
+    default_color.range = VIDEO_COLOR_RANGE_LIMITED;
+    default_color.matrix = src_width >= 1280 || src_height > 576
+        ? VIDEO_COLOR_MATRIX_BT709
+        : VIDEO_COLOR_MATRIX_BT601;
+    default_color.transfer = VIDEO_COLOR_TRANSFER_SDR;
+    default_color.primaries = default_color.matrix == VIDEO_COLOR_MATRIX_BT601
+        ? VIDEO_COLOR_PRIMARIES_BT601
+        : VIDEO_COLOR_PRIMARIES_BT709;
+    if (!ensure_sws_context(src_width, src_height, src_format, default_color)) {
         return false;
     }
 
@@ -159,6 +298,7 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
     result.height = frame->height;
     result.is_ref = false;
     result.texture_handle = nullptr;
+    result.color = color_info_from_frame(frame);
 
     if (is_hw_ && download_hw_to_cpu_) {
         AVFrame* sw_frame = av_frame_alloc();
@@ -176,7 +316,8 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
         }
 
         const auto sw_format = static_cast<AVPixelFormat>(sw_frame->format);
-        if (!ensure_sws_context(sw_frame->width, sw_frame->height, sw_format)) {
+        result.color = color_info_from_frame(sw_frame);
+        if (!ensure_sws_context(sw_frame->width, sw_frame->height, sw_format, result.color)) {
             av_frame_free(&sw_frame);
             return result;
         }
@@ -262,7 +403,8 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
         const auto frame_format = frame
             ? static_cast<AVPixelFormat>(frame->format)
             : AV_PIX_FMT_NONE;
-        if (!ensure_sws_context(frame_width, frame_height, frame_format)) {
+        result.color = color_info_from_frame(frame);
+        if (!ensure_sws_context(frame_width, frame_height, frame_format, result.color)) {
             return result;
         }
 
@@ -378,6 +520,7 @@ std::optional<TextureFrame> FrameConverter::snapshot_hardware_frame(AVFrame* fra
     result.texture_handle = snapshot.Get();
     result.is_nv12 = true;
     result.texture_array_index = 0;
+    result.color = color_info_from_frame(frame);
     result.hw_frame_ref = snapshot_ref;
     result.storage = D3D11Nv12FrameStorage{
         snapshot.Get(),

@@ -2,7 +2,11 @@
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <cstring>
+#include <limits>
+#include <memory>
+#include <new>
 #include <thread>
+#include <vector>
 #include <d3d11.h>
 #include <wrl/client.h>
 
@@ -15,6 +19,48 @@ extern "C" {
 namespace vr {
 
 namespace {
+constexpr int kMaxDecodedDimension = 16384;
+constexpr size_t kMaxRgbaBytes = size_t{1024} * 1024 * 1024;
+
+bool calculate_rgba_layout(int width, int height, size_t& stride, size_t& bytes) {
+    stride = 0;
+    bytes = 0;
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+    if (width > kMaxDecodedDimension || height > kMaxDecodedDimension) {
+        return false;
+    }
+    const size_t width_size = static_cast<size_t>(width);
+    const size_t height_size = static_cast<size_t>(height);
+    if (width_size > std::numeric_limits<size_t>::max() / 4) {
+        return false;
+    }
+    stride = width_size * 4;
+    if (stride > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return false;
+    }
+    if (height_size > std::numeric_limits<size_t>::max() / stride) {
+        return false;
+    }
+    bytes = stride * height_size;
+    if (bytes == 0 || bytes > kMaxRgbaBytes) {
+        return false;
+    }
+    return true;
+}
+
+std::shared_ptr<std::vector<uint8_t>> allocate_rgba_buffer(size_t bytes,
+                                                           const char* context) {
+    try {
+        return std::make_shared<std::vector<uint8_t>>(bytes);
+    } catch (const std::bad_alloc&) {
+        spdlog::error("[FrameConverter] Failed to allocate {} RGBA buffer ({} bytes)",
+                      context, bytes);
+    }
+    return nullptr;
+}
+
 VideoColorRange map_color_range(AVColorRange range) {
     switch (range) {
     case AVCOL_RANGE_JPEG:
@@ -187,6 +233,13 @@ bool FrameConverter::ensure_sws_context(int src_width, int src_height, AVPixelFo
                       src_width, src_height, static_cast<int>(src_format));
         return false;
     }
+    size_t rgba_stride = 0;
+    size_t rgba_bytes = 0;
+    if (!calculate_rgba_layout(src_width, src_height, rgba_stride, rgba_bytes)) {
+        spdlog::error("[FrameConverter] Refusing unsupported frame geometry ({}x{}, format={})",
+                      src_width, src_height, static_cast<int>(src_format));
+        return false;
+    }
 
     if (sws_ctx_ &&
         sws_src_width_ == src_width &&
@@ -330,9 +383,15 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
 
         result.width = sw_frame->width;
         result.height = sw_frame->height;
-        size_t stride = static_cast<size_t>(sw_frame->width) * 4;
-        size_t buf_size = stride * static_cast<size_t>(sw_frame->height);
-        auto rgba_buf = std::make_shared<std::vector<uint8_t>>(buf_size);
+        size_t stride = 0;
+        size_t buf_size = 0;
+        if (!calculate_rgba_layout(sw_frame->width, sw_frame->height, stride, buf_size)) {
+            spdlog::error("[FrameConverter] Invalid hw-download RGBA layout ({}x{})",
+                          sw_frame->width, sw_frame->height);
+            av_frame_free(&sw_frame);
+            return result;
+        }
+        auto rgba_buf = allocate_rgba_buffer(buf_size, "hw-download");
         if (!rgba_buf || rgba_buf->empty()) {
             spdlog::error("[FrameConverter] Failed to allocate hw-download RGBA buffer ({} bytes)", buf_size);
             av_frame_free(&sw_frame);
@@ -417,9 +476,14 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
         height_ = frame_height;
         src_format_ = frame_format;
 
-        size_t stride = static_cast<size_t>(frame_width) * 4;
-        size_t buf_size = stride * static_cast<size_t>(frame_height);
-        auto rgba_buf = std::make_shared<std::vector<uint8_t>>(buf_size);
+        size_t stride = 0;
+        size_t buf_size = 0;
+        if (!calculate_rgba_layout(frame_width, frame_height, stride, buf_size)) {
+            spdlog::error("[FrameConverter] Invalid RGBA layout ({}x{})",
+                          frame_width, frame_height);
+            return result;
+        }
+        auto rgba_buf = allocate_rgba_buffer(buf_size, "software");
         if (!rgba_buf || rgba_buf->empty()) {
             spdlog::error("[FrameConverter] Failed to allocate RGBA buffer ({} bytes)", buf_size);
             return result;

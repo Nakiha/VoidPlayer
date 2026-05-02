@@ -227,6 +227,23 @@ TEST_CASE("VBS2: open and header", "[analysis][vbs2]") {
     REQUIRE(vbs2.frame_count() >= 100);
 }
 
+TEST_CASE("VBS2: failed reopen clears previous header", "[analysis][vbs2]") {
+    auto& data = AnalysisTestData::instance();
+    REQUIRE(data.ensure());
+
+    vr::analysis::Vbs2File vbs2;
+    REQUIRE(vbs2.open(data.vbs2_path()));
+    REQUIRE(vbs2.header().width == 1920);
+
+    const auto missing_path =
+        std::filesystem::temp_directory_path() / "voidplayer_missing_reopen.vbs2";
+    std::filesystem::remove(missing_path);
+    REQUIRE(vbs2.open(missing_path.string()) == false);
+    REQUIRE(vbs2.frame_count() == 0);
+    REQUIRE(vbs2.header().width == 0);
+    REQUIRE(vbs2.header().height == 0);
+}
+
 TEST_CASE("VBS2: first frame is I-slice (IDR)", "[analysis][vbs2]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());

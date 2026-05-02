@@ -22,6 +22,7 @@ TEST_CASE("analysis FFI handle returns empty data after close",
     REQUIRE(loaded != nullptr);
     REQUIRE(loaded->loaded == 1);
     REQUIRE(loaded->frame_count > 0);
+    REQUIRE(loaded->current_frame_idx == -1);
 
     naki_analysis_close(handle);
     naki_analysis_close(handle);

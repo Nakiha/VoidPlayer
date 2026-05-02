@@ -111,6 +111,10 @@ DecodeThread::DecodeThread(PacketQueue& input_queue, TrackBuffer& output_buffer,
     , time_base_(time_base)
 {
     codec_ = nullptr;
+    if (!codec_params) {
+        spdlog::error("[DecodeThread] codec_params is null");
+        return;
+    }
     if (codec_params->codec_id == AV_CODEC_ID_AV1) {
         codec_ = avcodec_find_decoder_by_name("av1");
         if (codec_) {

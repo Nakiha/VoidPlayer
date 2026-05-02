@@ -3,6 +3,8 @@ include_guard(GLOBAL)
 include("${CMAKE_CURRENT_LIST_DIR}/NativeSources.cmake")
 
 function(void_configure_flutter_native_target target_name generated_include_dir)
+    void_apply_native_compile_options(${target_name})
+
     target_sources(${target_name} PRIVATE
         ${VOID_RENDERER_SOURCES}
         ${VOID_ANALYSIS_SOURCES}

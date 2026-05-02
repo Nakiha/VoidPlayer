@@ -86,6 +86,14 @@ std::filesystem::path make_dynamic_resolution_h264_fixture() {
 
 } // namespace
 
+TEST_CASE("DecodeThread: null codec parameters fail closed", "[decode_thread]") {
+    PacketQueue pkt_queue(1);
+    TrackBuffer track_buffer(1, 0);
+
+    DecodeThread decoder(pkt_queue, track_buffer, nullptr, AVRational{1, 1});
+    REQUIRE(decoder.start() == false);
+}
+
 TEST_CASE("DecodeThread: software decode H264 produces monotonically increasing PTS", "[decode_thread]") {
     std::string path = vr::test::video_test_dir() + "/h264_9s_1920x1080.mp4";
 

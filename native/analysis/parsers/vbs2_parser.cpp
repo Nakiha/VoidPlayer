@@ -36,7 +36,7 @@ bool validate_index_entry(const Vbs2IndexEntry& idx,
 } // namespace
 
 bool Vbs2File::open(const std::string& path) {
-    index_.clear();
+    close();
 
     file_.open(win_utf8::path_from_utf8(path), std::ios::binary);
     if (!file_) return false;

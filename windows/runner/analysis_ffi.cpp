@@ -102,8 +102,11 @@ std::shared_ptr<AnalysisHandleState> unregister_analysis_handle(NakiAnalysisHand
     return state;
 }
 
+int effective_frame_count(vr::analysis::AnalysisManager& mgr);
+
 void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSummary& s) {
     std::memset(&s, 0, sizeof(s));
+    s.current_frame_idx = -1;
     if (!mgr.is_loaded()) return;
 
     s.loaded = 1;
@@ -111,9 +114,8 @@ void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSumma
     const auto& vbi = mgr.vbi();
     const auto& vbt = mgr.vbt();
 
-    const int vbs2_frame_count = vbs2.frame_count();
     const int vbt_packet_count = vbt.packet_count();
-    s.frame_count = vbs2_frame_count > 0 ? vbs2_frame_count : vbt_packet_count;
+    s.frame_count = effective_frame_count(mgr);
     s.packet_count = vbt_packet_count;
     s.nalu_count = vbi.nalu_count();
     s.video_width = vbs2.header().width;
@@ -126,6 +128,12 @@ void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSumma
         int64_t pts_us = g_get_current_pts_us();
         s.current_frame_idx = mgr.current_frame_idx(pts_us);
     }
+}
+
+int effective_frame_count(vr::analysis::AnalysisManager& mgr) {
+    const int vbs2_count = mgr.vbs2().frame_count();
+    const int vbt_count = mgr.vbt().packet_count();
+    return vbs2_count > 0 ? std::min(vbs2_count, vbt_count) : vbt_count;
 }
 
 int32_t fill_analysis_frames_range(vr::analysis::AnalysisManager& mgr,
@@ -151,9 +159,7 @@ int32_t fill_analysis_frames_range(vr::analysis::AnalysisManager& mgr,
     if (!mgr.is_loaded()) return 0;
     if (start < 0) return 0;
 
-    int vbs2_count = mgr.vbs2().frame_count();
-    int vbt_count = mgr.vbt().packet_count();
-    int total_count = vbs2_count > 0 ? std::min(vbs2_count, vbt_count) : vbt_count;
+    int total_count = effective_frame_count(mgr);
     if (start >= total_count) return 0;
     int count = std::min(max_count, total_count - start);
 
@@ -171,8 +177,7 @@ bool fill_analysis_frame_at(vr::analysis::AnalysisManager& mgr,
     if (!mgr.is_loaded() || source_index < 0) return false;
 
     int vbs2_count = mgr.vbs2().frame_count();
-    int vbt_count = mgr.vbt().packet_count();
-    int total_count = vbs2_count > 0 ? std::min(vbs2_count, vbt_count) : vbt_count;
+    int total_count = effective_frame_count(mgr);
     if (source_index >= total_count) return false;
 
     // Fallback: no VBS2 — combine VBT timing with VBI VCL metadata.
@@ -686,6 +691,12 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
     int pkt_count = 0;
 
     AVPacket* pkt = av_packet_alloc();
+    if (!pkt) {
+        spdlog::error("[Analysis] extract_raw_vvc: failed to allocate packet");
+        if (bsf_ctx) av_bsf_free(&bsf_ctx);
+        avformat_close_input(&fmt_ctx);
+        return false;
+    }
     while (true) {
         ret = av_read_frame(fmt_ctx, pkt);
         if (ret < 0) break;
@@ -716,16 +727,22 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
                 total_written += static_cast<size_t>(len);
             } else {
                 int pos = 0;
-                while (pos + 4 < len) {
+                while (pos + 4 <= len) {
                     uint32_t nalu_len = (static_cast<uint32_t>(data[pos]) << 24) |
                                         (static_cast<uint32_t>(data[pos + 1]) << 16) |
                                         (static_cast<uint32_t>(data[pos + 2]) << 8) |
                                         static_cast<uint32_t>(data[pos + 3]);
-                    if (nalu_len == 0 || pos + 4 + static_cast<int>(nalu_len) > len) break;
+                    const int payload_pos = pos + 4;
+                    const int remaining = len - payload_pos;
+                    if (nalu_len == 0 ||
+                        static_cast<uint64_t>(nalu_len) > static_cast<uint64_t>(remaining)) {
+                        break;
+                    }
                     out.write(reinterpret_cast<const char*>(kStartCode4), 4);
-                    out.write(reinterpret_cast<const char*>(data + pos + 4), nalu_len);
+                    out.write(reinterpret_cast<const char*>(data + payload_pos),
+                              static_cast<std::streamsize>(nalu_len));
                     total_written += 4 + static_cast<size_t>(nalu_len);
-                    pos += 4 + static_cast<int>(nalu_len);
+                    pos = payload_pos + static_cast<int>(nalu_len);
                 }
             }
             av_packet_unref(pkt);

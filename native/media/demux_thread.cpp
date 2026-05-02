@@ -235,7 +235,8 @@ void DemuxThread::run() {
     AVPacket* pkt = av_packet_alloc();
     if (!pkt) {
         spdlog::error("[DemuxThread] Failed to allocate packet");
-        running_.store(false);
+        running_.store(false, std::memory_order_release);
+        abort_outputs();
         return;
     }
 

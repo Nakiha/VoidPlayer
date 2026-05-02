@@ -224,6 +224,26 @@ TEST_CASE("FrameConverter: init_hardware sets hardware mode", "[frame_converter]
     REQUIRE(converter.is_hardware() == true);
 }
 
+TEST_CASE("FrameConverter: rejects oversized software frame geometry",
+          "[frame_converter]") {
+    FrameConverter converter;
+    REQUIRE(converter.init_software(20000, 64, AV_PIX_FMT_YUV420P) == false);
+
+    REQUIRE(converter.init_software(64, 64, AV_PIX_FMT_YUV420P));
+    AVFrame* frame = av_frame_alloc();
+    REQUIRE(frame != nullptr);
+    frame->format = AV_PIX_FMT_YUV420P;
+    frame->width = 20000;
+    frame->height = 64;
+    frame->pts = 5000;
+
+    TextureFrame result = converter.convert(frame);
+    REQUIRE(result.texture_handle == nullptr);
+    REQUIRE(result.cpu_data == nullptr);
+
+    av_frame_free(&frame);
+}
+
 TEST_CASE("TextureFrame: storage exposes D3D11 NV12 metadata", "[frame_storage]") {
     TextureFrame frame;
     auto* texture = reinterpret_cast<ID3D11Texture2D*>(0x1234);

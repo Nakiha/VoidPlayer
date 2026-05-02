@@ -78,7 +78,6 @@ class AnalysisPageView extends StatelessWidget {
                     onFilterChanged: actions.onNaluFilterChanged,
                   ),
                 ),
-                Container(width: 1, color: theme.colorScheme.outlineVariant),
                 Expanded(
                   child: AnalysisNaluDetailView(
                     nalu:
@@ -156,20 +155,27 @@ class AnalysisPageView extends StatelessWidget {
                   0.0,
                   double.infinity,
                 );
-                final compact = available < 280;
-                final minTop = compact ? available * 0.28 : 120.0;
-                final minBottom = compact ? available * 0.28 : 170.0;
-                final maxTop = (available - minBottom).clamp(minTop, available);
+                final contentAvailable = (available - dividerHitH).clamp(
+                  0.0,
+                  double.infinity,
+                );
+                final compact = contentAvailable < 280;
+                final minTop = compact ? contentAvailable * 0.28 : 120.0;
+                final minBottom = compact ? contentAvailable * 0.28 : 170.0;
+                final maxTop = (contentAvailable - minBottom).clamp(
+                  minTop,
+                  contentAvailable,
+                );
                 final layoutController = splitLayoutController;
                 final topPanelFraction =
                     layoutController?.topPanelFraction ??
                     model.topPanelFraction;
-                final topH = (available * topPanelFraction).clamp(
+                final topH = (contentAvailable * topPanelFraction).clamp(
                   minTop,
                   maxTop,
                 );
-                final bottomH = available - topH;
-                final dividerTop = (topH - dividerHitH / 2).clamp(
+                final bottomH = contentAvailable - topH;
+                final dividerTop = topH.clamp(
                   0.0,
                   (available - dividerHitH).clamp(0.0, double.infinity),
                 );
@@ -185,7 +191,7 @@ class AnalysisPageView extends StatelessWidget {
                     Positioned(
                       left: 0,
                       right: 0,
-                      top: topH,
+                      top: topH + dividerHitH,
                       height: bottomH,
                       child: bottomPanel,
                     ),
@@ -199,8 +205,8 @@ class AnalysisPageView extends StatelessWidget {
                         minPosition: minTop,
                         maxPosition: maxTop,
                         onPositionChanged: (nextTop) {
-                          if (available <= 0) return;
-                          final nextFraction = nextTop / available;
+                          if (contentAvailable <= 0) return;
+                          final nextFraction = nextTop / contentAvailable;
                           if (layoutController != null) {
                             layoutController.setTopPanelFraction(nextFraction);
                           } else {

@@ -4,6 +4,25 @@ import '../../../analysis/analysis_ffi.dart';
 
 const double analysisChartLabelW = 66.0;
 const double analysisChartXAxisH = 34.0;
+const double analysisChartSelectedFramePadding = 8.0;
+
+void panChartByWheel({
+  required double scrollDeltaY,
+  required double viewStart,
+  required double viewEnd,
+  required double total,
+  required ValueChanged<double> onPan,
+}) {
+  if (total <= 0) return;
+  if (scrollDeltaY == 0) return;
+  final span = (viewEnd - viewStart).clamp(1.0, total);
+  final maxOffset = (total - span).clamp(0.0, double.infinity);
+  if (maxOffset <= 0) return;
+  final direction = scrollDeltaY > 0 ? 1.0 : -1.0;
+  final step = (span * 0.15).clamp(1.0, 24.0);
+  onPan((viewStart + direction * step).clamp(0.0, maxOffset));
+}
+
 String formatCompactAxisValue(int value) {
   final abs = value.abs();
   if (abs >= 1000000) return '${(value / 1000000).toStringAsFixed(1)}M';
@@ -205,12 +224,6 @@ class _ScrollbarPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (total <= 0) return;
     const minThumbW = 44.0;
-
-    // Track
-    canvas.drawRect(
-      Rect.fromLTWH(0, size.height - 3, size.width, 3),
-      Paint()..color = trackColor,
-    );
 
     // Thumb
     final rawLeft = (viewStart / total) * size.width;

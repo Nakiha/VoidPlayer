@@ -309,7 +309,8 @@ class _AnalysisResizableHDividerState extends State<AnalysisResizableHDivider> {
         onEnter: (_) => setState(() => _hovering = true),
         onExit: (_) => setState(() => _hovering = false),
         child: SizedBox.expand(
-          child: Center(
+          child: Align(
+            alignment: Alignment.topCenter,
             child: SizedBox(
               width: double.infinity,
               height: _hovering ? 2 : 1,

@@ -55,7 +55,26 @@ class _AnalysisReferencePyramidViewState
           child: Listener(
             onPointerSignal: (signal) {
               if (signal is PointerScrollEvent) {
-                widget.onZoom(signal.scrollDelta.dy);
+                final box = context.findRenderObject() as RenderBox;
+                final local = box.globalToLocal(signal.position);
+                final axisH = box.size.height >= 96 ? analysisChartXAxisH : 0.0;
+                final chartH = (box.size.height - axisH).clamp(
+                  1.0,
+                  double.infinity,
+                );
+                final inPlotContent =
+                    local.dx >= analysisChartLabelW && local.dy < chartH;
+                if (inPlotContent) {
+                  panChartByWheel(
+                    scrollDeltaY: signal.scrollDelta.dy,
+                    viewStart: widget.viewStart,
+                    viewEnd: widget.viewEnd,
+                    total: widget.frames.length.toDouble(),
+                    onPan: widget.onPan,
+                  );
+                } else {
+                  widget.onZoom(signal.scrollDelta.dy);
+                }
               }
             },
             child: GestureDetector(
@@ -166,7 +185,7 @@ class _RefPyramidPainter extends CustomPainter {
     final span = viewEnd - viewStart;
     final circleR = (rowH * 0.3).clamp(6.0, 20.0);
     final plotRect = Rect.fromLTWH(labelW, 0, usableW, chartH);
-    final centerPad = circleR + 2;
+    final centerPad = circleR + analysisChartSelectedFramePadding;
     final centerW = (usableW - centerPad * 2).clamp(1.0, double.infinity);
 
     final positions = <int, Offset>{}; // globalIdx → position

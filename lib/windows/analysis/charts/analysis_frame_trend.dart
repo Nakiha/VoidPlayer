@@ -77,7 +77,17 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
                     final upperH = chartH * 0.58;
                     final lowerTop = upperH + chartH * 0.05;
                     final lowerH = chartH * 0.32;
-                    if (local.dx < _frameTrendLabelW) {
+                    final inPlotContent =
+                        local.dx >= _frameTrendLabelW && local.dy < chartH;
+                    if (inPlotContent) {
+                      panChartByWheel(
+                        scrollDeltaY: signal.scrollDelta.dy,
+                        viewStart: w.viewStart,
+                        viewEnd: w.viewEnd,
+                        total: w.frames.length.toDouble(),
+                        onPan: w.onPan,
+                      );
+                    } else if (local.dx < _frameTrendLabelW) {
                       if (local.dy <= upperH) {
                         w.onAxisZoom(
                           AnalysisFrameTrendAxis.frameSize,
@@ -89,6 +99,8 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
                           AnalysisFrameTrendAxis.qp,
                           signal.scrollDelta.dy,
                         );
+                      } else {
+                        w.onZoom(signal.scrollDelta.dy);
                       }
                     } else {
                       w.onZoom(signal.scrollDelta.dy);
@@ -194,13 +206,15 @@ class _FrameTrendPainter extends CustomPainter {
     final labelW = _frameTrendLabelW;
     final chartW = (size.width - labelW).clamp(0.0, double.infinity);
     if (chartW <= 0) return;
+    final contentPad = analysisChartSelectedFramePadding;
+    final contentW = (chartW - contentPad * 2).clamp(1.0, double.infinity);
     final upperH = chartH * 0.58;
     final lowerH = chartH * 0.32;
     final gapH = chartH * 0.05;
     final lowerTop = upperH + gapH;
     final plotRect = Rect.fromLTWH(labelW, 0, chartW, chartH);
 
-    final barW = (chartW / count).clamp(2.0, 40.0);
+    final barW = (contentW / count).clamp(2.0, 40.0);
 
     // Find range for visible frames
     int maxPacketSize = 1;
@@ -301,7 +315,7 @@ class _FrameTrendPainter extends CustomPainter {
     for (var i = visibleStart; i < visibleEnd; i++) {
       final f = frames[i];
       final frac = (i - viewStart) / span;
-      final x = labelW + frac * chartW;
+      final x = labelW + contentPad + frac * contentW;
       final h = ((f.packetSize / sizeAxisMax).clamp(0.0, 1.0)) * upperH;
 
       barPaint.color = f.keyframe == 1
@@ -325,7 +339,7 @@ class _FrameTrendPainter extends CustomPainter {
     for (var i = visibleStart; i < visibleEnd; i++) {
       final f = frames[i];
       final frac = (i - viewStart) / span;
-      final x = labelW + frac * chartW + barW / 2;
+      final x = labelW + contentPad + frac * contentW + barW / 2;
       final normalizedQp = ((f.avgQp - qpLow) / effectiveQpRange).clamp(
         0.0,
         1.0,
@@ -343,7 +357,7 @@ class _FrameTrendPainter extends CustomPainter {
     // --- Playback cursor ---
     if (currentIdx >= 0 && currentIdx < frames.length) {
       final frac = (currentIdx - viewStart) / span;
-      final cx = labelW + frac * chartW;
+      final cx = labelW + contentPad + frac * contentW;
       canvas.drawLine(
         Offset(cx, 0),
         Offset(cx, chartH),
@@ -363,7 +377,10 @@ class _FrameTrendPainter extends CustomPainter {
       );
 
       final crossX =
-          labelW + ((frameIdx - viewStart) / span) * chartW + barW / 2;
+          labelW +
+          contentPad +
+          ((frameIdx - viewStart) / span) * contentW +
+          barW / 2;
       canvas.drawLine(
         Offset(crossX, 0),
         Offset(crossX, chartH),
@@ -435,7 +452,7 @@ class _FrameTrendPainter extends CustomPainter {
       ptsOrder: ptsOrder,
       xForFrame: (idx) {
         final frac = (idx - viewStart) / span;
-        return labelW + frac * chartW + barW / 2;
+        return labelW + contentPad + frac * contentW + barW / 2;
       },
     );
   }

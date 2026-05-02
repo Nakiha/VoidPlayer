@@ -3,6 +3,7 @@
 #include "media/seek_controller.h"
 #include <thread>
 #include <atomic>
+#include <chrono>
 #include <string>
 #include <cstdint>
 #include <functional>
@@ -80,6 +81,7 @@ private:
     std::string file_path_;
     SeekController& seek_controller_;
     AVFormatContext* fmt_ctx_ = nullptr;
+    std::chrono::steady_clock::time_point open_deadline_{};
     DemuxStats stats_;
     std::vector<OutputRoute> output_routes_;
     std::thread thread_;

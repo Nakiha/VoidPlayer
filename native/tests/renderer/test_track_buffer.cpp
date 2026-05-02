@@ -129,3 +129,22 @@ TEST_CASE("TrackBuffer: set_last_presented_pts_us stores value",
     tb.set_last_presented_pts_us(999999);
     REQUIRE(tb.last_presented_pts_us() == 999999);
 }
+
+TEST_CASE("TrackBuffer: reset clears frames, state, and last presented PTS",
+          "[track_buffer]") {
+    TrackBuffer tb;
+    TextureFrame frame;
+    frame.pts_us = 42000;
+
+    tb.push_frame(frame);
+    REQUIRE(tb.advance());
+    tb.set_state(TrackState::Ready);
+    REQUIRE(tb.last_presented_pts_us() == 42000);
+
+    tb.reset();
+
+    REQUIRE(tb.state() == TrackState::Empty);
+    REQUIRE(tb.last_presented_pts_us() == 0);
+    REQUIRE(tb.total_count() == 0);
+    REQUIRE_FALSE(tb.peek(0).has_value());
+}

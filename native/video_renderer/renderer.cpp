@@ -391,16 +391,26 @@ void Renderer::seek(int64_t target_pts_us, SeekType type) {
 void Renderer::set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
+    LoopRangeState next;
     if (!enabled || end_us <= start_us) {
-        loop_range_ = LoopRangeState();
-        spdlog::info("[Renderer] loop range disabled");
+        next = LoopRangeState();
+    } else {
+        next.enabled = true;
+        next.start_us = std::max<int64_t>(0, start_us);
+        next.end_us = std::max(next.start_us, end_us);
+    }
+
+    if (loop_range_.enabled == next.enabled &&
+        loop_range_.start_us == next.start_us &&
+        loop_range_.end_us == next.end_us) {
         return;
     }
-    loop_range_.enabled = true;
-    loop_range_.start_us = std::max<int64_t>(0, start_us);
-    loop_range_.end_us = std::max(loop_range_.start_us, end_us);
-    spdlog::info("[Renderer] loop range enabled: {:.3f}s -> {:.3f}s",
-                 loop_range_.start_us / 1e6, loop_range_.end_us / 1e6);
+
+    loop_range_ = next;
+    spdlog::debug("[Renderer] loop range {}: {:.3f}s -> {:.3f}s",
+                  next.enabled ? "enabled" : "disabled",
+                  next.start_us / 1e6,
+                  next.end_us / 1e6);
 }
 
 void Renderer::set_audible_track(int file_id) {

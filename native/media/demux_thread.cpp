@@ -24,18 +24,36 @@ DemuxThread::~DemuxThread() {
 bool DemuxThread::start() {
     if (running_.load()) return false;
 
-    // Open format context on the calling thread so stats are available immediately
+    fmt_ctx_ = avformat_alloc_context();
+    if (!fmt_ctx_) {
+        spdlog::error("[DemuxThread] Failed to allocate format context: {}", file_path_);
+        return false;
+    }
+    running_.store(true, std::memory_order_release);
+    open_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    fmt_ctx_->interrupt_callback.callback = &DemuxThread::interrupt_callback;
+    fmt_ctx_->interrupt_callback.opaque = this;
+
+    // Open format context on the calling thread so stats are available immediately.
+    // Install the interrupt callback before open/find_stream_info so stop() or an
+    // open timeout can break blocked probes.
     int ret = avformat_open_input(&fmt_ctx_, file_path_.c_str(), nullptr, nullptr);
     if (ret < 0) {
         spdlog::error("[DemuxThread] Failed to open input: {}", file_path_);
+        running_.store(false, std::memory_order_release);
+        avformat_close_input(&fmt_ctx_);
+        open_deadline_ = {};
         return false;
     }
     ret = avformat_find_stream_info(fmt_ctx_, nullptr);
     if (ret < 0) {
         spdlog::error("[DemuxThread] Failed to find stream info");
+        running_.store(false, std::memory_order_release);
         avformat_close_input(&fmt_ctx_);
+        open_deadline_ = {};
         return false;
     }
+    open_deadline_ = {};
 
     // Locate the first video stream. Audio is discovered now too, but it is
     // only routed when an audio output queue is registered by the owner.
@@ -54,6 +72,7 @@ bool DemuxThread::start() {
 
     if (output_routes_.empty()) {
         spdlog::error("[DemuxThread] No output routes registered for {}", file_path_);
+        running_.store(false, std::memory_order_release);
         avformat_close_input(&fmt_ctx_);
         return false;
     }
@@ -91,6 +110,7 @@ bool DemuxThread::start() {
                 continue;
             }
             spdlog::error("[DemuxThread] Requested output stream is missing in {}", file_path_);
+            running_.store(false, std::memory_order_release);
             avformat_close_input(&fmt_ctx_);
             return false;
         }
@@ -101,16 +121,22 @@ bool DemuxThread::start() {
                  stats_.video_stream_index,
                  stats_.time_base.num, stats_.time_base.den);
 
-    fmt_ctx_->interrupt_callback.callback = &DemuxThread::interrupt_callback;
-    fmt_ctx_->interrupt_callback.opaque = this;
-    running_.store(true);
     thread_ = std::thread(&DemuxThread::run, this);
     return true;
 }
 
 int DemuxThread::interrupt_callback(void* opaque) {
     auto* self = static_cast<DemuxThread*>(opaque);
-    return self && !self->running_.load(std::memory_order_acquire) ? 1 : 0;
+    if (!self) return 0;
+    if (!self->running_.load(std::memory_order_acquire)) {
+        return 1;
+    }
+    const auto deadline = self->open_deadline_;
+    if (deadline != std::chrono::steady_clock::time_point{} &&
+        std::chrono::steady_clock::now() > deadline) {
+        return 1;
+    }
+    return 0;
 }
 
 void DemuxThread::stop() {

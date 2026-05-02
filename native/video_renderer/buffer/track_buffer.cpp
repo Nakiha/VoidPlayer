@@ -36,6 +36,8 @@ void TrackBuffer::abort() {
 void TrackBuffer::reset() {
     aborted_.store(false);
     ring_.clear();
+    last_presented_pts_us_.store(0, std::memory_order_release);
+    state_.store(TrackState::Empty, std::memory_order_release);
     push_cv_.notify_all();
 }
 

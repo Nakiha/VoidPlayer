@@ -23,6 +23,7 @@
 #include <iomanip>
 #include <variant>
 #include <new>
+#include <limits>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -367,6 +368,17 @@ bool read_int64_arg(const flutter::EncodableValue& value, int64_t& out) {
     return false;
 }
 
+bool read_int_arg(const flutter::EncodableValue& value, int& out) {
+    int64_t raw = 0;
+    if (!read_int64_arg(value, raw) ||
+        raw < std::numeric_limits<int>::min() ||
+        raw > std::numeric_limits<int>::max()) {
+        return false;
+    }
+    out = static_cast<int>(raw);
+    return true;
+}
+
 bool read_double_arg(const flutter::EncodableValue& value, double& out) {
     if (std::holds_alternative<double>(value)) {
         out = std::get<double>(value);
@@ -381,6 +393,22 @@ bool read_double_arg(const flutter::EncodableValue& value, double& out) {
         return true;
     }
     return false;
+}
+
+bool read_bool_arg(const flutter::EncodableValue& value, bool& out) {
+    if (!std::holds_alternative<bool>(value)) {
+        return false;
+    }
+    out = std::get<bool>(value);
+    return true;
+}
+
+bool read_string_arg(const flutter::EncodableValue& value, std::string& out) {
+    if (!std::holds_alternative<std::string>(value)) {
+        return false;
+    }
+    out = std::get<std::string>(value);
+    return true;
 }
 
 extern "C" __declspec(dllexport)
@@ -579,9 +607,15 @@ void VideoRendererPlugin::HandleMethodCall(
         }
         int w = 1920, h = 1080;
         auto it = args->find(flutter::EncodableValue("width"));
-        if (it != args->end()) w = std::get<int>(it->second);
+        if (it != args->end() && !read_int_arg(it->second, w)) {
+            result->Error("BAD_ARGS", "width must be an integer");
+            return;
+        }
         it = args->find(flutter::EncodableValue("height"));
-        if (it != args->end()) h = std::get<int>(it->second);
+        if (it != args->end() && !read_int_arg(it->second, h)) {
+            result->Error("BAD_ARGS", "height must be an integer");
+            return;
+        }
         if (w <= 0 || h <= 0 || w > 16384 || h > 16384) {
             result->Error("BAD_ARGS", "Invalid viewport size");
             return;
@@ -665,20 +699,61 @@ void VideoRendererPlugin::HandleMethodCall(
         }
         vr::LayoutState ls;
         auto it = args->find(flutter::EncodableValue("mode"));
-        if (it != args->end()) ls.mode = std::get<int>(it->second);
+        if (it != args->end() && !read_int_arg(it->second, ls.mode)) {
+            result->Error("BAD_ARGS", "mode must be an integer");
+            return;
+        }
+        if (ls.mode != vr::LAYOUT_SIDE_BY_SIDE && ls.mode != vr::LAYOUT_SPLIT_SCREEN) {
+            result->Error("BAD_ARGS", "Invalid layout mode");
+            return;
+        }
         it = args->find(flutter::EncodableValue("splitPos"));
-        if (it != args->end()) ls.split_pos = static_cast<float>(std::get<double>(it->second));
+        double double_arg = 0.0;
+        if (it != args->end()) {
+            if (!read_double_arg(it->second, double_arg) || !std::isfinite(double_arg)) {
+                result->Error("BAD_ARGS", "splitPos must be a finite number");
+                return;
+            }
+            ls.split_pos = static_cast<float>(double_arg);
+        }
         it = args->find(flutter::EncodableValue("zoomRatio"));
-        if (it != args->end()) ls.zoom_ratio = static_cast<float>(std::get<double>(it->second));
+        if (it != args->end()) {
+            if (!read_double_arg(it->second, double_arg) ||
+                !std::isfinite(double_arg) ||
+                double_arg <= 0.0) {
+                result->Error("BAD_ARGS", "zoomRatio must be a positive finite number");
+                return;
+            }
+            ls.zoom_ratio = static_cast<float>(double_arg);
+        }
         it = args->find(flutter::EncodableValue("viewOffsetX"));
-        if (it != args->end()) ls.view_offset[0] = static_cast<float>(std::get<double>(it->second));
+        if (it != args->end()) {
+            if (!read_double_arg(it->second, double_arg) || !std::isfinite(double_arg)) {
+                result->Error("BAD_ARGS", "viewOffsetX must be a finite number");
+                return;
+            }
+            ls.view_offset[0] = static_cast<float>(double_arg);
+        }
         it = args->find(flutter::EncodableValue("viewOffsetY"));
-        if (it != args->end()) ls.view_offset[1] = static_cast<float>(std::get<double>(it->second));
+        if (it != args->end()) {
+            if (!read_double_arg(it->second, double_arg) || !std::isfinite(double_arg)) {
+                result->Error("BAD_ARGS", "viewOffsetY must be a finite number");
+                return;
+            }
+            ls.view_offset[1] = static_cast<float>(double_arg);
+        }
         it = args->find(flutter::EncodableValue("order"));
         if (it != args->end()) {
+            if (!std::holds_alternative<flutter::EncodableList>(it->second)) {
+                result->Error("BAD_ARGS", "order must be a list");
+                return;
+            }
             const auto& order_list = std::get<flutter::EncodableList>(it->second);
             for (size_t i = 0; i < 4 && i < order_list.size(); ++i) {
-                ls.order[i] = std::get<int>(order_list[i]);
+                if (!read_int_arg(order_list[i], ls.order[i])) {
+                    result->Error("BAD_ARGS", "order entries must be integers");
+                    return;
+                }
             }
         }
         player_->apply_layout(ls);
@@ -845,6 +920,10 @@ void VideoRendererPlugin::CreatePlayer(
         result->Error("INVALID_ARGS", "videoPaths required");
         return;
     }
+    if (!std::holds_alternative<flutter::EncodableList>(paths_it->second)) {
+        result->Error("BAD_ARGS", "videoPaths must be a list");
+        return;
+    }
     const auto& paths_list = std::get<flutter::EncodableList>(paths_it->second);
     if (paths_list.empty()) {
         result->Error("BAD_ARGS", "videoPaths must not be empty");
@@ -855,8 +934,14 @@ void VideoRendererPlugin::CreatePlayer(
     int height = 1080;
     auto w_it = args->find(flutter::EncodableValue("width"));
     auto h_it = args->find(flutter::EncodableValue("height"));
-    if (w_it != args->end()) width = std::get<int>(w_it->second);
-    if (h_it != args->end()) height = std::get<int>(h_it->second);
+    if (w_it != args->end() && !read_int_arg(w_it->second, width)) {
+        result->Error("BAD_ARGS", "width must be an integer");
+        return;
+    }
+    if (h_it != args->end() && !read_int_arg(h_it->second, height)) {
+        result->Error("BAD_ARGS", "height must be an integer");
+        return;
+    }
     if (width <= 0 || height <= 0 || width > 16384 || height > 16384) {
         result->Error("BAD_ARGS", "Invalid viewport size");
         return;
@@ -871,7 +956,11 @@ void VideoRendererPlugin::CreatePlayer(
     config.use_hardware_decode = true;
 
     for (const auto& p : paths_list) {
-        const auto& path = std::get<std::string>(p);
+        std::string path;
+        if (!read_string_arg(p, path)) {
+            result->Error("BAD_ARGS", "video paths must be strings");
+            return;
+        }
         if (path.empty()) {
             result->Error("BAD_ARGS", "video path must not be empty");
             return;
@@ -1028,7 +1117,11 @@ void VideoRendererPlugin::AddTrack(
         result->Error("INVALID_ARGS", "path required");
         return;
     }
-    const auto& path = std::get<std::string>(it->second);
+    std::string path;
+    if (!read_string_arg(it->second, path) || path.empty()) {
+        result->Error("BAD_ARGS", "path must be a non-empty string");
+        return;
+    }
 
     int slot = player_->add_track(path);
     if (slot < 0) {
@@ -1082,7 +1175,11 @@ void VideoRendererPlugin::RemoveTrack(
         result->Error("INVALID_ARGS", "fileId required");
         return;
     }
-    int file_id = std::get<int>(it->second);
+    int file_id = 0;
+    if (!read_int_arg(it->second, file_id)) {
+        result->Error("BAD_ARGS", "fileId must be an integer");
+        return;
+    }
 
     player_->remove_track(file_id);
     spdlog::info("[VideoRendererPlugin] Removed track: file_id={}", file_id);
@@ -1115,10 +1212,10 @@ void VideoRendererPlugin::SetTrackOffset(
         return;
     }
 
-    int64_t file_id = 0;
+    int file_id = 0;
     int64_t offset_us = 0;
     auto it = args->find(flutter::EncodableValue("fileId"));
-    if (it == args->end() || !read_int64_arg(it->second, file_id)) {
+    if (it == args->end() || !read_int_arg(it->second, file_id)) {
         result->Error("BAD_ARGS", "fileId must be an integer");
         return;
     }
@@ -1128,7 +1225,7 @@ void VideoRendererPlugin::SetTrackOffset(
         return;
     }
 
-    player_->set_track_offset(static_cast<int>(file_id), offset_us);
+    player_->set_track_offset(file_id, offset_us);
     spdlog::info("[VideoRendererPlugin] setTrackOffset: file_id={}, offset_us={}", file_id, offset_us);
     result->Success(flutter::EncodableValue(nullptr));
     } catch (const std::bad_variant_access& e) {
@@ -1163,7 +1260,10 @@ void VideoRendererPlugin::SetLoopRange(
     int64_t start_us = 0;
     int64_t end_us = 0;
     auto it = args->find(flutter::EncodableValue("enabled"));
-    if (it != args->end()) enabled = std::get<bool>(it->second);
+    if (it != args->end() && !read_bool_arg(it->second, enabled)) {
+        result->Error("BAD_ARGS", "enabled must be a boolean");
+        return;
+    }
     it = args->find(flutter::EncodableValue("startUs"));
     if (it != args->end() && !read_int64_arg(it->second, start_us)) {
         result->Error("BAD_ARGS", "startUs must be an integer");
@@ -1202,7 +1302,10 @@ void VideoRendererPlugin::PickFiles(
         if (args) {
             auto it = args->find(flutter::EncodableValue("allowMultiple"));
             if (it != args->end()) {
-                allow_multiple = std::get<bool>(it->second);
+                if (!read_bool_arg(it->second, allow_multiple)) {
+                    result->Error("BAD_ARGS", "allowMultiple must be a boolean");
+                    return;
+                }
             }
         }
     }
@@ -1288,8 +1391,9 @@ void VideoRendererPlugin::CaptureViewport(
         const auto* args = std::get_if<flutter::EncodableMap>(arguments);
         if (args) {
             auto it = args->find(flutter::EncodableValue("outputPath"));
-            if (it != args->end() && std::holds_alternative<std::string>(it->second)) {
-                output_path = std::get<std::string>(it->second);
+            if (it != args->end() && !read_string_arg(it->second, output_path)) {
+                result->Error("BAD_ARGS", "outputPath must be a string");
+                return;
             }
         }
     }

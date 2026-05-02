@@ -570,7 +570,7 @@ class _UnindexedCacheTile extends StatelessWidget {
       child: ListTile(
         dense: true,
         contentPadding: EdgeInsets.zero,
-        leading: const Icon(Icons.folder_copy_outlined),
+        leading: const SizedBox(width: 40, height: 48),
         title: Text(l.cacheUnindexed),
         trailing: Padding(
           padding: const EdgeInsets.only(right: _cacheListTrailingPadding),

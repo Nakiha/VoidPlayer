@@ -86,7 +86,7 @@
   "cachePerVideo": "视频分析数据缓存",
   "cacheNoEntries": "暂无分析缓存",
   "cacheEntryBreakdown": "分析 {analysis}",
-  "cacheUnindexed": "未索引的缓存文件",
+  "cacheUnindexed": "索引和其他文件",
   "copyCachePath": "复制缓存路径",
   "openCachePath": "打开缓存目录",
   "cacheSelectedCount": "已选择 {count} 项",

@@ -232,8 +232,8 @@
   "cacheEntryBreakdown": "Analysis {analysis}",
   "@cacheEntryBreakdown": { "description": "Analysis cache entry file-size", "placeholders": { "analysis": { "type": "String" } } },
 
-  "cacheUnindexed": "Unindexed cache files",
-  "@cacheUnindexed": { "description": "Analysis cache files not represented by the index" },
+  "cacheUnindexed": "Index and other files",
+  "@cacheUnindexed": { "description": "Analysis cache index and other files" },
 
   "copyCachePath": "Copy cache path",
   "@copyCachePath": { "description": "Copy analysis cache path tooltip" },

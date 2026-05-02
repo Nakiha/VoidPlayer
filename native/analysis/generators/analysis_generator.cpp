@@ -116,6 +116,41 @@ static const char* annex_b_bsf_name(VbiCodec codec) {
     }
 }
 
+static bool requires_annex_b_filter(VbiCodec codec) {
+    return codec == VbiCodec::H264 || codec == VbiCodec::HEVC || codec == VbiCodec::VVC;
+}
+
+static bool packet_starts_with_annex_b(const AVPacket* pkt) {
+    if (!pkt || !pkt->data || pkt->size < 3) return false;
+    const auto* data = pkt->data;
+    const int len = pkt->size;
+    return (len >= 4 && data[0] == 0 && data[1] == 0 && data[2] == 0 && data[3] == 1) ||
+           (data[0] == 0 && data[1] == 0 && data[2] == 1);
+}
+
+static void append_packet_if_safe(const AVPacket* pkt,
+                                  VbiCodec codec,
+                                  BitstreamIndex& bitstream_index,
+                                  bool& unsafe_fallback_warned) {
+    if (!pkt || !pkt->data || pkt->size <= 0) return;
+
+    if (requires_annex_b_filter(codec) && !packet_starts_with_annex_b(pkt)) {
+        if (!unsafe_fallback_warned) {
+            spdlog::warn(
+                "[AnalysisGen] skipping length-prefixed packets without Annex-B BSF; VBI unavailable for this stream");
+            unsafe_fallback_warned = true;
+        }
+        return;
+    }
+
+    BitstreamIndexer::append_packet(
+        codec,
+        pkt->data,
+        pkt->size,
+        (pkt->flags & AV_PKT_FLAG_KEY) != 0,
+        bitstream_index);
+}
+
 static AVBSFContext* create_annex_b_bsf(AVStream* stream, VbiCodec codec) {
     const char* name = annex_b_bsf_name(codec);
     if (!name || !stream || !stream->codecpar) return nullptr;
@@ -233,6 +268,7 @@ bool AnalysisGenerator::generate(const std::string& video_path,
     bitstream_index.unit_kind = BitstreamIndexer::unit_kind_for_codec(codec);
     std::vector<VbtEntry> pkt_entries;
     int32_t seq_poc = 0;         // Sequential POC for VBT
+    bool unsafe_fallback_warned = false;
     AVBSFContext* annex_b_bsf = create_annex_b_bsf(fmt_ctx->streams[video_idx], codec);
 
     AVPacket* pkt = av_packet_alloc();
@@ -285,25 +321,13 @@ bool AnalysisGenerator::generate(const std::string& video_path,
             if (send_ret >= 0) {
                 append_filtered_packets(annex_b_bsf, filtered_pkt, codec, bitstream_index);
             } else {
-                spdlog::warn("[AnalysisGen] av_bsf_send_packet failed: {:#x}; parsing packet directly",
+                spdlog::warn("[AnalysisGen] av_bsf_send_packet failed: {:#x}; skipping unsafe packet fallback if needed",
                              static_cast<unsigned>(send_ret));
-                if (pkt->data && pkt->size > 0) {
-                    BitstreamIndexer::append_packet(
-                        codec,
-                        pkt->data,
-                        pkt->size,
-                        (pkt->flags & AV_PKT_FLAG_KEY) != 0,
-                        bitstream_index);
-                }
+                append_packet_if_safe(pkt, codec, bitstream_index, unsafe_fallback_warned);
                 av_packet_unref(pkt);
             }
-        } else if (pkt->data && pkt->size > 0) {
-            BitstreamIndexer::append_packet(
-                codec,
-                pkt->data,
-                pkt->size,
-                (pkt->flags & AV_PKT_FLAG_KEY) != 0,
-                bitstream_index);
+        } else {
+            append_packet_if_safe(pkt, codec, bitstream_index, unsafe_fallback_warned);
         }
 
         av_packet_unref(pkt);

@@ -80,8 +80,9 @@ class WindowManager {
     final key = _analysisProcessKey(hash);
     if (_analysisProcesses.containsKey(key)) {
       log.info(
-        '[WindowManager] analysis process for $key still running, skipping',
+        '[WindowManager] analysis process for $key still running, activating',
       );
+      _activateAnalysisProcess(key);
       return;
     }
 
@@ -128,8 +129,9 @@ class WindowManager {
     );
     if (_analysisProcesses.containsKey(key)) {
       log.info(
-        '[WindowManager] analysis workspace for ${windows.length} tracks still running, skipping',
+        '[WindowManager] analysis workspace for ${windows.length} tracks still running, activating',
       );
+      _activateAnalysisProcess(key);
       return;
     }
 
@@ -183,6 +185,25 @@ class WindowManager {
             log.warning('[$tag] stderr read failed: $error');
           },
         );
+  }
+
+  static bool _activateAnalysisProcess(String key) {
+    final process = _analysisProcesses[key];
+    if (process == null) return false;
+    final hwnds = Win32FFI.findWindowsByProcessId(
+      process.pid,
+      className: kMainWindowClass,
+    );
+    for (final hwnd in hwnds) {
+      if (Win32FFI.restoreAndBringToFront(hwnd)) {
+        log.info('[WindowManager] activated analysis window hwnd=$hwnd');
+        return true;
+      }
+    }
+    log.warning(
+      '[WindowManager] no activatable analysis window found for pid=${process.pid}',
+    );
+    return false;
   }
 
   static String _analysisProcessKey(String fallback) =>

@@ -48,6 +48,23 @@ class ScriptSetAnalysisTestScript extends ScriptInstruction {
   const ScriptSetAnalysisTestScript(super.time, this.path);
 }
 
+class ScriptGenerateTestVideo extends ScriptInstruction {
+  final String path;
+  final int frames;
+  final int fps;
+  final int width;
+  final int height;
+
+  const ScriptGenerateTestVideo(
+    super.time, {
+    required this.path,
+    required this.frames,
+    required this.fps,
+    required this.width,
+    required this.height,
+  });
+}
+
 class ScriptSetSeekAfterJumpBehavior extends ScriptInstruction {
   final SeekAfterJumpBehavior behavior;
   const ScriptSetSeekAfterJumpBehavior(super.time, this.behavior);
@@ -150,6 +167,25 @@ class TestRunner {
       case ScriptSetAnalysisTestScript(:final path):
         log.info('TestRunner ${instr.time}: SET_ANALYSIS_TEST_SCRIPT $path');
         WindowManager.analysisTestScriptPath = path;
+
+      case ScriptGenerateTestVideo(
+        :final path,
+        :final frames,
+        :final fps,
+        :final width,
+        :final height,
+      ):
+        log.info(
+          'TestRunner ${instr.time}: GENERATE_TEST_VIDEO '
+          '$path frames=$frames fps=$fps size=${width}x$height',
+        );
+        await _generateTestVideo(
+          path: path,
+          frames: frames,
+          fps: fps,
+          width: width,
+          height: height,
+        );
 
       case ScriptSetSeekAfterJumpBehavior(:final behavior):
         log.info(
@@ -436,6 +472,68 @@ class TestRunner {
           );
         }
     }
+  }
+
+  Future<void> _generateTestVideo({
+    required String path,
+    required int frames,
+    required int fps,
+    required int width,
+    required int height,
+  }) async {
+    if (frames <= 0 || fps <= 0 || width <= 0 || height <= 0) {
+      throw ArgumentError(
+        'Invalid video parameters frames=$frames fps=$fps size=${width}x$height',
+      );
+    }
+    final output = File(path).absolute;
+    await output.parent.create(recursive: true);
+    final ffmpeg = _resolveFfmpegExecutable();
+    final args = [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc2=size=${width}x$height:rate=$fps',
+      '-frames:v',
+      '$frames',
+      '-metadata',
+      'comment=voidplayer-test-${DateTime.now().microsecondsSinceEpoch}',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '-g',
+      '$fps',
+      '-pix_fmt',
+      'yuv420p',
+      '-an',
+      output.path,
+    ];
+    final result = await Process.run(ffmpeg, args);
+    if (result.exitCode != 0) {
+      throw StateError(
+        'ffmpeg failed (${result.exitCode}) generating ${output.path}: '
+        '${result.stderr}',
+      );
+    }
+    final size = await output.length();
+    if (size <= 0) {
+      throw StateError('Generated video is empty: ${output.path}');
+    }
+    log.info(
+      'TestRunner: generated ${output.path} '
+      'frames=$frames fps=$fps bytes=$size',
+    );
+  }
+
+  String _resolveFfmpegExecutable() {
+    final bundled = File('windows/libs/ffmpeg/bin/ffmpeg.exe').absolute;
+    if (bundled.existsSync()) return bundled.path;
+    return 'ffmpeg';
   }
 
   Future<void> _executeWait(WaitState state, Duration timeout) async {
@@ -852,6 +950,19 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptSetAnalysisTestScript(time, args[0]);
+    case 'GENERATE_TEST_VIDEO':
+      if (args.isEmpty) {
+        log.warning('GENERATE_TEST_VIDEO missing path argument: $rawLine');
+        return null;
+      }
+      return ScriptGenerateTestVideo(
+        time,
+        path: args[0],
+        frames: args.length >= 2 ? int.parse(args[1]) : 9000,
+        fps: args.length >= 3 ? int.parse(args[2]) : 120,
+        width: args.length >= 4 ? int.parse(args[3]) : 64,
+        height: args.length >= 5 ? int.parse(args[4]) : 64,
+      );
     case 'SET_SEEK_AFTER_JUMP_BEHAVIOR':
       if (args.isEmpty) {
         log.warning(

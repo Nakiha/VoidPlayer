@@ -113,6 +113,7 @@ class AnalysisManager extends ChangeNotifier {
     if (AnalysisCache.hasEntry(hash, videoPath: videoPath)) {
       log.info('[Analysis] cache hit for $hash');
       await _refreshCacheEntry(hash, fileName, videoPath);
+      _setStateIfCurrent(stateSerial, AnalysisState.idle);
       return hash;
     }
     log.info('[Analysis] cache miss, will generate');
@@ -179,6 +180,7 @@ class AnalysisManager extends ChangeNotifier {
       }
     }
 
+    _setStateIfCurrent(stateSerial, AnalysisState.idle);
     return hash;
   }
 

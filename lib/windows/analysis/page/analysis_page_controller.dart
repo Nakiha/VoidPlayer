@@ -12,6 +12,7 @@ class AnalysisPageController extends ChangeNotifier {
   static const int _naluReadChunk = 4096;
   static const int _frameBlockSize = 4096;
   static const int _naluBlockSize = 8192;
+  static const int _frameBucketTargetCount = 1024;
 
   final String hash;
   final bool pollSummary;
@@ -30,6 +31,8 @@ class AnalysisPageController extends ChangeNotifier {
   double _topPanelFraction = 0.40;
 
   List<FrameInfo> _frames = [];
+  List<FrameBucket> _frameBuckets = [];
+  int _frameBucketSize = 1;
   List<NaluInfo> _nalus = [];
   int _frameWindowStart = 0;
   int _naluWindowStart = 0;
@@ -40,9 +43,6 @@ class AnalysisPageController extends ChangeNotifier {
   AnalysisSummary? _summary;
   AnalysisSession? _session;
   Timer? _pollTimer;
-
-  List<int> _frameToNalu = [];
-  List<int?> _naluToFrame = [];
 
   AnalysisPageController({required this.hash, this.pollSummary = true});
 
@@ -62,6 +62,8 @@ class AnalysisPageController extends ChangeNotifier {
       frames: _frames,
       frameIndexBase: _frameWindowStart,
       totalFrameCount: _summary?.frameCount ?? _frames.length,
+      frameBuckets: _frameBuckets,
+      frameBucketSize: _frameBucketSize,
       nalus: _nalus,
       naluIndexBase: _naluWindowStart,
       totalNaluCount: _summary?.naluCount ?? _nalus.length,
@@ -84,6 +86,7 @@ class AnalysisPageController extends ChangeNotifier {
       onChartFrameSelected: selectChartFrame,
       onNaluSelected: selectNalu,
       onNaluWindowRequested: requestNaluWindow,
+      onChartWindowSetForTest: setChartWindowForTest,
       onNaluFilterChanged: setNaluFilter,
       onNaluBrowserWidthChanged: setNaluBrowserWidth,
       onTopPanelFractionChanged: setTopPanelFraction,
@@ -92,6 +95,8 @@ class AnalysisPageController extends ChangeNotifier {
 
   List<FrameInfo> get frames => _frames;
   List<NaluInfo> get nalus => _nalus;
+  int get frameIndexBase => _frameWindowStart;
+  int get naluIndexBase => _naluWindowStart;
   AnalysisSummary? get summary => _summary;
   AnalysisCodec get codec => analysisCodecFromValue(_summary?.codec ?? 0);
   int? get selectedFrameIdx => _selectedFrameIdx;
@@ -140,6 +145,12 @@ class AnalysisPageController extends ChangeNotifier {
   void setTab(int tab) {
     if (_selectedTab == tab) return;
     _selectedTab = tab;
+    _visibleFrameCount = _visibleFrameCount.clamp(
+      _minVisibleFrameCount(),
+      _maxVisibleFrameCount(),
+    );
+    _clampChartOffset();
+    _ensureFrameWindowForChart();
     notifyListeners();
   }
 
@@ -161,7 +172,7 @@ class AnalysisPageController extends ChangeNotifier {
     final oldCount = _visibleFrameCount;
     _visibleFrameCount = (_visibleFrameCount * factor).clamp(
       minCount,
-      maxCount < _frameBlockSize ? maxCount : _frameBlockSize.toDouble(),
+      _maxVisibleFrameCount(),
     );
     final center = _chartOffset + oldCount / 2;
     _chartOffset = center - _visibleFrameCount / 2;
@@ -215,6 +226,17 @@ class AnalysisPageController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setChartWindowForTest(double offset, double visibleFrameCount) {
+    _visibleFrameCount = visibleFrameCount.clamp(
+      _minVisibleFrameCount(),
+      _maxVisibleFrameCount(),
+    );
+    _chartOffset = offset;
+    _clampChartOffset();
+    _ensureFrameWindowForChart();
+    notifyListeners();
+  }
+
   void setNaluFilter(String value) {
     if (_naluFilter == value) return;
     _naluFilter = value;
@@ -240,10 +262,8 @@ class AnalysisPageController extends ChangeNotifier {
     if (s.loaded == 0) return;
     _summary = s;
     _visibleFrameCount = _visibleFrameCount.clamp(
-      s.frameCount > 0 ? 1.0 : 0.0,
-      s.frameCount < _frameBlockSize
-          ? s.frameCount.toDouble()
-          : _frameBlockSize.toDouble(),
+      _minVisibleFrameCount(),
+      _maxVisibleFrameCount(),
     );
     _loadFrameWindowForRange(_chartOffset.floor(), _visibleFrameCount.ceil());
     _loadNaluWindowForRange(_selectedNaluIdx ?? 0, 1);
@@ -276,6 +296,8 @@ class AnalysisPageController extends ChangeNotifier {
 
     _session?.close();
     _frames = const [];
+    _frameBuckets = const [];
+    _frameBucketSize = 1;
     _nalus = const [];
     _frameWindowStart = 0;
     _naluWindowStart = 0;
@@ -407,21 +429,37 @@ class AnalysisPageController extends ChangeNotifier {
   }
 
   void _rebuildDerivedState() {
-    _frameToNalu = List<int>.filled(_frames.length, -1);
-    _naluToFrame = List<int?>.filled(_nalus.length, null);
-    var vclIdx = _naluWindowStart;
-    for (var i = 0; i < _nalus.length; i++) {
-      if ((_nalus[i].flags & 0x01) != 0) {
-        final frameLocalIdx = vclIdx - _frameWindowStart;
-        if (frameLocalIdx >= 0 && frameLocalIdx < _frames.length) {
-          _frameToNalu[frameLocalIdx] = _naluWindowStart + i;
-          _naluToFrame[i] = vclIdx;
-        }
-        vclIdx++;
-      }
+    _rebuildSortedFramesCache();
+    _refreshFrameBuckets();
+  }
+
+  void _refreshFrameBuckets() {
+    final session = _session;
+    final total = _summary?.frameCount ?? 0;
+    final visibleCount = _visibleFrameCount.ceil();
+    final bucketSize = _resolveFrameBucketSize();
+    if (_selectedTab != 1 ||
+        _ptsOrder ||
+        session == null ||
+        !session.isOpen ||
+        total <= 0 ||
+        visibleCount <= 0 ||
+        bucketSize <= 1) {
+      _frameBuckets = const [];
+      _frameBucketSize = 1;
+      return;
     }
 
-    _rebuildSortedFramesCache();
+    final start = _chartOffset.floor().clamp(0, total - 1).toInt();
+    final bucketCount = ((visibleCount + bucketSize - 1) ~/ bucketSize + 2)
+        .clamp(1, total)
+        .toInt();
+    _frameBuckets = session.frameBuckets(
+      start: start,
+      bucketSize: bucketSize,
+      maxCount: bucketCount,
+    );
+    _frameBucketSize = bucketSize;
   }
 
   void _rebuildSortedFramesCache() {
@@ -446,16 +484,17 @@ class AnalysisPageController extends ChangeNotifier {
   }
 
   int? _frameToNaluIdx(int frameIdx) {
-    final localIdx = frameIdx - _frameWindowStart;
-    if (localIdx < 0 || localIdx >= _frameToNalu.length) return null;
-    final v = _frameToNalu[localIdx];
+    final session = _session;
+    if (session == null || !session.isOpen) return null;
+    final v = session.frameToNalu(frameIdx);
     return v >= 0 ? v : null;
   }
 
   int? _naluToFrameIdx(int naluIdx) {
-    final localIdx = naluIdx - _naluWindowStart;
-    if (localIdx < 0 || localIdx >= _naluToFrame.length) return null;
-    return _naluToFrame[localIdx];
+    final session = _session;
+    if (session == null || !session.isOpen) return null;
+    final v = session.naluToFrame(naluIdx);
+    return v >= 0 ? v : null;
   }
 
   int? _originalFrameIdxAtSortedPosition(int sortedIdx) {
@@ -489,5 +528,27 @@ class AnalysisPageController extends ChangeNotifier {
         .toDouble();
     final max = (total - _visibleFrameCount).clamp(0.0, double.infinity);
     _chartOffset = _chartOffset.clamp(0.0, max);
+  }
+
+  double _minVisibleFrameCount() {
+    final total = (_summary?.frameCount ?? _frames.length).toDouble();
+    if (total <= 0) return 0.0;
+    return total < 3.0 ? total : 3.0;
+  }
+
+  double _maxVisibleFrameCount() {
+    final total = (_summary?.frameCount ?? _frames.length).toDouble();
+    if (total <= 0) return 0.0;
+    return total < _frameBlockSize ? total : _frameBlockSize.toDouble();
+  }
+
+  int _resolveFrameBucketSize() {
+    if (_ptsOrder) return 1;
+    final visibleCount = _visibleFrameCount.ceil();
+    if (visibleCount <= _frameBucketTargetCount) return 1;
+    return ((visibleCount + _frameBucketTargetCount - 1) ~/
+            _frameBucketTargetCount)
+        .clamp(1, _frameBlockSize)
+        .toInt();
   }
 }

@@ -45,6 +45,19 @@ struct NakiNaluInfo {
     uint8_t  flags;             // bit0: VCL, bit1: Slice, bit2: Keyframe
 };
 
+struct NakiFrameBucket {
+    int32_t start_frame;
+    int32_t frame_count;
+    int32_t packet_size_min;
+    int32_t packet_size_max;
+    int64_t packet_size_sum;
+    int32_t qp_min;
+    int32_t qp_max;
+    int64_t qp_sum;
+    int32_t keyframe_count;
+    int32_t _reserved[3];
+};
+
 struct NakiOverlayState {
     int32_t show_cu_grid;
     int32_t show_pred_mode;
@@ -76,6 +89,15 @@ extern "C" __declspec(dllexport)
 int32_t naki_analysis_get_nalus_range(int32_t start, NakiNaluInfo* out, int32_t max_count);
 
 extern "C" __declspec(dllexport)
+int32_t naki_analysis_frame_to_nalu(int32_t frame_index);
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_nalu_to_frame(int32_t nalu_index);
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_get_frame_buckets(int32_t start, int32_t bucket_size, NakiFrameBucket* out, int32_t max_count);
+
+extern "C" __declspec(dllexport)
 void naki_analysis_set_overlay(const NakiOverlayState* state);
 
 extern "C" __declspec(dllexport)
@@ -98,6 +120,15 @@ int32_t naki_analysis_handle_get_nalus(NakiAnalysisHandle handle, NakiNaluInfo* 
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_nalus_range(NakiAnalysisHandle handle, int32_t start, NakiNaluInfo* out, int32_t max_count);
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_handle_frame_to_nalu(NakiAnalysisHandle handle, int32_t frame_index);
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_handle_nalu_to_frame(NakiAnalysisHandle handle, int32_t nalu_index);
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_handle_get_frame_buckets(NakiAnalysisHandle handle, int32_t start, int32_t bucket_size, NakiFrameBucket* out, int32_t max_count);
 
 // Register a callback that returns the current playback PTS in microseconds.
 // Called by video_renderer_plugin during initialization.

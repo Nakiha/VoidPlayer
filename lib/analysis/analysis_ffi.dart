@@ -84,6 +84,30 @@ final class NakiNaluInfo extends Struct {
   external int flags;
 }
 
+final class NakiFrameBucket extends Struct {
+  @Int32()
+  external int startFrame;
+  @Int32()
+  external int frameCount;
+  @Int32()
+  external int packetSizeMin;
+  @Int32()
+  external int packetSizeMax;
+  @Int64()
+  external int packetSizeSum;
+  @Int32()
+  external int qpMin;
+  @Int32()
+  external int qpMax;
+  @Int64()
+  external int qpSum;
+  @Int32()
+  external int keyframeCount;
+
+  @Array(3)
+  external Array<Int32> _reserved;
+}
+
 final class NakiOverlayState extends Struct {
   @Int32()
   external int showCuGrid;
@@ -118,6 +142,14 @@ typedef _GetNalusRangeNative =
     Int32 Function(Int32, Pointer<NakiNaluInfo>, Int32);
 typedef _GetNalusRangeDart = int Function(int, Pointer<NakiNaluInfo>, int);
 
+typedef _IndexMapNative = Int32 Function(Int32);
+typedef _IndexMapDart = int Function(int);
+
+typedef _GetFrameBucketsNative =
+    Int32 Function(Int32, Int32, Pointer<NakiFrameBucket>, Int32);
+typedef _GetFrameBucketsDart =
+    int Function(int, int, Pointer<NakiFrameBucket>, int);
+
 typedef _SetOverlayNative = Void Function(Pointer<NakiOverlayState>);
 typedef _SetOverlayDart = void Function(Pointer<NakiOverlayState>);
 
@@ -147,6 +179,20 @@ typedef _HandleGetNalusRangeNative =
 typedef _HandleGetNalusRangeDart =
     int Function(Pointer<Void>, int, Pointer<NakiNaluInfo>, int);
 
+typedef _HandleIndexMapNative = Int32 Function(Pointer<Void>, Int32);
+typedef _HandleIndexMapDart = int Function(Pointer<Void>, int);
+
+typedef _HandleGetFrameBucketsNative =
+    Int32 Function(
+      Pointer<Void>,
+      Int32,
+      Int32,
+      Pointer<NakiFrameBucket>,
+      Int32,
+    );
+typedef _HandleGetFrameBucketsDart =
+    int Function(Pointer<Void>, int, int, Pointer<NakiFrameBucket>, int);
+
 // ===========================================================================
 // Native symbol lookup
 // ===========================================================================
@@ -167,6 +213,16 @@ final _getFramesRange = _dl
 final _getNalusRange = _dl
     .lookupFunction<_GetNalusRangeNative, _GetNalusRangeDart>(
       'naki_analysis_get_nalus_range',
+    );
+final _frameToNalu = _dl.lookupFunction<_IndexMapNative, _IndexMapDart>(
+  'naki_analysis_frame_to_nalu',
+);
+final _naluToFrame = _dl.lookupFunction<_IndexMapNative, _IndexMapDart>(
+  'naki_analysis_nalu_to_frame',
+);
+final _getFrameBuckets = _dl
+    .lookupFunction<_GetFrameBucketsNative, _GetFrameBucketsDart>(
+      'naki_analysis_get_frame_buckets',
     );
 final _setOverlay = _dl.lookupFunction<_SetOverlayNative, _SetOverlayDart>(
   'naki_analysis_set_overlay',
@@ -189,6 +245,18 @@ final _handleGetFramesRange = _dl
 final _handleGetNalusRange = _dl
     .lookupFunction<_HandleGetNalusRangeNative, _HandleGetNalusRangeDart>(
       'naki_analysis_handle_get_nalus_range',
+    );
+final _handleFrameToNalu = _dl
+    .lookupFunction<_HandleIndexMapNative, _HandleIndexMapDart>(
+      'naki_analysis_handle_frame_to_nalu',
+    );
+final _handleNaluToFrame = _dl
+    .lookupFunction<_HandleIndexMapNative, _HandleIndexMapDart>(
+      'naki_analysis_handle_nalu_to_frame',
+    );
+final _handleGetFrameBuckets = _dl
+    .lookupFunction<_HandleGetFrameBucketsNative, _HandleGetFrameBucketsDart>(
+      'naki_analysis_handle_get_frame_buckets',
     );
 
 // ===========================================================================
@@ -243,6 +311,33 @@ class NaluInfo {
     required this.layerId,
     required this.flags,
   });
+}
+
+class FrameBucket {
+  final int startFrame;
+  final int frameCount;
+  final int packetSizeMin;
+  final int packetSizeMax;
+  final int packetSizeSum;
+  final int qpMin;
+  final int qpMax;
+  final int qpSum;
+  final int keyframeCount;
+
+  FrameBucket({
+    required this.startFrame,
+    required this.frameCount,
+    required this.packetSizeMin,
+    required this.packetSizeMax,
+    required this.packetSizeSum,
+    required this.qpMin,
+    required this.qpMax,
+    required this.qpSum,
+    required this.keyframeCount,
+  });
+
+  double get avgPacketSize => frameCount == 0 ? 0 : packetSizeSum / frameCount;
+  double get avgQp => frameCount == 0 ? 0 : qpSum / frameCount;
 }
 
 class AnalysisSummary {
@@ -325,6 +420,21 @@ NaluInfo _naluInfoAt(Pointer<NakiNaluInfo> ptr, int i) {
     temporalId: n.temporalId,
     layerId: n.layerId,
     flags: n.flags,
+  );
+}
+
+FrameBucket _frameBucketAt(Pointer<NakiFrameBucket> ptr, int i) {
+  final b = ptr[i];
+  return FrameBucket(
+    startFrame: b.startFrame,
+    frameCount: b.frameCount,
+    packetSizeMin: b.packetSizeMin,
+    packetSizeMax: b.packetSizeMax,
+    packetSizeSum: b.packetSizeSum,
+    qpMin: b.qpMin,
+    qpMax: b.qpMax,
+    qpSum: b.qpSum,
+    keyframeCount: b.keyframeCount,
   );
 }
 
@@ -416,6 +526,44 @@ class AnalysisSession {
       calloc.free(ptr);
     }
   }
+
+  int frameToNalu(int frameIndex) {
+    if (_handle == nullptr || frameIndex < 0) return -1;
+    return _handleFrameToNalu(_handle, frameIndex);
+  }
+
+  int naluToFrame(int naluIndex) {
+    if (_handle == nullptr || naluIndex < 0) return -1;
+    return _handleNaluToFrame(_handle, naluIndex);
+  }
+
+  List<FrameBucket> frameBuckets({
+    required int start,
+    required int bucketSize,
+    required int maxCount,
+  }) {
+    final s = summary;
+    if (s.loaded == 0 || s.frameCount == 0 || _handle == nullptr) return [];
+    if (start < 0 ||
+        bucketSize <= 0 ||
+        maxCount <= 0 ||
+        start >= s.frameCount) {
+      return [];
+    }
+    final ptr = calloc<NakiFrameBucket>(maxCount);
+    try {
+      final actual = _handleGetFrameBuckets(
+        _handle,
+        start,
+        bucketSize,
+        ptr,
+        maxCount,
+      ).clamp(0, maxCount).toInt();
+      return List.generate(actual, (i) => _frameBucketAt(ptr, i));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
 }
 
 // ===========================================================================
@@ -497,6 +645,43 @@ class AnalysisFfi {
         safeCount,
       ).clamp(0, safeCount).toInt();
       return List.generate(actual, (i) => _naluInfoAt(ptr, i));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static int frameToNalu(int frameIndex) {
+    if (frameIndex < 0) return -1;
+    return _frameToNalu(frameIndex);
+  }
+
+  static int naluToFrame(int naluIndex) {
+    if (naluIndex < 0) return -1;
+    return _naluToFrame(naluIndex);
+  }
+
+  static List<FrameBucket> frameBuckets({
+    required int start,
+    required int bucketSize,
+    required int maxCount,
+  }) {
+    final s = summary;
+    if (s.loaded == 0 || s.frameCount == 0) return [];
+    if (start < 0 ||
+        bucketSize <= 0 ||
+        maxCount <= 0 ||
+        start >= s.frameCount) {
+      return [];
+    }
+    final ptr = calloc<NakiFrameBucket>(maxCount);
+    try {
+      final actual = _getFrameBuckets(
+        start,
+        bucketSize,
+        ptr,
+        maxCount,
+      ).clamp(0, maxCount).toInt();
+      return List.generate(actual, (i) => _frameBucketAt(ptr, i));
     } finally {
       calloc.free(ptr);
     }

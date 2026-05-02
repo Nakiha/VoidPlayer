@@ -20,6 +20,8 @@ class AnalysisPageViewModel {
   final List<FrameInfo> frames;
   final int frameIndexBase;
   final int totalFrameCount;
+  final List<FrameBucket> frameBuckets;
+  final int frameBucketSize;
   final List<NaluInfo> nalus;
   final int naluIndexBase;
   final int totalNaluCount;
@@ -45,6 +47,8 @@ class AnalysisPageViewModel {
     required this.frames,
     required this.frameIndexBase,
     required this.totalFrameCount,
+    required this.frameBuckets,
+    required this.frameBucketSize,
     required this.nalus,
     required this.naluIndexBase,
     required this.totalNaluCount,
@@ -67,6 +71,8 @@ class AnalysisPageActions {
   final ValueChanged<int?> onChartFrameSelected;
   final ValueChanged<int?> onNaluSelected;
   final void Function(int start, int count) onNaluWindowRequested;
+  final void Function(double offset, double visibleFrameCount)
+  onChartWindowSetForTest;
   final ValueChanged<String> onNaluFilterChanged;
   final ValueChanged<double> onNaluBrowserWidthChanged;
   final ValueChanged<double> onTopPanelFractionChanged;
@@ -80,6 +86,7 @@ class AnalysisPageActions {
     required this.onChartFrameSelected,
     required this.onNaluSelected,
     required this.onNaluWindowRequested,
+    required this.onChartWindowSetForTest,
     required this.onNaluFilterChanged,
     required this.onNaluBrowserWidthChanged,
     required this.onTopPanelFractionChanged,

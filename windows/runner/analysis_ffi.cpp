@@ -10,6 +10,7 @@
 #include <cstring>
 #include <algorithm>
 #include <fstream>
+#include <limits>
 #include <new>
 #include <atomic>
 #include <mutex>
@@ -132,6 +133,10 @@ int32_t fill_analysis_frames_range(vr::analysis::AnalysisManager& mgr,
                                    NakiFrameInfo* out,
                                    int32_t max_count);
 
+bool fill_analysis_frame_at(vr::analysis::AnalysisManager& mgr,
+                            int32_t source_index,
+                            NakiFrameInfo& f);
+
 int32_t fill_analysis_frames(vr::analysis::AnalysisManager& mgr,
                              NakiFrameInfo* out,
                              int32_t max_count) {
@@ -152,58 +157,68 @@ int32_t fill_analysis_frames_range(vr::analysis::AnalysisManager& mgr,
     if (start >= total_count) return 0;
     int count = std::min(max_count, total_count - start);
 
+    for (int i = 0; i < count; i++) {
+        if (!fill_analysis_frame_at(mgr, start + i, out[i])) {
+            return i;
+        }
+    }
+    return count;
+}
+
+bool fill_analysis_frame_at(vr::analysis::AnalysisManager& mgr,
+                            int32_t source_index,
+                            NakiFrameInfo& f) {
+    if (!mgr.is_loaded() || source_index < 0) return false;
+
+    int vbs2_count = mgr.vbs2().frame_count();
+    int vbt_count = mgr.vbt().packet_count();
+    int total_count = vbs2_count > 0 ? std::min(vbs2_count, vbt_count) : vbt_count;
+    if (source_index >= total_count) return false;
+
     // Fallback: no VBS2 — combine VBT timing with VBI VCL metadata.
     // Slice P/B needs codec-specific slice-header parsing; without VBS2 we only
     // promote keyframes to I and treat other coded frames as forward-coded.
     if (vbs2_count == 0) {
         const auto vcl_nalus = mgr.vbi().find_vcl_nalus();
-        for (int i = 0; i < count; i++) {
-            const int source_index = start + i;
-            const auto& pkt = mgr.vbt().entry(source_index);
-            auto& f = out[i];
-            std::memset(&f, 0, sizeof(f));
-            f.poc = source_index;
-            f.slice_type = 1;
-            f.pts = pkt.pts;
-            f.dts = pkt.dts;
-            f.packet_size = static_cast<int32_t>(pkt.size);
-            f.keyframe = (pkt.flags & 0x01) ? 1 : 0;
-
-            if (source_index < static_cast<int>(vcl_nalus.size())) {
-                const auto& nalu = mgr.vbi().entry(vcl_nalus[source_index]);
-                f.temporal_id = nalu.temporal_id;
-                f.nal_type = nalu.nal_type;
-                f.keyframe = (nalu.flags & VBI_FLAG_IS_KEYFRAME) ? 1 : f.keyframe;
-            }
-            if (f.keyframe != 0) {
-                f.slice_type = 2;
-            }
-        }
-        return count;
-    }
-
-    for (int i = 0; i < count; i++) {
-        const int source_index = start + i;
-        auto fh = mgr.vbs2().read_frame_header(source_index);
         const auto& pkt = mgr.vbt().entry(source_index);
-
-        auto& f = out[i];
         std::memset(&f, 0, sizeof(f));
-        f.poc = fh.poc;
-        f.temporal_id = fh.temporal_id;
-        f.slice_type = fh.slice_type;
-        f.nal_type = fh.nal_unit_type;
-        f.avg_qp = fh.avg_qp;
-        f.num_ref_l0 = fh.num_ref_l0;
-        f.num_ref_l1 = fh.num_ref_l1;
-        std::memcpy(f.ref_pocs_l0, fh.ref_pocs_l0, sizeof(fh.ref_pocs_l0));
-        std::memcpy(f.ref_pocs_l1, fh.ref_pocs_l1, sizeof(fh.ref_pocs_l1));
+        f.poc = source_index;
+        f.slice_type = 1;
         f.pts = pkt.pts;
         f.dts = pkt.dts;
         f.packet_size = static_cast<int32_t>(pkt.size);
         f.keyframe = (pkt.flags & 0x01) ? 1 : 0;
+
+        if (source_index < static_cast<int>(vcl_nalus.size())) {
+            const auto& nalu = mgr.vbi().entry(vcl_nalus[source_index]);
+            f.temporal_id = nalu.temporal_id;
+            f.nal_type = nalu.nal_type;
+            f.keyframe = (nalu.flags & VBI_FLAG_IS_KEYFRAME) ? 1 : f.keyframe;
+        }
+        if (f.keyframe != 0) {
+            f.slice_type = 2;
+        }
+        return true;
     }
-    return count;
+
+    auto fh = mgr.vbs2().read_frame_header(source_index);
+    const auto& pkt = mgr.vbt().entry(source_index);
+
+    std::memset(&f, 0, sizeof(f));
+    f.poc = fh.poc;
+    f.temporal_id = fh.temporal_id;
+    f.slice_type = fh.slice_type;
+    f.nal_type = fh.nal_unit_type;
+    f.avg_qp = fh.avg_qp;
+    f.num_ref_l0 = fh.num_ref_l0;
+    f.num_ref_l1 = fh.num_ref_l1;
+    std::memcpy(f.ref_pocs_l0, fh.ref_pocs_l0, sizeof(fh.ref_pocs_l0));
+    std::memcpy(f.ref_pocs_l1, fh.ref_pocs_l1, sizeof(fh.ref_pocs_l1));
+    f.pts = pkt.pts;
+    f.dts = pkt.dts;
+    f.packet_size = static_cast<int32_t>(pkt.size);
+    f.keyframe = (pkt.flags & 0x01) ? 1 : 0;
+    return true;
 }
 
 int32_t fill_analysis_nalus_range(vr::analysis::AnalysisManager& mgr,
@@ -239,6 +254,80 @@ int32_t fill_analysis_nalus_range(vr::analysis::AnalysisManager& mgr,
         n.flags = e.flags;
     }
     return count;
+}
+
+int32_t frame_to_nalu(vr::analysis::AnalysisManager& mgr, int32_t frame_index) {
+    if (!mgr.is_loaded() || frame_index < 0) return -1;
+    int frame = 0;
+    const auto& vbi = mgr.vbi();
+    for (int i = 0; i < vbi.nalu_count(); ++i) {
+        if ((vbi.entry(i).flags & VBI_FLAG_IS_VCL) == 0) continue;
+        if (frame == frame_index) return i;
+        ++frame;
+    }
+    return -1;
+}
+
+int32_t nalu_to_frame(vr::analysis::AnalysisManager& mgr, int32_t nalu_index) {
+    if (!mgr.is_loaded() || nalu_index < 0 || nalu_index >= mgr.vbi().nalu_count()) {
+        return -1;
+    }
+    int frame = 0;
+    const auto& vbi = mgr.vbi();
+    for (int i = 0; i <= nalu_index; ++i) {
+        if ((vbi.entry(i).flags & VBI_FLAG_IS_VCL) == 0) continue;
+        if (i == nalu_index) return frame;
+        ++frame;
+    }
+    return -1;
+}
+
+int32_t fill_analysis_frame_buckets(vr::analysis::AnalysisManager& mgr,
+                                    int32_t start,
+                                    int32_t bucket_size,
+                                    NakiFrameBucket* out,
+                                    int32_t max_count) {
+    if (!out || max_count <= 0 || bucket_size <= 0) return 0;
+    if (!mgr.is_loaded() || start < 0) return 0;
+
+    int vbs2_count = mgr.vbs2().frame_count();
+    int vbt_count = mgr.vbt().packet_count();
+    int total_count = vbs2_count > 0 ? std::min(vbs2_count, vbt_count) : vbt_count;
+    if (start >= total_count) return 0;
+
+    int produced = 0;
+    int bucket_start = start;
+    while (produced < max_count && bucket_start < total_count) {
+        const int count = std::min(bucket_size, total_count - bucket_start);
+        auto& bucket = out[produced];
+        std::memset(&bucket, 0, sizeof(bucket));
+        bucket.start_frame = bucket_start;
+        bucket.frame_count = count;
+        bucket.packet_size_min = std::numeric_limits<int32_t>::max();
+        bucket.qp_min = std::numeric_limits<int32_t>::max();
+
+        for (int i = 0; i < count; ++i) {
+            NakiFrameInfo f{};
+            if (!fill_analysis_frame_at(mgr, bucket_start + i, f)) break;
+            bucket.packet_size_min = std::min(bucket.packet_size_min, f.packet_size);
+            bucket.packet_size_max = std::max(bucket.packet_size_max, f.packet_size);
+            bucket.packet_size_sum += f.packet_size;
+            bucket.qp_min = std::min(bucket.qp_min, f.avg_qp);
+            bucket.qp_max = std::max(bucket.qp_max, f.avg_qp);
+            bucket.qp_sum += f.avg_qp;
+            if (f.keyframe != 0) bucket.keyframe_count++;
+        }
+        if (bucket.packet_size_min == std::numeric_limits<int32_t>::max()) {
+            bucket.packet_size_min = 0;
+        }
+        if (bucket.qp_min == std::numeric_limits<int32_t>::max()) {
+            bucket.qp_min = 0;
+        }
+
+        ++produced;
+        bucket_start += count;
+    }
+    return produced;
 }
 
 } // namespace
@@ -295,6 +384,27 @@ int32_t naki_analysis_get_nalus_range(int32_t start, NakiNaluInfo* out, int32_t 
     std::lock_guard<std::mutex> lock(g_analysis_mutex);
     auto& mgr = vr::analysis::AnalysisManager::instance();
     return fill_analysis_nalus_range(mgr, start, out, max_count);
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_frame_to_nalu(int32_t frame_index) {
+    std::lock_guard<std::mutex> lock(g_analysis_mutex);
+    auto& mgr = vr::analysis::AnalysisManager::instance();
+    return frame_to_nalu(mgr, frame_index);
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_nalu_to_frame(int32_t nalu_index) {
+    std::lock_guard<std::mutex> lock(g_analysis_mutex);
+    auto& mgr = vr::analysis::AnalysisManager::instance();
+    return nalu_to_frame(mgr, nalu_index);
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_get_frame_buckets(int32_t start, int32_t bucket_size, NakiFrameBucket* out, int32_t max_count) {
+    std::lock_guard<std::mutex> lock(g_analysis_mutex);
+    auto& mgr = vr::analysis::AnalysisManager::instance();
+    return fill_analysis_frame_buckets(mgr, start, bucket_size, out, max_count);
 }
 
 extern "C" __declspec(dllexport)
@@ -384,6 +494,30 @@ int32_t naki_analysis_handle_get_nalus_range(NakiAnalysisHandle handle, int32_t 
     if (!state) return 0;
     std::lock_guard<std::mutex> lock(state->mutex);
     return state->closed ? 0 : fill_analysis_nalus_range(state->manager, start, out, max_count);
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_handle_frame_to_nalu(NakiAnalysisHandle handle, int32_t frame_index) {
+    auto state = pin_analysis_handle(handle);
+    if (!state) return -1;
+    std::lock_guard<std::mutex> lock(state->mutex);
+    return state->closed ? -1 : frame_to_nalu(state->manager, frame_index);
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_handle_nalu_to_frame(NakiAnalysisHandle handle, int32_t nalu_index) {
+    auto state = pin_analysis_handle(handle);
+    if (!state) return -1;
+    std::lock_guard<std::mutex> lock(state->mutex);
+    return state->closed ? -1 : nalu_to_frame(state->manager, nalu_index);
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_handle_get_frame_buckets(NakiAnalysisHandle handle, int32_t start, int32_t bucket_size, NakiFrameBucket* out, int32_t max_count) {
+    auto state = pin_analysis_handle(handle);
+    if (!state) return 0;
+    std::lock_guard<std::mutex> lock(state->mutex);
+    return state->closed ? 0 : fill_analysis_frame_buckets(state->manager, start, bucket_size, out, max_count);
 }
 
 // ---- Analysis generation ----

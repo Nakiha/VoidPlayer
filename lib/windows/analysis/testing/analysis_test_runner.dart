@@ -110,12 +110,14 @@ extension AnalysisPageTestRunner on AnalysisTestHost {
           'ASSERT_ANALYSIS_SELECTED_FRAME $expectedSlice $expectedNalName',
         );
         final idx = selectedAnalysisFrameIdx;
-        if (idx == null || idx < 0 || idx >= analysisFrames.length) {
+        final localIdx = idx != null ? idx - analysisFrameIndexBase : -1;
+        if (idx == null || localIdx < 0 || localIdx >= analysisFrames.length) {
           throw AssertionError(
-            'Expected selected frame, got selected=$idx frames=${analysisFrames.length}',
+            'Expected selected frame, got selected=$idx '
+            'window=[$analysisFrameIndexBase, ${analysisFrameIndexBase + analysisFrames.length})',
           );
         }
-        final f = analysisFrames[idx];
+        final f = analysisFrames[localIdx];
         final actualSlice = analysisFrameSliceName(f);
         final actualNalName = bitstreamUnitTypeName(analysisCodec, f.nalType);
         if (actualSlice != expectedSlice || actualNalName != expectedNalName) {
@@ -132,9 +134,11 @@ extension AnalysisPageTestRunner on AnalysisTestHost {
           'ASSERT_ANALYSIS_SELECTED_FRAME_VISIBLE',
         );
         final idx = selectedAnalysisFrameIdx;
-        if (idx == null || idx < 0 || idx >= analysisFrames.length) {
+        final totalFrames =
+            analysisSummary?.frameCount ?? analysisFrames.length;
+        if (idx == null || idx < 0 || idx >= totalFrames) {
           throw AssertionError(
-            'Expected selected frame, got selected=$idx frames=${analysisFrames.length}',
+            'Expected selected frame, got selected=$idx frames=$totalFrames',
           );
         }
         final sortedIdx = sortedPositionForFrameIdx(idx);
@@ -195,9 +199,10 @@ extension AnalysisPageTestRunner on AnalysisTestHost {
       case _AnalysisTestCommand.selectNalu:
         final idx = instr.intArg(0);
         log.info('AnalysisTestRunner ${instr.time}: SELECT_ANALYSIS_NALU $idx');
-        if (idx < 0 || idx >= analysisNalus.length) {
+        final totalNalus = analysisSummary?.naluCount ?? analysisNalus.length;
+        if (idx < 0 || idx >= totalNalus) {
           throw AssertionError(
-            'NALU index $idx out of range; nalus=${analysisNalus.length}',
+            'NALU index $idx out of range; nalus=$totalNalus',
           );
         }
         updateAnalysisTestState(() => selectAnalysisNaluForTest(idx));
@@ -207,12 +212,24 @@ extension AnalysisPageTestRunner on AnalysisTestHost {
           'AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_DETAIL_VISIBLE',
         );
         final idx = selectedAnalysisNaluIdx;
-        if (idx == null || idx < 0 || idx >= analysisNalus.length) {
+        final localIdx = idx != null ? idx - analysisNaluIndexBase : -1;
+        if (idx == null || localIdx < 0 || localIdx >= analysisNalus.length) {
           throw AssertionError(
             'Expected selected NALU detail, got selected=$idx '
-            'nalus=${analysisNalus.length}',
+            'window=[$analysisNaluIndexBase, ${analysisNaluIndexBase + analysisNalus.length})',
           );
         }
+
+      case _AnalysisTestCommand.setChartWindow:
+        final offset = instr.doubleArg(0);
+        final visibleFrameCount = instr.doubleArg(1);
+        log.info(
+          'AnalysisTestRunner ${instr.time}: SET_ANALYSIS_CHART_WINDOW '
+          '$offset $visibleFrameCount',
+        );
+        updateAnalysisTestState(
+          () => setAnalysisChartWindowForTest(offset, visibleFrameCount),
+        );
 
       case _AnalysisTestCommand.quit:
         final exitCode = instr.intArg(0, defaultValue: 0);
@@ -247,27 +264,31 @@ extension AnalysisPageTestRunner on AnalysisTestHost {
 
   void _assertAnalysisMinCounts(int minFrames, int minPackets, int minNalus) {
     _assertAnalysisLoaded();
+    final actualFrames = analysisSummary?.frameCount ?? analysisFrames.length;
     final packets = analysisSummary?.packetCount ?? 0;
-    if (analysisFrames.length < minFrames ||
+    final actualNalus = analysisSummary?.naluCount ?? analysisNalus.length;
+    if (actualFrames < minFrames ||
         packets < minPackets ||
-        analysisNalus.length < minNalus) {
+        actualNalus < minNalus) {
       throw AssertionError(
         'Expected analysis counts >= ($minFrames, $minPackets, $minNalus), '
-        'got frames=${analysisFrames.length}, packets=$packets, nalus=${analysisNalus.length}',
+        'got frames=$actualFrames, packets=$packets, nalus=$actualNalus',
       );
     }
   }
 
   void _assertAnalysisCounts(int frames, int packets, int nalus) {
     _assertAnalysisLoaded();
+    final actualFrames = analysisSummary?.frameCount ?? analysisFrames.length;
     final actualPackets = analysisSummary?.packetCount ?? 0;
-    if (analysisFrames.length != frames ||
+    final actualNalus = analysisSummary?.naluCount ?? analysisNalus.length;
+    if (actualFrames != frames ||
         actualPackets != packets ||
-        analysisNalus.length != nalus) {
+        actualNalus != nalus) {
       throw AssertionError(
         'Expected analysis counts ($frames, $packets, $nalus), '
-        'got frames=${analysisFrames.length}, packets=$actualPackets, '
-        'nalus=${analysisNalus.length}',
+        'got frames=$actualFrames, packets=$actualPackets, '
+        'nalus=$actualNalus',
       );
     }
   }
@@ -286,6 +307,7 @@ enum _AnalysisTestCommand {
   assertTab,
   setOrder,
   assertOrder,
+  setChartWindow,
   selectNalu,
   assertDetailVisible,
   quit,
@@ -310,6 +332,14 @@ class _AnalysisTestInstruction {
     }
     if (defaultValue != null) return defaultValue;
     throw ArgumentError('Missing integer argument $index for $command');
+  }
+
+  double doubleArg(int index, {double? defaultValue}) {
+    if (index < args.length && args[index].isNotEmpty) {
+      return double.parse(args[index]);
+    }
+    if (defaultValue != null) return defaultValue;
+    throw ArgumentError('Missing number argument $index for $command');
   }
 }
 
@@ -343,6 +373,7 @@ List<_AnalysisTestInstruction> _parseAnalysisTestScript(String path) {
       'ASSERT_ANALYSIS_LOADED' => _AnalysisTestCommand.assertLoaded,
       'ASSERT_ANALYSIS_COUNTS' => _AnalysisTestCommand.assertCounts,
       'ASSERT_ANALYSIS_MIN_COUNTS' => _AnalysisTestCommand.assertMinCounts,
+      'ASSERT_ANALYSIS_CODEC' => _AnalysisTestCommand.assertCodec,
       'ASSERT_ANALYSISanalysisCodec' => _AnalysisTestCommand.assertCodec,
       'ASSERT_ANALYSIS_NALU_NAME' => _AnalysisTestCommand.assertNaluName,
       'ASSERT_ANALYSIS_SELECTED_FRAME' =>
@@ -353,6 +384,7 @@ List<_AnalysisTestInstruction> _parseAnalysisTestScript(String path) {
       'ASSERT_ANALYSIS_TAB' => _AnalysisTestCommand.assertTab,
       'SET_ANALYSIS_ORDER' => _AnalysisTestCommand.setOrder,
       'ASSERT_ANALYSIS_ORDER' => _AnalysisTestCommand.assertOrder,
+      'SET_ANALYSIS_CHART_WINDOW' => _AnalysisTestCommand.setChartWindow,
       'SELECT_ANALYSIS_NALU' => _AnalysisTestCommand.selectNalu,
       'ASSERT_ANALYSIS_DETAIL_VISIBLE' =>
         _AnalysisTestCommand.assertDetailVisible,

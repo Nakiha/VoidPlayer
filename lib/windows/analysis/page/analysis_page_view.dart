@@ -44,6 +44,8 @@ class AnalysisPageView extends StatelessWidget {
             frames: model.sortedFrames,
             frameIndexBase: model.frameIndexBase,
             totalFrames: model.totalFrameCount,
+            frameBuckets: model.frameBuckets,
+            frameBucketSize: model.frameBucketSize,
             currentIdx: model.currentSortedFrameIdx,
             selectedFrameIdx: model.selectedSortedFrameIdx,
             viewStart: model.chartOffset,

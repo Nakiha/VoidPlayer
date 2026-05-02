@@ -7,6 +7,8 @@ abstract class AnalysisTestHost {
   bool get mounted;
   List<FrameInfo> get analysisFrames;
   List<NaluInfo> get analysisNalus;
+  int get analysisFrameIndexBase;
+  int get analysisNaluIndexBase;
   AnalysisSummary? get analysisSummary;
   AnalysisCodec get analysisCodec;
   int? get selectedAnalysisFrameIdx;
@@ -22,5 +24,6 @@ abstract class AnalysisTestHost {
   void updateAnalysisTestState(VoidCallback update);
   void setAnalysisTabForTest(int tab);
   void setAnalysisOrderForTest(bool ptsOrder);
+  void setAnalysisChartWindowForTest(double offset, double visibleFrameCount);
   void selectAnalysisNaluForTest(int naluIdx);
 }

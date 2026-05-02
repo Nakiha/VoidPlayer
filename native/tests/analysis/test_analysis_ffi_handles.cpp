@@ -84,3 +84,42 @@ TEST_CASE("analysis FFI handle close is safe while readers are active",
     REQUIRE(summary != nullptr);
     REQUIRE(summary->loaded == 0);
 }
+
+TEST_CASE("analysis FFI handle exposes frame mappings and buckets",
+          "[analysis][ffi]") {
+    auto& data = AnalysisTestData::instance();
+    REQUIRE(data.ensure());
+
+    NakiAnalysisHandle handle = naki_analysis_open(
+        data.vbs2_path().c_str(),
+        data.vbi_path().c_str(),
+        data.vbt_path().c_str());
+    REQUIRE(handle != nullptr);
+
+    const auto* summary = naki_analysis_handle_get_summary(handle);
+    REQUIRE(summary != nullptr);
+    REQUIRE(summary->loaded == 1);
+    REQUIRE(summary->frame_count > 4);
+    REQUIRE(summary->nalu_count > 4);
+
+    const int32_t nalu0 = naki_analysis_handle_frame_to_nalu(handle, 0);
+    REQUIRE(nalu0 >= 0);
+    REQUIRE(naki_analysis_handle_nalu_to_frame(handle, nalu0) == 0);
+    REQUIRE(naki_analysis_handle_frame_to_nalu(handle, -1) == -1);
+    REQUIRE(naki_analysis_handle_nalu_to_frame(handle, -1) == -1);
+
+    std::vector<NakiFrameBucket> buckets(4);
+    const int32_t bucket_count = naki_analysis_handle_get_frame_buckets(
+        handle, 0, 2, buckets.data(), static_cast<int32_t>(buckets.size()));
+    REQUIRE(bucket_count > 0);
+    REQUIRE(buckets[0].start_frame == 0);
+    REQUIRE(buckets[0].frame_count > 0);
+    REQUIRE(buckets[0].packet_size_max >= buckets[0].packet_size_min);
+    REQUIRE(buckets[0].packet_size_sum >= buckets[0].packet_size_min);
+
+    naki_analysis_close(handle);
+    REQUIRE(naki_analysis_handle_frame_to_nalu(handle, 0) == -1);
+    REQUIRE(naki_analysis_handle_nalu_to_frame(handle, nalu0) == -1);
+    REQUIRE(naki_analysis_handle_get_frame_buckets(
+        handle, 0, 2, buckets.data(), static_cast<int32_t>(buckets.size())) == 0);
+}

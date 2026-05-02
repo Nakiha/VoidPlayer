@@ -55,6 +55,12 @@ typedef _SetWindowPosDart =
       int uFlags,
     );
 
+typedef _ShowWindowNative = Int32 Function(IntPtr hWnd, Int32 nCmdShow);
+typedef _ShowWindowDart = int Function(int hWnd, int nCmdShow);
+
+typedef _SetForegroundWindowNative = Int32 Function(IntPtr hWnd);
+typedef _SetForegroundWindowDart = int Function(int hWnd);
+
 typedef _MonitorFromWindowNative = IntPtr Function(IntPtr hwnd, Uint32 dwFlags);
 typedef _MonitorFromWindowDart = int Function(int hwnd, int dwFlags);
 
@@ -162,6 +168,7 @@ const int _swpShowWindow = 0x0040;
 const int _swpFrameChanged = 0x0020;
 const int _monitorDefaultToNull = 0x00000000;
 const int _monitorDefaultToNearest = 0x00000002;
+const int _swRestore = 9;
 const int _vkLButton = 0x01;
 const int _vkRButton = 0x02;
 const int _smCyCaption = 4;
@@ -198,6 +205,15 @@ final _moveWindow = _user32.lookupFunction<_MoveWindowNative, _MoveWindowDart>(
 
 final _setWindowPos = _user32
     .lookupFunction<_SetWindowPosNative, _SetWindowPosDart>('SetWindowPos');
+
+final _showWindow = _user32.lookupFunction<_ShowWindowNative, _ShowWindowDart>(
+  'ShowWindow',
+);
+
+final _setForegroundWindow = _user32
+    .lookupFunction<_SetForegroundWindowNative, _SetForegroundWindowDart>(
+      'SetForegroundWindow',
+    );
 
 final _monitorFromWindow = _user32
     .lookupFunction<_MonitorFromWindowNative, _MonitorFromWindowDart>(
@@ -379,6 +395,22 @@ class Win32FFI {
     _moveWindow(hwnd, x, y, w, h, 1);
   }
 
+  /// Restores a minimized window and requests foreground activation.
+  static bool restoreAndBringToFront(int hwnd) {
+    if (!isWindow(hwnd)) return false;
+    _showWindow(hwnd, _swRestore);
+    _setWindowPos(
+      hwnd,
+      0,
+      0,
+      0,
+      0,
+      0,
+      _swpNoMove | _swpNoSize | _swpShowWindow,
+    );
+    return _setForegroundWindow(hwnd) != 0;
+  }
+
   /// Positions and optionally resizes the window without changing Z-order.
   static void setWindowPos(
     int hwnd,
@@ -470,8 +502,13 @@ class Win32FFI {
 
   /// Finds top-level windows with [className] belonging to this process.
   static List<int> findCurrentProcessWindowsByClass(String className) {
+    return findWindowsByProcessId(getCurrentProcessId(), className: className);
+  }
+
+  /// Finds top-level windows belonging to [processId].
+  static List<int> findWindowsByProcessId(int processId, {String? className}) {
     _enumResult.clear();
-    _enumTargetPid = getCurrentProcessId();
+    _enumTargetPid = processId;
     _enumClassFilter = className;
     final callback = Pointer.fromFunction<_EnumWindowsCallbackNative>(
       _enumCurrentProcessWindowsCallback,

@@ -15,6 +15,8 @@ class AnalysisFrameTrendView extends StatefulWidget {
   final List<FrameInfo> frames;
   final int frameIndexBase;
   final int totalFrames;
+  final List<FrameBucket> frameBuckets;
+  final int frameBucketSize;
   final int currentIdx;
   final int? selectedFrameIdx;
   final double viewStart;
@@ -33,6 +35,8 @@ class AnalysisFrameTrendView extends StatefulWidget {
     required this.frames,
     this.frameIndexBase = 0,
     int? totalFrames,
+    this.frameBuckets = const [],
+    this.frameBucketSize = 1,
     required this.currentIdx,
     required this.selectedFrameIdx,
     required this.viewStart,
@@ -57,7 +61,7 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
   @override
   Widget build(BuildContext context) {
     final w = widget;
-    if (w.totalFrames == 0 || w.frames.isEmpty) {
+    if (w.totalFrames == 0 || (w.frames.isEmpty && w.frameBuckets.isEmpty)) {
       return Center(child: Text(w.l.analysisNoFrameData));
     }
     return Column(
@@ -146,6 +150,8 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
                         frames: w.frames,
                         frameIndexBase: w.frameIndexBase,
                         totalFrames: w.totalFrames,
+                        frameBuckets: w.frameBuckets,
+                        frameBucketSize: w.frameBucketSize,
                         currentIdx: w.currentIdx,
                         selectedFrameIdx: w.selectedFrameIdx,
                         viewStart: w.viewStart,
@@ -178,6 +184,8 @@ class _FrameTrendPainter extends CustomPainter {
   final List<FrameInfo> frames;
   final int frameIndexBase;
   final int totalFrames;
+  final List<FrameBucket> frameBuckets;
+  final int frameBucketSize;
   final int currentIdx;
   final int? selectedFrameIdx;
   final double viewStart;
@@ -191,6 +199,8 @@ class _FrameTrendPainter extends CustomPainter {
     required this.frames,
     required this.frameIndexBase,
     required this.totalFrames,
+    required this.frameBuckets,
+    required this.frameBucketSize,
     required this.currentIdx,
     required this.selectedFrameIdx,
     required this.viewStart,
@@ -203,20 +213,34 @@ class _FrameTrendPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (totalFrames == 0 || frames.isEmpty) return;
+    if (totalFrames == 0 || (frames.isEmpty && frameBuckets.isEmpty)) return;
 
     final windowStart = frameIndexBase;
     final windowEnd = frameIndexBase + frames.length;
-    final visibleStart = viewStart
-        .floor()
-        .clamp(windowStart, windowEnd - 1)
-        .toInt();
-    final visibleEnd = (viewEnd.ceil() + 1)
-        .clamp(windowStart, windowEnd)
-        .toInt();
+    final bucketMode = frameBuckets.isNotEmpty && frameBucketSize > 1;
+    final visibleStart = bucketMode
+        ? viewStart.floor().clamp(0, totalFrames - 1).toInt()
+        : viewStart.floor().clamp(windowStart, windowEnd - 1).toInt();
+    final visibleEnd = bucketMode
+        ? (viewEnd.ceil() + 1).clamp(visibleStart + 1, totalFrames).toInt()
+        : (viewEnd.ceil() + 1).clamp(windowStart, windowEnd).toInt();
     if (visibleStart >= visibleEnd) return;
 
-    final count = visibleEnd - visibleStart;
+    final visibleBuckets = bucketMode
+        ? frameBuckets
+              .where(
+                (b) =>
+                    b.frameCount > 0 &&
+                    b.startFrame < visibleEnd &&
+                    b.startFrame + b.frameCount > visibleStart,
+              )
+              .toList(growable: false)
+        : const <FrameBucket>[];
+    if (bucketMode && visibleBuckets.isEmpty) return;
+
+    final count = bucketMode
+        ? visibleBuckets.length
+        : visibleEnd - visibleStart;
     final span = viewEnd - viewStart;
 
     final axisH = size.height >= 96 ? analysisChartXAxisH : 0.0;
@@ -233,17 +257,31 @@ class _FrameTrendPainter extends CustomPainter {
     final plotRect = Rect.fromLTWH(labelW, 0, chartW, chartH);
 
     final barW = (contentW / count).clamp(2.0, 40.0);
+    double xForFrame(double frameIdx) {
+      final frac = (frameIdx - viewStart) / span;
+      return labelW + contentPad + frac * contentW;
+    }
 
     // Find range for visible frames
     int maxPacketSize = 1;
     int minQp = 63, maxQp = 0;
-    for (var i = visibleStart; i < visibleEnd; i++) {
-      final f = frames[i - frameIndexBase];
-      if (f.packetSize > maxPacketSize) {
-        maxPacketSize = f.packetSize;
+    if (bucketMode) {
+      for (final b in visibleBuckets) {
+        if (b.packetSizeMax > maxPacketSize) {
+          maxPacketSize = b.packetSizeMax;
+        }
+        if (b.qpMin < minQp) minQp = b.qpMin;
+        if (b.qpMax > maxQp) maxQp = b.qpMax;
       }
-      if (f.avgQp < minQp) minQp = f.avgQp;
-      if (f.avgQp > maxQp) maxQp = f.avgQp;
+    } else {
+      for (var i = visibleStart; i < visibleEnd; i++) {
+        final f = frames[i - frameIndexBase];
+        if (f.packetSize > maxPacketSize) {
+          maxPacketSize = f.packetSize;
+        }
+        if (f.avgQp < minQp) minQp = f.avgQp;
+        if (f.avgQp > maxQp) maxQp = f.avgQp;
+      }
     }
     final autoSizeMax = maxPacketSize.toDouble().clamp(1.0, double.infinity);
     final sizeAxisMax = (autoSizeMax / frameSizeAxisZoom).clamp(
@@ -331,20 +369,41 @@ class _FrameTrendPainter extends CustomPainter {
       ..color = const Color(0xFFFFFFFF)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
-    for (var i = visibleStart; i < visibleEnd; i++) {
-      final f = frames[i - frameIndexBase];
-      final frac = (i - viewStart) / span;
-      final x = labelW + contentPad + frac * contentW;
-      final h = ((f.packetSize / sizeAxisMax).clamp(0.0, 1.0)) * upperH;
+    if (bucketMode) {
+      for (final b in visibleBuckets) {
+        final x = xForFrame(b.startFrame.toDouble());
+        final x2 = xForFrame((b.startFrame + b.frameCount).toDouble());
+        final w = (x2 - x).clamp(1.0, contentW);
+        final h = ((b.avgPacketSize / sizeAxisMax).clamp(0.0, 1.0)) * upperH;
 
-      barPaint.color = f.keyframe == 1
-          ? const Color(0xFFFF5252)
-          : const Color(0xFF42A5F5);
-      final rect = Rect.fromLTWH(x, upperH - h, barW - 1, h);
-      canvas.drawRect(rect, barPaint);
+        barPaint.color = b.keyframeCount > 0
+            ? const Color(0xFFFF5252)
+            : const Color(0xFF42A5F5);
+        final rect = Rect.fromLTWH(x, upperH - h, w - 1, h);
+        canvas.drawRect(rect, barPaint);
 
-      if (i == selectedFrameIdx) {
-        canvas.drawRect(rect.inflate(1), selStroke);
+        final selected = selectedFrameIdx;
+        if (selected != null &&
+            selected >= b.startFrame &&
+            selected < b.startFrame + b.frameCount) {
+          canvas.drawRect(rect.inflate(1), selStroke);
+        }
+      }
+    } else {
+      for (var i = visibleStart; i < visibleEnd; i++) {
+        final f = frames[i - frameIndexBase];
+        final x = xForFrame(i.toDouble());
+        final h = ((f.packetSize / sizeAxisMax).clamp(0.0, 1.0)) * upperH;
+
+        barPaint.color = f.keyframe == 1
+            ? const Color(0xFFFF5252)
+            : const Color(0xFF42A5F5);
+        final rect = Rect.fromLTWH(x, upperH - h, barW - 1, h);
+        canvas.drawRect(rect, barPaint);
+
+        if (i == selectedFrameIdx) {
+          canvas.drawRect(rect.inflate(1), selStroke);
+        }
       }
     }
 
@@ -355,20 +414,29 @@ class _FrameTrendPainter extends CustomPainter {
       ..color = const Color(0xFFFFB74D);
     final qpPath = Path();
     bool first = true;
-    for (var i = visibleStart; i < visibleEnd; i++) {
-      final f = frames[i - frameIndexBase];
-      final frac = (i - viewStart) / span;
-      final x = labelW + contentPad + frac * contentW + barW / 2;
-      final normalizedQp = ((f.avgQp - qpLow) / effectiveQpRange).clamp(
+    final qpSamples = bucketMode
+        ? [
+            for (final b in visibleBuckets)
+              (x: xForFrame(b.startFrame + b.frameCount / 2), qp: b.avgQp),
+          ]
+        : [
+            for (var i = visibleStart; i < visibleEnd; i++)
+              (
+                x: xForFrame(i.toDouble()) + barW / 2,
+                qp: frames[i - frameIndexBase].avgQp.toDouble(),
+              ),
+          ];
+    for (final sample in qpSamples) {
+      final normalizedQp = ((sample.qp - qpLow) / effectiveQpRange).clamp(
         0.0,
         1.0,
       );
       final y = lowerTop + lowerH * (1 - normalizedQp);
       if (first) {
-        qpPath.moveTo(x, y);
+        qpPath.moveTo(sample.x, y);
         first = false;
       } else {
-        qpPath.lineTo(x, y);
+        qpPath.lineTo(sample.x, y);
       }
     }
     canvas.drawPath(qpPath, qpPaint);
@@ -377,9 +445,8 @@ class _FrameTrendPainter extends CustomPainter {
     final cursorIdx = selectedFrameIdx != null && selectedFrameIdx! >= 0
         ? selectedFrameIdx!
         : currentIdx;
-    if (cursorIdx >= windowStart && cursorIdx < windowEnd) {
-      final frac = (cursorIdx - viewStart) / span;
-      final cx = labelW + contentPad + frac * contentW + barW / 2;
+    if (cursorIdx >= visibleStart && cursorIdx < visibleEnd) {
+      final cx = xForFrame(cursorIdx + 0.5);
       canvas.drawLine(
         Offset(cx, 0),
         Offset(cx, chartH),
@@ -398,11 +465,7 @@ class _FrameTrendPainter extends CustomPainter {
           .clamp(visibleStart, visibleEnd - 1)
           .toInt();
 
-      final crossX =
-          labelW +
-          contentPad +
-          ((frameIdx - viewStart) / span) * contentW +
-          barW / 2;
+      final crossX = xForFrame(frameIdx + 0.5);
       canvas.drawLine(
         Offset(crossX, 0),
         Offset(crossX, chartH),
@@ -411,19 +474,9 @@ class _FrameTrendPainter extends CustomPainter {
           ..strokeWidth = 1,
       );
 
-      final f = frames[frameIdx - frameIndexBase];
-      final sliceLabel = switch (f.sliceType) {
-        2 => 'I',
-        1 => 'P',
-        _ => f.numRefL1 > 0 ? 'B' : 'B(uni)',
-      };
-      final lines = [
-        '#$frameIdx  $sliceLabel  POC ${f.poc}',
-        'Size: ${formatBytes(f.packetSize)}',
-        'QP: ${f.avgQp}',
-        'PTS: ${f.pts}',
-        'DTS: ${f.dts}',
-      ];
+      final lines = bucketMode
+          ? _bucketTooltipLines(visibleBuckets, frameIdx)
+          : _frameTooltipLines(frames[frameIdx - frameIndexBase], frameIdx);
       final tipStyle = const TextStyle(color: Color(0xFFFFFFFF), fontSize: 10);
       final tipPainters = lines
           .map(
@@ -463,21 +516,105 @@ class _FrameTrendPainter extends CustomPainter {
     }
     canvas.restore();
 
-    drawFrameXAxis(
-      canvas: canvas,
-      size: size,
-      axisTop: chartH,
-      labelW: labelW,
-      frames: frames,
-      visibleStart: visibleStart - frameIndexBase,
-      visibleEnd: visibleEnd - frameIndexBase,
-      ptsOrder: ptsOrder,
-      xForFrame: (idx) {
-        final frameIdx = idx + frameIndexBase;
-        final frac = (frameIdx - viewStart) / span;
-        return labelW + contentPad + frac * contentW + barW / 2;
-      },
+    if (bucketMode) {
+      _drawFrameNumberXAxis(
+        canvas: canvas,
+        size: size,
+        axisTop: chartH,
+        labelW: labelW,
+        visibleStart: visibleStart,
+        visibleEnd: visibleEnd,
+        xForFrame: (idx) => xForFrame(idx.toDouble() + 0.5),
+      );
+    } else {
+      drawFrameXAxis(
+        canvas: canvas,
+        size: size,
+        axisTop: chartH,
+        labelW: labelW,
+        frames: frames,
+        visibleStart: visibleStart - frameIndexBase,
+        visibleEnd: visibleEnd - frameIndexBase,
+        ptsOrder: ptsOrder,
+        xForFrame: (idx) {
+          final frameIdx = idx + frameIndexBase;
+          return xForFrame(frameIdx.toDouble()) + barW / 2;
+        },
+      );
+    }
+  }
+
+  static List<String> _frameTooltipLines(FrameInfo f, int frameIdx) {
+    final sliceLabel = switch (f.sliceType) {
+      2 => 'I',
+      1 => 'P',
+      _ => f.numRefL1 > 0 ? 'B' : 'B(uni)',
+    };
+    return [
+      '#$frameIdx  $sliceLabel  POC ${f.poc}',
+      'Size: ${formatBytes(f.packetSize)}',
+      'QP: ${f.avgQp}',
+      'PTS: ${f.pts}',
+      'DTS: ${f.dts}',
+    ];
+  }
+
+  static List<String> _bucketTooltipLines(
+    List<FrameBucket> buckets,
+    int frameIdx,
+  ) {
+    final bucket = buckets.firstWhere(
+      (b) => frameIdx >= b.startFrame && frameIdx < b.startFrame + b.frameCount,
+      orElse: () => buckets.first,
     );
+    final end = bucket.startFrame + bucket.frameCount - 1;
+    return [
+      '#${bucket.startFrame}-$end  ${bucket.frameCount} frames',
+      'Avg size: ${formatBytes(bucket.avgPacketSize.round())}',
+      'Max size: ${formatBytes(bucket.packetSizeMax)}',
+      'QP avg: ${bucket.avgQp.toStringAsFixed(1)}',
+      'QP range: ${bucket.qpMin}-${bucket.qpMax}',
+      'Keyframes: ${bucket.keyframeCount}',
+    ];
+  }
+
+  static void _drawFrameNumberXAxis({
+    required Canvas canvas,
+    required Size size,
+    required double axisTop,
+    required double labelW,
+    required int visibleStart,
+    required int visibleEnd,
+    required double Function(int idx) xForFrame,
+  }) {
+    if (size.height < 96 || visibleEnd <= visibleStart) return;
+    const style = TextStyle(color: Color(0x99FFFFFF), fontSize: 10);
+    final axisPaint = Paint()
+      ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.10)
+      ..strokeWidth = 1.0;
+    canvas.drawLine(
+      Offset(labelW, axisTop),
+      Offset(size.width, axisTop),
+      axisPaint,
+    );
+    final tickCount = ((size.width - labelW) / 96).floor().clamp(2, 8).toInt();
+    final span = visibleEnd - visibleStart;
+    for (var i = 0; i <= tickCount; i++) {
+      final frameIdx = (visibleStart + span * i / tickCount).round();
+      final x = xForFrame(frameIdx).clamp(labelW, size.width);
+      canvas.drawLine(Offset(x, axisTop), Offset(x, axisTop + 4), axisPaint);
+      final tp = TextPainter(
+        text: TextSpan(text: '#$frameIdx', style: style),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(
+        canvas,
+        Offset(
+          (x - tp.width / 2).clamp(labelW, size.width - tp.width),
+          axisTop + 5,
+        ),
+      );
+    }
   }
 
   static TextPainter _axisLabelPainter(
@@ -512,6 +649,8 @@ class _FrameTrendPainter extends CustomPainter {
       frames.length != old.frames.length ||
       frameIndexBase != old.frameIndexBase ||
       totalFrames != old.totalFrames ||
+      frameBuckets.length != old.frameBuckets.length ||
+      frameBucketSize != old.frameBucketSize ||
       currentIdx != old.currentIdx ||
       selectedFrameIdx != old.selectedFrameIdx ||
       viewStart != old.viewStart ||

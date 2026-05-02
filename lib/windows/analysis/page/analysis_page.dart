@@ -116,6 +116,12 @@ class AnalysisPageState extends State<AnalysisPage>
   List<NaluInfo> get analysisNalus => _controller.nalus;
 
   @override
+  int get analysisFrameIndexBase => _controller.frameIndexBase;
+
+  @override
+  int get analysisNaluIndexBase => _controller.naluIndexBase;
+
+  @override
   AnalysisSummary? get analysisSummary => _controller.summary;
 
   @override
@@ -156,6 +162,11 @@ class AnalysisPageState extends State<AnalysisPage>
   @override
   void setAnalysisOrderForTest(bool ptsOrder) {
     _controller.setPtsOrder(ptsOrder);
+  }
+
+  @override
+  void setAnalysisChartWindowForTest(double offset, double visibleFrameCount) {
+    _controller.setChartWindowForTest(offset, visibleFrameCount);
   }
 
   @override

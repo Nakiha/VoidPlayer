@@ -2,6 +2,7 @@
 
 VBS stores VTM-derived block statistics used for frame-level and CU-level
 analysis. The current on-disk version is VBS2 and uses the `.vbs2` extension.
+The planned indexed successor is documented in [VBS3](VBS3.md).
 
 The authoritative C++ layout is defined in
 `native/analysis/parsers/binary_types.h`. All fields are little-endian and the
@@ -133,6 +134,6 @@ reader.
 - VBS2 does not contain a compact frame-summary table or CU-level secondary
   index. This is the main reason large analysis files are expensive for UI
   range and bucket workflows.
-- A future VBS3 should keep VBI/VBT compatibility in mind and should introduce
-  64-bit offsets plus dedicated summary/index sections instead of overloading
-  the VBS2 frame blob.
+- VBS3 is intended to address these limitations with 64-bit offsets plus
+  dedicated summary/index sections instead of overloading the VBS2 frame blob.
+  See [VBS3](VBS3.md).

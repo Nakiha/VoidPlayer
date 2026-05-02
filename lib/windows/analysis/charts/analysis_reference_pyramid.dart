@@ -42,6 +42,64 @@ class AnalysisReferencePyramidView extends StatefulWidget {
 class _AnalysisReferencePyramidViewState
     extends State<AnalysisReferencePyramidView> {
   Offset? _hoverPosition;
+  late _FrameReferenceCache _referenceCache;
+  int? _cachedSelectedFrameIdx;
+  Set<String> _selectedChainEdges = const {};
+  Set<int> _selectedChainNodes = const {};
+
+  @override
+  void initState() {
+    super.initState();
+    _referenceCache = _FrameReferenceCache.build(
+      widget.frames,
+      widget.pocToIndices,
+    );
+    _rebuildSelectedChain();
+  }
+
+  @override
+  void didUpdateWidget(covariant AnalysisReferencePyramidView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(widget.frames, oldWidget.frames) ||
+        !identical(widget.pocToIndices, oldWidget.pocToIndices)) {
+      _referenceCache = _FrameReferenceCache.build(
+        widget.frames,
+        widget.pocToIndices,
+      );
+      _cachedSelectedFrameIdx = null;
+    }
+    if (widget.selectedFrameIdx != oldWidget.selectedFrameIdx ||
+        _cachedSelectedFrameIdx != widget.selectedFrameIdx) {
+      _rebuildSelectedChain();
+    }
+  }
+
+  void _rebuildSelectedChain() {
+    _cachedSelectedFrameIdx = widget.selectedFrameIdx;
+    final selectedFrameIdx = widget.selectedFrameIdx;
+    if (selectedFrameIdx == null ||
+        selectedFrameIdx < 0 ||
+        selectedFrameIdx >= widget.frames.length) {
+      _selectedChainEdges = const {};
+      _selectedChainNodes = const {};
+      return;
+    }
+
+    final selectedChainEdges = <String>{};
+    final selectedChainNodes = <int>{};
+    final stack = <int>[selectedFrameIdx];
+    while (stack.isNotEmpty) {
+      final sourceIdx = stack.removeLast();
+      if (!selectedChainNodes.add(sourceIdx)) continue;
+      for (final refIdx in _referenceCache.refsFor(sourceIdx)) {
+        selectedChainEdges.add('$sourceIdx:$refIdx');
+        if (!selectedChainNodes.contains(refIdx)) stack.add(refIdx);
+      }
+    }
+
+    _selectedChainEdges = Set<String>.unmodifiable(selectedChainEdges);
+    _selectedChainNodes = Set<int>.unmodifiable(selectedChainNodes);
+  }
 
   int? _frameIndexAtChartPosition(Offset local, Size size) {
     if (widget.frames.isEmpty) return null;
@@ -143,9 +201,11 @@ class _AnalysisReferencePyramidViewState
                   child: CustomPaint(
                     painter: _RefPyramidPainter(
                       frames: widget.frames,
+                      referenceCache: _referenceCache,
                       currentIdx: widget.currentIdx,
                       selectedFrameIdx: widget.selectedFrameIdx,
-                      pocToIndices: widget.pocToIndices,
+                      selectedChainEdges: _selectedChainEdges,
+                      selectedChainNodes: _selectedChainNodes,
                       viewStart: widget.viewStart,
                       viewEnd: widget.viewEnd,
                       ptsOrder: widget.ptsOrder,
@@ -169,11 +229,87 @@ class _AnalysisReferencePyramidViewState
   }
 }
 
+class _FrameReferenceCache {
+  final List<List<int>> refsByIndex;
+  final List<List<int>> sourcesByRefIndex;
+
+  const _FrameReferenceCache({
+    required this.refsByIndex,
+    required this.sourcesByRefIndex,
+  });
+
+  factory _FrameReferenceCache.build(
+    List<FrameInfo> frames,
+    Map<int, List<int>> pocToIndices,
+  ) {
+    int? nearestRefIdx(int refPoc, int sourceIdx) {
+      final indices = pocToIndices[refPoc];
+      if (indices == null || indices.isEmpty) return null;
+      var best = indices[0];
+      for (final idx in indices) {
+        if ((idx - sourceIdx).abs() < (best - sourceIdx).abs()) best = idx;
+      }
+      return best;
+    }
+
+    final refsByIndex = List<List<int>>.generate(
+      frames.length,
+      (_) => const <int>[],
+      growable: false,
+    );
+    final sourcesByRefIndex = List<List<int>>.generate(
+      frames.length,
+      (_) => <int>[],
+      growable: false,
+    );
+
+    for (var i = 0; i < frames.length; i++) {
+      final f = frames[i];
+      if (f.numRefL0 == 0 && f.numRefL1 == 0) continue;
+      final refs = <int>{};
+      for (var j = 0; j < f.numRefL0 && j < f.refPocsL0.length; j++) {
+        final ri = nearestRefIdx(f.refPocsL0[j], i);
+        if (ri != null && ri >= 0 && ri < frames.length) refs.add(ri);
+      }
+      for (var j = 0; j < f.numRefL1 && j < f.refPocsL1.length; j++) {
+        final ri = nearestRefIdx(f.refPocsL1[j], i);
+        if (ri != null && ri >= 0 && ri < frames.length) refs.add(ri);
+      }
+      if (refs.isEmpty) continue;
+      final refList = List<int>.unmodifiable(refs);
+      refsByIndex[i] = refList;
+      for (final refIdx in refList) {
+        sourcesByRefIndex[refIdx].add(i);
+      }
+    }
+
+    return _FrameReferenceCache(
+      refsByIndex: refsByIndex,
+      sourcesByRefIndex: [
+        for (final sources in sourcesByRefIndex)
+          List<int>.unmodifiable(sources),
+      ],
+    );
+  }
+
+  List<int> refsFor(int idx) {
+    if (idx < 0 || idx >= refsByIndex.length) return const [];
+    return refsByIndex[idx];
+  }
+
+  List<int> sourcesForRef(int idx) {
+    if (idx < 0 || idx >= sourcesByRefIndex.length) return const [];
+    return sourcesByRefIndex[idx];
+  }
+}
+
 class _RefPyramidPainter extends CustomPainter {
   final List<FrameInfo> frames;
+  final _FrameReferenceCache referenceCache;
   final int currentIdx;
   final int? selectedFrameIdx;
-  final Map<int, List<int>> pocToIndices;
+  final Set<String> selectedChainEdges;
+  final Set<int> selectedChainNodes;
   final double viewStart;
   final double viewEnd;
   final bool ptsOrder;
@@ -181,9 +317,11 @@ class _RefPyramidPainter extends CustomPainter {
 
   _RefPyramidPainter({
     required this.frames,
+    required this.referenceCache,
     required this.currentIdx,
     required this.selectedFrameIdx,
-    required this.pocToIndices,
+    required this.selectedChainEdges,
+    required this.selectedChainNodes,
     required this.viewStart,
     required this.viewEnd,
     required this.ptsOrder,
@@ -279,17 +417,8 @@ class _RefPyramidPainter extends CustomPainter {
     }
 
     // --- Reference arrows ---
-    // pocToIndices is pre-built by parent (cached across repaints).
-
-    int? nearestRefIdx(int refPoc, int sourceIdx) {
-      final indices = pocToIndices[refPoc];
-      if (indices == null || indices.isEmpty) return null;
-      var best = indices[0];
-      for (final idx in indices) {
-        if ((idx - sourceIdx).abs() < (best - sourceIdx).abs()) best = idx;
-      }
-      return best;
-    }
+    // Reference relationships are cached by the parent and reused across
+    // hover/current-frame repaints.
 
     Offset posFor(int idx) {
       if (positions.containsKey(idx)) return positions[idx]!;
@@ -307,37 +436,6 @@ class _RefPyramidPainter extends CustomPainter {
       ).overlaps(plotRect);
     }
 
-    List<int> refsFor(int sourceIdx) {
-      final f = frames[sourceIdx];
-      final refs = <int>[];
-      for (var j = 0; j < f.numRefL0 && j < f.refPocsL0.length; j++) {
-        final ri = nearestRefIdx(f.refPocsL0[j], sourceIdx);
-        if (ri != null && ri >= 0 && ri < frames.length) refs.add(ri);
-      }
-      for (var j = 0; j < f.numRefL1 && j < f.refPocsL1.length; j++) {
-        final ri = nearestRefIdx(f.refPocsL1[j], sourceIdx);
-        if (ri != null && ri >= 0 && ri < frames.length) refs.add(ri);
-      }
-      return refs;
-    }
-
-    // Collect the selected frame's transitive reference chain for highlighting.
-    final selectedChainEdges = <String>{};
-    final selectedChainNodes = <int>{};
-    if (selectedFrameIdx != null &&
-        selectedFrameIdx! >= 0 &&
-        selectedFrameIdx! < frames.length) {
-      void visitReferenceChain(int sourceIdx) {
-        if (!selectedChainNodes.add(sourceIdx)) return;
-        for (final refIdx in refsFor(sourceIdx)) {
-          selectedChainEdges.add('$sourceIdx:$refIdx');
-          visitReferenceChain(refIdx);
-        }
-      }
-
-      visitReferenceChain(selectedFrameIdx!);
-    }
-
     // Helper: get fill color for a frame's circle (same logic as circle drawing)
     Color frameFillColor(FrameInfo f) {
       if (f.sliceType == 2) return const Color(0xFFFF4D4F); // I: red
@@ -351,13 +449,18 @@ class _RefPyramidPainter extends CustomPainter {
     // sources/targets when the other endpoint is visible, preventing lines from
     // popping in only when an offscreen source node enters the viewport.
     final drawnEdges = <String>{};
-    for (var i = 0; i < frames.length; i++) {
-      final f = frames[i];
-      if (f.numRefL0 == 0 && f.numRefL1 == 0) continue;
+    final edgeCandidates = <int>{};
+    for (var i = visibleStart; i < visibleEnd; i++) {
+      edgeCandidates.add(i);
+      edgeCandidates.addAll(referenceCache.sourcesForRef(i));
+    }
+    for (final i in edgeCandidates) {
+      final refs = referenceCache.refsFor(i);
+      if (refs.isEmpty) continue;
       final from = posFor(i);
       final sourceVisible = endpointVisible(i);
 
-      for (final ri in refsFor(i)) {
+      for (final ri in refs) {
         final edgeKey = '$i:$ri';
         if (!drawnEdges.add(edgeKey)) continue;
 
@@ -692,8 +795,11 @@ class _RefPyramidPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _RefPyramidPainter old) =>
       frames.length != old.frames.length ||
+      referenceCache != old.referenceCache ||
       currentIdx != old.currentIdx ||
       selectedFrameIdx != old.selectedFrameIdx ||
+      selectedChainEdges != old.selectedChainEdges ||
+      selectedChainNodes != old.selectedChainNodes ||
       viewStart != old.viewStart ||
       viewEnd != old.viewEnd ||
       ptsOrder != old.ptsOrder ||

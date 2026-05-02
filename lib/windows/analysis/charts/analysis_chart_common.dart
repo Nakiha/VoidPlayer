@@ -181,6 +181,7 @@ class AnalysisChartScrollbarState extends State<AnalysisChartScrollbar> {
       onHorizontalDragUpdate: (details) {
         final box = context.findRenderObject() as RenderBox;
         final trackW = box.size.width;
+        if (trackW <= 0) return;
         final deltaPx = details.globalPosition.dx - _dragStart;
         final viewSpan = widget.viewEnd - widget.viewStart;
         final maxOffset = (widget.total - viewSpan).clamp(0.0, double.infinity);

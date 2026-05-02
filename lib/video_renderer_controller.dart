@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Layout mode constants matching native defines.
@@ -100,13 +101,15 @@ class LayoutState {
   };
 
   factory LayoutState.fromMap(Map<dynamic, dynamic> map) => LayoutState(
-    mode: map['mode'] as int? ?? LayoutMode.sideBySide,
-    splitPos: (map['splitPos'] as double?) ?? 0.5,
-    zoomRatio: (map['zoomRatio'] as double?) ?? 1.0,
-    viewOffsetX: (map['viewOffsetX'] as double?) ?? 0.0,
-    viewOffsetY: (map['viewOffsetY'] as double?) ?? 0.0,
+    mode: (map['mode'] as num?)?.toInt() ?? LayoutMode.sideBySide,
+    splitPos: (map['splitPos'] as num?)?.toDouble() ?? 0.5,
+    zoomRatio: (map['zoomRatio'] as num?)?.toDouble() ?? 1.0,
+    viewOffsetX: (map['viewOffsetX'] as num?)?.toDouble() ?? 0.0,
+    viewOffsetY: (map['viewOffsetY'] as num?)?.toDouble() ?? 0.0,
     order:
-        (map['order'] as List<dynamic>?)?.map((e) => e as int).toList() ??
+        (map['order'] as List<dynamic>?)
+            ?.map((e) => (e as num).toInt())
+            .toList() ??
         const [0, 1, 2, 3],
   );
 
@@ -124,6 +127,27 @@ class LayoutState {
     viewOffsetX: viewOffsetX ?? this.viewOffsetX,
     viewOffsetY: viewOffsetY ?? this.viewOffsetY,
     order: order ?? this.order,
+  );
+
+  @override
+  bool operator ==(Object other) {
+    return other is LayoutState &&
+        mode == other.mode &&
+        splitPos == other.splitPos &&
+        zoomRatio == other.zoomRatio &&
+        viewOffsetX == other.viewOffsetX &&
+        viewOffsetY == other.viewOffsetY &&
+        listEquals(order, other.order);
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    mode,
+    splitPos,
+    zoomRatio,
+    viewOffsetX,
+    viewOffsetY,
+    Object.hashAll(order),
   );
 }
 

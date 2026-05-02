@@ -354,15 +354,10 @@ class MainWindowPlaybackCoordinator {
     bool seekOnlyIfStartChanged = false,
   }) async {
     if (_disposed) return;
-    final durationUs = effectiveDurationUs();
     final previousStartUs = resolvedLoopStartUs;
-    final minRangeUs = durationUs > 10000 ? 10000 : 0;
-    final maxStartUs = (durationUs - minRangeUs).clamp(0, durationUs);
-    final clampedStartUs = startUs.clamp(0, maxStartUs).toInt();
-    final clampedEndUs = endUs
-        .clamp(clampedStartUs + minRangeUs, durationUs)
-        .toInt();
-
+    final clamped = _clampLoopRange(startUs, endUs);
+    final clampedStartUs = clamped.startUs;
+    final clampedEndUs = clamped.endUs;
     setLoopRangeState(clampedStartUs, clampedEndUs);
     if (loopRangeEnabled()) _syncNativeLoopRange();
     scheduleLoopBoundaryTimer();
@@ -376,6 +371,34 @@ class MainWindowPlaybackCoordinator {
       setPlaying(false);
       seekTo(resolvedLoopStartUs);
     }
+  }
+
+  void previewLoopRange(int startUs, int endUs) {
+    if (_disposed) return;
+    final clamped = _clampLoopRange(startUs, endUs);
+    final clampedStartUs = clamped.startUs;
+    final clampedEndUs = clamped.endUs;
+    if (clampedStartUs == resolvedLoopStartUs &&
+        clampedEndUs == resolvedLoopEndUs) {
+      return;
+    }
+    setLoopRangeState(clampedStartUs, clampedEndUs);
+    if (loopRangeEnabled()) {
+      setNativeLoopRangeSynced(false);
+      scheduleLoopBoundaryTimer();
+    }
+  }
+
+  Future<void> commitLoopRange({
+    bool seekToStart = false,
+    bool seekOnlyIfStartChanged = false,
+  }) {
+    return setLoopRange(
+      resolvedLoopStartUs,
+      resolvedLoopEndUs,
+      seekToStart: seekToStart,
+      seekOnlyIfStartChanged: seekOnlyIfStartChanged,
+    );
   }
 
   void _syncNativeLoopRange() {
@@ -416,6 +439,17 @@ class MainWindowPlaybackCoordinator {
       final startUs = loopStartUs().clamp(0, durationUs).toInt();
       setLoopRangeState(startUs, durationUs);
     }
+  }
+
+  ({int startUs, int endUs}) _clampLoopRange(int startUs, int endUs) {
+    final durationUs = effectiveDurationUs();
+    final minRangeUs = durationUs > 10000 ? 10000 : 0;
+    final maxStartUs = (durationUs - minRangeUs).clamp(0, durationUs);
+    final clampedStartUs = startUs.clamp(0, maxStartUs).toInt();
+    final clampedEndUs = endUs
+        .clamp(clampedStartUs + minRangeUs, durationUs)
+        .toInt();
+    return (startUs: clampedStartUs, endUs: clampedEndUs);
   }
 
   void onSliderHover(int hoverUs, bool hovering) {

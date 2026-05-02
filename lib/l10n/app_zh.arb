@@ -134,5 +134,6 @@
   "analysisErrorLoadFailed": "加载分析数据失败: {name}",
   "analysisErrorCacheLimitExceeded": "分析缓存已满（{used} / {limit}）。请调高上限或清理缓存后再生成新的 VTM 数据。",
 
-  "analysisFilterHint": "按类型、名称或 #序号筛选"
+  "analysisFilterHint": "按类型、名称或 #序号筛选",
+  "analysisIpcDisconnected": "IPC 已断开，轨道快照可能已过期"
 }

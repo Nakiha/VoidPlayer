@@ -312,21 +312,7 @@ class AnalysisCache {
     final entries = _entriesFromIndex(index);
     if (!entries.containsKey(hash) || !filesExist(hash)) return false;
     if (videoPath == null) return true;
-
-    final entry = entries[hash];
-    if (entry is! Map<String, dynamic>) return false;
-    final file = File(videoPath);
-    if (!file.existsSync()) return false;
-    final size = entry['size'];
-    final mtime = entry['mtime'];
-    if (size is! int || mtime is! String) return false;
-
-    try {
-      return file.lengthSync() == size &&
-          file.lastModifiedSync().toIso8601String() == mtime;
-    } catch (_) {
-      return false;
-    }
+    return File(videoPath).existsSync();
   }
 
   static Map<String, dynamic> _entriesFromIndex(Map<String, dynamic> index) {

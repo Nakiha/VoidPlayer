@@ -109,9 +109,7 @@ class WindowManager {
     final process = await Process.start(exe, args);
     _analysisProcesses[key] = process;
 
-    process.stderr.transform(utf8.decoder).listen((data) {
-      log.warning('[AnalysisProcess:$key] stderr: $data');
-    });
+    _attachProcessLogs(process, 'AnalysisProcess:$key');
 
     process.exitCode.then((code) {
       log.info(
@@ -159,15 +157,32 @@ class WindowManager {
     final process = await Process.start(exe, args);
     _analysisProcesses[key] = process;
 
-    process.stderr.transform(utf8.decoder).listen((data) {
-      log.warning('[AnalysisWorkspaceProcess] stderr: $data');
-    });
+    _attachProcessLogs(process, 'AnalysisWorkspaceProcess');
 
     process.exitCode.then((code) {
       log.info('[WindowManager] analysis workspace exited with code $code');
       _analysisProcesses.remove(key);
       _analysisExitCodes[key] = code;
     });
+  }
+
+  static void _attachProcessLogs(Process process, String tag) {
+    process.stdout
+        .transform(utf8.decoder)
+        .listen(
+          (data) => log.info('[$tag] stdout: $data'),
+          onError: (Object error, StackTrace stack) {
+            log.warning('[$tag] stdout read failed: $error');
+          },
+        );
+    process.stderr
+        .transform(utf8.decoder)
+        .listen(
+          (data) => log.warning('[$tag] stderr: $data'),
+          onError: (Object error, StackTrace stack) {
+            log.warning('[$tag] stderr read failed: $error');
+          },
+        );
   }
 
   static String _analysisProcessKey(String fallback) =>

@@ -43,6 +43,7 @@ class MainWindowController {
   late final MainWindowMediaCoordinator mediaCoordinator;
   late final MainWindowPlaybackCoordinator playbackCoordinator;
   late final MainWindowActionCoordinator actionCoordinator;
+  late final MainWindowViewActions _viewActions = _createViewActions();
 
   MainWindowController({
     required this.vsync,
@@ -115,7 +116,9 @@ class MainWindowController {
     );
   }
 
-  MainWindowViewActions get viewActions {
+  MainWindowViewActions get viewActions => _viewActions;
+
+  MainWindowViewActions _createViewActions() {
     return MainWindowViewActions(
       onFilesDropped: (paths) {
         stateStore.setDragging(false);
@@ -160,20 +163,16 @@ class MainWindowController {
         'set loop range enabled',
         playbackCoordinator.setLoopRangeEnabled(enabled),
       ),
-      onLoopRangeChanged: (startUs, endUs) => fireAndLog(
-        'set loop range',
-        playbackCoordinator.setLoopRange(startUs, endUs),
-      ),
-      onLoopRangeChangeEnd: _loopRangeEnabled
-          ? (handle) => fireAndLog(
-              'finish loop range change',
-              playbackCoordinator.setLoopRange(
-                _resolvedLoopStartUs,
-                _resolvedLoopEndUs,
-                seekToStart: handle == LoopRangeHandle.start,
-              ),
-            )
-          : null,
+      onLoopRangeChanged: playbackCoordinator.previewLoopRange,
+      onLoopRangeChangeEnd: (handle) {
+        if (!_loopRangeEnabled) return;
+        fireAndLog(
+          'finish loop range change',
+          playbackCoordinator.commitLoopRange(
+            seekToStart: handle == LoopRangeHandle.start,
+          ),
+        );
+      },
       onReorder: trackManager.moveTrack,
       onOffsetChanged: mediaCoordinator.onOffsetChanged,
       onToggleTrackAudio: _toggleTrackAudio,

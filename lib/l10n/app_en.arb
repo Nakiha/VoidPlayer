@@ -365,5 +365,8 @@
   "@analysisErrorCacheLimitExceeded": { "description": "Error: analysis cache limit exceeded", "placeholders": { "used": { "type": "String" }, "limit": { "type": "String" } } },
 
   "analysisFilterHint": "Filter by type, name or #id",
-  "@analysisFilterHint": { "description": "Placeholder text for NALU filter search bar" }
+  "@analysisFilterHint": { "description": "Placeholder text for NALU filter search bar" },
+
+  "analysisIpcDisconnected": "IPC disconnected - track snapshot is stale",
+  "@analysisIpcDisconnected": { "description": "Banner shown in analysis workspace when the main-window IPC connection closes" }
 }

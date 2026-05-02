@@ -35,6 +35,11 @@ class AnalysisNaluBrowserView extends StatefulWidget {
 class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
   static const _itemExtent = 28.0;
   final _scrollController = ScrollController();
+  List<NaluInfo>? _cachedNalus;
+  AnalysisCodec? _cachedCodec;
+  String? _cachedFilter;
+  List<String> _cachedTypeNamesLower = const [];
+  List<int> _cachedVisibleIndices = const [];
 
   @override
   void initState() {
@@ -60,17 +65,28 @@ class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
 
   List<int> _visibleIndices() {
     final filter = widget.filter.toLowerCase();
-    return [
+    if (!identical(_cachedNalus, widget.nalus) ||
+        _cachedCodec != widget.codec) {
+      _cachedNalus = widget.nalus;
+      _cachedCodec = widget.codec;
+      _cachedFilter = null;
+      _cachedTypeNamesLower = [
+        for (final nalu in widget.nalus)
+          bitstreamUnitTypeName(widget.codec, nalu.nalType).toLowerCase(),
+      ];
+    }
+    if (_cachedFilter == filter) return _cachedVisibleIndices;
+
+    _cachedFilter = filter;
+    _cachedVisibleIndices = [
       for (var i = 0; i < widget.nalus.length; i++)
         if (filter.isEmpty ||
-            bitstreamUnitTypeName(
-              widget.codec,
-              widget.nalus[i].nalType,
-            ).toLowerCase().contains(filter) ||
+            _cachedTypeNamesLower[i].contains(filter) ||
             '#$i'.contains(filter) ||
             '${widget.nalus[i].nalType}'.contains(filter))
           i,
     ];
+    return _cachedVisibleIndices;
   }
 
   void _scheduleScrollSelectedIntoView() {

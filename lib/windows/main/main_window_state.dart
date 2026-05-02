@@ -143,18 +143,22 @@ class MainWindowStateStore extends ChangeNotifier {
   }
 
   void setViewportState(int state) {
+    if (_value.viewportState == state) return;
     _set(_value.copyWith(viewportState: state));
   }
 
   void setTextureId(int textureId) {
+    if (_value.textureId == textureId) return;
     _set(_value.copyWith(textureId: textureId));
   }
 
   void setLayout(LayoutState layout) {
+    if (_value.layout == layout) return;
     _set(_value.copyWith(layout: layout));
   }
 
   void setSyncOffsets(Map<int, int> offsets) {
+    if (mapEquals(_value.syncOffsets, offsets)) return;
     _set(_value.copyWith(syncOffsets: offsets));
   }
 
@@ -180,10 +184,12 @@ class MainWindowStateStore extends ChangeNotifier {
   }
 
   void setPlaying(bool playing) {
+    if (_value.isPlaying == playing) return;
     _set(_value.copyWith(isPlaying: playing));
   }
 
   void setPlaybackSpeed(double speed) {
+    if (_value.playbackSpeed == speed) return;
     _set(_value.copyWith(playbackSpeed: speed));
   }
 
@@ -198,6 +204,7 @@ class MainWindowStateStore extends ChangeNotifier {
   }
 
   void setPendingSeek(int? ptsUs, DateTime? at) {
+    if (_value.pendingSeekUs == ptsUs && _value.pendingSeekAt == at) return;
     _set(_value.copyWith(pendingSeekUs: ptsUs, pendingSeekAt: at));
   }
 
@@ -207,6 +214,11 @@ class MainWindowStateStore extends ChangeNotifier {
   }
 
   void setPolledPlaybackState(int ptsUs, int durationUs, bool playing) {
+    if (_value.currentPtsUs == ptsUs &&
+        _value.durationUs == durationUs &&
+        _value.isPlaying == playing) {
+      return;
+    }
     _set(
       _value.copyWith(
         currentPtsUs: ptsUs,
@@ -217,38 +229,52 @@ class MainWindowStateStore extends ChangeNotifier {
   }
 
   void setLoopRangeEnabled(bool enabled) {
+    if (_value.loopRangeEnabled == enabled) return;
     _set(_value.copyWith(loopRangeEnabled: enabled));
   }
 
   void setNativeLoopRangeSynced(bool synced) {
+    if (_value.nativeLoopRangeSynced == synced) return;
     _set(_value.copyWith(nativeLoopRangeSynced: synced));
   }
 
   void setStartupLoopRangeApplied(bool applied) {
+    if (_value.startupLoopRangeApplied == applied) return;
     _set(_value.copyWith(startupLoopRangeApplied: applied));
   }
 
   void setLoopRange(int startUs, int endUs) {
+    if (_value.loopStartUs == startUs && _value.loopEndUs == endUs) return;
     _set(_value.copyWith(loopStartUs: startUs, loopEndUs: endUs));
   }
 
   void setSliderHover(int hoverUs, bool hovering) {
+    if (_value.hoverPtsUs == hoverUs && _value.sliderHovering == hovering) {
+      return;
+    }
     _set(_value.copyWith(hoverPtsUs: hoverUs, sliderHovering: hovering));
   }
 
   void setDragging(bool dragging) {
+    if (_value.dragging == dragging) return;
     _set(_value.copyWith(dragging: dragging));
   }
 
   void setProfilerVisible(bool visible) {
+    if (_value.profilerVisible == visible) return;
     _set(_value.copyWith(profilerVisible: visible));
   }
 
   void setSettingsVisible(bool visible) {
+    if (_value.settingsVisible == visible) return;
     _set(_value.copyWith(settingsVisible: visible));
   }
 
   void setFullScreen(bool fullScreen) {
+    if (_value.fullScreen == fullScreen &&
+        _value.fullScreenControlsVisible == fullScreen) {
+      return;
+    }
     _set(
       _value.copyWith(
         fullScreen: fullScreen,
@@ -263,6 +289,7 @@ class MainWindowStateStore extends ChangeNotifier {
   }
 
   void setAudibleTrackFileId(int? fileId) {
+    if (_value.audibleTrackFileId == fileId) return;
     _set(_value.copyWith(audibleTrackFileId: fileId));
   }
 }

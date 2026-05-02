@@ -63,7 +63,7 @@ Future<Color> _getWindowsAccentColor() async {
     final result = await Process.run('powershell', [
       '-Command',
       "(Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\DWM' -Name 'AccentColor').AccentColor",
-    ]);
+    ]).timeout(const Duration(milliseconds: 500));
     final value = int.parse(result.stdout.trim());
     final r = value & 0xFF;
     final g = (value >> 8) & 0xFF;

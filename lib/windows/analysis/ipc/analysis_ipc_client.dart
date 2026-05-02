@@ -12,12 +12,14 @@ class AnalysisIpcClient extends ChangeNotifier {
   late final StreamSubscription<String> _subscription;
   List<AnalysisIpcTrack> _tracks = const [];
   bool _hasSnapshot = false;
+  bool _connected = true;
   bool _disposed = false;
 
   AnalysisIpcClient._(this._socket);
 
   List<AnalysisIpcTrack> get tracks => List.unmodifiable(_tracks);
   bool get hasSnapshot => _hasSnapshot;
+  bool get connected => _connected;
 
   static Future<AnalysisIpcClient?> connect({
     required int port,
@@ -58,9 +60,11 @@ class AnalysisIpcClient extends ChangeNotifier {
           _handleMessage,
           onDone: () {
             log.info('[AnalysisIpcClient] disconnected');
+            _markDisconnected();
           },
           onError: (Object error, StackTrace stack) {
             log.warning('[AnalysisIpcClient] error: $error');
+            _markDisconnected();
           },
           cancelOnError: true,
         );
@@ -85,6 +89,14 @@ class AnalysisIpcClient extends ChangeNotifier {
     ];
     _hasSnapshot = true;
     if (_disposed) return;
+    notifyListeners();
+  }
+
+  void _markDisconnected() {
+    if (_disposed || !_connected) return;
+    _connected = false;
+    _hasSnapshot = false;
+    _tracks = const [];
     notifyListeners();
   }
 }

@@ -26,6 +26,7 @@ class AnalysisWorkspacePage extends StatefulWidget {
 class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   int _selected = 0;
   bool _splitView = false;
+  bool _disposed = false;
   late List<AnalysisWorkspaceEntry> _entries;
   final _splitLayout = AnalysisSplitLayoutController();
 
@@ -44,6 +45,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
 
   @override
   void dispose() {
+    _disposed = true;
     widget.ipcClient?.removeListener(_onIpcTracksChanged);
     widget.ipcClient?.dispose();
     _splitLayout.dispose();
@@ -51,6 +53,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   }
 
   void _onIpcTracksChanged() {
+    if (_disposed) return;
     final client = widget.ipcClient;
     if (client == null || !client.hasSnapshot) return;
     final selectedHash = _entries.isNotEmpty

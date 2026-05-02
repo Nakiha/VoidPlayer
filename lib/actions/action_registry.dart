@@ -32,6 +32,13 @@ class ActionRegistry {
     _actions[action.name] = action;
     _callbacks[action.name] = callback;
     if (action.shortcut != null) {
+      final existing = _keyMap[action.shortcut!];
+      if (existing != null && existing != action.name) {
+        throw StateError(
+          'Shortcut ${action.shortcut!.debugName ?? action.shortcut} '
+          'already bound to $existing, cannot bind ${action.name}',
+        );
+      }
       _keyMap[action.shortcut!] = action.name;
       if (action.requireControl) {
         _requireControl.add(action.shortcut!);
@@ -45,8 +52,10 @@ class ActionRegistry {
   void unbind(String name) {
     final action = _actions.remove(name);
     if (action?.shortcut != null) {
-      _keyMap.remove(action!.shortcut);
-      _requireControl.remove(action.shortcut);
+      if (_keyMap[action!.shortcut] == name) {
+        _keyMap.remove(action.shortcut);
+        _requireControl.remove(action.shortcut);
+      }
     }
     _callbacks.remove(name);
   }
@@ -79,13 +88,19 @@ class ActionRegistry {
   /// Returns [KeyEventResult.handled] to swallow the key, or
   /// [KeyEventResult.ignored] to let Flutter process it normally.
   KeyEventResult handleKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
 
     // Pass through all keys when an EditableText has focus.
     if (_focusIsEditableText()) return KeyEventResult.ignored;
 
     final actionName = _keyMap[event.logicalKey];
     if (actionName == null) return KeyEventResult.ignored;
+    final action = _actions[actionName];
+    if (event is KeyRepeatEvent && action?.repeatable != true) {
+      return KeyEventResult.handled;
+    }
 
     // Check if this action requires Ctrl to be held
     final needsCtrl = _requireControl.contains(event.logicalKey);

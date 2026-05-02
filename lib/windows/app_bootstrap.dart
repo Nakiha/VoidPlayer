@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
@@ -73,16 +72,6 @@ Future<Color> _getWindowsAccentColor() async {
   } catch (_) {
     return const Color(0xFF0078D4);
   }
-}
-
-/// Checks whether [rect] overlaps with any connected display.
-bool _isRectOnScreen(Rect rect) {
-  for (final display in PlatformDispatcher.instance.displays) {
-    final w = display.size.width / display.devicePixelRatio;
-    final h = display.size.height / display.devicePixelRatio;
-    if (rect.overlaps(Rect.fromLTWH(0, 0, w, h))) return true;
-  }
-  return false;
 }
 
 /// Handles the close button: saves window state, closes analysis processes,
@@ -250,7 +239,7 @@ Future<void> runVoidPlayer(List<String> args) async {
   if (testWindow != null) {
     await windowManager.setSize(Size(testWindow.width, testWindow.height));
     await windowManager.center();
-  } else if (savedRect != null && _isRectOnScreen(savedRect)) {
+  } else if (savedRect != null && Win32FFI.isRectOnScreen(savedRect)) {
     await windowManager.setSize(savedRect.size);
     await windowManager.setPosition(savedRect.topLeft);
   } else {

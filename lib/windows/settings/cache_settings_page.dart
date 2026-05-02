@@ -34,7 +34,7 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
     _limitFocusNode = FocusNode()..addListener(_onLimitFocusChanged);
     _refresh();
     _refreshTimer = Timer.periodic(
-      const Duration(seconds: 1),
+      const Duration(seconds: 5),
       (_) => _refresh(),
     );
   }
@@ -181,18 +181,26 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
 
     final hashes = _selectedHashes.toSet();
     setState(() => _deleting = true);
-    final result = await AnalysisCache.deleteEntries(hashes);
-    if (!mounted) return;
-
-    setState(() {
-      _deleting = false;
+    AnalysisCacheDeleteResult? result;
+    Object? error;
+    try {
+      result = await AnalysisCache.deleteEntries(hashes);
+      if (!mounted) return;
       _selectedHashes.removeAll(result.deletedHashes);
-    });
-    await _refresh();
+      await _refresh();
+    } catch (e) {
+      error = e;
+    } finally {
+      if (mounted) {
+        setState(() => _deleting = false);
+      }
+    }
     if (!mounted) return;
 
     final l = AppLocalizations.of(context)!;
-    final message = result.hasFailures
+    final message = error != null
+        ? l.cacheDeleteFailed(hashes.length)
+        : result!.hasFailures
         ? l.cacheDeleteFailed(result.failedCount)
         : l.cacheDeleted(result.deletedCount);
     ScaffoldMessenger.of(

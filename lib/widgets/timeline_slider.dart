@@ -47,6 +47,12 @@ class _TimelineSliderState extends State<TimelineSlider> {
   int? _dragPreviewUs;
 
   @override
+  void dispose() {
+    widget.onHoverChanged?.call(0, false);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final accentColor = Theme.of(context).colorScheme.primary;
     final inactiveColor = Theme.of(context).colorScheme.surfaceContainerHighest;
@@ -188,7 +194,7 @@ class _TimelineSliderState extends State<TimelineSlider> {
   int _updatePreview(double localX) {
     final box = context.findRenderObject() as RenderBox;
     final x = localX.clamp(0.0, box.size.width);
-    setState(() => _hoverX = x);
+    _hoverX = x;
     final previewUs = _clampSeekUs(_xToUs(x, box.size.width));
     widget.onHoverChanged?.call(previewUs, true);
     return previewUs;

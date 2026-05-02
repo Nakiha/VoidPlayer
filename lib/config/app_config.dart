@@ -33,7 +33,10 @@ class AppConfig {
 
     try {
       final content = await instance._file.readAsString();
-      instance._data = jsonDecode(content) as Map<String, dynamic>? ?? {};
+      final decoded = jsonDecode(content);
+      instance._data = decoded is Map
+          ? Map<String, dynamic>.from(decoded)
+          : <String, dynamic>{};
     } catch (_) {
       // File missing or corrupted — start fresh.
       instance._data = {};
@@ -91,8 +94,16 @@ class AppConfig {
 
   /// Returns a section map, creating it if absent.
   Map<String, dynamic> section(String name) {
-    return _data.putIfAbsent(name, () => <String, dynamic>{})
-        as Map<String, dynamic>;
+    final existing = _data[name];
+    if (existing is Map<String, dynamic>) return existing;
+    if (existing is Map) {
+      final sanitized = Map<String, dynamic>.from(existing);
+      _data[name] = sanitized;
+      return sanitized;
+    }
+    final created = <String, dynamic>{};
+    _data[name] = created;
+    return created;
   }
 
   // ---------------------------------------------------------------------------

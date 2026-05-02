@@ -12,6 +12,7 @@ class AnalysisIpcClient extends ChangeNotifier {
   late final StreamSubscription<String> _subscription;
   List<AnalysisIpcTrack> _tracks = const [];
   bool _hasSnapshot = false;
+  bool _disposed = false;
 
   AnalysisIpcClient._(this._socket);
 
@@ -35,6 +36,7 @@ class AnalysisIpcClient extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     unawaited(_subscription.cancel());
     _socket.destroy();
     super.dispose();
@@ -65,6 +67,7 @@ class AnalysisIpcClient extends ChangeNotifier {
   }
 
   void _handleMessage(String line) {
+    if (_disposed) return;
     Map<String, Object?> message;
     try {
       message = jsonDecode(line) as Map<String, Object?>;
@@ -81,6 +84,7 @@ class AnalysisIpcClient extends ChangeNotifier {
           AnalysisIpcTrack.fromJson(Map<String, Object?>.from(rawTrack)),
     ];
     _hasSnapshot = true;
+    if (_disposed) return;
     notifyListeners();
   }
 }

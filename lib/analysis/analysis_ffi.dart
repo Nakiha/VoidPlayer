@@ -358,7 +358,9 @@ class AnalysisSession {
 
   AnalysisSummary get summary {
     if (_handle == nullptr) return _emptySummary;
-    return AnalysisSummary.fromNative(_handleGetSummary(_handle).ref);
+    final ptr = _handleGetSummary(_handle);
+    if (ptr == nullptr) return _emptySummary;
+    return AnalysisSummary.fromNative(ptr.ref);
   }
 
   List<FrameInfo> get frames {
@@ -366,7 +368,11 @@ class AnalysisSession {
     if (s.loaded == 0 || s.frameCount == 0 || _handle == nullptr) return [];
     final ptr = calloc<NakiFrameInfo>(s.frameCount);
     try {
-      final actual = _handleGetFrames(_handle, ptr, s.frameCount);
+      final actual = _handleGetFrames(
+        _handle,
+        ptr,
+        s.frameCount,
+      ).clamp(0, s.frameCount).toInt();
       return List.generate(actual, (i) => _frameInfoAt(ptr, i));
     } finally {
       calloc.free(ptr);
@@ -378,7 +384,11 @@ class AnalysisSession {
     if (s.loaded == 0 || s.naluCount == 0 || _handle == nullptr) return [];
     final ptr = calloc<NakiNaluInfo>(s.naluCount);
     try {
-      final actual = _handleGetNalus(_handle, ptr, s.naluCount);
+      final actual = _handleGetNalus(
+        _handle,
+        ptr,
+        s.naluCount,
+      ).clamp(0, s.naluCount).toInt();
       return List.generate(actual, (i) => _naluInfoAt(ptr, i));
     } finally {
       calloc.free(ptr);
@@ -410,8 +420,11 @@ class AnalysisFfi {
   static void unload() => _unload();
 
   /// Get analysis summary snapshot.
-  static AnalysisSummary get summary =>
-      AnalysisSummary.fromNative(_getSummary().ref);
+  static AnalysisSummary get summary {
+    final ptr = _getSummary();
+    if (ptr == nullptr) return _emptySummary;
+    return AnalysisSummary.fromNative(ptr.ref);
+  }
 
   /// Read all frame info into a Dart list.
   /// Returns plain Dart objects (safe after the FFI buffer is freed).
@@ -422,7 +435,7 @@ class AnalysisFfi {
     if (count == 0) return [];
     final ptr = calloc<NakiFrameInfo>(count);
     try {
-      final actual = _getFrames(ptr, count);
+      final actual = _getFrames(ptr, count).clamp(0, count).toInt();
       return List.generate(actual, (i) => _frameInfoAt(ptr, i));
     } finally {
       calloc.free(ptr);
@@ -438,7 +451,7 @@ class AnalysisFfi {
     if (count == 0) return [];
     final ptr = calloc<NakiNaluInfo>(count);
     try {
-      final actual = _getNalus(ptr, count);
+      final actual = _getNalus(ptr, count).clamp(0, count).toInt();
       return List.generate(actual, (i) => _naluInfoAt(ptr, i));
     } finally {
       calloc.free(ptr);

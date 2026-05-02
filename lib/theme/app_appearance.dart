@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
@@ -68,6 +70,7 @@ class AppAppearanceController extends ChangeNotifier {
   AppThemePreference _themePreference;
   AppAccentPreference _accentPreference;
   Color _customAccentColor;
+  Timer? _customAccentSaveTimer;
 
   AppThemePreference get themePreference => _themePreference;
   AppAccentPreference get accentPreference => _accentPreference;
@@ -98,7 +101,22 @@ class AppAppearanceController extends ChangeNotifier {
     _customAccentColor = color;
     AppConfig.instance.customAccentColorValue = color.toARGB32();
     notifyListeners();
-    await AppConfig.instance.save();
+    _customAccentSaveTimer?.cancel();
+    _customAccentSaveTimer = Timer(const Duration(milliseconds: 400), () {
+      _customAccentSaveTimer = null;
+      unawaited(AppConfig.instance.save());
+    });
+  }
+
+  @override
+  void dispose() {
+    final hadPendingCustomAccentSave = _customAccentSaveTimer != null;
+    _customAccentSaveTimer?.cancel();
+    _customAccentSaveTimer = null;
+    if (hadPendingCustomAccentSave) {
+      unawaited(AppConfig.instance.save());
+    }
+    super.dispose();
   }
 }
 

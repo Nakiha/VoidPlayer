@@ -191,6 +191,7 @@ class MainWindowMediaCoordinator {
   }
 
   Future<void> onOffsetChanged(int slot, int deltaMs) async {
+    if (!_alive) return;
     final currentOffsetUs = syncOffsets()[slot] ?? 0;
     final newOffsetUs = currentOffsetUs + deltaMs * 1000;
 
@@ -203,13 +204,14 @@ class MainWindowMediaCoordinator {
       fileId: entry.fileId,
       offsetUs: newOffsetUs,
     );
-    if (!mounted()) return;
+    if (!_alive) return;
 
     setSyncOffset(slot, newOffsetUs);
     await refreshTracksAtCurrentPosition();
   }
 
   Future<void> refreshTracksAtCurrentPosition() async {
+    if (!_alive) return;
     var targetUs = pendingSeekUs() ?? currentPtsUs();
     if (pendingSeekUs() == null) {
       try {
@@ -218,7 +220,7 @@ class MainWindowMediaCoordinator {
         targetUs = currentPtsUs();
       }
     }
-    if (!mounted()) return;
+    if (!_alive) return;
 
     final clampedTargetUs = targetUs.clamp(0, effectiveDurationUs).toInt();
     seekTo(clampedTargetUs);

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:path/path.dart' as p;
 
 class AnalysisCacheEntryStats {
@@ -123,7 +124,7 @@ class AnalysisCache {
   static File get indexFile => File(p.join(dataDir, 'analysis_index.json'));
 
   static Future<AnalysisCacheSnapshot> snapshot({int maxBytes = 0}) async {
-    return scan(maxBytes: maxBytes);
+    return Isolate.run(() => scan(maxBytes: maxBytes));
   }
 
   static AnalysisCacheSnapshot scan({int maxBytes = 0}) {
@@ -219,13 +220,21 @@ class AnalysisCache {
   // ---- Index operations ----
 
   static Map<String, dynamic> loadIndex() {
+    final fallback = {'entries': <String, dynamic>{}};
     final f = indexFile;
-    if (!f.existsSync()) return {'entries': <String, dynamic>{}};
+    if (!f.existsSync()) return fallback;
     try {
       final raw = f.readAsStringSync();
-      return jsonDecode(raw) as Map<String, dynamic>;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return fallback;
+      final index = Map<String, dynamic>.from(decoded);
+      final entries = index['entries'];
+      index['entries'] = entries is Map
+          ? Map<String, dynamic>.from(entries)
+          : <String, dynamic>{};
+      return index;
     } catch (_) {
-      return {'entries': <String, dynamic>{}};
+      return fallback;
     }
   }
 
@@ -242,7 +251,7 @@ class AnalysisCache {
     String videoPath,
   ) async {
     final index = loadIndex();
-    final entries = index['entries'] as Map<String, dynamic>;
+    final entries = _entriesFromIndex(index);
     entries[hash] = {
       'name': name,
       'path': videoPath,
@@ -300,7 +309,7 @@ class AnalysisCache {
 
   static bool hasEntry(String hash, {String? videoPath}) {
     final index = loadIndex();
-    final entries = index['entries'] as Map<String, dynamic>;
+    final entries = _entriesFromIndex(index);
     if (!entries.containsKey(hash) || !filesExist(hash)) return false;
     if (videoPath == null) return true;
 
@@ -318,5 +327,18 @@ class AnalysisCache {
     } catch (_) {
       return false;
     }
+  }
+
+  static Map<String, dynamic> _entriesFromIndex(Map<String, dynamic> index) {
+    final rawEntries = index['entries'];
+    if (rawEntries is Map<String, dynamic>) return rawEntries;
+    if (rawEntries is Map) {
+      final entries = Map<String, dynamic>.from(rawEntries);
+      index['entries'] = entries;
+      return entries;
+    }
+    final entries = <String, dynamic>{};
+    index['entries'] = entries;
+    return entries;
   }
 }

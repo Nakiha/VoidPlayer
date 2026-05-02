@@ -8,7 +8,13 @@ sealed class PlayerAction {
   final String name;
   final LogicalKeyboardKey? shortcut;
   final bool requireControl;
-  const PlayerAction(this.name, [this.shortcut, this.requireControl = false]);
+  final bool repeatable;
+  const PlayerAction(
+    this.name, [
+    this.shortcut,
+    this.requireControl = false,
+    this.repeatable = false,
+  ]);
 
   /// All keyboard shortcuts for display in the settings UI.
   ///
@@ -57,11 +63,13 @@ class SetSpeed extends PlayerAction {
 }
 
 class StepForward extends PlayerAction {
-  const StepForward() : super('STEP_FORWARD', LogicalKeyboardKey.arrowRight);
+  const StepForward()
+    : super('STEP_FORWARD', LogicalKeyboardKey.arrowRight, false, true);
 }
 
 class StepBackward extends PlayerAction {
-  const StepBackward() : super('STEP_BACKWARD', LogicalKeyboardKey.arrowLeft);
+  const StepBackward()
+    : super('STEP_BACKWARD', LogicalKeyboardKey.arrowLeft, false, true);
 }
 
 class OpenFile extends PlayerAction {

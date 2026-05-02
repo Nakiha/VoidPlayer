@@ -35,6 +35,7 @@ class MainWindowController {
   final GlobalKey loopRangeBarKey = GlobalKey();
   final GlobalKey viewportKey = GlobalKey();
   Timer? _fullScreenControlsTimer;
+  int _fullScreenSerial = 0;
 
   late final MainWindowAnalysisCoordinator analysisCoordinator;
   late final MainWindowTestHarness testHarness;
@@ -187,30 +188,33 @@ class MainWindowController {
   }
 
   void _toggleFullScreen() {
+    _fullScreenSerial++;
     fireAndLog('toggle full screen', _setFullScreen(!_fullScreen));
   }
 
   void _exitFullScreen() {
     if (!_fullScreen) return;
+    _fullScreenSerial++;
     fireAndLog('exit full screen', _setFullScreen(false));
   }
 
   Future<void> _setFullScreen(bool fullScreen) async {
+    final serial = _fullScreenSerial;
     _fullScreenControlsTimer?.cancel();
     final initialBounds = await windowManager.getBounds();
     await windowManager.setFullScreen(fullScreen);
-    if (!mounted()) return;
+    if (!mounted() || serial != _fullScreenSerial) return;
     await _waitForWindowBoundsToSettle(
       initialBounds: initialBounds,
       fullScreen: fullScreen,
     );
-    if (!mounted()) return;
+    if (!mounted() || serial != _fullScreenSerial) return;
     final settledBounds = await windowManager.getBounds();
     await _preemptFullScreenViewportResize(
       windowBounds: settledBounds,
       fullScreen: fullScreen,
     );
-    if (!mounted()) return;
+    if (!mounted() || serial != _fullScreenSerial) return;
     stateStore.setFullScreen(fullScreen);
     if (fullScreen) {
       _scheduleFullScreenControlsHide();

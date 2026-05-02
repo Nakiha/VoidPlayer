@@ -12,12 +12,19 @@ class MainWindowAnalysisCoordinator {
   final Map<int, String> _hashesByFileId = <int, String>{};
 
   int _snapshotSerial = 0;
+  Future<void>? _triggerInFlight;
 
   MainWindowAnalysisCoordinator({required this.trackManager});
 
   Future<void> dispose() => _ipcServer.dispose();
 
-  Future<void> triggerAnalysis() async {
+  Future<void> triggerAnalysis() {
+    return _triggerInFlight ??= _triggerAnalysisImpl().whenComplete(() {
+      _triggerInFlight = null;
+    });
+  }
+
+  Future<void> _triggerAnalysisImpl() async {
     if (trackManager.isEmpty) return;
     final mgr = AnalysisManager.instance;
     final windows = <AnalysisWindowRequest>[];

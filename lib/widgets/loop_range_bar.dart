@@ -236,6 +236,7 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
     required double drawableWidth,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
+    final interactive = widget.enabled && widget.durationUs > 0;
     return Positioned(
       left: left,
       top: (40 - _LoopRangeTimeline._handleSize) / 2,
@@ -243,10 +244,10 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
       height: _LoopRangeTimeline._handleSize,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onHorizontalDragStart: widget.durationUs > 0
+        onHorizontalDragStart: interactive
             ? (_) => _trackerFor(handle).start(currentX)
             : null,
-        onHorizontalDragUpdate: widget.durationUs > 0
+        onHorizontalDragUpdate: interactive
             ? (details) => _dragHandle(
                 handle: handle,
                 dx: details.delta.dx,
@@ -254,10 +255,14 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
                 drawableWidth: drawableWidth,
               )
             : null,
-        onHorizontalDragEnd: (_) => widget.onRangeChangeEnd?.call(handle),
-        onHorizontalDragCancel: () => widget.onRangeChangeEnd?.call(handle),
+        onHorizontalDragEnd: interactive
+            ? (_) => widget.onRangeChangeEnd?.call(handle)
+            : null,
+        onHorizontalDragCancel: interactive
+            ? () => widget.onRangeChangeEnd?.call(handle)
+            : null,
         child: MouseRegion(
-          cursor: widget.durationUs > 0
+          cursor: interactive
               ? SystemMouseCursors.resizeLeftRight
               : SystemMouseCursors.basic,
           child: Center(
@@ -284,7 +289,9 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
     required double otherX,
     required double drawableWidth,
   }) {
-    if (widget.durationUs <= 0 || drawableWidth <= 0) return;
+    if (!widget.enabled || widget.durationUs <= 0 || drawableWidth <= 0) {
+      return;
+    }
 
     final minRangeUs = widget.durationUs > _LoopRangeTimeline._minRangeUs
         ? _LoopRangeTimeline._minRangeUs

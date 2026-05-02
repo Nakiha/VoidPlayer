@@ -10,6 +10,7 @@ import '../../video_renderer_controller.dart';
 class MainWindowPlaybackCoordinator {
   static const double trackDragHandleWidth = 28.0;
   static const double trackDividerWidth = 1.0;
+  static const Duration _maxLoopBoundaryDelay = Duration(seconds: 30);
 
   final NativePlayerController controller;
   final TrackManager trackManager;
@@ -229,7 +230,11 @@ class MainWindowPlaybackCoordinator {
         .toInt();
     final remainingUs = endUs - baseUs;
     final delayUs = (remainingUs / playbackSpeed()).round();
-    final delay = Duration(microseconds: delayUs.clamp(0, 1 << 31).toInt());
+    final delay = Duration(
+      microseconds: delayUs
+          .clamp(0, _maxLoopBoundaryDelay.inMicroseconds)
+          .toInt(),
+    );
     _loopBoundaryTimer = Timer(delay, _onLoopBoundaryTimer);
   }
 

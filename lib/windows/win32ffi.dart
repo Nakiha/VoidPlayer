@@ -3,7 +3,7 @@
 library;
 
 import 'dart:ffi';
-import 'dart:ui' show PlatformDispatcher, Rect;
+import 'dart:ui' show Rect;
 import 'package:ffi/ffi.dart';
 
 // ---------------------------------------------------------------------------
@@ -57,6 +57,10 @@ typedef _SetWindowPosDart =
 
 typedef _MonitorFromWindowNative = IntPtr Function(IntPtr hwnd, Uint32 dwFlags);
 typedef _MonitorFromWindowDart = int Function(int hwnd, int dwFlags);
+
+typedef _MonitorFromRectNative =
+    IntPtr Function(Pointer<RECT> lprc, Uint32 dwFlags);
+typedef _MonitorFromRectDart = int Function(Pointer<RECT> lprc, int dwFlags);
 
 typedef _GetMonitorInfoWNative =
     Int32 Function(IntPtr hMonitor, Pointer<MONITORINFO> lpmi);
@@ -156,6 +160,7 @@ const int _swpNoSize = 0x0001;
 const int _swpNoActivate = 0x0010;
 const int _swpShowWindow = 0x0040;
 const int _swpFrameChanged = 0x0020;
+const int _monitorDefaultToNull = 0x00000000;
 const int _monitorDefaultToNearest = 0x00000002;
 const int _vkLButton = 0x01;
 const int _vkRButton = 0x02;
@@ -197,6 +202,11 @@ final _setWindowPos = _user32
 final _monitorFromWindow = _user32
     .lookupFunction<_MonitorFromWindowNative, _MonitorFromWindowDart>(
       'MonitorFromWindow',
+    );
+
+final _monitorFromRect = _user32
+    .lookupFunction<_MonitorFromRectNative, _MonitorFromRectDart>(
+      'MonitorFromRect',
     );
 
 final _getMonitorInfoW = _user32
@@ -530,11 +540,16 @@ class Win32FFI {
 
   /// Checks whether [rect] overlaps with any connected display.
   static bool isRectOnScreen(Rect rect) {
-    for (final display in PlatformDispatcher.instance.displays) {
-      final w = display.size.width / display.devicePixelRatio;
-      final h = display.size.height / display.devicePixelRatio;
-      if (rect.overlaps(Rect.fromLTWH(0, 0, w, h))) return true;
+    final buf = calloc.allocate<RECT>(16);
+    try {
+      final nativeRect = buf.cast<RECT>();
+      nativeRect.ref.left = rect.left.round();
+      nativeRect.ref.top = rect.top.round();
+      nativeRect.ref.right = rect.right.round();
+      nativeRect.ref.bottom = rect.bottom.round();
+      return _monitorFromRect(nativeRect, _monitorDefaultToNull) != 0;
+    } finally {
+      calloc.free(buf);
     }
-    return false;
   }
 }

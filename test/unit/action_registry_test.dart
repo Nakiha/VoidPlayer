@@ -12,6 +12,8 @@ void main() {
 
   tearDown(() {
     actionRegistry.unbind(const ToggleLayoutMode().name);
+    actionRegistry.unbind(const TogglePlayPause().name);
+    actionRegistry.unbind(const StepForward().name);
   });
 
   testWidgets('shortcuts work when an unfocused text field is in the subtree', (
@@ -53,5 +55,31 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.keyM);
 
     expect(triggerCount, 0);
+  });
+
+  testWidgets('non-repeatable shortcuts swallow key repeats without firing', (
+    tester,
+  ) async {
+    var toggleCount = 0;
+    var stepCount = 0;
+    actionRegistry.bind(const TogglePlayPause(), (_) {
+      toggleCount++;
+    });
+    actionRegistry.bind(const StepForward(), (_) {
+      stepCount++;
+    });
+
+    await tester.pumpWidget(
+      const MaterialApp(home: ActionFocus(child: SizedBox.shrink())),
+    );
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.space);
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.space);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.space);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+
+    expect(toggleCount, 1);
+    expect(stepCount, 2);
   });
 }

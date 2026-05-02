@@ -2340,4 +2340,13 @@ std::vector<TrackPerfStats> Renderer::track_perf_stats() const {
     return result;
 }
 
+bool Renderer::d3d_device_lost() const {
+    return d3d_device_ && d3d_device_->device_lost();
+}
+
+long Renderer::d3d_device_removed_reason() const {
+    return d3d_device_ ? static_cast<long>(d3d_device_->device_removed_reason())
+                       : static_cast<long>(S_OK);
+}
+
 } // namespace vr

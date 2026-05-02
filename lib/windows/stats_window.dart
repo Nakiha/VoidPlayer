@@ -40,6 +40,13 @@ final class NakiVrDiagnostics extends Struct {
 
   @Array(4)
   external Array<NakiVrTrackStats> tracks;
+
+  @Int32()
+  external int d3dDeviceLost;
+  @Int32()
+  external int reserved0;
+  @Int64()
+  external int d3dDeviceRemovedReason;
 }
 
 typedef _GetDiagNative = Pointer<NakiVrDiagnostics> Function();

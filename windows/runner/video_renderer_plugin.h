@@ -42,6 +42,9 @@ struct NakiVrDiagnostics {
     uint64_t process_private_bytes;
     uint64_t dedicated_video_memory_bytes;
     NakiVrTrackStats tracks[kMaxTracksFFI];
+    int32_t d3d_device_lost;
+    int32_t reserved0;
+    int64_t d3d_device_removed_reason;
 };
 
 /// Returns pointer to a static NakiVrDiagnostics (valid until next call).

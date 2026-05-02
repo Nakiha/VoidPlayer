@@ -56,6 +56,10 @@ public:
     std::vector<TrackPerfStats> track_perf_stats() const {
         return renderer_.track_perf_stats();
     }
+    bool d3d_device_lost() const { return renderer_.d3d_device_lost(); }
+    long d3d_device_removed_reason() const {
+        return renderer_.d3d_device_removed_reason();
+    }
     void set_track_offset(int file_id, int64_t offset_us) {
         renderer_.set_track_offset(file_id, offset_us);
     }

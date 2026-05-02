@@ -138,6 +138,9 @@ public:
     /// Get per-track performance stats snapshot (thread-safe).
     std::vector<TrackPerfStats> track_perf_stats() const;
 
+    bool d3d_device_lost() const;
+    long d3d_device_removed_reason() const;
+
     /// Set per-track sync offset in microseconds.
     /// Positive = delayed start (blank lead-in), negative = early start (skip beginning).
     void set_track_offset(int file_id, int64_t offset_us);

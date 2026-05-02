@@ -395,6 +395,8 @@ const NakiVrDiagnostics* naki_vr_get_diagnostics() {
     auto r = pin_global_player();
     if (!r) return &d;
 
+    d.d3d_device_lost = r->d3d_device_lost() ? 1 : 0;
+    d.d3d_device_removed_reason = static_cast<int64_t>(r->d3d_device_removed_reason());
     d.playback_time_s = static_cast<double>(r->current_pts_us()) / 1e6;
     d.is_playing = r->is_playing() ? 1 : 0;
 
@@ -697,6 +699,10 @@ void VideoRendererPlugin::HandleMethodCall(
         map[flutter::EncodableValue("dedicatedGpuUsageBytes")] =
             flutter::EncodableValue(static_cast<int64_t>(QueryDedicatedVideoMemoryUsage()));
         if (diag_player) {
+            map[flutter::EncodableValue("d3dDeviceLost")] =
+                flutter::EncodableValue(diag_player->d3d_device_lost());
+            map[flutter::EncodableValue("d3dDeviceRemovedReason")] =
+                flutter::EncodableValue(static_cast<int64_t>(diag_player->d3d_device_removed_reason()));
             map[flutter::EncodableValue("playbackTime")] =
                 flutter::EncodableValue(static_cast<double>(diag_player->current_pts_us()) / 1e6);
             map[flutter::EncodableValue("isPlaying")] =

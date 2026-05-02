@@ -3,6 +3,7 @@
 #include "analysis/parsers/vbs2_parser.h"
 #include "analysis/parsers/vbi_parser.h"
 #include "analysis/parsers/vbt_parser.h"
+#include <atomic>
 #include <string>
 
 namespace vr::analysis {
@@ -25,9 +26,9 @@ public:
 
     // Overlay state (written by Dart via FFI, read by render thread)
     struct OverlayState {
-        bool show_cu_grid = false;
-        bool show_pred_mode = false;
-        bool show_qp_heatmap = false;
+        std::atomic<bool> show_cu_grid{false};
+        std::atomic<bool> show_pred_mode{false};
+        std::atomic<bool> show_qp_heatmap{false};
     };
 
     OverlayState overlay;

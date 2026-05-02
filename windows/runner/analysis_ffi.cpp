@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <fstream>
 #include <new>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -27,10 +28,9 @@ void naki_analysis_register_pts_callback(int64_t (*cb)()) {
     g_get_current_pts_us = cb;
 }
 
-// ---- dart:ffi analysis exports ----
-static NakiAnalysisSummary g_analysis_summary = {};
-
 namespace {
+
+std::mutex g_analysis_mutex;
 
 const char* safe_cstr(const char* value) {
     return value ? value : "";
@@ -38,7 +38,7 @@ const char* safe_cstr(const char* value) {
 
 struct AnalysisHandleState {
     vr::analysis::AnalysisManager manager;
-    NakiAnalysisSummary summary{};
+    std::mutex mutex;
 };
 
 AnalysisHandleState* as_analysis_handle(NakiAnalysisHandle handle) {
@@ -190,6 +190,7 @@ int32_t fill_analysis_nalus_range(vr::analysis::AnalysisManager& mgr,
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_load(const char* vbs2_path, const char* vbi_path, const char* vbt_path) {
     static int load_count = 0;
+    std::lock_guard<std::mutex> lock(g_analysis_mutex);
     LogStackUsage(fmt::format("analysis_load #{}", ++load_count).c_str());
     auto& mgr = vr::analysis::AnalysisManager::instance();
     return mgr.load(safe_cstr(vbs2_path), safe_cstr(vbi_path), safe_cstr(vbt_path)) ? 1 : 0;
@@ -198,13 +199,15 @@ int32_t naki_analysis_load(const char* vbs2_path, const char* vbi_path, const ch
 extern "C" __declspec(dllexport)
 void naki_analysis_unload() {
     static int unload_count = 0;
+    std::lock_guard<std::mutex> lock(g_analysis_mutex);
     LogStackUsage(fmt::format("analysis_unload #{}", ++unload_count).c_str());
     vr::analysis::AnalysisManager::instance().unload();
 }
 
 extern "C" __declspec(dllexport)
 const NakiAnalysisSummary* naki_analysis_get_summary() {
-    auto& s = g_analysis_summary;
+    thread_local NakiAnalysisSummary s{};
+    std::lock_guard<std::mutex> lock(g_analysis_mutex);
     auto& mgr = vr::analysis::AnalysisManager::instance();
     fill_analysis_summary(mgr, s);
     return &s;
@@ -212,24 +215,28 @@ const NakiAnalysisSummary* naki_analysis_get_summary() {
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_get_frames(NakiFrameInfo* out, int32_t max_count) {
+    std::lock_guard<std::mutex> lock(g_analysis_mutex);
     auto& mgr = vr::analysis::AnalysisManager::instance();
     return fill_analysis_frames(mgr, out, max_count);
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_get_frames_range(int32_t start, NakiFrameInfo* out, int32_t max_count) {
+    std::lock_guard<std::mutex> lock(g_analysis_mutex);
     auto& mgr = vr::analysis::AnalysisManager::instance();
     return fill_analysis_frames_range(mgr, start, out, max_count);
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_get_nalus(NakiNaluInfo* out, int32_t max_count) {
+    std::lock_guard<std::mutex> lock(g_analysis_mutex);
     auto& mgr = vr::analysis::AnalysisManager::instance();
     return fill_analysis_nalus(mgr, out, max_count);
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_get_nalus_range(int32_t start, NakiNaluInfo* out, int32_t max_count) {
+    std::lock_guard<std::mutex> lock(g_analysis_mutex);
     auto& mgr = vr::analysis::AnalysisManager::instance();
     return fill_analysis_nalus_range(mgr, start, out, max_count);
 }
@@ -237,10 +244,11 @@ int32_t naki_analysis_get_nalus_range(int32_t start, NakiNaluInfo* out, int32_t 
 extern "C" __declspec(dllexport)
 void naki_analysis_set_overlay(const NakiOverlayState* state) {
     if (!state) return;
+    std::lock_guard<std::mutex> lock(g_analysis_mutex);
     auto& overlay = vr::analysis::AnalysisManager::instance().overlay;
-    overlay.show_cu_grid = state->show_cu_grid != 0;
-    overlay.show_pred_mode = state->show_pred_mode != 0;
-    overlay.show_qp_heatmap = state->show_qp_heatmap != 0;
+    overlay.show_cu_grid.store(state->show_cu_grid != 0, std::memory_order_release);
+    overlay.show_pred_mode.store(state->show_pred_mode != 0, std::memory_order_release);
+    overlay.show_qp_heatmap.store(state->show_qp_heatmap != 0, std::memory_order_release);
 }
 
 extern "C" __declspec(dllexport)
@@ -261,36 +269,46 @@ void naki_analysis_close(NakiAnalysisHandle handle) {
 
 extern "C" __declspec(dllexport)
 const NakiAnalysisSummary* naki_analysis_handle_get_summary(NakiAnalysisHandle handle) {
+    thread_local NakiAnalysisSummary summary{};
     auto* state = as_analysis_handle(handle);
     if (!state) {
-        std::memset(&g_analysis_summary, 0, sizeof(g_analysis_summary));
-        return &g_analysis_summary;
+        std::memset(&summary, 0, sizeof(summary));
+        return &summary;
     }
-    fill_analysis_summary(state->manager, state->summary);
-    return &state->summary;
+    std::lock_guard<std::mutex> lock(state->mutex);
+    fill_analysis_summary(state->manager, summary);
+    return &summary;
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_frames(NakiAnalysisHandle handle, NakiFrameInfo* out, int32_t max_count) {
     auto* state = as_analysis_handle(handle);
+    if (!state) return 0;
+    std::lock_guard<std::mutex> lock(state->mutex);
     return state ? fill_analysis_frames(state->manager, out, max_count) : 0;
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_frames_range(NakiAnalysisHandle handle, int32_t start, NakiFrameInfo* out, int32_t max_count) {
     auto* state = as_analysis_handle(handle);
+    if (!state) return 0;
+    std::lock_guard<std::mutex> lock(state->mutex);
     return state ? fill_analysis_frames_range(state->manager, start, out, max_count) : 0;
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_nalus(NakiAnalysisHandle handle, NakiNaluInfo* out, int32_t max_count) {
     auto* state = as_analysis_handle(handle);
+    if (!state) return 0;
+    std::lock_guard<std::mutex> lock(state->mutex);
     return state ? fill_analysis_nalus(state->manager, out, max_count) : 0;
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_nalus_range(NakiAnalysisHandle handle, int32_t start, NakiNaluInfo* out, int32_t max_count) {
     auto* state = as_analysis_handle(handle);
+    if (!state) return 0;
+    std::lock_guard<std::mutex> lock(state->mutex);
     return state ? fill_analysis_nalus_range(state->manager, start, out, max_count) : 0;
 }
 

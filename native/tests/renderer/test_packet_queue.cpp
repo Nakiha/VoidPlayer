@@ -71,6 +71,34 @@ TEST_CASE("PacketQueue: abort wakes popper", "[packet_queue]") {
     REQUIRE(pq.is_aborted() == true);
 }
 
+TEST_CASE("PacketQueue: EOF wakes popper", "[packet_queue]") {
+    PacketQueue pq(10);
+
+    std::thread consumer([&]() {
+        auto* pkt = pq.pop();
+        REQUIRE(pkt == nullptr);
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    pq.signal_eof();
+    consumer.join();
+    REQUIRE(pq.is_eof() == true);
+}
+
+TEST_CASE("PacketQueue: flush wakes popper", "[packet_queue]") {
+    PacketQueue pq(10);
+
+    std::thread consumer([&]() {
+        auto* pkt = pq.pop();
+        REQUIRE(pkt == nullptr);
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    pq.flush();
+    consumer.join();
+    REQUIRE(pq.is_eof() == false);
+}
+
 TEST_CASE("PacketQueue: abort wakes pusher", "[packet_queue]") {
     PacketQueue pq(1);
     auto* p1 = av_packet_alloc();

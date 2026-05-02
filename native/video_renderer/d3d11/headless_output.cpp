@@ -68,12 +68,10 @@ ID3D11RenderTargetView* D3D11HeadlessOutput::begin_frame_locked() {
     return buffers_.rtvs[current_back_].Get();
 }
 
-void D3D11HeadlessOutput::publish_frame_locked(const char* label) {
+std::function<void()> D3D11HeadlessOutput::publish_frame_locked(const char* label) {
     wait_gpu_idle(label);
     buffers_.front.store(current_back_);
-    if (frame_callback_) {
-        frame_callback_();
-    }
+    return frame_callback_;
 }
 
 void D3D11HeadlessOutput::wait_gpu_idle(const char* label) {

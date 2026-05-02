@@ -27,7 +27,7 @@ public:
     std::mutex& texture_mutex() const { return texture_mutex_; }
 
     ID3D11RenderTargetView* begin_frame_locked();
-    void publish_frame_locked(const char* label);
+    std::function<void()> publish_frame_locked(const char* label);
     void wait_gpu_idle(const char* label);
 
     bool resize_locked(int width, int height);

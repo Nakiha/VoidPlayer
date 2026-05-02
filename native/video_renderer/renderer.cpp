@@ -983,39 +983,48 @@ void Renderer::wait_gpu_idle(const char* label) {
     }
 }
 
-void Renderer::draw_headless_and_publish(const PresentDecision& decision, const char* label) {
+std::function<void()> Renderer::draw_headless_and_publish(const PresentDecision& decision, const char* label) {
     if (!headless_output_) {
-        return;
+        return {};
     }
     cached_rtv_ = headless_output_->begin_frame_locked();
     draw_frame(decision);
-    headless_output_->publish_frame_locked(label);
+    auto callback = headless_output_->publish_frame_locked(label);
     preview_drawn_ = true;
+    return callback;
 }
 
 void Renderer::present_frame(const PresentDecision& decision) {
     spdlog::debug("[present_frame] mode={}", layout_.mode);
-    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-    std::lock_guard<std::mutex> tex_lock(texture_mutex());
-    if (headless_) {
-        draw_headless_and_publish(decision, "present_frame");
-    } else {
-        draw_frame(decision);
-        d3d_device_->present(0);
-        preview_drawn_ = true;
+    std::function<void()> frame_callback;
+    {
+        std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+        std::lock_guard<std::mutex> tex_lock(texture_mutex());
+        if (headless_) {
+            frame_callback = draw_headless_and_publish(decision, "present_frame");
+        } else {
+            draw_frame(decision);
+            d3d_device_->present(0);
+            preview_drawn_ = true;
+        }
     }
+    if (frame_callback) frame_callback();
 }
 
 void Renderer::redraw_layout() {
-    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-    std::lock_guard<std::mutex> tex_lock(texture_mutex());
-    if (headless_) {
-        draw_headless_and_publish(last_decision_, "redraw_layout");
-    } else {
-        draw_frame(last_decision_);
-        d3d_device_->context()->Flush();
-        preview_drawn_ = true;
+    std::function<void()> frame_callback;
+    {
+        std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+        std::lock_guard<std::mutex> tex_lock(texture_mutex());
+        if (headless_) {
+            frame_callback = draw_headless_and_publish(last_decision_, "redraw_layout");
+        } else {
+            draw_frame(last_decision_);
+            d3d_device_->context()->Flush();
+            preview_drawn_ = true;
+        }
     }
+    if (frame_callback) frame_callback();
 }
 
 bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
@@ -1270,6 +1279,7 @@ void Renderer::do_resize(int width, int height) {
         }
     }
 
+    std::function<void()> frame_callback;
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
         std::lock_guard<std::mutex> tex_lock(texture_mutex());
@@ -1280,8 +1290,9 @@ void Renderer::do_resize(int width, int height) {
         target_width_ = width;
         target_height_ = height;
 
-        draw_headless_and_publish(last_decision_, "resize");
+        frame_callback = draw_headless_and_publish(last_decision_, "resize");
     }
+    if (frame_callback) frame_callback();
 }
 
 void Renderer::render_loop() {

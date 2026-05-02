@@ -3,6 +3,7 @@
 #include <vector>
 #include <cstring>
 #include <mutex>
+#include <functional>
 #include "test_utils.h"
 #include "video_renderer/d3d11/device.h"
 #include "video_renderer/d3d11/frame_presenter.h"
@@ -258,11 +259,15 @@ TEST_CASE("D3D11HeadlessOutput publishes and resizes buffers", "[d3d11][headless
     int callback_count = 0;
     output.set_frame_callback([&] { ++callback_count; });
 
+    std::function<void()> callback;
     {
         std::lock_guard<std::mutex> lock(output.texture_mutex());
         REQUIRE(output.begin_frame_locked() != nullptr);
-        output.publish_frame_locked("headless_output_test");
+        callback = output.publish_frame_locked("headless_output_test");
+        REQUIRE(callback_count == 0);
+        REQUIRE(callback != nullptr);
     }
+    callback();
     REQUIRE(callback_count == 1);
 
     D3D11_TEXTURE2D_DESC desc = {};

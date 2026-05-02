@@ -345,12 +345,9 @@ std::shared_ptr<vr::NativePlayer> pin_global_player() {
     return g_player_weak.lock();
 }
 
-// ---- dart:ffi diagnostics export ----
-static NakiVrDiagnostics g_diag_snapshot = {};
-
 extern "C" __declspec(dllexport)
 const NakiVrDiagnostics* naki_vr_get_diagnostics() {
-    auto& d = g_diag_snapshot;
+    thread_local NakiVrDiagnostics d{};
     std::memset(&d, 0, sizeof(d));
     const auto process_memory = QueryProcessMemoryUsage();
     d.process_working_set_bytes = process_memory.working_set_bytes;

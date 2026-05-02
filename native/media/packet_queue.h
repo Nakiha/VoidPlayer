@@ -58,6 +58,7 @@ private:
     std::queue<PacketPtr> queue_;
     size_t capacity_;
     bool aborted_ = false;
+    bool flushed_ = false;
     std::atomic<bool> eof_{false};
 };
 

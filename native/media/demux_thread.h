@@ -75,6 +75,7 @@ private:
     void signal_outputs_eof();
     int stream_index_for_kind(DemuxStreamKind kind) const;
     AVRational time_base_for_stream(int stream_index) const;
+    static int interrupt_callback(void* opaque);
 
     std::string file_path_;
     SeekController& seek_controller_;

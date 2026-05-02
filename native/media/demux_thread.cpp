@@ -30,7 +30,6 @@ bool DemuxThread::start() {
         spdlog::error("[DemuxThread] Failed to open input: {}", file_path_);
         return false;
     }
-
     ret = avformat_find_stream_info(fmt_ctx_, nullptr);
     if (ret < 0) {
         spdlog::error("[DemuxThread] Failed to find stream info");
@@ -102,9 +101,16 @@ bool DemuxThread::start() {
                  stats_.video_stream_index,
                  stats_.time_base.num, stats_.time_base.den);
 
+    fmt_ctx_->interrupt_callback.callback = &DemuxThread::interrupt_callback;
+    fmt_ctx_->interrupt_callback.opaque = this;
     running_.store(true);
     thread_ = std::thread(&DemuxThread::run, this);
     return true;
+}
+
+int DemuxThread::interrupt_callback(void* opaque) {
+    auto* self = static_cast<DemuxThread*>(opaque);
+    return self && !self->running_.load(std::memory_order_acquire) ? 1 : 0;
 }
 
 void DemuxThread::stop() {

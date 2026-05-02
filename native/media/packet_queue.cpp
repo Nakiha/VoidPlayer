@@ -21,6 +21,7 @@ bool PacketQueue::push(AVPacket* pkt) {
     std::unique_lock<std::mutex> lock(mutex_);
     not_full_.wait(lock, [this]() { return queue_.size() < capacity_ || aborted_; });
     if (aborted_) return false;  // caller retains ownership of pkt
+    flushed_ = false;
     auto ptr = PacketPtr(pkt, &packet_deleter);
     queue_.push(std::move(ptr));
     not_empty_.notify_one();
@@ -30,6 +31,7 @@ bool PacketQueue::push(AVPacket* pkt) {
 bool PacketQueue::try_push(AVPacket* pkt) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (aborted_ || queue_.size() >= capacity_) return false;
+    flushed_ = false;
     auto ptr = PacketPtr(pkt, &packet_deleter);
     queue_.push(std::move(ptr));
     not_empty_.notify_one();
@@ -38,8 +40,15 @@ bool PacketQueue::try_push(AVPacket* pkt) {
 
 AVPacket* PacketQueue::pop() {
     std::unique_lock<std::mutex> lock(mutex_);
-    not_empty_.wait(lock, [this]() { return !queue_.empty() || aborted_; });
+    not_empty_.wait(lock, [this]() {
+        return !queue_.empty() || aborted_ || flushed_ ||
+               eof_.load(std::memory_order_acquire);
+    });
     if (aborted_ && queue_.empty()) return nullptr;
+    if (flushed_ && queue_.empty()) {
+        flushed_ = false;
+        return nullptr;
+    }
     if (queue_.empty()) return nullptr;
     auto ptr = std::move(queue_.front());
     queue_.pop();
@@ -61,8 +70,10 @@ void PacketQueue::flush() {
     while (!queue_.empty()) {
         queue_.pop();
     }
+    flushed_ = true;
     eof_.store(false, std::memory_order_release);
     not_full_.notify_all();
+    not_empty_.notify_all();
 }
 
 void PacketQueue::abort() {
@@ -78,8 +89,10 @@ void PacketQueue::reset() {
         queue_.pop();
     }
     aborted_ = false;
+    flushed_ = false;
     eof_.store(false, std::memory_order_release);
     not_full_.notify_all();
+    not_empty_.notify_all();
 }
 
 size_t PacketQueue::size() const {
@@ -99,10 +112,13 @@ bool PacketQueue::is_aborted() const {
 
 void PacketQueue::signal_eof() {
     eof_.store(true, std::memory_order_release);
+    not_empty_.notify_all();
 }
 
 void PacketQueue::clear_eof() {
     eof_.store(false, std::memory_order_release);
+    std::lock_guard<std::mutex> lock(mutex_);
+    flushed_ = false;
 }
 
 bool PacketQueue::is_eof() const {

@@ -31,7 +31,9 @@ void AnalysisManager::unload() {
     vbi_.close();
     vbt_.close();
     loaded_ = false;
-    overlay = {};
+    overlay.show_cu_grid.store(false, std::memory_order_release);
+    overlay.show_pred_mode.store(false, std::memory_order_release);
+    overlay.show_qp_heatmap.store(false, std::memory_order_release);
 }
 
 int AnalysisManager::current_frame_idx(int64_t pts_us) const {

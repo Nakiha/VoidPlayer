@@ -19,6 +19,7 @@
 #include <atomic>
 #include <vector>
 #include <mutex>  // IWYU pragma: keep
+#include <functional>
 #include <wrl/client.h>
 
 namespace vr {
@@ -231,7 +232,7 @@ private:
 
     /// Headless-only: select back buffer RTV, draw, swap, notify Flutter.
     /// Caller must hold both device_mutex_ and texture_mutex_.
-    void draw_headless_and_publish(const PresentDecision& decision, const char* label);
+    std::function<void()> draw_headless_and_publish(const PresentDecision& decision, const char* label);
 
     /// Lightweight layout-only redraw (no Flush) for responsive zoom/pan during playback.
     void redraw_layout();

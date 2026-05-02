@@ -1,5 +1,6 @@
 #include "device.h"
 #include <spdlog/spdlog.h>
+#include <dxgi1_2.h>
 #include <dxgidebug.h>
 
 namespace vr {
@@ -48,6 +49,8 @@ bool D3D11Device::create_device(IDXGIAdapter* adapter, D3D_DRIVER_TYPE driver_ty
         spdlog::error("Failed to create D3D11 device: HRESULT {:#x}", static_cast<unsigned long>(hr));
         return false;
     }
+    device_lost_.store(false, std::memory_order_release);
+    device_removed_reason_.store(S_OK, std::memory_order_release);
 
     // Enable D3D11 multi-thread protection so the device context can be
     // safely used from the render thread AND the hardware decode threads
@@ -88,6 +91,26 @@ void D3D11Device::setup_info_queue() {
         info_queue->Release();
         spdlog::info("[D3D11] Debug info queue enabled");
     }
+}
+
+void D3D11Device::handle_device_error(const char* operation, HRESULT hr) {
+    const bool lost =
+        hr == DXGI_ERROR_DEVICE_REMOVED ||
+        hr == DXGI_ERROR_DEVICE_RESET ||
+        hr == DXGI_ERROR_DEVICE_HUNG;
+    if (!lost) {
+        spdlog::error("[D3D11] {} failed: HRESULT {:#x}",
+                      operation, static_cast<unsigned long>(hr));
+        return;
+    }
+
+    HRESULT reason = device_ ? device_->GetDeviceRemovedReason() : hr;
+    device_lost_.store(true, std::memory_order_release);
+    device_removed_reason_.store(reason, std::memory_order_release);
+    spdlog::error("[D3D11] device lost during {}: hr={:#x}, reason={:#x}",
+                  operation,
+                  static_cast<unsigned long>(hr),
+                  static_cast<unsigned long>(reason));
 }
 
 bool D3D11Device::initialize(void* hwnd, int width, int height) {
@@ -244,6 +267,8 @@ void D3D11Device::shutdown() {
     device_.Reset();
 
     initialized_ = false;
+    device_lost_.store(false, std::memory_order_release);
+    device_removed_reason_.store(S_OK, std::memory_order_release);
     spdlog::info("D3D11 device shut down");
 }
 
@@ -258,7 +283,7 @@ void D3D11Device::resize(int width, int height) {
     HRESULT hr = swap_chain_->ResizeBuffers(0, static_cast<UINT>(width), static_cast<UINT>(height),
                                              DXGI_FORMAT_UNKNOWN, 0);
     if (FAILED(hr)) {
-        spdlog::error("Failed to resize swap chain buffers: HRESULT {:#x}", static_cast<unsigned long>(hr));
+        handle_device_error("ResizeBuffers", hr);
     } else {
         spdlog::info("Swap chain resized to {}x{}", width, height);
     }
@@ -278,7 +303,7 @@ void D3D11Device::present(int sync_interval) {
 
     HRESULT hr = swap_chain_->Present(sync_interval, 0);
     if (FAILED(hr)) {
-        spdlog::error("Failed to present: HRESULT {:#x}", static_cast<unsigned long>(hr));
+        handle_device_error("Present", hr);
     }
 }
 

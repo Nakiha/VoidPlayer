@@ -2,6 +2,7 @@
 #include <d3d11.h>
 #include <dxgi.h>
 #include <wrl/client.h>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 
@@ -25,6 +26,10 @@ public:
     ID3D11DeviceContext* context() const { return context_.Get(); }
     IDXGISwapChain* swap_chain() const { return swap_chain_.Get(); }
     bool is_headless() const { return headless_; }
+    bool device_lost() const { return device_lost_.load(std::memory_order_acquire); }
+    HRESULT device_removed_reason() const {
+        return device_removed_reason_.load(std::memory_order_acquire);
+    }
 
     void resize(int width, int height);
     void present(int sync_interval = 1);
@@ -33,6 +38,7 @@ private:
     bool create_device(IDXGIAdapter* adapter, D3D_DRIVER_TYPE driver_type,
                        UINT flags, D3D_FEATURE_LEVEL& out_level);
     void setup_info_queue();
+    void handle_device_error(const char* operation, HRESULT hr);
 
     void dump_debug_messages();
 
@@ -42,6 +48,8 @@ private:
     void* hwnd_ = nullptr;
     bool initialized_ = false;
     bool headless_ = false;
+    std::atomic<bool> device_lost_{false};
+    std::atomic<HRESULT> device_removed_reason_{S_OK};
 };
 
 } // namespace vr

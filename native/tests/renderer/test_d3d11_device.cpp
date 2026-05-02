@@ -11,6 +11,8 @@ TEST_CASE("D3D11Device initialization", "[d3d11][device]") {
     REQUIRE(dev.initialize(hwnd, 800, 600) == true);
     REQUIRE(dev.device() != nullptr);
     REQUIRE(dev.context() != nullptr);
+    REQUIRE(dev.device_lost() == false);
+    REQUIRE(dev.device_removed_reason() == S_OK);
 
     destroy_window(hwnd);
 }

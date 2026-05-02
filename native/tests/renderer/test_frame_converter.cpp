@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "video_renderer/decode/frame_converter.h"
+#include <mutex>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -105,8 +106,16 @@ TEST_CASE("FrameConverter: convert preserves PTS", "[frame_converter]") {
 
 TEST_CASE("FrameConverter: init_hardware sets hardware mode", "[frame_converter]") {
     FrameConverter converter;
+    std::recursive_mutex device_mutex;
     // Pass null pointers since we are not creating a real D3D11 device in tests
-    bool ok = converter.init_hardware(nullptr, nullptr, 1920, 1080);
+    bool ok = converter.init_hardware(
+        nullptr,
+        nullptr,
+        1920,
+        1080,
+        HwDecodeType::D3D11VA,
+        false,
+        &device_mutex);
     REQUIRE(ok == true);
     REQUIRE(converter.is_hardware() == true);
 }

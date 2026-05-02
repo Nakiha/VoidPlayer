@@ -2,6 +2,7 @@
 #include "video_renderer/buffer/bidi_ring_buffer.h"
 #include "video_renderer/decode/hw/hw_decode_provider.h"
 #include <cstdint>
+#include <mutex>
 #include <optional>
 
 extern "C" {
@@ -23,7 +24,8 @@ public:
     bool init_hardware(void* d3d_device, void* d3d_context,
                        int src_width, int src_height,
                        HwDecodeType hw_type = HwDecodeType::None,
-                       bool download_to_cpu = false);
+                       bool download_to_cpu = false,
+                       std::recursive_mutex* device_mutex = nullptr);
 
     TextureFrame convert(AVFrame* frame);
     std::optional<TextureFrame> snapshot_hardware_frame(AVFrame* frame);
@@ -42,6 +44,7 @@ private:
     AVPixelFormat downloaded_format_ = AV_PIX_FMT_NONE;
     void* d3d_device_ = nullptr;
     void* d3d_context_ = nullptr;
+    std::recursive_mutex* device_mutex_ = nullptr;
 };
 
 } // namespace vr

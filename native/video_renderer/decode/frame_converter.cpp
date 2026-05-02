@@ -75,6 +75,9 @@ bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat 
     is_hw_ = false;
     download_hw_to_cpu_ = false;
     hw_type_ = HwDecodeType::None;
+    d3d_device_ = nullptr;
+    d3d_context_ = nullptr;
+    device_mutex_ = nullptr;
 
     sws_ctx_ = sws_getContext(
         src_width, src_height, src_format,
@@ -97,7 +100,8 @@ bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat 
 bool FrameConverter::init_hardware(void* d3d_device, void* d3d_context,
                                    int src_width, int src_height,
                                    HwDecodeType hw_type,
-                                   bool download_to_cpu) {
+                                   bool download_to_cpu,
+                                   std::recursive_mutex* device_mutex) {
     if (sws_ctx_) {
         sws_freeContext(sws_ctx_);
         sws_ctx_ = nullptr;
@@ -105,6 +109,7 @@ bool FrameConverter::init_hardware(void* d3d_device, void* d3d_context,
 
     d3d_device_ = d3d_device;
     d3d_context_ = d3d_context;
+    device_mutex_ = device_mutex;
     width_ = src_width;
     height_ = src_height;
     is_hw_ = true;
@@ -282,6 +287,11 @@ std::optional<TextureFrame> FrameConverter::snapshot_hardware_frame(AVFrame* fra
     if (!is_hw_ || download_hw_to_cpu_ || hw_type_ != HwDecodeType::D3D11VA ||
         !frame || !frame->data[0]) {
         return std::nullopt;
+    }
+
+    std::unique_lock<std::recursive_mutex> d3d_lock;
+    if (device_mutex_) {
+        d3d_lock = std::unique_lock<std::recursive_mutex>(*device_mutex_);
     }
 
     auto* source = reinterpret_cast<ID3D11Texture2D*>(frame->data[0]);

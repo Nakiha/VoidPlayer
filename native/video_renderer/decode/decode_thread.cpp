@@ -340,7 +340,8 @@ bool DecodeThread::start() {
         conv_ok = converter_.init_hardware(native_device_, nullptr,
                                            codec_ctx_->width, codec_ctx_->height,
                                            hw_type_,
-                                           hardware_output_downloads_to_cpu());
+                                           hardware_output_downloads_to_cpu(),
+                                           device_mutex_);
     } else {
         conv_ok = converter_.init_software(codec_ctx_->width, codec_ctx_->height,
                                            codec_ctx_->pix_fmt);

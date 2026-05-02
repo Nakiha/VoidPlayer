@@ -238,6 +238,7 @@ class _AnalysisResizableVDividerState extends State<AnalysisResizableVDivider> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onHorizontalDragStart: _onDragStart,
@@ -248,11 +249,14 @@ class _AnalysisResizableVDividerState extends State<AnalysisResizableVDivider> {
         onExit: (_) => setState(() => _hovering = false),
         child: SizedBox.expand(
           child: Center(
-            child: Container(
-              width: _hovering ? 2 : 0,
-              color: _hovering
-                  ? Theme.of(context).colorScheme.primary
-                  : Colors.transparent,
+            child: SizedBox(
+              width: _hovering ? 2 : 1,
+              height: double.infinity,
+              child: ColoredBox(
+                color: _hovering
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.outlineVariant,
+              ),
             ),
           ),
         ),

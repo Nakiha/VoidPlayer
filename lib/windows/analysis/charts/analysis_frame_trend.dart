@@ -354,10 +354,13 @@ class _FrameTrendPainter extends CustomPainter {
     }
     canvas.drawPath(qpPath, qpPaint);
 
-    // --- Playback cursor ---
-    if (currentIdx >= 0 && currentIdx < frames.length) {
-      final frac = (currentIdx - viewStart) / span;
-      final cx = labelW + contentPad + frac * contentW;
+    // --- Selection/playback cursor ---
+    final cursorIdx = selectedFrameIdx != null && selectedFrameIdx! >= 0
+        ? selectedFrameIdx!
+        : currentIdx;
+    if (cursorIdx >= 0 && cursorIdx < frames.length) {
+      final frac = (cursorIdx - viewStart) / span;
+      final cx = labelW + contentPad + frac * contentW + barW / 2;
       canvas.drawLine(
         Offset(cx, 0),
         Offset(cx, chartH),

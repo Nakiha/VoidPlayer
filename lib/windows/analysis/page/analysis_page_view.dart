@@ -155,7 +155,8 @@ class AnalysisPageView extends StatelessWidget {
                   0.0,
                   double.infinity,
                 );
-                final contentAvailable = (available - dividerHitH).clamp(
+                const dividerLineH = 1.0;
+                final contentAvailable = (available - dividerLineH).clamp(
                   0.0,
                   double.infinity,
                 );
@@ -191,7 +192,7 @@ class AnalysisPageView extends StatelessWidget {
                     Positioned(
                       left: 0,
                       right: 0,
-                      top: topH + dividerHitH,
+                      top: topH + dividerLineH,
                       height: bottomH,
                       child: bottomPanel,
                     ),

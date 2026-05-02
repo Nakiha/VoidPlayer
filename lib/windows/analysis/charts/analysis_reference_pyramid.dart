@@ -41,8 +41,48 @@ class AnalysisReferencePyramidView extends StatefulWidget {
 
 class _AnalysisReferencePyramidViewState
     extends State<AnalysisReferencePyramidView> {
-  _RefPyramidPainter? _lastPainter;
   Offset? _hoverPosition;
+
+  int? _frameIndexAtChartPosition(Offset local, Size size) {
+    if (widget.frames.isEmpty) return null;
+    final visibleStart = widget.viewStart
+        .floor()
+        .clamp(0, widget.frames.length - 1)
+        .toInt();
+    final visibleEnd = (widget.viewEnd.ceil() + 1)
+        .clamp(0, widget.frames.length)
+        .toInt();
+    if (visibleStart >= visibleEnd) return null;
+
+    final axisH = size.height >= 96 ? analysisChartXAxisH : 0.0;
+    final chartH = (size.height - axisH).clamp(1.0, double.infinity);
+    final labelW = analysisChartLabelW;
+    final usableW = (size.width - labelW).clamp(0.0, double.infinity);
+    final plotRect = Rect.fromLTWH(labelW, 0, usableW, chartH);
+    if (!plotRect.contains(local)) return null;
+
+    var maxTid = 0;
+    for (var i = visibleStart; i < visibleEnd; i++) {
+      if (widget.frames[i].temporalId > maxTid) {
+        maxTid = widget.frames[i].temporalId;
+      }
+    }
+    final rowH = chartH / (maxTid + 1);
+    final circleR = (rowH * 0.3).clamp(6.0, 20.0);
+    final centerPad = circleR + analysisChartSelectedFramePadding;
+    final centerW = (usableW - centerPad * 2).clamp(1.0, double.infinity);
+    final span = widget.viewEnd - widget.viewStart;
+    if (span <= 0) return null;
+
+    final frameFrac = ((local.dx - labelW - centerPad) / centerW).clamp(
+      0.0,
+      1.0,
+    );
+    return (widget.viewStart + frameFrac * span)
+        .round()
+        .clamp(visibleStart, visibleEnd - 1)
+        .toInt();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -77,31 +117,31 @@ class _AnalysisReferencePyramidViewState
                 }
               }
             },
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapUp: (details) {
-                final rects = _lastPainter?.frameRects ?? [];
-                for (final (gi, rect) in rects) {
-                  if (rect.contains(details.localPosition)) {
-                    widget.onFrameSelected(
-                      widget.selectedFrameIdx == gi ? null : gi,
-                    );
-                    return;
-                  }
-                }
-                widget.onFrameSelected(null);
-              },
-              child: Builder(
-                builder: (chartContext) => MouseRegion(
-                  onExit: (_) => setState(() => _hoverPosition = null),
-                  onHover: (event) {
+            child: Builder(
+              builder: (chartContext) => MouseRegion(
+                onExit: (_) => setState(() => _hoverPosition = null),
+                onHover: (event) {
+                  final box = chartContext.findRenderObject() as RenderBox;
+                  setState(() {
+                    _hoverPosition = box.globalToLocal(event.position);
+                  });
+                },
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: (details) {
                     final box = chartContext.findRenderObject() as RenderBox;
-                    setState(() {
-                      _hoverPosition = box.globalToLocal(event.position);
-                    });
+                    final frameIdx = _frameIndexAtChartPosition(
+                      details.localPosition,
+                      box.size,
+                    );
+                    widget.onFrameSelected(
+                      frameIdx != null && widget.selectedFrameIdx == frameIdx
+                          ? null
+                          : frameIdx,
+                    );
                   },
                   child: CustomPaint(
-                    painter: _lastPainter = _RefPyramidPainter(
+                    painter: _RefPyramidPainter(
                       frames: widget.frames,
                       currentIdx: widget.currentIdx,
                       selectedFrameIdx: widget.selectedFrameIdx,
@@ -138,9 +178,6 @@ class _RefPyramidPainter extends CustomPainter {
   final double viewEnd;
   final bool ptsOrder;
   final Offset? hoverPosition;
-
-  /// Populated during paint() — used by parent for hit-testing.
-  List<(int, Rect)> frameRects = [];
 
   _RefPyramidPainter({
     required this.frames,
@@ -195,22 +232,6 @@ class _RefPyramidPainter extends CustomPainter {
       final y = chartH - (frames[i].temporalId + 0.5) * rowH;
       positions[i] = Offset(x, y);
     }
-    frameRects = [
-      for (final e in positions.entries) ...[
-        if (Rect.fromCircle(
-          center: e.value,
-          radius: circleR,
-        ).overlaps(plotRect))
-          (
-            e.key,
-            Rect.fromCircle(
-              center: e.value,
-              radius: circleR,
-            ).intersect(plotRect),
-          ),
-      ],
-    ];
-
     // --- Level backgrounds ---
     final levelLabelStep = rowH >= 16 ? 1 : (16 / rowH).ceil();
     for (var tid = 0; tid <= maxTid; tid++) {

@@ -6,7 +6,9 @@
 #include <chrono>
 #include <string>
 #include <cstdint>
+#include <condition_variable>
 #include <functional>
+#include <mutex>
 #include <vector>
 
 extern "C" {
@@ -87,6 +89,9 @@ private:
     std::thread thread_;
     std::atomic<bool> running_{false};
     SeekCallback seek_callback_;
+    std::mutex lifecycle_mutex_;
+    std::condition_variable lifecycle_cv_;
+    bool opening_ = false;
 };
 
 } // namespace vr

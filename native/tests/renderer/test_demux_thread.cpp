@@ -257,3 +257,25 @@ TEST_CASE("DemuxThread: stop cleans up without crash", "[demux_thread]") {
     }
     // Destructor also calls stop() — should not crash on double-stop
 }
+
+TEST_CASE("DemuxThread: stop can race with start without leaking context",
+          "[demux_thread][concurrency]") {
+    for (int i = 0; i < 20; ++i) {
+        PacketQueue pq(8);
+        SeekController sc;
+        DemuxThread demux(get_h264_path(), pq, sc);
+
+        bool started = false;
+        std::thread starter([&] {
+            started = demux.start();
+        });
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        demux.stop();
+        starter.join();
+        if (started) {
+            demux.stop();
+        }
+        REQUIRE(demux.format_context() == nullptr);
+    }
+}

@@ -29,20 +29,44 @@ DemuxThread::~DemuxThread() {
 }
 
 bool DemuxThread::start() {
-    if (running_.load()) return false;
-
-    fmt_ctx_ = avformat_alloc_context();
-    if (!fmt_ctx_) {
-        spdlog::error("[DemuxThread] Failed to allocate format context: {}", file_path_);
+    auto fail_start = [this]() {
+        std::unique_lock<std::mutex> lock(lifecycle_mutex_);
+        running_.store(false, std::memory_order_release);
+        open_deadline_ns_.store(0, std::memory_order_release);
+        if (fmt_ctx_) {
+            avformat_close_input(&fmt_ctx_);
+        }
+        opening_ = false;
+        lock.unlock();
+        lifecycle_cv_.notify_all();
         return false;
+    };
+
+    {
+        std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+        if (running_.load(std::memory_order_acquire) || opening_ ||
+            thread_.joinable() || fmt_ctx_) {
+            return false;
+        }
+
+        fmt_ctx_ = avformat_alloc_context();
+        if (!fmt_ctx_) {
+            spdlog::error("[DemuxThread] Failed to allocate format context: {}", file_path_);
+            return false;
+        }
+        stats_ = DemuxStats{};
+        for (auto& route : output_routes_) {
+            route.stream_index = -1;
+        }
+        opening_ = true;
+        running_.store(true, std::memory_order_release);
+        open_deadline_ns_.store(
+            steady_clock_ns() + std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::seconds(15)).count(),
+            std::memory_order_release);
+        fmt_ctx_->interrupt_callback.callback = &DemuxThread::interrupt_callback;
+        fmt_ctx_->interrupt_callback.opaque = this;
     }
-    running_.store(true, std::memory_order_release);
-    open_deadline_ns_.store(
-        steady_clock_ns() + std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::seconds(15)).count(),
-        std::memory_order_release);
-    fmt_ctx_->interrupt_callback.callback = &DemuxThread::interrupt_callback;
-    fmt_ctx_->interrupt_callback.opaque = this;
 
     // Open format context on the calling thread so stats are available immediately.
     // Install the interrupt callback before open/find_stream_info so stop() or an
@@ -50,20 +74,18 @@ bool DemuxThread::start() {
     int ret = avformat_open_input(&fmt_ctx_, file_path_.c_str(), nullptr, nullptr);
     if (ret < 0) {
         spdlog::error("[DemuxThread] Failed to open input: {}", file_path_);
-        running_.store(false, std::memory_order_release);
-        avformat_close_input(&fmt_ctx_);
-        open_deadline_ns_.store(0, std::memory_order_release);
-        return false;
+        return fail_start();
     }
     ret = avformat_find_stream_info(fmt_ctx_, nullptr);
     if (ret < 0) {
         spdlog::error("[DemuxThread] Failed to find stream info");
-        running_.store(false, std::memory_order_release);
-        avformat_close_input(&fmt_ctx_);
-        open_deadline_ns_.store(0, std::memory_order_release);
-        return false;
+        return fail_start();
     }
     open_deadline_ns_.store(0, std::memory_order_release);
+    if (!running_.load(std::memory_order_acquire)) {
+        spdlog::info("[DemuxThread] Open cancelled during probe: {}", file_path_);
+        return fail_start();
+    }
 
     // Locate the first video stream. Audio is discovered now too, but it is
     // only routed when an audio output queue is registered by the owner.
@@ -82,10 +104,7 @@ bool DemuxThread::start() {
 
     if (output_routes_.empty()) {
         spdlog::error("[DemuxThread] No output routes registered for {}", file_path_);
-        running_.store(false, std::memory_order_release);
-        avformat_close_input(&fmt_ctx_);
-        open_deadline_ns_.store(0, std::memory_order_release);
-        return false;
+        return fail_start();
     }
 
     if (stats_.video_stream_index >= 0) {
@@ -121,10 +140,7 @@ bool DemuxThread::start() {
                 continue;
             }
             spdlog::error("[DemuxThread] Requested output stream is missing in {}", file_path_);
-            running_.store(false, std::memory_order_release);
-            avformat_close_input(&fmt_ctx_);
-            open_deadline_ns_.store(0, std::memory_order_release);
-            return false;
+            return fail_start();
         }
     }
 
@@ -133,7 +149,23 @@ bool DemuxThread::start() {
                  stats_.video_stream_index,
                  stats_.time_base.num, stats_.time_base.den);
 
-    thread_ = std::thread(&DemuxThread::run, this);
+    {
+        std::unique_lock<std::mutex> lock(lifecycle_mutex_);
+        open_deadline_ns_.store(0, std::memory_order_release);
+        if (!running_.load(std::memory_order_acquire)) {
+            spdlog::info("[DemuxThread] Open cancelled before demux thread start: {}", file_path_);
+            if (fmt_ctx_) {
+                avformat_close_input(&fmt_ctx_);
+            }
+            opening_ = false;
+            lock.unlock();
+            lifecycle_cv_.notify_all();
+            return false;
+        }
+        thread_ = std::thread(&DemuxThread::run, this);
+        opening_ = false;
+    }
+    lifecycle_cv_.notify_all();
     return true;
 }
 
@@ -152,17 +184,24 @@ int DemuxThread::interrupt_callback(void* opaque) {
 
 void DemuxThread::stop() {
     spdlog::info("[DemuxThread] stop() begin for {}", file_path_);
-    running_.store(false);
-    open_deadline_ns_.store(0, std::memory_order_release);
-    abort_outputs();
+    {
+        std::unique_lock<std::mutex> lock(lifecycle_mutex_);
+        running_.store(false, std::memory_order_release);
+        open_deadline_ns_.store(0, std::memory_order_release);
+        abort_outputs();
+        lifecycle_cv_.wait(lock, [this] { return !opening_; });
+    }
     if (thread_.joinable()) {
         spdlog::info("[DemuxThread] stop() waiting for join: {}", file_path_);
         thread_.join();
         spdlog::info("[DemuxThread] stop() joined: {}", file_path_);
     }
-    if (fmt_ctx_) {
-        spdlog::info("[DemuxThread] stop() closing input: {}", file_path_);
-        avformat_close_input(&fmt_ctx_);
+    {
+        std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+        if (fmt_ctx_) {
+            spdlog::info("[DemuxThread] stop() closing input: {}", file_path_);
+            avformat_close_input(&fmt_ctx_);
+        }
     }
     spdlog::info("[DemuxThread] stop() end for {}", file_path_);
 }

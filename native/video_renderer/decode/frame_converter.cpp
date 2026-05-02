@@ -57,17 +57,56 @@ FrameConverter::FrameConverter()
 {}
 
 FrameConverter::~FrameConverter() {
+    reset_sws_context();
+}
+
+void FrameConverter::reset_sws_context() {
     if (sws_ctx_) {
         sws_freeContext(sws_ctx_);
         sws_ctx_ = nullptr;
     }
+    sws_src_width_ = 0;
+    sws_src_height_ = 0;
+    sws_src_format_ = AV_PIX_FMT_NONE;
+}
+
+bool FrameConverter::ensure_sws_context(int src_width, int src_height, AVPixelFormat src_format) {
+    if (src_width <= 0 || src_height <= 0 || src_format == AV_PIX_FMT_NONE) {
+        spdlog::error("[FrameConverter] Invalid SwsContext request ({}x{}, format={})",
+                      src_width, src_height, static_cast<int>(src_format));
+        return false;
+    }
+
+    if (sws_ctx_ &&
+        sws_src_width_ == src_width &&
+        sws_src_height_ == src_height &&
+        sws_src_format_ == src_format) {
+        return true;
+    }
+
+    reset_sws_context();
+    sws_ctx_ = sws_getContext(
+        src_width, src_height, src_format,
+        src_width, src_height, AV_PIX_FMT_RGBA,
+        SWS_BILINEAR,
+        nullptr, nullptr, nullptr);
+
+    if (!sws_ctx_) {
+        spdlog::error("[FrameConverter] Failed to create SwsContext ({}x{}, format={})",
+                      src_width, src_height, static_cast<int>(src_format));
+        return false;
+    }
+
+    sws_src_width_ = src_width;
+    sws_src_height_ = src_height;
+    sws_src_format_ = src_format;
+    spdlog::info("[FrameConverter] SwsContext initialized ({}x{}, format={})",
+                 src_width, src_height, static_cast<int>(src_format));
+    return true;
 }
 
 bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat src_format) {
-    if (sws_ctx_) {
-        sws_freeContext(sws_ctx_);
-        sws_ctx_ = nullptr;
-    }
+    reset_sws_context();
 
     width_ = src_width;
     height_ = src_height;
@@ -79,16 +118,7 @@ bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat 
     d3d_context_ = nullptr;
     device_mutex_ = nullptr;
 
-    sws_ctx_ = sws_getContext(
-        src_width, src_height, src_format,
-        src_width, src_height, AV_PIX_FMT_RGBA,
-        SWS_BILINEAR,
-        nullptr, nullptr, nullptr
-    );
-
-    if (!sws_ctx_) {
-        spdlog::error("[FrameConverter] Failed to create SwsContext ({}x{}, format={})",
-                      src_width, src_height, static_cast<int>(src_format));
+    if (!ensure_sws_context(src_width, src_height, src_format)) {
         return false;
     }
 
@@ -102,10 +132,7 @@ bool FrameConverter::init_hardware(void* d3d_device, void* d3d_context,
                                    HwDecodeType hw_type,
                                    bool download_to_cpu,
                                    std::recursive_mutex* device_mutex) {
-    if (sws_ctx_) {
-        sws_freeContext(sws_ctx_);
-        sws_ctx_ = nullptr;
-    }
+    reset_sws_context();
 
     d3d_device_ = d3d_device;
     d3d_context_ = d3d_context;
@@ -149,26 +176,11 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
         }
 
         const auto sw_format = static_cast<AVPixelFormat>(sw_frame->format);
-        if (!sws_ctx_ || downloaded_format_ != sw_format) {
-            if (sws_ctx_) {
-                sws_freeContext(sws_ctx_);
-                sws_ctx_ = nullptr;
-            }
-            downloaded_format_ = sw_format;
-            sws_ctx_ = sws_getContext(
-                sw_frame->width, sw_frame->height, sw_format,
-                sw_frame->width, sw_frame->height, AV_PIX_FMT_RGBA,
-                SWS_BILINEAR,
-                nullptr, nullptr, nullptr);
-            if (!sws_ctx_) {
-                spdlog::error("[FrameConverter] Failed to create hw-download SwsContext ({}x{}, format={})",
-                              sw_frame->width, sw_frame->height, static_cast<int>(sw_format));
-                av_frame_free(&sw_frame);
-                return result;
-            }
-            spdlog::info("[FrameConverter] Hardware download converter initialized ({}x{}, format={})",
-                         sw_frame->width, sw_frame->height, static_cast<int>(sw_format));
+        if (!ensure_sws_context(sw_frame->width, sw_frame->height, sw_format)) {
+            av_frame_free(&sw_frame);
+            return result;
         }
+        downloaded_format_ = sw_format;
 
         result.width = sw_frame->width;
         result.height = sw_frame->height;
@@ -242,14 +254,24 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
             }
         }
     } else {
-        // Software path: convert to RGBA via sws_scale
-        if (!sws_ctx_) {
-            spdlog::error("[FrameConverter] Software converter not initialized");
+        // Software path: convert to RGBA via sws_scale. Some codecs can
+        // legally change frame geometry mid-stream, so key the converter and
+        // output buffer off the actual AVFrame rather than constructor stats.
+        const int frame_width = frame ? frame->width : 0;
+        const int frame_height = frame ? frame->height : 0;
+        const auto frame_format = frame
+            ? static_cast<AVPixelFormat>(frame->format)
+            : AV_PIX_FMT_NONE;
+        if (!ensure_sws_context(frame_width, frame_height, frame_format)) {
             return result;
         }
 
-        size_t stride = static_cast<size_t>(width_) * 4;
-        size_t buf_size = stride * static_cast<size_t>(height_);
+        width_ = frame_width;
+        height_ = frame_height;
+        src_format_ = frame_format;
+
+        size_t stride = static_cast<size_t>(frame_width) * 4;
+        size_t buf_size = stride * static_cast<size_t>(frame_height);
         auto rgba_buf = std::make_shared<std::vector<uint8_t>>(buf_size);
         if (!rgba_buf || rgba_buf->empty()) {
             spdlog::error("[FrameConverter] Failed to allocate RGBA buffer ({} bytes)", buf_size);
@@ -262,13 +284,13 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
         int converted_height = sws_scale(
             sws_ctx_,
             frame->data, frame->linesize,
-            0, height_,
+            0, frame_height,
             dst_slices, dst_stride
         );
 
-        if (converted_height != height_) {
+        if (converted_height != frame_height) {
             spdlog::warn("[FrameConverter] sws_scale converted {} rows (expected {})",
-                         converted_height, height_);
+                         converted_height, frame_height);
         }
 
         result.cpu_data = rgba_buf;

@@ -478,12 +478,16 @@ VideoRendererPlugin::~VideoRendererPlugin() {
         std::lock_guard lock(g_player_mutex);
         g_player_weak.reset();
     }
-    if (texture_id_ >= 0 && texture_registrar_) {
-        texture_registrar_->UnregisterTexture(texture_id_);
-        texture_id_ = -1;
-    }
     if (player_) {
+        player_->set_frame_callback(nullptr);
         player_->shutdown();
+    }
+    const int64_t texture_id = texture_id_.exchange(-1, std::memory_order_acq_rel);
+    if (texture_id >= 0 && texture_registrar_) {
+        texture_registrar_->UnregisterTexture(texture_id);
+    }
+    texture_variant_.reset();
+    if (player_) {
         player_.reset();
     }
 }
@@ -920,9 +924,14 @@ void VideoRendererPlugin::CreatePlayer(
         });
 
     texture_variant_ = std::make_unique<flutter::TextureVariant>(std::move(*gpu_texture));
-    texture_id_ = texture_registrar_->RegisterTexture(texture_variant_.get());
+    texture_id_.store(texture_registrar_->RegisterTexture(texture_variant_.get()),
+                      std::memory_order_release);
 
-    if (texture_id_ < 0) {
+    if (texture_id_.load(std::memory_order_acquire) < 0) {
+        {
+            std::lock_guard lock(g_player_mutex);
+            g_player_weak.reset();
+        }
         player_->shutdown();
         player_.reset();
         texture_variant_.reset();
@@ -932,16 +941,19 @@ void VideoRendererPlugin::CreatePlayer(
 
     // Set frame callback to notify Flutter of new frames
     player_->set_frame_callback([this]() {
-        if (texture_id_ >= 0 && texture_registrar_) {
-            texture_registrar_->MarkTextureFrameAvailable(texture_id_);
+        const int64_t texture_id = texture_id_.load(std::memory_order_acquire);
+        if (texture_id >= 0 && texture_registrar_) {
+            texture_registrar_->MarkTextureFrameAvailable(texture_id);
         }
     });
 
-    spdlog::info("[VideoRendererPlugin] Created player, texture_id={}, tracks={}", texture_id_, player_->track_infos().size());
+    spdlog::info("[VideoRendererPlugin] Created player, texture_id={}, tracks={}",
+                 texture_id_.load(std::memory_order_acquire), player_->track_infos().size());
 
     // Build result map with textureId and track info
     flutter::EncodableMap result_map;
-    result_map[flutter::EncodableValue("textureId")] = flutter::EncodableValue(texture_id_);
+    result_map[flutter::EncodableValue("textureId")] =
+        flutter::EncodableValue(texture_id_.load(std::memory_order_acquire));
 
     flutter::EncodableList tracks_list;
     if (player_) {
@@ -965,18 +977,20 @@ void VideoRendererPlugin::DestroyPlayer(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     try {
-    if (texture_id_ >= 0 && texture_registrar_) {
-        texture_registrar_->UnregisterTexture(texture_id_);
-        texture_id_ = -1;
-    }
-    texture_variant_.reset();
-
     if (player_) {
         {
             std::lock_guard lock(g_player_mutex);
             g_player_weak.reset();
         }
+        player_->set_frame_callback(nullptr);
         player_->shutdown();
+    }
+    const int64_t texture_id = texture_id_.exchange(-1, std::memory_order_acq_rel);
+    if (texture_id >= 0 && texture_registrar_) {
+        texture_registrar_->UnregisterTexture(texture_id);
+    }
+    texture_variant_.reset();
+    if (player_) {
         player_.reset();
     }
 

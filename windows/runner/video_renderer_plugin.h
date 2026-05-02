@@ -8,6 +8,7 @@
 #include "player/native_player.h"
 
 #include <cstdint>
+#include <atomic>
 #include <memory>
 #include <mutex>
 
@@ -95,7 +96,7 @@ private:
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
     std::shared_ptr<vr::NativePlayer> player_;
-    int64_t texture_id_ = -1;
+    std::atomic<int64_t> texture_id_{-1};
     std::unique_ptr<flutter::TextureVariant> texture_variant_;
     FlutterDesktopGpuSurfaceDescriptor surface_descriptor_ = {};
     flutter::TextureRegistrar* texture_registrar_;

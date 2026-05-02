@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "video_renderer/decode/frame_converter.h"
+#include <cstring>
 #include <mutex>
 
 extern "C" {
@@ -8,6 +9,31 @@ extern "C" {
 }
 
 using namespace vr;
+
+namespace {
+
+AVFrame* make_yuv420_frame(int width, int height, int64_t pts) {
+    AVFrame* frame = av_frame_alloc();
+    REQUIRE(frame != nullptr);
+    frame->format = AV_PIX_FMT_YUV420P;
+    frame->width = width;
+    frame->height = height;
+    frame->pts = pts;
+
+    const int ret = av_frame_get_buffer(frame, 0);
+    REQUIRE(ret >= 0);
+
+    for (int y = 0; y < frame->height; ++y) {
+        memset(frame->data[0] + y * frame->linesize[0], 96, frame->width);
+    }
+    for (int y = 0; y < frame->height / 2; ++y) {
+        memset(frame->data[1] + y * frame->linesize[1], 128, frame->width / 2);
+        memset(frame->data[2] + y * frame->linesize[2], 128, frame->width / 2);
+    }
+    return frame;
+}
+
+} // namespace
 
 TEST_CASE("FrameConverter: init_software YUV420P succeeds", "[frame_converter]") {
     FrameConverter converter;
@@ -102,6 +128,32 @@ TEST_CASE("FrameConverter: convert preserves PTS", "[frame_converter]") {
 
     // cpu_data shared_ptr handles RGBA buffer lifetime
     av_frame_free(&frame);
+}
+
+TEST_CASE("FrameConverter: software conversion follows dynamic frame geometry",
+          "[frame_converter]") {
+    FrameConverter converter;
+    REQUIRE(converter.init_software(64, 64, AV_PIX_FMT_YUV420P));
+
+    AVFrame* first = make_yuv420_frame(64, 64, 1000);
+    TextureFrame first_result = converter.convert(first);
+    REQUIRE(first_result.texture_handle != nullptr);
+    REQUIRE(first_result.width == 64);
+    REQUIRE(first_result.height == 64);
+    REQUIRE(first_result.cpu_rgba_storage() != nullptr);
+    REQUIRE(first_result.cpu_rgba_storage()->stride == 64 * 4);
+
+    AVFrame* second = make_yuv420_frame(96, 72, 2000);
+    TextureFrame second_result = converter.convert(second);
+    REQUIRE(second_result.texture_handle != nullptr);
+    REQUIRE(second_result.width == 96);
+    REQUIRE(second_result.height == 72);
+    REQUIRE(second_result.cpu_rgba_storage() != nullptr);
+    REQUIRE(second_result.cpu_rgba_storage()->stride == 96 * 4);
+    REQUIRE(second_result.cpu_data != first_result.cpu_data);
+
+    av_frame_free(&first);
+    av_frame_free(&second);
 }
 
 TEST_CASE("FrameConverter: init_hardware sets hardware mode", "[frame_converter]") {

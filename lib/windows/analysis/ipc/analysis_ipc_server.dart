@@ -14,6 +14,7 @@ class AnalysisIpcServer {
   Map<String, Object?>? _lastSnapshot;
 
   bool get isStarted => _server != null;
+  bool get hasClients => _clients.isNotEmpty;
   int? get port => _server?.port;
   String? get token => _token;
 

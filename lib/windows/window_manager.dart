@@ -27,21 +27,29 @@ class WindowManager {
   static int accentColorValue = 0xFF0078D4;
 
   /// Show an analysis window for a specific video hash.
-  static Future<void> showAnalysisWindow(String hash, {String? fileName}) =>
-      _spawnAnalysisProcess(hash, fileName: fileName);
+  static Future<void> showAnalysisWindow(
+    String hash, {
+    String? fileName,
+    void Function()? onExit,
+  }) => _spawnAnalysisProcess(hash, fileName: fileName, onExit: onExit);
 
   /// Show multiple analysis views from one user action, arranged as a batch.
   static Future<void> showAnalysisWindows(
-    List<AnalysisWindowRequest> windows,
-  ) async {
+    List<AnalysisWindowRequest> windows, {
+    void Function()? onExit,
+  }) async {
     if (windows.isEmpty) return;
     if (windows.length == 1) {
       final window = windows.first;
-      await showAnalysisWindow(window.hash, fileName: window.fileName);
+      await showAnalysisWindow(
+        window.hash,
+        fileName: window.fileName,
+        onExit: onExit,
+      );
       return;
     }
 
-    await _spawnAnalysisWorkspaceProcess(windows);
+    await _spawnAnalysisWorkspaceProcess(windows, onExit: onExit);
   }
 
   static int get analysisProcessCount => _analysisProcesses.length;
@@ -76,6 +84,7 @@ class WindowManager {
     String hash, {
     String? fileName,
     Rect? initialRect,
+    void Function()? onExit,
   }) async {
     final key = _analysisProcessKey(hash);
     if (_analysisProcesses.containsKey(key)) {
@@ -118,12 +127,14 @@ class WindowManager {
       );
       _analysisProcesses.remove(key);
       _analysisExitCodes[key] = code;
+      onExit?.call();
     });
   }
 
   static Future<void> _spawnAnalysisWorkspaceProcess(
-    List<AnalysisWindowRequest> windows,
-  ) async {
+    List<AnalysisWindowRequest> windows, {
+    void Function()? onExit,
+  }) async {
     final key = _analysisProcessKey(
       'workspace:${windows.map((w) => w.hash).join('|')}',
     );
@@ -165,6 +176,7 @@ class WindowManager {
       log.info('[WindowManager] analysis workspace exited with code $code');
       _analysisProcesses.remove(key);
       _analysisExitCodes[key] = code;
+      onExit?.call();
     });
   }
 

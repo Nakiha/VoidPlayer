@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:path/path.dart' as p;
 
 import '../../analysis/analysis_manager.dart';
@@ -20,6 +22,9 @@ class MainWindowAnalysisCoordinator {
   Future<void> dispose() async {
     _disposed = true;
     _opSerial++;
+    _hashesByFileId.clear();
+    WindowManager.analysisIpcPort = null;
+    WindowManager.analysisIpcToken = null;
     await _ipcServer.dispose();
   }
 
@@ -45,7 +50,10 @@ class MainWindowAnalysisCoordinator {
     }
     await _publishTrackSnapshotImpl(serial);
     if (!_alive(serial)) return;
-    await WindowManager.showAnalysisWindows(windows);
+    await WindowManager.showAnalysisWindows(
+      windows,
+      onExit: _handleAnalysisWindowExited,
+    );
   }
 
   Future<void> publishTrackSnapshot() async {
@@ -54,6 +62,7 @@ class MainWindowAnalysisCoordinator {
 
   Future<void> _publishTrackSnapshotImpl(int serial) async {
     if (!_ipcServer.isStarted) return;
+    if (!_ipcServer.hasClients) return;
     final mgr = AnalysisManager.instance;
     final tracks = <AnalysisIpcTrack>[];
     final liveFileIds = trackManager.entries.map((e) => e.fileId).toSet();
@@ -82,6 +91,23 @@ class MainWindowAnalysisCoordinator {
 
     if (!_alive(serial)) return;
     _ipcServer.publishTracks(tracks);
+  }
+
+  void _handleAnalysisWindowExited() {
+    unawaited(_enqueueOperation(_deactivateIpcWorkspace));
+  }
+
+  Future<void> _deactivateIpcWorkspace(int serial) async {
+    final port = _ipcServer.port;
+    final token = _ipcServer.token;
+    await _ipcServer.dispose();
+    _hashesByFileId.clear();
+    if (!_alive(serial)) return;
+    if (WindowManager.analysisIpcPort == port &&
+        WindowManager.analysisIpcToken == token) {
+      WindowManager.analysisIpcPort = null;
+      WindowManager.analysisIpcToken = null;
+    }
   }
 
   Future<void> _enqueueOperation(Future<void> Function(int serial) operation) {

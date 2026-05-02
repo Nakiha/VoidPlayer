@@ -9,6 +9,9 @@ import '../../config/app_config.dart';
 import '../../l10n/app_localizations.dart';
 import 'settings_page_style.dart';
 
+const _cacheListTrailingPadding = 12.0;
+const _cacheListScrollbarThickness = 6.0;
+
 class CacheSettingsPage extends StatefulWidget {
   const CacheSettingsPage({super.key});
 
@@ -85,35 +88,44 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
           const SizedBox(height: 12),
           _CacheListHeader(
             selectedCount: _selectedHashes.length,
+            selectableCount: snapshot?.entries.length ?? 0,
             deleting: _deleting,
+            onSelectAll: _selectAllEntries,
             onCancelSelection: _clearSelection,
             onDeleteSelected: _deleteSelected,
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: snapshot == null || snapshot.entries.isEmpty
-                ? Center(child: Text(l.cacheNoEntries))
-                : ListView.separated(
-                    itemCount:
-                        snapshot.entries.length +
-                        (snapshot.unindexedBytes > 0 ? 1 : 0),
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      if (index >= snapshot.entries.length) {
-                        return _UnindexedCacheTile(
-                          bytes: snapshot.unindexedBytes,
+            child: ScrollbarTheme(
+              data: ScrollbarTheme.of(context).copyWith(
+                thickness: const WidgetStatePropertyAll(
+                  _cacheListScrollbarThickness,
+                ),
+              ),
+              child: snapshot == null || snapshot.entries.isEmpty
+                  ? Center(child: Text(l.cacheNoEntries))
+                  : ListView.separated(
+                      itemCount:
+                          snapshot.entries.length +
+                          (snapshot.unindexedBytes > 0 ? 1 : 0),
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        if (index >= snapshot.entries.length) {
+                          return _UnindexedCacheTile(
+                            bytes: snapshot.unindexedBytes,
+                          );
+                        }
+                        final entry = snapshot.entries[index];
+                        return _CacheEntryTile(
+                          entry: entry,
+                          selected: _selectedHashes.contains(entry.hash),
+                          onSelectedChanged: (selected) {
+                            _setSelected(entry.hash, selected);
+                          },
                         );
-                      }
-                      final entry = snapshot.entries[index];
-                      return _CacheEntryTile(
-                        entry: entry,
-                        selected: _selectedHashes.contains(entry.hash),
-                        onSelectedChanged: (selected) {
-                          _setSelected(entry.hash, selected);
-                        },
-                      );
-                    },
-                  ),
+                      },
+                    ),
+            ),
           ),
         ],
       ),
@@ -172,6 +184,16 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
 
   void _clearSelection() {
     setState(_selectedHashes.clear);
+  }
+
+  void _selectAllEntries() {
+    final snapshot = _snapshot;
+    if (snapshot == null || snapshot.entries.isEmpty) return;
+    setState(() {
+      _selectedHashes
+        ..clear()
+        ..addAll(snapshot.entries.map((entry) => entry.hash));
+    });
   }
 
   Future<void> _deleteSelected() async {
@@ -355,13 +377,17 @@ class _SmallPathButton extends StatelessWidget {
 
 class _CacheListHeader extends StatelessWidget {
   final int selectedCount;
+  final int selectableCount;
   final bool deleting;
+  final VoidCallback onSelectAll;
   final VoidCallback onCancelSelection;
   final VoidCallback onDeleteSelected;
 
   const _CacheListHeader({
     required this.selectedCount,
+    required this.selectableCount,
     required this.deleting,
+    required this.onSelectAll,
     required this.onCancelSelection,
     required this.onDeleteSelected,
   });
@@ -388,6 +414,14 @@ class _CacheListHeader extends StatelessWidget {
               style: SettingsPageStyle.secondary(context),
             ),
             const SizedBox(width: 8),
+            _SmallPathButton(
+              icon: Icons.select_all,
+              tooltip: l.selectAll,
+              onPressed: deleting || selectedCount >= selectableCount
+                  ? null
+                  : onSelectAll,
+            ),
+            const SizedBox(width: 4),
             _SmallPathButton(
               icon: Icons.close,
               tooltip: l.cancelSelection,
@@ -489,27 +523,35 @@ class _CacheEntryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      selected: selected,
-      onTap: () => onSelectedChanged(!selected),
-      leading: Checkbox(
-        value: selected,
-        onChanged: (value) => onSelectedChanged(value ?? false),
-      ),
-      title: Text(entry.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        [
-          l.cacheEntryBreakdown(AnalysisCache.formatBytes(entry.analysisBytes)),
-          if (entry.videoPath != null) entry.videoPath!,
-        ].join('\n'),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Text(
-        AnalysisCache.formatBytes(entry.cacheBytes),
-        style: theme.textTheme.labelLarge,
+    return Material(
+      type: MaterialType.transparency,
+      child: ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        selected: selected,
+        onTap: () => onSelectedChanged(!selected),
+        leading: Checkbox(
+          value: selected,
+          onChanged: (value) => onSelectedChanged(value ?? false),
+        ),
+        title: Text(entry.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          [
+            l.cacheEntryBreakdown(
+              AnalysisCache.formatBytes(entry.analysisBytes),
+            ),
+            if (entry.videoPath != null) entry.videoPath!,
+          ].join('\n'),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Padding(
+          padding: const EdgeInsets.only(right: _cacheListTrailingPadding),
+          child: Text(
+            AnalysisCache.formatBytes(entry.cacheBytes),
+            style: theme.textTheme.labelLarge,
+          ),
+        ),
       ),
     );
   }
@@ -523,12 +565,18 @@ class _UnindexedCacheTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.folder_copy_outlined),
-      title: Text(l.cacheUnindexed),
-      trailing: Text(AnalysisCache.formatBytes(bytes)),
+    return Material(
+      type: MaterialType.transparency,
+      child: ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.folder_copy_outlined),
+        title: Text(l.cacheUnindexed),
+        trailing: Padding(
+          padding: const EdgeInsets.only(right: _cacheListTrailingPadding),
+          child: Text(AnalysisCache.formatBytes(bytes)),
+        ),
+      ),
     );
   }
 }

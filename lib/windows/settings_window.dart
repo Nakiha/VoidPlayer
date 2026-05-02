@@ -170,6 +170,20 @@ class _ShortcutsPage extends StatelessWidget {
 class _AboutPage extends StatelessWidget {
   const _AboutPage();
 
+  static const _dependencies = [
+    ('Flutter / Dart SDK', 'BSD-3-Clause'),
+    ('FFmpeg 8.1 full build (gyan.dev)', 'GPL-3.0'),
+    ('VTM DecoderApp', 'BSD-3-Clause'),
+    ('Windows SDK: Direct3D 11 / DXGI / DWM', 'Microsoft SDK'),
+    ('spdlog', 'MIT'),
+    ('flutter_acrylic', 'MIT'),
+    ('window_manager', 'MIT'),
+    ('screen_retriever', 'MIT'),
+    ('desktop_drop', 'Apache-2.0'),
+    ('cupertino_icons', 'MIT'),
+    ('Dart packages: crypto, ffi, intl, logging, path', 'BSD-3-Clause'),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
@@ -181,18 +195,25 @@ class _AboutPage extends StatelessWidget {
           SettingsPageTitle(text: l.appTitle),
           const SizedBox(height: 4),
           Text(l.versionLabel, style: SettingsPageStyle.secondary(context)),
-          SettingsPageStyle.contentGap,
-          Text(l.appDescription, style: SettingsPageStyle.body(context)),
-          const SizedBox(height: 24),
-          Text(l.dependencies, style: SettingsPageStyle.sectionTitle(context)),
-          SettingsPageStyle.compactGap,
-          _depItem('Flutter', 'BSD-3-Clause'),
-          _depItem('FFmpeg', 'LGPL-2.1+'),
-          _depItem('Direct3D 11', 'MIT'),
-          _depItem('flutter_acrylic', 'MIT'),
-          _depItem('window_manager', 'MIT'),
-          const Spacer(),
+          const SizedBox(height: 4),
           Text(l.license, style: SettingsPageStyle.secondary(context)),
+          SettingsPageStyle.contentGap,
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                Text(l.appDescription, style: SettingsPageStyle.body(context)),
+                const SizedBox(height: 24),
+                Text(
+                  l.dependencies,
+                  style: SettingsPageStyle.sectionTitle(context),
+                ),
+                SettingsPageStyle.compactGap,
+                for (final dependency in _dependencies)
+                  _depItem(dependency.$1, dependency.$2),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -204,11 +225,12 @@ class _AboutPage extends StatelessWidget {
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 3),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: 180,
+              Expanded(
                 child: Text(name, style: SettingsPageStyle.body(context)),
               ),
+              const SizedBox(width: 16),
               Text(license, style: SettingsPageStyle.secondary(context)),
             ],
           ),

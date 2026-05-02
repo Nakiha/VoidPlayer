@@ -244,6 +244,9 @@
   "cacheSelectedCount": "{count} selected",
   "@cacheSelectedCount": { "description": "Selected analysis cache item count", "placeholders": { "count": { "type": "int" } } },
 
+  "selectAll": "Select all",
+  "@selectAll": { "description": "Select all cache list items tooltip" },
+
   "cancelSelection": "Cancel selection",
   "@cancelSelection": { "description": "Cancel cache list selection tooltip" },
 

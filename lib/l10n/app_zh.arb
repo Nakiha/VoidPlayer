@@ -90,6 +90,7 @@
   "copyCachePath": "复制缓存路径",
   "openCachePath": "打开缓存目录",
   "cacheSelectedCount": "已选择 {count} 项",
+  "selectAll": "全选",
   "cancelSelection": "取消选择",
   "deleteSelectedCache": "删除选中的缓存",
   "cacheDeleteConfirmMessage": "删除选中的 {count} 项分析缓存？正在使用的分析窗口可能会阻止删除。",

@@ -562,15 +562,15 @@ void VideoRendererPlugin::HandleMethodCall(
             return;
         }
         player_->set_audible_track(file_id);
-        result->Success(flutter::EncodableValue(nullptr));
+        result->Success(flutter::EncodableValue(std::monostate{}));
     } else if (method == "play") {
         if (!require_player()) return;
         player_->play();
-        result->Success(flutter::EncodableValue(nullptr));
+        result->Success(flutter::EncodableValue(std::monostate{}));
     } else if (method == "pause") {
         if (!require_player()) return;
         player_->pause();
-        result->Success(flutter::EncodableValue(nullptr));
+        result->Success(flutter::EncodableValue(std::monostate{}));
     } else if (method == "seek") {
         if (!require_player()) return;
         if (!method_call.arguments()) {
@@ -591,7 +591,7 @@ void VideoRendererPlugin::HandleMethodCall(
         spdlog::info("[VideoRendererPlugin] seek: pts={}us", pts);
         player_->seek(pts, vr::SeekType::Exact);
         spdlog::info("[VideoRendererPlugin] seek completed");
-        result->Success(flutter::EncodableValue(nullptr));
+        result->Success(flutter::EncodableValue(std::monostate{}));
     } else if (method == "resize") {
         if (!require_player()) return;
         if (!method_call.arguments()) {
@@ -619,7 +619,7 @@ void VideoRendererPlugin::HandleMethodCall(
             return;
         }
         player_->resize(w, h);
-        result->Success(flutter::EncodableValue(nullptr));
+        result->Success(flutter::EncodableValue(std::monostate{}));
     } else if (method == "setViewportBackgroundColor") {
         if (!require_player()) return;
         if (!method_call.arguments()) {
@@ -643,7 +643,7 @@ void VideoRendererPlugin::HandleMethodCall(
         const float g = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
         const float b = static_cast<float>(color & 0xFF) / 255.0f;
         player_->set_background_color(r, g, b, a);
-        result->Success(flutter::EncodableValue(nullptr));
+        result->Success(flutter::EncodableValue(std::monostate{}));
     } else if (method == "setSpeed") {
         if (!require_player()) return;
         if (!method_call.arguments()) {
@@ -666,15 +666,15 @@ void VideoRendererPlugin::HandleMethodCall(
             return;
         }
         player_->set_speed(speed);
-        result->Success(flutter::EncodableValue(nullptr));
+        result->Success(flutter::EncodableValue(std::monostate{}));
     } else if (method == "stepForward") {
         if (!require_player()) return;
         player_->step_forward();
-        result->Success(flutter::EncodableValue(nullptr));
+        result->Success(flutter::EncodableValue(std::monostate{}));
     } else if (method == "stepBackward") {
         if (!require_player()) return;
         player_->step_backward();
-        result->Success(flutter::EncodableValue(nullptr));
+        result->Success(flutter::EncodableValue(std::monostate{}));
     } else if (method == "currentPts") {
         int64_t pts = player_ ? player_->current_pts_us() : 0;
         result->Success(flutter::EncodableValue(pts));
@@ -755,7 +755,7 @@ void VideoRendererPlugin::HandleMethodCall(
             }
         }
         player_->apply_layout(ls);
-        result->Success(flutter::EncodableValue(nullptr));
+        result->Success(flutter::EncodableValue(std::monostate{}));
     } else if (method == "getTracks") {
         flutter::EncodableList tracks_list;
         if (player_) {
@@ -881,7 +881,7 @@ void VideoRendererPlugin::InitLogging(
         "[VideoRendererPlugin] Native logging reconfigured: level={}, file={}",
         level_str, config.file_path);
 
-    result->Success(flutter::EncodableValue(nullptr));
+    result->Success(flutter::EncodableValue(std::monostate{}));
     } catch (const std::bad_variant_access& e) {
         ReportMethodException(result.get(), "initLogging", e);
     } catch (const std::exception& e) {
@@ -1082,7 +1082,7 @@ void VideoRendererPlugin::DestroyPlayer(
     }
 
     spdlog::info("[VideoRendererPlugin] Destroyed player");
-    result->Success(flutter::EncodableValue(nullptr));
+    result->Success(flutter::EncodableValue(std::monostate{}));
     } catch (const std::exception& e) {
         ReportMethodException(result.get(), "DestroyPlayer", e);
     } catch (...) {
@@ -1181,7 +1181,7 @@ void VideoRendererPlugin::RemoveTrack(
 
     player_->remove_track(file_id);
     spdlog::info("[VideoRendererPlugin] Removed track: file_id={}", file_id);
-    result->Success(flutter::EncodableValue(nullptr));
+    result->Success(flutter::EncodableValue(std::monostate{}));
     } catch (const std::bad_variant_access& e) {
         ReportMethodException(result.get(), "removeTrack", e);
     } catch (const std::exception& e) {
@@ -1225,7 +1225,7 @@ void VideoRendererPlugin::SetTrackOffset(
 
     player_->set_track_offset(file_id, offset_us);
     spdlog::info("[VideoRendererPlugin] setTrackOffset: file_id={}, offset_us={}", file_id, offset_us);
-    result->Success(flutter::EncodableValue(nullptr));
+    result->Success(flutter::EncodableValue(std::monostate{}));
     } catch (const std::bad_variant_access& e) {
         ReportMethodException(result.get(), "setTrackOffset", e);
     } catch (const std::exception& e) {
@@ -1278,7 +1278,7 @@ void VideoRendererPlugin::SetLoopRange(
     }
 
     player_->set_loop_range(enabled, start_us, end_us);
-    result->Success(flutter::EncodableValue(nullptr));
+    result->Success(flutter::EncodableValue(std::monostate{}));
     } catch (const std::bad_variant_access& e) {
         ReportMethodException(result.get(), "setLoopRange", e);
     } catch (const std::exception& e) {

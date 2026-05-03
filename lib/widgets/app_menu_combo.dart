@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class AppMenuCombo<T> extends StatefulWidget {
   final T value;
@@ -47,6 +48,8 @@ class AppMenuCombo<T> extends StatefulWidget {
 class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
     with SingleTickerProviderStateMixin {
   final _anchorKey = GlobalKey();
+  final _layerLink = LayerLink();
+  final _focusNode = FocusNode(debugLabel: 'AppMenuCombo');
   OverlayEntry? _overlayEntry;
   late final AnimationController _animationController;
   late final Animation<double> _opacity;
@@ -58,6 +61,8 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
   static const _leadingGap = 8.0;
 
   bool get _isOpen => _overlayEntry != null;
+  bool _closing = false;
+  int? _highlightedIndex;
 
   @override
   void initState() {
@@ -84,6 +89,7 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
   void dispose() {
     _overlayEntry?.remove();
     _overlayEntry = null;
+    _focusNode.dispose();
     _animationController.dispose();
     super.dispose();
   }
@@ -100,8 +106,13 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
     final overlay = Overlay.of(context);
     if (_overlayEntry != null) return;
 
+    _closing = false;
+    _highlightedIndex = widget.items
+        .indexOf(widget.value)
+        .clamp(0, math.max(0, widget.items.length - 1));
     _overlayEntry = OverlayEntry(builder: _buildOverlay);
     overlay.insert(_overlayEntry!);
+    _focusNode.requestFocus();
     setState(() {});
     _animationController.forward(from: 0);
   }
@@ -112,6 +123,8 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
       onClosed?.call();
       return;
     }
+    if (_closing) return;
+    _closing = true;
     try {
       await _animationController.reverse();
     } finally {
@@ -120,8 +133,64 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
         _overlayEntry = null;
         if (mounted) setState(() {});
       }
+      _closing = false;
       onClosed?.call();
     }
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      if (_isOpen) {
+        _closeMenu();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      _moveHighlight(1);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      _moveHighlight(-1);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.space) {
+      _activateHighlighted();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _moveHighlight(int delta) {
+    if (!_isOpen) {
+      _openMenu();
+      return;
+    }
+    if (widget.items.isEmpty) return;
+    final current = (_highlightedIndex ?? widget.items.indexOf(widget.value))
+        .clamp(0, widget.items.length - 1)
+        .toInt();
+    _highlightedIndex = (current + delta).clamp(0, widget.items.length - 1);
+    _overlayEntry?.markNeedsBuild();
+  }
+
+  void _activateHighlighted() {
+    if (!_isOpen) {
+      _openMenu();
+      return;
+    }
+    final index = _highlightedIndex;
+    if (index == null || index < 0 || index >= widget.items.length) return;
+    final item = widget.items[index];
+    _closeMenu(
+      onClosed: () {
+        if (mounted && item != widget.value) {
+          widget.onChanged(item);
+        }
+      },
+    );
   }
 
   Widget _buildOverlay(BuildContext overlayContext) {
@@ -136,30 +205,36 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
             onTap: _closeMenu,
           ),
         ),
-        Positioned(
-          left: geometry.left,
-          top: geometry.top,
-          width: geometry.width,
+        CompositedTransformFollower(
+          link: _layerLink,
+          showWhenUnlinked: false,
+          targetAnchor: Alignment.topLeft,
+          followerAnchor: Alignment.topLeft,
+          offset: geometry.followerOffset,
           child: FadeTransition(
             opacity: _opacity,
-            child: _MenuSurface<T>(
-              value: widget.value,
-              items: widget.items,
-              labelFor: widget.labelFor,
+            child: SizedBox(
               width: geometry.width,
-              maxHeight: geometry.maxHeight,
-              itemHeight: widget.itemHeight,
-              itemPadding: widget.itemPadding,
-              textStyle: widget.menuTextStyle,
-              onSelected: (item) {
-                _closeMenu(
-                  onClosed: () {
-                    if (mounted && item != widget.value) {
-                      widget.onChanged(item);
-                    }
-                  },
-                );
-              },
+              child: _MenuSurface<T>(
+                value: widget.value,
+                items: widget.items,
+                labelFor: widget.labelFor,
+                highlightedIndex: _highlightedIndex,
+                width: geometry.width,
+                maxHeight: geometry.maxHeight,
+                itemHeight: widget.itemHeight,
+                itemPadding: widget.itemPadding,
+                textStyle: widget.menuTextStyle,
+                onSelected: (item) {
+                  _closeMenu(
+                    onClosed: () {
+                      if (mounted && item != widget.value) {
+                        widget.onChanged(item);
+                      }
+                    },
+                  );
+                },
+              ),
             ),
           ),
         ),
@@ -226,8 +301,10 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
           );
 
     return _MenuGeometry(
-      left: left.toDouble(),
-      top: top.toDouble(),
+      followerOffset: Offset(
+        left.toDouble() - anchorRect.left,
+        top.toDouble() - anchorRect.top,
+      ),
       width: width.toDouble(),
       maxHeight: maxHeight.toDouble(),
       opensUpward: opensUpward,
@@ -256,55 +333,62 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final labelStyle = widget.textStyle ?? theme.textTheme.bodySmall;
-    final child = SizedBox(
-      key: _anchorKey,
-      width: widget.width,
-      height: widget.height,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: widget.borderRadius,
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: _toggleMenu,
+    final child = CompositedTransformTarget(
+      link: _layerLink,
+      child: SizedBox(
+        key: _anchorKey,
+        width: widget.width,
+        height: widget.height,
+        child: Material(
+          color: Colors.transparent,
           borderRadius: widget.borderRadius,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: widget.backgroundColor,
-              border: widget.border,
-              borderRadius: widget.borderRadius,
-            ),
-            child: Padding(
-              padding: widget.buttonPadding,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.labelFor(widget.value),
-                      style: labelStyle,
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: _toggleMenu,
+            borderRadius: widget.borderRadius,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: widget.backgroundColor,
+                border: widget.border,
+                borderRadius: widget.borderRadius,
+              ),
+              child: Padding(
+                padding: widget.buttonPadding,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.labelFor(widget.value),
+                        style: labelStyle,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
                     ),
-                  ),
-                  AnimatedRotation(
-                    turns: _isOpen ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 120),
-                    curve: Curves.easeOutCubic,
-                    child: Icon(
-                      Icons.arrow_drop_down,
-                      size: widget.iconSize,
-                      color: theme.iconTheme.color,
+                    AnimatedRotation(
+                      turns: _isOpen ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 120),
+                      curve: Curves.easeOutCubic,
+                      child: Icon(
+                        Icons.arrow_drop_down,
+                        size: widget.iconSize,
+                        color: theme.iconTheme.color,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
         ),
       ),
     );
-    return widget.width == null
-        ? child
-        : SizedBox(width: widget.width, child: child);
+    return Focus(
+      focusNode: _focusNode,
+      onKeyEvent: _handleKeyEvent,
+      child: widget.width == null
+          ? child
+          : SizedBox(width: widget.width, child: child),
+    );
   }
 }
 
@@ -313,6 +397,7 @@ class _MenuSurface<T> extends StatelessWidget {
   final List<T> items;
   final String Function(T value) labelFor;
   final ValueChanged<T> onSelected;
+  final int? highlightedIndex;
   final double width;
   final double maxHeight;
   final double itemHeight;
@@ -324,6 +409,7 @@ class _MenuSurface<T> extends StatelessWidget {
     required this.items,
     required this.labelFor,
     required this.onSelected,
+    required this.highlightedIndex,
     required this.width,
     required this.maxHeight,
     required this.itemHeight,
@@ -348,11 +434,12 @@ class _MenuSurface<T> extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final item in items)
+              for (var i = 0; i < items.length; i++)
                 _MenuOption<T>(
-                  value: item,
-                  label: labelFor(item),
-                  selected: item == value,
+                  value: items[i],
+                  label: labelFor(items[i]),
+                  selected: items[i] == value,
+                  highlighted: highlightedIndex == i,
                   width: width,
                   height: itemHeight,
                   padding: itemPadding,
@@ -371,6 +458,7 @@ class _MenuOption<T> extends StatelessWidget {
   final T value;
   final String label;
   final bool selected;
+  final bool highlighted;
   final double width;
   final double height;
   final EdgeInsetsGeometry padding;
@@ -381,6 +469,7 @@ class _MenuOption<T> extends StatelessWidget {
     required this.value,
     required this.label,
     required this.selected,
+    required this.highlighted,
     required this.width,
     required this.height,
     required this.padding,
@@ -394,34 +483,39 @@ class _MenuOption<T> extends StatelessWidget {
     return SizedBox(
       width: width,
       height: height,
-      child: InkWell(
-        onTap: () => onSelected(value),
-        child: Padding(
-          padding: padding,
-          child: Row(
-            children: [
-              SizedBox(
-                width: _AppMenuComboState._leadingWidth,
-                child: selected
-                    ? Icon(
-                        Icons.check,
-                        size: 16,
-                        color: theme.colorScheme.primary,
-                      )
-                    : null,
-              ),
-              const SizedBox(width: _AppMenuComboState._leadingGap),
-              Expanded(
-                child: Text(
-                  label,
-                  style: (textStyle ?? theme.textTheme.bodySmall)?.copyWith(
-                    color: selected ? theme.colorScheme.primary : null,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
+      child: Material(
+        color: highlighted
+            ? theme.colorScheme.onSurface.withValues(alpha: 0.08)
+            : Colors.transparent,
+        child: InkWell(
+          onTap: () => onSelected(value),
+          child: Padding(
+            padding: padding,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: _AppMenuComboState._leadingWidth,
+                  child: selected
+                      ? Icon(
+                          Icons.check,
+                          size: 16,
+                          color: theme.colorScheme.primary,
+                        )
+                      : null,
                 ),
-              ),
-            ],
+                const SizedBox(width: _AppMenuComboState._leadingGap),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: (textStyle ?? theme.textTheme.bodySmall)?.copyWith(
+                      color: selected ? theme.colorScheme.primary : null,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -430,15 +524,13 @@ class _MenuOption<T> extends StatelessWidget {
 }
 
 class _MenuGeometry {
-  final double left;
-  final double top;
+  final Offset followerOffset;
   final double width;
   final double maxHeight;
   final bool opensUpward;
 
   const _MenuGeometry({
-    required this.left,
-    required this.top,
+    required this.followerOffset,
     required this.width,
     required this.maxHeight,
     required this.opensUpward,

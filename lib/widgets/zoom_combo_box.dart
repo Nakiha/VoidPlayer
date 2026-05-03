@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import 'app_menu_combo.dart';
 
 /// Zoom level dropdown using MenuAnchor for a cleaner Material 3 look.
 class ZoomComboBox extends StatelessWidget {
@@ -27,80 +28,17 @@ class ZoomComboBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
-    final currentValue = presets.contains(value) ? value : null;
 
-    return MenuAnchor(
-      alignmentOffset: const Offset(0, 4),
-      style: MenuStyle(
-        backgroundColor: WidgetStatePropertyAll(
-          theme.colorScheme.surfaceContainerHigh,
-        ),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-        padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(vertical: 4),
-        ),
-      ),
-      menuChildren: presets.map((v) {
-        final selected = v == currentValue;
-        return MenuItemButton(
-          leadingIcon: selected
-              ? Icon(Icons.check, size: 16, color: theme.colorScheme.primary)
-              : const SizedBox(width: 16),
-          requestFocusOnHover: false,
-          style: ButtonStyle(
-            padding: WidgetStatePropertyAll(
-              EdgeInsets.only(left: selected ? 8.0 : 12.0, right: 16),
-            ),
-          ),
-          onPressed: () => onChanged(v),
-          child: Text(
-            _label(v, l),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: selected ? theme.colorScheme.primary : null,
-            ),
-          ),
-        );
-      }).toList(),
-      builder: (context, controller, child) {
-        return SizedBox(
-          width: 76,
-          height: 32,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () {
-                if (controller.isOpen) {
-                  controller.close();
-                } else {
-                  controller.open();
-                }
-              },
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _label(value, l),
-                        style: theme.textTheme.bodySmall,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Icon(
-                      Icons.arrow_drop_down,
-                      size: 18,
-                      color: theme.iconTheme.color,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
+    return AppMenuCombo<double>(
+      width: 76,
+      height: 32,
+      value: value,
+      items: presets,
+      labelFor: (v) => _label(v, l),
+      onChanged: onChanged,
+      textStyle: theme.textTheme.bodySmall,
+      menuTextStyle: theme.textTheme.bodySmall,
+      maxMenuWidth: 220,
     );
   }
 }

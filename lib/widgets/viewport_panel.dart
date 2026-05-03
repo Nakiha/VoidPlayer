@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/pointer_gesture_utils.dart';
 import '../video_renderer_controller.dart';
 import '../windows/win32ffi.dart';
 
@@ -50,9 +51,6 @@ class _ViewportPanelState extends State<ViewportPanel> {
   Size _lastReportedLogicalSize = Size.zero;
   double _lastReportedDevicePixelRatio = 0.0;
   double _lastPanZoomScale = 1.0;
-
-  Offset _mouseZoomAnchor(double devicePixelRatio) =>
-      _lastMouseLocalPos * devicePixelRatio;
 
   void _syncDragButtons(
     int buttons,
@@ -292,11 +290,15 @@ class _ViewportPanelState extends State<ViewportPanel> {
         onPointerPanZoomStart: (_) => _resetPanZoom(),
         onPointerPanZoomUpdate: (e) {
           if (e.scale > 0 && e.scale.isFinite && _lastPanZoomScale > 0) {
+            final previousScale = _lastPanZoomScale;
             final scaleDelta = e.scale / _lastPanZoomScale;
             _lastPanZoomScale = e.scale;
-            if (scaleDelta != 1.0) {
+            final scaleIntent =
+                _panZoomScaling ||
+                isPanZoomScaleIntent(scale: e.scale, lastScale: previousScale);
+            if (scaleIntent && scaleDelta != 1.0) {
               _panZoomScaling = true;
-              _zoomByFactor(scaleDelta, _mouseZoomAnchor(devicePixelRatio));
+              _zoomByFactor(scaleDelta, e.localPosition * devicePixelRatio);
               return;
             }
           }

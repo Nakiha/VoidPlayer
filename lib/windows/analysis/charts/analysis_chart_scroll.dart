@@ -2,9 +2,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 
+export '../../../utils/pointer_gesture_utils.dart' show isPanZoomScaleIntent;
+
 const double _horizontalScrollDominanceRatio = 0.75;
 const double _scaleZoomLogStep = 0.04;
-const double _panZoomScaleIntentLogThreshold = 0.004;
 
 bool isChartHorizontalScrollIntent(Offset scrollDelta) {
   final dx = scrollDelta.dx.abs();
@@ -17,14 +18,6 @@ bool isChartZoomModifierPressed() => HardwareKeyboard.instance.isControlPressed;
 double chartZoomScrollDeltaForModifier(Offset scrollDelta) {
   if (scrollDelta.dy != 0) return scrollDelta.dy;
   return scrollDelta.dx;
-}
-
-bool isPanZoomScaleIntent({required double scale, required double lastScale}) {
-  if (scale <= 0 || lastScale <= 0 || !scale.isFinite || !lastScale.isFinite) {
-    return false;
-  }
-  return math.log(scale).abs() >= _panZoomScaleIntentLogThreshold ||
-      math.log(scale / lastScale).abs() >= _panZoomScaleIntentLogThreshold;
 }
 
 bool handleChartHorizontalScrollPan({

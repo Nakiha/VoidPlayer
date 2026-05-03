@@ -182,7 +182,7 @@ class MainWindowLayoutCoordinator {
     if (width == viewportWidth && height == viewportHeight) return;
     final previousWidth = viewportWidth;
     final previousHeight = viewportHeight;
-    if (previousWidth > 0 && previousHeight > 0) {
+    if (!_layoutDirty && previousWidth > 0 && previousHeight > 0) {
       _rescaleViewOffsetForResize(previousWidth, previousHeight, width, height);
     }
     viewportWidth = width;
@@ -234,6 +234,12 @@ class MainWindowLayoutCoordinator {
     _resizeDebounceTimer?.cancel();
     _resizeDebounceTimer = null;
     _resizeDirty = false;
+    if (_layoutDirty) {
+      final pendingLayout = layout();
+      _layoutDirty = false;
+      await controller.applyLayout(pendingLayout);
+      if (_disposed || !mounted()) return;
+    }
     if (previousWidth > 0 && previousHeight > 0) {
       _rescaleViewOffsetForResize(previousWidth, previousHeight, width, height);
     }
@@ -243,21 +249,25 @@ class MainWindowLayoutCoordinator {
   }
 
   void onZoomComboChanged(double value) {
-    if (_disposed) return;
-    _updateLayout((layout) => layout.copyWith(zoomRatio: value));
-    markLayoutDirty();
+    setZoom(value);
   }
 
   void markLayoutDirty() {
     if (_disposed) return;
     _layoutDirty = true;
-    _ticker?.start();
+    _startTicker();
   }
 
   void _markResizeDirty() {
     if (_disposed) return;
     _resizeDirty = true;
-    _ticker?.start();
+    _startTicker();
+  }
+
+  void _startTicker() {
+    final ticker = _ticker;
+    if (ticker == null || ticker.isActive) return;
+    ticker.start();
   }
 
   Future<void> flushPendingLayout() async {
@@ -276,13 +286,17 @@ class MainWindowLayoutCoordinator {
           final width = viewportWidth;
           final height = viewportHeight;
           _resizeDirty = false;
+          if (_layoutDirty) {
+            final pendingLayout = layout();
+            _layoutDirty = false;
+            await controller.applyLayout(pendingLayout);
+            if (_disposed || !mounted()) return;
+          }
           await controller.resize(width, height);
           if (_disposed || !mounted()) return;
-          if (!_layoutDirty) {
-            final nextLayout = await controller.getLayout();
-            if (_disposed || !mounted()) return;
-            setLayout(nextLayout);
-          }
+          final nextLayout = await controller.getLayout();
+          if (_disposed || !mounted()) return;
+          setLayout(nextLayout);
         } else if (_resizeDirty) {
           _resizeDirty = false;
         }
@@ -298,7 +312,7 @@ class MainWindowLayoutCoordinator {
       _flushInProgress = false;
       if (!_disposed && mounted()) {
         if (_resizeDirty || _layoutDirty) {
-          _ticker?.start();
+          _startTicker();
         } else {
           _ticker?.stop();
         }
@@ -310,7 +324,7 @@ class MainWindowLayoutCoordinator {
     setLayout(update(layout()));
   }
 
-  void _rescaleViewOffsetForResize(
+  bool _rescaleViewOffsetForResize(
     int oldWidth,
     int oldHeight,
     int newWidth,
@@ -319,7 +333,7 @@ class MainWindowLayoutCoordinator {
     final current = layout();
     final oldDisplay = _displayPixelSizeForLayout(oldWidth, oldHeight, current);
     final newDisplay = _displayPixelSizeForLayout(newWidth, newHeight, current);
-    if (oldDisplay == Size.zero || newDisplay == Size.zero) return;
+    if (oldDisplay == Size.zero || newDisplay == Size.zero) return false;
 
     var nextOffsetX = current.viewOffsetX;
     var nextOffsetY = current.viewOffsetY;
@@ -331,12 +345,13 @@ class MainWindowLayoutCoordinator {
     }
     if (nextOffsetX == current.viewOffsetX &&
         nextOffsetY == current.viewOffsetY) {
-      return;
+      return false;
     }
     _updateLayout(
       (layout) =>
           layout.copyWith(viewOffsetX: nextOffsetX, viewOffsetY: nextOffsetY),
     );
+    return true;
   }
 
   Size _displayPixelSizeForLayout(int width, int height, LayoutState layout) {

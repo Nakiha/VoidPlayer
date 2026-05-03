@@ -151,6 +151,14 @@ extension AnalysisPageTestRunner on AnalysisTestHost {
           );
         }
 
+      case _AnalysisTestCommand.assertReferenceEdges:
+        final minEdges = instr.intArg(0, defaultValue: 1);
+        log.info(
+          'AnalysisTestRunner ${instr.time}: '
+          'ASSERT_ANALYSIS_REFERENCE_EDGES $minEdges',
+        );
+        _assertAnalysisReferenceEdges(minEdges);
+
       case _AnalysisTestCommand.assertCounts:
         final frames = instr.intArg(0);
         final packets = instr.intArg(1);
@@ -292,6 +300,31 @@ extension AnalysisPageTestRunner on AnalysisTestHost {
       );
     }
   }
+
+  void _assertAnalysisReferenceEdges(int minEdges) {
+    _assertAnalysisLoaded();
+    final pocToCount = <int, int>{};
+    for (final f in analysisFrames) {
+      pocToCount[f.poc] = (pocToCount[f.poc] ?? 0) + 1;
+    }
+
+    var edges = 0;
+    for (final f in analysisFrames) {
+      for (var i = 0; i < f.numRefL0 && i < f.refPocsL0.length; i++) {
+        if ((pocToCount[f.refPocsL0[i]] ?? 0) > 0) edges++;
+      }
+      for (var i = 0; i < f.numRefL1 && i < f.refPocsL1.length; i++) {
+        if ((pocToCount[f.refPocsL1[i]] ?? 0) > 0) edges++;
+      }
+    }
+
+    if (edges < minEdges) {
+      throw AssertionError(
+        'Expected at least $minEdges resolvable reference edges, got $edges '
+        '(frames=${analysisFrames.length})',
+      );
+    }
+  }
 }
 
 enum _AnalysisTestCommand {
@@ -303,6 +336,7 @@ enum _AnalysisTestCommand {
   assertNaluName,
   assertSelectedFrame,
   assertSelectedFrameVisible,
+  assertReferenceEdges,
   setTab,
   assertTab,
   setOrder,
@@ -380,6 +414,8 @@ List<_AnalysisTestInstruction> _parseAnalysisTestScript(String path) {
         _AnalysisTestCommand.assertSelectedFrame,
       'ASSERT_ANALYSIS_SELECTED_FRAME_VISIBLE' =>
         _AnalysisTestCommand.assertSelectedFrameVisible,
+      'ASSERT_ANALYSIS_REFERENCE_EDGES' =>
+        _AnalysisTestCommand.assertReferenceEdges,
       'SET_ANALYSIS_TAB' => _AnalysisTestCommand.setTab,
       'ASSERT_ANALYSIS_TAB' => _AnalysisTestCommand.assertTab,
       'SET_ANALYSIS_ORDER' => _AnalysisTestCommand.setOrder,

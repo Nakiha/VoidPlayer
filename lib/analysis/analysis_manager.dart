@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
@@ -8,6 +9,7 @@ import '../config/app_config.dart';
 import 'analysis_cache.dart';
 import 'analysis_ffi.dart';
 import 'file_hash.dart';
+import 'nalu_types.dart';
 
 enum AnalysisState { idle, computingHash, generating, loading, loaded, error }
 
@@ -109,7 +111,7 @@ class AnalysisManager extends ChangeNotifier {
       return null;
     }
 
-    if (AnalysisCache.hasEntry(hash, videoPath: videoPath)) {
+    if (_hasUsableCacheEntry(hash, videoPath)) {
       log.info('[Analysis] cache hit for $hash');
       await _refreshCacheEntry(hash, fileName, videoPath);
       _setStateIfCurrent(stateSerial, AnalysisState.idle);
@@ -241,6 +243,89 @@ class AnalysisManager extends ChangeNotifier {
 
   bool _isStateCurrent(int serial) => serial == _stateSerial;
   bool _isLoadCurrent(int serial) => serial == _loadSerial;
+
+  bool _hasUsableCacheEntry(String hash, String videoPath) {
+    if (!AnalysisCache.hasEntry(hash, videoPath: videoPath)) return false;
+
+    AnalysisSession? session;
+    try {
+      session = AnalysisSession.open(AnalysisCache.analysisPath(hash));
+      if (session == null || !session.isOpen) {
+        log.info('[Analysis] cache stale for $hash: cannot open container');
+        return false;
+      }
+
+      final summary = session.summary;
+      if (summary.loaded == 0 ||
+          summary.packetCount <= 0 ||
+          summary.naluCount <= 0) {
+        log.info(
+          '[Analysis] cache stale for $hash: '
+          'loaded=${summary.loaded}, packets=${summary.packetCount}, '
+          'nalus=${summary.naluCount}',
+        );
+        return false;
+      }
+
+      final codec = analysisCodecFromValue(summary.codec);
+      if (_requiresVbs3FrameData(codec) && summary.frameCount <= 0) {
+        log.info(
+          '[Analysis] cache stale for $hash: codec=${analysisCodecName(codec)} '
+          'requires VBS3 frame data',
+        );
+        return false;
+      }
+      if (_isOlderThanFfmpegAnalyzer(hash, codec)) {
+        log.info(
+          '[Analysis] cache stale for $hash: codec=${analysisCodecName(codec)} '
+          'was generated before current FFmpeg analyzer',
+        );
+        return false;
+      }
+
+      return true;
+    } catch (e, stack) {
+      log.warning('[Analysis] cache validation failed for $hash: $e', e, stack);
+      return false;
+    } finally {
+      session?.close();
+    }
+  }
+
+  bool _requiresVbs3FrameData(AnalysisCodec codec) => switch (codec) {
+    AnalysisCodec.h264 ||
+    AnalysisCodec.hevc ||
+    AnalysisCodec.vvc ||
+    AnalysisCodec.vp9 ||
+    AnalysisCodec.mpeg2 => true,
+    AnalysisCodec.av1 || AnalysisCodec.unknown => false,
+  };
+
+  bool _isOlderThanFfmpegAnalyzer(String hash, AnalysisCodec codec) {
+    if (codec != AnalysisCodec.h264 && codec != AnalysisCodec.hevc) {
+      return false;
+    }
+    try {
+      final analysisFile = File(AnalysisCache.analysisPath(hash));
+      final analyzerFile = File(
+        p.join(
+          p.dirname(Platform.resolvedExecutable),
+          'tools',
+          'ffmpeg-analysis',
+          'void_ffmpeg_analyzer.exe',
+        ),
+      );
+      if (!analysisFile.existsSync() || !analyzerFile.existsSync()) {
+        return false;
+      }
+      return analysisFile.lastModifiedSync().isBefore(
+        analyzerFile.lastModifiedSync(),
+      );
+    } catch (e) {
+      log.warning('[Analysis] FFmpeg analyzer cache age check failed: $e');
+      return false;
+    }
+  }
 
   Future<bool> _generateAnalysisSerialized(String videoPath, String hash) {
     final previous = _generateQueue;

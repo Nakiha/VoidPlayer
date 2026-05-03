@@ -1045,18 +1045,32 @@ static bool generate_vvc_vbs3(const std::string& exe_dir,
     return vbs3_ok;
 }
 
-static bool generate_hevc_vbs3(const std::string& exe_dir,
-                               const std::string& /*data_dir*/,
-                               const char* video_path,
-                               const char* hash,
-                               const std::string& vbs3_out) {
+static const char* ffmpeg_analysis_codec_arg(VbiCodec codec) {
+    switch (codec) {
+    case VbiCodec::HEVC:  return "hevc";
+    case VbiCodec::H264:  return "h264";
+    case VbiCodec::VP9:   return "vp9";
+    case VbiCodec::MPEG2: return "mpeg2";
+    default:              return nullptr;
+    }
+}
+
+static bool generate_ffmpeg_vbs3(const std::string& exe_dir,
+                                 const char* video_path,
+                                 const char* hash,
+                                 VbiCodec codec,
+                                 const std::string& vbs3_out) {
+    const char* codec_arg = ffmpeg_analysis_codec_arg(codec);
+    if (!codec_arg) return false;
+
     const std::string analyzer_path = first_existing_tool_path({
         exe_dir + "\\tools\\ffmpeg-analysis\\void_ffmpeg_analyzer.exe",
         exe_dir + "\\tools\\ffmpeg-analysis\\void_hevc_analyzer.exe",
     });
-    spdlog::info("[Analysis] hevc producer={} exists={}",
+    spdlog::info("[Analysis] ffmpeg-analysis producer={} exists={} codec={}",
                  analyzer_path.empty() ? "(none)" : analyzer_path,
-                 !analyzer_path.empty());
+                 !analyzer_path.empty(),
+                 codec_arg);
     if (analyzer_path.empty()) return false;
 
     vr::win_utf8::delete_file_utf8(vbs3_out);
@@ -1064,7 +1078,7 @@ static bool generate_hevc_vbs3(const std::string& exe_dir,
     const std::string analyzer_log_path = make_analysis_tool_log_path(
         exe_dir, "ffmpeg_analysis", hash);
     const std::string cmd = "\"" + analyzer_path +
-        "\" --codec hevc --input \"" + video_path +
+        "\" --codec " + codec_arg + " --input \"" + video_path +
         "\" --vbs3 \"" + vbs3_out + "\"";
     spdlog::info("[Analysis] ffmpeg-analysis cmd: {}", cmd);
     spdlog::info("[Analysis] ffmpeg-analysis log: {}", analyzer_log_path);
@@ -1072,7 +1086,7 @@ static bool generate_hevc_vbs3(const std::string& exe_dir,
     spdlog::info("[Analysis] ffmpeg-analysis exit_code={}", analyzer_rc);
 
     const bool vbs3_ok = analyzer_rc == 0 && vr::win_utf8::file_exists_utf8(vbs3_out);
-    spdlog::info("[Analysis] hevc vbs3_out={} exists={}", vbs3_out, vbs3_ok);
+    spdlog::info("[Analysis] ffmpeg-analysis vbs3_out={} exists={}", vbs3_out, vbs3_ok);
     return vbs3_ok;
 }
 
@@ -1101,14 +1115,14 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
     spdlog::info("[Analysis] source codec={}", static_cast<int>(source_codec));
     if (source_codec == VbiCodec::VVC) {
         vbs3_generated = generate_vvc_vbs3(exe_dir, data_dir, video_path, hash, vbs3_tmp);
-    } else if (source_codec == VbiCodec::HEVC) {
-        vbs3_generated = generate_hevc_vbs3(exe_dir, data_dir, video_path, hash, vbs3_tmp);
+    } else if (ffmpeg_analysis_codec_arg(source_codec)) {
+        vbs3_generated = generate_ffmpeg_vbs3(exe_dir, video_path, hash, source_codec, vbs3_tmp);
     } else {
         spdlog::info("[Analysis] no VBS3 producer registered for codec={}",
                      static_cast<int>(source_codec));
     }
 
-    if ((source_codec == VbiCodec::VVC || source_codec == VbiCodec::HEVC) &&
+    if ((source_codec == VbiCodec::VVC || ffmpeg_analysis_codec_arg(source_codec)) &&
         (!vbs3_generated || !vr::win_utf8::file_exists_utf8(vbs3_tmp))) {
         spdlog::error("[Analysis] codec={} analysis requires VBS3, but no VBS3 section was generated",
                       static_cast<int>(source_codec));

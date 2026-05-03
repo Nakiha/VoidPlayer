@@ -1,0 +1,9 @@
+# Main window should generate VP9 analysis via the FFmpeg VBS3 producer.
+@WINDOW, 1280, 720
+0.2, SET_ANALYSIS_TEST_SCRIPT, ui_tests/analysis/child_vp9_codec.csv
+0.5, ADD_MEDIA, resources/video/vp9_10s_1920x1080.webm
+3.0, ASSERT_TRACK_COUNT, 1
+3.2, RUN_ANALYSIS
+4.0, WAIT_ANALYSIS_PROCESS_COUNT, 1, 45000
+5.0, ASSERT_ANALYSIS_PROCESS_COUNT, 1
+8.0, QUIT, 0

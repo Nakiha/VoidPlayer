@@ -86,11 +86,12 @@ class MainWindowLayoutCoordinator {
 
   void panByDelta(double dx, double dy) {
     if (_disposed) return;
+    final current = layout();
+    final nextOffsetX = current.viewOffsetX + dx;
+    final nextOffsetY = current.viewOffsetY + dy;
     _updateLayout(
-      (layout) => layout.copyWith(
-        viewOffsetX: layout.viewOffsetX + dx,
-        viewOffsetY: layout.viewOffsetY + dy,
-      ),
+      (layout) =>
+          layout.copyWith(viewOffsetX: nextOffsetX, viewOffsetY: nextOffsetY),
     );
     markLayoutDirty();
   }
@@ -103,14 +104,15 @@ class MainWindowLayoutCoordinator {
     setSplitPos(normalizedX);
   }
 
-  void onZoom(double scrollDelta, Offset localPos) {
+  void onZoom(double factor, Offset localPos) {
     if (_disposed) return;
+    if (factor <= 0 || !factor.isFinite || factor == 1.0) return;
     final currentLayout = layout();
-    final factor = scrollDelta > 0 ? 0.9 : 1.1;
     final newZoom = (currentLayout.zoomRatio * factor).clamp(
       LayoutState.zoomMin,
       LayoutState.zoomMax,
     );
+    if (newZoom == currentLayout.zoomRatio) return;
 
     if (newZoom == LayoutState.zoomMin && factor < 1.0) {
       _updateLayout(
@@ -146,15 +148,18 @@ class MainWindowLayoutCoordinator {
       slotH = viewportHeight.toDouble();
     }
 
+    final nextOffsetX =
+        actualFactor * currentLayout.viewOffsetX +
+        (1 - actualFactor) * (cursorX - 0.5) * slotW;
+    final nextOffsetY =
+        actualFactor * currentLayout.viewOffsetY +
+        (1 - actualFactor) * (cursorY - 0.5) * slotH;
+
     _updateLayout(
       (layout) => layout.copyWith(
         zoomRatio: newZoom,
-        viewOffsetX:
-            actualFactor * layout.viewOffsetX +
-            (1 - actualFactor) * (cursorX - 0.5) * slotW,
-        viewOffsetY:
-            actualFactor * layout.viewOffsetY +
-            (1 - actualFactor) * (cursorY - 0.5) * slotH,
+        viewOffsetX: nextOffsetX,
+        viewOffsetY: nextOffsetY,
       ),
     );
     markLayoutDirty();

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
@@ -14,7 +16,7 @@ class ViewportPanel extends StatefulWidget {
 
   final void Function(Offset delta) onPan;
   final void Function(double normalizedX) onSplit;
-  final void Function(double delta, Offset localPosition) onZoom;
+  final void Function(double factor, Offset localPosition) onZoom;
   final void Function(bool panning, bool splitting) onPointerButton;
   final void Function(int width, int height, double devicePixelRatio)? onResize;
 
@@ -37,13 +39,20 @@ class ViewportPanel extends StatefulWidget {
 
 class _ViewportPanelState extends State<ViewportPanel> {
   static const double _splitHandlePhysicalWidth = 4.0;
+  static const double _wheelScrollDeltaPerStep = 120.0;
+  static const double _wheelZoomFactorPerStep = 1.1;
 
   bool _panning = false;
   bool _splitting = false;
   bool _splitHandleDragging = false;
+  bool _panZoomScaling = false;
   Offset _lastMouseLocalPos = Offset.zero;
   Size _lastReportedLogicalSize = Size.zero;
   double _lastReportedDevicePixelRatio = 0.0;
+  double _lastPanZoomScale = 1.0;
+
+  Offset _mouseZoomAnchor(double devicePixelRatio) =>
+      _lastMouseLocalPos * devicePixelRatio;
 
   void _syncDragButtons(
     int buttons,
@@ -103,6 +112,24 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _splitHandleDragging = false;
     _splitting = false;
     widget.onPointerButton(false, false);
+  }
+
+  void _resetPanZoom() {
+    _lastPanZoomScale = 1.0;
+    _panZoomScaling = false;
+  }
+
+  void _zoomByFactor(double factor, Offset physicalLocalPosition) {
+    if (factor <= 0 || !factor.isFinite || factor == 1.0) return;
+    widget.onZoom(factor, physicalLocalPosition);
+  }
+
+  void _zoomByWheelDelta(double scrollDelta, Offset physicalLocalPosition) {
+    if (scrollDelta == 0.0 || !scrollDelta.isFinite) return;
+    final factor = math
+        .pow(_wheelZoomFactorPerStep, -scrollDelta / _wheelScrollDeltaPerStep)
+        .toDouble();
+    _zoomByFactor(factor, physicalLocalPosition);
   }
 
   void _clampSplitOnExit(BuildContext context, Offset localPosition) {
@@ -210,13 +237,15 @@ class _ViewportPanelState extends State<ViewportPanel> {
     }
     final devicePixelRatio = View.of(context).devicePixelRatio;
     return MouseRegion(
-      onEnter: (e) => _syncDragButtons(
-        e.buttons,
-        e.localPosition,
-        allowWin32Recovery: true,
-      ),
+      onEnter: (e) {
+        _lastMouseLocalPos = e.localPosition;
+        _syncDragButtons(e.buttons, e.localPosition, allowWin32Recovery: true);
+      },
       onExit: (e) => _clampSplitOnExit(context, e.localPosition),
       onHover: (e) {
+        if (!_panning && !_splitting) {
+          _lastMouseLocalPos = e.localPosition;
+        }
         _syncDragButtons(e.buttons, e.localPosition);
         _updateSplitFromLocalX(context, e.localPosition.dx);
       },
@@ -254,16 +283,31 @@ class _ViewportPanelState extends State<ViewportPanel> {
         },
         onPointerSignal: (e) {
           if (e is PointerScrollEvent) {
-            widget.onZoom(e.scrollDelta.dy, e.localPosition * devicePixelRatio);
+            _zoomByWheelDelta(
+              e.scrollDelta.dy,
+              e.localPosition * devicePixelRatio,
+            );
           }
         },
+        onPointerPanZoomStart: (_) => _resetPanZoom(),
         onPointerPanZoomUpdate: (e) {
-          // Trackpad two-finger scroll -> zoom
-          final panDelta = e.pan.dy;
-          if (panDelta != 0.0) {
-            widget.onZoom(panDelta, e.localPosition * devicePixelRatio);
+          if (e.scale > 0 && e.scale.isFinite && _lastPanZoomScale > 0) {
+            final scaleDelta = e.scale / _lastPanZoomScale;
+            _lastPanZoomScale = e.scale;
+            if (scaleDelta != 1.0) {
+              _panZoomScaling = true;
+              _zoomByFactor(scaleDelta, _mouseZoomAnchor(devicePixelRatio));
+              return;
+            }
+          }
+
+          if (_panZoomScaling) return;
+          final physicalPanDelta = e.panDelta * devicePixelRatio;
+          if (physicalPanDelta != Offset.zero) {
+            widget.onPan(physicalPanDelta);
           }
         },
+        onPointerPanZoomEnd: (_) => _resetPanZoom(),
         child: Stack(
           fit: StackFit.expand,
           children: [

@@ -883,7 +883,7 @@ void VideoRendererPlugin::InitLogging(
         "[VideoRendererPlugin] Native logging reconfigured: level={}, file={}",
         level_str, config.file_path);
 
-    result->Success(flutter::EncodableValue(std::monostate{}));
+    result->Success();
     } catch (const std::bad_variant_access& e) {
         ReportMethodException(result.get(), "initLogging", e);
     } catch (const std::exception& e) {

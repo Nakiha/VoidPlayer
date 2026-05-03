@@ -50,6 +50,9 @@ class _AnalysisReferencePyramidViewState
   int? _cachedSelectedFrameIdx;
   Set<String> _selectedChainEdges = const {};
   Set<int> _selectedChainNodes = const {};
+  double _lastPanZoomScale = 1.0;
+  double _scaleZoomAccumulator = 0.0;
+  bool _panZoomHasScaleIntent = false;
 
   @override
   void initState() {
@@ -108,6 +111,80 @@ class _AnalysisReferencePyramidViewState
     _selectedChainNodes = Set<int>.unmodifiable(selectedChainNodes);
   }
 
+  void _resetPanZoomScale() {
+    _lastPanZoomScale = 1.0;
+    _scaleZoomAccumulator = 0.0;
+    _panZoomHasScaleIntent = false;
+  }
+
+  void _handlePanZoomUpdate(
+    BuildContext chartContext,
+    PointerPanZoomUpdateEvent event,
+  ) {
+    final scaleIntent = isPanZoomScaleIntent(
+      scale: event.scale,
+      lastScale: _lastPanZoomScale,
+    );
+    _panZoomHasScaleIntent = _panZoomHasScaleIntent || scaleIntent;
+    if (!_panZoomHasScaleIntent) {
+      _handleScroll(chartContext, event.position, event.panDelta);
+      return;
+    }
+
+    final scaleDelta = event.scale / _lastPanZoomScale;
+    _lastPanZoomScale = event.scale;
+    final result = accumulateScaleZoomScrollDelta(
+      scaleDelta: scaleDelta,
+      accumulator: _scaleZoomAccumulator,
+    );
+    _scaleZoomAccumulator = result.accumulator;
+    final scrollDelta = result.scrollDelta;
+    if (scrollDelta == null) return;
+    widget.onZoom(scrollDelta);
+  }
+
+  void _handleScroll(
+    BuildContext chartContext,
+    Offset globalPosition,
+    Offset scrollDelta,
+  ) {
+    final box = chartContext.findRenderObject() as RenderBox;
+    final local = box.globalToLocal(globalPosition);
+    final axisH = box.size.height >= 96 ? analysisChartXAxisH : 0.0;
+    final chartH = (box.size.height - axisH).clamp(1.0, double.infinity);
+    if (isChartZoomModifierPressed()) {
+      final zoomDelta = chartZoomScrollDeltaForModifier(scrollDelta);
+      if (zoomDelta != 0) widget.onZoom(zoomDelta);
+      return;
+    }
+    if (handleChartHorizontalScrollPan(
+      scrollDelta: scrollDelta,
+      chartExtent: (box.size.width - analysisChartLabelW).clamp(
+        1.0,
+        double.infinity,
+      ),
+      viewStart: widget.viewStart,
+      viewEnd: widget.viewEnd,
+      total: widget.totalFrames.toDouble(),
+      onPan: widget.onPan,
+    )) {
+      return;
+    }
+
+    final inPlotContent = local.dx >= analysisChartLabelW && local.dy < chartH;
+    if (inPlotContent) {
+      panChartByWheel(
+        scrollDeltaY: scrollDelta.dy,
+        viewStart: widget.viewStart,
+        viewEnd: widget.viewEnd,
+        total: widget.totalFrames.toDouble(),
+        onPan: widget.onPan,
+      );
+    } else {
+      widget.onZoom(scrollDelta.dy);
+    }
+  }
+
   int? _frameIndexAtChartPosition(Offset local, Size size) {
     if (widget.frames.isEmpty) return null;
     final windowStart = widget.frameIndexBase;
@@ -160,33 +237,23 @@ class _AnalysisReferencePyramidViewState
     return Column(
       children: [
         Expanded(
-          child: Listener(
-            onPointerSignal: (signal) {
-              if (signal is PointerScrollEvent) {
-                final box = context.findRenderObject() as RenderBox;
-                final local = box.globalToLocal(signal.position);
-                final axisH = box.size.height >= 96 ? analysisChartXAxisH : 0.0;
-                final chartH = (box.size.height - axisH).clamp(
-                  1.0,
-                  double.infinity,
-                );
-                final inPlotContent =
-                    local.dx >= analysisChartLabelW && local.dy < chartH;
-                if (inPlotContent) {
-                  panChartByWheel(
-                    scrollDeltaY: signal.scrollDelta.dy,
-                    viewStart: widget.viewStart,
-                    viewEnd: widget.viewEnd,
-                    total: widget.totalFrames.toDouble(),
-                    onPan: widget.onPan,
+          child: Builder(
+            builder: (chartContext) => Listener(
+              onPointerSignal: (signal) {
+                if (signal is PointerScrollEvent) {
+                  _handleScroll(
+                    chartContext,
+                    signal.position,
+                    signal.scrollDelta,
                   );
-                } else {
-                  widget.onZoom(signal.scrollDelta.dy);
                 }
-              }
-            },
-            child: Builder(
-              builder: (chartContext) => MouseRegion(
+              },
+              onPointerPanZoomStart: (_) => _resetPanZoomScale(),
+              onPointerPanZoomUpdate: (event) {
+                _handlePanZoomUpdate(chartContext, event);
+              },
+              onPointerPanZoomEnd: (_) => _resetPanZoomScale(),
+              child: MouseRegion(
                 onExit: (_) => setState(() => _hoverPosition = null),
                 onHover: (event) {
                   final box = chartContext.findRenderObject() as RenderBox;
@@ -470,30 +537,26 @@ class _RefPyramidPainter extends CustomPainter {
       return const Color(0xFF52C41A); // B uni / P: green
     }
 
-    // Draw reference edges that affect the viewport. This includes offscreen
-    // sources/targets when the other endpoint is visible, preventing lines from
-    // popping in only when an offscreen source node enters the viewport.
-    final drawnEdges = <String>{};
-    final edgeCandidates = <int>{};
-    for (var i = visibleStart; i < visibleEnd; i++) {
-      edgeCandidates.add(i);
-      edgeCandidates.addAll(referenceCache.sourcesForRef(i));
-    }
-    for (final i in edgeCandidates) {
-      final refs = referenceCache.refsFor(i);
+    // Draw every cached edge whose segment intersects the plot. Tying edge
+    // candidates to visible integer frame slots makes long reference lines pop
+    // in/out during smooth trackpad panning while their geometry is still in
+    // view.
+    for (final entry in referenceCache.refsByIndex.entries) {
+      final i = entry.key;
+      if (i < windowStart || i >= windowEnd) continue;
+      final refs = entry.value;
       if (refs.isEmpty) continue;
       final from = posFor(i);
       final sourceVisible = endpointVisible(i);
 
       for (final ri in refs) {
-        final edgeKey = '$i:$ri';
-        if (!drawnEdges.add(edgeKey)) continue;
+        if (ri < windowStart || ri >= windowEnd) continue;
 
         final to = posFor(ri);
         final targetVisible = endpointVisible(ri);
+        final edgeKey = '$i:$ri';
         final isSelLine =
             selectedFrameIdx != null && selectedChainEdges.contains(edgeKey);
-        if (!sourceVisible && !targetVisible && !isSelLine) continue;
         if (!_segmentIntersectsRect(from, to, plotRect)) continue;
 
         final lineW = isSelLine
@@ -628,6 +691,8 @@ class _RefPyramidPainter extends CustomPainter {
       axisTop: chartH,
       labelW: labelW,
       frames: frames,
+      viewStart: viewStart - frameIndexBase,
+      viewEnd: viewEnd - frameIndexBase,
       visibleStart: visibleStart - frameIndexBase,
       visibleEnd: visibleEnd - frameIndexBase,
       ptsOrder: ptsOrder,

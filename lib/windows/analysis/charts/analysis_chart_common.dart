@@ -1,6 +1,10 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../../analysis/analysis_ffi.dart';
+import 'analysis_chart_scroll.dart';
+
+export 'analysis_chart_scroll.dart';
 
 const double analysisChartLabelW = 66.0;
 const double analysisChartXAxisH = 34.0;
@@ -59,6 +63,8 @@ void drawFrameXAxis({
   required double axisTop,
   required double labelW,
   required List<FrameInfo> frames,
+  required double viewStart,
+  required double viewEnd,
   required int visibleStart,
   required int visibleEnd,
   required bool ptsOrder,
@@ -106,17 +112,20 @@ void drawFrameXAxis({
   )..layout(maxWidth: labelW - 8);
   leftTp.paint(canvas, Offset(labelW - leftTp.width - 6, axisTop + 4));
 
-  final visibleCount = visibleEnd - visibleStart;
-  final maxTicks = visibleCount == 1
-      ? 1
-      : (plotW / 92).floor().clamp(2, visibleCount);
-  final step = (visibleCount / maxTicks).ceil().clamp(1, visibleCount);
+  final step = stableFrameTickStep(
+    visibleSpan: viewEnd - viewStart,
+    plotExtent: plotW,
+  );
+  final firstTick = firstStableFrameTick(viewStart, step);
+  final lastTick = viewEnd.ceil() + step;
 
-  var lastRight = plotLeft - 8;
-  for (var i = visibleStart; i < visibleEnd; i += step) {
+  canvas.save();
+  canvas.clipRect(Rect.fromLTRB(plotLeft, axisTop, plotRight, size.height));
+  var lastRight = double.negativeInfinity;
+  for (var i = firstTick; i <= lastTick; i += step) {
     if (i < 0 || i >= frames.length) continue;
+    if (i < visibleStart - step || i > visibleEnd + step) continue;
     final x = xForFrame(i);
-    if (x < plotLeft || x > plotRight) continue;
 
     final f = frames[i];
     final value = ptsOrder ? f.pts : f.dts;
@@ -132,18 +141,18 @@ void drawFrameXAxis({
       textAlign: TextAlign.center,
       textDirection: TextDirection.ltr,
     )..layout();
-    final minDrawX = plotLeft + 2;
-    final maxDrawX = (plotRight - tickTp.width - 2).clamp(
-      minDrawX,
-      double.infinity,
-    );
-    final drawX = (x - tickTp.width / 2).clamp(minDrawX, maxDrawX);
+    final drawX = x - tickTp.width / 2;
+    final drawRight = drawX + tickTp.width;
+    if (drawRight < plotLeft || drawX > plotRight) continue;
     if (drawX < lastRight + 8) continue;
 
-    canvas.drawLine(Offset(x, axisTop), Offset(x, axisTop + 4), tickPaint);
+    if (x >= plotLeft && x <= plotRight) {
+      canvas.drawLine(Offset(x, axisTop), Offset(x, axisTop + 4), tickPaint);
+    }
     tickTp.paint(canvas, Offset(drawX, axisTop + 4));
-    lastRight = drawX + tickTp.width;
+    lastRight = drawRight;
   }
+  canvas.restore();
 }
 
 class AnalysisChartScrollbar extends StatefulWidget {
@@ -168,37 +177,59 @@ class AnalysisChartScrollbarState extends State<AnalysisChartScrollbar> {
   double _dragStart = 0;
   double _dragOffsetStart = 0;
 
+  void _handleHorizontalScroll(Offset scrollDelta) {
+    final box = context.findRenderObject() as RenderBox?;
+    handleChartHorizontalScrollPan(
+      scrollDelta: scrollDelta,
+      chartExtent: box?.size.width ?? 0,
+      viewStart: widget.viewStart,
+      viewEnd: widget.viewEnd,
+      total: widget.total,
+      onPan: widget.onPan,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final trackH = 8.0;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onHorizontalDragStart: (details) {
-        _dragStart = details.globalPosition.dx;
-        _dragOffsetStart = widget.viewStart;
+    return Listener(
+      onPointerSignal: (event) {
+        if (event is PointerScrollEvent) {
+          _handleHorizontalScroll(event.scrollDelta);
+        }
       },
-      onHorizontalDragUpdate: (details) {
-        final box = context.findRenderObject() as RenderBox;
-        final trackW = box.size.width;
-        if (trackW <= 0) return;
-        final deltaPx = details.globalPosition.dx - _dragStart;
-        final viewSpan = widget.viewEnd - widget.viewStart;
-        final maxOffset = (widget.total - viewSpan).clamp(0.0, double.infinity);
-        final newOffset = (_dragOffsetStart + deltaPx / trackW * widget.total)
-            .clamp(0.0, maxOffset);
-        widget.onPan(newOffset);
-      },
-      child: CustomPaint(
-        painter: _ScrollbarPainter(
-          total: widget.total,
-          viewStart: widget.viewStart,
-          viewEnd: widget.viewEnd,
-          trackColor: theme.colorScheme.surfaceContainerHighest,
-          thumbColor: theme.colorScheme.onSurface.withValues(alpha: 0.3),
-          thumbHoverColor: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: (details) {
+          _dragStart = details.globalPosition.dx;
+          _dragOffsetStart = widget.viewStart;
+        },
+        onHorizontalDragUpdate: (details) {
+          final box = context.findRenderObject() as RenderBox;
+          final trackW = box.size.width;
+          if (trackW <= 0) return;
+          final deltaPx = details.globalPosition.dx - _dragStart;
+          final viewSpan = widget.viewEnd - widget.viewStart;
+          final maxOffset = (widget.total - viewSpan).clamp(
+            0.0,
+            double.infinity,
+          );
+          final newOffset = (_dragOffsetStart + deltaPx / trackW * widget.total)
+              .clamp(0.0, maxOffset);
+          widget.onPan(newOffset);
+        },
+        child: CustomPaint(
+          painter: _ScrollbarPainter(
+            total: widget.total,
+            viewStart: widget.viewStart,
+            viewEnd: widget.viewEnd,
+            trackColor: theme.colorScheme.surfaceContainerHighest,
+            thumbColor: theme.colorScheme.onSurface.withValues(alpha: 0.3),
+            thumbHoverColor: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+          ),
+          size: Size(Size.infinite.width, trackH),
         ),
-        size: Size(Size.infinite.width, trackH),
       ),
     );
   }

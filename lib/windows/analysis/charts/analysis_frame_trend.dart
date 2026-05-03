@@ -57,6 +57,114 @@ class AnalysisFrameTrendView extends StatefulWidget {
 
 class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
   double? _hoverX; // null = not hovering
+  double _lastPanZoomScale = 1.0;
+  double _scaleZoomAccumulator = 0.0;
+  bool _panZoomHasScaleIntent = false;
+
+  void _handleScroll(
+    BuildContext chartContext,
+    Offset globalPosition,
+    Offset scrollDelta,
+  ) {
+    final w = widget;
+    final box = chartContext.findRenderObject() as RenderBox;
+    final local = box.globalToLocal(globalPosition);
+    final axisH = box.size.height >= 96 ? analysisChartXAxisH : 0.0;
+    final chartH = (box.size.height - axisH).clamp(1.0, double.infinity);
+    if (isChartZoomModifierPressed()) {
+      final zoomDelta = chartZoomScrollDeltaForModifier(scrollDelta);
+      if (zoomDelta != 0) w.onZoom(zoomDelta);
+      return;
+    }
+    if (handleChartHorizontalScrollPan(
+      scrollDelta: scrollDelta,
+      chartExtent: (box.size.width - _frameTrendLabelW).clamp(
+        1.0,
+        double.infinity,
+      ),
+      viewStart: w.viewStart,
+      viewEnd: w.viewEnd,
+      total: w.totalFrames.toDouble(),
+      onPan: w.onPan,
+    )) {
+      return;
+    }
+
+    final upperH = chartH * 0.58;
+    final lowerTop = upperH + chartH * 0.05;
+    final lowerH = chartH * 0.32;
+    final inPlotContent = local.dx >= _frameTrendLabelW && local.dy < chartH;
+    if (inPlotContent) {
+      panChartByWheel(
+        scrollDeltaY: scrollDelta.dy,
+        viewStart: w.viewStart,
+        viewEnd: w.viewEnd,
+        total: w.totalFrames.toDouble(),
+        onPan: w.onPan,
+      );
+    } else if (local.dx < _frameTrendLabelW) {
+      if (local.dy <= upperH) {
+        w.onAxisZoom(AnalysisFrameTrendAxis.frameSize, scrollDelta.dy);
+      } else if (local.dy >= lowerTop && local.dy <= lowerTop + lowerH) {
+        w.onAxisZoom(AnalysisFrameTrendAxis.qp, scrollDelta.dy);
+      } else {
+        w.onZoom(scrollDelta.dy);
+      }
+    } else {
+      w.onZoom(scrollDelta.dy);
+    }
+  }
+
+  void _resetPanZoomScale() {
+    _lastPanZoomScale = 1.0;
+    _scaleZoomAccumulator = 0.0;
+    _panZoomHasScaleIntent = false;
+  }
+
+  void _handlePanZoomUpdate(
+    BuildContext chartContext,
+    PointerPanZoomUpdateEvent event,
+  ) {
+    final scaleIntent = isPanZoomScaleIntent(
+      scale: event.scale,
+      lastScale: _lastPanZoomScale,
+    );
+    _panZoomHasScaleIntent = _panZoomHasScaleIntent || scaleIntent;
+    if (!_panZoomHasScaleIntent) {
+      _handleScroll(chartContext, event.position, event.panDelta);
+      return;
+    }
+
+    final scaleDelta = event.scale / _lastPanZoomScale;
+    _lastPanZoomScale = event.scale;
+    final result = accumulateScaleZoomScrollDelta(
+      scaleDelta: scaleDelta,
+      accumulator: _scaleZoomAccumulator,
+    );
+    _scaleZoomAccumulator = result.accumulator;
+    final scrollDelta = result.scrollDelta;
+    if (scrollDelta == null) return;
+
+    final box = chartContext.findRenderObject() as RenderBox;
+    final local = box.globalToLocal(event.position);
+    final axisH = box.size.height >= 96 ? analysisChartXAxisH : 0.0;
+    final chartH = (box.size.height - axisH).clamp(1.0, double.infinity);
+    final upperH = chartH * 0.58;
+    final lowerTop = upperH + chartH * 0.05;
+    final lowerH = chartH * 0.32;
+
+    if (local.dx < _frameTrendLabelW) {
+      if (local.dy <= upperH) {
+        widget.onAxisZoom(AnalysisFrameTrendAxis.frameSize, scrollDelta);
+        return;
+      }
+      if (local.dy >= lowerTop && local.dy <= lowerTop + lowerH) {
+        widget.onAxisZoom(AnalysisFrameTrendAxis.qp, scrollDelta);
+        return;
+      }
+    }
+    widget.onZoom(scrollDelta);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -73,48 +181,18 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
               child: Listener(
                 onPointerSignal: (signal) {
                   if (signal is PointerScrollEvent) {
-                    final box = chartContext.findRenderObject() as RenderBox;
-                    final local = box.globalToLocal(signal.position);
-                    final axisH = box.size.height >= 96
-                        ? analysisChartXAxisH
-                        : 0.0;
-                    final chartH = (box.size.height - axisH).clamp(
-                      1.0,
-                      double.infinity,
+                    _handleScroll(
+                      chartContext,
+                      signal.position,
+                      signal.scrollDelta,
                     );
-                    final upperH = chartH * 0.58;
-                    final lowerTop = upperH + chartH * 0.05;
-                    final lowerH = chartH * 0.32;
-                    final inPlotContent =
-                        local.dx >= _frameTrendLabelW && local.dy < chartH;
-                    if (inPlotContent) {
-                      panChartByWheel(
-                        scrollDeltaY: signal.scrollDelta.dy,
-                        viewStart: w.viewStart,
-                        viewEnd: w.viewEnd,
-                        total: w.totalFrames.toDouble(),
-                        onPan: w.onPan,
-                      );
-                    } else if (local.dx < _frameTrendLabelW) {
-                      if (local.dy <= upperH) {
-                        w.onAxisZoom(
-                          AnalysisFrameTrendAxis.frameSize,
-                          signal.scrollDelta.dy,
-                        );
-                      } else if (local.dy >= lowerTop &&
-                          local.dy <= lowerTop + lowerH) {
-                        w.onAxisZoom(
-                          AnalysisFrameTrendAxis.qp,
-                          signal.scrollDelta.dy,
-                        );
-                      } else {
-                        w.onZoom(signal.scrollDelta.dy);
-                      }
-                    } else {
-                      w.onZoom(signal.scrollDelta.dy);
-                    }
                   }
                 },
+                onPointerPanZoomStart: (_) => _resetPanZoomScale(),
+                onPointerPanZoomUpdate: (event) {
+                  _handlePanZoomUpdate(chartContext, event);
+                },
+                onPointerPanZoomEnd: (_) => _resetPanZoomScale(),
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTapUp: (details) {
@@ -522,6 +600,8 @@ class _FrameTrendPainter extends CustomPainter {
         size: size,
         axisTop: chartH,
         labelW: labelW,
+        viewStart: viewStart,
+        viewEnd: viewEnd,
         visibleStart: visibleStart,
         visibleEnd: visibleEnd,
         xForFrame: (idx) => xForFrame(idx.toDouble() + 0.5),
@@ -533,6 +613,8 @@ class _FrameTrendPainter extends CustomPainter {
         axisTop: chartH,
         labelW: labelW,
         frames: frames,
+        viewStart: viewStart - frameIndexBase,
+        viewEnd: viewEnd - frameIndexBase,
         visibleStart: visibleStart - frameIndexBase,
         visibleEnd: visibleEnd - frameIndexBase,
         ptsOrder: ptsOrder,
@@ -583,6 +665,8 @@ class _FrameTrendPainter extends CustomPainter {
     required Size size,
     required double axisTop,
     required double labelW,
+    required double viewStart,
+    required double viewEnd,
     required int visibleStart,
     required int visibleEnd,
     required double Function(int idx) xForFrame,
@@ -597,24 +681,32 @@ class _FrameTrendPainter extends CustomPainter {
       Offset(size.width, axisTop),
       axisPaint,
     );
-    final tickCount = ((size.width - labelW) / 96).floor().clamp(2, 8).toInt();
-    final span = visibleEnd - visibleStart;
-    for (var i = 0; i <= tickCount; i++) {
-      final frameIdx = (visibleStart + span * i / tickCount).round();
-      final x = xForFrame(frameIdx).clamp(labelW, size.width);
-      canvas.drawLine(Offset(x, axisTop), Offset(x, axisTop + 4), axisPaint);
+    final step = stableFrameTickStep(
+      visibleSpan: viewEnd - viewStart,
+      plotExtent: size.width - labelW,
+    );
+    final firstTick = firstStableFrameTick(viewStart, step);
+    final lastTick = viewEnd.ceil() + step;
+    canvas.save();
+    canvas.clipRect(Rect.fromLTRB(labelW, axisTop, size.width, size.height));
+    for (var frameIdx = firstTick; frameIdx <= lastTick; frameIdx += step) {
+      if (frameIdx < visibleStart - step || frameIdx > visibleEnd + step) {
+        continue;
+      }
+      final x = xForFrame(frameIdx);
       final tp = TextPainter(
         text: TextSpan(text: '#$frameIdx', style: style),
         textDirection: TextDirection.ltr,
       )..layout();
-      tp.paint(
-        canvas,
-        Offset(
-          (x - tp.width / 2).clamp(labelW, size.width - tp.width),
-          axisTop + 5,
-        ),
-      );
+      final drawX = x - tp.width / 2;
+      if (drawX + tp.width < labelW || drawX > size.width) continue;
+
+      if (x >= labelW && x <= size.width) {
+        canvas.drawLine(Offset(x, axisTop), Offset(x, axisTop + 4), axisPaint);
+      }
+      tp.paint(canvas, Offset(drawX, axisTop + 5));
     }
+    canvas.restore();
   }
 
   static TextPainter _axisLabelPainter(

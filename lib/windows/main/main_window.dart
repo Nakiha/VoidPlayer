@@ -54,7 +54,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     final theme = Theme.of(context);
     final color = theme.brightness == Brightness.light
         ? theme.colorScheme.surfaceContainerHighest
-        : Colors.black;
+        : theme.colorScheme.surfaceContainerLowest;
     final value = color.toARGB32();
     if (_lastViewportBackgroundColor == value) return;
     _lastViewportBackgroundColor = value;

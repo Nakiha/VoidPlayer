@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../analysis/analysis_ffi.dart';
 import '../../../l10n/app_localizations.dart';
 import 'analysis_chart_common.dart';
+import 'reference_edge_index.dart';
 
 // Reference pyramid chart: circle nodes plus reference arrows.
 
@@ -311,10 +312,12 @@ class _AnalysisReferencePyramidViewState
 class _FrameReferenceCache {
   final Map<int, List<int>> refsByIndex;
   final Map<int, List<int>> sourcesByRefIndex;
+  final ReferenceEdgeSpanIndex edgeSpanIndex;
 
   const _FrameReferenceCache({
     required this.refsByIndex,
     required this.sourcesByRefIndex,
+    required this.edgeSpanIndex,
   });
 
   factory _FrameReferenceCache.build(
@@ -334,6 +337,7 @@ class _FrameReferenceCache {
 
     final refsByIndex = <int, List<int>>{};
     final sourcesByRefIndex = <int, List<int>>{};
+    final edges = <ReferenceEdgeSpan>[];
 
     for (var i = 0; i < frames.length; i++) {
       final f = frames[i];
@@ -361,6 +365,9 @@ class _FrameReferenceCache {
       refsByIndex[sourceIdx] = refList;
       for (final refIdx in refList) {
         (sourcesByRefIndex[refIdx] ??= <int>[]).add(sourceIdx);
+        edges.add(
+          ReferenceEdgeSpan(sourceIndex: sourceIdx, targetIndex: refIdx),
+        );
       }
     }
 
@@ -369,6 +376,9 @@ class _FrameReferenceCache {
       sourcesByRefIndex: sourcesByRefIndex.map(
         (idx, sources) => MapEntry(idx, List<int>.unmodifiable(sources)),
       ),
+      edgeSpanIndex: edges.isEmpty
+          ? ReferenceEdgeSpanIndex.empty
+          : ReferenceEdgeSpanIndex(edges),
     );
   }
 
@@ -537,40 +547,43 @@ class _RefPyramidPainter extends CustomPainter {
       return const Color(0xFF52C41A); // B uni / P: green
     }
 
-    // Draw every cached edge whose segment intersects the plot. Tying edge
-    // candidates to visible integer frame slots makes long reference lines pop
-    // in/out during smooth trackpad panning while their geometry is still in
-    // view.
-    for (final entry in referenceCache.refsByIndex.entries) {
-      final i = entry.key;
-      if (i < windowStart || i >= windowEnd) continue;
-      final refs = entry.value;
-      if (refs.isEmpty) continue;
+    final candidateEdges = referenceCache.edgeSpanIndex.query(
+      start: viewStart.floor().clamp(windowStart, windowEnd - 1).toInt(),
+      end: viewEnd.ceil().clamp(windowStart, windowEnd - 1).toInt(),
+      margin: 1,
+    );
+
+    // Draw indexed edge candidates whose segment intersects the plot. The
+    // small query margin keeps boundary lines stable during smooth panning.
+    for (final edge in candidateEdges) {
+      final i = edge.sourceIndex;
+      final ri = edge.targetIndex;
+      if (i < windowStart ||
+          i >= windowEnd ||
+          ri < windowStart ||
+          ri >= windowEnd) {
+        continue;
+      }
       final from = posFor(i);
       final sourceVisible = endpointVisible(i);
 
-      for (final ri in refs) {
-        if (ri < windowStart || ri >= windowEnd) continue;
+      final to = posFor(ri);
+      final targetVisible = endpointVisible(ri);
+      final isSelLine =
+          selectedFrameIdx != null && selectedChainEdges.contains(edge.key);
+      if (!_segmentIntersectsRect(from, to, plotRect)) continue;
 
-        final to = posFor(ri);
-        final targetVisible = endpointVisible(ri);
-        final edgeKey = '$i:$ri';
-        final isSelLine =
-            selectedFrameIdx != null && selectedChainEdges.contains(edgeKey);
-        if (!_segmentIntersectsRect(from, to, plotRect)) continue;
-
-        final lineW = isSelLine
-            ? 2.5
-            : (sourceVisible && targetVisible ? 1 : 0.8);
-        final baseAlpha = sourceVisible && targetVisible ? 0.5 : 0.36;
-        final arrowAlpha = isSelLine
-            ? 1.0
-            : (selectedFrameIdx != null ? baseAlpha * 0.4 : baseAlpha);
-        final arrowColor = frameFillColor(
-          frames[ri - frameIndexBase],
-        ).withValues(alpha: arrowAlpha);
-        _drawArrow(canvas, from, to, arrowColor, lineW.toDouble(), circleR);
-      }
+      final lineW = isSelLine
+          ? 2.5
+          : (sourceVisible && targetVisible ? 1 : 0.8);
+      final baseAlpha = sourceVisible && targetVisible ? 0.5 : 0.36;
+      final arrowAlpha = isSelLine
+          ? 1.0
+          : (selectedFrameIdx != null ? baseAlpha * 0.4 : baseAlpha);
+      final arrowColor = frameFillColor(
+        frames[ri - frameIndexBase],
+      ).withValues(alpha: arrowAlpha);
+      _drawArrow(canvas, from, to, arrowColor, lineW.toDouble(), circleR);
     }
     // --- Frame circles ---
     final related = <int>{};

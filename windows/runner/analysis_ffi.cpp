@@ -696,21 +696,23 @@ private:
     HANDLE handle_;
 };
 
-// Extract raw VVC Annex B bitstream from a video file using FFmpeg C API.
-// Uses vvc_mp4toannexb BSF for proper container→Annex B conversion
-// (handles extradata with parameter sets, AUD insertion, etc.).
-// Falls back to manual conversion if BSF unavailable.
-static bool extract_raw_vvc_to_sink(const std::string& video_path, RawVvcSink& sink) {
+// Extract a raw Annex B bitstream from a container using FFmpeg C API.
+// H.264/HEVC/VVC MP4 samples are length-prefixed, so use the matching
+// mp4toannexb BSF when available and fall back to a conservative manual path.
+static bool extract_raw_annex_b_to_sink(const std::string& video_path,
+                                        const char* bsf_name,
+                                        const char* log_label,
+                                        RawVvcSink& sink) {
     FfmpegOpenTimeout timeout;
     AVFormatContext* fmt_ctx = alloc_format_context_with_timeout(timeout, std::chrono::seconds(30));
     if (!fmt_ctx) {
-        spdlog::error("[Analysis] extract_raw_vvc: failed to allocate format context");
+        spdlog::error("[Analysis] {}: failed to allocate format context", log_label);
         return false;
     }
     int ret = avformat_open_input(&fmt_ctx, video_path.c_str(), nullptr, nullptr);
     if (ret < 0) {
         timeout.deadline_ns = 0;
-        spdlog::error("[Analysis] extract_raw_vvc: open failed: {:#x}", static_cast<unsigned>(ret));
+        spdlog::error("[Analysis] {}: open failed: {:#x}", log_label, static_cast<unsigned>(ret));
         if (fmt_ctx) avformat_close_input(&fmt_ctx);
         return false;
     }
@@ -718,7 +720,7 @@ static bool extract_raw_vvc_to_sink(const std::string& video_path, RawVvcSink& s
     ret = avformat_find_stream_info(fmt_ctx, nullptr);
     timeout.deadline_ns = 0;
     if (ret < 0) {
-        spdlog::error("[Analysis] extract_raw_vvc: find_stream_info failed: {:#x}", static_cast<unsigned>(ret));
+        spdlog::error("[Analysis] {}: find_stream_info failed: {:#x}", log_label, static_cast<unsigned>(ret));
         avformat_close_input(&fmt_ctx);
         return false;
     }
@@ -732,15 +734,14 @@ static bool extract_raw_vvc_to_sink(const std::string& video_path, RawVvcSink& s
         }
     }
     if (video_idx < 0) {
-        spdlog::error("[Analysis] extract_raw_vvc: no video stream found");
+        spdlog::error("[Analysis] {}: no video stream found", log_label);
         avformat_close_input(&fmt_ctx);
         return false;
     }
 
-    // Try vvc_mp4toannexb bitstream filter (handles extradata, AUD insertion)
     AVBSFContext* bsf_ctx = nullptr;
     bool use_bsf = false;
-    const AVBitStreamFilter* bsf = av_bsf_get_by_name("vvc_mp4toannexb");
+    const AVBitStreamFilter* bsf = av_bsf_get_by_name(bsf_name);
     if (bsf) {
         ret = av_bsf_alloc(bsf, &bsf_ctx);
         if (ret >= 0) {
@@ -748,15 +749,15 @@ static bool extract_raw_vvc_to_sink(const std::string& video_path, RawVvcSink& s
             ret = av_bsf_init(bsf_ctx);
             if (ret >= 0) {
                 use_bsf = true;
-                spdlog::info("[Analysis] extract_raw_vvc: using vvc_mp4toannexb BSF");
+                spdlog::info("[Analysis] {}: using {} BSF", log_label, bsf_name);
             } else {
-                spdlog::warn("[Analysis] extract_raw_vvc: BSF init failed: {:#x}, falling back to manual",
-                             static_cast<unsigned>(ret));
+                spdlog::warn("[Analysis] {}: BSF init failed: {:#x}, falling back to manual",
+                             log_label, static_cast<unsigned>(ret));
                 av_bsf_free(&bsf_ctx);
             }
         }
     } else {
-        spdlog::warn("[Analysis] extract_raw_vvc: vvc_mp4toannexb BSF not found, using manual conversion");
+        spdlog::warn("[Analysis] {}: {} BSF not found, using manual conversion", log_label, bsf_name);
     }
 
     static const uint8_t kStartCode4[] = {0, 0, 0, 1};
@@ -765,7 +766,7 @@ static bool extract_raw_vvc_to_sink(const std::string& video_path, RawVvcSink& s
 
     AVPacket* pkt = av_packet_alloc();
     if (!pkt) {
-        spdlog::error("[Analysis] extract_raw_vvc: failed to allocate packet");
+        spdlog::error("[Analysis] {}: failed to allocate packet", log_label);
         if (bsf_ctx) av_bsf_free(&bsf_ctx);
         avformat_close_input(&fmt_ctx);
         return false;
@@ -860,9 +861,14 @@ static bool extract_raw_vvc_to_sink(const std::string& video_path, RawVvcSink& s
     avformat_close_input(&fmt_ctx);
 
     const bool finished = sink.finish();
-    spdlog::info("[Analysis] extract_raw_vvc: {} packets, {} bytes written",
-                 pkt_count, total_written);
+    spdlog::info("[Analysis] {}: {} packets, {} bytes written",
+                 log_label, pkt_count, total_written);
     return total_written > 0 && finished;
+}
+
+static bool extract_raw_vvc_to_sink(const std::string& video_path, RawVvcSink& sink) {
+    return extract_raw_annex_b_to_sink(
+        video_path, "vvc_mp4toannexb", "extract_raw_vvc", sink);
 }
 
 static bool extract_raw_vvc(const std::string& video_path, const std::string& out_path) {
@@ -959,6 +965,117 @@ static int run_vtm_stdin_command(const std::string& cmd,
     return wrote ? static_cast<int>(exit_code) : -1;
 }
 
+static std::string make_analysis_tool_log_path(const std::string& exe_dir,
+                                               const char* tool_tag,
+                                               const char* hash) {
+    std::string logs_dir = exe_dir + "\\logs";
+    vr::win_utf8::create_directory_utf8(logs_dir);
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    char log_name[160];
+    snprintf(log_name, sizeof(log_name),
+             "%s_%04d-%02d-%02d_%02d%02d%02d_%s.log",
+             tool_tag,
+             st.wYear, st.wMonth, st.wDay,
+             st.wHour, st.wMinute, st.wSecond, hash);
+    return logs_dir + "\\" + log_name;
+}
+
+static std::string first_existing_tool_path(const std::vector<std::string>& paths) {
+    for (const auto& path : paths) {
+        if (vr::win_utf8::file_exists_utf8(path)) {
+            return path;
+        }
+    }
+    return {};
+}
+
+static bool generate_vvc_vbs3(const std::string& exe_dir,
+                              const std::string& data_dir,
+                              const char* video_path,
+                              const char* hash,
+                              const std::string& vbs3_out) {
+    const std::string decoder_path = exe_dir + "\\tools\\vtm\\DecoderApp.exe";
+    const bool decoder_exists = vr::win_utf8::file_exists_utf8(decoder_path);
+    spdlog::info("[Analysis] vvc producer={} exists={}", decoder_path, decoder_exists);
+    if (!decoder_exists) return false;
+
+    vr::win_utf8::delete_file_utf8(vbs3_out);
+
+    ScopedEnvVars env;
+    env.set("VTM_BINARY_STATS", vbs3_out);
+    env.set("VTM_BINARY_STATS_FORMAT", "VBS3");
+    env.set("VOID_VTM_STDIN_WINDOW_BYTES", "67108864");
+    env.set("VOID_VTM_STDIN_WINDOW_NALUS", "4096");
+    env.set("VOID_VTM_STDIN_HARD_CAP_BYTES", "268435456");
+
+    const std::string vtm_log_path = make_analysis_tool_log_path(exe_dir, "vtm", hash);
+    std::string cmd = "\"" + decoder_path +
+        "\" -b - --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
+    spdlog::info("[Analysis] vtm stdin cmd: {}", cmd);
+    spdlog::info("[Analysis] vtm log: {}", vtm_log_path);
+    const int vtm_rc = run_vtm_stdin_command(cmd, vtm_log_path, video_path);
+    spdlog::info("[Analysis] vtm stdin exit_code={}", vtm_rc);
+
+    bool vbs3_ok = vtm_rc == 0 && vr::win_utf8::file_exists_utf8(vbs3_out);
+    if (!vbs3_ok) {
+        spdlog::warn("[Analysis] VTM stdin generation failed, falling back to temp VVC file");
+        vr::win_utf8::delete_file_utf8(vbs3_out);
+
+        const std::string tmp_vvc = data_dir + "\\" + hash + ".tmp.vvc";
+        spdlog::info("[Analysis] extracting raw VVC to {}", tmp_vvc);
+        const bool demux_ok = extract_raw_vvc(video_path, tmp_vvc);
+        spdlog::info("[Analysis] extract_raw_vvc ok={}", demux_ok);
+
+        if (demux_ok && vr::win_utf8::file_exists_utf8(tmp_vvc)) {
+            const std::string fallback_cmd = "\"" + decoder_path + "\" -b \"" + tmp_vvc +
+                "\" --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
+            spdlog::info("[Analysis] vtm fallback cmd: {}", fallback_cmd);
+            const int fallback_rc = run_command(fallback_cmd, vtm_log_path);
+            spdlog::info("[Analysis] vtm fallback exit_code={}", fallback_rc);
+            vr::win_utf8::delete_file_utf8(tmp_vvc);
+            vbs3_ok = fallback_rc == 0 && vr::win_utf8::file_exists_utf8(vbs3_out);
+        } else {
+            spdlog::warn("[Analysis] raw VVC extraction failed, skipping VBS3 generation");
+            vr::win_utf8::delete_file_utf8(tmp_vvc);
+        }
+    }
+
+    spdlog::info("[Analysis] vvc vbs3_out={} exists={}", vbs3_out, vbs3_ok);
+    return vbs3_ok;
+}
+
+static bool generate_hevc_vbs3(const std::string& exe_dir,
+                               const std::string& /*data_dir*/,
+                               const char* video_path,
+                               const char* hash,
+                               const std::string& vbs3_out) {
+    const std::string analyzer_path = first_existing_tool_path({
+        exe_dir + "\\tools\\ffmpeg-analysis\\void_ffmpeg_analyzer.exe",
+        exe_dir + "\\tools\\ffmpeg-analysis\\void_hevc_analyzer.exe",
+    });
+    spdlog::info("[Analysis] hevc producer={} exists={}",
+                 analyzer_path.empty() ? "(none)" : analyzer_path,
+                 !analyzer_path.empty());
+    if (analyzer_path.empty()) return false;
+
+    vr::win_utf8::delete_file_utf8(vbs3_out);
+
+    const std::string analyzer_log_path = make_analysis_tool_log_path(
+        exe_dir, "ffmpeg_analysis", hash);
+    const std::string cmd = "\"" + analyzer_path +
+        "\" --codec hevc --input \"" + video_path +
+        "\" --vbs3 \"" + vbs3_out + "\"";
+    spdlog::info("[Analysis] ffmpeg-analysis cmd: {}", cmd);
+    spdlog::info("[Analysis] ffmpeg-analysis log: {}", analyzer_log_path);
+    const int analyzer_rc = run_command(cmd, analyzer_log_path);
+    spdlog::info("[Analysis] ffmpeg-analysis exit_code={}", analyzer_rc);
+
+    const bool vbs3_ok = analyzer_rc == 0 && vr::win_utf8::file_exists_utf8(vbs3_out);
+    spdlog::info("[Analysis] hevc vbs3_out={} exists={}", vbs3_out, vbs3_ok);
+    return vbs3_ok;
+}
+
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_generate(const char* video_path, const char* hash) {
     std::lock_guard<std::mutex> lock(g_analysis_generate_mutex);
@@ -977,81 +1094,24 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
     // Ensure data directory exists
     vr::win_utf8::create_directory_utf8(data_dir);
 
-    // ---- Step 0: VBS3 via VTM DecoderApp (optional) ----
+    // ---- Step 0: VBS3 via codec-specific decoder instrumentation ----
     VbiCodec source_codec = detect_analysis_codec(video_path);
-    std::string decoder_path = exe_dir + "\\tools\\vtm\\DecoderApp.exe";
-    bool decoder_exists = vr::win_utf8::file_exists_utf8(decoder_path);
-    spdlog::info("[Analysis] decoder={} exists={}, codec={}",
-                 decoder_path, decoder_exists, static_cast<int>(source_codec));
-
-    if (decoder_exists && source_codec == VbiCodec::VVC) {
-        std::string vbs3_out = data_dir + "\\" + hash + ".tmp.vbs3";
-        vr::win_utf8::delete_file_utf8(vbs3_out);
-
-        ScopedEnvVars env;
-        env.set("VTM_BINARY_STATS", vbs3_out);
-        env.set("VTM_BINARY_STATS_FORMAT", "VBS3");
-        env.set("VOID_VTM_STDIN_WINDOW_BYTES", "67108864");
-        env.set("VOID_VTM_STDIN_WINDOW_NALUS", "4096");
-        env.set("VOID_VTM_STDIN_HARD_CAP_BYTES", "268435456");
-
-        // Build VTM log path: logs/vtm_<timestamp>_<hash>.log
-        std::string logs_dir = exe_dir + "\\logs";
-        vr::win_utf8::create_directory_utf8(logs_dir);
-        SYSTEMTIME st;
-        GetLocalTime(&st);
-        char vtm_log_name[128];
-        snprintf(vtm_log_name, sizeof(vtm_log_name),
-                 "vtm_%04d-%02d-%02d_%02d%02d%02d_%s.log",
-                 st.wYear, st.wMonth, st.wDay,
-                 st.wHour, st.wMinute, st.wSecond, hash);
-        std::string vtm_log_path = logs_dir + "\\" + vtm_log_name;
-
-        // Run DecoderApp from the installed runtime tools/vtm directory.
-        std::string cmd = "\"" + decoder_path +
-            "\" -b - --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
-        spdlog::info("[Analysis] vtm stdin cmd: {}", cmd);
-        spdlog::info("[Analysis] vtm log: {}", vtm_log_path);
-        int vtm_rc = run_vtm_stdin_command(cmd, vtm_log_path, video_path);
-        spdlog::info("[Analysis] vtm stdin exit_code={}", vtm_rc);
-
-        bool vbs3_ok = vtm_rc == 0 && vr::win_utf8::file_exists_utf8(vbs3_out);
-        if (!vbs3_ok) {
-            spdlog::warn("[Analysis] VTM stdin generation failed, falling back to temp VVC file");
-            vr::win_utf8::delete_file_utf8(vbs3_out);
-
-            std::string tmp_vvc = data_dir + "\\" + hash + ".tmp.vvc";
-            spdlog::info("[Analysis] extracting raw VVC to {}", tmp_vvc);
-            bool demux_ok = extract_raw_vvc(video_path, tmp_vvc);
-            spdlog::info("[Analysis] extract_raw_vvc ok={}", demux_ok);
-
-            if (demux_ok && vr::win_utf8::file_exists_utf8(tmp_vvc)) {
-                std::string fallback_cmd = "\"" + decoder_path + "\" -b \"" + tmp_vvc +
-                    "\" --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
-                spdlog::info("[Analysis] vtm fallback cmd: {}", fallback_cmd);
-                int fallback_rc = run_command(fallback_cmd, vtm_log_path);
-                spdlog::info("[Analysis] vtm fallback exit_code={}", fallback_rc);
-                vr::win_utf8::delete_file_utf8(tmp_vvc);
-                vbs3_ok = fallback_rc == 0 && vr::win_utf8::file_exists_utf8(vbs3_out);
-            } else {
-                spdlog::warn("[Analysis] raw VVC extraction failed, skipping VBS3 generation");
-                vr::win_utf8::delete_file_utf8(tmp_vvc);
-            }
-        }
-
-        spdlog::info("[Analysis] vbs3_out={} exists={}", vbs3_out, vbs3_ok);
-        if (!vbs3_ok) {
-            spdlog::warn("[Analysis] VBS3 generation failed, continuing without VBS3");
-        } else {
-            vr::win_utf8::delete_file_utf8(data_dir + "\\" + hash + ".tmp.vvc");
-        }
-    } else if (decoder_exists) {
-        spdlog::info("[Analysis] skipping VBS3: VTM block statistics are VVC-only");
+    std::string vbs3_tmp = data_dir + "\\" + hash + ".tmp.vbs3";
+    bool vbs3_generated = false;
+    spdlog::info("[Analysis] source codec={}", static_cast<int>(source_codec));
+    if (source_codec == VbiCodec::VVC) {
+        vbs3_generated = generate_vvc_vbs3(exe_dir, data_dir, video_path, hash, vbs3_tmp);
+    } else if (source_codec == VbiCodec::HEVC) {
+        vbs3_generated = generate_hevc_vbs3(exe_dir, data_dir, video_path, hash, vbs3_tmp);
+    } else {
+        spdlog::info("[Analysis] no VBS3 producer registered for codec={}",
+                     static_cast<int>(source_codec));
     }
 
-    std::string vbs3_tmp = data_dir + "\\" + hash + ".tmp.vbs3";
-    if (source_codec == VbiCodec::VVC && !vr::win_utf8::file_exists_utf8(vbs3_tmp)) {
-        spdlog::error("[Analysis] VVC analysis requires VBS3, but no VBS3 section was generated");
+    if ((source_codec == VbiCodec::VVC || source_codec == VbiCodec::HEVC) &&
+        (!vbs3_generated || !vr::win_utf8::file_exists_utf8(vbs3_tmp))) {
+        spdlog::error("[Analysis] codec={} analysis requires VBS3, but no VBS3 section was generated",
+                      static_cast<int>(source_codec));
         vr::win_utf8::delete_file_utf8(vbs3_tmp);
         return 0;
     }

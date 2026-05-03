@@ -1,9 +1,11 @@
 # VBS3 Format
 
-VBS3 is the current native VBS payload format for VTM-derived block statistics.
-Runtime cache stores VBS3 as a section inside [VAC](VAC.md). It is written by
-the instrumented VTM `DecoderApp` when `VTM_BINARY_STATS_FORMAT=VBS3` is set,
-and read by `vr::analysis::Vbs3File`.
+VBS3 is the current native VBS payload format for codec decoder-derived block
+statistics. Runtime cache stores VBS3 as a section inside [VAC](VAC.md). The
+first producer is the instrumented VTM `DecoderApp` for VVC/H.266. Other codecs
+should write the same VBS3 payload from their own instrumented reference
+decoders/analyzers instead of synthesizing fallback frame rows. Runtime reads
+the payload with `vr::analysis::Vbs3File`.
 
 ## Why VBS3 Exists
 
@@ -27,8 +29,8 @@ overlay needs them.
 
 ## Compatibility Goals
 
-- Keep VBI and VBT semantics unchanged. VBS3 remains optional for non-VVC
-  packet/NALU analysis.
+- Keep VBI and VBT semantics unchanged. VBS3 is produced by whichever
+  codec-specific analyzer owns the source codec.
 - Native runtime reads VBS3 from VAC; `.vbs2` is legacy and is not used as a
   fallback.
 - Keep frame order aligned with VBT packet/frame order used by the current
@@ -39,9 +41,13 @@ overlay needs them.
 
 ## Producer And Reader
 
-- Producer: instrumented VTM `DecoderApp`
-- Writer switch: `VTM_BINARY_STATS=<path>` plus
-  `VTM_BINARY_STATS_FORMAT=VBS3`
+- Producers:
+  - VVC/H.266: instrumented VTM `DecoderApp`
+  - HEVC/H.265: planned instrumented FFmpeg analyzer
+- Writer switches:
+  - VTM: `VTM_BINARY_STATS=<path>` plus `VTM_BINARY_STATS_FORMAT=VBS3`
+  - FFmpeg analyzer CLI: `void_ffmpeg_analyzer.exe --codec hevc --input <path>
+    --vbs3 <path>`
 - Reader: `vr::analysis::Vbs3File`
 - Runtime container section: `VBS3`
 - Standalone test/tool extension: `.vbs3`

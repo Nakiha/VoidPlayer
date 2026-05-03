@@ -55,9 +55,16 @@ avformat_open_input → avformat_find_stream_info → av_read_frame 循环
        └── 写入 codec/unit_kind/offset/size/type/flags
 ```
 
-VBS3 生成由 VTM DecoderApp 外部进程完成（VVC 必需），通过 `analysis_ffi.cpp`
-调用。当前仍会生成临时 Annex-B `.tmp.vvc` 作为 VTM 输入；VAC 只保留最终
-VBS3/VBI2/VBT1 payload。
+VBS3 生成由 codec-specific decoder/analyzer 外部进程完成，通过
+`analysis_ffi.cpp` 调度：
+
+- VVC/H.266: instrumented VTM `DecoderApp`，安装到 `tools/vtm/`
+- HEVC/H.265: planned instrumented FFmpeg analyzer
+  `void_ffmpeg_analyzer.exe`，安装到 `tools/ffmpeg-analysis/`
+
+VVC 当前优先通过 stdin 喂给 VTM，失败时生成临时 Annex-B `.tmp.vvc`。
+HEVC/H.265 由 FFmpeg analyzer 自行 demux/decode 并写入 VBS3。VAC 只保留
+最终 VBS3/VBI2/VBT1 payload。
 
 ## 解析器
 
@@ -74,7 +81,7 @@ VBS3/VBI2/VBT1 payload。
 
 | FFI 函数 | 功能 |
 |----------|------|
-| `naki_analysis_generate` | 生成 `.vac` 容器：VBI+VBT（C++ FFmpeg），VVC 追加 VBS3（VTM DecoderApp） |
+| `naki_analysis_generate` | 生成 `.vac` 容器：VBI+VBT（C++ FFmpeg），按 codec 追加 VBS3（VTM/FFmpeg analyzer/...） |
 | `naki_analysis_load/unload` | 加载/卸载 VAC 分析容器到内存 |
 | `naki_analysis_get_summary` | 返回概要（帧数/分辨率/time_base/当前帧） |
 | `naki_analysis_get_frames` | 返回帧信息数组（VBS3+VBT 合并） |

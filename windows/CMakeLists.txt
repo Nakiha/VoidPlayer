@@ -142,3 +142,16 @@ if(VTM_DECODER_GLOB)
     DESTINATION "${CMAKE_INSTALL_PREFIX}/tools/vtm"
     COMPONENT Runtime)
 endif()
+
+# FFmpeg-based analysis tool (optional — HEVC/H.264/... VBS3 generation).
+# The analyzer is built out-of-band from the instrumented FFmpeg submodule.
+file(GLOB_RECURSE FFMPEG_ANALYSIS_GLOB
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/vendor/ffmpeg/bin/windows-x64/void_ffmpeg_analyzer.exe"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/vendor/ffmpeg/bin/windows-x64/void_hevc_analyzer.exe")
+if(FFMPEG_ANALYSIS_GLOB)
+  foreach(FFMPEG_ANALYZER IN LISTS FFMPEG_ANALYSIS_GLOB)
+    install(FILES "${FFMPEG_ANALYZER}"
+      DESTINATION "${CMAKE_INSTALL_PREFIX}/tools/ffmpeg-analysis"
+      COMPONENT Runtime)
+  endforeach()
+endif()

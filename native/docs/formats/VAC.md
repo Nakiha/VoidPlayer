@@ -23,7 +23,7 @@ file.
 AnalysisContainerHeader
 AnalysisContainerSectionEntry[section_count]
 section payloads
-  VBS3 bytes (optional, required for VVC frame summaries)
+  VBS3 bytes (optional section, required by codecs whose frame views need block statistics)
   VBI2 bytes
   VBT1 bytes
 ```
@@ -62,14 +62,14 @@ of the `.vac` file. Section payload bytes are unmodified inner files.
 |---|---:|---|
 | `VBI2` | Yes | Complete VBI2 bitstream-unit index bytes. |
 | `VBT1` | Yes | Complete VBT1 packet timing bytes. |
-| `VBS3` | Optional | Complete VBS3 block statistics bytes. Required for VVC frame/charts. |
+| `VBS3` | Optional | Complete VBS3 block statistics bytes from the codec-specific analyzer. Required for VVC/HEVC frame charts once those producers are enabled. |
 
 ## Generation Notes
 
 The current generator still has two stages:
 
-1. VVC only: extract a temporary Annex-B `.tmp.vvc` and let VTM write temporary
-   `.tmp.vbs3`.
+1. Codec-specific VBS3 producer: VVC extracts or streams Annex-B input to VTM;
+   HEVC is handled by the planned FFmpeg analyzer.
 2. FFmpeg pass: write temporary `.tmp.vbi` and `.tmp.vbt`.
 3. Pack the temporary files into `<hash>.vac`, then delete the temporary
    analysis files.

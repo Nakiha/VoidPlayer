@@ -54,10 +54,34 @@ AVFormatContext* alloc_format_context_with_timeout(FfmpegOpenTimeout& timeout,
 
 } // namespace
 
+class OutputBudget {
+public:
+    explicit OutputBudget(uint64_t max_bytes) : max_bytes_(max_bytes) {}
+
+    bool reserve(uint64_t bytes) {
+        if (max_bytes_ > 0 && bytes > max_bytes_ - used_) {
+            spdlog::warn("[AnalysisGen] output limit exceeded: used={} add={} max={}",
+                         used_, bytes, max_bytes_);
+            return false;
+        }
+        used_ += bytes;
+        return true;
+    }
+
+private:
+    uint64_t max_bytes_ = 0;
+    uint64_t used_ = 0;
+};
+
 class VbtStreamWriter {
 public:
-    bool open(const std::string& path, int32_t time_base_num, int32_t time_base_den) {
+    bool open(const std::string& path,
+              int32_t time_base_num,
+              int32_t time_base_den,
+              OutputBudget* budget = nullptr) {
         path_ = path;
+        budget_ = budget;
+        if (budget_ && !budget_->reserve(sizeof(VbtHeader))) return false;
         out_.open(win_utf8::path_from_utf8(path), std::ios::binary);
         if (!out_) return false;
 
@@ -72,6 +96,7 @@ public:
 
     bool append(const VbtEntry& entry) {
         if (!out_ || count_ == UINT32_MAX) return false;
+        if (budget_ && !budget_->reserve(sizeof(VbtEntry))) return false;
         out_.write(reinterpret_cast<const char*>(&entry), sizeof(entry));
         if (!out_) return false;
         ++count_;
@@ -99,12 +124,18 @@ private:
     std::ofstream out_;
     VbtHeader header_{};
     uint32_t count_ = 0;
+    OutputBudget* budget_ = nullptr;
 };
 
 class VbiStreamWriter {
 public:
-    bool open(const std::string& path, VbiCodec codec, VbiUnitKind unit_kind) {
+    bool open(const std::string& path,
+              VbiCodec codec,
+              VbiUnitKind unit_kind,
+              OutputBudget* budget = nullptr) {
         path_ = path;
+        budget_ = budget;
+        if (budget_ && !budget_->reserve(sizeof(VbiHeader))) return false;
         out_.open(win_utf8::path_from_utf8(path), std::ios::binary);
         if (!out_) return false;
 
@@ -121,6 +152,7 @@ public:
 
     bool append(const VbiEntry& entry) {
         if (!out_ || count_ == UINT32_MAX) return false;
+        if (budget_ && !budget_->reserve(sizeof(VbiEntry))) return false;
         out_.write(reinterpret_cast<const char*>(&entry), sizeof(entry));
         if (!out_) return false;
         ++count_;
@@ -159,11 +191,13 @@ private:
     VbiHeader header_{};
     uint32_t count_ = 0;
     uint64_t source_size_ = 0;
+    OutputBudget* budget_ = nullptr;
 };
 
 static bool generateRawOnly(const std::string& video_path,
                             const std::string& vbi_path,
-                            const std::string& vbt_path) {
+                            const std::string& vbt_path,
+                            uint64_t max_output_bytes = 0) {
     VbiCodec codec = BitstreamIndexer::codec_from_path(video_path);
     if (codec == VbiCodec::Unknown) {
         return false;
@@ -173,10 +207,11 @@ static bool generateRawOnly(const std::string& video_path,
     int32_t tb_den = 60;
     VbtStreamWriter vbt_writer;
     VbiStreamWriter vbi_writer;
-    if (!vbt_writer.open(vbt_path, tb_num, tb_den)) {
+    OutputBudget budget(max_output_bytes);
+    if (!vbt_writer.open(vbt_path, tb_num, tb_den, &budget)) {
         return false;
     }
-    if (!vbi_writer.open(vbi_path, codec, BitstreamIndexer::unit_kind_for_codec(codec))) {
+    if (!vbi_writer.open(vbi_path, codec, BitstreamIndexer::unit_kind_for_codec(codec), &budget)) {
         vbt_writer.close();
         return false;
     }
@@ -341,19 +376,20 @@ static bool append_filtered_packets(AVBSFContext* bsf,
 
 bool AnalysisGenerator::generate(const std::string& video_path,
                                  const std::string& vbi_path,
-                                 const std::string& vbt_path) {
+                                 const std::string& vbt_path,
+                                 uint64_t max_output_bytes) {
     FfmpegOpenTimeout timeout;
     AVFormatContext* fmt_ctx = alloc_format_context_with_timeout(timeout, std::chrono::seconds(30));
     if (!fmt_ctx) {
         spdlog::error("[AnalysisGen] failed to allocate format context");
-        return generateRawOnly(video_path, vbi_path, vbt_path);
+        return generateRawOnly(video_path, vbi_path, vbt_path, max_output_bytes);
     }
     int ret = avformat_open_input(&fmt_ctx, video_path.c_str(), nullptr, nullptr);
     if (ret < 0) {
         timeout.deadline_ns = 0;
         spdlog::error("[AnalysisGen] avformat_open_input failed: {:#x}", static_cast<unsigned>(ret));
         if (fmt_ctx) avformat_close_input(&fmt_ctx);
-        return generateRawOnly(video_path, vbi_path, vbt_path);
+        return generateRawOnly(video_path, vbi_path, vbt_path, max_output_bytes);
     }
 
     ret = avformat_find_stream_info(fmt_ctx, nullptr);
@@ -361,7 +397,7 @@ bool AnalysisGenerator::generate(const std::string& video_path,
     if (ret < 0) {
         spdlog::error("[AnalysisGen] avformat_find_stream_info failed: {:#x}", static_cast<unsigned>(ret));
         avformat_close_input(&fmt_ctx);
-        return generateRawOnly(video_path, vbi_path, vbt_path);
+        return generateRawOnly(video_path, vbi_path, vbt_path, max_output_bytes);
     }
 
     // Find video stream
@@ -375,7 +411,7 @@ bool AnalysisGenerator::generate(const std::string& video_path,
     if (video_idx < 0) {
         spdlog::error("[AnalysisGen] no video stream found");
         avformat_close_input(&fmt_ctx);
-        return generateRawOnly(video_path, vbi_path, vbt_path);
+        return generateRawOnly(video_path, vbi_path, vbt_path, max_output_bytes);
     }
 
     AVRational time_base = fmt_ctx->streams[video_idx]->time_base;
@@ -392,13 +428,14 @@ bool AnalysisGenerator::generate(const std::string& video_path,
 
     // Single-pass: append VBI and VBT data as it is discovered. Headers are
     // patched with final counts after the scan completes.
+    OutputBudget budget(max_output_bytes);
     VbtStreamWriter vbt_writer;
-    if (!vbt_writer.open(vbt_path, tb_num, tb_den)) {
+    if (!vbt_writer.open(vbt_path, tb_num, tb_den, &budget)) {
         avformat_close_input(&fmt_ctx);
         return false;
     }
     VbiStreamWriter vbi_writer;
-    if (!vbi_writer.open(vbi_path, codec, BitstreamIndexer::unit_kind_for_codec(codec))) {
+    if (!vbi_writer.open(vbi_path, codec, BitstreamIndexer::unit_kind_for_codec(codec), &budget)) {
         vbt_writer.close();
         avformat_close_input(&fmt_ctx);
         return false;
@@ -510,7 +547,7 @@ bool AnalysisGenerator::generate(const std::string& video_path,
     if (vbt_writer.count() == 0) {
         vbt_writer.close();
         vbi_writer.close();
-        if (generateRawOnly(video_path, vbi_path, vbt_path)) {
+        if (generateRawOnly(video_path, vbi_path, vbt_path, max_output_bytes)) {
             spdlog::info("[AnalysisGen] raw fallback synthesized VBT/VBI from raw units");
             return true;
         }

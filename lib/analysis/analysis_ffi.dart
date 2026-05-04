@@ -152,8 +152,8 @@ typedef _GetFrameBucketsDart =
 typedef _SetOverlayNative = Void Function(Pointer<NakiOverlayState>);
 typedef _SetOverlayDart = void Function(Pointer<NakiOverlayState>);
 
-typedef _GenerateNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>);
-typedef _GenerateDart = int Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef _GenerateNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Int64);
+typedef _GenerateDart = int Function(Pointer<Utf8>, Pointer<Utf8>, int);
 
 typedef _OpenNative = Pointer<Void> Function(Pointer<Utf8>);
 typedef _OpenDart = Pointer<Void> Function(Pointer<Utf8>);
@@ -693,11 +693,15 @@ class AnalysisFfi {
   /// [videoPath] is the source video file.
   /// [hash] is used as the base name for the output container.
   /// Returns true on success.
-  static bool generateAnalysis(String videoPath, String hash) {
+  static bool generateAnalysis(
+    String videoPath,
+    String hash,
+    int maxCacheBytes,
+  ) {
     final video = videoPath.toNativeUtf8(allocator: calloc);
     final hashStr = hash.toNativeUtf8(allocator: calloc);
     try {
-      return _generate(video, hashStr) != 0;
+      return _generate(video, hashStr, maxCacheBytes) != 0;
     } finally {
       calloc.free(video);
       calloc.free(hashStr);

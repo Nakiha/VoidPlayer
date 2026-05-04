@@ -34,6 +34,7 @@ class MainWindowAnalysisCoordinator {
 
   Future<void> _triggerAnalysisImpl(int serial) async {
     if (trackManager.isEmpty) return;
+    if (WindowManager.activateAnalysisWindows()) return;
     final mgr = AnalysisManager.instance;
     final windows = <AnalysisWindowRequest>[];
     await _ipcServer.start();

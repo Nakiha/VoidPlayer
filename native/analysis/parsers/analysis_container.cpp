@@ -27,7 +27,10 @@ uint64_t file_size(const std::string& path) {
     return size < 0 ? 0 : static_cast<uint64_t>(size);
 }
 
-bool copy_file_bytes(std::ofstream& out, const std::string& path) {
+bool copy_file_bytes_limited(std::ofstream& out,
+                             const std::string& path,
+                             uint64_t max_output_bytes,
+                             uint64_t& output_bytes) {
     std::ifstream in(win_utf8::path_from_utf8(path), std::ios::binary);
     if (!in) return false;
 
@@ -36,8 +39,13 @@ bool copy_file_bytes(std::ofstream& out, const std::string& path) {
         in.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
         const auto n = in.gcount();
         if (n > 0) {
+            const auto bytes = static_cast<uint64_t>(n);
+            if (max_output_bytes > 0 && bytes > max_output_bytes - output_bytes) {
+                return false;
+            }
             out.write(buffer.data(), n);
             if (!out) return false;
+            output_bytes += bytes;
         }
     }
     return in.eof();
@@ -116,7 +124,8 @@ const AnalysisContainerSectionEntry* AnalysisContainerFile::section(const char t
 bool write_analysis_container(const std::string& path,
                               const std::string& vbs4_path,
                               const std::string& vbi_path,
-                              const std::string& vbt_path) {
+                              const std::string& vbt_path,
+                              uint64_t max_output_bytes) {
     struct InputSection {
         const char* type;
         std::string path;
@@ -132,6 +141,15 @@ bool write_analysis_container(const std::string& path,
     if (vbi_size == 0 || vbt_size == 0) return false;
     inputs.push_back({"VBI2", vbi_path, vbi_size});
     inputs.push_back({"VBT1", vbt_path, vbt_size});
+
+    const uint64_t table_size =
+        static_cast<uint64_t>(inputs.size()) * sizeof(AnalysisContainerSectionEntry);
+    uint64_t expected_size = sizeof(AnalysisContainerHeader) + table_size;
+    for (const auto& input : inputs) {
+        if (input.size > UINT64_MAX - expected_size) return false;
+        expected_size += input.size;
+    }
+    if (max_output_bytes > 0 && expected_size > max_output_bytes) return false;
 
     std::ofstream out(win_utf8::path_from_utf8(path), std::ios::binary | std::ios::trunc);
     if (!out) return false;
@@ -152,13 +170,17 @@ bool write_analysis_container(const std::string& path,
     out.write(reinterpret_cast<const char*>(sections.data()),
               static_cast<std::streamsize>(sections.size() * sizeof(AnalysisContainerSectionEntry)));
     if (!out) return false;
+    uint64_t output_bytes = sizeof(header) +
+        static_cast<uint64_t>(sections.size()) * sizeof(AnalysisContainerSectionEntry);
 
     for (size_t i = 0; i < inputs.size(); ++i) {
         auto& entry = sections[i];
         set_fourcc(entry.type, inputs[i].type);
         entry.offset = static_cast<uint64_t>(out.tellp());
         entry.size = inputs[i].size;
-        if (!copy_file_bytes(out, inputs[i].path)) return false;
+        if (!copy_file_bytes_limited(out, inputs[i].path, max_output_bytes, output_bytes)) {
+            return false;
+        }
     }
 
     const auto end_pos = out.tellp();

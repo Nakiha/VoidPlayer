@@ -11,6 +11,7 @@
 #include <cstring>
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <new>
@@ -18,6 +19,7 @@
 #include <mutex>
 #include <memory>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -534,6 +536,120 @@ static std::string get_exe_dir() {
     return vr::win_utf8::module_directory_utf8();
 }
 
+static uint64_t file_size_utf8(const std::string& path) {
+    if (path.empty()) return 0;
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(vr::win_utf8::path_from_utf8(path), ec);
+    return ec ? 0 : static_cast<uint64_t>(size);
+}
+
+static bool ends_with_ascii(const std::string& text, const char* suffix) {
+    const size_t suffix_len = std::strlen(suffix);
+    return text.size() >= suffix_len &&
+        text.compare(text.size() - suffix_len, suffix_len, suffix) == 0;
+}
+
+static bool is_analysis_cache_artifact_name(const std::string& name) {
+    return ends_with_ascii(name, ".vac") ||
+        ends_with_ascii(name, ".tmp.vbs4") ||
+        ends_with_ascii(name, ".tmp.vbi") ||
+        ends_with_ascii(name, ".tmp.vbt") ||
+        ends_with_ascii(name, ".tmp.vvc") ||
+        ends_with_ascii(name, ".vbs4") ||
+        ends_with_ascii(name, ".vbi") ||
+        ends_with_ascii(name, ".vbt") ||
+        ends_with_ascii(name, ".vbs2");
+}
+
+static bool is_current_hash_artifact_name(const std::string& name, const char* hash) {
+    if (!hash || hash[0] == '\0') return false;
+    const std::string prefix = std::string(hash) + ".";
+    return name.rfind(prefix, 0) == 0 && is_analysis_cache_artifact_name(name);
+}
+
+struct NativeCacheBudget {
+    bool limited = false;
+    uint64_t available_for_current_hash = 0;
+};
+
+static NativeCacheBudget compute_native_cache_budget(const std::string& data_dir,
+                                                     const char* hash,
+                                                     int64_t max_cache_bytes) {
+    NativeCacheBudget budget{};
+    if (max_cache_bytes <= 0) return budget;
+    budget.limited = true;
+
+    uint64_t other_bytes = 0;
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator(
+             vr::win_utf8::path_from_utf8(data_dir), ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file(ec) || ec) {
+            ec.clear();
+            continue;
+        }
+        const std::string name = vr::win_utf8::path_to_utf8(entry.path().filename());
+        if (!is_analysis_cache_artifact_name(name) ||
+            is_current_hash_artifact_name(name, hash)) {
+            continue;
+        }
+        const auto size = entry.file_size(ec);
+        if (!ec) {
+            other_bytes += static_cast<uint64_t>(size);
+        }
+        ec.clear();
+    }
+
+    const auto max_bytes = static_cast<uint64_t>(max_cache_bytes);
+    budget.available_for_current_hash =
+        other_bytes >= max_bytes ? 0 : max_bytes - other_bytes;
+    return budget;
+}
+
+static uint64_t current_hash_artifact_bytes(const std::string& data_dir,
+                                            const char* hash) {
+    if (!hash || hash[0] == '\0') return 0;
+    uint64_t total = 0;
+    const std::vector<const char*> suffixes = {
+        ".vac", ".tmp.vbs4", ".tmp.vbi", ".tmp.vbt", ".tmp.vvc",
+        ".vbs4", ".vbi", ".vbt", ".vbs2",
+    };
+    for (const auto* suffix : suffixes) {
+        total += file_size_utf8(data_dir + "\\" + hash + suffix);
+    }
+    return total;
+}
+
+static bool check_current_hash_budget(const std::string& data_dir,
+                                      const char* hash,
+                                      const NativeCacheBudget& budget,
+                                      const char* stage) {
+    if (!budget.limited) return true;
+    const uint64_t used = current_hash_artifact_bytes(data_dir, hash);
+    if (used <= budget.available_for_current_hash) return true;
+    spdlog::warn("[Analysis] cache limit exceeded during {}: current_hash={} available={}",
+                 stage, used, budget.available_for_current_hash);
+    return false;
+}
+
+static uint64_t remaining_current_hash_budget(const std::string& data_dir,
+                                              const char* hash,
+                                              const NativeCacheBudget& budget) {
+    if (!budget.limited) return 0;
+    const uint64_t used = current_hash_artifact_bytes(data_dir, hash);
+    return used >= budget.available_for_current_hash
+        ? 0
+        : budget.available_for_current_hash - used;
+}
+
+static uint64_t watched_file_bytes(const std::vector<std::string>& paths) {
+    uint64_t total = 0;
+    for (const auto& path : paths) {
+        total += file_size_utf8(path);
+    }
+    return total;
+}
+
 static VbiCodec detect_analysis_codec(const char* video_path) {
     FfmpegOpenTimeout timeout;
     AVFormatContext* fmt_ctx = alloc_format_context_with_timeout(timeout, std::chrono::seconds(30));
@@ -566,7 +682,10 @@ static VbiCodec detect_analysis_codec(const char* video_path) {
 
 // Run a command via CreateProcess. Returns exit code, or -1 on CreateProcess failure.
 // If log_path is non-empty, stdout+stderr are redirected to that file.
-static int run_command(const std::string& cmd, const std::string& log_path = {}) {
+static int run_command(const std::string& cmd,
+                       const std::string& log_path = {},
+                       const std::vector<std::string>& watched_paths = {},
+                       uint64_t max_watched_bytes = 0) {
     STARTUPINFOW si = { sizeof(si) };
     PROCESS_INFORMATION pi = {};
 
@@ -602,7 +721,19 @@ static int run_command(const std::string& cmd, const std::string& log_path = {})
         return -1;
     }
 
-    WaitForSingleObject(pi.hProcess, INFINITE);
+    bool killed_for_limit = false;
+    while (true) {
+        const DWORD wait = WaitForSingleObject(
+            pi.hProcess,
+            max_watched_bytes > 0 ? 200 : INFINITE);
+        if (wait != WAIT_TIMEOUT) break;
+        if (watched_file_bytes(watched_paths) > max_watched_bytes) {
+            spdlog::warn("[Analysis] command output exceeded cache limit; terminating process");
+            TerminateProcess(pi.hProcess, 1);
+            killed_for_limit = true;
+            break;
+        }
+    }
 
     DWORD exit_code = 1;
     GetExitCodeProcess(pi.hProcess, &exit_code);
@@ -610,7 +741,7 @@ static int run_command(const std::string& cmd, const std::string& log_path = {})
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
     if (hLogFile != INVALID_HANDLE_VALUE) CloseHandle(hLogFile);
-    return static_cast<int>(exit_code);
+    return killed_for_limit ? -2 : static_cast<int>(exit_code);
 }
 
 // RAII helper: temporarily set env vars, restore on destruction.
@@ -644,16 +775,23 @@ public:
 
 class FileRawVvcSink : public RawVvcSink {
 public:
-    explicit FileRawVvcSink(const std::string& path)
+    explicit FileRawVvcSink(const std::string& path, uint64_t max_bytes = 0)
         : path_(path),
+          max_bytes_(max_bytes),
           out_(vr::win_utf8::path_from_utf8(path), std::ios::binary) {}
 
     bool is_open() const { return out_.is_open(); }
 
     bool write(const uint8_t* data, size_t size) override {
+        if (max_bytes_ > 0 && size > max_bytes_ - bytes_written_) {
+            spdlog::warn("[Analysis] raw VVC output exceeded cache limit");
+            return false;
+        }
         out_.write(reinterpret_cast<const char*>(data),
                    static_cast<std::streamsize>(size));
-        return out_.good();
+        if (!out_.good()) return false;
+        bytes_written_ += static_cast<uint64_t>(size);
+        return true;
     }
 
     bool finish() override {
@@ -665,6 +803,8 @@ public:
 
 private:
     std::string path_;
+    uint64_t max_bytes_ = 0;
+    uint64_t bytes_written_ = 0;
     std::ofstream out_;
 };
 
@@ -870,8 +1010,10 @@ static bool extract_raw_vvc_to_sink(const std::string& video_path, RawVvcSink& s
         video_path, "vvc_mp4toannexb", "extract_raw_vvc", sink);
 }
 
-static bool extract_raw_vvc(const std::string& video_path, const std::string& out_path) {
-    FileRawVvcSink sink(out_path);
+static bool extract_raw_vvc(const std::string& video_path,
+                            const std::string& out_path,
+                            uint64_t max_output_bytes = 0) {
+    FileRawVvcSink sink(out_path, max_output_bytes);
     if (!sink.is_open()) {
         spdlog::error("[Analysis] extract_raw_vvc: cannot create {}", out_path);
         return false;
@@ -885,7 +1027,12 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
             std::ifstream fallback(vr::win_utf8::path_from_utf8(out_path),
                                    std::ios::binary | std::ios::ate);
             const size_t total_written = fallback ? static_cast<size_t>(fallback.tellg()) : 0;
-            ok = total_written > 0;
+            ok = total_written > 0 &&
+                (max_output_bytes == 0 ||
+                 static_cast<uint64_t>(total_written) <= max_output_bytes);
+            if (!ok && max_output_bytes > 0) {
+                vr::win_utf8::delete_file_utf8(out_path);
+            }
         }
     }
     return ok;
@@ -893,7 +1040,9 @@ static bool extract_raw_vvc(const std::string& video_path, const std::string& ou
 
 static int run_vtm_stdin_command(const std::string& cmd,
                                  const std::string& log_path,
-                                 const std::string& video_path) {
+                                 const std::string& video_path,
+                                 const std::vector<std::string>& watched_paths = {},
+                                 uint64_t max_watched_bytes = 0) {
     STARTUPINFOW si = { sizeof(si) };
     PROCESS_INFORMATION pi = {};
     SECURITY_ATTRIBUTES sa = { sizeof(sa), nullptr, TRUE };
@@ -953,7 +1102,19 @@ static int run_vtm_stdin_command(const std::string& cmd,
         TerminateProcess(pi.hProcess, 1);
     }
 
-    WaitForSingleObject(pi.hProcess, INFINITE);
+    bool killed_for_limit = false;
+    while (true) {
+        const DWORD wait = WaitForSingleObject(
+            pi.hProcess,
+            max_watched_bytes > 0 ? 200 : INFINITE);
+        if (wait != WAIT_TIMEOUT) break;
+        if (watched_file_bytes(watched_paths) > max_watched_bytes) {
+            spdlog::warn("[Analysis] command output exceeded cache limit; terminating process");
+            TerminateProcess(pi.hProcess, 1);
+            killed_for_limit = true;
+            break;
+        }
+    }
 
     DWORD exit_code = 1;
     GetExitCodeProcess(pi.hProcess, &exit_code);
@@ -961,6 +1122,7 @@ static int run_vtm_stdin_command(const std::string& cmd,
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
     if (hLogFile != INVALID_HANDLE_VALUE) CloseHandle(hLogFile);
+    if (killed_for_limit) return -2;
     return wrote ? static_cast<int>(exit_code) : -1;
 }
 
@@ -993,7 +1155,8 @@ static bool generate_vvc_vbs4(const std::string& exe_dir,
                               const std::string& data_dir,
                               const char* video_path,
                               const char* hash,
-                              const std::string& vbs4_out) {
+                              const std::string& vbs4_out,
+                              const NativeCacheBudget& budget) {
     const std::string decoder_path = exe_dir + "\\tools\\vtm\\DecoderApp.exe";
     const bool decoder_exists = vr::win_utf8::file_exists_utf8(decoder_path);
     spdlog::info("[Analysis] vvc producer={} exists={}", decoder_path, decoder_exists);
@@ -1012,7 +1175,14 @@ static bool generate_vvc_vbs4(const std::string& exe_dir,
         "\" -b - --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
     spdlog::info("[Analysis] vtm stdin cmd: {}", cmd);
     spdlog::info("[Analysis] vtm log: {}", vtm_log_path);
-    const int vtm_rc = run_vtm_stdin_command(cmd, vtm_log_path, video_path);
+    const uint64_t stdin_budget = remaining_current_hash_budget(data_dir, hash, budget);
+    if (budget.limited && stdin_budget == 0) return false;
+    const int vtm_rc = run_vtm_stdin_command(
+        cmd,
+        vtm_log_path,
+        video_path,
+        {vbs4_out},
+        budget.limited ? stdin_budget : 0);
     spdlog::info("[Analysis] vtm stdin exit_code={}", vtm_rc);
 
     bool vbs4_ok = vtm_rc == 0 && vr::win_utf8::file_exists_utf8(vbs4_out);
@@ -1022,14 +1192,28 @@ static bool generate_vvc_vbs4(const std::string& exe_dir,
 
         const std::string tmp_vvc = data_dir + "\\" + hash + ".tmp.vvc";
         spdlog::info("[Analysis] extracting raw VVC to {}", tmp_vvc);
-        const bool demux_ok = extract_raw_vvc(video_path, tmp_vvc);
+        const uint64_t extract_budget = remaining_current_hash_budget(data_dir, hash, budget);
+        if (budget.limited && extract_budget == 0) {
+            vr::win_utf8::delete_file_utf8(tmp_vvc);
+            return false;
+        }
+        const bool demux_ok = extract_raw_vvc(
+            video_path,
+            tmp_vvc,
+            budget.limited ? extract_budget : 0);
         spdlog::info("[Analysis] extract_raw_vvc ok={}", demux_ok);
 
-        if (demux_ok && vr::win_utf8::file_exists_utf8(tmp_vvc)) {
+        if (demux_ok &&
+            vr::win_utf8::file_exists_utf8(tmp_vvc) &&
+            check_current_hash_budget(data_dir, hash, budget, "raw VVC extraction")) {
             const std::string fallback_cmd = "\"" + decoder_path + "\" -b \"" + tmp_vvc +
                 "\" --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
             spdlog::info("[Analysis] vtm fallback cmd: {}", fallback_cmd);
-            const int fallback_rc = run_command(fallback_cmd, vtm_log_path);
+            const int fallback_rc = run_command(
+                fallback_cmd,
+                vtm_log_path,
+                {tmp_vvc, vbs4_out},
+                budget.limited ? budget.available_for_current_hash : 0);
             spdlog::info("[Analysis] vtm fallback exit_code={}", fallback_rc);
             vr::win_utf8::delete_file_utf8(tmp_vvc);
             vbs4_ok = fallback_rc == 0 && vr::win_utf8::file_exists_utf8(vbs4_out);
@@ -1037,6 +1221,11 @@ static bool generate_vvc_vbs4(const std::string& exe_dir,
             spdlog::warn("[Analysis] raw VVC extraction failed, skipping VBS4 generation");
             vr::win_utf8::delete_file_utf8(tmp_vvc);
         }
+    }
+
+    if (vbs4_ok && !check_current_hash_budget(data_dir, hash, budget, "VBS4 generation")) {
+        vr::win_utf8::delete_file_utf8(vbs4_out);
+        vbs4_ok = false;
     }
 
     spdlog::info("[Analysis] vvc vbs4_out={} exists={}", vbs4_out, vbs4_ok);
@@ -1052,10 +1241,12 @@ static const char* ffmpeg_analysis_codec_arg(VbiCodec codec) {
 }
 
 static bool generate_ffmpeg_vbs4(const std::string& exe_dir,
+                                 const std::string& data_dir,
                                  const char* video_path,
                                  const char* hash,
                                  VbiCodec codec,
-                                 const std::string& vbs4_out) {
+                                 const std::string& vbs4_out,
+                                 const NativeCacheBudget& budget) {
     const char* codec_arg = ffmpeg_analysis_codec_arg(codec);
     if (!codec_arg) return false;
 
@@ -1078,16 +1269,26 @@ static bool generate_ffmpeg_vbs4(const std::string& exe_dir,
         "\" --vbs4 \"" + vbs4_out + "\"";
     spdlog::info("[Analysis] ffmpeg-analysis cmd: {}", cmd);
     spdlog::info("[Analysis] ffmpeg-analysis log: {}", analyzer_log_path);
-    const int analyzer_rc = run_command(cmd, analyzer_log_path);
+    const uint64_t vbs4_budget = remaining_current_hash_budget(data_dir, hash, budget);
+    if (budget.limited && vbs4_budget == 0) return false;
+    const int analyzer_rc = run_command(
+        cmd,
+        analyzer_log_path,
+        {vbs4_out},
+        budget.limited ? vbs4_budget : 0);
     spdlog::info("[Analysis] ffmpeg-analysis exit_code={}", analyzer_rc);
 
-    const bool vbs4_ok = analyzer_rc == 0 && vr::win_utf8::file_exists_utf8(vbs4_out);
+    bool vbs4_ok = analyzer_rc == 0 && vr::win_utf8::file_exists_utf8(vbs4_out);
+    if (vbs4_ok && !check_current_hash_budget(data_dir, hash, budget, "VBS4 generation")) {
+        vr::win_utf8::delete_file_utf8(vbs4_out);
+        vbs4_ok = false;
+    }
     spdlog::info("[Analysis] ffmpeg-analysis vbs4_out={} exists={}", vbs4_out, vbs4_ok);
     return vbs4_ok;
 }
 
 extern "C" __declspec(dllexport)
-int32_t naki_analysis_generate(const char* video_path, const char* hash) {
+int32_t naki_analysis_generate(const char* video_path, const char* hash, int64_t max_cache_bytes) {
     std::lock_guard<std::mutex> lock(g_analysis_generate_mutex);
     if (!video_path || video_path[0] == '\0' || !hash || hash[0] == '\0') {
         spdlog::error("[Analysis] generate: video_path and hash must be non-empty");
@@ -1103,6 +1304,12 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
 
     // Ensure data directory exists
     vr::win_utf8::create_directory_utf8(data_dir);
+    const NativeCacheBudget budget =
+        compute_native_cache_budget(data_dir, hash, max_cache_bytes);
+    if (budget.limited && budget.available_for_current_hash == 0) {
+        spdlog::warn("[Analysis] cache limit leaves no room for analysis generation");
+        return 0;
+    }
 
     // ---- Step 0: VBS4 via codec-specific decoder instrumentation ----
     VbiCodec source_codec = detect_analysis_codec(video_path);
@@ -1110,9 +1317,10 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
     bool vbs4_generated = false;
     spdlog::info("[Analysis] source codec={}", static_cast<int>(source_codec));
     if (source_codec == VbiCodec::VVC) {
-        vbs4_generated = generate_vvc_vbs4(exe_dir, data_dir, video_path, hash, vbs4_tmp);
+        vbs4_generated = generate_vvc_vbs4(exe_dir, data_dir, video_path, hash, vbs4_tmp, budget);
     } else if (ffmpeg_analysis_codec_arg(source_codec)) {
-        vbs4_generated = generate_ffmpeg_vbs4(exe_dir, video_path, hash, source_codec, vbs4_tmp);
+        vbs4_generated = generate_ffmpeg_vbs4(
+            exe_dir, data_dir, video_path, hash, source_codec, vbs4_tmp, budget);
     } else {
         spdlog::info("[Analysis] no VBS4 producer registered for codec={}",
                      static_cast<int>(source_codec));
@@ -1131,8 +1339,21 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
     std::string vbt_out = data_dir + "\\" + hash + ".tmp.vbt";
     std::string vac_out = data_dir + "\\" + hash + ".vac";
 
-    if (!vr::analysis::AnalysisGenerator::generate(video_path, vbi_out, vbt_out)) {
+    const uint64_t vbi_vbt_budget =
+        remaining_current_hash_budget(data_dir, hash, budget);
+    if (budget.limited && vbi_vbt_budget == 0) {
+        spdlog::error("[Analysis] cache limit leaves no room for VBI/VBT generation");
+        vr::win_utf8::delete_file_utf8(vbs4_tmp);
+        return 0;
+    }
+    if (!vr::analysis::AnalysisGenerator::generate(video_path, vbi_out, vbt_out, vbi_vbt_budget)) {
         spdlog::error("[Analysis] C++ generator failed");
+        vr::win_utf8::delete_file_utf8(vbs4_tmp);
+        vr::win_utf8::delete_file_utf8(vbi_out);
+        vr::win_utf8::delete_file_utf8(vbt_out);
+        return 0;
+    }
+    if (!check_current_hash_budget(data_dir, hash, budget, "VBI/VBT generation")) {
         vr::win_utf8::delete_file_utf8(vbs4_tmp);
         vr::win_utf8::delete_file_utf8(vbi_out);
         vr::win_utf8::delete_file_utf8(vbt_out);
@@ -1153,7 +1374,17 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
     }
 
     const std::string vbs4_section = vr::win_utf8::file_exists_utf8(vbs4_tmp) ? vbs4_tmp : "";
-    if (!vr::analysis::write_analysis_container(vac_out, vbs4_section, vbi_out, vbt_out)) {
+    const uint64_t vac_budget =
+        remaining_current_hash_budget(data_dir, hash, budget);
+    if (budget.limited && vac_budget == 0) {
+        spdlog::error("[Analysis] cache limit leaves no room for VAC container");
+        vr::win_utf8::delete_file_utf8(vbs4_tmp);
+        vr::win_utf8::delete_file_utf8(vbi_out);
+        vr::win_utf8::delete_file_utf8(vbt_out);
+        return 0;
+    }
+    if (!vr::analysis::write_analysis_container(
+            vac_out, vbs4_section, vbi_out, vbt_out, vac_budget)) {
         spdlog::error("[Analysis] failed to write analysis container: {}", vac_out);
         vr::win_utf8::delete_file_utf8(vbs4_tmp);
         vr::win_utf8::delete_file_utf8(vbi_out);

@@ -26,6 +26,7 @@ private:
 bool write_analysis_container(const std::string& path,
                               const std::string& vbs4_path,
                               const std::string& vbi_path,
-                              const std::string& vbt_path);
+                              const std::string& vbt_path,
+                              uint64_t max_output_bytes = 0);
 
 } // namespace vr::analysis

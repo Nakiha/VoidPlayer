@@ -57,6 +57,12 @@ class WindowManager {
   static Map<String, int> get analysisExitCodes =>
       Map.unmodifiable(_analysisExitCodes);
 
+  static bool activateAnalysisWindows() {
+    if (_analysisProcesses.isEmpty) return false;
+    final key = _analysisProcessKey(_analysisProcesses.keys.first);
+    return _activateAnalysisProcess(key);
+  }
+
   static Future<bool> waitForAnalysisProcessCount(
     int count,
     Duration timeout,

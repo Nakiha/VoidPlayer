@@ -138,4 +138,4 @@ void naki_analysis_register_pts_callback(int64_t (*cb)());
 /// Writes to <exe_dir>/cache/<hash>.vac.
 /// Returns 1 on success, 0 on failure (unsupported codec, tool not found, etc.)
 extern "C" __declspec(dllexport)
-int32_t naki_analysis_generate(const char* video_path, const char* hash);
+int32_t naki_analysis_generate(const char* video_path, const char* hash, int64_t max_cache_bytes);

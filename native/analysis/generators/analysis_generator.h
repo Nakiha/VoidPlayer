@@ -15,7 +15,8 @@ public:
     /// Returns true if at least VBT was generated successfully.
     static bool generate(const std::string& video_path,
                          const std::string& vbi_path,
-                         const std::string& vbt_path);
+                         const std::string& vbt_path,
+                         uint64_t max_output_bytes = 0);
 };
 
 } // namespace vr::analysis

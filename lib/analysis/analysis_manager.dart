@@ -138,13 +138,6 @@ class AnalysisManager extends ChangeNotifier {
     final stateSerial = ++_stateSerial;
     log.info('[Analysis] ensureGenerated: videoPath=$videoPath');
 
-    _setStateIfCurrent(stateSerial, AnalysisState.computingHash);
-    _setTrackStatus(
-      videoPath,
-      fileName: fileName,
-      status: AnalysisTrackStatus.computingHash,
-      progress: 0,
-    );
     final indexedHash = await AnalysisCache.findHashForUnchangedVideo(
       videoPath,
     );
@@ -164,6 +157,13 @@ class AnalysisManager extends ChangeNotifier {
     }
 
     final String hash;
+    _setStateIfCurrent(stateSerial, AnalysisState.computingHash);
+    _setTrackStatus(
+      videoPath,
+      fileName: fileName,
+      status: AnalysisTrackStatus.computingHash,
+      progress: 0,
+    );
     try {
       hash = await _computeHash(videoPath);
       log.info('[Analysis] hash=$hash');
@@ -515,12 +515,14 @@ class AnalysisManager extends ChangeNotifier {
 
   Future<bool> _generateAnalysisSerialized(String videoPath, String hash) {
     final previous = _generateQueue;
-    final task = previous
-        .catchError((_) {})
-        .then(
-          (_) =>
-              Isolate.run(() => AnalysisFfi.generateAnalysis(videoPath, hash)),
-        );
+    final task = previous.catchError((_) {}).then((_) {
+      final maxCacheBytes = AppConfig.isInitialized
+          ? AppConfig.instance.analysisCacheMaxBytes
+          : 0;
+      return Isolate.run(
+        () => AnalysisFfi.generateAnalysis(videoPath, hash, maxCacheBytes),
+      );
+    });
     _generateQueue = task.then<void>((_) {}, onError: (_) {});
     return task;
   }

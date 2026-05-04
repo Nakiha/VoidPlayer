@@ -185,8 +185,7 @@ class _AnalysisButtonState extends State<_AnalysisButton>
             final theme = Theme.of(context);
             final isWorking =
                 mgr.state == AnalysisState.computingHash ||
-                mgr.state == AnalysisState.generating ||
-                mgr.state == AnalysisState.loading;
+                mgr.state == AnalysisState.generating;
             final isError = mgr.state == AnalysisState.error;
 
             return SizedBox(

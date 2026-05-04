@@ -311,10 +311,11 @@ class _AnalysisReferencePyramidViewState
                 ),
                 Positioned(
                   right: 8,
-                  bottom: 8,
+                  bottom: (analysisChartXAxisH - _LayerModeToggle.size) / 2,
                   child: _LayerModeToggle(
                     useActualTemporalLayers: widget.useActualTemporalLayers,
                     onChanged: widget.onLayerModeChanged,
+                    l: widget.l,
                   ),
                 ),
               ],
@@ -333,12 +334,16 @@ class _AnalysisReferencePyramidViewState
 }
 
 class _LayerModeToggle extends StatelessWidget {
+  static const double size = 28.0;
+
   final bool useActualTemporalLayers;
   final ValueChanged<bool> onChanged;
+  final AppLocalizations l;
 
   const _LayerModeToggle({
     required this.useActualTemporalLayers,
     required this.onChanged,
+    required this.l,
   });
 
   @override
@@ -347,7 +352,9 @@ class _LayerModeToggle extends StatelessWidget {
     final colors = theme.colorScheme;
     final selected = useActualTemporalLayers;
     return Tooltip(
-      message: selected ? 'Actual temporal layers' : 'Auto reference layers',
+      message: selected
+          ? l.analysisActualTemporalLayers
+          : l.analysisAutoReferenceLayers,
       child: Material(
         color: selected
             ? colors.primary.withValues(alpha: 0.88)
@@ -364,8 +371,8 @@ class _LayerModeToggle extends StatelessWidget {
           borderRadius: BorderRadius.circular(6),
           onTap: () => onChanged(!selected),
           child: SizedBox(
-            width: 32,
-            height: 28,
+            width: size,
+            height: size,
             child: Icon(
               Icons.layers,
               size: 17,

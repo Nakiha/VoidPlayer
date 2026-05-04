@@ -307,6 +307,12 @@
   "analysisFrameTrend": "Frame Trend",
   "@analysisFrameTrend": { "description": "Tab label for frame trend chart" },
 
+  "analysisAutoReferenceLayers": "Auto reference layers",
+  "@analysisAutoReferenceLayers": { "description": "Tooltip for the reference pyramid layer toggle when using inferred reference-depth layers" },
+
+  "analysisActualTemporalLayers": "Actual temporal layers",
+  "@analysisActualTemporalLayers": { "description": "Tooltip for the reference pyramid layer toggle when using bitstream temporal_id layers" },
+
   "analysisTabsMode": "Tabs",
   "@analysisTabsMode": { "description": "Analysis workspace mode: show one track at a time" },
 

@@ -255,6 +255,8 @@ full block records.
 H.264 has a regular raster macroblock grid. The payload does not store `x`,
 `y`, `w`, `h`, or `depth`. The reader derives them from:
 
+Profile id: `1` when `Vbs4Header.codec == 1`.
+
 ```text
 mb_width = ceil(width / 16)
 x = (record_index % mb_width) * 16
@@ -286,6 +288,8 @@ compression.
 H.265 has variable CTU/CU trees. VBS4 stores structure explicitly but still
 avoids row-record padding.
 
+Profile id: `1` when `Vbs4Header.codec == 2`.
+
 Recommended streams:
 
 | Stream | Meaning | Encoding |
@@ -310,6 +314,8 @@ reader can build overlays without sorting.
 
 H.266/VVC is similar to H.265 but with more CU modes and tool flags. `VVCCU1`
 extends `HEVCCU1` with optional streams:
+
+Profile id: `1` when `Vbs4Header.codec == 3`.
 
 | Stream | Meaning |
 |---|---|

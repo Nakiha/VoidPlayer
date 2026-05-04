@@ -9,7 +9,8 @@ Current and planned producers:
 | Codec | Submodule | Runtime tool dir | Writer switch |
 |---|---|---|---|
 | VVC/H.266 | `vtm` | `tools/vtm` | VBS4 via `VTM_BINARY_STATS`, optional debug `VTM_BINARY_STATS_NO_COMPRESSION=1` |
-| HEVC/H.265 | `ffmpeg` | `tools/ffmpeg-analysis` | `void_ffmpeg_analyzer.exe --codec hevc --input <path> --vbs3 <path>` |
+| HEVC/H.265 | `ffmpeg` | `tools/ffmpeg-analysis` | `void_ffmpeg_analyzer.exe --codec hevc --input <path> --vbs4 <path>` |
+| AVC/H.264 | `ffmpeg` | `tools/ffmpeg-analysis` | `void_ffmpeg_analyzer.exe --codec h264 --input <path> --vbs4 <path>` |
 | Compression | `zstd` | build-time static library | VBS4 `compression=1` |
 
 Add new producers as separate forks instead of committing patched decoder

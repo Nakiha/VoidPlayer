@@ -99,23 +99,24 @@ native/analysis/vendor/ffmpeg/bin/windows-x64/void_hevc_analyzer.exe
 The command line contract is:
 
 ```text
-void_ffmpeg_analyzer.exe --codec hevc --input <video> --vbs3 <output.vbs3>
+void_ffmpeg_analyzer.exe --codec hevc --input <video> --vbs4 <output.vbs4>
+void_ffmpeg_analyzer.exe --codec h264 --input <video> --vbs4 <output.vbs4>
 ```
 
-The current tool can probe the configured demo codecs, but it intentionally
-refuses `--vbs3` output until codec block-stat writers are implemented:
+The current tool emits real decoder-derived VBS4 payloads for H.265/H.264. It
+still accepts `--probe-only` for quick codec/open validation:
 
 ```text
 void_ffmpeg_analyzer.exe --codec hevc --input <video> --probe-only
 ```
 
-Verified demo codecs:
+Verified VBS4 codecs:
 
 - `hevc` / H.265
 - `h264`
-- `av1`
-- `vp9`
-- `mpeg2`
+
+AV1, VP9, and MPEG-2 VBS4 generation are disabled until codec-specific payload
+profiles are added.
 
 The current PE import table for the analyzer contains only Windows DLLs:
 
@@ -124,6 +125,7 @@ Secur32.dll
 ncrypt.dll
 CRYPT32.dll
 WS2_32.dll
+USER32.dll
 KERNEL32.dll
 ```
 

@@ -1,11 +1,11 @@
 # VAC Analysis Container
 
 VAC is the current cache container for native analysis data. It replaces the
-runtime cache set of separate `.vbs3`, `.vbi`, and `.vbt` files with one
+runtime cache set of separate `.vbs3`/`.vbs4`, `.vbi`, and `.vbt` files with one
 `<hash>.vac` file.
 
 The container is intentionally simple: it stores complete existing payloads as
-sections. VBI2, VBT1, and VBS3 keep their own internal formats and can still be
+sections. VBI2, VBT1, VBS3, and future VBS4 keep their own internal formats and can still be
 tested independently, while cache management and runtime loading only need one
 file.
 
@@ -23,7 +23,8 @@ file.
 AnalysisContainerHeader
 AnalysisContainerSectionEntry[section_count]
 section payloads
-  VBS3 bytes (optional section, required by codecs whose frame views need block statistics)
+  VBS4 bytes (optional section, preferred when present)
+  VBS3 bytes (optional section, legacy/current block statistics)
   VBI2 bytes
   VBT1 bytes
 ```
@@ -63,6 +64,7 @@ of the `.vac` file. Section payload bytes are unmodified inner files.
 | `VBI2` | Yes | Complete VBI2 bitstream-unit index bytes. |
 | `VBT1` | Yes | Complete VBT1 packet timing bytes. |
 | `VBS3` | Optional | Complete VBS3 block statistics bytes from the codec-specific analyzer. Required for VVC/HEVC frame charts once those producers are enabled. |
+| `VBS4` | Optional | Complete [VBS4](VBS4.md) block statistics bytes. Readers should prefer this over `VBS3` when both are present. |
 
 ## Generation Notes
 

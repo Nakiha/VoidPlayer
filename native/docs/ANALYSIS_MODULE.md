@@ -11,7 +11,7 @@ analysis/
 ├── CMakeLists.txt
 ├── analysis_manager.h/cpp      # 单例管理器：加载/查询分析数据
 ├── parsers/                    # 二进制文件解析器（只读）
-│   ├── binary_types.h          # VAC/VBS3/VBI/VBT packed 结构体定义
+│   ├── binary_types.h          # VAC/VBS3/VBI/VBT packed 结构体定义（VBS4 迁移后扩展）
 │   ├── analysis_container.h/cpp # VAC1 单文件分析容器
 │   ├── vbs3_parser.h/cpp       # VBS3 — VTM 帧级/CU 统计
 │   ├── vbi_parser.h/cpp        # VBI  — NALU 索引
@@ -33,10 +33,11 @@ Analysis 使用三类自定义二进制格式，均为小端序，结构体使�
 
 独立格式文档：
 
-- [VAC](formats/VAC.md) — `.vac`，当前 runtime cache 容器，嵌入 VBI2/VBT1/VBS3 section
+- [VAC](formats/VAC.md) — `.vac`，当前 runtime cache 容器，嵌入 VBI2/VBT1/VBS3 section，后续优先读取 VBS4
 - [VBT](formats/VBT.md) — packet 时间戳/关键帧元数据 section，当前 magic `VBT1`
 - [VBI](formats/VBI.md) — bitstream unit 索引 section，当前写入格式为 `VBI2`，兼容读取 legacy `VBI1`
 - [VBS3](formats/VBS3.md) — VTM block statistics / CU 统计 section，当前 magic `VBS3`
+- [VBS4](formats/VBS4.md) — 下一代压缩/分块读取 block statistics 草案，目标 magic `VBS4`
 - [VBS legacy](formats/VBS.md) — `.vbs2`，旧版 VBS2 说明；native runtime 不再读取
 
 ## 生成管线

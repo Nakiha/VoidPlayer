@@ -204,6 +204,29 @@ extension AnalysisPageTestRunner on AnalysisTestHost {
           );
         }
 
+      case _AnalysisTestCommand.setLayerMode:
+        final useActual = _parseAnalysisLayerMode(instr.stringArg(0));
+        log.info(
+          'AnalysisTestRunner ${instr.time}: SET_ANALYSIS_LAYER_MODE '
+          '${useActual ? 'actual' : 'auto'}',
+        );
+        updateAnalysisTestState(() {
+          setAnalysisReferencePyramidLayerModeForTest(useActual);
+        });
+
+      case _AnalysisTestCommand.assertLayerMode:
+        final useActual = _parseAnalysisLayerMode(instr.stringArg(0));
+        log.info(
+          'AnalysisTestRunner ${instr.time}: ASSERT_ANALYSIS_LAYER_MODE '
+          '${useActual ? 'actual' : 'auto'}',
+        );
+        if (analysisReferencePyramidActualTemporalLayers != useActual) {
+          throw AssertionError(
+            'Expected layer mode ${useActual ? 'actual' : 'auto'}, '
+            'got ${analysisReferencePyramidActualTemporalLayers ? 'actual' : 'auto'}',
+          );
+        }
+
       case _AnalysisTestCommand.selectNalu:
         final idx = instr.intArg(0);
         log.info('AnalysisTestRunner ${instr.time}: SELECT_ANALYSIS_NALU $idx');
@@ -341,6 +364,8 @@ enum _AnalysisTestCommand {
   assertTab,
   setOrder,
   assertOrder,
+  setLayerMode,
+  assertLayerMode,
   setChartWindow,
   selectNalu,
   assertDetailVisible,
@@ -420,6 +445,8 @@ List<_AnalysisTestInstruction> _parseAnalysisTestScript(String path) {
       'ASSERT_ANALYSIS_TAB' => _AnalysisTestCommand.assertTab,
       'SET_ANALYSIS_ORDER' => _AnalysisTestCommand.setOrder,
       'ASSERT_ANALYSIS_ORDER' => _AnalysisTestCommand.assertOrder,
+      'SET_ANALYSIS_LAYER_MODE' => _AnalysisTestCommand.setLayerMode,
+      'ASSERT_ANALYSIS_LAYER_MODE' => _AnalysisTestCommand.assertLayerMode,
       'SET_ANALYSIS_CHART_WINDOW' => _AnalysisTestCommand.setChartWindow,
       'SELECT_ANALYSIS_NALU' => _AnalysisTestCommand.selectNalu,
       'ASSERT_ANALYSIS_DETAIL_VISIBLE' =>
@@ -466,6 +493,21 @@ bool _parseAnalysisOrder(String value) {
       return false;
     default:
       throw ArgumentError('Unknown analysis order: $value');
+  }
+}
+
+bool _parseAnalysisLayerMode(String value) {
+  switch (value.trim().toLowerCase()) {
+    case 'auto':
+    case 'reference':
+    case 'ref':
+      return false;
+    case 'actual':
+    case 'temporal':
+    case 'temporal_id':
+      return true;
+    default:
+      throw ArgumentError('Unknown analysis layer mode: $value');
   }
 }
 

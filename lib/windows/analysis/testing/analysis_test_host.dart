@@ -17,6 +17,7 @@ abstract class AnalysisTestHost {
   double get analysisVisibleFrameCount;
   int get analysisSelectedTab;
   bool get analysisPtsOrder;
+  bool get analysisReferencePyramidActualTemporalLayers;
   bool get isAnalysisLoaded;
 
   void readAnalysisDataForTest();
@@ -24,6 +25,7 @@ abstract class AnalysisTestHost {
   void updateAnalysisTestState(VoidCallback update);
   void setAnalysisTabForTest(int tab);
   void setAnalysisOrderForTest(bool ptsOrder);
+  void setAnalysisReferencePyramidLayerModeForTest(bool useActual);
   void setAnalysisChartWindowForTest(double offset, double visibleFrameCount);
   void selectAnalysisNaluForTest(int naluIdx);
 }

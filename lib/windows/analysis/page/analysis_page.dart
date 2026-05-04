@@ -146,6 +146,10 @@ class AnalysisPageState extends State<AnalysisPage>
   bool get analysisPtsOrder => _controller.ptsOrder;
 
   @override
+  bool get analysisReferencePyramidActualTemporalLayers =>
+      _controller.referencePyramidActualTemporalLayers;
+
+  @override
   bool get isAnalysisLoaded => _controller.isLoaded;
 
   @override
@@ -162,6 +166,11 @@ class AnalysisPageState extends State<AnalysisPage>
   @override
   void setAnalysisOrderForTest(bool ptsOrder) {
     _controller.setPtsOrder(ptsOrder);
+  }
+
+  @override
+  void setAnalysisReferencePyramidLayerModeForTest(bool useActual) {
+    _controller.setReferencePyramidActualTemporalLayers(useActual);
   }
 
   @override

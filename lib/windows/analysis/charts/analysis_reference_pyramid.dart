@@ -15,6 +15,8 @@ class AnalysisReferencePyramidView extends StatefulWidget {
   final int currentIdx;
   final int? selectedFrameIdx;
   final Map<int, List<int>> pocToIndices;
+  final bool useActualTemporalLayers;
+  final ValueChanged<bool> onLayerModeChanged;
   final ValueChanged<int?> onFrameSelected;
   final double viewStart;
   final double viewEnd;
@@ -30,6 +32,8 @@ class AnalysisReferencePyramidView extends StatefulWidget {
     required this.currentIdx,
     required this.selectedFrameIdx,
     required this.pocToIndices,
+    required this.useActualTemporalLayers,
+    required this.onLayerModeChanged,
     required this.onFrameSelected,
     required this.viewStart,
     required this.viewEnd,
@@ -206,14 +210,17 @@ class _AnalysisReferencePyramidViewState
     final plotRect = Rect.fromLTWH(labelW, 0, usableW, chartH);
     if (!plotRect.contains(local)) return null;
 
-    var maxTid = 0;
+    var maxLayer = 0;
     for (var i = visibleStart; i < visibleEnd; i++) {
-      final f = widget.frames[i - widget.frameIndexBase];
-      if (f.temporalId > maxTid) {
-        maxTid = f.temporalId;
-      }
+      final layer = _referenceCache.layerFor(
+        i,
+        useActualTemporalLayers: widget.useActualTemporalLayers,
+        frames: widget.frames,
+        frameIndexBase: widget.frameIndexBase,
+      );
+      if (layer > maxLayer) maxLayer = layer;
     }
-    final rowH = chartH / (maxTid + 1);
+    final rowH = chartH / (maxLayer + 1);
     final circleR = (rowH * 0.3).clamp(6.0, 20.0);
     final centerPad = circleR + analysisChartSelectedFramePadding;
     final centerW = (usableW - centerPad * 2).clamp(1.0, double.infinity);
@@ -239,62 +246,78 @@ class _AnalysisReferencePyramidViewState
       children: [
         Expanded(
           child: Builder(
-            builder: (chartContext) => Listener(
-              onPointerSignal: (signal) {
-                if (signal is PointerScrollEvent) {
-                  _handleScroll(
-                    chartContext,
-                    signal.position,
-                    signal.scrollDelta,
-                  );
-                }
-              },
-              onPointerPanZoomStart: (_) => _resetPanZoomScale(),
-              onPointerPanZoomUpdate: (event) {
-                _handlePanZoomUpdate(chartContext, event);
-              },
-              onPointerPanZoomEnd: (_) => _resetPanZoomScale(),
-              child: MouseRegion(
-                onExit: (_) => setState(() => _hoverPosition = null),
-                onHover: (event) {
-                  final box = chartContext.findRenderObject() as RenderBox;
-                  setState(() {
-                    _hoverPosition = box.globalToLocal(event.position);
-                  });
-                },
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapUp: (details) {
-                    final box = chartContext.findRenderObject() as RenderBox;
-                    final frameIdx = _frameIndexAtChartPosition(
-                      details.localPosition,
-                      box.size,
-                    );
-                    widget.onFrameSelected(
-                      frameIdx != null && widget.selectedFrameIdx == frameIdx
-                          ? null
-                          : frameIdx,
-                    );
+            builder: (chartContext) => Stack(
+              children: [
+                Listener(
+                  onPointerSignal: (signal) {
+                    if (signal is PointerScrollEvent) {
+                      _handleScroll(
+                        chartContext,
+                        signal.position,
+                        signal.scrollDelta,
+                      );
+                    }
                   },
-                  child: CustomPaint(
-                    painter: _RefPyramidPainter(
-                      frames: widget.frames,
-                      frameIndexBase: widget.frameIndexBase,
-                      totalFrames: widget.totalFrames,
-                      referenceCache: _referenceCache,
-                      currentIdx: widget.currentIdx,
-                      selectedFrameIdx: widget.selectedFrameIdx,
-                      selectedChainEdges: _selectedChainEdges,
-                      selectedChainNodes: _selectedChainNodes,
-                      viewStart: widget.viewStart,
-                      viewEnd: widget.viewEnd,
-                      ptsOrder: widget.ptsOrder,
-                      hoverPosition: _hoverPosition,
+                  onPointerPanZoomStart: (_) => _resetPanZoomScale(),
+                  onPointerPanZoomUpdate: (event) {
+                    _handlePanZoomUpdate(chartContext, event);
+                  },
+                  onPointerPanZoomEnd: (_) => _resetPanZoomScale(),
+                  child: MouseRegion(
+                    onExit: (_) => setState(() => _hoverPosition = null),
+                    onHover: (event) {
+                      final box = chartContext.findRenderObject() as RenderBox;
+                      setState(() {
+                        _hoverPosition = box.globalToLocal(event.position);
+                      });
+                    },
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapUp: (details) {
+                        final box =
+                            chartContext.findRenderObject() as RenderBox;
+                        final frameIdx = _frameIndexAtChartPosition(
+                          details.localPosition,
+                          box.size,
+                        );
+                        widget.onFrameSelected(
+                          frameIdx != null &&
+                                  widget.selectedFrameIdx == frameIdx
+                              ? null
+                              : frameIdx,
+                        );
+                      },
+                      child: CustomPaint(
+                        painter: _RefPyramidPainter(
+                          frames: widget.frames,
+                          frameIndexBase: widget.frameIndexBase,
+                          totalFrames: widget.totalFrames,
+                          referenceCache: _referenceCache,
+                          useActualTemporalLayers:
+                              widget.useActualTemporalLayers,
+                          currentIdx: widget.currentIdx,
+                          selectedFrameIdx: widget.selectedFrameIdx,
+                          selectedChainEdges: _selectedChainEdges,
+                          selectedChainNodes: _selectedChainNodes,
+                          viewStart: widget.viewStart,
+                          viewEnd: widget.viewEnd,
+                          ptsOrder: widget.ptsOrder,
+                          hoverPosition: _hoverPosition,
+                        ),
+                        size: Size.infinite,
+                      ),
                     ),
-                    size: Size.infinite,
                   ),
                 ),
-              ),
+                Positioned(
+                  right: 8,
+                  bottom: 8,
+                  child: _LayerModeToggle(
+                    useActualTemporalLayers: widget.useActualTemporalLayers,
+                    onChanged: widget.onLayerModeChanged,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -309,15 +332,63 @@ class _AnalysisReferencePyramidViewState
   }
 }
 
+class _LayerModeToggle extends StatelessWidget {
+  final bool useActualTemporalLayers;
+  final ValueChanged<bool> onChanged;
+
+  const _LayerModeToggle({
+    required this.useActualTemporalLayers,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final selected = useActualTemporalLayers;
+    return Tooltip(
+      message: selected ? 'Actual temporal layers' : 'Auto reference layers',
+      child: Material(
+        color: selected
+            ? colors.primary.withValues(alpha: 0.88)
+            : colors.surfaceContainerHighest.withValues(alpha: 0.84),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(6),
+          side: BorderSide(
+            color: selected
+                ? colors.primary
+                : colors.outlineVariant.withValues(alpha: 0.8),
+          ),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () => onChanged(!selected),
+          child: SizedBox(
+            width: 32,
+            height: 28,
+            child: Icon(
+              Icons.layers,
+              size: 17,
+              color: selected ? colors.onPrimary : colors.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _FrameReferenceCache {
   final Map<int, List<int>> refsByIndex;
   final Map<int, List<int>> sourcesByRefIndex;
   final ReferenceEdgeSpanIndex edgeSpanIndex;
+  final Map<int, int> autoLayersByIndex;
 
   const _FrameReferenceCache({
     required this.refsByIndex,
     required this.sourcesByRefIndex,
     required this.edgeSpanIndex,
+    required this.autoLayersByIndex,
   });
 
   factory _FrameReferenceCache.build(
@@ -371,6 +442,12 @@ class _FrameReferenceCache {
       }
     }
 
+    final autoLayersByIndex = _buildAutoLayers(
+      frames,
+      frameIndexBase,
+      refsByIndex,
+    );
+
     return _FrameReferenceCache(
       refsByIndex: refsByIndex,
       sourcesByRefIndex: sourcesByRefIndex.map(
@@ -379,7 +456,43 @@ class _FrameReferenceCache {
       edgeSpanIndex: edges.isEmpty
           ? ReferenceEdgeSpanIndex.empty
           : ReferenceEdgeSpanIndex(edges),
+      autoLayersByIndex: autoLayersByIndex,
     );
+  }
+
+  static Map<int, int> _buildAutoLayers(
+    List<FrameInfo> frames,
+    int frameIndexBase,
+    Map<int, List<int>> refsByIndex,
+  ) {
+    final memo = <int, int>{};
+    final visiting = <int>{};
+
+    int resolve(int idx) {
+      final cached = memo[idx];
+      if (cached != null) return cached;
+      final localIdx = idx - frameIndexBase;
+      if (localIdx < 0 || localIdx >= frames.length) return 0;
+      final frame = frames[localIdx];
+      if (frame.sliceType != 0) {
+        memo[idx] = 0;
+        return 0;
+      }
+      if (!visiting.add(idx)) return 1;
+      var layer = 1;
+      for (final refIdx in refsByIndex[idx] ?? const <int>[]) {
+        final refLayer = resolve(refIdx);
+        if (refLayer + 1 > layer) layer = refLayer + 1;
+      }
+      visiting.remove(idx);
+      memo[idx] = layer;
+      return layer;
+    }
+
+    for (var i = 0; i < frames.length; i++) {
+      resolve(frameIndexBase + i);
+    }
+    return Map<int, int>.unmodifiable(memo);
   }
 
   List<int> refsFor(int idx) {
@@ -389,6 +502,18 @@ class _FrameReferenceCache {
   List<int> sourcesForRef(int idx) {
     return sourcesByRefIndex[idx] ?? const [];
   }
+
+  int layerFor(
+    int idx, {
+    required bool useActualTemporalLayers,
+    required List<FrameInfo> frames,
+    required int frameIndexBase,
+  }) {
+    final localIdx = idx - frameIndexBase;
+    if (localIdx < 0 || localIdx >= frames.length) return 0;
+    if (useActualTemporalLayers) return frames[localIdx].temporalId;
+    return autoLayersByIndex[idx] ?? 0;
+  }
 }
 
 class _RefPyramidPainter extends CustomPainter {
@@ -396,6 +521,7 @@ class _RefPyramidPainter extends CustomPainter {
   final int frameIndexBase;
   final int totalFrames;
   final _FrameReferenceCache referenceCache;
+  final bool useActualTemporalLayers;
   final int currentIdx;
   final int? selectedFrameIdx;
   final Set<String> selectedChainEdges;
@@ -410,6 +536,7 @@ class _RefPyramidPainter extends CustomPainter {
     required this.frameIndexBase,
     required this.totalFrames,
     required this.referenceCache,
+    required this.useActualTemporalLayers,
     required this.currentIdx,
     required this.selectedFrameIdx,
     required this.selectedChainEdges,
@@ -446,14 +573,14 @@ class _RefPyramidPainter extends CustomPainter {
     if (visibleStart >= visibleEnd) return;
 
     // --- Layout ---
-    int maxTid = 0;
+    int maxLayer = 0;
     for (var i = visibleStart; i < visibleEnd; i++) {
-      final f = frames[i - frameIndexBase];
-      if (f.temporalId > maxTid) maxTid = f.temporalId;
+      final layer = layerFor(i);
+      if (layer > maxLayer) maxLayer = layer;
     }
     final axisH = size.height >= 96 ? analysisChartXAxisH : 0.0;
     final chartH = (size.height - axisH).clamp(1.0, double.infinity);
-    final numLevels = maxTid + 1;
+    final numLevels = maxLayer + 1;
     final rowH = chartH / numLevels;
     final labelW = analysisChartLabelW;
     final usableW = (size.width - labelW).clamp(0.0, double.infinity);
@@ -467,18 +594,18 @@ class _RefPyramidPainter extends CustomPainter {
     for (var i = visibleStart; i < visibleEnd; i++) {
       final frac = (i - viewStart) / span;
       final x = labelW + centerPad + frac * centerW;
-      final y = chartH - (frames[i - frameIndexBase].temporalId + 0.5) * rowH;
+      final y = chartH - (layerFor(i) + 0.5) * rowH;
       positions[i] = Offset(x, y);
     }
     // --- Level backgrounds ---
     final levelLabelStep = rowH >= 16 ? 1 : (16 / rowH).ceil();
-    for (var tid = 0; tid <= maxTid; tid++) {
+    for (var tid = 0; tid <= maxLayer; tid++) {
       final top = chartH - (tid + 1) * rowH;
-      final alpha = 0.03 + (maxTid - tid) * 0.025;
+      final alpha = 0.03 + (maxLayer - tid) * 0.025;
       _bgPaint.color = const Color(0xFFFFFFFF).withValues(alpha: alpha);
       canvas.drawRect(Rect.fromLTWH(0, top, size.width, rowH), _bgPaint);
       final showLevelLabel =
-          tid == 0 || tid == maxTid || tid % levelLabelStep == 0;
+          tid == 0 || tid == maxLayer || tid % levelLabelStep == 0;
       if (!showLevelLabel) continue;
       final tp = TextPainter(
         text: TextSpan(
@@ -526,7 +653,7 @@ class _RefPyramidPainter extends CustomPainter {
       if (localIdx < 0 || localIdx >= frames.length) return Offset.zero;
       final frac = (idx - viewStart) / span;
       final x = labelW + centerPad + frac * centerW;
-      final y = chartH - (frames[localIdx].temporalId + 0.5) * rowH;
+      final y = chartH - (layerFor(idx) + 0.5) * rowH;
       return Offset(x, y);
     }
 
@@ -714,6 +841,15 @@ class _RefPyramidPainter extends CustomPainter {
         final frac = (frameIdx - viewStart) / span;
         return labelW + centerPad + frac * centerW;
       },
+    );
+  }
+
+  int layerFor(int idx) {
+    return referenceCache.layerFor(
+      idx,
+      useActualTemporalLayers: useActualTemporalLayers,
+      frames: frames,
+      frameIndexBase: frameIndexBase,
     );
   }
 
@@ -912,6 +1048,7 @@ class _RefPyramidPainter extends CustomPainter {
       viewStart != old.viewStart ||
       viewEnd != old.viewEnd ||
       ptsOrder != old.ptsOrder ||
+      useActualTemporalLayers != old.useActualTemporalLayers ||
       hoverPosition != old.hoverPosition;
 }
 

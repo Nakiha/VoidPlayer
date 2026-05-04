@@ -12,6 +12,7 @@ class AnalysisPageViewModel {
   final String naluFilter;
   final double naluBrowserWidth;
   final int? selectedFrameIdx;
+  final bool referencePyramidActualTemporalLayers;
   final double visibleFrameCount;
   final double chartOffset;
   final double frameSizeAxisZoom;
@@ -39,6 +40,7 @@ class AnalysisPageViewModel {
     required this.naluFilter,
     required this.naluBrowserWidth,
     required this.selectedFrameIdx,
+    required this.referencePyramidActualTemporalLayers,
     required this.visibleFrameCount,
     required this.chartOffset,
     required this.frameSizeAxisZoom,
@@ -64,6 +66,7 @@ class AnalysisPageViewModel {
 class AnalysisPageActions {
   final ValueChanged<bool> onOrderChanged;
   final ValueChanged<int> onTabChanged;
+  final ValueChanged<bool> onReferencePyramidLayerModeChanged;
   final ValueChanged<double> onChartZoom;
   final ValueChanged<double> onChartPan;
   final void Function(AnalysisFrameTrendAxis axis, double scrollDelta)
@@ -80,6 +83,7 @@ class AnalysisPageActions {
   const AnalysisPageActions({
     required this.onOrderChanged,
     required this.onTabChanged,
+    required this.onReferencePyramidLayerModeChanged,
     required this.onChartZoom,
     required this.onChartPan,
     required this.onAxisZoom,

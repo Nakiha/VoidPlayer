@@ -32,6 +32,8 @@ class AnalysisPageView extends StatelessWidget {
             currentIdx: model.currentSortedFrameIdx,
             selectedFrameIdx: model.selectedSortedFrameIdx,
             pocToIndices: model.sortedPocToIndices,
+            useActualTemporalLayers: model.referencePyramidActualTemporalLayers,
+            onLayerModeChanged: actions.onReferencePyramidLayerModeChanged,
             onFrameSelected: actions.onChartFrameSelected,
             viewStart: model.chartOffset,
             viewEnd: model.chartOffset + model.visibleFrameCount,

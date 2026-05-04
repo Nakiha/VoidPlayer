@@ -19,6 +19,7 @@ class AnalysisPageController extends ChangeNotifier {
 
   int _selectedTab = 0;
   bool _ptsOrder = true;
+  bool _referencePyramidActualTemporalLayers = false;
   int? _selectedNaluIdx;
   String _naluFilter = '';
   double _naluBrowserWidth = 300;
@@ -54,6 +55,8 @@ class AnalysisPageController extends ChangeNotifier {
       naluFilter: _naluFilter,
       naluBrowserWidth: _naluBrowserWidth,
       selectedFrameIdx: _selectedFrameIdx,
+      referencePyramidActualTemporalLayers:
+          _referencePyramidActualTemporalLayers,
       visibleFrameCount: _visibleFrameCount,
       chartOffset: _chartOffset,
       frameSizeAxisZoom: _frameSizeAxisZoom,
@@ -80,6 +83,8 @@ class AnalysisPageController extends ChangeNotifier {
     return AnalysisPageActions(
       onOrderChanged: setPtsOrder,
       onTabChanged: setTab,
+      onReferencePyramidLayerModeChanged:
+          setReferencePyramidActualTemporalLayers,
       onChartZoom: chartZoom,
       onChartPan: chartPan,
       onAxisZoom: frameTrendAxisZoom,
@@ -105,6 +110,8 @@ class AnalysisPageController extends ChangeNotifier {
   double get visibleFrameCount => _visibleFrameCount;
   int get selectedTab => _selectedTab;
   bool get ptsOrder => _ptsOrder;
+  bool get referencePyramidActualTemporalLayers =>
+      _referencePyramidActualTemporalLayers;
   bool get isLoaded =>
       (_summary?.loaded ?? 0) != 0 &&
       ((_summary?.frameCount ?? 0) > 0 || (_summary?.naluCount ?? 0) > 0);
@@ -159,6 +166,12 @@ class AnalysisPageController extends ChangeNotifier {
     _ptsOrder = ptsOrder;
     _rebuildSortedFramesCache();
     _centerChartOnSelectedFrame();
+    notifyListeners();
+  }
+
+  void setReferencePyramidActualTemporalLayers(bool value) {
+    if (_referencePyramidActualTemporalLayers == value) return;
+    _referencePyramidActualTemporalLayers = value;
     notifyListeners();
   }
 

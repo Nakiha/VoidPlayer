@@ -154,7 +154,7 @@ frames.
 | `offset` | `uint64_t` | File offset inside `CUBL` section payload. |
 | `byte_size` | `uint64_t` | Number of stored payload bytes for the frame. For compressed frames this is the compressed byte count. |
 | `cu_count` | `uint32_t` | Number of CU records in the frame. |
-| `flags` | `uint32_t` | Payload flags. `0` means raw CU records; `1` means Windows XPRESS Huffman compressed CU records. |
+| `flags` | `uint32_t` | Payload flags. `0` means raw CU records; bit `0` means Windows XPRESS Huffman compressed bytes; bit `1` means H.264 raster macroblock compact records after decompression. |
 
 The offset is relative to the beginning of the `CUBL` payload, not the beginning
 of the file. Compression is per frame, so a reader can seek to one `CUID` row and
@@ -164,14 +164,32 @@ preserve fast list, chart, and random access paths.
 ## CU Blob
 
 The first VBS3 CU payload revision reuses the legacy VBS2 variable CU records.
-When `CUID.flags == 1`, the stored CUBL bytes must be decompressed first and the
-resulting byte stream has the same record layout:
+When `CUID.flags & 1` is set, the stored CUBL bytes must be decompressed first.
+If `CUID.flags & 2` is not set, the resulting byte stream has the same record
+layout:
 
 ```text
 VbsCuCommon
 optional VbsCuIntra when pred_mode == 1
 optional VbsCuInter when pred_mode == 0
 ```
+
+H.264 analyzers may set `CUID.flags & 2` for raster macroblock compact records.
+In that mode each macroblock is a 12-byte `VbsH264MbCompact` row:
+
+```text
+uint8 qp
+uint8 flags     bit0: intra, bit1: skip, bit2: merge, bits3-4: inter_dir, bits5-7: intra_mode
+int16 mv_l0_x
+int16 mv_l0_y
+int16 mv_l1_x
+int16 mv_l1_y
+int8  ref_l0
+int8  ref_l1
+```
+
+The reader derives `x`, `y`, `w`, `h`, and `depth` from the macroblock index and
+picture width, so those deterministic fields are not stored per macroblock.
 
 This keeps the initial VTM writer change small: the extraction code that fills
 CU common/intra/inter fields can remain mostly unchanged, while the writer gains

@@ -156,6 +156,49 @@ bool parse_cu_payload(const uint8_t* data,
     return true;
 }
 
+bool parse_h264_compact_payload(const uint8_t* data,
+                                size_t size,
+                                uint32_t cu_count,
+                                uint32_t width,
+                                std::vector<VbsCuRecord>& out) {
+    if (cu_count == 0) return true;
+    if (!data || width == 0) return false;
+    if (size != static_cast<size_t>(cu_count) * sizeof(VbsH264MbCompact)) return false;
+
+    const uint32_t mb_width = (width + 15) / 16;
+    if (mb_width == 0) return false;
+
+    out.reserve(cu_count);
+    for (uint32_t i = 0; i < cu_count; ++i) {
+        VbsH264MbCompact mb{};
+        std::memcpy(&mb, data + static_cast<size_t>(i) * sizeof(VbsH264MbCompact), sizeof(mb));
+
+        VbsCuRecord rec{};
+        rec.common.x = static_cast<uint16_t>((i % mb_width) * 16);
+        rec.common.y = static_cast<uint16_t>((i / mb_width) * 16);
+        rec.common.w = 16;
+        rec.common.h = 16;
+        rec.common.depth = 0;
+        rec.common.qp = mb.qp;
+        rec.common.pred_mode = (mb.flags & 0x01) ? 1 : 0;
+        if (rec.common.pred_mode == 1) {
+            rec.intra.intra_mode = (mb.flags >> 5) & 0x07;
+        } else {
+            rec.inter.skip = (mb.flags & 0x02) ? 1 : 0;
+            rec.inter.merge_flag = (mb.flags & 0x04) ? 1 : 0;
+            rec.inter.inter_dir = (mb.flags >> 3) & 0x03;
+            rec.inter.mv_l0_x = mb.mv_l0_x;
+            rec.inter.mv_l0_y = mb.mv_l0_y;
+            rec.inter.mv_l1_x = mb.mv_l1_x;
+            rec.inter.mv_l1_y = mb.mv_l1_y;
+            rec.inter.ref_l0 = mb.ref_l0;
+            rec.inter.ref_l1 = mb.ref_l1;
+        }
+        out.push_back(rec);
+    }
+    return true;
+}
+
 bool validate_summary(const Vbs3FrameSummary& summary, uint32_t index, size_t cu_index_count) {
     if (summary.coded_order != index) return false;
     if (summary.num_ref_l0 > 15 || summary.num_ref_l1 > 15) return false;
@@ -167,13 +210,18 @@ bool validate_summary(const Vbs3FrameSummary& summary, uint32_t index, size_t cu
 }
 
 bool validate_cu_index(const Vbs3CuIndexEntry& idx, uint64_t cu_blob_size) {
-    constexpr uint32_t kKnownFlags = VBS3_CUID_FLAG_COMPRESSED_XPRESS_HUFF;
+    constexpr uint32_t kKnownFlags = VBS3_CUID_FLAG_COMPRESSED_XPRESS_HUFF |
+                                     VBS3_CUID_FLAG_H264_RASTER_MB_COMPACT;
     const bool compressed = (idx.flags & VBS3_CUID_FLAG_COMPRESSED_XPRESS_HUFF) != 0;
+    const bool compact_h264 = (idx.flags & VBS3_CUID_FLAG_H264_RASTER_MB_COMPACT) != 0;
     if ((idx.flags & ~kKnownFlags) != 0) return false;
     if (idx.cu_count > kMaxCusPerFrame) return false;
     if (idx.offset > cu_blob_size) return false;
     if (idx.byte_size > cu_blob_size - idx.offset) return false;
     if (compressed) return idx.byte_size > 0 || idx.cu_count == 0;
+    if (compact_h264) {
+        return idx.byte_size == static_cast<uint64_t>(idx.cu_count) * sizeof(VbsH264MbCompact);
+    }
     return idx.byte_size >= static_cast<uint64_t>(idx.cu_count) * sizeof(VbsCuCommon);
 }
 } // namespace
@@ -351,7 +399,15 @@ Vbs3FrameData Vbs3File::read_frame(int frame_idx) const {
         payload_size = payload.size();
     }
 
-    parse_cu_payload(payload_data, payload_size, idx.cu_count, result.cus);
+    if ((idx.flags & VBS3_CUID_FLAG_H264_RASTER_MB_COMPACT) != 0) {
+        parse_h264_compact_payload(payload_data,
+                                   payload_size,
+                                   idx.cu_count,
+                                   header_.width,
+                                   result.cus);
+    } else {
+        parse_cu_payload(payload_data, payload_size, idx.cu_count, result.cus);
+    }
     return result;
 }
 

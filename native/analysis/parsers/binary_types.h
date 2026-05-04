@@ -99,7 +99,20 @@ static_assert(sizeof(Vbs3CuIndexEntry) == 24);
 
 // VBS3 CUBL/CUID flags
 inline constexpr uint32_t VBS3_CUID_FLAG_COMPRESSED_XPRESS_HUFF = 0x00000001;
+inline constexpr uint32_t VBS3_CUID_FLAG_H264_RASTER_MB_COMPACT = 0x00000002;
 inline constexpr uint32_t VBS3_CUBL_SECTION_FLAG_PER_FRAME_COMPRESSION = 0x00000001;
+
+struct VbsH264MbCompact {
+    uint8_t qp;
+    uint8_t flags;
+    int16_t mv_l0_x;
+    int16_t mv_l0_y;
+    int16_t mv_l1_x;
+    int16_t mv_l1_y;
+    int8_t  ref_l0;
+    int8_t  ref_l1;
+};
+static_assert(sizeof(VbsH264MbCompact) == 12);
 
 struct VbsCuCommon {
     uint16_t x;

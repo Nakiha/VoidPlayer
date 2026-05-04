@@ -75,7 +75,7 @@ directory when frame counts and offsets are final.
 |---|---:|---|
 | `magic` | `char[4]` | Must be `VBS3`. |
 | `version_major` | `uint16_t` | Major format version, initially `3`. |
-| `version_minor` | `uint16_t` | Minor format version, initially `0`. |
+| `version_minor` | `uint16_t` | Minor format version. `0` is uncompressed CUBL; `1` may use per-frame CUBL compression. |
 | `header_size` | `uint16_t` | Size of this header, initially `64`. |
 | `section_entry_size` | `uint16_t` | Size of each section entry, initially `48`. |
 | `flags` | `uint32_t` | File-level flags; `0` for the initial writer. |
@@ -107,7 +107,7 @@ Required section types:
 |---|---|---:|---|
 | `FSUM` | Frame Summary | Yes | Fixed frame summary rows, one per frame. |
 | `CUID` | CU Index | Yes if `CUBL` exists | Fixed CU payload index rows, one per frame. |
-| `CUBL` | CU Blob | No | Variable CU records grouped by frame. |
+| `CUBL` | CU Blob | No | Variable CU records grouped by frame. `flags & 1` means some frame payloads may be compressed individually. |
 
 Optional section types:
 
@@ -152,17 +152,20 @@ frames.
 | Field | Type | Meaning |
 |---|---:|---|
 | `offset` | `uint64_t` | File offset inside `CUBL` section payload. |
-| `byte_size` | `uint64_t` | Number of payload bytes for the frame. |
+| `byte_size` | `uint64_t` | Number of stored payload bytes for the frame. For compressed frames this is the compressed byte count. |
 | `cu_count` | `uint32_t` | Number of CU records in the frame. |
-| `flags` | `uint32_t` | Payload flags; initially `0`. |
+| `flags` | `uint32_t` | Payload flags. `0` means raw CU records; `1` means Windows XPRESS Huffman compressed CU records. |
 
 The offset is relative to the beginning of the `CUBL` payload, not the beginning
-of the file.
+of the file. Compression is per frame, so a reader can seek to one `CUID` row and
+decompress only that frame's CU records. `FSUM` and `CUID` remain uncompressed to
+preserve fast list, chart, and random access paths.
 
 ## CU Blob
 
-The first VBS3 CU payload revision reuses the legacy VBS2 variable CU
-records:
+The first VBS3 CU payload revision reuses the legacy VBS2 variable CU records.
+When `CUID.flags == 1`, the stored CUBL bytes must be decompressed first and the
+resulting byte stream has the same record layout:
 
 ```text
 VbsCuCommon

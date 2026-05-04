@@ -97,6 +97,10 @@ struct Vbs3CuIndexEntry {
 };
 static_assert(sizeof(Vbs3CuIndexEntry) == 24);
 
+// VBS3 CUBL/CUID flags
+inline constexpr uint32_t VBS3_CUID_FLAG_COMPRESSED_XPRESS_HUFF = 0x00000001;
+inline constexpr uint32_t VBS3_CUBL_SECTION_FLAG_PER_FRAME_COMPRESSION = 0x00000001;
+
 struct VbsCuCommon {
     uint16_t x;
     uint16_t y;

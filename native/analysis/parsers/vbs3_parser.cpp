@@ -1,6 +1,16 @@
 #include "analysis/parsers/vbs3_parser.h"
 #include "common/win_utf8.h"
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 #include <cstring>
 #include <limits>
 
@@ -25,10 +35,124 @@ bool section_records_fit(const Vbs3SectionEntry& section, uint32_t expected_entr
            section.size == static_cast<uint64_t>(section.entry_size) * section.entry_count;
 }
 
-bool read_pos(std::ifstream& file, uint64_t& out) {
-    const auto pos = file.tellg();
-    if (pos < 0) return false;
-    out = static_cast<uint64_t>(pos);
+bool read_bytes(std::ifstream& file, uint64_t offset, uint64_t size, std::vector<uint8_t>& out) {
+    if (size > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) return false;
+    out.resize(static_cast<size_t>(size));
+    file.clear();
+    file.seekg(static_cast<std::streamoff>(offset));
+    if (!file) return false;
+    if (out.empty()) return true;
+    file.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(out.size()));
+    return static_cast<size_t>(file.gcount()) == out.size();
+}
+
+#ifdef _WIN32
+constexpr DWORD kVoidCompressAlgorithmXpressHuff = 4;
+
+using VoidDecompressorHandle = void*;
+using VoidCreateDecompressorProc = BOOL(WINAPI*)(DWORD, void*, VoidDecompressorHandle*);
+using VoidDecompressProc = BOOL(WINAPI*)(VoidDecompressorHandle, void*, size_t, void*, size_t, size_t*);
+using VoidCloseDecompressorProc = BOOL(WINAPI*)(VoidDecompressorHandle);
+
+struct VoidDecompressionApi {
+    bool initialized = false;
+    bool available = false;
+    HMODULE module = nullptr;
+    VoidCreateDecompressorProc create_decompressor = nullptr;
+    VoidDecompressProc decompress = nullptr;
+    VoidCloseDecompressorProc close_decompressor = nullptr;
+};
+
+VoidDecompressionApi& decompression_api() {
+    static VoidDecompressionApi api;
+    if (!api.initialized) {
+        api.initialized = true;
+        api.module = LoadLibraryA("Cabinet.dll");
+        if (api.module) {
+            api.create_decompressor = reinterpret_cast<VoidCreateDecompressorProc>(
+                GetProcAddress(api.module, "CreateDecompressor"));
+            api.decompress = reinterpret_cast<VoidDecompressProc>(
+                GetProcAddress(api.module, "Decompress"));
+            api.close_decompressor = reinterpret_cast<VoidCloseDecompressorProc>(
+                GetProcAddress(api.module, "CloseDecompressor"));
+            api.available = api.create_decompressor && api.decompress && api.close_decompressor;
+        }
+    }
+    return api;
+}
+
+bool decompress_xpress_huff(const std::vector<uint8_t>& input,
+                            size_t max_output_size,
+                            std::vector<uint8_t>& output) {
+    auto& api = decompression_api();
+    if (!api.available || input.empty() || max_output_size == 0) return false;
+
+    VoidDecompressorHandle decompressor = nullptr;
+    if (!api.create_decompressor(kVoidCompressAlgorithmXpressHuff, nullptr, &decompressor)) {
+        return false;
+    }
+
+    output.resize(max_output_size);
+    size_t output_size = 0;
+    const BOOL ok = api.decompress(decompressor,
+                                   const_cast<uint8_t*>(input.data()),
+                                   input.size(),
+                                   output.data(),
+                                   output.size(),
+                                   &output_size);
+    api.close_decompressor(decompressor);
+    if (!ok || output_size > output.size()) {
+        output.clear();
+        return false;
+    }
+    output.resize(static_cast<size_t>(output_size));
+    return true;
+}
+#else
+bool decompress_xpress_huff(const std::vector<uint8_t>&,
+                            size_t,
+                            std::vector<uint8_t>&) {
+    return false;
+}
+#endif
+
+bool parse_cu_payload(const uint8_t* data,
+                      size_t size,
+                      uint32_t cu_count,
+                      std::vector<VbsCuRecord>& out) {
+    if (cu_count == 0) return true;
+    if (!data) return false;
+
+    const uint8_t* cursor = data;
+    const uint8_t* end = data + size;
+
+    out.reserve(cu_count);
+    for (uint32_t i = 0; i < cu_count; ++i) {
+        if (static_cast<size_t>(end - cursor) < sizeof(VbsCuCommon)) {
+            return false;
+        }
+
+        VbsCuRecord rec{};
+        std::memcpy(&rec.common, cursor, sizeof(VbsCuCommon));
+        cursor += sizeof(VbsCuCommon);
+
+        switch (rec.common.pred_mode) {
+        case 1:
+            if (static_cast<size_t>(end - cursor) < sizeof(VbsCuIntra)) return false;
+            std::memcpy(&rec.intra, cursor, sizeof(VbsCuIntra));
+            cursor += sizeof(VbsCuIntra);
+            break;
+        case 0:
+            if (static_cast<size_t>(end - cursor) < sizeof(VbsCuInter)) return false;
+            std::memcpy(&rec.inter, cursor, sizeof(VbsCuInter));
+            cursor += sizeof(VbsCuInter);
+            break;
+        default:
+            break;
+        }
+
+        out.push_back(rec);
+    }
     return true;
 }
 
@@ -40,6 +164,17 @@ bool validate_summary(const Vbs3FrameSummary& summary, uint32_t index, size_t cu
     if (summary.avg_qp > 63 || summary.qp_min > 63 || summary.qp_max > 63) return false;
     if (summary.num_cus > 0 && summary.qp_min > summary.qp_max) return false;
     return true;
+}
+
+bool validate_cu_index(const Vbs3CuIndexEntry& idx, uint64_t cu_blob_size) {
+    constexpr uint32_t kKnownFlags = VBS3_CUID_FLAG_COMPRESSED_XPRESS_HUFF;
+    const bool compressed = (idx.flags & VBS3_CUID_FLAG_COMPRESSED_XPRESS_HUFF) != 0;
+    if ((idx.flags & ~kKnownFlags) != 0) return false;
+    if (idx.cu_count > kMaxCusPerFrame) return false;
+    if (idx.offset > cu_blob_size) return false;
+    if (idx.byte_size > cu_blob_size - idx.offset) return false;
+    if (compressed) return idx.byte_size > 0 || idx.cu_count == 0;
+    return idx.byte_size >= static_cast<uint64_t>(idx.cu_count) * sizeof(VbsCuCommon);
 }
 } // namespace
 
@@ -147,10 +282,7 @@ bool Vbs3File::open_region(const std::string& path, uint64_t offset, uint64_t si
         }
         const auto& idx = cu_index_[summary.cu_index_entry];
         if (idx.cu_count != summary.num_cus ||
-            idx.cu_count > kMaxCusPerFrame ||
-            idx.offset > cu_blob_size_ ||
-            idx.byte_size > cu_blob_size_ - idx.offset ||
-            idx.byte_size < static_cast<uint64_t>(idx.cu_count) * sizeof(VbsCuCommon)) {
+            !validate_cu_index(idx, cu_blob_size_)) {
             close();
             return false;
         }
@@ -197,40 +329,29 @@ Vbs3FrameData Vbs3File::read_frame(int frame_idx) const {
         return result;
     }
 
-    file_.clear();
-    file_.seekg(static_cast<std::streamoff>(base_offset_ + cu_blob_offset_ + idx.offset));
-    const auto frame_end = base_offset_ + cu_blob_offset_ + idx.offset + idx.byte_size;
-
-    result.cus.reserve(idx.cu_count);
-    for (uint32_t i = 0; i < idx.cu_count; ++i) {
-        uint64_t pos = 0;
-        if (!read_pos(file_, pos) || pos + sizeof(VbsCuCommon) > frame_end) {
-            break;
-        }
-        VbsCuRecord rec{};
-        file_.read(reinterpret_cast<char*>(&rec.common), sizeof(VbsCuCommon));
-        if (!file_) break;
-
-        switch (rec.common.pred_mode) {
-        case 1:
-            if (!read_pos(file_, pos) || pos + sizeof(VbsCuIntra) > frame_end) {
-                return result;
-            }
-            file_.read(reinterpret_cast<char*>(&rec.intra), sizeof(VbsCuIntra));
-            break;
-        case 0:
-            if (!read_pos(file_, pos) || pos + sizeof(VbsCuInter) > frame_end) {
-                return result;
-            }
-            file_.read(reinterpret_cast<char*>(&rec.inter), sizeof(VbsCuInter));
-            break;
-        default:
-            break;
-        }
-        if (!file_) break;
-        result.cus.push_back(rec);
+    std::vector<uint8_t> stored;
+    if (!read_bytes(file_, base_offset_ + cu_blob_offset_ + idx.offset, idx.byte_size, stored)) {
+        return result;
     }
 
+    const bool compressed = (idx.flags & VBS3_CUID_FLAG_COMPRESSED_XPRESS_HUFF) != 0;
+    std::vector<uint8_t> payload;
+    const uint8_t* payload_data = stored.data();
+    size_t payload_size = stored.size();
+    if (compressed) {
+        if (idx.cu_count > static_cast<uint64_t>(std::numeric_limits<size_t>::max()) /
+                               VBS_CU_SIZE_INTER) {
+            return result;
+        }
+        const size_t max_payload_size = static_cast<size_t>(idx.cu_count) * VBS_CU_SIZE_INTER;
+        if (!decompress_xpress_huff(stored, max_payload_size, payload)) {
+            return result;
+        }
+        payload_data = payload.data();
+        payload_size = payload.size();
+    }
+
+    parse_cu_payload(payload_data, payload_size, idx.cu_count, result.cus);
     return result;
 }
 

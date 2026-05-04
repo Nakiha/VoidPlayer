@@ -8,6 +8,70 @@
 
 #include <filesystem>
 #include <fstream>
+#include <vector>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
+namespace {
+
+void set_fourcc(char dst[4], const char (&src)[5]) {
+    dst[0] = src[0];
+    dst[1] = src[1];
+    dst[2] = src[2];
+    dst[3] = src[3];
+}
+
+template <typename T>
+void write_struct(std::ofstream& out, const T& value) {
+    out.write(reinterpret_cast<const char*>(&value), sizeof(T));
+}
+
+#ifdef _WIN32
+std::vector<uint8_t> compress_xpress_huff_for_test(const std::vector<uint8_t>& input) {
+    using CompressorHandle = void*;
+    using CreateCompressorProc = BOOL(WINAPI*)(DWORD, void*, CompressorHandle*);
+    using CompressProc = BOOL(WINAPI*)(CompressorHandle, void*, size_t, void*, size_t, size_t*);
+    using CloseCompressorProc = BOOL(WINAPI*)(CompressorHandle);
+    constexpr DWORD kXpressHuff = 4;
+
+    HMODULE cabinet = LoadLibraryA("Cabinet.dll");
+    REQUIRE(cabinet != nullptr);
+    auto create_compressor = reinterpret_cast<CreateCompressorProc>(
+        GetProcAddress(cabinet, "CreateCompressor"));
+    auto compress = reinterpret_cast<CompressProc>(
+        GetProcAddress(cabinet, "Compress"));
+    auto close_compressor = reinterpret_cast<CloseCompressorProc>(
+        GetProcAddress(cabinet, "CloseCompressor"));
+    REQUIRE(create_compressor != nullptr);
+    REQUIRE(compress != nullptr);
+    REQUIRE(close_compressor != nullptr);
+
+    CompressorHandle compressor = nullptr;
+    REQUIRE(create_compressor(kXpressHuff, nullptr, &compressor));
+
+    std::vector<uint8_t> output(input.size() + 4096);
+    size_t output_size = 0;
+    REQUIRE(compress(compressor,
+                     const_cast<uint8_t*>(input.data()),
+                     input.size(),
+                     output.data(),
+                     output.size(),
+                     &output_size));
+    REQUIRE(close_compressor(compressor));
+    output.resize(output_size);
+    return output;
+}
+#endif
+
+} // namespace
 
 // ===========================================================================
 // VAC1 Container Tests
@@ -311,6 +375,130 @@ TEST_CASE("VBS3: read full frame with CU records", "[analysis][vbs3]") {
         REQUIRE(cu.common.qp <= 63);
     }
 }
+
+#ifdef _WIN32
+TEST_CASE("VBS3: read XPRESS Huffman compressed frame payload", "[analysis][vbs3]") {
+    std::vector<uint8_t> raw_payload;
+    auto append = [&raw_payload](const auto& value) {
+        const auto* first = reinterpret_cast<const uint8_t*>(&value);
+        raw_payload.insert(raw_payload.end(), first, first + sizeof(value));
+    };
+
+    VbsCuCommon intra_common{};
+    intra_common.x = 0;
+    intra_common.y = 0;
+    intra_common.w = 16;
+    intra_common.h = 16;
+    intra_common.qp = 22;
+    intra_common.pred_mode = 1;
+    VbsCuIntra intra{};
+    intra.intra_mode = 10;
+    append(intra_common);
+    append(intra);
+
+    VbsCuCommon inter_common{};
+    inter_common.x = 16;
+    inter_common.y = 0;
+    inter_common.w = 16;
+    inter_common.h = 16;
+    inter_common.qp = 24;
+    inter_common.pred_mode = 0;
+    VbsCuInter inter{};
+    inter.merge_flag = 1;
+    inter.inter_dir = 1;
+    inter.mv_l0_x = 4;
+    inter.mv_l0_y = -2;
+    inter.ref_l0 = 0;
+    inter.ref_l1 = -1;
+    append(inter_common);
+    append(inter);
+
+    const auto compressed_payload = compress_xpress_huff_for_test(raw_payload);
+    REQUIRE(!compressed_payload.empty());
+
+    const auto path = std::filesystem::temp_directory_path() / "voidplayer_compressed_frame.vbs3";
+    const uint64_t cubl_offset = sizeof(Vbs3Header);
+    const uint64_t cubl_size = compressed_payload.size();
+    const uint64_t fsum_offset = cubl_offset + cubl_size;
+    const uint64_t fsum_size = sizeof(Vbs3FrameSummary);
+    const uint64_t cuid_offset = fsum_offset + fsum_size;
+    const uint64_t cuid_size = sizeof(Vbs3CuIndexEntry);
+    const uint64_t section_table_offset = cuid_offset + cuid_size;
+    const uint64_t file_size = section_table_offset + 3 * sizeof(Vbs3SectionEntry);
+
+    Vbs3Header header{};
+    set_fourcc(header.magic, "VBS3");
+    header.version_major = 3;
+    header.version_minor = 1;
+    header.header_size = sizeof(Vbs3Header);
+    header.section_entry_size = sizeof(Vbs3SectionEntry);
+    header.width = 32;
+    header.height = 16;
+    header.frame_count = 1;
+    header.section_count = 3;
+    header.section_table_offset = section_table_offset;
+    header.file_size = file_size;
+
+    Vbs3FrameSummary summary{};
+    summary.coded_order = 0;
+    summary.vcl_nalu_index = 0xFFFFFFFFu;
+    summary.slice_type = 2;
+    summary.avg_qp = 23;
+    summary.qp_min = 22;
+    summary.qp_max = 24;
+    summary.num_cus = 2;
+    summary.cu_index_entry = 0;
+
+    Vbs3CuIndexEntry index{};
+    index.byte_size = compressed_payload.size();
+    index.cu_count = 2;
+    index.flags = VBS3_CUID_FLAG_COMPRESSED_XPRESS_HUFF;
+
+    Vbs3SectionEntry sections[3]{};
+    set_fourcc(sections[0].type, "FSUM");
+    sections[0].offset = fsum_offset;
+    sections[0].size = fsum_size;
+    sections[0].entry_size = sizeof(Vbs3FrameSummary);
+    sections[0].entry_count = 1;
+    set_fourcc(sections[1].type, "CUID");
+    sections[1].offset = cuid_offset;
+    sections[1].size = cuid_size;
+    sections[1].entry_size = sizeof(Vbs3CuIndexEntry);
+    sections[1].entry_count = 1;
+    set_fourcc(sections[2].type, "CUBL");
+    sections[2].flags = VBS3_CUBL_SECTION_FLAG_PER_FRAME_COMPRESSION;
+    sections[2].offset = cubl_offset;
+    sections[2].size = cubl_size;
+    sections[2].entry_count = 1;
+
+    {
+        std::ofstream out(path, std::ios::binary);
+        REQUIRE(out);
+        write_struct(out, header);
+        out.write(reinterpret_cast<const char*>(compressed_payload.data()),
+                  static_cast<std::streamsize>(compressed_payload.size()));
+        write_struct(out, summary);
+        write_struct(out, index);
+        out.write(reinterpret_cast<const char*>(sections), sizeof(sections));
+        REQUIRE(out.good());
+    }
+
+    vr::analysis::Vbs3File vbs3;
+    REQUIRE(vbs3.open(path.string()));
+    const auto frame = vbs3.read_frame(0);
+    REQUIRE(frame.cus.size() == 2);
+    REQUIRE(frame.cus[0].common.pred_mode == 1);
+    REQUIRE(frame.cus[0].common.qp == 22);
+    REQUIRE(frame.cus[0].intra.intra_mode == 10);
+    REQUIRE(frame.cus[1].common.pred_mode == 0);
+    REQUIRE(frame.cus[1].common.qp == 24);
+    REQUIRE(frame.cus[1].inter.mv_l0_x == 4);
+    REQUIRE(frame.cus[1].inter.mv_l0_y == -2);
+
+    vbs3.close();
+    std::filesystem::remove(path);
+}
+#endif
 
 TEST_CASE("VBS3: inter frames have references", "[analysis][vbs3]") {
     auto& data = AnalysisTestData::instance();

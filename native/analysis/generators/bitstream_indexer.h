@@ -30,6 +30,13 @@ public:
                               bool key_packet,
                               BitstreamIndex& index);
 
+    static bool append_packet_streaming(VbiCodec codec,
+                                        const uint8_t* data,
+                                        int data_len,
+                                        bool key_packet,
+                                        uint64_t& source_size,
+                                        const VbiEntrySink& sink);
+
     static bool index_raw_file(const std::string& path,
                                VbiCodec codec,
                                BitstreamIndex& index);

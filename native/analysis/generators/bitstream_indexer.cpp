@@ -96,6 +96,83 @@ void append_length_prefixed_units(const uint8_t* data,
     }
 }
 
+template <typename ParseFn>
+bool emit_annex_b_units(const uint8_t* data,
+                        int len,
+                        bool key_packet,
+                        uint64_t& source_size,
+                        const BitstreamIndexer::VbiEntrySink& sink,
+                        ParseFn parse) {
+    if (!sink) return false;
+
+    int current_start = -1;
+    int current_prefix = 0;
+    auto emit_current = [&](int end) -> bool {
+        if (current_start < 0 || end <= current_start + current_prefix) {
+            return true;
+        }
+        const int unit_size = end - current_start;
+        VbiEntry entry{};
+        entry.offset = source_size;
+        entry.size = static_cast<uint32_t>(unit_size);
+        parse(data + current_start + current_prefix,
+              unit_size - current_prefix,
+              key_packet,
+              entry);
+        source_size += entry.size;
+        return sink(entry);
+    };
+
+    for (int i = 0; i + 3 < len;) {
+        int prefix = 0;
+        if (data[i] == 0 && data[i + 1] == 0) {
+            if (data[i + 2] == 1) {
+                prefix = 3;
+            } else if (i + 4 < len && data[i + 2] == 0 && data[i + 3] == 1) {
+                prefix = 4;
+            }
+        }
+        if (prefix > 0) {
+            if (!emit_current(i)) return false;
+            current_start = i;
+            current_prefix = prefix;
+            i += prefix;
+            continue;
+        }
+        ++i;
+    }
+    return emit_current(len);
+}
+
+template <typename ParseFn>
+bool emit_length_prefixed_units(const uint8_t* data,
+                                int len,
+                                bool key_packet,
+                                uint64_t& source_size,
+                                const BitstreamIndexer::VbiEntrySink& sink,
+                                ParseFn parse) {
+    if (!sink) return false;
+    int pos = 0;
+    while (pos + 4 <= len) {
+        const uint32_t unit_len = (static_cast<uint32_t>(data[pos]) << 24) |
+                                  (static_cast<uint32_t>(data[pos + 1]) << 16) |
+                                  (static_cast<uint32_t>(data[pos + 2]) << 8) |
+                                  static_cast<uint32_t>(data[pos + 3]);
+        if (unit_len == 0 || unit_len > static_cast<uint32_t>(len - pos - 4)) {
+            break;
+        }
+
+        VbiEntry entry{};
+        entry.offset = source_size;
+        entry.size = 4 + unit_len;
+        parse(data + pos + 4, static_cast<int>(unit_len), key_packet, entry);
+        source_size += entry.size;
+        if (!sink(entry)) return false;
+        pos += 4 + static_cast<int>(unit_len);
+    }
+    return true;
+}
+
 void parse_h264(const uint8_t* data, int len, bool key_packet, VbiEntry& entry) {
     if (len <= 0) return;
     const uint8_t nal_type = data[0] & 0x1F;
@@ -199,6 +276,56 @@ void append_av1_obus(const uint8_t* data, int len, bool key_packet, BitstreamInd
     }
 }
 
+bool emit_av1_obus(const uint8_t* data,
+                   int len,
+                   bool key_packet,
+                   uint64_t& source_size,
+                   const BitstreamIndexer::VbiEntrySink& sink) {
+    if (!sink) return false;
+    int pos = 0;
+    while (pos < len) {
+        const int start = pos;
+        const uint8_t header = data[pos++];
+        if (header & 0x80) break;
+
+        const uint8_t obu_type = (header >> 3) & 0x0F;
+        const bool has_extension = (header & 0x04) != 0;
+        const bool has_size = (header & 0x02) != 0;
+        uint8_t temporal_id = 0;
+        uint8_t spatial_id = 0;
+        if (has_extension) {
+            if (pos >= len) break;
+            const uint8_t ext = data[pos++];
+            temporal_id = (ext >> 5) & 0x07;
+            spatial_id = (ext >> 3) & 0x03;
+        }
+
+        uint64_t payload_size = static_cast<uint64_t>(len - pos);
+        if (has_size && !read_uleb128(data, len, pos, payload_size)) break;
+        if (payload_size > static_cast<uint64_t>(len - pos)) break;
+
+        VbiEntry entry{};
+        entry.offset = source_size;
+        entry.size = static_cast<uint32_t>((pos - start) + payload_size);
+        entry.nal_type = obu_type;
+        entry.temporal_id = temporal_id;
+        entry.layer_id = spatial_id;
+        if (obu_type == 3 || obu_type == 4 || obu_type == 6) {
+            entry.flags |= VBI_FLAG_IS_VCL;
+        }
+        if (obu_type == 6 || obu_type == 4) {
+            entry.flags |= VBI_FLAG_IS_SLICE;
+        }
+        if (key_packet && (entry.flags & VBI_FLAG_IS_VCL)) {
+            entry.flags |= VBI_FLAG_IS_KEYFRAME;
+        }
+        source_size += entry.size;
+        if (!sink(entry)) return false;
+        pos += static_cast<int>(payload_size);
+    }
+    return true;
+}
+
 void append_mpeg2_units(const uint8_t* data, int len, bool key_packet, BitstreamIndex& index) {
     auto parse = [](const uint8_t* unit, int unit_len, bool packet_key, VbiEntry& entry) {
         if (unit_len <= 0) return;
@@ -224,6 +351,35 @@ void append_mpeg2_units(const uint8_t* data, int len, bool key_packet, Bitstream
     append_annex_b_units(data, len, key_packet, index, parse);
 }
 
+bool emit_mpeg2_units(const uint8_t* data,
+                      int len,
+                      bool key_packet,
+                      uint64_t& source_size,
+                      const BitstreamIndexer::VbiEntrySink& sink) {
+    auto parse = [](const uint8_t* unit, int unit_len, bool packet_key, VbiEntry& entry) {
+        if (unit_len <= 0) return;
+        const uint8_t code = unit[0];
+        entry.nal_type = code;
+        if (code == 0x00 || (code >= 0x01 && code <= 0xAF)) {
+            entry.flags |= VBI_FLAG_IS_VCL;
+        }
+        if (code >= 0x01 && code <= 0xAF) {
+            entry.flags |= VBI_FLAG_IS_SLICE;
+        }
+        if (code == 0x00 && unit_len >= 3) {
+            const uint16_t bits = static_cast<uint16_t>((unit[1] << 8) | unit[2]);
+            const uint8_t picture_coding_type = (bits >> 3) & 0x07;
+            if (picture_coding_type == 1) {
+                entry.flags |= VBI_FLAG_IS_KEYFRAME;
+            }
+        }
+        if (packet_key && (entry.flags & VBI_FLAG_IS_VCL)) {
+            entry.flags |= VBI_FLAG_IS_KEYFRAME;
+        }
+    };
+    return emit_annex_b_units(data, len, key_packet, source_size, sink, parse);
+}
+
 void append_packet_unit(VbiCodec codec,
                         const uint8_t* data,
                         int len,
@@ -242,6 +398,27 @@ void append_packet_unit(VbiCodec codec,
     }
     index.entries.push_back(entry);
     index.source_size += entry.size;
+}
+
+bool emit_packet_unit(VbiCodec codec,
+                      const uint8_t* data,
+                      int len,
+                      bool key_packet,
+                      uint64_t& source_size,
+                      const BitstreamIndexer::VbiEntrySink& sink) {
+    if (!sink || !data || len <= 0) return false;
+    VbiEntry entry{};
+    entry.offset = source_size;
+    entry.size = static_cast<uint32_t>(len);
+    entry.nal_type = 0;
+    entry.flags = VBI_FLAG_IS_VCL | VBI_FLAG_IS_SLICE;
+    if (key_packet) entry.flags |= VBI_FLAG_IS_KEYFRAME;
+    if (codec == VbiCodec::VP9 && len > 0) {
+        const bool vp9_key = (data[0] & 0x01) == 0;
+        if (vp9_key) entry.flags |= VBI_FLAG_IS_KEYFRAME;
+    }
+    source_size += entry.size;
+    return sink(entry);
 }
 
 std::string lowercase_extension(const std::string& path) {
@@ -636,6 +813,38 @@ void BitstreamIndexer::append_packet(VbiCodec codec,
     default:
         append_packet_unit(codec, data, data_len, key_packet, index);
         break;
+    }
+}
+
+bool BitstreamIndexer::append_packet_streaming(VbiCodec codec,
+                                               const uint8_t* data,
+                                               int data_len,
+                                               bool key_packet,
+                                               uint64_t& source_size,
+                                               const VbiEntrySink& sink) {
+    if (!data || data_len <= 0 || !sink) return false;
+
+    switch (codec) {
+    case VbiCodec::H264:
+        return is_annex_b(data, data_len)
+            ? emit_annex_b_units(data, data_len, key_packet, source_size, sink, parse_h264)
+            : emit_length_prefixed_units(data, data_len, key_packet, source_size, sink, parse_h264);
+    case VbiCodec::HEVC:
+        return is_annex_b(data, data_len)
+            ? emit_annex_b_units(data, data_len, key_packet, source_size, sink, parse_hevc)
+            : emit_length_prefixed_units(data, data_len, key_packet, source_size, sink, parse_hevc);
+    case VbiCodec::VVC:
+        return is_annex_b(data, data_len)
+            ? emit_annex_b_units(data, data_len, key_packet, source_size, sink, parse_vvc)
+            : emit_length_prefixed_units(data, data_len, key_packet, source_size, sink, parse_vvc);
+    case VbiCodec::AV1:
+        return emit_av1_obus(data, data_len, key_packet, source_size, sink);
+    case VbiCodec::MPEG2:
+        return emit_mpeg2_units(data, data_len, key_packet, source_size, sink);
+    case VbiCodec::VP9:
+        return emit_packet_unit(codec, data, data_len, key_packet, source_size, sink);
+    default:
+        return emit_packet_unit(codec, data, data_len, key_packet, source_size, sink);
     }
 }
 

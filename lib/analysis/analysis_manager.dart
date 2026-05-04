@@ -13,6 +13,15 @@ import 'nalu_types.dart';
 
 enum AnalysisState { idle, computingHash, generating, loading, loaded, error }
 
+enum AnalysisTrackStatus {
+  idle,
+  computingHash,
+  generating,
+  loading,
+  cached,
+  error,
+}
+
 /// Localizable error stored as a typed key + positional args.
 ///
 /// The UI resolves these via [AppLocalizations]; the manager never holds
@@ -22,12 +31,39 @@ enum AnalysisErrorKey {
   unsupported,
   loadFailed,
   cacheLimitExceeded,
+  cacheWriteIncomplete,
 }
 
 class AnalysisError {
   final AnalysisErrorKey key;
   final List<String> args;
   const AnalysisError(this.key, [this.args = const []]);
+}
+
+class AnalysisTrackGenerationStatus {
+  final String path;
+  final String fileName;
+  final String? hash;
+  final AnalysisTrackStatus status;
+  final double progress;
+  final AnalysisError? error;
+
+  const AnalysisTrackGenerationStatus({
+    required this.path,
+    required this.fileName,
+    required this.hash,
+    required this.status,
+    required this.progress,
+    required this.error,
+  });
+
+  bool get isWorking =>
+      status == AnalysisTrackStatus.computingHash ||
+      status == AnalysisTrackStatus.generating ||
+      status == AnalysisTrackStatus.loading;
+
+  bool get isCached => status == AnalysisTrackStatus.cached;
+  bool get isError => status == AnalysisTrackStatus.error;
 }
 
 /// Dart-side state machine for the analysis generation + loading flow.
@@ -43,6 +79,7 @@ class AnalysisManager extends ChangeNotifier {
   String? _generatingFileName;
   String? _loadedHash;
   final Map<String, Future<String?>> _ensureGeneratedInFlightByPath = {};
+  final Map<String, AnalysisTrackGenerationStatus> _trackStatusByPath = {};
   int _stateSerial = 0;
   int _loadSerial = 0;
   int _ensureAndLoadSerial = 0;
@@ -53,6 +90,9 @@ class AnalysisManager extends ChangeNotifier {
   String? get generatingFileName => _generatingFileName;
   String? get loadedHash => _loadedHash;
   bool get isLoaded => _state == AnalysisState.loaded;
+
+  AnalysisTrackGenerationStatus? statusForPath(String path) =>
+      _trackStatusByPath[path];
 
   /// Compute a full-file SHA-256 cache key.
   static Future<String> computeHash(String videoPath) =>
@@ -77,7 +117,7 @@ class AnalysisManager extends ChangeNotifier {
     return future;
   }
 
-  /// Full flow: compute hash → check cache → generate if needed → load.
+  /// Full flow: find cached hash or compute hash → generate if needed → load.
   /// Returns the hash on success, null on failure.
   Future<String?> ensureAndLoad(String videoPath) async {
     final serial = ++_ensureAndLoadSerial;
@@ -99,14 +139,53 @@ class AnalysisManager extends ChangeNotifier {
     log.info('[Analysis] ensureGenerated: videoPath=$videoPath');
 
     _setStateIfCurrent(stateSerial, AnalysisState.computingHash);
+    _setTrackStatus(
+      videoPath,
+      fileName: fileName,
+      status: AnalysisTrackStatus.computingHash,
+      progress: 0,
+    );
+    final indexedHash = await AnalysisCache.findHashForUnchangedVideo(
+      videoPath,
+    );
+    if (indexedHash != null && _hasUsableCacheEntry(indexedHash, videoPath)) {
+      log.info('[Analysis] metadata cache hit for $indexedHash');
+      await _refreshCacheEntry(indexedHash, fileName, videoPath);
+      await AnalysisCache.touchEntry(indexedHash);
+      _setTrackStatus(
+        videoPath,
+        fileName: fileName,
+        hash: indexedHash,
+        status: AnalysisTrackStatus.cached,
+        progress: 1,
+      );
+      _setStateIfCurrent(stateSerial, AnalysisState.idle);
+      return indexedHash;
+    }
+
     final String hash;
     try {
       hash = await _computeHash(videoPath);
       log.info('[Analysis] hash=$hash');
+      _setTrackStatus(
+        videoPath,
+        fileName: fileName,
+        hash: hash,
+        status: AnalysisTrackStatus.computingHash,
+        progress: 0,
+      );
     } catch (e) {
       log.severe('[Analysis] hash failed: $e');
+      final error = AnalysisError(AnalysisErrorKey.hashFailed, ['$e']);
+      _setTrackStatus(
+        videoPath,
+        fileName: fileName,
+        status: AnalysisTrackStatus.error,
+        progress: 0,
+        error: error,
+      );
       if (_isStateCurrent(stateSerial)) {
-        _setError(AnalysisErrorKey.hashFailed, ['$e']);
+        _setErrorObject(error);
       }
       return null;
     }
@@ -114,6 +193,14 @@ class AnalysisManager extends ChangeNotifier {
     if (_hasUsableCacheEntry(hash, videoPath)) {
       log.info('[Analysis] cache hit for $hash');
       await _refreshCacheEntry(hash, fileName, videoPath);
+      await AnalysisCache.touchEntry(hash);
+      _setTrackStatus(
+        videoPath,
+        fileName: fileName,
+        hash: hash,
+        status: AnalysisTrackStatus.cached,
+        progress: 1,
+      );
       _setStateIfCurrent(stateSerial, AnalysisState.idle);
       return hash;
     }
@@ -123,17 +210,29 @@ class AnalysisManager extends ChangeNotifier {
         ? AppConfig.instance.analysisCacheMaxBytes
         : 0;
     if (maxCacheBytes > 0) {
-      final snapshot = await AnalysisCache.snapshot(maxBytes: maxCacheBytes);
-      if (snapshot.isOverLimit) {
+      final pruneResult = await AnalysisCache.enforceLimit(
+        maxBytes: maxCacheBytes,
+        protectedHashes: {hash},
+      );
+      if (pruneResult.snapshot.isOverLimit) {
         log.warning(
           '[Analysis] cache limit reached: '
-          'current=${snapshot.totalBytes}, max=$maxCacheBytes',
+          'current=${pruneResult.snapshot.totalBytes}, max=$maxCacheBytes',
+        );
+        final error = AnalysisError(AnalysisErrorKey.cacheLimitExceeded, [
+          AnalysisCache.formatBytes(pruneResult.snapshot.totalBytes),
+          AnalysisCache.formatBytes(maxCacheBytes),
+        ]);
+        _setTrackStatus(
+          videoPath,
+          fileName: fileName,
+          hash: hash,
+          status: AnalysisTrackStatus.error,
+          progress: 0,
+          error: error,
         );
         if (_isStateCurrent(stateSerial)) {
-          _setError(AnalysisErrorKey.cacheLimitExceeded, [
-            AnalysisCache.formatBytes(snapshot.totalBytes),
-            AnalysisCache.formatBytes(maxCacheBytes),
-          ]);
+          _setErrorObject(error);
         }
         return null;
       }
@@ -145,6 +244,13 @@ class AnalysisManager extends ChangeNotifier {
       _error = null;
       notifyListeners();
     }
+    _setTrackStatus(
+      videoPath,
+      fileName: fileName,
+      hash: hash,
+      status: AnalysisTrackStatus.generating,
+      progress: 0,
+    );
 
     log.info(
       '[Analysis] calling FFI generateAnalysis(videoPath=$videoPath, hash=$hash)',
@@ -154,33 +260,90 @@ class AnalysisManager extends ChangeNotifier {
       ok = await _generateAnalysisSerialized(videoPath, hash);
     } catch (e, stack) {
       log.severe('[Analysis] generateAnalysis threw: $e', e, stack);
+      final error = await _generationFailureError(
+        hash: hash,
+        fileName: fileName,
+        maxCacheBytes: maxCacheBytes,
+      );
+      _setTrackStatus(
+        videoPath,
+        fileName: fileName,
+        hash: hash,
+        status: AnalysisTrackStatus.error,
+        progress: 0,
+        error: error,
+      );
       if (_isStateCurrent(stateSerial)) {
-        _setError(AnalysisErrorKey.unsupported, [fileName]);
+        _setErrorObject(error);
       }
       return null;
     }
     if (!ok) {
       log.severe('[Analysis] generateAnalysis returned false');
+      final error = await _generationFailureError(
+        hash: hash,
+        fileName: fileName,
+        maxCacheBytes: maxCacheBytes,
+      );
+      _setTrackStatus(
+        videoPath,
+        fileName: fileName,
+        hash: hash,
+        status: AnalysisTrackStatus.error,
+        progress: 0,
+        error: error,
+      );
       if (_isStateCurrent(stateSerial)) {
-        _setError(AnalysisErrorKey.unsupported, [fileName]);
+        _setErrorObject(error);
       }
       return null;
     }
     log.info('[Analysis] generateAnalysis succeeded');
 
+    if (!AnalysisCache.filesExist(hash)) {
+      final error = await _generationFailureError(
+        hash: hash,
+        fileName: fileName,
+        maxCacheBytes: maxCacheBytes,
+        forceIncomplete: true,
+      );
+      _setTrackStatus(
+        videoPath,
+        fileName: fileName,
+        hash: hash,
+        status: AnalysisTrackStatus.error,
+        progress: 0,
+        error: error,
+      );
+      if (_isStateCurrent(stateSerial)) {
+        _setErrorObject(error);
+      }
+      return null;
+    }
+
     await _refreshCacheEntry(hash, fileName, videoPath);
     log.info('[Analysis] index entry saved');
 
     if (maxCacheBytes > 0) {
-      final snapshot = await AnalysisCache.snapshot(maxBytes: maxCacheBytes);
-      if (snapshot.isOverLimit) {
+      final pruneResult = await AnalysisCache.enforceLimit(
+        maxBytes: maxCacheBytes,
+        protectedHashes: {hash},
+      );
+      if (pruneResult.snapshot.isOverLimit) {
         log.warning(
           '[Analysis] cache exceeded after generation: '
-          'current=${snapshot.totalBytes}, max=$maxCacheBytes',
+          'current=${pruneResult.snapshot.totalBytes}, max=$maxCacheBytes',
         );
       }
     }
 
+    _setTrackStatus(
+      videoPath,
+      fileName: fileName,
+      hash: hash,
+      status: AnalysisTrackStatus.cached,
+      progress: 1,
+    );
     _setStateIfCurrent(stateSerial, AnalysisState.idle);
     return hash;
   }
@@ -192,6 +355,13 @@ class AnalysisManager extends ChangeNotifier {
   }) async {
     final serial = ++_loadSerial;
     _setState(AnalysisState.loading);
+    _setTrackStatus(
+      path,
+      fileName: name,
+      hash: hash,
+      status: AnalysisTrackStatus.loading,
+      progress: 1,
+    );
     final analysisPath = AnalysisCache.analysisPath(hash);
 
     log.info('[Analysis] loading: analysis=$analysisPath');
@@ -199,11 +369,28 @@ class AnalysisManager extends ChangeNotifier {
     if (!_isLoadCurrent(serial)) return false;
     if (!ok) {
       log.severe('[Analysis] FFI load returned false');
-      _setError(AnalysisErrorKey.loadFailed, [name]);
+      final error = AnalysisError(AnalysisErrorKey.loadFailed, [name]);
+      _setTrackStatus(
+        path,
+        fileName: name,
+        hash: hash,
+        status: AnalysisTrackStatus.error,
+        progress: 1,
+        error: error,
+      );
+      _setErrorObject(error);
       return false;
     }
 
     _loadedHash = hash;
+    await AnalysisCache.touchEntry(hash);
+    _setTrackStatus(
+      path,
+      fileName: name,
+      hash: hash,
+      status: AnalysisTrackStatus.cached,
+      progress: 1,
+    );
     log.info('[Analysis] loaded successfully, hash=$hash');
     _setState(AnalysisState.loaded);
     return true;
@@ -230,9 +417,9 @@ class AnalysisManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _setError(AnalysisErrorKey key, [List<String> args = const []]) {
+  void _setErrorObject(AnalysisError error) {
     _state = AnalysisState.error;
-    _error = AnalysisError(key, args);
+    _error = error;
     _generatingFileName = null;
     notifyListeners();
   }
@@ -293,9 +480,7 @@ class AnalysisManager extends ChangeNotifier {
   }
 
   bool _requiresFrameData(AnalysisCodec codec) => switch (codec) {
-    AnalysisCodec.h264 ||
-    AnalysisCodec.hevc ||
-    AnalysisCodec.vvc => true,
+    AnalysisCodec.h264 || AnalysisCodec.hevc || AnalysisCodec.vvc => true,
     AnalysisCodec.vp9 ||
     AnalysisCodec.mpeg2 ||
     AnalysisCodec.av1 ||
@@ -338,6 +523,50 @@ class AnalysisManager extends ChangeNotifier {
         );
     _generateQueue = task.then<void>((_) {}, onError: (_) {});
     return task;
+  }
+
+  Future<AnalysisError> _generationFailureError({
+    required String hash,
+    required String fileName,
+    required int maxCacheBytes,
+    bool forceIncomplete = false,
+  }) async {
+    if (maxCacheBytes > 0) {
+      final snapshot = await AnalysisCache.snapshot(maxBytes: maxCacheBytes);
+      final incomplete =
+          forceIncomplete || AnalysisCache.hasIncompleteContainer(hash);
+      if (incomplete && snapshot.isOverLimit) {
+        log.warning(
+          '[Analysis] generation left incomplete VAC while cache is full: '
+          'current=${snapshot.totalBytes}, max=$maxCacheBytes, hash=$hash',
+        );
+        return AnalysisError(AnalysisErrorKey.cacheWriteIncomplete, [
+          fileName,
+          AnalysisCache.formatBytes(snapshot.totalBytes),
+          AnalysisCache.formatBytes(maxCacheBytes),
+        ]);
+      }
+    }
+    return AnalysisError(AnalysisErrorKey.unsupported, [fileName]);
+  }
+
+  void _setTrackStatus(
+    String path, {
+    required String fileName,
+    String? hash,
+    required AnalysisTrackStatus status,
+    required double progress,
+    AnalysisError? error,
+  }) {
+    _trackStatusByPath[path] = AnalysisTrackGenerationStatus(
+      path: path,
+      fileName: fileName,
+      hash: hash ?? _trackStatusByPath[path]?.hash,
+      status: status,
+      progress: progress,
+      error: error,
+    );
+    notifyListeners();
   }
 
   Future<void> _refreshCacheEntry(

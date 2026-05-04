@@ -182,6 +182,7 @@ class MainWindowView extends StatelessWidget {
                     onAnalysis: actions.onAnalysis,
                     onProfiler: actions.onProfiler,
                     onSettings: actions.onSettings,
+                    tracks: model.tracks,
                     viewModeEnabled: model.viewModeEnabled,
                     analysisEnabled: model.analysisEnabled,
                   ),
@@ -294,14 +295,18 @@ class MainWindowView extends StatelessWidget {
               key: const ValueKey('profilerOverlay'),
               top: 48,
               right: 12,
-              bottom: 12,
               left: 12,
               child: _AnimatedOverlaySlot(
                 visible: model.profilerVisible,
                 builder: (context) => Align(
-                  alignment: Alignment.centerRight,
+                  alignment: Alignment.topRight,
+                  heightFactor: 1,
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 640),
+                    constraints: const BoxConstraints(
+                      minWidth: 360,
+                      maxWidth: 560,
+                      maxHeight: 320,
+                    ),
                     child: _ProfilerOverlay(onClose: actions.onCloseProfiler),
                   ),
                 ),
@@ -550,37 +555,43 @@ class _ProfilerOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Material(
-      elevation: 12,
-      color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(8),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          SizedBox(
-            height: 40,
-            child: Row(
-              children: [
-                const SizedBox(width: 12),
-                Icon(Icons.speed, size: 18, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    AppLocalizations.of(context)!.performanceMonitor,
-                    style: theme.textTheme.titleSmall,
+    return IntrinsicWidth(
+      child: Material(
+        elevation: 12,
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: 40,
+              child: Row(
+                children: [
+                  const SizedBox(width: 12),
+                  Icon(Icons.speed, size: 18, color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      AppLocalizations.of(context)!.performanceMonitor,
+                      style: theme.textTheme.titleSmall,
+                    ),
                   ),
-                ),
-                IconButton(
-                  onPressed: onClose,
-                  icon: const Icon(Icons.close, size: 18),
-                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                ),
-              ],
+                  IconButton(
+                    onPressed: onClose,
+                    icon: const Icon(Icons.close, size: 18),
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).closeButtonTooltip,
+                  ),
+                ],
+              ),
             ),
-          ),
-          const Divider(height: 1),
-          const Expanded(child: StatsPage()),
-        ],
+            const Divider(height: 1),
+            const Flexible(child: StatsPage()),
+          ],
+        ),
       ),
     );
   }

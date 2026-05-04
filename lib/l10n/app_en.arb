@@ -82,6 +82,9 @@
   "target": "Target",
   "@target": { "description": "Table column: target FPS" },
 
+  "bufferQueue": "Buffer queue",
+  "@bufferQueue": { "description": "Stats table column: decoded frame buffers in use / capacity" },
+
   "decodeAvg": "Decode Avg",
   "@decodeAvg": { "description": "Table column: average decode time" },
 
@@ -372,6 +375,33 @@
 
   "analysisErrorCacheLimitExceeded": "Analysis cache is full ({used} / {limit}). Raise the limit or clear cache files before generating more VTM data.",
   "@analysisErrorCacheLimitExceeded": { "description": "Error: analysis cache limit exceeded", "placeholders": { "used": { "type": "String" }, "limit": { "type": "String" } } },
+
+  "analysisErrorCacheWriteIncomplete": "Analysis cache filled up while generating {name} ({used} / {limit}); the VAC file is incomplete. Raise the limit or clear cache, then try again.",
+  "@analysisErrorCacheWriteIncomplete": { "description": "Error: analysis cache filled during generation and left an incomplete VAC", "placeholders": { "name": { "type": "String" }, "used": { "type": "String" }, "limit": { "type": "String" } } },
+
+  "analysisCachePanelTitle": "Analysis cache",
+  "@analysisCachePanelTitle": { "description": "Toolbar analysis hover panel title" },
+
+  "analysisCachePanelEmpty": "No tracks open",
+  "@analysisCachePanelEmpty": { "description": "Toolbar analysis hover panel empty state" },
+
+  "analysisCacheStatusCached": "Cache ready",
+  "@analysisCacheStatusCached": { "description": "Toolbar analysis hover panel per-track cached status" },
+
+  "analysisCacheStatusMissing": "No analysis cache",
+  "@analysisCacheStatusMissing": { "description": "Toolbar analysis hover panel per-track missing cache status" },
+
+  "analysisCacheStatusChecking": "Checking cache",
+  "@analysisCacheStatusChecking": { "description": "Toolbar analysis hover panel per-track hashing status" },
+
+  "analysisCacheStatusGenerating": "Generating {progress}% - {size}",
+  "@analysisCacheStatusGenerating": { "description": "Toolbar analysis hover panel per-track fake generation progress", "placeholders": { "progress": { "type": "String" }, "size": { "type": "String" } } },
+
+  "analysisCacheStatusLoading": "Loading cache",
+  "@analysisCacheStatusLoading": { "description": "Toolbar analysis hover panel per-track loading status" },
+
+  "analysisCacheStatusFailed": "Analysis cache failed",
+  "@analysisCacheStatusFailed": { "description": "Toolbar analysis hover panel per-track failed status" },
 
   "analysisFilterHint": "Filter by type, name or #id",
   "@analysisFilterHint": { "description": "Placeholder text for NALU filter search bar" },

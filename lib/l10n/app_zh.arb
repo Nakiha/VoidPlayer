@@ -34,6 +34,7 @@
   "track": "轨道",
   "fps": "帧率",
   "target": "目标",
+  "bufferQueue": "缓冲队列",
   "decodeAvg": "解码均值",
   "decodeMax": "解码峰值",
   "status": "状态",
@@ -136,6 +137,15 @@
   "analysisErrorUnsupported": "不支持的编码格式或生成失败: {name}",
   "analysisErrorLoadFailed": "加载分析数据失败: {name}",
   "analysisErrorCacheLimitExceeded": "分析缓存已满（{used} / {limit}）。请调高上限或清理缓存后再生成新的 VTM 数据。",
+  "analysisErrorCacheWriteIncomplete": "为 {name} 生成分析缓存时用满了缓存限制（{used} / {limit}），VAC 文件未完整写入。请调高上限或清理缓存后重试。",
+  "analysisCachePanelTitle": "分析缓存",
+  "analysisCachePanelEmpty": "当前没有打开的轨道",
+  "analysisCacheStatusCached": "缓存就绪",
+  "analysisCacheStatusMissing": "暂无分析缓存",
+  "analysisCacheStatusChecking": "正在检查缓存",
+  "analysisCacheStatusGenerating": "生成中 {progress}% - {size}",
+  "analysisCacheStatusLoading": "正在加载缓存",
+  "analysisCacheStatusFailed": "分析缓存失败",
 
   "analysisFilterHint": "按类型、名称或 #序号筛选",
   "analysisIpcDisconnected": "IPC 已断开，轨道快照可能已过期"

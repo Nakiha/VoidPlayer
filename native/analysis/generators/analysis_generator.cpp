@@ -235,11 +235,11 @@ static bool packet_starts_with_annex_b(const AVPacket* pkt) {
            (data[0] == 0 && data[1] == 0 && data[2] == 1);
 }
 
-static void append_packet_if_safe(const AVPacket* pkt,
+static bool append_packet_if_safe(const AVPacket* pkt,
                                   VbiCodec codec,
-                                  BitstreamIndex& bitstream_index,
+                                  VbiStreamWriter& writer,
                                   bool& unsafe_fallback_warned) {
-    if (!pkt || !pkt->data || pkt->size <= 0) return;
+    if (!pkt || !pkt->data || pkt->size <= 0) return true;
 
     if (requires_annex_b_filter(codec) && !packet_starts_with_annex_b(pkt)) {
         if (!unsafe_fallback_warned) {
@@ -247,15 +247,19 @@ static void append_packet_if_safe(const AVPacket* pkt,
                 "[AnalysisGen] skipping length-prefixed packets without Annex-B BSF; VBI unavailable for this stream");
             unsafe_fallback_warned = true;
         }
-        return;
+        return true;
     }
 
-    BitstreamIndexer::append_packet(
+    uint64_t source_size = writer.source_size();
+    return BitstreamIndexer::append_packet_streaming(
         codec,
         pkt->data,
         pkt->size,
         (pkt->flags & AV_PKT_FLAG_KEY) != 0,
-        bitstream_index);
+        source_size,
+        [&writer](const VbiEntry& entry) {
+            return writer.append(entry);
+        });
 }
 
 static AVBSFContext* create_annex_b_bsf(AVStream* stream, VbiCodec codec) {
@@ -295,11 +299,11 @@ static AVBSFContext* create_annex_b_bsf(AVStream* stream, VbiCodec codec) {
     return bsf;
 }
 
-static void append_filtered_packets(AVBSFContext* bsf,
+static bool append_filtered_packets(AVBSFContext* bsf,
                                     AVPacket* filtered_pkt,
                                     VbiCodec codec,
-                                    BitstreamIndex& bitstream_index) {
-    if (!bsf || !filtered_pkt) return;
+                                    VbiStreamWriter& writer) {
+    if (!bsf || !filtered_pkt) return true;
     while (true) {
         int ret = av_bsf_receive_packet(bsf, filtered_pkt);
         if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
@@ -311,21 +315,24 @@ static void append_filtered_packets(AVBSFContext* bsf,
             break;
         }
         if (filtered_pkt->data && filtered_pkt->size > 0) {
-            BitstreamIndexer::append_packet(
+            uint64_t source_size = writer.source_size();
+            const bool ok = BitstreamIndexer::append_packet_streaming(
                 codec,
                 filtered_pkt->data,
                 filtered_pkt->size,
                 (filtered_pkt->flags & AV_PKT_FLAG_KEY) != 0,
-                bitstream_index);
+                source_size,
+                [&writer](const VbiEntry& entry) {
+                    return writer.append(entry);
+                });
+            if (!ok) {
+                av_packet_unref(filtered_pkt);
+                return false;
+            }
         }
         av_packet_unref(filtered_pkt);
     }
-}
-
-static bool append_index_to_writer(BitstreamIndex& index, VbiStreamWriter& writer) {
-    const bool ok = writer.append_all(index.entries);
-    index.entries.clear();
-    return ok;
+    return true;
 }
 
 // ---------------------------------------------------------------
@@ -455,24 +462,24 @@ bool AnalysisGenerator::generate(const std::string& video_path,
         // with a per-stream length size in extradata. Route those codecs
         // through FFmpeg's Annex-B filters so VBI indexing sees stable start
         // codes and parameter sets instead of guessing the length field width.
-        BitstreamIndex packet_index;
-        packet_index.codec = codec;
-        packet_index.unit_kind = BitstreamIndexer::unit_kind_for_codec(codec);
-        packet_index.source_size = vbi_writer.source_size();
+        bool vbi_ok = true;
         if (annex_b_bsf) {
             int send_ret = av_bsf_send_packet(annex_b_bsf, pkt);
             if (send_ret >= 0) {
-                append_filtered_packets(annex_b_bsf, filtered_pkt, codec, packet_index);
+                vbi_ok = append_filtered_packets(
+                    annex_b_bsf, filtered_pkt, codec, vbi_writer);
             } else {
                 spdlog::warn("[AnalysisGen] av_bsf_send_packet failed: {:#x}; skipping unsafe packet fallback if needed",
                              static_cast<unsigned>(send_ret));
-                append_packet_if_safe(pkt, codec, packet_index, unsafe_fallback_warned);
+                vbi_ok = append_packet_if_safe(
+                    pkt, codec, vbi_writer, unsafe_fallback_warned);
             }
         } else {
-            append_packet_if_safe(pkt, codec, packet_index, unsafe_fallback_warned);
+            vbi_ok = append_packet_if_safe(
+                pkt, codec, vbi_writer, unsafe_fallback_warned);
         }
 
-        if (!append_index_to_writer(packet_index, vbi_writer)) {
+        if (!vbi_ok) {
             scan_failed = true;
             av_packet_unref(pkt);
             break;
@@ -482,13 +489,8 @@ bool AnalysisGenerator::generate(const std::string& video_path,
     }
 
     if (annex_b_bsf) {
-        BitstreamIndex packet_index;
-        packet_index.codec = codec;
-        packet_index.unit_kind = BitstreamIndexer::unit_kind_for_codec(codec);
-        packet_index.source_size = vbi_writer.source_size();
         av_bsf_send_packet(annex_b_bsf, nullptr);
-        append_filtered_packets(annex_b_bsf, filtered_pkt, codec, packet_index);
-        if (!append_index_to_writer(packet_index, vbi_writer)) {
+        if (!append_filtered_packets(annex_b_bsf, filtered_pkt, codec, vbi_writer)) {
             spdlog::warn("[AnalysisGen] failed to append flushed VBI packets");
             scan_failed = true;
         }

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 
 class AnalysisCacheEntryStats {
@@ -10,6 +11,7 @@ class AnalysisCacheEntryStats {
   final int videoBytes;
   final int analysisBytes;
   final DateTime? cachedAt;
+  final DateTime? lastAccessedAt;
   final bool complete;
 
   const AnalysisCacheEntryStats({
@@ -19,6 +21,7 @@ class AnalysisCacheEntryStats {
     required this.videoBytes,
     required this.analysisBytes,
     required this.cachedAt,
+    required this.lastAccessedAt,
     required this.complete,
   });
 
@@ -66,6 +69,20 @@ class AnalysisCacheDeleteResult {
   bool get hasFailures => failuresByHash.isNotEmpty;
 }
 
+class AnalysisCachePruneResult {
+  final AnalysisCacheSnapshot snapshot;
+  final AnalysisCacheDeleteResult deleteResult;
+
+  const AnalysisCachePruneResult({
+    required this.snapshot,
+    required this.deleteResult,
+  });
+
+  bool get withinLimit => !snapshot.isOverLimit;
+  int get deletedCount => deleteResult.deletedCount;
+  bool get hasFailures => deleteResult.hasFailures;
+}
+
 /// Manages the on-disk analysis cache in `exe_dir/cache`.
 ///
 /// Cache structure:
@@ -88,26 +105,75 @@ class AnalysisCache {
 
   static String analysisPath(String hash) => p.join(dataDir, '$hash.vac');
 
-  static bool filesExist(String hash) => _isVac1(analysisPath(hash));
+  static bool filesExist(String hash) => _isCompleteVac1(analysisPath(hash));
 
-  static bool _isVac1(String path) {
+  static bool hasIncompleteContainer(String hash) {
+    final path = analysisPath(hash);
+    final file = File(path);
+    if (!file.existsSync()) return false;
+    return !_isCompleteVac1(path);
+  }
+
+  static bool _isCompleteVac1(String path) {
     final file = File(path);
     if (!file.existsSync()) return false;
     try {
       final raf = file.openSync();
       try {
+        final length = raf.lengthSync();
+        if (length < 64) return false;
         final header = raf.readSync(4);
-        return header.length == 4 &&
-            header[0] == 0x56 &&
-            header[1] == 0x41 &&
-            header[2] == 0x43 &&
-            header[3] == 0x31;
+        if (header.length != 4 ||
+            header[0] != 0x56 ||
+            header[1] != 0x41 ||
+            header[2] != 0x43 ||
+            header[3] != 0x31) {
+          return false;
+        }
+        raf.setPositionSync(0);
+        final bytes = raf.readSync(64);
+        if (bytes.length < 64) return false;
+        final data = ByteData.sublistView(Uint8List.fromList(bytes));
+        final version = data.getUint16(4, Endian.little);
+        final headerSize = data.getUint16(6, Endian.little);
+        final sectionEntrySize = data.getUint16(8, Endian.little);
+        final sectionCount = data.getUint16(10, Endian.little);
+        final sectionTableOffset = data.getUint64(16, Endian.little);
+        final expectedFileSize = data.getUint64(24, Endian.little);
+        if (version != 1 ||
+            headerSize != 64 ||
+            sectionEntrySize != 48 ||
+            sectionCount == 0 ||
+            sectionCount > 16 ||
+            expectedFileSize != length) {
+          return false;
+        }
+        final tableBytes = sectionCount * sectionEntrySize;
+        if (!_rangeFits(sectionTableOffset, tableBytes, length)) return false;
+        raf.setPositionSync(sectionTableOffset);
+        final table = raf.readSync(tableBytes);
+        if (table.length != tableBytes) return false;
+        final tableData = ByteData.sublistView(Uint8List.fromList(table));
+        for (var i = 0; i < sectionCount; i++) {
+          final offset = i * sectionEntrySize;
+          final payloadOffset = tableData.getUint64(offset + 8, Endian.little);
+          final payloadSize = tableData.getUint64(offset + 16, Endian.little);
+          if (payloadSize == 0 ||
+              !_rangeFits(payloadOffset, payloadSize, length)) {
+            return false;
+          }
+        }
+        return true;
       } finally {
         raf.closeSync();
       }
     } catch (_) {
       return false;
     }
+  }
+
+  static bool _rangeFits(int offset, int size, int fileSize) {
+    return offset <= fileSize && size <= fileSize - offset;
   }
 
   static File get indexFile => File(p.join(dataDir, 'analysis_index.json'));
@@ -162,13 +228,20 @@ class AnalysisCache {
             videoBytes: (value['size'] as num?)?.toInt() ?? 0,
             analysisBytes: cacheBytes,
             cachedAt: DateTime.tryParse(value['time'] as String? ?? ''),
+            lastAccessedAt: DateTime.tryParse(
+              value['lastAccessed'] as String? ?? '',
+            ),
             complete: filesExist(hash),
           ),
         );
       }
     }
 
-    entries.sort((a, b) => b.cacheBytes.compareTo(a.cacheBytes));
+    entries.sort((a, b) {
+      final aTime = a.lastAccessedAt ?? a.cachedAt ?? DateTime(0);
+      final bTime = b.lastAccessedAt ?? b.cachedAt ?? DateTime(0);
+      return bTime.compareTo(aTime);
+    });
     return AnalysisCacheSnapshot(
       path: dataDir,
       totalBytes: totalBytes,
@@ -235,13 +308,29 @@ class AnalysisCache {
   ) async {
     final index = loadIndex();
     final entries = _entriesFromIndex(index);
+    final existing = entries[hash] is Map
+        ? Map<String, dynamic>.from(entries[hash] as Map)
+        : <String, dynamic>{};
+    final now = DateTime.now().toIso8601String();
     entries[hash] = {
       'name': name,
       'path': videoPath,
       'size': await File(videoPath).length(),
       'mtime': (await File(videoPath).lastModified()).toIso8601String(),
-      'time': DateTime.now().toIso8601String(),
+      'time': existing['time'] as String? ?? now,
+      'lastAccessed': now,
     };
+    await saveIndex(index);
+  }
+
+  static Future<void> touchEntry(String hash) async {
+    final index = loadIndex();
+    final entries = _entriesFromIndex(index);
+    final rawEntry = entries[hash];
+    if (rawEntry is! Map) return;
+    final entry = Map<String, dynamic>.from(rawEntry);
+    entry['lastAccessed'] = DateTime.now().toIso8601String();
+    entries[hash] = entry;
     await saveIndex(index);
   }
 
@@ -266,6 +355,10 @@ class AnalysisCache {
         p.join(dataDir, '$hash.vbi'),
         p.join(dataDir, '$hash.vbt'),
         p.join(dataDir, '$hash.vbs2'),
+        p.join(dataDir, '$hash.tmp.vbs4'),
+        p.join(dataDir, '$hash.tmp.vbi'),
+        p.join(dataDir, '$hash.tmp.vbt'),
+        p.join(dataDir, '$hash.tmp.vvc'),
       ]) {
         final file = File(path);
         try {
@@ -304,6 +397,120 @@ class AnalysisCache {
     return File(videoPath).existsSync();
   }
 
+  static Future<String?> findHashForUnchangedVideo(String videoPath) async {
+    try {
+      final file = File(videoPath);
+      if (!await file.exists()) return null;
+      final size = await file.length();
+      final mtime = (await file.lastModified()).toIso8601String();
+      final index = loadIndex();
+      final entries = _entriesFromIndex(index);
+      for (final item in entries.entries) {
+        final value = item.value;
+        if (value is! Map) continue;
+        if (value['path'] != videoPath) continue;
+        if ((value['size'] as num?)?.toInt() != size) continue;
+        if (value['mtime'] != mtime) continue;
+        if (!filesExist(item.key)) continue;
+        return item.key;
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }
+
+  static Future<AnalysisCachePruneResult> enforceLimit({
+    required int maxBytes,
+    Set<String> protectedHashes = const {},
+  }) async {
+    return Isolate.run(
+      () => _enforceLimitSync(
+        maxBytes: maxBytes,
+        protectedHashes: protectedHashes,
+      ),
+    );
+  }
+
+  static AnalysisCachePruneResult _enforceLimitSync({
+    required int maxBytes,
+    required Set<String> protectedHashes,
+  }) {
+    if (maxBytes <= 0) {
+      return AnalysisCachePruneResult(
+        snapshot: scan(maxBytes: maxBytes),
+        deleteResult: const AnalysisCacheDeleteResult(
+          deletedHashes: [],
+          failuresByHash: {},
+        ),
+      );
+    }
+
+    var snapshot = scan(maxBytes: maxBytes);
+    final deletedHashes = <String>[];
+    final failuresByHash = <String, List<String>>{};
+
+    while (snapshot.isOverLimit) {
+      final candidates =
+          snapshot.entries
+              .where((entry) => !protectedHashes.contains(entry.hash))
+              .toList()
+            ..sort((a, b) {
+              final aTime = a.lastAccessedAt ?? a.cachedAt ?? DateTime(0);
+              final bTime = b.lastAccessedAt ?? b.cachedAt ?? DateTime(0);
+              return aTime.compareTo(bTime);
+            });
+      if (candidates.isEmpty) break;
+
+      final target = candidates.first;
+      final result = _deleteEntriesSync([target.hash]);
+      deletedHashes.addAll(result.deletedHashes);
+      failuresByHash.addAll(result.failuresByHash);
+      if (result.deletedHashes.isEmpty) break;
+      snapshot = scan(maxBytes: maxBytes);
+    }
+
+    return AnalysisCachePruneResult(
+      snapshot: snapshot,
+      deleteResult: AnalysisCacheDeleteResult(
+        deletedHashes: deletedHashes,
+        failuresByHash: failuresByHash,
+      ),
+    );
+  }
+
+  static Future<int> currentBytesForHash(String hash) async {
+    return Isolate.run(() => _currentBytesForHashSync(hash));
+  }
+
+  static Future<Map<String, int>> currentBytesByHash(
+    Iterable<String> hashes,
+  ) async {
+    final uniqueHashes = hashes.where((hash) => hash.isNotEmpty).toSet();
+    return Isolate.run(() {
+      return {
+        for (final hash in uniqueHashes) hash: _currentBytesForHashSync(hash),
+      };
+    });
+  }
+
+  static int _currentBytesForHashSync(String hash) {
+    final dir = Directory(dataDir);
+    if (!dir.existsSync()) return 0;
+    var total = 0;
+    for (final entity in dir.listSync(recursive: false, followLinks: false)) {
+      if (entity is! File) continue;
+      final name = p.basename(entity.path);
+      if (!name.startsWith('$hash.')) continue;
+      try {
+        total += entity.lengthSync();
+      } catch (_) {
+        // Best-effort stats.
+      }
+    }
+    return total;
+  }
+
   static Map<String, dynamic> _entriesFromIndex(Map<String, dynamic> index) {
     final rawEntries = index['entries'];
     if (rawEntries is Map<String, dynamic>) return rawEntries;
@@ -315,5 +522,61 @@ class AnalysisCache {
     final entries = <String, dynamic>{};
     index['entries'] = entries;
     return entries;
+  }
+
+  static AnalysisCacheDeleteResult _deleteEntriesSync(Iterable<String> hashes) {
+    final uniqueHashes = hashes.toSet();
+    final index = loadIndex();
+    final rawEntries = index['entries'];
+    final entries = rawEntries is Map<String, dynamic>
+        ? rawEntries
+        : <String, dynamic>{};
+
+    final deletedHashes = <String>[];
+    final failuresByHash = <String, List<String>>{};
+
+    for (final hash in uniqueHashes) {
+      final failures = <String>[];
+      for (final path in [
+        analysisPath(hash),
+        p.join(dataDir, '$hash.vbs4'),
+        p.join(dataDir, '$hash.vbi'),
+        p.join(dataDir, '$hash.vbt'),
+        p.join(dataDir, '$hash.vbs2'),
+        p.join(dataDir, '$hash.tmp.vbs4'),
+        p.join(dataDir, '$hash.tmp.vbi'),
+        p.join(dataDir, '$hash.tmp.vbt'),
+        p.join(dataDir, '$hash.tmp.vvc'),
+      ]) {
+        final file = File(path);
+        try {
+          if (file.existsSync()) file.deleteSync();
+        } on FileSystemException catch (e) {
+          failures.add(e.path ?? path);
+        } catch (_) {
+          failures.add(path);
+        }
+      }
+
+      if (failures.isEmpty) {
+        entries.remove(hash);
+        deletedHashes.add(hash);
+      } else {
+        failuresByHash[hash] = failures;
+      }
+    }
+
+    if (deletedHashes.isNotEmpty) {
+      index['entries'] = entries;
+      Directory(dataDir).createSync(recursive: true);
+      indexFile.writeAsStringSync(
+        const JsonEncoder.withIndent('  ').convert(index),
+      );
+    }
+
+    return AnalysisCacheDeleteResult(
+      deletedHashes: deletedHashes,
+      failuresByHash: failuresByHash,
+    );
   }
 }

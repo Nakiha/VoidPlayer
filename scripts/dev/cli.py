@@ -116,8 +116,8 @@ Examples:
                        help="'build' to compile DecoderApp, 'analyze' to generate VBS/.vvc stats")
     p_vtm.add_argument("video", nargs="?", default=None,
                        help="Video file path (required for 'analyze')")
-    p_vtm.add_argument("--format", choices=["vbs2", "vbs3"], default="vbs3",
-                       help="Binary stats format for 'analyze' (default: vbs3)")
+    p_vtm.add_argument("--no-compression", action="store_true",
+                       help="Generate debug VBS4 blocks without zstd compression")
 
     return parser
 

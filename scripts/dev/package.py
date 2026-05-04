@@ -50,6 +50,7 @@ MUTABLE_FILE_PATTERNS = {
     "*.vbs1",
     "*.vbs2",
     "*.vbs3",
+    "*.vbs4",
     "*.vbt",
 }
 

@@ -10,6 +10,8 @@ from .paths import ROOT, VTM_ANALYSIS_DIR, VTM_BUILD_DIR, VTM_DIR, find_vtm_deco
 from .process import header, run
 
 VTM_SUBMODULE_PATH = "native/analysis/vendor/vtm"
+ZSTD_SUBMODULE_PATH = "native/analysis/vendor/zstd"
+ZSTD_DIR = ROOT / "native" / "analysis" / "vendor" / "zstd"
 
 
 def vtm_source_ready() -> bool:
@@ -19,11 +21,12 @@ def vtm_source_ready() -> bool:
 
 def ensure_submodule() -> None:
     """Ensure the analysis VTM submodule has a usable source checkout."""
-    if not vtm_source_ready():
+    zstd_ready = (ZSTD_DIR / "build" / "cmake" / "CMakeLists.txt").is_file()
+    if not vtm_source_ready() or not zstd_ready:
         print("VTM source tree missing or incomplete. Running git submodule update...")
         run([
             "git", "submodule", "update", "--init", "--recursive", "--checkout",
-            VTM_SUBMODULE_PATH,
+            VTM_SUBMODULE_PATH, ZSTD_SUBMODULE_PATH,
         ], cwd=str(ROOT))
 
     if not vtm_source_ready():
@@ -33,6 +36,14 @@ def ensure_submodule() -> None:
             "Try one of:\n"
             f"  git submodule update --init --recursive --checkout {VTM_SUBMODULE_PATH}\n"
             "  set VTM_DECODER_APP=C:\\path\\to\\DecoderApp.exe\n"
+        )
+        sys.exit(1)
+
+    if not (ZSTD_DIR / "build" / "cmake" / "CMakeLists.txt").is_file():
+        print(
+            "\nERROR: zstd source tree is still incomplete after submodule update.\n"
+            f"Expected: {ZSTD_DIR / 'build' / 'cmake' / 'CMakeLists.txt'}\n"
+            f"Try: git submodule update --init --recursive --checkout {ZSTD_SUBMODULE_PATH}\n"
         )
         sys.exit(1)
 
@@ -60,7 +71,7 @@ def analysis_output_dir(video_path: Path) -> Path:
     """Choose where generated VTM artifacts should be written.
 
     Repository fixtures under resources/ are read-only by convention. When a
-    fixture is analyzed directly, keep generated VVC/vbs3 artifacts under
+    fixture is analyzed directly, keep generated VVC/vbs4 artifacts under
     build/. If the caller already copied the video to a temp directory, write
     alongside that temp input so the caller can clean the whole directory.
     """
@@ -124,6 +135,7 @@ def cmd_vtm_build() -> None:
         "cmake", "-B", str(VTM_BUILD_DIR), "-S", str(VTM_DIR),
         "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded",
         "-DCMAKE_CXX_FLAGS=/wd4819",
+        f"-DVOIDPLAYER_ZSTD_DIR={ZSTD_DIR}",
     ], cwd=str(ROOT))
 
     header("Build VTM DecoderApp (Release)")
@@ -158,17 +170,17 @@ def cmd_vtm_analyze(args) -> None:
 
     output_dir = analysis_output_dir(video_path)
     output_dir.mkdir(parents=True, exist_ok=True)
-    stats_format = getattr(args, "format", "vbs3")
-    stats_path = output_dir / f"{video_path.stem}.{stats_format}"
+    stats_path = output_dir / f"{video_path.stem}.vbs4"
     raw_path = extract_raw_vvc(video_path, output_dir)
 
-    header(f"Generate {stats_format.upper()} stats for {video_path.name}")
+    header(f"Generate VBS4 stats for {video_path.name}")
     print(f"  Artifact dir: {output_dir}")
     print(f"  Output: {stats_path}")
 
     env = os.environ.copy()
     env["VTM_BINARY_STATS"] = str(stats_path)
-    env["VTM_BINARY_STATS_FORMAT"] = stats_format.upper()
+    if getattr(args, "no_compression", False):
+        env["VTM_BINARY_STATS_NO_COMPRESSION"] = "1"
 
     run([
         str(decoder),

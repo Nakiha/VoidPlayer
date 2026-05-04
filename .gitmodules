@@ -6,3 +6,6 @@
 	path = native/analysis/vendor/ffmpeg
 	url = https://github.com/Nakiha/FFmpeg.git
 	branch = naki-n8.1
+[submodule "native/analysis/vendor/zstd"]
+	path = native/analysis/vendor/zstd
+	url = https://github.com/facebook/zstd.git

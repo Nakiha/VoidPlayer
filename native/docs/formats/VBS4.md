@@ -20,7 +20,8 @@ fields, bitsets, QP deltas, motion vectors, and reference indexes compress well.
   every CU into one fixed common/inter/intra record shape.
 - Keep VAC/VBI/VBT semantics unchanged. VAC embeds VBS4 as a separate payload
   section.
-- Use no mandatory non-system runtime dependency for the first implementation.
+- Use vendored, statically linked zstd for production compression so VBS4 stays
+  platform-neutral and ships without extra runtime DLLs.
 
 ## Why VBS3 Is Not Enough
 
@@ -35,10 +36,10 @@ payload. Its heavy payload is still frame-oriented row data:
 - per-frame records are awkward for column encoders, block caches, and range
   prefetch
 
-Recent H.264 measurements showed that simply grouping many frames before XPRESS
-compression did not materially reduce file size. Compact H.264 rows helped
-because they removed deterministic fields. VBS4 makes that idea first-class and
-extends it to H.265/H.266.
+Recent H.264 measurements showed that simply grouping many frames before generic
+whole-block compression did not materially reduce file size. Compact H.264 rows
+helped because they removed deterministic fields. VBS4 makes that idea
+first-class and extends it to H.265/H.266.
 
 ## Container
 
@@ -48,9 +49,9 @@ extends it to H.265/H.266.
 - Byte order: little-endian
 - On-disk structs are packed with `#pragma pack(push, 1)`
 
-VBS3 and VBS4 can coexist during migration. Readers should prefer `VBS4` when a
-VAC contains both `VBS4` and `VBS3`, and fall back to `VBS3` while producers are
-being ported.
+VBS4 is the only target for new block-statistics writers. Legacy VBS3 payloads
+may still be read for old cache files, but migrated analyzers should emit VBS4
+only.
 
 ## High-Level Layout
 
@@ -166,7 +167,7 @@ block before one frame can be materialized.
 | `payload_size` | `uint64_t` | Compressed block byte size. |
 | `decoded_size` | `uint64_t` | Decoded block byte size. |
 | `codec_profile` | `uint16_t` | Payload profile for this block. |
-| `compression` | `uint16_t` | `0=none`, `1=XPRESS_HUFF`, future `2=zstd`. |
+| `compression` | `uint16_t` | `0=none`, `1=zstd`. Other values are invalid for VBS4 v4.0. |
 | `flags` | `uint32_t` | Block flags. |
 | `checksum` | `uint64_t` | Optional decoded-block checksum. |
 | `reserved` | `uint64_t` | Must be zero. |
@@ -326,22 +327,21 @@ basic CU overlays.
 
 ## Compression
 
-Initial compression should use Windows Compression API `XPRESS_HUFF` through
-dynamic `Cabinet.dll` loading. It keeps the build clean and avoids MSYS2 runtime
-dependencies.
+Initial compression uses zstd. Writers and readers should link zstd from a
+vendored/static build so VBS4 does not depend on a platform compression API or
+on system package availability. Debug writers may store blocks uncompressed
+with `compression=0`.
 
 Compression is block-level:
 
 1. Write decoded block with column streams.
-2. Compress the decoded block.
+2. Compress the decoded block with zstd unless debug/no-compression mode is
+   requested.
 3. Store compressed bytes in `CPAY`.
 4. Store block metadata in `BIDX`.
 
 If compressed size is not smaller, store the block uncompressed with
 `compression=0`.
-
-Future profiles may add zstd as an optional bundled/static dependency, but VBS4
-must not require it for baseline Windows runtime support.
 
 ## Reader Strategy
 
@@ -385,20 +385,20 @@ Shared flow:
 ## Migration Plan
 
 1. Add `VBS4.md`, packed structs, and a `Vbs4File` reader.
-2. Teach VAC to accept an optional `VBS4` section and prefer it over `VBS3`.
+2. Teach VAC to accept `VBS4` sections for new analysis outputs.
 3. Implement H.264 `H264MB1` in the FFmpeg analyzer first because it has the
    largest measured payload pressure.
-4. Add reader tests that compare VBS3 and VBS4 frame summaries and selected
-   materialized block records.
+4. Add reader tests that validate VBS4 frame summaries and selected materialized
+   block records.
 5. Add H.265 `HEVCCU1`, then VTM/H.266 `VVCCU1`.
-6. Keep VBS3 generation available until VBS4 UI and cache migration are stable.
+6. Remove VBS3 generation paths from migrated analyzers.
 
 ## Open Questions
 
 - Whether `FSUM` should remain exactly `Vbs3FrameSummary` forever or gain a
   VBS4-specific row with codec id and layer mode hints.
 - Whether `BSUM` should be mandatory for very long streams.
-- Whether the first VBS4 release should include only `XPRESS_HUFF` or also a
-  static zstd option for better archival compression.
+- Whether VBS4 should later add optional trained zstd dictionaries per codec
+  profile.
 - Whether overlay APIs should expose column views directly instead of
   materializing row records for every requested frame.

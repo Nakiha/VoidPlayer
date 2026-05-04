@@ -1,5 +1,28 @@
 include(FetchContent)
 
+set(VOID_ZSTD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/analysis/vendor/zstd")
+if(EXISTS "${VOID_ZSTD_DIR}/build/cmake/CMakeLists.txt" AND NOT TARGET libzstd_static)
+    set(ZSTD_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+    set(ZSTD_BUILD_STATIC ON CACHE BOOL "" FORCE)
+    set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+    set(ZSTD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(ZSTD_BUILD_CONTRIB OFF CACHE BOOL "" FORCE)
+    set(ZSTD_LEGACY_SUPPORT OFF CACHE BOOL "" FORCE)
+    set(ZSTD_MULTITHREAD_SUPPORT OFF CACHE BOOL "" FORCE)
+    set(ZSTD_USE_STATIC_RUNTIME OFF CACHE BOOL "" FORCE)
+    add_subdirectory("${VOID_ZSTD_DIR}/build/cmake"
+                     "${CMAKE_BINARY_DIR}/_deps/zstd-build"
+                     EXCLUDE_FROM_ALL)
+endif()
+
+function(void_link_zstd target_name)
+    if(TARGET libzstd_static)
+        target_link_libraries(${target_name} PRIVATE libzstd_static)
+    else()
+        message(FATAL_ERROR "VBS4 parser requires vendored zstd at ${VOID_ZSTD_DIR}")
+    endif()
+endfunction()
+
 # spdlog (header-only): try the Flutter build cache first, fallback to FetchContent.
 set(SPDLOG_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build/windows/x64/_deps/spdlog-src")
 if(EXISTS "${SPDLOG_LOCAL_DIR}/include/spdlog/spdlog.h")

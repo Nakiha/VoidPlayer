@@ -262,7 +262,7 @@ class AnalysisCache {
       final failures = <String>[];
       for (final path in [
         analysisPath(hash),
-        p.join(dataDir, '$hash.vbs3'),
+        p.join(dataDir, '$hash.vbs4'),
         p.join(dataDir, '$hash.vbi'),
         p.join(dataDir, '$hash.vbt'),
         p.join(dataDir, '$hash.vbs2'),

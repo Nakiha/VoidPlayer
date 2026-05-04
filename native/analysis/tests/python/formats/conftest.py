@@ -55,8 +55,7 @@ def analysis_paths(request):
 
     vbi_file = TEMP_DIR / f"{TEST_VIDEO.stem}.vbi"
     vbt_file = TEMP_DIR / f"{TEST_VIDEO.stem}.vbt"
-    vbs2_file = TEMP_DIR / f"{TEST_VIDEO.stem}.vbs2"
-    vbs3_file = TEMP_DIR / f"{TEST_VIDEO.stem}.vbs3"
+    vbs4_file = TEMP_DIR / f"{TEST_VIDEO.stem}.vbs4"
     raw_vvc = TEMP_DIR / f"{TEST_VIDEO.stem}.vvc"
 
     subprocess.check_call([
@@ -66,21 +65,21 @@ def analysis_paths(request):
         str(vbt_file),
     ], cwd=ROOT)
 
-    for stats_format in ("vbs2", "vbs3"):
-        subprocess.check_call([
-            sys.executable,
-            "dev.py",
-            "vtm",
-            "analyze",
-            str(temp_video),
-            "--format",
-            stats_format,
-        ], cwd=ROOT)
+    subprocess.check_call([
+        sys.executable,
+        "dev.py",
+        "vtm",
+        "analyze",
+        str(temp_video),
+    ], cwd=ROOT)
+
+    generated_vbs4 = ROOT / "build" / "vtm_analysis" / TEST_VIDEO.stem / f"{TEST_VIDEO.stem}.vbs4"
+    if generated_vbs4.exists():
+        shutil.copy2(generated_vbs4, vbs4_file)
 
     paths = {
         "video": temp_video,
-        "vbs2": vbs2_file,
-        "vbs3": vbs3_file,
+        "vbs4": vbs4_file,
         "vbi": vbi_file,
         "vbt": vbt_file,
         "vvc": raw_vvc,

@@ -1,7 +1,7 @@
 # FFmpeg Analyzer Tool
 
 VoidPlayer uses the `native/analysis/vendor/ffmpeg` submodule for planned
-codec-native VBS3 generation. This analyzer is built out-of-band and installed
+codec-native VBS4 generation. This analyzer is built out-of-band and installed
 as a runtime tool; the main native and Flutter builds do not compile FFmpeg.
 
 ## Local Toolchain Shape

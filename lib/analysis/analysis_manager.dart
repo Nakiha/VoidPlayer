@@ -268,10 +268,10 @@ class AnalysisManager extends ChangeNotifier {
       }
 
       final codec = analysisCodecFromValue(summary.codec);
-      if (_requiresVbs3FrameData(codec) && summary.frameCount <= 0) {
+      if (_requiresFrameData(codec) && summary.frameCount <= 0) {
         log.info(
           '[Analysis] cache stale for $hash: codec=${analysisCodecName(codec)} '
-          'requires VBS3 frame data',
+          'requires VBS4 frame data',
         );
         return false;
       }
@@ -292,13 +292,14 @@ class AnalysisManager extends ChangeNotifier {
     }
   }
 
-  bool _requiresVbs3FrameData(AnalysisCodec codec) => switch (codec) {
+  bool _requiresFrameData(AnalysisCodec codec) => switch (codec) {
     AnalysisCodec.h264 ||
     AnalysisCodec.hevc ||
-    AnalysisCodec.vvc ||
+    AnalysisCodec.vvc => true,
     AnalysisCodec.vp9 ||
-    AnalysisCodec.mpeg2 => true,
-    AnalysisCodec.av1 || AnalysisCodec.unknown => false,
+    AnalysisCodec.mpeg2 ||
+    AnalysisCodec.av1 ||
+    AnalysisCodec.unknown => false,
   };
 
   bool _isOlderThanFfmpegAnalyzer(String hash, AnalysisCodec codec) {

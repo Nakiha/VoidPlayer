@@ -3,75 +3,40 @@
 import struct
 
 
-def read_vbs2_header(path):
+def read_vbs4_header(path):
     with open(path, "rb") as f:
-        magic = f.read(4)
-        width, height = struct.unpack("<HH", f.read(4))
-        num_frames, index_offset = struct.unpack("<II", f.read(8))
-    return magic, width, height, num_frames, index_offset
-
-
-def read_vbs2_index(path, num_frames, index_offset):
-    entries = []
-    with open(path, "rb") as f:
-        f.seek(index_offset)
-        for _ in range(num_frames):
-            off, nc = struct.unpack("<II", f.read(8))
-            entries.append((off, nc))
-    return entries
-
-
-def read_vbs2_frame(path, offset):
-    with open(path, "rb") as f:
-        f.seek(offset)
-        raw = f.read(134)
-    poc, num_cus = struct.unpack("<ii", raw[0:8])
-    tid, stype, nal_type, avg_qp, n_l0, n_l1 = struct.unpack("<BBBBBB", raw[8:14])
-    ref_l0 = list(struct.unpack("<15i", raw[14:74]))
-    ref_l1 = list(struct.unpack("<15i", raw[74:134]))
-    return {
-        "poc": poc,
-        "num_cus": num_cus,
-        "temporal_id": tid,
-        "slice_type": stype,
-        "nal_unit_type": nal_type,
-        "avg_qp": avg_qp,
-        "num_ref_l0": n_l0,
-        "num_ref_l1": n_l1,
-        "ref_pocs_l0": ref_l0[:n_l0],
-        "ref_pocs_l1": ref_l1[:n_l1],
-    }
-
-
-def read_vbs3_header(path):
-    with open(path, "rb") as f:
-        raw = f.read(64)
-    fields = struct.unpack("<4sHHHHIIIIIQQQQ", raw)
+        raw = f.read(80)
+    fields = struct.unpack("<4s6H7I4QI", raw)
     return {
         "magic": fields[0],
         "version_major": fields[1],
         "version_minor": fields[2],
         "header_size": fields[3],
         "section_entry_size": fields[4],
-        "flags": fields[5],
-        "width": fields[6],
-        "height": fields[7],
-        "frame_count": fields[8],
-        "section_count": fields[9],
-        "section_table_offset": fields[10],
-        "file_size": fields[11],
-        "content_revision": fields[12],
-        "reserved": fields[13],
+        "codec": fields[5],
+        "profile": fields[6],
+        "flags": fields[7],
+        "width": fields[8],
+        "height": fields[9],
+        "frame_count": fields[10],
+        "block_count": fields[11],
+        "section_count": fields[12],
+        "reserved0": fields[13],
+        "section_table_offset": fields[14],
+        "file_size": fields[15],
+        "content_revision": fields[16],
+        "reserved1": fields[17],
+        "reserved2": fields[18],
     }
 
 
-def read_vbs3_sections(path, header):
+def read_vbs4_sections(path, header):
     sections = {}
     with open(path, "rb") as f:
         f.seek(header["section_table_offset"])
         for _ in range(header["section_count"]):
             raw = f.read(header["section_entry_size"])
-            fields = struct.unpack("<4sIQQIIQQ", raw)
+            fields = struct.unpack("<4sIQQIIQQQ", raw)
             name = fields[0].decode("ascii")
             sections[name] = {
                 "type": fields[0],
@@ -81,12 +46,13 @@ def read_vbs3_sections(path, header):
                 "entry_size": fields[4],
                 "entry_count": fields[5],
                 "checksum": fields[6],
-                "reserved": fields[7],
+                "reserved0": fields[7],
+                "reserved1": fields[8],
             }
     return sections
 
 
-def read_vbs3_frame_summaries(path, section, limit=None):
+def read_vbs4_frame_summaries(path, section, limit=None):
     count = section["entry_count"] if limit is None else min(limit, section["entry_count"])
     entries = []
     with open(path, "rb") as f:
@@ -115,19 +81,27 @@ def read_vbs3_frame_summaries(path, section, limit=None):
     return entries
 
 
-def read_vbs3_cu_index(path, section, limit=None):
+def read_vbs4_block_index(path, section, limit=None):
     count = section["entry_count"] if limit is None else min(limit, section["entry_count"])
     entries = []
     with open(path, "rb") as f:
         f.seek(section["offset"])
         for _ in range(count):
             raw = f.read(section["entry_size"])
-            offset, byte_size, cu_count, flags = struct.unpack("<QQII", raw)
+            fields = struct.unpack("<4I3Q2HIQQ", raw)
             entries.append({
-                "offset": offset,
-                "byte_size": byte_size,
-                "cu_count": cu_count,
-                "flags": flags,
+                "first_frame": fields[0],
+                "frame_count": fields[1],
+                "first_record": fields[2],
+                "record_count": fields[3],
+                "payload_offset": fields[4],
+                "payload_size": fields[5],
+                "decoded_size": fields[6],
+                "codec_profile": fields[7],
+                "compression": fields[8],
+                "flags": fields[9],
+                "checksum": fields[10],
+                "reserved": fields[11],
             })
     return entries
 

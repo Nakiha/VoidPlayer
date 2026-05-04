@@ -1,7 +1,7 @@
 #pragma once
 
 #include "analysis/parsers/analysis_container.h"
-#include "analysis/parsers/vbs3_parser.h"
+#include "analysis/parsers/vbs4_parser.h"
 #include "analysis/parsers/vbi_parser.h"
 #include "analysis/parsers/vbt_parser.h"
 #include <atomic>
@@ -18,9 +18,15 @@ public:
     void unload();
     bool is_loaded() const { return loaded_; }
 
-    const Vbs3File& vbs3() const { return vbs3_; }
+    const Vbs4File& vbs4() const { return vbs4_; }
     const VbiFile& vbi() const { return vbi_; }
     const VbtFile& vbt() const { return vbt_; }
+    int frame_count() const { return vbs4_.frame_count(); }
+    uint32_t video_width() const { return vbs4_.header().width; }
+    uint32_t video_height() const { return vbs4_.header().height; }
+    Vbs4FrameSummary read_frame_summary(int frame_idx) const {
+        return vbs4_.read_frame_summary(frame_idx);
+    }
 
     // Overlay state (written by Dart via FFI, read by render thread)
     struct OverlayState {
@@ -37,7 +43,7 @@ public:
 
 private:
     AnalysisContainerFile container_;
-    Vbs3File vbs3_;
+    Vbs4File vbs4_;
     VbiFile vbi_;
     VbtFile vbt_;
     bool loaded_ = false;

@@ -6,7 +6,7 @@
 
 struct NakiAnalysisSummary {
     int32_t loaded;             // 0 or 1
-    int32_t frame_count;        // VBS3 when present
+    int32_t frame_count;        // VBS4 when present
     int32_t packet_count;       // VBT
     int32_t nalu_count;         // VBI
     int32_t video_width;
@@ -18,7 +18,7 @@ struct NakiAnalysisSummary {
     int32_t _reserved[6];
 };
 
-// Merged frame info: VBS3 frame summary + VBT packet data
+// Merged frame info: VBS4 frame summary + VBT packet data
 struct NakiFrameInfo {
     int32_t poc;
     int32_t temporal_id;

@@ -11,9 +11,9 @@ analysis/
 ├── CMakeLists.txt
 ├── analysis_manager.h/cpp      # 单例管理器：加载/查询分析数据
 ├── parsers/                    # 二进制文件解析器（只读）
-│   ├── binary_types.h          # VAC/VBS3/VBI/VBT packed 结构体定义（VBS4 迁移后扩展）
+│   ├── binary_types.h          # VAC/VBS4/VBI/VBT packed 结构体定义
 │   ├── analysis_container.h/cpp # VAC1 单文件分析容器
-│   ├── vbs3_parser.h/cpp       # VBS3 — VTM 帧级/CU 统计
+│   ├── vbs4_parser.h/cpp       # VBS4 — VTM 帧级/CU 统计
 │   ├── vbi_parser.h/cpp        # VBI  — NALU 索引
 │   └── vbt_parser.h/cpp        # VBT  — 时间戳/关键帧
 ├── generators/                 # 二进制文件生成器
@@ -22,7 +22,7 @@ analysis/
 ├── tools/
 │   └── analysis_generate.cpp   # AnalysisGenerator 命令行入口
 ├── tests/python/               # Python 落盘格式回归
-└── vendor/vtm/                 # 第三方 VTM 子仓库，生成 VBS3
+└── vendor/vtm/                 # 第三方 VTM 子仓库，生成 VBS4
 ```
 
 ## 二进制格式
@@ -33,11 +33,10 @@ Analysis 使用三类自定义二进制格式，均为小端序，结构体使�
 
 独立格式文档：
 
-- [VAC](formats/VAC.md) — `.vac`，当前 runtime cache 容器，嵌入 VBI2/VBT1/VBS3 section，后续优先读取 VBS4
+- [VAC](formats/VAC.md) — `.vac`，当前 runtime cache 容器，嵌入 VBI2/VBT1/VBS4 section
 - [VBT](formats/VBT.md) — packet 时间戳/关键帧元数据 section，当前 magic `VBT1`
 - [VBI](formats/VBI.md) — bitstream unit 索引 section，当前写入格式为 `VBI2`，兼容读取 legacy `VBI1`
-- [VBS3](formats/VBS3.md) — VTM block statistics / CU 统计 section，当前 magic `VBS3`
-- [VBS4](formats/VBS4.md) — 下一代压缩/分块读取 block statistics 草案，目标 magic `VBS4`
+- [VBS4](formats/VBS4.md) — 压缩/分块读取 block statistics section，当前 magic `VBS4`
 - [VBS legacy](formats/VBS.md) — `.vbs2`，旧版 VBS2 说明；native runtime 不再读取
 
 ## 生成管线
@@ -56,23 +55,23 @@ avformat_open_input → avformat_find_stream_info → av_read_frame 循环
        └── 写入 codec/unit_kind/offset/size/type/flags
 ```
 
-VBS3 生成由 codec-specific decoder/analyzer 外部进程完成，通过
+VBS4 生成由 codec-specific decoder/analyzer 外部进程完成，通过
 `analysis_ffi.cpp` 调度：
 
 - VVC/H.266: instrumented VTM `DecoderApp`，安装到 `tools/vtm/`
-- HEVC/H.265: planned instrumented FFmpeg analyzer
+- HEVC/H.265 与 H.264/AVC: instrumented FFmpeg analyzer
   `void_ffmpeg_analyzer.exe`，安装到 `tools/ffmpeg-analysis/`
 
 VVC 当前优先通过 stdin 喂给 VTM，失败时生成临时 Annex-B `.tmp.vvc`。
-HEVC/H.265 由 FFmpeg analyzer 自行 demux/decode 并写入 VBS3。VAC 只保留
-最终 VBS3/VBI2/VBT1 payload。
+HEVC/H.265 由 FFmpeg analyzer 自行 demux/decode 并写入 VBS4。VAC 只保留
+最终 VBS4/VBI2/VBT1 payload。
 
 ## 解析器
 
 每个解析器对应一个 `*File` 类，`open()` 读取 header 和索引，后续按需读取单帧数据：
 
-- **AnalysisContainerFile**: VAC section directory → 定位内嵌 VBS3/VBI2/VBT1 payload
-- **Vbs3File**: section directory + frame summaries + CU index → `read_frame(idx)` 返回 summary + CU records
+- **AnalysisContainerFile**: VAC section directory → 定位内嵌 VBS4/VBI2/VBT1 payload
+- **Vbs4File**: section directory + frame summaries + CU index → `read_frame(idx)` 返回 summary + CU records
 - **VbiFile**: NALU 数组 → `find_vcl_nalus()` / `find_keyframes()` 筛选
 - **VbtFile**: packet 数组 → `packet_at_pts()` 二分查找、`keyframe_indices()`
 
@@ -82,10 +81,10 @@ HEVC/H.265 由 FFmpeg analyzer 自行 demux/decode 并写入 VBS3。VAC 只保�
 
 | FFI 函数 | 功能 |
 |----------|------|
-| `naki_analysis_generate` | 生成 `.vac` 容器：VBI+VBT（C++ FFmpeg），按 codec 追加 VBS3（VTM/FFmpeg analyzer/...） |
+| `naki_analysis_generate` | 生成 `.vac` 容器：VBI+VBT（C++ FFmpeg），按 codec 追加 VBS4（VTM/FFmpeg analyzer/...） |
 | `naki_analysis_load/unload` | 加载/卸载 VAC 分析容器到内存 |
 | `naki_analysis_get_summary` | 返回概要（帧数/分辨率/time_base/当前帧） |
-| `naki_analysis_get_frames` | 返回帧信息数组（VBS3+VBT 合并） |
+| `naki_analysis_get_frames` | 返回帧信息数组（VBS4+VBT 合并） |
 | `naki_analysis_get_nalus` | 返回 NALU 信息数组 |
 | `naki_analysis_set_overlay` | 设置叠加层显示状态 |
 
@@ -93,13 +92,13 @@ HEVC/H.265 由 FFmpeg analyzer 自行 demux/decode 并写入 VBS3。VAC 只保�
 
 独立测试目标 `analysis_tests`（Catch2），位于 `native/tests/analysis/`：
 
-- `test_analysis_parsers.cpp` — VBT/VBI/VBS3 解析器测试
+- `test_analysis_parsers.cpp` — VBT/VBI/VBS4 解析器测试
 - `test_analysis_generator.cpp` — VBI+VBT 生成测试（从 H.266 MP4 实际生成并验证）
 
-Python 格式回归测试位于 `native/analysis/tests/python/formats/`，用于生成并校验 VBS2/VBS3/VBI/VBT 文件结构：
+Python 格式回归测试位于 `native/analysis/tests/python/formats/`，用于生成并校验 VBS4/VBI/VBT 文件结构：
 
 - `analysis_generate.exe` 生成 VBI/VBT
-- `python dev.py vtm analyze --format vbs2/vbs3` 生成 VBS/VVC。`resources/` 是只读 fixture 区；直接分析 `resources/video/...` 时，生成物写入 `build/vtm_analysis/<视频名>/`。
+- `python dev.py vtm analyze <video>` 生成 VBS4/VVC。`resources/` 是只读 fixture 区；直接分析 `resources/video/...` 时，生成物写入 `build/vtm_analysis/<视频名>/`。
 - pytest 解析文件并校验 header、索引、NALU、帧统计等格式约束
 
 运行：`python dev.py test`

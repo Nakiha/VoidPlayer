@@ -22,8 +22,8 @@ bool AnalysisManager::load(const std::string& analysis_path) {
     if (!vbi_.open_region(path, vbi->offset, vbi->size)) { unload(); return false; }
     if (!vbt_.open_region(path, vbt->offset, vbt->size)) { unload(); return false; }
 
-    if (const auto* vbs3 = container_.section("VBS3")) {
-        vbs3_.open_region(path, vbs3->offset, vbs3->size);
+    if (const auto* vbs4 = container_.section("VBS4")) {
+        vbs4_.open_region(path, vbs4->offset, vbs4->size);
     }
 
     loaded_ = true;
@@ -31,7 +31,7 @@ bool AnalysisManager::load(const std::string& analysis_path) {
 }
 
 void AnalysisManager::unload() {
-    vbs3_.close();
+    vbs4_.close();
     vbi_.close();
     vbt_.close();
     container_.close();

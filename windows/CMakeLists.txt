@@ -133,7 +133,7 @@ install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
 
-# VTM DecoderApp (optional — VBS3 generation, MSVC static runtime, no DLLs needed)
+# VTM DecoderApp (optional — VBS4 generation, MSVC static runtime, no DLLs needed)
 file(GLOB_RECURSE VTM_DECODER_GLOB
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/vendor/vtm/bin/vs*/DecoderApp.exe")
 if(VTM_DECODER_GLOB)
@@ -143,7 +143,7 @@ if(VTM_DECODER_GLOB)
     COMPONENT Runtime)
 endif()
 
-# FFmpeg-based analysis tool (optional — HEVC/H.264/... VBS3 generation).
+# FFmpeg-based analysis tool (optional — HEVC/H.264 VBS4 generation).
 # The analyzer is built out-of-band from the instrumented FFmpeg submodule.
 file(GLOB_RECURSE FFMPEG_ANALYSIS_GLOB
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/vendor/ffmpeg/bin/windows-x64/void_ffmpeg_analyzer.exe"

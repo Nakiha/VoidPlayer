@@ -21,6 +21,7 @@ endif()
 target_link_libraries(analysis_lib PUBLIC
     spdlog::spdlog_header_only
 )
+void_link_zstd(analysis_lib)
 
 add_executable(analysis_generate
     tools/analysis_generate.cpp

@@ -56,7 +56,7 @@ python native/build.py
 | spdlog | 本地 `_deps` 优先，缺失时 FetchContent | native 日志 |
 | Catch2 | 本地 `_deps` 优先，缺失时 FetchContent | C++ 测试 |
 | pybind11 | `find_package` | Python 绑定 |
-| VTM DecoderApp | `native/analysis/vendor/vtm` | analysis 测试生成 VBS3 |
+| VTM DecoderApp | `native/analysis/vendor/vtm` | analysis 测试生成 VBS4 |
 
 ## `python dev.py test` 实际覆盖
 
@@ -76,7 +76,7 @@ python dev.py test --native-only
 
 测试视频默认来自 `resources/video`，CMake 通过 `VIDEO_TEST_DIR` 注入。
 
-补充的 Python analysis 格式回归位于 `native/analysis/tests/python/formats/`，用于校验 VBS2/VBS3/VBI/VBT 落盘格式。它会把测试视频复制到临时目录，使用 `analysis_generate.exe` 生成 VBI/VBT，再调用 `python dev.py vtm analyze --format vbs2/vbs3` 生成 VBS/VVC，最后清理临时文件。`resources/` 只存放 checked-in fixture；如果直接对 `resources/video/...` 运行 `python dev.py vtm analyze`，生成物会写到 `build/vtm_analysis/<视频名>/`。
+补充的 Python analysis 格式回归位于 `native/analysis/tests/python/formats/`，用于校验 VBS2/VBS4/VBI/VBT 落盘格式。它会把测试视频复制到临时目录，使用 `analysis_generate.exe` 生成 VBI/VBT，再调用 `python dev.py vtm analyze --format vbs2/vbs4` 生成 VBS/VVC，最后清理临时文件。`resources/` 只存放 checked-in fixture；如果直接对 `resources/video/...` 运行 `python dev.py vtm analyze`，生成物会写到 `build/vtm_analysis/<视频名>/`。
 
 ```bash
 python -m pytest native/analysis/tests/python/formats -v

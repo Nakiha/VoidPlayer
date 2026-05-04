@@ -132,7 +132,7 @@ bool AnalysisTestData::ensure() {
 
         vbi_path_  = temp_dir_ + "/test.vbi";
         vbt_path_  = temp_dir_ + "/test.vbt";
-        vbs3_path_ = temp_dir_ + "/test.vbs3";
+        vbs4_path_ = temp_dir_ + "/test.vbs4";
         vac_path_  = temp_dir_ + "/test.vac";
         raw_vvc_path_ = temp_dir_ + "/test.vvc";
 
@@ -142,8 +142,8 @@ bool AnalysisTestData::ensure() {
         // Step 2: Raw VVC extraction via FFmpeg C API
         if (!extract_raw_vvc()) return;
 
-        // Step 3: VBS3 via VTM DecoderApp
-        if (!generate_vbs3()) return;
+        // Step 3: VBS4 via VTM DecoderApp
+        if (!generate_vbs4()) return;
 
         // Step 4: Unified analysis container
         if (!generate_container()) return;
@@ -291,7 +291,7 @@ bool AnalysisTestData::extract_raw_vvc() {
     return total_written > 0 && std::filesystem::exists(raw_vvc_path_);
 }
 
-bool AnalysisTestData::generate_vbs3() {
+bool AnalysisTestData::generate_vbs4() {
 #ifdef _WIN32
     std::string decoder_path = VTM_DECODER_PATH;
 
@@ -301,11 +301,10 @@ bool AnalysisTestData::generate_vbs3() {
         return false;
     }
 
-    spdlog::info("[TestData] generating VBS3 via VTM DecoderApp...");
+    spdlog::info("[TestData] generating VBS4 via VTM DecoderApp...");
 
     ScopedEnvVars env;
-    env.set("VTM_BINARY_STATS", vbs3_path_);
-    env.set("VTM_BINARY_STATS_FORMAT", "VBS3");
+    env.set("VTM_BINARY_STATS", vbs4_path_);
 
     std::string cmd = "\"" + decoder_path + "\" -b \"" + raw_vvc_path_ +
         "\" --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
@@ -313,23 +312,23 @@ bool AnalysisTestData::generate_vbs3() {
     int rc = run_command(cmd);
     spdlog::info("[TestData] VTM DecoderApp exit_code={}", rc);
 
-    if (!std::filesystem::exists(vbs3_path_)) {
-        spdlog::error("[TestData] VBS3 file not generated");
+    if (!std::filesystem::exists(vbs4_path_)) {
+        spdlog::error("[TestData] VBS4 file not generated");
         return false;
     }
 
-    auto size = std::filesystem::file_size(vbs3_path_);
-    spdlog::info("[TestData] VBS3 generated: {} bytes", size);
+    auto size = std::filesystem::file_size(vbs4_path_);
+    spdlog::info("[TestData] VBS4 generated: {} bytes", size);
     return true;
 #else
-    spdlog::error("[TestData] VBS3 generation only supported on Windows");
+    spdlog::error("[TestData] VBS4 generation only supported on Windows");
     return false;
 #endif
 }
 
 bool AnalysisTestData::generate_container() {
     spdlog::info("[TestData] generating VAC1 analysis container...");
-    if (!vr::analysis::write_analysis_container(vac_path_, vbs3_path_, vbi_path_, vbt_path_)) {
+    if (!vr::analysis::write_analysis_container(vac_path_, vbs4_path_, vbi_path_, vbt_path_)) {
         spdlog::error("[TestData] VAC1 container generation failed");
         return false;
     }

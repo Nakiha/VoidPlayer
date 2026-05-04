@@ -66,5 +66,5 @@ Flags:
 
 - PTS is not guaranteed to be monotonic in file order. Use `VbtFile::packet_at_pts()` for time lookup.
 - `poc` is currently a scan-order ordinal, not a codec POC parsed from the bitstream.
-- VAC loading requires VBT and VBI sections. VBS3 is optional for non-VVC
+- VAC loading requires VBT and VBI sections. VBS4 is optional for non-VVC
   packet/NALU analysis.

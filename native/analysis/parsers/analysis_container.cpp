@@ -114,7 +114,7 @@ const AnalysisContainerSectionEntry* AnalysisContainerFile::section(const char t
 }
 
 bool write_analysis_container(const std::string& path,
-                              const std::string& vbs3_path,
+                              const std::string& vbs4_path,
                               const std::string& vbi_path,
                               const std::string& vbt_path) {
     struct InputSection {
@@ -124,8 +124,8 @@ bool write_analysis_container(const std::string& path,
     };
 
     std::vector<InputSection> inputs;
-    const uint64_t vbs3_size = file_size(vbs3_path);
-    if (vbs3_size > 0) inputs.push_back({"VBS3", vbs3_path, vbs3_size});
+    const uint64_t vbs4_size = file_size(vbs4_path);
+    if (vbs4_size > 0) inputs.push_back({"VBS4", vbs4_path, vbs4_size});
 
     const uint64_t vbi_size = file_size(vbi_path);
     const uint64_t vbt_size = file_size(vbt_path);

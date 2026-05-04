@@ -142,7 +142,6 @@ void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSumma
     if (!mgr.is_loaded()) return;
 
     s.loaded = 1;
-    const auto& vbs3 = mgr.vbs3();
     const auto& vbi = mgr.vbi();
     const auto& vbt = mgr.vbt();
 
@@ -150,8 +149,8 @@ void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSumma
     s.frame_count = effective_frame_count(mgr);
     s.packet_count = vbt_packet_count;
     s.nalu_count = vbi.nalu_count();
-    s.video_width = vbs3.header().width;
-    s.video_height = vbs3.header().height;
+    s.video_width = mgr.video_width();
+    s.video_height = mgr.video_height();
     s.time_base_num = vbt.header().time_base_num;
     s.time_base_den = vbt.header().time_base_den;
     s.codec = static_cast<int32_t>(vbi.codec());
@@ -163,10 +162,10 @@ void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSumma
 }
 
 int effective_frame_count(vr::analysis::AnalysisManager& mgr) {
-    const int vbs3_count = mgr.vbs3().frame_count();
+    const int vbs4_count = mgr.frame_count();
     const int vbt_count = mgr.vbt().packet_count();
-    if (vbs3_count <= 0 || vbt_count <= 0) return 0;
-    return std::min(vbs3_count, vbt_count);
+    if (vbs4_count <= 0 || vbt_count <= 0) return 0;
+    return std::min(vbs4_count, vbt_count);
 }
 
 int32_t fill_analysis_frames_range(vr::analysis::AnalysisManager& mgr,
@@ -212,7 +211,7 @@ bool fill_analysis_frame_at(vr::analysis::AnalysisManager& mgr,
     int total_count = effective_frame_count(mgr);
     if (source_index >= total_count) return false;
 
-    auto fh = mgr.vbs3().read_frame_summary(source_index);
+    auto fh = mgr.read_frame_summary(source_index);
     const auto& pkt = mgr.vbt().entry(source_index);
 
     std::memset(&f, 0, sizeof(f));
@@ -990,21 +989,20 @@ static std::string first_existing_tool_path(const std::vector<std::string>& path
     return {};
 }
 
-static bool generate_vvc_vbs3(const std::string& exe_dir,
+static bool generate_vvc_vbs4(const std::string& exe_dir,
                               const std::string& data_dir,
                               const char* video_path,
                               const char* hash,
-                              const std::string& vbs3_out) {
+                              const std::string& vbs4_out) {
     const std::string decoder_path = exe_dir + "\\tools\\vtm\\DecoderApp.exe";
     const bool decoder_exists = vr::win_utf8::file_exists_utf8(decoder_path);
     spdlog::info("[Analysis] vvc producer={} exists={}", decoder_path, decoder_exists);
     if (!decoder_exists) return false;
 
-    vr::win_utf8::delete_file_utf8(vbs3_out);
+    vr::win_utf8::delete_file_utf8(vbs4_out);
 
     ScopedEnvVars env;
-    env.set("VTM_BINARY_STATS", vbs3_out);
-    env.set("VTM_BINARY_STATS_FORMAT", "VBS3");
+    env.set("VTM_BINARY_STATS", vbs4_out);
     env.set("VOID_VTM_STDIN_WINDOW_BYTES", "67108864");
     env.set("VOID_VTM_STDIN_WINDOW_NALUS", "4096");
     env.set("VOID_VTM_STDIN_HARD_CAP_BYTES", "268435456");
@@ -1017,10 +1015,10 @@ static bool generate_vvc_vbs3(const std::string& exe_dir,
     const int vtm_rc = run_vtm_stdin_command(cmd, vtm_log_path, video_path);
     spdlog::info("[Analysis] vtm stdin exit_code={}", vtm_rc);
 
-    bool vbs3_ok = vtm_rc == 0 && vr::win_utf8::file_exists_utf8(vbs3_out);
-    if (!vbs3_ok) {
+    bool vbs4_ok = vtm_rc == 0 && vr::win_utf8::file_exists_utf8(vbs4_out);
+    if (!vbs4_ok) {
         spdlog::warn("[Analysis] VTM stdin generation failed, falling back to temp VVC file");
-        vr::win_utf8::delete_file_utf8(vbs3_out);
+        vr::win_utf8::delete_file_utf8(vbs4_out);
 
         const std::string tmp_vvc = data_dir + "\\" + hash + ".tmp.vvc";
         spdlog::info("[Analysis] extracting raw VVC to {}", tmp_vvc);
@@ -1034,32 +1032,30 @@ static bool generate_vvc_vbs3(const std::string& exe_dir,
             const int fallback_rc = run_command(fallback_cmd, vtm_log_path);
             spdlog::info("[Analysis] vtm fallback exit_code={}", fallback_rc);
             vr::win_utf8::delete_file_utf8(tmp_vvc);
-            vbs3_ok = fallback_rc == 0 && vr::win_utf8::file_exists_utf8(vbs3_out);
+            vbs4_ok = fallback_rc == 0 && vr::win_utf8::file_exists_utf8(vbs4_out);
         } else {
-            spdlog::warn("[Analysis] raw VVC extraction failed, skipping VBS3 generation");
+            spdlog::warn("[Analysis] raw VVC extraction failed, skipping VBS4 generation");
             vr::win_utf8::delete_file_utf8(tmp_vvc);
         }
     }
 
-    spdlog::info("[Analysis] vvc vbs3_out={} exists={}", vbs3_out, vbs3_ok);
-    return vbs3_ok;
+    spdlog::info("[Analysis] vvc vbs4_out={} exists={}", vbs4_out, vbs4_ok);
+    return vbs4_ok;
 }
 
 static const char* ffmpeg_analysis_codec_arg(VbiCodec codec) {
     switch (codec) {
     case VbiCodec::HEVC:  return "hevc";
     case VbiCodec::H264:  return "h264";
-    case VbiCodec::VP9:   return "vp9";
-    case VbiCodec::MPEG2: return "mpeg2";
     default:              return nullptr;
     }
 }
 
-static bool generate_ffmpeg_vbs3(const std::string& exe_dir,
+static bool generate_ffmpeg_vbs4(const std::string& exe_dir,
                                  const char* video_path,
                                  const char* hash,
                                  VbiCodec codec,
-                                 const std::string& vbs3_out) {
+                                 const std::string& vbs4_out) {
     const char* codec_arg = ffmpeg_analysis_codec_arg(codec);
     if (!codec_arg) return false;
 
@@ -1073,21 +1069,21 @@ static bool generate_ffmpeg_vbs3(const std::string& exe_dir,
                  codec_arg);
     if (analyzer_path.empty()) return false;
 
-    vr::win_utf8::delete_file_utf8(vbs3_out);
+    vr::win_utf8::delete_file_utf8(vbs4_out);
 
     const std::string analyzer_log_path = make_analysis_tool_log_path(
         exe_dir, "ffmpeg_analysis", hash);
     const std::string cmd = "\"" + analyzer_path +
         "\" --codec " + codec_arg + " --input \"" + video_path +
-        "\" --vbs3 \"" + vbs3_out + "\"";
+        "\" --vbs4 \"" + vbs4_out + "\"";
     spdlog::info("[Analysis] ffmpeg-analysis cmd: {}", cmd);
     spdlog::info("[Analysis] ffmpeg-analysis log: {}", analyzer_log_path);
     const int analyzer_rc = run_command(cmd, analyzer_log_path);
     spdlog::info("[Analysis] ffmpeg-analysis exit_code={}", analyzer_rc);
 
-    const bool vbs3_ok = analyzer_rc == 0 && vr::win_utf8::file_exists_utf8(vbs3_out);
-    spdlog::info("[Analysis] ffmpeg-analysis vbs3_out={} exists={}", vbs3_out, vbs3_ok);
-    return vbs3_ok;
+    const bool vbs4_ok = analyzer_rc == 0 && vr::win_utf8::file_exists_utf8(vbs4_out);
+    spdlog::info("[Analysis] ffmpeg-analysis vbs4_out={} exists={}", vbs4_out, vbs4_ok);
+    return vbs4_ok;
 }
 
 extern "C" __declspec(dllexport)
@@ -1108,25 +1104,25 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
     // Ensure data directory exists
     vr::win_utf8::create_directory_utf8(data_dir);
 
-    // ---- Step 0: VBS3 via codec-specific decoder instrumentation ----
+    // ---- Step 0: VBS4 via codec-specific decoder instrumentation ----
     VbiCodec source_codec = detect_analysis_codec(video_path);
-    std::string vbs3_tmp = data_dir + "\\" + hash + ".tmp.vbs3";
-    bool vbs3_generated = false;
+    std::string vbs4_tmp = data_dir + "\\" + hash + ".tmp.vbs4";
+    bool vbs4_generated = false;
     spdlog::info("[Analysis] source codec={}", static_cast<int>(source_codec));
     if (source_codec == VbiCodec::VVC) {
-        vbs3_generated = generate_vvc_vbs3(exe_dir, data_dir, video_path, hash, vbs3_tmp);
+        vbs4_generated = generate_vvc_vbs4(exe_dir, data_dir, video_path, hash, vbs4_tmp);
     } else if (ffmpeg_analysis_codec_arg(source_codec)) {
-        vbs3_generated = generate_ffmpeg_vbs3(exe_dir, video_path, hash, source_codec, vbs3_tmp);
+        vbs4_generated = generate_ffmpeg_vbs4(exe_dir, video_path, hash, source_codec, vbs4_tmp);
     } else {
-        spdlog::info("[Analysis] no VBS3 producer registered for codec={}",
+        spdlog::info("[Analysis] no VBS4 producer registered for codec={}",
                      static_cast<int>(source_codec));
     }
 
     if ((source_codec == VbiCodec::VVC || ffmpeg_analysis_codec_arg(source_codec)) &&
-        (!vbs3_generated || !vr::win_utf8::file_exists_utf8(vbs3_tmp))) {
-        spdlog::error("[Analysis] codec={} analysis requires VBS3, but no VBS3 section was generated",
+        (!vbs4_generated || !vr::win_utf8::file_exists_utf8(vbs4_tmp))) {
+        spdlog::error("[Analysis] codec={} analysis requires VBS4, but no VBS4 section was generated",
                       static_cast<int>(source_codec));
-        vr::win_utf8::delete_file_utf8(vbs3_tmp);
+        vr::win_utf8::delete_file_utf8(vbs4_tmp);
         return 0;
     }
 
@@ -1137,7 +1133,7 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
 
     if (!vr::analysis::AnalysisGenerator::generate(video_path, vbi_out, vbt_out)) {
         spdlog::error("[Analysis] C++ generator failed");
-        vr::win_utf8::delete_file_utf8(vbs3_tmp);
+        vr::win_utf8::delete_file_utf8(vbs4_tmp);
         vr::win_utf8::delete_file_utf8(vbi_out);
         vr::win_utf8::delete_file_utf8(vbt_out);
         return 0;
@@ -1150,25 +1146,25 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash) {
     spdlog::info("[Analysis] vbt_out={} exists={}", vbt_out, vbt_ok);
     if (!vbi_ok || !vbt_ok) {
         spdlog::error("[Analysis] output files missing after generation");
-        vr::win_utf8::delete_file_utf8(vbs3_tmp);
+        vr::win_utf8::delete_file_utf8(vbs4_tmp);
         vr::win_utf8::delete_file_utf8(vbi_out);
         vr::win_utf8::delete_file_utf8(vbt_out);
         return 0;
     }
 
-    const std::string vbs3_section = vr::win_utf8::file_exists_utf8(vbs3_tmp) ? vbs3_tmp : "";
-    if (!vr::analysis::write_analysis_container(vac_out, vbs3_section, vbi_out, vbt_out)) {
+    const std::string vbs4_section = vr::win_utf8::file_exists_utf8(vbs4_tmp) ? vbs4_tmp : "";
+    if (!vr::analysis::write_analysis_container(vac_out, vbs4_section, vbi_out, vbt_out)) {
         spdlog::error("[Analysis] failed to write analysis container: {}", vac_out);
-        vr::win_utf8::delete_file_utf8(vbs3_tmp);
+        vr::win_utf8::delete_file_utf8(vbs4_tmp);
         vr::win_utf8::delete_file_utf8(vbi_out);
         vr::win_utf8::delete_file_utf8(vbt_out);
         return 0;
     }
 
-    vr::win_utf8::delete_file_utf8(vbs3_tmp);
+    vr::win_utf8::delete_file_utf8(vbs4_tmp);
     vr::win_utf8::delete_file_utf8(vbi_out);
     vr::win_utf8::delete_file_utf8(vbt_out);
-    vr::win_utf8::delete_file_utf8(data_dir + "\\" + hash + ".vbs3");
+    vr::win_utf8::delete_file_utf8(data_dir + "\\" + hash + ".vbs4");
     vr::win_utf8::delete_file_utf8(data_dir + "\\" + hash + ".vbi");
     vr::win_utf8::delete_file_utf8(data_dir + "\\" + hash + ".vbt");
     vr::win_utf8::delete_file_utf8(data_dir + "\\" + hash + ".vbs2");

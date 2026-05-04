@@ -2,7 +2,7 @@
 
 VBS stores VTM-derived block statistics used for frame-level and CU-level
 analysis. This document describes the retired VBS2 `.vbs2` layout. The native
-runtime now reads [VBS3](VBS3.md) and no longer ships a VBS2 reader.
+runtime now reads [VBS4](VBS4.md) and no longer ships a VBS2 reader.
 
 The historical C++ reader used packed little-endian structs. The names below
 are kept for format archaeology only; they are not current runtime APIs.
@@ -10,12 +10,12 @@ are kept for format archaeology only; they are not current runtime APIs.
 ## Producer And Reader
 
 - Producer: instrumented VTM `DecoderApp`
-- Reader: removed; use `vr::analysis::Vbs3File`
+- Reader: removed; use `vr::analysis::Vbs4File`
 - File extension: `.vbs2`
 - Legacy magic: `VBS2`
 
-VBI + VBT can still be loaded without VBS3 for packet/NALU views, but frame
-summary and bucket APIs require VBS3 and do not synthesize frame rows from VBI.
+VBI + VBT can still be loaded without VBS4 for packet/NALU views, but frame
+summary and bucket APIs require VBS4 and do not synthesize frame rows from VBI.
 
 ## VBS2 Layout
 
@@ -133,6 +133,6 @@ reader.
 - VBS2 does not contain a compact frame-summary table or CU-level secondary
   index. This is the main reason large analysis files are expensive for UI
   range and bucket workflows.
-- VBS3 is intended to address these limitations with 64-bit offsets plus
+- VBS4 is intended to address these limitations with 64-bit offsets plus
   dedicated summary/index sections instead of overloading the VBS2 frame blob.
-  See [VBS3](VBS3.md).
+  See [VBS4](VBS4.md).

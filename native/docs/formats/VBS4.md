@@ -1,10 +1,9 @@
-# VBS4 Format Draft
+# VBS4 Format
 
-VBS4 is the next-generation block-statistics payload format for codec
-decoder-derived analysis data. It is intended to replace VBS3 for H.266/VVC,
-H.265/HEVC, and H.264/AVC once the writer and reader are migrated.
+VBS4 is the block-statistics payload format for codec decoder-derived analysis
+data. H.266/VVC, H.265/HEVC, and H.264/AVC writers emit this format.
 
-The core change from VBS3 is that heavy block data is no longer stored as
+The core change from the previous block-stat format is that heavy block data is no longer stored as
 per-frame row records. VBS4 keeps frame summaries as a fast uncompressed table,
 then stores codec-specific block data in compressed frame-range blocks. Each
 block uses a compact codec profile and column-oriented streams so repeated
@@ -15,7 +14,7 @@ fields, bitsets, QP deltas, motion vectors, and reference indexes compress well.
 - Keep frame list, reference pyramid, and frame trend startup fast.
 - Load and decompress detailed block data only for the frame range currently
   needed by the UI.
-- Compress H.264 macroblock data much better than VBS3 row records.
+- Compress H.264 macroblock data much better than legacy row records.
 - Give H.265/H.266 variable block trees a native encoding instead of forcing
   every CU into one fixed common/inter/intra record shape.
 - Keep VAC/VBI/VBT semantics unchanged. VAC embeds VBS4 as a separate payload
@@ -23,9 +22,9 @@ fields, bitsets, QP deltas, motion vectors, and reference indexes compress well.
 - Use vendored, statically linked zstd for production compression so VBS4 stays
   platform-neutral and ships without extra runtime DLLs.
 
-## Why VBS3 Is Not Enough
+## Why The Previous Format Is Not Enough
 
-VBS3 improved open-time behavior by splitting `FSUM` from the heavy `CUBL`
+The previous block-stat format improved open-time behavior by splitting `FSUM` from the heavy `CUBL`
 payload. Its heavy payload is still frame-oriented row data:
 
 - per-frame compression keeps random access simple but limits compressor context
@@ -49,9 +48,7 @@ first-class and extends it to H.265/H.266.
 - Byte order: little-endian
 - On-disk structs are packed with `#pragma pack(push, 1)`
 
-VBS4 is the only target for new block-statistics writers. Legacy VBS3 payloads
-may still be read for old cache files, but migrated analyzers should emit VBS4
-only.
+VBS4 is the only target for new block-statistics writers.
 
 ## High-Level Layout
 
@@ -121,7 +118,7 @@ Unknown sections must be skipped.
 
 ## Frame Summary: `FSUM`
 
-`FSUM` stays intentionally close to VBS3. It is the fast path for:
+`FSUM` is intentionally a compact fixed-width table. It is the fast path for:
 
 - frame list
 - reference pyramid
@@ -129,7 +126,7 @@ Unknown sections must be skipped.
 - bucket generation
 - frame-to-NALU UI selection
 
-The first version may reuse `Vbs3FrameSummary` unchanged. That keeps current
+The first version may reuse `Vbs4FrameSummary` unchanged. That keeps current
 analysis FFI and chart code migration small. Future versions may add a wider
 summary row only if the UI needs additional fast-path fields.
 
@@ -279,7 +276,7 @@ Recommended streams:
 | `ref_l0` / `ref_l1` | Reference indexes | palette-u8 |
 | `mv_l0_x/y`, `mv_l1_x/y` | Motion vector components | sleb128-zigzag or rle-s16 |
 
-This profile is expected to beat VBS3 compact rows because every field can use
+This profile is expected to beat legacy compact rows because every field can use
 its own representation instead of paying 12 bytes per macroblock before
 compression.
 
@@ -397,11 +394,11 @@ Shared flow:
 4. Add reader tests that validate VBS4 frame summaries and selected materialized
    block records.
 5. Add H.265 `HEVCCU1`, then VTM/H.266 `VVCCU1`.
-6. Remove VBS3 generation paths from migrated analyzers.
+6. Remove migrated analyzer paths that still emit older block-stat payloads.
 
 ## Open Questions
 
-- Whether `FSUM` should remain exactly `Vbs3FrameSummary` forever or gain a
+- Whether `FSUM` should remain exactly `Vbs4FrameSummary` forever or gain a
   VBS4-specific row with codec id and layer mode hints.
 - Whether `BSUM` should be mandatory for very long streams.
 - Whether VBS4 should later add optional trained zstd dictionaries per codec

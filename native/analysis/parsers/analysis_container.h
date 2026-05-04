@@ -24,7 +24,7 @@ private:
 };
 
 bool write_analysis_container(const std::string& path,
-                              const std::string& vbs3_path,
+                              const std::string& vbs4_path,
                               const std::string& vbi_path,
                               const std::string& vbt_path);
 

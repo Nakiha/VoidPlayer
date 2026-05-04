@@ -3,7 +3,7 @@
 #include "analysis/parsers/analysis_container.h"
 #include "analysis/parsers/vbt_parser.h"
 #include "analysis/parsers/vbi_parser.h"
-#include "analysis/parsers/vbs3_parser.h"
+#include "analysis/parsers/vbs4_parser.h"
 #include "test_analysis_data.h"
 
 #include <filesystem>
@@ -87,7 +87,7 @@ TEST_CASE("VAC1: open and embedded sections", "[analysis][vac]") {
     REQUIRE(vac.header().magic[1] == 'A');
     REQUIRE(vac.header().magic[2] == 'C');
     REQUIRE(vac.header().magic[3] == '1');
-    REQUIRE(vac.section("VBS3") != nullptr);
+    REQUIRE(vac.section("VBS4") != nullptr);
     REQUIRE(vac.section("VBI2") != nullptr);
     REQUIRE(vac.section("VBT1") != nullptr);
 
@@ -101,10 +101,10 @@ TEST_CASE("VAC1: open and embedded sections", "[analysis][vac]") {
     REQUIRE(vbi.open_region(vac.path(), vbi_section->offset, vbi_section->size));
     REQUIRE(vbi.nalu_count() > 0);
 
-    vr::analysis::Vbs3File vbs3;
-    const auto* vbs3_section = vac.section("VBS3");
-    REQUIRE(vbs3.open_region(vac.path(), vbs3_section->offset, vbs3_section->size));
-    REQUIRE(vbs3.frame_count() > 0);
+    vr::analysis::Vbs4File vbs4;
+    const auto* vbs4_section = vac.section("VBS4");
+    REQUIRE(vbs4.open_region(vac.path(), vbs4_section->offset, vbs4_section->size));
+    REQUIRE(vbs4.frame_count() > 0);
 }
 
 // ===========================================================================
@@ -306,371 +306,134 @@ TEST_CASE("VBI: VCL and keyframe counts", "[analysis][vbi]") {
 }
 
 // ===========================================================================
-// VBS3 Tests
+// ===========================================================================
+// VBS4 Tests
 // ===========================================================================
 
-TEST_CASE("VBS3: open and header", "[analysis][vbs3]") {
+TEST_CASE("VBS4: open and header", "[analysis][vbs4]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs3File vbs3;
-    REQUIRE(vbs3.open(data.vbs3_path()));
+    vr::analysis::Vbs4File vbs4;
+    REQUIRE(vbs4.open(data.vbs4_path()));
 
-    auto& h = vbs3.header();
+    auto& h = vbs4.header();
     REQUIRE(h.magic[0] == 'V');
     REQUIRE(h.magic[1] == 'B');
     REQUIRE(h.magic[2] == 'S');
-    REQUIRE(h.magic[3] == '3');
-    REQUIRE(h.version_major == 3);
+    REQUIRE(h.magic[3] == '4');
+    REQUIRE(h.version_major == 4);
     REQUIRE(h.width == 1920);
     REQUIRE(h.height == 1080);
-    REQUIRE(vbs3.frame_count() >= 100);
+    REQUIRE(vbs4.frame_count() >= 100);
+    REQUIRE(vbs4.section("FSUM") != nullptr);
+    REQUIRE(vbs4.section("FIDX") != nullptr);
+    REQUIRE(vbs4.section("BIDX") != nullptr);
+    REQUIRE(vbs4.section("CPAY") != nullptr);
 }
 
-TEST_CASE("VBS3: failed reopen clears previous header", "[analysis][vbs3]") {
+TEST_CASE("VBS4: failed reopen clears previous header", "[analysis][vbs4]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs3File vbs3;
-    REQUIRE(vbs3.open(data.vbs3_path()));
-    REQUIRE(vbs3.header().width == 1920);
+    vr::analysis::Vbs4File vbs4;
+    REQUIRE(vbs4.open(data.vbs4_path()));
+    REQUIRE(vbs4.header().width == 1920);
 
     const auto missing_path =
-        std::filesystem::temp_directory_path() / "voidplayer_missing_reopen.vbs3";
+        std::filesystem::temp_directory_path() / "voidplayer_missing_reopen.vbs4";
     std::filesystem::remove(missing_path);
-    REQUIRE(vbs3.open(missing_path.string()) == false);
-    REQUIRE(vbs3.frame_count() == 0);
-    REQUIRE(vbs3.header().width == 0);
-    REQUIRE(vbs3.header().height == 0);
+    REQUIRE(vbs4.open(missing_path.string()) == false);
+    REQUIRE(vbs4.frame_count() == 0);
+    REQUIRE(vbs4.header().width == 0);
+    REQUIRE(vbs4.header().height == 0);
 }
 
-TEST_CASE("VBS3: first frame is I-slice (IDR)", "[analysis][vbs3]") {
+TEST_CASE("VBS4: first frame is I-slice (IDR)", "[analysis][vbs4]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs3File vbs3;
-    REQUIRE(vbs3.open(data.vbs3_path()));
+    vr::analysis::Vbs4File vbs4;
+    REQUIRE(vbs4.open(data.vbs4_path()));
 
-    auto fh = vbs3.read_frame_summary(0);
-    REQUIRE(fh.slice_type == 2); // I-slice
+    auto fh = vbs4.read_frame_summary(0);
+    REQUIRE(fh.slice_type == 2);
     REQUIRE(fh.num_ref_l0 == 0);
     REQUIRE(fh.num_ref_l1 == 0);
 }
 
-TEST_CASE("VBS3: read full frame with CU records", "[analysis][vbs3]") {
+TEST_CASE("VBS4: read full frame with CU records", "[analysis][vbs4]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs3File vbs3;
-    REQUIRE(vbs3.open(data.vbs3_path()));
+    vr::analysis::Vbs4File vbs4;
+    REQUIRE(vbs4.open(data.vbs4_path()));
 
-    auto frame = vbs3.read_frame(0);
+    auto frame = vbs4.read_frame(0);
     REQUIRE(frame.summary.poc >= 0);
     REQUIRE(frame.cus.size() > 0);
     REQUIRE(static_cast<int>(frame.cus.size()) == static_cast<int>(frame.summary.num_cus));
 
-    // All CUs should have valid pred_mode
     for (const auto& cu : frame.cus) {
         REQUIRE(cu.common.pred_mode <= 3);
         REQUIRE(cu.common.qp <= 63);
     }
 }
 
-#ifdef _WIN32
-TEST_CASE("VBS3: read XPRESS Huffman compressed frame payload", "[analysis][vbs3]") {
-    std::vector<uint8_t> raw_payload;
-    auto append = [&raw_payload](const auto& value) {
-        const auto* first = reinterpret_cast<const uint8_t*>(&value);
-        raw_payload.insert(raw_payload.end(), first, first + sizeof(value));
-    };
-
-    VbsCuCommon intra_common{};
-    intra_common.x = 0;
-    intra_common.y = 0;
-    intra_common.w = 16;
-    intra_common.h = 16;
-    intra_common.qp = 22;
-    intra_common.pred_mode = 1;
-    VbsCuIntra intra{};
-    intra.intra_mode = 10;
-    append(intra_common);
-    append(intra);
-
-    VbsCuCommon inter_common{};
-    inter_common.x = 16;
-    inter_common.y = 0;
-    inter_common.w = 16;
-    inter_common.h = 16;
-    inter_common.qp = 24;
-    inter_common.pred_mode = 0;
-    VbsCuInter inter{};
-    inter.merge_flag = 1;
-    inter.inter_dir = 1;
-    inter.mv_l0_x = 4;
-    inter.mv_l0_y = -2;
-    inter.ref_l0 = 0;
-    inter.ref_l1 = -1;
-    append(inter_common);
-    append(inter);
-
-    const auto compressed_payload = compress_xpress_huff_for_test(raw_payload);
-    REQUIRE(!compressed_payload.empty());
-
-    const auto path = std::filesystem::temp_directory_path() / "voidplayer_compressed_frame.vbs3";
-    const uint64_t cubl_offset = sizeof(Vbs3Header);
-    const uint64_t cubl_size = compressed_payload.size();
-    const uint64_t fsum_offset = cubl_offset + cubl_size;
-    const uint64_t fsum_size = sizeof(Vbs3FrameSummary);
-    const uint64_t cuid_offset = fsum_offset + fsum_size;
-    const uint64_t cuid_size = sizeof(Vbs3CuIndexEntry);
-    const uint64_t section_table_offset = cuid_offset + cuid_size;
-    const uint64_t file_size = section_table_offset + 3 * sizeof(Vbs3SectionEntry);
-
-    Vbs3Header header{};
-    set_fourcc(header.magic, "VBS3");
-    header.version_major = 3;
-    header.version_minor = 1;
-    header.header_size = sizeof(Vbs3Header);
-    header.section_entry_size = sizeof(Vbs3SectionEntry);
-    header.width = 32;
-    header.height = 16;
-    header.frame_count = 1;
-    header.section_count = 3;
-    header.section_table_offset = section_table_offset;
-    header.file_size = file_size;
-
-    Vbs3FrameSummary summary{};
-    summary.coded_order = 0;
-    summary.vcl_nalu_index = 0xFFFFFFFFu;
-    summary.slice_type = 2;
-    summary.avg_qp = 23;
-    summary.qp_min = 22;
-    summary.qp_max = 24;
-    summary.num_cus = 2;
-    summary.cu_index_entry = 0;
-
-    Vbs3CuIndexEntry index{};
-    index.byte_size = compressed_payload.size();
-    index.cu_count = 2;
-    index.flags = VBS3_CUID_FLAG_COMPRESSED_XPRESS_HUFF;
-
-    Vbs3SectionEntry sections[3]{};
-    set_fourcc(sections[0].type, "FSUM");
-    sections[0].offset = fsum_offset;
-    sections[0].size = fsum_size;
-    sections[0].entry_size = sizeof(Vbs3FrameSummary);
-    sections[0].entry_count = 1;
-    set_fourcc(sections[1].type, "CUID");
-    sections[1].offset = cuid_offset;
-    sections[1].size = cuid_size;
-    sections[1].entry_size = sizeof(Vbs3CuIndexEntry);
-    sections[1].entry_count = 1;
-    set_fourcc(sections[2].type, "CUBL");
-    sections[2].flags = VBS3_CUBL_SECTION_FLAG_PER_FRAME_COMPRESSION;
-    sections[2].offset = cubl_offset;
-    sections[2].size = cubl_size;
-    sections[2].entry_count = 1;
-
-    {
-        std::ofstream out(path, std::ios::binary);
-        REQUIRE(out);
-        write_struct(out, header);
-        out.write(reinterpret_cast<const char*>(compressed_payload.data()),
-                  static_cast<std::streamsize>(compressed_payload.size()));
-        write_struct(out, summary);
-        write_struct(out, index);
-        out.write(reinterpret_cast<const char*>(sections), sizeof(sections));
-        REQUIRE(out.good());
-    }
-
-    vr::analysis::Vbs3File vbs3;
-    REQUIRE(vbs3.open(path.string()));
-    const auto frame = vbs3.read_frame(0);
-    REQUIRE(frame.cus.size() == 2);
-    REQUIRE(frame.cus[0].common.pred_mode == 1);
-    REQUIRE(frame.cus[0].common.qp == 22);
-    REQUIRE(frame.cus[0].intra.intra_mode == 10);
-    REQUIRE(frame.cus[1].common.pred_mode == 0);
-    REQUIRE(frame.cus[1].common.qp == 24);
-    REQUIRE(frame.cus[1].inter.mv_l0_x == 4);
-    REQUIRE(frame.cus[1].inter.mv_l0_y == -2);
-
-    vbs3.close();
-    std::filesystem::remove(path);
-}
-
-TEST_CASE("VBS3: read compressed H264 compact macroblock payload", "[analysis][vbs3]") {
-    std::vector<uint8_t> raw_payload;
-    auto append = [&raw_payload](const auto& value) {
-        const auto* first = reinterpret_cast<const uint8_t*>(&value);
-        raw_payload.insert(raw_payload.end(), first, first + sizeof(value));
-    };
-
-    VbsH264MbCompact intra{};
-    intra.qp = 20;
-    intra.flags = 0x01 | (3 << 5);
-    append(intra);
-
-    VbsH264MbCompact inter{};
-    inter.qp = 26;
-    inter.flags = 0x02 | (1 << 3);
-    inter.mv_l0_x = 6;
-    inter.mv_l0_y = -4;
-    inter.ref_l0 = 0;
-    inter.ref_l1 = -1;
-    append(inter);
-
-    const auto compressed_payload = compress_xpress_huff_for_test(raw_payload);
-    REQUIRE(!compressed_payload.empty());
-
-    const auto path = std::filesystem::temp_directory_path() / "voidplayer_h264_compact_frame.vbs3";
-    const uint64_t cubl_offset = sizeof(Vbs3Header);
-    const uint64_t cubl_size = compressed_payload.size();
-    const uint64_t fsum_offset = cubl_offset + cubl_size;
-    const uint64_t fsum_size = sizeof(Vbs3FrameSummary);
-    const uint64_t cuid_offset = fsum_offset + fsum_size;
-    const uint64_t cuid_size = sizeof(Vbs3CuIndexEntry);
-    const uint64_t section_table_offset = cuid_offset + cuid_size;
-    const uint64_t file_size = section_table_offset + 3 * sizeof(Vbs3SectionEntry);
-
-    Vbs3Header header{};
-    set_fourcc(header.magic, "VBS3");
-    header.version_major = 3;
-    header.version_minor = 1;
-    header.header_size = sizeof(Vbs3Header);
-    header.section_entry_size = sizeof(Vbs3SectionEntry);
-    header.width = 32;
-    header.height = 16;
-    header.frame_count = 1;
-    header.section_count = 3;
-    header.section_table_offset = section_table_offset;
-    header.file_size = file_size;
-
-    Vbs3FrameSummary summary{};
-    summary.coded_order = 0;
-    summary.vcl_nalu_index = 0xFFFFFFFFu;
-    summary.slice_type = 2;
-    summary.avg_qp = 23;
-    summary.qp_min = 20;
-    summary.qp_max = 26;
-    summary.num_cus = 2;
-    summary.cu_index_entry = 0;
-
-    Vbs3CuIndexEntry index{};
-    index.byte_size = compressed_payload.size();
-    index.cu_count = 2;
-    index.flags = VBS3_CUID_FLAG_COMPRESSED_XPRESS_HUFF |
-                  VBS3_CUID_FLAG_H264_RASTER_MB_COMPACT;
-
-    Vbs3SectionEntry sections[3]{};
-    set_fourcc(sections[0].type, "FSUM");
-    sections[0].offset = fsum_offset;
-    sections[0].size = fsum_size;
-    sections[0].entry_size = sizeof(Vbs3FrameSummary);
-    sections[0].entry_count = 1;
-    set_fourcc(sections[1].type, "CUID");
-    sections[1].offset = cuid_offset;
-    sections[1].size = cuid_size;
-    sections[1].entry_size = sizeof(Vbs3CuIndexEntry);
-    sections[1].entry_count = 1;
-    set_fourcc(sections[2].type, "CUBL");
-    sections[2].flags = VBS3_CUBL_SECTION_FLAG_PER_FRAME_COMPRESSION;
-    sections[2].offset = cubl_offset;
-    sections[2].size = cubl_size;
-    sections[2].entry_count = 1;
-
-    {
-        std::ofstream out(path, std::ios::binary);
-        REQUIRE(out);
-        write_struct(out, header);
-        out.write(reinterpret_cast<const char*>(compressed_payload.data()),
-                  static_cast<std::streamsize>(compressed_payload.size()));
-        write_struct(out, summary);
-        write_struct(out, index);
-        out.write(reinterpret_cast<const char*>(sections), sizeof(sections));
-        REQUIRE(out.good());
-    }
-
-    vr::analysis::Vbs3File vbs3;
-    REQUIRE(vbs3.open(path.string()));
-    const auto frame = vbs3.read_frame(0);
-    REQUIRE(frame.cus.size() == 2);
-    REQUIRE(frame.cus[0].common.x == 0);
-    REQUIRE(frame.cus[0].common.y == 0);
-    REQUIRE(frame.cus[0].common.pred_mode == 1);
-    REQUIRE(frame.cus[0].common.qp == 20);
-    REQUIRE(frame.cus[0].intra.intra_mode == 3);
-    REQUIRE(frame.cus[1].common.x == 16);
-    REQUIRE(frame.cus[1].common.y == 0);
-    REQUIRE(frame.cus[1].common.pred_mode == 0);
-    REQUIRE(frame.cus[1].common.qp == 26);
-    REQUIRE(frame.cus[1].inter.skip == 1);
-    REQUIRE(frame.cus[1].inter.inter_dir == 1);
-    REQUIRE(frame.cus[1].inter.mv_l0_x == 6);
-    REQUIRE(frame.cus[1].inter.mv_l0_y == -4);
-
-    vbs3.close();
-    std::filesystem::remove(path);
-}
-#endif
-
-TEST_CASE("VBS3: inter frames have references", "[analysis][vbs3]") {
+TEST_CASE("VBS4: inter frames have references", "[analysis][vbs4]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs3File vbs3;
-    REQUIRE(vbs3.open(data.vbs3_path()));
+    vr::analysis::Vbs4File vbs4;
+    REQUIRE(vbs4.open(data.vbs4_path()));
 
     int inter_with_refs = 0;
-    for (int i = 1; i < std::min(50, vbs3.frame_count()); i++) {
-        auto fh = vbs3.read_frame_summary(i);
-        if (fh.slice_type != 2) { // not I-slice
-            if (fh.num_ref_l0 > 0 || fh.num_ref_l1 > 0) {
-                inter_with_refs++;
-            }
+    for (int i = 1; i < std::min(50, vbs4.frame_count()); i++) {
+        auto fh = vbs4.read_frame_summary(i);
+        if (fh.slice_type != 2 && (fh.num_ref_l0 > 0 || fh.num_ref_l1 > 0)) {
+            inter_with_refs++;
         }
     }
     REQUIRE(inter_with_refs > 0);
 }
 
-TEST_CASE("VBS3: avg QP in valid range", "[analysis][vbs3]") {
+TEST_CASE("VBS4: avg QP in valid range", "[analysis][vbs4]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs3File vbs3;
-    REQUIRE(vbs3.open(data.vbs3_path()));
+    vr::analysis::Vbs4File vbs4;
+    REQUIRE(vbs4.open(data.vbs4_path()));
 
-    for (int i = 0; i < std::min(20, vbs3.frame_count()); i++) {
-        auto fh = vbs3.read_frame_summary(i);
+    for (int i = 0; i < std::min(20, vbs4.frame_count()); i++) {
+        auto fh = vbs4.read_frame_summary(i);
         REQUIRE(fh.avg_qp <= 63);
     }
 }
 
-TEST_CASE("VBS3: read_all_frame_summaries", "[analysis][vbs3]") {
+TEST_CASE("VBS4: read_all_frame_summaries", "[analysis][vbs4]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs3File vbs3;
-    REQUIRE(vbs3.open(data.vbs3_path()));
+    vr::analysis::Vbs4File vbs4;
+    REQUIRE(vbs4.open(data.vbs4_path()));
 
-    auto summaries = vbs3.read_all_frame_summaries();
-    REQUIRE(static_cast<int>(summaries.size()) == vbs3.frame_count());
+    auto summaries = vbs4.read_all_frame_summaries();
+    REQUIRE(static_cast<int>(summaries.size()) == vbs4.frame_count());
 
-    // Verify temporal IDs are in reasonable range
     for (const auto& fh : summaries) {
         REQUIRE(fh.temporal_id <= 6);
     }
 }
 
-TEST_CASE("VBS3: temporal ID range", "[analysis][vbs3]") {
+TEST_CASE("VBS4: temporal ID range", "[analysis][vbs4]") {
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    vr::analysis::Vbs3File vbs3;
-    REQUIRE(vbs3.open(data.vbs3_path()));
+    vr::analysis::Vbs4File vbs4;
+    REQUIRE(vbs4.open(data.vbs4_path()));
 
-    for (int i = 0; i < std::min(30, vbs3.frame_count()); i++) {
-        auto fh = vbs3.read_frame_summary(i);
+    for (int i = 0; i < std::min(30, vbs4.frame_count()); i++) {
+        auto fh = vbs4.read_frame_summary(i);
         REQUIRE(fh.temporal_id <= 6);
     }
 }

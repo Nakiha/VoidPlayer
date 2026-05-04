@@ -9,6 +9,7 @@ import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
 import '../../widgets/loop_range_bar.dart';
+import '../win32ffi.dart';
 import 'main_window_actions.dart';
 import 'main_window_analysis.dart';
 import 'main_window_layout.dart';
@@ -219,7 +220,9 @@ class MainWindowController {
       }
       // Switch the native window first so the Flutter fullscreen chrome never
       // renders inside the old, non-fullscreen bounds.
-      await windowManager.setFullScreen(fullScreen);
+      if (!Win32FFI.setBorderlessFullScreen(fullScreen)) {
+        await windowManager.setFullScreen(fullScreen);
+      }
       if (!mounted() || serial != _fullScreenSerial) return;
       if (fullScreen) {
         await _preemptFullScreenViewportResize();

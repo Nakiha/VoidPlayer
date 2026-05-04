@@ -64,6 +64,10 @@ class AssertViewCenterStable extends PlayerAssert {
   const AssertViewCenterStable(this.baseline, this.tolerance);
 }
 
+class AssertMainWindowBorderless extends PlayerAssert {
+  const AssertMainWindowBorderless();
+}
+
 class AssertCaptureEquals extends PlayerAssert {
   final String expectedCapture;
   final String actualCapture;

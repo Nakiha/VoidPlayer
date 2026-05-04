@@ -58,6 +58,9 @@ typedef _SetWindowPosDart =
 typedef _ShowWindowNative = Int32 Function(IntPtr hWnd, Int32 nCmdShow);
 typedef _ShowWindowDart = int Function(int hWnd, int nCmdShow);
 
+typedef _IsZoomedNative = Int32 Function(IntPtr hWnd);
+typedef _IsZoomedDart = int Function(int hWnd);
+
 typedef _SetForegroundWindowNative = Int32 Function(IntPtr hWnd);
 typedef _SetForegroundWindowDart = int Function(int hWnd);
 
@@ -187,17 +190,23 @@ const int _swpNoSize = 0x0001;
 const int _swpNoActivate = 0x0010;
 const int _swpShowWindow = 0x0040;
 const int _swpFrameChanged = 0x0020;
+const int _swpNoOwnerZOrder = 0x0200;
+const int _hwndTop = 0;
 const int _monitorDefaultToNull = 0x00000000;
 const int _monitorDefaultToNearest = 0x00000002;
 const int _swRestore = 9;
+const int _swMaximize = 3;
 const int _vkLButton = 0x01;
 const int _vkRButton = 0x02;
 const int _smCyCaption = 4;
 const int _smCyFrame = 33;
 const int _smCyPaddedBorder = 92;
+const int _gwlStyle = -16;
 const int _gwlExStyle = -20;
 const int _wsExToolWindow = 0x00000080;
 const int _wsExAppWindow = 0x00040000;
+const int _wsOverlappedWindow = 0x00CF0000;
+const int _wsPopup = 0x80000000;
 const int _errorSuccess = 0;
 const int _hkeyCurrentUser = -2147483647; // reinterpret_cast<HKEY>(0x80000001)
 const int _rrfRtRegDword = 0x00000010;
@@ -233,6 +242,10 @@ final _setWindowPos = _user32
 
 final _showWindow = _user32.lookupFunction<_ShowWindowNative, _ShowWindowDart>(
   'ShowWindow',
+);
+
+final _isZoomed = _user32.lookupFunction<_IsZoomedNative, _IsZoomedDart>(
+  'IsZoomed',
 );
 
 final _setForegroundWindow = _user32
@@ -317,6 +330,22 @@ final List<int> _enumResult = [];
 int _enumTargetPid = 0;
 String? _enumClassFilter;
 
+final Map<int, _BorderlessFullScreenState> _borderlessFullScreenStates = {};
+
+class _BorderlessFullScreenState {
+  final Rect frame;
+  final int style;
+  final int exStyle;
+  final bool maximized;
+
+  const _BorderlessFullScreenState({
+    required this.frame,
+    required this.style,
+    required this.exStyle,
+    required this.maximized,
+  });
+}
+
 int _enumCurrentProcessWindowsCallback(int hwnd, int lParam) {
   final clsBuf = calloc.allocate<Utf16>(512);
   try {
@@ -357,6 +386,16 @@ class Win32FFI {
   /// Returns whether [hwnd] refers to a valid window.
   static bool isWindow(int hwnd) => hwnd != 0 && _isWindow(hwnd) != 0;
 
+  /// Returns the best matching Flutter runner HWND for this process.
+  static int findCurrentMainWindow() {
+    final foregroundHwnd = getForegroundWindow();
+    if (isCurrentProcessWindowOfClass(foregroundHwnd, kMainWindowClass)) {
+      return foregroundHwnd;
+    }
+    final hwnds = findCurrentProcessWindowsByClass(kMainWindowClass);
+    return hwnds.isNotEmpty ? hwnds.first : 0;
+  }
+
   /// Returns the window's outer rect (including title bar / borders).
   static Rect getWindowRect(int hwnd) {
     final buf = calloc.allocate<RECT>(40); // sizeof(RECT) = 16
@@ -366,6 +405,13 @@ class Win32FFI {
     } finally {
       calloc.free(buf);
     }
+  }
+
+  /// Returns whether the window still has overlapped caption/border styles.
+  static bool hasOverlappedWindowFrame(int hwnd) {
+    if (!isWindow(hwnd)) return false;
+    final style = _getWindowLongPtrW(hwnd, _gwlStyle);
+    return (style & _wsOverlappedWindow) != 0;
   }
 
   /// Returns the window title as a Dart string.
@@ -437,6 +483,77 @@ class Win32FFI {
       _swpNoMove | _swpNoSize | _swpShowWindow,
     );
     return _setForegroundWindow(hwnd) != 0;
+  }
+
+  /// Toggles true borderless fullscreen for the current Flutter runner window.
+  ///
+  /// The pub `window_manager` fullscreen implementation can leave standard
+  /// Win32 caption/border styles on this runner, which shows a native frame
+  /// around video. This path stores the original style and outer rect, removes
+  /// the overlapped-window decoration bits, and sizes the window to the full
+  /// monitor bounds.
+  static bool setBorderlessFullScreen(bool fullScreen, {int? hwnd}) {
+    final target = hwnd ?? findCurrentMainWindow();
+    if (!isWindow(target)) return false;
+
+    if (fullScreen) {
+      final monitor = _monitorFromWindow(target, _monitorDefaultToNearest);
+      if (monitor == 0) return false;
+      final info = calloc.allocate<MONITORINFO>(40);
+      try {
+        final mi = info.cast<MONITORINFO>();
+        mi.ref.cbSize = 40;
+        if (_getMonitorInfoW(monitor, mi) == 0) return false;
+        _borderlessFullScreenStates.putIfAbsent(
+          target,
+          () => _BorderlessFullScreenState(
+            frame: getWindowRect(target),
+            style: _getWindowLongPtrW(target, _gwlStyle),
+            exStyle: _getWindowLongPtrW(target, _gwlExStyle),
+            maximized: _isZoomed(target) != 0,
+          ),
+        );
+        final rect = mi.ref.rcMonitor;
+        final style = _getWindowLongPtrW(target, _gwlStyle);
+        _setWindowLongPtrW(
+          target,
+          _gwlStyle,
+          (style & ~_wsOverlappedWindow) | _wsPopup,
+        );
+        _setWindowPos(
+          target,
+          _hwndTop,
+          rect.left,
+          rect.top,
+          rect.right - rect.left,
+          rect.bottom - rect.top,
+          _swpNoOwnerZOrder | _swpFrameChanged | _swpShowWindow,
+        );
+      } finally {
+        calloc.free(info);
+      }
+      return true;
+    }
+
+    final saved = _borderlessFullScreenStates.remove(target);
+    if (saved == null) return false;
+    _setWindowLongPtrW(target, _gwlStyle, saved.style);
+    _setWindowLongPtrW(target, _gwlExStyle, saved.exStyle);
+    _setWindowPos(
+      target,
+      _hwndTop,
+      saved.frame.left.round(),
+      saved.frame.top.round(),
+      saved.frame.width.round(),
+      saved.frame.height.round(),
+      _swpNoOwnerZOrder | _swpFrameChanged | _swpShowWindow,
+    );
+    if (saved.maximized) {
+      _showWindow(target, _swMaximize);
+    } else {
+      _showWindow(target, _swRestore);
+    }
+    return true;
   }
 
   /// Positions and optionally resizes the window without changing Z-order.

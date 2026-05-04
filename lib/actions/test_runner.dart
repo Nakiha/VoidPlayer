@@ -9,6 +9,7 @@ import '../config/app_config.dart';
 import '../preferences/playback_preferences.dart';
 import 'action_registry.dart';
 import '../video_renderer_controller.dart';
+import '../windows/win32ffi.dart';
 import '../windows/window_manager.dart';
 import 'player_action.dart';
 import 'player_assert.dart';
@@ -334,6 +335,16 @@ class TestRunner {
             '(±$tolerance), got '
             '(${actual.x.toStringAsFixed(6)}, ${actual.y.toStringAsFixed(6)}) '
             'vs (${expected.x.toStringAsFixed(6)}, ${expected.y.toStringAsFixed(6)})',
+          );
+        }
+      case AssertMainWindowBorderless():
+        final hwnd = Win32FFI.findCurrentMainWindow();
+        if (hwnd == 0) {
+          throw AssertionError('Expected main window HWND to exist');
+        }
+        if (Win32FFI.hasOverlappedWindowFrame(hwnd)) {
+          throw AssertionError(
+            'Expected main window to be borderless in fullscreen, hwnd=$hwnd',
           );
         }
       case AssertCaptureEquals(:final expectedCapture, :final actualCapture):
@@ -1061,6 +1072,8 @@ ScriptInstruction? _parseInstruction(
         time,
         AssertViewCenterStable(args[0], double.parse(args[1])),
       );
+    case 'ASSERT_MAIN_WINDOW_BORDERLESS':
+      return ScriptAssert(time, const AssertMainWindowBorderless());
     case 'ASSERT_CAPTURE_EQUALS':
       if (args.length < 2) {
         log.warning(

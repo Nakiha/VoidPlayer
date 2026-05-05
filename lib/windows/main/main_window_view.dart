@@ -13,6 +13,7 @@ import '../../widgets/toolbar.dart';
 import '../../widgets/viewport_panel.dart';
 import '../settings_window.dart';
 import '../stats_window.dart';
+import '../win32_pointer_button_state_provider.dart';
 import 'main_window_state.dart';
 
 class MainWindowViewModel {
@@ -197,6 +198,8 @@ class MainWindowView extends StatelessWidget {
                     onZoom: actions.onZoom,
                     onPointerButton: actions.onPointerButton,
                     onResize: actions.onResize,
+                    pointerButtonStateProvider:
+                        const Win32PointerButtonStateProvider(),
                   ),
                 ),
                 if (!model.fullScreen && model.tracks.isNotEmpty)

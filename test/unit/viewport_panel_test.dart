@@ -2,13 +2,28 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/l10n/app_localizations.dart';
+import 'package:void_player/platform/pointer_button_state_provider.dart';
 import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/widgets/viewport_panel.dart';
+
+class _FakePointerButtonStateProvider implements PointerButtonStateProvider {
+  bool primary = false;
+  bool secondary = false;
+
+  @override
+  bool get isPrimaryButtonDown => primary;
+
+  @override
+  bool get isSecondaryButtonDown => secondary;
+}
 
 void main() {
   Widget buildPanel({
     required List<Offset> pans,
     required List<({double factor, Offset position})> zooms,
+    PointerButtonStateProvider pointerButtonStateProvider =
+        emptyPointerButtonStateProvider,
+    void Function(bool panning, bool splitting)? onPointerButton,
   }) {
     return MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -27,7 +42,8 @@ void main() {
               onSplit: (_) {},
               onZoom: (factor, position) =>
                   zooms.add((factor: factor, position: position)),
-              onPointerButton: (_, _) {},
+              onPointerButton: onPointerButton ?? (_, _) {},
+              pointerButtonStateProvider: pointerButtonStateProvider,
             ),
           ),
         ),
@@ -77,5 +93,31 @@ void main() {
     expect(zooms, hasLength(1));
     expect(zooms.single.factor, moreOrLessEquals(1.01));
     expect(zooms.single.position, gesturePosition * devicePixelRatio);
+  });
+
+  testWidgets('recovers drag state from injected physical button provider', (
+    tester,
+  ) async {
+    final pans = <Offset>[];
+    final zooms = <({double factor, Offset position})>[];
+    final pointerStates = <({bool panning, bool splitting})>[];
+    final pointerButtonStateProvider = _FakePointerButtonStateProvider()
+      ..primary = true;
+    await tester.pumpWidget(
+      buildPanel(
+        pans: pans,
+        zooms: zooms,
+        pointerButtonStateProvider: pointerButtonStateProvider,
+        onPointerButton: (panning, splitting) =>
+            pointerStates.add((panning: panning, splitting: splitting)),
+      ),
+    );
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(gesture.removePointer);
+    await gesture.addPointer(location: Offset.zero);
+    await gesture.moveTo(tester.getCenter(find.byType(ViewportPanel)));
+
+    expect(pointerStates.first, (panning: true, splitting: false));
   });
 }

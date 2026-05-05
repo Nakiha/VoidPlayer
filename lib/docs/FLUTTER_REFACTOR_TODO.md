@@ -8,10 +8,14 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 - [x] ~~Make the startup loop range UI smoke script self-contained with app startup args.~~
 - [x] ~~Add UI regression coverage for startup loop range after remove/re-add.~~
 
+## Round 2
+
+- [x] ~~Move ViewportPanel mouse-button recovery behind an injected platform service.~~
+
 ## P0
 
 - [ ] Move UI test runner/script parsing/media generation out of the production app graph behind a thin automation bridge.
-- [ ] Add a platform service boundary so widgets do not import Win32 FFI directly.
+- [x] ~~Add a platform service boundary so widgets do not import Win32 FFI directly.~~
 - [ ] Reduce global singleton/static state, starting with per-window action registry and injected window/process services.
 - [ ] Replace viewport magic ints with a typed viewport state model that can carry user-visible errors.
 

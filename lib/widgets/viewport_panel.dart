@@ -3,9 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../platform/pointer_button_state_provider.dart';
 import '../utils/pointer_gesture_utils.dart';
 import '../video_renderer_controller.dart';
-import '../windows/win32ffi.dart';
 
 /// Three-state viewport matching PySide6 ViewportPanel.
 /// States: 0=loading, 1=empty, 2=active(Texture with mouse interaction).
@@ -20,6 +20,7 @@ class ViewportPanel extends StatefulWidget {
   final void Function(double factor, Offset localPosition) onZoom;
   final void Function(bool panning, bool splitting) onPointerButton;
   final void Function(int width, int height, double devicePixelRatio)? onResize;
+  final PointerButtonStateProvider pointerButtonStateProvider;
 
   const ViewportPanel({
     super.key,
@@ -32,6 +33,7 @@ class ViewportPanel extends StatefulWidget {
     required this.onZoom,
     required this.onPointerButton,
     this.onResize,
+    this.pointerButtonStateProvider = emptyPointerButtonStateProvider,
   });
 
   @override
@@ -62,8 +64,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
     var wantsPan = (buttons & kPrimaryButton) != 0;
     var wantsSplit = (buttons & kSecondaryButton) != 0;
     if (!wantsPan && !wantsSplit && allowWin32Recovery && buttons == 0) {
-      wantsPan = Win32FFI.isLeftMouseButtonDown();
-      wantsSplit = Win32FFI.isRightMouseButtonDown();
+      wantsPan = widget.pointerButtonStateProvider.isPrimaryButtonDown;
+      wantsSplit = widget.pointerButtonStateProvider.isSecondaryButtonDown;
     }
 
     if (!wantsPan && !wantsSplit) {

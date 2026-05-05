@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../app_log.dart';
-import '../../config/app_config.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../startup_options.dart';
 import '../../track_manager.dart';
@@ -20,6 +19,7 @@ class MainWindowPlaybackCoordinator {
   final StartupOptions startupOptions;
   final MainWindowStateStore stateStore;
   final ValueNotifier<TimelineHoverState> timelineHoverNotifier;
+  final PlaybackPreferences playbackPreferences;
   final bool Function() mounted;
   final int Function() effectiveDurationUs;
 
@@ -37,6 +37,7 @@ class MainWindowPlaybackCoordinator {
     required this.startupOptions,
     required this.stateStore,
     required this.timelineHoverNotifier,
+    required this.playbackPreferences,
     required this.mounted,
     required this.effectiveDurationUs,
   });
@@ -152,7 +153,7 @@ class MainWindowPlaybackCoordinator {
     final seekSerial = ++_seekSerial;
     _pollSerial++;
     setSeekPreview(ptsUs);
-    final behavior = AppConfig.instance.seekAfterJumpBehavior;
+    final behavior = playbackPreferences.seekAfterJumpBehavior;
     final wasPlaying = isPlaying();
     final shouldResume =
         behavior == SeekAfterJumpBehavior.keepPreviousState &&

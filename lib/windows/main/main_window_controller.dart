@@ -6,6 +6,8 @@ import '../../actions/action_registry.dart';
 import '../../analysis/analysis_manager.dart';
 import '../../automation/test_runner.dart';
 import '../../automation/ui_automation_bridge.dart';
+import '../../preferences/app_config_playback_preferences.dart';
+import '../../preferences/playback_preferences.dart';
 import '../../startup_options.dart';
 import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
@@ -31,6 +33,7 @@ class MainWindowController {
   final MainWindowPlatform platformWindow;
   final app_window.AnalysisProcessManager analysisProcesses;
   final AnalysisGenerationService analysisGeneration;
+  final PlaybackPreferences playbackPreferences;
 
   final NativePlayerController player = NativePlayerController();
   final TrackManager trackManager = TrackManager();
@@ -64,10 +67,13 @@ class MainWindowController {
     MainWindowPlatform? platformWindow,
     app_window.AnalysisProcessManager? analysisProcesses,
     AnalysisGenerationService? analysisGeneration,
+    PlaybackPreferences? playbackPreferences,
   }) : platformWindow = platformWindow ?? const WindowsMainWindowPlatform(),
        analysisProcesses =
            analysisProcesses ?? app_window.WindowManager.analysisProcesses,
-       analysisGeneration = analysisGeneration ?? AnalysisManager.instance {
+       analysisGeneration = analysisGeneration ?? AnalysisManager.instance,
+       playbackPreferences =
+           playbackPreferences ?? const AppConfigPlaybackPreferences() {
     _initCoordinators();
   }
 
@@ -362,6 +368,7 @@ class MainWindowController {
       startupOptions: startupOptions,
       stateStore: stateStore,
       timelineHoverNotifier: timelineHoverNotifier,
+      playbackPreferences: playbackPreferences,
       mounted: mounted,
       effectiveDurationUs: () => mediaCoordinator.effectiveDurationUs,
     );

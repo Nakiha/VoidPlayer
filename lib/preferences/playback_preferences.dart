@@ -13,3 +13,7 @@ enum SeekAfterJumpBehavior {
     );
   }
 }
+
+abstract class PlaybackPreferences {
+  SeekAfterJumpBehavior get seekAfterJumpBehavior;
+}

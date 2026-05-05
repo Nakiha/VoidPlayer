@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/actions/action_registry.dart';
+import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/startup_options.dart';
 import 'package:void_player/windows/main/main_window_controller.dart';
 import 'package:void_player/windows/main/main_window_platform.dart';
@@ -15,10 +16,16 @@ class _FakeMainWindowPlatform implements MainWindowPlatform {
   Future<void> setFullScreen(bool fullScreen) => Future.value();
 }
 
+class _FakeAnalysisGenerationService implements AnalysisGenerationService {
+  @override
+  Future<String?> ensureGenerated(String videoPath) => Future.value(null);
+}
+
 void main() {
   test('MainWindowController keeps injected platform services', () {
     final platformWindow = _FakeMainWindowPlatform();
     final analysisProcesses = app_window.AnalysisProcessManager();
+    final analysisGeneration = _FakeAnalysisGenerationService();
     final controller = MainWindowController(
       actionRegistry: ActionRegistry(),
       vsync: const TestVSync(),
@@ -26,10 +33,12 @@ void main() {
       mounted: () => true,
       platformWindow: platformWindow,
       analysisProcesses: analysisProcesses,
+      analysisGeneration: analysisGeneration,
     );
     addTearDown(controller.dispose);
 
     expect(controller.platformWindow, same(platformWindow));
     expect(controller.analysisProcesses, same(analysisProcesses));
+    expect(controller.analysisGeneration, same(analysisGeneration));
   });
 }

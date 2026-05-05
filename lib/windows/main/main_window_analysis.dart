@@ -11,6 +11,7 @@ import '../window_manager.dart';
 class MainWindowAnalysisCoordinator {
   final TrackManager trackManager;
   final AnalysisProcessManager analysisProcesses;
+  final AnalysisGenerationService analysisGeneration;
   final AnalysisIpcServer _ipcServer = AnalysisIpcServer();
   final Map<int, String> _hashesByFileId = <int, String>{};
 
@@ -21,7 +22,8 @@ class MainWindowAnalysisCoordinator {
   MainWindowAnalysisCoordinator({
     required this.trackManager,
     required this.analysisProcesses,
-  });
+    AnalysisGenerationService? analysisGeneration,
+  }) : analysisGeneration = analysisGeneration ?? AnalysisManager.instance;
 
   Future<void> dispose() async {
     _disposed = true;
@@ -39,14 +41,13 @@ class MainWindowAnalysisCoordinator {
   Future<void> _triggerAnalysisImpl(int serial) async {
     if (trackManager.isEmpty) return;
     if (analysisProcesses.activateAnalysisWindows()) return;
-    final mgr = AnalysisManager.instance;
     final windows = <AnalysisWindowRequest>[];
     await _ipcServer.start();
     if (!_alive(serial)) return;
     analysisProcesses.analysisIpcPort = _ipcServer.port;
     analysisProcesses.analysisIpcToken = _ipcServer.token;
     for (final entry in trackManager.entries) {
-      final hash = await mgr.ensureGenerated(entry.path);
+      final hash = await analysisGeneration.ensureGenerated(entry.path);
       if (!_alive(serial)) return;
       if (hash != null) {
         _hashesByFileId[entry.fileId] = hash;
@@ -68,7 +69,6 @@ class MainWindowAnalysisCoordinator {
   Future<void> _publishTrackSnapshotImpl(int serial) async {
     if (!_ipcServer.isStarted) return;
     if (!_ipcServer.hasClients) return;
-    final mgr = AnalysisManager.instance;
     final tracks = <AnalysisIpcTrack>[];
     final liveFileIds = trackManager.entries.map((e) => e.fileId).toSet();
     _hashesByFileId.removeWhere((fileId, _) => !liveFileIds.contains(fileId));
@@ -76,7 +76,7 @@ class MainWindowAnalysisCoordinator {
     for (final entry in trackManager.entries) {
       var hash = _hashesByFileId[entry.fileId];
       if (hash == null) {
-        hash = await mgr.ensureGenerated(entry.path);
+        hash = await analysisGeneration.ensureGenerated(entry.path);
         if (!_alive(serial)) return;
         if (hash == null) continue;
         _hashesByFileId[entry.fileId] = hash;

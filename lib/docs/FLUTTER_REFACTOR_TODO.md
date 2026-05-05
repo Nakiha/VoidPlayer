@@ -116,7 +116,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
   Done: non-user automation commands no longer live in `PlayerAction`; script model/parser, assertion executor, probes, run-state, video generation, process access, process exit, window automation, and automation-only config writes now sit behind the automation module/bridge/runtime instead of the action system.
 - [x] ~~Add a platform service boundary so widgets do not import Win32 FFI directly.~~
 - [ ] Reduce global singleton/static state, starting with injected window/process services.
-  Slices done: `WindowManager` delegates analysis process state to an `AnalysisProcessManager` instance; main-window analysis and release UI automation use that instance through injection/bridge; `MainWindowController` now receives its analysis process manager and main-window fullscreen/bounds platform service through constructor injection instead of hard-reading the global facade or calling Win32/window-manager APIs directly.
+  Slices done: `WindowManager` delegates analysis process state to an `AnalysisProcessManager` instance; main-window analysis and release UI automation use that instance through injection/bridge; `MainWindowController` now receives its analysis process manager and main-window fullscreen/bounds platform service through constructor injection instead of hard-reading the global facade or calling Win32/window-manager APIs directly; main-window analysis generation now depends on an injected `AnalysisGenerationService` instead of directly reading `AnalysisManager.instance`.
 - [x] ~~Replace viewport magic ints with a typed viewport state model that can carry user-visible errors.~~
 
 ## P1

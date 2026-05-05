@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../actions/action_registry.dart';
+import '../../analysis/analysis_manager.dart';
 import '../../automation/test_runner.dart';
 import '../../automation/ui_automation_bridge.dart';
 import '../../startup_options.dart';
@@ -29,6 +30,7 @@ class MainWindowController {
   final bool Function() mounted;
   final MainWindowPlatform platformWindow;
   final app_window.AnalysisProcessManager analysisProcesses;
+  final AnalysisGenerationService analysisGeneration;
 
   final NativePlayerController player = NativePlayerController();
   final TrackManager trackManager = TrackManager();
@@ -61,9 +63,11 @@ class MainWindowController {
     required this.mounted,
     MainWindowPlatform? platformWindow,
     app_window.AnalysisProcessManager? analysisProcesses,
+    AnalysisGenerationService? analysisGeneration,
   }) : platformWindow = platformWindow ?? const WindowsMainWindowPlatform(),
        analysisProcesses =
-           analysisProcesses ?? app_window.WindowManager.analysisProcesses {
+           analysisProcesses ?? app_window.WindowManager.analysisProcesses,
+       analysisGeneration = analysisGeneration ?? AnalysisManager.instance {
     _initCoordinators();
   }
 
@@ -350,6 +354,7 @@ class MainWindowController {
     analysisCoordinator = MainWindowAnalysisCoordinator(
       trackManager: trackManager,
       analysisProcesses: analysisProcesses,
+      analysisGeneration: analysisGeneration,
     );
     playbackCoordinator = MainWindowPlaybackCoordinator(
       controller: player,

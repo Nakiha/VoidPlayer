@@ -67,11 +67,16 @@ class AnalysisTrackGenerationStatus {
   bool get isError => status == AnalysisTrackStatus.error;
 }
 
+abstract class AnalysisGenerationService {
+  Future<String?> ensureGenerated(String videoPath);
+}
+
 /// Dart-side state machine for the analysis generation + loading flow.
 ///
 /// The UI (AnalysisPanel) listens to this via [ChangeNotifier] to show
 /// progress / error / loaded states.
-class AnalysisManager extends ChangeNotifier {
+class AnalysisManager extends ChangeNotifier
+    implements AnalysisGenerationService {
   AnalysisManager._();
   static final AnalysisManager instance = AnalysisManager._();
 
@@ -105,6 +110,7 @@ class AnalysisManager extends ChangeNotifier {
   /// Generation is deduplicated by path and is intentionally independent from
   /// the current native loaded session. Starting analysis for another file
   /// must not invalidate a generation already running for this one.
+  @override
   Future<String?> ensureGenerated(String videoPath) {
     final existing = _ensureGeneratedInFlightByPath[videoPath];
     if (existing != null) return existing;

@@ -86,7 +86,8 @@ bool Renderer::initialize(const RendererConfig& config) {
 
     d3d_device_ = std::make_unique<D3D11Device>();
     if (config.headless) {
-        if (!d3d_device_->initialize_headless(config.dxgi_adapter, target_width_, target_height_)) {
+        auto* adapter = static_cast<IDXGIAdapter*>(config.backend.adapter);
+        if (!d3d_device_->initialize_headless(adapter, target_width_, target_height_)) {
             spdlog::error("Renderer: failed to initialize D3D11 device (headless)");
             return fail();
         }
@@ -1234,6 +1235,7 @@ bool Renderer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
     texture->GetDesc(&desc);
     texture->AddRef();
 
+    snapshot.type = SharedTextureHandleType::D3D11SharedHandle;
     snapshot.texture = texture;
     snapshot.handle = handle;
     snapshot.width = static_cast<int>(desc.Width);

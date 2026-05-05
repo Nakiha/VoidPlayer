@@ -63,6 +63,19 @@ struct LayoutState {
     int order[4] = {0, 1, 2, 3};    // Track display order mapping
 };
 
+enum class RendererBackendType {
+    D3D11 = 1,
+};
+
+/// Platform-specific renderer interop values.
+/// D3D11 uses `adapter` as the Flutter Windows DXGI adapter pointer. Future
+/// backends can add their own opaque handles without changing the
+/// cross-platform RendererConfig fields.
+struct RendererBackendInterop {
+    RendererBackendType type = RendererBackendType::D3D11;
+    void* adapter = nullptr;
+};
+
 struct RendererConfig {
     std::vector<std::string> video_paths;
     void* hwnd = nullptr;
@@ -73,17 +86,23 @@ struct RendererConfig {
     /// Headless mode: render to offscreen texture instead of swap chain.
     bool headless = false;
 
-    /// DXGI adapter for headless mode (must match Flutter's adapter).
-    IDXGIAdapter* dxgi_adapter = nullptr;
+    /// Native backend interop for headless mode.
+    RendererBackendInterop backend;
 
     /// Logging configuration. Applied during initialize().
     /// Can also be set independently via configure_logging() before init.
     LogConfig log_config;
 };
 
+enum class SharedTextureHandleType {
+    None = 0,
+    D3D11SharedHandle = 1,
+};
+
 struct SharedTextureSnapshot {
-    ID3D11Texture2D* texture = nullptr;  ///< AddRef'd; caller must Release().
-    HANDLE handle = nullptr;
+    SharedTextureHandleType type = SharedTextureHandleType::None;
+    void* texture = nullptr;  ///< AddRef'd backend texture; caller must Release().
+    void* handle = nullptr;
     int width = 0;
     int height = 0;
 };

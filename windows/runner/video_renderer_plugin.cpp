@@ -976,12 +976,13 @@ void VideoRendererPlugin::CreatePlayer(
     // Create player in headless mode
     vr::RendererConfig config;
     config.headless = true;
-    config.dxgi_adapter = dxgi_adapter_.Get();
+    config.backend.type = vr::RendererBackendType::D3D11;
+    config.backend.adapter = dxgi_adapter_.Get();
     config.width = width;
     config.height = height;
     config.use_hardware_decode = true;
 
-    if (!config.dxgi_adapter) {
+    if (!config.backend.adapter) {
         result->Error(
             "NO_DXGI_ADAPTER",
             "Flutter DXGI adapter is unavailable; cannot create shared D3D11 texture");
@@ -1028,10 +1029,16 @@ void VideoRendererPlugin::CreatePlayer(
 
             vr::SharedTextureSnapshot snapshot;
             if (!player_->acquire_shared_texture(snapshot)) return nullptr;
+            if (snapshot.type != vr::SharedTextureHandleType::D3D11SharedHandle ||
+                !snapshot.texture ||
+                !snapshot.handle) {
+                return nullptr;
+            }
 
-            auto* release_context = new (std::nothrow) FlutterTextureReleaseContext{snapshot.texture};
+            auto* release_context = new (std::nothrow) FlutterTextureReleaseContext{
+                static_cast<ID3D11Texture2D*>(snapshot.texture)};
             if (!release_context) {
-                snapshot.texture->Release();
+                static_cast<ID3D11Texture2D*>(snapshot.texture)->Release();
                 return nullptr;
             }
 

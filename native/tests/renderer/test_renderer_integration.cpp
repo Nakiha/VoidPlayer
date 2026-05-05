@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <d3d11.h>
 #include <dxgi.h>
 
 using namespace vr;
@@ -280,7 +281,8 @@ TEST_CASE("Renderer: headless mode requires a DXGI adapter", "[renderer][hw]") {
     RendererConfig config;
     config.video_paths = { video_test_dir() + "/h264_9s_1920x1080.mp4" };
     config.headless = true;
-    config.dxgi_adapter = nullptr;
+    config.backend.type = RendererBackendType::D3D11;
+    config.backend.adapter = nullptr;
     config.width = 640;
     config.height = 480;
     config.use_hardware_decode = true;
@@ -298,7 +300,8 @@ TEST_CASE("Renderer: headless hw decode initialize", "[renderer][hw]") {
     RendererConfig config;
     config.video_paths = { video_test_dir() + "/h264_9s_1920x1080.mp4" };
     config.headless = true;
-    config.dxgi_adapter = adapter;
+    config.backend.type = RendererBackendType::D3D11;
+    config.backend.adapter = adapter;
     config.width = 640;
     config.height = 480;
     config.use_hardware_decode = true;
@@ -311,9 +314,10 @@ TEST_CASE("Renderer: headless hw decode initialize", "[renderer][hw]") {
     // Verify the shared texture snapshot is available for Flutter consumption.
     SharedTextureSnapshot snapshot;
     REQUIRE(renderer.acquire_shared_texture(snapshot));
+    REQUIRE(snapshot.type == SharedTextureHandleType::D3D11SharedHandle);
     REQUIRE(snapshot.texture != nullptr);
     REQUIRE(snapshot.handle != nullptr);
-    snapshot.texture->Release();
+    static_cast<ID3D11Texture2D*>(snapshot.texture)->Release();
 
     renderer.shutdown();
     REQUIRE_FALSE(renderer.is_initialized());
@@ -328,7 +332,8 @@ TEST_CASE("Renderer: headless hw decode play", "[renderer][hw]") {
     RendererConfig config;
     config.video_paths = { video_test_dir() + "/h264_9s_1920x1080.mp4" };
     config.headless = true;
-    config.dxgi_adapter = adapter;
+    config.backend.type = RendererBackendType::D3D11;
+    config.backend.adapter = adapter;
     config.width = 640;
     config.height = 480;
     config.use_hardware_decode = true;
@@ -345,9 +350,10 @@ TEST_CASE("Renderer: headless hw decode play", "[renderer][hw]") {
     // Verify shared texture snapshot remains valid during playback.
     SharedTextureSnapshot snapshot;
     REQUIRE(renderer.acquire_shared_texture(snapshot));
+    REQUIRE(snapshot.type == SharedTextureHandleType::D3D11SharedHandle);
     REQUIRE(snapshot.texture != nullptr);
     REQUIRE(snapshot.handle != nullptr);
-    snapshot.texture->Release();
+    static_cast<ID3D11Texture2D*>(snapshot.texture)->Release();
 
     renderer.shutdown();
 }
@@ -364,7 +370,8 @@ TEST_CASE("Renderer: headless hw decode multi-track", "[renderer][hw]") {
         video_test_dir() + "/h265_10s_1920x1080.mp4"
     };
     config.headless = true;
-    config.dxgi_adapter = adapter;
+    config.backend.type = RendererBackendType::D3D11;
+    config.backend.adapter = adapter;
     config.width = 1280;
     config.height = 480;
     config.use_hardware_decode = true;
@@ -384,7 +391,8 @@ TEST_CASE("Renderer: headless HEVC paused exact seek updates captured frame", "[
     RendererConfig config;
     config.video_paths = { video_test_dir() + "/h265_10s_1920x1080.mp4" };
     config.headless = true;
-    config.dxgi_adapter = adapter;
+    config.backend.type = RendererBackendType::D3D11;
+    config.backend.adapter = adapter;
     config.width = 1280;
     config.height = 720;
     config.use_hardware_decode = true;
@@ -431,7 +439,8 @@ TEST_CASE("Renderer: headless AV1 and VP9 produce visual frames", "[renderer][hw
         RendererConfig config;
         config.video_paths = { file };
         config.headless = true;
-        config.dxgi_adapter = adapter;
+        config.backend.type = RendererBackendType::D3D11;
+        config.backend.adapter = adapter;
         config.width = 1280;
         config.height = 720;
         config.use_hardware_decode = true;

@@ -19,8 +19,10 @@ backend behind explicit platform boundaries before adding a macOS backend.
     texture and shared handle together.
 
 - [ ] Move public D3D11 types behind a renderer backend API.
-  - `RendererConfig` currently contains `IDXGIAdapter*`.
-  - `SharedTextureSnapshot` currently contains `ID3D11Texture2D*` and `HANDLE`.
+  - `RendererConfig` now carries backend interop as opaque handles instead of
+    `IDXGIAdapter*`.
+  - `SharedTextureSnapshot` now carries typed native handles instead of
+    `ID3D11Texture2D*` and `HANDLE`.
   - These are acceptable for the Windows backend, but should not be part of a
     platform-neutral renderer interface.
 

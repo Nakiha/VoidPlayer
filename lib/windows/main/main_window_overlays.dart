@@ -38,7 +38,7 @@ class FullScreenControlsOverlay extends StatelessWidget {
       right: 12,
       bottom: 12,
       child: AnimatedOverlaySlot(
-        visible: model.fullScreenControlsVisible,
+        visible: model.overlays.fullScreenControlsVisible,
         builder: (context) =>
             FullScreenControlsPanel(model: model, actions: actions),
         transitionBuilder: (context, animation, child) {

@@ -19,42 +19,44 @@ class MediaTimelineSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final media = model.media;
+    final playback = model.playback;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         MainWindowMediaHeader(model: model, actions: actions),
         MainWindowControlsBar(model: model, actions: actions),
         LoopRangeBar(
-          key: model.loopRangeBarKey,
-          timelineStartWidth: model.timelineStartWidth,
-          enabled: model.loopRangeEnabled,
-          startUs: model.loopStartUs,
-          endUs: model.loopEndUs,
-          durationUs: model.durationUs,
+          key: playback.loopRangeBarKey,
+          timelineStartWidth: playback.timelineStartWidth,
+          enabled: playback.loopRangeEnabled,
+          startUs: playback.loopStartUs,
+          endUs: playback.loopEndUs,
+          durationUs: playback.durationUs,
           onEnabledChanged: actions.onLoopRangeEnabledChanged,
           onRangeChanged: actions.onLoopRangeChanged,
           onRangeChangeEnd: actions.onLoopRangeChangeEnd,
         ),
         ValueListenableBuilder<TimelineHoverState>(
-          valueListenable: model.timelineHoverListenable,
+          valueListenable: playback.timelineHoverListenable,
           builder: (context, hover, _) => TimelineArea(
-            entries: model.tracks,
-            currentPtsUs: model.currentPtsUs,
+            entries: media.tracks,
+            currentPtsUs: playback.currentPtsUs,
             onRemoveTrack: actions.onRemoveTrack,
             onReorder: actions.onReorder,
             onOffsetChanged: actions.onOffsetChanged,
             onToggleTrackAudio: actions.onToggleTrackAudio,
-            audibleTrackFileId: model.audibleTrackFileId,
-            syncOffsets: model.syncOffsets,
-            maxEffectiveDurationUs: model.durationUs,
+            audibleTrackFileId: media.audibleTrackFileId,
+            syncOffsets: media.syncOffsets,
+            maxEffectiveDurationUs: playback.durationUs,
             hoverPtsUs: hover.hoverPtsUs,
             sliderHovering: hover.sliderHovering,
-            controlsWidth: model.controlsWidth,
+            controlsWidth: playback.controlsWidth,
             onControlsWidthChanged: actions.onControlsWidthChanged,
-            markerPtsUs: model.markerUs,
-            loopRangeEnabled: model.loopRangeEnabled,
-            loopStartUs: model.loopStartUs,
-            loopEndUs: model.loopEndUs,
+            markerPtsUs: playback.markerUs,
+            loopRangeEnabled: playback.loopRangeEnabled,
+            loopStartUs: playback.loopStartUs,
+            loopEndUs: playback.loopEndUs,
           ),
         ),
       ],
@@ -74,12 +76,13 @@ class MainWindowMediaHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tracks = model.media.tracks;
     return MediaHeaderBar(
-      entries: model.tracks,
+      entries: tracks,
       onMediaSwapped: actions.onMediaSwapped,
       onRemoveClicked: (slotIndex) {
-        if (slotIndex < model.tracks.length) {
-          actions.onRemoveTrack(model.tracks[slotIndex].fileId);
+        if (slotIndex < tracks.length) {
+          actions.onRemoveTrack(tracks[slotIndex].fileId);
         }
       },
     );
@@ -98,24 +101,25 @@ class MainWindowControlsBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final playback = model.playback;
     return ControlsBar(
-      timelineKey: model.timelineSliderKey,
-      timelineStartWidth: model.timelineStartWidth,
-      zoomRatio: model.layout.zoomRatio,
+      timelineKey: playback.timelineSliderKey,
+      timelineStartWidth: playback.timelineStartWidth,
+      zoomRatio: model.viewport.layout.zoomRatio,
       onZoomChanged: actions.onZoomChanged,
-      isPlaying: model.isPlaying,
-      isFullScreen: model.fullScreen,
+      isPlaying: playback.isPlaying,
+      isFullScreen: model.overlays.fullScreen,
       onToggleFullScreen: actions.onToggleFullScreen,
       onTogglePlay: actions.onTogglePlay,
       onStepForward: actions.onStepForward,
       onStepBackward: actions.onStepBackward,
-      currentPtsUs: model.currentPtsUs,
-      durationUs: model.durationUs,
+      currentPtsUs: playback.currentPtsUs,
+      durationUs: playback.durationUs,
       onSeek: actions.onSeek,
       onHoverChanged: actions.onSliderHover,
-      markerUs: model.markerUs,
-      seekMinUs: model.seekMinUs,
-      seekMaxUs: model.seekMaxUs,
+      markerUs: playback.markerUs,
+      seekMinUs: playback.seekMinUs,
+      seekMaxUs: playback.seekMaxUs,
     );
   }
 }

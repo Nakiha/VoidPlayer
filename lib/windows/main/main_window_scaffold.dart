@@ -19,30 +19,33 @@ class MainWindowScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final viewport = model.viewport;
+    final media = model.media;
+    final overlays = model.overlays;
     return Scaffold(
       body: Stack(
         children: [
           Column(
             children: [
-              if (!model.fullScreen)
+              if (!overlays.fullScreen)
                 AppToolBar(
-                  viewMode: model.viewMode,
+                  viewMode: viewport.viewMode,
                   onViewModeChanged: actions.onViewModeChanged,
                   onAddMedia: actions.onAddMedia,
                   onAnalysis: actions.onAnalysis,
                   onProfiler: actions.onProfiler,
                   onSettings: actions.onSettings,
-                  tracks: model.tracks,
-                  viewModeEnabled: model.viewModeEnabled,
-                  analysisEnabled: model.analysisEnabled,
+                  tracks: media.tracks,
+                  viewModeEnabled: viewport.viewModeEnabled,
+                  analysisEnabled: media.analysisEnabled,
                 ),
               Expanded(
                 child: ViewportPanel(
-                  key: model.viewportKey,
-                  textureId: model.textureId,
-                  viewportState: model.viewportState,
-                  errorText: model.viewportState.errorText,
-                  layout: model.layout,
+                  key: viewport.viewportKey,
+                  textureId: viewport.textureId,
+                  viewportState: viewport.viewportState,
+                  errorText: viewport.viewportState.errorText,
+                  layout: viewport.layout,
                   onPan: actions.onPan,
                   onSplit: actions.onSplit,
                   onZoom: actions.onZoom,
@@ -52,23 +55,23 @@ class MainWindowScaffold extends StatelessWidget {
                       const Win32PointerButtonStateProvider(),
                 ),
               ),
-              if (!model.fullScreen && model.tracks.isNotEmpty)
+              if (!overlays.fullScreen && media.tracks.isNotEmpty)
                 MediaTimelineSection(model: model, actions: actions),
             ],
           ),
-          if (model.fullScreen)
+          if (overlays.fullScreen)
             FullScreenPointerCapture(
               onActivity: actions.onFullScreenPointerActivity,
             ),
-          if (model.fullScreen && model.tracks.isNotEmpty)
+          if (overlays.fullScreen && media.tracks.isNotEmpty)
             FullScreenControlsOverlay(model: model, actions: actions),
-          if (model.dragging) const DragDropLayer(),
+          if (overlays.dragging) const DragDropLayer(),
           ProfilerOverlaySlot(
-            visible: model.profilerVisible,
+            visible: overlays.profilerVisible,
             onClose: actions.onCloseProfiler,
           ),
           SettingsOverlaySlot(
-            visible: model.settingsVisible,
+            visible: overlays.settingsVisible,
             onClose: actions.onCloseSettings,
           ),
         ],

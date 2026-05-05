@@ -8,15 +8,52 @@ import '../../widgets/loop_range_bar.dart';
 import 'main_window_state.dart';
 
 class MainWindowViewModel {
-  final bool dragging;
+  final MainWindowViewportVm viewport;
+  final MainWindowMediaVm media;
+  final MainWindowPlaybackVm playback;
+  final MainWindowOverlayVm overlays;
+
+  const MainWindowViewModel({
+    required this.viewport,
+    required this.media,
+    required this.playback,
+    required this.overlays,
+  });
+}
+
+class MainWindowViewportVm {
   final int viewMode;
   final bool viewModeEnabled;
-  final bool analysisEnabled;
   final int? textureId;
   final ViewportDisplayState viewportState;
   final LayoutState layout;
-  final List<TrackEntry> tracks;
   final GlobalKey viewportKey;
+
+  const MainWindowViewportVm({
+    required this.viewMode,
+    required this.viewModeEnabled,
+    required this.textureId,
+    required this.viewportState,
+    required this.layout,
+    required this.viewportKey,
+  });
+}
+
+class MainWindowMediaVm {
+  final bool analysisEnabled;
+  final List<TrackEntry> tracks;
+  final Map<int, int> syncOffsets; // fileId -> offset in microseconds
+  final int? audibleTrackFileId;
+
+  const MainWindowMediaVm({
+    required this.analysisEnabled,
+    required this.tracks,
+    required this.syncOffsets,
+    required this.audibleTrackFileId,
+  });
+}
+
+class MainWindowPlaybackVm {
   final GlobalKey timelineSliderKey;
   final double timelineStartWidth;
   final bool isPlaying;
@@ -29,25 +66,10 @@ class MainWindowViewModel {
   final bool loopRangeEnabled;
   final int loopStartUs;
   final int loopEndUs;
-  final Map<int, int> syncOffsets; // fileId -> offset in microseconds
   final ValueListenable<TimelineHoverState> timelineHoverListenable;
   final double controlsWidth;
-  final bool profilerVisible;
-  final bool settingsVisible;
-  final bool fullScreen;
-  final bool fullScreenControlsVisible;
-  final int? audibleTrackFileId;
 
-  const MainWindowViewModel({
-    required this.dragging,
-    required this.viewMode,
-    required this.viewModeEnabled,
-    required this.analysisEnabled,
-    required this.textureId,
-    required this.viewportState,
-    required this.layout,
-    required this.tracks,
-    required this.viewportKey,
+  const MainWindowPlaybackVm({
     required this.timelineSliderKey,
     required this.timelineStartWidth,
     required this.isPlaying,
@@ -60,14 +82,24 @@ class MainWindowViewModel {
     required this.loopRangeEnabled,
     required this.loopStartUs,
     required this.loopEndUs,
-    required this.syncOffsets,
     required this.timelineHoverListenable,
     required this.controlsWidth,
+  });
+}
+
+class MainWindowOverlayVm {
+  final bool dragging;
+  final bool profilerVisible;
+  final bool settingsVisible;
+  final bool fullScreen;
+  final bool fullScreenControlsVisible;
+
+  const MainWindowOverlayVm({
+    required this.dragging,
     required this.profilerVisible,
     required this.settingsVisible,
     required this.fullScreen,
     required this.fullScreenControlsVisible,
-    required this.audibleTrackFileId,
   });
 }
 

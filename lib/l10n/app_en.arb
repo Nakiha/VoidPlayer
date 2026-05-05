@@ -157,8 +157,8 @@
   "shortcut": "Shortcut",
   "@shortcut": { "description": "Table column: shortcut key" },
 
-  "versionLabel": "Version 1.0.0",
-  "@versionLabel": { "description": "Version display text" },
+  "versionLabel": "Version",
+  "@versionLabel": { "description": "Version label" },
 
   "appDescription": "A multi-track video comparison player.",
   "@appDescription": { "description": "App description in about page" },
@@ -166,8 +166,8 @@
   "dependencies": "Dependencies",
   "@dependencies": { "description": "Dependencies section title" },
 
-  "license": "License: GPLv3",
-  "@license": { "description": "License text" },
+  "license": "License",
+  "@license": { "description": "License label" },
 
   "refresh": "Refresh",
   "@refresh": { "description": "Refresh button tooltip" },

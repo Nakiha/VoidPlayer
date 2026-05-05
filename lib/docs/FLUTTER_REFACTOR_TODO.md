@@ -46,6 +46,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Extract shared viewport display geometry math for production layout and UI automation assertions.~~
 - [x] ~~Split release UI automation script model/parser out of TestRunner.~~
+- [x] ~~Centralize About page version/license/dependency metadata.~~
 
 ## P0
 
@@ -69,5 +70,5 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 - [ ] Strengthen analyzer/linter settings once current violations are triaged.
 - [ ] Split oversized main-window view/view-model surfaces by UI region.
 - [ ] Make shortcut display metadata come from the same action definitions as real bindings.
-- [ ] Centralize About/version/license metadata instead of hardcoding it in widgets/ARB strings.
+- [x] ~~Centralize About/version/license metadata instead of hardcoding it in widgets/ARB strings.~~
 - [x] ~~Extract shared layout geometry math used by production and UI test assertions.~~

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../actions/player_action.dart';
+import '../app_metadata.dart';
 import '../l10n/action_labels.dart';
 import '../l10n/app_localizations.dart';
 import 'settings/appearance_settings_page.dart';
@@ -170,20 +171,6 @@ class _ShortcutsPage extends StatelessWidget {
 class _AboutPage extends StatelessWidget {
   const _AboutPage();
 
-  static const _dependencies = [
-    ('Flutter / Dart SDK', 'BSD-3-Clause'),
-    ('FFmpeg 8.1 full build (gyan.dev)', 'GPL-3.0'),
-    ('VTM DecoderApp', 'BSD-3-Clause'),
-    ('Windows SDK: Direct3D 11 / DXGI / DWM', 'Microsoft SDK'),
-    ('spdlog', 'MIT'),
-    ('flutter_acrylic', 'MIT'),
-    ('window_manager', 'MIT'),
-    ('screen_retriever', 'MIT'),
-    ('desktop_drop', 'Apache-2.0'),
-    ('cupertino_icons', 'MIT'),
-    ('Dart packages: crypto, ffi, intl, logging, path', 'BSD-3-Clause'),
-  ];
-
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
@@ -194,9 +181,15 @@ class _AboutPage extends StatelessWidget {
         children: [
           SettingsPageTitle(text: l.appTitle),
           const SizedBox(height: 4),
-          Text(l.versionLabel, style: SettingsPageStyle.secondary(context)),
+          Text(
+            '${l.versionLabel} ${AppMetadata.version}',
+            style: SettingsPageStyle.secondary(context),
+          ),
           const SizedBox(height: 4),
-          Text(l.license, style: SettingsPageStyle.secondary(context)),
+          Text(
+            '${l.license}: ${AppMetadata.license}',
+            style: SettingsPageStyle.secondary(context),
+          ),
           SettingsPageStyle.contentGap,
           Expanded(
             child: ListView(
@@ -209,8 +202,8 @@ class _AboutPage extends StatelessWidget {
                   style: SettingsPageStyle.sectionTitle(context),
                 ),
                 SettingsPageStyle.compactGap,
-                for (final dependency in _dependencies)
-                  _depItem(dependency.$1, dependency.$2),
+                for (final dependency in AppMetadata.dependencies)
+                  _depItem(dependency.name, dependency.license),
               ],
             ),
           ),

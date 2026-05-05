@@ -21,7 +21,9 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
     void_apply_native_compile_options(${target_name})
 
     target_sources(${target_name} PRIVATE
-        ${VOID_RENDERER_SOURCES}
+        ${VOID_RENDERER_CORE_SOURCES}
+        ${VOID_RENDERER_WINDOWS_SOURCES}
+        ${VOID_D3D11_BACKEND_SOURCES}
         ${VOID_ANALYSIS_SOURCES}
     )
 

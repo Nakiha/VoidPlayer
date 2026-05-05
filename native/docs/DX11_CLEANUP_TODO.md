@@ -30,6 +30,11 @@ backend behind explicit platform boundaries before adding a macOS backend.
   - Keep D3D11/DXGI/D3DCompiler/WinMM links in a Windows backend/plugin target.
   - Keep media, playback, analysis, and shared utility code available without
     the D3D11 renderer target.
+  - Progress: `video_renderer_core` now owns media/buffer/sync/shared utility
+    sources without D3D11/DXGI links; `video_renderer_lib` owns the Windows
+    renderer, D3D11 backend, D3D11VA decode provider, and WinMM/D3D links.
+  - Remaining: split `PlaybackController` from the Windows `AudioEngine`
+    backend before treating playback as platform-neutral.
 
 ## P1: D3D11 Runtime Contract
 

@@ -134,7 +134,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 ## Deferred Analysis Debt
 
 - [ ] Split remaining `AnalysisManager` analysis singleton usage into explicit cache, FFI, generation queue, and presentation services.
-  Slices done: toolbar presentation now consumes an injected `AnalysisToolbarDataSource` instead of directly reading `AnalysisManager.instance` or `AppConfig.instance`; `AnalysisManager` reads cache-limit policy through `AnalysisGenerationSettings` instead of directly reading `AppConfig.instance`. Remaining deeper work: split cache, FFI, generation queue, and presentation services out of the historical global manager.
+  Slices done: toolbar presentation now consumes an injected `AnalysisToolbarDataSource` instead of directly reading `AnalysisManager.instance` or `AppConfig.instance`; `AnalysisManager` reads cache-limit policy through `AnalysisGenerationSettings` instead of directly reading `AppConfig.instance`; `AnalysisManager` now depends on `AnalysisCacheService` instead of calling `AnalysisCache` static APIs directly. Remaining deeper work: split FFI and generation queue responsibilities out of the historical global manager.
 
 ## P2
 

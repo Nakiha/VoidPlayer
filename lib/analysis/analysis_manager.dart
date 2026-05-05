@@ -6,7 +6,7 @@ import 'package:path/path.dart' as p;
 
 import '../app_log.dart';
 import '../utils/file_lock.dart';
-import 'analysis_cache.dart';
+import 'analysis_cache_service.dart';
 import 'analysis_ffi.dart';
 import 'analysis_generation_settings.dart';
 import 'file_hash.dart';
@@ -80,11 +80,14 @@ class AnalysisManager extends ChangeNotifier
   AnalysisManager._({
     AnalysisGenerationSettings settings =
         const AppConfigAnalysisGenerationSettings(),
-  }) : _settings = settings;
+    AnalysisCacheService cache = const DefaultAnalysisCacheService(),
+  }) : _settings = settings,
+       _cache = cache;
 
   static final AnalysisManager instance = AnalysisManager._();
 
   final AnalysisGenerationSettings _settings;
+  final AnalysisCacheService _cache;
   AnalysisState _state = AnalysisState.idle;
   AnalysisError? _error;
   String? _generatingFileName;
@@ -151,13 +154,11 @@ class AnalysisManager extends ChangeNotifier
     final stateSerial = ++_stateSerial;
     log.info('[Analysis] ensureGenerated: videoPath=$videoPath');
 
-    final indexedHash = await AnalysisCache.findHashForUnchangedVideo(
-      videoPath,
-    );
+    final indexedHash = await _cache.findHashForUnchangedVideo(videoPath);
     if (indexedHash != null && _hasUsableCacheEntry(indexedHash, videoPath)) {
       log.info('[Analysis] metadata cache hit for $indexedHash');
       await _refreshCacheEntry(indexedHash, fileName, videoPath);
-      await AnalysisCache.touchEntry(indexedHash);
+      await _cache.touchEntry(indexedHash);
       _setTrackStatus(
         videoPath,
         fileName: fileName,
@@ -206,7 +207,7 @@ class AnalysisManager extends ChangeNotifier
     if (_hasUsableCacheEntry(hash, videoPath)) {
       log.info('[Analysis] cache hit for $hash');
       await _refreshCacheEntry(hash, fileName, videoPath);
-      await AnalysisCache.touchEntry(hash);
+      await _cache.touchEntry(hash);
       _setTrackStatus(
         videoPath,
         fileName: fileName,
@@ -221,7 +222,7 @@ class AnalysisManager extends ChangeNotifier
 
     final maxCacheBytes = _settings.maxCacheBytes;
     if (maxCacheBytes > 0) {
-      final pruneResult = await AnalysisCache.enforceLimit(
+      final pruneResult = await _cache.enforceLimit(
         maxBytes: maxCacheBytes,
         protectedHashes: {hash},
       );
@@ -231,8 +232,8 @@ class AnalysisManager extends ChangeNotifier
           'current=${pruneResult.snapshot.totalBytes}, max=$maxCacheBytes',
         );
         final error = AnalysisError(AnalysisErrorKey.cacheLimitExceeded, [
-          AnalysisCache.formatBytes(pruneResult.snapshot.totalBytes),
-          AnalysisCache.formatBytes(maxCacheBytes),
+          _cache.formatBytes(pruneResult.snapshot.totalBytes),
+          _cache.formatBytes(maxCacheBytes),
         ]);
         _setTrackStatus(
           videoPath,
@@ -311,7 +312,7 @@ class AnalysisManager extends ChangeNotifier
     }
     log.info('[Analysis] generateAnalysis succeeded');
 
-    if (!AnalysisCache.filesExist(hash)) {
+    if (!_cache.filesExist(hash)) {
       final error = await _generationFailureError(
         hash: hash,
         fileName: fileName,
@@ -336,7 +337,7 @@ class AnalysisManager extends ChangeNotifier
     log.info('[Analysis] index entry saved');
 
     if (maxCacheBytes > 0) {
-      final pruneResult = await AnalysisCache.enforceLimit(
+      final pruneResult = await _cache.enforceLimit(
         maxBytes: maxCacheBytes,
         protectedHashes: {hash},
       );
@@ -373,10 +374,10 @@ class AnalysisManager extends ChangeNotifier
       status: AnalysisTrackStatus.loading,
       progress: 1,
     );
-    final analysisPath = AnalysisCache.analysisPath(hash);
+    final analysisPath = _cache.analysisPath(hash);
 
     log.info('[Analysis] loading: analysis=$analysisPath');
-    final hashLock = AnalysisCache.acquireHashSharedLockSync(hash);
+    final hashLock = _cache.acquireHashSharedLockSync(hash);
     final bool ok;
     try {
       ok = AnalysisFfi.load(analysisPath);
@@ -407,7 +408,7 @@ class AnalysisManager extends ChangeNotifier
     _releaseLoadedHashLock();
     _loadedHash = hash;
     _loadedHashLock = hashLock;
-    await AnalysisCache.touchEntry(hash);
+    await _cache.touchEntry(hash);
     _setTrackStatus(
       path,
       fileName: name,
@@ -462,11 +463,11 @@ class AnalysisManager extends ChangeNotifier
   bool _isLoadCurrent(int serial) => serial == _loadSerial;
 
   bool _hasUsableCacheEntry(String hash, String videoPath) {
-    if (!AnalysisCache.hasEntry(hash, videoPath: videoPath)) return false;
+    if (!_cache.hasEntry(hash, videoPath: videoPath)) return false;
 
     AnalysisSession? session;
     try {
-      session = AnalysisSession.open(AnalysisCache.analysisPath(hash));
+      session = AnalysisSession.open(_cache.analysisPath(hash));
       if (session == null || !session.isOpen) {
         log.info('[Analysis] cache stale for $hash: cannot open container');
         return false;
@@ -522,7 +523,7 @@ class AnalysisManager extends ChangeNotifier
       return false;
     }
     try {
-      final analysisFile = File(AnalysisCache.analysisPath(hash));
+      final analysisFile = File(_cache.analysisPath(hash));
       final analyzerFile = File(
         p.join(
           p.dirname(Platform.resolvedExecutable),
@@ -547,8 +548,8 @@ class AnalysisManager extends ChangeNotifier
     final previous = _generateQueue;
     final task = previous.catchError((_) {}).then((_) {
       final maxCacheBytes = _settings.maxCacheBytes;
-      return AnalysisCache.withHashExclusiveLock(hash, () async {
-        if (AnalysisCache.filesExist(hash)) return true;
+      return _cache.withHashExclusiveLock(hash, () async {
+        if (_cache.filesExist(hash)) return true;
         return Isolate.run(
           () => AnalysisFfi.generateAnalysis(videoPath, hash, maxCacheBytes),
         );
@@ -565,9 +566,8 @@ class AnalysisManager extends ChangeNotifier
     bool forceIncomplete = false,
   }) async {
     if (maxCacheBytes > 0) {
-      final snapshot = await AnalysisCache.snapshot(maxBytes: maxCacheBytes);
-      final incomplete =
-          forceIncomplete || AnalysisCache.hasIncompleteContainer(hash);
+      final snapshot = await _cache.snapshot(maxBytes: maxCacheBytes);
+      final incomplete = forceIncomplete || _cache.hasIncompleteContainer(hash);
       if (incomplete && snapshot.isOverLimit) {
         log.warning(
           '[Analysis] generation left incomplete VAC while cache is full: '
@@ -575,8 +575,8 @@ class AnalysisManager extends ChangeNotifier
         );
         return AnalysisError(AnalysisErrorKey.cacheWriteIncomplete, [
           fileName,
-          AnalysisCache.formatBytes(snapshot.totalBytes),
-          AnalysisCache.formatBytes(maxCacheBytes),
+          _cache.formatBytes(snapshot.totalBytes),
+          _cache.formatBytes(maxCacheBytes),
         ]);
       }
     }
@@ -608,7 +608,7 @@ class AnalysisManager extends ChangeNotifier
     String videoPath,
   ) async {
     try {
-      await AnalysisCache.addEntry(hash, fileName, videoPath);
+      await _cache.addEntry(hash, fileName, videoPath);
     } catch (e, stack) {
       log.warning('[Analysis] failed to refresh cache index: $e', e, stack);
     }

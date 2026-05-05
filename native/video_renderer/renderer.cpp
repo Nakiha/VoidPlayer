@@ -89,6 +89,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     headless_ = config.headless;
     target_width_ = config.width;
     target_height_ = config.height;
+    device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
     playback_session_started_by_renderer_ = false;
     if (!playback_->audio_output()) {
         playback_->start_session();
@@ -363,6 +364,7 @@ void Renderer::release_resources_locked() {
     stats_start_time_ = std::chrono::steady_clock::time_point{};
     for (auto& bl : perf_baselines_) bl.frames = 0;
     initialized_ = false;
+    device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
 }
 
 void Renderer::play() {
@@ -1020,35 +1022,73 @@ std::function<void()> Renderer::draw_headless_and_publish(const PresentDecision&
     return callback;
 }
 
+void Renderer::enter_terminal_device_lost_locked(const char* operation) {
+    if (device_state_.load(std::memory_order_acquire) == RendererDeviceState::Terminal) {
+        return;
+    }
+
+    device_state_.store(RendererDeviceState::Lost, std::memory_order_release);
+    const long reason = d3d_device_
+        ? static_cast<long>(d3d_device_->device_removed_reason())
+        : static_cast<long>(S_OK);
+    spdlog::error(
+        "[Renderer] D3D11 device lost during {}; entering terminal renderer state "
+        "(reason={:#x})",
+        operation,
+        static_cast<unsigned long>(reason));
+
+    running_ = false;
+    playing_ = false;
+    playback_->pause();
+    set_decode_paused_for_all_tracks(true);
+    device_state_.store(RendererDeviceState::Terminal, std::memory_order_release);
+}
+
 void Renderer::present_frame(const PresentDecision& decision) {
     spdlog::debug("[present_frame] mode={}", layout_.mode);
     std::function<void()> frame_callback;
+    bool device_lost = false;
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
         std::lock_guard<std::mutex> tex_lock(texture_mutex());
         if (headless_) {
             frame_callback = draw_headless_and_publish(decision, "present_frame");
+            device_lost = d3d_device_ && d3d_device_->poll_device_removed("headless present");
         } else {
             draw_frame(decision);
-            d3d_device_->present(0);
+            const bool presented = d3d_device_->present(0);
+            device_lost = !presented && d3d_device_->device_lost();
             preview_drawn_ = true;
         }
+    }
+    if (device_lost) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        enter_terminal_device_lost_locked("present_frame");
+        return;
     }
     if (frame_callback) frame_callback();
 }
 
 void Renderer::redraw_layout() {
     std::function<void()> frame_callback;
+    bool device_lost = false;
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
         std::lock_guard<std::mutex> tex_lock(texture_mutex());
         if (headless_) {
             frame_callback = draw_headless_and_publish(last_decision_, "redraw_layout");
+            device_lost = d3d_device_ && d3d_device_->poll_device_removed("headless redraw");
         } else {
             draw_frame(last_decision_);
             d3d_device_->context()->Flush();
+            device_lost = d3d_device_->poll_device_removed("redraw_layout");
             preview_drawn_ = true;
         }
+    }
+    if (device_lost) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        enter_terminal_device_lost_locked("redraw_layout");
+        return;
     }
     if (frame_callback) frame_callback();
 }
@@ -1316,6 +1356,12 @@ void Renderer::render_loop() {
     constexpr auto diag_interval = std::chrono::seconds(2);
 
     while (running_) {
+        if (d3d_device_ && d3d_device_->poll_device_removed("render_loop")) {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            enter_terminal_device_lost_locked("render_loop");
+            break;
+        }
+
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             if (apply_deferred_paused_hevc_seek_locked()) {
@@ -2384,12 +2430,17 @@ std::vector<TrackPerfStats> Renderer::track_perf_stats() const {
 }
 
 bool Renderer::d3d_device_lost() const {
-    return d3d_device_ && d3d_device_->device_lost();
+    return device_state_.load(std::memory_order_acquire) != RendererDeviceState::Ready ||
+           (d3d_device_ && d3d_device_->device_lost());
 }
 
 long Renderer::d3d_device_removed_reason() const {
     return d3d_device_ ? static_cast<long>(d3d_device_->device_removed_reason())
                        : static_cast<long>(S_OK);
+}
+
+RendererDeviceState Renderer::device_state() const {
+    return device_state_.load(std::memory_order_acquire);
 }
 
 } // namespace vr

@@ -14,6 +14,7 @@ TEST_CASE("D3D11Device initialization", "[d3d11][device]") {
     REQUIRE(dev.feature_level() == D3D_FEATURE_LEVEL_11_0);
     REQUIRE(dev.device_lost() == false);
     REQUIRE(dev.device_removed_reason() == S_OK);
+    REQUIRE(dev.poll_device_removed("test") == false);
 
     destroy_window(hwnd);
 }
@@ -38,7 +39,7 @@ TEST_CASE("D3D11Device present does not crash", "[d3d11][device]") {
     HWND hwnd = create_hidden_window();
 
     REQUIRE(dev.initialize(hwnd, 800, 600) == true);
-    REQUIRE_NOTHROW(dev.present(0));
+    REQUIRE(dev.present(0) == true);
 
     destroy_window(hwnd);
 }
@@ -63,10 +64,10 @@ TEST_CASE("D3D11Device resize to 1920x1080", "[d3d11][device]") {
     HWND hwnd = create_hidden_window(1920, 1080);
 
     REQUIRE(dev.initialize(hwnd, 800, 600) == true);
-    REQUIRE_NOTHROW(dev.resize(1920, 1080));
+    REQUIRE(dev.resize(1920, 1080) == true);
 
     // Present after resize should also work
-    REQUIRE_NOTHROW(dev.present(0));
+    REQUIRE(dev.present(0) == true);
 
     destroy_window(hwnd);
 }

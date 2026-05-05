@@ -89,7 +89,7 @@ void D3D11Device::setup_info_queue() {
     }
 }
 
-void D3D11Device::handle_device_error(const char* operation, HRESULT hr) {
+bool D3D11Device::handle_device_error(const char* operation, HRESULT hr) {
     const bool lost =
         hr == DXGI_ERROR_DEVICE_REMOVED ||
         hr == DXGI_ERROR_DEVICE_RESET ||
@@ -97,7 +97,7 @@ void D3D11Device::handle_device_error(const char* operation, HRESULT hr) {
     if (!lost) {
         spdlog::error("[D3D11] {} failed: HRESULT {:#x}",
                       operation, static_cast<unsigned long>(hr));
-        return;
+        return false;
     }
 
     HRESULT reason = device_ ? device_->GetDeviceRemovedReason() : hr;
@@ -107,6 +107,21 @@ void D3D11Device::handle_device_error(const char* operation, HRESULT hr) {
                   operation,
                   static_cast<unsigned long>(hr),
                   static_cast<unsigned long>(reason));
+    return true;
+}
+
+bool D3D11Device::poll_device_removed(const char* operation) {
+    if (device_lost_.load(std::memory_order_acquire)) {
+        return true;
+    }
+    if (!device_) {
+        return false;
+    }
+    HRESULT reason = device_->GetDeviceRemovedReason();
+    if (FAILED(reason)) {
+        return handle_device_error(operation, reason);
+    }
+    return false;
 }
 
 bool D3D11Device::initialize(void* hwnd, int width, int height) {
@@ -256,39 +271,42 @@ void D3D11Device::shutdown() {
     spdlog::info("D3D11 device shut down");
 }
 
-void D3D11Device::resize(int width, int height) {
-    if (headless_) return;
+bool D3D11Device::resize(int width, int height) {
+    if (headless_) return true;
 
     if (!swap_chain_) {
         spdlog::warn("Cannot resize: swap chain is null");
-        return;
+        return false;
     }
 
     HRESULT hr = swap_chain_->ResizeBuffers(0, static_cast<UINT>(width), static_cast<UINT>(height),
                                              DXGI_FORMAT_UNKNOWN, 0);
     if (FAILED(hr)) {
         handle_device_error("ResizeBuffers", hr);
-    } else {
-        spdlog::info("Swap chain resized to {}x{}", width, height);
+        return false;
     }
+    spdlog::info("Swap chain resized to {}x{}", width, height);
+    return true;
 }
 
-void D3D11Device::present(int sync_interval) {
-    if (headless_) return;
+bool D3D11Device::present(int sync_interval) {
+    if (headless_) return true;
 
     if (!swap_chain_) {
         spdlog::warn("Cannot present: swap chain is null");
-        return;
+        return false;
     }
 
     if (hwnd_ && !IsWindowVisible(static_cast<HWND>(hwnd_))) {
-        return;
+        return true;
     }
 
     HRESULT hr = swap_chain_->Present(sync_interval, 0);
     if (FAILED(hr)) {
         handle_device_error("Present", hr);
+        return false;
     }
+    return true;
 }
 
 void D3D11Device::dump_debug_messages() {

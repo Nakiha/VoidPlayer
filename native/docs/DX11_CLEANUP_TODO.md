@@ -43,11 +43,13 @@ backend behind explicit platform boundaries before adding a macOS backend.
   - Decide and enforce the real minimum before treating D3D11 as a stable
     backend contract.
 
-- [ ] Add a device-lost state machine.
-  - Current code records `device_lost` and removed reason.
-  - Required next state model: `Lost -> TearDownPipelines -> RecreateDevice ->
-    RecreateTextures -> ReprimeDecode`.
-  - Until recovery exists, surface device lost as a terminal renderer error.
+- [x] Add a device-lost state machine.
+  - `D3D11Device` now polls and records device removal from present/resize and
+    removed-reason checks.
+  - `Renderer` promotes device loss to `Ready -> Lost -> Terminal`, stops
+    playback/rendering, and exposes the terminal state until shutdown.
+  - Future automatic recovery can expand this into `TearDownPipelines ->
+    RecreateDevice -> RecreateTextures -> ReprimeDecode`.
 
 - [x] Modernize or retire the windowed swap-chain path.
   - Windowed mode now uses `DXGI_SWAP_EFFECT_FLIP_DISCARD`.

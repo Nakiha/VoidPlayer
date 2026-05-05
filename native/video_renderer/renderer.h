@@ -98,6 +98,12 @@ enum class SharedTextureHandleType {
     D3D11SharedHandle = 1,
 };
 
+enum class RendererDeviceState {
+    Ready = 0,
+    Lost,
+    Terminal,
+};
+
 struct SharedTextureSnapshot {
     SharedTextureHandleType type = SharedTextureHandleType::None;
     void* texture = nullptr;  ///< AddRef'd backend texture; caller must Release().
@@ -158,6 +164,7 @@ public:
 
     bool d3d_device_lost() const;
     long d3d_device_removed_reason() const;
+    RendererDeviceState device_state() const;
 
     /// Set per-track sync offset in microseconds.
     /// Positive = delayed start (blank lead-in), negative = early start (skip beginning).
@@ -298,6 +305,11 @@ private:
     /// Caller must hold state_mutex_.
     bool settle_eof_locked(int64_t max_presented_end_us);
 
+    /// Enter the terminal device-lost state. Automatic recovery is not
+    /// implemented yet, so this stops rendering and leaves teardown to shutdown.
+    /// Caller must hold state_mutex_.
+    void enter_terminal_device_lost_locked(const char* operation);
+
     std::unique_ptr<PlaybackController> owned_playback_;
     PlaybackController* playback_ = nullptr;
     bool playback_session_started_by_renderer_ = false;
@@ -316,6 +328,7 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<bool> initialized_{false};
     std::atomic<bool> playing_{false};
+    std::atomic<RendererDeviceState> device_state_{RendererDeviceState::Ready};
     mutable std::mutex lifecycle_mutex_;
     mutable std::mutex state_mutex_;
     float background_color_[4] = {0.0f, 0.0f, 0.0f, 1.0f};

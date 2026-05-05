@@ -32,15 +32,16 @@ public:
     HRESULT device_removed_reason() const {
         return device_removed_reason_.load(std::memory_order_acquire);
     }
+    bool poll_device_removed(const char* operation);
 
-    void resize(int width, int height);
-    void present(int sync_interval = 1);
+    bool resize(int width, int height);
+    bool present(int sync_interval = 1);
 
 private:
     bool create_device(IDXGIAdapter* adapter, D3D_DRIVER_TYPE driver_type,
                        UINT flags, D3D_FEATURE_LEVEL& out_level);
     void setup_info_queue();
-    void handle_device_error(const char* operation, HRESULT hr);
+    bool handle_device_error(const char* operation, HRESULT hr);
 
     void dump_debug_messages();
 

@@ -10,6 +10,7 @@ import '../window_manager.dart';
 
 class MainWindowAnalysisCoordinator {
   final TrackManager trackManager;
+  final AnalysisProcessManager analysisProcesses;
   final AnalysisIpcServer _ipcServer = AnalysisIpcServer();
   final Map<int, String> _hashesByFileId = <int, String>{};
 
@@ -17,14 +18,17 @@ class MainWindowAnalysisCoordinator {
   bool _disposed = false;
   Future<void>? _operationInFlight;
 
-  MainWindowAnalysisCoordinator({required this.trackManager});
+  MainWindowAnalysisCoordinator({
+    required this.trackManager,
+    required this.analysisProcesses,
+  });
 
   Future<void> dispose() async {
     _disposed = true;
     _opSerial++;
     _hashesByFileId.clear();
-    WindowManager.analysisIpcPort = null;
-    WindowManager.analysisIpcToken = null;
+    analysisProcesses.analysisIpcPort = null;
+    analysisProcesses.analysisIpcToken = null;
     await _ipcServer.dispose();
   }
 
@@ -34,13 +38,13 @@ class MainWindowAnalysisCoordinator {
 
   Future<void> _triggerAnalysisImpl(int serial) async {
     if (trackManager.isEmpty) return;
-    if (WindowManager.activateAnalysisWindows()) return;
+    if (analysisProcesses.activateAnalysisWindows()) return;
     final mgr = AnalysisManager.instance;
     final windows = <AnalysisWindowRequest>[];
     await _ipcServer.start();
     if (!_alive(serial)) return;
-    WindowManager.analysisIpcPort = _ipcServer.port;
-    WindowManager.analysisIpcToken = _ipcServer.token;
+    analysisProcesses.analysisIpcPort = _ipcServer.port;
+    analysisProcesses.analysisIpcToken = _ipcServer.token;
     for (final entry in trackManager.entries) {
       final hash = await mgr.ensureGenerated(entry.path);
       if (!_alive(serial)) return;
@@ -51,7 +55,7 @@ class MainWindowAnalysisCoordinator {
     }
     await _publishTrackSnapshotImpl(serial);
     if (!_alive(serial)) return;
-    await WindowManager.showAnalysisWindows(
+    await analysisProcesses.showAnalysisWindows(
       windows,
       onExit: _handleAnalysisWindowExited,
     );
@@ -104,10 +108,10 @@ class MainWindowAnalysisCoordinator {
     await _ipcServer.dispose();
     _hashesByFileId.clear();
     if (!_alive(serial)) return;
-    if (WindowManager.analysisIpcPort == port &&
-        WindowManager.analysisIpcToken == token) {
-      WindowManager.analysisIpcPort = null;
-      WindowManager.analysisIpcToken = null;
+    if (analysisProcesses.analysisIpcPort == port &&
+        analysisProcesses.analysisIpcToken == token) {
+      analysisProcesses.analysisIpcPort = null;
+      analysisProcesses.analysisIpcToken = null;
     }
   }
 

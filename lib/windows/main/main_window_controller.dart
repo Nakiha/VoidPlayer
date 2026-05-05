@@ -13,6 +13,7 @@ import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
 import '../../widgets/loop_range_bar.dart';
 import '../win32ffi.dart';
+import '../window_manager.dart' as app_window;
 import 'main_window_actions.dart';
 import 'main_window_analysis.dart';
 import 'main_window_layout.dart';
@@ -330,6 +331,7 @@ class MainWindowController {
     );
     analysisCoordinator = MainWindowAnalysisCoordinator(
       trackManager: trackManager,
+      analysisProcesses: app_window.WindowManager.analysisProcesses,
     );
     playbackCoordinator = MainWindowPlaybackCoordinator(
       controller: player,

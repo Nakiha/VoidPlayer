@@ -6,6 +6,7 @@ import '../app_log.dart';
 import '../utils/file_lock.dart';
 import 'analysis_cache_service.dart';
 import 'analysis_ffi.dart';
+import 'analysis_generation_queue.dart';
 import 'analysis_generation_settings.dart';
 import 'analysis_native_service.dart';
 import 'file_hash.dart';
@@ -81,15 +82,20 @@ class AnalysisManager extends ChangeNotifier
         const AppConfigAnalysisGenerationSettings(),
     AnalysisCacheService cache = const DefaultAnalysisCacheService(),
     AnalysisNativeService native = const DefaultAnalysisNativeService(),
+    AnalysisGenerationQueue? generationQueue,
   }) : _settings = settings,
        _cache = cache,
-       _native = native;
+       _native = native,
+       _generationQueue =
+           generationQueue ??
+           SerialAnalysisGenerationQueue(cache: cache, native: native);
 
   static final AnalysisManager instance = AnalysisManager._();
 
   final AnalysisGenerationSettings _settings;
   final AnalysisCacheService _cache;
   final AnalysisNativeService _native;
+  final AnalysisGenerationQueue _generationQueue;
   AnalysisState _state = AnalysisState.idle;
   AnalysisError? _error;
   String? _generatingFileName;
@@ -100,7 +106,6 @@ class AnalysisManager extends ChangeNotifier
   int _stateSerial = 0;
   int _loadSerial = 0;
   int _ensureAndLoadSerial = 0;
-  Future<void> _generateQueue = Future<void>.value();
 
   AnalysisState get state => _state;
   AnalysisError? get error => _error;
@@ -547,16 +552,11 @@ class AnalysisManager extends ChangeNotifier
   }
 
   Future<bool> _generateAnalysisSerialized(String videoPath, String hash) {
-    final previous = _generateQueue;
-    final task = previous.catchError((_) {}).then((_) {
-      final maxCacheBytes = _settings.maxCacheBytes;
-      return _cache.withHashExclusiveLock(hash, () async {
-        if (_cache.filesExist(hash)) return true;
-        return _native.generateAnalysis(videoPath, hash, maxCacheBytes);
-      });
-    });
-    _generateQueue = task.then<void>((_) {}, onError: (_) {});
-    return task;
+    return _generationQueue.generate(
+      videoPath: videoPath,
+      hash: hash,
+      maxCacheBytes: _settings.maxCacheBytes,
+    );
   }
 
   Future<AnalysisError> _generationFailureError({

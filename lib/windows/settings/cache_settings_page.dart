@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../analysis/analysis_cache.dart';
+import '../../feedback/app_feedback.dart';
 import '../../l10n/app_localizations.dart';
 import '../../platform/path_launcher.dart';
 import '../../theme/app_appearance.dart';
@@ -232,14 +233,24 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
     if (!mounted) return;
 
     final l = AppLocalizations.of(context)!;
+    final deleteResult = result;
     final message = error != null
         ? l.cacheDeleteFailed(hashes.length)
-        : result!.hasFailures
-        ? l.cacheDeleteFailed(result.failedCount)
-        : l.cacheDeleted(result.deletedCount);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+        : deleteResult!.hasFailures
+        ? l.cacheDeleteFailed(deleteResult.failedCount)
+        : l.cacheDeleted(deleteResult.deletedCount);
+    final failed = error != null || (deleteResult?.hasFailures ?? true);
+    final feedback = AppFeedbackScope.read(context);
+    if (failed) {
+      feedback.showError(message);
+    } else {
+      feedback.show(
+        AppFeedbackMessage(
+          text: message,
+          severity: AppFeedbackSeverity.success,
+        ),
+      );
+    }
   }
 
   Future<bool> _confirmDeleteSelected() async {

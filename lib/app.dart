@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'actions/action_registry.dart';
 import 'config/app_config.dart';
 import 'config/app_settings_repository.dart';
+import 'feedback/app_feedback.dart';
 import 'l10n/app_localizations.dart';
 import 'preferences/app_config_playback_preferences.dart';
 import 'startup_options.dart';
@@ -39,6 +40,8 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
   ];
 
   late final ActionRegistry _actionRegistry = ActionRegistry();
+  late final AppFeedbackController _feedbackController =
+      AppFeedbackController();
   late final AppSettingsRepository _settingsRepository =
       AppConfigSettingsRepository(AppConfig.instance);
   late final AppAppearanceController _appearance;
@@ -57,6 +60,7 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
   void dispose() {
     _appearance.removeListener(_syncAccentColor);
     _appearance.dispose();
+    _feedbackController.dispose();
     super.dispose();
   }
 
@@ -71,43 +75,46 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
       animation: _appearance,
       builder: (context, _) {
         final accentColor = _appearance.accentColor;
-        return AppSettingsScope(
-          settings: _settingsRepository,
-          child: AppAppearanceScope(
-            controller: _appearance,
-            child: MaterialApp(
-              title: 'Void Player',
-              localizationsDelegates: AppLocalizations.localizationsDelegates,
-              supportedLocales: AppLocalizations.supportedLocales,
-              themeAnimationDuration: const Duration(milliseconds: 180),
-              themeAnimationCurve: Curves.easeOutCubic,
-              theme: ThemeData(
-                fontFamily: _fontFamily,
-                fontFamilyFallback: _fontFamilyFallback,
-                colorScheme: ColorScheme.fromSeed(
-                  seedColor: accentColor,
-                  brightness: Brightness.light,
+        return AppFeedbackScope(
+          controller: _feedbackController,
+          child: AppSettingsScope(
+            settings: _settingsRepository,
+            child: AppAppearanceScope(
+              controller: _appearance,
+              child: MaterialApp(
+                title: 'Void Player',
+                localizationsDelegates: AppLocalizations.localizationsDelegates,
+                supportedLocales: AppLocalizations.supportedLocales,
+                themeAnimationDuration: const Duration(milliseconds: 180),
+                themeAnimationCurve: Curves.easeOutCubic,
+                theme: ThemeData(
+                  fontFamily: _fontFamily,
+                  fontFamilyFallback: _fontFamilyFallback,
+                  colorScheme: ColorScheme.fromSeed(
+                    seedColor: accentColor,
+                    brightness: Brightness.light,
+                  ),
                 ),
-              ),
-              darkTheme: ThemeData(
-                fontFamily: _fontFamily,
-                fontFamilyFallback: _fontFamilyFallback,
-                colorScheme: ColorScheme.fromSeed(
-                  seedColor: accentColor,
-                  brightness: Brightness.dark,
+                darkTheme: ThemeData(
+                  fontFamily: _fontFamily,
+                  fontFamilyFallback: _fontFamilyFallback,
+                  colorScheme: ColorScheme.fromSeed(
+                    seedColor: accentColor,
+                    brightness: Brightness.dark,
+                  ),
                 ),
-              ),
-              themeMode: _appearance.themeMode,
-              home: ActionFocus(
-                actionRegistry: _actionRegistry,
-                child: MainWindow(
+                themeMode: _appearance.themeMode,
+                home: ActionFocus(
                   actionRegistry: _actionRegistry,
-                  testScriptPath: widget.testScriptPath,
-                  startupOptions: widget.startupOptions,
-                  analysisProcesses: widget.analysisProcesses,
-                  appSettings: _settingsRepository,
-                  playbackPreferences: AppConfigPlaybackPreferences(
-                    _settingsRepository,
+                  child: MainWindow(
+                    actionRegistry: _actionRegistry,
+                    testScriptPath: widget.testScriptPath,
+                    startupOptions: widget.startupOptions,
+                    analysisProcesses: widget.analysisProcesses,
+                    appSettings: _settingsRepository,
+                    playbackPreferences: AppConfigPlaybackPreferences(
+                      _settingsRepository,
+                    ),
                   ),
                 ),
               ),

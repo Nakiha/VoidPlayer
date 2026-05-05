@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../analysis/analysis_cache.dart';
 import '../analysis/analysis_manager.dart';
 import '../analysis/analysis_toolbar_data_source.dart';
+import '../feedback/app_feedback.dart';
 import '../l10n/app_localizations.dart';
 import '../track_manager.dart';
 import 'segmented_widget.dart';
@@ -236,9 +237,7 @@ class _AnalysisButtonState extends State<_AnalysisButton>
         error.key != AnalysisErrorKey.cacheWriteIncomplete) {
       return;
     }
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(_errorText(context, error))));
+    AppFeedbackScope.read(context).showError(_errorText(context, error));
   }
 
   void _showPanel() {

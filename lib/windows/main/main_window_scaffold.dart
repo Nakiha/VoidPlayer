@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/app_feedback_host.dart';
 import '../../widgets/toolbar.dart';
 import '../../widgets/viewport_panel.dart';
 import '../win32_pointer_button_state_provider.dart';
@@ -78,6 +79,7 @@ class MainWindowScaffold extends StatelessWidget {
             visible: overlays.settingsVisible,
             onClose: overlayActions.onCloseSettings,
           ),
+          const AppFeedbackHost(),
         ],
       ),
     );

@@ -2,7 +2,10 @@ import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/actions/action_registry.dart';
+import 'package:void_player/analysis/analysis_cache.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
+import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
+import 'package:void_player/config/app_settings_repository.dart';
 import 'package:void_player/preferences/playback_preferences.dart';
 import 'package:void_player/startup_options.dart';
 import 'package:void_player/windows/main/main_window_controller.dart';
@@ -28,11 +31,73 @@ class _FakePlaybackPreferences implements PlaybackPreferences {
       SeekAfterJumpBehavior.keepPreviousState;
 }
 
+class _FakeAppSettingsRepository implements AppSettingsRepository {
+  @override
+  Rect? windowRect;
+
+  @override
+  int analysisCacheMaxBytes = 0;
+
+  @override
+  String themeModePreference = 'system';
+
+  @override
+  String accentColorPreference = 'system';
+
+  @override
+  int customAccentColorValue = 0xFF0078D4;
+
+  @override
+  SeekAfterJumpBehavior seekAfterJumpBehavior =
+      SeekAfterJumpBehavior.keepPreviousState;
+
+  @override
+  Future<void> save() => Future.value();
+}
+
+class _FakeAnalysisToolbarDataSource implements AnalysisToolbarDataSource {
+  @override
+  AnalysisState get state => AnalysisState.idle;
+
+  @override
+  AnalysisError? get error => null;
+
+  @override
+  void addListener(VoidCallback listener) {}
+
+  @override
+  void removeListener(VoidCallback listener) {}
+
+  @override
+  AnalysisTrackGenerationStatus? statusForPath(String path) => null;
+
+  @override
+  Future<AnalysisCacheSnapshot> snapshot() => Future.value(
+    const AnalysisCacheSnapshot(
+      path: '',
+      totalBytes: 0,
+      indexedBytes: 0,
+      unindexedBytes: 0,
+      maxBytes: 0,
+      entries: [],
+    ),
+  );
+
+  @override
+  Future<Map<String, int>> currentBytesByHash(Set<String> hashes) =>
+      Future.value(const {});
+
+  @override
+  String formatBytes(int bytes) => '$bytes B';
+}
+
 void main() {
   test('MainWindowController keeps injected platform services', () {
     final platformWindow = _FakeMainWindowPlatform();
     final analysisProcesses = app_window.AnalysisProcessManager();
     final analysisGeneration = _FakeAnalysisGenerationService();
+    final analysisToolbarDataSource = _FakeAnalysisToolbarDataSource();
+    final appSettings = _FakeAppSettingsRepository();
     final playbackPreferences = _FakePlaybackPreferences();
     final controller = MainWindowController(
       actionRegistry: ActionRegistry(),
@@ -42,6 +107,8 @@ void main() {
       platformWindow: platformWindow,
       analysisProcesses: analysisProcesses,
       analysisGeneration: analysisGeneration,
+      analysisToolbarDataSource: analysisToolbarDataSource,
+      appSettings: appSettings,
       playbackPreferences: playbackPreferences,
     );
     addTearDown(controller.dispose);
@@ -49,6 +116,11 @@ void main() {
     expect(controller.platformWindow, same(platformWindow));
     expect(controller.analysisProcesses, same(analysisProcesses));
     expect(controller.analysisGeneration, same(analysisGeneration));
+    expect(
+      controller.analysisToolbarDataSource,
+      same(analysisToolbarDataSource),
+    );
+    expect(controller.appSettings, same(appSettings));
     expect(controller.playbackPreferences, same(playbackPreferences));
   });
 }

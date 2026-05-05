@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../actions/action_registry.dart';
+import '../../config/app_settings_repository.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../startup_options.dart';
 import '../window_manager.dart' as app_window;
@@ -12,6 +13,7 @@ class MainWindow extends StatefulWidget {
   final String? testScriptPath;
   final StartupOptions startupOptions;
   final app_window.AnalysisProcessManager? analysisProcesses;
+  final AppSettingsRepository? appSettings;
   final PlaybackPreferences? playbackPreferences;
 
   const MainWindow({
@@ -20,6 +22,7 @@ class MainWindow extends StatefulWidget {
     this.testScriptPath,
     this.startupOptions = const StartupOptions(),
     this.analysisProcesses,
+    this.appSettings,
     this.playbackPreferences,
   });
 
@@ -39,6 +42,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       vsync: this,
       startupOptions: widget.startupOptions,
       analysisProcesses: widget.analysisProcesses,
+      appSettings: widget.appSettings,
       playbackPreferences: widget.playbackPreferences,
       mounted: () => mounted,
     )..start(testScriptPath: widget.testScriptPath);

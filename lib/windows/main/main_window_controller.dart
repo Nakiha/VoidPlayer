@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../actions/action_registry.dart';
 import '../../analysis/analysis_manager.dart';
+import '../../analysis/analysis_toolbar_data_source.dart';
 import '../../automation/test_runner.dart';
 import '../../automation/ui_automation_bridge.dart';
 import '../../config/app_config.dart';
@@ -37,6 +38,8 @@ class MainWindowController {
   final MainWindowPlatform platformWindow;
   final app_window.AnalysisProcessManager analysisProcesses;
   final AnalysisGenerationService analysisGeneration;
+  final AnalysisToolbarDataSource analysisToolbarDataSource;
+  final AppSettingsRepository appSettings;
   final PlaybackPreferences playbackPreferences;
 
   final NativePlayerController player = NativePlayerController();
@@ -77,15 +80,26 @@ class MainWindowController {
     MainWindowPlatform? platformWindow,
     app_window.AnalysisProcessManager? analysisProcesses,
     AnalysisGenerationService? analysisGeneration,
+    AnalysisToolbarDataSource? analysisToolbarDataSource,
+    AppSettingsRepository? appSettings,
     PlaybackPreferences? playbackPreferences,
   }) : platformWindow = platformWindow ?? const WindowsMainWindowPlatform(),
        analysisProcesses =
            analysisProcesses ?? app_window.WindowManager.analysisProcesses,
        analysisGeneration = analysisGeneration ?? AnalysisManager.instance,
+       appSettings =
+           appSettings ?? AppConfigSettingsRepository(AppConfig.instance),
+       analysisToolbarDataSource =
+           analysisToolbarDataSource ??
+           DefaultAnalysisToolbarDataSource(
+             analysisManager: AnalysisManager.instance,
+             settings:
+                 appSettings ?? AppConfigSettingsRepository(AppConfig.instance),
+           ),
        playbackPreferences =
            playbackPreferences ??
            AppConfigPlaybackPreferences(
-             AppConfigSettingsRepository(AppConfig.instance),
+             appSettings ?? AppConfigSettingsRepository(AppConfig.instance),
            ) {
     _initCoordinators();
   }
@@ -134,6 +148,7 @@ class MainWindowController {
         tracks: trackManager.entries,
         syncOffsets: _syncOffsets,
         audibleTrackFileId: _audibleTrackFileId,
+        analysisDataSource: analysisToolbarDataSource,
       ),
       playback: MainWindowPlaybackVm(
         timelineSliderKey: timelineSliderKey,

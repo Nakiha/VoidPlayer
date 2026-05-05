@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../analysis/analysis_toolbar_data_source.dart';
 import '../../track_manager.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
@@ -44,12 +45,14 @@ class MainWindowMediaVm {
   final List<TrackEntry> tracks;
   final Map<int, int> syncOffsets; // fileId -> offset in microseconds
   final int? audibleTrackFileId;
+  final AnalysisToolbarDataSource analysisDataSource;
 
   const MainWindowMediaVm({
     required this.analysisEnabled,
     required this.tracks,
     required this.syncOffsets,
     required this.audibleTrackFileId,
+    required this.analysisDataSource,
   });
 }
 

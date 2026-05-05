@@ -105,6 +105,7 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
                   testScriptPath: widget.testScriptPath,
                   startupOptions: widget.startupOptions,
                   analysisProcesses: widget.analysisProcesses,
+                  appSettings: _settingsRepository,
                   playbackPreferences: AppConfigPlaybackPreferences(
                     _settingsRepository,
                   ),

@@ -39,6 +39,7 @@ class MainWindowScaffold extends StatelessWidget {
                   onProfiler: toolbarActions.onProfiler,
                   onSettings: toolbarActions.onSettings,
                   tracks: media.tracks,
+                  analysisDataSource: media.analysisDataSource,
                   viewModeEnabled: viewport.viewModeEnabled,
                   analysisEnabled: media.analysisEnabled,
                 ),

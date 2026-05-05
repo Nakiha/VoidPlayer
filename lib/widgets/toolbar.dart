@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../analysis/analysis_cache.dart';
 import '../analysis/analysis_manager.dart';
-import '../config/app_config.dart';
+import '../analysis/analysis_toolbar_data_source.dart';
 import '../l10n/app_localizations.dart';
 import '../track_manager.dart';
 import 'segmented_widget.dart';
@@ -23,6 +23,7 @@ class AppToolBar extends StatelessWidget {
   final VoidCallback onProfiler;
   final VoidCallback onSettings;
   final List<TrackEntry> tracks;
+  final AnalysisToolbarDataSource analysisDataSource;
   final bool viewModeEnabled;
   final bool analysisEnabled;
 
@@ -35,6 +36,7 @@ class AppToolBar extends StatelessWidget {
     required this.onProfiler,
     required this.onSettings,
     required this.tracks,
+    required this.analysisDataSource,
     this.viewModeEnabled = false,
     this.analysisEnabled = false,
   });
@@ -76,6 +78,7 @@ class AppToolBar extends StatelessWidget {
           _AnalysisButton(
             enabled: analysisEnabled,
             tracks: tracks,
+            dataSource: analysisDataSource,
             onPressed: onAnalysis,
           ),
           const SizedBox(width: 4),
@@ -113,11 +116,13 @@ class AppToolBar extends StatelessWidget {
 class _AnalysisButton extends StatefulWidget {
   final bool enabled;
   final List<TrackEntry> tracks;
+  final AnalysisToolbarDataSource dataSource;
   final Future<void> Function() onPressed;
 
   const _AnalysisButton({
     required this.enabled,
     required this.tracks,
+    required this.dataSource,
     required this.onPressed,
   });
 
@@ -168,7 +173,6 @@ class _AnalysisButtonState extends State<_AnalysisButton>
 
   @override
   Widget build(BuildContext context) {
-    final mgr = AnalysisManager.instance;
     return MouseRegion(
       onEnter: (_) {
         _hoveringButton = true;
@@ -181,13 +185,13 @@ class _AnalysisButtonState extends State<_AnalysisButton>
       child: CompositedTransformTarget(
         link: _layerLink,
         child: ListenableBuilder(
-          listenable: mgr,
+          listenable: widget.dataSource,
           builder: (context, _) {
             final theme = Theme.of(context);
             final isWorking =
-                mgr.state == AnalysisState.computingHash ||
-                mgr.state == AnalysisState.generating;
-            final isError = mgr.state == AnalysisState.error;
+                widget.dataSource.state == AnalysisState.computingHash ||
+                widget.dataSource.state == AnalysisState.generating;
+            final isError = widget.dataSource.state == AnalysisState.error;
 
             return SizedBox(
               width: 32,
@@ -226,8 +230,7 @@ class _AnalysisButtonState extends State<_AnalysisButton>
     _showPanel();
     await widget.onPressed();
     if (!mounted) return;
-    final mgr = AnalysisManager.instance;
-    final error = mgr.error;
+    final error = widget.dataSource.error;
     if (error == null) return;
     if (error.key != AnalysisErrorKey.cacheLimitExceeded &&
         error.key != AnalysisErrorKey.cacheWriteIncomplete) {
@@ -268,7 +271,10 @@ class _AnalysisButtonState extends State<_AnalysisButton>
               },
               child: SizedBox(
                 width: _analysisPanelWidth,
-                child: _AnalysisHoverPanel(tracks: widget.tracks),
+                child: _AnalysisHoverPanel(
+                  tracks: widget.tracks,
+                  dataSource: widget.dataSource,
+                ),
               ),
             ),
           ),
@@ -334,8 +340,9 @@ class _AnalysisButtonState extends State<_AnalysisButton>
 
 class _AnalysisHoverPanel extends StatefulWidget {
   final List<TrackEntry> tracks;
+  final AnalysisToolbarDataSource dataSource;
 
-  const _AnalysisHoverPanel({required this.tracks});
+  const _AnalysisHoverPanel({required this.tracks, required this.dataSource});
 
   @override
   State<_AnalysisHoverPanel> createState() => _AnalysisHoverPanelState();
@@ -350,7 +357,7 @@ class _AnalysisHoverPanelState extends State<_AnalysisHoverPanel> {
   @override
   void initState() {
     super.initState();
-    AnalysisManager.instance.addListener(_refresh);
+    widget.dataSource.addListener(_refresh);
     unawaited(_refresh());
     _refreshTimer = Timer.periodic(
       const Duration(milliseconds: 700),
@@ -367,7 +374,7 @@ class _AnalysisHoverPanelState extends State<_AnalysisHoverPanel> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
-    AnalysisManager.instance.removeListener(_refresh);
+    widget.dataSource.removeListener(_refresh);
     super.dispose();
   }
 
@@ -410,11 +417,17 @@ class _AnalysisHoverPanelState extends State<_AnalysisHoverPanel> {
                       child: Text(
                         snapshot.hasLimit
                             ? l.cacheUsageWithLimit(
-                                AnalysisCache.formatBytes(snapshot.totalBytes),
-                                AnalysisCache.formatBytes(snapshot.maxBytes),
+                                widget.dataSource.formatBytes(
+                                  snapshot.totalBytes,
+                                ),
+                                widget.dataSource.formatBytes(
+                                  snapshot.maxBytes,
+                                ),
                               )
                             : l.cacheUsageUnlimited(
-                                AnalysisCache.formatBytes(snapshot.totalBytes),
+                                widget.dataSource.formatBytes(
+                                  snapshot.totalBytes,
+                                ),
                               ),
                         style: theme.textTheme.labelMedium?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
@@ -449,6 +462,7 @@ class _AnalysisHoverPanelState extends State<_AnalysisHoverPanel> {
                         track: widget.tracks[index],
                         snapshot: snapshot,
                         bytesByHash: _bytesByHash,
+                        dataSource: widget.dataSource,
                       ),
                     );
                   },
@@ -464,19 +478,16 @@ class _AnalysisHoverPanelState extends State<_AnalysisHoverPanel> {
     if (_refreshing) return;
     _refreshing = true;
     try {
-      final snapshot = await AnalysisCache.snapshot(
-        maxBytes: AppConfig.instance.analysisCacheMaxBytes,
-      );
+      final snapshot = await widget.dataSource.snapshot();
       final hashes = <String>{};
-      final mgr = AnalysisManager.instance;
       for (final track in widget.tracks) {
-        final statusHash = mgr.statusForPath(track.path)?.hash;
+        final statusHash = widget.dataSource.statusForPath(track.path)?.hash;
         if (statusHash != null) hashes.add(statusHash);
         for (final entry in snapshot.entries) {
           if (entry.videoPath == track.path) hashes.add(entry.hash);
         }
       }
-      final bytesByHash = await AnalysisCache.currentBytesByHash(hashes);
+      final bytesByHash = await widget.dataSource.currentBytesByHash(hashes);
       if (!mounted) return;
       setState(() {
         _snapshot = snapshot;
@@ -492,19 +503,20 @@ class _AnalysisTrackCacheTile extends StatelessWidget {
   final TrackEntry track;
   final AnalysisCacheSnapshot? snapshot;
   final Map<String, int> bytesByHash;
+  final AnalysisToolbarDataSource dataSource;
 
   const _AnalysisTrackCacheTile({
     required this.track,
     required this.snapshot,
     required this.bytesByHash,
+    required this.dataSource,
   });
 
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
-    final mgr = AnalysisManager.instance;
-    final status = mgr.statusForPath(track.path);
+    final status = dataSource.statusForPath(track.path);
     final cacheEntry = _cacheEntry(status);
     final hash = status?.hash ?? cacheEntry?.hash;
     final cacheBytes = hash == null
@@ -571,7 +583,7 @@ class _AnalysisTrackCacheTile extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Text(
-            AnalysisCache.formatBytes(cacheBytes),
+            dataSource.formatBytes(cacheBytes),
             style: theme.textTheme.labelSmall?.copyWith(color: color),
           ),
         ],
@@ -601,7 +613,7 @@ class _AnalysisTrackCacheTile extends StatelessWidget {
     if (status?.status == AnalysisTrackStatus.generating) {
       return l.analysisCacheStatusGenerating(
         ((status!.progress.clamp(0.0, 1.0)) * 100).toStringAsFixed(0),
-        AnalysisCache.formatBytes(cacheBytes),
+        dataSource.formatBytes(cacheBytes),
       );
     }
     if (status?.status == AnalysisTrackStatus.loading) {

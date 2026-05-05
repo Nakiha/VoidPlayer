@@ -421,6 +421,7 @@ class MainWindowController {
         scriptPath: path,
         automation: UiAutomationBridge(
           controller: player,
+          analysisProcesses: app_window.WindowManager.analysisProcesses,
           actionRegistry: actionRegistry,
         ),
       ).run();

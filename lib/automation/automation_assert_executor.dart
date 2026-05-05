@@ -7,8 +7,13 @@ import 'automation_run_state.dart';
 class AutomationAssertExecutor {
   final AutomationProbe probe;
   final AutomationRunState state;
+  final AnalysisProcessManager analysisProcesses;
 
-  const AutomationAssertExecutor({required this.probe, required this.state});
+  const AutomationAssertExecutor({
+    required this.probe,
+    required this.state,
+    required this.analysisProcesses,
+  });
 
   Future<void> execute(PlayerAssert assertion) async {
     final controller = probe.controller;
@@ -171,11 +176,11 @@ class AutomationAssertExecutor {
           );
         }
       case AssertAnalysisProcessCount(:final count):
-        final actual = WindowManager.analysisProcessCount;
+        final actual = analysisProcesses.analysisProcessCount;
         if (actual != count) {
           throw AssertionError(
             'Expected analysis process count $count, got $actual; '
-            'exits=${WindowManager.analysisExitCodes}',
+            'exits=${analysisProcesses.analysisExitCodes}',
           );
         }
       case AssertTrackBufferCountBelow(:final maxCount):

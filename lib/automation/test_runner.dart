@@ -15,7 +15,6 @@ import 'automation_run_state.dart';
 import 'test_video_generator.dart';
 import 'ui_automation_bridge.dart';
 import '../video_renderer_controller.dart';
-import '../windows/window_manager.dart';
 
 /// A parsed instruction from a test script, with its scheduled time.
 sealed class ScriptInstruction {
@@ -96,8 +95,11 @@ class TestRunner {
 
   AutomationProbe get _probe => AutomationProbe(controller);
 
-  AutomationAssertExecutor get _assertExecutor =>
-      AutomationAssertExecutor(probe: _probe, state: _state);
+  AutomationAssertExecutor get _assertExecutor => AutomationAssertExecutor(
+    probe: _probe,
+    state: _state,
+    analysisProcesses: automation.analysisProcesses,
+  );
 
   /// Parse and execute the test script. Exits the process on QUIT or failure.
   Future<void> run() async {
@@ -154,20 +156,17 @@ class TestRunner {
         log.info(
           'TestRunner ${instr.time}: WAIT_ANALYSIS_PROCESS_COUNT $count ${timeout.inMilliseconds}ms',
         );
-        final ok = await WindowManager.waitForAnalysisProcessCount(
-          count,
-          timeout,
-        );
+        final ok = await automation.waitForAnalysisProcessCount(count, timeout);
         if (!ok) {
           throw AssertionError(
             'Expected $count analysis process(es), got '
-            '${WindowManager.analysisProcessCount}; exits=${WindowManager.analysisExitCodes}',
+            '${automation.analysisProcessCount}; exits=${automation.analysisExitCodes}',
           );
         }
 
       case ScriptSetAnalysisTestScript(:final path):
         log.info('TestRunner ${instr.time}: SET_ANALYSIS_TEST_SCRIPT $path');
-        WindowManager.analysisTestScriptPath = path;
+        automation.analysisTestScriptPath = path;
 
       case ScriptGenerateTestVideo(
         :final path,
@@ -197,7 +196,7 @@ class TestRunner {
 
       case ScriptQuit(:final exitCode):
         log.info('TestRunner ${instr.time}: QUIT $exitCode');
-        await WindowManager.closeAllAnalysisWindows();
+        await automation.closeAllAnalysisWindows();
         exit(exitCode);
     }
   }

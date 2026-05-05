@@ -160,7 +160,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `lib/actions/automation_action.dart` | release UI automation 专用 command |
 | `lib/actions/player_assert.dart` | PlayerAssert sealed class |
 | `lib/actions/action_registry.dart` | ActionRegistry + ActionFocus |
-| `lib/automation/ui_automation_bridge.dart` | 主窗口暴露给 release UI automation 的显式桥 |
+| `lib/automation/ui_automation_bridge.dart` | 主窗口暴露给 release UI automation 的显式桥，集中提供 action 和分析进程服务 |
 | `lib/automation/test_runner.dart` | 脚本解析 + TestRunner |
 | `lib/automation/automation_assert_executor.dart` | 自动化断言执行 |
 | `lib/automation/automation_probe.dart` | 自动化指标/截图辅助查询 |

@@ -40,6 +40,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Move WindowManager analysis process state behind an AnalysisProcessManager instance facade.~~
 - [x] ~~Inject AnalysisProcessManager into MainWindowAnalysisCoordinator.~~
+- [x] ~~Route release UI automation analysis-process access through UiAutomationBridge.~~
 
 ## P0
 
@@ -47,7 +48,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
   First slice done: non-user automation commands no longer live in `PlayerAction`.
 - [x] ~~Add a platform service boundary so widgets do not import Win32 FFI directly.~~
 - [ ] Reduce global singleton/static state, starting with injected window/process services.
-  First slice done: `WindowManager` delegates analysis process state to an `AnalysisProcessManager` instance, and main-window analysis uses the instance directly.
+  First slice done: `WindowManager` delegates analysis process state to an `AnalysisProcessManager` instance; main-window analysis and release UI automation use that instance through injection/bridge.
 - [x] ~~Replace viewport magic ints with a typed viewport state model that can carry user-visible errors.~~
 
 ## P1

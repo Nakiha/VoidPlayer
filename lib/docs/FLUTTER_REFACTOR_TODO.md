@@ -57,6 +57,10 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 - [x] ~~Add cooperative cross-process locks for config, analysis index, and per-hash cache use/generation/delete.~~
 - [x] ~~Publish analysis generation from per-run staging directories instead of fixed hash tmp files.~~
 
+## Round 12
+
+- [x] ~~Extract native player MethodChannel method/key constants and DTO parsing out of NativePlayerController.~~
+
 ## P0
 
 - [ ] Move UI test runner/script parsing/media generation out of the production app graph behind a thin automation bridge.
@@ -70,6 +74,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [ ] Simplify main-window coordinator dependencies by grouping state and side effects behind explicit services/stores.
 - [ ] Extract a typed `NativePlayerApi` interface with DTOs and centralized MethodChannel names/payload keys.
+  First slice done: MethodChannel name/methods/keys and DTO parsing live in `native_player_protocol.dart`; `NativePlayerController` still owns the concrete channel calls and lifecycle.
 - [ ] Move config/cache/log default paths to user-writable app data directories and make writes atomic.
   Slices done: paths now resolve through AppData by default, with exe-local `cache/` acting as a portable-mode marker; config/index writes are guarded by companion lock files and temp-file replace fallback, but not a true Windows atomic replace yet.
 - [ ] Make analysis FFI symbol lookup lazy and add a native ABI/version check.

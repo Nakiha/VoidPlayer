@@ -1,158 +1,11 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Layout mode constants matching native defines.
-class LayoutMode {
-  static const int sideBySide = 0;
-  static const int splitScreen = 1;
-}
+import 'native_player/native_player_protocol.dart';
 
-/// Track metadata returned from native layer.
-class TrackInfo {
-  final int fileId;
-  final int slot;
-  final String path;
-  final int width;
-  final int height;
-  final int durationUs;
-
-  const TrackInfo({
-    required this.fileId,
-    required this.slot,
-    required this.path,
-    required this.width,
-    required this.height,
-    this.durationUs = 0,
-  });
-
-  factory TrackInfo.fromMap(Map<dynamic, dynamic> map) => TrackInfo(
-    fileId: map['fileId'] as int,
-    slot: map['slot'] as int,
-    path: map['path'] as String,
-    width: map['width'] as int,
-    height: map['height'] as int,
-    durationUs: map['durationUs'] as int? ?? 0,
-  );
-}
-
-/// Result of createPlayer, containing texture ID and initial track info.
-class CreatePlayerResult {
-  final int textureId;
-  final List<TrackInfo> tracks;
-
-  const CreatePlayerResult({required this.textureId, required this.tracks});
-}
-
-class ViewportCapture {
-  final String hash;
-  final int width;
-  final int height;
-  final double avgLuma;
-  final double nonBlackRatio;
-  final String? outputPath;
-
-  const ViewportCapture({
-    required this.hash,
-    required this.width,
-    required this.height,
-    required this.avgLuma,
-    required this.nonBlackRatio,
-    this.outputPath,
-  });
-
-  factory ViewportCapture.fromMap(Map<dynamic, dynamic> map) => ViewportCapture(
-    hash: map['hash'] as String,
-    width: map['width'] as int,
-    height: map['height'] as int,
-    avgLuma: (map['avgLuma'] as num?)?.toDouble() ?? 0.0,
-    nonBlackRatio: (map['nonBlackRatio'] as num?)?.toDouble() ?? 0.0,
-    outputPath: map['outputPath'] as String?,
-  );
-}
-
-/// Immutable snapshot of the layout state.
-class LayoutState {
-  static const double zoomMin = 1.0;
-  static const double zoomMax = 50.0;
-
-  final int mode;
-  final double splitPos;
-  final double zoomRatio;
-  final double viewOffsetX;
-  final double viewOffsetY;
-  final List<int> order;
-
-  const LayoutState({
-    this.mode = LayoutMode.sideBySide,
-    this.splitPos = 0.5,
-    this.zoomRatio = 1.0,
-    this.viewOffsetX = 0.0,
-    this.viewOffsetY = 0.0,
-    this.order = const [0, 1, 2, 3],
-  });
-
-  Map<String, dynamic> toMap() => {
-    'mode': mode,
-    'splitPos': splitPos,
-    'zoomRatio': zoomRatio,
-    'viewOffsetX': viewOffsetX,
-    'viewOffsetY': viewOffsetY,
-    'order': order,
-  };
-
-  factory LayoutState.fromMap(Map<dynamic, dynamic> map) => LayoutState(
-    mode: (map['mode'] as num?)?.toInt() ?? LayoutMode.sideBySide,
-    splitPos: (map['splitPos'] as num?)?.toDouble() ?? 0.5,
-    zoomRatio: (map['zoomRatio'] as num?)?.toDouble() ?? 1.0,
-    viewOffsetX: (map['viewOffsetX'] as num?)?.toDouble() ?? 0.0,
-    viewOffsetY: (map['viewOffsetY'] as num?)?.toDouble() ?? 0.0,
-    order:
-        (map['order'] as List<dynamic>?)
-            ?.map((e) => (e as num).toInt())
-            .toList() ??
-        const [0, 1, 2, 3],
-  );
-
-  LayoutState copyWith({
-    int? mode,
-    double? splitPos,
-    double? zoomRatio,
-    double? viewOffsetX,
-    double? viewOffsetY,
-    List<int>? order,
-  }) => LayoutState(
-    mode: mode ?? this.mode,
-    splitPos: splitPos ?? this.splitPos,
-    zoomRatio: zoomRatio ?? this.zoomRatio,
-    viewOffsetX: viewOffsetX ?? this.viewOffsetX,
-    viewOffsetY: viewOffsetY ?? this.viewOffsetY,
-    order: order ?? this.order,
-  );
-
-  @override
-  bool operator ==(Object other) {
-    return other is LayoutState &&
-        mode == other.mode &&
-        splitPos == other.splitPos &&
-        zoomRatio == other.zoomRatio &&
-        viewOffsetX == other.viewOffsetX &&
-        viewOffsetY == other.viewOffsetY &&
-        listEquals(order, other.order);
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    mode,
-    splitPos,
-    zoomRatio,
-    viewOffsetX,
-    viewOffsetY,
-    Object.hashAll(order),
-  );
-}
+export 'native_player/native_player_protocol.dart';
 
 class NativePlayerController {
-  static const MethodChannel _channel = MethodChannel('video_renderer');
+  static const MethodChannel _channel = MethodChannel(NativePlayerChannel.name);
 
   int? _textureId;
   bool _disposed = false;
@@ -181,20 +34,6 @@ class NativePlayerController {
   bool _hasPlayerForCommand() {
     _ensureAlive();
     return _textureId != null;
-  }
-
-  Map<dynamic, dynamic> _requireMap(Map<dynamic, dynamic>? map, String method) {
-    if (map == null) {
-      throw StateError('$method returned invalid payload: null');
-    }
-    return map;
-  }
-
-  TrackInfo _trackInfoFromValue(Object? value, String context) {
-    if (value is! Map) {
-      throw StateError('$context returned invalid track payload: $value');
-    }
-    return TrackInfo.fromMap(Map<dynamic, dynamic>.from(value));
   }
 
   Future<CreatePlayerResult> createPlayer(
@@ -230,34 +69,19 @@ class NativePlayerController {
       await destroying;
       _ensureAlive();
     }
-    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-      'createPlayer',
-      {'videoPaths': videoPaths, 'width': width, 'height': height},
+    final map = await _channel
+        .invokeMethod<Map<dynamic, dynamic>>(NativePlayerMethods.createPlayer, {
+          NativePlayerKeys.videoPaths: videoPaths,
+          NativePlayerKeys.width: width,
+          NativePlayerKeys.height: height,
+        });
+    final result = CreatePlayerResult.fromMap(
+      NativePlayerPayloads.requireMap(map, NativePlayerMethods.createPlayer),
     );
-    final payload = _requireMap(map, 'createPlayer');
-    final textureId = payload['textureId'];
-    if (textureId is! int) {
-      throw StateError(
-        'createPlayer returned invalid textureId: ${payload['textureId']}',
-      );
-    }
-    final tracksValue = payload['tracks'];
-    if (tracksValue != null && tracksValue is! List) {
-      throw StateError(
-        'createPlayer returned invalid tracks payload: $tracksValue',
-      );
-    }
-    final tracksList = tracksValue as List<dynamic>? ?? [];
-    _textureId = textureId;
-    final result = CreatePlayerResult(
-      textureId: textureId,
-      tracks: tracksList
-          .map((e) => _trackInfoFromValue(e, 'createPlayer'))
-          .toList(),
-    );
+    _textureId = result.textureId;
     if (_disposed) {
       _textureId = null;
-      await _channel.invokeMethod<void>('destroyPlayer');
+      await _channel.invokeMethod<void>(NativePlayerMethods.destroyPlayer);
       throw StateError('NativePlayerController is disposed');
     }
     final backgroundColor = _viewportBackgroundColor;
@@ -270,22 +94,26 @@ class NativePlayerController {
 
   Future<void> play() {
     if (!_hasPlayerForCommand()) return Future.value();
-    return _channel.invokeMethod<void>('play');
+    return _channel.invokeMethod<void>(NativePlayerMethods.play);
   }
 
   Future<void> pause() {
     if (!_hasPlayerForCommand()) return Future.value();
-    return _channel.invokeMethod<void>('pause');
+    return _channel.invokeMethod<void>(NativePlayerMethods.pause);
   }
 
   Future<void> seek(int ptsUs) {
     if (!_hasPlayerForCommand()) return Future.value();
-    return _channel.invokeMethod<void>('seek', {'ptsUs': ptsUs});
+    return _channel.invokeMethod<void>(NativePlayerMethods.seek, {
+      NativePlayerKeys.ptsUs: ptsUs,
+    });
   }
 
   Future<void> setSpeed(double speed) {
     if (!_hasPlayerForCommand()) return Future.value();
-    return _channel.invokeMethod<void>('setSpeed', {'speed': speed});
+    return _channel.invokeMethod<void>(NativePlayerMethods.setSpeed, {
+      NativePlayerKeys.speed: speed,
+    });
   }
 
   Future<void> setLoopRange({
@@ -294,25 +122,25 @@ class NativePlayerController {
     required int endUs,
   }) {
     if (!_hasPlayerForCommand()) return Future.value();
-    return _channel.invokeMethod<void>('setLoopRange', {
-      'enabled': enabled,
-      'startUs': startUs,
-      'endUs': endUs,
+    return _channel.invokeMethod<void>(NativePlayerMethods.setLoopRange, {
+      NativePlayerKeys.enabled: enabled,
+      NativePlayerKeys.startUs: startUs,
+      NativePlayerKeys.endUs: endUs,
     });
   }
 
   Future<void> setAudibleTrack(int? fileId) {
     if (!_hasPlayerForCommand()) return Future.value();
-    return _channel.invokeMethod<void>('setAudibleTrack', {
-      'fileId': fileId ?? -1,
+    return _channel.invokeMethod<void>(NativePlayerMethods.setAudibleTrack, {
+      NativePlayerKeys.fileId: fileId ?? -1,
     });
   }
 
   Future<void> resize(int width, int height) {
     if (!_hasPlayerForCommand()) return Future.value();
-    return _channel.invokeMethod<void>('resize', {
-      'width': width,
-      'height': height,
+    return _channel.invokeMethod<void>(NativePlayerMethods.resize, {
+      NativePlayerKeys.width: width,
+      NativePlayerKeys.height: height,
     });
   }
 
@@ -320,75 +148,91 @@ class NativePlayerController {
     _ensureAlive();
     _viewportBackgroundColor = colorValue;
     if (_textureId == null) return Future.value();
-    return _channel.invokeMethod<void>('setViewportBackgroundColor', {
-      'color': colorValue,
-    });
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.setViewportBackgroundColor,
+      {NativePlayerKeys.color: colorValue},
+    );
   }
 
   Future<ViewportCapture> captureViewport({String? outputPath}) async {
-    _ensurePlayer('captureViewport');
+    _ensurePlayer(NativePlayerMethods.captureViewport);
     final args = <String, dynamic>{};
     if (outputPath != null) {
-      args['outputPath'] = outputPath;
+      args[NativePlayerKeys.outputPath] = outputPath;
     }
     final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-      'captureViewport',
+      NativePlayerMethods.captureViewport,
       args,
     );
-    return ViewportCapture.fromMap(_requireMap(map, 'captureViewport'));
+    return ViewportCapture.fromMap(
+      NativePlayerPayloads.requireMap(map, NativePlayerMethods.captureViewport),
+    );
   }
 
   Future<void> stepForward() {
     if (!_hasPlayerForCommand()) return Future.value();
-    return _channel.invokeMethod<void>('stepForward');
+    return _channel.invokeMethod<void>(NativePlayerMethods.stepForward);
   }
 
   Future<void> stepBackward() {
     if (!_hasPlayerForCommand()) return Future.value();
-    return _channel.invokeMethod<void>('stepBackward');
+    return _channel.invokeMethod<void>(NativePlayerMethods.stepBackward);
   }
 
   Future<int> currentPts() async {
     if (!_hasPlayerForCommand()) return 0;
-    return await _channel.invokeMethod<int>('currentPts') ?? 0;
+    return await _channel.invokeMethod<int>(NativePlayerMethods.currentPts) ??
+        0;
   }
 
   Future<int> duration() async {
     if (!_hasPlayerForCommand()) return 0;
-    return await _channel.invokeMethod<int>('duration') ?? 0;
+    return await _channel.invokeMethod<int>(NativePlayerMethods.duration) ?? 0;
   }
 
   Future<bool> isPlaying() async {
     if (!_hasPlayerForCommand()) return false;
-    return await _channel.invokeMethod<bool>('isPlaying') ?? false;
+    return await _channel.invokeMethod<bool>(NativePlayerMethods.isPlaying) ??
+        false;
   }
 
   /// Atomically apply layout state and trigger redraw if paused.
   Future<void> applyLayout(LayoutState state) {
     if (!_hasPlayerForCommand()) return Future.value();
-    return _channel.invokeMethod<void>('applyLayout', state.toMap());
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.applyLayout,
+      state.toMap(),
+    );
   }
 
   /// Get a snapshot of the current layout state.
   Future<LayoutState> getLayout() async {
-    _ensurePlayer('getLayout');
-    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>('getLayout');
+    _ensurePlayer(NativePlayerMethods.getLayout);
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      NativePlayerMethods.getLayout,
+    );
     return LayoutState.fromMap(map ?? {});
   }
 
   /// Add a video track at the first empty slot.
   Future<TrackInfo> addTrack(String videoPath) async {
-    _ensurePlayer('addTrack');
-    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>('addTrack', {
-      'path': videoPath,
-    });
-    return _trackInfoFromValue(_requireMap(map, 'addTrack'), 'addTrack');
+    _ensurePlayer(NativePlayerMethods.addTrack);
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      NativePlayerMethods.addTrack,
+      {NativePlayerKeys.path: videoPath},
+    );
+    return NativePlayerPayloads.trackInfoFromValue(
+      NativePlayerPayloads.requireMap(map, NativePlayerMethods.addTrack),
+      NativePlayerMethods.addTrack,
+    );
   }
 
   /// Remove a track by file_id.
   Future<void> removeTrack(int fileId) {
-    _ensurePlayer('removeTrack');
-    return _channel.invokeMethod<void>('removeTrack', {'fileId': fileId});
+    _ensurePlayer(NativePlayerMethods.removeTrack);
+    return _channel.invokeMethod<void>(NativePlayerMethods.removeTrack, {
+      NativePlayerKeys.fileId: fileId,
+    });
   }
 
   /// Destroy the native player and texture while keeping this controller
@@ -400,25 +244,35 @@ class NativePlayerController {
 
   /// Set per-track sync offset in microseconds.
   Future<void> setTrackOffset({required int fileId, required int offsetUs}) {
-    _ensurePlayer('setTrackOffset');
-    return _channel.invokeMethod<void>('setTrackOffset', {
-      'fileId': fileId,
-      'offsetUs': offsetUs,
+    _ensurePlayer(NativePlayerMethods.setTrackOffset);
+    return _channel.invokeMethod<void>(NativePlayerMethods.setTrackOffset, {
+      NativePlayerKeys.fileId: fileId,
+      NativePlayerKeys.offsetUs: offsetUs,
     });
   }
 
   /// Get current track info list.
   Future<List<TrackInfo>> getTracks() async {
     if (!_hasPlayerForCommand()) return const [];
-    final list = await _channel.invokeMethod<List<dynamic>>('getTracks');
-    return list?.map((e) => _trackInfoFromValue(e, 'getTracks')).toList() ?? [];
+    final list = await _channel.invokeMethod<List<dynamic>>(
+      NativePlayerMethods.getTracks,
+    );
+    return list
+            ?.map(
+              (e) => NativePlayerPayloads.trackInfoFromValue(
+                e,
+                NativePlayerMethods.getTracks,
+              ),
+            )
+            .toList() ??
+        [];
   }
 
   /// Get diagnostics data (placeholder, requires native counters).
   Future<Map<String, dynamic>> getDiagnostics() async {
     if (!_hasPlayerForCommand()) return const {};
     final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-      'getDiagnostics',
+      NativePlayerMethods.getDiagnostics,
     );
     return Map<String, dynamic>.from(map ?? {});
   }
@@ -459,7 +313,7 @@ class NativePlayerController {
     final textureId = _textureId;
     _textureId = null;
     if (textureId != null) {
-      await _channel.invokeMethod<void>('destroyPlayer');
+      await _channel.invokeMethod<void>(NativePlayerMethods.destroyPlayer);
     }
   }
 }

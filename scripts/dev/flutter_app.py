@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .native import native_build
+from .native import ensure_ffmpeg_analyzer_tool, native_build
 from .paths import DEMO_SCRIPT, NATIVE_BUILD_DIR, NATIVE_DIR, ROOT, app_exe_path
 from .process import header, run
 from .ui_lock import gui_test_lock
@@ -15,6 +15,8 @@ from .ui_lock import gui_test_lock
 def flutter_build(debug: bool) -> None:
     """Build Flutter Windows app."""
     build_type = "Debug" if debug else "Release"
+    ensure_ffmpeg_analyzer_tool()
+
     header(f"Build Flutter ({build_type})")
 
     cmd = ["flutter", "build", "windows"]

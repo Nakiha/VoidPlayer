@@ -143,15 +143,22 @@ if(VTM_DECODER_GLOB)
     COMPONENT Runtime)
 endif()
 
-# FFmpeg-based analysis tool (optional — HEVC/H.264 VBS4 generation).
+# FFmpeg-based analysis tool (required for HEVC/H.264 VBS4 generation).
 # The analyzer is built out-of-band from the instrumented FFmpeg submodule.
 file(GLOB_RECURSE FFMPEG_ANALYSIS_GLOB
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/vendor/ffmpeg/bin/windows-x64/void_ffmpeg_analyzer.exe"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/vendor/ffmpeg/bin/windows-x64/void_hevc_analyzer.exe")
-if(FFMPEG_ANALYSIS_GLOB)
-  foreach(FFMPEG_ANALYZER IN LISTS FFMPEG_ANALYSIS_GLOB)
-    install(FILES "${FFMPEG_ANALYZER}"
-      DESTINATION "${CMAKE_INSTALL_PREFIX}/tools/ffmpeg-analysis"
-      COMPONENT Runtime)
-  endforeach()
+if(DEFINED ENV{VOID_FFMPEG_ANALYZER} AND EXISTS "$ENV{VOID_FFMPEG_ANALYZER}")
+  list(APPEND FFMPEG_ANALYSIS_GLOB "$ENV{VOID_FFMPEG_ANALYZER}")
 endif()
+if(NOT FFMPEG_ANALYSIS_GLOB)
+  message(FATAL_ERROR
+    "FFmpeg analysis tool missing. Build it with: "
+    "powershell -NoProfile -ExecutionPolicy Bypass -File "
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/vendor/ffmpeg/voidplayer/build_windows_msvc.ps1")
+endif()
+foreach(FFMPEG_ANALYZER IN LISTS FFMPEG_ANALYSIS_GLOB)
+  install(FILES "${FFMPEG_ANALYZER}"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/tools/ffmpeg-analysis"
+    COMPONENT Runtime)
+endforeach()

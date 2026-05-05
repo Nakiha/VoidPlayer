@@ -161,9 +161,6 @@ public:
     /// Set callback invoked after each frame is drawn in headless mode.
     void set_frame_callback(std::function<void()> cb);
 
-    /// Get the shared offscreen texture (headless mode only).
-    ID3D11Texture2D* shared_texture() const;
-
     /// Get actual texture dimensions (may lag behind resize request).
     int texture_width() const {
         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -174,15 +171,9 @@ public:
         return target_height_;
     }
 
-    /// Get the DXGI shared handle for the offscreen texture.
-    HANDLE shared_texture_handle() const;
-
     /// Acquire the current headless texture and shared handle as one snapshot.
     /// The returned texture is AddRef'd and must be released by the caller.
     bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const;
-
-    /// Mutex for thread-safe access to shared texture.
-    std::mutex& texture_mutex() const;
 
     /// Resize the offscreen shared texture (headless mode only).
     /// Stores pending dimensions; render loop applies at controlled rate.
@@ -242,6 +233,9 @@ private:
     /// Headless-only: select back buffer RTV, draw, swap, notify Flutter.
     /// Caller must hold both device_mutex_ and texture_mutex_.
     std::function<void()> draw_headless_and_publish(const PresentDecision& decision, const char* label);
+
+    /// Internal mutex for D3D11 headless texture access.
+    std::mutex& texture_mutex() const;
 
     /// Lightweight layout-only redraw (no Flush) for responsive zoom/pan during playback.
     void redraw_layout();

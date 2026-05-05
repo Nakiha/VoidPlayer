@@ -13,7 +13,7 @@ backend behind explicit platform boundaries before adding a macOS backend.
   - Missing adapter or adapter-specific device creation must fail explicitly,
     not fall back to an unrelated D3D11 device that may later black-screen.
 
-- [ ] Stop exposing raw D3D11 synchronization details through `NativePlayer`.
+- [x] Stop exposing raw D3D11 synchronization details through `NativePlayer`.
   - Remove public `texture_mutex()` forwarding from `NativePlayer`.
   - Prefer snapshot/capture APIs such as `acquire_shared_texture()` that carry
     texture and shared handle together.

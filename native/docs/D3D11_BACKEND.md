@@ -35,7 +35,7 @@ draw back buffer -> swap front index -> Flutter opens shared handle -> Texture w
 
 Renderer 只负责在持有 device/texture mutex 后调用 `begin_frame_locked()`、绘制、`publish_frame_locked()`；shared handle、GPU fence、resize pending buffers 和 capture 逻辑都收敛在 `D3D11HeadlessOutput`。
 
-`D3D11HeadlessOutput` 中带 `_locked` 后缀的 public 方法都要求调用方已经持有 `texture_mutex()`。当前锁顺序固定为 `device_mutex -> texture_mutex`。`Renderer::shared_texture()`、`Renderer::shared_texture_handle()` 和 `Renderer::capture_front_buffer()` 是对外安全入口，会短暂持有 texture mutex。延迟释放旧 buffers 只是 best-effort 保活，不是严格的 Flutter handle ack 协议。
+`D3D11HeadlessOutput` 中带 `_locked` 后缀的 public 方法都要求调用方已经持有 `texture_mutex()`。当前锁顺序固定为 `device_mutex -> texture_mutex`。`Renderer::acquire_shared_texture()` 和 `Renderer::capture_front_buffer()` 是对外安全入口，会短暂持有 texture mutex。延迟释放旧 buffers 只是 best-effort 保活，不是严格的 Flutter handle ack 协议。
 
 ## 纹理路径
 

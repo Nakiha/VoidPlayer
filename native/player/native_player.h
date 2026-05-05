@@ -3,7 +3,6 @@
 #include "playback/playback_controller.h"
 #include "video_renderer/renderer.h"
 #include <functional>
-#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -73,14 +72,11 @@ public:
     void set_frame_callback(std::function<void()> cb) {
         renderer_.set_frame_callback(std::move(cb));
     }
-    ID3D11Texture2D* shared_texture() const { return renderer_.shared_texture(); }
     int texture_width() const { return renderer_.texture_width(); }
     int texture_height() const { return renderer_.texture_height(); }
-    HANDLE shared_texture_handle() const { return renderer_.shared_texture_handle(); }
     bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
         return renderer_.acquire_shared_texture(snapshot);
     }
-    std::mutex& texture_mutex() const { return renderer_.texture_mutex(); }
     void resize(int width, int height) { renderer_.resize(width, height); }
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
         return renderer_.capture_front_buffer(bgra, width, height);

@@ -1215,24 +1215,6 @@ void Renderer::set_frame_callback(std::function<void()> cb) {
     }
 }
 
-ID3D11Texture2D* Renderer::shared_texture() const {
-    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!headless_output_) {
-        return nullptr;
-    }
-    std::lock_guard<std::mutex> lock(texture_mutex());
-    return headless_output_->shared_texture_locked();
-}
-
-HANDLE Renderer::shared_texture_handle() const {
-    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!headless_output_) {
-        return nullptr;
-    }
-    std::lock_guard<std::mutex> lock(texture_mutex());
-    return headless_output_->shared_texture_handle_locked();
-}
-
 bool Renderer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
     snapshot = {};
 

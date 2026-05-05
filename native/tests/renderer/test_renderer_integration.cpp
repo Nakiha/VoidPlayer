@@ -308,9 +308,12 @@ TEST_CASE("Renderer: headless hw decode initialize", "[renderer][hw]") {
     REQUIRE(renderer.track_count() == 1);
     REQUIRE(renderer.duration_us() > 0);
 
-    // Verify shared texture is available for Flutter consumption
-    REQUIRE(renderer.shared_texture() != nullptr);
-    REQUIRE(renderer.shared_texture_handle() != nullptr);
+    // Verify the shared texture snapshot is available for Flutter consumption.
+    SharedTextureSnapshot snapshot;
+    REQUIRE(renderer.acquire_shared_texture(snapshot));
+    REQUIRE(snapshot.texture != nullptr);
+    REQUIRE(snapshot.handle != nullptr);
+    snapshot.texture->Release();
 
     renderer.shutdown();
     REQUIRE_FALSE(renderer.is_initialized());
@@ -339,9 +342,12 @@ TEST_CASE("Renderer: headless hw decode play", "[renderer][hw]") {
     int64_t pts = renderer.current_pts_us();
     REQUIRE(pts > 0);
 
-    // Verify shared texture remains valid during playback
-    REQUIRE(renderer.shared_texture() != nullptr);
-    REQUIRE(renderer.shared_texture_handle() != nullptr);
+    // Verify shared texture snapshot remains valid during playback.
+    SharedTextureSnapshot snapshot;
+    REQUIRE(renderer.acquire_shared_texture(snapshot));
+    REQUIRE(snapshot.texture != nullptr);
+    REQUIRE(snapshot.handle != nullptr);
+    snapshot.texture->Release();
 
     renderer.shutdown();
 }

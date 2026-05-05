@@ -137,69 +137,79 @@ class MainWindowController {
 
   MainWindowViewActions _createViewActions() {
     return MainWindowViewActions(
-      onFilesDropped: (paths) {
-        stateStore.setDragging(false);
-        fireAndLog(
-          'load dropped media',
-          mediaCoordinator.loadMediaPaths(paths),
-        );
-      },
-      onDragEntered: () {
-        if (!_dragging) stateStore.setDragging(true);
-      },
-      onDragExited: () {
-        if (_dragging) stateStore.setDragging(false);
-      },
-      onViewModeChanged: (mode) {
-        stateStore.setLayout(_layout.copyWith(mode: mode));
-        layoutCoordinator.markLayoutDirty();
-      },
-      onAddMedia: mediaCoordinator.openFile,
-      onAnalysis: analysisCoordinator.triggerAnalysis,
-      onProfiler: () => stateStore.setProfilerVisible(!_profilerVisible),
-      onCloseProfiler: () => stateStore.setProfilerVisible(false),
-      onSettings: () => stateStore.setSettingsVisible(!_settingsVisible),
-      onCloseSettings: () => stateStore.setSettingsVisible(false),
-      onPan: layoutCoordinator.onPan,
-      onSplit: layoutCoordinator.onSplit,
-      onZoom: layoutCoordinator.onZoom,
-      onPointerButton: layoutCoordinator.onPointerButton,
-      onResize: (width, height, devicePixelRatio) =>
-          layoutCoordinator.onViewportResize(
-            width,
-            height,
-            devicePixelRatio,
-            immediate: _fullScreenUiResizePending,
-          ),
-      onMediaSwapped: mediaCoordinator.onMediaSwapped,
-      onRemoveTrack: mediaCoordinator.removeTrack,
-      onZoomChanged: layoutCoordinator.onZoomComboChanged,
-      onToggleFullScreen: _toggleFullScreen,
-      onFullScreenPointerActivity: _showFullScreenControlsTemporarily,
-      onFullScreenControlsHoverChanged: _setFullScreenControlsHovering,
-      onTogglePlay: playbackCoordinator.togglePlayPause,
-      onStepForward: () => player.stepForward(),
-      onStepBackward: () => player.stepBackward(),
-      onSeek: playbackCoordinator.seekTo,
-      onSliderHover: playbackCoordinator.onSliderHover,
-      onLoopRangeEnabledChanged: (enabled) => fireAndLog(
-        'set loop range enabled',
-        playbackCoordinator.setLoopRangeEnabled(enabled),
+      drop: MainWindowDropActions(
+        filesDropped: (paths) {
+          stateStore.setDragging(false);
+          fireAndLog(
+            'load dropped media',
+            mediaCoordinator.loadMediaPaths(paths),
+          );
+        },
+        dragEntered: () {
+          if (!_dragging) stateStore.setDragging(true);
+        },
+        dragExited: () {
+          if (_dragging) stateStore.setDragging(false);
+        },
       ),
-      onLoopRangeChanged: playbackCoordinator.previewLoopRange,
-      onLoopRangeChangeEnd: (handle) {
-        if (!_loopRangeEnabled) return;
-        fireAndLog(
-          'finish loop range change',
-          playbackCoordinator.commitLoopRange(
-            seekToStart: handle == LoopRangeHandle.start,
-          ),
-        );
-      },
-      onReorder: trackManager.moveTrack,
-      onOffsetChanged: mediaCoordinator.onOffsetChanged,
-      onToggleTrackAudio: _toggleTrackAudio,
-      onControlsWidthChanged: stateStore.setTimelineControlsWidth,
+      toolbar: MainWindowToolbarActions(
+        onViewModeChanged: (mode) {
+          stateStore.setLayout(_layout.copyWith(mode: mode));
+          layoutCoordinator.markLayoutDirty();
+        },
+        onAddMedia: mediaCoordinator.openFile,
+        onAnalysis: analysisCoordinator.triggerAnalysis,
+        onProfiler: () => stateStore.setProfilerVisible(!_profilerVisible),
+        onSettings: () => stateStore.setSettingsVisible(!_settingsVisible),
+      ),
+      viewport: MainWindowViewportActions(
+        onPan: layoutCoordinator.onPan,
+        onSplit: layoutCoordinator.onSplit,
+        onZoom: layoutCoordinator.onZoom,
+        onPointerButton: layoutCoordinator.onPointerButton,
+        onResize: (width, height, devicePixelRatio) =>
+            layoutCoordinator.onViewportResize(
+              width,
+              height,
+              devicePixelRatio,
+              immediate: _fullScreenUiResizePending,
+            ),
+      ),
+      mediaTimeline: MainWindowMediaTimelineActions(
+        onMediaSwapped: mediaCoordinator.onMediaSwapped,
+        onRemoveTrack: mediaCoordinator.removeTrack,
+        onZoomChanged: layoutCoordinator.onZoomComboChanged,
+        onToggleFullScreen: _toggleFullScreen,
+        onTogglePlay: playbackCoordinator.togglePlayPause,
+        onStepForward: () => player.stepForward(),
+        onStepBackward: () => player.stepBackward(),
+        onSeek: playbackCoordinator.seekTo,
+        onSliderHover: playbackCoordinator.onSliderHover,
+        onLoopRangeEnabledChanged: (enabled) => fireAndLog(
+          'set loop range enabled',
+          playbackCoordinator.setLoopRangeEnabled(enabled),
+        ),
+        onLoopRangeChanged: playbackCoordinator.previewLoopRange,
+        onLoopRangeChangeEnd: (handle) {
+          if (!_loopRangeEnabled) return;
+          fireAndLog(
+            'finish loop range change',
+            playbackCoordinator.commitLoopRange(
+              seekToStart: handle == LoopRangeHandle.start,
+            ),
+          );
+        },
+        onReorder: trackManager.moveTrack,
+        onOffsetChanged: mediaCoordinator.onOffsetChanged,
+        onToggleTrackAudio: _toggleTrackAudio,
+        onControlsWidthChanged: stateStore.setTimelineControlsWidth,
+      ),
+      overlays: MainWindowOverlayActions(
+        onCloseProfiler: () => stateStore.setProfilerVisible(false),
+        onCloseSettings: () => stateStore.setSettingsVisible(false),
+        onFullScreenPointerActivity: _showFullScreenControlsTemporarily,
+        onFullScreenControlsHoverChanged: _setFullScreenControlsHovering,
+      ),
     );
   }
 

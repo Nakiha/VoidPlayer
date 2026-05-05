@@ -13,14 +13,14 @@ class MainWindowView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DropTarget(
-      onDragEntered: (_) => actions.onDragEntered(),
-      onDragExited: (_) => actions.onDragExited(),
+      onDragEntered: (_) => actions.drop.dragEntered(),
+      onDragExited: (_) => actions.drop.dragExited(),
       onDragDone: (details) {
         final paths = details.files
             .map((f) => f.path)
             .where((path) => path.isNotEmpty)
             .toList();
-        if (paths.isNotEmpty) actions.onFilesDropped(paths);
+        if (paths.isNotEmpty) actions.drop.filesDropped(paths);
       },
       child: MainWindowScaffold(model: model, actions: actions),
     );

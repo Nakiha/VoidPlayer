@@ -104,27 +104,70 @@ class MainWindowOverlayVm {
 }
 
 class MainWindowViewActions {
-  final ValueChanged<List<String>> onFilesDropped;
-  final VoidCallback onDragEntered;
-  final VoidCallback onDragExited;
+  final MainWindowDropActions drop;
+  final MainWindowToolbarActions toolbar;
+  final MainWindowViewportActions viewport;
+  final MainWindowMediaTimelineActions mediaTimeline;
+  final MainWindowOverlayActions overlays;
+
+  const MainWindowViewActions({
+    required this.drop,
+    required this.toolbar,
+    required this.viewport,
+    required this.mediaTimeline,
+    required this.overlays,
+  });
+}
+
+class MainWindowDropActions {
+  final ValueChanged<List<String>> filesDropped;
+  final VoidCallback dragEntered;
+  final VoidCallback dragExited;
+
+  const MainWindowDropActions({
+    required this.filesDropped,
+    required this.dragEntered,
+    required this.dragExited,
+  });
+}
+
+class MainWindowToolbarActions {
   final ValueChanged<int> onViewModeChanged;
   final VoidCallback onAddMedia;
   final Future<void> Function() onAnalysis;
   final VoidCallback onProfiler;
-  final VoidCallback onCloseProfiler;
   final VoidCallback onSettings;
-  final VoidCallback onCloseSettings;
+
+  const MainWindowToolbarActions({
+    required this.onViewModeChanged,
+    required this.onAddMedia,
+    required this.onAnalysis,
+    required this.onProfiler,
+    required this.onSettings,
+  });
+}
+
+class MainWindowViewportActions {
   final ValueChanged<Offset> onPan;
   final ValueChanged<double> onSplit;
   final void Function(double scrollDelta, Offset localPos) onZoom;
   final void Function(bool panning, bool splitting) onPointerButton;
   final void Function(int width, int height, double devicePixelRatio) onResize;
+
+  const MainWindowViewportActions({
+    required this.onPan,
+    required this.onSplit,
+    required this.onZoom,
+    required this.onPointerButton,
+    required this.onResize,
+  });
+}
+
+class MainWindowMediaTimelineActions {
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
   final ValueChanged<int> onRemoveTrack;
   final ValueChanged<double> onZoomChanged;
   final VoidCallback onToggleFullScreen;
-  final VoidCallback onFullScreenPointerActivity;
-  final void Function(bool hovering) onFullScreenControlsHoverChanged;
   final VoidCallback onTogglePlay;
   final VoidCallback onStepForward;
   final VoidCallback onStepBackward;
@@ -138,28 +181,11 @@ class MainWindowViewActions {
   final ValueChanged<int> onToggleTrackAudio;
   final ValueChanged<double> onControlsWidthChanged;
 
-  const MainWindowViewActions({
-    required this.onFilesDropped,
-    required this.onDragEntered,
-    required this.onDragExited,
-    required this.onViewModeChanged,
-    required this.onAddMedia,
-    required this.onAnalysis,
-    required this.onProfiler,
-    required this.onCloseProfiler,
-    required this.onSettings,
-    required this.onCloseSettings,
-    required this.onPan,
-    required this.onSplit,
-    required this.onZoom,
-    required this.onPointerButton,
-    required this.onResize,
+  const MainWindowMediaTimelineActions({
     required this.onMediaSwapped,
     required this.onRemoveTrack,
     required this.onZoomChanged,
     required this.onToggleFullScreen,
-    required this.onFullScreenPointerActivity,
-    required this.onFullScreenControlsHoverChanged,
     required this.onTogglePlay,
     required this.onStepForward,
     required this.onStepBackward,
@@ -172,5 +198,19 @@ class MainWindowViewActions {
     required this.onOffsetChanged,
     required this.onToggleTrackAudio,
     required this.onControlsWidthChanged,
+  });
+}
+
+class MainWindowOverlayActions {
+  final VoidCallback onCloseProfiler;
+  final VoidCallback onCloseSettings;
+  final VoidCallback onFullScreenPointerActivity;
+  final void Function(bool hovering) onFullScreenControlsHoverChanged;
+
+  const MainWindowOverlayActions({
+    required this.onCloseProfiler,
+    required this.onCloseSettings,
+    required this.onFullScreenPointerActivity,
+    required this.onFullScreenControlsHoverChanged,
   });
 }

@@ -22,6 +22,9 @@ class MainWindowScaffold extends StatelessWidget {
     final viewport = model.viewport;
     final media = model.media;
     final overlays = model.overlays;
+    final toolbarActions = actions.toolbar;
+    final viewportActions = actions.viewport;
+    final overlayActions = actions.overlays;
     return Scaffold(
       body: Stack(
         children: [
@@ -30,11 +33,11 @@ class MainWindowScaffold extends StatelessWidget {
               if (!overlays.fullScreen)
                 AppToolBar(
                   viewMode: viewport.viewMode,
-                  onViewModeChanged: actions.onViewModeChanged,
-                  onAddMedia: actions.onAddMedia,
-                  onAnalysis: actions.onAnalysis,
-                  onProfiler: actions.onProfiler,
-                  onSettings: actions.onSettings,
+                  onViewModeChanged: toolbarActions.onViewModeChanged,
+                  onAddMedia: toolbarActions.onAddMedia,
+                  onAnalysis: toolbarActions.onAnalysis,
+                  onProfiler: toolbarActions.onProfiler,
+                  onSettings: toolbarActions.onSettings,
                   tracks: media.tracks,
                   viewModeEnabled: viewport.viewModeEnabled,
                   analysisEnabled: media.analysisEnabled,
@@ -46,11 +49,11 @@ class MainWindowScaffold extends StatelessWidget {
                   viewportState: viewport.viewportState,
                   errorText: viewport.viewportState.errorText,
                   layout: viewport.layout,
-                  onPan: actions.onPan,
-                  onSplit: actions.onSplit,
-                  onZoom: actions.onZoom,
-                  onPointerButton: actions.onPointerButton,
-                  onResize: actions.onResize,
+                  onPan: viewportActions.onPan,
+                  onSplit: viewportActions.onSplit,
+                  onZoom: viewportActions.onZoom,
+                  onPointerButton: viewportActions.onPointerButton,
+                  onResize: viewportActions.onResize,
                   pointerButtonStateProvider:
                       const Win32PointerButtonStateProvider(),
                 ),
@@ -61,18 +64,18 @@ class MainWindowScaffold extends StatelessWidget {
           ),
           if (overlays.fullScreen)
             FullScreenPointerCapture(
-              onActivity: actions.onFullScreenPointerActivity,
+              onActivity: overlayActions.onFullScreenPointerActivity,
             ),
           if (overlays.fullScreen && media.tracks.isNotEmpty)
             FullScreenControlsOverlay(model: model, actions: actions),
           if (overlays.dragging) const DragDropLayer(),
           ProfilerOverlaySlot(
             visible: overlays.profilerVisible,
-            onClose: actions.onCloseProfiler,
+            onClose: overlayActions.onCloseProfiler,
           ),
           SettingsOverlaySlot(
             visible: overlays.settingsVisible,
-            onClose: actions.onCloseSettings,
+            onClose: overlayActions.onCloseSettings,
           ),
         ],
       ),

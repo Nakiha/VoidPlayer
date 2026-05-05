@@ -21,6 +21,7 @@ class MediaTimelineSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final media = model.media;
     final playback = model.playback;
+    final mediaActions = actions.mediaTimeline;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -33,26 +34,26 @@ class MediaTimelineSection extends StatelessWidget {
           startUs: playback.loopStartUs,
           endUs: playback.loopEndUs,
           durationUs: playback.durationUs,
-          onEnabledChanged: actions.onLoopRangeEnabledChanged,
-          onRangeChanged: actions.onLoopRangeChanged,
-          onRangeChangeEnd: actions.onLoopRangeChangeEnd,
+          onEnabledChanged: mediaActions.onLoopRangeEnabledChanged,
+          onRangeChanged: mediaActions.onLoopRangeChanged,
+          onRangeChangeEnd: mediaActions.onLoopRangeChangeEnd,
         ),
         ValueListenableBuilder<TimelineHoverState>(
           valueListenable: playback.timelineHoverListenable,
           builder: (context, hover, _) => TimelineArea(
             entries: media.tracks,
             currentPtsUs: playback.currentPtsUs,
-            onRemoveTrack: actions.onRemoveTrack,
-            onReorder: actions.onReorder,
-            onOffsetChanged: actions.onOffsetChanged,
-            onToggleTrackAudio: actions.onToggleTrackAudio,
+            onRemoveTrack: mediaActions.onRemoveTrack,
+            onReorder: mediaActions.onReorder,
+            onOffsetChanged: mediaActions.onOffsetChanged,
+            onToggleTrackAudio: mediaActions.onToggleTrackAudio,
             audibleTrackFileId: media.audibleTrackFileId,
             syncOffsets: media.syncOffsets,
             maxEffectiveDurationUs: playback.durationUs,
             hoverPtsUs: hover.hoverPtsUs,
             sliderHovering: hover.sliderHovering,
             controlsWidth: playback.controlsWidth,
-            onControlsWidthChanged: actions.onControlsWidthChanged,
+            onControlsWidthChanged: mediaActions.onControlsWidthChanged,
             markerPtsUs: playback.markerUs,
             loopRangeEnabled: playback.loopRangeEnabled,
             loopStartUs: playback.loopStartUs,
@@ -77,12 +78,13 @@ class MainWindowMediaHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tracks = model.media.tracks;
+    final mediaActions = actions.mediaTimeline;
     return MediaHeaderBar(
       entries: tracks,
-      onMediaSwapped: actions.onMediaSwapped,
+      onMediaSwapped: mediaActions.onMediaSwapped,
       onRemoveClicked: (slotIndex) {
         if (slotIndex < tracks.length) {
-          actions.onRemoveTrack(tracks[slotIndex].fileId);
+          mediaActions.onRemoveTrack(tracks[slotIndex].fileId);
         }
       },
     );
@@ -102,21 +104,22 @@ class MainWindowControlsBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final playback = model.playback;
+    final mediaActions = actions.mediaTimeline;
     return ControlsBar(
       timelineKey: playback.timelineSliderKey,
       timelineStartWidth: playback.timelineStartWidth,
       zoomRatio: model.viewport.layout.zoomRatio,
-      onZoomChanged: actions.onZoomChanged,
+      onZoomChanged: mediaActions.onZoomChanged,
       isPlaying: playback.isPlaying,
       isFullScreen: model.overlays.fullScreen,
-      onToggleFullScreen: actions.onToggleFullScreen,
-      onTogglePlay: actions.onTogglePlay,
-      onStepForward: actions.onStepForward,
-      onStepBackward: actions.onStepBackward,
+      onToggleFullScreen: mediaActions.onToggleFullScreen,
+      onTogglePlay: mediaActions.onTogglePlay,
+      onStepForward: mediaActions.onStepForward,
+      onStepBackward: mediaActions.onStepBackward,
       currentPtsUs: playback.currentPtsUs,
       durationUs: playback.durationUs,
-      onSeek: actions.onSeek,
-      onHoverChanged: actions.onSliderHover,
+      onSeek: mediaActions.onSeek,
+      onHoverChanged: mediaActions.onSliderHover,
       markerUs: playback.markerUs,
       seekMinUs: playback.seekMinUs,
       seekMaxUs: playback.seekMaxUs,
@@ -137,9 +140,10 @@ class FullScreenControlsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final overlayActions = actions.overlays;
     return MouseRegion(
-      onEnter: (_) => actions.onFullScreenControlsHoverChanged(true),
-      onExit: (_) => actions.onFullScreenControlsHoverChanged(false),
+      onEnter: (_) => overlayActions.onFullScreenControlsHoverChanged(true),
+      onExit: (_) => overlayActions.onFullScreenControlsHoverChanged(false),
       child: Material(
         color: Colors.transparent,
         child: DecoratedBox(

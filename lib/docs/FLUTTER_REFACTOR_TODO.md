@@ -94,6 +94,10 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Group `MainWindowViewModel` into viewport, media, playback, and overlay view-model slices.~~
 
+## Round 21
+
+- [x] ~~Group `MainWindowViewActions` into drop, toolbar, viewport, media/timeline, and overlay action slices.~~
+
 ## P0
 
 - [x] ~~Keep release UI automation behind explicit automation bridge/runtime boundaries.~~
@@ -117,7 +121,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Strengthen analyzer/linter settings once current violations are triaged.~~
 - [ ] Split oversized main-window view/view-model surfaces by UI region.
-  Slices done: `MainWindowViewModel` and `MainWindowViewActions` now live outside `main_window_view.dart`; `MainWindowView` now delegates to scaffold, media/timeline section, and overlay region widgets; `MainWindowViewModel` is grouped into viewport, media, playback, and overlay slices.
+  Slices done: `MainWindowViewModel` and `MainWindowViewActions` now live outside `main_window_view.dart`; `MainWindowView` now delegates to scaffold, media/timeline section, and overlay region widgets; `MainWindowViewModel` is grouped into viewport, media, playback, and overlay slices; `MainWindowViewActions` is grouped into drop, toolbar, viewport, media/timeline, and overlay slices.
 - [x] ~~Make shortcut display metadata come from the same action definitions as real bindings.~~
 - [x] ~~Centralize About/version/license metadata instead of hardcoding it in widgets/ARB strings.~~
 - [x] ~~Extract shared layout geometry math used by production and UI test assertions.~~

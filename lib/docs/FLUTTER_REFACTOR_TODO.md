@@ -78,6 +78,10 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Move UI automation process/window/config/media side effects behind `UiAutomationRuntime`.~~
 
+## Round 17
+
+- [x] ~~Move `MainWindowViewModel` and `MainWindowViewActions` out of the main view file.~~
+
 ## P0
 
 - [ ] Move UI test runner/script parsing/media generation out of the production app graph behind a thin automation bridge.
@@ -101,6 +105,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [ ] Strengthen analyzer/linter settings once current violations are triaged.
 - [ ] Split oversized main-window view/view-model surfaces by UI region.
+  First slice done: `MainWindowViewModel` and `MainWindowViewActions` now live outside `main_window_view.dart`, leaving the view file focused on widget composition.
 - [x] ~~Make shortcut display metadata come from the same action definitions as real bindings.~~
 - [x] ~~Centralize About/version/license metadata instead of hardcoding it in widgets/ARB strings.~~
 - [x] ~~Extract shared layout geometry math used by production and UI test assertions.~~

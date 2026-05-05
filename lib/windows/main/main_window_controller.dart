@@ -21,7 +21,7 @@ import 'main_window_media.dart';
 import 'main_window_playback.dart';
 import 'main_window_state.dart';
 import 'main_window_test_hooks.dart';
-import 'main_window_view.dart';
+import 'main_window_view_model.dart';
 
 class MainWindowController {
   final ActionRegistry actionRegistry;

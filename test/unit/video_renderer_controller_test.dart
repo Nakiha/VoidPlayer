@@ -64,4 +64,180 @@ void main() {
       );
     });
   });
+
+  group('NativePlayerController', () {
+    test('delegates playback commands through injected api', () async {
+      final api = _FakeNativePlayerApi();
+      final controller = NativePlayerController(api: api);
+
+      await controller.createPlayer(['a.mp4'], width: 320, height: 180);
+      await controller.play();
+      await controller.seek(123);
+      await controller.resize(640, 360);
+      await controller.destroyPlayerOnly();
+
+      expect(api.calls, [
+        'createPlayer:320x180:a.mp4',
+        'play',
+        'seek:123',
+        'resize:640x360',
+        'destroyPlayer',
+      ]);
+    });
+
+    test('keeps no-player commands as no-ops', () async {
+      final api = _FakeNativePlayerApi();
+      final controller = NativePlayerController(api: api);
+
+      await controller.play();
+      await controller.seek(123);
+
+      expect(api.calls, isEmpty);
+    });
+  });
+}
+
+class _FakeNativePlayerApi implements NativePlayerApi {
+  final calls = <String>[];
+
+  @override
+  Future<CreatePlayerResult> createPlayer({
+    required List<String> videoPaths,
+    required int width,
+    required int height,
+  }) async {
+    calls.add('createPlayer:${width}x$height:${videoPaths.join('|')}');
+    return const CreatePlayerResult(textureId: 1, tracks: []);
+  }
+
+  @override
+  Future<void> destroyPlayer() async {
+    calls.add('destroyPlayer');
+  }
+
+  @override
+  Future<void> play() async {
+    calls.add('play');
+  }
+
+  @override
+  Future<void> pause() async {
+    calls.add('pause');
+  }
+
+  @override
+  Future<void> seek(int ptsUs) async {
+    calls.add('seek:$ptsUs');
+  }
+
+  @override
+  Future<void> setSpeed(double speed) async {
+    calls.add('setSpeed:$speed');
+  }
+
+  @override
+  Future<void> setLoopRange({
+    required bool enabled,
+    required int startUs,
+    required int endUs,
+  }) async {
+    calls.add('setLoopRange:$enabled:$startUs:$endUs');
+  }
+
+  @override
+  Future<void> setAudibleTrack(int? fileId) async {
+    calls.add('setAudibleTrack:$fileId');
+  }
+
+  @override
+  Future<void> resize({required int width, required int height}) async {
+    calls.add('resize:${width}x$height');
+  }
+
+  @override
+  Future<void> setViewportBackgroundColor(int colorValue) async {
+    calls.add('setViewportBackgroundColor:$colorValue');
+  }
+
+  @override
+  Future<ViewportCapture> captureViewport({String? outputPath}) async {
+    calls.add('captureViewport:$outputPath');
+    return const ViewportCapture(
+      hash: 'hash',
+      width: 1,
+      height: 1,
+      avgLuma: 1,
+      nonBlackRatio: 1,
+    );
+  }
+
+  @override
+  Future<void> stepForward() async {
+    calls.add('stepForward');
+  }
+
+  @override
+  Future<void> stepBackward() async {
+    calls.add('stepBackward');
+  }
+
+  @override
+  Future<int> currentPts() async {
+    calls.add('currentPts');
+    return 0;
+  }
+
+  @override
+  Future<int> duration() async {
+    calls.add('duration');
+    return 0;
+  }
+
+  @override
+  Future<bool> isPlaying() async {
+    calls.add('isPlaying');
+    return false;
+  }
+
+  @override
+  Future<void> applyLayout(LayoutState state) async {
+    calls.add('applyLayout');
+  }
+
+  @override
+  Future<LayoutState> getLayout() async {
+    calls.add('getLayout');
+    return const LayoutState();
+  }
+
+  @override
+  Future<TrackInfo> addTrack(String videoPath) async {
+    calls.add('addTrack:$videoPath');
+    return TrackInfo(fileId: 1, slot: 0, path: videoPath, width: 1, height: 1);
+  }
+
+  @override
+  Future<void> removeTrack(int fileId) async {
+    calls.add('removeTrack:$fileId');
+  }
+
+  @override
+  Future<void> setTrackOffset({
+    required int fileId,
+    required int offsetUs,
+  }) async {
+    calls.add('setTrackOffset:$fileId:$offsetUs');
+  }
+
+  @override
+  Future<List<TrackInfo>> getTracks() async {
+    calls.add('getTracks');
+    return const [];
+  }
+
+  @override
+  Future<Map<String, dynamic>> getDiagnostics() async {
+    calls.add('getDiagnostics');
+    return const {};
+  }
 }

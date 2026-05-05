@@ -34,6 +34,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 - [x] ~~Move TestRunner out of the actions namespace into automation.~~
 - [x] ~~Route TestRunner through an explicit UiAutomationBridge.~~
 - [x] ~~Extract ffmpeg test video generation out of TestRunner.~~
+- [x] ~~Extract automation assertion/probe/run-state helpers out of TestRunner.~~
 
 ## P0
 

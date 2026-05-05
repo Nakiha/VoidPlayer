@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:window_manager/window_manager.dart' as wm;
 
@@ -10,10 +9,12 @@ import '../actions/player_assert.dart';
 import '../app_log.dart';
 import '../config/app_config.dart';
 import '../preferences/playback_preferences.dart';
+import 'automation_assert_executor.dart';
+import 'automation_probe.dart';
+import 'automation_run_state.dart';
 import 'test_video_generator.dart';
 import 'ui_automation_bridge.dart';
 import '../video_renderer_controller.dart';
-import '../windows/win32ffi.dart';
 import '../windows/window_manager.dart';
 
 /// A parsed instruction from a test script, with its scheduled time.
@@ -83,33 +84,20 @@ class ScriptQuit extends ScriptInstruction {
   const ScriptQuit(super.time, this.exitCode);
 }
 
-class _ViewCenterMetric {
-  final double x;
-  final double y;
-  const _ViewCenterMetric(this.x, this.y);
-}
-
-class _ResourceUsageMetric {
-  final int rssBytes;
-  final int dedicatedGpuBytes;
-  const _ResourceUsageMetric({
-    required this.rssBytes,
-    required this.dedicatedGpuBytes,
-  });
-}
-
 /// Parses a test script file and runs instructions on a timeline.
 class TestRunner {
   final String scriptPath;
   final UiAutomationBridge automation;
-  final _captures = <String, ViewportCapture>{};
-  final _viewCenterBaselines = <String, _ViewCenterMetric>{};
-  final _resourceBaselines = <String, _ResourceUsageMetric>{};
-  final _nativeSeekCountBaselines = <String, int>{};
+  final AutomationRunState _state = AutomationRunState();
 
   TestRunner({required this.scriptPath, required this.automation});
 
   NativePlayerController get controller => automation.controller;
+
+  AutomationProbe get _probe => AutomationProbe(controller);
+
+  AutomationAssertExecutor get _assertExecutor =>
+      AutomationAssertExecutor(probe: _probe, state: _state);
 
   /// Parse and execute the test script. Exits the process on QUIT or failure.
   Future<void> run() async {
@@ -154,7 +142,7 @@ class TestRunner {
 
       case ScriptAssert(:final assertion):
         log.info('TestRunner ${instr.time}: assert ${assertion.runtimeType}');
-        await _executeAssert(assertion);
+        await _assertExecutor.execute(assertion);
 
       case ScriptWait(:final state, :final timeout):
         log.info(
@@ -227,7 +215,7 @@ class TestRunner {
         final capture = await controller.captureViewport(
           outputPath: outputPath,
         );
-        _captures[nameId] = capture;
+        _state.captures[nameId] = capture;
         log.info(
           'TestRunner: CAPTURE_VIEWPORT $nameId hash=${capture.hash} ${capture.width}x${capture.height}'
           ' avgLuma=${capture.avgLuma.toStringAsFixed(2)}'
@@ -241,261 +229,24 @@ class TestRunner {
         log.info('TestRunner: WINDOW_RESTORE');
         await wm.windowManager.restore();
       case StoreViewCenter(:final nameId):
-        final metric = await _currentViewCenterMetric();
-        _viewCenterBaselines[nameId] = metric;
+        final metric = await _probe.currentViewCenterMetric();
+        _state.viewCenterBaselines[nameId] = metric;
         log.info(
           'TestRunner: STORE_VIEW_CENTER $nameId '
           'normalized=(${metric.x.toStringAsFixed(6)}, ${metric.y.toStringAsFixed(6)})',
         );
       case StoreResourceUsage(:final nameId):
-        final metric = await _currentResourceUsageMetric();
-        _resourceBaselines[nameId] = metric;
+        final metric = await _probe.currentResourceUsageMetric();
+        _state.resourceBaselines[nameId] = metric;
         log.info(
           'TestRunner: STORE_RESOURCE_USAGE $nameId '
-          'rss=${_formatMb(metric.rssBytes)}MB '
-          'dedicatedGpu=${_formatMb(metric.dedicatedGpuBytes)}MB',
+          'rss=${AutomationProbe.formatMb(metric.rssBytes)}MB '
+          'dedicatedGpu=${AutomationProbe.formatMb(metric.dedicatedGpuBytes)}MB',
         );
       case StoreNativeSeekCount(:final nameId):
-        final count = _currentNativeSeekCount();
-        _nativeSeekCountBaselines[nameId] = count;
+        final count = _probe.currentNativeSeekCount();
+        _state.nativeSeekCountBaselines[nameId] = count;
         log.info('TestRunner: STORE_NATIVE_SEEK_COUNT $nameId count=$count');
-    }
-  }
-
-  Future<void> _executeAssert(PlayerAssert assertion) async {
-    switch (assertion) {
-      case AssertPlaying():
-        if (!await controller.isPlaying()) {
-          throw AssertionError('Expected PLAYING, but isPlaying=false');
-        }
-      case AssertPaused():
-        if (await controller.isPlaying()) {
-          throw AssertionError('Expected PAUSED, but isPlaying=true');
-        }
-      case AssertPosition(:final ptsUs, :final toleranceMs):
-        final actual = await controller.currentPts();
-        final diff = (actual - ptsUs).abs();
-        if (diff > toleranceMs * 1000) {
-          throw AssertionError(
-            'Expected position $ptsUs μs (±${toleranceMs}ms), got $actual μs (diff ${diff ~/ 1000}ms)',
-          );
-        }
-      case AssertPositionRange(:final minUs, :final maxUs):
-        final actual = await controller.currentPts();
-        if (actual < minUs || actual > maxUs) {
-          throw AssertionError(
-            'Expected position in [$minUs, $maxUs] μs, got $actual μs',
-          );
-        }
-      case AssertTrackCount(:final count):
-        final tracks = await controller.getTracks();
-        if (tracks.length != count) {
-          throw AssertionError(
-            'Expected track count $count, got ${tracks.length}',
-          );
-        }
-      case AssertDuration(:final ptsUs, :final toleranceMs):
-        final actual = await controller.duration();
-        final diff = (actual - ptsUs).abs();
-        if (diff > toleranceMs * 1000) {
-          throw AssertionError(
-            'Expected duration $ptsUs μs (±${toleranceMs}ms), got $actual μs',
-          );
-        }
-      case AssertLayoutMode(:final mode):
-        final layout = await controller.getLayout();
-        if (layout.mode != mode) {
-          throw AssertionError(
-            'Expected layout mode $mode, got ${layout.mode}',
-          );
-        }
-      case AssertZoom(:final ratio, :final tolerance):
-        final layout = await controller.getLayout();
-        if ((layout.zoomRatio - ratio).abs() > tolerance) {
-          throw AssertionError(
-            'Expected zoom $ratio (±$tolerance), got ${layout.zoomRatio}',
-          );
-        }
-      case AssertSplitPos(:final position, :final tolerance):
-        final layout = await controller.getLayout();
-        if ((layout.splitPos - position).abs() > tolerance) {
-          throw AssertionError(
-            'Expected split position $position (±$tolerance), got ${layout.splitPos}',
-          );
-        }
-      case AssertViewOffset(:final x, :final y, :final tolerance):
-        final layout = await controller.getLayout();
-        final dx = (layout.viewOffsetX - x).abs();
-        final dy = (layout.viewOffsetY - y).abs();
-        if (dx > tolerance || dy > tolerance) {
-          throw AssertionError(
-            'Expected view offset ($x, $y) (±$tolerance), '
-            'got (${layout.viewOffsetX}, ${layout.viewOffsetY})',
-          );
-        }
-      case AssertViewCenterStable(:final baseline, :final tolerance):
-        final expected = _viewCenterBaselines[baseline];
-        if (expected == null) {
-          throw AssertionError(
-            'Missing baseline for ASSERT_VIEW_CENTER_STABLE: $baseline',
-          );
-        }
-        final actual = await _currentViewCenterMetric();
-        final dx = (actual.x - expected.x).abs();
-        final dy = (actual.y - expected.y).abs();
-        if (dx > tolerance || dy > tolerance) {
-          throw AssertionError(
-            'Expected normalized view center to match $baseline '
-            '(±$tolerance), got '
-            '(${actual.x.toStringAsFixed(6)}, ${actual.y.toStringAsFixed(6)}) '
-            'vs (${expected.x.toStringAsFixed(6)}, ${expected.y.toStringAsFixed(6)})',
-          );
-        }
-      case AssertMainWindowBorderless():
-        final hwnd = Win32FFI.findCurrentMainWindow();
-        if (hwnd == 0) {
-          throw AssertionError('Expected main window HWND to exist');
-        }
-        if (Win32FFI.hasOverlappedWindowFrame(hwnd)) {
-          throw AssertionError(
-            'Expected main window to be borderless in fullscreen, hwnd=$hwnd',
-          );
-        }
-      case AssertCaptureEquals(:final expectedCapture, :final actualCapture):
-        final expected = _captures[expectedCapture];
-        final actual = _captures[actualCapture];
-        if (expected == null || actual == null) {
-          throw AssertionError(
-            'Missing capture(s) for ASSERT_CAPTURE_EQUALS: $expectedCapture / $actualCapture',
-          );
-        }
-        if (expected.hash != actual.hash) {
-          throw AssertionError(
-            'Expected capture $actualCapture to equal $expectedCapture, '
-            'got ${actual.hash} != ${expected.hash}',
-          );
-        }
-      case AssertCaptureChanged(:final beforeCapture, :final afterCapture):
-        final before = _captures[beforeCapture];
-        final after = _captures[afterCapture];
-        if (before == null || after == null) {
-          throw AssertionError(
-            'Missing capture(s) for ASSERT_CAPTURE_CHANGED: $beforeCapture / $afterCapture',
-          );
-        }
-        if (before.hash == after.hash) {
-          throw AssertionError(
-            'Expected capture $afterCapture to differ from $beforeCapture, '
-            'but both hashes are ${before.hash}',
-          );
-        }
-      case AssertCaptureHash(:final capture, :final hash):
-        final actual = _captures[capture];
-        if (actual == null) {
-          throw AssertionError(
-            'Missing capture for ASSERT_CAPTURE_HASH: $capture',
-          );
-        }
-        if (actual.hash != hash) {
-          throw AssertionError(
-            'Expected capture $capture hash=$hash, got ${actual.hash}',
-          );
-        }
-      case AssertCaptureNotBlack(
-        :final capture,
-        :final minNonBlackRatio,
-        :final minAvgLuma,
-      ):
-        final actual = _captures[capture];
-        if (actual == null) {
-          throw AssertionError(
-            'Missing capture for ASSERT_CAPTURE_NOT_BLACK: $capture',
-          );
-        }
-        if (actual.nonBlackRatio < minNonBlackRatio ||
-            actual.avgLuma < minAvgLuma) {
-          throw AssertionError(
-            'Expected capture $capture to be non-black '
-            '(nonBlack>=${minNonBlackRatio.toStringAsFixed(4)}, avgLuma>=${minAvgLuma.toStringAsFixed(2)}), '
-            'got nonBlack=${actual.nonBlackRatio.toStringAsFixed(4)}, '
-            'avgLuma=${actual.avgLuma.toStringAsFixed(2)}, hash=${actual.hash}',
-          );
-        }
-      case AssertAnalysisProcessCount(:final count):
-        final actual = WindowManager.analysisProcessCount;
-        if (actual != count) {
-          throw AssertionError(
-            'Expected analysis process count $count, got $actual; '
-            'exits=${WindowManager.analysisExitCodes}',
-          );
-        }
-      case AssertTrackBufferCountBelow(:final maxCount):
-        final diagnostics = await controller.getDiagnostics();
-        final tracks = diagnostics['tracks'] as List<dynamic>? ?? const [];
-        for (final rawTrack in tracks) {
-          final track = rawTrack as Map<dynamic, dynamic>;
-          final bufferCount = track['bufferCount'] as int? ?? 0;
-          final slot = track['slot'] as int? ?? -1;
-          if (bufferCount > maxCount) {
-            throw AssertionError(
-              'Expected track[$slot] bufferCount <= $maxCount, got $bufferCount',
-            );
-          }
-        }
-      case AssertResourceUsageBelow(:final maxRssMb, :final maxDedicatedGpuMb):
-        final actual = await _currentResourceUsageMetric();
-        _assertResourceMetricAvailable(actual, maxDedicatedGpuMb);
-        final rssMb = _bytesToMb(actual.rssBytes);
-        final gpuMb = _bytesToMb(actual.dedicatedGpuBytes);
-        if (rssMb > maxRssMb || gpuMb > maxDedicatedGpuMb) {
-          throw AssertionError(
-            'Expected resource usage <= rss=${maxRssMb.toStringAsFixed(1)}MB, '
-            'dedicatedGpu=${maxDedicatedGpuMb.toStringAsFixed(1)}MB; '
-            'got rss=${rssMb.toStringAsFixed(1)}MB, '
-            'dedicatedGpu=${gpuMb.toStringAsFixed(1)}MB',
-          );
-        }
-      case AssertResourceUsageDeltaBelow(
-        :final baseline,
-        :final maxRssDeltaMb,
-        :final maxDedicatedGpuDeltaMb,
-      ):
-        final expected = _resourceBaselines[baseline];
-        if (expected == null) {
-          throw AssertionError(
-            'Missing baseline for ASSERT_RESOURCE_USAGE_DELTA_BELOW: $baseline',
-          );
-        }
-        final actual = await _currentResourceUsageMetric();
-        _assertResourceMetricAvailable(actual, maxDedicatedGpuDeltaMb);
-        final rssDeltaMb = _bytesToMb(actual.rssBytes - expected.rssBytes);
-        final gpuDeltaMb = _bytesToMb(
-          actual.dedicatedGpuBytes - expected.dedicatedGpuBytes,
-        );
-        if (rssDeltaMb > maxRssDeltaMb || gpuDeltaMb > maxDedicatedGpuDeltaMb) {
-          throw AssertionError(
-            'Expected resource delta from $baseline <= '
-            'rss=${maxRssDeltaMb.toStringAsFixed(1)}MB, '
-            'dedicatedGpu=${maxDedicatedGpuDeltaMb.toStringAsFixed(1)}MB; '
-            'got rss=${rssDeltaMb.toStringAsFixed(1)}MB, '
-            'dedicatedGpu=${gpuDeltaMb.toStringAsFixed(1)}MB',
-          );
-        }
-      case AssertNativeSeekCountDelta(:final baseline, :final expectedDelta):
-        final expected = _nativeSeekCountBaselines[baseline];
-        if (expected == null) {
-          throw AssertionError(
-            'Missing baseline for ASSERT_NATIVE_SEEK_COUNT_DELTA: $baseline',
-          );
-        }
-        final actual = _currentNativeSeekCount();
-        final delta = actual - expected;
-        if (delta != expectedDelta) {
-          throw AssertionError(
-            'Expected native seek count delta from $baseline to be '
-            '$expectedDelta, got $delta (baseline=$expected, actual=$actual)',
-          );
-        }
     }
   }
 
@@ -512,129 +263,6 @@ class TestRunner {
     throw AssertionError(
       'WAIT_${state.name.toUpperCase()} timed out after ${timeout.inMilliseconds}ms',
     );
-  }
-
-  Future<_ViewCenterMetric> _currentViewCenterMetric() async {
-    final layout = await controller.getLayout();
-    final tracks = await controller.getTracks();
-    final capture = await controller.captureViewport();
-    final display = _displayPixelSizeForLayout(
-      width: capture.width,
-      height: capture.height,
-      layout: layout,
-      tracks: tracks,
-    );
-    final x = display.width.abs() > 1e-4
-        ? layout.viewOffsetX / display.width
-        : 0.0;
-    final y = display.height.abs() > 1e-4
-        ? layout.viewOffsetY / display.height
-        : 0.0;
-    return _ViewCenterMetric(x, y);
-  }
-
-  Future<_ResourceUsageMetric> _currentResourceUsageMetric() async {
-    final diagnostics = await controller.getDiagnostics();
-    final rssBytes =
-        diagnostics['processRssBytes'] as int? ?? ProcessInfo.currentRss;
-    final dedicatedGpuBytes =
-        diagnostics['dedicatedGpuUsageBytes'] as int? ?? 0;
-    return _ResourceUsageMetric(
-      rssBytes: rssBytes,
-      dedicatedGpuBytes: dedicatedGpuBytes,
-    );
-  }
-
-  int _currentNativeSeekCount() {
-    final file = File(
-      '${logConfig.logsDir}${Platform.pathSeparator}${logConfig.nativeLogFileName}',
-    );
-    if (!file.existsSync()) {
-      throw StateError('Native log file not found: ${file.path}');
-    }
-    final text = file.readAsStringSync();
-    return RegExp(
-      RegExp.escape('[VideoRendererPlugin] seek:'),
-    ).allMatches(text).length;
-  }
-
-  void _assertResourceMetricAvailable(
-    _ResourceUsageMetric metric,
-    double gpuThresholdMb,
-  ) {
-    if (gpuThresholdMb >= 0 && metric.dedicatedGpuBytes <= 0) {
-      throw AssertionError('Dedicated GPU memory metric is unavailable');
-    }
-  }
-
-  static double _bytesToMb(int bytes) => bytes / 1024.0 / 1024.0;
-
-  static String _formatMb(int bytes) => _bytesToMb(bytes).toStringAsFixed(1);
-
-  ({double width, double height}) _displayPixelSizeForLayout({
-    required int width,
-    required int height,
-    required LayoutState layout,
-    required List<TrackInfo> tracks,
-  }) {
-    if (width <= 0 || height <= 0 || tracks.isEmpty) {
-      return (width: width.toDouble(), height: height.toDouble());
-    }
-
-    TrackInfo? track;
-    for (final fileId in layout.order) {
-      for (final candidate in tracks) {
-        if (candidate.fileId == fileId) {
-          track = candidate;
-          break;
-        }
-      }
-      if (track != null) break;
-    }
-    track ??= tracks.first;
-
-    var slotW = width.toDouble();
-    final slotH = height.toDouble();
-    if (layout.mode != LayoutMode.splitScreen && tracks.length > 1) {
-      slotW /= tracks.length;
-    }
-    final slotAspect = slotH > 0 ? slotW / slotH : 1.0;
-
-    var refTrack = tracks.first;
-    var maxPixels = 0;
-    for (final candidate in tracks) {
-      final pixels = candidate.width * candidate.height;
-      if (pixels > maxPixels) {
-        maxPixels = pixels;
-        refTrack = candidate;
-      }
-    }
-
-    final refW = refTrack.width.toDouble();
-    final refH = refTrack.height.toDouble();
-    final refDensity = refW > 0 && refH > 0
-        ? math.min(slotW / refW, slotH / refH)
-        : 1.0;
-
-    final trackW = track.width.toDouble();
-    final trackH = track.height.toDouble();
-    final trackDensity = trackW > 0 && trackH > 0
-        ? math.min(slotW / trackW, slotH / trackH)
-        : 1.0;
-    final trackScale = trackDensity > 0 ? refDensity / trackDensity : 1.0;
-
-    var videoAspect = trackH > 0 ? trackW / trackH : slotAspect;
-    if (videoAspect <= 0) videoAspect = slotAspect;
-
-    var fitScale = videoAspect > slotAspect ? slotAspect / videoAspect : 1.0;
-    fitScale *= trackScale;
-    final displayScale = fitScale * layout.zoomRatio;
-    final dsX = slotAspect > 0
-        ? videoAspect * displayScale / slotAspect
-        : displayScale;
-    final dsY = displayScale;
-
-    return (width: dsX * slotW, height: dsY * slotH);
   }
 }
 

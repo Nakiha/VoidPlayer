@@ -19,6 +19,7 @@ import 'main_window_actions.dart';
 import 'main_window_analysis.dart';
 import 'main_window_layout.dart';
 import 'main_window_media.dart';
+import 'main_window_media_lifecycle.dart';
 import 'main_window_platform.dart';
 import 'main_window_playback.dart';
 import 'main_window_state.dart';
@@ -60,6 +61,7 @@ class MainWindowController {
   late final MainWindowAnalysisCoordinator analysisCoordinator;
   late final MainWindowTestHarness testHarness;
   late final MainWindowLayoutCoordinator layoutCoordinator;
+  late final MainWindowMediaLifecycle mediaLifecycle;
   late final MainWindowMediaCoordinator mediaCoordinator;
   late final MainWindowPlaybackCoordinator playbackCoordinator;
   late final MainWindowActionCoordinator actionCoordinator;
@@ -378,18 +380,20 @@ class MainWindowController {
       mounted: mounted,
       timelineMetrics: timelineMetrics,
     );
+    mediaLifecycle = MainWindowMediaLifecycle(
+      stateStore: stateStore,
+      trackManager: trackManager,
+      playbackCoordinator: playbackCoordinator,
+      requestFullScreen: _requestFullScreen,
+    );
     mediaCoordinator = MainWindowMediaCoordinator(
       controller: player,
       trackManager: trackManager,
       layoutCoordinator: layoutCoordinator,
       stateStore: stateStore,
       timelineMetrics: timelineMetrics,
+      lifecycle: mediaLifecycle,
       mounted: mounted,
-      applyStartupLoopRangeIfReady:
-          playbackCoordinator.applyStartupLoopRangeIfReady,
-      cancelLoopBoundaryTimer: playbackCoordinator.cancelLoopBoundaryTimer,
-      resetAfterLastTrackRemoved: _resetAfterLastTrackRemoved,
-      seekTo: playbackCoordinator.seekTo,
     );
     testHarness = MainWindowTestHarness(
       viewportKey: viewportKey,
@@ -439,18 +443,6 @@ class MainWindowController {
       'publish analysis track snapshot',
       analysisCoordinator.publishTrackSnapshot(),
     );
-  }
-
-  void _resetAfterLastTrackRemoved() {
-    if (_fullScreen) {
-      _requestFullScreen(
-        false,
-        reason: 'exit full screen after last track removed',
-      );
-    }
-    trackManager.clear();
-    stateStore.resetAfterLastTrackRemoved();
-    playbackCoordinator.invalidateLoopRangeSync();
   }
 
   MainWindowStateModel get _state => stateStore.value;

@@ -9,6 +9,7 @@ import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
 import '../native_file_picker.dart';
 import 'main_window_layout.dart';
+import 'main_window_media_lifecycle.dart';
 import 'main_window_state.dart';
 import 'main_window_timeline_metrics.dart';
 
@@ -18,11 +19,8 @@ class MainWindowMediaCoordinator {
   final MainWindowLayoutCoordinator layoutCoordinator;
   final MainWindowStateStore stateStore;
   final MainWindowTimelineMetrics timelineMetrics;
+  final MainWindowMediaLifecycle lifecycle;
   final bool Function() mounted;
-  final VoidCallback applyStartupLoopRangeIfReady;
-  final VoidCallback cancelLoopBoundaryTimer;
-  final VoidCallback resetAfterLastTrackRemoved;
-  final void Function(int ptsUs) seekTo;
   Future<void>? _loadInFlight;
   bool _disposed = false;
 
@@ -32,11 +30,8 @@ class MainWindowMediaCoordinator {
     required this.layoutCoordinator,
     required this.stateStore,
     required this.timelineMetrics,
+    required this.lifecycle,
     required this.mounted,
-    required this.applyStartupLoopRangeIfReady,
-    required this.cancelLoopBoundaryTimer,
-    required this.resetAfterLastTrackRemoved,
-    required this.seekTo,
   });
 
   void dispose() {
@@ -103,7 +98,7 @@ class MainWindowMediaCoordinator {
         final nativeLayout = await controller.getLayout();
         if (!_alive) return;
         setLayout(nativeLayout);
-        applyStartupLoopRangeIfReady();
+        lifecycle.applyStartupLoopRangeIfReady();
         await WidgetsBinding.instance.endOfFrame;
         if (!_alive) return;
         if (layoutCoordinator.viewportWidth > 0 &&
@@ -134,7 +129,7 @@ class MainWindowMediaCoordinator {
           );
           if (!_alive) return;
           trackManager.addTrack(track);
-          applyStartupLoopRangeIfReady();
+          lifecycle.applyStartupLoopRangeIfReady();
         } catch (e) {
           log.severe("addTrack failed: $e");
         }
@@ -169,8 +164,8 @@ class MainWindowMediaCoordinator {
       if (tracks.isEmpty) {
         await controller.destroyPlayerOnly();
         if (!_alive) return;
-        cancelLoopBoundaryTimer();
-        resetAfterLastTrackRemoved();
+        lifecycle.preparePlayerDestroyAfterLastTrackRemoved();
+        lifecycle.resetAfterLastTrackRemoved();
       } else {
         final previousTrackCount = trackManager.count;
         await layoutCoordinator.preemptTimelineTrackCountChange(
@@ -238,7 +233,7 @@ class MainWindowMediaCoordinator {
     final clampedTargetUs = targetUs
         .clamp(0, timelineMetrics.effectiveDurationUs)
         .toInt();
-    seekTo(clampedTargetUs);
+    lifecycle.seekTo(clampedTargetUs);
   }
 
   void removeSyncOffset(int fileId) {

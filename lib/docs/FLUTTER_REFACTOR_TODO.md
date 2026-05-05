@@ -84,8 +84,8 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 ## P0
 
-- [ ] Move UI test runner/script parsing/media generation out of the production app graph behind a thin automation bridge.
-  Slices done: non-user automation commands no longer live in `PlayerAction`; script model/parser, assertion executor, probes, run-state, video generation, process access, process exit, window automation, and automation-only config writes now sit behind the automation module/bridge/runtime instead of the action system.
+- [x] ~~Keep release UI automation behind explicit automation bridge/runtime boundaries.~~
+  Done: non-user automation commands no longer live in `PlayerAction`; script model/parser, assertion executor, probes, run-state, video generation, process access, process exit, window automation, and automation-only config writes now sit behind the automation module/bridge/runtime instead of the action system.
 - [x] ~~Add a platform service boundary so widgets do not import Win32 FFI directly.~~
 - [ ] Reduce global singleton/static state, starting with injected window/process services.
   First slice done: `WindowManager` delegates analysis process state to an `AnalysisProcessManager` instance; main-window analysis and release UI automation use that instance through injection/bridge.
@@ -94,8 +94,8 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 ## P1
 
 - [ ] Simplify main-window coordinator dependencies by grouping state and side effects behind explicit services/stores.
-- [ ] Extract a typed `NativePlayerApi` interface with DTOs and centralized MethodChannel names/payload keys.
-  First slices done: MethodChannel name/methods/keys and DTO parsing live in `native_player_protocol.dart`; concrete channel transport lives in `MethodChannelNativePlayerApi`; `NativePlayerController` owns lifecycle/no-op semantics over the typed API.
+- [x] ~~Extract a typed `NativePlayerApi` interface with DTOs and centralized MethodChannel names/payload keys.~~
+  Done: MethodChannel name/methods/keys and DTO parsing live in `native_player_protocol.dart`; concrete channel transport lives in `MethodChannelNativePlayerApi`; `NativePlayerController` owns lifecycle/no-op semantics over the typed API.
 - [x] ~~Move config/cache/log default paths to user-writable app data directories and make writes atomic.~~
   Done: paths now resolve through AppData by default, with exe-local `cache/` acting as a portable-mode marker; config/index writes are guarded by companion lock files and Windows atomic replacement.
 - [x] ~~Make analysis FFI symbol lookup lazy and add a native ABI/version check.~~

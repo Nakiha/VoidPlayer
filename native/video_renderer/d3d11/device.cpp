@@ -177,7 +177,7 @@ bool D3D11Device::initialize(void* hwnd, int width, int height) {
     sc_desc.Windowed = TRUE;
     sc_desc.SampleDesc.Count = 1;
     sc_desc.SampleDesc.Quality = 0;
-    sc_desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    sc_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 
     hr = factory->CreateSwapChain(device_.Get(), &sc_desc, swap_chain_.GetAddressOf());
     factory->Release();

@@ -43,8 +43,8 @@ backend behind explicit platform boundaries before adding a macOS backend.
     RecreateTextures -> ReprimeDecode`.
   - Until recovery exists, surface device lost as a terminal renderer error.
 
-- [ ] Modernize or retire the windowed swap-chain path.
-  - It currently uses `DXGI_SWAP_EFFECT_DISCARD`.
+- [x] Modernize or retire the windowed swap-chain path.
+  - Windowed mode now uses `DXGI_SWAP_EFFECT_FLIP_DISCARD`.
   - Either update to a flip-model swap chain or clearly mark windowed mode as a
     dev/demo path separate from Flutter headless rendering.
 

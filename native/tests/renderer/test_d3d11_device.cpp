@@ -25,6 +25,11 @@ TEST_CASE("D3D11Device swap chain is created", "[d3d11][device]") {
     REQUIRE(dev.initialize(hwnd, 800, 600) == true);
     REQUIRE(dev.swap_chain() != nullptr);
 
+    DXGI_SWAP_CHAIN_DESC desc = {};
+    REQUIRE(SUCCEEDED(dev.swap_chain()->GetDesc(&desc)));
+    REQUIRE(desc.BufferCount == 2);
+    REQUIRE(desc.SwapEffect == DXGI_SWAP_EFFECT_FLIP_DISCARD);
+
     destroy_window(hwnd);
 }
 

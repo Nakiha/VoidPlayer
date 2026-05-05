@@ -1,12 +1,13 @@
 import 'package:flutter/foundation.dart';
 
 import '../../video_renderer_controller.dart';
+import '../../viewport/viewport_display_state.dart';
 
 const Object _mainWindowStateUnset = Object();
 
 class MainWindowStateModel {
   final int? textureId;
-  final int viewportState;
+  final ViewportDisplayState viewportState;
   final bool isPlaying;
   final double playbackSpeed;
   final int currentPtsUs;
@@ -30,7 +31,7 @@ class MainWindowStateModel {
 
   const MainWindowStateModel({
     this.textureId,
-    this.viewportState = 1,
+    this.viewportState = const ViewportDisplayState.empty(),
     this.isPlaying = false,
     this.playbackSpeed = 1.0,
     this.currentPtsUs = 0,
@@ -55,7 +56,7 @@ class MainWindowStateModel {
 
   MainWindowStateModel copyWith({
     Object? textureId = _mainWindowStateUnset,
-    int? viewportState,
+    ViewportDisplayState? viewportState,
     bool? isPlaying,
     double? playbackSpeed,
     int? currentPtsUs,
@@ -134,7 +135,7 @@ class MainWindowStateStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setViewportState(int state) {
+  void setViewportState(ViewportDisplayState state) {
     if (_value.viewportState == state) return;
     _set(_value.copyWith(viewportState: state));
   }
@@ -158,7 +159,7 @@ class MainWindowStateStore extends ChangeNotifier {
     _set(
       _value.copyWith(
         textureId: null,
-        viewportState: 1,
+        viewportState: const ViewportDisplayState.empty(),
         isPlaying: false,
         currentPtsUs: 0,
         durationUs: 0,

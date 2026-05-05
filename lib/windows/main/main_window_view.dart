@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../track_manager.dart';
 import '../../video_renderer_controller.dart';
+import '../../viewport/viewport_display_state.dart';
 import '../../widgets/controls_bar.dart';
 import '../../widgets/loop_range_bar.dart';
 import '../../widgets/media_header.dart';
@@ -22,7 +23,7 @@ class MainWindowViewModel {
   final bool viewModeEnabled;
   final bool analysisEnabled;
   final int? textureId;
-  final int viewportState;
+  final ViewportDisplayState viewportState;
   final LayoutState layout;
   final List<TrackEntry> tracks;
   final GlobalKey viewportKey;
@@ -192,6 +193,7 @@ class MainWindowView extends StatelessWidget {
                     key: model.viewportKey,
                     textureId: model.textureId,
                     viewportState: model.viewportState,
+                    errorText: model.viewportState.errorText,
                     layout: model.layout,
                     onPan: actions.onPan,
                     onSplit: actions.onSplit,

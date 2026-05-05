@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/video_renderer_controller.dart';
+import 'package:void_player/viewport/viewport_display_state.dart';
 import 'package:void_player/windows/main/main_window_state.dart';
 
 void main() {
@@ -41,5 +42,19 @@ void main() {
     expect(store.value.nativeLoopRangeSynced, isFalse);
     expect(store.value.loopStartUs, 0);
     expect(store.value.loopEndUs, 0);
+  });
+
+  test('MainWindowStateStore keeps typed viewport errors', () {
+    final store = MainWindowStateStore();
+    addTearDown(store.dispose);
+
+    store.setViewportState(const ViewportDisplayState.error('no decoder'));
+
+    expect(store.value.viewportState.status, ViewportDisplayStatus.error);
+    expect(store.value.viewportState.errorText, 'no decoder');
+
+    store.resetAfterLastTrackRemoved();
+
+    expect(store.value.viewportState, const ViewportDisplayState.empty());
   });
 }

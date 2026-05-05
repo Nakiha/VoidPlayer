@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/platform/pointer_button_state_provider.dart';
 import 'package:void_player/video_renderer_controller.dart';
+import 'package:void_player/viewport/viewport_display_state.dart';
 import 'package:void_player/widgets/viewport_panel.dart';
 
 class _FakePointerButtonStateProvider implements PointerButtonStateProvider {
@@ -36,7 +37,7 @@ void main() {
             height: 160,
             child: ViewportPanel(
               textureId: 1,
-              viewportState: 2,
+              viewportState: const ViewportDisplayState.active(),
               layout: const LayoutState(),
               onPan: pans.add,
               onSplit: (_) {},

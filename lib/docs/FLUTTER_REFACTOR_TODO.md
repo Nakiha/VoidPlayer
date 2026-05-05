@@ -24,12 +24,16 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Add analysis IPC handshake timeout and bounded JSON line parsing.~~
 
+## Round 6
+
+- [x] ~~Replace viewport magic ints with typed display state and render error text.~~
+
 ## P0
 
 - [ ] Move UI test runner/script parsing/media generation out of the production app graph behind a thin automation bridge.
 - [x] ~~Add a platform service boundary so widgets do not import Win32 FFI directly.~~
 - [ ] Reduce global singleton/static state, starting with injected window/process services.
-- [ ] Replace viewport magic ints with a typed viewport state model that can carry user-visible errors.
+- [x] ~~Replace viewport magic ints with a typed viewport state model that can carry user-visible errors.~~
 
 ## P1
 

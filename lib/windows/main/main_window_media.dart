@@ -6,6 +6,7 @@ import '../../app_log.dart';
 import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
+import '../../viewport/viewport_display_state.dart';
 import 'main_window_layout.dart';
 import '../native_file_picker.dart';
 
@@ -15,7 +16,7 @@ class MainWindowMediaCoordinator {
   final MainWindowLayoutCoordinator layoutCoordinator;
   final bool Function() mounted;
   final int? Function() textureId;
-  final void Function(int state) setViewportState;
+  final void Function(ViewportDisplayState state) setViewportState;
   final void Function(int textureId) setTextureId;
   final void Function(LayoutState layout) setLayout;
   final Map<int, int> Function() syncOffsets;
@@ -81,7 +82,7 @@ class MainWindowMediaCoordinator {
     if (!_alive) return;
 
     if (textureId() == null) {
-      setViewportState(0);
+      setViewportState(const ViewportDisplayState.loading());
       try {
         final initialWidth = layoutCoordinator.viewportWidth > 0
             ? layoutCoordinator.viewportWidth
@@ -111,10 +112,12 @@ class MainWindowMediaCoordinator {
           );
         }
         if (!_alive) return;
-        setViewportState(2);
+        setViewportState(const ViewportDisplayState.active());
       } catch (e) {
         log.severe("createPlayer failed: $e");
-        if (_alive) setViewportState(1);
+        if (_alive) {
+          setViewportState(ViewportDisplayState.error('Failed to load: $e'));
+        }
       }
     } else {
       for (final path in paths) {

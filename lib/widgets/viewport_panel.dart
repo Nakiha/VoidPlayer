@@ -6,12 +6,11 @@ import '../l10n/app_localizations.dart';
 import '../platform/pointer_button_state_provider.dart';
 import '../utils/pointer_gesture_utils.dart';
 import '../video_renderer_controller.dart';
+import '../viewport/viewport_display_state.dart';
 
-/// Three-state viewport matching PySide6 ViewportPanel.
-/// States: 0=loading, 1=empty, 2=active(Texture with mouse interaction).
 class ViewportPanel extends StatefulWidget {
   final int? textureId;
-  final int viewportState; // 0=loading, 1=empty, 2=active
+  final ViewportDisplayState viewportState;
   final String? errorText;
   final LayoutState layout;
 
@@ -177,7 +176,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           logicalHeight: constraints.maxHeight,
         );
         return IndexedStack(
-          index: widget.viewportState,
+          index: widget.viewportState.stackIndex,
           sizing: StackFit.expand,
           children: [
             // State 0: Loading
@@ -225,6 +224,30 @@ class _ViewportPanelState extends State<ViewportPanel> {
             ),
             // State 2: Active (Texture + mouse listener)
             _buildActiveViewport(context),
+            // State 3: Error
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 56,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      widget.errorText ?? 'Failed to load media',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         );
       },

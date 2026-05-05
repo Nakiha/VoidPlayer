@@ -9,6 +9,7 @@ import '../../startup_options.dart';
 import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
+import '../../viewport/viewport_display_state.dart';
 import '../../widgets/loop_range_bar.dart';
 import '../win32ffi.dart';
 import 'main_window_actions.dart';
@@ -454,7 +455,7 @@ class MainWindowController {
   }
 
   int? get _textureId => _state.textureId;
-  int get _viewportState => _state.viewportState;
+  ViewportDisplayState get _viewportState => _state.viewportState;
   bool get _isPlaying => _state.isPlaying;
   double get _playbackSpeed => _state.playbackSpeed;
   int get _currentPtsUs => _state.currentPtsUs;

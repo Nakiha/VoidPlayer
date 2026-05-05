@@ -1,19 +1,24 @@
 import 'dart:async';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../analysis/analysis_cache.dart';
 import '../../l10n/app_localizations.dart';
+import '../../platform/path_launcher.dart';
 import '../../theme/app_appearance.dart';
+import '../windows_path_launcher.dart';
 import 'settings_page_style.dart';
 
 const _cacheListTrailingPadding = 12.0;
 const _cacheListScrollbarThickness = 6.0;
 
 class CacheSettingsPage extends StatefulWidget {
-  const CacheSettingsPage({super.key});
+  final PathLauncher pathLauncher;
+
+  const CacheSettingsPage({
+    super.key,
+    this.pathLauncher = const WindowsPathLauncher(),
+  });
 
   @override
   State<CacheSettingsPage> createState() => _CacheSettingsPageState();
@@ -75,7 +80,11 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
             ),
           ),
           const SizedBox(height: 4),
-          if (snapshot != null) _CachePathRow(path: snapshot.path),
+          if (snapshot != null)
+            _CachePathRow(
+              path: snapshot.path,
+              pathLauncher: widget.pathLauncher,
+            ),
           SettingsPageStyle.contentGap,
           _LimitEditor(
             controller: _limitController,
@@ -309,8 +318,9 @@ class _DigitsOnlyTextInputFormatter extends TextInputFormatter {
 
 class _CachePathRow extends StatelessWidget {
   final String path;
+  final PathLauncher pathLauncher;
 
-  const _CachePathRow({required this.path});
+  const _CachePathRow({required this.path, required this.pathLauncher});
 
   @override
   Widget build(BuildContext context) {
@@ -338,16 +348,11 @@ class _CachePathRow extends StatelessWidget {
           icon: Icons.folder_open,
           tooltip: l.openCachePath,
           onPressed: () {
-            unawaited(_openPath(path));
+            unawaited(pathLauncher.openFolder(path));
           },
         ),
       ],
     );
-  }
-
-  Future<void> _openPath(String path) async {
-    await Directory(path).create(recursive: true);
-    await Process.start('explorer.exe', [path]);
   }
 }
 

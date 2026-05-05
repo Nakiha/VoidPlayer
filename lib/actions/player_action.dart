@@ -30,7 +30,6 @@ sealed class PlayerAction {
     ToggleLayoutMode(),
     ToggleFullScreen(),
     ExitFullScreen(),
-    NewWindow(),
   ];
 
   /// All real keyboard shortcuts for display in the settings UI.
@@ -161,11 +160,6 @@ class ExitFullScreen extends PlayerAction {
         false,
         'actionExitFullScreen',
       );
-}
-
-class NewWindow extends PlayerAction {
-  const NewWindow()
-    : super('NEW_WINDOW', LogicalKeyboardKey.keyN, false, false, 'newWindow');
 }
 
 class OpenSettings extends PlayerAction {

@@ -105,7 +105,6 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `SET_ZOOM` | — | 设置缩放比例 |
 | `SET_SPLIT_POS` | — | 设置分屏位置（0.0–1.0） |
 | `PAN` | — | 视口平移 |
-| `NEW_WINDOW` | N | 打开主窗口内性能浮层（兼容旧入口） |
 | `OPEN_SETTINGS` | — | 打开主窗口设置对话框 |
 | `OPEN_STATS` | — | 打开主窗口性能浮层 |
 | `OPEN_MEMORY` | — | 打开主窗口性能浮层 |

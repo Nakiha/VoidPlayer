@@ -18,7 +18,6 @@ String resolveActionLabel(String labelKey, AppLocalizations l) {
     'actionSeekBackward' => l.actionSeekBackward,
     'actionToggleFullScreen' => l.actionToggleFullScreen,
     'actionExitFullScreen' => l.actionExitFullScreen,
-    'newWindow' => l.newWindow,
     _ => labelKey,
   };
 }

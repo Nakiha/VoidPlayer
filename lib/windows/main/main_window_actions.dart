@@ -22,7 +22,6 @@ class MainWindowActionCoordinator {
   final void Function() showSettingsDialog;
   final void Function() toggleFullScreen;
   final void Function() exitFullScreen;
-  final void Function() openNewWindow;
 
   MainWindowActionBinder? _binder;
 
@@ -39,7 +38,6 @@ class MainWindowActionCoordinator {
     required this.showSettingsDialog,
     required this.toggleFullScreen,
     required this.exitFullScreen,
-    required this.openNewWindow,
   });
 
   void bind() {
@@ -81,7 +79,6 @@ class MainWindowActionCoordinator {
       panByDelta: layoutCoordinator.panByDelta,
       toggleFullScreen: toggleFullScreen,
       exitFullScreen: exitFullScreen,
-      openNewWindow: openNewWindow,
       openSettings: showSettingsDialog,
       openStats: showProfilerOverlay,
       openMemory: showProfilerOverlay,
@@ -130,7 +127,6 @@ class MainWindowActionBinder {
   final void Function() toggleFullScreen;
   final void Function() exitFullScreen;
 
-  final void Function() openNewWindow;
   final void Function() openSettings;
   final void Function() openStats;
   final void Function() openMemory;
@@ -164,7 +160,6 @@ class MainWindowActionBinder {
     required this.panByDelta,
     required this.toggleFullScreen,
     required this.exitFullScreen,
-    required this.openNewWindow,
     required this.openSettings,
     required this.openStats,
     required this.openMemory,
@@ -246,7 +241,6 @@ class MainWindowActionBinder {
     _bind(const ToggleFullScreen(), (_) => toggleFullScreen());
     _bind(const ExitFullScreen(), (_) => exitFullScreen());
 
-    _bind(const NewWindow(), (_) => openNewWindow());
     _bind(const OpenSettings(), (_) => openSettings());
     _bind(const OpenStats(), (_) => openStats());
     _bind(const OpenMemory(), (_) => openMemory());

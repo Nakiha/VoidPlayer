@@ -7,9 +7,6 @@
   "addMedia": "Add Media",
   "@addMedia": { "description": "Add media button label" },
 
-  "newWindow": "New Window",
-  "@newWindow": { "description": "New window button label" },
-
   "settings": "Settings",
   "@settings": { "description": "Settings tooltip/nav label" },
 

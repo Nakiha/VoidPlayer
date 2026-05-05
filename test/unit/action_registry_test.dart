@@ -23,12 +23,11 @@ void main() {
         'TOGGLE_LAYOUT_MODE',
         'TOGGLE_FULL_SCREEN',
         'EXIT_FULL_SCREEN',
-        'NEW_WINDOW',
       ]),
     );
     expect(
       entries.map((entry) => entry.shortcutLabel),
-      orderedEquals(['Space', '→', '←', 'O', 'M', 'F11', 'Esc', 'N']),
+      orderedEquals(['Space', '→', '←', 'O', 'M', 'F11', 'Esc']),
     );
     expect(
       entries.map((entry) => entry.labelKey),

@@ -22,7 +22,6 @@ class AppMetadata {
     AppDependencyMetadata('window_manager', 'MIT'),
     AppDependencyMetadata('screen_retriever', 'MIT'),
     AppDependencyMetadata('desktop_drop', 'Apache-2.0'),
-    AppDependencyMetadata('cupertino_icons', 'MIT'),
     AppDependencyMetadata(
       'Dart packages: crypto, ffi, intl, logging, path',
       'BSD-3-Clause',

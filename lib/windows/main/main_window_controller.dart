@@ -438,7 +438,6 @@ class MainWindowController {
       showSettingsDialog: () => stateStore.setSettingsVisible(true),
       toggleFullScreen: _toggleFullScreen,
       exitFullScreen: _exitFullScreen,
-      openNewWindow: () => stateStore.setProfilerVisible(true),
     );
   }
 

@@ -162,5 +162,6 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `lib/actions/action_registry.dart` | ActionRegistry + ActionFocus |
 | `lib/automation/ui_automation_bridge.dart` | 主窗口暴露给 release UI automation 的显式桥 |
 | `lib/automation/test_runner.dart` | 脚本解析 + TestRunner |
+| `lib/automation/test_video_generator.dart` | `GENERATE_TEST_VIDEO` 的 ffmpeg 测试视频生成 |
 | `lib/windows/main/main_window_actions.dart` | 主窗口 Action 绑定表和 bind/unbind 生命周期 |
 | `lib/l10n/action_labels.dart` | `resolveActionLabel()` — labelKey → l10n 映射 |

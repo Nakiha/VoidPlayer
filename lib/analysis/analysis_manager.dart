@@ -5,10 +5,10 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../app_log.dart';
-import '../config/app_config.dart';
 import '../utils/file_lock.dart';
 import 'analysis_cache.dart';
 import 'analysis_ffi.dart';
+import 'analysis_generation_settings.dart';
 import 'file_hash.dart';
 import 'nalu_types.dart';
 
@@ -77,9 +77,14 @@ abstract class AnalysisGenerationService {
 /// progress / error / loaded states.
 class AnalysisManager extends ChangeNotifier
     implements AnalysisGenerationService {
-  AnalysisManager._();
+  AnalysisManager._({
+    AnalysisGenerationSettings settings =
+        const AppConfigAnalysisGenerationSettings(),
+  }) : _settings = settings;
+
   static final AnalysisManager instance = AnalysisManager._();
 
+  final AnalysisGenerationSettings _settings;
   AnalysisState _state = AnalysisState.idle;
   AnalysisError? _error;
   String? _generatingFileName;
@@ -214,9 +219,7 @@ class AnalysisManager extends ChangeNotifier
     }
     log.info('[Analysis] cache miss, will generate');
 
-    final maxCacheBytes = AppConfig.isInitialized
-        ? AppConfig.instance.analysisCacheMaxBytes
-        : 0;
+    final maxCacheBytes = _settings.maxCacheBytes;
     if (maxCacheBytes > 0) {
       final pruneResult = await AnalysisCache.enforceLimit(
         maxBytes: maxCacheBytes,
@@ -543,9 +546,7 @@ class AnalysisManager extends ChangeNotifier
   Future<bool> _generateAnalysisSerialized(String videoPath, String hash) {
     final previous = _generateQueue;
     final task = previous.catchError((_) {}).then((_) {
-      final maxCacheBytes = AppConfig.isInitialized
-          ? AppConfig.instance.analysisCacheMaxBytes
-          : 0;
+      final maxCacheBytes = _settings.maxCacheBytes;
       return AnalysisCache.withHashExclusiveLock(hash, () async {
         if (AnalysisCache.filesExist(hash)) return true;
         return Isolate.run(

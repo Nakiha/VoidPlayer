@@ -12,30 +12,107 @@ typedef AnalysisWindowRequest = ({String hash, String? fileName});
 const String _analysisWindowType = 'analysis';
 const (int, int) _analysisDefaultSize = (1000, 700);
 
-/// Manages external analysis processes and their lifecycle.
+/// Compatibility facade for window/process services.
+///
+/// New main-window code should prefer injecting [AnalysisProcessManager] instead
+/// of adding more static state here. The static API remains for bootstrap and
+/// release UI automation paths that have not been migrated yet.
 class WindowManager {
   WindowManager._();
 
-  /// Analysis processes spawned as separate processes (keyed by hash).
-  static final Map<String, Process> _analysisProcesses = {};
-  static final Map<String, int> _analysisExitCodes = {};
-  static String? analysisTestScriptPath;
-  static bool silentUiTest = false;
-  static int? analysisIpcPort;
-  static String? analysisIpcToken;
+  static final AnalysisProcessManager analysisProcesses =
+      AnalysisProcessManager();
+
+  static String? get analysisTestScriptPath =>
+      analysisProcesses.analysisTestScriptPath;
+
+  static set analysisTestScriptPath(String? value) {
+    analysisProcesses.analysisTestScriptPath = value;
+  }
+
+  static bool get silentUiTest => analysisProcesses.silentUiTest;
+
+  static set silentUiTest(bool value) {
+    analysisProcesses.silentUiTest = value;
+  }
+
+  static int? get analysisIpcPort => analysisProcesses.analysisIpcPort;
+
+  static set analysisIpcPort(int? value) {
+    analysisProcesses.analysisIpcPort = value;
+  }
+
+  static String? get analysisIpcToken => analysisProcesses.analysisIpcToken;
+
+  static set analysisIpcToken(String? value) {
+    analysisProcesses.analysisIpcToken = value;
+  }
+
+  static int get accentColorValue => analysisProcesses.accentColorValue;
+
+  static set accentColorValue(int value) {
+    analysisProcesses.accentColorValue = value;
+  }
+
+  static Future<void> showAnalysisWindow(
+    String hash, {
+    String? fileName,
+    void Function()? onExit,
+  }) => analysisProcesses.showAnalysisWindow(
+    hash,
+    fileName: fileName,
+    onExit: onExit,
+  );
+
+  static Future<void> showAnalysisWindows(
+    List<AnalysisWindowRequest> windows, {
+    void Function()? onExit,
+  }) => analysisProcesses.showAnalysisWindows(windows, onExit: onExit);
+
+  static int get analysisProcessCount => analysisProcesses.analysisProcessCount;
+
+  static Map<String, int> get analysisExitCodes =>
+      analysisProcesses.analysisExitCodes;
+
+  static bool activateAnalysisWindows() =>
+      analysisProcesses.activateAnalysisWindows();
+
+  static Future<bool> waitForAnalysisProcessCount(
+    int count,
+    Duration timeout,
+  ) => analysisProcesses.waitForAnalysisProcessCount(count, timeout);
+
+  static Future<void> closeAllAnalysisWindows() =>
+      analysisProcesses.closeAllAnalysisWindows();
+}
+
+/// Manages external analysis processes and their lifecycle.
+class AnalysisProcessManager {
+  final Map<String, Process> _analysisProcesses = {};
+  final Map<String, int> _analysisExitCodes = {};
+
+  String? analysisTestScriptPath;
+  bool silentUiTest = false;
+  int? analysisIpcPort;
+  String? analysisIpcToken;
 
   /// Accent color set by the main window, passed to analysis processes.
-  static int accentColorValue = 0xFF0078D4;
+  int accentColorValue = 0xFF0078D4;
+
+  int get analysisProcessCount => _analysisProcesses.length;
+
+  Map<String, int> get analysisExitCodes =>
+      Map.unmodifiable(_analysisExitCodes);
 
   /// Show an analysis window for a specific video hash.
-  static Future<void> showAnalysisWindow(
+  Future<void> showAnalysisWindow(
     String hash, {
     String? fileName,
     void Function()? onExit,
   }) => _spawnAnalysisProcess(hash, fileName: fileName, onExit: onExit);
 
   /// Show multiple analysis views from one user action, arranged as a batch.
-  static Future<void> showAnalysisWindows(
+  Future<void> showAnalysisWindows(
     List<AnalysisWindowRequest> windows, {
     void Function()? onExit,
   }) async {
@@ -53,21 +130,13 @@ class WindowManager {
     await _spawnAnalysisWorkspaceProcess(windows, onExit: onExit);
   }
 
-  static int get analysisProcessCount => _analysisProcesses.length;
-
-  static Map<String, int> get analysisExitCodes =>
-      Map.unmodifiable(_analysisExitCodes);
-
-  static bool activateAnalysisWindows() {
+  bool activateAnalysisWindows() {
     if (_analysisProcesses.isEmpty) return false;
     final key = _analysisProcessKey(_analysisProcesses.keys.first);
     return _activateAnalysisProcess(key);
   }
 
-  static Future<bool> waitForAnalysisProcessCount(
-    int count,
-    Duration timeout,
-  ) async {
+  Future<bool> waitForAnalysisProcessCount(int count, Duration timeout) async {
     final sw = Stopwatch()..start();
     while (sw.elapsed < timeout) {
       if (_analysisProcesses.length == count) return true;
@@ -77,7 +146,7 @@ class WindowManager {
   }
 
   /// Closes all analysis child processes before the main window exits.
-  static Future<void> closeAllAnalysisWindows() async {
+  Future<void> closeAllAnalysisWindows() async {
     for (final process in _analysisProcesses.values) {
       process.kill();
     }
@@ -87,7 +156,7 @@ class WindowManager {
     analysisIpcToken = null;
   }
 
-  static Future<void> _spawnAnalysisProcess(
+  Future<void> _spawnAnalysisProcess(
     String hash, {
     String? fileName,
     Rect? initialRect,
@@ -141,7 +210,7 @@ class WindowManager {
     });
   }
 
-  static Future<void> _spawnAnalysisWorkspaceProcess(
+  Future<void> _spawnAnalysisWorkspaceProcess(
     List<AnalysisWindowRequest> windows, {
     void Function()? onExit,
   }) async {
@@ -193,7 +262,7 @@ class WindowManager {
     });
   }
 
-  static void _attachProcessLogs(Process process, String tag) {
+  void _attachProcessLogs(Process process, String tag) {
     process.stdout
         .transform(utf8.decoder)
         .listen(
@@ -212,7 +281,7 @@ class WindowManager {
         );
   }
 
-  static bool _activateAnalysisProcess(String key) {
+  bool _activateAnalysisProcess(String key) {
     final process = _analysisProcesses[key];
     if (process == null) return false;
     final hwnds = Win32FFI.findWindowsByProcessId(
@@ -231,13 +300,13 @@ class WindowManager {
     return false;
   }
 
-  static String _analysisProcessKey(String fallback) =>
+  String _analysisProcessKey(String fallback) =>
       analysisIpcPort != null ? 'workspace:ipc' : fallback;
 
-  static Future<Rect> _computeAnalysisWindowRect() =>
+  Future<Rect> _computeAnalysisWindowRect() =>
       _computeWindowRect(_analysisWindowType);
 
-  static int _findMainWindowHwnd() {
+  int _findMainWindowHwnd() {
     final foregroundHwnd = Win32FFI.getForegroundWindow();
     if (Win32FFI.isCurrentProcessWindowOfClass(
       foregroundHwnd,
@@ -255,7 +324,7 @@ class WindowManager {
     return hwnds.isNotEmpty ? hwnds.first : 0;
   }
 
-  static Future<Rect> _computeWindowRect(String type) async {
+  Future<Rect> _computeWindowRect(String type) async {
     final (defaultW, defaultH) = switch (type) {
       _analysisWindowType => _analysisDefaultSize,
       _ => (800, 600),

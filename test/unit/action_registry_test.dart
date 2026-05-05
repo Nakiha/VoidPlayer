@@ -10,6 +10,32 @@ void main() {
     await initLogging(const []);
   });
 
+  test('shortcut display metadata is derived from real action definitions', () {
+    final entries = PlayerAction.shortcutEntries;
+
+    expect(
+      entries.map((entry) => entry.actionName),
+      orderedEquals([
+        'TOGGLE_PLAY_PAUSE',
+        'STEP_FORWARD',
+        'STEP_BACKWARD',
+        'OPEN_FILE',
+        'TOGGLE_LAYOUT_MODE',
+        'TOGGLE_FULL_SCREEN',
+        'EXIT_FULL_SCREEN',
+        'NEW_WINDOW',
+      ]),
+    );
+    expect(
+      entries.map((entry) => entry.shortcutLabel),
+      orderedEquals(['Space', '→', '←', 'O', 'M', 'F11', 'Esc', 'N']),
+    );
+    expect(
+      entries.map((entry) => entry.labelKey),
+      isNot(contains('actionSeekForward')),
+    );
+  });
+
   testWidgets('shortcuts work when an unfocused text field is in the subtree', (
     tester,
   ) async {

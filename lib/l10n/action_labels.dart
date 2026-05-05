@@ -1,6 +1,6 @@
 import 'app_localizations.dart';
 
-/// Resolves a [labelKey] (defined in `PlayerAction.shortcutEntries`) to its
+/// Resolves a [labelKey] (defined on displayable `PlayerAction`s) to its
 /// localized string using the generated [AppLocalizations].
 ///
 /// Flutter's generated l10n uses compile-time getters, so a manual mapping is
@@ -18,6 +18,7 @@ String resolveActionLabel(String labelKey, AppLocalizations l) {
     'actionSeekBackward' => l.actionSeekBackward,
     'actionToggleFullScreen' => l.actionToggleFullScreen,
     'actionExitFullScreen' => l.actionExitFullScreen,
+    'newWindow' => l.newWindow,
     _ => labelKey,
   };
 }

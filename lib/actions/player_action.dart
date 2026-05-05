@@ -1,12 +1,17 @@
 import 'package:flutter/services.dart';
 
 /// A shortcut entry for display in the settings UI.
-typedef ShortcutEntry = ({String labelKey, String shortcutLabel});
+typedef ShortcutEntry = ({
+  String actionName,
+  String labelKey,
+  String shortcutLabel,
+});
 
 /// User actions that can be triggered by shortcuts, buttons, or test scripts.
 sealed class PlayerAction {
   final String name;
   final LogicalKeyboardKey? shortcut;
+  final String? labelKey;
   final bool requireControl;
   final bool repeatable;
   const PlayerAction(
@@ -14,29 +19,59 @@ sealed class PlayerAction {
     this.shortcut,
     this.requireControl = false,
     this.repeatable = false,
+    this.labelKey,
   ]);
 
-  /// All keyboard shortcuts for display in the settings UI.
-  ///
-  /// When adding a new action with a shortcut, append an entry here so the
-  /// settings window picks it up automatically.  [labelKey] must match a key
-  /// defined in `app_*.arb`; [shortcutLabel] is the human-readable key label.
-  static const List<ShortcutEntry> shortcutEntries = [
-    (labelKey: 'actionTogglePlay', shortcutLabel: 'Space'),
-    (labelKey: 'actionStepForward', shortcutLabel: '→'),
-    (labelKey: 'actionStepBackward', shortcutLabel: '←'),
-    (labelKey: 'actionOpenFile', shortcutLabel: 'O'),
-    (labelKey: 'actionToggleLayout', shortcutLabel: 'M'),
-    (labelKey: 'actionSeekForward', shortcutLabel: 'Shift + →'),
-    (labelKey: 'actionSeekBackward', shortcutLabel: 'Shift + ←'),
-    (labelKey: 'actionToggleFullScreen', shortcutLabel: 'F11'),
-    (labelKey: 'actionExitFullScreen', shortcutLabel: 'Esc'),
+  static const List<PlayerAction> shortcutCatalog = [
+    TogglePlayPause(),
+    StepForward(),
+    StepBackward(),
+    OpenFile(),
+    ToggleLayoutMode(),
+    ToggleFullScreen(),
+    ExitFullScreen(),
+    NewWindow(),
   ];
+
+  /// All real keyboard shortcuts for display in the settings UI.
+  static List<ShortcutEntry> get shortcutEntries => [
+    for (final action in shortcutCatalog)
+      if (action.labelKey != null && action.shortcutLabel != null)
+        (
+          actionName: action.name,
+          labelKey: action.labelKey!,
+          shortcutLabel: action.shortcutLabel!,
+        ),
+  ];
+
+  String? get shortcutLabel {
+    final key = shortcut;
+    if (key == null) return null;
+    final keyLabel = _shortcutKeyLabel(key);
+    if (keyLabel == null) return null;
+    return requireControl ? 'Ctrl + $keyLabel' : keyLabel;
+  }
+
+  static String? _shortcutKeyLabel(LogicalKeyboardKey key) {
+    if (key == LogicalKeyboardKey.space) return 'Space';
+    if (key == LogicalKeyboardKey.arrowRight) return '→';
+    if (key == LogicalKeyboardKey.arrowLeft) return '←';
+    if (key == LogicalKeyboardKey.f11) return 'F11';
+    if (key == LogicalKeyboardKey.escape) return 'Esc';
+    final keyLabel = key.keyLabel;
+    return keyLabel.isEmpty ? key.debugName : keyLabel;
+  }
 }
 
 class TogglePlayPause extends PlayerAction {
   const TogglePlayPause()
-    : super('TOGGLE_PLAY_PAUSE', LogicalKeyboardKey.space);
+    : super(
+        'TOGGLE_PLAY_PAUSE',
+        LogicalKeyboardKey.space,
+        false,
+        false,
+        'actionTogglePlay',
+      );
 }
 
 class Play extends PlayerAction {
@@ -64,34 +99,73 @@ class SetSpeed extends PlayerAction {
 
 class StepForward extends PlayerAction {
   const StepForward()
-    : super('STEP_FORWARD', LogicalKeyboardKey.arrowRight, false, true);
+    : super(
+        'STEP_FORWARD',
+        LogicalKeyboardKey.arrowRight,
+        false,
+        true,
+        'actionStepForward',
+      );
 }
 
 class StepBackward extends PlayerAction {
   const StepBackward()
-    : super('STEP_BACKWARD', LogicalKeyboardKey.arrowLeft, false, true);
+    : super(
+        'STEP_BACKWARD',
+        LogicalKeyboardKey.arrowLeft,
+        false,
+        true,
+        'actionStepBackward',
+      );
 }
 
 class OpenFile extends PlayerAction {
-  const OpenFile() : super('OPEN_FILE', LogicalKeyboardKey.keyO);
+  const OpenFile()
+    : super(
+        'OPEN_FILE',
+        LogicalKeyboardKey.keyO,
+        false,
+        false,
+        'actionOpenFile',
+      );
 }
 
 class ToggleLayoutMode extends PlayerAction {
   const ToggleLayoutMode()
-    : super('TOGGLE_LAYOUT_MODE', LogicalKeyboardKey.keyM);
+    : super(
+        'TOGGLE_LAYOUT_MODE',
+        LogicalKeyboardKey.keyM,
+        false,
+        false,
+        'actionToggleLayout',
+      );
 }
 
 class ToggleFullScreen extends PlayerAction {
   const ToggleFullScreen()
-    : super('TOGGLE_FULL_SCREEN', LogicalKeyboardKey.f11);
+    : super(
+        'TOGGLE_FULL_SCREEN',
+        LogicalKeyboardKey.f11,
+        false,
+        false,
+        'actionToggleFullScreen',
+      );
 }
 
 class ExitFullScreen extends PlayerAction {
-  const ExitFullScreen() : super('EXIT_FULL_SCREEN', LogicalKeyboardKey.escape);
+  const ExitFullScreen()
+    : super(
+        'EXIT_FULL_SCREEN',
+        LogicalKeyboardKey.escape,
+        false,
+        false,
+        'actionExitFullScreen',
+      );
 }
 
 class NewWindow extends PlayerAction {
-  const NewWindow() : super('NEW_WINDOW', LogicalKeyboardKey.keyN);
+  const NewWindow()
+    : super('NEW_WINDOW', LogicalKeyboardKey.keyN, false, false, 'newWindow');
 }
 
 class OpenSettings extends PlayerAction {

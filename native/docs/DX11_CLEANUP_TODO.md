@@ -62,9 +62,10 @@ backend behind explicit platform boundaries before adding a macOS backend.
   - Hardware snapshot exact seek now reuses compatible D3D11 snapshot textures
     and returns them to the pool when the `TextureFrame` reference is released.
 
-- [ ] Add D3D11 backend metrics.
-  - Track render wait, copy time, present/publish time, shared texture resize
-    count, device-lost count, and texture-sharing failures.
+- [x] Add D3D11 backend metrics.
+  - Renderer now exposes a native D3D11 metrics snapshot for render wait,
+    frame prepare/copy, present/publish, shared texture resize count,
+    device-lost count, and texture-sharing failures.
 
 - [ ] Strengthen D3D11 tests around failure paths.
   - Missing Flutter adapter in headless mode.

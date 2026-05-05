@@ -318,6 +318,9 @@ TEST_CASE("Renderer: headless hw decode initialize", "[renderer][hw]") {
     REQUIRE(snapshot.texture != nullptr);
     REQUIRE(snapshot.handle != nullptr);
     static_cast<ID3D11Texture2D*>(snapshot.texture)->Release();
+    auto metrics = renderer.d3d_backend_metrics();
+    REQUIRE(metrics.device_lost_count == 0);
+    REQUIRE(metrics.texture_sharing_failure_count == 0);
 
     renderer.shutdown();
     REQUIRE_FALSE(renderer.is_initialized());
@@ -354,6 +357,9 @@ TEST_CASE("Renderer: headless hw decode play", "[renderer][hw]") {
     REQUIRE(snapshot.texture != nullptr);
     REQUIRE(snapshot.handle != nullptr);
     static_cast<ID3D11Texture2D*>(snapshot.texture)->Release();
+    auto metrics = renderer.d3d_backend_metrics();
+    REQUIRE(metrics.present_publish_count > 0);
+    REQUIRE(metrics.frame_copy_count > 0);
 
     renderer.shutdown();
 }

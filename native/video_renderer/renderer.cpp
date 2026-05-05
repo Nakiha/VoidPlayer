@@ -25,6 +25,12 @@ static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
 static constexpr size_t kTrackForwardDepth = 4;
 static constexpr size_t kTrackBackwardDepth = 1;
 
+uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - start).count());
+}
+
 struct Renderer::D3D11RenderResources {
     CompiledShader compiled_shader;
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertex_buffer;
@@ -90,6 +96,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     target_width_ = config.width;
     target_height_ = config.height;
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
+    reset_d3d_metrics();
     playback_session_started_by_renderer_ = false;
     if (!playback_->audio_output()) {
         playback_->start_session();
@@ -365,6 +372,18 @@ void Renderer::release_resources_locked() {
     for (auto& bl : perf_baselines_) bl.frames = 0;
     initialized_ = false;
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
+}
+
+void Renderer::reset_d3d_metrics() {
+    d3d_metrics_.render_wait_us.store(0, std::memory_order_relaxed);
+    d3d_metrics_.render_wait_count.store(0, std::memory_order_relaxed);
+    d3d_metrics_.frame_copy_us.store(0, std::memory_order_relaxed);
+    d3d_metrics_.frame_copy_count.store(0, std::memory_order_relaxed);
+    d3d_metrics_.present_publish_us.store(0, std::memory_order_relaxed);
+    d3d_metrics_.present_publish_count.store(0, std::memory_order_relaxed);
+    d3d_metrics_.shared_texture_resize_count.store(0, std::memory_order_relaxed);
+    d3d_metrics_.device_lost_count.store(0, std::memory_order_relaxed);
+    d3d_metrics_.texture_sharing_failure_count.store(0, std::memory_order_relaxed);
 }
 
 void Renderer::play() {
@@ -1001,11 +1020,14 @@ void Renderer::draw_paused_frame(const char* reason) {
 }
 
 void Renderer::wait_gpu_idle(const char* label) {
+    const auto start = std::chrono::steady_clock::now();
     if (headless_output_) {
         headless_output_->wait_gpu_idle(label);
     } else if (d3d_device_) {
         d3d_device_->context()->Flush();
     }
+    d3d_metrics_.render_wait_us.fetch_add(elapsed_us_since(start), std::memory_order_relaxed);
+    d3d_metrics_.render_wait_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 std::function<void()> Renderer::draw_headless_and_publish(const PresentDecision& decision, const char* label) {
@@ -1017,7 +1039,11 @@ std::function<void()> Renderer::draw_headless_and_publish(const PresentDecision&
     }
     d3d_resources_->cached_rtv = headless_output_->begin_frame_locked();
     draw_frame(decision);
+    const auto publish_start = std::chrono::steady_clock::now();
     auto callback = headless_output_->publish_frame_locked(label);
+    d3d_metrics_.present_publish_us.fetch_add(
+        elapsed_us_since(publish_start), std::memory_order_relaxed);
+    d3d_metrics_.present_publish_count.fetch_add(1, std::memory_order_relaxed);
     preview_drawn_ = true;
     return callback;
 }
@@ -1031,6 +1057,7 @@ void Renderer::enter_terminal_device_lost_locked(const char* operation) {
     const long reason = d3d_device_
         ? static_cast<long>(d3d_device_->device_removed_reason())
         : static_cast<long>(S_OK);
+    d3d_metrics_.device_lost_count.fetch_add(1, std::memory_order_relaxed);
     spdlog::error(
         "[Renderer] D3D11 device lost during {}; entering terminal renderer state "
         "(reason={:#x})",
@@ -1056,7 +1083,11 @@ void Renderer::present_frame(const PresentDecision& decision) {
             device_lost = d3d_device_ && d3d_device_->poll_device_removed("headless present");
         } else {
             draw_frame(decision);
+            const auto present_start = std::chrono::steady_clock::now();
             const bool presented = d3d_device_->present(0);
+            d3d_metrics_.present_publish_us.fetch_add(
+                elapsed_us_since(present_start), std::memory_order_relaxed);
+            d3d_metrics_.present_publish_count.fetch_add(1, std::memory_order_relaxed);
             device_lost = !presented && d3d_device_->device_lost();
             preview_drawn_ = true;
         }
@@ -1276,6 +1307,7 @@ bool Renderer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
 
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (!headless_output_) {
+        d3d_metrics_.texture_sharing_failure_count.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
 
@@ -1283,6 +1315,7 @@ bool Renderer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
     ID3D11Texture2D* texture = headless_output_->shared_texture_locked();
     HANDLE handle = headless_output_->shared_texture_handle_locked();
     if (!texture || !handle) {
+        d3d_metrics_.texture_sharing_failure_count.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
 
@@ -1335,6 +1368,7 @@ void Renderer::do_resize(int width, int height) {
         if (!headless_output_ || !headless_output_->resize_locked(width, height)) {
             return;
         }
+        d3d_metrics_.shared_texture_resize_count.fetch_add(1, std::memory_order_relaxed);
 
         target_width_ = width;
         target_height_ = height;
@@ -1714,6 +1748,7 @@ void Renderer::draw_frame(const PresentDecision& decision) {
             if (!decision.frames[i].has_value() || !decision.frames[i]->texture_handle) continue;
             if (!tracks_[i]) continue;
 
+            const auto prepare_start = std::chrono::steady_clock::now();
             const bool prepared_ok = frame_presenter_->prepare_frame(
                 i,
                 decision.frames[i].value(),
@@ -1721,6 +1756,9 @@ void Renderer::draw_frame(const PresentDecision& decision) {
                 target_height_,
                 [this](const char* label) { wait_gpu_idle(label); },
                 prepared_frames[i]);
+            d3d_metrics_.frame_copy_us.fetch_add(
+                elapsed_us_since(prepare_start), std::memory_order_relaxed);
+            d3d_metrics_.frame_copy_count.fetch_add(1, std::memory_order_relaxed);
             if (!prepared_ok) {
                 continue;
             }
@@ -2426,6 +2464,23 @@ std::vector<TrackPerfStats> Renderer::track_perf_stats() const {
     if (elapsed_s > 0.5) {
         stats_start_time_ = now;
     }
+    return result;
+}
+
+D3D11BackendMetrics Renderer::d3d_backend_metrics() const {
+    D3D11BackendMetrics result;
+    result.render_wait_us = d3d_metrics_.render_wait_us.load(std::memory_order_relaxed);
+    result.render_wait_count = d3d_metrics_.render_wait_count.load(std::memory_order_relaxed);
+    result.frame_copy_us = d3d_metrics_.frame_copy_us.load(std::memory_order_relaxed);
+    result.frame_copy_count = d3d_metrics_.frame_copy_count.load(std::memory_order_relaxed);
+    result.present_publish_us = d3d_metrics_.present_publish_us.load(std::memory_order_relaxed);
+    result.present_publish_count =
+        d3d_metrics_.present_publish_count.load(std::memory_order_relaxed);
+    result.shared_texture_resize_count =
+        d3d_metrics_.shared_texture_resize_count.load(std::memory_order_relaxed);
+    result.device_lost_count = d3d_metrics_.device_lost_count.load(std::memory_order_relaxed);
+    result.texture_sharing_failure_count =
+        d3d_metrics_.texture_sharing_failure_count.load(std::memory_order_relaxed);
     return result;
 }
 

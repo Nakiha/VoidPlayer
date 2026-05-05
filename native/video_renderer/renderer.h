@@ -52,6 +52,18 @@ struct TrackPerfStats {
     TrackState buffer_state = TrackState::Empty;
 };
 
+struct D3D11BackendMetrics {
+    uint64_t render_wait_us = 0;
+    uint64_t render_wait_count = 0;
+    uint64_t frame_copy_us = 0;
+    uint64_t frame_copy_count = 0;
+    uint64_t present_publish_us = 0;
+    uint64_t present_publish_count = 0;
+    uint64_t shared_texture_resize_count = 0;
+    uint64_t device_lost_count = 0;
+    uint64_t texture_sharing_failure_count = 0;
+};
+
 /// Layout state — all visual layout parameters in one struct.
 /// Updated atomically via Renderer::apply_layout().
 struct LayoutState {
@@ -161,6 +173,7 @@ public:
 
     /// Get per-track performance stats snapshot (thread-safe).
     std::vector<TrackPerfStats> track_perf_stats() const;
+    D3D11BackendMetrics d3d_backend_metrics() const;
 
     bool d3d_device_lost() const;
     long d3d_device_removed_reason() const;
@@ -309,6 +322,7 @@ private:
     /// implemented yet, so this stops rendering and leaves teardown to shutdown.
     /// Caller must hold state_mutex_.
     void enter_terminal_device_lost_locked(const char* operation);
+    void reset_d3d_metrics();
 
     std::unique_ptr<PlaybackController> owned_playback_;
     PlaybackController* playback_ = nullptr;
@@ -329,6 +343,18 @@ private:
     std::atomic<bool> initialized_{false};
     std::atomic<bool> playing_{false};
     std::atomic<RendererDeviceState> device_state_{RendererDeviceState::Ready};
+    struct D3D11BackendMetricCounters {
+        std::atomic<uint64_t> render_wait_us{0};
+        std::atomic<uint64_t> render_wait_count{0};
+        std::atomic<uint64_t> frame_copy_us{0};
+        std::atomic<uint64_t> frame_copy_count{0};
+        std::atomic<uint64_t> present_publish_us{0};
+        std::atomic<uint64_t> present_publish_count{0};
+        std::atomic<uint64_t> shared_texture_resize_count{0};
+        std::atomic<uint64_t> device_lost_count{0};
+        std::atomic<uint64_t> texture_sharing_failure_count{0};
+    };
+    mutable D3D11BackendMetricCounters d3d_metrics_;
     mutable std::mutex lifecycle_mutex_;
     mutable std::mutex state_mutex_;
     float background_color_[4] = {0.0f, 0.0f, 0.0f, 1.0f};

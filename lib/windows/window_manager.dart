@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import '../app_log.dart';
+import 'process_log_args.dart';
 import 'win32ffi.dart';
 
 typedef AnalysisWindowRequest = ({String hash, String? fileName});
@@ -121,7 +122,10 @@ class WindowManager {
       if (silentUiTest) '--silent-ui-test',
     ];
 
-    log.info('[WindowManager] spawning analysis process: $args');
+    log.info(
+      '[WindowManager] spawning analysis process: '
+      '${redactProcessArgsForLog(args)}',
+    );
     final process = await Process.start(exe, args);
     _analysisProcesses[key] = process;
 
@@ -172,7 +176,10 @@ class WindowManager {
       if (silentUiTest) '--silent-ui-test',
     ];
 
-    log.info('[WindowManager] spawning analysis workspace process: $args');
+    log.info(
+      '[WindowManager] spawning analysis workspace process: '
+      '${redactProcessArgsForLog(args)}',
+    );
     final process = await Process.start(exe, args);
     _analysisProcesses[key] = process;
 

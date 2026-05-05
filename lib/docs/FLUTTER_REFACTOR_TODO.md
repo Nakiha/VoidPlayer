@@ -16,6 +16,10 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Inject ActionRegistry through app/main-window/test-runner instead of using a global instance.~~
 
+## Round 4
+
+- [x] ~~Redact analysis IPC tokens from child process launch logs.~~
+
 ## P0
 
 - [ ] Move UI test runner/script parsing/media generation out of the production app graph behind a thin automation bridge.
@@ -29,7 +33,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 - [ ] Extract a typed `NativePlayerApi` interface with DTOs and centralized MethodChannel names/payload keys.
 - [ ] Move config/cache/log default paths to user-writable app data directories and make writes atomic.
 - [ ] Make analysis FFI symbol lookup lazy and add a native ABI/version check.
-- [ ] Harden analysis IPC token handling, logging, handshake timeout, and message length limits.
+- [ ] Harden analysis IPC handshake timeout and message length limits.
 
 ## P2
 

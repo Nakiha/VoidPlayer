@@ -58,9 +58,9 @@ backend behind explicit platform boundaries before adding a macOS backend.
 
 ## P2: Performance and Diagnostics
 
-- [ ] Pool D3D11 snapshot/capture textures.
-  - Hardware snapshot exact seek currently creates temporary textures in a hot
-    path.
+- [x] Pool D3D11 snapshot/capture textures.
+  - Hardware snapshot exact seek now reuses compatible D3D11 snapshot textures
+    and returns them to the pool when the `TextureFrame` reference is released.
 
 - [ ] Add D3D11 backend metrics.
   - Track render wait, copy time, present/publish time, shared texture resize

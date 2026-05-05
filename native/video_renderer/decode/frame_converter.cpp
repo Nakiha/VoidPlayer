@@ -169,7 +169,24 @@ int sws_colorspace_for_matrix(int matrix) {
     }
 }
 
+bool same_snapshot_desc(const D3D11_TEXTURE2D_DESC& a, const D3D11_TEXTURE2D_DESC& b) {
+    return a.Width == b.Width &&
+           a.Height == b.Height &&
+           a.MipLevels == b.MipLevels &&
+           a.ArraySize == b.ArraySize &&
+           a.Format == b.Format &&
+           a.SampleDesc.Count == b.SampleDesc.Count &&
+           a.SampleDesc.Quality == b.SampleDesc.Quality &&
+           a.Usage == b.Usage &&
+           a.BindFlags == b.BindFlags &&
+           a.CPUAccessFlags == b.CPUAccessFlags &&
+           a.MiscFlags == b.MiscFlags;
+}
+
 struct D3D11SnapshotFrameRef {
+    ~D3D11SnapshotFrameRef();
+
+    std::weak_ptr<D3D11SnapshotPool> pool;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
 };
 
@@ -207,6 +224,72 @@ void wait_d3d11_context_idle(ID3D11Device* device, ID3D11DeviceContext* context)
     }
 }
 }  // namespace
+
+struct D3D11SnapshotPool {
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> acquire(
+        ID3D11Device* device,
+        const D3D11_TEXTURE2D_DESC& desc) {
+        if (!device) {
+            return {};
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            for (auto it = available.begin(); it != available.end(); ++it) {
+                if (!*it) {
+                    it = available.erase(it);
+                    if (it == available.end()) break;
+                    continue;
+                }
+                D3D11_TEXTURE2D_DESC existing_desc = {};
+                (*it)->GetDesc(&existing_desc);
+                if (!same_snapshot_desc(existing_desc, desc)) {
+                    continue;
+                }
+
+                Microsoft::WRL::ComPtr<ID3D11Texture2D> texture = *it;
+                available.erase(it);
+                ++reused_count;
+                return texture;
+            }
+        }
+
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+        HRESULT hr = device->CreateTexture2D(&desc, nullptr, &texture);
+        if (FAILED(hr) || !texture) {
+            spdlog::warn("[FrameConverter] Failed to create D3D11 exact-seek snapshot: {:#x}",
+                         static_cast<unsigned long>(hr));
+            return {};
+        }
+
+        std::lock_guard<std::mutex> lock(mutex);
+        ++created_count;
+        return texture;
+    }
+
+    void release(Microsoft::WRL::ComPtr<ID3D11Texture2D> texture) {
+        if (!texture) {
+            return;
+        }
+        std::lock_guard<std::mutex> lock(mutex);
+        if (available.size() >= kMaxAvailable) {
+            return;
+        }
+        available.push_back(std::move(texture));
+    }
+
+    static constexpr size_t kMaxAvailable = 4;
+    std::mutex mutex;
+    std::vector<Microsoft::WRL::ComPtr<ID3D11Texture2D>> available;
+    uint64_t created_count = 0;
+    uint64_t reused_count = 0;
+};
+
+D3D11SnapshotFrameRef::~D3D11SnapshotFrameRef() {
+    if (auto owner = pool.lock()) {
+        owner->release(texture);
+    }
+}
 
 FrameConverter::FrameConverter()
 {}
@@ -300,6 +383,7 @@ bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat 
     d3d_device_ = nullptr;
     d3d_context_ = nullptr;
     device_mutex_ = nullptr;
+    d3d11_snapshot_pool_.reset();
 
     VideoColorInfo default_color;
     default_color.range = VIDEO_COLOR_RANGE_LIMITED;
@@ -335,6 +419,10 @@ bool FrameConverter::init_hardware(void* d3d_device, void* d3d_context,
     download_hw_to_cpu_ = download_to_cpu;
     hw_type_ = hw_type;
     downloaded_format_ = AV_PIX_FMT_NONE;
+    d3d11_snapshot_pool_ =
+        (!download_to_cpu && hw_type == HwDecodeType::D3D11VA)
+        ? std::make_shared<D3D11SnapshotPool>()
+        : nullptr;
 
     spdlog::info("[FrameConverter] Hardware converter initialized ({}x{}, hw_type={}, download_to_cpu={})",
                  src_width, src_height,
@@ -560,11 +648,12 @@ std::optional<TextureFrame> FrameConverter::snapshot_hardware_frame(AVFrame* fra
     snapshot_desc.CPUAccessFlags = 0;
     snapshot_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
 
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> snapshot;
-    HRESULT hr = device->CreateTexture2D(&snapshot_desc, nullptr, &snapshot);
-    if (FAILED(hr) || !snapshot) {
-        spdlog::warn("[FrameConverter] Failed to create D3D11 exact-seek snapshot: {:#x}",
-                     static_cast<unsigned long>(hr));
+    if (!d3d11_snapshot_pool_) {
+        d3d11_snapshot_pool_ = std::make_shared<D3D11SnapshotPool>();
+    }
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> snapshot =
+        d3d11_snapshot_pool_->acquire(device.Get(), snapshot_desc);
+    if (!snapshot) {
         return std::nullopt;
     }
 
@@ -578,6 +667,7 @@ std::optional<TextureFrame> FrameConverter::snapshot_hardware_frame(AVFrame* fra
     wait_d3d11_context_idle(device.Get(), context.Get());
 
     auto snapshot_ref = std::make_shared<D3D11SnapshotFrameRef>();
+    snapshot_ref->pool = d3d11_snapshot_pool_;
     snapshot_ref->texture = snapshot;
 
     TextureFrame result;

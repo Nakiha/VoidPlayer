@@ -8,16 +8,18 @@ import 'preferences/app_config_playback_preferences.dart';
 import 'startup_options.dart';
 import 'theme/app_appearance.dart';
 import 'windows/main/main_window.dart';
-import 'windows/window_manager.dart';
+import 'windows/window_manager.dart' show AnalysisProcessManager;
 
 class VoidPlayerApp extends StatefulWidget {
   final Color accentColor;
+  final AnalysisProcessManager analysisProcesses;
   final String? testScriptPath;
   final StartupOptions startupOptions;
 
   const VoidPlayerApp({
     super.key,
     required this.accentColor,
+    required this.analysisProcesses,
     this.testScriptPath,
     this.startupOptions = const StartupOptions(),
   });
@@ -59,7 +61,8 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
   }
 
   void _syncAccentColor() {
-    WindowManager.accentColorValue = _appearance.accentColor.toARGB32();
+    widget.analysisProcesses.accentColorValue = _appearance.accentColor
+        .toARGB32();
   }
 
   @override
@@ -101,6 +104,7 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
                   actionRegistry: _actionRegistry,
                   testScriptPath: widget.testScriptPath,
                   startupOptions: widget.startupOptions,
+                  analysisProcesses: widget.analysisProcesses,
                   playbackPreferences: AppConfigPlaybackPreferences(
                     _settingsRepository,
                   ),

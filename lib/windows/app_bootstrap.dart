@@ -319,7 +319,8 @@ Future<void> runVoidPlayer(List<String> args) async {
   startupTrace.mark('arguments parsed');
 
   await AppConfig.initialize();
-  WindowManager.silentUiTest = silentUiTest;
+  final analysisProcesses = WindowManager.analysisProcesses;
+  analysisProcesses.silentUiTest = silentUiTest;
   startupTrace.mark('config initialized');
 
   await windowManager.ensureInitialized();
@@ -342,12 +343,13 @@ Future<void> runVoidPlayer(List<String> args) async {
   startupTrace.mark('close handler installed');
 
   final accentColor = _getWindowsAccentColor();
-  WindowManager.accentColorValue = accentColor.toARGB32();
+  analysisProcesses.accentColorValue = accentColor.toARGB32();
   startupTrace.mark('accent color loaded');
   log.info('Application starting (main window), silentUiTest=$silentUiTest');
   runApp(
     VoidPlayerApp(
       accentColor: accentColor,
+      analysisProcesses: analysisProcesses,
       testScriptPath: testScriptPath,
       startupOptions: startupOptions,
     ),

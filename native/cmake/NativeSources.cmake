@@ -4,6 +4,7 @@ get_filename_component(VOID_NATIVE_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
 set(VOID_RENDERER_CORE_SOURCES
     "${VOID_NATIVE_DIR}/common/logging.cpp"
+    "${VOID_NATIVE_DIR}/playback/playback_controller.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/clock.cpp"
     "${VOID_NATIVE_DIR}/media/demux_thread.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/frame_converter.cpp"
@@ -16,8 +17,8 @@ set(VOID_RENDERER_CORE_SOURCES
 
 set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/audio/audio_engine.cpp"
+    "${VOID_NATIVE_DIR}/audio/audio_output_factory.cpp"
     "${VOID_NATIVE_DIR}/player/native_player.cpp"
-    "${VOID_NATIVE_DIR}/playback/playback_controller.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decode_thread.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/hw/hw_decode_provider.cpp"

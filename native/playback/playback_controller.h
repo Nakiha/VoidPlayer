@@ -1,8 +1,9 @@
 #pragma once
 
-#include "audio/audio_engine.h"
+#include "audio/audio_output.h"
 #include "video_renderer/clock.h"
 #include <cstdint>
+#include <functional>
 #include <memory>
 
 namespace vr {
@@ -13,7 +14,10 @@ namespace vr {
 /// lifecycle live here so play/pause/seek controls have a single native owner.
 class PlaybackController {
 public:
+    using AudioOutputFactory = std::function<std::unique_ptr<AudioOutput>()>;
+
     PlaybackController();
+    explicit PlaybackController(AudioOutputFactory audio_output_factory);
     ~PlaybackController();
 
     PlaybackController(const PlaybackController&) = delete;
@@ -25,8 +29,8 @@ public:
     Clock& clock() { return clock_; }
     const Clock& clock() const { return clock_; }
 
-    AudioEngine* audio_engine() { return audio_engine_.get(); }
-    const AudioEngine* audio_engine() const { return audio_engine_.get(); }
+    AudioOutput* audio_output() { return audio_output_.get(); }
+    const AudioOutput* audio_output() const { return audio_output_.get(); }
 
     void play();
     void pause();
@@ -36,7 +40,8 @@ public:
 
 private:
     Clock clock_;
-    std::unique_ptr<AudioEngine> audio_engine_;
+    AudioOutputFactory audio_output_factory_;
+    std::unique_ptr<AudioOutput> audio_output_;
 };
 
 } // namespace vr

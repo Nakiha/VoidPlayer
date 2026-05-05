@@ -1,4 +1,5 @@
 #include "video_renderer/renderer.h"
+#include "audio/audio_output_factory.h"
 #include "embedded_shaders.h"
 #include "video_renderer/d3d11/device.h"
 #include "video_renderer/d3d11/frame_presenter.h"
@@ -39,7 +40,7 @@ DecodeDeviceMode default_decode_device_mode(AVCodecID codec_id) {
 }
 
 Renderer::Renderer()
-    : owned_playback_(std::make_unique<PlaybackController>())
+    : owned_playback_(std::make_unique<PlaybackController>(create_default_audio_output))
     , playback_(owned_playback_.get()) {}
 
 Renderer::Renderer(PlaybackController& playback)
@@ -89,7 +90,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     target_width_ = config.width;
     target_height_ = config.height;
     playback_session_started_by_renderer_ = false;
-    if (!playback_->audio_engine()) {
+    if (!playback_->audio_output()) {
         playback_->start_session();
         playback_session_started_by_renderer_ = true;
     }
@@ -428,16 +429,16 @@ void Renderer::set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
 void Renderer::set_audible_track(int file_id) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
-    if (!playback_->audio_engine()) return;
+    if (!playback_->audio_output()) return;
     if (file_id >= 0 && find_slot_by_file_id(file_id) < 0) {
         file_id = -1;
     }
-    playback_->audio_engine()->set_active_track(file_id);
+    playback_->audio_output()->set_active_track(file_id);
 }
 
 int Renderer::audible_track() const {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    return playback_->audio_engine() ? playback_->audio_engine()->active_track() : -1;
+    return playback_->audio_output() ? playback_->audio_output()->active_track() : -1;
 }
 
 void Renderer::seek_internal(int64_t target_pts_us,
@@ -461,8 +462,8 @@ void Renderer::seek_internal(int64_t target_pts_us,
         // Pause decoder FIRST to prevent stale packets from reaching the codec
         // (avoids HEVC "Could not find ref" warnings during seek transition)
         track->decode_thread->set_decode_paused(true);
-        if (playback_->audio_engine()) {
-            playback_->audio_engine()->set_track_decode_paused(track->file_id, true);
+        if (playback_->audio_output()) {
+            playback_->audio_output()->set_track_decode_paused(track->file_id, true);
         }
         auto buf_count_before = track->track_buffer->total_count();
         auto pq_size_before = track->packet_queue->size();
@@ -1075,8 +1076,8 @@ void Renderer::set_decode_paused_for_all_tracks(bool paused) {
         if (!tracks_[i]) continue;
         tracks_[i]->decode_thread->set_decode_paused(paused);
     }
-    if (playback_->audio_engine()) {
-        playback_->audio_engine()->set_all_decode_paused(paused);
+    if (playback_->audio_output()) {
+        playback_->audio_output()->set_all_decode_paused(paused);
     }
 }
 
@@ -1086,14 +1087,14 @@ void Renderer::configure_track_seek_callback(TrackPipeline& track) {
     track.demux_thread->set_seek_callback(
         [this, dt, file_id](int64_t pts, SeekType type) {
             dt->notify_seek(pts, type);
-            if (playback_->audio_engine()) {
-                playback_->audio_engine()->notify_seek(file_id, pts, type);
+            if (playback_->audio_output()) {
+                playback_->audio_output()->notify_seek(file_id, pts, type);
             }
         });
 }
 
 void Renderer::register_track_audio(TrackPipeline& track) {
-    if (!playback_->audio_engine() ||
+    if (!playback_->audio_output() ||
         !track.audio_packet_queue ||
         !track.demux_thread ||
         track.file_id <= 0) {
@@ -1103,7 +1104,7 @@ void Renderer::register_track_audio(TrackPipeline& track) {
     if (stats.audio_stream_index < 0 || !stats.audio_codec_params) {
         return;
     }
-    if (!playback_->audio_engine()->add_track(
+    if (!playback_->audio_output()->add_track(
             track.file_id,
             *track.audio_packet_queue,
             stats.audio_codec_params,
@@ -1113,8 +1114,8 @@ void Renderer::register_track_audio(TrackPipeline& track) {
 }
 
 void Renderer::unregister_track_audio(int file_id) {
-    if (playback_->audio_engine() && file_id > 0) {
-        playback_->audio_engine()->remove_track(file_id);
+    if (playback_->audio_output() && file_id > 0) {
+        playback_->audio_output()->remove_track(file_id);
     }
 }
 
@@ -2119,8 +2120,8 @@ bool Renderer::recreate_decode_thread_for_seek(size_t slot, int64_t target_pts_u
     track->demux_thread->set_seek_callback(
         [this, dt = replacement.get(), file_id](int64_t pts, SeekType seek_type) {
             dt->notify_seek(pts, seek_type);
-            if (playback_->audio_engine()) {
-                playback_->audio_engine()->notify_seek(file_id, pts, seek_type);
+            if (playback_->audio_output()) {
+                playback_->audio_output()->notify_seek(file_id, pts, seek_type);
             }
         });
 
@@ -2209,8 +2210,8 @@ int Renderer::add_track(const std::string& video_path) {
         if (track->audio_packet_queue) {
             track->audio_packet_queue->flush();
         }
-        if (playback_->audio_engine()) {
-            playback_->audio_engine()->set_track_decode_paused(track->file_id, true);
+        if (playback_->audio_output()) {
+            playback_->audio_output()->set_track_decode_paused(track->file_id, true);
         }
         track->seek_controller->request_seek(track_target, SeekType::Keyframe);
         track->track_buffer->set_state(TrackState::Buffering);

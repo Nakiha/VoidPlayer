@@ -1,9 +1,11 @@
 #include "player/native_player.h"
+#include "audio/audio_output_factory.h"
 
 namespace vr {
 
 NativePlayer::NativePlayer()
-    : renderer_(playback_) {}
+    : playback_(create_default_audio_output)
+    , renderer_(playback_) {}
 
 NativePlayer::~NativePlayer() {
     shutdown();

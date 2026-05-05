@@ -26,15 +26,14 @@ backend behind explicit platform boundaries before adding a macOS backend.
   - `renderer.h` no longer includes D3D11 backend headers or exposes COM render
     resources; Windows implementation details live in the cpp/backend layer.
 
-- [ ] Split target ownership in CMake.
+- [x] Split target ownership in CMake.
   - Keep D3D11/DXGI/D3DCompiler/WinMM links in a Windows backend/plugin target.
   - Keep media, playback, analysis, and shared utility code available without
     the D3D11 renderer target.
-  - Progress: `video_renderer_core` now owns media/buffer/sync/shared utility
-    sources without D3D11/DXGI links; `video_renderer_lib` owns the Windows
-    renderer, D3D11 backend, D3D11VA decode provider, and WinMM/D3D links.
-  - Remaining: split `PlaybackController` from the Windows `AudioEngine`
-    backend before treating playback as platform-neutral.
+  - `video_renderer_core` now owns media/playback/buffer/sync/shared utility
+    sources without D3D11/DXGI/WinMM links; `video_renderer_lib` owns the
+    Windows renderer, Windows audio output factory, D3D11 backend, D3D11VA
+    decode provider, and WinMM/D3D links.
 
 ## P1: D3D11 Runtime Contract
 

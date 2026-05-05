@@ -414,26 +414,26 @@ class _CacheListHeader extends StatelessWidget {
               style: SettingsPageStyle.secondary(context),
             ),
             const SizedBox(width: 8),
-            _SmallPathButton(
-              icon: Icons.select_all,
-              tooltip: l.selectAll,
-              onPressed: deleting || selectedCount >= selectableCount
-                  ? null
-                  : onSelectAll,
-            ),
-            const SizedBox(width: 4),
-            _SmallPathButton(
-              icon: Icons.close,
-              tooltip: l.cancelSelection,
-              onPressed: deleting ? null : onCancelSelection,
-            ),
-            const SizedBox(width: 4),
-            _SmallPathButton(
-              icon: Icons.delete_outline,
-              tooltip: l.deleteSelectedCache,
-              onPressed: deleting ? null : onDeleteSelected,
-            ),
           ],
+          _SmallPathButton(
+            icon: Icons.select_all,
+            tooltip: l.selectAll,
+            onPressed: deleting || selectedCount >= selectableCount
+                ? null
+                : onSelectAll,
+          ),
+          const SizedBox(width: 4),
+          _SmallPathButton(
+            icon: Icons.close,
+            tooltip: l.cancelSelection,
+            onPressed: deleting || !hasSelection ? null : onCancelSelection,
+          ),
+          const SizedBox(width: 4),
+          _SmallPathButton(
+            icon: Icons.delete_outline,
+            tooltip: l.deleteSelectedCache,
+            onPressed: deleting || !hasSelection ? null : onDeleteSelected,
+          ),
         ],
       ),
     );

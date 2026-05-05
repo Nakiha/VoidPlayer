@@ -17,6 +17,13 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   int _selectedIndex = 0;
+  late final List<Widget> _pages = const [
+    _ShortcutsPage(),
+    AppearanceSettingsPage(),
+    PreferencesSettingsPage(),
+    CacheSettingsPage(),
+    _AboutPage(),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -54,19 +61,11 @@ class _SettingsPageState extends State<SettingsPage> {
           ],
         ),
         const VerticalDivider(thickness: 1, width: 1),
-        Expanded(child: _buildSelectedPage()),
+        Expanded(
+          child: IndexedStack(index: _selectedIndex, children: _pages),
+        ),
       ],
     );
-  }
-
-  Widget _buildSelectedPage() {
-    return switch (_selectedIndex) {
-      0 => const _ShortcutsPage(),
-      1 => const AppearanceSettingsPage(),
-      2 => const PreferencesSettingsPage(),
-      3 => const CacheSettingsPage(),
-      _ => const _AboutPage(),
-    };
   }
 }
 

@@ -140,7 +140,7 @@ class AnalysisProcessManager {
     final sw = Stopwatch()..start();
     while (sw.elapsed < timeout) {
       if (_analysisProcesses.length == count) return true;
-      await Future.delayed(const Duration(milliseconds: 100));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
     }
     return _analysisProcesses.length == count;
   }
@@ -200,14 +200,16 @@ class AnalysisProcessManager {
 
     _attachProcessLogs(process, 'AnalysisProcess:$key');
 
-    process.exitCode.then((code) {
-      log.info(
-        '[WindowManager] analysis process for $key exited with code $code',
-      );
-      _analysisProcesses.remove(key);
-      _analysisExitCodes[key] = code;
-      onExit?.call();
-    });
+    unawaited(
+      process.exitCode.then((code) {
+        log.info(
+          '[WindowManager] analysis process for $key exited with code $code',
+        );
+        _analysisProcesses.remove(key);
+        _analysisExitCodes[key] = code;
+        onExit?.call();
+      }),
+    );
   }
 
   Future<void> _spawnAnalysisWorkspaceProcess(
@@ -254,12 +256,14 @@ class AnalysisProcessManager {
 
     _attachProcessLogs(process, 'AnalysisWorkspaceProcess');
 
-    process.exitCode.then((code) {
-      log.info('[WindowManager] analysis workspace exited with code $code');
-      _analysisProcesses.remove(key);
-      _analysisExitCodes[key] = code;
-      onExit?.call();
-    });
+    unawaited(
+      process.exitCode.then((code) {
+        log.info('[WindowManager] analysis workspace exited with code $code');
+        _analysisProcesses.remove(key);
+        _analysisExitCodes[key] = code;
+        onExit?.call();
+      }),
+    );
   }
 
   void _attachProcessLogs(Process process, String tag) {

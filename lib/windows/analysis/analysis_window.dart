@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+
 import '../../l10n/app_localizations.dart';
 import 'ipc/analysis_ipc_client.dart';
 import 'page/analysis_page.dart';
-import 'workspace/analysis_workspace_page.dart';
 import 'workspace/analysis_workspace_models.dart';
+import 'workspace/analysis_workspace_page.dart';
 
 // ===========================================================================
 // Analysis window app entry for bitstream visualization.

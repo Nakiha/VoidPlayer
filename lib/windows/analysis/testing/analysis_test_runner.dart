@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import '../../../app_log.dart';
 import '../../../analysis/nalu_types.dart';
+import '../../../app_log.dart';
 import '../widgets/analysis_frame_utils.dart';
 import 'analysis_test_host.dart';
 
@@ -22,7 +22,7 @@ extension AnalysisPageTestRunner on AnalysisTestHost {
     for (final instr in instructions) {
       final waitMs = instr.time.inMilliseconds - sw.elapsedMilliseconds;
       if (waitMs > 0) {
-        await Future.delayed(Duration(milliseconds: waitMs));
+        await Future<void>.delayed(Duration(milliseconds: waitMs));
       }
 
       try {
@@ -274,7 +274,7 @@ extension AnalysisPageTestRunner on AnalysisTestHost {
     while (sw.elapsed < timeout) {
       readAnalysisDataForTest();
       if (isAnalysisLoaded) return;
-      await Future.delayed(const Duration(milliseconds: 100));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
     }
     throw AssertionError(
       'WAIT_ANALYSIS_LOADED timed out after ${timeout.inMilliseconds}ms; '

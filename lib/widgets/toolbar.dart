@@ -1,12 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
 import '../analysis/analysis_cache.dart';
 import '../analysis/analysis_manager.dart';
 import '../config/app_config.dart';
 import '../l10n/app_localizations.dart';
-import 'segmented_widget.dart';
 import '../track_manager.dart';
+import 'segmented_widget.dart';
 
 const _analysisPanelWidth = 360.0;
 const _analysisPanelMaxHeight = 240.0;

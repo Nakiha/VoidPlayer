@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-import '../../utils/async_guard.dart';
 import '../../track_manager.dart';
+import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/display_geometry.dart';
 

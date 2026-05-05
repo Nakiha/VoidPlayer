@@ -82,6 +82,10 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Move `MainWindowViewModel` and `MainWindowViewActions` out of the main view file.~~
 
+## Round 18
+
+- [x] ~~Enable the stricter analyzer/linter rules suggested by `build/GPT_flutter.md`.~~
+
 ## P0
 
 - [x] ~~Keep release UI automation behind explicit automation bridge/runtime boundaries.~~
@@ -103,7 +107,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 ## P2
 
-- [ ] Strengthen analyzer/linter settings once current violations are triaged.
+- [x] ~~Strengthen analyzer/linter settings once current violations are triaged.~~
 - [ ] Split oversized main-window view/view-model surfaces by UI region.
   First slice done: `MainWindowViewModel` and `MainWindowViewActions` now live outside `main_window_view.dart`, leaving the view file focused on widget composition.
 - [x] ~~Make shortcut display metadata come from the same action definitions as real bindings.~~

@@ -163,7 +163,7 @@ Future<LogConfig> initLogging(List<String> args) async {
   };
 
   Isolate.current.addErrorListener(
-    RawReceivePort((pair) async {
+    RawReceivePort((Object? pair) {
       final List<dynamic> errorAndStack = pair as List<dynamic>;
       _root.severe(
         'Isolate error: ${errorAndStack.first}\n${errorAndStack.last}',
@@ -180,7 +180,7 @@ Future<LogConfig> initLogging(List<String> args) async {
   // Forward native log config to C++ side via MethodChannel.
   // Fire-and-forget — native plugin already initialized with defaults
   // on construction, this just updates the level if --log-level changed it.
-  _configureNativeLogging();
+  unawaited(_configureNativeLogging());
 
   return _logConfig;
 }

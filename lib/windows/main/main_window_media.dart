@@ -7,8 +7,8 @@ import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
-import 'main_window_layout.dart';
 import '../native_file_picker.dart';
+import 'main_window_layout.dart';
 
 class MainWindowMediaCoordinator {
   final NativePlayerController controller;
@@ -62,18 +62,19 @@ class MainWindowMediaCoordinator {
   bool get _alive => !_disposed && mounted();
 
   Future<void> loadMediaPaths(List<String> paths) {
-    if (paths.isEmpty) return Future.value();
-    if (_disposed) return Future.value();
+    if (paths.isEmpty) return Future<void>.value();
+    if (_disposed) return Future<void>.value();
 
     final previous = _loadInFlight;
     late final Future<void> next;
-    next = (previous == null ? Future.value() : previous.catchError((_) {}))
-        .then((_) => _loadMediaPathsImpl(paths))
-        .whenComplete(() {
-          if (identical(_loadInFlight, next)) {
-            _loadInFlight = null;
-          }
-        });
+    next =
+        (previous == null ? Future<void>.value() : previous.catchError((_) {}))
+            .then((_) => _loadMediaPathsImpl(paths))
+            .whenComplete(() {
+              if (identical(_loadInFlight, next)) {
+                _loadInFlight = null;
+              }
+            });
     _loadInFlight = next;
     return next;
   }

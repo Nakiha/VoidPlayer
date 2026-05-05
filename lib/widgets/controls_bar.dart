@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+
 import '../l10n/app_localizations.dart';
-import 'zoom_combo_box.dart';
 import 'time_label.dart';
 import 'timeline_slider.dart';
+import 'zoom_combo_box.dart';
 
 enum _ControlsBarItem { zoom, fullscreen, step, play, time }
 

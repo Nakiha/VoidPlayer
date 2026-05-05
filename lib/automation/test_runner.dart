@@ -3,13 +3,13 @@ import 'dart:async';
 import '../actions/automation_action.dart';
 import '../actions/player_action.dart';
 import '../app_log.dart';
+import '../video_renderer_controller.dart';
 import 'automation_assert_executor.dart';
 import 'automation_probe.dart';
 import 'automation_run_state.dart';
 import 'automation_script.dart';
 import 'ui_automation_bridge.dart';
 import 'ui_automation_runtime.dart';
-import '../video_renderer_controller.dart';
 
 /// Parses a test script file and runs instructions on a timeline.
 class TestRunner {
@@ -52,7 +52,7 @@ class TestRunner {
     for (final instr in instructions) {
       final waitMs = instr.time.inMilliseconds - sw.elapsedMilliseconds;
       if (waitMs > 0) {
-        await Future.delayed(Duration(milliseconds: waitMs));
+        await Future<void>.delayed(Duration(milliseconds: waitMs));
       }
 
       try {
@@ -191,7 +191,7 @@ class TestRunner {
         WaitState.paused => !await controller.isPlaying(),
       };
       if (satisfied) return;
-      await Future.delayed(const Duration(milliseconds: 50));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     }
     throw AssertionError(
       'WAIT_${state.name.toUpperCase()} timed out after ${timeout.inMilliseconds}ms',

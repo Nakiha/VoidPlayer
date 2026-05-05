@@ -166,6 +166,7 @@ class MainWindowStateStore extends ChangeNotifier {
         syncOffsets: const {},
         loopRangeEnabled: false,
         nativeLoopRangeSynced: false,
+        startupLoopRangeApplied: false,
         loopStartUs: 0,
         loopEndUs: 0,
         fullScreen: false,

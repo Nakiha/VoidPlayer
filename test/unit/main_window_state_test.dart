@@ -24,4 +24,22 @@ void main() {
 
     expect(notifications, 2);
   });
+
+  test('resetAfterLastTrackRemoved clears startup loop range state', () {
+    final store = MainWindowStateStore();
+    addTearDown(store.dispose);
+
+    store.setStartupLoopRangeApplied(true);
+    store.setLoopRangeEnabled(true);
+    store.setNativeLoopRangeSynced(true);
+    store.setLoopRange(1000000, 2000000);
+
+    store.resetAfterLastTrackRemoved();
+
+    expect(store.value.startupLoopRangeApplied, isFalse);
+    expect(store.value.loopRangeEnabled, isFalse);
+    expect(store.value.nativeLoopRangeSynced, isFalse);
+    expect(store.value.loopStartUs, 0);
+    expect(store.value.loopEndUs, 0);
+  });
 }

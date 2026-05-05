@@ -80,6 +80,8 @@ ui_tests/               # 启动真实 app 的 CSV GUI 自动化脚本
 - 时间单位：秒
 - PTS 单位：微秒
 - 空行和 `#` 开头的行会被忽略
+- `@APP_ARG,<arg>` 或 `@APP_ARGS,<arg1>,<arg2>` 会由 `dev.py ui-test`
+  作为 app 启动参数传入，适合覆盖 startup options / deep link 行为
 - `QUIT, 0` 表示通过并退出
 
 ## 目录语义

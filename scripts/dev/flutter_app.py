@@ -1,5 +1,6 @@
 """Flutter app build, launch, demo, and UI test commands."""
 
+import csv
 import os
 import subprocess
 import sys
@@ -134,6 +135,24 @@ def cmd_ui_test(args) -> None:
         sys.exit(1)
 
 
+def _script_app_args(script_path: Path) -> list[str]:
+    """Read app startup arguments declared by CSV test headers."""
+    app_args: list[str] = []
+    try:
+        with script_path.open("r", encoding="utf-8-sig", newline="") as file:
+            for row in csv.reader(file):
+                if not row:
+                    continue
+                key = row[0].strip().upper()
+                if key not in ("@APP_ARG", "@APP_ARGS"):
+                    continue
+                app_args.extend(value.strip() for value in row[1:] if value.strip())
+    except OSError as exc:
+        raise RuntimeError(f"cannot read UI test headers from {script_path}: {exc}") from exc
+
+    return app_args
+
+
 def _cmd_ui_test(args) -> None:
     script_paths = [Path(script).resolve() for script in args.scripts]
     for script_path in script_paths:
@@ -153,6 +172,7 @@ def _cmd_ui_test(args) -> None:
     total = len(script_paths)
     for index, script_path in enumerate(script_paths, start=1):
         cmd = [str(exe), "--test-script", str(script_path)]
+        cmd.extend(_script_app_args(script_path))
         if not args.visible:
             cmd.append("--silent-ui-test")
         if args.log_level:

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import '../app_paths.dart';
 import '../preferences/playback_preferences.dart';
+import '../utils/file_lock.dart';
 
 /// Manages reading and writing `config.json` in the resolved app data root.
 ///
@@ -23,6 +24,7 @@ class AppConfig {
   static AppConfig get instance => _instance!;
 
   late final File _file;
+  late final String _lockPath;
   Map<String, dynamic> _data = {};
 
   /// Initializes the config manager. Reads `config.json` from app data, or
@@ -31,14 +33,17 @@ class AppConfig {
     final instance = AppConfig._();
     final paths = AppPaths.current;
     instance._file = File(paths.configFile);
+    instance._lockPath = p.join(paths.locksDir, 'config.lock');
     await instance._migrateLegacyConfigIfNeeded(paths);
 
     try {
-      final content = await instance._file.readAsString();
-      final decoded = jsonDecode(content);
-      instance._data = decoded is Map
-          ? Map<String, dynamic>.from(decoded)
-          : <String, dynamic>{};
+      await FileLockService.withShared(instance._lockPath, () async {
+        final content = await instance._file.readAsString();
+        final decoded = jsonDecode(content);
+        instance._data = decoded is Map
+            ? Map<String, dynamic>.from(decoded)
+            : <String, dynamic>{};
+      });
     } catch (_) {
       // File missing or corrupted — start fresh.
       instance._data = {};
@@ -50,13 +55,17 @@ class AppConfig {
   /// Persists the current in-memory state to disk.
   Future<void> save() async {
     try {
-      await _file.parent.create(recursive: true);
-      final tmp = File('${_file.path}.tmp');
-      await tmp.writeAsString(jsonEncode(_data));
-      if (await _file.exists()) {
-        await _file.delete();
-      }
-      await tmp.rename(_file.path);
+      await FileLockService.withExclusive(_lockPath, () async {
+        await _file.parent.create(recursive: true);
+        final tmp = File(
+          '${_file.path}.$pid.${DateTime.now().microsecondsSinceEpoch}.tmp',
+        );
+        await tmp.writeAsString(jsonEncode(_data));
+        if (await _file.exists()) {
+          await _file.delete();
+        }
+        await tmp.rename(_file.path);
+      });
     } catch (_) {
       // Best-effort: don't block shutdown on write failure.
     }

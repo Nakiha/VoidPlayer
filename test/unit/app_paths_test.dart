@@ -15,6 +15,7 @@ void main() {
       paths.configFile,
       r'C:\Users\me\AppData\Roaming\VoidPlayer\config.json',
     );
+    expect(paths.locksDir, r'C:\Users\me\AppData\Roaming\VoidPlayer\locks');
     expect(paths.logsDir, r'C:\Users\me\AppData\Roaming\VoidPlayer\logs');
     expect(
       paths.analysisCacheDir,
@@ -32,6 +33,7 @@ void main() {
     expect(paths.isPortable, isTrue);
     expect(paths.rootDir, r'D:\Portable\VoidPlayer');
     expect(paths.configFile, r'D:\Portable\VoidPlayer\config.json');
+    expect(paths.locksDir, r'D:\Portable\VoidPlayer\locks');
     expect(paths.logsDir, r'D:\Portable\VoidPlayer\logs');
     expect(paths.analysisCacheDir, r'D:\Portable\VoidPlayer\cache');
   });

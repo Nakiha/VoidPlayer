@@ -2,8 +2,11 @@
 
 import 'dart:ffi';
 import 'package:ffi/ffi.dart';
+import 'package:path/path.dart' as p;
 
 import '../app_paths.dart';
+import '../utils/file_lock.dart';
+import 'analysis_cache.dart';
 
 // ===========================================================================
 // FFI Struct definitions — mirror C++ structs in video_renderer_plugin.h
@@ -441,15 +444,24 @@ FrameBucket _frameBucketAt(Pointer<NakiFrameBucket> ptr, int i) {
 
 class AnalysisSession {
   Pointer<Void> _handle;
+  FileLockHandle? _useLock;
 
-  AnalysisSession._(this._handle);
+  AnalysisSession._(this._handle, this._useLock);
 
   static AnalysisSession? open(String analysisPath) {
+    final hash = p.basenameWithoutExtension(analysisPath);
+    final useLock = AnalysisCache.acquireHashSharedLockSync(hash);
     final analysis = analysisPath.toNativeUtf8(allocator: calloc);
     try {
       final handle = _open(analysis);
-      if (handle == nullptr) return null;
-      return AnalysisSession._(handle);
+      if (handle == nullptr) {
+        useLock.releaseSync();
+        return null;
+      }
+      return AnalysisSession._(handle, useLock);
+    } catch (_) {
+      useLock.releaseSync();
+      rethrow;
     } finally {
       calloc.free(analysis);
     }
@@ -458,9 +470,18 @@ class AnalysisSession {
   bool get isOpen => _handle != nullptr;
 
   void close() {
-    if (_handle == nullptr) return;
-    _close(_handle);
-    _handle = nullptr;
+    if (_handle == nullptr) {
+      _useLock?.releaseSync();
+      _useLock = null;
+      return;
+    }
+    try {
+      _close(_handle);
+    } finally {
+      _handle = nullptr;
+      _useLock?.releaseSync();
+      _useLock = null;
+    }
   }
 
   AnalysisSummary get summary {

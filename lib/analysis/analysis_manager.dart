@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 
 import '../app_log.dart';
 import '../config/app_config.dart';
+import '../utils/file_lock.dart';
 import 'analysis_cache.dart';
 import 'analysis_ffi.dart';
 import 'file_hash.dart';
@@ -78,6 +79,7 @@ class AnalysisManager extends ChangeNotifier {
   AnalysisError? _error;
   String? _generatingFileName;
   String? _loadedHash;
+  FileLockHandle? _loadedHashLock;
   final Map<String, Future<String?>> _ensureGeneratedInFlightByPath = {};
   final Map<String, AnalysisTrackGenerationStatus> _trackStatusByPath = {};
   int _stateSerial = 0;
@@ -365,9 +367,20 @@ class AnalysisManager extends ChangeNotifier {
     final analysisPath = AnalysisCache.analysisPath(hash);
 
     log.info('[Analysis] loading: analysis=$analysisPath');
-    final ok = AnalysisFfi.load(analysisPath);
-    if (!_isLoadCurrent(serial)) return false;
+    final hashLock = AnalysisCache.acquireHashSharedLockSync(hash);
+    final bool ok;
+    try {
+      ok = AnalysisFfi.load(analysisPath);
+    } catch (_) {
+      hashLock.releaseSync();
+      rethrow;
+    }
+    if (!_isLoadCurrent(serial)) {
+      hashLock.releaseSync();
+      return false;
+    }
     if (!ok) {
+      hashLock.releaseSync();
       log.severe('[Analysis] FFI load returned false');
       final error = AnalysisError(AnalysisErrorKey.loadFailed, [name]);
       _setTrackStatus(
@@ -382,7 +395,9 @@ class AnalysisManager extends ChangeNotifier {
       return false;
     }
 
+    _releaseLoadedHashLock();
     _loadedHash = hash;
+    _loadedHashLock = hashLock;
     await AnalysisCache.touchEntry(hash);
     _setTrackStatus(
       path,
@@ -405,7 +420,13 @@ class AnalysisManager extends ChangeNotifier {
       AnalysisFfi.unload();
     }
     _loadedHash = null;
+    _releaseLoadedHashLock();
     _setState(AnalysisState.idle);
+  }
+
+  void _releaseLoadedHashLock() {
+    _loadedHashLock?.releaseSync();
+    _loadedHashLock = null;
   }
 
   // ---- Internal ----
@@ -519,9 +540,12 @@ class AnalysisManager extends ChangeNotifier {
       final maxCacheBytes = AppConfig.isInitialized
           ? AppConfig.instance.analysisCacheMaxBytes
           : 0;
-      return Isolate.run(
-        () => AnalysisFfi.generateAnalysis(videoPath, hash, maxCacheBytes),
-      );
+      return AnalysisCache.withHashExclusiveLock(hash, () async {
+        if (AnalysisCache.filesExist(hash)) return true;
+        return Isolate.run(
+          () => AnalysisFfi.generateAnalysis(videoPath, hash, maxCacheBytes),
+        );
+      });
     });
     _generateQueue = task.then<void>((_) {}, onError: (_) {});
     return task;

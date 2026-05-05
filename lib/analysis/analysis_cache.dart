@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 
 import '../app_paths.dart';
+import '../utils/file_lock.dart';
 
 class AnalysisCacheEntryStats {
   final String hash;
@@ -97,6 +98,21 @@ class AnalysisCache {
   AnalysisCache._();
 
   static final String dataDir = AppPaths.current.analysisCacheDir;
+  static String get _locksDir => p.join(dataDir, 'locks');
+  static String get _indexLockPath => p.join(_locksDir, 'analysis_index.lock');
+
+  static String hashLockPath(String hash) => p.join(_locksDir, '$hash.lock');
+
+  static Future<T> withHashExclusiveLock<T>(
+    String hash,
+    Future<T> Function() action,
+  ) {
+    return FileLockService.withExclusive(hashLockPath(hash), action);
+  }
+
+  static FileLockHandle acquireHashSharedLockSync(String hash) {
+    return FileLockService.acquireSharedSync(hashLockPath(hash));
+  }
 
   // ---- Path helpers ----
 
@@ -273,6 +289,10 @@ class AnalysisCache {
   // ---- Index operations ----
 
   static Map<String, dynamic> loadIndex() {
+    return FileLockService.withSharedSync(_indexLockPath, _loadIndexUnlocked);
+  }
+
+  static Map<String, dynamic> _loadIndexUnlocked() {
     final fallback = {'entries': <String, dynamic>{}};
     final f = indexFile;
     if (!f.existsSync()) return fallback;
@@ -292,10 +312,33 @@ class AnalysisCache {
   }
 
   static Future<void> saveIndex(Map<String, dynamic> index) async {
+    await FileLockService.withExclusive(_indexLockPath, () async {
+      await _saveIndexUnlocked(index);
+    });
+  }
+
+  static Future<void> _saveIndexUnlocked(Map<String, dynamic> index) async {
     await Directory(dataDir).create(recursive: true);
-    await indexFile.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(index),
+    final tmp = File(
+      '${indexFile.path}.$pid.${DateTime.now().microsecondsSinceEpoch}.tmp',
     );
+    await tmp.writeAsString(const JsonEncoder.withIndent('  ').convert(index));
+    if (await indexFile.exists()) {
+      await indexFile.delete();
+    }
+    await tmp.rename(indexFile.path);
+  }
+
+  static void _saveIndexUnlockedSync(Map<String, dynamic> index) {
+    Directory(dataDir).createSync(recursive: true);
+    final tmp = File(
+      '${indexFile.path}.$pid.${DateTime.now().microsecondsSinceEpoch}.tmp',
+    );
+    tmp.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(index));
+    if (indexFile.existsSync()) {
+      indexFile.deleteSync();
+    }
+    tmp.renameSync(indexFile.path);
   }
 
   static Future<void> addEntry(
@@ -303,87 +346,95 @@ class AnalysisCache {
     String name,
     String videoPath,
   ) async {
-    final index = loadIndex();
-    final entries = _entriesFromIndex(index);
-    final existing = entries[hash] is Map
-        ? Map<String, dynamic>.from(entries[hash] as Map)
-        : <String, dynamic>{};
-    final now = DateTime.now().toIso8601String();
-    entries[hash] = {
-      'name': name,
-      'path': videoPath,
-      'size': await File(videoPath).length(),
-      'mtime': (await File(videoPath).lastModified()).toIso8601String(),
-      'time': existing['time'] as String? ?? now,
-      'lastAccessed': now,
-    };
-    await saveIndex(index);
+    await FileLockService.withExclusive(_indexLockPath, () async {
+      final index = _loadIndexUnlocked();
+      final entries = _entriesFromIndex(index);
+      final existing = entries[hash] is Map
+          ? Map<String, dynamic>.from(entries[hash] as Map)
+          : <String, dynamic>{};
+      final now = DateTime.now().toIso8601String();
+      entries[hash] = {
+        'name': name,
+        'path': videoPath,
+        'size': await File(videoPath).length(),
+        'mtime': (await File(videoPath).lastModified()).toIso8601String(),
+        'time': existing['time'] as String? ?? now,
+        'lastAccessed': now,
+      };
+      await _saveIndexUnlocked(index);
+    });
   }
 
   static Future<void> touchEntry(String hash) async {
-    final index = loadIndex();
-    final entries = _entriesFromIndex(index);
-    final rawEntry = entries[hash];
-    if (rawEntry is! Map) return;
-    final entry = Map<String, dynamic>.from(rawEntry);
-    entry['lastAccessed'] = DateTime.now().toIso8601String();
-    entries[hash] = entry;
-    await saveIndex(index);
+    await FileLockService.withExclusive(_indexLockPath, () async {
+      final index = _loadIndexUnlocked();
+      final entries = _entriesFromIndex(index);
+      final rawEntry = entries[hash];
+      if (rawEntry is! Map) return;
+      final entry = Map<String, dynamic>.from(rawEntry);
+      entry['lastAccessed'] = DateTime.now().toIso8601String();
+      entries[hash] = entry;
+      await _saveIndexUnlocked(index);
+    });
   }
 
   static Future<AnalysisCacheDeleteResult> deleteEntries(
     Iterable<String> hashes,
   ) async {
-    final uniqueHashes = hashes.toSet();
-    final index = loadIndex();
-    final rawEntries = index['entries'];
-    final entries = rawEntries is Map<String, dynamic>
-        ? rawEntries
-        : <String, dynamic>{};
+    return FileLockService.withExclusive(_indexLockPath, () async {
+      final uniqueHashes = hashes.toSet();
+      final index = _loadIndexUnlocked();
+      final rawEntries = index['entries'];
+      final entries = rawEntries is Map<String, dynamic>
+          ? rawEntries
+          : <String, dynamic>{};
 
-    final deletedHashes = <String>[];
-    final failuresByHash = <String, List<String>>{};
+      final deletedHashes = <String>[];
+      final failuresByHash = <String, List<String>>{};
 
-    for (final hash in uniqueHashes) {
-      final failures = <String>[];
-      for (final path in [
-        analysisPath(hash),
-        p.join(dataDir, '$hash.vbs4'),
-        p.join(dataDir, '$hash.vbi'),
-        p.join(dataDir, '$hash.vbt'),
-        p.join(dataDir, '$hash.vbs2'),
-        p.join(dataDir, '$hash.tmp.vbs4'),
-        p.join(dataDir, '$hash.tmp.vbi'),
-        p.join(dataDir, '$hash.tmp.vbt'),
-        p.join(dataDir, '$hash.tmp.vvc'),
-      ]) {
-        final file = File(path);
-        try {
-          if (file.existsSync()) await file.delete();
-        } on FileSystemException catch (e) {
-          failures.add(e.path ?? path);
-        } catch (_) {
-          failures.add(path);
+      for (final hash in uniqueHashes) {
+        final failures = await FileLockService.tryExclusive(
+          hashLockPath(hash),
+          () async => _deleteHashFiles(hash),
+        );
+        if (failures == null) {
+          failuresByHash[hash] = [analysisPath(hash)];
+          continue;
+        }
+
+        if (failures.isEmpty) {
+          entries.remove(hash);
+          deletedHashes.add(hash);
+        } else {
+          failuresByHash[hash] = failures;
         }
       }
 
-      if (failures.isEmpty) {
-        entries.remove(hash);
-        deletedHashes.add(hash);
-      } else {
-        failuresByHash[hash] = failures;
+      if (deletedHashes.isNotEmpty) {
+        index['entries'] = entries;
+        await _saveIndexUnlocked(index);
+      }
+
+      return AnalysisCacheDeleteResult(
+        deletedHashes: deletedHashes,
+        failuresByHash: failuresByHash,
+      );
+    });
+  }
+
+  static Future<List<String>> _deleteHashFiles(String hash) async {
+    final failures = <String>[];
+    for (final path in _pathsForHash(hash)) {
+      final file = File(path);
+      try {
+        if (file.existsSync()) await file.delete();
+      } on FileSystemException catch (e) {
+        failures.add(e.path ?? path);
+      } catch (_) {
+        failures.add(path);
       }
     }
-
-    if (deletedHashes.isNotEmpty) {
-      index['entries'] = entries;
-      await saveIndex(index);
-    }
-
-    return AnalysisCacheDeleteResult(
-      deletedHashes: deletedHashes,
-      failuresByHash: failuresByHash,
-    );
+    return failures;
   }
 
   static bool hasEntry(String hash, {String? videoPath}) {
@@ -508,6 +559,18 @@ class AnalysisCache {
     return total;
   }
 
+  static List<String> _pathsForHash(String hash) => [
+    analysisPath(hash),
+    p.join(dataDir, '$hash.vbs4'),
+    p.join(dataDir, '$hash.vbi'),
+    p.join(dataDir, '$hash.vbt'),
+    p.join(dataDir, '$hash.vbs2'),
+    p.join(dataDir, '$hash.tmp.vbs4'),
+    p.join(dataDir, '$hash.tmp.vbi'),
+    p.join(dataDir, '$hash.tmp.vbt'),
+    p.join(dataDir, '$hash.tmp.vvc'),
+  ];
+
   static Map<String, dynamic> _entriesFromIndex(Map<String, dynamic> index) {
     final rawEntries = index['entries'];
     if (rawEntries is Map<String, dynamic>) return rawEntries;
@@ -522,58 +585,59 @@ class AnalysisCache {
   }
 
   static AnalysisCacheDeleteResult _deleteEntriesSync(Iterable<String> hashes) {
-    final uniqueHashes = hashes.toSet();
-    final index = loadIndex();
-    final rawEntries = index['entries'];
-    final entries = rawEntries is Map<String, dynamic>
-        ? rawEntries
-        : <String, dynamic>{};
+    return FileLockService.withExclusiveSync(_indexLockPath, () {
+      final uniqueHashes = hashes.toSet();
+      final index = _loadIndexUnlocked();
+      final rawEntries = index['entries'];
+      final entries = rawEntries is Map<String, dynamic>
+          ? rawEntries
+          : <String, dynamic>{};
 
-    final deletedHashes = <String>[];
-    final failuresByHash = <String, List<String>>{};
+      final deletedHashes = <String>[];
+      final failuresByHash = <String, List<String>>{};
 
-    for (final hash in uniqueHashes) {
-      final failures = <String>[];
-      for (final path in [
-        analysisPath(hash),
-        p.join(dataDir, '$hash.vbs4'),
-        p.join(dataDir, '$hash.vbi'),
-        p.join(dataDir, '$hash.vbt'),
-        p.join(dataDir, '$hash.vbs2'),
-        p.join(dataDir, '$hash.tmp.vbs4'),
-        p.join(dataDir, '$hash.tmp.vbi'),
-        p.join(dataDir, '$hash.tmp.vbt'),
-        p.join(dataDir, '$hash.tmp.vvc'),
-      ]) {
-        final file = File(path);
-        try {
-          if (file.existsSync()) file.deleteSync();
-        } on FileSystemException catch (e) {
-          failures.add(e.path ?? path);
-        } catch (_) {
-          failures.add(path);
+      for (final hash in uniqueHashes) {
+        final failures = FileLockService.tryExclusiveSync(
+          hashLockPath(hash),
+          () => _deleteHashFilesSync(hash),
+        );
+        if (failures == null) {
+          failuresByHash[hash] = [analysisPath(hash)];
+          continue;
+        }
+
+        if (failures.isEmpty) {
+          entries.remove(hash);
+          deletedHashes.add(hash);
+        } else {
+          failuresByHash[hash] = failures;
         }
       }
 
-      if (failures.isEmpty) {
-        entries.remove(hash);
-        deletedHashes.add(hash);
-      } else {
-        failuresByHash[hash] = failures;
+      if (deletedHashes.isNotEmpty) {
+        index['entries'] = entries;
+        _saveIndexUnlockedSync(index);
+      }
+
+      return AnalysisCacheDeleteResult(
+        deletedHashes: deletedHashes,
+        failuresByHash: failuresByHash,
+      );
+    });
+  }
+
+  static List<String> _deleteHashFilesSync(String hash) {
+    final failures = <String>[];
+    for (final path in _pathsForHash(hash)) {
+      final file = File(path);
+      try {
+        if (file.existsSync()) file.deleteSync();
+      } on FileSystemException catch (e) {
+        failures.add(e.path ?? path);
+      } catch (_) {
+        failures.add(path);
       }
     }
-
-    if (deletedHashes.isNotEmpty) {
-      index['entries'] = entries;
-      Directory(dataDir).createSync(recursive: true);
-      indexFile.writeAsStringSync(
-        const JsonEncoder.withIndent('  ').convert(index),
-      );
-    }
-
-    return AnalysisCacheDeleteResult(
-      deletedHashes: deletedHashes,
-      failuresByHash: failuresByHash,
-    );
+    return failures;
   }
 }

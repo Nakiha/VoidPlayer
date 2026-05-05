@@ -6,6 +6,7 @@ class AppPathSet {
   final String exeDir;
   final String rootDir;
   final String configFile;
+  final String locksDir;
   final String logsDir;
   final String analysisCacheDir;
   final bool isPortable;
@@ -14,6 +15,7 @@ class AppPathSet {
     required this.exeDir,
     required this.rootDir,
     required this.configFile,
+    required this.locksDir,
     required this.logsDir,
     required this.analysisCacheDir,
     required this.isPortable,
@@ -42,6 +44,7 @@ class AppPaths {
       exeDir: exeDir,
       rootDir: rootDir,
       configFile: p.join(rootDir, 'config.json'),
+      locksDir: p.join(rootDir, 'locks'),
       logsDir: p.join(rootDir, 'logs'),
       analysisCacheDir: p.join(rootDir, 'cache'),
       isPortable: isPortable,

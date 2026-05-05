@@ -18,9 +18,11 @@
 #include <atomic>
 #include <mutex>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 extern "C" {
@@ -567,6 +569,8 @@ static bool is_current_hash_artifact_name(const std::string& name, const char* h
     return name.rfind(prefix, 0) == 0 && is_analysis_cache_artifact_name(name);
 }
 
+static uint64_t directory_tree_bytes_utf8(const std::string& path);
+
 struct NativeCacheBudget {
     bool limited = false;
     uint64_t available_for_current_hash = 0;
@@ -581,7 +585,7 @@ static NativeCacheBudget compute_native_cache_budget(const std::string& data_dir
 
     uint64_t other_bytes = 0;
     std::error_code ec;
-    for (const auto& entry : std::filesystem::directory_iterator(
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(
              vr::win_utf8::path_from_utf8(data_dir), ec)) {
         if (ec) break;
         if (!entry.is_regular_file(ec) || ec) {
@@ -607,7 +611,8 @@ static NativeCacheBudget compute_native_cache_budget(const std::string& data_dir
 }
 
 static uint64_t current_hash_artifact_bytes(const std::string& data_dir,
-                                            const char* hash) {
+                                            const char* hash,
+                                            const std::string& staging_dir = {}) {
     if (!hash || hash[0] == '\0') return 0;
     uint64_t total = 0;
     const std::vector<const char*> suffixes = {
@@ -617,15 +622,19 @@ static uint64_t current_hash_artifact_bytes(const std::string& data_dir,
     for (const auto* suffix : suffixes) {
         total += file_size_utf8(data_dir + "\\" + hash + suffix);
     }
+    if (!staging_dir.empty()) {
+        total += directory_tree_bytes_utf8(staging_dir);
+    }
     return total;
 }
 
 static bool check_current_hash_budget(const std::string& data_dir,
                                       const char* hash,
                                       const NativeCacheBudget& budget,
-                                      const char* stage) {
+                                      const char* stage,
+                                      const std::string& staging_dir = {}) {
     if (!budget.limited) return true;
-    const uint64_t used = current_hash_artifact_bytes(data_dir, hash);
+    const uint64_t used = current_hash_artifact_bytes(data_dir, hash, staging_dir);
     if (used <= budget.available_for_current_hash) return true;
     spdlog::warn("[Analysis] cache limit exceeded during {}: current_hash={} available={}",
                  stage, used, budget.available_for_current_hash);
@@ -634,9 +643,10 @@ static bool check_current_hash_budget(const std::string& data_dir,
 
 static uint64_t remaining_current_hash_budget(const std::string& data_dir,
                                               const char* hash,
-                                              const NativeCacheBudget& budget) {
+                                              const NativeCacheBudget& budget,
+                                              const std::string& staging_dir = {}) {
     if (!budget.limited) return 0;
-    const uint64_t used = current_hash_artifact_bytes(data_dir, hash);
+    const uint64_t used = current_hash_artifact_bytes(data_dir, hash, staging_dir);
     return used >= budget.available_for_current_hash
         ? 0
         : budget.available_for_current_hash - used;
@@ -648,6 +658,32 @@ static uint64_t watched_file_bytes(const std::vector<std::string>& paths) {
         total += file_size_utf8(path);
     }
     return total;
+}
+
+static uint64_t directory_tree_bytes_utf8(const std::string& path) {
+    uint64_t total = 0;
+    std::error_code ec;
+    const auto root = vr::win_utf8::path_from_utf8(path);
+    if (!std::filesystem::exists(root, ec) || ec) return 0;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(root, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file(ec) || ec) {
+            ec.clear();
+            continue;
+        }
+        const auto size = entry.file_size(ec);
+        if (!ec) {
+            total += static_cast<uint64_t>(size);
+        }
+        ec.clear();
+    }
+    return total;
+}
+
+static bool remove_directory_tree_utf8(const std::string& path) {
+    std::error_code ec;
+    std::filesystem::remove_all(vr::win_utf8::path_from_utf8(path), ec);
+    return !ec;
 }
 
 static VbiCodec detect_analysis_codec(const char* video_path) {
@@ -1134,10 +1170,12 @@ static std::string make_analysis_tool_log_path(const std::string& logs_dir,
     GetLocalTime(&st);
     char log_name[160];
     snprintf(log_name, sizeof(log_name),
-             "%s_%04d-%02d-%02d_%02d%02d%02d_%s.log",
+             "%s_%04d-%02d-%02d_%02d%02d%02d_%lu_%s.log",
              tool_tag,
              st.wYear, st.wMonth, st.wDay,
-             st.wHour, st.wMinute, st.wSecond, hash);
+             st.wHour, st.wMinute, st.wSecond,
+             static_cast<unsigned long>(GetCurrentProcessId()),
+             hash);
     return logs_dir + "\\" + log_name;
 }
 
@@ -1150,8 +1188,54 @@ static std::string first_existing_tool_path(const std::vector<std::string>& path
     return {};
 }
 
+static std::string make_analysis_staging_dir(const std::string& data_dir,
+                                             const char* hash) {
+    std::ostringstream name;
+    name << hash << "." << GetCurrentProcessId() << "." << GetTickCount64();
+    return data_dir + "\\tmp\\" + name.str();
+}
+
+static void remove_staging_dirs_for_hash(const std::string& data_dir,
+                                         const char* hash) {
+    if (!hash || hash[0] == '\0') return;
+    const std::string prefix = std::string(hash) + ".";
+    const auto tmp_root = vr::win_utf8::path_from_utf8(data_dir + "\\tmp");
+    std::error_code ec;
+    if (!std::filesystem::exists(tmp_root, ec) || ec) return;
+    for (const auto& entry : std::filesystem::directory_iterator(tmp_root, ec)) {
+        if (ec) break;
+        if (!entry.is_directory(ec) || ec) {
+            ec.clear();
+            continue;
+        }
+        const std::string name = vr::win_utf8::path_to_utf8(entry.path().filename());
+        if (name.rfind(prefix, 0) == 0) {
+            std::error_code remove_ec;
+            std::filesystem::remove_all(entry.path(), remove_ec);
+        }
+    }
+}
+
+class ScopedStagingDir {
+public:
+    explicit ScopedStagingDir(std::string path) : path_(std::move(path)) {}
+    ~ScopedStagingDir() {
+        if (active_ && !path_.empty()) {
+            remove_directory_tree_utf8(path_);
+        }
+    }
+
+    const std::string& path() const { return path_; }
+    void dismiss() { active_ = false; }
+
+private:
+    std::string path_;
+    bool active_ = true;
+};
+
 static bool generate_vvc_vbs4(const std::string& exe_dir,
                               const std::string& data_dir,
+                              const std::string& staging_dir,
                               const std::string& logs_dir,
                               const char* video_path,
                               const char* hash,
@@ -1175,7 +1259,8 @@ static bool generate_vvc_vbs4(const std::string& exe_dir,
         "\" -b - --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
     spdlog::info("[Analysis] vtm stdin cmd: {}", cmd);
     spdlog::info("[Analysis] vtm log: {}", vtm_log_path);
-    const uint64_t stdin_budget = remaining_current_hash_budget(data_dir, hash, budget);
+    const uint64_t stdin_budget = remaining_current_hash_budget(
+        data_dir, hash, budget, staging_dir);
     if (budget.limited && stdin_budget == 0) return false;
     const int vtm_rc = run_vtm_stdin_command(
         cmd,
@@ -1190,9 +1275,10 @@ static bool generate_vvc_vbs4(const std::string& exe_dir,
         spdlog::warn("[Analysis] VTM stdin generation failed, falling back to temp VVC file");
         vr::win_utf8::delete_file_utf8(vbs4_out);
 
-        const std::string tmp_vvc = data_dir + "\\" + hash + ".tmp.vvc";
+        const std::string tmp_vvc = staging_dir + "\\" + hash + ".tmp.vvc";
         spdlog::info("[Analysis] extracting raw VVC to {}", tmp_vvc);
-        const uint64_t extract_budget = remaining_current_hash_budget(data_dir, hash, budget);
+        const uint64_t extract_budget = remaining_current_hash_budget(
+            data_dir, hash, budget, staging_dir);
         if (budget.limited && extract_budget == 0) {
             vr::win_utf8::delete_file_utf8(tmp_vvc);
             return false;
@@ -1205,7 +1291,8 @@ static bool generate_vvc_vbs4(const std::string& exe_dir,
 
         if (demux_ok &&
             vr::win_utf8::file_exists_utf8(tmp_vvc) &&
-            check_current_hash_budget(data_dir, hash, budget, "raw VVC extraction")) {
+            check_current_hash_budget(
+                data_dir, hash, budget, "raw VVC extraction", staging_dir)) {
             const std::string fallback_cmd = "\"" + decoder_path + "\" -b \"" + tmp_vvc +
                 "\" --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
             spdlog::info("[Analysis] vtm fallback cmd: {}", fallback_cmd);
@@ -1213,7 +1300,8 @@ static bool generate_vvc_vbs4(const std::string& exe_dir,
                 fallback_cmd,
                 vtm_log_path,
                 {tmp_vvc, vbs4_out},
-                budget.limited ? budget.available_for_current_hash : 0);
+                budget.limited ? remaining_current_hash_budget(
+                    data_dir, hash, budget, staging_dir) : 0);
             spdlog::info("[Analysis] vtm fallback exit_code={}", fallback_rc);
             vr::win_utf8::delete_file_utf8(tmp_vvc);
             vbs4_ok = fallback_rc == 0 && vr::win_utf8::file_exists_utf8(vbs4_out);
@@ -1223,7 +1311,8 @@ static bool generate_vvc_vbs4(const std::string& exe_dir,
         }
     }
 
-    if (vbs4_ok && !check_current_hash_budget(data_dir, hash, budget, "VBS4 generation")) {
+    if (vbs4_ok && !check_current_hash_budget(
+            data_dir, hash, budget, "VBS4 generation", staging_dir)) {
         vr::win_utf8::delete_file_utf8(vbs4_out);
         vbs4_ok = false;
     }
@@ -1242,6 +1331,7 @@ static const char* ffmpeg_analysis_codec_arg(VbiCodec codec) {
 
 static bool generate_ffmpeg_vbs4(const std::string& exe_dir,
                                  const std::string& data_dir,
+                                 const std::string& staging_dir,
                                  const std::string& logs_dir,
                                  const char* video_path,
                                  const char* hash,
@@ -1270,7 +1360,8 @@ static bool generate_ffmpeg_vbs4(const std::string& exe_dir,
         "\" --vbs4 \"" + vbs4_out + "\"";
     spdlog::info("[Analysis] ffmpeg-analysis cmd: {}", cmd);
     spdlog::info("[Analysis] ffmpeg-analysis log: {}", analyzer_log_path);
-    const uint64_t vbs4_budget = remaining_current_hash_budget(data_dir, hash, budget);
+    const uint64_t vbs4_budget = remaining_current_hash_budget(
+        data_dir, hash, budget, staging_dir);
     if (budget.limited && vbs4_budget == 0) return false;
     const int analyzer_rc = run_command(
         cmd,
@@ -1280,7 +1371,8 @@ static bool generate_ffmpeg_vbs4(const std::string& exe_dir,
     spdlog::info("[Analysis] ffmpeg-analysis exit_code={}", analyzer_rc);
 
     bool vbs4_ok = analyzer_rc == 0 && vr::win_utf8::file_exists_utf8(vbs4_out);
-    if (vbs4_ok && !check_current_hash_budget(data_dir, hash, budget, "VBS4 generation")) {
+    if (vbs4_ok && !check_current_hash_budget(
+            data_dir, hash, budget, "VBS4 generation", staging_dir)) {
         vr::win_utf8::delete_file_utf8(vbs4_out);
         vbs4_ok = false;
     }
@@ -1312,6 +1404,16 @@ int32_t naki_analysis_generate(const char* video_path,
 
     // Ensure data directory exists
     vr::win_utf8::create_directory_utf8(data_dir);
+    remove_staging_dirs_for_hash(data_dir, hash);
+    const std::string staging_path = make_analysis_staging_dir(data_dir, hash);
+    ScopedStagingDir staging(staging_path);
+    if (!vr::win_utf8::create_directory_utf8(data_dir + "\\tmp") ||
+        !vr::win_utf8::create_directory_utf8(staging.path())) {
+        spdlog::error("[Analysis] failed to create staging directory: {}", staging.path());
+        return 0;
+    }
+    spdlog::info("[Analysis] staging_dir={}", staging.path());
+
     const NativeCacheBudget budget =
         compute_native_cache_budget(data_dir, hash, max_cache_bytes);
     if (budget.limited && budget.available_for_current_hash == 0) {
@@ -1321,15 +1423,15 @@ int32_t naki_analysis_generate(const char* video_path,
 
     // ---- Step 0: VBS4 via codec-specific decoder instrumentation ----
     VbiCodec source_codec = detect_analysis_codec(video_path);
-    std::string vbs4_tmp = data_dir + "\\" + hash + ".tmp.vbs4";
+    std::string vbs4_tmp = staging.path() + "\\" + hash + ".tmp.vbs4";
     bool vbs4_generated = false;
     spdlog::info("[Analysis] source codec={}", static_cast<int>(source_codec));
     if (source_codec == VbiCodec::VVC) {
         vbs4_generated = generate_vvc_vbs4(
-            exe_dir, data_dir, logs_dir, video_path, hash, vbs4_tmp, budget);
+            exe_dir, data_dir, staging.path(), logs_dir, video_path, hash, vbs4_tmp, budget);
     } else if (ffmpeg_analysis_codec_arg(source_codec)) {
         vbs4_generated = generate_ffmpeg_vbs4(
-            exe_dir, data_dir, logs_dir, video_path, hash, source_codec, vbs4_tmp, budget);
+            exe_dir, data_dir, staging.path(), logs_dir, video_path, hash, source_codec, vbs4_tmp, budget);
     } else {
         spdlog::info("[Analysis] no VBS4 producer registered for codec={}",
                      static_cast<int>(source_codec));
@@ -1344,12 +1446,13 @@ int32_t naki_analysis_generate(const char* video_path,
     }
 
     // ---- Step 1+2: VBI + VBT via C++ FFmpeg (single pass) ----
-    std::string vbi_out = data_dir + "\\" + hash + ".tmp.vbi";
-    std::string vbt_out = data_dir + "\\" + hash + ".tmp.vbt";
+    std::string vbi_out = staging.path() + "\\" + hash + ".tmp.vbi";
+    std::string vbt_out = staging.path() + "\\" + hash + ".tmp.vbt";
     std::string vac_out = data_dir + "\\" + hash + ".vac";
+    std::string vac_stage = staging.path() + "\\" + hash + ".vac";
 
     const uint64_t vbi_vbt_budget =
-        remaining_current_hash_budget(data_dir, hash, budget);
+        remaining_current_hash_budget(data_dir, hash, budget, staging.path());
     if (budget.limited && vbi_vbt_budget == 0) {
         spdlog::error("[Analysis] cache limit leaves no room for VBI/VBT generation");
         vr::win_utf8::delete_file_utf8(vbs4_tmp);
@@ -1362,7 +1465,8 @@ int32_t naki_analysis_generate(const char* video_path,
         vr::win_utf8::delete_file_utf8(vbt_out);
         return 0;
     }
-    if (!check_current_hash_budget(data_dir, hash, budget, "VBI/VBT generation")) {
+    if (!check_current_hash_budget(
+            data_dir, hash, budget, "VBI/VBT generation", staging.path())) {
         vr::win_utf8::delete_file_utf8(vbs4_tmp);
         vr::win_utf8::delete_file_utf8(vbi_out);
         vr::win_utf8::delete_file_utf8(vbt_out);
@@ -1384,7 +1488,7 @@ int32_t naki_analysis_generate(const char* video_path,
 
     const std::string vbs4_section = vr::win_utf8::file_exists_utf8(vbs4_tmp) ? vbs4_tmp : "";
     const uint64_t vac_budget =
-        remaining_current_hash_budget(data_dir, hash, budget);
+        remaining_current_hash_budget(data_dir, hash, budget, staging.path());
     if (budget.limited && vac_budget == 0) {
         spdlog::error("[Analysis] cache limit leaves no room for VAC container");
         vr::win_utf8::delete_file_utf8(vbs4_tmp);
@@ -1393,11 +1497,32 @@ int32_t naki_analysis_generate(const char* video_path,
         return 0;
     }
     if (!vr::analysis::write_analysis_container(
-            vac_out, vbs4_section, vbi_out, vbt_out, vac_budget)) {
-        spdlog::error("[Analysis] failed to write analysis container: {}", vac_out);
+            vac_stage, vbs4_section, vbi_out, vbt_out, vac_budget)) {
+        spdlog::error("[Analysis] failed to write analysis container: {}", vac_stage);
         vr::win_utf8::delete_file_utf8(vbs4_tmp);
         vr::win_utf8::delete_file_utf8(vbi_out);
         vr::win_utf8::delete_file_utf8(vbt_out);
+        return 0;
+    }
+    if (!check_current_hash_budget(
+            data_dir, hash, budget, "VAC container generation", staging.path())) {
+        spdlog::error("[Analysis] cache limit leaves no room for VAC container publish");
+        vr::win_utf8::delete_file_utf8(vbs4_tmp);
+        vr::win_utf8::delete_file_utf8(vbi_out);
+        vr::win_utf8::delete_file_utf8(vbt_out);
+        vr::win_utf8::delete_file_utf8(vac_stage);
+        return 0;
+    }
+
+    vr::win_utf8::delete_file_utf8(vac_out);
+    std::error_code rename_ec;
+    std::filesystem::rename(
+        vr::win_utf8::path_from_utf8(vac_stage),
+        vr::win_utf8::path_from_utf8(vac_out),
+        rename_ec);
+    if (rename_ec) {
+        spdlog::error("[Analysis] failed to publish analysis container: {} -> {} ({})",
+                      vac_stage, vac_out, rename_ec.message());
         return 0;
     }
 

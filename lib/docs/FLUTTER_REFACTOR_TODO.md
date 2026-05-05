@@ -55,6 +55,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 ## Round 11
 
 - [x] ~~Add cooperative cross-process locks for config, analysis index, and per-hash cache use/generation/delete.~~
+- [x] ~~Publish analysis generation from per-run staging directories instead of fixed hash tmp files.~~
 
 ## P0
 

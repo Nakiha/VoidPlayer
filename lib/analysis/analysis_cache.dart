@@ -209,7 +209,7 @@ class AnalysisCache {
     }
 
     var totalBytes = 0;
-    for (final entity in dir.listSync(recursive: false, followLinks: false)) {
+    for (final entity in dir.listSync(recursive: true, followLinks: false)) {
       if (entity is File) {
         try {
           totalBytes += entity.lengthSync();
@@ -434,7 +434,28 @@ class AnalysisCache {
         failures.add(path);
       }
     }
+    await _deleteHashStagingDirs(hash, failures);
     return failures;
+  }
+
+  static Future<void> _deleteHashStagingDirs(
+    String hash,
+    List<String> failures,
+  ) async {
+    final tmpDir = Directory(p.join(dataDir, 'tmp'));
+    if (!await tmpDir.exists()) return;
+    await for (final entity in tmpDir.list(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final name = p.basename(entity.path);
+      if (!name.startsWith('$hash.')) continue;
+      try {
+        await entity.delete(recursive: true);
+      } on FileSystemException catch (e) {
+        failures.add(e.path ?? entity.path);
+      } catch (_) {
+        failures.add(entity.path);
+      }
+    }
   }
 
   static bool hasEntry(String hash, {String? videoPath}) {
@@ -546,7 +567,7 @@ class AnalysisCache {
     final dir = Directory(dataDir);
     if (!dir.existsSync()) return 0;
     var total = 0;
-    for (final entity in dir.listSync(recursive: false, followLinks: false)) {
+    for (final entity in dir.listSync(recursive: true, followLinks: false)) {
       if (entity is! File) continue;
       final name = p.basename(entity.path);
       if (!name.startsWith('$hash.')) continue;
@@ -638,6 +659,24 @@ class AnalysisCache {
         failures.add(path);
       }
     }
+    _deleteHashStagingDirsSync(hash, failures);
     return failures;
+  }
+
+  static void _deleteHashStagingDirsSync(String hash, List<String> failures) {
+    final tmpDir = Directory(p.join(dataDir, 'tmp'));
+    if (!tmpDir.existsSync()) return;
+    for (final entity in tmpDir.listSync(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final name = p.basename(entity.path);
+      if (!name.startsWith('$hash.')) continue;
+      try {
+        entity.deleteSync(recursive: true);
+      } on FileSystemException catch (e) {
+        failures.add(e.path ?? entity.path);
+      } catch (_) {
+        failures.add(entity.path);
+      }
+    }
   }
 }

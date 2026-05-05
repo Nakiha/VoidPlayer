@@ -23,6 +23,7 @@ import 'main_window_platform.dart';
 import 'main_window_playback.dart';
 import 'main_window_state.dart';
 import 'main_window_test_hooks.dart';
+import 'main_window_timeline_metrics.dart';
 import 'main_window_view_model.dart';
 
 class MainWindowController {
@@ -38,6 +39,11 @@ class MainWindowController {
   final NativePlayerController player = NativePlayerController();
   final TrackManager trackManager = TrackManager();
   final MainWindowStateStore stateStore = MainWindowStateStore();
+  late final MainWindowTimelineMetrics timelineMetrics =
+      MainWindowTimelineMetrics(
+        stateStore: stateStore,
+        trackManager: trackManager,
+      );
   final ValueNotifier<TimelineHoverState> timelineHoverNotifier = ValueNotifier(
     const TimelineHoverState(),
   );
@@ -127,7 +133,7 @@ class MainWindowController {
         timelineStartWidth: _timelineStartWidth,
         isPlaying: _isPlaying,
         currentPtsUs: _currentPtsUs,
-        durationUs: mediaCoordinator.effectiveDurationUs,
+        durationUs: timelineMetrics.effectiveDurationUs,
         markerUs: _loopMarkerPtsUs,
         seekMinUs: _loopRangeEnabled ? _resolvedLoopStartUs : null,
         seekMaxUs: _loopRangeEnabled ? _resolvedLoopEndUs : null,
@@ -370,13 +376,14 @@ class MainWindowController {
       timelineHoverNotifier: timelineHoverNotifier,
       playbackPreferences: playbackPreferences,
       mounted: mounted,
-      effectiveDurationUs: () => mediaCoordinator.effectiveDurationUs,
+      timelineMetrics: timelineMetrics,
     );
     mediaCoordinator = MainWindowMediaCoordinator(
       controller: player,
       trackManager: trackManager,
       layoutCoordinator: layoutCoordinator,
       stateStore: stateStore,
+      timelineMetrics: timelineMetrics,
       mounted: mounted,
       applyStartupLoopRangeIfReady:
           playbackCoordinator.applyStartupLoopRangeIfReady,
@@ -390,7 +397,7 @@ class MainWindowController {
       loopRangeBarKey: loopRangeBarKey,
       splitPosition: () => _layout.splitPos,
       timelineStartWidth: () => _timelineStartWidth,
-      effectiveDurationUs: () => mediaCoordinator.effectiveDurationUs,
+      effectiveDurationUs: () => timelineMetrics.effectiveDurationUs,
       resolvedLoopStartUs: () => _resolvedLoopStartUs,
       resolvedLoopEndUs: () => _resolvedLoopEndUs,
     );

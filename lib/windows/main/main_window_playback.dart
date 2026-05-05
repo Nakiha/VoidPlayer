@@ -8,6 +8,7 @@ import '../../startup_options.dart';
 import '../../track_manager.dart';
 import '../../video_renderer_controller.dart';
 import 'main_window_state.dart';
+import 'main_window_timeline_metrics.dart';
 
 class MainWindowPlaybackCoordinator {
   static const double trackDragHandleWidth = 28.0;
@@ -21,7 +22,7 @@ class MainWindowPlaybackCoordinator {
   final ValueNotifier<TimelineHoverState> timelineHoverNotifier;
   final PlaybackPreferences playbackPreferences;
   final bool Function() mounted;
-  final int Function() effectiveDurationUs;
+  final MainWindowTimelineMetrics timelineMetrics;
 
   Timer? _pollTimer;
   Timer? _loopBoundaryTimer;
@@ -39,7 +40,7 @@ class MainWindowPlaybackCoordinator {
     required this.timelineHoverNotifier,
     required this.playbackPreferences,
     required this.mounted,
-    required this.effectiveDurationUs,
+    required this.timelineMetrics,
   });
 
   MainWindowStateModel get _state => stateStore.value;
@@ -184,17 +185,19 @@ class MainWindowPlaybackCoordinator {
       trackDragHandleWidth + timelineControlsWidth() + trackDividerWidth;
 
   int get resolvedLoopStartUs =>
-      loopStartUs().clamp(0, effectiveDurationUs()).toInt();
+      loopStartUs().clamp(0, timelineMetrics.effectiveDurationUs).toInt();
 
   int get resolvedLoopEndUs {
-    final durationUs = effectiveDurationUs();
+    final durationUs = timelineMetrics.effectiveDurationUs;
     if (durationUs <= 0) return 0;
     final defaultEndUs = loopEndUs() <= 0 ? durationUs : loopEndUs();
     return defaultEndUs.clamp(resolvedLoopStartUs, durationUs).toInt();
   }
 
   List<int> get loopMarkerPtsUs {
-    if (!loopRangeEnabled() || effectiveDurationUs() <= 0) return const [];
+    if (!loopRangeEnabled() || timelineMetrics.effectiveDurationUs <= 0) {
+      return const [];
+    }
     return [resolvedLoopStartUs, resolvedLoopEndUs];
   }
 
@@ -336,7 +339,7 @@ class MainWindowPlaybackCoordinator {
     if (startupLoopRangeApplied() || trackManager.isEmpty) return;
     final range = startupOptions.loopRange;
     if (range == null) return;
-    final durationUs = effectiveDurationUs();
+    final durationUs = timelineMetrics.effectiveDurationUs;
     if (durationUs <= 0) return;
 
     setStartupLoopRangeApplied(true);
@@ -431,7 +434,7 @@ class MainWindowPlaybackCoordinator {
   }
 
   void _ensureLoopRangeInitialized() {
-    final durationUs = effectiveDurationUs();
+    final durationUs = timelineMetrics.effectiveDurationUs;
     if (durationUs <= 0) return;
     if (loopEndUs() <= loopStartUs() || loopEndUs() > durationUs) {
       final startUs = loopStartUs().clamp(0, durationUs).toInt();
@@ -440,7 +443,7 @@ class MainWindowPlaybackCoordinator {
   }
 
   ({int startUs, int endUs}) _clampLoopRange(int startUs, int endUs) {
-    final durationUs = effectiveDurationUs();
+    final durationUs = timelineMetrics.effectiveDurationUs;
     final minRangeUs = durationUs > 10000 ? 10000 : 0;
     final maxStartUs = (durationUs - minRangeUs).clamp(0, durationUs);
     final clampedStartUs = startUs.clamp(0, maxStartUs).toInt();

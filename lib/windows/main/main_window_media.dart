@@ -10,12 +10,14 @@ import '../../viewport/viewport_display_state.dart';
 import '../native_file_picker.dart';
 import 'main_window_layout.dart';
 import 'main_window_state.dart';
+import 'main_window_timeline_metrics.dart';
 
 class MainWindowMediaCoordinator {
   final NativePlayerController controller;
   final TrackManager trackManager;
   final MainWindowLayoutCoordinator layoutCoordinator;
   final MainWindowStateStore stateStore;
+  final MainWindowTimelineMetrics timelineMetrics;
   final bool Function() mounted;
   final VoidCallback applyStartupLoopRangeIfReady;
   final VoidCallback cancelLoopBoundaryTimer;
@@ -29,6 +31,7 @@ class MainWindowMediaCoordinator {
     required this.trackManager,
     required this.layoutCoordinator,
     required this.stateStore,
+    required this.timelineMetrics,
     required this.mounted,
     required this.applyStartupLoopRangeIfReady,
     required this.cancelLoopBoundaryTimer,
@@ -232,18 +235,10 @@ class MainWindowMediaCoordinator {
     }
     if (!_alive) return;
 
-    final clampedTargetUs = targetUs.clamp(0, effectiveDurationUs).toInt();
+    final clampedTargetUs = targetUs
+        .clamp(0, timelineMetrics.effectiveDurationUs)
+        .toInt();
     seekTo(clampedTargetUs);
-  }
-
-  int get effectiveDurationUs {
-    int maxEffective = durationUs();
-    for (final entry in trackManager.entries) {
-      final offsetUs = syncOffsets()[entry.fileId] ?? 0;
-      final effective = entry.info.durationUs + offsetUs;
-      if (effective > maxEffective) maxEffective = effective;
-    }
-    return maxEffective;
   }
 
   void removeSyncOffset(int fileId) {

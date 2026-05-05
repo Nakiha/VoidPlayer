@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <condition_variable>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -17,6 +18,8 @@ extern "C" {
 }
 
 namespace vr {
+
+class PrivateCdnFlvDemuxer;
 
 enum class DemuxStreamKind {
     Video,
@@ -83,6 +86,7 @@ private:
     std::string file_path_;
     SeekController& seek_controller_;
     AVFormatContext* fmt_ctx_ = nullptr;
+    std::unique_ptr<PrivateCdnFlvDemuxer> private_flv_demuxer_;
     std::atomic<int64_t> open_deadline_ns_{0};
     DemuxStats stats_;
     std::vector<OutputRoute> output_routes_;

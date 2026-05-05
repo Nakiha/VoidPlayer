@@ -3,6 +3,7 @@
 #include "analysis/generators/bitstream_indexer.h"
 #include "analysis/parsers/binary_types.h"
 #include "common/win_utf8.h"
+#include "media/private_cdn_flv_demuxer.h"
 
 #include <spdlog/spdlog.h>
 
@@ -297,9 +298,11 @@ static bool append_packet_if_safe(const AVPacket* pkt,
         });
 }
 
-static AVBSFContext* create_annex_b_bsf(AVStream* stream, VbiCodec codec) {
+static AVBSFContext* create_annex_b_bsf(const AVCodecParameters* codecpar,
+                                        AVRational time_base,
+                                        VbiCodec codec) {
     const char* name = annex_b_bsf_name(codec);
-    if (!name || !stream || !stream->codecpar) return nullptr;
+    if (!name || !codecpar) return nullptr;
 
     const AVBitStreamFilter* filter = av_bsf_get_by_name(name);
     if (!filter) {
@@ -314,14 +317,14 @@ static AVBSFContext* create_annex_b_bsf(AVStream* stream, VbiCodec codec) {
         return nullptr;
     }
 
-    ret = avcodec_parameters_copy(bsf->par_in, stream->codecpar);
+    ret = avcodec_parameters_copy(bsf->par_in, codecpar);
     if (ret < 0) {
         spdlog::warn("[AnalysisGen] avcodec_parameters_copy({}) failed: {:#x}",
                      name, static_cast<unsigned>(ret));
         av_bsf_free(&bsf);
         return nullptr;
     }
-    bsf->time_base_in = stream->time_base;
+    bsf->time_base_in = time_base;
 
     ret = av_bsf_init(bsf);
     if (ret < 0) {
@@ -332,6 +335,11 @@ static AVBSFContext* create_annex_b_bsf(AVStream* stream, VbiCodec codec) {
 
     spdlog::info("[AnalysisGen] using {} for VBI Annex-B indexing", name);
     return bsf;
+}
+
+static AVBSFContext* create_annex_b_bsf(AVStream* stream, VbiCodec codec) {
+    if (!stream) return nullptr;
+    return create_annex_b_bsf(stream->codecpar, stream->time_base, codec);
 }
 
 static bool append_filtered_packets(AVBSFContext* bsf,
@@ -370,6 +378,135 @@ static bool append_filtered_packets(AVBSFContext* bsf,
     return true;
 }
 
+static bool generatePrivateCdnFlv(const std::string& video_path,
+                                  const std::string& vbi_path,
+                                  const std::string& vbt_path,
+                                  uint64_t max_output_bytes) {
+    vr::PrivateCdnFlvDemuxer demuxer;
+    if (!demuxer.open(video_path)) {
+        return false;
+    }
+
+    const DemuxStats& stats = demuxer.stats();
+    if (!stats.codec_params || stats.video_stream_index < 0) {
+        return false;
+    }
+
+    const AVRational time_base = stats.time_base.num > 0 && stats.time_base.den > 0
+        ? stats.time_base
+        : AVRational{1, 1000};
+    const VbiCodec codec = BitstreamIndexer::codec_from_ffmpeg_id(
+        stats.codec_params->codec_id);
+    if (codec == VbiCodec::Unknown) {
+        return false;
+    }
+
+    spdlog::info("[AnalysisGen] using private CDN FLV demuxer: time_base={}/{}, codec={}",
+                 time_base.num, time_base.den, static_cast<int>(codec));
+
+    OutputBudget budget(max_output_bytes);
+    VbtStreamWriter vbt_writer;
+    if (!vbt_writer.open(vbt_path, time_base.num, time_base.den, &budget)) {
+        return false;
+    }
+    VbiStreamWriter vbi_writer;
+    if (!vbi_writer.open(vbi_path, codec, BitstreamIndexer::unit_kind_for_codec(codec), &budget)) {
+        vbt_writer.close();
+        return false;
+    }
+
+    AVPacket* pkt = av_packet_alloc();
+    AVPacket* filtered_pkt = av_packet_alloc();
+    if (!pkt || !filtered_pkt) {
+        vbt_writer.close();
+        vbi_writer.close();
+        av_packet_free(&filtered_pkt);
+        av_packet_free(&pkt);
+        return false;
+    }
+
+    int32_t seq_poc = 0;
+    bool scan_failed = false;
+    bool unsafe_fallback_warned = false;
+    AVBSFContext* annex_b_bsf = create_annex_b_bsf(stats.codec_params, time_base, codec);
+
+    while (true) {
+        int ret = demuxer.read_packet(pkt);
+        if (ret < 0) {
+            if (ret == AVERROR_EOF) break;
+            spdlog::warn("[AnalysisGen] private CDN FLV read error: {:#x}",
+                         static_cast<unsigned>(ret));
+            break;
+        }
+
+        if (pkt->stream_index != stats.video_stream_index) {
+            av_packet_unref(pkt);
+            continue;
+        }
+
+        VbtEntry entry{};
+        entry.pts = (pkt->pts != AV_NOPTS_VALUE) ? pkt->pts : 0;
+        entry.dts = (pkt->dts != AV_NOPTS_VALUE) ? pkt->dts : 0;
+        entry.poc = seq_poc++;
+        entry.size = static_cast<uint32_t>(pkt->size);
+        entry.duration = static_cast<uint32_t>(pkt->duration);
+        entry.flags = (pkt->flags & AV_PKT_FLAG_KEY) ? VBT_FLAG_KEYFRAME : 0;
+        std::memset(entry.reserved, 0, sizeof(entry.reserved));
+        if (!vbt_writer.append(entry)) {
+            scan_failed = true;
+            av_packet_unref(pkt);
+            break;
+        }
+
+        bool vbi_ok = true;
+        if (annex_b_bsf) {
+            int send_ret = av_bsf_send_packet(annex_b_bsf, pkt);
+            if (send_ret >= 0) {
+                vbi_ok = append_filtered_packets(
+                    annex_b_bsf, filtered_pkt, codec, vbi_writer);
+            } else {
+                spdlog::warn("[AnalysisGen] private CDN FLV BSF send failed: {:#x}",
+                             static_cast<unsigned>(send_ret));
+                vbi_ok = append_packet_if_safe(
+                    pkt, codec, vbi_writer, unsafe_fallback_warned);
+            }
+        } else {
+            vbi_ok = append_packet_if_safe(
+                pkt, codec, vbi_writer, unsafe_fallback_warned);
+        }
+
+        if (!vbi_ok) {
+            scan_failed = true;
+            av_packet_unref(pkt);
+            break;
+        }
+        av_packet_unref(pkt);
+    }
+
+    if (annex_b_bsf) {
+        av_bsf_send_packet(annex_b_bsf, nullptr);
+        if (!append_filtered_packets(annex_b_bsf, filtered_pkt, codec, vbi_writer)) {
+            scan_failed = true;
+        }
+    }
+
+    if (annex_b_bsf) av_bsf_free(&annex_b_bsf);
+    av_packet_free(&filtered_pkt);
+    av_packet_free(&pkt);
+
+    if (scan_failed || vbt_writer.count() == 0) {
+        vbt_writer.close();
+        vbi_writer.close();
+        return false;
+    }
+
+    spdlog::info("[AnalysisGen] private CDN FLV scanned {} packets, {} bitstream units",
+                 vbt_writer.count(), vbi_writer.count());
+    const bool vbt_ok = vbt_writer.finish();
+    const bool vbi_ok = vbi_writer.finish();
+    return vbt_ok && vbi_ok;
+}
+
 // ---------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------
@@ -378,6 +515,13 @@ bool AnalysisGenerator::generate(const std::string& video_path,
                                  const std::string& vbi_path,
                                  const std::string& vbt_path,
                                  uint64_t max_output_bytes) {
+    if (vr::PrivateCdnFlvDemuxer::probe(video_path)) {
+        if (generatePrivateCdnFlv(video_path, vbi_path, vbt_path, max_output_bytes)) {
+            return true;
+        }
+        spdlog::warn("[AnalysisGen] private CDN FLV fallback failed, trying stock FFmpeg path");
+    }
+
     FfmpegOpenTimeout timeout;
     AVFormatContext* fmt_ctx = alloc_format_context_with_timeout(timeout, std::chrono::seconds(30));
     if (!fmt_ctx) {

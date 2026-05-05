@@ -7,6 +7,7 @@
 #include <chrono>
 #include <string>
 #include <cstdlib>
+#include <fstream>
 #include <filesystem>
 #include <sstream>
 
@@ -76,6 +77,58 @@ std::string make_multi_audio_fixture() {
 
     const int ret = run_command(cmd.str());
     REQUIRE(ret == 0);
+    REQUIRE(fs::exists(output));
+    return output.string();
+}
+
+void append_u24(std::vector<uint8_t>& out, uint32_t value) {
+    out.push_back(static_cast<uint8_t>((value >> 16) & 0xff));
+    out.push_back(static_cast<uint8_t>((value >> 8) & 0xff));
+    out.push_back(static_cast<uint8_t>(value & 0xff));
+}
+
+void append_u32(std::vector<uint8_t>& out, uint32_t value) {
+    out.push_back(static_cast<uint8_t>((value >> 24) & 0xff));
+    out.push_back(static_cast<uint8_t>((value >> 16) & 0xff));
+    out.push_back(static_cast<uint8_t>((value >> 8) & 0xff));
+    out.push_back(static_cast<uint8_t>(value & 0xff));
+}
+
+void append_private_video_tag(std::vector<uint8_t>& out, uint8_t codec_id,
+                              uint32_t timestamp_ms, uint8_t packet_type,
+                              uint32_t cts, const std::vector<uint8_t>& payload) {
+    const uint32_t data_size = 1 + 1 + 3 + static_cast<uint32_t>(payload.size());
+    out.push_back(0x09);
+    append_u24(out, data_size);
+    append_u24(out, timestamp_ms & 0x00ffffff);
+    out.push_back(static_cast<uint8_t>((timestamp_ms >> 24) & 0xff));
+    append_u24(out, 0);
+    out.push_back(static_cast<uint8_t>(0x10 | codec_id)); // keyframe + private codec id
+    out.push_back(packet_type);
+    append_u24(out, cts);
+    out.insert(out.end(), payload.begin(), payload.end());
+    append_u32(out, data_size + 11);
+}
+
+std::string make_private_flv_fixture(uint8_t codec_id, const char* name) {
+    namespace fs = std::filesystem;
+    const fs::path output = fs::temp_directory_path() / name;
+    std::vector<uint8_t> bytes = {
+        'F', 'L', 'V', 0x01, 0x01,
+        0x00, 0x00, 0x00, 0x09,
+        0x00, 0x00, 0x00, 0x00,
+    };
+    append_private_video_tag(bytes, codec_id, 0, 0, 0,
+                             codec_id == 0x0d
+                                 ? std::vector<uint8_t>{0x81, 0x00, 0x00, 0x00, 0x12, 0x34}
+                                 : std::vector<uint8_t>{0x12, 0x34});
+    append_private_video_tag(bytes, codec_id, 40, 1, 5, {0xaa, 0xbb, 0xcc});
+
+    std::ofstream file(output, std::ios::binary | std::ios::trunc);
+    REQUIRE(file.good());
+    file.write(reinterpret_cast<const char*>(bytes.data()),
+               static_cast<std::streamsize>(bytes.size()));
+    file.close();
     REQUIRE(fs::exists(output));
     return output.string();
 }
@@ -168,6 +221,57 @@ TEST_CASE("DemuxThread: drained packets have correct stream_index",
 
     free_packets(packets);
     demux.stop();
+}
+
+TEST_CASE("DemuxThread: private CDN FLV AV1 fallback emits packets",
+          "[demux_thread][flv]") {
+    const std::string path = make_private_flv_fixture(0x0d, "void_player_private_cdn_av1.flv");
+    PacketQueue pq(8);
+    SeekController sc;
+    DemuxThread demux(path, pq, sc);
+
+    REQUIRE(demux.start());
+    REQUIRE(demux.format_context() == nullptr);
+    REQUIRE(demux.stats().video_stream_index == 0);
+    REQUIRE(demux.stats().codec_params != nullptr);
+    REQUIRE(demux.stats().codec_params->codec_id == AV_CODEC_ID_AV1);
+    REQUIRE(demux.stats().codec_params->extradata_size == 2);
+
+    AVPacket* pkt = pq.pop();
+    REQUIRE(pkt != nullptr);
+    REQUIRE(pkt->stream_index == demux.stats().video_stream_index);
+    REQUIRE(pkt->dts == 40);
+    REQUIRE(pkt->pts == 45);
+    REQUIRE(pkt->size == 3);
+    REQUIRE((pkt->flags & AV_PKT_FLAG_KEY) != 0);
+
+    av_packet_free(&pkt);
+    demux.stop();
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("DemuxThread: private CDN FLV VVC fallback emits packets",
+          "[demux_thread][flv]") {
+    const std::string path = make_private_flv_fixture(0x0e, "void_player_private_cdn_vvc.flv");
+    PacketQueue pq(8);
+    SeekController sc;
+    DemuxThread demux(path, pq, sc);
+
+    REQUIRE(demux.start());
+    REQUIRE(demux.format_context() == nullptr);
+    REQUIRE(demux.stats().codec_params != nullptr);
+    REQUIRE(demux.stats().codec_params->codec_id == AV_CODEC_ID_VVC);
+    REQUIRE(demux.stats().codec_params->extradata_size == 2);
+
+    AVPacket* pkt = pq.pop();
+    REQUIRE(pkt != nullptr);
+    REQUIRE(pkt->dts == 40);
+    REQUIRE(pkt->pts == 45);
+    REQUIRE(pkt->size == 3);
+
+    av_packet_free(&pkt);
+    demux.stop();
+    std::filesystem::remove(path);
 }
 
 TEST_CASE("DemuxThread: output routes are fixed after start",

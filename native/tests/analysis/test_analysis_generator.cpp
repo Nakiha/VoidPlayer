@@ -27,6 +27,60 @@ static std::string make_temp_dir() {
     return dir.string();
 }
 
+static void append_u24(std::vector<uint8_t>& out, uint32_t value) {
+    out.push_back(static_cast<uint8_t>((value >> 16) & 0xff));
+    out.push_back(static_cast<uint8_t>((value >> 8) & 0xff));
+    out.push_back(static_cast<uint8_t>(value & 0xff));
+}
+
+static void append_u32(std::vector<uint8_t>& out, uint32_t value) {
+    out.push_back(static_cast<uint8_t>((value >> 24) & 0xff));
+    out.push_back(static_cast<uint8_t>((value >> 16) & 0xff));
+    out.push_back(static_cast<uint8_t>((value >> 8) & 0xff));
+    out.push_back(static_cast<uint8_t>(value & 0xff));
+}
+
+static void append_private_flv_video_tag(std::vector<uint8_t>& out,
+                                         uint8_t codec_id,
+                                         uint32_t timestamp_ms,
+                                         uint8_t packet_type,
+                                         uint32_t cts,
+                                         const std::vector<uint8_t>& payload) {
+    const uint32_t data_size = 1 + 1 + 3 + static_cast<uint32_t>(payload.size());
+    out.push_back(0x09);
+    append_u24(out, data_size);
+    append_u24(out, timestamp_ms & 0x00ffffff);
+    out.push_back(static_cast<uint8_t>((timestamp_ms >> 24) & 0xff));
+    append_u24(out, 0);
+    out.push_back(static_cast<uint8_t>(0x10 | codec_id));
+    out.push_back(packet_type);
+    append_u24(out, cts);
+    out.insert(out.end(), payload.begin(), payload.end());
+    append_u32(out, data_size + 11);
+}
+
+static std::string make_private_av1_flv_fixture(const std::string& dir) {
+    const auto path = std::filesystem::path(dir) / "private_av1.flv";
+    std::vector<uint8_t> bytes = {
+        'F', 'L', 'V', 0x01, 0x01,
+        0x00, 0x00, 0x00, 0x09,
+        0x00, 0x00, 0x00, 0x00,
+    };
+    append_private_flv_video_tag(
+        bytes, 0x0d, 0, 0, 0,
+        {0x81, 0x00, 0x00, 0x00, 0x12, 0x34});
+    append_private_flv_video_tag(
+        bytes, 0x0d, 40, 1, 5,
+        {0x32, 0x01, 0x00}); // AV1 frame OBU with leb128 payload size=1.
+
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    REQUIRE(file.good());
+    file.write(reinterpret_cast<const char*>(bytes.data()),
+               static_cast<std::streamsize>(bytes.size()));
+    file.close();
+    return path.string();
+}
+
 // ===========================================================================
 // AnalysisGenerator: VBI + VBT generation
 // ===========================================================================
@@ -84,6 +138,35 @@ TEST_CASE("AnalysisGenerator: generates VBI and VBT from H.266 MP4", "[analysis]
     REQUIRE(kf.size() >= 1);
 
     // Cleanup
+    std::filesystem::remove_all(tmp);
+}
+
+TEST_CASE("AnalysisGenerator: private CDN FLV AV1 fallback generates VBI and VBT",
+          "[analysis][generator][flv]") {
+    auto tmp = make_temp_dir();
+    const std::string video_path = make_private_av1_flv_fixture(tmp);
+    const std::string vbi_path = tmp + "/private_av1.vbi";
+    const std::string vbt_path = tmp + "/private_av1.vbt";
+
+    REQUIRE(vr::analysis::AnalysisGenerator::generate(video_path, vbi_path, vbt_path));
+
+    vr::analysis::VbtFile vbt;
+    REQUIRE(vbt.open(vbt_path));
+    REQUIRE(vbt.packet_count() == 1);
+    REQUIRE(vbt.header().time_base_num == 1);
+    REQUIRE(vbt.header().time_base_den == 1000);
+    REQUIRE(vbt.entry(0).dts == 40);
+    REQUIRE(vbt.entry(0).pts == 45);
+    REQUIRE(vbt.entry(0).flags & VBT_FLAG_KEYFRAME);
+
+    vr::analysis::VbiFile vbi;
+    REQUIRE(vbi.open(vbi_path));
+    REQUIRE(vbi.codec() == VbiCodec::AV1);
+    REQUIRE(vbi.unit_kind() == VbiUnitKind::Obu);
+    REQUIRE(vbi.nalu_count() == 1);
+    REQUIRE(vbi.entry(0).nal_type == 6);
+    REQUIRE(vbi.entry(0).flags & VBI_FLAG_IS_KEYFRAME);
+
     std::filesystem::remove_all(tmp);
 }
 

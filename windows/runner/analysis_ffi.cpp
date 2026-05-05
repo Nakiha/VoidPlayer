@@ -4,6 +4,7 @@
 #include "analysis/generators/analysis_generator.h"
 #include "analysis/parsers/analysis_container.h"
 #include "common/win_utf8.h"
+#include "media/private_cdn_flv_demuxer.h"
 #include "utils.h"
 
 #include <spdlog/spdlog.h>
@@ -713,6 +714,15 @@ static bool remove_directory_tree_utf8(const std::string& path) {
 }
 
 static VbiCodec detect_analysis_codec(const char* video_path) {
+    if (vr::PrivateCdnFlvDemuxer::probe(video_path)) {
+        vr::PrivateCdnFlvDemuxer demuxer;
+        if (demuxer.open(video_path) && demuxer.stats().codec_params) {
+            VbiCodec codec = vr::analysis::BitstreamIndexer::codec_from_ffmpeg_id(
+                demuxer.stats().codec_params->codec_id);
+            if (codec != VbiCodec::Unknown) return codec;
+        }
+    }
+
     FfmpegOpenTimeout timeout;
     AVFormatContext* fmt_ctx = alloc_format_context_with_timeout(timeout, std::chrono::seconds(30));
     if (!fmt_ctx) {
@@ -897,6 +907,158 @@ private:
     HANDLE handle_;
 };
 
+static bool write_annex_b_packet_payload(const uint8_t* data,
+                                         int len,
+                                         RawVvcSink& sink,
+                                         size_t& total_written) {
+    static const uint8_t kStartCode4[] = {0, 0, 0, 1};
+    if (!data || len <= 0) return true;
+
+    if ((len >= 4 && data[0] == 0 && data[1] == 0 && data[2] == 0 && data[3] == 1) ||
+        (len >= 3 && data[0] == 0 && data[1] == 0 && data[2] == 1)) {
+        if (!sink.write(data, static_cast<size_t>(len))) {
+            return false;
+        }
+        total_written += static_cast<size_t>(len);
+        return true;
+    }
+
+    int pos = 0;
+    bool wrote_any = false;
+    while (pos + 4 <= len) {
+        uint32_t nalu_len = (static_cast<uint32_t>(data[pos]) << 24) |
+                            (static_cast<uint32_t>(data[pos + 1]) << 16) |
+                            (static_cast<uint32_t>(data[pos + 2]) << 8) |
+                            static_cast<uint32_t>(data[pos + 3]);
+        const int payload_pos = pos + 4;
+        const int remaining = len - payload_pos;
+        if (nalu_len == 0 ||
+            static_cast<uint64_t>(nalu_len) > static_cast<uint64_t>(remaining)) {
+            break;
+        }
+        if (!sink.write(kStartCode4, 4) ||
+            !sink.write(data + payload_pos, static_cast<size_t>(nalu_len))) {
+            return false;
+        }
+        total_written += 4 + static_cast<size_t>(nalu_len);
+        wrote_any = true;
+        pos = payload_pos + static_cast<int>(nalu_len);
+    }
+    return wrote_any;
+}
+
+static bool extract_private_cdn_flv_annex_b_to_sink(const std::string& video_path,
+                                                    const char* bsf_name,
+                                                    const char* log_label,
+                                                    RawVvcSink& sink) {
+    vr::PrivateCdnFlvDemuxer demuxer;
+    if (!demuxer.open(video_path)) {
+        return false;
+    }
+    const auto& stats = demuxer.stats();
+    if (!stats.codec_params || stats.video_stream_index < 0) {
+        return false;
+    }
+
+    AVBSFContext* bsf_ctx = nullptr;
+    bool use_bsf = false;
+    const AVBitStreamFilter* bsf = av_bsf_get_by_name(bsf_name);
+    if (bsf && av_bsf_alloc(bsf, &bsf_ctx) >= 0) {
+        int ret = avcodec_parameters_copy(bsf_ctx->par_in, stats.codec_params);
+        if (ret >= 0) {
+            bsf_ctx->time_base_in = stats.time_base;
+            ret = av_bsf_init(bsf_ctx);
+        }
+        if (ret >= 0) {
+            use_bsf = true;
+            spdlog::info("[Analysis] {}: using private CDN FLV demuxer with {} BSF",
+                         log_label, bsf_name);
+        } else {
+            spdlog::warn("[Analysis] {}: private CDN FLV BSF init failed: {:#x}",
+                         log_label, static_cast<unsigned>(ret));
+            av_bsf_free(&bsf_ctx);
+        }
+    }
+
+    AVPacket* pkt = av_packet_alloc();
+    AVPacket* filtered_pkt = av_packet_alloc();
+    if (!pkt || !filtered_pkt) {
+        av_packet_free(&filtered_pkt);
+        av_packet_free(&pkt);
+        if (bsf_ctx) av_bsf_free(&bsf_ctx);
+        return false;
+    }
+
+    size_t total_written = 0;
+    int pkt_count = 0;
+    while (true) {
+        int ret = demuxer.read_packet(pkt);
+        if (ret < 0) {
+            if (ret != AVERROR_EOF) {
+                spdlog::warn("[Analysis] {}: private CDN FLV read failed: {:#x}",
+                             log_label, static_cast<unsigned>(ret));
+            }
+            break;
+        }
+        if (pkt->stream_index != stats.video_stream_index) {
+            av_packet_unref(pkt);
+            continue;
+        }
+        pkt_count++;
+
+        if (use_bsf) {
+            ret = av_bsf_send_packet(bsf_ctx, pkt);
+            av_packet_unref(pkt);
+            if (ret < 0) continue;
+            while (av_bsf_receive_packet(bsf_ctx, filtered_pkt) == 0) {
+                if (!sink.write(filtered_pkt->data, static_cast<size_t>(filtered_pkt->size))) {
+                    av_packet_unref(filtered_pkt);
+                    av_packet_free(&filtered_pkt);
+                    av_packet_free(&pkt);
+                    av_bsf_free(&bsf_ctx);
+                    return false;
+                }
+                total_written += static_cast<size_t>(filtered_pkt->size);
+                av_packet_unref(filtered_pkt);
+            }
+        } else {
+            const bool ok = write_annex_b_packet_payload(
+                pkt->data, pkt->size, sink, total_written);
+            av_packet_unref(pkt);
+            if (!ok) {
+                av_packet_free(&filtered_pkt);
+                av_packet_free(&pkt);
+                if (bsf_ctx) av_bsf_free(&bsf_ctx);
+                return false;
+            }
+        }
+    }
+
+    if (use_bsf) {
+        av_bsf_send_packet(bsf_ctx, nullptr);
+        while (av_bsf_receive_packet(bsf_ctx, filtered_pkt) == 0) {
+            if (!sink.write(filtered_pkt->data, static_cast<size_t>(filtered_pkt->size))) {
+                av_packet_unref(filtered_pkt);
+                av_packet_free(&filtered_pkt);
+                av_packet_free(&pkt);
+                av_bsf_free(&bsf_ctx);
+                return false;
+            }
+            total_written += static_cast<size_t>(filtered_pkt->size);
+            av_packet_unref(filtered_pkt);
+        }
+    }
+
+    av_packet_free(&filtered_pkt);
+    av_packet_free(&pkt);
+    if (bsf_ctx) av_bsf_free(&bsf_ctx);
+
+    const bool finished = sink.finish();
+    spdlog::info("[Analysis] {}: private CDN FLV {} packets, {} bytes written",
+                 log_label, pkt_count, total_written);
+    return total_written > 0 && finished;
+}
+
 // Extract a raw Annex B bitstream from a container using FFmpeg C API.
 // H.264/HEVC/VVC MP4 samples are length-prefixed, so use the matching
 // mp4toannexb BSF when available and fall back to a conservative manual path.
@@ -904,6 +1066,10 @@ static bool extract_raw_annex_b_to_sink(const std::string& video_path,
                                         const char* bsf_name,
                                         const char* log_label,
                                         RawVvcSink& sink) {
+    if (vr::PrivateCdnFlvDemuxer::probe(video_path)) {
+        return extract_private_cdn_flv_annex_b_to_sink(video_path, bsf_name, log_label, sink);
+    }
+
     FfmpegOpenTimeout timeout;
     AVFormatContext* fmt_ctx = alloc_format_context_with_timeout(timeout, std::chrono::seconds(30));
     if (!fmt_ctx) {

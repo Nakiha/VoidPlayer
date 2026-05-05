@@ -32,6 +32,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Separate non-user UI automation commands from PlayerAction.~~
 - [x] ~~Move TestRunner out of the actions namespace into automation.~~
+- [x] ~~Route TestRunner through an explicit UiAutomationBridge.~~
 
 ## P0
 

@@ -226,6 +226,7 @@ lib/
 │   ├── player_assert.dart
 │   └── action_registry.dart
 ├── automation/
+│   ├── ui_automation_bridge.dart
 │   └── test_runner.dart
 ├── video_renderer_controller.dart
 └── main.dart
@@ -242,7 +243,7 @@ main.dart
                   ├─ start → actionCoordinator.bind()
                   ├─ dispose → actionCoordinator.dispose() → unbind
                   └─ TestRunner (--test-script)
-                      ├─ PlayerAction → actionRegistry.execute(...)
+                      ├─ PlayerAction → UiAutomationBridge.executePlayerAction(...)
                       └─ AutomationAction → automation-only executor
 ```
 

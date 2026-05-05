@@ -5,6 +5,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../../actions/action_registry.dart';
 import '../../automation/test_runner.dart';
+import '../../automation/ui_automation_bridge.dart';
 import '../../startup_options.dart';
 import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
@@ -416,8 +417,10 @@ class MainWindowController {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       TestRunner(
         scriptPath: path,
-        controller: player,
-        actionRegistry: actionRegistry,
+        automation: UiAutomationBridge(
+          controller: player,
+          actionRegistry: actionRegistry,
+        ),
       ).run();
     });
   }

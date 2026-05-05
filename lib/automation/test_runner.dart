@@ -4,13 +4,13 @@ import 'dart:math' as math;
 
 import 'package:window_manager/window_manager.dart' as wm;
 
-import '../app_log.dart';
-import '../actions/action_registry.dart';
 import '../actions/automation_action.dart';
 import '../actions/player_action.dart';
 import '../actions/player_assert.dart';
+import '../app_log.dart';
 import '../config/app_config.dart';
 import '../preferences/playback_preferences.dart';
+import 'ui_automation_bridge.dart';
 import '../video_renderer_controller.dart';
 import '../windows/win32ffi.dart';
 import '../windows/window_manager.dart';
@@ -100,18 +100,15 @@ class _ResourceUsageMetric {
 /// Parses a test script file and runs instructions on a timeline.
 class TestRunner {
   final String scriptPath;
-  final NativePlayerController controller;
-  final ActionRegistry actionRegistry;
+  final UiAutomationBridge automation;
   final _captures = <String, ViewportCapture>{};
   final _viewCenterBaselines = <String, _ViewCenterMetric>{};
   final _resourceBaselines = <String, _ResourceUsageMetric>{};
   final _nativeSeekCountBaselines = <String, int>{};
 
-  TestRunner({
-    required this.scriptPath,
-    required this.controller,
-    required this.actionRegistry,
-  });
+  TestRunner({required this.scriptPath, required this.automation});
+
+  NativePlayerController get controller => automation.controller;
 
   /// Parse and execute the test script. Exits the process on QUIT or failure.
   Future<void> run() async {
@@ -217,7 +214,7 @@ class TestRunner {
   }
 
   Future<void> _executeAction(PlayerAction action) async {
-    actionRegistry.execute(action.name, action);
+    automation.executePlayerAction(action);
   }
 
   Future<void> _executeAutomationAction(AutomationAction action) async {

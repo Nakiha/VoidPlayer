@@ -2,9 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import '../app_paths.dart';
 import '../preferences/playback_preferences.dart';
 
-/// Manages reading and writing `config.json` located next to the executable.
+/// Manages reading and writing `config.json` in the resolved app data root.
 ///
 /// Structure:
 /// ```json
@@ -24,12 +25,13 @@ class AppConfig {
   late final File _file;
   Map<String, dynamic> _data = {};
 
-  /// Initializes the config manager. Reads `config.json` from the exe
-  /// directory; creates an empty one if it doesn't exist.
+  /// Initializes the config manager. Reads `config.json` from app data, or
+  /// from the executable directory in portable mode.
   static Future<void> initialize() async {
     final instance = AppConfig._();
-    final exeDir = p.dirname(Platform.resolvedExecutable);
-    instance._file = File(p.join(exeDir, 'config.json'));
+    final paths = AppPaths.current;
+    instance._file = File(paths.configFile);
+    await instance._migrateLegacyConfigIfNeeded(paths);
 
     try {
       final content = await instance._file.readAsString();
@@ -48,9 +50,28 @@ class AppConfig {
   /// Persists the current in-memory state to disk.
   Future<void> save() async {
     try {
-      await _file.writeAsString(jsonEncode(_data));
+      await _file.parent.create(recursive: true);
+      final tmp = File('${_file.path}.tmp');
+      await tmp.writeAsString(jsonEncode(_data));
+      if (await _file.exists()) {
+        await _file.delete();
+      }
+      await tmp.rename(_file.path);
     } catch (_) {
       // Best-effort: don't block shutdown on write failure.
+    }
+  }
+
+  Future<void> _migrateLegacyConfigIfNeeded(AppPathSet paths) async {
+    if (paths.isPortable) return;
+    if (await _file.exists()) return;
+    final legacy = File(p.join(paths.exeDir, 'config.json'));
+    if (!await legacy.exists()) return;
+    try {
+      await _file.parent.create(recursive: true);
+      await legacy.copy(_file.path);
+    } catch (_) {
+      // Best-effort migration; fallback to a fresh config below.
     }
   }
 

@@ -23,13 +23,58 @@ struct RestoredWindowBounds {
   double height;
 };
 
-std::filesystem::path GetConfigPath() {
+constexpr wchar_t kAppDirName[] = L"VoidPlayer";
+constexpr wchar_t kPortableMarkerDirName[] = L"cache";
+
+std::filesystem::path GetExeDir() {
   wchar_t executable_path[MAX_PATH];
   DWORD length = GetModuleFileNameW(nullptr, executable_path, MAX_PATH);
   if (length == 0 || length >= MAX_PATH) {
-    return L"config.json";
+    return std::filesystem::current_path();
   }
-  return std::filesystem::path(executable_path).parent_path() / L"config.json";
+  return std::filesystem::path(executable_path).parent_path();
+}
+
+std::optional<std::filesystem::path> GetEnvironmentPath(const wchar_t* name) {
+  wchar_t buffer[MAX_PATH];
+  DWORD length = GetEnvironmentVariableW(name, buffer, MAX_PATH);
+  if (length == 0 || length >= MAX_PATH) {
+    return std::nullopt;
+  }
+  return std::filesystem::path(buffer);
+}
+
+bool IsPortableInstall(const std::filesystem::path& exe_dir) {
+  std::error_code ec;
+  return std::filesystem::is_directory(exe_dir / kPortableMarkerDirName, ec);
+}
+
+std::filesystem::path GetAppDataRoot(const std::filesystem::path& exe_dir) {
+  if (IsPortableInstall(exe_dir)) {
+    return exe_dir;
+  }
+  if (auto app_data = GetEnvironmentPath(L"APPDATA")) {
+    return *app_data / kAppDirName;
+  }
+  if (auto local_app_data = GetEnvironmentPath(L"LOCALAPPDATA")) {
+    return *local_app_data / kAppDirName;
+  }
+  return exe_dir / kAppDirName;
+}
+
+std::filesystem::path GetConfigPath() {
+  const auto exe_dir = GetExeDir();
+  const auto root = GetAppDataRoot(exe_dir);
+  const auto config = root / L"config.json";
+  if (root == exe_dir || std::filesystem::exists(config)) {
+    return config;
+  }
+
+  const auto legacy_config = exe_dir / L"config.json";
+  if (std::filesystem::exists(legacy_config)) {
+    return legacy_config;
+  }
+  return config;
 }
 
 std::optional<double> ExtractJsonNumber(const std::string& json,

@@ -9,6 +9,8 @@ import 'package:intl/intl.dart';
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 
+import 'app_paths.dart';
+
 /// Module names used in --log-level parsing.
 enum LogModule {
   flutter('flutter'),
@@ -43,14 +45,13 @@ class LogConfig {
     required this.processRole,
   });
 
-  /// Default config: INFO for all modules, logs next to exe.
+  /// Default config: INFO for all modules, logs in the resolved app data root.
   static LogConfig defaultsFor(List<String> args) {
-    final exeDir = _exeDir();
     return LogConfig(
       flutter: Level.INFO,
       native: Level.INFO,
       ffmpeg: Level.INFO,
-      logsDir: p.join(exeDir, 'logs'),
+      logsDir: AppPaths.current.logsDir,
       processRole: _processRoleFromArgs(args),
     );
   }
@@ -375,12 +376,6 @@ Level? _parseLevel(String s) {
     default:
       return null;
   }
-}
-
-/// Get the directory where the exe lives.
-String _exeDir() {
-  final exePath = Platform.resolvedExecutable;
-  return p.dirname(exePath);
 }
 
 String _processRoleFromArgs(List<String> args) {

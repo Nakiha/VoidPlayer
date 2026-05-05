@@ -4,6 +4,8 @@ import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 
+import '../app_paths.dart';
+
 class AnalysisCacheEntryStats {
   final String hash;
   final String name;
@@ -83,7 +85,7 @@ class AnalysisCachePruneResult {
   bool get hasFailures => deleteResult.hasFailures;
 }
 
-/// Manages the on-disk analysis cache in `exe_dir/cache`.
+/// Manages the on-disk analysis cache in the resolved app data root.
 ///
 /// Cache structure:
 /// ```
@@ -94,12 +96,7 @@ class AnalysisCachePruneResult {
 class AnalysisCache {
   AnalysisCache._();
 
-  static final String dataDir = _resolveDataDir();
-
-  static String _resolveDataDir() {
-    final exeDir = p.dirname(Platform.resolvedExecutable);
-    return p.join(exeDir, 'cache');
-  }
+  static final String dataDir = AppPaths.current.analysisCacheDir;
 
   // ---- Path helpers ----
 

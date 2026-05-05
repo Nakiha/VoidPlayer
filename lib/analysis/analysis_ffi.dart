@@ -3,6 +3,8 @@
 import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 
+import '../app_paths.dart';
+
 // ===========================================================================
 // FFI Struct definitions — mirror C++ structs in video_renderer_plugin.h
 // ===========================================================================
@@ -152,8 +154,10 @@ typedef _GetFrameBucketsDart =
 typedef _SetOverlayNative = Void Function(Pointer<NakiOverlayState>);
 typedef _SetOverlayDart = void Function(Pointer<NakiOverlayState>);
 
-typedef _GenerateNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Int64);
-typedef _GenerateDart = int Function(Pointer<Utf8>, Pointer<Utf8>, int);
+typedef _GenerateNative =
+    Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Int64);
+typedef _GenerateDart =
+    int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, int);
 
 typedef _OpenNative = Pointer<Void> Function(Pointer<Utf8>);
 typedef _OpenDart = Pointer<Void> Function(Pointer<Utf8>);
@@ -700,11 +704,15 @@ class AnalysisFfi {
   ) {
     final video = videoPath.toNativeUtf8(allocator: calloc);
     final hashStr = hash.toNativeUtf8(allocator: calloc);
+    final cacheDir = AppPaths.current.analysisCacheDir.toNativeUtf8(
+      allocator: calloc,
+    );
     try {
-      return _generate(video, hashStr, maxCacheBytes) != 0;
+      return _generate(video, hashStr, cacheDir, maxCacheBytes) != 0;
     } finally {
       calloc.free(video);
       calloc.free(hashStr);
+      calloc.free(cacheDir);
     }
   }
 }

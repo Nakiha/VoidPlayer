@@ -1126,10 +1126,9 @@ static int run_vtm_stdin_command(const std::string& cmd,
     return wrote ? static_cast<int>(exit_code) : -1;
 }
 
-static std::string make_analysis_tool_log_path(const std::string& exe_dir,
+static std::string make_analysis_tool_log_path(const std::string& logs_dir,
                                                const char* tool_tag,
                                                const char* hash) {
-    std::string logs_dir = exe_dir + "\\logs";
     vr::win_utf8::create_directory_utf8(logs_dir);
     SYSTEMTIME st;
     GetLocalTime(&st);
@@ -1153,6 +1152,7 @@ static std::string first_existing_tool_path(const std::vector<std::string>& path
 
 static bool generate_vvc_vbs4(const std::string& exe_dir,
                               const std::string& data_dir,
+                              const std::string& logs_dir,
                               const char* video_path,
                               const char* hash,
                               const std::string& vbs4_out,
@@ -1170,7 +1170,7 @@ static bool generate_vvc_vbs4(const std::string& exe_dir,
     env.set("VOID_VTM_STDIN_WINDOW_NALUS", "4096");
     env.set("VOID_VTM_STDIN_HARD_CAP_BYTES", "268435456");
 
-    const std::string vtm_log_path = make_analysis_tool_log_path(exe_dir, "vtm", hash);
+    const std::string vtm_log_path = make_analysis_tool_log_path(logs_dir, "vtm", hash);
     std::string cmd = "\"" + decoder_path +
         "\" -b - --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
     spdlog::info("[Analysis] vtm stdin cmd: {}", cmd);
@@ -1242,6 +1242,7 @@ static const char* ffmpeg_analysis_codec_arg(VbiCodec codec) {
 
 static bool generate_ffmpeg_vbs4(const std::string& exe_dir,
                                  const std::string& data_dir,
+                                 const std::string& logs_dir,
                                  const char* video_path,
                                  const char* hash,
                                  VbiCodec codec,
@@ -1263,7 +1264,7 @@ static bool generate_ffmpeg_vbs4(const std::string& exe_dir,
     vr::win_utf8::delete_file_utf8(vbs4_out);
 
     const std::string analyzer_log_path = make_analysis_tool_log_path(
-        exe_dir, "ffmpeg_analysis", hash);
+        logs_dir, "ffmpeg_analysis", hash);
     const std::string cmd = "\"" + analyzer_path +
         "\" --codec " + codec_arg + " --input \"" + video_path +
         "\" --vbs4 \"" + vbs4_out + "\"";
@@ -1288,19 +1289,26 @@ static bool generate_ffmpeg_vbs4(const std::string& exe_dir,
 }
 
 extern "C" __declspec(dllexport)
-int32_t naki_analysis_generate(const char* video_path, const char* hash, int64_t max_cache_bytes) {
+int32_t naki_analysis_generate(const char* video_path,
+                               const char* hash,
+                               const char* cache_dir,
+                               int64_t max_cache_bytes) {
     std::lock_guard<std::mutex> lock(g_analysis_generate_mutex);
-    if (!video_path || video_path[0] == '\0' || !hash || hash[0] == '\0') {
-        spdlog::error("[Analysis] generate: video_path and hash must be non-empty");
+    if (!video_path || video_path[0] == '\0' || !hash || hash[0] == '\0' ||
+        !cache_dir || cache_dir[0] == '\0') {
+        spdlog::error("[Analysis] generate: video_path, hash, and cache_dir must be non-empty");
         return 0;
     }
 
     std::string exe_dir = get_exe_dir();
-    std::string data_dir = exe_dir + "\\cache";
+    std::string data_dir = cache_dir;
+    std::string logs_dir =
+        vr::win_utf8::path_to_utf8(vr::win_utf8::path_from_utf8(data_dir).parent_path() / L"logs");
 
     spdlog::info("[Analysis] generate: video_path={}, hash={}", video_path, hash);
     spdlog::info("[Analysis] exe_dir={}", exe_dir);
     spdlog::info("[Analysis] data_dir={}", data_dir);
+    spdlog::info("[Analysis] logs_dir={}", logs_dir);
 
     // Ensure data directory exists
     vr::win_utf8::create_directory_utf8(data_dir);
@@ -1317,10 +1325,11 @@ int32_t naki_analysis_generate(const char* video_path, const char* hash, int64_t
     bool vbs4_generated = false;
     spdlog::info("[Analysis] source codec={}", static_cast<int>(source_codec));
     if (source_codec == VbiCodec::VVC) {
-        vbs4_generated = generate_vvc_vbs4(exe_dir, data_dir, video_path, hash, vbs4_tmp, budget);
+        vbs4_generated = generate_vvc_vbs4(
+            exe_dir, data_dir, logs_dir, video_path, hash, vbs4_tmp, budget);
     } else if (ffmpeg_analysis_codec_arg(source_codec)) {
         vbs4_generated = generate_ffmpeg_vbs4(
-            exe_dir, data_dir, video_path, hash, source_codec, vbs4_tmp, budget);
+            exe_dir, data_dir, logs_dir, video_path, hash, source_codec, vbs4_tmp, budget);
     } else {
         spdlog::info("[Analysis] no VBS4 producer registered for codec={}",
                      static_cast<int>(source_codec));

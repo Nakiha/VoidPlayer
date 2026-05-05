@@ -135,7 +135,10 @@ int32_t naki_analysis_handle_get_frame_buckets(NakiAnalysisHandle handle, int32_
 void naki_analysis_register_pts_callback(int64_t (*cb)());
 
 /// Generate an analysis container for a video file.
-/// Writes to <exe_dir>/cache/<hash>.vac.
+/// Writes to <cache_dir>/<hash>.vac.
 /// Returns 1 on success, 0 on failure (unsupported codec, tool not found, etc.)
 extern "C" __declspec(dllexport)
-int32_t naki_analysis_generate(const char* video_path, const char* hash, int64_t max_cache_bytes);
+int32_t naki_analysis_generate(const char* video_path,
+                               const char* hash,
+                               const char* cache_dir,
+                               int64_t max_cache_bytes);

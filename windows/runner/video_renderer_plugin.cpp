@@ -17,6 +17,7 @@
 #include <cstring>
 #include <cwchar>
 #include <exception>
+#include <filesystem>
 #include <cmath>
 #include <mutex>
 #include <vector>
@@ -74,6 +75,26 @@ void ReportUnknownMethodException(PluginResult* result, const std::string& metho
 
 std::string get_exe_dir() {
     return vr::win_utf8::module_directory_utf8();
+}
+
+bool directory_exists_utf8(const std::string& path) {
+    std::error_code ec;
+    return std::filesystem::is_directory(vr::win_utf8::path_from_utf8(path), ec);
+}
+
+std::string default_app_data_root() {
+    const std::string exe_dir = get_exe_dir();
+    if (directory_exists_utf8(exe_dir + "\\cache")) {
+        return exe_dir;
+    }
+    std::string app_data = vr::win_utf8::get_env_utf8(L"APPDATA");
+    if (app_data.empty()) {
+        app_data = vr::win_utf8::get_env_utf8(L"LOCALAPPDATA");
+    }
+    if (!app_data.empty()) {
+        return app_data + "\\VoidPlayer";
+    }
+    return exe_dir + "\\VoidPlayer";
 }
 
 std::string sanitize_log_file_name(std::string name) {
@@ -482,7 +503,7 @@ VideoRendererPlugin::VideoRendererPlugin(
     // Initialize native logging with defaults on plugin construction.
     // This happens before any Dart-side initLogging call, so native logs
     // (including player creation) are always captured.
-    logs_dir_ = get_exe_dir() + "\\logs";
+    logs_dir_ = default_app_data_root() + "\\logs";
     log_file_name_ = default_native_log_file_name();
 
     vr::LogConfig config;

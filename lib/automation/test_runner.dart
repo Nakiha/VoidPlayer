@@ -5,15 +5,15 @@ import 'dart:math' as math;
 import 'package:window_manager/window_manager.dart' as wm;
 
 import '../app_log.dart';
+import '../actions/action_registry.dart';
+import '../actions/automation_action.dart';
+import '../actions/player_action.dart';
+import '../actions/player_assert.dart';
 import '../config/app_config.dart';
 import '../preferences/playback_preferences.dart';
-import 'automation_action.dart';
-import 'action_registry.dart';
 import '../video_renderer_controller.dart';
 import '../windows/win32ffi.dart';
 import '../windows/window_manager.dart';
-import 'player_action.dart';
-import 'player_assert.dart';
 
 /// A parsed instruction from a test script, with its scheduled time.
 sealed class ScriptInstruction {

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../actions/action_registry.dart';
-import '../../actions/test_runner.dart';
+import '../../automation/test_runner.dart';
 import '../../startup_options.dart';
 import '../../track_manager.dart';
 import '../../utils/async_guard.dart';

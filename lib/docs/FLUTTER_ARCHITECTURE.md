@@ -8,8 +8,8 @@ Flutter 层是 Windows 桌面播放器 UI 和 native 渲染引擎之间的编排
 
 - 主窗口 UI、timeline、loop range、轨道列表和 viewport 交互
 - 窗口协调：主窗口内设置/统计/内存浮层，以及独立进程 analysis 窗口
-- Action 系统：快捷键、按钮、测试脚本共用同一套操作入口
-- UI 自动化脚本和截图/hash 回归闭环
+- Action 系统：快捷键、按钮共用 `PlayerAction`
+- Release UI automation：CSV 脚本、测试专用命令、截图/hash 回归闭环
 - 通过 `NativePlayerController` 调用 native MethodChannel
 
 Flutter 层不负责：
@@ -22,7 +22,8 @@ Flutter 层不负责：
 
 ```text
 lib/
-├── actions/                       # Action / Assert / TestRunner
+├── actions/                       # PlayerAction / AutomationAction / Assert / ActionRegistry
+├── automation/                    # release UI automation TestRunner
 ├── docs/                          # Flutter 层设计和维护文档
 ├── l10n/                          # 本地化资源和 action label 映射
 ├── widgets/                       # 可复用 UI 控件

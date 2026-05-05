@@ -222,8 +222,10 @@ lib/
 │   └── ACTION_MAINTENANCE.md
 ├── actions/
 │   ├── player_action.dart
+│   ├── automation_action.dart
 │   ├── player_assert.dart
-│   ├── action_registry.dart
+│   └── action_registry.dart
+├── automation/
 │   └── test_runner.dart
 ├── video_renderer_controller.dart
 └── main.dart

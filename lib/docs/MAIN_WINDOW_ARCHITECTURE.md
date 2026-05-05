@@ -53,7 +53,7 @@ MainWindow.initState
       → TrackManager listener
       → Action bind
       → playback polling
-      → optional TestRunner
+      → optional release UI automation TestRunner
 
 MainWindow.dispose
   → controller.dispose()

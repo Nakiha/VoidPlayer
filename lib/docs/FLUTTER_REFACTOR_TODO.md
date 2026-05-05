@@ -31,6 +31,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 ## Round 7
 
 - [x] ~~Separate non-user UI automation commands from PlayerAction.~~
+- [x] ~~Move TestRunner out of the actions namespace into automation.~~
 
 ## P0
 

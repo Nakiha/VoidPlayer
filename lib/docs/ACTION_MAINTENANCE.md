@@ -7,13 +7,13 @@
 1. 在 `lib/actions/player_action.dart` 中添加新的 sealed subclass
 2. 在 `lib/windows/main/main_window_actions.dart` 中通过 `MainWindowActionBinder` 绑定 callback
 3. 如需快捷键，在构造函数中传入 `LogicalKeyboardKey`，并完成下面的「新增快捷键」步骤
-4. 如需自动化脚本触发，在 `lib/actions/test_runner.dart` 中补指令解析
+4. 如需自动化脚本触发，在 `lib/automation/test_runner.dart` 中补指令解析
 5. 更新本文档的 Action 清单
 
 ### 新增 Automation Command
 
 1. 在 `lib/actions/automation_action.dart` 中添加新的 sealed subclass
-2. 在 `lib/actions/test_runner.dart` 中补指令解析和执行分支
+2. 在 `lib/automation/test_runner.dart` 中补指令解析和执行分支
 3. 更新本文档的 Automation Command 清单
 
 Automation command 是 release UI test 的正式能力，但不属于用户操作，不进入
@@ -160,6 +160,6 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `lib/actions/automation_action.dart` | release UI automation 专用 command |
 | `lib/actions/player_assert.dart` | PlayerAssert sealed class |
 | `lib/actions/action_registry.dart` | ActionRegistry + ActionFocus |
-| `lib/actions/test_runner.dart` | 脚本解析 + TestRunner |
+| `lib/automation/test_runner.dart` | 脚本解析 + TestRunner |
 | `lib/windows/main/main_window_actions.dart` | 主窗口 Action 绑定表和 bind/unbind 生命周期 |
 | `lib/l10n/action_labels.dart` | `resolveActionLabel()` — labelKey → l10n 映射 |

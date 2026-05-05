@@ -26,6 +26,7 @@ public:
     ID3D11Device* device() const { return device_.Get(); }
     ID3D11DeviceContext* context() const { return context_.Get(); }
     IDXGISwapChain* swap_chain() const { return swap_chain_.Get(); }
+    D3D_FEATURE_LEVEL feature_level() const { return feature_level_; }
     bool is_headless() const { return headless_; }
     bool device_lost() const { return device_lost_.load(std::memory_order_acquire); }
     HRESULT device_removed_reason() const {
@@ -46,6 +47,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D11Device> device_;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
     Microsoft::WRL::ComPtr<IDXGISwapChain> swap_chain_;
+    D3D_FEATURE_LEVEL feature_level_ = static_cast<D3D_FEATURE_LEVEL>(0);
     void* hwnd_ = nullptr;
     bool initialized_ = false;
     bool headless_ = false;

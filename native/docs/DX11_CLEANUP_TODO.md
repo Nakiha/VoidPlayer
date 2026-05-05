@@ -31,7 +31,7 @@ backend behind explicit platform boundaries before adding a macOS backend.
 
 ## P1: D3D11 Runtime Contract
 
-- [ ] Document and enforce the minimum D3D11 feature level.
+- [x] Document and enforce the minimum D3D11 feature level.
   - The current device creation path allows down to 9_1, while shaders,
     shared textures, and D3D11VA have a higher practical requirement.
   - Decide and enforce the real minimum before treating D3D11 as a stable

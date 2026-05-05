@@ -25,11 +25,6 @@ bool D3D11Device::create_device(IDXGIAdapter* adapter, D3D_DRIVER_TYPE driver_ty
                                 UINT create_device_flags, D3D_FEATURE_LEVEL& out_level) {
     D3D_FEATURE_LEVEL feature_levels[] = {
         D3D_FEATURE_LEVEL_11_0,
-        D3D_FEATURE_LEVEL_10_1,
-        D3D_FEATURE_LEVEL_10_0,
-        D3D_FEATURE_LEVEL_9_3,
-        D3D_FEATURE_LEVEL_9_2,
-        D3D_FEATURE_LEVEL_9_1,
     };
 
     HRESULT hr = D3D11CreateDevice(
@@ -51,6 +46,7 @@ bool D3D11Device::create_device(IDXGIAdapter* adapter, D3D_DRIVER_TYPE driver_ty
     }
     device_lost_.store(false, std::memory_order_release);
     device_removed_reason_.store(S_OK, std::memory_order_release);
+    feature_level_ = out_level;
 
     // Enable D3D11 multi-thread protection so the device context can be
     // safely used from the render thread AND the hardware decode threads
@@ -130,7 +126,7 @@ bool D3D11Device::initialize(void* hwnd, int width, int height) {
         D3D_DRIVER_TYPE_REFERENCE,
     };
 
-    D3D_FEATURE_LEVEL obtained_level = D3D_FEATURE_LEVEL_9_1;
+    D3D_FEATURE_LEVEL obtained_level = D3D_FEATURE_LEVEL_11_0;
     bool created = false;
     for (UINT i = 0; i < ARRAYSIZE(driver_types); ++i) {
         device_.Reset();
@@ -214,7 +210,7 @@ bool D3D11Device::initialize_headless(IDXGIAdapter* adapter, int width, int heig
     UINT create_device_flags = 0;
     create_device_flags |= D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
 
-    D3D_FEATURE_LEVEL obtained_level = D3D_FEATURE_LEVEL_9_1;
+    D3D_FEATURE_LEVEL obtained_level = D3D_FEATURE_LEVEL_11_0;
 
     // When passing an adapter, driver type must be D3D_DRIVER_TYPE_UNKNOWN.
     DXGI_ADAPTER_DESC desc = {};
@@ -254,6 +250,7 @@ void D3D11Device::shutdown() {
     device_.Reset();
 
     initialized_ = false;
+    feature_level_ = static_cast<D3D_FEATURE_LEVEL>(0);
     device_lost_.store(false, std::memory_order_release);
     device_removed_reason_.store(S_OK, std::memory_order_release);
     spdlog::info("D3D11 device shut down");

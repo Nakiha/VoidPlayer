@@ -19,6 +19,10 @@ headless 模式必须传入 Flutter view 暴露的 DXGI adapter；native 不再�
 adapter 缺失或创建失败时 fallback 到自建 D3D11 device，因为这种 device
 无法保证与 Flutter texture registrar 共享 DXGI handle。
 
+D3D11 后端的最低 feature level 是 `D3D_FEATURE_LEVEL_11_0`。渲染 shader
+固定编译为 `vs_5_0` / `ps_5_0`，headless shared texture 和 D3D11VA
+decode provider 也按 11_0+ 作为后端契约；低于该等级的 adapter 会初始化失败。
+
 ## Headless shared texture
 
 `D3D11HeadlessOutput` 在 headless 模式下创建三缓冲 BGRA shared texture：

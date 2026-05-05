@@ -11,6 +11,7 @@ TEST_CASE("D3D11Device initialization", "[d3d11][device]") {
     REQUIRE(dev.initialize(hwnd, 800, 600) == true);
     REQUIRE(dev.device() != nullptr);
     REQUIRE(dev.context() != nullptr);
+    REQUIRE(dev.feature_level() == D3D_FEATURE_LEVEL_11_0);
     REQUIRE(dev.device_lost() == false);
     REQUIRE(dev.device_removed_reason() == S_OK);
 
@@ -47,6 +48,7 @@ TEST_CASE("D3D11Device shutdown clears all pointers", "[d3d11][device]") {
     REQUIRE(dev.device() == nullptr);
     REQUIRE(dev.context() == nullptr);
     REQUIRE(dev.swap_chain() == nullptr);
+    REQUIRE(dev.feature_level() == static_cast<D3D_FEATURE_LEVEL>(0));
 
     destroy_window(hwnd);
 }

@@ -20,8 +20,6 @@ bool create_independent_decode_device(Microsoft::WRL::ComPtr<ID3D11Device>& devi
                                       Microsoft::WRL::ComPtr<ID3D11DeviceContext>& context) {
     D3D_FEATURE_LEVEL feature_levels[] = {
         D3D_FEATURE_LEVEL_11_0,
-        D3D_FEATURE_LEVEL_10_1,
-        D3D_FEATURE_LEVEL_10_0,
     };
 
     UINT create_flags = D3D11_CREATE_DEVICE_VIDEO_SUPPORT;

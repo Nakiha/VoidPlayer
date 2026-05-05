@@ -44,6 +44,21 @@ TEST_CASE("D3D11Device present does not crash", "[d3d11][device]") {
     destroy_window(hwnd);
 }
 
+TEST_CASE("D3D11Device records device-lost failures", "[d3d11][device]") {
+    vr::D3D11Device dev;
+    HWND hwnd = create_hidden_window();
+
+    REQUIRE(dev.initialize(hwnd, 800, 600) == true);
+    REQUIRE(dev.record_device_error("test", E_INVALIDARG) == false);
+    REQUIRE(dev.device_lost() == false);
+
+    REQUIRE(dev.record_device_error("test", DXGI_ERROR_DEVICE_REMOVED) == true);
+    REQUIRE(dev.device_lost() == true);
+    REQUIRE(dev.device_removed_reason() == DXGI_ERROR_DEVICE_REMOVED);
+
+    destroy_window(hwnd);
+}
+
 TEST_CASE("D3D11Device shutdown clears all pointers", "[d3d11][device]") {
     vr::D3D11Device dev;
     HWND hwnd = create_hidden_window();

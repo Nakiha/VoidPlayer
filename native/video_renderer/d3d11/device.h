@@ -32,6 +32,7 @@ public:
     HRESULT device_removed_reason() const {
         return device_removed_reason_.load(std::memory_order_acquire);
     }
+    bool record_device_error(const char* operation, HRESULT hr);
     bool poll_device_removed(const char* operation);
 
     bool resize(int width, int height);
@@ -41,8 +42,6 @@ private:
     bool create_device(IDXGIAdapter* adapter, D3D_DRIVER_TYPE driver_type,
                        UINT flags, D3D_FEATURE_LEVEL& out_level);
     void setup_info_queue();
-    bool handle_device_error(const char* operation, HRESULT hr);
-
     void dump_debug_messages();
 
     Microsoft::WRL::ComPtr<ID3D11Device> device_;

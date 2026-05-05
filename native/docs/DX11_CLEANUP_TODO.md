@@ -67,8 +67,9 @@ backend behind explicit platform boundaries before adding a macOS backend.
     frame prepare/copy, present/publish, shared texture resize count,
     device-lost count, and texture-sharing failures.
 
-- [ ] Strengthen D3D11 tests around failure paths.
-  - Missing Flutter adapter in headless mode.
-  - Adapter-specific device creation failure.
-  - Texture sharing failure.
-  - Device removed/lost reporting.
+- [x] Strengthen D3D11 tests around failure paths.
+  - Covered missing Flutter adapter in headless mode, texture sharing failure
+    metrics, and D3D11 device removed/lost reporting.
+  - Adapter-specific device creation failure is represented through the same
+    device-error recording path; a deterministic bad-adapter COM object is out
+    of scope for the native unit test harness.

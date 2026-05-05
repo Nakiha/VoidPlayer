@@ -89,7 +89,7 @@ void D3D11Device::setup_info_queue() {
     }
 }
 
-bool D3D11Device::handle_device_error(const char* operation, HRESULT hr) {
+bool D3D11Device::record_device_error(const char* operation, HRESULT hr) {
     const bool lost =
         hr == DXGI_ERROR_DEVICE_REMOVED ||
         hr == DXGI_ERROR_DEVICE_RESET ||
@@ -100,7 +100,8 @@ bool D3D11Device::handle_device_error(const char* operation, HRESULT hr) {
         return false;
     }
 
-    HRESULT reason = device_ ? device_->GetDeviceRemovedReason() : hr;
+    HRESULT queried_reason = device_ ? device_->GetDeviceRemovedReason() : hr;
+    HRESULT reason = FAILED(queried_reason) ? queried_reason : hr;
     device_lost_.store(true, std::memory_order_release);
     device_removed_reason_.store(reason, std::memory_order_release);
     spdlog::error("[D3D11] device lost during {}: hr={:#x}, reason={:#x}",
@@ -119,7 +120,7 @@ bool D3D11Device::poll_device_removed(const char* operation) {
     }
     HRESULT reason = device_->GetDeviceRemovedReason();
     if (FAILED(reason)) {
-        return handle_device_error(operation, reason);
+        return record_device_error(operation, reason);
     }
     return false;
 }
@@ -282,7 +283,7 @@ bool D3D11Device::resize(int width, int height) {
     HRESULT hr = swap_chain_->ResizeBuffers(0, static_cast<UINT>(width), static_cast<UINT>(height),
                                              DXGI_FORMAT_UNKNOWN, 0);
     if (FAILED(hr)) {
-        handle_device_error("ResizeBuffers", hr);
+        record_device_error("ResizeBuffers", hr);
         return false;
     }
     spdlog::info("Swap chain resized to {}x{}", width, height);
@@ -303,7 +304,7 @@ bool D3D11Device::present(int sync_interval) {
 
     HRESULT hr = swap_chain_->Present(sync_interval, 0);
     if (FAILED(hr)) {
-        handle_device_error("Present", hr);
+        record_device_error("Present", hr);
         return false;
     }
     return true;

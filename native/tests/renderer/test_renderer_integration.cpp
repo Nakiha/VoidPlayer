@@ -271,6 +271,16 @@ TEST_CASE("Renderer: shutdown without play is safe", "[renderer]") {
     REQUIRE_FALSE(renderer.is_initialized());
 }
 
+TEST_CASE("Renderer: texture sharing failure increments D3D11 metrics", "[renderer][hw]") {
+    Renderer renderer;
+    SharedTextureSnapshot snapshot;
+
+    REQUIRE_FALSE(renderer.acquire_shared_texture(snapshot));
+    auto metrics = renderer.d3d_backend_metrics();
+    REQUIRE(metrics.texture_sharing_failure_count == 1);
+    REQUIRE(metrics.device_lost_count == 0);
+}
+
 // =============================================================================
 // Headless-mode tests (hardware decode — mirrors Flutter plugin setup)
 // =============================================================================

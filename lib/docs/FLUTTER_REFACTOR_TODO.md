@@ -62,6 +62,10 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 - [x] ~~Extract native player MethodChannel method/key constants and DTO parsing out of NativePlayerController.~~
 - [x] ~~Introduce NativePlayerApi and MethodChannelNativePlayerApi under NativePlayerController.~~
 
+## Round 13
+
+- [x] ~~Use atomic file replacement for `config.json` and `analysis_index.json` writes.~~
+
 ## P0
 
 - [ ] Move UI test runner/script parsing/media generation out of the production app graph behind a thin automation bridge.
@@ -76,8 +80,8 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 - [ ] Simplify main-window coordinator dependencies by grouping state and side effects behind explicit services/stores.
 - [ ] Extract a typed `NativePlayerApi` interface with DTOs and centralized MethodChannel names/payload keys.
   First slices done: MethodChannel name/methods/keys and DTO parsing live in `native_player_protocol.dart`; concrete channel transport lives in `MethodChannelNativePlayerApi`; `NativePlayerController` owns lifecycle/no-op semantics over the typed API.
-- [ ] Move config/cache/log default paths to user-writable app data directories and make writes atomic.
-  Slices done: paths now resolve through AppData by default, with exe-local `cache/` acting as a portable-mode marker; config/index writes are guarded by companion lock files and temp-file replace fallback, but not a true Windows atomic replace yet.
+- [x] ~~Move config/cache/log default paths to user-writable app data directories and make writes atomic.~~
+  Done: paths now resolve through AppData by default, with exe-local `cache/` acting as a portable-mode marker; config/index writes are guarded by companion lock files and Windows atomic replacement.
 - [ ] Make analysis FFI symbol lookup lazy and add a native ABI/version check.
 - [x] ~~Harden analysis IPC handshake timeout and message length limits.~~
 

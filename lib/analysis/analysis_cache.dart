@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 
 import '../app_paths.dart';
+import '../utils/atomic_file.dart';
 import '../utils/file_lock.dart';
 
 class AnalysisCacheEntryStats {
@@ -318,27 +319,17 @@ class AnalysisCache {
   }
 
   static Future<void> _saveIndexUnlocked(Map<String, dynamic> index) async {
-    await Directory(dataDir).create(recursive: true);
-    final tmp = File(
-      '${indexFile.path}.$pid.${DateTime.now().microsecondsSinceEpoch}.tmp',
+    await AtomicFileWriter.writeString(
+      indexFile,
+      const JsonEncoder.withIndent('  ').convert(index),
     );
-    await tmp.writeAsString(const JsonEncoder.withIndent('  ').convert(index));
-    if (await indexFile.exists()) {
-      await indexFile.delete();
-    }
-    await tmp.rename(indexFile.path);
   }
 
   static void _saveIndexUnlockedSync(Map<String, dynamic> index) {
-    Directory(dataDir).createSync(recursive: true);
-    final tmp = File(
-      '${indexFile.path}.$pid.${DateTime.now().microsecondsSinceEpoch}.tmp',
+    AtomicFileWriter.writeStringSync(
+      indexFile,
+      const JsonEncoder.withIndent('  ').convert(index),
     );
-    tmp.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(index));
-    if (indexFile.existsSync()) {
-      indexFile.deleteSync();
-    }
-    tmp.renameSync(indexFile.path);
   }
 
   static Future<void> addEntry(

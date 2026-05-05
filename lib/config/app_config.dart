@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import '../app_paths.dart';
 import '../preferences/playback_preferences.dart';
+import '../utils/atomic_file.dart';
 import '../utils/file_lock.dart';
 
 /// Manages reading and writing `config.json` in the resolved app data root.
@@ -56,15 +57,7 @@ class AppConfig {
   Future<void> save() async {
     try {
       await FileLockService.withExclusive(_lockPath, () async {
-        await _file.parent.create(recursive: true);
-        final tmp = File(
-          '${_file.path}.$pid.${DateTime.now().microsecondsSinceEpoch}.tmp',
-        );
-        await tmp.writeAsString(jsonEncode(_data));
-        if (await _file.exists()) {
-          await _file.delete();
-        }
-        await tmp.rename(_file.path);
+        await AtomicFileWriter.writeString(_file, jsonEncode(_data));
       });
     } catch (_) {
       // Best-effort: don't block shutdown on write failure.

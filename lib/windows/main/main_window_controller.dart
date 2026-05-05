@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:window_manager/window_manager.dart';
 
 import '../../actions/action_registry.dart';
 import '../../automation/test_runner.dart';
@@ -12,12 +11,12 @@ import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
 import '../../widgets/loop_range_bar.dart';
-import '../win32ffi.dart';
 import '../window_manager.dart' as app_window;
 import 'main_window_actions.dart';
 import 'main_window_analysis.dart';
 import 'main_window_layout.dart';
 import 'main_window_media.dart';
+import 'main_window_platform.dart';
 import 'main_window_playback.dart';
 import 'main_window_state.dart';
 import 'main_window_test_hooks.dart';
@@ -28,6 +27,8 @@ class MainWindowController {
   final TickerProvider vsync;
   final StartupOptions startupOptions;
   final bool Function() mounted;
+  final MainWindowPlatform platformWindow;
+  final app_window.AnalysisProcessManager analysisProcesses;
 
   final NativePlayerController player = NativePlayerController();
   final TrackManager trackManager = TrackManager();
@@ -58,7 +59,11 @@ class MainWindowController {
     required this.vsync,
     required this.startupOptions,
     required this.mounted,
-  }) {
+    MainWindowPlatform? platformWindow,
+    app_window.AnalysisProcessManager? analysisProcesses,
+  }) : platformWindow = platformWindow ?? const WindowsMainWindowPlatform(),
+       analysisProcesses =
+           analysisProcesses ?? app_window.WindowManager.analysisProcesses {
     _initCoordinators();
   }
 
@@ -244,9 +249,7 @@ class MainWindowController {
       }
       // Switch the native window first so the Flutter fullscreen chrome never
       // renders inside the old, non-fullscreen bounds.
-      if (!Win32FFI.setBorderlessFullScreen(fullScreen)) {
-        await windowManager.setFullScreen(fullScreen);
-      }
+      await platformWindow.setFullScreen(fullScreen);
       if (!mounted() || serial != _fullScreenSerial) return;
       if (fullScreen) {
         await _preemptFullScreenViewportResize();
@@ -283,7 +286,7 @@ class MainWindowController {
   Future<void> _preemptFullScreenViewportResize() async {
     final dpr = layoutCoordinator.viewportDevicePixelRatio;
     if (dpr <= 0) return;
-    final bounds = await windowManager.getBounds();
+    final bounds = await platformWindow.getBounds();
     await layoutCoordinator.preemptViewportResize(
       width: (bounds.width * dpr).round(),
       height: (bounds.height * dpr).round(),
@@ -346,7 +349,7 @@ class MainWindowController {
     );
     analysisCoordinator = MainWindowAnalysisCoordinator(
       trackManager: trackManager,
-      analysisProcesses: app_window.WindowManager.analysisProcesses,
+      analysisProcesses: analysisProcesses,
     );
     playbackCoordinator = MainWindowPlaybackCoordinator(
       controller: player,
@@ -403,7 +406,7 @@ class MainWindowController {
         scriptPath: path,
         automation: UiAutomationBridge(
           controller: player,
-          analysisProcesses: app_window.WindowManager.analysisProcesses,
+          analysisProcesses: analysisProcesses,
           actionRegistry: actionRegistry,
         ),
       ).run();

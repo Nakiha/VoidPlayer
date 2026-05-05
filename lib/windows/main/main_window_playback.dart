@@ -1,11 +1,14 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../../app_log.dart';
 import '../../config/app_config.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../startup_options.dart';
 import '../../track_manager.dart';
 import '../../video_renderer_controller.dart';
+import 'main_window_state.dart';
 
 class MainWindowPlaybackCoordinator {
   static const double trackDragHandleWidth = 28.0;
@@ -15,34 +18,10 @@ class MainWindowPlaybackCoordinator {
   final NativePlayerController controller;
   final TrackManager trackManager;
   final StartupOptions startupOptions;
+  final MainWindowStateStore stateStore;
+  final ValueNotifier<TimelineHoverState> timelineHoverNotifier;
   final bool Function() mounted;
-  final int? Function() textureId;
   final int Function() effectiveDurationUs;
-  final double Function() timelineControlsWidth;
-  final bool Function() isPlaying;
-  final void Function(bool playing) setPlaying;
-  final double Function() playbackSpeed;
-  final void Function(double speed) setPlaybackSpeed;
-  final int Function() currentPtsUs;
-  final int Function() durationUs;
-  final int? Function() pendingSeekUs;
-  final DateTime? Function() pendingSeekAt;
-  final void Function(int ptsUs) setSeekPreview;
-  final void Function(int? ptsUs, DateTime? at) setPendingSeek;
-  final void Function(int ptsUs, int durationUs, bool playing)
-  setPolledPlaybackState;
-  final bool Function() loopRangeEnabled;
-  final void Function(bool enabled) setLoopRangeEnabledState;
-  final bool Function() nativeLoopRangeSynced;
-  final void Function(bool synced) setNativeLoopRangeSynced;
-  final bool Function() startupLoopRangeApplied;
-  final void Function(bool applied) setStartupLoopRangeApplied;
-  final int Function() loopStartUs;
-  final int Function() loopEndUs;
-  final void Function(int startUs, int endUs) setLoopRangeState;
-  final int Function() hoverPtsUs;
-  final bool Function() sliderHovering;
-  final void Function(int hoverUs, bool hovering) setSliderHoverState;
 
   Timer? _pollTimer;
   Timer? _loopBoundaryTimer;
@@ -56,34 +35,52 @@ class MainWindowPlaybackCoordinator {
     required this.controller,
     required this.trackManager,
     required this.startupOptions,
+    required this.stateStore,
+    required this.timelineHoverNotifier,
     required this.mounted,
-    required this.textureId,
     required this.effectiveDurationUs,
-    required this.timelineControlsWidth,
-    required this.isPlaying,
-    required this.setPlaying,
-    required this.playbackSpeed,
-    required this.setPlaybackSpeed,
-    required this.currentPtsUs,
-    required this.durationUs,
-    required this.pendingSeekUs,
-    required this.pendingSeekAt,
-    required this.setSeekPreview,
-    required this.setPendingSeek,
-    required this.setPolledPlaybackState,
-    required this.loopRangeEnabled,
-    required this.setLoopRangeEnabledState,
-    required this.nativeLoopRangeSynced,
-    required this.setNativeLoopRangeSynced,
-    required this.startupLoopRangeApplied,
-    required this.setStartupLoopRangeApplied,
-    required this.loopStartUs,
-    required this.loopEndUs,
-    required this.setLoopRangeState,
-    required this.hoverPtsUs,
-    required this.sliderHovering,
-    required this.setSliderHoverState,
   });
+
+  MainWindowStateModel get _state => stateStore.value;
+
+  int? textureId() => _state.textureId;
+  double timelineControlsWidth() => _state.timelineControlsWidth;
+  bool isPlaying() => _state.isPlaying;
+  void setPlaying(bool playing) => stateStore.setPlaying(playing);
+  double playbackSpeed() => _state.playbackSpeed;
+  void setPlaybackSpeed(double speed) => stateStore.setPlaybackSpeed(speed);
+  int currentPtsUs() => _state.currentPtsUs;
+  int durationUs() => _state.durationUs;
+  int? pendingSeekUs() => _state.pendingSeekUs;
+  DateTime? pendingSeekAt() => _state.pendingSeekAt;
+  void setSeekPreview(int ptsUs) => stateStore.setSeekPreview(ptsUs);
+  void setPendingSeek(int? ptsUs, DateTime? at) =>
+      stateStore.setPendingSeek(ptsUs, at);
+  void setPolledPlaybackState(int ptsUs, int durationUs, bool playing) =>
+      stateStore.setPolledPlaybackState(ptsUs, durationUs, playing);
+  bool loopRangeEnabled() => _state.loopRangeEnabled;
+  void setLoopRangeEnabledState(bool enabled) =>
+      stateStore.setLoopRangeEnabled(enabled);
+  bool nativeLoopRangeSynced() => _state.nativeLoopRangeSynced;
+  void setNativeLoopRangeSynced(bool synced) =>
+      stateStore.setNativeLoopRangeSynced(synced);
+  bool startupLoopRangeApplied() => _state.startupLoopRangeApplied;
+  void setStartupLoopRangeApplied(bool applied) =>
+      stateStore.setStartupLoopRangeApplied(applied);
+  int loopStartUs() => _state.loopStartUs;
+  int loopEndUs() => _state.loopEndUs;
+  void setLoopRangeState(int startUs, int endUs) =>
+      stateStore.setLoopRange(startUs, endUs);
+  int hoverPtsUs() => timelineHoverNotifier.value.hoverPtsUs;
+  bool sliderHovering() => timelineHoverNotifier.value.sliderHovering;
+  void setSliderHoverState(int hoverUs, bool hovering) {
+    final next = TimelineHoverState(
+      hoverPtsUs: hoverUs,
+      sliderHovering: hovering,
+    );
+    if (timelineHoverNotifier.value == next) return;
+    timelineHoverNotifier.value = next;
+  }
 
   void dispose() {
     _disposed = true;

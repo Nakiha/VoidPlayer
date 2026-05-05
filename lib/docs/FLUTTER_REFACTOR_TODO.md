@@ -98,6 +98,10 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Group `MainWindowViewActions` into drop, toolbar, viewport, media/timeline, and overlay action slices.~~
 
+## Round 22
+
+- [x] ~~Route playback coordinator state access through `MainWindowStateStore` instead of a long getter/setter closure list.~~
+
 ## P0
 
 - [x] ~~Keep release UI automation behind explicit automation bridge/runtime boundaries.~~
@@ -110,6 +114,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 ## P1
 
 - [ ] Simplify main-window coordinator dependencies by grouping state and side effects behind explicit services/stores.
+  First slice done: `MainWindowPlaybackCoordinator` now depends on `MainWindowStateStore` and the timeline hover notifier for playback/seek/loop state instead of a long list of individual state getter/setter closures.
 - [x] ~~Extract a typed `NativePlayerApi` interface with DTOs and centralized MethodChannel names/payload keys.~~
   Done: MethodChannel name/methods/keys and DTO parsing live in `native_player_protocol.dart`; concrete channel transport lives in `MethodChannelNativePlayerApi`; `NativePlayerController` owns lifecycle/no-op semantics over the typed API.
 - [x] ~~Move config/cache/log default paths to user-writable app data directories and make writes atomic.~~

@@ -355,33 +355,10 @@ class MainWindowController {
       controller: player,
       trackManager: trackManager,
       startupOptions: startupOptions,
+      stateStore: stateStore,
+      timelineHoverNotifier: timelineHoverNotifier,
       mounted: mounted,
-      textureId: () => _textureId,
       effectiveDurationUs: () => mediaCoordinator.effectiveDurationUs,
-      timelineControlsWidth: () => _timelineControlsWidth,
-      isPlaying: () => _isPlaying,
-      setPlaying: stateStore.setPlaying,
-      playbackSpeed: () => _playbackSpeed,
-      setPlaybackSpeed: stateStore.setPlaybackSpeed,
-      currentPtsUs: () => _currentPtsUs,
-      durationUs: () => _durationUs,
-      pendingSeekUs: () => _pendingSeekUs,
-      pendingSeekAt: () => _pendingSeekAt,
-      setSeekPreview: stateStore.setSeekPreview,
-      setPendingSeek: stateStore.setPendingSeek,
-      setPolledPlaybackState: stateStore.setPolledPlaybackState,
-      loopRangeEnabled: () => _loopRangeEnabled,
-      setLoopRangeEnabledState: stateStore.setLoopRangeEnabled,
-      nativeLoopRangeSynced: () => _nativeLoopRangeSynced,
-      setNativeLoopRangeSynced: stateStore.setNativeLoopRangeSynced,
-      startupLoopRangeApplied: () => _startupLoopRangeApplied,
-      setStartupLoopRangeApplied: stateStore.setStartupLoopRangeApplied,
-      loopStartUs: () => _loopStartUs,
-      loopEndUs: () => _loopEndUs,
-      setLoopRangeState: stateStore.setLoopRange,
-      hoverPtsUs: () => timelineHoverNotifier.value.hoverPtsUs,
-      sliderHovering: () => timelineHoverNotifier.value.sliderHovering,
-      setSliderHoverState: _setTimelineHover,
     );
     mediaCoordinator = MainWindowMediaCoordinator(
       controller: player,
@@ -469,31 +446,16 @@ class MainWindowController {
 
   MainWindowStateModel get _state => stateStore.value;
 
-  void _setTimelineHover(int hoverUs, bool hovering) {
-    final next = TimelineHoverState(
-      hoverPtsUs: hoverUs,
-      sliderHovering: hovering,
-    );
-    if (timelineHoverNotifier.value == next) return;
-    timelineHoverNotifier.value = next;
-  }
-
   int? get _textureId => _state.textureId;
   ViewportDisplayState get _viewportState => _state.viewportState;
   bool get _isPlaying => _state.isPlaying;
-  double get _playbackSpeed => _state.playbackSpeed;
   int get _currentPtsUs => _state.currentPtsUs;
   int get _durationUs => _state.durationUs;
   LayoutState get _layout => _state.layout;
   int? get _pendingSeekUs => _state.pendingSeekUs;
-  DateTime? get _pendingSeekAt => _state.pendingSeekAt;
   Map<int, int> get _syncOffsets => _state.syncOffsets;
   double get _timelineControlsWidth => _state.timelineControlsWidth;
   bool get _loopRangeEnabled => _state.loopRangeEnabled;
-  bool get _nativeLoopRangeSynced => _state.nativeLoopRangeSynced;
-  bool get _startupLoopRangeApplied => _state.startupLoopRangeApplied;
-  int get _loopStartUs => _state.loopStartUs;
-  int get _loopEndUs => _state.loopEndUs;
   bool get _dragging => _state.dragging;
   bool get _profilerVisible => _state.profilerVisible;
   bool get _settingsVisible => _state.settingsVisible;

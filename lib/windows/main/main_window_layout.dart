@@ -6,6 +6,7 @@ import 'package:flutter/scheduler.dart';
 import '../../utils/async_guard.dart';
 import '../../track_manager.dart';
 import '../../video_renderer_controller.dart';
+import '../../viewport/display_geometry.dart';
 
 class MainWindowLayoutCoordinator {
   static const Duration viewportResizeDebounce = Duration(milliseconds: 80);
@@ -331,8 +332,21 @@ class MainWindowLayoutCoordinator {
     int newHeight,
   ) {
     final current = layout();
-    final oldDisplay = _displayPixelSizeForLayout(oldWidth, oldHeight, current);
-    final newDisplay = _displayPixelSizeForLayout(newWidth, newHeight, current);
+    final trackGeometry = tracks()
+        .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
+        .toList();
+    final oldDisplay = computeDisplayPixelSizeForLayout(
+      viewportWidth: oldWidth,
+      viewportHeight: oldHeight,
+      layout: current,
+      tracks: trackGeometry,
+    );
+    final newDisplay = computeDisplayPixelSizeForLayout(
+      viewportWidth: newWidth,
+      viewportHeight: newHeight,
+      layout: current,
+      tracks: trackGeometry,
+    );
     if (oldDisplay == Size.zero || newDisplay == Size.zero) return false;
 
     var nextOffsetX = current.viewOffsetX;
@@ -352,66 +366,5 @@ class MainWindowLayoutCoordinator {
           layout.copyWith(viewOffsetX: nextOffsetX, viewOffsetY: nextOffsetY),
     );
     return true;
-  }
-
-  Size _displayPixelSizeForLayout(int width, int height, LayoutState layout) {
-    if (width <= 0 || height <= 0) return Size.zero;
-    final activeTracks = tracks();
-    if (activeTracks.isEmpty) {
-      return Size(width.toDouble(), height.toDouble());
-    }
-
-    TrackEntry track = activeTracks.first;
-    for (final fileId in layout.order) {
-      final index = activeTracks.indexWhere((entry) => entry.fileId == fileId);
-      if (index >= 0) {
-        track = activeTracks[index];
-        break;
-      }
-    }
-
-    var slotWidth = width.toDouble();
-    final slotHeight = height.toDouble();
-    if (layout.mode != LayoutMode.splitScreen && activeTracks.length > 1) {
-      slotWidth /= activeTracks.length;
-    }
-    final slotAspect = slotHeight > 0 ? slotWidth / slotHeight : 1.0;
-
-    var refTrack = activeTracks.first;
-    var maxPixels = 0;
-    for (final entry in activeTracks) {
-      final pixels = entry.info.width * entry.info.height;
-      if (pixels > maxPixels) {
-        maxPixels = pixels;
-        refTrack = entry;
-      }
-    }
-
-    double densityFor(TrackEntry entry) {
-      final videoWidth = entry.info.width.toDouble();
-      final videoHeight = entry.info.height.toDouble();
-      if (videoWidth <= 0 || videoHeight <= 0) return 1.0;
-      return (slotWidth / videoWidth) < (slotHeight / videoHeight)
-          ? slotWidth / videoWidth
-          : slotHeight / videoHeight;
-    }
-
-    final trackDensity = densityFor(track);
-    final refDensity = densityFor(refTrack);
-    final trackScale = trackDensity > 0 ? refDensity / trackDensity : 1.0;
-
-    final videoWidth = track.info.width.toDouble();
-    final videoHeight = track.info.height.toDouble();
-    var videoAspect = videoHeight > 0 ? videoWidth / videoHeight : slotAspect;
-    if (videoAspect <= 0) videoAspect = slotAspect;
-
-    var fitScale = videoAspect > slotAspect ? slotAspect / videoAspect : 1.0;
-    fitScale *= trackScale;
-    final displayScale = fitScale * layout.zoomRatio;
-    final dsX = slotAspect > 0
-        ? videoAspect * displayScale / slotAspect
-        : displayScale;
-    final dsY = displayScale;
-    return Size(dsX * slotWidth, dsY * slotHeight);
   }
 }

@@ -42,6 +42,10 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 - [x] ~~Inject AnalysisProcessManager into MainWindowAnalysisCoordinator.~~
 - [x] ~~Route release UI automation analysis-process access through UiAutomationBridge.~~
 
+## Round 9
+
+- [x] ~~Extract shared viewport display geometry math for production layout and UI automation assertions.~~
+
 ## P0
 
 - [ ] Move UI test runner/script parsing/media generation out of the production app graph behind a thin automation bridge.
@@ -65,4 +69,4 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 - [ ] Split oversized main-window view/view-model surfaces by UI region.
 - [ ] Make shortcut display metadata come from the same action definitions as real bindings.
 - [ ] Centralize About/version/license metadata instead of hardcoding it in widgets/ARB strings.
-- [ ] Extract shared layout geometry math used by production and UI test assertions.
+- [x] ~~Extract shared layout geometry math used by production and UI test assertions.~~

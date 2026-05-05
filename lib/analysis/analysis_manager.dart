@@ -1,6 +1,4 @@
 import 'dart:io';
-import 'dart:isolate';
-
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
@@ -9,6 +7,7 @@ import '../utils/file_lock.dart';
 import 'analysis_cache_service.dart';
 import 'analysis_ffi.dart';
 import 'analysis_generation_settings.dart';
+import 'analysis_native_service.dart';
 import 'file_hash.dart';
 import 'nalu_types.dart';
 
@@ -81,13 +80,16 @@ class AnalysisManager extends ChangeNotifier
     AnalysisGenerationSettings settings =
         const AppConfigAnalysisGenerationSettings(),
     AnalysisCacheService cache = const DefaultAnalysisCacheService(),
+    AnalysisNativeService native = const DefaultAnalysisNativeService(),
   }) : _settings = settings,
-       _cache = cache;
+       _cache = cache,
+       _native = native;
 
   static final AnalysisManager instance = AnalysisManager._();
 
   final AnalysisGenerationSettings _settings;
   final AnalysisCacheService _cache;
+  final AnalysisNativeService _native;
   AnalysisState _state = AnalysisState.idle;
   AnalysisError? _error;
   String? _generatingFileName;
@@ -380,7 +382,7 @@ class AnalysisManager extends ChangeNotifier
     final hashLock = _cache.acquireHashSharedLockSync(hash);
     final bool ok;
     try {
-      ok = AnalysisFfi.load(analysisPath);
+      ok = _native.load(analysisPath);
     } catch (_) {
       hashLock.releaseSync();
       rethrow;
@@ -427,7 +429,7 @@ class AnalysisManager extends ChangeNotifier
     _loadSerial++;
     _ensureGeneratedInFlightByPath.clear();
     if (_state == AnalysisState.loaded) {
-      AnalysisFfi.unload();
+      _native.unload();
     }
     _loadedHash = null;
     _releaseLoadedHashLock();
@@ -467,7 +469,7 @@ class AnalysisManager extends ChangeNotifier
 
     AnalysisSession? session;
     try {
-      session = AnalysisSession.open(_cache.analysisPath(hash));
+      session = _native.openSession(_cache.analysisPath(hash));
       if (session == null || !session.isOpen) {
         log.info('[Analysis] cache stale for $hash: cannot open container');
         return false;
@@ -550,9 +552,7 @@ class AnalysisManager extends ChangeNotifier
       final maxCacheBytes = _settings.maxCacheBytes;
       return _cache.withHashExclusiveLock(hash, () async {
         if (_cache.filesExist(hash)) return true;
-        return Isolate.run(
-          () => AnalysisFfi.generateAnalysis(videoPath, hash, maxCacheBytes),
-        );
+        return _native.generateAnalysis(videoPath, hash, maxCacheBytes);
       });
     });
     _generateQueue = task.then<void>((_) {}, onError: (_) {});

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app_log.dart';
+import '../platform/keyboard_input_service.dart';
 import '../utils/async_guard.dart';
 import 'player_action.dart';
 
@@ -16,10 +17,13 @@ typedef ActionCallback = FutureOr<void> Function(PlayerAction action);
 /// [bind] registers an action definition + callback and starts intercepting
 /// its shortcut key. [unbind] removes the callback and stops interception.
 class ActionRegistry {
+  final KeyboardInputService keyboardInput;
   final Map<String, PlayerAction> _actions = {};
   final Map<String, ActionCallback> _callbacks = {};
   final Map<LogicalKeyboardKey, String> _keyMap = {};
   final Set<LogicalKeyboardKey> _requireControl = {};
+
+  ActionRegistry({this.keyboardInput = const FlutterKeyboardInputService()});
 
   /// Bind an action with its callback.
   ///
@@ -115,7 +119,7 @@ class ActionRegistry {
 
     // Check if this action requires Ctrl to be held
     final needsCtrl = _requireControl.contains(event.logicalKey);
-    final ctrlHeld = HardwareKeyboard.instance.isControlPressed;
+    final ctrlHeld = keyboardInput.isControlPressed;
     if (needsCtrl != ctrlHeld) return false;
     if (event is KeyRepeatEvent && action?.repeatable != true) {
       return true;
@@ -160,9 +164,9 @@ class ActionRegistry {
 /// A widget that intercepts registered shortcut keys globally.
 ///
 /// Place this above your page content in the widget tree. It registers with
-/// [HardwareKeyboard] so window-level shortcuts keep working even if native
-/// fullscreen transitions or overlays temporarily move primary focus away from
-/// this subtree.
+/// the registry's [KeyboardInputService] so window-level shortcuts keep working
+/// even if native fullscreen transitions or overlays temporarily move primary
+/// focus away from this subtree.
 class ActionFocus extends StatefulWidget {
   final ActionRegistry actionRegistry;
   final Widget child;
@@ -183,7 +187,7 @@ class _ActionFocusState extends State<ActionFocus> {
   @override
   void initState() {
     super.initState();
-    HardwareKeyboard.instance.addHandler(_handleGlobalKeyEvent);
+    widget.actionRegistry.keyboardInput.addHandler(_handleGlobalKeyEvent);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _focusNode.hasFocus) return;
       _focusNode.requestFocus();
@@ -192,7 +196,7 @@ class _ActionFocusState extends State<ActionFocus> {
 
   @override
   void dispose() {
-    HardwareKeyboard.instance.removeHandler(_handleGlobalKeyEvent);
+    widget.actionRegistry.keyboardInput.removeHandler(_handleGlobalKeyEvent);
     _focusNode.dispose();
     super.dispose();
   }

@@ -45,11 +45,12 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 ## Round 9
 
 - [x] ~~Extract shared viewport display geometry math for production layout and UI automation assertions.~~
+- [x] ~~Split release UI automation script model/parser out of TestRunner.~~
 
 ## P0
 
 - [ ] Move UI test runner/script parsing/media generation out of the production app graph behind a thin automation bridge.
-  First slice done: non-user automation commands no longer live in `PlayerAction`.
+  Slices done: non-user automation commands no longer live in `PlayerAction`; script model/parser, assertion executor, probes, run-state, video generation, and process access now sit behind the automation module/bridge instead of the action system.
 - [x] ~~Add a platform service boundary so widgets do not import Win32 FFI directly.~~
 - [ ] Reduce global singleton/static state, starting with injected window/process services.
   First slice done: `WindowManager` delegates analysis process state to an `AnalysisProcessManager` instance; main-window analysis and release UI automation use that instance through injection/bridge.

@@ -7,13 +7,13 @@
 1. 在 `lib/actions/player_action.dart` 中添加新的 sealed subclass
 2. 在 `lib/windows/main/main_window_actions.dart` 中通过 `MainWindowActionBinder` 绑定 callback
 3. 如需快捷键，在构造函数中传入 `LogicalKeyboardKey`，并完成下面的「新增快捷键」步骤
-4. 如需自动化脚本触发，在 `lib/automation/test_runner.dart` 中补指令解析
+4. 如需自动化脚本触发，在 `lib/automation/automation_script.dart` 中补指令解析
 5. 更新本文档的 Action 清单
 
 ### 新增 Automation Command
 
 1. 在 `lib/actions/automation_action.dart` 中添加新的 sealed subclass
-2. 在 `lib/automation/test_runner.dart` 中补指令解析和执行分支
+2. 在 `lib/automation/automation_script.dart` 中补指令解析，在 `lib/automation/test_runner.dart` 中补执行分支
 3. 更新本文档的 Automation Command 清单
 
 Automation command 是 release UI test 的正式能力，但不属于用户操作，不进入
@@ -161,7 +161,8 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `lib/actions/player_assert.dart` | PlayerAssert sealed class |
 | `lib/actions/action_registry.dart` | ActionRegistry + ActionFocus |
 | `lib/automation/ui_automation_bridge.dart` | 主窗口暴露给 release UI automation 的显式桥，集中提供 action 和分析进程服务 |
-| `lib/automation/test_runner.dart` | 脚本解析 + TestRunner |
+| `lib/automation/automation_script.dart` | 自动化脚本指令模型 + parser |
+| `lib/automation/test_runner.dart` | 自动化脚本执行器 |
 | `lib/automation/automation_assert_executor.dart` | 自动化断言执行 |
 | `lib/automation/automation_probe.dart` | 自动化指标/截图辅助查询 |
 | `lib/automation/automation_run_state.dart` | 单次自动化运行中的 capture/baseline 状态 |

@@ -6,16 +6,19 @@ import 'package:flutter/foundation.dart';
 
 import '../../../app_log.dart';
 import 'analysis_ipc_models.dart';
+import 'bounded_line_splitter.dart';
 
 class AnalysisIpcClient extends ChangeNotifier {
   final Socket _socket;
+  final int _maxLineLength;
   late final StreamSubscription<String> _subscription;
   List<AnalysisIpcTrack> _tracks = const [];
   bool _hasSnapshot = false;
   bool _connected = true;
   bool _disposed = false;
 
-  AnalysisIpcClient._(this._socket);
+  AnalysisIpcClient._(this._socket, {required int maxLineLength})
+    : _maxLineLength = maxLineLength;
 
   List<AnalysisIpcTrack> get tracks => List.unmodifiable(_tracks);
   bool get hasSnapshot => _hasSnapshot;
@@ -24,10 +27,11 @@ class AnalysisIpcClient extends ChangeNotifier {
   static Future<AnalysisIpcClient?> connect({
     required int port,
     required String token,
+    int maxLineLength = analysisIpcMaxLineLength,
   }) async {
     try {
       final socket = await Socket.connect(InternetAddress.loopbackIPv4, port);
-      final client = AnalysisIpcClient._(socket);
+      final client = AnalysisIpcClient._(socket, maxLineLength: maxLineLength);
       client._start(token);
       return client;
     } catch (e) {
@@ -55,7 +59,7 @@ class AnalysisIpcClient extends ChangeNotifier {
     _subscription = _socket
         .cast<List<int>>()
         .transform(utf8.decoder)
-        .transform(const LineSplitter())
+        .transform(BoundedLineSplitter(maxLineLength: _maxLineLength))
         .listen(
           _handleMessage,
           onDone: () {

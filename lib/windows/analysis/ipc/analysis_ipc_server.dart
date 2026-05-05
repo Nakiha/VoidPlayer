@@ -5,8 +5,14 @@ import 'dart:math';
 
 import '../../../app_log.dart';
 import 'analysis_ipc_models.dart';
+import 'bounded_line_splitter.dart';
+
+const Duration analysisIpcHandshakeTimeout = Duration(seconds: 5);
 
 class AnalysisIpcServer {
+  final Duration handshakeTimeout;
+  final int maxLineLength;
+
   ServerSocket? _server;
   final _clients = <Socket>{};
   String? _token;
@@ -17,6 +23,11 @@ class AnalysisIpcServer {
   bool get hasClients => _clients.isNotEmpty;
   int? get port => _server?.port;
   String? get token => _token;
+
+  AnalysisIpcServer({
+    this.handshakeTimeout = analysisIpcHandshakeTimeout,
+    this.maxLineLength = analysisIpcMaxLineLength,
+  });
 
   Future<void> start() async {
     if (_server != null) return;
@@ -58,10 +69,15 @@ class AnalysisIpcServer {
   void _handleClient(Socket socket) {
     var authorized = false;
     StreamSubscription<String>? subscription;
+    final handshakeTimer = Timer(handshakeTimeout, () {
+      if (authorized) return;
+      log.warning('[AnalysisIpcServer] handshake timed out');
+      socket.destroy();
+    });
     subscription = socket
         .cast<List<int>>()
         .transform(utf8.decoder)
-        .transform(const LineSplitter())
+        .transform(BoundedLineSplitter(maxLineLength: maxLineLength))
         .listen(
           (line) {
             Map<String, Object?> message;
@@ -80,6 +96,7 @@ class AnalysisIpcServer {
                 return;
               }
               authorized = true;
+              handshakeTimer.cancel();
               _clients.add(socket);
               log.info('[AnalysisIpcServer] analysis client connected');
               final snapshot = _lastSnapshot;
@@ -89,12 +106,15 @@ class AnalysisIpcServer {
             }
           },
           onDone: () {
+            handshakeTimer.cancel();
             _clients.remove(socket);
             unawaited(subscription?.cancel());
           },
           onError: (Object error, StackTrace stack) {
+            handshakeTimer.cancel();
             _clients.remove(socket);
             log.warning('[AnalysisIpcServer] client error: $error');
+            socket.destroy();
             unawaited(subscription?.cancel());
           },
           cancelOnError: true,

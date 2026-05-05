@@ -20,6 +20,10 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Redact analysis IPC tokens from child process launch logs.~~
 
+## Round 5
+
+- [x] ~~Add analysis IPC handshake timeout and bounded JSON line parsing.~~
+
 ## P0
 
 - [ ] Move UI test runner/script parsing/media generation out of the production app graph behind a thin automation bridge.
@@ -33,7 +37,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 - [ ] Extract a typed `NativePlayerApi` interface with DTOs and centralized MethodChannel names/payload keys.
 - [ ] Move config/cache/log default paths to user-writable app data directories and make writes atomic.
 - [ ] Make analysis FFI symbol lookup lazy and add a native ABI/version check.
-- [ ] Harden analysis IPC handshake timeout and message length limits.
+- [x] ~~Harden analysis IPC handshake timeout and message length limits.~~
 
 ## P2
 

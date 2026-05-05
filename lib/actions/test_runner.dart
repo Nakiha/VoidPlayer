@@ -7,6 +7,7 @@ import 'package:window_manager/window_manager.dart' as wm;
 import '../app_log.dart';
 import '../config/app_config.dart';
 import '../preferences/playback_preferences.dart';
+import 'automation_action.dart';
 import 'action_registry.dart';
 import '../video_renderer_controller.dart';
 import '../windows/win32ffi.dart';
@@ -23,6 +24,11 @@ sealed class ScriptInstruction {
 class ScriptAction extends ScriptInstruction {
   final PlayerAction action;
   const ScriptAction(super.time, this.action);
+}
+
+class ScriptAutomationAction extends ScriptInstruction {
+  final AutomationAction action;
+  const ScriptAutomationAction(super.time, this.action);
 }
 
 class ScriptAssert extends ScriptInstruction {
@@ -145,6 +151,9 @@ class TestRunner {
       case ScriptAction(:final action):
         await _executeAction(action);
 
+      case ScriptAutomationAction(:final action):
+        await _executeAutomationAction(action);
+
       case ScriptAssert(:final assertion):
         log.info('TestRunner ${instr.time}: assert ${assertion.runtimeType}');
         await _executeAssert(assertion);
@@ -208,6 +217,10 @@ class TestRunner {
   }
 
   Future<void> _executeAction(PlayerAction action) async {
+    actionRegistry.execute(action.name, action);
+  }
+
+  Future<void> _executeAutomationAction(AutomationAction action) async {
     switch (action) {
       case SetRenderSize(:final width, :final height):
         log.info('TestRunner: SET_RENDER_SIZE ${width}x$height');
@@ -248,8 +261,6 @@ class TestRunner {
         final count = _currentNativeSeekCount();
         _nativeSeekCountBaselines[nameId] = count;
         log.info('TestRunner: STORE_NATIVE_SEEK_COUNT $nameId count=$count');
-      default:
-        actionRegistry.execute(action.name, action);
     }
   }
 
@@ -882,7 +893,7 @@ ScriptInstruction? _parseInstruction(
         );
         return null;
       }
-      return ScriptAction(
+      return ScriptAutomationAction(
         time,
         SetRenderSize(int.parse(args[0]), int.parse(args[1])),
       );
@@ -899,7 +910,7 @@ ScriptInstruction? _parseInstruction(
         log.warning('CAPTURE_VIEWPORT needs a capture name: $rawLine');
         return null;
       }
-      return ScriptAction(
+      return ScriptAutomationAction(
         time,
         CaptureViewportAction(
           args[0],
@@ -907,27 +918,27 @@ ScriptInstruction? _parseInstruction(
         ),
       );
     case 'WINDOW_MAXIMIZE':
-      return ScriptAction(time, const WindowMaximize());
+      return ScriptAutomationAction(time, const WindowMaximize());
     case 'WINDOW_RESTORE':
-      return ScriptAction(time, const WindowRestore());
+      return ScriptAutomationAction(time, const WindowRestore());
     case 'STORE_VIEW_CENTER':
       if (args.isEmpty) {
         log.warning('STORE_VIEW_CENTER needs a baseline name: $rawLine');
         return null;
       }
-      return ScriptAction(time, StoreViewCenter(args[0]));
+      return ScriptAutomationAction(time, StoreViewCenter(args[0]));
     case 'STORE_RESOURCE_USAGE':
       if (args.isEmpty) {
         log.warning('STORE_RESOURCE_USAGE needs a baseline name: $rawLine');
         return null;
       }
-      return ScriptAction(time, StoreResourceUsage(args[0]));
+      return ScriptAutomationAction(time, StoreResourceUsage(args[0]));
     case 'STORE_NATIVE_SEEK_COUNT':
       if (args.isEmpty) {
         log.warning('STORE_NATIVE_SEEK_COUNT needs a baseline name: $rawLine');
         return null;
       }
-      return ScriptAction(time, StoreNativeSeekCount(args[0]));
+      return ScriptAutomationAction(time, StoreNativeSeekCount(args[0]));
     case 'RUN_ANALYSIS':
     case 'TRIGGER_ANALYSIS':
       return ScriptAction(time, const RunAnalysis());

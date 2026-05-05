@@ -28,9 +28,14 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Replace viewport magic ints with typed display state and render error text.~~
 
+## Round 7
+
+- [x] ~~Separate non-user UI automation commands from PlayerAction.~~
+
 ## P0
 
 - [ ] Move UI test runner/script parsing/media generation out of the production app graph behind a thin automation bridge.
+  First slice done: non-user automation commands no longer live in `PlayerAction`.
 - [x] ~~Add a platform service boundary so widgets do not import Win32 FFI directly.~~
 - [ ] Reduce global singleton/static state, starting with injected window/process services.
 - [x] ~~Replace viewport magic ints with a typed viewport state model that can carry user-visible errors.~~

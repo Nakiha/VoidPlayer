@@ -1,13 +1,14 @@
 # Action 系统设计文档
 
-> 统一管理用户操作的抽象层：快捷键、UI 按钮、测试脚本共享同一套 Action 定义。
+> 统一管理用户操作的抽象层：快捷键、UI 按钮共享 `PlayerAction`。
+> release UI automation 复用已绑定的 `PlayerAction`，但测试专用能力使用独立 automation command。
 
 ## 设计目标
 
 1. **单一来源** — 每个 PlayerAction 只定义一次，快捷键和按钮共用
 2. **按键拦截** — 仅在 `bind` 到 `unbind` 期间拦截快捷键，阻止 Flutter 框架捕获
 3. **全局一致** — 快捷键行为不随焦点位置改变，无论焦点在哪个控件上效果都相同
-4. **可脚本化测试** — 基于时间线的 CSV 脚本驱动 Action 和 Assert，无需人工交互
+4. **可脚本化测试** — 基于时间线的 CSV 脚本驱动 Action / automation command / Assert，无需人工交互
 
 ## 类型体系
 
@@ -44,6 +45,12 @@ class AssertPosition extends PlayerAssert {
   const AssertPosition(this.ptsUs, this.toleranceMs);
 }
 // 更多 Assert 见 ACTION_MAINTENANCE.md 清单
+
+/// release UI automation 专用命令，不进入 ActionRegistry。
+sealed class AutomationAction {
+  final String name;
+  const AutomationAction(this.name);
+}
 ```
 
 完整清单见 [ACTION_MAINTENANCE.md](ACTION_MAINTENANCE.md)。
@@ -155,6 +162,7 @@ FloatingActionButton(
 | 类别 | 指令 | 说明 |
 |------|------|------|
 | Action | `PLAY`, `PAUSE`, `SEEK_TO ptsUs`, `CLICK_TIMELINE_FRACTION fraction`, `SET_SPEED speed`, ... | 对应 PlayerAction，调用 controller 或真实 UI 交互路径 |
+| Automation | `SET_RENDER_SIZE width height`, `CAPTURE_VIEWPORT name`, `WINDOW_MAXIMIZE`, ... | release UI automation 专用命令，不注册快捷键 |
 | Wait | `WAIT_PLAYING timeoutMs`, `WAIT_PAUSED timeoutMs` | 轮询状态直到满足或超时 |
 | Assert | `ASSERT_PLAYING`, `ASSERT_POSITION ptsUs toleranceMs`, ... | 断言当前状态，失败则 throw |
 | Control | `QUIT exitCode` | 退出测试 |
@@ -231,7 +239,9 @@ main.dart
               └─ MainWindowController
                   ├─ start → actionCoordinator.bind()
                   ├─ dispose → actionCoordinator.dispose() → unbind
-                  └─ TestRunner (--test-script) → actionRegistry.execute(...)
+                  └─ TestRunner (--test-script)
+                      ├─ PlayerAction → actionRegistry.execute(...)
+                      └─ AutomationAction → automation-only executor
 ```
 
 Action 层位于 UI 和 coordinator 之间。主窗口通过 `MainWindowActionCoordinator`

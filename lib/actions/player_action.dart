@@ -180,39 +180,3 @@ class Pan extends PlayerAction {
   final double dy;
   const Pan(this.dx, this.dy) : super('PAN');
 }
-
-class SetRenderSize extends PlayerAction {
-  final int width;
-  final int height;
-  const SetRenderSize(this.width, this.height) : super('SET_RENDER_SIZE');
-}
-
-class CaptureViewportAction extends PlayerAction {
-  final String nameId;
-  final String? outputPath;
-  const CaptureViewportAction(this.nameId, {this.outputPath})
-    : super('CAPTURE_VIEWPORT');
-}
-
-class WindowMaximize extends PlayerAction {
-  const WindowMaximize() : super('WINDOW_MAXIMIZE');
-}
-
-class WindowRestore extends PlayerAction {
-  const WindowRestore() : super('WINDOW_RESTORE');
-}
-
-class StoreViewCenter extends PlayerAction {
-  final String nameId;
-  const StoreViewCenter(this.nameId) : super('STORE_VIEW_CENTER');
-}
-
-class StoreResourceUsage extends PlayerAction {
-  final String nameId;
-  const StoreResourceUsage(this.nameId) : super('STORE_RESOURCE_USAGE');
-}
-
-class StoreNativeSeekCount extends PlayerAction {
-  final String nameId;
-  const StoreNativeSeekCount(this.nameId) : super('STORE_NATIVE_SEEK_COUNT');
-}

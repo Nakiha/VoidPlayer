@@ -10,6 +10,15 @@
 4. 如需自动化脚本触发，在 `lib/actions/test_runner.dart` 中补指令解析
 5. 更新本文档的 Action 清单
 
+### 新增 Automation Command
+
+1. 在 `lib/actions/automation_action.dart` 中添加新的 sealed subclass
+2. 在 `lib/actions/test_runner.dart` 中补指令解析和执行分支
+3. 更新本文档的 Automation Command 清单
+
+Automation command 是 release UI test 的正式能力，但不属于用户操作，不进入
+`ActionRegistry`，也不应出现在快捷键或普通 UI action 绑定中。
+
 ### 新增快捷键
 
 快捷键会自动显示在设置窗口中，只需修改以下三处（设置窗口代码无需改动）：
@@ -96,18 +105,25 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `SET_ZOOM` | — | 设置缩放比例 |
 | `SET_SPLIT_POS` | — | 设置分屏位置（0.0–1.0） |
 | `PAN` | — | 视口平移 |
-| `SET_RENDER_SIZE` | — | 测试脚本专用：设置 renderer 输出尺寸 |
-| `CAPTURE_VIEWPORT` | — | 测试脚本专用：抓取 viewport hash / 截图 |
-| `WINDOW_MAXIMIZE` | — | 测试脚本专用：最大化主窗口 |
-| `WINDOW_RESTORE` | — | 测试脚本专用：恢复主窗口 |
-| `STORE_VIEW_CENTER` | — | 测试脚本专用：记录归一化视图中心基线 |
-| `STORE_RESOURCE_USAGE` | — | 测试脚本专用：记录进程 RSS / 专用显存基线 |
-| `STORE_NATIVE_SEEK_COUNT` | — | 测试脚本专用：记录当前 native 插件 seek 日志计数 |
 | `NEW_WINDOW` | N | 打开主窗口内性能浮层（兼容旧入口） |
 | `OPEN_SETTINGS` | — | 打开主窗口设置对话框 |
 | `OPEN_STATS` | — | 打开主窗口性能浮层 |
 | `OPEN_MEMORY` | — | 打开主窗口性能浮层 |
 | `RUN_ANALYSIS` | — | 触发 analysis 流程 |
+
+## Automation Command 清单
+
+> Release UI test 的正式自动化能力，不属于用户 Action。
+
+| Command | 参数 | 说明 |
+|---------|------|------|
+| `SET_RENDER_SIZE` | width, height | 设置 renderer 输出尺寸 |
+| `CAPTURE_VIEWPORT` | name, outputPath? | 抓取 viewport hash / 截图 |
+| `WINDOW_MAXIMIZE` | — | 最大化主窗口 |
+| `WINDOW_RESTORE` | — | 恢复主窗口 |
+| `STORE_VIEW_CENTER` | name | 记录归一化视图中心基线 |
+| `STORE_RESOURCE_USAGE` | name | 记录进程 RSS / 专用显存基线 |
+| `STORE_NATIVE_SEEK_COUNT` | name | 记录当前 native 插件 seek 日志计数 |
 
 ## Assert 清单
 
@@ -141,6 +157,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | [ACTION_DESIGN.md](ACTION_DESIGN.md) | 类型体系、组件设计、脚本格式 |
 | [ACTION_MAINTENANCE.md](ACTION_MAINTENANCE.md) | 本文档：修改流程、注意事项、清单 |
 | `lib/actions/player_action.dart` | PlayerAction sealed class + `shortcutEntries` 显示列表 |
+| `lib/actions/automation_action.dart` | release UI automation 专用 command |
 | `lib/actions/player_assert.dart` | PlayerAssert sealed class |
 | `lib/actions/action_registry.dart` | ActionRegistry + ActionFocus |
 | `lib/actions/test_runner.dart` | 脚本解析 + TestRunner |

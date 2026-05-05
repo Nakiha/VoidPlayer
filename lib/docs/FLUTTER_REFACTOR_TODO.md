@@ -106,6 +106,10 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Route media coordinator state access through `MainWindowStateStore` instead of individual state getter/setter closures.~~
 
+## Round 24
+
+- [x] ~~Route layout coordinator state access through `MainWindowStateStore` and `TrackManager` instead of individual closures.~~
+
 ## P0
 
 - [x] ~~Keep release UI automation behind explicit automation bridge/runtime boundaries.~~
@@ -118,7 +122,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 ## P1
 
 - [ ] Simplify main-window coordinator dependencies by grouping state and side effects behind explicit services/stores.
-  Slices done: `MainWindowPlaybackCoordinator` now depends on `MainWindowStateStore` and the timeline hover notifier for playback/seek/loop state instead of a long list of individual state getter/setter closures; `MainWindowMediaCoordinator` now reads/writes viewport, layout, sync offset, duration, pending seek, and audible-track state through `MainWindowStateStore`.
+  Slices done: `MainWindowPlaybackCoordinator` now depends on `MainWindowStateStore` and the timeline hover notifier for playback/seek/loop state instead of a long list of individual state getter/setter closures; `MainWindowMediaCoordinator` now reads/writes viewport, layout, sync offset, duration, pending seek, and audible-track state through `MainWindowStateStore`; `MainWindowLayoutCoordinator` now reads layout/texture state through `MainWindowStateStore` and track geometry through `TrackManager`.
 - [x] ~~Extract a typed `NativePlayerApi` interface with DTOs and centralized MethodChannel names/payload keys.~~
   Done: MethodChannel name/methods/keys and DTO parsing live in `native_player_protocol.dart`; concrete channel transport lives in `MethodChannelNativePlayerApi`; `NativePlayerController` owns lifecycle/no-op semantics over the typed API.
 - [x] ~~Move config/cache/log default paths to user-writable app data directories and make writes atomic.~~

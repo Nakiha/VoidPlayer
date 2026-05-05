@@ -7,6 +7,7 @@ import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/display_geometry.dart';
+import 'main_window_state.dart';
 
 class MainWindowLayoutCoordinator {
   static const Duration viewportResizeDebounce = Duration(milliseconds: 80);
@@ -14,12 +15,9 @@ class MainWindowLayoutCoordinator {
 
   final TickerProvider vsync;
   final NativePlayerController controller;
+  final MainWindowStateStore stateStore;
+  final TrackManager trackManager;
   final bool Function() mounted;
-  final int? Function() textureId;
-  final LayoutState Function() layout;
-  final void Function(LayoutState layout) setLayout;
-  final int Function() trackCount;
-  final List<TrackEntry> Function() tracks;
 
   Ticker? _ticker;
   Timer? _resizeDebounceTimer;
@@ -32,15 +30,20 @@ class MainWindowLayoutCoordinator {
   int viewportHeight = 0;
   double viewportDevicePixelRatio = 1.0;
 
+  MainWindowStateModel get _state => stateStore.value;
+
+  int? textureId() => _state.textureId;
+  LayoutState layout() => _state.layout;
+  void setLayout(LayoutState layout) => stateStore.setLayout(layout);
+  int trackCount() => trackManager.count;
+  List<TrackEntry> tracks() => trackManager.entries;
+
   MainWindowLayoutCoordinator({
     required this.vsync,
     required this.controller,
+    required this.stateStore,
+    required this.trackManager,
     required this.mounted,
-    required this.textureId,
-    required this.layout,
-    required this.setLayout,
-    required this.trackCount,
-    required this.tracks,
   }) {
     _ticker = vsync.createTicker((_) {
       fireAndLog('flush pending layout', flushPendingLayout());

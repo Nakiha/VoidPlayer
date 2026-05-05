@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/track_manager.dart';
 import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/windows/main/main_window_layout.dart';
+import 'package:void_player/windows/main/main_window_state.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -10,17 +11,19 @@ void main() {
   test(
     'immediate viewport resize applies pending layout before native resize',
     () async {
-      var layout = const LayoutState();
+      final stateStore = MainWindowStateStore()
+        ..setTextureId(1)
+        ..setLayout(const LayoutState());
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager();
+      addTearDown(trackManager.dispose);
       final controller = _FakeNativePlayerController();
       final coordinator = MainWindowLayoutCoordinator(
         vsync: const TestVSync(),
         controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
         mounted: () => true,
-        textureId: () => 1,
-        layout: () => layout,
-        setLayout: (value) => layout = value,
-        trackCount: () => 0,
-        tracks: () => const <TrackEntry>[],
       );
       addTearDown(coordinator.dispose);
       coordinator.viewportWidth = 100;
@@ -35,25 +38,27 @@ void main() {
       expect(controller.appliedLayouts, hasLength(1));
       expect(controller.appliedLayouts.single.viewOffsetX, 20);
       expect(controller.appliedLayouts.single.viewOffsetY, 30);
-      expect(layout.viewOffsetX, 40);
-      expect(layout.viewOffsetY, 45);
+      expect(stateStore.value.layout.viewOffsetX, 40);
+      expect(stateStore.value.layout.viewOffsetY, 45);
     },
   );
 
   test(
     'preempt viewport resize lets native resize rescale applied pending layout',
     () async {
-      var layout = const LayoutState();
+      final stateStore = MainWindowStateStore()
+        ..setTextureId(1)
+        ..setLayout(const LayoutState());
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager();
+      addTearDown(trackManager.dispose);
       final controller = _FakeNativePlayerController();
       final coordinator = MainWindowLayoutCoordinator(
         vsync: const TestVSync(),
         controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
         mounted: () => true,
-        textureId: () => 1,
-        layout: () => layout,
-        setLayout: (value) => layout = value,
-        trackCount: () => 0,
-        tracks: () => const <TrackEntry>[],
       );
       addTearDown(coordinator.dispose);
       coordinator.viewportWidth = 100;
@@ -67,30 +72,32 @@ void main() {
       expect(controller.appliedLayouts, hasLength(1));
       expect(controller.appliedLayouts.single.viewOffsetX, 20);
       expect(controller.appliedLayouts.single.viewOffsetY, 30);
-      expect(layout.viewOffsetX, 40);
-      expect(layout.viewOffsetY, 45);
+      expect(stateStore.value.layout.viewOffsetX, 40);
+      expect(stateStore.value.layout.viewOffsetY, 45);
       expect(controller.nativeLayout.viewOffsetX, 40);
       expect(controller.nativeLayout.viewOffsetY, 45);
     },
   );
 
   test('zoom combo changes are clamped through shared zoom path', () {
-    var layout = const LayoutState();
+    final stateStore = MainWindowStateStore()
+      ..setTextureId(1)
+      ..setLayout(const LayoutState());
+    addTearDown(stateStore.dispose);
+    final trackManager = TrackManager();
+    addTearDown(trackManager.dispose);
     final coordinator = MainWindowLayoutCoordinator(
       vsync: const TestVSync(),
       controller: _FakeNativePlayerController(),
+      stateStore: stateStore,
+      trackManager: trackManager,
       mounted: () => true,
-      textureId: () => 1,
-      layout: () => layout,
-      setLayout: (value) => layout = value,
-      trackCount: () => 0,
-      tracks: () => const <TrackEntry>[],
     );
     addTearDown(coordinator.dispose);
 
     coordinator.onZoomComboChanged(1000);
 
-    expect(layout.zoomRatio, LayoutState.zoomMax);
+    expect(stateStore.value.layout.zoomRatio, LayoutState.zoomMax);
   });
 }
 

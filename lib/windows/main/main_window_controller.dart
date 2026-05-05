@@ -340,12 +340,9 @@ class MainWindowController {
     layoutCoordinator = MainWindowLayoutCoordinator(
       vsync: vsync,
       controller: player,
+      stateStore: stateStore,
+      trackManager: trackManager,
       mounted: mounted,
-      textureId: () => _textureId,
-      layout: () => _layout,
-      setLayout: stateStore.setLayout,
-      trackCount: () => trackManager.count,
-      tracks: () => trackManager.entries,
     );
     analysisCoordinator = MainWindowAnalysisCoordinator(
       trackManager: trackManager,

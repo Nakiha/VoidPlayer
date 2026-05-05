@@ -499,7 +499,12 @@ void VideoRendererPlugin::RegisterWithRegistrar(
 VideoRendererPlugin::VideoRendererPlugin(
     flutter::TextureRegistrar* texture_registrar,
     IDXGIAdapter* dxgi_adapter)
-    : texture_registrar_(texture_registrar), dxgi_adapter_(dxgi_adapter) {
+    : texture_registrar_(texture_registrar) {
+    if (dxgi_adapter) {
+        dxgi_adapter->AddRef();
+        dxgi_adapter_.Attach(dxgi_adapter);
+    }
+
     // Initialize native logging with defaults on plugin construction.
     // This happens before any Dart-side initLogging call, so native logs
     // (including player creation) are always captured.
@@ -971,10 +976,17 @@ void VideoRendererPlugin::CreatePlayer(
     // Create player in headless mode
     vr::RendererConfig config;
     config.headless = true;
-    config.dxgi_adapter = dxgi_adapter_;
+    config.dxgi_adapter = dxgi_adapter_.Get();
     config.width = width;
     config.height = height;
     config.use_hardware_decode = true;
+
+    if (!config.dxgi_adapter) {
+        result->Error(
+            "NO_DXGI_ADAPTER",
+            "Flutter DXGI adapter is unavailable; cannot create shared D3D11 texture");
+        return;
+    }
 
     for (const auto& p : paths_list) {
         std::string path;

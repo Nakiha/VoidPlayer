@@ -17,7 +17,8 @@ public:
     bool initialize(void* hwnd, int width, int height);
 
     /// Initialize without swap chain (headless/texture-sharing mode).
-    /// Uses the given DXGI adapter to ensure same-device texture sharing.
+    /// Requires Flutter's DXGI adapter so shared texture handles stay on the
+    /// same adapter/device family. Missing or unusable adapter is a hard error.
     bool initialize_headless(IDXGIAdapter* adapter, int width, int height);
 
     void shutdown();

@@ -274,6 +274,21 @@ TEST_CASE("Renderer: shutdown without play is safe", "[renderer]") {
 // Headless-mode tests (hardware decode — mirrors Flutter plugin setup)
 // =============================================================================
 
+TEST_CASE("Renderer: headless mode requires a DXGI adapter", "[renderer][hw]") {
+    Renderer renderer;
+
+    RendererConfig config;
+    config.video_paths = { video_test_dir() + "/h264_9s_1920x1080.mp4" };
+    config.headless = true;
+    config.dxgi_adapter = nullptr;
+    config.width = 640;
+    config.height = 480;
+    config.use_hardware_decode = true;
+
+    REQUIRE_FALSE(renderer.initialize(config));
+    REQUIRE_FALSE(renderer.is_initialized());
+}
+
 TEST_CASE("Renderer: headless hw decode initialize", "[renderer][hw]") {
     auto* adapter = get_default_adapter();
     REQUIRE(adapter != nullptr);

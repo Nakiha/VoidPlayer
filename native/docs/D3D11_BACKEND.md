@@ -15,6 +15,9 @@ void present(int sync_interval = 1);
 ```
 
 当前 Flutter 主窗口走 headless 模式，native demo/standalone 可使用窗口模式。
+headless 模式必须传入 Flutter view 暴露的 DXGI adapter；native 不再在
+adapter 缺失或创建失败时 fallback 到自建 D3D11 device，因为这种 device
+无法保证与 Flutter texture registrar 共享 DXGI handle。
 
 ## Headless shared texture
 

@@ -205,47 +205,34 @@ bool D3D11Device::initialize_headless(IDXGIAdapter* adapter, int width, int heig
     }
     headless_ = true;
 
+    if (!adapter) {
+        spdlog::error(
+            "[D3D11] Headless mode requires Flutter's DXGI adapter; refusing fallback device");
+        return false;
+    }
+
     UINT create_device_flags = 0;
     create_device_flags |= D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
 
     D3D_FEATURE_LEVEL obtained_level = D3D_FEATURE_LEVEL_9_1;
-    bool created = false;
 
     // When passing an adapter, driver type must be D3D_DRIVER_TYPE_UNKNOWN.
-    if (adapter) {
-        DXGI_ADAPTER_DESC desc = {};
-        if (SUCCEEDED(adapter->GetDesc(&desc))) {
-            spdlog::info(
-                "[D3D11] Trying Flutter DXGI adapter: vendor={:#x}, device={:#x}, luid={}:{}",
-                static_cast<unsigned>(desc.VendorId),
-                static_cast<unsigned>(desc.DeviceId),
-                static_cast<long long>(desc.AdapterLuid.HighPart),
-                static_cast<unsigned long>(desc.AdapterLuid.LowPart));
-        }
-        device_.Reset();
-        context_.Reset();
-        created = create_device(adapter, D3D_DRIVER_TYPE_UNKNOWN,
-                                create_device_flags, obtained_level);
-        if (!created) {
-            spdlog::warn("[D3D11] Headless adapter-specific device failed; falling back");
-        }
-    } else {
-        spdlog::warn("[D3D11] Flutter DXGI adapter unavailable; using headless fallback device");
+    DXGI_ADAPTER_DESC desc = {};
+    if (SUCCEEDED(adapter->GetDesc(&desc))) {
+        spdlog::info(
+            "[D3D11] Trying Flutter DXGI adapter: vendor={:#x}, device={:#x}, luid={}:{}",
+            static_cast<unsigned>(desc.VendorId),
+            static_cast<unsigned>(desc.DeviceId),
+            static_cast<long long>(desc.AdapterLuid.HighPart),
+            static_cast<unsigned long>(desc.AdapterLuid.LowPart));
     }
 
-    D3D_DRIVER_TYPE fallback_driver_types[] = {
-        D3D_DRIVER_TYPE_HARDWARE,
-        D3D_DRIVER_TYPE_WARP,
-        D3D_DRIVER_TYPE_REFERENCE,
-    };
-    for (UINT i = 0; !created && i < ARRAYSIZE(fallback_driver_types); ++i) {
-        device_.Reset();
-        context_.Reset();
-        created = create_device(nullptr, fallback_driver_types[i],
-                                create_device_flags, obtained_level);
-    }
-
-    if (!created) {
+    device_.Reset();
+    context_.Reset();
+    if (!create_device(adapter, D3D_DRIVER_TYPE_UNKNOWN,
+                       create_device_flags, obtained_level)) {
+        spdlog::error(
+            "[D3D11] Failed to create headless device on Flutter DXGI adapter");
         return false;
     }
 

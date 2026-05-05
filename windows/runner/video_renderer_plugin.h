@@ -11,6 +11,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <wrl/client.h>
 
 /// Process-global player pointer — allows any engine's plugin to query stats.
 namespace vr { class NativePlayer; }
@@ -100,7 +101,7 @@ private:
     std::unique_ptr<flutter::TextureVariant> texture_variant_;
     FlutterDesktopGpuSurfaceDescriptor surface_descriptor_ = {};
     flutter::TextureRegistrar* texture_registrar_;
-    IDXGIAdapter* dxgi_adapter_;
+    Microsoft::WRL::ComPtr<IDXGIAdapter> dxgi_adapter_;
     std::string logs_dir_;
     std::string log_file_name_;
 };

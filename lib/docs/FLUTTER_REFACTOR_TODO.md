@@ -74,10 +74,14 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Derive keyboard shortcut settings metadata from real `PlayerAction` definitions.~~
 
+## Round 16
+
+- [x] ~~Move UI automation process/window/config/media side effects behind `UiAutomationRuntime`.~~
+
 ## P0
 
 - [ ] Move UI test runner/script parsing/media generation out of the production app graph behind a thin automation bridge.
-  Slices done: non-user automation commands no longer live in `PlayerAction`; script model/parser, assertion executor, probes, run-state, video generation, and process access now sit behind the automation module/bridge instead of the action system.
+  Slices done: non-user automation commands no longer live in `PlayerAction`; script model/parser, assertion executor, probes, run-state, video generation, process access, process exit, window automation, and automation-only config writes now sit behind the automation module/bridge/runtime instead of the action system.
 - [x] ~~Add a platform service boundary so widgets do not import Win32 FFI directly.~~
 - [ ] Reduce global singleton/static state, starting with injected window/process services.
   First slice done: `WindowManager` delegates analysis process state to an `AnalysisProcessManager` instance; main-window analysis and release UI automation use that instance through injection/bridge.

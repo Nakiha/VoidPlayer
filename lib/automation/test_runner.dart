@@ -1,27 +1,28 @@
 import 'dart:async';
-import 'dart:io';
-
-import 'package:window_manager/window_manager.dart' as wm;
 
 import '../actions/automation_action.dart';
 import '../actions/player_action.dart';
 import '../app_log.dart';
-import '../config/app_config.dart';
 import 'automation_assert_executor.dart';
 import 'automation_probe.dart';
 import 'automation_run_state.dart';
 import 'automation_script.dart';
-import 'test_video_generator.dart';
 import 'ui_automation_bridge.dart';
+import 'ui_automation_runtime.dart';
 import '../video_renderer_controller.dart';
 
 /// Parses a test script file and runs instructions on a timeline.
 class TestRunner {
   final String scriptPath;
   final UiAutomationBridge automation;
+  final UiAutomationRuntime runtime;
   final AutomationRunState _state = AutomationRunState();
 
-  TestRunner({required this.scriptPath, required this.automation});
+  TestRunner({
+    required this.scriptPath,
+    required this.automation,
+    this.runtime = const DefaultUiAutomationRuntime(),
+  });
 
   NativePlayerController get controller => automation.controller;
 
@@ -38,7 +39,8 @@ class TestRunner {
     final instructions = parseAutomationScript(scriptPath);
     if (instructions.isEmpty) {
       log.severe('Test script is empty: $scriptPath');
-      exit(1);
+      runtime.quit(1);
+      return;
     }
 
     log.info(
@@ -57,13 +59,14 @@ class TestRunner {
         await _execute(instr);
       } catch (e) {
         log.severe('TestRunner FAIL at ${instr.time}: $e');
-        exit(1);
+        runtime.quit(1);
+        return;
       }
     }
 
     // If we reach here without a QUIT instruction, that's an error.
     log.severe('TestRunner: script ended without QUIT instruction');
-    exit(1);
+    runtime.quit(1);
   }
 
   Future<void> _execute(ScriptInstruction instr) async {
@@ -111,7 +114,7 @@ class TestRunner {
           'TestRunner ${instr.time}: GENERATE_TEST_VIDEO '
           '$path frames=$frames fps=$fps size=${width}x$height',
         );
-        await generateTestVideo(
+        await runtime.generateVideo(
           path: path,
           frames: frames,
           fps: fps,
@@ -123,13 +126,12 @@ class TestRunner {
         log.info(
           'TestRunner ${instr.time}: SET_SEEK_AFTER_JUMP_BEHAVIOR ${behavior.storageValue}',
         );
-        AppConfig.instance.seekAfterJumpBehavior = behavior;
-        await AppConfig.instance.save();
+        await runtime.setSeekAfterJumpBehavior(behavior);
 
       case ScriptQuit(:final exitCode):
         log.info('TestRunner ${instr.time}: QUIT $exitCode');
         await automation.closeAllAnalysisWindows();
-        exit(exitCode);
+        runtime.quit(exitCode);
     }
   }
 
@@ -155,10 +157,10 @@ class TestRunner {
         );
       case WindowMaximize():
         log.info('TestRunner: WINDOW_MAXIMIZE');
-        await wm.windowManager.maximize();
+        await runtime.maximizeWindow();
       case WindowRestore():
         log.info('TestRunner: WINDOW_RESTORE');
-        await wm.windowManager.restore();
+        await runtime.restoreWindow();
       case StoreViewCenter(:final nameId):
         final metric = await _probe.currentViewCenterMetric();
         _state.viewCenterBaselines[nameId] = metric;

@@ -68,6 +68,24 @@ struct NakiOverlayState {
 using NakiAnalysisHandle = void*;
 
 extern "C" __declspec(dllexport)
+int32_t naki_analysis_abi_version();
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_sizeof_summary();
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_sizeof_frame_info();
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_sizeof_nalu_info();
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_sizeof_frame_bucket();
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_sizeof_overlay_state();
+
+extern "C" __declspec(dllexport)
 int32_t naki_analysis_load(const char* analysis_path);
 
 extern "C" __declspec(dllexport)

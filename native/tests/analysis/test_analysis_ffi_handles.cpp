@@ -7,6 +7,16 @@
 #include <thread>
 #include <vector>
 
+TEST_CASE("analysis FFI exposes ABI version and struct sizes",
+          "[analysis][ffi][abi]") {
+    REQUIRE(naki_analysis_abi_version() == 1);
+    REQUIRE(naki_analysis_sizeof_summary() == sizeof(NakiAnalysisSummary));
+    REQUIRE(naki_analysis_sizeof_frame_info() == sizeof(NakiFrameInfo));
+    REQUIRE(naki_analysis_sizeof_nalu_info() == sizeof(NakiNaluInfo));
+    REQUIRE(naki_analysis_sizeof_frame_bucket() == sizeof(NakiFrameBucket));
+    REQUIRE(naki_analysis_sizeof_overlay_state() == sizeof(NakiOverlayState));
+}
+
 TEST_CASE("analysis FFI handle returns empty data after close",
           "[analysis][ffi]") {
     auto& data = AnalysisTestData::instance();

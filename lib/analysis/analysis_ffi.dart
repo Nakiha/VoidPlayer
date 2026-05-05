@@ -197,71 +197,213 @@ typedef _HandleGetFrameBucketsNative =
 typedef _HandleGetFrameBucketsDart =
     int Function(Pointer<Void>, int, int, Pointer<NakiFrameBucket>, int);
 
+typedef _AbiIntNative = Int32 Function();
+typedef _AbiIntDart = int Function();
+
 // ===========================================================================
 // Native symbol lookup
 // ===========================================================================
 
-final _dl = DynamicLibrary.executable();
+const int _expectedAnalysisAbiVersion = 1;
 
-final _load = _dl.lookupFunction<_LoadNative, _LoadDart>('naki_analysis_load');
-final _unload = _dl.lookupFunction<_UnloadNative, _UnloadDart>(
-  'naki_analysis_unload',
-);
-final _getSummary = _dl.lookupFunction<_GetSummaryNative, _GetSummaryDart>(
-  'naki_analysis_get_summary',
-);
-final _getFramesRange = _dl
-    .lookupFunction<_GetFramesRangeNative, _GetFramesRangeDart>(
-      'naki_analysis_get_frames_range',
+class AnalysisFfiUnavailable implements Exception {
+  final String message;
+  final Object? cause;
+
+  const AnalysisFfiUnavailable(this.message, [this.cause]);
+
+  @override
+  String toString() => cause == null
+      ? 'AnalysisFfiUnavailable: $message'
+      : 'AnalysisFfiUnavailable: $message ($cause)';
+}
+
+class _AnalysisNativeBindings {
+  _AnalysisNativeBindings._(DynamicLibrary library) {
+    abiVersion = library.lookupFunction<_AbiIntNative, _AbiIntDart>(
+      'naki_analysis_abi_version',
     );
-final _getNalusRange = _dl
-    .lookupFunction<_GetNalusRangeNative, _GetNalusRangeDart>(
-      'naki_analysis_get_nalus_range',
+    sizeofSummary = library.lookupFunction<_AbiIntNative, _AbiIntDart>(
+      'naki_analysis_sizeof_summary',
     );
-final _frameToNalu = _dl.lookupFunction<_IndexMapNative, _IndexMapDart>(
-  'naki_analysis_frame_to_nalu',
-);
-final _naluToFrame = _dl.lookupFunction<_IndexMapNative, _IndexMapDart>(
-  'naki_analysis_nalu_to_frame',
-);
-final _getFrameBuckets = _dl
-    .lookupFunction<_GetFrameBucketsNative, _GetFrameBucketsDart>(
-      'naki_analysis_get_frame_buckets',
+    sizeofFrameInfo = library.lookupFunction<_AbiIntNative, _AbiIntDart>(
+      'naki_analysis_sizeof_frame_info',
     );
-final _setOverlay = _dl.lookupFunction<_SetOverlayNative, _SetOverlayDart>(
-  'naki_analysis_set_overlay',
-);
-final _generate = _dl.lookupFunction<_GenerateNative, _GenerateDart>(
-  'naki_analysis_generate',
-);
-final _open = _dl.lookupFunction<_OpenNative, _OpenDart>('naki_analysis_open');
-final _close = _dl.lookupFunction<_CloseNative, _CloseDart>(
-  'naki_analysis_close',
-);
-final _handleGetSummary = _dl
-    .lookupFunction<_HandleGetSummaryNative, _HandleGetSummaryDart>(
-      'naki_analysis_handle_get_summary',
+    sizeofNaluInfo = library.lookupFunction<_AbiIntNative, _AbiIntDart>(
+      'naki_analysis_sizeof_nalu_info',
     );
-final _handleGetFramesRange = _dl
-    .lookupFunction<_HandleGetFramesRangeNative, _HandleGetFramesRangeDart>(
-      'naki_analysis_handle_get_frames_range',
+    sizeofFrameBucket = library.lookupFunction<_AbiIntNative, _AbiIntDart>(
+      'naki_analysis_sizeof_frame_bucket',
     );
-final _handleGetNalusRange = _dl
-    .lookupFunction<_HandleGetNalusRangeNative, _HandleGetNalusRangeDart>(
-      'naki_analysis_handle_get_nalus_range',
+    sizeofOverlayState = library.lookupFunction<_AbiIntNative, _AbiIntDart>(
+      'naki_analysis_sizeof_overlay_state',
     );
-final _handleFrameToNalu = _dl
-    .lookupFunction<_HandleIndexMapNative, _HandleIndexMapDart>(
-      'naki_analysis_handle_frame_to_nalu',
+
+    load = library.lookupFunction<_LoadNative, _LoadDart>('naki_analysis_load');
+    unload = library.lookupFunction<_UnloadNative, _UnloadDart>(
+      'naki_analysis_unload',
     );
-final _handleNaluToFrame = _dl
-    .lookupFunction<_HandleIndexMapNative, _HandleIndexMapDart>(
-      'naki_analysis_handle_nalu_to_frame',
+    getSummary = library.lookupFunction<_GetSummaryNative, _GetSummaryDart>(
+      'naki_analysis_get_summary',
     );
-final _handleGetFrameBuckets = _dl
-    .lookupFunction<_HandleGetFrameBucketsNative, _HandleGetFrameBucketsDart>(
-      'naki_analysis_handle_get_frame_buckets',
+    getFramesRange = library
+        .lookupFunction<_GetFramesRangeNative, _GetFramesRangeDart>(
+          'naki_analysis_get_frames_range',
+        );
+    getNalusRange = library
+        .lookupFunction<_GetNalusRangeNative, _GetNalusRangeDart>(
+          'naki_analysis_get_nalus_range',
+        );
+    frameToNalu = library.lookupFunction<_IndexMapNative, _IndexMapDart>(
+      'naki_analysis_frame_to_nalu',
     );
+    naluToFrame = library.lookupFunction<_IndexMapNative, _IndexMapDart>(
+      'naki_analysis_nalu_to_frame',
+    );
+    getFrameBuckets = library
+        .lookupFunction<_GetFrameBucketsNative, _GetFrameBucketsDart>(
+          'naki_analysis_get_frame_buckets',
+        );
+    setOverlay = library.lookupFunction<_SetOverlayNative, _SetOverlayDart>(
+      'naki_analysis_set_overlay',
+    );
+    generate = library.lookupFunction<_GenerateNative, _GenerateDart>(
+      'naki_analysis_generate',
+    );
+    open = library.lookupFunction<_OpenNative, _OpenDart>('naki_analysis_open');
+    close = library.lookupFunction<_CloseNative, _CloseDart>(
+      'naki_analysis_close',
+    );
+    handleGetSummary = library
+        .lookupFunction<_HandleGetSummaryNative, _HandleGetSummaryDart>(
+          'naki_analysis_handle_get_summary',
+        );
+    handleGetFramesRange = library
+        .lookupFunction<_HandleGetFramesRangeNative, _HandleGetFramesRangeDart>(
+          'naki_analysis_handle_get_frames_range',
+        );
+    handleGetNalusRange = library
+        .lookupFunction<_HandleGetNalusRangeNative, _HandleGetNalusRangeDart>(
+          'naki_analysis_handle_get_nalus_range',
+        );
+    handleFrameToNalu = library
+        .lookupFunction<_HandleIndexMapNative, _HandleIndexMapDart>(
+          'naki_analysis_handle_frame_to_nalu',
+        );
+    handleNaluToFrame = library
+        .lookupFunction<_HandleIndexMapNative, _HandleIndexMapDart>(
+          'naki_analysis_handle_nalu_to_frame',
+        );
+    handleGetFrameBuckets = library
+        .lookupFunction<
+          _HandleGetFrameBucketsNative,
+          _HandleGetFrameBucketsDart
+        >('naki_analysis_handle_get_frame_buckets');
+
+    _validateAbi();
+  }
+
+  static _AnalysisNativeBindings? _instance;
+  static AnalysisFfiUnavailable? _unavailable;
+
+  static _AnalysisNativeBindings get instance {
+    final existing = _instance;
+    if (existing != null) return existing;
+    final previousFailure = _unavailable;
+    if (previousFailure != null) throw previousFailure;
+    try {
+      return _instance = _AnalysisNativeBindings._(DynamicLibrary.executable());
+    } catch (e) {
+      final unavailable = AnalysisFfiUnavailable(
+        'Native analysis symbols are unavailable or incompatible.',
+        e,
+      );
+      _unavailable = unavailable;
+      throw unavailable;
+    }
+  }
+
+  static bool get isAvailable {
+    try {
+      instance;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static AnalysisFfiUnavailable? get unavailableReason {
+    try {
+      instance;
+      return null;
+    } on AnalysisFfiUnavailable catch (e) {
+      return e;
+    }
+  }
+
+  late final _AbiIntDart abiVersion;
+  late final _AbiIntDart sizeofSummary;
+  late final _AbiIntDart sizeofFrameInfo;
+  late final _AbiIntDart sizeofNaluInfo;
+  late final _AbiIntDart sizeofFrameBucket;
+  late final _AbiIntDart sizeofOverlayState;
+
+  late final _LoadDart load;
+  late final _UnloadDart unload;
+  late final _GetSummaryDart getSummary;
+  late final _GetFramesRangeDart getFramesRange;
+  late final _GetNalusRangeDart getNalusRange;
+  late final _IndexMapDart frameToNalu;
+  late final _IndexMapDart naluToFrame;
+  late final _GetFrameBucketsDart getFrameBuckets;
+  late final _SetOverlayDart setOverlay;
+  late final _GenerateDart generate;
+  late final _OpenDart open;
+  late final _CloseDart close;
+  late final _HandleGetSummaryDart handleGetSummary;
+  late final _HandleGetFramesRangeDart handleGetFramesRange;
+  late final _HandleGetNalusRangeDart handleGetNalusRange;
+  late final _HandleIndexMapDart handleFrameToNalu;
+  late final _HandleIndexMapDart handleNaluToFrame;
+  late final _HandleGetFrameBucketsDart handleGetFrameBuckets;
+
+  void _validateAbi() {
+    final version = abiVersion();
+    if (version != _expectedAnalysisAbiVersion) {
+      throw StateError(
+        'analysis ABI version $version does not match '
+        '$_expectedAnalysisAbiVersion',
+      );
+    }
+    _validateSize(
+      'NakiAnalysisSummary',
+      sizeofSummary(),
+      sizeOf<NakiAnalysisSummary>(),
+    );
+    _validateSize('NakiFrameInfo', sizeofFrameInfo(), sizeOf<NakiFrameInfo>());
+    _validateSize('NakiNaluInfo', sizeofNaluInfo(), sizeOf<NakiNaluInfo>());
+    _validateSize(
+      'NakiFrameBucket',
+      sizeofFrameBucket(),
+      sizeOf<NakiFrameBucket>(),
+    );
+    _validateSize(
+      'NakiOverlayState',
+      sizeofOverlayState(),
+      sizeOf<NakiOverlayState>(),
+    );
+  }
+
+  void _validateSize(String name, int nativeSize, int dartSize) {
+    if (nativeSize != dartSize) {
+      throw StateError(
+        '$name size mismatch: native=$nativeSize dart=$dartSize',
+      );
+    }
+  }
+}
+
+_AnalysisNativeBindings get _native => _AnalysisNativeBindings.instance;
 
 // ===========================================================================
 // Pure Dart data classes — copies of FFI struct fields, safe after free
@@ -453,7 +595,7 @@ class AnalysisSession {
     final useLock = AnalysisCache.acquireHashSharedLockSync(hash);
     final analysis = analysisPath.toNativeUtf8(allocator: calloc);
     try {
-      final handle = _open(analysis);
+      final handle = _native.open(analysis);
       if (handle == nullptr) {
         useLock.releaseSync();
         return null;
@@ -476,7 +618,7 @@ class AnalysisSession {
       return;
     }
     try {
-      _close(_handle);
+      _native.close(_handle);
     } finally {
       _handle = nullptr;
       _useLock?.releaseSync();
@@ -486,7 +628,7 @@ class AnalysisSession {
 
   AnalysisSummary get summary {
     if (_handle == nullptr) return _emptySummary;
-    final ptr = _handleGetSummary(_handle);
+    final ptr = _native.handleGetSummary(_handle);
     if (ptr == nullptr) return _emptySummary;
     return AnalysisSummary.fromNative(ptr.ref);
   }
@@ -504,12 +646,10 @@ class AnalysisSession {
     if (safeCount <= 0) return [];
     final ptr = calloc<NakiFrameInfo>(safeCount);
     try {
-      final actual = _handleGetFramesRange(
-        _handle,
-        start,
-        ptr,
-        safeCount,
-      ).clamp(0, safeCount).toInt();
+      final actual = _native
+          .handleGetFramesRange(_handle, start, ptr, safeCount)
+          .clamp(0, safeCount)
+          .toInt();
       return List.generate(actual, (i) => _frameInfoAt(ptr, i));
     } finally {
       calloc.free(ptr);
@@ -529,12 +669,10 @@ class AnalysisSession {
     if (safeCount <= 0) return [];
     final ptr = calloc<NakiNaluInfo>(safeCount);
     try {
-      final actual = _handleGetNalusRange(
-        _handle,
-        start,
-        ptr,
-        safeCount,
-      ).clamp(0, safeCount).toInt();
+      final actual = _native
+          .handleGetNalusRange(_handle, start, ptr, safeCount)
+          .clamp(0, safeCount)
+          .toInt();
       return List.generate(actual, (i) => _naluInfoAt(ptr, i));
     } finally {
       calloc.free(ptr);
@@ -543,12 +681,12 @@ class AnalysisSession {
 
   int frameToNalu(int frameIndex) {
     if (_handle == nullptr || frameIndex < 0) return -1;
-    return _handleFrameToNalu(_handle, frameIndex);
+    return _native.handleFrameToNalu(_handle, frameIndex);
   }
 
   int naluToFrame(int naluIndex) {
     if (_handle == nullptr || naluIndex < 0) return -1;
-    return _handleNaluToFrame(_handle, naluIndex);
+    return _native.handleNaluToFrame(_handle, naluIndex);
   }
 
   List<FrameBucket> frameBuckets({
@@ -566,13 +704,10 @@ class AnalysisSession {
     }
     final ptr = calloc<NakiFrameBucket>(maxCount);
     try {
-      final actual = _handleGetFrameBuckets(
-        _handle,
-        start,
-        bucketSize,
-        ptr,
-        maxCount,
-      ).clamp(0, maxCount).toInt();
+      final actual = _native
+          .handleGetFrameBuckets(_handle, start, bucketSize, ptr, maxCount)
+          .clamp(0, maxCount)
+          .toInt();
       return List.generate(actual, (i) => _frameBucketAt(ptr, i));
     } finally {
       calloc.free(ptr);
@@ -585,23 +720,28 @@ class AnalysisSession {
 // ===========================================================================
 
 class AnalysisFfi {
+  static bool get isAvailable => _AnalysisNativeBindings.isAvailable;
+
+  static AnalysisFfiUnavailable? get unavailableReason =>
+      _AnalysisNativeBindings.unavailableReason;
+
   /// Load an analysis container from a specific path.
   /// Returns true on success.
   static bool load(String analysisPath) {
     final analysis = analysisPath.toNativeUtf8(allocator: calloc);
     try {
-      return _load(analysis) != 0;
+      return _native.load(analysis) != 0;
     } finally {
       calloc.free(analysis);
     }
   }
 
   /// Unload analysis data.
-  static void unload() => _unload();
+  static void unload() => _native.unload();
 
   /// Get analysis summary snapshot.
   static AnalysisSummary get summary {
-    final ptr = _getSummary();
+    final ptr = _native.getSummary();
     if (ptr == nullptr) return _emptySummary;
     return AnalysisSummary.fromNative(ptr.ref);
   }
@@ -622,11 +762,10 @@ class AnalysisFfi {
     if (safeCount <= 0) return [];
     final ptr = calloc<NakiFrameInfo>(safeCount);
     try {
-      final actual = _getFramesRange(
-        start,
-        ptr,
-        safeCount,
-      ).clamp(0, safeCount).toInt();
+      final actual = _native
+          .getFramesRange(start, ptr, safeCount)
+          .clamp(0, safeCount)
+          .toInt();
       return List.generate(actual, (i) => _frameInfoAt(ptr, i));
     } finally {
       calloc.free(ptr);
@@ -649,11 +788,10 @@ class AnalysisFfi {
     if (safeCount <= 0) return [];
     final ptr = calloc<NakiNaluInfo>(safeCount);
     try {
-      final actual = _getNalusRange(
-        start,
-        ptr,
-        safeCount,
-      ).clamp(0, safeCount).toInt();
+      final actual = _native
+          .getNalusRange(start, ptr, safeCount)
+          .clamp(0, safeCount)
+          .toInt();
       return List.generate(actual, (i) => _naluInfoAt(ptr, i));
     } finally {
       calloc.free(ptr);
@@ -662,12 +800,12 @@ class AnalysisFfi {
 
   static int frameToNalu(int frameIndex) {
     if (frameIndex < 0) return -1;
-    return _frameToNalu(frameIndex);
+    return _native.frameToNalu(frameIndex);
   }
 
   static int naluToFrame(int naluIndex) {
     if (naluIndex < 0) return -1;
-    return _naluToFrame(naluIndex);
+    return _native.naluToFrame(naluIndex);
   }
 
   static List<FrameBucket> frameBuckets({
@@ -685,12 +823,10 @@ class AnalysisFfi {
     }
     final ptr = calloc<NakiFrameBucket>(maxCount);
     try {
-      final actual = _getFrameBuckets(
-        start,
-        bucketSize,
-        ptr,
-        maxCount,
-      ).clamp(0, maxCount).toInt();
+      final actual = _native
+          .getFrameBuckets(start, bucketSize, ptr, maxCount)
+          .clamp(0, maxCount)
+          .toInt();
       return List.generate(actual, (i) => _frameBucketAt(ptr, i));
     } finally {
       calloc.free(ptr);
@@ -708,7 +844,7 @@ class AnalysisFfi {
       state.ref.showCuGrid = showCuGrid ? 1 : 0;
       state.ref.showPredMode = showPredMode ? 1 : 0;
       state.ref.showQpHeatmap = showQpHeatmap ? 1 : 0;
-      _setOverlay(state);
+      _native.setOverlay(state);
     } finally {
       calloc.free(state);
     }
@@ -729,7 +865,7 @@ class AnalysisFfi {
       allocator: calloc,
     );
     try {
-      return _generate(video, hashStr, cacheDir, maxCacheBytes) != 0;
+      return _native.generate(video, hashStr, cacheDir, maxCacheBytes) != 0;
     } finally {
       calloc.free(video);
       calloc.free(hashStr);

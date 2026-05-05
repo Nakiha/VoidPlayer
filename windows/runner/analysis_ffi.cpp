@@ -31,12 +31,38 @@ extern "C" {
 #include <libavcodec/bsf.h>
 }
 
+static constexpr int32_t kNakiAnalysisAbiVersion = 1;
+
 // Callback registered by video_renderer_plugin to provide current PTS.
 // Avoids analysis_ffi needing to know about vr::Renderer.
 static int64_t (*g_get_current_pts_us)() = nullptr;
 
 void naki_analysis_register_pts_callback(int64_t (*cb)()) {
     g_get_current_pts_us = cb;
+}
+
+int32_t naki_analysis_abi_version() {
+    return kNakiAnalysisAbiVersion;
+}
+
+int32_t naki_analysis_sizeof_summary() {
+    return static_cast<int32_t>(sizeof(NakiAnalysisSummary));
+}
+
+int32_t naki_analysis_sizeof_frame_info() {
+    return static_cast<int32_t>(sizeof(NakiFrameInfo));
+}
+
+int32_t naki_analysis_sizeof_nalu_info() {
+    return static_cast<int32_t>(sizeof(NakiNaluInfo));
+}
+
+int32_t naki_analysis_sizeof_frame_bucket() {
+    return static_cast<int32_t>(sizeof(NakiFrameBucket));
+}
+
+int32_t naki_analysis_sizeof_overlay_state() {
+    return static_cast<int32_t>(sizeof(NakiOverlayState));
 }
 
 namespace {

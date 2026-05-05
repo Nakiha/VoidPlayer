@@ -66,6 +66,10 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Use atomic file replacement for `config.json` and `analysis_index.json` writes.~~
 
+## Round 14
+
+- [x] ~~Make analysis FFI symbol lookup lazy and validate native ABI metadata before use.~~
+
 ## P0
 
 - [ ] Move UI test runner/script parsing/media generation out of the production app graph behind a thin automation bridge.
@@ -82,7 +86,7 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
   First slices done: MethodChannel name/methods/keys and DTO parsing live in `native_player_protocol.dart`; concrete channel transport lives in `MethodChannelNativePlayerApi`; `NativePlayerController` owns lifecycle/no-op semantics over the typed API.
 - [x] ~~Move config/cache/log default paths to user-writable app data directories and make writes atomic.~~
   Done: paths now resolve through AppData by default, with exe-local `cache/` acting as a portable-mode marker; config/index writes are guarded by companion lock files and Windows atomic replacement.
-- [ ] Make analysis FFI symbol lookup lazy and add a native ABI/version check.
+- [x] ~~Make analysis FFI symbol lookup lazy and add a native ABI/version check.~~
 - [x] ~~Harden analysis IPC handshake timeout and message length limits.~~
 
 ## P2

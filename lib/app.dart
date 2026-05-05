@@ -33,6 +33,7 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
     'SimSun',
   ];
 
+  late final ActionRegistry _actionRegistry = ActionRegistry();
   late final AppAppearanceController _appearance;
 
   @override
@@ -87,7 +88,9 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
             ),
             themeMode: _appearance.themeMode,
             home: ActionFocus(
+              actionRegistry: _actionRegistry,
               child: MainWindow(
+                actionRegistry: _actionRegistry,
                 testScriptPath: widget.testScriptPath,
                 startupOptions: widget.startupOptions,
               ),

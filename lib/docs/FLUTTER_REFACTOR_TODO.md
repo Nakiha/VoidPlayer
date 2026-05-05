@@ -12,11 +12,15 @@ Source review: `build/GPT_flutter.md` (local build artifact, not tracked).
 
 - [x] ~~Move ViewportPanel mouse-button recovery behind an injected platform service.~~
 
+## Round 3
+
+- [x] ~~Inject ActionRegistry through app/main-window/test-runner instead of using a global instance.~~
+
 ## P0
 
 - [ ] Move UI test runner/script parsing/media generation out of the production app graph behind a thin automation bridge.
 - [x] ~~Add a platform service boundary so widgets do not import Win32 FFI directly.~~
-- [ ] Reduce global singleton/static state, starting with per-window action registry and injected window/process services.
+- [ ] Reduce global singleton/static state, starting with injected window/process services.
 - [ ] Replace viewport magic ints with a typed viewport state model that can carry user-visible errors.
 
 ## P1

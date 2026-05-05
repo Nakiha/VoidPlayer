@@ -7,9 +7,6 @@ import '../app_log.dart';
 import '../utils/async_guard.dart';
 import 'player_action.dart';
 
-/// Global action registry instance.
-final actionRegistry = ActionRegistry();
-
 /// Callback type for action handlers. Receives the action instance so
 /// parameterized actions (e.g. [SeekTo], [SetSpeed]) can read their data.
 typedef ActionCallback = FutureOr<void> Function(PlayerAction action);
@@ -167,9 +164,14 @@ class ActionRegistry {
 /// fullscreen transitions or overlays temporarily move primary focus away from
 /// this subtree.
 class ActionFocus extends StatefulWidget {
+  final ActionRegistry actionRegistry;
   final Widget child;
 
-  const ActionFocus({super.key, required this.child});
+  const ActionFocus({
+    super.key,
+    required this.actionRegistry,
+    required this.child,
+  });
 
   @override
   State<ActionFocus> createState() => _ActionFocusState();
@@ -196,7 +198,7 @@ class _ActionFocusState extends State<ActionFocus> {
   }
 
   bool _handleGlobalKeyEvent(KeyEvent event) {
-    return actionRegistry.handleKeyEvent(event);
+    return widget.actionRegistry.handleKeyEvent(event);
   }
 
   @override

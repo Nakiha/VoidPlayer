@@ -10,6 +10,7 @@ import 'main_window_playback.dart';
 import 'main_window_test_hooks.dart';
 
 class MainWindowActionCoordinator {
+  final ActionRegistry actionRegistry;
   final NativePlayerController controller;
   final MainWindowPlaybackCoordinator playbackCoordinator;
   final MainWindowMediaCoordinator mediaCoordinator;
@@ -26,6 +27,7 @@ class MainWindowActionCoordinator {
   MainWindowActionBinder? _binder;
 
   MainWindowActionCoordinator({
+    required this.actionRegistry,
     required this.controller,
     required this.playbackCoordinator,
     required this.mediaCoordinator,
@@ -43,6 +45,7 @@ class MainWindowActionCoordinator {
   void bind() {
     _binder?.unbind();
     _binder = MainWindowActionBinder(
+      actionRegistry: actionRegistry,
       togglePlayPause: playbackCoordinator.togglePlayPause,
       play: playbackCoordinator.play,
       pause: playbackCoordinator.pause,
@@ -93,6 +96,7 @@ class MainWindowActionCoordinator {
 }
 
 class MainWindowActionBinder {
+  final ActionRegistry actionRegistry;
   final void Function() togglePlayPause;
   final Future<void> Function() play;
   final Future<void> Function() pause;
@@ -135,6 +139,7 @@ class MainWindowActionBinder {
   final List<String> _boundActionNames = [];
 
   MainWindowActionBinder({
+    required this.actionRegistry,
     required this.togglePlayPause,
     required this.play,
     required this.pause,

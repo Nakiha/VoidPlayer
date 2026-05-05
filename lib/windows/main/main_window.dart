@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 
+import '../../actions/action_registry.dart';
 import '../../startup_options.dart';
 import 'main_window_controller.dart';
 import 'main_window_view.dart';
 
 class MainWindow extends StatefulWidget {
+  final ActionRegistry actionRegistry;
   final String? testScriptPath;
   final StartupOptions startupOptions;
 
   const MainWindow({
     super.key,
+    required this.actionRegistry,
     this.testScriptPath,
     this.startupOptions = const StartupOptions(),
   });
@@ -26,6 +29,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _controller = MainWindowController(
+      actionRegistry: widget.actionRegistry,
       vsync: this,
       startupOptions: widget.startupOptions,
       mounted: () => mounted,

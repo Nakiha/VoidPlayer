@@ -95,12 +95,17 @@ class _ResourceUsageMetric {
 class TestRunner {
   final String scriptPath;
   final NativePlayerController controller;
+  final ActionRegistry actionRegistry;
   final _captures = <String, ViewportCapture>{};
   final _viewCenterBaselines = <String, _ViewCenterMetric>{};
   final _resourceBaselines = <String, _ResourceUsageMetric>{};
   final _nativeSeekCountBaselines = <String, int>{};
 
-  TestRunner({required this.scriptPath, required this.controller});
+  TestRunner({
+    required this.scriptPath,
+    required this.controller,
+    required this.actionRegistry,
+  });
 
   /// Parse and execute the test script. Exits the process on QUIT or failure.
   Future<void> run() async {

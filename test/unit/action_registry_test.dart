@@ -10,23 +10,21 @@ void main() {
     await initLogging(const []);
   });
 
-  tearDown(() {
-    actionRegistry.unbind(const ToggleLayoutMode().name);
-    actionRegistry.unbind(const TogglePlayPause().name);
-    actionRegistry.unbind(const StepForward().name);
-  });
-
   testWidgets('shortcuts work when an unfocused text field is in the subtree', (
     tester,
   ) async {
+    final actionRegistry = ActionRegistry();
     var triggerCount = 0;
     actionRegistry.bind(const ToggleLayoutMode(), (_) {
       triggerCount++;
     });
 
     await tester.pumpWidget(
-      const MaterialApp(
-        home: ActionFocus(child: Scaffold(body: TextField())),
+      MaterialApp(
+        home: ActionFocus(
+          actionRegistry: actionRegistry,
+          child: const Scaffold(body: TextField()),
+        ),
       ),
     );
     await tester.pump();
@@ -40,6 +38,7 @@ void main() {
   testWidgets('shortcuts work when primary focus leaves ActionFocus subtree', (
     tester,
   ) async {
+    final actionRegistry = ActionRegistry();
     var triggerCount = 0;
     actionRegistry.bind(const ToggleLayoutMode(), (_) {
       triggerCount++;
@@ -51,7 +50,10 @@ void main() {
       MaterialApp(
         home: Row(
           children: [
-            const ActionFocus(child: SizedBox.shrink()),
+            ActionFocus(
+              actionRegistry: actionRegistry,
+              child: const SizedBox.shrink(),
+            ),
             Focus(
               focusNode: outsideFocusNode,
               child: const SizedBox(width: 10, height: 10),
@@ -70,14 +72,18 @@ void main() {
   });
 
   testWidgets('shortcuts pass through while editing text', (tester) async {
+    final actionRegistry = ActionRegistry();
     var triggerCount = 0;
     actionRegistry.bind(const ToggleLayoutMode(), (_) {
       triggerCount++;
     });
 
     await tester.pumpWidget(
-      const MaterialApp(
-        home: ActionFocus(child: Scaffold(body: TextField())),
+      MaterialApp(
+        home: ActionFocus(
+          actionRegistry: actionRegistry,
+          child: const Scaffold(body: TextField()),
+        ),
       ),
     );
     await tester.tap(find.byType(TextField));
@@ -92,6 +98,7 @@ void main() {
   testWidgets('non-repeatable shortcuts swallow key repeats without firing', (
     tester,
   ) async {
+    final actionRegistry = ActionRegistry();
     var toggleCount = 0;
     var stepCount = 0;
     actionRegistry.bind(const TogglePlayPause(), (_) {
@@ -102,7 +109,12 @@ void main() {
     });
 
     await tester.pumpWidget(
-      const MaterialApp(home: ActionFocus(child: SizedBox.shrink())),
+      MaterialApp(
+        home: ActionFocus(
+          actionRegistry: actionRegistry,
+          child: const SizedBox.shrink(),
+        ),
+      ),
     );
     await tester.sendKeyDownEvent(LogicalKeyboardKey.space);
     await tester.sendKeyRepeatEvent(LogicalKeyboardKey.space);

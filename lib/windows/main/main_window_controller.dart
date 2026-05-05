@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../../actions/action_registry.dart';
 import '../../actions/test_runner.dart';
 import '../../startup_options.dart';
 import '../../track_manager.dart';
@@ -20,6 +21,7 @@ import 'main_window_test_hooks.dart';
 import 'main_window_view.dart';
 
 class MainWindowController {
+  final ActionRegistry actionRegistry;
   final TickerProvider vsync;
   final StartupOptions startupOptions;
   final bool Function() mounted;
@@ -49,6 +51,7 @@ class MainWindowController {
   late final MainWindowViewActions _viewActions = _createViewActions();
 
   MainWindowController({
+    required this.actionRegistry,
     required this.vsync,
     required this.startupOptions,
     required this.mounted,
@@ -391,6 +394,7 @@ class MainWindowController {
       resolvedLoopEndUs: () => _resolvedLoopEndUs,
     );
     actionCoordinator = MainWindowActionCoordinator(
+      actionRegistry: actionRegistry,
       controller: player,
       playbackCoordinator: playbackCoordinator,
       mediaCoordinator: mediaCoordinator,
@@ -409,7 +413,11 @@ class MainWindowController {
   void _maybeStartTestRunner(String? path) {
     if (path == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      TestRunner(scriptPath: path, controller: player).run();
+      TestRunner(
+        scriptPath: path,
+        controller: player,
+        actionRegistry: actionRegistry,
+      ).run();
     });
   }
 

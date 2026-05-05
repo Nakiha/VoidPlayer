@@ -18,13 +18,13 @@ backend behind explicit platform boundaries before adding a macOS backend.
   - Prefer snapshot/capture APIs such as `acquire_shared_texture()` that carry
     texture and shared handle together.
 
-- [ ] Move public D3D11 types behind a renderer backend API.
+- [x] Move public D3D11 types behind a renderer backend API.
   - `RendererConfig` now carries backend interop as opaque handles instead of
     `IDXGIAdapter*`.
   - `SharedTextureSnapshot` now carries typed native handles instead of
     `ID3D11Texture2D*` and `HANDLE`.
-  - These are acceptable for the Windows backend, but should not be part of a
-    platform-neutral renderer interface.
+  - `renderer.h` no longer includes D3D11 backend headers or exposes COM render
+    resources; Windows implementation details live in the cpp/backend layer.
 
 - [ ] Split target ownership in CMake.
   - Keep D3D11/DXGI/D3DCompiler/WinMM links in a Windows backend/plugin target.

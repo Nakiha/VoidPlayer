@@ -1,7 +1,10 @@
 #include "video_renderer/renderer.h"
 #include "embedded_shaders.h"
+#include "video_renderer/d3d11/device.h"
 #include "video_renderer/d3d11/frame_presenter.h"
 #include "video_renderer/d3d11/headless_output.h"
+#include "video_renderer/d3d11/shader.h"
+#include "video_renderer/d3d11/texture.h"
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <algorithm>
@@ -20,6 +23,13 @@ static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250
 static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
 static constexpr size_t kTrackForwardDepth = 4;
 static constexpr size_t kTrackBackwardDepth = 1;
+
+struct Renderer::D3D11RenderResources {
+    CompiledShader compiled_shader;
+    Microsoft::WRL::ComPtr<ID3D11Buffer> vertex_buffer;
+    Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_state;
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> cached_rtv;
+};
 
 DecodeDeviceMode default_decode_device_mode(AVCodecID codec_id) {
     if (codec_id == AV_CODEC_ID_AV1 || codec_id == AV_CODEC_ID_VP9) {
@@ -106,15 +116,18 @@ bool Renderer::initialize(const RendererConfig& config) {
     texture_mgr_ = std::make_unique<TextureManager>(d3d_device_->device(), d3d_device_->context());
     frame_presenter_ = std::make_unique<D3D11FramePresenter>(texture_mgr_.get(), d3d_device_->context());
     shader_mgr_ = std::make_unique<ShaderManager>(d3d_device_->device());
+    d3d_resources_ = std::make_unique<D3D11RenderResources>();
 
-    if (!shader_mgr_->compile_from_source(kMultitrackHlsl, "VSMain", "PSMain", compiled_shader_)) {
+    if (!shader_mgr_->compile_from_source(kMultitrackHlsl, "VSMain", "PSMain",
+                                          d3d_resources_->compiled_shader)) {
         spdlog::error("Renderer: failed to compile shaders");
         return fail();
     }
 
     // Create constant buffer for shader uniforms (must be 16-byte aligned)
     // Layout must match multitrack.hlsl cbuffer Constants
-    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 288, compiled_shader_)) {
+    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 288,
+                                             d3d_resources_->compiled_shader)) {
         spdlog::error("Renderer: failed to create constant buffer");
         return fail();
     }
@@ -128,8 +141,9 @@ bool Renderer::initialize(const RendererConfig& config) {
     sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
     sampler_desc.MinLOD = 0;
     sampler_desc.MaxLOD = D3D11_FLOAT32_MAX;
-    HRESULT hr = d3d_device_->device()->CreateSamplerState(&sampler_desc, &sampler_state_);
-    if (FAILED(hr) || !sampler_state_) {
+    HRESULT hr = d3d_device_->device()->CreateSamplerState(
+        &sampler_desc, &d3d_resources_->sampler_state);
+    if (FAILED(hr) || !d3d_resources_->sampler_state) {
         spdlog::error("Renderer: CreateSamplerState failed: HRESULT {:#x}",
                       static_cast<unsigned long>(hr));
         return fail();
@@ -150,8 +164,9 @@ bool Renderer::initialize(const RendererConfig& config) {
     vb_desc.CPUAccessFlags = 0;
     D3D11_SUBRESOURCE_DATA vb_data = {};
     vb_data.pSysMem = quad;
-    hr = d3d_device_->device()->CreateBuffer(&vb_desc, &vb_data, &vertex_buffer_);
-    if (FAILED(hr) || !vertex_buffer_) {
+    hr = d3d_device_->device()->CreateBuffer(&vb_desc, &vb_data,
+                                             &d3d_resources_->vertex_buffer);
+    if (FAILED(hr) || !d3d_resources_->vertex_buffer) {
         spdlog::error("Renderer: CreateBuffer(vertex) failed: HRESULT {:#x}",
                       static_cast<unsigned long>(hr));
         return fail();
@@ -255,9 +270,7 @@ void Renderer::shutdown() {
                         headless_output_ ||
                         shader_mgr_ ||
                         render_sink_ ||
-                        sampler_state_ ||
-                        vertex_buffer_ ||
-                        cached_rtv_ ||
+                        d3d_resources_ ||
                         initialized_.load() ||
                         running_.load() ||
                         render_thread_.joinable();
@@ -317,11 +330,9 @@ void Renderer::release_resources_locked() {
     frame_presenter_.reset();
     texture_mgr_.reset();
 
-    // ComPtr auto-releases — just reset
-    cached_rtv_.Reset();
+    // ComPtr auto-releases D3D11 render resources.
+    d3d_resources_.reset();
     headless_output_.reset();
-    sampler_state_.Reset();
-    vertex_buffer_.Reset();
 
     if (d3d_device_) {
         d3d_device_->shutdown();
@@ -998,7 +1009,10 @@ std::function<void()> Renderer::draw_headless_and_publish(const PresentDecision&
     if (!headless_output_) {
         return {};
     }
-    cached_rtv_ = headless_output_->begin_frame_locked();
+    if (!d3d_resources_) {
+        return {};
+    }
+    d3d_resources_->cached_rtv = headless_output_->begin_frame_locked();
     draw_frame(decision);
     auto callback = headless_output_->publish_frame_locked(label);
     preview_drawn_ = true;
@@ -1582,10 +1596,14 @@ void Renderer::render_loop() {
 }
 
 void Renderer::draw_frame(const PresentDecision& decision) {
+    if (!d3d_resources_) {
+        return;
+    }
+    auto& resources = *d3d_resources_;
     auto* ctx = d3d_device_->context();
 
     // Get or create cached render target view
-    if (!cached_rtv_) {
+    if (!resources.cached_rtv) {
         if (!headless_) {
             ID3D11Texture2D* back_buffer = nullptr;
             HRESULT hr = d3d_device_->swap_chain()->GetBuffer(0, __uuidof(ID3D11Texture2D),
@@ -1594,7 +1612,8 @@ void Renderer::draw_frame(const PresentDecision& decision) {
                 spdlog::error("[Renderer] Failed to get back buffer: HRESULT {:#x}", static_cast<unsigned long>(hr));
                 return;
             }
-            hr = d3d_device_->device()->CreateRenderTargetView(back_buffer, nullptr, &cached_rtv_);
+            hr = d3d_device_->device()->CreateRenderTargetView(
+                back_buffer, nullptr, &resources.cached_rtv);
             back_buffer->Release();
             if (FAILED(hr)) {
                 spdlog::error("[Renderer] Failed to create RTV: HRESULT {:#x}", static_cast<unsigned long>(hr));
@@ -1603,7 +1622,7 @@ void Renderer::draw_frame(const PresentDecision& decision) {
         }
     }
 
-    if (!cached_rtv_) {
+    if (!resources.cached_rtv) {
         return;
     }
 
@@ -1614,8 +1633,8 @@ void Renderer::draw_frame(const PresentDecision& decision) {
             clear_color[i] = background_color_[i];
         }
     }
-    ctx->ClearRenderTargetView(cached_rtv_.Get(), clear_color);
-    ctx->OMSetRenderTargets(1, cached_rtv_.GetAddressOf(), nullptr);
+    ctx->ClearRenderTargetView(resources.cached_rtv.Get(), clear_color);
+    ctx->OMSetRenderTargets(1, resources.cached_rtv.GetAddressOf(), nullptr);
 
     // Setup viewport
     D3D11_VIEWPORT vp = {};
@@ -1628,16 +1647,16 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     // Setup input assembler
     UINT stride = sizeof(float) * 4;
     UINT offset = 0;
-    ID3D11Buffer* vb = vertex_buffer_.Get();
+    ID3D11Buffer* vb = resources.vertex_buffer.Get();
     ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
     ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-    if (compiled_shader_.layout) {
-        ctx->IASetInputLayout(compiled_shader_.layout.Get());
+    if (resources.compiled_shader.layout) {
+        ctx->IASetInputLayout(resources.compiled_shader.layout.Get());
     }
 
     // Set shaders
-    ctx->VSSetShader(compiled_shader_.vs.Get(), nullptr, 0);
-    ctx->PSSetShader(compiled_shader_.ps.Get(), nullptr, 0);
+    ctx->VSSetShader(resources.compiled_shader.vs.Get(), nullptr, 0);
+    ctx->PSSetShader(resources.compiled_shader.ps.Get(), nullptr, 0);
 
     ID3D11ShaderResourceView* srvs[4] = {};           // t0-t3: RGBA (sw) or full NV12 (hw)
     ID3D11ShaderResourceView* nv12_y_srvs[4] = {};    // t4-t7: NV12 Y plane
@@ -1667,7 +1686,7 @@ void Renderer::draw_frame(const PresentDecision& decision) {
 
     // Update constant buffer
     // Layout must match HLSL cbuffer Constants in multitrack.hlsl
-    if (compiled_shader_.constant_buffer) {
+    if (resources.compiled_shader.constant_buffer) {
         struct Constants {
             int mode;              // offset 0
             int track_count;       // offset 4
@@ -1859,13 +1878,13 @@ void Renderer::draw_frame(const PresentDecision& decision) {
                 cb.view_offset_uv_y[i] = (fabsf(dp_y) > 1e-4f) ? snap.view_offset[1] / dp_y : 0.0f;
             }
         }
-        ctx->UpdateSubresource(compiled_shader_.constant_buffer.Get(), 0, nullptr, &cb, 0, 0);
-        ctx->PSSetConstantBuffers(0, 1, compiled_shader_.constant_buffer.GetAddressOf());
+        ctx->UpdateSubresource(resources.compiled_shader.constant_buffer.Get(), 0, nullptr, &cb, 0, 0);
+        ctx->PSSetConstantBuffers(0, 1, resources.compiled_shader.constant_buffer.GetAddressOf());
     }
 
     // Set sampler
-    if (sampler_state_) {
-        ID3D11SamplerState* sampler = sampler_state_.Get();
+    if (resources.sampler_state) {
+        ID3D11SamplerState* sampler = resources.sampler_state.Get();
         ctx->PSSetSamplers(0, 1, &sampler);
     }
 

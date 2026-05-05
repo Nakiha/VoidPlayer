@@ -1,8 +1,5 @@
 #pragma once
 #include "playback/playback_controller.h"
-#include "video_renderer/d3d11/device.h"
-#include "video_renderer/d3d11/texture.h"
-#include "video_renderer/d3d11/shader.h"
 #include "media/demux_thread.h"
 #include "video_renderer/decode/decode_thread.h"
 #include "video_renderer/decode/frame_converter.h"
@@ -20,12 +17,14 @@
 #include <vector>
 #include <mutex>  // IWYU pragma: keep
 #include <functional>
-#include <wrl/client.h>
 
 namespace vr {
 
+class D3D11Device;
 class D3D11FramePresenter;
 class D3D11HeadlessOutput;
+class ShaderManager;
+class TextureManager;
 
 /// Layout mode constants (match HLSL defines)
 constexpr int LAYOUT_SIDE_BY_SIDE = 0;
@@ -308,14 +307,10 @@ private:
     std::unique_ptr<D3D11HeadlessOutput> headless_output_;
     std::unique_ptr<ShaderManager> shader_mgr_;
     std::unique_ptr<RenderSink> render_sink_;
-    CompiledShader compiled_shader_;
+    struct D3D11RenderResources;
+    std::unique_ptr<D3D11RenderResources> d3d_resources_;
 
     std::array<std::unique_ptr<TrackPipeline>, kMaxTracks> tracks_;
-
-    // Render resources — ComPtr for automatic COM lifecycle management
-    Microsoft::WRL::ComPtr<ID3D11Buffer> vertex_buffer_;
-    Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_state_;
-    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> cached_rtv_;
 
     std::thread render_thread_;
     std::atomic<bool> running_{false};

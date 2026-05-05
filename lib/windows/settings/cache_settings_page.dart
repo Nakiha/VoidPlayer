@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../analysis/analysis_cache.dart';
-import '../../config/app_config.dart';
 import '../../l10n/app_localizations.dart';
+import '../../theme/app_appearance.dart';
 import 'settings_page_style.dart';
 
 const _cacheListTrailingPadding = 12.0;
@@ -32,7 +32,9 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
   void initState() {
     super.initState();
     _limitController = TextEditingController(
-      text: _limitInputFromBytes(AppConfig.instance.analysisCacheMaxBytes),
+      text: _limitInputFromBytes(
+        AppSettingsScope.read(context).analysisCacheMaxBytes,
+      ),
     );
     _limitFocusNode = FocusNode()..addListener(_onLimitFocusChanged);
     _refresh();
@@ -137,7 +139,7 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
     _loading = true;
     try {
       final snapshot = await AnalysisCache.snapshot(
-        maxBytes: AppConfig.instance.analysisCacheMaxBytes,
+        maxBytes: AppSettingsScope.read(context).analysisCacheMaxBytes,
       );
       if (!mounted) return;
       setState(() {
@@ -162,8 +164,9 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
       _limitController.text = '$valueMb';
     }
     final bytes = valueMb <= 0 ? 0 : valueMb * 1024 * 1024;
-    AppConfig.instance.analysisCacheMaxBytes = bytes;
-    await AppConfig.instance.save();
+    final settings = AppSettingsScope.read(context);
+    settings.analysisCacheMaxBytes = bytes;
+    await settings.save();
     if (refresh && mounted) await _refresh();
   }
 

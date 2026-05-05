@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../config/app_config.dart';
 import '../../l10n/app_localizations.dart';
 import '../../preferences/playback_preferences.dart';
+import '../../theme/app_appearance.dart';
 import 'settings_page_style.dart';
 
 class PreferencesSettingsPage extends StatefulWidget {
@@ -21,14 +21,15 @@ class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
   @override
   void initState() {
     super.initState();
-    _seekBehavior = AppConfig.instance.seekAfterJumpBehavior;
+    _seekBehavior = AppSettingsScope.read(context).seekAfterJumpBehavior;
   }
 
   Future<void> _setSeekBehavior(SeekAfterJumpBehavior behavior) async {
     if (_seekBehavior == behavior) return;
     setState(() => _seekBehavior = behavior);
-    AppConfig.instance.seekAfterJumpBehavior = behavior;
-    await AppConfig.instance.save();
+    final settings = AppSettingsScope.of(context);
+    settings.seekAfterJumpBehavior = behavior;
+    await settings.save();
   }
 
   @override

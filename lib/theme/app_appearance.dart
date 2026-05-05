@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../config/app_config.dart';
+import '../config/app_settings_repository.dart';
 
 enum AppThemePreference {
   system('system'),
@@ -44,28 +44,34 @@ enum AppAccentPreference {
 
 class AppAppearanceController extends ChangeNotifier {
   AppAppearanceController._({
+    required AppSettingsRepository settings,
     required this.systemAccentColor,
     required AppThemePreference themePreference,
     required AppAccentPreference accentPreference,
     required Color customAccentColor,
-  }) : _themePreference = themePreference,
+  }) : _settings = settings,
+       _themePreference = themePreference,
        _accentPreference = accentPreference,
        _customAccentColor = customAccentColor;
 
-  factory AppAppearanceController.load({required Color systemAccentColor}) {
-    final config = AppConfig.instance;
+  factory AppAppearanceController.load({
+    required AppSettingsRepository settings,
+    required Color systemAccentColor,
+  }) {
     return AppAppearanceController._(
+      settings: settings,
       systemAccentColor: systemAccentColor,
       themePreference: AppThemePreference.fromStorage(
-        config.themeModePreference,
+        settings.themeModePreference,
       ),
       accentPreference: AppAccentPreference.fromStorage(
-        config.accentColorPreference,
+        settings.accentColorPreference,
       ),
-      customAccentColor: Color(config.customAccentColorValue),
+      customAccentColor: Color(settings.customAccentColorValue),
     );
   }
 
+  final AppSettingsRepository _settings;
   Color systemAccentColor;
   AppThemePreference _themePreference;
   AppAccentPreference _accentPreference;
@@ -83,28 +89,28 @@ class AppAppearanceController extends ChangeNotifier {
   Future<void> setThemePreference(AppThemePreference preference) async {
     if (_themePreference == preference) return;
     _themePreference = preference;
-    AppConfig.instance.themeModePreference = preference.storageValue;
+    _settings.themeModePreference = preference.storageValue;
     notifyListeners();
-    await AppConfig.instance.save();
+    await _settings.save();
   }
 
   Future<void> setAccentPreference(AppAccentPreference preference) async {
     if (_accentPreference == preference) return;
     _accentPreference = preference;
-    AppConfig.instance.accentColorPreference = preference.storageValue;
+    _settings.accentColorPreference = preference.storageValue;
     notifyListeners();
-    await AppConfig.instance.save();
+    await _settings.save();
   }
 
   Future<void> setCustomAccentColor(Color color) async {
     if (_customAccentColor == color) return;
     _customAccentColor = color;
-    AppConfig.instance.customAccentColorValue = color.toARGB32();
+    _settings.customAccentColorValue = color.toARGB32();
     notifyListeners();
     _customAccentSaveTimer?.cancel();
     _customAccentSaveTimer = Timer(const Duration(milliseconds: 400), () {
       _customAccentSaveTimer = null;
-      unawaited(AppConfig.instance.save());
+      unawaited(_settings.save());
     });
   }
 
@@ -114,10 +120,39 @@ class AppAppearanceController extends ChangeNotifier {
     _customAccentSaveTimer?.cancel();
     _customAccentSaveTimer = null;
     if (hadPendingCustomAccentSave) {
-      unawaited(AppConfig.instance.save());
+      unawaited(_settings.save());
     }
     super.dispose();
   }
+}
+
+class AppSettingsScope extends InheritedWidget {
+  final AppSettingsRepository settings;
+
+  const AppSettingsScope({
+    super.key,
+    required this.settings,
+    required super.child,
+  });
+
+  static AppSettingsRepository of(BuildContext context) {
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<AppSettingsScope>();
+    assert(scope != null, 'AppSettingsScope was not found.');
+    return scope!.settings;
+  }
+
+  static AppSettingsRepository read(BuildContext context) {
+    final element = context
+        .getElementForInheritedWidgetOfExactType<AppSettingsScope>();
+    final scope = element?.widget as AppSettingsScope?;
+    assert(scope != null, 'AppSettingsScope was not found.');
+    return scope!.settings;
+  }
+
+  @override
+  bool updateShouldNotify(AppSettingsScope oldWidget) =>
+      !identical(settings, oldWidget.settings);
 }
 
 class AppAppearanceScope extends InheritedNotifier<AppAppearanceController> {

@@ -6,6 +6,8 @@ import '../../actions/action_registry.dart';
 import '../../analysis/analysis_manager.dart';
 import '../../automation/test_runner.dart';
 import '../../automation/ui_automation_bridge.dart';
+import '../../config/app_config.dart';
+import '../../config/app_settings_repository.dart';
 import '../../preferences/app_config_playback_preferences.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../startup_options.dart';
@@ -81,7 +83,10 @@ class MainWindowController {
            analysisProcesses ?? app_window.WindowManager.analysisProcesses,
        analysisGeneration = analysisGeneration ?? AnalysisManager.instance,
        playbackPreferences =
-           playbackPreferences ?? const AppConfigPlaybackPreferences() {
+           playbackPreferences ??
+           AppConfigPlaybackPreferences(
+             AppConfigSettingsRepository(AppConfig.instance),
+           ) {
     _initCoordinators();
   }
 

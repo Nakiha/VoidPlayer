@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../actions/action_registry.dart';
+import '../../preferences/playback_preferences.dart';
 import '../../startup_options.dart';
 import 'main_window_controller.dart';
 import 'main_window_view.dart';
@@ -9,12 +10,14 @@ class MainWindow extends StatefulWidget {
   final ActionRegistry actionRegistry;
   final String? testScriptPath;
   final StartupOptions startupOptions;
+  final PlaybackPreferences? playbackPreferences;
 
   const MainWindow({
     super.key,
     required this.actionRegistry,
     this.testScriptPath,
     this.startupOptions = const StartupOptions(),
+    this.playbackPreferences,
   });
 
   @override
@@ -32,6 +35,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       actionRegistry: widget.actionRegistry,
       vsync: this,
       startupOptions: widget.startupOptions,
+      playbackPreferences: widget.playbackPreferences,
       mounted: () => mounted,
     )..start(testScriptPath: widget.testScriptPath);
   }

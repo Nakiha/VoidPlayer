@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import 'actions/action_registry.dart';
+import 'config/app_config.dart';
+import 'config/app_settings_repository.dart';
 import 'l10n/app_localizations.dart';
+import 'preferences/app_config_playback_preferences.dart';
 import 'startup_options.dart';
 import 'theme/app_appearance.dart';
 import 'windows/main/main_window.dart';
@@ -34,12 +37,15 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
   ];
 
   late final ActionRegistry _actionRegistry = ActionRegistry();
+  late final AppSettingsRepository _settingsRepository =
+      AppConfigSettingsRepository(AppConfig.instance);
   late final AppAppearanceController _appearance;
 
   @override
   void initState() {
     super.initState();
     _appearance = AppAppearanceController.load(
+      settings: _settingsRepository,
       systemAccentColor: widget.accentColor,
     )..addListener(_syncAccentColor);
     _syncAccentColor();
@@ -62,37 +68,43 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
       animation: _appearance,
       builder: (context, _) {
         final accentColor = _appearance.accentColor;
-        return AppAppearanceScope(
-          controller: _appearance,
-          child: MaterialApp(
-            title: 'Void Player',
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
-            themeAnimationDuration: const Duration(milliseconds: 180),
-            themeAnimationCurve: Curves.easeOutCubic,
-            theme: ThemeData(
-              fontFamily: _fontFamily,
-              fontFamilyFallback: _fontFamilyFallback,
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: accentColor,
-                brightness: Brightness.light,
+        return AppSettingsScope(
+          settings: _settingsRepository,
+          child: AppAppearanceScope(
+            controller: _appearance,
+            child: MaterialApp(
+              title: 'Void Player',
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              themeAnimationDuration: const Duration(milliseconds: 180),
+              themeAnimationCurve: Curves.easeOutCubic,
+              theme: ThemeData(
+                fontFamily: _fontFamily,
+                fontFamilyFallback: _fontFamilyFallback,
+                colorScheme: ColorScheme.fromSeed(
+                  seedColor: accentColor,
+                  brightness: Brightness.light,
+                ),
               ),
-            ),
-            darkTheme: ThemeData(
-              fontFamily: _fontFamily,
-              fontFamilyFallback: _fontFamilyFallback,
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: accentColor,
-                brightness: Brightness.dark,
+              darkTheme: ThemeData(
+                fontFamily: _fontFamily,
+                fontFamilyFallback: _fontFamilyFallback,
+                colorScheme: ColorScheme.fromSeed(
+                  seedColor: accentColor,
+                  brightness: Brightness.dark,
+                ),
               ),
-            ),
-            themeMode: _appearance.themeMode,
-            home: ActionFocus(
-              actionRegistry: _actionRegistry,
-              child: MainWindow(
+              themeMode: _appearance.themeMode,
+              home: ActionFocus(
                 actionRegistry: _actionRegistry,
-                testScriptPath: widget.testScriptPath,
-                startupOptions: widget.startupOptions,
+                child: MainWindow(
+                  actionRegistry: _actionRegistry,
+                  testScriptPath: widget.testScriptPath,
+                  startupOptions: widget.startupOptions,
+                  playbackPreferences: AppConfigPlaybackPreferences(
+                    _settingsRepository,
+                  ),
+                ),
               ),
             ),
           ),

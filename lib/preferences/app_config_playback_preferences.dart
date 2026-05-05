@@ -1,10 +1,12 @@
-import '../config/app_config.dart';
+import '../config/app_settings_repository.dart';
 import 'playback_preferences.dart';
 
 class AppConfigPlaybackPreferences implements PlaybackPreferences {
-  const AppConfigPlaybackPreferences();
+  final AppSettingsRepository settings;
+
+  const AppConfigPlaybackPreferences(this.settings);
 
   @override
   SeekAfterJumpBehavior get seekAfterJumpBehavior =>
-      AppConfig.instance.seekAfterJumpBehavior;
+      settings.seekAfterJumpBehavior;
 }

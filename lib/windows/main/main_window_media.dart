@@ -9,23 +9,14 @@ import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
 import '../native_file_picker.dart';
 import 'main_window_layout.dart';
+import 'main_window_state.dart';
 
 class MainWindowMediaCoordinator {
   final NativePlayerController controller;
   final TrackManager trackManager;
   final MainWindowLayoutCoordinator layoutCoordinator;
+  final MainWindowStateStore stateStore;
   final bool Function() mounted;
-  final int? Function() textureId;
-  final void Function(ViewportDisplayState state) setViewportState;
-  final void Function(int textureId) setTextureId;
-  final void Function(LayoutState layout) setLayout;
-  final Map<int, int> Function() syncOffsets;
-  final void Function(Map<int, int> offsets) setSyncOffsets;
-  final int Function() durationUs;
-  final int? Function() pendingSeekUs;
-  final int Function() currentPtsUs;
-  final int? Function() audibleTrackFileId;
-  final void Function(int? fileId) setAudibleTrackFileId;
   final VoidCallback applyStartupLoopRangeIfReady;
   final VoidCallback cancelLoopBoundaryTimer;
   final VoidCallback resetAfterLastTrackRemoved;
@@ -37,18 +28,8 @@ class MainWindowMediaCoordinator {
     required this.controller,
     required this.trackManager,
     required this.layoutCoordinator,
+    required this.stateStore,
     required this.mounted,
-    required this.textureId,
-    required this.setViewportState,
-    required this.setTextureId,
-    required this.setLayout,
-    required this.syncOffsets,
-    required this.setSyncOffsets,
-    required this.durationUs,
-    required this.pendingSeekUs,
-    required this.currentPtsUs,
-    required this.audibleTrackFileId,
-    required this.setAudibleTrackFileId,
     required this.applyStartupLoopRangeIfReady,
     required this.cancelLoopBoundaryTimer,
     required this.resetAfterLastTrackRemoved,
@@ -60,6 +41,23 @@ class MainWindowMediaCoordinator {
   }
 
   bool get _alive => !_disposed && mounted();
+
+  MainWindowStateModel get _state => stateStore.value;
+
+  int? textureId() => _state.textureId;
+  void setViewportState(ViewportDisplayState state) =>
+      stateStore.setViewportState(state);
+  void setTextureId(int textureId) => stateStore.setTextureId(textureId);
+  void setLayout(LayoutState layout) => stateStore.setLayout(layout);
+  Map<int, int> syncOffsets() => _state.syncOffsets;
+  void setSyncOffsets(Map<int, int> offsets) =>
+      stateStore.setSyncOffsets(offsets);
+  int durationUs() => _state.durationUs;
+  int? pendingSeekUs() => _state.pendingSeekUs;
+  int currentPtsUs() => _state.currentPtsUs;
+  int? audibleTrackFileId() => _state.audibleTrackFileId;
+  void setAudibleTrackFileId(int? fileId) =>
+      stateStore.setAudibleTrackFileId(fileId);
 
   Future<void> loadMediaPaths(List<String> paths) {
     if (paths.isEmpty) return Future<void>.value();

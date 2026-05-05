@@ -364,18 +364,8 @@ class MainWindowController {
       controller: player,
       trackManager: trackManager,
       layoutCoordinator: layoutCoordinator,
+      stateStore: stateStore,
       mounted: mounted,
-      textureId: () => _textureId,
-      setViewportState: stateStore.setViewportState,
-      setTextureId: stateStore.setTextureId,
-      setLayout: stateStore.setLayout,
-      syncOffsets: () => _syncOffsets,
-      setSyncOffsets: stateStore.setSyncOffsets,
-      durationUs: () => _durationUs,
-      pendingSeekUs: () => _pendingSeekUs,
-      currentPtsUs: () => _currentPtsUs,
-      audibleTrackFileId: () => _audibleTrackFileId,
-      setAudibleTrackFileId: stateStore.setAudibleTrackFileId,
       applyStartupLoopRangeIfReady:
           playbackCoordinator.applyStartupLoopRangeIfReady,
       cancelLoopBoundaryTimer: playbackCoordinator.cancelLoopBoundaryTimer,
@@ -450,9 +440,7 @@ class MainWindowController {
   ViewportDisplayState get _viewportState => _state.viewportState;
   bool get _isPlaying => _state.isPlaying;
   int get _currentPtsUs => _state.currentPtsUs;
-  int get _durationUs => _state.durationUs;
   LayoutState get _layout => _state.layout;
-  int? get _pendingSeekUs => _state.pendingSeekUs;
   Map<int, int> get _syncOffsets => _state.syncOffsets;
   double get _timelineControlsWidth => _state.timelineControlsWidth;
   bool get _loopRangeEnabled => _state.loopRangeEnabled;

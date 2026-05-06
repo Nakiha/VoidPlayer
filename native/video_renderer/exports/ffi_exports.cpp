@@ -233,6 +233,7 @@ void naki_vr_player_apply_layout(naki_vr_player_t player, const naki_vr_player_l
         layout.zoom_ratio = state->zoom_ratio;
         layout.view_offset[0] = state->view_offset[0];
         layout.view_offset[1] = state->view_offset[1];
+        layout.pixel_size_mode = state->pixel_size_mode;
         for (int i = 0; i < 4; ++i) layout.order[i] = state->order[i];
         as_player(player)->apply_layout(layout);
     });
@@ -247,6 +248,7 @@ void naki_vr_player_layout(naki_vr_player_t player, naki_vr_player_layout_state_
         out_state->zoom_ratio = layout.zoom_ratio;
         out_state->view_offset[0] = layout.view_offset[0];
         out_state->view_offset[1] = layout.view_offset[1];
+        out_state->pixel_size_mode = layout.pixel_size_mode;
         for (int i = 0; i < 4; ++i) out_state->order[i] = layout.order[i];
     });
 }

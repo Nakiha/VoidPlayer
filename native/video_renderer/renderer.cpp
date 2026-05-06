@@ -766,35 +766,38 @@ std::pair<float, float> Renderer::display_pixel_size_for_layout_locked(
         slot_w /= static_cast<float>(active_count);
     }
     const float slot_aspect = (slot_h > 0.0f) ? slot_w / slot_h : 1.0f;
-
-    int ref_idx = -1;
-    int max_pixels = 0;
-    for (int i = 0; i < static_cast<int>(kMaxTracks); ++i) {
-        if (!tracks_[i]) continue;
-        int pixels = tracks_[i]->video_width * tracks_[i]->video_height;
-        if (pixels > max_pixels) {
-            max_pixels = pixels;
-            ref_idx = i;
-        }
-    }
-    if (ref_idx < 0 || !tracks_[ref_idx]) {
-        ref_idx = track_idx;
-    }
-
-    float ref_density = 1.0f;
-    const float ref_w = static_cast<float>(tracks_[ref_idx]->video_width);
-    const float ref_h = static_cast<float>(tracks_[ref_idx]->video_height);
-    if (ref_w > 0.0f && ref_h > 0.0f) {
-        ref_density = std::min(slot_w / ref_w, slot_h / ref_h);
-    }
-
     const float track_w = static_cast<float>(tracks_[track_idx]->video_width);
     const float track_h = static_cast<float>(tracks_[track_idx]->video_height);
-    float track_density = 1.0f;
-    if (track_w > 0.0f && track_h > 0.0f) {
-        track_density = std::min(slot_w / track_w, slot_h / track_h);
+
+    float track_scale = 1.0f;
+    if (layout.pixel_size_mode == PIXEL_SIZE_UNIFORM_VIDEO_PIXELS) {
+        int ref_idx = -1;
+        int max_pixels = 0;
+        for (int i = 0; i < static_cast<int>(kMaxTracks); ++i) {
+            if (!tracks_[i]) continue;
+            int pixels = tracks_[i]->video_width * tracks_[i]->video_height;
+            if (pixels > max_pixels) {
+                max_pixels = pixels;
+                ref_idx = i;
+            }
+        }
+        if (ref_idx < 0 || !tracks_[ref_idx]) {
+            ref_idx = track_idx;
+        }
+
+        float ref_density = 1.0f;
+        const float ref_w = static_cast<float>(tracks_[ref_idx]->video_width);
+        const float ref_h = static_cast<float>(tracks_[ref_idx]->video_height);
+        if (ref_w > 0.0f && ref_h > 0.0f) {
+            ref_density = std::min(slot_w / ref_w, slot_h / ref_h);
+        }
+
+        float track_density = 1.0f;
+        if (track_w > 0.0f && track_h > 0.0f) {
+            track_density = std::min(slot_w / track_w, slot_h / track_h);
+        }
+        track_scale = (track_density > 0.0f) ? ref_density / track_density : 1.0f;
     }
-    const float track_scale = (track_density > 0.0f) ? ref_density / track_density : 1.0f;
 
     float video_aspect = tracks_[track_idx]->video_aspect;
     if (video_aspect <= 0.0f) {
@@ -1928,51 +1931,52 @@ void Renderer::draw_frame(const PresentDecision& decision) {
         }
         cb.track_count = active_count;
 
-        // Compute per-track scale for uniform pixel density across all tracks.
-        // Find the reference track (highest resolution) and scale other tracks
-        // so all videos share the same pixel density (video pixel -> screen pixel ratio).
+        // Compute per-track scale for the selected pixel-size policy.
         {
-            int ref_idx = -1;
-            int max_pixels = 0;
             for (int i = 0; i < 4; ++i) {
-                if (!tracks_[i]) continue;
-                int pixels = tracks_[i]->video_width * tracks_[i]->video_height;
-                if (pixels > max_pixels) {
-                    max_pixels = pixels;
-                    ref_idx = i;
-                }
-            }
-            if (ref_idx < 0) ref_idx = 0;
-
-            // Slot dimensions depend on layout mode
-            float slot_w = static_cast<float>(target_width_);
-            float slot_h = static_cast<float>(target_height_);
-            if (snap.mode != LAYOUT_SPLIT_SCREEN && active_count > 1) {
-                slot_w /= static_cast<float>(active_count);
+                cb.track_scale[i] = 1.0f;
             }
 
-            // Reference video density: min(slot_w / ref_w, slot_h / ref_h)
-            float ref_density = 1.0f;
-            if (tracks_[ref_idx]) {
-                float ref_w = static_cast<float>(tracks_[ref_idx]->video_width);
-                float ref_h = static_cast<float>(tracks_[ref_idx]->video_height);
-                if (ref_w > 0.0f && ref_h > 0.0f) {
-                    ref_density = std::min(slot_w / ref_w, slot_h / ref_h);
+            if (snap.pixel_size_mode == PIXEL_SIZE_UNIFORM_VIDEO_PIXELS) {
+                int ref_idx = -1;
+                int max_pixels = 0;
+                for (int i = 0; i < 4; ++i) {
+                    if (!tracks_[i]) continue;
+                    int pixels = tracks_[i]->video_width * tracks_[i]->video_height;
+                    if (pixels > max_pixels) {
+                        max_pixels = pixels;
+                        ref_idx = i;
+                    }
                 }
-            }
+                if (ref_idx < 0) ref_idx = 0;
 
-            for (int i = 0; i < 4; ++i) {
-                if (!tracks_[i]) {
-                    cb.track_scale[i] = 1.0f;
-                    continue;
+                // Slot dimensions depend on layout mode
+                float slot_w = static_cast<float>(target_width_);
+                float slot_h = static_cast<float>(target_height_);
+                if (snap.mode != LAYOUT_SPLIT_SCREEN && active_count > 1) {
+                    slot_w /= static_cast<float>(active_count);
                 }
-                float tw = static_cast<float>(tracks_[i]->video_width);
-                float th = static_cast<float>(tracks_[i]->video_height);
-                float density = 1.0f;
-                if (tw > 0.0f && th > 0.0f) {
-                    density = std::min(slot_w / tw, slot_h / th);
+
+                // Reference video density: min(slot_w / ref_w, slot_h / ref_h)
+                float ref_density = 1.0f;
+                if (tracks_[ref_idx]) {
+                    float ref_w = static_cast<float>(tracks_[ref_idx]->video_width);
+                    float ref_h = static_cast<float>(tracks_[ref_idx]->video_height);
+                    if (ref_w > 0.0f && ref_h > 0.0f) {
+                        ref_density = std::min(slot_w / ref_w, slot_h / ref_h);
+                    }
                 }
-                cb.track_scale[i] = (density > 0.0f) ? ref_density / density : 1.0f;
+
+                for (int i = 0; i < 4; ++i) {
+                    if (!tracks_[i]) continue;
+                    float tw = static_cast<float>(tracks_[i]->video_width);
+                    float th = static_cast<float>(tracks_[i]->video_height);
+                    float density = 1.0f;
+                    if (tw > 0.0f && th > 0.0f) {
+                        density = std::min(slot_w / tw, slot_h / th);
+                    }
+                    cb.track_scale[i] = (density > 0.0f) ? ref_density / density : 1.0f;
+                }
             }
         }
 
@@ -2053,6 +2057,10 @@ void Renderer::apply_layout(const LayoutState& state) {
     layout_.zoom_ratio = std::clamp(state.zoom_ratio, 1.0f, 50.0f);
     layout_.view_offset[0] = state.view_offset[0];
     layout_.view_offset[1] = state.view_offset[1];
+    layout_.pixel_size_mode =
+        (state.pixel_size_mode == PIXEL_SIZE_FILL_VIEW)
+            ? PIXEL_SIZE_FILL_VIEW
+            : PIXEL_SIZE_UNIFORM_VIDEO_PIXELS;
 
     // Translate file_id order → slot order for the shader
     for (int i = 0; i < 4; ++i) {

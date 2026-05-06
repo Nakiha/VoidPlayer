@@ -30,6 +30,10 @@ class TextureManager;
 constexpr int LAYOUT_SIDE_BY_SIDE = 0;
 constexpr int LAYOUT_SPLIT_SCREEN = 1;
 
+/// Viewport pixel-size policy constants (match Flutter protocol).
+constexpr int PIXEL_SIZE_UNIFORM_VIDEO_PIXELS = 0;
+constexpr int PIXEL_SIZE_FILL_VIEW = 1;
+
 /// Track metadata returned to the UI layer.
 struct TrackInfo {
     int file_id;       ///< Stable identifier (auto-incrementing, survives reorder)
@@ -71,6 +75,7 @@ struct LayoutState {
     float split_pos = 0.5f;          // Split divider position (0.0-1.0)
     float zoom_ratio = 1.0f;         // 1.0=fit, >1.0=zoom in
     float view_offset[2] = {0.0f, 0.0f};  // Pan offset in pixel coordinates
+    int pixel_size_mode = PIXEL_SIZE_UNIFORM_VIDEO_PIXELS;  // 0=uniform density, 1=fit each slot
     int order[4] = {0, 1, 2, 3};    // Track display order mapping
 };
 

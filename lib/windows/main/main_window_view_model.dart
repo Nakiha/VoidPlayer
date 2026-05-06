@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../analysis/analysis_toolbar_data_source.dart';
+import '../../preferences/playback_preferences.dart';
 import '../../track_manager.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
@@ -207,12 +208,14 @@ class MainWindowMediaTimelineActions {
 class MainWindowOverlayActions {
   final VoidCallback onCloseProfiler;
   final VoidCallback onCloseSettings;
+  final ValueChanged<ViewportPixelSizeMode> onViewportPixelSizeModeChanged;
   final VoidCallback onFullScreenPointerActivity;
   final void Function(bool hovering) onFullScreenControlsHoverChanged;
 
   const MainWindowOverlayActions({
     required this.onCloseProfiler,
     required this.onCloseSettings,
+    required this.onViewportPixelSizeModeChanged,
     required this.onFullScreenPointerActivity,
     required this.onFullScreenControlsHoverChanged,
   });

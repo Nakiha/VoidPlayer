@@ -14,5 +14,9 @@ class AppConfigPlaybackPreferences implements PlaybackPreferences {
   DecodeMode get decodeMode => settings.decodeMode;
 
   @override
+  ViewportPixelSizeMode get viewportPixelSizeMode =>
+      settings.viewportPixelSizeMode;
+
+  @override
   bool get useHardwareDecode => decodeMode.useHardwareDecode;
 }

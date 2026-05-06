@@ -30,6 +30,10 @@ class _FakeAppSettingsRepository implements AppSettingsRepository {
   DecodeMode decodeMode = DecodeMode.preferHardware;
 
   @override
+  ViewportPixelSizeMode viewportPixelSizeMode =
+      ViewportPixelSizeMode.uniformVideoPixels;
+
+  @override
   Future<void> save() => Future.value();
 }
 

@@ -253,6 +253,7 @@ class MainWindowController {
       overlays: MainWindowOverlayActions(
         onCloseProfiler: () => stateStore.setProfilerVisible(false),
         onCloseSettings: () => stateStore.setSettingsVisible(false),
+        onViewportPixelSizeModeChanged: _setViewportPixelSizeMode,
         onFullScreenPointerActivity: _showFullScreenControlsTemporarily,
         onFullScreenControlsHoverChanged: _setFullScreenControlsHovering,
       ),
@@ -388,6 +389,11 @@ class MainWindowController {
       trackManager: trackManager,
       mounted: mounted,
     );
+    stateStore.setLayout(
+      _layout.copyWith(
+        pixelSizeMode: playbackPreferences.viewportPixelSizeMode.layoutValue,
+      ),
+    );
     analysisCoordinator = MainWindowAnalysisCoordinator(
       trackManager: trackManager,
       analysisProcesses: analysisProcesses,
@@ -443,6 +449,10 @@ class MainWindowController {
       toggleFullScreen: _toggleFullScreen,
       exitFullScreen: _exitFullScreen,
     );
+  }
+
+  void _setViewportPixelSizeMode(ViewportPixelSizeMode mode) {
+    layoutCoordinator.setPixelSizeMode(mode.layoutValue);
   }
 
   void _maybeStartTestRunner(String? path) {

@@ -34,6 +34,10 @@ class _FakePlaybackPreferences implements PlaybackPreferences {
   DecodeMode get decodeMode => DecodeMode.preferHardware;
 
   @override
+  ViewportPixelSizeMode get viewportPixelSizeMode =>
+      ViewportPixelSizeMode.uniformVideoPixels;
+
+  @override
   bool get useHardwareDecode => decodeMode.useHardwareDecode;
 }
 
@@ -59,6 +63,10 @@ class _FakeAppSettingsRepository implements AppSettingsRepository {
 
   @override
   DecodeMode decodeMode = DecodeMode.preferHardware;
+
+  @override
+  ViewportPixelSizeMode viewportPixelSizeMode =
+      ViewportPixelSizeMode.uniformVideoPixels;
 
   @override
   Future<void> save() => Future.value();

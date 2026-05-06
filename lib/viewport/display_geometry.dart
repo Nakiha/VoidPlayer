@@ -49,26 +49,29 @@ Size computeDisplayPixelSizeForLayout({
   }
   final slotAspect = slotHeight > 0 ? slotWidth / slotHeight : 1.0;
 
-  var refTrack = tracks.first;
-  var maxPixels = 0;
-  for (final entry in tracks) {
-    final pixels = entry.width * entry.height;
-    if (pixels > maxPixels) {
-      maxPixels = pixels;
-      refTrack = entry;
+  var trackScale = 1.0;
+  if (layout.pixelSizeMode == LayoutPixelSizeMode.uniformVideoPixels) {
+    var refTrack = tracks.first;
+    var maxPixels = 0;
+    for (final entry in tracks) {
+      final pixels = entry.width * entry.height;
+      if (pixels > maxPixels) {
+        maxPixels = pixels;
+        refTrack = entry;
+      }
     }
-  }
 
-  double densityFor(DisplayTrackGeometry entry) {
-    final videoWidth = entry.width.toDouble();
-    final videoHeight = entry.height.toDouble();
-    if (videoWidth <= 0 || videoHeight <= 0) return 1.0;
-    return math.min(slotWidth / videoWidth, slotHeight / videoHeight);
-  }
+    double densityFor(DisplayTrackGeometry entry) {
+      final videoWidth = entry.width.toDouble();
+      final videoHeight = entry.height.toDouble();
+      if (videoWidth <= 0 || videoHeight <= 0) return 1.0;
+      return math.min(slotWidth / videoWidth, slotHeight / videoHeight);
+    }
 
-  final trackDensity = densityFor(track);
-  final refDensity = densityFor(refTrack);
-  final trackScale = trackDensity > 0 ? refDensity / trackDensity : 1.0;
+    final trackDensity = densityFor(track);
+    final refDensity = densityFor(refTrack);
+    trackScale = trackDensity > 0 ? refDensity / trackDensity : 1.0;
+  }
 
   final videoWidth = track.width.toDouble();
   final videoHeight = track.height.toDouble();

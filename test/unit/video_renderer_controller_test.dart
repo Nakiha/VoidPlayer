@@ -10,6 +10,7 @@ void main() {
         'zoomRatio': 2,
         'viewOffsetX': 3,
         'viewOffsetY': 4,
+        'pixelSizeMode': 1,
         'order': [3, 2, 1, 0],
       });
 
@@ -18,6 +19,7 @@ void main() {
       expect(state.zoomRatio, 2.0);
       expect(state.viewOffsetX, 3.0);
       expect(state.viewOffsetY, 4.0);
+      expect(state.pixelSizeMode, LayoutPixelSizeMode.fillView);
       expect(state.order, [3, 2, 1, 0]);
     });
 

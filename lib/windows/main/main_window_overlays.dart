@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../preferences/playback_preferences.dart';
 import '../settings_window.dart';
 import '../stats_window.dart';
 import 'main_window_media_sections.dart';
@@ -130,11 +131,13 @@ class ProfilerOverlaySlot extends StatelessWidget {
 class SettingsOverlaySlot extends StatelessWidget {
   final bool visible;
   final VoidCallback onClose;
+  final ValueChanged<ViewportPixelSizeMode> onViewportPixelSizeModeChanged;
 
   const SettingsOverlaySlot({
     super.key,
     required this.visible,
     required this.onClose,
+    required this.onViewportPixelSizeModeChanged,
   });
 
   @override
@@ -143,7 +146,10 @@ class SettingsOverlaySlot extends StatelessWidget {
       key: const ValueKey('settingsOverlay'),
       child: AnimatedOverlaySlot(
         visible: visible,
-        builder: (context) => _SettingsDialog(onClose: onClose),
+        builder: (context) => _SettingsDialog(
+          onClose: onClose,
+          onViewportPixelSizeModeChanged: onViewportPixelSizeModeChanged,
+        ),
         transitionBuilder: (context, animation, child) {
           return _ModalScrim(
             animation: animation,
@@ -324,8 +330,12 @@ class _ProfilerOverlay extends StatelessWidget {
 
 class _SettingsDialog extends StatelessWidget {
   final VoidCallback onClose;
+  final ValueChanged<ViewportPixelSizeMode> onViewportPixelSizeModeChanged;
 
-  const _SettingsDialog({required this.onClose});
+  const _SettingsDialog({
+    required this.onClose,
+    required this.onViewportPixelSizeModeChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -371,7 +381,11 @@ class _SettingsDialog extends StatelessWidget {
               ),
             ),
             const Divider(height: 1),
-            const Expanded(child: SettingsPage()),
+            Expanded(
+              child: SettingsPage(
+                onViewportPixelSizeModeChanged: onViewportPixelSizeModeChanged,
+              ),
+            ),
           ],
         ),
       ),

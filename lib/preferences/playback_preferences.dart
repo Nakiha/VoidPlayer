@@ -32,9 +32,37 @@ enum DecodeMode {
   }
 }
 
+enum ViewportPixelSizeMode {
+  uniformVideoPixels('uniformVideoPixels'),
+  fillView('fillView');
+
+  const ViewportPixelSizeMode(this.storageValue);
+
+  final String storageValue;
+
+  int get layoutValue => switch (this) {
+    ViewportPixelSizeMode.uniformVideoPixels => 0,
+    ViewportPixelSizeMode.fillView => 1,
+  };
+
+  static ViewportPixelSizeMode fromStorage(String value) {
+    return ViewportPixelSizeMode.values.firstWhere(
+      (mode) => mode.storageValue == value,
+      orElse: () => ViewportPixelSizeMode.uniformVideoPixels,
+    );
+  }
+
+  static ViewportPixelSizeMode fromLayoutValue(int value) {
+    return value == ViewportPixelSizeMode.fillView.layoutValue
+        ? ViewportPixelSizeMode.fillView
+        : ViewportPixelSizeMode.uniformVideoPixels;
+  }
+}
+
 abstract class PlaybackPreferences {
   SeekAfterJumpBehavior get seekAfterJumpBehavior;
   DecodeMode get decodeMode;
+  ViewportPixelSizeMode get viewportPixelSizeMode;
 
   bool get useHardwareDecode => decodeMode.useHardwareDecode;
 }

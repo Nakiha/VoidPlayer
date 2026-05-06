@@ -3,13 +3,16 @@ import '../actions/player_action.dart';
 import '../app_metadata.dart';
 import '../l10n/action_labels.dart';
 import '../l10n/app_localizations.dart';
+import '../preferences/playback_preferences.dart';
 import 'settings/appearance_settings_page.dart';
 import 'settings/cache_settings_page.dart';
 import 'settings/preferences_settings_page.dart';
 import 'settings/settings_page_style.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key});
+  final ValueChanged<ViewportPixelSizeMode>? onViewportPixelSizeModeChanged;
+
+  const SettingsPage({super.key, this.onViewportPixelSizeModeChanged});
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -17,12 +20,14 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   int _selectedIndex = 0;
-  late final List<Widget> _pages = const [
-    _ShortcutsPage(),
-    AppearanceSettingsPage(),
-    PreferencesSettingsPage(),
-    CacheSettingsPage(),
-    _AboutPage(),
+  late final List<Widget> _pages = [
+    const _ShortcutsPage(),
+    const AppearanceSettingsPage(),
+    PreferencesSettingsPage(
+      onViewportPixelSizeModeChanged: widget.onViewportPixelSizeModeChanged,
+    ),
+    const CacheSettingsPage(),
+    const _AboutPage(),
   ];
 
   @override

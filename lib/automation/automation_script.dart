@@ -73,6 +73,11 @@ class ScriptSetDecodeMode extends ScriptInstruction {
   const ScriptSetDecodeMode(super.time, this.mode);
 }
 
+class ScriptSetViewportPixelSizeMode extends ScriptInstruction {
+  final ViewportPixelSizeMode mode;
+  const ScriptSetViewportPixelSizeMode(super.time, this.mode);
+}
+
 class ScriptQuit extends ScriptInstruction {
   final int exitCode;
   const ScriptQuit(super.time, this.exitCode);
@@ -386,6 +391,15 @@ ScriptInstruction? _parseInstruction(
       }
       final mode = DecodeMode.fromStorage(args[0]);
       return ScriptSetDecodeMode(time, mode);
+    case 'SET_VIEWPORT_PIXEL_SIZE_MODE':
+      if (args.isEmpty) {
+        log.warning(
+          'SET_VIEWPORT_PIXEL_SIZE_MODE missing mode argument: $rawLine',
+        );
+        return null;
+      }
+      final mode = ViewportPixelSizeMode.fromStorage(args[0]);
+      return ScriptSetViewportPixelSizeMode(time, mode);
 
     // Asserts — playback
     case 'ASSERT_PLAYING':

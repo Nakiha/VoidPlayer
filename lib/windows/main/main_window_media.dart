@@ -101,7 +101,14 @@ class MainWindowMediaCoordinator {
         trackManager.setTracks(res.tracks);
         final nativeLayout = await controller.getLayout();
         if (!_alive) return;
-        setLayout(nativeLayout);
+        setLayout(
+          nativeLayout.copyWith(
+            pixelSizeMode:
+                playbackPreferences.viewportPixelSizeMode.layoutValue,
+            order: trackManager.order,
+          ),
+        );
+        layoutCoordinator.markLayoutDirty();
         lifecycle.applyStartupLoopRangeIfReady();
         await WidgetsBinding.instance.endOfFrame;
         if (!_alive) return;

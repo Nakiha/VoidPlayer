@@ -28,6 +28,46 @@ void main() {
     expect(splitScreen.height, 200);
   });
 
+  test('fill view mode fits each track to its own slot', () {
+    const tracks = [
+      DisplayTrackGeometry(fileId: 1, width: 1280, height: 720),
+      DisplayTrackGeometry(fileId: 2, width: 1920, height: 1080),
+    ];
+
+    final uniform = computeDisplayPixelSizeForLayout(
+      viewportWidth: 1920,
+      viewportHeight: 1080,
+      layout: const LayoutState(order: [1, 2]),
+      tracks: tracks,
+    );
+    expect(uniform.width, closeTo(640, 1e-9));
+    expect(uniform.height, closeTo(360, 1e-9));
+
+    final fillView = computeDisplayPixelSizeForLayout(
+      viewportWidth: 1920,
+      viewportHeight: 1080,
+      layout: const LayoutState(
+        order: [1, 2],
+        pixelSizeMode: LayoutPixelSizeMode.fillView,
+      ),
+      tracks: tracks,
+    );
+    expect(fillView.width, 960);
+    expect(fillView.height, 540);
+
+    final selected1080p = computeDisplayPixelSizeForLayout(
+      viewportWidth: 1920,
+      viewportHeight: 1080,
+      layout: const LayoutState(
+        order: [2, 1],
+        pixelSizeMode: LayoutPixelSizeMode.fillView,
+      ),
+      tracks: tracks,
+    );
+    expect(selected1080p.width, 960);
+    expect(selected1080p.height, 540);
+  });
+
   test('falls back to viewport size without tracks', () {
     final display = computeDisplayPixelSizeForLayout(
       viewportWidth: 320,

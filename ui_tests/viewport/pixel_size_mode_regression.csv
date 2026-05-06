@@ -1,0 +1,13 @@
+# Verifies that viewport pixel-size policy reaches native rendering.
+0.0,SET_VIEWPORT_PIXEL_SIZE_MODE,uniformVideoPixels
+0.2,ADD_MEDIA,resources/video/mpeg2_10s_1280x720.ts
+0.8,ADD_MEDIA,resources/video/h264_9s_1920x1080.mp4
+2.0,ASSERT_TRACK_COUNT,2
+2.2,CAPTURE_VIEWPORT,uniform
+2.3,ASSERT_CAPTURE_NOT_BLACK,uniform,0.01,4.0
+2.5,SET_VIEWPORT_PIXEL_SIZE_MODE,fillView
+3.0,CAPTURE_VIEWPORT,fill
+3.1,ASSERT_CAPTURE_NOT_BLACK,fill,0.01,4.0
+3.2,ASSERT_CAPTURE_CHANGED,uniform,fill
+3.4,SET_VIEWPORT_PIXEL_SIZE_MODE,uniformVideoPixels
+3.6,QUIT,0

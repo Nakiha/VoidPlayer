@@ -78,6 +78,18 @@ class MainWindowLayoutCoordinator {
     markLayoutDirty();
   }
 
+  void setPixelSizeMode(int mode) {
+    if (_disposed) return;
+    final current = layout();
+    if (current.pixelSizeMode == mode) return;
+    final next = _rescaleViewOffsetForLayoutChange(
+      current,
+      current.copyWith(pixelSizeMode: mode),
+    );
+    setLayout(next);
+    markLayoutDirty();
+  }
+
   void setZoom(double ratio) {
     if (_disposed) return;
     _updateLayout(

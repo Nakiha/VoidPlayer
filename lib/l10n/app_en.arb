@@ -217,6 +217,15 @@
   "decodeModeForceSoftware": "Force software decode",
   "@decodeModeForceSoftware": { "description": "Decode mode option: always use software decoding" },
 
+  "viewportPixelSize": "Pixel size",
+  "@viewportPixelSize": { "description": "Viewport pixel size mode preference label" },
+
+  "viewportPixelSizeUniformVideoPixels": "All videos same size",
+  "@viewportPixelSizeUniformVideoPixels": { "description": "Viewport pixel size mode: keep videos at the same pixel density" },
+
+  "viewportPixelSizeFillView": "Prefer filling view",
+  "@viewportPixelSizeFillView": { "description": "Viewport pixel size mode: fit each video independently into its view slot" },
+
   "cacheMaxLimit": "Maximum cache size (0 = unlimited)",
   "@cacheMaxLimit": { "description": "Analysis cache maximum size setting label" },
 

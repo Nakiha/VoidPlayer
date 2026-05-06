@@ -19,6 +19,8 @@ abstract interface class UiAutomationRuntime {
 
   Future<void> setDecodeMode(DecodeMode mode);
 
+  Future<void> setViewportPixelSizeMode(ViewportPixelSizeMode mode);
+
   Future<void> maximizeWindow();
 
   Future<void> restoreWindow();
@@ -55,6 +57,12 @@ class DefaultUiAutomationRuntime implements UiAutomationRuntime {
   @override
   Future<void> setDecodeMode(DecodeMode mode) async {
     AppConfig.instance.decodeMode = mode;
+    await AppConfig.instance.save();
+  }
+
+  @override
+  Future<void> setViewportPixelSizeMode(ViewportPixelSizeMode mode) async {
+    AppConfig.instance.viewportPixelSizeMode = mode;
     await AppConfig.instance.save();
   }
 

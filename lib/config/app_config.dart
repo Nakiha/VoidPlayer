@@ -140,6 +140,7 @@ class AppConfig {
   static const _customAccentColorKey = 'customAccentColor';
   static const _seekAfterJumpBehaviorKey = 'seekAfterJumpBehavior';
   static const _decodeModeKey = 'decodeMode';
+  static const _viewportPixelSizeModeKey = 'viewportPixelSizeMode';
   static const _defaultAnalysisCacheMaxBytes = 1024 * 1024 * 1024;
 
   /// Maximum analysis cache size in bytes. A value of 0 means unlimited.
@@ -200,5 +201,14 @@ class AppConfig {
 
   set decodeMode(DecodeMode value) {
     section(_preferencesKey)[_decodeModeKey] = value.storageValue;
+  }
+
+  ViewportPixelSizeMode get viewportPixelSizeMode {
+    final value = section(_preferencesKey)[_viewportPixelSizeModeKey];
+    return ViewportPixelSizeMode.fromStorage(value is String ? value : '');
+  }
+
+  set viewportPixelSizeMode(ViewportPixelSizeMode value) {
+    section(_preferencesKey)[_viewportPixelSizeModeKey] = value.storageValue;
   }
 }

@@ -78,6 +78,8 @@ class MainWindowScaffold extends StatelessWidget {
           SettingsOverlaySlot(
             visible: overlays.settingsVisible,
             onClose: overlayActions.onCloseSettings,
+            onViewportPixelSizeModeChanged:
+                overlayActions.onViewportPixelSizeModeChanged,
           ),
           const AppFeedbackHost(),
         ],

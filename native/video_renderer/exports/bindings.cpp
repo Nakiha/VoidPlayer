@@ -33,6 +33,8 @@ PYBIND11_MODULE(video_renderer_native, m) {
             "Split divider position (0.0-1.0)")
         .def_readwrite("zoom_ratio", &vr::LayoutState::zoom_ratio,
             "Zoom ratio (1.0=fit, >1.0=zoom in)")
+        .def_readwrite("pixel_size_mode", &vr::LayoutState::pixel_size_mode,
+            "Pixel size mode: 0=UNIFORM_VIDEO_PIXELS, 1=FILL_VIEW")
         // view_offset: expose as Python list [x, y]
         .def_property("view_offset",
             [](vr::LayoutState& s) -> std::vector<float> {

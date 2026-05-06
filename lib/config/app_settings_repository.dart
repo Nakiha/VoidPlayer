@@ -25,6 +25,9 @@ abstract class AppSettingsRepository {
   DecodeMode get decodeMode;
   set decodeMode(DecodeMode value);
 
+  ViewportPixelSizeMode get viewportPixelSizeMode;
+  set viewportPixelSizeMode(ViewportPixelSizeMode value);
+
   Future<void> save();
 }
 
@@ -88,6 +91,15 @@ class AppConfigSettingsRepository implements AppSettingsRepository {
   @override
   set decodeMode(DecodeMode value) {
     config.decodeMode = value;
+  }
+
+  @override
+  ViewportPixelSizeMode get viewportPixelSizeMode =>
+      config.viewportPixelSizeMode;
+
+  @override
+  set viewportPixelSizeMode(ViewportPixelSizeMode value) {
+    config.viewportPixelSizeMode = value;
   }
 
   @override

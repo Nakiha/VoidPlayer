@@ -87,12 +87,15 @@ NAKI_VR_FFI_EXPORT void naki_vr_player_set_track_offset(naki_vr_player_t player,
 
 #define NAKI_VR_LAYOUT_SIDE_BY_SIDE 0
 #define NAKI_VR_LAYOUT_SPLIT_SCREEN 1
+#define NAKI_VR_PIXEL_SIZE_UNIFORM_VIDEO_PIXELS 0
+#define NAKI_VR_PIXEL_SIZE_FILL_VIEW 1
 
 typedef struct naki_vr_player_layout_state_t {
     int mode;                     /* 0=SIDE_BY_SIDE, 1=SPLIT_SCREEN */
     float split_pos;              /* Split divider position (0.0-1.0) */
     float zoom_ratio;             /* 1.0=fit, >1.0=zoom in */
     float view_offset[2];         /* Pan offset [x, y] in pixel coordinates */
+    int pixel_size_mode;          /* 0=uniform video pixels, 1=fit each view slot */
     int order[4];                 /* Track display order mapping */
 } naki_vr_player_layout_state_t;
 

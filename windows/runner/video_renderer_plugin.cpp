@@ -767,6 +767,16 @@ void VideoRendererPlugin::HandleMethodCall(
             }
             ls.view_offset[1] = static_cast<float>(double_arg);
         }
+        it = args->find(flutter::EncodableValue("pixelSizeMode"));
+        if (it != args->end() && !read_int_arg(it->second, ls.pixel_size_mode)) {
+            result->Error("BAD_ARGS", "pixelSizeMode must be an integer");
+            return;
+        }
+        if (ls.pixel_size_mode != vr::PIXEL_SIZE_UNIFORM_VIDEO_PIXELS &&
+            ls.pixel_size_mode != vr::PIXEL_SIZE_FILL_VIEW) {
+            result->Error("BAD_ARGS", "Invalid pixel size mode");
+            return;
+        }
         it = args->find(flutter::EncodableValue("order"));
         if (it != args->end()) {
             if (!std::holds_alternative<flutter::EncodableList>(it->second)) {
@@ -842,6 +852,7 @@ void VideoRendererPlugin::HandleMethodCall(
             map[flutter::EncodableValue("zoomRatio")] = flutter::EncodableValue(static_cast<double>(ls.zoom_ratio));
             map[flutter::EncodableValue("viewOffsetX")] = flutter::EncodableValue(static_cast<double>(ls.view_offset[0]));
             map[flutter::EncodableValue("viewOffsetY")] = flutter::EncodableValue(static_cast<double>(ls.view_offset[1]));
+            map[flutter::EncodableValue("pixelSizeMode")] = flutter::EncodableValue(ls.pixel_size_mode);
             flutter::EncodableList order_list;
             for (int i = 0; i < 4; ++i) order_list.push_back(flutter::EncodableValue(ls.order[i]));
             map[flutter::EncodableValue("order")] = flutter::EncodableValue(order_list);

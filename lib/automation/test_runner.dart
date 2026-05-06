@@ -134,6 +134,18 @@ class TestRunner {
         );
         await runtime.setDecodeMode(mode);
 
+      case ScriptSetViewportPixelSizeMode(:final mode):
+        log.info(
+          'TestRunner ${instr.time}: SET_VIEWPORT_PIXEL_SIZE_MODE ${mode.storageValue}',
+        );
+        await runtime.setViewportPixelSizeMode(mode);
+        if (controller.hasPlayer) {
+          final layout = await controller.getLayout();
+          await controller.applyLayout(
+            layout.copyWith(pixelSizeMode: mode.layoutValue),
+          );
+        }
+
       case ScriptQuit(:final exitCode):
         log.info('TestRunner ${instr.time}: QUIT $exitCode');
         await automation.closeAllAnalysisWindows();

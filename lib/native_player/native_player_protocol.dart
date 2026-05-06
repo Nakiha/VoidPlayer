@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../preferences/playback_preferences.dart';
+
 class NativePlayerChannel {
   static const name = 'video_renderer';
 }
@@ -50,6 +52,7 @@ class NativePlayerKeys {
   static const zoomRatio = 'zoomRatio';
   static const viewOffsetX = 'viewOffsetX';
   static const viewOffsetY = 'viewOffsetY';
+  static const pixelSizeMode = 'pixelSizeMode';
   static const order = 'order';
   static const ptsUs = 'ptsUs';
   static const speed = 'speed';
@@ -85,6 +88,11 @@ class NativePlayerPayloads {
 class LayoutMode {
   static const int sideBySide = 0;
   static const int splitScreen = 1;
+}
+
+class LayoutPixelSizeMode {
+  static const int uniformVideoPixels = 0;
+  static const int fillView = 1;
 }
 
 /// Track metadata returned from native layer.
@@ -186,6 +194,7 @@ class LayoutState {
   final double zoomRatio;
   final double viewOffsetX;
   final double viewOffsetY;
+  final int pixelSizeMode;
   final List<int> order;
 
   const LayoutState({
@@ -194,8 +203,14 @@ class LayoutState {
     this.zoomRatio = 1.0,
     this.viewOffsetX = 0.0,
     this.viewOffsetY = 0.0,
+    this.pixelSizeMode = LayoutPixelSizeMode.uniformVideoPixels,
     this.order = const [0, 1, 2, 3],
   });
+
+  factory LayoutState.fromPlaybackPreferences(
+    PlaybackPreferences preferences,
+  ) =>
+      LayoutState(pixelSizeMode: preferences.viewportPixelSizeMode.layoutValue);
 
   Map<String, dynamic> toMap() => {
     NativePlayerKeys.mode: mode,
@@ -203,6 +218,7 @@ class LayoutState {
     NativePlayerKeys.zoomRatio: zoomRatio,
     NativePlayerKeys.viewOffsetX: viewOffsetX,
     NativePlayerKeys.viewOffsetY: viewOffsetY,
+    NativePlayerKeys.pixelSizeMode: pixelSizeMode,
     NativePlayerKeys.order: order,
   };
 
@@ -213,6 +229,9 @@ class LayoutState {
     zoomRatio: (map[NativePlayerKeys.zoomRatio] as num?)?.toDouble() ?? 1.0,
     viewOffsetX: (map[NativePlayerKeys.viewOffsetX] as num?)?.toDouble() ?? 0.0,
     viewOffsetY: (map[NativePlayerKeys.viewOffsetY] as num?)?.toDouble() ?? 0.0,
+    pixelSizeMode:
+        (map[NativePlayerKeys.pixelSizeMode] as num?)?.toInt() ??
+        LayoutPixelSizeMode.uniformVideoPixels,
     order:
         (map[NativePlayerKeys.order] as List<dynamic>?)
             ?.map((e) => (e as num).toInt())
@@ -226,6 +245,7 @@ class LayoutState {
     double? zoomRatio,
     double? viewOffsetX,
     double? viewOffsetY,
+    int? pixelSizeMode,
     List<int>? order,
   }) => LayoutState(
     mode: mode ?? this.mode,
@@ -233,6 +253,7 @@ class LayoutState {
     zoomRatio: zoomRatio ?? this.zoomRatio,
     viewOffsetX: viewOffsetX ?? this.viewOffsetX,
     viewOffsetY: viewOffsetY ?? this.viewOffsetY,
+    pixelSizeMode: pixelSizeMode ?? this.pixelSizeMode,
     order: order ?? this.order,
   );
 
@@ -244,6 +265,7 @@ class LayoutState {
         zoomRatio == other.zoomRatio &&
         viewOffsetX == other.viewOffsetX &&
         viewOffsetY == other.viewOffsetY &&
+        pixelSizeMode == other.pixelSizeMode &&
         listEquals(order, other.order);
   }
 
@@ -254,6 +276,7 @@ class LayoutState {
     zoomRatio,
     viewOffsetX,
     viewOffsetY,
+    pixelSizeMode,
     Object.hashAll(order),
   );
 }

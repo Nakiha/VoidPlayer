@@ -8,7 +8,12 @@ import '../../theme/app_appearance.dart';
 import 'settings_page_style.dart';
 
 class PreferencesSettingsPage extends StatefulWidget {
-  const PreferencesSettingsPage({super.key});
+  final ValueChanged<ViewportPixelSizeMode>? onViewportPixelSizeModeChanged;
+
+  const PreferencesSettingsPage({
+    super.key,
+    this.onViewportPixelSizeModeChanged,
+  });
 
   @override
   State<PreferencesSettingsPage> createState() =>
@@ -18,6 +23,7 @@ class PreferencesSettingsPage extends StatefulWidget {
 class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
   late SeekAfterJumpBehavior _seekBehavior;
   late DecodeMode _decodeMode;
+  late ViewportPixelSizeMode _pixelSizeMode;
 
   @override
   void initState() {
@@ -25,6 +31,7 @@ class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
     final settings = AppSettingsScope.read(context);
     _seekBehavior = settings.seekAfterJumpBehavior;
     _decodeMode = settings.decodeMode;
+    _pixelSizeMode = settings.viewportPixelSizeMode;
   }
 
   Future<void> _setSeekBehavior(SeekAfterJumpBehavior behavior) async {
@@ -40,6 +47,15 @@ class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
     setState(() => _decodeMode = mode);
     final settings = AppSettingsScope.of(context);
     settings.decodeMode = mode;
+    await settings.save();
+  }
+
+  Future<void> _setPixelSizeMode(ViewportPixelSizeMode mode) async {
+    if (_pixelSizeMode == mode) return;
+    setState(() => _pixelSizeMode = mode);
+    widget.onViewportPixelSizeModeChanged?.call(mode);
+    final settings = AppSettingsScope.of(context);
+    settings.viewportPixelSizeMode = mode;
     await settings.save();
   }
 
@@ -65,6 +81,21 @@ class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
             },
             onChanged: (value) {
               unawaited(_setSeekBehavior(value));
+            },
+          ),
+          SettingsPageStyle.contentGap,
+          SettingsComboRow<ViewportPixelSizeMode>(
+            label: l.viewportPixelSize,
+            icon: Icons.aspect_ratio,
+            value: _pixelSizeMode,
+            items: ViewportPixelSizeMode.values,
+            labelFor: (value) => switch (value) {
+              ViewportPixelSizeMode.uniformVideoPixels =>
+                l.viewportPixelSizeUniformVideoPixels,
+              ViewportPixelSizeMode.fillView => l.viewportPixelSizeFillView,
+            },
+            onChanged: (value) {
+              unawaited(_setPixelSizeMode(value));
             },
           ),
           SettingsPageStyle.contentGap,

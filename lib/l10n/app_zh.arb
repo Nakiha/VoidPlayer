@@ -6,6 +6,7 @@
   "addMedia": "添加媒体",
   "settings": "设置",
   "performanceMonitor": "性能监视器",
+  "mediaInfo": "媒体信息",
 
   "previousFrame": "上一帧",
   "pause": "暂停",
@@ -31,6 +32,9 @@
   "trackStatistics": "轨道统计",
   "waitingDiagnostics": "等待诊断数据...",
   "track": "轨道",
+  "duration": "时长",
+  "open": "打开",
+  "notAvailable": "不可用",
   "fps": "帧率",
   "target": "目标",
   "bufferQueue": "缓冲队列",
@@ -151,6 +155,16 @@
   "analysisCacheStatusGenerating": "生成中 {progress}% - {size}",
   "analysisCacheStatusLoading": "正在加载缓存",
   "analysisCacheStatusFailed": "分析缓存失败",
+
+  "mediaInfoNoTracks": "当前没有打开的轨道",
+  "mediaInfoStartTime": "起始时间",
+  "mediaInfoResolution": "分辨率",
+  "mediaInfoCodec": "编码器",
+  "mediaInfoFormat": "格式",
+  "mediaInfoBitrate": "比特率",
+  "mediaInfoDecoder": "实际解码器",
+  "mediaInfoLocateFile": "在资源管理器中定位",
+  "mediaInfoLocateFailed": "无法定位媒体文件。",
 
   "analysisFilterHint": "按类型、名称或 #序号筛选",
   "analysisIpcDisconnected": "IPC 已断开，轨道快照可能已过期"

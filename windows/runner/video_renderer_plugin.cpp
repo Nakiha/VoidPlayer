@@ -141,6 +141,12 @@ flutter::EncodableMap make_track_map(const vr::TrackInfo& info) {
     map[flutter::EncodableValue("width")] = flutter::EncodableValue(info.width);
     map[flutter::EncodableValue("height")] = flutter::EncodableValue(info.height);
     map[flutter::EncodableValue("durationUs")] = flutter::EncodableValue(static_cast<int64_t>(info.duration_us));
+    map[flutter::EncodableValue("startTimeUs")] = flutter::EncodableValue(static_cast<int64_t>(info.start_time_us));
+    map[flutter::EncodableValue("bitRate")] = flutter::EncodableValue(static_cast<int64_t>(info.bit_rate));
+    map[flutter::EncodableValue("formatName")] = flutter::EncodableValue(info.format_name);
+    map[flutter::EncodableValue("codecName")] = flutter::EncodableValue(info.codec_name);
+    map[flutter::EncodableValue("codecLongName")] = flutter::EncodableValue(info.codec_long_name);
+    map[flutter::EncodableValue("decoderName")] = flutter::EncodableValue(info.decoder_name);
     return map;
 }
 

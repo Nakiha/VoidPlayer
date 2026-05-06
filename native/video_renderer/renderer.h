@@ -42,6 +42,12 @@ struct TrackInfo {
     int width;
     int height;
     int64_t duration_us = 0;  ///< Track duration in microseconds
+    int64_t start_time_us = 0;
+    int64_t bit_rate = 0;
+    std::string format_name;
+    std::string codec_name;
+    std::string codec_long_name;
+    std::string decoder_name;
 };
 
 /// Per-track performance stats snapshot.

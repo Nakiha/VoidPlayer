@@ -127,77 +127,68 @@ class _StatsPageState extends State<StatsPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l = AppLocalizations.of(context)!;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_tracks.isEmpty)
-            Container(
-              width: double.infinity,
-              constraints: const BoxConstraints(minHeight: 72),
-              alignment: Alignment.center,
-              child: Text(
-                l.waitingDiagnostics,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            )
-          else
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                horizontalMargin: 12,
-                columnSpacing: 30,
-                headingRowHeight: 34,
-                dataRowMinHeight: 38,
-                dataRowMaxHeight: 38,
-                headingTextStyle: theme.textTheme.labelSmall,
-                dataTextStyle: theme.textTheme.bodySmall,
-                columns: [
-                  DataColumn(label: Text(l.track)),
-                  DataColumn(label: Text(l.fps)),
-                  DataColumn(label: Text(l.bufferQueue)),
-                  DataColumn(label: Text(l.decodeAvg)),
-                  DataColumn(label: Text(l.decodeMax)),
-                  DataColumn(label: Text(l.status)),
-                ],
-                rows: _tracks
-                    .map(
-                      (t) => DataRow(
-                        cells: [
-                          DataCell(Text('${t.fileId}')),
-                          DataCell(Text(t.fps.toStringAsFixed(1))),
-                          DataCell(
-                            Text('${t.bufferCount}/${t.bufferCapacity}'),
-                          ),
-                          DataCell(
-                            Text('${t.avgDecodeMs.toStringAsFixed(1)}ms'),
-                          ),
-                          DataCell(
-                            Text('${t.maxDecodeMs.toStringAsFixed(1)}ms'),
-                          ),
-                          DataCell(
-                            Text(
-                              t.bufferState == 1 ? l.bottleneck : l.ok,
-                              style: TextStyle(
-                                color: t.bufferState == 1
-                                    ? Colors.orange
-                                    : Colors.green,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                    .toList(),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_tracks.isEmpty)
+          Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(minHeight: 72),
+            alignment: Alignment.center,
+            child: Text(
+              l.waitingDiagnostics,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-        ],
-      ),
+          )
+        else
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              horizontalMargin: 12,
+              columnSpacing: 30,
+              headingRowHeight: 34,
+              dataRowMinHeight: 38,
+              dataRowMaxHeight: 38,
+              headingTextStyle: theme.textTheme.labelSmall,
+              dataTextStyle: theme.textTheme.bodySmall,
+              columns: [
+                DataColumn(label: Text(l.track)),
+                DataColumn(label: Text(l.fps)),
+                DataColumn(label: Text(l.bufferQueue)),
+                DataColumn(label: Text(l.decodeAvg)),
+                DataColumn(label: Text(l.decodeMax)),
+                DataColumn(label: Text(l.status)),
+              ],
+              rows: _tracks
+                  .map(
+                    (t) => DataRow(
+                      cells: [
+                        DataCell(Text('${t.fileId}')),
+                        DataCell(Text(t.fps.toStringAsFixed(1))),
+                        DataCell(Text('${t.bufferCount}/${t.bufferCapacity}')),
+                        DataCell(Text('${t.avgDecodeMs.toStringAsFixed(1)}ms')),
+                        DataCell(Text('${t.maxDecodeMs.toStringAsFixed(1)}ms')),
+                        DataCell(
+                          Text(
+                            t.bufferState == 1 ? l.bottleneck : l.ok,
+                            style: TextStyle(
+                              color: t.bufferState == 1
+                                  ? Colors.orange
+                                  : Colors.green,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+      ],
     );
   }
 }

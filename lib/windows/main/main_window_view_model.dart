@@ -93,6 +93,7 @@ class MainWindowPlaybackVm {
 
 class MainWindowOverlayVm {
   final bool dragging;
+  final bool mediaInfoVisible;
   final bool profilerVisible;
   final bool settingsVisible;
   final bool fullScreen;
@@ -100,6 +101,7 @@ class MainWindowOverlayVm {
 
   const MainWindowOverlayVm({
     required this.dragging,
+    required this.mediaInfoVisible,
     required this.profilerVisible,
     required this.settingsVisible,
     required this.fullScreen,
@@ -138,6 +140,7 @@ class MainWindowDropActions {
 class MainWindowToolbarActions {
   final ValueChanged<int> onViewModeChanged;
   final VoidCallback onAddMedia;
+  final VoidCallback onMediaInfo;
   final Future<void> Function() onAnalysis;
   final VoidCallback onProfiler;
   final VoidCallback onSettings;
@@ -145,6 +148,7 @@ class MainWindowToolbarActions {
   const MainWindowToolbarActions({
     required this.onViewModeChanged,
     required this.onAddMedia,
+    required this.onMediaInfo,
     required this.onAnalysis,
     required this.onProfiler,
     required this.onSettings,
@@ -206,6 +210,7 @@ class MainWindowMediaTimelineActions {
 }
 
 class MainWindowOverlayActions {
+  final VoidCallback onCloseMediaInfo;
   final VoidCallback onCloseProfiler;
   final VoidCallback onCloseSettings;
   final ValueChanged<ViewportPixelSizeMode> onViewportPixelSizeModeChanged;
@@ -213,6 +218,7 @@ class MainWindowOverlayActions {
   final void Function(bool hovering) onFullScreenControlsHoverChanged;
 
   const MainWindowOverlayActions({
+    required this.onCloseMediaInfo,
     required this.onCloseProfiler,
     required this.onCloseSettings,
     required this.onViewportPixelSizeModeChanged,

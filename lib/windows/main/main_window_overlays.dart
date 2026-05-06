@@ -1,11 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../feedback/app_feedback.dart';
 import '../../l10n/app_localizations.dart';
 import '../../preferences/playback_preferences.dart';
+import '../../track_manager.dart';
 import '../settings_window.dart';
 import '../stats_window.dart';
+import '../windows_path_launcher.dart';
 import 'main_window_media_sections.dart';
 import 'main_window_view_model.dart';
+
+const _sidePanelGap = 10.0;
+const _mediaInfoPanelMaxHeight = 380.0;
+const _mediaInfoTableBottomScrollbarPadding = 6.0;
 
 class FullScreenPointerCapture extends StatelessWidget {
   final VoidCallback onActivity;
@@ -82,40 +91,43 @@ class DragDropLayer extends StatelessWidget {
   }
 }
 
-class ProfilerOverlaySlot extends StatelessWidget {
-  final bool visible;
-  final VoidCallback onClose;
+class FloatingSidePanelsSlot extends StatelessWidget {
+  final bool mediaInfoVisible;
+  final bool profilerVisible;
+  final List<TrackEntry> tracks;
+  final VoidCallback onCloseMediaInfo;
+  final VoidCallback onCloseProfiler;
 
-  const ProfilerOverlaySlot({
+  const FloatingSidePanelsSlot({
     super.key,
-    required this.visible,
-    required this.onClose,
+    required this.mediaInfoVisible,
+    required this.profilerVisible,
+    required this.tracks,
+    required this.onCloseMediaInfo,
+    required this.onCloseProfiler,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      key: const ValueKey('profilerOverlay'),
+    final visible = mediaInfoVisible || profilerVisible;
+    return Positioned.fill(
+      key: const ValueKey('floatingSidePanels'),
       top: 48,
-      right: 12,
       left: 12,
+      right: 12,
+      bottom: 12,
       child: AnimatedOverlaySlot(
         visible: visible,
-        builder: (context) => Align(
-          alignment: Alignment.topRight,
-          heightFactor: 1,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              minWidth: 360,
-              maxWidth: 560,
-              maxHeight: 320,
-            ),
-            child: _ProfilerOverlay(onClose: onClose),
-          ),
+        builder: (context) => _FloatingSidePanelStack(
+          mediaInfoVisible: mediaInfoVisible,
+          profilerVisible: profilerVisible,
+          tracks: tracks,
+          onCloseMediaInfo: onCloseMediaInfo,
+          onCloseProfiler: onCloseProfiler,
         ),
         transitionBuilder: (context, animation, child) {
           final offset = Tween<Offset>(
-            begin: const Offset(0.04, 0),
+            begin: const Offset(-0.04, 0),
             end: Offset.zero,
           ).animate(animation);
           return FadeTransition(
@@ -124,6 +136,74 @@ class ProfilerOverlaySlot extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+class _FloatingSidePanelStack extends StatelessWidget {
+  final bool mediaInfoVisible;
+  final bool profilerVisible;
+  final List<TrackEntry> tracks;
+  final VoidCallback onCloseMediaInfo;
+  final VoidCallback onCloseProfiler;
+
+  const _FloatingSidePanelStack({
+    required this.mediaInfoVisible,
+    required this.profilerVisible,
+    required this.tracks,
+    required this.onCloseMediaInfo,
+    required this.onCloseProfiler,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: constraints.maxWidth,
+              maxHeight: constraints.maxHeight,
+            ),
+            child: Scrollbar(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (mediaInfoVisible)
+                      _FloatingPanelFrame(
+                        icon: Icons.info_outline,
+                        title: AppLocalizations.of(context)!.mediaInfo,
+                        onClose: onCloseMediaInfo,
+                        child: MediaInfoPage(tracks: tracks),
+                      ),
+                    if (mediaInfoVisible && profilerVisible)
+                      const SizedBox(height: _sidePanelGap),
+                    if (profilerVisible)
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minWidth: 360,
+                          maxWidth: 560,
+                          maxHeight: 320,
+                        ),
+                        child: _FloatingPanelFrame(
+                          icon: Icons.speed,
+                          title: AppLocalizations.of(
+                            context,
+                          )!.performanceMonitor,
+                          onClose: onCloseProfiler,
+                          child: const Flexible(child: StatsPage()),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -278,10 +358,18 @@ class _ModalScrim extends StatelessWidget {
   }
 }
 
-class _ProfilerOverlay extends StatelessWidget {
+class _FloatingPanelFrame extends StatelessWidget {
+  final IconData icon;
+  final String title;
   final VoidCallback onClose;
+  final Widget child;
 
-  const _ProfilerOverlay({required this.onClose});
+  const _FloatingPanelFrame({
+    required this.icon,
+    required this.title,
+    required this.onClose,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -301,13 +389,10 @@ class _ProfilerOverlay extends StatelessWidget {
               child: Row(
                 children: [
                   const SizedBox(width: 12),
-                  Icon(Icons.speed, size: 18, color: theme.colorScheme.primary),
+                  Icon(icon, size: 18, color: theme.colorScheme.primary),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      AppLocalizations.of(context)!.performanceMonitor,
-                      style: theme.textTheme.titleSmall,
-                    ),
+                    child: Text(title, style: theme.textTheme.titleSmall),
                   ),
                   IconButton(
                     onPressed: onClose,
@@ -320,10 +405,213 @@ class _ProfilerOverlay extends StatelessWidget {
               ),
             ),
             const Divider(height: 1),
-            const Flexible(child: StatsPage()),
+            child,
           ],
         ),
       ),
+    );
+  }
+}
+
+class MediaInfoPage extends StatefulWidget {
+  final List<TrackEntry> tracks;
+  final WindowsPathLauncher pathLauncher;
+
+  const MediaInfoPage({
+    super.key,
+    required this.tracks,
+    this.pathLauncher = const WindowsPathLauncher(),
+  });
+
+  @override
+  State<MediaInfoPage> createState() => _MediaInfoPageState();
+}
+
+class _MediaInfoPageState extends State<MediaInfoPage> {
+  final ScrollController _verticalController = ScrollController();
+  final ScrollController _horizontalController = ScrollController();
+
+  @override
+  void dispose() {
+    _verticalController.dispose();
+    _horizontalController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l = AppLocalizations.of(context)!;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: _mediaInfoPanelMaxHeight),
+      child: widget.tracks.isEmpty
+          ? Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(minHeight: 72),
+              alignment: Alignment.center,
+              child: Text(
+                l.mediaInfoNoTracks,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            )
+          : Scrollbar(
+              controller: _verticalController,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _verticalController,
+                child: Scrollbar(
+                  controller: _horizontalController,
+                  thumbVisibility: true,
+                  thickness: 6,
+                  scrollbarOrientation: ScrollbarOrientation.bottom,
+                  child: SingleChildScrollView(
+                    controller: _horizontalController,
+                    scrollDirection: Axis.horizontal,
+                    child: Padding(
+                      padding: const EdgeInsets.only(
+                        bottom: _mediaInfoTableBottomScrollbarPadding,
+                      ),
+                      child: DataTable(
+                        horizontalMargin: 12,
+                        columnSpacing: 22,
+                        headingRowHeight: 34,
+                        dataRowMinHeight: 42,
+                        dataRowMaxHeight: 42,
+                        headingTextStyle: theme.textTheme.labelSmall,
+                        dataTextStyle: theme.textTheme.bodySmall,
+                        columns: [
+                          DataColumn(label: Text(l.track)),
+                          DataColumn(label: Text(l.duration)),
+                          DataColumn(label: Text(l.mediaInfoStartTime)),
+                          DataColumn(label: Text(l.mediaInfoResolution)),
+                          DataColumn(label: Text(l.mediaInfoCodec)),
+                          DataColumn(label: Text(l.mediaInfoFormat)),
+                          DataColumn(label: Text(l.mediaInfoBitrate)),
+                          DataColumn(label: Text(l.mediaInfoDecoder)),
+                          DataColumn(label: Text(l.open)),
+                        ],
+                        rows: widget.tracks.map((track) {
+                          final info = track.info;
+                          return DataRow(
+                            cells: [
+                              DataCell(
+                                _TableText(track.fileName, maxWidth: 180),
+                              ),
+                              DataCell(Text(_formatTimeUs(info.durationUs, l))),
+                              DataCell(
+                                Text(
+                                  _formatTimeUs(
+                                    info.startTimeUs,
+                                    l,
+                                    zeroOk: true,
+                                  ),
+                                ),
+                              ),
+                              DataCell(Text('${info.width}x${info.height}')),
+                              DataCell(
+                                _TableText(
+                                  _nonEmpty(
+                                    info.codecLongName,
+                                    info.codecName,
+                                    l,
+                                  ),
+                                  maxWidth: 260,
+                                ),
+                              ),
+                              DataCell(
+                                _TableText(
+                                  _nonEmpty(info.formatName, '', l),
+                                  maxWidth: 180,
+                                ),
+                              ),
+                              DataCell(Text(_formatBitrate(info.bitRate, l))),
+                              DataCell(
+                                _TableText(
+                                  _nonEmpty(info.decoderName, '', l),
+                                  maxWidth: 180,
+                                ),
+                              ),
+                              DataCell(
+                                IconButton(
+                                  onPressed: () => unawaited(
+                                    _locateFile(context, track.path),
+                                  ),
+                                  icon: const Icon(Icons.folder_open, size: 18),
+                                  tooltip: l.mediaInfoLocateFile,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints.tightFor(
+                                    width: 32,
+                                    height: 32,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+
+  Future<void> _locateFile(BuildContext context, String path) async {
+    try {
+      await widget.pathLauncher.locateFile(path);
+    } catch (error) {
+      if (!context.mounted) return;
+      AppFeedbackScope.read(
+        context,
+      ).showError(AppLocalizations.of(context)!.mediaInfoLocateFailed);
+    }
+  }
+
+  String _formatTimeUs(int value, AppLocalizations l, {bool zeroOk = false}) {
+    if (value < 0 || (value == 0 && !zeroOk)) return l.notAvailable;
+    final totalMs = value ~/ 1000;
+    final hours = totalMs ~/ 3600000;
+    final minutes = (totalMs ~/ 60000) % 60;
+    final seconds = (totalMs ~/ 1000) % 60;
+    final millis = totalMs % 1000;
+    if (hours > 0) {
+      return '$hours:${minutes.toString().padLeft(2, '0')}:'
+          '${seconds.toString().padLeft(2, '0')}.${millis.toString().padLeft(3, '0')}';
+    }
+    return '$minutes:${seconds.toString().padLeft(2, '0')}.'
+        '${millis.toString().padLeft(3, '0')}';
+  }
+
+  String _formatBitrate(int value, AppLocalizations l) {
+    if (value <= 0) return l.notAvailable;
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(2)} Mbps';
+    }
+    return '${(value / 1000).toStringAsFixed(0)} kbps';
+  }
+
+  String _nonEmpty(String primary, String fallback, AppLocalizations l) {
+    if (primary.trim().isNotEmpty) return primary;
+    if (fallback.trim().isNotEmpty) return fallback;
+    return l.notAvailable;
+  }
+}
+
+class _TableText extends StatelessWidget {
+  final String text;
+  final double maxWidth;
+
+  const _TableText(this.text, {required this.maxWidth});
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
     );
   }
 }

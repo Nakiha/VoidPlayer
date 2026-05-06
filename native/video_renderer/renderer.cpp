@@ -2482,13 +2482,21 @@ std::vector<TrackInfo> Renderer::track_infos() const {
     std::vector<TrackInfo> infos;
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (tracks_[i]) {
+            const auto* demux = tracks_[i]->demux_thread.get();
+            const auto* decode = tracks_[i]->decode_thread.get();
             infos.push_back({
                 tracks_[i]->file_id,
                 static_cast<int>(i),
                 tracks_[i]->file_path,
                 tracks_[i]->video_width,
                 tracks_[i]->video_height,
-                tracks_[i]->demux_thread ? tracks_[i]->demux_thread->stats().duration_us : 0
+                demux ? demux->stats().duration_us : 0,
+                demux ? demux->stats().start_time_us : 0,
+                demux ? demux->stats().bit_rate : 0,
+                demux ? demux->stats().format_name : std::string{},
+                demux ? demux->stats().codec_name : std::string{},
+                demux ? demux->stats().codec_long_name : std::string{},
+                decode ? decode->decoder_name() : std::string{}
             });
         }
     }

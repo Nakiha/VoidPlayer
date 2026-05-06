@@ -30,8 +30,13 @@ struct DemuxStats {
     int video_stream_index = -1;
     int audio_stream_index = -1;
     int64_t duration_us = 0;
+    int64_t start_time_us = 0;
+    int64_t bit_rate = 0;
     int width = 0;
     int height = 0;
+    std::string format_name;
+    std::string codec_name;
+    std::string codec_long_name;
     AVRational time_base = {0, 1};
     AVRational audio_time_base = {0, 1};
     int sar_num = 1;

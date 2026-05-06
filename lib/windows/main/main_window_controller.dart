@@ -172,6 +172,7 @@ class MainWindowController {
       ),
       overlays: MainWindowOverlayVm(
         dragging: _dragging,
+        mediaInfoVisible: _mediaInfoVisible,
         profilerVisible: _profilerVisible,
         settingsVisible: _settingsVisible,
         fullScreen: _fullScreen,
@@ -204,6 +205,10 @@ class MainWindowController {
           layoutCoordinator.setLayoutMode(mode);
         },
         onAddMedia: mediaCoordinator.openFile,
+        onMediaInfo: () {
+          if (trackManager.isEmpty) return;
+          stateStore.setMediaInfoVisible(!_mediaInfoVisible);
+        },
         onAnalysis: analysisCoordinator.triggerAnalysis,
         onProfiler: () => stateStore.setProfilerVisible(!_profilerVisible),
         onSettings: () => stateStore.setSettingsVisible(!_settingsVisible),
@@ -251,6 +256,7 @@ class MainWindowController {
         onControlsWidthChanged: stateStore.setTimelineControlsWidth,
       ),
       overlays: MainWindowOverlayActions(
+        onCloseMediaInfo: () => stateStore.setMediaInfoVisible(false),
         onCloseProfiler: () => stateStore.setProfilerVisible(false),
         onCloseSettings: () => stateStore.setSettingsVisible(false),
         onViewportPixelSizeModeChanged: _setViewportPixelSizeMode,
@@ -444,6 +450,9 @@ class MainWindowController {
       analysisCoordinator: analysisCoordinator,
       testHarness: testHarness,
       isLoopRangeEnabled: () => _loopRangeEnabled,
+      showMediaInfoOverlay: () {
+        if (!trackManager.isEmpty) stateStore.setMediaInfoVisible(true);
+      },
       showProfilerOverlay: () => stateStore.setProfilerVisible(true),
       showSettingsDialog: () => stateStore.setSettingsVisible(true),
       toggleFullScreen: _toggleFullScreen,
@@ -489,6 +498,7 @@ class MainWindowController {
   double get _timelineControlsWidth => _state.timelineControlsWidth;
   bool get _loopRangeEnabled => _state.loopRangeEnabled;
   bool get _dragging => _state.dragging;
+  bool get _mediaInfoVisible => _state.mediaInfoVisible;
   bool get _profilerVisible => _state.profilerVisible;
   bool get _settingsVisible => _state.settingsVisible;
   bool get _fullScreen => _state.fullScreen;

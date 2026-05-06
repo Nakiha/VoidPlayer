@@ -288,6 +288,8 @@ ScriptInstruction? _parseInstruction(
       return ScriptAction(time, const OpenSettings());
     case 'OPEN_STATS':
       return ScriptAction(time, const OpenStats());
+    case 'OPEN_MEDIA_INFO':
+      return ScriptAction(time, const OpenMediaInfo());
     case 'OPEN_MEMORY':
       return ScriptAction(time, const OpenMemory());
     case 'CAPTURE_VIEWPORT':

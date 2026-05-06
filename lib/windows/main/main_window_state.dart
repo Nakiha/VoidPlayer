@@ -23,6 +23,7 @@ class MainWindowStateModel {
   final int loopStartUs;
   final int loopEndUs;
   final bool dragging;
+  final bool mediaInfoVisible;
   final bool profilerVisible;
   final bool settingsVisible;
   final bool fullScreen;
@@ -47,6 +48,7 @@ class MainWindowStateModel {
     this.loopStartUs = 0,
     this.loopEndUs = 0,
     this.dragging = false,
+    this.mediaInfoVisible = false,
     this.profilerVisible = false,
     this.settingsVisible = false,
     this.fullScreen = false,
@@ -72,6 +74,7 @@ class MainWindowStateModel {
     int? loopStartUs,
     int? loopEndUs,
     bool? dragging,
+    bool? mediaInfoVisible,
     bool? profilerVisible,
     bool? settingsVisible,
     bool? fullScreen,
@@ -105,6 +108,7 @@ class MainWindowStateModel {
       loopStartUs: loopStartUs ?? this.loopStartUs,
       loopEndUs: loopEndUs ?? this.loopEndUs,
       dragging: dragging ?? this.dragging,
+      mediaInfoVisible: mediaInfoVisible ?? this.mediaInfoVisible,
       profilerVisible: profilerVisible ?? this.profilerVisible,
       settingsVisible: settingsVisible ?? this.settingsVisible,
       fullScreen: fullScreen ?? this.fullScreen,
@@ -173,6 +177,7 @@ class MainWindowStateStore extends ChangeNotifier {
         fullScreen: false,
         fullScreenControlsVisible: false,
         audibleTrackFileId: null,
+        mediaInfoVisible: false,
       ),
     );
   }
@@ -250,6 +255,11 @@ class MainWindowStateStore extends ChangeNotifier {
   void setProfilerVisible(bool visible) {
     if (_value.profilerVisible == visible) return;
     _set(_value.copyWith(profilerVisible: visible));
+  }
+
+  void setMediaInfoVisible(bool visible) {
+    if (_value.mediaInfoVisible == visible) return;
+    _set(_value.copyWith(mediaInfoVisible: visible));
   }
 
   void setSettingsVisible(bool visible) {

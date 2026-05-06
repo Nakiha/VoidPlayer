@@ -1,5 +1,6 @@
 #include "video_renderer/decode/decode_thread.h"
 #include <spdlog/spdlog.h>
+#include <sstream>
 #include <chrono>
 #include <algorithm>
 #include <windows.h>
@@ -360,6 +361,17 @@ bool DecodeThread::start() {
     running_.store(true);
     thread_ = std::thread(&DecodeThread::run, this);
     return true;
+}
+
+std::string DecodeThread::decoder_name() const {
+    const char* codec_name = codec_ && codec_->name ? codec_->name : "";
+    if (!hw_enabled_) {
+        return codec_name;
+    }
+    const char* hw_name = hw_provider_ ? hw_provider_->name() : "hardware";
+    std::ostringstream oss;
+    oss << hw_name << " / " << codec_name;
+    return oss.str();
 }
 
 void DecodeThread::stop() {

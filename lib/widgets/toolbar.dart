@@ -20,6 +20,7 @@ class AppToolBar extends StatelessWidget {
   final int viewMode; // 0=sideBySide, 1=splitScreen
   final ValueChanged<int> onViewModeChanged;
   final VoidCallback onAddMedia;
+  final VoidCallback onMediaInfo;
   final Future<void> Function() onAnalysis;
   final VoidCallback onProfiler;
   final VoidCallback onSettings;
@@ -27,12 +28,15 @@ class AppToolBar extends StatelessWidget {
   final AnalysisToolbarDataSource analysisDataSource;
   final bool viewModeEnabled;
   final bool analysisEnabled;
+  final bool mediaInfoActive;
+  final bool profilerActive;
 
   const AppToolBar({
     super.key,
     required this.viewMode,
     required this.onViewModeChanged,
     required this.onAddMedia,
+    required this.onMediaInfo,
     required this.onAnalysis,
     required this.onProfiler,
     required this.onSettings,
@@ -40,6 +44,8 @@ class AppToolBar extends StatelessWidget {
     required this.analysisDataSource,
     this.viewModeEnabled = false,
     this.analysisEnabled = false,
+    this.mediaInfoActive = false,
+    this.profilerActive = false,
   });
 
   @override
@@ -75,25 +81,28 @@ class AppToolBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
+          _ToolbarToggleButton(
+            active: mediaInfoActive,
+            enabled: tracks.isNotEmpty,
+            onPressed: onMediaInfo,
+            icon: Icons.info_outline,
+            tooltip: AppLocalizations.of(context)!.mediaInfo,
+          ),
+          const SizedBox(width: 4),
+          // Profiler button
+          _ToolbarToggleButton(
+            active: profilerActive,
+            onPressed: onProfiler,
+            icon: Icons.speed,
+            tooltip: AppLocalizations.of(context)!.performanceMonitor,
+          ),
+          const SizedBox(width: 4),
           // Analysis button
           _AnalysisButton(
             enabled: analysisEnabled,
             tracks: tracks,
             dataSource: analysisDataSource,
             onPressed: onAnalysis,
-          ),
-          const SizedBox(width: 4),
-          // Profiler button
-          SizedBox(
-            width: 32,
-            height: 32,
-            child: IconButton(
-              onPressed: onProfiler,
-              icon: const Icon(Icons.speed, size: 18),
-              tooltip: AppLocalizations.of(context)!.performanceMonitor,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-            ),
           ),
           const SizedBox(width: 4),
           // Settings button
@@ -109,6 +118,63 @@ class AppToolBar extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ToolbarToggleButton extends StatelessWidget {
+  final bool active;
+  final bool enabled;
+  final VoidCallback onPressed;
+  final IconData icon;
+  final String tooltip;
+
+  const _ToolbarToggleButton({
+    required this.active,
+    this.enabled = true,
+    required this.onPressed,
+    required this.icon,
+    required this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return IconButton(
+      onPressed: enabled ? onPressed : null,
+      icon: Icon(icon, size: 18),
+      tooltip: tooltip,
+      padding: EdgeInsets.zero,
+      style: ButtonStyle(
+        fixedSize: const WidgetStatePropertyAll(Size.square(32)),
+        minimumSize: const WidgetStatePropertyAll(Size.square(32)),
+        maximumSize: const WidgetStatePropertyAll(Size.square(32)),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: const WidgetStatePropertyAll(CircleBorder()),
+        overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+        backgroundColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return Colors.transparent;
+          }
+          if (states.contains(WidgetState.pressed)) {
+            return colorScheme.primary.withValues(alpha: 0.22);
+          }
+          if (active ||
+              states.contains(WidgetState.hovered) ||
+              states.contains(WidgetState.focused)) {
+            return colorScheme.primary.withValues(alpha: 0.16);
+          }
+          return Colors.transparent;
+        }),
+        foregroundColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return colorScheme.onSurface.withValues(alpha: 0.38);
+          }
+          if (active) return colorScheme.primary;
+          return colorScheme.onSurfaceVariant;
+        }),
       ),
     );
   }

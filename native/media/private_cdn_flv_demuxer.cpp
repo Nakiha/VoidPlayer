@@ -273,8 +273,14 @@ void PrivateCdnFlvDemuxer::ensure_video_params(AVCodecID codec_id) {
         stats_.video_stream_index = kVideoStreamIndex;
         stats_.time_base = AVRational{1, 1000};
         stats_.codec_params = video_params_;
+        stats_.format_name = "Private CDN FLV";
     }
     video_params_->codec_id = codec_id;
+    stats_.codec_name = avcodec_get_name(codec_id);
+    const AVCodecDescriptor* descriptor = avcodec_descriptor_get(codec_id);
+    if (descriptor && descriptor->long_name) {
+        stats_.codec_long_name = descriptor->long_name;
+    }
 }
 
 void PrivateCdnFlvDemuxer::ensure_aac_params() {

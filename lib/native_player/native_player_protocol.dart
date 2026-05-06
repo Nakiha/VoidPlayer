@@ -43,6 +43,12 @@ class NativePlayerKeys {
   static const path = 'path';
   static const useHardwareDecode = 'useHardwareDecode';
   static const durationUs = 'durationUs';
+  static const startTimeUs = 'startTimeUs';
+  static const bitRate = 'bitRate';
+  static const formatName = 'formatName';
+  static const codecName = 'codecName';
+  static const codecLongName = 'codecLongName';
+  static const decoderName = 'decoderName';
   static const hash = 'hash';
   static const avgLuma = 'avgLuma';
   static const nonBlackRatio = 'nonBlackRatio';
@@ -103,6 +109,12 @@ class TrackInfo {
   final int width;
   final int height;
   final int durationUs;
+  final int startTimeUs;
+  final int bitRate;
+  final String formatName;
+  final String codecName;
+  final String codecLongName;
+  final String decoderName;
 
   const TrackInfo({
     required this.fileId,
@@ -111,6 +123,12 @@ class TrackInfo {
     required this.width,
     required this.height,
     this.durationUs = 0,
+    this.startTimeUs = 0,
+    this.bitRate = 0,
+    this.formatName = '',
+    this.codecName = '',
+    this.codecLongName = '',
+    this.decoderName = '',
   });
 
   factory TrackInfo.fromMap(Map<dynamic, dynamic> map) => TrackInfo(
@@ -120,6 +138,12 @@ class TrackInfo {
     width: map[NativePlayerKeys.width] as int,
     height: map[NativePlayerKeys.height] as int,
     durationUs: map[NativePlayerKeys.durationUs] as int? ?? 0,
+    startTimeUs: map[NativePlayerKeys.startTimeUs] as int? ?? 0,
+    bitRate: map[NativePlayerKeys.bitRate] as int? ?? 0,
+    formatName: map[NativePlayerKeys.formatName] as String? ?? '',
+    codecName: map[NativePlayerKeys.codecName] as String? ?? '',
+    codecLongName: map[NativePlayerKeys.codecLongName] as String? ?? '',
+    decoderName: map[NativePlayerKeys.decoderName] as String? ?? '',
   );
 }
 

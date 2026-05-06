@@ -36,6 +36,7 @@ class MainWindowScaffold extends StatelessWidget {
                   viewMode: viewport.viewMode,
                   onViewModeChanged: toolbarActions.onViewModeChanged,
                   onAddMedia: toolbarActions.onAddMedia,
+                  onMediaInfo: toolbarActions.onMediaInfo,
                   onAnalysis: toolbarActions.onAnalysis,
                   onProfiler: toolbarActions.onProfiler,
                   onSettings: toolbarActions.onSettings,
@@ -43,6 +44,8 @@ class MainWindowScaffold extends StatelessWidget {
                   analysisDataSource: media.analysisDataSource,
                   viewModeEnabled: viewport.viewModeEnabled,
                   analysisEnabled: media.analysisEnabled,
+                  mediaInfoActive: overlays.mediaInfoVisible,
+                  profilerActive: overlays.profilerVisible,
                 ),
               Expanded(
                 child: ViewportPanel(
@@ -71,9 +74,12 @@ class MainWindowScaffold extends StatelessWidget {
           if (overlays.fullScreen && media.tracks.isNotEmpty)
             FullScreenControlsOverlay(model: model, actions: actions),
           if (overlays.dragging) const DragDropLayer(),
-          ProfilerOverlaySlot(
-            visible: overlays.profilerVisible,
-            onClose: overlayActions.onCloseProfiler,
+          FloatingSidePanelsSlot(
+            mediaInfoVisible: overlays.mediaInfoVisible,
+            profilerVisible: overlays.profilerVisible,
+            tracks: media.tracks,
+            onCloseMediaInfo: overlayActions.onCloseMediaInfo,
+            onCloseProfiler: overlayActions.onCloseProfiler,
           ),
           SettingsOverlaySlot(
             visible: overlays.settingsVisible,

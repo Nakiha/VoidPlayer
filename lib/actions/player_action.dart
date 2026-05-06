@@ -170,6 +170,10 @@ class OpenStats extends PlayerAction {
   const OpenStats() : super('OPEN_STATS');
 }
 
+class OpenMediaInfo extends PlayerAction {
+  const OpenMediaInfo() : super('OPEN_MEDIA_INFO');
+}
+
 class OpenMemory extends PlayerAction {
   const OpenMemory() : super('OPEN_MEMORY');
 }

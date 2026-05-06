@@ -18,6 +18,7 @@ class MainWindowActionCoordinator {
   final MainWindowAnalysisCoordinator analysisCoordinator;
   final MainWindowTestHarness testHarness;
   final bool Function() isLoopRangeEnabled;
+  final void Function() showMediaInfoOverlay;
   final void Function() showProfilerOverlay;
   final void Function() showSettingsDialog;
   final void Function() toggleFullScreen;
@@ -34,6 +35,7 @@ class MainWindowActionCoordinator {
     required this.analysisCoordinator,
     required this.testHarness,
     required this.isLoopRangeEnabled,
+    required this.showMediaInfoOverlay,
     required this.showProfilerOverlay,
     required this.showSettingsDialog,
     required this.toggleFullScreen,
@@ -81,6 +83,7 @@ class MainWindowActionCoordinator {
       toggleFullScreen: toggleFullScreen,
       exitFullScreen: exitFullScreen,
       openSettings: showSettingsDialog,
+      openMediaInfo: showMediaInfoOverlay,
       openStats: showProfilerOverlay,
       openMemory: showProfilerOverlay,
       runAnalysis: analysisCoordinator.triggerAnalysis,
@@ -130,6 +133,7 @@ class MainWindowActionBinder {
   final void Function() exitFullScreen;
 
   final void Function() openSettings;
+  final void Function() openMediaInfo;
   final void Function() openStats;
   final void Function() openMemory;
   final Future<void> Function() runAnalysis;
@@ -164,6 +168,7 @@ class MainWindowActionBinder {
     required this.toggleFullScreen,
     required this.exitFullScreen,
     required this.openSettings,
+    required this.openMediaInfo,
     required this.openStats,
     required this.openMemory,
     required this.runAnalysis,
@@ -249,6 +254,7 @@ class MainWindowActionBinder {
     _bind(const ExitFullScreen(), (_) => exitFullScreen());
 
     _bind(const OpenSettings(), (_) => openSettings());
+    _bind(const OpenMediaInfo(), (_) => openMediaInfo());
     _bind(const OpenStats(), (_) => openStats());
     _bind(const OpenMemory(), (_) => openMemory());
     _bind(const RunAnalysis(), (_) => runAnalysis());

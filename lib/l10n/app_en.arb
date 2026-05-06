@@ -13,6 +13,9 @@
   "performanceMonitor": "Performance Monitor",
   "@performanceMonitor": { "description": "Performance monitor tooltip" },
 
+  "mediaInfo": "Media Info",
+  "@mediaInfo": { "description": "Media information side panel title and toolbar tooltip" },
+
   "previousFrame": "Previous Frame",
   "@previousFrame": { "description": "Step backward tooltip" },
 
@@ -72,6 +75,15 @@
 
   "track": "Track",
   "@track": { "description": "Table column: track" },
+
+  "duration": "Duration",
+  "@duration": { "description": "Media information table column: duration" },
+
+  "open": "Open",
+  "@open": { "description": "Generic open action label" },
+
+  "notAvailable": "N/A",
+  "@notAvailable": { "description": "Value shown when media metadata is unavailable" },
 
   "fps": "FPS",
   "@fps": { "description": "Table column: FPS" },
@@ -417,6 +429,33 @@
 
   "analysisCacheStatusFailed": "Analysis cache failed",
   "@analysisCacheStatusFailed": { "description": "Toolbar analysis hover panel per-track failed status" },
+
+  "mediaInfoNoTracks": "No tracks open",
+  "@mediaInfoNoTracks": { "description": "Media information panel empty state" },
+
+  "mediaInfoStartTime": "Start",
+  "@mediaInfoStartTime": { "description": "Media information table column: start timestamp" },
+
+  "mediaInfoResolution": "Resolution",
+  "@mediaInfoResolution": { "description": "Media information table column: video resolution" },
+
+  "mediaInfoCodec": "Codec",
+  "@mediaInfoCodec": { "description": "Media information table column: stream codec" },
+
+  "mediaInfoFormat": "Format",
+  "@mediaInfoFormat": { "description": "Media information table column: container format" },
+
+  "mediaInfoBitrate": "Bitrate",
+  "@mediaInfoBitrate": { "description": "Media information table column: bitrate" },
+
+  "mediaInfoDecoder": "Decoder",
+  "@mediaInfoDecoder": { "description": "Media information table column: actual decoder" },
+
+  "mediaInfoLocateFile": "Locate file",
+  "@mediaInfoLocateFile": { "description": "Tooltip for locating a media file in Explorer" },
+
+  "mediaInfoLocateFailed": "Could not locate the media file.",
+  "@mediaInfoLocateFailed": { "description": "Error shown when Explorer cannot locate a media file" },
 
   "analysisFilterHint": "Filter by type, name or #id",
   "@analysisFilterHint": { "description": "Placeholder text for NALU filter search bar" },

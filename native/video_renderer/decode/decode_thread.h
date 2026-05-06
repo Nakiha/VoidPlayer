@@ -11,6 +11,7 @@
 #include <functional>
 #include <deque>
 #include <optional>
+#include <string>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -79,6 +80,7 @@ public:
 
     bool is_hardware_decode_enabled() const { return hw_enabled_; }
     AVCodecID codec_id() const { return codec_params_ ? codec_params_->codec_id : AV_CODEC_ID_NONE; }
+    std::string decoder_name() const;
 
 private:
     struct ExactSeekCandidate {

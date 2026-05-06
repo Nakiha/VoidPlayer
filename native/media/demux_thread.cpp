@@ -10,6 +10,14 @@ int64_t steady_clock_ns() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
 }
+
+void fill_codec_names(DemuxStats& stats, AVCodecID codec_id) {
+    stats.codec_name = avcodec_get_name(codec_id);
+    const AVCodecDescriptor* descriptor = avcodec_descriptor_get(codec_id);
+    if (descriptor && descriptor->long_name) {
+        stats.codec_long_name = descriptor->long_name;
+    }
+}
 }
 
 DemuxThread::DemuxThread(const std::string& file_path,
@@ -124,6 +132,17 @@ bool DemuxThread::start() {
             stats_.time_base = stream->time_base;
             stats_.width = stream->codecpar->width;
             stats_.height = stream->codecpar->height;
+            fill_codec_names(stats_, stream->codecpar->codec_id);
+            if (stream->start_time != AV_NOPTS_VALUE) {
+                stats_.start_time_us = av_rescale_q(
+                    stream->start_time, stream->time_base, {1, 1000000});
+            } else if (fmt_ctx_->start_time != AV_NOPTS_VALUE) {
+                stats_.start_time_us = av_rescale_q(
+                    fmt_ctx_->start_time, {1, AV_TIME_BASE}, {1, 1000000});
+            }
+            stats_.bit_rate = stream->codecpar->bit_rate > 0
+                ? stream->codecpar->bit_rate
+                : fmt_ctx_->bit_rate;
             // Extract Sample Aspect Ratio for correct display aspect ratio
             if (stream->codecpar->sample_aspect_ratio.num > 0 &&
                 stream->codecpar->sample_aspect_ratio.den > 0) {
@@ -134,6 +153,13 @@ bool DemuxThread::start() {
 
         if (fmt_ctx_->duration != AV_NOPTS_VALUE) {
             stats_.duration_us = av_rescale_q(fmt_ctx_->duration, {1, AV_TIME_BASE}, {1, 1000000});
+        }
+        if (fmt_ctx_->iformat) {
+            if (fmt_ctx_->iformat->long_name) {
+                stats_.format_name = fmt_ctx_->iformat->long_name;
+            } else if (fmt_ctx_->iformat->name) {
+                stats_.format_name = fmt_ctx_->iformat->name;
+            }
         }
 
         if (stats_.audio_stream_index >= 0) {

@@ -86,6 +86,14 @@ class AppAppearanceController extends ChangeNotifier {
       ? systemAccentColor
       : _customAccentColor;
 
+  void setSystemAccentColor(Color color) {
+    if (systemAccentColor == color) return;
+    systemAccentColor = color;
+    if (_accentPreference == AppAccentPreference.system) {
+      notifyListeners();
+    }
+  }
+
   Future<void> setThemePreference(AppThemePreference preference) async {
     if (_themePreference == preference) return;
     _themePreference = preference;

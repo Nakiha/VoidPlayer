@@ -23,7 +23,9 @@ class MainWindowAnalysisCoordinator {
     required this.trackManager,
     required this.analysisProcesses,
     AnalysisGenerationService? analysisGeneration,
-  }) : analysisGeneration = analysisGeneration ?? AnalysisManager.instance;
+  }) : analysisGeneration = analysisGeneration ?? AnalysisManager.instance {
+    _ipcServer.publishAccentColor(analysisProcesses.accentColorValue);
+  }
 
   Future<void> dispose() async {
     _disposed = true;
@@ -44,6 +46,7 @@ class MainWindowAnalysisCoordinator {
     final windows = <AnalysisWindowRequest>[];
     await _ipcServer.start();
     if (!_alive(serial)) return;
+    _ipcServer.publishAccentColor(analysisProcesses.accentColorValue);
     analysisProcesses.analysisIpcPort = _ipcServer.port;
     analysisProcesses.analysisIpcToken = _ipcServer.token;
     for (final entry in trackManager.entries) {
@@ -64,6 +67,12 @@ class MainWindowAnalysisCoordinator {
 
   Future<void> publishTrackSnapshot() async {
     return _enqueueOperation(_publishTrackSnapshotImpl);
+  }
+
+  void publishAccentColor(int colorValue) {
+    if (_disposed) return;
+    analysisProcesses.accentColorValue = colorValue;
+    _ipcServer.publishAccentColor(colorValue);
   }
 
   Future<void> _publishTrackSnapshotImpl(int serial) async {

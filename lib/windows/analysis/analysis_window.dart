@@ -53,7 +53,7 @@ class AnalysisApp extends StatelessWidget {
   }
 }
 
-class AnalysisWorkspaceApp extends StatelessWidget {
+class AnalysisWorkspaceApp extends StatefulWidget {
   final Color accentColor;
   final List<String> hashes;
   final List<String?> fileNames;
@@ -70,24 +70,72 @@ class AnalysisWorkspaceApp extends StatelessWidget {
   });
 
   @override
+  State<AnalysisWorkspaceApp> createState() => _AnalysisWorkspaceAppState();
+}
+
+class _AnalysisWorkspaceAppState extends State<AnalysisWorkspaceApp> {
+  late Color _accentColor = widget.accentColor;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.ipcClient?.addListener(_onIpcChanged);
+    _onIpcChanged();
+  }
+
+  @override
+  void didUpdateWidget(covariant AnalysisWorkspaceApp oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.ipcClient != widget.ipcClient) {
+      oldWidget.ipcClient?.removeListener(_onIpcChanged);
+      widget.ipcClient?.addListener(_onIpcChanged);
+    }
+    if (oldWidget.accentColor != widget.accentColor) {
+      _accentColor = widget.accentColor;
+    }
+    _onIpcChanged();
+  }
+
+  @override
+  void dispose() {
+    widget.ipcClient?.removeListener(_onIpcChanged);
+    widget.ipcClient?.dispose();
+    super.dispose();
+  }
+
+  void _onIpcChanged() {
+    final value = widget.ipcClient?.accentColorValue;
+    if (value == null) return;
+    final color = Color(value);
+    if (color == _accentColor) return;
+    if (!mounted) {
+      _accentColor = color;
+      return;
+    }
+    setState(() => _accentColor = color);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Void Player - Analysis',
       debugShowCheckedModeBanner: false,
-      theme: _analysisTheme(accentColor),
+      theme: _analysisTheme(_accentColor),
       builder: _silenceAnalysisSemantics,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: AnalysisWorkspacePage(
         entries: [
-          for (var i = 0; i < hashes.length; i++)
+          for (var i = 0; i < widget.hashes.length; i++)
             AnalysisWorkspaceEntry(
-              hash: hashes[i],
-              fileName: i < fileNames.length ? fileNames[i] : null,
+              hash: widget.hashes[i],
+              fileName: i < widget.fileNames.length
+                  ? widget.fileNames[i]
+                  : null,
             ),
         ],
-        testScriptPath: testScriptPath,
-        ipcClient: ipcClient,
+        testScriptPath: widget.testScriptPath,
+        ipcClient: widget.ipcClient,
       ),
     );
   }

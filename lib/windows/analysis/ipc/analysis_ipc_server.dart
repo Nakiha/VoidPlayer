@@ -18,6 +18,7 @@ class AnalysisIpcServer {
   String? _token;
   int _revision = 0;
   Map<String, Object?>? _lastSnapshot;
+  Map<String, Object?>? _lastAccentColor;
 
   bool get isStarted => _server != null;
   bool get hasClients => _clients.isNotEmpty;
@@ -54,6 +55,16 @@ class AnalysisIpcServer {
     _sendToAll(message);
   }
 
+  void publishAccentColor(int colorValue) {
+    final message = <String, Object?>{
+      'type': 'accentColor',
+      'value': colorValue,
+    };
+    _lastAccentColor = message;
+    if (_server == null) return;
+    _sendToAll(message);
+  }
+
   Future<void> dispose() async {
     final clients = List<Socket>.from(_clients);
     _clients.clear();
@@ -64,6 +75,7 @@ class AnalysisIpcServer {
     _server = null;
     _token = null;
     _lastSnapshot = null;
+    _lastAccentColor = null;
   }
 
   void _handleClient(Socket socket) {
@@ -99,6 +111,10 @@ class AnalysisIpcServer {
               handshakeTimer.cancel();
               _clients.add(socket);
               log.info('[AnalysisIpcServer] analysis client connected');
+              final accentColor = _lastAccentColor;
+              if (accentColor != null) {
+                _send(socket, accentColor);
+              }
               final snapshot = _lastSnapshot;
               if (snapshot != null) {
                 _send(socket, snapshot);

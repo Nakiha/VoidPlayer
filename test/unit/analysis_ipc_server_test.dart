@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/app_log.dart';
+import 'package:void_player/windows/analysis/ipc/analysis_ipc_client.dart';
 import 'package:void_player/windows/analysis/ipc/analysis_ipc_server.dart';
 
 void main() {
@@ -83,5 +84,45 @@ void main() {
 
     expect(server.hasClients, isFalse);
     await expectLater(socket.first, throwsA(isA<StateError>()));
+  });
+
+  test('AnalysisIpcClient receives live and cached accent colors', () async {
+    final server = AnalysisIpcServer();
+    addTearDown(server.dispose);
+
+    await server.start();
+    final firstClient = await AnalysisIpcClient.connect(
+      port: server.port!,
+      token: server.token!,
+    );
+    expect(firstClient, isNotNull);
+    addTearDown(firstClient!.dispose);
+
+    server.publishAccentColor(0xFFCA5010);
+    await expectLater(
+      Stream.periodic(
+            const Duration(milliseconds: 10),
+            (_) => firstClient.accentColorValue,
+          )
+          .firstWhere((value) => value == 0xFFCA5010)
+          .timeout(const Duration(seconds: 2)),
+      completion(0xFFCA5010),
+    );
+
+    final secondClient = await AnalysisIpcClient.connect(
+      port: server.port!,
+      token: server.token!,
+    );
+    expect(secondClient, isNotNull);
+    addTearDown(secondClient!.dispose);
+    await expectLater(
+      Stream.periodic(
+            const Duration(milliseconds: 10),
+            (_) => secondClient.accentColorValue,
+          )
+          .firstWhere((value) => value == 0xFFCA5010)
+          .timeout(const Duration(seconds: 2)),
+      completion(0xFFCA5010),
+    );
   });
 }

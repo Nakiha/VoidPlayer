@@ -15,6 +15,7 @@ class MainWindow extends StatefulWidget {
   final app_window.AnalysisProcessManager? analysisProcesses;
   final AppSettingsRepository? appSettings;
   final PlaybackPreferences? playbackPreferences;
+  final Color? accentColor;
 
   const MainWindow({
     super.key,
@@ -24,6 +25,7 @@ class MainWindow extends StatefulWidget {
     this.analysisProcesses,
     this.appSettings,
     this.playbackPreferences,
+    this.accentColor,
   });
 
   @override
@@ -33,6 +35,7 @@ class MainWindow extends StatefulWidget {
 class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   late final MainWindowController _controller;
   int? _lastViewportBackgroundColor;
+  int? _lastAnalysisAccentColor;
 
   @override
   void initState() {
@@ -57,6 +60,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     _syncViewportBackgroundColor(context);
+    _syncAnalysisAccentColor();
     return ListenableBuilder(
       listenable: _controller.listenable,
       builder: (context, _) => MainWindowView(
@@ -75,5 +79,14 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     if (_lastViewportBackgroundColor == value) return;
     _lastViewportBackgroundColor = value;
     _controller.setViewportBackgroundColor(color);
+  }
+
+  void _syncAnalysisAccentColor() {
+    final accentColor = widget.accentColor;
+    if (accentColor == null) return;
+    final value = accentColor.toARGB32();
+    if (_lastAnalysisAccentColor == value) return;
+    _lastAnalysisAccentColor = value;
+    _controller.setAnalysisAccentColor(accentColor);
   }
 }

@@ -48,7 +48,6 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   void dispose() {
     _disposed = true;
     widget.ipcClient?.removeListener(_onIpcTracksChanged);
-    widget.ipcClient?.dispose();
     _splitLayout.dispose();
     super.dispose();
   }

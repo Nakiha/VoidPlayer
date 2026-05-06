@@ -13,6 +13,7 @@ class AnalysisIpcClient extends ChangeNotifier {
   final int _maxLineLength;
   late final StreamSubscription<String> _subscription;
   List<AnalysisIpcTrack> _tracks = const [];
+  int? _accentColorValue;
   bool _hasSnapshot = false;
   bool _connected = true;
   bool _disposed = false;
@@ -21,6 +22,7 @@ class AnalysisIpcClient extends ChangeNotifier {
     : _maxLineLength = maxLineLength;
 
   List<AnalysisIpcTrack> get tracks => List.unmodifiable(_tracks);
+  int? get accentColorValue => _accentColorValue;
   bool get hasSnapshot => _hasSnapshot;
   bool get connected => _connected;
 
@@ -83,7 +85,16 @@ class AnalysisIpcClient extends ChangeNotifier {
       log.warning('[AnalysisIpcClient] malformed message: $e');
       return;
     }
-    if (message['type'] != 'trackSnapshot') return;
+    final type = message['type'];
+    if (type == 'accentColor') {
+      final value = (message['value'] as num?)?.toInt();
+      if (value == null || value == _accentColorValue) return;
+      _accentColorValue = value;
+      if (_disposed) return;
+      notifyListeners();
+      return;
+    }
+    if (type != 'trackSnapshot') return;
     final rawTracks = message['tracks'];
     if (rawTracks is! List) return;
     _tracks = [

@@ -9,6 +9,9 @@
 
 namespace {
 
+constexpr const char kSystemAccentColorChangedMethod[] =
+    "systemAccentColorChanged";
+
 bool ReadBoolArgument(const flutter::EncodableValue* arguments,
                       const char* key,
                       bool fallback) {
@@ -122,6 +125,12 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   switch (message) {
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
+      break;
+    case WM_DWMCOLORIZATIONCOLORCHANGED:
+      if (bootstrap_channel_) {
+        bootstrap_channel_->InvokeMethod(kSystemAccentColorChangedMethod,
+                                         nullptr);
+      }
       break;
   }
 

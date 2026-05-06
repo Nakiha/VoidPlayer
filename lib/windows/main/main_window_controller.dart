@@ -133,6 +133,10 @@ class MainWindowController {
     );
   }
 
+  void setAnalysisAccentColor(Color color) {
+    analysisCoordinator.publishAccentColor(color.toARGB32());
+  }
+
   MainWindowViewModel get viewModel {
     return MainWindowViewModel(
       viewport: MainWindowViewportVm(

@@ -197,8 +197,7 @@ class MainWindowController {
       ),
       toolbar: MainWindowToolbarActions(
         onViewModeChanged: (mode) {
-          stateStore.setLayout(_layout.copyWith(mode: mode));
-          layoutCoordinator.markLayoutDirty();
+          layoutCoordinator.setLayoutMode(mode);
         },
         onAddMedia: mediaCoordinator.openFile,
         onAnalysis: analysisCoordinator.triggerAnalysis,

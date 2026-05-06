@@ -68,7 +68,13 @@ class MainWindowLayoutCoordinator {
 
   void setLayoutMode(int mode) {
     if (_disposed) return;
-    _updateLayout((layout) => layout.copyWith(mode: mode));
+    final current = layout();
+    if (current.mode == mode) return;
+    final next = _rescaleViewOffsetForLayoutChange(
+      current,
+      current.copyWith(mode: mode),
+    );
+    setLayout(next);
     markLayoutDirty();
   }
 
@@ -326,6 +332,43 @@ class MainWindowLayoutCoordinator {
 
   void _updateLayout(LayoutState Function(LayoutState current) update) {
     setLayout(update(layout()));
+  }
+
+  LayoutState _rescaleViewOffsetForLayoutChange(
+    LayoutState oldLayout,
+    LayoutState newLayout,
+  ) {
+    if (viewportWidth <= 0 || viewportHeight <= 0) return newLayout;
+
+    final trackGeometry = tracks()
+        .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
+        .toList();
+    final oldDisplay = computeDisplayPixelSizeForLayout(
+      viewportWidth: viewportWidth,
+      viewportHeight: viewportHeight,
+      layout: oldLayout,
+      tracks: trackGeometry,
+    );
+    final newDisplay = computeDisplayPixelSizeForLayout(
+      viewportWidth: viewportWidth,
+      viewportHeight: viewportHeight,
+      layout: newLayout,
+      tracks: trackGeometry,
+    );
+    if (oldDisplay == Size.zero || newDisplay == Size.zero) return newLayout;
+
+    var nextOffsetX = oldLayout.viewOffsetX;
+    var nextOffsetY = oldLayout.viewOffsetY;
+    if (oldDisplay.width.abs() > 1e-4 && newDisplay.width.abs() > 1e-4) {
+      nextOffsetX *= newDisplay.width / oldDisplay.width;
+    }
+    if (oldDisplay.height.abs() > 1e-4 && newDisplay.height.abs() > 1e-4) {
+      nextOffsetY *= newDisplay.height / oldDisplay.height;
+    }
+    return newLayout.copyWith(
+      viewOffsetX: nextOffsetX,
+      viewOffsetY: nextOffsetY,
+    );
   }
 
   bool _rescaleViewOffsetForResize(

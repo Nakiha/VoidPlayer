@@ -2,11 +2,41 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/track_manager.dart';
 import 'package:void_player/video_renderer_controller.dart';
+import 'package:void_player/viewport/display_geometry.dart';
 import 'package:void_player/windows/main/main_window_layout.dart';
 import 'package:void_player/windows/main/main_window_state.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  TrackInfo track(int fileId) => TrackInfo(
+    fileId: fileId,
+    slot: fileId - 1,
+    path: 'track_$fileId.mp4',
+    width: 1920,
+    height: 1080,
+  );
+
+  Offset normalizedViewCenter(
+    MainWindowStateStore stateStore,
+    TrackManager trackManager,
+    int viewportWidth,
+    int viewportHeight,
+  ) {
+    final layout = stateStore.value.layout;
+    final display = computeDisplayPixelSizeForLayout(
+      viewportWidth: viewportWidth,
+      viewportHeight: viewportHeight,
+      layout: layout,
+      tracks: trackManager.entries
+          .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
+          .toList(),
+    );
+    return Offset(
+      display.width.abs() > 1e-4 ? layout.viewOffsetX / display.width : 0,
+      display.height.abs() > 1e-4 ? layout.viewOffsetY / display.height : 0,
+    );
+  }
 
   test(
     'immediate viewport resize applies pending layout before native resize',
@@ -98,6 +128,60 @@ void main() {
     coordinator.onZoomComboChanged(1000);
 
     expect(stateStore.value.layout.zoomRatio, LayoutState.zoomMax);
+  });
+
+  test('layout mode changes keep normalized view center stable', () {
+    final stateStore = MainWindowStateStore()
+      ..setTextureId(1)
+      ..setLayout(
+        const LayoutState(
+          zoomRatio: 2,
+          viewOffsetX: 140,
+          viewOffsetY: 90,
+          order: [1, 2, -1, -1],
+        ),
+      );
+    addTearDown(stateStore.dispose);
+    final trackManager = TrackManager()..setTracks([track(1), track(2)]);
+    addTearDown(trackManager.dispose);
+    final coordinator = MainWindowLayoutCoordinator(
+      vsync: const TestVSync(),
+      controller: _FakeNativePlayerController(),
+      stateStore: stateStore,
+      trackManager: trackManager,
+      mounted: () => true,
+    );
+    addTearDown(coordinator.dispose);
+    coordinator.viewportWidth = 1600;
+    coordinator.viewportHeight = 900;
+
+    final before = normalizedViewCenter(
+      stateStore,
+      trackManager,
+      coordinator.viewportWidth,
+      coordinator.viewportHeight,
+    );
+
+    coordinator.setLayoutMode(LayoutMode.splitScreen);
+    final afterSplit = normalizedViewCenter(
+      stateStore,
+      trackManager,
+      coordinator.viewportWidth,
+      coordinator.viewportHeight,
+    );
+
+    coordinator.setLayoutMode(LayoutMode.sideBySide);
+    final afterSideBySide = normalizedViewCenter(
+      stateStore,
+      trackManager,
+      coordinator.viewportWidth,
+      coordinator.viewportHeight,
+    );
+
+    expect(afterSplit.dx, closeTo(before.dx, 1e-9));
+    expect(afterSplit.dy, closeTo(before.dy, 1e-9));
+    expect(afterSideBySide.dx, closeTo(before.dx, 1e-9));
+    expect(afterSideBySide.dy, closeTo(before.dy, 1e-9));
   });
 }
 

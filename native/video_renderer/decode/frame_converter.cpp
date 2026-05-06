@@ -20,10 +20,12 @@ namespace vr {
 
 namespace {
 constexpr int kMaxDecodedDimension = 16384;
-constexpr size_t kMaxRgbaBytes = size_t{1024} * 1024 * 1024;
+constexpr size_t kMaxCpuFrameBytes = size_t{1024} * 1024 * 1024;
 
-bool calculate_rgba_layout(int width, int height, size_t& stride, size_t& bytes) {
-    stride = 0;
+bool calculate_nv12_layout(int width, int height,
+                           size_t& y_stride, size_t& uv_stride, size_t& bytes) {
+    y_stride = 0;
+    uv_stride = 0;
     bytes = 0;
     if (width <= 0 || height <= 0) {
         return false;
@@ -31,34 +33,242 @@ bool calculate_rgba_layout(int width, int height, size_t& stride, size_t& bytes)
     if (width > kMaxDecodedDimension || height > kMaxDecodedDimension) {
         return false;
     }
+    if ((width & 1) != 0 || (height & 1) != 0) {
+        return false;
+    }
     const size_t width_size = static_cast<size_t>(width);
     const size_t height_size = static_cast<size_t>(height);
-    if (width_size > std::numeric_limits<size_t>::max() / 4) {
+    y_stride = width_size;
+    uv_stride = width_size;
+    if (height_size > std::numeric_limits<size_t>::max() / y_stride) {
         return false;
     }
-    stride = width_size * 4;
-    if (stride > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    const size_t y_bytes = y_stride * height_size;
+    const size_t uv_height = height_size / 2;
+    if (uv_height > 0 &&
+        uv_stride > (std::numeric_limits<size_t>::max() - y_bytes) / uv_height) {
         return false;
     }
-    if (height_size > std::numeric_limits<size_t>::max() / stride) {
-        return false;
-    }
-    bytes = stride * height_size;
-    if (bytes == 0 || bytes > kMaxRgbaBytes) {
+    bytes = y_bytes + uv_stride * uv_height;
+    if (bytes == 0 || bytes > kMaxCpuFrameBytes ||
+        y_stride > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+        uv_stride > static_cast<size_t>(std::numeric_limits<int>::max())) {
         return false;
     }
     return true;
 }
 
-std::shared_ptr<std::vector<uint8_t>> allocate_rgba_buffer(size_t bytes,
-                                                           const char* context) {
+std::shared_ptr<std::vector<uint8_t>> allocate_cpu_frame_buffer(size_t bytes,
+                                                                const char* context) {
     try {
         return std::make_shared<std::vector<uint8_t>>(bytes);
     } catch (const std::bad_alloc&) {
-        spdlog::error("[FrameConverter] Failed to allocate {} RGBA buffer ({} bytes)",
+        spdlog::error("[FrameConverter] Failed to allocate {} frame buffer ({} bytes)",
                       context, bytes);
     }
     return nullptr;
+}
+
+bool supported_software_format(AVPixelFormat format) {
+    switch (format) {
+    case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUVJ420P:
+    case AV_PIX_FMT_NV12:
+    case AV_PIX_FMT_YUV420P10LE:
+    case AV_PIX_FMT_P010LE:
+        return true;
+    default:
+        return false;
+    }
+}
+
+uint8_t downconvert_10_to_8(uint16_t value) {
+    return static_cast<uint8_t>(std::min<uint16_t>((value + 2u) >> 2, 255u));
+}
+
+uint8_t downconvert_p010_to_8(uint16_t value) {
+    return static_cast<uint8_t>(std::min<uint16_t>((value + 128u) >> 8, 255u));
+}
+
+bool copy_nv12_8(const AVFrame* frame, std::vector<uint8_t>& dst,
+                 int width, int height, int y_stride, int uv_stride) {
+    if (!frame->data[0] || !frame->data[1] ||
+        frame->linesize[0] < width || frame->linesize[1] < width) {
+        return false;
+    }
+    uint8_t* dst_y = dst.data();
+    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * height;
+    for (int y = 0; y < height; ++y) {
+        std::memcpy(dst_y + static_cast<size_t>(y) * y_stride,
+                    frame->data[0] + static_cast<size_t>(y) * frame->linesize[0],
+                    static_cast<size_t>(width));
+    }
+    for (int y = 0; y < height / 2; ++y) {
+        std::memcpy(dst_uv + static_cast<size_t>(y) * uv_stride,
+                    frame->data[1] + static_cast<size_t>(y) * frame->linesize[1],
+                    static_cast<size_t>(width));
+    }
+    return true;
+}
+
+bool pack_yuv420p_8_to_nv12(const AVFrame* frame, std::vector<uint8_t>& dst,
+                            int width, int height, int y_stride, int uv_stride) {
+    if (!frame->data[0] || !frame->data[1] || !frame->data[2] ||
+        frame->linesize[0] < width ||
+        frame->linesize[1] < width / 2 ||
+        frame->linesize[2] < width / 2) {
+        return false;
+    }
+    uint8_t* dst_y = dst.data();
+    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * height;
+    for (int y = 0; y < height; ++y) {
+        std::memcpy(dst_y + static_cast<size_t>(y) * y_stride,
+                    frame->data[0] + static_cast<size_t>(y) * frame->linesize[0],
+                    static_cast<size_t>(width));
+    }
+    for (int y = 0; y < height / 2; ++y) {
+        const uint8_t* src_u = frame->data[1] + static_cast<size_t>(y) * frame->linesize[1];
+        const uint8_t* src_v = frame->data[2] + static_cast<size_t>(y) * frame->linesize[2];
+        uint8_t* row = dst_uv + static_cast<size_t>(y) * uv_stride;
+        for (int x = 0; x < width / 2; ++x) {
+            row[x * 2] = src_u[x];
+            row[x * 2 + 1] = src_v[x];
+        }
+    }
+    return true;
+}
+
+bool pack_yuv420p_10_to_nv12_8(const AVFrame* frame, std::vector<uint8_t>& dst,
+                               int width, int height, int y_stride, int uv_stride) {
+    if (!frame->data[0] || !frame->data[1] || !frame->data[2] ||
+        frame->linesize[0] < width * 2 ||
+        frame->linesize[1] < width ||
+        frame->linesize[2] < width) {
+        return false;
+    }
+    uint8_t* dst_y = dst.data();
+    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * height;
+    for (int y = 0; y < height; ++y) {
+        const auto* src_y = reinterpret_cast<const uint16_t*>(
+            frame->data[0] + static_cast<size_t>(y) * frame->linesize[0]);
+        uint8_t* row = dst_y + static_cast<size_t>(y) * y_stride;
+        for (int x = 0; x < width; ++x) {
+            row[x] = downconvert_10_to_8(src_y[x]);
+        }
+    }
+    for (int y = 0; y < height / 2; ++y) {
+        const auto* src_u = reinterpret_cast<const uint16_t*>(
+            frame->data[1] + static_cast<size_t>(y) * frame->linesize[1]);
+        const auto* src_v = reinterpret_cast<const uint16_t*>(
+            frame->data[2] + static_cast<size_t>(y) * frame->linesize[2]);
+        uint8_t* row = dst_uv + static_cast<size_t>(y) * uv_stride;
+        for (int x = 0; x < width / 2; ++x) {
+            row[x * 2] = downconvert_10_to_8(src_u[x]);
+            row[x * 2 + 1] = downconvert_10_to_8(src_v[x]);
+        }
+    }
+    return true;
+}
+
+bool pack_p010_to_nv12_8(const AVFrame* frame, std::vector<uint8_t>& dst,
+                         int width, int height, int y_stride, int uv_stride) {
+    if (!frame->data[0] || !frame->data[1] ||
+        frame->linesize[0] < width * 2 ||
+        frame->linesize[1] < width * 2) {
+        return false;
+    }
+    uint8_t* dst_y = dst.data();
+    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * height;
+    for (int y = 0; y < height; ++y) {
+        const auto* src_y = reinterpret_cast<const uint16_t*>(
+            frame->data[0] + static_cast<size_t>(y) * frame->linesize[0]);
+        uint8_t* row = dst_y + static_cast<size_t>(y) * y_stride;
+        for (int x = 0; x < width; ++x) {
+            row[x] = downconvert_p010_to_8(src_y[x]);
+        }
+    }
+    for (int y = 0; y < height / 2; ++y) {
+        const auto* src_uv = reinterpret_cast<const uint16_t*>(
+            frame->data[1] + static_cast<size_t>(y) * frame->linesize[1]);
+        uint8_t* row = dst_uv + static_cast<size_t>(y) * uv_stride;
+        for (int x = 0; x < width; x += 2) {
+            row[x] = downconvert_p010_to_8(src_uv[x]);
+            row[x + 1] = downconvert_p010_to_8(src_uv[x + 1]);
+        }
+    }
+    return true;
+}
+
+bool convert_frame_to_cpu_nv12(const AVFrame* frame,
+                               const char* context,
+                               TextureFrame& result) {
+    if (!frame) {
+        return false;
+    }
+    const int width = frame->width;
+    const int height = frame->height;
+    const auto format = static_cast<AVPixelFormat>(frame->format);
+    size_t y_stride = 0;
+    size_t uv_stride = 0;
+    size_t bytes = 0;
+    if (!calculate_nv12_layout(width, height, y_stride, uv_stride, bytes)) {
+        spdlog::error("[FrameConverter] Invalid CPU NV12 layout ({}x{}, format={})",
+                      width, height, static_cast<int>(format));
+        return false;
+    }
+    if (!supported_software_format(format)) {
+        const char* name = av_get_pix_fmt_name(format);
+        spdlog::error("[FrameConverter] Unsupported software pixel format {} ({}) "
+                      "without libswscale",
+                      static_cast<int>(format), name ? name : "unknown");
+        return false;
+    }
+
+    auto buffer = allocate_cpu_frame_buffer(bytes, context);
+    if (!buffer || buffer->empty()) {
+        return false;
+    }
+
+    bool ok = false;
+    switch (format) {
+    case AV_PIX_FMT_NV12:
+        ok = copy_nv12_8(frame, *buffer, width, height,
+                         static_cast<int>(y_stride), static_cast<int>(uv_stride));
+        break;
+    case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUVJ420P:
+        ok = pack_yuv420p_8_to_nv12(frame, *buffer, width, height,
+                                    static_cast<int>(y_stride), static_cast<int>(uv_stride));
+        break;
+    case AV_PIX_FMT_YUV420P10LE:
+        ok = pack_yuv420p_10_to_nv12_8(frame, *buffer, width, height,
+                                       static_cast<int>(y_stride), static_cast<int>(uv_stride));
+        break;
+    case AV_PIX_FMT_P010LE:
+        ok = pack_p010_to_nv12_8(frame, *buffer, width, height,
+                                 static_cast<int>(y_stride), static_cast<int>(uv_stride));
+        break;
+    default:
+        break;
+    }
+    if (!ok) {
+        spdlog::error("[FrameConverter] Failed to pack {} frame to CPU NV12 ({}x{}, format={})",
+                      context, width, height, static_cast<int>(format));
+        return false;
+    }
+
+    result.width = width;
+    result.height = height;
+    result.cpu_data = buffer;
+    result.texture_handle = buffer->data();
+    result.is_ref = false;
+    result.is_nv12 = true;
+    result.storage = CpuNv12FrameStorage{
+        buffer,
+        static_cast<int>(y_stride),
+        static_cast<int>(uv_stride),
+    };
+    return true;
 }
 
 VideoColorRange map_color_range(AVColorRange range) {
@@ -155,18 +365,6 @@ VideoColorInfo color_info_from_frame(const AVFrame* frame) {
                 : VIDEO_COLOR_PRIMARIES_BT709);
     }
     return info;
-}
-
-int sws_colorspace_for_matrix(int matrix) {
-    switch (matrix) {
-    case VIDEO_COLOR_MATRIX_BT709:
-        return SWS_CS_ITU709;
-    case VIDEO_COLOR_MATRIX_BT2020_NCL:
-        return SWS_CS_BT2020;
-    case VIDEO_COLOR_MATRIX_BT601:
-    default:
-        return SWS_CS_DEFAULT;
-    }
 }
 
 bool same_snapshot_desc(const D3D11_TEXTURE2D_DESC& a, const D3D11_TEXTURE2D_DESC& b) {
@@ -294,86 +492,9 @@ D3D11SnapshotFrameRef::~D3D11SnapshotFrameRef() {
 FrameConverter::FrameConverter()
 {}
 
-FrameConverter::~FrameConverter() {
-    reset_sws_context();
-}
-
-void FrameConverter::reset_sws_context() {
-    if (sws_ctx_) {
-        sws_freeContext(sws_ctx_);
-        sws_ctx_ = nullptr;
-    }
-    sws_src_width_ = 0;
-    sws_src_height_ = 0;
-    sws_src_format_ = AV_PIX_FMT_NONE;
-    sws_color_ = {};
-}
-
-bool FrameConverter::ensure_sws_context(int src_width, int src_height, AVPixelFormat src_format,
-                                        const VideoColorInfo& color) {
-    if (src_width <= 0 || src_height <= 0 || src_format == AV_PIX_FMT_NONE) {
-        spdlog::error("[FrameConverter] Invalid SwsContext request ({}x{}, format={})",
-                      src_width, src_height, static_cast<int>(src_format));
-        return false;
-    }
-    size_t rgba_stride = 0;
-    size_t rgba_bytes = 0;
-    if (!calculate_rgba_layout(src_width, src_height, rgba_stride, rgba_bytes)) {
-        spdlog::error("[FrameConverter] Refusing unsupported frame geometry ({}x{}, format={})",
-                      src_width, src_height, static_cast<int>(src_format));
-        return false;
-    }
-
-    if (sws_ctx_ &&
-        sws_src_width_ == src_width &&
-        sws_src_height_ == src_height &&
-        sws_src_format_ == src_format &&
-        sws_color_.range == color.range &&
-        sws_color_.matrix == color.matrix &&
-        sws_color_.transfer == color.transfer &&
-        sws_color_.primaries == color.primaries) {
-        return true;
-    }
-
-    reset_sws_context();
-    sws_ctx_ = sws_getContext(
-        src_width, src_height, src_format,
-        src_width, src_height, AV_PIX_FMT_RGBA,
-        SWS_BILINEAR,
-        nullptr, nullptr, nullptr);
-
-    if (!sws_ctx_) {
-        spdlog::error("[FrameConverter] Failed to create SwsContext ({}x{}, format={})",
-                      src_width, src_height, static_cast<int>(src_format));
-        return false;
-    }
-
-    const int* coeffs = sws_getCoefficients(sws_colorspace_for_matrix(color.matrix));
-    const int src_range = color.range == VIDEO_COLOR_RANGE_FULL ? 1 : 0;
-    const int dst_range = 1;
-    if (sws_setColorspaceDetails(
-            sws_ctx_,
-            coeffs,
-            src_range,
-            coeffs,
-            dst_range,
-            0, 1 << 16, 1 << 16) < 0) {
-        spdlog::warn("[FrameConverter] Failed to set SwsContext colorspace details");
-    }
-
-    sws_src_width_ = src_width;
-    sws_src_height_ = src_height;
-    sws_src_format_ = src_format;
-    sws_color_ = color;
-    spdlog::info("[FrameConverter] SwsContext initialized ({}x{}, format={}, range={}, matrix={})",
-                 src_width, src_height, static_cast<int>(src_format),
-                 color.range, color.matrix);
-    return true;
-}
+FrameConverter::~FrameConverter() = default;
 
 bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat src_format) {
-    reset_sws_context();
-
     width_ = src_width;
     height_ = src_height;
     src_format_ = src_format;
@@ -385,16 +506,6 @@ bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat 
     device_mutex_ = nullptr;
     d3d11_snapshot_pool_.reset();
 
-    VideoColorInfo default_color;
-    default_color.range = VIDEO_COLOR_RANGE_LIMITED;
-    default_color.matrix = src_width >= 1280 || src_height > 576
-        ? VIDEO_COLOR_MATRIX_BT709
-        : VIDEO_COLOR_MATRIX_BT601;
-    default_color.transfer = VIDEO_COLOR_TRANSFER_SDR;
-    default_color.primaries = default_color.matrix == VIDEO_COLOR_MATRIX_BT601
-        ? VIDEO_COLOR_PRIMARIES_BT601
-        : VIDEO_COLOR_PRIMARIES_BT709;
-
     if (src_width <= 0 || src_height <= 0 || src_format == AV_PIX_FMT_NONE) {
         spdlog::info("[FrameConverter] Software converter will initialize from first frame "
                      "(initial params {}x{}, format={})",
@@ -402,11 +513,25 @@ bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat 
         return true;
     }
 
-    if (!ensure_sws_context(src_width, src_height, src_format, default_color)) {
+    size_t y_stride = 0;
+    size_t uv_stride = 0;
+    size_t bytes = 0;
+    if (!calculate_nv12_layout(src_width, src_height, y_stride, uv_stride, bytes)) {
+        spdlog::error("[FrameConverter] Refusing unsupported software frame geometry "
+                      "({}x{}, format={})",
+                      src_width, src_height, static_cast<int>(src_format));
+        return false;
+    }
+    if (!supported_software_format(src_format)) {
+        const char* name = av_get_pix_fmt_name(src_format);
+        spdlog::error("[FrameConverter] Unsupported initial software pixel format {} ({}) "
+                      "without libswscale",
+                      static_cast<int>(src_format), name ? name : "unknown");
         return false;
     }
 
-    spdlog::info("[FrameConverter] Software converter initialized ({}x{}, format={})",
+    spdlog::info("[FrameConverter] Software converter initialized for CPU NV12 upload "
+                 "({}x{}, format={})",
                  src_width, src_height, static_cast<int>(src_format));
     return true;
 }
@@ -416,8 +541,6 @@ bool FrameConverter::init_hardware(void* d3d_device, void* d3d_context,
                                    HwDecodeType hw_type,
                                    bool download_to_cpu,
                                    std::recursive_mutex* device_mutex) {
-    reset_sws_context();
-
     d3d_device_ = d3d_device;
     d3d_context_ = d3d_context;
     device_mutex_ = device_mutex;
@@ -471,48 +594,9 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
 
         const auto sw_format = static_cast<AVPixelFormat>(sw_frame->format);
         result.color = color_info_from_frame(sw_frame);
-        if (!ensure_sws_context(sw_frame->width, sw_frame->height, sw_format, result.color)) {
-            av_frame_free(&sw_frame);
-            return result;
-        }
         downloaded_format_ = sw_format;
 
-        result.width = sw_frame->width;
-        result.height = sw_frame->height;
-        size_t stride = 0;
-        size_t buf_size = 0;
-        if (!calculate_rgba_layout(sw_frame->width, sw_frame->height, stride, buf_size)) {
-            spdlog::error("[FrameConverter] Invalid hw-download RGBA layout ({}x{})",
-                          sw_frame->width, sw_frame->height);
-            av_frame_free(&sw_frame);
-            return result;
-        }
-        auto rgba_buf = allocate_rgba_buffer(buf_size, "hw-download");
-        if (!rgba_buf || rgba_buf->empty()) {
-            spdlog::error("[FrameConverter] Failed to allocate hw-download RGBA buffer ({} bytes)", buf_size);
-            av_frame_free(&sw_frame);
-            return result;
-        }
-
-        uint8_t* dst_slices[1] = { rgba_buf->data() };
-        int dst_stride[1] = { static_cast<int>(stride) };
-        const int converted_height = sws_scale(
-            sws_ctx_,
-            sw_frame->data, sw_frame->linesize,
-            0, sw_frame->height,
-            dst_slices, dst_stride);
-        if (converted_height != sw_frame->height) {
-            spdlog::warn("[FrameConverter] hw-download sws_scale converted {} rows (expected {})",
-                         converted_height, sw_frame->height);
-        }
-
-        result.cpu_data = rgba_buf;
-        result.texture_handle = rgba_buf->data();
-        result.is_ref = false;
-        result.storage = CpuRgbaFrameStorage{
-            rgba_buf,
-            static_cast<int>(stride),
-        };
+        convert_frame_to_cpu_nv12(sw_frame, "hw-download", result);
         av_frame_free(&sw_frame);
     } else if (is_hw_) {
         // frame->data[0] = ID3D11Texture2D*, frame->data[1] = array index (intptr_t)
@@ -555,58 +639,14 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
             }
         }
     } else {
-        // Software path: convert to RGBA via sws_scale. Some codecs can
-        // legally change frame geometry mid-stream, so key the converter and
-        // output buffer off the actual AVFrame rather than constructor stats.
-        const int frame_width = frame ? frame->width : 0;
-        const int frame_height = frame ? frame->height : 0;
-        const auto frame_format = frame
-            ? static_cast<AVPixelFormat>(frame->format)
-            : AV_PIX_FMT_NONE;
+        // Software path: keep the frame in YUV and upload it as NV12 so it
+        // shares the same shader conversion path as D3D11VA decode.
         result.color = color_info_from_frame(frame);
-        if (!ensure_sws_context(frame_width, frame_height, frame_format, result.color)) {
-            return result;
+        if (convert_frame_to_cpu_nv12(frame, "software", result)) {
+            width_ = frame->width;
+            height_ = frame->height;
+            src_format_ = static_cast<AVPixelFormat>(frame->format);
         }
-
-        width_ = frame_width;
-        height_ = frame_height;
-        src_format_ = frame_format;
-
-        size_t stride = 0;
-        size_t buf_size = 0;
-        if (!calculate_rgba_layout(frame_width, frame_height, stride, buf_size)) {
-            spdlog::error("[FrameConverter] Invalid RGBA layout ({}x{})",
-                          frame_width, frame_height);
-            return result;
-        }
-        auto rgba_buf = allocate_rgba_buffer(buf_size, "software");
-        if (!rgba_buf || rgba_buf->empty()) {
-            spdlog::error("[FrameConverter] Failed to allocate RGBA buffer ({} bytes)", buf_size);
-            return result;
-        }
-
-        uint8_t* dst_slices[1] = { rgba_buf->data() };
-        int dst_stride[1] = { static_cast<int>(stride) };
-
-        int converted_height = sws_scale(
-            sws_ctx_,
-            frame->data, frame->linesize,
-            0, frame_height,
-            dst_slices, dst_stride
-        );
-
-        if (converted_height != frame_height) {
-            spdlog::warn("[FrameConverter] sws_scale converted {} rows (expected {})",
-                         converted_height, frame_height);
-        }
-
-        result.cpu_data = rgba_buf;
-        result.texture_handle = rgba_buf->data();
-        result.is_ref = false;
-        result.storage = CpuRgbaFrameStorage{
-            rgba_buf,
-            static_cast<int>(stride),
-        };
     }
 
     return result;

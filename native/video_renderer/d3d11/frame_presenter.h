@@ -38,6 +38,9 @@ private:
     struct TrackResources {
         Microsoft::WRL::ComPtr<ID3D11Texture2D> sw_texture;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sw_srv;
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> sw_nv12_texture;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sw_nv12_y_srv;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sw_nv12_uv_srv;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> nv12_y_srv;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> nv12_uv_srv;
         Microsoft::WRL::ComPtr<ID3D11Texture2D> render_nv12_tex;
@@ -56,6 +59,11 @@ private:
                                 int fallback_width,
                                 int fallback_height,
                                 D3D11PreparedFrame& out);
+    bool prepare_software_nv12_frame(size_t slot,
+                                     const TextureFrame& frame,
+                                     int fallback_width,
+                                     int fallback_height,
+                                     D3D11PreparedFrame& out);
     bool prepare_texture_frame(const TextureFrame& frame, D3D11PreparedFrame& out);
 
     TextureManager* texture_manager_ = nullptr;

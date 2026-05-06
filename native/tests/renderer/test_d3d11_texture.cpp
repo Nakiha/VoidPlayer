@@ -180,7 +180,37 @@ TEST_CASE("TextureManager creates reusable NV12 copy resources", "[d3d11][textur
     cleanup_test_device(dev, hwnd);
 }
 
-TEST_CASE("D3D11FramePresenter prepares cached software frame SRV", "[d3d11][frame_presenter]") {
+TEST_CASE("TextureManager creates and uploads dynamic NV12 textures", "[d3d11][texture]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::TextureManager tm(dev->device(), dev->context());
+
+    const int width = 32;
+    const int height = 16;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+    texture.Attach(tm.create_nv12_texture(width, height));
+    REQUIRE(texture != nullptr);
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    texture->GetDesc(&desc);
+    REQUIRE(desc.Format == DXGI_FORMAT_NV12);
+    REQUIRE(desc.Width == width);
+    REQUIRE(desc.Height == height);
+
+    std::vector<uint8_t> data(width * height * 3 / 2, 128);
+    data[0] = 16;
+    REQUIRE(tm.upload_nv12_data(texture.Get(), data.data(), width, height, width, width));
+
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> y_srv;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> uv_srv;
+    REQUIRE(tm.create_nv12_plane_srvs(texture.Get(), y_srv, uv_srv));
+    REQUIRE(y_srv != nullptr);
+    REQUIRE(uv_srv != nullptr);
+
+    cleanup_test_device(dev, hwnd);
+}
+
+TEST_CASE("D3D11FramePresenter prepares cached software NV12 frame SRVs",
+          "[d3d11][frame_presenter]") {
     auto [dev, hwnd] = create_test_device();
     vr::TextureManager tm(dev->device(), dev->context());
     vr::D3D11FramePresenter presenter(&tm, dev->context());
@@ -188,23 +218,24 @@ TEST_CASE("D3D11FramePresenter prepares cached software frame SRV", "[d3d11][fra
     const int width = 32;
     const int height = 16;
     auto pixels = std::make_shared<std::vector<uint8_t>>(
-        width * height * 4,
-        static_cast<uint8_t>(255));
+        width * height * 3 / 2,
+        static_cast<uint8_t>(128));
 
     vr::TextureFrame frame;
     frame.width = width;
     frame.height = height;
     frame.cpu_data = pixels;
     frame.texture_handle = pixels->data();
-    frame.storage = vr::CpuRgbaFrameStorage{pixels, width * 4};
+    frame.is_nv12 = true;
+    frame.storage = vr::CpuNv12FrameStorage{pixels, width, width};
 
     vr::D3D11PreparedFrame prepared;
     REQUIRE(presenter.prepare_frame(
         0, frame, 1920, 1080, [](const char*) {}, prepared));
-    REQUIRE(prepared.rgba_srv != nullptr);
+    REQUIRE(prepared.rgba_srv == nullptr);
     REQUIRE(prepared.owned_rgba_srv.Get() == nullptr);
-    REQUIRE(prepared.nv12_y_srv == nullptr);
-    REQUIRE(prepared.nv12_uv_srv == nullptr);
+    REQUIRE(prepared.nv12_y_srv != nullptr);
+    REQUIRE(prepared.nv12_uv_srv != nullptr);
 
     presenter.reset_all();
     cleanup_test_device(dev, hwnd);

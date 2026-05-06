@@ -40,6 +40,41 @@ ID3D11Texture2D* TextureManager::create_rgba_texture(int width, int height) {
     return texture;
 }
 
+ID3D11Texture2D* TextureManager::create_nv12_texture(int width, int height) {
+    if (!device_) {
+        spdlog::error("Cannot create NV12 texture: device is null");
+        return nullptr;
+    }
+    if (width <= 0 || height <= 0 || (width & 1) != 0 || (height & 1) != 0) {
+        spdlog::error("Cannot create NV12 texture: invalid geometry ({}x{})", width, height);
+        return nullptr;
+    }
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = static_cast<UINT>(width);
+    desc.Height = static_cast<UINT>(height);
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_NV12;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+    desc.Usage = D3D11_USAGE_DYNAMIC;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    desc.MiscFlags = 0;
+
+    ID3D11Texture2D* texture = nullptr;
+    HRESULT hr = device_->CreateTexture2D(&desc, nullptr, &texture);
+    if (FAILED(hr)) {
+        spdlog::error("Failed to create NV12 texture ({}x{}): HRESULT {:#x}",
+                      width, height, static_cast<unsigned long>(hr));
+        return nullptr;
+    }
+
+    spdlog::debug("Created NV12 texture ({}x{})", width, height);
+    return texture;
+}
+
 bool TextureManager::upload_data(ID3D11Texture2D* texture, const uint8_t* data,
                                   int width, int height, int stride) {
     if (!texture || !data || !context_) {
@@ -80,6 +115,65 @@ bool TextureManager::upload_data(ID3D11Texture2D* texture, const uint8_t* data,
     return true;
 }
 
+bool TextureManager::upload_nv12_data(ID3D11Texture2D* texture, const uint8_t* data,
+                                      int width, int height,
+                                      int y_stride, int uv_stride) {
+    if (!texture || !data || !context_) {
+        spdlog::error("upload_nv12_data: invalid arguments (texture={}, data={}, context={})",
+                      static_cast<void*>(texture), static_cast<const void*>(data),
+                      static_cast<void*>(context_));
+        return false;
+    }
+    if (width <= 0 || height <= 0 || (width & 1) != 0 || (height & 1) != 0 ||
+        y_stride < width || uv_stride < width) {
+        spdlog::error("upload_nv12_data: invalid geometry (width={}, height={}, "
+                      "y_stride={}, uv_stride={})",
+                      width, height, y_stride, uv_stride);
+        return false;
+    }
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    texture->GetDesc(&desc);
+    if (desc.Format != DXGI_FORMAT_NV12 ||
+        desc.Width != static_cast<UINT>(width) ||
+        desc.Height != static_cast<UINT>(height)) {
+        spdlog::error("upload_nv12_data: texture mismatch (texture={}x{} fmt={}, "
+                      "data={}x{})",
+                      desc.Width, desc.Height, static_cast<int>(desc.Format), width, height);
+        return false;
+    }
+
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    HRESULT hr = context_->Map(texture, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+    if (FAILED(hr)) {
+        spdlog::error("Failed to map NV12 texture for upload: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
+    const uint8_t* src_y = data;
+    const uint8_t* src_uv = data + static_cast<size_t>(y_stride) * height;
+    uint8_t* dst_y = static_cast<uint8_t*>(mapped.pData);
+    uint8_t* dst_uv = dst_y + static_cast<size_t>(mapped.RowPitch) * height;
+    const size_t row_bytes = static_cast<size_t>(width);
+
+    for (int y = 0; y < height; ++y) {
+        std::memcpy(dst_y + static_cast<size_t>(y) * mapped.RowPitch,
+                    src_y + static_cast<size_t>(y) * y_stride,
+                    row_bytes);
+    }
+    for (int y = 0; y < height / 2; ++y) {
+        std::memcpy(dst_uv + static_cast<size_t>(y) * mapped.RowPitch,
+                    src_uv + static_cast<size_t>(y) * uv_stride,
+                    row_bytes);
+    }
+
+    context_->Unmap(texture, 0);
+    spdlog::trace("Uploaded NV12 texture data ({}x{}, y_stride={}, uv_stride={})",
+                  width, height, y_stride, uv_stride);
+    return true;
+}
+
 ID3D11ShaderResourceView* TextureManager::create_srv(ID3D11Texture2D* texture) {
     if (!device_ || !texture) {
         spdlog::error("Cannot create SRV: device or texture is null");
@@ -106,6 +200,56 @@ ID3D11ShaderResourceView* TextureManager::create_srv(ID3D11Texture2D* texture) {
 
     spdlog::debug("Created shader resource view for texture");
     return srv;
+}
+
+bool TextureManager::create_nv12_plane_srvs(
+    ID3D11Texture2D* texture,
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& y_srv,
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& uv_srv) {
+    y_srv.Reset();
+    uv_srv.Reset();
+    if (!device_ || !texture) {
+        spdlog::error("create_nv12_plane_srvs: invalid arguments (device={}, texture={})",
+                      static_cast<void*>(device_), static_cast<void*>(texture));
+        return false;
+    }
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    texture->GetDesc(&desc);
+
+    DXGI_FORMAT y_format = DXGI_FORMAT_R8_UNORM;
+    DXGI_FORMAT uv_format = DXGI_FORMAT_R8G8_UNORM;
+    if (desc.Format == DXGI_FORMAT_P010 || desc.Format == DXGI_FORMAT_P016) {
+        y_format = DXGI_FORMAT_R16_UNORM;
+        uv_format = DXGI_FORMAT_R16G16_UNORM;
+    } else if (desc.Format != DXGI_FORMAT_NV12) {
+        spdlog::warn("Creating planar SRVs for unexpected format={}",
+                     static_cast<int>(desc.Format));
+    }
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC y_desc = {};
+    y_desc.Format = y_format;
+    y_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    y_desc.Texture2D.MipLevels = 1;
+    HRESULT hr = device_->CreateShaderResourceView(texture, &y_desc, &y_srv);
+    if (FAILED(hr)) {
+        spdlog::error("Failed to create NV12 Y SRV: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC uv_desc = {};
+    uv_desc.Format = uv_format;
+    uv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    uv_desc.Texture2D.MipLevels = 1;
+    hr = device_->CreateShaderResourceView(texture, &uv_desc, &uv_srv);
+    if (FAILED(hr)) {
+        spdlog::error("Failed to create NV12 UV SRV: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        y_srv.Reset();
+        return false;
+    }
+    return true;
 }
 
 bool TextureManager::open_shared_texture(
@@ -196,38 +340,8 @@ bool TextureManager::ensure_nv12_copy_resources(
         return false;
     }
 
-    DXGI_FORMAT y_format = DXGI_FORMAT_R8_UNORM;
-    DXGI_FORMAT uv_format = DXGI_FORMAT_R8G8_UNORM;
-    if (src_desc.Format == DXGI_FORMAT_P010 || src_desc.Format == DXGI_FORMAT_P016) {
-        y_format = DXGI_FORMAT_R16_UNORM;
-        uv_format = DXGI_FORMAT_R16G16_UNORM;
-    } else if (src_desc.Format != DXGI_FORMAT_NV12) {
-        spdlog::warn("Preparing planar copy resources for unexpected format={}",
-                     static_cast<int>(src_desc.Format));
-    }
-
-    D3D11_SHADER_RESOURCE_VIEW_DESC y_desc = {};
-    y_desc.Format = y_format;
-    y_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    y_desc.Texture2D.MipLevels = 1;
-    hr = device_->CreateShaderResourceView(copy_texture.Get(), &y_desc, &y_srv);
-    if (FAILED(hr)) {
-        spdlog::error("Failed to create NV12 Y SRV: HRESULT {:#x}",
-                      static_cast<unsigned long>(hr));
+    if (!create_nv12_plane_srvs(copy_texture.Get(), y_srv, uv_srv)) {
         copy_texture.Reset();
-        return false;
-    }
-
-    D3D11_SHADER_RESOURCE_VIEW_DESC uv_desc = {};
-    uv_desc.Format = uv_format;
-    uv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    uv_desc.Texture2D.MipLevels = 1;
-    hr = device_->CreateShaderResourceView(copy_texture.Get(), &uv_desc, &uv_srv);
-    if (FAILED(hr)) {
-        spdlog::error("Failed to create NV12 UV SRV: HRESULT {:#x}",
-                      static_cast<unsigned long>(hr));
-        copy_texture.Reset();
-        y_srv.Reset();
         return false;
     }
 

@@ -14,7 +14,6 @@ target_link_libraries(video_renderer_core PUBLIC
     ${AVFORMAT_LIBRARY}
     ${AVUTIL_LIBRARY}
     ${SWRESAMPLE_LIBRARY}
-    ${SWSCALE_LIBRARY}
 )
 
 add_library(video_renderer_lib STATIC
@@ -38,7 +37,6 @@ target_link_libraries(video_renderer_lib PUBLIC
     ${AVFORMAT_LIBRARY}
     ${AVUTIL_LIBRARY}
     ${SWRESAMPLE_LIBRARY}
-    ${SWSCALE_LIBRARY}
     dxgi
     d3d11
     d3dcompiler

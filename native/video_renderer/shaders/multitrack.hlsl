@@ -48,13 +48,13 @@ VSOutput VSMain(VSInput input) {
 #define COLOR_PRIMARIES_BT709 2
 #define COLOR_PRIMARIES_BT2020 3
 
-// RGBA textures (software decode path)
+// RGBA textures (legacy/direct texture path)
 Texture2D u_textures[4] : register(t0);
 SamplerState u_sampler : register(s0);
 
-// NV12 Y plane textures (D3D11VA hardware decode path)
+// NV12 Y plane textures (software upload and D3D11VA decode paths)
 Texture2D<float> u_textures_y[4] : register(t4);
-// NV12 UV plane textures (D3D11VA hardware decode path)
+// NV12 UV plane textures (software upload and D3D11VA decode paths)
 Texture2D<float2> u_textures_uv[4] : register(t8);
 
 cbuffer Constants : register(b0) {
@@ -196,10 +196,8 @@ float3 yuv_to_rgb(float y, float2 uv, int range, int color_matrix, int transfer,
     }
 
     if (transfer == COLOR_TRANSFER_SDR) {
-        // Software decoded frames are converted through libswscale's integer
-        // RGBA path. Bias the float NV12 shader path by one output code value
-        // so side-by-side software/hardware tracks land on the same rounding
-        // side for ordinary SDR video.
+        // Keep the shared NV12 shader path on the same output rounding side
+        // as the previous software decode presentation path for ordinary SDR.
         rgb -= (1.0 / 255.0);
     }
 
@@ -209,7 +207,7 @@ float3 yuv_to_rgb(float y, float2 uv, int range, int color_matrix, int transfer,
 // Sample a track's texture and return RGBA color.
 // Uses NV12 path if the corresponding bit in u_nv12_mask is set.
 float4 sample_track(int track_idx, float2 uv) {
-    // NV12 hardware decode path
+    // Shared NV12 decode path
     if (u_nv12_mask & (1 << track_idx)) {
         float y;
         float2 uv_color;

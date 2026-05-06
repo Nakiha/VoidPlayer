@@ -79,20 +79,20 @@ TEST_CASE("FrameConverter: convert white YUV420P frame", "[frame_converter]") {
     REQUIRE(result.pts_us == 0);
     REQUIRE(result.texture_handle != nullptr);
     REQUIRE(result.is_ref == false);
-    REQUIRE(result.storage_kind() == FrameStorageKind::CpuRgba);
-    REQUIRE(result.cpu_rgba_storage() != nullptr);
-    REQUIRE(result.cpu_rgba_storage()->data == result.cpu_data);
-    REQUIRE(result.cpu_rgba_storage()->stride == 64 * 4);
+    REQUIRE(result.is_nv12 == true);
+    REQUIRE(result.storage_kind() == FrameStorageKind::CpuNv12);
+    REQUIRE(result.cpu_nv12_storage() != nullptr);
+    REQUIRE(result.cpu_nv12_storage()->data == result.cpu_data);
+    REQUIRE(result.cpu_nv12_storage()->y_stride == 64);
+    REQUIRE(result.cpu_nv12_storage()->uv_stride == 64);
 
-    // Verify RGBA output is white (all 0xFF) for at least the first few pixels
-    uint8_t* rgba = static_cast<uint8_t*>(result.texture_handle);
-    // White in RGBA = 0xFF,0xFF,0xFF,0xFF
-    REQUIRE(rgba[0] == 255); // R
-    REQUIRE(rgba[1] == 255); // G
-    REQUIRE(rgba[2] == 255); // B
-    REQUIRE(rgba[3] == 255); // A
+    // Verify NV12 output preserves Y and interleaves U/V.
+    uint8_t* nv12 = static_cast<uint8_t*>(result.texture_handle);
+    REQUIRE(nv12[0] == 255);
+    REQUIRE(nv12[64 * 64] == 128);
+    REQUIRE(nv12[64 * 64 + 1] == 128);
 
-    // Clean up (cpu_data shared_ptr handles RGBA buffer lifetime)
+    // Clean up (cpu_data shared_ptr handles CPU buffer lifetime)
     av_frame_free(&frame);
 }
 
@@ -122,11 +122,11 @@ TEST_CASE("FrameConverter: convert preserves PTS", "[frame_converter]") {
     TextureFrame result = converter.convert(frame);
     REQUIRE(result.pts_us == 123456);
     REQUIRE(result.texture_handle != nullptr);
-    REQUIRE(result.storage_kind() == FrameStorageKind::CpuRgba);
-    REQUIRE(result.cpu_rgba_storage() != nullptr);
-    REQUIRE(result.cpu_rgba_storage()->data == result.cpu_data);
+    REQUIRE(result.storage_kind() == FrameStorageKind::CpuNv12);
+    REQUIRE(result.cpu_nv12_storage() != nullptr);
+    REQUIRE(result.cpu_nv12_storage()->data == result.cpu_data);
 
-    // cpu_data shared_ptr handles RGBA buffer lifetime
+    // cpu_data shared_ptr handles CPU buffer lifetime
     av_frame_free(&frame);
 }
 
@@ -140,16 +140,18 @@ TEST_CASE("FrameConverter: software conversion follows dynamic frame geometry",
     REQUIRE(first_result.texture_handle != nullptr);
     REQUIRE(first_result.width == 64);
     REQUIRE(first_result.height == 64);
-    REQUIRE(first_result.cpu_rgba_storage() != nullptr);
-    REQUIRE(first_result.cpu_rgba_storage()->stride == 64 * 4);
+    REQUIRE(first_result.cpu_nv12_storage() != nullptr);
+    REQUIRE(first_result.cpu_nv12_storage()->y_stride == 64);
+    REQUIRE(first_result.cpu_nv12_storage()->uv_stride == 64);
 
     AVFrame* second = make_yuv420_frame(96, 72, 2000);
     TextureFrame second_result = converter.convert(second);
     REQUIRE(second_result.texture_handle != nullptr);
     REQUIRE(second_result.width == 96);
     REQUIRE(second_result.height == 72);
-    REQUIRE(second_result.cpu_rgba_storage() != nullptr);
-    REQUIRE(second_result.cpu_rgba_storage()->stride == 96 * 4);
+    REQUIRE(second_result.cpu_nv12_storage() != nullptr);
+    REQUIRE(second_result.cpu_nv12_storage()->y_stride == 96);
+    REQUIRE(second_result.cpu_nv12_storage()->uv_stride == 96);
     REQUIRE(second_result.cpu_data != first_result.cpu_data);
 
     av_frame_free(&first);
@@ -261,4 +263,20 @@ TEST_CASE("TextureFrame: storage exposes D3D11 NV12 metadata", "[frame_storage]"
     REQUIRE(frame.d3d11_nv12_storage()->texture == texture);
     REQUIRE(frame.d3d11_nv12_storage()->array_index == 7);
     REQUIRE(frame.d3d11_nv12_storage()->frame_ref == ref);
+}
+
+TEST_CASE("TextureFrame: storage exposes CPU NV12 metadata", "[frame_storage]") {
+    TextureFrame frame;
+    auto data = std::make_shared<std::vector<uint8_t>>(64 * 64 * 3 / 2);
+
+    frame.texture_handle = data->data();
+    frame.cpu_data = data;
+    frame.is_nv12 = true;
+    frame.storage = CpuNv12FrameStorage{data, 64, 64};
+
+    REQUIRE(frame.storage_kind() == FrameStorageKind::CpuNv12);
+    REQUIRE(frame.cpu_nv12_storage() != nullptr);
+    REQUIRE(frame.cpu_nv12_storage()->data == data);
+    REQUIRE(frame.cpu_nv12_storage()->y_stride == 64);
+    REQUIRE(frame.cpu_nv12_storage()->uv_stride == 64);
 }

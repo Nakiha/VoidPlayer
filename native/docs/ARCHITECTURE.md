@@ -82,7 +82,7 @@ Renderer                          # 主入口，生命周期管理
     │   └── BidiRingBuffer        # 双向环形缓冲
     ├── DemuxThread               # media 层文件读取 / packet 分发线程
     ├── DecodeThread              # 解码线程
-    │   └── FrameConverter        # YUV→RGBA / NV12 包装
+    │   └── FrameConverter        # CPU NV12 包装 / D3D11VA surface 包装
     │   └── HwDecodeProvider?     # 硬解（可选）
     └── SeekController            # Seek 请求协调
 ```

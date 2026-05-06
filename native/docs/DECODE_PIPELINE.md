@@ -60,7 +60,7 @@ bool enable_hardware_decode(DecodeDeviceMode mode = DecodeDeviceMode::Independen
 | Codec/路径 | `FrameConverter` | 说明 |
 |------------|------------------|------|
 | H.264/H.265 等 renderer-owned surface | `download_to_cpu=false` | D3D11VA NV12 surface 进入 renderer，renderer 复制到自有 NV12 texture 后 shader 采样 |
-| AV1/VP9 hwdownload | `download_to_cpu=true` | D3D11VA 负责解码，`av_hwframe_transfer_data` 下载到 CPU，再 sws 转 RGBA 上传 |
+| AV1/VP9 hwdownload | `download_to_cpu=true` | D3D11VA 负责解码，`av_hwframe_transfer_data` 下载到 CPU，再打包/上传 NV12 |
 
 `extra_hw_frames=48` 只给 renderer-owned surface 路径配置。AV1/VP9 hwdownload 会尽快释放 decoder surface，强行扩大池子反而可能在部分驱动上产生黑帧。
 
@@ -78,16 +78,16 @@ bool init_hardware(void* d3d_device, void* d3d_context,
 ### 软件路径
 
 ```
-AVFrame(YUV/etc) -> sws_scale -> RGBA CPU buffer -> TextureFrame(cpu_data)
+AVFrame(YUV/NV12) -> CPU NV12 buffer -> TextureFrame(cpu_data, is_nv12)
 ```
 
 ### 硬解 hwdownload 路径
 
 ```
-AVFrame(D3D11VA) -> av_hwframe_transfer_data -> sws_scale -> RGBA CPU buffer
+AVFrame(D3D11VA) -> av_hwframe_transfer_data -> CPU NV12 buffer
 ```
 
-用于 AV1/VP9。它不是软件解码；只是上屏前把硬解结果转成稳定的 RGBA 上传路径。
+用于 AV1/VP9。它不是软件解码；只是上屏前把硬解结果转成稳定的 CPU NV12 上传路径。
 
 ### 硬解 renderer-owned 路径
 

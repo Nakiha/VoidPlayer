@@ -19,7 +19,10 @@ bool D3D11FramePresenter::prepare_frame(size_t slot,
         return false;
     }
 
-    if (frame.is_ref && frame.is_nv12) {
+    if (frame.is_nv12) {
+        if (!frame.is_ref) {
+            return prepare_software_nv12_frame(slot, frame, fallback_width, fallback_height, out);
+        }
         return prepare_nv12_frame(slot, frame, wait_gpu_idle, out);
     }
     if (frame.is_ref) {
@@ -185,6 +188,76 @@ bool D3D11FramePresenter::prepare_software_frame(size_t slot,
 
     out.rgba_srv = resources.sw_srv.Get();
     return true;
+}
+
+bool D3D11FramePresenter::prepare_software_nv12_frame(size_t slot,
+                                                      const TextureFrame& frame,
+                                                      int fallback_width,
+                                                      int fallback_height,
+                                                      D3D11PreparedFrame& out) {
+    auto& resources = tracks_[slot];
+    if (!texture_manager_) {
+        return false;
+    }
+
+    const int w = frame.width > 0 ? frame.width : fallback_width;
+    const int h = frame.height > 0 ? frame.height : fallback_height;
+    if ((w & 1) != 0 || (h & 1) != 0) {
+        spdlog::error("[D3D11FramePresenter] Invalid CPU NV12 frame geometry ({}x{})",
+                      w, h);
+        return false;
+    }
+
+    bool need_new_tex = !resources.sw_nv12_texture;
+    if (resources.sw_nv12_texture) {
+        D3D11_TEXTURE2D_DESC existing_desc = {};
+        resources.sw_nv12_texture->GetDesc(&existing_desc);
+        need_new_tex =
+            static_cast<int>(existing_desc.Width) != w ||
+            static_cast<int>(existing_desc.Height) != h ||
+            existing_desc.Format != DXGI_FORMAT_NV12;
+    }
+
+    if (need_new_tex) {
+        resources.sw_nv12_y_srv.Reset();
+        resources.sw_nv12_uv_srv.Reset();
+        resources.sw_nv12_texture.Attach(texture_manager_->create_nv12_texture(w, h));
+        if (resources.sw_nv12_texture) {
+            texture_manager_->create_nv12_plane_srvs(
+                resources.sw_nv12_texture.Get(),
+                resources.sw_nv12_y_srv,
+                resources.sw_nv12_uv_srv);
+        }
+    }
+
+    if (!resources.sw_nv12_texture ||
+        !resources.sw_nv12_y_srv ||
+        !resources.sw_nv12_uv_srv) {
+        return false;
+    }
+
+    int y_stride = w;
+    int uv_stride = w;
+    if (const auto* storage = frame.cpu_nv12_storage()) {
+        if (storage->y_stride > 0) {
+            y_stride = storage->y_stride;
+        }
+        if (storage->uv_stride > 0) {
+            uv_stride = storage->uv_stride;
+        }
+    }
+
+    if (!texture_manager_->upload_nv12_data(
+            resources.sw_nv12_texture.Get(),
+            static_cast<const uint8_t*>(frame.texture_handle),
+            w, h, y_stride, uv_stride)) {
+        return false;
+    }
+
+    resources.nv12_uv_scale_y = 1.0f;
+    out.nv12_y_srv = resources.sw_nv12_y_srv.Get();
+    out.nv12_uv_srv = resources.sw_nv12_uv_srv.Get();
+    return out.nv12_y_srv && out.nv12_uv_srv;
 }
 
 bool D3D11FramePresenter::prepare_texture_frame(const TextureFrame& frame,

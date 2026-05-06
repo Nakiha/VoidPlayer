@@ -48,6 +48,12 @@ struct CpuRgbaFrameStorage {
     int stride = 0;
 };
 
+struct CpuNv12FrameStorage {
+    std::shared_ptr<std::vector<uint8_t>> data;
+    int y_stride = 0;
+    int uv_stride = 0;
+};
+
 struct D3D11Nv12FrameStorage {
     ID3D11Texture2D* texture = nullptr;
     int array_index = 0;
@@ -62,12 +68,14 @@ struct D3D11TextureFrameStorage {
 using FrameStorage = std::variant<
     std::monostate,
     CpuRgbaFrameStorage,
+    CpuNv12FrameStorage,
     D3D11Nv12FrameStorage,
     D3D11TextureFrameStorage>;
 
 enum class FrameStorageKind {
     Empty,
     CpuRgba,
+    CpuNv12,
     D3D11Nv12,
     D3D11Texture,
 };
@@ -75,6 +83,9 @@ enum class FrameStorageKind {
 inline FrameStorageKind frame_storage_kind(const FrameStorage& storage) {
     if (std::holds_alternative<CpuRgbaFrameStorage>(storage)) {
         return FrameStorageKind::CpuRgba;
+    }
+    if (std::holds_alternative<CpuNv12FrameStorage>(storage)) {
+        return FrameStorageKind::CpuNv12;
     }
     if (std::holds_alternative<D3D11Nv12FrameStorage>(storage)) {
         return FrameStorageKind::D3D11Nv12;

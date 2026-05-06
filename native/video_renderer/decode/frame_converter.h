@@ -7,7 +7,6 @@
 
 extern "C" {
 #include <libavcodec/avcodec.h>
-#include <libswscale/swscale.h>
 }
 
 struct ID3D11Device;
@@ -41,21 +40,12 @@ private:
     bool is_hw_ = false;
     bool download_hw_to_cpu_ = false;
     HwDecodeType hw_type_ = HwDecodeType::None;
-    SwsContext* sws_ctx_ = nullptr;
     AVPixelFormat src_format_ = AV_PIX_FMT_NONE;
     AVPixelFormat downloaded_format_ = AV_PIX_FMT_NONE;
-    int sws_src_width_ = 0;
-    int sws_src_height_ = 0;
-    AVPixelFormat sws_src_format_ = AV_PIX_FMT_NONE;
-    VideoColorInfo sws_color_;
     void* d3d_device_ = nullptr;
     void* d3d_context_ = nullptr;
     std::recursive_mutex* device_mutex_ = nullptr;
     std::shared_ptr<D3D11SnapshotPool> d3d11_snapshot_pool_;
-
-    void reset_sws_context();
-    bool ensure_sws_context(int src_width, int src_height, AVPixelFormat src_format,
-                            const VideoColorInfo& color);
 };
 
 } // namespace vr

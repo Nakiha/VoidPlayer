@@ -38,23 +38,25 @@ struct TextureFrame {
 
 字段含义：
 
-- `storage` 是当前主路径，使用 `FrameStorage` variant 区分 `CpuRgba`、`D3D11Nv12`、`D3D11Texture`。
+- `storage` 是当前主路径，使用 `FrameStorage` variant 区分 `CpuNv12`、`CpuRgba`、`D3D11Nv12`、`D3D11Texture`。
 - `cpu_data`、`texture_handle`、`is_nv12`、`texture_array_index`、`hw_frame_ref` 仍保留为兼容字段，便于迁移期间的测试和旧调用点。
-- `CpuRgbaFrameStorage` 持有软件路径或 hwdownload 路径产生的 RGBA 数据。
+- `CpuNv12FrameStorage` 持有软件路径或 hwdownload 路径产生的 CPU NV12 数据。
+- `CpuRgbaFrameStorage` 保留给旧测试或直接 RGBA texture 路径。
 - `D3D11Nv12FrameStorage` 指向 D3D11VA NV12 texture 和 array slice，并持有 frame ref，保证 decoder surface 在 renderer 使用期间不被 FFmpeg pool 回收。
 
 ## 三条输出路径
 
 | 路径 | 典型 codec | 数据流 | 特点 |
 |------|------------|--------|------|
-| 软件解码 | fallback、部分不支持硬解的 codec | `AVFrame -> sws_scale -> RGBA CPU -> D3D11 upload` | 最稳，CPU 成本高 |
-| 硬解 hwdownload | AV1、VP9 | `D3D11VA decode -> av_hwframe_transfer_data -> RGBA CPU -> D3D11 upload` | 仍是硬解，避免直接采样驱动差异导致黑/灰帧 |
+| 软件解码 | fallback、部分不支持硬解的 codec | `AVFrame -> CPU NV12 pack -> D3D11 NV12 upload -> shader NV12->RGB` | 与硬解共用颜色转换路径 |
+| 硬解 hwdownload | AV1、VP9 | `D3D11VA decode -> av_hwframe_transfer_data -> CPU NV12 pack -> D3D11 NV12 upload` | 仍是硬解，避免直接采样驱动差异导致黑/灰帧 |
 | 硬解 renderer-owned NV12 | H.264、H.265 等 | `D3D11VA NV12 -> renderer-owned NV12 texture -> shader NV12->RGB` | CPU 拷贝少，性能路径 |
 
 ## Renderer 上屏
 
 Renderer 通过 `RenderSink::evaluate()` 选择每轨应该显示的帧。`D3D11FramePresenter` 根据 `TextureFrame::storage` 类型执行：
 
+- CPU NV12 数据：上传/复用每轨 NV12 texture 后创建 Y/UV SRV 采样。
 - RGBA CPU 数据：上传/复用每轨 RGBA texture 后按 RGBA 采样。
 - NV12 硬解数据：复制 decoder surface 的目标 array slice 到 renderer-owned NV12 texture，再创建 Y/UV SRV 采样。
 

@@ -15,13 +15,13 @@ struct TextureFrame {
     int height = 0;
     bool is_ref = false;
     void* texture_handle = nullptr;
-    // Owns CPU-side RGBA data; shared_ptr enables safe cross-thread sharing
+    // Owns CPU-side video data; shared_ptr enables safe cross-thread sharing
     // and automatic cleanup when all references are gone.
     std::shared_ptr<std::vector<uint8_t>> cpu_data;
     FrameStorage storage;
 
-    // Hardware decode metadata (D3D11VA NV12)
-    bool is_nv12 = false;               // true if NV12 D3D11VA frame
+    // Planar NV12 metadata (software upload or D3D11VA)
+    bool is_nv12 = false;               // true if frame uses NV12 plane sampling
     int texture_array_index = 0;        // Texture2DArray slice index
     VideoColorInfo color;
 
@@ -34,6 +34,9 @@ struct TextureFrame {
     FrameStorageKind storage_kind() const { return frame_storage_kind(storage); }
     const CpuRgbaFrameStorage* cpu_rgba_storage() const {
         return std::get_if<CpuRgbaFrameStorage>(&storage);
+    }
+    const CpuNv12FrameStorage* cpu_nv12_storage() const {
+        return std::get_if<CpuNv12FrameStorage>(&storage);
     }
     const D3D11Nv12FrameStorage* d3d11_nv12_storage() const {
         return std::get_if<D3D11Nv12FrameStorage>(&storage);

@@ -33,7 +33,6 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
 #include <libswresample/swresample.h>
-#include <libswscale/swscale.h>
 }
 
 #pragma comment(lib, "ole32.lib")
@@ -153,12 +152,11 @@ std::string format_ffmpeg_version(unsigned version) {
 
 void log_ffmpeg_runtime_versions() {
     spdlog::info(
-        "[FFmpeg] av_version_info={} avcodec={} avformat={} avutil={} swscale={} swresample={}",
+        "[FFmpeg] av_version_info={} avcodec={} avformat={} avutil={} swresample={}",
         av_version_info(),
         format_ffmpeg_version(avcodec_version()),
         format_ffmpeg_version(avformat_version()),
         format_ffmpeg_version(avutil_version()),
-        format_ffmpeg_version(swscale_version()),
         format_ffmpeg_version(swresample_version()));
 }
 

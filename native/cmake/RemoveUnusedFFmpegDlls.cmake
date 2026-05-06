@@ -4,7 +4,8 @@ endif()
 
 file(GLOB _void_unused_ffmpeg_dlls
     "${VOID_FFMPEG_RUNTIME_DIR}/avfilter-*.dll"
-    "${VOID_FFMPEG_RUNTIME_DIR}/avdevice-*.dll")
+    "${VOID_FFMPEG_RUNTIME_DIR}/avdevice-*.dll"
+    "${VOID_FFMPEG_RUNTIME_DIR}/swscale-*.dll")
 
 if(_void_unused_ffmpeg_dlls)
     file(REMOVE ${_void_unused_ffmpeg_dlls})

@@ -42,7 +42,6 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
         ${AVFORMAT_LIBRARY}
         ${AVUTIL_LIBRARY}
         ${SWRESAMPLE_LIBRARY}
-        ${SWSCALE_LIBRARY}
         dxgi
         d3d11
         d3dcompiler

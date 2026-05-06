@@ -1,3 +1,8 @@
+if(NOT SWSCALE_LIBRARY)
+    message(WARNING "Skipping pipeline_bench: libswscale was not found")
+    return()
+endif()
+
 add_executable(pipeline_bench
     pipeline_bench.cpp
     bench_demux.cpp

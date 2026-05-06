@@ -68,6 +68,11 @@ class ScriptSetSeekAfterJumpBehavior extends ScriptInstruction {
   const ScriptSetSeekAfterJumpBehavior(super.time, this.behavior);
 }
 
+class ScriptSetDecodeMode extends ScriptInstruction {
+  final DecodeMode mode;
+  const ScriptSetDecodeMode(super.time, this.mode);
+}
+
 class ScriptQuit extends ScriptInstruction {
   final int exitCode;
   const ScriptQuit(super.time, this.exitCode);
@@ -374,6 +379,13 @@ ScriptInstruction? _parseInstruction(
       }
       final behavior = SeekAfterJumpBehavior.fromStorage(args[0]);
       return ScriptSetSeekAfterJumpBehavior(time, behavior);
+    case 'SET_DECODE_MODE':
+      if (args.isEmpty) {
+        log.warning('SET_DECODE_MODE missing mode argument: $rawLine');
+        return null;
+      }
+      final mode = DecodeMode.fromStorage(args[0]);
+      return ScriptSetDecodeMode(time, mode);
 
     // Asserts — playback
     case 'ASSERT_PLAYING':
@@ -506,6 +518,26 @@ ScriptInstruction? _parseInstruction(
           args[0],
           minNonBlackRatio: args.length >= 2 ? double.parse(args[1]) : 0.01,
           minAvgLuma: args.length >= 3 ? double.parse(args[2]) : 4.0,
+        ),
+      );
+    case 'ASSERT_CAPTURE_SPLIT_DIFF':
+      if (args.isEmpty) {
+        log.warning('ASSERT_CAPTURE_SPLIT_DIFF needs capture name: $rawLine');
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertCaptureSplitDiff(
+          args[0],
+          maxMeanAbsChannel: args.length >= 2
+              ? double.parse(args[1])
+              : double.infinity,
+          maxMeanAbsLuma: args.length >= 3
+              ? double.parse(args[2])
+              : double.infinity,
+          maxMaxChannel: args.length >= 4
+              ? double.parse(args[3])
+              : double.infinity,
         ),
       );
     case 'ASSERT_ANALYSIS_PROCESS_COUNT':

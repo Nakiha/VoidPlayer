@@ -91,7 +91,8 @@ PYBIND11_MODULE(video_renderer_native, m) {
         .def("track_count", &vr::Renderer::track_count)
         .def("duration_us", &vr::Renderer::duration_us)
         // Dynamic track management
-        .def("add_track", &vr::Renderer::add_track, py::arg("video_path"),
+        .def("add_track", &vr::Renderer::add_track,
+             py::arg("video_path"), py::arg("use_hardware_decode") = true,
              "Add a video track, returns slot index (0-3) or -1 on failure")
         .def("remove_track", &vr::Renderer::remove_track, py::arg("file_id"),
              "Remove track by file_id")
@@ -126,7 +127,8 @@ PYBIND11_MODULE(video_renderer_native, m) {
         .def("current_speed", &vr::NativePlayer::current_speed)
         .def("track_count", &vr::NativePlayer::track_count)
         .def("duration_us", &vr::NativePlayer::duration_us)
-        .def("add_track", &vr::NativePlayer::add_track, py::arg("video_path"))
+        .def("add_track", &vr::NativePlayer::add_track,
+             py::arg("video_path"), py::arg("use_hardware_decode") = true)
         .def("remove_track", &vr::NativePlayer::remove_track, py::arg("file_id"))
         .def("has_track", &vr::NativePlayer::has_track, py::arg("slot"))
         .def("set_track_offset", &vr::NativePlayer::set_track_offset,

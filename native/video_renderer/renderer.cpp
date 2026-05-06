@@ -2278,7 +2278,8 @@ bool Renderer::recreate_decode_thread_for_seek(size_t slot, int64_t target_pts_u
     return true;
 }
 
-int Renderer::add_track(const std::string& video_path) {
+int Renderer::add_track(const std::string& video_path,
+                        bool use_hardware_decode) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (!initialized_) return -1;
@@ -2296,7 +2297,7 @@ int Renderer::add_track(const std::string& video_path) {
         playing_ = false;
     }
 
-    auto pipeline = create_pipeline(video_path);
+    auto pipeline = create_pipeline(video_path, use_hardware_decode);
     if (!pipeline) {
         if (was_playing) {
             playback_->play();
@@ -2366,7 +2367,10 @@ int Renderer::add_track(const std::string& video_path) {
     preview_drawn_ = false;
     last_decision_.frames[slot] = std::nullopt;
 
-    spdlog::info("Renderer::add_track: slot={} path={}", slot, video_path);
+    spdlog::info("Renderer::add_track: slot={} hw_decode={} path={}",
+                 slot,
+                 use_hardware_decode,
+                 video_path);
     return slot;
 }
 

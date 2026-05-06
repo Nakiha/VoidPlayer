@@ -21,15 +21,19 @@ void main() {
 0.5,SET_RENDER_SIZE,320,180
 0.1,PLAY
 0.7,ASSERT_PLAYING
+0.8,SET_DECODE_MODE,forceSoftware
+0.9,ASSERT_CAPTURE_SPLIT_DIFF,cap,1.5,2.5,12
 ''');
 
     final instructions = parseAutomationScript(file.path);
 
-    expect(instructions, hasLength(4));
+    expect(instructions, hasLength(6));
     expect(instructions.map((i) => i.time.inMilliseconds), [
       100,
       500,
       700,
+      800,
+      900,
       2000,
     ]);
     expect(
@@ -54,6 +58,22 @@ void main() {
     );
     expect(
       instructions[3],
+      isA<ScriptSetDecodeMode>().having(
+        (i) => i.mode.storageValue,
+        'mode',
+        'forceSoftware',
+      ),
+    );
+    expect(
+      instructions[4],
+      isA<ScriptAssert>().having(
+        (i) => i.assertion,
+        'assertion',
+        isA<AssertCaptureSplitDiff>(),
+      ),
+    );
+    expect(
+      instructions[5],
       isA<ScriptQuit>().having((i) => i.exitCode, 'exitCode', 0),
     );
   });

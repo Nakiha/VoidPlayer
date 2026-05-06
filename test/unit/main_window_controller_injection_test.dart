@@ -29,6 +29,12 @@ class _FakePlaybackPreferences implements PlaybackPreferences {
   @override
   SeekAfterJumpBehavior get seekAfterJumpBehavior =>
       SeekAfterJumpBehavior.keepPreviousState;
+
+  @override
+  DecodeMode get decodeMode => DecodeMode.preferHardware;
+
+  @override
+  bool get useHardwareDecode => decodeMode.useHardwareDecode;
 }
 
 class _FakeAppSettingsRepository implements AppSettingsRepository {
@@ -50,6 +56,9 @@ class _FakeAppSettingsRepository implements AppSettingsRepository {
   @override
   SeekAfterJumpBehavior seekAfterJumpBehavior =
       SeekAfterJumpBehavior.keepPreviousState;
+
+  @override
+  DecodeMode decodeMode = DecodeMode.preferHardware;
 
   @override
   Future<void> save() => Future.value();

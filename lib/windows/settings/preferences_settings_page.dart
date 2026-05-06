@@ -17,11 +17,14 @@ class PreferencesSettingsPage extends StatefulWidget {
 
 class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
   late SeekAfterJumpBehavior _seekBehavior;
+  late DecodeMode _decodeMode;
 
   @override
   void initState() {
     super.initState();
-    _seekBehavior = AppSettingsScope.read(context).seekAfterJumpBehavior;
+    final settings = AppSettingsScope.read(context);
+    _seekBehavior = settings.seekAfterJumpBehavior;
+    _decodeMode = settings.decodeMode;
   }
 
   Future<void> _setSeekBehavior(SeekAfterJumpBehavior behavior) async {
@@ -29,6 +32,14 @@ class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
     setState(() => _seekBehavior = behavior);
     final settings = AppSettingsScope.of(context);
     settings.seekAfterJumpBehavior = behavior;
+    await settings.save();
+  }
+
+  Future<void> _setDecodeMode(DecodeMode mode) async {
+    if (_decodeMode == mode) return;
+    setState(() => _decodeMode = mode);
+    final settings = AppSettingsScope.of(context);
+    settings.decodeMode = mode;
     await settings.save();
   }
 
@@ -54,6 +65,20 @@ class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
             },
             onChanged: (value) {
               unawaited(_setSeekBehavior(value));
+            },
+          ),
+          SettingsPageStyle.contentGap,
+          SettingsComboRow<DecodeMode>(
+            label: l.decodeMode,
+            icon: Icons.memory,
+            value: _decodeMode,
+            items: DecodeMode.values,
+            labelFor: (value) => switch (value) {
+              DecodeMode.preferHardware => l.decodeModePreferHardware,
+              DecodeMode.forceSoftware => l.decodeModeForceSoftware,
+            },
+            onChanged: (value) {
+              unawaited(_setDecodeMode(value));
             },
           ),
         ],

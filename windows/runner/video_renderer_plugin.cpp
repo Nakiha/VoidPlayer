@@ -973,6 +973,12 @@ void VideoRendererPlugin::CreatePlayer(
         result->Error("BAD_ARGS", "Invalid viewport size");
         return;
     }
+    bool use_hardware_decode = true;
+    auto hw_it = args->find(flutter::EncodableValue("useHardwareDecode"));
+    if (hw_it != args->end() && !read_bool_arg(hw_it->second, use_hardware_decode)) {
+        result->Error("BAD_ARGS", "useHardwareDecode must be a boolean");
+        return;
+    }
 
     // Create player in headless mode
     vr::RendererConfig config;
@@ -981,7 +987,7 @@ void VideoRendererPlugin::CreatePlayer(
     config.backend.adapter = dxgi_adapter_.Get();
     config.width = width;
     config.height = height;
-    config.use_hardware_decode = true;
+    config.use_hardware_decode = use_hardware_decode;
 
     if (!config.backend.adapter) {
         result->Error(
@@ -1077,8 +1083,11 @@ void VideoRendererPlugin::CreatePlayer(
         }
     });
 
-    spdlog::info("[VideoRendererPlugin] Created player, texture_id={}, tracks={}",
-                 texture_id_.load(std::memory_order_acquire), player_->track_infos().size());
+    spdlog::info(
+        "[VideoRendererPlugin] Created player, texture_id={}, tracks={}, hw_decode={}",
+        texture_id_.load(std::memory_order_acquire),
+        player_->track_infos().size(),
+        use_hardware_decode);
 
     // Build result map with textureId and track info
     flutter::EncodableMap result_map;
@@ -1163,8 +1172,14 @@ void VideoRendererPlugin::AddTrack(
         result->Error("BAD_ARGS", "path must be a non-empty string");
         return;
     }
+    bool use_hardware_decode = true;
+    auto hw_it = args->find(flutter::EncodableValue("useHardwareDecode"));
+    if (hw_it != args->end() && !read_bool_arg(hw_it->second, use_hardware_decode)) {
+        result->Error("BAD_ARGS", "useHardwareDecode must be a boolean");
+        return;
+    }
 
-    int slot = player_->add_track(path);
+    int slot = player_->add_track(path, use_hardware_decode);
     if (slot < 0) {
         result->Error("ADD_FAILED", "Failed to add track");
         return;
@@ -1180,7 +1195,13 @@ void VideoRendererPlugin::AddTrack(
         return;
     }
 
-    spdlog::info("[VideoRendererPlugin] Added track: file_id={}, slot={}, path={}, tracks={}", found->file_id, slot, path, player_->track_infos().size());
+    spdlog::info(
+        "[VideoRendererPlugin] Added track: file_id={}, slot={}, hw_decode={}, path={}, tracks={}",
+        found->file_id,
+        slot,
+        use_hardware_decode,
+        path,
+        player_->track_infos().size());
     result->Success(flutter::EncodableValue(make_track_map(*found)));
     } catch (const std::bad_variant_access& e) {
         ReportMethodException(result.get(), "addTrack", e);

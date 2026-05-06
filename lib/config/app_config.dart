@@ -139,6 +139,7 @@ class AppConfig {
   static const _accentColorModeKey = 'accentColorMode';
   static const _customAccentColorKey = 'customAccentColor';
   static const _seekAfterJumpBehaviorKey = 'seekAfterJumpBehavior';
+  static const _decodeModeKey = 'decodeMode';
   static const _defaultAnalysisCacheMaxBytes = 1024 * 1024 * 1024;
 
   /// Maximum analysis cache size in bytes. A value of 0 means unlimited.
@@ -190,5 +191,14 @@ class AppConfig {
 
   set seekAfterJumpBehavior(SeekAfterJumpBehavior value) {
     section(_preferencesKey)[_seekAfterJumpBehaviorKey] = value.storageValue;
+  }
+
+  DecodeMode get decodeMode {
+    final value = section(_preferencesKey)[_decodeModeKey];
+    return DecodeMode.fromStorage(value is String ? value : '');
+  }
+
+  set decodeMode(DecodeMode value) {
+    section(_preferencesKey)[_decodeModeKey] = value.storageValue;
   }
 }

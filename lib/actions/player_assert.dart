@@ -102,6 +102,20 @@ class AssertCaptureNotBlack extends PlayerAssert {
   });
 }
 
+class AssertCaptureSplitDiff extends PlayerAssert {
+  final String capture;
+  final double maxMeanAbsChannel;
+  final double maxMeanAbsLuma;
+  final double maxMaxChannel;
+
+  const AssertCaptureSplitDiff(
+    this.capture, {
+    this.maxMeanAbsChannel = double.infinity,
+    this.maxMeanAbsLuma = double.infinity,
+    this.maxMaxChannel = double.infinity,
+  });
+}
+
 class AssertAnalysisProcessCount extends PlayerAssert {
   final int count;
   const AssertAnalysisProcessCount(this.count);

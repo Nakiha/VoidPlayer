@@ -105,6 +105,7 @@ class _FakeNativePlayerApi implements NativePlayerApi {
     required List<String> videoPaths,
     required int width,
     required int height,
+    required bool useHardwareDecode,
   }) async {
     calls.add('createPlayer:${width}x$height:${videoPaths.join('|')}');
     return const CreatePlayerResult(textureId: 1, tracks: []);
@@ -211,7 +212,10 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<TrackInfo> addTrack(String videoPath) async {
+  Future<TrackInfo> addTrack(
+    String videoPath, {
+    required bool useHardwareDecode,
+  }) async {
     calls.add('addTrack:$videoPath');
     return TrackInfo(fileId: 1, slot: 0, path: videoPath, width: 1, height: 1);
   }

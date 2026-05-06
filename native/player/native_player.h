@@ -45,7 +45,9 @@ public:
     size_t track_count() const { return renderer_.track_count(); }
     int64_t duration_us() const { return renderer_.duration_us(); }
 
-    int add_track(const std::string& video_path) { return renderer_.add_track(video_path); }
+    int add_track(const std::string& video_path, bool use_hardware_decode = true) {
+        return renderer_.add_track(video_path, use_hardware_decode);
+    }
     void remove_track(int file_id) { renderer_.remove_track(file_id); }
     bool has_track(int slot) const { return renderer_.has_track(slot); }
     std::pair<int, int> track_dimensions(int slot) const {

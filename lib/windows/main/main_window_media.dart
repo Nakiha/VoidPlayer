@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../../app_log.dart';
+import '../../preferences/playback_preferences.dart';
 import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
@@ -20,6 +21,7 @@ class MainWindowMediaCoordinator {
   final MainWindowStateStore stateStore;
   final MainWindowTimelineMetrics timelineMetrics;
   final MainWindowMediaLifecycle lifecycle;
+  final PlaybackPreferences playbackPreferences;
   final bool Function() mounted;
   Future<void>? _loadInFlight;
   bool _disposed = false;
@@ -31,6 +33,7 @@ class MainWindowMediaCoordinator {
     required this.stateStore,
     required this.timelineMetrics,
     required this.lifecycle,
+    required this.playbackPreferences,
     required this.mounted,
   });
 
@@ -91,6 +94,7 @@ class MainWindowMediaCoordinator {
           paths,
           width: initialWidth,
           height: initialHeight,
+          useHardwareDecode: playbackPreferences.useHardwareDecode,
         );
         if (!_alive) return;
         setTextureId(res.textureId);
@@ -121,7 +125,10 @@ class MainWindowMediaCoordinator {
         if (!_alive) return;
         try {
           final previousTrackCount = trackManager.count;
-          final track = await controller.addTrack(path);
+          final track = await controller.addTrack(
+            path,
+            useHardwareDecode: playbackPreferences.useHardwareDecode,
+          );
           if (!_alive) return;
           await layoutCoordinator.preemptTimelineTrackCountChange(
             previousCount: previousTrackCount,

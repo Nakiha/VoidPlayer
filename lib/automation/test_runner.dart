@@ -128,6 +128,12 @@ class TestRunner {
         );
         await runtime.setSeekAfterJumpBehavior(behavior);
 
+      case ScriptSetDecodeMode(:final mode):
+        log.info(
+          'TestRunner ${instr.time}: SET_DECODE_MODE ${mode.storageValue}',
+        );
+        await runtime.setDecodeMode(mode);
+
       case ScriptQuit(:final exitCode):
         log.info('TestRunner ${instr.time}: QUIT $exitCode');
         await automation.closeAllAnalysisWindows();

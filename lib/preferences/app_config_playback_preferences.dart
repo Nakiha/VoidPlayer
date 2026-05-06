@@ -9,4 +9,10 @@ class AppConfigPlaybackPreferences implements PlaybackPreferences {
   @override
   SeekAfterJumpBehavior get seekAfterJumpBehavior =>
       settings.seekAfterJumpBehavior;
+
+  @override
+  DecodeMode get decodeMode => settings.decodeMode;
+
+  @override
+  bool get useHardwareDecode => decodeMode.useHardwareDecode;
 }

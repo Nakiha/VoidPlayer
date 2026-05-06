@@ -157,7 +157,8 @@ public:
 
     /// Add a video track at the first empty slot.
     /// Returns the slot index (0-3), or -1 if all slots are full or init fails.
-    int add_track(const std::string& video_path);
+    int add_track(const std::string& video_path,
+                  bool use_hardware_decode = true);
 
     /// Remove a track by file_id. Stops its pipeline, compacts slots.
     void remove_track(int file_id);

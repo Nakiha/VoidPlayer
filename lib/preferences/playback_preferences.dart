@@ -14,6 +14,27 @@ enum SeekAfterJumpBehavior {
   }
 }
 
+enum DecodeMode {
+  preferHardware('preferHardware'),
+  forceSoftware('forceSoftware');
+
+  const DecodeMode(this.storageValue);
+
+  final String storageValue;
+
+  bool get useHardwareDecode => this == DecodeMode.preferHardware;
+
+  static DecodeMode fromStorage(String value) {
+    return DecodeMode.values.firstWhere(
+      (mode) => mode.storageValue == value,
+      orElse: () => DecodeMode.preferHardware,
+    );
+  }
+}
+
 abstract class PlaybackPreferences {
   SeekAfterJumpBehavior get seekAfterJumpBehavior;
+  DecodeMode get decodeMode;
+
+  bool get useHardwareDecode => decodeMode.useHardwareDecode;
 }

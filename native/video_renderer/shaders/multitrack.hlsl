@@ -168,11 +168,11 @@ float3 tone_map_to_sdr(float3 rgb, int transfer, int primaries) {
 
 float3 yuv_to_rgb(float y, float2 uv, int range, int color_matrix, int transfer, int primaries) {
     float y_full = y;
-    float2 cbcr = uv - 0.5;
+    float2 cbcr = (uv * 255.0 - 128.0) / 255.0;
 
     if (range != COLOR_RANGE_FULL) {
-        y_full = (y - (16.0 / 255.0)) * (255.0 / 219.0);
-        cbcr *= (255.0 / 224.0);
+        y_full = (y * 255.0 - 16.0) / 219.0;
+        cbcr = (uv * 255.0 - 128.0) / 224.0;
     }
 
     float cb = cbcr.x;
@@ -193,6 +193,14 @@ float3 yuv_to_rgb(float y, float2 uv, int range, int color_matrix, int transfer,
             y_full + 1.402 * cr,
             y_full - 0.344136 * cb - 0.714136 * cr,
             y_full + 1.772 * cb);
+    }
+
+    if (transfer == COLOR_TRANSFER_SDR) {
+        // Software decoded frames are converted through libswscale's integer
+        // RGBA path. Bias the float NV12 shader path by one output code value
+        // so side-by-side software/hardware tracks land on the same rounding
+        // side for ordinary SDR video.
+        rgb -= (1.0 / 255.0);
     }
 
     return tone_map_to_sdr(rgb, transfer, primaries);

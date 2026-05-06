@@ -7,6 +7,7 @@ abstract interface class NativePlayerApi {
     required List<String> videoPaths,
     required int width,
     required int height,
+    required bool useHardwareDecode,
   });
 
   Future<void> destroyPlayer();
@@ -30,7 +31,10 @@ abstract interface class NativePlayerApi {
   Future<bool> isPlaying();
   Future<void> applyLayout(LayoutState state);
   Future<LayoutState> getLayout();
-  Future<TrackInfo> addTrack(String videoPath);
+  Future<TrackInfo> addTrack(
+    String videoPath, {
+    required bool useHardwareDecode,
+  });
   Future<void> removeTrack(int fileId);
   Future<void> setTrackOffset({required int fileId, required int offsetUs});
   Future<List<TrackInfo>> getTracks();
@@ -49,12 +53,14 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     required List<String> videoPaths,
     required int width,
     required int height,
+    required bool useHardwareDecode,
   }) async {
     final map = await _channel
         .invokeMethod<Map<dynamic, dynamic>>(NativePlayerMethods.createPlayer, {
           NativePlayerKeys.videoPaths: videoPaths,
           NativePlayerKeys.width: width,
           NativePlayerKeys.height: height,
+          NativePlayerKeys.useHardwareDecode: useHardwareDecode,
         });
     return CreatePlayerResult.fromMap(
       NativePlayerPayloads.requireMap(map, NativePlayerMethods.createPlayer),
@@ -185,11 +191,15 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<TrackInfo> addTrack(String videoPath) async {
-    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-      NativePlayerMethods.addTrack,
-      {NativePlayerKeys.path: videoPath},
-    );
+  Future<TrackInfo> addTrack(
+    String videoPath, {
+    required bool useHardwareDecode,
+  }) async {
+    final map = await _channel
+        .invokeMethod<Map<dynamic, dynamic>>(NativePlayerMethods.addTrack, {
+          NativePlayerKeys.path: videoPath,
+          NativePlayerKeys.useHardwareDecode: useHardwareDecode,
+        });
     return NativePlayerPayloads.trackInfoFromValue(
       NativePlayerPayloads.requireMap(map, NativePlayerMethods.addTrack),
       NativePlayerMethods.addTrack,

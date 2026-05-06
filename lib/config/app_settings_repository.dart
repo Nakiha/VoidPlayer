@@ -22,6 +22,9 @@ abstract class AppSettingsRepository {
   SeekAfterJumpBehavior get seekAfterJumpBehavior;
   set seekAfterJumpBehavior(SeekAfterJumpBehavior value);
 
+  DecodeMode get decodeMode;
+  set decodeMode(DecodeMode value);
+
   Future<void> save();
 }
 
@@ -77,6 +80,14 @@ class AppConfigSettingsRepository implements AppSettingsRepository {
   @override
   set seekAfterJumpBehavior(SeekAfterJumpBehavior value) {
     config.seekAfterJumpBehavior = value;
+  }
+
+  @override
+  DecodeMode get decodeMode => config.decodeMode;
+
+  @override
+  set decodeMode(DecodeMode value) {
+    config.decodeMode = value;
   }
 
   @override

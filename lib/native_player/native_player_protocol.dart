@@ -39,6 +39,7 @@ class NativePlayerKeys {
   static const fileId = 'fileId';
   static const slot = 'slot';
   static const path = 'path';
+  static const useHardwareDecode = 'useHardwareDecode';
   static const durationUs = 'durationUs';
   static const hash = 'hash';
   static const avgLuma = 'avgLuma';

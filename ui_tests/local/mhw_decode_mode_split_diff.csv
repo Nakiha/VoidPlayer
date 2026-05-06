@@ -1,0 +1,19 @@
+# Local visual-diff probe for the user's Monster Hunter Wilds HEVC sample.
+# Loads the same file twice at the first frame:
+#   left  = force software decode
+#   right = prefer hardware decode
+# Then captures the native viewport and measures left/right pixel difference.
+@WINDOW,1280,720
+
+0.0,SET_DECODE_MODE,forceSoftware
+0.1,ADD_MEDIA,C:\Users\12967\Videos\Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本.mp4
+2.5,ASSERT_TRACK_COUNT,1
+2.6,SET_DECODE_MODE,preferHardware
+2.7,ADD_MEDIA,C:\Users\12967\Videos\Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本.mp4
+6.0,ASSERT_TRACK_COUNT,2
+6.1,SET_LAYOUT_MODE,0
+6.2,SEEK_TO,0
+7.5,CAPTURE_VIEWPORT,mhw_decode_split,D:\Code\yorune\VoidPlayer\build\mhw_decode_split_diff.png
+7.6,ASSERT_CAPTURE_NOT_BLACK,mhw_decode_split,0.01,4.0
+7.7,ASSERT_CAPTURE_SPLIT_DIFF,mhw_decode_split,1,1,80
+7.8,QUIT,0

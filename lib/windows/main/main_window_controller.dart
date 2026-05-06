@@ -413,6 +413,7 @@ class MainWindowController {
       stateStore: stateStore,
       timelineMetrics: timelineMetrics,
       lifecycle: mediaLifecycle,
+      playbackPreferences: playbackPreferences,
       mounted: mounted,
     );
     testHarness = MainWindowTestHarness(

@@ -17,6 +17,8 @@ abstract interface class UiAutomationRuntime {
 
   Future<void> setSeekAfterJumpBehavior(SeekAfterJumpBehavior behavior);
 
+  Future<void> setDecodeMode(DecodeMode mode);
+
   Future<void> maximizeWindow();
 
   Future<void> restoreWindow();
@@ -47,6 +49,12 @@ class DefaultUiAutomationRuntime implements UiAutomationRuntime {
   @override
   Future<void> setSeekAfterJumpBehavior(SeekAfterJumpBehavior behavior) async {
     AppConfig.instance.seekAfterJumpBehavior = behavior;
+    await AppConfig.instance.save();
+  }
+
+  @override
+  Future<void> setDecodeMode(DecodeMode mode) async {
+    AppConfig.instance.decodeMode = mode;
     await AppConfig.instance.save();
   }
 

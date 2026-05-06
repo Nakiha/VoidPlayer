@@ -42,6 +42,7 @@ class NativePlayerController {
     List<String> videoPaths, {
     int width = 1920,
     int height = 1080,
+    bool useHardwareDecode = true,
   }) {
     _ensureAlive();
     if (_textureId != null) {
@@ -51,8 +52,13 @@ class NativePlayerController {
     if (existing != null) return existing;
 
     late final Future<CreatePlayerResult> future;
-    future = _createPlayerImpl(videoPaths, width: width, height: height)
-        .whenComplete(() {
+    future =
+        _createPlayerImpl(
+          videoPaths,
+          width: width,
+          height: height,
+          useHardwareDecode: useHardwareDecode,
+        ).whenComplete(() {
           if (identical(_createInFlight, future)) {
             _createInFlight = null;
           }
@@ -65,6 +71,7 @@ class NativePlayerController {
     List<String> videoPaths, {
     required int width,
     required int height,
+    required bool useHardwareDecode,
   }) async {
     final destroying = _destroyInFlight;
     if (destroying != null) {
@@ -75,6 +82,7 @@ class NativePlayerController {
       videoPaths: videoPaths,
       width: width,
       height: height,
+      useHardwareDecode: useHardwareDecode,
     );
     _textureId = result.textureId;
     if (_disposed) {
@@ -179,9 +187,12 @@ class NativePlayerController {
   }
 
   /// Add a video track at the first empty slot.
-  Future<TrackInfo> addTrack(String videoPath) {
+  Future<TrackInfo> addTrack(
+    String videoPath, {
+    bool useHardwareDecode = true,
+  }) {
     _ensurePlayer(NativePlayerMethods.addTrack);
-    return _api.addTrack(videoPath);
+    return _api.addTrack(videoPath, useHardwareDecode: useHardwareDecode);
   }
 
   /// Remove a track by file_id.

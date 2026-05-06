@@ -1,5 +1,8 @@
 """Native standalone build and test commands."""
 
+import hashlib
+import json
+import os
 import shutil
 import subprocess
 import sys
@@ -15,6 +18,8 @@ from .paths import (
 )
 from .process import header, run
 
+TOOL_STAMP_VERSION = 1
+
 
 def ensure_analysis_test_tools() -> None:
     """Prepare external tools required by native analysis tests."""
@@ -22,14 +27,129 @@ def ensure_analysis_test_tools() -> None:
     ensure_ffmpeg_analyzer_tool()
 
 
+def _file_sha256(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _git_head(path: Path) -> str:
+    if not path.exists():
+        return "missing"
+
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return "unknown"
+
+
+def _read_json(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _write_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(data, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _tool_needs_rebuild(exe: Path, stamp: Path, signature: dict, label: str) -> bool:
+    if not exe.exists():
+        print(f"{label} missing; building it...")
+        return True
+
+    current = _read_json(stamp)
+    if current != signature:
+        if current is None:
+            print(f"{label} has no build stamp; rebuilding it...")
+        else:
+            print(f"{label} build stamp is stale; rebuilding it...")
+        return True
+
+    return False
+
+
+def _zstd_head() -> str:
+    return _git_head(FFMPEG_ANALYZER_DIR.parent / "zstd")
+
+
+def _vtm_signature() -> dict:
+    return {
+        "version": TOOL_STAMP_VERSION,
+        "tool": "vtm-decoderapp",
+        "configuration": "msvc-static-release",
+        "vtm_head": _git_head(FFMPEG_ANALYZER_DIR.parent / "vtm"),
+        "zstd_head": _zstd_head(),
+    }
+
+
+def _ffmpeg_analyzer_signature() -> dict:
+    script_hash = (
+        _file_sha256(FFMPEG_ANALYZER_BUILD_SCRIPT)
+        if FFMPEG_ANALYZER_BUILD_SCRIPT.exists()
+        else "missing"
+    )
+    source_hashes = {}
+    for relative in (
+        "tools/void_ffmpeg_analyzer.c",
+        "libavcodec/voidplayer_vbs4.c",
+        "libavcodec/voidplayer_vbs4.h",
+    ):
+        source = FFMPEG_ANALYZER_DIR / relative
+        source_hashes[relative] = _file_sha256(source) if source.exists() else "missing"
+
+    return {
+        "version": TOOL_STAMP_VERSION,
+        "tool": "ffmpeg-analyzer",
+        "configuration": "analysis-minimal-msvc",
+        "ffmpeg_head": _git_head(FFMPEG_ANALYZER_DIR),
+        "zstd_head": _zstd_head(),
+        "build_script_sha256": script_hash,
+        "source_sha256": source_hashes,
+    }
+
+
+def _write_vtm_stamp(decoder: Path) -> None:
+    _write_json(decoder.with_suffix(".voidplayer-build-stamp.json"), _vtm_signature())
+
+
+def _ffmpeg_analyzer_stamp_path() -> Path:
+    return FFMPEG_ANALYZER_DIR / "build" / "voidplayer-analyzer-stamp.json"
+
+
+def _write_ffmpeg_analyzer_stamp(analyzer: Path) -> None:
+    _write_json(_ffmpeg_analyzer_stamp_path(), _ffmpeg_analyzer_signature())
+
+
 def ensure_vtm_decoder_tool() -> None:
     """Prepare VTM DecoderApp for VVC/VBS4 generation."""
     decoder = find_vtm_decoder()
-    if decoder.exists():
+    if os.environ.get("VTM_DECODER_APP"):
+        if decoder.exists():
+            print(f"Using VTM_DECODER_APP override: {decoder}")
+            return
+        print(f"ERROR: VTM_DECODER_APP does not exist: {decoder}")
+        sys.exit(1)
+
+    stamp = decoder.with_suffix(".voidplayer-build-stamp.json")
+    if not _tool_needs_rebuild(decoder, stamp, _vtm_signature(), "VTM DecoderApp"):
         return
 
     header("Prepare VTM DecoderApp for analysis tests")
-    print("VTM DecoderApp missing; building it before native tests...")
+    print("Building VTM DecoderApp before native build/tests...")
     print("Tip: set VTM_DECODER_APP=C:\\path\\to\\DecoderApp.exe to reuse a prebuilt VTM.")
 
     from .vtm import cmd_vtm_build, ensure_submodule
@@ -41,13 +161,26 @@ def ensure_vtm_decoder_tool() -> None:
     if not decoder.exists():
         print(f"ERROR: VTM DecoderApp was not found after build: {decoder}")
         sys.exit(1)
+    _write_vtm_stamp(decoder)
 
 
 def ensure_ffmpeg_analyzer_tool() -> None:
     """Prepare FFmpeg analyzer for H.264/H.265 VBS4 generation."""
     analyzer = find_ffmpeg_analyzer()
-    if analyzer.exists():
+    if os.environ.get("VOID_FFMPEG_ANALYZER"):
+        if not analyzer.exists():
+            print(f"ERROR: VOID_FFMPEG_ANALYZER does not exist: {analyzer}")
+            sys.exit(1)
         _copy_ffmpeg_analyzer_to_vendor_bin(analyzer)
+        return
+
+    stamp = _ffmpeg_analyzer_stamp_path()
+    if not _tool_needs_rebuild(
+        analyzer,
+        stamp,
+        _ffmpeg_analyzer_signature(),
+        "FFmpeg analyzer",
+    ):
         return
 
     header("Prepare FFmpeg analyzer for H.264/H.265 analysis")
@@ -55,7 +188,7 @@ def ensure_ffmpeg_analyzer_tool() -> None:
         print(f"ERROR: FFmpeg analyzer build script not found: {FFMPEG_ANALYZER_BUILD_SCRIPT}")
         sys.exit(1)
 
-    print("FFmpeg analyzer missing; building it before app/native build...")
+    print("Building FFmpeg analyzer before app/native build...")
     print("Tip: set VOID_FFMPEG_ANALYZER=C:\\path\\to\\void_ffmpeg_analyzer.exe to reuse a prebuilt analyzer.")
     cmd = [
         "powershell",
@@ -76,6 +209,7 @@ def ensure_ffmpeg_analyzer_tool() -> None:
         print(f"ERROR: FFmpeg analyzer was not found after build: {analyzer}")
         sys.exit(1)
     _copy_ffmpeg_analyzer_to_vendor_bin(analyzer)
+    _write_ffmpeg_analyzer_stamp(analyzer)
 
 
 def _copy_ffmpeg_analyzer_to_vendor_bin(analyzer: Path) -> None:
@@ -93,8 +227,7 @@ def native_build(debug: bool, test: bool = True) -> None:
     """Build native standalone module, optionally run tests."""
     build_type = "Debug" if debug else "Release"
 
-    if test:
-        ensure_analysis_test_tools()
+    ensure_analysis_test_tools()
 
     header(f"Build native standalone ({build_type})")
     build_cmd = [sys.executable, "-u", str(NATIVE_BUILD_PY), "--build-only"]

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -15,6 +16,11 @@ import 'main_window_view_model.dart';
 const _sidePanelGap = 10.0;
 const _mediaInfoPanelMaxHeight = 380.0;
 const _mediaInfoTableBottomScrollbarPadding = 6.0;
+const _settingsDialogMaxWidth = 760.0;
+const _settingsDialogMaxHeight = 720.0;
+const _settingsDialogMinWidth = 520.0;
+const _settingsDialogMinHeight = 360.0;
+const _settingsDialogViewportMargin = 16.0;
 
 class FullScreenPointerCapture extends StatelessWidget {
   final VoidCallback onActivity;
@@ -349,7 +355,10 @@ class _ModalScrim extends StatelessWidget {
               ),
             ),
             Center(
-              child: ScaleTransition(scale: scale, child: child),
+              child: Padding(
+                padding: const EdgeInsets.all(_settingsDialogViewportMargin),
+                child: ScaleTransition(scale: scale, child: child),
+              ),
             ),
           ],
         ),
@@ -628,55 +637,72 @@ class _SettingsDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ConstrainedBox(
-      constraints: const BoxConstraints(
-        maxWidth: 760,
-        maxHeight: 560,
-        minWidth: 520,
-      ),
-      child: Material(
-        elevation: 16,
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(8),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          children: [
-            SizedBox(
-              height: 44,
-              child: Row(
-                children: [
-                  const SizedBox(width: 12),
-                  Icon(
-                    Icons.settings,
-                    size: 18,
-                    color: theme.colorScheme.primary,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : _settingsDialogMaxWidth;
+        final availableHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : _settingsDialogMaxHeight;
+        final width = math.min(_settingsDialogMaxWidth, availableWidth);
+        final height = math.min(_settingsDialogMaxHeight, availableHeight);
+        final minWidth = math.min(_settingsDialogMinWidth, width);
+        final minHeight = math.min(_settingsDialogMinHeight, height);
+
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            minWidth: minWidth,
+            maxWidth: width,
+            minHeight: minHeight,
+            maxHeight: height,
+          ),
+          child: Material(
+            elevation: 16,
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(8),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                SizedBox(
+                  height: 44,
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 12),
+                      Icon(
+                        Icons.settings,
+                        size: 18,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          AppLocalizations.of(context)!.settings,
+                          style: theme.textTheme.titleSmall,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: onClose,
+                        icon: const Icon(Icons.close, size: 18),
+                        tooltip: MaterialLocalizations.of(
+                          context,
+                        ).closeButtonTooltip,
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      AppLocalizations.of(context)!.settings,
-                      style: theme.textTheme.titleSmall,
-                    ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: SettingsPage(
+                    onViewportPixelSizeModeChanged:
+                        onViewportPixelSizeModeChanged,
                   ),
-                  IconButton(
-                    onPressed: onClose,
-                    icon: const Icon(Icons.close, size: 18),
-                    tooltip: MaterialLocalizations.of(
-                      context,
-                    ).closeButtonTooltip,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const Divider(height: 1),
-            Expanded(
-              child: SettingsPage(
-                onViewportPixelSizeModeChanged: onViewportPixelSizeModeChanged,
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

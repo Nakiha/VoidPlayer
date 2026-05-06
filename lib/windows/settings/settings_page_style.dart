@@ -69,31 +69,58 @@ class SettingsComboRow<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final labelRow = Row(
+      children: [
+        Icon(icon, size: 20, color: theme.colorScheme.primary),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            label,
+            style: SettingsPageStyle.body(context),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+    final combo = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: SettingsPageStyle.comboWidth),
+      child: SizedBox(
+        width: double.infinity,
+        child: SettingsMenuCombo<T>(
+          value: value,
+          items: items,
+          labelFor: labelFor,
+          onChanged: onChanged,
+        ),
+      ),
+    );
+
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 36),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: theme.colorScheme.primary),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              label,
-              style: SettingsPageStyle.body(context),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 16),
-          SizedBox(
-            width: SettingsPageStyle.comboWidth,
-            child: SettingsMenuCombo<T>(
-              value: value,
-              items: items,
-              labelFor: labelFor,
-              onChanged: onChanged,
-            ),
-          ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 420) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                labelRow,
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.only(left: 32),
+                  child: Align(alignment: Alignment.centerRight, child: combo),
+                ),
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: labelRow),
+              const SizedBox(width: 16),
+              SizedBox(width: SettingsPageStyle.comboWidth, child: combo),
+            ],
+          );
+        },
       ),
     );
   }

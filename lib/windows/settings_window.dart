@@ -38,6 +38,7 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         NavigationRail(
           selectedIndex: _selectedIndex,
+          scrollable: true,
           onDestinationSelected: (index) {
             setState(() => _selectedIndex = index);
           },
@@ -82,92 +83,84 @@ class _ShortcutsPage extends StatelessWidget {
     final theme = Theme.of(context);
     final l = AppLocalizations.of(context)!;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: SettingsPageTitle(text: l.keyboardShortcuts),
-        ),
-        SettingsPageStyle.compactGap,
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(8, 0, 16, 16),
-            child: Table(
-              columnWidths: const {
-                0: FlexColumnWidth(),
-                1: IntrinsicColumnWidth(),
-              },
-              defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-              children: [
-                // Header
-                TableRow(
+    return SingleChildScrollView(
+      padding: SettingsPageStyle.pagePadding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SettingsPageTitle(text: l.keyboardShortcuts),
+          SettingsPageStyle.compactGap,
+          Table(
+            columnWidths: const {
+              0: FlexColumnWidth(),
+              1: IntrinsicColumnWidth(),
+            },
+            defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+            children: [
+              TableRow(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Text(
+                      l.action,
+                      style: SettingsPageStyle.tableHeader(context),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Text(
+                      l.shortcut,
+                      style: SettingsPageStyle.tableHeader(context),
+                    ),
+                  ),
+                ],
+              ),
+              TableRow(
+                children: [
+                  Divider(height: 1, color: theme.dividerColor),
+                  Divider(height: 1, color: theme.dividerColor),
+                ],
+              ),
+              ...PlayerAction.shortcutEntries.map(
+                (e) => TableRow(
                   children: [
                     Padding(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
                       child: Text(
-                        l.action,
-                        style: SettingsPageStyle.tableHeader(context),
+                        resolveActionLabel(e.labelKey, l),
+                        style: SettingsPageStyle.body(context),
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Text(
-                        l.shortcut,
-                        style: SettingsPageStyle.tableHeader(context),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
                       ),
-                    ),
-                  ],
-                ),
-                // Divider
-                TableRow(
-                  children: [
-                    Divider(height: 1, color: theme.dividerColor),
-                    Divider(height: 1, color: theme.dividerColor),
-                  ],
-                ),
-                // Data rows
-                ...PlayerAction.shortcutEntries.map(
-                  (e) => TableRow(
-                    children: [
-                      Padding(
+                      child: Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          resolveActionLabel(e.labelKey, l),
-                          style: SettingsPageStyle.body(context),
+                          e.shortcutLabel,
+                          style: SettingsPageStyle.shortcutKey(context),
                         ),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
-                        ),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            e.shortcutLabel,
-                            style: SettingsPageStyle.shortcutKey(context),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -178,7 +171,7 @@ class _AboutPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    return Padding(
+    return SingleChildScrollView(
       padding: SettingsPageStyle.pagePadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -195,22 +188,12 @@ class _AboutPage extends StatelessWidget {
             style: SettingsPageStyle.secondary(context),
           ),
           SettingsPageStyle.contentGap,
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: [
-                Text(l.appDescription, style: SettingsPageStyle.body(context)),
-                const SizedBox(height: 24),
-                Text(
-                  l.dependencies,
-                  style: SettingsPageStyle.sectionTitle(context),
-                ),
-                SettingsPageStyle.compactGap,
-                for (final dependency in AppMetadata.dependencies)
-                  _depItem(dependency.name, dependency.license),
-              ],
-            ),
-          ),
+          Text(l.appDescription, style: SettingsPageStyle.body(context)),
+          const SizedBox(height: 24),
+          Text(l.dependencies, style: SettingsPageStyle.sectionTitle(context)),
+          SettingsPageStyle.compactGap,
+          for (final dependency in AppMetadata.dependencies)
+            _depItem(dependency.name, dependency.license),
         ],
       ),
     );

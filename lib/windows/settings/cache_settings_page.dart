@@ -12,6 +12,13 @@ import 'settings_page_style.dart';
 
 const _cacheListTrailingPadding = 12.0;
 const _cacheListScrollbarThickness = 6.0;
+const _cachePinnedHeaderLoadingExtent = 60.0;
+const _cachePinnedHeaderCompactExtent = 80.0;
+const _cachePinnedHeaderLimitExtent = 118.0;
+const _cacheTopControlsBottomGap = 8.0;
+const _cachePinnedHeaderTopPadding = 6.0;
+const _cachePinnedHeaderBottomPadding = 6.0;
+const _cachePinnedHeaderSectionGap = 10.0;
 
 class CacheSettingsPage extends StatefulWidget {
   final PathLauncher pathLauncher;
@@ -67,79 +74,66 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
     final l = AppLocalizations.of(context)!;
     final snapshot = _snapshot;
 
-    return Padding(
-      padding: SettingsPageStyle.pagePadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SettingsPageTitle(
-            text: l.cache,
-            trailing: IconButton(
-              onPressed: _loading ? null : _refresh,
-              icon: const Icon(Icons.refresh, size: 18),
-              tooltip: l.refresh,
-            ),
-          ),
-          const SizedBox(height: 4),
-          if (snapshot != null)
-            _CachePathRow(
-              path: snapshot.path,
-              pathLauncher: widget.pathLauncher,
-            ),
-          SettingsPageStyle.contentGap,
-          _LimitEditor(
-            controller: _limitController,
-            focusNode: _limitFocusNode,
-            onSubmitted: () => _saveLimit(),
-          ),
-          SettingsPageStyle.contentGap,
-          if (snapshot == null)
-            const LinearProgressIndicator()
-          else
-            _UsageSummary(snapshot: snapshot),
-          const SizedBox(height: 12),
-          _CacheListHeader(
-            selectedCount: _selectedHashes.length,
-            selectableCount: snapshot?.entries.length ?? 0,
-            deleting: _deleting,
-            onSelectAll: _selectAllEntries,
-            onCancelSelection: _clearSelection,
-            onDeleteSelected: _deleteSelected,
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: ScrollbarTheme(
-              data: ScrollbarTheme.of(context).copyWith(
-                thickness: const WidgetStatePropertyAll(
-                  _cacheListScrollbarThickness,
+    return ScrollbarTheme(
+      data: ScrollbarTheme.of(context).copyWith(
+        thickness: const WidgetStatePropertyAll(_cacheListScrollbarThickness),
+      ),
+      child: Scrollbar(
+        child: CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SettingsPageTitle(
+                      text: l.cache,
+                      trailing: IconButton(
+                        onPressed: _loading ? null : _refresh,
+                        icon: const Icon(Icons.refresh, size: 18),
+                        tooltip: l.refresh,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    if (snapshot != null)
+                      _CachePathRow(
+                        path: snapshot.path,
+                        pathLauncher: widget.pathLauncher,
+                      ),
+                    SettingsPageStyle.contentGap,
+                    _LimitEditor(
+                      controller: _limitController,
+                      focusNode: _limitFocusNode,
+                      onSubmitted: () => _saveLimit(),
+                    ),
+                    const SizedBox(height: _cacheTopControlsBottomGap),
+                  ],
                 ),
               ),
-              child: snapshot == null || snapshot.entries.isEmpty
-                  ? Center(child: Text(l.cacheNoEntries))
-                  : ListView.separated(
-                      itemCount:
-                          snapshot.entries.length +
-                          (snapshot.unindexedBytes > 0 ? 1 : 0),
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        if (index >= snapshot.entries.length) {
-                          return _UnindexedCacheTile(
-                            bytes: snapshot.unindexedBytes,
-                          );
-                        }
-                        final entry = snapshot.entries[index];
-                        return _CacheEntryTile(
-                          entry: entry,
-                          selected: _selectedHashes.contains(entry.hash),
-                          onSelectedChanged: (selected) {
-                            _setSelected(entry.hash, selected);
-                          },
-                        );
-                      },
-                    ),
             ),
-          ),
-        ],
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _CachePinnedHeaderDelegate(
+                snapshot: snapshot,
+                selectedCount: _selectedHashes.length,
+                selectableCount: snapshot?.entries.length ?? 0,
+                deleting: _deleting,
+                onSelectAll: _selectAllEntries,
+                onCancelSelection: _clearSelection,
+                onDeleteSelected: _deleteSelected,
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              sliver: _CacheEntriesSliver(
+                snapshot: snapshot,
+                selectedHashes: _selectedHashes,
+                onSelectedChanged: _setSelected,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -274,6 +268,135 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
       ),
     );
     return result ?? false;
+  }
+}
+
+class _CachePinnedHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final AnalysisCacheSnapshot? snapshot;
+  final int selectedCount;
+  final int selectableCount;
+  final bool deleting;
+  final VoidCallback onSelectAll;
+  final VoidCallback onCancelSelection;
+  final VoidCallback onDeleteSelected;
+
+  const _CachePinnedHeaderDelegate({
+    required this.snapshot,
+    required this.selectedCount,
+    required this.selectableCount,
+    required this.deleting,
+    required this.onSelectAll,
+    required this.onCancelSelection,
+    required this.onDeleteSelected,
+  });
+
+  double get _extent {
+    final snapshot = this.snapshot;
+    if (snapshot == null) return _cachePinnedHeaderLoadingExtent;
+    if (!snapshot.hasLimit) return _cachePinnedHeaderCompactExtent;
+    return _cachePinnedHeaderLimitExtent;
+  }
+
+  @override
+  double get minExtent => _extent;
+
+  @override
+  double get maxExtent => _extent;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surface,
+      elevation: overlapsContent ? 2 : 0,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          16,
+          _cachePinnedHeaderTopPadding,
+          16,
+          _cachePinnedHeaderBottomPadding,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (snapshot == null)
+              const LinearProgressIndicator()
+            else
+              _UsageSummary(snapshot: snapshot!),
+            const SizedBox(height: _cachePinnedHeaderSectionGap),
+            _CacheListHeader(
+              selectedCount: selectedCount,
+              selectableCount: selectableCount,
+              deleting: deleting,
+              onSelectAll: onSelectAll,
+              onCancelSelection: onCancelSelection,
+              onDeleteSelected: onDeleteSelected,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _CachePinnedHeaderDelegate oldDelegate) {
+    return snapshot != oldDelegate.snapshot ||
+        selectedCount != oldDelegate.selectedCount ||
+        selectableCount != oldDelegate.selectableCount ||
+        deleting != oldDelegate.deleting ||
+        onSelectAll != oldDelegate.onSelectAll ||
+        onCancelSelection != oldDelegate.onCancelSelection ||
+        onDeleteSelected != oldDelegate.onDeleteSelected;
+  }
+}
+
+class _CacheEntriesSliver extends StatelessWidget {
+  final AnalysisCacheSnapshot? snapshot;
+  final Set<String> selectedHashes;
+  final void Function(String hash, bool selected) onSelectedChanged;
+
+  const _CacheEntriesSliver({
+    required this.snapshot,
+    required this.selectedHashes,
+    required this.onSelectedChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
+    final snapshot = this.snapshot;
+
+    if (snapshot == null || snapshot.entries.isEmpty) {
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(child: Text(l.cacheNoEntries)),
+      );
+    }
+
+    final entries = snapshot.entries;
+    final hasUnindexed = snapshot.unindexedBytes > 0;
+    final tileCount = entries.length + (hasUnindexed ? 1 : 0);
+    return SliverList(
+      delegate: SliverChildBuilderDelegate((context, index) {
+        if (index.isOdd) return const Divider(height: 1);
+        final tileIndex = index ~/ 2;
+        if (tileIndex >= entries.length) {
+          return _UnindexedCacheTile(bytes: snapshot.unindexedBytes);
+        }
+        final entry = entries[tileIndex];
+        return _CacheEntryTile(
+          entry: entry,
+          selected: selectedHashes.contains(entry.hash),
+          onSelectedChanged: (selected) {
+            onSelectedChanged(entry.hash, selected);
+          },
+        );
+      }, childCount: tileCount * 2 - 1),
+    );
   }
 }
 

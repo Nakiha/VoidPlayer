@@ -41,6 +41,9 @@ class ViewportPanel extends StatefulWidget {
 
 class _ViewportPanelState extends State<ViewportPanel> {
   static const double _splitHandlePhysicalWidth = 4.0;
+  static const double _splitHandleTouchWidth = 28.0;
+  static const double _splitHandleVisualWidth = 24.0;
+  static const double _splitHandleVisualHeight = 38.0;
   static const double _wheelScrollDeltaPerStep = 120.0;
   static const double _wheelZoomFactorPerStep = 1.1;
 
@@ -61,10 +64,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (_splitHandleDragging) return;
 
     var wantsPan = (buttons & kPrimaryButton) != 0;
-    var wantsSplit = (buttons & kSecondaryButton) != 0;
+    const wantsSplit = false;
     if (!wantsPan && !wantsSplit && allowWin32Recovery && buttons == 0) {
       wantsPan = widget.pointerButtonStateProvider.isPrimaryButtonDown;
-      wantsSplit = widget.pointerButtonStateProvider.isSecondaryButtonDown;
     }
 
     if (!wantsPan && !wantsSplit) {
@@ -91,6 +93,14 @@ class _ViewportPanelState extends State<ViewportPanel> {
     widget.onSplit(localX / box.size.width);
   }
 
+  bool _isOnSplitHandle(BuildContext context, Offset localPosition) {
+    if (widget.layout.mode != LayoutMode.splitScreen) return false;
+    final box = context.findRenderObject() as RenderBox;
+    if (box.size.width <= 0) return false;
+    final handleX = box.size.width * widget.layout.splitPos;
+    return (localPosition.dx - handleX).abs() <= _splitHandleTouchWidth / 2;
+  }
+
   void _startSplitHandleDrag(BuildContext context, double viewportLocalX) {
     _splitHandleDragging = true;
     _splitting = true;
@@ -110,6 +120,14 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (!_splitHandleDragging) return;
     _splitHandleDragging = false;
     _splitting = false;
+    widget.onPointerButton(false, false);
+  }
+
+  void _cancelPointerDragState() {
+    if (!_panning && !_splitting && !_splitHandleDragging) return;
+    _panning = false;
+    _splitting = false;
+    _splitHandleDragging = false;
     widget.onPointerButton(false, false);
   }
 
@@ -155,6 +173,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
             devicePixelRatio != _lastReportedDevicePixelRatio) &&
         logicalWidth > 0 &&
         logicalHeight > 0) {
+      _cancelPointerDragState();
       _lastReportedLogicalSize = logicalSize;
       _lastReportedDevicePixelRatio = devicePixelRatio;
       final physicalWidth = (logicalWidth * devicePixelRatio).round();
@@ -274,10 +293,23 @@ class _ViewportPanelState extends State<ViewportPanel> {
       },
       child: Listener(
         onPointerDown: (e) {
+          if ((e.buttons & kPrimaryButton) != 0) {
+            if (_isOnSplitHandle(context, e.localPosition)) {
+              _startSplitHandleDrag(context, e.localPosition.dx);
+              return;
+            }
+            _panning = false;
+            _splitting = false;
+            _lastMouseLocalPos = e.localPosition;
+          }
           _syncDragButtons(e.buttons, e.localPosition);
           _updateSplitFromLocalX(context, e.localPosition.dx);
         },
         onPointerUp: (e) {
+          if (_splitHandleDragging) {
+            _endSplitHandleDrag();
+            return;
+          }
           _syncDragButtons(
             e.buttons,
             e.localPosition,
@@ -285,9 +317,21 @@ class _ViewportPanelState extends State<ViewportPanel> {
           );
         },
         onPointerCancel: (_) {
+          if (_splitHandleDragging) {
+            _endSplitHandleDrag();
+            return;
+          }
           _syncDragButtons(0, _lastMouseLocalPos, allowWin32Recovery: true);
         },
         onPointerMove: (e) {
+          if (_splitHandleDragging) {
+            if ((e.buttons & kPrimaryButton) == 0) {
+              _endSplitHandleDrag();
+            } else {
+              _updateSplitHandleDrag(context, e.localPosition.dx);
+            }
+            return;
+          }
           _syncDragButtons(
             e.buttons,
             e.localPosition,
@@ -358,6 +402,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
         builder: (context, constraints) {
           final left =
               constraints.maxWidth * widget.layout.splitPos - logicalWidth / 2;
+          final touchLeft =
+              constraints.maxWidth * widget.layout.splitPos -
+              _splitHandleTouchWidth / 2;
           return Stack(
             children: [
               Positioned(
@@ -365,15 +412,30 @@ class _ViewportPanelState extends State<ViewportPanel> {
                 top: 0,
                 bottom: 0,
                 width: logicalWidth,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outline.withValues(alpha: 0.55),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: touchLeft,
+                top: 0,
+                bottom: 0,
+                width: _splitHandleTouchWidth,
                 child: MouseRegion(
                   cursor: SystemMouseCursors.resizeColumn,
                   child: Listener(
-                    behavior: HitTestBehavior.opaque,
+                    behavior: HitTestBehavior.translucent,
                     onPointerDown: (event) {
                       if ((event.buttons & kPrimaryButton) == 0) return;
                       _startSplitHandleDrag(
                         viewportContext,
-                        left + event.localPosition.dx,
+                        touchLeft + event.localPosition.dx,
                       );
                     },
                     onPointerMove: (event) {
@@ -383,17 +445,51 @@ class _ViewportPanelState extends State<ViewportPanel> {
                       }
                       _updateSplitHandleDrag(
                         viewportContext,
-                        left + event.localPosition.dx,
+                        touchLeft + event.localPosition.dx,
                       );
                     },
                     onPointerUp: (_) => _endSplitHandleDrag(),
                     onPointerCancel: (_) => _endSplitHandleDrag(),
+                    child: Center(child: _SplitHandleGrip()),
                   ),
                 ),
               ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _SplitHandleGrip extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      width: _ViewportPanelState._splitHandleVisualWidth,
+      height: _ViewportPanelState._splitHandleVisualHeight,
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.7),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: RotatedBox(
+        quarterTurns: 1,
+        child: Icon(
+          Icons.drag_handle,
+          size: 18,
+          color: colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }

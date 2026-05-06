@@ -186,7 +186,7 @@ class MainWindowMediaCoordinator {
   }
 
   void onMediaSwapped(int slotIndex, int targetTrackIndex) {
-    trackManager.moveTrack(slotIndex, targetTrackIndex);
+    trackManager.swapTracks(slotIndex, targetTrackIndex);
   }
 
   Future<void> onOffsetChanged(int fileId, int deltaMs) async {

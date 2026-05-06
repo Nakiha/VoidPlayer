@@ -2351,10 +2351,14 @@ int Renderer::add_track(const std::string& video_path) {
         if (playback_->audio_output()) {
             playback_->audio_output()->set_track_decode_paused(track->file_id, true);
         }
-        track->seek_controller->request_seek(track_target, SeekType::Keyframe);
+        const auto seek_type = was_playing ? SeekType::Keyframe : SeekType::Exact;
+        track->seek_controller->request_seek(track_target, seek_type);
         track->track_buffer->set_state(TrackState::Buffering);
-        spdlog::info("Renderer::add_track: seeking slot={} to {:.3f}s (offset={:.3f}s)",
-                     slot, track_target / 1e6, track->offset_us / 1e6);
+        spdlog::info("Renderer::add_track: seeking slot={} to {:.3f}s (offset={:.3f}s, type={})",
+                     slot,
+                     track_target / 1e6,
+                     track->offset_us / 1e6,
+                     seek_type == SeekType::Exact ? "Exact" : "Keyframe");
     }
 
     // Force redraw, but keep already-presented frames from existing tracks so

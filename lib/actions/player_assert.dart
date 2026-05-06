@@ -28,6 +28,11 @@ class AssertTrackCount extends PlayerAssert {
   const AssertTrackCount(this.count);
 }
 
+class AssertTrackOrder extends PlayerAssert {
+  final List<int> fileIds;
+  const AssertTrackOrder(this.fileIds);
+}
+
 class AssertDuration extends PlayerAssert {
   final int ptsUs;
   final int toleranceMs;

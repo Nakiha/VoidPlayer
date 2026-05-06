@@ -77,6 +77,25 @@ class TrackManager with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Swap two display positions directly.
+  ///
+  /// This is used by the media header combo boxes, where the selected index is
+  /// already an absolute display position rather than ReorderableListView's
+  /// insertion index.
+  void swapTracks(int firstIndex, int secondIndex) {
+    if (firstIndex < 0 ||
+        firstIndex >= _entries.length ||
+        secondIndex < 0 ||
+        secondIndex >= _entries.length ||
+        firstIndex == secondIndex) {
+      return;
+    }
+    final first = _entries[firstIndex];
+    _entries[firstIndex] = _entries[secondIndex];
+    _entries[secondIndex] = first;
+    notifyListeners();
+  }
+
   /// Clear all tracks.
   void clear() {
     _entries.clear();

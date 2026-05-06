@@ -55,6 +55,7 @@ class MainWindowActionCoordinator {
       openFile: mediaCoordinator.openFile,
       addMediaByPath: mediaCoordinator.addMediaByPath,
       removeTrack: mediaCoordinator.removeTrack,
+      swapMediaHeader: mediaCoordinator.onMediaSwapped,
       adjustTrackOffset: mediaCoordinator.onOffsetChangedForSlot,
       setLoopRangeEnabled: playbackCoordinator.setLoopRangeEnabled,
       isLoopRangeEnabled: isLoopRangeEnabled,
@@ -106,6 +107,7 @@ class MainWindowActionBinder {
   final FutureOr<void> Function() openFile;
   final void Function(String path) addMediaByPath;
   final FutureOr<void> Function(int fileId) removeTrack;
+  final void Function(int slotIndex, int targetTrackIndex) swapMediaHeader;
   final FutureOr<void> Function(int slot, int deltaMs) adjustTrackOffset;
   final FutureOr<void> Function(bool enabled) setLoopRangeEnabled;
   final bool Function() isLoopRangeEnabled;
@@ -147,6 +149,7 @@ class MainWindowActionBinder {
     required this.openFile,
     required this.addMediaByPath,
     required this.removeTrack,
+    required this.swapMediaHeader,
     required this.adjustTrackOffset,
     required this.setLoopRangeEnabled,
     required this.isLoopRangeEnabled,
@@ -194,6 +197,10 @@ class MainWindowActionBinder {
     _bind(const RemoveTrackAction(0), (action) {
       final a = action as RemoveTrackAction;
       return removeTrack(a.fileId);
+    });
+    _bind(const SwapMediaHeader(0, 0), (action) {
+      final a = action as SwapMediaHeader;
+      swapMediaHeader(a.slotIndex, a.targetTrackIndex);
     });
     _bind(const AdjustTrackOffset(0, 0), (action) {
       final a = action as AdjustTrackOffset;

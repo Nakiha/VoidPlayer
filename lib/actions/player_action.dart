@@ -208,6 +208,14 @@ class RemoveTrackAction extends PlayerAction {
   const RemoveTrackAction(this.fileId) : super('REMOVE_TRACK');
 }
 
+/// Swap two media-header display positions.
+class SwapMediaHeader extends PlayerAction {
+  final int slotIndex;
+  final int targetTrackIndex;
+  const SwapMediaHeader(this.slotIndex, this.targetTrackIndex)
+    : super('SWAP_MEDIA_HEADER');
+}
+
 /// Adjust a track sync offset by delta milliseconds.
 class AdjustTrackOffset extends PlayerAction {
   final int slot;

@@ -42,4 +42,18 @@ void main() {
     manager.moveTrack(99, 0);
     expect(orderOf(manager), [0, 2, 1]);
   });
+
+  test('swapTracks exchanges absolute display positions', () {
+    final manager = TrackManager()..setTracks([track(0), track(1), track(2)]);
+
+    manager.swapTracks(0, 2);
+    expect(orderOf(manager), [2, 1, 0]);
+
+    manager.swapTracks(1, 2);
+    expect(orderOf(manager), [2, 0, 1]);
+
+    manager.swapTracks(-1, 0);
+    manager.swapTracks(0, 99);
+    expect(orderOf(manager), [2, 0, 1]);
+  });
 }

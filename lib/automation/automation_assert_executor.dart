@@ -48,6 +48,16 @@ class AutomationAssertExecutor {
             'Expected track count $count, got ${tracks.length}',
           );
         }
+      case AssertTrackOrder(:final fileIds):
+        final layout = await controller.getLayout();
+        final actual = layout.order.take(fileIds.length).toList();
+        for (var i = 0; i < fileIds.length; i++) {
+          if (actual[i] != fileIds[i]) {
+            throw AssertionError(
+              'Expected track order prefix $fileIds, got $actual',
+            );
+          }
+        }
       case AssertDuration(:final ptsUs, :final toleranceMs):
         final actual = await controller.duration();
         final diff = (actual - ptsUs).abs();

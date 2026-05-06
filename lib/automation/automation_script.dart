@@ -161,6 +161,17 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAction(time, RemoveTrackAction(int.parse(args[0])));
+    case 'SWAP_MEDIA_HEADER':
+      if (args.length < 2) {
+        log.warning(
+          'SWAP_MEDIA_HEADER needs slotIndex and targetTrackIndex arguments: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAction(
+        time,
+        SwapMediaHeader(int.parse(args[0]), int.parse(args[1])),
+      );
     case 'ADJUST_TRACK_OFFSET':
       if (args.length < 2) {
         log.warning(
@@ -393,6 +404,12 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAssert(time, AssertTrackCount(int.parse(args[0])));
+    case 'ASSERT_TRACK_ORDER':
+      if (args.isEmpty) {
+        log.warning('ASSERT_TRACK_ORDER missing file_id arguments: $rawLine');
+        return null;
+      }
+      return ScriptAssert(time, AssertTrackOrder(args.map(int.parse).toList()));
     case 'ASSERT_DURATION':
       if (args.length < 2) {
         log.warning('ASSERT_DURATION needs ptsUs and toleranceMs: $rawLine');

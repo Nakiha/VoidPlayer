@@ -9,7 +9,7 @@ as a runtime tool; the main native and Flutter builds do not compile FFmpeg.
 Use MSYS2 as the Unix-like configure/make shell, but use the Visual Studio
 compiler and linker for the actual Windows binary.
 
-Current local status checked on this machine:
+Expected local toolchain shape:
 
 - `C:\msys64\usr\bin\bash.exe` works.
 - MSYS packages such as `make`, `pkgconf`, `diffutils`, and `base-devel` are
@@ -17,16 +17,17 @@ Current local status checked on this machine:
 - UCRT64 compiler packages are not currently installed.
 - Visual Studio 18 has `cl.exe` under
   `C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\...`.
-- NASM 3.01 is installed under
-  `C:\Users\Nakiha\AppData\Local\bin\NASM`.
+- NASM is installed and either available as `nasm.exe` on `PATH`, or provided
+  through `VOID_NASM` / `VOID_NASM_DIR`.
 
 That is enough for the first MSVC-based analyzer build. The UCRT64 GCC/Clang
 packages are not required if FFmpeg is configured with `--toolchain=msvc`.
-Before running FFmpeg `configure`, add NASM to the MSYS2 path:
+The build helper resolves NASM in this order:
 
-```bash
-export PATH="/c/Users/Nakiha/AppData/Local/bin/NASM:$PATH"
-```
+1. `-NasmPath` / `VOID_NASM`, pointing directly to `nasm.exe`
+2. `-NasmDir` / `VOID_NASM_DIR`, pointing to the directory containing `nasm.exe`
+3. `nasm.exe` on `PATH`
+4. common system install locations such as `C:\Program Files\NASM`
 
 ## Runtime Dependency Rule
 
@@ -46,6 +47,13 @@ The FFmpeg fork carries a VoidPlayer build helper:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass `
   -File native\analysis\vendor\ffmpeg\voidplayer\build_windows_msvc.ps1
+```
+
+Optional overrides:
+
+```powershell
+$env:VOID_NASM = "C:\Tools\NASM\nasm.exe"
+$env:MSYS2_BASH = "D:\msys64\usr\bin\bash.exe"
 ```
 
 The script configures a minimal static MSVC build with NASM enabled, builds the

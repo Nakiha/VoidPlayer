@@ -1,0 +1,24 @@
+# Local single-track visual-diff probe for the user's Monster Hunter Wilds HEVC sample.
+# This avoids side-by-side layout and compares two full-frame captures:
+#   soft = force software decode
+#   hard = prefer hardware decode
+@WINDOW,1280,720
+
+0.0,SET_DECODE_MODE,forceSoftware
+0.1,ADD_MEDIA,C:\Users\12967\Videos\Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本.mp4
+2.5,ASSERT_TRACK_COUNT,1
+2.6,SET_RENDER_SIZE,3840,2160
+2.8,SEEK_TO,0
+4.0,CAPTURE_VIEWPORT,mhw_soft,D:\Code\yorune\VoidPlayer\build\mhw_single_soft.png
+4.1,ASSERT_CAPTURE_NOT_BLACK,mhw_soft,0.01,4.0
+4.2,REMOVE_TRACK,1
+5.0,ASSERT_TRACK_COUNT,0
+5.1,SET_DECODE_MODE,preferHardware
+5.2,ADD_MEDIA,C:\Users\12967\Videos\Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本.mp4
+7.6,ASSERT_TRACK_COUNT,1
+7.7,SET_RENDER_SIZE,3840,2160
+7.9,SEEK_TO,0
+9.1,CAPTURE_VIEWPORT,mhw_hard,D:\Code\yorune\VoidPlayer\build\mhw_single_hard.png
+9.2,ASSERT_CAPTURE_NOT_BLACK,mhw_hard,0.01,4.0
+9.3,ASSERT_CAPTURE_DIFF,mhw_soft,mhw_hard,1,1,80
+9.4,QUIT,0

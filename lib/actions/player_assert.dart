@@ -116,6 +116,22 @@ class AssertCaptureSplitDiff extends PlayerAssert {
   });
 }
 
+class AssertCaptureDiff extends PlayerAssert {
+  final String expectedCapture;
+  final String actualCapture;
+  final double maxMeanAbsChannel;
+  final double maxMeanAbsLuma;
+  final double maxMaxChannel;
+
+  const AssertCaptureDiff(
+    this.expectedCapture,
+    this.actualCapture, {
+    this.maxMeanAbsChannel = double.infinity,
+    this.maxMeanAbsLuma = double.infinity,
+    this.maxMaxChannel = double.infinity,
+  });
+}
+
 class AssertAnalysisProcessCount extends PlayerAssert {
   final int count;
   const AssertAnalysisProcessCount(this.count);

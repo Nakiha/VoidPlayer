@@ -221,6 +221,42 @@ class AutomationAssertExecutor {
             'meanAbsLuma<=$maxMeanAbsLuma, maxChannel<=$maxMaxChannel)',
           );
         }
+      case AssertCaptureDiff(
+        :final expectedCapture,
+        :final actualCapture,
+        :final maxMeanAbsChannel,
+        :final maxMeanAbsLuma,
+        :final maxMaxChannel,
+      ):
+        final expected = state.captures[expectedCapture];
+        final actual = state.captures[actualCapture];
+        if (expected == null || actual == null) {
+          throw AssertionError(
+            'Missing capture(s) for ASSERT_CAPTURE_DIFF: $expectedCapture / $actualCapture',
+          );
+        }
+        final expectedPath = expected.outputPath;
+        final actualPath = actual.outputPath;
+        if (expectedPath == null ||
+            expectedPath.isEmpty ||
+            actualPath == null ||
+            actualPath.isEmpty) {
+          throw AssertionError(
+            'ASSERT_CAPTURE_DIFF requires CAPTURE_VIEWPORT outputPath for $expectedCapture and $actualCapture',
+          );
+        }
+        final metric = await _measureCapturePairDiff(expectedPath, actualPath);
+        final summary = metric.summary('$expectedCapture -> $actualCapture');
+        log.info(summary);
+        if (metric.meanAbsChannel > maxMeanAbsChannel ||
+            metric.meanAbsLuma > maxMeanAbsLuma ||
+            metric.maxChannel > maxMaxChannel) {
+          throw AssertionError(
+            '$summary exceeds thresholds '
+            '(meanAbsChannel<=$maxMeanAbsChannel, '
+            'meanAbsLuma<=$maxMeanAbsLuma, maxChannel<=$maxMaxChannel)',
+          );
+        }
       case AssertAnalysisProcessCount(:final count):
         final actual = analysisProcesses.analysisProcessCount;
         if (actual != count) {
@@ -310,6 +346,42 @@ class AutomationAssertExecutor {
   static Future<_CaptureSplitDiffMetric> _measureCaptureSplitDiff(
     String outputPath,
   ) async {
+    final decoded = await _decodeCaptureRgba(outputPath);
+    try {
+      return _CaptureSplitDiffMetric.fromRgba(
+        width: decoded.width,
+        height: decoded.height,
+        rgba: decoded.rgba,
+      );
+    } finally {
+      decoded.dispose();
+    }
+  }
+
+  static Future<_CapturePairDiffMetric> _measureCapturePairDiff(
+    String expectedPath,
+    String actualPath,
+  ) async {
+    final expected = await _decodeCaptureRgba(expectedPath);
+    final actual = await _decodeCaptureRgba(actualPath);
+    try {
+      return _CapturePairDiffMetric.fromRgba(
+        expectedWidth: expected.width,
+        expectedHeight: expected.height,
+        expectedRgba: expected.rgba,
+        actualWidth: actual.width,
+        actualHeight: actual.height,
+        actualRgba: actual.rgba,
+      );
+    } finally {
+      expected.dispose();
+      actual.dispose();
+    }
+  }
+
+  static Future<_DecodedCaptureRgba> _decodeCaptureRgba(
+    String outputPath,
+  ) async {
     final file = File(outputPath);
     if (!await file.exists()) {
       throw AssertionError('Capture file does not exist: $outputPath');
@@ -325,16 +397,30 @@ class AutomationAssertExecutor {
       if (rgbaData == null) {
         throw AssertionError('Failed to decode capture pixels: $outputPath');
       }
-      return _CaptureSplitDiffMetric.fromRgba(
+      return _DecodedCaptureRgba(
         width: image.width,
         height: image.height,
-        rgba: rgbaData.buffer.asUint8List(),
+        rgba: Uint8List.fromList(rgbaData.buffer.asUint8List()),
       );
     } finally {
       image.dispose();
       codec.dispose();
     }
   }
+}
+
+class _DecodedCaptureRgba {
+  final int width;
+  final int height;
+  final Uint8List rgba;
+
+  const _DecodedCaptureRgba({
+    required this.width,
+    required this.height,
+    required this.rgba,
+  });
+
+  void dispose() {}
 }
 
 class _CaptureSplitDiffMetric {
@@ -440,6 +526,111 @@ class _CaptureSplitDiffMetric {
         'maxChannel=$maxChannel '
         'meanAbsLuma=${meanAbsLuma.toStringAsFixed(4)} '
         'meanSignedLumaRightMinusLeft=${meanSignedLumaRightMinusLeft.toStringAsFixed(4)} '
+        'rmseLuma=${rmseLuma.toStringAsFixed(4)} '
+        'maxAbsLuma=${maxAbsLuma.toStringAsFixed(4)}';
+  }
+}
+
+class _CapturePairDiffMetric {
+  final int width;
+  final int height;
+  final int samples;
+  final double meanAbsChannel;
+  final double rmseChannel;
+  final int maxChannel;
+  final double meanAbsLuma;
+  final double meanSignedLumaActualMinusExpected;
+  final double rmseLuma;
+  final double maxAbsLuma;
+
+  const _CapturePairDiffMetric({
+    required this.width,
+    required this.height,
+    required this.samples,
+    required this.meanAbsChannel,
+    required this.rmseChannel,
+    required this.maxChannel,
+    required this.meanAbsLuma,
+    required this.meanSignedLumaActualMinusExpected,
+    required this.rmseLuma,
+    required this.maxAbsLuma,
+  });
+
+  factory _CapturePairDiffMetric.fromRgba({
+    required int expectedWidth,
+    required int expectedHeight,
+    required Uint8List expectedRgba,
+    required int actualWidth,
+    required int actualHeight,
+    required Uint8List actualRgba,
+  }) {
+    if (expectedWidth != actualWidth || expectedHeight != actualHeight) {
+      throw AssertionError(
+        'Capture sizes differ: expected=${expectedWidth}x$expectedHeight, actual=${actualWidth}x$actualHeight',
+      );
+    }
+    final width = expectedWidth;
+    final height = expectedHeight;
+    if (width <= 0 || height <= 0) {
+      throw AssertionError('Capture is empty: ${width}x$height');
+    }
+    final expectedBytes = width * height * 4;
+    if (expectedRgba.lengthInBytes < expectedBytes ||
+        actualRgba.lengthInBytes < expectedBytes) {
+      throw AssertionError('Capture RGBA buffer is too small');
+    }
+
+    var channelAbsSum = 0.0;
+    var channelSqSum = 0.0;
+    var maxChannel = 0;
+    var lumaAbsSum = 0.0;
+    var lumaSignedSum = 0.0;
+    var lumaSqSum = 0.0;
+    var maxAbsLuma = 0.0;
+    final samples = width * height;
+
+    for (var pixel = 0; pixel < samples; pixel++) {
+      final off = pixel * 4;
+      final dr = actualRgba[off] - expectedRgba[off];
+      final dg = actualRgba[off + 1] - expectedRgba[off + 1];
+      final db = actualRgba[off + 2] - expectedRgba[off + 2];
+      final adr = dr.abs();
+      final adg = dg.abs();
+      final adb = db.abs();
+      channelAbsSum += adr + adg + adb;
+      channelSqSum += dr * dr + dg * dg + db * db;
+      maxChannel = math.max(maxChannel, math.max(adr, math.max(adg, adb)));
+
+      final lumaDiff = 0.2126 * dr + 0.7152 * dg + 0.0722 * db;
+      final absLuma = lumaDiff.abs();
+      lumaAbsSum += absLuma;
+      lumaSignedSum += lumaDiff;
+      lumaSqSum += lumaDiff * lumaDiff;
+      maxAbsLuma = math.max(maxAbsLuma, absLuma);
+    }
+
+    return _CapturePairDiffMetric(
+      width: width,
+      height: height,
+      samples: samples,
+      meanAbsChannel: channelAbsSum / (samples * 3),
+      rmseChannel: math.sqrt(channelSqSum / (samples * 3)),
+      maxChannel: maxChannel,
+      meanAbsLuma: lumaAbsSum / samples,
+      meanSignedLumaActualMinusExpected: lumaSignedSum / samples,
+      rmseLuma: math.sqrt(lumaSqSum / samples),
+      maxAbsLuma: maxAbsLuma,
+    );
+  }
+
+  String summary(String label) {
+    return 'ASSERT_CAPTURE_DIFF $label: '
+        'size=${width}x$height samples=$samples '
+        'meanAbsChannel=${meanAbsChannel.toStringAsFixed(4)} '
+        'rmseChannel=${rmseChannel.toStringAsFixed(4)} '
+        'maxChannel=$maxChannel '
+        'meanAbsLuma=${meanAbsLuma.toStringAsFixed(4)} '
+        'meanSignedLumaActualMinusExpected=${meanSignedLumaActualMinusExpected.toStringAsFixed(4)} '
         'rmseLuma=${rmseLuma.toStringAsFixed(4)} '
         'maxAbsLuma=${maxAbsLuma.toStringAsFixed(4)}';
   }

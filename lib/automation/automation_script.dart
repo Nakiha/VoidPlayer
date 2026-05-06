@@ -540,6 +540,29 @@ ScriptInstruction? _parseInstruction(
               : double.infinity,
         ),
       );
+    case 'ASSERT_CAPTURE_DIFF':
+      if (args.length < 2) {
+        log.warning(
+          'ASSERT_CAPTURE_DIFF needs expected and actual capture names: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertCaptureDiff(
+          args[0],
+          args[1],
+          maxMeanAbsChannel: args.length >= 3
+              ? double.parse(args[2])
+              : double.infinity,
+          maxMeanAbsLuma: args.length >= 4
+              ? double.parse(args[3])
+              : double.infinity,
+          maxMaxChannel: args.length >= 5
+              ? double.parse(args[4])
+              : double.infinity,
+        ),
+      );
     case 'ASSERT_ANALYSIS_PROCESS_COUNT':
       if (args.isEmpty) {
         log.warning(

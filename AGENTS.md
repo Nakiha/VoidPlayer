@@ -61,6 +61,18 @@ python dev.py test --native-only     # 仅 native 构建/测试
 - 如果自动化脚本无法覆盖本次改动，需要在最终说明里明确写出阻塞点，以及还缺少哪个 Action / Assert / 启动参数。
 - 修改 native C++ 模块时，仍应至少运行 `python dev.py test` 或 `python dev.py test --native-only`；如果改动同时影响主窗口交互，补跑一条 UI 脚本。
 
+### UI 测试日志
+
+- `dev.py ui-test` 默认使用 `%APPDATA%\VoidPlayer\logs` 保存日志；Flutter/Dart 日志文件形如 `void_player_main_<pid>_<date>.log`，native C++ 日志文件形如 `native_main_<pid>.log`。
+- UI 自动化失败后，优先查看最近一对 Flutter/native 日志；Flutter 日志通常包含 `TestRunner FAIL`、断言期望值和实际值，native 日志通常包含 demux/decode/render/seek 细节。
+- 常用 PowerShell：
+
+```powershell
+Get-ChildItem "$env:APPDATA\VoidPlayer\logs" -File |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 8 FullName,Length,LastWriteTime
+```
+
 ## 模块文档
 
 - **Flutter / Dart 层** — UI 架构、主窗口 controller/coordinator、Action、UI 自动化 → [lib/doc.md](lib/doc.md)

@@ -394,6 +394,14 @@ bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat 
     default_color.primaries = default_color.matrix == VIDEO_COLOR_MATRIX_BT601
         ? VIDEO_COLOR_PRIMARIES_BT601
         : VIDEO_COLOR_PRIMARIES_BT709;
+
+    if (src_width <= 0 || src_height <= 0 || src_format == AV_PIX_FMT_NONE) {
+        spdlog::info("[FrameConverter] Software converter will initialize from first frame "
+                     "(initial params {}x{}, format={})",
+                     src_width, src_height, static_cast<int>(src_format));
+        return true;
+    }
+
     if (!ensure_sws_context(src_width, src_height, src_format, default_color)) {
         return false;
     }

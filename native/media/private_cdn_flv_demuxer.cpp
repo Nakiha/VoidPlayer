@@ -6,6 +6,7 @@
 extern "C" {
 #include <libavutil/error.h>
 #include <libavutil/mem.h>
+#include <libavutil/pixfmt.h>
 }
 
 namespace vr {
@@ -80,6 +81,107 @@ int flv_audio_sample_rate(uint8_t flags) {
     case 2: return 22050;
     case 3: return 44100;
     default: return 0;
+    }
+}
+
+uint16_t read_be16(const uint8_t* data) {
+    return static_cast<uint16_t>((static_cast<uint16_t>(data[0]) << 8) | data[1]);
+}
+
+AVPixelFormat vvc_pix_fmt_from_config(int chroma_format_idc, int bit_depth_minus8) {
+    const int bit_depth = bit_depth_minus8 + 8;
+    switch (chroma_format_idc) {
+    case 0:
+        if (bit_depth == 8) return AV_PIX_FMT_GRAY8;
+        if (bit_depth == 10) return AV_PIX_FMT_GRAY10LE;
+        if (bit_depth == 12) return AV_PIX_FMT_GRAY12LE;
+        break;
+    case 1:
+        if (bit_depth == 8) return AV_PIX_FMT_YUV420P;
+        if (bit_depth == 10) return AV_PIX_FMT_YUV420P10LE;
+        if (bit_depth == 12) return AV_PIX_FMT_YUV420P12LE;
+        break;
+    case 2:
+        if (bit_depth == 8) return AV_PIX_FMT_YUV422P;
+        if (bit_depth == 10) return AV_PIX_FMT_YUV422P10LE;
+        if (bit_depth == 12) return AV_PIX_FMT_YUV422P12LE;
+        break;
+    case 3:
+        if (bit_depth == 8) return AV_PIX_FMT_YUV444P;
+        if (bit_depth == 10) return AV_PIX_FMT_YUV444P10LE;
+        if (bit_depth == 12) return AV_PIX_FMT_YUV444P12LE;
+        break;
+    default:
+        break;
+    }
+    return AV_PIX_FMT_NONE;
+}
+
+void apply_vvc_config_metadata(AVCodecParameters* par, const uint8_t* data, int size) {
+    if (!par || !data || size < 4) {
+        return;
+    }
+
+    int pos = 0;
+    const uint8_t flags = data[pos++];
+    const bool ptl_present = (flags & 0x01) != 0;
+
+    if (pos + 3 > size) {
+        return;
+    }
+    const uint16_t header = read_be16(data + pos);
+    pos += 2;
+    const int num_sublayers = (header >> 4) & 0x07;
+    const int chroma_format_idc = header & 0x03;
+    const int bit_depth_minus8 = (data[pos++] >> 5) & 0x07;
+
+    const AVPixelFormat pix_fmt = vvc_pix_fmt_from_config(chroma_format_idc, bit_depth_minus8);
+    if (pix_fmt != AV_PIX_FMT_NONE) {
+        par->format = pix_fmt;
+    }
+
+    if (!ptl_present || pos >= size) {
+        return;
+    }
+
+    const int num_bytes_constraint_info = data[pos++] & 0x3f;
+    if (pos + 2 + num_bytes_constraint_info > size) {
+        return;
+    }
+    pos += 2 + num_bytes_constraint_info;
+
+    if (num_sublayers > 1) {
+        if (pos >= size) {
+            return;
+        }
+        const uint8_t present_flags = data[pos++];
+        int present_count = 0;
+        for (int i = num_sublayers - 2; i >= 0; --i) {
+            if ((present_flags >> (7 - (num_sublayers - 2 - i))) & 0x01) {
+                ++present_count;
+            }
+        }
+        if (pos + present_count > size) {
+            return;
+        }
+        pos += present_count;
+    }
+
+    if (pos >= size) {
+        return;
+    }
+    const int num_sub_profiles = data[pos++];
+    if (pos + num_sub_profiles * 4 + 6 > size) {
+        return;
+    }
+    pos += num_sub_profiles * 4;
+
+    const int width = read_be16(data + pos);
+    pos += 2;
+    const int height = read_be16(data + pos);
+    if (width > 0 && height > 0) {
+        par->width = width;
+        par->height = height;
     }
 }
 
@@ -224,6 +326,13 @@ bool PrivateCdnFlvDemuxer::copy_extradata(AVCodecParameters* par, int64_t offset
     av_freep(&par->extradata);
     par->extradata = data;
     par->extradata_size = size;
+    if (par->codec_id == AV_CODEC_ID_VVC) {
+        apply_vvc_config_metadata(par, data, size);
+        if (par == video_params_) {
+            stats_.width = par->width;
+            stats_.height = par->height;
+        }
+    }
     return true;
 }
 

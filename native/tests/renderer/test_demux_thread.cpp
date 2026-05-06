@@ -113,6 +113,18 @@ void append_private_video_tag(std::vector<uint8_t>& out, uint8_t codec_id,
 std::string make_private_flv_fixture(uint8_t codec_id, const char* name) {
     namespace fs = std::filesystem;
     const fs::path output = fs::temp_directory_path() / name;
+    const std::vector<uint8_t> vvc_config = {
+        0x07,             // ptl_present=1, lengthSizeMinusOne=3 (4-byte NAL lengths)
+        0x00, 0x11,       // numTemporalLayers=1, chroma_format_idc=1 (4:2:0)
+        0x40,             // bit_depth_minus8=2 (10-bit)
+        0x01,             // num_bytes_constraint_info=1
+        0x00, 0x00, 0x00, // profile/tier, level, constraint byte
+        0x00,             // num_sub_profiles
+        0x07, 0x80,       // max_picture_width=1920
+        0x04, 0x38,       // max_picture_height=1080
+        0x00, 0x00,       // avg_frame_rate
+        0x00,             // numOfArrays
+    };
     std::vector<uint8_t> bytes = {
         'F', 'L', 'V', 0x01, 0x01,
         0x00, 0x00, 0x00, 0x09,
@@ -121,7 +133,7 @@ std::string make_private_flv_fixture(uint8_t codec_id, const char* name) {
     append_private_video_tag(bytes, codec_id, 0, 0, 0,
                              codec_id == 0x0d
                                  ? std::vector<uint8_t>{0x81, 0x00, 0x00, 0x00, 0x12, 0x34}
-                                 : std::vector<uint8_t>{0x12, 0x34});
+                                 : vvc_config);
     append_private_video_tag(bytes, codec_id, 40, 1, 5, {0xaa, 0xbb, 0xcc});
 
     std::ofstream file(output, std::ios::binary | std::ios::trunc);
@@ -261,7 +273,10 @@ TEST_CASE("DemuxThread: private CDN FLV VVC fallback emits packets",
     REQUIRE(demux.format_context() == nullptr);
     REQUIRE(demux.stats().codec_params != nullptr);
     REQUIRE(demux.stats().codec_params->codec_id == AV_CODEC_ID_VVC);
-    REQUIRE(demux.stats().codec_params->extradata_size == 2);
+    REQUIRE(demux.stats().codec_params->extradata_size > 0);
+    REQUIRE(demux.stats().width == 1920);
+    REQUIRE(demux.stats().height == 1080);
+    REQUIRE(demux.stats().codec_params->format == AV_PIX_FMT_YUV420P10LE);
 
     AVPacket* pkt = pq.pop();
     REQUIRE(pkt != nullptr);

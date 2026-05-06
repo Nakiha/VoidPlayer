@@ -9,6 +9,7 @@
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
@@ -814,6 +815,55 @@ std::pair<float, float> Renderer::display_pixel_size_for_layout_locked(
     return {ds_x * slot_w, ds_y * slot_h};
 }
 
+void Renderer::update_track_geometry_from_decision_locked(const PresentDecision& decision) {
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks_[i] || !decision.frames[i].has_value()) continue;
+        const TextureFrame& frame = decision.frames[i].value();
+        if (frame.width <= 0 || frame.height <= 0) continue;
+
+        auto& track = *tracks_[i];
+        if (track.video_width == frame.width && track.video_height == frame.height) {
+            continue;
+        }
+
+        float sar = 1.0f;
+        if (track.video_width > 0 && track.video_height > 0 &&
+            track.video_aspect > 0.0f) {
+            const float old_natural_aspect =
+                static_cast<float>(track.video_width) /
+                static_cast<float>(track.video_height);
+            if (old_natural_aspect > 0.0f) {
+                sar = track.video_aspect / old_natural_aspect;
+            }
+        }
+        if (!std::isfinite(sar) || sar <= 0.0f) {
+            sar = 1.0f;
+        }
+
+        const int old_width = track.video_width;
+        const int old_height = track.video_height;
+        const float old_aspect = track.video_aspect;
+        track.video_width = frame.width;
+        track.video_height = frame.height;
+        track.video_aspect =
+            (static_cast<float>(frame.width) / static_cast<float>(frame.height)) * sar;
+        if (!std::isfinite(track.video_aspect) || track.video_aspect <= 0.0f) {
+            track.video_aspect =
+                static_cast<float>(frame.width) / static_cast<float>(frame.height);
+        }
+
+        spdlog::info(
+            "[Renderer] track[{}] display geometry changed: {}x{} aspect={:.6f} -> {}x{} aspect={:.6f}",
+            i,
+            old_width,
+            old_height,
+            old_aspect,
+            track.video_width,
+            track.video_height,
+            track.video_aspect);
+    }
+}
+
 void Renderer::step_forward() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     PresentDecision step_decision;
@@ -1073,6 +1123,10 @@ void Renderer::enter_terminal_device_lost_locked(const char* operation) {
 
 void Renderer::present_frame(const PresentDecision& decision) {
     spdlog::debug("[present_frame] mode={}", layout_.mode);
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        update_track_geometry_from_decision_locked(decision);
+    }
     std::function<void()> frame_callback;
     bool device_lost = false;
     {

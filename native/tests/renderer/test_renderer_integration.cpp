@@ -4,7 +4,10 @@
 #include <thread>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <d3d11.h>
 #include <dxgi.h>
 
@@ -25,6 +28,73 @@ static IDXGIAdapter* get_default_adapter() {
     if (FAILED(hr)) return nullptr;
 
     return adapter.Get();
+}
+
+static std::string quote_arg(const std::string& value) {
+    std::string quoted = "\"";
+    for (char ch : value) {
+        if (ch == '"') {
+            quoted += "\\\"";
+        } else {
+            quoted += ch;
+        }
+    }
+    quoted += "\"";
+    return quoted;
+}
+
+static int run_command(const std::string& command) {
+#ifdef _WIN32
+    return std::system(("\"" + command + "\"").c_str());
+#else
+    return std::system(command.c_str());
+#endif
+}
+
+static void append_file(const std::filesystem::path& src, std::ofstream& out) {
+    std::ifstream in(src, std::ios::binary);
+    REQUIRE(in.good());
+    out << in.rdbuf();
+    REQUIRE(out.good());
+}
+
+static std::filesystem::path make_dynamic_resolution_h264_fixture() {
+    namespace fs = std::filesystem;
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const fs::path dir =
+        fs::temp_directory_path() / ("void_player_renderer_dynamic_res_" + std::to_string(stamp));
+    fs::create_directories(dir);
+
+    const fs::path seg_a = dir / "seg_a.h264";
+    const fs::path seg_b = dir / "seg_b.h264";
+    const fs::path combined = dir / "dynamic_res.h264";
+    const std::string ffmpeg = FFMPEG_EXE_PATH;
+
+    auto encode_segment = [&](const fs::path& out, const char* size) {
+        std::ostringstream cmd;
+        cmd << quote_arg(ffmpeg)
+            << " -hide_banner -y -loglevel error"
+            << " -f lavfi -i " << quote_arg(std::string("testsrc=size=") + size + ":rate=5:duration=1")
+            << " -frames:v 5"
+            << " -c:v libx264 -preset ultrafast -tune zerolatency"
+            << " -g 5 -keyint_min 5 -x264-params " << quote_arg("scenecut=0:repeat-headers=1")
+            << " -pix_fmt yuv420p -f h264 "
+            << quote_arg(out.string());
+        const int ret = run_command(cmd.str());
+        REQUIRE(ret == 0);
+        REQUIRE(fs::exists(out));
+    };
+
+    encode_segment(seg_a, "64x64");
+    encode_segment(seg_b, "96x72");
+
+    std::ofstream out(combined, std::ios::binary);
+    REQUIRE(out.good());
+    append_file(seg_a, out);
+    append_file(seg_b, out);
+    out.close();
+    REQUIRE(fs::exists(combined));
+    return combined;
 }
 
 struct CaptureStats {
@@ -211,6 +281,38 @@ TEST_CASE("Renderer: play and check PTS advances", "[renderer]") {
 
     renderer.shutdown();
     destroy_window(static_cast<HWND>(config.hwnd));
+}
+
+TEST_CASE("Renderer: dynamic resolution updates displayed track geometry",
+          "[renderer][dynamic_resolution]") {
+    const auto path = make_dynamic_resolution_h264_fixture();
+    Renderer renderer;
+
+    RendererConfig config;
+    config.video_paths = { path.string() };
+    config.hwnd = create_hidden_window(320, 240);
+    config.width = 320;
+    config.height = 240;
+    config.use_hardware_decode = false;
+
+    REQUIRE(renderer.initialize(config));
+    renderer.play();
+
+    bool saw_updated_geometry = false;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
+    while (std::chrono::steady_clock::now() < deadline && !saw_updated_geometry) {
+        for (const auto& info : renderer.track_infos()) {
+            saw_updated_geometry =
+                saw_updated_geometry || (info.width == 96 && info.height == 72);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    renderer.shutdown();
+    destroy_window(static_cast<HWND>(config.hwnd));
+    std::filesystem::remove_all(path.parent_path());
+
+    REQUIRE(saw_updated_geometry);
 }
 
 TEST_CASE("Renderer: pause and play", "[renderer]") {

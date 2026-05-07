@@ -12,12 +12,20 @@ class MainWindowTimelineMetrics {
 
   int get effectiveDurationUs {
     final state = stateStore.value;
-    int maxEffective = state.durationUs;
+    if (trackManager.isEmpty) {
+      return state.durationUs;
+    }
+
+    var maxEffective = 0;
     for (final entry in trackManager.entries) {
       final offsetUs = state.syncOffsets[entry.fileId] ?? 0;
-      final effective = entry.info.durationUs + offsetUs;
+      final effective =
+          (entry.info.startTimeUs + entry.info.durationUs + offsetUs)
+              .clamp(0, 1 << 62)
+              .toInt();
       if (effective > maxEffective) maxEffective = effective;
     }
-    return maxEffective;
+
+    return maxEffective > 0 ? maxEffective : state.durationUs;
   }
 }

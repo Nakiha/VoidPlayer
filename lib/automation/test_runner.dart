@@ -32,6 +32,7 @@ class TestRunner {
     probe: _probe,
     state: _state,
     analysisProcesses: automation.analysisProcesses,
+    effectiveDurationUs: automation.effectiveDurationUs,
   );
 
   /// Parse and execute the test script. Exits the process on QUIT or failure.
@@ -109,10 +110,11 @@ class TestRunner {
         :final fps,
         :final width,
         :final height,
+        :final ptsOffsetUs,
       ):
         log.info(
           'TestRunner ${instr.time}: GENERATE_TEST_VIDEO '
-          '$path frames=$frames fps=$fps size=${width}x$height',
+          '$path frames=$frames fps=$fps size=${width}x$height ptsOffsetUs=$ptsOffsetUs',
         );
         await runtime.generateVideo(
           path: path,
@@ -120,6 +122,7 @@ class TestRunner {
           fps: fps,
           width: width,
           height: height,
+          ptsOffsetUs: ptsOffsetUs,
         );
 
       case ScriptSetSeekAfterJumpBehavior(:final behavior):

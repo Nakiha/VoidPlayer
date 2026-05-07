@@ -10,11 +10,13 @@ import '../windows/window_manager.dart';
 class UiAutomationBridge {
   final NativePlayerController controller;
   final AnalysisProcessManager analysisProcesses;
+  final int Function() effectiveDurationUs;
   final ActionRegistry _actionRegistry;
 
   const UiAutomationBridge({
     required this.controller,
     required this.analysisProcesses,
+    required this.effectiveDurationUs,
     required ActionRegistry actionRegistry,
   }) : _actionRegistry = actionRegistry;
 

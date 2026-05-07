@@ -145,6 +145,7 @@ class TrackRow extends StatelessWidget {
   final int hoverPtsUs;
   final bool sliderHovering;
   final int trackDurationUs;
+  final int trackStartTimeUs;
   final int offsetUs;
   final int maxEffectiveDurationUs;
   final List<int> markerPtsUs;
@@ -169,6 +170,7 @@ class TrackRow extends StatelessWidget {
     this.hoverPtsUs = 0,
     this.sliderHovering = false,
     this.trackDurationUs = 0,
+    this.trackStartTimeUs = 0,
     this.offsetUs = 0,
     this.maxEffectiveDurationUs = 0,
     this.markerPtsUs = const [],
@@ -300,6 +302,7 @@ class TrackRow extends StatelessWidget {
                   hoverPtsUs: hoverPtsUs,
                   sliderHovering: sliderHovering,
                   trackDurationUs: trackDurationUs,
+                  trackStartTimeUs: trackStartTimeUs,
                   offsetUs: offsetUs,
                   maxEffectiveDurationUs: maxEffectiveDurationUs,
                   markerPtsUs: markerPtsUs,

@@ -14,11 +14,13 @@ class AutomationAssertExecutor {
   final AutomationProbe probe;
   final AutomationRunState state;
   final AnalysisProcessManager analysisProcesses;
+  final int Function() effectiveDurationUs;
 
   const AutomationAssertExecutor({
     required this.probe,
     required this.state,
     required this.analysisProcesses,
+    required this.effectiveDurationUs,
   });
 
   Future<void> execute(PlayerAssert assertion) async {
@@ -70,6 +72,14 @@ class AutomationAssertExecutor {
         if (diff > toleranceMs * 1000) {
           throw AssertionError(
             'Expected duration $ptsUs μs (±${toleranceMs}ms), got $actual μs',
+          );
+        }
+      case AssertEffectiveDuration(:final ptsUs, :final toleranceMs):
+        final actual = effectiveDurationUs();
+        final diff = (actual - ptsUs).abs();
+        if (diff > toleranceMs * 1000) {
+          throw AssertionError(
+            'Expected effective duration $ptsUs μs (±${toleranceMs}ms), got $actual μs',
           );
         }
       case AssertLayoutMode(:final mode):

@@ -13,6 +13,7 @@ abstract interface class UiAutomationRuntime {
     required int fps,
     required int width,
     required int height,
+    int ptsOffsetUs = 0,
   });
 
   Future<void> setSeekAfterJumpBehavior(SeekAfterJumpBehavior behavior);
@@ -38,6 +39,7 @@ class DefaultUiAutomationRuntime implements UiAutomationRuntime {
     required int fps,
     required int width,
     required int height,
+    int ptsOffsetUs = 0,
   }) {
     return generateTestVideo(
       path: path,
@@ -45,6 +47,7 @@ class DefaultUiAutomationRuntime implements UiAutomationRuntime {
       fps: fps,
       width: width,
       height: height,
+      ptsOffsetUs: ptsOffsetUs,
     );
   }
 

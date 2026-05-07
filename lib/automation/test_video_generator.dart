@@ -8,10 +8,12 @@ Future<void> generateTestVideo({
   required int fps,
   required int width,
   required int height,
+  int ptsOffsetUs = 0,
 }) async {
-  if (frames <= 0 || fps <= 0 || width <= 0 || height <= 0) {
+  if (frames <= 0 || fps <= 0 || width <= 0 || height <= 0 || ptsOffsetUs < 0) {
     throw ArgumentError(
-      'Invalid video parameters frames=$frames fps=$fps size=${width}x$height',
+      'Invalid video parameters frames=$frames fps=$fps '
+      'size=${width}x$height ptsOffsetUs=$ptsOffsetUs',
     );
   }
   final output = File(path).absolute;
@@ -26,6 +28,12 @@ Future<void> generateTestVideo({
     'lavfi',
     '-i',
     'testsrc2=size=${width}x$height:rate=$fps',
+    if (ptsOffsetUs > 0) ...[
+      '-vf',
+      'setpts=PTS+${ptsOffsetUs / 1000000.0}/TB',
+      '-avoid_negative_ts',
+      'disabled',
+    ],
     '-frames:v',
     '$frames',
     '-metadata',
@@ -54,7 +62,7 @@ Future<void> generateTestVideo({
   }
   log.info(
     'TestRunner: generated ${output.path} '
-    'frames=$frames fps=$fps bytes=$size',
+    'frames=$frames fps=$fps ptsOffsetUs=$ptsOffsetUs bytes=$size',
   );
 }
 

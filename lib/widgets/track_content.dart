@@ -23,6 +23,7 @@ class TrackContent extends StatelessWidget {
   final int hoverPtsUs;
   final bool sliderHovering;
   final int trackDurationUs;
+  final int trackStartTimeUs;
   final int offsetUs;
   final int maxEffectiveDurationUs;
   final List<int> markerPtsUs;
@@ -39,6 +40,7 @@ class TrackContent extends StatelessWidget {
     this.hoverPtsUs = 0,
     this.sliderHovering = false,
     this.trackDurationUs = 0,
+    this.trackStartTimeUs = 0,
     this.offsetUs = 0,
     this.maxEffectiveDurationUs = 0,
     this.markerPtsUs = const [],
@@ -61,6 +63,7 @@ class TrackContent extends StatelessWidget {
         hoverPtsUs: hoverPtsUs,
         sliderHovering: sliderHovering,
         trackDurationUs: trackDurationUs,
+        trackStartTimeUs: trackStartTimeUs,
         offsetUs: offsetUs,
         maxEffectiveDurationUs: maxEffectiveDurationUs,
         markerPtsUs: markerPtsUs,
@@ -85,6 +88,7 @@ class _TrackContentPainter extends CustomPainter {
   final int hoverPtsUs;
   final bool sliderHovering;
   final int trackDurationUs;
+  final int trackStartTimeUs;
   final int offsetUs;
   final int maxEffectiveDurationUs;
   final List<int> markerPtsUs;
@@ -103,6 +107,7 @@ class _TrackContentPainter extends CustomPainter {
     required this.hoverPtsUs,
     required this.sliderHovering,
     required this.trackDurationUs,
+    required this.trackStartTimeUs,
     required this.offsetUs,
     required this.maxEffectiveDurationUs,
     required this.markerPtsUs,
@@ -135,8 +140,8 @@ class _TrackContentPainter extends CustomPainter {
     );
 
     if (loopRangeEnabled && trackDurationUs > 0 && loopEndUs > loopStartUs) {
-      final trackStartUs = offsetUs;
-      final trackEndUs = offsetUs + trackDurationUs;
+      final trackStartUs = trackStartTimeUs + offsetUs;
+      final trackEndUs = trackStartUs + trackDurationUs;
       final selectedStartUs = loopStartUs
           .clamp(trackStartUs, trackEndUs)
           .toInt();
@@ -218,9 +223,12 @@ class _TrackContentPainter extends CustomPainter {
       y += 7.0;
     }
 
-    // Local time label — clamp local time to track bounds for display
-    final localTimeUs = (markerPtsUs - offsetUs).clamp(0, trackDurationUs);
-    final label = formatTimeShort(localTimeUs);
+    // Source PTS label — translate global timeline time back through the
+    // track offset, then clamp to this track's real source PTS range.
+    final sourcePtsUs = (markerPtsUs - offsetUs)
+        .clamp(trackStartTimeUs, trackStartTimeUs + trackDurationUs)
+        .toInt();
+    final label = formatTimeShort(sourcePtsUs);
     final textSpan = TextSpan(
       text: label,
       style: TextStyle(
@@ -249,6 +257,7 @@ class _TrackContentPainter extends CustomPainter {
         oldDelegate.bgColor != bgColor ||
         oldDelegate.playheadColor != playheadColor ||
         oldDelegate.trackDurationUs != trackDurationUs ||
+        oldDelegate.trackStartTimeUs != trackStartTimeUs ||
         oldDelegate.offsetUs != offsetUs ||
         oldDelegate.maxEffectiveDurationUs != maxEffectiveDurationUs ||
         oldDelegate.markerPtsUs != markerPtsUs ||

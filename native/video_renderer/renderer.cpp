@@ -1018,7 +1018,7 @@ void Renderer::step_backward() {
             if (ref >= 0) {
                 auto frame = tracks_[ref]->track_buffer->peek(0);
                 if (frame.has_value()) {
-                    playback_->clock().seek(frame->pts_us);
+                    playback_->clock().seek(frame->pts_us + tracks_[ref]->offset_us);
                 }
             }
         } else {
@@ -1267,13 +1267,22 @@ int64_t Renderer::compute_frame_duration_us() const {
 }
 
 int64_t Renderer::effective_duration_us_locked() const {
-    int64_t duration_us = cached_duration_us_;
+    int64_t duration_us = 0;
+    bool has_track_duration = false;
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks_[i] || !tracks_[i]->demux_thread) continue;
         const int64_t track_duration_us =
             tracks_[i]->demux_thread->stats().duration_us;
         if (track_duration_us <= 0) continue;
-        duration_us = std::max(duration_us, track_duration_us + tracks_[i]->offset_us);
+        const int64_t track_start_time_us =
+            tracks_[i]->demux_thread->stats().start_time_us;
+        has_track_duration = true;
+        duration_us = std::max(
+            duration_us,
+            track_start_time_us + track_duration_us + tracks_[i]->offset_us);
+    }
+    if (!has_track_duration) {
+        duration_us = cached_duration_us_;
     }
     return std::max<int64_t>(0, duration_us);
 }
@@ -1290,8 +1299,10 @@ bool Renderer::settle_eof_locked(int64_t max_presented_end_us) {
         std::max<int64_t>(frame_duration_us + 2000, 5000);
 
     int64_t end_us = max_presented_end_us;
-    if (duration_us > 0 &&
-        std::llabs(duration_us - max_presented_end_us) <= eof_tolerance_us) {
+    if (duration_us > 0) {
+        if (std::llabs(duration_us - max_presented_end_us) > eof_tolerance_us) {
+            return false;
+        }
         end_us = duration_us;
     }
 
@@ -1593,7 +1604,8 @@ void Renderer::render_loop() {
                         if (!preserve_requested_clock &&
                             ref >= 0 &&
                             preview.frames[ref].has_value()) {
-                            playback_->clock().seek(preview.frames[ref]->pts_us);
+                            playback_->clock().seek(
+                                preview.frames[ref]->pts_us + tracks_[ref]->offset_us);
                         }
                         spdlog::info("[Renderer] Paused frame: pts={:.3f}s",
                                      ref >= 0 && preview.frames[ref].has_value()
@@ -1669,7 +1681,8 @@ void Renderer::render_loop() {
                 if (last_decision_.frames[i].has_value()) {
                     max_end_pts = std::max(max_end_pts,
                         last_decision_.frames[i]->pts_us +
-                        last_decision_.frames[i]->duration_us);
+                        last_decision_.frames[i]->duration_us +
+                        tracks_[i]->offset_us);
                 }
             }
             if (buffer_empty && max_end_pts > 0) {

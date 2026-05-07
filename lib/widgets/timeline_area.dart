@@ -71,7 +71,9 @@ class _TimelineAreaState extends State<TimelineArea> {
             itemBuilder: (context, index) {
               final entry = widget.entries[index];
               final trackDuration = entry.info.durationUs;
+              final trackStartTimeUs = entry.info.startTimeUs;
               final offsetUs = widget.syncOffsets[entry.fileId] ?? 0;
+              final globalTrackStartUs = trackStartTimeUs + offsetUs;
 
               // Clip ratio: original duration relative to max effective duration
               final clipRatio = maxEffectiveDurationUs > 0
@@ -80,13 +82,16 @@ class _TimelineAreaState extends State<TimelineArea> {
 
               // Offset ratio: where the clip block starts
               final offsetRatio = maxEffectiveDurationUs > 0
-                  ? (offsetUs / maxEffectiveDurationUs).clamp(0.0, 1.0)
+                  ? (globalTrackStartUs / maxEffectiveDurationUs).clamp(
+                      0.0,
+                      1.0,
+                    )
                   : 0.0;
 
               // Per-track playhead: global time → track internal time
               double playheadPosition = 0.0;
               if (trackDuration > 0) {
-                final localTime = widget.currentPtsUs - offsetUs;
+                final localTime = widget.currentPtsUs - globalTrackStartUs;
                 playheadPosition = (localTime / trackDuration).clamp(0.0, 1.0);
               }
 
@@ -108,6 +113,7 @@ class _TimelineAreaState extends State<TimelineArea> {
                 hoverPtsUs: widget.hoverPtsUs,
                 sliderHovering: widget.sliderHovering,
                 trackDurationUs: trackDuration,
+                trackStartTimeUs: trackStartTimeUs,
                 offsetUs: offsetUs,
                 maxEffectiveDurationUs: maxEffectiveDurationUs,
                 markerPtsUs: widget.markerPtsUs,

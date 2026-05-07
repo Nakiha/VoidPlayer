@@ -39,6 +39,12 @@ class AssertDuration extends PlayerAssert {
   const AssertDuration(this.ptsUs, this.toleranceMs);
 }
 
+class AssertEffectiveDuration extends PlayerAssert {
+  final int ptsUs;
+  final int toleranceMs;
+  const AssertEffectiveDuration(this.ptsUs, this.toleranceMs);
+}
+
 class AssertLayoutMode extends PlayerAssert {
   final int mode;
   const AssertLayoutMode(this.mode);

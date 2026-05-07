@@ -472,6 +472,7 @@ class MainWindowController {
         automation: UiAutomationBridge(
           controller: player,
           analysisProcesses: analysisProcesses,
+          effectiveDurationUs: () => timelineMetrics.effectiveDurationUs,
           actionRegistry: actionRegistry,
         ),
       ).run();

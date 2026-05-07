@@ -52,6 +52,7 @@ class ScriptGenerateTestVideo extends ScriptInstruction {
   final int fps;
   final int width;
   final int height;
+  final int ptsOffsetUs;
 
   const ScriptGenerateTestVideo(
     super.time, {
@@ -60,6 +61,7 @@ class ScriptGenerateTestVideo extends ScriptInstruction {
     required this.fps,
     required this.width,
     required this.height,
+    this.ptsOffsetUs = 0,
   });
 }
 
@@ -376,6 +378,7 @@ ScriptInstruction? _parseInstruction(
         fps: args.length >= 3 ? int.parse(args[2]) : 120,
         width: args.length >= 4 ? int.parse(args[3]) : 64,
         height: args.length >= 5 ? int.parse(args[4]) : 64,
+        ptsOffsetUs: args.length >= 6 ? int.parse(args[5]) : 0,
       );
     case 'SET_SEEK_AFTER_JUMP_BEHAVIOR':
       if (args.isEmpty) {
@@ -446,6 +449,17 @@ ScriptInstruction? _parseInstruction(
       return ScriptAssert(
         time,
         AssertDuration(int.parse(args[0]), int.parse(args[1])),
+      );
+    case 'ASSERT_EFFECTIVE_DURATION':
+      if (args.length < 2) {
+        log.warning(
+          'ASSERT_EFFECTIVE_DURATION needs ptsUs and toleranceMs: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertEffectiveDuration(int.parse(args[0]), int.parse(args[1])),
       );
 
     // Asserts — layout

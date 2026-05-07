@@ -99,6 +99,8 @@ class MainWindowMediaCoordinator {
         if (!_alive) return;
         setTextureId(res.textureId);
         trackManager.setTracks(res.tracks);
+        await _applyInitialPtsOffsets(res.tracks);
+        if (!_alive) return;
         final nativeLayout = await controller.getLayout();
         if (!_alive) return;
         setLayout(
@@ -143,6 +145,8 @@ class MainWindowMediaCoordinator {
           );
           if (!_alive) return;
           trackManager.addTrack(track);
+          await _applyInitialPtsOffsets([track]);
+          if (!_alive) return;
           lifecycle.applyStartupLoopRangeIfReady();
         } catch (e) {
           log.severe("addTrack failed: $e");
@@ -256,5 +260,38 @@ class MainWindowMediaCoordinator {
 
   void setSyncOffset(int fileId, int offsetUs) {
     setSyncOffsets(Map.from(syncOffsets())..[fileId] = offsetUs);
+  }
+
+  Future<void> _applyInitialPtsOffsets(Iterable<TrackInfo> tracks) async {
+    final nextOffsets = Map<int, int>.from(syncOffsets());
+    var changed = false;
+
+    for (final track in tracks) {
+      final startTimeUs = track.startTimeUs;
+      if (startTimeUs <= 0 || nextOffsets.containsKey(track.fileId)) {
+        continue;
+      }
+
+      final offsetUs = -startTimeUs;
+      try {
+        await controller.setTrackOffset(
+          fileId: track.fileId,
+          offsetUs: offsetUs,
+        );
+      } catch (e) {
+        log.warning(
+          'auto initial PTS offset failed for fileId=${track.fileId}: $e',
+        );
+        continue;
+      }
+      if (!_alive) return;
+
+      nextOffsets[track.fileId] = offsetUs;
+      changed = true;
+    }
+
+    if (changed) {
+      setSyncOffsets(nextOffsets);
+    }
   }
 }

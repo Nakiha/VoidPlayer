@@ -92,6 +92,7 @@ class AppToolBar extends StatelessWidget {
           // Profiler button
           _ToolbarToggleButton(
             active: profilerActive,
+            enabled: tracks.isNotEmpty,
             onPressed: onProfiler,
             icon: Icons.speed,
             tooltip: AppLocalizations.of(context)!.performanceMonitor,

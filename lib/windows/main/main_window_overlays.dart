@@ -14,6 +14,7 @@ import 'main_window_media_sections.dart';
 import 'main_window_view_model.dart';
 
 const _sidePanelGap = 10.0;
+const _sidePanelShadowPadding = 12.0;
 const _mediaInfoPanelMaxHeight = 380.0;
 const _mediaInfoTableBottomScrollbarPadding = 6.0;
 const _settingsDialogMaxWidth = 760.0;
@@ -122,25 +123,15 @@ class FloatingSidePanelsSlot extends StatelessWidget {
       left: 12,
       right: 12,
       bottom: 12,
-      child: AnimatedOverlaySlot(
-        visible: visible,
-        builder: (context) => _FloatingSidePanelStack(
+      child: IgnorePointer(
+        ignoring: !visible,
+        child: _FloatingSidePanelStack(
           mediaInfoVisible: mediaInfoVisible,
           profilerVisible: profilerVisible,
           tracks: tracks,
           onCloseMediaInfo: onCloseMediaInfo,
           onCloseProfiler: onCloseProfiler,
         ),
-        transitionBuilder: (context, animation, child) {
-          final offset = Tween<Offset>(
-            begin: const Offset(-0.04, 0),
-            end: Offset.zero,
-          ).animate(animation);
-          return FadeTransition(
-            opacity: animation,
-            child: SlideTransition(position: offset, child: child),
-          );
-        },
       ),
     );
   }
@@ -174,36 +165,48 @@ class _FloatingSidePanelStack extends StatelessWidget {
             ),
             child: Scrollbar(
               child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (mediaInfoVisible)
-                      _FloatingPanelFrame(
-                        icon: Icons.info_outline,
-                        title: AppLocalizations.of(context)!.mediaInfo,
-                        onClose: onCloseMediaInfo,
-                        child: MediaInfoPage(tracks: tracks),
-                      ),
-                    if (mediaInfoVisible && profilerVisible)
-                      const SizedBox(height: _sidePanelGap),
-                    if (profilerVisible)
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          minWidth: 360,
-                          maxWidth: 560,
-                          maxHeight: 320,
-                        ),
+                clipBehavior: Clip.none,
+                child: Padding(
+                  padding: const EdgeInsets.only(
+                    right: _sidePanelShadowPadding,
+                    bottom: _sidePanelShadowPadding,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _AnimatedFloatingPanelSlot(
+                        visible: mediaInfoVisible,
                         child: _FloatingPanelFrame(
-                          icon: Icons.speed,
-                          title: AppLocalizations.of(
-                            context,
-                          )!.performanceMonitor,
-                          onClose: onCloseProfiler,
-                          child: const Flexible(child: StatsPage()),
+                          icon: Icons.info_outline,
+                          title: AppLocalizations.of(context)!.mediaInfo,
+                          onClose: onCloseMediaInfo,
+                          child: MediaInfoPage(tracks: tracks),
                         ),
                       ),
-                  ],
+                      _AnimatedSidePanelGap(
+                        visible: mediaInfoVisible && profilerVisible,
+                      ),
+                      _AnimatedFloatingPanelSlot(
+                        visible: profilerVisible,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            minWidth: 360,
+                            maxWidth: 560,
+                            maxHeight: 320,
+                          ),
+                          child: _FloatingPanelFrame(
+                            icon: Icons.speed,
+                            title: AppLocalizations.of(
+                              context,
+                            )!.performanceMonitor,
+                            onClose: onCloseProfiler,
+                            child: const Flexible(child: StatsPage()),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -324,6 +327,70 @@ class _AnimatedOverlaySlotState extends State<AnimatedOverlaySlot>
       context,
       _animation,
       widget.builder(context),
+    );
+  }
+}
+
+class _AnimatedFloatingPanelSlot extends StatelessWidget {
+  final bool visible;
+  final Widget child;
+
+  const _AnimatedFloatingPanelSlot({
+    required this.visible,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 180),
+      reverseDuration: const Duration(milliseconds: 140),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topLeft,
+      clipBehavior: Clip.none,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        reverseDuration: const Duration(milliseconds: 140),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        layoutBuilder: (currentChild, previousChildren) {
+          return Stack(
+            alignment: Alignment.topLeft,
+            children: [
+              ...previousChildren,
+              if (currentChild != null) currentChild,
+            ],
+          );
+        },
+        transitionBuilder: (child, animation) {
+          final offset = Tween<Offset>(
+            begin: const Offset(-0.04, 0),
+            end: Offset.zero,
+          ).animate(animation);
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(position: offset, child: child),
+          );
+        },
+        child: visible
+            ? KeyedSubtree(key: const ValueKey('panel'), child: child)
+            : const SizedBox.shrink(key: ValueKey('empty')),
+      ),
+    );
+  }
+}
+
+class _AnimatedSidePanelGap extends StatelessWidget {
+  final bool visible;
+
+  const _AnimatedSidePanelGap({required this.visible});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      height: visible ? _sidePanelGap : 0,
     );
   }
 }

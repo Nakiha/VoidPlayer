@@ -13,7 +13,7 @@ class ControlsBar extends StatelessWidget {
   static const double _zoomWidth = 76.0;
   static const double _iconWidth = 32.0;
   static const double _gapWidth = 4.0;
-  static const double _timeWidth = 128.0;
+  static const double _timeWidth = 144.0;
   static const double _zoomHideWidth =
       _zoomWidth + _gapWidth + _iconWidth * 4 + _gapWidth + _timeWidth;
   static const double _fullscreenHideWidth =

@@ -54,11 +54,13 @@ class EditableTimeLabel extends StatefulWidget {
 }
 
 class _EditableTimeLabelState extends State<EditableTimeLabel> {
-  static const double _currentWidth = 57.0;
+  static const double _timeTextWidth = 62.0;
+  static const double _separatorWidth = 14.0;
 
   late final TextEditingController _controller;
   final _focusNode = FocusNode();
   bool _editing = false;
+  String? _editingStartText;
 
   @override
   void initState() {
@@ -86,21 +88,26 @@ class _EditableTimeLabelState extends State<EditableTimeLabel> {
   String _displayCurrent() => TimeLabel.formatUs(widget.currentUs);
 
   void _handleFocusChange() {
-    if (_focusNode.hasFocus && !_editing) {
-      setState(() {
-        _editing = true;
-        _controller.text = _displayCurrent();
-      });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_focusNode.hasFocus) return;
-        _controller.selection = TextSelection(
-          baseOffset: 0,
-          extentOffset: _controller.text.length,
-        );
-      });
-    } else if (!_focusNode.hasFocus && _editing) {
+    if (!_focusNode.hasFocus && _editing) {
       _commit();
     }
+  }
+
+  void _startEditing() {
+    if (_editing) return;
+    setState(() {
+      _editing = true;
+      _controller.text = _displayCurrent();
+      _editingStartText = _controller.text;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _focusNode.requestFocus();
+      _controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _controller.text.length,
+      );
+    });
   }
 
   void _commitAndUnfocus() {
@@ -109,12 +116,23 @@ class _EditableTimeLabelState extends State<EditableTimeLabel> {
   }
 
   void _commit() {
+    final submittedText = _controller.text.trim();
+    if (submittedText == _editingStartText?.trim()) {
+      setState(() {
+        _editing = false;
+        _editingStartText = null;
+        _controller.text = _displayCurrent();
+      });
+      return;
+    }
+
     final parsedUs = parseEditableTimeUs(_controller.text);
     final seekable = widget.totalUs > 0 && parsedUs != null;
     if (seekable) {
       final targetUs = _clampSeekUs(parsedUs);
       setState(() {
         _editing = false;
+        _editingStartText = null;
         _controller.text = TimeLabel.formatUs(targetUs);
       });
       if (targetUs != widget.currentUs) {
@@ -125,6 +143,7 @@ class _EditableTimeLabelState extends State<EditableTimeLabel> {
 
     setState(() {
       _editing = false;
+      _editingStartText = null;
       _controller.text = _displayCurrent();
     });
   }
@@ -143,51 +162,74 @@ class _EditableTimeLabelState extends State<EditableTimeLabel> {
     final style = theme.textTheme.bodySmall?.copyWith(
       fontFeatures: [const FontFeature.tabularFigures()],
     );
-    final border = UnderlineInputBorder(
-      borderSide: BorderSide(
-        color: theme.colorScheme.primary.withValues(alpha: 0.7),
-        width: 1,
-      ),
-    );
 
     return DefaultTextStyle.merge(
       style: style,
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
         children: [
           SizedBox(
-            width: _currentWidth,
-            height: 24,
-            child: TextField(
-              controller: _controller,
-              focusNode: _focusNode,
-              inputFormatters: [
-                const EditableTimeInputFormatter(),
-                LengthLimitingTextInputFormatter(16),
-              ],
-              style: style,
-              textAlign: TextAlign.left,
-              textAlignVertical: TextAlignVertical.center,
-              textInputAction: TextInputAction.done,
-              keyboardType: TextInputType.datetime,
-              cursorHeight: style?.fontSize,
-              decoration: InputDecoration(
-                isDense: true,
-                border: border,
-                enabledBorder: border,
-                focusedBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.primary,
-                    width: 1.5,
+            width: _timeTextWidth,
+            child: _editing
+                ? TextField(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    inputFormatters: [
+                      const EditableTimeInputFormatter(),
+                      LengthLimitingTextInputFormatter(16),
+                    ],
+                    style: style,
+                    textAlign: TextAlign.right,
+                    textInputAction: TextInputAction.done,
+                    keyboardType: TextInputType.datetime,
+                    cursorHeight: style?.fontSize,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: UnderlineInputBorder(
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: 0.7,
+                          ),
+                          width: 1,
+                        ),
+                      ),
+                      enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: 0.7,
+                          ),
+                          width: 1,
+                        ),
+                      ),
+                      focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.primary,
+                          width: 1,
+                        ),
+                      ),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    onSubmitted: (_) => _commitAndUnfocus(),
+                  )
+                : GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _startEditing,
+                    child: Text(
+                      _controller.text,
+                      textAlign: TextAlign.right,
+                      overflow: TextOverflow.clip,
+                      softWrap: false,
+                    ),
                   ),
-                ),
-                contentPadding: const EdgeInsets.only(top: 4, bottom: 1),
-              ),
-              onSubmitted: (_) => _commitAndUnfocus(),
-            ),
           ),
-          const Text(' / '),
-          Flexible(
+          SizedBox(
+            width: _separatorWidth,
+            child: Text('/', textAlign: TextAlign.center),
+          ),
+          SizedBox(
+            width: _timeTextWidth,
             child: Text(
               TimeLabel.formatUs(widget.totalUs),
               overflow: TextOverflow.clip,

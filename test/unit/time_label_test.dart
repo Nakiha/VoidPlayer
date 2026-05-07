@@ -54,16 +54,14 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byType(TextField));
+    await tester.tap(find.text('00:00.000'));
+    await tester.pump();
     await tester.enterText(find.byType(TextField), '00:01.250');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pump();
 
     expect(seeks, [1250000]);
-    expect(
-      tester.widget<TextField>(find.byType(TextField)).controller!.text,
-      '00:01.250',
-    );
+    expect(find.text('00:01.250'), findsOneWidget);
   });
 
   testWidgets('EditableTimeLabel restores current time on invalid input', (
@@ -82,17 +80,46 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byType(TextField));
+    await tester.tap(find.text('00:03.456'));
+    await tester.pump();
     await tester.enterText(find.byType(TextField), '1::2');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pump();
 
     expect(seeks, isEmpty);
-    expect(
-      tester.widget<TextField>(find.byType(TextField)).controller!.text,
-      '00:03.456',
-    );
+    expect(find.text('00:03.456'), findsOneWidget);
   });
+
+  testWidgets(
+    'EditableTimeLabel does not seek when unchanged text loses focus',
+    (tester) async {
+      final seeks = <int>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                EditableTimeLabel(
+                  currentUs: 33366,
+                  totalUs: 10000000,
+                  onSeek: seeks.add,
+                ),
+                const Text('outside'),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('00:00.033'));
+      await tester.pump();
+      await tester.tap(find.text('outside'));
+      await tester.pump();
+
+      expect(seeks, isEmpty);
+      expect(find.text('00:00.033'), findsOneWidget);
+    },
+  );
 
   testWidgets('EditableTimeLabel clamps input to active seek range', (
     tester,
@@ -112,15 +139,13 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byType(TextField));
+    await tester.tap(find.text('00:00.000'));
+    await tester.pump();
     await tester.enterText(find.byType(TextField), '00:09.000');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pump();
 
     expect(seeks, [5000000]);
-    expect(
-      tester.widget<TextField>(find.byType(TextField)).controller!.text,
-      '00:05.000',
-    );
+    expect(find.text('00:05.000'), findsOneWidget);
   });
 }

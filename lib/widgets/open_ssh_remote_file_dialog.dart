@@ -192,9 +192,17 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
                             dense: true,
                             leading: const Icon(Icons.video_file, size: 18),
                             title: Text(
-                              result.path,
+                              result.fileName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              result.path,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
                             ),
                             trailing: selected
                                 ? Icon(
@@ -283,6 +291,6 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
       });
       return;
     }
-    Navigator.of(context).pop(selected.remoteSpec);
+    Navigator.of(context).pop(selected.sftpUrl);
   }
 }

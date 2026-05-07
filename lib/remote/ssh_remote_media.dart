@@ -75,7 +75,24 @@ class SshRemoteFile {
 
   String get display => '$host:$path';
 
-  String get scpSource => '$host:${_remoteShellQuote(path)}';
+  String get scpSource => '$host:$path';
+
+  String get legacyScpSource => '$host:${_remoteShellQuote(path)}';
+
+  String get sftpUrl {
+    final endpoint = _SshEndpoint.parse(host);
+    final urlPath = path.startsWith('/') ? path : '/$path';
+    final portValue = port ?? endpoint.port;
+    final portSegment = portValue == null ? '' : ':$portValue';
+    final userSegment = endpoint.userInfo == null
+        ? ''
+        : '${endpoint.userInfo}@';
+    final hostSegment =
+        endpoint.host.contains(':') && !endpoint.host.startsWith('[')
+        ? '[${endpoint.host}]'
+        : endpoint.host;
+    return 'sftp://$userSegment$hostSegment$portSegment$urlPath';
+  }
 
   String get cacheKey {
     return sha256.convert(utf8.encode(display)).toString().substring(0, 16);
@@ -101,6 +118,19 @@ class SshRemoteFile {
     ];
   }
 
+  List<String> legacyScpArgs(String destinationPath) {
+    return [
+      '-O',
+      '-o',
+      'BatchMode=yes',
+      '-o',
+      'ConnectTimeout=10',
+      if (port != null) ...['-P', '$port'],
+      legacyScpSource,
+      destinationPath,
+    ];
+  }
+
   static String _remoteShellQuote(String value) {
     return "'${value.replaceAll("'", "'\"'\"'")}'";
   }
@@ -118,6 +148,15 @@ class SshRemoteSearchResult {
   const SshRemoteSearchResult({required this.host, required this.path});
 
   String get remoteSpec => '$host:$path';
+
+  String get fileName {
+    final name = p.posix.basename(path).trim();
+    return name.isEmpty ? path : name;
+  }
+
+  String get sftpUrl {
+    return SshRemoteFile(original: remoteSpec, host: host, path: path).sftpUrl;
+  }
 }
 
 class SshRemoteMediaService {
@@ -137,6 +176,12 @@ class SshRemoteMediaService {
     return downloadFile(SshRemoteFile.parse(input));
   }
 
+  String playableInput(String input) {
+    final trimmed = input.trim();
+    if (_isSftpUrl(trimmed)) return trimmed;
+    return SshRemoteFile.parse(trimmed).sftpUrl;
+  }
+
   Future<String> downloadFile(SshRemoteFile remote) async {
     final cacheDir = Directory(AppPaths.current.remoteCacheDir);
     await cacheDir.create(recursive: true);
@@ -147,12 +192,20 @@ class SshRemoteMediaService {
       await partialFile.delete();
     }
 
-    final result = await _runProcess(
+    var result = await _runProcess(
       scpExecutable,
       remote.scpArgs(partial),
       timeout: downloadTimeout,
       timeoutMessage: 'SSH download timed out.',
     );
+    if (result.exitCode != 0) {
+      result = await _runProcess(
+        scpExecutable,
+        remote.legacyScpArgs(partial),
+        timeout: downloadTimeout,
+        timeoutMessage: 'SSH download timed out.',
+      );
+    }
     if (result.exitCode != 0) {
       await _deleteIfExists(partialFile);
       throw SshRemoteMediaException(
@@ -271,6 +324,52 @@ class SshRemoteMediaService {
       return r'$HOME' + _remoteShellQuote(trimmed.substring(1));
     }
     return _remoteShellQuote(trimmed);
+  }
+
+  static bool _isSftpUrl(String value) {
+    final uri = Uri.tryParse(value);
+    return uri != null &&
+        uri.scheme.toLowerCase() == 'sftp' &&
+        uri.host.isNotEmpty;
+  }
+}
+
+class _SshEndpoint {
+  final String? userInfo;
+  final String host;
+  final int? port;
+
+  const _SshEndpoint({required this.host, this.userInfo, this.port});
+
+  static _SshEndpoint parse(String value) {
+    final trimmed = value.trim();
+    final at = trimmed.lastIndexOf('@');
+    final userInfo = at > 0 ? trimmed.substring(0, at) : null;
+    var hostPort = at > 0 ? trimmed.substring(at + 1) : trimmed;
+    int? port;
+
+    if (hostPort.startsWith('[')) {
+      final close = hostPort.indexOf(']');
+      if (close > 0) {
+        final parsedPort = _parsePortSuffix(hostPort.substring(close + 1));
+        port = parsedPort;
+        hostPort = hostPort.substring(1, close);
+      }
+    } else if (':'.allMatches(hostPort).length == 1) {
+      final colon = hostPort.lastIndexOf(':');
+      final parsedPort = int.tryParse(hostPort.substring(colon + 1));
+      if (parsedPort != null) {
+        port = parsedPort;
+        hostPort = hostPort.substring(0, colon);
+      }
+    }
+
+    return _SshEndpoint(userInfo: userInfo, host: hostPort, port: port);
+  }
+
+  static int? _parsePortSuffix(String value) {
+    if (!value.startsWith(':')) return null;
+    return int.tryParse(value.substring(1));
   }
 }
 

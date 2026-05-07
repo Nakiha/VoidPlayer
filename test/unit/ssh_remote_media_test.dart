@@ -21,7 +21,15 @@ void main() {
     expect(remote.path, '/home/user/video file.mp4');
     expect(remote.port, 2222);
     expect(remote.scpArgs('out.mp4'), contains('-P'));
-    expect(remote.scpSource, "user@example.com:'/home/user/video file.mp4'");
+    expect(remote.scpSource, 'user@example.com:/home/user/video file.mp4');
+    expect(
+      remote.legacyScpSource,
+      "user@example.com:'/home/user/video file.mp4'",
+    );
+    expect(
+      remote.sftpUrl,
+      'sftp://user@example.com:2222/home/user/video file.mp4',
+    );
   });
 
   test('rejects unsupported remote paths', () {
@@ -42,5 +50,30 @@ void main() {
 
     expect(command, r"find $HOME'/' -type f -iname '*.mp4' | head -n 100");
     expect(command, isNot(contains("'~/'")));
+  });
+
+  test('converts remote search results to playable sftp URLs', () {
+    const result = SshRemoteSearchResult(
+      host: 'zhuhongwei@192.168.1.103',
+      path: '/Users/zhuhongwei/Movies/h266_10s_1920x1080_副本.mp4',
+    );
+
+    expect(result.fileName, 'h266_10s_1920x1080_副本.mp4');
+    expect(
+      result.sftpUrl,
+      'sftp://zhuhongwei@192.168.1.103'
+      '/Users/zhuhongwei/Movies/h266_10s_1920x1080_副本.mp4',
+    );
+  });
+
+  test('playable input preserves existing sftp URLs', () {
+    const service = SshRemoteMediaService();
+
+    expect(
+      service.playableInput(
+        'sftp://zhuhongwei@192.168.1.103/Users/zhuhongwei/video.mp4',
+      ),
+      'sftp://zhuhongwei@192.168.1.103/Users/zhuhongwei/video.mp4',
+    );
   });
 }

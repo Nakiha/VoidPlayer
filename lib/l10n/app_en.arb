@@ -53,7 +53,7 @@
   "@openNetworkStream": { "description": "Add media menu item/dialog title: open http/https media" },
 
   "openSshRemoteFile": "Open SSH remote file...",
-  "@openSshRemoteFile": { "description": "Add media menu item/dialog title: copy a remote SSH file into local cache" },
+  "@openSshRemoteFile": { "description": "Add media menu item/dialog title: open a remote SSH/SFTP media file" },
 
   "addMediaOptions": "Add media options",
   "@addMediaOptions": { "description": "Tooltip for the Add Media dropdown" },

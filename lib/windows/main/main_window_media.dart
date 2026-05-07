@@ -172,13 +172,9 @@ class MainWindowMediaCoordinator {
 
   Future<void> addSshRemoteMedia(String remotePath) async {
     if (!_alive) return;
-    if (textureId() == null) {
-      setViewportState(const ViewportDisplayState.loading());
-    }
     try {
-      final localPath = await sshRemoteMedia.download(remotePath);
-      if (!_alive) return;
-      await loadMediaPaths([localPath]);
+      final playableInput = sshRemoteMedia.playableInput(remotePath);
+      await loadMediaPaths([playableInput]);
     } catch (e) {
       log.severe("SSH remote media failed: $e");
       if (_alive && textureId() == null) {

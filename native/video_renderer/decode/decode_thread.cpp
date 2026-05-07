@@ -493,16 +493,11 @@ void DecodeThread::flush_reorder_buffer() {
     // partially-written first seek frame.
     flush_hw_visibility_if_needed();
     for (auto& f : exact_seek_reorder_) {
-        if (!f.frame && !f.stable_frame.has_value()) {
+        if (!f.frame) {
             continue;
         }
         flush_hw_before_publish_if_needed(true);
-        TextureFrame tex_frame;
-        if (f.stable_frame.has_value() && f.stable_frame->texture_handle) {
-            tex_frame = *f.stable_frame;
-        } else if (f.frame) {
-            tex_frame = converter_.convert(f.frame.get());
-        }
+        TextureFrame tex_frame = converter_.convert(f.frame.get());
         output_buffer_.push_frame(std::move(tex_frame));
     }
     spdlog::info("[DecodeThread] Exact seek reorder: {} frames pushed",
@@ -511,18 +506,7 @@ void DecodeThread::flush_reorder_buffer() {
     exact_seek_target_us_ = -1;
 }
 
-DecodeThread::ExactSeekCandidate DecodeThread::make_exact_seek_candidate(AVFrame* frame) {
-    if (!frame) {
-        return {};
-    }
-    if (!hw_enabled_) {
-        return ExactSeekCandidate{
-            frame->pts,
-            nullptr,
-            converter_.convert(frame),
-        };
-    }
-
+DecodeThread::ExactSeekCandidate DecodeThread::make_exact_seek_candidate(AVFrame* frame) const {
     AVFrame* cloned = av_frame_clone(frame);
     if (!cloned) {
         spdlog::error("[DecodeThread] Failed to clone exact-seek candidate frame");
@@ -547,7 +531,7 @@ void DecodeThread::snapshot_exact_seek_candidate_if_needed(ExactSeekCandidate& c
 }
 
 void DecodeThread::collect_exact_seek_candidate(ExactSeekCandidate candidate) {
-    if (!candidate.frame && !candidate.stable_frame.has_value()) {
+    if (!candidate.frame) {
         return;
     }
     // FFmpeg receive_frame() has already applied codec reorder for display
@@ -610,8 +594,7 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
                                 selected + kExactSeekPreviewWindowFrames);
     const size_t published = end - selected;
     for (size_t i = selected; i < end; ++i) {
-        if (!exact_seek_reorder_[i].frame &&
-            !exact_seek_reorder_[i].stable_frame.has_value()) {
+        if (!exact_seek_reorder_[i].frame) {
             continue;
         }
         if (i == selected && hw_enabled_ && hw_provider_) {
@@ -621,10 +604,11 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
             flush_hw_before_publish_if_needed(true);
         }
         TextureFrame tex_frame;
-        if (exact_seek_reorder_[i].stable_frame.has_value() &&
+        if (i == selected &&
+            exact_seek_reorder_[i].stable_frame.has_value() &&
             exact_seek_reorder_[i].stable_frame->texture_handle) {
             tex_frame = *exact_seek_reorder_[i].stable_frame;
-        } else if (exact_seek_reorder_[i].frame) {
+        } else {
             tex_frame = converter_.convert(exact_seek_reorder_[i].frame.get());
         }
         output_buffer_.push_frame(std::move(tex_frame));
@@ -679,16 +663,11 @@ void DecodeThread::publish_pending_exact_seek_frames() {
     }
     auto candidate = std::move(exact_seek_pending_frames_.front());
     exact_seek_pending_frames_.pop_front();
-    if (!candidate.frame && !candidate.stable_frame.has_value()) {
+    if (!candidate.frame) {
         return;
     }
     flush_hw_before_publish_if_needed(true);
-    TextureFrame frame;
-    if (candidate.stable_frame.has_value() && candidate.stable_frame->texture_handle) {
-        frame = *candidate.stable_frame;
-    } else if (candidate.frame) {
-        frame = converter_.convert(candidate.frame.get());
-    }
+    TextureFrame frame = converter_.convert(candidate.frame.get());
     output_buffer_.push_frame(std::move(frame));
 }
 

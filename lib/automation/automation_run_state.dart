@@ -10,11 +10,19 @@ class ViewCenterMetric {
 class ResourceUsageMetric {
   final int rssBytes;
   final int privateBytes;
+  final int heapAllocatedBytes;
+  final int heapCommittedBytes;
+  final int heapReservedBytes;
+  final int heapCount;
   final int dedicatedGpuBytes;
 
   const ResourceUsageMetric({
     required this.rssBytes,
     required this.privateBytes,
+    required this.heapAllocatedBytes,
+    required this.heapCommittedBytes,
+    required this.heapReservedBytes,
+    required this.heapCount,
     required this.dedicatedGpuBytes,
   });
 }

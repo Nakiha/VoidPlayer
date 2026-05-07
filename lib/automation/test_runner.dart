@@ -193,6 +193,10 @@ class TestRunner {
           'TestRunner: STORE_RESOURCE_USAGE $nameId '
           'rss=${AutomationProbe.formatMb(metric.rssBytes)}MB '
           'private=${AutomationProbe.formatMb(metric.privateBytes)}MB '
+          'heapAlloc=${AutomationProbe.formatMb(metric.heapAllocatedBytes)}MB '
+          'heapCommit=${AutomationProbe.formatMb(metric.heapCommittedBytes)}MB '
+          'heapReserve=${AutomationProbe.formatMb(metric.heapReservedBytes)}MB '
+          'heaps=${metric.heapCount} '
           'dedicatedGpu=${AutomationProbe.formatMb(metric.dedicatedGpuBytes)}MB',
         );
       case StoreNativeSeekCount(:final nameId):

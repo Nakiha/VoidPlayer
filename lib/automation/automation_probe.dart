@@ -35,11 +35,22 @@ class AutomationProbe {
         diagnostics['processRssBytes'] as int? ?? ProcessInfo.currentRss;
     final privateBytes =
         diagnostics['processPrivateBytes'] as int? ?? ProcessInfo.currentRss;
+    final heapAllocatedBytes =
+        diagnostics['processHeapAllocatedBytes'] as int? ?? 0;
+    final heapCommittedBytes =
+        diagnostics['processHeapCommittedBytes'] as int? ?? 0;
+    final heapReservedBytes =
+        diagnostics['processHeapReservedBytes'] as int? ?? 0;
+    final heapCount = diagnostics['processHeapCount'] as int? ?? 0;
     final dedicatedGpuBytes =
         diagnostics['dedicatedGpuUsageBytes'] as int? ?? 0;
     return ResourceUsageMetric(
       rssBytes: rssBytes,
       privateBytes: privateBytes,
+      heapAllocatedBytes: heapAllocatedBytes,
+      heapCommittedBytes: heapCommittedBytes,
+      heapReservedBytes: heapReservedBytes,
+      heapCount: heapCount,
       dedicatedGpuBytes: dedicatedGpuBytes,
     );
   }

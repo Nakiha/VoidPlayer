@@ -116,7 +116,7 @@ private:
     void flush_reorder_buffer();
 
     /// Keep an exact-seek candidate alive without converting its pixels yet.
-    ExactSeekCandidate make_exact_seek_candidate(AVFrame* frame);
+    ExactSeekCandidate make_exact_seek_candidate(AVFrame* frame) const;
 
     /// Add a candidate in decoder presentation order, retaining only the last pre-target frame.
     void collect_exact_seek_candidate(ExactSeekCandidate candidate);

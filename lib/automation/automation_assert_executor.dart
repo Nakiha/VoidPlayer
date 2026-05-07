@@ -321,10 +321,23 @@ class AutomationAssertExecutor {
         final privateDeltaMb = AutomationProbe.bytesToMb(
           actual.privateBytes - expected.privateBytes,
         );
+        final heapAllocDeltaMb = AutomationProbe.bytesToMb(
+          actual.heapAllocatedBytes - expected.heapAllocatedBytes,
+        );
+        final heapCommitDeltaMb = AutomationProbe.bytesToMb(
+          actual.heapCommittedBytes - expected.heapCommittedBytes,
+        );
+        final heapReserveDeltaMb = AutomationProbe.bytesToMb(
+          actual.heapReservedBytes - expected.heapReservedBytes,
+        );
         log.info(
           'ASSERT_RESOURCE_USAGE_DELTA_BELOW $baseline: '
           'rss=${rssDeltaMb.toStringAsFixed(1)}MB '
           'private=${privateDeltaMb.toStringAsFixed(1)}MB '
+          'heapAlloc=${heapAllocDeltaMb.toStringAsFixed(1)}MB '
+          'heapCommit=${heapCommitDeltaMb.toStringAsFixed(1)}MB '
+          'heapReserve=${heapReserveDeltaMb.toStringAsFixed(1)}MB '
+          'heaps=${actual.heapCount} '
           'dedicatedGpu=${gpuDeltaMb.toStringAsFixed(1)}MB',
         );
         if (rssDeltaMb > maxRssDeltaMb || gpuDeltaMb > maxDedicatedGpuDeltaMb) {

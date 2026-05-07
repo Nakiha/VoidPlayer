@@ -2,7 +2,6 @@
 #include "video_renderer/buffer/bidi_ring_buffer.h"
 #include "video_renderer/decode/hw/hw_decode_provider.h"
 #include <cstdint>
-#include <memory>
 #include <mutex>
 #include <optional>
 
@@ -16,7 +15,6 @@ struct ID3D11DeviceContext;
 namespace vr {
 
 struct D3D11SnapshotPool;
-struct CpuFrameBufferPool;
 
 class FrameConverter {
 public:
@@ -47,7 +45,6 @@ private:
     void* d3d_device_ = nullptr;
     void* d3d_context_ = nullptr;
     std::recursive_mutex* device_mutex_ = nullptr;
-    std::shared_ptr<CpuFrameBufferPool> cpu_buffer_pool_;
     std::shared_ptr<D3D11SnapshotPool> d3d11_snapshot_pool_;
 };
 

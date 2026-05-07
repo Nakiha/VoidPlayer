@@ -187,6 +187,13 @@ struct ProcessMemoryUsage {
     uint64_t private_bytes = 0;
 };
 
+struct ProcessHeapUsage {
+    uint64_t allocated_bytes = 0;
+    uint64_t committed_bytes = 0;
+    uint64_t reserved_bytes = 0;
+    uint32_t heap_count = 0;
+};
+
 struct FlutterTextureReleaseContext {
     ID3D11Texture2D* texture = nullptr;
 };
@@ -211,6 +218,40 @@ ProcessMemoryUsage QueryProcessMemoryUsage() {
             sizeof(counters))) {
         usage.working_set_bytes = static_cast<uint64_t>(counters.WorkingSetSize);
         usage.private_bytes = static_cast<uint64_t>(counters.PrivateUsage);
+    }
+    return usage;
+}
+
+ProcessHeapUsage QueryProcessHeapUsage() {
+    ProcessHeapUsage usage;
+    DWORD count = GetProcessHeaps(0, nullptr);
+    if (count == 0) {
+        return usage;
+    }
+
+    std::vector<HANDLE> heaps(count);
+    DWORD written = GetProcessHeaps(count, heaps.data());
+    if (written == 0) {
+        return usage;
+    }
+    if (written > count) {
+        heaps.resize(written);
+        written = GetProcessHeaps(written, heaps.data());
+        if (written == 0) {
+            return usage;
+        }
+    }
+
+    usage.heap_count = written;
+    for (DWORD i = 0; i < written; ++i) {
+        HEAP_SUMMARY summary = {};
+        summary.cb = sizeof(summary);
+        if (!HeapSummary(heaps[i], 0, &summary)) {
+            continue;
+        }
+        usage.allocated_bytes += static_cast<uint64_t>(summary.cbAllocated);
+        usage.committed_bytes += static_cast<uint64_t>(summary.cbCommitted);
+        usage.reserved_bytes += static_cast<uint64_t>(summary.cbReserved);
     }
     return usage;
 }
@@ -812,10 +853,19 @@ void VideoRendererPlugin::HandleMethodCall(
         auto diag_player = pin_global_player();
         flutter::EncodableMap map;
         const auto process_memory = QueryProcessMemoryUsage();
+        const auto process_heap = QueryProcessHeapUsage();
         map[flutter::EncodableValue("processRssBytes")] =
             flutter::EncodableValue(static_cast<int64_t>(process_memory.working_set_bytes));
         map[flutter::EncodableValue("processPrivateBytes")] =
             flutter::EncodableValue(static_cast<int64_t>(process_memory.private_bytes));
+        map[flutter::EncodableValue("processHeapAllocatedBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(process_heap.allocated_bytes));
+        map[flutter::EncodableValue("processHeapCommittedBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(process_heap.committed_bytes));
+        map[flutter::EncodableValue("processHeapReservedBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(process_heap.reserved_bytes));
+        map[flutter::EncodableValue("processHeapCount")] =
+            flutter::EncodableValue(static_cast<int64_t>(process_heap.heap_count));
         map[flutter::EncodableValue("dedicatedGpuUsageBytes")] =
             flutter::EncodableValue(static_cast<int64_t>(QueryDedicatedVideoMemoryUsage()));
         if (diag_player) {

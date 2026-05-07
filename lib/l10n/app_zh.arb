@@ -40,6 +40,8 @@
   "bufferQueue": "缓冲队列",
   "decodeAvg": "解码均值",
   "decodeMax": "解码峰值",
+  "ptsUs": "PTS (us)",
+  "dtsUs": "DTS (us)",
   "status": "状态",
   "bottleneck": "瓶颈!",
   "ok": "正常",

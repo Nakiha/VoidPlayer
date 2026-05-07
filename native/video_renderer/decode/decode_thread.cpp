@@ -687,6 +687,9 @@ void DecodeThread::run() {
         } else if (f->best_effort_timestamp != AV_NOPTS_VALUE) {
             f->pts = av_rescale_q(f->best_effort_timestamp, time_base_, {1, 1000000});
         }
+        if (f->pkt_dts != AV_NOPTS_VALUE) {
+            f->pkt_dts = av_rescale_q(f->pkt_dts, time_base_, {1, 1000000});
+        }
         if (f->duration > 0 && f->duration != AV_NOPTS_VALUE) {
             f->duration = av_rescale_q(f->duration, time_base_, {1, 1000000});
         }

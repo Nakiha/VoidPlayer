@@ -508,6 +508,8 @@ const NakiVrDiagnostics* naki_vr_get_diagnostics() {
         d.tracks[i].buffer_count    = static_cast<int32_t>(s.buffer_count);
         d.tracks[i].buffer_capacity = static_cast<int32_t>(s.buffer_capacity);
         d.tracks[i].buffer_state    = static_cast<int32_t>(s.buffer_state);
+        d.tracks[i].current_pts_us  = s.current_pts_us;
+        d.tracks[i].current_dts_us  = s.current_dts_us;
     }
     // Mark unused slots
     for (int i = static_cast<int>(stats.size()); i < kMaxTracksFFI; ++i) {

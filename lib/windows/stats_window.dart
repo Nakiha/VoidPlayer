@@ -22,6 +22,10 @@ final class NakiVrTrackStats extends Struct {
   external int bufferCapacity;
   @Int32()
   external int bufferState;
+  @Int64()
+  external int currentPtsUs;
+  @Int64()
+  external int currentDtsUs;
 }
 
 final class NakiVrDiagnostics extends Struct {
@@ -98,6 +102,8 @@ class _StatsPageState extends State<StatsPage> {
           bufferCount: t.bufferCount,
           bufferCapacity: t.bufferCapacity,
           bufferState: t.bufferState,
+          currentPtsUs: t.currentPtsUs,
+          currentDtsUs: t.currentDtsUs,
         ),
       );
     }
@@ -116,7 +122,9 @@ class _StatsPageState extends State<StatsPage> {
           (x.maxDecodeMs - y.maxDecodeMs).abs() > 0.01 ||
           x.bufferCount != y.bufferCount ||
           x.bufferCapacity != y.bufferCapacity ||
-          x.bufferState != y.bufferState) {
+          x.bufferState != y.bufferState ||
+          x.currentPtsUs != y.currentPtsUs ||
+          x.currentDtsUs != y.currentDtsUs) {
         return false;
       }
     }
@@ -161,6 +169,8 @@ class _StatsPageState extends State<StatsPage> {
                 DataColumn(label: Text(l.bufferQueue)),
                 DataColumn(label: Text(l.decodeAvg)),
                 DataColumn(label: Text(l.decodeMax)),
+                DataColumn(label: Text(l.ptsUs)),
+                DataColumn(label: Text(l.dtsUs)),
                 DataColumn(label: Text(l.status)),
               ],
               rows: _tracks
@@ -172,6 +182,8 @@ class _StatsPageState extends State<StatsPage> {
                         DataCell(Text('${t.bufferCount}/${t.bufferCapacity}')),
                         DataCell(Text('${t.avgDecodeMs.toStringAsFixed(1)}ms')),
                         DataCell(Text('${t.maxDecodeMs.toStringAsFixed(1)}ms')),
+                        DataCell(Text(_timestampText(l, t.currentPtsUs))),
+                        DataCell(Text(_timestampText(l, t.currentDtsUs))),
                         DataCell(
                           Text(
                             t.bufferState == 1 ? l.bottleneck : l.ok,
@@ -193,6 +205,12 @@ class _StatsPageState extends State<StatsPage> {
   }
 }
 
+const int _noTimestampUs = -9223372036854775808;
+
+String _timestampText(AppLocalizations l, int value) {
+  return value == _noTimestampUs ? l.notAvailable : '$value';
+}
+
 class _TrackRow {
   final int fileId;
   final double fps;
@@ -201,6 +219,8 @@ class _TrackRow {
   final int bufferCount;
   final int bufferCapacity;
   final int bufferState;
+  final int currentPtsUs;
+  final int currentDtsUs;
   _TrackRow({
     required this.fileId,
     required this.fps,
@@ -209,5 +229,7 @@ class _TrackRow {
     required this.bufferCount,
     required this.bufferCapacity,
     required this.bufferState,
+    required this.currentPtsUs,
+    required this.currentDtsUs,
   });
 }

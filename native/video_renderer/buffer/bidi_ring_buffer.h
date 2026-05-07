@@ -4,9 +4,12 @@
 #include <mutex>
 #include <optional>
 #include <cstdint>
+#include <limits>
 #include <memory>
 
 namespace vr {
+
+constexpr int64_t kNoTimestampUs = std::numeric_limits<int64_t>::min();
 
 struct TextureFrame {
     int64_t pts_us = 0;
@@ -15,6 +18,7 @@ struct TextureFrame {
     int height = 0;
     bool is_ref = false;
     void* texture_handle = nullptr;
+    int64_t dts_us = kNoTimestampUs;
     // Owns CPU-side video data; shared_ptr enables safe cross-thread sharing
     // and automatic cleanup when all references are gone.
     std::shared_ptr<std::vector<uint8_t>> cpu_data;

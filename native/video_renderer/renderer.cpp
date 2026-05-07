@@ -2560,6 +2560,7 @@ std::vector<TrackInfo> Renderer::track_infos() const {
 }
 
 std::vector<TrackPerfStats> Renderer::track_perf_stats() const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     std::vector<TrackPerfStats> result;
     auto now = std::chrono::steady_clock::now();
     double elapsed_s = std::chrono::duration<double>(now - stats_start_time_).count();
@@ -2575,6 +2576,11 @@ std::vector<TrackPerfStats> Renderer::track_perf_stats() const {
         s.buffer_count = track->track_buffer->total_count();
         s.buffer_capacity = track->track_buffer->preroll_target();
         s.buffer_state = track->track_buffer->state();
+        if (last_decision_.frames[i].has_value()) {
+            const auto& current_frame = last_decision_.frames[i].value();
+            s.current_pts_us = current_frame.pts_us;
+            s.current_dts_us = current_frame.dts_us;
+        }
 
         // Average decode time
         if (snap.frames_decoded > 0) {

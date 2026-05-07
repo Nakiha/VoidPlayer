@@ -570,6 +570,9 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
     }
 
     result.pts_us = frame->pts;
+    result.dts_us = frame->pkt_dts != AV_NOPTS_VALUE
+        ? frame->pkt_dts
+        : kNoTimestampUs;
     result.duration_us = frame->duration;
     result.width = frame->width;
     result.height = frame->height;
@@ -720,6 +723,9 @@ std::optional<TextureFrame> FrameConverter::snapshot_hardware_frame(AVFrame* fra
 
     TextureFrame result;
     result.pts_us = frame->pts;
+    result.dts_us = frame->pkt_dts != AV_NOPTS_VALUE
+        ? frame->pkt_dts
+        : kNoTimestampUs;
     result.duration_us = frame->duration;
     result.width = frame->width;
     result.height = frame->height;

@@ -100,6 +100,12 @@
   "decodeMax": "Decode Max",
   "@decodeMax": { "description": "Table column: max decode time" },
 
+  "ptsUs": "PTS (us)",
+  "@ptsUs": { "description": "Stats table column: current frame presentation timestamp in microseconds" },
+
+  "dtsUs": "DTS (us)",
+  "@dtsUs": { "description": "Stats table column: current frame decode timestamp in microseconds" },
+
   "status": "Status",
   "@status": { "description": "Table column: status" },
 

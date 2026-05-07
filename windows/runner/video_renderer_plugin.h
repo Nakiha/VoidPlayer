@@ -34,6 +34,8 @@ struct NakiVrTrackStats {
     int32_t  buffer_count;
     int32_t  buffer_capacity;
     int32_t  buffer_state;    // TrackState enum value
+    int64_t  current_pts_us;
+    int64_t  current_dts_us;
 };
 
 struct NakiVrDiagnostics {

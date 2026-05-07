@@ -186,9 +186,11 @@ class SshRemoteMediaService {
       throw const SshRemoteMediaException('Host and directory are required.');
     }
 
-    final command =
-        'find ${_remoteShellQuote(cleanDirectory)} -type f '
-        '-iname ${_remoteShellQuote(cleanPattern)} | head -n $limit';
+    final command = buildFindCommand(
+      directory: cleanDirectory,
+      pattern: cleanPattern,
+      limit: limit,
+    );
     final result = await _runProcess(
       sshExecutable,
       ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', cleanHost, command],
@@ -206,6 +208,17 @@ class SshRemoteMediaService {
         .where((line) => line.isNotEmpty)
         .map((path) => SshRemoteSearchResult(host: cleanHost, path: path))
         .toList();
+  }
+
+  String buildFindCommand({
+    required String directory,
+    required String pattern,
+    required int limit,
+  }) {
+    final cleanDirectory = directory.trim();
+    final cleanPattern = pattern.trim().isEmpty ? '*' : pattern.trim();
+    return 'find ${_remotePathExpression(cleanDirectory)} -type f '
+        '-iname ${_remoteShellQuote(cleanPattern)} | head -n $limit';
   }
 
   Future<_ProcessResult> _runProcess(
@@ -249,6 +262,15 @@ class SshRemoteMediaService {
 
   static String _remoteShellQuote(String value) {
     return "'${value.replaceAll("'", "'\"'\"'")}'";
+  }
+
+  static String _remotePathExpression(String value) {
+    final trimmed = value.trim();
+    if (trimmed == '~') return r'$HOME';
+    if (trimmed.startsWith('~/')) {
+      return r'$HOME' + _remoteShellQuote(trimmed.substring(1));
+    }
+    return _remoteShellQuote(trimmed);
   }
 }
 

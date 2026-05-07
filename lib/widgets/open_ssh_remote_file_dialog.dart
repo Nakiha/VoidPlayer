@@ -26,7 +26,6 @@ class OpenSshRemoteFileDialog extends StatefulWidget {
 }
 
 class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
-  final TextEditingController _remoteController = TextEditingController();
   final TextEditingController _hostController = TextEditingController();
   final TextEditingController _directoryController = TextEditingController(
     text: '~/',
@@ -34,26 +33,27 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
   final TextEditingController _patternController = TextEditingController(
     text: '*.mp4',
   );
-  final FocusNode _remoteFocusNode = FocusNode();
+  final FocusNode _hostFocusNode = FocusNode();
   List<SshRemoteSearchResult> _results = const [];
-  String? _errorText;
+  SshRemoteSearchResult? _selectedResult;
+  String? _messageText;
+  bool _messageIsError = false;
   bool _searching = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _remoteFocusNode.requestFocus();
+      if (mounted) _hostFocusNode.requestFocus();
     });
   }
 
   @override
   void dispose() {
-    _remoteController.dispose();
     _hostController.dispose();
     _directoryController.dispose();
     _patternController.dispose();
-    _remoteFocusNode.dispose();
+    _hostFocusNode.dispose();
     super.dispose();
   }
 
@@ -74,23 +74,6 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              key: const ValueKey('ssh-remote-file-field'),
-              controller: _remoteController,
-              focusNode: _remoteFocusNode,
-              decoration: InputDecoration(
-                labelText: l.sshRemotePathLabel,
-                hintText: l.sshRemotePathHint,
-                errorText: _errorText,
-                prefixIcon: const Icon(Icons.terminal, size: 18),
-              ),
-              textInputAction: TextInputAction.done,
-              onChanged: (_) {
-                if (_errorText != null) setState(() => _errorText = null);
-              },
-              onSubmitted: (_) => _submit(),
-            ),
-            const SizedBox(height: 16),
             Align(
               alignment: Alignment.centerLeft,
               child: Text(l.sshSearchTitle, style: theme.textTheme.labelLarge),
@@ -102,11 +85,14 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
                   flex: 5,
                   child: TextField(
                     controller: _hostController,
+                    focusNode: _hostFocusNode,
                     decoration: InputDecoration(
                       labelText: l.sshHostLabel,
                       hintText: l.sshHostHint,
                       isDense: true,
                     ),
+                    onChanged: (_) => _clearSearchMessage(),
+                    onSubmitted: (_) => unawaited(_search()),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -118,6 +104,7 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
                       labelText: l.sshPatternLabel,
                       isDense: true,
                     ),
+                    onChanged: (_) => _clearSearchMessage(),
                     onSubmitted: (_) => unawaited(_search()),
                   ),
                 ),
@@ -134,6 +121,7 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
                       hintText: l.sshDirectoryHint,
                       isDense: true,
                     ),
+                    onChanged: (_) => _clearSearchMessage(),
                     onSubmitted: (_) => unawaited(_search()),
                   ),
                 ),
@@ -154,6 +142,20 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
                 ),
               ],
             ),
+            if (_messageText != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _messageText!,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: _messageIsError
+                        ? theme.colorScheme.error
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
             ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 180),
@@ -181,7 +183,12 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
                         separatorBuilder: (_, _) => const Divider(height: 1),
                         itemBuilder: (context, index) {
                           final result = _results[index];
+                          final selected = result == _selectedResult;
                           return ListTile(
+                            key: ValueKey('ssh-search-result-$index'),
+                            selected: selected,
+                            selectedTileColor: theme.colorScheme.primary
+                                .withValues(alpha: 0.10),
                             dense: true,
                             leading: const Icon(Icons.video_file, size: 18),
                             title: Text(
@@ -189,12 +196,19 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
+                            trailing: selected
+                                ? Icon(
+                                    Icons.check_circle,
+                                    size: 18,
+                                    color: theme.colorScheme.primary,
+                                  )
+                                : null,
                             onTap: () {
-                              _remoteController.text = result.remoteSpec;
-                              _remoteController.selection =
-                                  TextSelection.collapsed(
-                                    offset: result.remoteSpec.length,
-                                  );
+                              setState(() {
+                                _selectedResult = result;
+                                _messageText = null;
+                                _messageIsError = false;
+                              });
                             },
                           );
                         },
@@ -209,7 +223,10 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: Text(l.cancel),
         ),
-        FilledButton(onPressed: _submit, child: Text(l.open)),
+        FilledButton(
+          onPressed: _selectedResult == null ? null : _submit,
+          child: Text(l.open),
+        ),
       ],
     );
   }
@@ -218,7 +235,9 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
     final l = AppLocalizations.of(context)!;
     setState(() {
       _searching = true;
-      _errorText = null;
+      _messageText = null;
+      _messageIsError = false;
+      _selectedResult = null;
     });
     try {
       final results = await widget.service.search(
@@ -229,25 +248,41 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
       if (!mounted) return;
       setState(() {
         _results = results;
-        if (results.isEmpty) _errorText = l.sshSearchNoMatches;
+        if (results.isEmpty) {
+          _messageText = l.sshSearchNoMatches;
+          _messageIsError = false;
+        }
       });
     } on Object catch (e) {
       if (!mounted) return;
-      setState(() => _errorText = e.toString());
+      setState(() {
+        _messageText = e.toString();
+        _messageIsError = true;
+      });
     } finally {
       if (mounted) setState(() => _searching = false);
     }
   }
 
+  void _clearSearchMessage() {
+    if (_messageText != null) {
+      setState(() {
+        _messageText = null;
+        _messageIsError = false;
+      });
+    }
+  }
+
   void _submit() {
     final l = AppLocalizations.of(context)!;
-    final value = _remoteController.text.trim();
-    try {
-      SshRemoteFile.parse(value);
-    } on Object catch (_) {
-      setState(() => _errorText = l.sshRemoteInvalidPath);
+    final selected = _selectedResult;
+    if (selected == null) {
+      setState(() {
+        _messageText = l.sshOpenRequiresSelection;
+        _messageIsError = true;
+      });
       return;
     }
-    Navigator.of(context).pop(value);
+    Navigator.of(context).pop(selected.remoteSpec);
   }
 }

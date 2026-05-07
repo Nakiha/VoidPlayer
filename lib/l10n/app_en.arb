@@ -70,15 +70,6 @@
   "networkStreamInvalidUrl": "Enter a valid http or https URL.",
   "@networkStreamInvalidUrl": { "description": "Validation error for invalid network stream URL" },
 
-  "sshRemotePathLabel": "Remote file",
-  "@sshRemotePathLabel": { "description": "SSH remote file input label" },
-
-  "sshRemotePathHint": "user@host:/home/user/video.mp4",
-  "@sshRemotePathHint": { "description": "SSH remote file input hint" },
-
-  "sshRemoteInvalidPath": "Use user@host:/absolute/path or ssh://user@host/path.",
-  "@sshRemoteInvalidPath": { "description": "Validation error for SSH remote file input" },
-
   "sshSearchTitle": "Search remote host",
   "@sshSearchTitle": { "description": "SSH remote search section title" },
 
@@ -97,11 +88,14 @@
   "sshPatternLabel": "Pattern",
   "@sshPatternLabel": { "description": "SSH search file pattern input label" },
 
-  "sshSearchEmpty": "Enter a host and directory, then search for remote media files.",
+  "sshSearchEmpty": "Enter a host, directory, and pattern, then search for remote media files.",
   "@sshSearchEmpty": { "description": "SSH search empty state" },
 
   "sshSearchNoMatches": "No matching files found.",
   "@sshSearchNoMatches": { "description": "SSH search no matches message" },
+
+  "sshOpenRequiresSelection": "Select a search result first.",
+  "@sshOpenRequiresSelection": { "description": "Validation message shown before opening an SSH search result" },
 
   "offsetBackward": "-10ms",
   "@offsetBackward": { "description": "Track offset backward tooltip" },

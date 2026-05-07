@@ -30,4 +30,17 @@ void main() {
       throwsA(isA<SshRemoteMediaException>()),
     );
   });
+
+  test('builds search command that expands home directory remotely', () {
+    const service = SshRemoteMediaService();
+
+    final command = service.buildFindCommand(
+      directory: '~/',
+      pattern: '*.mp4',
+      limit: 100,
+    );
+
+    expect(command, r"find $HOME'/' -type f -iname '*.mp4' | head -n 100");
+    expect(command, isNot(contains("'~/'")));
+  });
 }

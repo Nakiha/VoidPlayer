@@ -8,6 +8,8 @@ import '../analysis/analysis_toolbar_data_source.dart';
 import '../feedback/app_feedback.dart';
 import '../l10n/app_localizations.dart';
 import '../track_manager.dart';
+import 'app_menu_combo.dart';
+import 'open_network_stream_dialog.dart';
 import 'segmented_widget.dart';
 
 const _analysisPanelWidth = 360.0;
@@ -19,7 +21,8 @@ const _analysisPanelRowHeight = 44.0;
 class AppToolBar extends StatelessWidget {
   final int viewMode; // 0=sideBySide, 1=splitScreen
   final ValueChanged<int> onViewModeChanged;
-  final VoidCallback onAddMedia;
+  final Future<void> Function() onOpenFile;
+  final Future<void> Function(String url) onOpenNetworkMedia;
   final VoidCallback onMediaInfo;
   final Future<void> Function() onAnalysis;
   final VoidCallback onProfiler;
@@ -35,7 +38,8 @@ class AppToolBar extends StatelessWidget {
     super.key,
     required this.viewMode,
     required this.onViewModeChanged,
-    required this.onAddMedia,
+    required this.onOpenFile,
+    required this.onOpenNetworkMedia,
     required this.onMediaInfo,
     required this.onAnalysis,
     required this.onProfiler,
@@ -67,18 +71,9 @@ class AppToolBar extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          // Add Media button
-          SizedBox(
-            height: 32,
-            child: FilledButton.icon(
-              onPressed: onAddMedia,
-              icon: const Icon(Icons.add, size: 16),
-              label: Text(AppLocalizations.of(context)!.addMedia),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
+          _AddMediaButton(
+            onOpenFile: onOpenFile,
+            onOpenNetworkMedia: onOpenNetworkMedia,
           ),
           const SizedBox(width: 4),
           _ToolbarToggleButton(
@@ -123,6 +118,129 @@ class AppToolBar extends StatelessWidget {
     );
   }
 }
+
+class _AddMediaButton extends StatelessWidget {
+  final Future<void> Function() onOpenFile;
+  final Future<void> Function(String url) onOpenNetworkMedia;
+
+  const _AddMediaButton({
+    required this.onOpenFile,
+    required this.onOpenNetworkMedia,
+  });
+
+  static const _choices = [
+    _AddMediaChoice.localFile,
+    _AddMediaChoice.networkStream,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final foreground = colorScheme.onPrimary;
+    return SizedBox(
+      height: 32,
+      child: Material(
+        color: colorScheme.primary,
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Tooltip(
+              message: l.openLocalFile,
+              child: InkWell(
+                onTap: () => unawaited(onOpenFile()),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 0, 10, 0),
+                  child: SizedBox(
+                    height: 32,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.add, size: 18, color: foreground),
+                        const SizedBox(width: 8),
+                        Text(
+                          l.addMedia,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: foreground,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 18,
+              width: 1,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: foreground.withValues(alpha: 0.28),
+                ),
+              ),
+            ),
+            Tooltip(
+              message: l.addMediaOptions,
+              child: AppMenuCombo<_AddMediaChoice>(
+                width: 36,
+                height: 32,
+                value: _AddMediaChoice.localFile,
+                items: _choices,
+                buttonLabel: '',
+                labelFor: (choice) => _labelFor(l, choice),
+                iconFor: _iconFor,
+                onChanged: (choice) {
+                  switch (choice) {
+                    case _AddMediaChoice.localFile:
+                      unawaited(onOpenFile());
+                    case _AddMediaChoice.networkStream:
+                      unawaited(_openNetworkDialog(context));
+                  }
+                },
+                menuTextStyle: theme.textTheme.bodySmall,
+                foregroundColor: foreground,
+                backgroundColor: Colors.transparent,
+                borderRadius: const BorderRadius.horizontal(
+                  right: Radius.circular(18),
+                ),
+                buttonPadding: const EdgeInsets.only(left: 6, right: 8),
+                itemPadding: const EdgeInsets.symmetric(horizontal: 12),
+                showSelectedCheck: false,
+                notifyOnReselect: true,
+                maxMenuWidth: 240,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _labelFor(AppLocalizations l, _AddMediaChoice choice) {
+    return switch (choice) {
+      _AddMediaChoice.localFile => l.openLocalFile,
+      _AddMediaChoice.networkStream => l.openNetworkStream,
+    };
+  }
+
+  IconData _iconFor(_AddMediaChoice choice) {
+    return switch (choice) {
+      _AddMediaChoice.localFile => Icons.video_file_outlined,
+      _AddMediaChoice.networkStream => Icons.public,
+    };
+  }
+
+  Future<void> _openNetworkDialog(BuildContext context) async {
+    final url = await OpenNetworkStreamDialog.show(context);
+    if (url == null || url.isEmpty) return;
+    await onOpenNetworkMedia(url);
+  }
+}
+
+enum _AddMediaChoice { localFile, networkStream }
 
 class _ToolbarToggleButton extends StatelessWidget {
   final bool active;

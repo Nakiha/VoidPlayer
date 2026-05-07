@@ -188,6 +188,12 @@ class AddMedia extends PlayerAction {
   const AddMedia(this.path) : super('ADD_MEDIA');
 }
 
+/// Add a network media stream by URL (no dialog).
+class AddNetworkMedia extends PlayerAction {
+  final String url;
+  const AddNetworkMedia(this.url) : super('ADD_NETWORK_MEDIA');
+}
+
 /// Set zoom ratio directly.
 class SetZoom extends PlayerAction {
   final double ratio;

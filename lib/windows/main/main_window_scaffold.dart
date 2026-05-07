@@ -35,7 +35,8 @@ class MainWindowScaffold extends StatelessWidget {
                 AppToolBar(
                   viewMode: viewport.viewMode,
                   onViewModeChanged: toolbarActions.onViewModeChanged,
-                  onAddMedia: toolbarActions.onAddMedia,
+                  onOpenFile: toolbarActions.onOpenFile,
+                  onOpenNetworkMedia: toolbarActions.onOpenNetworkMedia,
                   onMediaInfo: toolbarActions.onMediaInfo,
                   onAnalysis: toolbarActions.onAnalysis,
                   onProfiler: toolbarActions.onProfiler,

@@ -204,7 +204,8 @@ class MainWindowController {
         onViewModeChanged: (mode) {
           layoutCoordinator.setLayoutMode(mode);
         },
-        onAddMedia: mediaCoordinator.openFile,
+        onOpenFile: mediaCoordinator.openFile,
+        onOpenNetworkMedia: mediaCoordinator.addNetworkMedia,
         onMediaInfo: () {
           if (trackManager.isEmpty) return;
           stateStore.setMediaInfoVisible(!_mediaInfoVisible);

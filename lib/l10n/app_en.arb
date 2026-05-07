@@ -43,8 +43,26 @@
   "initializing": "Initializing...",
   "@initializing": { "description": "Loading state text" },
 
-  "emptyHint": "Click \"Add Media\" or drag files here",
+  "emptyHint": "Click \"Add Media\", drag files here, or drop an http(s) URL",
   "@emptyHint": { "description": "Empty viewport hint" },
+
+  "openLocalFile": "Open local file...",
+  "@openLocalFile": { "description": "Add media menu item: open a local media file" },
+
+  "openNetworkStream": "Open network stream...",
+  "@openNetworkStream": { "description": "Add media menu item/dialog title: open http/https media" },
+
+  "addMediaOptions": "Add media options",
+  "@addMediaOptions": { "description": "Tooltip for the Add Media dropdown" },
+
+  "networkStreamUrlLabel": "URL",
+  "@networkStreamUrlLabel": { "description": "Network stream URL input label" },
+
+  "networkStreamUrlHint": "https://example.com/video.mp4",
+  "@networkStreamUrlHint": { "description": "Network stream URL input hint" },
+
+  "networkStreamInvalidUrl": "Enter a valid http or https URL.",
+  "@networkStreamInvalidUrl": { "description": "Validation error for invalid network stream URL" },
 
   "offsetBackward": "-10ms",
   "@offsetBackward": { "description": "Track offset backward tooltip" },

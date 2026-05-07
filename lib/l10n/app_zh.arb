@@ -19,7 +19,14 @@
   "splitScreen": "分屏",
 
   "initializing": "初始化中...",
-  "emptyHint": "点击\"添加媒体\"或拖拽文件到此处",
+  "emptyHint": "点击\"添加媒体\"、拖拽文件，或拖入 http(s) 链接",
+
+  "openLocalFile": "打开本地文件...",
+  "openNetworkStream": "打开网络流...",
+  "addMediaOptions": "添加媒体选项",
+  "networkStreamUrlLabel": "URL",
+  "networkStreamUrlHint": "https://example.com/video.mp4",
+  "networkStreamInvalidUrl": "请输入有效的 http 或 https 地址。",
 
   "offsetBackward": "-10ms",
   "offsetForward": "+10ms",

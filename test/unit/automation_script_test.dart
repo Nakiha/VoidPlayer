@@ -20,6 +20,7 @@ void main() {
 2.0,QUIT,0
 0.5,SET_RENDER_SIZE,320,180
 0.1,PLAY
+0.2,ADD_NETWORK_MEDIA,http://127.0.0.1:8765/h264_9s_1920x1080.mp4
 0.7,ASSERT_PLAYING
 0.8,SET_DECODE_MODE,forceSoftware
 0.9,ASSERT_CAPTURE_SPLIT_DIFF,cap,1.5,2.5,12
@@ -28,9 +29,10 @@ void main() {
 
     final instructions = parseAutomationScript(file.path);
 
-    expect(instructions, hasLength(7));
+    expect(instructions, hasLength(8));
     expect(instructions.map((i) => i.time.inMilliseconds), [
       100,
+      200,
       500,
       700,
       800,
@@ -44,6 +46,18 @@ void main() {
     );
     expect(
       instructions[1],
+      isA<ScriptAction>().having(
+        (i) => i.action,
+        'action',
+        isA<AddNetworkMedia>().having(
+          (a) => a.url,
+          'url',
+          'http://127.0.0.1:8765/h264_9s_1920x1080.mp4',
+        ),
+      ),
+    );
+    expect(
+      instructions[2],
       isA<ScriptAutomationAction>().having(
         (i) => i.action,
         'action',
@@ -51,7 +65,7 @@ void main() {
       ),
     );
     expect(
-      instructions[2],
+      instructions[3],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -59,7 +73,7 @@ void main() {
       ),
     );
     expect(
-      instructions[3],
+      instructions[4],
       isA<ScriptSetDecodeMode>().having(
         (i) => i.mode.storageValue,
         'mode',
@@ -67,7 +81,7 @@ void main() {
       ),
     );
     expect(
-      instructions[4],
+      instructions[5],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -75,7 +89,7 @@ void main() {
       ),
     );
     expect(
-      instructions[5],
+      instructions[6],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -83,7 +97,7 @@ void main() {
       ),
     );
     expect(
-      instructions[6],
+      instructions[7],
       isA<ScriptQuit>().having((i) => i.exitCode, 'exitCode', 0),
     );
   });

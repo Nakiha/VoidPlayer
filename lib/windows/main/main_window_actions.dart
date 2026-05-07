@@ -56,6 +56,7 @@ class MainWindowActionCoordinator {
       setSpeed: playbackCoordinator.setSpeed,
       openFile: mediaCoordinator.openFile,
       addMediaByPath: mediaCoordinator.addMediaByPath,
+      addNetworkMedia: mediaCoordinator.addNetworkMedia,
       removeTrack: mediaCoordinator.removeTrack,
       swapMediaHeader: mediaCoordinator.onMediaSwapped,
       adjustTrackOffset: mediaCoordinator.onOffsetChangedForSlot,
@@ -109,6 +110,7 @@ class MainWindowActionBinder {
 
   final FutureOr<void> Function() openFile;
   final void Function(String path) addMediaByPath;
+  final FutureOr<void> Function(String url) addNetworkMedia;
   final FutureOr<void> Function(int fileId) removeTrack;
   final void Function(int slotIndex, int targetTrackIndex) swapMediaHeader;
   final FutureOr<void> Function(int slot, int deltaMs) adjustTrackOffset;
@@ -152,6 +154,7 @@ class MainWindowActionBinder {
     required this.setSpeed,
     required this.openFile,
     required this.addMediaByPath,
+    required this.addNetworkMedia,
     required this.removeTrack,
     required this.swapMediaHeader,
     required this.adjustTrackOffset,
@@ -198,6 +201,10 @@ class MainWindowActionBinder {
     _bind(const AddMedia(''), (action) {
       final a = action as AddMedia;
       addMediaByPath(a.path);
+    });
+    _bind(const AddNetworkMedia(''), (action) {
+      final a = action as AddNetworkMedia;
+      return addNetworkMedia(a.url);
     });
     _bind(const RemoveTrackAction(0), (action) {
       final a = action as RemoveTrackAction;

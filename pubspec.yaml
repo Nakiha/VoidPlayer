@@ -21,6 +21,10 @@ dependencies:
   path: ^1.9.0
   window_manager: ^0.5.0
 
+dependency_overrides:
+  desktop_drop:
+    path: third_party/desktop_drop
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

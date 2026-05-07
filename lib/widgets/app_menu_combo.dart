@@ -20,6 +20,12 @@ class AppMenuCombo<T> extends StatefulWidget {
   final TextStyle? textStyle;
   final TextStyle? menuTextStyle;
   final double iconSize;
+  final String? buttonLabel;
+  final IconData? buttonLeadingIcon;
+  final Color? foregroundColor;
+  final bool showSelectedCheck;
+  final IconData? Function(T value)? iconFor;
+  final bool notifyOnReselect;
 
   const AppMenuCombo({
     super.key,
@@ -39,6 +45,12 @@ class AppMenuCombo<T> extends StatefulWidget {
     this.textStyle,
     this.menuTextStyle,
     this.iconSize = 18,
+    this.buttonLabel,
+    this.buttonLeadingIcon,
+    this.foregroundColor,
+    this.showSelectedCheck = true,
+    this.iconFor,
+    this.notifyOnReselect = false,
   });
 
   @override
@@ -186,7 +198,7 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
     final item = widget.items[index];
     _closeMenu(
       onClosed: () {
-        if (mounted && item != widget.value) {
+        if (mounted && (widget.notifyOnReselect || item != widget.value)) {
           widget.onChanged(item);
         }
       },
@@ -225,10 +237,13 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
                 itemHeight: widget.itemHeight,
                 itemPadding: widget.itemPadding,
                 textStyle: widget.menuTextStyle,
+                showSelectedCheck: widget.showSelectedCheck,
+                iconFor: widget.iconFor,
                 onSelected: (item) {
                   _closeMenu(
                     onClosed: () {
-                      if (mounted && item != widget.value) {
+                      if (mounted &&
+                          (widget.notifyOnReselect || item != widget.value)) {
                         widget.onChanged(item);
                       }
                     },
@@ -322,17 +337,20 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
       width = math.max(width, painter.width);
     }
     final resolvedPadding = widget.itemPadding.resolve(textDirection);
+    final hasLeading = widget.showSelectedCheck || widget.iconFor != null;
     return width +
         resolvedPadding.left +
         resolvedPadding.right +
-        _leadingWidth +
-        _leadingGap;
+        (hasLeading ? _leadingWidth + _leadingGap : 0);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final labelStyle = widget.textStyle ?? theme.textTheme.bodySmall;
+    final labelStyle = (widget.textStyle ?? theme.textTheme.bodySmall)
+        ?.copyWith(color: widget.foregroundColor);
+    final iconColor = widget.foregroundColor ?? theme.iconTheme.color;
+    final buttonLabel = widget.buttonLabel ?? widget.labelFor(widget.value);
     final child = CompositedTransformTarget(
       link: _layerLink,
       child: SizedBox(
@@ -356,9 +374,17 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
                 padding: widget.buttonPadding,
                 child: Row(
                   children: [
+                    if (widget.buttonLeadingIcon != null) ...[
+                      Icon(
+                        widget.buttonLeadingIcon,
+                        size: widget.iconSize,
+                        color: iconColor,
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     Expanded(
                       child: Text(
-                        widget.labelFor(widget.value),
+                        buttonLabel,
                         style: labelStyle,
                         overflow: TextOverflow.ellipsis,
                         maxLines: 1,
@@ -371,7 +397,7 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
                       child: Icon(
                         Icons.arrow_drop_down,
                         size: widget.iconSize,
-                        color: theme.iconTheme.color,
+                        color: iconColor,
                       ),
                     ),
                   ],
@@ -403,6 +429,8 @@ class _MenuSurface<T> extends StatelessWidget {
   final double itemHeight;
   final EdgeInsetsGeometry itemPadding;
   final TextStyle? textStyle;
+  final bool showSelectedCheck;
+  final IconData? Function(T value)? iconFor;
 
   const _MenuSurface({
     required this.value,
@@ -415,6 +443,8 @@ class _MenuSurface<T> extends StatelessWidget {
     required this.itemHeight,
     required this.itemPadding,
     required this.textStyle,
+    required this.showSelectedCheck,
+    required this.iconFor,
   });
 
   @override
@@ -444,6 +474,8 @@ class _MenuSurface<T> extends StatelessWidget {
                   height: itemHeight,
                   padding: itemPadding,
                   textStyle: textStyle,
+                  showSelectedCheck: showSelectedCheck,
+                  icon: iconFor?.call(items[i]),
                   onSelected: onSelected,
                 ),
             ],
@@ -463,6 +495,8 @@ class _MenuOption<T> extends StatelessWidget {
   final double height;
   final EdgeInsetsGeometry padding;
   final TextStyle? textStyle;
+  final bool showSelectedCheck;
+  final IconData? icon;
   final ValueChanged<T> onSelected;
 
   const _MenuOption({
@@ -474,6 +508,8 @@ class _MenuOption<T> extends StatelessWidget {
     required this.height,
     required this.padding,
     required this.textStyle,
+    required this.showSelectedCheck,
+    required this.icon,
     required this.onSelected,
   });
 
@@ -493,17 +529,25 @@ class _MenuOption<T> extends StatelessWidget {
             padding: padding,
             child: Row(
               children: [
-                SizedBox(
-                  width: _AppMenuComboState._leadingWidth,
-                  child: selected
-                      ? Icon(
-                          Icons.check,
-                          size: 16,
-                          color: theme.colorScheme.primary,
-                        )
-                      : null,
-                ),
-                const SizedBox(width: _AppMenuComboState._leadingGap),
+                if (showSelectedCheck || icon != null) ...[
+                  SizedBox(
+                    width: _AppMenuComboState._leadingWidth,
+                    child: selected && showSelectedCheck
+                        ? Icon(
+                            Icons.check,
+                            size: 16,
+                            color: theme.colorScheme.primary,
+                          )
+                        : icon == null
+                        ? null
+                        : Icon(
+                            icon,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                  ),
+                  const SizedBox(width: _AppMenuComboState._leadingGap),
+                ],
                 Expanded(
                   child: Text(
                     label,

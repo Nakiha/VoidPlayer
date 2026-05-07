@@ -47,6 +47,7 @@ void main() {
   Widget buildToolbar({
     required List<TrackEntry> tracks,
     required VoidCallback onProfiler,
+    Future<void> Function()? onOpenFile,
   }) {
     return MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -55,7 +56,8 @@ void main() {
         body: AppToolBar(
           viewMode: 0,
           onViewModeChanged: (_) {},
-          onAddMedia: () {},
+          onOpenFile: onOpenFile ?? () async {},
+          onOpenNetworkMedia: (_) async {},
           onMediaInfo: () {},
           onAnalysis: () async {},
           onProfiler: onProfiler,
@@ -83,5 +85,22 @@ void main() {
     );
     await tester.tap(find.widgetWithIcon(IconButton, Icons.speed));
     expect(profilerTaps, 1);
+  });
+
+  testWidgets('add media main button opens the file picker action', (
+    tester,
+  ) async {
+    var openFileTaps = 0;
+
+    await tester.pumpWidget(
+      buildToolbar(
+        tracks: const [],
+        onProfiler: () {},
+        onOpenFile: () async => openFileTaps++,
+      ),
+    );
+
+    await tester.tap(find.text('Add Media'));
+    expect(openFileTaps, 1);
   });
 }

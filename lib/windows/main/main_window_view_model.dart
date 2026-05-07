@@ -139,7 +139,8 @@ class MainWindowDropActions {
 
 class MainWindowToolbarActions {
   final ValueChanged<int> onViewModeChanged;
-  final VoidCallback onAddMedia;
+  final Future<void> Function() onOpenFile;
+  final Future<void> Function(String url) onOpenNetworkMedia;
   final VoidCallback onMediaInfo;
   final Future<void> Function() onAnalysis;
   final VoidCallback onProfiler;
@@ -147,7 +148,8 @@ class MainWindowToolbarActions {
 
   const MainWindowToolbarActions({
     required this.onViewModeChanged,
-    required this.onAddMedia,
+    required this.onOpenFile,
+    required this.onOpenNetworkMedia,
     required this.onMediaInfo,
     required this.onAnalysis,
     required this.onProfiler,

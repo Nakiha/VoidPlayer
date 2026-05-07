@@ -6,6 +6,7 @@ import '../../app_log.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
+import '../../utils/media_source.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
 import '../native_file_picker.dart';
@@ -158,6 +159,12 @@ class MainWindowMediaCoordinator {
   void addMediaByPath(String path) {
     if (path.isEmpty) return;
     fireAndLog('add media by path', loadMediaPaths([path]));
+  }
+
+  Future<void> addNetworkMedia(String url) {
+    final normalized = normalizeNetworkMediaUrl(url);
+    if (normalized == null) return Future<void>.value();
+    return loadMediaPaths([normalized]);
   }
 
   Future<void> openFile() async {

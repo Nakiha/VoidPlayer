@@ -285,12 +285,14 @@ class AutomationAssertExecutor {
           maxDedicatedGpuMb,
         );
         final rssMb = AutomationProbe.bytesToMb(actual.rssBytes);
+        final privateMb = AutomationProbe.bytesToMb(actual.privateBytes);
         final gpuMb = AutomationProbe.bytesToMb(actual.dedicatedGpuBytes);
         if (rssMb > maxRssMb || gpuMb > maxDedicatedGpuMb) {
           throw AssertionError(
             'Expected resource usage <= rss=${maxRssMb.toStringAsFixed(1)}MB, '
             'dedicatedGpu=${maxDedicatedGpuMb.toStringAsFixed(1)}MB; '
             'got rss=${rssMb.toStringAsFixed(1)}MB, '
+            'private=${privateMb.toStringAsFixed(1)}MB, '
             'dedicatedGpu=${gpuMb.toStringAsFixed(1)}MB',
           );
         }
@@ -316,12 +318,22 @@ class AutomationAssertExecutor {
         final gpuDeltaMb = AutomationProbe.bytesToMb(
           actual.dedicatedGpuBytes - expected.dedicatedGpuBytes,
         );
+        final privateDeltaMb = AutomationProbe.bytesToMb(
+          actual.privateBytes - expected.privateBytes,
+        );
+        log.info(
+          'ASSERT_RESOURCE_USAGE_DELTA_BELOW $baseline: '
+          'rss=${rssDeltaMb.toStringAsFixed(1)}MB '
+          'private=${privateDeltaMb.toStringAsFixed(1)}MB '
+          'dedicatedGpu=${gpuDeltaMb.toStringAsFixed(1)}MB',
+        );
         if (rssDeltaMb > maxRssDeltaMb || gpuDeltaMb > maxDedicatedGpuDeltaMb) {
           throw AssertionError(
             'Expected resource delta from $baseline <= '
             'rss=${maxRssDeltaMb.toStringAsFixed(1)}MB, '
             'dedicatedGpu=${maxDedicatedGpuDeltaMb.toStringAsFixed(1)}MB; '
             'got rss=${rssDeltaMb.toStringAsFixed(1)}MB, '
+            'private=${privateDeltaMb.toStringAsFixed(1)}MB, '
             'dedicatedGpu=${gpuDeltaMb.toStringAsFixed(1)}MB',
           );
         }

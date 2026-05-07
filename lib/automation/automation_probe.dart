@@ -33,10 +33,13 @@ class AutomationProbe {
     final diagnostics = await controller.getDiagnostics();
     final rssBytes =
         diagnostics['processRssBytes'] as int? ?? ProcessInfo.currentRss;
+    final privateBytes =
+        diagnostics['processPrivateBytes'] as int? ?? ProcessInfo.currentRss;
     final dedicatedGpuBytes =
         diagnostics['dedicatedGpuUsageBytes'] as int? ?? 0;
     return ResourceUsageMetric(
       rssBytes: rssBytes,
+      privateBytes: privateBytes,
       dedicatedGpuBytes: dedicatedGpuBytes,
     );
   }

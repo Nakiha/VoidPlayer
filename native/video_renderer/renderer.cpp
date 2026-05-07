@@ -2262,6 +2262,17 @@ bool Renderer::recreate_decode_thread_for_seek(size_t slot, int64_t target_pts_u
         return false;
     }
 
+    if (track->use_hardware_decode) {
+        replacement->enable_hardware_decode(
+            default_decode_device_mode(stats.codec_params->codec_id));
+    }
+
+    replacement->set_pause_after_preroll(!playing_.load());
+    if (!replacement->start()) {
+        spdlog::error("[Renderer] Failed to start recreated decode thread for {}", track->file_path);
+        return false;
+    }
+
     const int file_id = track->file_id;
     track->demux_thread->set_seek_callback(
         [this, dt = replacement.get(), file_id](int64_t pts, SeekType seek_type) {
@@ -2270,16 +2281,6 @@ bool Renderer::recreate_decode_thread_for_seek(size_t slot, int64_t target_pts_u
                 playback_->audio_output()->notify_seek(file_id, pts, seek_type);
             }
         });
-
-    if (track->use_hardware_decode) {
-        replacement->enable_hardware_decode(
-            default_decode_device_mode(stats.codec_params->codec_id));
-    }
-
-    if (!replacement->start()) {
-        spdlog::error("[Renderer] Failed to start recreated decode thread for {}", track->file_path);
-        return false;
-    }
 
     track->decode_thread = std::move(replacement);
     track->seek_controller->request_seek(target_pts_us, type);

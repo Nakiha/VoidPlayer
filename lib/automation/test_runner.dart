@@ -192,6 +192,7 @@ class TestRunner {
         log.info(
           'TestRunner: STORE_RESOURCE_USAGE $nameId '
           'rss=${AutomationProbe.formatMb(metric.rssBytes)}MB '
+          'private=${AutomationProbe.formatMb(metric.privateBytes)}MB '
           'dedicatedGpu=${AutomationProbe.formatMb(metric.dedicatedGpuBytes)}MB',
         );
       case StoreNativeSeekCount(:final nameId):

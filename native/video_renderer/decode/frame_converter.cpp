@@ -1,5 +1,6 @@
 #include "video_renderer/decode/frame_converter.h"
 #include <spdlog/spdlog.h>
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <limits>
@@ -17,6 +18,57 @@ extern "C" {
 }
 
 namespace vr {
+
+struct CpuFrameBufferPool : public std::enable_shared_from_this<CpuFrameBufferPool> {
+    std::shared_ptr<std::vector<uint8_t>> acquire(size_t bytes,
+                                                  const char* context) {
+        std::unique_ptr<std::vector<uint8_t>> buffer;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            auto it = std::find_if(free_buffers.begin(), free_buffers.end(),
+                [bytes](const auto& candidate) {
+                    return candidate && candidate->size() == bytes;
+                });
+            if (it != free_buffers.end()) {
+                buffer = std::move(*it);
+                free_buffers.erase(it);
+            }
+        }
+
+        if (!buffer) {
+            try {
+                buffer = std::make_unique<std::vector<uint8_t>>(bytes);
+            } catch (const std::bad_alloc&) {
+                spdlog::error("[FrameConverter] Failed to allocate {} frame buffer ({} bytes)",
+                              context, bytes);
+                return nullptr;
+            }
+        }
+
+        auto* raw = buffer.release();
+        std::weak_ptr<CpuFrameBufferPool> weak_self = shared_from_this();
+        return std::shared_ptr<std::vector<uint8_t>>(raw, [weak_self](auto* ptr) {
+            std::unique_ptr<std::vector<uint8_t>> returned(ptr);
+            if (auto pool = weak_self.lock()) {
+                std::lock_guard<std::mutex> lock(pool->mutex);
+                if (pool->free_buffers.size() < kMaxFreeBuffers) {
+                    pool->free_buffers.push_back(std::move(returned));
+                    return;
+                }
+            }
+        });
+    }
+
+    void clear() {
+        std::lock_guard<std::mutex> lock(mutex);
+        free_buffers.clear();
+    }
+
+private:
+    static constexpr size_t kMaxFreeBuffers = 8;
+    std::mutex mutex;
+    std::vector<std::unique_ptr<std::vector<uint8_t>>> free_buffers;
+};
 
 namespace {
 constexpr int kMaxDecodedDimension = 16384;
@@ -56,17 +108,6 @@ bool calculate_nv12_layout(int width, int height,
         return false;
     }
     return true;
-}
-
-std::shared_ptr<std::vector<uint8_t>> allocate_cpu_frame_buffer(size_t bytes,
-                                                                const char* context) {
-    try {
-        return std::make_shared<std::vector<uint8_t>>(bytes);
-    } catch (const std::bad_alloc&) {
-        spdlog::error("[FrameConverter] Failed to allocate {} frame buffer ({} bytes)",
-                      context, bytes);
-    }
-    return nullptr;
 }
 
 bool supported_software_format(AVPixelFormat format) {
@@ -201,7 +242,8 @@ bool pack_p010_to_nv12_8(const AVFrame* frame, std::vector<uint8_t>& dst,
 
 bool convert_frame_to_cpu_nv12(const AVFrame* frame,
                                const char* context,
-                               TextureFrame& result) {
+                               TextureFrame& result,
+                               CpuFrameBufferPool& pool) {
     if (!frame) {
         return false;
     }
@@ -224,7 +266,7 @@ bool convert_frame_to_cpu_nv12(const AVFrame* frame,
         return false;
     }
 
-    auto buffer = allocate_cpu_frame_buffer(bytes, context);
+    auto buffer = pool.acquire(bytes, context);
     if (!buffer || buffer->empty()) {
         return false;
     }
@@ -490,6 +532,7 @@ D3D11SnapshotFrameRef::~D3D11SnapshotFrameRef() {
 }
 
 FrameConverter::FrameConverter()
+    : cpu_buffer_pool_(std::make_shared<CpuFrameBufferPool>())
 {}
 
 FrameConverter::~FrameConverter() = default;
@@ -596,7 +639,7 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
         result.color = color_info_from_frame(sw_frame);
         downloaded_format_ = sw_format;
 
-        convert_frame_to_cpu_nv12(sw_frame, "hw-download", result);
+        convert_frame_to_cpu_nv12(sw_frame, "hw-download", result, *cpu_buffer_pool_);
         av_frame_free(&sw_frame);
     } else if (is_hw_) {
         // frame->data[0] = ID3D11Texture2D*, frame->data[1] = array index (intptr_t)
@@ -642,7 +685,7 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
         // Software path: keep the frame in YUV and upload it as NV12 so it
         // shares the same shader conversion path as D3D11VA decode.
         result.color = color_info_from_frame(frame);
-        if (convert_frame_to_cpu_nv12(frame, "software", result)) {
+        if (convert_frame_to_cpu_nv12(frame, "software", result, *cpu_buffer_pool_)) {
             width_ = frame->width;
             height_ = frame->height;
             src_format_ = static_cast<AVPixelFormat>(frame->format);

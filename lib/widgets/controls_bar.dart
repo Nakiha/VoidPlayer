@@ -136,9 +136,12 @@ class ControlsBar extends StatelessWidget {
                           child: ClipRect(
                             child: Align(
                               alignment: Alignment.centerLeft,
-                              child: TimeLabel(
+                              child: EditableTimeLabel(
                                 currentUs: currentPtsUs,
                                 totalUs: durationUs,
+                                seekMinUs: seekMinUs,
+                                seekMaxUs: seekMaxUs,
+                                onSeek: onSeek,
                               ),
                             ),
                           ),

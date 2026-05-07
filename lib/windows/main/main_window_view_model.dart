@@ -141,6 +141,7 @@ class MainWindowToolbarActions {
   final ValueChanged<int> onViewModeChanged;
   final Future<void> Function() onOpenFile;
   final Future<void> Function(String url) onOpenNetworkMedia;
+  final Future<void> Function(String remotePath) onOpenSshRemoteMedia;
   final VoidCallback onMediaInfo;
   final Future<void> Function() onAnalysis;
   final VoidCallback onProfiler;
@@ -150,6 +151,7 @@ class MainWindowToolbarActions {
     required this.onViewModeChanged,
     required this.onOpenFile,
     required this.onOpenNetworkMedia,
+    required this.onOpenSshRemoteMedia,
     required this.onMediaInfo,
     required this.onAnalysis,
     required this.onProfiler,

@@ -52,8 +52,14 @@
   "openNetworkStream": "Open network stream...",
   "@openNetworkStream": { "description": "Add media menu item/dialog title: open http/https media" },
 
+  "openSshRemoteFile": "Open SSH remote file...",
+  "@openSshRemoteFile": { "description": "Add media menu item/dialog title: copy a remote SSH file into local cache" },
+
   "addMediaOptions": "Add media options",
   "@addMediaOptions": { "description": "Tooltip for the Add Media dropdown" },
+
+  "search": "Search",
+  "@search": { "description": "Generic search button label" },
 
   "networkStreamUrlLabel": "URL",
   "@networkStreamUrlLabel": { "description": "Network stream URL input label" },
@@ -63,6 +69,39 @@
 
   "networkStreamInvalidUrl": "Enter a valid http or https URL.",
   "@networkStreamInvalidUrl": { "description": "Validation error for invalid network stream URL" },
+
+  "sshRemotePathLabel": "Remote file",
+  "@sshRemotePathLabel": { "description": "SSH remote file input label" },
+
+  "sshRemotePathHint": "user@host:/home/user/video.mp4",
+  "@sshRemotePathHint": { "description": "SSH remote file input hint" },
+
+  "sshRemoteInvalidPath": "Use user@host:/absolute/path or ssh://user@host/path.",
+  "@sshRemoteInvalidPath": { "description": "Validation error for SSH remote file input" },
+
+  "sshSearchTitle": "Search remote host",
+  "@sshSearchTitle": { "description": "SSH remote search section title" },
+
+  "sshHostLabel": "Host",
+  "@sshHostLabel": { "description": "SSH host input label" },
+
+  "sshHostHint": "user@host",
+  "@sshHostHint": { "description": "SSH host input hint" },
+
+  "sshDirectoryLabel": "Directory",
+  "@sshDirectoryLabel": { "description": "SSH search directory input label" },
+
+  "sshDirectoryHint": "/home/user/videos",
+  "@sshDirectoryHint": { "description": "SSH search directory input hint" },
+
+  "sshPatternLabel": "Pattern",
+  "@sshPatternLabel": { "description": "SSH search file pattern input label" },
+
+  "sshSearchEmpty": "Enter a host and directory, then search for remote media files.",
+  "@sshSearchEmpty": { "description": "SSH search empty state" },
+
+  "sshSearchNoMatches": "No matching files found.",
+  "@sshSearchNoMatches": { "description": "SSH search no matches message" },
 
   "offsetBackward": "-10ms",
   "@offsetBackward": { "description": "Track offset backward tooltip" },

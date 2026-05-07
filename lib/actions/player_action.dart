@@ -194,6 +194,12 @@ class AddNetworkMedia extends PlayerAction {
   const AddNetworkMedia(this.url) : super('ADD_NETWORK_MEDIA');
 }
 
+/// Add an SSH remote media file by copying it into the local remote cache.
+class AddSshMedia extends PlayerAction {
+  final String remotePath;
+  const AddSshMedia(this.remotePath) : super('ADD_SSH_MEDIA');
+}
+
 /// Set zoom ratio directly.
 class SetZoom extends PlayerAction {
   final double ratio;

@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../app_log.dart';
 import '../../preferences/playback_preferences.dart';
+import '../../remote/ssh_remote_media.dart';
 import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
 import '../../utils/media_source.dart';
@@ -24,6 +25,7 @@ class MainWindowMediaCoordinator {
   final MainWindowMediaLifecycle lifecycle;
   final PlaybackPreferences playbackPreferences;
   final bool Function() mounted;
+  final SshRemoteMediaService sshRemoteMedia;
   Future<void>? _loadInFlight;
   bool _disposed = false;
 
@@ -36,6 +38,7 @@ class MainWindowMediaCoordinator {
     required this.lifecycle,
     required this.playbackPreferences,
     required this.mounted,
+    this.sshRemoteMedia = const SshRemoteMediaService(),
   });
 
   void dispose() {
@@ -165,6 +168,24 @@ class MainWindowMediaCoordinator {
     final normalized = normalizeNetworkMediaUrl(url);
     if (normalized == null) return Future<void>.value();
     return loadMediaPaths([normalized]);
+  }
+
+  Future<void> addSshRemoteMedia(String remotePath) async {
+    if (!_alive) return;
+    if (textureId() == null) {
+      setViewportState(const ViewportDisplayState.loading());
+    }
+    try {
+      final localPath = await sshRemoteMedia.download(remotePath);
+      if (!_alive) return;
+      await loadMediaPaths([localPath]);
+    } catch (e) {
+      log.severe("SSH remote media failed: $e");
+      if (_alive && textureId() == null) {
+        setViewportState(ViewportDisplayState.error('Failed to load: $e'));
+      }
+      rethrow;
+    }
   }
 
   Future<void> openFile() async {

@@ -58,6 +58,7 @@ void main() {
           onViewModeChanged: (_) {},
           onOpenFile: onOpenFile ?? () async {},
           onOpenNetworkMedia: (_) async {},
+          onOpenSshRemoteMedia: (_) async {},
           onMediaInfo: () {},
           onAnalysis: () async {},
           onProfiler: onProfiler,

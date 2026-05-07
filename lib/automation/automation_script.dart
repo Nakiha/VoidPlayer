@@ -173,6 +173,12 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAction(time, AddNetworkMedia(args[0]));
+    case 'ADD_SSH_MEDIA':
+      if (args.isEmpty) {
+        log.warning('ADD_SSH_MEDIA missing remote path argument: $rawLine');
+        return null;
+      }
+      return ScriptAction(time, AddSshMedia(args[0]));
     case 'REMOVE_TRACK':
       if (args.isEmpty) {
         log.warning('REMOVE_TRACK missing slot argument: $rawLine');

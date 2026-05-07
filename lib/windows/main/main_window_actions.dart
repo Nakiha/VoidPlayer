@@ -57,6 +57,7 @@ class MainWindowActionCoordinator {
       openFile: mediaCoordinator.openFile,
       addMediaByPath: mediaCoordinator.addMediaByPath,
       addNetworkMedia: mediaCoordinator.addNetworkMedia,
+      addSshRemoteMedia: mediaCoordinator.addSshRemoteMedia,
       removeTrack: mediaCoordinator.removeTrack,
       swapMediaHeader: mediaCoordinator.onMediaSwapped,
       adjustTrackOffset: mediaCoordinator.onOffsetChangedForSlot,
@@ -111,6 +112,7 @@ class MainWindowActionBinder {
   final FutureOr<void> Function() openFile;
   final void Function(String path) addMediaByPath;
   final FutureOr<void> Function(String url) addNetworkMedia;
+  final FutureOr<void> Function(String remotePath) addSshRemoteMedia;
   final FutureOr<void> Function(int fileId) removeTrack;
   final void Function(int slotIndex, int targetTrackIndex) swapMediaHeader;
   final FutureOr<void> Function(int slot, int deltaMs) adjustTrackOffset;
@@ -155,6 +157,7 @@ class MainWindowActionBinder {
     required this.openFile,
     required this.addMediaByPath,
     required this.addNetworkMedia,
+    required this.addSshRemoteMedia,
     required this.removeTrack,
     required this.swapMediaHeader,
     required this.adjustTrackOffset,
@@ -205,6 +208,10 @@ class MainWindowActionBinder {
     _bind(const AddNetworkMedia(''), (action) {
       final a = action as AddNetworkMedia;
       return addNetworkMedia(a.url);
+    });
+    _bind(const AddSshMedia(''), (action) {
+      final a = action as AddSshMedia;
+      return addSshRemoteMedia(a.remotePath);
     });
     _bind(const RemoveTrackAction(0), (action) {
       final a = action as RemoveTrackAction;

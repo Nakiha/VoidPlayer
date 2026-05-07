@@ -21,6 +21,10 @@ void main() {
       paths.analysisCacheDir,
       r'C:\Users\me\AppData\Roaming\VoidPlayer\cache',
     );
+    expect(
+      paths.remoteCacheDir,
+      r'C:\Users\me\AppData\Roaming\VoidPlayer\remote_cache',
+    );
   });
 
   test('uses executable directory when cache marker exists beside exe', () {
@@ -36,6 +40,7 @@ void main() {
     expect(paths.locksDir, r'D:\Portable\VoidPlayer\locks');
     expect(paths.logsDir, r'D:\Portable\VoidPlayer\logs');
     expect(paths.analysisCacheDir, r'D:\Portable\VoidPlayer\cache');
+    expect(paths.remoteCacheDir, r'D:\Portable\VoidPlayer\remote_cache');
   });
 
   test('falls back to LocalAppData when AppData is unavailable', () {

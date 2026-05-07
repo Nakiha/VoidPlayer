@@ -9,6 +9,7 @@ class AppPathSet {
   final String locksDir;
   final String logsDir;
   final String analysisCacheDir;
+  final String remoteCacheDir;
   final bool isPortable;
 
   const AppPathSet({
@@ -18,6 +19,7 @@ class AppPathSet {
     required this.locksDir,
     required this.logsDir,
     required this.analysisCacheDir,
+    required this.remoteCacheDir,
     required this.isPortable,
   });
 }
@@ -47,6 +49,7 @@ class AppPaths {
       locksDir: p.join(rootDir, 'locks'),
       logsDir: p.join(rootDir, 'logs'),
       analysisCacheDir: p.join(rootDir, 'cache'),
+      remoteCacheDir: p.join(rootDir, 'remote_cache'),
       isPortable: isPortable,
     );
   }

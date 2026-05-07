@@ -10,6 +10,7 @@ import '../l10n/app_localizations.dart';
 import '../track_manager.dart';
 import 'app_menu_combo.dart';
 import 'open_network_stream_dialog.dart';
+import 'open_ssh_remote_file_dialog.dart';
 import 'segmented_widget.dart';
 
 const _analysisPanelWidth = 360.0;
@@ -23,6 +24,7 @@ class AppToolBar extends StatelessWidget {
   final ValueChanged<int> onViewModeChanged;
   final Future<void> Function() onOpenFile;
   final Future<void> Function(String url) onOpenNetworkMedia;
+  final Future<void> Function(String remotePath) onOpenSshRemoteMedia;
   final VoidCallback onMediaInfo;
   final Future<void> Function() onAnalysis;
   final VoidCallback onProfiler;
@@ -40,6 +42,7 @@ class AppToolBar extends StatelessWidget {
     required this.onViewModeChanged,
     required this.onOpenFile,
     required this.onOpenNetworkMedia,
+    required this.onOpenSshRemoteMedia,
     required this.onMediaInfo,
     required this.onAnalysis,
     required this.onProfiler,
@@ -74,6 +77,7 @@ class AppToolBar extends StatelessWidget {
           _AddMediaButton(
             onOpenFile: onOpenFile,
             onOpenNetworkMedia: onOpenNetworkMedia,
+            onOpenSshRemoteMedia: onOpenSshRemoteMedia,
           ),
           const SizedBox(width: 4),
           _ToolbarToggleButton(
@@ -122,15 +126,18 @@ class AppToolBar extends StatelessWidget {
 class _AddMediaButton extends StatelessWidget {
   final Future<void> Function() onOpenFile;
   final Future<void> Function(String url) onOpenNetworkMedia;
+  final Future<void> Function(String remotePath) onOpenSshRemoteMedia;
 
   const _AddMediaButton({
     required this.onOpenFile,
     required this.onOpenNetworkMedia,
+    required this.onOpenSshRemoteMedia,
   });
 
   static const _choices = [
     _AddMediaChoice.localFile,
     _AddMediaChoice.networkStream,
+    _AddMediaChoice.sshRemoteFile,
   ];
 
   @override
@@ -198,6 +205,8 @@ class _AddMediaButton extends StatelessWidget {
                       unawaited(onOpenFile());
                     case _AddMediaChoice.networkStream:
                       unawaited(_openNetworkDialog(context));
+                    case _AddMediaChoice.sshRemoteFile:
+                      unawaited(_openSshDialog(context));
                   }
                 },
                 menuTextStyle: theme.textTheme.bodySmall,
@@ -223,6 +232,7 @@ class _AddMediaButton extends StatelessWidget {
     return switch (choice) {
       _AddMediaChoice.localFile => l.openLocalFile,
       _AddMediaChoice.networkStream => l.openNetworkStream,
+      _AddMediaChoice.sshRemoteFile => l.openSshRemoteFile,
     };
   }
 
@@ -230,6 +240,7 @@ class _AddMediaButton extends StatelessWidget {
     return switch (choice) {
       _AddMediaChoice.localFile => Icons.video_file_outlined,
       _AddMediaChoice.networkStream => Icons.public,
+      _AddMediaChoice.sshRemoteFile => Icons.dns_outlined,
     };
   }
 
@@ -238,9 +249,20 @@ class _AddMediaButton extends StatelessWidget {
     if (url == null || url.isEmpty) return;
     await onOpenNetworkMedia(url);
   }
+
+  Future<void> _openSshDialog(BuildContext context) async {
+    final feedback = AppFeedbackScope.read(context);
+    final remotePath = await OpenSshRemoteFileDialog.show(context);
+    if (remotePath == null || remotePath.isEmpty) return;
+    try {
+      await onOpenSshRemoteMedia(remotePath);
+    } on Object catch (e) {
+      feedback.showError(e.toString());
+    }
+  }
 }
 
-enum _AddMediaChoice { localFile, networkStream }
+enum _AddMediaChoice { localFile, networkStream, sshRemoteFile }
 
 class _ToolbarToggleButton extends StatelessWidget {
   final bool active;

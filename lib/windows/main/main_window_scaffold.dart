@@ -37,6 +37,7 @@ class MainWindowScaffold extends StatelessWidget {
                   onViewModeChanged: toolbarActions.onViewModeChanged,
                   onOpenFile: toolbarActions.onOpenFile,
                   onOpenNetworkMedia: toolbarActions.onOpenNetworkMedia,
+                  onOpenSshRemoteMedia: toolbarActions.onOpenSshRemoteMedia,
                   onMediaInfo: toolbarActions.onMediaInfo,
                   onAnalysis: toolbarActions.onAnalysis,
                   onProfiler: toolbarActions.onProfiler,

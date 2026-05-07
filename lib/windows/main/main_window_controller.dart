@@ -206,6 +206,7 @@ class MainWindowController {
         },
         onOpenFile: mediaCoordinator.openFile,
         onOpenNetworkMedia: mediaCoordinator.addNetworkMedia,
+        onOpenSshRemoteMedia: mediaCoordinator.addSshRemoteMedia,
         onMediaInfo: () {
           if (trackManager.isEmpty) return;
           stateStore.setMediaInfoVisible(!_mediaInfoVisible);

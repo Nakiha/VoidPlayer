@@ -261,6 +261,8 @@ private:
     std::pair<float, float> display_pixel_size_for_layout_locked(
         int width, int height, const LayoutState& layout) const;
     void update_track_geometry_from_decision_locked(const PresentDecision& decision);
+    int64_t clamp_track_seek_target_us_locked(const TrackPipeline& track,
+                                               int64_t target_pts_us) const;
     void seek_internal(int64_t target_pts_us,
                        SeekType type,
                        bool allow_deferred = true,

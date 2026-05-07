@@ -1,0 +1,14 @@
+# PTS-offset multi-track tail clamp regression. Shorter tracks should freeze on their tail frame after a seek into a longer track.
+0.0,GENERATE_TEST_VIDEO,build/generated/pts_offset/pts_start_45s_len_1_5s.mp4,45,30,320,180,45000000
+0.1,GENERATE_TEST_VIDEO,build/generated/pts_offset/pts_start_20s_len_3s.mp4,90,30,320,180,20000000
+0.3,ADD_MEDIA,build/generated/pts_offset/pts_start_45s_len_1_5s.mp4
+0.6,ADD_MEDIA,build/generated/pts_offset/pts_start_20s_len_3s.mp4
+1.6,ASSERT_TRACK_COUNT,2
+1.7,ASSERT_DURATION,3000000,80
+1.8,ASSERT_EFFECTIVE_DURATION,3000000,80
+2.0,SET_LAYOUT_MODE,1
+2.3,SEEK_TO,2488000
+3.1,ASSERT_POSITION,2488000,80000
+3.3,CAPTURE_VIEWPORT,multi_track_tail_clamp
+3.4,ASSERT_CAPTURE_NOT_BLACK,multi_track_tail_clamp,0.01,4.0
+3.6,QUIT,0

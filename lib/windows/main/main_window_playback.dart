@@ -151,9 +151,10 @@ class MainWindowPlaybackCoordinator {
 
   Future<void> _seekToAsync(int ptsUs) async {
     if (_disposed) return;
+    final targetPtsUs = _clampSeekTargetUs(ptsUs);
     final seekSerial = ++_seekSerial;
     _pollSerial++;
-    setSeekPreview(ptsUs);
+    setSeekPreview(targetPtsUs);
     final behavior = playbackPreferences.seekAfterJumpBehavior;
     final wasPlaying = isPlaying();
     final shouldResume =
@@ -166,7 +167,7 @@ class MainWindowPlaybackCoordinator {
       if (_disposed || !mounted()) return;
       setPlaying(false);
     }
-    await controller.seek(ptsUs);
+    await controller.seek(targetPtsUs);
     if (_disposed || !mounted()) return;
 
     if (seekSerial != _seekSerial) return;
@@ -178,7 +179,15 @@ class MainWindowPlaybackCoordinator {
       if (_disposed || !mounted() || seekSerial != _seekSerial) return;
       setPlaying(true);
     }
-    scheduleLoopBoundaryTimer(fromPtsUs: ptsUs);
+    scheduleLoopBoundaryTimer(fromPtsUs: targetPtsUs);
+  }
+
+  int _clampSeekTargetUs(int ptsUs) {
+    final durationUs = timelineMetrics.effectiveDurationUs;
+    if (durationUs <= 0) {
+      return ptsUs < 0 ? 0 : ptsUs;
+    }
+    return ptsUs.clamp(0, durationUs).toInt();
   }
 
   double get timelineStartWidth =>

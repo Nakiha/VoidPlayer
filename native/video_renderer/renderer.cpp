@@ -468,6 +468,19 @@ void Renderer::seek_internal(int64_t target_pts_us,
                              bool allow_deferred,
                              bool force_recreate_paused_hevc) {
     // Caller must hold state_mutex_
+    const int64_t requested_pts_us = target_pts_us;
+    const int64_t duration_us = effective_duration_us_locked();
+    if (duration_us > 0) {
+        target_pts_us = std::clamp(target_pts_us, int64_t(0), duration_us);
+    } else {
+        target_pts_us = std::max<int64_t>(0, target_pts_us);
+    }
+    if (target_pts_us != requested_pts_us) {
+        spdlog::info("[Renderer] seek_internal clamp: requested={:.3f}s, clamped={:.3f}s, duration={:.3f}s",
+                     requested_pts_us / 1e6,
+                     target_pts_us / 1e6,
+                     duration_us / 1e6);
+    }
     spdlog::info("[Renderer] seek_internal: target={:.3f}s, type={}",
                  target_pts_us / 1e6, type == SeekType::Exact ? "Exact" : "Keyframe");
     playback_->seek_clock(target_pts_us);
@@ -479,8 +492,17 @@ void Renderer::seek_internal(int64_t target_pts_us,
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks_[i]) continue;
         auto* track = tracks_[i].get();
-        // Per-track target: subtract this track's sync offset
-        int64_t track_target = std::max(target_pts_us - track->offset_us, int64_t(0));
+        const int64_t requested_track_target =
+            std::max(target_pts_us - track->offset_us, int64_t(0));
+        int64_t track_target =
+            clamp_track_seek_target_us_locked(*track, target_pts_us);
+        if (track_target != requested_track_target) {
+            spdlog::info("[Renderer] seek_internal: track[{}] target clamp "
+                         "requested={:.3f}s, clamped={:.3f}s",
+                         i,
+                         requested_track_target / 1e6,
+                         track_target / 1e6);
+        }
         // Pause decoder FIRST to prevent stale packets from reaching the codec
         // (avoids HEVC "Could not find ref" warnings during seek transition)
         track->decode_thread->set_decode_paused(true);
@@ -1266,6 +1288,27 @@ int64_t Renderer::compute_frame_duration_us() const {
     return 33333; // fallback ~30fps
 }
 
+int64_t Renderer::clamp_track_seek_target_us_locked(
+    const TrackPipeline& track,
+    int64_t target_pts_us) const {
+    int64_t track_target = std::max(target_pts_us - track.offset_us, int64_t(0));
+    if (!track.demux_thread) {
+        return track_target;
+    }
+
+    const auto stats = track.demux_thread->stats();
+    if (stats.duration_us <= 0) {
+        return track_target;
+    }
+
+    const int64_t track_end_us = stats.start_time_us + stats.duration_us;
+    if (track_end_us <= 0) {
+        return track_target;
+    }
+
+    return std::min(track_target, track_end_us);
+}
+
 int64_t Renderer::effective_duration_us_locked() const {
     int64_t duration_us = 0;
     bool has_track_duration = false;
@@ -1593,13 +1636,13 @@ void Renderer::render_loop() {
                         if (!playing_snapshot) {
                             set_decode_paused_for_all_tracks(true);
                             std::lock_guard<std::mutex> lock(state_mutex_);
-                            preserve_requested_clock = paused_hevc_seek_in_flight_;
+                            preserve_requested_clock = true;
                             mark_paused_hevc_seek_preview_drawn_locked();
                         }
-                        // For paused HEVC HW exact seeks, keep the logical
-                        // clock at the user's requested target. The decoded
-                        // preview can land on the nearest displayable frame,
-                        // but the timeline should not visually snap backward.
+                        // Keep the logical clock at the user's requested target
+                        // while paused. The decoded preview can land on a
+                        // nearest/tail frame for individual tracks, but the
+                        // timeline should not visually snap backward.
                         int ref = first_active_track();
                         if (!preserve_requested_clock &&
                             ref >= 0 &&
@@ -2362,7 +2405,7 @@ int Renderer::add_track(const std::string& video_path,
     int64_t current_pts = playback_->clock().current_pts_us();
     if (current_pts > 0) {
         auto& track = tracks_[slot];
-        int64_t track_target = std::max(current_pts - track->offset_us, int64_t(0));
+        int64_t track_target = clamp_track_seek_target_us_locked(*track, current_pts);
         track->decode_thread->set_decode_paused(true);
         track->track_buffer->set_state(TrackState::Flushing);
         track->track_buffer->clear_frames();

@@ -1,0 +1,15 @@
+# PTS-offset seek clamp regression. A far-past-duration seek should show the tail frame, not the viewport fill color.
+0.0,GENERATE_TEST_VIDEO,build/generated/pts_offset/pts_start_20s_len_3s.mp4,90,30,320,180,20000000
+0.2,ADD_MEDIA,build/generated/pts_offset/pts_start_20s_len_3s.mp4
+1.2,ASSERT_TRACK_COUNT,1
+1.3,ASSERT_DURATION,3000000,80
+1.4,ASSERT_EFFECTIVE_DURATION,3000000,80
+1.6,SEEK_TO,2990000
+2.2,ASSERT_POSITION,3000000,80000
+2.4,CAPTURE_VIEWPORT,tail_frame
+2.5,ASSERT_CAPTURE_NOT_BLACK,tail_frame,0.01,4.0
+2.7,SEEK_TO,100000000
+3.4,ASSERT_POSITION,3000000,80000
+3.6,CAPTURE_VIEWPORT,clamped_tail_frame
+3.7,ASSERT_CAPTURE_EQUALS,tail_frame,clamped_tail_frame
+3.9,QUIT,0

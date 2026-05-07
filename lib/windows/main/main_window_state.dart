@@ -4,6 +4,7 @@ import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
 
 const Object _mainWindowStateUnset = Object();
+const double kDefaultTimelineControlsWidth = 332.0;
 
 class MainWindowStateModel {
   final int? textureId;
@@ -41,7 +42,7 @@ class MainWindowStateModel {
     this.pendingSeekUs,
     this.pendingSeekAt,
     this.syncOffsets = const {},
-    this.timelineControlsWidth = 320,
+    this.timelineControlsWidth = kDefaultTimelineControlsWidth,
     this.loopRangeEnabled = false,
     this.nativeLoopRangeSynced = false,
     this.startupLoopRangeApplied = false,

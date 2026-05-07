@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/viewport/viewport_display_state.dart';
+import 'package:void_player/widgets/controls_bar.dart';
+import 'package:void_player/windows/main/main_window_playback.dart';
 import 'package:void_player/windows/main/main_window_state.dart';
 
 void main() {
@@ -57,4 +59,20 @@ void main() {
 
     expect(store.value.viewportState, const ViewportDisplayState.empty());
   });
+
+  test(
+    'default timeline splitter leaves room for all controls bar buttons',
+    () {
+      const state = MainWindowStateModel();
+      final timelineStartWidth =
+          MainWindowPlaybackCoordinator.trackDragHandleWidth +
+          state.timelineControlsWidth +
+          MainWindowPlaybackCoordinator.trackDividerWidth;
+
+      expect(
+        timelineStartWidth,
+        greaterThanOrEqualTo(ControlsBar.minimumStartWidthForFullControls),
+      );
+    },
+  );
 }

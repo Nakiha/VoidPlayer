@@ -9,11 +9,12 @@ enum _ControlsBarItem { zoom, fullscreen, step, play, time }
 
 /// Bottom playback controls bar matching PySide6 ControlsBar (40px height).
 class ControlsBar extends StatelessWidget {
-  static const double _leftPadding = 4.0;
+  static const double _leftPadding = 2.0;
   static const double _zoomWidth = 76.0;
   static const double _iconWidth = 32.0;
   static const double _gapWidth = 4.0;
-  static const double _timeWidth = 144.0;
+  static const double _timeWidth = 138.0;
+  static const double _timelineHorizontalPadding = 4.0;
   static const double _zoomHideWidth =
       _zoomWidth + _gapWidth + _iconWidth * 4 + _gapWidth + _timeWidth;
   static const double _fullscreenHideWidth =
@@ -21,6 +22,8 @@ class ControlsBar extends StatelessWidget {
   static const double _stepHideWidth = _iconWidth * 3 + _gapWidth + _timeWidth;
   static const double _playHideWidth = _iconWidth + _gapWidth + _timeWidth;
   static const double _timeHideWidth = _timeWidth;
+  static const double minimumStartWidthForFullControls =
+      _zoomHideWidth + _leftPadding * 2;
 
   final double zoomRatio;
   final ValueChanged<double> onZoomChanged;
@@ -54,7 +57,7 @@ class ControlsBar extends StatelessWidget {
     required this.durationUs,
     required this.onSeek,
     this.onHoverChanged,
-    this.timelineStartWidth = 349,
+    this.timelineStartWidth = minimumStartWidthForFullControls,
     this.markerUs = const [],
     this.seekMinUs,
     this.seekMaxUs,
@@ -92,7 +95,7 @@ class ControlsBar extends StatelessWidget {
                           value: zoomRatio,
                           onChanged: onZoomChanged,
                         ),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: _gapWidth),
                       ],
                       if (showFullscreen)
                         _ControlIconButton(
@@ -130,7 +133,7 @@ class ControlsBar extends StatelessWidget {
                         ),
                       if (showTime) ...[
                         if (showZoom || showFullscreen || showStep || showPlay)
-                          const SizedBox(width: 4),
+                          const SizedBox(width: _gapWidth),
                         SizedBox(
                           width: _timeWidth,
                           child: ClipRect(
@@ -157,7 +160,9 @@ class ControlsBar extends StatelessWidget {
           // Timeline slider (expanded)
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(
+                horizontal: _timelineHorizontalPadding,
+              ),
               child: TimelineSlider(
                 key: timelineKey,
                 currentUs: currentPtsUs,

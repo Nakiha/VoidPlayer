@@ -38,7 +38,7 @@ class TimelineArea extends StatefulWidget {
     this.maxEffectiveDurationUs = 0,
     this.hoverPtsUs = 0,
     this.sliderHovering = false,
-    this.controlsWidth = 320,
+    this.controlsWidth = 332,
     required this.onControlsWidthChanged,
     this.markerPtsUs = const [],
     this.loopRangeEnabled = false,

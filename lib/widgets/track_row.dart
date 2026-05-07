@@ -165,7 +165,7 @@ class TrackRow extends StatelessWidget {
     required this.onToggleAudio,
     this.isAudible = false,
     this.syncOffsetMs = 0,
-    this.controlsWidth = 320,
+    this.controlsWidth = 332,
     required this.onControlsWidthChanged,
     this.hoverPtsUs = 0,
     this.sliderHovering = false,

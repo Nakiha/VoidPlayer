@@ -29,6 +29,7 @@ public:
                        const GpuIdleWait& wait_gpu_idle,
                        D3D11PreparedFrame& out);
 
+    float nv12_uv_scale_x(size_t slot) const;
     float nv12_uv_scale_y(size_t slot) const;
     void reset_track(size_t slot);
     void move_track(size_t from, size_t to);
@@ -47,6 +48,7 @@ private:
         Microsoft::WRL::ComPtr<ID3D11Texture2D> render_nv12_copy_tex;
         void* last_nv12_tex = nullptr;
         int last_nv12_idx = -1;
+        float nv12_uv_scale_x = 1.0f;
         float nv12_uv_scale_y = 1.0f;
     };
 

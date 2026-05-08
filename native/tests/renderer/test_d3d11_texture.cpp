@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <windows.h>
+#include <cmath>
 #include <vector>
 #include <cstring>
 #include <mutex>
@@ -238,6 +239,45 @@ TEST_CASE("D3D11FramePresenter prepares cached software NV12 frame SRVs",
     REQUIRE(prepared.nv12_uv_srv != nullptr);
 
     presenter.reset_all();
+    cleanup_test_device(dev, hwnd);
+}
+
+TEST_CASE("D3D11FramePresenter crops padded hardware NV12 texture dimensions",
+          "[d3d11][frame_presenter]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::TextureManager tm(dev->device(), dev->context());
+    vr::D3D11FramePresenter presenter(&tm, dev->context());
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = 1152;
+    desc.Height = 2048;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_NV12;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_DECODER | D3D11_BIND_SHADER_RESOURCE;
+    desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+    REQUIRE(SUCCEEDED(dev->device()->CreateTexture2D(&desc, nullptr, &texture)));
+
+    vr::TextureFrame frame;
+    frame.width = 1088;
+    frame.height = 1980;
+    frame.texture_handle = texture.Get();
+    frame.is_ref = true;
+    frame.is_nv12 = true;
+    frame.texture_array_index = 0;
+
+    vr::D3D11PreparedFrame prepared;
+    REQUIRE(presenter.prepare_frame(
+        0, frame, 1920, 1080, [](const char*) {}, prepared));
+    REQUIRE(prepared.nv12_y_srv != nullptr);
+    REQUIRE(prepared.nv12_uv_srv != nullptr);
+    REQUIRE(std::fabs(presenter.nv12_uv_scale_x(0) - (1088.0f / 1152.0f)) < 0.0001f);
+    REQUIRE(std::fabs(presenter.nv12_uv_scale_y(0) - (1980.0f / 2048.0f)) < 0.0001f);
+
     cleanup_test_device(dev, hwnd);
 }
 

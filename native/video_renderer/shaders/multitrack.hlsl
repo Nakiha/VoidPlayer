@@ -76,30 +76,31 @@ cbuffer Constants : register(b0) {
     // === Track aspects (offset 48-63) ===
     float4 u_video_aspect;     // offset 48: aspect ratio for each track
 
-    // === NV12 params (offset 64-95) ===
+    // === NV12 params (offset 64-111) ===
     int u_nv12_mask;           // offset 64: bit i set = track i uses NV12
     float3 _pad1;              // offset 68-79
     float4 u_nv12_uv_scale_y;  // offset 80-95: video_h / texture_h
+    float4 u_nv12_uv_scale_x;  // offset 96-111: video_w / texture_w
 
-    // === Uniform pixel density (offset 96-111) ===
-    float4 u_track_scale;      // offset 96: per-track scale for uniform pixel density
+    // === Uniform pixel density (offset 112-127) ===
+    float4 u_track_scale;      // offset 112: per-track scale for uniform pixel density
 
-    // === Precomputed display params (offset 112-207) ===
+    // === Precomputed display params (offset 128-223) ===
     // Computed on CPU from video_aspect, slot_aspect, zoom_ratio, track_scale, view_offset.
     // The pixel shader uses these directly, avoiding per-pixel recomputation.
-    float4 u_display_offset_x;    // offset 112: display_offset.x for track 0-3
-    float4 u_display_offset_y;    // offset 128: display_offset.y for track 0-3
-    float4 u_inv_display_size_x;  // offset 144: 1/display_size.x for track 0-3
-    float4 u_inv_display_size_y;  // offset 160: 1/display_size.y for track 0-3
-    float4 u_view_offset_uv_x;   // offset 176: view_offset_uv.x for track 0-3
-    float4 u_view_offset_uv_y;   // offset 192: view_offset_uv.y for track 0-3
-    float4 u_background_color;   // offset 208: viewport fill outside video bounds
-    int4 u_color_range;          // offset 224: VideoColorRange per track
-    int4 u_color_matrix;         // offset 240: VideoColorMatrix per track
-    int4 u_color_transfer;       // offset 256: VideoColorTransfer per track
-    int4 u_color_primaries;      // offset 272: VideoColorPrimaries per track
+    float4 u_display_offset_x;    // offset 128: display_offset.x for track 0-3
+    float4 u_display_offset_y;    // offset 144: display_offset.y for track 0-3
+    float4 u_inv_display_size_x;  // offset 160: 1/display_size.x for track 0-3
+    float4 u_inv_display_size_y;  // offset 176: 1/display_size.y for track 0-3
+    float4 u_view_offset_uv_x;    // offset 192: view_offset_uv.x for track 0-3
+    float4 u_view_offset_uv_y;    // offset 208: view_offset_uv.y for track 0-3
+    float4 u_background_color;    // offset 224: viewport fill outside video bounds
+    int4 u_color_range;           // offset 240: VideoColorRange per track
+    int4 u_color_matrix;          // offset 256: VideoColorMatrix per track
+    int4 u_color_transfer;        // offset 272: VideoColorTransfer per track
+    int4 u_color_primaries;       // offset 288: VideoColorPrimaries per track
 };
-// Total: 288 bytes — must match renderer.cpp draw_frame() Constants struct (288 bytes)
+// Total: 304 bytes — must match renderer.cpp draw_frame() Constants struct (304 bytes)
 
 float3 linear_to_srgb(float3 x) {
     x = max(x, 0.0);
@@ -212,8 +213,10 @@ float4 sample_track(int track_idx, float2 uv) {
         float y;
         float2 uv_color;
 
-        // Scale UV.y to crop D3D11VA alignment padding at the bottom of the texture
-        float2 scaled_uv = float2(uv.x, uv.y * u_nv12_uv_scale_y[track_idx]);
+        // Scale UV to crop D3D11VA alignment padding at the right/bottom edge.
+        float2 scaled_uv = float2(
+            uv.x * u_nv12_uv_scale_x[track_idx],
+            uv.y * u_nv12_uv_scale_y[track_idx]);
 
         // SM 5.0 requires literal index for texture array .Sample()
         if (track_idx == 0) {

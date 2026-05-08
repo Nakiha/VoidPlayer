@@ -31,6 +31,13 @@ bool D3D11FramePresenter::prepare_frame(size_t slot,
     return prepare_software_frame(slot, frame, fallback_width, fallback_height, out);
 }
 
+float D3D11FramePresenter::nv12_uv_scale_x(size_t slot) const {
+    if (slot >= tracks_.size()) {
+        return 1.0f;
+    }
+    return tracks_[slot].nv12_uv_scale_x;
+}
+
 float D3D11FramePresenter::nv12_uv_scale_y(size_t slot) const {
     if (slot >= tracks_.size()) {
         return 1.0f;
@@ -125,8 +132,16 @@ bool D3D11FramePresenter::prepare_nv12_frame(size_t slot,
         wait_gpu_idle("D3D11FramePresenter::prepare_nv12_frame");
     }
 
+    if (src_desc.Width > 0 && frame.width > 0 &&
+        static_cast<UINT>(frame.width) < src_desc.Width) {
+        resources.nv12_uv_scale_x =
+            static_cast<float>(frame.width) / static_cast<float>(src_desc.Width);
+    } else {
+        resources.nv12_uv_scale_x = 1.0f;
+    }
+
     if (src_desc.Height > 0 && frame.height > 0 &&
-        src_desc.Height != static_cast<UINT>(frame.height)) {
+        static_cast<UINT>(frame.height) < src_desc.Height) {
         resources.nv12_uv_scale_y =
             static_cast<float>(frame.height) / static_cast<float>(src_desc.Height);
     } else {
@@ -254,6 +269,7 @@ bool D3D11FramePresenter::prepare_software_nv12_frame(size_t slot,
         return false;
     }
 
+    resources.nv12_uv_scale_x = 1.0f;
     resources.nv12_uv_scale_y = 1.0f;
     out.nv12_y_srv = resources.sw_nv12_y_srv.Get();
     out.nv12_uv_srv = resources.sw_nv12_uv_srv.Get();

@@ -136,7 +136,7 @@ bool Renderer::initialize(const RendererConfig& config) {
 
     // Create constant buffer for shader uniforms (must be 16-byte aligned)
     // Layout must match multitrack.hlsl cbuffer Constants
-    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 288,
+    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 304,
                                              d3d_resources_->compiled_shader)) {
         spdlog::error("Renderer: failed to create constant buffer");
         return fail();
@@ -1898,22 +1898,23 @@ void Renderer::draw_frame(const PresentDecision& decision) {
             int nv12_mask;         // offset 64
             float _pad1[3];        // offset 68
             float nv12_uv_scale_y[4]; // offset 80
-            float track_scale[4];  // offset 96: per-track scale for uniform pixel density
+            float nv12_uv_scale_x[4]; // offset 96
+            float track_scale[4];  // offset 112: per-track scale for uniform pixel density
 
-            // Precomputed per-track display params (offset 112-207)
-            float display_offset_x[4];     // offset 112
-            float display_offset_y[4];     // offset 128
-            float inv_display_size_x[4];   // offset 144
-            float inv_display_size_y[4];   // offset 160
-            float view_offset_uv_x[4];    // offset 176
-            float view_offset_uv_y[4];    // offset 192
-            float background_color[4];     // offset 208
-            int color_range[4];            // offset 224
-            int color_matrix[4];           // offset 240
-            int color_transfer[4];         // offset 256
-            int color_primaries[4];        // offset 272
+            // Precomputed per-track display params (offset 128-223)
+            float display_offset_x[4];     // offset 128
+            float display_offset_y[4];     // offset 144
+            float inv_display_size_x[4];   // offset 160
+            float inv_display_size_y[4];   // offset 176
+            float view_offset_uv_x[4];     // offset 192
+            float view_offset_uv_y[4];     // offset 208
+            float background_color[4];     // offset 224
+            int color_range[4];            // offset 240
+            int color_matrix[4];           // offset 256
+            int color_transfer[4];         // offset 272
+            int color_primaries[4];        // offset 288
         };
-        static_assert(sizeof(Constants) == 288, "Constants must be 288 bytes");
+        static_assert(sizeof(Constants) == 304, "Constants must be 304 bytes");
 
         // Snapshot layout state atomically
         LayoutState snap;
@@ -1944,6 +1945,7 @@ void Renderer::draw_frame(const PresentDecision& decision) {
         for (size_t i = 0; i < kMaxTracks; ++i) {
             if (!tracks_[i]) {
                 cb.video_aspect[i] = 1.0f;
+                cb.nv12_uv_scale_x[i] = 1.0f;
                 cb.nv12_uv_scale_y[i] = 1.0f;
                 cb.color_range[i] = VIDEO_COLOR_RANGE_LIMITED;
                 cb.color_matrix[i] = VIDEO_COLOR_MATRIX_BT709;
@@ -1976,10 +1978,16 @@ void Renderer::draw_frame(const PresentDecision& decision) {
                         : VIDEO_COLOR_PRIMARIES_BT709));
             if (decision.frames[i].has_value() && decision.frames[i]->is_nv12) {
                 cb.nv12_mask |= (1 << static_cast<int>(i));
+                cb.nv12_uv_scale_x[i] = frame_presenter_
+                    ? frame_presenter_->nv12_uv_scale_x(i)
+                    : 1.0f;
                 cb.nv12_uv_scale_y[i] = frame_presenter_
                     ? frame_presenter_->nv12_uv_scale_y(i)
                     : 1.0f;
             } else {
+                cb.nv12_uv_scale_x[i] = frame_presenter_
+                    ? frame_presenter_->nv12_uv_scale_x(i)
+                    : 1.0f;
                 cb.nv12_uv_scale_y[i] = frame_presenter_
                     ? frame_presenter_->nv12_uv_scale_y(i)
                     : 1.0f;

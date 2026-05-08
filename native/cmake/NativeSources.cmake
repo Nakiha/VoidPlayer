@@ -33,6 +33,7 @@ set(VOID_D3D11_BACKEND_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/d3d11/device.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/d3d11/frame_presenter.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/d3d11/headless_output.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/d3d11/render_backend.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/d3d11/texture.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/d3d11/shader.cpp"
 )

@@ -1,14 +1,9 @@
 #include "video_renderer/renderer.h"
 #include "audio/audio_output_factory.h"
-#include "embedded_shaders.h"
 #include "video_renderer/audio_coordinator.h"
 #include "video_renderer/seek_coordinator.h"
 #include "video_renderer/shader_constants.h"
-#include "video_renderer/d3d11/device.h"
-#include "video_renderer/d3d11/frame_presenter.h"
-#include "video_renderer/d3d11/headless_output.h"
-#include "video_renderer/d3d11/shader.h"
-#include "video_renderer/d3d11/texture.h"
+#include "video_renderer/d3d11/render_backend.h"
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <algorithm>
@@ -51,13 +46,6 @@ int64_t track_pts_end_us_from_stats(const DemuxStats& stats) {
     }
     return stats.start_time_us + stats.duration_us;
 }
-
-struct Renderer::D3D11RenderResources {
-    CompiledShader compiled_shader;
-    Microsoft::WRL::ComPtr<ID3D11Buffer> vertex_buffer;
-    Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_state;
-    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> cached_rtv;
-};
 
 DecodeDeviceMode default_decode_device_mode(AVCodecID codec_id) {
     if (codec_id == AV_CODEC_ID_AV1 || codec_id == AV_CODEC_ID_VP9) {
@@ -121,84 +109,22 @@ bool Renderer::initialize(const RendererConfig& config) {
         playback_session_started_by_renderer_ = true;
     }
 
-    d3d_device_ = std::make_unique<D3D11Device>();
-    if (config.headless) {
-        auto* adapter = static_cast<IDXGIAdapter*>(config.backend.adapter);
-        if (!d3d_device_->initialize_headless(adapter, target_width_, target_height_)) {
-            spdlog::error("Renderer: failed to initialize D3D11 device (headless)");
-            return fail();
-        }
-        headless_output_ = std::make_unique<D3D11HeadlessOutput>();
-        if (!headless_output_->initialize(d3d_device_->device(), d3d_device_->context(),
-                                          target_width_, target_height_)) {
-            return fail();
-        }
-    } else {
-        if (!d3d_device_->initialize(hwnd_, target_width_, target_height_)) {
-            spdlog::error("Renderer: failed to initialize D3D11 device");
-            return fail();
-        }
-    }
-
-    texture_mgr_ = std::make_unique<TextureManager>(d3d_device_->device(), d3d_device_->context());
-    frame_presenter_ = std::make_unique<D3D11FramePresenter>(texture_mgr_.get(), d3d_device_->context());
-    shader_mgr_ = std::make_unique<ShaderManager>(d3d_device_->device());
-    d3d_resources_ = std::make_unique<D3D11RenderResources>();
-
-    if (!shader_mgr_->compile_from_source(kMultitrackHlsl, "VSMain", "PSMain",
-                                          d3d_resources_->compiled_shader)) {
-        spdlog::error("Renderer: failed to compile shaders");
+    d3d_backend_ = std::make_unique<D3D11RenderBackend>();
+    D3D11RenderBackendConfig backend_config;
+    backend_config.hwnd = hwnd_;
+    backend_config.adapter = config.backend.adapter;
+    backend_config.width = target_width_;
+    backend_config.height = target_height_;
+    backend_config.headless = config.headless;
+    if (!d3d_backend_->initialize(backend_config)) {
         return fail();
     }
-
-    // Create constant buffer for shader uniforms (must be 16-byte aligned)
-    // Layout must match multitrack.hlsl cbuffer Constants
-    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(),
-                                             static_cast<UINT>(kShaderConstantsSize),
-                                             d3d_resources_->compiled_shader)) {
-        spdlog::error("Renderer: failed to create constant buffer");
-        return fail();
-    }
-
-    // Create sampler state
-    D3D11_SAMPLER_DESC sampler_desc = {};
-    sampler_desc.Filter = D3D11_FILTER_MIN_LINEAR_MAG_MIP_POINT;
-    sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
-    sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
-    sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-    sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
-    sampler_desc.MinLOD = 0;
-    sampler_desc.MaxLOD = D3D11_FLOAT32_MAX;
-    HRESULT hr = d3d_device_->device()->CreateSamplerState(
-        &sampler_desc, &d3d_resources_->sampler_state);
-    if (FAILED(hr) || !d3d_resources_->sampler_state) {
-        spdlog::error("Renderer: CreateSamplerState failed: HRESULT {:#x}",
-                      static_cast<unsigned long>(hr));
-        return fail();
-    }
-
-    // Create vertex buffer (fullscreen quad)
-    struct Vertex { float x, y, u, v; };
-    Vertex quad[] = {
-        {-1, -1, 0, 1},  // bottom-left (UV flipped for D3D)
-        {-1,  1, 0, 0},  // top-left
-        { 1, -1, 1, 1},  // bottom-right
-        { 1,  1, 1, 0},  // top-right
-    };
-    D3D11_BUFFER_DESC vb_desc = {};
-    vb_desc.ByteWidth = sizeof(quad);
-    vb_desc.Usage = D3D11_USAGE_IMMUTABLE;
-    vb_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-    vb_desc.CPUAccessFlags = 0;
-    D3D11_SUBRESOURCE_DATA vb_data = {};
-    vb_data.pSysMem = quad;
-    hr = d3d_device_->device()->CreateBuffer(&vb_desc, &vb_data,
-                                             &d3d_resources_->vertex_buffer);
-    if (FAILED(hr) || !d3d_resources_->vertex_buffer) {
-        spdlog::error("Renderer: CreateBuffer(vertex) failed: HRESULT {:#x}",
-                      static_cast<unsigned long>(hr));
-        return fail();
-    }
+    d3d_device_ = d3d_backend_->device();
+    texture_mgr_ = d3d_backend_->texture_manager();
+    frame_presenter_ = d3d_backend_->frame_presenter();
+    headless_output_ = d3d_backend_->headless_output();
+    shader_mgr_ = d3d_backend_->shader_manager();
+    d3d_resources_ = d3d_backend_->resources();
 
     // Create tracks
     for (const auto& path : config.video_paths) {
@@ -293,6 +219,7 @@ void Renderer::shutdown() {
         }
         has_resources = has_resources ||
                         d3d_device_ ||
+                        d3d_backend_ ||
                         texture_mgr_ ||
                         frame_presenter_ ||
                         headless_output_ ||
@@ -354,17 +281,15 @@ void Renderer::release_resources_locked() {
         playback_->stop_session();
         playback_session_started_by_renderer_ = false;
     }
-    shader_mgr_.reset();
-    frame_presenter_.reset();
-    texture_mgr_.reset();
-
-    // ComPtr auto-releases D3D11 render resources.
-    d3d_resources_.reset();
-    headless_output_.reset();
-
-    if (d3d_device_) {
-        d3d_device_->shutdown();
-        d3d_device_.reset();
+    shader_mgr_ = nullptr;
+    frame_presenter_ = nullptr;
+    texture_mgr_ = nullptr;
+    d3d_resources_ = nullptr;
+    headless_output_ = nullptr;
+    d3d_device_ = nullptr;
+    if (d3d_backend_) {
+        d3d_backend_->shutdown();
+        d3d_backend_.reset();
     }
 
     hwnd_ = nullptr;

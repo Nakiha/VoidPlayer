@@ -73,10 +73,10 @@ Source review: `build/chat_native_adv.md` (local build artifact, static review, 
 
 - [ ] 从 `Renderer` 抽出 `TrackPipelineManager`，负责 add/remove/recreate track、demux/decode lifecycle。
 - [x] 抽出 `SeekCoordinator`，集中处理 paused HEVC deferred seek、exact/keyframe gate 和 settle/in-flight 状态；实际 per-track seek 执行仍在 Renderer，等待 TrackPipelineManager 拆分。
-- [ ] 抽出 `D3D11RenderBackend`，收拢 device、shader、presenter、headless output。
+- [x] 抽出 `D3D11RenderBackend`，收拢 device、shader、presenter、headless output 的创建/销毁。
 - [x] 抽出 `AudioCoordinator`，收拢 audio track registration、sync、output backend。
 - [ ] 保留 `Renderer` 作为生命周期和 playback/render state 的薄入口，避免继续堆 flags。
-- [x] 验证：`AudioCoordinator` 拆分已跑 `python dev.py test --native-only`；后续 TrackPipeline/Seek/D3D 拆分继续各自独立测试提交。
+- [x] 验证：`AudioCoordinator`、`SeekCoordinator`、`D3D11RenderBackend` 拆分均已分别跑 `python dev.py test --native-only`；后续 TrackPipeline 拆分继续独立测试提交。
 
 ## Round 8 - Shader Layout And Diagnostics
 

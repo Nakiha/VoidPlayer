@@ -23,6 +23,8 @@ namespace vr {
 class D3D11Device;
 class D3D11FramePresenter;
 class D3D11HeadlessOutput;
+class D3D11RenderBackend;
+struct D3D11RenderResources;
 class ShaderManager;
 class TextureManager;
 class AudioCoordinator;
@@ -350,14 +352,14 @@ private:
     bool playback_session_started_by_renderer_ = false;
     std::unique_ptr<AudioCoordinator> audio_coordinator_;
     std::unique_ptr<SeekCoordinator> seek_coordinator_;
-    std::unique_ptr<D3D11Device> d3d_device_;
-    std::unique_ptr<TextureManager> texture_mgr_;
-    std::unique_ptr<D3D11FramePresenter> frame_presenter_;
-    std::unique_ptr<D3D11HeadlessOutput> headless_output_;
-    std::unique_ptr<ShaderManager> shader_mgr_;
+    std::unique_ptr<D3D11RenderBackend> d3d_backend_;
+    D3D11Device* d3d_device_ = nullptr;
+    TextureManager* texture_mgr_ = nullptr;
+    D3D11FramePresenter* frame_presenter_ = nullptr;
+    D3D11HeadlessOutput* headless_output_ = nullptr;
+    ShaderManager* shader_mgr_ = nullptr;
     std::unique_ptr<RenderSink> render_sink_;
-    struct D3D11RenderResources;
-    std::unique_ptr<D3D11RenderResources> d3d_resources_;
+    D3D11RenderResources* d3d_resources_ = nullptr;
 
     std::array<std::unique_ptr<TrackPipeline>, kMaxTracks> tracks_;
 

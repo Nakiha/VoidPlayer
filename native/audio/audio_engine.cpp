@@ -1,13 +1,12 @@
 #include "audio/audio_engine.h"
+#include "audio/pcm_buffer.h"
 #include <spdlog/spdlog.h>
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstdint>
 #include <cstring>
-#include <deque>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -35,68 +34,6 @@ constexpr int kOutputBufferCount = 4;
 constexpr size_t kPcmCapacityFrames = kOutputSampleRate / 2;  // 500ms
 constexpr size_t kFadeFrames = 480;  // 10ms
 constexpr int kNoTrack = -1;
-
-class PcmBuffer {
-public:
-    void push(const int16_t* samples, size_t frames) {
-        if (!samples || frames == 0) return;
-        std::unique_lock<std::mutex> lock(mutex_);
-        const size_t sample_count = frames * kOutputChannels;
-        for (size_t i = 0; i < sample_count; ++i) {
-            while (!aborted_ && samples_.size() >= kPcmCapacityFrames * kOutputChannels) {
-                not_full_.wait_for(lock, std::chrono::milliseconds(5));
-            }
-            if (aborted_) return;
-            samples_.push_back(samples[i]);
-        }
-        not_empty_.notify_all();
-    }
-
-    void pop(int16_t* dst, size_t frames) {
-        if (!dst) return;
-        std::lock_guard<std::mutex> lock(mutex_);
-        const size_t sample_count = frames * kOutputChannels;
-        for (size_t i = 0; i < sample_count; ++i) {
-            if (samples_.empty()) {
-                dst[i] = 0;
-            } else {
-                dst[i] = samples_.front();
-                samples_.pop_front();
-            }
-        }
-        not_full_.notify_all();
-    }
-
-    void discard(size_t frames) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        const size_t sample_count = std::min(samples_.size(), frames * kOutputChannels);
-        for (size_t i = 0; i < sample_count; ++i) {
-            samples_.pop_front();
-        }
-        not_full_.notify_all();
-    }
-
-    void flush() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        samples_.clear();
-        not_full_.notify_all();
-    }
-
-    void abort() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        aborted_ = true;
-        samples_.clear();
-        not_full_.notify_all();
-        not_empty_.notify_all();
-    }
-
-private:
-    std::mutex mutex_;
-    std::condition_variable not_full_;
-    std::condition_variable not_empty_;
-    std::deque<int16_t> samples_;
-    bool aborted_ = false;
-};
 
 class AudioDecodeThread {
 public:
@@ -166,9 +103,9 @@ public:
         decode_paused_.store(paused);
     }
 
-    void notify_seek(int64_t, SeekType) {
+    void notify_seek(int64_t target_pts_us, SeekType type) {
         seek_pending_.store(true);
-        output_buffer_.flush();
+        output_buffer_.begin_seek(target_pts_us, type);
     }
 
 private:
@@ -232,7 +169,13 @@ private:
                 const_cast<const uint8_t**>(frame->extended_data),
                 frame->nb_samples);
             if (out_samples > 0) {
-                output_buffer_.push(pcm.data(), static_cast<size_t>(out_samples));
+                const size_t out_frames = static_cast<size_t>(out_samples);
+                output_buffer_.push(
+                    pcm.data(),
+                    out_frames,
+                    frame_pts_us(frame),
+                    frames_to_duration_us(out_frames),
+                    output_buffer_.current_serial());
             }
             av_frame_unref(frame);
         }
@@ -277,6 +220,23 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<bool> decode_paused_{true};
     std::atomic<bool> seek_pending_{false};
+
+    int64_t frame_pts_us(const AVFrame* frame) const {
+        if (!frame) return kAudioNoPts;
+        int64_t pts = frame->best_effort_timestamp;
+        if (pts == AV_NOPTS_VALUE) {
+            pts = frame->pts;
+        }
+        if (pts == AV_NOPTS_VALUE) {
+            return kAudioNoPts;
+        }
+        return av_rescale_q(pts, time_base_, AVRational{1, AV_TIME_BASE});
+    }
+
+    static int64_t frames_to_duration_us(size_t frames) {
+        return static_cast<int64_t>(
+            (static_cast<int64_t>(frames) * 1000000LL) / static_cast<int64_t>(kOutputSampleRate));
+    }
 };
 
 struct AudioTrack {
@@ -409,6 +369,36 @@ private:
         return true;
     }
 
+    bool check_wave_result(MMRESULT result, const char* operation) const {
+        if (result == MMSYSERR_NOERROR) {
+            return true;
+        }
+        spdlog::warn("[AudioOutput] {} failed: {}", operation, static_cast<unsigned>(result));
+        return false;
+    }
+
+    bool submit_header(WAVEHDR& header) {
+        MMRESULT mm = waveOutPrepareHeader(wave_out_, &header, sizeof(WAVEHDR));
+        if (!check_wave_result(mm, "waveOutPrepareHeader")) {
+            return false;
+        }
+        mm = waveOutWrite(wave_out_, &header, sizeof(WAVEHDR));
+        if (!check_wave_result(mm, "waveOutWrite")) {
+            const MMRESULT unprepare = waveOutUnprepareHeader(wave_out_, &header, sizeof(WAVEHDR));
+            check_wave_result(unprepare, "waveOutUnprepareHeader after failed write");
+            return false;
+        }
+        return true;
+    }
+
+    void unprepare_header(WAVEHDR& header) {
+        if ((header.dwFlags & WHDR_PREPARED) == 0) {
+            return;
+        }
+        const MMRESULT mm = waveOutUnprepareHeader(wave_out_, &header, sizeof(WAVEHDR));
+        check_wave_result(mm, "waveOutUnprepareHeader");
+    }
+
     void run() {
         if (!open_device()) {
             running_.store(false);
@@ -422,21 +412,25 @@ private:
             render(sample_buffers[i].data(), kOutputBufferFrames);
             headers[i].lpData = reinterpret_cast<LPSTR>(sample_buffers[i].data());
             headers[i].dwBufferLength = static_cast<DWORD>(bytes);
-            waveOutPrepareHeader(wave_out_, &headers[i], sizeof(WAVEHDR));
-            waveOutWrite(wave_out_, &headers[i], sizeof(WAVEHDR));
+            if (!submit_header(headers[i])) {
+                running_.store(false);
+                break;
+            }
         }
 
         while (running_.load()) {
             bool wrote = false;
             for (int i = 0; i < kOutputBufferCount; ++i) {
                 if ((headers[i].dwFlags & WHDR_DONE) == 0) continue;
-                waveOutUnprepareHeader(wave_out_, &headers[i], sizeof(WAVEHDR));
+                unprepare_header(headers[i]);
                 std::memset(&headers[i], 0, sizeof(WAVEHDR));
                 render(sample_buffers[i].data(), kOutputBufferFrames);
                 headers[i].lpData = reinterpret_cast<LPSTR>(sample_buffers[i].data());
                 headers[i].dwBufferLength = static_cast<DWORD>(bytes);
-                waveOutPrepareHeader(wave_out_, &headers[i], sizeof(WAVEHDR));
-                waveOutWrite(wave_out_, &headers[i], sizeof(WAVEHDR));
+                if (!submit_header(headers[i])) {
+                    running_.store(false);
+                    break;
+                }
                 wrote = true;
             }
             if (!wrote) {
@@ -444,13 +438,11 @@ private:
             }
         }
 
-        waveOutReset(wave_out_);
+        check_wave_result(waveOutReset(wave_out_), "waveOutReset");
         for (auto& header : headers) {
-            if (header.dwFlags & WHDR_PREPARED) {
-                waveOutUnprepareHeader(wave_out_, &header, sizeof(WAVEHDR));
-            }
+            unprepare_header(header);
         }
-        waveOutClose(wave_out_);
+        check_wave_result(waveOutClose(wave_out_), "waveOutClose");
         wave_out_ = nullptr;
     }
 
@@ -486,7 +478,8 @@ public:
                    const AVCodecParameters* codec_params,
                    AVRational time_base) {
         if (!codec_params) return false;
-        auto buffer = std::make_shared<PcmBuffer>();
+        auto buffer = std::make_shared<PcmBuffer>(
+            kOutputChannels, kOutputSampleRate, kPcmCapacityFrames);
         auto decoder = std::make_unique<AudioDecodeThread>(
             input_queue, *buffer, codec_params, time_base);
         if (!decoder->start()) {

@@ -122,3 +122,15 @@ struct PresentDecision {
     int64_t current_pts_us;                         // 当前时钟 PTS
 };
 ```
+
+## 音频同步策略
+
+当前播放器仍以外部播放 Clock / 视频渲染时钟为主时钟，音频输出按 track active 状态消费 PCM；Round 5 之后音频 PCM 队列不再只保存裸 samples，而是保存：
+
+- PCM chunk 的 `pts_us`、`duration_us`
+- seek 后的 stream `serial`
+- underrun、丢弃、seek trim、插入 silence、chunk gap drift 等 metrics
+
+`AudioDecodeThread::notify_seek(target_pts_us, type)` 会递增音频 buffer serial，并保留 seek target/type。seek 后旧 serial 的 PCM chunk 会被丢弃；新 chunk 如果早于目标点，会按 PTS 裁掉前缀；Exact seek 如果首个新 chunk 晚于目标点且 gap 较小，会先补一段 silence；Keyframe seek 或较大 gap 则记录 realign metric。
+
+waveOut 仍是临时输出后端，但 `waveOutOpen`、`waveOutPrepareHeader`、`waveOutWrite`、`waveOutUnprepareHeader`、`waveOutReset`、`waveOutClose` 都必须检查返回值并写入 native log。后续迁移 WASAPI shared mode 时，可以复用同一套 `PcmBuffer` 时间模型和 metrics。

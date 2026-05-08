@@ -18,6 +18,7 @@ set(VOID_RENDERER_CORE_SOURCES
 
 set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/audio/audio_engine.cpp"
+    "${VOID_NATIVE_DIR}/audio/pcm_buffer.cpp"
     "${VOID_NATIVE_DIR}/audio/audio_output_factory.cpp"
     "${VOID_NATIVE_DIR}/player/native_player.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"

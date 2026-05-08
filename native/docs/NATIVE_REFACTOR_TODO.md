@@ -53,12 +53,12 @@ Source review: `build/chat_native_adv.md` (local build artifact, static review, 
 
 ## Round 5 - Audio Sync Foundation
 
-- [ ] PCM 输出队列携带 PTS、duration、stream serial/range，不再只传裸 PCM bytes。
-- [ ] `AudioDecodeThread::notify_seek()` 使用 seek target/type，seek 后按目标 PTS 丢弃、补 silence 或重新对齐。
-- [ ] 明确 master clock 策略：音频主时钟或外部 clock，并加入 drift/underrun metrics。
-- [ ] 检查 `waveOutPrepareHeader`、`waveOutWrite`、`waveOutUnprepareHeader`、device open/reset 的返回值并上报错误。
-- [ ] 规划 WASAPI shared mode 迁移；本轮可先完成时间模型，不强行一次替换后端。
-- [ ] 验证：新增 seek/pause/resume/underrun 的 native 测试；影响播放器主流程时跑 seek/timeline UI 脚本。
+- [x] PCM 输出队列携带 PTS、duration、stream serial/range，不再只传裸 PCM bytes。
+- [x] `AudioDecodeThread::notify_seek()` 使用 seek target/type，seek 后按目标 PTS 丢弃、补 silence 或重新对齐。
+- [x] 明确 master clock 策略：音频跟随外部播放 Clock / 视频渲染时钟；新增 underrun、seek trim、silence、gap drift metrics。
+- [x] 检查 `waveOutPrepareHeader`、`waveOutWrite`、`waveOutUnprepareHeader`、device open/reset/close 的返回值并写入 native log。
+- [x] 规划 WASAPI shared mode 迁移；本轮保留 waveOut，但时间模型已抽到 `audio/pcm_buffer.*`，可被 WASAPI 后端复用。
+- [x] 验证：新增 `PcmBuffer` seek/underrun/drift native 测试；本轮未改 Flutter 交互入口，未跑 UI 脚本。
 
 ## Round 6 - D3D Headless Texture And Device-Lost Handling
 

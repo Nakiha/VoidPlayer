@@ -103,10 +103,12 @@ Source review: `build/chat_native_adv.md` (local build artifact, static review, 
 
 ## 后续测试矩阵
 
-- [ ] Windows Debug/Release clean build。
-- [ ] `BUILD_PYTHON=OFF`、`BUILD_FFI=ON`、`BUILD_TESTS=ON/OFF` 组合。
+- [x] Windows Debug/Release native build/test；本轮已跑 `python dev.py test --native-only` 与 `python dev.py test --native-only --debug`。
+- [x] `BUILD_PYTHON=OFF`、`BUILD_FFI=ON`、`BUILD_TESTS=ON/OFF` 组合；`.github/workflows/native.yml` 已有 clean Windows runner configure matrix。
 - [ ] clang-cl ASan 或等价内存检查覆盖非 D3D 核心模块。
 - [ ] MSVC `/analyze` 或 clang-tidy 覆盖 media/buffer/sync/FFI。
 - [ ] fuzz/property tests 覆盖 `BidiRingBuffer`、`PacketQueue`、analysis parsers。
 - [ ] failure injection 覆盖 FFmpeg open fail、unsupported pixel format、D3D device removed、shared handle fail、shader compile fail、audio device open fail。
+  已覆盖 FFmpeg open fail、unsupported pixel format、D3D device removed、shared handle fail、shader compile fail；audio device open fail 还需要可注入 audio backend。
 - [ ] ABI tests 覆盖 struct size、enum 值、null pointer、invalid enum、invalid UTF-8/path、double destroy。
+  已覆盖 struct size、ABI version、null pointer、invalid enum、double destroy；invalid UTF-8/path 需要后续 FFI path API 后补。

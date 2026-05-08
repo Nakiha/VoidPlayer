@@ -7,6 +7,7 @@ import 'analysis_manager.dart';
 abstract class AnalysisToolbarDataSource implements Listenable {
   AnalysisState get state;
   AnalysisError? get error;
+  String? get activeOverlayHash;
   AnalysisTrackGenerationStatus? statusForPath(String path);
   Future<AnalysisCacheSnapshot> snapshot();
   Future<Map<String, int>> currentBytesByHash(Set<String> hashes);
@@ -27,6 +28,9 @@ class DefaultAnalysisToolbarDataSource implements AnalysisToolbarDataSource {
 
   @override
   AnalysisError? get error => analysisManager.error;
+
+  @override
+  String? get activeOverlayHash => analysisManager.activeOverlayHash;
 
   @override
   void addListener(VoidCallback listener) {

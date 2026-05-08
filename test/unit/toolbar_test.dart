@@ -14,6 +14,24 @@ import 'package:void_player/widgets/toolbar.dart';
 
 class _FakeAnalysisToolbarDataSource extends ChangeNotifier
     implements AnalysisToolbarDataSource {
+  final AnalysisCacheSnapshot cacheSnapshot;
+  final Map<String, int> bytesByHash;
+
+  _FakeAnalysisToolbarDataSource({
+    this.cacheSnapshot = const AnalysisCacheSnapshot(
+      path: '',
+      totalBytes: 0,
+      indexedBytes: 0,
+      unindexedBytes: 0,
+      maxBytes: 0,
+      entries: [],
+    ),
+    this.bytesByHash = const {},
+  });
+
+  @override
+  String? get activeOverlayHash => null;
+
   @override
   AnalysisState get state => AnalysisState.idle;
 
@@ -24,20 +42,11 @@ class _FakeAnalysisToolbarDataSource extends ChangeNotifier
   AnalysisTrackGenerationStatus? statusForPath(String path) => null;
 
   @override
-  Future<AnalysisCacheSnapshot> snapshot() => Future.value(
-    const AnalysisCacheSnapshot(
-      path: '',
-      totalBytes: 0,
-      indexedBytes: 0,
-      unindexedBytes: 0,
-      maxBytes: 0,
-      entries: [],
-    ),
-  );
+  Future<AnalysisCacheSnapshot> snapshot() => Future.value(cacheSnapshot);
 
   @override
   Future<Map<String, int>> currentBytesByHash(Set<String> hashes) =>
-      Future.value(const {});
+      Future.value(bytesByHash);
 
   @override
   String formatBytes(int bytes) => '$bytes B';
@@ -57,6 +66,9 @@ void main() {
     required VoidCallback onProfiler,
     Future<void> Function()? onOpenFile,
     Future<void> Function(String url)? onOpenNetworkMedia,
+    Future<void> Function(TrackEntry track, String hash)? onOverlayToggle,
+    AnalysisToolbarDataSource? analysisDataSource,
+    bool? analysisEnabled,
     ActionRegistry? actionRegistry,
     VoidCallback? onTogglePlay,
   }) {
@@ -73,10 +85,13 @@ void main() {
         onOpenSshRemoteMedia: (_) async {},
         onMediaInfo: () {},
         onAnalysis: () async {},
+        onAnalysisOverlayToggle: onOverlayToggle ?? (_, _) async {},
         onProfiler: onProfiler,
         onSettings: () {},
         tracks: tracks,
-        analysisDataSource: _FakeAnalysisToolbarDataSource(),
+        analysisDataSource:
+            analysisDataSource ?? _FakeAnalysisToolbarDataSource(),
+        analysisEnabled: analysisEnabled ?? tracks.isNotEmpty,
       ),
     );
     return MaterialApp(
@@ -121,6 +136,54 @@ void main() {
 
     await tester.tap(find.text('Add Media'));
     expect(openFileTaps, 1);
+  });
+
+  testWidgets('analysis panel enables overlay only for cached tracks', (
+    tester,
+  ) async {
+    var overlayTaps = 0;
+    String? overlayHash;
+    final openedTrack = track();
+
+    await tester.pumpWidget(
+      buildToolbar(
+        tracks: [openedTrack],
+        onProfiler: () {},
+        analysisDataSource: _FakeAnalysisToolbarDataSource(
+          cacheSnapshot: AnalysisCacheSnapshot(
+            path: '',
+            totalBytes: 4096,
+            indexedBytes: 4096,
+            unindexedBytes: 0,
+            maxBytes: 0,
+            entries: [
+              AnalysisCacheEntryStats(
+                hash: 'hash1',
+                name: openedTrack.fileName,
+                videoPath: openedTrack.path,
+                videoBytes: 1024,
+                analysisBytes: 4096,
+                cachedAt: null,
+                lastAccessedAt: null,
+                complete: true,
+              ),
+            ],
+          ),
+          bytesByHash: const {'hash1': 4096},
+        ),
+        onOverlayToggle: (track, hash) async {
+          overlayTaps++;
+          overlayHash = hash;
+        },
+      ),
+    );
+
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.analytics_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.grid_on));
+
+    expect(overlayTaps, 1);
+    expect(overlayHash, 'hash1');
   });
 
   testWidgets('canceling network stream dialog restores space shortcut', (

@@ -27,6 +27,8 @@ class AppToolBar extends StatelessWidget {
   final Future<void> Function(String remotePath) onOpenSshRemoteMedia;
   final VoidCallback onMediaInfo;
   final Future<void> Function() onAnalysis;
+  final Future<void> Function(TrackEntry track, String hash)
+  onAnalysisOverlayToggle;
   final VoidCallback onProfiler;
   final VoidCallback onSettings;
   final List<TrackEntry> tracks;
@@ -45,6 +47,7 @@ class AppToolBar extends StatelessWidget {
     required this.onOpenSshRemoteMedia,
     required this.onMediaInfo,
     required this.onAnalysis,
+    required this.onAnalysisOverlayToggle,
     required this.onProfiler,
     required this.onSettings,
     required this.tracks,
@@ -103,6 +106,7 @@ class AppToolBar extends StatelessWidget {
             tracks: tracks,
             dataSource: analysisDataSource,
             onPressed: onAnalysis,
+            onOverlayToggle: onAnalysisOverlayToggle,
           ),
           const SizedBox(width: 4),
           // Settings button
@@ -350,12 +354,14 @@ class _AnalysisButton extends StatefulWidget {
   final List<TrackEntry> tracks;
   final AnalysisToolbarDataSource dataSource;
   final Future<void> Function() onPressed;
+  final Future<void> Function(TrackEntry track, String hash) onOverlayToggle;
 
   const _AnalysisButton({
     required this.enabled,
     required this.tracks,
     required this.dataSource,
     required this.onPressed,
+    required this.onOverlayToggle,
   });
 
   @override
@@ -504,6 +510,7 @@ class _AnalysisButtonState extends State<_AnalysisButton>
                 child: _AnalysisHoverPanel(
                   tracks: widget.tracks,
                   dataSource: widget.dataSource,
+                  onOverlayToggle: widget.onOverlayToggle,
                 ),
               ),
             ),
@@ -571,8 +578,13 @@ class _AnalysisButtonState extends State<_AnalysisButton>
 class _AnalysisHoverPanel extends StatefulWidget {
   final List<TrackEntry> tracks;
   final AnalysisToolbarDataSource dataSource;
+  final Future<void> Function(TrackEntry track, String hash) onOverlayToggle;
 
-  const _AnalysisHoverPanel({required this.tracks, required this.dataSource});
+  const _AnalysisHoverPanel({
+    required this.tracks,
+    required this.dataSource,
+    required this.onOverlayToggle,
+  });
 
   @override
   State<_AnalysisHoverPanel> createState() => _AnalysisHoverPanelState();
@@ -693,6 +705,7 @@ class _AnalysisHoverPanelState extends State<_AnalysisHoverPanel> {
                         snapshot: snapshot,
                         bytesByHash: _bytesByHash,
                         dataSource: widget.dataSource,
+                        onOverlayToggle: widget.onOverlayToggle,
                       ),
                     );
                   },
@@ -734,12 +747,14 @@ class _AnalysisTrackCacheTile extends StatelessWidget {
   final AnalysisCacheSnapshot? snapshot;
   final Map<String, int> bytesByHash;
   final AnalysisToolbarDataSource dataSource;
+  final Future<void> Function(TrackEntry track, String hash) onOverlayToggle;
 
   const _AnalysisTrackCacheTile({
     required this.track,
     required this.snapshot,
     required this.bytesByHash,
     required this.dataSource,
+    required this.onOverlayToggle,
   });
 
   @override
@@ -756,6 +771,8 @@ class _AnalysisTrackCacheTile extends StatelessWidget {
     final failed = status?.isError ?? false;
     final cached =
         (cacheEntry?.complete ?? false) || (status?.isCached ?? false);
+    final active = hash != null && dataSource.activeOverlayHash == hash;
+    final canToggleOverlay = cached && hash != null && !working;
     final color = failed
         ? theme.colorScheme.error
         : cached
@@ -810,6 +827,16 @@ class _AnalysisTrackCacheTile extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+          const SizedBox(width: 8),
+          _ToolbarToggleButton(
+            active: active,
+            enabled: canToggleOverlay,
+            onPressed: () => unawaited(onOverlayToggle(track, hash!)),
+            icon: Icons.grid_on,
+            tooltip: active
+                ? l.analysisOverlayDeactivate
+                : l.analysisOverlayActivate,
           ),
           const SizedBox(width: 8),
           Text(

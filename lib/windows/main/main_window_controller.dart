@@ -212,6 +212,7 @@ class MainWindowController {
           stateStore.setMediaInfoVisible(!_mediaInfoVisible);
         },
         onAnalysis: analysisCoordinator.triggerAnalysis,
+        onAnalysisOverlayToggle: analysisCoordinator.toggleOverlay,
         onProfiler: () => stateStore.setProfilerVisible(!_profilerVisible),
         onSettings: () => stateStore.setSettingsVisible(!_settingsVisible),
       ),

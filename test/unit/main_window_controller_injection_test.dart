@@ -22,7 +22,20 @@ class _FakeMainWindowPlatform implements MainWindowPlatform {
 
 class _FakeAnalysisGenerationService implements AnalysisGenerationService {
   @override
+  String? get activeOverlayHash => null;
+
+  @override
   Future<String?> ensureGenerated(String videoPath) => Future.value(null);
+
+  @override
+  Future<bool> activateOverlay(
+    String hash, {
+    required String name,
+    required String path,
+  }) => Future.value(false);
+
+  @override
+  void deactivateOverlay() {}
 }
 
 class _FakePlaybackPreferences implements PlaybackPreferences {
@@ -78,6 +91,9 @@ class _FakeAnalysisToolbarDataSource implements AnalysisToolbarDataSource {
 
   @override
   AnalysisError? get error => null;
+
+  @override
+  String? get activeOverlayHash => null;
 
   @override
   void addListener(VoidCallback listener) {}

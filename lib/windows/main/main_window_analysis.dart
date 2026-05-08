@@ -40,6 +40,12 @@ class MainWindowAnalysisCoordinator {
     return _enqueueOperation(_triggerAnalysisImpl);
   }
 
+  Future<void> toggleOverlay(TrackEntry track, String hash) {
+    return _enqueueOperation(
+      (serial) => _toggleOverlayImpl(serial, track, hash),
+    );
+  }
+
   Future<void> _triggerAnalysisImpl(int serial) async {
     if (trackManager.isEmpty) return;
     if (analysisProcesses.activateAnalysisWindows()) return;
@@ -73,6 +79,28 @@ class MainWindowAnalysisCoordinator {
     if (_disposed) return;
     analysisProcesses.accentColorValue = colorValue;
     _ipcServer.publishAccentColor(colorValue);
+  }
+
+  Future<void> _toggleOverlayImpl(
+    int serial,
+    TrackEntry track,
+    String hash,
+  ) async {
+    final stillOpen = trackManager.entries.any(
+      (entry) => entry.fileId == track.fileId && entry.path == track.path,
+    );
+    if (!stillOpen) return;
+    if (analysisGeneration.activeOverlayHash == hash) {
+      analysisGeneration.deactivateOverlay();
+      return;
+    }
+    final activated = await analysisGeneration.activateOverlay(
+      hash,
+      name: track.fileName,
+      path: track.path,
+    );
+    if (!_alive(serial) || !activated) return;
+    _hashesByFileId[track.fileId] = hash;
   }
 
   Future<void> _publishTrackSnapshotImpl(int serial) async {

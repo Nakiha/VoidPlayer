@@ -144,6 +144,8 @@ class MainWindowToolbarActions {
   final Future<void> Function(String remotePath) onOpenSshRemoteMedia;
   final VoidCallback onMediaInfo;
   final Future<void> Function() onAnalysis;
+  final Future<void> Function(TrackEntry track, String hash)
+  onAnalysisOverlayToggle;
   final VoidCallback onProfiler;
   final VoidCallback onSettings;
 
@@ -154,6 +156,7 @@ class MainWindowToolbarActions {
     required this.onOpenSshRemoteMedia,
     required this.onMediaInfo,
     required this.onAnalysis,
+    required this.onAnalysisOverlayToggle,
     required this.onProfiler,
     required this.onSettings,
   });

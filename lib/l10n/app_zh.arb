@@ -175,6 +175,8 @@
   "analysisCacheStatusGenerating": "生成中 {progress}% - {size}",
   "analysisCacheStatusLoading": "正在加载缓存",
   "analysisCacheStatusFailed": "分析缓存失败",
+  "analysisOverlayActivate": "启用码流遮罩",
+  "analysisOverlayDeactivate": "关闭码流遮罩",
 
   "mediaInfoNoTracks": "当前没有打开的轨道",
   "mediaInfoStartTime": "起始时间",

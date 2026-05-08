@@ -68,7 +68,14 @@ class AnalysisTrackGenerationStatus {
 }
 
 abstract class AnalysisGenerationService {
+  String? get activeOverlayHash;
   Future<String?> ensureGenerated(String videoPath);
+  Future<bool> activateOverlay(
+    String hash, {
+    required String name,
+    required String path,
+  });
+  void deactivateOverlay();
 }
 
 /// Dart-side state machine for the analysis generation + loading flow.
@@ -100,6 +107,7 @@ class AnalysisManager extends ChangeNotifier
   AnalysisError? _error;
   String? _generatingFileName;
   String? _loadedHash;
+  String? _activeOverlayHash;
   FileLockHandle? _loadedHashLock;
   final Map<String, Future<String?>> _ensureGeneratedInFlightByPath = {};
   final Map<String, AnalysisTrackGenerationStatus> _trackStatusByPath = {};
@@ -111,6 +119,8 @@ class AnalysisManager extends ChangeNotifier
   AnalysisError? get error => _error;
   String? get generatingFileName => _generatingFileName;
   String? get loadedHash => _loadedHash;
+  @override
+  String? get activeOverlayHash => _activeOverlayHash;
   bool get isLoaded => _state == AnalysisState.loaded;
 
   AnalysisTrackGenerationStatus? statusForPath(String path) =>
@@ -428,11 +438,49 @@ class AnalysisManager extends ChangeNotifier
     return true;
   }
 
+  @override
+  Future<bool> activateOverlay(
+    String hash, {
+    required String name,
+    required String path,
+  }) async {
+    final loaded = _loadedHash == hash
+        ? true
+        : await loadAnalysisHash(hash, name: name, path: path);
+    if (!loaded) return false;
+    _activeOverlayHash = hash;
+    AnalysisFfi.setOverlay(
+      showCuGrid: true,
+      showPredMode: true,
+      showQpHeatmap: true,
+    );
+    notifyListeners();
+    return true;
+  }
+
+  @override
+  void deactivateOverlay() {
+    if (_activeOverlayHash == null) return;
+    _activeOverlayHash = null;
+    AnalysisFfi.setOverlay(
+      showCuGrid: false,
+      showPredMode: false,
+      showQpHeatmap: false,
+    );
+    notifyListeners();
+  }
+
   void unload() {
     _ensureAndLoadSerial++;
     _stateSerial++;
     _loadSerial++;
     _ensureGeneratedInFlightByPath.clear();
+    _activeOverlayHash = null;
+    AnalysisFfi.setOverlay(
+      showCuGrid: false,
+      showPredMode: false,
+      showQpHeatmap: false,
+    );
     if (_state == AnalysisState.loaded) {
       _native.unload();
     }

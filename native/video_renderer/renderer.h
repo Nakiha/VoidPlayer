@@ -26,6 +26,7 @@ class D3D11HeadlessOutput;
 class ShaderManager;
 class TextureManager;
 class AudioCoordinator;
+class SeekCoordinator;
 
 /// Layout mode constants (match HLSL defines)
 constexpr int LAYOUT_SIDE_BY_SIDE = 0;
@@ -279,6 +280,7 @@ private:
     bool apply_deferred_paused_hevc_seek_locked();
     bool apply_loop_range_locked();
     void mark_paused_hevc_seek_preview_drawn_locked();
+    bool has_hevc_hw_track_locked() const;
 
     /// Apply pending resize on the render thread.
     void do_resize(int width, int height);
@@ -347,6 +349,7 @@ private:
     PlaybackController* playback_ = nullptr;
     bool playback_session_started_by_renderer_ = false;
     std::unique_ptr<AudioCoordinator> audio_coordinator_;
+    std::unique_ptr<SeekCoordinator> seek_coordinator_;
     std::unique_ptr<D3D11Device> d3d_device_;
     std::unique_ptr<TextureManager> texture_mgr_;
     std::unique_ptr<D3D11FramePresenter> frame_presenter_;
@@ -380,15 +383,6 @@ private:
     float background_color_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     bool preview_drawn_ = false;
     bool was_buffering_ = false;
-    struct DeferredSeekRequest {
-        bool pending = false;
-        int64_t target_pts_us = 0;
-        SeekType type = SeekType::Keyframe;
-    };
-    DeferredSeekRequest deferred_paused_hevc_seek_;
-    bool paused_hevc_seek_in_flight_ = false;
-    bool paused_hevc_initial_settle_done_ = false;
-    std::chrono::steady_clock::time_point paused_hevc_seek_settle_until_{};
     struct LoopRangeState {
         bool enabled = false;
         int64_t start_us = 0;

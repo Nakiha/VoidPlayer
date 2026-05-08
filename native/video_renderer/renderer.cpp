@@ -2,6 +2,7 @@
 #include "audio/audio_output_factory.h"
 #include "embedded_shaders.h"
 #include "video_renderer/audio_coordinator.h"
+#include "video_renderer/seek_coordinator.h"
 #include "video_renderer/d3d11/device.h"
 #include "video_renderer/d3d11/frame_presenter.h"
 #include "video_renderer/d3d11/headless_output.h"
@@ -67,11 +68,13 @@ DecodeDeviceMode default_decode_device_mode(AVCodecID codec_id) {
 Renderer::Renderer()
     : owned_playback_(std::make_unique<PlaybackController>(create_default_audio_output))
     , playback_(owned_playback_.get())
-    , audio_coordinator_(std::make_unique<AudioCoordinator>(*playback_)) {}
+    , audio_coordinator_(std::make_unique<AudioCoordinator>(*playback_))
+    , seek_coordinator_(std::make_unique<SeekCoordinator>(kPausedHevcSeekSettleDelay)) {}
 
 Renderer::Renderer(PlaybackController& playback)
     : playback_(&playback)
-    , audio_coordinator_(std::make_unique<AudioCoordinator>(*playback_)) {}
+    , audio_coordinator_(std::make_unique<AudioCoordinator>(*playback_))
+    , seek_coordinator_(std::make_unique<SeekCoordinator>(kPausedHevcSeekSettleDelay)) {}
 
 Renderer::~Renderer() {
     shutdown();
@@ -381,10 +384,9 @@ void Renderer::release_resources_locked() {
     }
     preview_drawn_ = false;
     was_buffering_ = false;
-    deferred_paused_hevc_seek_ = DeferredSeekRequest();
-    paused_hevc_seek_in_flight_ = false;
-    paused_hevc_initial_settle_done_ = false;
-    paused_hevc_seek_settle_until_ = std::chrono::steady_clock::time_point{};
+    if (seek_coordinator_) {
+        seek_coordinator_->reset();
+    }
     loop_range_ = LoopRangeState();
     pending_width_.store(0);
     pending_height_.store(0);
@@ -411,10 +413,9 @@ void Renderer::play() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (!initialized_ || playing_) return;
-    deferred_paused_hevc_seek_.pending = false;
-    paused_hevc_seek_in_flight_ = false;
-    paused_hevc_initial_settle_done_ = false;
-    paused_hevc_seek_settle_until_ = std::chrono::steady_clock::time_point{};
+    if (seek_coordinator_) {
+        seek_coordinator_->reset();
+    }
 
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks_[i]) continue;
@@ -598,58 +599,30 @@ void Renderer::seek_internal(int64_t target_pts_us,
 }
 
 bool Renderer::should_defer_paused_hevc_seek_locked(int64_t target_pts_us, SeekType type) {
-    if (playing_.load() || type != SeekType::Exact) {
+    if (!seek_coordinator_) {
         return false;
     }
 
-    bool has_hevc_hw_track = false;
-    for (const auto& track : tracks_) {
-        if (!track) continue;
-        if (track->decode_thread->is_hardware_decode_enabled() &&
-            track->decode_thread->codec_id() == AV_CODEC_ID_HEVC) {
-            has_hevc_hw_track = true;
-            break;
-        }
+    const bool deferred = seek_coordinator_->should_defer_paused_hevc_seek(
+        playing_.load(), has_hevc_hw_track_locked(), target_pts_us, type);
+    if (deferred) {
+        spdlog::info("[Renderer] Deferring paused HEVC HW seek to {:.3f}s", target_pts_us / 1e6);
     }
-    if (!has_hevc_hw_track) {
-        return false;
-    }
-
-    const auto now = std::chrono::steady_clock::now();
-    if (!paused_hevc_seek_in_flight_ && now >= paused_hevc_seek_settle_until_) {
-        paused_hevc_seek_in_flight_ = true;
-        deferred_paused_hevc_seek_.pending = false;
-        return false;
-    }
-
-    deferred_paused_hevc_seek_.pending = true;
-    deferred_paused_hevc_seek_.target_pts_us = target_pts_us;
-    deferred_paused_hevc_seek_.type = type;
-    spdlog::info("[Renderer] Deferring paused HEVC HW seek to {:.3f}s (in_flight={}, settle_remaining_ms={})",
-                 target_pts_us / 1e6,
-                 paused_hevc_seek_in_flight_,
-                 now < paused_hevc_seek_settle_until_
-                     ? static_cast<long long>(
-                           std::chrono::duration_cast<std::chrono::milliseconds>(
-                               paused_hevc_seek_settle_until_ - now).count())
-                     : 0LL);
-    return true;
+    return deferred;
 }
 
 bool Renderer::apply_deferred_paused_hevc_seek_locked() {
-    if (playing_.load() ||
-        !deferred_paused_hevc_seek_.pending ||
-        paused_hevc_seek_in_flight_ ||
-        std::chrono::steady_clock::now() < paused_hevc_seek_settle_until_) {
+    if (!seek_coordinator_) {
         return false;
     }
 
-    auto deferred = deferred_paused_hevc_seek_;
-    deferred_paused_hevc_seek_.pending = false;
-    paused_hevc_seek_in_flight_ = true;
+    const auto deferred = seek_coordinator_->take_deferred_paused_hevc_seek(playing_.load());
+    if (!deferred.has_value()) {
+        return false;
+    }
     spdlog::info("[Renderer] Applying deferred paused HEVC HW seek to {:.3f}s",
-                 deferred.target_pts_us / 1e6);
-    seek_internal(deferred.target_pts_us, deferred.type, false, true);
+                 deferred->target_pts_us / 1e6);
+    seek_internal(deferred->target_pts_us, deferred->type, false, true);
     return true;
 }
 
@@ -673,33 +646,26 @@ bool Renderer::apply_loop_range_locked() {
 }
 
 void Renderer::mark_paused_hevc_seek_preview_drawn_locked() {
-    bool has_hevc_hw_track = false;
+    if (!seek_coordinator_) {
+        return;
+    }
+    const bool was_in_flight = seek_coordinator_->paused_hevc_seek_in_flight();
+    seek_coordinator_->mark_paused_hevc_preview_drawn(has_hevc_hw_track_locked());
+    if (was_in_flight && !seek_coordinator_->paused_hevc_seek_in_flight()) {
+        spdlog::info("[Renderer] Paused HEVC HW seek preview ready, settle window {}ms",
+                     static_cast<long long>(kPausedHevcSeekSettleDelay.count()));
+    }
+}
+
+bool Renderer::has_hevc_hw_track_locked() const {
     for (const auto& track : tracks_) {
         if (!track) continue;
         if (track->decode_thread->is_hardware_decode_enabled() &&
             track->decode_thread->codec_id() == AV_CODEC_ID_HEVC) {
-            has_hevc_hw_track = true;
-            break;
+            return true;
         }
     }
-    if (!has_hevc_hw_track) {
-        return;
-    }
-
-    if (paused_hevc_seek_in_flight_) {
-        paused_hevc_seek_in_flight_ = false;
-        paused_hevc_seek_settle_until_ = std::chrono::steady_clock::now() + kPausedHevcSeekSettleDelay;
-        spdlog::info("[Renderer] Paused HEVC HW seek preview ready, settle window {}ms",
-                     static_cast<long long>(kPausedHevcSeekSettleDelay.count()));
-        return;
-    }
-
-    if (!paused_hevc_initial_settle_done_) {
-        paused_hevc_initial_settle_done_ = true;
-        paused_hevc_seek_settle_until_ = std::chrono::steady_clock::now() + kPausedHevcSeekSettleDelay;
-        spdlog::info("[Renderer] Initial paused HEVC HW preview ready, settle window {}ms",
-                     static_cast<long long>(kPausedHevcSeekSettleDelay.count()));
-    }
+    return false;
 }
 
 bool Renderer::build_step_forward_decision_locked(PresentDecision& decision) const {

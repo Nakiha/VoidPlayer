@@ -71,6 +71,7 @@ native/
 Renderer                          # 主入口，生命周期管理
 ├── Clock                         # 可注入时间源，PTS 时钟
 ├── AudioCoordinator              # 音频轨注册 / seek / pause 桥接
+├── SeekCoordinator               # paused HEVC deferred seek 策略状态
 ├── D3D11Device                   # GPU 设备 + 可选窗口 SwapChain
 ├── ShaderManager                 # HLSL 编译
 ├── D3D11FramePresenter           # 每轨 frame 的 SRV/上传/NV12 copy 缓存

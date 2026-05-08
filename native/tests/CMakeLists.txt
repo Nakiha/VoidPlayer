@@ -6,6 +6,7 @@ add_executable(video_renderer_tests
     renderer/test_clock.cpp
     renderer/test_packet_queue.cpp
     renderer/test_pcm_buffer.cpp
+    renderer/test_seek_coordinator.cpp
     renderer/test_bidi_ring_buffer.cpp
     renderer/test_track_buffer.cpp
     renderer/test_demux_thread.cpp

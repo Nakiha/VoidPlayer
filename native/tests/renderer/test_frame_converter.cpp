@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "video_renderer/decode/frame_converter.h"
+#include <cstdint>
 #include <cstring>
 #include <mutex>
 #include <utility>
@@ -50,6 +51,15 @@ TEST_CASE("FrameConverter: init_software NV12 succeeds", "[frame_converter]") {
     REQUIRE(converter.is_hardware() == false);
 }
 
+TEST_CASE("FrameConverter: init_software common 4:2:2 and 4:4:4 formats succeeds",
+          "[frame_converter]") {
+    FrameConverter converter;
+    REQUIRE(converter.init_software(1920, 1080, AV_PIX_FMT_YUV422P));
+    REQUIRE(converter.init_software(1920, 1080, AV_PIX_FMT_YUV444P));
+    REQUIRE(converter.init_software(1920, 1080, AV_PIX_FMT_YUV422P10LE));
+    REQUIRE(converter.init_software(1920, 1080, AV_PIX_FMT_YUV444P10LE));
+}
+
 TEST_CASE("FrameConverter: convert white YUV420P frame", "[frame_converter]") {
     FrameConverter converter;
     REQUIRE(converter.init_software(64, 64, AV_PIX_FMT_YUV420P));
@@ -96,6 +106,85 @@ TEST_CASE("FrameConverter: convert white YUV420P frame", "[frame_converter]") {
     REQUIRE(nv12[64 * 64 + 1] == 128);
 
     // Clean up (cpu_data shared_ptr handles CPU buffer lifetime)
+    av_frame_free(&frame);
+}
+
+TEST_CASE("FrameConverter: converts YUV422P to NV12 with vertical chroma downsample",
+          "[frame_converter][color]") {
+    FrameConverter converter;
+    REQUIRE(converter.init_software(4, 4, AV_PIX_FMT_YUV422P));
+
+    AVFrame* frame = av_frame_alloc();
+    REQUIRE(frame != nullptr);
+    frame->format = AV_PIX_FMT_YUV422P;
+    frame->width = 4;
+    frame->height = 4;
+    REQUIRE(av_frame_get_buffer(frame, 0) >= 0);
+
+    for (int y = 0; y < 4; ++y) {
+        memset(frame->data[0] + y * frame->linesize[0], 64, 4);
+    }
+    const uint8_t u_rows[4][2] = {{10, 20}, {30, 40}, {50, 60}, {70, 80}};
+    const uint8_t v_rows[4][2] = {{100, 110}, {120, 130}, {140, 150}, {160, 170}};
+    for (int y = 0; y < 4; ++y) {
+        memcpy(frame->data[1] + y * frame->linesize[1], u_rows[y], 2);
+        memcpy(frame->data[2] + y * frame->linesize[2], v_rows[y], 2);
+    }
+
+    auto converted = converter.convert(frame);
+    REQUIRE(converted.has_value());
+    TextureFrame result = std::move(*converted);
+    REQUIRE(result.is_nv12);
+    REQUIRE_FALSE(result.is_p010);
+    REQUIRE(result.cpu_nv12_storage() != nullptr);
+
+    const auto* nv12 = static_cast<const uint8_t*>(result.texture_handle);
+    const size_t uv_offset = static_cast<size_t>(result.cpu_nv12_storage()->y_stride) * 4;
+    REQUIRE(nv12[uv_offset + 0] == 20);
+    REQUIRE(nv12[uv_offset + 1] == 110);
+    REQUIRE(nv12[uv_offset + 2] == 30);
+    REQUIRE(nv12[uv_offset + 3] == 120);
+    REQUIRE(nv12[uv_offset + 4] == 60);
+    REQUIRE(nv12[uv_offset + 5] == 150);
+    REQUIRE(nv12[uv_offset + 6] == 70);
+    REQUIRE(nv12[uv_offset + 7] == 160);
+
+    av_frame_free(&frame);
+}
+
+TEST_CASE("FrameConverter: converts NV21 to NV12 channel order",
+          "[frame_converter][color]") {
+    FrameConverter converter;
+    REQUIRE(converter.init_software(4, 4, AV_PIX_FMT_NV21));
+
+    AVFrame* frame = av_frame_alloc();
+    REQUIRE(frame != nullptr);
+    frame->format = AV_PIX_FMT_NV21;
+    frame->width = 4;
+    frame->height = 4;
+    REQUIRE(av_frame_get_buffer(frame, 0) >= 0);
+
+    for (int y = 0; y < 4; ++y) {
+        memset(frame->data[0] + y * frame->linesize[0], 64, 4);
+    }
+    for (int y = 0; y < 2; ++y) {
+        uint8_t* row = frame->data[1] + y * frame->linesize[1];
+        row[0] = 200;
+        row[1] = 100;
+        row[2] = 210;
+        row[3] = 110;
+    }
+
+    auto converted = converter.convert(frame);
+    REQUIRE(converted.has_value());
+    const auto& result = *converted;
+    const auto* nv12 = static_cast<const uint8_t*>(result.texture_handle);
+    const size_t uv_offset = static_cast<size_t>(result.cpu_nv12_storage()->y_stride) * 4;
+    REQUIRE(nv12[uv_offset + 0] == 100);
+    REQUIRE(nv12[uv_offset + 1] == 200);
+    REQUIRE(nv12[uv_offset + 2] == 110);
+    REQUIRE(nv12[uv_offset + 3] == 210);
+
     av_frame_free(&frame);
 }
 
@@ -215,10 +304,86 @@ TEST_CASE("FrameConverter: maps HDR transfer metadata", "[frame_converter][color
     REQUIRE(converted.has_value());
     TextureFrame result = std::move(*converted);
     REQUIRE(result.texture_handle != nullptr);
+    REQUIRE(result.is_p010);
+    REQUIRE(result.cpu_nv12_storage() != nullptr);
+    REQUIRE(result.cpu_nv12_storage()->is_p010);
+    REQUIRE(result.cpu_nv12_storage()->y_stride == 128);
+    REQUIRE(result.cpu_nv12_storage()->uv_stride == 128);
     REQUIRE(result.color.range == VIDEO_COLOR_RANGE_LIMITED);
     REQUIRE(result.color.matrix == VIDEO_COLOR_MATRIX_BT2020_NCL);
     REQUIRE(result.color.transfer == VIDEO_COLOR_TRANSFER_PQ);
     REQUIRE(result.color.primaries == VIDEO_COLOR_PRIMARIES_BT2020);
+
+    av_frame_free(&frame);
+}
+
+TEST_CASE("FrameConverter: preserves YUV420P10LE as CPU P010 before shader",
+          "[frame_converter][color]") {
+    FrameConverter converter;
+    REQUIRE(converter.init_software(4, 4, AV_PIX_FMT_YUV420P10LE));
+
+    AVFrame* frame = av_frame_alloc();
+    REQUIRE(frame != nullptr);
+    frame->format = AV_PIX_FMT_YUV420P10LE;
+    frame->width = 4;
+    frame->height = 4;
+    REQUIRE(av_frame_get_buffer(frame, 0) >= 0);
+
+    for (int y = 0; y < 4; ++y) {
+        auto* row = reinterpret_cast<uint16_t*>(frame->data[0] + y * frame->linesize[0]);
+        for (int x = 0; x < 4; ++x) {
+            row[x] = 512;
+        }
+    }
+    for (int y = 0; y < 2; ++y) {
+        auto* u = reinterpret_cast<uint16_t*>(frame->data[1] + y * frame->linesize[1]);
+        auto* v = reinterpret_cast<uint16_t*>(frame->data[2] + y * frame->linesize[2]);
+        for (int x = 0; x < 2; ++x) {
+            u[x] = 256;
+            v[x] = 768;
+        }
+    }
+
+    auto converted = converter.convert(frame);
+    REQUIRE(converted.has_value());
+    TextureFrame result = std::move(*converted);
+    REQUIRE(result.is_nv12);
+    REQUIRE(result.is_p010);
+    REQUIRE(result.cpu_nv12_storage() != nullptr);
+    REQUIRE(result.cpu_nv12_storage()->is_p010);
+    REQUIRE(result.cpu_nv12_storage()->y_stride == 8);
+    REQUIRE(result.cpu_nv12_storage()->uv_stride == 8);
+
+    const auto* p010 = reinterpret_cast<const uint16_t*>(result.texture_handle);
+    REQUIRE(p010[0] == static_cast<uint16_t>(512u << 6));
+    const size_t uv_offset_words =
+        static_cast<size_t>(result.cpu_nv12_storage()->y_stride) * 4 / sizeof(uint16_t);
+    REQUIRE(p010[uv_offset_words] == static_cast<uint16_t>(256u << 6));
+    REQUIRE(p010[uv_offset_words + 1] == static_cast<uint16_t>(768u << 6));
+
+    av_frame_free(&frame);
+}
+
+TEST_CASE("FrameConverter: YUVJ444P defaults to full range when metadata is absent",
+          "[frame_converter][color]") {
+    FrameConverter converter;
+    REQUIRE(converter.init_software(4, 4, AV_PIX_FMT_YUVJ444P));
+
+    AVFrame* frame = av_frame_alloc();
+    REQUIRE(frame != nullptr);
+    frame->format = AV_PIX_FMT_YUVJ444P;
+    frame->width = 4;
+    frame->height = 4;
+    REQUIRE(av_frame_get_buffer(frame, 0) >= 0);
+    for (int p = 0; p < 3; ++p) {
+        for (int y = 0; y < 4; ++y) {
+            memset(frame->data[p] + y * frame->linesize[p], p == 0 ? 64 : 128, 4);
+        }
+    }
+
+    auto converted = converter.convert(frame);
+    REQUIRE(converted.has_value());
+    REQUIRE(converted->color.range == VIDEO_COLOR_RANGE_FULL);
 
     av_frame_free(&frame);
 }

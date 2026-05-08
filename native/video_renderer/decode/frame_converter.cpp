@@ -1,5 +1,6 @@
 #include "video_renderer/decode/frame_converter.h"
 #include <spdlog/spdlog.h>
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <limits>
@@ -22,8 +23,8 @@ namespace {
 constexpr int kMaxDecodedDimension = 16384;
 constexpr size_t kMaxCpuFrameBytes = size_t{1024} * 1024 * 1024;
 
-bool calculate_nv12_layout(int width, int height,
-                           size_t& y_stride, size_t& uv_stride, size_t& bytes) {
+bool calculate_yuv420_layout(int width, int height, int bytes_per_component,
+                             size_t& y_stride, size_t& uv_stride, size_t& bytes) {
     y_stride = 0;
     uv_stride = 0;
     bytes = 0;
@@ -36,7 +37,11 @@ bool calculate_nv12_layout(int width, int height,
     if ((width & 1) != 0 || (height & 1) != 0) {
         return false;
     }
-    const size_t width_size = static_cast<size_t>(width);
+    if (bytes_per_component != 1 && bytes_per_component != 2) {
+        return false;
+    }
+    const size_t width_size = static_cast<size_t>(width) *
+        static_cast<size_t>(bytes_per_component);
     const size_t height_size = static_cast<size_t>(height);
     y_stride = width_size;
     uv_stride = width_size;
@@ -77,20 +82,55 @@ bool supported_software_format(AVPixelFormat format) {
     case AV_PIX_FMT_YUV420P:
     case AV_PIX_FMT_YUVJ420P:
     case AV_PIX_FMT_NV12:
+    case AV_PIX_FMT_NV21:
     case AV_PIX_FMT_YUV420P10LE:
     case AV_PIX_FMT_P010LE:
+    case AV_PIX_FMT_YUV422P:
+    case AV_PIX_FMT_YUVJ422P:
+    case AV_PIX_FMT_YUV444P:
+    case AV_PIX_FMT_YUVJ444P:
+    case AV_PIX_FMT_YUV422P10LE:
+    case AV_PIX_FMT_YUV444P10LE:
         return true;
     default:
         return false;
     }
 }
 
-uint8_t downconvert_10_to_8(uint16_t value) {
-    return static_cast<uint8_t>(std::min<uint16_t>((value + 2u) >> 2, 255u));
+bool software_format_uses_p010(AVPixelFormat format) {
+    switch (format) {
+    case AV_PIX_FMT_YUV420P10LE:
+    case AV_PIX_FMT_P010LE:
+    case AV_PIX_FMT_YUV422P10LE:
+    case AV_PIX_FMT_YUV444P10LE:
+        return true;
+    default:
+        return false;
+    }
 }
 
-uint8_t downconvert_p010_to_8(uint16_t value) {
-    return static_cast<uint8_t>(std::min<uint16_t>((value + 128u) >> 8, 255u));
+uint16_t clamp_10(uint16_t value) {
+    return std::min<uint16_t>(value, 1023u);
+}
+
+uint16_t yuv10_to_p010(uint16_t value) {
+    return static_cast<uint16_t>(clamp_10(value) << 6);
+}
+
+uint8_t avg2_u8(uint8_t a, uint8_t b) {
+    return static_cast<uint8_t>((static_cast<unsigned>(a) + b + 1u) / 2u);
+}
+
+uint8_t avg4_u8(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
+    return static_cast<uint8_t>((static_cast<unsigned>(a) + b + c + d + 2u) / 4u);
+}
+
+uint16_t avg2_u16(uint16_t a, uint16_t b) {
+    return static_cast<uint16_t>((static_cast<unsigned>(a) + b + 1u) / 2u);
+}
+
+uint16_t avg4_u16(uint16_t a, uint16_t b, uint16_t c, uint16_t d) {
+    return static_cast<uint16_t>((static_cast<unsigned>(a) + b + c + d + 2u) / 4u);
 }
 
 bool copy_nv12_8(const AVFrame* frame, std::vector<uint8_t>& dst,
@@ -141,10 +181,63 @@ bool pack_yuv420p_8_to_nv12(const AVFrame* frame, std::vector<uint8_t>& dst,
     return true;
 }
 
-bool pack_yuv420p_10_to_nv12_8(const AVFrame* frame, std::vector<uint8_t>& dst,
-                               int width, int height, int y_stride, int uv_stride) {
+bool copy_nv21_8_as_nv12(const AVFrame* frame, std::vector<uint8_t>& dst,
+                         int width, int height, int y_stride, int uv_stride) {
+    if (!frame->data[0] || !frame->data[1] ||
+        frame->linesize[0] < width || frame->linesize[1] < width) {
+        return false;
+    }
+    uint8_t* dst_y = dst.data();
+    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * height;
+    for (int y = 0; y < height; ++y) {
+        std::memcpy(dst_y + static_cast<size_t>(y) * y_stride,
+                    frame->data[0] + static_cast<size_t>(y) * frame->linesize[0],
+                    static_cast<size_t>(width));
+    }
+    for (int y = 0; y < height / 2; ++y) {
+        const uint8_t* src_vu = frame->data[1] + static_cast<size_t>(y) * frame->linesize[1];
+        uint8_t* row = dst_uv + static_cast<size_t>(y) * uv_stride;
+        for (int x = 0; x < width; x += 2) {
+            row[x] = src_vu[x + 1];
+            row[x + 1] = src_vu[x];
+        }
+    }
+    return true;
+}
+
+bool pack_yuv422p_8_to_nv12(const AVFrame* frame, std::vector<uint8_t>& dst,
+                            int width, int height, int y_stride, int uv_stride) {
     if (!frame->data[0] || !frame->data[1] || !frame->data[2] ||
-        frame->linesize[0] < width * 2 ||
+        frame->linesize[0] < width ||
+        frame->linesize[1] < width / 2 ||
+        frame->linesize[2] < width / 2) {
+        return false;
+    }
+    uint8_t* dst_y = dst.data();
+    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * height;
+    for (int y = 0; y < height; ++y) {
+        std::memcpy(dst_y + static_cast<size_t>(y) * y_stride,
+                    frame->data[0] + static_cast<size_t>(y) * frame->linesize[0],
+                    static_cast<size_t>(width));
+    }
+    for (int y = 0; y < height / 2; ++y) {
+        const uint8_t* src_u0 = frame->data[1] + static_cast<size_t>(y * 2) * frame->linesize[1];
+        const uint8_t* src_u1 = frame->data[1] + static_cast<size_t>(y * 2 + 1) * frame->linesize[1];
+        const uint8_t* src_v0 = frame->data[2] + static_cast<size_t>(y * 2) * frame->linesize[2];
+        const uint8_t* src_v1 = frame->data[2] + static_cast<size_t>(y * 2 + 1) * frame->linesize[2];
+        uint8_t* row = dst_uv + static_cast<size_t>(y) * uv_stride;
+        for (int x = 0; x < width / 2; ++x) {
+            row[x * 2] = avg2_u8(src_u0[x], src_u1[x]);
+            row[x * 2 + 1] = avg2_u8(src_v0[x], src_v1[x]);
+        }
+    }
+    return true;
+}
+
+bool pack_yuv444p_8_to_nv12(const AVFrame* frame, std::vector<uint8_t>& dst,
+                            int width, int height, int y_stride, int uv_stride) {
+    if (!frame->data[0] || !frame->data[1] || !frame->data[2] ||
+        frame->linesize[0] < width ||
         frame->linesize[1] < width ||
         frame->linesize[2] < width) {
         return false;
@@ -152,11 +245,42 @@ bool pack_yuv420p_10_to_nv12_8(const AVFrame* frame, std::vector<uint8_t>& dst,
     uint8_t* dst_y = dst.data();
     uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * height;
     for (int y = 0; y < height; ++y) {
+        std::memcpy(dst_y + static_cast<size_t>(y) * y_stride,
+                    frame->data[0] + static_cast<size_t>(y) * frame->linesize[0],
+                    static_cast<size_t>(width));
+    }
+    for (int y = 0; y < height / 2; ++y) {
+        const uint8_t* src_u0 = frame->data[1] + static_cast<size_t>(y * 2) * frame->linesize[1];
+        const uint8_t* src_u1 = frame->data[1] + static_cast<size_t>(y * 2 + 1) * frame->linesize[1];
+        const uint8_t* src_v0 = frame->data[2] + static_cast<size_t>(y * 2) * frame->linesize[2];
+        const uint8_t* src_v1 = frame->data[2] + static_cast<size_t>(y * 2 + 1) * frame->linesize[2];
+        uint8_t* row = dst_uv + static_cast<size_t>(y) * uv_stride;
+        for (int x = 0; x < width / 2; ++x) {
+            const int sx = x * 2;
+            row[x * 2] = avg4_u8(src_u0[sx], src_u0[sx + 1], src_u1[sx], src_u1[sx + 1]);
+            row[x * 2 + 1] = avg4_u8(src_v0[sx], src_v0[sx + 1], src_v1[sx], src_v1[sx + 1]);
+        }
+    }
+    return true;
+}
+
+bool pack_yuv420p_10_to_p010(const AVFrame* frame, std::vector<uint8_t>& dst,
+                             int width, int height, int y_stride, int uv_stride) {
+    if (!frame->data[0] || !frame->data[1] || !frame->data[2] ||
+        frame->linesize[0] < width * 2 ||
+        frame->linesize[1] < width ||
+        frame->linesize[2] < width) {
+        return false;
+    }
+    auto* dst_y = reinterpret_cast<uint16_t*>(dst.data());
+    auto* dst_uv = reinterpret_cast<uint16_t*>(dst.data() + static_cast<size_t>(y_stride) * height);
+    for (int y = 0; y < height; ++y) {
         const auto* src_y = reinterpret_cast<const uint16_t*>(
             frame->data[0] + static_cast<size_t>(y) * frame->linesize[0]);
-        uint8_t* row = dst_y + static_cast<size_t>(y) * y_stride;
+        auto* row = reinterpret_cast<uint16_t*>(
+            reinterpret_cast<uint8_t*>(dst_y) + static_cast<size_t>(y) * y_stride);
         for (int x = 0; x < width; ++x) {
-            row[x] = downconvert_10_to_8(src_y[x]);
+            row[x] = yuv10_to_p010(src_y[x]);
         }
     }
     for (int y = 0; y < height / 2; ++y) {
@@ -164,17 +288,18 @@ bool pack_yuv420p_10_to_nv12_8(const AVFrame* frame, std::vector<uint8_t>& dst,
             frame->data[1] + static_cast<size_t>(y) * frame->linesize[1]);
         const auto* src_v = reinterpret_cast<const uint16_t*>(
             frame->data[2] + static_cast<size_t>(y) * frame->linesize[2]);
-        uint8_t* row = dst_uv + static_cast<size_t>(y) * uv_stride;
+        auto* row = reinterpret_cast<uint16_t*>(
+            reinterpret_cast<uint8_t*>(dst_uv) + static_cast<size_t>(y) * uv_stride);
         for (int x = 0; x < width / 2; ++x) {
-            row[x * 2] = downconvert_10_to_8(src_u[x]);
-            row[x * 2 + 1] = downconvert_10_to_8(src_v[x]);
+            row[x * 2] = yuv10_to_p010(src_u[x]);
+            row[x * 2 + 1] = yuv10_to_p010(src_v[x]);
         }
     }
     return true;
 }
 
-bool pack_p010_to_nv12_8(const AVFrame* frame, std::vector<uint8_t>& dst,
-                         int width, int height, int y_stride, int uv_stride) {
+bool copy_p010(const AVFrame* frame, std::vector<uint8_t>& dst,
+               int width, int height, int y_stride, int uv_stride) {
     if (!frame->data[0] || !frame->data[1] ||
         frame->linesize[0] < width * 2 ||
         frame->linesize[1] < width * 2) {
@@ -183,20 +308,88 @@ bool pack_p010_to_nv12_8(const AVFrame* frame, std::vector<uint8_t>& dst,
     uint8_t* dst_y = dst.data();
     uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * height;
     for (int y = 0; y < height; ++y) {
-        const auto* src_y = reinterpret_cast<const uint16_t*>(
-            frame->data[0] + static_cast<size_t>(y) * frame->linesize[0]);
-        uint8_t* row = dst_y + static_cast<size_t>(y) * y_stride;
-        for (int x = 0; x < width; ++x) {
-            row[x] = downconvert_p010_to_8(src_y[x]);
-        }
+        std::memcpy(dst_y + static_cast<size_t>(y) * y_stride,
+                    frame->data[0] + static_cast<size_t>(y) * frame->linesize[0],
+                    static_cast<size_t>(width) * 2);
     }
     for (int y = 0; y < height / 2; ++y) {
-        const auto* src_uv = reinterpret_cast<const uint16_t*>(
-            frame->data[1] + static_cast<size_t>(y) * frame->linesize[1]);
-        uint8_t* row = dst_uv + static_cast<size_t>(y) * uv_stride;
-        for (int x = 0; x < width; x += 2) {
-            row[x] = downconvert_p010_to_8(src_uv[x]);
-            row[x + 1] = downconvert_p010_to_8(src_uv[x + 1]);
+        std::memcpy(dst_uv + static_cast<size_t>(y) * uv_stride,
+                    frame->data[1] + static_cast<size_t>(y) * frame->linesize[1],
+                    static_cast<size_t>(width) * 2);
+    }
+    return true;
+}
+
+bool pack_yuv422p_10_to_p010(const AVFrame* frame, std::vector<uint8_t>& dst,
+                             int width, int height, int y_stride, int uv_stride) {
+    if (!frame->data[0] || !frame->data[1] || !frame->data[2] ||
+        frame->linesize[0] < width * 2 ||
+        frame->linesize[1] < width ||
+        frame->linesize[2] < width) {
+        return false;
+    }
+    for (int y = 0; y < height; ++y) {
+        const auto* src_y = reinterpret_cast<const uint16_t*>(
+            frame->data[0] + static_cast<size_t>(y) * frame->linesize[0]);
+        auto* row = reinterpret_cast<uint16_t*>(
+            dst.data() + static_cast<size_t>(y) * y_stride);
+        for (int x = 0; x < width; ++x) {
+            row[x] = yuv10_to_p010(src_y[x]);
+        }
+    }
+    uint8_t* dst_uv = dst.data() + static_cast<size_t>(y_stride) * height;
+    for (int y = 0; y < height / 2; ++y) {
+        const auto* src_u0 = reinterpret_cast<const uint16_t*>(
+            frame->data[1] + static_cast<size_t>(y * 2) * frame->linesize[1]);
+        const auto* src_u1 = reinterpret_cast<const uint16_t*>(
+            frame->data[1] + static_cast<size_t>(y * 2 + 1) * frame->linesize[1]);
+        const auto* src_v0 = reinterpret_cast<const uint16_t*>(
+            frame->data[2] + static_cast<size_t>(y * 2) * frame->linesize[2]);
+        const auto* src_v1 = reinterpret_cast<const uint16_t*>(
+            frame->data[2] + static_cast<size_t>(y * 2 + 1) * frame->linesize[2]);
+        auto* row = reinterpret_cast<uint16_t*>(dst_uv + static_cast<size_t>(y) * uv_stride);
+        for (int x = 0; x < width / 2; ++x) {
+            row[x * 2] = yuv10_to_p010(avg2_u16(src_u0[x], src_u1[x]));
+            row[x * 2 + 1] = yuv10_to_p010(avg2_u16(src_v0[x], src_v1[x]));
+        }
+    }
+    return true;
+}
+
+bool pack_yuv444p_10_to_p010(const AVFrame* frame, std::vector<uint8_t>& dst,
+                             int width, int height, int y_stride, int uv_stride) {
+    if (!frame->data[0] || !frame->data[1] || !frame->data[2] ||
+        frame->linesize[0] < width * 2 ||
+        frame->linesize[1] < width * 2 ||
+        frame->linesize[2] < width * 2) {
+        return false;
+    }
+    for (int y = 0; y < height; ++y) {
+        const auto* src_y = reinterpret_cast<const uint16_t*>(
+            frame->data[0] + static_cast<size_t>(y) * frame->linesize[0]);
+        auto* row = reinterpret_cast<uint16_t*>(
+            dst.data() + static_cast<size_t>(y) * y_stride);
+        for (int x = 0; x < width; ++x) {
+            row[x] = yuv10_to_p010(src_y[x]);
+        }
+    }
+    uint8_t* dst_uv = dst.data() + static_cast<size_t>(y_stride) * height;
+    for (int y = 0; y < height / 2; ++y) {
+        const auto* src_u0 = reinterpret_cast<const uint16_t*>(
+            frame->data[1] + static_cast<size_t>(y * 2) * frame->linesize[1]);
+        const auto* src_u1 = reinterpret_cast<const uint16_t*>(
+            frame->data[1] + static_cast<size_t>(y * 2 + 1) * frame->linesize[1]);
+        const auto* src_v0 = reinterpret_cast<const uint16_t*>(
+            frame->data[2] + static_cast<size_t>(y * 2) * frame->linesize[2]);
+        const auto* src_v1 = reinterpret_cast<const uint16_t*>(
+            frame->data[2] + static_cast<size_t>(y * 2 + 1) * frame->linesize[2]);
+        auto* row = reinterpret_cast<uint16_t*>(dst_uv + static_cast<size_t>(y) * uv_stride);
+        for (int x = 0; x < width / 2; ++x) {
+            const int sx = x * 2;
+            row[x * 2] = yuv10_to_p010(avg4_u16(src_u0[sx], src_u0[sx + 1],
+                                                src_u1[sx], src_u1[sx + 1]));
+            row[x * 2 + 1] = yuv10_to_p010(avg4_u16(src_v0[sx], src_v0[sx + 1],
+                                                    src_v1[sx], src_v1[sx + 1]));
         }
     }
     return true;
@@ -211,10 +404,12 @@ bool convert_frame_to_cpu_nv12(const AVFrame* frame,
     const int width = frame->width;
     const int height = frame->height;
     const auto format = static_cast<AVPixelFormat>(frame->format);
+    const bool use_p010 = software_format_uses_p010(format);
     size_t y_stride = 0;
     size_t uv_stride = 0;
     size_t bytes = 0;
-    if (!calculate_nv12_layout(width, height, y_stride, uv_stride, bytes)) {
+    if (!calculate_yuv420_layout(width, height, use_p010 ? 2 : 1,
+                                 y_stride, uv_stride, bytes)) {
         spdlog::error("[FrameConverter] Invalid CPU NV12 layout ({}x{}, format={})",
                       width, height, static_cast<int>(format));
         return false;
@@ -238,18 +433,40 @@ bool convert_frame_to_cpu_nv12(const AVFrame* frame,
         ok = copy_nv12_8(frame, *buffer, width, height,
                          static_cast<int>(y_stride), static_cast<int>(uv_stride));
         break;
+    case AV_PIX_FMT_NV21:
+        ok = copy_nv21_8_as_nv12(frame, *buffer, width, height,
+                                 static_cast<int>(y_stride), static_cast<int>(uv_stride));
+        break;
     case AV_PIX_FMT_YUV420P:
     case AV_PIX_FMT_YUVJ420P:
         ok = pack_yuv420p_8_to_nv12(frame, *buffer, width, height,
                                     static_cast<int>(y_stride), static_cast<int>(uv_stride));
         break;
+    case AV_PIX_FMT_YUV422P:
+    case AV_PIX_FMT_YUVJ422P:
+        ok = pack_yuv422p_8_to_nv12(frame, *buffer, width, height,
+                                    static_cast<int>(y_stride), static_cast<int>(uv_stride));
+        break;
+    case AV_PIX_FMT_YUV444P:
+    case AV_PIX_FMT_YUVJ444P:
+        ok = pack_yuv444p_8_to_nv12(frame, *buffer, width, height,
+                                    static_cast<int>(y_stride), static_cast<int>(uv_stride));
+        break;
     case AV_PIX_FMT_YUV420P10LE:
-        ok = pack_yuv420p_10_to_nv12_8(frame, *buffer, width, height,
-                                       static_cast<int>(y_stride), static_cast<int>(uv_stride));
+        ok = pack_yuv420p_10_to_p010(frame, *buffer, width, height,
+                                     static_cast<int>(y_stride), static_cast<int>(uv_stride));
         break;
     case AV_PIX_FMT_P010LE:
-        ok = pack_p010_to_nv12_8(frame, *buffer, width, height,
-                                 static_cast<int>(y_stride), static_cast<int>(uv_stride));
+        ok = copy_p010(frame, *buffer, width, height,
+                       static_cast<int>(y_stride), static_cast<int>(uv_stride));
+        break;
+    case AV_PIX_FMT_YUV422P10LE:
+        ok = pack_yuv422p_10_to_p010(frame, *buffer, width, height,
+                                     static_cast<int>(y_stride), static_cast<int>(uv_stride));
+        break;
+    case AV_PIX_FMT_YUV444P10LE:
+        ok = pack_yuv444p_10_to_p010(frame, *buffer, width, height,
+                                     static_cast<int>(y_stride), static_cast<int>(uv_stride));
         break;
     default:
         break;
@@ -266,10 +483,12 @@ bool convert_frame_to_cpu_nv12(const AVFrame* frame,
     result.texture_handle = buffer->data();
     result.is_ref = false;
     result.is_nv12 = true;
+    result.is_p010 = use_p010;
     result.storage = CpuNv12FrameStorage{
         buffer,
         static_cast<int>(y_stride),
         static_cast<int>(uv_stride),
+        use_p010,
     };
     return true;
 }
@@ -349,6 +568,13 @@ VideoColorInfo color_info_from_frame(const AVFrame* frame) {
 
     // FFmpeg often leaves screen recordings partially unspecified. Pick the
     // same conservative defaults most players use for YUV video.
+    const auto format = static_cast<AVPixelFormat>(frame->format);
+    if (info.range == VIDEO_COLOR_RANGE_UNKNOWN &&
+        (format == AV_PIX_FMT_YUVJ420P ||
+         format == AV_PIX_FMT_YUVJ422P ||
+         format == AV_PIX_FMT_YUVJ444P)) {
+        info.range = VIDEO_COLOR_RANGE_FULL;
+    }
     if (info.range == VIDEO_COLOR_RANGE_UNKNOWN) {
         info.range = VIDEO_COLOR_RANGE_LIMITED;
     }
@@ -382,6 +608,12 @@ bool same_snapshot_desc(const D3D11_TEXTURE2D_DESC& a, const D3D11_TEXTURE2D_DES
            a.BindFlags == b.BindFlags &&
            a.CPUAccessFlags == b.CPUAccessFlags &&
            a.MiscFlags == b.MiscFlags;
+}
+
+bool d3d11_surface_is_supported_yuv420(DXGI_FORMAT format) {
+    return format == DXGI_FORMAT_NV12 ||
+           format == DXGI_FORMAT_P010 ||
+           format == DXGI_FORMAT_P016;
 }
 
 struct D3D11SnapshotFrameRef {
@@ -519,7 +751,9 @@ bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat 
     size_t y_stride = 0;
     size_t uv_stride = 0;
     size_t bytes = 0;
-    if (!calculate_nv12_layout(src_width, src_height, y_stride, uv_stride, bytes)) {
+    if (!calculate_yuv420_layout(src_width, src_height,
+                                 software_format_uses_p010(src_format) ? 2 : 1,
+                                 y_stride, uv_stride, bytes)) {
         spdlog::error("[FrameConverter] Refusing unsupported software frame geometry "
                       "({}x{}, format={})",
                       src_width, src_height, static_cast<int>(src_format));
@@ -614,7 +848,19 @@ std::optional<TextureFrame> FrameConverter::convert(AVFrame* frame) {
             result.is_ref = true;
 
             if (hw_type_ == HwDecodeType::D3D11VA) {
+                auto* texture = static_cast<ID3D11Texture2D*>(result.texture_handle);
+                D3D11_TEXTURE2D_DESC desc = {};
+                texture->GetDesc(&desc);
+                if (!d3d11_surface_is_supported_yuv420(desc.Format)) {
+                    spdlog::error("[FrameConverter] Unsupported D3D11VA surface format {}. "
+                                  "Renderer-owned hardware path only supports NV12/P010/P016; "
+                                  "use software decode until 4:2:2/4:4:4 GPU shader paths exist.",
+                                  static_cast<int>(desc.Format));
+                    return std::nullopt;
+                }
                 result.is_nv12 = true;
+                result.is_p010 = desc.Format == DXGI_FORMAT_P010 ||
+                    desc.Format == DXGI_FORMAT_P016;
                 result.texture_array_index = static_cast<int>(
                     reinterpret_cast<intptr_t>(frame->data[1]));
             }
@@ -685,6 +931,11 @@ std::optional<TextureFrame> FrameConverter::snapshot_hardware_frame(AVFrame* fra
 
     D3D11_TEXTURE2D_DESC source_desc = {};
     source->GetDesc(&source_desc);
+    if (!d3d11_surface_is_supported_yuv420(source_desc.Format)) {
+        spdlog::warn("[FrameConverter] Cannot snapshot unsupported D3D11VA surface format {}",
+                     static_cast<int>(source_desc.Format));
+        return std::nullopt;
+    }
     if (static_cast<UINT>(array_idx) >= source_desc.ArraySize) {
         spdlog::warn("[FrameConverter] D3D11 snapshot array index out of range: idx={}, array_size={}",
                      array_idx, source_desc.ArraySize);
@@ -743,6 +994,8 @@ std::optional<TextureFrame> FrameConverter::snapshot_hardware_frame(AVFrame* fra
     result.is_ref = true;
     result.texture_handle = snapshot.Get();
     result.is_nv12 = true;
+    result.is_p010 = source_desc.Format == DXGI_FORMAT_P010 ||
+        source_desc.Format == DXGI_FORMAT_P016;
     result.texture_array_index = 0;
     result.color = color_info_from_frame(frame);
     result.hw_frame_ref = snapshot_ref;

@@ -12,9 +12,11 @@ public:
 
     ID3D11Texture2D* create_rgba_texture(int width, int height);
     ID3D11Texture2D* create_nv12_texture(int width, int height);
+    ID3D11Texture2D* create_p010_texture(int width, int height);
     bool upload_data(ID3D11Texture2D* texture, const uint8_t* data, int width, int height, int stride);
     bool upload_nv12_data(ID3D11Texture2D* texture, const uint8_t* data,
-                          int width, int height, int y_stride, int uv_stride);
+                          int width, int height, int y_stride, int uv_stride,
+                          bool is_p010 = false);
     ID3D11ShaderResourceView* create_srv(ID3D11Texture2D* texture);
     bool create_nv12_plane_srvs(
         ID3D11Texture2D* texture,

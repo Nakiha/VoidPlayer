@@ -121,6 +121,7 @@ Video File
 | [时钟与同步](CLOCK_AND_SYNC.md) | Clock API、倍速、A/V 同步算法 |
 | [缓冲设计](BUFFER_DESIGN.md) | 队列、环形缓冲、状态机、Preroll |
 | [解码管线](DECODE_PIPELINE.md) | 软解/硬解路径、HwDecodeProvider |
+| [色彩管线](COLOR_PIPELINE.md) | 软件/硬件帧格式、YUV->RGB、HDR 到 SDR 边界 |
 | [Seek 策略](SEEK_STRATEGY.md) | SeekController、触发矩阵 |
 | [D3D11 后端](D3D11_BACKEND.md) | 设备、纹理、着色器、NV12 零拷贝 |
 | [FFI 与绑定](FFI_AND_BINDINGS.md) | C FFI API、Python 绑定 |

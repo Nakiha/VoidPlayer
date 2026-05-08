@@ -45,28 +45,30 @@ Renderer 只负责在持有 device/texture mutex 后调用 `begin_frame_locked()
 
 ## 纹理路径
 
-`D3D11FramePresenter` 负责把 `TextureFrame` 准备成 shader 可采样资源，并持有每轨的 RGBA upload texture、NV12 renderer-owned texture、Y/UV SRV 等缓存。Renderer 的 draw 阶段只消费准备好的 SRV 和 metadata。
+`D3D11FramePresenter` 负责把 `TextureFrame` 准备成 shader 可采样资源，并持有每轨的 RGBA upload texture、NV12/P010 renderer-owned texture、Y/UV SRV 等缓存。Renderer 的 draw 阶段只消费准备好的 SRV 和 metadata。
 
 ### RGBA 上传路径
 
-来源包括软件解码和 AV1/VP9 硬解 hwdownload：
+当前主要保留给旧测试或直接 RGBA texture 输入：
 
 ```
 RGBA CPU buffer -> UpdateSubresource -> RGBA texture -> shader sample
 ```
 
-### NV12 硬解路径
+### NV12/P010 硬解路径
 
 H.264/H.265 等 renderer-owned surface 路径：
 
 ```
 D3D11VA texture array slice
-  -> CopySubresourceRegion 到 renderer-owned NV12 texture
+  -> CopySubresourceRegion 到 renderer-owned NV12/P010 texture
   -> 创建 Y plane / UV plane SRV
-  -> shader NV12->RGB
+  -> shader YUV->RGB
 ```
 
 这里不是直接长期持有 decoder surface。复制一次 slice 能让 FFmpeg decode pool 在 seek/recreate 后安全复用 surface，避免跨线程/跨生命周期引用。
+
+当前 renderer-owned direct path 只支持 `DXGI_FORMAT_NV12`、`DXGI_FORMAT_P010`、`DXGI_FORMAT_P016`。`Y210/Y216/Y410/Y416/AYUV` 等 4:2:2 / 4:4:4 硬件 surface 不能按 NV12/P010 采样；这类流在 shader path 补齐前应走软件解码。
 
 ## ShaderManager
 
@@ -75,7 +77,7 @@ D3D11VA texture array slice
 HLSL shader 内嵌到构建产物，运行时编译并绑定：
 
 - RGBA 纹理采样
-- NV12 Y/UV 双平面采样
+- NV12/P010 Y/UV 双平面采样
 - 单轨/双轨/四宫格布局
 - 宽高比和 letterbox
 
@@ -83,7 +85,7 @@ HLSL shader 内嵌到构建产物，运行时编译并绑定：
 
 | 路径 | Device/context 策略 |
 |------|---------------------|
-| H.264/H.265 renderer-owned NV12 | `DecodeDeviceMode::IndependentDevice`，使用独立 decode device，surface 带 `DECODER|SHADER_RESOURCE|MISC_SHARED` |
+| H.264/H.265 renderer-owned NV12/P010 | `DecodeDeviceMode::IndependentDevice`，使用独立 decode device，surface 带 `DECODER|SHADER_RESOURCE|MISC_SHARED` |
 | AV1/VP9 hwdownload | `DecodeDeviceMode::FfmpegOwnedHwDownloadDevice`，让 FFmpeg 创建 D3D11VA device/context，匹配 CLI hwaccel 行为 |
 | 诊断/实验 | `DecodeDeviceMode::SharedRenderDevice`，显式传入 render device；默认路径禁止依赖“传 nullptr”语义 |
 

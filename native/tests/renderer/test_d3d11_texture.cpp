@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <windows.h>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 #include <cstring>
 #include <mutex>
@@ -10,6 +11,11 @@
 #include "video_renderer/d3d11/frame_presenter.h"
 #include "video_renderer/d3d11/headless_output.h"
 #include "video_renderer/d3d11/texture.h"
+#include "video_renderer/decode/frame_converter.h"
+
+extern "C" {
+#include <libavutil/frame.h>
+}
 
 using namespace vr::test;
 
@@ -210,6 +216,35 @@ TEST_CASE("TextureManager creates and uploads dynamic NV12 textures", "[d3d11][t
     cleanup_test_device(dev, hwnd);
 }
 
+TEST_CASE("TextureManager creates and uploads dynamic P010 textures", "[d3d11][texture]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::TextureManager tm(dev->device(), dev->context());
+
+    const int width = 32;
+    const int height = 16;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+    texture.Attach(tm.create_p010_texture(width, height));
+    REQUIRE(texture != nullptr);
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    texture->GetDesc(&desc);
+    REQUIRE(desc.Format == DXGI_FORMAT_P010);
+    REQUIRE(desc.Width == width);
+    REQUIRE(desc.Height == height);
+
+    std::vector<uint8_t> data(static_cast<size_t>(width) * height * 3, 0);
+    REQUIRE(tm.upload_nv12_data(
+        texture.Get(), data.data(), width, height, width * 2, width * 2, true));
+
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> y_srv;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> uv_srv;
+    REQUIRE(tm.create_nv12_plane_srvs(texture.Get(), y_srv, uv_srv));
+    REQUIRE(y_srv != nullptr);
+    REQUIRE(uv_srv != nullptr);
+
+    cleanup_test_device(dev, hwnd);
+}
+
 TEST_CASE("D3D11FramePresenter prepares cached software NV12 frame SRVs",
           "[d3d11][frame_presenter]") {
     auto [dev, hwnd] = create_test_device();
@@ -229,6 +264,39 @@ TEST_CASE("D3D11FramePresenter prepares cached software NV12 frame SRVs",
     frame.texture_handle = pixels->data();
     frame.is_nv12 = true;
     frame.storage = vr::CpuNv12FrameStorage{pixels, width, width};
+
+    vr::D3D11PreparedFrame prepared;
+    REQUIRE(presenter.prepare_frame(
+        0, frame, 1920, 1080, [](const char*) {}, prepared));
+    REQUIRE(prepared.rgba_srv == nullptr);
+    REQUIRE(prepared.owned_rgba_srv.Get() == nullptr);
+    REQUIRE(prepared.nv12_y_srv != nullptr);
+    REQUIRE(prepared.nv12_uv_srv != nullptr);
+
+    presenter.reset_all();
+    cleanup_test_device(dev, hwnd);
+}
+
+TEST_CASE("D3D11FramePresenter prepares cached software P010 frame SRVs",
+          "[d3d11][frame_presenter]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::TextureManager tm(dev->device(), dev->context());
+    vr::D3D11FramePresenter presenter(&tm, dev->context());
+
+    const int width = 32;
+    const int height = 16;
+    auto pixels = std::make_shared<std::vector<uint8_t>>(
+        static_cast<size_t>(width) * height * 3,
+        uint8_t{0});
+
+    vr::TextureFrame frame;
+    frame.width = width;
+    frame.height = height;
+    frame.cpu_data = pixels;
+    frame.texture_handle = pixels->data();
+    frame.is_nv12 = true;
+    frame.is_p010 = true;
+    frame.storage = vr::CpuNv12FrameStorage{pixels, width * 2, width * 2, true};
 
     vr::D3D11PreparedFrame prepared;
     REQUIRE(presenter.prepare_frame(
@@ -278,6 +346,49 @@ TEST_CASE("D3D11FramePresenter crops padded hardware NV12 texture dimensions",
     REQUIRE(std::fabs(presenter.nv12_uv_scale_x(0) - (1088.0f / 1152.0f)) < 0.0001f);
     REQUIRE(std::fabs(presenter.nv12_uv_scale_y(0) - (1980.0f / 2048.0f)) < 0.0001f);
 
+    cleanup_test_device(dev, hwnd);
+}
+
+TEST_CASE("FrameConverter rejects unsupported D3D11VA non-4:2:0 surfaces",
+          "[d3d11][frame_converter]") {
+    auto [dev, hwnd] = create_test_device();
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = 32;
+    desc.Height = 16;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+    REQUIRE(SUCCEEDED(dev->device()->CreateTexture2D(&desc, nullptr, &texture)));
+
+    std::recursive_mutex device_mutex;
+    vr::FrameConverter converter;
+    REQUIRE(converter.init_hardware(
+        dev->device(),
+        dev->context(),
+        32,
+        16,
+        vr::HwDecodeType::D3D11VA,
+        false,
+        &device_mutex));
+
+    AVFrame* frame = av_frame_alloc();
+    REQUIRE(frame != nullptr);
+    frame->format = AV_PIX_FMT_D3D11;
+    frame->width = 32;
+    frame->height = 16;
+    frame->data[0] = reinterpret_cast<uint8_t*>(texture.Get());
+    frame->data[1] = reinterpret_cast<uint8_t*>(intptr_t{0});
+
+    auto converted = converter.convert(frame);
+    REQUIRE_FALSE(converted.has_value());
+
+    av_frame_free(&frame);
     cleanup_test_device(dev, hwnd);
 }
 

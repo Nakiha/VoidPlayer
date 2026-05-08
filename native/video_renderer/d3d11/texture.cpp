@@ -75,6 +75,41 @@ ID3D11Texture2D* TextureManager::create_nv12_texture(int width, int height) {
     return texture;
 }
 
+ID3D11Texture2D* TextureManager::create_p010_texture(int width, int height) {
+    if (!device_) {
+        spdlog::error("Cannot create P010 texture: device is null");
+        return nullptr;
+    }
+    if (width <= 0 || height <= 0 || (width & 1) != 0 || (height & 1) != 0) {
+        spdlog::error("Cannot create P010 texture: invalid geometry ({}x{})", width, height);
+        return nullptr;
+    }
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = static_cast<UINT>(width);
+    desc.Height = static_cast<UINT>(height);
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_P010;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+    desc.Usage = D3D11_USAGE_DYNAMIC;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    desc.MiscFlags = 0;
+
+    ID3D11Texture2D* texture = nullptr;
+    HRESULT hr = device_->CreateTexture2D(&desc, nullptr, &texture);
+    if (FAILED(hr)) {
+        spdlog::error("Failed to create P010 texture ({}x{}): HRESULT {:#x}",
+                      width, height, static_cast<unsigned long>(hr));
+        return nullptr;
+    }
+
+    spdlog::debug("Created P010 texture ({}x{})", width, height);
+    return texture;
+}
+
 bool TextureManager::upload_data(ID3D11Texture2D* texture, const uint8_t* data,
                                   int width, int height, int stride) {
     if (!texture || !data || !context_) {
@@ -117,29 +152,34 @@ bool TextureManager::upload_data(ID3D11Texture2D* texture, const uint8_t* data,
 
 bool TextureManager::upload_nv12_data(ID3D11Texture2D* texture, const uint8_t* data,
                                       int width, int height,
-                                      int y_stride, int uv_stride) {
+                                      int y_stride, int uv_stride,
+                                      bool is_p010) {
     if (!texture || !data || !context_) {
         spdlog::error("upload_nv12_data: invalid arguments (texture={}, data={}, context={})",
                       static_cast<void*>(texture), static_cast<const void*>(data),
                       static_cast<void*>(context_));
         return false;
     }
+    const int bytes_per_component = is_p010 ? 2 : 1;
+    const int row_bytes = width * bytes_per_component;
     if (width <= 0 || height <= 0 || (width & 1) != 0 || (height & 1) != 0 ||
-        y_stride < width || uv_stride < width) {
+        y_stride < row_bytes || uv_stride < row_bytes) {
         spdlog::error("upload_nv12_data: invalid geometry (width={}, height={}, "
-                      "y_stride={}, uv_stride={})",
-                      width, height, y_stride, uv_stride);
+                      "y_stride={}, uv_stride={}, is_p010={})",
+                      width, height, y_stride, uv_stride, is_p010);
         return false;
     }
 
     D3D11_TEXTURE2D_DESC desc = {};
     texture->GetDesc(&desc);
-    if (desc.Format != DXGI_FORMAT_NV12 ||
+    const DXGI_FORMAT expected_format = is_p010 ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12;
+    if (desc.Format != expected_format ||
         desc.Width != static_cast<UINT>(width) ||
         desc.Height != static_cast<UINT>(height)) {
         spdlog::error("upload_nv12_data: texture mismatch (texture={}x{} fmt={}, "
-                      "data={}x{})",
-                      desc.Width, desc.Height, static_cast<int>(desc.Format), width, height);
+                      "data={}x{}, expected_fmt={})",
+                      desc.Width, desc.Height, static_cast<int>(desc.Format),
+                      width, height, static_cast<int>(expected_format));
         return false;
     }
 
@@ -155,22 +195,22 @@ bool TextureManager::upload_nv12_data(ID3D11Texture2D* texture, const uint8_t* d
     const uint8_t* src_uv = data + static_cast<size_t>(y_stride) * height;
     uint8_t* dst_y = static_cast<uint8_t*>(mapped.pData);
     uint8_t* dst_uv = dst_y + static_cast<size_t>(mapped.RowPitch) * height;
-    const size_t row_bytes = static_cast<size_t>(width);
+    const size_t copy_row_bytes = static_cast<size_t>(row_bytes);
 
     for (int y = 0; y < height; ++y) {
         std::memcpy(dst_y + static_cast<size_t>(y) * mapped.RowPitch,
                     src_y + static_cast<size_t>(y) * y_stride,
-                    row_bytes);
+                    copy_row_bytes);
     }
     for (int y = 0; y < height / 2; ++y) {
         std::memcpy(dst_uv + static_cast<size_t>(y) * mapped.RowPitch,
                     src_uv + static_cast<size_t>(y) * uv_stride,
-                    row_bytes);
+                    copy_row_bytes);
     }
 
     context_->Unmap(texture, 0);
-    spdlog::trace("Uploaded NV12 texture data ({}x{}, y_stride={}, uv_stride={})",
-                  width, height, y_stride, uv_stride);
+    spdlog::trace("Uploaded {} texture data ({}x{}, y_stride={}, uv_stride={})",
+                  is_p010 ? "P010" : "NV12", width, height, y_stride, uv_stride);
     return true;
 }
 

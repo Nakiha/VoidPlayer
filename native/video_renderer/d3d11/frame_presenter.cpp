@@ -227,16 +227,19 @@ bool D3D11FramePresenter::prepare_software_nv12_frame(size_t slot,
     if (resources.sw_nv12_texture) {
         D3D11_TEXTURE2D_DESC existing_desc = {};
         resources.sw_nv12_texture->GetDesc(&existing_desc);
+        const DXGI_FORMAT expected_format = frame.is_p010 ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12;
         need_new_tex =
             static_cast<int>(existing_desc.Width) != w ||
             static_cast<int>(existing_desc.Height) != h ||
-            existing_desc.Format != DXGI_FORMAT_NV12;
+            existing_desc.Format != expected_format;
     }
 
     if (need_new_tex) {
         resources.sw_nv12_y_srv.Reset();
         resources.sw_nv12_uv_srv.Reset();
-        resources.sw_nv12_texture.Attach(texture_manager_->create_nv12_texture(w, h));
+        resources.sw_nv12_texture.Attach(frame.is_p010
+            ? texture_manager_->create_p010_texture(w, h)
+            : texture_manager_->create_nv12_texture(w, h));
         if (resources.sw_nv12_texture) {
             texture_manager_->create_nv12_plane_srvs(
                 resources.sw_nv12_texture.Get(),
@@ -265,7 +268,7 @@ bool D3D11FramePresenter::prepare_software_nv12_frame(size_t slot,
     if (!texture_manager_->upload_nv12_data(
             resources.sw_nv12_texture.Get(),
             static_cast<const uint8_t*>(frame.texture_handle),
-            w, h, y_stride, uv_stride)) {
+            w, h, y_stride, uv_stride, frame.is_p010)) {
         return false;
     }
 

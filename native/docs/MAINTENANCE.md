@@ -54,6 +54,7 @@ python native/build.py --test-only   # 全部 PASS
 | Clock / 同步逻辑变更 | [CLOCK_AND_SYNC.md](CLOCK_AND_SYNC.md) |
 | 缓冲区大小/状态机变更 | [BUFFER_DESIGN.md](BUFFER_DESIGN.md) |
 | 解码路径变更（软解/硬解） | [DECODE_PIPELINE.md](DECODE_PIPELINE.md) |
+| 像素格式 / 色彩转换 / HDR-SDR 边界变更 | [COLOR_PIPELINE.md](COLOR_PIPELINE.md) |
 | Seek 逻辑变更 | [SEEK_STRATEGY.md](SEEK_STRATEGY.md) |
 | D3D11 / 着色器变更 | [D3D11_BACKEND.md](D3D11_BACKEND.md) |
 | FFI 函数签名变更 | [FFI_AND_BINDINGS.md](FFI_AND_BINDINGS.md) |
@@ -87,6 +88,7 @@ python native/build.py --test-only   # 全部 PASS
 | [CLOCK_AND_SYNC.md](CLOCK_AND_SYNC.md) | 时钟同步 | 时钟逻辑变更时 |
 | [BUFFER_DESIGN.md](BUFFER_DESIGN.md) | 缓冲区 | 缓冲策略变更时 |
 | [DECODE_PIPELINE.md](DECODE_PIPELINE.md) | 解码管线 | 解码路径变更时 |
+| [COLOR_PIPELINE.md](COLOR_PIPELINE.md) | 色彩管线 | 像素格式或色彩转换变更时 |
 | [SEEK_STRATEGY.md](SEEK_STRATEGY.md) | Seek 策略 | seek 逻辑变更时 |
 | [D3D11_BACKEND.md](D3D11_BACKEND.md) | D3D11 后端 | GPU 相关变更时 |
 | [FFI_AND_BINDINGS.md](FFI_AND_BINDINGS.md) | FFI 绑定 | API 签名变更时 |

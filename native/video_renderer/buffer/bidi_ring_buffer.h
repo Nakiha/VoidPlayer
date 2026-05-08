@@ -24,8 +24,9 @@ struct TextureFrame {
     std::shared_ptr<std::vector<uint8_t>> cpu_data;
     FrameStorage storage;
 
-    // Planar NV12 metadata (software upload or D3D11VA)
-    bool is_nv12 = false;               // true if frame uses NV12 plane sampling
+    // Planar YUV metadata (software NV12/P010 upload or D3D11VA).
+    bool is_nv12 = false;               // true if frame uses Y + interleaved UV sampling
+    bool is_p010 = false;               // true for CPU P010 upload; D3D11 hw format is read from texture desc
     int texture_array_index = 0;        // Texture2DArray slice index
     VideoColorInfo color;
 

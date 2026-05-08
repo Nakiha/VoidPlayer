@@ -7,6 +7,7 @@
 
 extern "C" {
 #include <libavutil/hwcontext.h>
+#include <libavutil/pixdesc.h>
 }
 
 namespace vr {
@@ -39,6 +40,24 @@ const char* decode_device_mode_name(DecodeDeviceMode mode) {
         return "FfmpegOwnedHwDownloadDevice";
     }
     return "Unknown";
+}
+
+bool renderer_owned_d3d11_supports_stream_format(AVPixelFormat format) {
+    switch (format) {
+    case AV_PIX_FMT_NONE:
+    case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUVJ420P:
+    case AV_PIX_FMT_NV12:
+    case AV_PIX_FMT_NV21:
+    case AV_PIX_FMT_YUV420P10LE:
+    case AV_PIX_FMT_P010LE:
+    case AV_PIX_FMT_P016LE:
+    case AV_PIX_FMT_YUV420P12LE:
+    case AV_PIX_FMT_P012LE:
+        return true;
+    default:
+        return false;
+    }
 }
 
 // SEH-safe wrappers for FFmpeg codec calls.
@@ -163,6 +182,23 @@ bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
     decode_device_mode_ = mode;
     native_device_ = (mode == DecodeDeviceMode::SharedRenderDevice) ? render_device : nullptr;
     device_mutex_ = device_mutex;
+
+    const auto stream_format = static_cast<AVPixelFormat>(codec_params_->format);
+    if (mode != DecodeDeviceMode::FfmpegOwnedHwDownloadDevice &&
+        !renderer_owned_d3d11_supports_stream_format(stream_format)) {
+        const char* name = av_get_pix_fmt_name(stream_format);
+        spdlog::info("[DecodeThread] Hardware decode disabled for stream pixel format {} ({}) "
+                     "because renderer-owned D3D11 path only supports NV12/P010-like 4:2:0 surfaces",
+                     static_cast<int>(stream_format), name ? name : "unknown");
+        hw_enabled_ = false;
+        const AVCodec* sw_codec = preferred_software_decoder();
+        if (sw_codec && sw_codec != codec_) {
+            spdlog::info("[DecodeThread] Switching decoder to {} for software fallback",
+                         sw_codec->name);
+            reset_codec_context(sw_codec);
+        }
+        return false;
+    }
 
     HwDecodeInitParams hw_params;
     hw_params.backend = RenderBackendType::D3D11;

@@ -52,6 +52,7 @@ struct CpuNv12FrameStorage {
     std::shared_ptr<std::vector<uint8_t>> data;
     int y_stride = 0;
     int uv_stride = 0;
+    bool is_p010 = false;
 };
 
 struct D3D11Nv12FrameStorage {

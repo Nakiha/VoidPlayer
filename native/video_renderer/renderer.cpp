@@ -253,19 +253,9 @@ void Renderer::release_resources_locked() {
     // otherwise hw_frame_ref cleanup will access a freed device context.
     last_decision_ = PresentDecision();
 
-    // Stop all tracks
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (tracks_[i]) {
-            unregister_track_audio(tracks_[i]->file_id);
-            spdlog::info("Renderer: stopping track[{}] decode ({})", i, tracks_[i]->file_path);
-            tracks_[i]->decode_thread->stop();
-            spdlog::info("Renderer: track[{}] decode stopped", i);
-            spdlog::info("Renderer: stopping track[{}] demux ({})", i, tracks_[i]->file_path);
-            tracks_[i]->demux_thread->stop();
-            spdlog::info("Renderer: track[{}] demux stopped", i);
-            tracks_[i].reset();
-        }
-    }
+    tracks_.stop_all([this](size_t, TrackPipeline& track) {
+        unregister_track_audio(track.file_id);
+    });
 
     render_sink_.reset();
     if (playback_ && playback_session_started_by_renderer_) {
@@ -2062,13 +2052,11 @@ bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, Se
     const auto use_hardware_decode = current->use_hardware_decode;
 
     unregister_track_audio(file_id);
-    current->decode_thread->stop();
-    current->demux_thread->stop();
     render_sink_->set_track(slot, nullptr);
     if (frame_presenter_) {
         frame_presenter_->reset_track(slot);
     }
-    current.reset();
+    tracks_.stop_slot(slot);
 
     // Give the driver a brief moment to retire the previous D3D11VA decoder
     // objects before constructing a fresh hardware pipeline on the same file.
@@ -2253,33 +2241,23 @@ void Renderer::remove_track(int file_id) {
         playing_ = false;
     }
 
-    // Stop the pipeline
-    auto& track = tracks_[slot];
-    unregister_track_audio(track->file_id);
-    track->decode_thread->stop();
-    track->demux_thread->stop();
-
-    // Unregister from render sink
-    render_sink_->set_track(slot, nullptr);
-
-    // Release the pipeline
-    if (frame_presenter_) {
-        frame_presenter_->reset_track(slot);
-    }
-    track.reset();
+    tracks_.stop_slot(slot, [this](size_t stopped_slot, TrackPipeline& track) {
+        unregister_track_audio(track.file_id);
+        render_sink_->set_track(stopped_slot, nullptr);
+        if (frame_presenter_) {
+            frame_presenter_->reset_track(stopped_slot);
+        }
+    });
 
     // Compact: shift tracks_[slot+1..] down to fill the gap
-    for (size_t i = slot; i < kMaxTracks - 1; ++i) {
-        if (!tracks_[i + 1]) break;  // No more tracks to compact
-        tracks_[i] = std::move(tracks_[i + 1]);
+    tracks_.compact_from(slot, [this](size_t from, size_t to, TrackPipeline& track) {
         if (frame_presenter_) {
-            frame_presenter_->move_track(i + 1, i);
+            frame_presenter_->move_track(from, to);
         }
-        // Update render sink mapping (track buffer + offset)
-        render_sink_->set_track(i, tracks_[i]->track_buffer.get());
-        render_sink_->set_track_offset(i, tracks_[i]->offset_us);
-        render_sink_->set_track(i + 1, nullptr);
-    }
+        render_sink_->set_track(to, track.track_buffer.get());
+        render_sink_->set_track_offset(to, track.offset_us);
+        render_sink_->set_track(from, nullptr);
+    });
 
     // Compact last_decision_.frames the same way
     for (size_t i = slot; i < kMaxTracks - 1; ++i) {

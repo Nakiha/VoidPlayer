@@ -8,6 +8,7 @@
 #include "video_renderer/sync/render_sink.h"
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -38,6 +39,8 @@ public:
     using Storage = std::array<std::unique_ptr<TrackPipeline>, kMaxTracks>;
     using iterator = Storage::iterator;
     using const_iterator = Storage::const_iterator;
+    using TrackCallback = std::function<void(size_t slot, TrackPipeline& track)>;
+    using MoveCallback = std::function<void(size_t from, size_t to, TrackPipeline& track)>;
 
     std::unique_ptr<TrackPipeline>& operator[](size_t slot) { return tracks_[slot]; }
     const std::unique_ptr<TrackPipeline>& operator[](size_t slot) const { return tracks_[slot]; }
@@ -50,6 +53,9 @@ public:
     int find_empty_slot() const;
     int find_slot_by_file_id(int file_id) const;
     void clear();
+    void stop_all(const TrackCallback& before_stop = {});
+    void stop_slot(size_t slot, const TrackCallback& before_stop = {});
+    void compact_from(size_t slot, const MoveCallback& after_move = {});
 
     std::unique_ptr<TrackPipeline> create_pipeline(
         const std::string& path,

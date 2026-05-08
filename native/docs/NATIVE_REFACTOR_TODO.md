@@ -71,8 +71,7 @@ Source review: `build/chat_native_adv.md` (local build artifact, static review, 
 
 ## Round 7 - Renderer Responsibility Split
 
-- [ ] 从 `Renderer` 抽出 `TrackPipelineManager`，负责 add/remove/recreate track、demux/decode lifecycle。
-  已抽出 `TrackPipelineManager`，收拢 track slot ownership、查找和 demux/decode pipeline 创建；add/remove/recreate 编排继续下一轮下沉。
+- [x] 从 `Renderer` 抽出 `TrackPipelineManager`，负责 track slot ownership、查找、demux/decode pipeline 创建、stop/reset/compact lifecycle primitives；Renderer 保留 playback/layout/audio/render-sink 编排。
 - [x] 抽出 `SeekCoordinator`，集中处理 paused HEVC deferred seek、exact/keyframe gate 和 settle/in-flight 状态；实际 per-track seek 执行仍在 Renderer，等待 TrackPipelineManager 拆分。
 - [x] 抽出 `D3D11RenderBackend`，收拢 device、shader、presenter、headless output 的创建/销毁。
 - [x] 抽出 `AudioCoordinator`，收拢 audio track registration、sync、output backend。

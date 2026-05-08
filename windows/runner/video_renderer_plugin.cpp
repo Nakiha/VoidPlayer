@@ -3,6 +3,7 @@
 #include "startup_trace.h"
 
 #include "common/win_utf8.h"
+#include "common/windows_crash_handler.h"
 #include "utils.h"
 #include <flutter_windows.h>
 #include <spdlog/spdlog.h>

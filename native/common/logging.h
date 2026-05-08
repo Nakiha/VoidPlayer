@@ -1,6 +1,5 @@
 #pragma once
 #include <string>
-#include <functional>
 #include <spdlog/common.h>
 
 namespace vr {
@@ -29,13 +28,5 @@ struct LogConfig {
 /// Must be called before any other vr:: operations (before Renderer::initialize).
 /// Can be called multiple times to reconfigure.
 void configure_logging(const LogConfig& config);
-
-/// Install Windows crash handler (SEH).
-/// Writes crash dump to crash_dir/{timestamp}_crash.log.
-/// If crash_dir is empty, no file is written (only output to stderr if available).
-void install_crash_handler(const std::string& crash_dir);
-
-/// Remove crash handler. Called automatically in atexit or DLL unload.
-void remove_crash_handler();
 
 } // namespace vr

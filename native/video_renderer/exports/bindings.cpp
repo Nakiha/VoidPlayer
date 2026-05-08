@@ -3,6 +3,7 @@
 #include "player/native_player.h"
 #include "video_renderer/renderer.h"
 #include "common/logging.h"
+#include "common/windows_crash_handler.h"
 #include <cstdint>
 
 namespace py = pybind11;

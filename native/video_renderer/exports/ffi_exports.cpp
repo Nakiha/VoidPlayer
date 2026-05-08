@@ -1,6 +1,7 @@
 #include "video_renderer/exports/ffi_exports.h"
 #include "player/native_player.h"
 #include "common/logging.h"
+#include "common/windows_crash_handler.h"
 #include <spdlog/spdlog.h>
 #include <algorithm>
 #include <cmath>

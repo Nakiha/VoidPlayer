@@ -49,7 +49,8 @@ typedef struct naki_vr_player_config_t {
 | 播放控制 | play / pause / resume / seek / seek_typed / set_speed |
 | 逐帧 | step_forward / step_backward |
 | 查询 | is_playing / is_initialized / current_pts_us / current_speed / track_count / duration_us |
-| 日志 | configure_logging / install_crash_handler / remove_crash_handler |
+| 日志 | configure_logging |
+| Windows 崩溃诊断 | install_crash_handler / remove_crash_handler |
 
 ### Status / last error
 
@@ -93,8 +94,10 @@ typedef enum naki_vr_status_t {
 
 ```python
 configure_logging(LogConfig)  # preserves host spdlog sinks; native file sink supports rotation
-install_crash_handler(str)    # crash_dir; explicit opt-in process-global SEH/VEH/DbgHelp hooks
+install_crash_handler(str)    # crash_dir; explicit opt-in process-global VEH/SEH/CRT/DbgHelp hooks
 ```
+
+Crash handler 的实现位于 `common/windows_crash_handler.*`。它不是 renderer 生命周期的一部分；宿主进程需要显式 opt-in，并且要意识到这些 Windows hooks 会影响整个进程。
 
 ---
 

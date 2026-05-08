@@ -78,7 +78,9 @@ std::optional<TextureFrame> convert(AVFrame* frame);
 
 `convert()` 失败时返回 `std::nullopt`，不会再返回空 `TextureFrame`。不支持的像素格式、非法几何尺寸、hwdownload 失败或 CPU NV12 打包失败都会进入这个路径；DecodeThread 收到失败后将 `TrackBuffer` 设置为 `TrackState::Error`，避免空 `texture_handle` 被推入 buffer 后表现成黑帧。
 
-当前播放器 runtime 不依赖 libswscale；FrameConverter 只支持 `YUV420P`、`YUVJ420P`、`NV12`、`YUV420P10LE`、`P010LE` 到 CPU NV12 / D3D11 NV12 路径。不支持的格式按显式错误处理。
+当前播放器 runtime 不依赖也不引入 `libswscale` / `libyuv` 作为通用 fallback。FrameConverter 只支持 `YUV420P`、`YUVJ420P`、`NV12`、`YUV420P10LE`、`P010LE` 到 CPU NV12 / D3D11 NV12 路径。不支持的格式按显式错误处理。
+
+这个限制是有意的：FrameConverter 只做确定性的 pack/upload，不做通用色彩转换。新增像素格式时应逐个实现转换或 shader 路径，并补软解/硬解颜色一致性回归，避免同一个片源在两条解码路径上出现颜色差异。
 
 ## Shader 常量布局
 

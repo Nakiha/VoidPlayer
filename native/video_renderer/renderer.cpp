@@ -69,8 +69,8 @@ bool Renderer::initialize(const RendererConfig& config) {
         configure_logging(config.log_config);
     }
 
-    // Crash handling is process-global. Hosts must opt in explicitly via
-    // install_crash_handler(); Renderer initialization does not install hooks.
+    // Crash handling is process-global. Hosts must opt in explicitly via the
+    // windows_crash_handler module; Renderer initialization does not install hooks.
 
     std::lock_guard<std::mutex> state_lock(state_mutex_);
     if (initialized_.load() || running_.load() || render_thread_.joinable()) {

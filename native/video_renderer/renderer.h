@@ -273,7 +273,9 @@ private:
 
     /// Headless-only: select back buffer RTV, draw, swap, notify Flutter.
     /// Caller must hold device_mutex_; texture_mutex_ is held only while
-    /// selecting and publishing the shared buffer.
+    /// selecting and publishing the shared buffer. Callers must not already
+    /// hold texture_mutex(); callbacks returned from this method run outside
+    /// both locks.
     std::function<void()> draw_headless_and_publish(const PresentDecision& decision, const char* label);
 
     /// Internal mutex for D3D11 headless texture access.

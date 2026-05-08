@@ -70,6 +70,9 @@ std::shared_ptr<std::vector<uint8_t>> allocate_cpu_frame_buffer(size_t bytes,
 }
 
 bool supported_software_format(AVPixelFormat format) {
+    // Keep this list deliberately small. FrameConverter is a deterministic
+    // pack/upload step, not a general color scaler; adding libswscale/libyuv
+    // fallback would risk soft/hard decode color divergence for the same clip.
     switch (format) {
     case AV_PIX_FMT_YUV420P:
     case AV_PIX_FMT_YUVJ420P:

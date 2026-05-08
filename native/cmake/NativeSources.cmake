@@ -4,6 +4,7 @@ get_filename_component(VOID_NATIVE_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
 set(VOID_RENDERER_CORE_SOURCES
     "${VOID_NATIVE_DIR}/common/logging.cpp"
+    "${VOID_NATIVE_DIR}/common/windows_crash_handler.cpp"
     "${VOID_NATIVE_DIR}/playback/playback_controller.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/clock.cpp"
     "${VOID_NATIVE_DIR}/media/demux_thread.cpp"

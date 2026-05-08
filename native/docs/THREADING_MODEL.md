@@ -83,7 +83,7 @@ Deadline-based sleep 保证长时间播放无累积漂移。
 | Headless shared texture | texture_mutex | shared handle 查询、front/back 索引切换、resize、capture |
 | TrackBuffer state | mutex | 状态变更瞬间 |
 
-Headless 输出路径的锁顺序固定为 `device_mutex -> texture_mutex`。`D3D11HeadlessOutput::*_locked()` 方法要求调用方已持有 `texture_mutex()`；不要在这些方法内部再反向获取 `device_mutex`。
+Headless 输出路径的锁顺序固定为 `device_mutex -> texture_mutex`。`D3D11HeadlessOutput::*_locked()` 方法要求调用方已持有 `texture_mutex()`；不要在这些方法内部再反向获取 `device_mutex`。`Renderer::draw_headless_and_publish()` 会在内部短暂获取 `texture_mutex()`，调用方必须只持有 `device_mutex`，不能预先持有 `texture_mutex()`。
 
 Headless publish 的同步契约：
 

@@ -18,6 +18,32 @@ if(TARGET video_renderer_ffi)
             "${DIST_DIR}/ffi/"
         COMMENT "Installing FFI artifacts to ${DIST_DIR}/ffi/..."
     )
+
+    if(EXISTS "${FFMPEG_BIN_DIR}")
+        void_collect_ffmpeg_runtime_dlls(FFMPEG_FFI_DLL_FILES)
+        void_collect_ffmpeg_notice_files(FFMPEG_FFI_NOTICE_FILES)
+        set(FFI_DLL_COPY_CMDS "")
+        foreach(DLL ${FFMPEG_FFI_DLL_FILES})
+            list(APPEND FFI_DLL_COPY_CMDS
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DLL}" "${DIST_DIR}/ffi/")
+        endforeach()
+        foreach(NOTICE ${FFMPEG_FFI_NOTICE_FILES})
+            list(APPEND FFI_DLL_COPY_CMDS
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${NOTICE}" "${DIST_DIR}/ffi/")
+        endforeach()
+        add_custom_target(copy_ffmpeg_to_ffi_dist ALL
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${DIST_DIR}/ffi"
+            COMMAND ${CMAKE_COMMAND}
+                -DVOID_FFMPEG_RUNTIME_DIR="${DIST_DIR}/ffi"
+                -P "${VOID_NATIVE_DIR}/cmake/RemoveUnusedFFmpegDlls.cmake"
+            ${FFI_DLL_COPY_CMDS}
+            COMMENT "Copying FFmpeg DLLs to ${DIST_DIR}/ffi/..."
+        )
+        add_dependencies(copy_ffmpeg_to_ffi_dist video_renderer_ffi)
+        if(TARGET copy_ffmpeg_dlls)
+            add_dependencies(copy_ffmpeg_to_ffi_dist copy_ffmpeg_dlls)
+        endif()
+    endif()
 endif()
 
 if(BUILD_PYTHON AND TARGET video_renderer_native)

@@ -85,7 +85,7 @@ CI 入口位于 `.github/workflows/native.yml`，包含完整 `python dev.py tes
 
 默认 `windows/libs/ffmpeg` 是 gyan.dev 的 FFmpeg 8.1 full shared Windows build，`README.txt` 记录来源、GPL v3 license、source commit 和完整 configure flags。VoidPlayer/native 通过 FFmpeg import libraries 动态链接这些 DLL，不静态链接 FFmpeg。用户可以用 `--ffmpeg-root`、`FFMPEG_ROOT` 或 `FFMPEG_DIR` 指向同布局的替代 FFmpeg dev package，但替换包必须同时提供 `include/`、`lib/`、`bin/` 以及对应 `README.txt`/`LICENSE`。
 
-构建会把运行所需的 FFmpeg DLL 和 `README.txt`、`LICENSE`/`LICENSE.txt` 一起复制到 native build 输出目录、`native/build-msvc/dist/python/`，以及 Flutter runner 输出目录。播放器默认 runtime copy 包含 `avcodec`、`avformat`、`avutil`、`swresample`，不包含 `swscale`；只有 `BUILD_BENCHMARKS=ON` 的 `pipeline_bench` 会单独复制 `swscale`。
+构建会把运行所需的 FFmpeg DLL 和 `README.txt`、`LICENSE`/`LICENSE.txt` 一起复制到 native build 输出目录、`native/build-msvc/dist/python/`、`native/build-msvc/dist/ffi/`，以及 Flutter runner 输出目录。播放器默认 runtime copy 包含 `avcodec`、`avformat`、`avutil`、`swresample`，不包含 `swscale`；只有 `BUILD_BENCHMARKS=ON` 的 `pipeline_bench` 会单独复制 `swscale`。
 
 ## `python dev.py test` 实际覆盖
 

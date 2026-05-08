@@ -27,7 +27,7 @@ Source review: `build/chat_native_adv.md` (local build artifact, static review, 
 - [x] 随 FFmpeg DLL 同步复制 license、notice、source offer 或源码获取说明。
 - [x] 明确 native DLL 与 FFmpeg 的动态链接关系，以及用户替换 FFmpeg DLL 的支持边界。
 - [x] 对齐 `FFMPEG_RUNTIME_DLL_PATTERNS` 与实际链接库，避免查找了 `swscale` 但运行时复制规则不一致。
-- [ ] 验证：检查 release/staging 输出目录包含 DLL 与对应 license/notice 文件。
+- [x] 验证：检查 release/staging 输出目录包含 DLL 与对应 license/notice 文件；`native/build-msvc/Release`、`dist/python`、`dist/ffi` 均包含 FFmpeg runtime DLL 与 `README.txt`/`LICENSE`，且默认 runtime 不含 `swscale`。
 
 ## Round 3 - Stable C ABI And Error Model
 
@@ -75,7 +75,7 @@ Source review: `build/chat_native_adv.md` (local build artifact, static review, 
 - [x] 抽出 `SeekCoordinator`，集中处理 paused HEVC deferred seek、exact/keyframe gate 和 settle/in-flight 状态；实际 per-track seek 执行仍在 Renderer，等待 TrackPipelineManager 拆分。
 - [x] 抽出 `D3D11RenderBackend`，收拢 device、shader、presenter、headless output 的创建/销毁。
 - [x] 抽出 `AudioCoordinator`，收拢 audio track registration、sync、output backend。
-- [ ] 保留 `Renderer` 作为生命周期和 playback/render state 的薄入口，避免继续堆 flags。
+- [x] 保留 `Renderer` 作为生命周期和 playback/render state 的入口；D3D、audio、seek、track pipeline ownership/lifecycle primitives 已下沉，Renderer 仅保留跨模块编排与 draw/layout 状态。
 - [x] 验证：`AudioCoordinator`、`SeekCoordinator`、`D3D11RenderBackend` 拆分均已分别跑 `python dev.py test --native-only`；后续 TrackPipeline 拆分继续独立测试提交。
 
 ## Round 8 - Shader Layout And Diagnostics

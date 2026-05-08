@@ -45,20 +45,24 @@ def configure(
     build_python: bool = True,
     build_ffi: bool = True,
 ):
-    import pybind11
-    pybind11_dir = pybind11.get_cmake_dir()
-
     cmake_args = [
         "cmake",
         "-B", str(build_dir),
         "-S", str(script_dir),
-        f"-Dpybind11_DIR={pybind11_dir}",
         f"-DFFMPEG_ROOT={ffmpeg_root}",
         f"-DBUILD_BENCHMARKS={'ON' if build_benchmarks else 'OFF'}",
         f"-DBUILD_TESTS={'ON' if build_tests else 'OFF'}",
         f"-DBUILD_PYTHON={'ON' if build_python else 'OFF'}",
         f"-DBUILD_FFI={'ON' if build_ffi else 'OFF'}",
     ]
+
+    if build_python:
+        try:
+            import pybind11
+        except ImportError:
+            pass
+        else:
+            cmake_args.append(f"-Dpybind11_DIR={pybind11.get_cmake_dir()}")
 
     subprocess.check_call(cmake_args)
 

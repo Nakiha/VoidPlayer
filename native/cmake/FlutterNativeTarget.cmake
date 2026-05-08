@@ -57,10 +57,17 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
     set(FFMPEG_DLL_DIR "${FFMPEG_ROOT}/bin")
     if(EXISTS "${FFMPEG_DLL_DIR}")
         void_collect_ffmpeg_runtime_dlls(FFMPEG_DLL_FILES)
+        void_collect_ffmpeg_notice_files(FFMPEG_NOTICE_FILES)
         foreach(DLL ${FFMPEG_DLL_FILES})
             add_custom_command(TARGET ${target_name} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${DLL}" "$<TARGET_FILE_DIR:${target_name}>"
+            )
+        endforeach()
+        foreach(NOTICE ${FFMPEG_NOTICE_FILES})
+            add_custom_command(TARGET ${target_name} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${NOTICE}" "$<TARGET_FILE_DIR:${target_name}>"
             )
         endforeach()
         add_custom_command(TARGET ${target_name} POST_BUILD

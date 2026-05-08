@@ -15,8 +15,8 @@ Expected local toolchain shape:
 - MSYS packages such as `make`, `pkgconf`, `diffutils`, and `base-devel` are
   present.
 - UCRT64 compiler packages are not currently installed.
-- Visual Studio 18 has `cl.exe` under
-  `C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\...`.
+- Visual Studio 2022 or newer has `cl.exe` under
+  `C:\Program Files\Microsoft Visual Studio\...\VC\Tools\MSVC\...`.
 - NASM is installed and either available as `nasm.exe` on `PATH`, or provided
   through `VOID_NASM` / `VOID_NASM_DIR`.
 
@@ -54,6 +54,7 @@ Optional overrides:
 ```powershell
 $env:VOID_NASM = "C:\Tools\NASM\nasm.exe"
 $env:MSYS2_BASH = "D:\msys64\usr\bin\bash.exe"
+$env:CMAKE_GENERATOR = "Visual Studio 17 2022"
 ```
 
 The script configures a minimal static MSVC build with NASM enabled, builds the

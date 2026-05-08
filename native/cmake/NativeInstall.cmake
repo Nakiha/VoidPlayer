@@ -1,4 +1,4 @@
-set(DIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dist")
+set(DIST_DIR "${CMAKE_BINARY_DIR}/dist" CACHE PATH "Native staging directory")
 
 file(MAKE_DIRECTORY "${DIST_DIR}/python")
 file(MAKE_DIRECTORY "${DIST_DIR}/python/video_renderer")
@@ -16,7 +16,7 @@ if(TARGET video_renderer_ffi)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/video_renderer/exports/ffi_exports.h"
             "${DIST_DIR}/ffi/"
-        COMMENT "Installing FFI artifacts to dist/ffi/..."
+        COMMENT "Installing FFI artifacts to ${DIST_DIR}/ffi/..."
     )
 endif()
 
@@ -29,15 +29,20 @@ if(BUILD_PYTHON AND TARGET video_renderer_native)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/video_renderer/exports/__init__.py"
             "${DIST_DIR}/python/video_renderer/__init__.py"
-        COMMENT "Installing Python artifacts to dist/python/..."
+        COMMENT "Installing Python artifacts to ${DIST_DIR}/python/..."
     )
 
     if(EXISTS "${FFMPEG_BIN_DIR}")
         void_collect_ffmpeg_runtime_dlls(FFMPEG_DLL_FILES)
+        void_collect_ffmpeg_notice_files(FFMPEG_NOTICE_FILES)
         set(DIST_DLL_COPY_CMDS "")
         foreach(DLL ${FFMPEG_DLL_FILES})
             list(APPEND DIST_DLL_COPY_CMDS
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DLL}" "${DIST_DIR}/python/")
+        endforeach()
+        foreach(NOTICE ${FFMPEG_NOTICE_FILES})
+            list(APPEND DIST_DLL_COPY_CMDS
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${NOTICE}" "${DIST_DIR}/python/")
         endforeach()
         add_custom_target(copy_ffmpeg_to_dist ALL
             COMMAND ${CMAKE_COMMAND} -E make_directory "${DIST_DIR}/python"
@@ -45,7 +50,7 @@ if(BUILD_PYTHON AND TARGET video_renderer_native)
                 -DVOID_FFMPEG_RUNTIME_DIR="${DIST_DIR}/python"
                 -P "${VOID_NATIVE_DIR}/cmake/RemoveUnusedFFmpegDlls.cmake"
             ${DIST_DLL_COPY_CMDS}
-            COMMENT "Copying FFmpeg DLLs to dist/python/..."
+            COMMENT "Copying FFmpeg DLLs to ${DIST_DIR}/python/..."
         )
         if(TARGET copy_ffmpeg_dlls)
             add_dependencies(copy_ffmpeg_to_dist copy_ffmpeg_dlls)

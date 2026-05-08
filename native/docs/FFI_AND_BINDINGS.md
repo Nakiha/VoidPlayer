@@ -79,8 +79,8 @@ install_crash_handler(str)   # crash_dir
 
 | 目标 | 输出路径 | 说明 |
 |------|---------|------|
-| video_renderer_ffi | dist/ffi/ | DLL + 头文件 |
-| video_renderer_native | dist/python/ | .pyd + FFmpeg DLLs |
+| video_renderer_ffi | `native/build-msvc/dist/ffi/` | DLL + 头文件 |
+| video_renderer_native | `native/build-msvc/dist/python/` | .pyd + FFmpeg DLLs |
 
 C FFI 消费者需链接 `video_renderer_ffi.dll` 并包含 `ffi_exports.h`。
 Python 消费者 `import video_renderer_native` 即可。

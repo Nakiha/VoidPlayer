@@ -1,0 +1,83 @@
+name: Native
+
+on:
+  push:
+    paths:
+      - ".github/workflows/native.yml"
+      - "dev.py"
+      - "scripts/dev/**"
+      - "native/**"
+      - "windows/libs/ffmpeg/**"
+      - "resources/video/**"
+  pull_request:
+    paths:
+      - ".github/workflows/native.yml"
+      - "dev.py"
+      - "scripts/dev/**"
+      - "native/**"
+      - "windows/libs/ffmpeg/**"
+      - "resources/video/**"
+
+jobs:
+  native-test:
+    name: Native test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            base-devel
+            diffutils
+            make
+            nasm
+            pkgconf
+
+      - name: Install Python test/build dependencies
+        run: python -m pip install --upgrade pip pytest pybind11
+
+      - name: Run native build and tests
+        shell: pwsh
+        run: python dev.py test --native-only
+
+  native-config-matrix:
+    name: Configure ${{ matrix.name }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: python-off-ffi-on-tests-on
+            build_python: "OFF"
+            build_ffi: "ON"
+            build_tests: "ON"
+          - name: python-off-ffi-on-tests-off
+            build_python: "OFF"
+            build_ffi: "ON"
+            build_tests: "OFF"
+          - name: python-off-ffi-off-tests-off
+            build_python: "OFF"
+            build_ffi: "OFF"
+            build_tests: "OFF"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure native
+        shell: pwsh
+        run: >
+          cmake -S native -B "native/build-ci-${{ matrix.name }}"
+          -DBUILD_PYTHON=${{ matrix.build_python }}
+          -DBUILD_FFI=${{ matrix.build_ffi }}
+          -DBUILD_TESTS=${{ matrix.build_tests }}
+          -DBUILD_BENCHMARKS=OFF

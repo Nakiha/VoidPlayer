@@ -1,0 +1,109 @@
+# Native Refactor Todo
+
+Source review: `build/chat_native_adv.md` (local build artifact, static review, not a verified build/test report).
+
+目标不是一次性重写 native，而是按风险拆成可独立验证的修复轮次。每轮开始前要先在当前代码中确认问题真实存在；每轮结束都要同步相关文档，并按 [MAINTENANCE.md](MAINTENANCE.md) 的 native 验证要求跑测试。
+
+## 分层原则
+
+| 优先级 | 判定标准 |
+|--------|----------|
+| P0 | 会阻塞干净构建、开源合规、FFI 边界稳定、用户直接黑屏/无声/崩溃的问题 |
+| P1 | 会持续放大维护成本，或缺少能抓住关键回归的测试 |
+| P2 | 代码味道、诊断质量、长期工程化改进 |
+
+## Round 1 - Build Hygiene
+
+- [x] `native/build.py` 仅在 `build_python=True` 时 import `pybind11` 并读取 `get_cmake_dir()`。
+- [x] 将 `BUILD_FFI`、`BUILD_PYTHON`、`BUILD_TESTS`、`BUILD_BENCHMARKS` 等构建开关统一成显式 CMake `option()`，移除隐式默认判断。
+- [x] install/staging 输出到 build tree 或 `CMAKE_INSTALL_PREFIX`，不再写入 `native/dist` 这类 source tree 路径。
+- [x] 收敛 spdlog、Catch2、zstd、FFmpeg 的依赖入口，至少文档化唯一优先路径和 fallback 规则。
+- [x] 增加 clean Windows build 说明或 CI 入口，覆盖 `BUILD_PYTHON=OFF`、`BUILD_FFI=ON`、`BUILD_TESTS=ON/OFF`。
+- [x] 验证：`python dev.py test --native-only`。
+
+## Round 2 - FFmpeg License And Runtime Packaging
+
+- [x] 记录随项目使用的 FFmpeg 版本、来源、configure flags、GPL/nonfree 状态。
+- [x] 随 FFmpeg DLL 同步复制 license、notice、source offer 或源码获取说明。
+- [x] 明确 native DLL 与 FFmpeg 的动态链接关系，以及用户替换 FFmpeg DLL 的支持边界。
+- [x] 对齐 `FFMPEG_RUNTIME_DLL_PATTERNS` 与实际链接库，避免查找了 `swscale` 但运行时复制规则不一致。
+- [ ] 验证：检查 release/staging 输出目录包含 DLL 与对应 license/notice 文件。
+
+## Round 3 - Stable C ABI And Error Model
+
+- [ ] 增加 `NAKI_VR_ABI_VERSION` 与 `naki_vr_abi_version()`。
+- [ ] 所有跨 FFI 的 config struct 增加 `size`、`abi_version`，并在入口处校验。
+- [ ] 引入项目自有的 `naki_vr_status_t`，避免把 `spdlog` enum 或 C++ enum 直接暴露成 ABI 契约。
+- [ ] 为 log level、seek type、layout mode、track order 等 FFI 参数增加范围校验。
+- [ ] 增加 `last_error` 或等价错误查询 API，让 Dart 能区分参数非法、FFmpeg 打开失败、D3D device lost、shader 失败和内部异常。
+- [ ] 更新 Dart FFI/MethodChannel 侧错误映射和用户可见错误文本。
+- [ ] 验证：补充 `native/tests/ffi` 的 struct size、ABI version、null pointer、invalid enum、double destroy 行为测试；如影响 Flutter action，追加一条 UI smoke。
+
+## Round 4 - Frame Conversion Failure As Explicit Error
+
+- [ ] 将 `FrameConverter::convert()` 从默认空 `TextureFrame` 改为 `Result`/`optional`/错误对象。
+- [ ] unsupported pixel format、hwdownload 失败、CPU NV12 转换失败必须进入明确错误路径。
+- [ ] DecodeThread 将转换错误写入 `TrackState::Error`，不要把空 texture frame 塞进 buffer。
+- [ ] 通过 FFI/native player facade 把 track 错误暴露给 Flutter。
+- [ ] 决定是否接入 libswscale/libyuv 作为兜底；如果暂不支持，文档写清楚支持的像素格式。
+- [ ] 验证：补充 unsupported pixel format/failure injection 测试；跑 `python dev.py test --native-only`，涉及上屏错误文案时跑 `python dev.py ui-test ui_tests/smoke/basic.csv`。
+
+## Round 5 - Audio Sync Foundation
+
+- [ ] PCM 输出队列携带 PTS、duration、stream serial/range，不再只传裸 PCM bytes。
+- [ ] `AudioDecodeThread::notify_seek()` 使用 seek target/type，seek 后按目标 PTS 丢弃、补 silence 或重新对齐。
+- [ ] 明确 master clock 策略：音频主时钟或外部 clock，并加入 drift/underrun metrics。
+- [ ] 检查 `waveOutPrepareHeader`、`waveOutWrite`、`waveOutUnprepareHeader`、device open/reset 的返回值并上报错误。
+- [ ] 规划 WASAPI shared mode 迁移；本轮可先完成时间模型，不强行一次替换后端。
+- [ ] 验证：新增 seek/pause/resume/underrun 的 native 测试；影响播放器主流程时跑 seek/timeline UI 脚本。
+
+## Round 6 - D3D Headless Texture And Device-Lost Handling
+
+- [ ] `D3D11HeadlessOutput::create_shared_buffers()` 获取 shared handle 失败时 hard fail，不再 warning 后继续初始化。
+- [ ] 缩短 texture mutex 持有范围，避免在锁内等待 GPU idle 或执行可能阻塞的 publish 流程。
+- [ ] 明确 Flutter texture consumer 与 native producer 的同步契约，选择 keyed mutex、fence 或文档化的 texture registrar 生命周期协议。
+- [ ] device lost 时至少做到停止 render loop、上报 Dart、允许 destroy/recreate；中期再评估内部自动恢复。
+- [ ] 统一 D3D texture/shader/presenter 的 HRESULT 失败上报，避免只散落 log。
+- [ ] 验证：补充 shared handle fail、shader compile fail、device removed/poll 的故障注入测试；跑 HEVC/AV1/VP9 上屏 UI 回归。
+
+## Round 7 - Renderer Responsibility Split
+
+- [ ] 从 `Renderer` 抽出 `TrackPipelineManager`，负责 add/remove/recreate track、demux/decode lifecycle。
+- [ ] 抽出 `SeekCoordinator`，集中处理 seek、deferred HEVC seek、exact/keyframe policy。
+- [ ] 抽出 `D3D11RenderBackend`，收拢 device、shader、presenter、headless output。
+- [ ] 抽出 `AudioCoordinator`，收拢 audio track registration、sync、output backend。
+- [ ] 保留 `Renderer` 作为生命周期和 playback/render state 的薄入口，避免继续堆 flags。
+- [ ] 验证：每个拆分 PR 都保持现有 native 测试和相关 UI 回归全绿，不做无测试的大搬家。
+
+## Round 8 - Shader Layout And Diagnostics
+
+- [ ] 给 C++ HLSL constants struct 增加 `static_assert(sizeof(...) == 304)` 与关键 offset 校验。
+- [ ] 评估用 schema/generator 或 shader reflection 校验 cbuffer layout。
+- [ ] runtime shader compile 依赖 `D3DCompile` 的分发策略要写入文档；中期评估预编译 shader。
+- [ ] `RenderSink` 的 PTS tolerance 从硬编码常量升级为命名配置或有测试覆盖的常量。
+- [ ] 验证：补充 shader layout 单测和不同 fps/timebase 的 RenderSink 边界测试。
+
+## Round 9 - Library Boundary And Global Hooks
+
+- [ ] `configure_logging()` 不再清空或接管 spdlog default logger；改为 native 自有 logger/sink。
+- [ ] crash handler、SEH/VEH、DbgHelp、purecall/invalid parameter handler 改成显式 opt-in，并写清宿主进程影响。
+- [ ] `LogConfig.max_file_size/max_files` 要么真正实现 rotation，要么移除/改注释，避免 API 行为不一致。
+- [ ] 验证：新增 logging 初始化幂等测试，确认不会污染宿主 logger。
+
+## Round 10 - Ownership And Queue Result Cleanup
+
+- [ ] `DemuxStats` 中的 `AVCodecParameters` 改为 deep copy，避免 borrowed pointer 生命周期悬垂。
+- [ ] `PacketQueue::pop()` 返回 richer enum，区分 packet、flush、EOF、abort、empty。
+- [ ] `D3D11Device` release 构建默认不使用 reference driver fallback，reference 仅作为 debug option。
+- [ ] 清理未调用的 static helper，例如确认 `report_live_objects()` 是否接入 debug shutdown 或删除。
+- [ ] 验证：补充 demux pipeline recreate、queue flush/abort/reset 的单元测试。
+
+## 后续测试矩阵
+
+- [ ] Windows Debug/Release clean build。
+- [ ] `BUILD_PYTHON=OFF`、`BUILD_FFI=ON`、`BUILD_TESTS=ON/OFF` 组合。
+- [ ] clang-cl ASan 或等价内存检查覆盖非 D3D 核心模块。
+- [ ] MSVC `/analyze` 或 clang-tidy 覆盖 media/buffer/sync/FFI。
+- [ ] fuzz/property tests 覆盖 `BidiRingBuffer`、`PacketQueue`、analysis parsers。
+- [ ] failure injection 覆盖 FFmpeg open fail、unsupported pixel format、D3D device removed、shared handle fail、shader compile fail、audio device open fail。
+- [ ] ABI tests 覆盖 struct size、enum 值、null pointer、invalid enum、invalid UTF-8/path、double destroy。

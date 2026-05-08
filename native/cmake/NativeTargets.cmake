@@ -1,4 +1,4 @@
-if(BUILD_FFI OR NOT DEFINED BUILD_FFI)
+if(BUILD_FFI)
     add_library(video_renderer_ffi SHARED
         video_renderer/exports/ffi_exports.cpp
     )

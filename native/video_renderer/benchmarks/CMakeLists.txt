@@ -37,3 +37,13 @@ set_target_properties(pipeline_bench PROPERTIES
 if(TARGET copy_ffmpeg_dlls)
     add_dependencies(pipeline_bench copy_ffmpeg_dlls)
 endif()
+
+if(EXISTS "${FFMPEG_BIN_DIR}")
+    file(GLOB SWSCALE_DLL_FILES "${FFMPEG_BIN_DIR}/swscale-*.dll")
+    foreach(DLL ${SWSCALE_DLL_FILES})
+        add_custom_command(TARGET pipeline_bench POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${DLL}" "$<TARGET_FILE_DIR:pipeline_bench>"
+        )
+    endforeach()
+endif()

@@ -24,6 +24,7 @@ include(cmake/TestAssets.cmake)
 include(cmake/RuntimeArtifacts.cmake)
 
 option(BUILD_BENCHMARKS "Build native benchmark executables" OFF)
+option(BUILD_FFI "Build C FFI shared library" ON)
 
 enable_testing()
 add_subdirectory(analysis)

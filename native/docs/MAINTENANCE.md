@@ -91,5 +91,6 @@ python native/build.py --test-only   # 全部 PASS
 | [D3D11_BACKEND.md](D3D11_BACKEND.md) | D3D11 后端 | GPU 相关变更时 |
 | [FFI_AND_BINDINGS.md](FFI_AND_BINDINGS.md) | FFI 绑定 | API 签名变更时 |
 | [BUILD_AND_TEST.md](BUILD_AND_TEST.md) | 构建测试 | 构建/测试变更时 |
+| [NATIVE_REFACTOR_TODO.md](NATIVE_REFACTOR_TODO.md) | native 技术债修复轮次 | 每轮技术债修复完成时 |
 | [MAINTENANCE.md](MAINTENANCE.md) | 本文档 | 维护流程变更时 |
 | CPP_VIDEO_RENDERER_DESIGN.md | 已归档 | 不再更新 |

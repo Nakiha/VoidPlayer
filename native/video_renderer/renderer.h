@@ -25,6 +25,7 @@ class D3D11FramePresenter;
 class D3D11HeadlessOutput;
 class ShaderManager;
 class TextureManager;
+class AudioCoordinator;
 
 /// Layout mode constants (match HLSL defines)
 constexpr int LAYOUT_SIDE_BY_SIDE = 0;
@@ -345,6 +346,7 @@ private:
     std::unique_ptr<PlaybackController> owned_playback_;
     PlaybackController* playback_ = nullptr;
     bool playback_session_started_by_renderer_ = false;
+    std::unique_ptr<AudioCoordinator> audio_coordinator_;
     std::unique_ptr<D3D11Device> d3d_device_;
     std::unique_ptr<TextureManager> texture_mgr_;
     std::unique_ptr<D3D11FramePresenter> frame_presenter_;

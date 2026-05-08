@@ -158,7 +158,7 @@ class _AddMediaButton extends StatelessWidget {
             Tooltip(
               message: l.openLocalFile,
               child: InkWell(
-                onTap: () => unawaited(onOpenFile()),
+                onTap: () => unawaited(_openLocalFile()),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 0, 10, 0),
                   child: SizedBox(
@@ -202,7 +202,7 @@ class _AddMediaButton extends StatelessWidget {
                 onChanged: (choice) {
                   switch (choice) {
                     case _AddMediaChoice.localFile:
-                      unawaited(onOpenFile());
+                      unawaited(_openLocalFile());
                     case _AddMediaChoice.networkStream:
                       unawaited(_openNetworkDialog(context));
                     case _AddMediaChoice.sshRemoteFile:
@@ -244,21 +244,45 @@ class _AddMediaButton extends StatelessWidget {
     };
   }
 
+  Future<void> _openLocalFile() async {
+    try {
+      await onOpenFile();
+    } finally {
+      await _restoreGlobalShortcutFocus();
+    }
+  }
+
   Future<void> _openNetworkDialog(BuildContext context) async {
-    final url = await OpenNetworkStreamDialog.show(context);
-    if (url == null || url.isEmpty) return;
-    await onOpenNetworkMedia(url);
+    try {
+      final url = await OpenNetworkStreamDialog.show(context);
+      if (url == null || url.isEmpty) return;
+      await onOpenNetworkMedia(url);
+    } finally {
+      await _restoreGlobalShortcutFocus();
+    }
   }
 
   Future<void> _openSshDialog(BuildContext context) async {
     final feedback = AppFeedbackScope.read(context);
-    final remotePath = await OpenSshRemoteFileDialog.show(context);
-    if (remotePath == null || remotePath.isEmpty) return;
     try {
+      final remotePath = await OpenSshRemoteFileDialog.show(context);
+      if (remotePath == null || remotePath.isEmpty) return;
       await onOpenSshRemoteMedia(remotePath);
     } on Object catch (e) {
       feedback.showError(e.toString());
+    } finally {
+      await _restoreGlobalShortcutFocus();
     }
+  }
+
+  Future<void> _restoreGlobalShortcutFocus() async {
+    FocusManager.instance.primaryFocus?.unfocus(
+      disposition: UnfocusDisposition.scope,
+    );
+    await WidgetsBinding.instance.endOfFrame;
+    FocusManager.instance.primaryFocus?.unfocus(
+      disposition: UnfocusDisposition.scope,
+    );
   }
 }
 

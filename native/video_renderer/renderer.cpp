@@ -485,6 +485,13 @@ void Renderer::seek_internal(int64_t target_pts_us,
                              bool allow_deferred,
                              bool force_recreate_paused_hevc) {
     // Caller must hold state_mutex_
+    // Known limitation: exact seek assumes the target keyframe carries the
+    // codec parameter sets needed by the decoder. Some H.264 FLV files store
+    // SPS/PPS only in the AVC sequence header and omit them on IDR frames.
+    // Seeking directly to such an IDR may leave the decoder without fresh
+    // parameters and produce corrupted output. We intentionally do not repair
+    // those streams here; remux/re-encode with SPS/PPS on keyframes if exact
+    // seek correctness is required.
     const int64_t requested_pts_us = target_pts_us;
     const int64_t duration_us = effective_duration_us_locked();
     if (duration_us > 0) {

@@ -21,8 +21,6 @@ namespace vr {
 static constexpr int64_t MAX_SLEEP_US = 8000;  // 8ms cap → ~120Hz layout response
 static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250);
 static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
-static constexpr size_t kTrackForwardDepth = 4;
-static constexpr size_t kTrackBackwardDepth = 1;
 
 uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
     return static_cast<uint64_t>(
@@ -45,13 +43,6 @@ int64_t track_pts_end_us_from_stats(const DemuxStats& stats) {
         return stats.duration_us;
     }
     return stats.start_time_us + stats.duration_us;
-}
-
-DecodeDeviceMode default_decode_device_mode(AVCodecID codec_id) {
-    if (codec_id == AV_CODEC_ID_AV1 || codec_id == AV_CODEC_ID_VP9) {
-        return DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
-    }
-    return DecodeDeviceMode::IndependentDevice;
 }
 
 Renderer::Renderer()
@@ -2043,92 +2034,18 @@ int Renderer::first_active_track() const {
 }
 
 int Renderer::find_slot_by_file_id(int file_id) const {
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (tracks_[i] && tracks_[i]->file_id == file_id)
-            return static_cast<int>(i);
-    }
-    return -1;
+    return tracks_.find_slot_by_file_id(file_id);
 }
 
 int Renderer::find_empty_slot() const {
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks_[i]) return static_cast<int>(i);
-    }
-    return -1;
+    return tracks_.find_empty_slot();
 }
 
-std::unique_ptr<Renderer::TrackPipeline> Renderer::create_pipeline(const std::string& path,
-                                                                      bool hw_decode,
-                                                                      const SeekRequest* initial_seek) {
-    auto pipeline = std::make_unique<TrackPipeline>();
-    pipeline->file_path = path;
-    pipeline->use_hardware_decode = hw_decode;
-    pipeline->seek_controller = std::make_unique<SeekController>();
-    if (initial_seek) {
-        pipeline->seek_controller->request_seek(initial_seek->target_pts_us, initial_seek->type);
-    }
-    pipeline->packet_queue = std::make_unique<PacketQueue>(100);
-    pipeline->audio_packet_queue = std::make_unique<PacketQueue>(100);
-    pipeline->track_buffer = std::make_unique<TrackBuffer>(kTrackForwardDepth, kTrackBackwardDepth);
-    spdlog::info("Renderer: track buffer depth forward={}, backward={}, max_cached={}",
-                 kTrackForwardDepth,
-                 kTrackBackwardDepth,
-                 kTrackForwardDepth + 1);
-    pipeline->demux_thread = std::make_unique<DemuxThread>(
-        path, *pipeline->seek_controller);
-    pipeline->demux_thread->add_output(DemuxStreamKind::Video, *pipeline->packet_queue);
-    pipeline->demux_thread->add_optional_output(DemuxStreamKind::Audio, *pipeline->audio_packet_queue);
-
-    if (!pipeline->demux_thread->start()) {
-        spdlog::error("Renderer: failed to start demux for {}", path);
-        return nullptr;
-    }
-
-    const auto& stats = pipeline->demux_thread->stats();
-    if (stats.video_stream_index < 0) {
-        spdlog::error("Renderer: no video stream found in {}", path);
-        pipeline->demux_thread->stop();
-        return nullptr;
-    }
-
-    pipeline->video_width = stats.width;
-    pipeline->video_height = stats.height;
-    if (stats.width > 0 && stats.height > 0) {
-        float sar = (stats.sar_den > 0)
-            ? static_cast<float>(stats.sar_num) / static_cast<float>(stats.sar_den)
-            : 1.0f;
-        pipeline->video_aspect = (static_cast<float>(stats.width) / static_cast<float>(stats.height)) * sar;
-    }
-
-    pipeline->decode_thread = std::make_unique<DecodeThread>(
-        *pipeline->packet_queue, *pipeline->track_buffer,
-        stats.codec_params, stats.time_base);
-
-    if (!pipeline->decode_thread->is_valid()) {
-        spdlog::error("Renderer: decode thread init failed for {}", path);
-        pipeline->demux_thread->stop();
-        return nullptr;
-    }
-
-    pipeline->demux_thread->set_seek_callback(
-        [dt = pipeline->decode_thread.get()](int64_t pts, SeekType type) {
-            dt->notify_seek(pts, type);
-        });
-
-    if (hw_decode) {
-        // Use an explicit policy so stable codecs stay on an independent
-        // decode device, while AV1/VP9 keep the FFmpeg-owned hwdownload path.
-        pipeline->decode_thread->enable_hardware_decode(
-            default_decode_device_mode(stats.codec_params->codec_id));
-    }
-
-    if (!pipeline->decode_thread->start()) {
-        spdlog::error("Renderer: failed to start decode for {}", path);
-        pipeline->demux_thread->stop();
-        return nullptr;
-    }
-
-    return pipeline;
+std::unique_ptr<TrackPipeline> Renderer::create_pipeline(
+    const std::string& path,
+    bool hw_decode,
+    const SeekRequest* initial_seek) {
+    return tracks_.create_pipeline(path, hw_decode, initial_seek);
 }
 
 bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, SeekType type) {

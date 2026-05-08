@@ -7,6 +7,7 @@
 #include "video_renderer/buffer/track_buffer.h"
 #include "media/seek_controller.h"
 #include "video_renderer/sync/render_sink.h"
+#include "video_renderer/track_pipeline.h"
 #include "common/logging.h"
 #include <vector>
 #include <array>
@@ -239,26 +240,6 @@ public:
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
 
 private:
-    struct TrackPipeline {
-        int file_id = 0;              ///< Stable identifier assigned by add_track()
-        std::string file_path;
-        int64_t offset_us = 0;        ///< Per-track sync offset in microseconds
-        std::unique_ptr<PacketQueue> packet_queue;
-        std::unique_ptr<PacketQueue> audio_packet_queue;
-        std::unique_ptr<TrackBuffer> track_buffer;
-        std::unique_ptr<DemuxThread> demux_thread;
-        std::unique_ptr<DecodeThread> decode_thread;
-        std::unique_ptr<SeekController> seek_controller;
-        bool use_hardware_decode = true;
-        bool recreated_for_paused_hevc_seek = false;
-
-        // Cached video dimensions (immutable after init)
-        int video_width = 0;
-        int video_height = 0;
-        float video_aspect = 16.0f / 9.0f;
-
-    };
-
     void render_loop();
     void draw_frame(const PresentDecision& decision);
     void draw_paused_frame(const char* reason);
@@ -319,9 +300,10 @@ private:
 
     /// Create a TrackPipeline for the given video path.
     /// Returns nullptr if pipeline init fails (demux/decode errors).
-    std::unique_ptr<TrackPipeline> create_pipeline(const std::string& path,
-                                                     bool hw_decode = true,
-                                                     const SeekRequest* initial_seek = nullptr);
+    std::unique_ptr<TrackPipeline> create_pipeline(
+        const std::string& path,
+        bool hw_decode = true,
+        const SeekRequest* initial_seek = nullptr);
 
     /// Recreate a track pipeline so seek starts with a fresh demux/decode epoch.
     bool recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, SeekType type);
@@ -361,7 +343,7 @@ private:
     std::unique_ptr<RenderSink> render_sink_;
     D3D11RenderResources* d3d_resources_ = nullptr;
 
-    std::array<std::unique_ptr<TrackPipeline>, kMaxTracks> tracks_;
+    TrackPipelineManager tracks_;
 
     std::thread render_thread_;
     std::atomic<bool> running_{false};

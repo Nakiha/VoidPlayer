@@ -74,6 +74,7 @@ Renderer                          # 主入口，生命周期管理
 ├── SeekCoordinator               # paused HEVC deferred seek 策略状态
 ├── D3D11Device                   # GPU 设备 + 可选窗口 SwapChain
 ├── ShaderManager                 # HLSL 编译
+│   └── ShaderConstants           # C++/HLSL cbuffer layout contract
 ├── D3D11FramePresenter           # 每轨 frame 的 SRV/上传/NV12 copy 缓存
 ├── D3D11HeadlessOutput           # Flutter Texture shared handle 三缓冲
 ├── RenderSink                    # 上屏决策，PTS 对齐

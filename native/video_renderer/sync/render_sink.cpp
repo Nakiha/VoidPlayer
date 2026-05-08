@@ -84,13 +84,13 @@ PresentDecision RenderSink::evaluate() {
             any_ready = true;
         }
         // 4. Check if frame is within tolerance of current time
-        else if (std::abs(frame->pts_us - effective_pts) <= PTS_TOLERANCE_US) {
+        else if (std::abs(frame->pts_us - effective_pts) <= kRenderSinkPtsToleranceUs) {
             // Within tolerance - select it
             decision.frames[t] = frame;
             any_ready = true;
         }
         // 5. Frame is in the future (past tolerance)
-        else if (frame->pts_us > effective_pts + PTS_TOLERANCE_US) {
+        else if (frame->pts_us > effective_pts + kRenderSinkPtsToleranceUs) {
             decision.frames[t] = std::nullopt;
         }
         // 6. Frame is in the past, far beyond tolerance — no valid frame

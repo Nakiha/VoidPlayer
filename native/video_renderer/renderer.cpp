@@ -3,6 +3,7 @@
 #include "embedded_shaders.h"
 #include "video_renderer/audio_coordinator.h"
 #include "video_renderer/seek_coordinator.h"
+#include "video_renderer/shader_constants.h"
 #include "video_renderer/d3d11/device.h"
 #include "video_renderer/d3d11/frame_presenter.h"
 #include "video_renderer/d3d11/headless_output.h"
@@ -159,7 +160,8 @@ bool Renderer::initialize(const RendererConfig& config) {
 
     // Create constant buffer for shader uniforms (must be 16-byte aligned)
     // Layout must match multitrack.hlsl cbuffer Constants
-    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(), 304,
+    if (!shader_mgr_->create_constant_buffer(d3d_device_->device(),
+                                             static_cast<UINT>(kShaderConstantsSize),
                                              d3d_resources_->compiled_shader)) {
         spdlog::error("Renderer: failed to create constant buffer");
         return fail();
@@ -1871,37 +1873,6 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     // Update constant buffer
     // Layout must match HLSL cbuffer Constants in multitrack.hlsl
     if (resources.compiled_shader.constant_buffer) {
-        struct Constants {
-            int mode;              // offset 0
-            int track_count;       // offset 4
-            float split_pos;       // offset 8
-            float zoom_ratio;      // offset 12
-            float canvas_width;    // offset 16
-            float canvas_height;   // offset 20
-            float view_offset[2];  // offset 24
-            int order[4];          // offset 32
-            float video_aspect[4]; // offset 48
-            int nv12_mask;         // offset 64
-            float _pad1[3];        // offset 68
-            float nv12_uv_scale_y[4]; // offset 80
-            float nv12_uv_scale_x[4]; // offset 96
-            float track_scale[4];  // offset 112: per-track scale for uniform pixel density
-
-            // Precomputed per-track display params (offset 128-223)
-            float display_offset_x[4];     // offset 128
-            float display_offset_y[4];     // offset 144
-            float inv_display_size_x[4];   // offset 160
-            float inv_display_size_y[4];   // offset 176
-            float view_offset_uv_x[4];     // offset 192
-            float view_offset_uv_y[4];     // offset 208
-            float background_color[4];     // offset 224
-            int color_range[4];            // offset 240
-            int color_matrix[4];           // offset 256
-            int color_transfer[4];         // offset 272
-            int color_primaries[4];        // offset 288
-        };
-        static_assert(sizeof(Constants) == 304, "Constants must be 304 bytes");
-
         // Snapshot layout state atomically
         LayoutState snap;
         {
@@ -1909,7 +1880,7 @@ void Renderer::draw_frame(const PresentDecision& decision) {
             snap = layout_;
         }
 
-        Constants cb = {};
+        ShaderConstants cb = {};
         cb.mode = snap.mode;
         cb.split_pos = snap.split_pos;
         cb.zoom_ratio = snap.zoom_ratio;

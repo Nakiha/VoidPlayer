@@ -80,6 +80,12 @@ std::optional<TextureFrame> convert(AVFrame* frame);
 
 当前播放器 runtime 不依赖 libswscale；FrameConverter 只支持 `YUV420P`、`YUVJ420P`、`NV12`、`YUV420P10LE`、`P010LE` 到 CPU NV12 / D3D11 NV12 路径。不支持的格式按显式错误处理。
 
+## Shader 常量布局
+
+多轨渲染 shader 仍通过运行时 `D3DCompile` 编译内嵌 HLSL。Windows runner/native 发布包需要确保系统可加载 D3DCompiler 运行时；若后续遇到分发问题，再评估预编译 shader blob。
+
+`multitrack.hlsl` 的 `cbuffer Constants` 对应 C++ `video_renderer/shader_constants.h` 中的 `ShaderConstants`。该头文件包含 304-byte size 和关键 offset `static_assert`，native 单测也会校验布局，避免 C++ 字段移动后 shader 读错 uniform。
+
 ### 软件路径
 
 ```

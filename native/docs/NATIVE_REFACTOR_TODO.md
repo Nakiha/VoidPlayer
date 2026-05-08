@@ -80,11 +80,11 @@ Source review: `build/chat_native_adv.md` (local build artifact, static review, 
 
 ## Round 8 - Shader Layout And Diagnostics
 
-- [ ] 给 C++ HLSL constants struct 增加 `static_assert(sizeof(...) == 304)` 与关键 offset 校验。
-- [ ] 评估用 schema/generator 或 shader reflection 校验 cbuffer layout。
-- [ ] runtime shader compile 依赖 `D3DCompile` 的分发策略要写入文档；中期评估预编译 shader。
-- [ ] `RenderSink` 的 PTS tolerance 从硬编码常量升级为命名配置或有测试覆盖的常量。
-- [ ] 验证：补充 shader layout 单测和不同 fps/timebase 的 RenderSink 边界测试。
+- [x] 给 C++ HLSL constants struct 增加 `static_assert(sizeof(...) == 304)` 与关键 offset 校验。
+- [x] 评估用 schema/generator 或 shader reflection 校验 cbuffer layout；本轮先集中到 `shader_constants.h` 并用单测锁住，后续若 shader 继续扩展再引入 reflection/generator。
+- [x] runtime shader compile 依赖 `D3DCompile` 的分发策略写入文档；中期评估预编译 shader。
+- [x] `RenderSink` 的 PTS tolerance 从硬编码常量升级为命名配置或有测试覆盖的常量。
+- [x] 验证：补充 shader layout 单测和 RenderSink tolerance 边界测试。
 
 ## Round 9 - Library Boundary And Global Hooks
 

@@ -6,7 +6,7 @@
 
 namespace vr {
 
-constexpr int64_t PTS_TOLERANCE_US = 5000;
+constexpr int64_t kRenderSinkPtsToleranceUs = 5000;
 static constexpr size_t kMaxTracks = 4;
 
 struct PresentDecision {

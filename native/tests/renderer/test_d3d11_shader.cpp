@@ -2,6 +2,8 @@
 #include "test_utils.h"
 #include "video_renderer/d3d11/device.h"
 #include "video_renderer/d3d11/shader.h"
+#include "video_renderer/shader_constants.h"
+#include <cstddef>
 
 using namespace vr::test;
 
@@ -99,12 +101,28 @@ TEST_CASE("ShaderManager garbage source returns false", "[d3d11][shader]") {
     cleanup_test_device(dev, hwnd);
 }
 
-TEST_CASE("ShaderManager creates constant buffer of 256 bytes", "[d3d11][shader]") {
+TEST_CASE("Shader constants layout matches HLSL cbuffer", "[d3d11][shader]") {
+    REQUIRE(sizeof(vr::ShaderConstants) == vr::kShaderConstantsSize);
+    REQUIRE(offsetof(vr::ShaderConstants, mode) == 0);
+    REQUIRE(offsetof(vr::ShaderConstants, canvas_width) == 16);
+    REQUIRE(offsetof(vr::ShaderConstants, order) == 32);
+    REQUIRE(offsetof(vr::ShaderConstants, video_aspect) == 48);
+    REQUIRE(offsetof(vr::ShaderConstants, nv12_mask) == 64);
+    REQUIRE(offsetof(vr::ShaderConstants, nv12_uv_scale_y) == 80);
+    REQUIRE(offsetof(vr::ShaderConstants, track_scale) == 112);
+    REQUIRE(offsetof(vr::ShaderConstants, display_offset_x) == 128);
+    REQUIRE(offsetof(vr::ShaderConstants, background_color) == 224);
+    REQUIRE(offsetof(vr::ShaderConstants, color_range) == 240);
+    REQUIRE(offsetof(vr::ShaderConstants, color_primaries) == 288);
+}
+
+TEST_CASE("ShaderManager creates renderer constant buffer", "[d3d11][shader]") {
     auto [dev, hwnd] = create_test_device();
     vr::ShaderManager sm(dev->device());
 
     vr::CompiledShader shader;
-    bool result = sm.create_constant_buffer(dev->device(), 256, shader);
+    bool result = sm.create_constant_buffer(
+        dev->device(), static_cast<UINT>(vr::kShaderConstantsSize), shader);
 
     REQUIRE(result == true);
     REQUIRE(shader.constant_buffer != nullptr);
@@ -112,7 +130,7 @@ TEST_CASE("ShaderManager creates constant buffer of 256 bytes", "[d3d11][shader]
     // Verify buffer description
     D3D11_BUFFER_DESC desc = {};
     shader.constant_buffer->GetDesc(&desc);
-    REQUIRE(desc.ByteWidth == 256);
+    REQUIRE(desc.ByteWidth == vr::kShaderConstantsSize);
     REQUIRE(desc.BindFlags == D3D11_BIND_CONSTANT_BUFFER);
 
     cleanup_test_device(dev, hwnd);

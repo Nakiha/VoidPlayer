@@ -164,6 +164,27 @@ TEST_CASE("RenderSink: two tracks within tolerance present", "[render_sink]") {
     REQUIRE(decision.frames[1].has_value());
 }
 
+TEST_CASE("RenderSink: PTS tolerance boundary is inclusive", "[render_sink]") {
+    MockTimeSource mt{0};
+    Clock clock([&mt]() { return mt.t; });
+    clock.play();
+
+    TrackBuffer track(4, 2);
+    TextureFrame frame;
+    frame.pts_us = 1000000 + kRenderSinkPtsToleranceUs;
+    frame.duration_us = 33000;
+    frame.texture_handle = reinterpret_cast<void*>(0x1);
+    track.push_frame(frame);
+
+    RenderSink sink(clock);
+    sink.set_track(0, &track);
+    mt.t = 1000000;
+
+    PresentDecision decision = sink.evaluate();
+    REQUIRE(decision.should_present == true);
+    REQUIRE(decision.frames[0].has_value());
+}
+
 TEST_CASE("RenderSink: independent present when tracks have different timing", "[render_sink]") {
     MockTimeSource mt{0};
     Clock clock([&mt]() { return mt.t; });

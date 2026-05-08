@@ -32,6 +32,23 @@ uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
             std::chrono::steady_clock::now() - start).count());
 }
 
+int64_t track_pts_end_us_from_stats(const DemuxStats& stats) {
+    if (stats.duration_us <= 0) {
+        return 0;
+    }
+    if (stats.start_time_us <= 0) {
+        return stats.duration_us;
+    }
+    // Most containers expose duration as a span. Some FLV files expose a value
+    // closer to the absolute end PTS; detect those so a -start offset maps the
+    // track to its actual playable span instead of the full PTS epoch.
+    if (stats.duration_us > stats.start_time_us &&
+        stats.duration_us - stats.start_time_us < stats.duration_us / 2) {
+        return stats.duration_us;
+    }
+    return stats.start_time_us + stats.duration_us;
+}
+
 struct Renderer::D3D11RenderResources {
     CompiledShader compiled_shader;
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertex_buffer;
@@ -1297,11 +1314,7 @@ int64_t Renderer::clamp_track_seek_target_us_locked(
     }
 
     const auto stats = track.demux_thread->stats();
-    if (stats.duration_us <= 0) {
-        return track_target;
-    }
-
-    const int64_t track_end_us = stats.start_time_us + stats.duration_us;
+    const int64_t track_end_us = track_pts_end_us_from_stats(stats);
     if (track_end_us <= 0) {
         return track_target;
     }
@@ -1314,15 +1327,13 @@ int64_t Renderer::effective_duration_us_locked() const {
     bool has_track_duration = false;
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks_[i] || !tracks_[i]->demux_thread) continue;
-        const int64_t track_duration_us =
-            tracks_[i]->demux_thread->stats().duration_us;
-        if (track_duration_us <= 0) continue;
-        const int64_t track_start_time_us =
-            tracks_[i]->demux_thread->stats().start_time_us;
+        const int64_t track_pts_end_us =
+            track_pts_end_us_from_stats(tracks_[i]->demux_thread->stats());
+        if (track_pts_end_us <= 0) continue;
         has_track_duration = true;
         duration_us = std::max(
             duration_us,
-            track_start_time_us + track_duration_us + tracks_[i]->offset_us);
+            track_pts_end_us + tracks_[i]->offset_us);
     }
     if (!has_track_duration) {
         duration_us = cached_duration_us_;

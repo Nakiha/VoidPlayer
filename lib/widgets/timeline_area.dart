@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../track_manager.dart';
+import '../utils/pts_range.dart';
 import 'track_row.dart';
 
 /// Timeline track list area matching PySide6 TimelineArea.
@@ -71,13 +72,17 @@ class _TimelineAreaState extends State<TimelineArea> {
             itemBuilder: (context, index) {
               final entry = widget.entries[index];
               final trackDuration = entry.info.durationUs;
+              final playableDuration = trackPlayableDurationUs(
+                startTimeUs: entry.info.startTimeUs,
+                durationUs: entry.info.durationUs,
+              );
               final trackStartTimeUs = entry.info.startTimeUs;
               final offsetUs = widget.syncOffsets[entry.fileId] ?? 0;
               final globalTrackStartUs = trackStartTimeUs + offsetUs;
 
               // Clip ratio: original duration relative to max effective duration
               final clipRatio = maxEffectiveDurationUs > 0
-                  ? (trackDuration / maxEffectiveDurationUs).clamp(0.0, 1.0)
+                  ? (playableDuration / maxEffectiveDurationUs).clamp(0.0, 1.0)
                   : 1.0;
 
               // Offset ratio: where the clip block starts
@@ -90,9 +95,12 @@ class _TimelineAreaState extends State<TimelineArea> {
 
               // Per-track playhead: global time → track internal time
               double playheadPosition = 0.0;
-              if (trackDuration > 0) {
+              if (playableDuration > 0) {
                 final localTime = widget.currentPtsUs - globalTrackStartUs;
-                playheadPosition = (localTime / trackDuration).clamp(0.0, 1.0);
+                playheadPosition = (localTime / playableDuration).clamp(
+                  0.0,
+                  1.0,
+                );
               }
 
               return TrackRow(

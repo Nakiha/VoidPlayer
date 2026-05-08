@@ -69,6 +69,28 @@ void main() {
     },
   );
 
+  test(
+    'absolute-end FLV duration shrinks to playable span after PTS offset',
+    () {
+      const startUs = 10196998000;
+      const absoluteEndUs = 10378832000;
+      final stateStore = MainWindowStateStore()
+        ..setPolledPlaybackState(1, absoluteEndUs, false)
+        ..setSyncOffsets({1: -startUs});
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager()
+        ..setTracks([_track(1, absoluteEndUs, startTimeUs: startUs)]);
+      addTearDown(trackManager.dispose);
+
+      final metrics = MainWindowTimelineMetrics(
+        stateStore: stateStore,
+        trackManager: trackManager,
+      );
+
+      expect(metrics.effectiveDurationUs, 181834000);
+    },
+  );
+
   test('falls back to polled duration until track metadata is available', () {
     final stateStore = MainWindowStateStore()
       ..setPolledPlaybackState(1, 4000, false);

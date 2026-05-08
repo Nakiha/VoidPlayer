@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/pts_range.dart';
 import '../utils/time_format.dart';
 
 /// Clip visualization area inside a TrackRow.
@@ -141,14 +142,21 @@ class _TrackContentPainter extends CustomPainter {
 
     if (loopRangeEnabled && trackDurationUs > 0 && loopEndUs > loopStartUs) {
       final trackStartUs = trackStartTimeUs + offsetUs;
-      final trackEndUs = trackStartUs + trackDurationUs;
+      final trackEndUs =
+          trackPtsEndUs(
+            startTimeUs: trackStartTimeUs,
+            durationUs: trackDurationUs,
+          ) +
+          offsetUs;
       final selectedStartUs = loopStartUs
           .clamp(trackStartUs, trackEndUs)
           .toInt();
       final selectedEndUs = loopEndUs.clamp(trackStartUs, trackEndUs).toInt();
       if (selectedEndUs > selectedStartUs) {
-        final startRatio = (selectedStartUs - trackStartUs) / trackDurationUs;
-        final endRatio = (selectedEndUs - trackStartUs) / trackDurationUs;
+        final playableDurationUs = trackEndUs - trackStartUs;
+        final startRatio =
+            (selectedStartUs - trackStartUs) / playableDurationUs;
+        final endRatio = (selectedEndUs - trackStartUs) / playableDurationUs;
         final highlightRect = Rect.fromLTRB(
           clipRect.left + clipRect.width * startRatio,
           clipRect.top,
@@ -226,7 +234,13 @@ class _TrackContentPainter extends CustomPainter {
     // Source PTS label — translate global timeline time back through the
     // track offset, then clamp to this track's real source PTS range.
     final sourcePtsUs = (markerPtsUs - offsetUs)
-        .clamp(trackStartTimeUs, trackStartTimeUs + trackDurationUs)
+        .clamp(
+          trackStartTimeUs,
+          trackPtsEndUs(
+            startTimeUs: trackStartTimeUs,
+            durationUs: trackDurationUs,
+          ),
+        )
         .toInt();
     final label = formatTimeShort(sourcePtsUs);
     final textSpan = TextSpan(

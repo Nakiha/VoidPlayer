@@ -272,7 +272,6 @@ void PrivateCdnFlvDemuxer::ensure_video_params(AVCodecID codec_id) {
         video_params_->codec_type = AVMEDIA_TYPE_VIDEO;
         stats_.video_stream_index = kVideoStreamIndex;
         stats_.time_base = AVRational{1, 1000};
-        stats_.codec_params = video_params_;
         stats_.format_name = "Private CDN FLV";
     }
     video_params_->codec_id = codec_id;
@@ -293,7 +292,6 @@ void PrivateCdnFlvDemuxer::ensure_aac_params() {
         audio_params_->codec_id = AV_CODEC_ID_AAC;
         stats_.audio_stream_index = kAudioStreamIndex;
         stats_.audio_time_base = AVRational{1, 1000};
-        stats_.audio_codec_params = audio_params_;
     }
 }
 
@@ -307,7 +305,6 @@ void PrivateCdnFlvDemuxer::ensure_mp3_params(int sample_rate, int channels) {
         audio_params_->codec_id = AV_CODEC_ID_MP3;
         stats_.audio_stream_index = kAudioStreamIndex;
         stats_.audio_time_base = AVRational{1, 1000};
-        stats_.audio_codec_params = audio_params_;
     }
     audio_params_->sample_rate = sample_rate;
     av_channel_layout_uninit(&audio_params_->ch_layout);
@@ -445,6 +442,12 @@ bool PrivateCdnFlvDemuxer::scan() {
     }
 
     finalize_packet_durations();
+    if (!stats_.set_video_codec_params(video_params_)) {
+        return false;
+    }
+    if (audio_params_ && !stats_.set_audio_codec_params(audio_params_)) {
+        stats_.audio_stream_index = -1;
+    }
     stats_.duration_us = max_ts_ms > 0 ? max_ts_ms * 1000 : 0;
     return true;
 }

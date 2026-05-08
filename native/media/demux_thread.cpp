@@ -128,7 +128,10 @@ bool DemuxThread::start() {
 
         if (stats_.video_stream_index >= 0) {
             AVStream* stream = fmt_ctx_->streams[stats_.video_stream_index];
-            stats_.codec_params = stream->codecpar;
+            if (!stats_.set_video_codec_params(stream->codecpar)) {
+                spdlog::error("[DemuxThread] Failed to copy video codec parameters");
+                return fail_start();
+            }
             stats_.time_base = stream->time_base;
             stats_.width = stream->codecpar->width;
             stats_.height = stream->codecpar->height;
@@ -164,10 +167,14 @@ bool DemuxThread::start() {
 
         if (stats_.audio_stream_index >= 0) {
             AVStream* audio_stream = fmt_ctx_->streams[stats_.audio_stream_index];
-            stats_.audio_codec_params = audio_stream->codecpar;
-            stats_.audio_time_base = audio_stream->time_base;
-            stats_.sample_rate = audio_stream->codecpar->sample_rate;
-            stats_.channels = audio_stream->codecpar->ch_layout.nb_channels;
+            if (stats_.set_audio_codec_params(audio_stream->codecpar)) {
+                stats_.audio_time_base = audio_stream->time_base;
+                stats_.sample_rate = audio_stream->codecpar->sample_rate;
+                stats_.channels = audio_stream->codecpar->ch_layout.nb_channels;
+            } else {
+                spdlog::warn("[DemuxThread] Failed to copy audio codec parameters; disabling audio stream");
+                stats_.audio_stream_index = -1;
+            }
         }
     }
 

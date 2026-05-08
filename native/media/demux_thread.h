@@ -21,6 +21,29 @@ namespace vr {
 
 class PrivateCdnFlvDemuxer;
 
+namespace detail {
+inline std::shared_ptr<AVCodecParameters> clone_codec_params(const AVCodecParameters* source) {
+    if (!source) {
+        return {};
+    }
+
+    AVCodecParameters* copy = avcodec_parameters_alloc();
+    if (!copy) {
+        return {};
+    }
+    if (avcodec_parameters_copy(copy, source) < 0) {
+        avcodec_parameters_free(&copy);
+        return {};
+    }
+
+    return std::shared_ptr<AVCodecParameters>(
+        copy,
+        [](AVCodecParameters* params) {
+            avcodec_parameters_free(&params);
+        });
+}
+} // namespace detail
+
 enum class DemuxStreamKind {
     Video,
     Audio,
@@ -43,11 +66,24 @@ struct DemuxStats {
     int sar_den = 1;
     int sample_rate = 0;
     int channels = 0;
-    /// Borrowed pointer into AVStream->codecpar. Valid only while the
-    /// DemuxThread's internal AVFormatContext is alive (i.e. after start()
-    /// and before stop()). Do NOT free.
+    /// Owned snapshots of the stream codec parameters. The raw pointers below
+    /// are convenience aliases and remain valid while this DemuxStats copy lives.
+    std::shared_ptr<AVCodecParameters> codec_params_owner;
+    std::shared_ptr<AVCodecParameters> audio_codec_params_owner;
     AVCodecParameters* codec_params = nullptr;
     AVCodecParameters* audio_codec_params = nullptr;
+
+    bool set_video_codec_params(const AVCodecParameters* source) {
+        codec_params_owner = detail::clone_codec_params(source);
+        codec_params = codec_params_owner.get();
+        return codec_params != nullptr;
+    }
+
+    bool set_audio_codec_params(const AVCodecParameters* source) {
+        audio_codec_params_owner = detail::clone_codec_params(source);
+        audio_codec_params = audio_codec_params_owner.get();
+        return audio_codec_params != nullptr;
+    }
 };
 
 class DemuxThread {

@@ -95,11 +95,11 @@ Source review: `build/chat_native_adv.md` (local build artifact, static review, 
 
 ## Round 10 - Ownership And Queue Result Cleanup
 
-- [ ] `DemuxStats` 中的 `AVCodecParameters` 改为 deep copy，避免 borrowed pointer 生命周期悬垂。
-- [ ] `PacketQueue::pop()` 返回 richer enum，区分 packet、flush、EOF、abort、empty。
-- [ ] `D3D11Device` release 构建默认不使用 reference driver fallback，reference 仅作为 debug option。
-- [ ] 清理未调用的 static helper，例如确认 `report_live_objects()` 是否接入 debug shutdown 或删除。
-- [ ] 验证：补充 demux pipeline recreate、queue flush/abort/reset 的单元测试。
+- [x] `DemuxStats` 中的 `AVCodecParameters` 改为 deep copy，避免 borrowed pointer 生命周期悬垂。
+- [x] `PacketQueue::pop()` 返回 richer enum，区分 packet、flush、EOF、abort、empty。
+- [x] `D3D11Device` release 构建默认不使用 reference driver fallback，reference 仅作为 debug option。
+- [x] 清理未调用的 static helper，例如确认 `report_live_objects()` 是否接入 debug shutdown 或删除。
+- [x] 验证：补充 demux pipeline recreate、queue flush/abort/reset 的单元测试；已跑 `python dev.py test --native-only`。
 
 ## 后续测试矩阵
 

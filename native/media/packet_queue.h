@@ -12,6 +12,19 @@ extern "C" {
 
 namespace vr {
 
+enum class PacketPopStatus {
+    Packet,
+    Flushed,
+    Eof,
+    Aborted,
+    Empty,
+};
+
+struct PacketPopResult {
+    PacketPopStatus status = PacketPopStatus::Empty;
+    AVPacket* packet = nullptr;
+};
+
 class PacketQueue {
 public:
     explicit PacketQueue(size_t capacity = 100);
@@ -23,11 +36,11 @@ public:
     // Push a packet without blocking. Takes ownership only on success.
     bool try_push(AVPacket* pkt);
 
-    // Pop a packet (caller takes ownership). Blocks if empty. Returns nullptr if aborted.
-    AVPacket* pop();
+    // Pop a packet (caller takes ownership). Blocks until packet/state change.
+    PacketPopResult pop();
 
-    // Non-blocking pop. Returns nullptr if empty or aborted.
-    AVPacket* try_pop();
+    // Non-blocking pop with explicit empty/EOF/abort status.
+    PacketPopResult try_pop();
 
     // Flush: discard queued packets and clear EOF state.
     void flush();

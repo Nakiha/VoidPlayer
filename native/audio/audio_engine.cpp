@@ -190,8 +190,9 @@ private:
                 continue;
             }
             flush_after_seek_if_needed();
-            AVPacket* pkt = input_queue_.pop();
-            if (!pkt) {
+            PacketPopResult packet_result = input_queue_.pop();
+            AVPacket* pkt = packet_result.packet;
+            if (packet_result.status != PacketPopStatus::Packet || !pkt) {
                 if (!running_.load()) break;
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 continue;

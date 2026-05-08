@@ -20,7 +20,8 @@ namespace {
 std::vector<AVPacket*> drain_packets(PacketQueue& pq, int count) {
     std::vector<AVPacket*> packets;
     for (int i = 0; i < count; ++i) {
-        auto* pkt = pq.pop();
+        auto result = pq.pop();
+        auto* pkt = result.packet;
         if (!pkt) break;
         packets.push_back(pkt);
     }
@@ -183,6 +184,28 @@ TEST_CASE("DemuxThread: open h264 file and verify stats", "[demux_thread]") {
     demux.stop();
 }
 
+TEST_CASE("DemuxThread: copied stats own codec parameters after stop",
+          "[demux_thread]") {
+    PacketQueue pq(200);
+    SeekController sc;
+    DemuxStats copied_stats;
+
+    {
+        DemuxThread demux(get_h264_path(), pq, sc);
+        REQUIRE(demux.start());
+        copied_stats = demux.stats();
+        REQUIRE(copied_stats.codec_params != nullptr);
+        REQUIRE(copied_stats.codec_params == copied_stats.codec_params_owner.get());
+        demux.stop();
+    }
+
+    REQUIRE(copied_stats.codec_params != nullptr);
+    REQUIRE(copied_stats.codec_params == copied_stats.codec_params_owner.get());
+    REQUIRE(copied_stats.codec_params->codec_type == AVMEDIA_TYPE_VIDEO);
+    REQUIRE(copied_stats.width == 1920);
+    REQUIRE(copied_stats.height == 1080);
+}
+
 TEST_CASE("DemuxThread: opens UTF-8 paths with non-ASCII characters",
           "[demux_thread][unicode]") {
     namespace fs = std::filesystem;
@@ -249,7 +272,9 @@ TEST_CASE("DemuxThread: private CDN FLV AV1 fallback emits packets",
     REQUIRE(demux.stats().codec_params->codec_id == AV_CODEC_ID_AV1);
     REQUIRE(demux.stats().codec_params->extradata_size == 2);
 
-    AVPacket* pkt = pq.pop();
+    auto packet_result = pq.pop();
+    REQUIRE(packet_result.status == PacketPopStatus::Packet);
+    AVPacket* pkt = packet_result.packet;
     REQUIRE(pkt != nullptr);
     REQUIRE(pkt->stream_index == demux.stats().video_stream_index);
     REQUIRE(pkt->dts == 40);
@@ -278,7 +303,9 @@ TEST_CASE("DemuxThread: private CDN FLV VVC fallback emits packets",
     REQUIRE(demux.stats().height == 1080);
     REQUIRE(demux.stats().codec_params->format == AV_PIX_FMT_YUV420P10LE);
 
-    AVPacket* pkt = pq.pop();
+    auto packet_result = pq.pop();
+    REQUIRE(packet_result.status == PacketPopStatus::Packet);
+    AVPacket* pkt = packet_result.packet;
     REQUIRE(pkt != nullptr);
     REQUIRE(pkt->dts == 40);
     REQUIRE(pkt->pts == 45);
@@ -348,7 +375,9 @@ TEST_CASE("DemuxThread: first packet has reasonable PTS", "[demux_thread]") {
     REQUIRE(demux.start());
 
     // Pop the first packet
-    auto* pkt = pq.pop();
+    auto packet_result = pq.pop();
+    REQUIRE(packet_result.status == PacketPopStatus::Packet);
+    auto* pkt = packet_result.packet;
     REQUIRE(pkt != nullptr);
 
     // PTS should be a reasonable microsecond value: >= 0 and < duration

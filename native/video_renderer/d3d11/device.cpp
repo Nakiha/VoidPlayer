@@ -11,16 +11,6 @@ D3D11Device::~D3D11Device() {
     shutdown();
 }
 
-static void report_live_objects(ID3D11Device* device) {
-    if (!device) return;
-    ID3D11Debug* debug = nullptr;
-    HRESULT hr = device->QueryInterface(__uuidof(ID3D11Debug), reinterpret_cast<void**>(&debug));
-    if (SUCCEEDED(hr) && debug) {
-        hr = debug->ReportLiveDeviceObjects(D3D11_RLDO_DETAIL);
-        debug->Release();
-    }
-}
-
 bool D3D11Device::create_device(IDXGIAdapter* adapter, D3D_DRIVER_TYPE driver_type,
                                 UINT create_device_flags, D3D_FEATURE_LEVEL& out_level) {
     D3D_FEATURE_LEVEL feature_levels[] = {
@@ -139,7 +129,9 @@ bool D3D11Device::initialize(void* hwnd, int width, int height) {
     D3D_DRIVER_TYPE driver_types[] = {
         D3D_DRIVER_TYPE_HARDWARE,
         D3D_DRIVER_TYPE_WARP,
+#ifndef NDEBUG
         D3D_DRIVER_TYPE_REFERENCE,
+#endif
     };
 
     D3D_FEATURE_LEVEL obtained_level = D3D_FEATURE_LEVEL_11_0;

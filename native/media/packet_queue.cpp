@@ -38,31 +38,48 @@ bool PacketQueue::try_push(AVPacket* pkt) {
     return true;
 }
 
-AVPacket* PacketQueue::pop() {
+PacketPopResult PacketQueue::pop() {
     std::unique_lock<std::mutex> lock(mutex_);
     not_empty_.wait(lock, [this]() {
         return !queue_.empty() || aborted_ || flushed_ ||
                eof_.load(std::memory_order_acquire);
     });
-    if (aborted_ && queue_.empty()) return nullptr;
+    if (aborted_ && queue_.empty()) {
+        return {PacketPopStatus::Aborted, nullptr};
+    }
     if (flushed_ && queue_.empty()) {
         flushed_ = false;
-        return nullptr;
+        return {PacketPopStatus::Flushed, nullptr};
     }
-    if (queue_.empty()) return nullptr;
+    if (queue_.empty()) {
+        return {PacketPopStatus::Eof, nullptr};
+    }
     auto ptr = std::move(queue_.front());
     queue_.pop();
     not_full_.notify_one();
-    return ptr.release();
+    return {PacketPopStatus::Packet, ptr.release()};
 }
 
-AVPacket* PacketQueue::try_pop() {
+PacketPopResult PacketQueue::try_pop() {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (aborted_ || queue_.empty()) return nullptr;
+    if (aborted_) {
+        return {PacketPopStatus::Aborted, nullptr};
+    }
+    if (flushed_ && queue_.empty()) {
+        flushed_ = false;
+        return {PacketPopStatus::Flushed, nullptr};
+    }
+    if (queue_.empty()) {
+        return {
+            eof_.load(std::memory_order_acquire)
+                ? PacketPopStatus::Eof
+                : PacketPopStatus::Empty,
+            nullptr};
+    }
     auto ptr = std::move(queue_.front());
     queue_.pop();
     not_full_.notify_one();
-    return ptr.release();
+    return {PacketPopStatus::Packet, ptr.release()};
 }
 
 void PacketQueue::flush() {

@@ -858,8 +858,9 @@ void DecodeThread::run() {
         }
 
         // Non-blocking pop with short sleep — allows seek_pending to be checked promptly
-        AVPacket* pkt = input_queue_.try_pop();
-        if (!pkt) {
+        PacketPopResult packet_result = input_queue_.try_pop();
+        AVPacket* pkt = packet_result.packet;
+        if (packet_result.status != PacketPopStatus::Packet || !pkt) {
             if (!running_.load(std::memory_order_acquire) ||
                 cancelled_.load(std::memory_order_acquire)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));

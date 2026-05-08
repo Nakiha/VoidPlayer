@@ -2,6 +2,7 @@
 #include "video_renderer/decode/frame_converter.h"
 #include <cstring>
 #include <mutex>
+#include <utility>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -75,7 +76,9 @@ TEST_CASE("FrameConverter: convert white YUV420P frame", "[frame_converter]") {
 
     // Set PTS explicitly (av_frame_alloc defaults to AV_NOPTS_VALUE)
     frame->pts = 0;
-    TextureFrame result = converter.convert(frame);
+    auto converted = converter.convert(frame);
+    REQUIRE(converted.has_value());
+    TextureFrame result = std::move(*converted);
     REQUIRE(result.pts_us == 0);
     REQUIRE(result.texture_handle != nullptr);
     REQUIRE(result.is_ref == false);
@@ -119,7 +122,9 @@ TEST_CASE("FrameConverter: convert preserves PTS", "[frame_converter]") {
         }
     }
 
-    TextureFrame result = converter.convert(frame);
+    auto converted = converter.convert(frame);
+    REQUIRE(converted.has_value());
+    TextureFrame result = std::move(*converted);
     REQUIRE(result.pts_us == 123456);
     REQUIRE(result.texture_handle != nullptr);
     REQUIRE(result.storage_kind() == FrameStorageKind::CpuNv12);
@@ -136,7 +141,9 @@ TEST_CASE("FrameConverter: software conversion follows dynamic frame geometry",
     REQUIRE(converter.init_software(64, 64, AV_PIX_FMT_YUV420P));
 
     AVFrame* first = make_yuv420_frame(64, 64, 1000);
-    TextureFrame first_result = converter.convert(first);
+    auto first_converted = converter.convert(first);
+    REQUIRE(first_converted.has_value());
+    TextureFrame first_result = std::move(*first_converted);
     REQUIRE(first_result.texture_handle != nullptr);
     REQUIRE(first_result.width == 64);
     REQUIRE(first_result.height == 64);
@@ -145,7 +152,9 @@ TEST_CASE("FrameConverter: software conversion follows dynamic frame geometry",
     REQUIRE(first_result.cpu_nv12_storage()->uv_stride == 64);
 
     AVFrame* second = make_yuv420_frame(96, 72, 2000);
-    TextureFrame second_result = converter.convert(second);
+    auto second_converted = converter.convert(second);
+    REQUIRE(second_converted.has_value());
+    TextureFrame second_result = std::move(*second_converted);
     REQUIRE(second_result.texture_handle != nullptr);
     REQUIRE(second_result.width == 96);
     REQUIRE(second_result.height == 72);
@@ -168,7 +177,9 @@ TEST_CASE("FrameConverter: propagates color metadata", "[frame_converter][color]
     frame->color_trc = AVCOL_TRC_BT709;
     frame->color_primaries = AVCOL_PRI_BT709;
 
-    TextureFrame result = converter.convert(frame);
+    auto converted = converter.convert(frame);
+    REQUIRE(converted.has_value());
+    TextureFrame result = std::move(*converted);
     REQUIRE(result.texture_handle != nullptr);
     REQUIRE(result.color.range == VIDEO_COLOR_RANGE_LIMITED);
     REQUIRE(result.color.matrix == VIDEO_COLOR_MATRIX_BT709);
@@ -200,7 +211,9 @@ TEST_CASE("FrameConverter: maps HDR transfer metadata", "[frame_converter][color
         }
     }
 
-    TextureFrame result = converter.convert(frame);
+    auto converted = converter.convert(frame);
+    REQUIRE(converted.has_value());
+    TextureFrame result = std::move(*converted);
     REQUIRE(result.texture_handle != nullptr);
     REQUIRE(result.color.range == VIDEO_COLOR_RANGE_LIMITED);
     REQUIRE(result.color.matrix == VIDEO_COLOR_MATRIX_BT2020_NCL);
@@ -239,9 +252,27 @@ TEST_CASE("FrameConverter: rejects oversized software frame geometry",
     frame->height = 64;
     frame->pts = 5000;
 
-    TextureFrame result = converter.convert(frame);
-    REQUIRE(result.texture_handle == nullptr);
-    REQUIRE(result.cpu_data == nullptr);
+    auto result = converter.convert(frame);
+    REQUIRE(result.has_value() == false);
+
+    av_frame_free(&frame);
+}
+
+TEST_CASE("FrameConverter: unsupported software format returns no frame",
+          "[frame_converter]") {
+    FrameConverter converter;
+    REQUIRE(converter.init_software(0, 0, AV_PIX_FMT_NONE));
+
+    AVFrame* frame = av_frame_alloc();
+    REQUIRE(frame != nullptr);
+    frame->format = AV_PIX_FMT_RGB24;
+    frame->width = 64;
+    frame->height = 64;
+    frame->pts = 6000;
+    REQUIRE(av_frame_get_buffer(frame, 0) >= 0);
+
+    auto result = converter.convert(frame);
+    REQUIRE(result.has_value() == false);
 
     av_frame_free(&frame);
 }

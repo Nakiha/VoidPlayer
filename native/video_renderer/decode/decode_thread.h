@@ -136,6 +136,9 @@ private:
     /// Push decoded exact-seek frames that did not fit in the initial preview window.
     void publish_pending_exact_seek_frames();
 
+    /// Convert a decoded AVFrame and publish it, or move the track to Error on failure.
+    bool convert_and_push_frame(AVFrame* frame, const char* context);
+
     /// Log the FFmpeg hardware frame pool geometry once it is materialized.
     void log_hw_frame_context_once(const AVFrame* frame);
 

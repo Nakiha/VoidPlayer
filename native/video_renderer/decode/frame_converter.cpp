@@ -562,11 +562,11 @@ bool FrameConverter::init_hardware(void* d3d_device, void* d3d_context,
     return true;
 }
 
-TextureFrame FrameConverter::convert(AVFrame* frame) {
+std::optional<TextureFrame> FrameConverter::convert(AVFrame* frame) {
     TextureFrame result;
     if (!frame) {
         spdlog::error("[FrameConverter] convert called with null AVFrame");
-        return result;
+        return std::nullopt;
     }
 
     result.pts_us = frame->pts;
@@ -584,7 +584,7 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
         AVFrame* sw_frame = av_frame_alloc();
         if (!sw_frame) {
             spdlog::error("[FrameConverter] Failed to allocate hw download frame");
-            return result;
+            return std::nullopt;
         }
 
         int ret = av_hwframe_transfer_data(sw_frame, frame, 0);
@@ -592,14 +592,17 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
             spdlog::error("[FrameConverter] av_hwframe_transfer_data failed: {:#x}",
                           static_cast<unsigned>(ret));
             av_frame_free(&sw_frame);
-            return result;
+            return std::nullopt;
         }
 
         const auto sw_format = static_cast<AVPixelFormat>(sw_frame->format);
         result.color = color_info_from_frame(sw_frame);
         downloaded_format_ = sw_format;
 
-        convert_frame_to_cpu_nv12(sw_frame, "hw-download", result);
+        if (!convert_frame_to_cpu_nv12(sw_frame, "hw-download", result)) {
+            av_frame_free(&sw_frame);
+            return std::nullopt;
+        }
         av_frame_free(&sw_frame);
     } else if (is_hw_) {
         // frame->data[0] = ID3D11Texture2D*, frame->data[1] = array index (intptr_t)
@@ -641,15 +644,20 @@ TextureFrame FrameConverter::convert(AVFrame* frame) {
                 };
             }
         }
+        if (!result.texture_handle) {
+            spdlog::error("[FrameConverter] Hardware frame has no D3D11 texture");
+            return std::nullopt;
+        }
     } else {
         // Software path: keep the frame in YUV and upload it as NV12 so it
         // shares the same shader conversion path as D3D11VA decode.
         result.color = color_info_from_frame(frame);
-        if (convert_frame_to_cpu_nv12(frame, "software", result)) {
-            width_ = frame->width;
-            height_ = frame->height;
-            src_format_ = static_cast<AVPixelFormat>(frame->format);
+        if (!convert_frame_to_cpu_nv12(frame, "software", result)) {
+            return std::nullopt;
         }
+        width_ = frame->width;
+        height_ = frame->height;
+        src_format_ = static_cast<AVPixelFormat>(frame->format);
     }
 
     return result;

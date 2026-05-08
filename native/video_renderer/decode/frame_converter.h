@@ -28,7 +28,7 @@ public:
                        bool download_to_cpu = false,
                        std::recursive_mutex* device_mutex = nullptr);
 
-    TextureFrame convert(AVFrame* frame);
+    std::optional<TextureFrame> convert(AVFrame* frame);
     std::optional<TextureFrame> snapshot_hardware_frame(AVFrame* frame);
 
     bool is_hardware() const { return is_hw_; }

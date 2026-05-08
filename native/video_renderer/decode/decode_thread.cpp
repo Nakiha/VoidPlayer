@@ -497,8 +497,9 @@ void DecodeThread::flush_reorder_buffer() {
             continue;
         }
         flush_hw_before_publish_if_needed(true);
-        TextureFrame tex_frame = converter_.convert(f.frame.get());
-        output_buffer_.push_frame(std::move(tex_frame));
+        if (!convert_and_push_frame(f.frame.get(), "exact-seek reorder flush")) {
+            break;
+        }
     }
     spdlog::info("[DecodeThread] Exact seek reorder: {} frames pushed",
                  exact_seek_reorder_.size());
@@ -593,6 +594,7 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
     const size_t end = std::min(exact_seek_reorder_.size(),
                                 selected + kExactSeekPreviewWindowFrames);
     const size_t published = end - selected;
+    bool conversion_failed = false;
     for (size_t i = selected; i < end; ++i) {
         if (!exact_seek_reorder_[i].frame) {
             continue;
@@ -609,9 +611,23 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
             exact_seek_reorder_[i].stable_frame->texture_handle) {
             tex_frame = *exact_seek_reorder_[i].stable_frame;
         } else {
-            tex_frame = converter_.convert(exact_seek_reorder_[i].frame.get());
+            auto converted = converter_.convert(exact_seek_reorder_[i].frame.get());
+            if (!converted.has_value()) {
+                spdlog::error("[DecodeThread] Frame conversion failed while publishing exact-seek window");
+                output_buffer_.set_state(TrackState::Error);
+                decode_paused_.store(true, std::memory_order_release);
+                running_.store(false, std::memory_order_release);
+                conversion_failed = true;
+                break;
+            }
+            tex_frame = std::move(*converted);
         }
         output_buffer_.push_frame(std::move(tex_frame));
+    }
+    if (conversion_failed) {
+        exact_seek_reorder_.clear();
+        exact_seek_pending_frames_.clear();
+        return;
     }
     exact_seek_pending_frames_.clear();
     for (size_t i = end; i < exact_seek_reorder_.size(); ++i) {
@@ -667,8 +683,20 @@ void DecodeThread::publish_pending_exact_seek_frames() {
         return;
     }
     flush_hw_before_publish_if_needed(true);
-    TextureFrame frame = converter_.convert(candidate.frame.get());
-    output_buffer_.push_frame(std::move(frame));
+    convert_and_push_frame(candidate.frame.get(), "pending exact-seek frame");
+}
+
+bool DecodeThread::convert_and_push_frame(AVFrame* frame, const char* context) {
+    auto converted = converter_.convert(frame);
+    if (!converted.has_value()) {
+        spdlog::error("[DecodeThread] Frame conversion failed ({})", context ? context : "unknown");
+        output_buffer_.set_state(TrackState::Error);
+        decode_paused_.store(true, std::memory_order_release);
+        running_.store(false, std::memory_order_release);
+        return false;
+    }
+    output_buffer_.push_frame(std::move(*converted));
+    return true;
 }
 
 void DecodeThread::run() {
@@ -803,8 +831,10 @@ void DecodeThread::run() {
                 rescale_ts(frame);
                 log_hw_frame_context_once(frame);
                 flush_hw_before_publish_if_needed(true);
-                TextureFrame tex_frame = converter_.convert(frame);
-                output_buffer_.push_frame(std::move(tex_frame));
+                if (!convert_and_push_frame(frame, "drain before next packet")) {
+                    av_frame_unref(frame);
+                    break;
+                }
                 av_frame_unref(frame);
                 ++drained;
 
@@ -893,8 +923,10 @@ void DecodeThread::run() {
                         rescale_ts(frame);
                         log_hw_frame_context_once(frame);
                         flush_hw_before_publish_if_needed();
-                        TextureFrame tex_frame = converter_.convert(frame);
-                        output_buffer_.push_frame(std::move(tex_frame));
+                        if (!convert_and_push_frame(frame, "EOF drain")) {
+                            av_frame_unref(frame);
+                            break;
+                        }
                         av_frame_unref(frame);
                     }
                     // Flush decode device after EOF drain to ensure shared NV12
@@ -1011,7 +1043,15 @@ void DecodeThread::run() {
             }
 
             flush_hw_before_publish_if_needed();
-            TextureFrame tex_frame = converter_.convert(frame);
+            auto tex_frame = converter_.convert(frame);
+            if (!tex_frame.has_value()) {
+                spdlog::error("[DecodeThread] Frame conversion failed during decode loop");
+                output_buffer_.set_state(TrackState::Error);
+                decode_paused_.store(true, std::memory_order_release);
+                running_.store(false, std::memory_order_release);
+                av_frame_unref(frame);
+                break;
+            }
             ++frames_produced;
 
             // Flush the independent decode device after the first visible HW
@@ -1027,7 +1067,7 @@ void DecodeThread::run() {
             // to the render thread, otherwise the paused preview path can win
             // the race and draw an incomplete surface.
             flush_hw_visibility_if_needed();
-            output_buffer_.push_frame(std::move(tex_frame));
+            output_buffer_.push_frame(std::move(*tex_frame));
 
             if (output_buffer_.state() == TrackState::Buffering) {
                 if (preroll_ready()) {

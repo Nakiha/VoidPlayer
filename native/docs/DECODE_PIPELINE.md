@@ -73,7 +73,12 @@ bool init_software(int src_w, int src_h, AVPixelFormat src_fmt);
 bool init_hardware(void* d3d_device, void* d3d_context,
                    int src_w, int src_h, HwDecodeType hw_type,
                    bool download_to_cpu);
+std::optional<TextureFrame> convert(AVFrame* frame);
 ```
+
+`convert()` 失败时返回 `std::nullopt`，不会再返回空 `TextureFrame`。不支持的像素格式、非法几何尺寸、hwdownload 失败或 CPU NV12 打包失败都会进入这个路径；DecodeThread 收到失败后将 `TrackBuffer` 设置为 `TrackState::Error`，避免空 `texture_handle` 被推入 buffer 后表现成黑帧。
+
+当前播放器 runtime 不依赖 libswscale；FrameConverter 只支持 `YUV420P`、`YUVJ420P`、`NV12`、`YUV420P10LE`、`P010LE` 到 CPU NV12 / D3D11 NV12 路径。不支持的格式按显式错误处理。
 
 ### 软件路径
 

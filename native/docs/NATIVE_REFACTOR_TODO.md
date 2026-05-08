@@ -42,12 +42,14 @@ Source review: `build/chat_native_adv.md` (local build artifact, static review, 
 
 ## Round 4 - Frame Conversion Failure As Explicit Error
 
-- [ ] 将 `FrameConverter::convert()` 从默认空 `TextureFrame` 改为 `Result`/`optional`/错误对象。
-- [ ] unsupported pixel format、hwdownload 失败、CPU NV12 转换失败必须进入明确错误路径。
-- [ ] DecodeThread 将转换错误写入 `TrackState::Error`，不要把空 texture frame 塞进 buffer。
-- [ ] 通过 FFI/native player facade 把 track 错误暴露给 Flutter。
-- [ ] 决定是否接入 libswscale/libyuv 作为兜底；如果暂不支持，文档写清楚支持的像素格式。
-- [ ] 验证：补充 unsupported pixel format/failure injection 测试；跑 `python dev.py test --native-only`，涉及上屏错误文案时跑 `python dev.py ui-test ui_tests/smoke/basic.csv`。
+- [x] 将 `FrameConverter::convert()` 从默认空 `TextureFrame` 改为 `Result`/`optional`/错误对象。
+- [x] unsupported pixel format、hwdownload 失败、CPU NV12 转换失败必须进入明确错误路径。
+- [x] DecodeThread 将转换错误写入 `TrackState::Error`，不要把空 texture frame 塞进 buffer。
+- [x] 通过 FFI/native player facade 把 track 错误暴露给 Flutter。
+  TrackState::Error 会进入 `track_perf_stats()`，Windows MethodChannel `getDiagnostics` 和 stats-window FFI 都已暴露 `bufferState`。
+- [x] 决定是否接入 libswscale/libyuv 作为兜底；如果暂不支持，文档写清楚支持的像素格式。
+  当前播放器 runtime 不引入 libswscale；支持格式写入 [DECODE_PIPELINE.md](DECODE_PIPELINE.md)。
+- [x] 验证：补充 unsupported pixel format/failure injection 测试；跑 `python dev.py test --native-only`，涉及上屏错误文案时跑 `python dev.py ui-test ui_tests/smoke/basic.csv`。
 
 ## Round 5 - Audio Sync Foundation
 

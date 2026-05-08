@@ -22,8 +22,8 @@ typedef struct naki_vr_log_config_t {
     uint32_t abi_version;   // NAKI_VR_ABI_VERSION
     const char* pattern;        // 日志格式，默认 "[%Y-%m-%d %H:%M:%S.%e] [%l] %v"
     const char* file_path;      // 日志文件路径，空 = 无文件日志
-    size_t max_file_size;       // 单文件大小上限，默认 5MB
-    int max_files;              // 轮转文件数，默认 3
+    size_t max_file_size;       // 单文件大小上限，默认 5MB，0 = unlimited
+    int max_files;              // 轮转文件数，默认 3，0 = no rotation
     int level;                  // NAKI_VR_LOG_*: 0=trace..6=off
 } naki_vr_log_config_t;
 
@@ -92,8 +92,8 @@ typedef enum naki_vr_status_t {
 ### 独立函数
 
 ```python
-configure_logging(LogConfig)
-install_crash_handler(str)   # crash_dir
+configure_logging(LogConfig)  # preserves host spdlog sinks; native file sink supports rotation
+install_crash_handler(str)    # crash_dir; explicit opt-in process-global SEH/VEH/DbgHelp hooks
 ```
 
 ---

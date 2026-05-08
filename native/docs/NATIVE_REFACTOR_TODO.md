@@ -88,10 +88,10 @@ Source review: `build/chat_native_adv.md` (local build artifact, static review, 
 
 ## Round 9 - Library Boundary And Global Hooks
 
-- [ ] `configure_logging()` 不再清空或接管 spdlog default logger；改为 native 自有 logger/sink。
-- [ ] crash handler、SEH/VEH、DbgHelp、purecall/invalid parameter handler 改成显式 opt-in，并写清宿主进程影响。
-- [ ] `LogConfig.max_file_size/max_files` 要么真正实现 rotation，要么移除/改注释，避免 API 行为不一致。
-- [ ] 验证：新增 logging 初始化幂等测试，确认不会污染宿主 logger。
+- [x] `configure_logging()` 不再清空宿主 spdlog default logger sinks；只替换 VoidPlayer native 自己持有的 sinks。
+- [x] crash handler、SEH/VEH、DbgHelp、purecall/invalid parameter handler 改成显式 opt-in；Renderer 初始化不再因 `file_path` 自动安装全局 hook。
+- [x] `LogConfig.max_file_size/max_files` 实现 Windows UTF-8 file sink rotation，避免 API 行为不一致。
+- [x] 验证：新增 logging 初始化保留宿主 sink 测试和 rotation 测试。
 
 ## Round 10 - Ownership And Queue Result Cleanup
 

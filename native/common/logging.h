@@ -23,7 +23,9 @@ struct LogConfig {
     spdlog::level::level_enum level = spdlog::level::info;
 };
 
-/// Configure spdlog with custom format, file sink, and level.
+/// Configure native logging with custom format, file sink, and level.
+/// Existing host/default spdlog sinks are preserved; only sinks previously
+/// owned by VoidPlayer native are replaced on reconfigure.
 /// Must be called before any other vr:: operations (before Renderer::initialize).
 /// Can be called multiple times to reconfigure.
 void configure_logging(const LogConfig& config);

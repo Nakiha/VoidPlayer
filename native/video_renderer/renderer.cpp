@@ -90,15 +90,8 @@ bool Renderer::initialize(const RendererConfig& config) {
         configure_logging(config.log_config);
     }
 
-    // Install crash handler if file path is set
-    if (!config.log_config.file_path.empty()) {
-        std::string crash_dir;
-        auto last_sep = config.log_config.file_path.find_last_of("/\\");
-        if (last_sep != std::string::npos) {
-            crash_dir = config.log_config.file_path.substr(0, last_sep);
-        }
-        install_crash_handler(crash_dir);
-    }
+    // Crash handling is process-global. Hosts must opt in explicitly via
+    // install_crash_handler(); Renderer initialization does not install hooks.
 
     std::lock_guard<std::mutex> state_lock(state_mutex_);
     if (initialized_.load() || running_.load() || render_thread_.joinable()) {

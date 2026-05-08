@@ -13,6 +13,7 @@
 #include <spdlog/sinks/base_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/pattern_formatter.h>
+#include <algorithm>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -124,28 +125,14 @@ static void ensure_utf8_bom(HANDLE handle) {
 template <typename Mutex>
 class utf8_file_sink final : public spdlog::sinks::base_sink<Mutex> {
 public:
-    explicit utf8_file_sink(const std::string& path) {
-        const auto wide_path = win_utf8::utf16_from_utf8(path);
-        if (wide_path.empty()) {
+    utf8_file_sink(const std::string& path, size_t max_file_size, int max_files)
+        : path_(win_utf8::utf16_from_utf8(path))
+        , max_file_size_(max_file_size)
+        , max_files_(max_files) {
+        if (path_.empty()) {
             throw spdlog::spdlog_ex("UTF-8 log path is empty or invalid");
         }
-
-        ensure_parent_directory(wide_path);
-        file_ = CreateFileW(
-            wide_path.c_str(),
-            GENERIC_READ | GENERIC_WRITE,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            nullptr,
-            OPEN_ALWAYS,
-            FILE_ATTRIBUTE_NORMAL,
-            nullptr);
-        if (file_ == INVALID_HANDLE_VALUE) {
-            throw spdlog::spdlog_ex(windows_error_message("CreateFileW", GetLastError()));
-        }
-
-        ensure_utf8_bom(file_);
-        LARGE_INTEGER end{};
-        SetFilePointerEx(file_, end, nullptr, FILE_END);
+        open_file(false);
     }
 
     ~utf8_file_sink() override {
@@ -161,6 +148,7 @@ protected:
         spdlog::memory_buf_t formatted;
         this->formatter_->format(msg, formatted);
         if (formatted.size() > 0) {
+            rotate_if_needed(formatted.size());
             write_all(file_, formatted.data(), static_cast<DWORD>(formatted.size()));
         }
     }
@@ -170,6 +158,68 @@ protected:
     }
 
 private:
+    std::wstring rotated_path(int index) const {
+        return path_ + L"." + std::to_wstring(index);
+    }
+
+    void open_file(bool truncate) {
+        ensure_parent_directory(path_);
+        file_ = CreateFileW(
+            path_.c_str(),
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            nullptr,
+            truncate ? CREATE_ALWAYS : OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr);
+        if (file_ == INVALID_HANDLE_VALUE) {
+            throw spdlog::spdlog_ex(windows_error_message("CreateFileW", GetLastError()));
+        }
+
+        ensure_utf8_bom(file_);
+        LARGE_INTEGER end{};
+        SetFilePointerEx(file_, end, nullptr, FILE_END);
+    }
+
+    uint64_t current_size() const {
+        LARGE_INTEGER size{};
+        if (!GetFileSizeEx(file_, &size) || size.QuadPart < 0) {
+            return 0;
+        }
+        return static_cast<uint64_t>(size.QuadPart);
+    }
+
+    void rotate_if_needed(size_t incoming_bytes) {
+        if (max_file_size_ == 0 || max_files_ <= 0 || file_ == INVALID_HANDLE_VALUE) {
+            return;
+        }
+        if (current_size() + incoming_bytes <= max_file_size_) {
+            return;
+        }
+
+        FlushFileBuffers(file_);
+        CloseHandle(file_);
+        file_ = INVALID_HANDLE_VALUE;
+
+        std::error_code ec;
+        if (max_files_ <= 1) {
+            std::filesystem::remove(path_, ec);
+            open_file(true);
+            return;
+        }
+
+        std::filesystem::remove(rotated_path(max_files_ - 1), ec);
+        for (int i = max_files_ - 2; i >= 1; --i) {
+            std::filesystem::rename(rotated_path(i), rotated_path(i + 1), ec);
+            ec.clear();
+        }
+        std::filesystem::rename(path_, rotated_path(1), ec);
+        open_file(true);
+    }
+
+    std::wstring path_;
+    size_t max_file_size_ = 0;
+    int max_files_ = 0;
     HANDLE file_ = INVALID_HANDLE_VALUE;
 };
 
@@ -199,6 +249,9 @@ void configure_logging(const LogConfig& config) {
 #endif
 
     auto logger = spdlog::default_logger();
+    static std::mutex logging_mutex;
+    static std::vector<spdlog::sink_ptr> native_sinks;
+    std::lock_guard<std::mutex> lock(logging_mutex);
 
     // Check SPDLOG_LEVEL env var to override configured level
     spdlog::level::level_enum effective_level = config.level;
@@ -210,20 +263,32 @@ void configure_logging(const LogConfig& config) {
         }
     }
 
-    // Remove all existing sinks
-    logger->sinks().clear();
+    auto& logger_sinks = logger->sinks();
+    logger_sinks.erase(
+        std::remove_if(
+            logger_sinks.begin(),
+            logger_sinks.end(),
+            [](const spdlog::sink_ptr& sink) {
+                return std::find(native_sinks.begin(), native_sinks.end(), sink) !=
+                    native_sinks.end();
+            }),
+        logger_sinks.end());
+    native_sinks.clear();
 
     // Add file sink if path specified
     if (!config.file_path.empty()) {
         try {
 #ifdef _WIN32
-            auto file_sink = std::make_shared<utf8_file_sink_mt>(config.file_path);
+            auto file_sink = std::make_shared<utf8_file_sink_mt>(
+                config.file_path, config.max_file_size, config.max_files);
 #else
             auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(
                 config.file_path, false);
 #endif
             file_sink->set_pattern(config.pattern);
-            logger->sinks().push_back(std::move(file_sink));
+            file_sink->set_level(effective_level);
+            native_sinks.push_back(file_sink);
+            logger_sinks.push_back(std::move(file_sink));
         } catch (const spdlog::spdlog_ex& ex) {
             // If file sink fails, we still want other sinks
             // Use a temporary stderr to report the error
@@ -236,11 +301,12 @@ void configure_logging(const LogConfig& config) {
     // Add stderr sink if available (safe for GUI apps — stderr_available
     // returns false when no console is attached, so no crash risk).
     // Uses the same level as the configured level.
-    if (stderr_available()) {
+    if (stderr_available() && logger_sinks.empty()) {
         auto console_sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
         console_sink->set_pattern(config.pattern);
         console_sink->set_level(effective_level);
-        logger->sinks().push_back(std::move(console_sink));
+        native_sinks.push_back(console_sink);
+        logger_sinks.push_back(std::move(console_sink));
     }
 
     // If no sinks at all (no file, no stderr), create a null-like setup
@@ -251,9 +317,12 @@ void configure_logging(const LogConfig& config) {
         // spdlog will still accept log calls but output goes nowhere
     }
 
-    // Set level
-    logger->set_level(effective_level);
-    spdlog::set_level(effective_level);
+    // spdlog free functions still pass through the default logger. Keep host
+    // sinks intact, but lower the logger threshold if needed so native-owned
+    // sinks can receive the requested level.
+    if (logger->level() > effective_level) {
+        logger->set_level(effective_level);
+    }
 
     // Flush every info log so crash-adjacent traces are persisted to disk.
     logger->flush_on(spdlog::level::info);

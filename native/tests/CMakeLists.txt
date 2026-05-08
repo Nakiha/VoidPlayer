@@ -4,6 +4,7 @@ add_executable(video_renderer_tests
     test_main.cpp
     renderer/test_utils.cpp
     renderer/test_clock.cpp
+    renderer/test_logging.cpp
     renderer/test_packet_queue.cpp
     renderer/test_pcm_buffer.cpp
     renderer/test_seek_coordinator.cpp

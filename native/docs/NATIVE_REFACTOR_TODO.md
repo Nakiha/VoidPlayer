@@ -31,13 +31,14 @@ Source review: `build/chat_native_adv.md` (local build artifact, static review, 
 
 ## Round 3 - Stable C ABI And Error Model
 
-- [ ] 增加 `NAKI_VR_ABI_VERSION` 与 `naki_vr_abi_version()`。
-- [ ] 所有跨 FFI 的 config struct 增加 `size`、`abi_version`，并在入口处校验。
-- [ ] 引入项目自有的 `naki_vr_status_t`，避免把 `spdlog` enum 或 C++ enum 直接暴露成 ABI 契约。
-- [ ] 为 log level、seek type、layout mode、track order 等 FFI 参数增加范围校验。
-- [ ] 增加 `last_error` 或等价错误查询 API，让 Dart 能区分参数非法、FFmpeg 打开失败、D3D device lost、shader 失败和内部异常。
-- [ ] 更新 Dart FFI/MethodChannel 侧错误映射和用户可见错误文本。
-- [ ] 验证：补充 `native/tests/ffi` 的 struct size、ABI version、null pointer、invalid enum、double destroy 行为测试；如影响 Flutter action，追加一条 UI smoke。
+- [x] 增加 `NAKI_VR_ABI_VERSION` 与 `naki_vr_abi_version()`。
+- [x] 所有跨 FFI 的 config struct 增加 `size`、`abi_version`，并在入口处校验。
+- [x] 引入项目自有的 `naki_vr_status_t`，避免把 `spdlog` enum 或 C++ enum 直接暴露成 ABI 契约。
+- [x] 为 log level、seek type、layout mode、track order 等 FFI 参数增加范围校验。
+- [x] 增加 `last_error` 或等价错误查询 API，让 Dart 能区分参数非法、FFmpeg 打开失败、D3D device lost、shader 失败和内部异常。
+- [x] 更新 Dart FFI/MethodChannel 侧错误映射和用户可见错误文本。
+  当前 Flutter 主播放器走 Windows MethodChannel，不直接消费 `video_renderer_ffi`；MethodChannel 已有 `BAD_ARGS` / `INVALID_ARGS` 映射。本轮新增的 `naki_vr_last_error()` 服务 C FFI 消费者，后续若 Dart 改为直接绑定该 DLL，需要在 Dart FFI wrapper 中读取 status/message。
+- [x] 验证：补充 `native/tests/ffi` 的 struct size、ABI version、null pointer、invalid enum、double destroy 行为测试；如影响 Flutter action，追加一条 UI smoke。
 
 ## Round 4 - Frame Conversion Failure As Explicit Error
 

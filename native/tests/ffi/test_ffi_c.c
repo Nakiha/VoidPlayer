@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -23,19 +24,67 @@ static int g_fail = 0;
     }                                                     \
 } while (0)
 
+static void init_log_config(naki_vr_log_config_t* cfg) {
+    memset(cfg, 0, sizeof(*cfg));
+    cfg->size = sizeof(*cfg);
+    cfg->abi_version = NAKI_VR_ABI_VERSION;
+    cfg->level = NAKI_VR_LOG_INFO;
+}
+
+static void init_player_config(naki_vr_player_config_t* cfg) {
+    memset(cfg, 0, sizeof(*cfg));
+    cfg->size = sizeof(*cfg);
+    cfg->abi_version = NAKI_VR_ABI_VERSION;
+    cfg->width = 1920;
+    cfg->height = 1080;
+    cfg->use_hardware_decode = 1;
+    init_log_config(&cfg->log_config);
+}
+
+static void init_layout_state(naki_vr_player_layout_state_t* state) {
+    memset(state, 0, sizeof(*state));
+    state->size = sizeof(*state);
+    state->abi_version = NAKI_VR_ABI_VERSION;
+    state->mode = NAKI_VR_LAYOUT_SIDE_BY_SIDE;
+    state->split_pos = 0.5f;
+    state->zoom_ratio = 1.0f;
+    state->pixel_size_mode = NAKI_VR_PIXEL_SIZE_UNIFORM_VIDEO_PIXELS;
+    state->order[0] = 0;
+    state->order[1] = 1;
+    state->order[2] = 2;
+    state->order[3] = 3;
+}
+
+static naki_vr_status_t last_error(char* buf, size_t cap) {
+    return naki_vr_last_error(NULL, buf, cap);
+}
+
 int main(void) {
     printf("=== C FFI Validation ===\n\n");
+
+    CHECK(naki_vr_abi_version() == NAKI_VR_ABI_VERSION, "ABI version matches header");
+    CHECK(sizeof(naki_vr_log_config_t) >= offsetof(naki_vr_log_config_t, level) + sizeof(int),
+          "log config exposes size/version-prefixed layout");
+    CHECK(sizeof(naki_vr_player_config_t) >= offsetof(naki_vr_player_config_t, log_config) + sizeof(naki_vr_log_config_t),
+          "player config exposes size/version-prefixed layout");
+    CHECK(sizeof(naki_vr_player_layout_state_t) >= offsetof(naki_vr_player_layout_state_t, order) + sizeof(int) * 4,
+          "layout config exposes size/version-prefixed layout");
 
     /* ---- configure_logging ---- */
     {
         naki_vr_log_config_t cfg;
-        memset(&cfg, 0, sizeof(cfg));
+        init_log_config(&cfg);
         cfg.pattern = "[%l] %v";
-        cfg.level = 3; /* spdlog::level::warn */
+        cfg.level = NAKI_VR_LOG_WARN;
         cfg.max_file_size = 1024;
         cfg.max_files = 1;
         naki_vr_configure_logging(&cfg);
         CHECK(1, "naki_vr_configure_logging");
+
+        cfg.level = 999;
+        naki_vr_configure_logging(&cfg);
+        CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
+              "invalid log level reports invalid argument");
     }
 
     /* ---- create / destroy ---- */
@@ -62,20 +111,47 @@ int main(void) {
         naki_vr_player_play(p);
         naki_vr_player_pause(p);
         naki_vr_player_seek(p, 0);
+        naki_vr_player_seek_typed(p, 0, NAKI_VR_SEEK_EXACT);
+        naki_vr_player_seek_typed(p, 0, 999);
+        CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
+              "invalid seek type reports invalid argument");
         naki_vr_player_set_speed(p, 2.0);
         naki_vr_player_set_loop_range(p, 0, 0, 0);
         naki_vr_player_set_audible_track(p, -1);
         naki_vr_player_set_track_offset(p, 1, 0);
+        {
+            naki_vr_player_layout_state_t layout;
+            init_layout_state(&layout);
+            naki_vr_player_apply_layout(p, &layout);
+            naki_vr_player_layout(p, &layout);
+            CHECK(layout.size == sizeof(layout) && layout.abi_version == NAKI_VR_ABI_VERSION,
+                  "layout roundtrip preserves ABI metadata");
+        }
         CHECK(1, "playback ops on uninitialized player (no crash)");
 
         naki_vr_player_destroy(p);
         CHECK(1, "naki_vr_player_destroy");
+        naki_vr_player_destroy(p);
+        CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
+              "double destroy reports invalid argument without crashing");
+        CHECK(naki_vr_player_is_initialized(p) == 0, "destroyed handle query returns default");
+        CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
+              "destroyed handle query reports invalid argument");
     }
 
     /* ---- NULL safety ---- */
     {
         naki_vr_player_initialize(NULL, NULL);
         CHECK(1, "initialize(NULL, NULL) does not crash");
+        CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
+              "initialize(NULL, NULL) reports invalid argument");
+
+        {
+            char err[128];
+            naki_vr_status_t st = last_error(err, sizeof(err));
+            CHECK(st == NAKI_VR_ERR_INVALID_ARGUMENT && strlen(err) > 0,
+                  "last_error copies a diagnostic message");
+        }
 
         naki_vr_player_destroy(NULL);
         CHECK(1, "destroy(NULL) does not crash");
@@ -85,6 +161,19 @@ int main(void) {
 
         naki_vr_install_crash_handler(NULL);
         CHECK(1, "install_crash_handler(NULL) does not crash");
+    }
+
+    /* ---- config validation ---- */
+    {
+        naki_vr_player_t p = naki_vr_player_create();
+        naki_vr_player_config_t cfg;
+        init_player_config(&cfg);
+        cfg.abi_version = 999;
+        CHECK(naki_vr_player_initialize(p, &cfg) == 0,
+              "initialize rejects ABI version mismatch");
+        CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
+              "ABI version mismatch reports invalid argument");
+        naki_vr_player_destroy(p);
     }
 
     /* ---- crash handler lifecycle ---- */

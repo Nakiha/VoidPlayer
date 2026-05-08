@@ -20,20 +20,42 @@ extern "C" {
 #   define NAKI_VR_FFI_NOEXCEPT
 #endif
 
+#define NAKI_VR_ABI_VERSION 1u
+
+typedef enum naki_vr_status_t {
+    NAKI_VR_OK = 0,
+    NAKI_VR_ERR_INVALID_ARGUMENT = 1,
+    NAKI_VR_ERR_NOT_INITIALIZED = 2,
+    NAKI_VR_ERR_OPEN_FAILED = 3,
+    NAKI_VR_ERR_INTERNAL = 1000
+} naki_vr_status_t;
+
 /* Opaque handle to vr::NativePlayer. */
 typedef void* naki_vr_player_t;
 
 /* ---- Config structs ---- */
 
 typedef struct naki_vr_log_config_t {
+    uint32_t size;          /* sizeof(naki_vr_log_config_t) */
+    uint32_t abi_version;   /* NAKI_VR_ABI_VERSION */
     const char* pattern;    /* Default: "[%Y-%m-%d %H:%M:%S.%e] [%l] %v" */
     const char* file_path;  /* Empty string = no file logging */
     size_t max_file_size;   /* Default: 5MB, 0 = unlimited */
     int max_files;          /* Default: 3, 0 = no rotation */
-    int level;              /* spdlog::level::level_enum value: 0=trace..6=off */
+    int level;              /* NAKI_VR_LOG_* value: 0=trace..6=off */
 } naki_vr_log_config_t;
 
+#define NAKI_VR_LOG_TRACE    0
+#define NAKI_VR_LOG_DEBUG    1
+#define NAKI_VR_LOG_INFO     2
+#define NAKI_VR_LOG_WARN     3
+#define NAKI_VR_LOG_ERROR    4
+#define NAKI_VR_LOG_CRITICAL 5
+#define NAKI_VR_LOG_OFF      6
+
 typedef struct naki_vr_player_config_t {
+    uint32_t size;            /* sizeof(naki_vr_player_config_t) */
+    uint32_t abi_version;     /* NAKI_VR_ABI_VERSION */
     const char** video_paths; /* Null-terminated array of file paths */
     int64_t hwnd;             /* Window handle (HWND cast to int64_t) */
     int width;                /* Default: 1920 */
@@ -44,6 +66,8 @@ typedef struct naki_vr_player_config_t {
 
 /* ---- Lifecycle ---- */
 
+NAKI_VR_FFI_EXPORT uint32_t naki_vr_abi_version(void) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_last_error(naki_vr_player_t player, char* buf, size_t cap) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT naki_vr_player_t naki_vr_player_create(void) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_player_destroy(naki_vr_player_t player) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT int naki_vr_player_initialize(naki_vr_player_t player, const naki_vr_player_config_t* config) NAKI_VR_FFI_NOEXCEPT;
@@ -91,6 +115,8 @@ NAKI_VR_FFI_EXPORT void naki_vr_player_set_track_offset(naki_vr_player_t player,
 #define NAKI_VR_PIXEL_SIZE_FILL_VIEW 1
 
 typedef struct naki_vr_player_layout_state_t {
+    uint32_t size;                 /* sizeof(naki_vr_player_layout_state_t) */
+    uint32_t abi_version;          /* NAKI_VR_ABI_VERSION */
     int mode;                     /* 0=SIDE_BY_SIDE, 1=SPLIT_SCREEN */
     float split_pos;              /* Split divider position (0.0-1.0) */
     float zoom_ratio;             /* 1.0=fit, >1.0=zoom in */

@@ -282,11 +282,12 @@ private:
     /// Apply pending resize on the render thread.
     void do_resize(int width, int height);
 
-    /// Lock device + texture mutexes, draw frame, present/flush, set preview_drawn_.
+    /// Draw frame, present/flush, set preview_drawn_.
     void present_frame(const PresentDecision& decision);
 
     /// Headless-only: select back buffer RTV, draw, swap, notify Flutter.
-    /// Caller must hold both device_mutex_ and texture_mutex_.
+    /// Caller must hold device_mutex_; texture_mutex_ is held only while
+    /// selecting and publishing the shared buffer.
     std::function<void()> draw_headless_and_publish(const PresentDecision& decision, const char* label);
 
     /// Internal mutex for D3D11 headless texture access.

@@ -19,6 +19,7 @@ public:
 
     bool initialize(ID3D11Device* device, ID3D11DeviceContext* context, int width, int height);
     void shutdown();
+    void fail_shared_handle_for_test(bool enabled);
 
     // Methods with the _locked suffix require callers to hold texture_mutex().
     // Renderer keeps lock ordering as device_mutex -> texture_mutex.
@@ -27,7 +28,7 @@ public:
     std::mutex& texture_mutex() const { return texture_mutex_; }
 
     ID3D11RenderTargetView* begin_frame_locked();
-    std::function<void()> publish_frame_locked(const char* label);
+    std::function<void()> publish_frame_locked();
     void wait_gpu_idle(const char* label);
 
     bool resize_locked(int width, int height);
@@ -58,6 +59,7 @@ private:
     mutable std::mutex texture_mutex_;
     std::function<void()> frame_callback_;
     int current_back_ = 0;
+    bool fail_shared_handle_for_test_ = false;
 };
 
 } // namespace vr

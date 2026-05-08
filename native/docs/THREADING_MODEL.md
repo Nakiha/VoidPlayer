@@ -80,10 +80,18 @@ Deadline-based sleep 保证长时间播放无累积漂移。
 | Clock | mutable mutex | 查询/更新瞬间 |
 | SeekController | mutex + atomic | request/take 瞬间 |
 | D3D11 Context | recursive_mutex（硬解时共享） | decode 期间 |
-| Headless shared texture | texture_mutex | shared handle 查询、front 切换、resize、capture |
+| Headless shared texture | texture_mutex | shared handle 查询、front/back 索引切换、resize、capture |
 | TrackBuffer state | mutex | 状态变更瞬间 |
 
 Headless 输出路径的锁顺序固定为 `device_mutex -> texture_mutex`。`D3D11HeadlessOutput::*_locked()` 方法要求调用方已持有 `texture_mutex()`；不要在这些方法内部再反向获取 `device_mutex`。
+
+Headless publish 的同步契约：
+
+- Native producer 在 `texture_mutex` 下选择 back buffer RTV，然后释放 texture lock 后执行 draw。
+- GPU fence / idle wait 只在 `device_mutex` 下执行，不持有 `texture_mutex`，避免 Flutter texture acquire、resize、callback 更新被最长 100ms 的等待阻塞。
+- fence 完成后再短暂持有 `texture_mutex` 切换 front buffer 并取出 callback；callback 在锁外执行。
+- Flutter consumer 通过 `acquire_shared_texture()` 一次性拿到 AddRef 后的 texture 与 shared handle，release 由 Windows runner 的 `FlutterDesktopGpuSurfaceDescriptor::release_callback` 归还。
+- `GetSharedHandle()` 失败是初始化/resize hard failure，不能发布空 handle。
 
 ## 线程间通信
 

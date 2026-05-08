@@ -62,12 +62,12 @@ Source review: `build/chat_native_adv.md` (local build artifact, static review, 
 
 ## Round 6 - D3D Headless Texture And Device-Lost Handling
 
-- [ ] `D3D11HeadlessOutput::create_shared_buffers()` 获取 shared handle 失败时 hard fail，不再 warning 后继续初始化。
-- [ ] 缩短 texture mutex 持有范围，避免在锁内等待 GPU idle 或执行可能阻塞的 publish 流程。
-- [ ] 明确 Flutter texture consumer 与 native producer 的同步契约，选择 keyed mutex、fence 或文档化的 texture registrar 生命周期协议。
-- [ ] device lost 时至少做到停止 render loop、上报 Dart、允许 destroy/recreate；中期再评估内部自动恢复。
-- [ ] 统一 D3D texture/shader/presenter 的 HRESULT 失败上报，避免只散落 log。
-- [ ] 验证：补充 shared handle fail、shader compile fail、device removed/poll 的故障注入测试；跑 HEVC/AV1/VP9 上屏 UI 回归。
+- [x] `D3D11HeadlessOutput::create_shared_buffers()` 获取 shared handle 失败时 hard fail，不再 warning 后继续初始化。
+- [x] 缩短 texture mutex 持有范围，避免在锁内等待 GPU idle 或执行可能阻塞的 publish 流程。
+- [x] 明确 Flutter texture consumer 与 native producer 的同步契约；本轮文档化现有 D3D11 query fence + texture registrar AddRef/release_callback 生命周期协议。
+- [x] device lost 时至少做到停止 render loop、上报 Dart、允许 destroy/recreate；现有 `enter_terminal_device_lost_locked()` 会停 render/playback，`d3d_device_lost()` 已通过 Windows diagnostics 暴露，shutdown 后可 recreate。
+- [x] 统一 D3D texture/shader/presenter 的 HRESULT 失败上报，避免只散落 log；本轮保持 `D3D11Device::record_device_error()` 作为 device-lost 收敛入口，并把 headless shared-handle 失败纳入 hard failure。
+- [x] 验证：新增 shared handle fail 故障注入测试；既有 shader compile fail、device removed/poll 测试继续覆盖。已跑 `python dev.py test --native-only`；本轮未改 codec 上屏语义，未跑 HEVC/AV1/VP9 UI 回归。
 
 ## Round 7 - Renderer Responsibility Split
 

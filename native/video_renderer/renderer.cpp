@@ -1136,10 +1136,18 @@ std::function<void()> Renderer::draw_headless_and_publish(const PresentDecision&
     if (!d3d_resources_) {
         return {};
     }
-    d3d_resources_->cached_rtv = headless_output_->begin_frame_locked();
+    {
+        std::lock_guard<std::mutex> tex_lock(texture_mutex());
+        d3d_resources_->cached_rtv = headless_output_->begin_frame_locked();
+    }
     draw_frame(decision);
     const auto publish_start = std::chrono::steady_clock::now();
-    auto callback = headless_output_->publish_frame_locked(label);
+    headless_output_->wait_gpu_idle(label);
+    std::function<void()> callback;
+    {
+        std::lock_guard<std::mutex> tex_lock(texture_mutex());
+        callback = headless_output_->publish_frame_locked();
+    }
     d3d_metrics_.present_publish_us.fetch_add(
         elapsed_us_since(publish_start), std::memory_order_relaxed);
     d3d_metrics_.present_publish_count.fetch_add(1, std::memory_order_relaxed);
@@ -1180,7 +1188,6 @@ void Renderer::present_frame(const PresentDecision& decision) {
     bool device_lost = false;
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-        std::lock_guard<std::mutex> tex_lock(texture_mutex());
         if (headless_) {
             frame_callback = draw_headless_and_publish(decision, "present_frame");
             device_lost = d3d_device_ && d3d_device_->poll_device_removed("headless present");
@@ -1208,7 +1215,6 @@ void Renderer::redraw_layout() {
     bool device_lost = false;
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-        std::lock_guard<std::mutex> tex_lock(texture_mutex());
         if (headless_) {
             frame_callback = draw_headless_and_publish(last_decision_, "redraw_layout");
             device_lost = d3d_device_ && d3d_device_->poll_device_removed("headless redraw");

@@ -1,6 +1,7 @@
 #include "video_renderer/d3d11/headless_output.h"
 #include <spdlog/spdlog.h>
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 
 namespace vr {
@@ -17,6 +18,7 @@ bool D3D11HeadlessOutput::initialize(ID3D11Device* device,
 
     if (!create_shared_buffers(width, height,
                                buffers_.textures, buffers_.rtvs, buffers_.handles)) {
+        shutdown();
         return false;
     }
     buffers_.front.store(0);
@@ -55,6 +57,10 @@ void D3D11HeadlessOutput::shutdown() {
     context_ = nullptr;
 }
 
+void D3D11HeadlessOutput::fail_shared_handle_for_test(bool enabled) {
+    fail_shared_handle_for_test_ = enabled;
+}
+
 ID3D11Texture2D* D3D11HeadlessOutput::shared_texture_locked() const {
     return buffers_.textures[buffers_.front.load()].Get();
 }
@@ -68,8 +74,7 @@ ID3D11RenderTargetView* D3D11HeadlessOutput::begin_frame_locked() {
     return buffers_.rtvs[current_back_].Get();
 }
 
-std::function<void()> D3D11HeadlessOutput::publish_frame_locked(const char* label) {
-    wait_gpu_idle(label);
+std::function<void()> D3D11HeadlessOutput::publish_frame_locked() {
     buffers_.front.store(current_back_);
     return frame_callback_;
 }
@@ -226,12 +231,20 @@ bool D3D11HeadlessOutput::create_shared_buffers(
         }
         Microsoft::WRL::ComPtr<IDXGIResource> dxgi_resource;
         hr = textures[i].As(&dxgi_resource);
-        if (SUCCEEDED(hr)) {
-            hr = dxgi_resource->GetSharedHandle(&handles[i]);
-            if (FAILED(hr)) {
-                spdlog::warn("[D3D11HeadlessOutput] failed to get shared handle[{}]: HRESULT {:#x}",
-                             i, static_cast<unsigned long>(hr));
-            }
+        if (FAILED(hr) || !dxgi_resource) {
+            spdlog::error("[D3D11HeadlessOutput] failed to query IDXGIResource[{}]: HRESULT {:#x}",
+                          i, static_cast<unsigned long>(hr));
+            return false;
+        }
+        hr = dxgi_resource->GetSharedHandle(&handles[i]);
+        if (fail_shared_handle_for_test_) {
+            handles[i] = nullptr;
+            hr = E_FAIL;
+        }
+        if (FAILED(hr) || !handles[i]) {
+            spdlog::error("[D3D11HeadlessOutput] failed to get shared handle[{}]: HRESULT {:#x}",
+                          i, static_cast<unsigned long>(hr));
+            return false;
         }
     }
     return true;

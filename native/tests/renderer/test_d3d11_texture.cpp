@@ -336,7 +336,8 @@ TEST_CASE("D3D11HeadlessOutput publishes and resizes buffers", "[d3d11][headless
     {
         std::lock_guard<std::mutex> lock(output.texture_mutex());
         REQUIRE(output.begin_frame_locked() != nullptr);
-        callback = output.publish_frame_locked("headless_output_test");
+        output.wait_gpu_idle("headless_output_test");
+        callback = output.publish_frame_locked();
         REQUIRE(callback_count == 0);
         REQUIRE(callback != nullptr);
     }
@@ -355,6 +356,24 @@ TEST_CASE("D3D11HeadlessOutput publishes and resizes buffers", "[d3d11][headless
     REQUIRE(desc.Height == 360);
 
     output.cleanup_expired_pending_buffers();
+    output.shutdown();
+    cleanup_test_device(dev, hwnd);
+}
+
+TEST_CASE("D3D11HeadlessOutput fails initialization when shared handles are unavailable",
+          "[d3d11][headless_output]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::D3D11HeadlessOutput output;
+    output.fail_shared_handle_for_test(true);
+
+    REQUIRE_FALSE(output.initialize(dev->device(), dev->context(), 320, 240));
+
+    {
+        std::lock_guard<std::mutex> lock(output.texture_mutex());
+        REQUIRE(output.shared_texture_locked() == nullptr);
+        REQUIRE(output.shared_texture_handle_locked() == nullptr);
+    }
+
     output.shutdown();
     cleanup_test_device(dev, hwnd);
 }

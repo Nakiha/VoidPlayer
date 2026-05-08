@@ -3,7 +3,7 @@ import 'dart:isolate';
 import 'analysis_ffi.dart';
 
 abstract class AnalysisNativeService {
-  bool load(String analysisPath);
+  Future<bool> load(String analysisPath);
   void unload();
   AnalysisSession? openSession(String analysisPath);
   Future<bool> generateAnalysis(
@@ -17,7 +17,9 @@ class DefaultAnalysisNativeService implements AnalysisNativeService {
   const DefaultAnalysisNativeService();
 
   @override
-  bool load(String analysisPath) => AnalysisFfi.load(analysisPath);
+  Future<bool> load(String analysisPath) {
+    return Isolate.run(() => AnalysisFfi.load(analysisPath));
+  }
 
   @override
   void unload() => AnalysisFfi.unload();

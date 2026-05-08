@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/actions/action_registry.dart';
 import 'package:void_player/analysis/analysis_cache.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
+import 'package:void_player/analysis/analysis_overlay.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
 import 'package:void_player/config/app_settings_repository.dart';
 import 'package:void_player/preferences/playback_preferences.dart';
@@ -21,8 +22,13 @@ class _FakeMainWindowPlatform implements MainWindowPlatform {
 }
 
 class _FakeAnalysisGenerationService implements AnalysisGenerationService {
+  AnalysisOverlayConfig _config = const AnalysisOverlayConfig();
+
   @override
   String? get activeOverlayHash => null;
+
+  @override
+  AnalysisOverlayConfig get overlayConfig => _config;
 
   @override
   Future<String?> ensureGenerated(String videoPath) => Future.value(null);
@@ -33,6 +39,11 @@ class _FakeAnalysisGenerationService implements AnalysisGenerationService {
     required String name,
     required String path,
   }) => Future.value(false);
+
+  @override
+  void updateOverlayConfig(AnalysisOverlayConfig config) {
+    _config = config;
+  }
 
   @override
   void deactivateOverlay() {}
@@ -94,6 +105,9 @@ class _FakeAnalysisToolbarDataSource implements AnalysisToolbarDataSource {
 
   @override
   String? get activeOverlayHash => null;
+
+  @override
+  AnalysisOverlayConfig get overlayConfig => const AnalysisOverlayConfig();
 
   @override
   void addListener(VoidCallback listener) {}

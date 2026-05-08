@@ -1,5 +1,6 @@
 import '../actions/action_registry.dart';
 import '../actions/player_action.dart';
+import '../analysis/analysis_overlay.dart';
 import '../video_renderer_controller.dart';
 import '../windows/window_manager.dart';
 
@@ -11,12 +12,21 @@ class UiAutomationBridge {
   final NativePlayerController controller;
   final AnalysisProcessManager analysisProcesses;
   final int Function() effectiveDurationUs;
+  final Future<void> Function(int slotIndex) toggleAnalysisOverlayForSlot;
+  final void Function(AnalysisOverlayType type) setAnalysisOverlayType;
+  final void Function(Set<AnalysisOverlayLayer> layers)
+  setAnalysisOverlayLayers;
+  final void Function(double opacity) setAnalysisOverlayOpacity;
   final ActionRegistry _actionRegistry;
 
   const UiAutomationBridge({
     required this.controller,
     required this.analysisProcesses,
     required this.effectiveDurationUs,
+    required this.toggleAnalysisOverlayForSlot,
+    required this.setAnalysisOverlayType,
+    required this.setAnalysisOverlayLayers,
+    required this.setAnalysisOverlayOpacity,
     required ActionRegistry actionRegistry,
   }) : _actionRegistry = actionRegistry;
 

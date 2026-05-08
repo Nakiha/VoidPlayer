@@ -1,3 +1,5 @@
+import '../analysis/analysis_overlay.dart';
+
 /// State assertions for test scripts.
 sealed class PlayerAssert {
   const PlayerAssert();
@@ -141,6 +143,20 @@ class AssertCaptureDiff extends PlayerAssert {
 class AssertAnalysisProcessCount extends PlayerAssert {
   final int count;
   const AssertAnalysisProcessCount(this.count);
+}
+
+class AssertAnalysisOverlay extends PlayerAssert {
+  final bool active;
+  final AnalysisOverlayType? type;
+  final double? opacity;
+  final double opacityTolerance;
+
+  const AssertAnalysisOverlay({
+    required this.active,
+    this.type,
+    this.opacity,
+    this.opacityTolerance = 0.02,
+  });
 }
 
 class AssertTrackBufferCountBelow extends PlayerAssert {

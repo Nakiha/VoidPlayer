@@ -1,0 +1,14 @@
+# Main window should activate the H.264 bitstream overlay and update its controls.
+@WINDOW, 1280, 720
+0.5, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+3.0, ASSERT_TRACK_COUNT, 1
+3.2, TOGGLE_ANALYSIS_OVERLAY, 0
+4.0, ASSERT_ANALYSIS_OVERLAY, true, cu, 0.55
+4.2, SET_ANALYSIS_OVERLAY_TYPE, qpHeatmap
+4.4, ASSERT_ANALYSIS_OVERLAY, true, qpHeatmap, 0.55
+4.6, SET_ANALYSIS_OVERLAY_LAYERS, cuGrid, predictionMode
+4.8, SET_ANALYSIS_OVERLAY_OPACITY, 0.35
+5.0, ASSERT_ANALYSIS_OVERLAY, true, qpHeatmap, 0.35
+5.2, TOGGLE_ANALYSIS_OVERLAY, 0
+5.6, ASSERT_ANALYSIS_OVERLAY, false
+6.0, QUIT, 0

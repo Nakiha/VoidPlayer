@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:path/path.dart' as p;
 
 import '../../analysis/analysis_manager.dart';
+import '../../analysis/analysis_overlay.dart';
 import '../../track_manager.dart';
 import '../analysis/ipc/analysis_ipc_models.dart';
 import '../analysis/ipc/analysis_ipc_server.dart';
@@ -44,6 +45,32 @@ class MainWindowAnalysisCoordinator {
     return _enqueueOperation(
       (serial) => _toggleOverlayImpl(serial, track, hash),
     );
+  }
+
+  Future<void> toggleOverlayForSlot(int slotIndex) {
+    return _enqueueOperation((serial) async {
+      if (slotIndex < 0 || slotIndex >= trackManager.entries.length) return;
+      final track = trackManager.entries[slotIndex];
+      final activeHash = analysisGeneration.activeOverlayHash;
+      final knownHash = _hashesByFileId[track.fileId];
+      if (activeHash != null && knownHash == activeHash) {
+        analysisGeneration.deactivateOverlay();
+        return;
+      }
+      final hash = await analysisGeneration.ensureGenerated(track.path);
+      if (!_alive(serial) || hash == null) return;
+      await _toggleOverlayImpl(serial, track, hash);
+    });
+  }
+
+  void updateOverlayConfig(AnalysisOverlayConfig config) {
+    if (_disposed) return;
+    analysisGeneration.updateOverlayConfig(config);
+  }
+
+  void deactivateOverlay() {
+    if (_disposed) return;
+    analysisGeneration.deactivateOverlay();
   }
 
   Future<void> _triggerAnalysisImpl(int serial) async {

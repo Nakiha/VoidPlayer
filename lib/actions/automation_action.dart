@@ -1,3 +1,5 @@
+import '../analysis/analysis_overlay.dart';
+
 /// Release-supported UI automation commands that are not user/player actions.
 sealed class AutomationAction {
   final String name;
@@ -44,4 +46,31 @@ class StoreNativeSeekCount extends AutomationAction {
   final String nameId;
 
   const StoreNativeSeekCount(this.nameId) : super('STORE_NATIVE_SEEK_COUNT');
+}
+
+class ToggleAnalysisOverlay extends AutomationAction {
+  final int slotIndex;
+
+  const ToggleAnalysisOverlay(this.slotIndex)
+    : super('TOGGLE_ANALYSIS_OVERLAY');
+}
+
+class SetAnalysisOverlayType extends AutomationAction {
+  final AnalysisOverlayType type;
+
+  const SetAnalysisOverlayType(this.type) : super('SET_ANALYSIS_OVERLAY_TYPE');
+}
+
+class SetAnalysisOverlayLayers extends AutomationAction {
+  final Set<AnalysisOverlayLayer> layers;
+
+  const SetAnalysisOverlayLayers(this.layers)
+    : super('SET_ANALYSIS_OVERLAY_LAYERS');
+}
+
+class SetAnalysisOverlayOpacity extends AutomationAction {
+  final double opacity;
+
+  const SetAnalysisOverlayOpacity(this.opacity)
+    : super('SET_ANALYSIS_OVERLAY_OPACITY');
 }

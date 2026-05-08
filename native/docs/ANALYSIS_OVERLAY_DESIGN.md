@@ -31,6 +31,58 @@
 - 没有 PU-level geometry；一个 CU 内多个 PU/MV 时只能做粗粒度展示。
 - affine 仅有标志时无法画 control-point MV。
 
+## Overlay UX
+
+### Activation
+
+- toolbar analysis hover panel 继续作为遮罩入口。
+- 每个 track row 保持小图标激活按钮，不使用文字按钮。
+- 只有该 track 的分析缓存完整时，激活按钮才可点击。
+- 点击已激活 track 的小图标会关闭遮罩；点击另一个 cached track 会切换 active overlay track。
+
+### Control Strip
+
+- 遮罩打开后，在 media header 上方展开 overlay control strip。
+- control strip 参与主窗口布局，占用底部媒体区高度，viewport 通过 `Expanded` 自然被向上挤压。
+- control strip 横向分栏与 media header 的 track slot 对齐；第一版 native 只支持一个 active analysis session，因此只有 active track 的分栏可交互，其他分栏显示为 disabled。
+- 每个 active track 分栏包含三类控件：
+  - overlay type：切换主视觉层。
+  - additive layers：切换可叠加的辅助层。
+  - opacity：调节遮罩透明度。
+- 功能区状态属于主窗口 overlay，不属于 analysis 子窗口；analysis 子窗口仍负责深度结构浏览。
+
+## Overlay Types and Layers
+
+### Overlay Types
+
+| Type | Primary visual | VBS4 dependency | Additive layers | First GUI state |
+| --- | --- | --- | --- | --- |
+| CU | CU/MB partition outlines | H.264 MB grid or HEVC/VVC CU geometry | CU grid | Enabled |
+| Prediction | Prediction mode glyph/color | CU pred mode, skip/merge/inter/intra flags | CU grid, prediction mode | Enabled |
+| Prediction lines | Intra direction and inter MV lines | CU-level intra mode and MV; PU/affine details optional | CU grid, prediction mode, prediction lines | Enabled |
+| QP heatmap | Per-CU/MB QP fill | CU/MB QP | CU grid, prediction mode | Enabled |
+| CU bit-cost heatmap | Per-CU bit/cost fill | future cost/bit optional stream | CU grid, prediction mode, prediction lines | GUI/protocol enabled, visual data pending |
+
+### Additive Layers
+
+| Layer | Meaning | Supported now | Notes |
+| --- | --- | --- | --- |
+| CU grid | Draw CU/MB boundaries over any primary type | Yes | Base layer for pure CU and useful guide for heatmaps. |
+| Prediction mode | Draw compact intra/inter/skip/merge labels or colors | Partially | Current VBS4 has CU-level mode data; glyph rendering lands in native renderer phase. |
+| Prediction lines | Draw intra direction lines and L0/L1 MV lines | Partially | Current data is CU-level; PU split and affine control-point precision require future streams. |
+| TU grid | Transform unit boundaries | No | Requires TU geometry stream. Do not expose as an active toggle until data exists. |
+| PU grid | Prediction unit boundaries | No | Requires PU geometry stream. Current MVP can only show CU-level prediction. |
+
+### Type Defaults
+
+- CU defaults to `CU grid`.
+- Prediction defaults to `CU grid + prediction mode`.
+- Prediction lines defaults to `CU grid + prediction mode + prediction lines`.
+- QP heatmap defaults to `CU grid`.
+- CU bit-cost heatmap defaults to `CU grid` until cost data exists.
+
+The type controls the primary native renderer pass. Additive layers are independent flags sent in the same overlay state so later renderer phases do not need UI rewiring.
+
 ## Architecture Boundaries
 
 ### Dart
@@ -72,8 +124,10 @@ D3D11 renderer 负责：
 
 - toolbar analysis hover panel 中每个 track row 提供一个小图标激活按钮。
 - 只有对应 track 的分析缓存完整时按钮可用。
-- 点击按钮加载该 track 的 VAC，并设置 native overlay flags。
-- overlay 默认打开 CU grid、prediction mode、QP heatmap；后续再拆成独立开关。
+- 点击按钮加载该 track 的 VAC，并设置 native overlay state。
+- overlay 默认类型为 CU，附加层为 CU grid，透明度为 55%。
+- 遮罩打开后 media header 上方出现 per-track overlay control strip。
+- control strip 可切换 CU / prediction / prediction lines / QP heatmap / CU bit-cost heatmap，可切换附加层，可调整透明度。
 - 同一时间只激活一个 track 的 overlay。
 
 渲染层落地顺序：
@@ -129,6 +183,8 @@ native 输出：
 - Add toolbar hover-panel activation button.
 - Gate activation on complete cache.
 - Load cached VAC and set overlay flags.
+- Add media-header overlay control strip.
+- Add overlay type/layer/opacity state protocol.
 
 ### Phase 1: Native Overlay MVP
 

@@ -5,17 +5,21 @@ import 'package:void_player/actions/action_registry.dart';
 import 'package:void_player/actions/player_action.dart';
 import 'package:void_player/analysis/analysis_cache.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
+import 'package:void_player/analysis/analysis_overlay.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
 import 'package:void_player/app_log.dart';
 import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/track_manager.dart';
 import 'package:void_player/video_renderer_controller.dart';
+import 'package:void_player/widgets/analysis_overlay_controls.dart';
 import 'package:void_player/widgets/toolbar.dart';
 
 class _FakeAnalysisToolbarDataSource extends ChangeNotifier
     implements AnalysisToolbarDataSource {
   final AnalysisCacheSnapshot cacheSnapshot;
   final Map<String, int> bytesByHash;
+  final String? overlayHash;
+  AnalysisOverlayConfig config;
 
   _FakeAnalysisToolbarDataSource({
     this.cacheSnapshot = const AnalysisCacheSnapshot(
@@ -27,10 +31,15 @@ class _FakeAnalysisToolbarDataSource extends ChangeNotifier
       entries: [],
     ),
     this.bytesByHash = const {},
+    this.overlayHash,
+    this.config = const AnalysisOverlayConfig(),
   });
 
   @override
-  String? get activeOverlayHash => null;
+  String? get activeOverlayHash => overlayHash;
+
+  @override
+  AnalysisOverlayConfig get overlayConfig => config;
 
   @override
   AnalysisState get state => AnalysisState.idle;
@@ -39,7 +48,33 @@ class _FakeAnalysisToolbarDataSource extends ChangeNotifier
   AnalysisError? get error => null;
 
   @override
-  AnalysisTrackGenerationStatus? statusForPath(String path) => null;
+  AnalysisTrackGenerationStatus? statusForPath(String path) {
+    for (final entry in cacheSnapshot.entries) {
+      if (entry.videoPath == path) {
+        return AnalysisTrackGenerationStatus(
+          path: path,
+          fileName: entry.name,
+          hash: entry.hash,
+          status: entry.complete
+              ? AnalysisTrackStatus.cached
+              : AnalysisTrackStatus.generating,
+          progress: entry.complete ? 1 : 0,
+          error: null,
+        );
+      }
+    }
+    if (overlayHash == 'hash1' && path == 'track.mp4') {
+      return const AnalysisTrackGenerationStatus(
+        path: 'track.mp4',
+        fileName: 'track.mp4',
+        hash: 'hash1',
+        status: AnalysisTrackStatus.cached,
+        progress: 1,
+        error: null,
+      );
+    }
+    return null;
+  }
 
   @override
   Future<AnalysisCacheSnapshot> snapshot() => Future.value(cacheSnapshot);
@@ -51,6 +86,12 @@ class _FakeAnalysisToolbarDataSource extends ChangeNotifier
   @override
   String formatBytes(int bytes) => '$bytes B';
 }
+
+Widget _localized(Widget child) => MaterialApp(
+  localizationsDelegates: AppLocalizations.localizationsDelegates,
+  supportedLocales: AppLocalizations.supportedLocales,
+  home: Scaffold(body: child),
+);
 
 void main() {
   setUpAll(() async {
@@ -184,6 +225,49 @@ void main() {
 
     expect(overlayTaps, 1);
     expect(overlayHash, 'hash1');
+  });
+
+  testWidgets('analysis overlay control bar switches type and opacity', (
+    tester,
+  ) async {
+    final openedTrack = track();
+    var type = AnalysisOverlayType.cu;
+    var opacity = 0.55;
+    final source = _FakeAnalysisToolbarDataSource(
+      overlayHash: 'hash1',
+      config: const AnalysisOverlayConfig(),
+    );
+
+    source.config = source.config.copyWith(opacity: opacity);
+
+    await tester.pumpWidget(
+      _localized(
+        AnalysisOverlayControlBar(
+          entries: [openedTrack],
+          dataSource: source,
+          onTypeChanged: (next) => type = next,
+          onLayersChanged: (_) {},
+          onOpacityChanged: (next) => opacity = next,
+          onClose: () {},
+        ),
+      ),
+    );
+
+    expect(find.byKey(analysisOverlayControlBarKey), findsOneWidget);
+    await tester.tap(
+      find.byKey(
+        ValueKey(
+          'analysis-overlay-type-${openedTrack.fileId}-${AnalysisOverlayType.qpHeatmap.name}',
+        ),
+      ),
+    );
+    expect(type, AnalysisOverlayType.qpHeatmap);
+
+    final slider = find.byKey(
+      ValueKey('analysis-overlay-opacity-${openedTrack.fileId}'),
+    );
+    await tester.drag(slider, const Offset(80, 0));
+    expect(opacity, greaterThan(0.55));
   });
 
   testWidgets('canceling network stream dialog restores space shortcut', (

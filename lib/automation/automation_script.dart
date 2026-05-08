@@ -3,6 +3,7 @@ import 'dart:io';
 import '../actions/automation_action.dart';
 import '../actions/player_action.dart';
 import '../actions/player_assert.dart';
+import '../analysis/analysis_overlay.dart';
 import '../app_log.dart';
 import '../preferences/playback_preferences.dart';
 
@@ -340,6 +341,40 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAutomationAction(time, StoreNativeSeekCount(args[0]));
+    case 'TOGGLE_ANALYSIS_OVERLAY':
+      if (args.isEmpty) {
+        log.warning('TOGGLE_ANALYSIS_OVERLAY needs slot index: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        ToggleAnalysisOverlay(int.parse(args[0])),
+      );
+    case 'SET_ANALYSIS_OVERLAY_TYPE':
+      if (args.isEmpty) {
+        log.warning('SET_ANALYSIS_OVERLAY_TYPE needs type: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        SetAnalysisOverlayType(analysisOverlayTypeFromName(args[0])),
+      );
+    case 'SET_ANALYSIS_OVERLAY_LAYERS':
+      final layers = args
+          .expand((arg) => arg.split('|'))
+          .where((arg) => arg.trim().isNotEmpty)
+          .map(analysisOverlayLayerFromName)
+          .toSet();
+      return ScriptAutomationAction(time, SetAnalysisOverlayLayers(layers));
+    case 'SET_ANALYSIS_OVERLAY_OPACITY':
+      if (args.isEmpty) {
+        log.warning('SET_ANALYSIS_OVERLAY_OPACITY needs opacity: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        SetAnalysisOverlayOpacity(double.parse(args[0])),
+      );
     case 'RUN_ANALYSIS':
     case 'TRIGGER_ANALYSIS':
       return ScriptAction(time, const RunAnalysis());
@@ -613,6 +648,24 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAssert(time, AssertAnalysisProcessCount(int.parse(args[0])));
+    case 'ASSERT_ANALYSIS_OVERLAY':
+      if (args.isEmpty) {
+        log.warning('ASSERT_ANALYSIS_OVERLAY needs active flag: $rawLine');
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertAnalysisOverlay(
+          active: args[0] == '1' || args[0].toLowerCase() == 'true',
+          type: args.length >= 2 && args[1].trim().isNotEmpty
+              ? analysisOverlayTypeFromName(args[1])
+              : null,
+          opacity: args.length >= 3 && args[2].trim().isNotEmpty
+              ? double.parse(args[2])
+              : null,
+          opacityTolerance: args.length >= 4 ? double.parse(args[3]) : 0.02,
+        ),
+      );
     case 'ASSERT_TRACK_BUFFER_COUNT_BELOW':
       if (args.isEmpty) {
         log.warning(

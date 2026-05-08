@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -9,6 +10,7 @@ import 'analysis_ffi.dart';
 import 'analysis_generation_queue.dart';
 import 'analysis_generation_settings.dart';
 import 'analysis_native_service.dart';
+import 'analysis_overlay.dart';
 import 'file_hash.dart';
 import 'nalu_types.dart';
 
@@ -69,12 +71,14 @@ class AnalysisTrackGenerationStatus {
 
 abstract class AnalysisGenerationService {
   String? get activeOverlayHash;
+  AnalysisOverlayConfig get overlayConfig;
   Future<String?> ensureGenerated(String videoPath);
   Future<bool> activateOverlay(
     String hash, {
     required String name,
     required String path,
   });
+  void updateOverlayConfig(AnalysisOverlayConfig config);
   void deactivateOverlay();
 }
 
@@ -108,6 +112,7 @@ class AnalysisManager extends ChangeNotifier
   String? _generatingFileName;
   String? _loadedHash;
   String? _activeOverlayHash;
+  AnalysisOverlayConfig _overlayConfig = const AnalysisOverlayConfig();
   FileLockHandle? _loadedHashLock;
   final Map<String, Future<String?>> _ensureGeneratedInFlightByPath = {};
   final Map<String, AnalysisTrackGenerationStatus> _trackStatusByPath = {};
@@ -121,6 +126,8 @@ class AnalysisManager extends ChangeNotifier
   String? get loadedHash => _loadedHash;
   @override
   String? get activeOverlayHash => _activeOverlayHash;
+  @override
+  AnalysisOverlayConfig get overlayConfig => _overlayConfig;
   bool get isLoaded => _state == AnalysisState.loaded;
 
   AnalysisTrackGenerationStatus? statusForPath(String path) =>
@@ -397,7 +404,25 @@ class AnalysisManager extends ChangeNotifier
     final hashLock = _cache.acquireHashSharedLockSync(hash);
     final bool ok;
     try {
-      ok = _native.load(analysisPath);
+      ok = await _native
+          .load(analysisPath)
+          .timeout(const Duration(seconds: 45));
+    } on TimeoutException catch (e, stack) {
+      hashLock.releaseSync();
+      log.severe('[Analysis] FFI load timed out: $analysisPath', e, stack);
+      final error = AnalysisError(AnalysisErrorKey.loadFailed, [name]);
+      _setTrackStatus(
+        path,
+        fileName: name,
+        hash: hash,
+        status: AnalysisTrackStatus.error,
+        progress: 1,
+        error: error,
+      );
+      if (_isLoadCurrent(serial)) {
+        _setErrorObject(error);
+      }
+      return false;
     } catch (_) {
       hashLock.releaseSync();
       rethrow;
@@ -449,24 +474,25 @@ class AnalysisManager extends ChangeNotifier
         : await loadAnalysisHash(hash, name: name, path: path);
     if (!loaded) return false;
     _activeOverlayHash = hash;
-    AnalysisFfi.setOverlay(
-      showCuGrid: true,
-      showPredMode: true,
-      showQpHeatmap: true,
-    );
+    _applyOverlayConfig();
     notifyListeners();
     return true;
+  }
+
+  @override
+  void updateOverlayConfig(AnalysisOverlayConfig config) {
+    _overlayConfig = config;
+    if (_activeOverlayHash != null) {
+      _applyOverlayConfig();
+    }
+    notifyListeners();
   }
 
   @override
   void deactivateOverlay() {
     if (_activeOverlayHash == null) return;
     _activeOverlayHash = null;
-    AnalysisFfi.setOverlay(
-      showCuGrid: false,
-      showPredMode: false,
-      showQpHeatmap: false,
-    );
+    _applyDisabledOverlayConfig();
     notifyListeners();
   }
 
@@ -476,11 +502,7 @@ class AnalysisManager extends ChangeNotifier
     _loadSerial++;
     _ensureGeneratedInFlightByPath.clear();
     _activeOverlayHash = null;
-    AnalysisFfi.setOverlay(
-      showCuGrid: false,
-      showPredMode: false,
-      showQpHeatmap: false,
-    );
+    _applyDisabledOverlayConfig();
     if (_state == AnalysisState.loaded) {
       _native.unload();
     }
@@ -492,6 +514,31 @@ class AnalysisManager extends ChangeNotifier
   void _releaseLoadedHashLock() {
     _loadedHashLock?.releaseSync();
     _loadedHashLock = null;
+  }
+
+  void _applyOverlayConfig() {
+    final config = _overlayConfig;
+    AnalysisFfi.setOverlay(
+      showCuGrid: config.showCuGrid,
+      showPredMode: config.showPredMode,
+      showQpHeatmap: config.showQpHeatmap,
+      showPredLines: config.showPredLines,
+      showCuBitCostHeatmap: config.showCuBitCostHeatmap,
+      opacity: config.opacity,
+      mode: config.type.index,
+    );
+  }
+
+  void _applyDisabledOverlayConfig() {
+    AnalysisFfi.setOverlay(
+      showCuGrid: false,
+      showPredMode: false,
+      showQpHeatmap: false,
+      showPredLines: false,
+      showCuBitCostHeatmap: false,
+      opacity: _overlayConfig.opacity,
+      mode: _overlayConfig.type.index,
+    );
   }
 
   // ---- Internal ----

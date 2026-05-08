@@ -121,7 +121,14 @@ final class NakiOverlayState extends Struct {
   @Int32()
   external int showQpHeatmap;
   @Int32()
-  // Reserved native ABI padding.
+  external int showPredLines;
+  @Int32()
+  external int showCuBitCostHeatmap;
+  @Int32()
+  external int opacityPermille;
+  @Int32()
+  external int mode;
+  @Int32()
   external int _reserved;
 }
 
@@ -838,12 +845,20 @@ class AnalysisFfi {
     required bool showCuGrid,
     required bool showPredMode,
     required bool showQpHeatmap,
+    bool showPredLines = false,
+    bool showCuBitCostHeatmap = false,
+    double opacity = 0.55,
+    int mode = 0,
   }) {
     final state = calloc<NakiOverlayState>();
     try {
       state.ref.showCuGrid = showCuGrid ? 1 : 0;
       state.ref.showPredMode = showPredMode ? 1 : 0;
       state.ref.showQpHeatmap = showQpHeatmap ? 1 : 0;
+      state.ref.showPredLines = showPredLines ? 1 : 0;
+      state.ref.showCuBitCostHeatmap = showCuBitCostHeatmap ? 1 : 0;
+      state.ref.opacityPermille = (opacity.clamp(0.1, 1.0) * 1000).round();
+      state.ref.mode = mode;
       _native.setOverlay(state);
     } finally {
       calloc.free(state);

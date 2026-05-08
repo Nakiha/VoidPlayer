@@ -454,6 +454,10 @@ void naki_analysis_set_overlay(const NakiOverlayState* state) {
     overlay.show_cu_grid.store(state->show_cu_grid != 0, std::memory_order_release);
     overlay.show_pred_mode.store(state->show_pred_mode != 0, std::memory_order_release);
     overlay.show_qp_heatmap.store(state->show_qp_heatmap != 0, std::memory_order_release);
+    overlay.show_pred_lines.store(state->show_pred_lines != 0, std::memory_order_release);
+    overlay.show_cu_bit_cost_heatmap.store(state->show_cu_bit_cost_heatmap != 0, std::memory_order_release);
+    overlay.opacity_permille.store(std::clamp(state->opacity_permille, 100, 1000), std::memory_order_release);
+    overlay.mode.store(std::max(0, state->mode), std::memory_order_release);
 }
 
 extern "C" __declspec(dllexport)

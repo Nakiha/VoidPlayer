@@ -493,6 +493,33 @@
   "analysisOverlayDeactivate": "Disable bitstream overlay",
   "@analysisOverlayDeactivate": { "description": "Tooltip for disabling the active bitstream overlay from the analysis toolbar panel" },
 
+  "analysisOverlayTypeCu": "CU partitions",
+  "@analysisOverlayTypeCu": { "description": "Tooltip for the CU partition overlay type button" },
+
+  "analysisOverlayTypePrediction": "Prediction modes",
+  "@analysisOverlayTypePrediction": { "description": "Tooltip for the prediction mode overlay type button" },
+
+  "analysisOverlayTypePredictionLines": "Prediction lines",
+  "@analysisOverlayTypePredictionLines": { "description": "Tooltip for the prediction-line overlay type button" },
+
+  "analysisOverlayTypeQpHeatmap": "QP heatmap",
+  "@analysisOverlayTypeQpHeatmap": { "description": "Tooltip for the QP heatmap overlay type button" },
+
+  "analysisOverlayTypeCuBitCostHeatmap": "CU bit-cost heatmap",
+  "@analysisOverlayTypeCuBitCostHeatmap": { "description": "Tooltip for the CU bit-cost heatmap overlay type button" },
+
+  "analysisOverlayLayerCuGrid": "CU grid",
+  "@analysisOverlayLayerCuGrid": { "description": "Tooltip for toggling CU grid overlay layer" },
+
+  "analysisOverlayLayerPredictionMode": "Prediction mode labels",
+  "@analysisOverlayLayerPredictionMode": { "description": "Tooltip for toggling prediction mode overlay layer" },
+
+  "analysisOverlayLayerPredictionLines": "Prediction lines",
+  "@analysisOverlayLayerPredictionLines": { "description": "Tooltip for toggling prediction-line overlay layer" },
+
+  "analysisOverlayOpacity": "Overlay opacity",
+  "@analysisOverlayOpacity": { "description": "Tooltip for the bitstream overlay opacity slider" },
+
   "mediaInfoNoTracks": "No tracks open",
   "@mediaInfoNoTracks": { "description": "Media information panel empty state" },
 

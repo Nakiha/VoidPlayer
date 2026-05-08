@@ -206,6 +206,21 @@ class TestRunner {
         final count = _probe.currentNativeSeekCount();
         _state.nativeSeekCountBaselines[nameId] = count;
         log.info('TestRunner: STORE_NATIVE_SEEK_COUNT $nameId count=$count');
+      case ToggleAnalysisOverlay(:final slotIndex):
+        log.info('TestRunner: TOGGLE_ANALYSIS_OVERLAY slot=$slotIndex');
+        await automation.toggleAnalysisOverlayForSlot(slotIndex);
+      case SetAnalysisOverlayType(:final type):
+        log.info('TestRunner: SET_ANALYSIS_OVERLAY_TYPE ${type.name}');
+        automation.setAnalysisOverlayType(type);
+      case SetAnalysisOverlayLayers(:final layers):
+        log.info(
+          'TestRunner: SET_ANALYSIS_OVERLAY_LAYERS '
+          '${layers.map((layer) => layer.name).join(',')}',
+        );
+        automation.setAnalysisOverlayLayers(layers);
+      case SetAnalysisOverlayOpacity(:final opacity):
+        log.info('TestRunner: SET_ANALYSIS_OVERLAY_OPACITY $opacity');
+        automation.setAnalysisOverlayOpacity(opacity);
     }
   }
 

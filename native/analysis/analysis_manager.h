@@ -33,6 +33,10 @@ public:
         std::atomic<bool> show_cu_grid{false};
         std::atomic<bool> show_pred_mode{false};
         std::atomic<bool> show_qp_heatmap{false};
+        std::atomic<bool> show_pred_lines{false};
+        std::atomic<bool> show_cu_bit_cost_heatmap{false};
+        std::atomic<int> opacity_permille{550};
+        std::atomic<int> mode{0};
     };
 
     OverlayState overlay;

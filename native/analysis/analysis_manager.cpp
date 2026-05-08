@@ -39,6 +39,10 @@ void AnalysisManager::unload() {
     overlay.show_cu_grid.store(false, std::memory_order_release);
     overlay.show_pred_mode.store(false, std::memory_order_release);
     overlay.show_qp_heatmap.store(false, std::memory_order_release);
+    overlay.show_pred_lines.store(false, std::memory_order_release);
+    overlay.show_cu_bit_cost_heatmap.store(false, std::memory_order_release);
+    overlay.opacity_permille.store(550, std::memory_order_release);
+    overlay.mode.store(0, std::memory_order_release);
 }
 
 int AnalysisManager::current_frame_idx(int64_t pts_us) const {

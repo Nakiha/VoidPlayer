@@ -3,11 +3,13 @@ import 'package:flutter/foundation.dart';
 import '../config/app_settings_repository.dart';
 import 'analysis_cache.dart';
 import 'analysis_manager.dart';
+import 'analysis_overlay.dart';
 
 abstract class AnalysisToolbarDataSource implements Listenable {
   AnalysisState get state;
   AnalysisError? get error;
   String? get activeOverlayHash;
+  AnalysisOverlayConfig get overlayConfig;
   AnalysisTrackGenerationStatus? statusForPath(String path);
   Future<AnalysisCacheSnapshot> snapshot();
   Future<Map<String, int>> currentBytesByHash(Set<String> hashes);
@@ -31,6 +33,9 @@ class DefaultAnalysisToolbarDataSource implements AnalysisToolbarDataSource {
 
   @override
   String? get activeOverlayHash => analysisManager.activeOverlayHash;
+
+  @override
+  AnalysisOverlayConfig get overlayConfig => analysisManager.overlayConfig;
 
   @override
   void addListener(VoidCallback listener) {

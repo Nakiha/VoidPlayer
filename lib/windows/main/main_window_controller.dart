@@ -71,6 +71,10 @@ class MainWindowController {
   late final MainWindowPlaybackCoordinator playbackCoordinator;
   late final MainWindowActionCoordinator actionCoordinator;
   late final MainWindowViewActions _viewActions = _createViewActions();
+  late final Listenable _listenable = Listenable.merge([
+    stateStore,
+    analysisToolbarDataSource,
+  ]);
 
   MainWindowController({
     required this.actionRegistry,
@@ -104,7 +108,7 @@ class MainWindowController {
     _initCoordinators();
   }
 
-  Listenable get listenable => stateStore;
+  Listenable get listenable => _listenable;
 
   void start({String? testScriptPath}) {
     trackManager.addListener(_onTrackManagerChanged);
@@ -257,6 +261,27 @@ class MainWindowController {
         onOffsetChanged: mediaCoordinator.onOffsetChanged,
         onToggleTrackAudio: _toggleTrackAudio,
         onControlsWidthChanged: stateStore.setTimelineControlsWidth,
+      ),
+      analysisOverlay: MainWindowAnalysisOverlayActions(
+        onTypeChanged: (type) {
+          final config = analysisGeneration.overlayConfig.withTypeDefaults(
+            type,
+          );
+          analysisCoordinator.updateOverlayConfig(config);
+        },
+        onLayersChanged: (layers) {
+          final config = analysisGeneration.overlayConfig.copyWith(
+            layers: layers,
+          );
+          analysisCoordinator.updateOverlayConfig(config);
+        },
+        onOpacityChanged: (opacity) {
+          final config = analysisGeneration.overlayConfig.copyWith(
+            opacity: opacity,
+          );
+          analysisCoordinator.updateOverlayConfig(config);
+        },
+        onClose: analysisCoordinator.deactivateOverlay,
       ),
       overlays: MainWindowOverlayActions(
         onCloseMediaInfo: () => stateStore.setMediaInfoVisible(false),
@@ -476,6 +501,23 @@ class MainWindowController {
           controller: player,
           analysisProcesses: analysisProcesses,
           effectiveDurationUs: () => timelineMetrics.effectiveDurationUs,
+          toggleAnalysisOverlayForSlot:
+              analysisCoordinator.toggleOverlayForSlot,
+          setAnalysisOverlayType: (type) {
+            analysisCoordinator.updateOverlayConfig(
+              analysisGeneration.overlayConfig.withTypeDefaults(type),
+            );
+          },
+          setAnalysisOverlayLayers: (layers) {
+            analysisCoordinator.updateOverlayConfig(
+              analysisGeneration.overlayConfig.copyWith(layers: layers),
+            );
+          },
+          setAnalysisOverlayOpacity: (opacity) {
+            analysisCoordinator.updateOverlayConfig(
+              analysisGeneration.overlayConfig.copyWith(opacity: opacity),
+            );
+          },
           actionRegistry: actionRegistry,
         ),
       ).run();

@@ -62,6 +62,10 @@ struct NakiOverlayState {
     int32_t show_cu_grid;
     int32_t show_pred_mode;
     int32_t show_qp_heatmap;
+    int32_t show_pred_lines;
+    int32_t show_cu_bit_cost_heatmap;
+    int32_t opacity_permille;
+    int32_t mode;
     int32_t _reserved;
 };
 

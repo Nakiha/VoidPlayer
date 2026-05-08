@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import '../actions/player_assert.dart';
+import '../analysis/analysis_manager.dart';
 import '../app_log.dart';
 import '../windows/win32ffi.dart';
 import '../windows/window_manager.dart';
@@ -273,6 +274,33 @@ class AutomationAssertExecutor {
           throw AssertionError(
             'Expected analysis process count $count, got $actual; '
             'exits=${analysisProcesses.analysisExitCodes}',
+          );
+        }
+      case AssertAnalysisOverlay(
+        :final active,
+        :final type,
+        :final opacity,
+        :final opacityTolerance,
+      ):
+        final manager = AnalysisManager.instance;
+        final isActive = manager.activeOverlayHash != null;
+        if (isActive != active) {
+          throw AssertionError(
+            'Expected analysis overlay active=$active, got $isActive',
+          );
+        }
+        if (type != null && manager.overlayConfig.type != type) {
+          throw AssertionError(
+            'Expected analysis overlay type ${type.name}, '
+            'got ${manager.overlayConfig.type.name}',
+          );
+        }
+        if (opacity != null &&
+            (manager.overlayConfig.opacity - opacity).abs() >
+                opacityTolerance) {
+          throw AssertionError(
+            'Expected analysis overlay opacity $opacity '
+            '(±$opacityTolerance), got ${manager.overlayConfig.opacity}',
           );
         }
       case AssertTrackBufferCountBelow(:final maxCount):

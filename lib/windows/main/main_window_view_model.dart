@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../analysis/analysis_overlay.dart';
 import '../../analysis/analysis_toolbar_data_source.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../track_manager.dart';
@@ -114,6 +115,7 @@ class MainWindowViewActions {
   final MainWindowToolbarActions toolbar;
   final MainWindowViewportActions viewport;
   final MainWindowMediaTimelineActions mediaTimeline;
+  final MainWindowAnalysisOverlayActions analysisOverlay;
   final MainWindowOverlayActions overlays;
 
   const MainWindowViewActions({
@@ -121,6 +123,7 @@ class MainWindowViewActions {
     required this.toolbar,
     required this.viewport,
     required this.mediaTimeline,
+    required this.analysisOverlay,
     required this.overlays,
   });
 }
@@ -213,6 +216,20 @@ class MainWindowMediaTimelineActions {
     required this.onOffsetChanged,
     required this.onToggleTrackAudio,
     required this.onControlsWidthChanged,
+  });
+}
+
+class MainWindowAnalysisOverlayActions {
+  final ValueChanged<AnalysisOverlayType> onTypeChanged;
+  final ValueChanged<Set<AnalysisOverlayLayer>> onLayersChanged;
+  final ValueChanged<double> onOpacityChanged;
+  final VoidCallback onClose;
+
+  const MainWindowAnalysisOverlayActions({
+    required this.onTypeChanged,
+    required this.onLayersChanged,
+    required this.onOpacityChanged,
+    required this.onClose,
   });
 }
 

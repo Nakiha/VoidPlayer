@@ -1362,9 +1362,11 @@ void Renderer::do_resize(int width, int height) {
     std::function<void()> frame_callback;
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-        std::lock_guard<std::mutex> tex_lock(texture_mutex());
-        if (!headless_output_ || !headless_output_->resize_locked(width, height)) {
-            return;
+        {
+            std::lock_guard<std::mutex> tex_lock(texture_mutex());
+            if (!headless_output_ || !headless_output_->resize_locked(width, height)) {
+                return;
+            }
         }
         d3d_metrics_.shared_texture_resize_count.fetch_add(1, std::memory_order_relaxed);
 

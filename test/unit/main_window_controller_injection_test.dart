@@ -38,6 +38,7 @@ class _FakeAnalysisGenerationService implements AnalysisGenerationService {
     String hash, {
     required String name,
     required String path,
+    required int trackFileId,
   }) => Future.value(false);
 
   @override

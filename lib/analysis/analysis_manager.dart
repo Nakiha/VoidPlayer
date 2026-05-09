@@ -77,6 +77,7 @@ abstract class AnalysisGenerationService {
     String hash, {
     required String name,
     required String path,
+    required int trackFileId,
   });
   void updateOverlayConfig(AnalysisOverlayConfig config);
   void deactivateOverlay();
@@ -112,6 +113,7 @@ class AnalysisManager extends ChangeNotifier
   String? _generatingFileName;
   String? _loadedHash;
   String? _activeOverlayHash;
+  int _activeOverlayTrackFileId = -1;
   AnalysisOverlayConfig _overlayConfig = const AnalysisOverlayConfig();
   FileLockHandle? _loadedHashLock;
   final Map<String, Future<String?>> _ensureGeneratedInFlightByPath = {};
@@ -468,12 +470,14 @@ class AnalysisManager extends ChangeNotifier
     String hash, {
     required String name,
     required String path,
+    required int trackFileId,
   }) async {
     final loaded = _loadedHash == hash
         ? true
         : await loadAnalysisHash(hash, name: name, path: path);
     if (!loaded) return false;
     _activeOverlayHash = hash;
+    _activeOverlayTrackFileId = trackFileId;
     _applyOverlayConfig();
     notifyListeners();
     return true;
@@ -492,6 +496,7 @@ class AnalysisManager extends ChangeNotifier
   void deactivateOverlay() {
     if (_activeOverlayHash == null) return;
     _activeOverlayHash = null;
+    _activeOverlayTrackFileId = -1;
     _applyDisabledOverlayConfig();
     notifyListeners();
   }
@@ -502,6 +507,7 @@ class AnalysisManager extends ChangeNotifier
     _loadSerial++;
     _ensureGeneratedInFlightByPath.clear();
     _activeOverlayHash = null;
+    _activeOverlayTrackFileId = -1;
     _applyDisabledOverlayConfig();
     if (_state == AnalysisState.loaded) {
       _native.unload();
@@ -526,6 +532,7 @@ class AnalysisManager extends ChangeNotifier
       showCuBitCostHeatmap: config.showCuBitCostHeatmap,
       opacity: config.opacity,
       mode: config.type.index,
+      trackFileId: _activeOverlayTrackFileId,
     );
   }
 
@@ -538,6 +545,7 @@ class AnalysisManager extends ChangeNotifier
       showCuBitCostHeatmap: false,
       opacity: _overlayConfig.opacity,
       mode: _overlayConfig.type.index,
+      trackFileId: -1,
     );
   }
 

@@ -32,6 +32,7 @@ target_include_directories(video_renderer_lib SYSTEM PUBLIC
 
 target_link_libraries(video_renderer_lib PUBLIC
     video_renderer_core
+    analysis_lib
     spdlog::spdlog_header_only
     ${AVCODEC_LIBRARY}
     ${AVFORMAT_LIBRARY}

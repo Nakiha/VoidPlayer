@@ -66,6 +66,7 @@ struct NakiOverlayState {
     int32_t show_cu_bit_cost_heatmap;
     int32_t opacity_permille;
     int32_t mode;
+    int32_t track_file_id;
     int32_t _reserved;
 };
 

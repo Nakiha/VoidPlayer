@@ -120,6 +120,10 @@ D3D11 renderer 负责：
 - 按显示尺度做 LOD：小尺度下隐藏过细线框或合并热力图。
 - 绘制 selected/hover 高亮。
 
+第一版实现先采用 correctness-first 路径：CPU 按当前 VBS4 frame 生成一张 viewport 尺寸的 BGRA dynamic texture，再由 D3D11 full-screen overlay pass 做 alpha blend。这样可以先把 CU grid、QP heatmap、prediction colors、MV line 和 CU complexity proxy heatmap 与现有 Texture 上屏路径打通；后续大码率/高分辨率优化再迁移到 GPU instance/structured-buffer 绘制。
+
+当前 VBS4 CU record 没有真实 bit-cost 字段，因此第一版 `cuBitCostHeatmap` 只能使用 CU depth/面积/QP 的复杂度 proxy 保持类型可见；真正的 CU bit-cost heatmap 必须等 VBS4 增加对应 stream 后替换。
+
 ## First Version
 
 - toolbar analysis hover panel 中每个 track row 提供一个小图标激活按钮。
@@ -134,8 +138,9 @@ D3D11 renderer 负责：
 
 1. CU/MB grid：按当前 track geometry 将 block rect 映射到 viewport。
 2. QP heatmap：以 block rect 半透明填充，使用 frame `qp_min/qp_max` 或 codec 范围归一化。
-3. Prediction mode：用小 glyph/色彩区分 intra/inter/skip/merge。
-4. Prediction lines：inter 画 L0/L1 MV，intra 按 intra mode 画方向线。
+3. Prediction mode：第一版用色彩区分 intra/inter/skip/merge，后续补小 glyph。
+4. Prediction lines：第一版画基础 L0 MV，后续补 L1 MV 和 intra direction。
+5. CU bit-cost heatmap：第一版用复杂度 proxy，后续接真实 bit-cost stream。
 
 ## Hit-Test Contract
 
@@ -189,9 +194,10 @@ native 输出：
 ### Phase 1: Native Overlay MVP
 
 - Add overlay state model with active track/hash and mode flags.
-- Connect renderer to analysis manager read-only snapshot.
-- Draw CU/MB grid and QP heatmap in D3D11.
-- Add screenshot regression.
+- Connect renderer to the loaded analysis manager and active track id.
+- Draw CU/MB grid, QP heatmap, prediction-mode colors, and basic MV lines in D3D11.
+- Trigger paused-frame redraw when overlay state changes.
+- Add screenshot regression that proves overlay modes change viewport pixels.
 
 ### Phase 2: Interaction
 
@@ -202,7 +208,7 @@ native 输出：
 
 ### Phase 3: Prediction Details
 
-- Draw pred mode glyphs and MV/intra prediction lines.
+- Replace first-pass prediction colors/lines with pred mode glyphs and precise MV/intra direction rendering.
 - Add per-layer toggles and legend.
 - Add LOD rules for dense 4K/8K streams.
 

@@ -432,6 +432,7 @@ class MainWindowController {
       trackManager: trackManager,
       analysisProcesses: analysisProcesses,
       analysisGeneration: analysisGeneration,
+      onOverlayStateChanged: _requestAnalysisOverlayRedraw,
     );
     playbackCoordinator = MainWindowPlaybackCoordinator(
       controller: player,
@@ -490,6 +491,11 @@ class MainWindowController {
 
   void _setViewportPixelSizeMode(ViewportPixelSizeMode mode) {
     layoutCoordinator.setPixelSizeMode(mode.layoutValue);
+  }
+
+  void _requestAnalysisOverlayRedraw() {
+    if (!mounted()) return;
+    fireAndLog('redraw analysis overlay', player.applyLayout(_layout));
   }
 
   void _maybeStartTestRunner(String? path) {

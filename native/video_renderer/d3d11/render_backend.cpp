@@ -8,6 +8,36 @@
 
 namespace vr {
 
+namespace {
+
+constexpr const char* kOverlayHlsl = R"(
+struct VSInput {
+    float2 position : POSITION;
+    float2 texcoord : TEXCOORD0;
+};
+
+struct VSOutput {
+    float4 position : SV_POSITION;
+    float2 texcoord : TEXCOORD0;
+};
+
+VSOutput VSMain(VSInput input) {
+    VSOutput output;
+    output.position = float4(input.position, 0.0, 1.0);
+    output.texcoord = input.texcoord;
+    return output;
+}
+
+Texture2D u_overlay : register(t0);
+SamplerState u_sampler : register(s0);
+
+float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_TARGET {
+    return u_overlay.Sample(u_sampler, texcoord);
+}
+)";
+
+} // namespace
+
 D3D11RenderBackend::~D3D11RenderBackend() {
     shutdown();
 }
@@ -60,6 +90,12 @@ bool D3D11RenderBackend::initialize_render_resources() {
         return false;
     }
 
+    if (!shader_manager_->compile_from_source(
+            kOverlayHlsl, "VSMain", "PSMain", resources_->overlay_shader)) {
+        spdlog::error("Renderer: failed to compile overlay shaders");
+        return false;
+    }
+
     if (!shader_manager_->create_constant_buffer(
             device_->device(),
             static_cast<UINT>(kShaderConstantsSize),
@@ -80,6 +116,23 @@ bool D3D11RenderBackend::initialize_render_resources() {
         &sampler_desc, &resources_->sampler_state);
     if (FAILED(hr) || !resources_->sampler_state) {
         spdlog::error("Renderer: CreateSamplerState failed: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
+    D3D11_BLEND_DESC blend_desc = {};
+    blend_desc.RenderTarget[0].BlendEnable = TRUE;
+    blend_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+    blend_desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+    blend_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+    blend_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+    blend_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+    blend_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+    blend_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+    hr = device_->device()->CreateBlendState(
+        &blend_desc, &resources_->overlay_blend_state);
+    if (FAILED(hr) || !resources_->overlay_blend_state) {
+        spdlog::error("Renderer: CreateBlendState(overlay) failed: HRESULT {:#x}",
                       static_cast<unsigned long>(hr));
         return false;
     }

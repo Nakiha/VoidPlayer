@@ -13,6 +13,7 @@ class MainWindowAnalysisCoordinator {
   final TrackManager trackManager;
   final AnalysisProcessManager analysisProcesses;
   final AnalysisGenerationService analysisGeneration;
+  final void Function()? onOverlayStateChanged;
   final AnalysisIpcServer _ipcServer = AnalysisIpcServer();
   final Map<int, String> _hashesByFileId = <int, String>{};
 
@@ -24,6 +25,7 @@ class MainWindowAnalysisCoordinator {
     required this.trackManager,
     required this.analysisProcesses,
     AnalysisGenerationService? analysisGeneration,
+    this.onOverlayStateChanged,
   }) : analysisGeneration = analysisGeneration ?? AnalysisManager.instance {
     _ipcServer.publishAccentColor(analysisProcesses.accentColorValue);
   }
@@ -55,6 +57,7 @@ class MainWindowAnalysisCoordinator {
       final knownHash = _hashesByFileId[track.fileId];
       if (activeHash != null && knownHash == activeHash) {
         analysisGeneration.deactivateOverlay();
+        _notifyOverlayStateChanged();
         return;
       }
       final hash = await analysisGeneration.ensureGenerated(track.path);
@@ -66,11 +69,13 @@ class MainWindowAnalysisCoordinator {
   void updateOverlayConfig(AnalysisOverlayConfig config) {
     if (_disposed) return;
     analysisGeneration.updateOverlayConfig(config);
+    _notifyOverlayStateChanged();
   }
 
   void deactivateOverlay() {
     if (_disposed) return;
     analysisGeneration.deactivateOverlay();
+    _notifyOverlayStateChanged();
   }
 
   Future<void> _triggerAnalysisImpl(int serial) async {
@@ -119,15 +124,18 @@ class MainWindowAnalysisCoordinator {
     if (!stillOpen) return;
     if (analysisGeneration.activeOverlayHash == hash) {
       analysisGeneration.deactivateOverlay();
+      _notifyOverlayStateChanged();
       return;
     }
     final activated = await analysisGeneration.activateOverlay(
       hash,
       name: track.fileName,
       path: track.path,
+      trackFileId: track.fileId,
     );
     if (!_alive(serial) || !activated) return;
     _hashesByFileId[track.fileId] = hash;
+    _notifyOverlayStateChanged();
   }
 
   Future<void> _publishTrackSnapshotImpl(int serial) async {
@@ -200,4 +208,9 @@ class MainWindowAnalysisCoordinator {
   }
 
   bool _alive(int serial) => !_disposed && serial == _opSerial;
+
+  void _notifyOverlayStateChanged() {
+    if (_disposed) return;
+    onOverlayStateChanged?.call();
+  }
 }

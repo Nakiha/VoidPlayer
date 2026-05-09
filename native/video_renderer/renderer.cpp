@@ -4,6 +4,7 @@
 #include "video_renderer/seek_coordinator.h"
 #include "video_renderer/shader_constants.h"
 #include "video_renderer/d3d11/render_backend.h"
+#include "analysis/analysis_manager.h"
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <algorithm>
@@ -44,6 +45,143 @@ int64_t track_pts_end_us_from_stats(const DemuxStats& stats) {
     }
     return stats.start_time_us + stats.duration_us;
 }
+
+namespace {
+
+struct OverlayColor {
+    uint8_t b = 0;
+    uint8_t g = 0;
+    uint8_t r = 0;
+    uint8_t a = 0;
+};
+
+void blend_pixel(std::vector<uint8_t>& pixels,
+                 int width,
+                 int height,
+                 int x,
+                 int y,
+                 OverlayColor color) {
+    if (x < 0 || y < 0 || x >= width || y >= height || color.a == 0) {
+        return;
+    }
+    const size_t off = static_cast<size_t>(y * width + x) * 4;
+    const uint32_t src_a = color.a;
+    const uint32_t inv_a = 255 - src_a;
+    pixels[off + 0] = static_cast<uint8_t>((color.b * src_a + pixels[off + 0] * inv_a) / 255);
+    pixels[off + 1] = static_cast<uint8_t>((color.g * src_a + pixels[off + 1] * inv_a) / 255);
+    pixels[off + 2] = static_cast<uint8_t>((color.r * src_a + pixels[off + 2] * inv_a) / 255);
+    pixels[off + 3] = static_cast<uint8_t>(std::min<uint32_t>(255, src_a + pixels[off + 3]));
+}
+
+void fill_rect(std::vector<uint8_t>& pixels,
+               int width,
+               int height,
+               int x0,
+               int y0,
+               int x1,
+               int y1,
+               OverlayColor color) {
+    x0 = std::clamp(x0, 0, width);
+    x1 = std::clamp(x1, 0, width);
+    y0 = std::clamp(y0, 0, height);
+    y1 = std::clamp(y1, 0, height);
+    if (x0 >= x1 || y0 >= y1) return;
+    for (int y = y0; y < y1; ++y) {
+        for (int x = x0; x < x1; ++x) {
+            blend_pixel(pixels, width, height, x, y, color);
+        }
+    }
+}
+
+void stroke_rect(std::vector<uint8_t>& pixels,
+                 int width,
+                 int height,
+                 int x0,
+                 int y0,
+                 int x1,
+                 int y1,
+                 OverlayColor color) {
+    if (x0 > x1) std::swap(x0, x1);
+    if (y0 > y1) std::swap(y0, y1);
+    x0 = std::clamp(x0, 0, width - 1);
+    x1 = std::clamp(x1, 0, width - 1);
+    y0 = std::clamp(y0, 0, height - 1);
+    y1 = std::clamp(y1, 0, height - 1);
+    if (x0 >= x1 || y0 >= y1) return;
+    for (int x = x0; x <= x1; ++x) {
+        blend_pixel(pixels, width, height, x, y0, color);
+        blend_pixel(pixels, width, height, x, y1, color);
+    }
+    for (int y = y0; y <= y1; ++y) {
+        blend_pixel(pixels, width, height, x0, y, color);
+        blend_pixel(pixels, width, height, x1, y, color);
+    }
+}
+
+void draw_line(std::vector<uint8_t>& pixels,
+               int width,
+               int height,
+               int x0,
+               int y0,
+               int x1,
+               int y1,
+               OverlayColor color) {
+    const int dx = std::abs(x1 - x0);
+    const int sx = x0 < x1 ? 1 : -1;
+    const int dy = -std::abs(y1 - y0);
+    const int sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    for (;;) {
+        blend_pixel(pixels, width, height, x0, y0, color);
+        if (x0 == x1 && y0 == y1) break;
+        const int e2 = 2 * err;
+        if (e2 >= dy) {
+            err += dy;
+            x0 += sx;
+        }
+        if (e2 <= dx) {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+OverlayColor qp_color(uint8_t qp, uint8_t qp_min, uint8_t qp_max, uint8_t alpha) {
+    const int min_qp = qp_min <= qp_max ? qp_min : 0;
+    const int max_qp = qp_max >= qp_min && qp_max > min_qp ? qp_max : 51;
+    const float t = std::clamp(
+        (static_cast<float>(qp) - static_cast<float>(min_qp)) /
+            std::max(1.0f, static_cast<float>(max_qp - min_qp)),
+        0.0f,
+        1.0f);
+    const uint8_t r = static_cast<uint8_t>(std::round(255.0f * t));
+    const uint8_t g = static_cast<uint8_t>(std::round(210.0f * (1.0f - std::abs(t - 0.45f) * 1.6f)));
+    const uint8_t b = static_cast<uint8_t>(std::round(255.0f * (1.0f - t)));
+    return OverlayColor{b, g, r, alpha};
+}
+
+OverlayColor cu_complexity_proxy_color(const VbsCuCommon& cu, uint8_t alpha) {
+    const float area = std::max(1.0f, static_cast<float>(cu.w) * static_cast<float>(cu.h));
+    const float size_score = std::clamp(1.0f - area / (64.0f * 64.0f), 0.0f, 1.0f);
+    const float depth_score = std::clamp(static_cast<float>(cu.depth) / 4.0f, 0.0f, 1.0f);
+    const float qp_score = std::clamp(static_cast<float>(cu.qp) / 51.0f, 0.0f, 1.0f);
+    const float t = std::clamp(size_score * 0.45f + depth_score * 0.35f + qp_score * 0.20f,
+                               0.0f,
+                               1.0f);
+    const uint8_t r = static_cast<uint8_t>(std::round(240.0f * t + 40.0f));
+    const uint8_t g = static_cast<uint8_t>(std::round(210.0f * (1.0f - std::abs(t - 0.55f) * 1.4f)));
+    const uint8_t b = static_cast<uint8_t>(std::round(210.0f * (1.0f - t)));
+    return OverlayColor{b, g, r, alpha};
+}
+
+OverlayColor pred_color(uint8_t pred_mode, const VbsCuInter& inter, uint8_t alpha) {
+    if (pred_mode == 1) return OverlayColor{80, 235, 90, alpha};
+    if (inter.skip != 0) return OverlayColor{40, 220, 245, alpha};
+    if (inter.merge_flag != 0) return OverlayColor{235, 170, 80, alpha};
+    return OverlayColor{245, 120, 70, alpha};
+}
+
+} // namespace
 
 Renderer::Renderer()
     : owned_playback_(std::make_unique<PlaybackController>(create_default_audio_output))
@@ -1771,6 +1909,9 @@ void Renderer::draw_frame(const PresentDecision& decision) {
         }
     }
 
+    ShaderConstants cb = {};
+    bool constants_ready = false;
+
     // Update constant buffer
     // Layout must match HLSL cbuffer Constants in multitrack.hlsl
     if (resources.compiled_shader.constant_buffer) {
@@ -1781,7 +1922,6 @@ void Renderer::draw_frame(const PresentDecision& decision) {
             snap = layout_;
         }
 
-        ShaderConstants cb = {};
         cb.mode = snap.mode;
         cb.split_pos = snap.split_pos;
         cb.zoom_ratio = snap.zoom_ratio;
@@ -1945,6 +2085,7 @@ void Renderer::draw_frame(const PresentDecision& decision) {
         }
         ctx->UpdateSubresource(resources.compiled_shader.constant_buffer.Get(), 0, nullptr, &cb, 0, 0);
         ctx->PSSetConstantBuffers(0, 1, resources.compiled_shader.constant_buffer.GetAddressOf());
+        constants_ready = true;
     }
 
     // Set sampler
@@ -1961,6 +2102,10 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     // Draw
     ctx->Draw(4, 0);
 
+    if (constants_ready) {
+        draw_analysis_overlay(decision, cb);
+    }
+
     // Unbind SRVs before releasing to avoid GPU resource-in-use issues
     ID3D11ShaderResourceView* null_srvs[4] = {};
     ctx->PSSetShaderResources(0, 4, null_srvs);
@@ -1968,6 +2113,266 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     ctx->PSSetShaderResources(8, 4, null_srvs);
 
     // Temporary direct-texture SRVs are owned by prepared_frames until draw returns.
+}
+
+bool Renderer::ensure_analysis_overlay_texture(int width, int height) {
+    if (!d3d_device_ || !d3d_resources_ || width <= 0 || height <= 0) {
+        return false;
+    }
+    auto& resources = *d3d_resources_;
+    if (resources.overlay_texture &&
+        resources.overlay_srv &&
+        resources.overlay_width == width &&
+        resources.overlay_height == height) {
+        return true;
+    }
+
+    resources.overlay_texture.Reset();
+    resources.overlay_srv.Reset();
+    resources.overlay_width = 0;
+    resources.overlay_height = 0;
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = static_cast<UINT>(width);
+    desc.Height = static_cast<UINT>(height);
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DYNAMIC;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+    HRESULT hr = d3d_device_->device()->CreateTexture2D(
+        &desc, nullptr, &resources.overlay_texture);
+    if (FAILED(hr) || !resources.overlay_texture) {
+        spdlog::error("[Renderer] CreateTexture2D(analysis overlay) failed: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
+    srv_desc.Format = desc.Format;
+    srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    srv_desc.Texture2D.MipLevels = 1;
+    hr = d3d_device_->device()->CreateShaderResourceView(
+        resources.overlay_texture.Get(), &srv_desc, &resources.overlay_srv);
+    if (FAILED(hr) || !resources.overlay_srv) {
+        spdlog::error("[Renderer] CreateShaderResourceView(analysis overlay) failed: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        resources.overlay_texture.Reset();
+        return false;
+    }
+
+    resources.overlay_width = width;
+    resources.overlay_height = height;
+    return true;
+}
+
+void Renderer::draw_analysis_overlay(const PresentDecision& decision,
+                                     const ShaderConstants& constants) {
+    if (!d3d_device_ || !d3d_resources_) return;
+    auto& resources = *d3d_resources_;
+    if (!resources.overlay_shader.vs ||
+        !resources.overlay_shader.ps ||
+        !resources.overlay_blend_state ||
+        !resources.sampler_state) {
+        return;
+    }
+
+    auto& manager = analysis::AnalysisManager::instance();
+    const auto& overlay = manager.overlay_state();
+    const bool show_grid = overlay.show_cu_grid.load(std::memory_order_acquire);
+    const bool show_qp = overlay.show_qp_heatmap.load(std::memory_order_acquire);
+    const bool show_pred = overlay.show_pred_mode.load(std::memory_order_acquire);
+    const bool show_lines = overlay.show_pred_lines.load(std::memory_order_acquire);
+    const bool show_bit_cost = overlay.show_cu_bit_cost_heatmap.load(std::memory_order_acquire);
+    const int mode = overlay.mode.load(std::memory_order_acquire);
+    const int file_id = overlay.track_file_id.load(std::memory_order_acquire);
+    const int opacity_permille =
+        std::clamp(overlay.opacity_permille.load(std::memory_order_acquire), 100, 1000);
+
+    if (!manager.is_loaded() ||
+        file_id < 0 ||
+        (!show_grid && !show_qp && !show_pred && !show_lines && !show_bit_cost && mode != 3 && mode != 4)) {
+        return;
+    }
+
+    const int slot = find_slot_by_file_id(file_id);
+    if (slot < 0 || slot >= static_cast<int>(kMaxTracks) || !tracks_[slot]) {
+        return;
+    }
+
+    const int frame_idx = manager.current_frame_idx(
+        decision.frames[slot].has_value()
+            ? decision.frames[slot]->pts_us
+            : std::max<int64_t>(0, decision.current_pts_us - tracks_[slot]->offset_us));
+    if (frame_idx < 0 || frame_idx >= manager.frame_count()) {
+        return;
+    }
+
+    auto frame = manager.vbs4().read_frame(frame_idx);
+    if (frame.cus.empty() || manager.video_width() == 0 || manager.video_height() == 0) {
+        return;
+    }
+
+    const int width = target_width_;
+    const int height = target_height_;
+    if (!ensure_analysis_overlay_texture(width, height)) {
+        return;
+    }
+
+    const size_t pixel_count = static_cast<size_t>(width) * static_cast<size_t>(height);
+    if (analysis_overlay_pixels_.size() != pixel_count * 4) {
+        analysis_overlay_pixels_.resize(pixel_count * 4);
+    }
+    std::fill(analysis_overlay_pixels_.begin(), analysis_overlay_pixels_.end(), 0);
+
+    int display_index = -1;
+    const int visible_count = std::max(constants.track_count, 1);
+    if (constants.mode == LAYOUT_SPLIT_SCREEN) {
+        if (constants.order[0] == slot) display_index = 0;
+        if (constants.order[1] == slot) display_index = 1;
+        if (display_index < 0) return;
+    } else {
+        for (int i = 0; i < visible_count && i < 4; ++i) {
+            if (constants.order[i] == slot) {
+                display_index = i;
+                break;
+            }
+        }
+        if (display_index < 0) return;
+    }
+
+    float region_x0 = 0.0f;
+    float region_x1 = static_cast<float>(width);
+    float slot_w = static_cast<float>(width);
+    const float slot_h = static_cast<float>(height);
+    if (constants.mode == LAYOUT_SPLIT_SCREEN) {
+        const float split_x = std::clamp(constants.split_pos, 0.0f, 1.0f) *
+                              static_cast<float>(width);
+        region_x0 = display_index == 0 ? 0.0f : split_x;
+        region_x1 = display_index == 0 ? split_x : static_cast<float>(width);
+    } else {
+        slot_w = static_cast<float>(width) / static_cast<float>(visible_count);
+        region_x0 = slot_w * static_cast<float>(display_index);
+        region_x1 = slot_w * static_cast<float>(display_index + 1);
+    }
+
+    const float display_size_x = constants.inv_display_size_x[slot] > 1e-5f
+        ? 1.0f / constants.inv_display_size_x[slot]
+        : 0.0f;
+    const float display_size_y = constants.inv_display_size_y[slot] > 1e-5f
+        ? 1.0f / constants.inv_display_size_y[slot]
+        : 0.0f;
+    if (display_size_x <= 0.0f || display_size_y <= 0.0f) return;
+
+    const float video_w = static_cast<float>(manager.video_width());
+    const float video_h = static_cast<float>(manager.video_height());
+    const uint8_t base_alpha = static_cast<uint8_t>(std::clamp(
+        opacity_permille * 255 / 1000, 25, 255));
+    const uint8_t fill_alpha = static_cast<uint8_t>(std::max(20, base_alpha * 2 / 5));
+    const uint8_t line_alpha = static_cast<uint8_t>(std::max<int>(70, base_alpha));
+    const bool qp_primary = show_qp || mode == 3;
+    const bool bit_cost_primary = show_bit_cost || mode == 4;
+    const bool pred_primary = show_pred || mode == 1 || mode == 2;
+    const bool line_primary = show_lines || mode == 2;
+
+    for (const auto& cu : frame.cus) {
+        const auto& c = cu.common;
+        const float u0 = static_cast<float>(c.x) / video_w;
+        const float v0 = static_cast<float>(c.y) / video_h;
+        const float u1 = static_cast<float>(c.x + c.w) / video_w;
+        const float v1 = static_cast<float>(c.y + c.h) / video_h;
+
+        const float lu0 = constants.display_offset_x[slot] +
+            (u0 + constants.view_offset_uv_x[slot]) * display_size_x;
+        const float lu1 = constants.display_offset_x[slot] +
+            (u1 + constants.view_offset_uv_x[slot]) * display_size_x;
+        const float lv0 = constants.display_offset_y[slot] +
+            (v0 + constants.view_offset_uv_y[slot]) * display_size_y;
+        const float lv1 = constants.display_offset_y[slot] +
+            (v1 + constants.view_offset_uv_y[slot]) * display_size_y;
+
+        float sx0 = 0.0f;
+        float sx1 = 0.0f;
+        if (constants.mode == LAYOUT_SPLIT_SCREEN) {
+            sx0 = lu0 * static_cast<float>(width);
+            sx1 = lu1 * static_cast<float>(width);
+        } else {
+            sx0 = region_x0 + lu0 * slot_w;
+            sx1 = region_x0 + lu1 * slot_w;
+        }
+        float sy0 = lv0 * slot_h;
+        float sy1 = lv1 * slot_h;
+
+        const int x0 = static_cast<int>(std::floor(std::max(sx0, region_x0)));
+        const int x1 = static_cast<int>(std::ceil(std::min(sx1, region_x1)));
+        const int y0 = static_cast<int>(std::floor(sy0));
+        const int y1 = static_cast<int>(std::ceil(sy1));
+        if (x1 <= x0 || y1 <= y0) continue;
+
+        if (bit_cost_primary) {
+            fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
+                      cu_complexity_proxy_color(c, fill_alpha));
+        } else if (qp_primary) {
+            fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
+                      qp_color(c.qp, frame.summary.qp_min, frame.summary.qp_max, fill_alpha));
+        } else if (pred_primary) {
+            fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
+                      c.pred_mode == 1
+                          ? OverlayColor{80, 235, 90, static_cast<uint8_t>(fill_alpha * 3 / 4)}
+                          : pred_color(c.pred_mode, cu.inter, static_cast<uint8_t>(fill_alpha * 3 / 4)));
+        }
+
+        if (show_grid || mode == 0 || qp_primary || bit_cost_primary || pred_primary) {
+            stroke_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
+                        OverlayColor{255, 255, 255, line_alpha});
+        }
+
+        if (line_primary && c.pred_mode != 1) {
+            const int cx = (x0 + x1) / 2;
+            const int cy = (y0 + y1) / 2;
+            const int dx = std::clamp(static_cast<int>(cu.inter.mv_l0_x / 16), -80, 80);
+            const int dy = std::clamp(static_cast<int>(cu.inter.mv_l0_y / 16), -80, 80);
+            draw_line(analysis_overlay_pixels_, width, height, cx, cy, cx + dx, cy + dy,
+                      OverlayColor{80, 180, 255, line_alpha});
+        }
+    }
+
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    auto* ctx = d3d_device_->context();
+    HRESULT hr = ctx->Map(resources.overlay_texture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+    if (FAILED(hr)) {
+        spdlog::warn("[Renderer] Map(analysis overlay) failed: HRESULT {:#x}",
+                     static_cast<unsigned long>(hr));
+        return;
+    }
+    const uint8_t* src = analysis_overlay_pixels_.data();
+    auto* dst = static_cast<uint8_t*>(mapped.pData);
+    const size_t row_bytes = static_cast<size_t>(width) * 4;
+    for (int y = 0; y < height; ++y) {
+        std::memcpy(dst + static_cast<size_t>(y) * mapped.RowPitch,
+                    src + static_cast<size_t>(y) * row_bytes,
+                    row_bytes);
+    }
+    ctx->Unmap(resources.overlay_texture.Get(), 0);
+
+    float blend_factor[4] = {0, 0, 0, 0};
+    ctx->OMSetBlendState(resources.overlay_blend_state.Get(), blend_factor, 0xffffffff);
+    ctx->VSSetShader(resources.overlay_shader.vs.Get(), nullptr, 0);
+    ctx->PSSetShader(resources.overlay_shader.ps.Get(), nullptr, 0);
+    if (resources.overlay_shader.layout) {
+        ctx->IASetInputLayout(resources.overlay_shader.layout.Get());
+    }
+    ID3D11ShaderResourceView* overlay_srv = resources.overlay_srv.Get();
+    ID3D11SamplerState* sampler = resources.sampler_state.Get();
+    ctx->PSSetShaderResources(0, 1, &overlay_srv);
+    ctx->PSSetSamplers(0, 1, &sampler);
+    ctx->Draw(4, 0);
+    ID3D11ShaderResourceView* null_srv = nullptr;
+    ctx->PSSetShaderResources(0, 1, &null_srv);
+    ctx->OMSetBlendState(nullptr, nullptr, 0xffffffff);
 }
 
 // -- Layout control --

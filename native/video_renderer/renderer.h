@@ -8,6 +8,7 @@
 #include "media/seek_controller.h"
 #include "video_renderer/sync/render_sink.h"
 #include "video_renderer/track_pipeline.h"
+#include "video_renderer/shader_constants.h"
 #include "common/logging.h"
 #include <vector>
 #include <array>
@@ -242,6 +243,9 @@ public:
 private:
     void render_loop();
     void draw_frame(const PresentDecision& decision);
+    void draw_analysis_overlay(const PresentDecision& decision,
+                               const ShaderConstants& constants);
+    bool ensure_analysis_overlay_texture(int width, int height);
     void draw_paused_frame(const char* reason);
     bool build_step_forward_decision_locked(PresentDecision& decision) const;
     void discard_step_forward_consumed_frames_locked(const PresentDecision& decision);
@@ -399,6 +403,7 @@ private:
 
     // -- Cached last frame for redraws (zoom/pan while paused or at EOF) --
     PresentDecision last_decision_;
+    std::vector<uint8_t> analysis_overlay_pixels_;
 
     // -- Headless mode state --
     bool headless_ = false;

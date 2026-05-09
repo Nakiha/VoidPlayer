@@ -129,6 +129,8 @@ final class NakiOverlayState extends Struct {
   @Int32()
   external int mode;
   @Int32()
+  external int trackFileId;
+  @Int32()
   external int _reserved;
 }
 
@@ -849,6 +851,7 @@ class AnalysisFfi {
     bool showCuBitCostHeatmap = false,
     double opacity = 0.55,
     int mode = 0,
+    int trackFileId = -1,
   }) {
     final state = calloc<NakiOverlayState>();
     try {
@@ -859,6 +862,7 @@ class AnalysisFfi {
       state.ref.showCuBitCostHeatmap = showCuBitCostHeatmap ? 1 : 0;
       state.ref.opacityPermille = (opacity.clamp(0.1, 1.0) * 1000).round();
       state.ref.mode = mode;
+      state.ref.trackFileId = trackFileId;
       _native.setOverlay(state);
     } finally {
       calloc.free(state);

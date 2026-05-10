@@ -462,6 +462,20 @@ void naki_analysis_set_overlay(const NakiOverlayState* state) {
 }
 
 extern "C" __declspec(dllexport)
+int32_t naki_analysis_set_overlay_track(int32_t track_file_id, const char* analysis_path) {
+    if (track_file_id < 0 || !analysis_path) return 0;
+    std::lock_guard<std::mutex> lock(g_analysis_mutex);
+    auto& mgr = vr::analysis::AnalysisManager::instance();
+    return mgr.set_overlay_track(track_file_id, safe_cstr(analysis_path)) ? 1 : 0;
+}
+
+extern "C" __declspec(dllexport)
+void naki_analysis_clear_overlay_tracks() {
+    std::lock_guard<std::mutex> lock(g_analysis_mutex);
+    vr::analysis::AnalysisManager::instance().clear_overlay_tracks();
+}
+
+extern "C" __declspec(dllexport)
 NakiAnalysisHandle naki_analysis_open(const char* analysis_path) {
     try {
         auto state = std::shared_ptr<AnalysisHandleState>(new (std::nothrow) AnalysisHandleState());

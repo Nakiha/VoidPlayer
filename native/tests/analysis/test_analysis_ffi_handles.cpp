@@ -17,6 +17,17 @@ TEST_CASE("analysis FFI exposes ABI version and struct sizes",
     REQUIRE(naki_analysis_sizeof_overlay_state() == sizeof(NakiOverlayState));
 }
 
+TEST_CASE("analysis FFI loads and clears overlay tracks",
+          "[analysis][ffi]") {
+    auto& data = AnalysisTestData::instance();
+    REQUIRE(data.ensure());
+
+    REQUIRE(naki_analysis_set_overlay_track(7, data.vac_path().c_str()) == 1);
+    naki_analysis_clear_overlay_tracks();
+    REQUIRE(naki_analysis_set_overlay_track(-1, data.vac_path().c_str()) == 0);
+    naki_analysis_clear_overlay_tracks();
+}
+
 TEST_CASE("analysis FFI handle returns empty data after close",
           "[analysis][ffi]") {
     auto& data = AnalysisTestData::instance();

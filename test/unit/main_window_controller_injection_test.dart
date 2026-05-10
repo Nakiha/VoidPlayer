@@ -28,6 +28,12 @@ class _FakeAnalysisGenerationService implements AnalysisGenerationService {
   String? get activeOverlayHash => null;
 
   @override
+  bool get overlayPanelVisible => false;
+
+  @override
+  Set<int> get activeOverlayTrackFileIds => const {};
+
+  @override
   AnalysisOverlayConfig get overlayConfig => _config;
 
   @override
@@ -40,6 +46,10 @@ class _FakeAnalysisGenerationService implements AnalysisGenerationService {
     required String path,
     required int trackFileId,
   }) => Future.value(false);
+
+  @override
+  Future<bool> activateOverlayTracks(List<AnalysisOverlayTrackSource> tracks) =>
+      Future.value(false);
 
   @override
   void updateOverlayConfig(AnalysisOverlayConfig config) {
@@ -106,6 +116,12 @@ class _FakeAnalysisToolbarDataSource implements AnalysisToolbarDataSource {
 
   @override
   String? get activeOverlayHash => null;
+
+  @override
+  bool get overlayPanelVisible => false;
+
+  @override
+  Set<int> get activeOverlayTrackFileIds => const {};
 
   @override
   AnalysisOverlayConfig get overlayConfig => const AnalysisOverlayConfig();

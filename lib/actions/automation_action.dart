@@ -55,6 +55,10 @@ class ToggleAnalysisOverlay extends AutomationAction {
     : super('TOGGLE_ANALYSIS_OVERLAY');
 }
 
+class ToggleAnalysisOverlayPanel extends AutomationAction {
+  const ToggleAnalysisOverlayPanel() : super('TOGGLE_ANALYSIS_OVERLAY_PANEL');
+}
+
 class SetAnalysisOverlayType extends AutomationAction {
   final AnalysisOverlayType type;
 

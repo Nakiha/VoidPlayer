@@ -18,6 +18,7 @@ class MainWindowAnalysisCoordinator {
   final Map<int, String> _hashesByFileId = <int, String>{};
 
   bool _disposed = false;
+  bool _overlayPanelRequested = false;
   Future<void>? _operationInFlight;
 
   MainWindowAnalysisCoordinator({
@@ -49,13 +50,16 @@ class MainWindowAnalysisCoordinator {
     return _enqueueOperation(_toggleOverlayPanelImpl);
   }
 
+  Future<void> syncOverlayPanelTracks() {
+    return _enqueueOperation(_syncOverlayPanelTracksImpl);
+  }
+
   Future<void> toggleOverlayForSlot(int slotIndex) {
     return _enqueueOperation(() async {
       if (slotIndex < 0 || slotIndex >= trackManager.entries.length) return;
       final track = trackManager.entries[slotIndex];
-      final activeHash = analysisGeneration.activeOverlayHash;
-      final knownHash = _hashesByFileId[track.fileId];
-      if (activeHash != null && knownHash == activeHash) {
+      if (analysisGeneration.activeOverlayTrackFileIds.contains(track.fileId)) {
+        _overlayPanelRequested = false;
         analysisGeneration.deactivateOverlay();
         _notifyOverlayStateChanged();
         return;
@@ -74,33 +78,72 @@ class MainWindowAnalysisCoordinator {
 
   void deactivateOverlay() {
     if (_disposed) return;
+    _overlayPanelRequested = false;
     analysisGeneration.deactivateOverlay();
     _notifyOverlayStateChanged();
   }
 
   Future<void> _toggleOverlayPanelImpl() async {
     if (trackManager.isEmpty) return;
-    if (analysisGeneration.activeOverlayHash != null) {
+    if (_overlayPanelRequested || analysisGeneration.overlayPanelVisible) {
+      _overlayPanelRequested = false;
+      analysisGeneration.deactivateOverlay();
+      _notifyOverlayStateChanged();
+      return;
+    }
+    _overlayPanelRequested = true;
+    await _syncOverlayPanelTracksImpl();
+  }
+
+  Future<void> _syncOverlayPanelTracksImpl() async {
+    if (!_overlayPanelRequested) return;
+    final requestedEntries = List<TrackEntry>.of(trackManager.entries);
+    if (requestedEntries.isEmpty) {
+      _overlayPanelRequested = false;
       analysisGeneration.deactivateOverlay();
       _notifyOverlayStateChanged();
       return;
     }
 
-    TrackEntry? firstReadyTrack;
-    String? firstReadyHash;
-    for (final entry in trackManager.entries) {
+    final sources = <AnalysisOverlayTrackSource>[];
+    for (final entry in requestedEntries) {
       final hash = await analysisGeneration.ensureGenerated(entry.path);
-      if (_disposed) return;
+      if (_disposed || !_overlayPanelRequested) return;
       if (hash == null) continue;
       _hashesByFileId[entry.fileId] = hash;
-      firstReadyTrack ??= entry;
-      firstReadyHash ??= hash;
+      sources.add(
+        AnalysisOverlayTrackSource(
+          hash: hash,
+          name: entry.fileName,
+          path: entry.path,
+          trackFileId: entry.fileId,
+        ),
+      );
     }
 
-    final track = firstReadyTrack;
-    final hash = firstReadyHash;
-    if (track == null || hash == null) return;
-    await _activateOverlayImpl(track, hash);
+    if (_disposed || !_overlayPanelRequested) return;
+    final liveEntriesByFileId = {
+      for (final entry in trackManager.entries) entry.fileId: entry,
+    };
+    final liveSources = sources
+        .where((source) {
+          final entry = liveEntriesByFileId[source.trackFileId];
+          return entry != null && entry.path == source.path;
+        })
+        .toList(growable: false);
+    if (liveSources.isEmpty) {
+      _overlayPanelRequested = false;
+      analysisGeneration.deactivateOverlay();
+      _notifyOverlayStateChanged();
+      return;
+    }
+    final activated = await analysisGeneration.activateOverlayTracks(
+      liveSources,
+    );
+    if (_disposed || !_overlayPanelRequested) return;
+    if (activated) {
+      _notifyOverlayStateChanged();
+    }
   }
 
   Future<void> _triggerAnalysisImpl() async {
@@ -143,13 +186,15 @@ class MainWindowAnalysisCoordinator {
       (entry) => entry.fileId == track.fileId && entry.path == track.path,
     );
     if (!stillOpen) return;
-    if (analysisGeneration.activeOverlayHash == hash) {
+    if (analysisGeneration.activeOverlayTrackFileIds.contains(track.fileId)) {
+      _overlayPanelRequested = false;
       analysisGeneration.deactivateOverlay();
       _notifyOverlayStateChanged();
       return;
     }
     final generatedHash = await analysisGeneration.ensureGenerated(track.path);
     if (_disposed || generatedHash == null) return;
+    _overlayPanelRequested = true;
     await _activateOverlayImpl(track, generatedHash);
   }
 

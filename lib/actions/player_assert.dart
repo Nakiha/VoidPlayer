@@ -114,10 +114,7 @@ class AssertCaptureHasDetail extends PlayerAssert {
   final String capture;
   final double minLumaStdDev;
 
-  const AssertCaptureHasDetail(
-    this.capture, {
-    this.minLumaStdDev = 4.0,
-  });
+  const AssertCaptureHasDetail(this.capture, {this.minLumaStdDev = 4.0});
 }
 
 class AssertCaptureSplitDiff extends PlayerAssert {
@@ -160,12 +157,14 @@ class AssertAnalysisOverlay extends PlayerAssert {
   final AnalysisOverlayType? type;
   final double? opacity;
   final double opacityTolerance;
+  final int? trackCount;
 
   const AssertAnalysisOverlay({
     required this.active,
     this.type,
     this.opacity,
     this.opacityTolerance = 0.02,
+    this.trackCount,
   });
 }
 

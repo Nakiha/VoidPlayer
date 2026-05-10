@@ -350,6 +350,8 @@ ScriptInstruction? _parseInstruction(
         time,
         ToggleAnalysisOverlay(int.parse(args[0])),
       );
+    case 'TOGGLE_ANALYSIS_OVERLAY_PANEL':
+      return ScriptAutomationAction(time, const ToggleAnalysisOverlayPanel());
     case 'SET_ANALYSIS_OVERLAY_TYPE':
       if (args.isEmpty) {
         log.warning('SET_ANALYSIS_OVERLAY_TYPE needs type: $rawLine');
@@ -676,6 +678,9 @@ ScriptInstruction? _parseInstruction(
               ? double.parse(args[2])
               : null,
           opacityTolerance: args.length >= 4 ? double.parse(args[3]) : 0.02,
+          trackCount: args.length >= 5 && args[4].trim().isNotEmpty
+              ? int.parse(args[4])
+              : null,
         ),
       );
     case 'ASSERT_TRACK_BUFFER_COUNT_BELOW':

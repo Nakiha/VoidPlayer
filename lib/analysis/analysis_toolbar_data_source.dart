@@ -9,6 +9,8 @@ abstract class AnalysisToolbarDataSource implements Listenable {
   AnalysisState get state;
   AnalysisError? get error;
   String? get activeOverlayHash;
+  bool get overlayPanelVisible;
+  Set<int> get activeOverlayTrackFileIds;
   AnalysisOverlayConfig get overlayConfig;
   AnalysisTrackGenerationStatus? statusForPath(String path);
   Future<AnalysisCacheSnapshot> snapshot();
@@ -33,6 +35,13 @@ class DefaultAnalysisToolbarDataSource implements AnalysisToolbarDataSource {
 
   @override
   String? get activeOverlayHash => analysisManager.activeOverlayHash;
+
+  @override
+  bool get overlayPanelVisible => analysisManager.overlayPanelVisible;
+
+  @override
+  Set<int> get activeOverlayTrackFileIds =>
+      analysisManager.activeOverlayTrackFileIds;
 
   @override
   AnalysisOverlayConfig get overlayConfig => analysisManager.overlayConfig;

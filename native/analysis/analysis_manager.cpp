@@ -31,6 +31,7 @@ bool AnalysisManager::load(const std::string& analysis_path) {
 }
 
 void AnalysisManager::unload() {
+    clear_overlay_tracks();
     vbs4_.close();
     vbi_.close();
     vbt_.close();
@@ -44,6 +45,33 @@ void AnalysisManager::unload() {
     overlay.opacity_permille.store(550, std::memory_order_release);
     overlay.mode.store(0, std::memory_order_release);
     overlay.track_file_id.store(-1, std::memory_order_release);
+}
+
+bool AnalysisManager::set_overlay_track(int track_file_id, const std::string& analysis_path) {
+    if (track_file_id < 0) return false;
+    auto track_manager = std::make_shared<AnalysisManager>();
+    if (!track_manager->load(analysis_path)) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(overlay_tracks_mutex_);
+    overlay_tracks_[track_file_id] = std::move(track_manager);
+    return true;
+}
+
+void AnalysisManager::clear_overlay_tracks() {
+    std::lock_guard<std::mutex> lock(overlay_tracks_mutex_);
+    overlay_tracks_.clear();
+}
+
+std::vector<std::pair<int, std::shared_ptr<const AnalysisManager>>>
+AnalysisManager::overlay_track_snapshot() const {
+    std::lock_guard<std::mutex> lock(overlay_tracks_mutex_);
+    std::vector<std::pair<int, std::shared_ptr<const AnalysisManager>>> tracks;
+    tracks.reserve(overlay_tracks_.size());
+    for (const auto& [track_file_id, manager] : overlay_tracks_) {
+        tracks.emplace_back(track_file_id, manager);
+    }
+    return tracks;
 }
 
 int AnalysisManager::current_frame_idx(int64_t pts_us) const {

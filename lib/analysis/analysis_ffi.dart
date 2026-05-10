@@ -166,6 +166,12 @@ typedef _GetFrameBucketsDart =
 typedef _SetOverlayNative = Void Function(Pointer<NakiOverlayState>);
 typedef _SetOverlayDart = void Function(Pointer<NakiOverlayState>);
 
+typedef _SetOverlayTrackNative = Int32 Function(Int32, Pointer<Utf8>);
+typedef _SetOverlayTrackDart = int Function(int, Pointer<Utf8>);
+
+typedef _ClearOverlayTracksNative = Void Function();
+typedef _ClearOverlayTracksDart = void Function();
+
 typedef _GenerateNative =
     Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Int64);
 typedef _GenerateDart =
@@ -276,6 +282,14 @@ class _AnalysisNativeBindings {
     setOverlay = library.lookupFunction<_SetOverlayNative, _SetOverlayDart>(
       'naki_analysis_set_overlay',
     );
+    setOverlayTrack = library
+        .lookupFunction<_SetOverlayTrackNative, _SetOverlayTrackDart>(
+          'naki_analysis_set_overlay_track',
+        );
+    clearOverlayTracks = library
+        .lookupFunction<_ClearOverlayTracksNative, _ClearOverlayTracksDart>(
+          'naki_analysis_clear_overlay_tracks',
+        );
     generate = library.lookupFunction<_GenerateNative, _GenerateDart>(
       'naki_analysis_generate',
     );
@@ -366,6 +380,8 @@ class _AnalysisNativeBindings {
   late final _IndexMapDart naluToFrame;
   late final _GetFrameBucketsDart getFrameBuckets;
   late final _SetOverlayDart setOverlay;
+  late final _SetOverlayTrackDart setOverlayTrack;
+  late final _ClearOverlayTracksDart clearOverlayTracks;
   late final _GenerateDart generate;
   late final _OpenDart open;
   late final _CloseDart close;
@@ -867,6 +883,22 @@ class AnalysisFfi {
     } finally {
       calloc.free(state);
     }
+  }
+
+  static bool setOverlayTrack({
+    required int trackFileId,
+    required String analysisPath,
+  }) {
+    final path = analysisPath.toNativeUtf8(allocator: calloc);
+    try {
+      return _native.setOverlayTrack(trackFileId, path) != 0;
+    } finally {
+      calloc.free(path);
+    }
+  }
+
+  static void clearOverlayTracks() {
+    _native.clearOverlayTracks();
   }
 
   /// Generate an analysis container for a video.

@@ -124,6 +124,12 @@ extern "C" __declspec(dllexport)
 void naki_analysis_set_overlay(const NakiOverlayState* state);
 
 extern "C" __declspec(dllexport)
+int32_t naki_analysis_set_overlay_track(int32_t track_file_id, const char* analysis_path);
+
+extern "C" __declspec(dllexport)
+void naki_analysis_clear_overlay_tracks();
+
+extern "C" __declspec(dllexport)
 NakiAnalysisHandle naki_analysis_open(const char* analysis_path);
 
 extern "C" __declspec(dllexport)

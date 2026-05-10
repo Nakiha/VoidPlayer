@@ -302,12 +302,20 @@ class AutomationAssertExecutor {
         :final type,
         :final opacity,
         :final opacityTolerance,
+        :final trackCount,
       ):
         final manager = AnalysisManager.instance;
-        final isActive = manager.activeOverlayHash != null;
+        final isActive = manager.overlayPanelVisible;
         if (isActive != active) {
           throw AssertionError(
             'Expected analysis overlay active=$active, got $isActive',
+          );
+        }
+        if (trackCount != null &&
+            manager.activeOverlayTrackFileIds.length != trackCount) {
+          throw AssertionError(
+            'Expected analysis overlay track count $trackCount, got '
+            '${manager.activeOverlayTrackFileIds.length}',
           );
         }
         if (type != null && manager.overlayConfig.type != type) {

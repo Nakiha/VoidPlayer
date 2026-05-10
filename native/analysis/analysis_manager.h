@@ -5,7 +5,12 @@
 #include "analysis/parsers/vbi_parser.h"
 #include "analysis/parsers/vbt_parser.h"
 #include <atomic>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace vr::analysis {
 
@@ -43,6 +48,11 @@ public:
     OverlayState overlay;
     const OverlayState& overlay_state() const { return overlay; }
 
+    bool set_overlay_track(int track_file_id, const std::string& analysis_path);
+    void clear_overlay_tracks();
+    std::vector<std::pair<int, std::shared_ptr<const AnalysisManager>>>
+    overlay_track_snapshot() const;
+
     // Derive current frame index from PTS
     int current_frame_idx(int64_t pts_us) const;
 
@@ -52,6 +62,8 @@ private:
     VbiFile vbi_;
     VbtFile vbt_;
     bool loaded_ = false;
+    mutable std::mutex overlay_tracks_mutex_;
+    std::unordered_map<int, std::shared_ptr<AnalysisManager>> overlay_tracks_;
 };
 
 } // namespace vr::analysis

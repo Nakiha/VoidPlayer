@@ -2206,27 +2206,19 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
     const int opacity_permille =
         std::clamp(overlay.opacity_permille.load(std::memory_order_acquire), 100, 1000);
 
-    if (!manager.is_loaded() ||
-        file_id < 0 ||
-        (!show_grid && !show_qp && !show_pred && !show_lines && !show_bit_cost && mode != 3 && mode != 4)) {
+    if (!show_grid && !show_qp && !show_pred && !show_lines && !show_bit_cost && mode != 3 && mode != 4) {
         return;
     }
 
-    const int slot = find_slot_by_file_id(file_id);
-    if (slot < 0 || slot >= static_cast<int>(kMaxTracks) || !tracks_[slot]) {
-        return;
+    auto overlay_tracks = manager.overlay_track_snapshot();
+    if (overlay_tracks.empty() && manager.is_loaded() && file_id >= 0) {
+        overlay_tracks.emplace_back(
+            file_id,
+            std::shared_ptr<const analysis::AnalysisManager>(
+                &manager,
+                [](const analysis::AnalysisManager*) {}));
     }
-
-    const int frame_idx = manager.current_frame_idx(
-        decision.frames[slot].has_value()
-            ? decision.frames[slot]->pts_us
-            : std::max<int64_t>(0, decision.current_pts_us - tracks_[slot]->offset_us));
-    if (frame_idx < 0 || frame_idx >= manager.frame_count()) {
-        return;
-    }
-
-    auto frame = manager.vbs4().read_frame(frame_idx);
-    if (frame.cus.empty() || manager.video_width() == 0 || manager.video_height() == 0) {
+    if (overlay_tracks.empty()) {
         return;
     }
 
@@ -2242,47 +2234,7 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
     }
     std::fill(analysis_overlay_pixels_.begin(), analysis_overlay_pixels_.end(), 0);
 
-    int display_index = -1;
     const int visible_count = std::max(constants.track_count, 1);
-    if (constants.mode == LAYOUT_SPLIT_SCREEN) {
-        if (constants.order[0] == slot) display_index = 0;
-        if (constants.order[1] == slot) display_index = 1;
-        if (display_index < 0) return;
-    } else {
-        for (int i = 0; i < visible_count && i < 4; ++i) {
-            if (constants.order[i] == slot) {
-                display_index = i;
-                break;
-            }
-        }
-        if (display_index < 0) return;
-    }
-
-    float region_x0 = 0.0f;
-    float region_x1 = static_cast<float>(width);
-    float slot_w = static_cast<float>(width);
-    const float slot_h = static_cast<float>(height);
-    if (constants.mode == LAYOUT_SPLIT_SCREEN) {
-        const float split_x = std::clamp(constants.split_pos, 0.0f, 1.0f) *
-                              static_cast<float>(width);
-        region_x0 = display_index == 0 ? 0.0f : split_x;
-        region_x1 = display_index == 0 ? split_x : static_cast<float>(width);
-    } else {
-        slot_w = static_cast<float>(width) / static_cast<float>(visible_count);
-        region_x0 = slot_w * static_cast<float>(display_index);
-        region_x1 = slot_w * static_cast<float>(display_index + 1);
-    }
-
-    const float display_size_x = constants.inv_display_size_x[slot] > 1e-5f
-        ? 1.0f / constants.inv_display_size_x[slot]
-        : 0.0f;
-    const float display_size_y = constants.inv_display_size_y[slot] > 1e-5f
-        ? 1.0f / constants.inv_display_size_y[slot]
-        : 0.0f;
-    if (display_size_x <= 0.0f || display_size_y <= 0.0f) return;
-
-    const float video_w = static_cast<float>(manager.video_width());
-    const float video_h = static_cast<float>(manager.video_height());
     const uint8_t base_alpha = static_cast<uint8_t>(std::clamp(
         opacity_permille * 255 / 1000, 25, 255));
     const uint8_t fill_alpha = static_cast<uint8_t>(std::max(20, base_alpha * 2 / 5));
@@ -2292,65 +2244,137 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
     const bool pred_primary = show_pred || mode == 1 || mode == 2;
     const bool line_primary = show_lines || mode == 2;
 
-    for (const auto& cu : frame.cus) {
-        const auto& c = cu.common;
-        const float u0 = static_cast<float>(c.x) / video_w;
-        const float v0 = static_cast<float>(c.y) / video_h;
-        const float u1 = static_cast<float>(c.x + c.w) / video_w;
-        const float v1 = static_cast<float>(c.y + c.h) / video_h;
+    auto draw_track_overlay = [&](int track_file_id,
+                                  const analysis::AnalysisManager& track_analysis) {
+        if (!track_analysis.is_loaded()) return;
 
-        const float lu0 = constants.display_offset_x[slot] +
-            (u0 + constants.view_offset_uv_x[slot]) * display_size_x;
-        const float lu1 = constants.display_offset_x[slot] +
-            (u1 + constants.view_offset_uv_x[slot]) * display_size_x;
-        const float lv0 = constants.display_offset_y[slot] +
-            (v0 + constants.view_offset_uv_y[slot]) * display_size_y;
-        const float lv1 = constants.display_offset_y[slot] +
-            (v1 + constants.view_offset_uv_y[slot]) * display_size_y;
+        const int slot = find_slot_by_file_id(track_file_id);
+        if (slot < 0 || slot >= static_cast<int>(kMaxTracks) || !tracks_[slot]) {
+            return;
+        }
 
-        float sx0 = 0.0f;
-        float sx1 = 0.0f;
+        const int frame_idx = track_analysis.current_frame_idx(
+            decision.frames[slot].has_value()
+                ? decision.frames[slot]->pts_us
+                : std::max<int64_t>(0, decision.current_pts_us - tracks_[slot]->offset_us));
+        if (frame_idx < 0 || frame_idx >= track_analysis.frame_count()) {
+            return;
+        }
+
+        auto frame = track_analysis.vbs4().read_frame(frame_idx);
+        if (frame.cus.empty() ||
+            track_analysis.video_width() == 0 ||
+            track_analysis.video_height() == 0) {
+            return;
+        }
+
+        int display_index = -1;
         if (constants.mode == LAYOUT_SPLIT_SCREEN) {
-            sx0 = lu0 * static_cast<float>(width);
-            sx1 = lu1 * static_cast<float>(width);
+            if (constants.order[0] == slot) display_index = 0;
+            if (constants.order[1] == slot) display_index = 1;
+            if (display_index < 0) return;
         } else {
-            sx0 = region_x0 + lu0 * slot_w;
-            sx1 = region_x0 + lu1 * slot_w;
-        }
-        float sy0 = lv0 * slot_h;
-        float sy1 = lv1 * slot_h;
-
-        const int x0 = static_cast<int>(std::floor(std::max(sx0, region_x0)));
-        const int x1 = static_cast<int>(std::ceil(std::min(sx1, region_x1)));
-        const int y0 = static_cast<int>(std::floor(sy0));
-        const int y1 = static_cast<int>(std::ceil(sy1));
-        if (x1 <= x0 || y1 <= y0) continue;
-
-        if (bit_cost_primary) {
-            fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
-                      cu_complexity_proxy_color(c, fill_alpha));
-        } else if (qp_primary) {
-            fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
-                      qp_color(c.qp, frame.summary.qp_min, frame.summary.qp_max, fill_alpha));
-        } else if (pred_primary) {
-            fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
-                      c.pred_mode == 1
-                          ? OverlayColor{80, 235, 90, static_cast<uint8_t>(fill_alpha * 3 / 4)}
-                          : pred_color(c.pred_mode, cu.inter, static_cast<uint8_t>(fill_alpha * 3 / 4)));
+            for (int i = 0; i < visible_count && i < 4; ++i) {
+                if (constants.order[i] == slot) {
+                    display_index = i;
+                    break;
+                }
+            }
+            if (display_index < 0) return;
         }
 
-        if (show_grid || mode == 0 || qp_primary || bit_cost_primary || pred_primary) {
-            stroke_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
-                        OverlayColor{255, 255, 255, line_alpha});
+        float region_x0 = 0.0f;
+        float region_x1 = static_cast<float>(width);
+        float slot_w = static_cast<float>(width);
+        const float slot_h = static_cast<float>(height);
+        if (constants.mode == LAYOUT_SPLIT_SCREEN) {
+            const float split_x = std::clamp(constants.split_pos, 0.0f, 1.0f) *
+                                  static_cast<float>(width);
+            region_x0 = display_index == 0 ? 0.0f : split_x;
+            region_x1 = display_index == 0 ? split_x : static_cast<float>(width);
+        } else {
+            slot_w = static_cast<float>(width) / static_cast<float>(visible_count);
+            region_x0 = slot_w * static_cast<float>(display_index);
+            region_x1 = slot_w * static_cast<float>(display_index + 1);
         }
 
-        if (line_primary && c.pred_mode != 1) {
-            const int cx = (x0 + x1) / 2;
-            const int cy = (y0 + y1) / 2;
-            const int dx = std::clamp(static_cast<int>(cu.inter.mv_l0_x / 16), -80, 80);
-            const int dy = std::clamp(static_cast<int>(cu.inter.mv_l0_y / 16), -80, 80);
-            draw_line(analysis_overlay_pixels_, width, height, cx, cy, cx + dx, cy + dy,
-                      OverlayColor{80, 180, 255, line_alpha});
+        const float display_size_x = constants.inv_display_size_x[slot] > 1e-5f
+            ? 1.0f / constants.inv_display_size_x[slot]
+            : 0.0f;
+        const float display_size_y = constants.inv_display_size_y[slot] > 1e-5f
+            ? 1.0f / constants.inv_display_size_y[slot]
+            : 0.0f;
+        if (display_size_x <= 0.0f || display_size_y <= 0.0f) return;
+
+        const float video_w = static_cast<float>(track_analysis.video_width());
+        const float video_h = static_cast<float>(track_analysis.video_height());
+
+        for (const auto& cu : frame.cus) {
+            const auto& c = cu.common;
+            const float u0 = static_cast<float>(c.x) / video_w;
+            const float v0 = static_cast<float>(c.y) / video_h;
+            const float u1 = static_cast<float>(c.x + c.w) / video_w;
+            const float v1 = static_cast<float>(c.y + c.h) / video_h;
+
+            const float lu0 = constants.display_offset_x[slot] +
+                (u0 + constants.view_offset_uv_x[slot]) * display_size_x;
+            const float lu1 = constants.display_offset_x[slot] +
+                (u1 + constants.view_offset_uv_x[slot]) * display_size_x;
+            const float lv0 = constants.display_offset_y[slot] +
+                (v0 + constants.view_offset_uv_y[slot]) * display_size_y;
+            const float lv1 = constants.display_offset_y[slot] +
+                (v1 + constants.view_offset_uv_y[slot]) * display_size_y;
+
+            float sx0 = 0.0f;
+            float sx1 = 0.0f;
+            if (constants.mode == LAYOUT_SPLIT_SCREEN) {
+                sx0 = lu0 * static_cast<float>(width);
+                sx1 = lu1 * static_cast<float>(width);
+            } else {
+                sx0 = region_x0 + lu0 * slot_w;
+                sx1 = region_x0 + lu1 * slot_w;
+            }
+            float sy0 = lv0 * slot_h;
+            float sy1 = lv1 * slot_h;
+
+            const int x0 = static_cast<int>(std::floor(std::max(sx0, region_x0)));
+            const int x1 = static_cast<int>(std::ceil(std::min(sx1, region_x1)));
+            const int y0 = static_cast<int>(std::floor(sy0));
+            const int y1 = static_cast<int>(std::ceil(sy1));
+            if (x1 <= x0 || y1 <= y0) continue;
+
+            if (bit_cost_primary) {
+                fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
+                          cu_complexity_proxy_color(c, fill_alpha));
+            } else if (qp_primary) {
+                fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
+                          qp_color(c.qp, frame.summary.qp_min, frame.summary.qp_max, fill_alpha));
+            } else if (pred_primary) {
+                fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
+                          c.pred_mode == 1
+                              ? OverlayColor{80, 235, 90, static_cast<uint8_t>(fill_alpha * 3 / 4)}
+                              : pred_color(c.pred_mode, cu.inter, static_cast<uint8_t>(fill_alpha * 3 / 4)));
+            }
+
+            if (show_grid || mode == 0 || qp_primary || bit_cost_primary || pred_primary) {
+                stroke_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
+                            OverlayColor{255, 255, 255, line_alpha});
+            }
+
+            if (line_primary && c.pred_mode != 1) {
+                const int cx = (x0 + x1) / 2;
+                const int cy = (y0 + y1) / 2;
+                const int dx = std::clamp(static_cast<int>(cu.inter.mv_l0_x / 16), -80, 80);
+                const int dy = std::clamp(static_cast<int>(cu.inter.mv_l0_y / 16), -80, 80);
+                draw_line(analysis_overlay_pixels_, width, height, cx, cy, cx + dx, cy + dy,
+                          OverlayColor{80, 180, 255, line_alpha});
+            }
+        }
+    };
+
+    for (const auto& [track_file_id, track_analysis] : overlay_tracks) {
+        if (track_analysis) {
+            draw_track_overlay(track_file_id, *track_analysis);
         }
     }
 

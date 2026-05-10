@@ -13,6 +13,7 @@ class UiAutomationBridge {
   final AnalysisProcessManager analysisProcesses;
   final int Function() effectiveDurationUs;
   final Future<void> Function(int slotIndex) toggleAnalysisOverlayForSlot;
+  final Future<void> Function() toggleAnalysisOverlayPanel;
   final void Function(AnalysisOverlayType type) setAnalysisOverlayType;
   final void Function(Set<AnalysisOverlayLayer> layers)
   setAnalysisOverlayLayers;
@@ -24,6 +25,7 @@ class UiAutomationBridge {
     required this.analysisProcesses,
     required this.effectiveDurationUs,
     required this.toggleAnalysisOverlayForSlot,
+    required this.toggleAnalysisOverlayPanel,
     required this.setAnalysisOverlayType,
     required this.setAnalysisOverlayLayers,
     required this.setAnalysisOverlayOpacity,

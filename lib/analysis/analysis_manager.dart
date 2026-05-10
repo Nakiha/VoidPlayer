@@ -69,8 +69,24 @@ class AnalysisTrackGenerationStatus {
   bool get isError => status == AnalysisTrackStatus.error;
 }
 
+class AnalysisOverlayTrackSource {
+  final String hash;
+  final String name;
+  final String path;
+  final int trackFileId;
+
+  const AnalysisOverlayTrackSource({
+    required this.hash,
+    required this.name,
+    required this.path,
+    required this.trackFileId,
+  });
+}
+
 abstract class AnalysisGenerationService {
   String? get activeOverlayHash;
+  bool get overlayPanelVisible;
+  Set<int> get activeOverlayTrackFileIds;
   AnalysisOverlayConfig get overlayConfig;
   Future<String?> ensureGenerated(String videoPath);
   Future<bool> activateOverlay(
@@ -79,6 +95,7 @@ abstract class AnalysisGenerationService {
     required String path,
     required int trackFileId,
   });
+  Future<bool> activateOverlayTracks(List<AnalysisOverlayTrackSource> tracks);
   void updateOverlayConfig(AnalysisOverlayConfig config);
   void deactivateOverlay();
 }
@@ -114,6 +131,8 @@ class AnalysisManager extends ChangeNotifier
   String? _loadedHash;
   String? _activeOverlayHash;
   int _activeOverlayTrackFileId = -1;
+  final Map<int, String> _activeOverlayHashesByTrackFileId = {};
+  final Map<int, FileLockHandle> _overlayHashLocksByTrackFileId = {};
   AnalysisOverlayConfig _overlayConfig = const AnalysisOverlayConfig();
   FileLockHandle? _loadedHashLock;
   final Map<String, Future<String?>> _ensureGeneratedInFlightByPath = {};
@@ -128,6 +147,11 @@ class AnalysisManager extends ChangeNotifier
   String? get loadedHash => _loadedHash;
   @override
   String? get activeOverlayHash => _activeOverlayHash;
+  @override
+  bool get overlayPanelVisible => _activeOverlayHashesByTrackFileId.isNotEmpty;
+  @override
+  Set<int> get activeOverlayTrackFileIds =>
+      Set<int>.unmodifiable(_activeOverlayHashesByTrackFileId.keys);
   @override
   AnalysisOverlayConfig get overlayConfig => _overlayConfig;
   bool get isLoaded => _state == AnalysisState.loaded;
@@ -487,19 +511,76 @@ class AnalysisManager extends ChangeNotifier
     required String path,
     required int trackFileId,
   }) async {
-    final loaded = await loadAnalysisHash(hash, name: name, path: path);
-    if (!loaded) return false;
-    _activeOverlayHash = hash;
-    _activeOverlayTrackFileId = trackFileId;
-    _applyOverlayConfig();
+    return activateOverlayTracks([
+      AnalysisOverlayTrackSource(
+        hash: hash,
+        name: name,
+        path: path,
+        trackFileId: trackFileId,
+      ),
+    ]);
+  }
+
+  @override
+  Future<bool> activateOverlayTracks(
+    List<AnalysisOverlayTrackSource> tracks,
+  ) async {
+    _releaseOverlayHashLocks();
+    AnalysisFfi.clearOverlayTracks();
+    _activeOverlayHashesByTrackFileId.clear();
+    _activeOverlayHash = null;
+    _activeOverlayTrackFileId = -1;
+
+    var activatedAny = false;
+    for (final track in tracks) {
+      if (_cache.deleteIfVacVersionMismatch(track.hash)) {
+        log.info('[Analysis] skipped stale overlay VAC version: ${track.hash}');
+        continue;
+      }
+      final analysisPath = _cache.analysisPath(track.hash);
+      final lock = _cache.acquireHashSharedLockSync(track.hash);
+      final loaded = AnalysisFfi.setOverlayTrack(
+        trackFileId: track.trackFileId,
+        analysisPath: analysisPath,
+      );
+      if (!loaded) {
+        lock.releaseSync();
+        log.warning(
+          '[Analysis] failed to load overlay track '
+          '${track.trackFileId}: $analysisPath',
+        );
+        continue;
+      }
+      _overlayHashLocksByTrackFileId[track.trackFileId] = lock;
+      _activeOverlayHashesByTrackFileId[track.trackFileId] = track.hash;
+      _activeOverlayHash ??= track.hash;
+      if (_activeOverlayTrackFileId < 0) {
+        _activeOverlayTrackFileId = track.trackFileId;
+      }
+      _setTrackStatus(
+        track.path,
+        fileName: track.name,
+        hash: track.hash,
+        status: AnalysisTrackStatus.cached,
+        progress: 1,
+      );
+      await _cache.touchEntry(track.hash);
+      activatedAny = true;
+    }
+
+    if (activatedAny) {
+      _applyOverlayConfig();
+    } else {
+      _applyDisabledOverlayConfig();
+    }
     notifyListeners();
-    return true;
+    return activatedAny;
   }
 
   @override
   void updateOverlayConfig(AnalysisOverlayConfig config) {
     _overlayConfig = config;
-    if (_activeOverlayHash != null) {
+    if (overlayPanelVisible) {
       _applyOverlayConfig();
     }
     notifyListeners();
@@ -507,9 +588,12 @@ class AnalysisManager extends ChangeNotifier
 
   @override
   void deactivateOverlay() {
-    if (_activeOverlayHash == null) return;
+    if (!overlayPanelVisible && _activeOverlayHash == null) return;
     _activeOverlayHash = null;
     _activeOverlayTrackFileId = -1;
+    _activeOverlayHashesByTrackFileId.clear();
+    _releaseOverlayHashLocks();
+    AnalysisFfi.clearOverlayTracks();
     _applyDisabledOverlayConfig();
     notifyListeners();
   }
@@ -521,6 +605,9 @@ class AnalysisManager extends ChangeNotifier
     _ensureGeneratedInFlightByPath.clear();
     _activeOverlayHash = null;
     _activeOverlayTrackFileId = -1;
+    _activeOverlayHashesByTrackFileId.clear();
+    _releaseOverlayHashLocks();
+    AnalysisFfi.clearOverlayTracks();
     _applyDisabledOverlayConfig();
     if (_state == AnalysisState.loaded) {
       _native.unload();
@@ -535,6 +622,13 @@ class AnalysisManager extends ChangeNotifier
     _loadedHashLock = null;
   }
 
+  void _releaseOverlayHashLocks() {
+    for (final lock in _overlayHashLocksByTrackFileId.values) {
+      lock.releaseSync();
+    }
+    _overlayHashLocksByTrackFileId.clear();
+  }
+
   void _applyOverlayConfig() {
     final config = _overlayConfig;
     AnalysisFfi.setOverlay(
@@ -545,7 +639,7 @@ class AnalysisManager extends ChangeNotifier
       showCuBitCostHeatmap: config.showCuBitCostHeatmap,
       opacity: config.opacity,
       mode: config.type.index,
-      trackFileId: _activeOverlayTrackFileId,
+      trackFileId: -1,
     );
   }
 
@@ -563,14 +657,24 @@ class AnalysisManager extends ChangeNotifier
   }
 
   void _unloadHashBeforeRegeneration(String hash) {
-    if (_loadedHash != hash) return;
+    final overlayUsesHash = _activeOverlayHashesByTrackFileId.containsValue(
+      hash,
+    );
+    if (_loadedHash != hash && !overlayUsesHash) return;
     log.info('[Analysis] unloading stale cache before regeneration: $hash');
-    _activeOverlayHash = null;
-    _activeOverlayTrackFileId = -1;
-    _applyDisabledOverlayConfig();
-    _native.unload();
-    _loadedHash = null;
-    _releaseLoadedHashLock();
+    if (overlayUsesHash) {
+      _activeOverlayHash = null;
+      _activeOverlayTrackFileId = -1;
+      _activeOverlayHashesByTrackFileId.clear();
+      _releaseOverlayHashLocks();
+      AnalysisFfi.clearOverlayTracks();
+      _applyDisabledOverlayConfig();
+    }
+    if (_loadedHash == hash) {
+      _native.unload();
+      _loadedHash = null;
+      _releaseLoadedHashLock();
+    }
     notifyListeners();
   }
 

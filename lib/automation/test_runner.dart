@@ -209,6 +209,9 @@ class TestRunner {
       case ToggleAnalysisOverlay(:final slotIndex):
         log.info('TestRunner: TOGGLE_ANALYSIS_OVERLAY slot=$slotIndex');
         await automation.toggleAnalysisOverlayForSlot(slotIndex);
+      case ToggleAnalysisOverlayPanel():
+        log.info('TestRunner: TOGGLE_ANALYSIS_OVERLAY_PANEL');
+        await automation.toggleAnalysisOverlayPanel();
       case SetAnalysisOverlayType(:final type):
         log.info('TestRunner: SET_ANALYSIS_OVERLAY_TYPE ${type.name}');
         automation.setAnalysisOverlayType(type);

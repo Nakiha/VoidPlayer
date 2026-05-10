@@ -1,0 +1,15 @@
+# Overlay panel session should keep all current tracks active, including tracks
+# added while the panel is already opening.
+@WINDOW, 1280, 720
+0.5, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+1.0, TOGGLE_ANALYSIS_OVERLAY_PANEL
+1.1, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+3.5, ASSERT_TRACK_COUNT, 2
+12.0, ASSERT_ANALYSIS_OVERLAY, true, cu, 0.55, 0.02, 2
+12.2, SET_ANALYSIS_OVERLAY_TYPE, qpHeatmap
+12.6, ASSERT_ANALYSIS_OVERLAY, true, qpHeatmap, 0.55, 0.02, 2
+12.8, CAPTURE_VIEWPORT, overlay_panel_tracks
+13.0, ASSERT_CAPTURE_NOT_BLACK, overlay_panel_tracks, 0.01, 4.0
+13.2, TOGGLE_ANALYSIS_OVERLAY_PANEL
+13.6, ASSERT_ANALYSIS_OVERLAY, false
+14.0, QUIT, 0

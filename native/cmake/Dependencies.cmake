@@ -42,6 +42,7 @@ else()
 endif()
 
 option(BUILD_TESTS "Build tests" ON)
+option(BUILD_ANALYSIS_TESTS "Build native analysis tests that require external analysis tools" ON)
 if(BUILD_TESTS)
     set(CATCH2_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/_deps/catch2-src")
     if(EXISTS "${CATCH2_LOCAL_DIR}/CMakeLists.txt")

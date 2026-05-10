@@ -223,16 +223,21 @@ def _copy_ffmpeg_analyzer_to_vendor_bin(analyzer: Path) -> None:
     print(f"Copied FFmpeg analyzer to {expected}")
 
 
-def native_build(debug: bool, test: bool = True) -> None:
+def native_build(debug: bool, test: bool = True, github: bool = False) -> None:
     """Build native standalone module, optionally run tests."""
     build_type = "Debug" if debug else "Release"
 
-    ensure_analysis_test_tools()
+    if not github:
+        ensure_analysis_test_tools()
+    else:
+        print("GitHub native mode: skipping external analysis tool builds.")
 
     header(f"Build native standalone ({build_type})")
     build_cmd = [sys.executable, "-u", str(NATIVE_BUILD_PY), "--build-only"]
     if debug:
         build_cmd.append("--debug")
+    if github:
+        build_cmd.append("--github")
     run(build_cmd, cwd=str(NATIVE_DIR))
 
     if test:
@@ -240,4 +245,6 @@ def native_build(debug: bool, test: bool = True) -> None:
         test_cmd = [sys.executable, "-u", str(NATIVE_BUILD_PY), "--test-only"]
         if debug:
             test_cmd.append("--debug")
+        if github:
+            test_cmd.append("--github")
         run(test_cmd, cwd=str(NATIVE_DIR))

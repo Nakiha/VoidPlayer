@@ -135,6 +135,7 @@ def cmd_vtm_build() -> None:
         "cmake", "-B", str(VTM_BUILD_DIR), "-S", str(VTM_DIR),
         "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded",
         "-DCMAKE_CXX_FLAGS=/wd4819",
+        "-DENABLE_SEARCH_OPENSSL=OFF",
         f"-DVOIDPLAYER_ZSTD_DIR={ZSTD_DIR}",
     ], cwd=str(ROOT))
 

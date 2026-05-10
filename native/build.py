@@ -42,6 +42,7 @@ def configure(
     ffmpeg_root: Path,
     build_benchmarks: bool = False,
     build_tests: bool = True,
+    build_analysis_tests: bool = True,
     build_python: bool = True,
     build_ffi: bool = True,
 ):
@@ -52,6 +53,7 @@ def configure(
         f"-DFFMPEG_ROOT={ffmpeg_root}",
         f"-DBUILD_BENCHMARKS={'ON' if build_benchmarks else 'OFF'}",
         f"-DBUILD_TESTS={'ON' if build_tests else 'OFF'}",
+        f"-DBUILD_ANALYSIS_TESTS={'ON' if build_analysis_tests else 'OFF'}",
         f"-DBUILD_PYTHON={'ON' if build_python else 'OFF'}",
         f"-DBUILD_FFI={'ON' if build_ffi else 'OFF'}",
     ]
@@ -76,15 +78,21 @@ def build(build_dir: Path, build_type: str):
     ])
 
 
-def test(build_dir: Path, build_type: str, script_dir: Path):
-    subprocess.check_call([
+def test(build_dir: Path, build_type: str, script_dir: Path, skip_analysis_tests: bool = False):
+    ctest_cmd = [
         "ctest",
         "--test-dir", str(build_dir),
         "--build-config", build_type,
         "-V",
         "--timeout", "180",
         "--output-on-failure",
-    ])
+    ]
+    if skip_analysis_tests:
+        ctest_cmd.extend(["-E", "^analysis_tests$"])
+    subprocess.check_call(ctest_cmd)
+
+    if skip_analysis_tests:
+        return
 
     repo_root = script_dir.parent
     analysis_test = script_dir / "analysis" / "tests" / "python" / "formats"
@@ -118,6 +126,8 @@ def main():
                         help="Build in Debug mode (no optimization, with PDB debug symbols)")
     parser.add_argument("--ffmpeg-root", type=str, default=None,
                         help="Path to an FFmpeg root containing include/ and lib/")
+    parser.add_argument("--github", action="store_true",
+                        help="Skip external analysis tool tests for lightweight GitHub CI")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -133,6 +143,7 @@ def main():
             ffmpeg_root,
             build_benchmarks=True,
             build_tests=False,
+            build_analysis_tests=False,
             build_python=False,
             build_ffi=False,
         )
@@ -147,14 +158,19 @@ def main():
 
     if not args.test_only:
         print("Configuring...", flush=True)
-        configure(build_dir, script_dir, ffmpeg_root)
+        configure(
+            build_dir,
+            script_dir,
+            ffmpeg_root,
+            build_analysis_tests=not args.github,
+        )
 
         print(f"Building ({build_type})...", flush=True)
         build(build_dir, build_type)
 
     if not args.build_only:
         print("Running tests...", flush=True)
-        test(build_dir, build_type, script_dir)
+        test(build_dir, build_type, script_dir, skip_analysis_tests=args.github)
 
     print("Done.", flush=True)
 

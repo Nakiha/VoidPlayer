@@ -124,7 +124,7 @@ def cmd_test(args) -> None:
         flutter_unit_test()
 
     if not args.flutter_only:
-        native_build(args.debug, test=True)
+        native_build(args.debug, test=True, github=args.github)
 
 
 def cmd_ui_test(args) -> None:

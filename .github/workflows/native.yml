@@ -47,7 +47,7 @@ jobs:
 
       - name: Run native build and tests
         shell: pwsh
-        run: python dev.py test --native-only
+        run: python dev.py test --native-only --github
 
   native-config-matrix:
     name: Configure ${{ matrix.name }}

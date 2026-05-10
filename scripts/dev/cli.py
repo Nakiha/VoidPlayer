@@ -33,6 +33,7 @@ Examples:
   python dev.py test
   python dev.py test --flutter-only
   python dev.py test --native-only
+  python dev.py test --native-only --github
   python dev.py package
   python dev.py package --installer
   python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
@@ -79,6 +80,8 @@ Examples:
                         help="Run only Flutter unit tests")
     p_test.add_argument("--native-only", action="store_true",
                         help="Run only native standalone tests")
+    p_test.add_argument("--github", action="store_true",
+                        help="Run the lightweight native test set used by GitHub Actions")
 
     p_package = sub.add_parser("package", help="Build and stage clean Windows installer input")
     p_package.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)

@@ -48,46 +48,48 @@ void_apply_native_compile_options(video_renderer_tests)
 add_test(NAME video_renderer_tests COMMAND video_renderer_tests)
 set_tests_properties(video_renderer_tests PROPERTIES TIMEOUT 180)
 
-# ==================== Analysis Tests ====================
+if(BUILD_ANALYSIS_TESTS)
+    # ==================== Analysis Tests ====================
 
-add_executable(analysis_tests
-    test_main.cpp
-    analysis/test_analysis_parsers.cpp
-    analysis/test_analysis_generator.cpp
-    analysis/test_analysis_data.cpp
-    analysis/test_analysis_ffi_handles.cpp
-    analysis/test_analysis_ffi_stubs.cpp
-    ../../windows/runner/analysis_ffi.cpp
-)
-void_apply_native_compile_options(analysis_tests)
+    add_executable(analysis_tests
+        test_main.cpp
+        analysis/test_analysis_parsers.cpp
+        analysis/test_analysis_generator.cpp
+        analysis/test_analysis_data.cpp
+        analysis/test_analysis_ffi_handles.cpp
+        analysis/test_analysis_ffi_stubs.cpp
+        ../../windows/runner/analysis_ffi.cpp
+    )
+    void_apply_native_compile_options(analysis_tests)
 
-set_target_properties(analysis_tests PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>"
-)
+    set_target_properties(analysis_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>"
+    )
 
-if(TARGET copy_ffmpeg_dlls)
-    add_dependencies(analysis_tests copy_ffmpeg_dlls)
+    if(TARGET copy_ffmpeg_dlls)
+        add_dependencies(analysis_tests copy_ffmpeg_dlls)
+    endif()
+
+    target_link_libraries(analysis_tests PRIVATE
+        analysis_lib
+        Catch2::Catch2
+        spdlog::spdlog_header_only
+    )
+
+    target_include_directories(analysis_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/analysis"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../windows/runner"
+    )
+
+    target_compile_definitions(analysis_tests PRIVATE
+        VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
+        VTM_DECODER_PATH="${VTM_DECODER_PATH}"
+        FFMPEG_ANALYZER_PATH="${FFMPEG_ANALYZER_PATH}"
+    )
+
+    add_test(NAME analysis_tests COMMAND analysis_tests)
+    set_tests_properties(analysis_tests PROPERTIES TIMEOUT 180)
 endif()
-
-target_link_libraries(analysis_tests PRIVATE
-    analysis_lib
-    Catch2::Catch2
-    spdlog::spdlog_header_only
-)
-
-target_include_directories(analysis_tests PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/analysis"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../windows/runner"
-)
-
-target_compile_definitions(analysis_tests PRIVATE
-    VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
-    VTM_DECODER_PATH="${VTM_DECODER_PATH}"
-    FFMPEG_ANALYZER_PATH="${FFMPEG_ANALYZER_PATH}"
-)
-
-add_test(NAME analysis_tests COMMAND analysis_tests)
-set_tests_properties(analysis_tests PROPERTIES TIMEOUT 180)
 
 # ==================== C FFI Validation ====================
 

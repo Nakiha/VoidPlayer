@@ -82,6 +82,7 @@ class MainWindowMediaHeader extends StatelessWidget {
     return MediaHeaderBar(
       entries: tracks,
       analysisDataSource: model.media.analysisDataSource,
+      analysisOverlayButtonKey: model.media.analysisOverlayButtonKey,
       onMediaSwapped: mediaActions.onMediaSwapped,
       onAnalysisOverlayPanelToggle:
           actions.toolbar.onAnalysisOverlayPanelToggle,
@@ -112,6 +113,7 @@ class MainWindowControlsBar extends StatelessWidget {
     final playback = model.playback;
     final mediaActions = actions.mediaTimeline;
     return ControlsBar(
+      key: playback.controlsBarKey,
       timelineKey: playback.timelineSliderKey,
       timelineStartWidth: playback.timelineStartWidth,
       zoomRatio: model.viewport.layout.zoomRatio,

@@ -1,11 +1,16 @@
+import 'dart:ffi';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart' as wm;
 
 import '../../app_log.dart';
 
 class MainWindowTestHarness {
   final GlobalKey viewportKey;
   final GlobalKey timelineSliderKey;
+  final GlobalKey controlsBarKey;
+  final GlobalKey analysisOverlayButtonKey;
   final GlobalKey loopRangeBarKey;
   final double Function() splitPosition;
   final double Function() timelineStartWidth;
@@ -18,6 +23,8 @@ class MainWindowTestHarness {
   MainWindowTestHarness({
     required this.viewportKey,
     required this.timelineSliderKey,
+    required this.controlsBarKey,
+    required this.analysisOverlayButtonKey,
     required this.loopRangeBarKey,
     required this.splitPosition,
     required this.timelineStartWidth,
@@ -54,6 +61,239 @@ class MainWindowTestHarness {
     GestureBinding.instance.handlePointerEvent(
       PointerUpEvent(pointer: pointer, position: global),
     );
+  }
+
+  void hoverControlsBarButtons({int steps = 24}) {
+    final context = controlsBarKey.currentContext;
+    if (context == null) {
+      throw StateError('Controls bar is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Controls bar has no render box');
+    }
+
+    final y = renderObject.size.height / 2;
+    final startWidth = timelineStartWidth()
+        .clamp(0.0, renderObject.size.width)
+        .toDouble();
+    final buttonBandRight = startWidth > 0
+        ? startWidth
+        : renderObject.size.width;
+    final fixedButtonCenters = <double>[
+      100,
+      132,
+      164,
+      196,
+      228,
+    ].where((x) => x > 0 && x < buttonBandRight).toList(growable: false);
+    final count = steps <= 0 ? 1 : steps;
+    final points = <Offset>[
+      for (var i = 0; i <= count; i++)
+        Offset(
+          (buttonBandRight * (0.08 + 0.72 * i / count)).clamp(
+            1.0,
+            renderObject.size.width - 1,
+          ),
+          y,
+        ),
+      for (final x in fixedButtonCenters) Offset(x, y),
+    ];
+
+    var previousGlobal = renderObject.localToGlobal(points.first);
+    log.info(
+      'Test action: HOVER_CONTROLS_BAR_BUTTONS steps=$count '
+      'points=${points.length} y=${y.toStringAsFixed(1)} '
+      'buttonBandRight=${buttonBandRight.toStringAsFixed(1)}',
+    );
+
+    for (final local in points) {
+      final global = renderObject.localToGlobal(local);
+      GestureBinding.instance.handlePointerEvent(
+        PointerHoverEvent(
+          pointer: _pointerId,
+          position: global,
+          delta: global - previousGlobal,
+          kind: PointerDeviceKind.mouse,
+        ),
+      );
+      previousGlobal = global;
+    }
+    final exitGlobal = renderObject.localToGlobal(
+      Offset(renderObject.size.width - 1, renderObject.size.height + 24),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerHoverEvent(
+        pointer: _pointerId,
+        position: exitGlobal,
+        delta: exitGlobal - previousGlobal,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+  }
+
+  void clickAnalysisOverlayButton() {
+    final context = analysisOverlayButtonKey.currentContext;
+    if (context == null) {
+      throw StateError('Analysis overlay button is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Analysis overlay button has no render box');
+    }
+
+    final local = Offset(
+      renderObject.size.width / 2,
+      renderObject.size.height / 2,
+    );
+    final global = renderObject.localToGlobal(local);
+    final pointer = _pointerId++;
+    log.info(
+      'Test action: CLICK_MEDIA_HEADER_OVERLAY_BUTTON '
+      'global=(${global.dx.toStringAsFixed(1)}, ${global.dy.toStringAsFixed(1)})',
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerDownEvent(
+        pointer: pointer,
+        position: global,
+        buttons: kPrimaryButton,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerUpEvent(
+        pointer: pointer,
+        position: global,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+  }
+
+  Future<void> hoverControlsBarButtonsNative({int steps = 24}) async {
+    final context = controlsBarKey.currentContext;
+    if (context == null) {
+      throw StateError('Controls bar is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Controls bar has no render box');
+    }
+
+    final devicePixelRatio = View.of(context).devicePixelRatio;
+    final windowPosition = await wm.windowManager.getPosition();
+    final y = renderObject.size.height / 2;
+    final startWidth = timelineStartWidth()
+        .clamp(0.0, renderObject.size.width)
+        .toDouble();
+    final buttonBandRight = startWidth > 0
+        ? startWidth
+        : renderObject.size.width;
+    final count = steps <= 0 ? 1 : steps;
+    final points = <Offset>[
+      for (var i = 0; i <= count; i++)
+        Offset(
+          (buttonBandRight * (0.08 + 0.72 * i / count)).clamp(
+            1.0,
+            renderObject.size.width - 1,
+          ),
+          y,
+        ),
+      for (final x in const <double>[100, 132, 164, 196, 228])
+        if (x > 0 && x < buttonBandRight) Offset(x, y),
+    ];
+
+    await _moveNativeMouseAcrossPoints(
+      renderObject: renderObject,
+      points: points,
+      windowPosition: windowPosition,
+      scale: devicePixelRatio,
+      label: 'scaled',
+    );
+    await _moveNativeMouseAcrossPoints(
+      renderObject: renderObject,
+      points: points,
+      windowPosition: windowPosition,
+      scale: 1,
+      label: 'unscaled',
+    );
+  }
+
+  Future<void> clickAnalysisOverlayButtonNative() async {
+    final context = analysisOverlayButtonKey.currentContext;
+    if (context == null) {
+      throw StateError('Analysis overlay button is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Analysis overlay button has no render box');
+    }
+
+    final windowPosition = await wm.windowManager.getPosition();
+    final local = Offset(
+      renderObject.size.width / 2,
+      renderObject.size.height / 2,
+    );
+    await _nativeClickAt(
+      renderObject: renderObject,
+      local: local,
+      windowPosition: windowPosition,
+      scale: 1,
+      label: 'unscaled',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+  }
+
+  Future<void> _nativeClickAt({
+    required RenderBox renderObject,
+    required Offset local,
+    required Offset windowPosition,
+    required double scale,
+    required String label,
+  }) async {
+    final appGlobal = renderObject.localToGlobal(local);
+    final x = ((windowPosition.dx + appGlobal.dx) * scale).round();
+    final y = ((windowPosition.dy + appGlobal.dy) * scale).round();
+    log.info(
+      'Test action: CLICK_MEDIA_HEADER_OVERLAY_BUTTON_NATIVE $label '
+      'screen=($x, $y) window=(${windowPosition.dx.toStringAsFixed(1)}, '
+      '${windowPosition.dy.toStringAsFixed(1)}) scale=${scale.toStringAsFixed(2)}',
+    );
+    _setCursorPos(x, y);
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    _mouseEvent(_mouseEventLeftDown, 0, 0, 0, 0);
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    _mouseEvent(_mouseEventLeftUp, 0, 0, 0, 0);
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+  }
+
+  Future<void> _moveNativeMouseAcrossPoints({
+    required RenderBox renderObject,
+    required List<Offset> points,
+    required Offset windowPosition,
+    required double scale,
+    required String label,
+  }) async {
+    log.info(
+      'Test action: HOVER_CONTROLS_BAR_BUTTONS_NATIVE $label '
+      'points=${points.length} window=(${windowPosition.dx.toStringAsFixed(1)}, '
+      '${windowPosition.dy.toStringAsFixed(1)}) scale=${scale.toStringAsFixed(2)}',
+    );
+    for (final local in points) {
+      final appGlobal = renderObject.localToGlobal(local);
+      _setCursorPos(
+        ((windowPosition.dx + appGlobal.dx) * scale).round(),
+        ((windowPosition.dy + appGlobal.dy) * scale).round(),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 18));
+    }
+    final exitGlobal = renderObject.localToGlobal(
+      Offset(renderObject.size.width - 1, renderObject.size.height + 24),
+    );
+    _setCursorPos(
+      ((windowPosition.dx + exitGlobal.dx) * scale).round(),
+      ((windowPosition.dy + exitGlobal.dy) * scale).round(),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 80));
   }
 
   void dragSplitHandle(double targetFraction, {int steps = 12}) {
@@ -211,3 +451,23 @@ class MainWindowTestHarness {
     );
   }
 }
+
+final _user32 = DynamicLibrary.open('user32.dll');
+const _mouseEventLeftDown = 0x0002;
+const _mouseEventLeftUp = 0x0004;
+final _setCursorPos = _user32
+    .lookupFunction<
+      Int32 Function(Int32 x, Int32 y),
+      int Function(int x, int y)
+    >('SetCursorPos');
+final _mouseEvent = _user32
+    .lookupFunction<
+      Void Function(
+        Uint32 dwFlags,
+        Uint32 dx,
+        Uint32 dy,
+        Uint32 dwData,
+        IntPtr dwExtraInfo,
+      ),
+      void Function(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo)
+    >('mouse_event');

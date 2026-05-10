@@ -182,9 +182,35 @@ def _cmd_ui_test(args) -> None:
 
         label = script_path.relative_to(ROOT) if script_path.is_relative_to(ROOT) else script_path
         header(f"UI test {index}/{total} {label}")
-        result = subprocess.call(cmd, cwd=str(ROOT))
+        result, ax_tree_error = _run_ui_test_process(cmd)
+        if ax_tree_error:
+            print(f"\nUI test failed: Flutter AXTree error detected: {label}")
+            sys.exit(1)
         if result != 0:
             print(f"\nUI test failed with exit code {result}: {label}")
             sys.exit(result)
 
     print(f"\nUI test batch passed ({total} script{'s' if total != 1 else ''}).")
+
+
+def _run_ui_test_process(cmd: list[str]) -> tuple[int, bool]:
+    ax_tree_error = False
+    process = subprocess.Popen(
+        cmd,
+        cwd=str(ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
+    assert process.stdout is not None
+    for line in process.stdout:
+        print(line, end="")
+        if (
+            "Failed to update ui::AXTree" in line
+            or "accessibility_bridge.cc" in line
+        ):
+            ax_tree_error = True
+    return process.wait(), ax_tree_error

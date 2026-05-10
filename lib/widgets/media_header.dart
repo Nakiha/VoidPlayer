@@ -17,6 +17,7 @@ import 'app_menu_combo.dart';
 class MediaHeaderBar extends StatelessWidget {
   final List<TrackEntry> entries;
   final AnalysisToolbarDataSource analysisDataSource;
+  final Key? analysisOverlayButtonKey;
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
   final Future<void> Function() onAnalysisOverlayPanelToggle;
   final ValueChanged<AnalysisOverlayType> onAnalysisOverlayTypeChanged;
@@ -28,6 +29,7 @@ class MediaHeaderBar extends StatelessWidget {
     super.key,
     required this.entries,
     required this.analysisDataSource,
+    this.analysisOverlayButtonKey,
     required this.onMediaSwapped,
     required this.onAnalysisOverlayPanelToggle,
     required this.onAnalysisOverlayTypeChanged,
@@ -41,6 +43,7 @@ class MediaHeaderBar extends StatelessWidget {
     return _MediaHeaderBarWithCache(
       entries: entries,
       analysisDataSource: analysisDataSource,
+      analysisOverlayButtonKey: analysisOverlayButtonKey,
       onMediaSwapped: onMediaSwapped,
       onAnalysisOverlayPanelToggle: onAnalysisOverlayPanelToggle,
       onAnalysisOverlayTypeChanged: onAnalysisOverlayTypeChanged,
@@ -54,6 +57,7 @@ class MediaHeaderBar extends StatelessWidget {
 class _MediaHeaderBarWithCache extends StatefulWidget {
   final List<TrackEntry> entries;
   final AnalysisToolbarDataSource analysisDataSource;
+  final Key? analysisOverlayButtonKey;
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
   final Future<void> Function() onAnalysisOverlayPanelToggle;
   final ValueChanged<AnalysisOverlayType> onAnalysisOverlayTypeChanged;
@@ -64,6 +68,7 @@ class _MediaHeaderBarWithCache extends StatefulWidget {
   const _MediaHeaderBarWithCache({
     required this.entries,
     required this.analysisDataSource,
+    this.analysisOverlayButtonKey,
     required this.onMediaSwapped,
     required this.onAnalysisOverlayPanelToggle,
     required this.onAnalysisOverlayTypeChanged,
@@ -78,27 +83,6 @@ class _MediaHeaderBarWithCache extends StatefulWidget {
 }
 
 class _MediaHeaderBarWithCacheState extends State<_MediaHeaderBarWithCache> {
-  @override
-  void initState() {
-    super.initState();
-    widget.analysisDataSource.addListener(_handleAnalysisChanged);
-  }
-
-  @override
-  void didUpdateWidget(covariant _MediaHeaderBarWithCache oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.analysisDataSource != widget.analysisDataSource) {
-      oldWidget.analysisDataSource.removeListener(_handleAnalysisChanged);
-      widget.analysisDataSource.addListener(_handleAnalysisChanged);
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.analysisDataSource.removeListener(_handleAnalysisChanged);
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     if (widget.entries.isEmpty) return const SizedBox.shrink();
@@ -119,10 +103,10 @@ class _MediaHeaderBarWithCacheState extends State<_MediaHeaderBarWithCache> {
                       slotIndex: i,
                       entries: widget.entries,
                       analysisDataSource: widget.analysisDataSource,
+                      analysisOverlayButtonKey: i == 0
+                          ? widget.analysisOverlayButtonKey
+                          : null,
                       showOverlayPanelButton: i == 0,
-                      overlayPanelActive:
-                          widget.analysisDataSource.overlayPanelVisible,
-                      overlayWorking: _isAnalysisWorking,
                       onMediaSwapped: widget.onMediaSwapped,
                       onAnalysisOverlayPanelToggle:
                           widget.onAnalysisOverlayPanelToggle,
@@ -143,17 +127,6 @@ class _MediaHeaderBarWithCacheState extends State<_MediaHeaderBarWithCache> {
       ),
     );
   }
-
-  void _handleAnalysisChanged() {
-    if (!mounted) return;
-    setState(() {});
-  }
-
-  bool get _isAnalysisWorking {
-    return widget.analysisDataSource.state == AnalysisState.computingHash ||
-        widget.analysisDataSource.state == AnalysisState.generating ||
-        widget.analysisDataSource.state == AnalysisState.loading;
-  }
 }
 
 /// Single track header with source combo box and action buttons.
@@ -161,9 +134,8 @@ class _MediaHeader extends StatelessWidget {
   final int slotIndex;
   final List<TrackEntry> entries;
   final AnalysisToolbarDataSource analysisDataSource;
+  final Key? analysisOverlayButtonKey;
   final bool showOverlayPanelButton;
-  final bool overlayPanelActive;
-  final bool overlayWorking;
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
   final Future<void> Function() onAnalysisOverlayPanelToggle;
   final ValueChanged<AnalysisOverlayType> onAnalysisOverlayTypeChanged;
@@ -175,9 +147,8 @@ class _MediaHeader extends StatelessWidget {
     required this.slotIndex,
     required this.entries,
     required this.analysisDataSource,
+    this.analysisOverlayButtonKey,
     required this.showOverlayPanelButton,
-    required this.overlayPanelActive,
-    required this.overlayWorking,
     required this.onMediaSwapped,
     required this.onAnalysisOverlayPanelToggle,
     required this.onAnalysisOverlayTypeChanged,
@@ -199,8 +170,7 @@ class _MediaHeader extends StatelessWidget {
         children: [
           if (showOverlayPanelButton)
             _HeaderOverlayPanelButton(
-              active: overlayPanelActive,
-              working: overlayWorking,
+              key: analysisOverlayButtonKey,
               entries: entries,
               dataSource: analysisDataSource,
               onToggle: onAnalysisOverlayPanelToggle,
@@ -263,8 +233,6 @@ ButtonStyle _removeTrackButtonStyle(ColorScheme colorScheme, double radius) {
 }
 
 class _HeaderOverlayPanelButton extends StatefulWidget {
-  final bool active;
-  final bool working;
   final List<TrackEntry> entries;
   final AnalysisToolbarDataSource dataSource;
   final Future<void> Function() onToggle;
@@ -273,8 +241,7 @@ class _HeaderOverlayPanelButton extends StatefulWidget {
   final ValueChanged<double> onOpacityChanged;
 
   const _HeaderOverlayPanelButton({
-    required this.active,
-    required this.working,
+    super.key,
     required this.entries,
     required this.dataSource,
     required this.onToggle,
@@ -295,6 +262,7 @@ class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton>
   Timer? _hideTimer;
   bool _hoveringButton = false;
   bool _hoveringPanel = false;
+  String? _lastDataSourceSignature;
   late final AnimationController _panelAnimationController;
   late final Animation<double> _panelOpacity;
 
@@ -302,6 +270,7 @@ class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton>
   void initState() {
     super.initState();
     widget.dataSource.addListener(_handleDataSourceChanged);
+    _lastDataSourceSignature = _dataSourceSignature();
     _panelAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 130),
@@ -320,8 +289,9 @@ class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton>
     if (oldWidget.dataSource != widget.dataSource) {
       oldWidget.dataSource.removeListener(_handleDataSourceChanged);
       widget.dataSource.addListener(_handleDataSourceChanged);
+      _lastDataSourceSignature = _dataSourceSignature();
     }
-    if (!widget.active) {
+    if (!widget.dataSource.overlayPanelVisible) {
       _removePanel();
     } else {
       _overlayEntry?.markNeedsBuild();
@@ -341,11 +311,16 @@ class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final enabled = !widget.working;
+    final active = widget.dataSource.overlayPanelVisible;
+    final working = _isAnalysisWorking(widget.dataSource.state);
+    final enabled = !working;
+    final tooltip = active
+        ? AppLocalizations.of(context)!.analysisOverlayDeactivate
+        : AppLocalizations.of(context)!.analysisOverlayActivate;
     return MouseRegion(
       onEnter: (_) {
         _hoveringButton = true;
-        if (widget.active) _showPanel();
+        if (active) _showPanel();
       },
       onExit: (_) {
         _hoveringButton = false;
@@ -356,45 +331,64 @@ class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton>
         child: SizedBox(
           width: 28,
           height: 28,
-          child: IconButton(
-            onPressed: enabled ? () => unawaited(_handlePressed()) : null,
-            icon: widget.working
-                ? const SizedBox(
-                    width: 13,
-                    height: 13,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.grid_on, size: 14),
-            tooltip: widget.active
-                ? AppLocalizations.of(context)!.analysisOverlayDeactivate
-                : AppLocalizations.of(context)!.analysisOverlayActivate,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-            style: ButtonStyle(
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              shape: WidgetStatePropertyAll(
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          child: Semantics(
+            button: true,
+            toggled: active,
+            enabled: enabled,
+            label: tooltip,
+            onTap: enabled ? () => unawaited(_handlePressed()) : null,
+            child: Tooltip(
+              message: tooltip,
+              excludeFromSemantics: true,
+              child: ExcludeSemantics(
+                child: IconButton(
+                  onPressed: enabled ? () => unawaited(_handlePressed()) : null,
+                  icon: working
+                      ? const SizedBox(
+                          width: 13,
+                          height: 13,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.grid_on, size: 14),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 28,
+                    height: 28,
+                  ),
+                  style: ButtonStyle(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    shape: WidgetStatePropertyAll(
+                      RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    backgroundColor: WidgetStateProperty.resolveWith((states) {
+                      if (!enabled) return Colors.transparent;
+                      if (active) {
+                        return colorScheme.primary.withValues(alpha: 0.22);
+                      }
+                      if (states.contains(WidgetState.hovered) ||
+                          states.contains(WidgetState.focused)) {
+                        return colorScheme.primary.withValues(alpha: 0.14);
+                      }
+                      return Colors.transparent;
+                    }),
+                    foregroundColor: WidgetStateProperty.resolveWith((states) {
+                      if (!enabled) {
+                        return colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.34,
+                        );
+                      }
+                      return active
+                          ? colorScheme.primary
+                          : colorScheme.onSurfaceVariant;
+                    }),
+                    overlayColor: const WidgetStatePropertyAll(
+                      Colors.transparent,
+                    ),
+                  ),
+                ),
               ),
-              backgroundColor: WidgetStateProperty.resolveWith((states) {
-                if (!enabled) return Colors.transparent;
-                if (widget.active) {
-                  return colorScheme.primary.withValues(alpha: 0.22);
-                }
-                if (states.contains(WidgetState.hovered) ||
-                    states.contains(WidgetState.focused)) {
-                  return colorScheme.primary.withValues(alpha: 0.14);
-                }
-                return Colors.transparent;
-              }),
-              foregroundColor: WidgetStateProperty.resolveWith((states) {
-                if (!enabled) {
-                  return colorScheme.onSurfaceVariant.withValues(alpha: 0.34);
-                }
-                return widget.active
-                    ? colorScheme.primary
-                    : colorScheme.onSurfaceVariant;
-              }),
-              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
             ),
           ),
         ),
@@ -414,6 +408,10 @@ class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton>
 
   void _handleDataSourceChanged() {
     if (!mounted) return;
+    final signature = _dataSourceSignature();
+    if (signature == _lastDataSourceSignature) return;
+    _lastDataSourceSignature = signature;
+    setState(() {});
     if (!widget.dataSource.overlayPanelVisible) {
       _removePanel();
       return;
@@ -446,35 +444,37 @@ class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton>
           maxPanelContentWidth,
           math.max(420.0, widget.entries.length * 500.0),
         );
-        return CompositedTransformFollower(
-          link: _layerLink,
-          targetAnchor: Alignment.topLeft,
-          followerAnchor: Alignment.bottomLeft,
-          offset: const Offset(0, -panelMargin),
-          showWhenUnlinked: false,
-          child: FadeTransition(
-            opacity: _panelOpacity,
-            child: UnconstrainedBox(
-              alignment: Alignment.bottomLeft,
-              child: MouseRegion(
-                onEnter: (_) {
-                  _hoveringPanel = true;
-                  _hideTimer?.cancel();
-                },
-                onExit: (_) {
-                  _hoveringPanel = false;
-                  _scheduleHidePanel();
-                },
-                child: Material(
-                  color: Colors.transparent,
-                  child: SizedBox(
-                    width: panelWidth,
-                    child: AnalysisOverlayControlBar(
-                      entries: widget.entries,
-                      dataSource: widget.dataSource,
-                      onTypeChanged: widget.onTypeChanged,
-                      onLayersChanged: widget.onLayersChanged,
-                      onOpacityChanged: widget.onOpacityChanged,
+        return ExcludeSemantics(
+          child: CompositedTransformFollower(
+            link: _layerLink,
+            targetAnchor: Alignment.topLeft,
+            followerAnchor: Alignment.bottomLeft,
+            offset: const Offset(0, -panelMargin),
+            showWhenUnlinked: false,
+            child: FadeTransition(
+              opacity: _panelOpacity,
+              child: UnconstrainedBox(
+                alignment: Alignment.bottomLeft,
+                child: MouseRegion(
+                  onEnter: (_) {
+                    _hoveringPanel = true;
+                    _hideTimer?.cancel();
+                  },
+                  onExit: (_) {
+                    _hoveringPanel = false;
+                    _scheduleHidePanel();
+                  },
+                  child: Material(
+                    color: Colors.transparent,
+                    child: SizedBox(
+                      width: panelWidth,
+                      child: AnalysisOverlayControlBar(
+                        entries: widget.entries,
+                        dataSource: widget.dataSource,
+                        onTypeChanged: widget.onTypeChanged,
+                        onLayersChanged: widget.onLayersChanged,
+                        onOpacityChanged: widget.onOpacityChanged,
+                      ),
                     ),
                   ),
                 ),
@@ -513,6 +513,27 @@ class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton>
         _panelAnimationController.value != 0) {
       _panelAnimationController.value = 0;
     }
+  }
+
+  bool _isAnalysisWorking(AnalysisState state) {
+    return state == AnalysisState.computingHash ||
+        state == AnalysisState.generating ||
+        state == AnalysisState.loading;
+  }
+
+  String _dataSourceSignature() {
+    final activeTrackIds = widget.dataSource.activeOverlayTrackFileIds.toList()
+      ..sort();
+    final config = widget.dataSource.overlayConfig;
+    final layers = config.layers.map((layer) => layer.name).toList()..sort();
+    return [
+      widget.dataSource.state.name,
+      widget.dataSource.overlayPanelVisible,
+      activeTrackIds.join('|'),
+      config.type.name,
+      layers.join('|'),
+      config.opacity.toStringAsFixed(3),
+    ].join(';');
   }
 }
 

@@ -369,12 +369,15 @@ class _AnalysisButtonState extends State<_AnalysisButton>
   Timer? _hideTimer;
   bool _hoveringButton = false;
   bool _hoveringPanel = false;
+  String? _lastButtonSignature;
   late final AnimationController _panelAnimationController;
   late final Animation<double> _panelOpacity;
 
   @override
   void initState() {
     super.initState();
+    widget.dataSource.addListener(_handleDataSourceChanged);
+    _lastButtonSignature = _buttonSignature();
     _panelAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 130),
@@ -390,6 +393,11 @@ class _AnalysisButtonState extends State<_AnalysisButton>
   @override
   void didUpdateWidget(covariant _AnalysisButton oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.dataSource != widget.dataSource) {
+      oldWidget.dataSource.removeListener(_handleDataSourceChanged);
+      widget.dataSource.addListener(_handleDataSourceChanged);
+      _lastButtonSignature = _buttonSignature();
+    }
     if (_overlayEntry != null && oldWidget.tracks != widget.tracks) {
       _overlayEntry!.markNeedsBuild();
     }
@@ -398,6 +406,7 @@ class _AnalysisButtonState extends State<_AnalysisButton>
   @override
   void dispose() {
     _hideTimer?.cancel();
+    widget.dataSource.removeListener(_handleDataSourceChanged);
     _removePanel();
     _panelAnimationController.dispose();
     super.dispose();
@@ -416,46 +425,55 @@ class _AnalysisButtonState extends State<_AnalysisButton>
       },
       child: CompositedTransformTarget(
         link: _layerLink,
-        child: ListenableBuilder(
-          listenable: widget.dataSource,
-          builder: (context, _) {
-            final theme = Theme.of(context);
-            final isWorking =
-                widget.dataSource.state == AnalysisState.computingHash ||
-                widget.dataSource.state == AnalysisState.generating;
-            final isError = widget.dataSource.state == AnalysisState.error;
-
-            return SizedBox(
-              width: 32,
-              height: 32,
-              child: IconButton(
-                onPressed: !widget.enabled || isWorking
-                    ? null
-                    : () => unawaited(_handlePressed()),
-                icon: isWorking
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        isError
-                            ? Icons.error_outline
-                            : Icons.analytics_outlined,
-                        size: 18,
-                        color: isError ? theme.colorScheme.error : null,
-                      ),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 32,
-                  height: 32,
-                ),
-              ),
-            );
-          },
+        child: SizedBox(
+          width: 32,
+          height: 32,
+          child: IconButton(
+            onPressed: !widget.enabled || _isWorking
+                ? null
+                : () => unawaited(_handlePressed()),
+            icon: _isWorking
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    _isError ? Icons.error_outline : Icons.analytics_outlined,
+                    size: 18,
+                    color: _isError
+                        ? Theme.of(context).colorScheme.error
+                        : null,
+                  ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          ),
         ),
       ),
     );
+  }
+
+  bool get _isWorking =>
+      widget.dataSource.state == AnalysisState.computingHash ||
+      widget.dataSource.state == AnalysisState.generating;
+
+  bool get _isError => widget.dataSource.state == AnalysisState.error;
+
+  void _handleDataSourceChanged() {
+    if (!mounted) return;
+    final signature = _buttonSignature();
+    if (signature == _lastButtonSignature) return;
+    _lastButtonSignature = signature;
+    setState(() {});
+  }
+
+  String _buttonSignature() {
+    final error = widget.dataSource.error;
+    return [
+      widget.dataSource.state.name,
+      error?.key.name ?? '',
+      error?.args.join('|') ?? '',
+    ].join(';');
   }
 
   Future<void> _handlePressed() async {

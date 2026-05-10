@@ -3,12 +3,14 @@
 #include <flutter_windows.h>
 #include <windows.h>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <optional>
 #include <regex>
 #include <sstream>
+#include <vector>
 
 #include "flutter_window.h"
 #include "startup_trace.h"
@@ -150,9 +152,20 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
   RunnerStartupTraceReset();
 
+  std::vector<std::string> command_line_arguments = GetCommandLineArguments();
+  const bool is_ui_test =
+      std::find(command_line_arguments.begin(), command_line_arguments.end(),
+                "--test-script") != command_line_arguments.end();
+
   // Attach to console when present (e.g., 'flutter run') or create a
   // new console when running with a debugger.
-  if (::AttachConsole(ATTACH_PARENT_PROCESS)) {
+  //
+  // UI tests are launched with stdout/stderr pipes by dev.py. Attaching to the
+  // parent console bypasses those pipes, which makes engine stderr such as
+  // AXTree failures visible to humans but invisible to the test harness.
+  if (is_ui_test) {
+    // Keep the stdout/stderr handles inherited from dev.py's pipes.
+  } else if (::AttachConsole(ATTACH_PARENT_PROCESS)) {
     // Attached to parent console — sync Dart VM stdout/stderr so
     // dart:io stdout.writeln() actually reaches the terminal.
     FlutterDesktopResyncOutputStreams();
@@ -168,9 +181,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   flutter::DartProject project(L"data");
   RunnerStartupTraceMark("Dart project created");
-
-  std::vector<std::string> command_line_arguments =
-      GetCommandLineArguments();
 
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
   RunnerStartupTraceMark("entrypoint arguments set");

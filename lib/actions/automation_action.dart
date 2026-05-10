@@ -48,6 +48,30 @@ class StoreNativeSeekCount extends AutomationAction {
   const StoreNativeSeekCount(this.nameId) : super('STORE_NATIVE_SEEK_COUNT');
 }
 
+class HoverControlsBarButtons extends AutomationAction {
+  final int steps;
+
+  const HoverControlsBarButtons({this.steps = 24})
+    : super('HOVER_CONTROLS_BAR_BUTTONS');
+}
+
+class HoverControlsBarButtonsNative extends AutomationAction {
+  final int steps;
+
+  const HoverControlsBarButtonsNative({this.steps = 24})
+    : super('HOVER_CONTROLS_BAR_BUTTONS_NATIVE');
+}
+
+class ClickMediaHeaderOverlayButtonNative extends AutomationAction {
+  const ClickMediaHeaderOverlayButtonNative()
+    : super('CLICK_MEDIA_HEADER_OVERLAY_BUTTON_NATIVE');
+}
+
+class ClickMediaHeaderOverlayButton extends AutomationAction {
+  const ClickMediaHeaderOverlayButton()
+    : super('CLICK_MEDIA_HEADER_OVERLAY_BUTTON');
+}
+
 class ToggleAnalysisOverlay extends AutomationAction {
   final int slotIndex;
 

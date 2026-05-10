@@ -2,6 +2,7 @@ import '../actions/action_registry.dart';
 import '../actions/player_action.dart';
 import '../analysis/analysis_overlay.dart';
 import '../video_renderer_controller.dart';
+import '../windows/main/main_window_test_hooks.dart';
 import '../windows/window_manager.dart';
 
 /// Explicit release UI automation bridge exposed by the main window.
@@ -11,6 +12,7 @@ import '../windows/window_manager.dart';
 class UiAutomationBridge {
   final NativePlayerController controller;
   final AnalysisProcessManager analysisProcesses;
+  final MainWindowTestHarness testHarness;
   final int Function() effectiveDurationUs;
   final Future<void> Function(int slotIndex) toggleAnalysisOverlayForSlot;
   final Future<void> Function() toggleAnalysisOverlayPanel;
@@ -23,6 +25,7 @@ class UiAutomationBridge {
   const UiAutomationBridge({
     required this.controller,
     required this.analysisProcesses,
+    required this.testHarness,
     required this.effectiveDurationUs,
     required this.toggleAnalysisOverlayForSlot,
     required this.toggleAnalysisOverlayPanel,

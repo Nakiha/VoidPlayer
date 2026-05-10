@@ -48,6 +48,7 @@ class MainWindowMediaVm {
   final Map<int, int> syncOffsets; // fileId -> offset in microseconds
   final int? audibleTrackFileId;
   final AnalysisToolbarDataSource analysisDataSource;
+  final GlobalKey analysisOverlayButtonKey;
 
   const MainWindowMediaVm({
     required this.analysisEnabled,
@@ -55,11 +56,13 @@ class MainWindowMediaVm {
     required this.syncOffsets,
     required this.audibleTrackFileId,
     required this.analysisDataSource,
+    required this.analysisOverlayButtonKey,
   });
 }
 
 class MainWindowPlaybackVm {
   final GlobalKey timelineSliderKey;
+  final GlobalKey controlsBarKey;
   final double timelineStartWidth;
   final bool isPlaying;
   final int currentPtsUs;
@@ -76,6 +79,7 @@ class MainWindowPlaybackVm {
 
   const MainWindowPlaybackVm({
     required this.timelineSliderKey,
+    required this.controlsBarKey,
     required this.timelineStartWidth,
     required this.isPlaying,
     required this.currentPtsUs,

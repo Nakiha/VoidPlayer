@@ -681,6 +681,9 @@ class AnalysisManager extends ChangeNotifier
   // ---- Internal ----
 
   void _setState(AnalysisState s) {
+    if (_state == s && _error == null && _generatingFileName == null) {
+      return;
+    }
     _state = s;
     _error = null;
     _generatingFileName = null;
@@ -827,10 +830,20 @@ class AnalysisManager extends ChangeNotifier
     required double progress,
     AnalysisError? error,
   }) {
+    final previous = _trackStatusByPath[path];
+    final nextHash = hash ?? previous?.hash;
+    if (previous != null &&
+        previous.fileName == fileName &&
+        previous.hash == nextHash &&
+        previous.status == status &&
+        previous.progress == progress &&
+        previous.error == error) {
+      return;
+    }
     _trackStatusByPath[path] = AnalysisTrackGenerationStatus(
       path: path,
       fileName: fileName,
-      hash: hash ?? _trackStatusByPath[path]?.hash,
+      hash: nextHash,
       status: status,
       progress: progress,
       error: error,

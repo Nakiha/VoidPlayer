@@ -55,6 +55,8 @@ class MainWindowController {
   );
   final GlobalKey timelineSliderKey = GlobalKey();
   final GlobalKey loopRangeBarKey = GlobalKey();
+  final GlobalKey controlsBarKey = GlobalKey();
+  final GlobalKey analysisOverlayButtonKey = GlobalKey();
   final GlobalKey viewportKey = GlobalKey();
   Timer? _fullScreenControlsTimer;
   int _fullScreenSerial = 0;
@@ -71,10 +73,7 @@ class MainWindowController {
   late final MainWindowPlaybackCoordinator playbackCoordinator;
   late final MainWindowActionCoordinator actionCoordinator;
   late final MainWindowViewActions _viewActions = _createViewActions();
-  late final Listenable _listenable = Listenable.merge([
-    stateStore,
-    analysisToolbarDataSource,
-  ]);
+  late final Listenable _listenable = stateStore;
 
   MainWindowController({
     required this.actionRegistry,
@@ -157,9 +156,11 @@ class MainWindowController {
         syncOffsets: _syncOffsets,
         audibleTrackFileId: _audibleTrackFileId,
         analysisDataSource: analysisToolbarDataSource,
+        analysisOverlayButtonKey: analysisOverlayButtonKey,
       ),
       playback: MainWindowPlaybackVm(
         timelineSliderKey: timelineSliderKey,
+        controlsBarKey: controlsBarKey,
         timelineStartWidth: _timelineStartWidth,
         isPlaying: _isPlaying,
         currentPtsUs: _currentPtsUs,
@@ -463,6 +464,8 @@ class MainWindowController {
     testHarness = MainWindowTestHarness(
       viewportKey: viewportKey,
       timelineSliderKey: timelineSliderKey,
+      controlsBarKey: controlsBarKey,
+      analysisOverlayButtonKey: analysisOverlayButtonKey,
       loopRangeBarKey: loopRangeBarKey,
       splitPosition: () => _layout.splitPos,
       timelineStartWidth: () => _timelineStartWidth,
@@ -506,6 +509,7 @@ class MainWindowController {
         automation: UiAutomationBridge(
           controller: player,
           analysisProcesses: analysisProcesses,
+          testHarness: testHarness,
           effectiveDurationUs: () => timelineMetrics.effectiveDurationUs,
           toggleAnalysisOverlayForSlot:
               analysisCoordinator.toggleOverlayForSlot,

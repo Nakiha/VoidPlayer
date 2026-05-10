@@ -4,6 +4,7 @@ import '../actions/automation_action.dart';
 import '../actions/player_action.dart';
 import '../app_log.dart';
 import '../video_renderer_controller.dart';
+import '../windows/main/main_window_test_hooks.dart';
 import 'automation_assert_executor.dart';
 import 'automation_probe.dart';
 import 'automation_run_state.dart';
@@ -206,6 +207,18 @@ class TestRunner {
         final count = _probe.currentNativeSeekCount();
         _state.nativeSeekCountBaselines[nameId] = count;
         log.info('TestRunner: STORE_NATIVE_SEEK_COUNT $nameId count=$count');
+      case HoverControlsBarButtons(:final steps):
+        log.info('TestRunner: HOVER_CONTROLS_BAR_BUTTONS steps=$steps');
+        testHarness.hoverControlsBarButtons(steps: steps);
+      case HoverControlsBarButtonsNative(:final steps):
+        log.info('TestRunner: HOVER_CONTROLS_BAR_BUTTONS_NATIVE steps=$steps');
+        await testHarness.hoverControlsBarButtonsNative(steps: steps);
+      case ClickMediaHeaderOverlayButtonNative():
+        log.info('TestRunner: CLICK_MEDIA_HEADER_OVERLAY_BUTTON_NATIVE');
+        await testHarness.clickAnalysisOverlayButtonNative();
+      case ClickMediaHeaderOverlayButton():
+        log.info('TestRunner: CLICK_MEDIA_HEADER_OVERLAY_BUTTON');
+        testHarness.clickAnalysisOverlayButton();
       case ToggleAnalysisOverlay(:final slotIndex):
         log.info('TestRunner: TOGGLE_ANALYSIS_OVERLAY slot=$slotIndex');
         await automation.toggleAnalysisOverlayForSlot(slotIndex);
@@ -226,6 +239,8 @@ class TestRunner {
         automation.setAnalysisOverlayOpacity(opacity);
     }
   }
+
+  MainWindowTestHarness get testHarness => automation.testHarness;
 
   Future<void> _executeWait(WaitState state, Duration timeout) async {
     final sw = Stopwatch()..start();

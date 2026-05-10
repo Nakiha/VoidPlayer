@@ -74,5 +74,13 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h
 ```
 
 如果改动 timeline、seek、loop、viewport 分屏语义边界，同时跑对应目录下的 UI 脚本。
-自动化脚本目前不直接断言 Windows UIA/AXTree 内容；这类缺口需要在最终说明里写明，并用
-截图/OCR/识图工具人工抽检窗口分割效果。
+`dev.py ui-test` 会捕获 Flutter engine 输出中的 `accessibility_bridge.cc` /
+`Failed to update ui::AXTree`，出现 AXTree 更新错误时直接判定失败。针对 media header
+码流遮罩面板和 playback controls hover 的回归，优先运行：
+
+```bash
+python dev.py ui-test --build ui_tests/analysis/overlay_axtree_controls_hover.csv
+```
+
+如果某类 AXTree 风险还没有对应 UI 自动化动作，需要在最终说明里写明缺少的 Action /
+Assert，并用截图/OCR/识图工具人工抽检窗口分割效果。

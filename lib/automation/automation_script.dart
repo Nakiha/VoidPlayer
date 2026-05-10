@@ -341,6 +341,30 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAutomationAction(time, StoreNativeSeekCount(args[0]));
+    case 'HOVER_CONTROLS_BAR_BUTTONS':
+      return ScriptAutomationAction(
+        time,
+        HoverControlsBarButtons(
+          steps: args.isNotEmpty ? int.parse(args[0]) : 24,
+        ),
+      );
+    case 'HOVER_CONTROLS_BAR_BUTTONS_NATIVE':
+      return ScriptAutomationAction(
+        time,
+        HoverControlsBarButtonsNative(
+          steps: args.isNotEmpty ? int.parse(args[0]) : 24,
+        ),
+      );
+    case 'CLICK_MEDIA_HEADER_OVERLAY_BUTTON_NATIVE':
+      return ScriptAutomationAction(
+        time,
+        const ClickMediaHeaderOverlayButtonNative(),
+      );
+    case 'CLICK_MEDIA_HEADER_OVERLAY_BUTTON':
+      return ScriptAutomationAction(
+        time,
+        const ClickMediaHeaderOverlayButton(),
+      );
     case 'TOGGLE_ANALYSIS_OVERLAY':
       if (args.isEmpty) {
         log.warning('TOGGLE_ANALYSIS_OVERLAY needs slot index: $rawLine');

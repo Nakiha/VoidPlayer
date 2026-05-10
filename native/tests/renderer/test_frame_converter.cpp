@@ -60,7 +60,7 @@ TEST_CASE("FrameConverter: init_software common 4:2:2 and 4:4:4 formats succeeds
     REQUIRE(converter.init_software(1920, 1080, AV_PIX_FMT_YUV444P10LE));
 }
 
-TEST_CASE("FrameConverter: convert white YUV420P frame", "[frame_converter]") {
+TEST_CASE("FrameConverter: wraps YUV420P frame as planar YUV", "[frame_converter]") {
     FrameConverter converter;
     REQUIRE(converter.init_software(64, 64, AV_PIX_FMT_YUV420P));
 
@@ -92,20 +92,23 @@ TEST_CASE("FrameConverter: convert white YUV420P frame", "[frame_converter]") {
     REQUIRE(result.pts_us == 0);
     REQUIRE(result.texture_handle != nullptr);
     REQUIRE(result.is_ref == false);
-    REQUIRE(result.is_nv12 == true);
-    REQUIRE(result.storage_kind() == FrameStorageKind::CpuNv12);
-    REQUIRE(result.cpu_nv12_storage() != nullptr);
-    REQUIRE(result.cpu_nv12_storage()->data == result.cpu_data);
-    REQUIRE(result.cpu_nv12_storage()->y_stride == 64);
-    REQUIRE(result.cpu_nv12_storage()->uv_stride == 64);
+    REQUIRE(result.is_nv12 == false);
+    REQUIRE(result.storage_kind() == FrameStorageKind::CpuPlanarYuv);
+    REQUIRE(result.cpu_planar_yuv_storage() != nullptr);
+    REQUIRE(result.cpu_nv12_storage() == nullptr);
 
-    // Verify NV12 output preserves Y and interleaves U/V.
-    uint8_t* nv12 = static_cast<uint8_t*>(result.texture_handle);
-    REQUIRE(nv12[0] == 255);
-    REQUIRE(nv12[64 * 64] == 128);
-    REQUIRE(nv12[64 * 64 + 1] == 128);
+    const auto* planar = result.cpu_planar_yuv_storage();
+    REQUIRE(planar->bytes_per_sample == 1);
+    REQUIRE(planar->plane_widths[0] == 64);
+    REQUIRE(planar->plane_heights[0] == 64);
+    REQUIRE(planar->plane_widths[1] == 32);
+    REQUIRE(planar->plane_heights[1] == 32);
+    REQUIRE(planar->plane_widths[2] == 32);
+    REQUIRE(planar->plane_heights[2] == 32);
+    REQUIRE(planar->planes[0][0] == 255);
+    REQUIRE(planar->planes[1][0] == 128);
+    REQUIRE(planar->planes[2][0] == 128);
 
-    // Clean up (cpu_data shared_ptr handles CPU buffer lifetime)
     av_frame_free(&frame);
 }
 
@@ -216,11 +219,9 @@ TEST_CASE("FrameConverter: convert preserves PTS", "[frame_converter]") {
     TextureFrame result = std::move(*converted);
     REQUIRE(result.pts_us == 123456);
     REQUIRE(result.texture_handle != nullptr);
-    REQUIRE(result.storage_kind() == FrameStorageKind::CpuNv12);
-    REQUIRE(result.cpu_nv12_storage() != nullptr);
-    REQUIRE(result.cpu_nv12_storage()->data == result.cpu_data);
+    REQUIRE(result.storage_kind() == FrameStorageKind::CpuPlanarYuv);
+    REQUIRE(result.cpu_planar_yuv_storage() != nullptr);
 
-    // cpu_data shared_ptr handles CPU buffer lifetime
     av_frame_free(&frame);
 }
 
@@ -236,9 +237,11 @@ TEST_CASE("FrameConverter: software conversion follows dynamic frame geometry",
     REQUIRE(first_result.texture_handle != nullptr);
     REQUIRE(first_result.width == 64);
     REQUIRE(first_result.height == 64);
-    REQUIRE(first_result.cpu_nv12_storage() != nullptr);
-    REQUIRE(first_result.cpu_nv12_storage()->y_stride == 64);
-    REQUIRE(first_result.cpu_nv12_storage()->uv_stride == 64);
+    REQUIRE(first_result.cpu_planar_yuv_storage() != nullptr);
+    REQUIRE(first_result.cpu_planar_yuv_storage()->plane_widths[0] == 64);
+    REQUIRE(first_result.cpu_planar_yuv_storage()->plane_heights[0] == 64);
+    REQUIRE(first_result.cpu_planar_yuv_storage()->plane_widths[1] == 32);
+    REQUIRE(first_result.cpu_planar_yuv_storage()->plane_heights[1] == 32);
 
     AVFrame* second = make_yuv420_frame(96, 72, 2000);
     auto second_converted = converter.convert(second);
@@ -247,10 +250,13 @@ TEST_CASE("FrameConverter: software conversion follows dynamic frame geometry",
     REQUIRE(second_result.texture_handle != nullptr);
     REQUIRE(second_result.width == 96);
     REQUIRE(second_result.height == 72);
-    REQUIRE(second_result.cpu_nv12_storage() != nullptr);
-    REQUIRE(second_result.cpu_nv12_storage()->y_stride == 96);
-    REQUIRE(second_result.cpu_nv12_storage()->uv_stride == 96);
-    REQUIRE(second_result.cpu_data != first_result.cpu_data);
+    REQUIRE(second_result.cpu_planar_yuv_storage() != nullptr);
+    REQUIRE(second_result.cpu_planar_yuv_storage()->plane_widths[0] == 96);
+    REQUIRE(second_result.cpu_planar_yuv_storage()->plane_heights[0] == 72);
+    REQUIRE(second_result.cpu_planar_yuv_storage()->plane_widths[1] == 48);
+    REQUIRE(second_result.cpu_planar_yuv_storage()->plane_heights[1] == 36);
+    REQUIRE(second_result.cpu_planar_yuv_storage()->planes[0] !=
+            first_result.cpu_planar_yuv_storage()->planes[0]);
 
     av_frame_free(&first);
     av_frame_free(&second);
@@ -475,4 +481,31 @@ TEST_CASE("TextureFrame: storage exposes CPU NV12 metadata", "[frame_storage]") 
     REQUIRE(frame.cpu_nv12_storage()->data == data);
     REQUIRE(frame.cpu_nv12_storage()->y_stride == 64);
     REQUIRE(frame.cpu_nv12_storage()->uv_stride == 64);
+}
+
+TEST_CASE("TextureFrame: storage exposes CPU planar YUV metadata", "[frame_storage]") {
+    TextureFrame frame;
+    auto ref = std::shared_ptr<void>(reinterpret_cast<void*>(0x5678), [](void*) {});
+    const uint8_t y = 16;
+    const uint8_t u = 128;
+    const uint8_t v = 129;
+
+    frame.texture_handle = const_cast<uint8_t*>(&y);
+    frame.storage = CpuPlanarYuvFrameStorage{
+        ref,
+        {&y, &u, &v},
+        {64, 32, 32},
+        {64, 32, 32},
+        {64, 32, 32},
+        1,
+    };
+
+    REQUIRE(frame.storage_kind() == FrameStorageKind::CpuPlanarYuv);
+    REQUIRE(frame.cpu_planar_yuv_storage() != nullptr);
+    REQUIRE(frame.cpu_planar_yuv_storage()->frame_ref == ref);
+    REQUIRE(frame.cpu_planar_yuv_storage()->planes[0] == &y);
+    REQUIRE(frame.cpu_planar_yuv_storage()->planes[1] == &u);
+    REQUIRE(frame.cpu_planar_yuv_storage()->planes[2] == &v);
+    REQUIRE(frame.cpu_planar_yuv_storage()->strides[0] == 64);
+    REQUIRE(frame.cpu_planar_yuv_storage()->bytes_per_sample == 1);
 }

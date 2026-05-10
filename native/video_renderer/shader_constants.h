@@ -17,7 +17,8 @@ struct ShaderConstants {
     int order[4];          // offset 32
     float video_aspect[4]; // offset 48
     int nv12_mask;         // offset 64
-    float _pad1[3];        // offset 68
+    int planar_yuv_mask;   // offset 68
+    float _pad1[2];        // offset 72
     float nv12_uv_scale_y[4]; // offset 80
     float nv12_uv_scale_x[4]; // offset 96
     float track_scale[4];  // offset 112
@@ -41,6 +42,7 @@ static_assert(offsetof(ShaderConstants, canvas_width) == 16);
 static_assert(offsetof(ShaderConstants, order) == 32);
 static_assert(offsetof(ShaderConstants, video_aspect) == 48);
 static_assert(offsetof(ShaderConstants, nv12_mask) == 64);
+static_assert(offsetof(ShaderConstants, planar_yuv_mask) == 68);
 static_assert(offsetof(ShaderConstants, nv12_uv_scale_y) == 80);
 static_assert(offsetof(ShaderConstants, track_scale) == 112);
 static_assert(offsetof(ShaderConstants, display_offset_x) == 128);

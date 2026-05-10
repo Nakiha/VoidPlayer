@@ -1,6 +1,18 @@
 #pragma once
-// Auto-generated from multitrack.hlsl — do not edit
+// Auto-generated from renderer shader chunks - do not edit
 namespace vr {
+constexpr const char kCommonHlsl[] = R"__SHADER__(
+@COMMON_HLSL@
+)__SHADER__";
+
+constexpr const char kColorPipelineHlsl[] = R"__SHADER__(
+@COLOR_PIPELINE_HLSL@
+)__SHADER__";
+
+constexpr const char kSamplingHlsl[] = R"__SHADER__(
+@SAMPLING_HLSL@
+)__SHADER__";
+
 constexpr const char kMultitrackHlsl[] = R"__SHADER__(
 @MULTITRACK_HLSL@
 )__SHADER__";

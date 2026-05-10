@@ -1,0 +1,26 @@
+# Portable single-track visual-diff probe for a stream-copied MHW HEVC fixture.
+# The fixture is cut with ffmpeg -c copy, so it keeps the source stream metadata:
+#   HEVC Main, yuv420p(pc, bt709), 3840x2160
+# This compares full-frame captures from the same media:
+#   soft = force software decode
+#   hard = prefer hardware decode
+@WINDOW,1280,720
+
+0.0,SET_DECODE_MODE,forceSoftware
+0.1,ADD_MEDIA,resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+2.5,ASSERT_TRACK_COUNT,1
+2.6,SET_RENDER_SIZE,1920,1080
+2.8,SEEK_TO,0
+4.0,CAPTURE_VIEWPORT,hevc_full_soft,D:\Code\yorune\VoidPlayer\build\color_hevc_full_soft.png
+4.1,ASSERT_CAPTURE_NOT_BLACK,hevc_full_soft,0.01,4.0
+4.2,REMOVE_TRACK,1
+5.0,ASSERT_TRACK_COUNT,0
+5.1,SET_DECODE_MODE,preferHardware
+5.2,ADD_MEDIA,resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+7.6,ASSERT_TRACK_COUNT,1
+7.7,SET_RENDER_SIZE,1920,1080
+7.9,SEEK_TO,0
+9.1,CAPTURE_VIEWPORT,hevc_full_hard,D:\Code\yorune\VoidPlayer\build\color_hevc_full_hard.png
+9.2,ASSERT_CAPTURE_NOT_BLACK,hevc_full_hard,0.01,4.0
+9.3,ASSERT_CAPTURE_DIFF,hevc_full_soft,hevc_full_hard,1,1,80
+9.4,QUIT,0

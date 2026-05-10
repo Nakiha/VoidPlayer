@@ -109,6 +109,16 @@ bool software_format_uses_p010(AVPixelFormat format) {
     }
 }
 
+bool software_format_uses_direct_planar_yuv420(AVPixelFormat format) {
+    switch (format) {
+    case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUVJ420P:
+        return true;
+    default:
+        return false;
+    }
+}
+
 uint16_t clamp_10(uint16_t value) {
     return std::min<uint16_t>(value, 1023u);
 }
@@ -392,6 +402,58 @@ bool pack_yuv444p_10_to_p010(const AVFrame* frame, std::vector<uint8_t>& dst,
                                                     src_v1[sx], src_v1[sx + 1]));
         }
     }
+    return true;
+}
+
+bool wrap_frame_as_cpu_planar_yuv420(const AVFrame* frame,
+                                     TextureFrame& result) {
+    if (!frame) {
+        return false;
+    }
+    const int width = frame->width;
+    const int height = frame->height;
+    const auto format = static_cast<AVPixelFormat>(frame->format);
+    if (!software_format_uses_direct_planar_yuv420(format) ||
+        width <= 0 || height <= 0 ||
+        width > kMaxDecodedDimension || height > kMaxDecodedDimension ||
+        (width & 1) != 0 || (height & 1) != 0 ||
+        !frame->data[0] || !frame->data[1] || !frame->data[2] ||
+        frame->linesize[0] < width ||
+        frame->linesize[1] < width / 2 ||
+        frame->linesize[2] < width / 2) {
+        return false;
+    }
+
+    AVFrame* ref_frame = av_frame_alloc();
+    if (!ref_frame) {
+        spdlog::error("[FrameConverter] Failed to allocate software planar frame ref");
+        return false;
+    }
+    if (av_frame_ref(ref_frame, frame) < 0) {
+        spdlog::error("[FrameConverter] Failed to ref software planar frame");
+        av_frame_free(&ref_frame);
+        return false;
+    }
+
+    auto frame_ref = std::shared_ptr<void>(ref_frame, [](void* p) {
+        AVFrame* f = static_cast<AVFrame*>(p);
+        av_frame_free(&f);
+    });
+
+    result.width = width;
+    result.height = height;
+    result.texture_handle = ref_frame->data[0];
+    result.is_ref = false;
+    result.is_nv12 = false;
+    result.is_p010 = false;
+    result.storage = CpuPlanarYuvFrameStorage{
+        frame_ref,
+        {ref_frame->data[0], ref_frame->data[1], ref_frame->data[2]},
+        {ref_frame->linesize[0], ref_frame->linesize[1], ref_frame->linesize[2]},
+        {width, width / 2, width / 2},
+        {height, height / 2, height / 2},
+        1,
+    };
     return true;
 }
 
@@ -767,7 +829,7 @@ bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat 
         return false;
     }
 
-    spdlog::info("[FrameConverter] Software converter initialized for CPU NV12 upload "
+    spdlog::info("[FrameConverter] Software converter initialized for deterministic upload "
                  "({}x{}, format={})",
                  src_width, src_height, static_cast<int>(src_format));
     return true;
@@ -898,10 +960,15 @@ std::optional<TextureFrame> FrameConverter::convert(AVFrame* frame) {
             return std::nullopt;
         }
     } else {
-        // Software path: keep the frame in YUV and upload it as NV12 so it
-        // shares the same shader conversion path as D3D11VA decode.
+        // Software 8-bit 4:2:0 can be uploaded as its original Y/U/V planes.
+        // Other supported software formats still use the deterministic packer.
         result.color = color_info_from_frame(frame);
-        if (!convert_frame_to_cpu_nv12(frame, "software", result)) {
+        if (software_format_uses_direct_planar_yuv420(
+                static_cast<AVPixelFormat>(frame->format))) {
+            if (!wrap_frame_as_cpu_planar_yuv420(frame, result)) {
+                return std::nullopt;
+            }
+        } else if (!convert_frame_to_cpu_nv12(frame, "software", result)) {
             return std::nullopt;
         }
         width_ = frame->width;

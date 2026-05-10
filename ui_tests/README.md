@@ -23,6 +23,7 @@ small smoke script first, then one or more scripts from the affected folder.
 | `viewport/` | Window resize/maximize, viewport pan/zoom, split screen layout, and layout edge behavior. |
 | `track/` | Track-level mutations such as offsets, refresh, add/remove/reorder side effects. |
 | `codec/` | Codec-specific decode and non-black visual smoke checks. |
+| `color/` | Portable software/hardware decode visual-diff and color pipeline checks. |
 | `local/` | Machine-local regressions that depend on absolute paths or large private videos. Do not treat these as portable default checks. |
 
 ## Analysis Tests

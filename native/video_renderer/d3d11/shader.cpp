@@ -1,22 +1,67 @@
 #include "shader.h"
 #include <spdlog/spdlog.h>
+#include <cstring>
+#include <string_view>
 
 namespace vr {
+
+namespace {
+
+class EmbeddedShaderInclude final : public ID3DInclude {
+public:
+    explicit EmbeddedShaderInclude(const std::vector<EmbeddedShaderFile>& files)
+        : files_(files) {}
+
+    HRESULT Open(D3D_INCLUDE_TYPE,
+                 LPCSTR file_name,
+                 LPCVOID,
+                 LPCVOID* data,
+                 UINT* bytes) override {
+        if (!file_name || !data || !bytes) {
+            return E_INVALIDARG;
+        }
+        const std::string_view requested(file_name);
+        for (const auto& file : files_) {
+            if (!file.name || !file.source) {
+                continue;
+            }
+            if (requested == file.name) {
+                *data = file.source;
+                *bytes = static_cast<UINT>(
+                    file.size != 0 ? file.size : std::strlen(file.source));
+                return S_OK;
+            }
+        }
+        spdlog::error("Shader include not found: {}", file_name);
+        return E_FAIL;
+    }
+
+    HRESULT Close(LPCVOID) override {
+        return S_OK;
+    }
+
+private:
+    const std::vector<EmbeddedShaderFile>& files_;
+};
+
+} // namespace
 
 ShaderManager::ShaderManager(ID3D11Device* device)
     : device_(device) {
 }
 
 bool ShaderManager::compile_stage(const std::string& source, const std::string& entry,
-                                   const std::string& target, ID3DBlob** out_blob) {
+                                   const std::string& target,
+                                   ID3DInclude* include_handler,
+                                   ID3DBlob** out_blob) {
     Microsoft::WRL::ComPtr<ID3DBlob> error_blob = nullptr;
 
     HRESULT hr = D3DCompile(
         source.c_str(),
         source.size(),
-        nullptr,                        // source name
+        "Shader",                       // source name
         nullptr,                        // defines
-        nullptr,                        // include
+        include_handler,                // include
         entry.c_str(),                  // entry point
         target.c_str(),                 // target (vs_5_0, ps_5_0)
         D3DCOMPILE_ENABLE_STRICTNESS,   // flags
@@ -47,20 +92,31 @@ bool ShaderManager::compile_from_source(const std::string& source,
                                          const std::string& vs_entry,
                                          const std::string& ps_entry,
                                          CompiledShader& out) {
+    return compile_from_source(source, {}, vs_entry, ps_entry, out);
+}
+
+bool ShaderManager::compile_from_source(const std::string& source,
+                                         const std::vector<EmbeddedShaderFile>& includes,
+                                         const std::string& vs_entry,
+                                         const std::string& ps_entry,
+                                         CompiledShader& out) {
     if (!device_) {
         spdlog::error("Cannot compile shader: device is null");
         return false;
     }
 
+    EmbeddedShaderInclude include_handler(includes);
+    ID3DInclude* include_ptr = includes.empty() ? nullptr : &include_handler;
+
     // Compile vertex shader
     Microsoft::WRL::ComPtr<ID3DBlob> vs_blob = nullptr;
-    if (!compile_stage(source, vs_entry, "vs_5_0", &vs_blob)) {
+    if (!compile_stage(source, vs_entry, "vs_5_0", include_ptr, &vs_blob)) {
         return false;
     }
 
     // Compile pixel shader
     Microsoft::WRL::ComPtr<ID3DBlob> ps_blob = nullptr;
-    if (!compile_stage(source, ps_entry, "ps_5_0", &ps_blob)) {
+    if (!compile_stage(source, ps_entry, "ps_5_0", include_ptr, &ps_blob)) {
         return false;
     }
 

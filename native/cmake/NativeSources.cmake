@@ -56,7 +56,10 @@ set(VOID_ANALYSIS_SOURCES
     "${VOID_NATIVE_DIR}/analysis/generators/analysis_generator.cpp"
 )
 
-set(VOID_RENDERER_SHADER_SOURCE
+set(VOID_RENDERER_SHADER_SOURCES
+    "${VOID_NATIVE_DIR}/video_renderer/shaders/common.hlsl"
+    "${VOID_NATIVE_DIR}/video_renderer/shaders/color_pipeline.hlsl"
+    "${VOID_NATIVE_DIR}/video_renderer/shaders/sampling.hlsl"
     "${VOID_NATIVE_DIR}/video_renderer/shaders/multitrack.hlsl")
 set(VOID_RENDERER_SHADER_TEMPLATE
     "${VOID_NATIVE_DIR}/video_renderer/shaders/embedded_shaders.h.in")
@@ -68,7 +71,12 @@ function(void_apply_native_compile_options target_name)
 endfunction()
 
 function(void_configure_renderer_shaders output_dir)
-    file(READ "${VOID_RENDERER_SHADER_SOURCE}" MULTITRACK_HLSL)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        ${VOID_RENDERER_SHADER_SOURCES})
+    file(READ "${VOID_NATIVE_DIR}/video_renderer/shaders/common.hlsl" COMMON_HLSL)
+    file(READ "${VOID_NATIVE_DIR}/video_renderer/shaders/color_pipeline.hlsl" COLOR_PIPELINE_HLSL)
+    file(READ "${VOID_NATIVE_DIR}/video_renderer/shaders/sampling.hlsl" SAMPLING_HLSL)
+    file(READ "${VOID_NATIVE_DIR}/video_renderer/shaders/multitrack.hlsl" MULTITRACK_HLSL)
     configure_file(
         "${VOID_RENDERER_SHADER_TEMPLATE}"
         "${output_dir}/embedded_shaders.h"

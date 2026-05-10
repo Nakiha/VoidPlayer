@@ -1879,9 +1879,11 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     ctx->VSSetShader(resources.compiled_shader.vs.Get(), nullptr, 0);
     ctx->PSSetShader(resources.compiled_shader.ps.Get(), nullptr, 0);
 
-    ID3D11ShaderResourceView* srvs[4] = {};           // t0-t3: RGBA (sw) or full NV12 (hw)
-    ID3D11ShaderResourceView* nv12_y_srvs[4] = {};    // t4-t7: NV12 Y plane
-    ID3D11ShaderResourceView* nv12_uv_srvs[4] = {};   // t8-t11: NV12 UV plane
+    ID3D11ShaderResourceView* srvs[4] = {};           // t0-t3: RGBA
+    ID3D11ShaderResourceView* nv12_y_srvs[4] = {};    // t4-t7: NV12 Y or planar Y
+    ID3D11ShaderResourceView* nv12_uv_srvs[4] = {};   // t8-t11: NV12 UV
+    ID3D11ShaderResourceView* planar_u_srvs[4] = {};  // t12-t15: planar U
+    ID3D11ShaderResourceView* planar_v_srvs[4] = {};  // t16-t19: planar V
     std::array<D3D11PreparedFrame, kMaxTracks> prepared_frames;
     if (frame_presenter_) {
         for (size_t i = 0; i < kMaxTracks; ++i) {
@@ -1906,6 +1908,8 @@ void Renderer::draw_frame(const PresentDecision& decision) {
             srvs[i] = prepared_frames[i].rgba_srv;
             nv12_y_srvs[i] = prepared_frames[i].nv12_y_srv;
             nv12_uv_srvs[i] = prepared_frames[i].nv12_uv_srv;
+            planar_u_srvs[i] = prepared_frames[i].planar_u_srv;
+            planar_v_srvs[i] = prepared_frames[i].planar_v_srv;
         }
     }
 
@@ -1930,6 +1934,7 @@ void Renderer::draw_frame(const PresentDecision& decision) {
         cb.view_offset[0] = snap.view_offset[0];
         cb.view_offset[1] = snap.view_offset[1];
         cb.nv12_mask = 0;
+        cb.planar_yuv_mask = 0;
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             for (int i = 0; i < 4; ++i) {
@@ -1974,7 +1979,12 @@ void Renderer::draw_frame(const PresentDecision& decision) {
                     : (cb.color_matrix[i] == VIDEO_COLOR_MATRIX_BT601
                         ? VIDEO_COLOR_PRIMARIES_BT601
                         : VIDEO_COLOR_PRIMARIES_BT709));
-            if (decision.frames[i].has_value() && decision.frames[i]->is_nv12) {
+            if (decision.frames[i].has_value() &&
+                decision.frames[i]->cpu_planar_yuv_storage()) {
+                cb.planar_yuv_mask |= (1 << static_cast<int>(i));
+                cb.nv12_uv_scale_x[i] = 1.0f;
+                cb.nv12_uv_scale_y[i] = 1.0f;
+            } else if (decision.frames[i].has_value() && decision.frames[i]->is_nv12) {
                 cb.nv12_mask |= (1 << static_cast<int>(i));
                 cb.nv12_uv_scale_x[i] = frame_presenter_
                     ? frame_presenter_->nv12_uv_scale_x(i)
@@ -2094,10 +2104,12 @@ void Renderer::draw_frame(const PresentDecision& decision) {
         ctx->PSSetSamplers(0, 1, &sampler);
     }
 
-    // Bind SRVs: t0-t3 RGBA, t4-t7 NV12 Y, t8-t11 NV12 UV
+    // Bind SRVs: t0-t3 RGBA, t4-t7 Y, t8-t11 NV12 UV, t12-t15 planar U, t16-t19 planar V
     ctx->PSSetShaderResources(0, 4, srvs);
     ctx->PSSetShaderResources(4, 4, nv12_y_srvs);
     ctx->PSSetShaderResources(8, 4, nv12_uv_srvs);
+    ctx->PSSetShaderResources(12, 4, planar_u_srvs);
+    ctx->PSSetShaderResources(16, 4, planar_v_srvs);
 
     // Draw
     ctx->Draw(4, 0);
@@ -2111,6 +2123,8 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     ctx->PSSetShaderResources(0, 4, null_srvs);
     ctx->PSSetShaderResources(4, 4, null_srvs);
     ctx->PSSetShaderResources(8, 4, null_srvs);
+    ctx->PSSetShaderResources(12, 4, null_srvs);
+    ctx->PSSetShaderResources(16, 4, null_srvs);
 
     // Temporary direct-texture SRVs are owned by prepared_frames until draw returns.
 }

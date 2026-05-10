@@ -144,6 +144,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `ASSERT_CAPTURE_CHANGED` | before, after | 断言两次 viewport 截图 hash 不同 |
 | `ASSERT_CAPTURE_HASH` | capture, hash | 断言截图 hash |
 | `ASSERT_CAPTURE_NOT_BLACK` | capture, minNonBlackRatio?, minAvgLuma? | 断言截图不是黑帧 |
+| `ASSERT_CAPTURE_HAS_DETAIL` | capture, minLumaStdDev? | 断言截图亮度有足够细节，避免纯灰/纯色画面漏检 |
 | `ASSERT_TRACK_BUFFER_COUNT_BELOW` | maxCount | 断言所有轨道当前缓存帧数不超过阈值 |
 | `ASSERT_RESOURCE_USAGE_BELOW` | maxRssMb, maxDedicatedGpuMb | 断言当前进程 RSS / 专用显存不超过阈值 |
 | `ASSERT_RESOURCE_USAGE_DELTA_BELOW` | baseline, maxRssDeltaMb, maxDedicatedGpuDeltaMb | 断言相对 `STORE_RESOURCE_USAGE` 基线的 RSS / 专用显存增量不超过阈值 |

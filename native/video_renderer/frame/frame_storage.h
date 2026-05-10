@@ -55,6 +55,15 @@ struct CpuNv12FrameStorage {
     bool is_p010 = false;
 };
 
+struct CpuPlanarYuvFrameStorage {
+    std::shared_ptr<void> frame_ref;
+    const uint8_t* planes[3] = {};
+    int strides[3] = {};
+    int plane_widths[3] = {};
+    int plane_heights[3] = {};
+    int bytes_per_sample = 1;
+};
+
 struct D3D11Nv12FrameStorage {
     ID3D11Texture2D* texture = nullptr;
     int array_index = 0;
@@ -70,6 +79,7 @@ using FrameStorage = std::variant<
     std::monostate,
     CpuRgbaFrameStorage,
     CpuNv12FrameStorage,
+    CpuPlanarYuvFrameStorage,
     D3D11Nv12FrameStorage,
     D3D11TextureFrameStorage>;
 
@@ -77,6 +87,7 @@ enum class FrameStorageKind {
     Empty,
     CpuRgba,
     CpuNv12,
+    CpuPlanarYuv,
     D3D11Nv12,
     D3D11Texture,
 };
@@ -87,6 +98,9 @@ inline FrameStorageKind frame_storage_kind(const FrameStorage& storage) {
     }
     if (std::holds_alternative<CpuNv12FrameStorage>(storage)) {
         return FrameStorageKind::CpuNv12;
+    }
+    if (std::holds_alternative<CpuPlanarYuvFrameStorage>(storage)) {
+        return FrameStorageKind::CpuPlanarYuv;
     }
     if (std::holds_alternative<D3D11Nv12FrameStorage>(storage)) {
         return FrameStorageKind::D3D11Nv12;

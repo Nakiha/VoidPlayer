@@ -358,7 +358,7 @@ class _AnimatedFloatingPanelSlot extends StatelessWidget {
             alignment: Alignment.topLeft,
             children: [
               ...previousChildren,
-              if (currentChild != null) currentChild,
+              ?currentChild,
             ],
           );
         },

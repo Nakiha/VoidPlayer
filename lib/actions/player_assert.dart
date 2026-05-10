@@ -110,6 +110,16 @@ class AssertCaptureNotBlack extends PlayerAssert {
   });
 }
 
+class AssertCaptureHasDetail extends PlayerAssert {
+  final String capture;
+  final double minLumaStdDev;
+
+  const AssertCaptureHasDetail(
+    this.capture, {
+    this.minLumaStdDev = 4.0,
+  });
+}
+
 class AssertCaptureSplitDiff extends PlayerAssert {
   final String capture;
   final double maxMeanAbsChannel;

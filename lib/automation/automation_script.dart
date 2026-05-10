@@ -597,6 +597,18 @@ ScriptInstruction? _parseInstruction(
           minAvgLuma: args.length >= 3 ? double.parse(args[2]) : 4.0,
         ),
       );
+    case 'ASSERT_CAPTURE_HAS_DETAIL':
+      if (args.isEmpty) {
+        log.warning('ASSERT_CAPTURE_HAS_DETAIL needs capture name: $rawLine');
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertCaptureHasDetail(
+          args[0],
+          minLumaStdDev: args.length >= 2 ? double.parse(args[1]) : 4.0,
+        ),
+      );
     case 'ASSERT_CAPTURE_SPLIT_DIFF':
       if (args.isEmpty) {
         log.warning('ASSERT_CAPTURE_SPLIT_DIFF needs capture name: $rawLine');

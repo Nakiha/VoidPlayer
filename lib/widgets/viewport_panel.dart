@@ -411,17 +411,19 @@ class _ViewportPanelState extends State<ViewportPanel> {
     double devicePixelRatio,
   ) {
     final splitPos = widget.layout.splitPos;
-    return Semantics(
-      container: true,
-      slider: true,
-      label: 'Viewport split handle',
-      value: axPercent(splitPos),
-      increasedValue: axPercent((splitPos + 0.05).clamp(0.0, 1.0)),
-      decreasedValue: axPercent((splitPos - 0.05).clamp(0.0, 1.0)),
-      onIncrease: () => widget.onSplit((splitPos + 0.05).clamp(0.0, 1.0)),
-      onDecrease: () => widget.onSplit((splitPos - 0.05).clamp(0.0, 1.0)),
-      child: ExcludeSemantics(
-        child: _buildSplitHandle(context, devicePixelRatio),
+    return Positioned.fill(
+      child: Semantics(
+        container: true,
+        slider: true,
+        label: 'Viewport split handle',
+        value: axPercent(splitPos),
+        increasedValue: axPercent((splitPos + 0.05).clamp(0.0, 1.0)),
+        decreasedValue: axPercent((splitPos - 0.05).clamp(0.0, 1.0)),
+        onIncrease: () => widget.onSplit((splitPos + 0.05).clamp(0.0, 1.0)),
+        onDecrease: () => widget.onSplit((splitPos - 0.05).clamp(0.0, 1.0)),
+        child: ExcludeSemantics(
+          child: _buildSplitHandle(context, devicePixelRatio),
+        ),
       ),
     );
   }
@@ -432,67 +434,65 @@ class _ViewportPanelState extends State<ViewportPanel> {
       2.0,
       4.0,
     );
-    return Positioned.fill(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final left =
-              constraints.maxWidth * widget.layout.splitPos - logicalWidth / 2;
-          final touchLeft =
-              constraints.maxWidth * widget.layout.splitPos -
-              _splitHandleTouchWidth / 2;
-          return Stack(
-            children: [
-              Positioned(
-                left: left,
-                top: 0,
-                bottom: 0,
-                width: logicalWidth,
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.outline.withValues(alpha: 0.55),
-                    ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final left =
+            constraints.maxWidth * widget.layout.splitPos - logicalWidth / 2;
+        final touchLeft =
+            constraints.maxWidth * widget.layout.splitPos -
+            _splitHandleTouchWidth / 2;
+        return Stack(
+          children: [
+            Positioned(
+              left: left,
+              top: 0,
+              bottom: 0,
+              width: logicalWidth,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.outline.withValues(alpha: 0.55),
                   ),
                 ),
               ),
-              Positioned(
-                left: touchLeft,
-                top: 0,
-                bottom: 0,
-                width: _splitHandleTouchWidth,
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.resizeColumn,
-                  child: Listener(
-                    behavior: HitTestBehavior.translucent,
-                    onPointerDown: (event) {
-                      if ((event.buttons & kPrimaryButton) == 0) return;
-                      _startSplitHandleDrag(
-                        viewportContext,
-                        touchLeft + event.localPosition.dx,
-                      );
-                    },
-                    onPointerMove: (event) {
-                      if ((event.buttons & kPrimaryButton) == 0) {
-                        _endSplitHandleDrag();
-                        return;
-                      }
-                      _updateSplitHandleDrag(
-                        viewportContext,
-                        touchLeft + event.localPosition.dx,
-                      );
-                    },
-                    onPointerUp: (_) => _endSplitHandleDrag(),
-                    onPointerCancel: (_) => _endSplitHandleDrag(),
-                    child: Center(child: _SplitHandleGrip()),
-                  ),
+            ),
+            Positioned(
+              left: touchLeft,
+              top: 0,
+              bottom: 0,
+              width: _splitHandleTouchWidth,
+              child: MouseRegion(
+                cursor: SystemMouseCursors.resizeColumn,
+                child: Listener(
+                  behavior: HitTestBehavior.translucent,
+                  onPointerDown: (event) {
+                    if ((event.buttons & kPrimaryButton) == 0) return;
+                    _startSplitHandleDrag(
+                      viewportContext,
+                      touchLeft + event.localPosition.dx,
+                    );
+                  },
+                  onPointerMove: (event) {
+                    if ((event.buttons & kPrimaryButton) == 0) {
+                      _endSplitHandleDrag();
+                      return;
+                    }
+                    _updateSplitHandleDrag(
+                      viewportContext,
+                      touchLeft + event.localPosition.dx,
+                    );
+                  },
+                  onPointerUp: (_) => _endSplitHandleDrag(),
+                  onPointerCancel: (_) => _endSplitHandleDrag(),
+                  child: Center(child: _SplitHandleGrip()),
                 ),
               ),
-            ],
-          );
-        },
-      ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

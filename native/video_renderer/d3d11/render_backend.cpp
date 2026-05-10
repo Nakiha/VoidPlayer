@@ -5,6 +5,7 @@
 
 #include <dxgi.h>
 #include <spdlog/spdlog.h>
+#include <vector>
 
 namespace vr {
 
@@ -84,8 +85,17 @@ bool D3D11RenderBackend::initialize_device(const D3D11RenderBackendConfig& confi
 }
 
 bool D3D11RenderBackend::initialize_render_resources() {
+    const std::vector<EmbeddedShaderFile> multitrack_includes = {
+        {"common.hlsl", kCommonHlsl, sizeof(kCommonHlsl) - 1},
+        {"color_pipeline.hlsl", kColorPipelineHlsl, sizeof(kColorPipelineHlsl) - 1},
+        {"sampling.hlsl", kSamplingHlsl, sizeof(kSamplingHlsl) - 1},
+    };
     if (!shader_manager_->compile_from_source(
-            kMultitrackHlsl, "VSMain", "PSMain", resources_->compiled_shader)) {
+            kMultitrackHlsl,
+            multitrack_includes,
+            "VSMain",
+            "PSMain",
+            resources_->compiled_shader)) {
         spdlog::error("Renderer: failed to compile shaders");
         return false;
     }

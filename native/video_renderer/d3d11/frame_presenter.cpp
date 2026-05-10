@@ -19,6 +19,9 @@ bool D3D11FramePresenter::prepare_frame(size_t slot,
         return false;
     }
 
+    if (frame.cpu_planar_yuv_storage()) {
+        return prepare_software_planar_yuv_frame(slot, frame, out);
+    }
     if (frame.is_nv12) {
         if (!frame.is_ref) {
             return prepare_software_nv12_frame(slot, frame, fallback_width, fallback_height, out);
@@ -277,6 +280,72 @@ bool D3D11FramePresenter::prepare_software_nv12_frame(size_t slot,
     out.nv12_y_srv = resources.sw_nv12_y_srv.Get();
     out.nv12_uv_srv = resources.sw_nv12_uv_srv.Get();
     return out.nv12_y_srv && out.nv12_uv_srv;
+}
+
+bool D3D11FramePresenter::prepare_software_planar_yuv_frame(size_t slot,
+                                                            const TextureFrame& frame,
+                                                            D3D11PreparedFrame& out) {
+    auto& resources = tracks_[slot];
+    const auto* storage = frame.cpu_planar_yuv_storage();
+    if (!texture_manager_ || !storage) {
+        return false;
+    }
+
+    const bool is_16bit = storage->bytes_per_sample == 2;
+    for (int plane = 0; plane < 3; ++plane) {
+        const int w = storage->plane_widths[plane];
+        const int h = storage->plane_heights[plane];
+        if (!storage->planes[plane] || w <= 0 || h <= 0 ||
+            storage->strides[plane] < w * storage->bytes_per_sample) {
+            spdlog::error("[D3D11FramePresenter] Invalid planar YUV plane {} "
+                          "(data={}, {}x{}, stride={}, bytes_per_sample={})",
+                          plane, static_cast<const void*>(storage->planes[plane]),
+                          w, h, storage->strides[plane], storage->bytes_per_sample);
+            return false;
+        }
+
+        bool need_new_tex = !resources.sw_planar_textures[plane];
+        if (resources.sw_planar_textures[plane]) {
+            D3D11_TEXTURE2D_DESC existing_desc = {};
+            resources.sw_planar_textures[plane]->GetDesc(&existing_desc);
+            const DXGI_FORMAT expected_format = is_16bit ? DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_R8_UNORM;
+            need_new_tex =
+                static_cast<int>(existing_desc.Width) != w ||
+                static_cast<int>(existing_desc.Height) != h ||
+                existing_desc.Format != expected_format;
+        }
+
+        if (need_new_tex) {
+            resources.sw_planar_srvs[plane].Reset();
+            resources.sw_planar_textures[plane].Attach(
+                texture_manager_->create_plane_texture(w, h, is_16bit));
+            if (resources.sw_planar_textures[plane]) {
+                resources.sw_planar_srvs[plane].Attach(
+                    texture_manager_->create_srv(resources.sw_planar_textures[plane].Get()));
+            }
+        }
+
+        if (!resources.sw_planar_textures[plane] || !resources.sw_planar_srvs[plane]) {
+            return false;
+        }
+
+        if (!texture_manager_->upload_plane_data(
+                resources.sw_planar_textures[plane].Get(),
+                storage->planes[plane],
+                w,
+                h,
+                storage->strides[plane],
+                is_16bit)) {
+            return false;
+        }
+    }
+
+    resources.nv12_uv_scale_x = 1.0f;
+    resources.nv12_uv_scale_y = 1.0f;
+    out.nv12_y_srv = resources.sw_planar_srvs[0].Get();
+    out.planar_u_srv = resources.sw_planar_srvs[1].Get();
+    out.planar_v_srv = resources.sw_planar_srvs[2].Get();
+    return out.nv12_y_srv && out.planar_u_srv && out.planar_v_srv;
 }
 
 bool D3D11FramePresenter::prepare_texture_frame(const TextureFrame& frame,

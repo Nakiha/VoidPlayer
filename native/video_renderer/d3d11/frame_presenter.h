@@ -12,6 +12,8 @@ struct D3D11PreparedFrame {
     ID3D11ShaderResourceView* rgba_srv = nullptr;
     ID3D11ShaderResourceView* nv12_y_srv = nullptr;
     ID3D11ShaderResourceView* nv12_uv_srv = nullptr;
+    ID3D11ShaderResourceView* planar_u_srv = nullptr;
+    ID3D11ShaderResourceView* planar_v_srv = nullptr;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> owned_rgba_srv;
 };
 
@@ -42,6 +44,8 @@ private:
         Microsoft::WRL::ComPtr<ID3D11Texture2D> sw_nv12_texture;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sw_nv12_y_srv;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sw_nv12_uv_srv;
+        std::array<Microsoft::WRL::ComPtr<ID3D11Texture2D>, 3> sw_planar_textures;
+        std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 3> sw_planar_srvs;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> nv12_y_srv;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> nv12_uv_srv;
         Microsoft::WRL::ComPtr<ID3D11Texture2D> render_nv12_tex;
@@ -66,6 +70,9 @@ private:
                                      int fallback_width,
                                      int fallback_height,
                                      D3D11PreparedFrame& out);
+    bool prepare_software_planar_yuv_frame(size_t slot,
+                                           const TextureFrame& frame,
+                                           D3D11PreparedFrame& out);
     bool prepare_texture_frame(const TextureFrame& frame, D3D11PreparedFrame& out);
 
     TextureManager* texture_manager_ = nullptr;

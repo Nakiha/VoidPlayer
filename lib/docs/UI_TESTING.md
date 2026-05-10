@@ -51,6 +51,7 @@ ui_tests/               # 启动真实 app 的 CSV GUI 自动化脚本
 ├── viewport/           # resize / maximize / pan / zoom / split layout
 ├── track/              # 轨道级刷新和 offset
 ├── codec/              # codec 解码和非黑屏 smoke
+├── color/              # 软/硬解上屏差异和色彩管线回归
 └── local/              # 依赖个人绝对路径的非通用脚本
 ```
 
@@ -98,6 +99,7 @@ ui_tests/               # 启动真实 app 的 CSV GUI 自动化脚本
 | `viewport/` | 窗口 resize/maximize、画面 pan/zoom、split screen 边界。 |
 | `track/` | 轨道 offset、多轨刷新、轨道级状态变更。 |
 | `codec/` | AV1/VP9/H.265 等 codec 上屏和非黑屏 smoke。 |
+| `color/` | 软件/硬件解码最终截图差异、range/matrix/tone-map 等色彩管线回归。 |
 | `local/` | 依赖个人绝对路径或大型私有素材，只在本机复现特定问题时使用。 |
 
 analysis 目录里有两类脚本：

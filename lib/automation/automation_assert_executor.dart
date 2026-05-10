@@ -202,6 +202,27 @@ class AutomationAssertExecutor {
             'avgLuma=${actual.avgLuma.toStringAsFixed(2)}, hash=${actual.hash}',
           );
         }
+      case AssertCaptureHasDetail(:final capture, :final minLumaStdDev):
+        final actual = state.captures[capture];
+        if (actual == null) {
+          throw AssertionError(
+            'Missing capture for ASSERT_CAPTURE_HAS_DETAIL: $capture',
+          );
+        }
+        final outputPath = actual.outputPath;
+        if (outputPath == null || outputPath.isEmpty) {
+          throw AssertionError(
+            'ASSERT_CAPTURE_HAS_DETAIL requires CAPTURE_VIEWPORT with outputPath for $capture',
+          );
+        }
+        final metric = await _measureCaptureDetail(outputPath);
+        final summary = metric.summary(capture);
+        log.info(summary);
+        if (metric.lumaStdDev < minLumaStdDev) {
+          throw AssertionError(
+            '$summary below threshold (lumaStdDev>=$minLumaStdDev)',
+          );
+        }
       case AssertCaptureSplitDiff(
         :final capture,
         :final maxMeanAbsChannel,
@@ -421,6 +442,21 @@ class AutomationAssertExecutor {
     }
   }
 
+  static Future<_CaptureDetailMetric> _measureCaptureDetail(
+    String outputPath,
+  ) async {
+    final decoded = await _decodeCaptureRgba(outputPath);
+    try {
+      return _CaptureDetailMetric.fromRgba(
+        width: decoded.width,
+        height: decoded.height,
+        rgba: decoded.rgba,
+      );
+    } finally {
+      decoded.dispose();
+    }
+  }
+
   static Future<_CapturePairDiffMetric> _measureCapturePairDiff(
     String expectedPath,
     String actualPath,
@@ -484,6 +520,74 @@ class _DecodedCaptureRgba {
   });
 
   void dispose() {}
+}
+
+class _CaptureDetailMetric {
+  final int width;
+  final int height;
+  final int samples;
+  final double meanLuma;
+  final double lumaStdDev;
+  final double minLuma;
+  final double maxLuma;
+
+  const _CaptureDetailMetric({
+    required this.width,
+    required this.height,
+    required this.samples,
+    required this.meanLuma,
+    required this.lumaStdDev,
+    required this.minLuma,
+    required this.maxLuma,
+  });
+
+  factory _CaptureDetailMetric.fromRgba({
+    required int width,
+    required int height,
+    required Uint8List rgba,
+  }) {
+    final expectedBytes = width * height * 4;
+    if (width <= 0 || height <= 0 || rgba.lengthInBytes < expectedBytes) {
+      throw AssertionError(
+        'Capture RGBA buffer is invalid: ${rgba.lengthInBytes} < $expectedBytes',
+      );
+    }
+
+    var sum = 0.0;
+    var sumSquares = 0.0;
+    var minLuma = double.infinity;
+    var maxLuma = double.negativeInfinity;
+    final samples = width * height;
+    for (var i = 0; i < expectedBytes; i += 4) {
+      final luma =
+          0.2126 * rgba[i] + 0.7152 * rgba[i + 1] + 0.0722 * rgba[i + 2];
+      sum += luma;
+      sumSquares += luma * luma;
+      minLuma = math.min(minLuma, luma);
+      maxLuma = math.max(maxLuma, luma);
+    }
+
+    final mean = sum / samples;
+    final variance = math.max(0.0, sumSquares / samples - mean * mean);
+    return _CaptureDetailMetric(
+      width: width,
+      height: height,
+      samples: samples,
+      meanLuma: mean,
+      lumaStdDev: math.sqrt(variance),
+      minLuma: minLuma,
+      maxLuma: maxLuma,
+    );
+  }
+
+  String summary(String capture) {
+    return 'ASSERT_CAPTURE_HAS_DETAIL $capture: '
+        'size=${width}x$height samples=$samples '
+        'meanLuma=${meanLuma.toStringAsFixed(4)} '
+        'lumaStdDev=${lumaStdDev.toStringAsFixed(4)} '
+        'minLuma=${minLuma.toStringAsFixed(4)} '
+        'maxLuma=${maxLuma.toStringAsFixed(4)}';
+  }
 }
 
 class _CaptureSplitDiffMetric {

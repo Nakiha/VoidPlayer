@@ -40,6 +40,42 @@ ID3D11Texture2D* TextureManager::create_rgba_texture(int width, int height) {
     return texture;
 }
 
+ID3D11Texture2D* TextureManager::create_plane_texture(int width, int height, bool is_16bit) {
+    if (!device_) {
+        spdlog::error("Cannot create plane texture: device is null");
+        return nullptr;
+    }
+    if (width <= 0 || height <= 0) {
+        spdlog::error("Cannot create plane texture: invalid geometry ({}x{})", width, height);
+        return nullptr;
+    }
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = static_cast<UINT>(width);
+    desc.Height = static_cast<UINT>(height);
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = is_16bit ? DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_R8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+    desc.Usage = D3D11_USAGE_DYNAMIC;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    desc.MiscFlags = 0;
+
+    ID3D11Texture2D* texture = nullptr;
+    HRESULT hr = device_->CreateTexture2D(&desc, nullptr, &texture);
+    if (FAILED(hr)) {
+        spdlog::error("Failed to create {} plane texture ({}x{}): HRESULT {:#x}",
+                      is_16bit ? "R16" : "R8", width, height,
+                      static_cast<unsigned long>(hr));
+        return nullptr;
+    }
+
+    spdlog::debug("Created {} plane texture ({}x{})", is_16bit ? "R16" : "R8", width, height);
+    return texture;
+}
+
 ID3D11Texture2D* TextureManager::create_nv12_texture(int width, int height) {
     if (!device_) {
         spdlog::error("Cannot create NV12 texture: device is null");
@@ -147,6 +183,56 @@ bool TextureManager::upload_data(ID3D11Texture2D* texture, const uint8_t* data,
 
     context_->Unmap(texture, 0);
     spdlog::trace("Uploaded texture data ({}x{}, stride={})", width, height, stride);
+    return true;
+}
+
+bool TextureManager::upload_plane_data(ID3D11Texture2D* texture, const uint8_t* data,
+                                       int width, int height, int stride,
+                                       bool is_16bit) {
+    if (!texture || !data || !context_) {
+        spdlog::error("upload_plane_data: invalid arguments (texture={}, data={}, context={})",
+                      static_cast<void*>(texture), static_cast<const void*>(data),
+                      static_cast<void*>(context_));
+        return false;
+    }
+    const int bytes_per_sample = is_16bit ? 2 : 1;
+    const int row_bytes = width * bytes_per_sample;
+    if (width <= 0 || height <= 0 || stride < row_bytes) {
+        spdlog::error("upload_plane_data: invalid geometry (width={}, height={}, stride={}, is_16bit={})",
+                      width, height, stride, is_16bit);
+        return false;
+    }
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    texture->GetDesc(&desc);
+    const DXGI_FORMAT expected_format = is_16bit ? DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_R8_UNORM;
+    if (desc.Format != expected_format ||
+        desc.Width != static_cast<UINT>(width) ||
+        desc.Height != static_cast<UINT>(height)) {
+        spdlog::error("upload_plane_data: texture mismatch (texture={}x{} fmt={}, "
+                      "data={}x{}, expected_fmt={})",
+                      desc.Width, desc.Height, static_cast<int>(desc.Format),
+                      width, height, static_cast<int>(expected_format));
+        return false;
+    }
+
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    HRESULT hr = context_->Map(texture, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+    if (FAILED(hr)) {
+        spdlog::error("Failed to map plane texture for upload: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
+    for (int y = 0; y < height; ++y) {
+        std::memcpy(static_cast<uint8_t*>(mapped.pData) + static_cast<size_t>(y) * mapped.RowPitch,
+                    data + static_cast<size_t>(y) * stride,
+                    static_cast<size_t>(row_bytes));
+    }
+
+    context_->Unmap(texture, 0);
+    spdlog::trace("Uploaded {} plane texture data ({}x{}, stride={})",
+                  is_16bit ? "R16" : "R8", width, height, stride);
     return true;
 }
 

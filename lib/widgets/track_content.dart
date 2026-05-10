@@ -121,7 +121,8 @@ class _TrackContentPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     const horizontalMargin = 4.0;
-    const verticalMargin = 0.0;
+    const verticalMargin = 4.0;
+    const borderWidth = 1.0;
     final drawableWidth = size.width - horizontalMargin * 2;
 
     // Background
@@ -177,11 +178,11 @@ class _TrackContentPainter extends CustomPainter {
     }
 
     canvas.drawRect(
-      clipRect,
+      clipRect.deflate(borderWidth / 2),
       Paint()
         ..color = clipColor.withValues(alpha: 0.6)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1,
+        ..strokeWidth = borderWidth,
     );
 
     // Playhead line

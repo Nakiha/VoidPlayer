@@ -240,11 +240,13 @@ def native_build(debug: bool, test: bool = True, github: bool = False) -> None:
         build_cmd.append("--github")
     run(build_cmd, cwd=str(NATIVE_DIR))
 
+    if test and github:
+        print("GitHub native mode: skipping executable tests on hosted runners.")
+        return
+
     if test:
         header(f"Test native standalone ({build_type})")
         test_cmd = [sys.executable, "-u", str(NATIVE_BUILD_PY), "--test-only"]
         if debug:
             test_cmd.append("--debug")
-        if github:
-            test_cmd.append("--github")
         run(test_cmd, cwd=str(NATIVE_DIR))

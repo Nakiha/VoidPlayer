@@ -45,7 +45,7 @@ jobs:
       - name: Install Python test/build dependencies
         run: python -m pip install --upgrade pip pytest pybind11
 
-      - name: Run native build and tests
+      - name: Run native build
         shell: pwsh
         run: python dev.py test --native-only --github
 

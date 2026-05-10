@@ -5,6 +5,10 @@ import 'axtree_region.dart';
 import 'drag_excess_tracker.dart';
 import 'track_content.dart';
 
+const double _trackSplitterWidth = 1.0;
+const double _darkAlternateRowOverlayOpacity = 0.045;
+const double _lightAlternateRowOverlayOpacity = 0.035;
+
 /// Drag handle with hover highlight and grab cursor.
 class _DragHandle extends StatefulWidget {
   final int index;
@@ -186,161 +190,187 @@ class TrackRow extends StatelessWidget {
     // Divider sits at: dragHandle(28) + controlsWidth
     final dividerX = 28.0 + controlsWidth;
     final fileName = _fileName(track.path);
+    final splitterColor = colorScheme.outlineVariant;
+    final rowBackgroundColor = _trackRowBackgroundColor(colorScheme, index);
 
     return AxTreeRegion(
       label: 'Track ${index + 1}: $fileName',
       value: isAudible ? 'Audio enabled' : 'Audio muted',
       child: SizedBox(
         height: 32,
-        child: Stack(
-          children: [
-            // Main row layout
-            Row(
-              children: [
-                // Drag handle with hover highlight
-                _DragHandle(index: index),
-                // Controls panel
-                SizedBox(
-                  width: controlsWidth,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      children: [
-                        // File name
-                        Expanded(
-                          child: Text(
-                            fileName,
-                            style: Theme.of(context).textTheme.bodySmall,
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: IconButton(
-                            onPressed: onToggleAudio,
-                            icon: Icon(
-                              isAudible ? Icons.volume_up : Icons.volume_off,
-                              size: 15,
-                              color: isAudible
-                                  ? colorScheme.primary
-                                  : colorScheme.onSurfaceVariant,
+        child: ColoredBox(
+          color: rowBackgroundColor,
+          child: Stack(
+            children: [
+              // Main row layout
+              Row(
+                children: [
+                  // Drag handle with hover highlight
+                  _DragHandle(index: index),
+                  // Controls panel
+                  SizedBox(
+                    width: controlsWidth,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Row(
+                        children: [
+                          // File name
+                          Expanded(
+                            child: Text(
+                              fileName,
+                              style: Theme.of(context).textTheme.bodySmall,
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 24,
-                              height: 24,
-                            ),
-                            tooltip: isAudible
-                                ? AppLocalizations.of(context)!.muteTrackAudio
-                                : AppLocalizations.of(context)!.playTrackAudio,
                           ),
-                        ),
-                        // Offset controls
-                        SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: IconButton(
-                            onPressed: () => onOffsetChanged(-10),
-                            icon: const Icon(Icons.remove, size: 14),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 24,
-                              height: 24,
+                          const SizedBox(width: 4),
+                          SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: IconButton(
+                              onPressed: onToggleAudio,
+                              icon: Icon(
+                                isAudible ? Icons.volume_up : Icons.volume_off,
+                                size: 15,
+                                color: isAudible
+                                    ? colorScheme.primary
+                                    : colorScheme.onSurfaceVariant,
+                              ),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 24,
+                                height: 24,
+                              ),
+                              tooltip: isAudible
+                                  ? AppLocalizations.of(context)!.muteTrackAudio
+                                  : AppLocalizations.of(
+                                      context,
+                                    )!.playTrackAudio,
                             ),
-                            tooltip: AppLocalizations.of(
-                              context,
-                            )!.offsetBackward,
                           ),
-                        ),
-                        _OffsetField(
-                          valueMs: syncOffsetMs,
-                          onChanged: onOffsetChanged,
-                        ),
-                        SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: IconButton(
-                            onPressed: () => onOffsetChanged(10),
-                            icon: const Icon(Icons.add, size: 14),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 24,
-                              height: 24,
+                          // Offset controls
+                          SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: IconButton(
+                              onPressed: () => onOffsetChanged(-10),
+                              icon: const Icon(Icons.remove, size: 14),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 24,
+                                height: 24,
+                              ),
+                              tooltip: AppLocalizations.of(
+                                context,
+                              )!.offsetBackward,
                             ),
-                            tooltip: AppLocalizations.of(
-                              context,
-                            )!.offsetForward,
                           ),
-                        ),
-                        // Remove button
-                        SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: IconButton(
-                            onPressed: onRemove,
-                            icon: const Icon(Icons.close, size: 16),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 28,
-                              height: 28,
+                          _OffsetField(
+                            valueMs: syncOffsetMs,
+                            onChanged: onOffsetChanged,
+                          ),
+                          SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: IconButton(
+                              onPressed: () => onOffsetChanged(10),
+                              icon: const Icon(Icons.add, size: 14),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 24,
+                                height: 24,
+                              ),
+                              tooltip: AppLocalizations.of(
+                                context,
+                              )!.offsetForward,
                             ),
-                            style: _removeTrackButtonStyle(colorScheme, 4),
-                            tooltip: AppLocalizations.of(context)!.removeTrack,
                           ),
-                        ),
-                      ],
+                          // Remove button
+                          SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: IconButton(
+                              onPressed: onRemove,
+                              icon: const Icon(Icons.close, size: 16),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 28,
+                                height: 28,
+                              ),
+                              style: _removeTrackButtonStyle(colorScheme, 4),
+                              tooltip: AppLocalizations.of(
+                                context,
+                              )!.removeTrack,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                // Visual-only divider line (1px)
-                ExcludeSemantics(
-                  child: Container(width: 1, color: colorScheme.outlineVariant),
-                ),
-                // Track content (expanded)
-                Expanded(
-                  child: AxTreeVisualRegion(
-                    label: 'Track ${index + 1} clip timeline',
-                    image: false,
-                    child: TrackContent(
-                      durationRatio: durationRatio,
-                      offsetRatio: offsetRatio,
-                      playheadPosition: playheadPosition,
-                      clipColor: _trackColor(track.slot),
-                      hoverPtsUs: hoverPtsUs,
-                      sliderHovering: sliderHovering,
-                      trackDurationUs: trackDurationUs,
-                      trackStartTimeUs: trackStartTimeUs,
-                      offsetUs: offsetUs,
-                      maxEffectiveDurationUs: maxEffectiveDurationUs,
-                      markerPtsUs: markerPtsUs,
-                      loopRangeEnabled: loopRangeEnabled,
-                      loopStartUs: loopStartUs,
-                      loopEndUs: loopEndUs,
+                  // Visual-only divider line (1px)
+                  ExcludeSemantics(
+                    child: Container(
+                      width: _trackSplitterWidth,
+                      color: splitterColor,
                     ),
                   ),
-                ),
-              ],
-            ),
-            // Wider invisible hit area overlay for the divider
-            Positioned(
-              left: dividerX - 4,
-              top: 0,
-              bottom: 0,
-              width: 9,
-              child: ExcludeSemantics(
-                child: _ResizableDivider(
-                  color: colorScheme.outlineVariant,
-                  controlsWidth: controlsWidth,
-                  onWidthChanged: onControlsWidthChanged,
+                  // Track content (expanded)
+                  Expanded(
+                    child: AxTreeVisualRegion(
+                      label: 'Track ${index + 1} clip timeline',
+                      image: false,
+                      child: TrackContent(
+                        durationRatio: durationRatio,
+                        offsetRatio: offsetRatio,
+                        playheadPosition: playheadPosition,
+                        clipColor: _trackColor(track.slot),
+                        backgroundColor: rowBackgroundColor,
+                        hoverPtsUs: hoverPtsUs,
+                        sliderHovering: sliderHovering,
+                        trackDurationUs: trackDurationUs,
+                        trackStartTimeUs: trackStartTimeUs,
+                        offsetUs: offsetUs,
+                        maxEffectiveDurationUs: maxEffectiveDurationUs,
+                        markerPtsUs: markerPtsUs,
+                        loopRangeEnabled: loopRangeEnabled,
+                        loopStartUs: loopStartUs,
+                        loopEndUs: loopEndUs,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              // Wider invisible hit area overlay for the divider
+              Positioned(
+                left: dividerX - 4,
+                top: 0,
+                bottom: 0,
+                width: 9,
+                child: ExcludeSemantics(
+                  child: _ResizableDivider(
+                    color: splitterColor,
+                    controlsWidth: controlsWidth,
+                    onWidthChanged: onControlsWidthChanged,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  Color _trackRowBackgroundColor(ColorScheme colorScheme, int rowIndex) {
+    final baseColor = colorScheme.surfaceContainerLow;
+    if (rowIndex.isEven) return baseColor;
+
+    final overlayOpacity = colorScheme.brightness == Brightness.dark
+        ? _darkAlternateRowOverlayOpacity
+        : _lightAlternateRowOverlayOpacity;
+    return Color.alphaBlend(
+      colorScheme.onSurface.withValues(alpha: overlayOpacity),
+      baseColor,
     );
   }
 

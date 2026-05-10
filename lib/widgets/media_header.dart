@@ -102,41 +102,42 @@ class _MediaHeaderBarWithCacheState extends State<_MediaHeaderBarWithCache> {
   @override
   Widget build(BuildContext context) {
     if (widget.entries.isEmpty) return const SizedBox.shrink();
-    return Container(
+    return SizedBox(
       height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Align(
         alignment: Alignment.bottomCenter,
         child: SizedBox(
-          width: double.infinity,
           height: 28,
-          child: Row(
-            children: [
-              for (int i = 0; i < widget.entries.length; i++) ...[
-                if (i > 0) const SizedBox(width: 4),
-                Expanded(
-                  child: _MediaHeader(
-                    slotIndex: i,
-                    entries: widget.entries,
-                    analysisDataSource: widget.analysisDataSource,
-                    showOverlayPanelButton: i == 0,
-                    overlayPanelActive:
-                        widget.analysisDataSource.overlayPanelVisible,
-                    overlayWorking: _isAnalysisWorking,
-                    onMediaSwapped: widget.onMediaSwapped,
-                    onAnalysisOverlayPanelToggle:
-                        widget.onAnalysisOverlayPanelToggle,
-                    onAnalysisOverlayTypeChanged:
-                        widget.onAnalysisOverlayTypeChanged,
-                    onAnalysisOverlayLayersChanged:
-                        widget.onAnalysisOverlayLayersChanged,
-                    onAnalysisOverlayOpacityChanged:
-                        widget.onAnalysisOverlayOpacityChanged,
-                    onRemoveClicked: widget.onRemoveClicked,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                for (int i = 0; i < widget.entries.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 4),
+                  Expanded(
+                    child: _MediaHeader(
+                      slotIndex: i,
+                      entries: widget.entries,
+                      analysisDataSource: widget.analysisDataSource,
+                      showOverlayPanelButton: i == 0,
+                      overlayPanelActive:
+                          widget.analysisDataSource.overlayPanelVisible,
+                      overlayWorking: _isAnalysisWorking,
+                      onMediaSwapped: widget.onMediaSwapped,
+                      onAnalysisOverlayPanelToggle:
+                          widget.onAnalysisOverlayPanelToggle,
+                      onAnalysisOverlayTypeChanged:
+                          widget.onAnalysisOverlayTypeChanged,
+                      onAnalysisOverlayLayersChanged:
+                          widget.onAnalysisOverlayLayersChanged,
+                      onAnalysisOverlayOpacityChanged:
+                          widget.onAnalysisOverlayOpacityChanged,
+                      onRemoveClicked: widget.onRemoveClicked,
+                    ),
                   ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

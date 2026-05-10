@@ -19,6 +19,7 @@ class TrackContent extends StatelessWidget {
   final double playheadPosition;
 
   final Color clipColor;
+  final Color? backgroundColor;
 
   // Hover cross-track indicator state
   final int hoverPtsUs;
@@ -38,6 +39,7 @@ class TrackContent extends StatelessWidget {
     this.offsetRatio = 0.0,
     this.playheadPosition = 0.0,
     this.clipColor = Colors.blueGrey,
+    this.backgroundColor,
     this.hoverPtsUs = 0,
     this.sliderHovering = false,
     this.trackDurationUs = 0,
@@ -60,7 +62,9 @@ class TrackContent extends StatelessWidget {
         playheadPosition: playheadPosition.clamp(0.0, 1.0),
         clipColor: clipColor,
         playheadColor: Theme.of(context).colorScheme.primary,
-        bgColor: Theme.of(context).colorScheme.surfaceContainerLow,
+        bgColor:
+            backgroundColor ??
+            Theme.of(context).colorScheme.surfaceContainerLow,
         hoverPtsUs: hoverPtsUs,
         sliderHovering: sliderHovering,
         trackDurationUs: trackDurationUs,
@@ -144,7 +148,7 @@ class _TrackContentPainter extends CustomPainter {
     );
     canvas.drawRect(
       clipRect,
-      Paint()..color = clipColor.withValues(alpha: 0.3),
+      Paint()..color = clipColor.withValues(alpha: 0.24),
     );
 
     if (loopRangeEnabled && trackDurationUs > 0 && loopEndUs > loopStartUs) {
@@ -180,7 +184,7 @@ class _TrackContentPainter extends CustomPainter {
     canvas.drawRect(
       clipRect.deflate(borderWidth / 2),
       Paint()
-        ..color = clipColor.withValues(alpha: 0.6)
+        ..color = clipColor.withValues(alpha: 0.5)
         ..style = PaintingStyle.stroke
         ..strokeWidth = borderWidth,
     );

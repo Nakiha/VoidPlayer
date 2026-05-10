@@ -7,6 +7,7 @@ import 'drag_excess_tracker.dart';
 enum LoopRangeHandle { start, end }
 
 const double _loopRangeBarHeight = 32.0;
+const double _loopRangeBorderWidth = 1.0;
 
 /// Loop range editor aligned to the shared timeline content column.
 class LoopRangeBar extends StatelessWidget {
@@ -35,14 +36,15 @@ class LoopRangeBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final l = AppLocalizations.of(context)!;
+    final borderSide = BorderSide(
+      color: colorScheme.outlineVariant,
+      width: _loopRangeBorderWidth,
+    );
     return Container(
       height: _loopRangeBarHeight,
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerLow,
-        border: Border(
-          top: BorderSide(color: colorScheme.outlineVariant),
-          bottom: BorderSide(color: colorScheme.outlineVariant),
-        ),
+        border: Border(top: borderSide, bottom: borderSide),
       ),
       child: Row(
         children: [
@@ -290,15 +292,13 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
               ? SystemMouseCursors.resizeLeftRight
               : SystemMouseCursors.basic,
           child: Center(
-            child: Container(
-              width: 12,
-              height: 24,
-              decoration: BoxDecoration(
+            child: CustomPaint(
+              size: const Size(13, 24),
+              painter: _LoopRangeHandlePainter(
                 color: widget.enabled
                     ? colorScheme.primary
                     : colorScheme.onSurfaceVariant,
-                border: Border.all(color: colorScheme.surface, width: 1.5),
-                borderRadius: BorderRadius.circular(2),
+                outlineColor: colorScheme.surface,
               ),
             ),
           ),
@@ -376,6 +376,53 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
       LoopRangeHandle.start => _startTracker,
       LoopRangeHandle.end => _endTracker,
     };
+  }
+}
+
+class _LoopRangeHandlePainter extends CustomPainter {
+  final Color color;
+  final Color outlineColor;
+
+  const _LoopRangeHandlePainter({
+    required this.color,
+    required this.outlineColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final centerX = size.width / 2;
+    final triangle = Path()
+      ..moveTo(centerX - 5.5, 3)
+      ..lineTo(centerX + 5.5, 3)
+      ..lineTo(centerX, 10)
+      ..close();
+    final outlinePaint = Paint()
+      ..color = outlineColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2
+      ..strokeJoin = StrokeJoin.round;
+    final fillPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    canvas.drawPath(triangle, fillPaint);
+    canvas.drawPath(triangle, outlinePaint);
+
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 1
+      ..strokeCap = StrokeCap.square;
+    canvas.drawLine(
+      Offset(centerX, 10),
+      Offset(centerX, size.height - 3),
+      linePaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _LoopRangeHandlePainter oldDelegate) {
+    return oldDelegate.color != color ||
+        oldDelegate.outlineColor != outlineColor;
   }
 }
 

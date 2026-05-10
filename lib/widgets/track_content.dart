@@ -120,7 +120,7 @@ class _TrackContentPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const margin = 8.0;
+    const margin = 4.0;
     final drawableWidth = size.width - margin * 2;
 
     // Background

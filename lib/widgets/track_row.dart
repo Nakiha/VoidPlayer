@@ -29,7 +29,7 @@ class _DragHandleState extends State<_DragHandle> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           width: 28,
-          height: 40,
+          height: 32,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: _hovering
@@ -128,7 +128,7 @@ class _ResizableDividerState extends State<_ResizableDivider> {
   }
 }
 
-/// Single track row matching PySide6 TrackRow (40px height).
+/// Single track row matching PySide6 TrackRow.
 /// Horizontal split: drag handle + controls + track content (expanded).
 class TrackRow extends StatelessWidget {
   final TrackInfo track;
@@ -191,7 +191,7 @@ class TrackRow extends StatelessWidget {
       label: 'Track ${index + 1}: $fileName',
       value: isAudible ? 'Audio enabled' : 'Audio muted',
       child: SizedBox(
-        height: 40,
+        height: 32,
         child: Stack(
           children: [
             // Main row layout
@@ -206,7 +206,6 @@ class TrackRow extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Row(
                       children: [
-                        const SizedBox(width: 4),
                         // File name
                         Expanded(
                           child: Text(
@@ -282,16 +281,13 @@ class TrackRow extends StatelessWidget {
                           height: 28,
                           child: IconButton(
                             onPressed: onRemove,
-                            icon: Icon(
-                              Icons.close,
-                              size: 16,
-                              color: colorScheme.error,
-                            ),
+                            icon: const Icon(Icons.close, size: 16),
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints.tightFor(
                               width: 28,
                               height: 28,
                             ),
+                            style: _removeTrackButtonStyle(colorScheme, 4),
                             tooltip: AppLocalizations.of(context)!.removeTrack,
                           ),
                         ),
@@ -357,6 +353,31 @@ class TrackRow extends StatelessWidget {
     const colors = [Colors.blue, Colors.orange, Colors.green, Colors.purple];
     return colors[slot % colors.length];
   }
+}
+
+ButtonStyle _removeTrackButtonStyle(ColorScheme colorScheme, double radius) {
+  final warningStates = {
+    WidgetState.hovered,
+    WidgetState.focused,
+    WidgetState.pressed,
+  };
+  return ButtonStyle(
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    shape: WidgetStatePropertyAll(
+      RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
+    ),
+    foregroundColor: WidgetStateProperty.resolveWith((states) {
+      if (states.any(warningStates.contains)) return colorScheme.error;
+      return colorScheme.onSurfaceVariant;
+    }),
+    backgroundColor: WidgetStateProperty.resolveWith((states) {
+      if (states.any(warningStates.contains)) {
+        return colorScheme.error.withValues(alpha: 0.12);
+      }
+      return Colors.transparent;
+    }),
+    overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+  );
 }
 
 /// Editable offset field showing the current sync offset in milliseconds.

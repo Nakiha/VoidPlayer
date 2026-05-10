@@ -9,7 +9,7 @@ enum _ControlsBarItem { zoom, fullscreen, step, play, time }
 
 /// Bottom playback controls bar matching PySide6 ControlsBar (40px height).
 class ControlsBar extends StatelessWidget {
-  static const double _leftPadding = 2.0;
+  static const double _leftPadding = 4.0;
   static const double _zoomWidth = 76.0;
   static const double _iconWidth = 32.0;
   static const double _gapWidth = 4.0;

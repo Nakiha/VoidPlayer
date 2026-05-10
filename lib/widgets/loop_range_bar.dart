@@ -6,6 +6,8 @@ import 'drag_excess_tracker.dart';
 
 enum LoopRangeHandle { start, end }
 
+const double _loopRangeBarHeight = 32.0;
+
 /// Loop range editor aligned to the shared timeline content column.
 class LoopRangeBar extends StatelessWidget {
   final double timelineStartWidth;
@@ -34,7 +36,7 @@ class LoopRangeBar extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final l = AppLocalizations.of(context)!;
     return Container(
-      height: 40,
+      height: _loopRangeBarHeight,
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerLow,
         border: Border(
@@ -47,7 +49,7 @@ class LoopRangeBar extends StatelessWidget {
           SizedBox(
             width: timelineStartWidth,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Opacity(
                 opacity: durationUs > 0 ? 1.0 : 0.5,
                 child: Row(
@@ -57,7 +59,7 @@ class LoopRangeBar extends StatelessWidget {
                       style: Theme.of(context).textTheme.bodySmall,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 4),
                     _CompactSwitch(
                       value: enabled,
                       onChanged: durationUs > 0 ? onEnabledChanged : null,
@@ -113,7 +115,7 @@ class _CompactSwitch extends StatelessWidget {
           cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
           child: SizedBox(
             width: 34,
-            height: 22,
+            height: 24,
             child: Align(
               alignment: Alignment.center,
               child: AnimatedContainer(
@@ -154,9 +156,9 @@ class _CompactSwitch extends StatelessWidget {
 }
 
 class _LoopRangeTimeline extends StatefulWidget {
-  static const double _margin = 8.0;
+  static const double _margin = 4.0;
   static const double _trackHeight = 4.0;
-  static const double _handleSize = 16.0;
+  static const double _handleSize = 24.0;
   static const int _minRangeUs = 10000;
 
   final bool enabled;
@@ -261,7 +263,7 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
     final interactive = widget.enabled && widget.durationUs > 0;
     return Positioned(
       left: left,
-      top: (40 - _LoopRangeTimeline._handleSize) / 2,
+      top: (_loopRangeBarHeight - _LoopRangeTimeline._handleSize) / 2,
       width: _LoopRangeTimeline._handleSize,
       height: _LoopRangeTimeline._handleSize,
       child: GestureDetector(
@@ -289,8 +291,8 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
               : SystemMouseCursors.basic,
           child: Center(
             child: Container(
-              width: 11,
-              height: 14,
+              width: 12,
+              height: 24,
               decoration: BoxDecoration(
                 color: widget.enabled
                     ? colorScheme.primary

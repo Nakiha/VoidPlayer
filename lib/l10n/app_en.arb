@@ -491,7 +491,7 @@
   "@analysisOverlayActivate": { "description": "Tooltip for enabling a cached track's bitstream overlay from the analysis toolbar panel" },
 
   "analysisOverlayDeactivate": "Disable bitstream overlay",
-  "@analysisOverlayDeactivate": { "description": "Tooltip for disabling the active bitstream overlay from the analysis toolbar panel" },
+  "@analysisOverlayDeactivate": { "description": "Tooltip for disabling the active bitstream overlay from the media header activation toggle" },
 
   "analysisOverlayTypeCu": "CU partitions",
   "@analysisOverlayTypeCu": { "description": "Tooltip for the CU partition overlay type button" },

@@ -4,7 +4,9 @@ import '../utils/pts_range.dart';
 import 'track_row.dart';
 
 /// Timeline track list area matching PySide6 TimelineArea.
-/// Max height: 40% of parent height. Each TrackRow is 40px.
+const double timelineTrackRowHeight = 32.0;
+
+/// Max height: 40% of parent height. Each TrackRow is 32px.
 /// Supports drag-to-reorder via [ReorderableListView].
 /// Dragging any row's divider resizes all rows synchronously.
 class TimelineArea extends StatefulWidget {
@@ -59,14 +61,13 @@ class _TimelineAreaState extends State<TimelineArea> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxHeight = constraints.maxHeight;
-        final targetHeight = (widget.entries.length * 40.0).clamp(
-          0.0,
-          maxHeight,
-        );
+        final targetHeight = (widget.entries.length * timelineTrackRowHeight)
+            .clamp(0.0, maxHeight);
         return SizedBox(
           height: targetHeight,
           child: ReorderableListView.builder(
             buildDefaultDragHandles: false,
+            padding: EdgeInsets.zero,
             itemCount: widget.entries.length,
             onReorder: widget.onReorder,
             itemBuilder: (context, index) {

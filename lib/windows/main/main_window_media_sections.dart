@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../widgets/analysis_overlay_controls.dart';
 import '../../widgets/controls_bar.dart';
 import '../../widgets/loop_range_bar.dart';
 import '../../widgets/media_header.dart';
@@ -26,14 +25,6 @@ class MediaTimelineSection extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        AnalysisOverlayControlBar(
-          entries: media.tracks,
-          dataSource: media.analysisDataSource,
-          onTypeChanged: actions.analysisOverlay.onTypeChanged,
-          onLayersChanged: actions.analysisOverlay.onLayersChanged,
-          onOpacityChanged: actions.analysisOverlay.onOpacityChanged,
-          onClose: actions.analysisOverlay.onClose,
-        ),
         MainWindowMediaHeader(model: model, actions: actions),
         MainWindowControlsBar(model: model, actions: actions),
         LoopRangeBar(
@@ -94,6 +85,9 @@ class MainWindowMediaHeader extends StatelessWidget {
       onMediaSwapped: mediaActions.onMediaSwapped,
       onAnalysisOverlayPanelToggle:
           actions.toolbar.onAnalysisOverlayPanelToggle,
+      onAnalysisOverlayTypeChanged: actions.analysisOverlay.onTypeChanged,
+      onAnalysisOverlayLayersChanged: actions.analysisOverlay.onLayersChanged,
+      onAnalysisOverlayOpacityChanged: actions.analysisOverlay.onOpacityChanged,
       onRemoveClicked: (slotIndex) {
         if (slotIndex < tracks.length) {
           mediaActions.onRemoveTrack(tracks[slotIndex].fileId);
@@ -171,14 +165,6 @@ class FullScreenControlsPanel extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                AnalysisOverlayControlBar(
-                  entries: model.media.tracks,
-                  dataSource: model.media.analysisDataSource,
-                  onTypeChanged: actions.analysisOverlay.onTypeChanged,
-                  onLayersChanged: actions.analysisOverlay.onLayersChanged,
-                  onOpacityChanged: actions.analysisOverlay.onOpacityChanged,
-                  onClose: actions.analysisOverlay.onClose,
-                ),
                 MainWindowMediaHeader(model: model, actions: actions),
                 MainWindowControlsBar(model: model, actions: actions),
               ],

@@ -20,6 +20,7 @@ class _FakeAnalysisToolbarDataSource extends ChangeNotifier
   final AnalysisCacheSnapshot cacheSnapshot;
   final Map<String, int> bytesByHash;
   final String? overlayHash;
+  final Set<int> overlayTrackFileIds;
   AnalysisOverlayConfig config;
 
   _FakeAnalysisToolbarDataSource({
@@ -33,11 +34,19 @@ class _FakeAnalysisToolbarDataSource extends ChangeNotifier
     ),
     this.bytesByHash = const {},
     this.overlayHash,
+    Set<int>? overlayTrackFileIds,
     this.config = const AnalysisOverlayConfig(),
-  });
+  }) : overlayTrackFileIds =
+           overlayTrackFileIds ?? (overlayHash == null ? const {} : const {1});
 
   @override
   String? get activeOverlayHash => overlayHash;
+
+  @override
+  bool get overlayPanelVisible => overlayHash != null;
+
+  @override
+  Set<int> get activeOverlayTrackFileIds => overlayTrackFileIds;
 
   @override
   AnalysisOverlayConfig get overlayConfig => config;
@@ -200,6 +209,9 @@ void main() {
           analysisDataSource: _FakeAnalysisToolbarDataSource(),
           onMediaSwapped: (_, _) {},
           onAnalysisOverlayPanelToggle: () async => panelTaps++,
+          onAnalysisOverlayTypeChanged: (_) {},
+          onAnalysisOverlayLayersChanged: (_) {},
+          onAnalysisOverlayOpacityChanged: (_) {},
           onRemoveClicked: (_) {},
         ),
       ),
@@ -273,7 +285,6 @@ void main() {
           onTypeChanged: (next) => type = next,
           onLayersChanged: (_) {},
           onOpacityChanged: (next) => opacity = next,
-          onClose: () {},
         ),
       ),
     );
@@ -311,6 +322,7 @@ void main() {
     var type = AnalysisOverlayType.cu;
     final source = _FakeAnalysisToolbarDataSource(
       overlayHash: 'hash1',
+      overlayTrackFileIds: const {1, 2},
       cacheSnapshot: const AnalysisCacheSnapshot(
         path: '',
         totalBytes: 0,
@@ -350,7 +362,6 @@ void main() {
           onTypeChanged: (next) => type = next,
           onLayersChanged: (_) {},
           onOpacityChanged: (_) {},
-          onClose: () {},
         ),
       ),
     );

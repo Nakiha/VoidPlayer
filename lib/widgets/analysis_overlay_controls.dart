@@ -8,14 +8,13 @@ import '../track_manager.dart';
 const analysisOverlayControlBarKey = Key('analysis-overlay-control-bar');
 
 class AnalysisOverlayControlBar extends StatefulWidget {
-  static const double height = 74.0;
+  static const double margin = 4.0;
 
   final List<TrackEntry> entries;
   final AnalysisToolbarDataSource dataSource;
   final ValueChanged<AnalysisOverlayType> onTypeChanged;
   final ValueChanged<Set<AnalysisOverlayLayer>> onLayersChanged;
   final ValueChanged<double> onOpacityChanged;
-  final VoidCallback onClose;
 
   const AnalysisOverlayControlBar({
     super.key,
@@ -24,7 +23,6 @@ class AnalysisOverlayControlBar extends StatefulWidget {
     required this.onTypeChanged,
     required this.onLayersChanged,
     required this.onOpacityChanged,
-    required this.onClose,
   });
 
   @override
@@ -34,86 +32,112 @@ class AnalysisOverlayControlBar extends StatefulWidget {
 
 class _AnalysisOverlayControlBarState extends State<AnalysisOverlayControlBar> {
   bool _syncSettingsToAll = true;
+  int? _primaryTrackFileId;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncPrimaryTrack();
+  }
+
+  @override
+  void didUpdateWidget(covariant AnalysisOverlayControlBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncPrimaryTrack();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final activeHash = widget.dataSource.activeOverlayHash;
-    if (widget.entries.isEmpty || activeHash == null) {
+    if (widget.entries.isEmpty || !widget.dataSource.overlayPanelVisible) {
       return const SizedBox.shrink();
     }
-
-    return Container(
+    final overlayTrackIds = widget.dataSource.activeOverlayTrackFileIds;
+    final primaryTrackFileId = _primaryTrackFileId;
+    return Row(
       key: analysisOverlayControlBarKey,
-      height: AnalysisOverlayControlBar.height,
-      padding: const EdgeInsets.fromLTRB(4, 4, 4, 2),
-      child: Row(
-        children: [
-          for (int i = 0; i < widget.entries.length; i++) ...[
-            if (i > 0) const SizedBox(width: 4),
-            Expanded(
-              child: _AnalysisOverlayTrackPanel(
-                track: widget.entries[i],
-                active:
-                    widget.dataSource
-                        .statusForPath(widget.entries[i].path)
-                        ?.hash ==
-                    activeHash,
-                syncSettingsToAll: _syncSettingsToAll,
-                config: widget.dataSource.overlayConfig,
-                onTypeChanged: widget.onTypeChanged,
-                onLayersChanged: widget.onLayersChanged,
-                onOpacityChanged: widget.onOpacityChanged,
-                onSyncSettingsToAllChanged: (value) {
-                  setState(() {
-                    _syncSettingsToAll = value;
-                  });
-                },
-                onClose: widget.onClose,
-              ),
+      children: [
+        for (int i = 0; i < widget.entries.length; i++) ...[
+          if (i > 0) const SizedBox(width: 4),
+          Expanded(
+            child: _AnalysisOverlayTrackPanel(
+              track: widget.entries[i],
+              primary: widget.entries[i].fileId == primaryTrackFileId,
+              overlayReady: overlayTrackIds.contains(widget.entries[i].fileId),
+              syncSettingsToAll: _syncSettingsToAll,
+              config: widget.dataSource.overlayConfig,
+              onTypeChanged: widget.onTypeChanged,
+              onLayersChanged: widget.onLayersChanged,
+              onOpacityChanged: widget.onOpacityChanged,
+              onSyncSettingsToAllChanged: (value) {
+                setState(() {
+                  _syncSettingsToAll = value;
+                });
+              },
             ),
-          ],
+          ),
         ],
-      ),
+      ],
     );
+  }
+
+  void _syncPrimaryTrack() {
+    if (widget.entries.isEmpty) {
+      _primaryTrackFileId = null;
+      return;
+    }
+    final overlayTrackIds = widget.dataSource.activeOverlayTrackFileIds;
+    final current = _primaryTrackFileId;
+    if (current != null &&
+        widget.entries.any((entry) => entry.fileId == current) &&
+        overlayTrackIds.contains(current)) {
+      return;
+    }
+    for (final entry in widget.entries) {
+      if (overlayTrackIds.contains(entry.fileId)) {
+        _primaryTrackFileId = entry.fileId;
+        return;
+      }
+    }
+    _primaryTrackFileId = widget.entries.first.fileId;
   }
 }
 
 class _AnalysisOverlayTrackPanel extends StatelessWidget {
   final TrackEntry track;
-  final bool active;
+  final bool primary;
+  final bool overlayReady;
   final bool syncSettingsToAll;
   final AnalysisOverlayConfig config;
   final ValueChanged<AnalysisOverlayType> onTypeChanged;
   final ValueChanged<Set<AnalysisOverlayLayer>> onLayersChanged;
   final ValueChanged<double> onOpacityChanged;
   final ValueChanged<bool> onSyncSettingsToAllChanged;
-  final VoidCallback onClose;
 
   const _AnalysisOverlayTrackPanel({
     required this.track,
-    required this.active,
+    required this.primary,
+    required this.overlayReady,
     required this.syncSettingsToAll,
     required this.config,
     required this.onTypeChanged,
     required this.onLayersChanged,
     required this.onOpacityChanged,
     required this.onSyncSettingsToAllChanged,
-    required this.onClose,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final editable = active || !syncSettingsToAll;
+    final editable = overlayReady && (primary || !syncSettingsToAll);
     final contentOpacity = editable ? 1.0 : 0.42;
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.46),
+        color: colorScheme.surface.withValues(alpha: 0.86),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
-          color: active
+          color: primary
               ? colorScheme.primary.withValues(alpha: 0.58)
               : colorScheme.outlineVariant.withValues(alpha: 0.28),
         ),
@@ -122,117 +146,105 @@ class _AnalysisOverlayTrackPanel extends StatelessWidget {
         opacity: contentOpacity,
         child: IgnorePointer(
           ignoring: !editable,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: _OverlayTypeButtons(
-                        trackFileId: track.fileId,
-                        value: config.type,
-                        onChanged: onTypeChanged,
-                      ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _OverlayTypeButtons(
+                      trackFileId: track.fileId,
+                      value: config.type,
+                      onChanged: onTypeChanged,
                     ),
+                  ),
+                  const SizedBox(width: 4),
+                  if (primary) ...[
+                    _OverlayPanelDivider(),
                     const SizedBox(width: 4),
-                    if (active) ...[
-                      _OverlayPanelDivider(),
-                      const SizedBox(width: 4),
-                      _OverlayIconButton(
-                        key: ValueKey('analysis-overlay-sync-${track.fileId}'),
-                        selected: syncSettingsToAll,
-                        icon: Icons.sync,
-                        tooltip: AppLocalizations.of(
-                          context,
-                        )!.analysisOverlaySyncSettings,
-                        onPressed: () =>
-                            onSyncSettingsToAllChanged(!syncSettingsToAll),
-                      ),
-                      const SizedBox(width: 4),
-                    ],
                     _OverlayIconButton(
-                      key: ValueKey('analysis-overlay-close-${track.fileId}'),
-                      selected: false,
-                      icon: Icons.close,
+                      key: ValueKey('analysis-overlay-sync-${track.fileId}'),
+                      selected: syncSettingsToAll,
+                      icon: Icons.sync,
                       tooltip: AppLocalizations.of(
                         context,
-                      )!.analysisOverlayDeactivate,
-                      onPressed: onClose,
+                      )!.analysisOverlaySyncSettings,
+                      onPressed: () =>
+                          onSyncSettingsToAllChanged(!syncSettingsToAll),
                     ),
+                    const SizedBox(width: 4),
                   ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    _OverlayLayerButton(
-                      trackFileId: track.fileId,
-                      layer: AnalysisOverlayLayer.cuGrid,
-                      selected: config.layers.contains(
-                        AnalysisOverlayLayer.cuGrid,
-                      ),
-                      onChanged: _toggleLayer,
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  _OverlayLayerButton(
+                    trackFileId: track.fileId,
+                    layer: AnalysisOverlayLayer.cuGrid,
+                    selected: config.layers.contains(
+                      AnalysisOverlayLayer.cuGrid,
                     ),
-                    _OverlayLayerButton(
-                      trackFileId: track.fileId,
-                      layer: AnalysisOverlayLayer.predictionMode,
-                      selected: config.layers.contains(
-                        AnalysisOverlayLayer.predictionMode,
-                      ),
-                      onChanged: _toggleLayer,
+                    onChanged: _toggleLayer,
+                  ),
+                  _OverlayLayerButton(
+                    trackFileId: track.fileId,
+                    layer: AnalysisOverlayLayer.predictionMode,
+                    selected: config.layers.contains(
+                      AnalysisOverlayLayer.predictionMode,
                     ),
-                    _OverlayLayerButton(
-                      trackFileId: track.fileId,
-                      layer: AnalysisOverlayLayer.predictionLines,
-                      selected: config.layers.contains(
-                        AnalysisOverlayLayer.predictionLines,
-                      ),
-                      onChanged: _toggleLayer,
+                    onChanged: _toggleLayer,
+                  ),
+                  _OverlayLayerButton(
+                    trackFileId: track.fileId,
+                    layer: AnalysisOverlayLayer.predictionLines,
+                    selected: config.layers.contains(
+                      AnalysisOverlayLayer.predictionLines,
                     ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Tooltip(
-                        message: AppLocalizations.of(
-                          context,
-                        )!.analysisOverlayOpacity,
-                        child: SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            trackHeight: 2,
-                            thumbShape: const RoundSliderThumbShape(
-                              enabledThumbRadius: 5,
-                            ),
-                            overlayShape: const RoundSliderOverlayShape(
-                              overlayRadius: 12,
-                            ),
+                    onChanged: _toggleLayer,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Tooltip(
+                      message: AppLocalizations.of(
+                        context,
+                      )!.analysisOverlayOpacity,
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 2,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 5,
                           ),
-                          child: Slider(
-                            key: ValueKey(
-                              'analysis-overlay-opacity-${track.fileId}',
-                            ),
-                            min: 0.1,
-                            max: 1.0,
-                            value: config.opacity,
-                            onChanged: onOpacityChanged,
+                          overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 12,
                           ),
+                        ),
+                        child: Slider(
+                          key: ValueKey(
+                            'analysis-overlay-opacity-${track.fileId}',
+                          ),
+                          min: 0.1,
+                          max: 1.0,
+                          value: config.opacity,
+                          onChanged: onOpacityChanged,
                         ),
                       ),
                     ),
-                    SizedBox(
-                      width: 34,
-                      child: Text(
-                        '${(config.opacity * 100).round()}%',
-                        textAlign: TextAlign.right,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
+                  ),
+                  SizedBox(
+                    width: 34,
+                    child: Text(
+                      '${(config.opacity * 100).round()}%',
+                      textAlign: TextAlign.right,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                     ),
-                  ],
-                ),
-              ],
-            ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),

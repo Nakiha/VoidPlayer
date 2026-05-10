@@ -120,8 +120,9 @@ class _TrackContentPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const margin = 4.0;
-    final drawableWidth = size.width - margin * 2;
+    const horizontalMargin = 4.0;
+    const verticalMargin = 0.0;
+    final drawableWidth = size.width - horizontalMargin * 2;
 
     // Background
     canvas.drawRect(
@@ -130,11 +131,16 @@ class _TrackContentPainter extends CustomPainter {
     );
 
     // Clip rectangle: starts at offset position, width proportional to duration
-    final clipX = margin + drawableWidth * offsetRatio;
+    final clipX = horizontalMargin + drawableWidth * offsetRatio;
     final clipWidth = drawableWidth * durationRatio;
-    final clipHeight = size.height - margin * 2;
+    final clipHeight = size.height - verticalMargin * 2;
     if (clipWidth <= 0 || clipHeight <= 0) return;
-    final clipRect = Rect.fromLTWH(clipX, margin, clipWidth, clipHeight);
+    final clipRect = Rect.fromLTWH(
+      clipX,
+      verticalMargin,
+      clipWidth,
+      clipHeight,
+    );
     canvas.drawRect(
       clipRect,
       Paint()..color = clipColor.withValues(alpha: 0.3),
@@ -194,7 +200,8 @@ class _TrackContentPainter extends CustomPainter {
         canvas: canvas,
         size: size,
         clipRect: clipRect,
-        margin: margin,
+        horizontalMargin: horizontalMargin,
+        verticalMargin: verticalMargin,
         drawableWidth: drawableWidth,
         markerPtsUs: markerUs,
       );
@@ -205,7 +212,8 @@ class _TrackContentPainter extends CustomPainter {
     required Canvas canvas,
     required Size size,
     required Rect clipRect,
-    required double margin,
+    required double horizontalMargin,
+    required double verticalMargin,
     required double drawableWidth,
     required int markerPtsUs,
   }) {
@@ -215,7 +223,7 @@ class _TrackContentPainter extends CustomPainter {
       0.0,
       1.0,
     );
-    var markerX = margin + drawableWidth * markerGlobalRatio;
+    var markerX = horizontalMargin + drawableWidth * markerGlobalRatio;
     // Clamp marker line within the clip rect bounds
     markerX = markerX.clamp(clipRect.left, clipRect.right);
 
@@ -257,7 +265,7 @@ class _TrackContentPainter extends CustomPainter {
       clipRect.left,
       size.width - tp.width - 4,
     );
-    tp.paint(canvas, Offset(labelX, margin));
+    tp.paint(canvas, Offset(labelX, verticalMargin));
   }
 
   @override

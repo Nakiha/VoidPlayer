@@ -96,6 +96,9 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
                 theme: ThemeData(
                   fontFamily: _fontFamily,
                   fontFamilyFallback: _fontFamilyFallback,
+                  tooltipTheme: const TooltipThemeData(
+                    excludeFromSemantics: true,
+                  ),
                   colorScheme: ColorScheme.fromSeed(
                     seedColor: accentColor,
                     brightness: Brightness.light,
@@ -104,6 +107,9 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
                 darkTheme: ThemeData(
                   fontFamily: _fontFamily,
                   fontFamilyFallback: _fontFamilyFallback,
+                  tooltipTheme: const TooltipThemeData(
+                    excludeFromSemantics: true,
+                  ),
                   colorScheme: ColorScheme.fromSeed(
                     seedColor: accentColor,
                     brightness: Brightness.dark,

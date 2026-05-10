@@ -210,15 +210,25 @@ class _ControlIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 32,
-      height: 32,
-      child: IconButton(
-        onPressed: onPressed,
-        icon: Icon(icon, size: iconSize),
-        tooltip: tooltip,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+    return Semantics(
+      button: true,
+      label: tooltip,
+      onTap: onPressed,
+      child: Tooltip(
+        message: tooltip,
+        excludeFromSemantics: true,
+        child: ExcludeSemantics(
+          child: SizedBox(
+            width: 32,
+            height: 32,
+            child: IconButton(
+              onPressed: onPressed,
+              icon: Icon(icon, size: iconSize),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            ),
+          ),
+        ),
       ),
     );
   }

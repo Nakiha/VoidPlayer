@@ -1,0 +1,11 @@
+# Cached overlay activation should still allow the toolbar analysis action to spawn the workspace.
+@WINDOW, 1280, 720
+0.2, SET_ANALYSIS_TEST_SCRIPT, ui_tests/analysis/child_h264_codec.csv
+0.5, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+3.0, ASSERT_TRACK_COUNT, 1
+3.2, TOGGLE_ANALYSIS_OVERLAY, 0
+4.2, ASSERT_ANALYSIS_OVERLAY, true, cu, 0.55
+4.4, RUN_ANALYSIS
+5.0, WAIT_ANALYSIS_PROCESS_COUNT, 1, 45000
+5.2, ASSERT_ANALYSIS_PROCESS_COUNT, 1
+8.0, QUIT, 0

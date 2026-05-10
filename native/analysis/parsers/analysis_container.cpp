@@ -75,7 +75,7 @@ bool AnalysisContainerFile::open(const std::string& path) {
         header_.magic[1] != 'A' ||
         header_.magic[2] != 'C' ||
         header_.magic[3] != '1' ||
-        header_.version != 1 ||
+        header_.version != kAnalysisContainerVersion ||
         header_.header_size != sizeof(AnalysisContainerHeader) ||
         header_.section_entry_size != sizeof(AnalysisContainerSectionEntry) ||
         header_.section_count == 0 ||
@@ -159,7 +159,7 @@ bool write_analysis_container(const std::string& path,
     header.magic[1] = 'A';
     header.magic[2] = 'C';
     header.magic[3] = '1';
-    header.version = 1;
+    header.version = kAnalysisContainerVersion;
     header.header_size = sizeof(AnalysisContainerHeader);
     header.section_entry_size = sizeof(AnalysisContainerSectionEntry);
     header.section_count = static_cast<uint16_t>(inputs.size());

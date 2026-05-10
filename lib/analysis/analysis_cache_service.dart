@@ -9,6 +9,7 @@ abstract class AnalysisCacheService {
     Set<String> protectedHashes = const {},
   });
   bool filesExist(String hash);
+  bool deleteIfVacVersionMismatch(String hash);
   String analysisPath(String hash);
   FileLockHandle acquireHashSharedLockSync(String hash);
   bool hasEntry(String hash, {String? videoPath});
@@ -42,6 +43,10 @@ class DefaultAnalysisCacheService implements AnalysisCacheService {
 
   @override
   bool filesExist(String hash) => AnalysisCache.filesExist(hash);
+
+  @override
+  bool deleteIfVacVersionMismatch(String hash) =>
+      AnalysisCache.deleteIfVacVersionMismatch(hash);
 
   @override
   String analysisPath(String hash) => AnalysisCache.analysisPath(hash);

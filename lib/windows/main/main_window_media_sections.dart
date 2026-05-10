@@ -90,7 +90,10 @@ class MainWindowMediaHeader extends StatelessWidget {
     final mediaActions = actions.mediaTimeline;
     return MediaHeaderBar(
       entries: tracks,
+      analysisDataSource: model.media.analysisDataSource,
       onMediaSwapped: mediaActions.onMediaSwapped,
+      onAnalysisOverlayPanelToggle:
+          actions.toolbar.onAnalysisOverlayPanelToggle,
       onRemoveClicked: (slotIndex) {
         if (slotIndex < tracks.length) {
           mediaActions.onRemoveTrack(tracks[slotIndex].fileId);

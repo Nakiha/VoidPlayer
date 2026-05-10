@@ -87,6 +87,7 @@ TEST_CASE("VAC1: open and embedded sections", "[analysis][vac]") {
     REQUIRE(vac.header().magic[1] == 'A');
     REQUIRE(vac.header().magic[2] == 'C');
     REQUIRE(vac.header().magic[3] == '1');
+    REQUIRE(vac.header().version == kAnalysisContainerVersion);
     REQUIRE(vac.section("VBS4") != nullptr);
     REQUIRE(vac.section("VBI2") != nullptr);
     REQUIRE(vac.section("VBT1") != nullptr);

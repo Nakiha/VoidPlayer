@@ -10,9 +10,11 @@
 // VAC1 — Void analysis container
 // ===========================================================================
 
+inline constexpr uint16_t kAnalysisContainerVersion = 1;
+
 struct AnalysisContainerHeader {
     char     magic[4];       // "VAC1"
-    uint16_t version;        // 1
+    uint16_t version;        // kAnalysisContainerVersion
     uint16_t header_size;    // sizeof(AnalysisContainerHeader)
     uint16_t section_entry_size;
     uint16_t section_count;

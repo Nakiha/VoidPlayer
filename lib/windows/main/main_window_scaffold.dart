@@ -43,8 +43,6 @@ class MainWindowScaffold extends StatelessWidget {
                     onOpenSshRemoteMedia: toolbarActions.onOpenSshRemoteMedia,
                     onMediaInfo: toolbarActions.onMediaInfo,
                     onAnalysis: toolbarActions.onAnalysis,
-                    onAnalysisOverlayToggle:
-                        toolbarActions.onAnalysisOverlayToggle,
                     onProfiler: toolbarActions.onProfiler,
                     onSettings: toolbarActions.onSettings,
                     tracks: media.tracks,

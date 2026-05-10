@@ -98,6 +98,10 @@ class AnalysisCachePruneResult {
 class AnalysisCache {
   AnalysisCache._();
 
+  static const int currentVacVersion = 1;
+  static const int _vacHeaderSize = 64;
+  static const int _vacSectionEntrySize = 48;
+
   static final String dataDir = AppPaths.current.analysisCacheDir;
   static String get _locksDir => p.join(dataDir, 'locks');
   static String get _indexLockPath => p.join(_locksDir, 'analysis_index.lock');
@@ -121,6 +125,38 @@ class AnalysisCache {
 
   static bool filesExist(String hash) => _isCompleteVac1(analysisPath(hash));
 
+  static bool deleteIfVacVersionMismatch(String hash) {
+    final version = readVacVersion(analysisPath(hash));
+    if (version == null || version == currentVacVersion) return false;
+    final result = _deleteEntriesSync([hash]);
+    return result.deletedHashes.contains(hash);
+  }
+
+  static int? readVacVersion(String path) {
+    final file = File(path);
+    if (!file.existsSync()) return null;
+    try {
+      final raf = file.openSync();
+      try {
+        if (raf.lengthSync() < 6) return null;
+        final bytes = raf.readSync(6);
+        if (bytes.length != 6 ||
+            bytes[0] != 0x56 ||
+            bytes[1] != 0x41 ||
+            bytes[2] != 0x43 ||
+            bytes[3] != 0x31) {
+          return null;
+        }
+        final data = ByteData.sublistView(Uint8List.fromList(bytes));
+        return data.getUint16(4, Endian.little);
+      } finally {
+        raf.closeSync();
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
   static bool hasIncompleteContainer(String hash) {
     final path = analysisPath(hash);
     final file = File(path);
@@ -135,7 +171,7 @@ class AnalysisCache {
       final raf = file.openSync();
       try {
         final length = raf.lengthSync();
-        if (length < 64) return false;
+        if (length < _vacHeaderSize) return false;
         final header = raf.readSync(4);
         if (header.length != 4 ||
             header[0] != 0x56 ||
@@ -145,8 +181,8 @@ class AnalysisCache {
           return false;
         }
         raf.setPositionSync(0);
-        final bytes = raf.readSync(64);
-        if (bytes.length < 64) return false;
+        final bytes = raf.readSync(_vacHeaderSize);
+        if (bytes.length < _vacHeaderSize) return false;
         final data = ByteData.sublistView(Uint8List.fromList(bytes));
         final version = data.getUint16(4, Endian.little);
         final headerSize = data.getUint16(6, Endian.little);
@@ -154,9 +190,9 @@ class AnalysisCache {
         final sectionCount = data.getUint16(10, Endian.little);
         final sectionTableOffset = data.getUint64(16, Endian.little);
         final expectedFileSize = data.getUint64(24, Endian.little);
-        if (version != 1 ||
-            headerSize != 64 ||
-            sectionEntrySize != 48 ||
+        if (version != currentVacVersion ||
+            headerSize != _vacHeaderSize ||
+            sectionEntrySize != _vacSectionEntrySize ||
             sectionCount == 0 ||
             sectionCount > 16 ||
             expectedFileSize != length) {

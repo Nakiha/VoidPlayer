@@ -244,6 +244,7 @@ class AnalysisManager extends ChangeNotifier
       _setStateIfCurrent(stateSerial, AnalysisState.idle);
       return hash;
     }
+    _unloadHashBeforeRegeneration(hash);
     log.info('[Analysis] cache miss, will generate');
 
     final maxCacheBytes = _settings.maxCacheBytes;
@@ -391,6 +392,20 @@ class AnalysisManager extends ChangeNotifier
     required String name,
     required String path,
   }) async {
+    if (_loadedHash == hash) {
+      _activeOverlayHash = null;
+      _activeOverlayTrackFileId = -1;
+      _applyDisabledOverlayConfig();
+      _native.unload();
+      _loadedHash = null;
+      _releaseLoadedHashLock();
+    }
+    if (_cache.deleteIfVacVersionMismatch(hash)) {
+      log.info('[Analysis] deleted stale VAC version before load: $hash');
+      final regeneratedHash = await ensureGenerated(path);
+      if (regeneratedHash == null) return false;
+      hash = regeneratedHash;
+    }
     final serial = ++_loadSerial;
     _setState(AnalysisState.loading);
     _setTrackStatus(
@@ -472,9 +487,7 @@ class AnalysisManager extends ChangeNotifier
     required String path,
     required int trackFileId,
   }) async {
-    final loaded = _loadedHash == hash
-        ? true
-        : await loadAnalysisHash(hash, name: name, path: path);
+    final loaded = await loadAnalysisHash(hash, name: name, path: path);
     if (!loaded) return false;
     _activeOverlayHash = hash;
     _activeOverlayTrackFileId = trackFileId;
@@ -549,6 +562,18 @@ class AnalysisManager extends ChangeNotifier
     );
   }
 
+  void _unloadHashBeforeRegeneration(String hash) {
+    if (_loadedHash != hash) return;
+    log.info('[Analysis] unloading stale cache before regeneration: $hash');
+    _activeOverlayHash = null;
+    _activeOverlayTrackFileId = -1;
+    _applyDisabledOverlayConfig();
+    _native.unload();
+    _loadedHash = null;
+    _releaseLoadedHashLock();
+    notifyListeners();
+  }
+
   // ---- Internal ----
 
   void _setState(AnalysisState s) {
@@ -573,6 +598,10 @@ class AnalysisManager extends ChangeNotifier
   bool _isLoadCurrent(int serial) => serial == _loadSerial;
 
   bool _hasUsableCacheEntry(String hash, String videoPath) {
+    if (_cache.deleteIfVacVersionMismatch(hash)) {
+      log.info('[Analysis] deleted stale VAC version: $hash');
+      return false;
+    }
     if (!_cache.hasEntry(hash, videoPath: videoPath)) return false;
 
     AnalysisSession? session;

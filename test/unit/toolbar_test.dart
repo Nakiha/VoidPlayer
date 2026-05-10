@@ -12,6 +12,7 @@ import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/track_manager.dart';
 import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/widgets/analysis_overlay_controls.dart';
+import 'package:void_player/widgets/media_header.dart';
 import 'package:void_player/widgets/toolbar.dart';
 
 class _FakeAnalysisToolbarDataSource extends ChangeNotifier
@@ -107,7 +108,6 @@ void main() {
     required VoidCallback onProfiler,
     Future<void> Function()? onOpenFile,
     Future<void> Function(String url)? onOpenNetworkMedia,
-    Future<void> Function(TrackEntry track, String hash)? onOverlayToggle,
     AnalysisToolbarDataSource? analysisDataSource,
     bool? analysisEnabled,
     ActionRegistry? actionRegistry,
@@ -126,7 +126,6 @@ void main() {
         onOpenSshRemoteMedia: (_) async {},
         onMediaInfo: () {},
         onAnalysis: () async {},
-        onAnalysisOverlayToggle: onOverlayToggle ?? (_, _) async {},
         onProfiler: onProfiler,
         onSettings: () {},
         tracks: tracks,
@@ -179,11 +178,43 @@ void main() {
     expect(openFileTaps, 1);
   });
 
-  testWidgets('analysis panel enables overlay only for cached tracks', (
+  testWidgets('media header toggles overlay panel from first track only', (
     tester,
   ) async {
-    var overlayTaps = 0;
-    String? overlayHash;
+    var panelTaps = 0;
+    final openedTrack = track();
+    final secondTrack = const TrackEntry(
+      TrackInfo(
+        fileId: 2,
+        slot: 1,
+        path: 'second.mp4',
+        width: 1920,
+        height: 1080,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _localized(
+        MediaHeaderBar(
+          entries: [openedTrack, secondTrack],
+          analysisDataSource: _FakeAnalysisToolbarDataSource(),
+          onMediaSwapped: (_, _) {},
+          onAnalysisOverlayPanelToggle: () async => panelTaps++,
+          onRemoveClicked: (_) {},
+        ),
+      ),
+    );
+
+    await tester.pump();
+    expect(find.widgetWithIcon(IconButton, Icons.grid_on), findsOneWidget);
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.grid_on));
+
+    expect(panelTaps, 1);
+  });
+
+  testWidgets('analysis panel reports cache without overlay controls', (
+    tester,
+  ) async {
     final openedTrack = track();
 
     await tester.pumpWidget(
@@ -212,19 +243,13 @@ void main() {
           ),
           bytesByHash: const {'hash1': 4096},
         ),
-        onOverlayToggle: (track, hash) async {
-          overlayTaps++;
-          overlayHash = hash;
-        },
       ),
     );
 
     await tester.tap(find.widgetWithIcon(IconButton, Icons.analytics_outlined));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.grid_on));
-
-    expect(overlayTaps, 1);
-    expect(overlayHash, 'hash1');
+    expect(find.text(openedTrack.fileName), findsOneWidget);
+    expect(find.widgetWithIcon(IconButton, Icons.grid_on), findsNothing);
   });
 
   testWidgets('analysis overlay control bar switches type and opacity', (
@@ -268,6 +293,82 @@ void main() {
     );
     await tester.drag(slider, const Offset(80, 0));
     expect(opacity, greaterThan(0.55));
+  });
+
+  testWidgets('analysis overlay sync disables inactive track panels by default', (
+    tester,
+  ) async {
+    final openedTrack = track();
+    const secondTrack = TrackEntry(
+      TrackInfo(
+        fileId: 2,
+        slot: 1,
+        path: 'second.mp4',
+        width: 1920,
+        height: 1080,
+      ),
+    );
+    var type = AnalysisOverlayType.cu;
+    final source = _FakeAnalysisToolbarDataSource(
+      overlayHash: 'hash1',
+      cacheSnapshot: const AnalysisCacheSnapshot(
+        path: '',
+        totalBytes: 0,
+        indexedBytes: 0,
+        unindexedBytes: 0,
+        maxBytes: 0,
+        entries: [
+          AnalysisCacheEntryStats(
+            hash: 'hash1',
+            name: 'track.mp4',
+            videoPath: 'track.mp4',
+            videoBytes: 1,
+            analysisBytes: 1,
+            cachedAt: null,
+            lastAccessedAt: null,
+            complete: true,
+          ),
+          AnalysisCacheEntryStats(
+            hash: 'hash2',
+            name: 'second.mp4',
+            videoPath: 'second.mp4',
+            videoBytes: 1,
+            analysisBytes: 1,
+            cachedAt: null,
+            lastAccessedAt: null,
+            complete: true,
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      _localized(
+        AnalysisOverlayControlBar(
+          entries: [openedTrack, secondTrack],
+          dataSource: source,
+          onTypeChanged: (next) => type = next,
+          onLayersChanged: (_) {},
+          onOpacityChanged: (_) {},
+          onClose: () {},
+        ),
+      ),
+    );
+
+    final secondTrackQpButton = find.byKey(
+      ValueKey(
+        'analysis-overlay-type-${secondTrack.fileId}-${AnalysisOverlayType.qpHeatmap.name}',
+      ),
+    );
+    await tester.tap(secondTrackQpButton, warnIfMissed: false);
+    expect(type, AnalysisOverlayType.cu);
+
+    await tester.tap(
+      find.byKey(ValueKey('analysis-overlay-sync-${openedTrack.fileId}')),
+    );
+    await tester.pump();
+    await tester.tap(secondTrackQpButton);
+    expect(type, AnalysisOverlayType.qpHeatmap);
   });
 
   testWidgets('canceling network stream dialog restores space shortcut', (

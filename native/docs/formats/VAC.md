@@ -44,6 +44,11 @@ of the `.vac` file. Section payload bytes are unmodified inner files.
 | `file_size` | `uint64_t` | Expected full container size. |
 | `reserved` | `uint64_t[4]` | Reserved, zero-filled. |
 
+Readers must treat any `version` other than the compiled
+`kAnalysisContainerVersion` as incompatible. Flutter cache validation deletes
+that hash's stale analysis artifacts before regeneration; native readers reject
+the container instead of trying to partially load it.
+
 ## Section Entry: `AnalysisContainerSectionEntry` (48 bytes)
 
 | Field | Type | Meaning |

@@ -16,6 +16,7 @@ import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
+import '../../widgets/analysis_overlay_controls.dart';
 import '../../widgets/loop_range_bar.dart';
 import '../window_manager.dart' as app_window;
 import 'main_window_actions.dart';
@@ -60,6 +61,9 @@ class MainWindowController {
   int _fullScreenSerial = 0;
   bool? _pendingFullScreen;
   bool _fullScreenUiResizePending = false;
+  bool _analysisOverlayUiResizePending = false;
+  int _analysisOverlayResizeSerial = 0;
+  String? _lastAnalysisOverlayHash;
   int? _windowedViewportWidth;
   int? _windowedViewportHeight;
 
@@ -112,6 +116,8 @@ class MainWindowController {
 
   void start({String? testScriptPath}) {
     trackManager.addListener(_onTrackManagerChanged);
+    _lastAnalysisOverlayHash = analysisToolbarDataSource.activeOverlayHash;
+    analysisToolbarDataSource.addListener(_onAnalysisOverlayVisibilityChanged);
     actionCoordinator.bind();
     playbackCoordinator.startPolling();
     _maybeStartTestRunner(testScriptPath);
@@ -119,6 +125,9 @@ class MainWindowController {
 
   void dispose() {
     _fullScreenControlsTimer?.cancel();
+    analysisToolbarDataSource.removeListener(
+      _onAnalysisOverlayVisibilityChanged,
+    );
     actionCoordinator.dispose();
     playbackCoordinator.dispose();
     mediaCoordinator.dispose();
@@ -216,7 +225,7 @@ class MainWindowController {
           stateStore.setMediaInfoVisible(!_mediaInfoVisible);
         },
         onAnalysis: analysisCoordinator.triggerAnalysis,
-        onAnalysisOverlayToggle: analysisCoordinator.toggleOverlay,
+        onAnalysisOverlayPanelToggle: analysisCoordinator.toggleOverlayPanel,
         onProfiler: () => stateStore.setProfilerVisible(!_profilerVisible),
         onSettings: () => stateStore.setSettingsVisible(!_settingsVisible),
       ),
@@ -230,7 +239,8 @@ class MainWindowController {
               width,
               height,
               devicePixelRatio,
-              immediate: _fullScreenUiResizePending,
+              immediate:
+                  _fullScreenUiResizePending || _analysisOverlayUiResizePending,
             ),
       ),
       mediaTimeline: MainWindowMediaTimelineActions(
@@ -389,6 +399,50 @@ class MainWindowController {
       width: (size.width * dpr).round(),
       height: (size.height * dpr).round(),
     );
+  }
+
+  void _onAnalysisOverlayVisibilityChanged() {
+    final nextHash = analysisToolbarDataSource.activeOverlayHash;
+    final wasVisible = _lastAnalysisOverlayHash != null;
+    final isVisible = nextHash != null;
+    _lastAnalysisOverlayHash = nextHash;
+    if (wasVisible == isVisible) return;
+
+    final serial = ++_analysisOverlayResizeSerial;
+    _analysisOverlayUiResizePending = true;
+    fireAndLog(
+      'preempt analysis overlay viewport resize',
+      _preemptAnalysisOverlayViewportResize(isVisible, serial),
+    );
+  }
+
+  Future<void> _preemptAnalysisOverlayViewportResize(
+    bool visible,
+    int serial,
+  ) async {
+    try {
+      if (_fullScreen || trackManager.isEmpty) return;
+      final dpr = layoutCoordinator.viewportDevicePixelRatio;
+      if (dpr <= 0) return;
+      final delta = (AnalysisOverlayControlBar.height * dpr).round();
+      if (delta == 0) return;
+      final currentHeight = layoutCoordinator.viewportHeight;
+      final currentWidth = layoutCoordinator.viewportWidth;
+      if (currentWidth <= 0 || currentHeight <= 0) return;
+      final nextHeight = (currentHeight + (visible ? -delta : delta))
+          .clamp(1, 1 << 30)
+          .toInt();
+      if (nextHeight == currentHeight) return;
+      await layoutCoordinator.preemptViewportResize(
+        width: currentWidth,
+        height: nextHeight,
+      );
+    } finally {
+      await WidgetsBinding.instance.endOfFrame;
+      if (serial == _analysisOverlayResizeSerial) {
+        _analysisOverlayUiResizePending = false;
+      }
+    }
   }
 
   void _showFullScreenControlsTemporarily() {

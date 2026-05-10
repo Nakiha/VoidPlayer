@@ -17,7 +17,6 @@ class MainWindowAnalysisCoordinator {
   final AnalysisIpcServer _ipcServer = AnalysisIpcServer();
   final Map<int, String> _hashesByFileId = <int, String>{};
 
-  int _opSerial = 0;
   bool _disposed = false;
   Future<void>? _operationInFlight;
 
@@ -32,7 +31,6 @@ class MainWindowAnalysisCoordinator {
 
   Future<void> dispose() async {
     _disposed = true;
-    _opSerial++;
     _hashesByFileId.clear();
     analysisProcesses.analysisIpcPort = null;
     analysisProcesses.analysisIpcToken = null;
@@ -44,13 +42,15 @@ class MainWindowAnalysisCoordinator {
   }
 
   Future<void> toggleOverlay(TrackEntry track, String hash) {
-    return _enqueueOperation(
-      (serial) => _toggleOverlayImpl(serial, track, hash),
-    );
+    return _enqueueOperation(() => _toggleOverlayImpl(track, hash));
+  }
+
+  Future<void> toggleOverlayPanel() {
+    return _enqueueOperation(_toggleOverlayPanelImpl);
   }
 
   Future<void> toggleOverlayForSlot(int slotIndex) {
-    return _enqueueOperation((serial) async {
+    return _enqueueOperation(() async {
       if (slotIndex < 0 || slotIndex >= trackManager.entries.length) return;
       final track = trackManager.entries[slotIndex];
       final activeHash = analysisGeneration.activeOverlayHash;
@@ -61,8 +61,8 @@ class MainWindowAnalysisCoordinator {
         return;
       }
       final hash = await analysisGeneration.ensureGenerated(track.path);
-      if (!_alive(serial) || hash == null) return;
-      await _toggleOverlayImpl(serial, track, hash);
+      if (_disposed || hash == null) return;
+      await _toggleOverlayImpl(track, hash);
     });
   }
 
@@ -78,25 +78,50 @@ class MainWindowAnalysisCoordinator {
     _notifyOverlayStateChanged();
   }
 
-  Future<void> _triggerAnalysisImpl(int serial) async {
+  Future<void> _toggleOverlayPanelImpl() async {
+    if (trackManager.isEmpty) return;
+    if (analysisGeneration.activeOverlayHash != null) {
+      analysisGeneration.deactivateOverlay();
+      _notifyOverlayStateChanged();
+      return;
+    }
+
+    TrackEntry? firstReadyTrack;
+    String? firstReadyHash;
+    for (final entry in trackManager.entries) {
+      final hash = await analysisGeneration.ensureGenerated(entry.path);
+      if (_disposed) return;
+      if (hash == null) continue;
+      _hashesByFileId[entry.fileId] = hash;
+      firstReadyTrack ??= entry;
+      firstReadyHash ??= hash;
+    }
+
+    final track = firstReadyTrack;
+    final hash = firstReadyHash;
+    if (track == null || hash == null) return;
+    await _activateOverlayImpl(track, hash);
+  }
+
+  Future<void> _triggerAnalysisImpl() async {
     if (trackManager.isEmpty) return;
     if (analysisProcesses.activateAnalysisWindows()) return;
     final windows = <AnalysisWindowRequest>[];
     await _ipcServer.start();
-    if (!_alive(serial)) return;
+    if (_disposed) return;
     _ipcServer.publishAccentColor(analysisProcesses.accentColorValue);
     analysisProcesses.analysisIpcPort = _ipcServer.port;
     analysisProcesses.analysisIpcToken = _ipcServer.token;
     for (final entry in trackManager.entries) {
       final hash = await analysisGeneration.ensureGenerated(entry.path);
-      if (!_alive(serial)) return;
+      if (_disposed) return;
       if (hash != null) {
         _hashesByFileId[entry.fileId] = hash;
         windows.add((hash: hash, fileName: p.basename(entry.path)));
       }
     }
-    await _publishTrackSnapshotImpl(serial);
-    if (!_alive(serial)) return;
+    await _publishTrackSnapshotImpl();
+    if (_disposed) return;
     await analysisProcesses.showAnalysisWindows(
       windows,
       onExit: _handleAnalysisWindowExited,
@@ -113,11 +138,7 @@ class MainWindowAnalysisCoordinator {
     _ipcServer.publishAccentColor(colorValue);
   }
 
-  Future<void> _toggleOverlayImpl(
-    int serial,
-    TrackEntry track,
-    String hash,
-  ) async {
+  Future<void> _toggleOverlayImpl(TrackEntry track, String hash) async {
     final stillOpen = trackManager.entries.any(
       (entry) => entry.fileId == track.fileId && entry.path == track.path,
     );
@@ -127,18 +148,24 @@ class MainWindowAnalysisCoordinator {
       _notifyOverlayStateChanged();
       return;
     }
+    final generatedHash = await analysisGeneration.ensureGenerated(track.path);
+    if (_disposed || generatedHash == null) return;
+    await _activateOverlayImpl(track, generatedHash);
+  }
+
+  Future<void> _activateOverlayImpl(TrackEntry track, String hash) async {
     final activated = await analysisGeneration.activateOverlay(
       hash,
       name: track.fileName,
       path: track.path,
       trackFileId: track.fileId,
     );
-    if (!_alive(serial) || !activated) return;
+    if (_disposed || !activated) return;
     _hashesByFileId[track.fileId] = hash;
     _notifyOverlayStateChanged();
   }
 
-  Future<void> _publishTrackSnapshotImpl(int serial) async {
+  Future<void> _publishTrackSnapshotImpl() async {
     if (!_ipcServer.isStarted) return;
     if (!_ipcServer.hasClients) return;
     final tracks = <AnalysisIpcTrack>[];
@@ -149,11 +176,11 @@ class MainWindowAnalysisCoordinator {
       var hash = _hashesByFileId[entry.fileId];
       if (hash == null) {
         hash = await analysisGeneration.ensureGenerated(entry.path);
-        if (!_alive(serial)) return;
+        if (_disposed) return;
         if (hash == null) continue;
         _hashesByFileId[entry.fileId] = hash;
       }
-      if (!_alive(serial)) return;
+      if (_disposed) return;
       tracks.add(
         AnalysisIpcTrack(
           fileId: entry.fileId,
@@ -166,7 +193,7 @@ class MainWindowAnalysisCoordinator {
       );
     }
 
-    if (!_alive(serial)) return;
+    if (_disposed) return;
     _ipcServer.publishTracks(tracks);
   }
 
@@ -174,12 +201,12 @@ class MainWindowAnalysisCoordinator {
     unawaited(_enqueueOperation(_deactivateIpcWorkspace));
   }
 
-  Future<void> _deactivateIpcWorkspace(int serial) async {
+  Future<void> _deactivateIpcWorkspace() async {
     final port = _ipcServer.port;
     final token = _ipcServer.token;
     await _ipcServer.dispose();
     _hashesByFileId.clear();
-    if (!_alive(serial)) return;
+    if (_disposed) return;
     if (analysisProcesses.analysisIpcPort == port &&
         analysisProcesses.analysisIpcToken == token) {
       analysisProcesses.analysisIpcPort = null;
@@ -187,16 +214,15 @@ class MainWindowAnalysisCoordinator {
     }
   }
 
-  Future<void> _enqueueOperation(Future<void> Function(int serial) operation) {
+  Future<void> _enqueueOperation(Future<void> Function() operation) {
     if (_disposed) return Future.value();
-    final serial = ++_opSerial;
     final previous = _operationInFlight;
     late final Future<void> future;
     future = (previous ?? Future<void>.value())
         .catchError((_) {})
         .then((_) async {
-          if (!_alive(serial)) return;
-          await operation(serial);
+          if (_disposed) return;
+          await operation();
         })
         .whenComplete(() {
           if (identical(_operationInFlight, future)) {
@@ -206,8 +232,6 @@ class MainWindowAnalysisCoordinator {
     _operationInFlight = future;
     return future;
   }
-
-  bool _alive(int serial) => !_disposed && serial == _opSerial;
 
   void _notifyOverlayStateChanged() {
     if (_disposed) return;

@@ -7,7 +7,9 @@ import '../track_manager.dart';
 
 const analysisOverlayControlBarKey = Key('analysis-overlay-control-bar');
 
-class AnalysisOverlayControlBar extends StatelessWidget {
+class AnalysisOverlayControlBar extends StatefulWidget {
+  static const double height = 74.0;
+
   final List<TrackEntry> entries;
   final AnalysisToolbarDataSource dataSource;
   final ValueChanged<AnalysisOverlayType> onTypeChanged;
@@ -26,29 +28,47 @@ class AnalysisOverlayControlBar extends StatelessWidget {
   });
 
   @override
+  State<AnalysisOverlayControlBar> createState() =>
+      _AnalysisOverlayControlBarState();
+}
+
+class _AnalysisOverlayControlBarState extends State<AnalysisOverlayControlBar> {
+  bool _syncSettingsToAll = true;
+
+  @override
   Widget build(BuildContext context) {
-    final activeHash = dataSource.activeOverlayHash;
-    if (entries.isEmpty || activeHash == null) return const SizedBox.shrink();
+    final activeHash = widget.dataSource.activeOverlayHash;
+    if (widget.entries.isEmpty || activeHash == null) {
+      return const SizedBox.shrink();
+    }
 
     return Container(
       key: analysisOverlayControlBarKey,
-      height: 74,
+      height: AnalysisOverlayControlBar.height,
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 2),
       child: Row(
         children: [
-          for (int i = 0; i < entries.length; i++) ...[
+          for (int i = 0; i < widget.entries.length; i++) ...[
             if (i > 0) const SizedBox(width: 4),
             Expanded(
               child: _AnalysisOverlayTrackPanel(
-                track: entries[i],
+                track: widget.entries[i],
                 active:
-                    dataSource.statusForPath(entries[i].path)?.hash ==
+                    widget.dataSource
+                        .statusForPath(widget.entries[i].path)
+                        ?.hash ==
                     activeHash,
-                config: dataSource.overlayConfig,
-                onTypeChanged: onTypeChanged,
-                onLayersChanged: onLayersChanged,
-                onOpacityChanged: onOpacityChanged,
-                onClose: onClose,
+                syncSettingsToAll: _syncSettingsToAll,
+                config: widget.dataSource.overlayConfig,
+                onTypeChanged: widget.onTypeChanged,
+                onLayersChanged: widget.onLayersChanged,
+                onOpacityChanged: widget.onOpacityChanged,
+                onSyncSettingsToAllChanged: (value) {
+                  setState(() {
+                    _syncSettingsToAll = value;
+                  });
+                },
+                onClose: widget.onClose,
               ),
             ),
           ],
@@ -61,19 +81,23 @@ class AnalysisOverlayControlBar extends StatelessWidget {
 class _AnalysisOverlayTrackPanel extends StatelessWidget {
   final TrackEntry track;
   final bool active;
+  final bool syncSettingsToAll;
   final AnalysisOverlayConfig config;
   final ValueChanged<AnalysisOverlayType> onTypeChanged;
   final ValueChanged<Set<AnalysisOverlayLayer>> onLayersChanged;
   final ValueChanged<double> onOpacityChanged;
+  final ValueChanged<bool> onSyncSettingsToAllChanged;
   final VoidCallback onClose;
 
   const _AnalysisOverlayTrackPanel({
     required this.track,
     required this.active,
+    required this.syncSettingsToAll,
     required this.config,
     required this.onTypeChanged,
     required this.onLayersChanged,
     required this.onOpacityChanged,
+    required this.onSyncSettingsToAllChanged,
     required this.onClose,
   });
 
@@ -81,7 +105,8 @@ class _AnalysisOverlayTrackPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final contentOpacity = active ? 1.0 : 0.42;
+    final editable = active || !syncSettingsToAll;
+    final contentOpacity = editable ? 1.0 : 0.42;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -96,7 +121,7 @@ class _AnalysisOverlayTrackPanel extends StatelessWidget {
       child: Opacity(
         opacity: contentOpacity,
         child: IgnorePointer(
-          ignoring: !active,
+          ignoring: !editable,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             child: Column(
@@ -112,6 +137,21 @@ class _AnalysisOverlayTrackPanel extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 4),
+                    if (active) ...[
+                      _OverlayPanelDivider(),
+                      const SizedBox(width: 4),
+                      _OverlayIconButton(
+                        key: ValueKey('analysis-overlay-sync-${track.fileId}'),
+                        selected: syncSettingsToAll,
+                        icon: Icons.sync,
+                        tooltip: AppLocalizations.of(
+                          context,
+                        )!.analysisOverlaySyncSettings,
+                        onPressed: () =>
+                            onSyncSettingsToAllChanged(!syncSettingsToAll),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
                     _OverlayIconButton(
                       key: ValueKey('analysis-overlay-close-${track.fileId}'),
                       selected: false,
@@ -203,6 +243,23 @@ class _AnalysisOverlayTrackPanel extends StatelessWidget {
     final layers = Set<AnalysisOverlayLayer>.of(config.layers);
     selected ? layers.add(layer) : layers.remove(layer);
     onLayersChanged(layers);
+  }
+}
+
+class _OverlayPanelDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 1,
+      height: 18,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(
+            context,
+          ).colorScheme.outlineVariant.withValues(alpha: 0.62),
+        ),
+      ),
+    );
   }
 }
 

@@ -4,6 +4,21 @@
 
 /// ---- dart:ffi flat structs for bitstream analysis ----
 
+static constexpr int32_t NAKI_ANALYSIS_ABI_VERSION = 1;
+
+enum NakiAnalysisStatus {
+    NAKI_ANALYSIS_OK = 0,
+    NAKI_ANALYSIS_ERR_INVALID_ARGUMENT = 1,
+    NAKI_ANALYSIS_ERR_OPEN_FAILED = 2,
+    NAKI_ANALYSIS_ERR_CLOSED = 3,
+    NAKI_ANALYSIS_ERR_INTERNAL = 1000,
+};
+
+struct NakiAnalysisStructHeader {
+    uint32_t size;
+    uint32_t abi_version;
+};
+
 struct NakiAnalysisSummary {
     int32_t loaded;             // 0 or 1
     int32_t frame_count;        // VBS4 when present
@@ -70,10 +85,38 @@ struct NakiOverlayState {
     int32_t _reserved;
 };
 
+struct NakiAnalysisSummaryV2 {
+    NakiAnalysisStructHeader header;
+    NakiAnalysisSummary value;
+};
+
+struct NakiFrameInfoV2 {
+    NakiAnalysisStructHeader header;
+    NakiFrameInfo value;
+};
+
+struct NakiNaluInfoV2 {
+    NakiAnalysisStructHeader header;
+    NakiNaluInfo value;
+};
+
+struct NakiFrameBucketV2 {
+    NakiAnalysisStructHeader header;
+    NakiFrameBucket value;
+};
+
+struct NakiOverlayStateV2 {
+    NakiAnalysisStructHeader header;
+    NakiOverlayState value;
+};
+
 using NakiAnalysisHandle = void*;
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_abi_version();
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_last_error(char* buf, int32_t cap);
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_sizeof_summary();
@@ -89,6 +132,21 @@ int32_t naki_analysis_sizeof_frame_bucket();
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_sizeof_overlay_state();
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_sizeof_summary_v2();
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_sizeof_frame_info_v2();
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_sizeof_nalu_info_v2();
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_sizeof_frame_bucket_v2();
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_sizeof_overlay_state_v2();
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_load(const char* analysis_path);

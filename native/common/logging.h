@@ -20,6 +20,16 @@ struct LogConfig {
 
     /// Minimum log level.
     spdlog::level::level_enum level = spdlog::level::info;
+
+    /// Windows-only: opt in to changing the process console code page to UTF-8.
+    /// This is process-global, so library consumers should leave it disabled.
+    bool configure_console_codepage = false;
+
+    /// Opt in to reading VOIDPLAYER_NATIVE_LOG_LEVEL as an override.
+    bool use_environment_level_override = false;
+
+    /// Opt in to spdlog's process-global flush settings/thread.
+    bool manage_global_flush = false;
 };
 
 /// Configure native logging with custom format, file sink, and level.

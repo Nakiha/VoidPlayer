@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -15,6 +16,13 @@ TEST_CASE("analysis FFI exposes ABI version and struct sizes",
     REQUIRE(naki_analysis_sizeof_nalu_info() == sizeof(NakiNaluInfo));
     REQUIRE(naki_analysis_sizeof_frame_bucket() == sizeof(NakiFrameBucket));
     REQUIRE(naki_analysis_sizeof_overlay_state() == sizeof(NakiOverlayState));
+    REQUIRE(naki_analysis_sizeof_summary_v2() == sizeof(NakiAnalysisSummaryV2));
+    REQUIRE(naki_analysis_sizeof_frame_info_v2() == sizeof(NakiFrameInfoV2));
+    REQUIRE(naki_analysis_sizeof_nalu_info_v2() == sizeof(NakiNaluInfoV2));
+    REQUIRE(naki_analysis_sizeof_frame_bucket_v2() == sizeof(NakiFrameBucketV2));
+    REQUIRE(naki_analysis_sizeof_overlay_state_v2() == sizeof(NakiOverlayStateV2));
+    REQUIRE(sizeof(NakiAnalysisSummaryV2) >
+            sizeof(NakiAnalysisStructHeader) + sizeof(NakiAnalysisSummary) - 1);
 }
 
 TEST_CASE("analysis FFI loads and clears overlay tracks",
@@ -99,6 +107,20 @@ TEST_CASE("analysis FFI handle close is safe while readers are active",
     const auto* summary = naki_analysis_handle_get_summary(handle);
     REQUIRE(summary != nullptr);
     REQUIRE(summary->loaded == 0);
+}
+
+TEST_CASE("analysis FFI reports thread-local last errors",
+          "[analysis][ffi][abi]") {
+    char message[128] = {};
+    REQUIRE(naki_analysis_open(nullptr) == nullptr);
+    REQUIRE(naki_analysis_last_error(message, sizeof(message)) ==
+            NAKI_ANALYSIS_ERR_INVALID_ARGUMENT);
+    REQUIRE(std::string(message).find("analysis_path") != std::string::npos);
+
+    REQUIRE(naki_analysis_handle_get_frames_range(
+                nullptr, 0, nullptr, 1) == 0);
+    REQUIRE(naki_analysis_last_error(message, sizeof(message)) ==
+            NAKI_ANALYSIS_ERR_INVALID_ARGUMENT);
 }
 
 TEST_CASE("analysis FFI handle exposes frame mappings and buckets",

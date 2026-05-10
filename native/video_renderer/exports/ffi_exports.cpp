@@ -1,5 +1,6 @@
 #include "video_renderer/exports/ffi_exports.h"
 #include "player/native_player.h"
+#include "video_renderer/layout_validation.h"
 #include "common/logging.h"
 #include "common/windows_crash_handler.h"
 #include <spdlog/spdlog.h>
@@ -7,9 +8,10 @@
 #include <cmath>
 #include <cstring>
 #include <exception>
+#include <memory>
 #include <mutex>
 #include <string>
-#include <unordered_set>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -22,10 +24,34 @@ struct FfiError {
 
 thread_local FfiError g_last_error;
 std::mutex g_players_mutex;
-std::unordered_set<vr::NativePlayer*> g_live_players;
+struct PlayerHandleState {
+    std::mutex mutex;
+    bool closing = false;
+    vr::NativePlayer player;
+};
 
-vr::NativePlayer* raw_player(naki_vr_player_t player) {
-    return static_cast<vr::NativePlayer*>(player);
+std::unordered_map<PlayerHandleState*, std::shared_ptr<PlayerHandleState>> g_live_players;
+
+struct PlayerLease {
+    std::shared_ptr<PlayerHandleState> state;
+    std::unique_lock<std::mutex> lock;
+    vr::NativePlayer* player = nullptr;
+
+    explicit operator bool() const {
+        return player != nullptr;
+    }
+
+    vr::NativePlayer* operator->() {
+        return player;
+    }
+
+    const vr::NativePlayer* operator->() const {
+        return player;
+    }
+};
+
+PlayerHandleState* raw_player(naki_vr_player_t player) {
+    return static_cast<PlayerHandleState*>(player);
 }
 
 void set_error(naki_vr_status_t status, std::string message) {
@@ -37,28 +63,51 @@ void set_ok() {
     set_error(NAKI_VR_OK, "");
 }
 
-void register_player(vr::NativePlayer* player) {
+void register_player(const std::shared_ptr<PlayerHandleState>& player) {
     std::lock_guard<std::mutex> lock(g_players_mutex);
-    g_live_players.insert(player);
+    g_live_players.emplace(player.get(), player);
 }
 
-bool unregister_player(vr::NativePlayer* player) {
+std::shared_ptr<PlayerHandleState> unregister_player(PlayerHandleState* player) {
     std::lock_guard<std::mutex> lock(g_players_mutex);
-    return g_live_players.erase(player) > 0;
+    auto it = g_live_players.find(player);
+    if (it == g_live_players.end()) {
+        return nullptr;
+    }
+    auto state = std::move(it->second);
+    g_live_players.erase(it);
+    return state;
 }
 
-vr::NativePlayer* checked_player(naki_vr_player_t player) {
+std::shared_ptr<PlayerHandleState> pin_player(naki_vr_player_t player) {
     if (!player) {
         set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "player is required");
         return nullptr;
     }
     auto* typed = raw_player(player);
     std::lock_guard<std::mutex> lock(g_players_mutex);
-    if (g_live_players.find(typed) == g_live_players.end()) {
+    auto it = g_live_players.find(typed);
+    if (it == g_live_players.end()) {
         set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "player handle is invalid or destroyed");
         return nullptr;
     }
-    return typed;
+    return it->second;
+}
+
+PlayerLease checked_player(naki_vr_player_t player) {
+    auto state = pin_player(player);
+    if (!state) {
+        return {};
+    }
+    PlayerLease lease;
+    lease.state = std::move(state);
+    lease.lock = std::unique_lock<std::mutex>(lease.state->mutex);
+    if (lease.state->closing) {
+        set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "player handle is invalid or destroyed");
+        return {};
+    }
+    lease.player = &lease.state->player;
+    return lease;
 }
 
 bool validate_abi(uint32_t size, uint32_t version, size_t expected, const char* name) {
@@ -115,29 +164,28 @@ bool is_valid_seek_type(int type) {
     return type == NAKI_VR_SEEK_KEYFRAME || type == NAKI_VR_SEEK_EXACT;
 }
 
-bool validate_layout_state(const naki_vr_player_layout_state_t& state) {
+vr::LayoutState to_layout_state(const naki_vr_player_layout_state_t& state) {
+    vr::LayoutState layout;
+    layout.mode = state.mode;
+    layout.split_pos = state.split_pos;
+    layout.zoom_ratio = state.zoom_ratio;
+    layout.view_offset[0] = state.view_offset[0];
+    layout.view_offset[1] = state.view_offset[1];
+    layout.pixel_size_mode = state.pixel_size_mode;
+    for (int i = 0; i < 4; ++i) layout.order[i] = state.order[i];
+    return layout;
+}
+
+bool validate_ffi_layout_state(const naki_vr_player_layout_state_t& state) {
     if (!validate_abi(state.size,
                       state.abi_version,
                       sizeof(naki_vr_player_layout_state_t),
                       "layout state")) {
         return false;
     }
-    if (state.mode != NAKI_VR_LAYOUT_SIDE_BY_SIDE &&
-        state.mode != NAKI_VR_LAYOUT_SPLIT_SCREEN) {
-        set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "layout mode out of range");
-        return false;
-    }
-    if (state.pixel_size_mode != NAKI_VR_PIXEL_SIZE_UNIFORM_VIDEO_PIXELS &&
-        state.pixel_size_mode != NAKI_VR_PIXEL_SIZE_FILL_VIEW) {
-        set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "pixel size mode out of range");
-        return false;
-    }
-    if (!std::isfinite(state.split_pos) ||
-        !std::isfinite(state.zoom_ratio) ||
-        !std::isfinite(state.view_offset[0]) ||
-        !std::isfinite(state.view_offset[1]) ||
-        state.zoom_ratio <= 0.0f) {
-        set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "layout values must be finite and positive");
+    const auto result = vr::validate_layout_state(to_layout_state(state));
+    if (!result.ok) {
+        set_error(NAKI_VR_ERR_INVALID_ARGUMENT, result.message);
         return false;
     }
     return true;
@@ -191,10 +239,11 @@ naki_vr_status_t naki_vr_last_error(naki_vr_player_t /*player*/, char* buf, size
 
 naki_vr_player_t naki_vr_player_create(void) noexcept {
     return ffi_guard("naki_vr_player_create", static_cast<naki_vr_player_t>(nullptr), []() {
-        auto* player = new vr::NativePlayer();
+        auto player = std::make_shared<PlayerHandleState>();
+        auto* handle = player.get();
         register_player(player);
         set_ok();
-        return static_cast<naki_vr_player_t>(player);
+        return static_cast<naki_vr_player_t>(handle);
     });
 }
 
@@ -205,11 +254,16 @@ void naki_vr_player_destroy(naki_vr_player_t player) noexcept {
             return;
         }
         auto* typed = raw_player(player);
-        if (!unregister_player(typed)) {
+        auto state = unregister_player(typed);
+        if (!state) {
             set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "player handle is invalid or destroyed");
             return;
         }
-        delete typed;
+        {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->closing = true;
+            state->player.shutdown();
+        }
         set_ok();
     });
 }
@@ -223,7 +277,7 @@ int naki_vr_player_initialize(naki_vr_player_t player, const naki_vr_player_conf
         if (!validate_player_config(*config)) {
             return 0;
         }
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return 0;
 
         vr::RendererConfig cfg;
@@ -256,7 +310,7 @@ int naki_vr_player_initialize(naki_vr_player_t player, const naki_vr_player_conf
 
 void naki_vr_player_shutdown(naki_vr_player_t player) noexcept {
     ffi_guard_void("naki_vr_player_shutdown", [player]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return;
         p->shutdown();
         set_ok();
@@ -267,7 +321,7 @@ void naki_vr_player_shutdown(naki_vr_player_t player) noexcept {
 
 void naki_vr_player_play(naki_vr_player_t player) noexcept {
     ffi_guard_void("naki_vr_player_play", [player]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return;
         p->play();
         set_ok();
@@ -276,7 +330,7 @@ void naki_vr_player_play(naki_vr_player_t player) noexcept {
 
 void naki_vr_player_pause(naki_vr_player_t player) noexcept {
     ffi_guard_void("naki_vr_player_pause", [player]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return;
         p->pause();
         set_ok();
@@ -285,7 +339,7 @@ void naki_vr_player_pause(naki_vr_player_t player) noexcept {
 
 void naki_vr_player_seek(naki_vr_player_t player, int64_t target_pts_us) noexcept {
     ffi_guard_void("naki_vr_player_seek", [player, target_pts_us]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return;
         p->seek(target_pts_us);
         set_ok();
@@ -298,7 +352,7 @@ void naki_vr_player_seek_typed(naki_vr_player_t player, int64_t target_pts_us, i
             set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "seek type out of range");
             return;
         }
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return;
         auto seek_type = static_cast<vr::SeekType>(type);
         p->seek(target_pts_us, seek_type);
@@ -312,7 +366,7 @@ void naki_vr_player_set_speed(naki_vr_player_t player, double speed) noexcept {
             set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "speed out of range");
             return;
         }
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return;
         p->set_speed(speed);
         set_ok();
@@ -324,7 +378,7 @@ void naki_vr_player_set_loop_range(naki_vr_player_t player,
                                    int64_t start_us,
                                    int64_t end_us) noexcept {
     ffi_guard_void("naki_vr_player_set_loop_range", [player, enabled, start_us, end_us]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return;
         p->set_loop_range(enabled != 0, start_us, end_us);
         set_ok();
@@ -333,7 +387,7 @@ void naki_vr_player_set_loop_range(naki_vr_player_t player,
 
 void naki_vr_player_set_audible_track(naki_vr_player_t player, int file_id) noexcept {
     ffi_guard_void("naki_vr_player_set_audible_track", [player, file_id]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return;
         p->set_audible_track(file_id);
         set_ok();
@@ -344,7 +398,7 @@ void naki_vr_player_set_audible_track(naki_vr_player_t player, int file_id) noex
 
 void naki_vr_player_step_forward(naki_vr_player_t player) noexcept {
     ffi_guard_void("naki_vr_player_step_forward", [player]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return;
         p->step_forward();
         set_ok();
@@ -353,7 +407,7 @@ void naki_vr_player_step_forward(naki_vr_player_t player) noexcept {
 
 void naki_vr_player_step_backward(naki_vr_player_t player) noexcept {
     ffi_guard_void("naki_vr_player_step_backward", [player]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return;
         p->step_backward();
         set_ok();
@@ -364,42 +418,42 @@ void naki_vr_player_step_backward(naki_vr_player_t player) noexcept {
 
 int naki_vr_player_is_playing(naki_vr_player_t player) noexcept {
     return ffi_guard("naki_vr_player_is_playing", 0, [player]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         return p && p->is_playing() ? 1 : 0;
     });
 }
 
 int naki_vr_player_is_initialized(naki_vr_player_t player) noexcept {
     return ffi_guard("naki_vr_player_is_initialized", 0, [player]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         return p && p->is_initialized() ? 1 : 0;
     });
 }
 
 int64_t naki_vr_player_current_pts_us(naki_vr_player_t player) noexcept {
     return ffi_guard("naki_vr_player_current_pts_us", int64_t(0), [player]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         return p ? p->current_pts_us() : int64_t(0);
     });
 }
 
 double naki_vr_player_current_speed(naki_vr_player_t player) noexcept {
     return ffi_guard("naki_vr_player_current_speed", 1.0, [player]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         return p ? p->current_speed() : 1.0;
     });
 }
 
 int naki_vr_player_track_count(naki_vr_player_t player) noexcept {
     return ffi_guard("naki_vr_player_track_count", 0, [player]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         return p ? static_cast<int>(p->track_count()) : 0;
     });
 }
 
 int64_t naki_vr_player_duration_us(naki_vr_player_t player) noexcept {
     return ffi_guard("naki_vr_player_duration_us", int64_t(0), [player]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         return p ? p->duration_us() : int64_t(0);
     });
 }
@@ -412,7 +466,7 @@ int naki_vr_player_add_track(naki_vr_player_t player, const char* video_path) no
             set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "video_path is required");
             return -1;
         }
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return -1;
         int slot = p->add_track(video_path);
         if (slot < 0) {
@@ -426,7 +480,7 @@ int naki_vr_player_add_track(naki_vr_player_t player, const char* video_path) no
 
 void naki_vr_player_remove_track(naki_vr_player_t player, int file_id) noexcept {
     ffi_guard_void("naki_vr_player_remove_track", [player, file_id]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return;
         p->remove_track(file_id);
         set_ok();
@@ -435,14 +489,14 @@ void naki_vr_player_remove_track(naki_vr_player_t player, int file_id) noexcept 
 
 int naki_vr_player_has_track(naki_vr_player_t player, int slot) noexcept {
     return ffi_guard("naki_vr_player_has_track", 0, [player, slot]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         return p && p->has_track(slot) ? 1 : 0;
     });
 }
 
 void naki_vr_player_set_track_offset(naki_vr_player_t player, int file_id, int64_t offset_us) noexcept {
     ffi_guard_void("naki_vr_player_set_track_offset", [player, file_id, offset_us]() {
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return;
         p->set_track_offset(file_id, offset_us);
         set_ok();
@@ -457,19 +511,12 @@ void naki_vr_player_apply_layout(naki_vr_player_t player, const naki_vr_player_l
             set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "layout state is required");
             return;
         }
-        if (!validate_layout_state(*state)) {
+        if (!validate_ffi_layout_state(*state)) {
             return;
         }
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return;
-        vr::LayoutState layout;
-        layout.mode = state->mode;
-        layout.split_pos = state->split_pos;
-        layout.zoom_ratio = state->zoom_ratio;
-        layout.view_offset[0] = state->view_offset[0];
-        layout.view_offset[1] = state->view_offset[1];
-        layout.pixel_size_mode = state->pixel_size_mode;
-        for (int i = 0; i < 4; ++i) layout.order[i] = state->order[i];
+        vr::LayoutState layout = to_layout_state(*state);
         p->apply_layout(layout);
         set_ok();
     });
@@ -487,7 +534,7 @@ void naki_vr_player_layout(naki_vr_player_t player, naki_vr_player_layout_state_
                           "layout state")) {
             return;
         }
-        auto* p = checked_player(player);
+        auto p = checked_player(player);
         if (!p) return;
         auto layout = p->layout();
         out_state->size = sizeof(naki_vr_player_layout_state_t);

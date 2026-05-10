@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <mutex>
 
@@ -85,5 +86,45 @@ TEST_CASE("configure_logging rotates native UTF-8 log files", "[logging]") {
 
     std::filesystem::remove(path, ec);
     std::filesystem::remove(rotated, ec);
+    restore_test_logging();
+}
+
+TEST_CASE("configure_logging keeps process-global options opt-in", "[logging]") {
+    auto logger = spdlog::default_logger();
+    logger->set_level(spdlog::level::err);
+    logger->flush_on(spdlog::level::critical);
+
+#ifdef _WIN32
+    _putenv_s("SPDLOG_LEVEL", "trace");
+    _putenv_s("VOIDPLAYER_NATIVE_LOG_LEVEL", "");
+#else
+    setenv("SPDLOG_LEVEL", "trace", 1);
+    unsetenv("VOIDPLAYER_NATIVE_LOG_LEVEL");
+#endif
+
+    vr::LogConfig config;
+    config.level = spdlog::level::warn;
+    vr::configure_logging(config);
+
+    REQUIRE(logger->level() == spdlog::level::warn);
+    REQUIRE(logger->flush_level() == spdlog::level::critical);
+
+#ifdef _WIN32
+    _putenv_s("VOIDPLAYER_NATIVE_LOG_LEVEL", "debug");
+#else
+    setenv("VOIDPLAYER_NATIVE_LOG_LEVEL", "debug", 1);
+#endif
+    config.use_environment_level_override = true;
+    vr::configure_logging(config);
+
+    REQUIRE(logger->level() == spdlog::level::debug);
+
+#ifdef _WIN32
+    _putenv_s("SPDLOG_LEVEL", "");
+    _putenv_s("VOIDPLAYER_NATIVE_LOG_LEVEL", "");
+#else
+    unsetenv("SPDLOG_LEVEL");
+    unsetenv("VOIDPLAYER_NATIVE_LOG_LEVEL");
+#endif
     restore_test_logging();
 }

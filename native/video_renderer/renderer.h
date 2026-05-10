@@ -368,6 +368,10 @@ private:
         std::atomic<uint64_t> texture_sharing_failure_count{0};
     };
     mutable D3D11BackendMetricCounters d3d_metrics_;
+
+    // Renderer lock contract is documented in native/docs/THREADING_MODEL.md.
+    // Allowed nesting: lifecycle_mutex_ -> state_mutex_ -> device_mutex_ ->
+    // texture_mutex(). Callbacks must run outside these locks.
     mutable std::mutex lifecycle_mutex_;
     mutable std::mutex state_mutex_;
     float background_color_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -385,7 +389,7 @@ private:
     struct PerfBaseline { uint64_t frames = 0; };
     mutable std::array<PerfBaseline, kMaxTracks> perf_baselines_;
 
-    // Shared mutex for D3D11 immediate context serialization.
+    // Shared lock for D3D11 immediate context serialization.
     // Both the render thread and FFmpeg's D3D11VA decode threads must acquire
     // this lock before using the immediate context. Without it, concurrent
     // access causes driver-level deadlocks.

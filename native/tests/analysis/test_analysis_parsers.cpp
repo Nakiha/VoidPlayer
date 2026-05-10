@@ -8,6 +8,8 @@
 
 #include <filesystem>
 #include <fstream>
+#include <array>
+#include <cstring>
 #include <vector>
 
 #ifdef _WIN32
@@ -70,6 +72,161 @@ std::vector<uint8_t> compress_xpress_huff_for_test(const std::vector<uint8_t>& i
     return output;
 }
 #endif
+
+std::vector<uint8_t> u32_le(uint32_t value) {
+    return {
+        static_cast<uint8_t>(value & 0xFF),
+        static_cast<uint8_t>((value >> 8) & 0xFF),
+        static_cast<uint8_t>((value >> 16) & 0xFF),
+        static_cast<uint8_t>((value >> 24) & 0xFF),
+    };
+}
+
+void append_bytes(std::vector<uint8_t>& dst, const std::vector<uint8_t>& src) {
+    dst.insert(dst.end(), src.begin(), src.end());
+}
+
+void write_minimal_h264_vbs4(const std::filesystem::path& path,
+                             uint16_t stream_with_extra_raw_byte) {
+    std::array<uint16_t, 13> stream_ids{
+        VBS4_STREAM_FRAME_PREFIX,
+        VBS4_H264_IS_INTRA,
+        VBS4_H264_SKIP_FLAG,
+        VBS4_H264_MERGE_FLAG,
+        VBS4_H264_INTER_DIR,
+        VBS4_H264_QP_DELTA,
+        VBS4_H264_INTRA_MODE,
+        VBS4_H264_REF_L0,
+        VBS4_H264_REF_L1,
+        VBS4_H264_MV_L0_X,
+        VBS4_H264_MV_L0_Y,
+        VBS4_H264_MV_L1_X,
+        VBS4_H264_MV_L1_Y,
+    };
+
+    Vbs4DecodedBlockHeader block_header{};
+    set_fourcc(block_header.magic, "BLK4");
+    block_header.header_size = sizeof(Vbs4DecodedBlockHeader);
+    block_header.stream_entry_size = sizeof(Vbs4StreamEntry);
+    block_header.stream_count = static_cast<uint16_t>(stream_ids.size());
+    block_header.frame_count = 1;
+    block_header.record_count = 1;
+
+    std::vector<Vbs4StreamEntry> stream_entries;
+    std::vector<uint8_t> decoded(sizeof(Vbs4DecodedBlockHeader) +
+                                 stream_ids.size() * sizeof(Vbs4StreamEntry));
+    std::memcpy(decoded.data(), &block_header, sizeof(block_header));
+
+    for (uint16_t id : stream_ids) {
+        std::vector<uint8_t> bytes;
+        uint16_t encoding = VBS4_ENCODING_RAW;
+        uint32_t value_count = 1;
+        if (id == VBS4_STREAM_FRAME_PREFIX) {
+            encoding = VBS4_ENCODING_FRAME_PREFIX_U32;
+            value_count = 2;
+            append_bytes(bytes, u32_le(0));
+            append_bytes(bytes, u32_le(1));
+        } else {
+            bytes.push_back(id == VBS4_H264_IS_INTRA ? 1 : 0);
+            if (id == stream_with_extra_raw_byte) {
+                bytes.push_back(0xEE);
+            }
+        }
+
+        Vbs4StreamEntry entry{};
+        entry.stream_id = id;
+        entry.encoding = encoding;
+        entry.offset = static_cast<uint32_t>(decoded.size());
+        entry.size = static_cast<uint32_t>(bytes.size());
+        entry.value_count = value_count;
+        stream_entries.push_back(entry);
+        append_bytes(decoded, bytes);
+    }
+    std::memcpy(decoded.data() + sizeof(Vbs4DecodedBlockHeader),
+                stream_entries.data(),
+                stream_entries.size() * sizeof(Vbs4StreamEntry));
+
+    const uint64_t section_table_offset = sizeof(Vbs4Header);
+    const uint64_t fsum_offset = section_table_offset + 4 * sizeof(Vbs4SectionEntry);
+    const uint64_t fidx_offset = fsum_offset + sizeof(Vbs4FrameSummary);
+    const uint64_t bidx_offset = fidx_offset + sizeof(Vbs4FrameIndexEntry);
+    const uint64_t cpay_offset = bidx_offset + sizeof(Vbs4BlockIndexEntry);
+    const uint64_t file_size = cpay_offset + decoded.size();
+
+    Vbs4Header header{};
+    set_fourcc(header.magic, "VBS4");
+    header.version_major = 4;
+    header.header_size = sizeof(Vbs4Header);
+    header.section_entry_size = sizeof(Vbs4SectionEntry);
+    header.codec = static_cast<uint16_t>(VbiCodec::H264);
+    header.width = 16;
+    header.height = 16;
+    header.frame_count = 1;
+    header.block_count = 1;
+    header.section_count = 4;
+    header.section_table_offset = section_table_offset;
+    header.file_size = file_size;
+
+    Vbs4SectionEntry fsum{};
+    set_fourcc(fsum.type, "FSUM");
+    fsum.offset = fsum_offset;
+    fsum.size = sizeof(Vbs4FrameSummary);
+    fsum.entry_size = sizeof(Vbs4FrameSummary);
+    fsum.entry_count = 1;
+
+    Vbs4SectionEntry fidx{};
+    set_fourcc(fidx.type, "FIDX");
+    fidx.offset = fidx_offset;
+    fidx.size = sizeof(Vbs4FrameIndexEntry);
+    fidx.entry_size = sizeof(Vbs4FrameIndexEntry);
+    fidx.entry_count = 1;
+
+    Vbs4SectionEntry bidx{};
+    set_fourcc(bidx.type, "BIDX");
+    bidx.offset = bidx_offset;
+    bidx.size = sizeof(Vbs4BlockIndexEntry);
+    bidx.entry_size = sizeof(Vbs4BlockIndexEntry);
+    bidx.entry_count = 1;
+
+    Vbs4SectionEntry cpay{};
+    set_fourcc(cpay.type, "CPAY");
+    cpay.offset = cpay_offset;
+    cpay.size = decoded.size();
+    cpay.entry_count = 1;
+
+    Vbs4FrameSummary summary{};
+    summary.slice_type = 2;
+    summary.avg_qp = 22;
+    summary.qp_min = 22;
+    summary.qp_max = 22;
+    summary.num_cus = 1;
+    summary.cu_index_entry = 0;
+
+    Vbs4FrameIndexEntry frame_index{};
+    frame_index.block_index = 0;
+    frame_index.record_count = 1;
+
+    Vbs4BlockIndexEntry block_index{};
+    block_index.frame_count = 1;
+    block_index.record_count = 1;
+    block_index.payload_size = decoded.size();
+    block_index.decoded_size = decoded.size();
+    block_index.compression = VBS4_COMPRESSION_NONE;
+
+    std::ofstream out(path, std::ios::binary);
+    REQUIRE(out);
+    write_struct(out, header);
+    write_struct(out, fsum);
+    write_struct(out, fidx);
+    write_struct(out, bidx);
+    write_struct(out, cpay);
+    write_struct(out, summary);
+    write_struct(out, frame_index);
+    write_struct(out, block_index);
+    out.write(reinterpret_cast<const char*>(decoded.data()),
+              static_cast<std::streamsize>(decoded.size()));
+    REQUIRE(out.good());
+}
 
 } // namespace
 
@@ -436,5 +593,31 @@ TEST_CASE("VBS4: temporal ID range", "[analysis][vbs4]") {
     for (int i = 0; i < std::min(30, vbs4.frame_count()); i++) {
         auto fh = vbs4.read_frame_summary(i);
         REQUIRE(fh.temporal_id <= 6);
+    }
+}
+
+TEST_CASE("VBS4: raw streams reject trailing payload bytes", "[analysis][vbs4]") {
+    const auto base = std::filesystem::temp_directory_path();
+
+    {
+        const auto path = base / "voidplayer_vbs4_trailing_u32_raw.vbs4";
+        write_minimal_h264_vbs4(path, VBS4_H264_SKIP_FLAG);
+        vr::analysis::Vbs4File vbs4;
+        REQUIRE(vbs4.open(path.string()));
+        auto frame = vbs4.read_frame(0);
+        REQUIRE(frame.cus.empty());
+        vbs4.close();
+        std::filesystem::remove(path);
+    }
+
+    {
+        const auto path = base / "voidplayer_vbs4_trailing_i32_raw.vbs4";
+        write_minimal_h264_vbs4(path, VBS4_H264_QP_DELTA);
+        vr::analysis::Vbs4File vbs4;
+        REQUIRE(vbs4.open(path.string()));
+        auto frame = vbs4.read_frame(0);
+        REQUIRE(frame.cus.empty());
+        vbs4.close();
+        std::filesystem::remove(path);
     }
 }

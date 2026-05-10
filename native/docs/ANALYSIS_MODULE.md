@@ -88,6 +88,20 @@ HEVC/H.265 由 FFmpeg analyzer 自行 demux/decode 并写入 VBS4。VAC 只保�
 | `naki_analysis_get_nalus` | 返回 NALU 信息数组 |
 | `naki_analysis_set_overlay` | 设置叠加层显示状态 |
 
+ABI / lifecycle notes:
+
+- `naki_analysis_open` / `naki_analysis_close` / `naki_analysis_handle_*` are the
+  preferred APIs for new code. Handle state is pinned with `shared_ptr`, so
+  closing a handle is safe while readers already inside an FFI call finish.
+- Legacy flat structs remain unchanged for Dart compatibility. V2 wrapper
+  structs add `size` and `abi_version` headers for future callers without
+  changing the legacy ABI.
+- `naki_analysis_last_error(buf, cap)` returns thread-local status/message for
+  the most recent analysis FFI call on the same thread.
+- Summary pointers point to thread-local snapshots and are valid only until the
+  next analysis FFI call on that thread. Bulk data APIs use caller-provided
+  output buffers.
+
 ## 测试
 
 独立测试目标 `analysis_tests`（Catch2），位于 `native/tests/analysis/`：

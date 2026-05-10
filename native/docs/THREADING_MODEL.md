@@ -40,7 +40,7 @@
 - FFmpeg 解码（D3D11VA 硬解 / 软解）
 - FrameConverter 统一输出 TextureFrame
 - 写入 TrackBuffer（BidiRingBuffer）
-- 硬解时通过 shared_mutex 序列化 D3D11 Context 访问
+- 硬解时通过 `device_mutex_` 序列化 D3D11 immediate context 访问
 
 ### Render 线程（单例）
 
@@ -75,15 +75,34 @@ Deadline-based sleep 保证长时间播放无累积漂移。
 
 | 资源 | 保护方式 | 持锁时间 |
 |------|---------|---------|
+| Renderer lifecycle | `lifecycle_mutex_` | public API 入口、render thread join、headless texture snapshot |
+| Renderer state | `state_mutex_` | tracks/layout/background/last decision/EOF/seek policy state |
 | PacketQueue | mutex + condvar | push/pop 瞬间 |
 | BidiRingBuffer | mutex | push/peek/advance 瞬间 |
 | Clock | mutable mutex | 查询/更新瞬间 |
 | SeekController | mutex + atomic | request/take 瞬间 |
-| D3D11 Context | recursive_mutex（硬解时共享） | decode 期间 |
+| D3D11 Context | `device_mutex_` (`recursive_mutex`) | render draw/present、headless resize/publish、D3D11VA decode 使用 immediate context |
 | Headless shared texture | texture_mutex | shared handle 查询、front/back 索引切换、resize、capture |
 | TrackBuffer state | mutex | 状态变更瞬间 |
 
-Headless 输出路径的锁顺序固定为 `device_mutex -> texture_mutex`。`D3D11HeadlessOutput::*_locked()` 方法要求调用方已持有 `texture_mutex()`；不要在这些方法内部再反向获取 `device_mutex`。`Renderer::draw_headless_and_publish()` 会在内部短暂获取 `texture_mutex()`，调用方必须只持有 `device_mutex`，不能预先持有 `texture_mutex()`。
+### Renderer 锁顺序
+
+Renderer 内部允许的嵌套顺序是：
+
+```text
+lifecycle_mutex_ -> state_mutex_ -> device_mutex_ -> texture_mutex()
+```
+
+规则：
+
+- Public API 入口如果会改变生命周期或跨线程资源，先拿 `lifecycle_mutex_`，再视需要短暂拿 `state_mutex_`。
+- `shutdown()` 在释放 `state_mutex_` 后 join render thread；不能持有 `state_mutex_` 等待线程退出。
+- Render thread 不拿 `lifecycle_mutex_`。它只通过 atomics、`state_mutex_` 快照和队列/buffer API 与外部 API 协调。
+- D3D11 draw/present、headless resize/publish、GPU fence wait 只在 `device_mutex_` 下执行；不要在持有 `texture_mutex()` 时等待 GPU。
+- Headless 输出路径的锁顺序固定为 `device_mutex_ -> texture_mutex()`。`D3D11HeadlessOutput::*_locked()` 方法要求调用方已持有 `texture_mutex()`；不要在这些方法内部再反向获取 `device_mutex_`。
+- `Renderer::draw_headless_and_publish()` 会在内部短暂获取 `texture_mutex()`，调用方必须只持有 `device_mutex_`，不能预先持有 `texture_mutex()`。
+- Callback（Flutter frame callback、seek callback、audio callback）不能在持有 `state_mutex_`、`device_mutex_` 或 `texture_mutex()` 时执行。需要 callback 时先复制/取出，再在锁外调用。
+- `TrackPipelineManager::stop_all()` 只能在 render thread 已停或调用方已经保证没有 render-loop 并发访问 `tracks_` 时执行。
 
 Headless publish 的同步契约：
 
@@ -92,6 +111,29 @@ Headless publish 的同步契约：
 - fence 完成后再短暂持有 `texture_mutex` 切换 front buffer 并取出 callback；callback 在锁外执行。
 - Flutter consumer 通过 `acquire_shared_texture()` 一次性拿到 AddRef 后的 texture 与 shared handle，release 由 Windows runner 的 `FlutterDesktopGpuSurfaceDescriptor::release_callback` 归还。
 - `GetSharedHandle()` 失败是初始化/resize hard failure，不能发布空 handle。
+
+## Renderer 调用线程契约
+
+| 调用方 | 允许调用 / 访问 | 禁止事项 |
+| --- | --- | --- |
+| UI / FFI / Python host thread | `initialize`、`shutdown`、`play`、`pause`、`seek`、`set_speed`、track add/remove、layout/background、resize、texture acquire、stats/query API | 不要持有宿主 callback lock 后同步调用会等待 native callback 的 API；同一 player 的 C FFI API 已由 handle mutex 串行化 |
+| Render thread | `render_loop`、`do_resize`、`present_frame`、`draw_frame`、headless publish、paused redraw、EOF settling | 不调用 public lifecycle API；不 join 自己；不执行 Flutter callback while holding renderer locks |
+| Demux thread | 写 `PacketQueue`，消费 `SeekController`，通过注册 seek callback 通知 decode/audio | 不直接访问 `Renderer::tracks_`、layout、D3D resources |
+| Decode thread | 消费 `PacketQueue`，写 `TrackBuffer`，硬解路径持 `device_mutex_` 使用 D3D11VA immediate context | 不访问 headless texture mutex；不调用 Renderer public API |
+| Audio decode / callback path | 通过 `AudioCoordinator` 消费 audio packet queue，响应 seek/pause/speed state | 不访问 D3D resources 或 render layout state |
+| Flutter texture consumer | 只通过 `acquire_shared_texture()` 获取 AddRef 后的 texture/handle snapshot | 不缓存未 AddRef 的 native texture pointer |
+
+## Renderer 拆分边界
+
+`Renderer` 仍是 native 播放器的 facade 和生命周期所有者。新增职责时优先放入已有组件；确实需要拆分时按下列边界切：
+
+- Render loop / tick / present scheduling: 从 `render_loop()`、`present_frame()` 外提为 `RenderLoopController`，但 D3D draw 仍需遵守 `device_mutex_`。
+- Layout validation / order / viewport math: 从 `apply_layout()`、`display_pixel_size_for_layout_locked()`、`update_track_geometry_from_decision_locked()` 外提为 `LayoutController`。
+- Analysis overlay CPU raster + D3D upload: 从 `draw_analysis_overlay()`、`ensure_analysis_overlay_texture()` 外提为 `AnalysisOverlayRenderer`。
+- Device loss terminal/recreate policy: 从 `enter_terminal_device_lost_locked()` 和 poll sites 外提为 `DeviceLossPolicy`。
+- Front-buffer capture and snapshot helpers: 从 `capture_front_buffer()` / headless snapshot helpers 外提为 `FrameCaptureService`。
+
+拆分前必须先写下新组件的锁所有权：组件是否能拿 `state_mutex_`、是否能调用 callback、是否能触碰 D3D immediate context。
 
 ## 线程间通信
 

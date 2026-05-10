@@ -30,7 +30,7 @@ typedef enum naki_vr_status_t {
     NAKI_VR_ERR_INTERNAL = 1000
 } naki_vr_status_t;
 
-/* Opaque handle to vr::NativePlayer. */
+/* Opaque player handle. */
 typedef void* naki_vr_player_t;
 
 /* ---- Config structs ---- */

@@ -131,3 +131,5 @@ AVFrame(D3D11VA NV12) -> TextureFrame(is_nv12, hw_frame_ref) -> renderer copy/sa
 3. Exact seek 丢弃目标前的帧，并保留目标前最后一帧作为暂停预览候选。
 4. 硬解 exact seek 会轻微 pacing，避免 paused HEVC burst feeding 触发驱动不稳定。
 5. post-seek preroll 达到阈值后设置 Ready。
+
+Exact seek 的容器/码流限制见 [SEEK_STRATEGY.md](SEEK_STRATEGY.md)。特别是 H.264/FLV 如果只在 AVC sequence header 中保存 SPS/PPS，而 IDR 不重复参数集，flush 后从 seek 点开始解码可能缺少上下文。当前策略是记录 warning 并保持 best-effort，不自动注入参数集或静默降级。

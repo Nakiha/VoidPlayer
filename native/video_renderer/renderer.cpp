@@ -8,6 +8,7 @@
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -44,6 +45,21 @@ int64_t track_pts_end_us_from_stats(const DemuxStats& stats) {
         return stats.duration_us;
     }
     return stats.start_time_us + stats.duration_us;
+}
+
+bool is_h264_flv_track(const TrackPipeline& track) {
+    if (!track.demux_thread) {
+        return false;
+    }
+    const auto& stats = track.demux_thread->stats();
+    if (!stats.codec_params || stats.codec_params->codec_id != AV_CODEC_ID_H264) {
+        return false;
+    }
+    std::string format = stats.format_name;
+    std::transform(format.begin(), format.end(), format.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return format.find("flv") != std::string::npos;
 }
 
 namespace {
@@ -528,13 +544,8 @@ void Renderer::seek_internal(int64_t target_pts_us,
                              bool allow_deferred,
                              bool force_recreate_paused_hevc) {
     // Caller must hold state_mutex_
-    // Known limitation: exact seek assumes the target keyframe carries the
-    // codec parameter sets needed by the decoder. Some H.264 FLV files store
-    // SPS/PPS only in the AVC sequence header and omit them on IDR frames.
-    // Seeking directly to such an IDR may leave the decoder without fresh
-    // parameters and produce corrupted output. We intentionally do not repair
-    // those streams here; remux/re-encode with SPS/PPS on keyframes if exact
-    // seek correctness is required.
+    // See native/docs/SEEK_STRATEGY.md for codec/container-specific exact seek
+    // limits, especially H.264 FLV streams without repeated SPS/PPS on IDR.
     const int64_t requested_pts_us = target_pts_us;
     const int64_t duration_us = effective_duration_us_locked();
     if (duration_us > 0) {
@@ -559,6 +570,12 @@ void Renderer::seek_internal(int64_t target_pts_us,
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks_[i]) continue;
         auto* track = tracks_[i].get();
+        if (type == SeekType::Exact && is_h264_flv_track(*track)) {
+            spdlog::warn("[Renderer] Exact seek on H.264/FLV is best-effort: "
+                         "streams that omit SPS/PPS on IDR frames can decode "
+                         "incorrectly after seek. Remux/re-encode with repeated "
+                         "headers for frame-accurate previews.");
+        }
         const int64_t requested_track_target =
             std::max(target_pts_us - track->offset_us, int64_t(0));
         int64_t track_target =

@@ -563,9 +563,17 @@ VideoRendererPlugin::VideoRendererPlugin(
     vr::LogConfig config;
     config.file_path = logs_dir_ + "\\" + log_file_name_;
     config.max_files = 5;
+    config.configure_console_codepage = true;
+    config.use_environment_level_override = true;
+    config.manage_global_flush = true;
     vr::configure_logging(config);
     RunnerStartupTraceFlush();
-    vr::install_crash_handler(logs_dir_);
+    vr::WindowsCrashHandlerConfig crash_config;
+    crash_config.crash_dir = logs_dir_;
+    crash_config.install_unhandled_exception_filter = true;
+    crash_config.install_vectored_exception_handler = true;
+    crash_config.install_crt_handlers = true;
+    vr::install_windows_crash_handler(crash_config);
 
     spdlog::info("[VideoRendererPlugin] Plugin constructed, native logging initialized: {}", config.file_path);
     spdlog::info("[VideoRendererPlugin] Crash handler installed (VEH + SEH), crash dir: {}", logs_dir_);
@@ -971,6 +979,9 @@ void VideoRendererPlugin::InitLogging(
     config.file_path = logs_dir_ + "\\" + log_file_name_;
     config.level = level;
     config.max_files = 5;
+    config.configure_console_codepage = true;
+    config.use_environment_level_override = true;
+    config.manage_global_flush = true;
 
     vr::configure_logging(config);
 

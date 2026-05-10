@@ -37,6 +37,25 @@ seek 到关键帧 -> 解码并丢弃目标前帧 -> 发布目标前最后可显�
 
 用于逐帧回退缓存未命中，以及需要接近用户点击 PTS 的暂停预览。B 帧/DPB 可能导致输出顺序晚于输入，因此 DecodeThread 有 exact seek candidate/reorder 逻辑。
 
+Exact seek 仍依赖容器和码流在 seek 点之后提供足够的解码上下文。它不是对所有损坏或省略参数集的 bitstream 的修复器。
+
+### H.264 / FLV SPS/PPS 限制
+
+H.264 FLV 常见两种打包方式：
+
+- SPS/PPS 写在 AVC sequence header，并且关键帧 IDR 不重复携带参数集。
+- 每个关键帧附近重复 SPS/PPS，decoder 从 seek 点开始也能重新获得参数集。
+
+当前 exact seek 对 H.264/FLV 是 best-effort。如果文件只在 AVC sequence header 里保存 SPS/PPS，直接 seek 到后续 IDR 可能让 decoder 在 flush 后缺少参数集，从而出现坏帧、黑帧或无法稳定输出暂停预览。Renderer 会记录 warning，但不会自动注入 SPS/PPS，也不会把 exact seek 静默降级成 keyframe seek。
+
+需要 frame-accurate 暂停预览的 H.264/FLV 输入应在生成或 remux 时让关键帧重复 headers，例如 x264 `repeat-headers=1`，或转成参数集分布更适合随机访问的容器/码流。
+
+后续如果要改变行为，优先顺序是：
+
+1. 在 demux/bitstream 层检测目标 IDR 附近是否已有 SPS/PPS。
+2. 对缺失参数集的 H.264/FLV 返回显式 unsupported-path status，或在 UI 层降级提示。
+3. 只有在能证明 extradata 注入不会破坏其他路径时，才考虑自动注入保存的 SPS/PPS。
+
 ## 当前触发矩阵
 
 | 场景 | Seek 类型 | 说明 |
@@ -90,3 +109,5 @@ Seek 相关 native 改动至少跑 `python dev.py test`。如果影响主窗口�
 ```bash
 python dev.py ui-test ui_tests/h265_seek_visual_regression.csv
 ```
+
+H.264/FLV “IDR 不重复 SPS/PPS”的 exact seek 目前缺少可签入的小型回归资产。新增行为变更时需要补一个合法生成的 fixture，或者在 UI 自动化中提供一个可复现的本地样本路径并在最终说明里标注该覆盖不是通用 CI 用例。

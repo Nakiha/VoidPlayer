@@ -241,7 +241,9 @@ static bool stderr_available() {
 
 void configure_logging(const LogConfig& config) {
 #ifdef _WIN32
-    configure_windows_utf8_console();
+    if (config.configure_console_codepage) {
+        configure_windows_utf8_console();
+    }
 #endif
 
     auto logger = spdlog::default_logger();
@@ -249,13 +251,15 @@ void configure_logging(const LogConfig& config) {
     static std::vector<spdlog::sink_ptr> native_sinks;
     std::lock_guard<std::mutex> lock(logging_mutex);
 
-    // Check SPDLOG_LEVEL env var to override configured level
     spdlog::level::level_enum effective_level = config.level;
-    const char* env_level = std::getenv("SPDLOG_LEVEL");
-    if (env_level && env_level[0] != '\0') {
-        auto parsed = spdlog::level::from_str(env_level);
-        if (parsed != spdlog::level::off || spdlog::level::to_string_view(spdlog::level::off) == env_level) {
-            effective_level = parsed;
+    if (config.use_environment_level_override) {
+        const char* env_level = std::getenv("VOIDPLAYER_NATIVE_LOG_LEVEL");
+        if (env_level && env_level[0] != '\0') {
+            auto parsed = spdlog::level::from_str(env_level);
+            if (parsed != spdlog::level::off ||
+                spdlog::level::to_string_view(spdlog::level::off) == env_level) {
+                effective_level = parsed;
+            }
         }
     }
 
@@ -320,12 +324,14 @@ void configure_logging(const LogConfig& config) {
         logger->set_level(effective_level);
     }
 
-    // Flush every info log so crash-adjacent traces are persisted to disk.
-    logger->flush_on(spdlog::level::info);
-    spdlog::flush_on(spdlog::level::info);
+    if (config.manage_global_flush) {
+        // Flush every info log so crash-adjacent traces are persisted to disk.
+        logger->flush_on(spdlog::level::info);
+        spdlog::flush_on(spdlog::level::info);
 
-    // Keep a background flush as a fallback for sinks that buffer internally.
-    spdlog::flush_every(std::chrono::seconds(1));
+        // Keep a background flush as a fallback for sinks that buffer internally.
+        spdlog::flush_every(std::chrono::seconds(1));
+    }
 }
 
 } // namespace vr

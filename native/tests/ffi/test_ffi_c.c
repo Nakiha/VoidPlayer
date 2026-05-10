@@ -11,6 +11,10 @@
 #include <string.h>
 #include <stddef.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 static int g_pass = 0;
 static int g_fail = 0;
 
@@ -58,6 +62,23 @@ static void init_layout_state(naki_vr_player_layout_state_t* state) {
 static naki_vr_status_t last_error(char* buf, size_t cap) {
     return naki_vr_last_error(NULL, buf, cap);
 }
+
+#ifdef _WIN32
+typedef struct FfiReaderArgs {
+    naki_vr_player_t player;
+    volatile LONG* stop;
+    volatile LONG* calls;
+} FfiReaderArgs;
+
+static DWORD WINAPI ffi_reader_thread(LPVOID param) {
+    FfiReaderArgs* args = (FfiReaderArgs*)param;
+    while (InterlockedCompareExchange(args->stop, 0, 0) == 0) {
+        (void)naki_vr_player_is_initialized(args->player);
+        InterlockedIncrement(args->calls);
+    }
+    return 0;
+}
+#endif
 
 int main(void) {
     printf("=== C FFI Validation ===\n\n");
@@ -138,6 +159,49 @@ int main(void) {
         CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
               "destroyed handle query reports invalid argument");
     }
+
+#ifdef _WIN32
+    /* ---- concurrent destroy / query smoke ---- */
+    {
+        enum { kThreadCount = 4 };
+        naki_vr_player_t p = naki_vr_player_create();
+        volatile LONG stop = 0;
+        volatile LONG calls = 0;
+        HANDLE threads[kThreadCount];
+        FfiReaderArgs args;
+        int created = 0;
+
+        args.player = p;
+        args.stop = &stop;
+        args.calls = &calls;
+
+        for (int i = 0; i < kThreadCount; ++i) {
+            HANDLE thread = CreateThread(NULL, 0, ffi_reader_thread, &args, 0, NULL);
+            if (thread != NULL) {
+                threads[created++] = thread;
+            }
+        }
+
+        Sleep(10);
+        naki_vr_player_destroy(p);
+        Sleep(10);
+        InterlockedExchange(&stop, 1);
+
+        if (created > 0) {
+            WaitForMultipleObjects((DWORD)created, threads, TRUE, 5000);
+        }
+        for (int i = 0; i < created; ++i) {
+            CloseHandle(threads[i]);
+        }
+
+        CHECK(created == kThreadCount, "concurrent FFI smoke created reader threads");
+        CHECK(calls > 0, "concurrent FFI smoke exercised reader calls");
+        CHECK(naki_vr_player_is_initialized(p) == 0,
+              "query after concurrent destroy returns default");
+        CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
+              "query after concurrent destroy reports invalid argument");
+    }
+#endif
 
     /* ---- NULL safety ---- */
     {

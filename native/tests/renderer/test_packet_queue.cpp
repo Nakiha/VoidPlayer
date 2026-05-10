@@ -2,8 +2,21 @@
 #include "media/packet_queue.h"
 #include <thread>
 #include <chrono>
+#include <deque>
+#include <random>
 
 using namespace vr;
+
+namespace {
+
+AVPacket* make_packet(int64_t pts) {
+    auto* pkt = av_packet_alloc();
+    REQUIRE(pkt != nullptr);
+    pkt->pts = pts;
+    return pkt;
+}
+
+} // namespace
 
 TEST_CASE("PacketQueue: push and pop preserves order", "[packet_queue]") {
     PacketQueue pq(10);
@@ -192,4 +205,73 @@ TEST_CASE("PacketQueue: flush discards all packets", "[packet_queue]") {
     REQUIRE(pq.empty() == true);
     REQUIRE(pq.size() == 0);
     REQUIRE(pq.is_eof() == false);
+}
+
+TEST_CASE("PacketQueue: deterministic nonblocking sequence preserves FIFO and states",
+          "[packet_queue]") {
+    constexpr size_t kCapacity = 4;
+    PacketQueue pq(kCapacity);
+    std::deque<int64_t> expected;
+    std::mt19937 rng(0xFACE);
+    int64_t next_pts = 0;
+
+    for (int step = 0; step < 500; ++step) {
+        const int op = static_cast<int>(rng() % 6);
+        if (op <= 1) {
+            auto* pkt = make_packet(next_pts);
+            const bool ok = pq.try_push(pkt);
+            REQUIRE(ok == (expected.size() < kCapacity));
+            if (ok) {
+                expected.push_back(next_pts);
+                ++next_pts;
+            } else {
+                av_packet_free(&pkt);
+            }
+        } else if (op == 2) {
+            const auto result = pq.try_pop();
+            if (expected.empty()) {
+                REQUIRE(result.status == PacketPopStatus::Empty);
+                REQUIRE(result.packet == nullptr);
+            } else {
+                REQUIRE(result.status == PacketPopStatus::Packet);
+                REQUIRE(result.packet != nullptr);
+                REQUIRE(result.packet->pts == expected.front());
+                expected.pop_front();
+                auto* pkt = result.packet;
+                av_packet_free(&pkt);
+            }
+        } else if (op == 3) {
+            pq.flush();
+            expected.clear();
+            REQUIRE(pq.empty());
+            auto result = pq.try_pop();
+            REQUIRE(result.status == PacketPopStatus::Flushed);
+            REQUIRE(result.packet == nullptr);
+            REQUIRE(pq.try_pop().status == PacketPopStatus::Empty);
+        } else if (op == 4) {
+            pq.signal_eof();
+            if (expected.empty()) {
+                auto result = pq.try_pop();
+                REQUIRE(result.status == PacketPopStatus::Eof);
+                REQUIRE(result.packet == nullptr);
+            }
+            pq.clear_eof();
+            REQUIRE_FALSE(pq.is_eof());
+        } else {
+            pq.abort();
+            REQUIRE(pq.is_aborted());
+            auto result = pq.try_pop();
+            REQUIRE(result.status == PacketPopStatus::Aborted);
+            REQUIRE(result.packet == nullptr);
+            auto* pkt = make_packet(next_pts);
+            REQUIRE_FALSE(pq.try_push(pkt));
+            av_packet_free(&pkt);
+            pq.reset();
+            expected.clear();
+            REQUIRE_FALSE(pq.is_aborted());
+            REQUIRE(pq.empty());
+        }
+
+        REQUIRE(pq.size() == expected.size());
+    }
 }

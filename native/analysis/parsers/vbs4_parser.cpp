@@ -76,7 +76,7 @@ bool decode_u32_stream(const uint8_t* data,
     out.clear();
     out.reserve(count);
     if (encoding == VBS4_ENCODING_RAW) {
-        if (size < count) return false;
+        if (size != count) return false;
         for (uint32_t i = 0; i < count; ++i) out.push_back(data[i]);
         return true;
     }
@@ -115,7 +115,7 @@ bool decode_i32_stream(const uint8_t* data,
     out.clear();
     out.reserve(count);
     if (encoding == VBS4_ENCODING_RAW) {
-        if (size < count) return false;
+        if (size != count) return false;
         for (uint32_t i = 0; i < count; ++i) out.push_back(static_cast<int32_t>(data[i]));
         return true;
     }

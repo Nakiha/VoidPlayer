@@ -50,7 +50,7 @@ jobs:
         run: python dev.py test --native-only --github
 
   native-config-matrix:
-    name: Configure ${{ matrix.name }}
+    name: Build ${{ matrix.name }}
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -80,4 +80,14 @@ jobs:
           -DBUILD_PYTHON=${{ matrix.build_python }}
           -DBUILD_FFI=${{ matrix.build_ffi }}
           -DBUILD_TESTS=${{ matrix.build_tests }}
+          -DBUILD_ANALYSIS_TESTS=OFF
           -DBUILD_BENCHMARKS=OFF
+
+      - name: Build native
+        shell: pwsh
+        run: cmake --build "native/build-ci-${{ matrix.name }}" --config Release --parallel
+
+      - name: Run FFI ABI smoke
+        if: ${{ matrix.build_ffi == 'ON' && matrix.build_tests == 'ON' }}
+        shell: pwsh
+        run: ctest --test-dir "native/build-ci-${{ matrix.name }}" -C Release --output-on-failure -R test_ffi_c

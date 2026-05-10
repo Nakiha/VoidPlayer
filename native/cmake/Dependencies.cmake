@@ -1,5 +1,9 @@
 include(FetchContent)
 
+option(VOID_USE_LOCAL_DEPS
+       "Use existing local dependency source directories instead of locked FetchContent downloads"
+       OFF)
+
 set(VOID_ZSTD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/analysis/vendor/zstd")
 if(EXISTS "${VOID_ZSTD_DIR}/build/cmake/CMakeLists.txt" AND NOT TARGET libzstd_static)
     set(ZSTD_BUILD_SHARED OFF CACHE BOOL "" FORCE)
@@ -23,9 +27,9 @@ function(void_link_zstd target_name)
     endif()
 endfunction()
 
-# spdlog (header-only): try the Flutter build cache first, fallback to FetchContent.
+# spdlog (header-only): locked FetchContent by default; local cache is explicit opt-in.
 set(SPDLOG_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build/windows/x64/_deps/spdlog-src")
-if(EXISTS "${SPDLOG_LOCAL_DIR}/include/spdlog/spdlog.h")
+if(VOID_USE_LOCAL_DEPS AND EXISTS "${SPDLOG_LOCAL_DIR}/include/spdlog/spdlog.h")
     message(STATUS "Using local spdlog from: ${SPDLOG_LOCAL_DIR}")
     add_library(spdlog_header_only INTERFACE)
     target_include_directories(spdlog_header_only INTERFACE "${SPDLOG_LOCAL_DIR}/include")
@@ -34,8 +38,7 @@ else()
     FetchContent_Declare(
         spdlog
         GIT_REPOSITORY https://github.com/gabime/spdlog.git
-        GIT_TAG v1.15.2
-        GIT_SHALLOW TRUE
+        GIT_TAG 48bcf39a661a13be22666ac64db8a7f886f2637e
     )
     set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(spdlog)
@@ -45,16 +48,14 @@ option(BUILD_TESTS "Build tests" ON)
 option(BUILD_ANALYSIS_TESTS "Build native analysis tests that require external analysis tools" ON)
 if(BUILD_TESTS)
     set(CATCH2_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/_deps/catch2-src")
-    if(EXISTS "${CATCH2_LOCAL_DIR}/CMakeLists.txt")
+    if(VOID_USE_LOCAL_DEPS AND EXISTS "${CATCH2_LOCAL_DIR}/CMakeLists.txt")
         message(STATUS "Using local Catch2 from: ${CATCH2_LOCAL_DIR}")
         add_subdirectory("${CATCH2_LOCAL_DIR}" "${CMAKE_BINARY_DIR}/_deps/catch2-build")
     else()
         FetchContent_Declare(
             Catch2
             GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-            GIT_TAG v3.8.1
-            GIT_SHALLOW TRUE
-            SOURCE_DIR "${CATCH2_LOCAL_DIR}"
+            GIT_TAG 56809e5282f104c5c8b570e7c2996cdc352d94f1
         )
         FetchContent_MakeAvailable(Catch2)
     endif()

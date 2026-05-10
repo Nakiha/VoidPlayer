@@ -66,7 +66,7 @@ python native/build.py
 | `BUILD_TESTS` | `ON` | 构建 CTest 测试目标 |
 | `BUILD_BENCHMARKS` | `OFF` | 构建 pipeline benchmark |
 
-CI 入口位于 `.github/workflows/native.yml`，包含完整 `python dev.py test --native-only`，并额外覆盖 `BUILD_PYTHON=OFF`、`BUILD_FFI=ON/OFF`、`BUILD_TESTS=ON/OFF` 的 clean configure 组合。
+CI 入口位于 `.github/workflows/native.yml`，包含完整 `python dev.py test --native-only`，并额外覆盖 `BUILD_PYTHON=OFF`、`BUILD_FFI=ON/OFF`、`BUILD_TESTS=ON/OFF` 的 clean configure + build 组合；FFI/tests 组合还会运行 `test_ffi_c` ABI smoke。
 
 ## 依赖
 
@@ -74,12 +74,14 @@ CI 入口位于 `.github/workflows/native.yml`，包含完整 `python dev.py tes
 |------|------|------|
 | FFmpeg runtime/dev package | `FFMPEG_ROOT` / `FFMPEG_DIR` / `--ffmpeg-root`，默认 `windows/libs/ffmpeg` | demux、软解、D3D11VA 硬解、hwdownload |
 | zstd | `native/analysis/vendor/zstd` | VBS4 解析/生成 |
-| spdlog | `build/windows/x64/_deps/spdlog-src`，缺失时 FetchContent | native 日志 |
-| Catch2 | `native/_deps/catch2-src`，缺失时 FetchContent | C++ 测试 |
+| spdlog | FetchContent commit pin；`VOID_USE_LOCAL_DEPS=ON` 时可使用本地 cache | native 日志 |
+| Catch2 | FetchContent commit pin；`VOID_USE_LOCAL_DEPS=ON` 时可使用本地 cache | C++ 测试 |
 | pybind11 | Python 包提供的 `pybind11_DIR` 或 CMake `find_package` | Python 绑定 |
 | VTM DecoderApp | `native/analysis/vendor/vtm`，缺失或 stamp 过期时由 `dev.py` 构建 | analysis 测试生成 VBS4 |
 
-当前依赖入口以“仓库内固定路径 + 显式 override”为准：FFmpeg 只能从 `FFMPEG_ROOT` 指向的完整 dev package 读取头文件、lib 和 runtime DLL；zstd/VTM 使用 analysis vendor 子模块；spdlog/Catch2 允许本地缓存优先、网络 FetchContent 兜底。不要在同一轮改动里混入新的包管理器策略；如要迁到 vcpkg/Conan，应单独开轮次并同步 CI。
+当前依赖入口以“仓库内固定路径 + 显式 override + commit pin”为准：FFmpeg 只能从 `FFMPEG_ROOT` 指向的完整 dev package 读取头文件、lib 和 runtime DLL；zstd/VTM/analysis FFmpeg 使用 analysis vendor 子模块；spdlog/Catch2 默认通过 locked FetchContent 获取。已有本地源码 cache 只有在显式设置 `-DVOID_USE_LOCAL_DEPS=ON` 时才会优先使用，避免 clean checkout、CI 和个人机器因为残留 cache 产生不同依赖来源。
+
+Native 第三方依赖清单位于 [`native/THIRD_PARTY_NATIVE.md`](../THIRD_PARTY_NATIVE.md)。更新依赖版本、submodule pointer 或 runtime package 时，必须同步更新该清单。
 
 ### FFmpeg Runtime Package
 

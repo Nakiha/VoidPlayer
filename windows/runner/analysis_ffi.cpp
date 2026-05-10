@@ -32,18 +32,44 @@ extern "C" {
 #include <libavcodec/bsf.h>
 }
 
-static constexpr int32_t kNakiAnalysisAbiVersion = 1;
-
 // Callback registered by video_renderer_plugin to provide current PTS.
 // Avoids analysis_ffi needing to know about vr::Renderer.
-static int64_t (*g_get_current_pts_us)() = nullptr;
+using PtsCallback = int64_t (*)();
+static std::atomic<PtsCallback> g_get_current_pts_us{nullptr};
+
+struct AnalysisFfiError {
+    int32_t status = NAKI_ANALYSIS_OK;
+    std::string message;
+};
+
+thread_local AnalysisFfiError g_last_analysis_error;
+
+void set_analysis_error(int32_t status, std::string message) {
+    g_last_analysis_error.status = status;
+    g_last_analysis_error.message = std::move(message);
+}
+
+void set_analysis_ok() {
+    set_analysis_error(NAKI_ANALYSIS_OK, "");
+}
 
 void naki_analysis_register_pts_callback(int64_t (*cb)()) {
-    g_get_current_pts_us = cb;
+    g_get_current_pts_us.store(cb, std::memory_order_release);
 }
 
 int32_t naki_analysis_abi_version() {
-    return kNakiAnalysisAbiVersion;
+    return NAKI_ANALYSIS_ABI_VERSION;
+}
+
+int32_t naki_analysis_last_error(char* buf, int32_t cap) {
+    if (buf && cap > 0) {
+        const auto& message = g_last_analysis_error.message;
+        const size_t writable = static_cast<size_t>(cap - 1);
+        const size_t to_copy = std::min(writable, message.size());
+        std::memcpy(buf, message.data(), to_copy);
+        buf[to_copy] = '\0';
+    }
+    return g_last_analysis_error.status;
 }
 
 int32_t naki_analysis_sizeof_summary() {
@@ -64,6 +90,26 @@ int32_t naki_analysis_sizeof_frame_bucket() {
 
 int32_t naki_analysis_sizeof_overlay_state() {
     return static_cast<int32_t>(sizeof(NakiOverlayState));
+}
+
+int32_t naki_analysis_sizeof_summary_v2() {
+    return static_cast<int32_t>(sizeof(NakiAnalysisSummaryV2));
+}
+
+int32_t naki_analysis_sizeof_frame_info_v2() {
+    return static_cast<int32_t>(sizeof(NakiFrameInfoV2));
+}
+
+int32_t naki_analysis_sizeof_nalu_info_v2() {
+    return static_cast<int32_t>(sizeof(NakiNaluInfoV2));
+}
+
+int32_t naki_analysis_sizeof_frame_bucket_v2() {
+    return static_cast<int32_t>(sizeof(NakiFrameBucketV2));
+}
+
+int32_t naki_analysis_sizeof_overlay_state_v2() {
+    return static_cast<int32_t>(sizeof(NakiOverlayStateV2));
 }
 
 namespace {
@@ -186,8 +232,8 @@ void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSumma
     s.time_base_den = vbt.header().time_base_den;
     s.codec = static_cast<int32_t>(vbi.codec());
 
-    if (g_get_current_pts_us) {
-        int64_t pts_us = g_get_current_pts_us();
+    if (auto cb = g_get_current_pts_us.load(std::memory_order_acquire)) {
+        int64_t pts_us = cb();
         s.current_frame_idx = mgr.current_frame_idx(pts_us);
     }
 }
@@ -373,11 +419,20 @@ int32_t fill_analysis_frame_buckets(vr::analysis::AnalysisManager& mgr,
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_load(const char* analysis_path) {
+    if (!analysis_path || analysis_path[0] == '\0') {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT, "analysis_path is required");
+        return 0;
+    }
     static int load_count = 0;
     std::lock_guard<std::mutex> lock(g_analysis_mutex);
     LogStackUsage(fmt::format("analysis_load #{}", ++load_count).c_str());
     auto& mgr = vr::analysis::AnalysisManager::instance();
-    return mgr.load(safe_cstr(analysis_path)) ? 1 : 0;
+    if (!mgr.load(analysis_path)) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_OPEN_FAILED, "failed to load analysis container");
+        return 0;
+    }
+    set_analysis_ok();
+    return 1;
 }
 
 extern "C" __declspec(dllexport)
@@ -386,6 +441,7 @@ void naki_analysis_unload() {
     std::lock_guard<std::mutex> lock(g_analysis_mutex);
     LogStackUsage(fmt::format("analysis_unload #{}", ++unload_count).c_str());
     vr::analysis::AnalysisManager::instance().unload();
+    set_analysis_ok();
 }
 
 extern "C" __declspec(dllexport)
@@ -463,10 +519,19 @@ void naki_analysis_set_overlay(const NakiOverlayState* state) {
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_set_overlay_track(int32_t track_file_id, const char* analysis_path) {
-    if (track_file_id < 0 || !analysis_path) return 0;
+    if (track_file_id < 0 || !analysis_path) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "track_file_id and analysis_path are required");
+        return 0;
+    }
     std::lock_guard<std::mutex> lock(g_analysis_mutex);
     auto& mgr = vr::analysis::AnalysisManager::instance();
-    return mgr.set_overlay_track(track_file_id, safe_cstr(analysis_path)) ? 1 : 0;
+    if (!mgr.set_overlay_track(track_file_id, safe_cstr(analysis_path))) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_OPEN_FAILED, "failed to set overlay track");
+        return 0;
+    }
+    set_analysis_ok();
+    return 1;
 }
 
 extern "C" __declspec(dllexport)
@@ -478,20 +543,35 @@ void naki_analysis_clear_overlay_tracks() {
 extern "C" __declspec(dllexport)
 NakiAnalysisHandle naki_analysis_open(const char* analysis_path) {
     try {
+        if (!analysis_path || analysis_path[0] == '\0') {
+            set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT, "analysis_path is required");
+            return nullptr;
+        }
         auto state = std::shared_ptr<AnalysisHandleState>(new (std::nothrow) AnalysisHandleState());
-        if (!state) return nullptr;
-        if (!state->manager.load(safe_cstr(analysis_path))) {
+        if (!state) {
+            set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL, "failed to allocate analysis handle");
+            return nullptr;
+        }
+        if (!state->manager.load(analysis_path)) {
+            set_analysis_error(NAKI_ANALYSIS_ERR_OPEN_FAILED, "failed to load analysis container");
             return nullptr;
         }
         auto handle = register_analysis_handle(state);
         if (!handle) {
             state->manager.unload();
+            set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL, "failed to register analysis handle");
+            return nullptr;
         }
+        set_analysis_ok();
         return handle;
     } catch (const std::exception& e) {
         spdlog::error("[analysis_ffi] naki_analysis_open failed: {}", e.what());
+        set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                           std::string("naki_analysis_open exception: ") + e.what());
     } catch (...) {
         spdlog::error("[analysis_ffi] naki_analysis_open failed: unknown exception");
+        set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                           "naki_analysis_open unknown exception");
     }
     return nullptr;
 }
@@ -499,10 +579,15 @@ NakiAnalysisHandle naki_analysis_open(const char* analysis_path) {
 extern "C" __declspec(dllexport)
 void naki_analysis_close(NakiAnalysisHandle handle) {
     auto state = unregister_analysis_handle(handle);
-    if (!state) return;
+    if (!state) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "analysis handle is invalid or closed");
+        return;
+    }
     std::lock_guard<std::mutex> lock(state->mutex);
     state->closed = true;
     state->manager.unload();
+    set_analysis_ok();
 }
 
 extern "C" __declspec(dllexport)
@@ -511,13 +596,17 @@ const NakiAnalysisSummary* naki_analysis_handle_get_summary(NakiAnalysisHandle h
     auto state = pin_analysis_handle(handle);
     if (!state) {
         std::memset(&summary, 0, sizeof(summary));
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "analysis handle is invalid or closed");
         return &summary;
     }
     std::lock_guard<std::mutex> lock(state->mutex);
     if (state->closed) {
         std::memset(&summary, 0, sizeof(summary));
+        set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
     } else {
         fill_analysis_summary(state->manager, summary);
+        set_analysis_ok();
     }
     return &summary;
 }
@@ -525,57 +614,127 @@ const NakiAnalysisSummary* naki_analysis_handle_get_summary(NakiAnalysisHandle h
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_frames(NakiAnalysisHandle handle, NakiFrameInfo* out, int32_t max_count) {
     auto state = pin_analysis_handle(handle);
-    if (!state) return 0;
+    if (!state) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "analysis handle is invalid or closed");
+        return 0;
+    }
     std::lock_guard<std::mutex> lock(state->mutex);
-    return state->closed ? 0 : fill_analysis_frames(state->manager, out, max_count);
+    if (state->closed) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
+        return 0;
+    }
+    auto count = fill_analysis_frames(state->manager, out, max_count);
+    set_analysis_ok();
+    return count;
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_frames_range(NakiAnalysisHandle handle, int32_t start, NakiFrameInfo* out, int32_t max_count) {
     auto state = pin_analysis_handle(handle);
-    if (!state) return 0;
+    if (!state) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "analysis handle is invalid or closed");
+        return 0;
+    }
     std::lock_guard<std::mutex> lock(state->mutex);
-    return state->closed ? 0 : fill_analysis_frames_range(state->manager, start, out, max_count);
+    if (state->closed) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
+        return 0;
+    }
+    auto count = fill_analysis_frames_range(state->manager, start, out, max_count);
+    set_analysis_ok();
+    return count;
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_nalus(NakiAnalysisHandle handle, NakiNaluInfo* out, int32_t max_count) {
     auto state = pin_analysis_handle(handle);
-    if (!state) return 0;
+    if (!state) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "analysis handle is invalid or closed");
+        return 0;
+    }
     std::lock_guard<std::mutex> lock(state->mutex);
-    return state->closed ? 0 : fill_analysis_nalus(state->manager, out, max_count);
+    if (state->closed) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
+        return 0;
+    }
+    auto count = fill_analysis_nalus(state->manager, out, max_count);
+    set_analysis_ok();
+    return count;
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_nalus_range(NakiAnalysisHandle handle, int32_t start, NakiNaluInfo* out, int32_t max_count) {
     auto state = pin_analysis_handle(handle);
-    if (!state) return 0;
+    if (!state) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "analysis handle is invalid or closed");
+        return 0;
+    }
     std::lock_guard<std::mutex> lock(state->mutex);
-    return state->closed ? 0 : fill_analysis_nalus_range(state->manager, start, out, max_count);
+    if (state->closed) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
+        return 0;
+    }
+    auto count = fill_analysis_nalus_range(state->manager, start, out, max_count);
+    set_analysis_ok();
+    return count;
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_frame_to_nalu(NakiAnalysisHandle handle, int32_t frame_index) {
     auto state = pin_analysis_handle(handle);
-    if (!state) return -1;
+    if (!state) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "analysis handle is invalid or closed");
+        return -1;
+    }
     std::lock_guard<std::mutex> lock(state->mutex);
-    return state->closed ? -1 : frame_to_nalu(state->manager, frame_index);
+    if (state->closed) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
+        return -1;
+    }
+    auto index = frame_to_nalu(state->manager, frame_index);
+    set_analysis_ok();
+    return index;
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_nalu_to_frame(NakiAnalysisHandle handle, int32_t nalu_index) {
     auto state = pin_analysis_handle(handle);
-    if (!state) return -1;
+    if (!state) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "analysis handle is invalid or closed");
+        return -1;
+    }
     std::lock_guard<std::mutex> lock(state->mutex);
-    return state->closed ? -1 : nalu_to_frame(state->manager, nalu_index);
+    if (state->closed) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
+        return -1;
+    }
+    auto index = nalu_to_frame(state->manager, nalu_index);
+    set_analysis_ok();
+    return index;
 }
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_frame_buckets(NakiAnalysisHandle handle, int32_t start, int32_t bucket_size, NakiFrameBucket* out, int32_t max_count) {
     auto state = pin_analysis_handle(handle);
-    if (!state) return 0;
+    if (!state) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "analysis handle is invalid or closed");
+        return 0;
+    }
     std::lock_guard<std::mutex> lock(state->mutex);
-    return state->closed ? 0 : fill_analysis_frame_buckets(state->manager, start, bucket_size, out, max_count);
+    if (state->closed) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
+        return 0;
+    }
+    auto count = fill_analysis_frame_buckets(state->manager, start, bucket_size, out, max_count);
+    set_analysis_ok();
+    return count;
 }
 
 // ---- Analysis generation ----

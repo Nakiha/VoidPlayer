@@ -24,6 +24,7 @@ MethodChannel 调用编排，以及 DX11 texture 的 Flutter 侧展示。
 | [Analysis 窗口架构](docs/ANALYSIS_WINDOW_ARCHITECTURE.md) | analysis app/page/workspace/chart/NALU/test runner 的职责边界 |
 | [Action 设计](docs/ACTION_DESIGN.md) | 快捷键、UI 按钮、测试脚本共用的 Action 抽象 |
 | [Action 维护](docs/ACTION_MAINTENANCE.md) | 新增/修改/移除 Action 与 Assert 的维护清单 |
+| [AXTree 维护](docs/AXTREE_MAINTENANCE.md) | 主窗口 / analysis 窗口 Semantics、UIA、识图分割维护规则 |
 | [UI 自动化测试](docs/UI_TESTING.md) | `ui_tests/` 目录分区、回归选择、补测试规则 |
 
 ## 常用开发命令

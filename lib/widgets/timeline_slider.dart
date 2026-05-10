@@ -60,101 +60,137 @@ class _TimelineSliderState extends State<TimelineSlider> {
       context,
     ).colorScheme.surfaceContainerHighest;
 
-    return Listener(
-      behavior: HitTestBehavior.opaque,
-      onPointerDown: (event) => _beginDrag(event.localPosition.dx),
-      onPointerMove: (event) => _updateDrag(event.localPosition.dx),
-      onPointerUp: (event) => _commitDrag(event.localPosition.dx),
-      onPointerCancel: (_) => _cancelDrag(),
-      onPointerHover: (event) {
-        setState(() => _hoverX = event.localPosition.dx);
-        _reportHover(event.localPosition.dx);
-      },
-      child: MouseRegion(
-        opaque: false,
-        onEnter: (event) {
-          setState(() {
-            _hovering = true;
-            _hoverX = event.localPosition.dx;
-          });
-          _reportHover(event.localPosition.dx);
-        },
-        onExit: (_) {
-          setState(() => _hovering = false);
-          widget.onHoverChanged?.call(0, false);
-        },
-        cursor: SystemMouseCursors.click,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            // Track
-            SizedBox.expand(
-              child: CustomPaint(
-                painter: _TrackPainter(
-                  value: widget.durationUs > 0
-                      ? (((_dragging ? _dragPreviewUs : widget.currentUs) ??
-                                    0) /
-                                widget.durationUs)
-                            .clamp(0.0, 1.0)
-                      : 0.0,
-                  trackHeight: _trackHeight,
-                  trackRadius: _trackRadius,
-                  accentColor: accentColor,
-                  inactiveColor: inactiveColor,
-                ),
+    final semanticsValue = widget.durationUs > 0
+        ? '${_formatTime(widget.currentUs)} / ${_formatTime(widget.durationUs)}'
+        : _formatTime(0);
+
+    return Semantics(
+      container: true,
+      slider: true,
+      label: 'Timeline seek',
+      value: semanticsValue,
+      increasedValue: _formatTime(
+        _clampSeekUs(
+          widget.currentUs + const Duration(seconds: 1).inMicroseconds,
+        ),
+      ),
+      decreasedValue: _formatTime(
+        _clampSeekUs(
+          widget.currentUs - const Duration(seconds: 1).inMicroseconds,
+        ),
+      ),
+      onIncrease: widget.durationUs > 0
+          ? () => widget.onSeek(
+              _clampSeekUs(
+                widget.currentUs + const Duration(seconds: 1).inMicroseconds,
               ),
-            ),
-            // Fixed loop markers + hover tooltip (positioned above the track)
-            if (((_hovering && widget.durationUs > 0) ||
-                    widget.markerUs.isNotEmpty) &&
-                widget.durationUs > 0)
-              Positioned(
-                top: -(_tooltipHeight + _triangleSize + _tooltipOffset),
-                left: 0,
-                right: 0,
-                child: IgnorePointer(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final width = constraints.maxWidth;
-                      final clampedX = _hoverX.clamp(0.0, width);
-                      final tooltipSize = Size(
-                        width,
-                        _tooltipHeight + _triangleSize,
-                      );
-                      final markers = widget.markerUs
-                          .where((us) => us >= 0 && us <= widget.durationUs)
-                          .map(
-                            (us) => _TooltipEntry(
-                              x: _usToX(us, width),
-                              text: _formatTime(us),
-                              color: markerTooltipColor,
-                            ),
-                          )
-                          .toList();
-                      if (_hovering) {
-                        markers.add(
-                          _TooltipEntry(
-                            x: clampedX,
-                            text: _formatTime(_xToUs(clampedX, width)),
-                            color: accentColor,
-                          ),
-                        );
-                      }
-                      return CustomPaint(
-                        size: tooltipSize,
-                        painter: _TooltipPainter(
-                          entries: markers,
-                          tooltipHeight: _tooltipHeight,
-                          tooltipPadding: _tooltipPadding,
-                          tooltipRadius: _tooltipRadius,
-                          triangleSize: _triangleSize,
-                        ),
-                      );
-                    },
+            )
+          : null,
+      onDecrease: widget.durationUs > 0
+          ? () => widget.onSeek(
+              _clampSeekUs(
+                widget.currentUs - const Duration(seconds: 1).inMicroseconds,
+              ),
+            )
+          : null,
+      child: ExcludeSemantics(
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: (event) => _beginDrag(event.localPosition.dx),
+          onPointerMove: (event) => _updateDrag(event.localPosition.dx),
+          onPointerUp: (event) => _commitDrag(event.localPosition.dx),
+          onPointerCancel: (_) => _cancelDrag(),
+          onPointerHover: (event) {
+            setState(() => _hoverX = event.localPosition.dx);
+            _reportHover(event.localPosition.dx);
+          },
+          child: MouseRegion(
+            opaque: false,
+            onEnter: (event) {
+              setState(() {
+                _hovering = true;
+                _hoverX = event.localPosition.dx;
+              });
+              _reportHover(event.localPosition.dx);
+            },
+            onExit: (_) {
+              setState(() => _hovering = false);
+              widget.onHoverChanged?.call(0, false);
+            },
+            cursor: SystemMouseCursors.click,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // Track
+                SizedBox.expand(
+                  child: CustomPaint(
+                    painter: _TrackPainter(
+                      value: widget.durationUs > 0
+                          ? (((_dragging ? _dragPreviewUs : widget.currentUs) ??
+                                        0) /
+                                    widget.durationUs)
+                                .clamp(0.0, 1.0)
+                          : 0.0,
+                      trackHeight: _trackHeight,
+                      trackRadius: _trackRadius,
+                      accentColor: accentColor,
+                      inactiveColor: inactiveColor,
+                    ),
                   ),
                 ),
-              ),
-          ],
+                // Fixed loop markers + hover tooltip (positioned above the track)
+                if (((_hovering && widget.durationUs > 0) ||
+                        widget.markerUs.isNotEmpty) &&
+                    widget.durationUs > 0)
+                  Positioned(
+                    top: -(_tooltipHeight + _triangleSize + _tooltipOffset),
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final width = constraints.maxWidth;
+                          final clampedX = _hoverX.clamp(0.0, width);
+                          final tooltipSize = Size(
+                            width,
+                            _tooltipHeight + _triangleSize,
+                          );
+                          final markers = widget.markerUs
+                              .where((us) => us >= 0 && us <= widget.durationUs)
+                              .map(
+                                (us) => _TooltipEntry(
+                                  x: _usToX(us, width),
+                                  text: _formatTime(us),
+                                  color: markerTooltipColor,
+                                ),
+                              )
+                              .toList();
+                          if (_hovering) {
+                            markers.add(
+                              _TooltipEntry(
+                                x: clampedX,
+                                text: _formatTime(_xToUs(clampedX, width)),
+                                color: accentColor,
+                              ),
+                            );
+                          }
+                          return CustomPaint(
+                            size: tooltipSize,
+                            painter: _TooltipPainter(
+                              entries: markers,
+                              tooltipHeight: _tooltipHeight,
+                              tooltipPadding: _tooltipPadding,
+                              tooltipRadius: _tooltipRadius,
+                              triangleSize: _triangleSize,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../widgets/axtree_region.dart';
 import '../page/analysis_page.dart';
 import '../widgets/analysis_split_layout_controller.dart';
 import '../widgets/analysis_style.dart';
@@ -69,27 +70,30 @@ class AnalysisSplitView extends StatelessWidget {
     final entry = entries[index];
     final theme = Theme.of(context);
     final divider = BorderSide(color: theme.colorScheme.outlineVariant);
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(
-          right: col < columns - 1 ? divider : BorderSide.none,
-          bottom: row < rows - 1 ? divider : BorderSide.none,
+    return AxTreeRegion(
+      label: 'Analysis pane ${index + 1}',
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            right: col < columns - 1 ? divider : BorderSide.none,
+            bottom: row < rows - 1 ? divider : BorderSide.none,
+          ),
         ),
-      ),
-      child: AnalysisTrackPane(
-        entry: entry,
-        index: index,
-        selected: index == selectedIndex,
-        showModeToggle: index == 0,
-        splitView: splitView,
-        modeToggleEnabled: modeToggleEnabled,
-        onModeChanged: onModeChanged,
-        onSelected: () => onSelected(index),
-        child: AnalysisPage(
-          key: ValueKey('analysis-split-${entry.hash}'),
-          hash: entry.hash,
-          pollSummary: false,
-          splitLayoutController: layoutController,
+        child: AnalysisTrackPane(
+          entry: entry,
+          index: index,
+          selected: index == selectedIndex,
+          showModeToggle: index == 0,
+          splitView: splitView,
+          modeToggleEnabled: modeToggleEnabled,
+          onModeChanged: onModeChanged,
+          onSelected: () => onSelected(index),
+          child: AnalysisPage(
+            key: ValueKey('analysis-split-${entry.hash}'),
+            hash: entry.hash,
+            pollSummary: false,
+            splitLayoutController: layoutController,
+          ),
         ),
       ),
     );

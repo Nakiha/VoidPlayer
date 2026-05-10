@@ -19,17 +19,15 @@ class AnalysisWorkspaceModeToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    return ExcludeSemantics(
-      child: ViewModeSelector(
-        currentMode: splitView ? 1 : 0,
-        onChanged: (value) => onChanged(value == 1),
-        firstLabel: l.analysisTabsMode,
-        secondLabel: l.analysisSplitMode,
-        width: 124,
-        height: analysisHeaderControlHeight,
-        enabled: enabled,
-        labelFontWeight: FontWeight.w700,
-      ),
+    return ViewModeSelector(
+      currentMode: splitView ? 1 : 0,
+      onChanged: (value) => onChanged(value == 1),
+      firstLabel: l.analysisTabsMode,
+      secondLabel: l.analysisSplitMode,
+      width: 124,
+      height: analysisHeaderControlHeight,
+      enabled: enabled,
+      labelFontWeight: FontWeight.w700,
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../widgets/app_feedback_host.dart';
+import '../../widgets/axtree_region.dart';
 import '../../widgets/toolbar.dart';
 import '../../widgets/viewport_panel.dart';
 import '../win32_pointer_button_state_provider.dart';
@@ -32,24 +33,27 @@ class MainWindowScaffold extends StatelessWidget {
           Column(
             children: [
               if (!overlays.fullScreen)
-                AppToolBar(
-                  viewMode: viewport.viewMode,
-                  onViewModeChanged: toolbarActions.onViewModeChanged,
-                  onOpenFile: toolbarActions.onOpenFile,
-                  onOpenNetworkMedia: toolbarActions.onOpenNetworkMedia,
-                  onOpenSshRemoteMedia: toolbarActions.onOpenSshRemoteMedia,
-                  onMediaInfo: toolbarActions.onMediaInfo,
-                  onAnalysis: toolbarActions.onAnalysis,
-                  onAnalysisOverlayToggle:
-                      toolbarActions.onAnalysisOverlayToggle,
-                  onProfiler: toolbarActions.onProfiler,
-                  onSettings: toolbarActions.onSettings,
-                  tracks: media.tracks,
-                  analysisDataSource: media.analysisDataSource,
-                  viewModeEnabled: viewport.viewModeEnabled,
-                  analysisEnabled: media.analysisEnabled,
-                  mediaInfoActive: overlays.mediaInfoVisible,
-                  profilerActive: overlays.profilerVisible,
+                AxTreeRegion(
+                  label: 'Main toolbar',
+                  child: AppToolBar(
+                    viewMode: viewport.viewMode,
+                    onViewModeChanged: toolbarActions.onViewModeChanged,
+                    onOpenFile: toolbarActions.onOpenFile,
+                    onOpenNetworkMedia: toolbarActions.onOpenNetworkMedia,
+                    onOpenSshRemoteMedia: toolbarActions.onOpenSshRemoteMedia,
+                    onMediaInfo: toolbarActions.onMediaInfo,
+                    onAnalysis: toolbarActions.onAnalysis,
+                    onAnalysisOverlayToggle:
+                        toolbarActions.onAnalysisOverlayToggle,
+                    onProfiler: toolbarActions.onProfiler,
+                    onSettings: toolbarActions.onSettings,
+                    tracks: media.tracks,
+                    analysisDataSource: media.analysisDataSource,
+                    viewModeEnabled: viewport.viewModeEnabled,
+                    analysisEnabled: media.analysisEnabled,
+                    mediaInfoActive: overlays.mediaInfoVisible,
+                    profilerActive: overlays.profilerVisible,
+                  ),
                 ),
               Expanded(
                 child: ViewportPanel(
@@ -68,7 +72,10 @@ class MainWindowScaffold extends StatelessWidget {
                 ),
               ),
               if (!overlays.fullScreen && media.tracks.isNotEmpty)
-                MediaTimelineSection(model: model, actions: actions),
+                AxTreeRegion(
+                  label: 'Playback timeline',
+                  child: MediaTimelineSection(model: model, actions: actions),
+                ),
             ],
           ),
           if (overlays.fullScreen)

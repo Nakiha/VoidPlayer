@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import '../utils/time_format.dart';
 import 'drag_excess_tracker.dart';
 
 enum LoopRangeHandle { start, end }
@@ -98,39 +99,49 @@ class _CompactSwitch extends StatelessWidget {
         : colorScheme.surfaceContainerHighest;
     final knobColor = value ? colorScheme.onPrimary : colorScheme.outline;
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return Semantics(
+      button: true,
+      toggled: value,
+      enabled: enabled,
+      label: AppLocalizations.of(context)!.loopRange,
       onTap: enabled ? () => onChanged?.call(!value) : null,
-      child: MouseRegion(
-        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-        child: SizedBox(
-          width: 34,
-          height: 22,
-          child: Align(
-            alignment: Alignment.center,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 140),
-              width: 30,
-              height: 16,
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                color: trackColor,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: value ? colorScheme.primary : colorScheme.outline,
-                  width: 1,
-                ),
-              ),
-              child: AnimatedAlign(
+      child: GestureDetector(
+        excludeFromSemantics: true,
+        behavior: HitTestBehavior.opaque,
+        onTap: enabled ? () => onChanged?.call(!value) : null,
+        child: MouseRegion(
+          cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+          child: SizedBox(
+            width: 34,
+            height: 22,
+            child: Align(
+              alignment: Alignment.center,
+              child: AnimatedContainer(
                 duration: const Duration(milliseconds: 140),
-                curve: Curves.easeOut,
-                alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-                child: Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: knobColor,
-                    shape: BoxShape.circle,
+                width: 30,
+                height: 16,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: trackColor,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: value ? colorScheme.primary : colorScheme.outline,
+                    width: 1,
+                  ),
+                ),
+                child: AnimatedAlign(
+                  duration: const Duration(milliseconds: 140),
+                  curve: Curves.easeOut,
+                  alignment: value
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
+                  child: Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: knobColor,
+                      shape: BoxShape.circle,
+                    ),
                   ),
                 ),
               ),
@@ -189,39 +200,50 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
         final endX =
             _LoopRangeTimeline._margin + drawableWidth * _ratio(range.end);
 
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _LoopRangePainter(
-                  enabled: widget.enabled,
-                  startX: startX,
-                  endX: endX,
-                  margin: _LoopRangeTimeline._margin,
-                  trackHeight: _LoopRangeTimeline._trackHeight,
-                  activeColor: colorScheme.primary,
-                  inactiveColor: colorScheme.surfaceContainerHighest,
+        return Semantics(
+          container: true,
+          slider: true,
+          enabled: widget.enabled && widget.durationUs > 0,
+          label: AppLocalizations.of(context)!.loopRange,
+          value: widget.durationUs > 0
+              ? '${formatTimePad2(range.start)} - ${formatTimePad2(range.end)}'
+              : null,
+          child: ExcludeSemantics(
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _LoopRangePainter(
+                      enabled: widget.enabled,
+                      startX: startX,
+                      endX: endX,
+                      margin: _LoopRangeTimeline._margin,
+                      trackHeight: _LoopRangeTimeline._trackHeight,
+                      activeColor: colorScheme.primary,
+                      inactiveColor: colorScheme.surfaceContainerHighest,
+                    ),
+                  ),
                 ),
-              ),
+                _buildHandle(
+                  context: context,
+                  left: startX - _LoopRangeTimeline._handleSize / 2,
+                  handle: LoopRangeHandle.start,
+                  currentX: startX,
+                  otherX: endX,
+                  drawableWidth: drawableWidth,
+                ),
+                _buildHandle(
+                  context: context,
+                  left: endX - _LoopRangeTimeline._handleSize / 2,
+                  handle: LoopRangeHandle.end,
+                  currentX: endX,
+                  otherX: startX,
+                  drawableWidth: drawableWidth,
+                ),
+              ],
             ),
-            _buildHandle(
-              context: context,
-              left: startX - _LoopRangeTimeline._handleSize / 2,
-              handle: LoopRangeHandle.start,
-              currentX: startX,
-              otherX: endX,
-              drawableWidth: drawableWidth,
-            ),
-            _buildHandle(
-              context: context,
-              left: endX - _LoopRangeTimeline._handleSize / 2,
-              handle: LoopRangeHandle.end,
-              currentX: endX,
-              otherX: startX,
-              drawableWidth: drawableWidth,
-            ),
-          ],
+          ),
         );
       },
     );

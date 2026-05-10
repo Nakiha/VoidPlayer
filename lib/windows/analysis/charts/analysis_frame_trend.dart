@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../analysis/analysis_ffi.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../widgets/axtree_region.dart';
 import '../page/analysis_page_state.dart';
 import 'analysis_chart_common.dart';
 
@@ -176,70 +177,81 @@ class _AnalysisFrameTrendViewState extends State<AnalysisFrameTrendView> {
       children: [
         Expanded(
           child: Builder(
-            builder: (chartContext) => MouseRegion(
-              onExit: (_) => setState(() => _hoverX = null),
-              child: Listener(
-                onPointerSignal: (signal) {
-                  if (signal is PointerScrollEvent) {
-                    _handleScroll(
-                      chartContext,
-                      signal.position,
-                      signal.scrollDelta,
-                    );
-                  }
-                },
-                onPointerPanZoomStart: (_) => _resetPanZoomScale(),
-                onPointerPanZoomUpdate: (event) {
-                  _handlePanZoomUpdate(chartContext, event);
-                },
-                onPointerPanZoomEnd: (_) => _resetPanZoomScale(),
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapUp: (details) {
-                    final box = chartContext.findRenderObject() as RenderBox;
-                    final localX = box.globalToLocal(details.globalPosition).dx;
-                    final chartW = box.size.width - _frameTrendLabelW;
-                    if (chartW <= 0 || localX < _frameTrendLabelW) {
-                      w.onFrameSelected(null);
-                      return;
+            builder: (chartContext) => AxTreeVisualRegion(
+              label: w.l.analysisFrameTrend,
+              value:
+                  'Frames ${w.viewStart.round()}-${w.viewEnd.round()} of ${w.totalFrames}',
+              hint: 'Scroll or drag to pan, Ctrl-scroll to zoom',
+              child: MouseRegion(
+                onExit: (_) => setState(() => _hoverX = null),
+                child: Listener(
+                  onPointerSignal: (signal) {
+                    if (signal is PointerScrollEvent) {
+                      _handleScroll(
+                        chartContext,
+                        signal.position,
+                        signal.scrollDelta,
+                      );
                     }
-                    final span = w.viewEnd - w.viewStart;
-                    final idx =
-                        (w.viewStart +
-                                ((localX - _frameTrendLabelW) / chartW) * span)
-                            .round()
-                            .clamp(0, w.totalFrames - 1)
-                            .toInt();
-                    w.onFrameSelected(w.selectedFrameIdx == idx ? null : idx);
                   },
-                  onPanUpdate: (details) {
-                    final box = chartContext.findRenderObject() as RenderBox;
-                    final local = box.globalToLocal(details.globalPosition);
-                    setState(() => _hoverX = local.dx);
+                  onPointerPanZoomStart: (_) => _resetPanZoomScale(),
+                  onPointerPanZoomUpdate: (event) {
+                    _handlePanZoomUpdate(chartContext, event);
                   },
-                  child: MouseRegion(
-                    onHover: (e) {
+                  onPointerPanZoomEnd: (_) => _resetPanZoomScale(),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    excludeFromSemantics: true,
+                    onTapUp: (details) {
                       final box = chartContext.findRenderObject() as RenderBox;
-                      final local = box.globalToLocal(e.position);
+                      final localX = box
+                          .globalToLocal(details.globalPosition)
+                          .dx;
+                      final chartW = box.size.width - _frameTrendLabelW;
+                      if (chartW <= 0 || localX < _frameTrendLabelW) {
+                        w.onFrameSelected(null);
+                        return;
+                      }
+                      final span = w.viewEnd - w.viewStart;
+                      final idx =
+                          (w.viewStart +
+                                  ((localX - _frameTrendLabelW) / chartW) *
+                                      span)
+                              .round()
+                              .clamp(0, w.totalFrames - 1)
+                              .toInt();
+                      w.onFrameSelected(w.selectedFrameIdx == idx ? null : idx);
+                    },
+                    onPanUpdate: (details) {
+                      final box = chartContext.findRenderObject() as RenderBox;
+                      final local = box.globalToLocal(details.globalPosition);
                       setState(() => _hoverX = local.dx);
                     },
-                    child: CustomPaint(
-                      painter: _FrameTrendPainter(
-                        frames: w.frames,
-                        frameIndexBase: w.frameIndexBase,
-                        totalFrames: w.totalFrames,
-                        frameBuckets: w.frameBuckets,
-                        frameBucketSize: w.frameBucketSize,
-                        currentIdx: w.currentIdx,
-                        selectedFrameIdx: w.selectedFrameIdx,
-                        viewStart: w.viewStart,
-                        viewEnd: w.viewEnd,
-                        frameSizeAxisZoom: w.frameSizeAxisZoom,
-                        qpAxisZoom: w.qpAxisZoom,
-                        ptsOrder: w.ptsOrder,
-                        hoverX: _hoverX,
+                    child: MouseRegion(
+                      onHover: (e) {
+                        final box =
+                            chartContext.findRenderObject() as RenderBox;
+                        final local = box.globalToLocal(e.position);
+                        setState(() => _hoverX = local.dx);
+                      },
+                      child: CustomPaint(
+                        painter: _FrameTrendPainter(
+                          frames: w.frames,
+                          frameIndexBase: w.frameIndexBase,
+                          totalFrames: w.totalFrames,
+                          frameBuckets: w.frameBuckets,
+                          frameBucketSize: w.frameBucketSize,
+                          currentIdx: w.currentIdx,
+                          selectedFrameIdx: w.selectedFrameIdx,
+                          viewStart: w.viewStart,
+                          viewEnd: w.viewEnd,
+                          frameSizeAxisZoom: w.frameSizeAxisZoom,
+                          qpAxisZoom: w.qpAxisZoom,
+                          ptsOrder: w.ptsOrder,
+                          hoverX: _hoverX,
+                        ),
+                        size: Size.infinite,
                       ),
-                      size: Size.infinite,
                     ),
                   ),
                 ),

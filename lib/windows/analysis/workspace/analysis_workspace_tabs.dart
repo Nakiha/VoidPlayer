@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../widgets/axtree_region.dart';
 import '../widgets/analysis_style.dart';
 import 'analysis_workspace_mode_toggle.dart';
 import 'analysis_workspace_models.dart';
@@ -63,37 +64,40 @@ class AnalysisTabsHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      height: analysisHeaderHeight,
-      padding: analysisHeaderPadding,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.18),
-        border: Border(bottom: BorderSide(color: theme.dividerColor)),
-      ),
-      child: Row(
-        children: [
-          AnalysisWorkspaceModeToggle(
-            splitView: splitView,
-            enabled: modeToggleEnabled,
-            onChanged: onModeChanged,
-          ),
-          const SizedBox(width: analysisHeaderGap),
-          Expanded(
-            child: Row(
-              children: [
-                for (var i = 0; i < entries.length; i++)
-                  Expanded(
-                    child: AnalysisTrackTab(
-                      entry: entries[i],
-                      index: i,
-                      selected: i == selectedIndex,
-                      onTap: () => onSelected(i),
-                    ),
-                  ),
-              ],
+    return AxTreeRegion(
+      label: 'Analysis workspace tabs',
+      child: Container(
+        height: analysisHeaderHeight,
+        padding: analysisHeaderPadding,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primaryContainer.withValues(alpha: 0.18),
+          border: Border(bottom: BorderSide(color: theme.dividerColor)),
+        ),
+        child: Row(
+          children: [
+            AnalysisWorkspaceModeToggle(
+              splitView: splitView,
+              enabled: modeToggleEnabled,
+              onChanged: onModeChanged,
             ),
-          ),
-        ],
+            const SizedBox(width: analysisHeaderGap),
+            Expanded(
+              child: Row(
+                children: [
+                  for (var i = 0; i < entries.length; i++)
+                    Expanded(
+                      child: AnalysisTrackTab(
+                        entry: entries[i],
+                        index: i,
+                        selected: i == selectedIndex,
+                        onTap: () => onSelected(i),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -144,51 +148,60 @@ class AnalysisTrackTitleButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SizedBox(
-      height: analysisHeaderControlHeight,
-      child: Material(
-        color: selected
-            ? theme.colorScheme.primary.withValues(alpha: 0.10)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(4),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
+    final label = '${index + 1}. ${entry.fileName ?? 'Track ${index + 1}'}';
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      onTap: onTap,
+      child: SizedBox(
+        height: analysisHeaderControlHeight,
+        child: Material(
+          color: selected
+              ? theme.colorScheme.primary.withValues(alpha: 0.10)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(4),
-          onTap: onTap,
-          child: Stack(
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '${index + 1}. ${entry.fileName ?? 'Track ${index + 1}'}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    softWrap: false,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: selected
-                          ? theme.colorScheme.onSurface
-                          : theme.colorScheme.onSurfaceVariant,
-                      fontWeight: selected ? FontWeight.w600 : null,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(4),
+            onTap: onTap,
+            child: Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: selected
+                            ? theme.colorScheme.onSurface
+                            : theme.colorScheme.onSurfaceVariant,
+                        fontWeight: selected ? FontWeight.w600 : null,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              if (selected)
-                Positioned(
-                  left: 10,
-                  right: 10,
-                  bottom: 2,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.52),
-                      borderRadius: BorderRadius.circular(1),
+                if (selected)
+                  Positioned(
+                    left: 10,
+                    right: 10,
+                    bottom: 2,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withValues(
+                          alpha: 0.52,
+                        ),
+                        borderRadius: BorderRadius.circular(1),
+                      ),
+                      child: const SizedBox(height: 2),
                     ),
-                    child: const SizedBox(height: 2),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

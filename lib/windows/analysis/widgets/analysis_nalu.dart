@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../analysis/analysis_ffi.dart';
 import '../../../analysis/nalu_types.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../widgets/axtree_region.dart';
 import 'analysis_frame_utils.dart';
 
 // ===========================================================================
@@ -149,63 +150,69 @@ class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
     final visible = _visibleIndices();
     final itemCount = filter.isEmpty ? widget.totalNalus : visible.length;
 
-    return Column(
-      children: [
-        // Search bar — same height as list items (28px)
-        Padding(
-          padding: const EdgeInsets.all(4),
-          child: TextField(
-            onChanged: widget.onFilterChanged,
-            style: theme.textTheme.bodySmall,
-            decoration: InputDecoration(
-              hintText: AppLocalizations.of(context)!.analysisFilterHint,
-              hintStyle: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant.withValues(
-                  alpha: 0.5,
-                ),
-              ),
-              prefixIcon: Icon(
-                Icons.search,
-                size: 14,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              prefixIconConstraints: const BoxConstraints(
-                minWidth: 20,
-                minHeight: 0,
-              ),
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 4,
-                vertical: 6,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(4),
-                borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(4),
-                borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
-              ),
-            ),
-          ),
-        ),
-        // Result count
-        if (filter.isNotEmpty)
+    return AxTreeRegion(
+      label: 'NAL unit browser',
+      value: '$itemCount of ${widget.totalNalus} units',
+      child: Column(
+        children: [
+          // Search bar — same height as list items (28px)
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '${visible.length} / ${widget.totalNalus}',
-                style: theme.textTheme.labelSmall?.copyWith(
+            padding: const EdgeInsets.all(4),
+            child: TextField(
+              onChanged: widget.onFilterChanged,
+              style: theme.textTheme.bodySmall,
+              decoration: InputDecoration(
+                hintText: AppLocalizations.of(context)!.analysisFilterHint,
+                hintStyle: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant.withValues(
+                    alpha: 0.5,
+                  ),
+                ),
+                prefixIcon: Icon(
+                  Icons.search,
+                  size: 14,
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 20,
+                  minHeight: 0,
+                ),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 4,
+                  vertical: 6,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outlineVariant,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outlineVariant,
+                  ),
+                ),
               ),
             ),
           ),
-        // List
-        Expanded(
-          child: ExcludeSemantics(
+          // Result count
+          if (filter.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '${visible.length} / ${widget.totalNalus}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          // List
+          Expanded(
             child: ListView.builder(
               controller: _scrollController,
               itemCount: itemCount,
@@ -223,69 +230,79 @@ class _AnalysisNaluBrowserViewState extends State<AnalysisNaluBrowserView> {
                 }
                 final n = widget.nalus[localIdx];
                 final selected = origIdx == widget.selectedIdx;
-                return InkWell(
-                  onTap: () => widget.onSelected(origIdx),
-                  child: Container(
-                    color: selected
-                        ? theme.colorScheme.primary.withValues(alpha: 0.15)
-                        : null,
-                    child: Row(
-                      children: [
-                        // Decorative color bar
-                        Container(
-                          width: 4,
-                          height: 28,
-                          color: bitstreamUnitDecorColor(
-                            widget.codec,
-                            n.nalType,
-                            flags: n.flags,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // Index
-                        SizedBox(
-                          width: 40,
-                          child: Text(
-                            '#$origIdx',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontFeatures: [
-                                const FontFeature.tabularFigures(),
-                              ],
+                final typeName = bitstreamUnitTypeName(widget.codec, n.nalType);
+                return Semantics(
+                  button: true,
+                  selected: selected,
+                  label: 'NAL unit #$origIdx',
+                  value: '$typeName, type ${n.nalType}',
+                  child: InkWell(
+                    excludeFromSemantics: true,
+                    onTap: () => widget.onSelected(origIdx),
+                    child: Container(
+                      color: selected
+                          ? theme.colorScheme.primary.withValues(alpha: 0.15)
+                          : null,
+                      child: Row(
+                        children: [
+                          // Decorative color bar
+                          ExcludeSemantics(
+                            child: Container(
+                              width: 4,
+                              height: 28,
+                              color: bitstreamUnitDecorColor(
+                                widget.codec,
+                                n.nalType,
+                                flags: n.flags,
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 6),
-                        // Type number
-                        SizedBox(
-                          width: 24,
-                          child: Text(
-                            '${n.nalType}',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontFeatures: [
-                                const FontFeature.tabularFigures(),
-                              ],
+                          const SizedBox(width: 8),
+                          // Index
+                          SizedBox(
+                            width: 40,
+                            child: Text(
+                              '#$origIdx',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontFeatures: [
+                                  const FontFeature.tabularFigures(),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 6),
-                        // Type name
-                        Expanded(
-                          child: Text(
-                            bitstreamUnitTypeName(widget.codec, n.nalType),
-                            style: theme.textTheme.bodySmall,
+                          const SizedBox(width: 6),
+                          // Type number
+                          SizedBox(
+                            width: 24,
+                            child: Text(
+                              '${n.nalType}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontFeatures: [
+                                  const FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 6),
+                          // Type name
+                          Expanded(
+                            child: Text(
+                              typeName,
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
               },
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -392,22 +409,25 @@ class AnalysisNaluDetailView extends StatelessWidget {
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: SingleChildScrollView(
-        child: Align(
-          alignment: Alignment.topLeft,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              section(l.analysisNaluDetail, items),
-              if (frameItems.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                const Divider(height: 1),
-                const SizedBox(height: 8),
-                section(l.analysisFrameInfo, frameItems),
+    return AxTreeRegion(
+      label: l.analysisNaluDetail,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: SingleChildScrollView(
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                section(l.analysisNaluDetail, items),
+                if (frameItems.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                  section(l.analysisFrameInfo, frameItems),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

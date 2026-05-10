@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../analysis/analysis_ffi.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../widgets/axtree_region.dart';
 import 'analysis_chart_common.dart';
 import 'reference_edge_index.dart';
 
@@ -248,63 +249,71 @@ class _AnalysisReferencePyramidViewState
           child: Builder(
             builder: (chartContext) => Stack(
               children: [
-                Listener(
-                  onPointerSignal: (signal) {
-                    if (signal is PointerScrollEvent) {
-                      _handleScroll(
-                        chartContext,
-                        signal.position,
-                        signal.scrollDelta,
-                      );
-                    }
-                  },
-                  onPointerPanZoomStart: (_) => _resetPanZoomScale(),
-                  onPointerPanZoomUpdate: (event) {
-                    _handlePanZoomUpdate(chartContext, event);
-                  },
-                  onPointerPanZoomEnd: (_) => _resetPanZoomScale(),
-                  child: MouseRegion(
-                    onExit: (_) => setState(() => _hoverPosition = null),
-                    onHover: (event) {
-                      final box = chartContext.findRenderObject() as RenderBox;
-                      setState(() {
-                        _hoverPosition = box.globalToLocal(event.position);
-                      });
+                AxTreeVisualRegion(
+                  label: widget.l.analysisRefPyramid,
+                  value:
+                      'Frames ${widget.viewStart.round()}-${widget.viewEnd.round()} of ${widget.totalFrames}',
+                  hint: 'Scroll or drag to pan, Ctrl-scroll to zoom',
+                  child: Listener(
+                    onPointerSignal: (signal) {
+                      if (signal is PointerScrollEvent) {
+                        _handleScroll(
+                          chartContext,
+                          signal.position,
+                          signal.scrollDelta,
+                        );
+                      }
                     },
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTapUp: (details) {
+                    onPointerPanZoomStart: (_) => _resetPanZoomScale(),
+                    onPointerPanZoomUpdate: (event) {
+                      _handlePanZoomUpdate(chartContext, event);
+                    },
+                    onPointerPanZoomEnd: (_) => _resetPanZoomScale(),
+                    child: MouseRegion(
+                      onExit: (_) => setState(() => _hoverPosition = null),
+                      onHover: (event) {
                         final box =
                             chartContext.findRenderObject() as RenderBox;
-                        final frameIdx = _frameIndexAtChartPosition(
-                          details.localPosition,
-                          box.size,
-                        );
-                        widget.onFrameSelected(
-                          frameIdx != null &&
-                                  widget.selectedFrameIdx == frameIdx
-                              ? null
-                              : frameIdx,
-                        );
+                        setState(() {
+                          _hoverPosition = box.globalToLocal(event.position);
+                        });
                       },
-                      child: CustomPaint(
-                        painter: _RefPyramidPainter(
-                          frames: widget.frames,
-                          frameIndexBase: widget.frameIndexBase,
-                          totalFrames: widget.totalFrames,
-                          referenceCache: _referenceCache,
-                          useActualTemporalLayers:
-                              widget.useActualTemporalLayers,
-                          currentIdx: widget.currentIdx,
-                          selectedFrameIdx: widget.selectedFrameIdx,
-                          selectedChainEdges: _selectedChainEdges,
-                          selectedChainNodes: _selectedChainNodes,
-                          viewStart: widget.viewStart,
-                          viewEnd: widget.viewEnd,
-                          ptsOrder: widget.ptsOrder,
-                          hoverPosition: _hoverPosition,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        excludeFromSemantics: true,
+                        onTapUp: (details) {
+                          final box =
+                              chartContext.findRenderObject() as RenderBox;
+                          final frameIdx = _frameIndexAtChartPosition(
+                            details.localPosition,
+                            box.size,
+                          );
+                          widget.onFrameSelected(
+                            frameIdx != null &&
+                                    widget.selectedFrameIdx == frameIdx
+                                ? null
+                                : frameIdx,
+                          );
+                        },
+                        child: CustomPaint(
+                          painter: _RefPyramidPainter(
+                            frames: widget.frames,
+                            frameIndexBase: widget.frameIndexBase,
+                            totalFrames: widget.totalFrames,
+                            referenceCache: _referenceCache,
+                            useActualTemporalLayers:
+                                widget.useActualTemporalLayers,
+                            currentIdx: widget.currentIdx,
+                            selectedFrameIdx: widget.selectedFrameIdx,
+                            selectedChainEdges: _selectedChainEdges,
+                            selectedChainNodes: _selectedChainNodes,
+                            viewStart: widget.viewStart,
+                            viewEnd: widget.viewEnd,
+                            ptsOrder: widget.ptsOrder,
+                            hoverPosition: _hoverPosition,
+                          ),
+                          size: Size.infinite,
                         ),
-                        size: Size.infinite,
                       ),
                     ),
                   ),

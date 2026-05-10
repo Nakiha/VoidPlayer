@@ -193,42 +193,65 @@ class AnalysisChartScrollbarState extends State<AnalysisChartScrollbar> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final trackH = 8.0;
-    return Listener(
-      onPointerSignal: (event) {
-        if (event is PointerScrollEvent) {
-          _handleHorizontalScroll(event.scrollDelta);
-        }
-      },
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onHorizontalDragStart: (details) {
-          _dragStart = details.globalPosition.dx;
-          _dragOffsetStart = widget.viewStart;
-        },
-        onHorizontalDragUpdate: (details) {
-          final box = context.findRenderObject() as RenderBox;
-          final trackW = box.size.width;
-          if (trackW <= 0) return;
-          final deltaPx = details.globalPosition.dx - _dragStart;
-          final viewSpan = widget.viewEnd - widget.viewStart;
-          final maxOffset = (widget.total - viewSpan).clamp(
-            0.0,
-            double.infinity,
-          );
-          final newOffset = (_dragOffsetStart + deltaPx / trackW * widget.total)
-              .clamp(0.0, maxOffset);
-          widget.onPan(newOffset);
-        },
-        child: CustomPaint(
-          painter: _ScrollbarPainter(
-            total: widget.total,
-            viewStart: widget.viewStart,
-            viewEnd: widget.viewEnd,
-            trackColor: theme.colorScheme.surfaceContainerHighest,
-            thumbColor: theme.colorScheme.onSurface.withValues(alpha: 0.3),
-            thumbHoverColor: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+    final viewSpan = widget.viewEnd - widget.viewStart;
+    final maxOffset = (widget.total - viewSpan).clamp(0.0, double.infinity);
+    final step = (viewSpan * 0.25).clamp(1.0, 24.0);
+    return Semantics(
+      container: true,
+      slider: true,
+      label: 'Chart range',
+      value:
+          '${widget.viewStart.round()}-${widget.viewEnd.round()} of ${widget.total.round()}',
+      increasedValue:
+          '${(widget.viewStart + step).clamp(0.0, maxOffset).round()}-${(widget.viewEnd + step).clamp(viewSpan, widget.total).round()}',
+      decreasedValue:
+          '${(widget.viewStart - step).clamp(0.0, maxOffset).round()}-${(widget.viewEnd - step).clamp(viewSpan, widget.total).round()}',
+      onIncrease: maxOffset > 0
+          ? () => widget.onPan((widget.viewStart + step).clamp(0.0, maxOffset))
+          : null,
+      onDecrease: maxOffset > 0
+          ? () => widget.onPan((widget.viewStart - step).clamp(0.0, maxOffset))
+          : null,
+      child: ExcludeSemantics(
+        child: Listener(
+          onPointerSignal: (event) {
+            if (event is PointerScrollEvent) {
+              _handleHorizontalScroll(event.scrollDelta);
+            }
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            excludeFromSemantics: true,
+            onHorizontalDragStart: (details) {
+              _dragStart = details.globalPosition.dx;
+              _dragOffsetStart = widget.viewStart;
+            },
+            onHorizontalDragUpdate: (details) {
+              final box = context.findRenderObject() as RenderBox;
+              final trackW = box.size.width;
+              if (trackW <= 0) return;
+              final deltaPx = details.globalPosition.dx - _dragStart;
+              final newOffset =
+                  (_dragOffsetStart + deltaPx / trackW * widget.total).clamp(
+                    0.0,
+                    maxOffset,
+                  );
+              widget.onPan(newOffset);
+            },
+            child: CustomPaint(
+              painter: _ScrollbarPainter(
+                total: widget.total,
+                viewStart: widget.viewStart,
+                viewEnd: widget.viewEnd,
+                trackColor: theme.colorScheme.surfaceContainerHighest,
+                thumbColor: theme.colorScheme.onSurface.withValues(alpha: 0.3),
+                thumbHoverColor: theme.colorScheme.onSurface.withValues(
+                  alpha: 0.5,
+                ),
+              ),
+              size: Size(Size.infinite.width, trackH),
+            ),
           ),
-          size: Size(Size.infinite.width, trackH),
         ),
       ),
     );

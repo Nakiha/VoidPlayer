@@ -20,24 +20,22 @@ class AnalysisOrderToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ExcludeSemantics(
-      child: SegmentedButton<bool>(
-        showSelectedIcon: false,
-        segments: [
-          ButtonSegment(value: true, label: Text(l.analysisPtsOrder)),
-          ButtonSegment(value: false, label: Text(l.analysisDtsOrder)),
-        ],
-        selected: {ptsOrder},
-        onSelectionChanged: (s) => onChanged(s.first),
-        style: const ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          textStyle: WidgetStatePropertyAll(
-            TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-          ),
-          fixedSize: WidgetStatePropertyAll(
-            Size.fromHeight(analysisHeaderControlHeight),
-          ),
+    return SegmentedButton<bool>(
+      showSelectedIcon: false,
+      segments: [
+        ButtonSegment(value: true, label: Text(l.analysisPtsOrder)),
+        ButtonSegment(value: false, label: Text(l.analysisDtsOrder)),
+      ],
+      selected: {ptsOrder},
+      onSelectionChanged: (s) => onChanged(s.first),
+      style: const ButtonStyle(
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        textStyle: WidgetStatePropertyAll(
+          TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        ),
+        fixedSize: WidgetStatePropertyAll(
+          Size.fromHeight(analysisHeaderControlHeight),
         ),
       ),
     );
@@ -57,43 +55,51 @@ class AnalysisViewTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ExcludeSemantics(
-      child: SegmentedButton<int>(
-        showSelectedIcon: false,
-        segments: [
-          ButtonSegment(
-            value: 0,
-            label: Tooltip(
-              message: l.analysisRefPyramid,
+    return SegmentedButton<int>(
+      showSelectedIcon: false,
+      segments: [
+        ButtonSegment(
+          value: 0,
+          label: Tooltip(
+            message: l.analysisRefPyramid,
+            child: Semantics(
+              label: l.analysisRefPyramid,
               child: const SizedBox(
                 width: 28,
                 height: 20,
-                child: _AnalysisViewIcon(_AnalysisViewIconKind.pyramid),
+                child: ExcludeSemantics(
+                  child: _AnalysisViewIcon(_AnalysisViewIconKind.pyramid),
+                ),
               ),
             ),
           ),
-          ButtonSegment(
-            value: 1,
-            label: Tooltip(
-              message: l.analysisFrameTrend,
+        ),
+        ButtonSegment(
+          value: 1,
+          label: Tooltip(
+            message: l.analysisFrameTrend,
+            child: Semantics(
+              label: l.analysisFrameTrend,
               child: const SizedBox(
                 width: 28,
                 height: 20,
-                child: _AnalysisViewIcon(_AnalysisViewIconKind.trend),
+                child: ExcludeSemantics(
+                  child: _AnalysisViewIcon(_AnalysisViewIconKind.trend),
+                ),
               ),
             ),
           ),
-        ],
-        selected: {selectedTab},
-        onSelectionChanged: (s) => onTabChanged(s.first),
-        style: const ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 7)),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
-          fixedSize: WidgetStatePropertyAll(
-            Size.fromHeight(analysisHeaderControlHeight),
-          ),
+        ),
+      ],
+      selected: {selectedTab},
+      onSelectionChanged: (s) => onTabChanged(s.first),
+      style: const ButtonStyle(
+        visualDensity: VisualDensity.compact,
+        padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 7)),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
+        fixedSize: WidgetStatePropertyAll(
+          Size.fromHeight(analysisHeaderControlHeight),
         ),
       ),
     );

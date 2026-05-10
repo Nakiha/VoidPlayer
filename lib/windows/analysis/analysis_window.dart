@@ -19,10 +19,6 @@ ThemeData _analysisTheme(Color accentColor) {
   );
 }
 
-Widget _silenceAnalysisSemantics(BuildContext context, Widget? child) {
-  return ExcludeSemantics(child: child ?? const SizedBox.shrink());
-}
-
 class AnalysisApp extends StatelessWidget {
   final Color accentColor;
   final String hash;
@@ -45,7 +41,6 @@ class AnalysisApp extends StatelessWidget {
           : 'Void Player - Analysis',
       debugShowCheckedModeBanner: false,
       theme: _analysisTheme(accentColor),
-      builder: _silenceAnalysisSemantics,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: AnalysisPage(hash: hash, testScriptPath: testScriptPath),
@@ -121,7 +116,6 @@ class _AnalysisWorkspaceAppState extends State<AnalysisWorkspaceApp> {
       title: 'Void Player - Analysis',
       debugShowCheckedModeBanner: false,
       theme: _analysisTheme(_accentColor),
-      builder: _silenceAnalysisSemantics,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: AnalysisWorkspacePage(

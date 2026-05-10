@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../video_renderer_controller.dart';
+import 'axtree_region.dart';
 import 'drag_excess_tracker.dart';
 import 'track_content.dart';
 
@@ -184,148 +185,165 @@ class TrackRow extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     // Divider sits at: dragHandle(28) + controlsWidth
     final dividerX = 28.0 + controlsWidth;
+    final fileName = _fileName(track.path);
 
-    return SizedBox(
-      height: 40,
-      child: Stack(
-        children: [
-          // Main row layout
-          Row(
-            children: [
-              // Drag handle with hover highlight
-              _DragHandle(index: index),
-              // Controls panel
-              SizedBox(
-                width: controlsWidth,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 4),
-                      // File name
-                      Expanded(
-                        child: Text(
-                          _fileName(track.path),
-                          style: Theme.of(context).textTheme.bodySmall,
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
+    return AxTreeRegion(
+      label: 'Track ${index + 1}: $fileName',
+      value: isAudible ? 'Audio enabled' : 'Audio muted',
+      child: SizedBox(
+        height: 40,
+        child: Stack(
+          children: [
+            // Main row layout
+            Row(
+              children: [
+                // Drag handle with hover highlight
+                _DragHandle(index: index),
+                // Controls panel
+                SizedBox(
+                  width: controlsWidth,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 4),
+                        // File name
+                        Expanded(
+                          child: Text(
+                            fileName,
+                            style: Theme.of(context).textTheme.bodySmall,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: IconButton(
-                          onPressed: onToggleAudio,
-                          icon: Icon(
-                            isAudible ? Icons.volume_up : Icons.volume_off,
-                            size: 15,
-                            color: isAudible
-                                ? colorScheme.primary
-                                : colorScheme.onSurfaceVariant,
+                        const SizedBox(width: 4),
+                        SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: IconButton(
+                            onPressed: onToggleAudio,
+                            icon: Icon(
+                              isAudible ? Icons.volume_up : Icons.volume_off,
+                              size: 15,
+                              color: isAudible
+                                  ? colorScheme.primary
+                                  : colorScheme.onSurfaceVariant,
+                            ),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 24,
+                              height: 24,
+                            ),
+                            tooltip: isAudible
+                                ? AppLocalizations.of(context)!.muteTrackAudio
+                                : AppLocalizations.of(context)!.playTrackAudio,
                           ),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 24,
-                            height: 24,
-                          ),
-                          tooltip: isAudible
-                              ? AppLocalizations.of(context)!.muteTrackAudio
-                              : AppLocalizations.of(context)!.playTrackAudio,
                         ),
-                      ),
-                      // Offset controls
-                      SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: IconButton(
-                          onPressed: () => onOffsetChanged(-10),
-                          icon: const Icon(Icons.remove, size: 14),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 24,
-                            height: 24,
+                        // Offset controls
+                        SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: IconButton(
+                            onPressed: () => onOffsetChanged(-10),
+                            icon: const Icon(Icons.remove, size: 14),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 24,
+                              height: 24,
+                            ),
+                            tooltip: AppLocalizations.of(
+                              context,
+                            )!.offsetBackward,
                           ),
-                          tooltip: AppLocalizations.of(context)!.offsetBackward,
                         ),
-                      ),
-                      _OffsetField(
-                        valueMs: syncOffsetMs,
-                        onChanged: onOffsetChanged,
-                      ),
-                      SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: IconButton(
-                          onPressed: () => onOffsetChanged(10),
-                          icon: const Icon(Icons.add, size: 14),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 24,
-                            height: 24,
-                          ),
-                          tooltip: AppLocalizations.of(context)!.offsetForward,
+                        _OffsetField(
+                          valueMs: syncOffsetMs,
+                          onChanged: onOffsetChanged,
                         ),
-                      ),
-                      // Remove button
-                      SizedBox(
-                        width: 28,
-                        height: 28,
-                        child: IconButton(
-                          onPressed: onRemove,
-                          icon: Icon(
-                            Icons.close,
-                            size: 16,
-                            color: colorScheme.error,
+                        SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: IconButton(
+                            onPressed: () => onOffsetChanged(10),
+                            icon: const Icon(Icons.add, size: 14),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 24,
+                              height: 24,
+                            ),
+                            tooltip: AppLocalizations.of(
+                              context,
+                            )!.offsetForward,
                           ),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 28,
-                            height: 28,
-                          ),
-                          tooltip: AppLocalizations.of(context)!.removeTrack,
                         ),
-                      ),
-                    ],
+                        // Remove button
+                        SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: IconButton(
+                            onPressed: onRemove,
+                            icon: Icon(
+                              Icons.close,
+                              size: 16,
+                              color: colorScheme.error,
+                            ),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 28,
+                              height: 28,
+                            ),
+                            tooltip: AppLocalizations.of(context)!.removeTrack,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              // Visual-only divider line (1px)
-              Container(width: 1, color: colorScheme.outlineVariant),
-              // Track content (expanded)
-              Expanded(
-                child: TrackContent(
-                  durationRatio: durationRatio,
-                  offsetRatio: offsetRatio,
-                  playheadPosition: playheadPosition,
-                  clipColor: _trackColor(track.slot),
-                  hoverPtsUs: hoverPtsUs,
-                  sliderHovering: sliderHovering,
-                  trackDurationUs: trackDurationUs,
-                  trackStartTimeUs: trackStartTimeUs,
-                  offsetUs: offsetUs,
-                  maxEffectiveDurationUs: maxEffectiveDurationUs,
-                  markerPtsUs: markerPtsUs,
-                  loopRangeEnabled: loopRangeEnabled,
-                  loopStartUs: loopStartUs,
-                  loopEndUs: loopEndUs,
+                // Visual-only divider line (1px)
+                ExcludeSemantics(
+                  child: Container(width: 1, color: colorScheme.outlineVariant),
+                ),
+                // Track content (expanded)
+                Expanded(
+                  child: AxTreeVisualRegion(
+                    label: 'Track ${index + 1} clip timeline',
+                    image: false,
+                    child: TrackContent(
+                      durationRatio: durationRatio,
+                      offsetRatio: offsetRatio,
+                      playheadPosition: playheadPosition,
+                      clipColor: _trackColor(track.slot),
+                      hoverPtsUs: hoverPtsUs,
+                      sliderHovering: sliderHovering,
+                      trackDurationUs: trackDurationUs,
+                      trackStartTimeUs: trackStartTimeUs,
+                      offsetUs: offsetUs,
+                      maxEffectiveDurationUs: maxEffectiveDurationUs,
+                      markerPtsUs: markerPtsUs,
+                      loopRangeEnabled: loopRangeEnabled,
+                      loopStartUs: loopStartUs,
+                      loopEndUs: loopEndUs,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            // Wider invisible hit area overlay for the divider
+            Positioned(
+              left: dividerX - 4,
+              top: 0,
+              bottom: 0,
+              width: 9,
+              child: ExcludeSemantics(
+                child: _ResizableDivider(
+                  color: colorScheme.outlineVariant,
+                  controlsWidth: controlsWidth,
+                  onWidthChanged: onControlsWidthChanged,
                 ),
               ),
-            ],
-          ),
-          // Wider invisible hit area overlay for the divider
-          Positioned(
-            left: dividerX - 4,
-            top: 0,
-            bottom: 0,
-            width: 9,
-            child: _ResizableDivider(
-              color: colorScheme.outlineVariant,
-              controlsWidth: controlsWidth,
-              onWidthChanged: onControlsWidthChanged,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -44,6 +44,7 @@ class ViewModeSelector extends StatelessWidget {
                 _Segment(
                   label: firstLabel ?? AppLocalizations.of(context)!.sideBySide,
                   selected: currentMode == 0,
+                  enabled: enabled,
                   borderRadius: const BorderRadius.horizontal(
                     left: Radius.circular(5),
                   ),
@@ -54,6 +55,7 @@ class ViewModeSelector extends StatelessWidget {
                   label:
                       secondLabel ?? AppLocalizations.of(context)!.splitScreen,
                   selected: currentMode == 1,
+                  enabled: enabled,
                   borderRadius: const BorderRadius.horizontal(
                     right: Radius.circular(5),
                   ),
@@ -72,6 +74,7 @@ class ViewModeSelector extends StatelessWidget {
 class _Segment extends StatelessWidget {
   final String label;
   final bool selected;
+  final bool enabled;
   final BorderRadius borderRadius;
   final FontWeight? labelFontWeight;
   final VoidCallback onTap;
@@ -79,6 +82,7 @@ class _Segment extends StatelessWidget {
   const _Segment({
     required this.label,
     required this.selected,
+    required this.enabled,
     required this.borderRadius,
     this.labelFontWeight,
     required this.onTap,
@@ -88,20 +92,28 @@ class _Segment extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          decoration: BoxDecoration(
-            color: selected ? colorScheme.primary : Colors.transparent,
-            borderRadius: borderRadius,
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: selected ? colorScheme.onPrimary : colorScheme.onSurface,
-              fontWeight: labelFontWeight,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        enabled: enabled,
+        label: label,
+        onTap: enabled ? onTap : null,
+        child: GestureDetector(
+          excludeFromSemantics: true,
+          onTap: enabled ? onTap : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            decoration: BoxDecoration(
+              color: selected ? colorScheme.primary : Colors.transparent,
+              borderRadius: borderRadius,
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: selected ? colorScheme.onPrimary : colorScheme.onSurface,
+                fontWeight: labelFontWeight,
+              ),
             ),
           ),
         ),

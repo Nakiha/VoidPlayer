@@ -7,6 +7,7 @@ import '../platform/pointer_button_state_provider.dart';
 import '../utils/pointer_gesture_utils.dart';
 import '../video_renderer_controller.dart';
 import '../viewport/viewport_display_state.dart';
+import 'axtree_region.dart';
 
 class ViewportPanel extends StatefulWidget {
   final int? textureId;
@@ -278,115 +279,149 @@ class _ViewportPanelState extends State<ViewportPanel> {
       return const SizedBox.shrink();
     }
     final devicePixelRatio = View.of(context).devicePixelRatio;
-    return MouseRegion(
-      onEnter: (e) {
-        _lastMouseLocalPos = e.localPosition;
-        _syncDragButtons(e.buttons, e.localPosition, allowWin32Recovery: true);
-      },
-      onExit: (e) => _clampSplitOnExit(context, e.localPosition),
-      onHover: (e) {
-        if (!_panning && !_splitting) {
+    return AxTreeRegion(
+      label: 'Video viewport',
+      value: widget.layout.mode == LayoutMode.splitScreen
+          ? 'Split ${axPercent(widget.layout.splitPos)}'
+          : null,
+      image: true,
+      child: MouseRegion(
+        onEnter: (e) {
           _lastMouseLocalPos = e.localPosition;
-        }
-        _syncDragButtons(e.buttons, e.localPosition);
-        _updateSplitFromLocalX(context, e.localPosition.dx);
-      },
-      child: Listener(
-        onPointerDown: (e) {
-          if ((e.buttons & kPrimaryButton) != 0) {
-            if (_isOnSplitHandle(context, e.localPosition)) {
-              _startSplitHandleDrag(context, e.localPosition.dx);
-              return;
-            }
-            _panning = false;
-            _splitting = false;
-            _lastMouseLocalPos = e.localPosition;
-          }
-          _syncDragButtons(e.buttons, e.localPosition);
-          _updateSplitFromLocalX(context, e.localPosition.dx);
-        },
-        onPointerUp: (e) {
-          if (_splitHandleDragging) {
-            _endSplitHandleDrag();
-            return;
-          }
           _syncDragButtons(
             e.buttons,
             e.localPosition,
             allowWin32Recovery: true,
           );
         },
-        onPointerCancel: (_) {
-          if (_splitHandleDragging) {
-            _endSplitHandleDrag();
-            return;
+        onExit: (e) => _clampSplitOnExit(context, e.localPosition),
+        onHover: (e) {
+          if (!_panning && !_splitting) {
+            _lastMouseLocalPos = e.localPosition;
           }
-          _syncDragButtons(0, _lastMouseLocalPos, allowWin32Recovery: true);
-        },
-        onPointerMove: (e) {
-          if (_splitHandleDragging) {
-            if ((e.buttons & kPrimaryButton) == 0) {
-              _endSplitHandleDrag();
-            } else {
-              _updateSplitHandleDrag(context, e.localPosition.dx);
-            }
-            return;
-          }
-          _syncDragButtons(
-            e.buttons,
-            e.localPosition,
-            allowWin32Recovery: _panning || _splitting,
-          );
-          if (!_panning && !_splitting) return;
-          final logicalDelta = e.localPosition - _lastMouseLocalPos;
-          final physicalDelta = logicalDelta * devicePixelRatio;
-          _lastMouseLocalPos = e.localPosition;
-
-          if (_panning) {
-            widget.onPan(physicalDelta);
-          }
-
+          _syncDragButtons(e.buttons, e.localPosition);
           _updateSplitFromLocalX(context, e.localPosition.dx);
         },
-        onPointerSignal: (e) {
-          if (e is PointerScrollEvent) {
-            _zoomByWheelDelta(
-              e.scrollDelta.dy,
-              e.localPosition * devicePixelRatio,
-            );
-          }
-        },
-        onPointerPanZoomStart: (_) => _resetPanZoom(),
-        onPointerPanZoomUpdate: (e) {
-          if (e.scale > 0 && e.scale.isFinite && _lastPanZoomScale > 0) {
-            final previousScale = _lastPanZoomScale;
-            final scaleDelta = e.scale / _lastPanZoomScale;
-            _lastPanZoomScale = e.scale;
-            final scaleIntent =
-                _panZoomScaling ||
-                isPanZoomScaleIntent(scale: e.scale, lastScale: previousScale);
-            if (scaleIntent && scaleDelta != 1.0) {
-              _panZoomScaling = true;
-              _zoomByFactor(scaleDelta, e.localPosition * devicePixelRatio);
+        child: Listener(
+          onPointerDown: (e) {
+            if ((e.buttons & kPrimaryButton) != 0) {
+              if (_isOnSplitHandle(context, e.localPosition)) {
+                _startSplitHandleDrag(context, e.localPosition.dx);
+                return;
+              }
+              _panning = false;
+              _splitting = false;
+              _lastMouseLocalPos = e.localPosition;
+            }
+            _syncDragButtons(e.buttons, e.localPosition);
+            _updateSplitFromLocalX(context, e.localPosition.dx);
+          },
+          onPointerUp: (e) {
+            if (_splitHandleDragging) {
+              _endSplitHandleDrag();
               return;
             }
-          }
+            _syncDragButtons(
+              e.buttons,
+              e.localPosition,
+              allowWin32Recovery: true,
+            );
+          },
+          onPointerCancel: (_) {
+            if (_splitHandleDragging) {
+              _endSplitHandleDrag();
+              return;
+            }
+            _syncDragButtons(0, _lastMouseLocalPos, allowWin32Recovery: true);
+          },
+          onPointerMove: (e) {
+            if (_splitHandleDragging) {
+              if ((e.buttons & kPrimaryButton) == 0) {
+                _endSplitHandleDrag();
+              } else {
+                _updateSplitHandleDrag(context, e.localPosition.dx);
+              }
+              return;
+            }
+            _syncDragButtons(
+              e.buttons,
+              e.localPosition,
+              allowWin32Recovery: _panning || _splitting,
+            );
+            if (!_panning && !_splitting) return;
+            final logicalDelta = e.localPosition - _lastMouseLocalPos;
+            final physicalDelta = logicalDelta * devicePixelRatio;
+            _lastMouseLocalPos = e.localPosition;
 
-          if (_panZoomScaling) return;
-          final physicalPanDelta = e.panDelta * devicePixelRatio;
-          if (physicalPanDelta != Offset.zero) {
-            widget.onPan(physicalPanDelta);
-          }
-        },
-        onPointerPanZoomEnd: (_) => _resetPanZoom(),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Texture(textureId: widget.textureId!),
-            if (widget.layout.mode == LayoutMode.splitScreen)
-              _buildSplitHandle(context, devicePixelRatio),
-          ],
+            if (_panning) {
+              widget.onPan(physicalDelta);
+            }
+
+            _updateSplitFromLocalX(context, e.localPosition.dx);
+          },
+          onPointerSignal: (e) {
+            if (e is PointerScrollEvent) {
+              _zoomByWheelDelta(
+                e.scrollDelta.dy,
+                e.localPosition * devicePixelRatio,
+              );
+            }
+          },
+          onPointerPanZoomStart: (_) => _resetPanZoom(),
+          onPointerPanZoomUpdate: (e) {
+            if (e.scale > 0 && e.scale.isFinite && _lastPanZoomScale > 0) {
+              final previousScale = _lastPanZoomScale;
+              final scaleDelta = e.scale / _lastPanZoomScale;
+              _lastPanZoomScale = e.scale;
+              final scaleIntent =
+                  _panZoomScaling ||
+                  isPanZoomScaleIntent(
+                    scale: e.scale,
+                    lastScale: previousScale,
+                  );
+              if (scaleIntent && scaleDelta != 1.0) {
+                _panZoomScaling = true;
+                _zoomByFactor(scaleDelta, e.localPosition * devicePixelRatio);
+                return;
+              }
+            }
+
+            if (_panZoomScaling) return;
+            final physicalPanDelta = e.panDelta * devicePixelRatio;
+            if (physicalPanDelta != Offset.zero) {
+              widget.onPan(physicalPanDelta);
+            }
+          },
+          onPointerPanZoomEnd: (_) => _resetPanZoom(),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ExcludeSemantics(child: Texture(textureId: widget.textureId!)),
+              if (widget.layout.mode == LayoutMode.splitScreen)
+                _buildSplitHandleSemantics(context, devicePixelRatio),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSplitHandleSemantics(
+    BuildContext context,
+    double devicePixelRatio,
+  ) {
+    final splitPos = widget.layout.splitPos;
+    return Semantics(
+      container: true,
+      slider: true,
+      label: 'Viewport split handle',
+      value: axPercent(splitPos),
+      increasedValue: axPercent((splitPos + 0.05).clamp(0.0, 1.0)),
+      decreasedValue: axPercent((splitPos - 0.05).clamp(0.0, 1.0)),
+      onIncrease: () => widget.onSplit((splitPos + 0.05).clamp(0.0, 1.0)),
+      onDecrease: () => widget.onSplit((splitPos - 0.05).clamp(0.0, 1.0)),
+      child: ExcludeSemantics(
+        child: _buildSplitHandle(context, devicePixelRatio),
       ),
     );
   }

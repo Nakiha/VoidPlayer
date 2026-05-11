@@ -15,6 +15,13 @@
 6.0, PAUSE
 6.5, WAIT_PAUSED, 3000
 6.7, ASSERT_PAUSED
-7.0, SEEK_TO, 3000000
-7.5, ASSERT_POSITION, 3000000, 300
+6.8, CAPTURE_VIEWPORT, basic_before_seek, build/basic_before_seek.png
+6.9, ASSERT_CAPTURE_NOT_BLACK, basic_before_seek, 0.01, 4.0
+6.95, ASSERT_CAPTURE_CHANGED, basic_split, basic_before_seek
+7.0, CLICK_TIMELINE_FRACTION, 0.333
+7.5, ASSERT_POSITION, 3000000, 600
+7.7, CAPTURE_VIEWPORT, basic_after_seek, build/basic_after_seek.png
+7.8, ASSERT_CAPTURE_NOT_BLACK, basic_after_seek, 0.01, 4.0
+7.9, ASSERT_CAPTURE_HAS_DETAIL, basic_after_seek, 4.0
+8.0, ASSERT_CAPTURE_CHANGED, basic_before_seek, basic_after_seek
 9.0, QUIT, 0

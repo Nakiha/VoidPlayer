@@ -72,6 +72,23 @@ class ClickMediaHeaderOverlayButton extends AutomationAction {
     : super('CLICK_MEDIA_HEADER_OVERLAY_BUTTON');
 }
 
+class HoverMediaHeaderOverlayButton extends AutomationAction {
+  const HoverMediaHeaderOverlayButton()
+    : super('HOVER_MEDIA_HEADER_OVERLAY_BUTTON');
+}
+
+class HoverMediaHeaderOverlayPanelControls extends AutomationAction {
+  const HoverMediaHeaderOverlayPanelControls()
+    : super('HOVER_MEDIA_HEADER_OVERLAY_PANEL_CONTROLS');
+}
+
+class AssertMediaHeaderOverlayPanelVisible extends AutomationAction {
+  final bool visible;
+
+  const AssertMediaHeaderOverlayPanelVisible(this.visible)
+    : super('ASSERT_MEDIA_HEADER_OVERLAY_PANEL_VISIBLE');
+}
+
 class ToggleAnalysisOverlay extends AutomationAction {
   final int slotIndex;
 

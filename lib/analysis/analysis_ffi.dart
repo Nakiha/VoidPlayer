@@ -876,7 +876,7 @@ class AnalysisFfi {
       state.ref.showQpHeatmap = showQpHeatmap ? 1 : 0;
       state.ref.showPredLines = showPredLines ? 1 : 0;
       state.ref.showCuBitCostHeatmap = showCuBitCostHeatmap ? 1 : 0;
-      state.ref.opacityPermille = (opacity.clamp(0.1, 1.0) * 1000).round();
+      state.ref.opacityPermille = (opacity.clamp(0.0, 1.0) * 1000).round();
       state.ref.mode = mode;
       state.ref.trackFileId = trackFileId;
       _native.setOverlay(state);

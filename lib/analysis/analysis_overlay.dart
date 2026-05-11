@@ -1,10 +1,4 @@
-enum AnalysisOverlayType {
-  cu,
-  prediction,
-  predictionLines,
-  qpHeatmap,
-  cuBitCostHeatmap,
-}
+enum AnalysisOverlayType { cu, qpHeatmap, cuBitCostHeatmap }
 
 enum AnalysisOverlayLayer { cuGrid, predictionMode, predictionLines }
 
@@ -17,15 +11,15 @@ AnalysisOverlayType analysisOverlayTypeFromName(String value) {
     (type) => type.name.toLowerCase() == normalized,
     orElse: () => switch (normalized) {
       'cu' || 'cugrid' || 'partitions' => AnalysisOverlayType.cu,
-      'pred' ||
-      'prediction' ||
-      'predictionmode' => AnalysisOverlayType.prediction,
+      'pred' || 'prediction' || 'predictionmode' => AnalysisOverlayType.cu,
       'predlines' ||
       'predictionlines' ||
       'mv' ||
-      'mvlines' => AnalysisOverlayType.predictionLines,
+      'mvlines' => AnalysisOverlayType.cu,
       'qp' || 'qpheatmap' => AnalysisOverlayType.qpHeatmap,
       'bits' ||
+      'bitrate' ||
+      'bitrateheatmap' ||
       'bitcost' ||
       'cubits' ||
       'cubitcost' => AnalysisOverlayType.cuBitCostHeatmap,
@@ -62,7 +56,7 @@ class AnalysisOverlayConfig {
 
   const AnalysisOverlayConfig({
     this.type = AnalysisOverlayType.cu,
-    this.layers = const {AnalysisOverlayLayer.cuGrid},
+    this.layers = const {},
     this.opacity = 0.55,
   });
 
@@ -74,7 +68,7 @@ class AnalysisOverlayConfig {
     return AnalysisOverlayConfig(
       type: type ?? this.type,
       layers: layers ?? this.layers,
-      opacity: (opacity ?? this.opacity).clamp(0.1, 1.0).toDouble(),
+      opacity: (opacity ?? this.opacity).clamp(0.0, 1.0).toDouble(),
     );
   }
 
@@ -82,7 +76,7 @@ class AnalysisOverlayConfig {
     return copyWith(type: nextType, layers: defaultLayersFor(nextType));
   }
 
-  bool get showCuGrid => layers.contains(AnalysisOverlayLayer.cuGrid);
+  bool get showCuGrid => type == AnalysisOverlayType.cu;
   bool get showPredMode => layers.contains(AnalysisOverlayLayer.predictionMode);
   bool get showPredLines =>
       layers.contains(AnalysisOverlayLayer.predictionLines);
@@ -91,18 +85,9 @@ class AnalysisOverlayConfig {
 
   static Set<AnalysisOverlayLayer> defaultLayersFor(AnalysisOverlayType type) =>
       switch (type) {
-        AnalysisOverlayType.cu => {AnalysisOverlayLayer.cuGrid},
-        AnalysisOverlayType.prediction => {
-          AnalysisOverlayLayer.cuGrid,
-          AnalysisOverlayLayer.predictionMode,
-        },
-        AnalysisOverlayType.predictionLines => {
-          AnalysisOverlayLayer.cuGrid,
-          AnalysisOverlayLayer.predictionMode,
-          AnalysisOverlayLayer.predictionLines,
-        },
-        AnalysisOverlayType.qpHeatmap => {AnalysisOverlayLayer.cuGrid},
-        AnalysisOverlayType.cuBitCostHeatmap => {AnalysisOverlayLayer.cuGrid},
+        AnalysisOverlayType.cu => {},
+        AnalysisOverlayType.qpHeatmap => {},
+        AnalysisOverlayType.cuBitCostHeatmap => {},
       };
 
   static const disabled = AnalysisOverlayConfig(

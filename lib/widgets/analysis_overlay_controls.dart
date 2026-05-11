@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../analysis/analysis_overlay.dart';
@@ -12,6 +14,8 @@ class AnalysisOverlayControlBar extends StatefulWidget {
 
   final List<TrackEntry> entries;
   final AnalysisToolbarDataSource dataSource;
+  final bool panelActive;
+  final Set<int> readyTrackFileIds;
   final ValueChanged<AnalysisOverlayType> onTypeChanged;
   final ValueChanged<Set<AnalysisOverlayLayer>> onLayersChanged;
   final ValueChanged<double> onOpacityChanged;
@@ -20,6 +24,8 @@ class AnalysisOverlayControlBar extends StatefulWidget {
     super.key,
     required this.entries,
     required this.dataSource,
+    this.panelActive = true,
+    this.readyTrackFileIds = const {},
     required this.onTypeChanged,
     required this.onLayersChanged,
     required this.onOpacityChanged,
@@ -48,10 +54,12 @@ class _AnalysisOverlayControlBarState extends State<AnalysisOverlayControlBar> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.entries.isEmpty || !widget.dataSource.overlayPanelVisible) {
+    final readyTrackIds = widget.panelActive
+        ? widget.dataSource.activeOverlayTrackFileIds
+        : widget.readyTrackFileIds;
+    if (widget.entries.isEmpty) {
       return const SizedBox.shrink();
     }
-    final overlayTrackIds = widget.dataSource.activeOverlayTrackFileIds;
     final primaryTrackFileId = _primaryTrackFileId;
     return Row(
       key: analysisOverlayControlBarKey,
@@ -62,7 +70,7 @@ class _AnalysisOverlayControlBarState extends State<AnalysisOverlayControlBar> {
             child: _AnalysisOverlayTrackPanel(
               track: widget.entries[i],
               primary: widget.entries[i].fileId == primaryTrackFileId,
-              overlayReady: overlayTrackIds.contains(widget.entries[i].fileId),
+              overlayReady: readyTrackIds.contains(widget.entries[i].fileId),
               syncSettingsToAll: _syncSettingsToAll,
               config: widget.dataSource.overlayConfig,
               onTypeChanged: widget.onTypeChanged,
@@ -86,14 +94,17 @@ class _AnalysisOverlayControlBarState extends State<AnalysisOverlayControlBar> {
       return;
     }
     final overlayTrackIds = widget.dataSource.activeOverlayTrackFileIds;
+    final readyTrackIds = widget.panelActive
+        ? overlayTrackIds
+        : widget.readyTrackFileIds;
     final current = _primaryTrackFileId;
     if (current != null &&
         widget.entries.any((entry) => entry.fileId == current) &&
-        overlayTrackIds.contains(current)) {
+        readyTrackIds.contains(current)) {
       return;
     }
     for (final entry in widget.entries) {
-      if (overlayTrackIds.contains(entry.fileId)) {
+      if (readyTrackIds.contains(entry.fileId)) {
         _primaryTrackFileId = entry.fileId;
         return;
       }
@@ -132,103 +143,76 @@ class _AnalysisOverlayTrackPanel extends StatelessWidget {
     final editable = overlayReady && (primary || !syncSettingsToAll);
     final contentOpacity = editable ? 1.0 : 0.42;
 
-    return ExcludeSemantics(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colorScheme.surface.withValues(alpha: 0.86),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: primary
-                ? colorScheme.primary.withValues(alpha: 0.58)
-                : colorScheme.outlineVariant.withValues(alpha: 0.28),
-          ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withValues(alpha: 0.86),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: primary
+              ? colorScheme.primary.withValues(alpha: 0.58)
+              : colorScheme.outlineVariant.withValues(alpha: 0.28),
         ),
-        child: Opacity(
-          opacity: contentOpacity,
-          child: IgnorePointer(
-            ignoring: !editable,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+      ),
+      child: Opacity(
+        opacity: contentOpacity,
+        child: IgnorePointer(
+          ignoring: !editable,
+          child: SizedBox(
+            height: 30,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: _OverlayTypeButtons(
-                        trackFileId: track.fileId,
-                        value: config.type,
-                        onChanged: onTypeChanged,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    if (primary) ...[
-                      _OverlayPanelDivider(),
-                      const SizedBox(width: 4),
-                      _OverlayIconButton(
-                        key: ValueKey('analysis-overlay-sync-${track.fileId}'),
-                        selected: syncSettingsToAll,
-                        icon: Icons.sync,
-                        tooltip: AppLocalizations.of(
-                          context,
-                        )!.analysisOverlaySyncSettings,
-                        onPressed: () =>
-                            onSyncSettingsToAllChanged(!syncSettingsToAll),
-                      ),
-                      const SizedBox(width: 4),
-                    ],
-                  ],
+                const SizedBox(width: 4),
+                _OverlayTypeButtons(
+                  trackFileId: track.fileId,
+                  value: config.type,
+                  onChanged: onTypeChanged,
                 ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    _OverlayLayerButton(
-                      trackFileId: track.fileId,
-                      layer: AnalysisOverlayLayer.cuGrid,
-                      selected: config.layers.contains(
-                        AnalysisOverlayLayer.cuGrid,
-                      ),
-                      onChanged: _toggleLayer,
-                    ),
-                    _OverlayLayerButton(
-                      trackFileId: track.fileId,
-                      layer: AnalysisOverlayLayer.predictionMode,
-                      selected: config.layers.contains(
-                        AnalysisOverlayLayer.predictionMode,
-                      ),
-                      onChanged: _toggleLayer,
-                    ),
-                    _OverlayLayerButton(
-                      trackFileId: track.fileId,
-                      layer: AnalysisOverlayLayer.predictionLines,
-                      selected: config.layers.contains(
-                        AnalysisOverlayLayer.predictionLines,
-                      ),
-                      onChanged: _toggleLayer,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: _OverlayOpacityScrubber(
-                        key: ValueKey(
-                          'analysis-overlay-opacity-${track.fileId}',
-                        ),
-                        value: config.opacity,
-                        onChanged: onOpacityChanged,
-                      ),
-                    ),
-                    ExcludeSemantics(
-                      child: SizedBox(
-                        width: 34,
-                        child: Text(
-                          '${(config.opacity * 100).round()}%',
-                          textAlign: TextAlign.right,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                const SizedBox(width: 6),
+                _OverlayPanelDivider(),
+                const SizedBox(width: 6),
+                _OverlayLayerButton(
+                  trackFileId: track.fileId,
+                  layer: AnalysisOverlayLayer.predictionMode,
+                  selected: config.layers.contains(
+                    AnalysisOverlayLayer.predictionMode,
+                  ),
+                  onChanged: _toggleLayer,
                 ),
+                _OverlayLayerButton(
+                  trackFileId: track.fileId,
+                  layer: AnalysisOverlayLayer.predictionLines,
+                  selected: config.layers.contains(
+                    AnalysisOverlayLayer.predictionLines,
+                  ),
+                  onChanged: _toggleLayer,
+                ),
+                const SizedBox(width: 6),
+                _OverlayPanelDivider(),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _OverlayOpacitySlider(
+                    key: ValueKey('analysis-overlay-opacity-${track.fileId}'),
+                    value: config.opacity,
+                    onChanged: onOpacityChanged,
+                  ),
+                ),
+                if (primary) ...[
+                  const SizedBox(width: 6),
+                  _OverlayPanelDivider(),
+                  const SizedBox(width: 6),
+                  _OverlayIconButton(
+                    key: ValueKey('analysis-overlay-sync-${track.fileId}'),
+                    selected: syncSettingsToAll,
+                    icon: Icons.sync,
+                    tooltip: AppLocalizations.of(
+                      context,
+                    )!.analysisOverlaySyncSettings,
+                    onPressed: () =>
+                        onSyncSettingsToAllChanged(!syncSettingsToAll),
+                  ),
+                ],
+                const SizedBox(width: 4),
               ],
             ),
           ),
@@ -291,8 +275,6 @@ class _OverlayTypeButtons extends StatelessWidget {
 
   IconData _iconForType(AnalysisOverlayType type) => switch (type) {
     AnalysisOverlayType.cu => Icons.grid_4x4,
-    AnalysisOverlayType.prediction => Icons.category_outlined,
-    AnalysisOverlayType.predictionLines => Icons.polyline,
     AnalysisOverlayType.qpHeatmap => Icons.thermostat,
     AnalysisOverlayType.cuBitCostHeatmap => Icons.show_chart,
   };
@@ -301,9 +283,6 @@ class _OverlayTypeButtons extends StatelessWidget {
     final l = AppLocalizations.of(context)!;
     return switch (type) {
       AnalysisOverlayType.cu => l.analysisOverlayTypeCu,
-      AnalysisOverlayType.prediction => l.analysisOverlayTypePrediction,
-      AnalysisOverlayType.predictionLines =>
-        l.analysisOverlayTypePredictionLines,
       AnalysisOverlayType.qpHeatmap => l.analysisOverlayTypeQpHeatmap,
       AnalysisOverlayType.cuBitCostHeatmap =>
         l.analysisOverlayTypeCuBitCostHeatmap,
@@ -413,7 +392,10 @@ class _OverlayBareIconButtonState extends State<_OverlayBareIconButton> {
         ? colorScheme.onPrimary
         : colorScheme.onSurfaceVariant;
 
-    return ExcludeSemantics(
+    return Tooltip(
+      message: widget.tooltip,
+      excludeFromSemantics: true,
+      waitDuration: const Duration(milliseconds: 450),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _hovered = true),
@@ -423,7 +405,6 @@ class _OverlayBareIconButtonState extends State<_OverlayBareIconButton> {
         }),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          excludeFromSemantics: true,
           onTap: widget.onPressed,
           onTapDown: (_) => setState(() => _pressed = true),
           onTapCancel: () => setState(() => _pressed = false),
@@ -447,122 +428,115 @@ class _OverlayBareIconButtonState extends State<_OverlayBareIconButton> {
   }
 }
 
-class _OverlayOpacityScrubber extends StatefulWidget {
+class _OverlayOpacitySlider extends StatelessWidget {
   final double value;
   final ValueChanged<double> onChanged;
 
-  const _OverlayOpacityScrubber({
+  const _OverlayOpacitySlider({
     super.key,
     required this.value,
     required this.onChanged,
   });
 
   @override
-  State<_OverlayOpacityScrubber> createState() =>
-      _OverlayOpacityScrubberState();
-}
-
-class _OverlayOpacityScrubberState extends State<_OverlayOpacityScrubber> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    return ExcludeSemantics(
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return GestureDetector(
+    final tooltip = AppLocalizations.of(context)!.analysisOverlayOpacity;
+    final colorScheme = Theme.of(context).colorScheme;
+    final normalized = value.clamp(0.0, 1.0).toDouble();
+    return Tooltip(
+      message: tooltip,
+      excludeFromSemantics: true,
+      waitDuration: const Duration(milliseconds: 450),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          void updateFromLocal(Offset local) {
+            final width = constraints.maxWidth <= 0
+                ? 1.0
+                : constraints.maxWidth;
+            final t = (local.dx / width).clamp(0.0, 1.0);
+            onChanged(t.toDouble());
+          }
+
+          return MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              excludeFromSemantics: true,
-              onTapDown: (details) => _updateFromLocalDx(
-                details.localPosition.dx,
-                constraints.maxWidth,
-              ),
-              onHorizontalDragUpdate: (details) => _updateFromLocalDx(
-                details.localPosition.dx,
-                constraints.maxWidth,
-              ),
+              onTapDown: (details) => updateFromLocal(details.localPosition),
+              onHorizontalDragUpdate: (details) =>
+                  updateFromLocal(details.localPosition),
               child: SizedBox(
                 height: 24,
                 child: CustomPaint(
-                  painter: _OverlayOpacityScrubberPainter(
-                    value: widget.value,
-                    hovered: _hovered,
-                    colorScheme: Theme.of(context).colorScheme,
+                  painter: _OverlayOpacitySliderPainter(
+                    normalized: normalized,
+                    colorScheme: colorScheme,
                   ),
                 ),
               ),
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
   }
-
-  void _updateFromLocalDx(double dx, double width) {
-    if (width <= 0) return;
-    final normalized = (dx / width).clamp(0.0, 1.0).toDouble();
-    widget.onChanged(0.1 + normalized * 0.9);
-  }
 }
 
-class _OverlayOpacityScrubberPainter extends CustomPainter {
-  final double value;
-  final bool hovered;
+class _OverlayOpacitySliderPainter extends CustomPainter {
+  final double normalized;
   final ColorScheme colorScheme;
 
-  const _OverlayOpacityScrubberPainter({
-    required this.value,
-    required this.hovered,
+  const _OverlayOpacitySliderPainter({
+    required this.normalized,
     required this.colorScheme,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
+    final value = normalized.clamp(0.0, 1.0).toDouble();
     final centerY = size.height / 2;
-    final trackLeft = 4.0;
-    final trackRight = size.width - 4.0;
-    final trackWidth = (trackRight - trackLeft).clamp(1.0, double.infinity);
-    final normalized = ((value.clamp(0.1, 1.0) - 0.1) / 0.9).toDouble();
-    final thumbX = trackLeft + trackWidth * normalized;
-
-    final inactivePaint = Paint()
-      ..color = colorScheme.outlineVariant.withValues(
-        alpha: hovered ? 0.75 : 0.55,
-      )
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
-    final activePaint = Paint()
-      ..color = colorScheme.primary.withValues(alpha: hovered ? 0.95 : 0.82)
-      ..strokeWidth = 2.4
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(
-      Offset(trackLeft, centerY),
-      Offset(trackRight, centerY),
-      inactivePaint,
+    final trackLeft = 5.5;
+    final trackRight = math.max(trackLeft, size.width - 5.5);
+    final trackWidth = trackRight - trackLeft;
+    final thumbX = trackLeft + trackWidth * value;
+    final trackRect = RRect.fromLTRBR(
+      trackLeft,
+      centerY - 1.4,
+      trackRight,
+      centerY + 1.4,
+      const Radius.circular(2),
     );
-    canvas.drawLine(
-      Offset(trackLeft, centerY),
+    final activeRect = RRect.fromLTRBR(
+      trackLeft,
+      centerY - 1.4,
+      thumbX,
+      centerY + 1.4,
+      const Radius.circular(2),
+    );
+
+    canvas.drawRRect(
+      trackRect,
+      Paint()
+        ..color = colorScheme.outlineVariant.withValues(alpha: 0.64)
+        ..isAntiAlias = true,
+    );
+    canvas.drawRRect(
+      activeRect,
+      Paint()
+        ..color = colorScheme.primary.withValues(alpha: 0.92)
+        ..isAntiAlias = true,
+    );
+    canvas.drawCircle(
       Offset(thumbX, centerY),
-      activePaint,
+      5.5,
+      Paint()
+        ..color = colorScheme.primary
+        ..isAntiAlias = true,
     );
-
-    final thumbPaint = Paint()..color = colorScheme.primary;
-    final ringPaint = Paint()
-      ..color = colorScheme.surface
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4;
-    canvas.drawCircle(Offset(thumbX, centerY), hovered ? 6 : 5, thumbPaint);
-    canvas.drawCircle(Offset(thumbX, centerY), hovered ? 6 : 5, ringPaint);
   }
 
   @override
-  bool shouldRepaint(covariant _OverlayOpacityScrubberPainter oldDelegate) {
-    return oldDelegate.value != value ||
-        oldDelegate.hovered != hovered ||
+  bool shouldRepaint(covariant _OverlayOpacitySliderPainter oldDelegate) {
+    return oldDelegate.normalized != normalized ||
         oldDelegate.colorScheme != colorScheme;
   }
 }

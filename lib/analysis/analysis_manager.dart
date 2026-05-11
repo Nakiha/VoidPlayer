@@ -88,6 +88,7 @@ abstract class AnalysisGenerationService {
   bool get overlayPanelVisible;
   Set<int> get activeOverlayTrackFileIds;
   AnalysisOverlayConfig get overlayConfig;
+  AnalysisTrackGenerationStatus? statusForPath(String path);
   Future<String?> ensureGenerated(String videoPath);
   Future<bool> activateOverlay(
     String hash, {
@@ -156,6 +157,7 @@ class AnalysisManager extends ChangeNotifier
   AnalysisOverlayConfig get overlayConfig => _overlayConfig;
   bool get isLoaded => _state == AnalysisState.loaded;
 
+  @override
   AnalysisTrackGenerationStatus? statusForPath(String path) =>
       _trackStatusByPath[path];
 

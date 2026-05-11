@@ -2240,9 +2240,10 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
     const int mode = overlay.mode.load(std::memory_order_acquire);
     const int file_id = overlay.track_file_id.load(std::memory_order_acquire);
     const int opacity_permille =
-        std::clamp(overlay.opacity_permille.load(std::memory_order_acquire), 100, 1000);
+        std::clamp(overlay.opacity_permille.load(std::memory_order_acquire), 0, 1000);
 
-    if (!show_grid && !show_qp && !show_pred && !show_lines && !show_bit_cost && mode != 3 && mode != 4) {
+    if (!show_grid && !show_qp && !show_pred && !show_lines && !show_bit_cost &&
+        mode != 0 && mode != 1 && mode != 2 && mode != 3 && mode != 4) {
         return;
     }
 
@@ -2272,13 +2273,16 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
 
     const int visible_count = std::max(constants.track_count, 1);
     const uint8_t base_alpha = static_cast<uint8_t>(std::clamp(
-        opacity_permille * 255 / 1000, 25, 255));
-    const uint8_t fill_alpha = static_cast<uint8_t>(std::max(20, base_alpha * 2 / 5));
-    const uint8_t line_alpha = static_cast<uint8_t>(std::max<int>(70, base_alpha));
-    const bool qp_primary = show_qp || mode == 3;
-    const bool bit_cost_primary = show_bit_cost || mode == 4;
-    const bool pred_primary = show_pred || mode == 1 || mode == 2;
-    const bool line_primary = show_lines || mode == 2;
+        opacity_permille * 255 / 1000, 0, 255));
+    const uint8_t fill_alpha = static_cast<uint8_t>(base_alpha * 2 / 5);
+    const uint8_t line_alpha = base_alpha;
+    // Current Dart primary overlay modes are: 0=CU, 1=QP heatmap,
+    // 2=bitrate/bit-cost heatmap. Keep 3/4 as compatibility with the
+    // previous five-mode UI.
+    const bool qp_primary = show_qp || mode == 1 || mode == 3;
+    const bool bit_cost_primary = show_bit_cost || mode == 2 || mode == 4;
+    const bool pred_primary = show_pred;
+    const bool line_primary = show_lines;
 
     auto draw_track_overlay = [&](int track_file_id,
                                   const analysis::AnalysisManager& track_analysis) {

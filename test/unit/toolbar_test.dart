@@ -290,6 +290,30 @@ void main() {
     );
 
     expect(find.byKey(analysisOverlayControlBarKey), findsOneWidget);
+    final overlayTooltips = find.descendant(
+      of: find.byKey(analysisOverlayControlBarKey),
+      matching: find.byType(Tooltip),
+    );
+    final tooltipMessages = tester
+        .widgetList<Tooltip>(overlayTooltips)
+        .map((tooltip) => tooltip.message)
+        .toSet();
+    expect(
+      tooltipMessages,
+      containsAll(const [
+        'CU partitions',
+        'QP heatmap',
+        'Bitrate heatmap',
+        'Prediction mode labels',
+        'Prediction lines',
+        'Overlay opacity',
+        'Sync this panel to all overlay headers',
+      ]),
+    );
+    for (final tooltip in tester.widgetList<Tooltip>(overlayTooltips)) {
+      expect(tooltip.excludeFromSemantics, isTrue);
+    }
+
     await tester.tap(
       find.byKey(
         ValueKey(
@@ -302,8 +326,13 @@ void main() {
     final slider = find.byKey(
       ValueKey('analysis-overlay-opacity-${openedTrack.fileId}'),
     );
-    await tester.drag(slider, const Offset(80, 0));
+    await tester.tapAt(tester.getTopRight(slider) + const Offset(-2, 12));
     expect(opacity, greaterThan(0.55));
+    await tester.tapAt(tester.getTopLeft(slider) + const Offset(0, 12));
+    expect(opacity, lessThanOrEqualTo(0.01));
+
+    expect(source.config.copyWith(opacity: -1).opacity, 0);
+    expect(source.config.copyWith(opacity: 2).opacity, 1);
   });
 
   testWidgets('analysis overlay sync disables inactive track panels by default', (

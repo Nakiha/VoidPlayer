@@ -220,6 +220,17 @@ class TestRunner {
       case ClickMediaHeaderOverlayButton():
         log.info('TestRunner: CLICK_MEDIA_HEADER_OVERLAY_BUTTON');
         testHarness.clickAnalysisOverlayButton();
+      case HoverMediaHeaderOverlayButton():
+        log.info('TestRunner: HOVER_MEDIA_HEADER_OVERLAY_BUTTON');
+        testHarness.hoverAnalysisOverlayButton();
+      case HoverMediaHeaderOverlayPanelControls():
+        log.info('TestRunner: HOVER_MEDIA_HEADER_OVERLAY_PANEL_CONTROLS');
+        testHarness.hoverAnalysisOverlayPanelControls();
+      case AssertMediaHeaderOverlayPanelVisible(:final visible):
+        log.info(
+          'TestRunner: ASSERT_MEDIA_HEADER_OVERLAY_PANEL_VISIBLE $visible',
+        );
+        testHarness.assertAnalysisOverlayPanelVisible(visible);
       case ToggleAnalysisOverlay(:final slotIndex):
         log.info('TestRunner: TOGGLE_ANALYSIS_OVERLAY slot=$slotIndex');
         await automation.toggleAnalysisOverlayForSlot(slotIndex);

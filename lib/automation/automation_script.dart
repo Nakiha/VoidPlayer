@@ -365,6 +365,29 @@ ScriptInstruction? _parseInstruction(
         time,
         const ClickMediaHeaderOverlayButton(),
       );
+    case 'HOVER_MEDIA_HEADER_OVERLAY_BUTTON':
+      return ScriptAutomationAction(
+        time,
+        const HoverMediaHeaderOverlayButton(),
+      );
+    case 'HOVER_MEDIA_HEADER_OVERLAY_PANEL_CONTROLS':
+      return ScriptAutomationAction(
+        time,
+        const HoverMediaHeaderOverlayPanelControls(),
+      );
+    case 'ASSERT_MEDIA_HEADER_OVERLAY_PANEL_VISIBLE':
+      if (args.isEmpty) {
+        log.warning(
+          'ASSERT_MEDIA_HEADER_OVERLAY_PANEL_VISIBLE needs visible flag: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        AssertMediaHeaderOverlayPanelVisible(
+          args[0] == '1' || args[0].toLowerCase() == 'true',
+        ),
+      );
     case 'TOGGLE_ANALYSIS_OVERLAY':
       if (args.isEmpty) {
         log.warning('TOGGLE_ANALYSIS_OVERLAY needs slot index: $rawLine');

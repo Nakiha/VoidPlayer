@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart' as wm;
 
 import '../../app_log.dart';
+import '../../widgets/analysis_overlay_controls.dart';
 
 class MainWindowTestHarness {
   final GlobalKey viewportKey;
@@ -153,6 +154,13 @@ class MainWindowTestHarness {
       'global=(${global.dx.toStringAsFixed(1)}, ${global.dy.toStringAsFixed(1)})',
     );
     GestureBinding.instance.handlePointerEvent(
+      PointerAddedEvent(
+        pointer: pointer,
+        position: global,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    GestureBinding.instance.handlePointerEvent(
       PointerDownEvent(
         pointer: pointer,
         position: global,
@@ -167,6 +175,122 @@ class MainWindowTestHarness {
         kind: PointerDeviceKind.mouse,
       ),
     );
+    GestureBinding.instance.handlePointerEvent(
+      PointerRemovedEvent(
+        pointer: pointer,
+        position: global,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+  }
+
+  void hoverAnalysisOverlayButton() {
+    final context = analysisOverlayButtonKey.currentContext;
+    if (context == null) {
+      throw StateError('Analysis overlay button is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Analysis overlay button has no render box');
+    }
+
+    final local = Offset(
+      renderObject.size.width / 2,
+      renderObject.size.height / 2,
+    );
+    final outside = renderObject.localToGlobal(
+      Offset(renderObject.size.width + 24, renderObject.size.height + 24),
+    );
+    final global = renderObject.localToGlobal(local);
+    log.info(
+      'Test action: HOVER_MEDIA_HEADER_OVERLAY_BUTTON '
+      'global=(${global.dx.toStringAsFixed(1)}, ${global.dy.toStringAsFixed(1)})',
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerHoverEvent(
+        pointer: _pointerId,
+        position: outside,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerHoverEvent(
+        pointer: _pointerId,
+        position: global,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+  }
+
+  void hoverAnalysisOverlayPanelControls() {
+    final context = _findContextByKey(analysisOverlayControlBarKey);
+    if (context == null) {
+      throw StateError('Analysis overlay control bar is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Analysis overlay control bar has no render box');
+    }
+
+    final global = renderObject.localToGlobal(
+      Offset(
+        (renderObject.size.width * 0.08).clamp(
+          8.0,
+          renderObject.size.width / 2,
+        ),
+        renderObject.size.height / 2,
+      ),
+    );
+    log.info(
+      'Test action: HOVER_MEDIA_HEADER_OVERLAY_PANEL_CONTROLS '
+      'global=(${global.dx.toStringAsFixed(1)}, ${global.dy.toStringAsFixed(1)})',
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerHoverEvent(
+        pointer: _pointerId,
+        position: global,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+  }
+
+  void assertAnalysisOverlayPanelVisible(bool expected) {
+    final context = _findContextByKey(analysisOverlayControlBarKey);
+    var visible = false;
+    if (context != null) {
+      final renderObject = context.findRenderObject();
+      visible =
+          renderObject is RenderBox &&
+          renderObject.hasSize &&
+          renderObject.size.width > 0 &&
+          renderObject.size.height > 0;
+    }
+    log.info(
+      'Test assert: ASSERT_MEDIA_HEADER_OVERLAY_PANEL_VISIBLE '
+      'expected=$expected actual=$visible',
+    );
+    if (visible != expected) {
+      throw AssertionError(
+        'Expected media-header overlay panel visible=$expected, got $visible',
+      );
+    }
+  }
+
+  BuildContext? _findContextByKey(Key key) {
+    final root = WidgetsBinding.instance.rootElement;
+    if (root == null) return null;
+    Element? found;
+    void visit(Element element) {
+      if (found != null) return;
+      if (element.widget.key == key) {
+        found = element;
+        return;
+      }
+      element.visitChildElements(visit);
+    }
+
+    visit(root);
+    return found;
   }
 
   Future<void> hoverControlsBarButtonsNative({int steps = 24}) async {

@@ -4,7 +4,7 @@
 
 ## Goals
 
-- 在播放 viewport 上叠加 codec block analysis 信息，第一版覆盖 CU/MB 划分、预测模式、预测线/MV 线、QP 热力图。
+- 在播放 viewport 上叠加 codec block analysis 信息，第一版覆盖 CU/MB 划分、QP 热力图、比特率/复杂度热力图、预测模式、预测线/MV 线。
 - 遮罩必须跟随现有 layout：side-by-side、split screen、track order、zoom、pan、像素大小模式。
 - 高密度元素由 native/D3D11 绘制，Dart 只负责入口、开关、hover/click 事件、inspector 和少量 UI chrome。
 - 点击命中使用 native 的当前帧数据和布局几何，避免把大量 CU/PU/TU records 搬到 Dart。
@@ -45,10 +45,11 @@
 - 遮罩打开后，在 media header 上方展开 overlay control strip。
 - control strip 参与主窗口布局，占用底部媒体区高度，viewport 通过 `Expanded` 自然被向上挤压。
 - control strip 横向分栏与 media header 的 track slot 对齐；第一版 native 只支持一个 active analysis session，因此只有 active track 的分栏可交互，其他分栏显示为 disabled。
-- 每个 active track 分栏包含三类控件：
-  - overlay type：切换主视觉层。
-  - additive layers：切换可叠加的辅助层。
+- 每个 active track 分栏是一行控件，从左到右：
+  - overlay type：`CU/MB 划分`、`QP 热力图`、`比特率热力图` 三选一。
+  - additive layers：`预测模式`、`预测线` 两个独立激活按钮。
   - opacity：调节遮罩透明度。
+  - sync：是否把当前面板设置同步到全部 overlay header。
 - 功能区状态属于主窗口 overlay，不属于 analysis 子窗口；analysis 子窗口仍负责深度结构浏览。
 
 ## Overlay Types and Layers
@@ -57,17 +58,14 @@
 
 | Type | Primary visual | VBS4 dependency | Additive layers | First GUI state |
 | --- | --- | --- | --- | --- |
-| CU | CU/MB partition outlines | H.264 MB grid or HEVC/VVC CU geometry | CU grid | Enabled |
-| Prediction | Prediction mode glyph/color | CU pred mode, skip/merge/inter/intra flags | CU grid, prediction mode | Enabled |
-| Prediction lines | Intra direction and inter MV lines | CU-level intra mode and MV; PU/affine details optional | CU grid, prediction mode, prediction lines | Enabled |
-| QP heatmap | Per-CU/MB QP fill | CU/MB QP | CU grid, prediction mode | Enabled |
-| CU bit-cost heatmap | Per-CU bit/cost fill | future cost/bit optional stream | CU grid, prediction mode, prediction lines | GUI/protocol enabled, visual data pending |
+| CU | CU/MB partition outlines | H.264 MB grid or HEVC/VVC CU geometry | prediction mode, prediction lines | Enabled |
+| QP heatmap | Per-CU/MB QP fill | CU/MB QP | prediction mode, prediction lines | Enabled |
+| Bitrate heatmap | Per-CU bit/cost fill when available; current proxy uses CU depth/area/QP | future cost/bit optional stream | prediction mode, prediction lines | GUI/protocol enabled, visual data pending |
 
 ### Additive Layers
 
 | Layer | Meaning | Supported now | Notes |
 | --- | --- | --- | --- |
-| CU grid | Draw CU/MB boundaries over any primary type | Yes | Base layer for pure CU and useful guide for heatmaps. |
 | Prediction mode | Draw compact intra/inter/skip/merge labels or colors | Partially | Current VBS4 has CU-level mode data; glyph rendering lands in native renderer phase. |
 | Prediction lines | Draw intra direction lines and L0/L1 MV lines | Partially | Current data is CU-level; PU split and affine control-point precision require future streams. |
 | TU grid | Transform unit boundaries | No | Requires TU geometry stream. Do not expose as an active toggle until data exists. |
@@ -75,13 +73,11 @@
 
 ### Type Defaults
 
-- CU defaults to `CU grid`.
-- Prediction defaults to `CU grid + prediction mode`.
-- Prediction lines defaults to `CU grid + prediction mode + prediction lines`.
-- QP heatmap defaults to `CU grid`.
-- CU bit-cost heatmap defaults to `CU grid` until cost data exists.
+- CU defaults to partition outlines.
+- QP heatmap defaults to QP fill plus partition outlines.
+- Bitrate heatmap defaults to complexity proxy fill plus partition outlines until cost data exists.
 
-The type controls the primary native renderer pass. Additive layers are independent flags sent in the same overlay state so later renderer phases do not need UI rewiring.
+The type controls the primary native renderer pass. Prediction mode and prediction line layers are independent flags sent in the same overlay state so later renderer phases do not need UI rewiring.
 
 ## Architecture Boundaries
 
@@ -122,16 +118,16 @@ D3D11 renderer 负责：
 
 第一版实现先采用 correctness-first 路径：CPU 按当前 VBS4 frame 生成一张 viewport 尺寸的 BGRA dynamic texture，再由 D3D11 full-screen overlay pass 做 alpha blend。这样可以先把 CU grid、QP heatmap、prediction colors、MV line 和 CU complexity proxy heatmap 与现有 Texture 上屏路径打通；后续大码率/高分辨率优化再迁移到 GPU instance/structured-buffer 绘制。
 
-当前 VBS4 CU record 没有真实 bit-cost 字段，因此第一版 `cuBitCostHeatmap` 只能使用 CU depth/面积/QP 的复杂度 proxy 保持类型可见；真正的 CU bit-cost heatmap 必须等 VBS4 增加对应 stream 后替换。
+当前 VBS4 CU record 没有真实 bit/bitrate/cost 字段，因此第一版 `cuBitCostHeatmap` 只能使用 CU depth/面积/QP 的复杂度 proxy 保持类型可见；真正的 bitrate heatmap 必须等 VBS4 增加对应 stream 后替换。
 
 ## First Version
 
 - toolbar analysis hover panel 中每个 track row 提供一个小图标激活按钮。
 - 只有对应 track 的分析缓存完整时按钮可用。
 - 点击按钮加载该 track 的 VAC，并设置 native overlay state。
-- overlay 默认类型为 CU，附加层为 CU grid，透明度为 55%。
+- overlay 默认类型为 CU，透明度为 55%。
 - 遮罩打开后 media header 上方出现 per-track overlay control strip。
-- control strip 可切换 CU / prediction / prediction lines / QP heatmap / CU bit-cost heatmap，可切换附加层，可调整透明度。
+- control strip 可在 CU / QP heatmap / bitrate heatmap 三个主视觉间切换，可独立开关预测模式和预测线，可调整透明度。
 - 同一时间只激活一个 track 的 overlay。
 
 渲染层落地顺序：
@@ -140,7 +136,7 @@ D3D11 renderer 负责：
 2. QP heatmap：以 block rect 半透明填充，使用 frame `qp_min/qp_max` 或 codec 范围归一化。
 3. Prediction mode：第一版用色彩区分 intra/inter/skip/merge，后续补小 glyph。
 4. Prediction lines：第一版画基础 L0 MV，后续补 L1 MV 和 intra direction。
-5. CU bit-cost heatmap：第一版用复杂度 proxy，后续接真实 bit-cost stream。
+5. Bitrate heatmap：第一版用复杂度 proxy，后续接真实 bit/cost stream。
 
 ## Hit-Test Contract
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../analysis/analysis_manager.dart';
 import '../analysis/analysis_overlay.dart';
@@ -51,6 +52,324 @@ class MediaHeaderBar extends StatelessWidget {
       onAnalysisOverlayOpacityChanged: onAnalysisOverlayOpacityChanged,
       onRemoveClicked: onRemoveClicked,
     );
+  }
+}
+
+class MediaHeaderOverlayPanelHost extends StatefulWidget {
+  final List<TrackEntry> entries;
+  final AnalysisToolbarDataSource dataSource;
+  final ValueChanged<AnalysisOverlayType> onTypeChanged;
+  final ValueChanged<Set<AnalysisOverlayLayer>> onLayersChanged;
+  final ValueChanged<double> onOpacityChanged;
+  final Widget child;
+
+  const MediaHeaderOverlayPanelHost({
+    super.key,
+    required this.entries,
+    required this.dataSource,
+    required this.onTypeChanged,
+    required this.onLayersChanged,
+    required this.onOpacityChanged,
+    required this.child,
+  });
+
+  static MediaHeaderOverlayPanelHostState? maybeOf(BuildContext context) {
+    final scope = context
+        .getElementForInheritedWidgetOfExactType<
+          _MediaHeaderOverlayPanelScope
+        >()
+        ?.widget;
+    return scope is _MediaHeaderOverlayPanelScope ? scope.state : null;
+  }
+
+  @override
+  State<MediaHeaderOverlayPanelHost> createState() =>
+      MediaHeaderOverlayPanelHostState();
+}
+
+class _MediaHeaderOverlayPanelScope extends InheritedWidget {
+  final MediaHeaderOverlayPanelHostState state;
+
+  const _MediaHeaderOverlayPanelScope({
+    required this.state,
+    required super.child,
+  });
+
+  @override
+  bool updateShouldNotify(covariant _MediaHeaderOverlayPanelScope oldWidget) {
+    return oldWidget.state != state;
+  }
+}
+
+enum _HeaderOverlayPanelPhase { hidden, shown, closing }
+
+class MediaHeaderOverlayPanelHostState
+    extends State<MediaHeaderOverlayPanelHost>
+    with SingleTickerProviderStateMixin {
+  Timer? _hideTimer;
+  Rect? _anchorRect;
+  bool _hoveringButton = false;
+  bool _hoveringPanel = false;
+  _HeaderOverlayPanelPhase _panelPhase = _HeaderOverlayPanelPhase.hidden;
+  Set<int> _cachedTrackFileIds = const {};
+  Future<void>? _cacheRefreshInFlight;
+  String? _lastDataSourceSignature;
+  late final AnimationController _panelAnimationController;
+  late final Animation<double> _panelOpacity;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.dataSource.addListener(_handleDataSourceChanged);
+    _lastDataSourceSignature = _dataSourceSignature();
+    _panelAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 130),
+      reverseDuration: const Duration(milliseconds: 110),
+    );
+    _panelOpacity = CurvedAnimation(
+      parent: _panelAnimationController,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant MediaHeaderOverlayPanelHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.dataSource != widget.dataSource) {
+      oldWidget.dataSource.removeListener(_handleDataSourceChanged);
+      widget.dataSource.addListener(_handleDataSourceChanged);
+      _lastDataSourceSignature = _dataSourceSignature();
+    }
+    if (widget.entries.isEmpty) {
+      _removePanel();
+    } else if (_isPanelVisible) {
+      setState(() {});
+    }
+  }
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    widget.dataSource.removeListener(_handleDataSourceChanged);
+    _panelAnimationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _MediaHeaderOverlayPanelScope(
+      state: this,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              widget.child,
+              if (_isPanelVisible && widget.entries.isNotEmpty)
+                _buildPanel(context, constraints),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildPanel(BuildContext context, BoxConstraints constraints) {
+    final anchor = _anchorRect;
+    if (anchor == null) return const SizedBox.shrink();
+    const panelMargin = AnalysisOverlayControlBar.margin;
+    final panelWidth = math.min(
+      math.max(1.0, constraints.maxWidth - anchor.left - panelMargin),
+      math.max(420.0, widget.entries.length * 500.0),
+    );
+    final left = anchor.left
+        .clamp(0.0, math.max(0.0, constraints.maxWidth - panelWidth))
+        .toDouble();
+    final bottom = math.max(
+      0.0,
+      constraints.maxHeight - anchor.top + panelMargin,
+    );
+    return Positioned(
+      left: left,
+      bottom: bottom,
+      width: panelWidth,
+      child: IgnorePointer(
+        ignoring: _panelPhase == _HeaderOverlayPanelPhase.hidden,
+        child: FadeTransition(
+          opacity: _panelOpacity,
+          child: MouseRegion(
+            onEnter: (_) {
+              _hoveringPanel = true;
+              _hideTimer?.cancel();
+            },
+            onExit: (_) {
+              _hoveringPanel = false;
+              _scheduleHidePanel();
+            },
+            child: Material(
+              color: Colors.transparent,
+              child: AnalysisOverlayControlBar(
+                entries: widget.entries,
+                dataSource: widget.dataSource,
+                panelActive: widget.dataSource.overlayPanelVisible,
+                readyTrackFileIds: _cachedTrackFileIds,
+                onTypeChanged: widget.onTypeChanged,
+                onLayersChanged: widget.onLayersChanged,
+                onOpacityChanged: widget.onOpacityChanged,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void showFrom(BuildContext anchorContext) {
+    if (widget.entries.isEmpty) return;
+    _updateAnchor(anchorContext);
+    _hoveringButton = true;
+    _showPanel();
+    unawaited(refreshCachedTrackFileIds());
+  }
+
+  void buttonExited() {
+    _hoveringButton = false;
+    _scheduleHidePanel();
+  }
+
+  Future<void> handleToggleCompleted({required bool stillHovering}) async {
+    await refreshCachedTrackFileIds();
+    if (!mounted) return;
+    if (stillHovering || _hoveringPanel) {
+      _showPanel();
+    } else {
+      _removePanel();
+    }
+  }
+
+  void _updateAnchor(BuildContext anchorContext) {
+    final hostBox = context.findRenderObject();
+    final targetBox = anchorContext.findRenderObject();
+    if (hostBox is! RenderBox || targetBox is! RenderBox) return;
+    final globalTopLeft = targetBox.localToGlobal(Offset.zero);
+    final localTopLeft = hostBox.globalToLocal(globalTopLeft);
+    _anchorRect = localTopLeft & targetBox.size;
+  }
+
+  void _showPanel() {
+    _hideTimer?.cancel();
+    setState(() {
+      _panelPhase = _HeaderOverlayPanelPhase.shown;
+    });
+    _panelAnimationController.forward();
+  }
+
+  void _scheduleHidePanel() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(milliseconds: 180), () {
+      if (_hoveringButton || _hoveringPanel) return;
+      unawaited(_fadeOutPanel());
+    });
+  }
+
+  Future<void> _fadeOutPanel() async {
+    if (!_isPanelVisible) return;
+    setState(() {
+      _panelPhase = _HeaderOverlayPanelPhase.closing;
+    });
+    await _panelAnimationController.reverse();
+    if (!mounted) return;
+    if (_hoveringButton || _hoveringPanel) {
+      setState(() {
+        _panelPhase = _HeaderOverlayPanelPhase.shown;
+      });
+      await _panelAnimationController.forward();
+      return;
+    }
+    _removePanel();
+  }
+
+  void _removePanel() {
+    _hideTimer?.cancel();
+    _hoveringButton = false;
+    _hoveringPanel = false;
+    if (_panelAnimationController.isAnimating ||
+        _panelAnimationController.value != 0) {
+      _panelAnimationController.value = 0;
+    }
+    if (_panelPhase == _HeaderOverlayPanelPhase.hidden && _anchorRect == null) {
+      return;
+    }
+    setState(() {
+      _panelPhase = _HeaderOverlayPanelPhase.hidden;
+      _anchorRect = null;
+    });
+  }
+
+  bool get _isPanelVisible =>
+      _panelPhase == _HeaderOverlayPanelPhase.shown ||
+      _panelPhase == _HeaderOverlayPanelPhase.closing;
+
+  Future<void> refreshCachedTrackFileIds() async {
+    final existing = _cacheRefreshInFlight;
+    if (existing != null) return existing;
+    final entries = List<TrackEntry>.of(widget.entries);
+    if (entries.isEmpty) return;
+    late final Future<void> future;
+    future =
+        (() async {
+          final snapshot = await widget.dataSource.snapshot();
+          if (!mounted) return;
+          final ready = <int>{};
+          for (final entry in entries) {
+            final status = widget.dataSource.statusForPath(entry.path);
+            if (status?.isCached ?? false) {
+              ready.add(entry.fileId);
+              continue;
+            }
+            for (final cacheEntry in snapshot.entries) {
+              if (cacheEntry.videoPath == entry.path && cacheEntry.complete) {
+                ready.add(entry.fileId);
+                break;
+              }
+            }
+          }
+          if (setEquals(ready, _cachedTrackFileIds)) return;
+          setState(() {
+            _cachedTrackFileIds = ready;
+          });
+        })().whenComplete(() {
+          if (identical(_cacheRefreshInFlight, future)) {
+            _cacheRefreshInFlight = null;
+          }
+        });
+    _cacheRefreshInFlight = future;
+    return future;
+  }
+
+  void _handleDataSourceChanged() {
+    if (!mounted) return;
+    final signature = _dataSourceSignature();
+    if (signature == _lastDataSourceSignature) return;
+    _lastDataSourceSignature = signature;
+    if (_isPanelVisible) setState(() {});
+  }
+
+  String _dataSourceSignature() {
+    final activeTrackIds = widget.dataSource.activeOverlayTrackFileIds.toList()
+      ..sort();
+    final config = widget.dataSource.overlayConfig;
+    final layers = config.layers.map((layer) => layer.name).toList()..sort();
+    return [
+      widget.dataSource.state.name,
+      widget.dataSource.overlayPanelVisible,
+      activeTrackIds.join('|'),
+      config.type.name,
+      layers.join('|'),
+      config.opacity.toStringAsFixed(3),
+    ].join(';');
   }
 }
 
@@ -255,57 +574,8 @@ class _HeaderOverlayPanelButton extends StatefulWidget {
       _HeaderOverlayPanelButtonState();
 }
 
-class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton>
-    with SingleTickerProviderStateMixin {
-  final LayerLink _layerLink = LayerLink();
-  OverlayEntry? _overlayEntry;
-  Timer? _hideTimer;
+class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton> {
   bool _hoveringButton = false;
-  bool _hoveringPanel = false;
-  String? _lastDataSourceSignature;
-  late final AnimationController _panelAnimationController;
-  late final Animation<double> _panelOpacity;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.dataSource.addListener(_handleDataSourceChanged);
-    _lastDataSourceSignature = _dataSourceSignature();
-    _panelAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 130),
-      reverseDuration: const Duration(milliseconds: 110),
-    );
-    _panelOpacity = CurvedAnimation(
-      parent: _panelAnimationController,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant _HeaderOverlayPanelButton oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.dataSource != widget.dataSource) {
-      oldWidget.dataSource.removeListener(_handleDataSourceChanged);
-      widget.dataSource.addListener(_handleDataSourceChanged);
-      _lastDataSourceSignature = _dataSourceSignature();
-    }
-    if (!widget.dataSource.overlayPanelVisible) {
-      _removePanel();
-    } else {
-      _overlayEntry?.markNeedsBuild();
-    }
-  }
-
-  @override
-  void dispose() {
-    _hideTimer?.cancel();
-    widget.dataSource.removeListener(_handleDataSourceChanged);
-    _removePanel();
-    _panelAnimationController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -313,82 +583,64 @@ class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton>
     final colorScheme = theme.colorScheme;
     final active = widget.dataSource.overlayPanelVisible;
     final working = _isAnalysisWorking(widget.dataSource.state);
-    final enabled = !working;
     final tooltip = active
         ? AppLocalizations.of(context)!.analysisOverlayDeactivate
         : AppLocalizations.of(context)!.analysisOverlayActivate;
     return MouseRegion(
       onEnter: (_) {
-        _hoveringButton = true;
-        if (active) _showPanel();
+        setState(() {
+          _hoveringButton = true;
+        });
+        MediaHeaderOverlayPanelHost.maybeOf(context)?.showFrom(context);
       },
       onExit: (_) {
-        _hoveringButton = false;
-        _scheduleHidePanel();
+        setState(() {
+          _hoveringButton = false;
+        });
+        MediaHeaderOverlayPanelHost.maybeOf(context)?.buttonExited();
       },
-      child: CompositedTransformTarget(
-        link: _layerLink,
-        child: SizedBox(
-          width: 28,
-          height: 28,
-          child: Semantics(
-            button: true,
-            toggled: active,
-            enabled: enabled,
-            label: tooltip,
-            onTap: enabled ? () => unawaited(_handlePressed()) : null,
-            child: Tooltip(
-              message: tooltip,
-              excludeFromSemantics: true,
-              child: ExcludeSemantics(
-                child: IconButton(
-                  onPressed: enabled ? () => unawaited(_handlePressed()) : null,
-                  icon: working
-                      ? const SizedBox(
-                          width: 13,
-                          height: 13,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.grid_on, size: 14),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 28,
-                    height: 28,
-                  ),
-                  style: ButtonStyle(
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    shape: WidgetStatePropertyAll(
-                      RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                    ),
-                    backgroundColor: WidgetStateProperty.resolveWith((states) {
-                      if (!enabled) return Colors.transparent;
-                      if (active) {
-                        return colorScheme.primary.withValues(alpha: 0.22);
-                      }
-                      if (states.contains(WidgetState.hovered) ||
-                          states.contains(WidgetState.focused)) {
-                        return colorScheme.primary.withValues(alpha: 0.14);
-                      }
-                      return Colors.transparent;
-                    }),
-                    foregroundColor: WidgetStateProperty.resolveWith((states) {
-                      if (!enabled) {
-                        return colorScheme.onSurfaceVariant.withValues(
-                          alpha: 0.34,
-                        );
-                      }
-                      return active
-                          ? colorScheme.primary
-                          : colorScheme.onSurfaceVariant;
-                    }),
-                    overlayColor: const WidgetStatePropertyAll(
-                      Colors.transparent,
-                    ),
-                  ),
-                ),
+      child: SizedBox(
+        width: 28,
+        height: 28,
+        child: Tooltip(
+          message: tooltip,
+          excludeFromSemantics: true,
+          child: IconButton(
+            onPressed: working ? null : () => unawaited(_handlePressed()),
+            icon: working
+                ? const SizedBox(
+                    width: 13,
+                    height: 13,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.grid_on, size: 14),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+            style: ButtonStyle(
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
               ),
+              backgroundColor: WidgetStateProperty.resolveWith((states) {
+                if (working) return Colors.transparent;
+                if (active) {
+                  return colorScheme.primary.withValues(alpha: 0.22);
+                }
+                if (states.contains(WidgetState.hovered) ||
+                    states.contains(WidgetState.focused)) {
+                  return colorScheme.primary.withValues(alpha: 0.14);
+                }
+                return Colors.transparent;
+              }),
+              foregroundColor: WidgetStateProperty.resolveWith((states) {
+                if (working) {
+                  return colorScheme.onSurfaceVariant.withValues(alpha: 0.34);
+                }
+                return active
+                    ? colorScheme.primary
+                    : colorScheme.onSurfaceVariant;
+              }),
+              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
             ),
           ),
         ),
@@ -397,143 +649,16 @@ class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton>
   }
 
   Future<void> _handlePressed() async {
+    if (_isAnalysisWorking(widget.dataSource.state)) return;
+    final host = MediaHeaderOverlayPanelHost.maybeOf(context);
     await widget.onToggle();
     if (!mounted) return;
-    if (widget.dataSource.overlayPanelVisible) {
-      _showPanel();
-    } else {
-      _removePanel();
-    }
-  }
-
-  void _handleDataSourceChanged() {
-    if (!mounted) return;
-    final signature = _dataSourceSignature();
-    if (signature == _lastDataSourceSignature) return;
-    _lastDataSourceSignature = signature;
-    setState(() {});
-    if (!widget.dataSource.overlayPanelVisible) {
-      _removePanel();
-      return;
-    }
-    _overlayEntry?.markNeedsBuild();
-  }
-
-  void _showPanel() {
-    if (!widget.dataSource.overlayPanelVisible) return;
-    _hideTimer?.cancel();
-    if (_overlayEntry != null) {
-      _overlayEntry!.markNeedsBuild();
-      _panelAnimationController.forward();
-      return;
-    }
-    final overlay = Overlay.of(context);
-    _overlayEntry = OverlayEntry(
-      builder: (context) {
-        const panelMargin = AnalysisOverlayControlBar.margin;
-        final screenWidth = MediaQuery.sizeOf(context).width;
-        final targetRenderBox = this.context.findRenderObject();
-        final targetLeft = targetRenderBox is RenderBox
-            ? targetRenderBox.localToGlobal(Offset.zero).dx
-            : 0.0;
-        final maxPanelContentWidth = math.max(
-          1.0,
-          screenWidth - targetLeft - panelMargin,
-        );
-        final panelWidth = math.min(
-          maxPanelContentWidth,
-          math.max(420.0, widget.entries.length * 500.0),
-        );
-        return ExcludeSemantics(
-          child: CompositedTransformFollower(
-            link: _layerLink,
-            targetAnchor: Alignment.topLeft,
-            followerAnchor: Alignment.bottomLeft,
-            offset: const Offset(0, -panelMargin),
-            showWhenUnlinked: false,
-            child: FadeTransition(
-              opacity: _panelOpacity,
-              child: UnconstrainedBox(
-                alignment: Alignment.bottomLeft,
-                child: MouseRegion(
-                  onEnter: (_) {
-                    _hoveringPanel = true;
-                    _hideTimer?.cancel();
-                  },
-                  onExit: (_) {
-                    _hoveringPanel = false;
-                    _scheduleHidePanel();
-                  },
-                  child: Material(
-                    color: Colors.transparent,
-                    child: SizedBox(
-                      width: panelWidth,
-                      child: AnalysisOverlayControlBar(
-                        entries: widget.entries,
-                        dataSource: widget.dataSource,
-                        onTypeChanged: widget.onTypeChanged,
-                        onLayersChanged: widget.onLayersChanged,
-                        onOpacityChanged: widget.onOpacityChanged,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-    overlay.insert(_overlayEntry!);
-    _panelAnimationController.forward(from: 0);
-  }
-
-  void _scheduleHidePanel() {
-    _hideTimer?.cancel();
-    _hideTimer = Timer(const Duration(milliseconds: 180), () {
-      if (_hoveringButton || _hoveringPanel) return;
-      unawaited(_fadeOutPanel());
-    });
-  }
-
-  Future<void> _fadeOutPanel() async {
-    await _panelAnimationController.reverse();
-    if (!mounted) return;
-    if (_hoveringButton || _hoveringPanel) {
-      await _panelAnimationController.forward();
-      return;
-    }
-    _removePanel();
-  }
-
-  void _removePanel() {
-    _overlayEntry?.remove();
-    _overlayEntry = null;
-    if (_panelAnimationController.isAnimating ||
-        _panelAnimationController.value != 0) {
-      _panelAnimationController.value = 0;
-    }
+    await host?.handleToggleCompleted(stillHovering: _hoveringButton);
   }
 
   bool _isAnalysisWorking(AnalysisState state) {
     return state == AnalysisState.computingHash ||
-        state == AnalysisState.generating ||
-        state == AnalysisState.loading;
-  }
-
-  String _dataSourceSignature() {
-    final activeTrackIds = widget.dataSource.activeOverlayTrackFileIds.toList()
-      ..sort();
-    final config = widget.dataSource.overlayConfig;
-    final layers = config.layers.map((layer) => layer.name).toList()..sort();
-    return [
-      widget.dataSource.state.name,
-      widget.dataSource.overlayPanelVisible,
-      activeTrackIds.join('|'),
-      config.type.name,
-      layers.join('|'),
-      config.opacity.toStringAsFixed(3),
-    ].join(';');
+        state == AnalysisState.generating;
   }
 }
 

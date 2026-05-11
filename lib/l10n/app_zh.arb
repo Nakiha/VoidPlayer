@@ -181,7 +181,7 @@
   "analysisOverlayTypePrediction": "预测模式",
   "analysisOverlayTypePredictionLines": "预测线",
   "analysisOverlayTypeQpHeatmap": "QP 热力图",
-  "analysisOverlayTypeCuBitCostHeatmap": "CU 比特开销热力图",
+  "analysisOverlayTypeCuBitCostHeatmap": "比特率热力图",
   "analysisOverlayLayerCuGrid": "CU 网格",
   "analysisOverlayLayerPredictionMode": "预测模式标签",
   "analysisOverlayLayerPredictionLines": "预测线",

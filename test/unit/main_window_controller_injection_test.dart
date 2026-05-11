@@ -37,6 +37,9 @@ class _FakeAnalysisGenerationService implements AnalysisGenerationService {
   AnalysisOverlayConfig get overlayConfig => _config;
 
   @override
+  AnalysisTrackGenerationStatus? statusForPath(String path) => null;
+
+  @override
   Future<String?> ensureGenerated(String videoPath) => Future.value(null);
 
   @override

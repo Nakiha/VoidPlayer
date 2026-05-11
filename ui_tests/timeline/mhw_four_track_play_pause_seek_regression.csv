@@ -1,0 +1,23 @@
+# Four 4K HEVC hardware tracks should keep playing and refresh the paused
+# preview after a timeline exact seek.
+@WINDOW,1900,1068
+
+0.0,SET_DECODE_MODE,preferHardware
+0.2,ADD_MEDIA,resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+1.2,ADD_MEDIA,resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+2.2,ADD_MEDIA,resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+3.2,ADD_MEDIA,resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+5.2,ASSERT_TRACK_COUNT,4
+5.3,SET_RENDER_SIZE,1280,720
+5.5,PLAY
+6.2,WAIT_PLAYING,3000
+6.8,PAUSE
+7.2,WAIT_PAUSED,3000
+7.4,CAPTURE_VIEWPORT,mhw_four_before_seek,build/mhw_four_before_seek.png
+7.5,ASSERT_CAPTURE_NOT_BLACK,mhw_four_before_seek,0.01,4.0
+7.6,CLICK_TIMELINE_FRACTION,0.72
+8.8,ASSERT_POSITION,2160000,300
+8.9,CAPTURE_VIEWPORT,mhw_four_after_seek,build/mhw_four_after_seek.png
+9.0,ASSERT_CAPTURE_NOT_BLACK,mhw_four_after_seek,0.01,4.0
+9.1,ASSERT_CAPTURE_CHANGED,mhw_four_before_seek,mhw_four_after_seek
+9.3,QUIT,0

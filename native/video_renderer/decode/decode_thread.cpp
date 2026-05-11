@@ -627,8 +627,15 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
 
     flush_hw_visibility_if_needed();
     const int64_t pts = exact_seek_reorder_[selected].pts_us;
+    const size_t buffered = output_buffer_.total_count();
+    const size_t capacity = output_buffer_.max_count();
+    const size_t free_slots = capacity > buffered ? capacity - buffered : 0;
+    if (free_slots == 0) {
+        spdlog::warn("[DecodeThread] Exact seek preview skipped: output buffer is full");
+        return;
+    }
     const size_t end = std::min(exact_seek_reorder_.size(),
-                                selected + kExactSeekPreviewWindowFrames);
+                                selected + std::min(kExactSeekPreviewWindowFrames, free_slots));
     const size_t published = end - selected;
     bool conversion_failed = false;
     for (size_t i = selected; i < end; ++i) {

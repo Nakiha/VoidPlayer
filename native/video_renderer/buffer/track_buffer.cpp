@@ -82,6 +82,10 @@ size_t TrackBuffer::total_count() const {
     return ring_.total_count();
 }
 
+size_t TrackBuffer::max_count() const {
+    return ring_.max_count();
+}
+
 int64_t TrackBuffer::last_presented_pts_us() const {
     return last_presented_pts_us_.load(std::memory_order_acquire);
 }

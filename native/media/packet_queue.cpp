@@ -23,7 +23,7 @@ bool PacketQueue::push(AVPacket* pkt) {
     if (aborted_) return false;  // caller retains ownership of pkt
     flushed_ = false;
     auto ptr = PacketPtr(pkt, &packet_deleter);
-    queue_.push(std::move(ptr));
+    queue_.push_back(std::move(ptr));
     not_empty_.notify_one();
     return true;
 }
@@ -33,7 +33,7 @@ bool PacketQueue::try_push(AVPacket* pkt) {
     if (aborted_ || queue_.size() >= capacity_) return false;
     flushed_ = false;
     auto ptr = PacketPtr(pkt, &packet_deleter);
-    queue_.push(std::move(ptr));
+    queue_.push_back(std::move(ptr));
     not_empty_.notify_one();
     return true;
 }
@@ -55,7 +55,7 @@ PacketPopResult PacketQueue::pop() {
         return {PacketPopStatus::Eof, nullptr};
     }
     auto ptr = std::move(queue_.front());
-    queue_.pop();
+    queue_.pop_front();
     not_full_.notify_one();
     return {PacketPopStatus::Packet, ptr.release()};
 }
@@ -77,7 +77,7 @@ PacketPopResult PacketQueue::try_pop() {
             nullptr};
     }
     auto ptr = std::move(queue_.front());
-    queue_.pop();
+    queue_.pop_front();
     not_full_.notify_one();
     return {PacketPopStatus::Packet, ptr.release()};
 }
@@ -85,7 +85,7 @@ PacketPopResult PacketQueue::try_pop() {
 void PacketQueue::flush() {
     std::lock_guard<std::mutex> lock(mutex_);
     while (!queue_.empty()) {
-        queue_.pop();
+        queue_.pop_front();
     }
     flushed_ = true;
     eof_.store(false, std::memory_order_release);
@@ -103,7 +103,7 @@ void PacketQueue::abort() {
 void PacketQueue::reset() {
     std::lock_guard<std::mutex> lock(mutex_);
     while (!queue_.empty()) {
-        queue_.pop();
+        queue_.pop_front();
     }
     aborted_ = false;
     flushed_ = false;
@@ -115,6 +115,27 @@ void PacketQueue::reset() {
 size_t PacketQueue::size() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return queue_.size();
+}
+
+uint64_t PacketQueue::estimated_bytes() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    uint64_t bytes = 0;
+    for (const auto& item : queue_) {
+        const AVPacket* pkt = item.get();
+        if (pkt) {
+            bytes += sizeof(AVPacket);
+            if (pkt->size > 0) {
+                bytes += static_cast<uint64_t>(pkt->size);
+            }
+            for (int i = 0; i < pkt->side_data_elems; ++i) {
+                bytes += sizeof(AVPacketSideData);
+                if (pkt->side_data[i].size > 0) {
+                    bytes += static_cast<uint64_t>(pkt->side_data[i].size);
+                }
+            }
+        }
+    }
+    return bytes;
 }
 
 bool PacketQueue::empty() const {

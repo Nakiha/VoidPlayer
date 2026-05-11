@@ -1,5 +1,5 @@
 #pragma once
-#include <queue>
+#include <deque>
 #include <mutex>
 #include <condition_variable>
 #include <memory>
@@ -58,6 +58,7 @@ public:
 
     // State
     size_t size() const;
+    uint64_t estimated_bytes() const;
     bool empty() const;
     bool is_aborted() const;
 
@@ -68,7 +69,7 @@ private:
     mutable std::mutex mutex_;
     std::condition_variable not_full_;
     std::condition_variable not_empty_;
-    std::queue<PacketPtr> queue_;
+    std::deque<PacketPtr> queue_;
     size_t capacity_;
     bool aborted_ = false;
     bool flushed_ = false;

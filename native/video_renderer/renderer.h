@@ -98,6 +98,14 @@ struct TrackGpuMemoryStats {
     uint64_t decoder_pool_bytes = 0;
     uint64_t exact_seek_snapshot_bytes = 0;
     uint64_t presenter_copy_texture_bytes = 0;
+    uint64_t track_buffer_cpu_bytes = 0;
+    uint64_t packet_queue_bytes = 0;
+    uint64_t exact_seek_candidate_cpu_bytes = 0;
+    uint64_t exact_seek_stable_cpu_bytes = 0;
+    uint64_t total_cpu_frame_bytes = 0;
+    size_t exact_seek_reorder_count = 0;
+    size_t exact_seek_pending_count = 0;
+    size_t exact_seek_stable_frame_count = 0;
     size_t buffer_count = 0;
     size_t buffer_capacity = 0;
 };
@@ -109,6 +117,11 @@ struct RendererGpuMemoryStats {
     uint64_t presenter_texture_bytes = 0;
     uint64_t headless_output_bytes = 0;
     uint64_t analysis_overlay_bytes = 0;
+    uint64_t cpu_frame_bytes = 0;
+    uint64_t track_buffer_cpu_bytes = 0;
+    uint64_t packet_queue_bytes = 0;
+    uint64_t exact_seek_candidate_cpu_bytes = 0;
+    uint64_t exact_seek_stable_cpu_bytes = 0;
     int headless_width = 0;
     int headless_height = 0;
     int headless_buffer_count = 0;

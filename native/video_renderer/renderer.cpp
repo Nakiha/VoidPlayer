@@ -2923,6 +2923,11 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
         if (tracks_[i]->track_buffer) {
             track.buffer_count = tracks_[i]->track_buffer->total_count();
             track.buffer_capacity = tracks_[i]->track_buffer->max_count();
+            track.track_buffer_cpu_bytes =
+                tracks_[i]->track_buffer->estimated_cpu_bytes();
+        }
+        if (tracks_[i]->packet_queue) {
+            track.packet_queue_bytes = tracks_[i]->packet_queue->estimated_bytes();
         }
         if (tracks_[i]->decode_thread) {
             const auto decode_stats = tracks_[i]->decode_thread->memory_stats();
@@ -2937,13 +2942,30 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
             track.decoder_frame_bytes = decode_stats.estimated_hw_frame_bytes;
             track.decoder_pool_bytes = decode_stats.estimated_hw_pool_bytes;
             track.exact_seek_snapshot_bytes = decode_stats.snapshot_pool.estimated_bytes;
+            track.exact_seek_candidate_cpu_bytes =
+                decode_stats.exact_seek_candidate_cpu_bytes;
+            track.exact_seek_stable_cpu_bytes =
+                decode_stats.exact_seek_stable_cpu_bytes;
+            track.exact_seek_reorder_count = decode_stats.exact_seek_reorder_count;
+            track.exact_seek_pending_count = decode_stats.exact_seek_pending_count;
+            track.exact_seek_stable_frame_count =
+                decode_stats.exact_seek_stable_frame_count;
         }
         if (i < presenter_stats.slots.size()) {
             track.presenter_copy_texture_bytes =
                 presenter_stats.slots[i].render_nv12_copy_texture_bytes;
         }
+        track.total_cpu_frame_bytes =
+            track.track_buffer_cpu_bytes +
+            track.exact_seek_candidate_cpu_bytes +
+            track.exact_seek_stable_cpu_bytes;
         result.decoder_pool_bytes += track.decoder_pool_bytes;
         result.exact_seek_snapshot_bytes += track.exact_seek_snapshot_bytes;
+        result.track_buffer_cpu_bytes += track.track_buffer_cpu_bytes;
+        result.packet_queue_bytes += track.packet_queue_bytes;
+        result.exact_seek_candidate_cpu_bytes += track.exact_seek_candidate_cpu_bytes;
+        result.exact_seek_stable_cpu_bytes += track.exact_seek_stable_cpu_bytes;
+        result.cpu_frame_bytes += track.total_cpu_frame_bytes;
         result.total_estimated_bytes +=
             track.decoder_pool_bytes + track.exact_seek_snapshot_bytes;
         result.tracks.push_back(track);

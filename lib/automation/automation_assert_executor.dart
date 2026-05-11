@@ -367,6 +367,7 @@ class AutomationAssertExecutor {
         :final baseline,
         :final maxRssDeltaMb,
         :final maxDedicatedGpuDeltaMb,
+        :final maxPrivateDeltaMb,
       ):
         final expected = state.resourceBaselines[baseline];
         if (expected == null) {
@@ -408,11 +409,16 @@ class AutomationAssertExecutor {
           'dedicatedGpu=${gpuDeltaMb.toStringAsFixed(1)}MB '
           '${AutomationProbe.formatGpuBreakdown(actual.gpuBreakdown, dedicatedGpuBytes: actual.dedicatedGpuBytes)}',
         );
-        if (rssDeltaMb > maxRssDeltaMb || gpuDeltaMb > maxDedicatedGpuDeltaMb) {
+        final privateFailed =
+            maxPrivateDeltaMb != null && privateDeltaMb > maxPrivateDeltaMb;
+        if (rssDeltaMb > maxRssDeltaMb ||
+            gpuDeltaMb > maxDedicatedGpuDeltaMb ||
+            privateFailed) {
           throw AssertionError(
             'Expected resource delta from $baseline <= '
             'rss=${maxRssDeltaMb.toStringAsFixed(1)}MB, '
-            'dedicatedGpu=${maxDedicatedGpuDeltaMb.toStringAsFixed(1)}MB; '
+            'dedicatedGpu=${maxDedicatedGpuDeltaMb.toStringAsFixed(1)}MB'
+            '${maxPrivateDeltaMb == null ? '' : ', private=${maxPrivateDeltaMb.toStringAsFixed(1)}MB'}; '
             'got rss=${rssDeltaMb.toStringAsFixed(1)}MB, '
             'private=${privateDeltaMb.toStringAsFixed(1)}MB, '
             'dedicatedGpu=${gpuDeltaMb.toStringAsFixed(1)}MB',

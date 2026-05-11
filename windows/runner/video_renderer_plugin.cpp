@@ -167,6 +167,16 @@ flutter::EncodableMap make_gpu_breakdown_map(const vr::RendererGpuMemoryStats& s
         flutter::EncodableValue(static_cast<int64_t>(stats.headless_output_bytes));
     map[flutter::EncodableValue("analysisOverlayBytes")] =
         flutter::EncodableValue(static_cast<int64_t>(stats.analysis_overlay_bytes));
+    map[flutter::EncodableValue("cpuFrameBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.cpu_frame_bytes));
+    map[flutter::EncodableValue("trackBufferCpuBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.track_buffer_cpu_bytes));
+    map[flutter::EncodableValue("packetQueueBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.packet_queue_bytes));
+    map[flutter::EncodableValue("exactSeekCandidateCpuBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.exact_seek_candidate_cpu_bytes));
+    map[flutter::EncodableValue("exactSeekStableCpuBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.exact_seek_stable_cpu_bytes));
     map[flutter::EncodableValue("headlessWidth")] =
         flutter::EncodableValue(stats.headless_width);
     map[flutter::EncodableValue("headlessHeight")] =
@@ -203,6 +213,22 @@ flutter::EncodableMap make_gpu_breakdown_map(const vr::RendererGpuMemoryStats& s
             flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_snapshot_bytes));
         tm[flutter::EncodableValue("presenterCopyTextureBytes")] =
             flutter::EncodableValue(static_cast<int64_t>(track.presenter_copy_texture_bytes));
+        tm[flutter::EncodableValue("trackBufferCpuBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.track_buffer_cpu_bytes));
+        tm[flutter::EncodableValue("packetQueueBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.packet_queue_bytes));
+        tm[flutter::EncodableValue("exactSeekCandidateCpuBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_candidate_cpu_bytes));
+        tm[flutter::EncodableValue("exactSeekStableCpuBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_stable_cpu_bytes));
+        tm[flutter::EncodableValue("totalCpuFrameBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.total_cpu_frame_bytes));
+        tm[flutter::EncodableValue("exactSeekReorderCount")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_reorder_count));
+        tm[flutter::EncodableValue("exactSeekPendingCount")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_pending_count));
+        tm[flutter::EncodableValue("exactSeekStableFrameCount")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_stable_frame_count));
         tm[flutter::EncodableValue("bufferCount")] =
             flutter::EncodableValue(static_cast<int64_t>(track.buffer_count));
         tm[flutter::EncodableValue("bufferCapacity")] =
@@ -559,6 +585,9 @@ const NakiVrDiagnostics* naki_vr_get_diagnostics() {
     d.playback_time_s = static_cast<double>(r->current_pts_us()) / 1e6;
     d.is_playing = r->is_playing() ? 1 : 0;
 
+    const auto memory_stats = r->gpu_memory_stats();
+    d.cpu_frame_memory_bytes = memory_stats.cpu_frame_bytes;
+    d.packet_queue_memory_bytes = memory_stats.packet_queue_bytes;
     auto stats = r->track_perf_stats();
     d.track_count = static_cast<int32_t>(stats.size());
     for (int i = 0; i < kMaxTracksFFI && i < static_cast<int>(stats.size()); ++i) {
@@ -571,6 +600,13 @@ const NakiVrDiagnostics* naki_vr_get_diagnostics() {
         d.tracks[i].buffer_count    = static_cast<int32_t>(s.buffer_count);
         d.tracks[i].buffer_capacity = static_cast<int32_t>(s.buffer_capacity);
         d.tracks[i].buffer_state    = static_cast<int32_t>(s.buffer_state);
+        for (const auto& m : memory_stats.tracks) {
+            if (m.slot == s.slot && m.file_id == s.file_id) {
+                d.tracks[i].cpu_frame_memory_bytes = m.total_cpu_frame_bytes;
+                d.tracks[i].packet_queue_memory_bytes = m.packet_queue_bytes;
+                break;
+            }
+        }
         d.tracks[i].current_pts_us  = s.current_pts_us;
         d.tracks[i].current_dts_us  = s.current_dts_us;
     }

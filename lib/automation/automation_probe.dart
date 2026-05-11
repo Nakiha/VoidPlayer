@@ -96,6 +96,10 @@ class AutomationProbe {
       'headless=${formatMb(bytes('headlessOutputBytes'))}MB',
       'seekSnapshot=${formatMb(bytes('exactSeekSnapshotBytes'))}MB',
       'overlay=${formatMb(bytes('analysisOverlayBytes'))}MB',
+      'cpuFrames=${formatMb(bytes('cpuFrameBytes'))}MB',
+      'trackCpu=${formatMb(bytes('trackBufferCpuBytes'))}MB',
+      'packetQueue=${formatMb(bytes('packetQueueBytes'))}MB',
+      'seekCpu=${formatMb(bytes('exactSeekCandidateCpuBytes') + bytes('exactSeekStableCpuBytes'))}MB',
     ];
 
     final tracks = breakdown['tracks'] as List<dynamic>? ?? const [];
@@ -107,12 +111,23 @@ class AutomationProbe {
       final poolSize = track['hwInitialPoolSize'] ?? 0;
       final copy = track['presenterCopyTextureBytes'] as int? ?? 0;
       final snapshots = track['exactSeekSnapshotBytes'] as int? ?? 0;
+      final cpu = track['totalCpuFrameBytes'] as int? ?? 0;
+      final trackCpu = track['trackBufferCpuBytes'] as int? ?? 0;
+      final packetQueue = track['packetQueueBytes'] as int? ?? 0;
+      final seekCandidateCpu = track['exactSeekCandidateCpuBytes'] as int? ?? 0;
+      final seekStableCpu = track['exactSeekStableCpuBytes'] as int? ?? 0;
+      final seekReorder = track['exactSeekReorderCount'] ?? 0;
+      final seekPending = track['exactSeekPendingCount'] ?? 0;
       final hwWidth = track['hwWidth'] ?? 0;
       final hwHeight = track['hwHeight'] ?? 0;
       parts.add(
         't$slot=${hwWidth}x$hwHeight pool=${formatMb(pool)}MB'
         '/$poolSize frame=${formatMb(frame)}MB '
-        'copy=${formatMb(copy)}MB snap=${formatMb(snapshots)}MB',
+        'copy=${formatMb(copy)}MB snap=${formatMb(snapshots)}MB '
+        'cpu=${formatMb(cpu)}MB bufCpu=${formatMb(trackCpu)}MB '
+        'pkt=${formatMb(packetQueue)}MB '
+        'seekCpu=${formatMb(seekCandidateCpu + seekStableCpu)}MB'
+        '($seekReorder/$seekPending)',
       );
     }
     return 'gpuBreakdown=${parts.join('; ')}';

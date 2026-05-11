@@ -115,6 +115,15 @@ size_t BidiRingBuffer::total_count() const {
     return count_;
 }
 
+uint64_t BidiRingBuffer::estimated_cpu_bytes() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    uint64_t bytes = 0;
+    for (const auto& frame : ring_) {
+        bytes += estimate_texture_frame_cpu_bytes(frame);
+    }
+    return bytes;
+}
+
 bool BidiRingBuffer::empty() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return count_ == 0;

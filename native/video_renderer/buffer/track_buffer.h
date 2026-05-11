@@ -40,6 +40,7 @@ public:
     TrackState state() const;
     size_t total_count() const;
     size_t max_count() const;
+    uint64_t estimated_cpu_bytes() const;
     int64_t last_presented_pts_us() const;
     void set_last_presented_pts_us(int64_t pts_us);
 

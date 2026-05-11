@@ -54,6 +54,32 @@ struct TextureFrame {
     }
 };
 
+inline uint64_t estimate_texture_frame_cpu_bytes(const TextureFrame& frame) {
+    if (frame.cpu_data) {
+        return static_cast<uint64_t>(frame.cpu_data->capacity());
+    }
+    if (const auto* storage = frame.cpu_rgba_storage()) {
+        return storage->data ? static_cast<uint64_t>(storage->data->capacity()) : 0;
+    }
+    if (const auto* storage = frame.cpu_nv12_storage()) {
+        return storage->data ? static_cast<uint64_t>(storage->data->capacity()) : 0;
+    }
+    if (const auto* storage = frame.cpu_planar_yuv_storage()) {
+        uint64_t bytes = 0;
+        for (int i = 0; i < 3; ++i) {
+            if (!storage->planes[i] || storage->strides[i] == 0 ||
+                storage->plane_heights[i] <= 0) {
+                continue;
+            }
+            const uint64_t stride = static_cast<uint64_t>(
+                storage->strides[i] < 0 ? -storage->strides[i] : storage->strides[i]);
+            bytes += stride * static_cast<uint64_t>(storage->plane_heights[i]);
+        }
+        return bytes;
+    }
+    return 0;
+}
+
 class BidiRingBuffer {
 public:
     explicit BidiRingBuffer(size_t forward_depth = 4, size_t backward_depth = 2);
@@ -76,6 +102,7 @@ public:
     size_t forward_count() const;
     size_t backward_count() const;
     size_t total_count() const;
+    uint64_t estimated_cpu_bytes() const;
     bool empty() const;
     void clear();
 

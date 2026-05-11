@@ -57,6 +57,8 @@ struct DecodeMemoryStats {
     size_t exact_seek_reorder_count = 0;
     size_t exact_seek_pending_count = 0;
     size_t exact_seek_stable_frame_count = 0;
+    uint64_t exact_seek_candidate_cpu_bytes = 0;
+    uint64_t exact_seek_stable_cpu_bytes = 0;
     D3D11SnapshotPoolStats snapshot_pool;
 };
 
@@ -163,6 +165,9 @@ private:
     /// Log the FFmpeg hardware frame pool geometry once it is materialized.
     void log_hw_frame_context_once(const AVFrame* frame);
 
+    /// Refresh lightweight exact-seek memory counters owned by the decode thread.
+    void refresh_exact_seek_memory_stats();
+
     /// Flush codec buffers after seek.
     void safe_flush_codec();
 
@@ -214,6 +219,11 @@ private:
     int64_t exact_seek_target_us_ = -1;  // >= 0 when discarding frames before exact seek target
     std::vector<ExactSeekCandidate> exact_seek_reorder_;  // Stream-ordered exact-seek candidates
     std::deque<ExactSeekCandidate> exact_seek_pending_frames_;  // Post-preview frames for smooth play
+    std::atomic<size_t> exact_seek_reorder_count_{0};
+    std::atomic<size_t> exact_seek_pending_count_{0};
+    std::atomic<size_t> exact_seek_stable_frame_count_{0};
+    std::atomic<uint64_t> exact_seek_candidate_cpu_bytes_{0};
+    std::atomic<uint64_t> exact_seek_stable_cpu_bytes_{0};
     bool drain_decoder_before_next_packet_ = false;
 
     bool eof_flushed_ = false;

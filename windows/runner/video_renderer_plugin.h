@@ -34,6 +34,8 @@ struct NakiVrTrackStats {
     int32_t  buffer_count;
     int32_t  buffer_capacity;
     int32_t  buffer_state;    // TrackState enum value
+    uint64_t cpu_frame_memory_bytes;
+    uint64_t packet_queue_memory_bytes;
     int64_t  current_pts_us;
     int64_t  current_dts_us;
 };
@@ -45,6 +47,8 @@ struct NakiVrDiagnostics {
     uint64_t process_working_set_bytes;
     uint64_t process_private_bytes;
     uint64_t dedicated_video_memory_bytes;
+    uint64_t cpu_frame_memory_bytes;
+    uint64_t packet_queue_memory_bytes;
     NakiVrTrackStats tracks[kMaxTracksFFI];
     int32_t d3d_device_lost;
     int32_t reserved0;

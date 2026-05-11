@@ -2,6 +2,8 @@
 
 VoidPlayer 当前输出目标是 Flutter 暴露的 BGRA/RGB888 SDR surface。native 侧不声明 HDR passthrough，不设置 Windows HDR metadata，也不做 ICC / display profile / per-monitor color management。PQ/HLG 片源会在 shader 中 tone-map 到 SDR 后再写入 BGRA render target。
 
+当前 render target 使用 `DXGI_FORMAT_B8G8R8A8_UNORM`。shader 写入的是 SDR/sRGB code value，不依赖 `_SRGB` render target 的硬件 gamma encode；也就是说普通 SDR YUV -> RGB 得到的是非线性 R'G'B'，HDR tone-map 分支会先得到线性 BT.709，再显式 `linear_to_srgb()` 后输出。Flutter/DWM 后续如何映射到显示器由系统和 Flutter engine 决定，native 不做 PotPlayer/MPV 那类显示设备 profile 或视频 renderer 级别的色彩管理。
+
 真 HDR 输出需要 Flutter engine / Windows swapchain / surface format / HDR metadata 级别的改造；在此之前，native 侧的目标是让软件帧和硬件帧在送入 shader 前尽量一致，并由同一套 shader 完成 YUV -> RGB 与 SDR tone mapping。
 
 ## Frame Format Policy
@@ -53,12 +55,31 @@ FrameConverter 从 `AVFrame` 读取：
 
 ## Shader Conversion
 
-`shaders/multitrack.hlsl` 负责：
+`shaders/multitrack.hlsl` include 的 `shaders/color_pipeline.hlsl` 负责：
 
 - limited/full range 展开
 - BT.601 / BT.709 / BT.2020_NCL YUV -> RGB
-- BT.2020 primaries 转 BT.709
-- PQ / HLG tone-map 到 SDR/sRGB
+- BT.2020 primaries 转 BT.709；BT.601 primaries 当前按 RGB code value 直接输出，不单独做 gamut conversion
+- PQ / HLG tone-map 到 SDR/sRGB code value
 - SDR 输出写入 BGRA render target
 
-当前 tone mapping 是播放器预览用的稳定 SDR 映射，不是完整影视级 HDR pipeline。调整曲线时应补 golden/capture 测试，确保软件帧和硬件帧同源输入的 BGRA 输出保持一致。
+普通 SDR 分支在 YUV -> RGB 后保留一个历史性的 `1/255` 轻微下压，用于维持旧软件解码显示路径的取整侧一致性。它只会造成约 1 个 8-bit code value 的暗部/中间调偏移，不应被当作 HDR 或 full-range/limited-range 的大幅色彩修正。
+
+当前 tone mapping 是播放器预览用的稳定 SDR 映射，不是完整影视级 HDR pipeline。它不读取 mastering display metadata / MaxCLL，不按目标显示器峰值亮度自适应，也不实现 PotPlayer 等播放器可能启用的视频 renderer、ICC 或 GPU driver 级增强。调整曲线时应补 golden/capture 测试，确保软件帧和硬件帧同源输入的 BGRA 输出保持一致。
+
+## MHW Full-Range BT.709 Fixture
+
+`resources/video/mhw_hevc_fullrange_bt709_3s.mp4` 是从本地 Monster Hunter Wilds 4K 样本 stream copy 出来的 portable fixture。`ffprobe` metadata 为：
+
+| 字段 | 值 |
+| --- | --- |
+| Pixel format | `yuv420p` |
+| Range | `pc` / full |
+| Matrix | `bt709` |
+| Transfer | `bt709` |
+| Primaries | `bt709` |
+| Resolution | `3840x2160` |
+
+它是 SDR full-range BT.709，不是 HDR/PQ/HLG。`ui_tests/color/hevc_fullrange_bt709_decode_mode_single_track_diff.csv` 用它比较 force software decode 和 preferred hardware decode 的最终 BGRA capture，覆盖 full-range metadata 在软解/硬解路径是否一致。
+
+2026-05-11 手工检查中，`build/color_hevc_full_soft.png` 与 `build/color_hevc_full_hard.png` 完全一致；与 FFmpeg 解出的同帧 1920x1080 RGB 参考相比，平均绝对 RGB 差约 1 code value，平均亮度基本持平。因此如果这条 MHW 样本肉眼比 PotPlayer 更深，优先怀疑 PotPlayer 侧的视频 renderer/range/color-management/enhancement 设置，或 native 缺少显示器 profile 管理，而不是当前 native soft/hard YUV metadata 链路已经把 full-range 当 limited-range。

@@ -49,7 +49,7 @@ struct TextureFrame {
 
 | 路径 | 典型 codec | 数据流 | 特点 |
 |------|------------|--------|------|
-| 软件解码 | fallback、部分不支持硬解的 codec | `AVFrame -> CPU NV12/P010 pack -> D3D11 NV12/P010 upload -> shader YUV->RGB` | 与硬解共用颜色转换路径 |
+| 软件解码 | fallback、部分不支持硬解的 codec | `AVFrame -> CPU planar Y/U/V 或 CPU NV12/P010 pack -> D3D11 plane/NV12/P010 upload -> shader YUV->RGB` | 普通 8-bit 4:2:0 保留原始三平面；其他支持格式走确定性 packer，与硬解共用 shader 色彩转换路径 |
 | 硬解 hwdownload | AV1、VP9 | `D3D11VA decode -> av_hwframe_transfer_data -> CPU NV12/P010 pack -> D3D11 NV12/P010 upload` | 仍是硬解，避免直接采样驱动差异导致黑/灰帧 |
 | 硬解 renderer-owned NV12/P010 | H.264、H.265 等 | `D3D11VA NV12/P010 -> renderer-owned planar texture -> shader YUV->RGB` | CPU 拷贝少，性能路径 |
 
@@ -57,6 +57,7 @@ struct TextureFrame {
 
 Renderer 通过 `RenderSink::evaluate()` 选择每轨应该显示的帧。`D3D11FramePresenter` 根据 `TextureFrame::storage` 类型执行：
 
+- CPU planar Y/U/V 数据：当前用于普通 8-bit 4:2:0，上传/复用每轨 R8 plane texture 后创建 Y/U/V SRV 采样。
 - CPU NV12/P010 数据：上传/复用每轨 NV12/P010 texture 后创建 Y/UV SRV 采样。
 - RGBA CPU 数据：上传/复用每轨 RGBA texture 后按 RGBA 采样。
 - NV12/P010 硬解数据：复制 decoder surface 的目标 array slice 到 renderer-owned planar texture，再创建 Y/UV SRV 采样。

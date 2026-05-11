@@ -190,18 +190,19 @@ HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
     d3d_context_->AddRef();
     d3d11_ctx->device_context = d3d_context_.Get();
 
-    // 3. Bind flags: direct renderer sampling needs shared shader-resource
-    // decode surfaces. AV1/VP9 currently use hwdownload before upload; on some
-    // drivers D3D11VA surfaces created with SHADER_RESOURCE|SHARED decode
-    // successfully but transfer out as black frames, so keep them decoder-only.
-    const bool decoder_only_surfaces =
-        params.device_mode == DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
-    if (decoder_only_surfaces) {
+    // 3. Bind flags: keep independent decoder pools decoder-only. Published
+    // frames are copied into a small shared snapshot pool before they reach the
+    // render device, so the full FFmpeg pool does not need SHADER_RESOURCE or
+    // SHARED allocation overhead. SharedRenderDevice remains the diagnostics
+    // escape hatch for direct same-device sampling experiments.
+    const bool direct_same_device_surfaces =
+        params.device_mode == DecodeDeviceMode::SharedRenderDevice;
+    if (!direct_same_device_surfaces) {
         d3d11_ctx->BindFlags = D3D11_BIND_DECODER;
         d3d11_ctx->MiscFlags = 0;
     } else {
         d3d11_ctx->BindFlags = D3D11_BIND_DECODER | D3D11_BIND_SHADER_RESOURCE;
-        d3d11_ctx->MiscFlags = D3D11_RESOURCE_MISC_SHARED;
+        d3d11_ctx->MiscFlags = 0;
     }
 
     // 4. Thread safety: recursive mutex for D3D11 device access serialization
@@ -235,7 +236,7 @@ HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
     spdlog::info("[D3D11VA] Device context initialized ({}x{}, BindFlags={}, MiscFlags={:#x})",
                  width,
                  height,
-                 decoder_only_surfaces ? "DECODER" : "DECODER|SHADER_RESOURCE",
+                 direct_same_device_surfaces ? "DECODER|SHADER_RESOURCE" : "DECODER",
                  static_cast<unsigned int>(d3d11_ctx->MiscFlags));
 
     result.success = true;

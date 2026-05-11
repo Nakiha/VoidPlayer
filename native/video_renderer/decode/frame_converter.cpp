@@ -1,4 +1,5 @@
 #include "video_renderer/decode/frame_converter.h"
+#include "video_renderer/renderer_limits.h"
 #include <spdlog/spdlog.h>
 #include <algorithm>
 #include <chrono>
@@ -20,9 +21,6 @@ extern "C" {
 namespace vr {
 
 namespace {
-constexpr int kMaxDecodedDimension = 16384;
-constexpr size_t kMaxCpuFrameBytes = size_t{1024} * 1024 * 1024;
-
 bool calculate_yuv420_layout(int width, int height, int bytes_per_component,
                              size_t& y_stride, size_t& uv_stride, size_t& bytes) {
     y_stride = 0;
@@ -31,7 +29,7 @@ bool calculate_yuv420_layout(int width, int height, int bytes_per_component,
     if (width <= 0 || height <= 0) {
         return false;
     }
-    if (width > kMaxDecodedDimension || height > kMaxDecodedDimension) {
+    if (width > kMaxRendererDimension || height > kMaxRendererDimension) {
         return false;
     }
     if ((width & 1) != 0 || (height & 1) != 0) {
@@ -415,7 +413,7 @@ bool wrap_frame_as_cpu_planar_yuv420(const AVFrame* frame,
     const auto format = static_cast<AVPixelFormat>(frame->format);
     if (!software_format_uses_direct_planar_yuv420(format) ||
         width <= 0 || height <= 0 ||
-        width > kMaxDecodedDimension || height > kMaxDecodedDimension ||
+        width > kMaxRendererDimension || height > kMaxRendererDimension ||
         (width & 1) != 0 || (height & 1) != 0 ||
         !frame->data[0] || !frame->data[1] || !frame->data[2] ||
         frame->linesize[0] < width ||
@@ -773,7 +771,7 @@ struct D3D11SnapshotPool {
         available.push_back(std::move(texture));
     }
 
-    static constexpr size_t kMaxAvailable = 4;
+    static constexpr size_t kMaxAvailable = 1;
     std::mutex mutex;
     std::vector<Microsoft::WRL::ComPtr<ID3D11Texture2D>> available;
     uint64_t created_count = 0;

@@ -64,13 +64,32 @@ typedef struct naki_vr_player_config_t {
     naki_vr_log_config_t log_config;
 } naki_vr_player_config_t;
 
+typedef struct naki_vr_player_config_v2_t {
+    uint32_t size;              /* sizeof(naki_vr_player_config_v2_t) */
+    uint32_t abi_version;       /* NAKI_VR_ABI_VERSION */
+    uint32_t flags;             /* Reserved, must be 0 */
+    uint32_t reserved0;
+    const char** video_paths;   /* Array of file paths, not NULL-terminated */
+    size_t video_path_count;    /* Number of entries in video_paths */
+    int64_t hwnd;               /* Window handle (HWND cast to int64_t) */
+    int width;                  /* Default: 1920 */
+    int height;                 /* Default: 1080 */
+    int use_hardware_decode;    /* 0 = false, 1 = true */
+    naki_vr_log_config_t log_config;
+    uint64_t reserved[4];
+} naki_vr_player_config_v2_t;
+
 /* ---- Lifecycle ---- */
 
 NAKI_VR_FFI_EXPORT uint32_t naki_vr_abi_version(void) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_last_error(naki_vr_player_t player, char* buf, size_t cap) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_get_error(naki_vr_player_t player, char* buf, size_t cap) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT naki_vr_player_t naki_vr_player_create(void) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_destroy_status(naki_vr_player_t player) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_player_destroy(naki_vr_player_t player) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT int naki_vr_player_initialize(naki_vr_player_t player, const naki_vr_player_config_t* config) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_initialize_v2(naki_vr_player_t player, const naki_vr_player_config_v2_t* config) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_shutdown_status(naki_vr_player_t player) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_player_shutdown(naki_vr_player_t player) NAKI_VR_FFI_NOEXCEPT;
 
 /* ---- Playback ---- */
@@ -79,17 +98,26 @@ NAKI_VR_FFI_EXPORT void naki_vr_player_shutdown(naki_vr_player_t player) NAKI_VR
 #define NAKI_VR_SEEK_EXACT    1
 
 NAKI_VR_FFI_EXPORT void naki_vr_player_play(naki_vr_player_t player) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_play_status(naki_vr_player_t player) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_player_pause(naki_vr_player_t player) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_pause_status(naki_vr_player_t player) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_player_seek(naki_vr_player_t player, int64_t target_pts_us) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_seek_status(naki_vr_player_t player, int64_t target_pts_us) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_player_seek_typed(naki_vr_player_t player, int64_t target_pts_us, int type) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_seek_typed_status(naki_vr_player_t player, int64_t target_pts_us, int type) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_player_set_speed(naki_vr_player_t player, double speed) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_set_speed_status(naki_vr_player_t player, double speed) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_player_set_loop_range(naki_vr_player_t player, int enabled, int64_t start_us, int64_t end_us) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_set_loop_range_status(naki_vr_player_t player, int enabled, int64_t start_us, int64_t end_us) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_player_set_audible_track(naki_vr_player_t player, int file_id) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_set_audible_track_status(naki_vr_player_t player, int file_id) NAKI_VR_FFI_NOEXCEPT;
 
 /* ---- Frame stepping (pause + advance/retreat) ---- */
 
 NAKI_VR_FFI_EXPORT void naki_vr_player_step_forward(naki_vr_player_t player) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_step_forward_status(naki_vr_player_t player) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_player_step_backward(naki_vr_player_t player) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_step_backward_status(naki_vr_player_t player) NAKI_VR_FFI_NOEXCEPT;
 
 /* ---- Query ---- */
 
@@ -103,9 +131,12 @@ NAKI_VR_FFI_EXPORT int64_t naki_vr_player_duration_us(naki_vr_player_t player) N
 /* ---- Dynamic track management ---- */
 
 NAKI_VR_FFI_EXPORT int naki_vr_player_add_track(naki_vr_player_t player, const char* video_path) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_add_track_status(naki_vr_player_t player, const char* video_path, int* out_slot) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_player_remove_track(naki_vr_player_t player, int file_id) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_remove_track_status(naki_vr_player_t player, int file_id) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT int naki_vr_player_has_track(naki_vr_player_t player, int slot) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_player_set_track_offset(naki_vr_player_t player, int file_id, int64_t offset_us) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_set_track_offset_status(naki_vr_player_t player, int file_id, int64_t offset_us) NAKI_VR_FFI_NOEXCEPT;
 
 /* ---- Layout ---- */
 
@@ -126,13 +157,17 @@ typedef struct naki_vr_player_layout_state_t {
 } naki_vr_player_layout_state_t;
 
 NAKI_VR_FFI_EXPORT void naki_vr_player_apply_layout(naki_vr_player_t player, const naki_vr_player_layout_state_t* state) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_apply_layout_status(naki_vr_player_t player, const naki_vr_player_layout_state_t* state) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_player_layout(naki_vr_player_t player, naki_vr_player_layout_state_t* out_state) NAKI_VR_FFI_NOEXCEPT;
 
 /* ---- Logging & Crash ---- */
 
 NAKI_VR_FFI_EXPORT void naki_vr_configure_logging(const naki_vr_log_config_t* config) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_configure_logging_status(const naki_vr_log_config_t* config) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_install_crash_handler(const char* crash_dir) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_install_crash_handler_status(const char* crash_dir) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_remove_crash_handler(void) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_remove_crash_handler_status(void) NAKI_VR_FFI_NOEXCEPT;
 
 #ifdef __cplusplus
 }

@@ -84,6 +84,8 @@ bool D3D11FramePresenter::prepare_nv12_frame(size_t slot,
     const bool opened_new_shared_resource = resources.last_nv12_tex != decode_tex;
     if (opened_new_shared_resource) {
         resources.render_nv12_tex.Reset();
+        resources.nv12_y_srv.Reset();
+        resources.nv12_uv_srv.Reset();
         resources.last_nv12_tex = nullptr;
 
         if (!texture_manager_->open_shared_texture(decode_tex, resources.render_nv12_tex)) {
@@ -106,33 +108,51 @@ bool D3D11FramePresenter::prepare_nv12_frame(size_t slot,
         return false;
     }
 
-    bool created_new_copy_texture = false;
-    if (!texture_manager_->ensure_nv12_copy_resources(
-            resources.render_nv12_tex.Get(),
-            resources.render_nv12_copy_tex,
-            resources.nv12_y_srv,
-            resources.nv12_uv_srv,
-            &created_new_copy_texture)) {
-        spdlog::error("[D3D11FramePresenter] Failed to prepare NV12 resources for slot {}",
-                      slot);
-        return false;
-    }
+    const bool can_sample_directly =
+        src_desc.ArraySize == 1 &&
+        array_idx == 0 &&
+        (src_desc.BindFlags & D3D11_BIND_SHADER_RESOURCE) != 0;
+    if (can_sample_directly) {
+        resources.render_nv12_copy_tex.Reset();
+        if (!resources.nv12_y_srv || !resources.nv12_uv_srv) {
+            if (!texture_manager_->create_nv12_plane_srvs(
+                    resources.render_nv12_tex.Get(),
+                    resources.nv12_y_srv,
+                    resources.nv12_uv_srv)) {
+                spdlog::error("[D3D11FramePresenter] Failed to prepare direct NV12 SRVs for slot {}",
+                              slot);
+                return false;
+            }
+        }
+    } else {
+        bool created_new_copy_texture = false;
+        if (!texture_manager_->ensure_nv12_copy_resources(
+                resources.render_nv12_tex.Get(),
+                resources.render_nv12_copy_tex,
+                resources.nv12_y_srv,
+                resources.nv12_uv_srv,
+                &created_new_copy_texture)) {
+            spdlog::error("[D3D11FramePresenter] Failed to prepare NV12 resources for slot {}",
+                          slot);
+            return false;
+        }
 
-    auto copy_nv12_slice = [&] {
-        context_->CopySubresourceRegion(
-            resources.render_nv12_copy_tex.Get(),
-            0,
-            0, 0, 0,
-            resources.render_nv12_tex.Get(),
-            D3D11CalcSubresource(0, static_cast<UINT>(array_idx), 1),
-            nullptr);
-    };
-    copy_nv12_slice();
-
-    if (opened_new_shared_resource || created_new_copy_texture) {
-        wait_gpu_idle("D3D11FramePresenter::prepare_nv12_frame");
+        auto copy_nv12_slice = [&] {
+            context_->CopySubresourceRegion(
+                resources.render_nv12_copy_tex.Get(),
+                0,
+                0, 0, 0,
+                resources.render_nv12_tex.Get(),
+                D3D11CalcSubresource(0, static_cast<UINT>(array_idx), 1),
+                nullptr);
+        };
         copy_nv12_slice();
-        wait_gpu_idle("D3D11FramePresenter::prepare_nv12_frame");
+
+        if (opened_new_shared_resource || created_new_copy_texture) {
+            wait_gpu_idle("D3D11FramePresenter::prepare_nv12_frame");
+            copy_nv12_slice();
+            wait_gpu_idle("D3D11FramePresenter::prepare_nv12_frame");
+        }
     }
 
     if (src_desc.Width > 0 && frame.width > 0 &&

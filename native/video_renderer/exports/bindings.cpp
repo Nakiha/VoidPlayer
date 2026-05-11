@@ -2,6 +2,7 @@
 #include <pybind11/stl.h>
 #include "player/native_player.h"
 #include "video_renderer/layout_validation.h"
+#include "video_renderer/renderer_config_validation.h"
 #include "video_renderer/renderer.h"
 #include "common/logging.h"
 #include "common/windows_crash_handler.h"
@@ -13,6 +14,27 @@ namespace {
 
 void validate_layout_or_throw(const vr::LayoutState& state) {
     const auto result = vr::validate_layout_state(state);
+    if (!result.ok) {
+        throw py::value_error(result.message);
+    }
+}
+
+void validate_config_or_throw(const vr::RendererConfig& config) {
+    const auto result = vr::validate_renderer_config(config);
+    if (!result.ok) {
+        throw py::value_error(result.message);
+    }
+}
+
+void validate_speed_or_throw(double speed) {
+    const auto result = vr::validate_playback_speed(speed);
+    if (!result.ok) {
+        throw py::value_error(result.message);
+    }
+}
+
+void validate_loop_range_or_throw(bool enabled, int64_t start_us, int64_t end_us) {
+    const auto result = vr::validate_loop_range(enabled, start_us, end_us);
     if (!result.ok) {
         throw py::value_error(result.message);
     }
@@ -95,6 +117,7 @@ PYBIND11_MODULE(video_renderer_native, m) {
     py::class_<vr::Renderer>(m, "Renderer")
         .def(py::init<>())
         .def("initialize", [](vr::Renderer& r, const vr::RendererConfig& config) {
+            validate_config_or_throw(config);
             py::gil_scoped_release release;
             return r.initialize(config);
         }, py::arg("config"))
@@ -109,10 +132,18 @@ PYBIND11_MODULE(video_renderer_native, m) {
             r.seek(target_pts_us, type);
         }, py::arg("target_pts_us"), py::arg("type") = vr::SeekType::Keyframe)
         .def("set_speed", [](vr::Renderer& r, double speed) {
+            validate_speed_or_throw(speed);
             py::gil_scoped_release release;
             r.set_speed(speed);
         }, py::arg("speed"))
-        .def("set_loop_range", &vr::Renderer::set_loop_range,
+        .def("set_loop_range", [](vr::Renderer& r,
+                                  bool enabled,
+                                  int64_t start_us,
+                                  int64_t end_us) {
+            validate_loop_range_or_throw(enabled, start_us, end_us);
+            py::gil_scoped_release release;
+            r.set_loop_range(enabled, start_us, end_us);
+        },
              py::arg("enabled"), py::arg("start_us"), py::arg("end_us"))
         .def("set_audible_track", &vr::Renderer::set_audible_track, py::arg("file_id"))
         .def("step_forward", &vr::Renderer::step_forward)
@@ -156,6 +187,7 @@ PYBIND11_MODULE(video_renderer_native, m) {
     py::class_<vr::NativePlayer>(m, "NativePlayer")
         .def(py::init<>())
         .def("initialize", [](vr::NativePlayer& p, const vr::RendererConfig& config) {
+            validate_config_or_throw(config);
             py::gil_scoped_release release;
             return p.initialize(config);
         }, py::arg("config"))
@@ -170,10 +202,18 @@ PYBIND11_MODULE(video_renderer_native, m) {
             p.seek(target_pts_us, type);
         }, py::arg("target_pts_us"), py::arg("type") = vr::SeekType::Keyframe)
         .def("set_speed", [](vr::NativePlayer& p, double speed) {
+            validate_speed_or_throw(speed);
             py::gil_scoped_release release;
             p.set_speed(speed);
         }, py::arg("speed"))
-        .def("set_loop_range", &vr::NativePlayer::set_loop_range,
+        .def("set_loop_range", [](vr::NativePlayer& p,
+                                  bool enabled,
+                                  int64_t start_us,
+                                  int64_t end_us) {
+            validate_loop_range_or_throw(enabled, start_us, end_us);
+            py::gil_scoped_release release;
+            p.set_loop_range(enabled, start_us, end_us);
+        },
              py::arg("enabled"), py::arg("start_us"), py::arg("end_us"))
         .def("set_audible_track", &vr::NativePlayer::set_audible_track, py::arg("file_id"))
         .def("step_forward", &vr::NativePlayer::step_forward)

@@ -647,7 +647,7 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
             exact_seek_reorder_[i].stable_frame->texture_handle) {
             tex_frame = *exact_seek_reorder_[i].stable_frame;
         } else {
-            auto converted = converter_.convert(exact_seek_reorder_[i].frame.get());
+            auto converted = convert_frame_for_publish(exact_seek_reorder_[i].frame.get());
             if (!converted.has_value()) {
                 spdlog::error("[DecodeThread] Frame conversion failed while publishing exact-seek window");
                 output_buffer_.set_state(TrackState::Error);
@@ -722,8 +722,15 @@ void DecodeThread::publish_pending_exact_seek_frames() {
     convert_and_push_frame(candidate.frame.get(), "pending exact-seek frame");
 }
 
+std::optional<TextureFrame> DecodeThread::convert_frame_for_publish(AVFrame* frame) {
+    if (hw_enabled_ && !converter_.downloads_hardware_to_cpu()) {
+        return converter_.snapshot_hardware_frame(frame);
+    }
+    return converter_.convert(frame);
+}
+
 bool DecodeThread::convert_and_push_frame(AVFrame* frame, const char* context) {
-    auto converted = converter_.convert(frame);
+    auto converted = convert_frame_for_publish(frame);
     if (!converted.has_value()) {
         spdlog::error("[DecodeThread] Frame conversion failed ({})", context ? context : "unknown");
         output_buffer_.set_state(TrackState::Error);
@@ -1079,16 +1086,6 @@ void DecodeThread::run() {
                 continue;
             }
 
-            flush_hw_before_publish_if_needed();
-            auto tex_frame = converter_.convert(frame);
-            if (!tex_frame.has_value()) {
-                spdlog::error("[DecodeThread] Frame conversion failed during decode loop");
-                output_buffer_.set_state(TrackState::Error);
-                decode_paused_.store(true, std::memory_order_release);
-                running_.store(false, std::memory_order_release);
-                av_frame_unref(frame);
-                break;
-            }
             ++frames_produced;
 
             // Flush the independent decode device after the first visible HW
@@ -1104,7 +1101,10 @@ void DecodeThread::run() {
             // to the render thread, otherwise the paused preview path can win
             // the race and draw an incomplete surface.
             flush_hw_visibility_if_needed();
-            output_buffer_.push_frame(std::move(*tex_frame));
+            if (!convert_and_push_frame(frame, "decode loop")) {
+                av_frame_unref(frame);
+                break;
+            }
 
             if (output_buffer_.state() == TrackState::Buffering) {
                 if (preroll_ready()) {

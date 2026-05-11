@@ -3,6 +3,7 @@
 #include "playback/playback_controller.h"
 #include "video_renderer/renderer.h"
 #include <functional>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -90,6 +91,15 @@ public:
     const Renderer& renderer() const { return renderer_; }
 
 private:
+    enum class State {
+        Created,
+        Initializing,
+        Initialized,
+        ShuttingDown,
+    };
+
+    mutable std::mutex lifecycle_mutex_;
+    State state_ = State::Created;
     PlaybackController playback_;
     Renderer renderer_;
 };

@@ -1,11 +1,17 @@
 #include "video_renderer/track_pipeline.h"
+#include "video_renderer/renderer_limits.h"
 
 #include <spdlog/spdlog.h>
 
 namespace vr {
 namespace {
-static constexpr size_t kTrackForwardDepth = 4;
-static constexpr size_t kTrackBackwardDepth = 1;
+bool is_high_resolution_track(const DemuxStats& stats) {
+    if (stats.width <= 0 || stats.height <= 0) {
+        return false;
+    }
+    return static_cast<size_t>(stats.width) * static_cast<size_t>(stats.height) >=
+        kHighResolutionTrackPixels;
+}
 }
 
 DecodeDeviceMode default_decode_device_mode(AVCodecID codec_id) {
@@ -95,12 +101,6 @@ std::unique_ptr<TrackPipeline> TrackPipelineManager::create_pipeline(
     }
     pipeline->packet_queue = std::make_unique<PacketQueue>(100);
     pipeline->audio_packet_queue = std::make_unique<PacketQueue>(100);
-    pipeline->track_buffer = std::make_unique<TrackBuffer>(
-        kTrackForwardDepth, kTrackBackwardDepth);
-    spdlog::info("Renderer: track buffer depth forward={}, backward={}, max_cached={}",
-                 kTrackForwardDepth,
-                 kTrackBackwardDepth,
-                 kTrackForwardDepth + 1);
 
     pipeline->demux_thread = std::make_unique<DemuxThread>(
         path, *pipeline->seek_controller);
@@ -130,6 +130,20 @@ std::unique_ptr<TrackPipeline> TrackPipelineManager::create_pipeline(
         pipeline->video_aspect =
             (static_cast<float>(stats.width) / static_cast<float>(stats.height)) * sar;
     }
+
+    const size_t forward_depth =
+        hw_decode && is_high_resolution_track(stats)
+            ? kHighResolutionHardwareTrackForwardDepth
+            : kDefaultTrackForwardDepth;
+    pipeline->track_buffer = std::make_unique<TrackBuffer>(
+        forward_depth, kDefaultTrackBackwardDepth);
+    spdlog::info(
+        "Renderer: track buffer depth forward={}, backward={}, max_cached={}, high_res={}, hw_decode={}",
+        forward_depth,
+        kDefaultTrackBackwardDepth,
+        forward_depth + kDefaultTrackBackwardDepth,
+        is_high_resolution_track(stats),
+        hw_decode);
 
     pipeline->decode_thread = std::make_unique<DecodeThread>(
         *pipeline->packet_queue, *pipeline->track_buffer,

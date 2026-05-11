@@ -62,7 +62,7 @@ bool enable_hardware_decode(DecodeDeviceMode mode = DecodeDeviceMode::Independen
 | H.264/H.265 等 renderer-owned surface | `download_to_cpu=false` | D3D11VA NV12 surface 进入 renderer，renderer 复制到自有 NV12 texture 后 shader 采样 |
 | AV1/VP9 hwdownload | `download_to_cpu=true` | D3D11VA 负责解码，`av_hwframe_transfer_data` 下载到 CPU，再打包/上传 NV12 |
 
-`extra_hw_frames=48` 只给 renderer-owned surface 路径配置。AV1/VP9 hwdownload 会尽快释放 decoder surface，强行扩大池子反而可能在部分驱动上产生黑帧。
+renderer-owned surface 路径当前保持 `extra_hw_frames=0`，让 FFmpeg 使用解码器默认池大小，避免每条硬解轨额外预留大量 D3D11 surface。AV1/VP9 hwdownload 会尽快释放 decoder surface，强行扩大池子反而可能在部分驱动上产生黑帧。
 
 ## FrameConverter
 

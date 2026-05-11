@@ -44,6 +44,10 @@ typedef struct naki_vr_player_config_t {
 
 所有跨 FFI 的 config/layout struct 必须先填 `size` 和 `abi_version`。FFI 层会校验 struct 大小、ABI 版本、log level、seek type、layout mode 和 pixel-size mode；失败时原有 bool/int API 仍返回失败值，详细原因通过 `naki_vr_last_error()` 查询。
 
+Renderer config 校验集中在 `video_renderer/renderer_config_validation.*`，C FFI、Python binding、`Renderer` / `NativePlayer` 初始化和 Windows runner MethodChannel 共享同一套规则。当前规则包括：尺寸必须为正且不超过 `16384`，至少一个视频路径、最多 4 条路径，路径非空、不含内嵌 null 且必须是合法 UTF-8，windowed mode 必须提供 HWND，headless mode 必须提供 DXGI adapter 且不能同时传 HWND。FFI v1 的 `video_paths` 仍是 NULL 终止数组；实现最多扫描 4 条路径，超过上限或缺少 NULL terminator 会返回 `NAKI_VR_ERR_INVALID_ARGUMENT`。
+
+ABI v2 新增 `naki_vr_player_config_v2_t` 和 `naki_vr_player_initialize_v2()`。v2 config 使用 `(video_paths, video_path_count)`，不要求 NULL terminator；旧 v1 config 会继续保留兼容，但新绑定应优先使用 v2。
+
 ### API 分类
 
 | 分类 | 函数 |
@@ -71,6 +75,8 @@ typedef enum naki_vr_status_t {
 `naki_vr_last_error(player, buf, cap)` 返回最近一次 FFI 调用的 status，并在 `buf` 非空时复制一段诊断文本。当前实现使用线程本地 last-error 状态，`player` 参数保留给后续 per-player 错误状态。
 
 因为 last-error 是 thread-local，必须在产生失败的同一线程读取；其他线程读取到的是该线程自己的最近 FFI 状态。
+
+ABI v2 同时提供 `naki_vr_player_get_error(player, buf, cap)`，读取 player handle 上保存的最近一次进入该 handle 后的操作结果。对于参数校验在 pin handle 之前失败的情况，例如 null player、非法 seek type、非法 counted path config，错误仍只保证写入 thread-local `naki_vr_last_error()`。新增的 mutating status API，例如 `naki_vr_player_play_status()`、`naki_vr_player_set_speed_status()`、`naki_vr_player_apply_layout_status()` 和 `naki_vr_player_add_track_status()`，会直接返回 `naki_vr_status_t`；旧 `void` / bool / int API 继续作为兼容 wrapper。
 
 ### Seek 类型常量
 
@@ -107,7 +113,7 @@ install_crash_handler(str)    # crash_dir; explicit opt-in process-global VEH/SE
 
 可能阻塞的 Python 调用会释放 GIL，包括 `Renderer` / `NativePlayer` 的 `initialize()`、`shutdown()`、`seek()`、`add_track()`、`remove_track()`、`set_speed()`、`set_track_offset()` 和 `apply_layout()`。这些调用可能打开文件、等待 render/decode 线程、触碰 GPU/FFmpeg 或等待内部锁，不应阻塞其他 Python 线程。
 
-Python `LayoutState` 使用和 C FFI 相同的核心校验：layout mode、pixel-size mode、finite split/zoom/offset、positive zoom。非法 layout 在进入 native renderer 前抛 `ValueError`。`view_offset` 必须是 2 个 float，`order` 必须是 4 个 file_id；`Renderer.apply_layout()` 会把 file_id order 翻译成内部 slot order。
+Python `RendererConfig` 和 `LayoutState` 使用和 C FFI 相同的核心校验。非法 config/layout 在进入 native renderer 前抛 `ValueError`。`RendererConfig` 会检查尺寸、路径数量、路径内容和 windowed/headless interop 组合；`LayoutState` 会检查 layout mode、pixel-size mode、finite split/zoom/offset、positive zoom。`view_offset` 必须是 2 个 float，`order` 必须是 4 个 file_id；`Renderer.apply_layout()` 会把 file_id order 翻译成内部 slot order。
 
 `LogConfig` 的默认行为是 library-safe：不会改 Windows console code page，不读取通用 `SPDLOG_LEVEL`，也不会启动/修改 spdlog 的 process-global flush 策略。VoidPlayer Windows runner 会在 app 层显式打开 `configure_console_codepage`、`use_environment_level_override` 和 `manage_global_flush`。
 

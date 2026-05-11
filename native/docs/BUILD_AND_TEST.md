@@ -21,6 +21,16 @@ python native/build.py --benchmarks-only
 python native/build.py --debug
 ```
 
+Native also provides CMake presets for direct contributor workflows:
+
+```bash
+cmake --list-presets -S native
+cmake --preset windows-release -S native
+cmake --build native/build-msvc-preset-release --config Release
+cmake --preset no-python-no-tests -S native
+cmake --build native/build-msvc-preset-minimal --config Release
+```
+
 Native FFI/Python staging 产物默认写入 `native/build-msvc/dist/`。不要依赖或提交源码树下的 `native/dist/`。
 
 `dev.py build --native` 会在 native CMake 构建前检查 analysis 外部工具：
@@ -68,6 +78,13 @@ python native/build.py
 
 CI 入口位于 `.github/workflows/native.yml`，包含完整 `python dev.py test --native-only`，并额外覆盖 `BUILD_PYTHON=OFF`、`BUILD_FFI=ON/OFF`、`BUILD_TESTS=ON/OFF` 的 clean configure + build 组合；FFI/tests 组合还会运行 `test_ffi_c` ABI smoke。
 
+CI matrix also includes a Debug FFI/tests build and a native dist smoke check
+for FFI artifacts:
+
+```bash
+python scripts/dev/check_native_dist.py --ffi native/build-msvc/dist/ffi
+```
+
 ## 依赖
 
 | 依赖 | 来源 | 用途 |
@@ -88,6 +105,25 @@ Native 第三方依赖清单位于 [`native/THIRD_PARTY_NATIVE.md`](../THIRD_PAR
 默认 `windows/libs/ffmpeg` 是 gyan.dev 的 FFmpeg 8.1 full shared Windows build，`README.txt` 记录来源、GPL v3 license、source commit 和完整 configure flags。VoidPlayer/native 通过 FFmpeg import libraries 动态链接这些 DLL，不静态链接 FFmpeg。用户可以用 `--ffmpeg-root`、`FFMPEG_ROOT` 或 `FFMPEG_DIR` 指向同布局的替代 FFmpeg dev package，但替换包必须同时提供 `include/`、`lib/`、`bin/` 以及对应 `README.txt`/`LICENSE`。
 
 构建会把运行所需的 FFmpeg DLL 和 `README.txt`、`LICENSE`/`LICENSE.txt` 一起复制到 native build 输出目录、`native/build-msvc/dist/python/`、`native/build-msvc/dist/ffi/`，以及 Flutter runner 输出目录。播放器默认 runtime copy 包含 `avcodec`、`avformat`、`avutil`、`swresample`，不包含 `swscale`；只有 `BUILD_BENCHMARKS=ON` 的 `pipeline_bench` 会单独复制 `swscale`。
+
+### Release Compliance Smoke
+
+顶层 `THIRD_PARTY_NOTICES.md` 是发布包入口 notice，`native/THIRD_PARTY_NATIVE.md` 是 native 依赖清单。发布包必须包含：
+
+- VoidPlayer 顶层 `LICENSE`
+- `THIRD_PARTY_NOTICES.md`
+- `native/THIRD_PARTY_NATIVE.md`
+- FFmpeg package `README.txt`
+- FFmpeg `LICENSE` 或 `LICENSE.txt`
+
+机器检查入口：
+
+```bash
+python scripts/dev/check_release_compliance.py
+python scripts/dev/check_release_compliance.py --stage build/package/windows/stage
+```
+
+`python dev.py package` 会把顶层 license、third-party notices 和 native manifest 复制到 staged package 的 `docs/` 目录，并对 staging 目录执行同一套 smoke。CI 的 native workflow 也会在 native build 前检查 source tree 的 notice 文件，避免更新 FFmpeg/runtime 依赖时漏掉发布说明。
 
 ## `python dev.py test` 实际覆盖
 

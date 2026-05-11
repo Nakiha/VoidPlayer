@@ -1,4 +1,5 @@
 #include "video_renderer/renderer.h"
+#include "video_renderer/renderer_config_validation.h"
 #include "audio/audio_output_factory.h"
 #include "video_renderer/audio_coordinator.h"
 #include "video_renderer/seek_coordinator.h"
@@ -217,6 +218,12 @@ Renderer::~Renderer() {
 bool Renderer::initialize(const RendererConfig& config) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
 
+    const auto validation = validate_renderer_config(config);
+    if (!validation.ok) {
+        spdlog::error("Renderer: invalid config: {}", validation.message);
+        return false;
+    }
+
     // Flutter plugin configures logging before initialize().
     // Skip empty config to avoid clearing all sinks.
     if (!config.log_config.file_path.empty() || config.log_config.level != spdlog::level::info) {
@@ -229,11 +236,6 @@ bool Renderer::initialize(const RendererConfig& config) {
     std::lock_guard<std::mutex> state_lock(state_mutex_);
     if (initialized_.load() || running_.load() || render_thread_.joinable()) {
         spdlog::warn("Renderer: initialize called while already initialized or running");
-        return false;
-    }
-
-    if (config.video_paths.empty()) {
-        spdlog::error("Renderer: no video paths provided");
         return false;
     }
 
@@ -500,6 +502,12 @@ void Renderer::seek(int64_t target_pts_us, SeekType type) {
 }
 
 void Renderer::set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
+    const auto validation = validate_loop_range(enabled, start_us, end_us);
+    if (!validation.ok) {
+        spdlog::warn("[Renderer] ignoring invalid loop range: {}", validation.message);
+        return;
+    }
+
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
     LoopRangeState next;
@@ -1408,6 +1416,12 @@ bool Renderer::settle_eof_locked(int64_t max_presented_end_us) {
 }
 
 void Renderer::set_speed(double speed) {
+    const auto validation = validate_playback_speed(speed);
+    if (!validation.ok) {
+        spdlog::warn("[Renderer] ignoring invalid playback speed: {}", validation.message);
+        return;
+    }
+
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     playback_->set_speed(speed);
 }
@@ -1491,7 +1505,11 @@ std::mutex& Renderer::texture_mutex() const {
 void Renderer::resize(int width, int height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (!headless_ || !d3d_device_) return;
-    if (width <= 0 || height <= 0) return;
+    const auto validation = validate_renderer_dimensions(width, height, "resize dimensions");
+    if (!validation.ok) {
+        spdlog::warn("[Renderer] ignoring invalid resize: {}", validation.message);
+        return;
+    }
     pending_width_.store(width);
     pending_height_.store(height);
 }

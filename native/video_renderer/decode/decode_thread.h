@@ -136,6 +136,9 @@ private:
     /// Push decoded exact-seek frames that did not fit in the initial preview window.
     void publish_pending_exact_seek_frames();
 
+    /// Convert a decoded AVFrame into storage that can safely outlive decoder pool reuse.
+    std::optional<TextureFrame> convert_frame_for_publish(AVFrame* frame);
+
     /// Convert a decoded AVFrame and publish it, or move the track to Error on failure.
     bool convert_and_push_frame(AVFrame* frame, const char* context);
 

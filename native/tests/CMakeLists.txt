@@ -6,6 +6,10 @@ add_executable(video_renderer_tests
     renderer/test_clock.cpp
     renderer/test_logging.cpp
     renderer/test_windows_crash_handler.cpp
+    renderer/test_win_utf8.cpp
+    renderer/test_native_player.cpp
+    renderer/test_renderer_config_validation.cpp
+    renderer/test_renderer_stress.cpp
     renderer/test_packet_queue.cpp
     renderer/test_pcm_buffer.cpp
     renderer/test_seek_coordinator.cpp

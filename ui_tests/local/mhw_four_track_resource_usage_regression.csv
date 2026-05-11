@@ -1,5 +1,6 @@
 @WINDOW,1900,1068
 
+0.0,SET_DECODE_MODE,preferHardware
 0.0,STORE_RESOURCE_USAGE,baseline
 0.2,ADD_MEDIA,C:\Users\12967\Videos\Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本.mp4
 1.8,ADD_MEDIA,C:\Users\12967\Videos\Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本Monster Hunter Wilds - 2025-03-02 20-59-56 - 副本.mp4

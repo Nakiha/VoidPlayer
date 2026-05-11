@@ -1,0 +1,87 @@
+"""Check release/package license notice files.
+
+This script intentionally checks file presence and a few key strings only. It is
+not a legal review; it prevents obvious release artifacts from shipping without
+the FFmpeg GPL package notices and VoidPlayer third-party manifests.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _require_file(path: Path, label: str) -> None:
+    if not path.is_file():
+        raise RuntimeError(f"missing {label}: {path}")
+
+
+def _require_text(path: Path, needles: list[str], label: str) -> None:
+    _require_file(path, label)
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    missing = [needle for needle in needles if needle not in text]
+    if missing:
+        joined = ", ".join(repr(value) for value in missing)
+        raise RuntimeError(f"{label} is missing expected text: {joined}")
+
+
+def check_source_tree() -> None:
+    _require_text(ROOT / "LICENSE", ["GNU GENERAL PUBLIC LICENSE", "Version 3"],
+                  "top-level GPL license")
+    _require_text(ROOT / "THIRD_PARTY_NOTICES.md",
+                  ["FFmpeg Runtime Package", "native/THIRD_PARTY_NATIVE.md"],
+                  "top-level third-party notices")
+    _require_text(ROOT / "native" / "THIRD_PARTY_NATIVE.md",
+                  ["FFmpeg runtime/dev package", "GPL v3 package"],
+                  "native third-party manifest")
+
+    ffmpeg_root = ROOT / "windows" / "libs" / "ffmpeg"
+    _require_text(ffmpeg_root / "README.txt",
+                  ["FFmpeg", "configuration"],
+                  "FFmpeg package README")
+    if not ((ffmpeg_root / "LICENSE").is_file() or
+            (ffmpeg_root / "LICENSE.txt").is_file()):
+        raise RuntimeError(f"missing FFmpeg LICENSE or LICENSE.txt in {ffmpeg_root}")
+
+
+def check_stage(stage_dir: Path) -> None:
+    _require_file(stage_dir / "README.txt", "staged FFmpeg README")
+    if not ((stage_dir / "LICENSE").is_file() or
+            (stage_dir / "LICENSE.txt").is_file()):
+        raise RuntimeError(f"missing staged FFmpeg LICENSE or LICENSE.txt in {stage_dir}")
+
+    docs = stage_dir / "docs"
+    _require_text(docs / "LICENSE", ["GNU GENERAL PUBLIC LICENSE", "Version 3"],
+                  "staged GPL license")
+    _require_text(docs / "THIRD_PARTY_NOTICES.md",
+                  ["FFmpeg Runtime Package", "native/THIRD_PARTY_NATIVE.md"],
+                  "staged third-party notices")
+    _require_text(docs / "THIRD_PARTY_NATIVE.md",
+                  ["FFmpeg runtime/dev package", "GPL v3 package"],
+                  "staged native third-party manifest")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--stage", type=Path, default=None,
+                        help="Optional staged package directory to validate")
+    args = parser.parse_args()
+
+    try:
+        check_source_tree()
+        if args.stage is not None:
+            check_stage(args.stage)
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
+    print("release compliance smoke passed")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

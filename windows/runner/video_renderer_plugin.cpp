@@ -4,6 +4,8 @@
 
 #include "common/win_utf8.h"
 #include "common/windows_crash_handler.h"
+#include "video_renderer/layout_validation.h"
+#include "video_renderer/renderer_config_validation.h"
 #include "utils.h"
 #include <flutter_windows.h>
 #include <spdlog/spdlog.h>
@@ -699,8 +701,9 @@ void VideoRendererPlugin::HandleMethodCall(
             result->Error("BAD_ARGS", "height must be an integer");
             return;
         }
-        if (w <= 0 || h <= 0 || w > 16384 || h > 16384) {
-            result->Error("BAD_ARGS", "Invalid viewport size");
+        if (auto validation = vr::validate_renderer_dimensions(w, h, "viewport size");
+            !validation.ok) {
+            result->Error("BAD_ARGS", validation.message);
             return;
         }
         player_->resize(w, h);
@@ -746,8 +749,8 @@ void VideoRendererPlugin::HandleMethodCall(
             result->Error("BAD_ARGS", "speed must be a number");
             return;
         }
-        if (!std::isfinite(speed) || speed <= 0.0 || speed > 16.0) {
-            result->Error("BAD_ARGS", "Invalid playback speed");
+        if (auto validation = vr::validate_playback_speed(speed); !validation.ok) {
+            result->Error("BAD_ARGS", validation.message);
             return;
         }
         player_->set_speed(speed);
@@ -848,6 +851,10 @@ void VideoRendererPlugin::HandleMethodCall(
                     return;
                 }
             }
+        }
+        if (auto validation = vr::validate_layout_state(ls); !validation.ok) {
+            result->Error("BAD_ARGS", validation.message);
+            return;
         }
         player_->apply_layout(ls);
         result->Success(flutter::EncodableValue(std::monostate{}));
@@ -1048,8 +1055,9 @@ void VideoRendererPlugin::CreatePlayer(
         result->Error("BAD_ARGS", "height must be an integer");
         return;
     }
-    if (width <= 0 || height <= 0 || width > 16384 || height > 16384) {
-        result->Error("BAD_ARGS", "Invalid viewport size");
+    if (auto validation = vr::validate_renderer_dimensions(width, height, "viewport size");
+        !validation.ok) {
+        result->Error("BAD_ARGS", validation.message);
         return;
     }
     bool use_hardware_decode = true;
@@ -1081,11 +1089,12 @@ void VideoRendererPlugin::CreatePlayer(
             result->Error("BAD_ARGS", "video paths must be strings");
             return;
         }
-        if (path.empty()) {
-            result->Error("BAD_ARGS", "video path must not be empty");
-            return;
-        }
         config.video_paths.push_back(path);
+    }
+
+    if (auto validation = vr::validate_renderer_config(config); !validation.ok) {
+        result->Error("BAD_ARGS", validation.message);
+        return;
     }
 
     player_ = std::make_shared<vr::NativePlayer>();
@@ -1415,8 +1424,9 @@ void VideoRendererPlugin::SetLoopRange(
         result->Error("BAD_ARGS", "endUs must be an integer");
         return;
     }
-    if (enabled && (start_us < 0 || end_us <= start_us)) {
-        result->Error("BAD_ARGS", "Invalid loop range");
+    if (auto validation = vr::validate_loop_range(enabled, start_us, end_us);
+        !validation.ok) {
+        result->Error("BAD_ARGS", validation.message);
         return;
     }
 

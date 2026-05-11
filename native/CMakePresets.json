@@ -1,0 +1,87 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "windows-release",
+      "displayName": "Windows Release",
+      "binaryDir": "${sourceDir}/build-msvc-preset-release",
+      "cacheVariables": {
+        "BUILD_PYTHON": "ON",
+        "BUILD_FFI": "ON",
+        "BUILD_TESTS": "ON",
+        "BUILD_BENCHMARKS": "OFF"
+      }
+    },
+    {
+      "name": "windows-debug",
+      "displayName": "Windows Debug",
+      "inherits": "windows-release",
+      "binaryDir": "${sourceDir}/build-msvc-preset-debug"
+    },
+    {
+      "name": "ffi-only",
+      "displayName": "Windows FFI Only",
+      "inherits": "windows-release",
+      "binaryDir": "${sourceDir}/build-msvc-preset-ffi",
+      "cacheVariables": {
+        "BUILD_PYTHON": "OFF",
+        "BUILD_FFI": "ON",
+        "BUILD_TESTS": "OFF",
+        "BUILD_ANALYSIS_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "no-python-no-tests",
+      "displayName": "Windows Minimal App Native",
+      "inherits": "windows-release",
+      "binaryDir": "${sourceDir}/build-msvc-preset-minimal",
+      "cacheVariables": {
+        "BUILD_PYTHON": "OFF",
+        "BUILD_FFI": "OFF",
+        "BUILD_TESTS": "OFF",
+        "BUILD_ANALYSIS_TESTS": "OFF",
+        "BUILD_BENCHMARKS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "ffi-only-release",
+      "configurePreset": "ffi-only",
+      "configuration": "Release"
+    },
+    {
+      "name": "minimal-release",
+      "configurePreset": "no-python-no-tests",
+      "configuration": "Release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

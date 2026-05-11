@@ -8,6 +8,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from .check_release_compliance import check_source_tree, check_stage
 from .flutter_app import flutter_build
 from .paths import (
     ROOT,
@@ -86,10 +87,12 @@ def cmd_package(args) -> None:
     print(f"Copy package input: {release_dir} -> {stage_dir}")
     shutil.copytree(release_dir, stage_dir)
     _copy_release_docs(stage_dir)
+    _copy_compliance_docs(stage_dir)
 
     removed = _remove_build_only_artifacts(stage_dir)
     _assert_no_mutable_artifacts(stage_dir, "package staging")
     _assert_no_build_only_artifacts(stage_dir)
+    _assert_release_compliance(stage_dir)
 
     print(f"\nPackage staging ready: {stage_dir}")
     if removed:
@@ -163,6 +166,28 @@ def _copy_release_docs(stage_dir: Path) -> None:
     docs_dest = stage_dir / "docs"
     print(f"Copy release docs: {WINDOWS_RELEASE_DOCS_DIR} -> {docs_dest}")
     shutil.copytree(WINDOWS_RELEASE_DOCS_DIR, docs_dest, dirs_exist_ok=True)
+
+
+def _copy_compliance_docs(stage_dir: Path) -> None:
+    docs_dest = stage_dir / "docs"
+    docs_dest.mkdir(parents=True, exist_ok=True)
+    files = [
+        (ROOT / "LICENSE", docs_dest / "LICENSE"),
+        (ROOT / "THIRD_PARTY_NOTICES.md", docs_dest / "THIRD_PARTY_NOTICES.md"),
+        (ROOT / "native" / "THIRD_PARTY_NATIVE.md", docs_dest / "THIRD_PARTY_NATIVE.md"),
+    ]
+    for src, dest in files:
+        print(f"Copy compliance doc: {src} -> {dest}")
+        shutil.copy2(src, dest)
+
+
+def _assert_release_compliance(stage_dir: Path) -> None:
+    try:
+        check_source_tree()
+        check_stage(stage_dir)
+    except RuntimeError as exc:
+        print(f"\nERROR: release compliance smoke failed: {exc}")
+        sys.exit(1)
 
 
 def _assert_no_build_only_artifacts(root: Path) -> None:

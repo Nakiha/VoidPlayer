@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -12,28 +13,78 @@ namespace vr::win_utf8 {
 
 #ifdef _WIN32
 
-inline std::wstring utf16_from_utf8(const std::string& utf8) {
-    if (utf8.empty()) return {};
-    const int length = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
-    if (length <= 0) return {};
+struct Utf16FromUtf8Result {
+    bool ok = false;
+    DWORD error = 0;
+    std::wstring value;
+};
+
+struct Utf8FromUtf16Result {
+    bool ok = false;
+    DWORD error = 0;
+    std::string value;
+};
+
+inline Utf16FromUtf8Result try_utf16_from_utf8(const std::string& utf8) {
+    Utf16FromUtf8Result result;
+    if (utf8.empty()) {
+        result.ok = true;
+        return result;
+    }
+    const int length = MultiByteToWideChar(
+        CP_UTF8, MB_ERR_INVALID_CHARS, utf8.c_str(), -1, nullptr, 0);
+    if (length <= 0) {
+        result.error = GetLastError();
+        return result;
+    }
     std::wstring wide(static_cast<size_t>(length), L'\0');
-    if (MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, wide.data(), length) <= 0) {
-        return {};
+    if (MultiByteToWideChar(
+            CP_UTF8, MB_ERR_INVALID_CHARS, utf8.c_str(), -1, wide.data(), length) <= 0) {
+        result.error = GetLastError();
+        return result;
     }
     wide.resize(static_cast<size_t>(length - 1));
-    return wide;
+    result.ok = true;
+    result.value = std::move(wide);
+    return result;
+}
+
+inline std::wstring utf16_from_utf8(const std::string& utf8) {
+    auto result = try_utf16_from_utf8(utf8);
+    return result.ok ? std::move(result.value) : std::wstring{};
+}
+
+inline bool is_valid_utf8(const std::string& utf8) {
+    return try_utf16_from_utf8(utf8).ok;
+}
+
+inline Utf8FromUtf16Result try_utf8_from_utf16(const wchar_t* utf16) {
+    Utf8FromUtf16Result result;
+    if (!utf16 || utf16[0] == L'\0') {
+        result.ok = true;
+        return result;
+    }
+    const int length = WideCharToMultiByte(
+        CP_UTF8, WC_ERR_INVALID_CHARS, utf16, -1, nullptr, 0, nullptr, nullptr);
+    if (length <= 0) {
+        result.error = GetLastError();
+        return result;
+    }
+    std::string utf8(static_cast<size_t>(length), '\0');
+    if (WideCharToMultiByte(
+            CP_UTF8, WC_ERR_INVALID_CHARS, utf16, -1, utf8.data(), length, nullptr, nullptr) <= 0) {
+        result.error = GetLastError();
+        return result;
+    }
+    utf8.resize(static_cast<size_t>(length - 1));
+    result.ok = true;
+    result.value = std::move(utf8);
+    return result;
 }
 
 inline std::string utf8_from_utf16(const wchar_t* utf16) {
-    if (!utf16 || utf16[0] == L'\0') return {};
-    const int length = WideCharToMultiByte(CP_UTF8, 0, utf16, -1, nullptr, 0, nullptr, nullptr);
-    if (length <= 0) return {};
-    std::string utf8(static_cast<size_t>(length), '\0');
-    if (WideCharToMultiByte(CP_UTF8, 0, utf16, -1, utf8.data(), length, nullptr, nullptr) <= 0) {
-        return {};
-    }
-    utf8.resize(static_cast<size_t>(length - 1));
-    return utf8;
+    auto result = try_utf8_from_utf16(utf16);
+    return result.ok ? std::move(result.value) : std::string{};
 }
 
 inline std::filesystem::path path_from_utf8(const std::string& utf8) {
@@ -100,6 +151,10 @@ inline bool set_env_utf8(const wchar_t* name, const std::string& value) {
 }
 
 #else
+
+inline bool is_valid_utf8(const std::string&) {
+    return true;
+}
 
 inline std::filesystem::path path_from_utf8(const std::string& utf8) {
     return std::filesystem::u8path(utf8);

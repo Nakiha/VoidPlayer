@@ -45,6 +45,16 @@ static void init_player_config(naki_vr_player_config_t* cfg) {
     init_log_config(&cfg->log_config);
 }
 
+static void init_player_config_v2(naki_vr_player_config_v2_t* cfg) {
+    memset(cfg, 0, sizeof(*cfg));
+    cfg->size = sizeof(*cfg);
+    cfg->abi_version = NAKI_VR_ABI_VERSION;
+    cfg->width = 1920;
+    cfg->height = 1080;
+    cfg->use_hardware_decode = 1;
+    init_log_config(&cfg->log_config);
+}
+
 static void init_layout_state(naki_vr_player_layout_state_t* state) {
     memset(state, 0, sizeof(*state));
     state->size = sizeof(*state);
@@ -88,6 +98,8 @@ int main(void) {
           "log config exposes size/version-prefixed layout");
     CHECK(sizeof(naki_vr_player_config_t) >= offsetof(naki_vr_player_config_t, log_config) + sizeof(naki_vr_log_config_t),
           "player config exposes size/version-prefixed layout");
+    CHECK(sizeof(naki_vr_player_config_v2_t) >= offsetof(naki_vr_player_config_v2_t, reserved) + sizeof(uint64_t) * 4,
+          "player config v2 exposes counted-path layout");
     CHECK(sizeof(naki_vr_player_layout_state_t) >= offsetof(naki_vr_player_layout_state_t, order) + sizeof(int) * 4,
           "layout config exposes size/version-prefixed layout");
 
@@ -137,7 +149,14 @@ int main(void) {
         CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
               "invalid seek type reports invalid argument");
         naki_vr_player_set_speed(p, 2.0);
+        CHECK(naki_vr_player_set_speed_status(p, 2.0) == NAKI_VR_OK,
+              "status API returns OK for set_speed");
         naki_vr_player_set_loop_range(p, 0, 0, 0);
+        CHECK(naki_vr_player_set_loop_range_status(p, 1, -1, 0) ==
+                  NAKI_VR_ERR_INVALID_ARGUMENT,
+              "status API rejects invalid loop range");
+        CHECK(naki_vr_player_get_error(p, NULL, 0) == NAKI_VR_OK,
+              "per-player error remains OK for pre-handle validation failures");
         naki_vr_player_set_audible_track(p, -1);
         naki_vr_player_set_track_offset(p, 1, 0);
         {
@@ -237,6 +256,99 @@ int main(void) {
               "initialize rejects ABI version mismatch");
         CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
               "ABI version mismatch reports invalid argument");
+        naki_vr_player_destroy(p);
+    }
+
+    {
+        naki_vr_player_t p = naki_vr_player_create();
+        naki_vr_player_config_v2_t cfg;
+        const char* paths[] = {"C:/definitely/missing.mp4"};
+        init_player_config_v2(&cfg);
+        cfg.hwnd = 1;
+        cfg.video_paths = paths;
+        cfg.video_path_count = 1;
+        CHECK(naki_vr_player_initialize_v2(p, &cfg) == NAKI_VR_ERR_OPEN_FAILED,
+              "initialize_v2 uses counted paths and returns status");
+        CHECK(naki_vr_player_get_error(p, NULL, 0) == NAKI_VR_ERR_OPEN_FAILED,
+              "per-player error records initialize_v2 failure");
+        naki_vr_player_destroy(p);
+    }
+
+    {
+        naki_vr_player_t p = naki_vr_player_create();
+        naki_vr_player_config_v2_t cfg;
+        const char* paths[] = {"a", "b", "c", "d", "e"};
+        init_player_config_v2(&cfg);
+        cfg.hwnd = 1;
+        cfg.video_paths = paths;
+        cfg.video_path_count = 5;
+        CHECK(naki_vr_player_initialize_v2(p, &cfg) == NAKI_VR_ERR_INVALID_ARGUMENT,
+              "initialize_v2 rejects too many counted paths");
+        naki_vr_player_destroy(p);
+    }
+
+    {
+        naki_vr_player_t p = naki_vr_player_create();
+        int slot = 123;
+        CHECK(naki_vr_player_add_track_status(p, NULL, &slot) ==
+                  NAKI_VR_ERR_INVALID_ARGUMENT,
+              "add_track_status rejects null path");
+        CHECK(slot == -1, "add_track_status clears output slot on failure");
+        naki_vr_player_destroy(p);
+    }
+
+    {
+        naki_vr_player_t p = naki_vr_player_create();
+        naki_vr_player_config_t cfg;
+        const char* empty_path[] = {"", NULL};
+        init_player_config(&cfg);
+        cfg.hwnd = 1;
+        cfg.video_paths = empty_path;
+        CHECK(naki_vr_player_initialize(p, &cfg) == 0,
+              "initialize rejects empty video path");
+        CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
+              "empty video path reports invalid argument");
+        naki_vr_player_destroy(p);
+    }
+
+    {
+        naki_vr_player_t p = naki_vr_player_create();
+        naki_vr_player_config_t cfg;
+        const char bad_utf8[] = {(char)0xC3, (char)0x28, 0};
+        const char* paths[] = {bad_utf8, NULL};
+        init_player_config(&cfg);
+        cfg.hwnd = 1;
+        cfg.video_paths = paths;
+        CHECK(naki_vr_player_initialize(p, &cfg) == 0,
+              "initialize rejects malformed UTF-8 path");
+        CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
+              "malformed UTF-8 path reports invalid argument");
+        naki_vr_player_destroy(p);
+    }
+
+    {
+        naki_vr_player_t p = naki_vr_player_create();
+        naki_vr_player_config_t cfg;
+        const char* too_many_paths[] = {"a", "b", "c", "d", "e", NULL};
+        init_player_config(&cfg);
+        cfg.hwnd = 1;
+        cfg.video_paths = too_many_paths;
+        CHECK(naki_vr_player_initialize(p, &cfg) == 0,
+              "initialize rejects too many video paths");
+        CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
+              "too many video paths reports invalid argument");
+        naki_vr_player_destroy(p);
+    }
+
+    {
+        naki_vr_player_t p = naki_vr_player_create();
+        naki_vr_player_config_t cfg;
+        init_player_config(&cfg);
+        cfg.width = 20000;
+        CHECK(naki_vr_player_initialize(p, &cfg) == 0,
+              "initialize rejects oversized dimensions");
+        CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
+              "oversized dimensions report invalid argument");
         naki_vr_player_destroy(p);
     }
 

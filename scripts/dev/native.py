@@ -13,12 +13,15 @@ from .paths import (
     FFMPEG_ANALYZER_BUILD_SCRIPT,
     NATIVE_BUILD_PY,
     NATIVE_DIR,
+    ROOT,
     find_ffmpeg_analyzer,
     find_vtm_decoder,
 )
 from .process import header, run
 
 TOOL_STAMP_VERSION = 1
+FFMPEG_SUBMODULE_PATH = "native/analysis/vendor/ffmpeg"
+ZSTD_SUBMODULE_PATH = "native/analysis/vendor/zstd"
 
 
 def ensure_analysis_test_tools() -> None:
@@ -134,6 +137,45 @@ def _write_ffmpeg_analyzer_stamp(analyzer: Path) -> None:
     _write_json(_ffmpeg_analyzer_stamp_path(), _ffmpeg_analyzer_signature())
 
 
+def _ffmpeg_analyzer_source_ready() -> bool:
+    zstd_cmake = FFMPEG_ANALYZER_DIR.parent / "zstd" / "build" / "cmake" / "CMakeLists.txt"
+    return (
+        FFMPEG_ANALYZER_BUILD_SCRIPT.is_file()
+        and (FFMPEG_ANALYZER_DIR / "tools" / "void_ffmpeg_analyzer.c").is_file()
+        and zstd_cmake.is_file()
+    )
+
+
+def _ensure_ffmpeg_analyzer_submodule() -> None:
+    """Ensure the patched FFmpeg analyzer source checkout is usable."""
+    if _ffmpeg_analyzer_source_ready():
+        return
+
+    print("FFmpeg analyzer source tree missing or incomplete. Running git submodule update...")
+    try:
+        run([
+            "git", "submodule", "update", "--init", "--recursive", "--checkout",
+            FFMPEG_SUBMODULE_PATH, ZSTD_SUBMODULE_PATH,
+        ], cwd=str(ROOT))
+    except subprocess.CalledProcessError:
+        print(
+            "\nERROR: failed to initialize FFmpeg analyzer submodules.\n"
+            "Try one of:\n"
+            f"  git submodule update --init --recursive --checkout {FFMPEG_SUBMODULE_PATH} {ZSTD_SUBMODULE_PATH}\n"
+            "  set VOID_FFMPEG_ANALYZER=C:\\path\\to\\void_ffmpeg_analyzer.exe\n"
+        )
+        sys.exit(1)
+
+    if not _ffmpeg_analyzer_source_ready():
+        print(
+            "\nERROR: FFmpeg analyzer source tree is still incomplete after submodule update.\n"
+            f"Expected: {FFMPEG_ANALYZER_BUILD_SCRIPT}\n"
+            f"Expected: {FFMPEG_ANALYZER_DIR / 'tools' / 'void_ffmpeg_analyzer.c'}\n"
+            f"Try: git submodule update --init --recursive --checkout {FFMPEG_SUBMODULE_PATH} {ZSTD_SUBMODULE_PATH}\n"
+        )
+        sys.exit(1)
+
+
 def ensure_vtm_decoder_tool() -> None:
     """Prepare VTM DecoderApp for VVC/VBS4 generation."""
     decoder = find_vtm_decoder()
@@ -174,6 +216,8 @@ def ensure_ffmpeg_analyzer_tool() -> None:
         _copy_ffmpeg_analyzer_to_vendor_bin(analyzer)
         return
 
+    _ensure_ffmpeg_analyzer_submodule()
+
     stamp = _ffmpeg_analyzer_stamp_path()
     if not _tool_needs_rebuild(
         analyzer,
@@ -184,10 +228,6 @@ def ensure_ffmpeg_analyzer_tool() -> None:
         return
 
     header("Prepare FFmpeg analyzer for H.264/H.265 analysis")
-    if not FFMPEG_ANALYZER_BUILD_SCRIPT.exists():
-        print(f"ERROR: FFmpeg analyzer build script not found: {FFMPEG_ANALYZER_BUILD_SCRIPT}")
-        sys.exit(1)
-
     print("Building FFmpeg analyzer before app/native build...")
     print("Tip: set VOID_FFMPEG_ANALYZER=C:\\path\\to\\void_ffmpeg_analyzer.exe to reuse a prebuilt analyzer.")
     cmd = [

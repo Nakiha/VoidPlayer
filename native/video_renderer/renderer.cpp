@@ -5,6 +5,7 @@
 #include "video_renderer/seek_coordinator.h"
 #include "video_renderer/shader_constants.h"
 #include "video_renderer/d3d11/render_backend.h"
+#include "video_renderer/d3d11/memory_estimate.h"
 #include "analysis/analysis_manager.h"
 #include <spdlog/spdlog.h>
 #include <chrono>
@@ -2879,6 +2880,75 @@ D3D11BackendMetrics Renderer::d3d_backend_metrics() const {
     result.device_lost_count = d3d_metrics_.device_lost_count.load(std::memory_order_relaxed);
     result.texture_sharing_failure_count =
         d3d_metrics_.texture_sharing_failure_count.load(std::memory_order_relaxed);
+    return result;
+}
+
+RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    std::lock_guard<std::recursive_mutex> device_lock(device_mutex_);
+    RendererGpuMemoryStats result;
+
+    const auto presenter_stats = frame_presenter_
+        ? frame_presenter_->memory_stats()
+        : D3D11FramePresenterMemoryStats{};
+    result.presenter_texture_bytes = presenter_stats.total_estimated_bytes;
+    result.total_estimated_bytes += result.presenter_texture_bytes;
+
+    if (headless_output_) {
+        const auto headless_stats = headless_output_->memory_stats();
+        result.headless_output_bytes = headless_stats.estimated_bytes;
+        result.headless_width = headless_stats.width;
+        result.headless_height = headless_stats.height;
+        result.headless_buffer_count = headless_stats.buffer_count;
+        result.total_estimated_bytes += result.headless_output_bytes;
+    }
+
+    if (d3d_resources_ && d3d_resources_->overlay_texture) {
+        D3D11_TEXTURE2D_DESC desc = {};
+        d3d_resources_->overlay_texture->GetDesc(&desc);
+        result.analysis_overlay_bytes = estimate_d3d11_texture_bytes(desc);
+        result.analysis_overlay_width = static_cast<int>(desc.Width);
+        result.analysis_overlay_height = static_cast<int>(desc.Height);
+        result.total_estimated_bytes += result.analysis_overlay_bytes;
+    }
+
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks_[i]) {
+            continue;
+        }
+
+        TrackGpuMemoryStats track;
+        track.slot = static_cast<int>(i);
+        track.file_id = tracks_[i]->file_id;
+        if (tracks_[i]->track_buffer) {
+            track.buffer_count = tracks_[i]->track_buffer->total_count();
+            track.buffer_capacity = tracks_[i]->track_buffer->max_count();
+        }
+        if (tracks_[i]->decode_thread) {
+            const auto decode_stats = tracks_[i]->decode_thread->memory_stats();
+            track.hardware_enabled = decode_stats.hardware_enabled;
+            track.hardware_download_to_cpu = decode_stats.hardware_download_to_cpu;
+            track.hw_format = decode_stats.hw_format;
+            track.sw_format = decode_stats.sw_format;
+            track.hw_width = decode_stats.hw_width;
+            track.hw_height = decode_stats.hw_height;
+            track.hw_initial_pool_size = decode_stats.hw_initial_pool_size;
+            track.extra_hw_frames = decode_stats.extra_hw_frames;
+            track.decoder_frame_bytes = decode_stats.estimated_hw_frame_bytes;
+            track.decoder_pool_bytes = decode_stats.estimated_hw_pool_bytes;
+            track.exact_seek_snapshot_bytes = decode_stats.snapshot_pool.estimated_bytes;
+        }
+        if (i < presenter_stats.slots.size()) {
+            track.presenter_copy_texture_bytes =
+                presenter_stats.slots[i].render_nv12_copy_texture_bytes;
+        }
+        result.decoder_pool_bytes += track.decoder_pool_bytes;
+        result.exact_seek_snapshot_bytes += track.exact_seek_snapshot_bytes;
+        result.total_estimated_bytes +=
+            track.decoder_pool_bytes + track.exact_seek_snapshot_bytes;
+        result.tracks.push_back(track);
+    }
+
     return result;
 }
 

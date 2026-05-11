@@ -1,4 +1,5 @@
 #include "video_renderer/d3d11/frame_presenter.h"
+#include "video_renderer/d3d11/memory_estimate.h"
 #include <spdlog/spdlog.h>
 #include <utility>
 
@@ -67,6 +68,40 @@ void D3D11FramePresenter::reset_all() {
     for (size_t i = 0; i < tracks_.size(); ++i) {
         reset_track(i);
     }
+}
+
+D3D11FramePresenterMemoryStats D3D11FramePresenter::memory_stats() const {
+    D3D11FramePresenterMemoryStats result;
+    for (size_t i = 0; i < tracks_.size(); ++i) {
+        const auto& resources = tracks_[i];
+        auto& slot = result.slots[i];
+        auto add_texture = [&result](ID3D11Texture2D* texture) -> uint64_t {
+            if (!texture) {
+                return 0;
+            }
+            D3D11_TEXTURE2D_DESC desc = {};
+            texture->GetDesc(&desc);
+            const uint64_t bytes = estimate_d3d11_texture_bytes(desc);
+            result.total_estimated_bytes += bytes;
+            return bytes;
+        };
+
+        slot.software_texture_bytes = add_texture(resources.sw_texture.Get());
+        slot.software_nv12_texture_bytes = add_texture(resources.sw_nv12_texture.Get());
+        for (const auto& texture : resources.sw_planar_textures) {
+            slot.software_planar_texture_bytes += add_texture(texture.Get());
+        }
+        slot.render_nv12_copy_texture_bytes =
+            add_texture(resources.render_nv12_copy_tex.Get());
+        if (resources.render_nv12_copy_tex) {
+            D3D11_TEXTURE2D_DESC desc = {};
+            resources.render_nv12_copy_tex->GetDesc(&desc);
+            slot.render_nv12_copy_width = static_cast<int>(desc.Width);
+            slot.render_nv12_copy_height = static_cast<int>(desc.Height);
+            slot.render_nv12_copy_format = static_cast<int>(desc.Format);
+        }
+    }
+    return result;
 }
 
 bool D3D11FramePresenter::prepare_nv12_frame(size_t slot,

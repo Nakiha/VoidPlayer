@@ -17,6 +17,35 @@ constexpr int64_t kExactSeekLookbehindUs = 250000;  // Keep a small B-frame wind
 constexpr size_t kExactSeekPreviewWindowFrames = 4;
 constexpr int kRendererOwnedHwExtraFrames = 0;
 
+uint64_t estimate_av_yuv_surface_bytes(int width, int height, AVPixelFormat format) {
+    if (width <= 0 || height <= 0) {
+        return 0;
+    }
+    const uint64_t pixels = static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
+    switch (format) {
+    case AV_PIX_FMT_NV12:
+    case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUVJ420P:
+        return pixels * 3 / 2;
+    case AV_PIX_FMT_P010LE:
+    case AV_PIX_FMT_P016LE:
+    case AV_PIX_FMT_YUV420P10LE:
+        return pixels * 3;
+    case AV_PIX_FMT_YUV422P:
+    case AV_PIX_FMT_YUVJ422P:
+        return pixels * 2;
+    case AV_PIX_FMT_YUV422P10LE:
+        return pixels * 4;
+    case AV_PIX_FMT_YUV444P:
+    case AV_PIX_FMT_YUVJ444P:
+        return pixels * 3;
+    case AV_PIX_FMT_YUV444P10LE:
+        return pixels * 6;
+    default:
+        return 0;
+    }
+}
+
 size_t post_seek_preroll_target(bool hw_enabled) {
     // Hardware-decoded seek/add-track previews are more stable if we wait for
     // one extra frame before exposing the paused preview. Some GPU/driver
@@ -410,6 +439,30 @@ std::string DecodeThread::decoder_name() const {
     return oss.str();
 }
 
+DecodeMemoryStats DecodeThread::memory_stats() const {
+    DecodeMemoryStats stats;
+    stats.hardware_enabled = hw_enabled_;
+    stats.hardware_download_to_cpu = converter_.downloads_hardware_to_cpu();
+    stats.hw_format = hw_frames_format_.load(std::memory_order_relaxed);
+    stats.sw_format = hw_frames_sw_format_.load(std::memory_order_relaxed);
+    stats.hw_width = hw_frames_width_.load(std::memory_order_relaxed);
+    stats.hw_height = hw_frames_height_.load(std::memory_order_relaxed);
+    stats.hw_initial_pool_size =
+        hw_frames_initial_pool_size_.load(std::memory_order_relaxed);
+    stats.extra_hw_frames = codec_ctx_ ? codec_ctx_->extra_hw_frames : 0;
+    stats.estimated_hw_frame_bytes = estimate_av_yuv_surface_bytes(
+        stats.hw_width,
+        stats.hw_height,
+        static_cast<AVPixelFormat>(stats.sw_format));
+    if (stats.hw_initial_pool_size > 0) {
+        stats.estimated_hw_pool_bytes =
+            stats.estimated_hw_frame_bytes *
+            static_cast<uint64_t>(stats.hw_initial_pool_size);
+    }
+    stats.snapshot_pool = converter_.snapshot_pool_stats();
+    return stats;
+}
+
 void DecodeThread::stop() {
     spdlog::info("[DecodeThread] stop() begin");
     running_.store(false);
@@ -597,6 +650,11 @@ void DecodeThread::log_hw_frame_context_once(const AVFrame* frame) {
     if (!frames_ctx) {
         return;
     }
+    hw_frames_format_.store(static_cast<int>(frames_ctx->format), std::memory_order_relaxed);
+    hw_frames_sw_format_.store(static_cast<int>(frames_ctx->sw_format), std::memory_order_relaxed);
+    hw_frames_width_.store(frames_ctx->width, std::memory_order_relaxed);
+    hw_frames_height_.store(frames_ctx->height, std::memory_order_relaxed);
+    hw_frames_initial_pool_size_.store(frames_ctx->initial_pool_size, std::memory_order_relaxed);
     spdlog::info("[DecodeThread] HW frames ctx: format={}, sw_format={}, {}x{}, initial_pool_size={}, extra_hw_frames={}",
                  static_cast<int>(frames_ctx->format),
                  static_cast<int>(frames_ctx->sw_format),

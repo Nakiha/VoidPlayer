@@ -10,6 +10,15 @@
 
 namespace vr {
 
+struct D3D11HeadlessOutputMemoryStats {
+    uint64_t estimated_bytes = 0;
+    uint64_t texture_bytes = 0;
+    int width = 0;
+    int height = 0;
+    int format = 0;
+    int buffer_count = 0;
+};
+
 class D3D11HeadlessOutput {
 public:
     static constexpr int kBufferCount = 3;
@@ -36,6 +45,7 @@ public:
     bool capture_front_buffer_locked(std::vector<uint8_t>& bgra, int& width, int& height);
 
     void set_frame_callback(std::function<void()> cb);
+    D3D11HeadlessOutputMemoryStats memory_stats() const;
 
 private:
     struct SharedBuffers {

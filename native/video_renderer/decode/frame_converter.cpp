@@ -1,4 +1,5 @@
 #include "video_renderer/decode/frame_converter.h"
+#include "video_renderer/d3d11/memory_estimate.h"
 #include "video_renderer/renderer_limits.h"
 #include <spdlog/spdlog.h>
 #include <algorithm>
@@ -743,6 +744,8 @@ struct D3D11SnapshotPool {
                 Microsoft::WRL::ComPtr<ID3D11Texture2D> texture = *it;
                 available.erase(it);
                 ++reused_count;
+                ++checked_out_count;
+                last_desc = desc;
                 return texture;
             }
         }
@@ -757,6 +760,8 @@ struct D3D11SnapshotPool {
 
         std::lock_guard<std::mutex> lock(mutex);
         ++created_count;
+        ++checked_out_count;
+        last_desc = desc;
         return texture;
     }
 
@@ -765,17 +770,38 @@ struct D3D11SnapshotPool {
             return;
         }
         std::lock_guard<std::mutex> lock(mutex);
+        if (checked_out_count > 0) {
+            --checked_out_count;
+        }
         if (available.size() >= kMaxAvailable) {
             return;
         }
         available.push_back(std::move(texture));
     }
 
+    D3D11SnapshotPoolStats stats() const {
+        std::lock_guard<std::mutex> lock(mutex);
+        D3D11SnapshotPoolStats result;
+        result.created_count = created_count;
+        result.reused_count = reused_count;
+        result.checked_out_count = checked_out_count;
+        result.available_count = available.size();
+        result.width = static_cast<int>(last_desc.Width);
+        result.height = static_cast<int>(last_desc.Height);
+        result.format = static_cast<int>(last_desc.Format);
+        result.texture_bytes = estimate_d3d11_texture_bytes(last_desc);
+        result.estimated_bytes = result.texture_bytes *
+            static_cast<uint64_t>(checked_out_count + available.size());
+        return result;
+    }
+
     static constexpr size_t kMaxAvailable = 1;
-    std::mutex mutex;
+    mutable std::mutex mutex;
     std::vector<Microsoft::WRL::ComPtr<ID3D11Texture2D>> available;
     uint64_t created_count = 0;
     uint64_t reused_count = 0;
+    size_t checked_out_count = 0;
+    D3D11_TEXTURE2D_DESC last_desc = {};
 };
 
 D3D11SnapshotFrameRef::~D3D11SnapshotFrameRef() {
@@ -788,6 +814,10 @@ FrameConverter::FrameConverter()
 {}
 
 FrameConverter::~FrameConverter() = default;
+
+D3D11SnapshotPoolStats FrameConverter::snapshot_pool_stats() const {
+    return d3d11_snapshot_pool_ ? d3d11_snapshot_pool_->stats() : D3D11SnapshotPoolStats{};
+}
 
 bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat src_format) {
     width_ = src_width;

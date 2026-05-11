@@ -15,6 +15,7 @@ class ResourceUsageMetric {
   final int heapReservedBytes;
   final int heapCount;
   final int dedicatedGpuBytes;
+  final Map<String, dynamic> gpuBreakdown;
 
   const ResourceUsageMetric({
     required this.rssBytes,
@@ -24,6 +25,7 @@ class ResourceUsageMetric {
     required this.heapReservedBytes,
     required this.heapCount,
     required this.dedicatedGpuBytes,
+    required this.gpuBreakdown,
   });
 }
 

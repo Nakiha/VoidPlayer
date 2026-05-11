@@ -201,7 +201,8 @@ class TestRunner {
           'heapCommit=${AutomationProbe.formatMb(metric.heapCommittedBytes)}MB '
           'heapReserve=${AutomationProbe.formatMb(metric.heapReservedBytes)}MB '
           'heaps=${metric.heapCount} '
-          'dedicatedGpu=${AutomationProbe.formatMb(metric.dedicatedGpuBytes)}MB',
+          'dedicatedGpu=${AutomationProbe.formatMb(metric.dedicatedGpuBytes)}MB '
+          '${AutomationProbe.formatGpuBreakdown(metric.gpuBreakdown, dedicatedGpuBytes: metric.dedicatedGpuBytes)}',
         );
       case StoreNativeSeekCount(:final nameId):
         final count = _probe.currentNativeSeekCount();

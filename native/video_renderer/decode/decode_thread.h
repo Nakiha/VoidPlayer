@@ -43,6 +43,23 @@ struct DecodePerfCounters {
     }
 };
 
+struct DecodeMemoryStats {
+    bool hardware_enabled = false;
+    bool hardware_download_to_cpu = false;
+    int hw_format = AV_PIX_FMT_NONE;
+    int sw_format = AV_PIX_FMT_NONE;
+    int hw_width = 0;
+    int hw_height = 0;
+    int hw_initial_pool_size = 0;
+    int extra_hw_frames = 0;
+    uint64_t estimated_hw_frame_bytes = 0;
+    uint64_t estimated_hw_pool_bytes = 0;
+    size_t exact_seek_reorder_count = 0;
+    size_t exact_seek_pending_count = 0;
+    size_t exact_seek_stable_frame_count = 0;
+    D3D11SnapshotPoolStats snapshot_pool;
+};
+
 class DecodeThread {
 public:
     DecodeThread(PacketQueue& input_queue, TrackBuffer& output_buffer,
@@ -77,6 +94,7 @@ public:
 
     /// Read-only access to performance counters.
     const DecodePerfCounters& perf_counters() const { return perf_; }
+    DecodeMemoryStats memory_stats() const;
 
     bool is_hardware_decode_enabled() const { return hw_enabled_; }
     AVCodecID codec_id() const { return codec_params_ ? codec_params_->codec_id : AV_CODEC_ID_NONE; }
@@ -174,6 +192,11 @@ private:
     AVPixelFormat hw_pix_fmt_ = AV_PIX_FMT_NONE;  // Per-instance, avoids global shared state
     std::recursive_mutex* device_mutex_ = nullptr;  // Shared D3D11 mutex for hw decode serialization
     bool hw_frames_ctx_logged_ = false;
+    std::atomic<int> hw_frames_format_{AV_PIX_FMT_NONE};
+    std::atomic<int> hw_frames_sw_format_{AV_PIX_FMT_NONE};
+    std::atomic<int> hw_frames_width_{0};
+    std::atomic<int> hw_frames_height_{0};
+    std::atomic<int> hw_frames_initial_pool_size_{0};
 
     // Seek coordination — protected by seek_mutex_ to avoid torn reads
     // between seek_target / seek_type / seek_pending

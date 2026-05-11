@@ -17,6 +17,21 @@ struct D3D11PreparedFrame {
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> owned_rgba_srv;
 };
 
+struct D3D11FramePresenterSlotMemoryStats {
+    uint64_t software_texture_bytes = 0;
+    uint64_t software_nv12_texture_bytes = 0;
+    uint64_t software_planar_texture_bytes = 0;
+    uint64_t render_nv12_copy_texture_bytes = 0;
+    int render_nv12_copy_width = 0;
+    int render_nv12_copy_height = 0;
+    int render_nv12_copy_format = 0;
+};
+
+struct D3D11FramePresenterMemoryStats {
+    std::array<D3D11FramePresenterSlotMemoryStats, 4> slots{};
+    uint64_t total_estimated_bytes = 0;
+};
+
 class D3D11FramePresenter {
 public:
     static constexpr size_t kMaxSlots = 4;
@@ -36,6 +51,7 @@ public:
     void reset_track(size_t slot);
     void move_track(size_t from, size_t to);
     void reset_all();
+    D3D11FramePresenterMemoryStats memory_stats() const;
 
 private:
     struct TrackResources {

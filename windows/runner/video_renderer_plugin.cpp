@@ -153,6 +153,66 @@ flutter::EncodableMap make_track_map(const vr::TrackInfo& info) {
     return map;
 }
 
+flutter::EncodableMap make_gpu_breakdown_map(const vr::RendererGpuMemoryStats& stats) {
+    flutter::EncodableMap map;
+    map[flutter::EncodableValue("totalEstimatedBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.total_estimated_bytes));
+    map[flutter::EncodableValue("decoderPoolBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.decoder_pool_bytes));
+    map[flutter::EncodableValue("exactSeekSnapshotBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.exact_seek_snapshot_bytes));
+    map[flutter::EncodableValue("presenterTextureBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.presenter_texture_bytes));
+    map[flutter::EncodableValue("headlessOutputBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.headless_output_bytes));
+    map[flutter::EncodableValue("analysisOverlayBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.analysis_overlay_bytes));
+    map[flutter::EncodableValue("headlessWidth")] =
+        flutter::EncodableValue(stats.headless_width);
+    map[flutter::EncodableValue("headlessHeight")] =
+        flutter::EncodableValue(stats.headless_height);
+    map[flutter::EncodableValue("headlessBufferCount")] =
+        flutter::EncodableValue(stats.headless_buffer_count);
+    map[flutter::EncodableValue("analysisOverlayWidth")] =
+        flutter::EncodableValue(stats.analysis_overlay_width);
+    map[flutter::EncodableValue("analysisOverlayHeight")] =
+        flutter::EncodableValue(stats.analysis_overlay_height);
+
+    flutter::EncodableList tracks;
+    for (const auto& track : stats.tracks) {
+        flutter::EncodableMap tm;
+        tm[flutter::EncodableValue("slot")] = flutter::EncodableValue(track.slot);
+        tm[flutter::EncodableValue("fileId")] = flutter::EncodableValue(track.file_id);
+        tm[flutter::EncodableValue("hardwareEnabled")] =
+            flutter::EncodableValue(track.hardware_enabled);
+        tm[flutter::EncodableValue("hardwareDownloadToCpu")] =
+            flutter::EncodableValue(track.hardware_download_to_cpu);
+        tm[flutter::EncodableValue("hwFormat")] = flutter::EncodableValue(track.hw_format);
+        tm[flutter::EncodableValue("swFormat")] = flutter::EncodableValue(track.sw_format);
+        tm[flutter::EncodableValue("hwWidth")] = flutter::EncodableValue(track.hw_width);
+        tm[flutter::EncodableValue("hwHeight")] = flutter::EncodableValue(track.hw_height);
+        tm[flutter::EncodableValue("hwInitialPoolSize")] =
+            flutter::EncodableValue(track.hw_initial_pool_size);
+        tm[flutter::EncodableValue("extraHwFrames")] =
+            flutter::EncodableValue(track.extra_hw_frames);
+        tm[flutter::EncodableValue("decoderFrameBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.decoder_frame_bytes));
+        tm[flutter::EncodableValue("decoderPoolBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.decoder_pool_bytes));
+        tm[flutter::EncodableValue("exactSeekSnapshotBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_snapshot_bytes));
+        tm[flutter::EncodableValue("presenterCopyTextureBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.presenter_copy_texture_bytes));
+        tm[flutter::EncodableValue("bufferCount")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.buffer_count));
+        tm[flutter::EncodableValue("bufferCapacity")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.buffer_capacity));
+        tracks.push_back(flutter::EncodableValue(tm));
+    }
+    map[flutter::EncodableValue("tracks")] = flutter::EncodableValue(tracks);
+    return map;
+}
+
 std::string format_ffmpeg_version(unsigned version) {
     return std::to_string((version >> 16) & 0xFF) + "." +
            std::to_string((version >> 8) & 0xFF) + "." +
@@ -911,6 +971,8 @@ void VideoRendererPlugin::HandleMethodCall(
                 tracks_list.push_back(flutter::EncodableValue(tm));
             }
             map[flutter::EncodableValue("tracks")] = flutter::EncodableValue(tracks_list);
+            map[flutter::EncodableValue("gpuBreakdown")] =
+                flutter::EncodableValue(make_gpu_breakdown_map(diag_player->gpu_memory_stats()));
         }
         result->Success(flutter::EncodableValue(map));
     } else if (method == "pickFiles") {

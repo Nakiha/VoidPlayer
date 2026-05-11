@@ -405,7 +405,8 @@ class AutomationAssertExecutor {
           'heapCommit=${heapCommitDeltaMb.toStringAsFixed(1)}MB '
           'heapReserve=${heapReserveDeltaMb.toStringAsFixed(1)}MB '
           'heaps=${actual.heapCount} '
-          'dedicatedGpu=${gpuDeltaMb.toStringAsFixed(1)}MB',
+          'dedicatedGpu=${gpuDeltaMb.toStringAsFixed(1)}MB '
+          '${AutomationProbe.formatGpuBreakdown(actual.gpuBreakdown, dedicatedGpuBytes: actual.dedicatedGpuBytes)}',
         );
         if (rssDeltaMb > maxRssDeltaMb || gpuDeltaMb > maxDedicatedGpuDeltaMb) {
           throw AssertionError(

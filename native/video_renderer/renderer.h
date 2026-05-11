@@ -19,6 +19,7 @@
 #include <vector>
 #include <mutex>  // IWYU pragma: keep
 #include <functional>
+#include <cstdint>
 
 namespace vr {
 
@@ -80,6 +81,40 @@ struct D3D11BackendMetrics {
     uint64_t shared_texture_resize_count = 0;
     uint64_t device_lost_count = 0;
     uint64_t texture_sharing_failure_count = 0;
+};
+
+struct TrackGpuMemoryStats {
+    int slot = -1;
+    int file_id = 0;
+    bool hardware_enabled = false;
+    bool hardware_download_to_cpu = false;
+    int hw_format = 0;
+    int sw_format = 0;
+    int hw_width = 0;
+    int hw_height = 0;
+    int hw_initial_pool_size = 0;
+    int extra_hw_frames = 0;
+    uint64_t decoder_frame_bytes = 0;
+    uint64_t decoder_pool_bytes = 0;
+    uint64_t exact_seek_snapshot_bytes = 0;
+    uint64_t presenter_copy_texture_bytes = 0;
+    size_t buffer_count = 0;
+    size_t buffer_capacity = 0;
+};
+
+struct RendererGpuMemoryStats {
+    uint64_t total_estimated_bytes = 0;
+    uint64_t decoder_pool_bytes = 0;
+    uint64_t exact_seek_snapshot_bytes = 0;
+    uint64_t presenter_texture_bytes = 0;
+    uint64_t headless_output_bytes = 0;
+    uint64_t analysis_overlay_bytes = 0;
+    int headless_width = 0;
+    int headless_height = 0;
+    int headless_buffer_count = 0;
+    int analysis_overlay_width = 0;
+    int analysis_overlay_height = 0;
+    std::vector<TrackGpuMemoryStats> tracks;
 };
 
 /// Layout state — all visual layout parameters in one struct.
@@ -194,6 +229,7 @@ public:
     /// Get per-track performance stats snapshot (thread-safe).
     std::vector<TrackPerfStats> track_perf_stats() const;
     D3D11BackendMetrics d3d_backend_metrics() const;
+    RendererGpuMemoryStats gpu_memory_stats() const;
 
     bool d3d_device_lost() const;
     long d3d_device_removed_reason() const;
@@ -393,7 +429,7 @@ private:
     // Both the render thread and FFmpeg's D3D11VA decode threads must acquire
     // this lock before using the immediate context. Without it, concurrent
     // access causes driver-level deadlocks.
-    std::recursive_mutex device_mutex_;
+    mutable std::recursive_mutex device_mutex_;
 
     int target_width_ = 1920;
     int target_height_ = 1080;

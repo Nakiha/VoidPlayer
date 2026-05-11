@@ -1,4 +1,5 @@
 #include "video_renderer/d3d11/headless_output.h"
+#include "video_renderer/d3d11/memory_estimate.h"
 #include <spdlog/spdlog.h>
 #include <algorithm>
 #include <chrono>
@@ -193,6 +194,28 @@ bool D3D11HeadlessOutput::capture_front_buffer_locked(std::vector<uint8_t>& bgra
 void D3D11HeadlessOutput::set_frame_callback(std::function<void()> cb) {
     std::lock_guard<std::mutex> lock(texture_mutex_);
     frame_callback_ = std::move(cb);
+}
+
+D3D11HeadlessOutputMemoryStats D3D11HeadlessOutput::memory_stats() const {
+    std::lock_guard<std::mutex> lock(texture_mutex_);
+    D3D11HeadlessOutputMemoryStats stats;
+    for (int i = 0; i < kBufferCount; ++i) {
+        if (!buffers_.textures[i]) {
+            continue;
+        }
+        D3D11_TEXTURE2D_DESC desc = {};
+        buffers_.textures[i]->GetDesc(&desc);
+        const uint64_t bytes = estimate_d3d11_texture_bytes(desc);
+        stats.estimated_bytes += bytes;
+        ++stats.buffer_count;
+        if (stats.texture_bytes == 0) {
+            stats.texture_bytes = bytes;
+            stats.width = static_cast<int>(desc.Width);
+            stats.height = static_cast<int>(desc.Height);
+            stats.format = static_cast<int>(desc.Format);
+        }
+    }
+    return stats;
 }
 
 bool D3D11HeadlessOutput::create_shared_buffers(

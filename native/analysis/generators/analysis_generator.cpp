@@ -261,6 +261,45 @@ static uint64_t source_file_size(const std::string& path) {
     return size < 0 ? 0 : static_cast<uint64_t>(size);
 }
 
+static bool probe_video_geometry(const std::string& video_path,
+                                 uint32_t& width,
+                                 uint32_t& height) {
+    width = 0;
+    height = 0;
+
+    FfmpegOpenTimeout timeout;
+    AVFormatContext* fmt_ctx =
+        alloc_format_context_with_timeout(timeout, std::chrono::seconds(10));
+    if (!fmt_ctx) return false;
+
+    if (avformat_open_input(&fmt_ctx, video_path.c_str(), nullptr, nullptr) < 0) {
+        if (fmt_ctx) avformat_close_input(&fmt_ctx);
+        return false;
+    }
+    if (avformat_find_stream_info(fmt_ctx, nullptr) < 0) {
+        avformat_close_input(&fmt_ctx);
+        return false;
+    }
+
+    const int stream_index =
+        av_find_best_stream(fmt_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+    if (stream_index < 0 ||
+        stream_index >= static_cast<int>(fmt_ctx->nb_streams) ||
+        !fmt_ctx->streams[stream_index] ||
+        !fmt_ctx->streams[stream_index]->codecpar) {
+        avformat_close_input(&fmt_ctx);
+        return false;
+    }
+
+    const AVCodecParameters* params = fmt_ctx->streams[stream_index]->codecpar;
+    if (params->width > 0 && params->height > 0) {
+        width = static_cast<uint32_t>(params->width);
+        height = static_cast<uint32_t>(params->height);
+    }
+    avformat_close_input(&fmt_ctx);
+    return width > 0 && height > 0;
+}
+
 static uint8_t infer_slice_type(VbiCodec codec, uint8_t nal_type, uint8_t flags) {
     if ((flags & VBI_FLAG_IS_KEYFRAME) != 0) {
         return 2;
@@ -298,6 +337,9 @@ static bool build_vac2_base_from_indices(const std::string& video_path,
     out.time_base_den = vbt.header().time_base_den;
     out.source_size = source_file_size(video_path);
     out.content_revision = 1;
+    if (!probe_video_geometry(video_path, out.width, out.height)) {
+        spdlog::warn("[AnalysisGen] failed to probe VAC2 base dimensions: {}", video_path);
+    }
     out.metadata_json =
         "{\"schema\":\"VAC2\",\"producer\":\"AnalysisGenerator::generate_vac2_base\","
         "\"source\":\"vbi-vbt-indexer\"}";

@@ -1,5 +1,7 @@
 #include "analysis/cache/overlay_chunk.h"
 
+#include <spdlog/spdlog.h>
+
 #include <cstring>
 #include <limits>
 
@@ -55,6 +57,12 @@ bool build_overlay_vachunk_from_vbs4(const Vbs4File& vbs4,
     for (uint32_t frame = start_frame; frame <= end_frame; ++frame) {
         const auto frame_data = vbs4.read_frame(static_cast<int>(frame));
         if (frame_data.summary.num_cus > 0 && frame_data.cus.empty()) {
+            spdlog::error("[VACHUNK] failed to read VBS4 overlay frame: frame={}, num_cus={}, "
+                          "cu_index_entry={}, coded_order={}",
+                          frame,
+                          frame_data.summary.num_cus,
+                          frame_data.summary.cu_index_entry,
+                          frame_data.summary.coded_order);
             out = {};
             return false;
         }

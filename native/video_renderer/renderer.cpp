@@ -2099,15 +2099,23 @@ void Renderer::draw_frame(const PresentDecision& decision) {
 
             for (int i = 0; i < 4; ++i) {
                 float video_aspect = cb.video_aspect[i];
-                if (video_aspect <= 0.0f) video_aspect = slot_aspect;
+                if (!std::isfinite(video_aspect) || video_aspect <= 0.0f) {
+                    video_aspect = slot_aspect;
+                }
 
                 // Aspect-fit scale
                 float fit_scale = (video_aspect > slot_aspect)
                     ? slot_aspect / video_aspect : 1.0f;
                 fit_scale *= cb.track_scale[i];
+                if (!std::isfinite(fit_scale) || fit_scale <= 0.0f) {
+                    fit_scale = 1.0f;
+                }
 
                 // Apply zoom
                 float display_scale = fit_scale * snap.zoom_ratio;
+                if (!std::isfinite(display_scale) || display_scale <= 0.0f) {
+                    display_scale = 1.0f;
+                }
 
                 // Display size in slot UV space
                 float ds_x = (slot_aspect > 0.0f)
@@ -2312,7 +2320,9 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
         if (constants.mode == LAYOUT_SPLIT_SCREEN) {
             if (constants.order[0] == slot) display_index = 0;
             if (constants.order[1] == slot) display_index = 1;
-            if (display_index < 0) return;
+            if (display_index < 0) {
+                return;
+            }
         } else {
             for (int i = 0; i < visible_count && i < 4; ++i) {
                 if (constants.order[i] == slot) {
@@ -2320,7 +2330,9 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
                     break;
                 }
             }
-            if (display_index < 0) return;
+            if (display_index < 0) {
+                return;
+            }
         }
 
         float region_x0 = 0.0f;
@@ -2344,7 +2356,9 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
         const float display_size_y = constants.inv_display_size_y[slot] > 1e-5f
             ? 1.0f / constants.inv_display_size_y[slot]
             : 0.0f;
-        if (display_size_x <= 0.0f || display_size_y <= 0.0f) return;
+        if (display_size_x <= 0.0f || display_size_y <= 0.0f) {
+            return;
+        }
 
         const float video_w = static_cast<float>(track_analysis.video_width());
         const float video_h = static_cast<float>(track_analysis.video_height());

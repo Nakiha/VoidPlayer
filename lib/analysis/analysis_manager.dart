@@ -777,6 +777,13 @@ class AnalysisManager extends ChangeNotifier
         );
         return false;
       }
+      if (summary.videoWidth <= 0 || summary.videoHeight <= 0) {
+        log.info(
+          '[Analysis] cache stale for $hash: '
+          'invalid video dimensions ${summary.videoWidth}x${summary.videoHeight}',
+        );
+        return false;
+      }
 
       final codec = analysisCodecFromValue(summary.codec);
       if (_requiresFrameData(codec) && summary.frameCount <= 0) {

@@ -1,6 +1,7 @@
 #include "analysis/parsers/vbs4_parser.h"
 #include "common/win_utf8.h"
 
+#include <spdlog/spdlog.h>
 #include <zstd.h>
 
 #include <algorithm>
@@ -477,7 +478,12 @@ bool Vbs4File::decode_block(uint32_t block_index, std::vector<VbsCuRecord>& out)
         out = cache_.records;
         return true;
     }
-    if (block_index >= block_index_.size()) return false;
+    if (block_index >= block_index_.size()) {
+        spdlog::error("[VBS4] decode_block: block index {} outside block table size {}",
+                      block_index,
+                      block_index_.size());
+        return false;
+    }
 
     const auto& idx = block_index_[block_index];
     std::vector<uint8_t> stored;
@@ -485,6 +491,11 @@ bool Vbs4File::decode_block(uint32_t block_index, std::vector<VbsCuRecord>& out)
                     base_offset_ + cpay_offset_ + idx.payload_offset,
                     idx.payload_size,
                     stored)) {
+        spdlog::error("[VBS4] decode_block: failed to read payload for block {}, "
+                      "offset={}, size={}",
+                      block_index,
+                      idx.payload_offset,
+                      idx.payload_size);
         return false;
     }
 
@@ -495,15 +506,39 @@ bool Vbs4File::decode_block(uint32_t block_index, std::vector<VbsCuRecord>& out)
                                               decoded.size(),
                                               stored.data(),
                                               stored.size());
-        if (ZSTD_isError(result) || result != decoded.size()) return false;
+        if (ZSTD_isError(result) || result != decoded.size()) {
+            spdlog::error("[VBS4] decode_block: zstd decode failed for block {}, "
+                          "stored={}, decoded={}, result={}, error={}",
+                          block_index,
+                          stored.size(),
+                          decoded.size(),
+                          result,
+                          ZSTD_isError(result) ? ZSTD_getErrorName(result) : "size mismatch");
+            return false;
+        }
     } else if (idx.compression == VBS4_COMPRESSION_NONE) {
-        if (stored.size() != static_cast<size_t>(idx.decoded_size)) return false;
+        if (stored.size() != static_cast<size_t>(idx.decoded_size)) {
+            spdlog::error("[VBS4] decode_block: uncompressed size mismatch for block {}, "
+                          "stored={}, decoded={}",
+                          block_index,
+                          stored.size(),
+                          idx.decoded_size);
+            return false;
+        }
         decoded = std::move(stored);
     } else {
+        spdlog::error("[VBS4] decode_block: unsupported compression {} for block {}",
+                      idx.compression,
+                      block_index);
         return false;
     }
 
-    if (decoded.size() < sizeof(Vbs4DecodedBlockHeader)) return false;
+    if (decoded.size() < sizeof(Vbs4DecodedBlockHeader)) {
+        spdlog::error("[VBS4] decode_block: decoded block {} too small: {}",
+                      block_index,
+                      decoded.size());
+        return false;
+    }
     Vbs4DecodedBlockHeader block_header{};
     std::memcpy(&block_header, decoded.data(), sizeof(block_header));
     if (block_header.magic[0] != 'B' ||
@@ -519,6 +554,21 @@ bool Vbs4File::decode_block(uint32_t block_index, std::vector<VbsCuRecord>& out)
         !range_fits(block_header.header_size,
                     static_cast<uint64_t>(block_header.stream_count) * block_header.stream_entry_size,
                     decoded.size())) {
+        spdlog::error("[VBS4] decode_block: invalid decoded block header for block {}, "
+                      "magic={}{}{}{}, header_size={}, stream_entry_size={}, "
+                      "stream_count={}, record_count={} expected={}, frame_count={}, decoded={}",
+                      block_index,
+                      block_header.magic[0],
+                      block_header.magic[1],
+                      block_header.magic[2],
+                      block_header.magic[3],
+                      block_header.header_size,
+                      block_header.stream_entry_size,
+                      block_header.stream_count,
+                      block_header.record_count,
+                      idx.record_count,
+                      block_header.frame_count,
+                      decoded.size());
         return false;
     }
 
@@ -535,13 +585,28 @@ bool Vbs4File::decode_block(uint32_t block_index, std::vector<VbsCuRecord>& out)
                      frame_prefix) ||
         frame_prefix.empty() ||
         frame_prefix.back() != block_header.record_count) {
+        spdlog::error("[VBS4] decode_block: invalid frame prefix for block {}, "
+                      "frame_count={}, record_count={}, prefix_count={}, last={}",
+                      block_index,
+                      block_header.frame_count,
+                      block_header.record_count,
+                      frame_prefix.size(),
+                      frame_prefix.empty() ? 0 : frame_prefix.back());
         return false;
     }
 
     const bool ok = header_.codec == static_cast<uint16_t>(VbiCodec::H264)
         ? decode_h264_records(streams, block_header.record_count, header_.width, out)
         : decode_hevc_records(streams, block_header.record_count, out);
-    if (!ok) return false;
+    if (!ok) {
+        spdlog::error("[VBS4] decode_block: failed to decode CU streams for block {}, "
+                      "codec={}, record_count={}, stream_count={}",
+                      block_index,
+                      header_.codec,
+                      block_header.record_count,
+                      block_header.stream_count);
+        return false;
+    }
 
     cache_.block_index = block_index;
     cache_.records = out;
@@ -554,18 +619,44 @@ Vbs4FrameData Vbs4File::read_frame(int frame_idx) const {
 
     result.summary = summaries_[frame_idx];
     const auto& frame_idx_entry = frame_index_[result.summary.cu_index_entry];
-    if (frame_idx_entry.block_index >= block_index_.size()) return result;
+    if (frame_idx_entry.block_index >= block_index_.size()) {
+        spdlog::error("[VBS4] read_frame: frame {} references block {} outside block table {}",
+                      frame_idx,
+                      frame_idx_entry.block_index,
+                      block_index_.size());
+        return result;
+    }
     const auto& block_idx_entry = block_index_[frame_idx_entry.block_index];
-    if (frame_idx_entry.first_record < block_idx_entry.first_record) return result;
-    const uint32_t local_first = frame_idx_entry.first_record - block_idx_entry.first_record;
+    const uint32_t local_first = frame_idx_entry.first_record >= block_idx_entry.first_record
+        ? frame_idx_entry.first_record - block_idx_entry.first_record
+        : frame_idx_entry.first_record;
     if (local_first > block_idx_entry.record_count ||
         frame_idx_entry.record_count > block_idx_entry.record_count - local_first) {
+        spdlog::error("[VBS4] read_frame: frame {} record range outside block {}, "
+                      "frame_first={}, frame_records={}, block_first={}, block_records={}, "
+                      "local_first={}",
+                      frame_idx,
+                      frame_idx_entry.block_index,
+                      frame_idx_entry.first_record,
+                      frame_idx_entry.record_count,
+                      block_idx_entry.first_record,
+                      block_idx_entry.record_count,
+                      local_first);
         return result;
     }
 
     std::vector<VbsCuRecord> block_records;
     if (!decode_block(frame_idx_entry.block_index, block_records)) return result;
-    if (local_first + frame_idx_entry.record_count > block_records.size()) return result;
+    if (local_first + frame_idx_entry.record_count > block_records.size()) {
+        spdlog::error("[VBS4] read_frame: frame {} decoded block {} has too few records, "
+                      "decoded={}, local_first={}, needed={}",
+                      frame_idx,
+                      frame_idx_entry.block_index,
+                      block_records.size(),
+                      local_first,
+                      frame_idx_entry.record_count);
+        return result;
+    }
 
     result.cus.insert(result.cus.end(),
                       block_records.begin() + local_first,

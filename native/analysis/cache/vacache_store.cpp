@@ -6,6 +6,7 @@
 #include <sstream>
 #include <system_error>
 #include <utility>
+#include <spdlog/spdlog.h>
 
 namespace vr::analysis {
 namespace {
@@ -145,7 +146,15 @@ bool VacacheStore::open_base(Vac2BaseFile& out) const {
 bool VacacheStore::write_chunk_atomic(const VachunkKey& key,
                                       VachunkData data,
                                       uint64_t max_output_bytes) const {
-    if (!ensure_layout() || !create_dir_utf8(chunks_dir(key.kind))) return false;
+    if (!ensure_layout()) {
+        spdlog::error("[VACache] failed to create cache layout: {}", hash_dir());
+        return false;
+    }
+    const std::string chunk_dir = chunks_dir(key.kind);
+    if (!create_dir_utf8(chunk_dir)) {
+        spdlog::error("[VACache] failed to create chunk directory: {}", chunk_dir);
+        return false;
+    }
 
     data.kind = key.kind;
     data.codec = key.codec;
@@ -164,10 +173,17 @@ bool VacacheStore::write_chunk_atomic(const VachunkKey& key,
         win_utf8::path_from_utf8(tmp_dir()) /
         win_utf8::path_from_utf8(tmp_name));
     if (!write_vachunk_file(tmp_path, data, max_output_bytes)) {
+        spdlog::error("[VACache] failed to write VACHUNK temp file: {}", tmp_path);
         win_utf8::delete_file_utf8(tmp_path);
         return false;
     }
-    return replace_file_utf8(tmp_path, chunk_path(key));
+    const std::string final_path = chunk_path(key);
+    if (!replace_file_utf8(tmp_path, final_path)) {
+        spdlog::error("[VACache] failed to publish VACHUNK: {} -> {}",
+                      tmp_path, final_path);
+        return false;
+    }
+    return true;
 }
 
 bool VacacheStore::open_chunk(const VachunkKey& key, VachunkFile& out) const {

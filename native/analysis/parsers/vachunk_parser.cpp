@@ -5,6 +5,7 @@
 #include <fstream>
 #include <limits>
 #include <vector>
+#include <spdlog/spdlog.h>
 
 namespace vr::analysis {
 namespace {
@@ -177,7 +178,20 @@ bool VachunkFile::read_section(const char type[4], std::vector<uint8_t>& out) co
 bool write_vachunk_file(const std::string& path,
                         const VachunkData& data,
                         uint64_t max_output_bytes) {
-    if (!validate_write_data(data)) return false;
+    if (!validate_write_data(data)) {
+        spdlog::error("[VACHUNK] invalid write data: path={}, sections={}, kind={}, codec={}, frames={}-{} packets={}-{} units={}-{}",
+                      path,
+                      data.sections.size(),
+                      static_cast<int>(data.kind),
+                      static_cast<int>(data.codec),
+                      data.start_frame,
+                      data.end_frame,
+                      data.start_packet,
+                      data.end_packet,
+                      data.start_unit,
+                      data.end_unit);
+        return false;
+    }
 
     const uint64_t table_offset = sizeof(VachunkHeader);
     const uint64_t table_size =
@@ -188,7 +202,11 @@ bool write_vachunk_file(const std::string& path,
         if (section.bytes.size() > UINT64_MAX - expected_size) return false;
         expected_size += section.bytes.size();
     }
-    if (max_output_bytes > 0 && expected_size > max_output_bytes) return false;
+    if (max_output_bytes > 0 && expected_size > max_output_bytes) {
+        spdlog::error("[VACHUNK] output exceeds byte limit: path={}, expected={}, max={}",
+                      path, expected_size, max_output_bytes);
+        return false;
+    }
 
     VachunkHeader header{};
     header.magic[0] = 'V';
@@ -231,7 +249,10 @@ bool write_vachunk_file(const std::string& path,
     }
 
     std::ofstream out(win_utf8::path_from_utf8(path), std::ios::binary | std::ios::trunc);
-    if (!out) return false;
+    if (!out) {
+        spdlog::error("[VACHUNK] failed to open output: {}", path);
+        return false;
+    }
     out.write(reinterpret_cast<const char*>(&header), sizeof(header));
     out.write(reinterpret_cast<const char*>(section_entries.data()),
               static_cast<std::streamsize>(section_entries.size() * sizeof(VachunkSectionEntry)));
@@ -242,7 +263,11 @@ bool write_vachunk_file(const std::string& path,
         }
     }
     out.close();
-    return !out.fail();
+    if (out.fail()) {
+        spdlog::error("[VACHUNK] failed while writing output: {}", path);
+        return false;
+    }
+    return true;
 }
 
 } // namespace vr::analysis

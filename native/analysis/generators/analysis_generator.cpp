@@ -300,7 +300,7 @@ static bool build_vac2_base_from_indices(const std::string& video_path,
     out.content_revision = 1;
     out.metadata_json =
         "{\"schema\":\"VAC2\",\"producer\":\"AnalysisGenerator::generate_vac2_base\","
-        "\"source\":\"legacy-vbi-vbt-bridge\"}";
+        "\"source\":\"vbi-vbt-indexer\"}";
 
     out.packets.resize(static_cast<size_t>(packet_count));
     out.frames.resize(static_cast<size_t>(packet_count));

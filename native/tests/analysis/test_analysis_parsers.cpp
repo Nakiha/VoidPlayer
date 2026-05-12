@@ -2,6 +2,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include "analysis/parsers/analysis_container.h"
 #include "analysis/parsers/vac2_parser.h"
+#include "analysis/parsers/vachunk_parser.h"
 #include "analysis/parsers/vbt_parser.h"
 #include "analysis/parsers/vbi_parser.h"
 #include "analysis/parsers/vbs4_parser.h"
@@ -450,6 +451,104 @@ TEST_CASE("VAC2: writer respects output budget", "[analysis][vac2]") {
     data.frame_summaries = {summary};
 
     REQUIRE_FALSE(vr::analysis::write_vac2_base_container(path.string(), data, 16));
+    std::filesystem::remove(path);
+}
+
+// ===========================================================================
+// VACHUNK Derived Chunk Tests
+// ===========================================================================
+
+TEST_CASE("VACHUNK: write and read exact frame summary chunk", "[analysis][vachunk]") {
+    const auto path = std::filesystem::temp_directory_path() /
+        "voidplayer_test_summary.vck";
+
+    Vac2FrameSummaryEntry summary0{};
+    summary0.poc = 4;
+    summary0.coded_order = 2;
+    summary0.first_vcl_unit = 10;
+    summary0.flags = VAC2_FRAME_SUMMARY_FLAG_EXACT_QP |
+                     VAC2_FRAME_SUMMARY_FLAG_EXACT_REFS;
+    summary0.temporal_id = 1;
+    summary0.slice_type = 1;
+    summary0.nal_type = 1;
+    summary0.qp_kind = VAC2_QP_KIND_EXACT;
+    summary0.qp_avg = 31;
+    summary0.qp_min = 28;
+    summary0.qp_max = 34;
+    summary0.num_ref_l0 = 1;
+    summary0.ref_pocs_l0[0] = 0;
+
+    Vac2FrameSummaryEntry summary1 = summary0;
+    summary1.poc = 6;
+    summary1.coded_order = 3;
+    summary1.first_vcl_unit = 11;
+    summary1.qp_avg = 29;
+
+    std::vector<Vac2FrameSummaryEntry> summaries{summary0, summary1};
+
+    vr::analysis::VachunkData data;
+    data.kind = VachunkKind::FrameSummaryExact;
+    data.codec = VbiCodec::VVC;
+    data.feature_flags = VACHUNK_FEATURE_QP | VACHUNK_FEATURE_REF_INDEXES;
+    data.base_content_revision = 42;
+    data.generator_revision = 7;
+    data.start_frame = 2;
+    data.end_frame = 3;
+    data.start_packet = 2;
+    data.end_packet = 3;
+    data.start_unit = 10;
+    data.end_unit = 11;
+    data.sections.push_back(vr::analysis::make_vachunk_string_section(
+        "META", R"({"schema":"vachunk-test"})"));
+    data.sections.push_back(vr::analysis::make_vachunk_record_section(
+        "FSUM", summaries));
+
+    REQUIRE(vr::analysis::write_vachunk_file(path.string(), data));
+
+    vr::analysis::VachunkFile chunk;
+    REQUIRE(chunk.open(path.string()));
+    REQUIRE(chunk.header().magic[0] == 'V');
+    REQUIRE(chunk.header().magic[1] == 'C');
+    REQUIRE(chunk.header().magic[2] == 'K');
+    REQUIRE(chunk.header().magic[3] == '1');
+    REQUIRE(chunk.header().kind == static_cast<uint16_t>(VachunkKind::FrameSummaryExact));
+    REQUIRE(chunk.header().codec == static_cast<uint16_t>(VbiCodec::VVC));
+    REQUIRE(chunk.header().feature_flags & VACHUNK_FEATURE_QP);
+    REQUIRE(chunk.header().base_content_revision == 42);
+    REQUIRE(chunk.header().start_frame == 2);
+    REQUIRE(chunk.header().end_frame == 3);
+    REQUIRE(chunk.section("META") != nullptr);
+    REQUIRE(chunk.section("FSUM") != nullptr);
+    REQUIRE(chunk.section("FSUM")->entry_size == sizeof(Vac2FrameSummaryEntry));
+    REQUIRE(chunk.section("FSUM")->entry_count == 2);
+
+    std::vector<uint8_t> raw;
+    REQUIRE(chunk.read_section("FSUM", raw));
+    REQUIRE(raw.size() == summaries.size() * sizeof(Vac2FrameSummaryEntry));
+    const auto* decoded = reinterpret_cast<const Vac2FrameSummaryEntry*>(raw.data());
+    REQUIRE(decoded[0].qp_kind == VAC2_QP_KIND_EXACT);
+    REQUIRE(decoded[0].qp_avg == 31);
+    REQUIRE(decoded[1].poc == 6);
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("VACHUNK: writer rejects invalid range and tiny budget", "[analysis][vachunk]") {
+    const auto path = std::filesystem::temp_directory_path() /
+        "voidplayer_test_invalid.vck";
+
+    vr::analysis::VachunkData data;
+    data.kind = VachunkKind::Overlay;
+    data.codec = VbiCodec::HEVC;
+    data.start_frame = 10;
+    data.end_frame = 9;
+    data.sections.push_back(vr::analysis::make_vachunk_string_section("META", "{}"));
+
+    REQUIRE_FALSE(vr::analysis::write_vachunk_file(path.string(), data));
+
+    data.start_frame = 10;
+    data.end_frame = 10;
+    REQUIRE_FALSE(vr::analysis::write_vachunk_file(path.string(), data, 8));
     std::filesystem::remove(path);
 }
 

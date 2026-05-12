@@ -440,4 +440,70 @@ inline constexpr uint8_t VAC2_QP_KIND_BASE = 2;
 inline constexpr uint8_t VAC2_QP_KIND_ESTIMATED = 3;
 inline constexpr uint8_t VAC2_QP_KIND_EXACT = 4;
 
+// ===========================================================================
+// VACHUNK — progressive analysis derived chunk
+// ===========================================================================
+
+inline constexpr uint16_t kVachunkVersionMajor = 1;
+inline constexpr uint16_t kVachunkVersionMinor = 0;
+
+enum class VachunkKind : uint16_t {
+    Unknown = 0,
+    NaluDetail = 1,
+    FrameSummaryExact = 2,
+    Overlay = 3,
+    HitTest = 4,
+    Export = 5,
+};
+
+struct VachunkHeader {
+    char     magic[4];       // "VCK1"
+    uint16_t version_major;
+    uint16_t version_minor;
+    uint16_t header_size;
+    uint16_t section_entry_size;
+    uint32_t section_count;
+    uint16_t kind;           // VachunkKind
+    uint16_t codec;          // VbiCodec
+    uint64_t feature_flags;
+    uint64_t base_content_revision;
+    uint64_t generator_revision;
+    uint16_t track_index;
+    uint16_t reserved0;
+    uint32_t start_frame;    // UINT32_MAX when not frame-scoped
+    uint32_t end_frame;      // inclusive, UINT32_MAX when not frame-scoped
+    uint32_t start_packet;
+    uint32_t end_packet;
+    uint32_t start_unit;
+    uint32_t end_unit;
+    uint64_t section_table_offset;
+    uint64_t file_size;
+    uint64_t checksum;
+    uint64_t reserved1[4];
+};
+static_assert(sizeof(VachunkHeader) == 128);
+
+struct VachunkSectionEntry {
+    char     type[4];
+    uint32_t flags;
+    uint64_t offset;
+    uint64_t size;
+    uint32_t entry_size;     // 0 for variable payloads
+    uint32_t entry_count;    // 0 for variable payloads
+    uint64_t decoded_size;   // decoded size if compressed, else size
+    uint64_t checksum;
+    uint64_t reserved;
+};
+static_assert(sizeof(VachunkSectionEntry) == 56);
+
+inline constexpr uint64_t VACHUNK_FEATURE_CU_GEOMETRY = 1ull << 0;
+inline constexpr uint64_t VACHUNK_FEATURE_QP = 1ull << 1;
+inline constexpr uint64_t VACHUNK_FEATURE_PRED_MODE = 1ull << 2;
+inline constexpr uint64_t VACHUNK_FEATURE_MOTION_VECTORS = 1ull << 3;
+inline constexpr uint64_t VACHUNK_FEATURE_REF_INDEXES = 1ull << 4;
+inline constexpr uint64_t VACHUNK_FEATURE_PU_GEOMETRY = 1ull << 5;
+inline constexpr uint64_t VACHUNK_FEATURE_TU_GEOMETRY = 1ull << 6;
+inline constexpr uint64_t VACHUNK_FEATURE_CODEC_TOOLS = 1ull << 7;
+inline constexpr uint64_t VACHUNK_FEATURE_BIT_COST = 1ull << 8;
+
 #pragma pack(pop)

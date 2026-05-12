@@ -21,9 +21,9 @@ struct NakiAnalysisStructHeader {
 
 struct NakiAnalysisSummary {
     int32_t loaded;             // 0 or 1
-    int32_t frame_count;        // VBS4 when present
-    int32_t packet_count;       // VBT
-    int32_t nalu_count;         // VBI
+    int32_t frame_count;        // VAC2 frame table
+    int32_t packet_count;       // VAC2 packet table
+    int32_t nalu_count;         // VAC2 bitstream-unit table
     int32_t video_width;
     int32_t video_height;
     int32_t time_base_num;
@@ -33,7 +33,7 @@ struct NakiAnalysisSummary {
     int32_t _reserved[6];
 };
 
-// Merged frame info: VBS4 frame summary + VBT packet data
+// Merged frame info from VAC2 frame summary + packet timing data.
 struct NakiFrameInfo {
     int32_t poc;
     int32_t temporal_id;
@@ -147,36 +147,6 @@ int32_t naki_analysis_sizeof_frame_bucket_v2();
 
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_sizeof_overlay_state_v2();
-
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_load(const char* analysis_path);
-
-extern "C" __declspec(dllexport)
-void naki_analysis_unload();
-
-extern "C" __declspec(dllexport)
-const NakiAnalysisSummary* naki_analysis_get_summary();
-
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_get_frames(NakiFrameInfo* out, int32_t max_count);
-
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_get_frames_range(int32_t start, NakiFrameInfo* out, int32_t max_count);
-
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_get_nalus(NakiNaluInfo* out, int32_t max_count);
-
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_get_nalus_range(int32_t start, NakiNaluInfo* out, int32_t max_count);
-
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_frame_to_nalu(int32_t frame_index);
-
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_nalu_to_frame(int32_t nalu_index);
-
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_get_frame_buckets(int32_t start, int32_t bucket_size, NakiFrameBucket* out, int32_t max_count);
 
 extern "C" __declspec(dllexport)
 void naki_analysis_set_overlay(const NakiOverlayState* state);

@@ -124,12 +124,9 @@ const char* safe_cstr(const char* value) {
 }
 
 struct AnalysisHandleState {
-    vr::analysis::AnalysisManager manager;
     std::unique_ptr<vr::analysis::Vac2BaseFile> vac2_base;
     std::mutex mutex;
     bool closed = false;
-
-    bool is_vac2() const { return static_cast<bool>(vac2_base); }
 };
 
 std::mutex g_handle_registry_mutex;
@@ -232,16 +229,11 @@ bool is_vac2_base_path(const char* path) {
 }
 
 bool open_analysis_handle_path(AnalysisHandleState& state, const char* analysis_path) {
-    if (is_vac2_base_path(analysis_path)) {
-        auto base = std::make_unique<vr::analysis::Vac2BaseFile>();
-        if (!base->open(analysis_path)) return false;
-        state.vac2_base = std::move(base);
-        state.manager.unload();
-        return true;
-    }
-
-    state.vac2_base.reset();
-    return state.manager.load(analysis_path);
+    if (!is_vac2_base_path(analysis_path)) return false;
+    auto base = std::make_unique<vr::analysis::Vac2BaseFile>();
+    if (!base->open(analysis_path)) return false;
+    state.vac2_base = std::move(base);
+    return true;
 }
 
 int32_t clamp_count_to_i32(size_t count) {
@@ -250,7 +242,6 @@ int32_t clamp_count_to_i32(size_t count) {
         : static_cast<int32_t>(count);
 }
 
-int effective_frame_count(vr::analysis::AnalysisManager& mgr);
 bool fill_vac2_frame_at(const vr::analysis::Vac2BaseFile& base,
                         int32_t source_index,
                         NakiFrameInfo& f);
@@ -267,118 +258,6 @@ int32_t fill_vac2_frame_buckets(const vr::analysis::Vac2BaseFile& base,
                                 int32_t bucket_size,
                                 NakiFrameBucket* out,
                                 int32_t max_count);
-
-void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSummary& s) {
-    std::memset(&s, 0, sizeof(s));
-    s.current_frame_idx = -1;
-    if (!mgr.is_loaded()) return;
-
-    s.loaded = 1;
-    const auto& base = mgr.vac2_base();
-    const auto& h = base.header();
-    s.frame_count = clamp_count_to_i32(base.frames().size());
-    s.packet_count = clamp_count_to_i32(base.packets().size());
-    s.nalu_count = clamp_count_to_i32(base.units().size());
-    s.video_width = static_cast<int32_t>(std::min<uint32_t>(
-        h.width, static_cast<uint32_t>(std::numeric_limits<int32_t>::max())));
-    s.video_height = static_cast<int32_t>(std::min<uint32_t>(
-        h.height, static_cast<uint32_t>(std::numeric_limits<int32_t>::max())));
-    s.time_base_num = h.time_base_num;
-    s.time_base_den = h.time_base_den;
-    s.codec = static_cast<int32_t>(h.codec);
-
-    if (auto cb = g_get_current_pts_us.load(std::memory_order_acquire)) {
-        int64_t pts_us = cb();
-        s.current_frame_idx = mgr.current_frame_idx(pts_us);
-    }
-}
-
-int effective_frame_count(vr::analysis::AnalysisManager& mgr) {
-    return mgr.is_loaded() ? mgr.frame_count() : 0;
-}
-
-int32_t fill_analysis_frames_range(vr::analysis::AnalysisManager& mgr,
-                                   int32_t start,
-                                   NakiFrameInfo* out,
-                                   int32_t max_count);
-
-bool fill_analysis_frame_at(vr::analysis::AnalysisManager& mgr,
-                            int32_t source_index,
-                            NakiFrameInfo& f);
-
-int32_t fill_analysis_frames(vr::analysis::AnalysisManager& mgr,
-                             NakiFrameInfo* out,
-                             int32_t max_count) {
-    return fill_analysis_frames_range(mgr, 0, out, max_count);
-}
-
-int32_t fill_analysis_frames_range(vr::analysis::AnalysisManager& mgr,
-                                   int32_t start,
-                                   NakiFrameInfo* out,
-                                   int32_t max_count) {
-    if (!out || max_count <= 0) return 0;
-    if (!mgr.is_loaded()) return 0;
-    if (start < 0) return 0;
-
-    int total_count = effective_frame_count(mgr);
-    if (start >= total_count) return 0;
-    int count = std::min(max_count, total_count - start);
-
-    for (int i = 0; i < count; i++) {
-        if (!fill_analysis_frame_at(mgr, start + i, out[i])) {
-            return i;
-        }
-    }
-    return count;
-}
-
-bool fill_analysis_frame_at(vr::analysis::AnalysisManager& mgr,
-                            int32_t source_index,
-                            NakiFrameInfo& f) {
-    if (!mgr.is_loaded()) return false;
-    return fill_vac2_frame_at(mgr.vac2_base(), source_index, f);
-}
-
-int32_t fill_analysis_nalus_range(vr::analysis::AnalysisManager& mgr,
-                                  int32_t start,
-                                  NakiNaluInfo* out,
-                                  int32_t max_count);
-
-int32_t fill_analysis_nalus(vr::analysis::AnalysisManager& mgr,
-                            NakiNaluInfo* out,
-                            int32_t max_count) {
-    return fill_analysis_nalus_range(mgr, 0, out, max_count);
-}
-
-int32_t fill_analysis_nalus_range(vr::analysis::AnalysisManager& mgr,
-                                  int32_t start,
-                                  NakiNaluInfo* out,
-                                  int32_t max_count) {
-    if (!out || max_count <= 0) return 0;
-    if (!mgr.is_loaded()) return 0;
-    if (start < 0) return 0;
-
-    return fill_vac2_nalus_range(mgr.vac2_base(), start, out, max_count);
-}
-
-int32_t frame_to_nalu(vr::analysis::AnalysisManager& mgr, int32_t frame_index) {
-    if (!mgr.is_loaded()) return -1;
-    return vac2_frame_to_nalu(mgr.vac2_base(), frame_index);
-}
-
-int32_t nalu_to_frame(vr::analysis::AnalysisManager& mgr, int32_t nalu_index) {
-    if (!mgr.is_loaded()) return -1;
-    return vac2_nalu_to_frame(mgr.vac2_base(), nalu_index);
-}
-
-int32_t fill_analysis_frame_buckets(vr::analysis::AnalysisManager& mgr,
-                                    int32_t start,
-                                    int32_t bucket_size,
-                                    NakiFrameBucket* out,
-                                    int32_t max_count) {
-    if (!mgr.is_loaded()) return 0;
-    return fill_vac2_frame_buckets(mgr.vac2_base(), start, bucket_size, out, max_count);
-}
 
 int32_t current_vac2_frame_idx(const vr::analysis::Vac2BaseFile& base) {
     const auto& frames = base.frames();
@@ -584,91 +463,6 @@ int32_t fill_vac2_frame_buckets(const vr::analysis::Vac2BaseFile& base,
 } // namespace
 
 extern "C" __declspec(dllexport)
-int32_t naki_analysis_load(const char* analysis_path) {
-    if (!analysis_path || analysis_path[0] == '\0') {
-        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT, "analysis_path is required");
-        return 0;
-    }
-    static int load_count = 0;
-    std::lock_guard<std::mutex> lock(g_analysis_mutex);
-    LogStackUsage(fmt::format("analysis_load #{}", ++load_count).c_str());
-    auto& mgr = vr::analysis::AnalysisManager::instance();
-    if (!mgr.load(analysis_path)) {
-        set_analysis_error(NAKI_ANALYSIS_ERR_OPEN_FAILED, "failed to load analysis container");
-        return 0;
-    }
-    set_analysis_ok();
-    return 1;
-}
-
-extern "C" __declspec(dllexport)
-void naki_analysis_unload() {
-    static int unload_count = 0;
-    std::lock_guard<std::mutex> lock(g_analysis_mutex);
-    LogStackUsage(fmt::format("analysis_unload #{}", ++unload_count).c_str());
-    vr::analysis::AnalysisManager::instance().unload();
-    set_analysis_ok();
-}
-
-extern "C" __declspec(dllexport)
-const NakiAnalysisSummary* naki_analysis_get_summary() {
-    thread_local NakiAnalysisSummary s{};
-    std::lock_guard<std::mutex> lock(g_analysis_mutex);
-    auto& mgr = vr::analysis::AnalysisManager::instance();
-    fill_analysis_summary(mgr, s);
-    return &s;
-}
-
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_get_frames(NakiFrameInfo* out, int32_t max_count) {
-    std::lock_guard<std::mutex> lock(g_analysis_mutex);
-    auto& mgr = vr::analysis::AnalysisManager::instance();
-    return fill_analysis_frames(mgr, out, max_count);
-}
-
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_get_frames_range(int32_t start, NakiFrameInfo* out, int32_t max_count) {
-    std::lock_guard<std::mutex> lock(g_analysis_mutex);
-    auto& mgr = vr::analysis::AnalysisManager::instance();
-    return fill_analysis_frames_range(mgr, start, out, max_count);
-}
-
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_get_nalus(NakiNaluInfo* out, int32_t max_count) {
-    std::lock_guard<std::mutex> lock(g_analysis_mutex);
-    auto& mgr = vr::analysis::AnalysisManager::instance();
-    return fill_analysis_nalus(mgr, out, max_count);
-}
-
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_get_nalus_range(int32_t start, NakiNaluInfo* out, int32_t max_count) {
-    std::lock_guard<std::mutex> lock(g_analysis_mutex);
-    auto& mgr = vr::analysis::AnalysisManager::instance();
-    return fill_analysis_nalus_range(mgr, start, out, max_count);
-}
-
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_frame_to_nalu(int32_t frame_index) {
-    std::lock_guard<std::mutex> lock(g_analysis_mutex);
-    auto& mgr = vr::analysis::AnalysisManager::instance();
-    return frame_to_nalu(mgr, frame_index);
-}
-
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_nalu_to_frame(int32_t nalu_index) {
-    std::lock_guard<std::mutex> lock(g_analysis_mutex);
-    auto& mgr = vr::analysis::AnalysisManager::instance();
-    return nalu_to_frame(mgr, nalu_index);
-}
-
-extern "C" __declspec(dllexport)
-int32_t naki_analysis_get_frame_buckets(int32_t start, int32_t bucket_size, NakiFrameBucket* out, int32_t max_count) {
-    std::lock_guard<std::mutex> lock(g_analysis_mutex);
-    auto& mgr = vr::analysis::AnalysisManager::instance();
-    return fill_analysis_frame_buckets(mgr, start, bucket_size, out, max_count);
-}
-
-extern "C" __declspec(dllexport)
 void naki_analysis_set_overlay(const NakiOverlayState* state) {
     if (!state) return;
     std::lock_guard<std::mutex> lock(g_analysis_mutex);
@@ -726,7 +520,6 @@ NakiAnalysisHandle naki_analysis_open(const char* analysis_path) {
         if (!handle) {
             if (state->vac2_base) state->vac2_base->close();
             state->vac2_base.reset();
-            state->manager.unload();
             set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL, "failed to register analysis handle");
             return nullptr;
         }
@@ -756,7 +549,6 @@ void naki_analysis_close(NakiAnalysisHandle handle) {
     state->closed = true;
     if (state->vac2_base) state->vac2_base->close();
     state->vac2_base.reset();
-    state->manager.unload();
     set_analysis_ok();
 }
 
@@ -775,11 +567,7 @@ const NakiAnalysisSummary* naki_analysis_handle_get_summary(NakiAnalysisHandle h
         std::memset(&summary, 0, sizeof(summary));
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
     } else {
-        if (state->is_vac2()) {
-            fill_vac2_summary(*state->vac2_base, summary);
-        } else {
-            fill_analysis_summary(state->manager, summary);
-        }
+        fill_vac2_summary(*state->vac2_base, summary);
         set_analysis_ok();
     }
     return &summary;
@@ -798,9 +586,7 @@ int32_t naki_analysis_handle_get_frames(NakiAnalysisHandle handle, NakiFrameInfo
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return 0;
     }
-    auto count = state->is_vac2()
-        ? fill_vac2_frames_range(*state->vac2_base, 0, out, max_count)
-        : fill_analysis_frames(state->manager, out, max_count);
+    auto count = fill_vac2_frames_range(*state->vac2_base, 0, out, max_count);
     set_analysis_ok();
     return count;
 }
@@ -818,9 +604,7 @@ int32_t naki_analysis_handle_get_frames_range(NakiAnalysisHandle handle, int32_t
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return 0;
     }
-    auto count = state->is_vac2()
-        ? fill_vac2_frames_range(*state->vac2_base, start, out, max_count)
-        : fill_analysis_frames_range(state->manager, start, out, max_count);
+    auto count = fill_vac2_frames_range(*state->vac2_base, start, out, max_count);
     set_analysis_ok();
     return count;
 }
@@ -838,9 +622,7 @@ int32_t naki_analysis_handle_get_nalus(NakiAnalysisHandle handle, NakiNaluInfo* 
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return 0;
     }
-    auto count = state->is_vac2()
-        ? fill_vac2_nalus_range(*state->vac2_base, 0, out, max_count)
-        : fill_analysis_nalus(state->manager, out, max_count);
+    auto count = fill_vac2_nalus_range(*state->vac2_base, 0, out, max_count);
     set_analysis_ok();
     return count;
 }
@@ -858,9 +640,7 @@ int32_t naki_analysis_handle_get_nalus_range(NakiAnalysisHandle handle, int32_t 
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return 0;
     }
-    auto count = state->is_vac2()
-        ? fill_vac2_nalus_range(*state->vac2_base, start, out, max_count)
-        : fill_analysis_nalus_range(state->manager, start, out, max_count);
+    auto count = fill_vac2_nalus_range(*state->vac2_base, start, out, max_count);
     set_analysis_ok();
     return count;
 }
@@ -878,9 +658,7 @@ int32_t naki_analysis_handle_frame_to_nalu(NakiAnalysisHandle handle, int32_t fr
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return -1;
     }
-    auto index = state->is_vac2()
-        ? vac2_frame_to_nalu(*state->vac2_base, frame_index)
-        : frame_to_nalu(state->manager, frame_index);
+    auto index = vac2_frame_to_nalu(*state->vac2_base, frame_index);
     set_analysis_ok();
     return index;
 }
@@ -898,9 +676,7 @@ int32_t naki_analysis_handle_nalu_to_frame(NakiAnalysisHandle handle, int32_t na
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return -1;
     }
-    auto index = state->is_vac2()
-        ? vac2_nalu_to_frame(*state->vac2_base, nalu_index)
-        : nalu_to_frame(state->manager, nalu_index);
+    auto index = vac2_nalu_to_frame(*state->vac2_base, nalu_index);
     set_analysis_ok();
     return index;
 }
@@ -918,9 +694,8 @@ int32_t naki_analysis_handle_get_frame_buckets(NakiAnalysisHandle handle, int32_
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return 0;
     }
-    auto count = state->is_vac2()
-        ? fill_vac2_frame_buckets(*state->vac2_base, start, bucket_size, out, max_count)
-        : fill_analysis_frame_buckets(state->manager, start, bucket_size, out, max_count);
+    auto count = fill_vac2_frame_buckets(
+        *state->vac2_base, start, bucket_size, out, max_count);
     set_analysis_ok();
     return count;
 }

@@ -137,31 +137,6 @@ final class NakiOverlayState extends Struct {
 // FFI function typedefs
 // ===========================================================================
 
-typedef _LoadNative = Int32 Function(Pointer<Utf8>);
-typedef _LoadDart = int Function(Pointer<Utf8>);
-
-typedef _UnloadNative = Void Function();
-typedef _UnloadDart = void Function();
-
-typedef _GetSummaryNative = Pointer<NakiAnalysisSummary> Function();
-typedef _GetSummaryDart = Pointer<NakiAnalysisSummary> Function();
-
-typedef _GetFramesRangeNative =
-    Int32 Function(Int32, Pointer<NakiFrameInfo>, Int32);
-typedef _GetFramesRangeDart = int Function(int, Pointer<NakiFrameInfo>, int);
-
-typedef _GetNalusRangeNative =
-    Int32 Function(Int32, Pointer<NakiNaluInfo>, Int32);
-typedef _GetNalusRangeDart = int Function(int, Pointer<NakiNaluInfo>, int);
-
-typedef _IndexMapNative = Int32 Function(Int32);
-typedef _IndexMapDart = int Function(int);
-
-typedef _GetFrameBucketsNative =
-    Int32 Function(Int32, Int32, Pointer<NakiFrameBucket>, Int32);
-typedef _GetFrameBucketsDart =
-    int Function(int, int, Pointer<NakiFrameBucket>, int);
-
 typedef _SetOverlayNative = Void Function(Pointer<NakiOverlayState>);
 typedef _SetOverlayDart = void Function(Pointer<NakiOverlayState>);
 
@@ -265,31 +240,6 @@ class _AnalysisNativeBindings {
       'naki_analysis_sizeof_overlay_state',
     );
 
-    load = library.lookupFunction<_LoadNative, _LoadDart>('naki_analysis_load');
-    unload = library.lookupFunction<_UnloadNative, _UnloadDart>(
-      'naki_analysis_unload',
-    );
-    getSummary = library.lookupFunction<_GetSummaryNative, _GetSummaryDart>(
-      'naki_analysis_get_summary',
-    );
-    getFramesRange = library
-        .lookupFunction<_GetFramesRangeNative, _GetFramesRangeDart>(
-          'naki_analysis_get_frames_range',
-        );
-    getNalusRange = library
-        .lookupFunction<_GetNalusRangeNative, _GetNalusRangeDart>(
-          'naki_analysis_get_nalus_range',
-        );
-    frameToNalu = library.lookupFunction<_IndexMapNative, _IndexMapDart>(
-      'naki_analysis_frame_to_nalu',
-    );
-    naluToFrame = library.lookupFunction<_IndexMapNative, _IndexMapDart>(
-      'naki_analysis_nalu_to_frame',
-    );
-    getFrameBuckets = library
-        .lookupFunction<_GetFrameBucketsNative, _GetFrameBucketsDart>(
-          'naki_analysis_get_frame_buckets',
-        );
     setOverlay = library.lookupFunction<_SetOverlayNative, _SetOverlayDart>(
       'naki_analysis_set_overlay',
     );
@@ -388,14 +338,6 @@ class _AnalysisNativeBindings {
   late final _AbiIntDart sizeofFrameBucket;
   late final _AbiIntDart sizeofOverlayState;
 
-  late final _LoadDart load;
-  late final _UnloadDart unload;
-  late final _GetSummaryDart getSummary;
-  late final _GetFramesRangeDart getFramesRange;
-  late final _GetNalusRangeDart getNalusRange;
-  late final _IndexMapDart frameToNalu;
-  late final _IndexMapDart naluToFrame;
-  late final _GetFrameBucketsDart getFrameBuckets;
   late final _SetOverlayDart setOverlay;
   late final _SetOverlayTrackDart setOverlayTrack;
   late final _ClearOverlayTracksDart clearOverlayTracks;
@@ -767,114 +709,6 @@ class AnalysisFfi {
 
   static AnalysisFfiUnavailable? get unavailableReason =>
       _AnalysisNativeBindings.unavailableReason;
-
-  /// Load an analysis container from a specific path.
-  /// Returns true on success.
-  static bool load(String analysisPath) {
-    final analysis = analysisPath.toNativeUtf8(allocator: calloc);
-    try {
-      return _native.load(analysis) != 0;
-    } finally {
-      calloc.free(analysis);
-    }
-  }
-
-  /// Unload analysis data.
-  static void unload() => _native.unload();
-
-  /// Get analysis summary snapshot.
-  static AnalysisSummary get summary {
-    final ptr = _native.getSummary();
-    if (ptr == nullptr) return _emptySummary;
-    return AnalysisSummary.fromNative(ptr.ref);
-  }
-
-  /// Read all frame info into a Dart list.
-  /// Returns plain Dart objects (safe after the FFI buffer is freed).
-  static List<FrameInfo> get frames {
-    final s = summary;
-    return framesRange(0, s.loaded == 0 ? 0 : s.frameCount);
-  }
-
-  /// Read a bounded frame range into Dart objects.
-  static List<FrameInfo> framesRange(int start, int count) {
-    final s = summary;
-    if (s.loaded == 0 || s.frameCount == 0) return [];
-    if (start < 0 || count <= 0 || start >= s.frameCount) return [];
-    final safeCount = count.clamp(0, s.frameCount - start).toInt();
-    if (safeCount <= 0) return [];
-    final ptr = calloc<NakiFrameInfo>(safeCount);
-    try {
-      final actual = _native
-          .getFramesRange(start, ptr, safeCount)
-          .clamp(0, safeCount)
-          .toInt();
-      return List.generate(actual, (i) => _frameInfoAt(ptr, i));
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  /// Read all NALU info into a Dart list.
-  /// Returns plain Dart objects (safe after the FFI buffer is freed).
-  static List<NaluInfo> get nalus {
-    final s = summary;
-    return nalusRange(0, s.loaded == 0 ? 0 : s.naluCount);
-  }
-
-  /// Read a bounded NALU range into Dart objects.
-  static List<NaluInfo> nalusRange(int start, int count) {
-    final s = summary;
-    if (s.loaded == 0 || s.naluCount == 0) return [];
-    if (start < 0 || count <= 0 || start >= s.naluCount) return [];
-    final safeCount = count.clamp(0, s.naluCount - start).toInt();
-    if (safeCount <= 0) return [];
-    final ptr = calloc<NakiNaluInfo>(safeCount);
-    try {
-      final actual = _native
-          .getNalusRange(start, ptr, safeCount)
-          .clamp(0, safeCount)
-          .toInt();
-      return List.generate(actual, (i) => _naluInfoAt(ptr, i));
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  static int frameToNalu(int frameIndex) {
-    if (frameIndex < 0) return -1;
-    return _native.frameToNalu(frameIndex);
-  }
-
-  static int naluToFrame(int naluIndex) {
-    if (naluIndex < 0) return -1;
-    return _native.naluToFrame(naluIndex);
-  }
-
-  static List<FrameBucket> frameBuckets({
-    required int start,
-    required int bucketSize,
-    required int maxCount,
-  }) {
-    final s = summary;
-    if (s.loaded == 0 || s.frameCount == 0) return [];
-    if (start < 0 ||
-        bucketSize <= 0 ||
-        maxCount <= 0 ||
-        start >= s.frameCount) {
-      return [];
-    }
-    final ptr = calloc<NakiFrameBucket>(maxCount);
-    try {
-      final actual = _native
-          .getFrameBuckets(start, bucketSize, ptr, maxCount)
-          .clamp(0, maxCount)
-          .toInt();
-      return List.generate(actual, (i) => _frameBucketAt(ptr, i));
-    } finally {
-      calloc.free(ptr);
-    }
-  }
 
   /// Set overlay visibility flags.
   static void setOverlay({

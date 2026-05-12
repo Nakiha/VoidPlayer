@@ -36,7 +36,7 @@ class DefaultAnalysisNativeService implements AnalysisNativeService {
   }
 
   @override
-  void unload() => AnalysisFfi.unload();
+  void unload() {}
 
   @override
   AnalysisSession? openSession(String analysisPath) =>

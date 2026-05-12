@@ -1,5 +1,6 @@
 #include "analysis_ffi.h"
 #include "analysis/analysis_manager.h"
+#include "analysis/cache/overlay_chunk.h"
 #include "analysis/cache/vacache_store.h"
 #include "analysis/generators/bitstream_indexer.h"
 #include "analysis/generators/analysis_generator.h"
@@ -2249,5 +2250,137 @@ int32_t naki_analysis_generate_vac2_base(const char* video_path,
 
     set_analysis_ok();
     spdlog::info("[Analysis] generate_vac2_base succeeded");
+    return 1;
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path,
+                                                  const char* hash,
+                                                  const char* cache_root,
+                                                  int32_t start_frame,
+                                                  int32_t end_frame,
+                                                  int64_t max_cache_bytes) {
+    std::lock_guard<std::mutex> lock(g_analysis_generate_mutex);
+    if (!video_path || video_path[0] == '\0' || !hash || hash[0] == '\0' ||
+        !cache_root || cache_root[0] == '\0' ||
+        start_frame < 0 || end_frame < start_frame) {
+        spdlog::error("[Analysis] generate_vac2_overlay_chunk: invalid arguments");
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "video_path, hash, cache_root, and a valid frame range are required");
+        return 0;
+    }
+
+    vr::analysis::VacacheStore store(cache_root, hash);
+    if (!store.ensure_layout()) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_OPEN_FAILED,
+                           "failed to create VAC2 cache layout");
+        return 0;
+    }
+
+    vr::analysis::Vac2BaseFile base;
+    if (!store.open_base(base)) {
+        spdlog::error("[Analysis] generate_vac2_overlay_chunk: base.vac is missing or invalid");
+        set_analysis_error(NAKI_ANALYSIS_ERR_OPEN_FAILED,
+                           "VAC2 base cache must exist before overlay chunks");
+        return 0;
+    }
+    if (static_cast<uint32_t>(end_frame) >= base.frames().size()) {
+        spdlog::error("[Analysis] generate_vac2_overlay_chunk: frame range {}-{} outside base frame count {}",
+                      start_frame, end_frame, base.frames().size());
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "overlay frame range exceeds VAC2 base frame count");
+        return 0;
+    }
+
+    const std::string exe_dir = get_exe_dir();
+    const std::string data_dir = cache_root;
+    const std::string logs_dir =
+        vr::win_utf8::path_to_utf8(vr::win_utf8::path_from_utf8(data_dir).parent_path() / L"logs");
+    const std::string staging_path = vr::win_utf8::path_to_utf8(
+        vr::win_utf8::path_from_utf8(store.tmp_dir()) /
+        vr::win_utf8::path_from_utf8(
+            "overlay." + std::to_string(GetCurrentProcessId()) + "." +
+            std::to_string(GetTickCount64())));
+    ScopedStagingDir staging(staging_path);
+    if (!vr::win_utf8::create_directory_utf8(staging.path())) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_OPEN_FAILED,
+                           "failed to create overlay chunk staging directory");
+        return 0;
+    }
+
+    const NativeCacheBudget budget =
+        compute_native_cache_budget(data_dir, hash, max_cache_bytes);
+    if (budget.limited && budget.available_for_current_hash == 0) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                           "cache limit leaves no room for overlay chunk generation");
+        return 0;
+    }
+
+    const VbiCodec source_codec = detect_analysis_codec(video_path);
+    if (source_codec != static_cast<VbiCodec>(base.header().codec)) {
+        spdlog::warn("[Analysis] generate_vac2_overlay_chunk: detected codec {} differs from base codec {}",
+                     static_cast<int>(source_codec), base.header().codec);
+    }
+
+    const std::string vbs4_tmp = staging.path() + "\\" + std::string(hash) + ".overlay.tmp.vbs4";
+    bool vbs4_generated = false;
+    if (source_codec == VbiCodec::VVC) {
+        vbs4_generated = generate_vvc_vbs4(
+            exe_dir, data_dir, staging.path(), logs_dir, video_path, hash, vbs4_tmp, budget);
+    } else if (ffmpeg_analysis_codec_arg(source_codec)) {
+        vbs4_generated = generate_ffmpeg_vbs4(
+            exe_dir, data_dir, staging.path(), logs_dir, video_path, hash,
+            source_codec, vbs4_tmp, budget);
+    }
+    if (!vbs4_generated || !vr::win_utf8::file_exists_utf8(vbs4_tmp)) {
+        spdlog::error("[Analysis] generate_vac2_overlay_chunk: deep analyzer failed");
+        vr::win_utf8::delete_file_utf8(vbs4_tmp);
+        set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                           "failed to generate deep overlay analysis");
+        return 0;
+    }
+
+    vr::analysis::Vbs4File vbs4;
+    if (!vbs4.open(vbs4_tmp)) {
+        vr::win_utf8::delete_file_utf8(vbs4_tmp);
+        set_analysis_error(NAKI_ANALYSIS_ERR_OPEN_FAILED,
+                           "failed to open generated overlay analysis");
+        return 0;
+    }
+
+    vr::analysis::VachunkData chunk_data;
+    if (!vr::analysis::build_overlay_vachunk_from_vbs4(
+            vbs4,
+            static_cast<uint32_t>(start_frame),
+            static_cast<uint32_t>(end_frame),
+            chunk_data)) {
+        vr::win_utf8::delete_file_utf8(vbs4_tmp);
+        set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                           "failed to build overlay VACHUNK");
+        return 0;
+    }
+    vbs4.close();
+    vr::win_utf8::delete_file_utf8(vbs4_tmp);
+
+    vr::analysis::VachunkKey key;
+    key.kind = VachunkKind::Overlay;
+    key.codec = static_cast<VbiCodec>(base.header().codec);
+    key.feature_flags = chunk_data.feature_flags;
+    key.base_content_revision = base.header().content_revision;
+    key.generator_revision = 1;
+    key.start_frame = static_cast<uint32_t>(start_frame);
+    key.end_frame = static_cast<uint32_t>(end_frame);
+
+    const uint64_t max_output_bytes =
+        max_cache_bytes > 0 ? static_cast<uint64_t>(max_cache_bytes) : 0;
+    if (!store.write_chunk_atomic(key, std::move(chunk_data), max_output_bytes)) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                           "failed to publish overlay VACHUNK");
+        return 0;
+    }
+
+    set_analysis_ok();
+    spdlog::info("[Analysis] generate_vac2_overlay_chunk succeeded: hash={}, frames={}-{}",
+                 hash, start_frame, end_frame);
     return 1;
 }

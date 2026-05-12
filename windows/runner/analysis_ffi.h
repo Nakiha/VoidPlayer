@@ -238,3 +238,14 @@ int32_t naki_analysis_generate_vac2_base(const char* video_path,
                                          const char* hash,
                                          const char* cache_root,
                                          int64_t max_cache_bytes);
+
+/// Generate an overlay VACHUNK for an inclusive frame range.
+/// Writes to <cache_root>/<hash>/chunks/overlay/*.vck.
+/// Returns 1 on success, 0 on failure.
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path,
+                                                  const char* hash,
+                                                  const char* cache_root,
+                                                  int32_t start_frame,
+                                                  int32_t end_frame,
+                                                  int64_t max_cache_bytes);

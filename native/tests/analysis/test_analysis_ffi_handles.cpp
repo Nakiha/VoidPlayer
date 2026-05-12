@@ -252,6 +252,33 @@ TEST_CASE("analysis FFI generates VAC2 base cache layout",
     fs::remove_all(cache_root);
 }
 
+TEST_CASE("analysis FFI rejects overlay chunk generation without VAC2 base",
+          "[analysis][ffi][vac2][vachunk]") {
+    namespace fs = std::filesystem;
+    const std::string video_path =
+        std::string(VIDEO_TEST_DIR) + "/h264_9s_1920x1080.mp4";
+    REQUIRE(fs::exists(video_path));
+
+    const fs::path cache_root =
+        fs::temp_directory_path() / "voidplayer_ffi_vac2_overlay_cache";
+    fs::remove_all(cache_root);
+    REQUIRE(fs::create_directories(cache_root));
+
+    REQUIRE(naki_analysis_generate_vac2_overlay_chunk(
+                video_path.c_str(),
+                "ffi_overlay",
+                cache_root.string().c_str(),
+                0,
+                0,
+                128 * 1024 * 1024) == 0);
+    char message[128] = {};
+    REQUIRE(naki_analysis_last_error(message, sizeof(message)) ==
+            NAKI_ANALYSIS_ERR_OPEN_FAILED);
+    REQUIRE(std::string(message).find("base") != std::string::npos);
+
+    fs::remove_all(cache_root);
+}
+
 TEST_CASE("analysis FFI handle close is safe while readers are active",
           "[analysis][ffi][concurrency]") {
     auto& data = AnalysisTestData::instance();

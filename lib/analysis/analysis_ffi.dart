@@ -181,6 +181,18 @@ typedef _GenerateVac2BaseNative =
 typedef _GenerateVac2BaseDart =
     int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, int);
 
+typedef _GenerateVac2OverlayChunkNative =
+    Int32 Function(
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Int32,
+      Int32,
+      Int64,
+    );
+typedef _GenerateVac2OverlayChunkDart =
+    int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, int, int, int);
+
 typedef _OpenNative = Pointer<Void> Function(Pointer<Utf8>);
 typedef _OpenDart = Pointer<Void> Function(Pointer<Utf8>);
 
@@ -301,6 +313,10 @@ class _AnalysisNativeBindings {
         .lookupFunction<_GenerateVac2BaseNative, _GenerateVac2BaseDart>(
           'naki_analysis_generate_vac2_base',
         );
+    generateVac2OverlayChunk = library.lookupFunction<
+      _GenerateVac2OverlayChunkNative,
+      _GenerateVac2OverlayChunkDart
+    >('naki_analysis_generate_vac2_overlay_chunk');
     open = library.lookupFunction<_OpenNative, _OpenDart>('naki_analysis_open');
     close = library.lookupFunction<_CloseNative, _CloseDart>(
       'naki_analysis_close',
@@ -392,6 +408,7 @@ class _AnalysisNativeBindings {
   late final _ClearOverlayTracksDart clearOverlayTracks;
   late final _GenerateDart generate;
   late final _GenerateVac2BaseDart generateVac2Base;
+  late final _GenerateVac2OverlayChunkDart generateVac2OverlayChunk;
   late final _OpenDart open;
   late final _CloseDart close;
   late final _HandleGetSummaryDart handleGetSummary;
@@ -950,6 +967,36 @@ class AnalysisFfi {
             video,
             hashStr,
             cacheRoot,
+            maxCacheBytes,
+          ) !=
+          0;
+    } finally {
+      calloc.free(video);
+      calloc.free(hashStr);
+      calloc.free(cacheRoot);
+    }
+  }
+
+  /// Generate an overlay VACHUNK for an inclusive frame range.
+  static bool generateVac2OverlayChunk({
+    required String videoPath,
+    required String hash,
+    required int startFrame,
+    required int endFrame,
+    required int maxCacheBytes,
+  }) {
+    final video = videoPath.toNativeUtf8(allocator: calloc);
+    final hashStr = hash.toNativeUtf8(allocator: calloc);
+    final cacheRoot = AppPaths.current.analysisCacheDir.toNativeUtf8(
+      allocator: calloc,
+    );
+    try {
+      return _native.generateVac2OverlayChunk(
+            video,
+            hashStr,
+            cacheRoot,
+            startFrame,
+            endFrame,
             maxCacheBytes,
           ) !=
           0;

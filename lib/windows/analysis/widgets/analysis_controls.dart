@@ -60,32 +60,28 @@ class AnalysisViewTabBar extends StatelessWidget {
       segments: [
         ButtonSegment(
           value: 0,
-          label: Tooltip(
-            message: l.analysisRefPyramid,
-            child: Semantics(
-              label: l.analysisRefPyramid,
-              child: const SizedBox(
-                width: 28,
-                height: 20,
-                child: ExcludeSemantics(
-                  child: _AnalysisViewIcon(_AnalysisViewIconKind.pyramid),
-                ),
+          tooltip: l.analysisRefPyramid,
+          label: Semantics(
+            label: l.analysisRefPyramid,
+            child: const SizedBox(
+              width: 28,
+              height: 20,
+              child: ExcludeSemantics(
+                child: _AnalysisViewIcon(_AnalysisViewIconKind.pyramid),
               ),
             ),
           ),
         ),
         ButtonSegment(
           value: 1,
-          label: Tooltip(
-            message: l.analysisFrameTrend,
-            child: Semantics(
-              label: l.analysisFrameTrend,
-              child: const SizedBox(
-                width: 28,
-                height: 20,
-                child: ExcludeSemantics(
-                  child: _AnalysisViewIcon(_AnalysisViewIconKind.trend),
-                ),
+          tooltip: l.analysisFrameTrend,
+          label: Semantics(
+            label: l.analysisFrameTrend,
+            child: const SizedBox(
+              width: 28,
+              height: 20,
+              child: ExcludeSemantics(
+                child: _AnalysisViewIcon(_AnalysisViewIconKind.trend),
               ),
             ),
           ),

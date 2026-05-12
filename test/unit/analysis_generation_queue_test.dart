@@ -36,6 +36,12 @@ class _FakeCacheService implements AnalysisCacheService {
   String analysisPath(String hash) => throw UnimplementedError();
 
   @override
+  bool hasLegacyAnalysis(String hash) => throw UnimplementedError();
+
+  @override
+  String legacyAnalysisPath(String hash) => throw UnimplementedError();
+
+  @override
   Future<AnalysisCachePruneResult> enforceLimit({
     required int maxBytes,
     Set<String> protectedHashes = const {},

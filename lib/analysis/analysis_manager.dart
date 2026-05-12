@@ -318,13 +318,13 @@ class AnalysisManager extends ChangeNotifier
     );
 
     log.info(
-      '[Analysis] calling FFI generateAnalysis(videoPath=$videoPath, hash=$hash)',
+      '[Analysis] calling FFI generate VAC2 base(videoPath=$videoPath, hash=$hash)',
     );
     final bool ok;
     try {
       ok = await _generateAnalysisSerialized(videoPath, hash);
     } catch (e, stack) {
-      log.severe('[Analysis] generateAnalysis threw: $e', e, stack);
+      log.severe('[Analysis] generate VAC2 base threw: $e', e, stack);
       final error = await _generationFailureError(
         hash: hash,
         fileName: fileName,
@@ -344,7 +344,7 @@ class AnalysisManager extends ChangeNotifier
       return null;
     }
     if (!ok) {
-      log.severe('[Analysis] generateAnalysis returned false');
+      log.severe('[Analysis] generate VAC2 base returned false');
       final error = await _generationFailureError(
         hash: hash,
         fileName: fileName,
@@ -363,7 +363,7 @@ class AnalysisManager extends ChangeNotifier
       }
       return null;
     }
-    log.info('[Analysis] generateAnalysis succeeded');
+    log.info('[Analysis] generate VAC2 base succeeded');
 
     if (!_cache.filesExist(hash)) {
       final error = await _generationFailureError(
@@ -539,7 +539,14 @@ class AnalysisManager extends ChangeNotifier
         log.info('[Analysis] skipped stale overlay VAC version: ${track.hash}');
         continue;
       }
-      final analysisPath = _cache.analysisPath(track.hash);
+      if (!_cache.hasLegacyAnalysis(track.hash)) {
+        log.info(
+          '[Analysis] skipped overlay for ${track.hash}: '
+          'VAC2 base cache has no legacy deep overlay data',
+        );
+        continue;
+      }
+      final analysisPath = _cache.legacyAnalysisPath(track.hash);
       final lock = _cache.acquireHashSharedLockSync(track.hash);
       final loaded = AnalysisFfi.setOverlayTrack(
         trackFileId: track.trackFileId,
@@ -712,10 +719,11 @@ class AnalysisManager extends ChangeNotifier
       return false;
     }
     if (!_cache.hasEntry(hash, videoPath: videoPath)) return false;
+    final analysisPath = _cache.analysisPath(hash);
 
     AnalysisSession? session;
     try {
-      session = _native.openSession(_cache.analysisPath(hash));
+      session = _native.openSession(analysisPath);
       if (session == null || !session.isOpen) {
         log.info('[Analysis] cache stale for $hash: cannot open container');
         return false;
@@ -771,7 +779,11 @@ class AnalysisManager extends ChangeNotifier
       return false;
     }
     try {
-      final analysisFile = File(_cache.analysisPath(hash));
+      final analysisPath = _cache.analysisPath(hash);
+      if (p.basename(analysisPath).toLowerCase() == 'base.vac') {
+        return false;
+      }
+      final analysisFile = File(analysisPath);
       final analyzerFile = File(
         p.join(
           p.dirname(Platform.resolvedExecutable),

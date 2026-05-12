@@ -93,14 +93,21 @@ class AnalysisCachePruneResult {
 /// ```
 /// cache/
 ///   analysis_index.json
-///   <hash>.vac
+///   <hash>/
+///     base.vac
+///     chunks/
+///     tmp/
+///   <hash>.vac  # legacy VAC1 artifact, ignored as a read path
 /// ```
 class AnalysisCache {
   AnalysisCache._();
 
   static const int currentVacVersion = 1;
+  static const int currentVac2MajorVersion = 2;
   static const int _vacHeaderSize = 64;
   static const int _vacSectionEntrySize = 48;
+  static const int _vac2HeaderSize = 124;
+  static const int _vac2SectionEntrySize = 56;
 
   static final String dataDir = AppPaths.current.analysisCacheDir;
   static String get _locksDir => p.join(dataDir, 'locks');
@@ -121,15 +128,32 @@ class AnalysisCache {
 
   // ---- Path helpers ----
 
-  static String analysisPath(String hash) => p.join(dataDir, '$hash.vac');
+  static String hashDir(String hash) => p.join(dataDir, hash);
 
-  static bool filesExist(String hash) => _isCompleteVac1(analysisPath(hash));
+  static String vac2BasePath(String hash) => p.join(hashDir(hash), 'base.vac');
+
+  static String legacyAnalysisPath(String hash) => p.join(dataDir, '$hash.vac');
+
+  static String analysisPath(String hash) => vac2BasePath(hash);
+
+  static String hashForAnalysisPath(String analysisPath) {
+    if (p.basename(analysisPath).toLowerCase() == 'base.vac') {
+      return p.basename(p.dirname(analysisPath));
+    }
+    return p.basenameWithoutExtension(analysisPath);
+  }
+
+  static bool filesExist(String hash) => _isCompleteVac2(vac2BasePath(hash));
+
+  static bool hasLegacyAnalysis(String hash) => false;
 
   static bool deleteIfVacVersionMismatch(String hash) {
-    final version = readVacVersion(analysisPath(hash));
-    if (version == null || version == currentVacVersion) return false;
-    final result = _deleteEntriesSync([hash]);
-    return result.deletedHashes.contains(hash);
+    final basePath = vac2BasePath(hash);
+    if (File(basePath).existsSync() && !_isCompleteVac2(basePath)) {
+      final result = _deleteEntriesSync([hash]);
+      return result.deletedHashes.contains(hash);
+    }
+    return false;
   }
 
   static int? readVacVersion(String path) {
@@ -158,10 +182,14 @@ class AnalysisCache {
   }
 
   static bool hasIncompleteContainer(String hash) {
-    final path = analysisPath(hash);
-    final file = File(path);
-    if (!file.existsSync()) return false;
-    return !_isCompleteVac1(path);
+    final basePath = vac2BasePath(hash);
+    if (File(basePath).existsSync() && !_isCompleteVac2(basePath)) return true;
+
+    final legacyPath = legacyAnalysisPath(hash);
+    if (File(legacyPath).existsSync() && !_isCompleteVac1(legacyPath)) {
+      return true;
+    }
+    return false;
   }
 
   static bool _isCompleteVac1(String path) {
@@ -195,6 +223,61 @@ class AnalysisCache {
             sectionEntrySize != _vacSectionEntrySize ||
             sectionCount == 0 ||
             sectionCount > 16 ||
+            expectedFileSize != length) {
+          return false;
+        }
+        final tableBytes = sectionCount * sectionEntrySize;
+        if (!_rangeFits(sectionTableOffset, tableBytes, length)) return false;
+        raf.setPositionSync(sectionTableOffset);
+        final table = raf.readSync(tableBytes);
+        if (table.length != tableBytes) return false;
+        final tableData = ByteData.sublistView(Uint8List.fromList(table));
+        for (var i = 0; i < sectionCount; i++) {
+          final offset = i * sectionEntrySize;
+          final payloadOffset = tableData.getUint64(offset + 8, Endian.little);
+          final payloadSize = tableData.getUint64(offset + 16, Endian.little);
+          if (payloadSize == 0 ||
+              !_rangeFits(payloadOffset, payloadSize, length)) {
+            return false;
+          }
+        }
+        return true;
+      } finally {
+        raf.closeSync();
+      }
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static bool _isCompleteVac2(String path) {
+    final file = File(path);
+    if (!file.existsSync()) return false;
+    try {
+      final raf = file.openSync();
+      try {
+        final length = raf.lengthSync();
+        if (length < _vac2HeaderSize) return false;
+        final bytes = raf.readSync(_vac2HeaderSize);
+        if (bytes.length < _vac2HeaderSize ||
+            bytes[0] != 0x56 ||
+            bytes[1] != 0x41 ||
+            bytes[2] != 0x43 ||
+            bytes[3] != 0x32) {
+          return false;
+        }
+        final data = ByteData.sublistView(Uint8List.fromList(bytes));
+        final major = data.getUint16(4, Endian.little);
+        final headerSize = data.getUint16(8, Endian.little);
+        final sectionEntrySize = data.getUint16(10, Endian.little);
+        final sectionCount = data.getUint32(12, Endian.little);
+        final sectionTableOffset = data.getUint64(52, Endian.little);
+        final expectedFileSize = data.getUint64(60, Endian.little);
+        if (major != currentVac2MajorVersion ||
+            headerSize != _vac2HeaderSize ||
+            sectionEntrySize != _vac2SectionEntrySize ||
+            sectionCount == 0 ||
+            sectionCount > 64 ||
             expectedFileSize != length) {
           return false;
         }
@@ -267,7 +350,7 @@ class AnalysisCache {
         final value = item.value;
         if (value is! Map<String, dynamic>) continue;
 
-        final cacheBytes = _fileLength(analysisPath(hash));
+        final cacheBytes = _currentBytesForHashSync(hash);
         indexedBytes += cacheBytes;
 
         entries.add(
@@ -300,15 +383,6 @@ class AnalysisCache {
       maxBytes: maxBytes,
       entries: entries,
     );
-  }
-
-  static int _fileLength(String path) {
-    try {
-      final file = File(path);
-      return file.existsSync() ? file.lengthSync() : 0;
-    } catch (_) {
-      return 0;
-    }
   }
 
   static String formatBytes(int bytes) {
@@ -452,9 +526,13 @@ class AnalysisCache {
   static Future<List<String>> _deleteHashFiles(String hash) async {
     final failures = <String>[];
     for (final path in _pathsForHash(hash)) {
-      final file = File(path);
       try {
-        if (file.existsSync()) await file.delete();
+        final type = await FileSystemEntity.type(path);
+        if (type == FileSystemEntityType.directory) {
+          await Directory(path).delete(recursive: true);
+        } else if (type == FileSystemEntityType.file) {
+          await File(path).delete();
+        }
       } on FileSystemException catch (e) {
         failures.add(e.path ?? path);
       } catch (_) {
@@ -594,6 +672,20 @@ class AnalysisCache {
     final dir = Directory(dataDir);
     if (!dir.existsSync()) return 0;
     var total = 0;
+    final hashDirectory = Directory(hashDir(hash));
+    if (hashDirectory.existsSync()) {
+      for (final entity in hashDirectory.listSync(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is! File) continue;
+        try {
+          total += entity.lengthSync();
+        } catch (_) {
+          // Best-effort stats.
+        }
+      }
+    }
     for (final entity in dir.listSync(recursive: true, followLinks: false)) {
       if (entity is! File) continue;
       final name = p.basename(entity.path);
@@ -608,7 +700,7 @@ class AnalysisCache {
   }
 
   static List<String> _pathsForHash(String hash) => [
-    analysisPath(hash),
+    legacyAnalysisPath(hash),
     p.join(dataDir, '$hash.vbs4'),
     p.join(dataDir, '$hash.vbi'),
     p.join(dataDir, '$hash.vbt'),
@@ -617,6 +709,7 @@ class AnalysisCache {
     p.join(dataDir, '$hash.tmp.vbi'),
     p.join(dataDir, '$hash.tmp.vbt'),
     p.join(dataDir, '$hash.tmp.vvc'),
+    hashDir(hash),
   ];
 
   static Map<String, dynamic> _entriesFromIndex(Map<String, dynamic> index) {
@@ -677,9 +770,13 @@ class AnalysisCache {
   static List<String> _deleteHashFilesSync(String hash) {
     final failures = <String>[];
     for (final path in _pathsForHash(hash)) {
-      final file = File(path);
       try {
-        if (file.existsSync()) file.deleteSync();
+        final type = FileSystemEntity.typeSync(path);
+        if (type == FileSystemEntityType.directory) {
+          Directory(path).deleteSync(recursive: true);
+        } else if (type == FileSystemEntityType.file) {
+          File(path).deleteSync();
+        }
       } on FileSystemException catch (e) {
         failures.add(e.path ?? path);
       } catch (_) {

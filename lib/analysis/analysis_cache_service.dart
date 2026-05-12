@@ -11,6 +11,8 @@ abstract class AnalysisCacheService {
   bool filesExist(String hash);
   bool deleteIfVacVersionMismatch(String hash);
   String analysisPath(String hash);
+  String legacyAnalysisPath(String hash);
+  bool hasLegacyAnalysis(String hash);
   FileLockHandle acquireHashSharedLockSync(String hash);
   bool hasEntry(String hash, {String? videoPath});
   Future<T> withHashExclusiveLock<T>(String hash, Future<T> Function() action);
@@ -50,6 +52,13 @@ class DefaultAnalysisCacheService implements AnalysisCacheService {
 
   @override
   String analysisPath(String hash) => AnalysisCache.analysisPath(hash);
+
+  @override
+  String legacyAnalysisPath(String hash) =>
+      AnalysisCache.legacyAnalysisPath(hash);
+
+  @override
+  bool hasLegacyAnalysis(String hash) => AnalysisCache.hasLegacyAnalysis(hash);
 
   @override
   FileLockHandle acquireHashSharedLockSync(String hash) =>

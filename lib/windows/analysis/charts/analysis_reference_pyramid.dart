@@ -360,32 +360,40 @@ class _LayerModeToggle extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final selected = useActualTemporalLayers;
+    final label = selected
+        ? l.analysisActualTemporalLayers
+        : l.analysisAutoReferenceLayers;
     return Tooltip(
-      message: selected
-          ? l.analysisActualTemporalLayers
-          : l.analysisAutoReferenceLayers,
-      child: Material(
-        color: selected
-            ? colors.primary.withValues(alpha: 0.88)
-            : colors.surfaceContainerHighest.withValues(alpha: 0.84),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(6),
-          side: BorderSide(
-            color: selected
-                ? colors.primary
-                : colors.outlineVariant.withValues(alpha: 0.8),
+      message: label,
+      child: Semantics(
+        button: true,
+        toggled: selected,
+        label: label,
+        onTap: () => onChanged(!selected),
+        child: Material(
+          color: selected
+              ? colors.primary.withValues(alpha: 0.88)
+              : colors.surfaceContainerHighest.withValues(alpha: 0.84),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(6),
+            side: BorderSide(
+              color: selected
+                  ? colors.primary
+                  : colors.outlineVariant.withValues(alpha: 0.8),
+            ),
           ),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(6),
-          onTap: () => onChanged(!selected),
-          child: SizedBox(
-            width: size,
-            height: size,
-            child: Icon(
-              Icons.layers,
-              size: 17,
-              color: selected ? colors.onPrimary : colors.onSurfaceVariant,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(6),
+            excludeFromSemantics: true,
+            onTap: () => onChanged(!selected),
+            child: SizedBox(
+              width: size,
+              height: size,
+              child: Icon(
+                Icons.layers,
+                size: 17,
+                color: selected ? colors.onPrimary : colors.onSurfaceVariant,
+              ),
             ),
           ),
         ),

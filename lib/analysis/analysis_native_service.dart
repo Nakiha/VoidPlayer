@@ -1,5 +1,7 @@
 import 'dart:isolate';
 
+import 'package:path/path.dart' as p;
+
 import 'analysis_ffi.dart';
 
 abstract class AnalysisNativeService {
@@ -18,7 +20,17 @@ class DefaultAnalysisNativeService implements AnalysisNativeService {
 
   @override
   Future<bool> load(String analysisPath) {
-    return Isolate.run(() => AnalysisFfi.load(analysisPath));
+    return Isolate.run(() {
+      if (p.basename(analysisPath).toLowerCase() == 'base.vac') {
+        final session = AnalysisSession.open(analysisPath);
+        try {
+          return session != null && session.summary.loaded != 0;
+        } finally {
+          session?.close();
+        }
+      }
+      return AnalysisFfi.load(analysisPath);
+    });
   }
 
   @override
@@ -35,7 +47,7 @@ class DefaultAnalysisNativeService implements AnalysisNativeService {
     int maxCacheBytes,
   ) {
     return Isolate.run(
-      () => AnalysisFfi.generateAnalysis(videoPath, hash, maxCacheBytes),
+      () => AnalysisFfi.generateVac2Base(videoPath, hash, maxCacheBytes),
     );
   }
 }

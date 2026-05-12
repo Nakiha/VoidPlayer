@@ -789,7 +789,7 @@ class AnalysisManager extends ChangeNotifier
       if (_requiresFrameData(codec) && summary.frameCount <= 0) {
         log.info(
           '[Analysis] cache stale for $hash: codec=${analysisCodecName(codec)} '
-          'requires VBS4 frame data',
+          'requires VAC2 frame index data',
         );
         return false;
       }

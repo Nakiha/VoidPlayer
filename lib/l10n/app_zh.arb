@@ -165,7 +165,7 @@
   "analysisErrorHashFailed": "文件哈希失败: {error}",
   "analysisErrorUnsupported": "不支持的编码格式或生成失败: {name}",
   "analysisErrorLoadFailed": "加载分析数据失败: {name}",
-  "analysisErrorCacheLimitExceeded": "分析缓存已满（{used} / {limit}）。请调高上限或清理缓存后再生成新的 VTM 数据。",
+  "analysisErrorCacheLimitExceeded": "分析缓存已满（{used} / {limit}）。请调高上限或清理缓存后再生成新的分析数据。",
   "analysisErrorCacheWriteIncomplete": "为 {name} 生成分析缓存时用满了缓存限制（{used} / {limit}），VAC 文件未完整写入。请调高上限或清理缓存后重试。",
   "analysisCachePanelTitle": "分析缓存",
   "analysisCachePanelEmpty": "当前没有打开的轨道",

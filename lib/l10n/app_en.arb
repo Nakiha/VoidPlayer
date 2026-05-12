@@ -457,7 +457,7 @@
   "analysisErrorLoadFailed": "Failed to load analysis for {name}",
   "@analysisErrorLoadFailed": { "description": "Error: failed to load cached analysis", "placeholders": { "name": { "type": "String" } } },
 
-  "analysisErrorCacheLimitExceeded": "Analysis cache is full ({used} / {limit}). Raise the limit or clear cache files before generating more VTM data.",
+  "analysisErrorCacheLimitExceeded": "Analysis cache is full ({used} / {limit}). Raise the limit or clear cache files before generating more analysis data.",
   "@analysisErrorCacheLimitExceeded": { "description": "Error: analysis cache limit exceeded", "placeholders": { "used": { "type": "String" }, "limit": { "type": "String" } } },
 
   "analysisErrorCacheWriteIncomplete": "Analysis cache filled up while generating {name} ({used} / {limit}); the VAC file is incomplete. Raise the limit or clear cache, then try again.",

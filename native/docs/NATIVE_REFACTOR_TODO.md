@@ -210,14 +210,14 @@ TODO:
 证据：
 
 - `windows/runner/video_renderer_plugin.cpp` 有 `g_player_weak`。
-- `windows/runner/analysis_ffi.cpp` 仍有 atomic global PTS callback、handle registry、legacy API。
+- `windows/runner/analysis_ffi.cpp` 仍有 atomic global PTS callback 和 handle registry；legacy singleton reader API 已移除，overlay state 仍是 renderer-facing global。
 - FFI logging/crash convenience API 仍是 process-global。
 
 TODO:
 
 - [ ] 把 diagnostics 的 active player 从 global weak pointer 改为 plugin instance/provider scope。
 - [ ] analysis PTS callback 支持 handle/player scoped 注册；global callback 标记 deprecated。
-- [ ] analysis legacy singleton API 内部路由到 handle state，或在文档/API 中正式 deprecated。
+- [x] 移除 analysis legacy singleton reader API；Dart/native 读取路径改为 handle-scoped VAC2 session。
 - [ ] 为 process-global logging/crash FFI API 增加文档警示，并规划 host-provided logger/sink 的长期接口。
 - [ ] 增加多 player / plugin teardown / repeated create-destroy smoke。
 

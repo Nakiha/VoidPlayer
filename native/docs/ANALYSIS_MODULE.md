@@ -96,20 +96,25 @@ HEVC/H.265 由 FFmpeg analyzer 自行 demux/decode 并写入 VBS4。overlay chun
 |----------|------|
 | `naki_analysis_generate_vac2_base` | 生成 `cache/<hash>/base.vac` VAC2 base |
 | `naki_analysis_generate_vac2_overlay_chunk` | 生成 `cache/<hash>/chunks/overlay/*.vck` overlay VACHUNK |
-| `naki_analysis_load/unload` | 加载/卸载分析容器到内存 |
-| `naki_analysis_get_summary` | 返回概要（帧数/分辨率/time_base/当前帧） |
-| `naki_analysis_get_frames` | 返回帧信息数组（VBS4+VBT 合并） |
-| `naki_analysis_get_nalus` | 返回 NALU 信息数组 |
+| `naki_analysis_open/close` | 打开/关闭 VAC2 base handle |
+| `naki_analysis_handle_get_summary` | 返回概要（帧数/分辨率/time_base/当前帧） |
+| `naki_analysis_handle_get_frames_range` | 返回 VAC2 frame summary + packet timing 数组 |
+| `naki_analysis_handle_get_nalus_range` | 返回 VAC2 bitstream-unit 数组 |
+| `naki_analysis_handle_get_frame_buckets` | 返回 VAC2 frame bucket 聚合 |
 | `naki_analysis_set_overlay` | 设置叠加层显示状态 |
+| `naki_analysis_set_overlay_track` | 将 track file id 绑定到 VAC2/VACache overlay 数据 |
 
 ABI / lifecycle notes:
 
 - `naki_analysis_open` / `naki_analysis_close` / `naki_analysis_handle_*` are the
   preferred APIs for new code. Handle state is pinned with `shared_ptr`, so
   closing a handle is safe while readers already inside an FFI call finish.
+- Flat singleton reader exports were removed from Dart and native FFI; analysis
+  data reads are handle-scoped. Global functions remain only for renderer-facing
+  overlay state.
 - Legacy flat structs remain unchanged for Dart compatibility. V2 wrapper
   structs add `size` and `abi_version` headers for future callers without
-  changing the legacy ABI.
+  changing the ABI.
 - `naki_analysis_last_error(buf, cap)` returns thread-local status/message for
   the most recent analysis FFI call on the same thread.
 - Summary pointers point to thread-local snapshots and are valid only until the

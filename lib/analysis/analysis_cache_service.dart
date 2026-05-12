@@ -13,6 +13,7 @@ abstract class AnalysisCacheService {
   String analysisPath(String hash);
   String legacyAnalysisPath(String hash);
   bool hasLegacyAnalysis(String hash);
+  bool hasOverlayChunks(String hash);
   FileLockHandle acquireHashSharedLockSync(String hash);
   bool hasEntry(String hash, {String? videoPath});
   Future<T> withHashExclusiveLock<T>(String hash, Future<T> Function() action);
@@ -59,6 +60,9 @@ class DefaultAnalysisCacheService implements AnalysisCacheService {
 
   @override
   bool hasLegacyAnalysis(String hash) => AnalysisCache.hasLegacyAnalysis(hash);
+
+  @override
+  bool hasOverlayChunks(String hash) => AnalysisCache.hasOverlayChunks(hash);
 
   @override
   FileLockHandle acquireHashSharedLockSync(String hash) =>

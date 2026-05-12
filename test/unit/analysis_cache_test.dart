@@ -89,6 +89,7 @@ void main() {
 
     expect(AnalysisCache.filesExist(hash), isFalse);
     expect(AnalysisCache.hasLegacyAnalysis(hash), isFalse);
+    expect(AnalysisCache.hasOverlayChunks(hash), isFalse);
     expect(AnalysisCache.analysisPath(hash), AnalysisCache.vac2BasePath(hash));
 
     final basePath = AnalysisCache.vac2BasePath(hash);
@@ -99,6 +100,14 @@ void main() {
     expect(AnalysisCache.analysisPath(hash), basePath);
     expect(AnalysisCache.hashForAnalysisPath(basePath), hash);
     expect(AnalysisCache.hasIncompleteContainer(hash), isFalse);
+
+    final overlayChunkPath = p.join(
+      AnalysisCache.overlayChunksDir(hash),
+      'overlay_00000000_00000000.vck',
+    );
+    await Directory(p.dirname(overlayChunkPath)).create(recursive: true);
+    await File(overlayChunkPath).writeAsBytes([1, 2, 3]);
+    expect(AnalysisCache.hasOverlayChunks(hash), isTrue);
   });
 
   test('deletes per-hash VAC2 cache directories', () async {

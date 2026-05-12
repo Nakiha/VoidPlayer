@@ -132,6 +132,11 @@ class AnalysisCache {
 
   static String vac2BasePath(String hash) => p.join(hashDir(hash), 'base.vac');
 
+  static String chunksDir(String hash) => p.join(hashDir(hash), 'chunks');
+
+  static String overlayChunksDir(String hash) =>
+      p.join(chunksDir(hash), 'overlay');
+
   static String legacyAnalysisPath(String hash) => p.join(dataDir, '$hash.vac');
 
   static String analysisPath(String hash) => vac2BasePath(hash);
@@ -146,6 +151,19 @@ class AnalysisCache {
   static bool filesExist(String hash) => _isCompleteVac2(vac2BasePath(hash));
 
   static bool hasLegacyAnalysis(String hash) => false;
+
+  static bool hasOverlayChunks(String hash) {
+    final dir = Directory(overlayChunksDir(hash));
+    if (!dir.existsSync()) return false;
+    try {
+      return dir.listSync(followLinks: false).any((entity) {
+        if (entity is! File) return false;
+        return p.extension(entity.path).toLowerCase() == '.vck';
+      });
+    } catch (_) {
+      return false;
+    }
+  }
 
   static bool deleteIfVacVersionMismatch(String hash) {
     final basePath = vac2BasePath(hash);

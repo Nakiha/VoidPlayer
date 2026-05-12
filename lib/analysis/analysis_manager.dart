@@ -539,14 +539,14 @@ class AnalysisManager extends ChangeNotifier
         log.info('[Analysis] skipped stale overlay VAC version: ${track.hash}');
         continue;
       }
-      if (!_cache.hasLegacyAnalysis(track.hash)) {
+      if (!_cache.hasOverlayChunks(track.hash)) {
         log.info(
           '[Analysis] skipped overlay for ${track.hash}: '
-          'VAC2 base cache has no legacy deep overlay data',
+          'VAC2 cache has no overlay chunks',
         );
         continue;
       }
-      final analysisPath = _cache.legacyAnalysisPath(track.hash);
+      final analysisPath = _cache.analysisPath(track.hash);
       final lock = _cache.acquireHashSharedLockSync(track.hash);
       final loaded = AnalysisFfi.setOverlayTrack(
         trackFileId: track.trackFileId,

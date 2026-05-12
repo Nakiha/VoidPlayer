@@ -39,6 +39,9 @@ class _FakeCacheService implements AnalysisCacheService {
   bool hasLegacyAnalysis(String hash) => throw UnimplementedError();
 
   @override
+  bool hasOverlayChunks(String hash) => throw UnimplementedError();
+
+  @override
   String legacyAnalysisPath(String hash) => throw UnimplementedError();
 
   @override

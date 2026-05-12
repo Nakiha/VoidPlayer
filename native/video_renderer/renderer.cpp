@@ -2301,7 +2301,7 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
             return;
         }
 
-        auto frame = track_analysis.vbs4().read_frame(frame_idx);
+        auto frame = track_analysis.read_overlay_frame(frame_idx);
         if (frame.cus.empty() ||
             track_analysis.video_width() == 0 ||
             track_analysis.video_height() == 0) {

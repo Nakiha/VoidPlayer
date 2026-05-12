@@ -1,6 +1,8 @@
 #pragma once
 
+#include "analysis/cache/overlay_chunk.h"
 #include "analysis/parsers/analysis_container.h"
+#include "analysis/parsers/vac2_parser.h"
 #include "analysis/parsers/vbs4_parser.h"
 #include "analysis/parsers/vbi_parser.h"
 #include "analysis/parsers/vbt_parser.h"
@@ -26,12 +28,11 @@ public:
     const Vbs4File& vbs4() const { return vbs4_; }
     const VbiFile& vbi() const { return vbi_; }
     const VbtFile& vbt() const { return vbt_; }
-    int frame_count() const { return vbs4_.frame_count(); }
-    uint32_t video_width() const { return vbs4_.header().width; }
-    uint32_t video_height() const { return vbs4_.header().height; }
-    Vbs4FrameSummary read_frame_summary(int frame_idx) const {
-        return vbs4_.read_frame_summary(frame_idx);
-    }
+    int frame_count() const;
+    uint32_t video_width() const;
+    uint32_t video_height() const;
+    Vbs4FrameSummary read_frame_summary(int frame_idx) const;
+    Vbs4FrameData read_overlay_frame(int frame_idx) const;
 
     // Overlay state (written by Dart via FFI, read by render thread)
     struct OverlayState {
@@ -57,10 +58,23 @@ public:
     int current_frame_idx(int64_t pts_us) const;
 
 private:
+    enum class LoadedFormat {
+        None,
+        Vac1,
+        Vac2,
+    };
+
+    bool load_vac1(const std::string& analysis_path);
+    bool load_vac2(const std::string& analysis_path);
+    Vbs4FrameData read_vac2_overlay_frame(int frame_idx) const;
+
     AnalysisContainerFile container_;
+    Vac2BaseFile vac2_base_;
     Vbs4File vbs4_;
     VbiFile vbi_;
     VbtFile vbt_;
+    std::string analysis_path_;
+    LoadedFormat format_ = LoadedFormat::None;
     bool loaded_ = false;
     mutable std::mutex overlay_tracks_mutex_;
     std::unordered_map<int, std::shared_ptr<AnalysisManager>> overlay_tracks_;

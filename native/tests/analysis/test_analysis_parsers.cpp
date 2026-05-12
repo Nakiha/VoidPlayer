@@ -2,6 +2,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include "analysis/cache/vacache_store.h"
 #include "analysis/cache/overlay_chunk.h"
+#include "analysis/analysis_manager.h"
 #include "analysis/parsers/analysis_container.h"
 #include "analysis/parsers/vac2_parser.h"
 #include "analysis/parsers/vachunk_parser.h"
@@ -605,6 +606,103 @@ TEST_CASE("VACHUNK: overlay chunk carries VBS4 frame data",
 
     chunk.close();
     fs::remove(path);
+}
+
+TEST_CASE("AnalysisManager: reads VAC2 base with overlay chunks",
+          "[analysis][manager][vac2][vachunk]") {
+    namespace fs = std::filesystem;
+    auto& test_data = AnalysisTestData::instance();
+    REQUIRE(test_data.ensure());
+
+    vr::analysis::Vbs4File vbs4;
+    REQUIRE(vbs4.open(test_data.vbs4_path()));
+    REQUIRE(vbs4.frame_count() >= 2);
+
+    const auto root = fs::temp_directory_path() / "voidplayer_manager_vac2";
+    const auto hash_dir = root / "hash";
+    const auto overlay_dir = hash_dir / "chunks" / "overlay";
+    fs::remove_all(root);
+    REQUIRE(fs::create_directories(overlay_dir));
+
+    vr::analysis::Vac2BaseData base;
+    base.codec = static_cast<VbiCodec>(vbs4.header().codec);
+    base.time_base_num = 1;
+    base.time_base_den = 1000000;
+    base.width = vbs4.header().width;
+    base.height = vbs4.header().height;
+    base.metadata_json = R"({"schema":"manager-vac2-overlay-test"})";
+
+    for (uint32_t i = 0; i < 2; ++i) {
+        Vac2PacketEntry packet{};
+        packet.pts = static_cast<int64_t>(i) * 40000;
+        packet.dts = packet.pts;
+        packet.duration = 40000;
+        packet.size = 1000;
+        packet.file_offset = UINT64_MAX;
+        packet.format_offset = UINT64_MAX;
+        packet.first_unit = i;
+        packet.unit_count = 1;
+        packet.au_index = i;
+        base.packets.push_back(packet);
+
+        Vac2BitstreamUnitEntry unit{};
+        unit.packet_index = i;
+        unit.au_index = i;
+        unit.offset = i * 1000;
+        unit.size = 1000;
+        unit.flags = VAC2_UNIT_FLAG_IS_VCL | VAC2_UNIT_FLAG_IS_SLICE;
+        unit.pset_snapshot = UINT16_MAX;
+        base.units.push_back(unit);
+
+        Vac2FrameEntry frame{};
+        frame.first_packet = i;
+        frame.packet_count = 1;
+        frame.first_unit = i;
+        frame.unit_count = 1;
+        frame.pts = packet.pts;
+        frame.dts = packet.dts;
+        frame.duration = packet.duration;
+        frame.coded_order = i;
+        frame.display_order = static_cast<int32_t>(i);
+        frame.poc = static_cast<int32_t>(i);
+        frame.frame_size = packet.size;
+        base.frames.push_back(frame);
+
+        Vac2FrameSummaryEntry summary{};
+        summary.poc = static_cast<int32_t>(i);
+        summary.coded_order = i;
+        summary.first_vcl_unit = i;
+        summary.qp_kind = VAC2_QP_KIND_UNKNOWN;
+        base.frame_summaries.push_back(summary);
+    }
+
+    const auto base_path = hash_dir / "base.vac";
+    REQUIRE(vr::analysis::write_vac2_base_container(base_path.string(), base));
+
+    vr::analysis::VachunkData chunk_data;
+    REQUIRE(vr::analysis::build_overlay_vachunk_from_vbs4(
+        vbs4, 0, 1, chunk_data));
+    REQUIRE(vr::analysis::write_vachunk_file(
+        (overlay_dir / "overlay_00000000_00000001.vck").string(),
+        chunk_data));
+
+    vr::analysis::AnalysisManager manager;
+    REQUIRE(manager.load(base_path.string()));
+    REQUIRE(manager.frame_count() == 2);
+    REQUIRE(manager.video_width() == vbs4.header().width);
+    REQUIRE(manager.video_height() == vbs4.header().height);
+    REQUIRE(manager.current_frame_idx(45000) == 1);
+
+    const auto frame0 = manager.read_overlay_frame(0);
+    const auto legacy0 = vbs4.read_frame(0);
+    REQUIRE(frame0.summary.avg_qp == legacy0.summary.avg_qp);
+    REQUIRE(frame0.cus.size() == legacy0.cus.size());
+    if (!frame0.cus.empty()) {
+        REQUIRE(frame0.cus[0].common.qp == legacy0.cus[0].common.qp);
+    }
+
+    manager.unload();
+    fs::remove_all(root);
 }
 
 // ===========================================================================

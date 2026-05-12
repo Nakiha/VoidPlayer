@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include "analysis/cache/vacache_store.h"
+#include "analysis/cache/overlay_chunk.h"
 #include "analysis/parsers/analysis_container.h"
 #include "analysis/parsers/vac2_parser.h"
 #include "analysis/parsers/vachunk_parser.h"
@@ -551,6 +552,59 @@ TEST_CASE("VACHUNK: writer rejects invalid range and tiny budget", "[analysis][v
     data.end_frame = 10;
     REQUIRE_FALSE(vr::analysis::write_vachunk_file(path.string(), data, 8));
     std::filesystem::remove(path);
+}
+
+TEST_CASE("VACHUNK: overlay chunk carries VBS4 frame data",
+          "[analysis][vachunk][overlay]") {
+    namespace fs = std::filesystem;
+    auto& data = AnalysisTestData::instance();
+    REQUIRE(data.ensure());
+
+    vr::analysis::Vbs4File vbs4;
+    REQUIRE(vbs4.open(data.vbs4_path()));
+    REQUIRE(vbs4.frame_count() >= 2);
+
+    vr::analysis::VachunkData chunk_data;
+    REQUIRE(vr::analysis::build_overlay_vachunk_from_vbs4(
+        vbs4, 0, 1, chunk_data));
+    REQUIRE(chunk_data.kind == VachunkKind::Overlay);
+    REQUIRE(chunk_data.sections.size() == 3);
+    REQUIRE((chunk_data.feature_flags & VACHUNK_FEATURE_CU_GEOMETRY) != 0);
+    REQUIRE((chunk_data.feature_flags & VACHUNK_FEATURE_QP) != 0);
+
+    const auto path = fs::temp_directory_path() / "voidplayer_test_overlay.vck";
+    fs::remove(path);
+    REQUIRE(vr::analysis::write_vachunk_file(path.string(), chunk_data));
+
+    vr::analysis::VachunkFile chunk;
+    REQUIRE(chunk.open(path.string()));
+    REQUIRE(chunk.header().kind ==
+            static_cast<uint16_t>(VachunkKind::Overlay));
+    REQUIRE(chunk.header().start_frame == 0);
+    REQUIRE(chunk.header().end_frame == 1);
+    REQUIRE(chunk.section("FSUM") != nullptr);
+    REQUIRE(chunk.section("FIDX") != nullptr);
+    REQUIRE(chunk.section("CU4R") != nullptr);
+
+    vr::analysis::VachunkOverlayFrameData frame0;
+    REQUIRE(vr::analysis::read_overlay_vachunk_frame(chunk, 0, frame0));
+    const auto legacy0 = vbs4.read_frame(0);
+    REQUIRE(frame0.summary.avg_qp == legacy0.summary.avg_qp);
+    REQUIRE(frame0.summary.num_cus == legacy0.summary.num_cus);
+    REQUIRE(frame0.cus.size() == legacy0.cus.size());
+    if (!frame0.cus.empty()) {
+        REQUIRE(frame0.cus[0].common.x == legacy0.cus[0].common.x);
+        REQUIRE(frame0.cus[0].common.y == legacy0.cus[0].common.y);
+        REQUIRE(frame0.cus[0].common.qp == legacy0.cus[0].common.qp);
+        REQUIRE(frame0.cus[0].common.pred_mode ==
+                legacy0.cus[0].common.pred_mode);
+    }
+
+    vr::analysis::VachunkOverlayFrameData missing;
+    REQUIRE_FALSE(vr::analysis::read_overlay_vachunk_frame(chunk, 2, missing));
+
+    chunk.close();
+    fs::remove(path);
 }
 
 // ===========================================================================

@@ -496,6 +496,19 @@ struct VachunkSectionEntry {
 };
 static_assert(sizeof(VachunkSectionEntry) == 56);
 
+struct VachunkOverlayFrameIndexEntry {
+    uint32_t frame_index;
+    uint32_t first_unit;
+    uint32_t unit_count;
+    uint32_t first_stream_value;
+    uint32_t flags;
+    uint32_t reserved;
+};
+static_assert(sizeof(VachunkOverlayFrameIndexEntry) == 24);
+
+inline constexpr uint32_t VACHUNK_OVERLAY_FRAME_FLAG_COMPLETE = 0x00000001;
+inline constexpr uint32_t VACHUNK_OVERLAY_FRAME_FLAG_EXACT = 0x00000002;
+
 inline constexpr uint64_t VACHUNK_FEATURE_CU_GEOMETRY = 1ull << 0;
 inline constexpr uint64_t VACHUNK_FEATURE_QP = 1ull << 1;
 inline constexpr uint64_t VACHUNK_FEATURE_PRED_MODE = 1ull << 2;

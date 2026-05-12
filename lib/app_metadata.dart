@@ -6,7 +6,7 @@ class AppDependencyMetadata {
 }
 
 class AppMetadata {
-  static const version = '1.0.1';
+  static const version = '1.0.2';
   static const license = 'GPLv3';
 
   static const dependencies = [

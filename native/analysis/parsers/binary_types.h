@@ -308,4 +308,136 @@ static_assert(sizeof(VbtEntry) == 32);
 // VBT flags
 inline constexpr uint8_t VBT_FLAG_KEYFRAME = 0x01;
 
+// ===========================================================================
+// VAC2 — progressive analysis base index
+// ===========================================================================
+
+inline constexpr uint16_t kVac2VersionMajor = 2;
+inline constexpr uint16_t kVac2VersionMinor = 0;
+
+struct Vac2Header {
+    char     magic[4];       // "VAC2"
+    uint16_t version_major;
+    uint16_t version_minor;
+    uint16_t header_size;
+    uint16_t section_entry_size;
+    uint32_t section_count;
+    uint32_t flags;
+    uint16_t codec;          // VbiCodec
+    uint16_t track_index;
+    int32_t  time_base_num;
+    int32_t  time_base_den;
+    uint32_t packet_count;
+    uint32_t unit_count;
+    uint32_t au_count;
+    uint32_t width;
+    uint32_t height;
+    uint64_t section_table_offset;
+    uint64_t file_size;
+    uint64_t source_size;
+    int64_t  source_mtime_unix_ms;
+    uint64_t content_revision;
+    uint64_t reserved[4];
+};
+static_assert(sizeof(Vac2Header) == 124);
+
+struct Vac2SectionEntry {
+    char     type[4];
+    uint32_t flags;
+    uint64_t offset;
+    uint64_t size;
+    uint32_t entry_size;     // 0 for variable payloads
+    uint32_t entry_count;    // 0 for variable payloads
+    uint64_t checksum;
+    uint64_t reserved[2];
+};
+static_assert(sizeof(Vac2SectionEntry) == 56);
+
+struct Vac2PacketEntry {
+    int64_t  pts;
+    int64_t  dts;
+    uint32_t duration;
+    uint32_t size;
+    uint16_t stream_index;
+    uint16_t flags;
+    uint64_t file_offset;    // UINT64_MAX when unknown
+    uint64_t format_offset;  // UINT64_MAX when unknown
+    uint32_t first_unit;
+    uint32_t unit_count;
+    uint32_t au_index;       // UINT32_MAX when unknown
+    uint32_t reserved;
+};
+static_assert(sizeof(Vac2PacketEntry) == 60);
+
+struct Vac2BitstreamUnitEntry {
+    uint32_t packet_index;   // UINT32_MAX when unknown
+    uint32_t au_index;       // UINT32_MAX when unknown
+    uint64_t offset;
+    uint32_t size;
+    uint32_t payload_offset;
+    uint8_t  nal_type;
+    uint8_t  temporal_id;
+    uint8_t  layer_id;
+    uint8_t  unit_kind;      // VbiUnitKind
+    uint16_t flags;
+    uint16_t pset_snapshot;  // UINT16_MAX when unknown
+    uint32_t detail_hint;
+};
+static_assert(sizeof(Vac2BitstreamUnitEntry) == 36);
+
+struct Vac2FrameEntry {
+    uint32_t first_packet;
+    uint32_t packet_count;
+    uint32_t first_unit;
+    uint32_t unit_count;
+    int64_t  pts;
+    int64_t  dts;
+    uint32_t duration;
+    uint32_t coded_order;
+    int32_t  display_order;
+    int32_t  poc;
+    uint32_t frame_size;
+    uint32_t rap_distance;
+    uint32_t flags;
+};
+static_assert(sizeof(Vac2FrameEntry) == 60);
+
+struct Vac2FrameSummaryEntry {
+    int32_t  poc;
+    uint32_t coded_order;
+    uint32_t first_vcl_unit;
+    uint32_t flags;
+    uint8_t  temporal_id;
+    uint8_t  slice_type;     // 0=B, 1=P, 2=I, 255=unknown
+    uint8_t  nal_type;
+    uint8_t  qp_kind;        // 0=unknown, 1=slice, 2=base, 3=estimated, 4=exact
+    uint8_t  qp_avg;
+    uint8_t  qp_min;
+    uint8_t  qp_max;
+    uint8_t  num_ref_l0;
+    uint8_t  num_ref_l1;
+    uint8_t  reserved0[3];
+    int32_t  ref_pocs_l0[15];
+    int32_t  ref_pocs_l1[15];
+    uint64_t summary_chunk_id;
+    uint64_t reserved1[2];
+};
+static_assert(sizeof(Vac2FrameSummaryEntry) == 172);
+
+inline constexpr uint16_t VAC2_PACKET_FLAG_KEYFRAME = 0x0001;
+inline constexpr uint16_t VAC2_UNIT_FLAG_IS_VCL = 0x0001;
+inline constexpr uint16_t VAC2_UNIT_FLAG_IS_SLICE = 0x0002;
+inline constexpr uint16_t VAC2_UNIT_FLAG_IS_KEYFRAME = 0x0004;
+inline constexpr uint16_t VAC2_UNIT_FLAG_PARAMETER_SET = 0x0008;
+inline constexpr uint32_t VAC2_FRAME_FLAG_KEYFRAME = 0x00000001;
+inline constexpr uint32_t VAC2_FRAME_FLAG_RAP = 0x00000002;
+inline constexpr uint32_t VAC2_FRAME_SUMMARY_FLAG_EXACT_REFS = 0x00000001;
+inline constexpr uint32_t VAC2_FRAME_SUMMARY_FLAG_EXACT_QP = 0x00000002;
+
+inline constexpr uint8_t VAC2_QP_KIND_UNKNOWN = 0;
+inline constexpr uint8_t VAC2_QP_KIND_SLICE = 1;
+inline constexpr uint8_t VAC2_QP_KIND_BASE = 2;
+inline constexpr uint8_t VAC2_QP_KIND_ESTIMATED = 3;
+inline constexpr uint8_t VAC2_QP_KIND_EXACT = 4;
+
 #pragma pack(pop)

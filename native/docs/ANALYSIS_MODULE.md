@@ -34,10 +34,16 @@ Analysis 使用三类自定义二进制格式，均为小端序，结构体使�
 独立格式文档：
 
 - [VAC](formats/VAC.md) — `.vac`，当前 runtime cache 容器，嵌入 VBI2/VBT1/VBS4 section
+- [VAC2](formats/VAC2.md) — 目标 base index 容器；只保存可快速生成的码流地图和轻量展示统计
+- [VACHUNK](formats/VACHUNK.md) — 目标按需派生分析 chunk；保存 NAL detail、exact frame summary、overlay 数据
 - [VBT](formats/VBT.md) — packet 时间戳/关键帧元数据 section，当前 magic `VBT1`
 - [VBI](formats/VBI.md) — bitstream unit 索引 section，当前写入格式为 `VBI2`，兼容读取 legacy `VBI1`
 - [VBS4](formats/VBS4.md) — 压缩/分块读取 block statistics section，当前 magic `VBS4`
 - [VBS legacy](formats/VBS.md) — `.vbs2`，旧版 VBS2 说明；native runtime 不再读取
+
+VAC2 / VACHUNK 的总体设计见
+[Analysis Cache V2 Design](ANALYSIS_CACHE_V2_DESIGN.md)。它们是目标设计，
+当前 runtime 仍使用 VAC1 + VBI/VBT/VBS4。
 
 ## 生成管线
 

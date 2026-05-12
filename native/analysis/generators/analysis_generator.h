@@ -17,6 +17,15 @@ public:
                          const std::string& vbi_path,
                          const std::string& vbt_path,
                          uint64_t max_output_bytes = 0);
+
+    /// Generate a VAC2 base index from the existing lightweight FFmpeg scan.
+    ///
+    /// This is the first migration bridge: it writes packet, bitstream-unit,
+    /// frame, and lightweight frame-summary tables without running deep
+    /// VBS4/overlay analysis.
+    static bool generate_vac2_base(const std::string& video_path,
+                                   const std::string& vac2_path,
+                                   uint64_t max_output_bytes = 0);
 };
 
 } // namespace vr::analysis

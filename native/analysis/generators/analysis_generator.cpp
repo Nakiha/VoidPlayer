@@ -2,6 +2,9 @@
 
 #include "analysis/generators/bitstream_indexer.h"
 #include "analysis/parsers/binary_types.h"
+#include "analysis/parsers/vac2_parser.h"
+#include "analysis/parsers/vbi_parser.h"
+#include "analysis/parsers/vbt_parser.h"
 #include "common/win_utf8.h"
 #include "media/private_cdn_flv_demuxer.h"
 
@@ -16,6 +19,7 @@ extern "C" {
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <vector>
 
@@ -248,6 +252,156 @@ static bool generateRawOnly(const std::string& video_path,
     const bool vbt_ok = vbt_writer.finish();
     const bool vbi_ok = vbi_writer.finish();
     return vbt_ok && vbi_ok;
+}
+
+static uint64_t source_file_size(const std::string& path) {
+    std::ifstream f(win_utf8::path_from_utf8(path), std::ios::binary | std::ios::ate);
+    if (!f) return 0;
+    const auto size = f.tellg();
+    return size < 0 ? 0 : static_cast<uint64_t>(size);
+}
+
+static uint8_t infer_slice_type(VbiCodec codec, uint8_t nal_type, uint8_t flags) {
+    if ((flags & VBI_FLAG_IS_KEYFRAME) != 0) {
+        return 2;
+    }
+    if ((flags & VBI_FLAG_IS_VCL) == 0) {
+        return 255;
+    }
+    switch (codec) {
+    case VbiCodec::H264:
+        return nal_type == 5 ? 2 : 1;
+    case VbiCodec::HEVC:
+        return (nal_type >= 16 && nal_type <= 21) ? 2 : 1;
+    case VbiCodec::VVC:
+        return (nal_type >= 7 && nal_type <= 10) ? 2 : 1;
+    case VbiCodec::AV1:
+    case VbiCodec::VP9:
+        return (flags & VBI_FLAG_IS_KEYFRAME) != 0 ? 2 : 1;
+    default:
+        return 255;
+    }
+}
+
+static bool build_vac2_base_from_indices(const std::string& video_path,
+                                         const VbiFile& vbi,
+                                         const VbtFile& vbt,
+                                         Vac2BaseData& out) {
+    const int packet_count = vbt.packet_count();
+    const int unit_count = vbi.unit_count();
+    if (packet_count <= 0 || unit_count < 0) return false;
+
+    out = {};
+    out.codec = vbi.codec();
+    out.track_index = 0;
+    out.time_base_num = vbt.header().time_base_num;
+    out.time_base_den = vbt.header().time_base_den;
+    out.source_size = source_file_size(video_path);
+    out.content_revision = 1;
+    out.metadata_json =
+        "{\"schema\":\"VAC2\",\"producer\":\"AnalysisGenerator::generate_vac2_base\","
+        "\"source\":\"legacy-vbi-vbt-bridge\"}";
+
+    out.packets.resize(static_cast<size_t>(packet_count));
+    out.frames.resize(static_cast<size_t>(packet_count));
+    out.frame_summaries.resize(static_cast<size_t>(packet_count));
+
+    std::vector<uint32_t> first_unit_by_frame(static_cast<size_t>(packet_count), UINT32_MAX);
+    std::vector<uint32_t> unit_count_by_frame(static_cast<size_t>(packet_count), 0);
+    std::vector<uint32_t> first_vcl_by_frame(static_cast<size_t>(packet_count), UINT32_MAX);
+
+    uint32_t vcl_seen = 0;
+    out.units.reserve(static_cast<size_t>(unit_count));
+    for (int i = 0; i < unit_count; ++i) {
+        const auto& src = vbi.entry(i);
+        uint32_t frame_index = vcl_seen;
+        if (frame_index >= static_cast<uint32_t>(packet_count)) {
+            frame_index = static_cast<uint32_t>(packet_count - 1);
+        }
+
+        Vac2BitstreamUnitEntry unit{};
+        unit.packet_index = frame_index;
+        unit.au_index = frame_index;
+        unit.offset = src.offset;
+        unit.size = src.size;
+        unit.payload_offset = 0;
+        unit.nal_type = src.nal_type;
+        unit.temporal_id = src.temporal_id;
+        unit.layer_id = src.layer_id;
+        unit.unit_kind = static_cast<uint8_t>(vbi.unit_kind());
+        unit.flags = 0;
+        if ((src.flags & VBI_FLAG_IS_VCL) != 0) unit.flags |= VAC2_UNIT_FLAG_IS_VCL;
+        if ((src.flags & VBI_FLAG_IS_SLICE) != 0) unit.flags |= VAC2_UNIT_FLAG_IS_SLICE;
+        if ((src.flags & VBI_FLAG_IS_KEYFRAME) != 0) unit.flags |= VAC2_UNIT_FLAG_IS_KEYFRAME;
+        unit.pset_snapshot = UINT16_MAX;
+        out.units.push_back(unit);
+
+        auto& first_unit = first_unit_by_frame[frame_index];
+        if (first_unit == UINT32_MAX) first_unit = static_cast<uint32_t>(i);
+        ++unit_count_by_frame[frame_index];
+        if ((src.flags & VBI_FLAG_IS_VCL) != 0) {
+            if (first_vcl_by_frame[frame_index] == UINT32_MAX) {
+                first_vcl_by_frame[frame_index] = static_cast<uint32_t>(i);
+            }
+            ++vcl_seen;
+        }
+    }
+
+    for (int i = 0; i < packet_count; ++i) {
+        const auto& src = vbt.entry(i);
+        const uint32_t index = static_cast<uint32_t>(i);
+        Vac2PacketEntry packet{};
+        packet.pts = src.pts;
+        packet.dts = src.dts;
+        packet.duration = src.duration;
+        packet.size = src.size;
+        packet.stream_index = 0;
+        packet.flags = (src.flags & VBT_FLAG_KEYFRAME) ? VAC2_PACKET_FLAG_KEYFRAME : 0;
+        packet.file_offset = UINT64_MAX;
+        packet.format_offset = UINT64_MAX;
+        packet.first_unit = first_unit_by_frame[index] == UINT32_MAX ? 0 : first_unit_by_frame[index];
+        packet.unit_count = unit_count_by_frame[index];
+        packet.au_index = index;
+        out.packets[static_cast<size_t>(i)] = packet;
+
+        Vac2FrameEntry frame{};
+        frame.first_packet = index;
+        frame.packet_count = 1;
+        frame.first_unit = packet.first_unit;
+        frame.unit_count = packet.unit_count;
+        frame.pts = src.pts;
+        frame.dts = src.dts;
+        frame.duration = src.duration;
+        frame.coded_order = index;
+        frame.display_order = static_cast<int32_t>(i);
+        frame.poc = src.poc;
+        frame.frame_size = src.size;
+        frame.rap_distance = 0;
+        frame.flags = (src.flags & VBT_FLAG_KEYFRAME)
+            ? (VAC2_FRAME_FLAG_KEYFRAME | VAC2_FRAME_FLAG_RAP)
+            : 0;
+        out.frames[static_cast<size_t>(i)] = frame;
+
+        Vac2FrameSummaryEntry summary{};
+        summary.poc = src.poc;
+        summary.coded_order = index;
+        summary.first_vcl_unit = first_vcl_by_frame[index];
+        summary.slice_type = 255;
+        summary.qp_kind = VAC2_QP_KIND_UNKNOWN;
+        if (summary.first_vcl_unit != UINT32_MAX &&
+            summary.first_vcl_unit < out.units.size()) {
+            const auto& unit = out.units[summary.first_vcl_unit];
+            summary.temporal_id = unit.temporal_id;
+            summary.nal_type = unit.nal_type;
+            summary.slice_type = infer_slice_type(out.codec, unit.nal_type, static_cast<uint8_t>(
+                ((unit.flags & VAC2_UNIT_FLAG_IS_VCL) ? VBI_FLAG_IS_VCL : 0) |
+                ((unit.flags & VAC2_UNIT_FLAG_IS_SLICE) ? VBI_FLAG_IS_SLICE : 0) |
+                ((unit.flags & VAC2_UNIT_FLAG_IS_KEYFRAME) ? VBI_FLAG_IS_KEYFRAME : 0)));
+        }
+        out.frame_summaries[static_cast<size_t>(i)] = summary;
+    }
+
+    return true;
 }
 
 static const char* annex_b_bsf_name(VbiCodec codec) {
@@ -718,6 +872,51 @@ bool AnalysisGenerator::generate(const std::string& video_path,
     }
 
     return vbt_ok && vbi_ok;
+}
+
+bool AnalysisGenerator::generate_vac2_base(const std::string& video_path,
+                                           const std::string& vac2_path,
+                                           uint64_t max_output_bytes) {
+    if (video_path.empty() || vac2_path.empty()) return false;
+
+    const std::filesystem::path out_path = win_utf8::path_from_utf8(vac2_path);
+    const std::filesystem::path parent = out_path.parent_path();
+    std::error_code ec;
+    if (!parent.empty()) {
+        std::filesystem::create_directories(parent, ec);
+        if (ec) return false;
+    }
+
+    const std::string tmp_prefix = vac2_path + ".legacy.";
+    const std::string tmp_vbi_path = tmp_prefix + "tmp.vbi";
+    const std::string tmp_vbt_path = tmp_prefix + "tmp.vbt";
+
+    auto cleanup = [&]() {
+        win_utf8::delete_file_utf8(tmp_vbi_path);
+        win_utf8::delete_file_utf8(tmp_vbt_path);
+    };
+
+    if (!generate(video_path, tmp_vbi_path, tmp_vbt_path, max_output_bytes)) {
+        cleanup();
+        return false;
+    }
+
+    VbiFile vbi;
+    VbtFile vbt;
+    if (!vbi.open(tmp_vbi_path) || !vbt.open(tmp_vbt_path)) {
+        cleanup();
+        return false;
+    }
+
+    Vac2BaseData data;
+    if (!build_vac2_base_from_indices(video_path, vbi, vbt, data)) {
+        cleanup();
+        return false;
+    }
+
+    const bool ok = write_vac2_base_container(vac2_path, data, max_output_bytes);
+    cleanup();
+    return ok;
 }
 
 } // namespace vr::analysis

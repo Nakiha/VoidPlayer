@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include "analysis/parsers/analysis_container.h"
+#include "analysis/parsers/vac2_parser.h"
 #include "analysis/parsers/vbt_parser.h"
 #include "analysis/parsers/vbi_parser.h"
 #include "analysis/parsers/vbs4_parser.h"
@@ -263,6 +264,193 @@ TEST_CASE("VAC1: open and embedded sections", "[analysis][vac]") {
     const auto* vbs4_section = vac.section("VBS4");
     REQUIRE(vbs4.open_region(vac.path(), vbs4_section->offset, vbs4_section->size));
     REQUIRE(vbs4.frame_count() > 0);
+}
+
+// ===========================================================================
+// VAC2 Base Container Tests
+// ===========================================================================
+
+TEST_CASE("VAC2: write and read base index sections", "[analysis][vac2]") {
+    const auto path = std::filesystem::temp_directory_path() / "voidplayer_test_base.vac";
+
+    vr::analysis::Vac2BaseData data;
+    data.codec = VbiCodec::VVC;
+    data.track_index = 0;
+    data.time_base_num = 1;
+    data.time_base_den = 60;
+    data.width = 1920;
+    data.height = 1080;
+    data.source_size = 123456;
+    data.source_mtime_unix_ms = 987654321;
+    data.content_revision = 42;
+    data.metadata_json = R"({"schema":"vac2-test"})";
+
+    Vac2PacketEntry packet0{};
+    packet0.pts = 0;
+    packet0.dts = 0;
+    packet0.duration = 1;
+    packet0.size = 100;
+    packet0.flags = VAC2_PACKET_FLAG_KEYFRAME;
+    packet0.file_offset = 1000;
+    packet0.format_offset = 1000;
+    packet0.first_unit = 0;
+    packet0.unit_count = 2;
+    packet0.au_index = 0;
+
+    Vac2PacketEntry packet1{};
+    packet1.pts = 1;
+    packet1.dts = 1;
+    packet1.duration = 1;
+    packet1.size = 80;
+    packet1.file_offset = 1100;
+    packet1.format_offset = 1100;
+    packet1.first_unit = 2;
+    packet1.unit_count = 1;
+    packet1.au_index = 1;
+    data.packets = {packet0, packet1};
+
+    Vac2BitstreamUnitEntry unit0{};
+    unit0.packet_index = 0;
+    unit0.au_index = 0;
+    unit0.offset = 0;
+    unit0.size = 32;
+    unit0.nal_type = 14;
+    unit0.unit_kind = static_cast<uint8_t>(VbiUnitKind::Nalu);
+    unit0.flags = VAC2_UNIT_FLAG_PARAMETER_SET;
+    unit0.pset_snapshot = 0;
+
+    Vac2BitstreamUnitEntry unit1{};
+    unit1.packet_index = 0;
+    unit1.au_index = 0;
+    unit1.offset = 32;
+    unit1.size = 68;
+    unit1.nal_type = 7;
+    unit1.temporal_id = 0;
+    unit1.unit_kind = static_cast<uint8_t>(VbiUnitKind::Nalu);
+    unit1.flags = VAC2_UNIT_FLAG_IS_VCL |
+                  VAC2_UNIT_FLAG_IS_SLICE |
+                  VAC2_UNIT_FLAG_IS_KEYFRAME;
+    unit1.pset_snapshot = 0;
+
+    Vac2BitstreamUnitEntry unit2{};
+    unit2.packet_index = 1;
+    unit2.au_index = 1;
+    unit2.offset = 100;
+    unit2.size = 80;
+    unit2.nal_type = 1;
+    unit2.temporal_id = 1;
+    unit2.unit_kind = static_cast<uint8_t>(VbiUnitKind::Nalu);
+    unit2.flags = VAC2_UNIT_FLAG_IS_VCL | VAC2_UNIT_FLAG_IS_SLICE;
+    unit2.pset_snapshot = 0;
+    data.units = {unit0, unit1, unit2};
+
+    Vac2FrameEntry frame0{};
+    frame0.first_packet = 0;
+    frame0.packet_count = 1;
+    frame0.first_unit = 0;
+    frame0.unit_count = 2;
+    frame0.pts = 0;
+    frame0.dts = 0;
+    frame0.duration = 1;
+    frame0.coded_order = 0;
+    frame0.display_order = 0;
+    frame0.poc = 0;
+    frame0.frame_size = 100;
+    frame0.rap_distance = 0;
+    frame0.flags = VAC2_FRAME_FLAG_KEYFRAME | VAC2_FRAME_FLAG_RAP;
+
+    Vac2FrameEntry frame1{};
+    frame1.first_packet = 1;
+    frame1.packet_count = 1;
+    frame1.first_unit = 2;
+    frame1.unit_count = 1;
+    frame1.pts = 1;
+    frame1.dts = 1;
+    frame1.duration = 1;
+    frame1.coded_order = 1;
+    frame1.display_order = 1;
+    frame1.poc = 2;
+    frame1.frame_size = 80;
+    frame1.rap_distance = 1;
+    data.frames = {frame0, frame1};
+
+    Vac2FrameSummaryEntry summary0{};
+    summary0.poc = 0;
+    summary0.coded_order = 0;
+    summary0.first_vcl_unit = 1;
+    summary0.flags = VAC2_FRAME_SUMMARY_FLAG_EXACT_REFS;
+    summary0.slice_type = 2;
+    summary0.nal_type = 7;
+    summary0.qp_kind = VAC2_QP_KIND_SLICE;
+    summary0.qp_avg = 26;
+    summary0.qp_min = 26;
+    summary0.qp_max = 26;
+
+    Vac2FrameSummaryEntry summary1{};
+    summary1.poc = 2;
+    summary1.coded_order = 1;
+    summary1.first_vcl_unit = 2;
+    summary1.temporal_id = 1;
+    summary1.slice_type = 1;
+    summary1.nal_type = 1;
+    summary1.qp_kind = VAC2_QP_KIND_SLICE;
+    summary1.qp_avg = 28;
+    summary1.qp_min = 28;
+    summary1.qp_max = 28;
+    summary1.num_ref_l0 = 1;
+    summary1.ref_pocs_l0[0] = 0;
+    data.frame_summaries = {summary0, summary1};
+
+    REQUIRE(vr::analysis::write_vac2_base_container(path.string(), data));
+
+    vr::analysis::Vac2BaseFile vac2;
+    REQUIRE(vac2.open(path.string()));
+    REQUIRE(vac2.header().magic[0] == 'V');
+    REQUIRE(vac2.header().magic[1] == 'A');
+    REQUIRE(vac2.header().magic[2] == 'C');
+    REQUIRE(vac2.header().magic[3] == '2');
+    REQUIRE(vac2.header().codec == static_cast<uint16_t>(VbiCodec::VVC));
+    REQUIRE(vac2.header().packet_count == 2);
+    REQUIRE(vac2.header().unit_count == 3);
+    REQUIRE(vac2.header().au_count == 2);
+    REQUIRE(vac2.section("META") != nullptr);
+    REQUIRE(vac2.section("PKT2") != nullptr);
+    REQUIRE(vac2.section("BSU2") != nullptr);
+    REQUIRE(vac2.section("AUF2") != nullptr);
+    REQUIRE(vac2.section("FSUM") != nullptr);
+
+    REQUIRE(vac2.metadata_json() == data.metadata_json);
+    REQUIRE(vac2.packets().size() == 2);
+    REQUIRE(vac2.units().size() == 3);
+    REQUIRE(vac2.frames().size() == 2);
+    REQUIRE(vac2.frame_summaries().size() == 2);
+    REQUIRE(vac2.packets()[0].flags & VAC2_PACKET_FLAG_KEYFRAME);
+    REQUIRE(vac2.units()[1].flags & VAC2_UNIT_FLAG_IS_KEYFRAME);
+    REQUIRE(vac2.frames()[1].poc == 2);
+    REQUIRE(vac2.frame_summaries()[1].num_ref_l0 == 1);
+    REQUIRE(vac2.frame_summaries()[1].ref_pocs_l0[0] == 0);
+    REQUIRE(vac2.frame_summaries()[1].qp_kind == VAC2_QP_KIND_SLICE);
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("VAC2: writer respects output budget", "[analysis][vac2]") {
+    const auto path = std::filesystem::temp_directory_path() /
+        "voidplayer_test_base_budget.vac";
+    vr::analysis::Vac2BaseData data;
+    data.metadata_json = "{}";
+
+    Vac2PacketEntry packet{};
+    data.packets = {packet};
+    Vac2BitstreamUnitEntry unit{};
+    data.units = {unit};
+    Vac2FrameEntry frame{};
+    data.frames = {frame};
+    Vac2FrameSummaryEntry summary{};
+    data.frame_summaries = {summary};
+
+    REQUIRE_FALSE(vr::analysis::write_vac2_base_container(path.string(), data, 16));
+    std::filesystem::remove(path);
 }
 
 // ===========================================================================

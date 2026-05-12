@@ -3,6 +3,7 @@
 #include "analysis/generators/bitstream_indexer.h"
 #include "analysis/analysis_manager.h"
 #include "analysis/parsers/analysis_container.h"
+#include "analysis/parsers/vac2_parser.h"
 #include "analysis/parsers/vbt_parser.h"
 #include "analysis/parsers/vbi_parser.h"
 #include "common/win_utf8.h"
@@ -166,6 +167,38 @@ TEST_CASE("AnalysisGenerator: private CDN FLV AV1 fallback generates VBI and VBT
     REQUIRE(vbi.nalu_count() == 1);
     REQUIRE(vbi.entry(0).nal_type == 6);
     REQUIRE(vbi.entry(0).flags & VBI_FLAG_IS_KEYFRAME);
+
+    std::filesystem::remove_all(tmp);
+}
+
+TEST_CASE("AnalysisGenerator: generates VAC2 base from lightweight scan",
+          "[analysis][generator][vac2]") {
+    auto tmp = make_temp_dir();
+    const std::string video_path = make_private_av1_flv_fixture(tmp);
+    const std::string vac2_path = tmp + "/base.vac";
+
+    REQUIRE(vr::analysis::AnalysisGenerator::generate_vac2_base(video_path, vac2_path));
+
+    vr::analysis::Vac2BaseFile vac2;
+    REQUIRE(vac2.open(vac2_path));
+    REQUIRE(vac2.header().magic[0] == 'V');
+    REQUIRE(vac2.header().magic[1] == 'A');
+    REQUIRE(vac2.header().magic[2] == 'C');
+    REQUIRE(vac2.header().magic[3] == '2');
+    REQUIRE(vac2.header().codec == static_cast<uint16_t>(VbiCodec::AV1));
+    REQUIRE(vac2.header().packet_count == 1);
+    REQUIRE(vac2.header().unit_count == 1);
+    REQUIRE(vac2.header().au_count == 1);
+    REQUIRE(vac2.packets().size() == 1);
+    REQUIRE(vac2.units().size() == 1);
+    REQUIRE(vac2.frames().size() == 1);
+    REQUIRE(vac2.frame_summaries().size() == 1);
+    REQUIRE(vac2.packets()[0].pts == 45);
+    REQUIRE(vac2.packets()[0].dts == 40);
+    REQUIRE(vac2.units()[0].nal_type == 6);
+    REQUIRE(vac2.units()[0].flags & VAC2_UNIT_FLAG_IS_KEYFRAME);
+    REQUIRE(vac2.frames()[0].frame_size > 0);
+    REQUIRE(vac2.frame_summaries()[0].qp_kind == VAC2_QP_KIND_UNKNOWN);
 
     std::filesystem::remove_all(tmp);
 }

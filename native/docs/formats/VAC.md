@@ -4,6 +4,10 @@ VAC is the current cache container for native analysis data. It replaces the
 runtime cache set of separate `.vbs4`, `.vbi`, and `.vbt` files with one
 `<hash>.vac` file.
 
+VAC1 is the currently implemented format. The planned progressive-analysis
+successor is [VAC2](VAC2.md), with derived data stored as
+[VACHUNK](VACHUNK.md) files.
+
 The container is intentionally simple: it stores complete existing payloads as
 sections. VBI2, VBT1, and VBS4 keep their own internal formats and can still be
 tested independently, while cache management and runtime loading only need one file.

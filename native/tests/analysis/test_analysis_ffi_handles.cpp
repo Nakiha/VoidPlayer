@@ -36,9 +36,9 @@ TEST_CASE("analysis FFI loads and clears overlay tracks",
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    REQUIRE(naki_analysis_set_overlay_track(7, data.vac_path().c_str()) == 1);
+    REQUIRE(naki_analysis_set_overlay_track(7, data.vac2_base_path().c_str()) == 1);
     naki_analysis_clear_overlay_tracks();
-    REQUIRE(naki_analysis_set_overlay_track(-1, data.vac_path().c_str()) == 0);
+    REQUIRE(naki_analysis_set_overlay_track(-1, data.vac2_base_path().c_str()) == 0);
     naki_analysis_clear_overlay_tracks();
 }
 
@@ -47,7 +47,7 @@ TEST_CASE("analysis FFI handle returns empty data after close",
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    NakiAnalysisHandle handle = naki_analysis_open(data.vac_path().c_str());
+    NakiAnalysisHandle handle = naki_analysis_open(data.vac2_base_path().c_str());
     REQUIRE(handle != nullptr);
 
     const NakiAnalysisSummary* loaded = naki_analysis_handle_get_summary(handle);
@@ -284,7 +284,7 @@ TEST_CASE("analysis FFI handle close is safe while readers are active",
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    NakiAnalysisHandle handle = naki_analysis_open(data.vac_path().c_str());
+    NakiAnalysisHandle handle = naki_analysis_open(data.vac2_base_path().c_str());
     REQUIRE(handle != nullptr);
 
     std::atomic<bool> stop{false};
@@ -344,7 +344,7 @@ TEST_CASE("analysis FFI handle exposes frame mappings and buckets",
     auto& data = AnalysisTestData::instance();
     REQUIRE(data.ensure());
 
-    NakiAnalysisHandle handle = naki_analysis_open(data.vac_path().c_str());
+    NakiAnalysisHandle handle = naki_analysis_open(data.vac2_base_path().c_str());
     REQUIRE(handle != nullptr);
 
     const auto* summary = naki_analysis_handle_get_summary(handle);

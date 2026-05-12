@@ -4,7 +4,6 @@
 #include "analysis/cache/vacache_store.h"
 #include "analysis/generators/bitstream_indexer.h"
 #include "analysis/generators/analysis_generator.h"
-#include "analysis/parsers/analysis_container.h"
 #include "analysis/parsers/vac2_parser.h"
 #include "common/win_utf8.h"
 #include "media/private_cdn_flv_demuxer.h"
@@ -252,6 +251,22 @@ int32_t clamp_count_to_i32(size_t count) {
 }
 
 int effective_frame_count(vr::analysis::AnalysisManager& mgr);
+bool fill_vac2_frame_at(const vr::analysis::Vac2BaseFile& base,
+                        int32_t source_index,
+                        NakiFrameInfo& f);
+int32_t fill_vac2_nalus_range(const vr::analysis::Vac2BaseFile& base,
+                              int32_t start,
+                              NakiNaluInfo* out,
+                              int32_t max_count);
+int32_t vac2_frame_to_nalu(const vr::analysis::Vac2BaseFile& base,
+                           int32_t frame_index);
+int32_t vac2_nalu_to_frame(const vr::analysis::Vac2BaseFile& base,
+                           int32_t nalu_index);
+int32_t fill_vac2_frame_buckets(const vr::analysis::Vac2BaseFile& base,
+                                int32_t start,
+                                int32_t bucket_size,
+                                NakiFrameBucket* out,
+                                int32_t max_count);
 
 void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSummary& s) {
     std::memset(&s, 0, sizeof(s));
@@ -259,18 +274,18 @@ void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSumma
     if (!mgr.is_loaded()) return;
 
     s.loaded = 1;
-    const auto& vbi = mgr.vbi();
-    const auto& vbt = mgr.vbt();
-
-    const int vbt_packet_count = vbt.packet_count();
-    s.frame_count = effective_frame_count(mgr);
-    s.packet_count = vbt_packet_count;
-    s.nalu_count = vbi.nalu_count();
-    s.video_width = mgr.video_width();
-    s.video_height = mgr.video_height();
-    s.time_base_num = vbt.header().time_base_num;
-    s.time_base_den = vbt.header().time_base_den;
-    s.codec = static_cast<int32_t>(vbi.codec());
+    const auto& base = mgr.vac2_base();
+    const auto& h = base.header();
+    s.frame_count = clamp_count_to_i32(base.frames().size());
+    s.packet_count = clamp_count_to_i32(base.packets().size());
+    s.nalu_count = clamp_count_to_i32(base.units().size());
+    s.video_width = static_cast<int32_t>(std::min<uint32_t>(
+        h.width, static_cast<uint32_t>(std::numeric_limits<int32_t>::max())));
+    s.video_height = static_cast<int32_t>(std::min<uint32_t>(
+        h.height, static_cast<uint32_t>(std::numeric_limits<int32_t>::max())));
+    s.time_base_num = h.time_base_num;
+    s.time_base_den = h.time_base_den;
+    s.codec = static_cast<int32_t>(h.codec);
 
     if (auto cb = g_get_current_pts_us.load(std::memory_order_acquire)) {
         int64_t pts_us = cb();
@@ -279,10 +294,7 @@ void fill_analysis_summary(vr::analysis::AnalysisManager& mgr, NakiAnalysisSumma
 }
 
 int effective_frame_count(vr::analysis::AnalysisManager& mgr) {
-    const int vbs4_count = mgr.frame_count();
-    const int vbt_count = mgr.vbt().packet_count();
-    if (vbs4_count <= 0 || vbt_count <= 0) return 0;
-    return std::min(vbs4_count, vbt_count);
+    return mgr.is_loaded() ? mgr.frame_count() : 0;
 }
 
 int32_t fill_analysis_frames_range(vr::analysis::AnalysisManager& mgr,
@@ -323,29 +335,8 @@ int32_t fill_analysis_frames_range(vr::analysis::AnalysisManager& mgr,
 bool fill_analysis_frame_at(vr::analysis::AnalysisManager& mgr,
                             int32_t source_index,
                             NakiFrameInfo& f) {
-    if (!mgr.is_loaded() || source_index < 0) return false;
-
-    int total_count = effective_frame_count(mgr);
-    if (source_index >= total_count) return false;
-
-    auto fh = mgr.read_frame_summary(source_index);
-    const auto& pkt = mgr.vbt().entry(source_index);
-
-    std::memset(&f, 0, sizeof(f));
-    f.poc = fh.poc;
-    f.temporal_id = fh.temporal_id;
-    f.slice_type = fh.slice_type;
-    f.nal_type = fh.nal_unit_type;
-    f.avg_qp = fh.avg_qp;
-    f.num_ref_l0 = fh.num_ref_l0;
-    f.num_ref_l1 = fh.num_ref_l1;
-    std::memcpy(f.ref_pocs_l0, fh.ref_pocs_l0, sizeof(fh.ref_pocs_l0));
-    std::memcpy(f.ref_pocs_l1, fh.ref_pocs_l1, sizeof(fh.ref_pocs_l1));
-    f.pts = pkt.pts;
-    f.dts = pkt.dts;
-    f.packet_size = static_cast<int32_t>(pkt.size);
-    f.keyframe = (pkt.flags & 0x01) ? 1 : 0;
-    return true;
+    if (!mgr.is_loaded()) return false;
+    return fill_vac2_frame_at(mgr.vac2_base(), source_index, f);
 }
 
 int32_t fill_analysis_nalus_range(vr::analysis::AnalysisManager& mgr,
@@ -367,46 +358,17 @@ int32_t fill_analysis_nalus_range(vr::analysis::AnalysisManager& mgr,
     if (!mgr.is_loaded()) return 0;
     if (start < 0) return 0;
 
-    int total_count = mgr.vbi().nalu_count();
-    if (start >= total_count) return 0;
-    int count = std::min(max_count, total_count - start);
-    for (int i = 0; i < count; i++) {
-        const auto& e = mgr.vbi().entry(start + i);
-        auto& n = out[i];
-        n.offset = e.offset;
-        n.size = e.size;
-        n.nal_type = e.nal_type;
-        n.temporal_id = e.temporal_id;
-        n.layer_id = e.layer_id;
-        n.flags = e.flags;
-    }
-    return count;
+    return fill_vac2_nalus_range(mgr.vac2_base(), start, out, max_count);
 }
 
 int32_t frame_to_nalu(vr::analysis::AnalysisManager& mgr, int32_t frame_index) {
-    if (!mgr.is_loaded() || frame_index < 0) return -1;
-    int frame = 0;
-    const auto& vbi = mgr.vbi();
-    for (int i = 0; i < vbi.nalu_count(); ++i) {
-        if ((vbi.entry(i).flags & VBI_FLAG_IS_VCL) == 0) continue;
-        if (frame == frame_index) return i;
-        ++frame;
-    }
-    return -1;
+    if (!mgr.is_loaded()) return -1;
+    return vac2_frame_to_nalu(mgr.vac2_base(), frame_index);
 }
 
 int32_t nalu_to_frame(vr::analysis::AnalysisManager& mgr, int32_t nalu_index) {
-    if (!mgr.is_loaded() || nalu_index < 0 || nalu_index >= mgr.vbi().nalu_count()) {
-        return -1;
-    }
-    int frame = 0;
-    const auto& vbi = mgr.vbi();
-    for (int i = 0; i <= nalu_index; ++i) {
-        if ((vbi.entry(i).flags & VBI_FLAG_IS_VCL) == 0) continue;
-        if (i == nalu_index) return frame;
-        ++frame;
-    }
-    return -1;
+    if (!mgr.is_loaded()) return -1;
+    return vac2_nalu_to_frame(mgr.vac2_base(), nalu_index);
 }
 
 int32_t fill_analysis_frame_buckets(vr::analysis::AnalysisManager& mgr,
@@ -414,45 +376,8 @@ int32_t fill_analysis_frame_buckets(vr::analysis::AnalysisManager& mgr,
                                     int32_t bucket_size,
                                     NakiFrameBucket* out,
                                     int32_t max_count) {
-    if (!out || max_count <= 0 || bucket_size <= 0) return 0;
-    if (!mgr.is_loaded() || start < 0) return 0;
-
-    int total_count = effective_frame_count(mgr);
-    if (start >= total_count) return 0;
-
-    int produced = 0;
-    int bucket_start = start;
-    while (produced < max_count && bucket_start < total_count) {
-        const int count = std::min(bucket_size, total_count - bucket_start);
-        auto& bucket = out[produced];
-        std::memset(&bucket, 0, sizeof(bucket));
-        bucket.start_frame = bucket_start;
-        bucket.frame_count = count;
-        bucket.packet_size_min = std::numeric_limits<int32_t>::max();
-        bucket.qp_min = std::numeric_limits<int32_t>::max();
-
-        for (int i = 0; i < count; ++i) {
-            NakiFrameInfo f{};
-            if (!fill_analysis_frame_at(mgr, bucket_start + i, f)) break;
-            bucket.packet_size_min = std::min(bucket.packet_size_min, f.packet_size);
-            bucket.packet_size_max = std::max(bucket.packet_size_max, f.packet_size);
-            bucket.packet_size_sum += f.packet_size;
-            bucket.qp_min = std::min(bucket.qp_min, f.avg_qp);
-            bucket.qp_max = std::max(bucket.qp_max, f.avg_qp);
-            bucket.qp_sum += f.avg_qp;
-            if (f.keyframe != 0) bucket.keyframe_count++;
-        }
-        if (bucket.packet_size_min == std::numeric_limits<int32_t>::max()) {
-            bucket.packet_size_min = 0;
-        }
-        if (bucket.qp_min == std::numeric_limits<int32_t>::max()) {
-            bucket.qp_min = 0;
-        }
-
-        ++produced;
-        bucket_start += count;
-    }
-    return produced;
+    if (!mgr.is_loaded()) return 0;
+    return fill_vac2_frame_buckets(mgr.vac2_base(), start, bucket_size, out, max_count);
 }
 
 int32_t current_vac2_frame_idx(const vr::analysis::Vac2BaseFile& base) {

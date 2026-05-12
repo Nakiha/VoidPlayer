@@ -14,39 +14,12 @@ AnalysisManager& AnalysisManager::instance() {
 
 bool AnalysisManager::load(const std::string& analysis_path) {
     unload();
-
-    if (load_vac1(analysis_path)) {
-        return true;
-    }
-    unload();
     return load_vac2(analysis_path);
-}
-
-bool AnalysisManager::load_vac1(const std::string& analysis_path) {
-    if (!container_.open(analysis_path)) return false;
-
-    const auto* vbi = container_.section("VBI2");
-    const auto* vbt = container_.section("VBT1");
-    if (!vbi || !vbt) { unload(); return false; }
-
-    const auto& path = container_.path();
-    if (!vbi_.open_region(path, vbi->offset, vbi->size)) { unload(); return false; }
-    if (!vbt_.open_region(path, vbt->offset, vbt->size)) { unload(); return false; }
-
-    if (const auto* vbs4 = container_.section("VBS4")) {
-        vbs4_.open_region(path, vbs4->offset, vbs4->size);
-    }
-
-    analysis_path_ = analysis_path;
-    format_ = LoadedFormat::Vac1;
-    loaded_ = true;
-    return true;
 }
 
 bool AnalysisManager::load_vac2(const std::string& analysis_path) {
     if (!vac2_base_.open(analysis_path)) return false;
     analysis_path_ = analysis_path;
-    format_ = LoadedFormat::Vac2;
     loaded_ = true;
     return true;
 }
@@ -54,12 +27,7 @@ bool AnalysisManager::load_vac2(const std::string& analysis_path) {
 void AnalysisManager::unload() {
     clear_overlay_tracks();
     vac2_base_.close();
-    vbs4_.close();
-    vbi_.close();
-    vbt_.close();
-    container_.close();
     analysis_path_.clear();
-    format_ = LoadedFormat::None;
     loaded_ = false;
     overlay.show_cu_grid.store(false, std::memory_order_release);
     overlay.show_pred_mode.store(false, std::memory_order_release);
@@ -73,29 +41,22 @@ void AnalysisManager::unload() {
 
 int AnalysisManager::frame_count() const {
     if (!loaded_) return 0;
-    if (format_ == LoadedFormat::Vac2) {
-        return static_cast<int>(vac2_base_.frames().size());
-    }
-    return vbs4_.frame_count();
+    return static_cast<int>(vac2_base_.frames().size());
 }
 
 uint32_t AnalysisManager::video_width() const {
     if (!loaded_) return 0;
-    if (format_ == LoadedFormat::Vac2) return vac2_base_.header().width;
-    return vbs4_.header().width;
+    return vac2_base_.header().width;
 }
 
 uint32_t AnalysisManager::video_height() const {
     if (!loaded_) return 0;
-    if (format_ == LoadedFormat::Vac2) return vac2_base_.header().height;
-    return vbs4_.header().height;
+    return vac2_base_.header().height;
 }
 
 Vbs4FrameSummary AnalysisManager::read_frame_summary(int frame_idx) const {
     if (!loaded_ || frame_idx < 0 || frame_idx >= frame_count()) return {};
-    if (format_ != LoadedFormat::Vac2) {
-        return vbs4_.read_frame_summary(frame_idx);
-    }
+    if (static_cast<size_t>(frame_idx) >= vac2_base_.frame_summaries().size()) return {};
     const auto& source = vac2_base_.frame_summaries()[static_cast<size_t>(frame_idx)];
     Vbs4FrameSummary out{};
     out.poc = source.poc;
@@ -119,8 +80,7 @@ Vbs4FrameSummary AnalysisManager::read_frame_summary(int frame_idx) const {
 
 Vbs4FrameData AnalysisManager::read_overlay_frame(int frame_idx) const {
     if (!loaded_ || frame_idx < 0 || frame_idx >= frame_count()) return {};
-    if (format_ == LoadedFormat::Vac2) return read_vac2_overlay_frame(frame_idx);
-    return vbs4_.read_frame(frame_idx);
+    return read_vac2_overlay_frame(frame_idx);
 }
 
 Vbs4FrameData AnalysisManager::read_vac2_overlay_frame(int frame_idx) const {
@@ -189,32 +149,7 @@ AnalysisManager::overlay_track_snapshot() const {
 
 int AnalysisManager::current_frame_idx(int64_t pts_us) const {
     if (!loaded_) return -1;
-    if (format_ == LoadedFormat::Vac2) {
-        const auto& h = vac2_base_.header();
-        if (h.time_base_num == 0 || h.time_base_den == 0) return -1;
-        const long double pts_tb =
-            static_cast<long double>(pts_us) *
-            static_cast<long double>(h.time_base_den) /
-            (static_cast<long double>(h.time_base_num) * 1000000.0L);
-        if (pts_tb < static_cast<long double>(std::numeric_limits<int64_t>::min()) ||
-            pts_tb > static_cast<long double>(std::numeric_limits<int64_t>::max())) {
-            return -1;
-        }
-        const int64_t target = static_cast<int64_t>(pts_tb);
-        const auto& frames = vac2_base_.frames();
-        auto it = std::upper_bound(
-            frames.begin(),
-            frames.end(),
-            target,
-            [](int64_t value, const Vac2FrameEntry& frame) {
-                return value < frame.pts;
-            });
-        if (it == frames.begin()) return frames.empty() ? -1 : 0;
-        --it;
-        return static_cast<int>(std::distance(frames.begin(), it));
-    }
-    // Convert microseconds to time_base units
-    const auto& h = vbt_.header();
+    const auto& h = vac2_base_.header();
     if (h.time_base_num == 0 || h.time_base_den == 0) return -1;
     const long double pts_tb =
         static_cast<long double>(pts_us) *
@@ -222,9 +157,20 @@ int AnalysisManager::current_frame_idx(int64_t pts_us) const {
         (static_cast<long double>(h.time_base_num) * 1000000.0L);
     if (pts_tb < static_cast<long double>(std::numeric_limits<int64_t>::min()) ||
         pts_tb > static_cast<long double>(std::numeric_limits<int64_t>::max())) {
-        return -1;
+            return -1;
     }
-    return vbt_.packet_at_pts(static_cast<int64_t>(pts_tb));
+    const int64_t target = static_cast<int64_t>(pts_tb);
+    const auto& frames = vac2_base_.frames();
+    auto it = std::upper_bound(
+        frames.begin(),
+        frames.end(),
+        target,
+        [](int64_t value, const Vac2FrameEntry& frame) {
+            return value < frame.pts;
+        });
+    if (it == frames.begin()) return frames.empty() ? -1 : 0;
+    --it;
+    return static_cast<int>(std::distance(frames.begin(), it));
 }
 
 } // namespace vr::analysis

@@ -134,6 +134,7 @@ bool AnalysisTestData::ensure() {
         vbt_path_  = temp_dir_ + "/test.vbt";
         vbs4_path_ = temp_dir_ + "/test.vbs4";
         vac_path_  = temp_dir_ + "/test.vac";
+        vac2_base_path_ = temp_dir_ + "/base.vac";
         raw_vvc_path_ = temp_dir_ + "/test.vvc";
 
         // Step 1: VBI + VBT via C++ AnalysisGenerator
@@ -147,6 +148,9 @@ bool AnalysisTestData::ensure() {
 
         // Step 4: Unified analysis container
         if (!generate_container()) return;
+
+        // Step 5: VAC2 base cache
+        if (!generate_vac2_base()) return;
 
         ok_ = true;
         std::atexit(atexit_cleanup);
@@ -337,5 +341,21 @@ bool AnalysisTestData::generate_container() {
         return false;
     }
     spdlog::info("[TestData] VAC1 generated: {} bytes", std::filesystem::file_size(vac_path_));
+    return true;
+}
+
+bool AnalysisTestData::generate_vac2_base() {
+    spdlog::info("[TestData] generating VAC2 base container...");
+    if (!vr::analysis::AnalysisGenerator::generate_vac2_base(
+            kTestVideo, vac2_base_path_)) {
+        spdlog::error("[TestData] VAC2 base generation failed");
+        return false;
+    }
+    if (!std::filesystem::exists(vac2_base_path_)) {
+        spdlog::error("[TestData] VAC2 base not generated");
+        return false;
+    }
+    spdlog::info("[TestData] VAC2 base generated: {} bytes",
+                 std::filesystem::file_size(vac2_base_path_));
     return true;
 }

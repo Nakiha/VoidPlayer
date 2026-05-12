@@ -1,6 +1,5 @@
 #include "test_analysis_data.h"
 #include "analysis/generators/analysis_generator.h"
-#include "analysis/parsers/analysis_container.h"
 
 #include <spdlog/spdlog.h>
 
@@ -133,7 +132,6 @@ bool AnalysisTestData::ensure() {
         vbi_path_  = temp_dir_ + "/test.vbi";
         vbt_path_  = temp_dir_ + "/test.vbt";
         vbs4_path_ = temp_dir_ + "/test.vbs4";
-        vac_path_  = temp_dir_ + "/test.vac";
         vac2_base_path_ = temp_dir_ + "/base.vac";
         raw_vvc_path_ = temp_dir_ + "/test.vvc";
 
@@ -146,10 +144,7 @@ bool AnalysisTestData::ensure() {
         // Step 3: VBS4 via VTM DecoderApp
         if (!generate_vbs4()) return;
 
-        // Step 4: Unified analysis container
-        if (!generate_container()) return;
-
-        // Step 5: VAC2 base cache
+        // Step 4: VAC2 base cache
         if (!generate_vac2_base()) return;
 
         ok_ = true;
@@ -328,20 +323,6 @@ bool AnalysisTestData::generate_vbs4() {
     spdlog::error("[TestData] VBS4 generation only supported on Windows");
     return false;
 #endif
-}
-
-bool AnalysisTestData::generate_container() {
-    spdlog::info("[TestData] generating VAC1 analysis container...");
-    if (!vr::analysis::write_analysis_container(vac_path_, vbs4_path_, vbi_path_, vbt_path_)) {
-        spdlog::error("[TestData] VAC1 container generation failed");
-        return false;
-    }
-    if (!std::filesystem::exists(vac_path_)) {
-        spdlog::error("[TestData] VAC1 container not generated");
-        return false;
-    }
-    spdlog::info("[TestData] VAC1 generated: {} bytes", std::filesystem::file_size(vac_path_));
-    return true;
 }
 
 bool AnalysisTestData::generate_vac2_base() {

@@ -2,8 +2,7 @@
 
 This document describes the cache architecture for progressive analysis. The
 runtime cache now writes VAC2 base files plus VACHUNK derived chunks; the old
-VAC1 container is retained only as legacy format documentation and parser test
-coverage.
+VAC1 container remains only as migration history in this design note.
 
 ## Problem
 

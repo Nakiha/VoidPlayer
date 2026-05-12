@@ -4,8 +4,8 @@ VACHUNK is the target file format for derived analysis results generated from a
 VAC2 base index. Chunks are optional, range-scoped, feature-scoped, and safe to
 delete. The recommended file extension is `.vck`.
 
-This is a proposed format specification. Current runtime code still stores deep
-analysis in VAC1/VBS4.
+Runtime code now writes overlay data as VACHUNK files. VBS4 remains a temporary
+codec-analyzer input for chunk generation, not a runtime cache container.
 
 ## Purpose
 

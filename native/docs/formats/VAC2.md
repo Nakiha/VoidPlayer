@@ -275,5 +275,5 @@ with richer base tables and external derived chunks.
 
 VAC1-to-VAC2 migration was completed destructively for runtime cache writes:
 new analysis generation writes VAC2 base plus chunks, and stale VAC1 files are
-only treated as cleanup artifacts. VAC1 parser coverage remains for old-format
-tests.
+only treated as cleanup artifacts. Native runtime no longer builds or tests a
+VAC1 parser.

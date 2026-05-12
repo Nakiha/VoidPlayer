@@ -7,35 +7,6 @@
 #pragma pack(push, 1)
 
 // ===========================================================================
-// VAC1 — Void analysis container
-// ===========================================================================
-
-inline constexpr uint16_t kAnalysisContainerVersion = 1;
-
-struct AnalysisContainerHeader {
-    char     magic[4];       // "VAC1"
-    uint16_t version;        // kAnalysisContainerVersion
-    uint16_t header_size;    // sizeof(AnalysisContainerHeader)
-    uint16_t section_entry_size;
-    uint16_t section_count;
-    uint32_t flags;
-    uint64_t section_table_offset;
-    uint64_t file_size;
-    uint64_t reserved[4];
-};
-static_assert(sizeof(AnalysisContainerHeader) == 64);
-
-struct AnalysisContainerSectionEntry {
-    char     type[4];        // "VBS4", "VBI2", "VBT1"
-    uint32_t flags;
-    uint64_t offset;
-    uint64_t size;
-    uint64_t checksum;
-    uint64_t reserved[2];
-};
-static_assert(sizeof(AnalysisContainerSectionEntry) == 48);
-
-// ===========================================================================
 // VBS4 — decoder-derived block statistics (summaries + compressed blocks)
 // ===========================================================================
 

@@ -12,7 +12,8 @@ analysis/
 ├── analysis_manager.h/cpp      # 单例管理器：加载/查询分析数据
 ├── parsers/                    # 二进制文件解析器（只读）
 │   ├── binary_types.h          # VAC2/VACHUNK/VBS4/VBI/VBT packed 结构体定义
-│   ├── analysis_container.h/cpp # 旧 VAC1 解析/格式测试辅助
+│   ├── vac2_parser.h/cpp       # VAC2 base index
+│   ├── vachunk_parser.h/cpp    # VACHUNK derived chunks
 │   ├── vbs4_parser.h/cpp       # VBS4 — VTM 帧级/CU 统计
 │   ├── vbi_parser.h/cpp        # VBI  — NALU 索引
 │   └── vbt_parser.h/cpp        # VBT  — 时间戳/关键帧
@@ -35,7 +36,6 @@ Analysis 使用三类自定义二进制格式，均为小端序，结构体使�
 
 - [VAC2](formats/VAC2.md) — 当前 base index 容器；只保存可快速生成的码流地图和轻量展示统计
 - [VACHUNK](formats/VACHUNK.md) — 当前按需派生分析 chunk；保存 NAL detail、exact frame summary、overlay 数据
-- [VAC](formats/VAC.md) — 旧 VAC1 单文件容器说明；runtime cache 不再生成 `.vac` VAC1
 - [VBT](formats/VBT.md) — packet 时间戳/关键帧元数据 section，当前 magic `VBT1`
 - [VBI](formats/VBI.md) — bitstream unit 索引 section，当前写入格式为 `VBI2`，兼容读取 legacy `VBI1`
 - [VBS4](formats/VBS4.md) — 压缩/分块读取 block statistics section，当前 magic `VBS4`
@@ -82,7 +82,8 @@ HEVC/H.265 由 FFmpeg analyzer 自行 demux/decode 并写入 VBS4。overlay chun
 
 每个解析器对应一个 `*File` 类，`open()` 读取 header 和索引，后续按需读取单帧数据：
 
-- **AnalysisContainerFile**: VAC section directory → 定位内嵌 VBS4/VBI2/VBT1 payload
+- **Vac2BaseFile**: VAC2 section directory + base tables → frames/NALU/packet/summary fast path
+- **VachunkFile**: VACHUNK section directory → overlay/exact summary/detail chunks
 - **Vbs4File**: section directory + frame summaries + CU index → `read_frame(idx)` 返回 summary + CU records
 - **VbiFile**: NALU 数组 → `find_vcl_nalus()` / `find_keyframes()` 筛选
 - **VbtFile**: packet 数组 → `packet_at_pts()` 二分查找、`keyframe_indices()`

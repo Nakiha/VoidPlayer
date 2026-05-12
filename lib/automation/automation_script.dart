@@ -319,6 +319,18 @@ ScriptInstruction? _parseInstruction(
           outputPath: args.length >= 2 ? args[1] : null,
         ),
       );
+    case 'CAPTURE_FLUTTER':
+      if (args.isEmpty) {
+        log.warning('CAPTURE_FLUTTER needs a capture name: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        CaptureFlutterAction(
+          args[0],
+          outputPath: args.length >= 2 ? args[1] : null,
+        ),
+      );
     case 'WINDOW_MAXIMIZE':
       return ScriptAutomationAction(time, const WindowMaximize());
     case 'WINDOW_RESTORE':

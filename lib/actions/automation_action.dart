@@ -22,6 +22,14 @@ class CaptureViewportAction extends AutomationAction {
     : super('CAPTURE_VIEWPORT');
 }
 
+class CaptureFlutterAction extends AutomationAction {
+  final String nameId;
+  final String? outputPath;
+
+  const CaptureFlutterAction(this.nameId, {this.outputPath})
+    : super('CAPTURE_FLUTTER');
+}
+
 class WindowMaximize extends AutomationAction {
   const WindowMaximize() : super('WINDOW_MAXIMIZE');
 }

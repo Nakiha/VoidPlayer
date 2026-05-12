@@ -1,10 +1,16 @@
 import 'dart:ffi';
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:window_manager/window_manager.dart' as wm;
 
 import '../../app_log.dart';
+import '../../native_player/native_player_protocol.dart';
 import '../../widgets/analysis_overlay_controls.dart';
 
 class MainWindowTestHarness {
@@ -12,6 +18,7 @@ class MainWindowTestHarness {
   final GlobalKey timelineSliderKey;
   final GlobalKey controlsBarKey;
   final GlobalKey analysisOverlayButtonKey;
+  final GlobalKey fullFrameCaptureKey;
   final GlobalKey loopRangeBarKey;
   final double Function() splitPosition;
   final double Function() timelineStartWidth;
@@ -26,6 +33,7 @@ class MainWindowTestHarness {
     required this.timelineSliderKey,
     required this.controlsBarKey,
     required this.analysisOverlayButtonKey,
+    required this.fullFrameCaptureKey,
     required this.loopRangeBarKey,
     required this.splitPosition,
     required this.timelineStartWidth,
@@ -33,6 +41,55 @@ class MainWindowTestHarness {
     required this.resolvedLoopStartUs,
     required this.resolvedLoopEndUs,
   });
+
+  Future<ViewportCapture> captureFlutterFrame({String? outputPath}) async {
+    final context = fullFrameCaptureKey.currentContext;
+    if (context == null) {
+      throw StateError('Flutter frame capture root is not mounted');
+    }
+    await WidgetsBinding.instance.endOfFrame;
+    if (!context.mounted) {
+      throw StateError('Flutter frame capture root was unmounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderRepaintBoundary || !renderObject.hasSize) {
+      throw StateError('Flutter frame capture root has no repaint boundary');
+    }
+
+    final pixelRatio = View.of(context).devicePixelRatio;
+    final image = await renderObject.toImage(pixelRatio: pixelRatio);
+    try {
+      final rawData = await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
+      if (rawData == null) {
+        throw StateError('Failed to read Flutter frame pixels');
+      }
+      final rawRgba = rawData.buffer.asUint8List();
+      final stats = _computeRgbaStats(rawRgba);
+      String? resolvedOutputPath;
+      if (outputPath != null && outputPath.trim().isNotEmpty) {
+        final pngData = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (pngData == null) {
+          throw StateError('Failed to encode Flutter frame PNG');
+        }
+        final file = File(outputPath);
+        await file.parent.create(recursive: true);
+        await file.writeAsBytes(pngData.buffer.asUint8List(), flush: true);
+        resolvedOutputPath = outputPath;
+      }
+      return ViewportCapture(
+        hash: _captureHash(rawRgba),
+        width: image.width,
+        height: image.height,
+        avgLuma: stats.avgLuma,
+        nonBlackRatio: stats.nonBlackRatio,
+        outputPath: resolvedOutputPath,
+      );
+    } finally {
+      image.dispose();
+    }
+  }
 
   void clickTimelineFraction(double fraction) {
     final context = timelineSliderKey.currentContext;
@@ -575,6 +632,40 @@ class MainWindowTestHarness {
     );
   }
 }
+
+class _RgbaCaptureStats {
+  final double avgLuma;
+  final double nonBlackRatio;
+
+  const _RgbaCaptureStats({required this.avgLuma, required this.nonBlackRatio});
+}
+
+_RgbaCaptureStats _computeRgbaStats(Uint8List rgba) {
+  final pixelCount = rgba.length ~/ 4;
+  if (pixelCount == 0) {
+    return const _RgbaCaptureStats(avgLuma: 0, nonBlackRatio: 0);
+  }
+
+  var lumaSum = 0;
+  var nonBlack = 0;
+  for (var i = 0; i < pixelCount; i++) {
+    final off = i * 4;
+    final r = rgba[off];
+    final g = rgba[off + 1];
+    final b = rgba[off + 2];
+    final luma = (77 * r + 150 * g + 29 * b) >> 8;
+    lumaSum += luma;
+    if (r > 8 || g > 8 || b > 8) nonBlack++;
+  }
+
+  return _RgbaCaptureStats(
+    avgLuma: lumaSum / pixelCount,
+    nonBlackRatio: nonBlack / pixelCount,
+  );
+}
+
+String _captureHash(Uint8List bytes) =>
+    sha256.convert(bytes).toString().substring(0, 16);
 
 final _user32 = DynamicLibrary.open('user32.dll');
 const _mouseEventLeftDown = 0x0002;

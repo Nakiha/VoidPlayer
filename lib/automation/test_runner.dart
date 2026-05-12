@@ -177,6 +177,17 @@ class TestRunner {
           ' nonBlack=${capture.nonBlackRatio.toStringAsFixed(4)}'
           '${capture.outputPath != null ? ' -> ${capture.outputPath}' : ''}',
         );
+      case CaptureFlutterAction(:final nameId, :final outputPath):
+        final capture = await testHarness.captureFlutterFrame(
+          outputPath: outputPath,
+        );
+        _state.captures[nameId] = capture;
+        log.info(
+          'TestRunner: CAPTURE_FLUTTER $nameId hash=${capture.hash} ${capture.width}x${capture.height}'
+          ' avgLuma=${capture.avgLuma.toStringAsFixed(2)}'
+          ' nonBlack=${capture.nonBlackRatio.toStringAsFixed(4)}'
+          '${capture.outputPath != null ? ' -> ${capture.outputPath}' : ''}',
+        );
       case WindowMaximize():
         log.info('TestRunner: WINDOW_MAXIMIZE');
         await runtime.maximizeWindow();

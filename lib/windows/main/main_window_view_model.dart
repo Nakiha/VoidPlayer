@@ -11,12 +11,14 @@ import '../../widgets/loop_range_bar.dart';
 import 'main_window_state.dart';
 
 class MainWindowViewModel {
+  final GlobalKey fullFrameCaptureKey;
   final MainWindowViewportVm viewport;
   final MainWindowMediaVm media;
   final MainWindowPlaybackVm playback;
   final MainWindowOverlayVm overlays;
 
   const MainWindowViewModel({
+    required this.fullFrameCaptureKey,
     required this.viewport,
     required this.media,
     required this.playback,

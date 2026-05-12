@@ -118,6 +118,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 |---------|------|------|
 | `SET_RENDER_SIZE` | width, height | 设置 renderer 输出尺寸 |
 | `CAPTURE_VIEWPORT` | name, outputPath? | 抓取 viewport hash / 截图 |
+| `CAPTURE_FLUTTER` | name, outputPath? | 抓取完整 Flutter 主窗口 hash / 截图，包含 toolbar 和浮层 |
 | `WINDOW_MAXIMIZE` | — | 最大化主窗口 |
 | `WINDOW_RESTORE` | — | 恢复主窗口 |
 | `STORE_VIEW_CENTER` | name | 记录归一化视图中心基线 |

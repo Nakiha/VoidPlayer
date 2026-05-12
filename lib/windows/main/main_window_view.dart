@@ -22,7 +22,10 @@ class MainWindowView extends StatelessWidget {
         );
         if (sources.isNotEmpty) actions.drop.filesDropped(sources);
       },
-      child: MainWindowScaffold(model: model, actions: actions),
+      child: RepaintBoundary(
+        key: model.fullFrameCaptureKey,
+        child: MainWindowScaffold(model: model, actions: actions),
+      ),
     );
   }
 }

@@ -58,6 +58,7 @@ class MainWindowController {
   final GlobalKey controlsBarKey = GlobalKey();
   final GlobalKey analysisOverlayButtonKey = GlobalKey();
   final GlobalKey viewportKey = GlobalKey();
+  final GlobalKey fullFrameCaptureKey = GlobalKey();
   Timer? _fullScreenControlsTimer;
   int _fullScreenSerial = 0;
   bool? _pendingFullScreen;
@@ -142,6 +143,7 @@ class MainWindowController {
 
   MainWindowViewModel get viewModel {
     return MainWindowViewModel(
+      fullFrameCaptureKey: fullFrameCaptureKey,
       viewport: MainWindowViewportVm(
         viewMode: _layout.mode,
         viewModeEnabled: _textureId != null,
@@ -466,6 +468,7 @@ class MainWindowController {
       timelineSliderKey: timelineSliderKey,
       controlsBarKey: controlsBarKey,
       analysisOverlayButtonKey: analysisOverlayButtonKey,
+      fullFrameCaptureKey: fullFrameCaptureKey,
       loopRangeBarKey: loopRangeBarKey,
       splitPosition: () => _layout.splitPos,
       timelineStartWidth: () => _timelineStartWidth,

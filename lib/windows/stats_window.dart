@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ffi';
+
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 
@@ -162,33 +163,8 @@ class _StatsPageState extends State<StatsPage> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Wrap(
-          spacing: 16,
-          runSpacing: 8,
-          children: [
-            _MetricChip(
-              label: 'RSS',
-              value: _bytesText(_memory.workingSetBytes),
-            ),
-            _MetricChip(
-              label: 'Private',
-              value: _bytesText(_memory.privateBytes),
-            ),
-            _MetricChip(
-              label: 'GPU',
-              value: _bytesText(_memory.dedicatedGpuBytes),
-            ),
-            _MetricChip(
-              label: 'CPU frames',
-              value: _bytesText(_memory.cpuFrameBytes),
-            ),
-            _MetricChip(
-              label: 'Packets',
-              value: _bytesText(_memory.packetQueueBytes),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
+        _MemorySummarySection(memory: _memory),
+        const Divider(height: 1),
         if (_tracks.isEmpty)
           Container(
             width: double.infinity,
@@ -272,22 +248,185 @@ String _bytesText(int bytes) {
   return '${(mb / 1024.0).toStringAsFixed(2)} GB';
 }
 
-class _MetricChip extends StatelessWidget {
-  final String label;
-  final String value;
+class _MemorySummarySection extends StatelessWidget {
+  static const _minTableWidth = 520.0;
+  static const _cellWidth = 104.0;
 
-  const _MetricChip({required this.label, required this.value});
+  final _MemorySummary memory;
+
+  const _MemorySummarySection({required this.memory});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Text(
-      '$label $value',
-      style: theme.textTheme.labelMedium?.copyWith(
-        color: theme.colorScheme.onSurfaceVariant,
+    final colorScheme = theme.colorScheme;
+    final metrics = [
+      _MemoryMetric(
+        label: 'RSS',
+        value: _bytesText(memory.workingSetBytes),
+        icon: Icons.memory_outlined,
+      ),
+      _MemoryMetric(
+        label: 'Private',
+        value: _bytesText(memory.privateBytes),
+        icon: Icons.lock_outline,
+      ),
+      _MemoryMetric(
+        label: 'GPU',
+        value: _bytesText(memory.dedicatedGpuBytes),
+        icon: Icons.developer_board_outlined,
+      ),
+      _MemoryMetric(
+        label: 'CPU frames',
+        value: _bytesText(memory.cpuFrameBytes),
+        icon: Icons.view_in_ar_outlined,
+      ),
+      _MemoryMetric(
+        label: 'Packets',
+        value: _bytesText(memory.packetQueueBytes),
+        icon: Icons.all_inbox_outlined,
+      ),
+    ];
+
+    return ColoredBox(
+      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.18),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.monitor_heart_outlined,
+                  size: 15,
+                  color: colorScheme.primary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Memory',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final tableWidth = constraints.maxWidth.isFinite
+                    ? (constraints.maxWidth < _minTableWidth
+                          ? _minTableWidth
+                          : constraints.maxWidth)
+                    : _minTableWidth;
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: tableWidth,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: colorScheme.outlineVariant.withValues(
+                            alpha: 0.62,
+                          ),
+                        ),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        children: [
+                          for (int i = 0; i < metrics.length; i++) ...[
+                            Expanded(
+                              child: _MemoryMetricCell(metric: metrics[i]),
+                            ),
+                            if (i != metrics.length - 1)
+                              SizedBox(
+                                width: 1,
+                                height: 52,
+                                child: ColoredBox(
+                                  color: colorScheme.outlineVariant.withValues(
+                                    alpha: 0.62,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
+}
+
+class _MemoryMetricCell extends StatelessWidget {
+  final _MemoryMetric metric;
+
+  const _MemoryMetricCell({required this.metric});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return SizedBox(
+      width: _MemorySummarySection._cellWidth,
+      height: 52,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  metric.icon,
+                  size: 13,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    metric.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 3),
+            Text(
+              metric.value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MemoryMetric {
+  final String label;
+  final String value;
+  final IconData icon;
+
+  const _MemoryMetric({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
 }
 
 class _MemorySummary {

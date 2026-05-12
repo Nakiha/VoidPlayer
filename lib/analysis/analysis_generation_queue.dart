@@ -7,6 +7,14 @@ abstract class AnalysisGenerationQueue {
     required String hash,
     required int maxCacheBytes,
   });
+
+  Future<bool> generateOverlayChunk({
+    required String videoPath,
+    required String hash,
+    required int startFrame,
+    required int endFrame,
+    required int maxCacheBytes,
+  });
 }
 
 class SerialAnalysisGenerationQueue implements AnalysisGenerationQueue {
@@ -27,6 +35,30 @@ class SerialAnalysisGenerationQueue implements AnalysisGenerationQueue {
     final task = previous.catchError((_) {}).then((_) {
       return cache.withHashExclusiveLock(hash, () async {
         return native.generateAnalysis(videoPath, hash, maxCacheBytes);
+      });
+    });
+    _queue = task.then<void>((_) {}, onError: (_) {});
+    return task;
+  }
+
+  @override
+  Future<bool> generateOverlayChunk({
+    required String videoPath,
+    required String hash,
+    required int startFrame,
+    required int endFrame,
+    required int maxCacheBytes,
+  }) {
+    final previous = _queue;
+    final task = previous.catchError((_) {}).then((_) {
+      return cache.withHashExclusiveLock(hash, () async {
+        return native.generateOverlayChunk(
+          videoPath: videoPath,
+          hash: hash,
+          startFrame: startFrame,
+          endFrame: endFrame,
+          maxCacheBytes: maxCacheBytes,
+        );
       });
     });
     _queue = task.then<void>((_) {}, onError: (_) {});

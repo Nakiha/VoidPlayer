@@ -90,6 +90,7 @@ abstract class AnalysisGenerationService {
   AnalysisOverlayConfig get overlayConfig;
   AnalysisTrackGenerationStatus? statusForPath(String path);
   Future<String?> ensureGenerated(String videoPath);
+  Future<bool> ensureOverlayChunk(String hash, {required String videoPath});
   Future<bool> activateOverlay(
     String hash, {
     required String name,
@@ -137,6 +138,7 @@ class AnalysisManager extends ChangeNotifier
   AnalysisOverlayConfig _overlayConfig = const AnalysisOverlayConfig();
   FileLockHandle? _loadedHashLock;
   final Map<String, Future<String?>> _ensureGeneratedInFlightByPath = {};
+  final Map<String, Future<bool>> _ensureOverlayChunkInFlightByKey = {};
   final Map<String, AnalysisTrackGenerationStatus> _trackStatusByPath = {};
   int _stateSerial = 0;
   int _loadSerial = 0;
@@ -182,6 +184,36 @@ class AnalysisManager extends ChangeNotifier
       }
     });
     _ensureGeneratedInFlightByPath[videoPath] = future;
+    return future;
+  }
+
+  @override
+  Future<bool> ensureOverlayChunk(String hash, {required String videoPath}) {
+    final targetFrame = _resolveOverlayTargetFrame(hash);
+    final range = _overlayChunkRangeFor(hash, targetFrame);
+    if (range == null) return Future.value(false);
+    if (_cache.hasOverlayChunkForFrame(hash, targetFrame)) {
+      return Future.value(true);
+    }
+
+    final key = '$hash:${range.startFrame}:${range.endFrame}';
+    final existing = _ensureOverlayChunkInFlightByKey[key];
+    if (existing != null) return existing;
+
+    late final Future<bool> future;
+    future =
+        _ensureOverlayChunkImpl(
+          hash: hash,
+          videoPath: videoPath,
+          startFrame: range.startFrame,
+          endFrame: range.endFrame,
+          targetFrame: targetFrame,
+        ).whenComplete(() {
+          if (identical(_ensureOverlayChunkInFlightByKey[key], future)) {
+            _ensureOverlayChunkInFlightByKey.remove(key);
+          }
+        });
+    _ensureOverlayChunkInFlightByKey[key] = future;
     return future;
   }
 
@@ -539,10 +571,14 @@ class AnalysisManager extends ChangeNotifier
         log.info('[Analysis] skipped stale overlay VAC version: ${track.hash}');
         continue;
       }
-      if (!_cache.hasOverlayChunks(track.hash)) {
+      final chunkReady = await ensureOverlayChunk(
+        track.hash,
+        videoPath: track.path,
+      );
+      if (!chunkReady) {
         log.info(
           '[Analysis] skipped overlay for ${track.hash}: '
-          'VAC2 cache has no overlay chunks',
+          'VAC2 cache has no overlay chunk for the current frame',
         );
         continue;
       }
@@ -612,6 +648,7 @@ class AnalysisManager extends ChangeNotifier
     _stateSerial++;
     _loadSerial++;
     _ensureGeneratedInFlightByPath.clear();
+    _ensureOverlayChunkInFlightByKey.clear();
     _activeOverlayHash = null;
     _activeOverlayTrackFileId = -1;
     _activeOverlayHashesByTrackFileId.clear();
@@ -810,6 +847,111 @@ class AnalysisManager extends ChangeNotifier
       hash: hash,
       maxCacheBytes: _settings.maxCacheBytes,
     );
+  }
+
+  Future<bool> _ensureOverlayChunkImpl({
+    required String hash,
+    required String videoPath,
+    required int startFrame,
+    required int endFrame,
+    required int targetFrame,
+  }) async {
+    if (_cache.deleteIfVacVersionMismatch(hash) || !_cache.filesExist(hash)) {
+      return false;
+    }
+    if (_cache.hasOverlayChunkForFrame(hash, targetFrame)) return true;
+
+    final maxCacheBytes = _settings.maxCacheBytes;
+    if (maxCacheBytes > 0) {
+      final pruneResult = await _cache.enforceLimit(
+        maxBytes: maxCacheBytes,
+        protectedHashes: {hash},
+      );
+      if (pruneResult.snapshot.isOverLimit) {
+        log.warning(
+          '[Analysis] cannot generate overlay chunk; cache limit reached: '
+          'current=${pruneResult.snapshot.totalBytes}, max=$maxCacheBytes',
+        );
+        return false;
+      }
+    }
+
+    log.info(
+      '[Analysis] calling FFI generate VAC2 overlay chunk('
+      'videoPath=$videoPath, hash=$hash, frames=$startFrame..$endFrame)',
+    );
+    final ok = await _generationQueue.generateOverlayChunk(
+      videoPath: videoPath,
+      hash: hash,
+      startFrame: startFrame,
+      endFrame: endFrame,
+      maxCacheBytes: maxCacheBytes,
+    );
+    if (!ok) {
+      log.warning(
+        '[Analysis] generate VAC2 overlay chunk returned false: '
+        'hash=$hash frames=$startFrame..$endFrame',
+      );
+      return false;
+    }
+    await _cache.touchEntry(hash);
+    return _cache.hasOverlayChunkForFrame(hash, targetFrame);
+  }
+
+  int _resolveOverlayTargetFrame(String hash) {
+    AnalysisSession? session;
+    try {
+      session = _native.openSession(_cache.analysisPath(hash));
+      final summary = session?.summary;
+      if (summary == null || summary.loaded == 0 || summary.frameCount <= 0) {
+        return 0;
+      }
+      final current = summary.currentFrameIdx;
+      if (current < 0) return 0;
+      return current.clamp(0, summary.frameCount - 1).toInt();
+    } catch (e, stack) {
+      log.warning(
+        '[Analysis] failed to resolve overlay frame for $hash: $e',
+        e,
+        stack,
+      );
+      return 0;
+    } finally {
+      session?.close();
+    }
+  }
+
+  ({int startFrame, int endFrame})? _overlayChunkRangeFor(
+    String hash,
+    int targetFrame,
+  ) {
+    AnalysisSession? session;
+    try {
+      session = _native.openSession(_cache.analysisPath(hash));
+      final summary = session?.summary;
+      if (summary == null || summary.loaded == 0 || summary.frameCount <= 0) {
+        return null;
+      }
+      final frameCount = summary.frameCount;
+      final safeTarget = targetFrame.clamp(0, frameCount - 1).toInt();
+      const chunkFrameCount = 64;
+      final start = (safeTarget - chunkFrameCount ~/ 2)
+          .clamp(0, frameCount - 1)
+          .toInt();
+      final end = (start + chunkFrameCount - 1)
+          .clamp(start, frameCount - 1)
+          .toInt();
+      return (startFrame: start, endFrame: end);
+    } catch (e, stack) {
+      log.warning(
+        '[Analysis] failed to resolve overlay chunk range for $hash: $e',
+        e,
+        stack,
+      );
+      return null;
+    } finally {
+      session?.close();
+    }
   }
 
   Future<AnalysisError> _generationFailureError({

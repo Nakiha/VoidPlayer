@@ -165,6 +165,37 @@ class AnalysisCache {
     }
   }
 
+  static bool hasOverlayChunkForFrame(String hash, int frameIndex) {
+    if (frameIndex < 0) return false;
+    final dir = Directory(overlayChunksDir(hash));
+    if (!dir.existsSync()) return false;
+    try {
+      return dir.listSync(followLinks: false).any((entity) {
+        if (entity is! File) return false;
+        if (p.extension(entity.path).toLowerCase() != '.vck') return false;
+        return _overlayChunkFileCoversFrame(entity.path, frameIndex);
+      });
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static final RegExp _chunkFrameRangePattern = RegExp(
+    r'_(\d{8})_(\d{8})\.vck$',
+    caseSensitive: false,
+  );
+
+  static bool _overlayChunkFileCoversFrame(String path, int frameIndex) {
+    final name = p.basename(path);
+    if (name.toLowerCase().endsWith('_all.vck')) return true;
+    final match = _chunkFrameRangePattern.firstMatch(name);
+    if (match == null) return false;
+    final start = int.tryParse(match.group(1)!);
+    final end = int.tryParse(match.group(2)!);
+    if (start == null || end == null || start > end) return false;
+    return frameIndex >= start && frameIndex <= end;
+  }
+
   static bool deleteIfVacVersionMismatch(String hash) {
     final basePath = vac2BasePath(hash);
     if (File(basePath).existsSync() && !_isCompleteVac2(basePath)) {

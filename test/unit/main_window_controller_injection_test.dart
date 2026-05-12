@@ -43,6 +43,10 @@ class _FakeAnalysisGenerationService implements AnalysisGenerationService {
   Future<String?> ensureGenerated(String videoPath) => Future.value(null);
 
   @override
+  Future<bool> ensureOverlayChunk(String hash, {required String videoPath}) =>
+      Future.value(false);
+
+  @override
   Future<bool> activateOverlay(
     String hash, {
     required String name,

@@ -13,6 +13,13 @@ abstract class AnalysisNativeService {
     String hash,
     int maxCacheBytes,
   );
+  Future<bool> generateOverlayChunk({
+    required String videoPath,
+    required String hash,
+    required int startFrame,
+    required int endFrame,
+    required int maxCacheBytes,
+  });
 }
 
 class DefaultAnalysisNativeService implements AnalysisNativeService {
@@ -48,6 +55,25 @@ class DefaultAnalysisNativeService implements AnalysisNativeService {
   ) {
     return Isolate.run(
       () => AnalysisFfi.generateVac2Base(videoPath, hash, maxCacheBytes),
+    );
+  }
+
+  @override
+  Future<bool> generateOverlayChunk({
+    required String videoPath,
+    required String hash,
+    required int startFrame,
+    required int endFrame,
+    required int maxCacheBytes,
+  }) {
+    return Isolate.run(
+      () => AnalysisFfi.generateVac2OverlayChunk(
+        videoPath: videoPath,
+        hash: hash,
+        startFrame: startFrame,
+        endFrame: endFrame,
+        maxCacheBytes: maxCacheBytes,
+      ),
     );
   }
 }

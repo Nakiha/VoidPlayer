@@ -42,6 +42,10 @@ class _FakeCacheService implements AnalysisCacheService {
   bool hasOverlayChunks(String hash) => throw UnimplementedError();
 
   @override
+  bool hasOverlayChunkForFrame(String hash, int frameIndex) =>
+      throw UnimplementedError();
+
+  @override
   String legacyAnalysisPath(String hash) => throw UnimplementedError();
 
   @override
@@ -73,6 +77,7 @@ class _FakeCacheService implements AnalysisCacheService {
 
 class _FakeNativeService implements AnalysisNativeService {
   int generateCount = 0;
+  int generateOverlayChunkCount = 0;
 
   @override
   Future<bool> generateAnalysis(
@@ -81,6 +86,18 @@ class _FakeNativeService implements AnalysisNativeService {
     int maxCacheBytes,
   ) async {
     generateCount++;
+    return true;
+  }
+
+  @override
+  Future<bool> generateOverlayChunk({
+    required String videoPath,
+    required String hash,
+    required int startFrame,
+    required int endFrame,
+    required int maxCacheBytes,
+  }) async {
+    generateOverlayChunkCount++;
     return true;
   }
 
@@ -111,4 +128,25 @@ void main() {
     expect(cache.lockCount, 1);
     expect(native.generateCount, 1);
   });
+
+  test(
+    'generation queue serializes overlay chunk writes under hash lock',
+    () async {
+      final cache = _FakeCacheService();
+      final native = _FakeNativeService();
+      final queue = SerialAnalysisGenerationQueue(cache: cache, native: native);
+
+      final ok = await queue.generateOverlayChunk(
+        videoPath: 'video.mp4',
+        hash: 'hash',
+        startFrame: 10,
+        endFrame: 20,
+        maxCacheBytes: 0,
+      );
+
+      expect(ok, isTrue);
+      expect(cache.lockCount, 1);
+      expect(native.generateOverlayChunkCount, 1);
+    },
+  );
 }

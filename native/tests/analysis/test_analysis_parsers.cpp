@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
+#include "analysis/cache/vacache_store.h"
 #include "analysis/parsers/analysis_container.h"
 #include "analysis/parsers/vac2_parser.h"
 #include "analysis/parsers/vachunk_parser.h"
@@ -550,6 +551,110 @@ TEST_CASE("VACHUNK: writer rejects invalid range and tiny budget", "[analysis][v
     data.end_frame = 10;
     REQUIRE_FALSE(vr::analysis::write_vachunk_file(path.string(), data, 8));
     std::filesystem::remove(path);
+}
+
+// ===========================================================================
+// VACache Store Tests
+// ===========================================================================
+
+TEST_CASE("VACache: publishes base and derived chunks atomically", "[analysis][vacache]") {
+    const auto root = std::filesystem::temp_directory_path() / "voidplayer_vacache_test";
+    std::filesystem::remove_all(root);
+
+    vr::analysis::VacacheStore store(root.string(), "abc123");
+    REQUIRE(store.ensure_layout());
+    REQUIRE(std::filesystem::exists(root / "abc123" / "tmp"));
+    REQUIRE(std::filesystem::exists(root / "abc123" / "chunks"));
+    REQUIRE(store.base_path().find("base.vac") != std::string::npos);
+
+    vr::analysis::Vac2BaseData base;
+    base.codec = VbiCodec::HEVC;
+    base.time_base_num = 1;
+    base.time_base_den = 1000;
+    base.content_revision = 88;
+    base.metadata_json = R"({"schema":"vac2-cache-test"})";
+
+    Vac2PacketEntry packet{};
+    packet.pts = 40;
+    packet.dts = 40;
+    packet.size = 256;
+    packet.file_offset = UINT64_MAX;
+    packet.format_offset = UINT64_MAX;
+    packet.au_index = 0;
+    base.packets = {packet};
+
+    Vac2BitstreamUnitEntry unit{};
+    unit.packet_index = 0;
+    unit.au_index = 0;
+    unit.size = 256;
+    unit.nal_type = 19;
+    unit.unit_kind = static_cast<uint8_t>(VbiUnitKind::Nalu);
+    unit.flags = VAC2_UNIT_FLAG_IS_VCL |
+                 VAC2_UNIT_FLAG_IS_SLICE |
+                 VAC2_UNIT_FLAG_IS_KEYFRAME;
+    unit.pset_snapshot = UINT16_MAX;
+    base.units = {unit};
+
+    Vac2FrameEntry frame{};
+    frame.first_packet = 0;
+    frame.packet_count = 1;
+    frame.first_unit = 0;
+    frame.unit_count = 1;
+    frame.pts = 40;
+    frame.dts = 40;
+    frame.frame_size = 256;
+    frame.flags = VAC2_FRAME_FLAG_KEYFRAME | VAC2_FRAME_FLAG_RAP;
+    base.frames = {frame};
+
+    Vac2FrameSummaryEntry summary{};
+    summary.first_vcl_unit = 0;
+    summary.slice_type = 2;
+    summary.nal_type = 19;
+    summary.qp_kind = VAC2_QP_KIND_UNKNOWN;
+    base.frame_summaries = {summary};
+
+    REQUIRE(store.write_base_atomic(base));
+    vr::analysis::Vac2BaseFile base_file;
+    REQUIRE(store.open_base(base_file));
+    REQUIRE(base_file.header().codec == static_cast<uint16_t>(VbiCodec::HEVC));
+    REQUIRE(base_file.header().packet_count == 1);
+
+    vr::analysis::VachunkKey key;
+    key.kind = VachunkKind::FrameSummaryExact;
+    key.codec = VbiCodec::HEVC;
+    key.feature_flags = VACHUNK_FEATURE_QP;
+    key.base_content_revision = 88;
+    key.generator_revision = 3;
+    key.start_frame = 0;
+    key.end_frame = 0;
+    key.start_packet = 0;
+    key.end_packet = 0;
+    key.start_unit = 0;
+    key.end_unit = 0;
+
+    summary.qp_kind = VAC2_QP_KIND_EXACT;
+    summary.qp_avg = 27;
+    std::vector<Vac2FrameSummaryEntry> exact{summary};
+
+    vr::analysis::VachunkData chunk_data;
+    chunk_data.sections.push_back(
+        vr::analysis::make_vachunk_string_section("META", "{}"));
+    chunk_data.sections.push_back(
+        vr::analysis::make_vachunk_record_section("FSUM", exact));
+
+    REQUIRE(store.write_chunk_atomic(key, chunk_data));
+    REQUIRE(std::filesystem::exists(root / "abc123" / "chunks" / "frame_summary_exact"));
+
+    vr::analysis::VachunkFile chunk;
+    REQUIRE(store.open_chunk(key, chunk));
+    REQUIRE(chunk.header().base_content_revision == 88);
+    REQUIRE(chunk.header().generator_revision == 3);
+
+    key.generator_revision = 4;
+    vr::analysis::VachunkFile wrong_chunk;
+    REQUIRE_FALSE(store.open_chunk(key, wrong_chunk));
+
+    std::filesystem::remove_all(root);
 }
 
 // ===========================================================================

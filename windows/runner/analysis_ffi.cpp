@@ -1,8 +1,10 @@
 #include "analysis_ffi.h"
 #include "analysis/analysis_manager.h"
+#include "analysis/cache/vacache_store.h"
 #include "analysis/generators/bitstream_indexer.h"
 #include "analysis/generators/analysis_generator.h"
 #include "analysis/parsers/analysis_container.h"
+#include "analysis/parsers/vac2_parser.h"
 #include "common/win_utf8.h"
 #include "media/private_cdn_flv_demuxer.h"
 #include "utils.h"
@@ -123,8 +125,11 @@ const char* safe_cstr(const char* value) {
 
 struct AnalysisHandleState {
     vr::analysis::AnalysisManager manager;
+    std::unique_ptr<vr::analysis::Vac2BaseFile> vac2_base;
     std::mutex mutex;
     bool closed = false;
+
+    bool is_vac2() const { return static_cast<bool>(vac2_base); }
 };
 
 std::mutex g_handle_registry_mutex;
@@ -209,6 +214,40 @@ std::shared_ptr<AnalysisHandleState> unregister_analysis_handle(NakiAnalysisHand
     auto state = std::move(it->second);
     g_handle_registry.erase(it);
     return state;
+}
+
+bool file_starts_with_magic_utf8(const char* path, const char (&magic)[4]) {
+    if (!path || path[0] == '\0') return false;
+    std::ifstream in(vr::win_utf8::path_from_utf8(path), std::ios::binary);
+    if (!in.is_open()) return false;
+    char got[4] = {};
+    in.read(got, sizeof(got));
+    return in.gcount() == static_cast<std::streamsize>(sizeof(got)) &&
+           std::memcmp(got, magic, sizeof(got)) == 0;
+}
+
+bool is_vac2_base_path(const char* path) {
+    static constexpr char kMagic[4] = {'V', 'A', 'C', '2'};
+    return file_starts_with_magic_utf8(path, kMagic);
+}
+
+bool open_analysis_handle_path(AnalysisHandleState& state, const char* analysis_path) {
+    if (is_vac2_base_path(analysis_path)) {
+        auto base = std::make_unique<vr::analysis::Vac2BaseFile>();
+        if (!base->open(analysis_path)) return false;
+        state.vac2_base = std::move(base);
+        state.manager.unload();
+        return true;
+    }
+
+    state.vac2_base.reset();
+    return state.manager.load(analysis_path);
+}
+
+int32_t clamp_count_to_i32(size_t count) {
+    return count > static_cast<size_t>(std::numeric_limits<int32_t>::max())
+        ? std::numeric_limits<int32_t>::max()
+        : static_cast<int32_t>(count);
 }
 
 int effective_frame_count(vr::analysis::AnalysisManager& mgr);
@@ -415,6 +454,207 @@ int32_t fill_analysis_frame_buckets(vr::analysis::AnalysisManager& mgr,
     return produced;
 }
 
+int32_t current_vac2_frame_idx(const vr::analysis::Vac2BaseFile& base) {
+    const auto& frames = base.frames();
+    if (frames.empty()) return -1;
+    auto cb = g_get_current_pts_us.load(std::memory_order_acquire);
+    if (!cb) return -1;
+
+    const auto& h = base.header();
+    if (h.time_base_num <= 0 || h.time_base_den <= 0) return -1;
+    const int64_t pts_us = cb();
+    const long double target_units =
+        (static_cast<long double>(pts_us) * h.time_base_den) /
+        (static_cast<long double>(h.time_base_num) * 1000000.0L);
+    const int64_t target_pts = static_cast<int64_t>(target_units);
+
+    auto it = std::upper_bound(
+        frames.begin(),
+        frames.end(),
+        target_pts,
+        [](int64_t value, const Vac2FrameEntry& frame) {
+            return value < frame.pts;
+        });
+    if (it == frames.begin()) return 0;
+    return static_cast<int32_t>(std::distance(frames.begin(), it) - 1);
+}
+
+void fill_vac2_summary(const vr::analysis::Vac2BaseFile& base,
+                       NakiAnalysisSummary& s) {
+    std::memset(&s, 0, sizeof(s));
+    s.loaded = 1;
+    s.current_frame_idx = current_vac2_frame_idx(base);
+    const auto& h = base.header();
+    s.frame_count = clamp_count_to_i32(base.frames().size());
+    s.packet_count = clamp_count_to_i32(base.packets().size());
+    s.nalu_count = clamp_count_to_i32(base.units().size());
+    s.video_width = static_cast<int32_t>(std::min<uint32_t>(
+        h.width, static_cast<uint32_t>(std::numeric_limits<int32_t>::max())));
+    s.video_height = static_cast<int32_t>(std::min<uint32_t>(
+        h.height, static_cast<uint32_t>(std::numeric_limits<int32_t>::max())));
+    s.time_base_num = h.time_base_num;
+    s.time_base_den = h.time_base_den;
+    s.codec = static_cast<int32_t>(h.codec);
+}
+
+bool fill_vac2_frame_at(const vr::analysis::Vac2BaseFile& base,
+                        int32_t source_index,
+                        NakiFrameInfo& f) {
+    if (source_index < 0 ||
+        static_cast<size_t>(source_index) >= base.frames().size()) {
+        return false;
+    }
+
+    const auto& frame = base.frames()[source_index];
+    const Vac2FrameSummaryEntry* summary = nullptr;
+    if (static_cast<size_t>(source_index) < base.frame_summaries().size()) {
+        summary = &base.frame_summaries()[source_index];
+    }
+
+    std::memset(&f, 0, sizeof(f));
+    f.poc = summary ? summary->poc : frame.poc;
+    f.temporal_id = summary ? summary->temporal_id : 0;
+    f.slice_type = summary ? summary->slice_type : 255;
+    f.nal_type = summary ? summary->nal_type : 0;
+    if (summary && summary->qp_kind != VAC2_QP_KIND_UNKNOWN) {
+        f.avg_qp = summary->qp_avg;
+    }
+    if (summary) {
+        f.num_ref_l0 = std::min<int32_t>(summary->num_ref_l0, 15);
+        f.num_ref_l1 = std::min<int32_t>(summary->num_ref_l1, 15);
+        std::memcpy(f.ref_pocs_l0, summary->ref_pocs_l0, sizeof(f.ref_pocs_l0));
+        std::memcpy(f.ref_pocs_l1, summary->ref_pocs_l1, sizeof(f.ref_pocs_l1));
+    }
+    f.pts = frame.pts;
+    f.dts = frame.dts;
+    f.packet_size = static_cast<int32_t>(std::min<uint32_t>(
+        frame.frame_size, static_cast<uint32_t>(std::numeric_limits<int32_t>::max())));
+    f.keyframe = (frame.flags & VAC2_FRAME_FLAG_KEYFRAME) ? 1 : 0;
+    return true;
+}
+
+int32_t fill_vac2_frames_range(const vr::analysis::Vac2BaseFile& base,
+                               int32_t start,
+                               NakiFrameInfo* out,
+                               int32_t max_count) {
+    if (!out || max_count <= 0 || start < 0) return 0;
+    const int32_t total_count = clamp_count_to_i32(base.frames().size());
+    if (start >= total_count) return 0;
+    const int32_t count = std::min(max_count, total_count - start);
+    for (int32_t i = 0; i < count; ++i) {
+        if (!fill_vac2_frame_at(base, start + i, out[i])) return i;
+    }
+    return count;
+}
+
+int32_t fill_vac2_nalus_range(const vr::analysis::Vac2BaseFile& base,
+                              int32_t start,
+                              NakiNaluInfo* out,
+                              int32_t max_count) {
+    if (!out || max_count <= 0 || start < 0) return 0;
+    const int32_t total_count = clamp_count_to_i32(base.units().size());
+    if (start >= total_count) return 0;
+    const int32_t count = std::min(max_count, total_count - start);
+    for (int32_t i = 0; i < count; ++i) {
+        const auto& unit = base.units()[start + i];
+        auto& n = out[i];
+        n.offset = unit.offset;
+        n.size = unit.size;
+        n.nal_type = unit.nal_type;
+        n.temporal_id = unit.temporal_id;
+        n.layer_id = unit.layer_id;
+        n.flags = 0;
+        if (unit.flags & VAC2_UNIT_FLAG_IS_VCL) n.flags |= 0x01;
+        if (unit.flags & VAC2_UNIT_FLAG_IS_SLICE) n.flags |= 0x02;
+        if (unit.flags & VAC2_UNIT_FLAG_IS_KEYFRAME) n.flags |= 0x04;
+    }
+    return count;
+}
+
+int32_t vac2_frame_to_nalu(const vr::analysis::Vac2BaseFile& base,
+                           int32_t frame_index) {
+    if (frame_index < 0 ||
+        static_cast<size_t>(frame_index) >= base.frames().size()) {
+        return -1;
+    }
+    if (static_cast<size_t>(frame_index) < base.frame_summaries().size()) {
+        const auto first_vcl = base.frame_summaries()[frame_index].first_vcl_unit;
+        if (first_vcl != UINT32_MAX && first_vcl < base.units().size()) {
+            return static_cast<int32_t>(first_vcl);
+        }
+    }
+    const auto first_unit = base.frames()[frame_index].first_unit;
+    if (first_unit == UINT32_MAX || first_unit >= base.units().size()) return -1;
+    return static_cast<int32_t>(first_unit);
+}
+
+int32_t vac2_nalu_to_frame(const vr::analysis::Vac2BaseFile& base,
+                           int32_t nalu_index) {
+    if (nalu_index < 0 ||
+        static_cast<size_t>(nalu_index) >= base.units().size()) {
+        return -1;
+    }
+    const auto& unit = base.units()[nalu_index];
+    if (unit.au_index != UINT32_MAX && unit.au_index < base.frames().size()) {
+        return static_cast<int32_t>(unit.au_index);
+    }
+    const uint32_t needle = static_cast<uint32_t>(nalu_index);
+    const auto& frames = base.frames();
+    for (size_t i = 0; i < frames.size(); ++i) {
+        const auto& frame = frames[i];
+        const uint64_t start = frame.first_unit;
+        const uint64_t end = start + frame.unit_count;
+        if (start != UINT32_MAX && needle >= start && needle < end) {
+            return static_cast<int32_t>(i);
+        }
+    }
+    return -1;
+}
+
+int32_t fill_vac2_frame_buckets(const vr::analysis::Vac2BaseFile& base,
+                                int32_t start,
+                                int32_t bucket_size,
+                                NakiFrameBucket* out,
+                                int32_t max_count) {
+    if (!out || max_count <= 0 || bucket_size <= 0 || start < 0) return 0;
+    const int32_t total_count = clamp_count_to_i32(base.frames().size());
+    if (start >= total_count) return 0;
+
+    int32_t produced = 0;
+    int32_t bucket_start = start;
+    while (produced < max_count && bucket_start < total_count) {
+        const int32_t count = std::min(bucket_size, total_count - bucket_start);
+        auto& bucket = out[produced];
+        std::memset(&bucket, 0, sizeof(bucket));
+        bucket.start_frame = bucket_start;
+        bucket.frame_count = count;
+        bucket.packet_size_min = std::numeric_limits<int32_t>::max();
+        bucket.qp_min = std::numeric_limits<int32_t>::max();
+
+        for (int32_t i = 0; i < count; ++i) {
+            NakiFrameInfo f{};
+            if (!fill_vac2_frame_at(base, bucket_start + i, f)) break;
+            bucket.packet_size_min = std::min(bucket.packet_size_min, f.packet_size);
+            bucket.packet_size_max = std::max(bucket.packet_size_max, f.packet_size);
+            bucket.packet_size_sum += f.packet_size;
+            bucket.qp_min = std::min(bucket.qp_min, f.avg_qp);
+            bucket.qp_max = std::max(bucket.qp_max, f.avg_qp);
+            bucket.qp_sum += f.avg_qp;
+            if (f.keyframe != 0) bucket.keyframe_count++;
+        }
+        if (bucket.packet_size_min == std::numeric_limits<int32_t>::max()) {
+            bucket.packet_size_min = 0;
+        }
+        if (bucket.qp_min == std::numeric_limits<int32_t>::max()) {
+            bucket.qp_min = 0;
+        }
+
+        ++produced;
+        bucket_start += count;
+    }
+    return produced;
+}
+
 } // namespace
 
 extern "C" __declspec(dllexport)
@@ -552,12 +792,14 @@ NakiAnalysisHandle naki_analysis_open(const char* analysis_path) {
             set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL, "failed to allocate analysis handle");
             return nullptr;
         }
-        if (!state->manager.load(analysis_path)) {
+        if (!open_analysis_handle_path(*state, analysis_path)) {
             set_analysis_error(NAKI_ANALYSIS_ERR_OPEN_FAILED, "failed to load analysis container");
             return nullptr;
         }
         auto handle = register_analysis_handle(state);
         if (!handle) {
+            if (state->vac2_base) state->vac2_base->close();
+            state->vac2_base.reset();
             state->manager.unload();
             set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL, "failed to register analysis handle");
             return nullptr;
@@ -586,6 +828,8 @@ void naki_analysis_close(NakiAnalysisHandle handle) {
     }
     std::lock_guard<std::mutex> lock(state->mutex);
     state->closed = true;
+    if (state->vac2_base) state->vac2_base->close();
+    state->vac2_base.reset();
     state->manager.unload();
     set_analysis_ok();
 }
@@ -605,7 +849,11 @@ const NakiAnalysisSummary* naki_analysis_handle_get_summary(NakiAnalysisHandle h
         std::memset(&summary, 0, sizeof(summary));
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
     } else {
-        fill_analysis_summary(state->manager, summary);
+        if (state->is_vac2()) {
+            fill_vac2_summary(*state->vac2_base, summary);
+        } else {
+            fill_analysis_summary(state->manager, summary);
+        }
         set_analysis_ok();
     }
     return &summary;
@@ -624,7 +872,9 @@ int32_t naki_analysis_handle_get_frames(NakiAnalysisHandle handle, NakiFrameInfo
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return 0;
     }
-    auto count = fill_analysis_frames(state->manager, out, max_count);
+    auto count = state->is_vac2()
+        ? fill_vac2_frames_range(*state->vac2_base, 0, out, max_count)
+        : fill_analysis_frames(state->manager, out, max_count);
     set_analysis_ok();
     return count;
 }
@@ -642,7 +892,9 @@ int32_t naki_analysis_handle_get_frames_range(NakiAnalysisHandle handle, int32_t
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return 0;
     }
-    auto count = fill_analysis_frames_range(state->manager, start, out, max_count);
+    auto count = state->is_vac2()
+        ? fill_vac2_frames_range(*state->vac2_base, start, out, max_count)
+        : fill_analysis_frames_range(state->manager, start, out, max_count);
     set_analysis_ok();
     return count;
 }
@@ -660,7 +912,9 @@ int32_t naki_analysis_handle_get_nalus(NakiAnalysisHandle handle, NakiNaluInfo* 
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return 0;
     }
-    auto count = fill_analysis_nalus(state->manager, out, max_count);
+    auto count = state->is_vac2()
+        ? fill_vac2_nalus_range(*state->vac2_base, 0, out, max_count)
+        : fill_analysis_nalus(state->manager, out, max_count);
     set_analysis_ok();
     return count;
 }
@@ -678,7 +932,9 @@ int32_t naki_analysis_handle_get_nalus_range(NakiAnalysisHandle handle, int32_t 
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return 0;
     }
-    auto count = fill_analysis_nalus_range(state->manager, start, out, max_count);
+    auto count = state->is_vac2()
+        ? fill_vac2_nalus_range(*state->vac2_base, start, out, max_count)
+        : fill_analysis_nalus_range(state->manager, start, out, max_count);
     set_analysis_ok();
     return count;
 }
@@ -696,7 +952,9 @@ int32_t naki_analysis_handle_frame_to_nalu(NakiAnalysisHandle handle, int32_t fr
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return -1;
     }
-    auto index = frame_to_nalu(state->manager, frame_index);
+    auto index = state->is_vac2()
+        ? vac2_frame_to_nalu(*state->vac2_base, frame_index)
+        : frame_to_nalu(state->manager, frame_index);
     set_analysis_ok();
     return index;
 }
@@ -714,7 +972,9 @@ int32_t naki_analysis_handle_nalu_to_frame(NakiAnalysisHandle handle, int32_t na
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return -1;
     }
-    auto index = nalu_to_frame(state->manager, nalu_index);
+    auto index = state->is_vac2()
+        ? vac2_nalu_to_frame(*state->vac2_base, nalu_index)
+        : nalu_to_frame(state->manager, nalu_index);
     set_analysis_ok();
     return index;
 }
@@ -732,7 +992,9 @@ int32_t naki_analysis_handle_get_frame_buckets(NakiAnalysisHandle handle, int32_
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return 0;
     }
-    auto count = fill_analysis_frame_buckets(state->manager, start, bucket_size, out, max_count);
+    auto count = state->is_vac2()
+        ? fill_vac2_frame_buckets(*state->vac2_base, start, bucket_size, out, max_count)
+        : fill_analysis_frame_buckets(state->manager, start, bucket_size, out, max_count);
     set_analysis_ok();
     return count;
 }
@@ -1910,5 +2172,82 @@ int32_t naki_analysis_generate(const char* video_path,
     }
 
     spdlog::info("[Analysis] generation succeeded");
+    return 1;
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_generate_vac2_base(const char* video_path,
+                                         const char* hash,
+                                         const char* cache_root,
+                                         int64_t max_cache_bytes) {
+    std::lock_guard<std::mutex> lock(g_analysis_generate_mutex);
+    if (!video_path || video_path[0] == '\0' || !hash || hash[0] == '\0' ||
+        !cache_root || cache_root[0] == '\0') {
+        spdlog::error("[Analysis] generate_vac2_base: video_path, hash, and cache_root must be non-empty");
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "video_path, hash, and cache_root are required");
+        return 0;
+    }
+
+    vr::analysis::VacacheStore store(cache_root, hash);
+    if (!store.ensure_layout()) {
+        spdlog::error("[Analysis] generate_vac2_base: failed to create cache layout");
+        set_analysis_error(NAKI_ANALYSIS_ERR_OPEN_FAILED,
+                           "failed to create VAC2 cache layout");
+        return 0;
+    }
+
+    std::ostringstream tmp_name;
+    tmp_name << "base." << GetCurrentProcessId() << "." << GetTickCount64() << ".vac.tmp";
+    const std::string tmp_path = vr::win_utf8::path_to_utf8(
+        vr::win_utf8::path_from_utf8(store.tmp_dir()) /
+        vr::win_utf8::path_from_utf8(tmp_name.str()));
+    const uint64_t max_output_bytes =
+        max_cache_bytes > 0 ? static_cast<uint64_t>(max_cache_bytes) : 0;
+
+    spdlog::info("[Analysis] generate_vac2_base: video_path={}, hash={}, out={}",
+                 video_path, hash, store.base_path());
+    if (!vr::analysis::AnalysisGenerator::generate_vac2_base(
+            video_path, tmp_path, max_output_bytes)) {
+        spdlog::error("[Analysis] generate_vac2_base: generator failed");
+        vr::win_utf8::delete_file_utf8(tmp_path);
+        set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                           "failed to generate VAC2 base cache");
+        return 0;
+    }
+
+    if (max_output_bytes > 0 && file_size_utf8(tmp_path) > max_output_bytes) {
+        spdlog::warn("[Analysis] generate_vac2_base: output exceeded cache limit");
+        vr::win_utf8::delete_file_utf8(tmp_path);
+        set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                           "VAC2 base cache exceeded cache limit");
+        return 0;
+    }
+
+    vr::win_utf8::delete_file_utf8(store.base_path());
+    std::error_code rename_ec;
+    std::filesystem::rename(
+        vr::win_utf8::path_from_utf8(tmp_path),
+        vr::win_utf8::path_from_utf8(store.base_path()),
+        rename_ec);
+    if (rename_ec) {
+        spdlog::error("[Analysis] generate_vac2_base: publish failed: {} -> {} ({})",
+                      tmp_path, store.base_path(), rename_ec.message());
+        vr::win_utf8::delete_file_utf8(tmp_path);
+        set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                           "failed to publish VAC2 base cache");
+        return 0;
+    }
+
+    vr::analysis::Vac2BaseFile verify;
+    if (!store.open_base(verify)) {
+        spdlog::error("[Analysis] generate_vac2_base: published base failed to reopen");
+        set_analysis_error(NAKI_ANALYSIS_ERR_OPEN_FAILED,
+                           "published VAC2 base cache failed to reopen");
+        return 0;
+    }
+
+    set_analysis_ok();
+    spdlog::info("[Analysis] generate_vac2_base succeeded");
     return 1;
 }

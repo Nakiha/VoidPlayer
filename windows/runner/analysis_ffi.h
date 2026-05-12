@@ -229,3 +229,12 @@ int32_t naki_analysis_generate(const char* video_path,
                                const char* hash,
                                const char* cache_dir,
                                int64_t max_cache_bytes);
+
+/// Generate a progressive VAC2 base cache for a video file.
+/// Writes to <cache_root>/<hash>/base.vac.
+/// Returns 1 on success, 0 on failure.
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_generate_vac2_base(const char* video_path,
+                                         const char* hash,
+                                         const char* cache_root,
+                                         int64_t max_cache_bytes);

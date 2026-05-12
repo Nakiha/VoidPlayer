@@ -1,12 +1,12 @@
-# VAC Analysis Container
+# VAC1 Analysis Container (Legacy)
 
-VAC is the current cache container for native analysis data. It replaces the
-runtime cache set of separate `.vbs4`, `.vbi`, and `.vbt` files with one
-`<hash>.vac` file.
+VAC1 is the retired single-file cache container for native analysis data. It
+replaced the older runtime cache set of separate `.vbs4`, `.vbi`, and `.vbt`
+files with one `<hash>.vac` file.
 
-VAC1 is the currently implemented format. The planned progressive-analysis
-successor is [VAC2](VAC2.md), with derived data stored as
-[VACHUNK](VACHUNK.md) files.
+Runtime cache generation now uses [VAC2](VAC2.md) base files plus
+[VACHUNK](VACHUNK.md) derived chunks. This document is kept for parser tests and
+for understanding old artifacts that may be deleted during cache cleanup.
 
 The container is intentionally simple: it stores complete existing payloads as
 sections. VBI2, VBT1, and VBS4 keep their own internal formats and can still be
@@ -14,7 +14,7 @@ tested independently, while cache management and runtime loading only need one f
 
 ## Producer And Reader
 
-- Producer: `naki_analysis_generate`
+- Producer: none in current runtime
 - Writer helper: `vr::analysis::write_analysis_container`
 - Reader: `vr::analysis::AnalysisContainerFile`
 - File extension: `.vac`
@@ -72,9 +72,9 @@ the container instead of trying to partially load it.
 | `VBT1` | Yes | Complete VBT1 packet timing bytes. |
 | `VBS4` | Optional | Complete [VBS4](VBS4.md) block statistics bytes from the codec-specific analyzer. Required for VVC/HEVC/H.264 frame charts. |
 
-## Generation Notes
+## Historical Generation Notes
 
-The current generator still has two stages:
+The old generator had these stages:
 
 1. Codec-specific VBS4 producer: VVC extracts or streams Annex-B input to VTM;
    HEVC/H.264 are handled by the instrumented FFmpeg analyzer.

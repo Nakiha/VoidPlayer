@@ -1,12 +1,12 @@
 # VAC2 Base Analysis Container
 
-VAC2 is the target base-index container for progressive analysis. It replaces
+VAC2 is the base-index container for progressive analysis. It replaces
 the VAC1 "complete analysis package" contract with an immutable map of the
 source bitstream. Deep analysis results are stored separately as VACHUNK files;
 see [VACHUNK.md](VACHUNK.md).
 
-This is a proposed format specification. Current runtime code still reads and
-writes VAC1.
+Current runtime cache generation writes `cache/<hash>/base.vac` VAC2 base
+files. Expensive/deep results are generated as VACHUNK files.
 
 ## Purpose
 
@@ -273,5 +273,7 @@ Suggested fields:
 VAC1 embeds VBI2, VBT1, and optional VBS4 complete payloads. VAC2 replaces that
 with richer base tables and external derived chunks.
 
-VAC1-to-VAC2 migration should happen with side-by-side readers. VAC1 files stay
-readable until all UI and overlay paths can consume VAC2 plus chunks.
+VAC1-to-VAC2 migration was completed destructively for runtime cache writes:
+new analysis generation writes VAC2 base plus chunks, and stale VAC1 files are
+only treated as cleanup artifacts. VAC1 parser coverage remains for old-format
+tests.

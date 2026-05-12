@@ -1,8 +1,9 @@
 # Analysis Cache V2 Design
 
-This document describes the target cache architecture for progressive analysis.
-It is a roadmap/specification document. The current runtime still uses the
-VAC1 container described in [formats/VAC.md](formats/VAC.md).
+This document describes the cache architecture for progressive analysis. The
+runtime cache now writes VAC2 base files plus VACHUNK derived chunks; the old
+VAC1 container is retained only as legacy format documentation and parser test
+coverage.
 
 ## Problem
 
@@ -197,11 +198,11 @@ Recommended initial policy:
 
 ### Phase 1: Base-Only Cache
 
-- Add VAC2 writer/reader beside VAC1.
-- Generate packet, bitstream-unit, AU/frame, parameter-set, and lightweight
+- [x] Add VAC2 writer/reader.
+- [x] Generate packet, bitstream-unit, AU/frame, parameter-set, and lightweight
   frame-summary sections.
-- Allow analysis UI to open H.264/HEVC/VVC when only base data exists.
-- Keep VAC1/VBS4 as a compatibility/deep path.
+- [x] Allow analysis UI to open H.264/HEVC/VVC when only base data exists.
+- [x] Remove VAC1 as a runtime cache write path.
 
 ### Phase 2: NAL Detail On Demand
 
@@ -218,9 +219,9 @@ Recommended initial policy:
 
 ### Phase 4: Overlay Chunks
 
-- Add request/ready APIs for overlay features.
-- Generate CU/MB/QP/MV chunks by GOP/window.
-- Render pending/ready states in the main window.
+- [x] Add request/ready APIs for overlay features.
+- [x] Generate CU/MB/QP/MV overlay chunks for bounded frame windows.
+- [x] Gate and load main-window overlays from VACache chunks.
 
 ### Phase 5: FFmpeg VVC Analyzer
 

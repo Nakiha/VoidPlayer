@@ -34,7 +34,7 @@ class SerialAnalysisGenerationQueue implements AnalysisGenerationQueue {
     final previous = _queue;
     final task = previous.catchError((_) {}).then((_) {
       return cache.withHashExclusiveLock(hash, () async {
-        return native.generateAnalysis(videoPath, hash, maxCacheBytes);
+        return native.generateVac2Base(videoPath, hash, maxCacheBytes);
       });
     });
     _queue = task.then<void>((_) {}, onError: (_) {});

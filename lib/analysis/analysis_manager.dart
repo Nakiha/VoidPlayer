@@ -354,7 +354,7 @@ class AnalysisManager extends ChangeNotifier
     );
     final bool ok;
     try {
-      ok = await _generateAnalysisSerialized(videoPath, hash);
+      ok = await _generateVac2BaseSerialized(videoPath, hash);
     } catch (e, stack) {
       log.severe('[Analysis] generate VAC2 base threw: $e', e, stack);
       final error = await _generationFailureError(
@@ -841,7 +841,7 @@ class AnalysisManager extends ChangeNotifier
     }
   }
 
-  Future<bool> _generateAnalysisSerialized(String videoPath, String hash) {
+  Future<bool> _generateVac2BaseSerialized(String videoPath, String hash) {
     return _generationQueue.generate(
       videoPath: videoPath,
       hash: hash,

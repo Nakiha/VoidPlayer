@@ -8,7 +8,7 @@ abstract class AnalysisNativeService {
   Future<bool> load(String analysisPath);
   void unload();
   AnalysisSession? openSession(String analysisPath);
-  Future<bool> generateAnalysis(
+  Future<bool> generateVac2Base(
     String videoPath,
     String hash,
     int maxCacheBytes,
@@ -48,7 +48,7 @@ class DefaultAnalysisNativeService implements AnalysisNativeService {
       AnalysisSession.open(analysisPath);
 
   @override
-  Future<bool> generateAnalysis(
+  Future<bool> generateVac2Base(
     String videoPath,
     String hash,
     int maxCacheBytes,

@@ -97,15 +97,11 @@ class AnalysisCachePruneResult {
 ///     base.vac
 ///     chunks/
 ///     tmp/
-///   <hash>.vac  # legacy VAC1 artifact, ignored as a read path
 /// ```
 class AnalysisCache {
   AnalysisCache._();
 
-  static const int currentVacVersion = 1;
   static const int currentVac2MajorVersion = 2;
-  static const int _vacHeaderSize = 64;
-  static const int _vacSectionEntrySize = 48;
   static const int _vac2HeaderSize = 124;
   static const int _vac2SectionEntrySize = 56;
 
@@ -137,8 +133,6 @@ class AnalysisCache {
   static String overlayChunksDir(String hash) =>
       p.join(chunksDir(hash), 'overlay');
 
-  static String legacyAnalysisPath(String hash) => p.join(dataDir, '$hash.vac');
-
   static String analysisPath(String hash) => vac2BasePath(hash);
 
   static String hashForAnalysisPath(String analysisPath) {
@@ -149,8 +143,6 @@ class AnalysisCache {
   }
 
   static bool filesExist(String hash) => _isCompleteVac2(vac2BasePath(hash));
-
-  static bool hasLegacyAnalysis(String hash) => false;
 
   static bool hasOverlayChunks(String hash) {
     final dir = Directory(overlayChunksDir(hash));
@@ -205,98 +197,10 @@ class AnalysisCache {
     return false;
   }
 
-  static int? readVacVersion(String path) {
-    final file = File(path);
-    if (!file.existsSync()) return null;
-    try {
-      final raf = file.openSync();
-      try {
-        if (raf.lengthSync() < 6) return null;
-        final bytes = raf.readSync(6);
-        if (bytes.length != 6 ||
-            bytes[0] != 0x56 ||
-            bytes[1] != 0x41 ||
-            bytes[2] != 0x43 ||
-            bytes[3] != 0x31) {
-          return null;
-        }
-        final data = ByteData.sublistView(Uint8List.fromList(bytes));
-        return data.getUint16(4, Endian.little);
-      } finally {
-        raf.closeSync();
-      }
-    } catch (_) {
-      return null;
-    }
-  }
-
   static bool hasIncompleteContainer(String hash) {
     final basePath = vac2BasePath(hash);
     if (File(basePath).existsSync() && !_isCompleteVac2(basePath)) return true;
-
-    final legacyPath = legacyAnalysisPath(hash);
-    if (File(legacyPath).existsSync() && !_isCompleteVac1(legacyPath)) {
-      return true;
-    }
     return false;
-  }
-
-  static bool _isCompleteVac1(String path) {
-    final file = File(path);
-    if (!file.existsSync()) return false;
-    try {
-      final raf = file.openSync();
-      try {
-        final length = raf.lengthSync();
-        if (length < _vacHeaderSize) return false;
-        final header = raf.readSync(4);
-        if (header.length != 4 ||
-            header[0] != 0x56 ||
-            header[1] != 0x41 ||
-            header[2] != 0x43 ||
-            header[3] != 0x31) {
-          return false;
-        }
-        raf.setPositionSync(0);
-        final bytes = raf.readSync(_vacHeaderSize);
-        if (bytes.length < _vacHeaderSize) return false;
-        final data = ByteData.sublistView(Uint8List.fromList(bytes));
-        final version = data.getUint16(4, Endian.little);
-        final headerSize = data.getUint16(6, Endian.little);
-        final sectionEntrySize = data.getUint16(8, Endian.little);
-        final sectionCount = data.getUint16(10, Endian.little);
-        final sectionTableOffset = data.getUint64(16, Endian.little);
-        final expectedFileSize = data.getUint64(24, Endian.little);
-        if (version != currentVacVersion ||
-            headerSize != _vacHeaderSize ||
-            sectionEntrySize != _vacSectionEntrySize ||
-            sectionCount == 0 ||
-            sectionCount > 16 ||
-            expectedFileSize != length) {
-          return false;
-        }
-        final tableBytes = sectionCount * sectionEntrySize;
-        if (!_rangeFits(sectionTableOffset, tableBytes, length)) return false;
-        raf.setPositionSync(sectionTableOffset);
-        final table = raf.readSync(tableBytes);
-        if (table.length != tableBytes) return false;
-        final tableData = ByteData.sublistView(Uint8List.fromList(table));
-        for (var i = 0; i < sectionCount; i++) {
-          final offset = i * sectionEntrySize;
-          final payloadOffset = tableData.getUint64(offset + 8, Endian.little);
-          final payloadSize = tableData.getUint64(offset + 16, Endian.little);
-          if (payloadSize == 0 ||
-              !_rangeFits(payloadOffset, payloadSize, length)) {
-            return false;
-          }
-        }
-        return true;
-      } finally {
-        raf.closeSync();
-      }
-    } catch (_) {
-      return false;
-    }
   }
 
   static bool _isCompleteVac2(String path) {
@@ -749,7 +653,7 @@ class AnalysisCache {
   }
 
   static List<String> _pathsForHash(String hash) => [
-    legacyAnalysisPath(hash),
+    p.join(dataDir, '$hash.vac'),
     p.join(dataDir, '$hash.vbs4'),
     p.join(dataDir, '$hash.vbi'),
     p.join(dataDir, '$hash.vbt'),

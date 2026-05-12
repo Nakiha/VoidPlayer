@@ -36,17 +36,11 @@ class _FakeCacheService implements AnalysisCacheService {
   String analysisPath(String hash) => throw UnimplementedError();
 
   @override
-  bool hasLegacyAnalysis(String hash) => throw UnimplementedError();
-
-  @override
   bool hasOverlayChunks(String hash) => throw UnimplementedError();
 
   @override
   bool hasOverlayChunkForFrame(String hash, int frameIndex) =>
       throw UnimplementedError();
-
-  @override
-  String legacyAnalysisPath(String hash) => throw UnimplementedError();
 
   @override
   Future<AnalysisCachePruneResult> enforceLimit({
@@ -80,7 +74,7 @@ class _FakeNativeService implements AnalysisNativeService {
   int generateOverlayChunkCount = 0;
 
   @override
-  Future<bool> generateAnalysis(
+  Future<bool> generateVac2Base(
     String videoPath,
     String hash,
     int maxCacheBytes,

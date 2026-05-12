@@ -171,11 +171,6 @@ typedef _SetOverlayTrackDart = int Function(int, Pointer<Utf8>);
 typedef _ClearOverlayTracksNative = Void Function();
 typedef _ClearOverlayTracksDart = void Function();
 
-typedef _GenerateNative =
-    Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Int64);
-typedef _GenerateDart =
-    int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, int);
-
 typedef _GenerateVac2BaseNative =
     Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Int64);
 typedef _GenerateVac2BaseDart =
@@ -306,17 +301,15 @@ class _AnalysisNativeBindings {
         .lookupFunction<_ClearOverlayTracksNative, _ClearOverlayTracksDart>(
           'naki_analysis_clear_overlay_tracks',
         );
-    generate = library.lookupFunction<_GenerateNative, _GenerateDart>(
-      'naki_analysis_generate',
-    );
     generateVac2Base = library
         .lookupFunction<_GenerateVac2BaseNative, _GenerateVac2BaseDart>(
           'naki_analysis_generate_vac2_base',
         );
-    generateVac2OverlayChunk = library.lookupFunction<
-      _GenerateVac2OverlayChunkNative,
-      _GenerateVac2OverlayChunkDart
-    >('naki_analysis_generate_vac2_overlay_chunk');
+    generateVac2OverlayChunk = library
+        .lookupFunction<
+          _GenerateVac2OverlayChunkNative,
+          _GenerateVac2OverlayChunkDart
+        >('naki_analysis_generate_vac2_overlay_chunk');
     open = library.lookupFunction<_OpenNative, _OpenDart>('naki_analysis_open');
     close = library.lookupFunction<_CloseNative, _CloseDart>(
       'naki_analysis_close',
@@ -406,7 +399,6 @@ class _AnalysisNativeBindings {
   late final _SetOverlayDart setOverlay;
   late final _SetOverlayTrackDart setOverlayTrack;
   late final _ClearOverlayTracksDart clearOverlayTracks;
-  late final _GenerateDart generate;
   late final _GenerateVac2BaseDart generateVac2Base;
   late final _GenerateVac2OverlayChunkDart generateVac2OverlayChunk;
   late final _OpenDart open;
@@ -925,29 +917,6 @@ class AnalysisFfi {
 
   static void clearOverlayTracks() {
     _native.clearOverlayTracks();
-  }
-
-  /// Generate an analysis container for a video.
-  /// [videoPath] is the source video file.
-  /// [hash] is used as the base name for the output container.
-  /// Returns true on success.
-  static bool generateAnalysis(
-    String videoPath,
-    String hash,
-    int maxCacheBytes,
-  ) {
-    final video = videoPath.toNativeUtf8(allocator: calloc);
-    final hashStr = hash.toNativeUtf8(allocator: calloc);
-    final cacheDir = AppPaths.current.analysisCacheDir.toNativeUtf8(
-      allocator: calloc,
-    );
-    try {
-      return _native.generate(video, hashStr, cacheDir, maxCacheBytes) != 0;
-    } finally {
-      calloc.free(video);
-      calloc.free(hashStr);
-      calloc.free(cacheDir);
-    }
   }
 
   /// Generate the progressive VAC2 base cache for a video.

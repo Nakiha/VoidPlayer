@@ -13,6 +13,7 @@ from .flutter_app import (
     cmd_ui_test,
 )
 from .analysis_resize_stress import cmd_analysis_resize_stress
+from .analysis_benchmark import cmd_analysis_benchmark
 from .package import cmd_package
 
 
@@ -37,6 +38,7 @@ Examples:
   python dev.py package --installer
   python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
   python dev.py analysis-resize-stress
+  python dev.py analysis-benchmark --build
 """,
     )
     sub = parser.add_subparsers(dest="command")
@@ -111,6 +113,21 @@ Examples:
     p_analysis_resize.add_argument("--visible", action="store_true",
                                    help="Show and focus the analysis window instead of silent mode")
 
+    p_analysis_benchmark = sub.add_parser(
+        "analysis-benchmark",
+        help="Benchmark full-file VAC2 + VACHUNK generation for bundled samples",
+    )
+    p_analysis_benchmark.add_argument("--build", action="store_true",
+                                      help="Build Flutter release before benchmarking")
+    p_analysis_benchmark.add_argument("--cache-root", type=str, default=None,
+                                      help="Cache root to use (default: build/analysis-benchmark/cache)")
+    p_analysis_benchmark.add_argument("--output-dir", type=str, default=None,
+                                      help="Report output directory (default: build/analysis-benchmark)")
+    p_analysis_benchmark.add_argument("--keep-cache", action="store_true",
+                                      help="Reuse existing benchmark cache root")
+    p_analysis_benchmark.add_argument("samples", nargs="*",
+                                      help="Optional sample codec/name filters: h264 h265 h266, or hevc/vvc")
+
     return parser
 
 
@@ -133,4 +150,5 @@ def main() -> None:
         "package": cmd_package,
         "ui-test": cmd_ui_test,
         "analysis-resize-stress": cmd_analysis_resize_stress,
+        "analysis-benchmark": cmd_analysis_benchmark,
     }[args.command](args)

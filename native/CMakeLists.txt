@@ -54,6 +54,7 @@ if(WIN32)
         void_apply_native_compile_options(analysis_cli_smoke_tests)
         target_include_directories(analysis_cli_smoke_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
         target_link_libraries(analysis_cli_smoke_tests PRIVATE spdlog::spdlog_header_only)
+        void_link_zstd(analysis_cli_smoke_tests)
         add_dependencies(analysis_cli_smoke_tests VoidPlayerCli)
         add_test(NAME voidplayer_cli_help COMMAND VoidPlayerCli --help)
         add_test(NAME analysis_cli_smoke COMMAND

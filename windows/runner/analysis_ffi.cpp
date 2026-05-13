@@ -1148,23 +1148,16 @@ static bool publish_generated_vachunk(vr::analysis::VacacheStore& store,
         return false;
     }
 
-    const std::string chunk_dir = store.chunks_dir(key.kind);
-    if (!vr::win_utf8::create_directory_utf8(chunk_dir)) {
-        spdlog::error("[Analysis] failed to create chunk directory: {}", chunk_dir);
+    vr::analysis::VachunkData data;
+    if (!vr::analysis::read_vachunk_file_data(tmp_path, data)) {
+        spdlog::error("[Analysis] failed to read generated VACHUNK for publish: {}", tmp_path);
         return false;
     }
-    const std::string final_path = store.chunk_path(key);
-    vr::win_utf8::delete_file_utf8(final_path);
-    std::error_code rename_ec;
-    std::filesystem::rename(
-        vr::win_utf8::path_from_utf8(tmp_path),
-        vr::win_utf8::path_from_utf8(final_path),
-        rename_ec);
-    if (rename_ec) {
-        spdlog::error("[Analysis] failed to publish generated VACHUNK: {} -> {} ({})",
-                      tmp_path, final_path, rename_ec.message());
+    if (!store.write_chunk_atomic(key, std::move(data), max_output_bytes)) {
+        spdlog::error("[Analysis] failed to publish generated VACHUNK through VACache store");
         return false;
     }
+    vr::win_utf8::delete_file_utf8(tmp_path);
     return true;
 }
 

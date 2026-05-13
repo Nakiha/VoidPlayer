@@ -16,14 +16,13 @@ bool read_record_section(const VachunkFile& chunk,
     const auto* section = chunk.section(type);
     if (!section ||
         section->entry_size != sizeof(T) ||
-        section->decoded_size != section->size ||
-        section->size != static_cast<uint64_t>(section->entry_count) * sizeof(T) ||
-        section->size > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+        section->decoded_size != static_cast<uint64_t>(section->entry_count) * sizeof(T) ||
+        section->decoded_size > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
         return false;
     }
 
     std::vector<uint8_t> bytes;
-    if (!chunk.read_section(type, bytes) || bytes.size() != section->size) {
+    if (!chunk.read_section(type, bytes) || bytes.size() != section->decoded_size) {
         return false;
     }
     out.resize(section->entry_count);

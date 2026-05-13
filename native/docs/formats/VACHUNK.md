@@ -45,7 +45,7 @@ VACHUNK header before consuming payloads.
 - Little-endian.
 - Packed fixed-size records where possible.
 - Column-oriented streams for large per-unit data.
-- Payload blocks may be compressed with zstd.
+- Payload sections may be compressed with zstd.
 - Unknown sections must be skipped.
 - Chunks are immutable after publish.
 
@@ -59,7 +59,7 @@ section payloads
 
 ## Header
 
-Proposed `VachunkHeader`:
+Current `VachunkHeader`:
 
 | Field | Type | Meaning |
 | --- | ---: | --- |
@@ -75,7 +75,7 @@ Proposed `VachunkHeader`:
 | `base_content_revision` | `uint64_t` | Required VAC2 base revision. |
 | `generator_revision` | `uint64_t` | Analyzer implementation revision. |
 | `track_index` | `uint16_t` | Source video stream index. |
-| `reserved0` | `uint16_t` | Must be zero. |
+| `compression` | `uint16_t` | `0` none, `1` zstd. Section flags identify the compressed payloads. |
 | `start_frame` | `uint32_t` | First covered frame, or `UINT32_MAX`. |
 | `end_frame` | `uint32_t` | Inclusive last covered frame, or `UINT32_MAX`. |
 | `start_packet` | `uint32_t` | First covered packet, or `UINT32_MAX`. |
@@ -87,11 +87,11 @@ Proposed `VachunkHeader`:
 | `checksum` | `uint64_t` | Optional whole-file or payload checksum. |
 | `reserved1` | `uint64_t[4]` | Must be zero. |
 
-The exact C++ struct size should be locked by `static_assert` when implemented.
+The C++ struct size is locked at 128 bytes by `static_assert`.
 
 ## Section Entry
 
-Proposed `VachunkSectionEntry`:
+Current `VachunkSectionEntry`:
 
 | Field | Type | Meaning |
 | --- | ---: | --- |
@@ -104,6 +104,16 @@ Proposed `VachunkSectionEntry`:
 | `decoded_size` | `uint64_t` | Decoded size if compressed, otherwise `size`. |
 | `checksum` | `uint64_t` | Optional payload checksum. |
 | `reserved` | `uint64_t` | Must be zero. |
+
+Known generic section flags:
+
+| Flag | Meaning |
+| ---: | --- |
+| `0x00000001` | Payload bytes are zstd-compressed. `size` is compressed bytes and `decoded_size` is the byte count after decompression. |
+
+When no zstd flag is set, readers require `decoded_size == size`. The runtime
+writer only compresses sections when zstd wins by a small margin, so tiny or
+poorly-compressing sections remain raw.
 
 ## Chunk Kinds
 

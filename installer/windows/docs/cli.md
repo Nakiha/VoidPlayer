@@ -1,8 +1,9 @@
 # VoidPlayerCli
 
 `VoidPlayerCli.exe` is shipped next to `void_player.exe` for agents, support
-scripts, and manual debugging. It is read-only: it never creates, deletes, or
-rewrites runtime cache files.
+scripts, and manual debugging. Inspection commands are read-only. Generation
+commands write VAC2/VACHUNK cache files under the explicit `--cache-root` and
+`--hash` selected by the caller.
 
 The first version focuses on the current analysis cache formats and the
 headless generation path:
@@ -45,6 +46,11 @@ Inspect an overlay chunk and one frame's CU records:
 .\VoidPlayerCli.exe chunk-frame "$env:APPDATA\VoidPlayer\cache\<hash>\chunks\overlay\<chunk>.vck" --frame 128 --json --limit 20
 ```
 
+`inspect <chunk.vck> --json` reports the chunk header compression algorithm and
+per-section `compressed`, `size`, and `decodedSize` fields. Current published
+overlay chunks may use zstd on large sections; CLI readers transparently
+decompress before returning frame or CU records.
+
 Generate cache without opening the GUI:
 
 ```powershell
@@ -72,6 +78,10 @@ $hash = "<sha256-or-debug-id>"
 1. `--analyzer <exe>`
 2. `VOID_FFMPEG_ANALYZER`
 3. `tools/ffmpeg-analysis/void_ffmpeg_analyzer.exe` next to the installed GUI
+
+The analyzer writes a temporary uncompressed `.vck`; `generate-overlay` validates
+and republishes it through the same native VACHUNK writer used by the GUI, so
+generated cache files follow the current section-compression policy.
 
 ## Exit Codes
 

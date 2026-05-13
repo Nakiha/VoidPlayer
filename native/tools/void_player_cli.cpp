@@ -17,6 +17,7 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -112,6 +113,14 @@ std::string vachunk_kind_name(uint16_t kind) {
     case VachunkKind::Unknown:
     default:
         return "unknown";
+    }
+}
+
+std::string compression_name(uint16_t compression) {
+    switch (compression) {
+    case VACHUNK_COMPRESSION_NONE: return "none";
+    case VACHUNK_COMPRESSION_ZSTD: return "zstd";
+    default: return "unknown";
     }
 }
 
@@ -359,12 +368,11 @@ bool read_vachunk_records(const vr::analysis::VachunkFile& chunk,
     const auto* section = chunk.section(type);
     if (!section ||
         section->entry_size != sizeof(T) ||
-        section->decoded_size != section->size ||
-        section->size != static_cast<uint64_t>(section->entry_count) * sizeof(T)) {
+        section->decoded_size != static_cast<uint64_t>(section->entry_count) * sizeof(T)) {
         return false;
     }
     std::vector<uint8_t> bytes;
-    if (!chunk.read_section(type, bytes) || bytes.size() != section->size) {
+    if (!chunk.read_section(type, bytes) || bytes.size() != section->decoded_size) {
         return false;
     }
     out.resize(section->entry_count);
@@ -607,6 +615,7 @@ int inspect_vachunk(const std::string& path, bool json, uint32_t limit) {
             << "\"codec\":\"" << codec_name(h.codec) << "\","
             << "\"version\":\"" << h.version_major << "." << h.version_minor << "\","
             << "\"trackIndex\":" << h.track_index << ","
+            << "\"compression\":\"" << compression_name(h.compression) << "\","
             << "\"sizeBytes\":" << h.file_size << ","
             << "\"baseRevision\":" << h.base_content_revision << ","
             << "\"generatorRevision\":" << h.generator_revision << ","
@@ -634,6 +643,7 @@ int inspect_vachunk(const std::string& path, bool json, uint32_t limit) {
                       << "\"offset\":" << section->offset
                       << ",\"size\":" << section->size
                       << ",\"decodedSize\":" << section->decoded_size
+                      << ",\"compressed\":" << (((section->flags & VACHUNK_SECTION_FLAG_ZSTD) != 0) ? "true" : "false")
                       << ",\"entrySize\":" << section->entry_size
                       << ",\"entryCount\":" << section->entry_count
                       << "}";
@@ -674,6 +684,7 @@ int inspect_vachunk(const std::string& path, bool json, uint32_t limit) {
               << " v" << h.version_major << "." << h.version_minor << "\n"
               << "path: " << path << "\n"
               << "track: " << h.track_index
+              << ", compression: " << compression_name(h.compression)
               << ", size: " << h.file_size
               << ", base_revision: " << h.base_content_revision
               << ", generator_revision: " << h.generator_revision << "\n"
@@ -1036,8 +1047,13 @@ int generate_overlay(const CliOptions& options) {
     }
     verify.close();
 
-    const std::string chunk_dir = store.chunks_dir(key.kind);
-    if (!create_dir(chunk_dir) || !replace_file(tmp_path, store.chunk_path(key))) {
+    vr::analysis::VachunkData data;
+    if (!vr::analysis::read_vachunk_file_data(tmp_path, data)) {
+        std::filesystem::remove_all(vr::win_utf8::path_from_utf8(staging_dir));
+        std::cerr << "Failed to read generated VACHUNK for publish\n";
+        return 2;
+    }
+    if (!store.write_chunk_atomic(key, std::move(data), options.max_cache_bytes)) {
         std::filesystem::remove_all(vr::win_utf8::path_from_utf8(staging_dir));
         std::cerr << "Failed to publish VACHUNK\n";
         return 2;

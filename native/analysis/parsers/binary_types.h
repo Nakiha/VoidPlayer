@@ -279,7 +279,7 @@ struct VachunkHeader {
     uint64_t base_content_revision;
     uint64_t generator_revision;
     uint16_t track_index;
-    uint16_t reserved0;
+    uint16_t compression;    // VACHUNK_COMPRESSION_*, section flags say which payloads use it.
     uint32_t start_frame;    // UINT32_MAX when not frame-scoped
     uint32_t end_frame;      // inclusive, UINT32_MAX when not frame-scoped
     uint32_t start_packet;
@@ -293,6 +293,9 @@ struct VachunkHeader {
 };
 static_assert(sizeof(VachunkHeader) == 128);
 
+inline constexpr uint16_t VACHUNK_COMPRESSION_NONE = 0;
+inline constexpr uint16_t VACHUNK_COMPRESSION_ZSTD = 1;
+
 struct VachunkSectionEntry {
     char     type[4];
     uint32_t flags;
@@ -305,6 +308,8 @@ struct VachunkSectionEntry {
     uint64_t reserved;
 };
 static_assert(sizeof(VachunkSectionEntry) == 56);
+
+inline constexpr uint32_t VACHUNK_SECTION_FLAG_ZSTD = 0x00000001;
 
 struct VachunkOverlayFrameIndexEntry {
     uint32_t frame_index;

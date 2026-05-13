@@ -129,8 +129,11 @@ void_ffmpeg_analyzer.exe --codec h264 --input <video> --vachunk <output.vck> --s
 The current tool emits real decoder-derived overlay VACHUNK payloads for
 H.266/H.265/H.264. Overlay records include CU/MB geometry, QP, prediction mode,
 motion vectors/reference indexes where available, and per-CU/MB coded bit
-counts used by the bitrate heatmap. It still accepts `--probe-only` for quick
-codec/open validation:
+counts used by the bitrate heatmap. The tool writes a temporary uncompressed
+VCK1 file; the runner/CLI publish step validates that file and rewrites it
+through the native VACHUNK writer, which may zstd-compress individual payload
+sections before atomically publishing into cache. It still accepts `--probe-only`
+for quick codec/open validation:
 
 ```text
 void_ffmpeg_analyzer.exe --codec hevc --input <video> --probe-only
@@ -157,3 +160,24 @@ KERNEL32.dll
 ```
 
 There are no MSYS2, pthread, libgcc, or libstdc++ runtime imports.
+
+## Benchmark Flow
+
+Use the dev benchmark to measure full-file VAC2 + overlay VACHUNK generation for
+the supported codec samples:
+
+```powershell
+python dev.py analysis-benchmark --build
+python dev.py analysis-benchmark h264 h265 h266
+```
+
+The command runs `VoidPlayerCli.exe generate-base` and `generate-overlay` over
+the selected samples, then inspects the published chunks. Reports are written to
+`build/analysis-benchmark/analysis_benchmark.json` and `.md`, including elapsed
+time, cache/video size ratio, section decoded/compressed sizes, and zstd savings.
+
+The analyzer already disables loop filtering and IDCT where FFmpeg permits it,
+but still must demux, send packets, and receive decoded frames because the
+codec-specific CU hooks fire inside decoder paths. Further pixel-path removal
+should be checked by comparing generated VAC2/VACHUNK records before and after
+the change, not just by wall-clock time.

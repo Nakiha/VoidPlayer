@@ -33,6 +33,18 @@ cmake --build native/build-msvc-preset-minimal --config Release
 
 Native FFI/Python staging 产物默认写入 `native/build-msvc/dist/`。不要依赖或提交源码树下的 `native/dist/`。
 
+Analysis 全片生成 benchmark 通过顶层 dev 命令运行，它使用发布目录里的
+`VoidPlayerCli.exe` 和 `tools/ffmpeg-analysis/void_ffmpeg_analyzer.exe`：
+
+```bash
+python dev.py analysis-benchmark --build
+python dev.py analysis-benchmark h264 h265 h266
+```
+
+报告默认写入 `build/analysis-benchmark/analysis_benchmark.json` 和 `.md`。
+这条流程会同时覆盖 CLI、VAC2 生成、overlay VACHUNK 生成、chunk inspect 和
+zstd section 压缩统计。
+
 `dev.py build --native` 会在 native CMake 构建前检查 analysis 外部工具：
 
 - FFmpeg `void_ffmpeg_analyzer.exe`：如果缺失，或构建 stamp 与当前 `native/analysis/vendor/ffmpeg`、`zstd` 子模块版本 / `build_windows_msvc.ps1` 不一致，会自动运行 `native/analysis/vendor/ffmpeg/voidplayer/build_windows_msvc.ps1` 重编。
@@ -61,6 +73,7 @@ python native/build.py
 | `video_renderer_native` | MODULE | Python 扩展 `.pyd`，供 demo/脚本调用 |
 | `video_renderer_tests` | EXE | Catch2 renderer 单元/集成测试 |
 | `analysis_tests` | EXE | VAC2/VACHUNK 解析、生成与 cache 布局测试 |
+| `analysis_cli_smoke_tests` | EXE | VoidPlayerCli inspect/check/frame/chunk-frame/generate-base/generate-overlay smoke |
 | `test_ffi_c` | EXE | C ABI smoke test |
 | `probe_hw` | EXE | 硬件能力探测，存在 `probe_hw.cpp` 时构建 |
 | `pipeline_bench` | EXE | 解复用/解码/上传/Present 基准，`BUILD_BENCHMARKS=ON` 时构建 |

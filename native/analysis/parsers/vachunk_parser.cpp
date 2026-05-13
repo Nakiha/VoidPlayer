@@ -4,14 +4,18 @@
 #include <cstring>
 #include <fstream>
 #include <limits>
+#include <utility>
 #include <vector>
 #include <spdlog/spdlog.h>
+#include <zstd.h>
 
 namespace vr::analysis {
 namespace {
 
 constexpr uint32_t kMaxVachunkSections = 128;
 constexpr uint64_t kMaxVachunkSectionBytes = 1ull << 34; // 16 GiB guardrail.
+constexpr size_t kZstdMinBenefitBytes = 16;
+constexpr size_t kZstdMinSectionBytes = 1024;
 
 bool fourcc_eq(const char lhs[4], const char rhs[4]) {
     return std::memcmp(lhs, rhs, 4) == 0;
@@ -48,11 +52,47 @@ bool validate_write_data(const VachunkData& data) {
             if (expected != section.bytes.size()) return false;
         }
         if (section.decoded_size != 0 &&
-            section.decoded_size < section.bytes.size()) {
+            section.decoded_size != section.bytes.size()) {
             return false;
         }
     }
     return true;
+}
+
+struct EncodedSection {
+    VachunkSectionEntry entry{};
+    std::vector<uint8_t> bytes;
+};
+
+EncodedSection encode_section(const VachunkPayloadSection& source) {
+    EncodedSection encoded;
+    set_fourcc(encoded.entry.type, source.type);
+    encoded.entry.flags = source.flags & ~VACHUNK_SECTION_FLAG_ZSTD;
+    encoded.entry.entry_size = source.entry_size;
+    encoded.entry.entry_count = source.entry_count;
+    encoded.entry.decoded_size =
+        source.decoded_size == 0 ? source.bytes.size() : source.decoded_size;
+    encoded.bytes = source.bytes;
+
+    if (source.bytes.size() >= kZstdMinSectionBytes) {
+        const size_t bound = ZSTD_compressBound(source.bytes.size());
+        std::vector<uint8_t> compressed(bound);
+        const size_t compressed_size = ZSTD_compress(
+            compressed.data(),
+            compressed.size(),
+            source.bytes.data(),
+            source.bytes.size(),
+            3);
+        if (!ZSTD_isError(compressed_size) &&
+            compressed_size + kZstdMinBenefitBytes < source.bytes.size()) {
+            compressed.resize(compressed_size);
+            encoded.bytes = std::move(compressed);
+            encoded.entry.flags |= VACHUNK_SECTION_FLAG_ZSTD;
+        }
+    }
+
+    encoded.entry.size = encoded.bytes.size();
+    return encoded;
 }
 
 } // namespace
@@ -102,6 +142,8 @@ bool VachunkFile::open(const std::string& path) {
         header_.section_entry_size != sizeof(VachunkSectionEntry) ||
         header_.section_count == 0 ||
         header_.section_count > kMaxVachunkSections ||
+        (header_.compression != VACHUNK_COMPRESSION_NONE &&
+         header_.compression != VACHUNK_COMPRESSION_ZSTD) ||
         header_.file_size != actual_size ||
         !valid_scope(header_.start_frame, header_.end_frame) ||
         !valid_scope(header_.start_packet, header_.end_packet) ||
@@ -124,9 +166,20 @@ bool VachunkFile::open(const std::string& path) {
     }
 
     for (const auto& section_entry : sections_) {
+        const bool compressed =
+            (section_entry.flags & VACHUNK_SECTION_FLAG_ZSTD) != 0;
+        if (compressed && header_.compression != VACHUNK_COMPRESSION_ZSTD) {
+            close();
+            return false;
+        }
         if (section_entry.size > kMaxVachunkSectionBytes ||
+            section_entry.decoded_size > kMaxVachunkSectionBytes ||
             section_entry.decoded_size < section_entry.size ||
             !range_fits(section_entry.offset, section_entry.size, actual_size)) {
+            close();
+            return false;
+        }
+        if (!compressed && section_entry.decoded_size != section_entry.size) {
             close();
             return false;
         }
@@ -163,16 +216,67 @@ bool VachunkFile::read_section(const char type[4], std::vector<uint8_t>& out) co
     out.clear();
     const auto* section_entry = section(type);
     if (!section_entry || path_.empty()) return false;
-    if (section_entry->size > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+    if (section_entry->size > static_cast<uint64_t>(std::numeric_limits<size_t>::max()) ||
+        section_entry->decoded_size > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
         return false;
     }
     std::ifstream file(win_utf8::path_from_utf8(path_), std::ios::binary);
     if (!file) return false;
-    out.resize(static_cast<size_t>(section_entry->size));
-    if (out.empty()) return true;
+    std::vector<uint8_t> encoded(static_cast<size_t>(section_entry->size));
+    if (encoded.empty()) return true;
     file.seekg(static_cast<std::streamoff>(section_entry->offset));
-    file.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(out.size()));
-    return static_cast<size_t>(file.gcount()) == out.size();
+    file.read(reinterpret_cast<char*>(encoded.data()), static_cast<std::streamsize>(encoded.size()));
+    if (static_cast<size_t>(file.gcount()) != encoded.size()) return false;
+
+    if ((section_entry->flags & VACHUNK_SECTION_FLAG_ZSTD) == 0) {
+        out = std::move(encoded);
+        return true;
+    }
+
+    out.resize(static_cast<size_t>(section_entry->decoded_size));
+    const size_t decoded = ZSTD_decompress(
+        out.data(),
+        out.size(),
+        encoded.data(),
+        encoded.size());
+    return !ZSTD_isError(decoded) && decoded == out.size();
+}
+
+bool VachunkFile::read_data(VachunkData& out) const {
+    out = {};
+    if (path_.empty()) return false;
+    out.kind = static_cast<VachunkKind>(header_.kind);
+    out.codec = static_cast<AnalysisCodec>(header_.codec);
+    out.feature_flags = header_.feature_flags;
+    out.base_content_revision = header_.base_content_revision;
+    out.generator_revision = header_.generator_revision;
+    out.track_index = header_.track_index;
+    out.start_frame = header_.start_frame;
+    out.end_frame = header_.end_frame;
+    out.start_packet = header_.start_packet;
+    out.end_packet = header_.end_packet;
+    out.start_unit = header_.start_unit;
+    out.end_unit = header_.end_unit;
+
+    out.sections.reserve(sections_.size());
+    for (const auto& entry : sections_) {
+        VachunkPayloadSection section{};
+        set_fourcc(section.type, entry.type);
+        section.flags = entry.flags & ~VACHUNK_SECTION_FLAG_ZSTD;
+        section.entry_size = entry.entry_size;
+        section.entry_count = entry.entry_count;
+        section.decoded_size = entry.decoded_size;
+        if (!read_section(entry.type, section.bytes)) {
+            out = {};
+            return false;
+        }
+        if (section.decoded_size != section.bytes.size()) {
+            out = {};
+            return false;
+        }
+        out.sections.push_back(std::move(section));
+    }
+    return true;
 }
 
 bool write_vachunk_file(const std::string& path,
@@ -193,12 +297,18 @@ bool write_vachunk_file(const std::string& path,
         return false;
     }
 
+    std::vector<EncodedSection> encoded_sections;
+    encoded_sections.reserve(data.sections.size());
+    for (const auto& section : data.sections) {
+        encoded_sections.push_back(encode_section(section));
+    }
+
     const uint64_t table_offset = sizeof(VachunkHeader);
     const uint64_t table_size =
-        static_cast<uint64_t>(data.sections.size()) * sizeof(VachunkSectionEntry);
+        static_cast<uint64_t>(encoded_sections.size()) * sizeof(VachunkSectionEntry);
     const uint64_t payload_offset = table_offset + table_size;
     uint64_t expected_size = payload_offset;
-    for (const auto& section : data.sections) {
+    for (const auto& section : encoded_sections) {
         if (section.bytes.size() > UINT64_MAX - expected_size) return false;
         expected_size += section.bytes.size();
     }
@@ -206,6 +316,14 @@ bool write_vachunk_file(const std::string& path,
         spdlog::error("[VACHUNK] output exceeds byte limit: path={}, expected={}, max={}",
                       path, expected_size, max_output_bytes);
         return false;
+    }
+
+    bool uses_zstd = false;
+    for (const auto& section : encoded_sections) {
+        if ((section.entry.flags & VACHUNK_SECTION_FLAG_ZSTD) != 0) {
+            uses_zstd = true;
+            break;
+        }
     }
 
     VachunkHeader header{};
@@ -224,6 +342,8 @@ bool write_vachunk_file(const std::string& path,
     header.base_content_revision = data.base_content_revision;
     header.generator_revision = data.generator_revision;
     header.track_index = data.track_index;
+    header.compression = uses_zstd ? VACHUNK_COMPRESSION_ZSTD
+                                   : VACHUNK_COMPRESSION_NONE;
     header.start_frame = data.start_frame;
     header.end_frame = data.end_frame;
     header.start_packet = data.start_packet;
@@ -233,18 +353,10 @@ bool write_vachunk_file(const std::string& path,
     header.section_table_offset = table_offset;
     header.file_size = expected_size;
 
-    std::vector<VachunkSectionEntry> section_entries(data.sections.size());
     uint64_t cursor = payload_offset;
-    for (size_t i = 0; i < data.sections.size(); ++i) {
-        const auto& source = data.sections[i];
-        auto& entry = section_entries[i];
-        set_fourcc(entry.type, source.type);
-        entry.flags = source.flags;
+    for (auto& section : encoded_sections) {
+        auto& entry = section.entry;
         entry.offset = cursor;
-        entry.size = source.bytes.size();
-        entry.entry_size = source.entry_size;
-        entry.entry_count = source.entry_count;
-        entry.decoded_size = source.decoded_size == 0 ? source.bytes.size() : source.decoded_size;
         cursor += entry.size;
     }
 
@@ -254,9 +366,11 @@ bool write_vachunk_file(const std::string& path,
         return false;
     }
     out.write(reinterpret_cast<const char*>(&header), sizeof(header));
-    out.write(reinterpret_cast<const char*>(section_entries.data()),
-              static_cast<std::streamsize>(section_entries.size() * sizeof(VachunkSectionEntry)));
-    for (const auto& section : data.sections) {
+    for (const auto& section : encoded_sections) {
+        out.write(reinterpret_cast<const char*>(&section.entry),
+                  static_cast<std::streamsize>(sizeof(VachunkSectionEntry)));
+    }
+    for (const auto& section : encoded_sections) {
         if (!section.bytes.empty()) {
             out.write(reinterpret_cast<const char*>(section.bytes.data()),
                       static_cast<std::streamsize>(section.bytes.size()));
@@ -268,6 +382,12 @@ bool write_vachunk_file(const std::string& path,
         return false;
     }
     return true;
+}
+
+bool read_vachunk_file_data(const std::string& path, VachunkData& out) {
+    VachunkFile file;
+    if (!file.open(path)) return false;
+    return file.read_data(out);
 }
 
 } // namespace vr::analysis

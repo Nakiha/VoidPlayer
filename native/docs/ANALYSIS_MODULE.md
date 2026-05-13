@@ -61,9 +61,10 @@ Overlay VACHUNK 生成由 codec-specific decoder/analyzer 外部进程完成，�
 - VVC/H.266、HEVC/H.265 与 H.264/AVC: instrumented FFmpeg analyzer
   `void_ffmpeg_analyzer.exe`，安装到 `tools/ffmpeg-analysis/`
 
-FFmpeg analyzer 自行 demux/decode，并直接写入临时 `.vck`。runner 验证
-VACHUNK header/key 后原子发布到 `cache/<hash>/chunks/overlay/*.vck`；临时文件
-不进入 runtime cache。
+FFmpeg analyzer 自行 demux/decode，并直接写入未压缩临时 `.vck`。runner 验证
+VACHUNK header/key 后，通过统一 VACHUNK writer 重新写出并原子发布到
+`cache/<hash>/chunks/overlay/*.vck`；发布步骤会按 section 判断是否使用 zstd
+压缩，临时文件不进入 runtime cache。
 
 Overlay chunk 当前按 64 帧对齐窗口生成。Dart 侧在 seek settle 后用 renderer
 实际 presented PTS+DTS 解析目标帧；命中窗口边界前后 1/4 区域时，会把相邻窗口
@@ -118,3 +119,14 @@ ABI / lifecycle notes:
 - `test_analysis_generator.cpp` — VAC2 base 生成测试（覆盖 H.264/HEVC/VVC/AV1/VP9/MPEG2 样本）
 
 运行：`python dev.py test`
+
+全片 VAC2 + VACHUNK 生成性能和落盘体积可用 benchmark 脚本覆盖：
+
+```bash
+python dev.py analysis-benchmark --build
+python dev.py analysis-benchmark h264 h265 h266
+```
+
+报告默认写入 `build/analysis-benchmark/analysis_benchmark.json` 和
+`build/analysis-benchmark/analysis_benchmark.md`，包含每个样片的 base/chunk
+耗时、最终 cache 大小、视频大小占比、section 原始/压缩大小，以及 zstd 节省量。

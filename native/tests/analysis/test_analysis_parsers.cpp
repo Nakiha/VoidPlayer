@@ -370,6 +370,55 @@ TEST_CASE("VACHUNK: writer rejects invalid range and tiny budget", "[analysis][v
     std::filesystem::remove(path);
 }
 
+TEST_CASE("VACHUNK: zstd section compression roundtrips",
+          "[analysis][vachunk][zstd]") {
+    const auto path = std::filesystem::temp_directory_path() /
+        "voidplayer_test_compressed.vck";
+
+    std::vector<VachunkFrameSummary> summaries(256);
+    for (size_t i = 0; i < summaries.size(); ++i) {
+        summaries[i].poc = static_cast<int32_t>(i);
+        summaries[i].coded_order = static_cast<uint32_t>(i);
+        summaries[i].avg_qp = 24;
+        summaries[i].qp_min = 24;
+        summaries[i].qp_max = 24;
+    }
+
+    vr::analysis::VachunkData data;
+    data.kind = VachunkKind::FrameSummaryExact;
+    data.codec = AnalysisCodec::HEVC;
+    data.base_content_revision = 5;
+    data.generator_revision = 9;
+    data.start_frame = 0;
+    data.end_frame = static_cast<uint32_t>(summaries.size() - 1);
+    data.sections.push_back(
+        vr::analysis::make_vachunk_record_section("FSUM", summaries));
+
+    REQUIRE(vr::analysis::write_vachunk_file(path.string(), data));
+
+    vr::analysis::VachunkFile chunk;
+    REQUIRE(chunk.open(path.string()));
+    REQUIRE(chunk.header().compression == VACHUNK_COMPRESSION_ZSTD);
+    REQUIRE(chunk.section("FSUM") != nullptr);
+    REQUIRE((chunk.section("FSUM")->flags & VACHUNK_SECTION_FLAG_ZSTD) != 0);
+    REQUIRE(chunk.section("FSUM")->size < chunk.section("FSUM")->decoded_size);
+
+    std::vector<uint8_t> raw;
+    REQUIRE(chunk.read_section("FSUM", raw));
+    REQUIRE(raw.size() == summaries.size() * sizeof(VachunkFrameSummary));
+    const auto* decoded = reinterpret_cast<const VachunkFrameSummary*>(raw.data());
+    REQUIRE(decoded[17].poc == 17);
+    REQUIRE(decoded[17].avg_qp == 24);
+
+    vr::analysis::VachunkData roundtrip;
+    REQUIRE(chunk.read_data(roundtrip));
+    REQUIRE(roundtrip.sections.size() == 1);
+    REQUIRE((roundtrip.sections[0].flags & VACHUNK_SECTION_FLAG_ZSTD) == 0);
+    REQUIRE(roundtrip.sections[0].bytes == raw);
+
+    std::filesystem::remove(path);
+}
+
 TEST_CASE("VACHUNK: overlay chunk carries frame data",
           "[analysis][vachunk][overlay]") {
     namespace fs = std::filesystem;

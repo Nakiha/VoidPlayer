@@ -42,6 +42,7 @@ public:
     const VachunkHeader& header() const { return header_; }
     const VachunkSectionEntry* section(const char type[4]) const;
     bool read_section(const char type[4], std::vector<uint8_t>& out) const;
+    bool read_data(VachunkData& out) const;
 
 private:
     std::string path_;
@@ -78,5 +79,7 @@ VachunkPayloadSection make_vachunk_string_section(const char (&type)[5],
 bool write_vachunk_file(const std::string& path,
                         const VachunkData& data,
                         uint64_t max_output_bytes = 0);
+
+bool read_vachunk_file_data(const std::string& path, VachunkData& out);
 
 } // namespace vr::analysis

@@ -16,7 +16,7 @@ FFMPEG_ANALYZER_BUILD_SCRIPT = FFMPEG_ANALYZER_DIR / "voidplayer" / "build_windo
 
 
 def find_ffmpeg_analyzer() -> Path:
-    """Find the instrumented FFmpeg analyzer used for H.264/H.265 overlays."""
+    """Find the instrumented FFmpeg analyzer used for H.264/H.265/VVC overlays."""
     override = os.environ.get("VOID_FFMPEG_ANALYZER")
     if override:
         return Path(override)

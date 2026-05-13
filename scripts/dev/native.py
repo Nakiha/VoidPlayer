@@ -96,8 +96,11 @@ def _ffmpeg_analyzer_signature() -> dict:
     source_hashes = {}
     for relative in (
         "tools/void_ffmpeg_analyzer.c",
-        "libavcodec/voidplayer_vbs4.c",
-        "libavcodec/voidplayer_vbs4.h",
+        "libavcodec/h264_mb.c",
+        "libavcodec/hevc/hevcdec.c",
+        "libavcodec/vvc/ctu.c",
+        "libavcodec/voidplayer_vachunk.c",
+        "libavcodec/voidplayer_vachunk.h",
     ):
         source = FFMPEG_ANALYZER_DIR / relative
         source_hashes[relative] = _file_sha256(source) if source.exists() else "missing"
@@ -161,7 +164,7 @@ def _ensure_ffmpeg_analyzer_submodule() -> None:
 
 
 def ensure_ffmpeg_analyzer_tool() -> None:
-    """Prepare FFmpeg analyzer for H.264/H.265 VACache overlay generation."""
+    """Prepare FFmpeg analyzer for H.264/H.265/VVC VACache overlay generation."""
     analyzer = find_ffmpeg_analyzer()
     if os.environ.get("VOID_FFMPEG_ANALYZER"):
         if not analyzer.exists():
@@ -181,7 +184,7 @@ def ensure_ffmpeg_analyzer_tool() -> None:
     ):
         return
 
-    header("Prepare FFmpeg analyzer for H.264/H.265 analysis")
+    header("Prepare FFmpeg analyzer for H.264/H.265/VVC analysis")
     print("Building FFmpeg analyzer before app/native build...")
     print("Tip: set VOID_FFMPEG_ANALYZER=C:\\path\\to\\void_ffmpeg_analyzer.exe to reuse a prebuilt analyzer.")
     cmd = [

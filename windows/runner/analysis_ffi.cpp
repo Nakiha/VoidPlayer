@@ -719,14 +719,7 @@ static bool ends_with_ascii(const std::string& text, const char* suffix) {
 
 static bool is_analysis_cache_artifact_name(const std::string& name) {
     return ends_with_ascii(name, ".vac") ||
-        ends_with_ascii(name, ".tmp.vbs4") ||
-        ends_with_ascii(name, ".tmp.vbi") ||
-        ends_with_ascii(name, ".tmp.vbt") ||
-        ends_with_ascii(name, ".tmp.vvc") ||
-        ends_with_ascii(name, ".vbs4") ||
-        ends_with_ascii(name, ".vbi") ||
-        ends_with_ascii(name, ".vbt") ||
-        ends_with_ascii(name, ".vbs2");
+        ends_with_ascii(name, ".vck");
 }
 
 static bool is_current_hash_artifact_name(const std::string& name, const char* hash) {
@@ -782,8 +775,7 @@ static uint64_t current_hash_artifact_bytes(const std::string& data_dir,
     if (!hash || hash[0] == '\0') return 0;
     uint64_t total = 0;
     const std::vector<const char*> suffixes = {
-        ".vac", ".tmp.vbs4", ".tmp.vbi", ".tmp.vbt", ".tmp.vvc",
-        ".vbs4", ".vbi", ".vbt", ".vbs2",
+        ".vac",
     };
     for (const auto* suffix : suffixes) {
         total += file_size_utf8(data_dir + "\\" + hash + suffix);
@@ -852,13 +844,13 @@ static bool remove_directory_tree_utf8(const std::string& path) {
     return !ec;
 }
 
-static VbiCodec detect_analysis_codec(const char* video_path) {
+static AnalysisCodec detect_analysis_codec(const char* video_path) {
     if (vr::PrivateCdnFlvDemuxer::probe(video_path)) {
         vr::PrivateCdnFlvDemuxer demuxer;
         if (demuxer.open(video_path) && demuxer.stats().codec_params) {
-            VbiCodec codec = vr::analysis::BitstreamIndexer::codec_from_ffmpeg_id(
+            AnalysisCodec codec = vr::analysis::BitstreamIndexer::codec_from_ffmpeg_id(
                 demuxer.stats().codec_params->codec_id);
-            if (codec != VbiCodec::Unknown) return codec;
+            if (codec != AnalysisCodec::Unknown) return codec;
         }
     }
 
@@ -875,10 +867,10 @@ static VbiCodec detect_analysis_codec(const char* video_path) {
             for (unsigned i = 0; i < fmt_ctx->nb_streams; i++) {
                 const auto* codecpar = fmt_ctx->streams[i]->codecpar;
                 if (codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-                    VbiCodec codec = vr::analysis::BitstreamIndexer::codec_from_ffmpeg_id(
+                    AnalysisCodec codec = vr::analysis::BitstreamIndexer::codec_from_ffmpeg_id(
                         codecpar->codec_id);
                     avformat_close_input(&fmt_ctx);
-                    if (codec != VbiCodec::Unknown) return codec;
+                    if (codec != AnalysisCodec::Unknown) return codec;
                     return vr::analysis::BitstreamIndexer::codec_from_path(video_path);
                 }
             }
@@ -998,10 +990,11 @@ private:
     bool active_ = true;
 };
 
-static const char* ffmpeg_analysis_codec_arg(VbiCodec codec) {
+static const char* ffmpeg_analysis_codec_arg(AnalysisCodec codec) {
     switch (codec) {
-    case VbiCodec::HEVC:  return "hevc";
-    case VbiCodec::H264:  return "h264";
+    case AnalysisCodec::VVC:   return "vvc";
+    case AnalysisCodec::HEVC:  return "hevc";
+    case AnalysisCodec::H264:  return "h264";
     default:              return nullptr;
     }
 }
@@ -1020,7 +1013,7 @@ static bool generate_ffmpeg_vachunk(const std::string& exe_dir,
                                     const std::string& logs_dir,
                                     const char* video_path,
                                     const char* hash,
-                                    VbiCodec codec,
+                                    AnalysisCodec codec,
                                     const std::string& vachunk_out,
                                     int32_t start_frame,
                                     int32_t end_frame,
@@ -1266,15 +1259,15 @@ int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path,
         return 0;
     }
 
-    const VbiCodec source_codec = detect_analysis_codec(video_path);
-    if (source_codec != static_cast<VbiCodec>(base.header().codec)) {
+    const AnalysisCodec source_codec = detect_analysis_codec(video_path);
+    if (source_codec != static_cast<AnalysisCodec>(base.header().codec)) {
         spdlog::warn("[Analysis] generate_vac2_overlay_chunk: detected codec {} differs from base codec {}",
                      static_cast<int>(source_codec), base.header().codec);
     }
 
     vr::analysis::VachunkKey key;
     key.kind = VachunkKind::Overlay;
-    key.codec = static_cast<VbiCodec>(base.header().codec);
+    key.codec = static_cast<AnalysisCodec>(base.header().codec);
     key.feature_flags = kOverlayVachunkFeatureFlags;
     key.base_content_revision = base.header().content_revision;
     key.generator_revision = 1;
@@ -1289,8 +1282,6 @@ int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path,
             exe_dir, data_dir, staging.path(), logs_dir, video_path, hash,
             source_codec, vachunk_tmp, start_frame, end_frame,
             key.base_content_revision, key.generator_revision, budget);
-    } else if (source_codec == VbiCodec::VVC) {
-        spdlog::warn("[Analysis] VVC overlay generation is unsupported after external decoder retirement");
     }
     if (!vachunk_generated || !vr::win_utf8::file_exists_utf8(vachunk_tmp)) {
         spdlog::error("[Analysis] generate_vac2_overlay_chunk: deep analyzer failed");

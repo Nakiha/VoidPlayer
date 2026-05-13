@@ -1,4 +1,4 @@
-# Main window should generate H.264 analysis via the FFmpeg VBS3 producer.
+# Main window should generate H.264 analysis via the VAC2/VACHUNK producer.
 @WINDOW, 1280, 720
 0.2, SET_ANALYSIS_TEST_SCRIPT, ui_tests/analysis/child_h264_codec.csv
 0.5, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4

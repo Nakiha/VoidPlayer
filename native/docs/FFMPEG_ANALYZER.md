@@ -1,7 +1,7 @@
 # FFmpeg Analyzer Tool
 
-VoidPlayer uses the `native/analysis/vendor/ffmpeg` submodule for planned
-codec-native VBS4 generation. This analyzer is built out-of-band and installed
+VoidPlayer uses the `native/analysis/vendor/ffmpeg` submodule for codec-native
+VACache overlay chunk generation. This analyzer is built out-of-band and installed
 as a runtime tool; the main native and Flutter builds do not compile FFmpeg.
 
 ## Local Toolchain Shape
@@ -76,9 +76,10 @@ The current configure shape is:
   --disable-programs \
   --disable-doc \
   --disable-everything \
-  --enable-decoder=hevc \
-  --enable-parser=hevc \
-  --enable-demuxer=mov,matroska,hevc \
+  --enable-decoder=h264,hevc,vvc \
+  --enable-parser=h264,hevc,vvc \
+  --enable-demuxer=mov,matroska,h264,hevc,vvc \
+  --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,vvc_mp4toannexb \
   --enable-protocol=file
 ```
 
@@ -108,24 +109,27 @@ native/analysis/vendor/ffmpeg/bin/windows-x64/void_hevc_analyzer.exe
 The command line contract is:
 
 ```text
-void_ffmpeg_analyzer.exe --codec hevc --input <video> --vbs4 <output.vbs4>
-void_ffmpeg_analyzer.exe --codec h264 --input <video> --vbs4 <output.vbs4>
+void_ffmpeg_analyzer.exe --codec vvc --input <video> --vachunk <output.vck> --start-frame <n> --end-frame <m>
+void_ffmpeg_analyzer.exe --codec hevc --input <video> --vachunk <output.vck> --start-frame <n> --end-frame <m>
+void_ffmpeg_analyzer.exe --codec h264 --input <video> --vachunk <output.vck> --start-frame <n> --end-frame <m>
 ```
 
-The current tool emits real decoder-derived VBS4 payloads for H.265/H.264. It
-still accepts `--probe-only` for quick codec/open validation:
+The current tool emits real decoder-derived overlay VACHUNK payloads for
+H.266/H.265/H.264. It still accepts `--probe-only` for quick codec/open
+validation:
 
 ```text
 void_ffmpeg_analyzer.exe --codec hevc --input <video> --probe-only
 ```
 
-Verified VBS4 codecs:
+Verified overlay VACHUNK codecs:
 
+- `vvc` / H.266
 - `hevc` / H.265
 - `h264`
 
-AV1, VP9, and MPEG-2 VBS4 generation are disabled until codec-specific payload
-profiles are added.
+AV1, VP9, and MPEG-2 overlay generation are disabled until codec-specific
+payload profiles are added.
 
 The current PE import table for the analyzer contains only Windows DLLs:
 

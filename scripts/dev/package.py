@@ -47,12 +47,7 @@ MUTABLE_FILE_PATTERNS = {
     "*.log",
     "*.tmp",
     "*.vac",
-    "*.vbi",
-    "*.vbs1",
-    "*.vbs2",
-    "*.vbs3",
-    "*.vbs4",
-    "*.vbt",
+    "*.vck",
 }
 
 BUILD_ONLY_FILE_PATTERNS = {

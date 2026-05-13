@@ -118,8 +118,8 @@ def _pick_analysis_hash(debug: bool, requested_hash: str | None) -> tuple[str, s
     if not items:
         raise RuntimeError(f"No usable analysis cache entries in {cache}")
 
-    # Prefer entries with VBS3 because the pyramid view is the historically
-    # riskiest resize path.
+    # Prefer entries that have overlay analysis because the pyramid view is the
+    # historically riskiest resize path.
     items.sort(key=lambda item: item[0])
     chosen_hash, meta = items[0]
     file_name = meta.get("name") if isinstance(meta.get("name"), str) else None

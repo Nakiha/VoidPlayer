@@ -1,4 +1,4 @@
-# Main window should generate VVC analysis with VBS3 frame data and spawn one child process.
+# Main window should generate VVC analysis with VAC2/VACHUNK analysis data and spawn one child process.
 @WINDOW, 1280, 720
 0.2, SET_ANALYSIS_TEST_SCRIPT, ui_tests/analysis/child_smoke.csv
 0.5, ADD_MEDIA, resources/video/h266_10s_1920x1080.mp4

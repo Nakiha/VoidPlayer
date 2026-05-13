@@ -54,6 +54,10 @@ class MainWindowAnalysisCoordinator {
     return _enqueueOperation(_syncOverlayPanelTracksImpl);
   }
 
+  Future<void> refreshOverlayForCurrentFrame() {
+    return _enqueueOperation(_refreshOverlayForCurrentFrameImpl);
+  }
+
   Future<void> toggleOverlayForSlot(int slotIndex) {
     return _enqueueOperation(() async {
       if (slotIndex < 0 || slotIndex >= trackManager.entries.length) return;
@@ -207,6 +211,34 @@ class MainWindowAnalysisCoordinator {
     );
     if (_disposed || !activated) return;
     _hashesByFileId[track.fileId] = hash;
+    _notifyOverlayStateChanged();
+  }
+
+  Future<void> _refreshOverlayForCurrentFrameImpl() async {
+    final activeFileIds = analysisGeneration.activeOverlayTrackFileIds;
+    if (activeFileIds.isEmpty) return;
+
+    final sources = <AnalysisOverlayTrackSource>[];
+    for (final entry in trackManager.entries) {
+      if (!activeFileIds.contains(entry.fileId)) continue;
+      var hash = _hashesByFileId[entry.fileId];
+      hash ??= await analysisGeneration.ensureGenerated(entry.path);
+      if (_disposed) return;
+      if (hash == null) continue;
+      _hashesByFileId[entry.fileId] = hash;
+      sources.add(
+        AnalysisOverlayTrackSource(
+          hash: hash,
+          name: entry.fileName,
+          path: entry.path,
+          trackFileId: entry.fileId,
+        ),
+      );
+    }
+
+    if (_disposed || sources.isEmpty) return;
+    final refreshed = await analysisGeneration.activateOverlayTracks(sources);
+    if (_disposed || !refreshed) return;
     _notifyOverlayStateChanged();
   }
 

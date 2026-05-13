@@ -23,9 +23,11 @@ class MainWindowPlaybackCoordinator {
   final PlaybackPreferences playbackPreferences;
   final bool Function() mounted;
   final MainWindowTimelineMetrics timelineMetrics;
+  final Future<void> Function(int ptsUs)? onSeekSettled;
 
   Timer? _pollTimer;
   Timer? _loopBoundaryTimer;
+  Timer? _seekSettledTimer;
   bool _disposed = false;
   bool _resumeAfterSeek = false;
   int _pollSerial = 0;
@@ -41,6 +43,7 @@ class MainWindowPlaybackCoordinator {
     required this.playbackPreferences,
     required this.mounted,
     required this.timelineMetrics,
+    this.onSeekSettled,
   });
 
   MainWindowStateModel get _state => stateStore.value;
@@ -90,6 +93,7 @@ class MainWindowPlaybackCoordinator {
     _loopRangeSyncSerial++;
     _pollTimer?.cancel();
     _loopBoundaryTimer?.cancel();
+    _seekSettledTimer?.cancel();
   }
 
   void startPolling() {
@@ -171,6 +175,7 @@ class MainWindowPlaybackCoordinator {
     if (_disposed || !mounted()) return;
 
     if (seekSerial != _seekSerial) return;
+    _scheduleSeekSettledNotification(seekSerial, targetPtsUs);
 
     final resume = shouldResume && _resumeAfterSeek;
     _resumeAfterSeek = false;
@@ -180,6 +185,16 @@ class MainWindowPlaybackCoordinator {
       setPlaying(true);
     }
     scheduleLoopBoundaryTimer(fromPtsUs: targetPtsUs);
+  }
+
+  void _scheduleSeekSettledNotification(int seekSerial, int targetPtsUs) {
+    final seekSettled = onSeekSettled;
+    if (seekSettled == null) return;
+    _seekSettledTimer?.cancel();
+    _seekSettledTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (_disposed || !mounted() || seekSerial != _seekSerial) return;
+      unawaited(seekSettled(targetPtsUs).catchError((_) {}));
+    });
   }
 
   int _clampSeekTargetUs(int ptsUs) {

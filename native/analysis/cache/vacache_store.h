@@ -10,7 +10,7 @@ namespace vr::analysis {
 
 struct VachunkKey {
     VachunkKind kind = VachunkKind::Unknown;
-    VbiCodec codec = VbiCodec::Unknown;
+    AnalysisCodec codec = AnalysisCodec::Unknown;
     uint64_t feature_flags = 0;
     uint64_t base_content_revision = 0;
     uint64_t generator_revision = 0;

@@ -54,14 +54,14 @@ uint32_t AnalysisManager::video_height() const {
     return vac2_base_.header().height;
 }
 
-Vbs4FrameSummary AnalysisManager::read_frame_summary(int frame_idx) const {
+VachunkFrameSummary AnalysisManager::read_frame_summary(int frame_idx) const {
     if (!loaded_ || frame_idx < 0 || frame_idx >= frame_count()) return {};
     if (static_cast<size_t>(frame_idx) >= vac2_base_.frame_summaries().size()) return {};
     const auto& source = vac2_base_.frame_summaries()[static_cast<size_t>(frame_idx)];
-    Vbs4FrameSummary out{};
+    VachunkFrameSummary out{};
     out.poc = source.poc;
     out.coded_order = source.coded_order;
-    out.vcl_nalu_index = source.first_vcl_unit;
+    out.vcl_unit_index = source.first_vcl_unit;
     out.flags = source.flags;
     out.temporal_id = source.temporal_id;
     out.slice_type = source.slice_type;
@@ -78,13 +78,13 @@ Vbs4FrameSummary AnalysisManager::read_frame_summary(int frame_idx) const {
     return out;
 }
 
-Vbs4FrameData AnalysisManager::read_overlay_frame(int frame_idx) const {
+VachunkOverlayFrameData AnalysisManager::read_overlay_frame(int frame_idx) const {
     if (!loaded_ || frame_idx < 0 || frame_idx >= frame_count()) return {};
     return read_vac2_overlay_frame(frame_idx);
 }
 
-Vbs4FrameData AnalysisManager::read_vac2_overlay_frame(int frame_idx) const {
-    Vbs4FrameData result;
+VachunkOverlayFrameData AnalysisManager::read_vac2_overlay_frame(int frame_idx) const {
+    VachunkOverlayFrameData result;
     if (analysis_path_.empty()) return result;
 
     const auto base_path = win_utf8::path_from_utf8(analysis_path_);

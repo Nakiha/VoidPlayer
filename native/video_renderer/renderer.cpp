@@ -178,7 +178,7 @@ OverlayColor qp_color(uint8_t qp, uint8_t qp_min, uint8_t qp_max, uint8_t alpha)
     return OverlayColor{b, g, r, alpha};
 }
 
-OverlayColor cu_complexity_proxy_color(const VbsCuCommon& cu, uint8_t alpha) {
+OverlayColor cu_complexity_proxy_color(const VachunkCuCommon& cu, uint8_t alpha) {
     const float area = std::max(1.0f, static_cast<float>(cu.w) * static_cast<float>(cu.h));
     const float size_score = std::clamp(1.0f - area / (64.0f * 64.0f), 0.0f, 1.0f);
     const float depth_score = std::clamp(static_cast<float>(cu.depth) / 4.0f, 0.0f, 1.0f);
@@ -192,7 +192,7 @@ OverlayColor cu_complexity_proxy_color(const VbsCuCommon& cu, uint8_t alpha) {
     return OverlayColor{b, g, r, alpha};
 }
 
-OverlayColor pred_color(uint8_t pred_mode, const VbsCuInter& inter, uint8_t alpha) {
+OverlayColor pred_color(uint8_t pred_mode, const VachunkCuInter& inter, uint8_t alpha) {
     if (pred_mode == 1) return OverlayColor{80, 235, 90, alpha};
     if (inter.skip != 0) return OverlayColor{40, 220, 245, alpha};
     if (inter.merge_flag != 0) return OverlayColor{235, 170, 80, alpha};

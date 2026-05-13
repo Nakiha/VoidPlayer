@@ -4,8 +4,8 @@ VACHUNK is the target file format for derived analysis results generated from a
 VAC2 base index. Chunks are optional, range-scoped, feature-scoped, and safe to
 delete. The recommended file extension is `.vck`.
 
-Runtime code now writes overlay data as VACHUNK files. VBS4 remains a temporary
-codec-analyzer input for chunk generation, not a runtime cache container.
+Runtime code writes overlay data as VACHUNK files directly. There is no
+standalone legacy block-stat sidecar in the cache path.
 
 ## Purpose
 
@@ -71,7 +71,7 @@ Proposed `VachunkHeader`:
 | `section_entry_size` | `uint16_t` | Size of each section entry. |
 | `section_count` | `uint32_t` | Number of section entries. |
 | `kind` | `uint16_t` | Chunk kind enum. |
-| `codec` | `uint16_t` | Same values as `VbiCodec`. |
+| `codec` | `uint16_t` | Same values as `AnalysisCodec`. |
 | `feature_flags` | `uint64_t` | Feature-set bitmask. |
 | `base_content_revision` | `uint64_t` | Required VAC2 base revision. |
 | `generator_revision` | `uint64_t` | Analyzer implementation revision. |
@@ -181,8 +181,7 @@ Suggested sections:
 | `CPAY` | Column Payload | Compressed column streams. |
 | `HTST` | Optional Hit-Test Index | Spatial bins or tree data. |
 
-The overlay payload should be column-oriented, similar in spirit to VBS4, but
-range-scoped and feature-scoped.
+The overlay payload should be column-oriented, range-scoped, and feature-scoped.
 
 Recommended initial overlay feature bits:
 
@@ -213,7 +212,7 @@ Each covered frame should map to a local unit range:
 
 ## Overlay Unit Columns
 
-Initial columns should cover current VBS4-equivalent data:
+Initial columns should cover current overlay data:
 
 - unit type: MB/CU/PU/TU
 - parent unit id

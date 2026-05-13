@@ -63,7 +63,7 @@ Proposed `Vac2Header`:
 | `section_entry_size` | `uint16_t` | Size of each section entry. |
 | `section_count` | `uint32_t` | Number of section entries. |
 | `flags` | `uint32_t` | File-level flags. |
-| `codec` | `uint16_t` | Same values as `VbiCodec`. |
+| `codec` | `uint16_t` | Same values as `AnalysisCodec`. |
 | `track_index` | `uint16_t` | Source video stream index. |
 | `time_base_num` | `int32_t` | Stream time-base numerator. |
 | `time_base_den` | `int32_t` | Stream time-base denominator. |
@@ -270,8 +270,8 @@ Suggested fields:
 
 ## Relationship To VAC1
 
-VAC1 embeds VBI2, VBT1, and optional VBS4 complete payloads. VAC2 replaces that
-with richer base tables and external derived chunks.
+VAC1 embedded complete sidecar payloads in one file. VAC2 replaces that with
+richer base tables and external derived chunks.
 
 VAC1-to-VAC2 migration was completed destructively for runtime cache writes:
 new analysis generation writes VAC2 base plus chunks, and stale VAC1 files are

@@ -654,14 +654,6 @@ class AnalysisCache {
 
   static List<String> _pathsForHash(String hash) => [
     p.join(dataDir, '$hash.vac'),
-    p.join(dataDir, '$hash.vbs4'),
-    p.join(dataDir, '$hash.vbi'),
-    p.join(dataDir, '$hash.vbt'),
-    p.join(dataDir, '$hash.vbs2'),
-    p.join(dataDir, '$hash.tmp.vbs4'),
-    p.join(dataDir, '$hash.tmp.vbi'),
-    p.join(dataDir, '$hash.tmp.vbt'),
-    p.join(dataDir, '$hash.tmp.vvc'),
     hashDir(hash),
   ];
 

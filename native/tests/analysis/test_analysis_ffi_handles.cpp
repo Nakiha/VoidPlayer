@@ -76,7 +76,7 @@ TEST_CASE("analysis FFI handle opens VAC2 base indexes",
     fs::remove(path);
 
     vr::analysis::Vac2BaseData data;
-    data.codec = VbiCodec::H264;
+    data.codec = AnalysisCodec::H264;
     data.time_base_num = 1;
     data.time_base_den = 1000;
     data.width = 1920;
@@ -187,7 +187,7 @@ TEST_CASE("analysis FFI handle opens VAC2 base indexes",
     REQUIRE(summary->frame_count == 2);
     REQUIRE(summary->packet_count == 2);
     REQUIRE(summary->nalu_count == 2);
-    REQUIRE(summary->codec == static_cast<int32_t>(VbiCodec::H264));
+    REQUIRE(summary->codec == static_cast<int32_t>(AnalysisCodec::H264));
 
     NakiFrameInfo frame{};
     REQUIRE(naki_analysis_handle_get_frames_range(handle, 1, &frame, 1) == 1);

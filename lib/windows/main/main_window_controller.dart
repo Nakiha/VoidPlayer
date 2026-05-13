@@ -446,6 +446,7 @@ class MainWindowController {
       playbackPreferences: playbackPreferences,
       mounted: mounted,
       timelineMetrics: timelineMetrics,
+      onSeekSettled: (_) => analysisCoordinator.refreshOverlayForCurrentFrame(),
     );
     mediaLifecycle = MainWindowMediaLifecycle(
       stateStore: stateStore,

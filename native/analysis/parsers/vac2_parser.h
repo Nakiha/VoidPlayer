@@ -9,7 +9,7 @@
 namespace vr::analysis {
 
 struct Vac2BaseData {
-    VbiCodec codec = VbiCodec::Unknown;
+    AnalysisCodec codec = AnalysisCodec::Unknown;
     uint16_t track_index = 0;
     int32_t time_base_num = 0;
     int32_t time_base_den = 0;

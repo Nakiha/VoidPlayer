@@ -25,8 +25,8 @@ public:
     int frame_count() const;
     uint32_t video_width() const;
     uint32_t video_height() const;
-    Vbs4FrameSummary read_frame_summary(int frame_idx) const;
-    Vbs4FrameData read_overlay_frame(int frame_idx) const;
+    VachunkFrameSummary read_frame_summary(int frame_idx) const;
+    VachunkOverlayFrameData read_overlay_frame(int frame_idx) const;
 
     // Overlay state (written by Dart via FFI, read by render thread)
     struct OverlayState {
@@ -53,7 +53,7 @@ public:
 
 private:
     bool load_vac2(const std::string& analysis_path);
-    Vbs4FrameData read_vac2_overlay_frame(int frame_idx) const;
+    VachunkOverlayFrameData read_vac2_overlay_frame(int frame_idx) const;
 
     Vac2BaseFile vac2_base_;
     std::string analysis_path_;

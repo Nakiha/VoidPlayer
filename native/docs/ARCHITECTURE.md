@@ -124,7 +124,7 @@ Video File
 | [色彩管线](COLOR_PIPELINE.md) | 软件/硬件帧格式、YUV->RGB、HDR 到 SDR 边界 |
 | [Seek 策略](SEEK_STRATEGY.md) | SeekController、触发矩阵 |
 | [D3D11 后端](D3D11_BACKEND.md) | 设备、纹理、着色器、NV12 零拷贝 |
-| [码流遮罩层](ANALYSIS_OVERLAY_DESIGN.md) | VBS4/D3D11/Dart 交互边界与 roadmap |
+| [码流遮罩层](ANALYSIS_OVERLAY_DESIGN.md) | VACHUNK/D3D11/Dart 交互边界与 roadmap |
 | [FFI 与绑定](FFI_AND_BINDINGS.md) | C FFI API、Python 绑定 |
 | [构建与测试](BUILD_AND_TEST.md) | CMake 目标、测试、基准、Demo |
 | [Native Refactor Todo](NATIVE_REFACTOR_TODO.md) | native 技术债分轮修复计划 |

@@ -60,8 +60,7 @@ python native/build.py
 | `video_renderer_ffi` | SHARED | C FFI DLL，导出 `naki_vr_*` |
 | `video_renderer_native` | MODULE | Python 扩展 `.pyd`，供 demo/脚本调用 |
 | `video_renderer_tests` | EXE | Catch2 renderer 单元/集成测试 |
-| `analysis_tests` | EXE | H.266 分析数据、VBI/VBT 解析与生成测试 |
-| `analysis_generate` | EXE | AnalysisGenerator 命令行入口，供 Python 格式回归生成 VBI/VBT |
+| `analysis_tests` | EXE | VAC2/VACHUNK 解析、生成与 cache 布局测试 |
 | `test_ffi_c` | EXE | C ABI smoke test |
 | `probe_hw` | EXE | 硬件能力探测，存在 `probe_hw.cpp` 时构建 |
 | `pipeline_bench` | EXE | 解复用/解码/上传/Present 基准，`BUILD_BENCHMARKS=ON` 时构建 |
@@ -89,7 +88,7 @@ python scripts/dev/check_native_dist.py --ffi native/build-msvc/dist/ffi
 | 依赖 | 来源 | 用途 |
 |------|------|------|
 | FFmpeg runtime/dev package | `FFMPEG_ROOT` / `FFMPEG_DIR` / `--ffmpeg-root`，默认 `windows/libs/ffmpeg` | demux、软解、D3D11VA 硬解、hwdownload |
-| zstd | `native/analysis/vendor/zstd` | VBS4 解析/生成 |
+| zstd | `native/analysis/vendor/zstd` | analysis FFmpeg analyzer / future chunk compression support |
 | spdlog | FetchContent commit pin；`VOID_USE_LOCAL_DEPS=ON` 时可使用本地 cache | native 日志 |
 | Catch2 | FetchContent commit pin；`VOID_USE_LOCAL_DEPS=ON` 时可使用本地 cache | C++ 测试 |
 | pybind11 | Python 包提供的 `pybind11_DIR` 或 CMake `find_package` | Python 绑定 |
@@ -125,7 +124,7 @@ python scripts/dev/check_release_compliance.py --stage build/package/windows/sta
 
 ## `python dev.py test` 实际覆盖
 
-`dev.py test` 会先执行 Flutter 单元测试，然后构建 native Release，再执行 `native/build.py --test-only`。当前 native 部分包含 CTest 的 3 个测试目标，随后执行 Python analysis 格式回归。
+`dev.py test` 会先执行 Flutter 单元测试，然后构建 native Release，再执行 `native/build.py --test-only`。当前 native 部分包含 CTest 的 3 个测试目标。
 
 如果只想运行 native 部分，可以使用：
 
@@ -136,16 +135,10 @@ python dev.py test --native-only
 | CTest | 覆盖 |
 |------|------|
 | `video_renderer_tests` | Clock、PacketQueue、TrackBuffer、DemuxThread、DecodeThread、FrameConverter、D3D11 device/texture/shader、RenderSink、Renderer integration，并包含 headless front-buffer capture 的 HEVC/AV1/VP9 视觉回归 |
-| `analysis_tests` | H.266 分析模块，VBI/VBT 生成与解析，测试数据生成/清理 |
+| `analysis_tests` | VAC2/VACHUNK、VACache、analysis FFI handle、overlay chunk 和 bitstream indexing |
 | `test_ffi_c` | 未初始化 renderer、空指针、基础 lifecycle、C ABI 可调用性 |
 
 测试视频默认来自 `resources/video`，CMake 通过 `VIDEO_TEST_DIR` 注入。
-
-补充的 Python analysis 格式回归位于 `native/analysis/tests/python/formats/`，用于校验 VBS2/VBS4/VBI/VBT 落盘格式。它会把测试视频复制到临时目录，使用 `analysis_generate.exe` 生成 VBI/VBT，再调用 FFmpeg analyzer 生成兼容 VBS4 fixture，最后清理临时文件。
-
-```bash
-python -m pytest native/analysis/tests/python/formats -v
-```
 
 ## UI 回归测试
 

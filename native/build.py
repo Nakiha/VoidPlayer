@@ -2,7 +2,6 @@
 import argparse
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 
@@ -93,18 +92,6 @@ def test(build_dir: Path, build_type: str, script_dir: Path, skip_analysis_tests
 
     if skip_analysis_tests:
         return
-
-    repo_root = script_dir.parent
-    analysis_test = script_dir / "analysis" / "tests" / "python" / "formats"
-    analysis_generate = build_dir / build_type / "analysis_generate.exe"
-    env = os.environ.copy()
-    env["VOID_ANALYSIS_GENERATE_EXE"] = str(analysis_generate)
-    subprocess.check_call([
-        sys.executable,
-        "-m", "pytest",
-        str(analysis_test),
-        "-q",
-    ], cwd=repo_root, env=env)
 
 
 def benchmark(build_dir: Path, build_type: str):

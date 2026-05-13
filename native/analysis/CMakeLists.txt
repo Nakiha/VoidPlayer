@@ -26,20 +26,3 @@ target_link_libraries(analysis_lib PUBLIC
     spdlog::spdlog_header_only
 )
 void_link_zstd(analysis_lib)
-
-add_executable(analysis_generate
-    tools/analysis_generate.cpp
-)
-void_apply_native_compile_options(analysis_generate)
-
-target_link_libraries(analysis_generate PRIVATE
-    analysis_lib
-)
-
-set_target_properties(analysis_generate PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>"
-)
-
-if(TARGET copy_ffmpeg_dlls)
-    add_dependencies(analysis_generate copy_ffmpeg_dlls)
-endif()

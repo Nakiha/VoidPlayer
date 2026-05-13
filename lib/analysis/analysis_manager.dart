@@ -560,12 +560,8 @@ class AnalysisManager extends ChangeNotifier
     List<AnalysisOverlayTrackSource> tracks,
   ) async {
     _releaseOverlayHashLocks();
-    AnalysisFfi.clearOverlayTracks();
-    _activeOverlayHashesByTrackFileId.clear();
-    _activeOverlayHash = null;
-    _activeOverlayTrackFileId = -1;
 
-    var activatedAny = false;
+    final readyTracks = <AnalysisOverlayTrackSource>[];
     for (final track in tracks) {
       if (_cache.deleteIfVacVersionMismatch(track.hash)) {
         log.info('[Analysis] skipped stale overlay VAC version: ${track.hash}');
@@ -582,6 +578,16 @@ class AnalysisManager extends ChangeNotifier
         );
         continue;
       }
+      readyTracks.add(track);
+    }
+
+    AnalysisFfi.clearOverlayTracks();
+    _activeOverlayHashesByTrackFileId.clear();
+    _activeOverlayHash = null;
+    _activeOverlayTrackFileId = -1;
+
+    var activatedAny = false;
+    for (final track in readyTracks) {
       final analysisPath = _cache.analysisPath(track.hash);
       final lock = _cache.acquireHashSharedLockSync(track.hash);
       final loaded = AnalysisFfi.setOverlayTrack(
@@ -819,7 +825,9 @@ class AnalysisManager extends ChangeNotifier
   };
 
   bool _isOlderThanFfmpegAnalyzer(String hash, AnalysisCodec codec) {
-    if (codec != AnalysisCodec.h264 && codec != AnalysisCodec.hevc) {
+    if (codec != AnalysisCodec.h264 &&
+        codec != AnalysisCodec.hevc &&
+        codec != AnalysisCodec.vvc) {
       return false;
     }
     try {

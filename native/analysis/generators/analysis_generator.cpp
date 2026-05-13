@@ -3,8 +3,6 @@
 #include "analysis/generators/bitstream_indexer.h"
 #include "analysis/parsers/binary_types.h"
 #include "analysis/parsers/vac2_parser.h"
-#include "analysis/parsers/vbi_parser.h"
-#include "analysis/parsers/vbt_parser.h"
 #include "common/win_utf8.h"
 #include "media/private_cdn_flv_demuxer.h"
 
@@ -78,181 +76,38 @@ private:
     uint64_t used_ = 0;
 };
 
-class VbtStreamWriter {
+class MemoryUnitWriter {
 public:
-    bool open(const std::string& path,
-              int32_t time_base_num,
-              int32_t time_base_den,
-              OutputBudget* budget = nullptr) {
-        path_ = path;
-        budget_ = budget;
-        if (budget_ && !budget_->reserve(sizeof(VbtHeader))) return false;
-        out_.open(win_utf8::path_from_utf8(path), std::ios::binary);
-        if (!out_) return false;
+    explicit MemoryUnitWriter(OutputBudget* budget = nullptr) : budget_(budget) {}
 
-        header_ = {};
-        header_.magic[0] = 'V'; header_.magic[1] = 'B';
-        header_.magic[2] = 'T'; header_.magic[3] = '1';
-        header_.time_base_num = time_base_num;
-        header_.time_base_den = time_base_den;
-        out_.write(reinterpret_cast<const char*>(&header_), sizeof(header_));
-        return out_.good();
-    }
-
-    bool append(const VbtEntry& entry) {
-        if (!out_ || count_ == UINT32_MAX) return false;
-        if (budget_ && !budget_->reserve(sizeof(VbtEntry))) return false;
-        out_.write(reinterpret_cast<const char*>(&entry), sizeof(entry));
-        if (!out_) return false;
-        ++count_;
-        return true;
-    }
-
-    bool finish() {
-        if (!out_) return false;
-        header_.num_packets = count_;
-        out_.seekp(0, std::ios::beg);
-        out_.write(reinterpret_cast<const char*>(&header_), sizeof(header_));
-        out_.close();
-        return !out_.fail();
-    }
-
-    void close() {
-        if (out_.is_open()) out_.close();
-    }
-
-    uint32_t count() const { return count_; }
-    const std::string& path() const { return path_; }
-
-private:
-    std::string path_;
-    std::ofstream out_;
-    VbtHeader header_{};
-    uint32_t count_ = 0;
-    OutputBudget* budget_ = nullptr;
-};
-
-class VbiStreamWriter {
-public:
-    bool open(const std::string& path,
-              VbiCodec codec,
-              VbiUnitKind unit_kind,
-              OutputBudget* budget = nullptr) {
-        path_ = path;
-        budget_ = budget;
-        if (budget_ && !budget_->reserve(sizeof(VbiHeader))) return false;
-        out_.open(win_utf8::path_from_utf8(path), std::ios::binary);
-        if (!out_) return false;
-
-        header_ = {};
-        header_.magic[0] = 'V'; header_.magic[1] = 'B';
-        header_.magic[2] = 'I'; header_.magic[3] = '2';
-        header_.version = 2;
-        header_.codec = static_cast<uint16_t>(codec);
-        header_.unit_kind = static_cast<uint16_t>(unit_kind);
-        header_.header_size = sizeof(VbiHeader);
-        out_.write(reinterpret_cast<const char*>(&header_), sizeof(header_));
-        return out_.good();
-    }
-
-    bool append(const VbiEntry& entry) {
-        if (!out_ || count_ == UINT32_MAX) return false;
-        if (budget_ && !budget_->reserve(sizeof(VbiEntry))) return false;
-        out_.write(reinterpret_cast<const char*>(&entry), sizeof(entry));
-        if (!out_) return false;
-        ++count_;
+    bool append(const AnalysisUnitScanEntry& entry) {
+        if (entries_.size() == UINT32_MAX) return false;
+        if (budget_ && !budget_->reserve(sizeof(AnalysisUnitScanEntry))) return false;
+        entries_.push_back(entry);
         source_size_ = std::max(source_size_, entry.offset + entry.size);
         return true;
     }
 
-    bool append_all(const std::vector<VbiEntry>& entries) {
-        for (const auto& entry : entries) {
-            if (!append(entry)) return false;
-        }
-        return true;
-    }
-
-    bool finish() {
-        if (!out_) return false;
-        header_.num_units = count_;
-        header_.source_size = source_size_;
-        out_.seekp(0, std::ios::beg);
-        out_.write(reinterpret_cast<const char*>(&header_), sizeof(header_));
-        out_.close();
-        return !out_.fail();
-    }
-
-    void close() {
-        if (out_.is_open()) out_.close();
-    }
-
-    uint32_t count() const { return count_; }
+    uint32_t count() const { return static_cast<uint32_t>(entries_.size()); }
     uint64_t source_size() const { return source_size_; }
-    const std::string& path() const { return path_; }
+    const std::vector<AnalysisUnitScanEntry>& entries() const { return entries_; }
 
 private:
-    std::string path_;
-    std::ofstream out_;
-    VbiHeader header_{};
-    uint32_t count_ = 0;
+    std::vector<AnalysisUnitScanEntry> entries_;
     uint64_t source_size_ = 0;
     OutputBudget* budget_ = nullptr;
 };
 
-static bool generateRawOnly(const std::string& video_path,
-                            const std::string& vbi_path,
-                            const std::string& vbt_path,
-                            uint64_t max_output_bytes = 0) {
-    VbiCodec codec = BitstreamIndexer::codec_from_path(video_path);
-    if (codec == VbiCodec::Unknown) {
-        return false;
-    }
-
-    int32_t tb_num = 1;
-    int32_t tb_den = 60;
-    VbtStreamWriter vbt_writer;
-    VbiStreamWriter vbi_writer;
-    OutputBudget budget(max_output_bytes);
-    if (!vbt_writer.open(vbt_path, tb_num, tb_den, &budget)) {
-        return false;
-    }
-    if (!vbi_writer.open(vbi_path, codec, BitstreamIndexer::unit_kind_for_codec(codec), &budget)) {
-        vbt_writer.close();
-        return false;
-    }
-
-    int32_t poc = 0;
-    const bool indexed = BitstreamIndexer::index_raw_file_streaming(
-        video_path,
-        codec,
-        [&](const VbiEntry& unit) {
-            if (!vbi_writer.append(unit)) return false;
-            if ((unit.flags & VBI_FLAG_IS_VCL) == 0) return true;
-
-            VbtEntry entry{};
-            entry.pts = poc;
-            entry.dts = poc;
-            entry.poc = poc++;
-            entry.size = unit.size;
-            entry.duration = 1;
-            entry.flags = (unit.flags & VBI_FLAG_IS_KEYFRAME) ? VBT_FLAG_KEYFRAME : 0;
-            return vbt_writer.append(entry);
-        });
-
-    if (!indexed) {
-        vbt_writer.close();
-        vbi_writer.close();
-        return false;
-    }
-
-    if (vbt_writer.count() == 0) {
-        spdlog::warn("[AnalysisGen] raw fallback found no coded units: {}", video_path);
-    }
-
-    const bool vbt_ok = vbt_writer.finish();
-    const bool vbi_ok = vbi_writer.finish();
-    return vbt_ok && vbi_ok;
-}
+struct Vac2ScanData {
+    AnalysisCodec codec = AnalysisCodec::Unknown;
+    AnalysisUnitKind unit_kind = AnalysisUnitKind::Unknown;
+    int32_t time_base_num = 1;
+    int32_t time_base_den = 1;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    std::vector<AnalysisPacketScanEntry> packets;
+    std::vector<AnalysisUnitScanEntry> units;
+};
 
 static uint64_t source_file_size(const std::string& path) {
     std::ifstream f(win_utf8::path_from_utf8(path), std::ios::binary | std::ios::ate);
@@ -300,49 +155,53 @@ static bool probe_video_geometry(const std::string& video_path,
     return width > 0 && height > 0;
 }
 
-static uint8_t infer_slice_type(VbiCodec codec, uint8_t nal_type, uint8_t flags) {
-    if ((flags & VBI_FLAG_IS_KEYFRAME) != 0) {
+static uint8_t infer_slice_type(AnalysisCodec codec, uint8_t nal_type, uint8_t flags) {
+    if ((flags & ANALYSIS_UNIT_FLAG_IS_KEYFRAME) != 0) {
         return 2;
     }
-    if ((flags & VBI_FLAG_IS_VCL) == 0) {
+    if ((flags & ANALYSIS_UNIT_FLAG_IS_VCL) == 0) {
         return 255;
     }
     switch (codec) {
-    case VbiCodec::H264:
+    case AnalysisCodec::H264:
         return nal_type == 5 ? 2 : 1;
-    case VbiCodec::HEVC:
+    case AnalysisCodec::HEVC:
         return (nal_type >= 16 && nal_type <= 21) ? 2 : 1;
-    case VbiCodec::VVC:
+    case AnalysisCodec::VVC:
         return (nal_type >= 7 && nal_type <= 10) ? 2 : 1;
-    case VbiCodec::AV1:
-    case VbiCodec::VP9:
-        return (flags & VBI_FLAG_IS_KEYFRAME) != 0 ? 2 : 1;
+    case AnalysisCodec::AV1:
+    case AnalysisCodec::VP9:
+        return (flags & ANALYSIS_UNIT_FLAG_IS_KEYFRAME) != 0 ? 2 : 1;
     default:
         return 255;
     }
 }
 
-static bool build_vac2_base_from_indices(const std::string& video_path,
-                                         const VbiFile& vbi,
-                                         const VbtFile& vbt,
-                                         Vac2BaseData& out) {
-    const int packet_count = vbt.packet_count();
-    const int unit_count = vbi.unit_count();
-    if (packet_count <= 0 || unit_count < 0) return false;
+static bool build_vac2_base_from_scan(const std::string& video_path,
+                                      const Vac2ScanData& scan,
+                                      Vac2BaseData& out) {
+    const int packet_count = static_cast<int>(scan.packets.size());
+    const int unit_count = static_cast<int>(scan.units.size());
+    if (packet_count <= 0 || unit_count < 0 || scan.codec == AnalysisCodec::Unknown) {
+        return false;
+    }
 
     out = {};
-    out.codec = vbi.codec();
+    out.codec = scan.codec;
     out.track_index = 0;
-    out.time_base_num = vbt.header().time_base_num;
-    out.time_base_den = vbt.header().time_base_den;
+    out.time_base_num = scan.time_base_num;
+    out.time_base_den = scan.time_base_den;
+    out.width = scan.width;
+    out.height = scan.height;
     out.source_size = source_file_size(video_path);
     out.content_revision = 1;
-    if (!probe_video_geometry(video_path, out.width, out.height)) {
+    if ((out.width == 0 || out.height == 0) &&
+        !probe_video_geometry(video_path, out.width, out.height)) {
         spdlog::warn("[AnalysisGen] failed to probe VAC2 base dimensions: {}", video_path);
     }
     out.metadata_json =
         "{\"schema\":\"VAC2\",\"producer\":\"AnalysisGenerator::generate_vac2_base\","
-        "\"source\":\"vbi-vbt-indexer\"}";
+        "\"source\":\"direct-vac2-scanner\"}";
 
     out.packets.resize(static_cast<size_t>(packet_count));
     out.frames.resize(static_cast<size_t>(packet_count));
@@ -353,9 +212,9 @@ static bool build_vac2_base_from_indices(const std::string& video_path,
     std::vector<uint32_t> first_vcl_by_frame(static_cast<size_t>(packet_count), UINT32_MAX);
 
     uint32_t vcl_seen = 0;
-    out.units.reserve(static_cast<size_t>(unit_count));
+    out.units.reserve(scan.units.size());
     for (int i = 0; i < unit_count; ++i) {
-        const auto& src = vbi.entry(i);
+        const auto& src = scan.units[static_cast<size_t>(i)];
         uint32_t frame_index = vcl_seen;
         if (frame_index >= static_cast<uint32_t>(packet_count)) {
             frame_index = static_cast<uint32_t>(packet_count - 1);
@@ -370,18 +229,18 @@ static bool build_vac2_base_from_indices(const std::string& video_path,
         unit.nal_type = src.nal_type;
         unit.temporal_id = src.temporal_id;
         unit.layer_id = src.layer_id;
-        unit.unit_kind = static_cast<uint8_t>(vbi.unit_kind());
+        unit.unit_kind = static_cast<uint8_t>(scan.unit_kind);
         unit.flags = 0;
-        if ((src.flags & VBI_FLAG_IS_VCL) != 0) unit.flags |= VAC2_UNIT_FLAG_IS_VCL;
-        if ((src.flags & VBI_FLAG_IS_SLICE) != 0) unit.flags |= VAC2_UNIT_FLAG_IS_SLICE;
-        if ((src.flags & VBI_FLAG_IS_KEYFRAME) != 0) unit.flags |= VAC2_UNIT_FLAG_IS_KEYFRAME;
+        if ((src.flags & ANALYSIS_UNIT_FLAG_IS_VCL) != 0) unit.flags |= VAC2_UNIT_FLAG_IS_VCL;
+        if ((src.flags & ANALYSIS_UNIT_FLAG_IS_SLICE) != 0) unit.flags |= VAC2_UNIT_FLAG_IS_SLICE;
+        if ((src.flags & ANALYSIS_UNIT_FLAG_IS_KEYFRAME) != 0) unit.flags |= VAC2_UNIT_FLAG_IS_KEYFRAME;
         unit.pset_snapshot = UINT16_MAX;
         out.units.push_back(unit);
 
         auto& first_unit = first_unit_by_frame[frame_index];
         if (first_unit == UINT32_MAX) first_unit = static_cast<uint32_t>(i);
         ++unit_count_by_frame[frame_index];
-        if ((src.flags & VBI_FLAG_IS_VCL) != 0) {
+        if ((src.flags & ANALYSIS_UNIT_FLAG_IS_VCL) != 0) {
             if (first_vcl_by_frame[frame_index] == UINT32_MAX) {
                 first_vcl_by_frame[frame_index] = static_cast<uint32_t>(i);
             }
@@ -390,7 +249,7 @@ static bool build_vac2_base_from_indices(const std::string& video_path,
     }
 
     for (int i = 0; i < packet_count; ++i) {
-        const auto& src = vbt.entry(i);
+        const auto& src = scan.packets[static_cast<size_t>(i)];
         const uint32_t index = static_cast<uint32_t>(i);
         Vac2PacketEntry packet{};
         packet.pts = src.pts;
@@ -398,7 +257,7 @@ static bool build_vac2_base_from_indices(const std::string& video_path,
         packet.duration = src.duration;
         packet.size = src.size;
         packet.stream_index = 0;
-        packet.flags = (src.flags & VBT_FLAG_KEYFRAME) ? VAC2_PACKET_FLAG_KEYFRAME : 0;
+        packet.flags = (src.flags & ANALYSIS_PACKET_FLAG_KEYFRAME) ? VAC2_PACKET_FLAG_KEYFRAME : 0;
         packet.file_offset = UINT64_MAX;
         packet.format_offset = UINT64_MAX;
         packet.first_unit = first_unit_by_frame[index] == UINT32_MAX ? 0 : first_unit_by_frame[index];
@@ -419,7 +278,7 @@ static bool build_vac2_base_from_indices(const std::string& video_path,
         frame.poc = src.poc;
         frame.frame_size = src.size;
         frame.rap_distance = 0;
-        frame.flags = (src.flags & VBT_FLAG_KEYFRAME)
+        frame.flags = (src.flags & ANALYSIS_PACKET_FLAG_KEYFRAME)
             ? (VAC2_FRAME_FLAG_KEYFRAME | VAC2_FRAME_FLAG_RAP)
             : 0;
         out.frames[static_cast<size_t>(i)] = frame;
@@ -436,9 +295,9 @@ static bool build_vac2_base_from_indices(const std::string& video_path,
             summary.temporal_id = unit.temporal_id;
             summary.nal_type = unit.nal_type;
             summary.slice_type = infer_slice_type(out.codec, unit.nal_type, static_cast<uint8_t>(
-                ((unit.flags & VAC2_UNIT_FLAG_IS_VCL) ? VBI_FLAG_IS_VCL : 0) |
-                ((unit.flags & VAC2_UNIT_FLAG_IS_SLICE) ? VBI_FLAG_IS_SLICE : 0) |
-                ((unit.flags & VAC2_UNIT_FLAG_IS_KEYFRAME) ? VBI_FLAG_IS_KEYFRAME : 0)));
+                ((unit.flags & VAC2_UNIT_FLAG_IS_VCL) ? ANALYSIS_UNIT_FLAG_IS_VCL : 0) |
+                ((unit.flags & VAC2_UNIT_FLAG_IS_SLICE) ? ANALYSIS_UNIT_FLAG_IS_SLICE : 0) |
+                ((unit.flags & VAC2_UNIT_FLAG_IS_KEYFRAME) ? ANALYSIS_UNIT_FLAG_IS_KEYFRAME : 0)));
         }
         out.frame_summaries[static_cast<size_t>(i)] = summary;
     }
@@ -446,17 +305,17 @@ static bool build_vac2_base_from_indices(const std::string& video_path,
     return true;
 }
 
-static const char* annex_b_bsf_name(VbiCodec codec) {
+static const char* annex_b_bsf_name(AnalysisCodec codec) {
     switch (codec) {
-    case VbiCodec::H264: return "h264_mp4toannexb";
-    case VbiCodec::HEVC: return "hevc_mp4toannexb";
-    case VbiCodec::VVC:  return "vvc_mp4toannexb";
+    case AnalysisCodec::H264: return "h264_mp4toannexb";
+    case AnalysisCodec::HEVC: return "hevc_mp4toannexb";
+    case AnalysisCodec::VVC:  return "vvc_mp4toannexb";
     default:             return nullptr;
     }
 }
 
-static bool requires_annex_b_filter(VbiCodec codec) {
-    return codec == VbiCodec::H264 || codec == VbiCodec::HEVC || codec == VbiCodec::VVC;
+static bool requires_annex_b_filter(AnalysisCodec codec) {
+    return codec == AnalysisCodec::H264 || codec == AnalysisCodec::HEVC || codec == AnalysisCodec::VVC;
 }
 
 static bool packet_starts_with_annex_b(const AVPacket* pkt) {
@@ -467,16 +326,17 @@ static bool packet_starts_with_annex_b(const AVPacket* pkt) {
            (data[0] == 0 && data[1] == 0 && data[2] == 1);
 }
 
+template <typename UnitWriter>
 static bool append_packet_if_safe(const AVPacket* pkt,
-                                  VbiCodec codec,
-                                  VbiStreamWriter& writer,
+                                  AnalysisCodec codec,
+                                  UnitWriter& writer,
                                   bool& unsafe_fallback_warned) {
     if (!pkt || !pkt->data || pkt->size <= 0) return true;
 
     if (requires_annex_b_filter(codec) && !packet_starts_with_annex_b(pkt)) {
         if (!unsafe_fallback_warned) {
             spdlog::warn(
-                "[AnalysisGen] skipping length-prefixed packets without Annex-B BSF; VBI unavailable for this stream");
+                "[AnalysisGen] skipping length-prefixed packets without Annex-B BSF; VAC2 unit scan unavailable for this stream");
             unsafe_fallback_warned = true;
         }
         return true;
@@ -489,14 +349,14 @@ static bool append_packet_if_safe(const AVPacket* pkt,
         pkt->size,
         (pkt->flags & AV_PKT_FLAG_KEY) != 0,
         source_size,
-        [&writer](const VbiEntry& entry) {
+        [&writer](const AnalysisUnitScanEntry& entry) {
             return writer.append(entry);
         });
 }
 
 static AVBSFContext* create_annex_b_bsf(const AVCodecParameters* codecpar,
                                         AVRational time_base,
-                                        VbiCodec codec) {
+                                        AnalysisCodec codec) {
     const char* name = annex_b_bsf_name(codec);
     if (!name || !codecpar) return nullptr;
 
@@ -529,19 +389,20 @@ static AVBSFContext* create_annex_b_bsf(const AVCodecParameters* codecpar,
         return nullptr;
     }
 
-    spdlog::info("[AnalysisGen] using {} for VBI Annex-B indexing", name);
+    spdlog::info("[AnalysisGen] using {} for VAC2 Annex-B indexing", name);
     return bsf;
 }
 
-static AVBSFContext* create_annex_b_bsf(AVStream* stream, VbiCodec codec) {
+static AVBSFContext* create_annex_b_bsf(AVStream* stream, AnalysisCodec codec) {
     if (!stream) return nullptr;
     return create_annex_b_bsf(stream->codecpar, stream->time_base, codec);
 }
 
+template <typename UnitWriter>
 static bool append_filtered_packets(AVBSFContext* bsf,
                                     AVPacket* filtered_pkt,
-                                    VbiCodec codec,
-                                    VbiStreamWriter& writer) {
+                                    AnalysisCodec codec,
+                                    UnitWriter& writer) {
     if (!bsf || !filtered_pkt) return true;
     while (true) {
         int ret = av_bsf_receive_packet(bsf, filtered_pkt);
@@ -561,7 +422,7 @@ static bool append_filtered_packets(AVBSFContext* bsf,
                 filtered_pkt->size,
                 (filtered_pkt->flags & AV_PKT_FLAG_KEY) != 0,
                 source_size,
-                [&writer](const VbiEntry& entry) {
+                [&writer](const AnalysisUnitScanEntry& entry) {
                     return writer.append(entry);
                 });
             if (!ok) {
@@ -574,9 +435,52 @@ static bool append_filtered_packets(AVBSFContext* bsf,
     return true;
 }
 
-static bool generatePrivateCdnFlv(const std::string& video_path,
-                                  const std::string& vbi_path,
-                                  const std::string& vbt_path,
+static bool scanRawOnlyVac2(const std::string& video_path,
+                            Vac2ScanData& out,
+                            uint64_t max_output_bytes = 0) {
+    AnalysisCodec codec = BitstreamIndexer::codec_from_path(video_path);
+    if (codec == AnalysisCodec::Unknown) {
+        return false;
+    }
+
+    OutputBudget budget(max_output_bytes);
+    MemoryUnitWriter unit_writer(&budget);
+    if (!budget.reserve(sizeof(Vac2Header))) return false;
+
+    int32_t poc = 0;
+    const bool indexed = BitstreamIndexer::index_raw_file_streaming(
+        video_path,
+        codec,
+        [&](const AnalysisUnitScanEntry& unit) {
+            if (!unit_writer.append(unit)) return false;
+            if ((unit.flags & ANALYSIS_UNIT_FLAG_IS_VCL) == 0) return true;
+
+            AnalysisPacketScanEntry entry{};
+            entry.pts = poc;
+            entry.dts = poc;
+            entry.poc = poc++;
+            entry.size = unit.size;
+            entry.duration = 1;
+            entry.flags = (unit.flags & ANALYSIS_UNIT_FLAG_IS_KEYFRAME) ? ANALYSIS_PACKET_FLAG_KEYFRAME : 0;
+            if (!budget.reserve(sizeof(AnalysisPacketScanEntry))) return false;
+            out.packets.push_back(entry);
+            return true;
+        });
+
+    if (!indexed || out.packets.empty()) {
+        return false;
+    }
+
+    out.codec = codec;
+    out.unit_kind = BitstreamIndexer::unit_kind_for_codec(codec);
+    out.time_base_num = 1;
+    out.time_base_den = 60;
+    out.units = unit_writer.entries();
+    return true;
+}
+
+static bool scanPrivateCdnFlvVac2(const std::string& video_path,
+                                  Vac2ScanData& out,
                                   uint64_t max_output_bytes) {
     vr::PrivateCdnFlvDemuxer demuxer;
     if (!demuxer.open(video_path)) {
@@ -591,31 +495,19 @@ static bool generatePrivateCdnFlv(const std::string& video_path,
     const AVRational time_base = stats.time_base.num > 0 && stats.time_base.den > 0
         ? stats.time_base
         : AVRational{1, 1000};
-    const VbiCodec codec = BitstreamIndexer::codec_from_ffmpeg_id(
+    const AnalysisCodec codec = BitstreamIndexer::codec_from_ffmpeg_id(
         stats.codec_params->codec_id);
-    if (codec == VbiCodec::Unknown) {
+    if (codec == AnalysisCodec::Unknown) {
         return false;
     }
-
-    spdlog::info("[AnalysisGen] using private CDN FLV demuxer: time_base={}/{}, codec={}",
-                 time_base.num, time_base.den, static_cast<int>(codec));
 
     OutputBudget budget(max_output_bytes);
-    VbtStreamWriter vbt_writer;
-    if (!vbt_writer.open(vbt_path, time_base.num, time_base.den, &budget)) {
-        return false;
-    }
-    VbiStreamWriter vbi_writer;
-    if (!vbi_writer.open(vbi_path, codec, BitstreamIndexer::unit_kind_for_codec(codec), &budget)) {
-        vbt_writer.close();
-        return false;
-    }
+    if (!budget.reserve(sizeof(Vac2Header))) return false;
+    MemoryUnitWriter unit_writer(&budget);
 
     AVPacket* pkt = av_packet_alloc();
     AVPacket* filtered_pkt = av_packet_alloc();
     if (!pkt || !filtered_pkt) {
-        vbt_writer.close();
-        vbi_writer.close();
         av_packet_free(&filtered_pkt);
         av_packet_free(&pkt);
         return false;
@@ -630,7 +522,7 @@ static bool generatePrivateCdnFlv(const std::string& video_path,
         int ret = demuxer.read_packet(pkt);
         if (ret < 0) {
             if (ret == AVERROR_EOF) break;
-            spdlog::warn("[AnalysisGen] private CDN FLV read error: {:#x}",
+            spdlog::warn("[AnalysisGen] private CDN FLV VAC2 read error: {:#x}",
                          static_cast<unsigned>(ret));
             break;
         }
@@ -640,38 +532,36 @@ static bool generatePrivateCdnFlv(const std::string& video_path,
             continue;
         }
 
-        VbtEntry entry{};
+        AnalysisPacketScanEntry entry{};
         entry.pts = (pkt->pts != AV_NOPTS_VALUE) ? pkt->pts : 0;
         entry.dts = (pkt->dts != AV_NOPTS_VALUE) ? pkt->dts : 0;
         entry.poc = seq_poc++;
         entry.size = static_cast<uint32_t>(pkt->size);
         entry.duration = static_cast<uint32_t>(pkt->duration);
-        entry.flags = (pkt->flags & AV_PKT_FLAG_KEY) ? VBT_FLAG_KEYFRAME : 0;
-        std::memset(entry.reserved, 0, sizeof(entry.reserved));
-        if (!vbt_writer.append(entry)) {
+        entry.flags = (pkt->flags & AV_PKT_FLAG_KEY) ? ANALYSIS_PACKET_FLAG_KEYFRAME : 0;
+        if (!budget.reserve(sizeof(AnalysisPacketScanEntry))) {
             scan_failed = true;
             av_packet_unref(pkt);
             break;
         }
+        out.packets.push_back(entry);
 
-        bool vbi_ok = true;
+        bool unit_ok = true;
         if (annex_b_bsf) {
-            int send_ret = av_bsf_send_packet(annex_b_bsf, pkt);
+            const int send_ret = av_bsf_send_packet(annex_b_bsf, pkt);
             if (send_ret >= 0) {
-                vbi_ok = append_filtered_packets(
-                    annex_b_bsf, filtered_pkt, codec, vbi_writer);
+                unit_ok = append_filtered_packets(
+                    annex_b_bsf, filtered_pkt, codec, unit_writer);
             } else {
-                spdlog::warn("[AnalysisGen] private CDN FLV BSF send failed: {:#x}",
-                             static_cast<unsigned>(send_ret));
-                vbi_ok = append_packet_if_safe(
-                    pkt, codec, vbi_writer, unsafe_fallback_warned);
+                unit_ok = append_packet_if_safe(
+                    pkt, codec, unit_writer, unsafe_fallback_warned);
             }
         } else {
-            vbi_ok = append_packet_if_safe(
-                pkt, codec, vbi_writer, unsafe_fallback_warned);
+            unit_ok = append_packet_if_safe(
+                pkt, codec, unit_writer, unsafe_fallback_warned);
         }
 
-        if (!vbi_ok) {
+        if (!unit_ok) {
             scan_failed = true;
             av_packet_unref(pkt);
             break;
@@ -681,7 +571,7 @@ static bool generatePrivateCdnFlv(const std::string& video_path,
 
     if (annex_b_bsf) {
         av_bsf_send_packet(annex_b_bsf, nullptr);
-        if (!append_filtered_packets(annex_b_bsf, filtered_pkt, codec, vbi_writer)) {
+        if (!append_filtered_packets(annex_b_bsf, filtered_pkt, codec, unit_writer)) {
             scan_failed = true;
         }
     }
@@ -690,46 +580,35 @@ static bool generatePrivateCdnFlv(const std::string& video_path,
     av_packet_free(&filtered_pkt);
     av_packet_free(&pkt);
 
-    if (scan_failed || vbt_writer.count() == 0) {
-        vbt_writer.close();
-        vbi_writer.close();
+    if (scan_failed || out.packets.empty()) {
         return false;
     }
 
-    spdlog::info("[AnalysisGen] private CDN FLV scanned {} packets, {} bitstream units",
-                 vbt_writer.count(), vbi_writer.count());
-    const bool vbt_ok = vbt_writer.finish();
-    const bool vbi_ok = vbi_writer.finish();
-    return vbt_ok && vbi_ok;
+    out.codec = codec;
+    out.unit_kind = BitstreamIndexer::unit_kind_for_codec(codec);
+    out.time_base_num = time_base.num;
+    out.time_base_den = time_base.den;
+    out.width = stats.codec_params->width > 0 ? static_cast<uint32_t>(stats.codec_params->width) : 0;
+    out.height = stats.codec_params->height > 0 ? static_cast<uint32_t>(stats.codec_params->height) : 0;
+    out.units = unit_writer.entries();
+    return true;
 }
 
-// ---------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------
-
-bool AnalysisGenerator::generate(const std::string& video_path,
-                                 const std::string& vbi_path,
-                                 const std::string& vbt_path,
-                                 uint64_t max_output_bytes) {
-    if (vr::PrivateCdnFlvDemuxer::probe(video_path)) {
-        if (generatePrivateCdnFlv(video_path, vbi_path, vbt_path, max_output_bytes)) {
-            return true;
-        }
-        spdlog::warn("[AnalysisGen] private CDN FLV fallback failed, trying stock FFmpeg path");
-    }
-
+static bool scanFfmpegVac2(const std::string& video_path,
+                           Vac2ScanData& out,
+                           uint64_t max_output_bytes) {
     FfmpegOpenTimeout timeout;
     AVFormatContext* fmt_ctx = alloc_format_context_with_timeout(timeout, std::chrono::seconds(30));
     if (!fmt_ctx) {
         spdlog::error("[AnalysisGen] failed to allocate format context");
-        return generateRawOnly(video_path, vbi_path, vbt_path, max_output_bytes);
+        return scanRawOnlyVac2(video_path, out, max_output_bytes);
     }
     int ret = avformat_open_input(&fmt_ctx, video_path.c_str(), nullptr, nullptr);
     if (ret < 0) {
         timeout.deadline_ns = 0;
         spdlog::error("[AnalysisGen] avformat_open_input failed: {:#x}", static_cast<unsigned>(ret));
         if (fmt_ctx) avformat_close_input(&fmt_ctx);
-        return generateRawOnly(video_path, vbi_path, vbt_path, max_output_bytes);
+        return scanRawOnlyVac2(video_path, out, max_output_bytes);
     }
 
     ret = avformat_find_stream_info(fmt_ctx, nullptr);
@@ -737,10 +616,9 @@ bool AnalysisGenerator::generate(const std::string& video_path,
     if (ret < 0) {
         spdlog::error("[AnalysisGen] avformat_find_stream_info failed: {:#x}", static_cast<unsigned>(ret));
         avformat_close_input(&fmt_ctx);
-        return generateRawOnly(video_path, vbi_path, vbt_path, max_output_bytes);
+        return scanRawOnlyVac2(video_path, out, max_output_bytes);
     }
 
-    // Find video stream
     int video_idx = -1;
     for (unsigned i = 0; i < fmt_ctx->nb_streams; i++) {
         if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
@@ -751,58 +629,39 @@ bool AnalysisGenerator::generate(const std::string& video_path,
     if (video_idx < 0) {
         spdlog::error("[AnalysisGen] no video stream found");
         avformat_close_input(&fmt_ctx);
-        return generateRawOnly(video_path, vbi_path, vbt_path, max_output_bytes);
+        return scanRawOnlyVac2(video_path, out, max_output_bytes);
     }
 
-    AVRational time_base = fmt_ctx->streams[video_idx]->time_base;
-    int32_t tb_num = time_base.num;
-    int32_t tb_den = time_base.den;
-    VbiCodec codec = BitstreamIndexer::codec_from_ffmpeg_id(
-        fmt_ctx->streams[video_idx]->codecpar->codec_id);
-    if (codec == VbiCodec::Unknown) {
+    AVStream* video_stream = fmt_ctx->streams[video_idx];
+    AVRational time_base = video_stream->time_base;
+    const int video_width = video_stream->codecpar->width;
+    const int video_height = video_stream->codecpar->height;
+    AnalysisCodec codec = BitstreamIndexer::codec_from_ffmpeg_id(
+        video_stream->codecpar->codec_id);
+    if (codec == AnalysisCodec::Unknown) {
         codec = BitstreamIndexer::codec_from_path(video_path);
     }
 
-    spdlog::info("[AnalysisGen] video stream {}: time_base={}/{}, codec={}",
-                 video_idx, tb_num, tb_den, static_cast<int>(codec));
-
-    // Single-pass: append VBI and VBT data as it is discovered. Headers are
-    // patched with final counts after the scan completes.
     OutputBudget budget(max_output_bytes);
-    VbtStreamWriter vbt_writer;
-    if (!vbt_writer.open(vbt_path, tb_num, tb_den, &budget)) {
+    if (!budget.reserve(sizeof(Vac2Header))) {
         avformat_close_input(&fmt_ctx);
         return false;
     }
-    VbiStreamWriter vbi_writer;
-    if (!vbi_writer.open(vbi_path, codec, BitstreamIndexer::unit_kind_for_codec(codec), &budget)) {
-        vbt_writer.close();
-        avformat_close_input(&fmt_ctx);
-        return false;
-    }
+    MemoryUnitWriter unit_writer(&budget);
 
-    int32_t seq_poc = 0;         // Sequential POC for VBT
     bool unsafe_fallback_warned = false;
-    AVBSFContext* annex_b_bsf = create_annex_b_bsf(fmt_ctx->streams[video_idx], codec);
-
+    AVBSFContext* annex_b_bsf = create_annex_b_bsf(video_stream, codec);
     AVPacket* pkt = av_packet_alloc();
-    if (!pkt) {
-        vbt_writer.close();
-        vbi_writer.close();
-        if (annex_b_bsf) av_bsf_free(&annex_b_bsf);
-        avformat_close_input(&fmt_ctx);
-        return false;
-    }
     AVPacket* filtered_pkt = av_packet_alloc();
-    if (!filtered_pkt) {
-        vbt_writer.close();
-        vbi_writer.close();
+    if (!pkt || !filtered_pkt) {
+        av_packet_free(&filtered_pkt);
         av_packet_free(&pkt);
         if (annex_b_bsf) av_bsf_free(&annex_b_bsf);
         avformat_close_input(&fmt_ctx);
         return false;
     }
 
+    int32_t seq_poc = 0;
     bool scan_failed = false;
     while (true) {
         ret = av_read_frame(fmt_ctx, pkt);
@@ -817,46 +676,38 @@ bool AnalysisGenerator::generate(const std::string& video_path,
             continue;
         }
 
-        // --- VBT: extract per-packet timestamp info ---
-        {
-            VbtEntry entry{};
-            entry.pts      = (pkt->pts != AV_NOPTS_VALUE) ? pkt->pts : 0;
-            entry.dts      = (pkt->dts != AV_NOPTS_VALUE) ? pkt->dts : 0;
-            entry.poc      = seq_poc++;
-            entry.size     = static_cast<uint32_t>(pkt->size);
-            entry.duration = static_cast<uint32_t>(pkt->duration);
-            entry.flags    = (pkt->flags & AV_PKT_FLAG_KEY) ? VBT_FLAG_KEYFRAME : 0;
-            std::memset(entry.reserved, 0, sizeof(entry.reserved));
-            if (!vbt_writer.append(entry)) {
-                scan_failed = true;
-                av_packet_unref(pkt);
-                break;
-            }
+        AnalysisPacketScanEntry entry{};
+        entry.pts = (pkt->pts != AV_NOPTS_VALUE) ? pkt->pts : 0;
+        entry.dts = (pkt->dts != AV_NOPTS_VALUE) ? pkt->dts : 0;
+        entry.poc = seq_poc++;
+        entry.size = static_cast<uint32_t>(pkt->size);
+        entry.duration = static_cast<uint32_t>(pkt->duration);
+        entry.flags = (pkt->flags & AV_PKT_FLAG_KEY) ? ANALYSIS_PACKET_FLAG_KEYFRAME : 0;
+        if (!budget.reserve(sizeof(AnalysisPacketScanEntry))) {
+            scan_failed = true;
+            av_packet_unref(pkt);
+            break;
         }
+        out.packets.push_back(entry);
 
-        // --- VBI2: parse codec-specific bitstream units from packet data.
-        // MP4 stores H.264/H.265/H.266 samples as length-prefixed NAL units,
-        // with a per-stream length size in extradata. Route those codecs
-        // through FFmpeg's Annex-B filters so VBI indexing sees stable start
-        // codes and parameter sets instead of guessing the length field width.
-        bool vbi_ok = true;
+        bool unit_ok = true;
         if (annex_b_bsf) {
-            int send_ret = av_bsf_send_packet(annex_b_bsf, pkt);
+            const int send_ret = av_bsf_send_packet(annex_b_bsf, pkt);
             if (send_ret >= 0) {
-                vbi_ok = append_filtered_packets(
-                    annex_b_bsf, filtered_pkt, codec, vbi_writer);
+                unit_ok = append_filtered_packets(
+                    annex_b_bsf, filtered_pkt, codec, unit_writer);
             } else {
                 spdlog::warn("[AnalysisGen] av_bsf_send_packet failed: {:#x}; skipping unsafe packet fallback if needed",
                              static_cast<unsigned>(send_ret));
-                vbi_ok = append_packet_if_safe(
-                    pkt, codec, vbi_writer, unsafe_fallback_warned);
+                unit_ok = append_packet_if_safe(
+                    pkt, codec, unit_writer, unsafe_fallback_warned);
             }
         } else {
-            vbi_ok = append_packet_if_safe(
-                pkt, codec, vbi_writer, unsafe_fallback_warned);
+            unit_ok = append_packet_if_safe(
+                pkt, codec, unit_writer, unsafe_fallback_warned);
         }
 
-        if (!vbi_ok) {
+        if (!unit_ok) {
             scan_failed = true;
             av_packet_unref(pkt);
             break;
@@ -867,8 +718,7 @@ bool AnalysisGenerator::generate(const std::string& video_path,
 
     if (annex_b_bsf) {
         av_bsf_send_packet(annex_b_bsf, nullptr);
-        if (!append_filtered_packets(annex_b_bsf, filtered_pkt, codec, vbi_writer)) {
-            spdlog::warn("[AnalysisGen] failed to append flushed VBI packets");
+        if (!append_filtered_packets(annex_b_bsf, filtered_pkt, codec, unit_writer)) {
             scan_failed = true;
         }
     }
@@ -878,43 +728,26 @@ bool AnalysisGenerator::generate(const std::string& video_path,
     if (annex_b_bsf) av_bsf_free(&annex_b_bsf);
     avformat_close_input(&fmt_ctx);
 
-    if (scan_failed) {
-        vbt_writer.close();
-        vbi_writer.close();
-        return false;
+    if (scan_failed) return false;
+    if (out.packets.empty()) {
+        return scanRawOnlyVac2(video_path, out, max_output_bytes);
     }
 
-    if (vbt_writer.count() == 0) {
-        vbt_writer.close();
-        vbi_writer.close();
-        if (generateRawOnly(video_path, vbi_path, vbt_path, max_output_bytes)) {
-            spdlog::info("[AnalysisGen] raw fallback synthesized VBT/VBI from raw units");
-            return true;
-        }
-        return false;
+    out.codec = codec;
+    out.unit_kind = BitstreamIndexer::unit_kind_for_codec(codec);
+    out.time_base_num = time_base.num;
+    out.time_base_den = time_base.den;
+    if (video_width > 0 && video_height > 0) {
+        out.width = static_cast<uint32_t>(video_width);
+        out.height = static_cast<uint32_t>(video_height);
     }
-
-    spdlog::info("[AnalysisGen] scanned {} packets, {} bitstream units",
-                 vbt_writer.count(), vbi_writer.count());
-
-    // Write VBT
-    bool vbt_ok = vbt_writer.finish();
-    if (!vbt_ok) {
-        spdlog::error("[AnalysisGen] failed to write VBT: {}", vbt_path);
-        return false;
-    }
-    spdlog::info("[AnalysisGen] wrote VBT: {} ({} entries)", vbt_path, vbt_writer.count());
-
-    // Write VBI
-    bool vbi_ok = vbi_writer.finish();
-    if (!vbi_ok) {
-        spdlog::error("[AnalysisGen] failed to write VBI: {}", vbi_path);
-    } else {
-        spdlog::info("[AnalysisGen] wrote VBI: {} ({} entries)", vbi_path, vbi_writer.count());
-    }
-
-    return vbt_ok && vbi_ok;
+    out.units = unit_writer.entries();
+    return true;
 }
+
+// ---------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------
 
 bool AnalysisGenerator::generate_vac2_base(const std::string& video_path,
                                            const std::string& vac2_path,
@@ -929,36 +762,19 @@ bool AnalysisGenerator::generate_vac2_base(const std::string& video_path,
         if (ec) return false;
     }
 
-    const std::string tmp_prefix = vac2_path + ".legacy.";
-    const std::string tmp_vbi_path = tmp_prefix + "tmp.vbi";
-    const std::string tmp_vbt_path = tmp_prefix + "tmp.vbt";
-
-    auto cleanup = [&]() {
-        win_utf8::delete_file_utf8(tmp_vbi_path);
-        win_utf8::delete_file_utf8(tmp_vbt_path);
-    };
-
-    if (!generate(video_path, tmp_vbi_path, tmp_vbt_path, max_output_bytes)) {
-        cleanup();
-        return false;
-    }
-
-    VbiFile vbi;
-    VbtFile vbt;
-    if (!vbi.open(tmp_vbi_path) || !vbt.open(tmp_vbt_path)) {
-        cleanup();
-        return false;
-    }
+    Vac2ScanData scan;
+    const bool scanned = vr::PrivateCdnFlvDemuxer::probe(video_path)
+        ? scanPrivateCdnFlvVac2(video_path, scan, max_output_bytes) ||
+              scanFfmpegVac2(video_path, scan, max_output_bytes)
+        : scanFfmpegVac2(video_path, scan, max_output_bytes);
+    if (!scanned) return false;
 
     Vac2BaseData data;
-    if (!build_vac2_base_from_indices(video_path, vbi, vbt, data)) {
-        cleanup();
+    if (!build_vac2_base_from_scan(video_path, scan, data)) {
         return false;
     }
 
-    const bool ok = write_vac2_base_container(vac2_path, data, max_output_bytes);
-    cleanup();
-    return ok;
+    return write_vac2_base_container(vac2_path, data, max_output_bytes);
 }
 
 } // namespace vr::analysis

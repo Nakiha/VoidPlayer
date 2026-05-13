@@ -10,7 +10,7 @@ The VAC1 pipeline treats analysis as a complete offline artifact:
 
 1. Scan or demux the whole file.
 2. Run codec-specific deep analyzers before the UI can use the result.
-3. Write VBI/VBT/VBS4 into one VAC file.
+3. Write every analysis payload into one VAC file.
 4. Allow analysis UI and overlay only after the whole artifact exists.
 
 That model blocks lightweight workflows. A user who only wants a few NAL unit
@@ -151,7 +151,7 @@ using the parameter-set snapshot active at that point.
 
 ## External Analyzer Retirement
 
-The old external decoder flow was useful for historical full-file VBS/VBS4
+The old external decoder flow was useful for historical full-file block-stat
 analysis, but it was a poor fit for progressive analysis because it was not
 built around seeking and partial decode jobs.
 
@@ -223,8 +223,8 @@ Recommended initial policy:
 
 ### Phase 5: FFmpeg VVC Analyzer
 
-- Extend the FFmpeg-based analyzer contract to VVC/H.266.
-- Keep VVC overlay unavailable until that analyzer coverage exists.
+- [x] Extend the FFmpeg-based analyzer contract to VVC/H.266.
+- [x] Generate VVC overlay chunks through the FFmpeg analyzer path.
 
 ## Testing
 

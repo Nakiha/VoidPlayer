@@ -23,7 +23,7 @@ function(void_link_zstd target_name)
     if(TARGET libzstd_static)
         target_link_libraries(${target_name} PRIVATE libzstd_static)
     else()
-        message(FATAL_ERROR "VBS4 parser requires vendored zstd at ${VOID_ZSTD_DIR}")
+        message(FATAL_ERROR "Vendored zstd is missing at ${VOID_ZSTD_DIR}")
     endif()
 endfunction()
 

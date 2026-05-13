@@ -457,6 +457,7 @@ private:
     // -- Cached last frame for redraws (zoom/pan while paused or at EOF) --
     PresentDecision last_decision_;
     std::vector<uint8_t> analysis_overlay_pixels_;
+    std::vector<uint8_t> analysis_overlay_line_pixels_;
 
     // -- Headless mode state --
     bool headless_ = false;

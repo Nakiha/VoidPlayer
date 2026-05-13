@@ -21,6 +21,7 @@ class NativePlayerMethods {
   static const stepForward = 'stepForward';
   static const stepBackward = 'stepBackward';
   static const currentPts = 'currentPts';
+  static const currentPresentedFrame = 'currentPresentedFrame';
   static const duration = 'duration';
   static const isPlaying = 'isPlaying';
   static const applyLayout = 'applyLayout';
@@ -61,6 +62,7 @@ class NativePlayerKeys {
   static const pixelSizeMode = 'pixelSizeMode';
   static const order = 'order';
   static const ptsUs = 'ptsUs';
+  static const dtsUs = 'dtsUs';
   static const speed = 'speed';
   static const enabled = 'enabled';
   static const startUs = 'startUs';
@@ -88,6 +90,24 @@ class NativePlayerPayloads {
     }
     return TrackInfo.fromMap(Map<dynamic, dynamic>.from(value));
   }
+}
+
+class PresentedFrameTiming {
+  static const noTimestampUs = -9223372036854775808;
+
+  final int ptsUs;
+  final int dtsUs;
+
+  const PresentedFrameTiming({required this.ptsUs, required this.dtsUs});
+
+  factory PresentedFrameTiming.fromMap(Map<dynamic, dynamic> map) {
+    return PresentedFrameTiming(
+      ptsUs: map[NativePlayerKeys.ptsUs] as int? ?? -1,
+      dtsUs: map[NativePlayerKeys.dtsUs] as int? ?? -1,
+    );
+  }
+
+  bool get isValid => ptsUs >= 0 && dtsUs != noTimestampUs;
 }
 
 /// Layout mode constants matching native defines.

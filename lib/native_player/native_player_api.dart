@@ -27,6 +27,7 @@ abstract interface class NativePlayerApi {
   Future<void> stepForward();
   Future<void> stepBackward();
   Future<int> currentPts();
+  Future<PresentedFrameTiming?> currentPresentedFrame(int fileId);
   Future<int> duration();
   Future<bool> isPlaying();
   Future<void> applyLayout(LayoutState state);
@@ -161,6 +162,17 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   Future<int> currentPts() async {
     return await _channel.invokeMethod<int>(NativePlayerMethods.currentPts) ??
         0;
+  }
+
+  @override
+  Future<PresentedFrameTiming?> currentPresentedFrame(int fileId) async {
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      NativePlayerMethods.currentPresentedFrame,
+      {NativePlayerKeys.fileId: fileId},
+    );
+    if (map == null) return null;
+    final timing = PresentedFrameTiming.fromMap(map);
+    return timing.isValid ? timing : null;
   }
 
   @override

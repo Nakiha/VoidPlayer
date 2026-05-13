@@ -174,6 +174,11 @@ typedef _HandleGetSummaryNative =
 typedef _HandleGetSummaryDart =
     Pointer<NakiAnalysisSummary> Function(Pointer<Void>);
 
+typedef _HandleFrameIndexForTimestampNative =
+    Int32 Function(Pointer<Void>, Int64, Int64);
+typedef _HandleFrameIndexForTimestampDart =
+    int Function(Pointer<Void>, int, int);
+
 typedef _HandleGetFramesRangeNative =
     Int32 Function(Pointer<Void>, Int32, Pointer<NakiFrameInfo>, Int32);
 typedef _HandleGetFramesRangeDart =
@@ -268,6 +273,11 @@ class _AnalysisNativeBindings {
         .lookupFunction<_HandleGetSummaryNative, _HandleGetSummaryDart>(
           'naki_analysis_handle_get_summary',
         );
+    handleFrameIndexForTimestamp = library
+        .lookupFunction<
+          _HandleFrameIndexForTimestampNative,
+          _HandleFrameIndexForTimestampDart
+        >('naki_analysis_handle_frame_index_for_timestamp');
     handleGetFramesRange = library
         .lookupFunction<_HandleGetFramesRangeNative, _HandleGetFramesRangeDart>(
           'naki_analysis_handle_get_frames_range',
@@ -346,6 +356,7 @@ class _AnalysisNativeBindings {
   late final _OpenDart open;
   late final _CloseDart close;
   late final _HandleGetSummaryDart handleGetSummary;
+  late final _HandleFrameIndexForTimestampDart handleFrameIndexForTimestamp;
   late final _HandleGetFramesRangeDart handleGetFramesRange;
   late final _HandleGetNalusRangeDart handleGetNalusRange;
   late final _HandleIndexMapDart handleFrameToNalu;
@@ -616,6 +627,11 @@ class AnalysisSession {
     final ptr = _native.handleGetSummary(_handle);
     if (ptr == nullptr) return _emptySummary;
     return AnalysisSummary.fromNative(ptr.ref);
+  }
+
+  int frameIndexForTimestamp({required int ptsUs, required int dtsUs}) {
+    if (_handle == nullptr || ptsUs < 0) return -1;
+    return _native.handleFrameIndexForTimestamp(_handle, ptsUs, dtsUs);
   }
 
   List<FrameInfo> get frames {

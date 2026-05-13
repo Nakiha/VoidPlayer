@@ -257,15 +257,13 @@ int32_t fill_vac2_frame_buckets(const vr::analysis::Vac2BaseFile& base,
                                 NakiFrameBucket* out,
                                 int32_t max_count);
 
-int32_t current_vac2_frame_idx(const vr::analysis::Vac2BaseFile& base) {
+int32_t vac2_frame_idx_for_pts_us(const vr::analysis::Vac2BaseFile& base,
+                                  int64_t pts_us) {
     const auto& frames = base.frames();
     if (frames.empty()) return -1;
-    auto cb = g_get_current_pts_us.load(std::memory_order_acquire);
-    if (!cb) return -1;
 
     const auto& h = base.header();
     if (h.time_base_num <= 0 || h.time_base_den <= 0) return -1;
-    const int64_t pts_us = cb();
     const long double target_units =
         (static_cast<long double>(pts_us) * h.time_base_den) /
         (static_cast<long double>(h.time_base_num) * 1000000.0L);
@@ -280,6 +278,36 @@ int32_t current_vac2_frame_idx(const vr::analysis::Vac2BaseFile& base) {
         });
     if (it == frames.begin()) return 0;
     return static_cast<int32_t>(std::distance(frames.begin(), it) - 1);
+}
+
+int32_t vac2_frame_idx_for_timestamp_us(const vr::analysis::Vac2BaseFile& base,
+                                        int64_t pts_us,
+                                        int64_t dts_us) {
+    const auto& frames = base.frames();
+    if (frames.empty()) return -1;
+
+    const auto& h = base.header();
+    if (h.time_base_num <= 0 || h.time_base_den <= 0) return -1;
+    const AVRational stream_time_base{h.time_base_num, h.time_base_den};
+    const AVRational us_time_base{1, 1000000};
+
+    for (size_t i = 0; i < frames.size(); ++i) {
+        const auto& frame = frames[i];
+        const int64_t frame_pts_us =
+            av_rescale_q(frame.pts, stream_time_base, us_time_base);
+        const int64_t frame_dts_us =
+            av_rescale_q(frame.dts, stream_time_base, us_time_base);
+        if (frame_pts_us == pts_us && frame_dts_us == dts_us) {
+            return static_cast<int32_t>(i);
+        }
+    }
+    return -1;
+}
+
+int32_t current_vac2_frame_idx(const vr::analysis::Vac2BaseFile& base) {
+    auto cb = g_get_current_pts_us.load(std::memory_order_acquire);
+    if (!cb) return -1;
+    return vac2_frame_idx_for_pts_us(base, cb());
 }
 
 void fill_vac2_summary(const vr::analysis::Vac2BaseFile& base,
@@ -569,6 +597,27 @@ const NakiAnalysisSummary* naki_analysis_handle_get_summary(NakiAnalysisHandle h
         set_analysis_ok();
     }
     return &summary;
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_handle_frame_index_for_timestamp(NakiAnalysisHandle handle,
+                                                       int64_t pts_us,
+                                                       int64_t dts_us) {
+    auto state = pin_analysis_handle(handle);
+    if (!state) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "analysis handle is invalid or closed");
+        return -1;
+    }
+    std::lock_guard<std::mutex> lock(state->mutex);
+    if (state->closed) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
+        return -1;
+    }
+    const auto index = vac2_frame_idx_for_timestamp_us(
+        *state->vac2_base, pts_us, dts_us);
+    set_analysis_ok();
+    return index;
 }
 
 extern "C" __declspec(dllexport)

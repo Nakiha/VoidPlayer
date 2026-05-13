@@ -43,8 +43,12 @@ class _FakeAnalysisGenerationService implements AnalysisGenerationService {
   Future<String?> ensureGenerated(String videoPath) => Future.value(null);
 
   @override
-  Future<bool> ensureOverlayChunk(String hash, {required String videoPath}) =>
-      Future.value(false);
+  Future<bool> ensureOverlayChunk(
+    String hash, {
+    required String videoPath,
+    int? presentedPtsUs,
+    int? presentedDtsUs,
+  }) => Future.value(false);
 
   @override
   Future<bool> activateOverlay(
@@ -52,6 +56,8 @@ class _FakeAnalysisGenerationService implements AnalysisGenerationService {
     required String name,
     required String path,
     required int trackFileId,
+    int? presentedPtsUs,
+    int? presentedDtsUs,
   }) => Future.value(false);
 
   @override

@@ -118,6 +118,13 @@ class AnalysisCache {
     return FileLockService.withExclusive(hashLockPath(hash), action);
   }
 
+  static Future<T> withHashSharedLock<T>(
+    String hash,
+    Future<T> Function() action,
+  ) {
+    return FileLockService.withShared(hashLockPath(hash), action);
+  }
+
   static FileLockHandle acquireHashSharedLockSync(String hash) {
     return FileLockService.acquireSharedSync(hashLockPath(hash));
   }

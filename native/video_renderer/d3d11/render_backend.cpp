@@ -37,6 +37,36 @@ float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_T
 }
 )";
 
+constexpr const char* kOverlayInvertHlsl = R"(
+struct VSInput {
+    float2 position : POSITION;
+    float2 texcoord : TEXCOORD0;
+};
+
+struct VSOutput {
+    float4 position : SV_POSITION;
+    float2 texcoord : TEXCOORD0;
+};
+
+VSOutput VSMain(VSInput input) {
+    VSOutput output;
+    output.position = float4(input.position, 0.0, 1.0);
+    output.texcoord = input.texcoord;
+    return output;
+}
+
+Texture2D u_overlay : register(t0);
+SamplerState u_sampler : register(s0);
+
+float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_TARGET {
+    float4 mask = u_overlay.Sample(u_sampler, texcoord);
+    if (mask.a < 0.5) {
+        discard;
+    }
+    return float4(1.0, 1.0, 1.0, 1.0);
+}
+)";
+
 } // namespace
 
 D3D11RenderBackend::~D3D11RenderBackend() {
@@ -106,6 +136,12 @@ bool D3D11RenderBackend::initialize_render_resources() {
         return false;
     }
 
+    if (!shader_manager_->compile_from_source(
+            kOverlayInvertHlsl, "VSMain", "PSMain", resources_->overlay_invert_shader)) {
+        spdlog::error("Renderer: failed to compile overlay invert shaders");
+        return false;
+    }
+
     if (!shader_manager_->create_constant_buffer(
             device_->device(),
             static_cast<UINT>(kShaderConstantsSize),
@@ -130,6 +166,16 @@ bool D3D11RenderBackend::initialize_render_resources() {
         return false;
     }
 
+    D3D11_SAMPLER_DESC overlay_sampler_desc = sampler_desc;
+    overlay_sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+    hr = device_->device()->CreateSamplerState(
+        &overlay_sampler_desc, &resources_->overlay_sampler_state);
+    if (FAILED(hr) || !resources_->overlay_sampler_state) {
+        spdlog::error("Renderer: CreateSamplerState(overlay) failed: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
     D3D11_BLEND_DESC blend_desc = {};
     blend_desc.RenderTarget[0].BlendEnable = TRUE;
     blend_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
@@ -143,6 +189,26 @@ bool D3D11RenderBackend::initialize_render_resources() {
         &blend_desc, &resources_->overlay_blend_state);
     if (FAILED(hr) || !resources_->overlay_blend_state) {
         spdlog::error("Renderer: CreateBlendState(overlay) failed: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
+    D3D11_BLEND_DESC invert_blend_desc = {};
+    invert_blend_desc.RenderTarget[0].BlendEnable = TRUE;
+    invert_blend_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+    invert_blend_desc.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
+    invert_blend_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_SUBTRACT;
+    invert_blend_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
+    invert_blend_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+    invert_blend_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+    invert_blend_desc.RenderTarget[0].RenderTargetWriteMask =
+        D3D11_COLOR_WRITE_ENABLE_RED |
+        D3D11_COLOR_WRITE_ENABLE_GREEN |
+        D3D11_COLOR_WRITE_ENABLE_BLUE;
+    hr = device_->device()->CreateBlendState(
+        &invert_blend_desc, &resources_->overlay_invert_blend_state);
+    if (FAILED(hr) || !resources_->overlay_invert_blend_state) {
+        spdlog::error("Renderer: CreateBlendState(overlay invert) failed: HRESULT {:#x}",
                       static_cast<unsigned long>(hr));
         return false;
     }

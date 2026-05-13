@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 
 import '../../analysis/analysis_manager.dart';
 import '../../analysis/analysis_overlay.dart';
+import '../../native_player/native_player_protocol.dart';
 import '../../track_manager.dart';
 import '../analysis/ipc/analysis_ipc_models.dart';
 import '../analysis/ipc/analysis_ipc_server.dart';
@@ -13,6 +14,8 @@ class MainWindowAnalysisCoordinator {
   final TrackManager trackManager;
   final AnalysisProcessManager analysisProcesses;
   final AnalysisGenerationService analysisGeneration;
+  final Future<PresentedFrameTiming?> Function(int fileId)?
+  presentedFrameProvider;
   final void Function()? onOverlayStateChanged;
   final AnalysisIpcServer _ipcServer = AnalysisIpcServer();
   final Map<int, String> _hashesByFileId = <int, String>{};
@@ -25,6 +28,7 @@ class MainWindowAnalysisCoordinator {
     required this.trackManager,
     required this.analysisProcesses,
     AnalysisGenerationService? analysisGeneration,
+    this.presentedFrameProvider,
     this.onOverlayStateChanged,
   }) : analysisGeneration = analysisGeneration ?? AnalysisManager.instance {
     _ipcServer.publishAccentColor(analysisProcesses.accentColorValue);
@@ -115,12 +119,16 @@ class MainWindowAnalysisCoordinator {
       if (_disposed || !_overlayPanelRequested) return;
       if (hash == null) continue;
       _hashesByFileId[entry.fileId] = hash;
+      final presentedFrame = await _presentedFrameForTrack(entry);
+      if (_disposed || !_overlayPanelRequested) return;
       sources.add(
         AnalysisOverlayTrackSource(
           hash: hash,
           name: entry.fileName,
           path: entry.path,
           trackFileId: entry.fileId,
+          presentedPtsUs: presentedFrame?.ptsUs,
+          presentedDtsUs: presentedFrame?.dtsUs,
         ),
       );
     }
@@ -203,11 +211,15 @@ class MainWindowAnalysisCoordinator {
   }
 
   Future<void> _activateOverlayImpl(TrackEntry track, String hash) async {
+    final presentedFrame = await _presentedFrameForTrack(track);
+    if (_disposed) return;
     final activated = await analysisGeneration.activateOverlay(
       hash,
       name: track.fileName,
       path: track.path,
       trackFileId: track.fileId,
+      presentedPtsUs: presentedFrame?.ptsUs,
+      presentedDtsUs: presentedFrame?.dtsUs,
     );
     if (_disposed || !activated) return;
     _hashesByFileId[track.fileId] = hash;
@@ -226,12 +238,16 @@ class MainWindowAnalysisCoordinator {
       if (_disposed) return;
       if (hash == null) continue;
       _hashesByFileId[entry.fileId] = hash;
+      final presentedFrame = await _presentedFrameForTrack(entry);
+      if (_disposed) return;
       sources.add(
         AnalysisOverlayTrackSource(
           hash: hash,
           name: entry.fileName,
           path: entry.path,
           trackFileId: entry.fileId,
+          presentedPtsUs: presentedFrame?.ptsUs,
+          presentedDtsUs: presentedFrame?.dtsUs,
         ),
       );
     }
@@ -240,6 +256,18 @@ class MainWindowAnalysisCoordinator {
     final refreshed = await analysisGeneration.activateOverlayTracks(sources);
     if (_disposed || !refreshed) return;
     _notifyOverlayStateChanged();
+  }
+
+  Future<PresentedFrameTiming?> _presentedFrameForTrack(
+    TrackEntry track,
+  ) async {
+    final provider = presentedFrameProvider;
+    if (provider == null) return null;
+    try {
+      return await provider(track.fileId);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _publishTrackSnapshotImpl() async {

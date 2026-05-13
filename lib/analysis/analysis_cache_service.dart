@@ -16,6 +16,7 @@ abstract class AnalysisCacheService {
   FileLockHandle acquireHashSharedLockSync(String hash);
   bool hasEntry(String hash, {String? videoPath});
   Future<T> withHashExclusiveLock<T>(String hash, Future<T> Function() action);
+  Future<T> withHashSharedLock<T>(String hash, Future<T> Function() action);
   Future<AnalysisCacheSnapshot> snapshot({int maxBytes = 0});
   bool hasIncompleteContainer(String hash);
   Future<void> addEntry(String hash, String name, String videoPath);
@@ -71,6 +72,11 @@ class DefaultAnalysisCacheService implements AnalysisCacheService {
   @override
   Future<T> withHashExclusiveLock<T>(String hash, Future<T> Function() action) {
     return AnalysisCache.withHashExclusiveLock(hash, action);
+  }
+
+  @override
+  Future<T> withHashSharedLock<T>(String hash, Future<T> Function() action) {
+    return AnalysisCache.withHashSharedLock(hash, action);
   }
 
   @override

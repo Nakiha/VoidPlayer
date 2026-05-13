@@ -111,14 +111,28 @@ void fill_rect(std::vector<uint8_t>& pixels,
     }
 }
 
-void stroke_rect(std::vector<uint8_t>& pixels,
-                 int width,
-                 int height,
-                 int x0,
-                 int y0,
-                 int x1,
-                 int y1,
-                 OverlayColor color) {
+void set_mask_pixel(std::vector<uint8_t>& pixels,
+                    int width,
+                    int height,
+                    int x,
+                    int y) {
+    if (x < 0 || y < 0 || x >= width || y >= height) {
+        return;
+    }
+    const size_t off = static_cast<size_t>(y * width + x) * 4;
+    pixels[off + 0] = 255;
+    pixels[off + 1] = 255;
+    pixels[off + 2] = 255;
+    pixels[off + 3] = 255;
+}
+
+void stroke_rect_mask(std::vector<uint8_t>& pixels,
+                      int width,
+                      int height,
+                      int x0,
+                      int y0,
+                      int x1,
+                      int y1) {
     if (x0 > x1) std::swap(x0, x1);
     if (y0 > y1) std::swap(y0, y1);
     x0 = std::clamp(x0, 0, width - 1);
@@ -127,12 +141,12 @@ void stroke_rect(std::vector<uint8_t>& pixels,
     y1 = std::clamp(y1, 0, height - 1);
     if (x0 >= x1 || y0 >= y1) return;
     for (int x = x0; x <= x1; ++x) {
-        blend_pixel(pixels, width, height, x, y0, color);
-        blend_pixel(pixels, width, height, x, y1, color);
+        set_mask_pixel(pixels, width, height, x, y0);
+        set_mask_pixel(pixels, width, height, x, y1);
     }
     for (int y = y0; y <= y1; ++y) {
-        blend_pixel(pixels, width, height, x0, y, color);
-        blend_pixel(pixels, width, height, x1, y, color);
+        set_mask_pixel(pixels, width, height, x0, y);
+        set_mask_pixel(pixels, width, height, x1, y);
     }
 }
 
@@ -2233,8 +2247,11 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
     auto& resources = *d3d_resources_;
     if (!resources.overlay_shader.vs ||
         !resources.overlay_shader.ps ||
+        !resources.overlay_invert_shader.vs ||
+        !resources.overlay_invert_shader.ps ||
         !resources.overlay_blend_state ||
-        !resources.sampler_state) {
+        !resources.overlay_invert_blend_state ||
+        !resources.overlay_sampler_state) {
         return;
     }
 
@@ -2277,7 +2294,11 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
     if (analysis_overlay_pixels_.size() != pixel_count * 4) {
         analysis_overlay_pixels_.resize(pixel_count * 4);
     }
+    if (analysis_overlay_line_pixels_.size() != pixel_count * 4) {
+        analysis_overlay_line_pixels_.resize(pixel_count * 4);
+    }
     std::fill(analysis_overlay_pixels_.begin(), analysis_overlay_pixels_.end(), 0);
+    std::fill(analysis_overlay_line_pixels_.begin(), analysis_overlay_line_pixels_.end(), 0);
 
     const int visible_count = std::max(constants.track_count, 1);
     const uint8_t base_alpha = static_cast<uint8_t>(std::clamp(
@@ -2291,6 +2312,8 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
     const bool bit_cost_primary = show_bit_cost || mode == 2 || mode == 4;
     const bool pred_primary = show_pred;
     const bool line_primary = show_lines;
+    bool has_color_overlay = false;
+    bool has_line_mask = false;
 
     auto draw_track_overlay = [&](int track_file_id,
                                   const analysis::AnalysisManager& track_analysis) {
@@ -2398,30 +2421,41 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
             if (x1 <= x0 || y1 <= y0) continue;
 
             if (bit_cost_primary) {
-                fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
-                          cu_complexity_proxy_color(c, fill_alpha));
+                if (fill_alpha > 0) {
+                    fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
+                              cu_complexity_proxy_color(c, fill_alpha));
+                    has_color_overlay = true;
+                }
             } else if (qp_primary) {
-                fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
-                          qp_color(c.qp, frame.summary.qp_min, frame.summary.qp_max, fill_alpha));
+                if (fill_alpha > 0) {
+                    fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
+                              qp_color(c.qp, frame.summary.qp_min, frame.summary.qp_max, fill_alpha));
+                    has_color_overlay = true;
+                }
             } else if (pred_primary) {
-                fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
-                          c.pred_mode == 1
-                              ? OverlayColor{80, 235, 90, static_cast<uint8_t>(fill_alpha * 3 / 4)}
-                              : pred_color(c.pred_mode, cu.inter, static_cast<uint8_t>(fill_alpha * 3 / 4)));
+                if (fill_alpha > 0) {
+                    fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
+                              c.pred_mode == 1
+                                  ? OverlayColor{80, 235, 90, static_cast<uint8_t>(fill_alpha * 3 / 4)}
+                                  : pred_color(c.pred_mode, cu.inter, static_cast<uint8_t>(fill_alpha * 3 / 4)));
+                    has_color_overlay = true;
+                }
             }
 
-            if (show_grid || mode == 0 || qp_primary || bit_cost_primary || pred_primary) {
-                stroke_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
-                            OverlayColor{255, 255, 255, line_alpha});
+            if (line_alpha > 0 &&
+                (show_grid || mode == 0 || qp_primary || bit_cost_primary || pred_primary)) {
+                stroke_rect_mask(analysis_overlay_line_pixels_, width, height, x0, y0, x1, y1);
+                has_line_mask = true;
             }
 
-            if (line_primary && c.pred_mode != 1) {
+            if (line_primary && c.pred_mode != 1 && line_alpha > 0) {
                 const int cx = (x0 + x1) / 2;
                 const int cy = (y0 + y1) / 2;
                 const int dx = std::clamp(static_cast<int>(cu.inter.mv_l0_x / 16), -80, 80);
                 const int dy = std::clamp(static_cast<int>(cu.inter.mv_l0_y / 16), -80, 80);
                 draw_line(analysis_overlay_pixels_, width, height, cx, cy, cx + dx, cy + dy,
                           OverlayColor{80, 180, 255, line_alpha});
+                has_color_overlay = true;
             }
         }
     };
@@ -2432,38 +2466,72 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
         }
     }
 
-    D3D11_MAPPED_SUBRESOURCE mapped = {};
     auto* ctx = d3d_device_->context();
-    HRESULT hr = ctx->Map(resources.overlay_texture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-    if (FAILED(hr)) {
-        spdlog::warn("[Renderer] Map(analysis overlay) failed: HRESULT {:#x}",
-                     static_cast<unsigned long>(hr));
+    auto upload_overlay = [&](const std::vector<uint8_t>& pixels, const char* label) -> bool {
+        D3D11_MAPPED_SUBRESOURCE mapped = {};
+        HRESULT hr = ctx->Map(
+            resources.overlay_texture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+        if (FAILED(hr)) {
+            spdlog::warn("[Renderer] Map({}) failed: HRESULT {:#x}",
+                         label,
+                         static_cast<unsigned long>(hr));
+            return false;
+        }
+        const uint8_t* src = pixels.data();
+        auto* dst = static_cast<uint8_t*>(mapped.pData);
+        const size_t row_bytes = static_cast<size_t>(width) * 4;
+        for (int y = 0; y < height; ++y) {
+            std::memcpy(dst + static_cast<size_t>(y) * mapped.RowPitch,
+                        src + static_cast<size_t>(y) * row_bytes,
+                        row_bytes);
+        }
+        ctx->Unmap(resources.overlay_texture.Get(), 0);
+        return true;
+    };
+
+    if (!has_color_overlay && !has_line_mask) {
         return;
     }
-    const uint8_t* src = analysis_overlay_pixels_.data();
-    auto* dst = static_cast<uint8_t*>(mapped.pData);
-    const size_t row_bytes = static_cast<size_t>(width) * 4;
-    for (int y = 0; y < height; ++y) {
-        std::memcpy(dst + static_cast<size_t>(y) * mapped.RowPitch,
-                    src + static_cast<size_t>(y) * row_bytes,
-                    row_bytes);
-    }
-    ctx->Unmap(resources.overlay_texture.Get(), 0);
 
-    float blend_factor[4] = {0, 0, 0, 0};
-    ctx->OMSetBlendState(resources.overlay_blend_state.Get(), blend_factor, 0xffffffff);
-    ctx->VSSetShader(resources.overlay_shader.vs.Get(), nullptr, 0);
-    ctx->PSSetShader(resources.overlay_shader.ps.Get(), nullptr, 0);
-    if (resources.overlay_shader.layout) {
-        ctx->IASetInputLayout(resources.overlay_shader.layout.Get());
-    }
+    ID3D11SamplerState* sampler = resources.overlay_sampler_state.Get();
     ID3D11ShaderResourceView* overlay_srv = resources.overlay_srv.Get();
-    ID3D11SamplerState* sampler = resources.sampler_state.Get();
-    ctx->PSSetShaderResources(0, 1, &overlay_srv);
-    ctx->PSSetSamplers(0, 1, &sampler);
-    ctx->Draw(4, 0);
     ID3D11ShaderResourceView* null_srv = nullptr;
-    ctx->PSSetShaderResources(0, 1, &null_srv);
+    float blend_factor[4] = {0, 0, 0, 0};
+
+    if (has_color_overlay) {
+        if (!upload_overlay(analysis_overlay_pixels_, "analysis overlay")) {
+            return;
+        }
+        ctx->OMSetBlendState(resources.overlay_blend_state.Get(), blend_factor, 0xffffffff);
+        ctx->VSSetShader(resources.overlay_shader.vs.Get(), nullptr, 0);
+        ctx->PSSetShader(resources.overlay_shader.ps.Get(), nullptr, 0);
+        if (resources.overlay_shader.layout) {
+            ctx->IASetInputLayout(resources.overlay_shader.layout.Get());
+        }
+        ctx->PSSetShaderResources(0, 1, &overlay_srv);
+        ctx->PSSetSamplers(0, 1, &sampler);
+        ctx->Draw(4, 0);
+        ctx->PSSetShaderResources(0, 1, &null_srv);
+    }
+
+    if (has_line_mask) {
+        if (!upload_overlay(analysis_overlay_line_pixels_, "analysis overlay line mask")) {
+            ctx->OMSetBlendState(nullptr, nullptr, 0xffffffff);
+            return;
+        }
+        ctx->OMSetBlendState(
+            resources.overlay_invert_blend_state.Get(), blend_factor, 0xffffffff);
+        ctx->VSSetShader(resources.overlay_invert_shader.vs.Get(), nullptr, 0);
+        ctx->PSSetShader(resources.overlay_invert_shader.ps.Get(), nullptr, 0);
+        if (resources.overlay_invert_shader.layout) {
+            ctx->IASetInputLayout(resources.overlay_invert_shader.layout.Get());
+        }
+        ctx->PSSetShaderResources(0, 1, &overlay_srv);
+        ctx->PSSetSamplers(0, 1, &sampler);
+        ctx->Draw(4, 0);
+        ctx->PSSetShaderResources(0, 1, &null_srv);
+    }
+
     ctx->OMSetBlendState(nullptr, nullptr, 0xffffffff);
 }
 

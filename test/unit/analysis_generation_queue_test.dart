@@ -7,14 +7,24 @@ import 'package:void_player/analysis/analysis_native_service.dart';
 import 'package:void_player/utils/file_lock.dart';
 
 class _FakeCacheService implements AnalysisCacheService {
-  int lockCount = 0;
+  int exclusiveLockCount = 0;
+  int sharedLockCount = 0;
 
   @override
   Future<T> withHashExclusiveLock<T>(
     String hash,
     Future<T> Function() action,
   ) async {
-    lockCount++;
+    exclusiveLockCount++;
+    return action();
+  }
+
+  @override
+  Future<T> withHashSharedLock<T>(
+    String hash,
+    Future<T> Function() action,
+  ) async {
+    sharedLockCount++;
     return action();
   }
 
@@ -119,12 +129,13 @@ void main() {
     );
 
     expect(ok, isTrue);
-    expect(cache.lockCount, 1);
+    expect(cache.exclusiveLockCount, 1);
+    expect(cache.sharedLockCount, 0);
     expect(native.generateCount, 1);
   });
 
   test(
-    'generation queue serializes overlay chunk writes under hash lock',
+    'generation queue writes overlay chunks under shared hash lock',
     () async {
       final cache = _FakeCacheService();
       final native = _FakeNativeService();
@@ -139,7 +150,8 @@ void main() {
       );
 
       expect(ok, isTrue);
-      expect(cache.lockCount, 1);
+      expect(cache.exclusiveLockCount, 0);
+      expect(cache.sharedLockCount, 1);
       expect(native.generateOverlayChunkCount, 1);
     },
   );

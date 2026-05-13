@@ -862,6 +862,37 @@ void VideoRendererPlugin::HandleMethodCall(
     } else if (method == "currentPts") {
         int64_t pts = player_ ? player_->current_pts_us() : 0;
         result->Success(flutter::EncodableValue(pts));
+    } else if (method == "currentPresentedFrame") {
+        if (!method_call.arguments()) {
+            result->Error("INVALID_ARGS", "Arguments required");
+            return;
+        }
+        const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+        if (!args) {
+            result->Error("INVALID_ARGS", "Arguments must be a map");
+            return;
+        }
+        auto it = args->find(flutter::EncodableValue("fileId"));
+        int file_id = -1;
+        if (it == args->end() || !read_int_arg(it->second, file_id)) {
+            result->Error("BAD_ARGS", "fileId must be an integer");
+            return;
+        }
+        int64_t pts = -1;
+        int64_t dts = std::numeric_limits<int64_t>::min();
+        if (player_) {
+            for (const auto& stats : player_->track_perf_stats()) {
+                if (stats.file_id == file_id) {
+                    pts = stats.current_pts_us;
+                    dts = stats.current_dts_us;
+                    break;
+                }
+            }
+        }
+        flutter::EncodableMap frame;
+        frame[flutter::EncodableValue("ptsUs")] = flutter::EncodableValue(pts);
+        frame[flutter::EncodableValue("dtsUs")] = flutter::EncodableValue(dts);
+        result->Success(flutter::EncodableValue(frame));
     } else if (method == "duration") {
         int64_t dur = player_ ? player_->duration_us() : 0;
         result->Success(flutter::EncodableValue(dur));

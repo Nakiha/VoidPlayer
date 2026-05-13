@@ -51,7 +51,7 @@ class SerialAnalysisGenerationQueue implements AnalysisGenerationQueue {
   }) {
     final previous = _queue;
     final task = previous.catchError((_) {}).then((_) {
-      return cache.withHashExclusiveLock(hash, () async {
+      return cache.withHashSharedLock(hash, () async {
         return native.generateOverlayChunk(
           videoPath: videoPath,
           hash: hash,

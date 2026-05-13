@@ -14,6 +14,8 @@ import 'analysis_overlay.dart';
 import 'file_hash.dart';
 import 'nalu_types.dart';
 
+const int _noTimestampUs = -9223372036854775808;
+
 enum AnalysisState { idle, computingHash, generating, loading, loaded, error }
 
 enum AnalysisTrackStatus {
@@ -74,12 +76,16 @@ class AnalysisOverlayTrackSource {
   final String name;
   final String path;
   final int trackFileId;
+  final int? presentedPtsUs;
+  final int? presentedDtsUs;
 
   const AnalysisOverlayTrackSource({
     required this.hash,
     required this.name,
     required this.path,
     required this.trackFileId,
+    this.presentedPtsUs,
+    this.presentedDtsUs,
   });
 }
 
@@ -90,12 +96,19 @@ abstract class AnalysisGenerationService {
   AnalysisOverlayConfig get overlayConfig;
   AnalysisTrackGenerationStatus? statusForPath(String path);
   Future<String?> ensureGenerated(String videoPath);
-  Future<bool> ensureOverlayChunk(String hash, {required String videoPath});
+  Future<bool> ensureOverlayChunk(
+    String hash, {
+    required String videoPath,
+    int? presentedPtsUs,
+    int? presentedDtsUs,
+  });
   Future<bool> activateOverlay(
     String hash, {
     required String name,
     required String path,
     required int trackFileId,
+    int? presentedPtsUs,
+    int? presentedDtsUs,
   });
   Future<bool> activateOverlayTracks(List<AnalysisOverlayTrackSource> tracks);
   void updateOverlayConfig(AnalysisOverlayConfig config);
@@ -188,15 +201,105 @@ class AnalysisManager extends ChangeNotifier
   }
 
   @override
-  Future<bool> ensureOverlayChunk(String hash, {required String videoPath}) {
-    final targetFrame = _resolveOverlayTargetFrame(hash);
-    final range = _overlayChunkRangeFor(hash, targetFrame);
-    if (range == null) return Future.value(false);
+  Future<bool> ensureOverlayChunk(
+    String hash, {
+    required String videoPath,
+    int? presentedPtsUs,
+    int? presentedDtsUs,
+  }) async {
+    final targetFrame = _resolveOverlayTargetFrame(
+      hash,
+      presentedPtsUs: presentedPtsUs,
+      presentedDtsUs: presentedDtsUs,
+    );
+    final ranges = _overlayChunkRangesFor(hash, targetFrame);
+    if (ranges == null) return false;
+    final hasPresentedTarget =
+        presentedPtsUs != null &&
+        presentedPtsUs >= 0 &&
+        presentedDtsUs != null &&
+        presentedDtsUs != _noTimestampUs;
+    var ready = true;
+    final blockingRanges = hasPresentedTarget ? ranges.take(1) : ranges;
+    for (final range in blockingRanges) {
+      final frame = targetFrame.clamp(range.startFrame, range.endFrame).toInt();
+      if (_cache.hasOverlayChunkForFrame(hash, frame)) {
+        continue;
+      }
+      final ok = await _ensureOverlayChunkRange(
+        hash: hash,
+        videoPath: videoPath,
+        startFrame: range.startFrame,
+        endFrame: range.endFrame,
+        targetFrame: frame,
+      );
+      ready = ready && ok;
+    }
+    if (!ready) return false;
+
+    if (hasPresentedTarget) {
+      for (final range in ranges.skip(1)) {
+        final frame = targetFrame
+            .clamp(range.startFrame, range.endFrame)
+            .toInt();
+        if (_cache.hasOverlayChunkForFrame(hash, frame)) continue;
+        _prefetchOverlayChunkRange(
+          hash: hash,
+          videoPath: videoPath,
+          startFrame: range.startFrame,
+          endFrame: range.endFrame,
+          targetFrame: frame,
+        );
+      }
+    }
+    return ready;
+  }
+
+  void _prefetchOverlayChunkRange({
+    required String hash,
+    required String videoPath,
+    required int startFrame,
+    required int endFrame,
+    required int targetFrame,
+  }) {
+    unawaited(
+      _ensureOverlayChunkRange(
+            hash: hash,
+            videoPath: videoPath,
+            startFrame: startFrame,
+            endFrame: endFrame,
+            targetFrame: targetFrame,
+          )
+          .then((ok) {
+            if (!ok) {
+              log.info(
+                '[Analysis] overlay chunk prefetch skipped: '
+                'hash=$hash frames=$startFrame..$endFrame',
+              );
+            }
+          })
+          .catchError((Object e, StackTrace stack) {
+            log.warning(
+              '[Analysis] overlay chunk prefetch failed: '
+              'hash=$hash frames=$startFrame..$endFrame: $e',
+              e,
+              stack,
+            );
+          }),
+    );
+  }
+
+  Future<bool> _ensureOverlayChunkRange({
+    required String hash,
+    required String videoPath,
+    required int startFrame,
+    required int endFrame,
+    required int targetFrame,
+  }) {
     if (_cache.hasOverlayChunkForFrame(hash, targetFrame)) {
       return Future.value(true);
     }
-
-    final key = '$hash:${range.startFrame}:${range.endFrame}';
+    final key = '$hash:$startFrame:$endFrame';
     final existing = _ensureOverlayChunkInFlightByKey[key];
     if (existing != null) return existing;
 
@@ -205,8 +308,8 @@ class AnalysisManager extends ChangeNotifier
         _ensureOverlayChunkImpl(
           hash: hash,
           videoPath: videoPath,
-          startFrame: range.startFrame,
-          endFrame: range.endFrame,
+          startFrame: startFrame,
+          endFrame: endFrame,
           targetFrame: targetFrame,
         ).whenComplete(() {
           if (identical(_ensureOverlayChunkInFlightByKey[key], future)) {
@@ -544,6 +647,8 @@ class AnalysisManager extends ChangeNotifier
     required String name,
     required String path,
     required int trackFileId,
+    int? presentedPtsUs,
+    int? presentedDtsUs,
   }) async {
     return activateOverlayTracks([
       AnalysisOverlayTrackSource(
@@ -551,6 +656,8 @@ class AnalysisManager extends ChangeNotifier
         name: name,
         path: path,
         trackFileId: trackFileId,
+        presentedPtsUs: presentedPtsUs,
+        presentedDtsUs: presentedDtsUs,
       ),
     ]);
   }
@@ -570,6 +677,8 @@ class AnalysisManager extends ChangeNotifier
       final chunkReady = await ensureOverlayChunk(
         track.hash,
         videoPath: track.path,
+        presentedPtsUs: track.presentedPtsUs,
+        presentedDtsUs: track.presentedDtsUs,
       );
       if (!chunkReady) {
         log.info(
@@ -913,7 +1022,11 @@ class AnalysisManager extends ChangeNotifier
     return _cache.hasOverlayChunkForFrame(hash, targetFrame);
   }
 
-  int _resolveOverlayTargetFrame(String hash) {
+  int _resolveOverlayTargetFrame(
+    String hash, {
+    int? presentedPtsUs,
+    int? presentedDtsUs,
+  }) {
     AnalysisSession? session;
     try {
       session = _native.openSession(_cache.analysisPath(hash));
@@ -921,7 +1034,21 @@ class AnalysisManager extends ChangeNotifier
       if (summary == null || summary.loaded == 0 || summary.frameCount <= 0) {
         return 0;
       }
-      final current = summary.currentFrameIdx;
+      var current = -1;
+      if (presentedPtsUs != null &&
+          presentedPtsUs >= 0 &&
+          presentedDtsUs != null &&
+          presentedDtsUs != _noTimestampUs) {
+        current =
+            session?.frameIndexForTimestamp(
+              ptsUs: presentedPtsUs,
+              dtsUs: presentedDtsUs,
+            ) ??
+            -1;
+      }
+      if (current < 0) {
+        current = summary.currentFrameIdx;
+      }
       if (current < 0) return 0;
       return current.clamp(0, summary.frameCount - 1).toInt();
     } catch (e, stack) {
@@ -936,7 +1063,7 @@ class AnalysisManager extends ChangeNotifier
     }
   }
 
-  ({int startFrame, int endFrame})? _overlayChunkRangeFor(
+  List<({int startFrame, int endFrame})>? _overlayChunkRangesFor(
     String hash,
     int targetFrame,
   ) {
@@ -948,15 +1075,10 @@ class AnalysisManager extends ChangeNotifier
         return null;
       }
       final frameCount = summary.frameCount;
-      final safeTarget = targetFrame.clamp(0, frameCount - 1).toInt();
-      const chunkFrameCount = 64;
-      final start = (safeTarget - chunkFrameCount ~/ 2)
-          .clamp(0, frameCount - 1)
-          .toInt();
-      final end = (start + chunkFrameCount - 1)
-          .clamp(start, frameCount - 1)
-          .toInt();
-      return (startFrame: start, endFrame: end);
+      return overlayChunkRangesForFrame(
+        frameCount: frameCount,
+        targetFrame: targetFrame,
+      );
     } catch (e, stack) {
       log.warning(
         '[Analysis] failed to resolve overlay chunk range for $hash: $e',
@@ -967,6 +1089,70 @@ class AnalysisManager extends ChangeNotifier
     } finally {
       session?.close();
     }
+  }
+
+  @visibleForTesting
+  static ({int startFrame, int endFrame}) overlayChunkRangeForFrame({
+    required int frameCount,
+    required int targetFrame,
+    int chunkFrameCount = 64,
+  }) {
+    final safeFrameCount = frameCount <= 0 ? 1 : frameCount;
+    final safeChunkFrameCount = chunkFrameCount <= 0 ? 64 : chunkFrameCount;
+    final safeTarget = targetFrame.clamp(0, safeFrameCount - 1).toInt();
+    final start = (safeTarget ~/ safeChunkFrameCount) * safeChunkFrameCount;
+    final end = (start + safeChunkFrameCount - 1)
+        .clamp(start, safeFrameCount - 1)
+        .toInt();
+    return (startFrame: start, endFrame: end);
+  }
+
+  @visibleForTesting
+  static List<({int startFrame, int endFrame})> overlayChunkRangesForFrame({
+    required int frameCount,
+    required int targetFrame,
+    int chunkFrameCount = 64,
+    int edgePrefetchDivisor = 4,
+  }) {
+    final safeFrameCount = frameCount <= 0 ? 1 : frameCount;
+    final safeChunkFrameCount = chunkFrameCount <= 0 ? 64 : chunkFrameCount;
+    final safeTarget = targetFrame.clamp(0, safeFrameCount - 1).toInt();
+    final edgePrefetchSize = (safeChunkFrameCount ~/ edgePrefetchDivisor)
+        .clamp(1, safeChunkFrameCount)
+        .toInt();
+    final current = overlayChunkRangeForFrame(
+      frameCount: safeFrameCount,
+      targetFrame: safeTarget,
+      chunkFrameCount: safeChunkFrameCount,
+    );
+    final ranges = <({int startFrame, int endFrame})>[current];
+    final localFrame = safeTarget - current.startFrame;
+    final currentWindowSize = current.endFrame - current.startFrame + 1;
+
+    if (localFrame < edgePrefetchSize && current.startFrame > 0) {
+      ranges.add(
+        overlayChunkRangeForFrame(
+          frameCount: safeFrameCount,
+          targetFrame: current.startFrame - 1,
+          chunkFrameCount: safeChunkFrameCount,
+        ),
+      );
+    }
+    if (localFrame >= currentWindowSize - edgePrefetchSize &&
+        current.endFrame < safeFrameCount - 1) {
+      ranges.add(
+        overlayChunkRangeForFrame(
+          frameCount: safeFrameCount,
+          targetFrame: current.endFrame + 1,
+          chunkFrameCount: safeChunkFrameCount,
+        ),
+      );
+    }
+
+    final seen = <String>{};
+    return ranges
+        .where((range) => seen.add('${range.startFrame}:${range.endFrame}'))
+        .toList(growable: false);
   }
 
   Future<AnalysisError> _generationFailureError({

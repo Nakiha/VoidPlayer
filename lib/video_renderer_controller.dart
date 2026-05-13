@@ -164,6 +164,11 @@ class NativePlayerController {
     return _api.currentPts();
   }
 
+  Future<PresentedFrameTiming?> currentPresentedFrame(int fileId) {
+    if (!_hasPlayerForCommand()) return Future.value(null);
+    return _api.currentPresentedFrame(fileId);
+  }
+
   Future<int> duration() {
     if (!_hasPlayerForCommand()) return Future.value(0);
     return _api.duration();

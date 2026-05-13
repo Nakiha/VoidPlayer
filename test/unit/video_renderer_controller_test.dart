@@ -191,6 +191,12 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
+  Future<PresentedFrameTiming?> currentPresentedFrame(int fileId) async {
+    calls.add('currentPresentedFrame:$fileId');
+    return null;
+  }
+
+  @override
   Future<int> duration() async {
     calls.add('duration');
     return 0;

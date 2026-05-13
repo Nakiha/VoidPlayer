@@ -435,6 +435,7 @@ class MainWindowController {
       trackManager: trackManager,
       analysisProcesses: analysisProcesses,
       analysisGeneration: analysisGeneration,
+      presentedFrameProvider: player.currentPresentedFrame,
       onOverlayStateChanged: _requestAnalysisOverlayRedraw,
     );
     playbackCoordinator = MainWindowPlaybackCoordinator(

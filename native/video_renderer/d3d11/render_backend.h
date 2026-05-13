@@ -22,9 +22,12 @@ struct D3D11RenderBackendConfig {
 struct D3D11RenderResources {
     CompiledShader compiled_shader;
     CompiledShader overlay_shader;
+    CompiledShader overlay_invert_shader;
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertex_buffer;
     Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_state;
+    Microsoft::WRL::ComPtr<ID3D11SamplerState> overlay_sampler_state;
     Microsoft::WRL::ComPtr<ID3D11BlendState> overlay_blend_state;
+    Microsoft::WRL::ComPtr<ID3D11BlendState> overlay_invert_blend_state;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> overlay_texture;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> overlay_srv;
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> cached_rtv;

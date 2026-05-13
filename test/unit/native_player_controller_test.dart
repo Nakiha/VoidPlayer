@@ -29,6 +29,7 @@ void main() {
 
     expect(calls, isEmpty);
     expect(await controller.currentPts(), 0);
+    expect(await controller.currentPresentedFrame(1), isNull);
     expect(await controller.duration(), 0);
     expect(await controller.isPlaying(), isFalse);
   });
@@ -36,8 +37,8 @@ void main() {
   test('structural commands require a created player', () async {
     final controller = NativePlayerController();
 
-    await expectLater(controller.getLayout(), throwsStateError);
-    await expectLater(controller.addTrack('next.mp4'), throwsStateError);
+    expect(() => controller.getLayout(), throwsStateError);
+    expect(() => controller.addTrack('next.mp4'), throwsStateError);
     expect(() => controller.removeTrack(1), throwsStateError);
     expect(
       () => controller.setTrackOffset(fileId: 1, offsetUs: 1000),

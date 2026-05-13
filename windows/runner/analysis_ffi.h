@@ -167,6 +167,11 @@ extern "C" __declspec(dllexport)
 const NakiAnalysisSummary* naki_analysis_handle_get_summary(NakiAnalysisHandle handle);
 
 extern "C" __declspec(dllexport)
+int32_t naki_analysis_handle_frame_index_for_timestamp(NakiAnalysisHandle handle,
+                                                       int64_t pts_us,
+                                                       int64_t dts_us);
+
+extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_frames(NakiAnalysisHandle handle, NakiFrameInfo* out, int32_t max_count);
 
 extern "C" __declspec(dllexport)

@@ -150,6 +150,8 @@ void stroke_rect_mask(std::vector<uint8_t>& pixels,
     }
 }
 
+constexpr int kMinCuGridLineSpanPx = 5;
+
 void draw_line(std::vector<uint8_t>& pixels,
                int width,
                int height,
@@ -2419,6 +2421,8 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
             const int y0 = static_cast<int>(std::floor(sy0));
             const int y1 = static_cast<int>(std::ceil(sy1));
             if (x1 <= x0 || y1 <= y0) continue;
+            const int rect_w = x1 - x0;
+            const int rect_h = y1 - y0;
 
             if (bit_cost_primary) {
                 if (fill_alpha > 0) {
@@ -2443,6 +2447,8 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
             }
 
             if (line_alpha > 0 &&
+                rect_w >= kMinCuGridLineSpanPx &&
+                rect_h >= kMinCuGridLineSpanPx &&
                 (show_grid || mode == 0 || qp_primary || bit_cost_primary || pred_primary)) {
                 stroke_rect_mask(analysis_overlay_line_pixels_, width, height, x0, y0, x1, y1);
                 has_line_mask = true;

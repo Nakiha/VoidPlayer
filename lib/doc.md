@@ -21,6 +21,7 @@ MethodChannel 调用编排，以及 DX11 texture 的 Flutter 侧展示。
 |------|------|
 | [Flutter 架构](docs/FLUTTER_ARCHITECTURE.md) | Flutter 层分层、目录、依赖规则、功能开发流程 |
 | [主窗口架构](docs/MAIN_WINDOW_ARCHITECTURE.md) | `MainWindowController`、state store、coordinator、view model 的职责 |
+| [Analysis 缓存与遮罩流程](docs/ANALYSIS_CACHE_OVERLAY.md) | VAC2 生成、VACHUNK 按需生成、seek 后 overlay refresh 的 Flutter 编排 |
 | [Analysis 窗口架构](docs/ANALYSIS_WINDOW_ARCHITECTURE.md) | analysis app/page/workspace/chart/NALU/test runner 的职责边界 |
 | [Action 设计](docs/ACTION_DESIGN.md) | 快捷键、UI 按钮、测试脚本共用的 Action 抽象 |
 | [Action 维护](docs/ACTION_MAINTENANCE.md) | 新增/修改/移除 Action 与 Assert 的维护清单 |

@@ -24,22 +24,21 @@ file revision and source range it depends on.
 
 ## File Name
 
-Recommended path:
+Current runtime path:
 
 ```text
-cache/<hash>/chunks/<kind>/<codec>_<feature-set>_<start>_<end>.vck
+cache/<hash>/chunks/<kind>/<kind-id>_f<feature-mask>_b<base-revision>_g<generator-revision>_<start-frame>_<end-frame>.vck
 ```
 
 Examples:
 
 ```text
-cache/<hash>/chunks/overlay/vvc_cu_qp_mv_00001234_00001289.vck
-cache/<hash>/chunks/frame_summary_exact/hevc_qp_refs_00001000_00001047.vck
-cache/<hash>/chunks/nalu_detail/00004567.vck
+cache/<hash>/chunks/overlay/3_f000000000000011f_b0000000000000001_g0000000000000002_00000128_00000191.vck
 ```
 
-File names are for human inspection and cleanup. The management index in
-`meta.json` should be used for authoritative discovery.
+File names are used by Dart cache discovery to cheaply reject stale generator
+revisions and locate covered frame windows. Native readers still validate the
+VACHUNK header before consuming payloads.
 
 ## Encoding Rules
 
@@ -177,8 +176,10 @@ Suggested sections:
 | FourCC | Name | Payload |
 | --- | --- | --- |
 | `FIDX` | Frame Index | Maps covered frames to local records. |
-| `UIDX` | Unit Index | Per-unit row ranges and optional parent links. |
-| `CPAY` | Column Payload | Compressed column streams. |
+| `FSUM` | Frame Summary | `VachunkFrameSummary[]` for exact per-frame stats. |
+| `CU4R` | Overlay CU/MB Records | Variable-size `VachunkCuCommon + VachunkCuInter/Intra` records. |
+| `UIDX` | Unit Index | Future per-unit row ranges and optional parent links. |
+| `CPAY` | Column Payload | Future compressed column streams. |
 | `HTST` | Optional Hit-Test Index | Spatial bins or tree data. |
 
 The overlay payload should be column-oriented, range-scoped, and feature-scoped.
@@ -219,14 +220,35 @@ Initial columns should cover current overlay data:
 - x, y, width, height
 - depth
 - QP
+- coded bit count
 - prediction mode
 - intra mode
 - skip/merge/inter direction
 - L0/L1 reference indexes
 - L0/L1 motion vectors
 
-Future columns may add affine control points, transform flags, coded bits/cost,
-VVC tool flags, or export-only syntax values.
+Current runtime records store the initial overlay data as packed row records
+rather than separate compressed columns:
+
+```text
+VachunkCuCommon:
+  uint16 x, uint16 y, uint8 w, uint8 h
+  uint8 depth, uint8 qp, uint8 pred_mode
+  uint32 bit_count
+
+VachunkCuInter:
+  skip, merge_flag, inter_dir, mv_l0/l1, ref_l0/l1
+
+VachunkCuIntra:
+  intra_mode, mip_flag, isp_mode
+```
+
+`bit_count` is the syntax bit delta attributed by the codec hook to the CU/MB.
+The renderer normalizes it to a 64x64 block before applying the fixed bitrate
+heatmap scale.
+
+Future columns may add affine control points, transform flags, VVC tool flags,
+or export-only syntax values.
 
 ## Generation And Publish
 
@@ -235,11 +257,11 @@ VVC tool flags, or export-only syntax values.
 3. Decode/parse into memory or a temp file under `tmp/`.
 4. Write a complete `.vck.tmp`.
 5. Validate header, ranges, feature flags, and checksums.
-6. Atomically rename to `.vck`.
-7. Register the chunk as complete in `meta.json`.
+6. Atomically publish to the final `.vck` name.
+7. Touch cache metadata for LRU/cache-size management.
 
 Readers must not open temp files. Readers should verify that the chunk
-`base_content_revision` matches `base.vac`.
+`base_content_revision` and `generator_revision` match the runtime expectation.
 
 ## Cache Management
 

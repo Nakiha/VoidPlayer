@@ -56,6 +56,7 @@ vr::analysis::VachunkData make_overlay_chunk(uint32_t start_frame,
         cu.common.h = 16;
         cu.common.qp = summary.avg_qp;
         cu.common.pred_mode = i == 0 ? 1 : 0;
+        cu.common.bit_count = 128 + i * 64;
         cu.inter.merge_flag = i == 0 ? 0 : 1;
         records.push_back(cu);
     }
@@ -401,6 +402,7 @@ TEST_CASE("VACHUNK: overlay chunk carries frame data",
         REQUIRE(frame0.cus[0].common.y == 0);
         REQUIRE(frame0.cus[0].common.qp == 22);
         REQUIRE(frame0.cus[0].common.pred_mode == 1);
+        REQUIRE(frame0.cus[0].common.bit_count == 128);
     }
 
     vr::analysis::VachunkOverlayFrameData missing;

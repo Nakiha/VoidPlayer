@@ -18,7 +18,7 @@ from .paths import (
 )
 from .process import header, run
 
-TOOL_STAMP_VERSION = 1
+TOOL_STAMP_VERSION = 2
 FFMPEG_SUBMODULE_PATH = "native/analysis/vendor/ffmpeg"
 ZSTD_SUBMODULE_PATH = "native/analysis/vendor/zstd"
 
@@ -34,6 +34,22 @@ def _file_sha256(path: Path) -> str:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def _source_hashes(root: Path, patterns: tuple[str, ...]) -> dict[str, str]:
+    hashes: dict[str, str] = {}
+    for pattern in patterns:
+        matches = sorted(
+            path for path in root.glob(pattern)
+            if path.is_file() and "build" not in path.relative_to(root).parts
+        )
+        if not matches:
+            hashes[pattern] = "missing"
+            continue
+        for path in matches:
+            relative = path.relative_to(root).as_posix()
+            hashes[relative] = _file_sha256(path)
+    return hashes
 
 
 def _git_head(path: Path) -> str:
@@ -93,17 +109,23 @@ def _ffmpeg_analyzer_signature() -> dict:
         if FFMPEG_ANALYZER_BUILD_SCRIPT.exists()
         else "missing"
     )
-    source_hashes = {}
-    for relative in (
+    source_hashes = _source_hashes(FFMPEG_ANALYZER_DIR, (
         "tools/void_ffmpeg_analyzer.c",
+        "libavcodec/h264dec.h",
+        "libavcodec/h264_slice.c",
         "libavcodec/h264_mb.c",
+        "libavcodec/h264_cabac.c",
+        "libavcodec/h264_cavlc.c",
+        "libavcodec/cabac.c",
+        "libavcodec/cabac.h",
+        "libavcodec/cabac_functions.h",
         "libavcodec/hevc/hevcdec.c",
+        "libavcodec/hevc/*.h",
         "libavcodec/vvc/ctu.c",
+        "libavcodec/vvc/*.h",
         "libavcodec/voidplayer_vachunk.c",
         "libavcodec/voidplayer_vachunk.h",
-    ):
-        source = FFMPEG_ANALYZER_DIR / relative
-        source_hashes[relative] = _file_sha256(source) if source.exists() else "missing"
+    ))
 
     return {
         "version": TOOL_STAMP_VERSION,
@@ -194,6 +216,7 @@ def ensure_ffmpeg_analyzer_tool() -> None:
         "Bypass",
         "-File",
         str(FFMPEG_ANALYZER_BUILD_SCRIPT),
+        "-Clean",
     ]
     try:
         run(cmd, cwd=str(FFMPEG_ANALYZER_BUILD_SCRIPT.parent.parent))

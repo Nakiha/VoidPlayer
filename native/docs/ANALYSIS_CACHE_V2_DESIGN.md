@@ -138,13 +138,19 @@ range, and track:
 request: track, feature_set, target_frame_or_nalu, optional window
 VAC2:    locate RAP/GOP, packets, parameter sets, source byte ranges
 job:     seek/read/decode/parse only the required region
-output:  VACHUNK file + meta.json registration
+output:  validated VACHUNK file published under chunks/<kind>/
 UI:      pending -> ready, then repaint or refresh detail view
 ```
 
 Frame-oriented jobs should use random access points or GOP boundaries as their
 natural range. A chunk may cover more frames than requested if that improves
 reuse.
+
+The current runtime overlay implementation publishes validated `.vck` files
+directly under `cache/<hash>/chunks/overlay/`; file names encode the chunk kind,
+feature mask, base revision, generator revision, and covered frame range. Dart
+uses those names plus the VACHUNK header validation path rather than treating
+`meta.json` as an authoritative chunk registry.
 
 NAL-detail jobs can be single-unit chunks. They should parse the selected NAL
 using the parameter-set snapshot active at that point.
@@ -159,17 +165,20 @@ Current direction:
 
 1. Use the vendored FFmpeg analyzer to emit VACHUNK overlay data directly for
    supported codecs.
-2. Use VAC2 source mapping to seek to random access points and decode only the
-   requested range.
-3. Extend the FFmpeg analyzer contract when VVC/H.266 overlay coverage is
-   ready, instead of reintroducing full-file decoder artifacts.
+2. Request bounded 64-frame overlay windows from Dart/native FFI instead of
+   generating full-file deep artifacts.
+3. Keep codec-specific hooks in the FFmpeg analyzer for H.264/HEVC/VVC and
+   extend that contract for future codecs instead of reintroducing full-file
+   decoder artifacts.
 
 ## Concurrency And Locks
 
 - A base index has one shared read lock and one exclusive generation lock.
 - Each chunk has its own generation lock.
 - Chunks are written under `tmp/`, validated, then atomically published.
-- Readers must ignore chunks not registered as complete in `meta.json`.
+- Readers must ignore temp files and must validate VACHUNK header kind/range,
+  base revision, and generator revision. Runtime overlay discovery currently
+  uses published `.vck` file names plus header validation.
 - Deleting chunks must not invalidate `base.vac`.
 - Regenerating `base.vac` for a different source/generator version invalidates
   all chunks under that hash directory.
@@ -178,9 +187,11 @@ Current direction:
 
 Default frame-oriented chunk boundaries:
 
-- start at a random access point or GOP start
-- end at GOP end or a bounded UI window
+- start at a 64-frame aligned window
+- end at the inclusive end of that window or the final frame
 - never split one decoded frame across chunks
+- near the first/last quarter of a window, request the adjacent window too so
+  seek-to-boundary redraws cover the actual presented frame
 - prefer reuse over exact request size, but keep chunks small enough for
   interactive cache pruning
 
@@ -188,7 +199,7 @@ Recommended initial policy:
 
 - NAL detail: one NAL or small adjacent range.
 - Exact frame summary: GOP/window chunk.
-- Overlay CU/QP/MV: GOP/window chunk.
+- Overlay CU/QP/MV/bit density: aligned 64-frame window chunk.
 - Export batch: may request larger sequential chunks, but still writes normal
   chunk files.
 
@@ -218,13 +229,16 @@ Recommended initial policy:
 ### Phase 4: Overlay Chunks
 
 - [x] Add request/ready APIs for overlay features.
-- [x] Generate CU/MB/QP/MV overlay chunks for bounded frame windows.
-- [x] Gate and load main-window overlays from VACache chunks.
+- [x] Generate CU/MB/QP/MV/bit-count overlay chunks for bounded frame windows.
+- [x] Gate and load main-window overlays from overlay VACHUNK chunks.
 
 ### Phase 5: FFmpeg VVC Analyzer
 
 - [x] Extend the FFmpeg-based analyzer contract to VVC/H.266.
 - [x] Generate VVC overlay chunks through the FFmpeg analyzer path.
+- [x] Generate H.264/HEVC/VVC overlay chunks through the same analyzer path.
+- [x] Rebuild analyzer from clean objects when hook source/header signatures
+  change, preventing stale analyzer executables.
 
 ## Testing
 

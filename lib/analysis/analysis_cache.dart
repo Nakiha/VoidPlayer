@@ -102,6 +102,7 @@ class AnalysisCache {
   AnalysisCache._();
 
   static const int currentVac2MajorVersion = 2;
+  static const int currentOverlayVachunkGeneratorRevision = 2;
   static const int _vac2HeaderSize = 124;
   static const int _vac2SectionEntrySize = 56;
 
@@ -185,8 +186,11 @@ class AnalysisCache {
   );
 
   static bool _overlayChunkFileCoversFrame(String path, int frameIndex) {
-    final name = p.basename(path);
-    if (name.toLowerCase().endsWith('_all.vck')) return true;
+    final name = p.basename(path).toLowerCase();
+    final expectedGenerator =
+        '_g${currentOverlayVachunkGeneratorRevision.toRadixString(16).padLeft(16, '0')}_';
+    if (!name.contains(expectedGenerator)) return false;
+    if (name.endsWith('_all.vck')) return true;
     final match = _chunkFrameRangePattern.firstMatch(name);
     if (match == null) return false;
     final start = int.tryParse(match.group(1)!);

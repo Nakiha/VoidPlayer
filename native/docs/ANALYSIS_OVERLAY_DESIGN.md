@@ -4,7 +4,7 @@
 
 ## Goals
 
-- 在播放 viewport 上叠加 codec block analysis 信息，第一版覆盖 CU/MB 划分、QP 热力图、比特率/复杂度热力图、预测模式、预测线/MV 线。
+- 在播放 viewport 上叠加 codec block analysis 信息，当前覆盖 CU/MB 划分、QP 热力图、CU bit density 热力图、预测模式、预测线/MV 线。
 - 遮罩必须跟随现有 layout：side-by-side、split screen、track order、zoom、pan、像素大小模式。
 - 高密度元素由 native/D3D11 绘制，Dart 只负责入口、开关、hover/click 事件、inspector 和少量 UI chrome。
 - 点击命中使用 native 的当前帧数据和布局几何，避免把大量 CU/PU/TU records 搬到 Dart。
@@ -15,14 +15,14 @@
 - 第一版不追求 Elecard/StreamEye 全量工具层。
 - 第一版不绘制真实 TU tree，因为当前 VACHUNK overlay 没有 TU geometry。
 - 第一版不在 Dart `CustomPainter` 中绘制大量 block rect。
-- 第一版不把 overlay 状态绑定到 analysis 子窗口；主窗口 overlay 使用主进程已加载的 VAC。
+- 主窗口 overlay 不绑定到 analysis 子窗口；它通过主进程的 VAC2 base 和按需 VACHUNK chunk 独立工作。
 
 ## Current VACHUNK Coverage
 
 当前足够支持：
 
 - H.264: 16x16 MB 栅格、intra/inter、skip、merge/direct 风格标志、inter direction、QP、intra mode、ref index、MV。
-- HEVC/VVC: CU `x/y/log2_w/log2_h/depth`、prediction mode、QP、intra mode、skip/merge、inter direction、ref index、MV。
+- HEVC/VVC: CU `x/y/w/h/depth`、prediction mode、QP、CU/MB coded bit count、intra mode、skip/merge、inter direction、ref index、MV。
 - VVC optional streams: MIP、ISP、IBC、PLT、affine、SBT 等工具标志可逐步扩展。
 
 当前不足：
@@ -60,7 +60,7 @@
 | --- | --- | --- | --- | --- |
 | CU | CU/MB partition outlines | H.264 MB grid or HEVC/VVC CU geometry | prediction mode, prediction lines | Enabled |
 | QP heatmap | Per-CU/MB QP fill | CU/MB QP | prediction mode, prediction lines | Enabled |
-| Bitrate heatmap | Per-CU bit/cost fill when available; current proxy uses CU depth/area/QP | future cost/bit optional stream | prediction mode, prediction lines | GUI/protocol enabled, visual data pending |
+| Bitrate heatmap | Per-CU/MB bit density fill | `bit_count` in current overlay CU/MB records | prediction mode, prediction lines | Enabled |
 
 ### Additive Layers
 
@@ -75,7 +75,7 @@
 
 - CU defaults to partition outlines.
 - QP heatmap defaults to QP fill plus partition outlines.
-- Bitrate heatmap defaults to complexity proxy fill plus partition outlines until cost data exists.
+- Bitrate heatmap defaults to real coded-bit density fill plus partition outlines.
 
 The type controls the primary native renderer pass. Prediction mode and prediction line layers are independent flags sent in the same overlay state so later renderer phases do not need UI rewiring.
 
@@ -116,27 +116,29 @@ D3D11 renderer 负责：
 - 按显示尺度做 LOD：小尺度下隐藏过细线框或合并热力图。
 - 绘制 selected/hover 高亮。
 
-第一版实现先采用 correctness-first 路径：CPU 按当前 VACHUNK frame 生成一张 viewport 尺寸的 BGRA dynamic texture，再由 D3D11 full-screen overlay pass 做 alpha blend。这样可以先把 CU grid、QP heatmap、prediction colors、MV line 和 CU complexity proxy heatmap 与现有 Texture 上屏路径打通；后续大码率/高分辨率优化再迁移到 GPU instance/structured-buffer 绘制。
+第一版实现先采用 correctness-first 路径：CPU 按当前 VACHUNK frame 生成一张 viewport 尺寸的 BGRA dynamic texture，再由 D3D11 full-screen overlay pass 做 alpha blend。这样可以先把 CU grid、QP heatmap、prediction colors、MV line 和 bit-density heatmap 与现有 Texture 上屏路径打通；后续大码率/高分辨率优化再迁移到 GPU instance/structured-buffer 绘制。
 
-当前 VACHUNK CU record 没有真实 bit/bitrate/cost 字段，因此第一版 `cuBitCostHeatmap` 只能使用 CU depth/面积/QP 的复杂度 proxy 保持类型可见；真正的 bitrate heatmap 必须等 VACHUNK 增加对应 stream 后替换。
+当前 VACHUNK CU/MB record 已带 `bit_count`，`cuBitCostHeatmap` 使用
+`bit_count * 64 * 64 / (w * h)` 计算归一到 64x64 的 bit density，并用固定
+log2 标尺绘制，避免不同帧/片源自适应导致颜色抖动。
 
 ## First Version
 
 - toolbar analysis hover panel 中每个 track row 提供一个小图标激活按钮。
-- 只有对应 track 的分析缓存完整时按钮可用。
-- 点击按钮加载该 track 的 VAC，并设置 native overlay state。
+- 只有对应 track 的 VAC2 base 缓存存在时按钮可用；缺失 overlay window 会按需生成。
+- 点击按钮加载该 track 的 VAC2 base，并设置 native overlay state。
 - overlay 默认类型为 CU，透明度为 55%。
 - 遮罩打开后 media header 上方出现 per-track overlay control strip。
 - control strip 可在 CU / QP heatmap / bitrate heatmap 三个主视觉间切换，可独立开关预测模式和预测线，可调整透明度。
-- 同一时间只激活一个 track 的 overlay。
+- native overlay tracks 按 `track_file_id` 绑定；UI 可按当前控制面板状态激活一个或多个 track，renderer 在 draw pass 根据 layout slot 映射。
 
 渲染层落地顺序：
 
 1. CU/MB grid：按当前 track geometry 将 block rect 映射到 viewport。
-2. QP heatmap：以 block rect 半透明填充，使用 frame `qp_min/qp_max` 或 codec 范围归一化。
+2. QP heatmap：以 block rect 半透明填充，使用固定 QP 范围归一化。
 3. Prediction mode：第一版用色彩区分 intra/inter/skip/merge，后续补小 glyph。
 4. Prediction lines：第一版画基础 L0 MV，后续补 L1 MV 和 intra direction。
-5. Bitrate heatmap：第一版用复杂度 proxy，后续接真实 bit/cost stream。
+5. Bitrate heatmap：使用 VACHUNK `bit_count` 绘制真实 CU/MB bit density。
 
 ## Hit-Test Contract
 
@@ -183,7 +185,7 @@ native 输出：
 - Add design document.
 - Add toolbar hover-panel activation button.
 - Gate activation on complete cache.
-- Load cached VAC and set overlay flags.
+- Load cached VAC2 and set overlay flags.
 - Add media-header overlay control strip.
 - Add overlay type/layer/opacity state protocol.
 

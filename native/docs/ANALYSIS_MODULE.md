@@ -17,7 +17,7 @@ analysis/
 ├── generators/                 # 二进制文件生成器
 │   ├── analysis_generator.h    # VAC2 base 生成接口
 │   └── analysis_generator.cpp  # FFmpeg 单趟实现
-└── vendor/ffmpeg/              # FFmpeg analyzer fork，按需生成 VACache overlay chunk
+└── vendor/ffmpeg/              # FFmpeg analyzer fork，按需生成 VACHUNK overlay chunk
 ```
 
 ## 二进制格式
@@ -33,7 +33,7 @@ Analysis 使用三类自定义二进制格式，均为小端序，结构体使�
 
 VAC2 / VACHUNK 的总体设计见
 [Analysis Cache V2 Design](ANALYSIS_CACHE_V2_DESIGN.md)。当前 runtime cache
-使用 VAC2 base + VACHUNK；runtime overlay 直接消费 VACache chunk。
+使用 VAC2 base + VACHUNK；runtime overlay 直接消费 overlay VACHUNK。
 
 ## 生成管线
 
@@ -65,6 +65,11 @@ FFmpeg analyzer 自行 demux/decode，并直接写入临时 `.vck`。runner 验�
 VACHUNK header/key 后原子发布到 `cache/<hash>/chunks/overlay/*.vck`；临时文件
 不进入 runtime cache。
 
+Overlay chunk 当前按 64 帧对齐窗口生成。Dart 侧在 seek settle 后用 renderer
+实际 presented PTS+DTS 解析目标帧；命中窗口边界前后 1/4 区域时，会把相邻窗口
+一起排队生成，以避免 native 暂停帧和 Dart timestamp lookup 在边界差一帧时
+overlay redraw 读不到实际显示帧。
+
 ## 解析器
 
 每个解析器对应一个 `*File` 类，`open()` 读取 header 和索引，后续按需读取单帧数据：
@@ -86,7 +91,7 @@ VACHUNK header/key 后原子发布到 `cache/<hash>/chunks/overlay/*.vck`；临�
 | `naki_analysis_handle_get_nalus_range` | 返回 VAC2 bitstream-unit 数组 |
 | `naki_analysis_handle_get_frame_buckets` | 返回 VAC2 frame bucket 聚合 |
 | `naki_analysis_set_overlay` | 设置叠加层显示状态 |
-| `naki_analysis_set_overlay_track` | 将 track file id 绑定到 VAC2/VACache overlay 数据 |
+| `naki_analysis_set_overlay_track` | 将 track file id 绑定到 VAC2/VACHUNK overlay 数据 |
 
 ABI / lifecycle notes:
 

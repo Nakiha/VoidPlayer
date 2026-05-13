@@ -214,14 +214,8 @@ class AnalysisManager extends ChangeNotifier
     );
     final ranges = _overlayChunkRangesFor(hash, targetFrame);
     if (ranges == null) return false;
-    final hasPresentedTarget =
-        presentedPtsUs != null &&
-        presentedPtsUs >= 0 &&
-        presentedDtsUs != null &&
-        presentedDtsUs != _noTimestampUs;
     var ready = true;
-    final blockingRanges = hasPresentedTarget ? ranges.take(1) : ranges;
-    for (final range in blockingRanges) {
+    for (final range in ranges) {
       final frame = targetFrame.clamp(range.startFrame, range.endFrame).toInt();
       if (_cache.hasOverlayChunkForFrame(hash, frame)) {
         continue;
@@ -235,58 +229,7 @@ class AnalysisManager extends ChangeNotifier
       );
       ready = ready && ok;
     }
-    if (!ready) return false;
-
-    if (hasPresentedTarget) {
-      for (final range in ranges.skip(1)) {
-        final frame = targetFrame
-            .clamp(range.startFrame, range.endFrame)
-            .toInt();
-        if (_cache.hasOverlayChunkForFrame(hash, frame)) continue;
-        _prefetchOverlayChunkRange(
-          hash: hash,
-          videoPath: videoPath,
-          startFrame: range.startFrame,
-          endFrame: range.endFrame,
-          targetFrame: frame,
-        );
-      }
-    }
     return ready;
-  }
-
-  void _prefetchOverlayChunkRange({
-    required String hash,
-    required String videoPath,
-    required int startFrame,
-    required int endFrame,
-    required int targetFrame,
-  }) {
-    unawaited(
-      _ensureOverlayChunkRange(
-            hash: hash,
-            videoPath: videoPath,
-            startFrame: startFrame,
-            endFrame: endFrame,
-            targetFrame: targetFrame,
-          )
-          .then((ok) {
-            if (!ok) {
-              log.info(
-                '[Analysis] overlay chunk prefetch skipped: '
-                'hash=$hash frames=$startFrame..$endFrame',
-              );
-            }
-          })
-          .catchError((Object e, StackTrace stack) {
-            log.warning(
-              '[Analysis] overlay chunk prefetch failed: '
-              'hash=$hash frames=$startFrame..$endFrame: $e',
-              e,
-              stack,
-            );
-          }),
-    );
   }
 
   Future<bool> _ensureOverlayChunkRange({

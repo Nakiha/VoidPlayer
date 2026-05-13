@@ -39,8 +39,9 @@ struct VachunkCuCommon {
     uint8_t  depth;
     uint8_t  qp;
     uint8_t  pred_mode;      // 0=inter, 1=intra, 2=ibc, 3=plt
+    uint32_t bit_count;      // coded syntax bits attributed to this CU/MB.
 };
-static_assert(sizeof(VachunkCuCommon) == 9);
+static_assert(sizeof(VachunkCuCommon) == 13);
 
 struct VachunkCuIntra {
     uint8_t intra_mode;
@@ -63,8 +64,8 @@ struct VachunkCuInter {
 static_assert(sizeof(VachunkCuInter) == 13);
 
 // CU record size by prediction mode
-inline constexpr size_t VACHUNK_CU_SIZE_INTER = sizeof(VachunkCuCommon) + sizeof(VachunkCuInter);  // 22
-inline constexpr size_t VACHUNK_CU_SIZE_INTRA = sizeof(VachunkCuCommon) + sizeof(VachunkCuIntra);  // 12
+inline constexpr size_t VACHUNK_CU_SIZE_INTER = sizeof(VachunkCuCommon) + sizeof(VachunkCuInter);  // 26
+inline constexpr size_t VACHUNK_CU_SIZE_INTRA = sizeof(VachunkCuCommon) + sizeof(VachunkCuIntra);  // 16
 
 // ===========================================================================
 // VAC2 scanner records

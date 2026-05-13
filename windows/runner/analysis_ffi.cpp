@@ -1319,7 +1319,7 @@ int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path,
     key.codec = static_cast<AnalysisCodec>(base.header().codec);
     key.feature_flags = kOverlayVachunkFeatureFlags;
     key.base_content_revision = base.header().content_revision;
-    key.generator_revision = 1;
+    key.generator_revision = 2;
     key.start_frame = static_cast<uint32_t>(start_frame);
     key.end_frame = static_cast<uint32_t>(end_frame);
 

@@ -1,7 +1,7 @@
 # FFmpeg Analyzer Tool
 
 VoidPlayer uses the `native/analysis/vendor/ffmpeg` submodule for codec-native
-VACache overlay chunk generation. This analyzer is built out-of-band and installed
+VACHUNK overlay generation. This analyzer is built out-of-band and installed
 as a runtime tool; the main native and Flutter builds do not compile FFmpeg.
 
 ## Local Toolchain Shape
@@ -64,6 +64,18 @@ analyzer tool, and installs it to:
 native/analysis/vendor/ffmpeg/bin/windows-x64/void_ffmpeg_analyzer.exe
 ```
 
+`python dev.py build --native` / `python dev.py ui-test --build ...` install the
+tool into the Flutter runner output under:
+
+```text
+build/windows/x64/runner/<Config>/tools/ffmpeg-analysis/void_ffmpeg_analyzer.exe
+```
+
+The dev script stamps the analyzer with a signature over the wrapper source and
+codec hook files/headers. When H.264/HEVC/VVC hook code changes, the next build
+forces a clean analyzer rebuild so stale object files do not leave an old tool
+beside a freshly built runner.
+
 The current configure shape is:
 
 ```bash
@@ -115,8 +127,10 @@ void_ffmpeg_analyzer.exe --codec h264 --input <video> --vachunk <output.vck> --s
 ```
 
 The current tool emits real decoder-derived overlay VACHUNK payloads for
-H.266/H.265/H.264. It still accepts `--probe-only` for quick codec/open
-validation:
+H.266/H.265/H.264. Overlay records include CU/MB geometry, QP, prediction mode,
+motion vectors/reference indexes where available, and per-CU/MB coded bit
+counts used by the bitrate heatmap. It still accepts `--probe-only` for quick
+codec/open validation:
 
 ```text
 void_ffmpeg_analyzer.exe --codec hevc --input <video> --probe-only

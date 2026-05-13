@@ -27,6 +27,7 @@ windows/
 ├── flutter/                       # Flutter 工具生成的 embedding 集成层，通常不手改
 ├── runner/                        # Win32 应用宿主和插件桥接代码
 │   ├── flutter_window.*           # Flutter window / plugin 注册
+│   ├── analysis_ffi.*             # VAC2/VACHUNK generation, cache publish, overlay state FFI
 │   ├── main.cpp                   # Windows app 入口
 │   ├── win32_window.*             # Win32 窗口包装
 │   └── video_renderer_plugin.*    # video_renderer MethodChannel + Texture bridge
@@ -37,6 +38,7 @@ windows/
 
 - `flutter/` 目录由 Flutter 工具生成，除非升级 embedding 或修复生成层问题，否则不要手改。
 - `runner/` 可以处理 Win32 窗口、插件注册、MethodChannel 参数和 Texture bridge。
+- `runner/analysis_ffi.*` 可以做 Dart FFI 参数校验、cache path/publish、工具进程调度和 native analysis handle 管理；具体 VAC2/VACHUNK 格式仍归 `native/analysis`。
 - 复杂渲染/解码/同步逻辑不要写进 `runner/`，应放在 `native/`。
 - Flutter UI 行为不要写进 `runner/`，应放在 `lib/`。
 - FFmpeg Windows bundle 的文件位置可以在这里记录，但 FFmpeg/native 管线设计仍归 native 文档维护。

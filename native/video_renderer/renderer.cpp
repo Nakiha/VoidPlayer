@@ -194,14 +194,16 @@ OverlayColor qp_color(uint8_t qp, uint8_t alpha) {
     return heatmap_ramp_color(t, alpha);
 }
 
-OverlayColor cu_complexity_proxy_color(const VachunkCuCommon& cu, uint8_t alpha) {
+OverlayColor cu_bit_density_color(const VachunkCuCommon& cu, uint8_t alpha) {
     const float area = std::max(1.0f, static_cast<float>(cu.w) * static_cast<float>(cu.h));
-    const float size_score = std::clamp(1.0f - area / (64.0f * 64.0f), 0.0f, 1.0f);
-    const float depth_score = std::clamp(static_cast<float>(cu.depth) / 4.0f, 0.0f, 1.0f);
-    const float qp_score = std::clamp(static_cast<float>(cu.qp) / 50.0f, 0.0f, 1.0f);
-    const float t = std::clamp(size_score * 0.45f + depth_score * 0.35f + qp_score * 0.20f,
-                               0.0f,
-                               1.0f);
+    const float bits_per_64x64 =
+        static_cast<float>(cu.bit_count) * (64.0f * 64.0f) / area;
+    const float low = std::log2(64.0f + 1.0f);
+    const float high = std::log2(4096.0f + 1.0f);
+    const float t = std::clamp(
+        (std::log2(bits_per_64x64 + 1.0f) - low) / (high - low),
+        0.0f,
+        1.0f);
     return heatmap_ramp_color(t, alpha);
 }
 
@@ -2429,7 +2431,7 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
             if (bit_cost_primary) {
                 if (fill_alpha > 0) {
                     fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
-                              cu_complexity_proxy_color(c, fill_alpha));
+                              cu_bit_density_color(c, fill_alpha));
                     has_color_overlay = true;
                 }
             } else if (qp_primary) {

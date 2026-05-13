@@ -41,7 +41,7 @@ MainWindowView
 | `lib/windows/main/main_window_playback.dart` | play/pause/seek、polling、loop range、timeline hover |
 | `lib/windows/main/main_window_layout.dart` | viewport resize debounce、pan/zoom/split、native layout flush |
 | `lib/windows/main/main_window_media.dart` | open/add/remove media、track offset、effective duration |
-| `lib/windows/main/main_window_analysis.dart` | analysis IPC snapshot 和 analysis window trigger |
+| `lib/windows/main/main_window_analysis.dart` | analysis IPC snapshot、analysis window trigger、main-window overlay activation/refresh |
 | `lib/windows/main/main_window_test_hooks.dart` | UI 自动化专用 pointer simulation |
 
 ## 生命周期
@@ -180,8 +180,14 @@ Timeline slider hover
 
 - 触发 analysis window
 - 发布 track snapshot 到 analysis IPC
+- 激活/关闭主窗口 analysis overlay
+- 基于 renderer presented PTS+DTS 请求当前帧 overlay VACHUNK
+- seek settle 后刷新 overlay track 并触发 paused-frame redraw
 
 主播放器清理不主动重构 analysis 业务。
+
+VAC2/VACHUNK 的 Dart 编排细节见
+[Analysis 缓存与遮罩流程](ANALYSIS_CACHE_OVERLAY.md)。
 
 ### Actions
 

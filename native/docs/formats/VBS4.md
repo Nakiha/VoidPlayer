@@ -393,7 +393,7 @@ Shared flow:
    largest measured payload pressure.
 4. Add reader tests that validate VBS4 frame summaries and selected materialized
    block records.
-5. Add H.265 `HEVCCU1`, then VTM/H.266 `VVCCU1`.
+5. Add H.265 `HEVCCU1`, then retire VBS4 in favor of direct VACHUNK output.
 6. Remove migrated analyzer paths that still emit older block-stat payloads.
 
 ## Open Questions

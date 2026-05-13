@@ -3,14 +3,7 @@
 
 #include <spdlog/spdlog.h>
 
-extern "C" {
-#include <libavformat/avformat.h>
-#include <libavcodec/avcodec.h>
-#include <libavcodec/bsf.h>
-}
-
 #include <filesystem>
-#include <fstream>
 #include <mutex>
 #include <cstdlib>
 
@@ -18,11 +11,12 @@ extern "C" {
 #define VIDEO_TEST_DIR ""
 #endif
 
-#ifndef VTM_DECODER_PATH
-#define VTM_DECODER_PATH ""
+#ifndef FFMPEG_ANALYZER_PATH
+#define FFMPEG_ANALYZER_PATH ""
 #endif
 
 static const std::string kTestVideo = std::string(VIDEO_TEST_DIR) + "/h266_10s_1920x1080.mp4";
+static const std::string kOverlayTestVideo = std::string(VIDEO_TEST_DIR) + "/h264_9s_1920x1080.mp4";
 
 // ============================================================================
 // Win32 helpers (adapted from analysis_ffi.cpp)
@@ -73,30 +67,6 @@ static int run_command(const std::string& cmd, const std::string& log_path = {})
     return static_cast<int>(exit_code);
 }
 
-static std::string get_env_var(const char* name) {
-    char buf[32768];
-    DWORD len = GetEnvironmentVariableA(name, buf, sizeof(buf));
-    return (len > 0 && len < sizeof(buf)) ? std::string(buf, len) : std::string();
-}
-
-struct ScopedEnvVars {
-    std::vector<std::pair<std::string, std::string>> saved;
-
-    void set(const char* name, const std::string& value) {
-        saved.emplace_back(name, get_env_var(name));
-        SetEnvironmentVariableA(name, value.c_str());
-    }
-
-    ~ScopedEnvVars() {
-        for (auto it = saved.rbegin(); it != saved.rend(); ++it) {
-            if (it->second.empty()) {
-                SetEnvironmentVariableA(it->first.c_str(), nullptr);
-            } else {
-                SetEnvironmentVariableA(it->first.c_str(), it->second.c_str());
-            }
-        }
-    }
-};
 #endif // _WIN32
 
 // ============================================================================
@@ -133,18 +103,14 @@ bool AnalysisTestData::ensure() {
         vbt_path_  = temp_dir_ + "/test.vbt";
         vbs4_path_ = temp_dir_ + "/test.vbs4";
         vac2_base_path_ = temp_dir_ + "/base.vac";
-        raw_vvc_path_ = temp_dir_ + "/test.vvc";
 
         // Step 1: VBI + VBT via C++ AnalysisGenerator
         if (!generate_vbi_vbt()) return;
 
-        // Step 2: Raw VVC extraction via FFmpeg C API
-        if (!extract_raw_vvc()) return;
-
-        // Step 3: VBS4 via VTM DecoderApp
+        // Step 2: VBS4 compatibility fixture via FFmpeg analyzer.
         if (!generate_vbs4()) return;
 
-        // Step 4: VAC2 base cache
+        // Step 3: VAC2 base cache
         if (!generate_vac2_base()) return;
 
         ok_ = true;
@@ -173,143 +139,30 @@ bool AnalysisTestData::generate_vbi_vbt() {
     return true;
 }
 
-bool AnalysisTestData::extract_raw_vvc() {
-    spdlog::info("[TestData] extracting raw VVC via FFmpeg C API...");
-    AVFormatContext* fmt_ctx = nullptr;
-    int ret = avformat_open_input(&fmt_ctx, kTestVideo.c_str(), nullptr, nullptr);
-    if (ret < 0) {
-        spdlog::error("[TestData] avformat_open_input failed: {:#x}", static_cast<unsigned>(ret));
-        return false;
-    }
-
-    ret = avformat_find_stream_info(fmt_ctx, nullptr);
-    if (ret < 0) {
-        spdlog::error("[TestData] avformat_find_stream_info failed");
-        avformat_close_input(&fmt_ctx);
-        return false;
-    }
-
-    int video_idx = -1;
-    for (unsigned i = 0; i < fmt_ctx->nb_streams; i++) {
-        if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-            video_idx = static_cast<int>(i);
-            break;
-        }
-    }
-    if (video_idx < 0) {
-        spdlog::error("[TestData] no video stream found");
-        avformat_close_input(&fmt_ctx);
-        return false;
-    }
-
-    std::ofstream out(raw_vvc_path_, std::ios::binary);
-    if (!out) {
-        spdlog::error("[TestData] cannot create {}", raw_vvc_path_);
-        avformat_close_input(&fmt_ctx);
-        return false;
-    }
-
-    // Try vvc_mp4toannexb bitstream filter
-    AVBSFContext* bsf_ctx = nullptr;
-    bool use_bsf = false;
-    const AVBitStreamFilter* bsf = av_bsf_get_by_name("vvc_mp4toannexb");
-    if (bsf) {
-        ret = av_bsf_alloc(bsf, &bsf_ctx);
-        if (ret >= 0) {
-            avcodec_parameters_copy(bsf_ctx->par_in, fmt_ctx->streams[video_idx]->codecpar);
-            ret = av_bsf_init(bsf_ctx);
-            if (ret >= 0) {
-                use_bsf = true;
-            } else {
-                av_bsf_free(&bsf_ctx);
-            }
-        }
-    }
-
-    static const uint8_t kStartCode4[] = {0, 0, 0, 1};
-    size_t total_written = 0;
-
-    AVPacket* pkt = av_packet_alloc();
-    while (true) {
-        ret = av_read_frame(fmt_ctx, pkt);
-        if (ret < 0) break;
-        if (pkt->stream_index != video_idx) {
-            av_packet_unref(pkt);
-            continue;
-        }
-
-        if (use_bsf) {
-            ret = av_bsf_send_packet(bsf_ctx, pkt);
-            if (ret < 0) { av_packet_unref(pkt); continue; }
-            while (av_bsf_receive_packet(bsf_ctx, pkt) == 0) {
-                out.write(reinterpret_cast<const char*>(pkt->data), pkt->size);
-                total_written += static_cast<size_t>(pkt->size);
-                av_packet_unref(pkt);
-            }
-        } else {
-            const uint8_t* data = pkt->data;
-            int len = pkt->size;
-            if ((len >= 4 && data[0] == 0 && data[1] == 0 && data[2] == 0 && data[3] == 1) ||
-                (len >= 3 && data[0] == 0 && data[1] == 0 && data[2] == 1)) {
-                out.write(reinterpret_cast<const char*>(data), len);
-                total_written += static_cast<size_t>(len);
-            } else {
-                int pos = 0;
-                while (pos + 4 < len) {
-                    uint32_t nalu_len = (static_cast<uint32_t>(data[pos]) << 24) |
-                                        (static_cast<uint32_t>(data[pos + 1]) << 16) |
-                                        (static_cast<uint32_t>(data[pos + 2]) << 8) |
-                                        static_cast<uint32_t>(data[pos + 3]);
-                    if (nalu_len == 0 || pos + 4 + static_cast<int>(nalu_len) > len) break;
-                    out.write(reinterpret_cast<const char*>(kStartCode4), 4);
-                    out.write(reinterpret_cast<const char*>(data + pos + 4), nalu_len);
-                    total_written += 4 + static_cast<size_t>(nalu_len);
-                    pos += 4 + static_cast<int>(nalu_len);
-                }
-            }
-            av_packet_unref(pkt);
-        }
-    }
-
-    // Flush BSF
-    if (use_bsf) {
-        av_bsf_send_packet(bsf_ctx, nullptr);
-        while (av_bsf_receive_packet(bsf_ctx, pkt) == 0) {
-            out.write(reinterpret_cast<const char*>(pkt->data), pkt->size);
-            total_written += static_cast<size_t>(pkt->size);
-            av_packet_unref(pkt);
-        }
-    }
-
-    av_packet_free(&pkt);
-    if (bsf_ctx) av_bsf_free(&bsf_ctx);
-    avformat_close_input(&fmt_ctx);
-    out.close();
-
-    spdlog::info("[TestData] raw VVC extracted: {} bytes", total_written);
-    return total_written > 0 && std::filesystem::exists(raw_vvc_path_);
-}
-
 bool AnalysisTestData::generate_vbs4() {
 #ifdef _WIN32
-    std::string decoder_path = VTM_DECODER_PATH;
+    std::string analyzer_path = FFMPEG_ANALYZER_PATH;
 
-    if (decoder_path.empty() || !std::filesystem::exists(decoder_path)) {
-        spdlog::error("[TestData] VTM DecoderApp not found at: {} (build with: python dev.py vtm build)",
-                      decoder_path.empty() ? "(VTM_DECODER_PATH not defined)" : decoder_path);
+    if (analyzer_path.empty() || !std::filesystem::exists(analyzer_path)) {
+        spdlog::error("[TestData] FFmpeg analyzer not found at: {}",
+                      analyzer_path.empty() ? "(FFMPEG_ANALYZER_PATH not defined)" : analyzer_path);
+        return false;
+    }
+    if (!std::filesystem::exists(kOverlayTestVideo)) {
+        spdlog::error("[TestData] overlay source video not found: {}", kOverlayTestVideo);
         return false;
     }
 
-    spdlog::info("[TestData] generating VBS4 via VTM DecoderApp...");
+    spdlog::info("[TestData] generating VBS4 compatibility fixture via FFmpeg analyzer...");
 
-    ScopedEnvVars env;
-    env.set("VTM_BINARY_STATS", vbs4_path_);
-
-    std::string cmd = "\"" + decoder_path + "\" -b \"" + raw_vvc_path_ +
-        "\" --TraceFile=NUL --TraceRule=\"D_BLOCK_STATISTICS_CODED:poc>=0\" -o NUL";
+    std::string cmd = "\"" + analyzer_path + "\" --codec h264 --input \"" +
+        kOverlayTestVideo + "\" --vbs4 \"" + vbs4_path_ + "\"";
 
     int rc = run_command(cmd);
-    spdlog::info("[TestData] VTM DecoderApp exit_code={}", rc);
+    spdlog::info("[TestData] FFmpeg analyzer exit_code={}", rc);
+    if (rc != 0) {
+        return false;
+    }
 
     if (!std::filesystem::exists(vbs4_path_)) {
         spdlog::error("[TestData] VBS4 file not generated");

@@ -27,7 +27,6 @@ private:
     AnalysisTestData() = default;
 
     bool generate_vbi_vbt();
-    bool extract_raw_vvc();
     bool generate_vbs4();
     bool generate_vac2_base();
 
@@ -36,7 +35,6 @@ private:
     std::string vbi_path_;
     std::string vbs4_path_;
     std::string vac2_base_path_;
-    std::string raw_vvc_path_;
     bool ok_ = false;
     bool cleaned_up_ = false;
 };

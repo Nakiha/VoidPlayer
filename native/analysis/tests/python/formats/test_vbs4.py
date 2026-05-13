@@ -12,7 +12,7 @@ def test_vbs4_header(analysis_paths):
     assert header["version_major"] == 4
     assert header["header_size"] == 80
     assert header["section_entry_size"] == 56
-    assert header["codec"] == 3
+    assert header["codec"] == 1
     assert header["profile"] == 1
     assert header["width"] == 1920
     assert header["height"] == 1080

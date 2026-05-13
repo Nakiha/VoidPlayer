@@ -1,16 +1,17 @@
 # VBS Legacy Format
 
-VBS stores VTM-derived block statistics used for frame-level and CU-level
+VBS stored decoder-derived block statistics used for frame-level and CU-level
 analysis. This document describes the retired VBS2 `.vbs2` layout. The native
-runtime now reads [VBS4](VBS4.md) and no longer ships a VBS2 reader.
+runtime now uses VAC2/VACHUNK for active cache data and keeps VBS4 only as a
+compatibility parser/test fixture format.
 
 The historical C++ reader used packed little-endian structs. The names below
 are kept for format archaeology only; they are not current runtime APIs.
 
 ## Producer And Reader
 
-- Producer: instrumented VTM `DecoderApp`
-- Reader: removed; use `vr::analysis::Vbs4File`
+- Producer: retired external analyzer
+- Reader: removed; active runtime readers use VAC2/VACHUNK
 - File extension: `.vbs2`
 - Legacy magic: `VBS2`
 
@@ -36,8 +37,8 @@ VBS2 has a frame-level index. Each `Vbs2IndexEntry` points to the start of a
 | Field | Type | Meaning |
 |---|---:|---|
 | `magic` | `char[4]` | Must be `VBS2`. |
-| `width` | `uint16_t` | Video width reported by VTM. |
-| `height` | `uint16_t` | Video height reported by VTM. |
+| `width` | `uint16_t` | Video width reported by the producer. |
+| `height` | `uint16_t` | Video height reported by the producer. |
 | `num_frames` | `uint32_t` | Number of indexed frame records. |
 | `index_offset` | `uint32_t` | Byte offset of the `Vbs2IndexEntry` array. |
 

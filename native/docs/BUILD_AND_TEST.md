@@ -35,10 +35,9 @@ Native FFI/Python staging 产物默认写入 `native/build-msvc/dist/`。不要�
 
 `dev.py build --native` 会在 native CMake 构建前检查 analysis 外部工具：
 
-- VTM `DecoderApp.exe`：如果缺失，或构建 stamp 与当前 `native/analysis/vendor/vtm`、`zstd` 子模块版本不一致，会自动执行 `python dev.py vtm build` 等价流程重编。
 - FFmpeg `void_ffmpeg_analyzer.exe`：如果缺失，或构建 stamp 与当前 `native/analysis/vendor/ffmpeg`、`zstd` 子模块版本 / `build_windows_msvc.ps1` 不一致，会自动运行 `native/analysis/vendor/ffmpeg/voidplayer/build_windows_msvc.ps1` 重编。
 
-这意味着 cherry-pick 只改变 vendor 子模块指针时，下一次 `python dev.py build --native` 会自动刷新对应的小工具，不需要手动记一条额外命令。
+这意味着 cherry-pick 只改变 FFmpeg analyzer 或 zstd 子模块指针时，下一次 `python dev.py build --native` 会自动刷新对应的小工具，不需要手动记一条额外命令。
 
 如果 FFmpeg 不在默认的 `windows/libs/ffmpeg`，可以显式指定：
 
@@ -94,9 +93,8 @@ python scripts/dev/check_native_dist.py --ffi native/build-msvc/dist/ffi
 | spdlog | FetchContent commit pin；`VOID_USE_LOCAL_DEPS=ON` 时可使用本地 cache | native 日志 |
 | Catch2 | FetchContent commit pin；`VOID_USE_LOCAL_DEPS=ON` 时可使用本地 cache | C++ 测试 |
 | pybind11 | Python 包提供的 `pybind11_DIR` 或 CMake `find_package` | Python 绑定 |
-| VTM DecoderApp | `native/analysis/vendor/vtm`，缺失或 stamp 过期时由 `dev.py` 构建 | analysis 测试生成 VBS4 |
 
-当前依赖入口以“仓库内固定路径 + 显式 override + commit pin”为准：FFmpeg 只能从 `FFMPEG_ROOT` 指向的完整 dev package 读取头文件、lib 和 runtime DLL；zstd/VTM/analysis FFmpeg 使用 analysis vendor 子模块；spdlog/Catch2 默认通过 locked FetchContent 获取。已有本地源码 cache 只有在显式设置 `-DVOID_USE_LOCAL_DEPS=ON` 时才会优先使用，避免 clean checkout、CI 和个人机器因为残留 cache 产生不同依赖来源。
+当前依赖入口以“仓库内固定路径 + 显式 override + commit pin”为准：FFmpeg 只能从 `FFMPEG_ROOT` 指向的完整 dev package 读取头文件、lib 和 runtime DLL；zstd/analysis FFmpeg 使用 analysis vendor 子模块；spdlog/Catch2 默认通过 locked FetchContent 获取。已有本地源码 cache 只有在显式设置 `-DVOID_USE_LOCAL_DEPS=ON` 时才会优先使用，避免 clean checkout、CI 和个人机器因为残留 cache 产生不同依赖来源。
 
 Native 第三方依赖清单位于 [`native/THIRD_PARTY_NATIVE.md`](../THIRD_PARTY_NATIVE.md)。更新依赖版本、submodule pointer 或 runtime package 时，必须同步更新该清单。
 
@@ -143,7 +141,7 @@ python dev.py test --native-only
 
 测试视频默认来自 `resources/video`，CMake 通过 `VIDEO_TEST_DIR` 注入。
 
-补充的 Python analysis 格式回归位于 `native/analysis/tests/python/formats/`，用于校验 VBS2/VBS4/VBI/VBT 落盘格式。它会把测试视频复制到临时目录，使用 `analysis_generate.exe` 生成 VBI/VBT，再调用 `python dev.py vtm analyze --format vbs2/vbs4` 生成 VBS/VVC，最后清理临时文件。`resources/` 只存放 checked-in fixture；如果直接对 `resources/video/...` 运行 `python dev.py vtm analyze`，生成物会写到 `build/vtm_analysis/<视频名>/`。
+补充的 Python analysis 格式回归位于 `native/analysis/tests/python/formats/`，用于校验 VBS2/VBS4/VBI/VBT 落盘格式。它会把测试视频复制到临时目录，使用 `analysis_generate.exe` 生成 VBI/VBT，再调用 FFmpeg analyzer 生成兼容 VBS4 fixture，最后清理临时文件。
 
 ```bash
 python -m pytest native/analysis/tests/python/formats -v

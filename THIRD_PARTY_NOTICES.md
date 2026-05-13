@@ -26,7 +26,7 @@ The native module also uses:
 - zstd, from `native/analysis/vendor/zstd`, for VBS4 compression.
 - spdlog, fetched by pinned commit unless `VOID_USE_LOCAL_DEPS=ON`.
 - Catch2, fetched by pinned commit for tests.
-- VTM / analyzer tooling under `native/analysis/vendor/`.
+- FFmpeg analyzer tooling under `native/analysis/vendor/ffmpeg`.
 
 See `native/THIRD_PARTY_NATIVE.md` for versions, source locations, licenses,
 and update notes.

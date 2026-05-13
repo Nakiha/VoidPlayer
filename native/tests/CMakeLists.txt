@@ -87,7 +87,6 @@ if(BUILD_ANALYSIS_TESTS)
 
     target_compile_definitions(analysis_tests PRIVATE
         VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
-        VTM_DECODER_PATH="${VTM_DECODER_PATH}"
         FFMPEG_ANALYZER_PATH="${FFMPEG_ANALYZER_PATH}"
     )
 

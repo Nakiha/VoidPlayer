@@ -15,7 +15,6 @@ from .paths import (
     NATIVE_DIR,
     ROOT,
     find_ffmpeg_analyzer,
-    find_vtm_decoder,
 )
 from .process import header, run
 
@@ -26,7 +25,6 @@ ZSTD_SUBMODULE_PATH = "native/analysis/vendor/zstd"
 
 def ensure_analysis_test_tools() -> None:
     """Prepare external tools required by native analysis tests."""
-    ensure_vtm_decoder_tool()
     ensure_ffmpeg_analyzer_tool()
 
 
@@ -89,16 +87,6 @@ def _zstd_head() -> str:
     return _git_head(FFMPEG_ANALYZER_DIR.parent / "zstd")
 
 
-def _vtm_signature() -> dict:
-    return {
-        "version": TOOL_STAMP_VERSION,
-        "tool": "vtm-decoderapp",
-        "configuration": "msvc-static-release",
-        "vtm_head": _git_head(FFMPEG_ANALYZER_DIR.parent / "vtm"),
-        "zstd_head": _zstd_head(),
-    }
-
-
 def _ffmpeg_analyzer_signature() -> dict:
     script_hash = (
         _file_sha256(FFMPEG_ANALYZER_BUILD_SCRIPT)
@@ -123,10 +111,6 @@ def _ffmpeg_analyzer_signature() -> dict:
         "build_script_sha256": script_hash,
         "source_sha256": source_hashes,
     }
-
-
-def _write_vtm_stamp(decoder: Path) -> None:
-    _write_json(decoder.with_suffix(".voidplayer-build-stamp.json"), _vtm_signature())
 
 
 def _ffmpeg_analyzer_stamp_path() -> Path:
@@ -176,38 +160,8 @@ def _ensure_ffmpeg_analyzer_submodule() -> None:
         sys.exit(1)
 
 
-def ensure_vtm_decoder_tool() -> None:
-    """Prepare VTM DecoderApp for VVC/VBS4 generation."""
-    decoder = find_vtm_decoder()
-    if os.environ.get("VTM_DECODER_APP"):
-        if decoder.exists():
-            print(f"Using VTM_DECODER_APP override: {decoder}")
-            return
-        print(f"ERROR: VTM_DECODER_APP does not exist: {decoder}")
-        sys.exit(1)
-
-    stamp = decoder.with_suffix(".voidplayer-build-stamp.json")
-    if not _tool_needs_rebuild(decoder, stamp, _vtm_signature(), "VTM DecoderApp"):
-        return
-
-    header("Prepare VTM DecoderApp for analysis tests")
-    print("Building VTM DecoderApp before native build/tests...")
-    print("Tip: set VTM_DECODER_APP=C:\\path\\to\\DecoderApp.exe to reuse a prebuilt VTM.")
-
-    from .vtm import cmd_vtm_build, ensure_submodule
-
-    ensure_submodule()
-    cmd_vtm_build()
-
-    decoder = find_vtm_decoder()
-    if not decoder.exists():
-        print(f"ERROR: VTM DecoderApp was not found after build: {decoder}")
-        sys.exit(1)
-    _write_vtm_stamp(decoder)
-
-
 def ensure_ffmpeg_analyzer_tool() -> None:
-    """Prepare FFmpeg analyzer for H.264/H.265 VBS4 generation."""
+    """Prepare FFmpeg analyzer for H.264/H.265 VACache overlay generation."""
     analyzer = find_ffmpeg_analyzer()
     if os.environ.get("VOID_FFMPEG_ANALYZER"):
         if not analyzer.exists():

@@ -6,7 +6,6 @@ Run: python -m pytest native/analysis/tests/python/formats -v
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -16,6 +15,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[5]
 VIDEO_DIR = ROOT / "resources" / "video"
 TEST_VIDEO = VIDEO_DIR / "h266_10s_1920x1080.mp4"
+OVERLAY_VIDEO = VIDEO_DIR / "h264_9s_1920x1080.mp4"
 TEMP_DIR = Path(tempfile.gettempdir()) / "void_player_analysis_format_test"
 
 
@@ -33,18 +33,39 @@ def _analysis_generate_exe() -> Path:
     return build_dir / "Release" / "analysis_generate.exe"
 
 
+def _ffmpeg_analyzer_exe() -> Path:
+    explicit = os.environ.get("VOID_FFMPEG_ANALYZER")
+    if explicit:
+        return Path(explicit)
+    return (
+        ROOT
+        / "native"
+        / "analysis"
+        / "vendor"
+        / "ffmpeg"
+        / "bin"
+        / "windows-x64"
+        / "void_ffmpeg_analyzer.exe"
+    )
+
+
 @pytest.fixture(scope="session")
 def analysis_paths(request):
     request.addfinalizer(lambda: shutil.rmtree(TEMP_DIR, ignore_errors=True))
 
     if not TEST_VIDEO.exists():
         pytest.skip(f"Test video not found: {TEST_VIDEO}")
+    if not OVERLAY_VIDEO.exists():
+        pytest.skip(f"Overlay test video not found: {OVERLAY_VIDEO}")
 
     generator = _analysis_generate_exe()
     if not generator.exists():
         pytest.skip(
             "analysis_generate.exe not found. Run: python dev.py build --native"
         )
+    analyzer = _ffmpeg_analyzer_exe()
+    if not analyzer.exists():
+        pytest.skip("void_ffmpeg_analyzer.exe not found. Run: python dev.py build --native")
 
     if TEMP_DIR.exists():
         shutil.rmtree(TEMP_DIR)
@@ -56,7 +77,6 @@ def analysis_paths(request):
     vbi_file = TEMP_DIR / f"{TEST_VIDEO.stem}.vbi"
     vbt_file = TEMP_DIR / f"{TEST_VIDEO.stem}.vbt"
     vbs4_file = TEMP_DIR / f"{TEST_VIDEO.stem}.vbs4"
-    raw_vvc = TEMP_DIR / f"{TEST_VIDEO.stem}.vvc"
 
     subprocess.check_call([
         str(generator),
@@ -66,23 +86,20 @@ def analysis_paths(request):
     ], cwd=ROOT)
 
     subprocess.check_call([
-        sys.executable,
-        "dev.py",
-        "vtm",
-        "analyze",
-        str(temp_video),
+        str(analyzer),
+        "--codec",
+        "h264",
+        "--input",
+        str(OVERLAY_VIDEO),
+        "--vbs4",
+        str(vbs4_file),
     ], cwd=ROOT)
-
-    generated_vbs4 = ROOT / "build" / "vtm_analysis" / TEST_VIDEO.stem / f"{TEST_VIDEO.stem}.vbs4"
-    if generated_vbs4.exists():
-        shutil.copy2(generated_vbs4, vbs4_file)
 
     paths = {
         "video": temp_video,
         "vbs4": vbs4_file,
         "vbi": vbi_file,
         "vbt": vbt_file,
-        "vvc": raw_vvc,
     }
     for name, path in paths.items():
         if name == "video":

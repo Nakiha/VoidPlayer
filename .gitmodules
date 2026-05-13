@@ -1,7 +1,3 @@
-[submodule "native/analysis/vendor/vtm"]
-	path = native/analysis/vendor/vtm
-	url = git@github.com:Nakiha/VTM-VoidPlayer.git
-	branch = voidplayer-patches
 [submodule "native/analysis/vendor/ffmpeg"]
 	path = native/analysis/vendor/ffmpeg
 	url = https://github.com/Nakiha/FFmpeg.git

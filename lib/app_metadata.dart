@@ -12,7 +12,6 @@ class AppMetadata {
   static const dependencies = [
     AppDependencyMetadata('Flutter / Dart SDK', 'BSD-3-Clause'),
     AppDependencyMetadata('FFmpeg 8.1 full build (gyan.dev)', 'GPL-3.0'),
-    AppDependencyMetadata('VTM DecoderApp', 'BSD-3-Clause'),
     AppDependencyMetadata(
       'Windows SDK: Direct3D 11 / DXGI / DWM',
       'Microsoft SDK',

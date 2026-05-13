@@ -14,7 +14,6 @@ from .flutter_app import (
 )
 from .analysis_resize_stress import cmd_analysis_resize_stress
 from .package import cmd_package
-from .vtm import cmd_vtm
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,8 +37,6 @@ Examples:
   python dev.py package --installer
   python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
   python dev.py analysis-resize-stress
-  python dev.py vtm build
-  python dev.py vtm analyze video.mp4
 """,
     )
     sub = parser.add_subparsers(dest="command")
@@ -114,14 +111,6 @@ Examples:
     p_analysis_resize.add_argument("--visible", action="store_true",
                                    help="Show and focus the analysis window instead of silent mode")
 
-    p_vtm = sub.add_parser("vtm", help="VTM DecoderApp: build & H.266 analysis")
-    p_vtm.add_argument("vtm_action", choices=["build", "analyze"],
-                       help="'build' to compile DecoderApp, 'analyze' to generate VBS/.vvc stats")
-    p_vtm.add_argument("video", nargs="?", default=None,
-                       help="Video file path (required for 'analyze')")
-    p_vtm.add_argument("--no-compression", action="store_true",
-                       help="Generate debug VBS4 blocks without zstd compression")
-
     return parser
 
 
@@ -144,5 +133,4 @@ def main() -> None:
         "package": cmd_package,
         "ui-test": cmd_ui_test,
         "analysis-resize-stress": cmd_analysis_resize_stress,
-        "vtm": cmd_vtm,
     }[args.command](args)

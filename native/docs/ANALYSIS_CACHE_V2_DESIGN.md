@@ -9,7 +9,7 @@ VAC1 container remains only as migration history in this design note.
 The VAC1 pipeline treats analysis as a complete offline artifact:
 
 1. Scan or demux the whole file.
-2. Run codec-specific deep analyzers, including VTM for VVC.
+2. Run codec-specific deep analyzers before the UI can use the result.
 3. Write VBI/VBT/VBS4 into one VAC file.
 4. Allow analysis UI and overlay only after the whole artifact exists.
 
@@ -30,8 +30,8 @@ derived analysis.
   reference pyramid, coarse QP trend, and distribution charts.
 - Make CLI/agent analysis deterministic: it can read base data, request missing
   chunks, or report which derived capabilities are absent.
-- Move VVC/H.266 deep analysis away from VTM toward the same FFmpeg-based
-  on-demand analyzer contract used for other codecs.
+- Use the same FFmpeg-based on-demand analyzer contract for codec-specific
+  derived analysis.
 
 ## Non-Goals
 
@@ -149,21 +149,20 @@ reuse.
 NAL-detail jobs can be single-unit chunks. They should parse the selected NAL
 using the parameter-set snapshot active at that point.
 
-## VTM Phase-Out
+## External Analyzer Retirement
 
-VTM is useful as a reference and for historical VVC analysis, but it is a poor
-fit for progressive analysis because it is not built around seeking and partial
-decode jobs.
+The old external decoder flow was useful for historical full-file VBS/VBS4
+analysis, but it was a poor fit for progressive analysis because it was not
+built around seeking and partial decode jobs.
 
-Target direction:
+Current direction:
 
-1. Keep VTM only as a temporary golden/reference tool.
-2. Extend the vendored FFmpeg H.266/VVC software decoder/analyzer to emit the
-   same derived chunk schema used by H.264/HEVC.
-3. Use VAC2 source mapping to seek to random access points and decode only the
+1. Use the vendored FFmpeg analyzer to emit VACHUNK overlay data directly for
+   supported codecs.
+2. Use VAC2 source mapping to seek to random access points and decode only the
    requested range.
-4. Remove VTM from the shipped analysis path once VVC coverage and tests are
-   sufficient.
+3. Extend the FFmpeg analyzer contract when VVC/H.266 overlay coverage is
+   ready, instead of reintroducing full-file decoder artifacts.
 
 ## Concurrency And Locks
 
@@ -224,8 +223,8 @@ Recommended initial policy:
 
 ### Phase 5: FFmpeg VVC Analyzer
 
-- Move VVC deep analysis from VTM to the FFmpeg-based analyzer contract.
-- Keep VTM fixtures for regression until removed.
+- Extend the FFmpeg-based analyzer contract to VVC/H.266.
+- Keep VVC overlay unavailable until that analyzer coverage exists.
 
 ## Testing
 

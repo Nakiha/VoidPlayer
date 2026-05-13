@@ -49,7 +49,7 @@ Status: done in Round 13.
 
 TODO:
 
-- [x] 新增顶层 `THIRD_PARTY_NOTICES.md`，集中列出 FFmpeg runtime、zstd、spdlog、Catch2、VTM/analyzer、Flutter/third_party desktop_drop 的分发说明。
+- [x] 新增顶层 `THIRD_PARTY_NOTICES.md`，集中列出 FFmpeg runtime、zstd、spdlog、Catch2、FFmpeg analyzer、Flutter/third_party desktop_drop 的分发说明。
 - [x] 明确 release 包必须包含：顶层 GPL license、FFmpeg package license、FFmpeg README/source commit/configure flags、native third-party manifest。
 - [x] 在 release/package 脚本中加入 machine-checkable compliance smoke，检查 staged package 存在上述文件。
 - [x] 在 `native/docs/BUILD_AND_TEST.md` 增加“发布包合规检查”章节。

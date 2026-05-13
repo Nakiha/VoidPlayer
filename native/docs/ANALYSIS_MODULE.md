@@ -14,7 +14,7 @@ analysis/
 │   ├── binary_types.h          # VAC2/VACHUNK/VBS4/VBI/VBT packed 结构体定义
 │   ├── vac2_parser.h/cpp       # VAC2 base index
 │   ├── vachunk_parser.h/cpp    # VACHUNK derived chunks
-│   ├── vbs4_parser.h/cpp       # VBS4 — VTM 帧级/CU 统计
+│   ├── vbs4_parser.h/cpp       # VBS4 — legacy/compat block-stat reader
 │   ├── vbi_parser.h/cpp        # VBI  — NALU 索引
 │   └── vbt_parser.h/cpp        # VBT  — 时间戳/关键帧
 ├── generators/                 # 二进制文件生成器
@@ -23,7 +23,7 @@ analysis/
 ├── tools/
 │   └── analysis_generate.cpp   # AnalysisGenerator 命令行入口
 ├── tests/python/               # Python 落盘格式回归
-└── vendor/vtm/                 # 第三方 VTM 子仓库，生成 VBS4
+└── vendor/ffmpeg/              # FFmpeg analyzer fork，按需生成 VACache overlay chunk
 ```
 
 ## 二进制格式
@@ -43,8 +43,8 @@ Analysis 使用三类自定义二进制格式，均为小端序，结构体使�
 
 VAC2 / VACHUNK 的总体设计见
 [Analysis Cache V2 Design](ANALYSIS_CACHE_V2_DESIGN.md)。当前 runtime cache
-使用 VAC2 base + VACHUNK；VBS4 仍作为 codec-specific analyzer 的临时输入，
-用于生成 overlay chunks。
+使用 VAC2 base + VACHUNK；runtime overlay 直接消费 VACache chunk，不再通过
+VBS4 中间产物。
 
 ## 生成管线
 
@@ -66,17 +66,15 @@ avformat_open_input → avformat_find_stream_info → av_read_frame 循环
        └── 写入 codec/unit_kind/offset/size/type/flags
 ```
 
-VBS4 生成由 codec-specific decoder/analyzer 外部进程完成，通过
+Overlay VACHUNK 生成由 codec-specific decoder/analyzer 外部进程完成，通过
 `analysis_ffi.cpp` 调度：
 
-- VVC/H.266: instrumented VTM `DecoderApp`，安装到 `tools/vtm/`
 - HEVC/H.265 与 H.264/AVC: instrumented FFmpeg analyzer
   `void_ffmpeg_analyzer.exe`，安装到 `tools/ffmpeg-analysis/`
 
-VVC 当前优先通过 stdin 喂给 VTM，失败时生成临时 Annex-B `.tmp.vvc`。
-HEVC/H.265 由 FFmpeg analyzer 自行 demux/decode 并写入 VBS4。overlay chunk
-生成会读取临时 VBS4，并发布到 `cache/<hash>/chunks/overlay/*.vck`；临时文件
-不进入 runtime cache。
+FFmpeg analyzer 自行 demux/decode，并直接写入临时 `.vck`。runner 验证
+VACHUNK header/key 后原子发布到 `cache/<hash>/chunks/overlay/*.vck`；临时文件
+不进入 runtime cache。VVC/H.266 overlay 当前不可用，等待 FFmpeg analyzer 覆盖。
 
 ## 解析器
 
@@ -125,13 +123,13 @@ ABI / lifecycle notes:
 
 独立测试目标 `analysis_tests`（Catch2），位于 `native/tests/analysis/`：
 
-- `test_analysis_parsers.cpp` — VBT/VBI/VBS4 解析器测试
+- `test_analysis_parsers.cpp` — VBT/VBI/VBS4 兼容解析器和 VAC2/VACHUNK 测试
 - `test_analysis_generator.cpp` — VBI+VBT 生成测试（从 H.266 MP4 实际生成并验证）
 
 Python 格式回归测试位于 `native/analysis/tests/python/formats/`，用于生成并校验 VBS4/VBI/VBT 文件结构：
 
 - `analysis_generate.exe` 生成 VBI/VBT
-- `python dev.py vtm analyze <video>` 生成 VBS4/VVC。`resources/` 是只读 fixture 区；直接分析 `resources/video/...` 时，生成物写入 `build/vtm_analysis/<视频名>/`。
+- FFmpeg analyzer 生成 H.264 VBS4 compatibility fixture。
 - pytest 解析文件并校验 header、索引、NALU、帧统计等格式约束
 
 运行：`python dev.py test`

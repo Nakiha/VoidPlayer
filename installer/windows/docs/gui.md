@@ -51,6 +51,10 @@ voidplayer://v1/open?loopStart=1.5s&loopEnd=4s
 
 卸载程序会删除安装目录内历史遗留的 `logs/`、`cache/`、`config.json`，并清理 `%APPDATA%\VoidPlayer` 与 `%LOCALAPPDATA%\VoidPlayer` 下的运行时数据。
 
+## 命令行工具
+
+发布包会在 `void_player.exe` 旁放置 `VoidPlayerCli.exe`，用于只读检查 VAC2/VACHUNK 分析缓存。用法见 [cli.md](cli.md)。
+
 ## 内部窗口参数
 
 下面这些参数主要供 VoidPlayer 自身启动独立分析窗口或 secondary window 时使用，普通用户一般不需要手动传入：

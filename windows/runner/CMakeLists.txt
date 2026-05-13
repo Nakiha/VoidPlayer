@@ -47,6 +47,39 @@ target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 if(FFMPEG_FOUND)
   include("${CMAKE_CURRENT_SOURCE_DIR}/../../native/cmake/FlutterNativeTarget.cmake")
   void_configure_flutter_native_target(${BINARY_NAME} "${CMAKE_CURRENT_BINARY_DIR}")
+
+  add_executable(VoidPlayerCli
+    "../../native/tools/void_player_cli.cpp"
+    "../../native/analysis/cache/overlay_chunk.cpp"
+    "../../native/analysis/cache/vacache_store.cpp"
+    "../../native/analysis/generators/analysis_generator.cpp"
+    "../../native/analysis/generators/bitstream_indexer.cpp"
+    "../../native/analysis/parsers/vac2_parser.cpp"
+    "../../native/analysis/parsers/vachunk_parser.cpp"
+    "../../native/media/private_cdn_flv_demuxer.cpp"
+  )
+  target_compile_features(VoidPlayerCli PRIVATE cxx_std_17)
+  if(MSVC)
+    target_compile_options(VoidPlayerCli PRIVATE /utf-8 /W4 /WX /permissive- /EHsc)
+  endif()
+  target_compile_definitions(VoidPlayerCli PRIVATE
+    "_CRT_SECURE_NO_WARNINGS"
+    "NOMINMAX"
+    "WIN32_LEAN_AND_MEAN"
+  )
+  target_include_directories(VoidPlayerCli PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../native"
+  )
+  target_include_directories(VoidPlayerCli SYSTEM PRIVATE
+    "${FFMPEG_INCLUDE_DIR}"
+  )
+  target_link_libraries(VoidPlayerCli PRIVATE
+    spdlog::spdlog_header_only
+    libzstd_static
+    ${AVCODEC_LIBRARY}
+    ${AVFORMAT_LIBRARY}
+    ${AVUTIL_LIBRARY}
+  )
 endif(FFMPEG_FOUND)
 
 # Run the Flutter tool portions of the build. This must not be removed.

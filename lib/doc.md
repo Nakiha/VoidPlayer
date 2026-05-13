@@ -28,6 +28,7 @@ MethodChannel 调用编排，以及 DX11 texture 的 Flutter 侧展示。
 | [Action 维护](docs/ACTION_MAINTENANCE.md) | 新增/修改/移除 Action 与 Assert 的维护清单 |
 | [AXTree 维护](docs/AXTREE_MAINTENANCE.md) | 主窗口 / analysis 窗口 Semantics、UIA、识图分割维护规则 |
 | [UI 自动化测试](docs/UI_TESTING.md) | `ui_tests/` 目录分区、回归选择、补测试规则 |
+| [VoidPlayerCli](../installer/windows/docs/cli.md) | 发布包内只读 VAC2/VACHUNK cache 检查工具 |
 
 ## 常用开发命令
 

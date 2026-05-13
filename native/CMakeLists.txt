@@ -40,6 +40,31 @@ if(WIN32 AND BUILD_TESTS)
 endif()
 
 if(WIN32)
+    add_executable(VoidPlayerCli tools/void_player_cli.cpp)
+    void_apply_native_compile_options(VoidPlayerCli)
+    target_include_directories(VoidPlayerCli PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(VoidPlayerCli PRIVATE analysis_lib)
+    if(BUILD_TESTS)
+        add_executable(analysis_cli_smoke_tests
+            tests/analysis/test_analysis_cli.cpp
+            analysis/cache/overlay_chunk.cpp
+            analysis/parsers/vac2_parser.cpp
+            analysis/parsers/vachunk_parser.cpp
+        )
+        void_apply_native_compile_options(analysis_cli_smoke_tests)
+        target_include_directories(analysis_cli_smoke_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+        target_link_libraries(analysis_cli_smoke_tests PRIVATE spdlog::spdlog_header_only)
+        add_dependencies(analysis_cli_smoke_tests VoidPlayerCli)
+        add_test(NAME voidplayer_cli_help COMMAND VoidPlayerCli --help)
+        add_test(NAME analysis_cli_smoke COMMAND
+            analysis_cli_smoke_tests
+            $<TARGET_FILE:VoidPlayerCli>
+            "${FFMPEG_ANALYZER_PATH}"
+            "${VIDEO_TEST_DIR}/h265_10s_1920x1080.mp4")
+    endif()
+endif()
+
+if(WIN32)
     include(cmake/NativeTargets.cmake)
 endif()
 include(cmake/NativeInstall.cmake)

@@ -1538,14 +1538,14 @@ private:
     bool active_ = true;
 };
 
-static bool generate_vvc_vbs4(const std::string& exe_dir,
-                              const std::string& data_dir,
-                              const std::string& staging_dir,
-                              const std::string& logs_dir,
-                              const char* video_path,
-                              const char* hash,
-                              const std::string& vbs4_out,
-                              const NativeCacheBudget& budget) {
+[[maybe_unused]] static bool generate_vvc_vbs4(const std::string& exe_dir,
+                                               const std::string& data_dir,
+                                               const std::string& staging_dir,
+                                               const std::string& logs_dir,
+                                               const char* video_path,
+                                               const char* hash,
+                                               const std::string& vbs4_out,
+                                               const NativeCacheBudget& budget) {
     const std::string decoder_path = exe_dir + "\\tools\\vtm\\DecoderApp.exe";
     const bool decoder_exists = vr::win_utf8::file_exists_utf8(decoder_path);
     spdlog::info("[Analysis] vvc producer={} exists={}", decoder_path, decoder_exists);
@@ -1634,17 +1634,27 @@ static const char* ffmpeg_analysis_codec_arg(VbiCodec codec) {
     }
 }
 
-static bool generate_ffmpeg_vbs4(const std::string& exe_dir,
-                                 const std::string& data_dir,
-                                 const std::string& staging_dir,
-                                 const std::string& logs_dir,
-                                 const char* video_path,
-                                 const char* hash,
-                                 VbiCodec codec,
-                                 const std::string& vbs4_out,
-                                 int32_t start_frame,
-                                 int32_t end_frame,
-                                 const NativeCacheBudget& budget) {
+static constexpr uint64_t kOverlayVachunkFeatureFlags =
+    VACHUNK_FEATURE_CU_GEOMETRY |
+    VACHUNK_FEATURE_QP |
+    VACHUNK_FEATURE_PRED_MODE |
+    VACHUNK_FEATURE_MOTION_VECTORS |
+    VACHUNK_FEATURE_REF_INDEXES |
+    VACHUNK_FEATURE_BIT_COST;
+
+static bool generate_ffmpeg_vachunk(const std::string& exe_dir,
+                                    const std::string& data_dir,
+                                    const std::string& staging_dir,
+                                    const std::string& logs_dir,
+                                    const char* video_path,
+                                    const char* hash,
+                                    VbiCodec codec,
+                                    const std::string& vachunk_out,
+                                    int32_t start_frame,
+                                    int32_t end_frame,
+                                    uint64_t base_content_revision,
+                                    uint64_t generator_revision,
+                                    const NativeCacheBudget& budget) {
     const char* codec_arg = ffmpeg_analysis_codec_arg(codec);
     if (!codec_arg) return false;
 
@@ -1658,35 +1668,90 @@ static bool generate_ffmpeg_vbs4(const std::string& exe_dir,
                  codec_arg);
     if (analyzer_path.empty()) return false;
 
-    vr::win_utf8::delete_file_utf8(vbs4_out);
+    vr::win_utf8::delete_file_utf8(vachunk_out);
 
     const std::string analyzer_log_path = make_analysis_tool_log_path(
         logs_dir, "ffmpeg_analysis", hash);
     const std::string cmd = "\"" + analyzer_path +
         "\" --codec " + codec_arg + " --input \"" + video_path +
-        "\" --vbs4 \"" + vbs4_out +
+        "\" --vachunk \"" + vachunk_out +
         "\" --start-frame " + std::to_string(start_frame) +
-        " --end-frame " + std::to_string(end_frame);
+        " --end-frame " + std::to_string(end_frame) +
+        " --base-revision " + std::to_string(base_content_revision) +
+        " --generator-revision " + std::to_string(generator_revision);
     spdlog::info("[Analysis] ffmpeg-analysis cmd: {}", cmd);
     spdlog::info("[Analysis] ffmpeg-analysis log: {}", analyzer_log_path);
-    const uint64_t vbs4_budget = remaining_current_hash_budget(
+    const uint64_t vachunk_budget = remaining_current_hash_budget(
         data_dir, hash, budget, staging_dir);
-    if (budget.limited && vbs4_budget == 0) return false;
+    if (budget.limited && vachunk_budget == 0) return false;
     const int analyzer_rc = run_command(
         cmd,
         analyzer_log_path,
-        {vbs4_out},
-        budget.limited ? vbs4_budget : 0);
+        {vachunk_out},
+        budget.limited ? vachunk_budget : 0);
     spdlog::info("[Analysis] ffmpeg-analysis exit_code={}", analyzer_rc);
 
-    bool vbs4_ok = analyzer_rc == 0 && vr::win_utf8::file_exists_utf8(vbs4_out);
-    if (vbs4_ok && !check_current_hash_budget(
-            data_dir, hash, budget, "VBS4 generation", staging_dir)) {
-        vr::win_utf8::delete_file_utf8(vbs4_out);
-        vbs4_ok = false;
+    bool vachunk_ok = analyzer_rc == 0 && vr::win_utf8::file_exists_utf8(vachunk_out);
+    if (vachunk_ok && !check_current_hash_budget(
+            data_dir, hash, budget, "VACHUNK generation", staging_dir)) {
+        vr::win_utf8::delete_file_utf8(vachunk_out);
+        vachunk_ok = false;
     }
-    spdlog::info("[Analysis] ffmpeg-analysis vbs4_out={} exists={}", vbs4_out, vbs4_ok);
-    return vbs4_ok;
+    spdlog::info("[Analysis] ffmpeg-analysis vachunk_out={} exists={}", vachunk_out, vachunk_ok);
+    return vachunk_ok;
+}
+
+static bool vachunk_matches_key(const vr::analysis::VachunkFile& chunk,
+                                const vr::analysis::VachunkKey& key) {
+    const auto& h = chunk.header();
+    return h.kind == static_cast<uint16_t>(key.kind) &&
+           h.codec == static_cast<uint16_t>(key.codec) &&
+           h.feature_flags == key.feature_flags &&
+           h.base_content_revision == key.base_content_revision &&
+           h.generator_revision == key.generator_revision &&
+           h.start_frame == key.start_frame &&
+           h.end_frame == key.end_frame &&
+           h.start_packet == key.start_packet &&
+           h.end_packet == key.end_packet &&
+           h.start_unit == key.start_unit &&
+           h.end_unit == key.end_unit;
+}
+
+static bool publish_generated_vachunk(vr::analysis::VacacheStore& store,
+                                      const vr::analysis::VachunkKey& key,
+                                      const std::string& tmp_path,
+                                      uint64_t max_output_bytes) {
+    vr::analysis::VachunkFile verify;
+    if (!verify.open(tmp_path) || !vachunk_matches_key(verify, key)) {
+        spdlog::error("[Analysis] generated VACHUNK did not match requested key: {}", tmp_path);
+        verify.close();
+        return false;
+    }
+    verify.close();
+
+    if (max_output_bytes > 0 && file_size_utf8(tmp_path) > max_output_bytes) {
+        spdlog::error("[Analysis] generated VACHUNK exceeded output budget: {}", tmp_path);
+        return false;
+    }
+
+    const std::string chunk_dir = store.chunks_dir(key.kind);
+    if (!vr::win_utf8::create_directory_utf8(chunk_dir)) {
+        spdlog::error("[Analysis] failed to create chunk directory: {}", chunk_dir);
+        return false;
+    }
+    const std::string final_path = store.chunk_path(key);
+    vr::win_utf8::delete_file_utf8(final_path);
+    std::error_code rename_ec;
+    std::filesystem::rename(
+        vr::win_utf8::path_from_utf8(tmp_path),
+        vr::win_utf8::path_from_utf8(final_path),
+        rename_ec);
+    if (rename_ec) {
+        spdlog::error("[Analysis] failed to publish generated VACHUNK: {} -> {} ({})",
+                      tmp_path, final_path, rename_ec.message());
+        return false;
+    }
+    return true;
 }
 
 extern "C" __declspec(dllexport)
@@ -1835,68 +1900,38 @@ int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path,
                      static_cast<int>(source_codec), base.header().codec);
     }
 
-    const std::string vbs4_tmp = staging.path() + "\\" + std::string(hash) + ".overlay.tmp.vbs4";
-    bool vbs4_generated = false;
-    bool vbs4_uses_local_frame_window = false;
-    if (source_codec == VbiCodec::VVC) {
-        vbs4_generated = generate_vvc_vbs4(
-            exe_dir, data_dir, staging.path(), logs_dir, video_path, hash, vbs4_tmp, budget);
-    } else if (ffmpeg_analysis_codec_arg(source_codec)) {
-        vbs4_generated = generate_ffmpeg_vbs4(
-            exe_dir, data_dir, staging.path(), logs_dir, video_path, hash,
-            source_codec, vbs4_tmp, start_frame, end_frame, budget);
-        vbs4_uses_local_frame_window = vbs4_generated;
-    }
-    if (!vbs4_generated || !vr::win_utf8::file_exists_utf8(vbs4_tmp)) {
-        spdlog::error("[Analysis] generate_vac2_overlay_chunk: deep analyzer failed");
-        vr::win_utf8::delete_file_utf8(vbs4_tmp);
-        set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
-                           "failed to generate deep overlay analysis");
-        return 0;
-    }
-
-    vr::analysis::Vbs4File vbs4;
-    if (!vbs4.open(vbs4_tmp)) {
-        vr::win_utf8::delete_file_utf8(vbs4_tmp);
-        set_analysis_error(NAKI_ANALYSIS_ERR_OPEN_FAILED,
-                           "failed to open generated overlay analysis");
-        return 0;
-    }
-
-    vr::analysis::VachunkData chunk_data;
-    const bool chunk_built = vbs4_uses_local_frame_window
-        ? vr::analysis::build_overlay_vachunk_from_vbs4_window(
-              vbs4,
-              0,
-              static_cast<uint32_t>(start_frame),
-              static_cast<uint32_t>(end_frame),
-              chunk_data)
-        : vr::analysis::build_overlay_vachunk_from_vbs4(
-              vbs4,
-              static_cast<uint32_t>(start_frame),
-              static_cast<uint32_t>(end_frame),
-              chunk_data);
-    if (!chunk_built) {
-        vr::win_utf8::delete_file_utf8(vbs4_tmp);
-        set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
-                           "failed to build overlay VACHUNK");
-        return 0;
-    }
-    vbs4.close();
-    vr::win_utf8::delete_file_utf8(vbs4_tmp);
-
     vr::analysis::VachunkKey key;
     key.kind = VachunkKind::Overlay;
     key.codec = static_cast<VbiCodec>(base.header().codec);
-    key.feature_flags = chunk_data.feature_flags;
+    key.feature_flags = kOverlayVachunkFeatureFlags;
     key.base_content_revision = base.header().content_revision;
     key.generator_revision = 1;
     key.start_frame = static_cast<uint32_t>(start_frame);
     key.end_frame = static_cast<uint32_t>(end_frame);
 
+    const std::string vachunk_tmp =
+        staging.path() + "\\" + std::string(hash) + ".overlay.tmp.vck";
+    bool vachunk_generated = false;
+    if (ffmpeg_analysis_codec_arg(source_codec)) {
+        vachunk_generated = generate_ffmpeg_vachunk(
+            exe_dir, data_dir, staging.path(), logs_dir, video_path, hash,
+            source_codec, vachunk_tmp, start_frame, end_frame,
+            key.base_content_revision, key.generator_revision, budget);
+    } else if (source_codec == VbiCodec::VVC) {
+        spdlog::warn("[Analysis] VVC overlay generation is unsupported after VTM retirement");
+    }
+    if (!vachunk_generated || !vr::win_utf8::file_exists_utf8(vachunk_tmp)) {
+        spdlog::error("[Analysis] generate_vac2_overlay_chunk: deep analyzer failed");
+        vr::win_utf8::delete_file_utf8(vachunk_tmp);
+        set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                           "failed to generate deep overlay analysis");
+        return 0;
+    }
+
     const uint64_t max_output_bytes =
         max_cache_bytes > 0 ? static_cast<uint64_t>(max_cache_bytes) : 0;
-    if (!store.write_chunk_atomic(key, std::move(chunk_data), max_output_bytes)) {
+    if (!publish_generated_vachunk(store, key, vachunk_tmp, max_output_bytes)) {
+        vr::win_utf8::delete_file_utf8(vachunk_tmp);
         set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
                            "failed to publish overlay VACHUNK");
         return 0;

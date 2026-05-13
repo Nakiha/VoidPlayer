@@ -3,12 +3,14 @@
 #include <flutter/plugin_registrar_windows.h>
 #include <flutter/texture_registrar.h>
 #include <flutter/method_channel.h>
+#include <flutter/event_sink.h>
 #include <flutter/standard_method_codec.h>
 
 #include "player/native_player.h"
 
 #include <cstdint>
 #include <atomic>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <wrl/client.h>
@@ -63,12 +65,15 @@ class VideoRendererPlugin : public flutter::Plugin {
 public:
     static void RegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar);
 
-    VideoRendererPlugin(flutter::TextureRegistrar* texture_registrar,
+    VideoRendererPlugin(flutter::PluginRegistrarWindows* registrar,
+                        flutter::TextureRegistrar* texture_registrar,
                         IDXGIAdapter* dxgi_adapter);
     ~VideoRendererPlugin() override;
 
     VideoRendererPlugin(const VideoRendererPlugin&) = delete;
     VideoRendererPlugin& operator=(const VideoRendererPlugin&) = delete;
+
+    void DrainEventQueue();
 
 private:
     void HandleMethodCall(
@@ -101,12 +106,21 @@ private:
     void CaptureViewport(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void SetEventSink(std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink);
+    void ClearEventSink();
+    void QueueRendererEvent(const vr::RendererEvent& event);
+    void RegisterEventDrainWindowProc();
 
     std::shared_ptr<vr::NativePlayer> player_;
     std::atomic<int64_t> texture_id_{-1};
     std::unique_ptr<flutter::TextureVariant> texture_variant_;
     FlutterDesktopGpuSurfaceDescriptor surface_descriptor_ = {};
     flutter::TextureRegistrar* texture_registrar_;
+    HWND event_hwnd_ = nullptr;
+    std::mutex event_mutex_;
+    std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> event_sink_;
+    std::deque<flutter::EncodableValue> pending_events_;
+    std::atomic<int64_t> event_sequence_{0};
     Microsoft::WRL::ComPtr<IDXGIAdapter> dxgi_adapter_;
     std::string logs_dir_;
     std::string log_file_name_;

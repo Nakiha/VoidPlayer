@@ -3,6 +3,7 @@
 #include "analysis/cache/overlay_chunk.h"
 #include "analysis/parsers/vac2_parser.h"
 #include <atomic>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -54,10 +55,24 @@ public:
 private:
     bool load_vac2(const std::string& analysis_path);
     VachunkOverlayFrameData read_vac2_overlay_frame(int frame_idx) const;
+    void refresh_overlay_chunk_index_locked() const;
+    VachunkOverlayFrameData read_overlay_frame_from_index_locked(int frame_idx) const;
+
+    struct OverlayChunkIndexEntry {
+        uint32_t start_frame = 0;
+        uint32_t end_frame = 0;
+        uint64_t base_revision = 0;
+        uint64_t generator_revision = 0;
+        std::string path;
+    };
 
     Vac2BaseFile vac2_base_;
     std::string analysis_path_;
     bool loaded_ = false;
+    mutable std::mutex overlay_chunk_index_mutex_;
+    mutable bool overlay_chunk_index_loaded_ = false;
+    mutable std::filesystem::file_time_type overlay_chunk_index_write_time_{};
+    mutable std::vector<OverlayChunkIndexEntry> overlay_chunk_index_;
     mutable std::mutex overlay_tracks_mutex_;
     std::unordered_map<int, std::shared_ptr<AnalysisManager>> overlay_tracks_;
 };

@@ -62,6 +62,20 @@ class MainWindowAnalysisCoordinator {
     return _enqueueOperation(_refreshOverlayForCurrentFrameImpl);
   }
 
+  Future<void> refreshOverlayForPresentedFrame({
+    required int trackFileId,
+    required int ptsUs,
+    required int dtsUs,
+  }) {
+    return _enqueueOperation(
+      () => _refreshOverlayForCurrentFrameImpl(
+        presentedFrameOverrides: {
+          trackFileId: PresentedFrameTiming(ptsUs: ptsUs, dtsUs: dtsUs),
+        },
+      ),
+    );
+  }
+
   Future<void> toggleOverlayForSlot(int slotIndex) {
     return _enqueueOperation(() async {
       if (slotIndex < 0 || slotIndex >= trackManager.entries.length) return;
@@ -226,7 +240,9 @@ class MainWindowAnalysisCoordinator {
     _notifyOverlayStateChanged();
   }
 
-  Future<void> _refreshOverlayForCurrentFrameImpl() async {
+  Future<void> _refreshOverlayForCurrentFrameImpl({
+    Map<int, PresentedFrameTiming>? presentedFrameOverrides,
+  }) async {
     final activeFileIds = analysisGeneration.activeOverlayTrackFileIds;
     if (activeFileIds.isEmpty) return;
 
@@ -238,7 +254,9 @@ class MainWindowAnalysisCoordinator {
       if (_disposed) return;
       if (hash == null) continue;
       _hashesByFileId[entry.fileId] = hash;
-      final presentedFrame = await _presentedFrameForTrack(entry);
+      final presentedFrame =
+          presentedFrameOverrides?[entry.fileId] ??
+          await _presentedFrameForTrack(entry);
       if (_disposed) return;
       sources.add(
         AnalysisOverlayTrackSource(

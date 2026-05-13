@@ -71,6 +71,21 @@ struct TrackPerfStats {
     int64_t current_dts_us = kNoTimestampUs;
 };
 
+struct RendererEvent {
+    enum class Type {
+        SeekPreviewPresented,
+    };
+
+    Type type = Type::SeekPreviewPresented;
+    int64_t request_id = -1;
+    int track_file_id = -1;
+    int64_t pts_us = -1;
+    int64_t dts_us = kNoTimestampUs;
+    int64_t target_pts_us = -1;
+};
+
+using RendererEventCallback = std::function<void(const RendererEvent&)>;
+
 struct D3D11BackendMetrics {
     uint64_t render_wait_us = 0;
     uint64_t render_wait_count = 0;
@@ -202,7 +217,9 @@ public:
 
     void play();
     void pause();
-    void seek(int64_t target_pts_us, SeekType type = SeekType::Keyframe);
+    void seek(int64_t target_pts_us,
+              SeekType type = SeekType::Keyframe,
+              int64_t request_id = -1);
     void set_speed(double speed);
     void set_loop_range(bool enabled, int64_t start_us, int64_t end_us);
     void set_audible_track(int file_id);
@@ -268,6 +285,9 @@ public:
     /// Set callback invoked after each frame is drawn in headless mode.
     void set_frame_callback(std::function<void()> cb);
 
+    /// Set callback invoked for low-frequency renderer/player events.
+    void set_event_callback(RendererEventCallback cb);
+
     /// Get actual texture dimensions (may lag behind resize request).
     int texture_width() const {
         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -317,6 +337,8 @@ private:
     bool apply_loop_range_locked();
     void mark_paused_hevc_seek_preview_drawn_locked();
     bool has_hevc_hw_track_locked() const;
+    void emit_event(const RendererEvent& event);
+    void emit_seek_preview_presented_events(const PresentDecision& decision);
 
     /// Apply pending resize on the render thread.
     void do_resize(int width, int height);
@@ -423,6 +445,8 @@ private:
     // texture_mutex(). Callbacks must run outside these locks.
     mutable std::mutex lifecycle_mutex_;
     mutable std::mutex state_mutex_;
+    mutable std::mutex event_callback_mutex_;
+    RendererEventCallback event_callback_;
     float background_color_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     bool preview_drawn_ = false;
     bool was_buffering_ = false;
@@ -456,6 +480,9 @@ private:
 
     // -- Cached last frame for redraws (zoom/pan while paused or at EOF) --
     PresentDecision last_decision_;
+    int64_t pending_seek_event_request_id_ = -1;
+    int64_t pending_seek_event_target_pts_us_ = -1;
+    bool pending_seek_event_emitted_ = true;
     std::vector<uint8_t> analysis_overlay_pixels_;
     std::vector<uint8_t> analysis_overlay_line_pixels_;
 

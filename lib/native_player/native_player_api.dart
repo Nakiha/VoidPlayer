@@ -1,8 +1,11 @@
 import 'package:flutter/services.dart';
 
+import 'native_player_events.dart';
 import 'native_player_protocol.dart';
 
 abstract interface class NativePlayerApi {
+  Stream<NativePlayerEvent> get events;
+
   Future<CreatePlayerResult> createPlayer({
     required List<String> videoPaths,
     required int width,
@@ -13,7 +16,7 @@ abstract interface class NativePlayerApi {
   Future<void> destroyPlayer();
   Future<void> play();
   Future<void> pause();
-  Future<void> seek(int ptsUs);
+  Future<void> seek(int ptsUs, {int? requestId});
   Future<void> setSpeed(double speed);
   Future<void> setLoopRange({
     required bool enabled,
@@ -44,10 +47,15 @@ abstract interface class NativePlayerApi {
 
 class MethodChannelNativePlayerApi implements NativePlayerApi {
   final MethodChannel _channel;
+  final NativePlayerEventStream _eventStream;
 
   const MethodChannelNativePlayerApi([
     this._channel = const MethodChannel(NativePlayerChannel.name),
+    this._eventStream = const NativePlayerEventStream(),
   ]);
+
+  @override
+  Stream<NativePlayerEvent> get events => _eventStream.events;
 
   @override
   Future<CreatePlayerResult> createPlayer({
@@ -84,10 +92,12 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> seek(int ptsUs) {
-    return _channel.invokeMethod<void>(NativePlayerMethods.seek, {
-      NativePlayerKeys.ptsUs: ptsUs,
-    });
+  Future<void> seek(int ptsUs, {int? requestId}) {
+    final args = <String, dynamic>{NativePlayerKeys.ptsUs: ptsUs};
+    if (requestId != null) {
+      args[NativePlayerKeys.requestId] = requestId;
+    }
+    return _channel.invokeMethod<void>(NativePlayerMethods.seek, args);
   }
 
   @override

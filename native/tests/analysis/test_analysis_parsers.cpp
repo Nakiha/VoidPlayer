@@ -7,6 +7,7 @@
 #include "analysis/parsers/vachunk_parser.h"
 #include "test_analysis_data.h"
 
+#include <cstring>
 #include <filesystem>
 #include <vector>
 
@@ -500,23 +501,55 @@ TEST_CASE("AnalysisManager: reads VAC2 base with overlay chunks",
     const auto base_path = hash_dir / "base.vac";
     REQUIRE(vr::analysis::write_vac2_base_container(base_path.string(), base));
 
-    const auto chunk_data = make_overlay_chunk(0, 1);
-    REQUIRE(vr::analysis::write_vachunk_file(
-        (overlay_dir / "overlay_00000000_00000001.vck").string(),
-        chunk_data));
-
     vr::analysis::AnalysisManager manager;
     REQUIRE(manager.load(base_path.string()));
     REQUIRE(manager.frame_count() == 2);
     REQUIRE(manager.video_width() == 1920);
     REQUIRE(manager.video_height() == 1080);
     REQUIRE(manager.current_frame_idx(45000) == 1);
+    REQUIRE(manager.read_overlay_frame(0).cus.empty());
+
+    const auto chunk_data = make_overlay_chunk(0, 1);
+    REQUIRE(vr::analysis::write_vachunk_file(
+        (overlay_dir / "overlay_00000000_00000001_g1.vck").string(),
+        chunk_data));
 
     const auto frame0 = manager.read_overlay_frame(0);
     REQUIRE(frame0.summary.avg_qp == 22);
     REQUIRE(frame0.cus.size() == 1);
     if (!frame0.cus.empty()) {
         REQUIRE(frame0.cus[0].common.qp == 22);
+    }
+
+    auto newer_chunk_data = make_overlay_chunk(0, 1);
+    newer_chunk_data.generator_revision = chunk_data.generator_revision + 1;
+    for (auto& section : newer_chunk_data.sections) {
+        const std::string type(section.type, section.type + 4);
+        if (type != "FSUM" && type != "CU4R") continue;
+        if (type == "FSUM") {
+            VachunkFrameSummary summary{};
+            std::memcpy(&summary, section.bytes.data(), sizeof(summary));
+            summary.avg_qp = 41;
+            summary.qp_min = 41;
+            summary.qp_max = 41;
+            std::memcpy(section.bytes.data(), &summary, sizeof(summary));
+        } else if (type == "CU4R") {
+            vr::analysis::VachunkCuRecord record{};
+            std::memcpy(&record, section.bytes.data(), sizeof(record));
+            record.common.qp = 41;
+            std::memcpy(section.bytes.data(), &record, sizeof(record));
+        }
+    }
+    REQUIRE(vr::analysis::write_vachunk_file(
+        (overlay_dir / "overlay_00000000_00000001_g2.vck").string(),
+        newer_chunk_data));
+    manager.unload();
+    REQUIRE(manager.load(base_path.string()));
+    const auto newer_frame0 = manager.read_overlay_frame(0);
+    REQUIRE(newer_frame0.summary.avg_qp == 41);
+    REQUIRE(newer_frame0.cus.size() == 1);
+    if (!newer_frame0.cus.empty()) {
+        REQUIRE(newer_frame0.cus[0].common.qp == 41);
     }
 
     manager.unload();

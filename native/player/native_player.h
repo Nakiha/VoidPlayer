@@ -26,8 +26,10 @@ public:
 
     void play() { renderer_.play(); }
     void pause() { renderer_.pause(); }
-    void seek(int64_t target_pts_us, SeekType type = SeekType::Keyframe) {
-        renderer_.seek(target_pts_us, type);
+    void seek(int64_t target_pts_us,
+              SeekType type = SeekType::Keyframe,
+              int64_t request_id = -1) {
+        renderer_.seek(target_pts_us, type, request_id);
     }
     void set_speed(double speed) { renderer_.set_speed(speed); }
     void set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
@@ -77,6 +79,9 @@ public:
 
     void set_frame_callback(std::function<void()> cb) {
         renderer_.set_frame_callback(std::move(cb));
+    }
+    void set_event_callback(RendererEventCallback cb) {
+        renderer_.set_event_callback(std::move(cb));
     }
     int texture_width() const { return renderer_.texture_width(); }
     int texture_height() const { return renderer_.texture_height(); }

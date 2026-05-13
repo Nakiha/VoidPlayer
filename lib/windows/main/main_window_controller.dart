@@ -448,6 +448,13 @@ class MainWindowController {
       mounted: mounted,
       timelineMetrics: timelineMetrics,
       onSeekSettled: (_) => analysisCoordinator.refreshOverlayForCurrentFrame(),
+      onSeekPreviewPresented:
+          ({required trackFileId, required ptsUs, required dtsUs}) =>
+              analysisCoordinator.refreshOverlayForPresentedFrame(
+                trackFileId: trackFileId,
+                ptsUs: ptsUs,
+                dtsUs: dtsUs,
+              ),
     );
     mediaLifecycle = MainWindowMediaLifecycle(
       stateStore: stateStore,

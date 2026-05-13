@@ -24,10 +24,17 @@ class MainWindowPlaybackCoordinator {
   final bool Function() mounted;
   final MainWindowTimelineMetrics timelineMetrics;
   final Future<void> Function(int ptsUs)? onSeekSettled;
+  final Future<void> Function({
+    required int trackFileId,
+    required int ptsUs,
+    required int dtsUs,
+  })?
+  onSeekPreviewPresented;
 
   Timer? _pollTimer;
   Timer? _loopBoundaryTimer;
   Timer? _seekSettledTimer;
+  StreamSubscription<NativePlayerEvent>? _nativeEventSubscription;
   bool _disposed = false;
   bool _resumeAfterSeek = false;
   int _pollSerial = 0;
@@ -44,7 +51,13 @@ class MainWindowPlaybackCoordinator {
     required this.mounted,
     required this.timelineMetrics,
     this.onSeekSettled,
-  });
+    this.onSeekPreviewPresented,
+  }) {
+    _nativeEventSubscription = controller.events.listen(
+      _handleNativePlayerEvent,
+      onError: (_) {},
+    );
+  }
 
   MainWindowStateModel get _state => stateStore.value;
 
@@ -94,6 +107,8 @@ class MainWindowPlaybackCoordinator {
     _pollTimer?.cancel();
     _loopBoundaryTimer?.cancel();
     _seekSettledTimer?.cancel();
+    unawaited(_nativeEventSubscription?.cancel());
+    _nativeEventSubscription = null;
   }
 
   void startPolling() {
@@ -171,7 +186,7 @@ class MainWindowPlaybackCoordinator {
       if (_disposed || !mounted()) return;
       setPlaying(false);
     }
-    await controller.seek(targetPtsUs);
+    await controller.seek(targetPtsUs, requestId: seekSerial);
     if (_disposed || !mounted()) return;
 
     if (seekSerial != _seekSerial) return;
@@ -191,10 +206,33 @@ class MainWindowPlaybackCoordinator {
     final seekSettled = onSeekSettled;
     if (seekSettled == null) return;
     _seekSettledTimer?.cancel();
-    _seekSettledTimer = Timer(const Duration(milliseconds: 1200), () {
+    _seekSettledTimer = Timer(const Duration(seconds: 2), () {
       if (_disposed || !mounted() || seekSerial != _seekSerial) return;
+      log.info(
+        'Seek preview event timed out; refreshing overlay by current frame '
+        'fallback (requestId=$seekSerial, targetPtsUs=$targetPtsUs)',
+      );
       unawaited(seekSettled(targetPtsUs).catchError((_) {}));
     });
+  }
+
+  void _handleNativePlayerEvent(NativePlayerEvent event) {
+    if (_disposed || !mounted()) return;
+    if (event.type != NativePlayerEventType.seekPreviewPresented) return;
+    final requestId = event.requestId;
+    if (requestId == null || requestId != _seekSerial) return;
+    if (!event.hasPresentedFrame) return;
+    final callback = onSeekPreviewPresented;
+    if (callback == null) return;
+    _seekSettledTimer?.cancel();
+    _seekSettledTimer = null;
+    unawaited(
+      callback(
+        trackFileId: event.trackFileId!,
+        ptsUs: event.ptsUs!,
+        dtsUs: event.dtsUs!,
+      ).catchError((_) {}),
+    );
   }
 
   int _clampSeekTargetUs(int ptsUs) {

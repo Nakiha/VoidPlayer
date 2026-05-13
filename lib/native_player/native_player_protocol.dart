@@ -4,6 +4,7 @@ import '../preferences/playback_preferences.dart';
 
 class NativePlayerChannel {
   static const name = 'video_renderer';
+  static const eventsName = 'video_renderer/events';
 }
 
 class NativePlayerMethods {
@@ -63,6 +64,8 @@ class NativePlayerKeys {
   static const order = 'order';
   static const ptsUs = 'ptsUs';
   static const dtsUs = 'dtsUs';
+  static const requestId = 'requestId';
+  static const targetPtsUs = 'targetPtsUs';
   static const speed = 'speed';
   static const enabled = 'enabled';
   static const startUs = 'startUs';

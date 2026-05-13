@@ -3,6 +3,9 @@
 > This document covers the Flutter-side orchestration for VAC2 base cache,
 > on-demand VACHUNK overlay chunks, and main-window overlay activation. Native
 > file formats and analyzer internals live under `native/docs/`.
+>
+> The event-driven seek refresh design is tracked in
+> [ANALYSIS_OVERLAY_REFRESH_DESIGN.md](ANALYSIS_OVERLAY_REFRESH_DESIGN.md).
 
 ## Ownership
 
@@ -70,16 +73,19 @@ Seek does not synchronously generate analysis data:
 timeline / action seek
   -> NativePlayerController.seek(...)
   -> renderer presents paused preview frame
-  -> MainWindowPlaybackCoordinator starts a short settled timer
-  -> MainWindowAnalysisCoordinator.refreshOverlayForCurrentFrame()
+  -> native emits seekPreviewPresented(requestId, trackFileId, ptsUs, dtsUs)
+  -> MainWindowPlaybackCoordinator accepts the latest requestId
+  -> MainWindowAnalysisCoordinator.refreshOverlayForPresentedFrame(...)
   -> AnalysisManager.ensureOverlayChunk(...)
   -> native overlay track is reloaded
   -> MainWindowController.applyLayout(...) forces redraw
 ```
 
 This keeps timeline interaction responsive. The tradeoff is that overlay can
-appear shortly after the video frame when the chunk was missing. The redraw is
-owned by `onOverlayStateChanged`, not by the analyzer process.
+appear shortly after the video frame when the chunk was missing. A watchdog
+fallback still calls `refreshOverlayForCurrentFrame()` if the native event
+stream does not arrive, but the normal path is event-driven. The redraw is owned
+by `onOverlayStateChanged`, not by the analyzer process.
 
 ## Presented Frame Matching
 

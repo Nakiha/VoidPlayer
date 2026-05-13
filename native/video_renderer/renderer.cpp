@@ -511,9 +511,14 @@ void Renderer::pause() {
     playing_ = false;
 }
 
-void Renderer::seek(int64_t target_pts_us, SeekType type) {
+void Renderer::seek(int64_t target_pts_us, SeekType type, int64_t request_id) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
+    if (request_id >= 0) {
+        pending_seek_event_request_id_ = request_id;
+        pending_seek_event_target_pts_us_ = target_pts_us;
+        pending_seek_event_emitted_ = false;
+    }
     seek_internal(target_pts_us, type);
 }
 
@@ -582,6 +587,11 @@ void Renderer::seek_internal(int64_t target_pts_us,
                      requested_pts_us / 1e6,
                      target_pts_us / 1e6,
                      duration_us / 1e6);
+    }
+    if (pending_seek_event_request_id_ >= 0 &&
+        !pending_seek_event_emitted_ &&
+        pending_seek_event_target_pts_us_ == requested_pts_us) {
+        pending_seek_event_target_pts_us_ = target_pts_us;
     }
     spdlog::info("[Renderer] seek_internal: target={:.3f}s, type={}",
                  target_pts_us / 1e6, type == SeekType::Exact ? "Exact" : "Keyframe");
@@ -746,6 +756,52 @@ bool Renderer::has_hevc_hw_track_locked() const {
         }
     }
     return false;
+}
+
+void Renderer::emit_event(const RendererEvent& event) {
+    RendererEventCallback callback;
+    {
+        std::lock_guard<std::mutex> lock(event_callback_mutex_);
+        callback = event_callback_;
+    }
+    if (callback) {
+        if (event.type == RendererEvent::Type::SeekPreviewPresented) {
+            spdlog::info("[Renderer] emit seekPreviewPresented request_id={} file_id={} pts={:.3f}s dts={:.3f}s",
+                         event.request_id,
+                         event.track_file_id,
+                         event.pts_us / 1e6,
+                         event.dts_us == kNoTimestampUs ? -1.0 : event.dts_us / 1e6);
+        }
+        callback(event);
+    }
+}
+
+void Renderer::emit_seek_preview_presented_events(const PresentDecision& decision) {
+    int64_t request_id = -1;
+    int64_t target_pts_us = -1;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (pending_seek_event_request_id_ < 0 || pending_seek_event_emitted_) {
+            return;
+        }
+        request_id = pending_seek_event_request_id_;
+        target_pts_us = pending_seek_event_target_pts_us_;
+        pending_seek_event_emitted_ = true;
+    }
+
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!decision.frames[i].has_value()) continue;
+        const int track_file_id = tracks_[i] ? tracks_[i]->file_id : -1;
+        if (track_file_id < 0) continue;
+        RendererEvent event;
+        event.type = RendererEvent::Type::SeekPreviewPresented;
+        event.request_id = request_id;
+        event.track_file_id = track_file_id;
+        event.pts_us = decision.frames[i]->pts_us;
+        event.dts_us = decision.frames[i]->dts_us;
+        event.target_pts_us = target_pts_us;
+        emit_event(event);
+    }
 }
 
 bool Renderer::build_step_forward_decision_locked(PresentDecision& decision) const {
@@ -1485,6 +1541,11 @@ void Renderer::set_frame_callback(std::function<void()> cb) {
     }
 }
 
+void Renderer::set_event_callback(RendererEventCallback cb) {
+    std::lock_guard<std::mutex> lock(event_callback_mutex_);
+    event_callback_ = std::move(cb);
+}
+
 bool Renderer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
     snapshot = {};
 
@@ -1731,6 +1792,7 @@ void Renderer::render_loop() {
                         spdlog::info("[Renderer] Paused frame: pts={:.3f}s",
                                      ref >= 0 && preview.frames[ref].has_value()
                                      ? preview.frames[ref]->pts_us / 1e6 : -1.0);
+                        emit_seek_preview_presented_events(preview);
                     }
                 }
             }

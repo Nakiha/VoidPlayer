@@ -81,7 +81,7 @@ void main() {
       expect(api.calls, [
         'createPlayer:320x180:a.mp4',
         'play',
-        'seek:123',
+        'seek:123:null',
         'resize:640x360',
         'destroyPlayer',
       ]);
@@ -101,6 +101,9 @@ void main() {
 
 class _FakeNativePlayerApi implements NativePlayerApi {
   final calls = <String>[];
+
+  @override
+  Stream<NativePlayerEvent> get events => const Stream.empty();
 
   @override
   Future<CreatePlayerResult> createPlayer({
@@ -129,8 +132,8 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> seek(int ptsUs) async {
-    calls.add('seek:$ptsUs');
+  Future<void> seek(int ptsUs, {int? requestId}) async {
+    calls.add('seek:$ptsUs:$requestId');
   }
 
   @override

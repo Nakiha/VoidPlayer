@@ -1,7 +1,9 @@
 import 'native_player/native_player_api.dart';
+import 'native_player/native_player_events.dart';
 import 'native_player/native_player_protocol.dart';
 
 export 'native_player/native_player_api.dart';
+export 'native_player/native_player_events.dart';
 export 'native_player/native_player_protocol.dart';
 
 class NativePlayerController {
@@ -19,6 +21,7 @@ class NativePlayerController {
   int? get textureId => _textureId;
   bool get isDisposed => _disposed;
   bool get hasPlayer => _textureId != null;
+  Stream<NativePlayerEvent> get events => _api.events;
 
   void _ensureAlive() {
     if (_disposed) {
@@ -108,9 +111,9 @@ class NativePlayerController {
     return _api.pause();
   }
 
-  Future<void> seek(int ptsUs) {
+  Future<void> seek(int ptsUs, {int? requestId}) {
     if (!_hasPlayerForCommand()) return Future.value();
-    return _api.seek(ptsUs);
+    return _api.seek(ptsUs, requestId: requestId);
   }
 
   Future<void> setSpeed(double speed) {

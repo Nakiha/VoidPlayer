@@ -178,32 +178,31 @@ void draw_line(std::vector<uint8_t>& pixels,
     }
 }
 
-OverlayColor qp_color(uint8_t qp, uint8_t qp_min, uint8_t qp_max, uint8_t alpha) {
-    const int min_qp = qp_min <= qp_max ? qp_min : 0;
-    const int max_qp = qp_max >= qp_min && qp_max > min_qp ? qp_max : 51;
-    const float t = std::clamp(
-        (static_cast<float>(qp) - static_cast<float>(min_qp)) /
-            std::max(1.0f, static_cast<float>(max_qp - min_qp)),
-        0.0f,
-        1.0f);
-    const uint8_t r = static_cast<uint8_t>(std::round(255.0f * t));
-    const uint8_t g = static_cast<uint8_t>(std::round(210.0f * (1.0f - std::abs(t - 0.45f) * 1.6f)));
-    const uint8_t b = static_cast<uint8_t>(std::round(255.0f * (1.0f - t)));
-    return OverlayColor{b, g, r, alpha};
+OverlayColor heatmap_ramp_color(float value, uint8_t alpha) {
+    const float t = std::clamp(value, 0.0f, 1.0f);
+    const float r = t < 0.5f ? (t * 2.0f) : 1.0f;
+    const float g = t < 0.5f ? 1.0f : (1.0f - (t - 0.5f) * 2.0f);
+    const float brightness = 0.55f + 0.45f * t;
+    const uint8_t red = static_cast<uint8_t>(std::round(255.0f * r * brightness));
+    const uint8_t green = static_cast<uint8_t>(std::round(255.0f * g * brightness));
+    const uint8_t blue = static_cast<uint8_t>(std::round(36.0f * (1.0f - t)));
+    return OverlayColor{blue, green, red, alpha};
+}
+
+OverlayColor qp_color(uint8_t qp, uint8_t alpha) {
+    const float t = std::clamp(static_cast<float>(qp) / 50.0f, 0.0f, 1.0f);
+    return heatmap_ramp_color(t, alpha);
 }
 
 OverlayColor cu_complexity_proxy_color(const VachunkCuCommon& cu, uint8_t alpha) {
     const float area = std::max(1.0f, static_cast<float>(cu.w) * static_cast<float>(cu.h));
     const float size_score = std::clamp(1.0f - area / (64.0f * 64.0f), 0.0f, 1.0f);
     const float depth_score = std::clamp(static_cast<float>(cu.depth) / 4.0f, 0.0f, 1.0f);
-    const float qp_score = std::clamp(static_cast<float>(cu.qp) / 51.0f, 0.0f, 1.0f);
+    const float qp_score = std::clamp(static_cast<float>(cu.qp) / 50.0f, 0.0f, 1.0f);
     const float t = std::clamp(size_score * 0.45f + depth_score * 0.35f + qp_score * 0.20f,
                                0.0f,
                                1.0f);
-    const uint8_t r = static_cast<uint8_t>(std::round(240.0f * t + 40.0f));
-    const uint8_t g = static_cast<uint8_t>(std::round(210.0f * (1.0f - std::abs(t - 0.55f) * 1.4f)));
-    const uint8_t b = static_cast<uint8_t>(std::round(210.0f * (1.0f - t)));
-    return OverlayColor{b, g, r, alpha};
+    return heatmap_ramp_color(t, alpha);
 }
 
 OverlayColor pred_color(uint8_t pred_mode, const VachunkCuInter& inter, uint8_t alpha) {
@@ -2303,7 +2302,6 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
     const int visible_count = std::max(constants.track_count, 1);
     const uint8_t base_alpha = static_cast<uint8_t>(std::clamp(
         opacity_permille * 255 / 1000, 0, 255));
-    const uint8_t fill_alpha = static_cast<uint8_t>(base_alpha * 2 / 5);
     const uint8_t line_alpha = base_alpha;
     // Current Dart primary overlay modes are: 0=CU, 1=QP heatmap,
     // 2=bitrate/bit-cost heatmap. Keep 3/4 as compatibility with the
@@ -2312,6 +2310,10 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
     const bool bit_cost_primary = show_bit_cost || mode == 2 || mode == 4;
     const bool pred_primary = show_pred;
     const bool line_primary = show_lines;
+    const bool heatmap_primary = qp_primary || bit_cost_primary;
+    const uint8_t fill_alpha = heatmap_primary
+        ? base_alpha
+        : static_cast<uint8_t>(base_alpha * 2 / 5);
     bool has_color_overlay = false;
     bool has_line_mask = false;
 
@@ -2433,7 +2435,7 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
             } else if (qp_primary) {
                 if (fill_alpha > 0) {
                     fill_rect(analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
-                              qp_color(c.qp, frame.summary.qp_min, frame.summary.qp_max, fill_alpha));
+                              qp_color(c.qp, fill_alpha));
                     has_color_overlay = true;
                 }
             } else if (pred_primary) {
@@ -2447,7 +2449,7 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
             }
 
             if (line_alpha > 0 &&
-                (show_grid || mode == 0 || qp_primary || bit_cost_primary || pred_primary)) {
+                (show_grid || mode == 0 || pred_primary)) {
                 stroke_rect_mask(
                     analysis_overlay_line_pixels_,
                     width,

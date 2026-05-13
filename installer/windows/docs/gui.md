@@ -45,6 +45,12 @@ voidplayer://v1/open?loopStart=1.5s&loopEnd=4s
 
 开发/测试参数如 `--test-script`、`--silent-ui-test`、`--standalone-analysis`、`--analysis-ipc-*` 不会通过 `voidplayer://` 暴露。
 
+## 安装与卸载数据
+
+默认安装目录是当前用户的 `%LOCALAPPDATA%\Programs\VoidPlayer`。运行时配置、日志、分析缓存默认写入 `%APPDATA%\VoidPlayer`；如果系统没有 `APPDATA`，会回退到 `%LOCALAPPDATA%\VoidPlayer`。native crash symbol cache 也可能写入 `%LOCALAPPDATA%\VoidPlayer`。
+
+卸载程序会删除安装目录内历史遗留的 `logs/`、`cache/`、`config.json`，并清理 `%APPDATA%\VoidPlayer` 与 `%LOCALAPPDATA%\VoidPlayer` 下的运行时数据。
+
 ## 内部窗口参数
 
 下面这些参数主要供 VoidPlayer 自身启动独立分析窗口或 secondary window 时使用，普通用户一般不需要手动传入：

@@ -47,7 +47,10 @@ python dev.py ui-test ui_tests/loop/h265_loop_range_enable_regression.csv
 
 ## 日志系统
 
-默认所有模块日志级别为 `INFO`。日志文件落盘到 exe 旁的 `logs/` 目录。
+默认所有模块日志级别为 `INFO`。正式安装版的运行时数据根目录是
+`%APPDATA%\VoidPlayer`，若系统没有 `APPDATA` 则回退到
+`%LOCALAPPDATA%\VoidPlayer`；带有 exe 旁 `cache/` 目录的便携式布局会把
+运行时数据写在 exe 旁。
 
 启动传参控制日志级别：
 
@@ -55,8 +58,8 @@ python dev.py ui-test ui_tests/loop/h265_loop_range_enable_regression.csv
 void_player.exe --log-level=flutter=DEBUG,native=TRACE,ffmpeg=INFO
 ```
 
-- `flutter`: Flutter/Dart 层日志，写入 `logs/void_player_YYYY-MM-DD.log`
-- `native`: C++ native 模块日志，写入 `logs/native.log`
+- `flutter`: Flutter/Dart 层日志，写入运行时数据根目录下的 `logs/`
+- `native`: C++ native 模块日志，写入运行时数据根目录下的 `logs/`
 - `ffmpeg`: FFmpeg 库日志（预留，暂未实现）
 
 ## 启动参数

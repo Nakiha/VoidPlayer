@@ -70,3 +70,5 @@ Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(
 Type: filesandordirs; Name: "{app}\logs"
 Type: filesandordirs; Name: "{app}\cache"
 Type: files; Name: "{app}\config.json"
+Type: filesandordirs; Name: "{userappdata}\{#AppName}"
+Type: filesandordirs; Name: "{localappdata}\{#AppName}"

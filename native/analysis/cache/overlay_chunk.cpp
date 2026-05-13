@@ -41,25 +41,43 @@ bool build_overlay_vachunk_from_vbs4(const Vbs4File& vbs4,
                                      uint32_t start_frame,
                                      uint32_t end_frame,
                                      VachunkData& out) {
+    return build_overlay_vachunk_from_vbs4_window(
+        vbs4, start_frame, start_frame, end_frame, out);
+}
+
+bool build_overlay_vachunk_from_vbs4_window(const Vbs4File& vbs4,
+                                            uint32_t vbs4_start_frame,
+                                            uint32_t source_start_frame,
+                                            uint32_t source_end_frame,
+                                            VachunkData& out) {
     out = {};
+    const uint64_t frame_count =
+        source_start_frame <= source_end_frame
+            ? static_cast<uint64_t>(source_end_frame) - source_start_frame + 1
+            : 0;
     if (vbs4.frame_count() <= 0 ||
-        start_frame > end_frame ||
-        end_frame >= static_cast<uint32_t>(vbs4.frame_count())) {
+        frame_count == 0 ||
+        vbs4_start_frame >= static_cast<uint32_t>(vbs4.frame_count()) ||
+        frame_count >
+            static_cast<uint64_t>(vbs4.frame_count()) - vbs4_start_frame) {
         return false;
     }
+    const uint32_t output_frame_count = static_cast<uint32_t>(frame_count);
 
     std::vector<Vbs4FrameSummary> summaries;
     std::vector<VachunkOverlayFrameIndexEntry> frame_index;
     std::vector<VbsCuRecord> records;
-    summaries.reserve(end_frame - start_frame + 1);
-    frame_index.reserve(end_frame - start_frame + 1);
+    summaries.reserve(output_frame_count);
+    frame_index.reserve(output_frame_count);
 
-    for (uint32_t frame = start_frame; frame <= end_frame; ++frame) {
-        const auto frame_data = vbs4.read_frame(static_cast<int>(frame));
+    for (uint32_t i = 0; i < output_frame_count; ++i) {
+        const uint32_t vbs4_frame = vbs4_start_frame + i;
+        const uint32_t source_frame = source_start_frame + i;
+        const auto frame_data = vbs4.read_frame(static_cast<int>(vbs4_frame));
         if (frame_data.summary.num_cus > 0 && frame_data.cus.empty()) {
             spdlog::error("[VACHUNK] failed to read VBS4 overlay frame: frame={}, num_cus={}, "
                           "cu_index_entry={}, coded_order={}",
-                          frame,
+                          vbs4_frame,
                           frame_data.summary.num_cus,
                           frame_data.summary.cu_index_entry,
                           frame_data.summary.coded_order);
@@ -68,7 +86,7 @@ bool build_overlay_vachunk_from_vbs4(const Vbs4File& vbs4,
         }
 
         VachunkOverlayFrameIndexEntry index{};
-        index.frame_index = frame;
+        index.frame_index = source_frame;
         index.first_unit = static_cast<uint32_t>(records.size());
         index.unit_count = static_cast<uint32_t>(frame_data.cus.size());
         index.flags =
@@ -89,8 +107,8 @@ bool build_overlay_vachunk_from_vbs4(const Vbs4File& vbs4,
         VACHUNK_FEATURE_MOTION_VECTORS |
         VACHUNK_FEATURE_REF_INDEXES |
         VACHUNK_FEATURE_BIT_COST;
-    out.start_frame = start_frame;
-    out.end_frame = end_frame;
+    out.start_frame = source_start_frame;
+    out.end_frame = source_end_frame;
     out.sections.push_back(make_vachunk_record_section("FSUM", summaries));
     out.sections.push_back(make_vachunk_record_section("FIDX", frame_index));
     out.sections.push_back(make_vachunk_record_section("CU4R", records));

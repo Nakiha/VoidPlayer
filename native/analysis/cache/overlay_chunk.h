@@ -18,6 +18,12 @@ bool build_overlay_vachunk_from_vbs4(const Vbs4File& vbs4,
                                      uint32_t end_frame,
                                      VachunkData& out);
 
+bool build_overlay_vachunk_from_vbs4_window(const Vbs4File& vbs4,
+                                            uint32_t vbs4_start_frame,
+                                            uint32_t source_start_frame,
+                                            uint32_t source_end_frame,
+                                            VachunkData& out);
+
 bool read_overlay_vachunk_frame(const VachunkFile& chunk,
                                 uint32_t frame_index,
                                 VachunkOverlayFrameData& out);

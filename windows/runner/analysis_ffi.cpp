@@ -1642,6 +1642,8 @@ static bool generate_ffmpeg_vbs4(const std::string& exe_dir,
                                  const char* hash,
                                  VbiCodec codec,
                                  const std::string& vbs4_out,
+                                 int32_t start_frame,
+                                 int32_t end_frame,
                                  const NativeCacheBudget& budget) {
     const char* codec_arg = ffmpeg_analysis_codec_arg(codec);
     if (!codec_arg) return false;
@@ -1662,7 +1664,9 @@ static bool generate_ffmpeg_vbs4(const std::string& exe_dir,
         logs_dir, "ffmpeg_analysis", hash);
     const std::string cmd = "\"" + analyzer_path +
         "\" --codec " + codec_arg + " --input \"" + video_path +
-        "\" --vbs4 \"" + vbs4_out + "\"";
+        "\" --vbs4 \"" + vbs4_out +
+        "\" --start-frame " + std::to_string(start_frame) +
+        " --end-frame " + std::to_string(end_frame);
     spdlog::info("[Analysis] ffmpeg-analysis cmd: {}", cmd);
     spdlog::info("[Analysis] ffmpeg-analysis log: {}", analyzer_log_path);
     const uint64_t vbs4_budget = remaining_current_hash_budget(
@@ -1833,13 +1837,15 @@ int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path,
 
     const std::string vbs4_tmp = staging.path() + "\\" + std::string(hash) + ".overlay.tmp.vbs4";
     bool vbs4_generated = false;
+    bool vbs4_uses_local_frame_window = false;
     if (source_codec == VbiCodec::VVC) {
         vbs4_generated = generate_vvc_vbs4(
             exe_dir, data_dir, staging.path(), logs_dir, video_path, hash, vbs4_tmp, budget);
     } else if (ffmpeg_analysis_codec_arg(source_codec)) {
         vbs4_generated = generate_ffmpeg_vbs4(
             exe_dir, data_dir, staging.path(), logs_dir, video_path, hash,
-            source_codec, vbs4_tmp, budget);
+            source_codec, vbs4_tmp, start_frame, end_frame, budget);
+        vbs4_uses_local_frame_window = vbs4_generated;
     }
     if (!vbs4_generated || !vr::win_utf8::file_exists_utf8(vbs4_tmp)) {
         spdlog::error("[Analysis] generate_vac2_overlay_chunk: deep analyzer failed");
@@ -1858,11 +1864,19 @@ int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path,
     }
 
     vr::analysis::VachunkData chunk_data;
-    if (!vr::analysis::build_overlay_vachunk_from_vbs4(
-            vbs4,
-            static_cast<uint32_t>(start_frame),
-            static_cast<uint32_t>(end_frame),
-            chunk_data)) {
+    const bool chunk_built = vbs4_uses_local_frame_window
+        ? vr::analysis::build_overlay_vachunk_from_vbs4_window(
+              vbs4,
+              0,
+              static_cast<uint32_t>(start_frame),
+              static_cast<uint32_t>(end_frame),
+              chunk_data)
+        : vr::analysis::build_overlay_vachunk_from_vbs4(
+              vbs4,
+              static_cast<uint32_t>(start_frame),
+              static_cast<uint32_t>(end_frame),
+              chunk_data);
+    if (!chunk_built) {
         vr::win_utf8::delete_file_utf8(vbs4_tmp);
         set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
                            "failed to build overlay VACHUNK");

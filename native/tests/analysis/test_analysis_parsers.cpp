@@ -570,6 +570,29 @@ TEST_CASE("VACHUNK: overlay chunk carries VBS4 frame data",
 
     chunk.close();
     fs::remove(path);
+
+    vr::analysis::VachunkData window_chunk_data;
+    REQUIRE(vr::analysis::build_overlay_vachunk_from_vbs4_window(
+        vbs4, 0, 10, 11, window_chunk_data));
+    REQUIRE(window_chunk_data.start_frame == 10);
+    REQUIRE(window_chunk_data.end_frame == 11);
+
+    const auto window_path =
+        fs::temp_directory_path() / "voidplayer_test_overlay_window.vck";
+    fs::remove(window_path);
+    REQUIRE(vr::analysis::write_vachunk_file(window_path.string(), window_chunk_data));
+
+    vr::analysis::VachunkFile window_chunk;
+    REQUIRE(window_chunk.open(window_path.string()));
+    REQUIRE(window_chunk.header().start_frame == 10);
+    REQUIRE(window_chunk.header().end_frame == 11);
+    vr::analysis::VachunkOverlayFrameData frame10;
+    REQUIRE(vr::analysis::read_overlay_vachunk_frame(window_chunk, 10, frame10));
+    REQUIRE(frame10.summary.avg_qp == legacy0.summary.avg_qp);
+    REQUIRE(frame10.cus.size() == legacy0.cus.size());
+    REQUIRE_FALSE(vr::analysis::read_overlay_vachunk_frame(window_chunk, 0, missing));
+    window_chunk.close();
+    fs::remove(window_path);
 }
 
 TEST_CASE("AnalysisManager: reads VAC2 base with overlay chunks",

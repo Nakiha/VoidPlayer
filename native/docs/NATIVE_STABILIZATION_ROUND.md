@@ -53,7 +53,7 @@ Regression coverage added:
 
 ### `review_overlay.md`
 
-Status: partially fixed, still the main active backlog.
+Status: fixed for the current chat audit.
 
 Fixed:
 
@@ -95,7 +95,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: return to `review_godobject.md` owner-boundary cleanup after a final overlay cross-check.
+Next patch: return to `review_godobject.md` owner-boundary cleanup.
 
 ### P30 - VACache Atomic Publish
 
@@ -306,8 +306,8 @@ These are real, but lower priority than the overlay backlog above:
 
 ## Do-Not-Drift List
 
-- Do not prioritize runner plugin cosmetics while `review_overlay.md` P1 items remain open.
-- Do not start a large Renderer split before P34 precision coverage is handled.
+- Do not let runner plugin cosmetics displace the remaining `review_godobject.md` owner-boundary work.
+- Keep overlay regression coverage in place before starting large Renderer ownership splits.
 - Do not add broad fallback image conversion libraries; pixel-format support must stay deterministic.
 - Do not batch unrelated cleanup with behavior fixes.
 - Do not mark a chat item fixed without a test or an explicit documented coverage gap.

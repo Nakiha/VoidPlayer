@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <string>
@@ -706,6 +707,109 @@ TEST_CASE("TrackStepPolicy retreats tracks only when all can retreat",
     REQUIRE_FALSE(retreat_tracks_if_all_can_retreat(failure_manager));
     REQUIRE(failure_manager[0]->track_buffer->peek(0)->pts_us == 600);
     REQUIRE(failure_manager[1]->track_buffer->peek(0)->pts_us == 700);
+}
+
+TEST_CASE("TrackStepPolicy builds step-forward decisions",
+          "[track_pipeline][track_step_policy]") {
+    TrackPipelineManager empty_manager;
+    PresentDecision decision;
+    PresentDecision last_decision;
+    REQUIRE_FALSE(build_step_forward_decision(
+        empty_manager,
+        1000,
+        1000,
+        last_decision,
+        decision));
+    REQUIRE_FALSE(decision.should_present);
+
+    const auto make_track_with_frames =
+        [](std::initializer_list<int64_t> pts_values) {
+            auto track = std::make_unique<TrackPipeline>();
+            track->track_buffer = std::make_shared<TrackBuffer>();
+            for (const int64_t pts : pts_values) {
+                TextureFrame frame;
+                frame.pts_us = pts;
+                track->track_buffer->push_frame(frame);
+            }
+            return track;
+        };
+
+    TrackPipelineManager manager;
+    manager[1] = make_track_with_frames({1000, 2000, 3000});
+
+    REQUIRE(build_step_forward_decision(
+        manager,
+        1000,
+        1000,
+        last_decision,
+        decision));
+    REQUIRE(decision.should_present);
+    REQUIRE(decision.current_pts_us == 1000);
+    REQUIRE(decision.frames[1].has_value());
+    REQUIRE(decision.frames[1]->pts_us == 2000);
+
+    TextureFrame last_frame;
+    last_frame.pts_us = 2000;
+    last_decision.frames[1] = last_frame;
+    REQUIRE(build_step_forward_decision(
+        manager,
+        1000,
+        1000,
+        last_decision,
+        decision));
+    REQUIRE(decision.frames[1]->pts_us == 3000);
+
+    TrackPipelineManager gap_manager;
+    gap_manager[0] = make_track_with_frames({1000, 10000});
+    PresentDecision gap_decision;
+    REQUIRE_FALSE(build_step_forward_decision(
+        gap_manager,
+        1000,
+        1000,
+        PresentDecision(),
+        gap_decision));
+    REQUIRE_FALSE(gap_decision.should_present);
+}
+
+TEST_CASE("TrackStepPolicy discards consumed step-forward frames",
+          "[track_pipeline][track_step_policy]") {
+    const auto make_track_with_frames =
+        [](std::initializer_list<int64_t> pts_values, int64_t offset_us = 0) {
+            auto track = std::make_unique<TrackPipeline>();
+            track->offset_us = offset_us;
+            track->track_buffer = std::make_shared<TrackBuffer>();
+            for (const int64_t pts : pts_values) {
+                TextureFrame frame;
+                frame.pts_us = pts;
+                track->track_buffer->push_frame(frame);
+            }
+            return track;
+        };
+
+    TrackPipelineManager manager;
+    manager[0] = make_track_with_frames({100, 200, 300});
+    manager[1] = make_track_with_frames({100, 200, 300});
+    manager[2] = make_track_with_frames({100, 200, 300}, 50);
+
+    PresentDecision decision;
+    TextureFrame selected;
+    selected.pts_us = 200;
+    decision.frames[0] = selected;
+
+    PresentDecision last_decision;
+    TextureFrame last_selected;
+    last_selected.pts_us = 200;
+    last_decision.frames[1] = last_selected;
+
+    discard_step_forward_consumed_frames(
+        manager,
+        250,
+        decision,
+        last_decision);
+
+    REQUIRE(manager[0]->track_buffer->peek(0)->pts_us == 300);
+    REQUIRE(manager[1]->track_buffer->peek(0)->pts_us == 300);
+    REQUIRE(manager[2]->track_buffer->peek(0)->pts_us == 300);
 }
 
 TEST_CASE("TrackLifecycle prepares add-track seek to current clock",

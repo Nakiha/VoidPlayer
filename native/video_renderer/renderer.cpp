@@ -637,79 +637,6 @@ void Renderer::emit_seek_preview_presented_events(const PresentDecision& decisio
     }
 }
 
-bool Renderer::build_step_forward_decision_locked(PresentDecision& decision) const {
-    decision = PresentDecision();
-    decision.current_pts_us = playback_->clock().current_pts_us();
-    const int64_t frame_duration_us = compute_frame_duration_us();
-    const int64_t max_step_gap_us = frame_duration_us + frame_duration_us / 2 + 2000;
-
-    bool any_active = false;
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks_[i]) {
-            decision.frames[i] = std::nullopt;
-            continue;
-        }
-        any_active = true;
-
-        int64_t base_pts = decision.current_pts_us - tracks_[i]->offset_us;
-        if (last_decision_.frames[i].has_value()) {
-            base_pts = last_decision_.frames[i]->pts_us;
-        } else if (auto current = tracks_[i]->track_buffer->peek(0); current.has_value()) {
-            base_pts = current->pts_us;
-        }
-
-        std::optional<TextureFrame> best;
-        auto& buffer = tracks_[i]->track_buffer;
-        const size_t total = buffer->total_count();
-        for (size_t offset = 0; offset < total; ++offset) {
-            auto frame = buffer->peek(static_cast<int>(offset));
-            if (!frame.has_value() || frame->pts_us <= base_pts) {
-                continue;
-            }
-            if (!best.has_value() || frame->pts_us < best->pts_us) {
-                best = frame;
-            }
-        }
-
-        if (!best.has_value()) {
-            decision = PresentDecision();
-            return false;
-        }
-        if (frame_duration_us > 0 && best->pts_us - base_pts > max_step_gap_us) {
-            decision = PresentDecision();
-            return false;
-        }
-        decision.frames[i] = best;
-    }
-
-    decision.should_present = any_active;
-    return decision.should_present;
-}
-
-void Renderer::discard_step_forward_consumed_frames_locked(const PresentDecision& decision) {
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks_[i]) continue;
-
-        int64_t keep_after_pts = playback_->clock().current_pts_us() - tracks_[i]->offset_us;
-        if (decision.frames[i].has_value()) {
-            keep_after_pts = decision.frames[i]->pts_us;
-        } else if (last_decision_.frames[i].has_value()) {
-            keep_after_pts = last_decision_.frames[i]->pts_us;
-        }
-
-        auto& buffer = tracks_[i]->track_buffer;
-        while (true) {
-            auto frame = buffer->peek(0);
-            if (!frame.has_value() || frame->pts_us > keep_after_pts) {
-                break;
-            }
-            if (!buffer->advance()) {
-                break;
-            }
-        }
-    }
-}
-
 void Renderer::update_track_geometry_from_decision_locked(const PresentDecision& decision) {
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks_[i] || !decision.frames[i].has_value()) continue;
@@ -766,6 +693,21 @@ void Renderer::step_forward() {
     bool need_decode_wait = false;
     bool need_exact_seek = false;
     int64_t exact_seek_target = 0;
+    const auto build_step_decision_locked = [this](PresentDecision& decision) {
+        return build_step_forward_decision(
+            tracks_,
+            playback_->clock().current_pts_us(),
+            compute_frame_duration_us(),
+            last_decision_,
+            decision);
+    };
+    const auto discard_step_consumed_locked = [this](const PresentDecision& decision) {
+        discard_step_forward_consumed_frames(
+            tracks_,
+            playback_->clock().current_pts_us(),
+            decision,
+            last_decision_);
+    };
     const auto set_video_decode_paused_locked = [this](bool paused) {
         apply_track_video_decode_pause_state(
             tracks_,
@@ -785,8 +727,8 @@ void Renderer::step_forward() {
         playback_->clock().pause();
         playing_ = false;
 
-        if (build_step_forward_decision_locked(step_decision)) {
-            discard_step_forward_consumed_frames_locked(step_decision);
+        if (build_step_decision_locked(step_decision)) {
+            discard_step_consumed_locked(step_decision);
             int ref = first_active_track();
             if (ref >= 0) {
                 auto& frame = step_decision.frames[ref];
@@ -796,7 +738,7 @@ void Renderer::step_forward() {
             }
             have_step_decision = true;
         } else {
-            discard_step_forward_consumed_frames_locked(last_decision_);
+            discard_step_consumed_locked(last_decision_);
             set_video_decode_paused_locked(false);
             need_decode_wait = true;
         }
@@ -808,9 +750,9 @@ void Renderer::step_forward() {
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 if (!initialized_) return;
-                if (build_step_forward_decision_locked(step_decision)) {
+                if (build_step_decision_locked(step_decision)) {
                     set_video_decode_paused_locked(true);
-                    discard_step_forward_consumed_frames_locked(step_decision);
+                    discard_step_consumed_locked(step_decision);
                     int ref = first_active_track();
                     if (ref >= 0) {
                         auto& frame = step_decision.frames[ref];

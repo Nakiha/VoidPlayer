@@ -106,6 +106,7 @@ Fixed or reduced:
 - `Renderer`: shared step buffering gate moved into `track_lifecycle`.
 - `Renderer`: step-backward retreat fanout moved into `track_lifecycle`.
 - `Renderer`: step-specific track helpers moved into dedicated `track_step_policy` owner.
+- `Renderer`: step-forward next-frame selection and consumed-frame draining moved into `track_step_policy`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -129,7 +130,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P74 Renderer Step Forward Decision Boundary.
+Next patch: P75 Renderer Step Frame Duration Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1072,11 +1073,33 @@ Result:
 
 ### P74 - Renderer Step Forward Decision Boundary
 
+Status: done in Patch 74.
+
 Goal:
 
 - Move `Renderer::build_step_forward_decision_locked` next-frame selection into `track_step_policy`.
 - Move `Renderer::discard_step_forward_consumed_frames_locked` consumed-frame draining into `track_step_policy`.
 - Keep `Renderer` responsible for lock ownership, playback clock updates, wait loop, exact-seek fallback, present, and logging.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_step_forward_visual_regression.csv`
+
+Result:
+
+- Added `build_step_forward_decision` and `discard_step_forward_consumed_frames` to `track_step_policy`.
+- Removed the corresponding private Renderer methods; `Renderer::step_forward` now passes current clock, frame duration, last decision, and track manager facts to the policy helper.
+- Added focused native coverage for empty decisions, last-decision base PTS, oversized step gaps, and consumed-frame draining.
+- Verified with native-only tests plus rebuilt smoke and H.265 step-forward UI.
+
+### P75 - Renderer Step Frame Duration Boundary
+
+Goal:
+
+- Move `Renderer::compute_frame_duration_us` min-current-frame duration policy into `track_step_policy`.
+- Keep the fallback duration and "highest FPS wins" semantics unchanged.
+- Keep `Renderer` responsible for deciding when step-forward/step-backward need a duration.
 
 Validation:
 

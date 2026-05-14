@@ -281,8 +281,12 @@ TODO:
    - 已把 step-specific helper 从 generic `track_lifecycle` 迁到独立 `track_step_policy`，避免 lifecycle helper 继续膨胀成二级 god object。
    - 验证：native-only + smoke UI。
 
-30. [ ] `StepForwardDecisionPolicy`
-   - 后续把 `build_step_forward_decision_locked()` 的 next-frame selection 和 `discard_step_forward_consumed_frames_locked()` 的 buffer drain 拆到 `track_step_policy`。
+30. [x] `StepForwardDecisionPolicy`
+   - 已把 `build_step_forward_decision_locked()` 的 next-frame selection 和 `discard_step_forward_consumed_frames_locked()` 的 buffer drain 拆到 `track_step_policy`。
+   - 验证：native-only + smoke/step-forward UI。
+
+31. [ ] `StepFrameDurationPolicy`
+   - 后续把 `compute_frame_duration_us()` 的 per-track min duration/fallback policy 拆到 `track_step_policy`。
    - 验证：native-only + smoke/step-forward UI。
 
 ## P1 - Windows Runner Plugin Split

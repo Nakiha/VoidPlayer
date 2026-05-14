@@ -290,6 +290,73 @@ TEST_CASE("TrackSnapshot builds track perf stats",
     REQUIRE(short_window.stats.fps == 0.0);
 }
 
+TEST_CASE("TrackSnapshot builds track GPU memory stats",
+          "[track_pipeline][track_snapshot]") {
+    TrackPipeline track;
+    track.file_id = 64;
+    track.track_buffer = std::make_shared<TrackBuffer>(3, 2);
+    TextureFrame buffered_frame;
+    buffered_frame.cpu_data = std::make_shared<std::vector<uint8_t>>(32);
+    track.track_buffer->push_frame(buffered_frame);
+
+    track.packet_queue = std::make_unique<PacketQueue>();
+    AVPacket* packet = av_packet_alloc();
+    REQUIRE(packet != nullptr);
+    REQUIRE(av_new_packet(packet, 48) == 0);
+    REQUIRE(track.packet_queue->try_push(packet));
+
+    DecodeMemoryStats decode_stats;
+    decode_stats.hardware_enabled = true;
+    decode_stats.hardware_download_to_cpu = true;
+    decode_stats.hw_format = 23;
+    decode_stats.sw_format = 0;
+    decode_stats.hw_width = 1920;
+    decode_stats.hw_height = 1080;
+    decode_stats.hw_initial_pool_size = 8;
+    decode_stats.extra_hw_frames = 3;
+    decode_stats.estimated_hw_frame_bytes = 1024;
+    decode_stats.estimated_hw_pool_bytes = 8192;
+    decode_stats.snapshot_pool.estimated_bytes = 512;
+    decode_stats.exact_seek_candidate_cpu_bytes = 128;
+    decode_stats.exact_seek_stable_cpu_bytes = 256;
+    decode_stats.exact_seek_reorder_count = 5;
+    decode_stats.exact_seek_pending_count = 2;
+    decode_stats.exact_seek_stable_frame_count = 1;
+
+    const auto buffer_bytes = track.track_buffer->estimated_cpu_bytes();
+    const auto packet_bytes = track.packet_queue->estimated_bytes();
+    auto stats = snapshot_track_gpu_memory_stats(2, track, &decode_stats, 4096);
+
+    REQUIRE(stats.slot == 2);
+    REQUIRE(stats.file_id == 64);
+    REQUIRE(stats.buffer_count == 1);
+    REQUIRE(stats.buffer_capacity == track.track_buffer->max_count());
+    REQUIRE(stats.track_buffer_cpu_bytes == buffer_bytes);
+    REQUIRE(stats.packet_queue_bytes == packet_bytes);
+    REQUIRE(stats.hardware_enabled);
+    REQUIRE(stats.hardware_download_to_cpu);
+    REQUIRE(stats.hw_format == 23);
+    REQUIRE(stats.hw_width == 1920);
+    REQUIRE(stats.hw_height == 1080);
+    REQUIRE(stats.hw_initial_pool_size == 8);
+    REQUIRE(stats.extra_hw_frames == 3);
+    REQUIRE(stats.decoder_frame_bytes == 1024);
+    REQUIRE(stats.decoder_pool_bytes == 8192);
+    REQUIRE(stats.exact_seek_snapshot_bytes == 512);
+    REQUIRE(stats.presenter_copy_texture_bytes == 4096);
+    REQUIRE(stats.exact_seek_candidate_cpu_bytes == 128);
+    REQUIRE(stats.exact_seek_stable_cpu_bytes == 256);
+    REQUIRE(stats.exact_seek_reorder_count == 5);
+    REQUIRE(stats.exact_seek_pending_count == 2);
+    REQUIRE(stats.exact_seek_stable_frame_count == 1);
+    REQUIRE(stats.total_cpu_frame_bytes == buffer_bytes + 128 + 256);
+
+    auto without_decode = snapshot_track_gpu_memory_stats(2, track, nullptr, 0);
+    REQUIRE_FALSE(without_decode.hardware_enabled);
+    REQUIRE(without_decode.decoder_pool_bytes == 0);
+    REQUIRE(without_decode.total_cpu_frame_bytes == buffer_bytes);
+}
+
 TEST_CASE("TrackLifecycle compacts cached present decisions",
           "[track_pipeline][track_lifecycle]") {
     PresentDecision decision;

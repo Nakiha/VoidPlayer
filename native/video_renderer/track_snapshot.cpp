@@ -72,4 +72,49 @@ TrackPerfSnapshotResult snapshot_track_perf_stats(
     return {stats, decode_perf.frames_decoded};
 }
 
+TrackGpuMemoryStats snapshot_track_gpu_memory_stats(
+    size_t slot,
+    const TrackPipeline& track,
+    const DecodeMemoryStats* decode_stats,
+    uint64_t presenter_copy_texture_bytes) {
+    TrackGpuMemoryStats stats;
+    stats.slot = static_cast<int>(slot);
+    stats.file_id = track.file_id;
+    if (track.track_buffer) {
+        stats.buffer_count = track.track_buffer->total_count();
+        stats.buffer_capacity = track.track_buffer->max_count();
+        stats.track_buffer_cpu_bytes = track.track_buffer->estimated_cpu_bytes();
+    }
+    if (track.packet_queue) {
+        stats.packet_queue_bytes = track.packet_queue->estimated_bytes();
+    }
+    if (decode_stats) {
+        stats.hardware_enabled = decode_stats->hardware_enabled;
+        stats.hardware_download_to_cpu = decode_stats->hardware_download_to_cpu;
+        stats.hw_format = decode_stats->hw_format;
+        stats.sw_format = decode_stats->sw_format;
+        stats.hw_width = decode_stats->hw_width;
+        stats.hw_height = decode_stats->hw_height;
+        stats.hw_initial_pool_size = decode_stats->hw_initial_pool_size;
+        stats.extra_hw_frames = decode_stats->extra_hw_frames;
+        stats.decoder_frame_bytes = decode_stats->estimated_hw_frame_bytes;
+        stats.decoder_pool_bytes = decode_stats->estimated_hw_pool_bytes;
+        stats.exact_seek_snapshot_bytes = decode_stats->snapshot_pool.estimated_bytes;
+        stats.exact_seek_candidate_cpu_bytes =
+            decode_stats->exact_seek_candidate_cpu_bytes;
+        stats.exact_seek_stable_cpu_bytes =
+            decode_stats->exact_seek_stable_cpu_bytes;
+        stats.exact_seek_reorder_count = decode_stats->exact_seek_reorder_count;
+        stats.exact_seek_pending_count = decode_stats->exact_seek_pending_count;
+        stats.exact_seek_stable_frame_count =
+            decode_stats->exact_seek_stable_frame_count;
+    }
+    stats.presenter_copy_texture_bytes = presenter_copy_texture_bytes;
+    stats.total_cpu_frame_bytes =
+        stats.track_buffer_cpu_bytes +
+        stats.exact_seek_candidate_cpu_bytes +
+        stats.exact_seek_stable_cpu_bytes;
+    return stats;
+}
+
 } // namespace vr

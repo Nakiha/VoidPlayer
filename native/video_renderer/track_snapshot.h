@@ -1,6 +1,7 @@
 #pragma once
 
 #include "video_renderer/decode/decode_thread.h"
+#include "video_renderer/track_gpu_memory_stats.h"
 #include "video_renderer/track_info.h"
 #include "video_renderer/track_perf_stats.h"
 #include "video_renderer/track_pipeline.h"
@@ -26,5 +27,11 @@ TrackPerfSnapshotResult snapshot_track_perf_stats(
     const std::optional<TextureFrame>& current_frame,
     uint64_t baseline_frames,
     double elapsed_s);
+
+TrackGpuMemoryStats snapshot_track_gpu_memory_stats(
+    size_t slot,
+    const TrackPipeline& track,
+    const DecodeMemoryStats* decode_stats,
+    uint64_t presenter_copy_texture_bytes);
 
 } // namespace vr

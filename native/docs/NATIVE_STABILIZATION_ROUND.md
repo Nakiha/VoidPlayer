@@ -97,6 +97,7 @@ Fixed or reduced:
 - `Renderer`: active track count and first-active-slot queries moved into `TrackPipelineManager`.
 - `Renderer`: track metadata snapshot assembly moved into `track_snapshot`.
 - `Renderer`: per-track performance stats snapshot assembly moved into `track_snapshot`.
+- `Renderer`: per-track GPU/memory stats snapshot assembly moved into `track_snapshot`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -120,7 +121,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P65 Renderer Track GPU Memory Snapshot Boundary.
+Next patch: P66 Renderer Loop Range Seek Policy Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -874,6 +875,8 @@ Result:
 
 ### P65 - Renderer Track GPU Memory Snapshot Boundary
 
+Status: done in Patch 65.
+
 Goal:
 
 - Move per-track GPU/memory stats field assembly out of `Renderer::gpu_memory_stats`.
@@ -883,6 +886,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `TrackGpuMemoryStats` as a standalone payload header and `snapshot_track_gpu_memory_stats` in `track_snapshot`.
+- `Renderer::gpu_memory_stats` now delegates per-track buffer, packet, decode, exact-seek, and presenter-copy memory payload assembly while retaining device locks and aggregate totals.
+- Added native coverage for synthetic track buffer bytes, packet queue bytes, decode memory fields, presenter-copy bytes, exact-seek counters, and no-decode defaults.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P66 - Renderer Loop Range Seek Policy Boundary
+
+Goal:
+
+- Move `apply_loop_range_locked` decision logic into a small seek/playback policy helper.
+- Keep `Renderer` responsible for lock ownership, reading the playback clock, logging, and invoking `seek_internal`.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/loop/h265_loop_range_enable_regression.csv`
 
 ## Do-Not-Drift List
 

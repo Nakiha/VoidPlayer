@@ -2263,48 +2263,17 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
             continue;
         }
 
-        TrackGpuMemoryStats track;
-        track.slot = static_cast<int>(i);
-        track.file_id = tracks_[i]->file_id;
-        if (tracks_[i]->track_buffer) {
-            track.buffer_count = tracks_[i]->track_buffer->total_count();
-            track.buffer_capacity = tracks_[i]->track_buffer->max_count();
-            track.track_buffer_cpu_bytes =
-                tracks_[i]->track_buffer->estimated_cpu_bytes();
-        }
-        if (tracks_[i]->packet_queue) {
-            track.packet_queue_bytes = tracks_[i]->packet_queue->estimated_bytes();
-        }
+        std::optional<DecodeMemoryStats> decode_stats;
         if (tracks_[i]->decode_thread) {
-            const auto decode_stats = tracks_[i]->decode_thread->memory_stats();
-            track.hardware_enabled = decode_stats.hardware_enabled;
-            track.hardware_download_to_cpu = decode_stats.hardware_download_to_cpu;
-            track.hw_format = decode_stats.hw_format;
-            track.sw_format = decode_stats.sw_format;
-            track.hw_width = decode_stats.hw_width;
-            track.hw_height = decode_stats.hw_height;
-            track.hw_initial_pool_size = decode_stats.hw_initial_pool_size;
-            track.extra_hw_frames = decode_stats.extra_hw_frames;
-            track.decoder_frame_bytes = decode_stats.estimated_hw_frame_bytes;
-            track.decoder_pool_bytes = decode_stats.estimated_hw_pool_bytes;
-            track.exact_seek_snapshot_bytes = decode_stats.snapshot_pool.estimated_bytes;
-            track.exact_seek_candidate_cpu_bytes =
-                decode_stats.exact_seek_candidate_cpu_bytes;
-            track.exact_seek_stable_cpu_bytes =
-                decode_stats.exact_seek_stable_cpu_bytes;
-            track.exact_seek_reorder_count = decode_stats.exact_seek_reorder_count;
-            track.exact_seek_pending_count = decode_stats.exact_seek_pending_count;
-            track.exact_seek_stable_frame_count =
-                decode_stats.exact_seek_stable_frame_count;
+            decode_stats = tracks_[i]->decode_thread->memory_stats();
         }
-        if (i < presenter_stats.slots.size()) {
-            track.presenter_copy_texture_bytes =
-                presenter_stats.slots[i].render_nv12_copy_texture_bytes;
-        }
-        track.total_cpu_frame_bytes =
-            track.track_buffer_cpu_bytes +
-            track.exact_seek_candidate_cpu_bytes +
-            track.exact_seek_stable_cpu_bytes;
+        const uint64_t presenter_copy_texture_bytes =
+            i < presenter_stats.slots.size()
+                ? presenter_stats.slots[i].render_nv12_copy_texture_bytes
+                : 0;
+        auto track = snapshot_track_gpu_memory_stats(
+            i, *tracks_[i], decode_stats ? &*decode_stats : nullptr,
+            presenter_copy_texture_bytes);
         result.decoder_pool_bytes += track.decoder_pool_bytes;
         result.exact_seek_snapshot_bytes += track.exact_seek_snapshot_bytes;
         result.track_buffer_cpu_bytes += track.track_buffer_cpu_bytes;

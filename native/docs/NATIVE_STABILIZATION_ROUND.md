@@ -84,13 +84,14 @@ Fixed or reduced:
 - `Renderer`: analysis overlay CPU cache, D3D overlay resource helpers, mask pass, and overlay draw pass moved into `AnalysisOverlayRenderer`; `Renderer` now delegates the overlay pass after the base frame draw.
 - `Renderer`: layout state/constants moved to layout-owned helpers; `Renderer` now snapshots track geometry and delegates shader layout math to `layout_geometry`.
 - `Renderer`: render-loop debounce, diagnostics cadence, and frame-deadline sleep policy moved into `RenderLoopController`.
+- `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - Windows runner plugin: diagnostics, logging bootstrap, texture bridge, file picker, method dispatch, and MethodChannel diagnostics scope were split.
 - Process-global logging/crash FFI ownership is now documented.
 
 Still active:
 
 - `Renderer` remains the coordination root.
-- `ffi_exports.cpp` remains an ABI God Module candidate.
+- `ffi_exports.cpp` still carries ABI guard, marshalling, and command dispatch density.
 - `TrackPipelineManager` still hides lifecycle factory order and should keep shrinking.
 - `DecodeThread` remains a large seek/decode state machine.
 - Target/feature boundaries are still too coupled.
@@ -98,7 +99,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P42 FFI ABI God Module Split.
+Next patch: P43 TrackPipelineManager Lifecycle Split.
 
 ### P30 - VACache Atomic Publish
 
@@ -370,15 +371,23 @@ Result:
 
 ### P42 - FFI ABI God Module Split
 
+Status: done in Patch 42.
+
 Goal:
 
-- Keep `ffi_exports.cpp` as extern "C" ABI shim only.
-- Move handle registry / command implementations / marshalling into smaller native modules.
+- Move the player handle registry, closing gate lease, thread-local last error, and per-player error state out of `ffi_exports.cpp`.
+- Keep extern "C" ABI entrypoints and command marshalling unchanged in this first FFI split.
 
 Validation:
 
 - `python dev.py test --native-only`
 - FFI C validation already included in native tests.
+
+Result:
+
+- Added `ffi_player_registry` as the owner for live player map registration, unregister/pin, gate-locked `PlayerLease`, and invalid/destroyed handle reporting.
+- `ffi_exports.cpp` now includes the registry boundary and keeps ABI guards, struct marshalling, and exported command functions for follow-up splits.
+- `video_renderer_ffi` now builds the registry translation unit explicitly.
 
 ### P43 - TrackPipelineManager Lifecycle Split
 

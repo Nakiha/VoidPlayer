@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "test_utils.h"
 #include "video_renderer/d3d11/device.h"
+#include <wrl/client.h>
 
 using namespace vr::test;
 
@@ -71,6 +72,45 @@ TEST_CASE("D3D11Device shutdown clears all pointers", "[d3d11][device]") {
     REQUIRE(dev.swap_chain() == nullptr);
     REQUIRE(dev.feature_level() == static_cast<D3D_FEATURE_LEVEL>(0));
 
+    destroy_window(hwnd);
+}
+
+TEST_CASE("D3D11Device shutdown clears immediate-context bindings",
+          "[d3d11][device]") {
+    vr::D3D11Device dev;
+    HWND hwnd = create_hidden_window();
+
+    REQUIRE(dev.initialize(hwnd, 800, 600) == true);
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> context = dev.context();
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = 64;
+    desc.Height = 64;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+    REQUIRE(SUCCEEDED(dev.device()->CreateTexture2D(&desc, nullptr, &texture)));
+
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
+    REQUIRE(SUCCEEDED(dev.device()->CreateRenderTargetView(
+        texture.Get(), nullptr, &rtv)));
+
+    ID3D11RenderTargetView* bound_rtv = rtv.Get();
+    context->OMSetRenderTargets(1, &bound_rtv, nullptr);
+    rtv.Reset();
+
+    dev.shutdown();
+
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> still_bound;
+    context->OMGetRenderTargets(1, still_bound.GetAddressOf(), nullptr);
+    REQUIRE(still_bound.Get() == nullptr);
+
+    context.Reset();
     destroy_window(hwnd);
 }
 

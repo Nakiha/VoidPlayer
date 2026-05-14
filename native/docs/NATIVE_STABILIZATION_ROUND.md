@@ -48,7 +48,7 @@ chat 给出的方向和当前代码状态高度匹配。优先级最高的不是
 | S9 | demux read error 没传播成明确 track error/event | `DemuxThread::run()` 非 EOF read error 后 break，最后只 `abort_outputs()` | DONE - Patch 9 |
 | S10 | `avcodec_open2()` 未包 SEH guard | send/receive 已有 SEH wrapper，open 阶段仍直调 | DONE - Patch 10 |
 | S11 | odd-dimension software path 直接拒绝 | `calculate_yuv420_layout()` 要求 width/height 都是偶数 | DONE - Patch 11 |
-| S12 | `D3D11Device::shutdown()` 缺 `ClearState + Flush` | shutdown 直接 reset swapchain/context/device | cleanup patch |
+| S12 | `D3D11Device::shutdown()` 缺 `ClearState + Flush` | shutdown 直接 reset swapchain/context/device | DONE - Patch 12 |
 
 ## Patch Plan
 
@@ -403,16 +403,36 @@ Follow-up:
 
 - S12 D3D shutdown `ClearState + Flush` cleanup is next.
 
+2026-05-15 Patch 12 - D3D Shutdown Flush
+
+Changed:
+
+- `D3D11Device::shutdown()` now calls `ClearState()` and `Flush()` before releasing swap chain, context, and device references.
+- Added a native regression that keeps an external immediate-context reference alive, binds an RTV, calls shutdown, and verifies the binding is cleared.
+
+Verified:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- Second-tier native correctness backlog from `review_native.md` is now complete except the broader #6/#7 facade/FFI lifecycle cleanup items.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
 
 | 来源 | 复核项 | 结果 |
 | --- | --- | --- |
-| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | fixed: #1/#2/#3/#4/#5/#8/#9/#10/#11/#12; accepted-backlog: #6/#7/#13 |
+| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | fixed: #1/#2/#3/#4/#5/#8/#9/#10/#11/#12/#13; accepted-backlog: #6/#7 |
 | `review_godobject.md` | God Object 排名和 owner boundary 判断 | fixed: AudioMixer boundary + Analysis session snapshot; accepted-backlog: remaining owner splits |
 | `review_overlay.md` | AnalysisManager、VACHUNK、overlay cache、D3D pass 风险 | fixed: AnalysisManager session + current-base chunk filter; accepted-backlog: remaining overlay/cache/render-pass items |
-| `split_adv.md` | Patch 顺序和“不贪大”边界 | fixed: Patch 1-11 executed in stabilization-sized slices |
+| `split_adv.md` | Patch 顺序和“不贪大”边界 | fixed: Patch 1-12 executed in stabilization-sized slices |
 
 复核时只标三类状态：
 
@@ -434,12 +454,12 @@ fixed:
 - #10 demux read error propagation: Patch 9 emits track error events and marks the track buffer Error on non-EOF read errors.
 - #11 `avcodec_open2()` SEH guard: Patch 10 routes codec open and software fallback open through a noinline SEH wrapper.
 - #12 odd-dimension software path: Patch 11 pads coded CPU NV12/P010 buffers while preserving odd display dimensions.
+- #13 D3D shutdown `ClearState + Flush`: Patch 12 clears immediate-context bindings and flushes before device release.
 
 accepted-backlog:
 
 - #6 NativePlayer facade locking remains a lifecycle boundary cleanup.
 - #7 FFI long-operation serialization remains an ABI/registry cleanup.
-- #13 D3D shutdown `ClearState + Flush` maps to S12.
 
 not-applicable:
 
@@ -495,10 +515,11 @@ fixed:
 - Patch 9 completed the S9 demux read-error propagation as a narrow error-model patch.
 - Patch 10 completed the S10 codec-open SEH guard as a narrow decode hardening patch.
 - Patch 11 completed the S11 odd-dimension software-frame compatibility patch without adding generic scaling fallback.
+- Patch 12 completed the S12 D3D shutdown cleanup as a narrow lifecycle patch.
 
 accepted-backlog:
 
-- Remaining second-priority owner boundary work starts with S12 or a future `FrameCaptureService`; avoid jumping straight into a large Renderer split.
+- Remaining second-priority owner boundary work should continue as explicit owner-boundary slices such as `FrameCaptureService`; avoid jumping straight into a large Renderer split.
 
 not-applicable:
 

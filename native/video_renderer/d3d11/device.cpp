@@ -251,8 +251,12 @@ void D3D11Device::shutdown() {
         return;
     }
 
-    dump_debug_messages();
+    if (context_) {
+        context_->ClearState();
+        context_->Flush();
+    }
 
+    dump_debug_messages();
     swap_chain_.Reset();
     context_.Reset();
     device_.Reset();

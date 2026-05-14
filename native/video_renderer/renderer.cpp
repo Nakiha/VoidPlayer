@@ -18,7 +18,6 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -38,21 +37,6 @@ uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
     return static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - start).count());
-}
-
-bool is_h264_flv_track(const TrackPipeline& track) {
-    if (!track.demux_thread) {
-        return false;
-    }
-    const auto& stats = track.demux_thread->stats();
-    if (!stats.codec_params || stats.codec_params->codec_id != AV_CODEC_ID_H264) {
-        return false;
-    }
-    std::string format = stats.format_name;
-    std::transform(format.begin(), format.end(), format.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return format.find("flv") != std::string::npos;
 }
 
 Renderer::Renderer()
@@ -393,14 +377,15 @@ void Renderer::seek_internal(int64_t target_pts_us,
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks_[i]) continue;
         auto* track = tracks_[i].get();
-        if (type == SeekType::Exact && is_h264_flv_track(*track)) {
+        const auto seek_facts =
+            inspect_track_seek_facts(*track, target_pts_us, type);
+        if (seek_facts.warn_h264_flv_exact_seek) {
             spdlog::warn("[Renderer] Exact seek on H.264/FLV is best-effort: "
                          "streams that omit SPS/PPS on IDR frames can decode "
                          "incorrectly after seek. Remux/re-encode with repeated "
                          "headers for frame-accurate previews.");
         }
-        const auto track_target =
-            resolve_track_seek_target(*track, target_pts_us);
+        const auto& track_target = seek_facts.target;
         if (track_target.clamped) {
             spdlog::info("[Renderer] seek_internal: track[{}] target clamp "
                          "requested={:.3f}s, clamped={:.3f}s",
@@ -408,10 +393,8 @@ void Renderer::seek_internal(int64_t target_pts_us,
                          track_target.requested_target_us / 1e6,
                          track_target.target_us / 1e6);
         }
-        const bool hardware_decode_enabled =
-            track->decode_thread->is_hardware_decode_enabled();
         const TrackSeekPreparationConfig seek_prep_config{
-            hardware_decode_enabled,
+            seek_facts.hardware_decode_enabled,
         };
         const TrackSeekPreparationHooks seek_prep_hooks{
             [this](int file_id, bool paused) {
@@ -427,13 +410,10 @@ void Renderer::seek_internal(int64_t target_pts_us,
         };
         const auto seek_prep =
             prepare_track_seek_transition(*track, seek_prep_config, seek_prep_hooks);
-        const bool is_hevc_hw_seek =
-            hardware_decode_enabled &&
-            track->decode_thread->codec_id() == AV_CODEC_ID_HEVC;
         const bool paused_seek = !playing_.load();
         const SeekType track_seek_type = type;
         HevcSeekRecreateInput hevc_recreate_input;
-        hevc_recreate_input.is_hevc_hw_seek = is_hevc_hw_seek;
+        hevc_recreate_input.is_hevc_hw_seek = seek_facts.hevc_hardware_seek;
         hevc_recreate_input.paused_seek = paused_seek;
         hevc_recreate_input.seek_transition_active = seek_prep.seek_transition_active;
         hevc_recreate_input.recreated_for_paused_hevc_seek =
@@ -535,14 +515,7 @@ void Renderer::mark_paused_hevc_seek_preview_drawn_locked() {
 }
 
 bool Renderer::has_hevc_hw_track_locked() const {
-    for (const auto& track : tracks_) {
-        if (!track) continue;
-        if (track->decode_thread->is_hardware_decode_enabled() &&
-            track->decode_thread->codec_id() == AV_CODEC_ID_HEVC) {
-            return true;
-        }
-    }
-    return false;
+    return any_track_uses_hardware_codec(tracks_, AV_CODEC_ID_HEVC);
 }
 
 void Renderer::emit_event(const RendererEvent& event) {

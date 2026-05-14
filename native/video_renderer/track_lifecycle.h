@@ -78,9 +78,27 @@ struct TrackSeekTargetResolution {
     bool clamped = false;
 };
 
+struct TrackSeekFacts {
+    TrackSeekTargetResolution target;
+    bool warn_h264_flv_exact_seek = false;
+    bool hardware_decode_enabled = false;
+    bool hevc_hardware_seek = false;
+};
+
 TrackSeekTargetResolution resolve_track_seek_target(
     const TrackPipeline& track,
     int64_t global_target_pts_us);
+
+bool track_uses_hardware_codec(const TrackPipeline& track, AVCodecID codec_id);
+
+bool any_track_uses_hardware_codec(
+    const TrackPipelineManager& tracks,
+    AVCodecID codec_id);
+
+TrackSeekFacts inspect_track_seek_facts(
+    const TrackPipeline& track,
+    int64_t global_target_pts_us,
+    SeekType type);
 
 struct TrackOffsetMutationHooks {
     std::function<void(size_t slot, int64_t offset_us)> set_render_track_offset;

@@ -136,6 +136,7 @@ Fixed or reduced:
 - `Renderer`: per-track perf stats collection moved into `track_snapshot`; Renderer keeps timing and baseline rotation ownership.
 - `Renderer`: per-track GPU/memory stats collection moved into `track_snapshot`; Renderer keeps D3D presenter/headless/overlay aggregation.
 - `Renderer`: analysis-overlay GPU resource memory accounting moved into `analysis_overlay_renderer`.
+- `Renderer`: per-track seek target/hardware/codec warning facts moved into `track_lifecycle`; Renderer keeps logging and seek actions.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
@@ -154,7 +155,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P99 Renderer Seek Track Facts Boundary.
+Next patch: P100 Renderer Seek Track Transition Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1645,11 +1646,34 @@ Result:
 
 ### P99 - Renderer Seek Track Facts Boundary
 
+Status: done in Patch 99.
+
 Goal:
 
 - Move per-track seek classification facts out of `Renderer::seek_internal`.
 - Centralize target clamp, hardware-decode status, HEVC hardware seek detection, and H.264/FLV exact-seek warning facts.
 - Keep Renderer responsible for logging, hook wiring, pipeline recreation, and seek submission for this patch.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `TrackSeekFacts`, `inspect_track_seek_facts`, `track_uses_hardware_codec`, and `any_track_uses_hardware_codec` to `track_lifecycle`.
+- `Renderer::seek_internal` now consumes per-track seek facts instead of directly inspecting demux/decode details.
+- `Renderer::has_hevc_hw_track_locked` now delegates the HEVC hardware scan to `track_lifecycle`.
+- Added native coverage for target resolution, no-demux/no-decode facts, and empty-manager hardware codec scanning.
+- Verified with native-only tests plus rebuilt smoke and h265 seek visual UI.
+
+### P100 - Renderer Seek Track Transition Boundary
+
+Goal:
+
+- Continue reducing `Renderer::seek_internal` by extracting per-track transition/recreate input assembly.
+- Keep Renderer responsible for hook wiring and actual `recreate_pipeline_for_seek` / `submit_track_seek_after_recreate` calls.
+- Preserve paused HEVC hardware seek coalescing and failure behavior.
 
 Validation:
 

@@ -785,6 +785,27 @@ TEST_CASE("TrackLifecycle resolves per-track seek target",
     REQUIRE(result.clamped);
 }
 
+TEST_CASE("TrackLifecycle inspects per-track seek facts",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipeline track;
+    track.offset_us = 125000;
+
+    const auto facts = inspect_track_seek_facts(
+        track, 1000000, SeekType::Exact);
+
+    REQUIRE(facts.target.requested_target_us == 875000);
+    REQUIRE(facts.target.target_us == 875000);
+    REQUIRE_FALSE(facts.target.clamped);
+    REQUIRE_FALSE(facts.warn_h264_flv_exact_seek);
+    REQUIRE_FALSE(facts.hardware_decode_enabled);
+    REQUIRE_FALSE(facts.hevc_hardware_seek);
+    REQUIRE_FALSE(track_uses_hardware_codec(track, AV_CODEC_ID_HEVC));
+
+    TrackPipelineManager manager;
+    manager[1] = std::make_unique<TrackPipeline>();
+    REQUIRE_FALSE(any_track_uses_hardware_codec(manager, AV_CODEC_ID_HEVC));
+}
+
 TEST_CASE("TrackLifecycle applies track offset mutation",
           "[track_pipeline][track_lifecycle]") {
     TrackPipeline track;

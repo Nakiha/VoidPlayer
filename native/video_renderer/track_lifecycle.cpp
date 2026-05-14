@@ -3,12 +3,32 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <optional>
+#include <string>
 #include <thread>
 #include <utility>
 
 namespace vr {
+namespace {
+
+bool is_h264_flv_track(const TrackPipeline& track) {
+    if (!track.demux_thread) {
+        return false;
+    }
+    const auto& stats = track.demux_thread->stats();
+    if (!stats.codec_params || stats.codec_params->codec_id != AV_CODEC_ID_H264) {
+        return false;
+    }
+    std::string format = stats.format_name;
+    std::transform(format.begin(), format.end(), format.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return format.find("flv") != std::string::npos;
+}
+
+} // namespace
 
 bool configure_and_start_track_pipeline(
     TrackPipeline& pipeline,
@@ -172,6 +192,39 @@ TrackSeekTargetResolution resolve_track_seek_target(
     result.target_us = clamp_track_seek_target_us(track, global_target_pts_us);
     result.clamped = result.target_us != result.requested_target_us;
     return result;
+}
+
+bool track_uses_hardware_codec(const TrackPipeline& track, AVCodecID codec_id) {
+    if (!track.decode_thread) {
+        return false;
+    }
+    return track.decode_thread->is_hardware_decode_enabled() &&
+           track.decode_thread->codec_id() == codec_id;
+}
+
+bool any_track_uses_hardware_codec(
+    const TrackPipelineManager& tracks,
+    AVCodecID codec_id) {
+    for (const auto& track : tracks) {
+        if (track && track_uses_hardware_codec(*track, codec_id)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+TrackSeekFacts inspect_track_seek_facts(
+    const TrackPipeline& track,
+    int64_t global_target_pts_us,
+    SeekType type) {
+    TrackSeekFacts facts;
+    facts.target = resolve_track_seek_target(track, global_target_pts_us);
+    facts.warn_h264_flv_exact_seek =
+        type == SeekType::Exact && is_h264_flv_track(track);
+    facts.hardware_decode_enabled =
+        track.decode_thread && track.decode_thread->is_hardware_decode_enabled();
+    facts.hevc_hardware_seek = track_uses_hardware_codec(track, AV_CODEC_ID_HEVC);
+    return facts;
 }
 
 TrackOffsetMutationResult apply_track_offset_mutation(

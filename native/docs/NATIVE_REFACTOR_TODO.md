@@ -381,8 +381,12 @@ TODO:
    - 已把 `Renderer::gpu_memory_stats()` 的 analysis overlay GPU resource aggregation 迁出 Renderer。
    - 验证：native-only + smoke UI。
 
-55. [ ] `TrackSeekFacts`
-   - 后续把 `Renderer::seek_internal()` 中 per-track target clamp / hardware decode / HEVC-HW / H.264-FLV exact-seek warning facts 集中到 track lifecycle helper。
+55. [x] `TrackSeekFacts`
+   - 已把 `Renderer::seek_internal()` 中 per-track target clamp / hardware decode / HEVC-HW / H.264-FLV exact-seek warning facts 集中到 track lifecycle helper。
+   - 验证：native-only + smoke/seek UI。
+
+56. [ ] `TrackSeekTransitionAssembly`
+   - 后续继续拆 `Renderer::seek_internal()` 中 per-track transition/recreate input assembly，Renderer 暂保留 hooks 和实际 seek/recreate 动作。
    - 验证：native-only + smoke/seek UI。
 
 ## P1 - Windows Runner Plugin Split

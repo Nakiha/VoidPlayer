@@ -9,6 +9,7 @@
 #include "video_renderer/sync/render_sink.h"
 #include "video_renderer/track_pipeline.h"
 #include "video_renderer/capture/frame_capture_service.h"
+#include "video_renderer/layout_controller.h"
 #include "video_renderer/shader_constants.h"
 #include "common/logging.h"
 #include <vector>
@@ -440,6 +441,7 @@ private:
     std::unique_ptr<RenderSink> render_sink_;
     D3D11RenderResources* d3d_resources_ = nullptr;
     FrameCaptureService frame_capture_;
+    LayoutController layout_controller_;
 
     TrackPipelineManager tracks_;
 
@@ -497,7 +499,6 @@ private:
     // -- Layout state --
     LayoutState layout_;
     int next_file_id_ = 1;                         ///< Auto-incrementing file ID
-    int file_id_order_[4] = {-1, -1, -1, -1};      ///< file_id order from Flutter
 
     // -- Cached last frame for redraws (zoom/pan while paused or at EOF) --
     PresentDecision last_decision_;

@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "video_renderer/layout_validation.h"
+#include "video_renderer/layout_controller.h"
 #include "video_renderer/renderer_config_validation.h"
 
 using namespace vr;
@@ -125,6 +126,53 @@ TEST_CASE("Layout validation treats order entries as file IDs",
     invalid = layout;
     invalid.order[2] = -2;
     REQUIRE_FALSE(validate_layout_state(invalid).ok);
+}
+
+TEST_CASE("LayoutController owns file-id to slot order translation",
+          "[renderer_config][layout]") {
+    LayoutController controller;
+    LayoutState layout;
+    controller.reset(layout);
+
+    controller.append_track(layout, 10, 0);
+    controller.append_track(layout, 20, 2);
+    REQUIRE(layout.order[0] == 0);
+    REQUIRE(layout.order[1] == 2);
+    REQUIRE(layout.order[2] == 0);
+    REQUIRE(layout.order[3] == 0);
+
+    auto snapshot = controller.snapshot(layout);
+    REQUIRE(snapshot.order[0] == 10);
+    REQUIRE(snapshot.order[1] == 20);
+    REQUIRE(snapshot.order[2] == -1);
+    REQUIRE(snapshot.order[3] == -1);
+
+    LayoutState requested;
+    requested.order[0] = 20;
+    requested.order[1] = 10;
+    requested.order[2] = 99;
+    requested.order[3] = -1;
+    controller.apply(layout, requested, [](int file_id) {
+        if (file_id == 10) return 0;
+        if (file_id == 20) return 2;
+        return -1;
+    });
+    REQUIRE(layout.order[0] == 2);
+    REQUIRE(layout.order[1] == 0);
+    REQUIRE(layout.order[2] == 0);
+    REQUIRE(layout.order[3] == 0);
+
+    controller.remove_track(layout, 20, [](int file_id) {
+        if (file_id == 10) return 0;
+        return -1;
+    });
+    snapshot = controller.snapshot(layout);
+    REQUIRE(snapshot.order[0] == 10);
+    REQUIRE(snapshot.order[1] == 99);
+    REQUIRE(snapshot.order[2] == -1);
+    REQUIRE(snapshot.order[3] == -1);
+    REQUIRE(layout.order[0] == 0);
+    REQUIRE(layout.order[1] == 0);
 }
 
 TEST_CASE("Native resource budget exposes renderer guardrails",

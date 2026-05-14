@@ -514,6 +514,28 @@ Follow-up:
 
 - Continue runner plugin cleanup with another narrow bridge slice, or switch back to native `LayoutController` extraction.
 
+2026-05-15 Patch 17 - LayoutController Order Boundary
+
+Changed:
+
+- Added `LayoutController` to own Flutter file-id order and shader slot-order translation.
+- Removed `Renderer::file_id_order_`; Renderer now asks the controller to apply, snapshot, append, remove, and rebuild layout order.
+- Kept viewport math and geometry updates in Renderer for now to avoid a broad layout/render split.
+- Added native coverage for file-id to slot-order translation, snapshots, append, and removal.
+
+Verified:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/split_screen_edges_regression.csv ui_tests/viewport/split_handle_drag_regression.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- If layout cleanup continues, extract viewport math separately from `display_pixel_size_for_layout_locked()` and geometry updates.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
@@ -608,6 +630,7 @@ fixed:
 - Patch 14 completed the FFI shared player lease cleanup as a narrow ABI/registry patch.
 - Patch 15 completed the native-facing `FrameCaptureService` boundary without touching runner PNG/WIC capture.
 - Patch 16 completed the runner-facing `ViewportCaptureService` slice while preserving MethodChannel behavior.
+- Patch 17 completed the first `LayoutController` slice for order ownership, intentionally leaving viewport math in Renderer.
 
 accepted-backlog:
 

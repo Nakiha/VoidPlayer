@@ -191,19 +191,11 @@ bool Renderer::initialize(const RendererConfig& config) {
         return fail();
     }
 
-    // Initialize file_id_order_ and slot-based order
-    {
-        int pos = 0;
-        for (size_t i = 0; i < kMaxTracks; ++i) {
-            if (tracks_[i]) {
-                file_id_order_[pos] = tracks_[i]->file_id;
-                layout_.order[pos] = static_cast<int>(i);
-                ++pos;
-            }
-        }
-        for (int i = pos; i < 4; ++i) {
-            file_id_order_[i] = -1;
-            layout_.order[i] = 0;
+    layout_controller_.reset(layout_);
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (tracks_[i]) {
+            layout_controller_.append_track(
+                layout_, tracks_[i]->file_id, static_cast<int>(i));
         }
     }
 
@@ -328,7 +320,7 @@ void Renderer::release_resources_locked() {
     target_height_ = 1080;
     cached_duration_us_ = 0;
     next_file_id_ = 1;
-    layout_ = LayoutState();
+    layout_controller_.reset(layout_);
     for (auto& pixels : analysis_overlay_pixels_) {
         pixels.clear();
     }
@@ -337,9 +329,6 @@ void Renderer::release_resources_locked() {
     }
     for (auto& cache : analysis_overlay_cache_) {
         cache = {};
-    }
-    for (int i = 0; i < 4; ++i) {
-        file_id_order_[i] = -1;
     }
     preview_drawn_ = false;
     was_buffering_ = false;
@@ -2836,24 +2825,8 @@ void Renderer::apply_layout(const LayoutState& state) {
         spdlog::warn("[Renderer] ignoring invalid layout: {}", validation.message);
         return;
     }
-    layout_.mode = state.mode;
-    layout_.split_pos =
-        std::clamp(state.split_pos, kMinLayoutSplitPos, kMaxLayoutSplitPos);
-    layout_.zoom_ratio =
-        std::clamp(state.zoom_ratio, kMinLayoutZoomRatio, kMaxLayoutZoomRatio);
-    layout_.view_offset[0] = state.view_offset[0];
-    layout_.view_offset[1] = state.view_offset[1];
-    layout_.pixel_size_mode =
-        (state.pixel_size_mode == PIXEL_SIZE_FILL_VIEW)
-            ? PIXEL_SIZE_FILL_VIEW
-            : PIXEL_SIZE_UNIFORM_VIDEO_PIXELS;
-
-    // Translate file_id order → slot order for the shader
-    for (int i = 0; i < 4; ++i) {
-        file_id_order_[i] = state.order[i];
-        int slot = find_slot_by_file_id(state.order[i]);
-        layout_.order[i] = (slot >= 0) ? slot : 0;
-    }
+    layout_controller_.apply(
+        layout_, state, [this](int file_id) { return find_slot_by_file_id(file_id); });
 
     // Trigger redraw — during playback, redraw_layout() handles this
     // without Flush() to avoid contention with D3D11VA decode threads.
@@ -2872,12 +2845,7 @@ void Renderer::set_background_color(float r, float g, float b, float a) {
 
 LayoutState Renderer::layout() const {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    LayoutState result = layout_;
-    // Return file_id order (not slot order) to Flutter
-    for (int i = 0; i < 4; ++i) {
-        result.order[i] = file_id_order_[i];
-    }
-    return result;
+    return layout_controller_.snapshot(layout_);
 }
 
 // -- Dynamic track management --
@@ -3064,14 +3032,7 @@ int Renderer::add_track(const std::string& video_path,
     }
     tracks_[slot] = std::move(pipeline);
 
-    // Append new file_id to the order arrays
-    for (int i = 0; i < 4; ++i) {
-        if (file_id_order_[i] < 0) {
-            file_id_order_[i] = new_file_id;
-            layout_.order[i] = slot;
-            break;
-        }
-    }
+    layout_controller_.append_track(layout_, new_file_id, slot);
 
     // Seek new track to current clock position so evaluate() can find matching frames.
     // Without this, the new track starts from PTS=0 and evaluate() discards all its
@@ -3152,20 +3113,8 @@ void Renderer::remove_track(int file_id) {
     }
     last_decision_.frames[kMaxTracks - 1] = std::nullopt;
 
-    // Compact file_id_order_: remove the deleted file_id, shift remaining down
-    for (int i = 0; i < 4; ++i) {
-        if (file_id_order_[i] == file_id) {
-            for (int j = i; j < 3; ++j) file_id_order_[j] = file_id_order_[j + 1];
-            file_id_order_[3] = -1;
-            break;
-        }
-    }
-
-    // Re-translate file_id order → slot order after compact
-    for (int i = 0; i < 4; ++i) {
-        int s = find_slot_by_file_id(file_id_order_[i]);
-        layout_.order[i] = (s >= 0) ? s : 0;
-    }
+    layout_controller_.remove_track(
+        layout_, file_id, [this](int id) { return find_slot_by_file_id(id); });
 
     // Recalculate duration
     cached_duration_us_ = 0;

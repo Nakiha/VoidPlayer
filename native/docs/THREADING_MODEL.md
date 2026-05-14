@@ -128,7 +128,7 @@ Headless publish 的同步契约：
 `Renderer` 仍是 native 播放器的 facade 和生命周期所有者。新增职责时优先放入已有组件；确实需要拆分时按下列边界切：
 
 - Render loop / tick / present scheduling: 从 `render_loop()`、`present_frame()` 外提为 `RenderLoopController`，但 D3D draw 仍需遵守 `device_mutex_`。
-- Layout validation / order / viewport math: 从 `apply_layout()`、`display_pixel_size_for_layout_locked()`、`update_track_geometry_from_decision_locked()` 外提为 `LayoutController`。
+- Layout validation / order / viewport math: `LayoutController` 已接管 file-id order 与 shader slot-order 翻译；后续再从 `display_pixel_size_for_layout_locked()`、`update_track_geometry_from_decision_locked()` 外提 viewport math。
 - Analysis overlay cache + CPU raster + D3D upload: 从 `draw_analysis_overlay()`、`ensure_analysis_overlay_texture()` 外提为 `AnalysisOverlayRenderer`。
 - Device loss terminal/recreate policy: 从 `enter_terminal_device_lost_locked()` 和 poll sites 外提为 `DeviceLossPolicy`。
 - Front-buffer capture and snapshot helpers: `FrameCaptureService` 负责 headless front-buffer capture 的 `device_mutex_ -> texture_mutex()` 锁编排，`Renderer::capture_front_buffer()` 只保留生命周期门禁。

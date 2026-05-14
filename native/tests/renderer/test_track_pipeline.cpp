@@ -559,6 +559,41 @@ TEST_CASE("TrackSnapshot builds track perf stats",
     REQUIRE(short_window.stats.fps == 0.0);
 }
 
+TEST_CASE("TrackSnapshot collects track perf stats in slot order",
+          "[track_pipeline][track_snapshot]") {
+    TrackPipelineManager manager;
+    auto track = std::make_unique<TrackPipeline>();
+    track->file_id = 11;
+    track->track_buffer = std::make_shared<TrackBuffer>(2, 1);
+    TextureFrame buffered_frame;
+    buffered_frame.pts_us = 1000;
+    track->track_buffer->push_frame(buffered_frame);
+    track->track_buffer->set_state(TrackState::Ready);
+    manager[1] = std::move(track);
+
+    PresentDecision last_decision;
+    TextureFrame current_frame;
+    current_frame.pts_us = 2222;
+    current_frame.dts_us = 1111;
+    last_decision.frames[1] = current_frame;
+
+    TrackPerfBaselineTracker baseline_tracker;
+    const auto collection = snapshot_track_perf_stats_collection(
+        manager, last_decision, baseline_tracker, 0.25);
+
+    REQUIRE(collection.stats.size() == 1);
+    REQUIRE(collection.stats[0].slot == 1);
+    REQUIRE(collection.stats[0].file_id == 11);
+    REQUIRE(collection.stats[0].buffer_count == 1);
+    REQUIRE(collection.stats[0].buffer_capacity == 2);
+    REQUIRE(collection.stats[0].buffer_state == TrackState::Ready);
+    REQUIRE(collection.stats[0].current_pts_us == 2222);
+    REQUIRE(collection.stats[0].current_dts_us == 1111);
+    REQUIRE_FALSE(collection.frames_decoded_by_slot[0].has_value());
+    REQUIRE(collection.frames_decoded_by_slot[1].has_value());
+    REQUIRE(*collection.frames_decoded_by_slot[1] == 0);
+}
+
 TEST_CASE("TrackSnapshot builds track GPU memory stats",
           "[track_pipeline][track_snapshot]") {
     TrackPipeline track;

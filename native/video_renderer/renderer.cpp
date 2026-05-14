@@ -1893,31 +1893,27 @@ std::vector<TrackInfo> Renderer::track_infos() const {
 
 std::vector<TrackPerfStats> Renderer::track_perf_stats() const {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    std::vector<TrackPerfStats> result;
     auto now = std::chrono::steady_clock::now();
     const double elapsed_s = perf_baseline_tracker_.elapsed_seconds(now);
     const bool should_rotate = perf_baseline_tracker_.should_rotate(elapsed_s);
+    const auto snapshot = snapshot_track_perf_stats_collection(
+        tracks_, last_decision_, perf_baseline_tracker_, elapsed_s);
 
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks_[i]) continue;
-        const auto& track = *tracks_[i];
-        const auto decode_perf = track.decode_thread->perf_counters().snapshot();
-        auto snapshot = snapshot_track_perf_stats(
-            i, track, decode_perf, last_decision_.frames[i],
-            perf_baseline_tracker_.baseline_frames(i), elapsed_s);
-        if (should_rotate) {
-            perf_baseline_tracker_.update_baseline_frames(i,
-                                                          snapshot.frames_decoded);
+    if (should_rotate) {
+        for (size_t i = 0; i < kMaxTracks; ++i) {
+            if (!snapshot.frames_decoded_by_slot[i].has_value()) {
+                continue;
+            }
+            perf_baseline_tracker_.update_baseline_frames(
+                i, *snapshot.frames_decoded_by_slot[i]);
         }
-
-        result.push_back(snapshot.stats);
     }
 
     // Reset shared timer once after all tracks are processed
     if (should_rotate) {
         perf_baseline_tracker_.rotate_timer(now);
     }
-    return result;
+    return snapshot.stats;
 }
 
 D3D11BackendMetrics Renderer::d3d_backend_metrics() const {

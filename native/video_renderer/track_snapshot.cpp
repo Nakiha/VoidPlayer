@@ -92,6 +92,31 @@ TrackPerfSnapshotResult snapshot_track_perf_stats(
     return {stats, decode_perf.frames_decoded};
 }
 
+TrackPerfStatsCollectionResult snapshot_track_perf_stats_collection(
+    const TrackPipelineManager& tracks,
+    const PresentDecision& last_decision,
+    const TrackPerfBaselineTracker& baseline_tracker,
+    double elapsed_s) {
+    TrackPerfStatsCollectionResult result;
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks[i]) {
+            continue;
+        }
+
+        const auto& track = *tracks[i];
+        DecodePerfCounters::Snapshot decode_perf{};
+        if (track.decode_thread) {
+            decode_perf = track.decode_thread->perf_counters().snapshot();
+        }
+        const auto snapshot = snapshot_track_perf_stats(
+            i, track, decode_perf, last_decision.frames[i],
+            baseline_tracker.baseline_frames(i), elapsed_s);
+        result.frames_decoded_by_slot[i] = snapshot.frames_decoded;
+        result.stats.push_back(snapshot.stats);
+    }
+    return result;
+}
+
 TrackGpuMemoryStats snapshot_track_gpu_memory_stats(
     size_t slot,
     const TrackPipeline& track,

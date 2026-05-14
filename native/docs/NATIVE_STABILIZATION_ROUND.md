@@ -133,6 +133,7 @@ Fixed or reduced:
 - `Renderer`: track geometry mutation from presented frames moved into `layout_geometry`; Renderer now only logs returned geometry updates.
 - `Renderer`: cached paused-frame first-PTS lookup moved into `track_present_policy`.
 - `Renderer`: seek-preview presented track-event collection moved into `track_present_policy`; Renderer keeps pending-event state and callback emission.
+- `Renderer`: per-track perf stats collection moved into `track_snapshot`; Renderer keeps timing and baseline rotation ownership.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
@@ -151,7 +152,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P96 Renderer Track Perf Stats Snapshot Boundary.
+Next patch: P97 Renderer Track GPU Memory Stats Snapshot Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1576,11 +1577,33 @@ Result:
 
 ### P96 - Renderer Track Perf Stats Snapshot Boundary
 
+Status: done in Patch 96.
+
 Goal:
 
 - Move the per-track perf stats scan out of `Renderer::track_perf_stats`.
 - Keep Renderer responsible for timer/baseline ownership, but move active-track snapshot collection into `track_snapshot`.
 - Preserve baseline rotation behavior and current-frame reporting.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `TrackPerfStatsCollectionResult` and `snapshot_track_perf_stats_collection` to `track_snapshot`.
+- `Renderer::track_perf_stats` now delegates active-track stats collection and only handles elapsed time plus baseline rotation.
+- Added native coverage for slot-ordered collection, buffer/current-frame fields, and decoded-frame baseline update data.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P97 - Renderer Track GPU Memory Stats Snapshot Boundary
+
+Goal:
+
+- Move the per-track GPU/memory stats scan out of `Renderer::gpu_memory_stats`.
+- Keep Renderer responsible for D3D presenter/headless/overlay aggregate resources.
+- Reuse `snapshot_track_gpu_memory_stats` through a collection helper that returns aggregate track memory totals.
 
 Validation:
 

@@ -369,8 +369,12 @@ TODO:
    - 已把 `Renderer::emit_seek_preview_presented_events()` 中按 slot 拼 seek-preview presented track event 的扫描迁入 present policy helper。
    - 验证：native-only + smoke/timeline UI。
 
-52. [ ] `TrackPerfStatsCollection`
-   - 后续把 `Renderer::track_perf_stats()` 的 active-track snapshot collection 迁入 track snapshot helper，Renderer 保留 timer/baseline ownership。
+52. [x] `TrackPerfStatsCollection`
+   - 已把 `Renderer::track_perf_stats()` 的 active-track snapshot collection 迁入 track snapshot helper，Renderer 保留 timer/baseline ownership。
+   - 验证：native-only + smoke UI。
+
+53. [ ] `TrackGpuMemoryStatsCollection`
+   - 后续把 `Renderer::gpu_memory_stats()` 的 per-track memory aggregation 迁入 track snapshot helper，Renderer 保留 D3D presenter/headless/overlay 聚合。
    - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split

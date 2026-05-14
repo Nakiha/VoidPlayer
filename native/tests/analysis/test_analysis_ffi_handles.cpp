@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "analysis_ffi.h"
+#include "analysis/analysis_manager.h"
 #include "analysis/parsers/vac2_parser.h"
 #include "test_analysis_data.h"
 
@@ -40,6 +41,28 @@ TEST_CASE("analysis FFI loads and clears overlay tracks",
     naki_analysis_clear_overlay_tracks();
     REQUIRE(naki_analysis_set_overlay_track(-1, data.vac2_base_path().c_str()) == 0);
     naki_analysis_clear_overlay_tracks();
+}
+
+TEST_CASE("analysis FFI preserves overlay opacity zero",
+          "[analysis][ffi][overlay]") {
+    NakiOverlayState state{};
+    state.show_cu_grid = 1;
+    state.opacity_permille = 0;
+    state.mode = 0;
+    state.track_file_id = 7;
+
+    naki_analysis_set_overlay(&state);
+    const auto& overlay = vr::analysis::AnalysisManager::instance().overlay_state();
+    REQUIRE(overlay.show_cu_grid.load(std::memory_order_acquire));
+    REQUIRE(overlay.opacity_permille.load(std::memory_order_acquire) == 0);
+
+    state.opacity_permille = -100;
+    naki_analysis_set_overlay(&state);
+    REQUIRE(overlay.opacity_permille.load(std::memory_order_acquire) == 0);
+
+    state.opacity_permille = 1200;
+    naki_analysis_set_overlay(&state);
+    REQUIRE(overlay.opacity_permille.load(std::memory_order_acquire) == 1000);
 }
 
 TEST_CASE("analysis FFI handle returns empty data after close",

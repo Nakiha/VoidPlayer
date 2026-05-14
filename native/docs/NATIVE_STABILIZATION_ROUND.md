@@ -63,14 +63,13 @@ Fixed:
 - VACHUNK hot-path IO/memory amplification: overlay chunks are decoded once into a small per-session LRU keyed by path and file metadata; adjacent frame reads slice cached decoded sections instead of re-opening and re-decoding every section.
 - `overlay_raster.cpp` helper hardening: BGRA fill no longer writes through aliased `uint32_t*`, public raster helpers guard invalid surfaces, and heatmap output rejects overflow or oversized allocations before resizing.
 - D3D overlay pass state contract: mask materialization now checks/restores the main RTV and viewport, unbinds overlay SRV hazards before writing mask RTVs, and overlay draw passes explicitly bind their render target, IA topology, shaders, blend state, and cleanup SRV slots.
+- Overlay precision and opacity semantics: native regression tests now cover 1x1, 2x2, 8K, shared-boundary, and clamped packed-UV coordinates, and FFI overlay opacity preserves 0 instead of forcing 10%.
 
 Active backlog:
 
-- High-resolution and tiny-rect overlay precision tests for 16-bit packed rects.
 - Overlay generation budget should honor current-hash remaining budget, not only raw max cache bytes.
 - VACHUNK checksum semantics are not enforced.
 - record count truncation should be guarded before write validation.
-- opacity 0 semantics need to match UI expectations.
 - VAC2 frame model still has packet-index assumptions that can cause future overlay alignment issues.
 
 ### `review_godobject.md`
@@ -95,7 +94,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P34 Overlay Precision And Semantics Tests.
+Next patch: P35 Overlay Generation Budget And Enum Semantics.
 
 ### P30 - VACache Atomic Publish
 
@@ -189,6 +188,8 @@ Validation:
 
 ### P34 - Overlay Precision And Semantics Tests
 
+Status: done in Patch 34.
+
 Source: `review_overlay.md`.
 
 Goal:
@@ -199,7 +200,27 @@ Goal:
 Validation:
 
 - `python dev.py test --native-only`
-- targeted analysis UI scripts when visible output semantics change.
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/overlay_controls_h264.csv`
+
+### P35 - Overlay Generation Budget And Enum Semantics
+
+Source: `review_overlay.md`.
+
+Goal:
+
+- Make overlay chunk generation honor the current-hash remaining budget instead of the raw global cache byte limit.
+- Replace or pin the codec enum conversion used for chunk keys so chunk path/read matching cannot silently diverge.
+
+Likely files:
+
+- `windows/runner/analysis_ffi.cpp`
+- `native/analysis/cache/vacache_store.*`
+- related native analysis tests.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/overlay_controls_h264.csv`
 
 ## Later Native Owner-Boundary Queue
 

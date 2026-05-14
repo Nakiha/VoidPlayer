@@ -225,9 +225,13 @@ TODO:
    - 已把 `seek_internal` 开头的 target clamp 与 pending seek event retarget 决策拆出，Renderer 保留 clock/deferred seek 执行。
    - 验证：native-only + smoke/seek clamp UI。
 
-16. [ ] `TrackSeekTargetPolicy`
-   - 后续把 `seek_internal` 内每轨 requested target / offset clamp facts 拆成 helper，Renderer 只保留日志与执行。
+16. [x] `TrackSeekTargetPolicy`
+   - 已把 `seek_internal` 内每轨 requested target / offset clamp facts 拆成 helper，Renderer 只保留日志与执行。
    - 验证：native-only + smoke/seek clamp UI。
+
+17. [ ] `TrackOffsetMutation`
+   - 后续把 `set_track_offset` 的轨道 offset 赋值与 render-sink offset 更新拆进 lifecycle helper，Renderer 保留 file-id lookup 与 redraw invalidation。
+   - 验证：native-only + smoke/track offset refresh UI。
 
 ## P1 - Windows Runner Plugin Split
 

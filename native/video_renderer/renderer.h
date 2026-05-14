@@ -308,8 +308,6 @@ private:
     bool build_step_forward_decision_locked(PresentDecision& decision) const;
     void discard_step_forward_consumed_frames_locked(const PresentDecision& decision);
     void update_track_geometry_from_decision_locked(const PresentDecision& decision);
-    int64_t clamp_track_seek_target_us_locked(const TrackPipeline& track,
-                                               int64_t target_pts_us) const;
     void seek_internal(int64_t target_pts_us,
                        SeekType type,
                        bool allow_deferred = true,

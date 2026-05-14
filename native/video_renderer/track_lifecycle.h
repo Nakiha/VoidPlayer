@@ -48,6 +48,16 @@ int64_t track_pts_end_us_from_stats(const DemuxStats& stats);
 int64_t clamp_track_seek_target_us(const TrackPipeline& track,
                                    int64_t target_pts_us);
 
+struct TrackSeekTargetResolution {
+    int64_t requested_target_us = 0;
+    int64_t target_us = 0;
+    bool clamped = false;
+};
+
+TrackSeekTargetResolution resolve_track_seek_target(
+    const TrackPipeline& track,
+    int64_t global_target_pts_us);
+
 int64_t track_duration_us(const TrackPipeline& track);
 
 int64_t extend_track_duration_cache(int64_t cached_duration_us,

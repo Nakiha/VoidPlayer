@@ -215,6 +215,36 @@ TEST_CASE("TrackLifecycle computes track PTS end from demux stats",
     REQUIRE(track_pts_end_us_from_stats(absolute_end) == 5000);
 }
 
+TEST_CASE("TrackLifecycle resolves per-track seek target",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipeline no_demux_track;
+    no_demux_track.offset_us = 250000;
+
+    auto result = resolve_track_seek_target(no_demux_track, 1000000);
+    REQUIRE(result.requested_target_us == 750000);
+    REQUIRE(result.target_us == 750000);
+    REQUIRE_FALSE(result.clamped);
+
+    result = resolve_track_seek_target(no_demux_track, 100000);
+    REQUIRE(result.requested_target_us == 0);
+    REQUIRE(result.target_us == 0);
+    REQUIRE_FALSE(result.clamped);
+
+    TrackPipelineFactory factory;
+    auto pipeline = factory.create_opened_pipeline(
+        video_test_dir() + "/h264_9s_1920x1080.mp4",
+        false);
+    REQUIRE(pipeline);
+    const int64_t track_end_us =
+        track_pts_end_us_from_stats(pipeline->demux_thread->stats());
+    REQUIRE(track_end_us > 0);
+
+    result = resolve_track_seek_target(*pipeline, track_end_us + 1000000);
+    REQUIRE(result.requested_target_us == track_end_us + 1000000);
+    REQUIRE(result.target_us == track_end_us);
+    REQUIRE(result.clamped);
+}
+
 TEST_CASE("TrackLifecycle computes duration cache",
           "[track_pipeline][track_lifecycle]") {
     TrackPipeline no_demux_track;

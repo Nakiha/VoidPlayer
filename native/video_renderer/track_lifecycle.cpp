@@ -115,6 +115,17 @@ int64_t clamp_track_seek_target_us(const TrackPipeline& track,
     return std::min(track_target, track_end_us);
 }
 
+TrackSeekTargetResolution resolve_track_seek_target(
+    const TrackPipeline& track,
+    int64_t global_target_pts_us) {
+    TrackSeekTargetResolution result;
+    result.requested_target_us =
+        std::max(global_target_pts_us - track.offset_us, int64_t(0));
+    result.target_us = clamp_track_seek_target_us(track, global_target_pts_us);
+    result.clamped = result.target_us != result.requested_target_us;
+    return result;
+}
+
 int64_t track_duration_us(const TrackPipeline& track) {
     if (!track.demux_thread) {
         return 0;

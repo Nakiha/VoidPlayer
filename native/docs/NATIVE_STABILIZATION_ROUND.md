@@ -92,6 +92,7 @@ Fixed or reduced:
 - `Renderer`: add-track render-sink/frame-presenter/tracks slot commit moved into `track_lifecycle`.
 - `Renderer`: add/remove-track temporary playback pause, failure rollback, and remove-success resume policy moved into `track_lifecycle`.
 - `Renderer`: seek target clamp and pending seek-preview event retarget decision moved into `SeekCoordinator` policy.
+- `Renderer`: per-track seek target/offset clamp facts moved into `track_lifecycle`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -115,7 +116,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P60 Renderer Track Seek Target Boundary.
+Next patch: P61 Renderer Track Offset Mutation Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -763,6 +764,8 @@ Result:
 
 ### P60 - Renderer Track Seek Target Boundary
 
+Status: done in Patch 60.
+
 Goal:
 
 - Move per-track seek requested-target/offset clamp facts out of `Renderer::seek_internal`.
@@ -772,6 +775,26 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/pts_offset_seek_clamp_generated.csv`
+
+Result:
+
+- Added `TrackSeekTargetResolution` and `resolve_track_seek_target` to `track_lifecycle`.
+- `Renderer::seek_internal` now delegates per-track offset/clamp calculation and only logs/applies the returned facts.
+- Removed the now-redundant `Renderer::clamp_track_seek_target_us_locked` forwarding method.
+- Added native coverage for offset subtraction, pre-offset clamp, and real media tail clamp.
+- Verified with native-only tests plus rebuilt smoke and PTS-offset seek clamp UI scripts.
+
+### P61 - Renderer Track Offset Mutation Boundary
+
+Goal:
+
+- Move `set_track_offset` track mutation plus render-sink offset update behind a lifecycle helper.
+- Keep `Renderer` responsible for file-id lookup, lock ownership, and preview redraw invalidation.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/h265_track_offset_refresh_visual_regression.csv`
 
 ## Do-Not-Drift List
 

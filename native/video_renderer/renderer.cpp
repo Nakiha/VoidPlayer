@@ -457,16 +457,14 @@ void Renderer::seek_internal(int64_t target_pts_us,
                          "incorrectly after seek. Remux/re-encode with repeated "
                          "headers for frame-accurate previews.");
         }
-        const int64_t requested_track_target =
-            std::max(target_pts_us - track->offset_us, int64_t(0));
-        int64_t track_target =
-            clamp_track_seek_target_us_locked(*track, target_pts_us);
-        if (track_target != requested_track_target) {
+        const auto track_target =
+            resolve_track_seek_target(*track, target_pts_us);
+        if (track_target.clamped) {
             spdlog::info("[Renderer] seek_internal: track[{}] target clamp "
                          "requested={:.3f}s, clamped={:.3f}s",
                          i,
-                         requested_track_target / 1e6,
-                         track_target / 1e6);
+                         track_target.requested_target_us / 1e6,
+                         track_target.target_us / 1e6);
         }
         const bool hardware_decode_enabled =
             track->decode_thread->is_hardware_decode_enabled();
@@ -504,7 +502,7 @@ void Renderer::seek_internal(int64_t target_pts_us,
             choose_hevc_seek_recreate(hevc_recreate_input);
         const bool recreated_for_seek =
             hevc_recreate_decision.should_recreate_pipeline &&
-            recreate_pipeline_for_seek(i, track_target, track_seek_type);
+            recreate_pipeline_for_seek(i, track_target.target_us, track_seek_type);
         if (hevc_recreate_decision.error_if_recreate_not_applied &&
             !recreated_for_seek) {
             track->track_buffer->set_state(TrackState::Error);
@@ -515,18 +513,18 @@ void Renderer::seek_internal(int64_t target_pts_us,
                          "(buf_state_before={}, target={:.3f}s)",
                          i,
                          static_cast<int>(seek_prep.buffer_state_before),
-                         track_target / 1e6);
+                         track_target.target_us / 1e6);
         }
         track = tracks_[i].get();
         submit_track_seek_after_recreate(
-            *track, track_target, track_seek_type, paused_seek, recreated_for_seek);
+            *track, track_target.target_us, track_seek_type, paused_seek, recreated_for_seek);
         applied_seek = true;
         spdlog::info("[Renderer] seek_internal: track[{}] cleared (buf={}->{}, pq={}->0), state->Flushing, target={:.3f}s",
                      i,
                      seek_prep.buffered_frames_before,
                      track->track_buffer->total_count(),
                      seek_prep.packet_queue_size_before,
-                     track_target / 1e6);
+                     track_target.target_us / 1e6);
     }
     if (applied_seek) {
         preview_drawn_ = false;
@@ -1193,12 +1191,6 @@ int64_t Renderer::compute_frame_duration_us() const {
         return min_dur;
     }
     return 33333; // fallback ~30fps
-}
-
-int64_t Renderer::clamp_track_seek_target_us_locked(
-    const TrackPipeline& track,
-    int64_t target_pts_us) const {
-    return clamp_track_seek_target_us(track, target_pts_us);
 }
 
 int64_t Renderer::effective_duration_us_locked() const {

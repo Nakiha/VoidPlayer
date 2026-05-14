@@ -20,7 +20,7 @@ struct TrackPipeline {
     int64_t offset_us = 0;
     std::unique_ptr<PacketQueue> packet_queue;
     std::unique_ptr<PacketQueue> audio_packet_queue;
-    std::unique_ptr<TrackBuffer> track_buffer;
+    std::shared_ptr<TrackBuffer> track_buffer;
     std::unique_ptr<DemuxThread> demux_thread;
     std::unique_ptr<DecodeThread> decode_thread;
     std::unique_ptr<SeekController> seek_controller;

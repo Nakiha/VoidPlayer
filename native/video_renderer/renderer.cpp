@@ -209,7 +209,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     render_sink_ = std::make_unique<RenderSink>(playback_->clock());
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (tracks_[i]) {
-            render_sink_->set_track(i, tracks_[i]->track_buffer.get());
+            render_sink_->set_track(i, tracks_[i]->track_buffer);
         }
     }
 
@@ -2911,7 +2911,7 @@ bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, Se
         return false;
     }
 
-    render_sink_->set_track(slot, replacement->track_buffer.get());
+    render_sink_->set_track(slot, replacement->track_buffer);
     render_sink_->set_track_offset(slot, offset_us);
     tracks_[slot] = std::move(replacement);
     return true;
@@ -3012,7 +3012,7 @@ int Renderer::add_track(const std::string& video_path,
     }
 
     // Register with render sink
-    render_sink_->set_track(slot, pipeline->track_buffer.get());
+    render_sink_->set_track(slot, pipeline->track_buffer);
     render_sink_->set_track_offset(slot, 0);
 
     // Update duration cache
@@ -3102,7 +3102,7 @@ void Renderer::remove_track(int file_id) {
         if (frame_presenter_) {
             frame_presenter_->move_track(from, to);
         }
-        render_sink_->set_track(to, track.track_buffer.get());
+        render_sink_->set_track(to, track.track_buffer);
         render_sink_->set_track_offset(to, track.offset_us);
         render_sink_->set_track(from, nullptr);
     });

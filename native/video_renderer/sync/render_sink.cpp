@@ -1,6 +1,7 @@
 #include "video_renderer/sync/render_sink.h"
 #include <spdlog/spdlog.h>
 #include <cmath>
+#include <utility>
 
 namespace vr {
 
@@ -8,18 +9,21 @@ RenderSink::RenderSink(Clock& clock)
     : clock_(clock)
 {}
 
-void RenderSink::set_track(size_t slot, TrackBuffer* track) {
+void RenderSink::set_track(size_t slot, std::shared_ptr<TrackBuffer> track) {
     if (slot < kMaxTracks) {
-        tracks_[slot] = track;
+        std::lock_guard<std::mutex> lock(mutex_);
+        tracks_[slot] = std::move(track);
     }
 }
 
 void RenderSink::remove_all_tracks() {
+    std::lock_guard<std::mutex> lock(mutex_);
     tracks_.fill(nullptr);
 }
 
 void RenderSink::set_track_offset(size_t slot, int64_t offset_us) {
     if (slot < kMaxTracks) {
+        std::lock_guard<std::mutex> lock(mutex_);
         track_offsets_[slot] = offset_us;
     }
 }
@@ -27,20 +31,28 @@ void RenderSink::set_track_offset(size_t slot, int64_t offset_us) {
 PresentDecision RenderSink::evaluate() {
     PresentDecision decision;
 
+    std::array<std::shared_ptr<TrackBuffer>, kMaxTracks> tracks;
+    std::array<int64_t, kMaxTracks> track_offsets;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        tracks = tracks_;
+        track_offsets = track_offsets_;
+    }
+
     int64_t current_pts_us = clock_.current_pts_us();
     decision.current_pts_us = current_pts_us;
 
     bool any_active = false;
     bool any_ready = false;
     for (size_t t = 0; t < kMaxTracks; ++t) {
-        if (!tracks_[t]) {
+        if (!tracks[t]) {
             decision.frames[t] = std::nullopt;
             continue;
         }
         any_active = true;
 
-        TrackBuffer* track = tracks_[t];
-        int64_t effective_pts = current_pts_us - track_offsets_[t];
+        auto& track = tracks[t];
+        int64_t effective_pts = current_pts_us - track_offsets[t];
 
         // 1. Discard expired frames: advance past frames whose display window has passed
         while (true) {

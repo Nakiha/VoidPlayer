@@ -2,6 +2,8 @@
 #include "video_renderer/buffer/track_buffer.h"
 #include "video_renderer/clock.h"
 #include <array>
+#include <memory>
+#include <mutex>
 #include <optional>
 
 namespace vr {
@@ -19,9 +21,11 @@ class RenderSink {
 public:
     explicit RenderSink(Clock& clock);
 
-    /// Set or clear a track buffer at a specific slot.
-    /// Pass nullptr to clear a slot.
-    void set_track(size_t slot, TrackBuffer* track);
+    /// Set or clear a track buffer at a specific slot. RenderSink keeps shared
+    /// ownership and evaluate() snapshots handles under its own mutex, so track
+    /// removal/compaction cannot leave an in-flight decision with dangling
+    /// buffer pointers.
+    void set_track(size_t slot, std::shared_ptr<TrackBuffer> track);
 
     void remove_all_tracks();
 
@@ -32,7 +36,8 @@ public:
 
 private:
     Clock& clock_;
-    std::array<TrackBuffer*, kMaxTracks> tracks_{};
+    mutable std::mutex mutex_;
+    std::array<std::shared_ptr<TrackBuffer>, kMaxTracks> tracks_{};
     std::array<int64_t, kMaxTracks> track_offsets_{};
 };
 

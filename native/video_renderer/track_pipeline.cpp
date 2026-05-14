@@ -135,7 +135,7 @@ std::unique_ptr<TrackPipeline> TrackPipelineManager::create_pipeline(
         hw_decode && is_high_resolution_track(stats)
             ? kHighResolutionHardwareTrackForwardDepth
             : kDefaultTrackForwardDepth;
-    pipeline->track_buffer = std::make_unique<TrackBuffer>(
+    pipeline->track_buffer = std::make_shared<TrackBuffer>(
         forward_depth, kDefaultTrackBackwardDepth);
     spdlog::info(
         "Renderer: track buffer depth forward={}, backward={}, max_cached={}, high_res={}, hw_decode={}",

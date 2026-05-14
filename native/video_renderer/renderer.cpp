@@ -2364,14 +2364,21 @@ bool Renderer::render_analysis_overlay_mask(int slot,
     auto& resources = *d3d_resources_;
     if (!resources.overlay_mask_rtvs[slot] ||
         !resources.overlay_rect_srvs[slot] ||
+        !resources.cached_rtv ||
         !resources.overlay_mask_rect_shader.vs ||
         !resources.overlay_mask_rect_shader.ps) {
+        return false;
+    }
+    if (target_width_ <= 0 || target_height_ <= 0) {
         return false;
     }
 
     auto* ctx = d3d_device_->context();
     ID3D11ShaderResourceView* null_srvs[4] = {};
     ID3D11ShaderResourceView* null_rect_srv = nullptr;
+
+    // Pass contract: this pass owns the temporary mask RTV. Before binding it
+    // as an output, unbind every overlay SRV slot that could still reference it.
     ctx->PSSetShaderResources(24, 4, null_srvs);
     ctx->VSSetShaderResources(28, 1, &null_rect_srv);
 
@@ -2400,6 +2407,8 @@ bool Renderer::render_analysis_overlay_mask(int slot,
     ctx->DrawInstanced(4, rect_count, 0, 0);
     ctx->VSSetShaderResources(28, 1, &null_rect_srv);
 
+    // Return ownership to the main render target before the mask SRV can be
+    // sampled by the invert pass.
     ID3D11RenderTargetView* target_rtv = resources.cached_rtv.Get();
     ctx->OMSetRenderTargets(1, &target_rtv, nullptr);
     D3D11_VIEWPORT target_vp = {};
@@ -2473,6 +2482,24 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
         : static_cast<uint8_t>(base_alpha * 2 / 5);
 
     auto* ctx = d3d_device_->context();
+    auto bind_overlay_target = [&]() -> bool {
+        if (!resources.cached_rtv || target_width_ <= 0 || target_height_ <= 0) {
+            return false;
+        }
+        ID3D11RenderTargetView* target_rtv = resources.cached_rtv.Get();
+        ctx->OMSetRenderTargets(1, &target_rtv, nullptr);
+        D3D11_VIEWPORT target_vp = {};
+        target_vp.Width = static_cast<float>(target_width_);
+        target_vp.Height = static_cast<float>(target_height_);
+        target_vp.MinDepth = 0.0f;
+        target_vp.MaxDepth = 1.0f;
+        ctx->RSSetViewports(1, &target_vp);
+        return true;
+    };
+    if (!bind_overlay_target()) {
+        return;
+    }
+
     auto upload_overlay = [&](ID3D11Texture2D* texture,
                               const std::vector<uint8_t>& pixels,
                               int upload_height,
@@ -2766,6 +2793,7 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
         ctx->PSSetShader(resources.overlay_rect_shader.ps.Get(), nullptr, 0);
         ctx->IASetInputLayout(nullptr);
         ctx->IASetVertexBuffers(0, 1, &null_vb, &zero, &zero);
+        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
         for (size_t slot = 0; slot < kMaxTracks; ++slot) {
             if (!rect_srvs[slot] || rect_counts[slot] == 0) {
                 continue;
@@ -2814,7 +2842,12 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
         ctx->PSSetShaderResources(24, 4, null_srvs);
     }
 
+    ID3D11ShaderResourceView* null_rect_srv = nullptr;
+    ctx->VSSetShaderResources(28, 1, &null_rect_srv);
+    ctx->PSSetShaderResources(20, 4, null_srvs);
+    ctx->PSSetShaderResources(24, 4, null_srvs);
     ctx->OMSetBlendState(nullptr, nullptr, 0xffffffff);
+    (void)bind_overlay_target();
 }
 
 // -- Layout control --

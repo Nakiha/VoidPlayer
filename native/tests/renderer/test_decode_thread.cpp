@@ -12,6 +12,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <windows.h>
 
 using namespace vr;
 
@@ -84,6 +85,12 @@ std::filesystem::path make_dynamic_resolution_h264_fixture() {
     return combined;
 }
 
+__declspec(noinline)
+int raise_codec_open_seh_for_test(AVCodecContext*, const AVCodec*, AVDictionary**) {
+    RaiseException(0xE06D7363, 0, 0, nullptr);
+    return 0;
+}
+
 } // namespace
 
 TEST_CASE("DecodeThread: null codec parameters fail closed", "[decode_thread]") {
@@ -92,6 +99,27 @@ TEST_CASE("DecodeThread: null codec parameters fail closed", "[decode_thread]") 
 
     DecodeThread decoder(pkt_queue, track_buffer, nullptr, AVRational{1, 1});
     REQUIRE(decoder.start() == false);
+}
+
+TEST_CASE("DecodeThread: codec open SEH fails closed", "[decode_thread]") {
+    AVCodecParameters* params = avcodec_parameters_alloc();
+    REQUIRE(params != nullptr);
+    params->codec_type = AVMEDIA_TYPE_VIDEO;
+    params->codec_id = AV_CODEC_ID_H264;
+    params->format = AV_PIX_FMT_YUV420P;
+    params->width = 16;
+    params->height = 16;
+
+    PacketQueue pkt_queue(1);
+    TrackBuffer track_buffer(1, 0);
+    {
+        DecodeThread decoder(pkt_queue, track_buffer, params, AVRational{1, 25});
+        decoder.set_codec_open_for_test(raise_codec_open_seh_for_test);
+
+        REQUIRE(decoder.start() == false);
+    }
+
+    avcodec_parameters_free(&params);
 }
 
 TEST_CASE("DecodeThread: software decode H264 produces monotonically increasing PTS", "[decode_thread]") {

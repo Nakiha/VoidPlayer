@@ -46,7 +46,7 @@ chat 给出的方向和当前代码状态高度匹配。优先级最高的不是
 | S7 | layout validation 太宽松 | `validate_layout_state()` 只检查 enum、finite、zoom positive | DONE - Patch 7 |
 | S8 | `TextureManager::create_rgba_texture()` 缺尺寸校验 | RGBA create 直接 cast width/height，其他 create API 有基本校验 | DONE - Patch 8 |
 | S9 | demux read error 没传播成明确 track error/event | `DemuxThread::run()` 非 EOF read error 后 break，最后只 `abort_outputs()` | DONE - Patch 9 |
-| S10 | `avcodec_open2()` 未包 SEH guard | send/receive 已有 SEH wrapper，open 阶段仍直调 | decode hardening patch |
+| S10 | `avcodec_open2()` 未包 SEH guard | send/receive 已有 SEH wrapper，open 阶段仍直调 | DONE - Patch 10 |
 | S11 | odd-dimension software path 直接拒绝 | `calculate_yuv420_layout()` 要求 width/height 都是偶数 | compatibility patch |
 | S12 | `D3D11Device::shutdown()` 缺 `ClearState + Flush` | shutdown 直接 reset swapchain/context/device | cleanup patch |
 
@@ -357,16 +357,38 @@ Follow-up:
 
 - S10 `avcodec_open2()` SEH guard is next.
 
+2026-05-14 Patch 10 - Codec Open SEH Guard
+
+Changed:
+
+- Added a noinline SEH-safe `avcodec_open2()` wrapper matching the existing send/receive guard style.
+- Routed both the initial codec open and hardware-to-software fallback open through the wrapper.
+- Added a per-instance codec-open test hook so native tests can raise a Windows SEH exception deterministically.
+- Added a native regression proving codec-open SEH fails closed instead of escaping the test process.
+
+Verified:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/codec/av1_decode_smoke.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- S11 odd-dimension software path compatibility is next.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
 
 | 来源 | 复核项 | 结果 |
 | --- | --- | --- |
-| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | fixed: #1/#2/#3/#4/#5/#8/#9/#10; accepted-backlog: #6/#7/#11-#13 |
+| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | fixed: #1/#2/#3/#4/#5/#8/#9/#10/#11; accepted-backlog: #6/#7/#12-#13 |
 | `review_godobject.md` | God Object 排名和 owner boundary 判断 | fixed: AudioMixer boundary + Analysis session snapshot; accepted-backlog: remaining owner splits |
 | `review_overlay.md` | AnalysisManager、VACHUNK、overlay cache、D3D pass 风险 | fixed: AnalysisManager session + current-base chunk filter; accepted-backlog: remaining overlay/cache/render-pass items |
-| `split_adv.md` | Patch 顺序和“不贪大”边界 | fixed: Patch 1-9 executed in stabilization-sized slices |
+| `split_adv.md` | Patch 顺序和“不贪大”边界 | fixed: Patch 1-10 executed in stabilization-sized slices |
 
 复核时只标三类状态：
 
@@ -386,12 +408,12 @@ fixed:
 - #8 layout validation: Patch 7 tightened split/zoom/order checks using file-ID order semantics.
 - #9 RGBA texture size validation: Patch 8 added texture dimension/stride guardrails.
 - #10 demux read error propagation: Patch 9 emits track error events and marks the track buffer Error on non-EOF read errors.
+- #11 `avcodec_open2()` SEH guard: Patch 10 routes codec open and software fallback open through a noinline SEH wrapper.
 
 accepted-backlog:
 
 - #6 NativePlayer facade locking remains a lifecycle boundary cleanup.
 - #7 FFI long-operation serialization remains an ABI/registry cleanup.
-- #11 `avcodec_open2()` SEH guard maps to S10.
 - #12 odd-dimension software path maps to S11.
 - #13 D3D shutdown `ClearState + Flush` maps to S12.
 
@@ -447,10 +469,11 @@ fixed:
 - Patch 7 completed the S7 layout validation guardrails as a narrow defensive patch.
 - Patch 8 completed the S8 texture dimension guardrail as a small low-risk patch.
 - Patch 9 completed the S9 demux read-error propagation as a narrow error-model patch.
+- Patch 10 completed the S10 codec-open SEH guard as a narrow decode hardening patch.
 
 accepted-backlog:
 
-- Remaining second-priority owner boundary work starts with S10 or a future `FrameCaptureService`; avoid jumping straight into a large Renderer split.
+- Remaining second-priority owner boundary work starts with S11 or a future `FrameCaptureService`; avoid jumping straight into a large Renderer split.
 
 not-applicable:
 

@@ -64,6 +64,10 @@ struct DecodeMemoryStats {
 
 class DecodeThread {
 public:
+    using CodecOpenFunction = int (*)(AVCodecContext* ctx,
+                                      const AVCodec* codec,
+                                      AVDictionary** options);
+
     DecodeThread(PacketQueue& input_queue, TrackBuffer& output_buffer,
                  const AVCodecParameters* codec_params, AVRational time_base);
     ~DecodeThread();
@@ -101,6 +105,7 @@ public:
     bool is_hardware_decode_enabled() const { return hw_enabled_; }
     AVCodecID codec_id() const { return codec_params_ ? codec_params_->codec_id : AV_CODEC_ID_NONE; }
     std::string decoder_name() const;
+    void set_codec_open_for_test(CodecOpenFunction open_fn) { codec_open_for_test_ = open_fn; }
 
 private:
     struct ExactSeekCandidate {
@@ -186,6 +191,7 @@ private:
     const AVCodec* codec_ = nullptr;
     const AVCodecParameters* codec_params_;
     AVRational time_base_;
+    CodecOpenFunction codec_open_for_test_ = nullptr;
 
     // Hardware decode state
     void* native_device_ = nullptr;

@@ -193,9 +193,13 @@ TODO:
    - 已把 remove-track stop/compact/render-sink/presenter slot side effects 和 cached present decision frame compaction 拆到 `track_lifecycle`。
    - 验证：native track lifecycle tests + smoke/track compact UI。
 
-8. [ ] `AddTrackSeekPolicy`
-   - 后续把 add-track 对齐当前播放时钟时的 seek target clamp、buffer/audio queue flush、audio pause、seek type choice 从 `Renderer` 主体拆出。
+8. [x] `AddTrackSeekPolicy`
+   - 已把 add-track 对齐当前播放时钟时的 seek target clamp、buffer/audio queue flush、audio pause、seek type choice 拆到 `track_lifecycle`。
    - 验证：native-only + smoke/track compact UI。
+
+9. [ ] `HevcSeekRecreatePolicy`
+   - 后续把 `seek_internal` 内 HEVC hardware seek recreate/coalesce/error 选择从 `Renderer` 主体拆成可单测 policy。
+   - 验证：native-only + smoke/shutdown-during-seek recreate UI。
 
 ## P1 - Windows Runner Plugin Split
 

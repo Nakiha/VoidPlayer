@@ -35,23 +35,6 @@ uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
             std::chrono::steady_clock::now() - start).count());
 }
 
-int64_t track_pts_end_us_from_stats(const DemuxStats& stats) {
-    if (stats.duration_us <= 0) {
-        return 0;
-    }
-    if (stats.start_time_us <= 0) {
-        return stats.duration_us;
-    }
-    // Most containers expose duration as a span. Some FLV files expose a value
-    // closer to the absolute end PTS; detect those so a -start offset maps the
-    // track to its actual playable span instead of the full PTS epoch.
-    if (stats.duration_us > stats.start_time_us &&
-        stats.duration_us - stats.start_time_us < stats.duration_us / 2) {
-        return stats.duration_us;
-    }
-    return stats.start_time_us + stats.duration_us;
-}
-
 bool is_h264_flv_track(const TrackPipeline& track) {
     if (!track.demux_thread) {
         return false;
@@ -1222,18 +1205,7 @@ int64_t Renderer::compute_frame_duration_us() const {
 int64_t Renderer::clamp_track_seek_target_us_locked(
     const TrackPipeline& track,
     int64_t target_pts_us) const {
-    int64_t track_target = std::max(target_pts_us - track.offset_us, int64_t(0));
-    if (!track.demux_thread) {
-        return track_target;
-    }
-
-    const auto stats = track.demux_thread->stats();
-    const int64_t track_end_us = track_pts_end_us_from_stats(stats);
-    if (track_end_us <= 0) {
-        return track_target;
-    }
-
-    return std::min(track_target, track_end_us);
+    return clamp_track_seek_target_us(track, target_pts_us);
 }
 
 int64_t Renderer::effective_duration_us_locked() const {
@@ -2179,27 +2151,22 @@ int Renderer::add_track(const std::string& video_path,
     // frames as "expired" when the clock is elsewhere, causing both panels to show
     // the same old video.
     int64_t current_pts = playback_->clock().current_pts_us();
-    if (current_pts > 0) {
-        auto& track = tracks_[slot];
-        int64_t track_target = clamp_track_seek_target_us_locked(*track, current_pts);
-        track->decode_thread->set_decode_paused(true);
-        track->track_buffer->set_state(TrackState::Flushing);
-        track->track_buffer->clear_frames();
-        track->packet_queue->flush();
-        if (track->audio_packet_queue) {
-            track->audio_packet_queue->flush();
-        }
-        if (audio_coordinator_) {
-            audio_coordinator_->set_track_decode_paused(track->file_id, true);
-        }
-        const auto seek_type = was_playing ? SeekType::Keyframe : SeekType::Exact;
-        track->seek_controller->request_seek(track_target, seek_type);
-        track->track_buffer->set_state(TrackState::Buffering);
+    auto& track = tracks_[slot];
+    const TrackAddSeekHooks add_seek_hooks{
+        [this](int file_id, bool paused) {
+            if (audio_coordinator_) {
+                audio_coordinator_->set_track_decode_paused(file_id, paused);
+            }
+        },
+    };
+    const auto seek_result = prepare_add_track_seek_to_clock(
+        *track, current_pts, was_playing, add_seek_hooks);
+    if (seek_result.applied) {
         spdlog::info("Renderer::add_track: seeking slot={} to {:.3f}s (offset={:.3f}s, type={})",
                      slot,
-                     track_target / 1e6,
+                     seek_result.target_pts_us / 1e6,
                      track->offset_us / 1e6,
-                     seek_type == SeekType::Exact ? "Exact" : "Keyframe");
+                     seek_result.seek_type == SeekType::Exact ? "Exact" : "Keyframe");
     }
 
     // Force redraw, but keep already-presented frames from existing tracks so

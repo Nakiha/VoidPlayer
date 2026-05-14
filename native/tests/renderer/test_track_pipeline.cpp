@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -196,4 +197,84 @@ TEST_CASE("TrackLifecycle compacts cached present decisions",
     REQUIRE(decision.frames[1]->pts_us == 3000);
     REQUIRE_FALSE(decision.frames[2]);
     REQUIRE_FALSE(decision.frames[3]);
+}
+
+TEST_CASE("TrackLifecycle computes track PTS end from demux stats",
+          "[track_pipeline][track_lifecycle]") {
+    DemuxStats no_duration;
+    REQUIRE(track_pts_end_us_from_stats(no_duration) == 0);
+
+    DemuxStats duration_span;
+    duration_span.start_time_us = 1000;
+    duration_span.duration_us = 4000;
+    REQUIRE(track_pts_end_us_from_stats(duration_span) == 5000);
+
+    DemuxStats absolute_end;
+    absolute_end.start_time_us = 3000;
+    absolute_end.duration_us = 5000;
+    REQUIRE(track_pts_end_us_from_stats(absolute_end) == 5000);
+}
+
+TEST_CASE("TrackLifecycle prepares add-track seek to current clock",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipeline track;
+    track.file_id = 42;
+    track.offset_us = 250000;
+    track.packet_queue = std::make_unique<PacketQueue>();
+    track.audio_packet_queue = std::make_unique<PacketQueue>();
+    track.track_buffer = std::make_shared<TrackBuffer>(4, 1);
+    track.seek_controller = std::make_unique<SeekController>();
+    track.track_buffer->set_state(TrackState::Ready);
+
+    TextureFrame frame;
+    frame.pts_us = 1000;
+    track.track_buffer->push_frame(frame);
+    REQUIRE(track.track_buffer->total_count() == 1);
+
+    int audio_pause_count = 0;
+    int paused_file_id = -1;
+    bool paused_value = false;
+    const TrackAddSeekHooks hooks{
+        [&](int file_id, bool paused) {
+            ++audio_pause_count;
+            paused_file_id = file_id;
+            paused_value = paused;
+        },
+    };
+
+    const auto idle_result =
+        prepare_add_track_seek_to_clock(track, 0, true, hooks);
+    REQUIRE_FALSE(idle_result.applied);
+    REQUIRE(track.track_buffer->total_count() == 1);
+    REQUIRE_FALSE(track.seek_controller->has_pending_seek());
+    REQUIRE(audio_pause_count == 0);
+
+    const auto paused_result =
+        prepare_add_track_seek_to_clock(track, 1000000, false, hooks);
+    REQUIRE(paused_result.applied);
+    REQUIRE(paused_result.target_pts_us == 750000);
+    REQUIRE(paused_result.seek_type == SeekType::Exact);
+    REQUIRE(track.track_buffer->state() == TrackState::Buffering);
+    REQUIRE(track.track_buffer->total_count() == 0);
+    REQUIRE(audio_pause_count == 1);
+    REQUIRE(paused_file_id == 42);
+    REQUIRE(paused_value);
+
+    auto pending_seek = track.seek_controller->take_pending();
+    REQUIRE(pending_seek);
+    REQUIRE(pending_seek->target_pts_us == 750000);
+    REQUIRE(pending_seek->type == SeekType::Exact);
+    REQUIRE(track.packet_queue->try_pop().status == PacketPopStatus::Flushed);
+    REQUIRE(track.audio_packet_queue->try_pop().status == PacketPopStatus::Flushed);
+
+    const auto playing_result =
+        prepare_add_track_seek_to_clock(track, 2000000, true, hooks);
+    REQUIRE(playing_result.applied);
+    REQUIRE(playing_result.target_pts_us == 1750000);
+    REQUIRE(playing_result.seek_type == SeekType::Keyframe);
+    pending_seek = track.seek_controller->take_pending();
+    REQUIRE(pending_seek);
+    REQUIRE(pending_seek->target_pts_us == 1750000);
+    REQUIRE(pending_seek->type == SeekType::Keyframe);
+    REQUIRE(audio_pause_count == 2);
 }

@@ -85,6 +85,7 @@ Fixed or reduced:
 - `Renderer`: layout state/constants moved to layout-owned helpers; `Renderer` now snapshots track geometry and delegates shader layout math to `layout_geometry`.
 - `Renderer`: render-loop debounce, diagnostics cadence, and frame-deadline sleep policy moved into `RenderLoopController`.
 - `Renderer`: remove-track stop/compact render-sink/presenter slot side effects and cached `PresentDecision` frame compaction moved into `track_lifecycle`.
+- `Renderer`: add-track current-clock seek target clamp, buffer/queue flush, audio pause, and seek type choice moved into `track_lifecycle`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -101,14 +102,14 @@ Still active:
 
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
-- `Renderer` still owns track slot commit, layout mutation, playback pause/resume, current-clock add-track seek, and HEVC recreate policy.
+- `Renderer` still owns track slot commit, layout mutation, playback pause/resume, and HEVC recreate policy.
 - `DecodeThread` main loop still owns codec send/receive, EOF drain, AVFrame ownership, and hardware visibility transitions.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P52 Renderer Add-Track Seek Policy.
+Next patch: P53 Renderer HEVC Seek Recreate Policy.
 
 ### P30 - VACache Atomic Publish
 
@@ -586,6 +587,8 @@ Result:
 
 ### P52 - Renderer Add-Track Seek Policy
 
+Status: done in Patch 52.
+
 Goal:
 
 - Move the current-clock add-track seek preparation into a small helper or policy boundary.
@@ -595,6 +598,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv`
+
+Result:
+
+- Added `track_pts_end_us_from_stats`, `clamp_track_seek_target_us`, and `prepare_add_track_seek_to_clock` to `track_lifecycle`.
+- `Renderer::add_track` now keeps slot commit/layout decisions but delegates current-clock seek preparation and request submission.
+- Added native coverage for track PTS end heuristics, idle add-track seek, exact paused add-track seek, and keyframe playing add-track seek.
+- Verified with native-only tests plus rebuilt smoke and track compact UI scripts.
+
+### P53 - Renderer HEVC Seek Recreate Policy
+
+Goal:
+
+- Move the HEVC hardware seek recreate decision out of `Renderer::seek_internal` into a small policy boundary.
+- Keep actual pipeline recreation and frame-presenter reset owned by `Renderer` for this patch.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`
 
 ## Do-Not-Drift List
 

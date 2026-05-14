@@ -41,4 +41,25 @@ void remove_and_compact_track_pipeline(
 
 void compact_present_decision_frames(PresentDecision& decision, size_t slot);
 
+int64_t track_pts_end_us_from_stats(const DemuxStats& stats);
+
+int64_t clamp_track_seek_target_us(const TrackPipeline& track,
+                                   int64_t target_pts_us);
+
+struct TrackAddSeekHooks {
+    std::function<void(int file_id, bool paused)> set_audio_decode_paused;
+};
+
+struct TrackAddSeekResult {
+    bool applied = false;
+    int64_t target_pts_us = 0;
+    SeekType seek_type = SeekType::Keyframe;
+};
+
+TrackAddSeekResult prepare_add_track_seek_to_clock(
+    TrackPipeline& track,
+    int64_t current_pts_us,
+    bool was_playing,
+    const TrackAddSeekHooks& hooks);
+
 } // namespace vr

@@ -1127,7 +1127,11 @@ std::function<void()> Renderer::draw_headless_and_publish(const PresentDecision&
     }
     {
         std::lock_guard<std::mutex> tex_lock(texture_mutex());
-        d3d_resources_->cached_rtv = headless_output_->begin_frame_locked();
+        auto* rtv = headless_output_->begin_frame_locked();
+        if (!rtv) {
+            return {};
+        }
+        d3d_resources_->cached_rtv = rtv;
     }
     draw_frame(decision);
     const auto publish_start = std::chrono::steady_clock::now();
@@ -1440,23 +1444,27 @@ bool Renderer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
     }
 
     std::lock_guard<std::mutex> lock(texture_mutex());
-    ID3D11Texture2D* texture = headless_output_->shared_texture_locked();
-    HANDLE handle = headless_output_->shared_texture_handle_locked();
-    if (!texture || !handle) {
+    D3D11HeadlessOutputTextureLease lease;
+    if (!headless_output_->acquire_shared_texture_locked(lease)) {
         d3d_metrics_.texture_sharing_failure_count.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
 
-    D3D11_TEXTURE2D_DESC desc = {};
-    texture->GetDesc(&desc);
-    texture->AddRef();
-
     snapshot.type = SharedTextureHandleType::D3D11SharedHandle;
-    snapshot.texture = texture;
-    snapshot.handle = handle;
-    snapshot.width = static_cast<int>(desc.Width);
-    snapshot.height = static_cast<int>(desc.Height);
+    snapshot.texture = lease.texture;
+    snapshot.handle = lease.handle;
+    snapshot.width = lease.width;
+    snapshot.height = lease.height;
+    snapshot.buffer_index = lease.buffer_index;
+    snapshot.buffer_generation = lease.generation;
     return true;
+}
+
+void Renderer::release_shared_texture(int buffer_index, uint64_t buffer_generation) const {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    if (headless_output_) {
+        headless_output_->release_shared_texture(buffer_index, buffer_generation);
+    }
 }
 
 std::mutex& Renderer::texture_mutex() const {

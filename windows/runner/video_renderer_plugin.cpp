@@ -311,12 +311,19 @@ struct ProcessHeapUsage {
 
 struct FlutterTextureReleaseContext {
     ID3D11Texture2D* texture = nullptr;
+    std::weak_ptr<vr::NativePlayer> player;
+    int buffer_index = -1;
+    uint64_t buffer_generation = 0;
 };
 
 void ReleaseFlutterTexture(void* release_context) {
     auto* context = static_cast<FlutterTextureReleaseContext*>(release_context);
     if (!context) {
         return;
+    }
+    if (auto player = context->player.lock()) {
+        player->release_shared_texture(
+            context->buffer_index, context->buffer_generation);
     }
     if (context->texture) {
         context->texture->Release();
@@ -1411,7 +1418,10 @@ void VideoRendererPlugin::CreatePlayer(
             }
 
             auto* release_context = new (std::nothrow) FlutterTextureReleaseContext{
-                static_cast<ID3D11Texture2D*>(snapshot.texture)};
+                static_cast<ID3D11Texture2D*>(snapshot.texture),
+                player_,
+                snapshot.buffer_index,
+                snapshot.buffer_generation};
             if (!release_context) {
                 static_cast<ID3D11Texture2D*>(snapshot.texture)->Release();
                 return nullptr;

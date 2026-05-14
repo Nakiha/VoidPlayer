@@ -471,6 +471,71 @@ TEST_CASE("D3D11HeadlessOutput publishes and resizes buffers", "[d3d11][headless
     cleanup_test_device(dev, hwnd);
 }
 
+TEST_CASE("D3D11HeadlessOutput does not reuse in-flight shared buffers",
+          "[d3d11][headless_output]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::D3D11HeadlessOutput output;
+    REQUIRE(output.initialize(dev->device(), dev->context(), 320, 240));
+
+    auto publish_and_acquire = [&]() {
+        vr::D3D11HeadlessOutputTextureLease lease;
+        {
+            std::lock_guard<std::mutex> lock(output.texture_mutex());
+            REQUIRE(output.begin_frame_locked() != nullptr);
+            output.publish_frame_locked();
+            REQUIRE(output.acquire_shared_texture_locked(lease));
+        }
+        REQUIRE(lease.texture != nullptr);
+        REQUIRE(lease.handle != nullptr);
+        REQUIRE(lease.buffer_index >= 0);
+        REQUIRE(lease.buffer_index < vr::D3D11HeadlessOutput::kBufferCount);
+        REQUIRE(output.buffer_in_flight_for_test(lease.buffer_index));
+        return lease;
+    };
+
+    auto lease1 = publish_and_acquire();
+    auto lease2 = publish_and_acquire();
+    auto lease3 = publish_and_acquire();
+    vr::D3D11HeadlessOutputTextureLease lease3_duplicate;
+    {
+        std::lock_guard<std::mutex> lock(output.texture_mutex());
+        REQUIRE(output.acquire_shared_texture_locked(lease3_duplicate));
+    }
+    REQUIRE(lease3_duplicate.buffer_index == lease3.buffer_index);
+
+    {
+        std::lock_guard<std::mutex> lock(output.texture_mutex());
+        REQUIRE(output.begin_frame_locked() == nullptr);
+        REQUIRE(output.publish_frame_locked() == nullptr);
+    }
+
+    output.release_shared_texture(lease3.buffer_index, lease3.generation);
+    REQUIRE(output.buffer_in_flight_for_test(lease3.buffer_index));
+    lease3.texture->Release();
+    lease3.texture = nullptr;
+
+    output.release_shared_texture(lease1.buffer_index, lease1.generation + 1);
+    REQUIRE(output.buffer_in_flight_for_test(lease1.buffer_index));
+
+    output.release_shared_texture(lease1.buffer_index, lease1.generation);
+    REQUIRE_FALSE(output.buffer_in_flight_for_test(lease1.buffer_index));
+    lease1.texture->Release();
+    lease1.texture = nullptr;
+
+    {
+        std::lock_guard<std::mutex> lock(output.texture_mutex());
+        REQUIRE(output.begin_frame_locked() != nullptr);
+    }
+
+    output.release_shared_texture(lease2.buffer_index, lease2.generation);
+    output.release_shared_texture(lease3_duplicate.buffer_index, lease3_duplicate.generation);
+    lease2.texture->Release();
+    lease3_duplicate.texture->Release();
+
+    output.shutdown();
+    cleanup_test_device(dev, hwnd);
+}
+
 TEST_CASE("D3D11HeadlessOutput fails initialization when shared handles are unavailable",
           "[d3d11][headless_output]") {
     auto [dev, hwnd] = create_test_device();

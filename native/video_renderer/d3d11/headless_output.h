@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <wrl/client.h>
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <vector>
@@ -17,6 +18,15 @@ struct D3D11HeadlessOutputMemoryStats {
     int height = 0;
     int format = 0;
     int buffer_count = 0;
+};
+
+struct D3D11HeadlessOutputTextureLease {
+    ID3D11Texture2D* texture = nullptr;  // AddRef'd; caller must Release().
+    HANDLE handle = nullptr;
+    int width = 0;
+    int height = 0;
+    int buffer_index = -1;
+    uint64_t generation = 0;
 };
 
 class D3D11HeadlessOutput {
@@ -35,6 +45,9 @@ public:
     ID3D11Texture2D* shared_texture_locked() const;
     HANDLE shared_texture_handle_locked() const;
     std::mutex& texture_mutex() const { return texture_mutex_; }
+    bool acquire_shared_texture_locked(D3D11HeadlessOutputTextureLease& lease);
+    void release_shared_texture(int buffer_index, uint64_t generation);
+    bool buffer_in_flight_for_test(int buffer_index) const;
 
     ID3D11RenderTargetView* begin_frame_locked();
     std::function<void()> publish_frame_locked();
@@ -53,6 +66,8 @@ private:
         Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtvs[kBufferCount];
         HANDLE handles[kBufferCount] = {};
         std::atomic<int> front{0};
+        uint32_t in_flight_count[kBufferCount] = {};
+        uint64_t generation = 1;
     };
 
     bool create_shared_buffers(int width,
@@ -60,7 +75,7 @@ private:
                                Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[],
                                Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtvs[],
                                HANDLE handles[]);
-    int pick_free_buffer() const;
+    int pick_free_buffer_locked() const;
 
     ID3D11Device* device_ = nullptr;
     ID3D11DeviceContext* context_ = nullptr;
@@ -68,7 +83,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D11Query> gpu_fence_;
     mutable std::mutex texture_mutex_;
     std::function<void()> frame_callback_;
-    int current_back_ = 0;
+    int current_back_ = -1;
     bool fail_shared_handle_for_test_ = false;
 };
 

@@ -88,6 +88,9 @@ public:
     bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
         return renderer_.acquire_shared_texture(snapshot);
     }
+    void release_shared_texture(int buffer_index, uint64_t buffer_generation) const {
+        renderer_.release_shared_texture(buffer_index, buffer_generation);
+    }
     void resize(int width, int height) { renderer_.resize(width, height); }
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
         return renderer_.capture_front_buffer(bgra, width, height);

@@ -204,6 +204,8 @@ struct SharedTextureSnapshot {
     void* handle = nullptr;
     int width = 0;
     int height = 0;
+    int buffer_index = -1;
+    uint64_t buffer_generation = 0;
 };
 
 class Renderer {
@@ -301,6 +303,7 @@ public:
     /// Acquire the current headless texture and shared handle as one snapshot.
     /// The returned texture is AddRef'd and must be released by the caller.
     bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const;
+    void release_shared_texture(int buffer_index, uint64_t buffer_generation) const;
 
     /// Resize the offscreen shared texture (headless mode only).
     /// Stores pending dimensions; render loop applies at controlled rate.

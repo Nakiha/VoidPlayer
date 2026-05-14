@@ -1,10 +1,10 @@
 #pragma once
 
+#include "video_renderer/layout_state.h"
+
 #include <functional>
 
 namespace vr {
-
-struct LayoutState;
 
 class LayoutController {
 public:

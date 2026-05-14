@@ -10,6 +10,7 @@
 #include "video_renderer/track_pipeline.h"
 #include "video_renderer/capture/frame_capture_service.h"
 #include "video_renderer/layout_controller.h"
+#include "video_renderer/layout_state.h"
 #include "video_renderer/shader_constants.h"
 #include "common/logging.h"
 #include <vector>
@@ -35,18 +36,6 @@ class TextureManager;
 class AudioCoordinator;
 class SeekCoordinator;
 class AnalysisOverlayRenderer;
-
-/// Layout mode constants (match HLSL defines)
-constexpr int LAYOUT_SIDE_BY_SIDE = 0;
-constexpr int LAYOUT_SPLIT_SCREEN = 1;
-constexpr float kMinLayoutSplitPos = 0.0f;
-constexpr float kMaxLayoutSplitPos = 1.0f;
-constexpr float kMinLayoutZoomRatio = 1.0f;
-constexpr float kMaxLayoutZoomRatio = 50.0f;
-
-/// Viewport pixel-size policy constants (match Flutter protocol).
-constexpr int PIXEL_SIZE_UNIFORM_VIDEO_PIXELS = 0;
-constexpr int PIXEL_SIZE_FILL_VIEW = 1;
 
 /// Track metadata returned to the UI layer.
 struct TrackInfo {
@@ -152,17 +141,6 @@ struct RendererGpuMemoryStats {
     int analysis_overlay_width = 0;
     int analysis_overlay_height = 0;
     std::vector<TrackGpuMemoryStats> tracks;
-};
-
-/// Layout state — all visual layout parameters in one struct.
-/// Updated atomically via Renderer::apply_layout().
-struct LayoutState {
-    int mode = LAYOUT_SIDE_BY_SIDE;  // 0=SIDE_BY_SIDE, 1=SPLIT_SCREEN
-    float split_pos = 0.5f;          // Split divider position (0.0-1.0)
-    float zoom_ratio = 1.0f;         // 1.0=fit, >1.0=zoom in
-    float view_offset[2] = {0.0f, 0.0f};  // Pan offset in pixel coordinates
-    int pixel_size_mode = PIXEL_SIZE_UNIFORM_VIDEO_PIXELS;  // 0=uniform density, 1=fit each slot
-    int order[4] = {0, 1, 2, 3};    // Track display order by file_id; -1/0 are placeholders
 };
 
 enum class RendererBackendType {
@@ -327,8 +305,6 @@ private:
     void draw_paused_frame(const char* reason);
     bool build_step_forward_decision_locked(PresentDecision& decision) const;
     void discard_step_forward_consumed_frames_locked(const PresentDecision& decision);
-    std::pair<float, float> display_pixel_size_for_layout_locked(
-        int width, int height, const LayoutState& layout) const;
     void update_track_geometry_from_decision_locked(const PresentDecision& decision);
     int64_t clamp_track_seek_target_us_locked(const TrackPipeline& track,
                                                int64_t target_pts_us) const;

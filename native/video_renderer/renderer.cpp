@@ -1,5 +1,6 @@
 #include "video_renderer/renderer.h"
 #include "video_renderer/analysis_overlay_renderer.h"
+#include "video_renderer/layout_geometry.h"
 #include "video_renderer/layout_validation.h"
 #include "video_renderer/renderer_config_validation.h"
 #include "audio/audio_output_factory.h"
@@ -63,6 +64,20 @@ bool is_h264_flv_track(const TrackPipeline& track) {
         return static_cast<char>(std::tolower(c));
     });
     return format.find("flv") != std::string::npos;
+}
+
+LayoutTrackGeometryList snapshot_layout_track_geometry(const TrackPipelineManager& tracks) {
+    LayoutTrackGeometryList result = {};
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks[i]) {
+            continue;
+        }
+        result[i].active = true;
+        result[i].width = tracks[i]->video_width;
+        result[i].height = tracks[i]->video_height;
+        result[i].aspect = tracks[i]->video_aspect;
+    }
+    return result;
 }
 
 Renderer::Renderer()
@@ -732,98 +747,6 @@ void Renderer::discard_step_forward_consumed_frames_locked(const PresentDecision
     }
 }
 
-std::pair<float, float> Renderer::display_pixel_size_for_layout_locked(
-    int width, int height, const LayoutState& layout) const {
-    if (width <= 0 || height <= 0) {
-        return {0.0f, 0.0f};
-    }
-
-    int active_count = 0;
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (tracks_[i]) ++active_count;
-    }
-    if (active_count == 0) {
-        return {static_cast<float>(width), static_cast<float>(height)};
-    }
-
-    int track_idx = -1;
-    for (int display = 0; display < 4; ++display) {
-        int candidate = layout.order[display];
-        if (candidate >= 0 && candidate < static_cast<int>(kMaxTracks) && tracks_[candidate]) {
-            track_idx = candidate;
-            break;
-        }
-    }
-    if (track_idx < 0) {
-        for (int i = 0; i < static_cast<int>(kMaxTracks); ++i) {
-            if (tracks_[i]) {
-                track_idx = i;
-                break;
-            }
-        }
-    }
-    if (track_idx < 0 || !tracks_[track_idx]) {
-        return {static_cast<float>(width), static_cast<float>(height)};
-    }
-
-    float slot_w = static_cast<float>(width);
-    float slot_h = static_cast<float>(height);
-    if (layout.mode != LAYOUT_SPLIT_SCREEN && active_count > 1) {
-        slot_w /= static_cast<float>(active_count);
-    }
-    const float slot_aspect = (slot_h > 0.0f) ? slot_w / slot_h : 1.0f;
-    const float track_w = static_cast<float>(tracks_[track_idx]->video_width);
-    const float track_h = static_cast<float>(tracks_[track_idx]->video_height);
-
-    float track_scale = 1.0f;
-    if (layout.pixel_size_mode == PIXEL_SIZE_UNIFORM_VIDEO_PIXELS) {
-        int ref_idx = -1;
-        int max_pixels = 0;
-        for (int i = 0; i < static_cast<int>(kMaxTracks); ++i) {
-            if (!tracks_[i]) continue;
-            int pixels = tracks_[i]->video_width * tracks_[i]->video_height;
-            if (pixels > max_pixels) {
-                max_pixels = pixels;
-                ref_idx = i;
-            }
-        }
-        if (ref_idx < 0 || !tracks_[ref_idx]) {
-            ref_idx = track_idx;
-        }
-
-        float ref_density = 1.0f;
-        const float ref_w = static_cast<float>(tracks_[ref_idx]->video_width);
-        const float ref_h = static_cast<float>(tracks_[ref_idx]->video_height);
-        if (ref_w > 0.0f && ref_h > 0.0f) {
-            ref_density = std::min(slot_w / ref_w, slot_h / ref_h);
-        }
-
-        float track_density = 1.0f;
-        if (track_w > 0.0f && track_h > 0.0f) {
-            track_density = std::min(slot_w / track_w, slot_h / track_h);
-        }
-        track_scale = (track_density > 0.0f) ? ref_density / track_density : 1.0f;
-    }
-
-    float video_aspect = tracks_[track_idx]->video_aspect;
-    if (video_aspect <= 0.0f) {
-        video_aspect = (track_h > 0.0f) ? track_w / track_h : slot_aspect;
-    }
-    if (video_aspect <= 0.0f) {
-        video_aspect = slot_aspect;
-    }
-
-    float fit_scale = (video_aspect > slot_aspect)
-        ? slot_aspect / video_aspect : 1.0f;
-    fit_scale *= track_scale;
-    const float display_scale = fit_scale * layout.zoom_ratio;
-    const float ds_x = (slot_aspect > 0.0f)
-        ? video_aspect * display_scale / slot_aspect : display_scale;
-    const float ds_y = display_scale;
-
-    return {ds_x * slot_w, ds_y * slot_h};
-}
-
 void Renderer::update_track_geometry_from_decision_locked(const PresentDecision& decision) {
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks_[i] || !decision.frames[i].has_value()) continue;
@@ -1478,9 +1401,11 @@ void Renderer::do_resize(int width, int height) {
 
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        const auto old_display = display_pixel_size_for_layout_locked(
-            target_width_, target_height_, layout_);
-        const auto new_display = display_pixel_size_for_layout_locked(width, height, layout_);
+        const auto layout_tracks = snapshot_layout_track_geometry(tracks_);
+        const auto old_display = display_pixel_size_for_layout(
+            target_width_, target_height_, layout_, layout_tracks);
+        const auto new_display = display_pixel_size_for_layout(
+            width, height, layout_, layout_tracks);
         if (old_display.first > 1e-4f && new_display.first > 1e-4f) {
             layout_.view_offset[0] *= new_display.first / old_display.first;
         }
@@ -1912,35 +1837,30 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     // Update constant buffer
     // Layout must match HLSL cbuffer Constants in multitrack.hlsl
     if (resources.compiled_shader.constant_buffer) {
-        // Snapshot layout state atomically
         LayoutState snap;
+        float background_color[4] = {};
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             snap = layout_;
-        }
-
-        cb.mode = snap.mode;
-        cb.split_pos = snap.split_pos;
-        cb.zoom_ratio = snap.zoom_ratio;
-        cb.canvas_width = static_cast<float>(target_width_);
-        cb.canvas_height = static_cast<float>(target_height_);
-        cb.view_offset[0] = snap.view_offset[0];
-        cb.view_offset[1] = snap.view_offset[1];
-        cb.nv12_mask = 0;
-        cb.planar_yuv_mask = 0;
-        {
-            std::lock_guard<std::mutex> lock(state_mutex_);
             for (int i = 0; i < 4; ++i) {
-                cb.background_color[i] = background_color_[i];
+                background_color[i] = background_color_[i];
             }
         }
+
+        populate_layout_shader_constants(
+            cb,
+            snap,
+            snapshot_layout_track_geometry(tracks_),
+            target_width_,
+            target_height_);
+        cb.nv12_mask = 0;
+        cb.planar_yuv_mask = 0;
         for (int i = 0; i < 4; ++i) {
-            cb.order[i] = snap.order[i];
+            cb.background_color[i] = background_color[i];
         }
-        int active_count = 0;
+
         for (size_t i = 0; i < kMaxTracks; ++i) {
             if (!tracks_[i]) {
-                cb.video_aspect[i] = 1.0f;
                 cb.nv12_uv_scale_x[i] = 1.0f;
                 cb.nv12_uv_scale_y[i] = 1.0f;
                 cb.color_range[i] = VIDEO_COLOR_RANGE_LIMITED;
@@ -1949,8 +1869,6 @@ void Renderer::draw_frame(const PresentDecision& decision) {
                 cb.color_primaries[i] = VIDEO_COLOR_PRIMARIES_BT709;
                 continue;
             }
-            ++active_count;
-            cb.video_aspect[i] = tracks_[i]->video_aspect;
             const VideoColorInfo color = decision.frames[i].has_value()
                 ? decision.frames[i]->color
                 : VideoColorInfo{};
@@ -1992,106 +1910,6 @@ void Renderer::draw_frame(const PresentDecision& decision) {
                 cb.nv12_uv_scale_y[i] = frame_presenter_
                     ? frame_presenter_->nv12_uv_scale_y(i)
                     : 1.0f;
-            }
-        }
-        cb.track_count = active_count;
-
-        // Compute per-track scale for the selected pixel-size policy.
-        {
-            for (int i = 0; i < 4; ++i) {
-                cb.track_scale[i] = 1.0f;
-            }
-
-            if (snap.pixel_size_mode == PIXEL_SIZE_UNIFORM_VIDEO_PIXELS) {
-                int ref_idx = -1;
-                int max_pixels = 0;
-                for (int i = 0; i < 4; ++i) {
-                    if (!tracks_[i]) continue;
-                    int pixels = tracks_[i]->video_width * tracks_[i]->video_height;
-                    if (pixels > max_pixels) {
-                        max_pixels = pixels;
-                        ref_idx = i;
-                    }
-                }
-                if (ref_idx < 0) ref_idx = 0;
-
-                // Slot dimensions depend on layout mode
-                float slot_w = static_cast<float>(target_width_);
-                float slot_h = static_cast<float>(target_height_);
-                if (snap.mode != LAYOUT_SPLIT_SCREEN && active_count > 1) {
-                    slot_w /= static_cast<float>(active_count);
-                }
-
-                // Reference video density: min(slot_w / ref_w, slot_h / ref_h)
-                float ref_density = 1.0f;
-                if (tracks_[ref_idx]) {
-                    float ref_w = static_cast<float>(tracks_[ref_idx]->video_width);
-                    float ref_h = static_cast<float>(tracks_[ref_idx]->video_height);
-                    if (ref_w > 0.0f && ref_h > 0.0f) {
-                        ref_density = std::min(slot_w / ref_w, slot_h / ref_h);
-                    }
-                }
-
-                for (int i = 0; i < 4; ++i) {
-                    if (!tracks_[i]) continue;
-                    float tw = static_cast<float>(tracks_[i]->video_width);
-                    float th = static_cast<float>(tracks_[i]->video_height);
-                    float density = 1.0f;
-                    if (tw > 0.0f && th > 0.0f) {
-                        density = std::min(slot_w / tw, slot_h / th);
-                    }
-                    cb.track_scale[i] = (density > 0.0f) ? ref_density / density : 1.0f;
-                }
-            }
-        }
-
-        // Precompute per-track display constants (moves heavy math from pixel shader to CPU)
-        {
-            float slot_w = static_cast<float>(target_width_);
-            float slot_h = static_cast<float>(target_height_);
-            if (snap.mode != LAYOUT_SPLIT_SCREEN && active_count > 1) {
-                slot_w /= static_cast<float>(active_count);
-            }
-            float slot_aspect = (slot_h > 0.0f) ? slot_w / slot_h : 1.0f;
-
-            for (int i = 0; i < 4; ++i) {
-                float video_aspect = cb.video_aspect[i];
-                if (!std::isfinite(video_aspect) || video_aspect <= 0.0f) {
-                    video_aspect = slot_aspect;
-                }
-
-                // Aspect-fit scale
-                float fit_scale = (video_aspect > slot_aspect)
-                    ? slot_aspect / video_aspect : 1.0f;
-                fit_scale *= cb.track_scale[i];
-                if (!std::isfinite(fit_scale) || fit_scale <= 0.0f) {
-                    fit_scale = 1.0f;
-                }
-
-                // Apply zoom
-                float display_scale = fit_scale * snap.zoom_ratio;
-                if (!std::isfinite(display_scale) || display_scale <= 0.0f) {
-                    display_scale = 1.0f;
-                }
-
-                // Display size in slot UV space
-                float ds_x = (slot_aspect > 0.0f)
-                    ? video_aspect * display_scale / slot_aspect : display_scale;
-                float ds_y = display_scale;
-
-                // Display offset (centering)
-                cb.display_offset_x[i] = (1.0f - ds_x) * 0.5f;
-                cb.display_offset_y[i] = (1.0f - ds_y) * 0.5f;
-
-                // Inverse display size (for fast division in shader)
-                cb.inv_display_size_x[i] = (fabsf(ds_x) > 1e-4f) ? 1.0f / ds_x : 0.0f;
-                cb.inv_display_size_y[i] = (fabsf(ds_y) > 1e-4f) ? 1.0f / ds_y : 0.0f;
-
-                // View offset in video UV space
-                float dp_x = ds_x * slot_w;
-                float dp_y = ds_y * slot_h;
-                cb.view_offset_uv_x[i] = (fabsf(dp_x) > 1e-4f) ? snap.view_offset[0] / dp_x : 0.0f;
-                cb.view_offset_uv_y[i] = (fabsf(dp_y) > 1e-4f) ? snap.view_offset[1] / dp_y : 0.0f;
             }
         }
         ctx->UpdateSubresource(resources.compiled_shader.constant_buffer.Get(), 0, nullptr, &cb, 0, 0);

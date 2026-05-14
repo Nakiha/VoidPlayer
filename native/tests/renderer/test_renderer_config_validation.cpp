@@ -2,7 +2,10 @@
 
 #include "video_renderer/layout_validation.h"
 #include "video_renderer/layout_controller.h"
+#include "video_renderer/layout_geometry.h"
 #include "video_renderer/renderer_config_validation.h"
+
+#include <cmath>
 
 using namespace vr;
 
@@ -16,6 +19,10 @@ RendererConfig valid_windowed_config() {
     config.height = 1080;
     config.use_hardware_decode = true;
     return config;
+}
+
+bool layout_float_near(float lhs, float rhs, float epsilon = 0.0001f) {
+    return std::fabs(lhs - rhs) <= epsilon;
 }
 
 } // namespace
@@ -173,6 +180,39 @@ TEST_CASE("LayoutController owns file-id to slot order translation",
     REQUIRE(snapshot.order[3] == -1);
     REQUIRE(layout.order[0] == 0);
     REQUIRE(layout.order[1] == 0);
+}
+
+TEST_CASE("Layout geometry computes shader constants outside Renderer",
+          "[renderer_config][layout]") {
+    LayoutState layout;
+    layout.mode = LAYOUT_SIDE_BY_SIDE;
+    layout.zoom_ratio = 1.0f;
+    layout.pixel_size_mode = PIXEL_SIZE_UNIFORM_VIDEO_PIXELS;
+    layout.order[0] = 0;
+    layout.order[1] = 1;
+    layout.order[2] = 0;
+    layout.order[3] = 0;
+
+    LayoutTrackGeometryList tracks = {};
+    tracks[0] = {true, 1920, 1080, 16.0f / 9.0f};
+    tracks[1] = {true, 1280, 720, 16.0f / 9.0f};
+
+    ShaderConstants constants = {};
+    populate_layout_shader_constants(constants, layout, tracks, 2000, 1000);
+
+    REQUIRE(constants.track_count == 2);
+    REQUIRE(constants.order[0] == 0);
+    REQUIRE(constants.order[1] == 1);
+    REQUIRE(layout_float_near(constants.track_scale[0], 1.0f));
+    REQUIRE(layout_float_near(constants.track_scale[1], 2.0f / 3.0f));
+    REQUIRE(layout_float_near(constants.display_offset_x[0], 0.0f));
+    REQUIRE(layout_float_near(constants.display_offset_y[0], 0.21875f));
+    REQUIRE(layout_float_near(constants.inv_display_size_x[0], 1.0f));
+    REQUIRE(layout_float_near(constants.inv_display_size_y[0], 16.0f / 9.0f));
+
+    const auto display = display_pixel_size_for_layout(2000, 1000, layout, tracks);
+    REQUIRE(layout_float_near(display.first, 1000.0f));
+    REQUIRE(layout_float_near(display.second, 562.5f));
 }
 
 TEST_CASE("Native resource budget exposes renderer guardrails",

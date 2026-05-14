@@ -1,7 +1,5 @@
 #include "video_renderer/layout_controller.h"
 
-#include "video_renderer/renderer.h"
-
 #include <algorithm>
 
 namespace vr {

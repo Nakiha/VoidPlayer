@@ -82,6 +82,7 @@ Fixed or reduced:
 - `AudioEngine::Impl`: `AudioMixer` extracted and pause PCM consumption bug fixed.
 - `AnalysisManager`: session snapshot split reduced global session risk.
 - `Renderer`: analysis overlay CPU cache, D3D overlay resource helpers, mask pass, and overlay draw pass moved into `AnalysisOverlayRenderer`; `Renderer` now delegates the overlay pass after the base frame draw.
+- `Renderer`: layout state/constants moved to layout-owned helpers; `Renderer` now snapshots track geometry and delegates shader layout math to `layout_geometry`.
 - Windows runner plugin: diagnostics, logging bootstrap, texture bridge, file picker, method dispatch, and MethodChannel diagnostics scope were split.
 - Process-global logging/crash FFI ownership is now documented.
 
@@ -96,7 +97,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P40 Renderer Layout Ownership Continuation.
+Next patch: P41 Render Loop Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -324,6 +325,8 @@ Result:
 
 ### P40 - Renderer Layout Ownership Continuation
 
+Status: done in Patch 40.
+
 Source: `review_godobject.md`, `native/docs/NATIVE_REFACTOR_TODO.md`.
 
 Goal:
@@ -335,6 +338,13 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewport_pan_layout_regression.csv`
+
+Result:
+
+- Moved layout protocol constants and `LayoutState` into `layout_state.h` so validation/controller code no longer reaches through `renderer.h`.
+- Added `layout_geometry` as a pure layout math owner for display pixel-size, track scale, display offset, inverse display size, and view-offset UV constants.
+- `Renderer` now snapshots layout/track geometry, fills non-layout color/format constants, and leaves layout shader math outside the god object.
+- Added native coverage for uniform pixel-size shader constants and resize display-size math.
 
 ### P41 - Render Loop Boundary
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "video_renderer/renderer.h"
+#include "video_renderer/layout_state.h"
 
 #include <cmath>
 

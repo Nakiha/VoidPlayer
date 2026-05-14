@@ -1416,9 +1416,8 @@ void VideoRendererPlugin::GetDiagnostics(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     try {
-    // Use global player so stats window (secondary engine) can query directly.
     result->Success(flutter::EncodableValue(
-        diagnostics_.BuildMethodChannelDiagnostics(pin_global_player())));
+        diagnostics_.BuildMethodChannelDiagnostics(player_)));
     } catch (const std::exception& e) {
         ReportMethodException(result.get(), "getDiagnostics", e);
     } catch (...) {

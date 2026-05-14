@@ -730,6 +730,27 @@ Follow-up:
 
 - Continue shrinking `VideoRendererPlugin` by moving player lifecycle/control handlers behind a narrower player bridge and by removing process-global diagnostics lookup where possible.
 
+2026-05-15 Patch 27 - Plugin-Scoped MethodChannel Diagnostics
+
+Changed:
+
+- Changed MethodChannel `getDiagnostics` to pass the plugin instance `player_` directly into `NativeDiagnosticsProvider`.
+- Removed the MethodChannel dependency on `NativePlayerRegistry::Pin()` while preserving the diagnostics payload shape.
+- Split the diagnostics backlog into completed MethodChannel instance scope and remaining FFI host/session scope.
+
+Verified:
+
+- `git diff --check`
+- `python dev.py ui-test --build ui_tests/smoke/profiler_overlay.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- FFI `naki_vr_get_diagnostics()` still uses the process-global registry because the stats window polls it through `DynamicLibrary.executable()`; replace that with a host/session-scoped contract in a separate ABI slice.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
@@ -784,11 +805,12 @@ fixed:
 - Windows runner file picker: Patch 24 moved native file dialog and path conversion into `FilePickerService`.
 - Global-state smoke coverage: Patch 25 added repeated create-destroy UI coverage.
 - Windows runner MethodChannel dispatch: Patch 26 moved method-name lookup into `NativePlayerMethodDispatcher`.
+- Windows runner MethodChannel diagnostics scope: Patch 27 switched `getDiagnostics` to plugin instance player scope.
 
 accepted-backlog:
 
 - `Renderer` remains the root coordination object; future work should move one owner boundary at a time.
-- `windows/runner/video_renderer_plugin.cpp` remains a bridge God Module; split player handlers and player diagnostics/provider scope later.
+- `windows/runner/video_renderer_plugin.cpp` remains a bridge God Module; split player handlers and FFI diagnostics host/session scope later.
 - `ffi_exports.cpp` remains an ABI God Module candidate; split ABI shim / registry / commands / marshalling later.
 - `TrackPipelineManager` remains a lifecycle-heavy factory; further factory/lifecycle split remains useful.
 - `DecodeThread`, `FrameConverter`, target boundaries, process globals, and resource-budget policy remain second-stage refactor topics.
@@ -843,6 +865,7 @@ fixed:
 - Patch 24 completed the runner `FilePickerService` slice for native file dialog ownership.
 - Patch 25 added repeated create-destroy UI smoke coverage for last-track teardown and player recreation.
 - Patch 26 completed the runner `NativePlayerMethodDispatcher` slice for MethodChannel method-name dispatch.
+- Patch 27 completed MethodChannel diagnostics active-player lookup scope.
 
 accepted-backlog:
 

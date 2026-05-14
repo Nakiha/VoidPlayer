@@ -329,8 +329,12 @@ TODO:
    - 已把 `Renderer::initialize()` 中 active track 到 layout order 的初始 append 循环拆到 `LayoutController`，Renderer 保留 layout reset 和 track manager。
    - 验证：native-only + smoke/viewport UI。
 
-42. [ ] `InitialActiveTrackQuery`
-   - 后续把 `Renderer::initialize()` 中剩余的 active track 扫描替换为 `TrackPipelineManager` 查询，Renderer 保留失败分支和错误日志。
+42. [x] `InitialActiveTrackQuery`
+   - 已把 `Renderer::initialize()` 中剩余的 active track 扫描替换为 `TrackPipelineManager` 查询，Renderer 保留失败分支和错误日志。
+   - 验证：native-only + smoke UI。
+
+43. [ ] `PerfBaselineReset`
+   - 后续集中 `Renderer` 初始化/释放时的 perf baseline reset，减少重复状态清理循环，为后续 track perf ownership 继续外移做准备。
    - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split

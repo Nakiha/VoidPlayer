@@ -118,6 +118,7 @@ Fixed or reduced:
 - `Renderer`: paused preview snapshot assembly moved into dedicated `track_preview_policy` owner.
 - `Renderer`: paused-frame draw snapshot assembly moved into `track_preview_policy`.
 - `Renderer`: initial layout track-order append moved into `LayoutController`.
+- `Renderer`: initial active-track query now uses `TrackPipelineManager` ownership instead of an ad hoc scan.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -141,7 +142,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P86 Renderer Initial Active-Track Query Boundary.
+Next patch: P87 Renderer Perf Baseline Reset Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1348,11 +1349,32 @@ Result:
 
 ### P86 - Renderer Initial Active-Track Query Boundary
 
+Status: done in Patch 86.
+
 Goal:
 
 - Remove the remaining ad hoc active-track scan from `Renderer::initialize`.
 - Reuse `TrackPipelineManager` as the owner of active-track count queries.
 - Preserve the existing "no valid tracks" failure behavior.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Replaced the manual active-track scan in `Renderer::initialize` with `tracks_.count()`.
+- Reused existing `TrackPipelineManager` active-query coverage.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P87 - Renderer Perf Baseline Reset Boundary
+
+Goal:
+
+- Centralize initialization and teardown resets for perf baseline state.
+- Keep public `track_perf_stats()` behavior unchanged.
+- Avoid widening the track snapshot module until the mutable FPS baseline policy can be isolated cleanly.
 
 Validation:
 

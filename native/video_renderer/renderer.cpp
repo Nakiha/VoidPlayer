@@ -159,9 +159,7 @@ bool Renderer::initialize(const RendererConfig& config) {
         tracks_[slot] = std::move(pipeline);
     }
 
-    bool any_track = false;
-    for (const auto& t : tracks_) { if (t) { any_track = true; break; } }
-    if (!any_track) {
+    if (tracks_.count() == 0) {
         spdlog::error("Renderer: no valid tracks");
         return fail();
     }

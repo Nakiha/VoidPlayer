@@ -2058,19 +2058,30 @@ int Renderer::add_track(const std::string& video_path,
         return -1;
     }
 
-    // Register with render sink
-    render_sink_->set_track(slot, pipeline->track_buffer);
-    render_sink_->set_track_offset(slot, 0);
-
     // Update duration cache
     cached_duration_us_ = std::max(cached_duration_us_,
         pipeline->demux_thread->stats().duration_us);
 
-    // Commit: install the pipeline
-    if (frame_presenter_) {
-        frame_presenter_->reset_track(slot);
+    const TrackAddCommitHooks commit_hooks{
+        [this](size_t committed_slot, TrackPipeline& track) {
+            render_sink_->set_track(committed_slot, track.track_buffer);
+            render_sink_->set_track_offset(committed_slot, track.offset_us);
+        },
+        [this](size_t committed_slot) {
+            if (frame_presenter_) {
+                frame_presenter_->reset_track(committed_slot);
+            }
+        },
+    };
+    TrackPipeline* track = commit_new_track_pipeline(
+        tracks_, static_cast<size_t>(slot), std::move(pipeline), commit_hooks);
+    if (!track) {
+        if (was_playing) {
+            playback_->play();
+            playing_ = true;
+        }
+        return -1;
     }
-    tracks_[slot] = std::move(pipeline);
 
     layout_controller_.append_track(layout_, new_file_id, slot);
 
@@ -2079,7 +2090,6 @@ int Renderer::add_track(const std::string& video_path,
     // frames as "expired" when the clock is elsewhere, causing both panels to show
     // the same old video.
     int64_t current_pts = playback_->clock().current_pts_us();
-    auto& track = tracks_[slot];
     const TrackAddSeekHooks add_seek_hooks{
         [this](int file_id, bool paused) {
             if (audio_coordinator_) {

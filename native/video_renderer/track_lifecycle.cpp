@@ -146,6 +146,25 @@ TrackAddSeekResult prepare_add_track_seek_to_clock(
     return result;
 }
 
+TrackPipeline* commit_new_track_pipeline(
+    TrackPipelineManager& tracks,
+    size_t slot,
+    std::unique_ptr<TrackPipeline> pipeline,
+    const TrackAddCommitHooks& hooks) {
+    if (slot >= kMaxTracks || !pipeline) {
+        return nullptr;
+    }
+
+    if (hooks.set_render_slot) {
+        hooks.set_render_slot(slot, *pipeline);
+    }
+    if (hooks.reset_presenter_track) {
+        hooks.reset_presenter_track(slot);
+    }
+    tracks[slot] = std::move(pipeline);
+    return tracks[slot].get();
+}
+
 TrackSeekPreparationResult prepare_track_seek_transition(
     TrackPipeline& track,
     const TrackSeekPreparationConfig& config,

@@ -209,8 +209,12 @@ TODO:
    - 已把 `recreate_pipeline_for_seek` 的 stop/recreate/start/render-sink commit 编排拆成 lifecycle helper，并清理不再使用的 decode-thread-only recreate 路径。
    - 验证：native-only + smoke/shutdown-during-seek recreate UI。
 
-12. [ ] `TrackAddCommit`
-   - 后续把 add-track 的 render-sink/frame-presenter/tracks slot commit 拆成 lifecycle helper，Renderer 保留 layout/duration/playback 决策。
+12. [x] `TrackAddCommit`
+   - 已把 add-track 的 render-sink/frame-presenter/tracks slot commit 拆成 lifecycle helper，Renderer 保留 layout/duration/playback 决策。
+   - 验证：native-only + smoke/track compact UI。
+
+13. [ ] `TrackDurationCache`
+   - 后续把 initialize/add/remove 中的 track duration max/recompute 逻辑拆成可单测 helper，Renderer 只保留 cached value。
    - 验证：native-only + smoke/track compact UI。
 
 ## P1 - Windows Runner Plugin Split

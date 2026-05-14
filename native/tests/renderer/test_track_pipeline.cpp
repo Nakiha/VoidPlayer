@@ -279,6 +279,39 @@ TEST_CASE("TrackLifecycle prepares add-track seek to current clock",
     REQUIRE(audio_pause_count == 2);
 }
 
+TEST_CASE("TrackLifecycle commits new track pipeline slot",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineManager manager;
+    auto pipeline = std::make_unique<TrackPipeline>();
+    pipeline->file_id = 55;
+    pipeline->offset_us = 12345;
+    pipeline->track_buffer = std::make_shared<TrackBuffer>(1, 0);
+
+    std::vector<std::string> events;
+    const TrackAddCommitHooks hooks{
+        [&](size_t slot, TrackPipeline& track) {
+            events.push_back(
+                "render:" + std::to_string(slot) + ":" +
+                std::to_string(track.file_id));
+        },
+        [&](size_t slot) {
+            events.push_back("reset:" + std::to_string(slot));
+        },
+    };
+
+    TrackPipeline* committed =
+        commit_new_track_pipeline(manager, 1, std::move(pipeline), hooks);
+
+    REQUIRE(committed != nullptr);
+    REQUIRE(manager[1].get() == committed);
+    REQUIRE(committed->file_id == 55);
+    REQUIRE(committed->offset_us == 12345);
+    REQUIRE(events == std::vector<std::string>{"render:1:55", "reset:1"});
+
+    REQUIRE_FALSE(commit_new_track_pipeline(
+        manager, kMaxTracks, std::unique_ptr<TrackPipeline>{}, hooks));
+}
+
 TEST_CASE("TrackLifecycle prepares generic track seek transition",
           "[track_pipeline][track_lifecycle]") {
     TrackPipeline track;

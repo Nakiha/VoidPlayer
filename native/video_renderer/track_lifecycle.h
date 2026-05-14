@@ -64,6 +64,17 @@ TrackAddSeekResult prepare_add_track_seek_to_clock(
     bool was_playing,
     const TrackAddSeekHooks& hooks);
 
+struct TrackAddCommitHooks {
+    std::function<void(size_t slot, TrackPipeline& track)> set_render_slot;
+    std::function<void(size_t slot)> reset_presenter_track;
+};
+
+TrackPipeline* commit_new_track_pipeline(
+    TrackPipelineManager& tracks,
+    size_t slot,
+    std::unique_ptr<TrackPipeline> pipeline,
+    const TrackAddCommitHooks& hooks);
+
 struct TrackSeekPreparationConfig {
     bool reset_presenter_track = false;
 };

@@ -89,6 +89,7 @@ Fixed or reduced:
 - `Renderer`: HEVC hardware seek recreate/coalesce/error decision moved into `SeekCoordinator` policy.
 - `Renderer`: generic per-track seek preparation and post-recreate seek submission moved into `track_lifecycle`.
 - `Renderer`: seek pipeline stop/recreate/start/render-sink commit choreography moved into `track_lifecycle`; unused decode-thread-only recreate path removed.
+- `Renderer`: add-track render-sink/frame-presenter/tracks slot commit moved into `track_lifecycle`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -105,14 +106,14 @@ Still active:
 
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
-- `Renderer` still owns add/remove track slot commit, layout mutation, playback pause/resume, and global seek clock/deferred gates.
+- `Renderer` still owns layout mutation, playback pause/resume, duration cache updates, and global seek clock/deferred gates.
 - `DecodeThread` main loop still owns codec send/receive, EOF drain, AVFrame ownership, and hardware visibility transitions.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P56 Renderer Track Add Commit Boundary.
+Next patch: P57 Renderer Track Duration Cache Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -675,10 +676,31 @@ Result:
 
 ### P56 - Renderer Track Add Commit Boundary
 
+Status: done in Patch 56.
+
 Goal:
 
 - Move add-track render-sink/frame-presenter/tracks slot commit into a lifecycle helper.
 - Keep layout mutation, duration cache update, playback pause/resume, and public file-id allocation in `Renderer`.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv`
+
+Result:
+
+- Added `TrackAddCommitHooks` and `commit_new_track_pipeline` to `track_lifecycle`.
+- `Renderer::add_track` now delegates render-sink registration, frame-presenter reset, and `tracks_` slot installation.
+- Added native coverage for add-track commit hook order, slot installation, metadata preservation, and invalid/null commit rejection.
+- Verified with native-only tests plus rebuilt smoke and track compact UI scripts.
+
+### P57 - Renderer Track Duration Cache Boundary
+
+Goal:
+
+- Move track duration cache max/recompute helpers out of `Renderer`.
+- Keep the cached value field and public `duration_us()` API in `Renderer`.
 
 Validation:
 

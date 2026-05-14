@@ -240,6 +240,56 @@ TEST_CASE("TrackLifecycle computes duration cache",
     manager.stop_slot(1);
 }
 
+TEST_CASE("TrackLifecycle guards playback around track mutation",
+          "[track_pipeline][track_lifecycle]") {
+    std::vector<std::string> events;
+    const TrackPlaybackMutationHooks hooks{
+        [&]() { events.push_back("pause"); },
+        [&]() { events.push_back("play"); },
+        [&](bool playing) {
+            events.push_back(std::string("playing:") + (playing ? "true" : "false"));
+        },
+    };
+
+    const auto idle_state =
+        pause_playback_for_track_mutation(false, hooks);
+    REQUIRE_FALSE(idle_state.was_playing);
+    REQUIRE(events.empty());
+    rollback_track_mutation_playback(idle_state, hooks);
+    finish_track_removal_playback(idle_state, true, hooks);
+    REQUIRE(events.empty());
+
+    const auto active_state =
+        pause_playback_for_track_mutation(true, hooks);
+    REQUIRE(active_state.was_playing);
+    REQUIRE(events == std::vector<std::string>{"pause", "playing:false"});
+
+    rollback_track_mutation_playback(active_state, hooks);
+    REQUIRE(events == std::vector<std::string>{
+        "pause",
+        "playing:false",
+        "play",
+        "playing:true",
+    });
+
+    events.clear();
+    const auto removal_without_tracks =
+        pause_playback_for_track_mutation(true, hooks);
+    finish_track_removal_playback(removal_without_tracks, false, hooks);
+    REQUIRE(events == std::vector<std::string>{"pause", "playing:false"});
+
+    events.clear();
+    const auto removal_with_tracks =
+        pause_playback_for_track_mutation(true, hooks);
+    finish_track_removal_playback(removal_with_tracks, true, hooks);
+    REQUIRE(events == std::vector<std::string>{
+        "pause",
+        "playing:false",
+        "play",
+        "playing:true",
+    });
+}
+
 TEST_CASE("TrackLifecycle prepares add-track seek to current clock",
           "[track_pipeline][track_lifecycle]") {
     TrackPipeline track;

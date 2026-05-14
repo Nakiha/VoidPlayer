@@ -55,6 +55,29 @@ int64_t extend_track_duration_cache(int64_t cached_duration_us,
 
 int64_t compute_track_duration_cache(const TrackPipelineManager& tracks);
 
+struct TrackPlaybackMutationHooks {
+    std::function<void()> pause_playback;
+    std::function<void()> resume_playback;
+    std::function<void(bool playing)> set_playing;
+};
+
+struct TrackPlaybackMutationState {
+    bool was_playing = false;
+};
+
+TrackPlaybackMutationState pause_playback_for_track_mutation(
+    bool currently_playing,
+    const TrackPlaybackMutationHooks& hooks);
+
+void rollback_track_mutation_playback(
+    const TrackPlaybackMutationState& state,
+    const TrackPlaybackMutationHooks& hooks);
+
+void finish_track_removal_playback(
+    const TrackPlaybackMutationState& state,
+    bool has_active_tracks,
+    const TrackPlaybackMutationHooks& hooks);
+
 struct TrackAddSeekHooks {
     std::function<void(int file_id, bool paused)> set_audio_decode_paused;
 };

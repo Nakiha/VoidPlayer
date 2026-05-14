@@ -137,6 +137,55 @@ int64_t compute_track_duration_cache(const TrackPipelineManager& tracks) {
     return duration_us;
 }
 
+TrackPlaybackMutationState pause_playback_for_track_mutation(
+    bool currently_playing,
+    const TrackPlaybackMutationHooks& hooks) {
+    TrackPlaybackMutationState state;
+    state.was_playing = currently_playing;
+    if (!state.was_playing) {
+        return state;
+    }
+
+    if (hooks.pause_playback) {
+        hooks.pause_playback();
+    }
+    if (hooks.set_playing) {
+        hooks.set_playing(false);
+    }
+    return state;
+}
+
+void rollback_track_mutation_playback(
+    const TrackPlaybackMutationState& state,
+    const TrackPlaybackMutationHooks& hooks) {
+    if (!state.was_playing) {
+        return;
+    }
+
+    if (hooks.resume_playback) {
+        hooks.resume_playback();
+    }
+    if (hooks.set_playing) {
+        hooks.set_playing(true);
+    }
+}
+
+void finish_track_removal_playback(
+    const TrackPlaybackMutationState& state,
+    bool has_active_tracks,
+    const TrackPlaybackMutationHooks& hooks) {
+    if (!state.was_playing || !has_active_tracks) {
+        return;
+    }
+
+    if (hooks.resume_playback) {
+        hooks.resume_playback();
+    }
+    if (hooks.set_playing) {
+        hooks.set_playing(true);
+    }
+}
+
 TrackAddSeekResult prepare_add_track_seek_to_clock(
     TrackPipeline& track,
     int64_t current_pts_us,

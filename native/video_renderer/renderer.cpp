@@ -2016,26 +2016,24 @@ int Renderer::add_track(const std::string& video_path,
         return -1;
     }
 
-    // Pause playback to avoid render loop reading partially-initialized pipeline
-    bool was_playing = playing_.load();
-    if (was_playing) {
-        playback_->pause();
-        playing_ = false;
-    }
+    const TrackPlaybackMutationHooks playback_hooks{
+        [this]() { playback_->pause(); },
+        [this]() { playback_->play(); },
+        [this](bool playing) { playing_ = playing; },
+    };
+    const auto playback_state = pause_playback_for_track_mutation(
+        playing_.load(), playback_hooks);
 
     auto pipeline = create_pipeline(video_path, use_hardware_decode);
     if (!pipeline) {
-        if (was_playing) {
-            playback_->play();
-            playing_ = true;
-        }
+        rollback_track_mutation_playback(playback_state, playback_hooks);
         return -1;
     }
     const int new_file_id = next_file_id_++;
     const TrackPipelineStartConfig start_config{
         new_file_id,
         0,
-        !was_playing,
+        !playback_state.was_playing,
         false,
     };
     const TrackPipelineStartHooks hooks{
@@ -2046,10 +2044,7 @@ int Renderer::add_track(const std::string& video_path,
     };
     if (!configure_and_start_track_pipeline(
             *pipeline, start_config, hooks, "Renderer::add_track")) {
-        if (was_playing) {
-            playback_->play();
-            playing_ = true;
-        }
+        rollback_track_mutation_playback(playback_state, playback_hooks);
         return -1;
     }
 
@@ -2070,10 +2065,7 @@ int Renderer::add_track(const std::string& video_path,
     TrackPipeline* track = commit_new_track_pipeline(
         tracks_, static_cast<size_t>(slot), std::move(pipeline), commit_hooks);
     if (!track) {
-        if (was_playing) {
-            playback_->play();
-            playing_ = true;
-        }
+        rollback_track_mutation_playback(playback_state, playback_hooks);
         return -1;
     }
 
@@ -2092,7 +2084,7 @@ int Renderer::add_track(const std::string& video_path,
         },
     };
     const auto seek_result = prepare_add_track_seek_to_clock(
-        *track, current_pts, was_playing, add_seek_hooks);
+        *track, current_pts, playback_state.was_playing, add_seek_hooks);
     if (seek_result.applied) {
         spdlog::info("Renderer::add_track: seeking slot={} to {:.3f}s (offset={:.3f}s, type={})",
                      slot,
@@ -2121,12 +2113,13 @@ void Renderer::remove_track(int file_id) {
 
     spdlog::info("Renderer::remove_track: file_id={}, slot={}", file_id, slot);
 
-    // Pause playback
-    bool was_playing = playing_.load();
-    if (was_playing) {
-        playback_->pause();
-        playing_ = false;
-    }
+    const TrackPlaybackMutationHooks playback_hooks{
+        [this]() { playback_->pause(); },
+        [this]() { playback_->play(); },
+        [this](bool playing) { playing_ = playing; },
+    };
+    const auto playback_state = pause_playback_for_track_mutation(
+        playing_.load(), playback_hooks);
 
     const TrackRemovalHooks removal_hooks{
         [this](int removed_file_id) { unregister_track_audio(removed_file_id); },
@@ -2155,11 +2148,8 @@ void Renderer::remove_track(int file_id) {
 
     preview_drawn_ = false;
 
-    // If still have tracks and was playing, resume
-    if (was_playing && first_active_track() >= 0) {
-        playback_->play();
-        playing_ = true;
-    }
+    finish_track_removal_playback(
+        playback_state, first_active_track() >= 0, playback_hooks);
 
     spdlog::info("Renderer::remove_track: file_id={}, slot={}, remaining={}", file_id, slot, track_count());
 }

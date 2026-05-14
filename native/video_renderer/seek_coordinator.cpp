@@ -45,6 +45,29 @@ HevcSeekRecreateDecision choose_hevc_seek_recreate(
     return decision;
 }
 
+LoopRangeState normalize_loop_range_state(
+    bool enabled,
+    int64_t start_us,
+    int64_t end_us) {
+    LoopRangeState state;
+    if (!enabled || end_us <= start_us) {
+        return state;
+    }
+
+    state.enabled = true;
+    state.start_us = std::max<int64_t>(0, start_us);
+    state.end_us = std::max(state.start_us, end_us);
+    return state;
+}
+
+bool loop_range_states_equal(
+    const LoopRangeState& lhs,
+    const LoopRangeState& rhs) {
+    return lhs.enabled == rhs.enabled &&
+           lhs.start_us == rhs.start_us &&
+           lhs.end_us == rhs.end_us;
+}
+
 LoopRangeSeekDecision choose_loop_range_seek(
     const LoopRangeSeekInput& input) {
     LoopRangeSeekDecision decision;

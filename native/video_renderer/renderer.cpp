@@ -380,18 +380,8 @@ void Renderer::set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
 
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
-    LoopRangeState next;
-    if (!enabled || end_us <= start_us) {
-        next = LoopRangeState();
-    } else {
-        next.enabled = true;
-        next.start_us = std::max<int64_t>(0, start_us);
-        next.end_us = std::max(next.start_us, end_us);
-    }
-
-    if (loop_range_.enabled == next.enabled &&
-        loop_range_.start_us == next.start_us &&
-        loop_range_.end_us == next.end_us) {
+    const auto next = normalize_loop_range_state(enabled, start_us, end_us);
+    if (loop_range_states_equal(loop_range_, next)) {
         return;
     }
 

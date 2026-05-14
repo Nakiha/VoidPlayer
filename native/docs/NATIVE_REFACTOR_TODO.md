@@ -253,9 +253,13 @@ TODO:
    - 已把 `apply_loop_range_locked()` 的 loop 边界判断拆成可单测 policy，Renderer 保留锁、clock 读取、日志和 `seek_internal()` 执行。
    - 验证：native-only + smoke/loop UI。
 
-23. [ ] `LoopRangeState`
-   - 后续把 nested `LoopRangeState` 和 set-loop normalization/comparison 拆出 Renderer，Renderer 保留 validation、锁、状态存储和日志。
+23. [x] `LoopRangeState`
+   - 已把 nested `LoopRangeState` 和 set-loop normalization/comparison 拆出 Renderer，Renderer 保留 validation、锁、状态存储和日志。
    - 验证：native-only + smoke/loop UI。
+
+24. [ ] `PlaybackDecodeState`
+   - 后续把 public play/pause 的 track decode pause 和 pause-after-preroll fanout 拆到 helper，Renderer 保留生命周期锁、playback clock 命令、`playing_` 和 seek coordinator reset。
+   - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split
 

@@ -45,6 +45,21 @@ struct HevcSeekRecreateDecision {
 HevcSeekRecreateDecision choose_hevc_seek_recreate(
     const HevcSeekRecreateInput& input);
 
+struct LoopRangeState {
+    bool enabled = false;
+    int64_t start_us = 0;
+    int64_t end_us = 0;
+};
+
+LoopRangeState normalize_loop_range_state(
+    bool enabled,
+    int64_t start_us,
+    int64_t end_us);
+
+bool loop_range_states_equal(
+    const LoopRangeState& lhs,
+    const LoopRangeState& rhs);
+
 struct LoopRangeSeekInput {
     bool playing = false;
     bool loop_enabled = false;

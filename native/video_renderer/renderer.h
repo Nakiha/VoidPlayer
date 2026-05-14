@@ -12,6 +12,7 @@
 #include "video_renderer/layout_controller.h"
 #include "video_renderer/layout_state.h"
 #include "video_renderer/render_loop_controller.h"
+#include "video_renderer/seek_coordinator.h"
 #include "video_renderer/shader_constants.h"
 #include "video_renderer/track_gpu_memory_stats.h"
 #include "video_renderer/track_info.h"
@@ -384,11 +385,6 @@ private:
     float background_color_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     bool preview_drawn_ = false;
     bool was_buffering_ = false;
-    struct LoopRangeState {
-        bool enabled = false;
-        int64_t start_us = 0;
-        int64_t end_us = 0;
-    };
     LoopRangeState loop_range_;
 
     // -- Perf stats baseline for FPS calculation --

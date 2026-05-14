@@ -99,6 +99,7 @@ Fixed or reduced:
 - `Renderer`: per-track performance stats snapshot assembly moved into `track_snapshot`.
 - `Renderer`: per-track GPU/memory stats snapshot assembly moved into `track_snapshot`.
 - `Renderer`: loop-range boundary seek decision moved into `SeekCoordinator` policy.
+- `Renderer`: loop-range state normalization and comparison moved into `SeekCoordinator` policy.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -122,7 +123,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P67 Renderer Loop Range State Boundary.
+Next patch: P68 Renderer Playback Decode State Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -918,6 +919,8 @@ Result:
 
 ### P67 - Renderer Loop Range State Boundary
 
+Status: done in Patch 67.
+
 Goal:
 
 - Move `LoopRangeState` and loop range normalization/comparison out of `Renderer`.
@@ -927,6 +930,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/loop/h265_loop_range_enable_regression.csv`
+
+Result:
+
+- Added `LoopRangeState`, `normalize_loop_range_state`, and `loop_range_states_equal` to `SeekCoordinator`.
+- `Renderer::set_loop_range` now delegates state normalization/comparison while retaining validation, locks, stored state, and logging.
+- Added native coverage for enabled, disabled, invalid, equal, and different loop-range states.
+- Verified with native-only tests plus rebuilt smoke and H.265 loop range enable UI.
+
+### P68 - Renderer Playback Decode State Boundary
+
+Goal:
+
+- Move public play/pause track decode pause and pause-after-preroll fanout out of `Renderer`.
+- Keep `Renderer` responsible for lifecycle/state locks, playback clock commands, `playing_`, and seek coordinator reset.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
 
 ## Do-Not-Drift List
 

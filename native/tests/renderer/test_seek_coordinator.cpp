@@ -182,6 +182,27 @@ TEST_CASE("LoopRangeSeekPolicy: seeks to loop start at or past end",
     REQUIRE(decision.target_pts_us == 1000);
 }
 
+TEST_CASE("LoopRangeState: normalizes and compares loop ranges",
+          "[seek][coordinator][loop]") {
+    auto state = normalize_loop_range_state(true, 1000, 4000);
+    REQUIRE(state.enabled);
+    REQUIRE(state.start_us == 1000);
+    REQUIRE(state.end_us == 4000);
+
+    state = normalize_loop_range_state(false, 1000, 4000);
+    REQUIRE_FALSE(state.enabled);
+    REQUIRE(state.start_us == 0);
+    REQUIRE(state.end_us == 0);
+
+    state = normalize_loop_range_state(true, 4000, 1000);
+    REQUIRE_FALSE(state.enabled);
+
+    auto same = normalize_loop_range_state(true, 1000, 4000);
+    auto different = normalize_loop_range_state(true, 1000, 5000);
+    REQUIRE(loop_range_states_equal(same, normalize_loop_range_state(true, 1000, 4000)));
+    REQUIRE_FALSE(loop_range_states_equal(same, different));
+}
+
 TEST_CASE("LoopRangeSeekPolicy: ignores inactive or invalid loop states",
           "[seek][coordinator][loop]") {
     LoopRangeSeekInput input;

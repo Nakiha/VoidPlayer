@@ -162,6 +162,17 @@ NAKI_VR_FFI_EXPORT void naki_vr_player_layout(naki_vr_player_t player, naki_vr_p
 
 /* ---- Logging & Crash ---- */
 
+/*
+ * Process-global convenience APIs.
+ *
+ * These functions reconfigure shared spdlog state and Windows crash hooks for
+ * the whole process, not for a single naki_vr_player_t. They are suitable for a
+ * single-host application bootstrap or native tests. Multi-engine or embedded
+ * hosts should treat them as process ownership APIs and avoid calling them as
+ * per-player lifecycle operations.
+ *
+ * Longer term, prefer a host-provided logger/sink contract over these globals.
+ */
 NAKI_VR_FFI_EXPORT void naki_vr_configure_logging(const naki_vr_log_config_t* config) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_configure_logging_status(const naki_vr_log_config_t* config) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT void naki_vr_install_crash_handler(const char* crash_dir) NAKI_VR_FFI_NOEXCEPT;

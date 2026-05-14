@@ -751,6 +751,26 @@ Follow-up:
 
 - FFI `naki_vr_get_diagnostics()` still uses the process-global registry because the stats window polls it through `DynamicLibrary.executable()`; replace that with a host/session-scoped contract in a separate ABI slice.
 
+2026-05-15 Patch 28 - FFI Logging/Crash Global Ownership Notes
+
+Changed:
+
+- Added public ABI comments to `native/video_renderer/exports/ffi_exports.h` documenting that logging and crash-handler FFI convenience APIs mutate process-wide state.
+- Split the global-state backlog into completed API warning and remaining host-provided logger/sink design.
+
+Verified:
+
+- `git diff --check`
+- `python dev.py test --native-only`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- Design a host-provided logger/sink API so embedded or multi-engine hosts do not need to share global spdlog/crash-handler ownership.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
@@ -806,6 +826,7 @@ fixed:
 - Global-state smoke coverage: Patch 25 added repeated create-destroy UI coverage.
 - Windows runner MethodChannel dispatch: Patch 26 moved method-name lookup into `NativePlayerMethodDispatcher`.
 - Windows runner MethodChannel diagnostics scope: Patch 27 switched `getDiagnostics` to plugin instance player scope.
+- FFI logging/crash ownership notes: Patch 28 documented process-global ownership in the public FFI header.
 
 accepted-backlog:
 
@@ -866,6 +887,7 @@ fixed:
 - Patch 25 added repeated create-destroy UI smoke coverage for last-track teardown and player recreation.
 - Patch 26 completed the runner `NativePlayerMethodDispatcher` slice for MethodChannel method-name dispatch.
 - Patch 27 completed MethodChannel diagnostics active-player lookup scope.
+- Patch 28 documented process-global logging/crash FFI ownership and split out host-provided logger/sink design.
 
 accepted-backlog:
 

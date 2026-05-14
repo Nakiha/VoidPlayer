@@ -218,7 +218,7 @@ TODO:
 
 - `windows/runner/native_player_registry.*` 仍提供 process-global active player registry。
 - `windows/runner/analysis_ffi.cpp` 仍有 atomic global PTS callback 和 handle registry；legacy singleton reader API 已移除，overlay state 仍是 renderer-facing global。
-- FFI logging/crash convenience API 仍是 process-global。
+- FFI logging/crash convenience API 已在 public header 标明 process-global ownership；host-provided logger/sink 长期接口仍待设计。
 
 TODO:
 
@@ -227,7 +227,8 @@ TODO:
 - [ ] 把 FFI diagnostics 的 active player 从 process-global registry 改为 host/session scope。
 - [ ] analysis PTS callback 支持 handle/player scoped 注册；global callback 标记 deprecated。
 - [x] 移除 analysis legacy singleton reader API；Dart/native 读取路径改为 handle-scoped VAC2 session。
-- [ ] 为 process-global logging/crash FFI API 增加文档警示，并规划 host-provided logger/sink 的长期接口。
+- [x] 为 process-global logging/crash FFI API 增加文档警示。
+- [ ] 规划 host-provided logger/sink 的长期接口。
 - [x] 增加 repeated create-destroy UI smoke，覆盖 last-track remove -> destroy -> recreate。
 - [ ] 增加 multi player / plugin teardown smoke。
 

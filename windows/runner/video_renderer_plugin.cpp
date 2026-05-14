@@ -12,7 +12,6 @@
 #include <shlwapi.h>
 #include <commdlg.h>
 #include <wincodec.h>
-#include <d3d11.h>
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 #include <chrono>
@@ -22,7 +21,6 @@
 #include <cmath>
 #include <mutex>
 #include <variant>
-#include <new>
 #include <limits>
 
 namespace {
@@ -212,28 +210,6 @@ void log_ffmpeg_runtime_versions() {
         format_ffmpeg_version(swresample_version()));
 }
 
-struct FlutterTextureReleaseContext {
-    ID3D11Texture2D* texture = nullptr;
-    std::weak_ptr<vr::NativePlayer> player;
-    int buffer_index = -1;
-    uint64_t buffer_generation = 0;
-};
-
-void ReleaseFlutterTexture(void* release_context) {
-    auto* context = static_cast<FlutterTextureReleaseContext*>(release_context);
-    if (!context) {
-        return;
-    }
-    if (auto player = context->player.lock()) {
-        player->release_shared_texture(
-            context->buffer_index, context->buffer_generation);
-    }
-    if (context->texture) {
-        context->texture->Release();
-    }
-    delete context;
-}
-
 } // namespace
 
 // Process-global player pointer for cross-engine access (e.g. stats window).
@@ -398,7 +374,7 @@ VideoRendererPlugin::VideoRendererPlugin(
     flutter::PluginRegistrarWindows*,
     flutter::TextureRegistrar* texture_registrar,
     IDXGIAdapter* dxgi_adapter)
-    : texture_registrar_(texture_registrar) {
+    : texture_bridge_(texture_registrar) {
     if (dxgi_adapter) {
         dxgi_adapter->AddRef();
         dxgi_adapter_.Attach(dxgi_adapter);
@@ -426,16 +402,12 @@ VideoRendererPlugin::~VideoRendererPlugin() {
         std::lock_guard lock(g_player_mutex);
         g_player_weak.reset();
     }
+    texture_bridge_.DetachFrameCallback();
     if (player_) {
-        player_->set_frame_callback(nullptr);
         player_->set_event_callback(nullptr);
         player_->shutdown();
     }
-    const int64_t texture_id = texture_id_.exchange(-1, std::memory_order_acq_rel);
-    if (texture_id >= 0 && texture_registrar_) {
-        texture_registrar_->UnregisterTexture(texture_id);
-    }
-    texture_variant_.reset();
+    texture_bridge_.Unregister();
     if (player_) {
         player_.reset();
     }
@@ -1066,81 +1038,31 @@ void VideoRendererPlugin::CreatePlayer(
         return;
     }
 
-    // Create GPU surface texture for Flutter using DXGI shared handle
-    surface_descriptor_ = {};
-    surface_descriptor_.struct_size = sizeof(FlutterDesktopGpuSurfaceDescriptor);
-    surface_descriptor_.format = kFlutterDesktopPixelFormatBGRA8888;
-
-    auto gpu_texture = std::make_unique<flutter::GpuSurfaceTexture>(
-        kFlutterDesktopGpuSurfaceTypeDxgiSharedHandle,
-        [this](size_t width, size_t height) -> const FlutterDesktopGpuSurfaceDescriptor* {
-            if (!player_) return nullptr;
-
-            vr::SharedTextureSnapshot snapshot;
-            if (!player_->acquire_shared_texture(snapshot)) return nullptr;
-            if (snapshot.type != vr::SharedTextureHandleType::D3D11SharedHandle ||
-                !snapshot.texture ||
-                !snapshot.handle) {
-                return nullptr;
-            }
-
-            auto* release_context = new (std::nothrow) FlutterTextureReleaseContext{
-                static_cast<ID3D11Texture2D*>(snapshot.texture),
-                player_,
-                snapshot.buffer_index,
-                snapshot.buffer_generation};
-            if (!release_context) {
-                static_cast<ID3D11Texture2D*>(snapshot.texture)->Release();
-                return nullptr;
-            }
-
-            surface_descriptor_.handle = snapshot.handle;
-            surface_descriptor_.width = static_cast<size_t>(snapshot.width);
-            surface_descriptor_.height = static_cast<size_t>(snapshot.height);
-            surface_descriptor_.visible_width = surface_descriptor_.width;
-            surface_descriptor_.visible_height = surface_descriptor_.height;
-            surface_descriptor_.release_callback = ReleaseFlutterTexture;
-            surface_descriptor_.release_context = release_context;
-            return &surface_descriptor_;
-        });
-
-    texture_variant_ = std::make_unique<flutter::TextureVariant>(std::move(*gpu_texture));
-    texture_id_.store(texture_registrar_->RegisterTexture(texture_variant_.get()),
-                      std::memory_order_release);
-
-    if (texture_id_.load(std::memory_order_acquire) < 0) {
+    if (!texture_bridge_.Register(player_)) {
         {
             std::lock_guard lock(g_player_mutex);
             g_player_weak.reset();
         }
         player_->shutdown();
         player_.reset();
-        texture_variant_.reset();
         result->Error("TEXTURE_FAILED", "Failed to register texture");
         return;
     }
 
-    // Set frame callback to notify Flutter of new frames
-    player_->set_frame_callback([this]() {
-        const int64_t texture_id = texture_id_.load(std::memory_order_acquire);
-        if (texture_id >= 0 && texture_registrar_) {
-            texture_registrar_->MarkTextureFrameAvailable(texture_id);
-        }
-    });
     player_->set_event_callback([this](const vr::RendererEvent& event) {
         QueueRendererEvent(event);
     });
 
     spdlog::info(
         "[VideoRendererPlugin] Created player, texture_id={}, tracks={}, hw_decode={}",
-        texture_id_.load(std::memory_order_acquire),
+        texture_bridge_.texture_id(),
         player_->track_infos().size(),
         use_hardware_decode);
 
     // Build result map with textureId and track info
     flutter::EncodableMap result_map;
     result_map[flutter::EncodableValue("textureId")] =
-        flutter::EncodableValue(texture_id_.load(std::memory_order_acquire));
+        flutter::EncodableValue(texture_bridge_.texture_id());
 
     flutter::EncodableList tracks_list;
     if (player_) {
@@ -1169,15 +1091,11 @@ void VideoRendererPlugin::DestroyPlayer(
             std::lock_guard lock(g_player_mutex);
             g_player_weak.reset();
         }
-        player_->set_frame_callback(nullptr);
+        texture_bridge_.DetachFrameCallback();
         player_->set_event_callback(nullptr);
         player_->shutdown();
     }
-    const int64_t texture_id = texture_id_.exchange(-1, std::memory_order_acq_rel);
-    if (texture_id >= 0 && texture_registrar_) {
-        texture_registrar_->UnregisterTexture(texture_id);
-    }
-    texture_variant_.reset();
+    texture_bridge_.Unregister();
     if (player_) {
         player_.reset();
     }

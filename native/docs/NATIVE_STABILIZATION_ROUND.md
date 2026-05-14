@@ -578,6 +578,27 @@ Follow-up:
 
 - Keep remaining runner plugin cleanup focused on dispatcher, texture bridge, and player diagnostics/global state boundaries.
 
+2026-05-15 Patch 20 - Runner FlutterTextureBridge
+
+Changed:
+
+- Added `FlutterTextureBridge` in the Windows runner to own Flutter texture registration, DXGI shared-handle surface descriptor production, release callbacks, and frame-available notifications.
+- Removed texture registrar state, descriptor state, and release-context helper code from `video_renderer_plugin.cpp`.
+- Kept player creation/shutdown, global player registration, event callbacks, and MethodChannel result payloads in the plugin for this slice.
+- Marked the matching runner split item complete in `NATIVE_REFACTOR_TODO.md`.
+
+Verified:
+
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- Continue with MethodChannel dispatcher extraction or player diagnostics/global-state isolation as separate patches.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
@@ -625,11 +646,12 @@ fixed:
 - `AnalysisManager`: Patch 5 introduced session snapshots and moved overlay chunk cache/index state into the session.
 - Windows runner plugin diagnostics: Patch 18 moved process/heap/DXGI memory queries into `NativeDiagnosticsProvider`.
 - Windows runner logging/crash bootstrap: Patch 19 moved app-layer logging and crash handler opt-in into `NativeLoggingBootstrap`.
+- Windows runner texture bridge: Patch 20 moved texture registration, shared-handle descriptor fill, release callbacks, and frame notifications into `FlutterTextureBridge`.
 
 accepted-backlog:
 
 - `Renderer` remains the root coordination object; future work should move one owner boundary at a time.
-- `windows/runner/video_renderer_plugin.cpp` remains a bridge God Module; split dispatcher / texture bridge / player diagnostics later.
+- `windows/runner/video_renderer_plugin.cpp` remains a bridge God Module; split dispatcher and player diagnostics/global state later.
 - `ffi_exports.cpp` remains an ABI God Module candidate; split ABI shim / registry / commands / marshalling later.
 - `TrackPipelineManager` remains a lifecycle-heavy factory; further factory/lifecycle split remains useful.
 - `DecodeThread`, `FrameConverter`, target boundaries, process globals, and resource-budget policy remain second-stage refactor topics.
@@ -677,6 +699,7 @@ fixed:
 - Patch 17 completed the first `LayoutController` slice for order ownership, intentionally leaving viewport math in Renderer.
 - Patch 18 completed the first runner `NativeDiagnosticsProvider` slice for process/heap/DXGI memory queries.
 - Patch 19 completed the runner `NativeLoggingBootstrap` slice for startup logging and crash handler opt-in.
+- Patch 20 completed the runner `FlutterTextureBridge` slice for Texture registrar and shared-handle callback ownership.
 
 accepted-backlog:
 

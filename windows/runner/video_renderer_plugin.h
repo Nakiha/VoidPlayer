@@ -1,11 +1,11 @@
 #pragma once
 
 #include <flutter/plugin_registrar_windows.h>
-#include <flutter/texture_registrar.h>
 #include <flutter/method_channel.h>
 #include <flutter/event_sink.h>
 #include <flutter/standard_method_codec.h>
 
+#include "flutter_texture_bridge.h"
 #include "player/native_player.h"
 #include "native_diagnostics_provider.h"
 #include "native_logging_bootstrap.h"
@@ -115,10 +115,7 @@ private:
     void RegisterEventDrainWindowProc();
 
     std::shared_ptr<vr::NativePlayer> player_;
-    std::atomic<int64_t> texture_id_{-1};
-    std::unique_ptr<flutter::TextureVariant> texture_variant_;
-    FlutterDesktopGpuSurfaceDescriptor surface_descriptor_ = {};
-    flutter::TextureRegistrar* texture_registrar_;
+    FlutterTextureBridge texture_bridge_;
     HWND event_hwnd_ = nullptr;
     std::mutex event_mutex_;
     std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> event_sink_;

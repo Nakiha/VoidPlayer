@@ -596,51 +596,17 @@ void Renderer::emit_seek_preview_presented_events(const PresentDecision& decisio
 }
 
 void Renderer::update_track_geometry_from_decision_locked(const PresentDecision& decision) {
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks_[i] || !decision.frames[i].has_value()) continue;
-        const TextureFrame& frame = decision.frames[i].value();
-        if (frame.width <= 0 || frame.height <= 0) continue;
-
-        auto& track = *tracks_[i];
-        if (track.video_width == frame.width && track.video_height == frame.height) {
-            continue;
-        }
-
-        float sar = 1.0f;
-        if (track.video_width > 0 && track.video_height > 0 &&
-            track.video_aspect > 0.0f) {
-            const float old_natural_aspect =
-                static_cast<float>(track.video_width) /
-                static_cast<float>(track.video_height);
-            if (old_natural_aspect > 0.0f) {
-                sar = track.video_aspect / old_natural_aspect;
-            }
-        }
-        if (!std::isfinite(sar) || sar <= 0.0f) {
-            sar = 1.0f;
-        }
-
-        const int old_width = track.video_width;
-        const int old_height = track.video_height;
-        const float old_aspect = track.video_aspect;
-        track.video_width = frame.width;
-        track.video_height = frame.height;
-        track.video_aspect =
-            (static_cast<float>(frame.width) / static_cast<float>(frame.height)) * sar;
-        if (!std::isfinite(track.video_aspect) || track.video_aspect <= 0.0f) {
-            track.video_aspect =
-                static_cast<float>(frame.width) / static_cast<float>(frame.height);
-        }
-
+    const auto updates = update_layout_track_geometry_from_decision(tracks_, decision);
+    for (const auto& update : updates) {
         spdlog::info(
             "[Renderer] track[{}] display geometry changed: {}x{} aspect={:.6f} -> {}x{} aspect={:.6f}",
-            i,
-            old_width,
-            old_height,
-            old_aspect,
-            track.video_width,
-            track.video_height,
-            track.video_aspect);
+            update.slot,
+            update.old_width,
+            update.old_height,
+            update.old_aspect,
+            update.new_width,
+            update.new_height,
+            update.new_aspect);
     }
 }
 

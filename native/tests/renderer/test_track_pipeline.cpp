@@ -334,6 +334,47 @@ TEST_CASE("LayoutGeometry snapshots track geometry",
     REQUIRE(geometry[2].aspect == 4.0f / 3.0f);
 }
 
+TEST_CASE("LayoutGeometry updates track geometry from present decisions",
+          "[track_pipeline][layout_geometry]") {
+    TrackPipelineManager manager;
+    auto track = std::make_unique<TrackPipeline>();
+    track->video_width = 640;
+    track->video_height = 480;
+    track->video_aspect = 2.0f;
+    manager[1] = std::move(track);
+
+    PresentDecision decision;
+    TextureFrame invalid_frame;
+    invalid_frame.width = 0;
+    invalid_frame.height = 720;
+    decision.frames[1] = invalid_frame;
+    REQUIRE(update_layout_track_geometry_from_decision(manager, decision).empty());
+    REQUIRE(manager[1]->video_width == 640);
+    REQUIRE(manager[1]->video_height == 480);
+
+    TextureFrame frame;
+    frame.width = 800;
+    frame.height = 600;
+    decision.frames[1] = frame;
+    const auto updates = update_layout_track_geometry_from_decision(manager, decision);
+
+    REQUIRE(updates.size() == 1);
+    REQUIRE(updates[0].slot == 1);
+    REQUIRE(updates[0].old_width == 640);
+    REQUIRE(updates[0].old_height == 480);
+    REQUIRE(updates[0].old_aspect == 2.0f);
+    REQUIRE(updates[0].new_width == 800);
+    REQUIRE(updates[0].new_height == 600);
+    REQUIRE(updates[0].new_aspect > 1.99f);
+    REQUIRE(updates[0].new_aspect < 2.01f);
+    REQUIRE(manager[1]->video_width == 800);
+    REQUIRE(manager[1]->video_height == 600);
+    REQUIRE(manager[1]->video_aspect > 1.99f);
+    REQUIRE(manager[1]->video_aspect < 2.01f);
+
+    REQUIRE(update_layout_track_geometry_from_decision(manager, decision).empty());
+}
+
 TEST_CASE("LayoutController appends active tracks in slot order",
           "[track_pipeline][layout_controller]") {
     TrackPipelineManager manager;

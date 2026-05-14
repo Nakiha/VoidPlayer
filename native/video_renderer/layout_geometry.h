@@ -6,7 +6,9 @@
 #include "video_renderer/track_pipeline.h"
 
 #include <array>
+#include <cstddef>
 #include <utility>
+#include <vector>
 
 namespace vr {
 
@@ -17,10 +19,24 @@ struct LayoutTrackGeometry {
     float aspect = 1.0f;
 };
 
+struct LayoutTrackGeometryUpdate {
+    size_t slot = 0;
+    int old_width = 0;
+    int old_height = 0;
+    float old_aspect = 1.0f;
+    int new_width = 0;
+    int new_height = 0;
+    float new_aspect = 1.0f;
+};
+
 using LayoutTrackGeometryList = std::array<LayoutTrackGeometry, kMaxTracks>;
 
 LayoutTrackGeometryList snapshot_layout_track_geometry(
     const TrackPipelineManager& tracks);
+
+std::vector<LayoutTrackGeometryUpdate> update_layout_track_geometry_from_decision(
+    TrackPipelineManager& tracks,
+    const PresentDecision& decision);
 
 std::pair<float, float> display_pixel_size_for_layout(
     int width,

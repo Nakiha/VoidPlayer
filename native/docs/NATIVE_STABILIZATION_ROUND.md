@@ -130,6 +130,7 @@ Fixed or reduced:
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
 - `TrackPipelineManager`: demux/decode pipeline construction moved into `TrackPipelineFactory`, leaving manager focused on slot storage, stop, and compact.
 - `Renderer`: track pipeline metadata setup, callback/audio hook registration, demux start, and failed-start rollback moved into `track_lifecycle`.
+- `Renderer`: track geometry mutation from presented frames moved into `layout_geometry`; Renderer now only logs returned geometry updates.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
@@ -148,7 +149,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P93 Renderer Track Geometry Update Boundary.
+Next patch: P94 Renderer Cached Present PTS Query Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1507,6 +1508,8 @@ Result:
 
 ### P93 - Renderer Track Geometry Update Boundary
 
+Status: done in Patch 93.
+
 Goal:
 
 - Move `Renderer::update_track_geometry_from_decision_locked` frame-size/aspect mutation logic into a layout/geometry helper.
@@ -1517,6 +1520,26 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewport_pan_layout_regression.csv`
+
+Result:
+
+- Added `update_layout_track_geometry_from_decision` and `LayoutTrackGeometryUpdate`.
+- `Renderer::update_track_geometry_from_decision_locked` now delegates frame-size/aspect mutation and only logs returned updates.
+- Added native coverage for invalid frame filtering, SAR carry-forward, update records, and unchanged geometry suppression.
+- Verified with native-only tests plus rebuilt smoke and viewport pan/layout UI.
+
+### P94 - Renderer Cached Present PTS Query Boundary
+
+Goal:
+
+- Move the cached paused-frame first-PTS scan out of `Renderer::run`.
+- Reuse a focused `PresentDecision` query helper next to other present policy helpers.
+- Keep paused-frame logging behavior unchanged while removing another anonymous scan from the Renderer godobject.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
 
 ## Do-Not-Drift List
 

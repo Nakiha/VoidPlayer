@@ -100,6 +100,65 @@ LayoutTrackGeometryList snapshot_layout_track_geometry(
     return result;
 }
 
+std::vector<LayoutTrackGeometryUpdate> update_layout_track_geometry_from_decision(
+    TrackPipelineManager& tracks,
+    const PresentDecision& decision) {
+    std::vector<LayoutTrackGeometryUpdate> updates;
+
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks[i] || !decision.frames[i].has_value()) {
+            continue;
+        }
+        const TextureFrame& frame = decision.frames[i].value();
+        if (frame.width <= 0 || frame.height <= 0) {
+            continue;
+        }
+
+        auto& track = *tracks[i];
+        if (track.video_width == frame.width &&
+            track.video_height == frame.height) {
+            continue;
+        }
+
+        float sar = 1.0f;
+        if (track.video_width > 0 &&
+            track.video_height > 0 &&
+            track.video_aspect > 0.0f) {
+            const float old_natural_aspect =
+                static_cast<float>(track.video_width) /
+                static_cast<float>(track.video_height);
+            if (old_natural_aspect > 0.0f) {
+                sar = track.video_aspect / old_natural_aspect;
+            }
+        }
+        if (!std::isfinite(sar) || sar <= 0.0f) {
+            sar = 1.0f;
+        }
+
+        LayoutTrackGeometryUpdate update;
+        update.slot = i;
+        update.old_width = track.video_width;
+        update.old_height = track.video_height;
+        update.old_aspect = track.video_aspect;
+
+        track.video_width = frame.width;
+        track.video_height = frame.height;
+        track.video_aspect =
+            (static_cast<float>(frame.width) / static_cast<float>(frame.height)) * sar;
+        if (!std::isfinite(track.video_aspect) || track.video_aspect <= 0.0f) {
+            track.video_aspect =
+                static_cast<float>(frame.width) / static_cast<float>(frame.height);
+        }
+
+        update.new_width = track.video_width;
+        update.new_height = track.video_height;
+        update.new_aspect = track.video_aspect;
+        updates.push_back(update);
+    }
+
+    return updates;
+}
+
 std::pair<float, float> display_pixel_size_for_layout(
     int width,
     int height,

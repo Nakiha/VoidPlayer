@@ -357,9 +357,13 @@ TODO:
    - 已把 `Renderer::effective_duration_us_locked()` 中 per-track duration/end-PTS 合成逻辑迁到 track lifecycle/duration policy，保留 cached-duration fallback。
    - 验证：native-only + smoke UI。
 
-49. [ ] `TrackGeometryUpdatePolicy`
-   - 后续把 `Renderer::update_track_geometry_from_decision_locked()` 的 frame-size/aspect mutation 迁入 layout/geometry helper，Renderer 保留日志。
+49. [x] `TrackGeometryUpdatePolicy`
+   - 已把 `Renderer::update_track_geometry_from_decision_locked()` 的 frame-size/aspect mutation 迁入 layout/geometry helper，Renderer 保留日志。
    - 验证：native-only + smoke/viewport UI。
+
+50. [ ] `CachedPresentPtsQuery`
+   - 后续把 paused cached-frame 日志里的 first-frame PTS scan 迁入 present policy helper，Renderer 只负责日志格式。
+   - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split
 

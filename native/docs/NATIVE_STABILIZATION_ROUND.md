@@ -65,10 +65,10 @@ Fixed:
 - D3D overlay pass state contract: mask materialization now checks/restores the main RTV and viewport, unbinds overlay SRV hazards before writing mask RTVs, and overlay draw passes explicitly bind their render target, IA topology, shaders, blend state, and cleanup SRV slots.
 - Overlay precision and opacity semantics: native regression tests now cover 1x1, 2x2, 8K, shared-boundary, and clamped packed-UV coordinates, and FFI overlay opacity preserves 0 instead of forcing 10%.
 - Overlay generation budget and codec semantics: generated VACHUNK publish now uses the current remaining cache budget, VAC2/VACHUNK parsers reject undefined codec values, and overlay chunk keys are built from a validated base codec instead of a blind header cast.
+- VACHUNK checksum fields: v1 semantics are now explicit reserved-zero fields, with parser validation for nonzero header/section checksum values and docs updated to match the external analyzer's current output.
 
 Active backlog:
 
-- VACHUNK checksum semantics are not enforced.
 - record count truncation should be guarded before write validation.
 - VAC2 frame model still has packet-index assumptions that can cause future overlay alignment issues.
 
@@ -94,7 +94,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P36 VACHUNK Checksum Semantics.
+Next patch: P37 VACHUNK Record Count Guard.
 
 ### P30 - VACache Atomic Publish
 
@@ -226,6 +226,8 @@ Validation:
 
 ### P36 - VACHUNK Checksum Semantics
 
+Status: done in Patch 36.
+
 Source: `review_overlay.md`.
 
 Goal:
@@ -238,6 +240,25 @@ Likely files:
 - `native/analysis/parsers/vachunk_parser.*`
 - `native/tests/analysis/test_analysis_parsers.cpp`
 - `native/docs/formats/VACHUNK.md`
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/overlay_controls_h264.csv`
+
+### P37 - VACHUNK Record Count Guard
+
+Source: `review_overlay.md`.
+
+Goal:
+
+- Guard `make_vachunk_record_section()` record-count narrowing before writing.
+- Keep caller-visible behavior deterministic instead of letting malformed sections fail later in generic write validation.
+
+Likely files:
+
+- `native/analysis/parsers/vachunk_parser.*`
+- `native/tests/analysis/test_analysis_parsers.cpp`
 
 Validation:
 

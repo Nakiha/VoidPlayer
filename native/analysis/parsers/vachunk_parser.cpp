@@ -34,6 +34,18 @@ bool valid_scope(uint32_t start, uint32_t end) {
            (start != UINT32_MAX && end != UINT32_MAX && start <= end);
 }
 
+bool reserved_header_fields_are_zero(const VachunkHeader& header) {
+    if (header.checksum != 0) return false;
+    for (const uint64_t value : header.reserved1) {
+        if (value != 0) return false;
+    }
+    return true;
+}
+
+bool reserved_section_fields_are_zero(const VachunkSectionEntry& section) {
+    return section.checksum == 0 && section.reserved == 0;
+}
+
 bool validate_write_data(const VachunkData& data) {
     if (data.sections.empty() || data.sections.size() > kMaxVachunkSections) {
         return false;
@@ -146,6 +158,7 @@ bool VachunkFile::open(const std::string& path) {
         header_.section_count == 0 ||
         header_.section_count > kMaxVachunkSections ||
         !is_defined_analysis_codec_value(header_.codec) ||
+        !reserved_header_fields_are_zero(header_) ||
         (header_.compression != VACHUNK_COMPRESSION_NONE &&
          header_.compression != VACHUNK_COMPRESSION_ZSTD) ||
         header_.file_size != actual_size ||
@@ -176,7 +189,8 @@ bool VachunkFile::open(const std::string& path) {
             close();
             return false;
         }
-        if (section_entry.size > kMaxVachunkSectionBytes ||
+        if (!reserved_section_fields_are_zero(section_entry) ||
+            section_entry.size > kMaxVachunkSectionBytes ||
             section_entry.decoded_size > kMaxVachunkSectionBytes ||
             section_entry.decoded_size < section_entry.size ||
             !range_fits(section_entry.offset, section_entry.size, actual_size)) {

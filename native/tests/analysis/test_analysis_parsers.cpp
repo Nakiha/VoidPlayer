@@ -137,6 +137,14 @@ void overwrite_u16(const std::filesystem::path& path, size_t offset, uint16_t va
     REQUIRE(file);
 }
 
+void overwrite_u64(const std::filesystem::path& path, size_t offset, uint64_t value) {
+    std::fstream file(path, std::ios::binary | std::ios::in | std::ios::out);
+    REQUIRE(file);
+    file.seekp(static_cast<std::streamoff>(offset));
+    file.write(reinterpret_cast<const char*>(&value), sizeof(value));
+    REQUIRE(file);
+}
+
 vr::analysis::Vac2BaseData make_vacache_base_data(uint64_t content_revision) {
     vr::analysis::Vac2BaseData base;
     base.codec = AnalysisCodec::HEVC;
@@ -512,6 +520,27 @@ TEST_CASE("VACHUNK: parser rejects undefined codec values", "[analysis][vachunk]
 
     vr::analysis::VachunkFile chunk;
     REQUIRE_FALSE(chunk.open(path.string()));
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("VACHUNK: checksum fields are reserved zero in version 1",
+          "[analysis][vachunk]") {
+    const auto path = std::filesystem::temp_directory_path() /
+        "voidplayer_test_chunk_reserved_checksum.vck";
+
+    REQUIRE(vr::analysis::write_vachunk_file(path.string(), make_overlay_chunk(0, 0)));
+    overwrite_u64(path, offsetof(VachunkHeader, checksum), 1);
+    vr::analysis::VachunkFile header_chunk;
+    REQUIRE_FALSE(header_chunk.open(path.string()));
+
+    REQUIRE(vr::analysis::write_vachunk_file(path.string(), make_overlay_chunk(0, 0)));
+    overwrite_u64(
+        path,
+        sizeof(VachunkHeader) + offsetof(VachunkSectionEntry, checksum),
+        1);
+    vr::analysis::VachunkFile section_chunk;
+    REQUIRE_FALSE(section_chunk.open(path.string()));
+
     std::filesystem::remove(path);
 }
 

@@ -84,7 +84,7 @@ Current `VachunkHeader`:
 | `end_unit` | `uint32_t` | Inclusive last unit, or `UINT32_MAX`. |
 | `section_table_offset` | `uint64_t` | Absolute offset of the section table. |
 | `file_size` | `uint64_t` | Expected final file size. |
-| `checksum` | `uint64_t` | Optional whole-file or payload checksum. |
+| `checksum` | `uint64_t` | Reserved in VACHUNK v1. Must be zero. |
 | `reserved1` | `uint64_t[4]` | Must be zero. |
 
 The C++ struct size is locked at 128 bytes by `static_assert`.
@@ -102,7 +102,7 @@ Current `VachunkSectionEntry`:
 | `entry_size` | `uint32_t` | Fixed record size, or `0`. |
 | `entry_count` | `uint32_t` | Record count, or `0`. |
 | `decoded_size` | `uint64_t` | Decoded size if compressed, otherwise `size`. |
-| `checksum` | `uint64_t` | Optional payload checksum. |
+| `checksum` | `uint64_t` | Reserved in VACHUNK v1. Must be zero. |
 | `reserved` | `uint64_t` | Must be zero. |
 
 Known generic section flags:
@@ -266,7 +266,7 @@ or export-only syntax values.
 2. Resolve request range through VAC2.
 3. Decode/parse into memory or a temp file under `tmp/`.
 4. Write a complete `.vck.tmp`.
-5. Validate header, ranges, feature flags, and checksums.
+5. Validate header, ranges, feature flags, and reserved checksum fields.
 6. Atomically publish to the final `.vck` name.
 7. Touch cache metadata for LRU/cache-size management.
 

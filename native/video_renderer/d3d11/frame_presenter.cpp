@@ -273,11 +273,16 @@ bool D3D11FramePresenter::prepare_software_nv12_frame(size_t slot,
         return false;
     }
 
-    const int w = frame.width > 0 ? frame.width : fallback_width;
-    const int h = frame.height > 0 ? frame.height : fallback_height;
-    if ((w & 1) != 0 || (h & 1) != 0) {
+    const int display_w = frame.width > 0 ? frame.width : fallback_width;
+    const int display_h = frame.height > 0 ? frame.height : fallback_height;
+    const auto* storage = frame.cpu_nv12_storage();
+    const int w = (storage && storage->coded_width > 0) ? storage->coded_width : display_w;
+    const int h = (storage && storage->coded_height > 0) ? storage->coded_height : display_h;
+    if (display_w <= 0 || display_h <= 0 ||
+        (w & 1) != 0 || (h & 1) != 0 ||
+        w < display_w || h < display_h) {
         spdlog::error("[D3D11FramePresenter] Invalid CPU NV12 frame geometry ({}x{})",
-                      w, h);
+                      display_w, display_h);
         return false;
     }
 
@@ -314,7 +319,7 @@ bool D3D11FramePresenter::prepare_software_nv12_frame(size_t slot,
 
     int y_stride = w;
     int uv_stride = w;
-    if (const auto* storage = frame.cpu_nv12_storage()) {
+    if (storage) {
         if (storage->y_stride > 0) {
             y_stride = storage->y_stride;
         }
@@ -330,8 +335,8 @@ bool D3D11FramePresenter::prepare_software_nv12_frame(size_t slot,
         return false;
     }
 
-    resources.nv12_uv_scale_x = 1.0f;
-    resources.nv12_uv_scale_y = 1.0f;
+    resources.nv12_uv_scale_x = static_cast<float>(display_w) / static_cast<float>(w);
+    resources.nv12_uv_scale_y = static_cast<float>(display_h) / static_cast<float>(h);
     out.nv12_y_srv = resources.sw_nv12_y_srv.Get();
     out.nv12_uv_srv = resources.sw_nv12_uv_srv.Get();
     return out.nv12_y_srv && out.nv12_uv_srv;

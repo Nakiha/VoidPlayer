@@ -47,7 +47,7 @@ chat 给出的方向和当前代码状态高度匹配。优先级最高的不是
 | S8 | `TextureManager::create_rgba_texture()` 缺尺寸校验 | RGBA create 直接 cast width/height，其他 create API 有基本校验 | DONE - Patch 8 |
 | S9 | demux read error 没传播成明确 track error/event | `DemuxThread::run()` 非 EOF read error 后 break，最后只 `abort_outputs()` | DONE - Patch 9 |
 | S10 | `avcodec_open2()` 未包 SEH guard | send/receive 已有 SEH wrapper，open 阶段仍直调 | DONE - Patch 10 |
-| S11 | odd-dimension software path 直接拒绝 | `calculate_yuv420_layout()` 要求 width/height 都是偶数 | compatibility patch |
+| S11 | odd-dimension software path 直接拒绝 | `calculate_yuv420_layout()` 要求 width/height 都是偶数 | DONE - Patch 11 |
 | S12 | `D3D11Device::shutdown()` 缺 `ClearState + Flush` | shutdown 直接 reset swapchain/context/device | cleanup patch |
 
 ## Patch Plan
@@ -379,16 +379,40 @@ Follow-up:
 
 - S11 odd-dimension software path compatibility is next.
 
+2026-05-15 Patch 11 - Odd-Dimension Software Frames
+
+Changed:
+
+- Relaxed CPU YUV layout validation to allow odd display dimensions while allocating even padded coded NV12/P010 buffers.
+- Preserved original frame width/height for display and added coded width/height metadata to CPU NV12 storage.
+- Updated CPU packers to duplicate edge luma/chroma samples into padded rows/columns for 4:2:0, 4:2:2, 4:4:4, 8-bit, and 10-bit software inputs.
+- Allowed direct planar YUV420 frames to expose ceil-sized U/V planes instead of rejecting odd dimensions.
+- Updated the D3D11 presenter to create even coded textures and scale sampling back to the original odd display size.
+- Added native regressions for odd planar YUV420, odd packed YUV444-to-NV12, and padded D3D software NV12 presentation.
+
+Verified:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- S12 D3D shutdown `ClearState + Flush` cleanup is next.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
 
 | 来源 | 复核项 | 结果 |
 | --- | --- | --- |
-| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | fixed: #1/#2/#3/#4/#5/#8/#9/#10/#11; accepted-backlog: #6/#7/#12-#13 |
+| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | fixed: #1/#2/#3/#4/#5/#8/#9/#10/#11/#12; accepted-backlog: #6/#7/#13 |
 | `review_godobject.md` | God Object 排名和 owner boundary 判断 | fixed: AudioMixer boundary + Analysis session snapshot; accepted-backlog: remaining owner splits |
 | `review_overlay.md` | AnalysisManager、VACHUNK、overlay cache、D3D pass 风险 | fixed: AnalysisManager session + current-base chunk filter; accepted-backlog: remaining overlay/cache/render-pass items |
-| `split_adv.md` | Patch 顺序和“不贪大”边界 | fixed: Patch 1-10 executed in stabilization-sized slices |
+| `split_adv.md` | Patch 顺序和“不贪大”边界 | fixed: Patch 1-11 executed in stabilization-sized slices |
 
 复核时只标三类状态：
 
@@ -409,12 +433,12 @@ fixed:
 - #9 RGBA texture size validation: Patch 8 added texture dimension/stride guardrails.
 - #10 demux read error propagation: Patch 9 emits track error events and marks the track buffer Error on non-EOF read errors.
 - #11 `avcodec_open2()` SEH guard: Patch 10 routes codec open and software fallback open through a noinline SEH wrapper.
+- #12 odd-dimension software path: Patch 11 pads coded CPU NV12/P010 buffers while preserving odd display dimensions.
 
 accepted-backlog:
 
 - #6 NativePlayer facade locking remains a lifecycle boundary cleanup.
 - #7 FFI long-operation serialization remains an ABI/registry cleanup.
-- #12 odd-dimension software path maps to S11.
 - #13 D3D shutdown `ClearState + Flush` maps to S12.
 
 not-applicable:
@@ -470,10 +494,11 @@ fixed:
 - Patch 8 completed the S8 texture dimension guardrail as a small low-risk patch.
 - Patch 9 completed the S9 demux read-error propagation as a narrow error-model patch.
 - Patch 10 completed the S10 codec-open SEH guard as a narrow decode hardening patch.
+- Patch 11 completed the S11 odd-dimension software-frame compatibility patch without adding generic scaling fallback.
 
 accepted-backlog:
 
-- Remaining second-priority owner boundary work starts with S11 or a future `FrameCaptureService`; avoid jumping straight into a large Renderer split.
+- Remaining second-priority owner boundary work starts with S12 or a future `FrameCaptureService`; avoid jumping straight into a large Renderer split.
 
 not-applicable:
 

@@ -28,9 +28,11 @@ AVFrame* make_yuv420_frame(int width, int height, int64_t pts) {
     for (int y = 0; y < frame->height; ++y) {
         memset(frame->data[0] + y * frame->linesize[0], 96, frame->width);
     }
-    for (int y = 0; y < frame->height / 2; ++y) {
-        memset(frame->data[1] + y * frame->linesize[1], 128, frame->width / 2);
-        memset(frame->data[2] + y * frame->linesize[2], 128, frame->width / 2);
+    const int chroma_width = (frame->width + 1) / 2;
+    const int chroma_height = (frame->height + 1) / 2;
+    for (int y = 0; y < chroma_height; ++y) {
+        memset(frame->data[1] + y * frame->linesize[1], 128, chroma_width);
+        memset(frame->data[2] + y * frame->linesize[2], 128, chroma_width);
     }
     return frame;
 }
@@ -112,6 +114,31 @@ TEST_CASE("FrameConverter: wraps YUV420P frame as planar YUV", "[frame_converter
     av_frame_free(&frame);
 }
 
+TEST_CASE("FrameConverter: wraps odd YUV420P frame with ceil chroma planes",
+          "[frame_converter]") {
+    FrameConverter converter;
+    REQUIRE(converter.init_software(65, 63, AV_PIX_FMT_YUV420P));
+
+    AVFrame* frame = make_yuv420_frame(65, 63, 17);
+    auto converted = converter.convert(frame);
+    REQUIRE(converted.has_value());
+    TextureFrame result = std::move(*converted);
+    REQUIRE(result.width == 65);
+    REQUIRE(result.height == 63);
+    REQUIRE(result.storage_kind() == FrameStorageKind::CpuPlanarYuv);
+    REQUIRE(result.cpu_planar_yuv_storage() != nullptr);
+
+    const auto* planar = result.cpu_planar_yuv_storage();
+    REQUIRE(planar->plane_widths[0] == 65);
+    REQUIRE(planar->plane_heights[0] == 63);
+    REQUIRE(planar->plane_widths[1] == 33);
+    REQUIRE(planar->plane_heights[1] == 32);
+    REQUIRE(planar->plane_widths[2] == 33);
+    REQUIRE(planar->plane_heights[2] == 32);
+
+    av_frame_free(&frame);
+}
+
 TEST_CASE("FrameConverter: converts YUV422P to NV12 with vertical chroma downsample",
           "[frame_converter][color]") {
     FrameConverter converter;
@@ -151,6 +178,55 @@ TEST_CASE("FrameConverter: converts YUV422P to NV12 with vertical chroma downsam
     REQUIRE(nv12[uv_offset + 5] == 150);
     REQUIRE(nv12[uv_offset + 6] == 70);
     REQUIRE(nv12[uv_offset + 7] == 160);
+
+    av_frame_free(&frame);
+}
+
+TEST_CASE("FrameConverter: packs odd YUV444P to padded CPU NV12",
+          "[frame_converter][color]") {
+    FrameConverter converter;
+    REQUIRE(converter.init_software(5, 3, AV_PIX_FMT_YUV444P));
+
+    AVFrame* frame = av_frame_alloc();
+    REQUIRE(frame != nullptr);
+    frame->format = AV_PIX_FMT_YUV444P;
+    frame->width = 5;
+    frame->height = 3;
+    REQUIRE(av_frame_get_buffer(frame, 0) >= 0);
+
+    for (int y = 0; y < frame->height; ++y) {
+        for (int x = 0; x < frame->width; ++x) {
+            frame->data[0][y * frame->linesize[0] + x] = static_cast<uint8_t>(10 + y * 5 + x);
+            frame->data[1][y * frame->linesize[1] + x] = 100;
+            frame->data[2][y * frame->linesize[2] + x] = 150;
+        }
+    }
+
+    auto converted = converter.convert(frame);
+    REQUIRE(converted.has_value());
+    TextureFrame result = std::move(*converted);
+    REQUIRE(result.width == 5);
+    REQUIRE(result.height == 3);
+    REQUIRE(result.is_nv12);
+    REQUIRE(result.cpu_nv12_storage() != nullptr);
+
+    const auto* storage = result.cpu_nv12_storage();
+    REQUIRE(storage->coded_width == 6);
+    REQUIRE(storage->coded_height == 4);
+    REQUIRE(storage->y_stride == 6);
+    REQUIRE(storage->uv_stride == 6);
+
+    const auto* nv12 = static_cast<const uint8_t*>(result.texture_handle);
+    REQUIRE(nv12[5] == nv12[4]);
+    REQUIRE(nv12[3 * storage->y_stride + 0] == nv12[2 * storage->y_stride + 0]);
+
+    const size_t uv_offset = static_cast<size_t>(storage->y_stride) * storage->coded_height;
+    for (int y = 0; y < storage->coded_height / 2; ++y) {
+        for (int x = 0; x < storage->coded_width; x += 2) {
+            REQUIRE(nv12[uv_offset + static_cast<size_t>(y) * storage->uv_stride + x] == 100);
+            REQUIRE(nv12[uv_offset + static_cast<size_t>(y) * storage->uv_stride + x + 1] == 150);
+        }
+    }
 
     av_frame_free(&frame);
 }

@@ -22,6 +22,14 @@ extern "C" {
 namespace vr {
 
 namespace {
+int ceil_div2(int value) {
+    return (value + 1) / 2;
+}
+
+int round_up_even(int value) {
+    return (value + 1) & ~1;
+}
+
 bool calculate_yuv420_layout(int width, int height, int bytes_per_component,
                              size_t& y_stride, size_t& uv_stride, size_t& bytes) {
     y_stride = 0;
@@ -33,22 +41,21 @@ bool calculate_yuv420_layout(int width, int height, int bytes_per_component,
     if (width > kMaxRendererDimension || height > kMaxRendererDimension) {
         return false;
     }
-    if ((width & 1) != 0 || (height & 1) != 0) {
-        return false;
-    }
     if (bytes_per_component != 1 && bytes_per_component != 2) {
         return false;
     }
-    const size_t width_size = static_cast<size_t>(width) *
+    const int coded_width = round_up_even(width);
+    const int coded_height = round_up_even(height);
+    const size_t width_size = static_cast<size_t>(coded_width) *
         static_cast<size_t>(bytes_per_component);
-    const size_t height_size = static_cast<size_t>(height);
+    const size_t height_size = static_cast<size_t>(coded_height);
     y_stride = width_size;
     uv_stride = width_size;
     if (height_size > std::numeric_limits<size_t>::max() / y_stride) {
         return false;
     }
     const size_t y_bytes = y_stride * height_size;
-    const size_t uv_height = height_size / 2;
+    const size_t uv_height = static_cast<size_t>(coded_height / 2);
     if (uv_height > 0 &&
         uv_stride > (std::numeric_limits<size_t>::max() - y_bytes) / uv_height) {
         return false;
@@ -144,47 +151,69 @@ uint16_t avg4_u16(uint16_t a, uint16_t b, uint16_t c, uint16_t d) {
 
 bool copy_nv12_8(const AVFrame* frame, std::vector<uint8_t>& dst,
                  int width, int height, int y_stride, int uv_stride) {
+    const int coded_width = round_up_even(width);
+    const int coded_height = round_up_even(height);
+    const int chroma_width = ceil_div2(width);
+    const int chroma_height = ceil_div2(height);
     if (!frame->data[0] || !frame->data[1] ||
-        frame->linesize[0] < width || frame->linesize[1] < width) {
+        frame->linesize[0] < width || frame->linesize[1] < chroma_width * 2) {
         return false;
     }
     uint8_t* dst_y = dst.data();
-    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * height;
-    for (int y = 0; y < height; ++y) {
-        std::memcpy(dst_y + static_cast<size_t>(y) * y_stride,
-                    frame->data[0] + static_cast<size_t>(y) * frame->linesize[0],
+    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * coded_height;
+    for (int y = 0; y < coded_height; ++y) {
+        const int sy = std::min(y, height - 1);
+        uint8_t* row = dst_y + static_cast<size_t>(y) * y_stride;
+        std::memcpy(row,
+                    frame->data[0] + static_cast<size_t>(sy) * frame->linesize[0],
                     static_cast<size_t>(width));
+        if (coded_width > width) {
+            row[width] = row[width - 1];
+        }
     }
-    for (int y = 0; y < height / 2; ++y) {
+    for (int y = 0; y < coded_height / 2; ++y) {
+        const int sy = std::min(y, chroma_height - 1);
         std::memcpy(dst_uv + static_cast<size_t>(y) * uv_stride,
-                    frame->data[1] + static_cast<size_t>(y) * frame->linesize[1],
-                    static_cast<size_t>(width));
+                    frame->data[1] + static_cast<size_t>(sy) * frame->linesize[1],
+                    static_cast<size_t>(coded_width));
     }
     return true;
 }
 
 bool pack_yuv420p_8_to_nv12(const AVFrame* frame, std::vector<uint8_t>& dst,
                             int width, int height, int y_stride, int uv_stride) {
+    const int coded_width = round_up_even(width);
+    const int coded_height = round_up_even(height);
+    const int chroma_width = ceil_div2(width);
+    const int chroma_height = ceil_div2(height);
+    const int coded_chroma_width = coded_width / 2;
     if (!frame->data[0] || !frame->data[1] || !frame->data[2] ||
         frame->linesize[0] < width ||
-        frame->linesize[1] < width / 2 ||
-        frame->linesize[2] < width / 2) {
+        frame->linesize[1] < chroma_width ||
+        frame->linesize[2] < chroma_width) {
         return false;
     }
     uint8_t* dst_y = dst.data();
-    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * height;
-    for (int y = 0; y < height; ++y) {
-        std::memcpy(dst_y + static_cast<size_t>(y) * y_stride,
-                    frame->data[0] + static_cast<size_t>(y) * frame->linesize[0],
+    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * coded_height;
+    for (int y = 0; y < coded_height; ++y) {
+        const int sy = std::min(y, height - 1);
+        uint8_t* row = dst_y + static_cast<size_t>(y) * y_stride;
+        std::memcpy(row,
+                    frame->data[0] + static_cast<size_t>(sy) * frame->linesize[0],
                     static_cast<size_t>(width));
+        if (coded_width > width) {
+            row[width] = row[width - 1];
+        }
     }
-    for (int y = 0; y < height / 2; ++y) {
-        const uint8_t* src_u = frame->data[1] + static_cast<size_t>(y) * frame->linesize[1];
-        const uint8_t* src_v = frame->data[2] + static_cast<size_t>(y) * frame->linesize[2];
+    for (int y = 0; y < coded_height / 2; ++y) {
+        const int sy = std::min(y, chroma_height - 1);
+        const uint8_t* src_u = frame->data[1] + static_cast<size_t>(sy) * frame->linesize[1];
+        const uint8_t* src_v = frame->data[2] + static_cast<size_t>(sy) * frame->linesize[2];
         uint8_t* row = dst_uv + static_cast<size_t>(y) * uv_stride;
-        for (int x = 0; x < width / 2; ++x) {
-            row[x * 2] = src_u[x];
-            row[x * 2 + 1] = src_v[x];
+        for (int x = 0; x < coded_chroma_width; ++x) {
+            const int sx = std::min(x, chroma_width - 1);
+            row[x * 2] = src_u[sx];
+            row[x * 2 + 1] = src_v[sx];
         }
     }
     return true;
@@ -192,23 +221,34 @@ bool pack_yuv420p_8_to_nv12(const AVFrame* frame, std::vector<uint8_t>& dst,
 
 bool copy_nv21_8_as_nv12(const AVFrame* frame, std::vector<uint8_t>& dst,
                          int width, int height, int y_stride, int uv_stride) {
+    const int coded_width = round_up_even(width);
+    const int coded_height = round_up_even(height);
+    const int chroma_width = ceil_div2(width);
+    const int chroma_height = ceil_div2(height);
     if (!frame->data[0] || !frame->data[1] ||
-        frame->linesize[0] < width || frame->linesize[1] < width) {
+        frame->linesize[0] < width || frame->linesize[1] < chroma_width * 2) {
         return false;
     }
     uint8_t* dst_y = dst.data();
-    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * height;
-    for (int y = 0; y < height; ++y) {
-        std::memcpy(dst_y + static_cast<size_t>(y) * y_stride,
-                    frame->data[0] + static_cast<size_t>(y) * frame->linesize[0],
+    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * coded_height;
+    for (int y = 0; y < coded_height; ++y) {
+        const int sy = std::min(y, height - 1);
+        uint8_t* row = dst_y + static_cast<size_t>(y) * y_stride;
+        std::memcpy(row,
+                    frame->data[0] + static_cast<size_t>(sy) * frame->linesize[0],
                     static_cast<size_t>(width));
+        if (coded_width > width) {
+            row[width] = row[width - 1];
+        }
     }
-    for (int y = 0; y < height / 2; ++y) {
-        const uint8_t* src_vu = frame->data[1] + static_cast<size_t>(y) * frame->linesize[1];
+    for (int y = 0; y < coded_height / 2; ++y) {
+        const int sy = std::min(y, chroma_height - 1);
+        const uint8_t* src_vu = frame->data[1] + static_cast<size_t>(sy) * frame->linesize[1];
         uint8_t* row = dst_uv + static_cast<size_t>(y) * uv_stride;
-        for (int x = 0; x < width; x += 2) {
-            row[x] = src_vu[x + 1];
-            row[x + 1] = src_vu[x];
+        for (int x = 0; x < coded_width; x += 2) {
+            const int sx = std::min(x / 2, chroma_width - 1) * 2;
+            row[x] = src_vu[sx + 1];
+            row[x + 1] = src_vu[sx];
         }
     }
     return true;
@@ -216,28 +256,40 @@ bool copy_nv21_8_as_nv12(const AVFrame* frame, std::vector<uint8_t>& dst,
 
 bool pack_yuv422p_8_to_nv12(const AVFrame* frame, std::vector<uint8_t>& dst,
                             int width, int height, int y_stride, int uv_stride) {
+    const int coded_width = round_up_even(width);
+    const int coded_height = round_up_even(height);
+    const int chroma_width = ceil_div2(width);
+    const int coded_chroma_width = coded_width / 2;
     if (!frame->data[0] || !frame->data[1] || !frame->data[2] ||
         frame->linesize[0] < width ||
-        frame->linesize[1] < width / 2 ||
-        frame->linesize[2] < width / 2) {
+        frame->linesize[1] < chroma_width ||
+        frame->linesize[2] < chroma_width) {
         return false;
     }
     uint8_t* dst_y = dst.data();
-    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * height;
-    for (int y = 0; y < height; ++y) {
-        std::memcpy(dst_y + static_cast<size_t>(y) * y_stride,
-                    frame->data[0] + static_cast<size_t>(y) * frame->linesize[0],
+    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * coded_height;
+    for (int y = 0; y < coded_height; ++y) {
+        const int sy = std::min(y, height - 1);
+        uint8_t* row = dst_y + static_cast<size_t>(y) * y_stride;
+        std::memcpy(row,
+                    frame->data[0] + static_cast<size_t>(sy) * frame->linesize[0],
                     static_cast<size_t>(width));
+        if (coded_width > width) {
+            row[width] = row[width - 1];
+        }
     }
-    for (int y = 0; y < height / 2; ++y) {
-        const uint8_t* src_u0 = frame->data[1] + static_cast<size_t>(y * 2) * frame->linesize[1];
-        const uint8_t* src_u1 = frame->data[1] + static_cast<size_t>(y * 2 + 1) * frame->linesize[1];
-        const uint8_t* src_v0 = frame->data[2] + static_cast<size_t>(y * 2) * frame->linesize[2];
-        const uint8_t* src_v1 = frame->data[2] + static_cast<size_t>(y * 2 + 1) * frame->linesize[2];
+    for (int y = 0; y < coded_height / 2; ++y) {
+        const int sy0 = std::min(y * 2, height - 1);
+        const int sy1 = std::min(y * 2 + 1, height - 1);
+        const uint8_t* src_u0 = frame->data[1] + static_cast<size_t>(sy0) * frame->linesize[1];
+        const uint8_t* src_u1 = frame->data[1] + static_cast<size_t>(sy1) * frame->linesize[1];
+        const uint8_t* src_v0 = frame->data[2] + static_cast<size_t>(sy0) * frame->linesize[2];
+        const uint8_t* src_v1 = frame->data[2] + static_cast<size_t>(sy1) * frame->linesize[2];
         uint8_t* row = dst_uv + static_cast<size_t>(y) * uv_stride;
-        for (int x = 0; x < width / 2; ++x) {
-            row[x * 2] = avg2_u8(src_u0[x], src_u1[x]);
-            row[x * 2 + 1] = avg2_u8(src_v0[x], src_v1[x]);
+        for (int x = 0; x < coded_chroma_width; ++x) {
+            const int sx = std::min(x, chroma_width - 1);
+            row[x * 2] = avg2_u8(src_u0[sx], src_u1[sx]);
+            row[x * 2 + 1] = avg2_u8(src_v0[sx], src_v1[sx]);
         }
     }
     return true;
@@ -245,6 +297,9 @@ bool pack_yuv422p_8_to_nv12(const AVFrame* frame, std::vector<uint8_t>& dst,
 
 bool pack_yuv444p_8_to_nv12(const AVFrame* frame, std::vector<uint8_t>& dst,
                             int width, int height, int y_stride, int uv_stride) {
+    const int coded_width = round_up_even(width);
+    const int coded_height = round_up_even(height);
+    const int coded_chroma_width = coded_width / 2;
     if (!frame->data[0] || !frame->data[1] || !frame->data[2] ||
         frame->linesize[0] < width ||
         frame->linesize[1] < width ||
@@ -252,22 +307,30 @@ bool pack_yuv444p_8_to_nv12(const AVFrame* frame, std::vector<uint8_t>& dst,
         return false;
     }
     uint8_t* dst_y = dst.data();
-    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * height;
-    for (int y = 0; y < height; ++y) {
-        std::memcpy(dst_y + static_cast<size_t>(y) * y_stride,
-                    frame->data[0] + static_cast<size_t>(y) * frame->linesize[0],
+    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * coded_height;
+    for (int y = 0; y < coded_height; ++y) {
+        const int sy = std::min(y, height - 1);
+        uint8_t* row = dst_y + static_cast<size_t>(y) * y_stride;
+        std::memcpy(row,
+                    frame->data[0] + static_cast<size_t>(sy) * frame->linesize[0],
                     static_cast<size_t>(width));
+        if (coded_width > width) {
+            row[width] = row[width - 1];
+        }
     }
-    for (int y = 0; y < height / 2; ++y) {
-        const uint8_t* src_u0 = frame->data[1] + static_cast<size_t>(y * 2) * frame->linesize[1];
-        const uint8_t* src_u1 = frame->data[1] + static_cast<size_t>(y * 2 + 1) * frame->linesize[1];
-        const uint8_t* src_v0 = frame->data[2] + static_cast<size_t>(y * 2) * frame->linesize[2];
-        const uint8_t* src_v1 = frame->data[2] + static_cast<size_t>(y * 2 + 1) * frame->linesize[2];
+    for (int y = 0; y < coded_height / 2; ++y) {
+        const int sy0 = std::min(y * 2, height - 1);
+        const int sy1 = std::min(y * 2 + 1, height - 1);
+        const uint8_t* src_u0 = frame->data[1] + static_cast<size_t>(sy0) * frame->linesize[1];
+        const uint8_t* src_u1 = frame->data[1] + static_cast<size_t>(sy1) * frame->linesize[1];
+        const uint8_t* src_v0 = frame->data[2] + static_cast<size_t>(sy0) * frame->linesize[2];
+        const uint8_t* src_v1 = frame->data[2] + static_cast<size_t>(sy1) * frame->linesize[2];
         uint8_t* row = dst_uv + static_cast<size_t>(y) * uv_stride;
-        for (int x = 0; x < width / 2; ++x) {
-            const int sx = x * 2;
-            row[x * 2] = avg4_u8(src_u0[sx], src_u0[sx + 1], src_u1[sx], src_u1[sx + 1]);
-            row[x * 2 + 1] = avg4_u8(src_v0[sx], src_v0[sx + 1], src_v1[sx], src_v1[sx + 1]);
+        for (int x = 0; x < coded_chroma_width; ++x) {
+            const int sx = std::min(x * 2, width - 1);
+            const int sx1 = std::min(sx + 1, width - 1);
+            row[x * 2] = avg4_u8(src_u0[sx], src_u0[sx1], src_u1[sx], src_u1[sx1]);
+            row[x * 2 + 1] = avg4_u8(src_v0[sx], src_v0[sx1], src_v1[sx], src_v1[sx1]);
         }
     }
     return true;
@@ -275,33 +338,44 @@ bool pack_yuv444p_8_to_nv12(const AVFrame* frame, std::vector<uint8_t>& dst,
 
 bool pack_yuv420p_10_to_p010(const AVFrame* frame, std::vector<uint8_t>& dst,
                              int width, int height, int y_stride, int uv_stride) {
+    const int coded_width = round_up_even(width);
+    const int coded_height = round_up_even(height);
+    const int chroma_width = ceil_div2(width);
+    const int chroma_height = ceil_div2(height);
+    const int coded_chroma_width = coded_width / 2;
     if (!frame->data[0] || !frame->data[1] || !frame->data[2] ||
         frame->linesize[0] < width * 2 ||
-        frame->linesize[1] < width ||
-        frame->linesize[2] < width) {
+        frame->linesize[1] < chroma_width * 2 ||
+        frame->linesize[2] < chroma_width * 2) {
         return false;
     }
     auto* dst_y = reinterpret_cast<uint16_t*>(dst.data());
-    auto* dst_uv = reinterpret_cast<uint16_t*>(dst.data() + static_cast<size_t>(y_stride) * height);
-    for (int y = 0; y < height; ++y) {
+    auto* dst_uv = reinterpret_cast<uint16_t*>(dst.data() + static_cast<size_t>(y_stride) * coded_height);
+    for (int y = 0; y < coded_height; ++y) {
+        const int sy = std::min(y, height - 1);
         const auto* src_y = reinterpret_cast<const uint16_t*>(
-            frame->data[0] + static_cast<size_t>(y) * frame->linesize[0]);
+            frame->data[0] + static_cast<size_t>(sy) * frame->linesize[0]);
         auto* row = reinterpret_cast<uint16_t*>(
             reinterpret_cast<uint8_t*>(dst_y) + static_cast<size_t>(y) * y_stride);
         for (int x = 0; x < width; ++x) {
             row[x] = yuv10_to_p010(src_y[x]);
         }
+        if (coded_width > width) {
+            row[width] = row[width - 1];
+        }
     }
-    for (int y = 0; y < height / 2; ++y) {
+    for (int y = 0; y < coded_height / 2; ++y) {
+        const int sy = std::min(y, chroma_height - 1);
         const auto* src_u = reinterpret_cast<const uint16_t*>(
-            frame->data[1] + static_cast<size_t>(y) * frame->linesize[1]);
+            frame->data[1] + static_cast<size_t>(sy) * frame->linesize[1]);
         const auto* src_v = reinterpret_cast<const uint16_t*>(
-            frame->data[2] + static_cast<size_t>(y) * frame->linesize[2]);
+            frame->data[2] + static_cast<size_t>(sy) * frame->linesize[2]);
         auto* row = reinterpret_cast<uint16_t*>(
             reinterpret_cast<uint8_t*>(dst_uv) + static_cast<size_t>(y) * uv_stride);
-        for (int x = 0; x < width / 2; ++x) {
-            row[x * 2] = yuv10_to_p010(src_u[x]);
-            row[x * 2 + 1] = yuv10_to_p010(src_v[x]);
+        for (int x = 0; x < coded_chroma_width; ++x) {
+            const int sx = std::min(x, chroma_width - 1);
+            row[x * 2] = yuv10_to_p010(src_u[sx]);
+            row[x * 2 + 1] = yuv10_to_p010(src_v[sx]);
         }
     }
     return true;
@@ -309,57 +383,88 @@ bool pack_yuv420p_10_to_p010(const AVFrame* frame, std::vector<uint8_t>& dst,
 
 bool copy_p010(const AVFrame* frame, std::vector<uint8_t>& dst,
                int width, int height, int y_stride, int uv_stride) {
+    const int coded_width = round_up_even(width);
+    const int coded_height = round_up_even(height);
+    const int chroma_width = ceil_div2(width);
+    const int chroma_height = ceil_div2(height);
+    const int coded_chroma_width = coded_width / 2;
     if (!frame->data[0] || !frame->data[1] ||
         frame->linesize[0] < width * 2 ||
-        frame->linesize[1] < width * 2) {
+        frame->linesize[1] < chroma_width * 4) {
         return false;
     }
-    uint8_t* dst_y = dst.data();
-    uint8_t* dst_uv = dst_y + static_cast<size_t>(y_stride) * height;
-    for (int y = 0; y < height; ++y) {
-        std::memcpy(dst_y + static_cast<size_t>(y) * y_stride,
-                    frame->data[0] + static_cast<size_t>(y) * frame->linesize[0],
-                    static_cast<size_t>(width) * 2);
+    auto* dst_y = reinterpret_cast<uint16_t*>(dst.data());
+    auto* dst_uv = reinterpret_cast<uint16_t*>(dst.data() + static_cast<size_t>(y_stride) * coded_height);
+    for (int y = 0; y < coded_height; ++y) {
+        const int sy = std::min(y, height - 1);
+        const auto* src_y = reinterpret_cast<const uint16_t*>(
+            frame->data[0] + static_cast<size_t>(sy) * frame->linesize[0]);
+        auto* row = reinterpret_cast<uint16_t*>(
+            reinterpret_cast<uint8_t*>(dst_y) + static_cast<size_t>(y) * y_stride);
+        for (int x = 0; x < width; ++x) {
+            row[x] = src_y[x];
+        }
+        if (coded_width > width) {
+            row[width] = row[width - 1];
+        }
     }
-    for (int y = 0; y < height / 2; ++y) {
-        std::memcpy(dst_uv + static_cast<size_t>(y) * uv_stride,
-                    frame->data[1] + static_cast<size_t>(y) * frame->linesize[1],
-                    static_cast<size_t>(width) * 2);
+    for (int y = 0; y < coded_height / 2; ++y) {
+        const int sy = std::min(y, chroma_height - 1);
+        const auto* src_uv = reinterpret_cast<const uint16_t*>(
+            frame->data[1] + static_cast<size_t>(sy) * frame->linesize[1]);
+        auto* row = reinterpret_cast<uint16_t*>(
+            reinterpret_cast<uint8_t*>(dst_uv) + static_cast<size_t>(y) * uv_stride);
+        for (int x = 0; x < coded_chroma_width; ++x) {
+            const int sx = std::min(x, chroma_width - 1);
+            row[x * 2] = src_uv[sx * 2];
+            row[x * 2 + 1] = src_uv[sx * 2 + 1];
+        }
     }
     return true;
 }
 
 bool pack_yuv422p_10_to_p010(const AVFrame* frame, std::vector<uint8_t>& dst,
                              int width, int height, int y_stride, int uv_stride) {
+    const int coded_width = round_up_even(width);
+    const int coded_height = round_up_even(height);
+    const int chroma_width = ceil_div2(width);
+    const int coded_chroma_width = coded_width / 2;
     if (!frame->data[0] || !frame->data[1] || !frame->data[2] ||
         frame->linesize[0] < width * 2 ||
-        frame->linesize[1] < width ||
-        frame->linesize[2] < width) {
+        frame->linesize[1] < chroma_width * 2 ||
+        frame->linesize[2] < chroma_width * 2) {
         return false;
     }
-    for (int y = 0; y < height; ++y) {
+    for (int y = 0; y < coded_height; ++y) {
+        const int sy = std::min(y, height - 1);
         const auto* src_y = reinterpret_cast<const uint16_t*>(
-            frame->data[0] + static_cast<size_t>(y) * frame->linesize[0]);
+            frame->data[0] + static_cast<size_t>(sy) * frame->linesize[0]);
         auto* row = reinterpret_cast<uint16_t*>(
             dst.data() + static_cast<size_t>(y) * y_stride);
         for (int x = 0; x < width; ++x) {
             row[x] = yuv10_to_p010(src_y[x]);
         }
+        if (coded_width > width) {
+            row[width] = row[width - 1];
+        }
     }
-    uint8_t* dst_uv = dst.data() + static_cast<size_t>(y_stride) * height;
-    for (int y = 0; y < height / 2; ++y) {
+    uint8_t* dst_uv = dst.data() + static_cast<size_t>(y_stride) * coded_height;
+    for (int y = 0; y < coded_height / 2; ++y) {
+        const int sy0 = std::min(y * 2, height - 1);
+        const int sy1 = std::min(y * 2 + 1, height - 1);
         const auto* src_u0 = reinterpret_cast<const uint16_t*>(
-            frame->data[1] + static_cast<size_t>(y * 2) * frame->linesize[1]);
+            frame->data[1] + static_cast<size_t>(sy0) * frame->linesize[1]);
         const auto* src_u1 = reinterpret_cast<const uint16_t*>(
-            frame->data[1] + static_cast<size_t>(y * 2 + 1) * frame->linesize[1]);
+            frame->data[1] + static_cast<size_t>(sy1) * frame->linesize[1]);
         const auto* src_v0 = reinterpret_cast<const uint16_t*>(
-            frame->data[2] + static_cast<size_t>(y * 2) * frame->linesize[2]);
+            frame->data[2] + static_cast<size_t>(sy0) * frame->linesize[2]);
         const auto* src_v1 = reinterpret_cast<const uint16_t*>(
-            frame->data[2] + static_cast<size_t>(y * 2 + 1) * frame->linesize[2]);
+            frame->data[2] + static_cast<size_t>(sy1) * frame->linesize[2]);
         auto* row = reinterpret_cast<uint16_t*>(dst_uv + static_cast<size_t>(y) * uv_stride);
-        for (int x = 0; x < width / 2; ++x) {
-            row[x * 2] = yuv10_to_p010(avg2_u16(src_u0[x], src_u1[x]));
-            row[x * 2 + 1] = yuv10_to_p010(avg2_u16(src_v0[x], src_v1[x]));
+        for (int x = 0; x < coded_chroma_width; ++x) {
+            const int sx = std::min(x, chroma_width - 1);
+            row[x * 2] = yuv10_to_p010(avg2_u16(src_u0[sx], src_u1[sx]));
+            row[x * 2 + 1] = yuv10_to_p010(avg2_u16(src_v0[sx], src_v1[sx]));
         }
     }
     return true;
@@ -367,38 +472,48 @@ bool pack_yuv422p_10_to_p010(const AVFrame* frame, std::vector<uint8_t>& dst,
 
 bool pack_yuv444p_10_to_p010(const AVFrame* frame, std::vector<uint8_t>& dst,
                              int width, int height, int y_stride, int uv_stride) {
+    const int coded_width = round_up_even(width);
+    const int coded_height = round_up_even(height);
+    const int coded_chroma_width = coded_width / 2;
     if (!frame->data[0] || !frame->data[1] || !frame->data[2] ||
         frame->linesize[0] < width * 2 ||
         frame->linesize[1] < width * 2 ||
         frame->linesize[2] < width * 2) {
         return false;
     }
-    for (int y = 0; y < height; ++y) {
+    for (int y = 0; y < coded_height; ++y) {
+        const int sy = std::min(y, height - 1);
         const auto* src_y = reinterpret_cast<const uint16_t*>(
-            frame->data[0] + static_cast<size_t>(y) * frame->linesize[0]);
+            frame->data[0] + static_cast<size_t>(sy) * frame->linesize[0]);
         auto* row = reinterpret_cast<uint16_t*>(
             dst.data() + static_cast<size_t>(y) * y_stride);
         for (int x = 0; x < width; ++x) {
             row[x] = yuv10_to_p010(src_y[x]);
         }
+        if (coded_width > width) {
+            row[width] = row[width - 1];
+        }
     }
-    uint8_t* dst_uv = dst.data() + static_cast<size_t>(y_stride) * height;
-    for (int y = 0; y < height / 2; ++y) {
+    uint8_t* dst_uv = dst.data() + static_cast<size_t>(y_stride) * coded_height;
+    for (int y = 0; y < coded_height / 2; ++y) {
+        const int sy0 = std::min(y * 2, height - 1);
+        const int sy1 = std::min(y * 2 + 1, height - 1);
         const auto* src_u0 = reinterpret_cast<const uint16_t*>(
-            frame->data[1] + static_cast<size_t>(y * 2) * frame->linesize[1]);
+            frame->data[1] + static_cast<size_t>(sy0) * frame->linesize[1]);
         const auto* src_u1 = reinterpret_cast<const uint16_t*>(
-            frame->data[1] + static_cast<size_t>(y * 2 + 1) * frame->linesize[1]);
+            frame->data[1] + static_cast<size_t>(sy1) * frame->linesize[1]);
         const auto* src_v0 = reinterpret_cast<const uint16_t*>(
-            frame->data[2] + static_cast<size_t>(y * 2) * frame->linesize[2]);
+            frame->data[2] + static_cast<size_t>(sy0) * frame->linesize[2]);
         const auto* src_v1 = reinterpret_cast<const uint16_t*>(
-            frame->data[2] + static_cast<size_t>(y * 2 + 1) * frame->linesize[2]);
+            frame->data[2] + static_cast<size_t>(sy1) * frame->linesize[2]);
         auto* row = reinterpret_cast<uint16_t*>(dst_uv + static_cast<size_t>(y) * uv_stride);
-        for (int x = 0; x < width / 2; ++x) {
-            const int sx = x * 2;
-            row[x * 2] = yuv10_to_p010(avg4_u16(src_u0[sx], src_u0[sx + 1],
-                                                src_u1[sx], src_u1[sx + 1]));
-            row[x * 2 + 1] = yuv10_to_p010(avg4_u16(src_v0[sx], src_v0[sx + 1],
-                                                    src_v1[sx], src_v1[sx + 1]));
+        for (int x = 0; x < coded_chroma_width; ++x) {
+            const int sx = std::min(x * 2, width - 1);
+            const int sx1 = std::min(sx + 1, width - 1);
+            row[x * 2] = yuv10_to_p010(avg4_u16(src_u0[sx], src_u0[sx1],
+                                                src_u1[sx], src_u1[sx1]));
+            row[x * 2 + 1] = yuv10_to_p010(avg4_u16(src_v0[sx], src_v0[sx1],
+                                                    src_v1[sx], src_v1[sx1]));
         }
     }
     return true;
@@ -412,14 +527,15 @@ bool wrap_frame_as_cpu_planar_yuv420(const AVFrame* frame,
     const int width = frame->width;
     const int height = frame->height;
     const auto format = static_cast<AVPixelFormat>(frame->format);
+    const int chroma_width = ceil_div2(width);
+    const int chroma_height = ceil_div2(height);
     if (!software_format_uses_direct_planar_yuv420(format) ||
         width <= 0 || height <= 0 ||
         width > kMaxRendererDimension || height > kMaxRendererDimension ||
-        (width & 1) != 0 || (height & 1) != 0 ||
         !frame->data[0] || !frame->data[1] || !frame->data[2] ||
         frame->linesize[0] < width ||
-        frame->linesize[1] < width / 2 ||
-        frame->linesize[2] < width / 2) {
+        frame->linesize[1] < chroma_width ||
+        frame->linesize[2] < chroma_width) {
         return false;
     }
 
@@ -449,8 +565,8 @@ bool wrap_frame_as_cpu_planar_yuv420(const AVFrame* frame,
         frame_ref,
         {ref_frame->data[0], ref_frame->data[1], ref_frame->data[2]},
         {ref_frame->linesize[0], ref_frame->linesize[1], ref_frame->linesize[2]},
-        {width, width / 2, width / 2},
-        {height, height / 2, height / 2},
+        {width, chroma_width, chroma_width},
+        {height, chroma_height, chroma_height},
         1,
     };
     return true;
@@ -545,11 +661,15 @@ bool convert_frame_to_cpu_nv12(const AVFrame* frame,
     result.is_ref = false;
     result.is_nv12 = true;
     result.is_p010 = use_p010;
+    const int coded_width = round_up_even(width);
+    const int coded_height = round_up_even(height);
     result.storage = CpuNv12FrameStorage{
         buffer,
         static_cast<int>(y_stride),
         static_cast<int>(uv_stride),
         use_p010,
+        coded_width,
+        coded_height,
     };
     return true;
 }

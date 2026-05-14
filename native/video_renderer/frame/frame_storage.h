@@ -53,6 +53,9 @@ struct CpuNv12FrameStorage {
     int y_stride = 0;
     int uv_stride = 0;
     bool is_p010 = false;
+    // NV12/P010 D3D textures require even coded dimensions; display can remain odd.
+    int coded_width = 0;
+    int coded_height = 0;
 };
 
 struct CpuPlanarYuvFrameStorage {

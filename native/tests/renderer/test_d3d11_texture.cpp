@@ -290,6 +290,50 @@ TEST_CASE("D3D11FramePresenter prepares cached software NV12 frame SRVs",
     cleanup_test_device(dev, hwnd);
 }
 
+TEST_CASE("D3D11FramePresenter prepares padded odd software NV12 frame SRVs",
+          "[d3d11][frame_presenter]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::TextureManager tm(dev->device(), dev->context());
+    vr::D3D11FramePresenter presenter(&tm, dev->context());
+
+    const int display_width = 65;
+    const int display_height = 63;
+    const int coded_width = 66;
+    const int coded_height = 64;
+    auto pixels = std::make_shared<std::vector<uint8_t>>(
+        static_cast<size_t>(coded_width) * coded_height +
+            static_cast<size_t>(coded_width) * (coded_height / 2),
+        static_cast<uint8_t>(128));
+
+    vr::TextureFrame frame;
+    frame.width = display_width;
+    frame.height = display_height;
+    frame.cpu_data = pixels;
+    frame.texture_handle = pixels->data();
+    frame.is_nv12 = true;
+    frame.storage = vr::CpuNv12FrameStorage{
+        pixels,
+        coded_width,
+        coded_width,
+        false,
+        coded_width,
+        coded_height,
+    };
+
+    vr::D3D11PreparedFrame prepared;
+    REQUIRE(presenter.prepare_frame(
+        0, frame, 1920, 1080, [](const char*) {}, prepared));
+    REQUIRE(prepared.nv12_y_srv != nullptr);
+    REQUIRE(prepared.nv12_uv_srv != nullptr);
+    REQUIRE(std::fabs(presenter.nv12_uv_scale_x(0) -
+                      (static_cast<float>(display_width) / coded_width)) < 0.0001f);
+    REQUIRE(std::fabs(presenter.nv12_uv_scale_y(0) -
+                      (static_cast<float>(display_height) / coded_height)) < 0.0001f);
+
+    presenter.reset_all();
+    cleanup_test_device(dev, hwnd);
+}
+
 TEST_CASE("D3D11FramePresenter prepares cached software P010 frame SRVs",
           "[d3d11][frame_presenter]") {
     auto [dev, hwnd] = create_test_device();

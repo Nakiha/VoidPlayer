@@ -36,7 +36,7 @@ chat 给出的方向和当前代码状态高度匹配。优先级最高的不是
 | S2 | paused audio 持续丢弃 PCM | `WaveOutOutput::render()` 在 `!playing_` 时写 silence 后调用 `discard_unheard(frames, kNoTrack, kNoTrack)` | pause/resume 音频空洞、underrun、重新对齐异常 | DONE - Patch 2 |
 | S3 | `RenderSink` 长期保存裸 `TrackBuffer*` | `RenderSink::tracks_` 是裸指针数组；render loop `evaluate()` 与 remove/compact 不共享明确锁契约 | add/remove/compact 时 UAF 或错轨 | DONE - Patch 3 |
 | S4 | Headless shared texture 没有 in-flight tracking | `pick_free_buffer()` 固定返回 `(front + 2) % 3`；release callback 只保证 lifetime，不保证内容不被重写 | Flutter 仍采样旧 texture 时 native 覆盖导致闪帧/撕裂 | DONE - Patch 4 |
-| S5 | `AnalysisManager` session/global state 并发风险 | `loaded_ / vac2_base_ / analysis_path_` 无 session 级锁或 immutable snapshot；render thread 可同时读 overlay frame | render/FFI/load/unload 并发 UB 或错 chunk | TODO |
+| S5 | `AnalysisManager` session/global state 并发风险 | `loaded_ / vac2_base_ / analysis_path_` 无 session 级锁或 immutable snapshot；render thread 可同时读 overlay frame | render/FFI/load/unload 并发 UB 或错 chunk | DONE - Patch 5 |
 
 第二梯队，确认存在但本轮可以排在前五项之后：
 
@@ -243,6 +243,29 @@ Blocked:
 Follow-up:
 
 - S5 AnalysisManager session snapshot is next.
+
+2026-05-14 Patch 5 - AnalysisManager Session Snapshot
+
+Changed:
+
+- Replaced mutable `loaded_ / vac2_base_ / analysis_path_` manager state with a shared immutable session snapshot.
+- Moved overlay chunk index and overlay frame cache into the session so render reads can safely outlive concurrent load/unload swaps.
+- Filtered overlay chunks against the current base session by codec, content revision, track index, and required CU geometry feature flags.
+- Removed the public raw `vac2_base()` reference accessor and adjusted the only test caller.
+- Added native regressions for stale overlay chunks and concurrent load/unload/read access.
+
+Verified:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/overlay_controls_h264.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- Run final cross-check against the original chat review files, then start second-tier stabilization backlog.
 
 ## Final Cross-Check
 

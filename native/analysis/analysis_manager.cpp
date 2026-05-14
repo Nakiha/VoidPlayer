@@ -18,30 +18,19 @@ bool AnalysisManager::load(const std::string& analysis_path) {
 }
 
 bool AnalysisManager::load_vac2(const std::string& analysis_path) {
-    if (!vac2_base_.open(analysis_path)) return false;
-    analysis_path_ = analysis_path;
-    loaded_ = true;
-    {
-        std::lock_guard<std::mutex> lock(overlay_chunk_index_mutex_);
-        overlay_chunk_index_loaded_ = false;
-        overlay_chunk_index_write_time_ = {};
-        overlay_chunk_index_.clear();
-        overlay_frame_cache_ = {};
-    }
+    auto session = std::make_shared<Session>();
+    if (!session->vac2_base.open(analysis_path)) return false;
+    session->analysis_path = analysis_path;
+    std::lock_guard<std::mutex> lock(session_mutex_);
+    session_ = std::move(session);
     return true;
 }
 
 void AnalysisManager::unload() {
     clear_overlay_tracks();
-    vac2_base_.close();
-    analysis_path_.clear();
-    loaded_ = false;
     {
-        std::lock_guard<std::mutex> lock(overlay_chunk_index_mutex_);
-        overlay_chunk_index_loaded_ = false;
-        overlay_chunk_index_write_time_ = {};
-        overlay_chunk_index_.clear();
-        overlay_frame_cache_ = {};
+        std::lock_guard<std::mutex> lock(session_mutex_);
+        session_.reset();
     }
     overlay.show_cu_grid.store(false, std::memory_order_release);
     overlay.show_pred_mode.store(false, std::memory_order_release);
@@ -53,25 +42,39 @@ void AnalysisManager::unload() {
     overlay.track_file_id.store(-1, std::memory_order_release);
 }
 
+bool AnalysisManager::is_loaded() const {
+    return session_snapshot() != nullptr;
+}
+
+std::shared_ptr<const AnalysisManager::Session> AnalysisManager::session_snapshot() const {
+    std::lock_guard<std::mutex> lock(session_mutex_);
+    return session_;
+}
+
 int AnalysisManager::frame_count() const {
-    if (!loaded_) return 0;
-    return static_cast<int>(vac2_base_.frames().size());
+    const auto session = session_snapshot();
+    if (!session) return 0;
+    return static_cast<int>(session->vac2_base.frames().size());
 }
 
 uint32_t AnalysisManager::video_width() const {
-    if (!loaded_) return 0;
-    return vac2_base_.header().width;
+    const auto session = session_snapshot();
+    if (!session) return 0;
+    return session->vac2_base.header().width;
 }
 
 uint32_t AnalysisManager::video_height() const {
-    if (!loaded_) return 0;
-    return vac2_base_.header().height;
+    const auto session = session_snapshot();
+    if (!session) return 0;
+    return session->vac2_base.header().height;
 }
 
 VachunkFrameSummary AnalysisManager::read_frame_summary(int frame_idx) const {
-    if (!loaded_ || frame_idx < 0 || frame_idx >= frame_count()) return {};
-    if (static_cast<size_t>(frame_idx) >= vac2_base_.frame_summaries().size()) return {};
-    const auto& source = vac2_base_.frame_summaries()[static_cast<size_t>(frame_idx)];
+    const auto session = session_snapshot();
+    if (!session || frame_idx < 0) return {};
+    const auto index = static_cast<size_t>(frame_idx);
+    if (index >= session->vac2_base.frame_summaries().size()) return {};
+    const auto& source = session->vac2_base.frame_summaries()[index];
     VachunkFrameSummary out{};
     out.poc = source.poc;
     out.coded_order = source.coded_order;
@@ -93,44 +96,53 @@ VachunkFrameSummary AnalysisManager::read_frame_summary(int frame_idx) const {
 }
 
 VachunkOverlayFrameData AnalysisManager::read_overlay_frame(int frame_idx) const {
-    if (!loaded_ || frame_idx < 0 || frame_idx >= frame_count()) return {};
-    return read_vac2_overlay_frame(frame_idx);
+    const auto session = session_snapshot();
+    if (!session || frame_idx < 0 ||
+        static_cast<size_t>(frame_idx) >= session->vac2_base.frames().size()) {
+        return {};
+    }
+    return read_vac2_overlay_frame(session, frame_idx);
 }
 
-VachunkOverlayFrameData AnalysisManager::read_vac2_overlay_frame(int frame_idx) const {
+VachunkOverlayFrameData AnalysisManager::read_vac2_overlay_frame(
+    const std::shared_ptr<const Session>& session,
+    int frame_idx) const {
     VachunkOverlayFrameData empty;
-    if (analysis_path_.empty()) return empty;
+    if (!session || session->analysis_path.empty()) return empty;
 
-    std::lock_guard<std::mutex> lock(overlay_chunk_index_mutex_);
-    const auto base_path = win_utf8::path_from_utf8(analysis_path_);
+    std::lock_guard<std::mutex> lock(session->overlay_chunk_index_mutex);
+    const auto base_path = win_utf8::path_from_utf8(session->analysis_path);
     const auto overlay_dir = base_path.parent_path() / L"chunks" / L"overlay";
     std::error_code ec;
     const auto write_time = std::filesystem::last_write_time(overlay_dir, ec);
     const bool directory_changed =
-        !ec && overlay_chunk_index_loaded_ &&
-        write_time != overlay_chunk_index_write_time_;
-    if (!overlay_chunk_index_loaded_ || directory_changed) {
-        refresh_overlay_chunk_index_locked();
+        !ec && session->overlay_chunk_index_loaded &&
+        write_time != session->overlay_chunk_index_write_time;
+    if (!session->overlay_chunk_index_loaded || directory_changed) {
+        refresh_overlay_chunk_index_locked(*session);
     }
-    auto result = read_overlay_frame_from_index_locked(frame_idx);
+    auto result = read_overlay_frame_from_index_locked(*session, frame_idx);
     if (!result.cus.empty()) {
         return result;
     }
-    refresh_overlay_chunk_index_locked();
-    return read_overlay_frame_from_index_locked(frame_idx);
+    refresh_overlay_chunk_index_locked(*session);
+    return read_overlay_frame_from_index_locked(*session, frame_idx);
 }
 
-void AnalysisManager::refresh_overlay_chunk_index_locked() const {
-    overlay_chunk_index_loaded_ = true;
-    overlay_chunk_index_.clear();
-    overlay_frame_cache_ = {};
-    if (analysis_path_.empty()) return;
+void AnalysisManager::refresh_overlay_chunk_index_locked(const Session& session) const {
+    session.overlay_chunk_index_loaded = true;
+    session.overlay_chunk_index.clear();
+    session.overlay_frame_cache = {};
+    if (session.analysis_path.empty()) return;
 
-    const auto base_path = win_utf8::path_from_utf8(analysis_path_);
+    const auto base_path = win_utf8::path_from_utf8(session.analysis_path);
     const auto overlay_dir = base_path.parent_path() / L"chunks" / L"overlay";
     std::error_code ec;
-    overlay_chunk_index_write_time_ = std::filesystem::last_write_time(overlay_dir, ec);
+    session.overlay_chunk_index_write_time = std::filesystem::last_write_time(overlay_dir, ec);
     if (ec || !std::filesystem::exists(overlay_dir, ec) || ec) return;
+
+    const auto& base_header = session.vac2_base.header();
+    constexpr uint64_t kRequiredOverlayFeatures = VACHUNK_FEATURE_CU_GEOMETRY;
 
     for (const auto& entry : std::filesystem::directory_iterator(overlay_dir, ec)) {
         if (ec) break;
@@ -145,23 +157,32 @@ void AnalysisManager::refresh_overlay_chunk_index_locked() const {
         if (header.kind != static_cast<uint16_t>(VachunkKind::Overlay)) {
             continue;
         }
-        overlay_chunk_index_.push_back(OverlayChunkIndexEntry{
+        if (header.codec != base_header.codec ||
+            header.track_index != base_header.track_index ||
+            header.base_content_revision != base_header.content_revision ||
+            (header.feature_flags & kRequiredOverlayFeatures) != kRequiredOverlayFeatures) {
+            continue;
+        }
+        session.overlay_chunk_index.push_back(OverlayChunkIndexEntry{
             header.start_frame,
             header.end_frame,
             header.base_content_revision,
             header.generator_revision,
+            header.feature_flags,
             win_utf8::path_to_utf8(entry.path()),
         });
     }
 }
 
-VachunkOverlayFrameData AnalysisManager::read_overlay_frame_from_index_locked(int frame_idx) const {
+VachunkOverlayFrameData AnalysisManager::read_overlay_frame_from_index_locked(
+    const Session& session,
+    int frame_idx) const {
     VachunkOverlayFrameData result;
     if (frame_idx < 0) return result;
 
     const OverlayChunkIndexEntry* best = nullptr;
     const auto target = static_cast<uint32_t>(frame_idx);
-    for (const auto& entry : overlay_chunk_index_) {
+    for (const auto& entry : session.overlay_chunk_index) {
         if (target < entry.start_frame || target > entry.end_frame) {
             continue;
         }
@@ -175,10 +196,10 @@ VachunkOverlayFrameData AnalysisManager::read_overlay_frame_from_index_locked(in
 
     if (!best) return result;
 
-    if (overlay_frame_cache_.valid &&
-        overlay_frame_cache_.frame_index == target &&
-        overlay_frame_cache_.chunk_path == best->path) {
-        return overlay_frame_cache_.data;
+    if (session.overlay_frame_cache.valid &&
+        session.overlay_frame_cache.frame_index == target &&
+        session.overlay_frame_cache.chunk_path == best->path) {
+        return session.overlay_frame_cache.data;
     }
 
     VachunkFile chunk;
@@ -187,10 +208,10 @@ VachunkOverlayFrameData AnalysisManager::read_overlay_frame_from_index_locked(in
     if (!read_overlay_vachunk_frame(chunk, target, frame)) return result;
     result.summary = frame.summary;
     result.cus = std::move(frame.cus);
-    overlay_frame_cache_.valid = true;
-    overlay_frame_cache_.frame_index = target;
-    overlay_frame_cache_.chunk_path = best->path;
-    overlay_frame_cache_.data = result;
+    session.overlay_frame_cache.valid = true;
+    session.overlay_frame_cache.frame_index = target;
+    session.overlay_frame_cache.chunk_path = best->path;
+    session.overlay_frame_cache.data = result;
     return result;
 }
 
@@ -222,8 +243,9 @@ AnalysisManager::overlay_track_snapshot() const {
 }
 
 int AnalysisManager::current_frame_idx(int64_t pts_us) const {
-    if (!loaded_) return -1;
-    const auto& h = vac2_base_.header();
+    const auto session = session_snapshot();
+    if (!session) return -1;
+    const auto& h = session->vac2_base.header();
     if (h.time_base_num == 0 || h.time_base_den == 0) return -1;
     const long double pts_tb =
         static_cast<long double>(pts_us) *
@@ -234,7 +256,7 @@ int AnalysisManager::current_frame_idx(int64_t pts_us) const {
             return -1;
     }
     const int64_t target = static_cast<int64_t>(pts_tb);
-    const auto& frames = vac2_base_.frames();
+    const auto& frames = session->vac2_base.frames();
     auto it = std::upper_bound(
         frames.begin(),
         frames.end(),

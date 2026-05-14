@@ -20,9 +20,8 @@ public:
 
     bool load(const std::string& analysis_path);
     void unload();
-    bool is_loaded() const { return loaded_; }
+    bool is_loaded() const;
 
-    const Vac2BaseFile& vac2_base() const { return vac2_base_; }
     int frame_count() const;
     uint32_t video_width() const;
     uint32_t video_height() const;
@@ -53,16 +52,12 @@ public:
     int current_frame_idx(int64_t pts_us) const;
 
 private:
-    bool load_vac2(const std::string& analysis_path);
-    VachunkOverlayFrameData read_vac2_overlay_frame(int frame_idx) const;
-    void refresh_overlay_chunk_index_locked() const;
-    VachunkOverlayFrameData read_overlay_frame_from_index_locked(int frame_idx) const;
-
     struct OverlayChunkIndexEntry {
         uint32_t start_frame = 0;
         uint32_t end_frame = 0;
         uint64_t base_revision = 0;
         uint64_t generator_revision = 0;
+        uint64_t feature_flags = 0;
         std::string path;
     };
 
@@ -73,14 +68,28 @@ private:
         VachunkOverlayFrameData data;
     };
 
-    Vac2BaseFile vac2_base_;
-    std::string analysis_path_;
-    bool loaded_ = false;
-    mutable std::mutex overlay_chunk_index_mutex_;
-    mutable bool overlay_chunk_index_loaded_ = false;
-    mutable std::filesystem::file_time_type overlay_chunk_index_write_time_{};
-    mutable std::vector<OverlayChunkIndexEntry> overlay_chunk_index_;
-    mutable OverlayFrameCache overlay_frame_cache_;
+    struct Session {
+        Vac2BaseFile vac2_base;
+        std::string analysis_path;
+        mutable std::mutex overlay_chunk_index_mutex;
+        mutable bool overlay_chunk_index_loaded = false;
+        mutable std::filesystem::file_time_type overlay_chunk_index_write_time{};
+        mutable std::vector<OverlayChunkIndexEntry> overlay_chunk_index;
+        mutable OverlayFrameCache overlay_frame_cache;
+    };
+
+    std::shared_ptr<const Session> session_snapshot() const;
+    bool load_vac2(const std::string& analysis_path);
+    VachunkOverlayFrameData read_vac2_overlay_frame(
+        const std::shared_ptr<const Session>& session,
+        int frame_idx) const;
+    void refresh_overlay_chunk_index_locked(const Session& session) const;
+    VachunkOverlayFrameData read_overlay_frame_from_index_locked(
+        const Session& session,
+        int frame_idx) const;
+
+    mutable std::mutex session_mutex_;
+    std::shared_ptr<const Session> session_;
     mutable std::mutex overlay_tracks_mutex_;
     std::unordered_map<int, std::shared_ptr<AnalysisManager>> overlay_tracks_;
 };

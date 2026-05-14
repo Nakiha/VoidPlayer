@@ -8,7 +8,9 @@
 #include "test_analysis_data.h"
 
 #include <cstring>
+#include <atomic>
 #include <filesystem>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -501,6 +503,7 @@ TEST_CASE("AnalysisManager: reads VAC2 base with overlay chunks",
     base.time_base_den = 1000000;
     base.width = 1920;
     base.height = 1080;
+    base.content_revision = 17;
     base.metadata_json = R"({"schema":"manager-vac2-overlay-test"})";
 
     for (uint32_t i = 0; i < 2; ++i) {
@@ -558,7 +561,30 @@ TEST_CASE("AnalysisManager: reads VAC2 base with overlay chunks",
     REQUIRE(manager.current_frame_idx(45000) == 1);
     REQUIRE(manager.read_overlay_frame(0).cus.empty());
 
-    const auto chunk_data = make_overlay_chunk(0, 1);
+    auto stale_revision_chunk = make_overlay_chunk(0, 1);
+    stale_revision_chunk.base_content_revision = base.content_revision + 1;
+    REQUIRE(vr::analysis::write_vachunk_file(
+        (overlay_dir / "overlay_stale_revision.vck").string(),
+        stale_revision_chunk));
+    REQUIRE(manager.read_overlay_frame(0).cus.empty());
+
+    auto stale_codec_chunk = make_overlay_chunk(0, 1, AnalysisCodec::HEVC);
+    stale_codec_chunk.base_content_revision = base.content_revision;
+    REQUIRE(vr::analysis::write_vachunk_file(
+        (overlay_dir / "overlay_stale_codec.vck").string(),
+        stale_codec_chunk));
+    REQUIRE(manager.read_overlay_frame(0).cus.empty());
+
+    auto stale_feature_chunk = make_overlay_chunk(0, 1);
+    stale_feature_chunk.base_content_revision = base.content_revision;
+    stale_feature_chunk.feature_flags = 0;
+    REQUIRE(vr::analysis::write_vachunk_file(
+        (overlay_dir / "overlay_stale_features.vck").string(),
+        stale_feature_chunk));
+    REQUIRE(manager.read_overlay_frame(0).cus.empty());
+
+    auto chunk_data = make_overlay_chunk(0, 1);
+    chunk_data.base_content_revision = base.content_revision;
     REQUIRE(vr::analysis::write_vachunk_file(
         (overlay_dir / "overlay_00000000_00000001_g1.vck").string(),
         chunk_data));
@@ -571,6 +597,7 @@ TEST_CASE("AnalysisManager: reads VAC2 base with overlay chunks",
     }
 
     auto newer_chunk_data = make_overlay_chunk(0, 1);
+    newer_chunk_data.base_content_revision = base.content_revision;
     newer_chunk_data.generator_revision = chunk_data.generator_revision + 1;
     for (auto& section : newer_chunk_data.sections) {
         const std::string type(section.type, section.type + 4);
@@ -600,6 +627,27 @@ TEST_CASE("AnalysisManager: reads VAC2 base with overlay chunks",
     if (!newer_frame0.cus.empty()) {
         REQUIRE(newer_frame0.cus[0].common.qp == 41);
     }
+
+    std::atomic<bool> stop_reader{false};
+    std::atomic<int> read_count{0};
+    std::thread reader([&] {
+        while (!stop_reader.load(std::memory_order_acquire)) {
+            (void)manager.frame_count();
+            (void)manager.current_frame_idx(45000);
+            (void)manager.read_overlay_frame(0);
+            read_count.fetch_add(1, std::memory_order_relaxed);
+            std::this_thread::yield();
+        }
+    });
+    for (int i = 0; i < 20; ++i) {
+        REQUIRE(manager.load(base_path.string()));
+        if ((i % 2) == 0) {
+            manager.unload();
+        }
+    }
+    stop_reader.store(true, std::memory_order_release);
+    reader.join();
+    REQUIRE(read_count.load(std::memory_order_relaxed) > 0);
 
     manager.unload();
     fs::remove_all(root);

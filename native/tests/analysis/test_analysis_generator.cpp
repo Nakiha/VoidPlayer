@@ -192,7 +192,9 @@ TEST_CASE("AnalysisManager: current frame handles high-denominator time bases",
 
     auto& mgr = vr::analysis::AnalysisManager::instance();
     REQUIRE(mgr.load(vac_path));
-    REQUIRE(mgr.vac2_base().header().time_base_den > 1000000);
+    vr::analysis::Vac2BaseFile vac2;
+    REQUIRE(vac2.open(vac_path));
+    REQUIRE(vac2.header().time_base_den > 1000000);
     REQUIRE(mgr.current_frame_idx(0) >= 0);
     REQUIRE(mgr.current_frame_idx(1000000) >= 0);
 

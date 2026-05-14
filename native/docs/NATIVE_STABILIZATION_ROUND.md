@@ -771,6 +771,27 @@ Follow-up:
 
 - Design a host-provided logger/sink API so embedded or multi-engine hosts do not need to share global spdlog/crash-handler ownership.
 
+2026-05-15 Patch 29 - Shutdown During Seek Recreate Smoke
+
+Changed:
+
+- Added `ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`.
+- Covers play -> real timeline seek -> immediate last-track removal/player shutdown -> player recreation -> viewport capture.
+- Split the renderer shutdown stress backlog into completed seek/recreate UI smoke and remaining capture/resize stress coverage.
+
+Verified:
+
+- `git diff --check`
+- `python dev.py ui-test ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- Add dedicated shutdown-during-capture and shutdown-during-resize stress coverage.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
@@ -827,6 +848,7 @@ fixed:
 - Windows runner MethodChannel dispatch: Patch 26 moved method-name lookup into `NativePlayerMethodDispatcher`.
 - Windows runner MethodChannel diagnostics scope: Patch 27 switched `getDiagnostics` to plugin instance player scope.
 - FFI logging/crash ownership notes: Patch 28 documented process-global ownership in the public FFI header.
+- Renderer shutdown/seek smoke coverage: Patch 29 added shutdown during real seek plus recreate UI coverage.
 
 accepted-backlog:
 
@@ -888,6 +910,7 @@ fixed:
 - Patch 26 completed the runner `NativePlayerMethodDispatcher` slice for MethodChannel method-name dispatch.
 - Patch 27 completed MethodChannel diagnostics active-player lookup scope.
 - Patch 28 documented process-global logging/crash FFI ownership and split out host-provided logger/sink design.
+- Patch 29 added a shutdown-during-seek recreate smoke test.
 
 accepted-backlog:
 

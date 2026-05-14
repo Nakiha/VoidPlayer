@@ -130,3 +130,15 @@ python dev.py analysis-benchmark h264 h265 h266
 报告默认写入 `build/analysis-benchmark/analysis_benchmark.json` 和
 `build/analysis-benchmark/analysis_benchmark.md`，包含每个样片的 base/chunk
 耗时、最终 cache 大小、视频大小占比、section 原始/压缩大小，以及 zstd 节省量。
+
+Overlay heatmap CPU raster 成本可用独立 benchmark 覆盖：
+
+```bash
+python dev.py analysis-overlay-benchmark --iterations 240
+```
+
+该命令会生成一个临时 VAC2 base 和 overlay VACHUNK，然后调用
+`VoidPlayerCli.exe benchmark-overlay` 对指定帧重复栅格化，报告写入
+`build/analysis-overlay-benchmark/analysis_overlay_benchmark.json` 和 `.md`。
+它用于检查 CU/MB 热力图填充路径的回归；不包含 GUI 中的 D3D texture upload 和
+最终窗口合成。

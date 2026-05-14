@@ -51,6 +51,7 @@ if(FFMPEG_FOUND)
   add_executable(VoidPlayerCli
     "../../native/tools/void_player_cli.cpp"
     "../../native/analysis/cache/overlay_chunk.cpp"
+    "../../native/analysis/cache/overlay_raster.cpp"
     "../../native/analysis/cache/vacache_store.cpp"
     "../../native/analysis/generators/analysis_generator.cpp"
     "../../native/analysis/generators/bitstream_indexer.cpp"

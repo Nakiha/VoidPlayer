@@ -66,6 +66,13 @@ private:
         std::string path;
     };
 
+    struct OverlayFrameCache {
+        bool valid = false;
+        uint32_t frame_index = 0;
+        std::string chunk_path;
+        VachunkOverlayFrameData data;
+    };
+
     Vac2BaseFile vac2_base_;
     std::string analysis_path_;
     bool loaded_ = false;
@@ -73,6 +80,7 @@ private:
     mutable bool overlay_chunk_index_loaded_ = false;
     mutable std::filesystem::file_time_type overlay_chunk_index_write_time_{};
     mutable std::vector<OverlayChunkIndexEntry> overlay_chunk_index_;
+    mutable OverlayFrameCache overlay_frame_cache_;
     mutable std::mutex overlay_tracks_mutex_;
     std::unordered_map<int, std::shared_ptr<AnalysisManager>> overlay_tracks_;
 };

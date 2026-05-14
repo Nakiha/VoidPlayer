@@ -20,6 +20,7 @@ VoidPlayerCli inspect <base.vac|chunk.vck> [--json] [--limit N]
 VoidPlayerCli check <base.vac|chunk.vck> [--json]
 VoidPlayerCli frame <base.vac> --index N [--json]
 VoidPlayerCli chunk-frame <chunk.vck> --frame N [--json] [--limit N]
+VoidPlayerCli benchmark-overlay <chunk.vck> --frame N [--width N] [--height N] [--iterations N] [--mode bitrate|qp] [--json]
 VoidPlayerCli generate-base --input <video> --cache-root <dir> --hash <hash> [--json]
 VoidPlayerCli generate-overlay --input <video> --cache-root <dir> --hash <hash> --start-frame N --end-frame N [--codec h264|hevc|vvc] [--analyzer <exe>] [--json]
 ```
@@ -45,6 +46,20 @@ Inspect an overlay chunk and one frame's CU records:
 .\VoidPlayerCli.exe inspect "$env:APPDATA\VoidPlayer\cache\<hash>\chunks\overlay\<chunk>.vck"
 .\VoidPlayerCli.exe chunk-frame "$env:APPDATA\VoidPlayer\cache\<hash>\chunks\overlay\<chunk>.vck" --frame 128 --json --limit 20
 ```
+
+Benchmark one overlay frame's heatmap raster path:
+
+```powershell
+.\VoidPlayerCli.exe benchmark-overlay `
+  "$env:APPDATA\VoidPlayer\cache\<hash>\chunks\overlay\<chunk>.vck" `
+  --frame 128 `
+  --iterations 240 `
+  --mode bitrate `
+  --json
+```
+
+This command measures CPU rasterization into a BGRA overlay buffer. It does not
+include GUI texture upload, D3D blending, or compositor work.
 
 `inspect <chunk.vck> --json` reports the chunk header compression algorithm and
 per-section `compressed`, `size`, and `decodedSize` fields. Current published
@@ -100,6 +115,7 @@ test generates a small VAC2 base file and VACHUNK overlay chunk, then runs:
 - `check --json`
 - `frame --json`
 - `chunk-frame --json`
+- `benchmark-overlay --json`
 - `generate-base --json`
 - `generate-overlay --json`
 

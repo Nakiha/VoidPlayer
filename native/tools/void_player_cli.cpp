@@ -1,4 +1,5 @@
 #include "analysis/cache/overlay_chunk.h"
+#include "analysis/cache/overlay_raster.h"
 #include "analysis/cache/vacache_store.h"
 #include "analysis/generators/analysis_generator.h"
 #include "analysis/parsers/binary_types.h"
@@ -50,6 +51,9 @@ struct CliOptions {
     uint32_t limit = 5;
     uint32_t start_frame = UINT32_MAX;
     uint32_t end_frame = UINT32_MAX;
+    uint32_t width = 1920;
+    uint32_t height = 1080;
+    uint32_t iterations = 120;
     uint64_t generator_revision = 2;
     uint64_t max_cache_bytes = 0;
     std::string input;
@@ -57,6 +61,7 @@ struct CliOptions {
     std::string hash;
     std::string analyzer;
     std::string codec;
+    std::string mode = "bitrate";
 };
 
 std::string fourcc(const char value[4]) {
@@ -215,12 +220,14 @@ void print_usage(std::ostream& out) {
         "  VoidPlayerCli inspect <base.vac|chunk.vck> [--json] [--limit N]\n"
         "  VoidPlayerCli check <base.vac|chunk.vck> [--json]\n"
         "  VoidPlayerCli frame <base.vac> --index N [--json]\n"
-        "  VoidPlayerCli chunk-frame <chunk.vck> --frame N [--json] [--limit N]\n\n"
+        "  VoidPlayerCli chunk-frame <chunk.vck> --frame N [--json] [--limit N]\n"
+        "  VoidPlayerCli benchmark-overlay <chunk.vck> --frame N [--width N] [--height N] [--iterations N] [--mode bitrate|qp] [--json]\n\n"
         "  VoidPlayerCli generate-base --input <video> --cache-root <dir> --hash <hash> [--json]\n"
         "  VoidPlayerCli generate-overlay --input <video> --cache-root <dir> --hash <hash> --start-frame N --end-frame N [--codec h264|hevc|vvc] [--analyzer <exe>] [--json]\n\n"
         "Examples:\n"
         "  VoidPlayerCli inspect \"%APPDATA%\\VoidPlayer\\cache\\<hash>\\base.vac\"\n"
         "  VoidPlayerCli chunk-frame \"overlay.vck\" --frame 128 --json\n"
+        "  VoidPlayerCli benchmark-overlay \"overlay.vck\" --frame 0 --iterations 240 --json\n"
         "  VoidPlayerCli generate-base --input input.mp4 --cache-root \"%APPDATA%\\VoidPlayer\\cache\" --hash <hash>\n"
         "  VoidPlayerCli generate-overlay --input input.mp4 --cache-root \"%APPDATA%\\VoidPlayer\\cache\" --hash <hash> --start-frame 128 --end-frame 191\n";
 }
@@ -245,6 +252,12 @@ bool parse_args(const std::vector<std::string>& args, CliOptions& options) {
             if (!parse_u32(args[++i], options.start_frame)) return false;
         } else if (arg == "--end-frame" && i + 1 < args.size()) {
             if (!parse_u32(args[++i], options.end_frame)) return false;
+        } else if (arg == "--width" && i + 1 < args.size()) {
+            if (!parse_u32(args[++i], options.width)) return false;
+        } else if (arg == "--height" && i + 1 < args.size()) {
+            if (!parse_u32(args[++i], options.height)) return false;
+        } else if (arg == "--iterations" && i + 1 < args.size()) {
+            if (!parse_u32(args[++i], options.iterations)) return false;
         } else if (arg == "--generator-revision" && i + 1 < args.size()) {
             if (!parse_u64(args[++i], options.generator_revision)) return false;
         } else if (arg == "--max-cache-bytes" && i + 1 < args.size()) {
@@ -259,6 +272,8 @@ bool parse_args(const std::vector<std::string>& args, CliOptions& options) {
             options.analyzer = args[++i];
         } else if (arg == "--codec" && i + 1 < args.size()) {
             options.codec = args[++i];
+        } else if (arg == "--mode" && i + 1 < args.size()) {
+            options.mode = args[++i];
         } else if (!arg.empty() && arg[0] == '-') {
             return false;
         } else if (options.path.empty()) {
@@ -275,6 +290,10 @@ bool parse_args(const std::vector<std::string>& args, CliOptions& options) {
         if (!parse_u32(options.value, options.index)) return false;
     }
     if (options.command == "chunk-frame" && options.frame == UINT32_MAX &&
+        !options.value.empty()) {
+        if (!parse_u32(options.value, options.frame)) return false;
+    }
+    if (options.command == "benchmark-overlay" && options.frame == UINT32_MAX &&
         !options.value.empty()) {
         if (!parse_u32(options.value, options.frame)) return false;
     }
@@ -924,6 +943,96 @@ int print_chunk_frame(const CliOptions& options) {
     return 0;
 }
 
+int benchmark_overlay(const CliOptions& options) {
+    if (options.frame == UINT32_MAX) {
+        std::cerr << "Missing --frame N\n";
+        return 1;
+    }
+    if (options.width == 0 || options.height == 0 || options.iterations == 0) {
+        std::cerr << "--width, --height, and --iterations must be positive\n";
+        return 1;
+    }
+
+    vr::analysis::VachunkFile chunk;
+    if (!chunk.open(options.path)) {
+        std::cerr << "Failed to open VACHUNK: " << options.path << "\n";
+        return 2;
+    }
+    vr::analysis::VachunkOverlayFrameData frame;
+    if (!vr::analysis::read_overlay_vachunk_frame(chunk, options.frame, frame)) {
+        std::cerr << "Failed to read overlay frame " << options.frame << "\n";
+        return 2;
+    }
+
+    const auto mode = (options.mode == "qp")
+        ? vr::analysis::OverlayHeatmapMode::Qp
+        : vr::analysis::OverlayHeatmapMode::BitCost;
+    const uint8_t alpha = 255;
+    std::vector<uint8_t> pixels(
+        static_cast<size_t>(options.width) * static_cast<size_t>(options.height) * 4);
+    vr::analysis::OverlayRasterStats stats;
+
+    std::fill(pixels.begin(), pixels.end(), 0);
+    if (!vr::analysis::raster_overlay_heatmap(
+            frame,
+            options.width,
+            options.height,
+            static_cast<int>(options.width),
+            static_cast<int>(options.height),
+            mode,
+            alpha,
+            pixels,
+            &stats)) {
+        std::cerr << "Failed to raster overlay frame\n";
+        return 2;
+    }
+
+    const auto start = std::chrono::steady_clock::now();
+    for (uint32_t i = 0; i < options.iterations; ++i) {
+        std::fill(pixels.begin(), pixels.end(), 0);
+        if (!vr::analysis::raster_overlay_heatmap(
+                frame,
+                options.width,
+                options.height,
+                static_cast<int>(options.width),
+                static_cast<int>(options.height),
+                mode,
+                alpha,
+                pixels,
+                &stats)) {
+            std::cerr << "Failed to raster overlay frame\n";
+            return 2;
+        }
+    }
+    const auto elapsed = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - start).count();
+    const double avg_ms = elapsed / static_cast<double>(options.iterations);
+
+    if (options.json) {
+        std::cout << "{"
+                  << "\"type\":\"overlayRasterBenchmark\","
+                  << "\"path\":\"" << json_escape(options.path) << "\","
+                  << "\"frame\":" << options.frame << ","
+                  << "\"mode\":\"" << json_escape(options.mode) << "\","
+                  << "\"width\":" << options.width << ","
+                  << "\"height\":" << options.height << ","
+                  << "\"iterations\":" << options.iterations << ","
+                  << "\"cuCount\":" << stats.cu_count << ","
+                  << "\"filledPixels\":" << stats.filled_pixels << ","
+                  << "\"totalMs\":" << elapsed << ","
+                  << "\"avgMs\":" << avg_ms
+                  << "}\n";
+    } else {
+        std::cout << "Overlay raster benchmark: frame=" << options.frame
+                  << " mode=" << options.mode
+                  << " iterations=" << options.iterations
+                  << " avg=" << avg_ms << " ms"
+                  << " cus=" << stats.cu_count
+                  << " filled_pixels=" << stats.filled_pixels << "\n";
+    }
+    return 0;
+}
+
 int generate_base(const CliOptions& options) {
     if (options.input.empty() || options.cache_root.empty() || options.hash.empty()) {
         std::cerr << "generate-base requires --input, --cache-root, and --hash\n";
@@ -1109,6 +1218,7 @@ int run_cli(const std::vector<std::string>& args) {
         }
         return print_chunk_frame(options);
     }
+    if (options.command == "benchmark-overlay") return benchmark_overlay(options);
     std::cerr << "Unknown command: " << options.command << "\n";
     print_usage(std::cerr);
     return 1;

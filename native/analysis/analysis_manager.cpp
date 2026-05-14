@@ -26,6 +26,7 @@ bool AnalysisManager::load_vac2(const std::string& analysis_path) {
         overlay_chunk_index_loaded_ = false;
         overlay_chunk_index_write_time_ = {};
         overlay_chunk_index_.clear();
+        overlay_frame_cache_ = {};
     }
     return true;
 }
@@ -40,6 +41,7 @@ void AnalysisManager::unload() {
         overlay_chunk_index_loaded_ = false;
         overlay_chunk_index_write_time_ = {};
         overlay_chunk_index_.clear();
+        overlay_frame_cache_ = {};
     }
     overlay.show_cu_grid.store(false, std::memory_order_release);
     overlay.show_pred_mode.store(false, std::memory_order_release);
@@ -121,6 +123,7 @@ VachunkOverlayFrameData AnalysisManager::read_vac2_overlay_frame(int frame_idx) 
 void AnalysisManager::refresh_overlay_chunk_index_locked() const {
     overlay_chunk_index_loaded_ = true;
     overlay_chunk_index_.clear();
+    overlay_frame_cache_ = {};
     if (analysis_path_.empty()) return;
 
     const auto base_path = win_utf8::path_from_utf8(analysis_path_);
@@ -172,12 +175,22 @@ VachunkOverlayFrameData AnalysisManager::read_overlay_frame_from_index_locked(in
 
     if (!best) return result;
 
+    if (overlay_frame_cache_.valid &&
+        overlay_frame_cache_.frame_index == target &&
+        overlay_frame_cache_.chunk_path == best->path) {
+        return overlay_frame_cache_.data;
+    }
+
     VachunkFile chunk;
     if (!chunk.open(best->path)) return result;
     VachunkOverlayFrameData frame;
     if (!read_overlay_vachunk_frame(chunk, target, frame)) return result;
     result.summary = frame.summary;
     result.cus = std::move(frame.cus);
+    overlay_frame_cache_.valid = true;
+    overlay_frame_cache_.frame_index = target;
+    overlay_frame_cache_.chunk_path = best->path;
+    overlay_frame_cache_.data = result;
     return result;
 }
 

@@ -254,7 +254,16 @@ int main(int argc, char** argv) {
         run_cli(cli_path, {"frame", fixture.vac_path, "--index", "1", "--json"}) &&
         run_cli(cli_path, {"inspect", fixture.vck_path, "--json"}) &&
         run_cli(cli_path, {"check", fixture.vck_path, "--json"}) &&
-        run_cli(cli_path, {"chunk-frame", fixture.vck_path, "--frame", "1", "--json"});
+        run_cli(cli_path, {"chunk-frame", fixture.vck_path, "--frame", "1", "--json"}) &&
+        run_cli(cli_path, {
+            "benchmark-overlay",
+            fixture.vck_path,
+            "--frame", "1",
+            "--width", "64",
+            "--height", "64",
+            "--iterations", "2",
+            "--json",
+        });
 
     bool generation_ok = true;
     if (!analyzer_path.empty() && !video_path.empty()) {

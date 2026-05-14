@@ -118,6 +118,10 @@ D3D11 renderer 负责：
 
 第一版实现先采用 correctness-first 路径：CPU 按当前 VACHUNK frame 生成一张 viewport 尺寸的 BGRA dynamic texture，再由 D3D11 full-screen overlay pass 做 alpha blend。这样可以先把 CU grid、QP heatmap、prediction colors、MV line 和 bit-density heatmap 与现有 Texture 上屏路径打通；后续大码率/高分辨率优化再迁移到 GPU instance/structured-buffer 绘制。
 
+当前 CPU raster 的热力图矩形填充会直接写入 BGRA overlay buffer；线框和预测线仍走独立 mask/line 路径。这个路径避免了对每个填充像素做 alpha blend，但平滑 pan/zoom 时仍会重新投影并上传 viewport 尺寸 overlay texture，因此 GPU 侧仍会看到 texture upload/full-screen blend/compositor 成本。使用
+`python dev.py analysis-overlay-benchmark --iterations 240` 可以独立测量 CU/MB
+heatmap raster 的 CPU 成本。
+
 当前 VACHUNK CU/MB record 已带 `bit_count`，`cuBitCostHeatmap` 使用
 `bit_count * 64 * 64 / (w * h)` 计算归一到 64x64 的 bit density，并用固定
 log2 标尺绘制，避免不同帧/片源自适应导致颜色抖动。

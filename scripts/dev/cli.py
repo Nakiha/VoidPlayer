@@ -14,6 +14,7 @@ from .flutter_app import (
 )
 from .analysis_resize_stress import cmd_analysis_resize_stress
 from .analysis_benchmark import cmd_analysis_benchmark
+from .analysis_overlay_benchmark import cmd_analysis_overlay_benchmark
 from .package import cmd_package
 
 
@@ -39,6 +40,7 @@ Examples:
   python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
   python dev.py analysis-resize-stress
   python dev.py analysis-benchmark --build
+  python dev.py analysis-overlay-benchmark --build
 """,
     )
     sub = parser.add_subparsers(dest="command")
@@ -128,6 +130,35 @@ Examples:
     p_analysis_benchmark.add_argument("samples", nargs="*",
                                       help="Optional sample codec/name filters: h264 h265 h266, or hevc/vvc")
 
+    p_overlay_benchmark = sub.add_parser(
+        "analysis-overlay-benchmark",
+        help="Benchmark native overlay heatmap rasterization",
+    )
+    p_overlay_benchmark.add_argument("--build", action="store_true",
+                                     help="Build Flutter release before benchmarking")
+    p_overlay_benchmark.add_argument("--cache-root", type=str, default=None,
+                                     help="Cache root to use (default: build/analysis-overlay-benchmark/cache)")
+    p_overlay_benchmark.add_argument("--output-dir", type=str, default=None,
+                                     help="Report output directory (default: build/analysis-overlay-benchmark)")
+    p_overlay_benchmark.add_argument("--keep-cache", action="store_true",
+                                     help="Reuse existing benchmark cache root")
+    p_overlay_benchmark.add_argument("--video", type=str, default=None,
+                                     help="Video path (default: resources/video/h266_10s_1920x1080.mp4)")
+    p_overlay_benchmark.add_argument("--codec", type=str, default="vvc",
+                                     choices=["h264", "hevc", "vvc"],
+                                     help="Codec for --video (default: vvc)")
+    p_overlay_benchmark.add_argument("--frame", type=int, default=0,
+                                     help="Frame index to benchmark")
+    p_overlay_benchmark.add_argument("--width", type=int, default=1920,
+                                     help="Raster surface width")
+    p_overlay_benchmark.add_argument("--height", type=int, default=1080,
+                                     help="Raster surface height")
+    p_overlay_benchmark.add_argument("--iterations", type=int, default=120,
+                                     help="Raster iterations")
+    p_overlay_benchmark.add_argument("--mode", type=str, default="bitrate",
+                                     choices=["bitrate", "qp"],
+                                     help="Heatmap mode")
+
     return parser
 
 
@@ -151,4 +182,5 @@ def main() -> None:
         "ui-test": cmd_ui_test,
         "analysis-resize-stress": cmd_analysis_resize_stress,
         "analysis-benchmark": cmd_analysis_benchmark,
+        "analysis-overlay-benchmark": cmd_analysis_overlay_benchmark,
     }[args.command](args)

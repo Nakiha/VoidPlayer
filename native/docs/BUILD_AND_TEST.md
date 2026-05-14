@@ -45,6 +45,21 @@ python dev.py analysis-benchmark h264 h265 h266
 这条流程会同时覆盖 CLI、VAC2 生成、overlay VACHUNK 生成、chunk inspect 和
 zstd section 压缩统计。
 
+Analysis overlay 栅格化 benchmark 用于测量当前帧 VACHUNK CU 记录到 BGRA
+overlay texture 的 CPU raster 成本。它默认使用 H.266 小样第一帧、比特率热力图，
+并优先使用 native build 目录下的 `VoidPlayerCli.exe`，方便在 renderer/analysis
+迭代时拿到最新代码：
+
+```bash
+python dev.py analysis-overlay-benchmark --build
+python dev.py analysis-overlay-benchmark --iterations 240
+python dev.py analysis-overlay-benchmark --video <video> --codec hevc --frame 128 --mode qp
+```
+
+报告默认写入
+`build/analysis-overlay-benchmark/analysis_overlay_benchmark.json` 和 `.md`。
+这条基准只测 CPU fill+raster，不代表完整 GUI 的 D3D upload、blend 或窗口合成成本。
+
 `dev.py build --native` 会在 native CMake 构建前检查 analysis 外部工具：
 
 - FFmpeg `void_ffmpeg_analyzer.exe`：如果缺失，或构建 stamp 与当前 `native/analysis/vendor/ffmpeg`、`zstd` 子模块版本 / `build_windows_msvc.ps1` 不一致，会自动运行 `native/analysis/vendor/ffmpeg/voidplayer/build_windows_msvc.ps1` 重编。

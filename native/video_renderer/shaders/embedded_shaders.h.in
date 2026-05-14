@@ -16,4 +16,12 @@ constexpr const char kSamplingHlsl[] = R"__SHADER__(
 constexpr const char kMultitrackHlsl[] = R"__SHADER__(
 @MULTITRACK_HLSL@
 )__SHADER__";
+
+constexpr const char kAnalysisOverlayHlsl[] = R"__SHADER__(
+@ANALYSIS_OVERLAY_HLSL@
+)__SHADER__";
+
+constexpr const char kAnalysisOverlayInvertHlsl[] = R"__SHADER__(
+@ANALYSIS_OVERLAY_INVERT_HLSL@
+)__SHADER__";
 } // namespace vr

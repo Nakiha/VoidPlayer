@@ -129,7 +129,7 @@ Headless publish 的同步契约：
 
 - Render loop / tick / present scheduling: 从 `render_loop()`、`present_frame()` 外提为 `RenderLoopController`，但 D3D draw 仍需遵守 `device_mutex_`。
 - Layout validation / order / viewport math: 从 `apply_layout()`、`display_pixel_size_for_layout_locked()`、`update_track_geometry_from_decision_locked()` 外提为 `LayoutController`。
-- Analysis overlay CPU raster + D3D upload: 从 `draw_analysis_overlay()`、`ensure_analysis_overlay_texture()` 外提为 `AnalysisOverlayRenderer`。
+- Analysis overlay cache + CPU raster + D3D upload: 从 `draw_analysis_overlay()`、`ensure_analysis_overlay_texture()` 外提为 `AnalysisOverlayRenderer`。
 - Device loss terminal/recreate policy: 从 `enter_terminal_device_lost_locked()` 和 poll sites 外提为 `DeviceLossPolicy`。
 - Front-buffer capture and snapshot helpers: 从 `capture_front_buffer()` / headless snapshot helpers 外提为 `FrameCaptureService`。
 

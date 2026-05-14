@@ -9,66 +9,6 @@
 
 namespace vr {
 
-namespace {
-
-constexpr const char* kOverlayHlsl = R"(
-struct VSInput {
-    float2 position : POSITION;
-    float2 texcoord : TEXCOORD0;
-};
-
-struct VSOutput {
-    float4 position : SV_POSITION;
-    float2 texcoord : TEXCOORD0;
-};
-
-VSOutput VSMain(VSInput input) {
-    VSOutput output;
-    output.position = float4(input.position, 0.0, 1.0);
-    output.texcoord = input.texcoord;
-    return output;
-}
-
-Texture2D u_overlay : register(t0);
-SamplerState u_sampler : register(s0);
-
-float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_TARGET {
-    return u_overlay.Sample(u_sampler, texcoord);
-}
-)";
-
-constexpr const char* kOverlayInvertHlsl = R"(
-struct VSInput {
-    float2 position : POSITION;
-    float2 texcoord : TEXCOORD0;
-};
-
-struct VSOutput {
-    float4 position : SV_POSITION;
-    float2 texcoord : TEXCOORD0;
-};
-
-VSOutput VSMain(VSInput input) {
-    VSOutput output;
-    output.position = float4(input.position, 0.0, 1.0);
-    output.texcoord = input.texcoord;
-    return output;
-}
-
-Texture2D u_overlay : register(t0);
-SamplerState u_sampler : register(s0);
-
-float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_TARGET {
-    float4 mask = u_overlay.Sample(u_sampler, texcoord);
-    if (mask.r < 0.5) {
-        discard;
-    }
-    return float4(1.0, 1.0, 1.0, 1.0);
-}
-)";
-
-} // namespace
-
 D3D11RenderBackend::~D3D11RenderBackend() {
     shutdown();
 }
@@ -131,13 +71,21 @@ bool D3D11RenderBackend::initialize_render_resources() {
     }
 
     if (!shader_manager_->compile_from_source(
-            kOverlayHlsl, "VSMain", "PSMain", resources_->overlay_shader)) {
+            kAnalysisOverlayHlsl,
+            multitrack_includes,
+            "VSMain",
+            "PSMain",
+            resources_->overlay_shader)) {
         spdlog::error("Renderer: failed to compile overlay shaders");
         return false;
     }
 
     if (!shader_manager_->compile_from_source(
-            kOverlayInvertHlsl, "VSMain", "PSMain", resources_->overlay_invert_shader)) {
+            kAnalysisOverlayInvertHlsl,
+            multitrack_includes,
+            "VSMain",
+            "PSMain",
+            resources_->overlay_invert_shader)) {
         spdlog::error("Renderer: failed to compile overlay invert shaders");
         return false;
     }

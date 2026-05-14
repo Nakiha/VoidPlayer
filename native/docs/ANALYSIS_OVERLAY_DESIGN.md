@@ -116,11 +116,20 @@ D3D11 renderer 负责：
 - 按显示尺度做 LOD：小尺度下隐藏过细线框或合并热力图。
 - 绘制 selected/hover 高亮。
 
-第一版实现先采用 correctness-first 路径：CPU 按当前 VACHUNK frame 生成一张 viewport 尺寸的 BGRA dynamic texture，再由 D3D11 full-screen overlay pass 做 alpha blend。这样可以先把 CU grid、QP heatmap、prediction colors、MV line 和 bit-density heatmap 与现有 Texture 上屏路径打通；后续大码率/高分辨率优化再迁移到 GPU instance/structured-buffer 绘制。
+当前实现把 VACHUNK frame 栅格化成每个 track 一组 video-space dynamic texture：
+BGRA color overlay 保存热力图、预测模式和预测线，R8 mask overlay 保存需要反色合成的
+CU/MB 边界。renderer 按 `track_file_id + frame_index + overlay state + video size`
+缓存这些纹理；只有实际上屏帧、overlay 类型/图层/透明度或视频尺寸变化时才重新读取
+VACHUNK、CPU raster 并上传纹理。平滑 pan/zoom/resize 复用已有 video-space texture，
+由 D3D11 overlay shader 根据当前 layout constants 映射到 viewport，因此不会因为视口变化
+反复重投影或重传整张屏幕尺寸的 overlay。
 
-当前 CPU raster 的热力图矩形填充会直接写入 BGRA overlay buffer；CU/MB 反色线框使用独立 R8 mask texture，预测线仍写入颜色 overlay。这个路径避免了对每个填充像素做 alpha blend，并把边界 mask 的清零/上传量压到 1 byte/pixel，但平滑 pan/zoom 时仍会重新投影并上传 viewport 尺寸 overlay texture，因此 GPU 侧仍会看到 texture upload/full-screen blend/compositor 成本。使用
-`python dev.py analysis-overlay-benchmark --iterations 240` 可以独立测量 CU/MB
-heatmap raster 的 CPU 成本。
+CPU raster 的热力图矩形填充会直接写入 BGRA overlay buffer；CU/MB 反色线框使用独立
+R8 mask texture，预测线仍写入颜色 overlay。这个路径避免了对每个填充像素做 alpha
+blend，并把边界 mask 的上传量压到 1 byte/pixel。使用
+`python dev.py analysis-overlay-benchmark --iterations 240` 可以独立测量 dirty frame
+时 CU/MB heatmap raster 的 CPU 成本。后续如果 dirty-frame 上传仍成为瓶颈，再迁移到
+GPU instance/structured-buffer 绘制。
 
 当前 VACHUNK CU/MB record 已带 `bit_count`，`cuBitCostHeatmap` 使用
 `bit_count * 64 * 64 / (w * h)` 计算归一到 64x64 的 bit density，并用固定
@@ -138,8 +147,8 @@ log2 标尺绘制，避免不同帧/片源自适应导致颜色抖动。
 
 渲染层落地顺序：
 
-1. CU/MB grid：按当前 track geometry 将 block rect 映射到 viewport。
-2. QP heatmap：以 block rect 半透明填充，使用固定 QP 范围归一化。
+1. CU/MB grid：按 video-space block rect 生成 R8 反色 mask，由 shader 映射到 viewport。
+2. QP heatmap：以 video-space block rect 半透明填充，使用固定 QP 范围归一化。
 3. Prediction mode：第一版用色彩区分 intra/inter/skip/merge，后续补小 glyph。
 4. Prediction lines：第一版画基础 L0 MV，后续补 L1 MV 和 intra direction。
 5. Bitrate heatmap：使用 VACHUNK `bit_count` 绘制真实 CU/MB bit density。

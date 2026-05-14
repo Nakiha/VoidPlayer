@@ -314,7 +314,7 @@ private:
     void draw_frame(const PresentDecision& decision);
     void draw_analysis_overlay(const PresentDecision& decision,
                                const ShaderConstants& constants);
-    bool ensure_analysis_overlay_texture(int width, int height);
+    bool ensure_analysis_overlay_texture(int slot, int width, int height);
     void draw_paused_frame(const char* reason);
     bool build_step_forward_decision_locked(PresentDecision& decision) const;
     void discard_step_forward_consumed_frames_locked(const PresentDecision& decision);
@@ -483,8 +483,25 @@ private:
     int64_t pending_seek_event_request_id_ = -1;
     int64_t pending_seek_event_target_pts_us_ = -1;
     bool pending_seek_event_emitted_ = true;
-    std::vector<uint8_t> analysis_overlay_pixels_;
-    std::vector<uint8_t> analysis_overlay_line_pixels_;
+    struct AnalysisOverlayCache {
+        bool valid = false;
+        bool has_color = false;
+        bool has_mask = false;
+        int track_file_id = -1;
+        int frame_index = -1;
+        int mode = -1;
+        int opacity_permille = -1;
+        int width = 0;
+        int height = 0;
+        bool show_grid = false;
+        bool show_qp = false;
+        bool show_pred = false;
+        bool show_lines = false;
+        bool show_bit_cost = false;
+    };
+    std::array<std::vector<uint8_t>, kMaxTracks> analysis_overlay_pixels_;
+    std::array<std::vector<uint8_t>, kMaxTracks> analysis_overlay_line_pixels_;
+    std::array<AnalysisOverlayCache, kMaxTracks> analysis_overlay_cache_;
 
     // -- Headless mode state --
     bool headless_ = false;

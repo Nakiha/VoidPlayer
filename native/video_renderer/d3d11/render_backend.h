@@ -6,6 +6,7 @@
 #include "video_renderer/d3d11/shader.h"
 #include "video_renderer/d3d11/texture.h"
 
+#include <array>
 #include <memory>
 #include <wrl/client.h>
 
@@ -28,13 +29,13 @@ struct D3D11RenderResources {
     Microsoft::WRL::ComPtr<ID3D11SamplerState> overlay_sampler_state;
     Microsoft::WRL::ComPtr<ID3D11BlendState> overlay_blend_state;
     Microsoft::WRL::ComPtr<ID3D11BlendState> overlay_invert_blend_state;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> overlay_texture;
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> overlay_srv;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> overlay_mask_texture;
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> overlay_mask_srv;
+    std::array<Microsoft::WRL::ComPtr<ID3D11Texture2D>, 4> overlay_textures;
+    std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 4> overlay_srvs;
+    std::array<Microsoft::WRL::ComPtr<ID3D11Texture2D>, 4> overlay_mask_textures;
+    std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 4> overlay_mask_srvs;
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> cached_rtv;
-    int overlay_width = 0;
-    int overlay_height = 0;
+    std::array<int, 4> overlay_width = {0, 0, 0, 0};
+    std::array<int, 4> overlay_height = {0, 0, 0, 0};
 };
 
 class D3D11RenderBackend {

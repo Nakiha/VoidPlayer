@@ -301,6 +301,15 @@ void Renderer::release_resources_locked() {
     cached_duration_us_ = 0;
     next_file_id_ = 1;
     layout_ = LayoutState();
+    for (auto& pixels : analysis_overlay_pixels_) {
+        pixels.clear();
+    }
+    for (auto& pixels : analysis_overlay_line_pixels_) {
+        pixels.clear();
+    }
+    for (auto& cache : analysis_overlay_cache_) {
+        cache = {};
+    }
     for (int i = 0; i < 4; ++i) {
         file_id_order_[i] = -1;
     }
@@ -2099,26 +2108,28 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     // Temporary direct-texture SRVs are owned by prepared_frames until draw returns.
 }
 
-bool Renderer::ensure_analysis_overlay_texture(int width, int height) {
-    if (!d3d_device_ || !d3d_resources_ || width <= 0 || height <= 0) {
+bool Renderer::ensure_analysis_overlay_texture(int slot, int width, int height) {
+    if (!d3d_device_ || !d3d_resources_ ||
+        slot < 0 || slot >= static_cast<int>(kMaxTracks) ||
+        width <= 0 || height <= 0) {
         return false;
     }
     auto& resources = *d3d_resources_;
-    if (resources.overlay_texture &&
-        resources.overlay_srv &&
-        resources.overlay_mask_texture &&
-        resources.overlay_mask_srv &&
-        resources.overlay_width == width &&
-        resources.overlay_height == height) {
+    if (resources.overlay_textures[slot] &&
+        resources.overlay_srvs[slot] &&
+        resources.overlay_mask_textures[slot] &&
+        resources.overlay_mask_srvs[slot] &&
+        resources.overlay_width[slot] == width &&
+        resources.overlay_height[slot] == height) {
         return true;
     }
 
-    resources.overlay_texture.Reset();
-    resources.overlay_srv.Reset();
-    resources.overlay_mask_texture.Reset();
-    resources.overlay_mask_srv.Reset();
-    resources.overlay_width = 0;
-    resources.overlay_height = 0;
+    resources.overlay_textures[slot].Reset();
+    resources.overlay_srvs[slot].Reset();
+    resources.overlay_mask_textures[slot].Reset();
+    resources.overlay_mask_srvs[slot].Reset();
+    resources.overlay_width[slot] = 0;
+    resources.overlay_height[slot] = 0;
 
     D3D11_TEXTURE2D_DESC desc = {};
     desc.Width = static_cast<UINT>(width);
@@ -2132,8 +2143,8 @@ bool Renderer::ensure_analysis_overlay_texture(int width, int height) {
     desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
     HRESULT hr = d3d_device_->device()->CreateTexture2D(
-        &desc, nullptr, &resources.overlay_texture);
-    if (FAILED(hr) || !resources.overlay_texture) {
+        &desc, nullptr, &resources.overlay_textures[slot]);
+    if (FAILED(hr) || !resources.overlay_textures[slot]) {
         spdlog::error("[Renderer] CreateTexture2D(analysis overlay) failed: HRESULT {:#x}",
                       static_cast<unsigned long>(hr));
         return false;
@@ -2144,23 +2155,23 @@ bool Renderer::ensure_analysis_overlay_texture(int width, int height) {
     srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     srv_desc.Texture2D.MipLevels = 1;
     hr = d3d_device_->device()->CreateShaderResourceView(
-        resources.overlay_texture.Get(), &srv_desc, &resources.overlay_srv);
-    if (FAILED(hr) || !resources.overlay_srv) {
+        resources.overlay_textures[slot].Get(), &srv_desc, &resources.overlay_srvs[slot]);
+    if (FAILED(hr) || !resources.overlay_srvs[slot]) {
         spdlog::error("[Renderer] CreateShaderResourceView(analysis overlay) failed: HRESULT {:#x}",
                       static_cast<unsigned long>(hr));
-        resources.overlay_texture.Reset();
+        resources.overlay_textures[slot].Reset();
         return false;
     }
 
     D3D11_TEXTURE2D_DESC mask_desc = desc;
     mask_desc.Format = DXGI_FORMAT_R8_UNORM;
     hr = d3d_device_->device()->CreateTexture2D(
-        &mask_desc, nullptr, &resources.overlay_mask_texture);
-    if (FAILED(hr) || !resources.overlay_mask_texture) {
+        &mask_desc, nullptr, &resources.overlay_mask_textures[slot]);
+    if (FAILED(hr) || !resources.overlay_mask_textures[slot]) {
         spdlog::error("[Renderer] CreateTexture2D(analysis overlay mask) failed: HRESULT {:#x}",
                       static_cast<unsigned long>(hr));
-        resources.overlay_texture.Reset();
-        resources.overlay_srv.Reset();
+        resources.overlay_textures[slot].Reset();
+        resources.overlay_srvs[slot].Reset();
         return false;
     }
 
@@ -2169,23 +2180,24 @@ bool Renderer::ensure_analysis_overlay_texture(int width, int height) {
     mask_srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     mask_srv_desc.Texture2D.MipLevels = 1;
     hr = d3d_device_->device()->CreateShaderResourceView(
-        resources.overlay_mask_texture.Get(), &mask_srv_desc, &resources.overlay_mask_srv);
-    if (FAILED(hr) || !resources.overlay_mask_srv) {
+        resources.overlay_mask_textures[slot].Get(), &mask_srv_desc, &resources.overlay_mask_srvs[slot]);
+    if (FAILED(hr) || !resources.overlay_mask_srvs[slot]) {
         spdlog::error("[Renderer] CreateShaderResourceView(analysis overlay mask) failed: HRESULT {:#x}",
                       static_cast<unsigned long>(hr));
-        resources.overlay_texture.Reset();
-        resources.overlay_srv.Reset();
-        resources.overlay_mask_texture.Reset();
+        resources.overlay_textures[slot].Reset();
+        resources.overlay_srvs[slot].Reset();
+        resources.overlay_mask_textures[slot].Reset();
         return false;
     }
 
-    resources.overlay_width = width;
-    resources.overlay_height = height;
+    resources.overlay_width[slot] = width;
+    resources.overlay_height[slot] = height;
     return true;
 }
 
 void Renderer::draw_analysis_overlay(const PresentDecision& decision,
                                      const ShaderConstants& constants) {
+    (void)constants;
     if (!d3d_device_ || !d3d_resources_) return;
     auto& resources = *d3d_resources_;
     if (!resources.overlay_shader.vs ||
@@ -2227,23 +2239,6 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
         return;
     }
 
-    const int width = target_width_;
-    const int height = target_height_;
-    if (!ensure_analysis_overlay_texture(width, height)) {
-        return;
-    }
-
-    const size_t pixel_count = static_cast<size_t>(width) * static_cast<size_t>(height);
-    if (analysis_overlay_pixels_.size() != pixel_count * 4) {
-        analysis_overlay_pixels_.resize(pixel_count * 4);
-    }
-    if (analysis_overlay_line_pixels_.size() != pixel_count) {
-        analysis_overlay_line_pixels_.resize(pixel_count);
-    }
-    std::fill(analysis_overlay_pixels_.begin(), analysis_overlay_pixels_.end(), 0);
-    std::fill(analysis_overlay_line_pixels_.begin(), analysis_overlay_line_pixels_.end(), 0);
-
-    const int visible_count = std::max(constants.track_count, 1);
     const uint8_t base_alpha = static_cast<uint8_t>(std::clamp(
         opacity_permille * 255 / 1000, 0, 255));
     const uint8_t line_alpha = base_alpha;
@@ -2258,11 +2253,40 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
     const uint8_t fill_alpha = heatmap_primary
         ? base_alpha
         : static_cast<uint8_t>(base_alpha * 2 / 5);
+
+    auto* ctx = d3d_device_->context();
+    auto upload_overlay = [&](ID3D11Texture2D* texture,
+                              const std::vector<uint8_t>& pixels,
+                              int upload_height,
+                              size_t row_bytes,
+                              const char* label) -> bool {
+        D3D11_MAPPED_SUBRESOURCE mapped = {};
+        HRESULT hr = ctx->Map(
+            texture, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+        if (FAILED(hr)) {
+            spdlog::warn("[Renderer] Map({}) failed: HRESULT {:#x}",
+                         label,
+                         static_cast<unsigned long>(hr));
+            return false;
+        }
+        const uint8_t* src = pixels.data();
+        auto* dst = static_cast<uint8_t*>(mapped.pData);
+        for (int y = 0; y < upload_height; ++y) {
+            std::memcpy(dst + static_cast<size_t>(y) * mapped.RowPitch,
+                        src + static_cast<size_t>(y) * row_bytes,
+                        row_bytes);
+        }
+        ctx->Unmap(texture, 0);
+        return true;
+    };
+
+    std::array<ID3D11ShaderResourceView*, kMaxTracks> color_srvs = {};
+    std::array<ID3D11ShaderResourceView*, kMaxTracks> mask_srvs = {};
     bool has_color_overlay = false;
     bool has_line_mask = false;
 
-    auto draw_track_overlay = [&](int track_file_id,
-                                  const analysis::AnalysisManager& track_analysis) {
+    auto prepare_track_overlay = [&](int track_file_id,
+                                     const analysis::AnalysisManager& track_analysis) {
         if (!track_analysis.is_loaded()) return;
 
         const int slot = find_slot_by_file_id(track_file_id);
@@ -2278,222 +2302,179 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
             return;
         }
 
-        auto frame = track_analysis.read_overlay_frame(frame_idx);
-        if (frame.cus.empty() ||
-            track_analysis.video_width() == 0 ||
-            track_analysis.video_height() == 0) {
+        const int video_w = static_cast<int>(track_analysis.video_width());
+        const int video_h = static_cast<int>(track_analysis.video_height());
+        if (video_w <= 0 || video_h <= 0) {
+            return;
+        }
+        const bool texture_was_valid =
+            resources.overlay_textures[slot] &&
+            resources.overlay_mask_textures[slot] &&
+            resources.overlay_width[slot] == video_w &&
+            resources.overlay_height[slot] == video_h;
+        if (!ensure_analysis_overlay_texture(slot, video_w, video_h)) {
             return;
         }
 
-        int display_index = -1;
-        if (constants.mode == LAYOUT_SPLIT_SCREEN) {
-            if (constants.order[0] == slot) display_index = 0;
-            if (constants.order[1] == slot) display_index = 1;
-            if (display_index < 0) {
+        auto& cache = analysis_overlay_cache_[slot];
+        const bool dirty =
+            !texture_was_valid ||
+            !cache.valid ||
+            cache.track_file_id != track_file_id ||
+            cache.frame_index != frame_idx ||
+            cache.mode != mode ||
+            cache.opacity_permille != opacity_permille ||
+            cache.width != video_w ||
+            cache.height != video_h ||
+            cache.show_grid != show_grid ||
+            cache.show_qp != show_qp ||
+            cache.show_pred != show_pred ||
+            cache.show_lines != show_lines ||
+            cache.show_bit_cost != show_bit_cost;
+
+        if (dirty) {
+            auto frame = track_analysis.read_overlay_frame(frame_idx);
+            cache = {};
+            cache.track_file_id = track_file_id;
+            cache.frame_index = frame_idx;
+            cache.mode = mode;
+            cache.opacity_permille = opacity_permille;
+            cache.width = video_w;
+            cache.height = video_h;
+            cache.show_grid = show_grid;
+            cache.show_qp = show_qp;
+            cache.show_pred = show_pred;
+            cache.show_lines = show_lines;
+            cache.show_bit_cost = show_bit_cost;
+
+            if (frame.cus.empty()) {
                 return;
             }
-        } else {
-            for (int i = 0; i < visible_count && i < 4; ++i) {
-                if (constants.order[i] == slot) {
-                    display_index = i;
-                    break;
+
+            const size_t pixel_count =
+                static_cast<size_t>(video_w) * static_cast<size_t>(video_h);
+            auto& color_pixels = analysis_overlay_pixels_[slot];
+            auto& mask_pixels = analysis_overlay_line_pixels_[slot];
+            color_pixels.assign(pixel_count * 4, 0);
+            mask_pixels.assign(pixel_count, 0);
+
+            for (const auto& cu : frame.cus) {
+                const auto& c = cu.common;
+                const int x0 = std::clamp(static_cast<int>(c.x), 0, video_w);
+                const int y0 = std::clamp(static_cast<int>(c.y), 0, video_h);
+                const int x1 = std::clamp(static_cast<int>(c.x + c.w), 0, video_w);
+                const int y1 = std::clamp(static_cast<int>(c.y + c.h), 0, video_h);
+                if (x1 <= x0 || y1 <= y0) continue;
+
+                if (bit_cost_primary) {
+                    if (fill_alpha > 0) {
+                        analysis::fill_overlay_rect(
+                            color_pixels, video_w, video_h, x0, y0, x1, y1,
+                            analysis::cu_bit_density_color(c, fill_alpha));
+                        cache.has_color = true;
+                    }
+                } else if (qp_primary) {
+                    if (fill_alpha > 0) {
+                        analysis::fill_overlay_rect(
+                            color_pixels, video_w, video_h, x0, y0, x1, y1,
+                            analysis::qp_color(c.qp, fill_alpha));
+                        cache.has_color = true;
+                    }
+                } else if (pred_primary) {
+                    if (fill_alpha > 0) {
+                        analysis::fill_overlay_rect(
+                            color_pixels, video_w, video_h, x0, y0, x1, y1,
+                            c.pred_mode == 1
+                                ? analysis::OverlayColor{
+                                      80, 235, 90, static_cast<uint8_t>(fill_alpha * 3 / 4)}
+                                : analysis::pred_color(
+                                      c.pred_mode, cu.inter,
+                                      static_cast<uint8_t>(fill_alpha * 3 / 4)));
+                        cache.has_color = true;
+                    }
+                }
+
+                if (line_alpha > 0 && (show_grid || mode == 0 || pred_primary)) {
+                    analysis::stroke_overlay_rect_mask8(
+                        mask_pixels, video_w, video_h, x0, y0, x1, y1);
+                    cache.has_mask = true;
+                }
+
+                if (line_primary && c.pred_mode != 1 && line_alpha > 0) {
+                    const int cx = (x0 + x1) / 2;
+                    const int cy = (y0 + y1) / 2;
+                    const int dx = std::clamp(static_cast<int>(cu.inter.mv_l0_x / 16), -80, 80);
+                    const int dy = std::clamp(static_cast<int>(cu.inter.mv_l0_y / 16), -80, 80);
+                    analysis::draw_overlay_line(
+                        color_pixels, video_w, video_h, cx, cy, cx + dx, cy + dy,
+                        analysis::OverlayColor{80, 180, 255, line_alpha});
+                    cache.has_color = true;
                 }
             }
-            if (display_index < 0) {
-                return;
+
+            if (cache.has_color) {
+                if (!upload_overlay(
+                        resources.overlay_textures[slot].Get(),
+                        color_pixels,
+                        video_h,
+                        static_cast<size_t>(video_w) * 4,
+                        "analysis overlay")) {
+                    cache = {};
+                    return;
+                }
             }
+            if (cache.has_mask) {
+                if (!upload_overlay(
+                        resources.overlay_mask_textures[slot].Get(),
+                        mask_pixels,
+                        video_h,
+                        static_cast<size_t>(video_w),
+                        "analysis overlay line mask")) {
+                    cache = {};
+                    return;
+                }
+            }
+            cache.valid = true;
         }
 
-        float region_x0 = 0.0f;
-        float region_x1 = static_cast<float>(width);
-        float slot_w = static_cast<float>(width);
-        const float slot_h = static_cast<float>(height);
-        if (constants.mode == LAYOUT_SPLIT_SCREEN) {
-            const float split_x = std::clamp(constants.split_pos, 0.0f, 1.0f) *
-                                  static_cast<float>(width);
-            region_x0 = display_index == 0 ? 0.0f : split_x;
-            region_x1 = display_index == 0 ? split_x : static_cast<float>(width);
-        } else {
-            slot_w = static_cast<float>(width) / static_cast<float>(visible_count);
-            region_x0 = slot_w * static_cast<float>(display_index);
-            region_x1 = slot_w * static_cast<float>(display_index + 1);
+        if (cache.valid && cache.has_color) {
+            color_srvs[slot] = resources.overlay_srvs[slot].Get();
+            has_color_overlay = true;
         }
-
-        const float display_size_x = constants.inv_display_size_x[slot] > 1e-5f
-            ? 1.0f / constants.inv_display_size_x[slot]
-            : 0.0f;
-        const float display_size_y = constants.inv_display_size_y[slot] > 1e-5f
-            ? 1.0f / constants.inv_display_size_y[slot]
-            : 0.0f;
-        if (display_size_x <= 0.0f || display_size_y <= 0.0f) {
-            return;
-        }
-
-        const float video_w = static_cast<float>(track_analysis.video_width());
-        const float video_h = static_cast<float>(track_analysis.video_height());
-
-        for (const auto& cu : frame.cus) {
-            const auto& c = cu.common;
-            const float u0 = static_cast<float>(c.x) / video_w;
-            const float v0 = static_cast<float>(c.y) / video_h;
-            const float u1 = static_cast<float>(c.x + c.w) / video_w;
-            const float v1 = static_cast<float>(c.y + c.h) / video_h;
-
-            const float lu0 = constants.display_offset_x[slot] +
-                (u0 + constants.view_offset_uv_x[slot]) * display_size_x;
-            const float lu1 = constants.display_offset_x[slot] +
-                (u1 + constants.view_offset_uv_x[slot]) * display_size_x;
-            const float lv0 = constants.display_offset_y[slot] +
-                (v0 + constants.view_offset_uv_y[slot]) * display_size_y;
-            const float lv1 = constants.display_offset_y[slot] +
-                (v1 + constants.view_offset_uv_y[slot]) * display_size_y;
-
-            float sx0 = 0.0f;
-            float sx1 = 0.0f;
-            if (constants.mode == LAYOUT_SPLIT_SCREEN) {
-                sx0 = lu0 * static_cast<float>(width);
-                sx1 = lu1 * static_cast<float>(width);
-            } else {
-                sx0 = region_x0 + lu0 * slot_w;
-                sx1 = region_x0 + lu1 * slot_w;
-            }
-            float sy0 = lv0 * slot_h;
-            float sy1 = lv1 * slot_h;
-
-            const int x0 = static_cast<int>(std::floor(std::max(sx0, region_x0)));
-            const int x1 = static_cast<int>(std::ceil(std::min(sx1, region_x1)));
-            const int y0 = static_cast<int>(std::floor(sy0));
-            const int y1 = static_cast<int>(std::ceil(sy1));
-            if (x1 <= x0 || y1 <= y0) continue;
-            const int line_x0 = static_cast<int>(std::round(std::max(sx0, region_x0)));
-            const int line_x1 = static_cast<int>(std::round(std::min(sx1, region_x1)));
-            const int line_y0 = static_cast<int>(std::round(sy0));
-            const int line_y1 = static_cast<int>(std::round(sy1));
-
-            if (bit_cost_primary) {
-                if (fill_alpha > 0) {
-                    analysis::fill_overlay_rect(
-                        analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
-                        analysis::cu_bit_density_color(c, fill_alpha));
-                    has_color_overlay = true;
-                }
-            } else if (qp_primary) {
-                if (fill_alpha > 0) {
-                    analysis::fill_overlay_rect(
-                        analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
-                        analysis::qp_color(c.qp, fill_alpha));
-                    has_color_overlay = true;
-                }
-            } else if (pred_primary) {
-                if (fill_alpha > 0) {
-                    analysis::fill_overlay_rect(
-                        analysis_overlay_pixels_, width, height, x0, y0, x1, y1,
-                        c.pred_mode == 1
-                            ? analysis::OverlayColor{
-                                  80, 235, 90, static_cast<uint8_t>(fill_alpha * 3 / 4)}
-                            : analysis::pred_color(
-                                  c.pred_mode, cu.inter,
-                                  static_cast<uint8_t>(fill_alpha * 3 / 4)));
-                    has_color_overlay = true;
-                }
-            }
-
-            if (line_alpha > 0 &&
-                (show_grid || mode == 0 || pred_primary)) {
-                analysis::stroke_overlay_rect_mask8(
-                    analysis_overlay_line_pixels_,
-                    width,
-                    height,
-                    line_x0,
-                    line_y0,
-                    line_x1,
-                    line_y1);
-                has_line_mask = true;
-            }
-
-            if (line_primary && c.pred_mode != 1 && line_alpha > 0) {
-                const int cx = (x0 + x1) / 2;
-                const int cy = (y0 + y1) / 2;
-                const int dx = std::clamp(static_cast<int>(cu.inter.mv_l0_x / 16), -80, 80);
-                const int dy = std::clamp(static_cast<int>(cu.inter.mv_l0_y / 16), -80, 80);
-                analysis::draw_overlay_line(
-                    analysis_overlay_pixels_, width, height, cx, cy, cx + dx, cy + dy,
-                    analysis::OverlayColor{80, 180, 255, line_alpha});
-                has_color_overlay = true;
-            }
+        if (cache.valid && cache.has_mask) {
+            mask_srvs[slot] = resources.overlay_mask_srvs[slot].Get();
+            has_line_mask = true;
         }
     };
 
     for (const auto& [track_file_id, track_analysis] : overlay_tracks) {
         if (track_analysis) {
-            draw_track_overlay(track_file_id, *track_analysis);
+            prepare_track_overlay(track_file_id, *track_analysis);
         }
     }
-
-    auto* ctx = d3d_device_->context();
-    auto upload_overlay = [&](ID3D11Texture2D* texture,
-                              const std::vector<uint8_t>& pixels,
-                              size_t row_bytes,
-                              const char* label) -> bool {
-        D3D11_MAPPED_SUBRESOURCE mapped = {};
-        HRESULT hr = ctx->Map(
-            texture, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-        if (FAILED(hr)) {
-            spdlog::warn("[Renderer] Map({}) failed: HRESULT {:#x}",
-                         label,
-                         static_cast<unsigned long>(hr));
-            return false;
-        }
-        const uint8_t* src = pixels.data();
-        auto* dst = static_cast<uint8_t*>(mapped.pData);
-        for (int y = 0; y < height; ++y) {
-            std::memcpy(dst + static_cast<size_t>(y) * mapped.RowPitch,
-                        src + static_cast<size_t>(y) * row_bytes,
-                        row_bytes);
-        }
-        ctx->Unmap(texture, 0);
-        return true;
-    };
 
     if (!has_color_overlay && !has_line_mask) {
         return;
     }
 
     ID3D11SamplerState* sampler = resources.overlay_sampler_state.Get();
-    ID3D11ShaderResourceView* overlay_srv = resources.overlay_srv.Get();
-    ID3D11ShaderResourceView* overlay_mask_srv = resources.overlay_mask_srv.Get();
-    ID3D11ShaderResourceView* null_srv = nullptr;
+    ID3D11ShaderResourceView* null_srvs[4] = {};
     float blend_factor[4] = {0, 0, 0, 0};
 
     if (has_color_overlay) {
-        if (!upload_overlay(
-                resources.overlay_texture.Get(),
-                analysis_overlay_pixels_,
-                static_cast<size_t>(width) * 4,
-                "analysis overlay")) {
-            return;
-        }
         ctx->OMSetBlendState(resources.overlay_blend_state.Get(), blend_factor, 0xffffffff);
         ctx->VSSetShader(resources.overlay_shader.vs.Get(), nullptr, 0);
         ctx->PSSetShader(resources.overlay_shader.ps.Get(), nullptr, 0);
         if (resources.overlay_shader.layout) {
             ctx->IASetInputLayout(resources.overlay_shader.layout.Get());
         }
-        ctx->PSSetShaderResources(0, 1, &overlay_srv);
+        ctx->PSSetShaderResources(20, static_cast<UINT>(color_srvs.size()), color_srvs.data());
         ctx->PSSetSamplers(0, 1, &sampler);
         ctx->Draw(4, 0);
-        ctx->PSSetShaderResources(0, 1, &null_srv);
+        ctx->PSSetShaderResources(20, 4, null_srvs);
     }
 
     if (has_line_mask) {
-        if (!upload_overlay(
-                resources.overlay_mask_texture.Get(),
-                analysis_overlay_line_pixels_,
-                static_cast<size_t>(width),
-                "analysis overlay line mask")) {
-            ctx->OMSetBlendState(nullptr, nullptr, 0xffffffff);
-            return;
-        }
         ctx->OMSetBlendState(
             resources.overlay_invert_blend_state.Get(), blend_factor, 0xffffffff);
         ctx->VSSetShader(resources.overlay_invert_shader.vs.Get(), nullptr, 0);
@@ -2501,10 +2482,10 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
         if (resources.overlay_invert_shader.layout) {
             ctx->IASetInputLayout(resources.overlay_invert_shader.layout.Get());
         }
-        ctx->PSSetShaderResources(0, 1, &overlay_mask_srv);
+        ctx->PSSetShaderResources(24, static_cast<UINT>(mask_srvs.size()), mask_srvs.data());
         ctx->PSSetSamplers(0, 1, &sampler);
         ctx->Draw(4, 0);
-        ctx->PSSetShaderResources(0, 1, &null_srv);
+        ctx->PSSetShaderResources(24, 4, null_srvs);
     }
 
     ctx->OMSetBlendState(nullptr, nullptr, 0xffffffff);
@@ -2964,18 +2945,30 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
         result.total_estimated_bytes += result.headless_output_bytes;
     }
 
-    if (d3d_resources_ && d3d_resources_->overlay_texture) {
-        D3D11_TEXTURE2D_DESC desc = {};
-        d3d_resources_->overlay_texture->GetDesc(&desc);
-        result.analysis_overlay_bytes = estimate_d3d11_texture_bytes(desc);
-        result.analysis_overlay_width = static_cast<int>(desc.Width);
-        result.analysis_overlay_height = static_cast<int>(desc.Height);
-        if (d3d_resources_->overlay_mask_texture) {
-            D3D11_TEXTURE2D_DESC mask_desc = {};
-            d3d_resources_->overlay_mask_texture->GetDesc(&mask_desc);
-            result.analysis_overlay_bytes += estimate_d3d11_texture_bytes(mask_desc);
+    if (d3d_resources_) {
+        for (size_t i = 0; i < kMaxTracks; ++i) {
+            if (d3d_resources_->overlay_textures[i]) {
+                D3D11_TEXTURE2D_DESC desc = {};
+                d3d_resources_->overlay_textures[i]->GetDesc(&desc);
+                result.analysis_overlay_bytes += estimate_d3d11_texture_bytes(desc);
+                result.analysis_overlay_width =
+                    std::max(result.analysis_overlay_width, static_cast<int>(desc.Width));
+                result.analysis_overlay_height =
+                    std::max(result.analysis_overlay_height, static_cast<int>(desc.Height));
+            }
+            if (d3d_resources_->overlay_mask_textures[i]) {
+                D3D11_TEXTURE2D_DESC mask_desc = {};
+                d3d_resources_->overlay_mask_textures[i]->GetDesc(&mask_desc);
+                result.analysis_overlay_bytes += estimate_d3d11_texture_bytes(mask_desc);
+                result.analysis_overlay_width =
+                    std::max(result.analysis_overlay_width, static_cast<int>(mask_desc.Width));
+                result.analysis_overlay_height =
+                    std::max(result.analysis_overlay_height, static_cast<int>(mask_desc.Height));
+            }
         }
-        result.total_estimated_bytes += result.analysis_overlay_bytes;
+        if (result.analysis_overlay_bytes > 0) {
+            result.total_estimated_bytes += result.analysis_overlay_bytes;
+        }
     }
 
     for (size_t i = 0; i < kMaxTracks; ++i) {

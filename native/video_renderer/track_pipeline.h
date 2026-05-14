@@ -32,8 +32,6 @@ struct TrackPipeline {
     float video_aspect = 16.0f / 9.0f;
 };
 
-DecodeDeviceMode default_decode_device_mode(AVCodecID codec_id);
-
 class TrackPipelineManager {
 public:
     using Storage = std::array<std::unique_ptr<TrackPipeline>, kMaxTracks>;
@@ -56,11 +54,6 @@ public:
     void stop_all(const TrackCallback& before_stop = {});
     void stop_slot(size_t slot, const TrackCallback& before_stop = {});
     void compact_from(size_t slot, const MoveCallback& after_move = {});
-
-    std::unique_ptr<TrackPipeline> create_pipeline(
-        const std::string& path,
-        bool hw_decode,
-        const SeekRequest* initial_seek = nullptr) const;
 
 private:
     Storage tracks_{};

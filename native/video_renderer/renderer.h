@@ -13,6 +13,7 @@
 #include "video_renderer/layout_state.h"
 #include "video_renderer/render_loop_controller.h"
 #include "video_renderer/shader_constants.h"
+#include "video_renderer/track_pipeline_factory.h"
 #include "common/logging.h"
 #include <vector>
 #include <array>
@@ -411,6 +412,7 @@ private:
     LayoutController layout_controller_;
     RenderLoopController render_loop_controller_;
 
+    TrackPipelineFactory track_pipeline_factory_;
     TrackPipelineManager tracks_;
 
     std::thread render_thread_;

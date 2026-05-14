@@ -85,6 +85,7 @@ Fixed or reduced:
 - `Renderer`: layout state/constants moved to layout-owned helpers; `Renderer` now snapshots track geometry and delegates shader layout math to `layout_geometry`.
 - `Renderer`: render-loop debounce, diagnostics cadence, and frame-deadline sleep policy moved into `RenderLoopController`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
+- `TrackPipelineManager`: demux/decode pipeline construction moved into `TrackPipelineFactory`, leaving manager focused on slot storage, stop, and compact.
 - Windows runner plugin: diagnostics, logging bootstrap, texture bridge, file picker, method dispatch, and MethodChannel diagnostics scope were split.
 - Process-global logging/crash FFI ownership is now documented.
 
@@ -92,14 +93,14 @@ Still active:
 
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries ABI guard, marshalling, and command dispatch density.
-- `TrackPipelineManager` still hides lifecycle factory order and should keep shrinking.
+- Track lifecycle start/recreate/rollback order is still shared between `Renderer` and track helpers.
 - `DecodeThread` remains a large seek/decode state machine.
 - Target/feature boundaries are still too coupled.
 - Resource budget policy is still distributed.
 
 ## Active Patch Queue
 
-Next patch: P43 TrackPipelineManager Lifecycle Split.
+Next patch: P44 DecodeThread State-Machine Guards.
 
 ### P30 - VACache Atomic Publish
 
@@ -391,6 +392,8 @@ Result:
 
 ### P43 - TrackPipelineManager Lifecycle Split
 
+Status: done in Patch 43.
+
 Goal:
 
 - Split slot storage, pipeline factory, and start/stop/recreate lifecycle order.
@@ -400,6 +403,13 @@ Validation:
 
 - `python dev.py test --native-only`
 - relevant track/seek UI script if behavior-facing paths move.
+
+Result:
+
+- Added `TrackPipelineFactory::create_opened_pipeline()` for queue/controller construction, synchronous demux open, track-buffer sizing, decode-thread creation, and hardware decode mode selection.
+- Removed pipeline construction from `TrackPipelineManager`, which now stays on slot lookup, stop, clear, and compact responsibilities.
+- Kept the demux worker start in `Renderer` after seek/error/audio callbacks are wired; added native coverage that wires a seek callback before `start_thread()` and observes the pending seek callback.
+- Verified runner-facing track lifecycle paths with smoke, middle-track compact/re-add, and shutdown-during-seek recreate UI scripts.
 
 ### P44 - DecodeThread State-Machine Guards
 

@@ -1999,7 +1999,7 @@ std::unique_ptr<TrackPipeline> Renderer::create_pipeline(
     const std::string& path,
     bool hw_decode,
     const SeekRequest* initial_seek) {
-    return tracks_.create_pipeline(path, hw_decode, initial_seek);
+    return track_pipeline_factory_.create_opened_pipeline(path, hw_decode, initial_seek);
 }
 
 bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, SeekType type) {

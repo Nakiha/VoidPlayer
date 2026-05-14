@@ -32,6 +32,7 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/renderer_config_validation.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/seek_coordinator.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track_pipeline.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/track_pipeline_factory.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decode_thread.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/hw/hw_decode_provider.cpp"

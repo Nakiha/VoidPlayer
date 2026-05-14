@@ -15,11 +15,11 @@
 
 当前优先级：
 
-1. `review_overlay.md` 里仍会线上咬人的 overlay/cache/IO/D3D 状态问题。
-2. `review_native.md` 的 correctness / race / lifetime 回归防线。
-3. `review_godobject.md` 中 native owner boundary 的下一刀。
+1. `review_godobject.md` 中 Renderer owner boundary 的下一刀。
+2. `ffi_exports.cpp` / `TrackPipelineManager` / `DecodeThread` 这些二级 God Module 的收缩。
+3. `review_native.md` / `review_overlay.md` 已修 correctness 回归防线不能倒退。
 
-暂时不要继续做纯 runner plugin 清理，除非它直接关闭 native/overlay 的 process-global、测试隔离或上屏正确性问题。
+暂时不要继续做纯 runner plugin 清理，除非它直接关闭 native owner boundary、process-global、测试隔离或上屏正确性问题。
 
 每轮仍保持：一个问题一个 patch，测试通过后单独提交，本文档同步状态。
 
@@ -95,7 +95,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: return to `review_godobject.md` owner-boundary cleanup.
+Next patch: P39 Renderer Analysis Overlay Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -290,19 +290,99 @@ Validation:
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/overlay_controls_h264.csv`
 
-## Later Native Owner-Boundary Queue
+## Godobject Patch Queue
 
-These are real, but lower priority than the overlay backlog above:
+### P39 - Renderer Analysis Overlay Boundary
 
-- Split `AnalysisOverlayRenderer` from `Renderer`.
-- Continue `LayoutController` ownership after the first order-controller slice.
-- Extract `RenderLoopController` only after state/capture/overlay boundaries are calmer.
-- Add `DeviceLossPolicy`.
-- Split `ffi_exports.cpp` into ABI shim / registry / commands / marshalling.
-- Add `DecodeThread` seek/drain/flush state-machine tests.
-- Continue `TrackPipelineManager` factory/lifecycle split.
-- Design target boundaries and feature options.
-- Centralize queued-frame, exact-seek, analysis-cache, and runtime budget policy.
+Source: `review_godobject.md`, now that `review_overlay.md` is fixed.
+
+Goal:
+
+- Move analysis overlay drawing/resource helpers behind a small renderer-adjacent owner instead of keeping all overlay pass logic as `Renderer` methods.
+- Keep D3D state contract and overlay behavior unchanged.
+- Do not touch playback, seek, track lifecycle, or shader semantics in this patch.
+
+Likely files:
+
+- `native/video_renderer/renderer.*`
+- new `native/video_renderer/analysis_overlay_renderer.*` or equivalent.
+- `native/video_renderer/CMakeLists.txt` / source list if needed.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/overlay_controls_h264.csv`
+
+### P40 - Renderer Layout Ownership Continuation
+
+Source: `review_godobject.md`, `native/docs/NATIVE_REFACTOR_TODO.md`.
+
+Goal:
+
+- Continue moving layout/order calculations out of `Renderer` without changing public layout behavior.
+- Target pure decision/state helpers first; avoid mixing this with render-loop or track lifecycle changes.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewport_pan_layout_regression.csv`
+
+### P41 - Render Loop Boundary
+
+Goal:
+
+- Extract render-loop timing/device-lost decision boundaries only after overlay/layout state is calmer.
+- Keep immediate D3D context ownership explicit.
+
+Validation:
+
+- `python dev.py test --native-only`
+- smoke + timeline/viewport UI scripts depending on touched paths.
+
+### P42 - FFI ABI God Module Split
+
+Goal:
+
+- Keep `ffi_exports.cpp` as extern "C" ABI shim only.
+- Move handle registry / command implementations / marshalling into smaller native modules.
+
+Validation:
+
+- `python dev.py test --native-only`
+- FFI C validation already included in native tests.
+
+### P43 - TrackPipelineManager Lifecycle Split
+
+Goal:
+
+- Split slot storage, pipeline factory, and start/stop/recreate lifecycle order.
+- Make callback wiring before thread start an explicit invariant.
+
+Validation:
+
+- `python dev.py test --native-only`
+- relevant track/seek UI script if behavior-facing paths move.
+
+### P44 - DecodeThread State-Machine Guards
+
+Goal:
+
+- Add focused tests and helper objects for seek/drain/exact-preview state combinations before large extraction.
+
+Validation:
+
+- `python dev.py test --native-only`
+
+### P45 - Native Budget Policy Consolidation
+
+Goal:
+
+- Centralize queued-frame, exact-seek, analysis-cache, capture, and runtime memory budget rules into explicit policy objects.
+
+Validation:
+
+- `python dev.py test --native-only`
+- UI scripts selected by touched policy surface.
 
 ## Do-Not-Drift List
 

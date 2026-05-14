@@ -86,6 +86,7 @@ Fixed or reduced:
 - `Renderer`: render-loop debounce, diagnostics cadence, and frame-deadline sleep policy moved into `RenderLoopController`.
 - `Renderer`: remove-track stop/compact render-sink/presenter slot side effects and cached `PresentDecision` frame compaction moved into `track_lifecycle`.
 - `Renderer`: add-track current-clock seek target clamp, buffer/queue flush, audio pause, and seek type choice moved into `track_lifecycle`.
+- `Renderer`: HEVC hardware seek recreate/coalesce/error decision moved into `SeekCoordinator` policy.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -102,14 +103,14 @@ Still active:
 
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
-- `Renderer` still owns track slot commit, layout mutation, playback pause/resume, and HEVC recreate policy.
+- `Renderer` still owns track slot commit, layout mutation, playback pause/resume, and per-track seek preparation side effects.
 - `DecodeThread` main loop still owns codec send/receive, EOF drain, AVFrame ownership, and hardware visibility transitions.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P53 Renderer HEVC Seek Recreate Policy.
+Next patch: P54 Renderer Seek Track Preparation Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -608,6 +609,8 @@ Result:
 
 ### P53 - Renderer HEVC Seek Recreate Policy
 
+Status: done in Patch 53.
+
 Goal:
 
 - Move the HEVC hardware seek recreate decision out of `Renderer::seek_internal` into a small policy boundary.
@@ -617,6 +620,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`
+
+Result:
+
+- Added `HevcSeekRecreateInput`, `HevcSeekRecreateDecision`, and `choose_hevc_seek_recreate` to `SeekCoordinator`.
+- `Renderer::seek_internal` now delegates HEVC hardware recreate/coalesce/error decisions while still executing actual pipeline recreation.
+- Added native coverage for non-HEVC, playing seek recreate/error, transition coalescing, paused one-shot keyframe recreate, paused exact seek, and forced paused transition recreate cases.
+- Verified with native-only tests plus rebuilt smoke and shutdown-during-seek recreate UI scripts.
+
+### P54 - Renderer Seek Track Preparation Boundary
+
+Goal:
+
+- Move generic per-track seek preparation side effects out of `Renderer::seek_internal`: decode/audio pause, buffer state transition, frame clear, presenter reset trigger, packet/audio queue flush, and seek request submission.
+- Keep global seek timing, playback clock update, deferred paused HEVC gate, and actual pipeline recreation owned by `Renderer` for this patch.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/timeline/h265_timeline_seek_crash.csv ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`
 
 ## Do-Not-Drift List
 

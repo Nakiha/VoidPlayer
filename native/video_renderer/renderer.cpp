@@ -502,33 +502,32 @@ void Renderer::seek_internal(int64_t target_pts_us,
         const bool seek_transition_active =
             buffer_state_before == TrackState::Flushing ||
             buffer_state_before == TrackState::Buffering;
-        const bool recreated_decode_only = false;
-        const bool should_recreate_hevc_pipeline =
-            is_hevc_hw_seek &&
-            ((!paused_seek && !seek_transition_active) ||
-             (paused_seek &&
-              type != SeekType::Exact &&
-              !track->recreated_for_paused_hevc_seek &&
-              (!seek_transition_active || force_recreate_paused_hevc)));
+        HevcSeekRecreateInput hevc_recreate_input;
+        hevc_recreate_input.is_hevc_hw_seek = is_hevc_hw_seek;
+        hevc_recreate_input.paused_seek = paused_seek;
+        hevc_recreate_input.seek_transition_active = seek_transition_active;
+        hevc_recreate_input.recreated_for_paused_hevc_seek =
+            track->recreated_for_paused_hevc_seek;
+        hevc_recreate_input.force_recreate_paused_hevc = force_recreate_paused_hevc;
+        hevc_recreate_input.seek_type = type;
+        const auto hevc_recreate_decision =
+            choose_hevc_seek_recreate(hevc_recreate_input);
         const bool recreated_for_seek =
-            should_recreate_hevc_pipeline &&
+            hevc_recreate_decision.should_recreate_pipeline &&
             recreate_pipeline_for_seek(i, track_target, track_seek_type);
-        if (is_hevc_hw_seek &&
-            !paused_seek &&
-            !seek_transition_active &&
-            !recreated_decode_only &&
+        if (hevc_recreate_decision.error_if_recreate_not_applied &&
             !recreated_for_seek) {
             track->track_buffer->set_state(TrackState::Error);
             continue;
         }
-        if (is_hevc_hw_seek && seek_transition_active) {
+        if (hevc_recreate_decision.coalescing_transition) {
             spdlog::info("[Renderer] seek_internal: track[{}] coalescing HEVC HW seek during transition "
                          "(buf_state_before={}, target={:.3f}s)",
                          i, static_cast<int>(buffer_state_before), track_target / 1e6);
         }
         track = tracks_[i].get();
         track->decode_thread->set_pause_after_preroll(paused_seek);
-        if (!recreated_decode_only && !recreated_for_seek) {
+        if (!recreated_for_seek) {
             track->seek_controller->request_seek(track_target, track_seek_type);
         }
         applied_seek = true;

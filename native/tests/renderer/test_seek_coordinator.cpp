@@ -7,6 +7,97 @@
 
 using namespace vr;
 
+TEST_CASE("HevcSeekRecreatePolicy: ignores non-HEVC hardware seeks",
+          "[seek][coordinator][hevc]") {
+    HevcSeekRecreateInput input;
+    input.is_hevc_hw_seek = false;
+    input.paused_seek = false;
+    input.seek_transition_active = false;
+    input.seek_type = SeekType::Keyframe;
+
+    const auto decision = choose_hevc_seek_recreate(input);
+    REQUIRE_FALSE(decision.should_recreate_pipeline);
+    REQUIRE_FALSE(decision.error_if_recreate_not_applied);
+    REQUIRE_FALSE(decision.coalescing_transition);
+}
+
+TEST_CASE("HevcSeekRecreatePolicy: playing seek recreates or errors",
+          "[seek][coordinator][hevc]") {
+    HevcSeekRecreateInput input;
+    input.is_hevc_hw_seek = true;
+    input.paused_seek = false;
+    input.seek_transition_active = false;
+    input.seek_type = SeekType::Exact;
+
+    const auto decision = choose_hevc_seek_recreate(input);
+    REQUIRE(decision.should_recreate_pipeline);
+    REQUIRE(decision.error_if_recreate_not_applied);
+    REQUIRE_FALSE(decision.coalescing_transition);
+}
+
+TEST_CASE("HevcSeekRecreatePolicy: transition coalesces without playing error",
+          "[seek][coordinator][hevc]") {
+    HevcSeekRecreateInput input;
+    input.is_hevc_hw_seek = true;
+    input.paused_seek = false;
+    input.seek_transition_active = true;
+    input.seek_type = SeekType::Exact;
+
+    const auto decision = choose_hevc_seek_recreate(input);
+    REQUIRE_FALSE(decision.should_recreate_pipeline);
+    REQUIRE_FALSE(decision.error_if_recreate_not_applied);
+    REQUIRE(decision.coalescing_transition);
+}
+
+TEST_CASE("HevcSeekRecreatePolicy: paused keyframe recreate is one-shot",
+          "[seek][coordinator][hevc]") {
+    HevcSeekRecreateInput input;
+    input.is_hevc_hw_seek = true;
+    input.paused_seek = true;
+    input.seek_transition_active = false;
+    input.seek_type = SeekType::Keyframe;
+
+    auto decision = choose_hevc_seek_recreate(input);
+    REQUIRE(decision.should_recreate_pipeline);
+    REQUIRE_FALSE(decision.error_if_recreate_not_applied);
+    REQUIRE_FALSE(decision.coalescing_transition);
+
+    input.recreated_for_paused_hevc_seek = true;
+    decision = choose_hevc_seek_recreate(input);
+    REQUIRE_FALSE(decision.should_recreate_pipeline);
+    REQUIRE_FALSE(decision.error_if_recreate_not_applied);
+    REQUIRE_FALSE(decision.coalescing_transition);
+}
+
+TEST_CASE("HevcSeekRecreatePolicy: paused exact seek does not recreate",
+          "[seek][coordinator][hevc]") {
+    HevcSeekRecreateInput input;
+    input.is_hevc_hw_seek = true;
+    input.paused_seek = true;
+    input.seek_transition_active = false;
+    input.seek_type = SeekType::Exact;
+
+    const auto decision = choose_hevc_seek_recreate(input);
+    REQUIRE_FALSE(decision.should_recreate_pipeline);
+    REQUIRE_FALSE(decision.error_if_recreate_not_applied);
+    REQUIRE_FALSE(decision.coalescing_transition);
+}
+
+TEST_CASE("HevcSeekRecreatePolicy: forced paused transition can recreate",
+          "[seek][coordinator][hevc]") {
+    HevcSeekRecreateInput input;
+    input.is_hevc_hw_seek = true;
+    input.paused_seek = true;
+    input.seek_transition_active = true;
+    input.force_recreate_paused_hevc = true;
+    input.seek_type = SeekType::Keyframe;
+
+    const auto decision = choose_hevc_seek_recreate(input);
+    REQUIRE(decision.should_recreate_pipeline);
+    REQUIRE_FALSE(decision.error_if_recreate_not_applied);
+    REQUIRE(decision.coalescing_transition);
+}
+
 TEST_CASE("SeekCoordinator: only paused exact HEVC hardware seek enters coordinator",
           "[seek][coordinator]") {
     SeekCoordinator coordinator(std::chrono::milliseconds(1));

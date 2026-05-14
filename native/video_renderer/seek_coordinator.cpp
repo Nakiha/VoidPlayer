@@ -2,6 +2,25 @@
 
 namespace vr {
 
+HevcSeekRecreateDecision choose_hevc_seek_recreate(
+    const HevcSeekRecreateInput& input) {
+    HevcSeekRecreateDecision decision;
+    if (!input.is_hevc_hw_seek) {
+        return decision;
+    }
+
+    decision.coalescing_transition = input.seek_transition_active;
+    decision.error_if_recreate_not_applied =
+        !input.paused_seek && !input.seek_transition_active;
+    decision.should_recreate_pipeline =
+        (!input.paused_seek && !input.seek_transition_active) ||
+        (input.paused_seek &&
+         input.seek_type != SeekType::Exact &&
+         !input.recreated_for_paused_hevc_seek &&
+         (!input.seek_transition_active || input.force_recreate_paused_hevc));
+    return decision;
+}
+
 SeekCoordinator::SeekCoordinator(std::chrono::milliseconds paused_hevc_settle_delay)
     : paused_hevc_settle_delay_(paused_hevc_settle_delay) {}
 

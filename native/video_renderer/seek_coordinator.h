@@ -7,6 +7,24 @@
 
 namespace vr {
 
+struct HevcSeekRecreateInput {
+    bool is_hevc_hw_seek = false;
+    bool paused_seek = false;
+    bool seek_transition_active = false;
+    bool recreated_for_paused_hevc_seek = false;
+    bool force_recreate_paused_hevc = false;
+    SeekType seek_type = SeekType::Keyframe;
+};
+
+struct HevcSeekRecreateDecision {
+    bool should_recreate_pipeline = false;
+    bool error_if_recreate_not_applied = false;
+    bool coalescing_transition = false;
+};
+
+HevcSeekRecreateDecision choose_hevc_seek_recreate(
+    const HevcSeekRecreateInput& input);
+
 class SeekCoordinator {
 public:
     explicit SeekCoordinator(std::chrono::milliseconds paused_hevc_settle_delay);

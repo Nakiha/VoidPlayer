@@ -197,9 +197,13 @@ TODO:
    - 已把 add-track 对齐当前播放时钟时的 seek target clamp、buffer/audio queue flush、audio pause、seek type choice 拆到 `track_lifecycle`。
    - 验证：native-only + smoke/track compact UI。
 
-9. [ ] `HevcSeekRecreatePolicy`
-   - 后续把 `seek_internal` 内 HEVC hardware seek recreate/coalesce/error 选择从 `Renderer` 主体拆成可单测 policy。
+9. [x] `HevcSeekRecreatePolicy`
+   - 已把 `seek_internal` 内 HEVC hardware seek recreate/coalesce/error 选择拆到 `SeekCoordinator` policy。
    - 验证：native-only + smoke/shutdown-during-seek recreate UI。
+
+10. [ ] `TrackSeekPreparation`
+   - 后续把 `seek_internal` 内每轨 seek 前的 decode/audio pause、buffer clear、presenter reset、packet/audio queue flush、seek request submission 拆成 lifecycle helper。
+   - 验证：native-only + smoke/timeline seek/shutdown-during-seek recreate UI。
 
 ## P1 - Windows Runner Plugin Split
 

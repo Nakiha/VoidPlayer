@@ -52,6 +52,7 @@ public:
     int find_empty_slot() const;
     int find_slot_by_file_id(int file_id) const;
     int first_active_slot() const;
+    bool has_active_tracks() const;
     size_t count() const;
     void clear();
     void stop_all(const TrackCallback& before_stop = {});

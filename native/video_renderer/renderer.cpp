@@ -146,7 +146,7 @@ bool Renderer::initialize(const RendererConfig& config) {
         tracks_, config.video_paths, config.use_hardware_decode,
         initial_track_hooks, "Renderer");
 
-    if (tracks_.count() == 0) {
+    if (!tracks_.has_active_tracks()) {
         spdlog::error("Renderer: no valid tracks");
         return fail();
     }
@@ -184,28 +184,9 @@ bool Renderer::initialize(const RendererConfig& config) {
 void Renderer::shutdown() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
 
-    bool has_resources = false;
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        for (const auto& track : tracks_) {
-            if (track) {
-                has_resources = true;
-                break;
-            }
-        }
-        has_resources = has_resources ||
-                        d3d_device_ ||
-                        d3d_backend_ ||
-                        texture_mgr_ ||
-                        frame_presenter_ ||
-                        headless_output_ ||
-                        shader_mgr_ ||
-                        render_sink_ ||
-                        d3d_resources_ ||
-                        initialized_.load() ||
-                        running_.load() ||
-                        render_thread_.joinable();
-        if (!has_resources) {
+        if (!has_resources_locked()) {
             return;
         }
 
@@ -227,6 +208,21 @@ void Renderer::shutdown() {
     }
 
     spdlog::info("Renderer: shutdown complete");
+}
+
+bool Renderer::has_resources_locked() const {
+    return tracks_.has_active_tracks() ||
+           d3d_device_ ||
+           d3d_backend_ ||
+           texture_mgr_ ||
+           frame_presenter_ ||
+           headless_output_ ||
+           shader_mgr_ ||
+           render_sink_ ||
+           d3d_resources_ ||
+           initialized_.load() ||
+           running_.load() ||
+           render_thread_.joinable();
 }
 
 void Renderer::release_resources_locked() {

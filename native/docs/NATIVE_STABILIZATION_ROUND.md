@@ -121,6 +121,7 @@ Fixed or reduced:
 - `Renderer`: initial active-track query now uses `TrackPipelineManager` ownership instead of an ad hoc scan.
 - `Renderer`: perf baseline timer/frame reset state moved into `TrackPerfBaselineTracker`.
 - `Renderer`: initial video-path open/start loop moved into `track_lifecycle`.
+- `Renderer`: shutdown resource-presence predicate centralized and now uses `TrackPipelineManager` active-track query.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -144,7 +145,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P89 Renderer Shutdown Resource Presence Boundary.
+Next patch: P90 Renderer Present-Decision Frame Query Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1416,11 +1417,33 @@ Result:
 
 ### P89 - Renderer Shutdown Resource Presence Boundary
 
+Status: done in Patch 89.
+
 Goal:
 
 - Centralize the shutdown "do we have anything to release?" predicate.
 - Reuse track manager active-track queries instead of a local track scan.
 - Keep shutdown idempotency and early-return behavior unchanged.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `TrackPipelineManager::has_active_tracks`.
+- `Renderer::shutdown` now delegates resource-presence checks to `has_resources_locked()`.
+- `Renderer::initialize` uses the active-track predicate for the no-valid-tracks failure.
+- Verified with native-only tests plus rebuilt smoke UI. One first native-only run hit an unrelated `analysis_tests` read-count flake; immediate rerun passed.
+
+### P90 - Renderer Present-Decision Frame Query Boundary
+
+Goal:
+
+- Move the pure `PresentDecision` frame-presence query out of `Renderer`.
+- Keep render-loop fallback behavior unchanged.
+- Add focused policy coverage for empty and populated decisions.
 
 Validation:
 

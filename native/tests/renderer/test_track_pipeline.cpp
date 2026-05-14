@@ -274,6 +274,7 @@ TEST_CASE("TrackPipelineManager exposes active track queries",
     TrackPipelineManager manager;
     REQUIRE(manager.count() == 0);
     REQUIRE(manager.first_active_slot() == -1);
+    REQUIRE_FALSE(manager.has_active_tracks());
 
     auto first = std::make_unique<TrackPipeline>();
     first->file_id = 21;
@@ -284,6 +285,7 @@ TEST_CASE("TrackPipelineManager exposes active track queries",
 
     REQUIRE(manager.count() == 2);
     REQUIRE(manager.first_active_slot() == 1);
+    REQUIRE(manager.has_active_tracks());
     REQUIRE(manager.find_slot_by_file_id(42) == 3);
 
     manager.stop_slot(1);
@@ -293,6 +295,7 @@ TEST_CASE("TrackPipelineManager exposes active track queries",
     manager.clear();
     REQUIRE(manager.count() == 0);
     REQUIRE(manager.first_active_slot() == -1);
+    REQUIRE_FALSE(manager.has_active_tracks());
 }
 
 TEST_CASE("LayoutGeometry snapshots track geometry",

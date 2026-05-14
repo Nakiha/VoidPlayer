@@ -31,6 +31,10 @@ int TrackPipelineManager::first_active_slot() const {
     return -1;
 }
 
+bool TrackPipelineManager::has_active_tracks() const {
+    return first_active_slot() >= 0;
+}
+
 size_t TrackPipelineManager::count() const {
     size_t active_count = 0;
     for (const auto& track : tracks_) {

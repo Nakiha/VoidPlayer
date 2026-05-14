@@ -320,6 +320,10 @@ private:
     /// Caller must hold state_mutex_.
     void release_resources_locked();
 
+    /// Return whether shutdown has native state or resources to release.
+    /// Caller must hold state_mutex_.
+    bool has_resources_locked() const;
+
     /// Resolve the logical playback end across active tracks.
     /// Caller must hold state_mutex_.
     int64_t effective_duration_us_locked() const;

@@ -113,6 +113,17 @@ struct TrackPlaybackDecodeStateHooks {
     std::function<void(bool paused)> set_all_audio_decode_paused;
 };
 
+struct TrackDecodePauseHooks {
+    std::function<void(size_t slot, TrackPipeline& track, bool paused)>
+        set_decode_paused;
+    std::function<void(bool paused)> set_all_audio_decode_paused;
+};
+
+void apply_track_decode_pause_state(
+    TrackPipelineManager& tracks,
+    bool paused,
+    const TrackDecodePauseHooks& hooks);
+
 void apply_track_playback_decode_state(
     TrackPipelineManager& tracks,
     bool playback_active,

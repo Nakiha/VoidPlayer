@@ -213,6 +213,24 @@ void finish_track_removal_playback(
     }
 }
 
+void apply_track_decode_pause_state(
+    TrackPipelineManager& tracks,
+    bool paused,
+    const TrackDecodePauseHooks& hooks) {
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks[i]) {
+            continue;
+        }
+        if (hooks.set_decode_paused) {
+            hooks.set_decode_paused(i, *tracks[i], paused);
+        }
+    }
+
+    if (hooks.set_all_audio_decode_paused) {
+        hooks.set_all_audio_decode_paused(paused);
+    }
+}
+
 void apply_track_playback_decode_state(
     TrackPipelineManager& tracks,
     bool playback_active,
@@ -227,18 +245,13 @@ void apply_track_playback_decode_state(
         }
     }
 
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks[i]) {
-            continue;
-        }
-        if (hooks.set_decode_paused) {
-            hooks.set_decode_paused(i, *tracks[i], paused);
-        }
-    }
-
-    if (hooks.set_all_audio_decode_paused) {
-        hooks.set_all_audio_decode_paused(paused);
-    }
+    apply_track_decode_pause_state(
+        tracks,
+        paused,
+        TrackDecodePauseHooks{
+            hooks.set_decode_paused,
+            hooks.set_all_audio_decode_paused,
+        });
 }
 
 TrackAddSeekResult prepare_add_track_seek_to_clock(

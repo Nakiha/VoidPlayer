@@ -101,6 +101,7 @@ Fixed or reduced:
 - `Renderer`: loop-range boundary seek decision moved into `SeekCoordinator` policy.
 - `Renderer`: loop-range state normalization and comparison moved into `SeekCoordinator` policy.
 - `Renderer`: public play/pause decode pause and pause-after-preroll fanout moved into `track_lifecycle`.
+- `Renderer`: remaining all-track decode/audio pause fanout moved into `track_lifecycle`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -124,7 +125,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P69 Renderer Decode Pause Fanout Boundary.
+Next patch: P70 Renderer Step Decode Pause Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -962,6 +963,8 @@ Result:
 
 ### P69 - Renderer Decode Pause Fanout Boundary
 
+Status: done in Patch 69.
+
 Goal:
 
 - Move the remaining all-track decode/audio pause fanout in `Renderer::set_decode_paused_for_all_tracks` into `track_lifecycle`.
@@ -971,6 +974,26 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `TrackDecodePauseHooks` and `apply_track_decode_pause_state` to `track_lifecycle`.
+- `Renderer::set_decode_paused_for_all_tracks` now delegates remaining all-track decode/audio pause fanout while preserving call-site intent and lock ownership.
+- `apply_track_playback_decode_state` reuses the same helper so play/pause and render-loop pause paths share the same decode/audio fanout order.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P70 - Renderer Step Decode Pause Boundary
+
+Goal:
+
+- Move `Renderer::step_forward` temporary per-track decode pause/resume fanout into `track_lifecycle`.
+- Preserve current step behavior: step-forward should only pause/resume video decode threads and must not touch audio decode pause state.
+- Keep `Renderer` responsible for step decision, clock update, wait loop, and exact-seek fallback.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_step_forward_visual_regression.csv`
 
 ## Do-Not-Drift List
 

@@ -261,9 +261,13 @@ TODO:
    - 已把 public play/pause 的 track decode pause 和 pause-after-preroll fanout 拆到 helper，Renderer 保留生命周期锁、playback clock 命令、`playing_` 和 seek coordinator reset。
    - 验证：native-only + smoke UI。
 
-25. [ ] `DecodePauseFanout`
-   - 后续把 `set_decode_paused_for_all_tracks()` 的剩余 all-track decode/audio pause fanout 拆到 helper，Renderer 保留调用意图和锁。
+25. [x] `DecodePauseFanout`
+   - 已把 `set_decode_paused_for_all_tracks()` 的剩余 all-track decode/audio pause fanout 拆到 helper，Renderer 保留调用意图和锁。
    - 验证：native-only + smoke UI。
+
+26. [ ] `StepDecodePauseFanout`
+   - 后续把 `step_forward()` 内临时 per-track decode pause/resume fanout 拆到 helper；该路径只影响视频 decode thread，不应触碰 audio decode pause state。
+   - 验证：native-only + smoke/step-forward UI。
 
 ## P1 - Windows Runner Plugin Split
 

@@ -1102,13 +1102,17 @@ bool Renderer::has_any_frame(const PresentDecision& decision) {
 }
 
 void Renderer::set_decode_paused_for_all_tracks(bool paused) {
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks_[i]) continue;
-        tracks_[i]->decode_thread->set_decode_paused(paused);
-    }
-    if (audio_coordinator_) {
-        audio_coordinator_->set_all_decode_paused(paused);
-    }
+    const TrackDecodePauseHooks hooks{
+        [](size_t, TrackPipeline& track, bool paused) {
+            track.decode_thread->set_decode_paused(paused);
+        },
+        [this](bool paused) {
+            if (audio_coordinator_) {
+                audio_coordinator_->set_all_decode_paused(paused);
+            }
+        },
+    };
+    apply_track_decode_pause_state(tracks_, paused, hooks);
 }
 
 void Renderer::apply_playback_decode_state_locked(bool playback_active) {

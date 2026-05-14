@@ -581,6 +581,41 @@ TEST_CASE("TrackLifecycle applies playback decode state in stable order",
     REQUIRE(events == std::vector<std::string>{"audio:true"});
 }
 
+TEST_CASE("TrackLifecycle applies decode pause fanout",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineManager manager;
+    auto first = std::make_unique<TrackPipeline>();
+    first->file_id = 20;
+    auto second = std::make_unique<TrackPipeline>();
+    second->file_id = 22;
+    manager[1] = std::move(first);
+    manager[3] = std::move(second);
+
+    std::vector<std::string> events;
+    const TrackDecodePauseHooks hooks{
+        [&](size_t slot, TrackPipeline& track, bool paused) {
+            events.push_back("decode:" + std::to_string(slot) + ":" +
+                             std::to_string(track.file_id) + ":" +
+                             (paused ? "true" : "false"));
+        },
+        [&](bool paused) {
+            events.push_back(std::string("audio:") + (paused ? "true" : "false"));
+        },
+    };
+
+    apply_track_decode_pause_state(manager, true, hooks);
+    REQUIRE(events == std::vector<std::string>{
+        "decode:1:20:true",
+        "decode:3:22:true",
+        "audio:true",
+    });
+
+    events.clear();
+    manager.clear();
+    apply_track_decode_pause_state(manager, false, hooks);
+    REQUIRE(events == std::vector<std::string>{"audio:false"});
+}
+
 TEST_CASE("TrackLifecycle prepares add-track seek to current clock",
           "[track_pipeline][track_lifecycle]") {
     TrackPipeline track;

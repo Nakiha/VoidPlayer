@@ -84,6 +84,7 @@ Fixed or reduced:
 - `Renderer`: analysis overlay CPU cache, D3D overlay resource helpers, mask pass, and overlay draw pass moved into `AnalysisOverlayRenderer`; `Renderer` now delegates the overlay pass after the base frame draw.
 - `Renderer`: layout state/constants moved to layout-owned helpers; `Renderer` now snapshots track geometry and delegates shader layout math to `layout_geometry`.
 - `Renderer`: render-loop debounce, diagnostics cadence, and frame-deadline sleep policy moved into `RenderLoopController`.
+- `Renderer`: remove-track stop/compact render-sink/presenter slot side effects and cached `PresentDecision` frame compaction moved into `track_lifecycle`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -100,14 +101,14 @@ Still active:
 
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
-- `Renderer` still owns track slot commit, removal compaction, current-clock add-track seek, and HEVC recreate policy.
+- `Renderer` still owns track slot commit, layout mutation, playback pause/resume, current-clock add-track seek, and HEVC recreate policy.
 - `DecodeThread` main loop still owns codec send/receive, EOF drain, AVFrame ownership, and hardware visibility transitions.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P51 Renderer Track Removal/Compaction Boundary.
+Next patch: P52 Renderer Add-Track Seek Policy.
 
 ### P30 - VACache Atomic Publish
 
@@ -564,10 +565,31 @@ Result:
 
 ### P51 - Renderer Track Removal/Compaction Boundary
 
+Status: done in Patch 51.
+
 Goal:
 
 - Move remove-track stop/compact side effects into a helper that owns render-sink/presenter slot updates and `last_decision_` compaction.
 - Keep layout mutation and playback pause/resume decisions in `Renderer` for this patch.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv`
+
+Result:
+
+- Added `TrackRemovalHooks`, `remove_and_compact_track_pipeline`, and `compact_present_decision_frames`.
+- `Renderer::remove_track` now keeps playback/layout decisions but delegates track stop/compact plus render-sink/presenter slot side effects.
+- Added native coverage for slot compaction and cached present-frame compaction.
+- Verified with native-only tests plus rebuilt smoke and track compact UI scripts.
+
+### P52 - Renderer Add-Track Seek Policy
+
+Goal:
+
+- Move the current-clock add-track seek preparation into a small helper or policy boundary.
+- Keep `Renderer` responsible for slot commit, layout mutation, and playback pause/resume.
 
 Validation:
 

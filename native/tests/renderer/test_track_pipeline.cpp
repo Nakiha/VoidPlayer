@@ -6,7 +6,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <string>
 #include <thread>
+#include <vector>
 
 using namespace vr;
 using namespace vr::test;
@@ -130,4 +132,68 @@ TEST_CASE("TrackLifecycle configures and starts pipeline with rollback hooks",
     REQUIRE(seek_callbacks.load(std::memory_order_acquire) == 1);
     REQUIRE(callback_pts.load(std::memory_order_acquire) == 1000000);
     REQUIRE(audio_unregisters.load(std::memory_order_acquire) == 1);
+}
+
+TEST_CASE("TrackLifecycle removes and compacts track slots",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineManager manager;
+    for (int i = 0; i < 3; ++i) {
+        auto track = std::make_unique<TrackPipeline>();
+        track->file_id = 10 + i;
+        track->offset_us = i * 1000;
+        track->track_buffer = std::make_shared<TrackBuffer>(1, 0);
+        manager[static_cast<size_t>(i)] = std::move(track);
+    }
+
+    std::vector<int> unregistered_file_ids;
+    std::vector<std::string> cleared_slots;
+    std::vector<std::string> moved_slots;
+    const TrackRemovalHooks hooks{
+        [&](int file_id) {
+            unregistered_file_ids.push_back(file_id);
+        },
+        [&](size_t slot, TrackPipeline& track) {
+            cleared_slots.push_back(
+                std::to_string(slot) + ":" + std::to_string(track.file_id));
+        },
+        [&](size_t from, size_t to, TrackPipeline& track) {
+            moved_slots.push_back(
+                std::to_string(from) + ">" + std::to_string(to) + ":" +
+                std::to_string(track.file_id));
+        },
+    };
+
+    remove_and_compact_track_pipeline(manager, 1, hooks);
+
+    REQUIRE(unregistered_file_ids == std::vector<int>{11});
+    REQUIRE(cleared_slots == std::vector<std::string>{"1:11"});
+    REQUIRE(moved_slots == std::vector<std::string>{"2>1:12"});
+    REQUIRE(manager[0]);
+    REQUIRE(manager[0]->file_id == 10);
+    REQUIRE(manager[1]);
+    REQUIRE(manager[1]->file_id == 12);
+    REQUIRE_FALSE(manager[2]);
+}
+
+TEST_CASE("TrackLifecycle compacts cached present decisions",
+          "[track_pipeline][track_lifecycle]") {
+    PresentDecision decision;
+    TextureFrame frame0;
+    frame0.pts_us = 1000;
+    TextureFrame frame1;
+    frame1.pts_us = 2000;
+    TextureFrame frame2;
+    frame2.pts_us = 3000;
+    decision.frames[0] = frame0;
+    decision.frames[1] = frame1;
+    decision.frames[2] = frame2;
+
+    compact_present_decision_frames(decision, 1);
+
+    REQUIRE(decision.frames[0]);
+    REQUIRE(decision.frames[0]->pts_us == 1000);
+    REQUIRE(decision.frames[1]);
+    REQUIRE(decision.frames[1]->pts_us == 3000);
+    REQUIRE_FALSE(decision.frames[2]);
+    REQUIRE_FALSE(decision.frames[3]);
 }

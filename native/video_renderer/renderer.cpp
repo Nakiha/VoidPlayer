@@ -2229,29 +2229,25 @@ void Renderer::remove_track(int file_id) {
         playing_ = false;
     }
 
-    tracks_.stop_slot(slot, [this](size_t stopped_slot, TrackPipeline& track) {
-        unregister_track_audio(track.file_id);
-        render_sink_->set_track(stopped_slot, nullptr);
-        if (frame_presenter_) {
-            frame_presenter_->reset_track(stopped_slot);
-        }
-    });
-
-    // Compact: shift tracks_[slot+1..] down to fill the gap
-    tracks_.compact_from(slot, [this](size_t from, size_t to, TrackPipeline& track) {
-        if (frame_presenter_) {
-            frame_presenter_->move_track(from, to);
-        }
-        render_sink_->set_track(to, track.track_buffer);
-        render_sink_->set_track_offset(to, track.offset_us);
-        render_sink_->set_track(from, nullptr);
-    });
-
-    // Compact last_decision_.frames the same way
-    for (size_t i = slot; i < kMaxTracks - 1; ++i) {
-        last_decision_.frames[i] = std::move(last_decision_.frames[i + 1]);
-    }
-    last_decision_.frames[kMaxTracks - 1] = std::nullopt;
+    const TrackRemovalHooks removal_hooks{
+        [this](int removed_file_id) { unregister_track_audio(removed_file_id); },
+        [this](size_t stopped_slot, TrackPipeline&) {
+            render_sink_->set_track(stopped_slot, nullptr);
+            if (frame_presenter_) {
+                frame_presenter_->reset_track(stopped_slot);
+            }
+        },
+        [this](size_t from, size_t to, TrackPipeline& track) {
+            if (frame_presenter_) {
+                frame_presenter_->move_track(from, to);
+            }
+            render_sink_->set_track(to, track.track_buffer);
+            render_sink_->set_track_offset(to, track.offset_us);
+            render_sink_->set_track(from, nullptr);
+        },
+    };
+    remove_and_compact_track_pipeline(tracks_, slot, removal_hooks);
+    compact_present_decision_frames(last_decision_, slot);
 
     layout_controller_.remove_track(
         layout_, file_id, [this](int id) { return find_slot_by_file_id(id); });

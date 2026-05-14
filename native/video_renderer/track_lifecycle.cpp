@@ -2,6 +2,9 @@
 
 #include <spdlog/spdlog.h>
 
+#include <optional>
+#include <utility>
+
 namespace vr {
 
 bool configure_and_start_track_pipeline(
@@ -43,6 +46,36 @@ bool configure_and_start_track_pipeline(
     }
 
     return true;
+}
+
+void remove_and_compact_track_pipeline(
+    TrackPipelineManager& tracks,
+    size_t slot,
+    const TrackRemovalHooks& hooks) {
+    tracks.stop_slot(slot, [&](size_t stopped_slot, TrackPipeline& track) {
+        if (hooks.unregister_audio) {
+            hooks.unregister_audio(track.file_id);
+        }
+        if (hooks.clear_slot) {
+            hooks.clear_slot(stopped_slot, track);
+        }
+    });
+
+    tracks.compact_from(slot, [&](size_t from, size_t to, TrackPipeline& track) {
+        if (hooks.move_slot) {
+            hooks.move_slot(from, to, track);
+        }
+    });
+}
+
+void compact_present_decision_frames(PresentDecision& decision, size_t slot) {
+    if (slot >= kMaxTracks) {
+        return;
+    }
+    for (size_t i = slot; i < kMaxTracks - 1; ++i) {
+        decision.frames[i] = std::move(decision.frames[i + 1]);
+    }
+    decision.frames[kMaxTracks - 1] = std::nullopt;
 }
 
 } // namespace vr

@@ -189,9 +189,13 @@ TODO:
    - 已把 file_id/offset/recreate flags、seek/error/audio hooks、demux start、failed-start rollback 拆到 `track_lifecycle`。
    - 验证：native track pipeline/lifecycle tests + smoke/track compact/shutdown-during-seek recreate UI。
 
-7. [ ] `TrackRemovalCompaction`
-   - 后续把 remove-track stop/compact/render-sink/presenter slot side effects 从 `Renderer` 主体拆出。
-   - 验证：native-only + `ui_tests/track/remove_middle_compact_regression.csv`。
+7. [x] `TrackRemovalCompaction`
+   - 已把 remove-track stop/compact/render-sink/presenter slot side effects 和 cached present decision frame compaction 拆到 `track_lifecycle`。
+   - 验证：native track lifecycle tests + smoke/track compact UI。
+
+8. [ ] `AddTrackSeekPolicy`
+   - 后续把 add-track 对齐当前播放时钟时的 seek target clamp、buffer/audio queue flush、audio pause、seek type choice 从 `Renderer` 主体拆出。
+   - 验证：native-only + smoke/track compact UI。
 
 ## P1 - Windows Runner Plugin Split
 

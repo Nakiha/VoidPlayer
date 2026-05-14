@@ -1,6 +1,7 @@
 #pragma once
 
 #include "video_renderer/track_pipeline.h"
+#include "video_renderer/sync/render_sink.h"
 
 #include <cstdint>
 #include <functional>
@@ -26,5 +27,18 @@ bool configure_and_start_track_pipeline(
     const TrackPipelineStartConfig& config,
     const TrackPipelineStartHooks& hooks,
     const char* log_context);
+
+struct TrackRemovalHooks {
+    std::function<void(int file_id)> unregister_audio;
+    std::function<void(size_t slot, TrackPipeline& track)> clear_slot;
+    std::function<void(size_t from, size_t to, TrackPipeline& track)> move_slot;
+};
+
+void remove_and_compact_track_pipeline(
+    TrackPipelineManager& tracks,
+    size_t slot,
+    const TrackRemovalHooks& hooks);
+
+void compact_present_decision_frames(PresentDecision& decision, size_t slot);
 
 } // namespace vr

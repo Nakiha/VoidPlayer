@@ -5,6 +5,7 @@
 #include "video_renderer/renderer_config_validation.h"
 #include "video_renderer/track_lifecycle.h"
 #include "video_renderer/track_preroll_policy.h"
+#include "video_renderer/track_preview_policy.h"
 #include "video_renderer/track_step_policy.h"
 #include "audio/audio_output_factory.h"
 #include "video_renderer/audio_coordinator.h"
@@ -1410,28 +1411,9 @@ void Renderer::render_loop() {
                 // Only draw when ALL active tracks have frames, to avoid
                 // flashing black for tracks that haven't finished seeking.
                 if (!drawn) {
-                    PresentDecision preview;
-                    preview.current_pts_us = 0;
-                    preview.should_present = false;
-                    bool all_active_have_frames = true;
-                    bool all_active_ready = true;
-                    for (size_t t = 0; t < kMaxTracks; ++t) {
-                        if (!tracks_[t]) continue;
-                        const auto state = tracks_[t]->track_buffer->state();
-                        if (state != TrackState::Ready) {
-                            all_active_ready = false;
-                        }
-                        auto frame = tracks_[t]->track_buffer->peek(0);
-                        if (frame.has_value()) {
-                            preview.frames[t] = frame;
-                        } else if (state == TrackState::Ready) {
-                            // Track is Ready but has no frames — past its duration (EOF).
-                            // Don't block preview drawing for other tracks.
-                        } else {
-                            all_active_have_frames = false;
-                        }
-                    }
-                    if (all_active_ready && all_active_have_frames && has_any_frame(preview)) {
+                    auto snapshot = build_paused_preview_snapshot(tracks_);
+                    if (snapshot.ready_to_present) {
+                        auto& preview = snapshot.decision;
                         present_frame(preview);
                         last_decision_ = preview;
                         bool preserve_requested_clock = false;

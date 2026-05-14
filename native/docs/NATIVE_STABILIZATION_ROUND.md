@@ -109,6 +109,7 @@ Fixed or reduced:
 - `Renderer`: step-forward next-frame selection and consumed-frame draining moved into `track_step_policy`.
 - `Renderer`: current-frame duration policy moved into `track_step_policy` and reused by step/EOF tolerance paths.
 - `Renderer`: preroll readiness track-state scan moved into dedicated `track_preroll_policy` owner.
+- `Renderer`: paused preview snapshot assembly moved into dedicated `track_preview_policy` owner.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -132,7 +133,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P77 Renderer Paused Preview Snapshot Boundary.
+Next patch: P78 Renderer Present Carry-Forward Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1141,11 +1142,33 @@ Result:
 
 ### P77 - Renderer Paused Preview Snapshot Boundary
 
+Status: done in Patch 77.
+
 Goal:
 
 - Move paused preview snapshot assembly (`ALL active tracks have frames` rule) out of the render loop into a small policy/helper.
 - Keep `Renderer` responsible for cached last-frame reuse, present, `preview_drawn_`, and logging.
 - Preserve the rule that partial active-track previews do not draw, avoiding black flashes during seek/preroll.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `track_preview_policy` with `build_paused_preview_snapshot`.
+- Render loop now delegates paused preview snapshot assembly while keeping cached last-frame reuse, present, clock correction, `preview_drawn_`, seek-preview events, and logging in `Renderer`.
+- Added native coverage for empty managers, all-ready previews, Ready-at-EOF tracks, Buffering tracks with/without frames, and missing buffers.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P78 - Renderer Present Carry-Forward Boundary
+
+Goal:
+
+- Move playing-state `PresentDecision` carry-forward logic out of the render loop.
+- Preserve the rule that active tracks can reuse their last frame only after their effective PTS is non-negative, so shorter tracks freeze at EOF while longer tracks continue.
+- Keep `Renderer` responsible for calling `RenderSink::evaluate`, `present_frame`, `last_decision_` assignment, and layout redraw fallback.
 
 Validation:
 

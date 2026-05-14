@@ -4,6 +4,7 @@
 #include "video_renderer/track_lifecycle.h"
 #include "video_renderer/track_pipeline_factory.h"
 #include "video_renderer/track_preroll_policy.h"
+#include "video_renderer/track_preview_policy.h"
 #include "video_renderer/track_snapshot.h"
 #include "video_renderer/track_step_policy.h"
 
@@ -766,6 +767,59 @@ TEST_CASE("TrackPrerollPolicy detects preroll-blocking tracks",
     auto missing_buffer = std::make_unique<TrackPipeline>();
     manager[1] = std::move(missing_buffer);
     REQUIRE(has_preroll_blocking_track(manager));
+}
+
+TEST_CASE("TrackPreviewPolicy builds paused preview snapshots",
+          "[track_pipeline][track_preview_policy]") {
+    const auto make_track =
+        [](TrackState state, std::optional<int64_t> pts_us) {
+            auto track = std::make_unique<TrackPipeline>();
+            track->track_buffer = std::make_shared<TrackBuffer>();
+            if (pts_us.has_value()) {
+                TextureFrame frame;
+                frame.pts_us = *pts_us;
+                track->track_buffer->push_frame(frame);
+            }
+            track->track_buffer->set_state(state);
+            return track;
+        };
+
+    TrackPipelineManager empty_manager;
+    auto empty = build_paused_preview_snapshot(empty_manager);
+    REQUIRE_FALSE(empty.ready_to_present);
+    REQUIRE_FALSE(empty.decision.should_present);
+
+    TrackPipelineManager ready_manager;
+    ready_manager[0] = make_track(TrackState::Ready, 1000);
+    ready_manager[2] = make_track(TrackState::Ready, 2000);
+    auto ready = build_paused_preview_snapshot(ready_manager);
+    REQUIRE(ready.ready_to_present);
+    REQUIRE(ready.decision.should_present);
+    REQUIRE(ready.decision.frames[0]->pts_us == 1000);
+    REQUIRE_FALSE(ready.decision.frames[1].has_value());
+    REQUIRE(ready.decision.frames[2]->pts_us == 2000);
+
+    ready_manager[1] = make_track(TrackState::Ready, std::nullopt);
+    auto eof_ready = build_paused_preview_snapshot(ready_manager);
+    REQUIRE(eof_ready.ready_to_present);
+    REQUIRE_FALSE(eof_ready.decision.frames[1].has_value());
+
+    ready_manager[3] = make_track(TrackState::Buffering, std::nullopt);
+    auto buffering_empty = build_paused_preview_snapshot(ready_manager);
+    REQUIRE_FALSE(buffering_empty.ready_to_present);
+    REQUIRE_FALSE(buffering_empty.decision.should_present);
+
+    ready_manager[3] = make_track(TrackState::Buffering, 3000);
+    auto buffering_with_frame = build_paused_preview_snapshot(ready_manager);
+    REQUIRE_FALSE(buffering_with_frame.ready_to_present);
+    REQUIRE_FALSE(buffering_with_frame.decision.should_present);
+
+    TrackPipelineManager missing_buffer_manager;
+    missing_buffer_manager[0] = std::make_unique<TrackPipeline>();
+    auto missing_buffer =
+        build_paused_preview_snapshot(missing_buffer_manager);
+    REQUIRE_FALSE(missing_buffer.ready_to_present);
+    REQUIRE_FALSE(missing_buffer.decision.should_present);
 }
 
 TEST_CASE("TrackStepPolicy builds step-forward decisions",

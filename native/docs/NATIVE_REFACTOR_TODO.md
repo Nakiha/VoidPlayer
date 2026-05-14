@@ -293,8 +293,12 @@ TODO:
    - 已把 render loop 中 Empty/Flushing/Buffering 任一轨道阻塞 preroll 的判断拆到 `track_preroll_policy`，Renderer 保留 clock pause/resume 和 preview invalidation。
    - 验证：native-only + smoke UI。
 
-33. [ ] `PausedPreviewSnapshot`
-   - 后续把 render loop 暂停预览的 ALL active tracks have frames 组装规则拆出 Renderer，Renderer 保留 cached last-frame reuse、present、`preview_drawn_` 和日志。
+33. [x] `PausedPreviewSnapshot`
+   - 已把 render loop 暂停预览的 ALL active tracks have frames 组装规则拆到 `track_preview_policy`，Renderer 保留 cached last-frame reuse、present、`preview_drawn_`、seek-preview event 和日志。
+   - 验证：native-only + smoke UI。
+
+34. [ ] `PresentCarryForwardPolicy`
+   - 后续把播放态 `PresentDecision` 缺帧时复用 `last_decision_` 的 carry-forward 规则拆出 Renderer，Renderer 保留 `RenderSink::evaluate`、present、last-decision commit 和 redraw fallback。
    - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split

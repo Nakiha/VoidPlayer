@@ -8,6 +8,7 @@
 #include "media/seek_controller.h"
 #include "video_renderer/sync/render_sink.h"
 #include "video_renderer/track_pipeline.h"
+#include "video_renderer/capture/frame_capture_service.h"
 #include "video_renderer/shader_constants.h"
 #include "common/logging.h"
 #include <vector>
@@ -438,6 +439,7 @@ private:
     ShaderManager* shader_mgr_ = nullptr;
     std::unique_ptr<RenderSink> render_sink_;
     D3D11RenderResources* d3d_resources_ = nullptr;
+    FrameCaptureService frame_capture_;
 
     TrackPipelineManager tracks_;
 

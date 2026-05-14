@@ -137,7 +137,7 @@ chat 给出的方向和当前代码状态高度匹配。优先级最高的不是
 | 边界 | 当前判断 | 建议 |
 | --- | --- | --- |
 | `Renderer` | 仍是最大 coordination root，但直接大拆风险高 | 按 `NATIVE_REFACTOR_TODO.md` 的顺序分轮移动状态所有权 |
-| `FrameCaptureService` | 边界清楚，能顺带修 capture 锁粒度 | 可作为前五项后的第一拆 |
+| `FrameCaptureService` | 边界清楚，能顺带修 capture 锁粒度 | DONE - Patch 15 |
 | `AudioEngine::Impl` | 新的强 God Object | 先修 pause 语义，再拆 `WaveOutDevice` / mixer / registry |
 | `AnalysisManager` | 隐形 global/session/cache/overlay God Object | 先做 session snapshot，再谈完整 registry/session 拆分 |
 | `windows/runner/video_renderer_plugin.cpp` | app bridge God Module | 后续拆 dispatcher / texture bridge / diagnostics / capture |
@@ -471,6 +471,28 @@ Follow-up:
 
 - `review_native.md` correctness backlog is now fully fixed. Continue broader owner-boundary cleanup from `review_godobject.md`, `review_overlay.md`, and `split_adv.md`.
 
+2026-05-15 Patch 15 - FrameCaptureService Boundary
+
+Changed:
+
+- Added `FrameCaptureService` as the native-facing boundary for headless front-buffer BGRA capture.
+- Moved capture lock choreography out of `Renderer::capture_front_buffer()` while preserving the order `lifecycle_mutex_ -> device_mutex_ -> texture_mutex()`.
+- Kept `texture_mutex()` scoped only to pinning the front-buffer snapshot; GPU copy/map remains serialized by `device_mutex_`.
+- Added a D3D11 native regression covering service-level capture of the current headless front buffer.
+
+Verified:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- Continue owner-boundary cleanup one slice at a time; next candidates are `ViewportCaptureService` in the runner or a narrow `LayoutController` extraction.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
@@ -563,10 +585,11 @@ fixed:
 - Patch 12 completed the S12 D3D shutdown cleanup as a narrow lifecycle patch.
 - Patch 13 completed the `NativePlayer` facade lifecycle guard as a narrow boundary patch.
 - Patch 14 completed the FFI shared player lease cleanup as a narrow ABI/registry patch.
+- Patch 15 completed the native-facing `FrameCaptureService` boundary without touching runner PNG/WIC capture.
 
 accepted-backlog:
 
-- Remaining second-priority owner boundary work should continue as explicit owner-boundary slices such as `FrameCaptureService`; avoid jumping straight into a large Renderer split.
+- Remaining second-priority owner boundary work should continue as explicit owner-boundary slices; avoid jumping straight into a large Renderer split.
 
 not-applicable:
 

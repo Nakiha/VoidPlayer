@@ -116,7 +116,7 @@ Headless publish 的同步契约：
 
 | 调用方 | 允许调用 / 访问 | 禁止事项 |
 | --- | --- | --- |
-| UI / FFI / Python host thread | `initialize`、`shutdown`、`play`、`pause`、`seek`、`set_speed`、track add/remove、layout/background、resize、texture acquire、stats/query API | 不要持有宿主 callback lock 后同步调用会等待 native callback 的 API；同一 player 的 C FFI API 已由 handle mutex 串行化 |
+| UI / FFI / Python host thread | `initialize`、`shutdown`、`play`、`pause`、`seek`、`set_speed`、track add/remove、layout/background、resize、texture acquire、stats/query API | 不要持有宿主 callback lock 后同步调用会等待 native callback 的 API；同一 player 的 C FFI API 通过 shared handle lease 保护句柄生命周期，destroy 使用独占 gate |
 | Render thread | `render_loop`、`do_resize`、`present_frame`、`draw_frame`、headless publish、paused redraw、EOF settling | 不调用 public lifecycle API；不 join 自己；不执行 Flutter callback while holding renderer locks |
 | Demux thread | 写 `PacketQueue`，消费 `SeekController`，通过注册 seek callback 通知 decode/audio | 不直接访问 `Renderer::tracks_`、layout、D3D resources |
 | Decode thread | 消费 `PacketQueue`，写 `TrackBuffer`，硬解路径持 `device_mutex_` 使用 D3D11VA immediate context | 不访问 headless texture mutex；不调用 Renderer public API |
@@ -131,7 +131,7 @@ Headless publish 的同步契约：
 - Layout validation / order / viewport math: 从 `apply_layout()`、`display_pixel_size_for_layout_locked()`、`update_track_geometry_from_decision_locked()` 外提为 `LayoutController`。
 - Analysis overlay cache + CPU raster + D3D upload: 从 `draw_analysis_overlay()`、`ensure_analysis_overlay_texture()` 外提为 `AnalysisOverlayRenderer`。
 - Device loss terminal/recreate policy: 从 `enter_terminal_device_lost_locked()` 和 poll sites 外提为 `DeviceLossPolicy`。
-- Front-buffer capture and snapshot helpers: 从 `capture_front_buffer()` / headless snapshot helpers 外提为 `FrameCaptureService`。
+- Front-buffer capture and snapshot helpers: `FrameCaptureService` 负责 headless front-buffer capture 的 `device_mutex_ -> texture_mutex()` 锁编排，`Renderer::capture_front_buffer()` 只保留生命周期门禁。
 
 拆分前必须先写下新组件的锁所有权：组件是否能拿 `state_mutex_`、是否能调用 callback、是否能触碰 D3D immediate context。
 

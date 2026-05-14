@@ -1235,18 +1235,13 @@ void Renderer::redraw_layout() {
 bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (!headless_ || !headless_output_) {
+        bgra.clear();
+        width = 0;
+        height = 0;
         return false;
     }
-
-    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-    D3D11HeadlessOutputFrontBufferSnapshot snapshot;
-    {
-        std::lock_guard<std::mutex> tex_lock(texture_mutex());
-        if (!headless_output_->snapshot_front_buffer_locked(snapshot)) {
-            return false;
-        }
-    }
-    return headless_output_->capture_front_buffer_snapshot(snapshot, bgra, width, height);
+    return frame_capture_.capture_headless_front_buffer(
+        *headless_output_, device_mutex_, bgra, width, height);
 }
 
 bool Renderer::has_any_frame(const PresentDecision& decision) {

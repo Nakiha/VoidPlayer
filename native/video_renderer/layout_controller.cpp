@@ -1,6 +1,7 @@
 #include "video_renderer/layout_controller.h"
 
 #include <algorithm>
+#include <cstddef>
 
 namespace vr {
 
@@ -50,6 +51,16 @@ void LayoutController::append_track(LayoutState& layout, int file_id, int slot) 
             layout.order[i] = slot;
             return;
         }
+    }
+}
+
+void LayoutController::append_tracks(LayoutState& layout,
+                                     const TrackPipelineManager& tracks) {
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks[i]) {
+            continue;
+        }
+        append_track(layout, tracks[i]->file_id, static_cast<int>(i));
     }
 }
 

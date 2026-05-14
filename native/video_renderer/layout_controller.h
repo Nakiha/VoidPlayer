@@ -1,6 +1,7 @@
 #pragma once
 
 #include "video_renderer/layout_state.h"
+#include "video_renderer/track_pipeline.h"
 
 #include <functional>
 
@@ -16,6 +17,7 @@ public:
                const SlotResolver& resolve_slot);
     LayoutState snapshot(LayoutState layout) const;
     void append_track(LayoutState& layout, int file_id, int slot);
+    void append_tracks(LayoutState& layout, const TrackPipelineManager& tracks);
     void remove_track(LayoutState& layout, int file_id, const SlotResolver& resolve_slot);
     void rebuild_slot_order(LayoutState& layout, const SlotResolver& resolve_slot) const;
 

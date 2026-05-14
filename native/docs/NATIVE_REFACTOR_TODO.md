@@ -325,9 +325,13 @@ TODO:
    - 已把 `Renderer::initialize()` 中 active track 到 `RenderSink` 的初始 slot binding 循环拆到 `track_lifecycle` helper，Renderer 保留 render sink 构造。
    - 验证：native-only + smoke UI。
 
-41. [ ] `InitialLayoutOrder`
-   - 后续把 `Renderer::initialize()` 中 active track 到 layout order 的初始 append 循环拆到 `LayoutController`，Renderer 保留 layout reset 和 track manager。
+41. [x] `InitialLayoutOrder`
+   - 已把 `Renderer::initialize()` 中 active track 到 layout order 的初始 append 循环拆到 `LayoutController`，Renderer 保留 layout reset 和 track manager。
    - 验证：native-only + smoke/viewport UI。
+
+42. [ ] `InitialActiveTrackQuery`
+   - 后续把 `Renderer::initialize()` 中剩余的 active track 扫描替换为 `TrackPipelineManager` 查询，Renderer 保留失败分支和错误日志。
+   - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split
 

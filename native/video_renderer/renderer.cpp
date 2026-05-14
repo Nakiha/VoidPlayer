@@ -167,12 +167,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     }
 
     layout_controller_.reset(layout_);
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (tracks_[i]) {
-            layout_controller_.append_track(
-                layout_, tracks_[i]->file_id, static_cast<int>(i));
-        }
-    }
+    layout_controller_.append_tracks(layout_, tracks_);
 
     // Setup render sink
     render_sink_ = std::make_unique<RenderSink>(playback_->clock());

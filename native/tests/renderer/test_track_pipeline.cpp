@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "test_utils.h"
+#include "video_renderer/layout_controller.h"
 #include "video_renderer/layout_geometry.h"
 #include "video_renderer/track_lifecycle.h"
 #include "video_renderer/track_pipeline_factory.h"
@@ -244,6 +245,33 @@ TEST_CASE("LayoutGeometry snapshots track geometry",
     REQUIRE(geometry[2].width == 1280);
     REQUIRE(geometry[2].height == 720);
     REQUIRE(geometry[2].aspect == 4.0f / 3.0f);
+}
+
+TEST_CASE("LayoutController appends active tracks in slot order",
+          "[track_pipeline][layout_controller]") {
+    TrackPipelineManager manager;
+    auto first = std::make_unique<TrackPipeline>();
+    first->file_id = 21;
+    manager[1] = std::move(first);
+    auto second = std::make_unique<TrackPipeline>();
+    second->file_id = 42;
+    manager[3] = std::move(second);
+
+    LayoutController controller;
+    LayoutState layout;
+    controller.reset(layout);
+    controller.append_tracks(layout, manager);
+
+    REQUIRE(layout.order[0] == 1);
+    REQUIRE(layout.order[1] == 3);
+    REQUIRE(layout.order[2] == 0);
+    REQUIRE(layout.order[3] == 0);
+
+    const auto snapshot = controller.snapshot(layout);
+    REQUIRE(snapshot.order[0] == 21);
+    REQUIRE(snapshot.order[1] == 42);
+    REQUIRE(snapshot.order[2] == -1);
+    REQUIRE(snapshot.order[3] == -1);
 }
 
 TEST_CASE("TrackSnapshot builds track metadata",

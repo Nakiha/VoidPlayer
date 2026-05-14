@@ -117,6 +117,7 @@ Fixed or reduced:
 - `Renderer`: next frame deadline event PTS calculation moved into `track_present_policy`.
 - `Renderer`: paused preview snapshot assembly moved into dedicated `track_preview_policy` owner.
 - `Renderer`: paused-frame draw snapshot assembly moved into `track_preview_policy`.
+- `Renderer`: initial layout track-order append moved into `LayoutController`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -140,7 +141,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P85 Renderer Initial Layout Order Boundary.
+Next patch: P86 Renderer Initial Active-Track Query Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1325,6 +1326,8 @@ Result:
 
 ### P85 - Renderer Initial Layout Order Boundary
 
+Status: done in Patch 85.
+
 Goal:
 
 - Move `Renderer::initialize` initial layout track append loop into `LayoutController`.
@@ -1335,6 +1338,26 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewport_pan_layout_regression.csv`
+
+Result:
+
+- Added `LayoutController::append_tracks`.
+- `Renderer::initialize` now resets layout and delegates active track file-id/slot append to `LayoutController`.
+- Added native coverage for slot-order layout state and public file-id snapshot order.
+- Verified with native-only tests plus rebuilt smoke and viewport pan/layout UI.
+
+### P86 - Renderer Initial Active-Track Query Boundary
+
+Goal:
+
+- Remove the remaining ad hoc active-track scan from `Renderer::initialize`.
+- Reuse `TrackPipelineManager` as the owner of active-track count queries.
+- Preserve the existing "no valid tracks" failure behavior.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
 
 ## Do-Not-Drift List
 

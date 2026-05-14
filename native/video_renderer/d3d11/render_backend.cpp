@@ -100,6 +100,16 @@ bool D3D11RenderBackend::initialize_render_resources() {
         return false;
     }
 
+    if (!shader_manager_->compile_from_source(
+            kAnalysisOverlayMaskRectHlsl,
+            multitrack_includes,
+            "VSMain",
+            "PSMain",
+            resources_->overlay_mask_rect_shader)) {
+        spdlog::error("Renderer: failed to compile overlay mask rect shaders");
+        return false;
+    }
+
     if (!shader_manager_->create_constant_buffer(
             device_->device(),
             static_cast<UINT>(kShaderConstantsSize),

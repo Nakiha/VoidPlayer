@@ -320,6 +320,10 @@ private:
                                          bool need_color,
                                          bool need_mask);
     bool ensure_analysis_overlay_rect_buffer(int slot, uint32_t rect_count);
+    bool render_analysis_overlay_mask(int slot,
+                                      int width,
+                                      int height,
+                                      uint32_t rect_count);
     void draw_paused_frame(const char* reason);
     bool build_step_forward_decision_locked(PresentDecision& decision) const;
     void discard_step_forward_consumed_frames_locked(const PresentDecision& decision);
@@ -494,6 +498,7 @@ private:
         bool has_color_instances = false;
         bool has_mask = false;
         uint32_t color_instance_count = 0;
+        uint32_t mask_instance_count = 0;
         int track_file_id = -1;
         int frame_index = -1;
         int mode = -1;
@@ -513,7 +518,6 @@ private:
         uint32_t track_idx = 0;
     };
     std::array<std::vector<uint8_t>, kMaxTracks> analysis_overlay_pixels_;
-    std::array<std::vector<uint8_t>, kMaxTracks> analysis_overlay_line_pixels_;
     std::array<std::vector<AnalysisOverlayGpuRect>, kMaxTracks> analysis_overlay_rects_;
     std::array<AnalysisOverlayCache, kMaxTracks> analysis_overlay_cache_;
 

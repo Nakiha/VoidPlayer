@@ -1049,7 +1049,7 @@ int benchmark_overlay(const CliOptions& options) {
         ? static_cast<uint64_t>(options.width) * static_cast<uint64_t>(options.height)
         : 0;
     const uint64_t gpu_rect_upload_bytes = stats.cu_count * 16ull;
-    const uint64_t gpu_estimated_upload_bytes = gpu_rect_upload_bytes + mask_upload_bytes;
+    const uint64_t gpu_estimated_upload_bytes = gpu_rect_upload_bytes;
 
     if (options.json) {
         std::cout << "{"

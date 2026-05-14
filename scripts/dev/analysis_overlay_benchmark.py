@@ -187,7 +187,7 @@ def _format_markdown(report: dict) -> str:
         f"- Analyzer: `{report['analyzer']}`\n"
         f"- Video: `{r['video']}`\n"
         f"- Chunk: `{r['chunkPath']}`\n\n"
-        "| Codec | Frame | Mode | Grid | Size | Iterations | CUs | Filled Pixels | CPU Upload Bytes | GPU Upload Bytes | Avg Raster |\n"
+        "| Codec | Frame | Mode | Grid | Size | Iterations | CUs | Filled Pixels | CPU Upload Bytes | GPU Rect Upload Bytes | Avg Raster |\n"
         "| --- | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n"
         f"| {r['codec']} | {r['frame']} | {r['mode']} | {'yes' if r.get('withGrid') else 'no'} | "
         f"{r['width']}x{r['height']} | {r['iterations']} | {r['cuCount']} | "

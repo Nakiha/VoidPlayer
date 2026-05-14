@@ -123,13 +123,14 @@ dynamic texture，而是把每个 CU/MB 写成 16-byte packed rect instance，�
 structured buffer，并由 instanced quad pass 在 GPU 上直接绘制。平滑 pan/zoom/resize
 只更新已有 layout constants，不重新 raster 或上传整张 video-space color texture。
 
-CU/MB 反色线框仍使用独立 R8 mask texture。这个选择保留了共享边界的幂等绘制语义：
-同一条边只在 mask 中置位一次，再通过 fullscreen invert pass 合成，避免直接画线时
-双重叠加导致的点状闪烁。预测线/MV 线仍走小量 BGRA color texture fallback。使用
+CU/MB 反色线框也复用同一组 rect instances，在 GPU 侧写入 video-size R8 mask render
+target。这个选择保留了共享边界的幂等绘制语义：同一条边只在 mask 中置位一次，再通过
+fullscreen invert pass 合成，避免直接画线时双重叠加导致的点状闪烁。预测线/MV 线仍走
+小量 BGRA color texture fallback。使用
 `python dev.py analysis-overlay-benchmark --iterations 240` 可以独立测量 legacy dirty
-frame CPU raster 成本，并同时报告当前 GUI/DX11 路径的 estimated rect+mask upload
-字节数。后续如果边界 mask 仍成为瓶颈，应优先考虑 GPU-side R8 mask render target
-或 stencil/coverage pass，而不是直接把共享边界当普通 alpha line 绘制。
+frame CPU raster 成本，并同时报告当前 GUI/DX11 路径的 estimated rect upload 字节数。
+后续如果 GPU mask pass 仍成为瓶颈，应优先考虑更紧的 rect buffer 或 stencil/coverage
+策略，而不是回到普通 alpha line 绘制。
 
 当前 VACHUNK CU/MB record 已带 `bit_count`，`cuBitCostHeatmap` 使用
 `bit_count * 64 * 64 / (w * h)` 计算归一到 64x64 的 bit density，并用固定

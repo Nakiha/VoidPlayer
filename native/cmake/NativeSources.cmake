@@ -65,7 +65,8 @@ set(VOID_RENDERER_SHADER_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/shaders/multitrack.hlsl"
     "${VOID_NATIVE_DIR}/video_renderer/shaders/analysis_overlay.hlsl"
     "${VOID_NATIVE_DIR}/video_renderer/shaders/analysis_overlay_invert.hlsl"
-    "${VOID_NATIVE_DIR}/video_renderer/shaders/analysis_overlay_rect.hlsl")
+    "${VOID_NATIVE_DIR}/video_renderer/shaders/analysis_overlay_rect.hlsl"
+    "${VOID_NATIVE_DIR}/video_renderer/shaders/analysis_overlay_mask_rect.hlsl")
 set(VOID_RENDERER_SHADER_TEMPLATE
     "${VOID_NATIVE_DIR}/video_renderer/shaders/embedded_shaders.h.in")
 
@@ -85,6 +86,7 @@ function(void_configure_renderer_shaders output_dir)
     file(READ "${VOID_NATIVE_DIR}/video_renderer/shaders/analysis_overlay.hlsl" ANALYSIS_OVERLAY_HLSL)
     file(READ "${VOID_NATIVE_DIR}/video_renderer/shaders/analysis_overlay_invert.hlsl" ANALYSIS_OVERLAY_INVERT_HLSL)
     file(READ "${VOID_NATIVE_DIR}/video_renderer/shaders/analysis_overlay_rect.hlsl" ANALYSIS_OVERLAY_RECT_HLSL)
+    file(READ "${VOID_NATIVE_DIR}/video_renderer/shaders/analysis_overlay_mask_rect.hlsl" ANALYSIS_OVERLAY_MASK_RECT_HLSL)
     configure_file(
         "${VOID_RENDERER_SHADER_TEMPLATE}"
         "${output_dir}/embedded_shaders.h"

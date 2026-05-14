@@ -25,6 +25,7 @@ struct D3D11RenderResources {
     CompiledShader overlay_shader;
     CompiledShader overlay_invert_shader;
     CompiledShader overlay_rect_shader;
+    CompiledShader overlay_mask_rect_shader;
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertex_buffer;
     Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_state;
     Microsoft::WRL::ComPtr<ID3D11SamplerState> overlay_sampler_state;
@@ -34,6 +35,7 @@ struct D3D11RenderResources {
     std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 4> overlay_srvs;
     std::array<Microsoft::WRL::ComPtr<ID3D11Texture2D>, 4> overlay_mask_textures;
     std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 4> overlay_mask_srvs;
+    std::array<Microsoft::WRL::ComPtr<ID3D11RenderTargetView>, 4> overlay_mask_rtvs;
     std::array<Microsoft::WRL::ComPtr<ID3D11Buffer>, 4> overlay_rect_buffers;
     std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 4> overlay_rect_srvs;
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> cached_rtv;

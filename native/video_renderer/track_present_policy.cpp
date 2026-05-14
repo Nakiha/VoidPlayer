@@ -14,6 +14,16 @@ bool present_decision_has_frame(const PresentDecision& decision) {
     return false;
 }
 
+std::optional<int64_t> first_present_decision_frame_pts_us(
+    const PresentDecision& decision) {
+    for (const auto& frame : decision.frames) {
+        if (frame.has_value()) {
+            return frame->pts_us;
+        }
+    }
+    return std::nullopt;
+}
+
 void apply_present_carry_forward(
     const TrackPipelineManager& tracks,
     const PresentDecision& last_decision,

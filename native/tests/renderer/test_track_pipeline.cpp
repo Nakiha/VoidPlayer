@@ -1156,12 +1156,19 @@ TEST_CASE("TrackPresentPolicy detects frames in present decisions",
           "[track_pipeline][track_present_policy]") {
     PresentDecision decision;
     REQUIRE_FALSE(present_decision_has_frame(decision));
+    REQUIRE_FALSE(first_present_decision_frame_pts_us(decision).has_value());
 
     TextureFrame frame;
     frame.pts_us = 1234;
     decision.frames[2] = frame;
 
     REQUIRE(present_decision_has_frame(decision));
+    REQUIRE(first_present_decision_frame_pts_us(decision) == 1234);
+
+    TextureFrame earlier_slot_frame;
+    earlier_slot_frame.pts_us = 5678;
+    decision.frames[0] = earlier_slot_frame;
+    REQUIRE(first_present_decision_frame_pts_us(decision) == 5678);
 }
 
 TEST_CASE("TrackPresentPolicy carries forward active last frames",

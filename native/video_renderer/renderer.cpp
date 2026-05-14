@@ -1287,12 +1287,12 @@ void Renderer::render_loop() {
                 if (present_decision_has_frame(last_decision_)) {
                     present_frame(last_decision_);
                     drawn = true;
+                    const auto pts_us =
+                        first_present_decision_frame_pts_us(last_decision_);
                     spdlog::debug("[Renderer] Paused frame (cached): pts={:.3f}s",
-                                 [&]{
-                                     for (auto& f : last_decision_.frames)
-                                         if (f.has_value()) return f->pts_us / 1e6;
-                                     return -1.0;
-                                 }());
+                                  pts_us.has_value()
+                                      ? static_cast<double>(*pts_us) / 1e6
+                                      : -1.0);
                 }
 
                 // No cached frame — try track buffer (initial preview)

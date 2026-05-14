@@ -131,6 +131,7 @@ Fixed or reduced:
 - `TrackPipelineManager`: demux/decode pipeline construction moved into `TrackPipelineFactory`, leaving manager focused on slot storage, stop, and compact.
 - `Renderer`: track pipeline metadata setup, callback/audio hook registration, demux start, and failed-start rollback moved into `track_lifecycle`.
 - `Renderer`: track geometry mutation from presented frames moved into `layout_geometry`; Renderer now only logs returned geometry updates.
+- `Renderer`: cached paused-frame first-PTS lookup moved into `track_present_policy`.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
@@ -149,7 +150,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P94 Renderer Cached Present PTS Query Boundary.
+Next patch: P95 Renderer Seek Preview Event Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1530,6 +1531,8 @@ Result:
 
 ### P94 - Renderer Cached Present PTS Query Boundary
 
+Status: done in Patch 94.
+
 Goal:
 
 - Move the cached paused-frame first-PTS scan out of `Renderer::run`.
@@ -1540,6 +1543,26 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `first_present_decision_frame_pts_us` to `track_present_policy`.
+- Removed the anonymous `last_decision_.frames` scan from the paused cached-frame logging path.
+- Extended native present policy coverage for empty decisions and slot-order PTS selection.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P95 - Renderer Seek Preview Event Boundary
+
+Goal:
+
+- Move seek-preview presented track-event collection out of `Renderer::emit_seek_preview_presented_events`.
+- Keep Renderer responsible for pending seek-event state and callback emission.
+- Reuse track file-id and `PresentDecision` data through a focused present policy helper.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/timeline/h265_timeline_click_like.csv`
 
 ## Do-Not-Drift List
 

@@ -361,9 +361,13 @@ TODO:
    - 已把 `Renderer::update_track_geometry_from_decision_locked()` 的 frame-size/aspect mutation 迁入 layout/geometry helper，Renderer 保留日志。
    - 验证：native-only + smoke/viewport UI。
 
-50. [ ] `CachedPresentPtsQuery`
-   - 后续把 paused cached-frame 日志里的 first-frame PTS scan 迁入 present policy helper，Renderer 只负责日志格式。
+50. [x] `CachedPresentPtsQuery`
+   - 已把 paused cached-frame 日志里的 first-frame PTS scan 迁入 present policy helper，Renderer 只负责日志格式。
    - 验证：native-only + smoke UI。
+
+51. [ ] `SeekPreviewPresentedEventCollection`
+   - 后续把 `Renderer::emit_seek_preview_presented_events()` 中按 slot 拼 seek-preview presented track event 的扫描迁入 present policy helper。
+   - 验证：native-only + smoke/timeline UI。
 
 ## P1 - Windows Runner Plugin Split
 

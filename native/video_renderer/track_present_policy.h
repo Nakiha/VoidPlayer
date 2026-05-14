@@ -14,6 +14,9 @@ struct EmptyBufferEofClamp {
 
 bool present_decision_has_frame(const PresentDecision& decision);
 
+std::optional<int64_t> first_present_decision_frame_pts_us(
+    const PresentDecision& decision);
+
 void apply_present_carry_forward(
     const TrackPipelineManager& tracks,
     const PresentDecision& last_decision,

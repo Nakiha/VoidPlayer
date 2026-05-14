@@ -160,6 +160,8 @@ Examples:
                                      help="Heatmap mode")
     p_overlay_benchmark.add_argument("--with-grid", action="store_true",
                                      help="Also raster the CU/MB boundary mask")
+    p_overlay_benchmark.add_argument("--skip-gpu", action="store_true",
+                                     help="Skip D3D11 GPU timestamp benchmark")
 
     return parser
 

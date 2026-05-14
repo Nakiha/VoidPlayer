@@ -40,10 +40,18 @@ if(WIN32 AND BUILD_TESTS)
 endif()
 
 if(WIN32)
-    add_executable(VoidPlayerCli tools/void_player_cli.cpp)
+    add_executable(VoidPlayerCli
+        tools/void_player_cli.cpp
+        tools/analysis_overlay_gpu_benchmark.cpp)
     void_apply_native_compile_options(VoidPlayerCli)
-    target_include_directories(VoidPlayerCli PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_link_libraries(VoidPlayerCli PRIVATE analysis_lib)
+    target_include_directories(VoidPlayerCli PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${CMAKE_BINARY_DIR}/video_renderer")
+    target_link_libraries(VoidPlayerCli PRIVATE
+        analysis_lib
+        d3d11
+        dxgi
+        d3dcompiler)
     if(BUILD_TESTS)
         add_executable(analysis_cli_smoke_tests
             tests/analysis/test_analysis_cli.cpp

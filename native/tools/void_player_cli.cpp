@@ -6,6 +6,7 @@
 #include "analysis/parsers/vac2_parser.h"
 #include "analysis/parsers/vachunk_parser.h"
 #include "common/win_utf8.h"
+#include "tools/analysis_overlay_gpu_benchmark.h"
 
 #include <algorithm>
 #include <chrono>
@@ -224,12 +225,14 @@ void print_usage(std::ostream& out) {
         "  VoidPlayerCli frame <base.vac> --index N [--json]\n"
         "  VoidPlayerCli chunk-frame <chunk.vck> --frame N [--json] [--limit N]\n"
         "  VoidPlayerCli benchmark-overlay <chunk.vck> --frame N [--width N] [--height N] [--iterations N] [--mode bitrate|qp] [--with-grid] [--json]\n\n"
+        "  VoidPlayerCli benchmark-overlay-gpu <chunk.vck> --frame N [--width N] [--height N] [--iterations N] [--mode bitrate|qp] [--with-grid] [--json]\n\n"
         "  VoidPlayerCli generate-base --input <video> --cache-root <dir> --hash <hash> [--json]\n"
         "  VoidPlayerCli generate-overlay --input <video> --cache-root <dir> --hash <hash> --start-frame N --end-frame N [--codec h264|hevc|vvc] [--analyzer <exe>] [--json]\n\n"
         "Examples:\n"
         "  VoidPlayerCli inspect \"%APPDATA%\\VoidPlayer\\cache\\<hash>\\base.vac\"\n"
         "  VoidPlayerCli chunk-frame \"overlay.vck\" --frame 128 --json\n"
         "  VoidPlayerCli benchmark-overlay \"overlay.vck\" --frame 0 --iterations 240 --with-grid --json\n"
+        "  VoidPlayerCli benchmark-overlay-gpu \"overlay.vck\" --frame 0 --iterations 240 --with-grid --json\n"
         "  VoidPlayerCli generate-base --input input.mp4 --cache-root \"%APPDATA%\\VoidPlayer\\cache\" --hash <hash>\n"
         "  VoidPlayerCli generate-overlay --input input.mp4 --cache-root \"%APPDATA%\\VoidPlayer\\cache\" --hash <hash> --start-frame 128 --end-frame 191\n";
 }
@@ -297,7 +300,9 @@ bool parse_args(const std::vector<std::string>& args, CliOptions& options) {
         !options.value.empty()) {
         if (!parse_u32(options.value, options.frame)) return false;
     }
-    if (options.command == "benchmark-overlay" && options.frame == UINT32_MAX &&
+    if ((options.command == "benchmark-overlay" ||
+         options.command == "benchmark-overlay-gpu") &&
+        options.frame == UINT32_MAX &&
         !options.value.empty()) {
         if (!parse_u32(options.value, options.frame)) return false;
     }
@@ -1272,6 +1277,18 @@ int run_cli(const std::vector<std::string>& args) {
         return print_chunk_frame(options);
     }
     if (options.command == "benchmark-overlay") return benchmark_overlay(options);
+    if (options.command == "benchmark-overlay-gpu") {
+        vr::tools::AnalysisOverlayGpuBenchmarkOptions gpu_options;
+        gpu_options.path = options.path;
+        gpu_options.mode = options.mode;
+        gpu_options.frame = options.frame;
+        gpu_options.width = options.width;
+        gpu_options.height = options.height;
+        gpu_options.iterations = options.iterations;
+        gpu_options.with_grid = options.with_grid;
+        gpu_options.json = options.json;
+        return vr::tools::benchmark_analysis_overlay_gpu(gpu_options);
+    }
     std::cerr << "Unknown command: " << options.command << "\n";
     print_usage(std::cerr);
     return 1;

@@ -50,6 +50,7 @@ if(FFMPEG_FOUND)
 
   add_executable(VoidPlayerCli
     "../../native/tools/void_player_cli.cpp"
+    "../../native/tools/analysis_overlay_gpu_benchmark.cpp"
     "../../native/analysis/cache/overlay_chunk.cpp"
     "../../native/analysis/cache/overlay_raster.cpp"
     "../../native/analysis/cache/vacache_store.cpp"
@@ -70,6 +71,7 @@ if(FFMPEG_FOUND)
   )
   target_include_directories(VoidPlayerCli PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../native"
+    "${CMAKE_CURRENT_BINARY_DIR}"
   )
   target_include_directories(VoidPlayerCli SYSTEM PRIVATE
     "${FFMPEG_INCLUDE_DIR}"
@@ -80,6 +82,9 @@ if(FFMPEG_FOUND)
     ${AVCODEC_LIBRARY}
     ${AVFORMAT_LIBRARY}
     ${AVUTIL_LIBRARY}
+    d3d11
+    dxgi
+    d3dcompiler
   )
 endif(FFMPEG_FOUND)
 

@@ -45,9 +45,9 @@ python dev.py analysis-benchmark h264 h265 h266
 这条流程会同时覆盖 CLI、VAC2 生成、overlay VACHUNK 生成、chunk inspect 和
 zstd section 压缩统计。
 
-Analysis overlay benchmark 用于测量 legacy dirty-frame CPU raster 参考成本，并估算
-当前 GUI/DX11 路径把 VACHUNK CU 记录上传为 GPU rect instances 的字节数。它默认使用
-H.266 小样第一帧、比特率热力图，并优先使用 native build 目录下的
+Analysis overlay benchmark 用于测量 legacy dirty-frame CPU raster 参考成本、估算
+当前 GUI/DX11 路径把 VACHUNK CU 记录上传为 GPU rect instances 的字节数，并通过
+D3D11 timestamp query 量化 overlay GPU pass。它默认使用 H.266 小样第一帧、比特率热力图，并优先使用 native build 目录下的
 `VoidPlayerCli.exe`，方便在 renderer/analysis 迭代时拿到最新代码：
 
 ```bash
@@ -61,8 +61,9 @@ python dev.py analysis-overlay-benchmark --video <video> --codec hevc --frame 12
 这条基准不代表完整 GUI 的 D3D blend 或窗口合成成本。GUI 当前对热力图/预测模式填充
 使用 16-byte packed rect structured buffer + instanced quad pass；CU/MB 反色边界用同一
 rect buffer 在 GPU 侧生成 R8 mask render target，以避免共享边界双绘制。`--with-grid`
-会同时测 legacy CU/MB 边界 mask raster，并输出 legacy CPU texture upload 与当前 GPU
-rect upload 的字节数估算。
+会同时测 legacy CU/MB 边界 mask raster，并输出 legacy CPU texture upload、当前 GPU
+rect upload、rect upload CPU wall time、color instance pass、GPU mask pass、invert pass
+和 full overlay pass 的平均耗时。可用 `--skip-gpu` 只跑 CPU reference。
 
 `dev.py build --native` 会在 native CMake 构建前检查 analysis 外部工具：
 

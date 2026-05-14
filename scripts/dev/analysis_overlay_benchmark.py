@@ -61,6 +61,7 @@ def cmd_analysis_overlay_benchmark(args) -> None:
         iterations=args.iterations,
         mode=args.mode,
         with_grid=args.with_grid,
+        run_gpu=not args.skip_gpu,
     )
     report = {
         "schema": "voidplayer-analysis-overlay-benchmark-v1",
@@ -127,6 +128,7 @@ def _benchmark(
     iterations: int,
     mode: str,
     with_grid: bool,
+    run_gpu: bool,
 ) -> dict:
     sample_hash = _hash_for_sample(codec, video)
     print(f"\nOverlay benchmark {codec}: {video.name} frame={frame} mode={mode}")
@@ -166,22 +168,49 @@ def _benchmark(
         bench_command.append("--with-grid")
     bench_command.append("--json")
     bench, _ = _run_json(bench_command)
+    gpu_bench = None
+    if run_gpu:
+        gpu_command = [
+            str(cli),
+            "benchmark-overlay-gpu",
+            chunk["path"],
+            "--frame", str(frame),
+            "--width", str(width),
+            "--height", str(height),
+            "--iterations", str(iterations),
+            "--mode", mode,
+        ]
+        if with_grid:
+            gpu_command.append("--with-grid")
+        gpu_command.append("--json")
+        gpu_bench, _ = _run_json(gpu_command)
     bench["codec"] = codec
     bench["video"] = str(video)
     bench["frames"] = frames
     bench["overlayGenerateSeconds"] = overlay_seconds
     bench["chunkPath"] = chunk["path"]
+    if gpu_bench is not None:
+        bench["gpu"] = gpu_bench
     print(
         f"  avg={bench['avgMs']:.3f}ms iterations={iterations} "
         f"cus={bench['cuCount']} filled={bench['filledPixels']} "
         f"gpuUpload={bench.get('gpuEstimatedUploadBytes', 0)}"
     )
+    if gpu_bench is not None:
+        print(
+            f"  gpu device={gpu_bench.get('deviceType', 'unknown')} "
+            f"full={gpu_bench['fullOverlayGpuMs']:.4f}ms "
+            f"color={gpu_bench['colorPassGpuMs']:.4f}ms "
+            f"mask={gpu_bench['maskPassGpuMs']:.4f}ms "
+            f"invert={gpu_bench['invertPassGpuMs']:.4f}ms "
+            f"uploadCpu={gpu_bench['rectUploadCpuMs']:.4f}ms"
+        )
     return bench
 
 
 def _format_markdown(report: dict) -> str:
     r = report["result"]
-    return (
+    text = (
         "# Analysis Overlay Benchmark\n\n"
         f"- CLI: `{report['cli']}`\n"
         f"- Analyzer: `{report['analyzer']}`\n"
@@ -195,3 +224,17 @@ def _format_markdown(report: dict) -> str:
         f"{r.get('gpuEstimatedUploadBytes', 0)} | "
         f"{r['avgMs']:.3f} ms |\n"
     )
+    gpu = r.get("gpu")
+    if gpu:
+        text += (
+            "\n## GPU Pass Timing\n\n"
+            "| Device | Rect Upload CPU | Color Pass GPU | Mask Pass GPU | Invert Pass GPU | Full Overlay GPU |\n"
+            "| --- | ---: | ---: | ---: | ---: | ---: |\n"
+            f"| {gpu.get('deviceType', 'unknown')} | "
+            f"{gpu.get('rectUploadCpuMs', 0):.4f} ms | "
+            f"{gpu.get('colorPassGpuMs', 0):.4f} ms | "
+            f"{gpu.get('maskPassGpuMs', 0):.4f} ms | "
+            f"{gpu.get('invertPassGpuMs', 0):.4f} ms | "
+            f"{gpu.get('fullOverlayGpuMs', 0):.4f} ms |\n"
+        )
+    return text

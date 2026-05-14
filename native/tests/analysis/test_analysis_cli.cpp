@@ -264,6 +264,16 @@ int main(int argc, char** argv) {
             "--iterations", "2",
             "--with-grid",
             "--json",
+        }) &&
+        run_cli(cli_path, {
+            "benchmark-overlay-gpu",
+            fixture.vck_path,
+            "--frame", "1",
+            "--width", "64",
+            "--height", "64",
+            "--iterations", "2",
+            "--with-grid",
+            "--json",
         });
 
     bool generation_ok = true;

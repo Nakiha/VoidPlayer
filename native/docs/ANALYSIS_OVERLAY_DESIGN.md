@@ -128,7 +128,8 @@ target。这个选择保留了共享边界的幂等绘制语义：同一条边�
 fullscreen invert pass 合成，避免直接画线时双重叠加导致的点状闪烁。预测线/MV 线仍走
 小量 BGRA color texture fallback。使用
 `python dev.py analysis-overlay-benchmark --iterations 240` 可以独立测量 legacy dirty
-frame CPU raster 成本，并同时报告当前 GUI/DX11 路径的 estimated rect upload 字节数。
+frame CPU raster 成本、当前 GUI/DX11 路径的 estimated rect upload 字节数，以及
+rect upload / color pass / GPU mask pass / invert pass / full overlay pass 的粒度耗时。
 后续如果 GPU mask pass 仍成为瓶颈，应优先考虑更紧的 rect buffer 或 stencil/coverage
 策略，而不是回到普通 alpha line 绘制。
 

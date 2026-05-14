@@ -881,21 +881,7 @@ void Renderer::step_backward() {
         playback_->clock().pause();
         playing_ = false;
 
-        // Check if ALL tracks can retreat (cache hit)
-        bool all_can_retreat = true;
-        for (size_t i = 0; i < kMaxTracks; ++i) {
-            if (!tracks_[i]) continue;
-            if (!tracks_[i]->track_buffer->can_retreat()) {
-                all_can_retreat = false;
-                break;
-            }
-        }
-
-        if (all_can_retreat) {
-            for (size_t i = 0; i < kMaxTracks; ++i) {
-                if (!tracks_[i]) continue;
-                tracks_[i]->track_buffer->retreat();
-            }
+        if (retreat_tracks_if_all_can_retreat(tracks_)) {
             int ref = first_active_track();
             if (ref >= 0) {
                 auto frame = tracks_[ref]->track_buffer->peek(0);

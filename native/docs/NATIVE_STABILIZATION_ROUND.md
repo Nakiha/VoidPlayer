@@ -104,6 +104,7 @@ Fixed or reduced:
 - `Renderer`: remaining all-track decode/audio pause fanout moved into `track_lifecycle`.
 - `Renderer`: step-forward temporary video decode pause/resume fanout moved into `track_lifecycle`.
 - `Renderer`: shared step buffering gate moved into `track_lifecycle`.
+- `Renderer`: step-backward retreat fanout moved into `track_lifecycle`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -127,7 +128,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P72 Renderer Step Backward Retreat Boundary.
+Next patch: P73 Renderer Step Policy Owner Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1027,10 +1028,32 @@ Result:
 
 ### P72 - Renderer Step Backward Retreat Boundary
 
+Status: done in Patch 72.
+
 Goal:
 
 - Move `Renderer::step_backward` all-track `can_retreat()` and `retreat()` fanout into a track lifecycle helper.
 - Keep `Renderer` responsible for lifecycle/state locks, playback clock pause, reference-track clock seek, fallback exact seek, and final paused-frame draw.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `retreat_tracks_if_all_can_retreat` to move the all-track `can_retreat()` / `retreat()` sequence behind one lifecycle helper.
+- Preserved all-or-nothing behavior: no track is retreated unless every active track can retreat.
+- `Renderer::step_backward` now keeps clock/fallback/draw decisions and delegates the per-track retreat fanout.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P73 - Renderer Step Policy Owner Boundary
+
+Goal:
+
+- Move step-specific helpers out of generic `track_lifecycle` into a dedicated `track_step_policy` owner before step logic grows there.
+- Keep public helper semantics unchanged: Buffering gate, video decode pause fanout, and backward retreat fanout should keep their existing tests.
+- Keep `Renderer` call sites behavior-equivalent in this ownership-only patch.
 
 Validation:
 

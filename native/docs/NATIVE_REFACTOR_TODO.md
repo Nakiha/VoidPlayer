@@ -273,8 +273,12 @@ TODO:
    - 已把 `step_forward()` / `step_backward()` 共享的 Buffering 轨道阻塞判断拆到 helper，Renderer 保留锁和 step/fallback 决策。
    - 验证：native-only + smoke/step-forward UI。
 
-28. [ ] `StepBackwardRetreatFanout`
-   - 后续把 `step_backward()` 内 all-track `can_retreat()` / `retreat()` 扇出拆到 helper，Renderer 保留 clock seek、fallback exact seek 和 draw 决策。
+28. [x] `StepBackwardRetreatFanout`
+   - 已把 `step_backward()` 内 all-track `can_retreat()` / `retreat()` 扇出拆到 helper，Renderer 保留 clock seek、fallback exact seek 和 draw 决策。
+   - 验证：native-only + smoke UI。
+
+29. [ ] `StepPolicyOwner`
+   - 后续把 step-specific helper 从 generic `track_lifecycle` 迁到独立 `track_step_policy`，避免 lifecycle helper 继续膨胀成二级 god object。
    - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split

@@ -663,6 +663,50 @@ TEST_CASE("TrackLifecycle detects buffering tracks",
     REQUIRE_FALSE(has_buffering_track(manager));
 }
 
+TEST_CASE("TrackLifecycle retreats tracks only when all can retreat",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineManager empty_manager;
+    REQUIRE(retreat_tracks_if_all_can_retreat(empty_manager));
+
+    const auto make_retreatable_track = [](int64_t previous_pts,
+                                           int64_t current_pts) {
+        auto track = std::make_unique<TrackPipeline>();
+        track->track_buffer = std::make_shared<TrackBuffer>();
+        TextureFrame previous;
+        previous.pts_us = previous_pts;
+        TextureFrame current;
+        current.pts_us = current_pts;
+        track->track_buffer->push_frame(previous);
+        track->track_buffer->push_frame(current);
+        REQUIRE(track->track_buffer->advance());
+        REQUIRE(track->track_buffer->can_retreat());
+        REQUIRE(track->track_buffer->peek(0)->pts_us == current_pts);
+        return track;
+    };
+
+    TrackPipelineManager success_manager;
+    success_manager[0] = make_retreatable_track(100, 200);
+    success_manager[2] = make_retreatable_track(300, 400);
+
+    REQUIRE(retreat_tracks_if_all_can_retreat(success_manager));
+    REQUIRE(success_manager[0]->track_buffer->peek(0)->pts_us == 100);
+    REQUIRE(success_manager[2]->track_buffer->peek(0)->pts_us == 300);
+
+    TrackPipelineManager failure_manager;
+    failure_manager[0] = make_retreatable_track(500, 600);
+    auto non_retreatable = std::make_unique<TrackPipeline>();
+    non_retreatable->track_buffer = std::make_shared<TrackBuffer>();
+    TextureFrame only_frame;
+    only_frame.pts_us = 700;
+    non_retreatable->track_buffer->push_frame(only_frame);
+    REQUIRE_FALSE(non_retreatable->track_buffer->can_retreat());
+    failure_manager[1] = std::move(non_retreatable);
+
+    REQUIRE_FALSE(retreat_tracks_if_all_can_retreat(failure_manager));
+    REQUIRE(failure_manager[0]->track_buffer->peek(0)->pts_us == 600);
+    REQUIRE(failure_manager[1]->track_buffer->peek(0)->pts_us == 700);
+}
+
 TEST_CASE("TrackLifecycle prepares add-track seek to current clock",
           "[track_pipeline][track_lifecycle]") {
     TrackPipeline track;

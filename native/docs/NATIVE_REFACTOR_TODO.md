@@ -257,7 +257,8 @@ TODO:
 - [x] 先跑 native 层，不依赖 Flutter UI。Round 17 使用 windowed software renderer；headless capture stress 留给后续。
 - [x] 给 DecodeThread exact seek lookbehind / preview-window selection 增加更小粒度状态机单测。
 - [x] 给 DecodeThread pending/drain/pause/stale-packet loop guards 增加更小粒度状态机单测。
-- [ ] 给 DecodeThread EOF drain/codec flush 增加更小粒度状态机单测。
+- [x] 给 DecodeThread EOF drain/exact-seek EOF publish decisions 增加更小粒度状态机单测。
+- [ ] 给 DecodeThread codec send/receive、AVFrame ownership 和硬解 visibility flush 增加更小粒度边界测试。
 - [x] 增加 shutdown during seek + recreate UI smoke。
 - [ ] 给 Renderer shutdown during capture/resize 增加 smoke/stress。
 - [x] 记录每个 stress test 的 seed 和失败复现命令入口。

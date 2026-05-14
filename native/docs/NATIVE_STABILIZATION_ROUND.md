@@ -90,6 +90,7 @@ Fixed or reduced:
 - `TrackPipelineManager`: demux/decode pipeline construction moved into `TrackPipelineFactory`, leaving manager focused on slot storage, stop, and compact.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
+- `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
 - `NativeResourceBudget`: track buffer queued-frame depth decision moved into `TrackBufferBudget` and is tested as a policy boundary.
 - Windows runner plugin: diagnostics, logging bootstrap, texture bridge, file picker, method dispatch, and MethodChannel diagnostics scope were split.
 - Process-global logging/crash FFI ownership is now documented.
@@ -105,7 +106,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P49 DecodeThread EOF Drain/Codec Flush Policy.
+Next patch: P50 Renderer Track Lifecycle Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -520,6 +521,8 @@ Result:
 
 ### P49 - DecodeThread EOF Drain/Codec Flush Policy
 
+Status: done in Patch 49.
+
 Goal:
 
 - Continue P46 by isolating EOF drain and codec-flush decisions that are still embedded in the decode loop.
@@ -529,6 +532,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - HEVC seek/step or smoke UI script if decode state transitions change.
+
+Result:
+
+- Extended `decode_loop_policy` with EOF drain action selection for Buffering exact seek, Buffering non-exact, and normal codec-drain states.
+- Added exact-seek reorder publish policy for preview-window readiness and queue-EOF drain/publish behavior.
+- Kept FFmpeg send/receive, AVFrame ownership, and hardware visibility flush calls inside `DecodeThread`.
+- Verified with native-only tests plus rebuilt smoke and HEVC seek visual UI scripts.
+
+### P50 - Renderer Track Lifecycle Boundary
+
+Goal:
+
+- Move track add/recreate/rollback sequencing out of `Renderer` into a narrow lifecycle helper without changing slot ownership or render-thread contracts.
+- Keep `Renderer` as the coordination root for this patch; only remove duplicated start/rollback mechanics that already depend on `TrackPipelineFactory`.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`
 
 ## Do-Not-Drift List
 

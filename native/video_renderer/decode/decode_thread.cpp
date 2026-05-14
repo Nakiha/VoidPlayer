@@ -1068,10 +1068,16 @@ void DecodeThread::run() {
             // Skip during Buffering (post-seek preroll) — the DemuxThread may
             // signal EOF very quickly after seek (file is cached), but we need
             // to keep decoding to fill the preroll buffer first.
-            if (input_queue_.is_eof() && !eof_flushed_) {
-                if (output_buffer_.state() == TrackState::Buffering) {
-                    // Drain codec for exact seek to flush remaining DPB frames
-                    if (exact_seek_target_us_ >= 0) {
+            const auto eof_action = choose_eof_drain_action(
+                input_queue_.is_eof(),
+                eof_flushed_,
+                output_buffer_.state(),
+                exact_seek_target_us_ >= 0);
+            if (eof_action != EofDrainAction::None) {
+                if (eof_action == EofDrainAction::BufferingExactSeekDrain ||
+                    eof_action == EofDrainAction::BufferingMarkFlushed) {
+                    // Drain codec for exact seek to flush remaining DPB frames.
+                    if (eof_action == EofDrainAction::BufferingExactSeekDrain) {
                         drain_codec(frame, rescale_ts, exact_seek_target_us_);
                         spdlog::info("[DecodeThread] Exact seek EOF drain: reorder buffer has {} frames",
                                      exact_seek_reorder_.size());
@@ -1080,7 +1086,7 @@ void DecodeThread::run() {
                     }
 
                     // Flush exact-seek reorder buffer at EOF — no more frames coming.
-                    if (exact_seek_target_us_ >= 0) {
+                    if (eof_action == EofDrainAction::BufferingExactSeekDrain) {
                         publish_best_exact_seek_frame();
                     } else {
                         flush_reorder_buffer();
@@ -1098,7 +1104,7 @@ void DecodeThread::run() {
                                      "(buf={}, pq={})",
                                      output_buffer_.total_count(), input_queue_.size());
                     }
-                } else {
+                } else if (eof_action == EofDrainAction::CodecDrain) {
                     int send_ret = seh_send_packet(codec_ctx_, nullptr);
                     if (send_ret < 0 && send_ret != AVERROR(EAGAIN) && send_ret != AVERROR_EOF) {
                         if (send_ret == kSehCaught) {
@@ -1282,22 +1288,20 @@ void DecodeThread::run() {
         // publishes once enough frames are collected, but EOF/drain can also
         // make the buffer ready here.
         if (exact_seek_target_us_ >= 0 && !exact_seek_reorder_.empty()) {
-            bool should_publish = false;
-
-            if (input_queue_.is_eof() && input_queue_.size() == 0) {
-                if (!eof_flushed_) {
-                    drain_codec(frame, rescale_ts, exact_seek_target_us_);
-                    spdlog::info("[DecodeThread] Exact seek EOF: codec drain, reorder buffer now has {} frames",
-                                 exact_seek_reorder_.size());
-                }
-                should_publish = true;
-            } else {
-                if (exact_seek_preview_window_ready()) {
-                    should_publish = true;
-                }
+            const auto publish_decision = choose_exact_seek_reorder_publish(
+                exact_seek_target_us_ >= 0,
+                exact_seek_reorder_.size(),
+                input_queue_.is_eof(),
+                input_queue_.size(),
+                eof_flushed_,
+                exact_seek_preview_window_ready());
+            if (publish_decision.drain_codec) {
+                drain_codec(frame, rescale_ts, exact_seek_target_us_);
+                spdlog::info("[DecodeThread] Exact seek EOF: codec drain, reorder buffer now has {} frames",
+                             exact_seek_reorder_.size());
             }
 
-            if (should_publish) {
+            if (publish_decision.publish) {
                 publish_best_exact_seek_frame();
                 auto first = output_buffer_.peek(0);
                 spdlog::info("[DecodeThread] Exact seek reorder: frames pushed, first_pts={:.3f}s",

@@ -87,6 +87,7 @@ Fixed or reduced:
 - `Renderer`: remove-track stop/compact render-sink/presenter slot side effects and cached `PresentDecision` frame compaction moved into `track_lifecycle`.
 - `Renderer`: add-track current-clock seek target clamp, buffer/queue flush, audio pause, and seek type choice moved into `track_lifecycle`.
 - `Renderer`: HEVC hardware seek recreate/coalesce/error decision moved into `SeekCoordinator` policy.
+- `Renderer`: generic per-track seek preparation and post-recreate seek submission moved into `track_lifecycle`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -103,14 +104,14 @@ Still active:
 
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
-- `Renderer` still owns track slot commit, layout mutation, playback pause/resume, and per-track seek preparation side effects.
+- `Renderer` still owns track slot commit, layout mutation, playback pause/resume, global seek clock/deferred gates, and seek pipeline recreation.
 - `DecodeThread` main loop still owns codec send/receive, EOF drain, AVFrame ownership, and hardware visibility transitions.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P54 Renderer Seek Track Preparation Boundary.
+Next patch: P55 Renderer Seek Pipeline Recreate Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -630,6 +631,8 @@ Result:
 
 ### P54 - Renderer Seek Track Preparation Boundary
 
+Status: done in Patch 54.
+
 Goal:
 
 - Move generic per-track seek preparation side effects out of `Renderer::seek_internal`: decode/audio pause, buffer state transition, frame clear, presenter reset trigger, packet/audio queue flush, and seek request submission.
@@ -639,6 +642,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/timeline/h265_timeline_seek_crash.csv ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`
+
+Result:
+
+- Added `prepare_track_seek_transition` and `submit_track_seek_after_recreate` to `track_lifecycle`.
+- `Renderer::seek_internal` now delegates per-track pause/flush/reset preparation and post-recreate seek request submission.
+- Added native coverage for generic track seek preparation, transition detection, packet/audio queue flushing, presenter reset hook dispatch, and recreated seek suppression.
+- Verified with native-only tests plus rebuilt smoke, H.265 timeline seek crash, and shutdown-during-seek recreate UI scripts.
+
+### P55 - Renderer Seek Pipeline Recreate Boundary
+
+Goal:
+
+- Move `recreate_pipeline_for_seek` stop/recreate/start/render-sink commit choreography into a lifecycle helper.
+- Keep the HEVC recreate decision, pipeline factory callback, and Renderer-owned audio/render-sink hooks at the Renderer boundary.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`
 
 ## Do-Not-Drift List
 

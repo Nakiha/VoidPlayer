@@ -278,3 +278,68 @@ TEST_CASE("TrackLifecycle prepares add-track seek to current clock",
     REQUIRE(pending_seek->type == SeekType::Keyframe);
     REQUIRE(audio_pause_count == 2);
 }
+
+TEST_CASE("TrackLifecycle prepares generic track seek transition",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipeline track;
+    track.file_id = 77;
+    track.packet_queue = std::make_unique<PacketQueue>();
+    track.audio_packet_queue = std::make_unique<PacketQueue>();
+    track.track_buffer = std::make_shared<TrackBuffer>(4, 1);
+    track.track_buffer->set_state(TrackState::Ready);
+
+    TextureFrame frame;
+    frame.pts_us = 1000;
+    track.track_buffer->push_frame(frame);
+
+    int audio_pause_count = 0;
+    int presenter_reset_count = 0;
+    const TrackSeekPreparationHooks hooks{
+        [&](int file_id, bool paused) {
+            REQUIRE(file_id == 77);
+            REQUIRE(paused);
+            ++audio_pause_count;
+        },
+        [&]() {
+            ++presenter_reset_count;
+        },
+    };
+
+    const TrackSeekPreparationConfig config{
+        true,
+    };
+    const auto result = prepare_track_seek_transition(track, config, hooks);
+
+    REQUIRE(result.buffered_frames_before == 1);
+    REQUIRE(result.packet_queue_size_before == 0);
+    REQUIRE(result.buffer_state_before == TrackState::Ready);
+    REQUIRE_FALSE(result.seek_transition_active);
+    REQUIRE(track.track_buffer->state() == TrackState::Flushing);
+    REQUIRE(track.track_buffer->total_count() == 0);
+    REQUIRE(track.packet_queue->try_pop().status == PacketPopStatus::Flushed);
+    REQUIRE(track.audio_packet_queue->try_pop().status == PacketPopStatus::Flushed);
+    REQUIRE(audio_pause_count == 1);
+    REQUIRE(presenter_reset_count == 1);
+
+    const auto transition_result =
+        prepare_track_seek_transition(track, TrackSeekPreparationConfig{}, hooks);
+    REQUIRE(transition_result.buffer_state_before == TrackState::Flushing);
+    REQUIRE(transition_result.seek_transition_active);
+}
+
+TEST_CASE("TrackLifecycle submits seek after optional recreate",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipeline track;
+    track.seek_controller = std::make_unique<SeekController>();
+
+    submit_track_seek_after_recreate(
+        track, 123000, SeekType::Exact, true, false);
+    auto pending_seek = track.seek_controller->take_pending();
+    REQUIRE(pending_seek);
+    REQUIRE(pending_seek->target_pts_us == 123000);
+    REQUIRE(pending_seek->type == SeekType::Exact);
+
+    submit_track_seek_after_recreate(
+        track, 456000, SeekType::Keyframe, false, true);
+    REQUIRE_FALSE(track.seek_controller->has_pending_seek());
+}

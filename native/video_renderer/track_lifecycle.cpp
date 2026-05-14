@@ -144,4 +144,50 @@ TrackAddSeekResult prepare_add_track_seek_to_clock(
     return result;
 }
 
+TrackSeekPreparationResult prepare_track_seek_transition(
+    TrackPipeline& track,
+    const TrackSeekPreparationConfig& config,
+    const TrackSeekPreparationHooks& hooks) {
+    TrackSeekPreparationResult result;
+    if (track.decode_thread) {
+        track.decode_thread->set_decode_paused(true);
+    }
+    if (hooks.set_audio_decode_paused) {
+        hooks.set_audio_decode_paused(track.file_id, true);
+    }
+
+    result.buffered_frames_before = track.track_buffer->total_count();
+    result.packet_queue_size_before = track.packet_queue->size();
+    result.buffer_state_before = track.track_buffer->state();
+    result.seek_transition_active =
+        result.buffer_state_before == TrackState::Flushing ||
+        result.buffer_state_before == TrackState::Buffering;
+
+    track.track_buffer->set_state(TrackState::Flushing);
+    track.track_buffer->clear_frames();
+    if (config.reset_presenter_track && hooks.reset_presenter_track) {
+        hooks.reset_presenter_track();
+    }
+    track.packet_queue->flush();
+    if (track.audio_packet_queue) {
+        track.audio_packet_queue->flush();
+    }
+
+    return result;
+}
+
+void submit_track_seek_after_recreate(
+    TrackPipeline& track,
+    int64_t target_pts_us,
+    SeekType type,
+    bool paused_seek,
+    bool recreated_for_seek) {
+    if (track.decode_thread) {
+        track.decode_thread->set_pause_after_preroll(paused_seek);
+    }
+    if (!recreated_for_seek) {
+        track.seek_controller->request_seek(target_pts_us, type);
+    }
+}
+
 } // namespace vr

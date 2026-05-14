@@ -62,4 +62,32 @@ TrackAddSeekResult prepare_add_track_seek_to_clock(
     bool was_playing,
     const TrackAddSeekHooks& hooks);
 
+struct TrackSeekPreparationConfig {
+    bool reset_presenter_track = false;
+};
+
+struct TrackSeekPreparationHooks {
+    std::function<void(int file_id, bool paused)> set_audio_decode_paused;
+    std::function<void()> reset_presenter_track;
+};
+
+struct TrackSeekPreparationResult {
+    size_t buffered_frames_before = 0;
+    size_t packet_queue_size_before = 0;
+    TrackState buffer_state_before = TrackState::Empty;
+    bool seek_transition_active = false;
+};
+
+TrackSeekPreparationResult prepare_track_seek_transition(
+    TrackPipeline& track,
+    const TrackSeekPreparationConfig& config,
+    const TrackSeekPreparationHooks& hooks);
+
+void submit_track_seek_after_recreate(
+    TrackPipeline& track,
+    int64_t target_pts_us,
+    SeekType type,
+    bool paused_seek,
+    bool recreated_for_seek);
+
 } // namespace vr

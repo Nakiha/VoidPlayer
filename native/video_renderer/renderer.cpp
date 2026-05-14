@@ -474,38 +474,34 @@ void Renderer::seek_internal(int64_t target_pts_us,
                          requested_track_target / 1e6,
                          track_target / 1e6);
         }
-        // Pause decoder FIRST to prevent stale packets from reaching the codec
-        // (avoids HEVC "Could not find ref" warnings during seek transition)
-        track->decode_thread->set_decode_paused(true);
-        if (audio_coordinator_) {
-            audio_coordinator_->set_track_decode_paused(track->file_id, true);
-        }
-        auto buf_count_before = track->track_buffer->total_count();
-        auto pq_size_before = track->packet_queue->size();
-        const auto buffer_state_before = track->track_buffer->state();
-        track->track_buffer->set_state(TrackState::Flushing);
-        track->track_buffer->clear_frames();
-        if (frame_presenter_ && track->decode_thread->is_hardware_decode_enabled()) {
-            // Hardware seek invalidates the decoder surface epoch; software
-            // upload textures stay reusable across seeks.
-            frame_presenter_->reset_track(i);
-        }
-        track->packet_queue->flush();
-        if (track->audio_packet_queue) {
-            track->audio_packet_queue->flush();
-        }
+        const bool hardware_decode_enabled =
+            track->decode_thread->is_hardware_decode_enabled();
+        const TrackSeekPreparationConfig seek_prep_config{
+            hardware_decode_enabled,
+        };
+        const TrackSeekPreparationHooks seek_prep_hooks{
+            [this](int file_id, bool paused) {
+                if (audio_coordinator_) {
+                    audio_coordinator_->set_track_decode_paused(file_id, paused);
+                }
+            },
+            [this, i]() {
+                if (frame_presenter_) {
+                    frame_presenter_->reset_track(i);
+                }
+            },
+        };
+        const auto seek_prep =
+            prepare_track_seek_transition(*track, seek_prep_config, seek_prep_hooks);
         const bool is_hevc_hw_seek =
-            track->decode_thread->is_hardware_decode_enabled() &&
+            hardware_decode_enabled &&
             track->decode_thread->codec_id() == AV_CODEC_ID_HEVC;
         const bool paused_seek = !playing_.load();
         const SeekType track_seek_type = type;
-        const bool seek_transition_active =
-            buffer_state_before == TrackState::Flushing ||
-            buffer_state_before == TrackState::Buffering;
         HevcSeekRecreateInput hevc_recreate_input;
         hevc_recreate_input.is_hevc_hw_seek = is_hevc_hw_seek;
         hevc_recreate_input.paused_seek = paused_seek;
-        hevc_recreate_input.seek_transition_active = seek_transition_active;
+        hevc_recreate_input.seek_transition_active = seek_prep.seek_transition_active;
         hevc_recreate_input.recreated_for_paused_hevc_seek =
             track->recreated_for_paused_hevc_seek;
         hevc_recreate_input.force_recreate_paused_hevc = force_recreate_paused_hevc;
@@ -523,16 +519,20 @@ void Renderer::seek_internal(int64_t target_pts_us,
         if (hevc_recreate_decision.coalescing_transition) {
             spdlog::info("[Renderer] seek_internal: track[{}] coalescing HEVC HW seek during transition "
                          "(buf_state_before={}, target={:.3f}s)",
-                         i, static_cast<int>(buffer_state_before), track_target / 1e6);
+                         i,
+                         static_cast<int>(seek_prep.buffer_state_before),
+                         track_target / 1e6);
         }
         track = tracks_[i].get();
-        track->decode_thread->set_pause_after_preroll(paused_seek);
-        if (!recreated_for_seek) {
-            track->seek_controller->request_seek(track_target, track_seek_type);
-        }
+        submit_track_seek_after_recreate(
+            *track, track_target, track_seek_type, paused_seek, recreated_for_seek);
         applied_seek = true;
         spdlog::info("[Renderer] seek_internal: track[{}] cleared (buf={}->{}, pq={}->0), state->Flushing, target={:.3f}s",
-                     i, buf_count_before, track->track_buffer->total_count(), pq_size_before, track_target / 1e6);
+                     i,
+                     seek_prep.buffered_frames_before,
+                     track->track_buffer->total_count(),
+                     seek_prep.packet_queue_size_before,
+                     track_target / 1e6);
     }
     if (applied_seek) {
         preview_drawn_ = false;

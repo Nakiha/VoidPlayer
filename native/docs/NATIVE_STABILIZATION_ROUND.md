@@ -109,6 +109,7 @@ Fixed or reduced:
 - `Renderer`: step-forward next-frame selection and consumed-frame draining moved into `track_step_policy`.
 - `Renderer`: current-frame duration policy moved into `track_step_policy` and reused by step/EOF tolerance paths.
 - `Renderer`: preroll readiness track-state scan moved into dedicated `track_preroll_policy` owner.
+- `Renderer`: playing present-decision carry-forward moved into dedicated `track_present_policy` owner.
 - `Renderer`: paused preview snapshot assembly moved into dedicated `track_preview_policy` owner.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
@@ -133,7 +134,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P78 Renderer Present Carry-Forward Boundary.
+Next patch: P79 Renderer Empty-Buffer EOF Clamp Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1164,11 +1165,33 @@ Result:
 
 ### P78 - Renderer Present Carry-Forward Boundary
 
+Status: done in Patch 78.
+
 Goal:
 
 - Move playing-state `PresentDecision` carry-forward logic out of the render loop.
 - Preserve the rule that active tracks can reuse their last frame only after their effective PTS is non-negative, so shorter tracks freeze at EOF while longer tracks continue.
 - Keep `Renderer` responsible for calling `RenderSink::evaluate`, `present_frame`, `last_decision_` assignment, and layout redraw fallback.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `track_present_policy` with `apply_present_carry_forward`.
+- Render loop now delegates missing-frame carry-forward while keeping `RenderSink::evaluate`, `present_frame`, `last_decision_` commit, and layout redraw fallback in `Renderer`.
+- Added native coverage for active carry-forward, negative effective PTS blocking, new-frame preservation, and inactive-track rejection.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P79 - Renderer Empty-Buffer EOF Clamp Boundary
+
+Goal:
+
+- Move render-loop empty-buffer scan and max last-presented end-PTS calculation out of `Renderer`.
+- Keep `Renderer` responsible for clock seek/clamp and `settle_eof_locked`.
+- Preserve the behavior that one non-empty active buffer disables the EOF clamp.
 
 Validation:
 

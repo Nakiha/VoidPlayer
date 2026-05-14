@@ -4,6 +4,7 @@
 #include "video_renderer/track_lifecycle.h"
 #include "video_renderer/track_pipeline_factory.h"
 #include "video_renderer/track_preroll_policy.h"
+#include "video_renderer/track_present_policy.h"
 #include "video_renderer/track_preview_policy.h"
 #include "video_renderer/track_snapshot.h"
 #include "video_renderer/track_step_policy.h"
@@ -820,6 +821,44 @@ TEST_CASE("TrackPreviewPolicy builds paused preview snapshots",
         build_paused_preview_snapshot(missing_buffer_manager);
     REQUIRE_FALSE(missing_buffer.ready_to_present);
     REQUIRE_FALSE(missing_buffer.decision.should_present);
+}
+
+TEST_CASE("TrackPresentPolicy carries forward active last frames",
+          "[track_pipeline][track_present_policy]") {
+    const auto make_track = [](int64_t offset_us) {
+        auto track = std::make_unique<TrackPipeline>();
+        track->offset_us = offset_us;
+        return track;
+    };
+    const auto make_frame = [](int64_t pts_us) {
+        TextureFrame frame;
+        frame.pts_us = pts_us;
+        return frame;
+    };
+
+    TrackPipelineManager manager;
+    manager[0] = make_track(0);
+    manager[1] = make_track(3000);
+    manager[2] = make_track(-1000);
+
+    PresentDecision last_decision;
+    last_decision.frames[0] = make_frame(100);
+    last_decision.frames[1] = make_frame(200);
+    last_decision.frames[2] = make_frame(300);
+    last_decision.frames[3] = make_frame(400);
+
+    PresentDecision decision;
+    decision.current_pts_us = 2000;
+    decision.should_present = true;
+    decision.frames[2] = make_frame(999);
+
+    apply_present_carry_forward(manager, last_decision, decision);
+
+    REQUIRE(decision.should_present);
+    REQUIRE(decision.frames[0]->pts_us == 100);
+    REQUIRE_FALSE(decision.frames[1].has_value());
+    REQUIRE(decision.frames[2]->pts_us == 999);
+    REQUIRE_FALSE(decision.frames[3].has_value());
 }
 
 TEST_CASE("TrackStepPolicy builds step-forward decisions",

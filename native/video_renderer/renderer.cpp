@@ -5,6 +5,7 @@
 #include "video_renderer/renderer_config_validation.h"
 #include "video_renderer/track_lifecycle.h"
 #include "video_renderer/track_preroll_policy.h"
+#include "video_renderer/track_present_policy.h"
 #include "video_renderer/track_preview_policy.h"
 #include "video_renderer/track_step_policy.h"
 #include "audio/audio_output_factory.h"
@@ -1473,15 +1474,7 @@ void Renderer::render_loop() {
             // Once a track has started, keep carrying its last frame even after
             // that track reaches EOF. This lets shorter tracks freeze on their
             // final image while longer tracks continue playing.
-            for (size_t i = 0; i < kMaxTracks; ++i) {
-                if (!decision.frames[i].has_value() &&
-                    last_decision_.frames[i].has_value() && tracks_[i]) {
-                    int64_t effective_pts = decision.current_pts_us - tracks_[i]->offset_us;
-                    if (effective_pts >= 0) {
-                        decision.frames[i] = last_decision_.frames[i];
-                    }
-                }
-            }
+            apply_present_carry_forward(tracks_, last_decision_, decision);
             present_frame(decision);
             last_decision_ = decision;
         } else if (!preview_drawn_) {

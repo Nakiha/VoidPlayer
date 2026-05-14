@@ -197,7 +197,7 @@ TODO:
 - [ ] 新增 `FlutterTextureBridge`：只负责 texture registrar、shared handle acquire/release、frame callback。
 - [ ] 新增 `NativeDiagnosticsProvider`：聚合 native/player/process/DXGI diagnostics，先消除 `g_player_weak` 或收口到 plugin instance。
 - [ ] 新增 `NativeLoggingBootstrap` / `CrashHandlerBootstrap`：明确 app-layer process-global opt-in。
-- [ ] 新增 `ViewportCaptureService`：PNG/WIC save 和 BGRA hash/preview 归一。
+- [x] 新增 `ViewportCaptureService`：PNG/WIC save 和 BGRA hash/preview 归一。
 - [ ] 分批迁移，每批保持 MethodChannel payload 不变。
 
 建议验证：

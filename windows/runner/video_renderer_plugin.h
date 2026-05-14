@@ -7,6 +7,7 @@
 #include <flutter/standard_method_codec.h>
 
 #include "player/native_player.h"
+#include "viewport_capture_service.h"
 
 #include <cstdint>
 #include <atomic>
@@ -122,6 +123,7 @@ private:
     std::deque<flutter::EncodableValue> pending_events_;
     std::atomic<int64_t> event_sequence_{0};
     Microsoft::WRL::ComPtr<IDXGIAdapter> dxgi_adapter_;
+    ViewportCaptureService viewport_capture_;
     std::string logs_dir_;
     std::string log_file_name_;
 };

@@ -493,6 +493,27 @@ Follow-up:
 
 - Continue owner-boundary cleanup one slice at a time; next candidates are `ViewportCaptureService` in the runner or a narrow `LayoutController` extraction.
 
+2026-05-15 Patch 16 - Runner ViewportCaptureService
+
+Changed:
+
+- Added `ViewportCaptureService` in the Windows runner to own viewport capture orchestration, BGRA hashing/statistics, and WIC PNG persistence.
+- Kept `captureViewport` MethodChannel payload and error codes unchanged.
+- Reduced `video_renderer_plugin.cpp` by moving capture helper logic out of the bridge God Module.
+- Marked the matching `NATIVE_REFACTOR_TODO.md` runner split item complete.
+
+Verified:
+
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- Continue runner plugin cleanup with another narrow bridge slice, or switch back to native `LayoutController` extraction.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
@@ -586,6 +607,7 @@ fixed:
 - Patch 13 completed the `NativePlayer` facade lifecycle guard as a narrow boundary patch.
 - Patch 14 completed the FFI shared player lease cleanup as a narrow ABI/registry patch.
 - Patch 15 completed the native-facing `FrameCaptureService` boundary without touching runner PNG/WIC capture.
+- Patch 16 completed the runner-facing `ViewportCaptureService` slice while preserving MethodChannel behavior.
 
 accepted-backlog:
 

@@ -4,6 +4,7 @@
 #include "video_renderer/sync/render_sink.h"
 
 #include <cstdint>
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <string>
@@ -57,6 +58,22 @@ struct TrackSeekTargetResolution {
 TrackSeekTargetResolution resolve_track_seek_target(
     const TrackPipeline& track,
     int64_t global_target_pts_us);
+
+struct TrackOffsetMutationHooks {
+    std::function<void(size_t slot, int64_t offset_us)> set_render_track_offset;
+};
+
+struct TrackOffsetMutationResult {
+    int64_t previous_offset_us = 0;
+    int64_t offset_us = 0;
+    bool changed = false;
+};
+
+TrackOffsetMutationResult apply_track_offset_mutation(
+    TrackPipeline& track,
+    size_t slot,
+    int64_t offset_us,
+    const TrackOffsetMutationHooks& hooks);
 
 int64_t track_duration_us(const TrackPipeline& track);
 

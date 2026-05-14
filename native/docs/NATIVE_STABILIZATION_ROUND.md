@@ -93,6 +93,7 @@ Fixed or reduced:
 - `Renderer`: add/remove-track temporary playback pause, failure rollback, and remove-success resume policy moved into `track_lifecycle`.
 - `Renderer`: seek target clamp and pending seek-preview event retarget decision moved into `SeekCoordinator` policy.
 - `Renderer`: per-track seek target/offset clamp facts moved into `track_lifecycle`.
+- `Renderer`: track offset mutation and render-sink offset synchronization moved into `track_lifecycle`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -116,7 +117,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P61 Renderer Track Offset Mutation Boundary.
+Next patch: P62 Renderer Track Manager Query Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -786,6 +787,8 @@ Result:
 
 ### P61 - Renderer Track Offset Mutation Boundary
 
+Status: done in Patch 61.
+
 Goal:
 
 - Move `set_track_offset` track mutation plus render-sink offset update behind a lifecycle helper.
@@ -795,6 +798,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/h265_track_offset_refresh_visual_regression.csv`
+
+Result:
+
+- Added `TrackOffsetMutationHooks`, `TrackOffsetMutationResult`, and `apply_track_offset_mutation` to `track_lifecycle`.
+- `Renderer::set_track_offset` now delegates track state mutation and render-sink offset synchronization.
+- Added native coverage for changed and unchanged offset mutation hook behavior.
+- Verified with native-only tests plus rebuilt smoke and H.265 track-offset visual regression scripts.
+
+### P62 - Renderer Track Manager Query Boundary
+
+Goal:
+
+- Move remaining simple active-track/count queries from `Renderer` into `TrackPipelineManager`.
+- Keep `Renderer` responsible for public locking and public API shape.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv`
 
 ## Do-Not-Drift List
 

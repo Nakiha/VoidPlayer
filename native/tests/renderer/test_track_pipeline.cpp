@@ -245,6 +245,34 @@ TEST_CASE("TrackLifecycle resolves per-track seek target",
     REQUIRE(result.clamped);
 }
 
+TEST_CASE("TrackLifecycle applies track offset mutation",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipeline track;
+    track.offset_us = 1000;
+
+    std::vector<std::string> events;
+    const TrackOffsetMutationHooks hooks{
+        [&](size_t slot, int64_t offset_us) {
+            events.push_back(
+                std::to_string(slot) + ":" + std::to_string(offset_us));
+        },
+    };
+
+    auto result = apply_track_offset_mutation(track, 2, 3000, hooks);
+    REQUIRE(result.previous_offset_us == 1000);
+    REQUIRE(result.offset_us == 3000);
+    REQUIRE(result.changed);
+    REQUIRE(track.offset_us == 3000);
+    REQUIRE(events == std::vector<std::string>{"2:3000"});
+
+    result = apply_track_offset_mutation(track, 2, 3000, hooks);
+    REQUIRE(result.previous_offset_us == 3000);
+    REQUIRE(result.offset_us == 3000);
+    REQUIRE_FALSE(result.changed);
+    REQUIRE(track.offset_us == 3000);
+    REQUIRE(events == std::vector<std::string>{"2:3000", "2:3000"});
+}
+
 TEST_CASE("TrackLifecycle computes duration cache",
           "[track_pipeline][track_lifecycle]") {
     TrackPipeline no_demux_track;

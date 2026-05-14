@@ -1289,8 +1289,13 @@ void Renderer::set_track_offset(int file_id, int64_t offset_us) {
     std::lock_guard<std::mutex> lock(state_mutex_);
     int slot = find_slot_by_file_id(file_id);
     if (slot < 0 || !tracks_[slot]) return;
-    tracks_[slot]->offset_us = offset_us;
-    render_sink_->set_track_offset(slot, offset_us);
+    const TrackOffsetMutationHooks hooks{
+        [this](size_t offset_slot, int64_t offset) {
+            render_sink_->set_track_offset(offset_slot, offset);
+        },
+    };
+    apply_track_offset_mutation(
+        *tracks_[slot], static_cast<size_t>(slot), offset_us, hooks);
     preview_drawn_ = false;
 }
 

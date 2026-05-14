@@ -126,6 +126,22 @@ TrackSeekTargetResolution resolve_track_seek_target(
     return result;
 }
 
+TrackOffsetMutationResult apply_track_offset_mutation(
+    TrackPipeline& track,
+    size_t slot,
+    int64_t offset_us,
+    const TrackOffsetMutationHooks& hooks) {
+    TrackOffsetMutationResult result;
+    result.previous_offset_us = track.offset_us;
+    result.offset_us = offset_us;
+    result.changed = result.previous_offset_us != offset_us;
+    track.offset_us = offset_us;
+    if (hooks.set_render_track_offset) {
+        hooks.set_render_track_offset(slot, offset_us);
+    }
+    return result;
+}
+
 int64_t track_duration_us(const TrackPipeline& track) {
     if (!track.demux_thread) {
         return 0;

@@ -229,9 +229,13 @@ TODO:
    - 已把 `seek_internal` 内每轨 requested target / offset clamp facts 拆成 helper，Renderer 只保留日志与执行。
    - 验证：native-only + smoke/seek clamp UI。
 
-17. [ ] `TrackOffsetMutation`
-   - 后续把 `set_track_offset` 的轨道 offset 赋值与 render-sink offset 更新拆进 lifecycle helper，Renderer 保留 file-id lookup 与 redraw invalidation。
+17. [x] `TrackOffsetMutation`
+   - 已把 `set_track_offset` 的轨道 offset 赋值与 render-sink offset 更新拆进 lifecycle helper，Renderer 保留 file-id lookup 与 redraw invalidation。
    - 验证：native-only + smoke/track offset refresh UI。
+
+18. [ ] `TrackManagerQueries`
+   - 后续把 `track_count` / first active slot 这类简单查询下放到 `TrackPipelineManager`，Renderer 保留 public API 和锁。
+   - 验证：native-only + smoke/track compact UI。
 
 ## P1 - Windows Runner Plugin Split
 

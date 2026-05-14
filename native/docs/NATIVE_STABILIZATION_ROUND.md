@@ -81,6 +81,7 @@ Fixed or reduced:
 
 - `AudioEngine::Impl`: `AudioMixer` extracted and pause PCM consumption bug fixed.
 - `AnalysisManager`: session snapshot split reduced global session risk.
+- `Renderer`: analysis overlay CPU cache, D3D overlay resource helpers, mask pass, and overlay draw pass moved into `AnalysisOverlayRenderer`; `Renderer` now delegates the overlay pass after the base frame draw.
 - Windows runner plugin: diagnostics, logging bootstrap, texture bridge, file picker, method dispatch, and MethodChannel diagnostics scope were split.
 - Process-global logging/crash FFI ownership is now documented.
 
@@ -95,7 +96,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P39 Renderer Analysis Overlay Boundary.
+Next patch: P40 Renderer Layout Ownership Continuation.
 
 ### P30 - VACache Atomic Publish
 
@@ -294,6 +295,8 @@ Validation:
 
 ### P39 - Renderer Analysis Overlay Boundary
 
+Status: done in Patch 39.
+
 Source: `review_godobject.md`, now that `review_overlay.md` is fixed.
 
 Goal:
@@ -312,6 +315,12 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/overlay_controls_h264.csv`
+
+Result:
+
+- Added `AnalysisOverlayRenderer` as the renderer-adjacent owner for overlay CPU cache, packed rect upload buffers, mask materialization, and final overlay draw calls.
+- Kept `D3D11RenderResources` as the D3D resource storage for this patch so ownership and render-thread timing stay unchanged.
+- Preserved the existing `pack_overlay_uv16` test contract while moving implementation out of `renderer.cpp`.
 
 ### P40 - Renderer Layout Ownership Continuation
 

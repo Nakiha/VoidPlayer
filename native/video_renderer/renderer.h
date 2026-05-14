@@ -34,6 +34,7 @@ class ShaderManager;
 class TextureManager;
 class AudioCoordinator;
 class SeekCoordinator;
+class AnalysisOverlayRenderer;
 
 /// Layout mode constants (match HLSL defines)
 constexpr int LAYOUT_SIDE_BY_SIDE = 0;
@@ -323,18 +324,6 @@ public:
 private:
     void render_loop();
     void draw_frame(const PresentDecision& decision);
-    void draw_analysis_overlay(const PresentDecision& decision,
-                               const ShaderConstants& constants);
-    bool ensure_analysis_overlay_texture(int slot,
-                                         int width,
-                                         int height,
-                                         bool need_color,
-                                         bool need_mask);
-    bool ensure_analysis_overlay_rect_buffer(int slot, uint32_t rect_count);
-    bool render_analysis_overlay_mask(int slot,
-                                      int width,
-                                      int height,
-                                      uint32_t rect_count);
     void draw_paused_frame(const char* reason);
     bool build_step_forward_decision_locked(PresentDecision& decision) const;
     void discard_step_forward_consumed_frames_locked(const PresentDecision& decision);
@@ -432,6 +421,7 @@ private:
     bool playback_session_started_by_renderer_ = false;
     std::unique_ptr<AudioCoordinator> audio_coordinator_;
     std::unique_ptr<SeekCoordinator> seek_coordinator_;
+    std::unique_ptr<AnalysisOverlayRenderer> analysis_overlay_renderer_;
     std::unique_ptr<D3D11RenderBackend> d3d_backend_;
     D3D11Device* d3d_device_ = nullptr;
     TextureManager* texture_mgr_ = nullptr;
@@ -505,34 +495,6 @@ private:
     int64_t pending_seek_event_request_id_ = -1;
     int64_t pending_seek_event_target_pts_us_ = -1;
     bool pending_seek_event_emitted_ = true;
-    struct AnalysisOverlayCache {
-        bool valid = false;
-        bool has_color = false;
-        bool has_color_instances = false;
-        bool has_mask = false;
-        uint32_t color_instance_count = 0;
-        uint32_t mask_instance_count = 0;
-        int track_file_id = -1;
-        int frame_index = -1;
-        int mode = -1;
-        int opacity_permille = -1;
-        int width = 0;
-        int height = 0;
-        bool show_grid = false;
-        bool show_qp = false;
-        bool show_pred = false;
-        bool show_lines = false;
-        bool show_bit_cost = false;
-    };
-    struct AnalysisOverlayGpuRect {
-        uint32_t rect_uv0 = 0;
-        uint32_t rect_uv1 = 0;
-        uint32_t color_bgra = 0;
-        uint32_t track_idx = 0;
-    };
-    std::array<std::vector<uint8_t>, kMaxTracks> analysis_overlay_pixels_;
-    std::array<std::vector<AnalysisOverlayGpuRect>, kMaxTracks> analysis_overlay_rects_;
-    std::array<AnalysisOverlayCache, kMaxTracks> analysis_overlay_cache_;
 
     // -- Headless mode state --
     bool headless_ = false;

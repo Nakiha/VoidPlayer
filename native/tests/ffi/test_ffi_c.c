@@ -80,10 +80,27 @@ typedef struct FfiReaderArgs {
     volatile LONG* calls;
 } FfiReaderArgs;
 
+typedef struct FfiWriterArgs {
+    naki_vr_player_t player;
+    volatile LONG* stop;
+    volatile LONG* calls;
+} FfiWriterArgs;
+
 static DWORD WINAPI ffi_reader_thread(LPVOID param) {
     FfiReaderArgs* args = (FfiReaderArgs*)param;
     while (InterlockedCompareExchange(args->stop, 0, 0) == 0) {
         (void)naki_vr_player_is_initialized(args->player);
+        InterlockedIncrement(args->calls);
+    }
+    return 0;
+}
+
+static DWORD WINAPI ffi_writer_thread(LPVOID param) {
+    FfiWriterArgs* args = (FfiWriterArgs*)param;
+    while (InterlockedCompareExchange(args->stop, 0, 0) == 0) {
+        (void)naki_vr_player_set_speed_status(args->player, 1.0);
+        (void)naki_vr_player_set_loop_range_status(args->player, 0, 0, 0);
+        (void)naki_vr_player_get_error(args->player, NULL, 0);
         InterlockedIncrement(args->calls);
     }
     return 0;
@@ -182,20 +199,31 @@ int main(void) {
 #ifdef _WIN32
     /* ---- concurrent destroy / query smoke ---- */
     {
-        enum { kThreadCount = 4 };
+        enum { kReaderThreadCount = 4, kWriterThreadCount = 2, kThreadCount = 6 };
         naki_vr_player_t p = naki_vr_player_create();
         volatile LONG stop = 0;
-        volatile LONG calls = 0;
+        volatile LONG reader_calls = 0;
+        volatile LONG writer_calls = 0;
         HANDLE threads[kThreadCount];
-        FfiReaderArgs args;
+        FfiReaderArgs reader_args;
+        FfiWriterArgs writer_args;
         int created = 0;
 
-        args.player = p;
-        args.stop = &stop;
-        args.calls = &calls;
+        reader_args.player = p;
+        reader_args.stop = &stop;
+        reader_args.calls = &reader_calls;
+        writer_args.player = p;
+        writer_args.stop = &stop;
+        writer_args.calls = &writer_calls;
 
-        for (int i = 0; i < kThreadCount; ++i) {
-            HANDLE thread = CreateThread(NULL, 0, ffi_reader_thread, &args, 0, NULL);
+        for (int i = 0; i < kReaderThreadCount; ++i) {
+            HANDLE thread = CreateThread(NULL, 0, ffi_reader_thread, &reader_args, 0, NULL);
+            if (thread != NULL) {
+                threads[created++] = thread;
+            }
+        }
+        for (int i = 0; i < kWriterThreadCount; ++i) {
+            HANDLE thread = CreateThread(NULL, 0, ffi_writer_thread, &writer_args, 0, NULL);
             if (thread != NULL) {
                 threads[created++] = thread;
             }
@@ -213,8 +241,9 @@ int main(void) {
             CloseHandle(threads[i]);
         }
 
-        CHECK(created == kThreadCount, "concurrent FFI smoke created reader threads");
-        CHECK(calls > 0, "concurrent FFI smoke exercised reader calls");
+        CHECK(created == kThreadCount, "concurrent FFI smoke created reader/writer threads");
+        CHECK(reader_calls > 0, "concurrent FFI smoke exercised reader calls");
+        CHECK(writer_calls > 0, "concurrent FFI smoke exercised writer calls");
         CHECK(naki_vr_player_is_initialized(p) == 0,
               "query after concurrent destroy returns default");
         CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,

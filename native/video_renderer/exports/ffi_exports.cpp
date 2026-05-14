@@ -11,6 +11,7 @@
 #include <exception>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -26,7 +27,8 @@ struct FfiError {
 thread_local FfiError g_last_error;
 std::mutex g_players_mutex;
 struct PlayerHandleState {
-    std::mutex mutex;
+    std::shared_mutex gate_mutex;
+    std::mutex error_mutex;
     bool closing = false;
     FfiError last_error;
     vr::NativePlayer player;
@@ -36,7 +38,7 @@ std::unordered_map<PlayerHandleState*, std::shared_ptr<PlayerHandleState>> g_liv
 
 struct PlayerLease {
     std::shared_ptr<PlayerHandleState> state;
-    std::unique_lock<std::mutex> lock;
+    std::shared_lock<std::shared_mutex> lock;
     vr::NativePlayer* player = nullptr;
 
     explicit operator bool() const {
@@ -73,18 +75,25 @@ void copy_error(const FfiError& error, char* buf, size_t cap) {
     }
 }
 
-void set_state_error_locked(const std::shared_ptr<PlayerHandleState>& state,
-                            naki_vr_status_t status,
-                            std::string message) {
+void store_state_error_locked(PlayerHandleState& state,
+                              naki_vr_status_t status,
+                              const std::string& message) {
+    state.last_error.status = status;
+    state.last_error.message = message;
+}
+
+void set_state_error(const std::shared_ptr<PlayerHandleState>& state,
+                     naki_vr_status_t status,
+                     std::string message) {
     if (state) {
-        state->last_error.status = status;
-        state->last_error.message = message;
+        std::lock_guard<std::mutex> lock(state->error_mutex);
+        store_state_error_locked(*state, status, message);
     }
     set_error(status, std::move(message));
 }
 
 void set_lease_error(PlayerLease& lease, naki_vr_status_t status, std::string message) {
-    set_state_error_locked(lease.state, status, std::move(message));
+    set_state_error(lease.state, status, std::move(message));
 }
 
 void set_lease_ok(PlayerLease& lease) {
@@ -129,11 +138,14 @@ PlayerLease checked_player(naki_vr_player_t player) {
     }
     PlayerLease lease;
     lease.state = std::move(state);
-    lease.lock = std::unique_lock<std::mutex>(lease.state->mutex);
+    lease.lock = std::shared_lock<std::shared_mutex>(lease.state->gate_mutex);
     if (lease.state->closing) {
-        set_state_error_locked(lease.state,
-                               NAKI_VR_ERR_INVALID_ARGUMENT,
-                               "player handle is invalid or destroyed");
+        const std::string message = "player handle is invalid or destroyed";
+        {
+            std::lock_guard<std::mutex> error_lock(lease.state->error_mutex);
+            store_state_error_locked(*lease.state, NAKI_VR_ERR_INVALID_ARGUMENT, message);
+        }
+        set_error(NAKI_VR_ERR_INVALID_ARGUMENT, message);
         return {};
     }
     lease.player = &lease.state->player;
@@ -376,7 +388,7 @@ naki_vr_status_t naki_vr_player_get_error(naki_vr_player_t player, char* buf, si
             copy_error(g_last_error, buf, cap);
             return g_last_error.status;
         }
-        std::lock_guard<std::mutex> lock(state->mutex);
+        std::lock_guard<std::mutex> lock(state->error_mutex);
         copy_error(state->last_error, buf, cap);
         return state->last_error.status;
     });
@@ -405,9 +417,12 @@ naki_vr_status_t naki_vr_player_destroy_status(naki_vr_player_t player) noexcept
             return NAKI_VR_ERR_INVALID_ARGUMENT;
         }
         {
-            std::lock_guard<std::mutex> lock(state->mutex);
+            std::unique_lock<std::shared_mutex> gate_lock(state->gate_mutex);
             state->closing = true;
-            state->player.shutdown();
+        }
+        state->player.shutdown();
+        {
+            std::lock_guard<std::mutex> error_lock(state->error_mutex);
             state->last_error = {NAKI_VR_OK, ""};
         }
         set_ok();

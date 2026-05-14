@@ -1,6 +1,7 @@
 #include "player/native_player.h"
 #include "audio/audio_output_factory.h"
 #include "video_renderer/renderer_config_validation.h"
+#include <mutex>
 
 namespace vr {
 
@@ -13,7 +14,7 @@ NativePlayer::~NativePlayer() {
 }
 
 bool NativePlayer::initialize(const RendererConfig& config) {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::unique_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (state_ != State::Created || renderer_.is_initialized()) {
         return false;
     }
@@ -34,7 +35,7 @@ bool NativePlayer::initialize(const RendererConfig& config) {
 }
 
 void NativePlayer::shutdown() {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::unique_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (state_ == State::ShuttingDown) {
         return;
     }
@@ -49,7 +50,7 @@ bool NativePlayer::renderer_ready_locked() const {
 }
 
 void NativePlayer::play() {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return;
     }
@@ -57,7 +58,7 @@ void NativePlayer::play() {
 }
 
 void NativePlayer::pause() {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return;
     }
@@ -67,7 +68,7 @@ void NativePlayer::pause() {
 void NativePlayer::seek(int64_t target_pts_us,
                         SeekType type,
                         int64_t request_id) {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return;
     }
@@ -75,7 +76,7 @@ void NativePlayer::seek(int64_t target_pts_us,
 }
 
 void NativePlayer::set_speed(double speed) {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return;
     }
@@ -83,7 +84,7 @@ void NativePlayer::set_speed(double speed) {
 }
 
 void NativePlayer::set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return;
     }
@@ -91,7 +92,7 @@ void NativePlayer::set_loop_range(bool enabled, int64_t start_us, int64_t end_us
 }
 
 void NativePlayer::set_audible_track(int file_id) {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return;
     }
@@ -99,7 +100,7 @@ void NativePlayer::set_audible_track(int file_id) {
 }
 
 int NativePlayer::audible_track() const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return -1;
     }
@@ -107,7 +108,7 @@ int NativePlayer::audible_track() const {
 }
 
 void NativePlayer::step_forward() {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return;
     }
@@ -115,7 +116,7 @@ void NativePlayer::step_forward() {
 }
 
 void NativePlayer::step_backward() {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return;
     }
@@ -123,17 +124,17 @@ void NativePlayer::step_backward() {
 }
 
 bool NativePlayer::is_playing() const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     return renderer_ready_locked() && renderer_.is_playing();
 }
 
 bool NativePlayer::is_initialized() const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     return renderer_ready_locked();
 }
 
 int64_t NativePlayer::current_pts_us() const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return 0;
     }
@@ -141,7 +142,7 @@ int64_t NativePlayer::current_pts_us() const {
 }
 
 double NativePlayer::current_speed() const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return 1.0;
     }
@@ -149,7 +150,7 @@ double NativePlayer::current_speed() const {
 }
 
 size_t NativePlayer::track_count() const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return 0;
     }
@@ -157,7 +158,7 @@ size_t NativePlayer::track_count() const {
 }
 
 int64_t NativePlayer::duration_us() const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return 0;
     }
@@ -165,7 +166,7 @@ int64_t NativePlayer::duration_us() const {
 }
 
 int NativePlayer::add_track(const std::string& video_path, bool use_hardware_decode) {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return -1;
     }
@@ -173,7 +174,7 @@ int NativePlayer::add_track(const std::string& video_path, bool use_hardware_dec
 }
 
 void NativePlayer::remove_track(int file_id) {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return;
     }
@@ -181,12 +182,12 @@ void NativePlayer::remove_track(int file_id) {
 }
 
 bool NativePlayer::has_track(int slot) const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     return renderer_ready_locked() && renderer_.has_track(slot);
 }
 
 std::pair<int, int> NativePlayer::track_dimensions(int slot) const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return {0, 0};
     }
@@ -194,7 +195,7 @@ std::pair<int, int> NativePlayer::track_dimensions(int slot) const {
 }
 
 std::vector<TrackInfo> NativePlayer::track_infos() const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return {};
     }
@@ -202,7 +203,7 @@ std::vector<TrackInfo> NativePlayer::track_infos() const {
 }
 
 std::vector<TrackPerfStats> NativePlayer::track_perf_stats() const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return {};
     }
@@ -210,7 +211,7 @@ std::vector<TrackPerfStats> NativePlayer::track_perf_stats() const {
 }
 
 RendererGpuMemoryStats NativePlayer::gpu_memory_stats() const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return {};
     }
@@ -218,12 +219,12 @@ RendererGpuMemoryStats NativePlayer::gpu_memory_stats() const {
 }
 
 bool NativePlayer::d3d_device_lost() const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     return renderer_ready_locked() && renderer_.d3d_device_lost();
 }
 
 long NativePlayer::d3d_device_removed_reason() const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return 0;
     }
@@ -231,7 +232,7 @@ long NativePlayer::d3d_device_removed_reason() const {
 }
 
 void NativePlayer::set_track_offset(int file_id, int64_t offset_us) {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return;
     }
@@ -239,7 +240,7 @@ void NativePlayer::set_track_offset(int file_id, int64_t offset_us) {
 }
 
 void NativePlayer::apply_layout(const LayoutState& state) {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return;
     }
@@ -247,7 +248,7 @@ void NativePlayer::apply_layout(const LayoutState& state) {
 }
 
 void NativePlayer::set_background_color(float r, float g, float b, float a) {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return;
     }
@@ -255,7 +256,7 @@ void NativePlayer::set_background_color(float r, float g, float b, float a) {
 }
 
 LayoutState NativePlayer::layout() const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return {};
     }
@@ -263,17 +264,17 @@ LayoutState NativePlayer::layout() const {
 }
 
 void NativePlayer::set_frame_callback(std::function<void()> cb) {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     renderer_.set_frame_callback(std::move(cb));
 }
 
 void NativePlayer::set_event_callback(RendererEventCallback cb) {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     renderer_.set_event_callback(std::move(cb));
 }
 
 int NativePlayer::texture_width() const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return 0;
     }
@@ -281,7 +282,7 @@ int NativePlayer::texture_width() const {
 }
 
 int NativePlayer::texture_height() const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return 0;
     }
@@ -289,7 +290,7 @@ int NativePlayer::texture_height() const {
 }
 
 bool NativePlayer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         snapshot = {};
         return false;
@@ -299,7 +300,7 @@ bool NativePlayer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const
 
 void NativePlayer::release_shared_texture(int buffer_index,
                                           uint64_t buffer_generation) const {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return;
     }
@@ -307,7 +308,7 @@ void NativePlayer::release_shared_texture(int buffer_index,
 }
 
 void NativePlayer::resize(int width, int height) {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         return;
     }
@@ -317,7 +318,7 @@ void NativePlayer::resize(int width, int height) {
 bool NativePlayer::capture_front_buffer(std::vector<uint8_t>& bgra,
                                         int& width,
                                         int& height) {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {
         bgra.clear();
         width = 0;

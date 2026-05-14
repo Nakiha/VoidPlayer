@@ -3,7 +3,7 @@
 #include "playback/playback_controller.h"
 #include "video_renderer/renderer.h"
 #include <functional>
-#include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -83,7 +83,7 @@ private:
 
     bool renderer_ready_locked() const;
 
-    mutable std::mutex lifecycle_mutex_;
+    mutable std::shared_mutex lifecycle_mutex_;
     State state_ = State::Created;
     PlaybackController playback_;
     Renderer renderer_;

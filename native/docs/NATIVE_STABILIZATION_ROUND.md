@@ -50,6 +50,7 @@ chat 给出的方向和当前代码状态高度匹配。优先级最高的不是
 | S11 | odd-dimension software path 直接拒绝 | `calculate_yuv420_layout()` 要求 width/height 都是偶数 | DONE - Patch 11 |
 | S12 | `D3D11Device::shutdown()` 缺 `ClearState + Flush` | shutdown 直接 reset swapchain/context/device | DONE - Patch 12 |
 | S13 | `NativePlayer` facade 直接转发 Renderer | `native_player.h` public methods inline 调 renderer，没有统一生命周期锁/状态门禁 | DONE - Patch 13 |
+| S14 | FFI handle 长操作独占 per-player mutex | `ffi_exports.cpp` 的 `checked_player()` 持独占锁覆盖整个 native 调用 | DONE - Patch 14 |
 
 ## Patch Plan
 
@@ -447,16 +448,39 @@ Follow-up:
 
 - #7 FFI long-operation serialization is the remaining `review_native.md` accepted backlog item.
 
+2026-05-15 Patch 14 - FFI Shared Player Leases
+
+Changed:
+
+- Replaced the FFI per-player exclusive mutex lease with a shared gate plus unique destroy/closing gate.
+- Split per-player `last_error` storage behind a small error mutex so error reads/writes no longer depend on the operation gate.
+- Changed `NativePlayer` lifecycle locking to shared/unique: initialize/shutdown remain exclusive, initialized facade calls share the lifecycle gate.
+- Kept destroy semantics strict: unregister first, mark closing under the unique gate, then shutdown after all in-flight leases exit.
+- Expanded the pure C FFI smoke with concurrent reader/writer calls while destroy races the handle.
+
+Verified:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- `review_native.md` correctness backlog is now fully fixed. Continue broader owner-boundary cleanup from `review_godobject.md`, `review_overlay.md`, and `split_adv.md`.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
 
 | 来源 | 复核项 | 结果 |
 | --- | --- | --- |
-| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | fixed: #1/#2/#3/#4/#5/#6/#8/#9/#10/#11/#12/#13; accepted-backlog: #7 |
+| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | fixed: #1/#2/#3/#4/#5/#6/#7/#8/#9/#10/#11/#12/#13 |
 | `review_godobject.md` | God Object 排名和 owner boundary 判断 | fixed: AudioMixer boundary + Analysis session snapshot; accepted-backlog: remaining owner splits |
 | `review_overlay.md` | AnalysisManager、VACHUNK、overlay cache、D3D pass 风险 | fixed: AnalysisManager session + current-base chunk filter; accepted-backlog: remaining overlay/cache/render-pass items |
-| `split_adv.md` | Patch 顺序和“不贪大”边界 | fixed: Patch 1-13 executed in stabilization-sized slices |
+| `split_adv.md` | Patch 顺序和“不贪大”边界 | fixed: Patch 1-14 executed in stabilization-sized slices |
 
 复核时只标三类状态：
 
@@ -474,16 +498,13 @@ fixed:
 - #4 capture lock/GPU wait split: Patch 6 split front-buffer snapshot from GPU readback.
 - #5 Audio pause discards PCM: Patch 2 made paused render output silence without consuming PCM.
 - #6 NativePlayer facade locking: Patch 13 moved public methods behind the lifecycle mutex and fail-closed initialized gate.
+- #7 FFI long-operation serialization: Patch 14 uses shared player leases, unique destroy gating, and a separate error mutex.
 - #8 layout validation: Patch 7 tightened split/zoom/order checks using file-ID order semantics.
 - #9 RGBA texture size validation: Patch 8 added texture dimension/stride guardrails.
 - #10 demux read error propagation: Patch 9 emits track error events and marks the track buffer Error on non-EOF read errors.
 - #11 `avcodec_open2()` SEH guard: Patch 10 routes codec open and software fallback open through a noinline SEH wrapper.
 - #12 odd-dimension software path: Patch 11 pads coded CPU NV12/P010 buffers while preserving odd display dimensions.
 - #13 D3D shutdown `ClearState + Flush`: Patch 12 clears immediate-context bindings and flushes before device release.
-
-accepted-backlog:
-
-- #7 FFI long-operation serialization remains an ABI/registry cleanup.
 
 not-applicable:
 
@@ -541,6 +562,7 @@ fixed:
 - Patch 11 completed the S11 odd-dimension software-frame compatibility patch without adding generic scaling fallback.
 - Patch 12 completed the S12 D3D shutdown cleanup as a narrow lifecycle patch.
 - Patch 13 completed the `NativePlayer` facade lifecycle guard as a narrow boundary patch.
+- Patch 14 completed the FFI shared player lease cleanup as a narrow ABI/registry patch.
 
 accepted-backlog:
 

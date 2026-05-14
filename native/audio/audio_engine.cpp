@@ -1,7 +1,7 @@
 #include "audio/audio_engine.h"
+#include "audio/audio_mixer.h"
 #include "audio/pcm_buffer.h"
 #include <spdlog/spdlog.h>
-#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -33,7 +33,6 @@ constexpr int kOutputBufferFrames = 480;  // 10ms
 constexpr int kOutputBufferCount = 4;
 constexpr size_t kPcmCapacityFrames = kOutputSampleRate / 2;  // 500ms
 constexpr size_t kFadeFrames = 480;  // 10ms
-constexpr int kNoTrack = -1;
 
 class AudioDecodeThread {
 public:
@@ -266,93 +265,22 @@ public:
     }
 
     void set_playing(bool playing) {
-        playing_.store(playing);
+        mixer_.set_playing(playing);
     }
 
     void set_active_track(int file_id) {
-        target_track_.store(file_id);
+        mixer_.set_active_track(file_id);
     }
 
     int active_track() const {
-        return target_track_.load();
+        return mixer_.active_track();
     }
 
     void set_tracks(const std::map<int, std::shared_ptr<PcmBuffer>>& tracks) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        tracks_ = tracks;
+        mixer_.set_tracks(tracks);
     }
 
 private:
-    std::shared_ptr<PcmBuffer> find_track_locked(int file_id) const {
-        auto it = tracks_.find(file_id);
-        return it == tracks_.end() ? nullptr : it->second;
-    }
-
-    void read_track(int file_id, int16_t* dst, size_t frames) {
-        std::shared_ptr<PcmBuffer> buffer;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            buffer = find_track_locked(file_id);
-        }
-        if (buffer) {
-            buffer->pop(dst, frames);
-        } else {
-            std::memset(dst, 0, frames * kOutputChannels * sizeof(int16_t));
-        }
-    }
-
-    void discard_unheard(size_t frames, int keep_a, int keep_b) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (auto& [file_id, buffer] : tracks_) {
-            if (file_id == keep_a || file_id == keep_b || !buffer) continue;
-            buffer->discard(frames);
-        }
-    }
-
-    void render(int16_t* dst, size_t frames) {
-        if (!playing_.load()) {
-            std::memset(dst, 0, frames * kOutputChannels * sizeof(int16_t));
-            discard_unheard(frames, kNoTrack, kNoTrack);
-            return;
-        }
-
-        const int target = target_track_.load();
-        if (target != current_track_.load() && !fading_) {
-            fade_from_ = current_track_.load();
-            fade_to_ = target;
-            fade_pos_ = 0;
-            fading_ = true;
-        }
-
-        if (!fading_) {
-            read_track(target, dst, frames);
-            current_track_.store(target);
-            discard_unheard(frames, target, kNoTrack);
-            return;
-        }
-
-        std::vector<int16_t> from(frames * kOutputChannels);
-        std::vector<int16_t> to(frames * kOutputChannels);
-        read_track(fade_from_, from.data(), frames);
-        read_track(fade_to_, to.data(), frames);
-        for (size_t f = 0; f < frames; ++f) {
-            const float t = static_cast<float>(std::min(fade_pos_, kFadeFrames)) /
-                static_cast<float>(kFadeFrames);
-            for (int c = 0; c < kOutputChannels; ++c) {
-                const size_t idx = f * kOutputChannels + c;
-                const float mixed = static_cast<float>(from[idx]) * (1.0f - t) +
-                    static_cast<float>(to[idx]) * t;
-                dst[idx] = static_cast<int16_t>(std::clamp(mixed, -32768.0f, 32767.0f));
-            }
-            if (fade_pos_ < kFadeFrames) ++fade_pos_;
-        }
-        if (fade_pos_ >= kFadeFrames) {
-            current_track_.store(fade_to_);
-            fading_ = false;
-        }
-        discard_unheard(frames, fade_from_, fade_to_);
-    }
-
     bool open_device() {
         WAVEFORMATEX fmt = {};
         fmt.wFormatTag = WAVE_FORMAT_PCM;
@@ -410,7 +338,7 @@ private:
         std::array<WAVEHDR, kOutputBufferCount> headers = {};
         for (int i = 0; i < kOutputBufferCount; ++i) {
             sample_buffers[i].resize(kOutputBufferFrames * kOutputChannels);
-            render(sample_buffers[i].data(), kOutputBufferFrames);
+            mixer_.render(sample_buffers[i].data(), kOutputBufferFrames);
             headers[i].lpData = reinterpret_cast<LPSTR>(sample_buffers[i].data());
             headers[i].dwBufferLength = static_cast<DWORD>(bytes);
             if (!submit_header(headers[i])) {
@@ -425,7 +353,7 @@ private:
                 if ((headers[i].dwFlags & WHDR_DONE) == 0) continue;
                 unprepare_header(headers[i]);
                 std::memset(&headers[i], 0, sizeof(WAVEHDR));
-                render(sample_buffers[i].data(), kOutputBufferFrames);
+                mixer_.render(sample_buffers[i].data(), kOutputBufferFrames);
                 headers[i].lpData = reinterpret_cast<LPSTR>(sample_buffers[i].data());
                 headers[i].dwBufferLength = static_cast<DWORD>(bytes);
                 if (!submit_header(headers[i])) {
@@ -447,17 +375,9 @@ private:
         wave_out_ = nullptr;
     }
 
-    std::mutex mutex_;
-    std::map<int, std::shared_ptr<PcmBuffer>> tracks_;
+    AudioMixer mixer_{kOutputChannels, kFadeFrames};
     std::thread thread_;
     std::atomic<bool> running_{false};
-    std::atomic<bool> playing_{false};
-    std::atomic<int> target_track_{kNoTrack};
-    std::atomic<int> current_track_{kNoTrack};
-    bool fading_ = false;
-    int fade_from_ = kNoTrack;
-    int fade_to_ = kNoTrack;
-    size_t fade_pos_ = 0;
     HWAVEOUT wave_out_ = nullptr;
 };
 
@@ -507,7 +427,7 @@ public:
         }
         if (decoder) decoder->stop();
         if (output_.active_track() == file_id) {
-            output_.set_active_track(kNoTrack);
+            output_.set_active_track(kAudioNoTrack);
         }
     }
 
@@ -518,7 +438,7 @@ public:
             old.swap(tracks_);
             publish_buffers_locked();
         }
-        output_.set_active_track(kNoTrack);
+        output_.set_active_track(kAudioNoTrack);
         for (auto& [_, track] : old) {
             if (track.decoder) track.decoder->stop();
             if (track.buffer) track.buffer->abort();

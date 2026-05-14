@@ -11,6 +11,7 @@ add_executable(video_renderer_tests
     renderer/test_renderer_config_validation.cpp
     renderer/test_renderer_stress.cpp
     renderer/test_packet_queue.cpp
+    renderer/test_audio_mixer.cpp
     renderer/test_pcm_buffer.cpp
     renderer/test_seek_coordinator.cpp
     renderer/test_bidi_ring_buffer.cpp

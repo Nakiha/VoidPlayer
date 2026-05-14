@@ -105,10 +105,6 @@ void finish_track_removal_playback(
     bool has_active_tracks,
     const TrackPlaybackMutationHooks& hooks);
 
-bool has_buffering_track(const TrackPipelineManager& tracks);
-
-bool retreat_tracks_if_all_can_retreat(TrackPipelineManager& tracks);
-
 struct TrackPlaybackDecodeStateHooks {
     std::function<void(size_t slot, TrackPipeline& track, bool enabled)>
         set_pause_after_preroll;
@@ -127,12 +123,6 @@ void apply_track_decode_pause_state(
     TrackPipelineManager& tracks,
     bool paused,
     const TrackDecodePauseHooks& hooks);
-
-void apply_track_video_decode_pause_state(
-    TrackPipelineManager& tracks,
-    bool paused,
-    std::function<void(size_t slot, TrackPipeline& track, bool paused)>
-        set_decode_paused);
 
 void apply_track_playback_decode_state(
     TrackPipelineManager& tracks,

@@ -105,6 +105,7 @@ Fixed or reduced:
 - `Renderer`: step-forward temporary video decode pause/resume fanout moved into `track_lifecycle`.
 - `Renderer`: shared step buffering gate moved into `track_lifecycle`.
 - `Renderer`: step-backward retreat fanout moved into `track_lifecycle`.
+- `Renderer`: step-specific track helpers moved into dedicated `track_step_policy` owner.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -128,7 +129,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P73 Renderer Step Policy Owner Boundary.
+Next patch: P74 Renderer Step Forward Decision Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1049,6 +1050,8 @@ Result:
 
 ### P73 - Renderer Step Policy Owner Boundary
 
+Status: done in Patch 73.
+
 Goal:
 
 - Move step-specific helpers out of generic `track_lifecycle` into a dedicated `track_step_policy` owner before step logic grows there.
@@ -1059,6 +1062,26 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `track_step_policy.h/.cpp` and wired it into `VOID_RENDERER_WINDOWS_SOURCES`.
+- Moved the step Buffering gate, video-only decode pause fanout, and all-track backward retreat helper out of `track_lifecycle`.
+- Updated tests and `Renderer` includes so step-specific behavior has a dedicated owner and `track_lifecycle` does not keep absorbing step policy.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P74 - Renderer Step Forward Decision Boundary
+
+Goal:
+
+- Move `Renderer::build_step_forward_decision_locked` next-frame selection into `track_step_policy`.
+- Move `Renderer::discard_step_forward_consumed_frames_locked` consumed-frame draining into `track_step_policy`.
+- Keep `Renderer` responsible for lock ownership, playback clock updates, wait loop, exact-seek fallback, present, and logging.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_step_forward_visual_regression.csv`
 
 ## Do-Not-Drift List
 

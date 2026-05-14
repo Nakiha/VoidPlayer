@@ -4,6 +4,7 @@
 #include "video_renderer/track_lifecycle.h"
 #include "video_renderer/track_pipeline_factory.h"
 #include "video_renderer/track_snapshot.h"
+#include "video_renderer/track_step_policy.h"
 
 #include <atomic>
 #include <chrono>
@@ -616,8 +617,8 @@ TEST_CASE("TrackLifecycle applies decode pause fanout",
     REQUIRE(events == std::vector<std::string>{"audio:false"});
 }
 
-TEST_CASE("TrackLifecycle applies video-only decode pause fanout",
-          "[track_pipeline][track_lifecycle]") {
+TEST_CASE("TrackStepPolicy applies video-only decode pause fanout",
+          "[track_pipeline][track_step_policy]") {
     TrackPipelineManager manager;
     auto first = std::make_unique<TrackPipeline>();
     first->file_id = 30;
@@ -642,8 +643,8 @@ TEST_CASE("TrackLifecycle applies video-only decode pause fanout",
     });
 }
 
-TEST_CASE("TrackLifecycle detects buffering tracks",
-          "[track_pipeline][track_lifecycle]") {
+TEST_CASE("TrackStepPolicy detects buffering tracks",
+          "[track_pipeline][track_step_policy]") {
     TrackPipelineManager manager;
     REQUIRE_FALSE(has_buffering_track(manager));
 
@@ -663,8 +664,8 @@ TEST_CASE("TrackLifecycle detects buffering tracks",
     REQUIRE_FALSE(has_buffering_track(manager));
 }
 
-TEST_CASE("TrackLifecycle retreats tracks only when all can retreat",
-          "[track_pipeline][track_lifecycle]") {
+TEST_CASE("TrackStepPolicy retreats tracks only when all can retreat",
+          "[track_pipeline][track_step_policy]") {
     TrackPipelineManager empty_manager;
     REQUIRE(retreat_tracks_if_all_can_retreat(empty_manager));
 

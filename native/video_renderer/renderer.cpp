@@ -4,6 +4,7 @@
 #include "video_renderer/layout_validation.h"
 #include "video_renderer/renderer_config_validation.h"
 #include "video_renderer/track_lifecycle.h"
+#include "video_renderer/track_step_policy.h"
 #include "audio/audio_output_factory.h"
 #include "video_renderer/audio_coordinator.h"
 #include "video_renderer/seek_coordinator.h"

@@ -213,37 +213,6 @@ void finish_track_removal_playback(
     }
 }
 
-bool has_buffering_track(const TrackPipelineManager& tracks) {
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks[i] || !tracks[i]->track_buffer) {
-            continue;
-        }
-        if (tracks[i]->track_buffer->state() == TrackState::Buffering) {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool retreat_tracks_if_all_can_retreat(TrackPipelineManager& tracks) {
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks[i]) {
-            continue;
-        }
-        if (!tracks[i]->track_buffer || !tracks[i]->track_buffer->can_retreat()) {
-            return false;
-        }
-    }
-
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks[i] || !tracks[i]->track_buffer) {
-            continue;
-        }
-        tracks[i]->track_buffer->retreat();
-    }
-    return true;
-}
-
 void apply_track_decode_pause_state(
     TrackPipelineManager& tracks,
     bool paused,
@@ -260,20 +229,6 @@ void apply_track_decode_pause_state(
     if (hooks.set_all_audio_decode_paused) {
         hooks.set_all_audio_decode_paused(paused);
     }
-}
-
-void apply_track_video_decode_pause_state(
-    TrackPipelineManager& tracks,
-    bool paused,
-    std::function<void(size_t slot, TrackPipeline& track, bool paused)>
-        set_decode_paused) {
-    apply_track_decode_pause_state(
-        tracks,
-        paused,
-        TrackDecodePauseHooks{
-            std::move(set_decode_paused),
-            {},
-        });
 }
 
 void apply_track_playback_decode_state(

@@ -57,4 +57,28 @@ PausedPreviewSnapshot build_paused_preview_snapshot(
     return snapshot;
 }
 
+AvailablePausedFrameSnapshot build_available_paused_frame_snapshot(
+    const TrackPipelineManager& tracks) {
+    AvailablePausedFrameSnapshot snapshot;
+    snapshot.decision.current_pts_us = 0;
+    snapshot.decision.should_present = false;
+
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks[i]) {
+            snapshot.decision.frames[i] = std::nullopt;
+            continue;
+        }
+        if (!tracks[i]->track_buffer) {
+            continue;
+        }
+        auto frame = tracks[i]->track_buffer->peek(0);
+        if (frame.has_value()) {
+            snapshot.decision.frames[i] = frame;
+            snapshot.has_frame = true;
+        }
+    }
+
+    return snapshot;
+}
+
 } // namespace vr

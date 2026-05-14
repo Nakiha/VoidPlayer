@@ -857,21 +857,9 @@ void Renderer::step_backward() {
 }
 
 void Renderer::draw_paused_frame(const char* reason) {
-    PresentDecision decision;
-    decision.current_pts_us = 0;
-    decision.should_present = false;
-    bool has_frame = false;
-    for (size_t t = 0; t < kMaxTracks; ++t) {
-        if (!tracks_[t]) {
-            decision.frames[t] = std::nullopt;
-            continue;
-        }
-        auto frame = tracks_[t]->track_buffer->peek(0);
-        if (frame.has_value()) {
-            decision.frames[t] = frame;
-            has_frame = true;
-        }
-    }
+    auto snapshot = build_available_paused_frame_snapshot(tracks_);
+    PresentDecision decision = snapshot.decision;
+    bool has_frame = snapshot.has_frame;
     if (!has_frame && has_any_frame(last_decision_)) {
         decision = last_decision_;
         has_frame = true;

@@ -850,6 +850,41 @@ TEST_CASE("TrackPreviewPolicy builds paused preview snapshots",
     REQUIRE_FALSE(missing_buffer.decision.should_present);
 }
 
+TEST_CASE("TrackPreviewPolicy builds available paused frame snapshots",
+          "[track_pipeline][track_preview_policy]") {
+    const auto make_track =
+        [](TrackState state, std::optional<int64_t> pts_us) {
+            auto track = std::make_unique<TrackPipeline>();
+            track->track_buffer = std::make_shared<TrackBuffer>();
+            if (pts_us.has_value()) {
+                TextureFrame frame;
+                frame.pts_us = *pts_us;
+                track->track_buffer->push_frame(frame);
+            }
+            track->track_buffer->set_state(state);
+            return track;
+        };
+
+    TrackPipelineManager empty_manager;
+    auto empty = build_available_paused_frame_snapshot(empty_manager);
+    REQUIRE_FALSE(empty.has_frame);
+    REQUIRE_FALSE(empty.decision.should_present);
+
+    TrackPipelineManager manager;
+    manager[0] = make_track(TrackState::Ready, 1000);
+    manager[1] = make_track(TrackState::Ready, std::nullopt);
+    manager[2] = std::make_unique<TrackPipeline>();
+    manager[3] = make_track(TrackState::Buffering, 3000);
+
+    auto snapshot = build_available_paused_frame_snapshot(manager);
+    REQUIRE(snapshot.has_frame);
+    REQUIRE_FALSE(snapshot.decision.should_present);
+    REQUIRE(snapshot.decision.frames[0]->pts_us == 1000);
+    REQUIRE_FALSE(snapshot.decision.frames[1].has_value());
+    REQUIRE_FALSE(snapshot.decision.frames[2].has_value());
+    REQUIRE(snapshot.decision.frames[3]->pts_us == 3000);
+}
+
 TEST_CASE("TrackPresentPolicy carries forward active last frames",
           "[track_pipeline][track_present_policy]") {
     const auto make_track = [](int64_t offset_us) {

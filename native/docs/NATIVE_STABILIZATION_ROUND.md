@@ -114,6 +114,7 @@ Fixed or reduced:
 - `Renderer`: empty-buffer EOF clamp fact calculation moved into `track_present_policy`.
 - `Renderer`: next frame deadline event PTS calculation moved into `track_present_policy`.
 - `Renderer`: paused preview snapshot assembly moved into dedicated `track_preview_policy` owner.
+- `Renderer`: paused-frame draw snapshot assembly moved into `track_preview_policy`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -137,7 +138,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P82 Renderer Paused Frame Draw Snapshot Boundary.
+Next patch: P83 Renderer Layout Track Geometry Snapshot Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1256,6 +1257,8 @@ Result:
 
 ### P82 - Renderer Paused Frame Draw Snapshot Boundary
 
+Status: done in Patch 82.
+
 Goal:
 
 - Move `draw_paused_frame()` current-frame snapshot assembly out of `Renderer`.
@@ -1266,6 +1269,26 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `build_available_paused_frame_snapshot` to `track_preview_policy`.
+- `Renderer::draw_paused_frame` now delegates available current-frame snapshot assembly while keeping last-decision fallback, present, reference-slot logging, and `last_decision_` commit in `Renderer`.
+- Added native coverage for empty managers, partial active-track frames, tracks without buffers, and non-Ready frames.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P83 - Renderer Layout Track Geometry Snapshot Boundary
+
+Goal:
+
+- Move `snapshot_layout_track_geometry` out of `renderer.cpp` and into the layout-owned helper module.
+- Keep `Renderer` responsible for passing the current track manager to shader constant population.
+- Preserve active slot, width, height, and aspect semantics.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewport_pan_layout_regression.csv`
 
 ## Do-Not-Drift List
 

@@ -2,6 +2,8 @@
 
 本文件是 native 层硬化的主动追踪表。来源是 `build/gpt_native_adv.md` 的静态审查，以及对当前代码树的快速核验。
 
+当前收敛轮的逐 patch 账本见 [NATIVE_STABILIZATION_ROUND.md](NATIVE_STABILIZATION_ROUND.md)。该文件用于记录 `build/chat/*.md` 核验结果、每个 stabilization patch 的边界、验证命令和最终复核结论。
+
 使用规则：
 
 - 每一轮只选一个清晰边界，不顺手堆无关改动。

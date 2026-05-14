@@ -1,4 +1,5 @@
 #include "video_renderer/decode/decode_thread.h"
+#include "video_renderer/decode/decode_loop_policy.h"
 #include "video_renderer/decode/exact_seek_window.h"
 #include <spdlog/spdlog.h>
 #include <sstream>
@@ -981,16 +982,18 @@ void DecodeThread::run() {
             continue;
         }
 
-        if (!exact_seek_pending_frames_.empty() &&
-            !decode_paused_.load(std::memory_order_acquire) &&
-            output_buffer_.state() != TrackState::Flushing) {
+        if (should_publish_pending_exact_seek_frames(
+                exact_seek_pending_frames_.size(),
+                decode_paused_.load(std::memory_order_acquire),
+                output_buffer_.state())) {
             publish_pending_exact_seek_frames();
             continue;
         }
 
-        if (drain_decoder_before_next_packet_ &&
-            !decode_paused_.load(std::memory_order_acquire) &&
-            output_buffer_.state() != TrackState::Flushing) {
+        if (should_drain_decoder_before_next_packet(
+                drain_decoder_before_next_packet_,
+                decode_paused_.load(std::memory_order_acquire),
+                output_buffer_.state())) {
             int drained = 0;
             while (true) {
                 if (cancelled_.load(std::memory_order_acquire) ||
@@ -1045,8 +1048,9 @@ void DecodeThread::run() {
 
         // Fully pause decode consumption so the packet queue preserves packets
         // and the demux thread stops at backpressure instead of racing to EOF.
-        if (decode_paused_.load(std::memory_order_acquire) &&
-            output_buffer_.state() != TrackState::Flushing) {
+        if (should_pause_decode_consumption(
+                decode_paused_.load(std::memory_order_acquire),
+                output_buffer_.state())) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
         }
@@ -1141,15 +1145,17 @@ void DecodeThread::run() {
         // If decode is paused (seek transition), discard the packet without
         // sending to codec.  This prevents the HEVC decoder from emitting
         // "Could not find ref with POC" warnings on stale packets.
+        bool seek_pending = false;
         {
             std::lock_guard<std::mutex> seek_lock(seek_mutex_);
             if (seek_.pending) {
-                av_packet_free(&pkt);
-                continue;
+                seek_pending = true;
             }
         }
-        if (decode_paused_.load(std::memory_order_acquire) ||
-            output_buffer_.state() == TrackState::Flushing) {
+        if (should_discard_packet_before_decode(
+                seek_pending,
+                decode_paused_.load(std::memory_order_acquire),
+                output_buffer_.state())) {
             av_packet_free(&pkt);
             continue;
         }

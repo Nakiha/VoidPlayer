@@ -10,6 +10,7 @@ set(VOID_RENDERER_CORE_SOURCES
     "${VOID_NATIVE_DIR}/media/demux_thread.cpp"
     "${VOID_NATIVE_DIR}/media/private_cdn_flv_demuxer.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/frame_converter.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/decode/decode_loop_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/exact_seek_window.cpp"
     "${VOID_NATIVE_DIR}/media/packet_queue.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/buffer/bidi_ring_buffer.cpp"

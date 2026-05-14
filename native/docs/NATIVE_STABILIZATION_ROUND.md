@@ -87,6 +87,7 @@ Fixed or reduced:
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `TrackPipelineManager`: demux/decode pipeline construction moved into `TrackPipelineFactory`, leaving manager focused on slot storage, stop, and compact.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
+- `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `NativeResourceBudget`: track buffer queued-frame depth decision moved into `TrackBufferBudget` and is tested as a policy boundary.
 - Windows runner plugin: diagnostics, logging bootstrap, texture bridge, file picker, method dispatch, and MethodChannel diagnostics scope were split.
 - Process-global logging/crash FFI ownership is now documented.
@@ -96,13 +97,13 @@ Still active:
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries ABI guard, marshalling, and command dispatch density.
 - Track lifecycle start/recreate/rollback order is still shared between `Renderer` and track helpers.
-- `DecodeThread` main loop still owns drain, pause, EOF, and hardware visibility state transitions.
+- `DecodeThread` main loop still owns codec send/receive, EOF drain, AVFrame ownership, and hardware visibility transitions.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P46 DecodeThread Drain/Flush Guards.
+Next patch: P47 FFI Command/Marshalling Split.
 
 ### P30 - VACache Atomic Publish
 
@@ -454,6 +455,8 @@ Result:
 
 ### P46 - DecodeThread Drain/Flush Guards
 
+Status: done in Patch 46.
+
 Goal:
 
 - Continue P44 by isolating drain-before-next-packet, EOF flush, post-seek pause, and cancellation guard decisions into small tested helpers.
@@ -463,6 +466,13 @@ Validation:
 
 - `python dev.py test --native-only`
 - HEVC seek/step UI script if decode seek behavior changes.
+
+Result:
+
+- Added `decode_loop_policy` for pending exact-seek frame publish, drain-before-next-packet, paused packet preservation, and stale packet discard guards.
+- `DecodeThread` still owns FFmpeg send/receive, EOF drain, frame ownership, and hardware visibility flush calls; guard extraction did not change codec ownership.
+- Added native tests for paused, flushing, seek-pending, and pending exact-seek frame combinations.
+- Verified runner-facing seek/render behavior with smoke and HEVC seek visual UI scripts.
 
 ### P47 - FFI Command/Marshalling Split
 

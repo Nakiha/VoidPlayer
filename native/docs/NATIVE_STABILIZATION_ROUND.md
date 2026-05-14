@@ -557,6 +557,27 @@ Follow-up:
 
 - Move native/player diagnostics aggregation behind the provider or a per-engine registry, then remove the process-global player weak pointer.
 
+2026-05-15 Patch 19 - Runner NativeLoggingBootstrap
+
+Changed:
+
+- Added `NativeLoggingBootstrap` in the Windows runner to own default native log path selection, process-role log file naming, log-file sanitization, `vr::configure_logging()`, startup trace flush, and crash handler opt-in.
+- Removed logging/crash bootstrap helpers and state from `video_renderer_plugin.cpp`; the plugin now delegates startup logging and `initLogging` reconfiguration to the bootstrap.
+- Kept `initLogging` MethodChannel arguments and success/error behavior unchanged.
+- Marked the matching runner split item complete in `NATIVE_REFACTOR_TODO.md`.
+
+Verified:
+
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h264.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- Keep remaining runner plugin cleanup focused on dispatcher, texture bridge, and player diagnostics/global state boundaries.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
@@ -603,6 +624,7 @@ fixed:
 - `AudioEngine::Impl`: Patch 2 extracted `AudioMixer`, separating output submission from mixer/PCM consumption policy.
 - `AnalysisManager`: Patch 5 introduced session snapshots and moved overlay chunk cache/index state into the session.
 - Windows runner plugin diagnostics: Patch 18 moved process/heap/DXGI memory queries into `NativeDiagnosticsProvider`.
+- Windows runner logging/crash bootstrap: Patch 19 moved app-layer logging and crash handler opt-in into `NativeLoggingBootstrap`.
 
 accepted-backlog:
 
@@ -654,6 +676,7 @@ fixed:
 - Patch 16 completed the runner-facing `ViewportCaptureService` slice while preserving MethodChannel behavior.
 - Patch 17 completed the first `LayoutController` slice for order ownership, intentionally leaving viewport math in Renderer.
 - Patch 18 completed the first runner `NativeDiagnosticsProvider` slice for process/heap/DXGI memory queries.
+- Patch 19 completed the runner `NativeLoggingBootstrap` slice for startup logging and crash handler opt-in.
 
 accepted-backlog:
 

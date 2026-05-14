@@ -8,6 +8,7 @@
 
 #include "player/native_player.h"
 #include "native_diagnostics_provider.h"
+#include "native_logging_bootstrap.h"
 #include "viewport_capture_service.h"
 
 #include <cstdint>
@@ -125,7 +126,6 @@ private:
     std::atomic<int64_t> event_sequence_{0};
     Microsoft::WRL::ComPtr<IDXGIAdapter> dxgi_adapter_;
     NativeDiagnosticsProvider diagnostics_;
+    NativeLoggingBootstrap logging_bootstrap_;
     ViewportCaptureService viewport_capture_;
-    std::string logs_dir_;
-    std::string log_file_name_;
 };

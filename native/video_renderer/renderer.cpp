@@ -16,8 +16,9 @@
 #include "video_renderer/d3d11/render_backend.h"
 #include "video_renderer/d3d11/memory_estimate.h"
 #include <spdlog/spdlog.h>
-#include <chrono>
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -1984,33 +1985,23 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
         }
     }
 
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks_[i]) {
-            continue;
-        }
-
-        std::optional<DecodeMemoryStats> decode_stats;
-        if (tracks_[i]->decode_thread) {
-            decode_stats = tracks_[i]->decode_thread->memory_stats();
-        }
-        const uint64_t presenter_copy_texture_bytes =
-            i < presenter_stats.slots.size()
-                ? presenter_stats.slots[i].render_nv12_copy_texture_bytes
-                : 0;
-        auto track = snapshot_track_gpu_memory_stats(
-            i, *tracks_[i], decode_stats ? &*decode_stats : nullptr,
-            presenter_copy_texture_bytes);
-        result.decoder_pool_bytes += track.decoder_pool_bytes;
-        result.exact_seek_snapshot_bytes += track.exact_seek_snapshot_bytes;
-        result.track_buffer_cpu_bytes += track.track_buffer_cpu_bytes;
-        result.packet_queue_bytes += track.packet_queue_bytes;
-        result.exact_seek_candidate_cpu_bytes += track.exact_seek_candidate_cpu_bytes;
-        result.exact_seek_stable_cpu_bytes += track.exact_seek_stable_cpu_bytes;
-        result.cpu_frame_bytes += track.total_cpu_frame_bytes;
-        result.total_estimated_bytes +=
-            track.decoder_pool_bytes + track.exact_seek_snapshot_bytes;
-        result.tracks.push_back(track);
+    std::array<uint64_t, kMaxTracks> presenter_copy_texture_bytes_by_slot{};
+    for (size_t i = 0; i < kMaxTracks && i < presenter_stats.slots.size(); ++i) {
+        presenter_copy_texture_bytes_by_slot[i] =
+            presenter_stats.slots[i].render_nv12_copy_texture_bytes;
     }
+    const auto track_memory = snapshot_track_gpu_memory_stats_collection(
+        tracks_, presenter_copy_texture_bytes_by_slot);
+    result.decoder_pool_bytes += track_memory.decoder_pool_bytes;
+    result.exact_seek_snapshot_bytes += track_memory.exact_seek_snapshot_bytes;
+    result.track_buffer_cpu_bytes += track_memory.track_buffer_cpu_bytes;
+    result.packet_queue_bytes += track_memory.packet_queue_bytes;
+    result.exact_seek_candidate_cpu_bytes +=
+        track_memory.exact_seek_candidate_cpu_bytes;
+    result.exact_seek_stable_cpu_bytes += track_memory.exact_seek_stable_cpu_bytes;
+    result.cpu_frame_bytes += track_memory.cpu_frame_bytes;
+    result.total_estimated_bytes += track_memory.total_estimated_bytes;
+    result.tracks = track_memory.tracks;
 
     return result;
 }

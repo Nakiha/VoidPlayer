@@ -25,6 +25,18 @@ struct TrackPerfStatsCollectionResult {
     std::array<std::optional<uint64_t>, kMaxTracks> frames_decoded_by_slot{};
 };
 
+struct TrackGpuMemoryStatsCollectionResult {
+    std::vector<TrackGpuMemoryStats> tracks;
+    uint64_t decoder_pool_bytes = 0;
+    uint64_t exact_seek_snapshot_bytes = 0;
+    uint64_t track_buffer_cpu_bytes = 0;
+    uint64_t packet_queue_bytes = 0;
+    uint64_t exact_seek_candidate_cpu_bytes = 0;
+    uint64_t exact_seek_stable_cpu_bytes = 0;
+    uint64_t cpu_frame_bytes = 0;
+    uint64_t total_estimated_bytes = 0;
+};
+
 struct RenderLoopTrackDiagnosticSnapshot {
     size_t slot = 0;
     size_t buffer_count = 0;
@@ -56,5 +68,9 @@ TrackGpuMemoryStats snapshot_track_gpu_memory_stats(
     const TrackPipeline& track,
     const DecodeMemoryStats* decode_stats,
     uint64_t presenter_copy_texture_bytes);
+
+TrackGpuMemoryStatsCollectionResult snapshot_track_gpu_memory_stats_collection(
+    const TrackPipelineManager& tracks,
+    const std::array<uint64_t, kMaxTracks>& presenter_copy_texture_bytes_by_slot);
 
 } // namespace vr

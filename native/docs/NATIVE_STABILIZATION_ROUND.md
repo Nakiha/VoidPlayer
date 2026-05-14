@@ -134,6 +134,7 @@ Fixed or reduced:
 - `Renderer`: cached paused-frame first-PTS lookup moved into `track_present_policy`.
 - `Renderer`: seek-preview presented track-event collection moved into `track_present_policy`; Renderer keeps pending-event state and callback emission.
 - `Renderer`: per-track perf stats collection moved into `track_snapshot`; Renderer keeps timing and baseline rotation ownership.
+- `Renderer`: per-track GPU/memory stats collection moved into `track_snapshot`; Renderer keeps D3D presenter/headless/overlay aggregation.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
@@ -152,7 +153,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P97 Renderer Track GPU Memory Stats Snapshot Boundary.
+Next patch: P98 Renderer Analysis Overlay Memory Stats Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1599,11 +1600,33 @@ Result:
 
 ### P97 - Renderer Track GPU Memory Stats Snapshot Boundary
 
+Status: done in Patch 97.
+
 Goal:
 
 - Move the per-track GPU/memory stats scan out of `Renderer::gpu_memory_stats`.
 - Keep Renderer responsible for D3D presenter/headless/overlay aggregate resources.
 - Reuse `snapshot_track_gpu_memory_stats` through a collection helper that returns aggregate track memory totals.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `TrackGpuMemoryStatsCollectionResult` and `snapshot_track_gpu_memory_stats_collection` to `track_snapshot`.
+- `Renderer::gpu_memory_stats` now delegates active-track memory stats collection and aggregate per-track totals.
+- Added native coverage for slot-ordered collection, presenter copy bytes, buffer/packet totals, and aggregate CPU/estimated totals.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P98 - Renderer Analysis Overlay Memory Stats Boundary
+
+Goal:
+
+- Move analysis-overlay GPU resource memory aggregation out of `Renderer::gpu_memory_stats`.
+- Keep Renderer responsible for owning device locks and merging returned aggregate bytes/dimensions.
+- Cover rect-capacity accounting without requiring live D3D texture allocation.
 
 Validation:
 

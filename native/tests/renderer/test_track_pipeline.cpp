@@ -12,6 +12,7 @@
 #include "video_renderer/track_snapshot.h"
 #include "video_renderer/track_step_policy.h"
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <initializer_list>
@@ -659,6 +660,44 @@ TEST_CASE("TrackSnapshot builds track GPU memory stats",
     REQUIRE_FALSE(without_decode.hardware_enabled);
     REQUIRE(without_decode.decoder_pool_bytes == 0);
     REQUIRE(without_decode.total_cpu_frame_bytes == buffer_bytes);
+}
+
+TEST_CASE("TrackSnapshot collects track GPU memory stats in slot order",
+          "[track_pipeline][track_snapshot]") {
+    TrackPipelineManager manager;
+    auto track = std::make_unique<TrackPipeline>();
+    track->file_id = 71;
+    track->track_buffer = std::make_shared<TrackBuffer>(3, 1);
+    TextureFrame buffered_frame;
+    buffered_frame.cpu_data = std::make_shared<std::vector<uint8_t>>(64);
+    track->track_buffer->push_frame(buffered_frame);
+
+    track->packet_queue = std::make_unique<PacketQueue>();
+    AVPacket* packet = av_packet_alloc();
+    REQUIRE(packet != nullptr);
+    REQUIRE(av_new_packet(packet, 32) == 0);
+    REQUIRE(track->packet_queue->try_push(packet));
+
+    const auto buffer_bytes = track->track_buffer->estimated_cpu_bytes();
+    const auto packet_bytes = track->packet_queue->estimated_bytes();
+    manager[2] = std::move(track);
+
+    std::array<uint64_t, kMaxTracks> presenter_copy_bytes{};
+    presenter_copy_bytes[2] = 2048;
+
+    const auto collection =
+        snapshot_track_gpu_memory_stats_collection(manager, presenter_copy_bytes);
+
+    REQUIRE(collection.tracks.size() == 1);
+    REQUIRE(collection.tracks[0].slot == 2);
+    REQUIRE(collection.tracks[0].file_id == 71);
+    REQUIRE(collection.tracks[0].track_buffer_cpu_bytes == buffer_bytes);
+    REQUIRE(collection.tracks[0].packet_queue_bytes == packet_bytes);
+    REQUIRE(collection.tracks[0].presenter_copy_texture_bytes == 2048);
+    REQUIRE(collection.track_buffer_cpu_bytes == buffer_bytes);
+    REQUIRE(collection.packet_queue_bytes == packet_bytes);
+    REQUIRE(collection.cpu_frame_bytes == buffer_bytes);
+    REQUIRE(collection.total_estimated_bytes == 0);
 }
 
 TEST_CASE("TrackLifecycle compacts cached present decisions",

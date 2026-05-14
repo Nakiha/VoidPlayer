@@ -201,7 +201,9 @@ static bool build_vac2_base_from_scan(const std::string& video_path,
     }
     out.metadata_json =
         "{\"schema\":\"VAC2\",\"producer\":\"AnalysisGenerator::generate_vac2_base\","
-        "\"source\":\"direct-vac2-scanner\"}";
+        "\"source\":\"direct-vac2-scanner\","
+        "\"frame_model\":\"one_packet_per_frame_fallback\","
+        "\"frame_model_warning\":\"packet_index_equals_frame_index\"}";
 
     out.packets.resize(static_cast<size_t>(packet_count));
     out.frames.resize(static_cast<size_t>(packet_count));
@@ -281,12 +283,14 @@ static bool build_vac2_base_from_scan(const std::string& video_path,
         frame.flags = (src.flags & ANALYSIS_PACKET_FLAG_KEYFRAME)
             ? (VAC2_FRAME_FLAG_KEYFRAME | VAC2_FRAME_FLAG_RAP)
             : 0;
+        frame.flags |= VAC2_FRAME_FLAG_INFERRED_AU;
         out.frames[static_cast<size_t>(i)] = frame;
 
         Vac2FrameSummaryEntry summary{};
         summary.poc = src.poc;
         summary.coded_order = index;
         summary.first_vcl_unit = first_vcl_by_frame[index];
+        summary.flags = VAC2_FRAME_SUMMARY_FLAG_INFERRED_AU;
         summary.slice_type = 255;
         summary.qp_kind = VAC2_QP_KIND_UNKNOWN;
         if (summary.first_vcl_unit != UINT32_MAX &&

@@ -67,10 +67,11 @@ Fixed:
 - Overlay generation budget and codec semantics: generated VACHUNK publish now uses the current remaining cache budget, VAC2/VACHUNK parsers reject undefined codec values, and overlay chunk keys are built from a validated base codec instead of a blind header cast.
 - VACHUNK checksum fields: v1 semantics are now explicit reserved-zero fields, with parser validation for nonzero header/section checksum values and docs updated to match the external analyzer's current output.
 - VACHUNK record-count guard: record section factories now check count/record-size narrowing before filling section metadata, and empty record sections no longer do pointer arithmetic on a null vector data pointer.
+- VAC2 frame model boundary: the current one-packet-per-frame fallback is explicit in VAC2 metadata, frame/summary flags, format docs, and generator tests so overlay alignment assumptions are visible until exact AU grouping is implemented.
 
 Active backlog:
 
-- VAC2 frame model still has packet-index assumptions that can cause future overlay alignment issues.
+- No open `review_overlay.md` items remain in this stabilization pass. Future work can replace the documented VAC2 fallback with exact access-unit grouping when the generator/analyzer exposes enough frame boundary data.
 
 ### `review_godobject.md`
 
@@ -94,7 +95,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P38 VAC2 Frame Model Assumptions.
+Next patch: return to `review_godobject.md` owner-boundary cleanup after a final overlay cross-check.
 
 ### P30 - VACache Atomic Publish
 
@@ -268,6 +269,8 @@ Validation:
 
 ### P38 - VAC2 Frame Model Assumptions
 
+Status: done in Patch 38.
+
 Source: `review_overlay.md`.
 
 Goal:
@@ -285,6 +288,7 @@ Likely files:
 Validation:
 
 - `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/overlay_controls_h264.csv`
 
 ## Later Native Owner-Boundary Queue
 

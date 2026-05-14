@@ -90,11 +90,21 @@ TEST_CASE("AnalysisGenerator: generates VAC2 base from private CDN FLV",
     REQUIRE(vac2.header().packet_count == 1);
     REQUIRE(vac2.header().unit_count == 1);
     REQUIRE(vac2.header().au_count == 1);
+    REQUIRE(vac2.metadata_json().find(
+                "\"frame_model\":\"one_packet_per_frame_fallback\"") !=
+            std::string::npos);
     REQUIRE(vac2.packets()[0].pts == 45);
     REQUIRE(vac2.packets()[0].dts == 40);
+    REQUIRE(vac2.packets()[0].au_index == 0);
     REQUIRE(vac2.units()[0].nal_type == 6);
     REQUIRE(vac2.units()[0].flags & VAC2_UNIT_FLAG_IS_KEYFRAME);
+    REQUIRE(vac2.units()[0].au_index == 0);
+    REQUIRE(vac2.frames()[0].first_packet == 0);
+    REQUIRE(vac2.frames()[0].packet_count == 1);
+    REQUIRE(vac2.frames()[0].flags & VAC2_FRAME_FLAG_INFERRED_AU);
     REQUIRE(vac2.frames()[0].frame_size > 0);
+    REQUIRE(vac2.frame_summaries()[0].flags &
+            VAC2_FRAME_SUMMARY_FLAG_INFERRED_AU);
     REQUIRE(vac2.frame_summaries()[0].qp_kind == VAC2_QP_KIND_UNKNOWN);
 
     std::filesystem::remove_all(tmp);
@@ -136,8 +146,13 @@ TEST_CASE("AnalysisGenerator: resources video samples produce VAC2 base",
         REQUIRE(vac2.packets().size() == static_cast<size_t>(sample.expected_packets));
         REQUIRE(vac2.frames().size() == static_cast<size_t>(sample.expected_packets));
         REQUIRE(vac2.units()[0].unit_kind == static_cast<uint8_t>(sample.unit_kind));
-        for (const auto& packet : vac2.packets()) {
+        for (size_t i = 0; i < vac2.packets().size(); ++i) {
+            const auto& packet = vac2.packets()[i];
             REQUIRE(packet.size > 0);
+            REQUIRE(packet.au_index == i);
+            REQUIRE(vac2.frames()[i].first_packet == i);
+            REQUIRE(vac2.frames()[i].packet_count == 1);
+            REQUIRE(vac2.frames()[i].flags & VAC2_FRAME_FLAG_INFERRED_AU);
         }
     }
     std::filesystem::remove_all(tmp);

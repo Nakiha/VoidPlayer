@@ -262,8 +262,10 @@ inline constexpr uint16_t VAC2_UNIT_FLAG_IS_KEYFRAME = 0x0004;
 inline constexpr uint16_t VAC2_UNIT_FLAG_PARAMETER_SET = 0x0008;
 inline constexpr uint32_t VAC2_FRAME_FLAG_KEYFRAME = 0x00000001;
 inline constexpr uint32_t VAC2_FRAME_FLAG_RAP = 0x00000002;
+inline constexpr uint32_t VAC2_FRAME_FLAG_INFERRED_AU = 0x00000004;
 inline constexpr uint32_t VAC2_FRAME_SUMMARY_FLAG_EXACT_REFS = 0x00000001;
 inline constexpr uint32_t VAC2_FRAME_SUMMARY_FLAG_EXACT_QP = 0x00000002;
+inline constexpr uint32_t VAC2_FRAME_SUMMARY_FLAG_INFERRED_AU = 0x00000004;
 
 inline constexpr uint8_t VAC2_QP_KIND_UNKNOWN = 0;
 inline constexpr uint8_t VAC2_QP_KIND_SLICE = 1;

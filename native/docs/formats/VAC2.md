@@ -17,6 +17,15 @@ VAC2 must answer four questions quickly:
 3. Which lightweight display statistics can the UI show immediately?
 4. Where should an on-demand analyzer seek to produce deeper chunks?
 
+Current `AnalysisGenerator::generate_vac2_base()` uses an explicit
+`one_packet_per_frame_fallback` frame model. In generated metadata this appears
+as `"frame_model":"one_packet_per_frame_fallback"`. Under that model each
+demuxed packet becomes one `AUF2` row, `packet.au_index == packet_index`, and
+frame/summary flags include the inferred-AU bit. This is a compatibility
+boundary, not a final decoded-frame model; future exact AU grouping should
+replace the flag and metadata when B-frame reorder or multi-packet access units
+are modeled precisely.
+
 ## File Name
 
 Recommended path:
@@ -181,6 +190,14 @@ One row per decoded/displayable frame or access unit.
 | `rap_distance` | `uint32_t` | Frames from nearest previous RAP, or `UINT32_MAX`. |
 | `flags` | `uint32_t` | Keyframe/RAP, corrupt, incomplete, inferred. |
 
+Current flag bits:
+
+| Flag | Meaning |
+| ---: | --- |
+| `0x00000001` | Keyframe. |
+| `0x00000002` | Random access point. |
+| `0x00000004` | Access-unit/frame row was inferred from the one-packet fallback model. |
+
 ## Lightweight Frame Summary: `FSUM`
 
 `FSUM` keeps the analysis window useful before deep chunks exist. It is a
@@ -206,6 +223,14 @@ lightweight semantic summary, not a CU/MB statistics table.
 | `ref_pocs_l1` | `int32_t[15]` | L1 reference POCs; unused slots `INT32_MIN`. |
 | `summary_chunk_id` | `uint64_t` | Exact summary chunk id, or zero. |
 | `reserved1` | `uint64_t[2]` | Must be zero. |
+
+Current `FSUM.flags` bits:
+
+| Flag | Meaning |
+| ---: | --- |
+| `0x00000001` | Exact reference lists are known. |
+| `0x00000002` | Exact QP values are known. |
+| `0x00000004` | Frame summary belongs to an inferred one-packet access unit. |
 
 Reference pyramid can use `FSUM` immediately. QP trend can use `FSUM` when
 `qp_kind != unknown`; the UI should show quality/precision when needed.

@@ -91,6 +91,7 @@ Fixed or reduced:
 - `Renderer`: generic per-track seek preparation and post-recreate seek submission moved into `track_lifecycle`.
 - `Renderer`: seek pipeline stop/recreate/start/render-sink commit choreography moved into `track_lifecycle`; unused decode-thread-only recreate path removed.
 - `Renderer`: add-track render-sink/frame-presenter/tracks slot commit moved into `track_lifecycle`.
+- `Renderer`: initial active-track-to-RenderSink binding moved into `track_lifecycle`.
 - `Renderer`: add/remove-track temporary playback pause, failure rollback, and remove-success resume policy moved into `track_lifecycle`.
 - `Renderer`: seek target clamp and pending seek-preview event retarget decision moved into `SeekCoordinator` policy.
 - `Renderer`: per-track seek target/offset clamp facts moved into `track_lifecycle`.
@@ -139,7 +140,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P84 Renderer Initial Render-Sink Binding Boundary.
+Next patch: P85 Renderer Initial Layout Order Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1302,6 +1303,8 @@ Result:
 
 ### P84 - Renderer Initial Render-Sink Binding Boundary
 
+Status: done in Patch 84.
+
 Goal:
 
 - Move initial active-track-to-`RenderSink` binding out of `Renderer::initialize`.
@@ -1312,6 +1315,26 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `bind_existing_tracks_to_render_sink` to `track_lifecycle`.
+- `Renderer::initialize` now constructs the `RenderSink` and delegates active slot binding.
+- Added native coverage using a real `RenderSink::evaluate` call.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P85 - Renderer Initial Layout Order Boundary
+
+Goal:
+
+- Move `Renderer::initialize` initial layout track append loop into `LayoutController`.
+- Keep `Renderer` responsible for resetting layout state and owning the track manager.
+- Preserve file-id insertion order and slot order semantics.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewport_pan_layout_regression.csv`
 
 ## Do-Not-Drift List
 

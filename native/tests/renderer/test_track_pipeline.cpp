@@ -1249,6 +1249,31 @@ TEST_CASE("TrackLifecycle commits new track pipeline slot",
         manager, kMaxTracks, std::unique_ptr<TrackPipeline>{}, hooks));
 }
 
+TEST_CASE("TrackLifecycle binds existing tracks to render sink",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineManager manager;
+    auto track = std::make_unique<TrackPipeline>();
+    track->track_buffer = std::make_shared<TrackBuffer>(2, 0);
+    TextureFrame frame;
+    frame.pts_us = 1000;
+    frame.duration_us = 100;
+    track->track_buffer->push_frame(frame);
+    manager[0] = std::move(track);
+    manager[2] = std::make_unique<TrackPipeline>();
+
+    Clock clock([] { return int64_t{0}; });
+    clock.seek(1000);
+    RenderSink render_sink(clock);
+    bind_existing_tracks_to_render_sink(manager, render_sink);
+
+    const auto decision = render_sink.evaluate();
+    REQUIRE(decision.should_present);
+    REQUIRE(decision.frames[0].has_value());
+    REQUIRE(decision.frames[0]->pts_us == 1000);
+    REQUIRE_FALSE(decision.frames[1].has_value());
+    REQUIRE_FALSE(decision.frames[2].has_value());
+}
+
 TEST_CASE("TrackLifecycle prepares generic track seek transition",
           "[track_pipeline][track_lifecycle]") {
     TrackPipeline track;

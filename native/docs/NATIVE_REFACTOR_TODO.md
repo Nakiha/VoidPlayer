@@ -321,9 +321,13 @@ TODO:
    - 已把 `snapshot_layout_track_geometry` 从 `renderer.cpp` 移入 `layout_geometry`，Renderer 只传入 track manager 给 shader constants。
    - 验证：native-only + smoke/viewport UI。
 
-40. [ ] `InitialRenderSinkBinding`
-   - 后续把 `Renderer::initialize()` 中 active track 到 `RenderSink` 的初始 slot binding 循环拆到 lifecycle helper，Renderer 保留 render sink 构造。
+40. [x] `InitialRenderSinkBinding`
+   - 已把 `Renderer::initialize()` 中 active track 到 `RenderSink` 的初始 slot binding 循环拆到 `track_lifecycle` helper，Renderer 保留 render sink 构造。
    - 验证：native-only + smoke UI。
+
+41. [ ] `InitialLayoutOrder`
+   - 后续把 `Renderer::initialize()` 中 active track 到 layout order 的初始 append 循环拆到 `LayoutController`，Renderer 保留 layout reset 和 track manager。
+   - 验证：native-only + smoke/viewport UI。
 
 ## P1 - Windows Runner Plugin Split
 

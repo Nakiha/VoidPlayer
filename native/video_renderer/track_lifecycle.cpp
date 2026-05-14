@@ -304,6 +304,17 @@ TrackPipeline* commit_new_track_pipeline(
     return tracks[slot].get();
 }
 
+void bind_existing_tracks_to_render_sink(
+    const TrackPipelineManager& tracks,
+    RenderSink& render_sink) {
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks[i]) {
+            continue;
+        }
+        render_sink.set_track(i, tracks[i]->track_buffer);
+    }
+}
+
 TrackSeekPreparationResult prepare_track_seek_transition(
     TrackPipeline& track,
     const TrackSeekPreparationConfig& config,

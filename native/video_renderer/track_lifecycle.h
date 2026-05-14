@@ -156,6 +156,10 @@ TrackPipeline* commit_new_track_pipeline(
     std::unique_ptr<TrackPipeline> pipeline,
     const TrackAddCommitHooks& hooks);
 
+void bind_existing_tracks_to_render_sink(
+    const TrackPipelineManager& tracks,
+    RenderSink& render_sink);
+
 struct TrackSeekPreparationConfig {
     bool reset_presenter_track = false;
 };

@@ -176,11 +176,7 @@ bool Renderer::initialize(const RendererConfig& config) {
 
     // Setup render sink
     render_sink_ = std::make_unique<RenderSink>(playback_->clock());
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (tracks_[i]) {
-            render_sink_->set_track(i, tracks_[i]->track_buffer);
-        }
-    }
+    bind_existing_tracks_to_render_sink(tracks_, *render_sink_);
 
     // Cache duration (immutable until tracks are added/removed)
     cached_duration_us_ = compute_track_duration_cache(tracks_);

@@ -51,6 +51,54 @@ bool configure_and_start_track_pipeline(
     return true;
 }
 
+InitialTrackOpenResult open_initial_track_pipelines(
+    TrackPipelineManager& tracks,
+    const std::vector<std::string>& video_paths,
+    bool use_hardware_decode,
+    const InitialTrackOpenHooks& hooks,
+    const char* log_context) {
+    InitialTrackOpenResult result;
+    const char* context = log_context ? log_context : "TrackLifecycle";
+
+    for (const auto& path : video_paths) {
+        const int slot = tracks.find_empty_slot();
+        if (slot < 0) {
+            spdlog::warn("{}: skipping {}, max {} tracks",
+                         context, path, kMaxTracks);
+            ++result.skipped_full_count;
+            continue;
+        }
+
+        if (!hooks.create_pipeline) {
+            ++result.failed_pipeline_count;
+            continue;
+        }
+        auto pipeline = hooks.create_pipeline(path, use_hardware_decode);
+        if (!pipeline) {
+            ++result.failed_pipeline_count;
+            continue;
+        }
+
+        const int file_id = hooks.allocate_file_id ? hooks.allocate_file_id() : 0;
+        const TrackPipelineStartConfig start_config{
+            file_id,
+            0,
+            true,
+            false,
+        };
+        if (!configure_and_start_track_pipeline(
+                *pipeline, start_config, hooks.start_hooks, context)) {
+            ++result.failed_start_count;
+            continue;
+        }
+
+        tracks[static_cast<size_t>(slot)] = std::move(pipeline);
+        ++result.opened_count;
+    }
+
+    return result;
+}
+
 void remove_and_compact_track_pipeline(
     TrackPipelineManager& tracks,
     size_t slot,

@@ -337,8 +337,12 @@ TODO:
    - 已新增 `TrackPerfBaselineTracker` 收口 stats timer 和 per-slot frame baseline reset/rotation，Renderer 不再直接持有 baseline array。
    - 验证：native-only + smoke UI。
 
-44. [ ] `InitialTrackCreation`
-   - 后续把 `Renderer::initialize()` 的初始 video path loop 拆入 track lifecycle helper，Renderer 保留 pipeline factory hooks、file-id 分配和错误日志上下文。
+44. [x] `InitialTrackCreation`
+   - 已把 `Renderer::initialize()` 的初始 video path loop 拆入 track lifecycle helper，Renderer 保留 pipeline factory hooks、file-id 分配和错误日志上下文。
+   - 验证：native-only + smoke UI。
+
+45. [ ] `ShutdownResourcePresence`
+   - 后续集中 shutdown 里“是否还有资源需要释放”的判断，并复用 track manager active-track query 替代本地 track scan。
    - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split

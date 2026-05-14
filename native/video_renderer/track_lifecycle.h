@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace vr {
 
@@ -29,6 +30,28 @@ bool configure_and_start_track_pipeline(
     TrackPipeline& pipeline,
     const TrackPipelineStartConfig& config,
     const TrackPipelineStartHooks& hooks,
+    const char* log_context);
+
+struct InitialTrackOpenHooks {
+    std::function<std::unique_ptr<TrackPipeline>(
+        const std::string& path,
+        bool use_hardware_decode)> create_pipeline;
+    std::function<int()> allocate_file_id;
+    TrackPipelineStartHooks start_hooks;
+};
+
+struct InitialTrackOpenResult {
+    size_t opened_count = 0;
+    size_t skipped_full_count = 0;
+    size_t failed_pipeline_count = 0;
+    size_t failed_start_count = 0;
+};
+
+InitialTrackOpenResult open_initial_track_pipelines(
+    TrackPipelineManager& tracks,
+    const std::vector<std::string>& video_paths,
+    bool use_hardware_decode,
+    const InitialTrackOpenHooks& hooks,
     const char* log_context);
 
 struct TrackRemovalHooks {

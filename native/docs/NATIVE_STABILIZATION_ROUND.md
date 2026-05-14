@@ -120,6 +120,7 @@ Fixed or reduced:
 - `Renderer`: initial layout track-order append moved into `LayoutController`.
 - `Renderer`: initial active-track query now uses `TrackPipelineManager` ownership instead of an ad hoc scan.
 - `Renderer`: perf baseline timer/frame reset state moved into `TrackPerfBaselineTracker`.
+- `Renderer`: initial video-path open/start loop moved into `track_lifecycle`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -143,7 +144,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P88 Renderer Initial Track Creation Boundary.
+Next patch: P89 Renderer Shutdown Resource Presence Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1393,11 +1394,33 @@ Result:
 
 ### P88 - Renderer Initial Track Creation Boundary
 
+Status: done in Patch 88.
+
 Goal:
 
 - Move the `Renderer::initialize` initial video-path loop into a track lifecycle helper.
 - Keep `Renderer` responsible for supplying pipeline factory hooks, file-id allocation, and error logging context.
 - Preserve max-track skip behavior, failed-pipeline skip behavior, and started-track slot order.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `open_initial_track_pipelines` with hook-provided pipeline creation, file-id allocation, and start hooks.
+- `Renderer::initialize` now delegates initial video-path open/start/slot insertion to track lifecycle.
+- Added focused native coverage for slot-order open and full-slot skip behavior.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P89 - Renderer Shutdown Resource Presence Boundary
+
+Goal:
+
+- Centralize the shutdown "do we have anything to release?" predicate.
+- Reuse track manager active-track queries instead of a local track scan.
+- Keep shutdown idempotency and early-return behavior unchanged.
 
 Validation:
 

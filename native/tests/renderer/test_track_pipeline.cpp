@@ -145,6 +145,89 @@ TEST_CASE("TrackLifecycle configures and starts pipeline with rollback hooks",
     REQUIRE(audio_unregisters.load(std::memory_order_acquire) == 1);
 }
 
+TEST_CASE("TrackLifecycle opens initial tracks in slot order",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineFactory factory;
+    TrackPipelineManager manager;
+    struct StopTracks {
+        TrackPipelineManager& tracks;
+        ~StopTracks() { tracks.stop_all(); }
+    } stop_tracks{manager};
+    static_cast<void>(stop_tracks);
+
+    const std::vector<std::string> paths{
+        video_test_dir() + "/h264_9s_1920x1080.mp4",
+        video_test_dir() + "/mpeg2_10s_1280x720.ts",
+    };
+    std::vector<std::string> created_paths;
+    std::vector<std::string> registered_audio_paths;
+    int next_file_id = 10;
+
+    const InitialTrackOpenHooks hooks{
+        [&](const std::string& path, bool use_hardware_decode) {
+            REQUIRE_FALSE(use_hardware_decode);
+            created_paths.push_back(path);
+            return factory.create_opened_pipeline(path, use_hardware_decode);
+        },
+        [&]() { return next_file_id++; },
+        TrackPipelineStartHooks{
+            [](TrackPipeline&) {},
+            [](TrackPipeline&) {},
+            [&](TrackPipeline& track) {
+                registered_audio_paths.push_back(track.file_path);
+            },
+            [](int) {},
+        },
+    };
+
+    const auto result = open_initial_track_pipelines(
+        manager, paths, false, hooks, "TrackLifecycleTest");
+
+    REQUIRE(result.opened_count == 2);
+    REQUIRE(result.skipped_full_count == 0);
+    REQUIRE(result.failed_pipeline_count == 0);
+    REQUIRE(result.failed_start_count == 0);
+    REQUIRE(created_paths == paths);
+    REQUIRE(registered_audio_paths == paths);
+    REQUIRE(manager[0]);
+    REQUIRE(manager[0]->file_id == 10);
+    REQUIRE(manager[1]);
+    REQUIRE(manager[1]->file_id == 11);
+    REQUIRE(next_file_id == 12);
+}
+
+TEST_CASE("TrackLifecycle skips initial tracks when slots are full",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineManager manager;
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        manager[i] = std::make_unique<TrackPipeline>();
+    }
+
+    bool create_called = false;
+    bool allocate_called = false;
+    const InitialTrackOpenHooks hooks{
+        [&](const std::string&, bool) {
+            create_called = true;
+            return std::unique_ptr<TrackPipeline>{};
+        },
+        [&]() {
+            allocate_called = true;
+            return 1;
+        },
+        TrackPipelineStartHooks{},
+    };
+
+    const auto result = open_initial_track_pipelines(
+        manager, std::vector<std::string>{"overflow.mp4"}, false, hooks,
+        "TrackLifecycleTest");
+
+    REQUIRE(result.opened_count == 0);
+    REQUIRE(result.skipped_full_count == 1);
+    REQUIRE(result.failed_pipeline_count == 0);
+    REQUIRE_FALSE(create_called);
+    REQUIRE_FALSE(allocate_called);
+}
+
 TEST_CASE("TrackLifecycle removes and compacts track slots",
           "[track_pipeline][track_lifecycle]") {
     TrackPipelineManager manager;

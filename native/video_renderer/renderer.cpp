@@ -130,34 +130,21 @@ bool Renderer::initialize(const RendererConfig& config) {
     shader_mgr_ = d3d_backend_->shader_manager();
     d3d_resources_ = d3d_backend_->resources();
 
-    // Create tracks
-    for (const auto& path : config.video_paths) {
-        int slot = find_empty_slot();
-        if (slot < 0) {
-            spdlog::warn("Renderer: skipping {}, max {} tracks", path, kMaxTracks);
-            continue;
-        }
-
-        auto pipeline = create_pipeline(path, config.use_hardware_decode);
-        if (!pipeline) continue;
-        const TrackPipelineStartConfig start_config{
-            next_file_id_++,
-            0,
-            true,
-            false,
-        };
-        const TrackPipelineStartHooks hooks{
+    const InitialTrackOpenHooks initial_track_hooks{
+        [this](const std::string& path, bool use_hardware_decode) {
+            return create_pipeline(path, use_hardware_decode);
+        },
+        [this]() { return next_file_id_++; },
+        TrackPipelineStartHooks{
             [this](TrackPipeline& track) { configure_track_seek_callback(track); },
             [this](TrackPipeline& track) { configure_track_error_callback(track); },
             [this](TrackPipeline& track) { register_track_audio(track); },
             [this](int file_id) { unregister_track_audio(file_id); },
-        };
-        if (!configure_and_start_track_pipeline(
-                *pipeline, start_config, hooks, "Renderer")) {
-            continue;
-        }
-        tracks_[slot] = std::move(pipeline);
-    }
+        },
+    };
+    open_initial_track_pipelines(
+        tracks_, config.video_paths, config.use_hardware_decode,
+        initial_track_hooks, "Renderer");
 
     if (tracks_.count() == 0) {
         spdlog::error("Renderer: no valid tracks");

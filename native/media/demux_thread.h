@@ -89,6 +89,7 @@ struct DemuxStats {
 class DemuxThread {
 public:
     using SeekCallback = std::function<void(int64_t target_pts_us, SeekType type)>;
+    using ErrorCallback = std::function<void(int error_code)>;
 
     DemuxThread(const std::string& file_path, SeekController& seek_controller);
     DemuxThread(const std::string& file_path, PacketQueue& output_queue,
@@ -112,6 +113,8 @@ public:
     bool add_optional_output(DemuxStreamKind kind, PacketQueue& output_queue);
 
     void set_seek_callback(SeekCallback cb);
+    void set_error_callback(ErrorCallback cb);
+    void fail_next_read_for_test(int error_code);
 
     const DemuxStats& stats() const { return stats_; }
     AVFormatContext* format_context() const { return fmt_ctx_; }
@@ -128,6 +131,7 @@ private:
     void abort_outputs();
     void flush_outputs();
     void signal_outputs_eof();
+    void emit_error(int error_code);
     int stream_index_for_kind(DemuxStreamKind kind) const;
     AVRational time_base_for_stream(int stream_index) const;
     static int interrupt_callback(void* opaque);
@@ -143,6 +147,9 @@ private:
     std::atomic<bool> running_{false};
     SeekCallback seek_callback_;
     mutable std::mutex seek_callback_mutex_;
+    ErrorCallback error_callback_;
+    mutable std::mutex error_callback_mutex_;
+    std::atomic<int> forced_read_error_for_test_{0};
     std::mutex lifecycle_mutex_;
     std::condition_variable lifecycle_cv_;
     bool opening_ = false;

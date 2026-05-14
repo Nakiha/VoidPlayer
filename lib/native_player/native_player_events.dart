@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'native_player_protocol.dart';
 
-enum NativePlayerEventType { seekPreviewPresented, unknown }
+enum NativePlayerEventType { seekPreviewPresented, trackError, unknown }
 
 class NativePlayerEvent {
   final int schemaVersion;
@@ -17,6 +17,7 @@ class NativePlayerEvent {
   final int? ptsUs;
   final int? dtsUs;
   final int? targetPtsUs;
+  final int? errorCode;
 
   const NativePlayerEvent({
     required this.schemaVersion,
@@ -29,6 +30,7 @@ class NativePlayerEvent {
     this.ptsUs,
     this.dtsUs,
     this.targetPtsUs,
+    this.errorCode,
   });
 
   bool get hasPresentedFrame =>
@@ -46,6 +48,7 @@ class NativePlayerEvent {
       rawType: rawType,
       type: switch (rawType) {
         'seekPreviewPresented' => NativePlayerEventType.seekPreviewPresented,
+        'trackError' => NativePlayerEventType.trackError,
         _ => NativePlayerEventType.unknown,
       },
       timestampUs: _asInt(map['timestampUs']) ?? 0,
@@ -54,6 +57,7 @@ class NativePlayerEvent {
       ptsUs: _asInt(map['ptsUs']),
       dtsUs: _asInt(map['dtsUs']),
       targetPtsUs: _asInt(map['targetPtsUs']),
+      errorCode: _asInt(map['errorCode']),
     );
   }
 

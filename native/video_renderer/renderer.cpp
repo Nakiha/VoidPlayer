@@ -172,6 +172,7 @@ bool Renderer::initialize(const RendererConfig& config) {
 
         pipeline->file_id = next_file_id_++;
         configure_track_seek_callback(*pipeline);
+        configure_track_error_callback(*pipeline);
         register_track_audio(*pipeline);
         if (!pipeline->demux_thread->start_thread()) {
             spdlog::error("Renderer: failed to start demux thread for {}", path);
@@ -656,6 +657,10 @@ void Renderer::emit_event(const RendererEvent& event) {
                          event.track_file_id,
                          event.pts_us / 1e6,
                          event.dts_us == kNoTimestampUs ? -1.0 : event.dts_us / 1e6);
+        } else if (event.type == RendererEvent::Type::TrackError) {
+            spdlog::error("[Renderer] emit trackError file_id={} error_code={:#x}",
+                          event.track_file_id,
+                          static_cast<unsigned>(event.error_code));
         }
         callback(event);
     }
@@ -1270,6 +1275,22 @@ void Renderer::configure_track_seek_callback(TrackPipeline& track) {
             if (audio_coordinator_) {
                 audio_coordinator_->notify_seek(file_id, pts, type);
             }
+        });
+}
+
+void Renderer::configure_track_error_callback(TrackPipeline& track) {
+    const int file_id = track.file_id;
+    const auto buffer = track.track_buffer;
+    track.demux_thread->set_error_callback(
+        [this, file_id, buffer](int error_code) {
+            if (buffer) {
+                buffer->set_state(TrackState::Error);
+            }
+            RendererEvent event;
+            event.type = RendererEvent::Type::TrackError;
+            event.track_file_id = file_id;
+            event.error_code = error_code;
+            emit_event(event);
         });
 }
 
@@ -2923,6 +2944,7 @@ bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, Se
     replacement->offset_us = offset_us;
     replacement->recreated_for_paused_hevc_seek = true;
     configure_track_seek_callback(*replacement);
+    configure_track_error_callback(*replacement);
     register_track_audio(*replacement);
     if (!replacement->demux_thread->start_thread()) {
         spdlog::error("[Renderer] Failed to start recreated demux thread for {}", file_path);
@@ -3019,6 +3041,7 @@ int Renderer::add_track(const std::string& video_path,
     pipeline->file_id = next_file_id_++;
     int new_file_id = pipeline->file_id;
     configure_track_seek_callback(*pipeline);
+    configure_track_error_callback(*pipeline);
     register_track_audio(*pipeline);
     if (!pipeline->demux_thread->start_thread()) {
         spdlog::error("Renderer::add_track: failed to start demux thread for {}", video_path);

@@ -817,12 +817,17 @@ void VideoRendererPlugin::QueueRendererEvent(const vr::RendererEvent& event) {
         payload[flutter::EncodableValue("type")] =
             flutter::EncodableValue("seekPreviewPresented");
         break;
+    case vr::RendererEvent::Type::TrackError:
+        payload[flutter::EncodableValue("type")] =
+            flutter::EncodableValue("trackError");
+        break;
     }
     payload[flutter::EncodableValue("requestId")] = flutter::EncodableValue(event.request_id);
     payload[flutter::EncodableValue("trackFileId")] = flutter::EncodableValue(event.track_file_id);
     payload[flutter::EncodableValue("ptsUs")] = flutter::EncodableValue(event.pts_us);
     payload[flutter::EncodableValue("dtsUs")] = flutter::EncodableValue(event.dts_us);
     payload[flutter::EncodableValue("targetPtsUs")] = flutter::EncodableValue(event.target_pts_us);
+    payload[flutter::EncodableValue("errorCode")] = flutter::EncodableValue(event.error_code);
 
     {
         std::lock_guard<std::mutex> lock(event_mutex_);

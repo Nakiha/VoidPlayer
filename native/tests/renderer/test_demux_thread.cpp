@@ -367,6 +367,35 @@ TEST_CASE("DemuxThread: two-stage start keeps pending seek until callback is wir
     demux.stop();
 }
 
+TEST_CASE("DemuxThread: read errors invoke callback and abort queues",
+          "[demux_thread]") {
+    PacketQueue video_pq;
+    SeekController sc;
+    DemuxThread demux(get_h264_path(), video_pq, sc);
+
+    std::atomic<int> error_code{0};
+    demux.set_error_callback([&](int code) {
+        error_code.store(code, std::memory_order_release);
+    });
+
+    REQUIRE(demux.open());
+    demux.fail_next_read_for_test(AVERROR_INVALIDDATA);
+    REQUIRE(demux.start_thread());
+
+    for (int i = 0; i < 100; ++i) {
+        if (error_code.load(std::memory_order_acquire) == AVERROR_INVALIDDATA &&
+            video_pq.is_aborted()) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    REQUIRE(error_code.load(std::memory_order_acquire) == AVERROR_INVALIDDATA);
+    REQUIRE(video_pq.is_aborted());
+
+    demux.stop();
+}
+
 TEST_CASE("DemuxThread: audio output receives only first audio stream",
           "[demux_thread]") {
     const std::string path = make_multi_audio_fixture();

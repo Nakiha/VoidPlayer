@@ -78,6 +78,7 @@ struct TrackPerfStats {
 struct RendererEvent {
     enum class Type {
         SeekPreviewPresented,
+        TrackError,
     };
 
     Type type = Type::SeekPreviewPresented;
@@ -86,6 +87,7 @@ struct RendererEvent {
     int64_t pts_us = -1;
     int64_t dts_us = kNoTimestampUs;
     int64_t target_pts_us = -1;
+    int error_code = 0;
 };
 
 using RendererEventCallback = std::function<void(const RendererEvent&)>;
@@ -346,6 +348,7 @@ private:
     int64_t compute_frame_duration_us() const;
     void set_decode_paused_for_all_tracks(bool paused);
     void configure_track_seek_callback(TrackPipeline& track);
+    void configure_track_error_callback(TrackPipeline& track);
     void register_track_audio(TrackPipeline& track);
     void unregister_track_audio(int file_id);
     bool should_defer_paused_hevc_seek_locked(int64_t target_pts_us, SeekType type);

@@ -304,6 +304,15 @@ void DemuxThread::set_seek_callback(SeekCallback cb) {
     seek_callback_ = std::move(cb);
 }
 
+void DemuxThread::set_error_callback(ErrorCallback cb) {
+    std::lock_guard<std::mutex> lock(error_callback_mutex_);
+    error_callback_ = std::move(cb);
+}
+
+void DemuxThread::fail_next_read_for_test(int error_code) {
+    forced_read_error_for_test_.store(error_code, std::memory_order_release);
+}
+
 void DemuxThread::abort_outputs() {
     for (auto& route : output_routes_) {
         if (route.queue) {
@@ -325,6 +334,17 @@ void DemuxThread::signal_outputs_eof() {
         if (route.queue) {
             route.queue->signal_eof();
         }
+    }
+}
+
+void DemuxThread::emit_error(int error_code) {
+    ErrorCallback error_callback;
+    {
+        std::lock_guard<std::mutex> lock(error_callback_mutex_);
+        error_callback = error_callback_;
+    }
+    if (error_callback) {
+        error_callback(error_code);
     }
 }
 
@@ -424,9 +444,13 @@ void DemuxThread::run() {
             continue;
         }
 
-        int ret = private_flv_demuxer_
-            ? private_flv_demuxer_->read_packet(pkt)
-            : av_read_frame(fmt_ctx_, pkt);
+        const int forced_read_error =
+            forced_read_error_for_test_.exchange(0, std::memory_order_acq_rel);
+        int ret = forced_read_error != 0
+            ? forced_read_error
+            : (private_flv_demuxer_
+                ? private_flv_demuxer_->read_packet(pkt)
+                : av_read_frame(fmt_ctx_, pkt));
         if (ret < 0) {
             if (ret == AVERROR_EOF) {
                 spdlog::info("[DemuxThread] EOF reached after {} packets, waiting for seek",
@@ -436,6 +460,7 @@ void DemuxThread::run() {
                 continue;
             }
             spdlog::error("[DemuxThread] Read error: {:#x}", static_cast<unsigned>(ret));
+            emit_error(ret);
             break;
         }
 

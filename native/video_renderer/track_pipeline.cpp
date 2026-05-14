@@ -22,6 +22,25 @@ int TrackPipelineManager::find_slot_by_file_id(int file_id) const {
     return -1;
 }
 
+int TrackPipelineManager::first_active_slot() const {
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (tracks_[i]) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+size_t TrackPipelineManager::count() const {
+    size_t active_count = 0;
+    for (const auto& track : tracks_) {
+        if (track) {
+            ++active_count;
+        }
+    }
+    return active_count;
+}
+
 void TrackPipelineManager::clear() {
     for (auto& track : tracks_) {
         track.reset();

@@ -94,6 +94,7 @@ Fixed or reduced:
 - `Renderer`: seek target clamp and pending seek-preview event retarget decision moved into `SeekCoordinator` policy.
 - `Renderer`: per-track seek target/offset clamp facts moved into `track_lifecycle`.
 - `Renderer`: track offset mutation and render-sink offset synchronization moved into `track_lifecycle`.
+- `Renderer`: active track count and first-active-slot queries moved into `TrackPipelineManager`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -117,7 +118,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P62 Renderer Track Manager Query Boundary.
+Next patch: P63 Renderer Track Metadata Snapshot Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -808,10 +809,31 @@ Result:
 
 ### P62 - Renderer Track Manager Query Boundary
 
+Status: done in Patch 62.
+
 Goal:
 
 - Move remaining simple active-track/count queries from `Renderer` into `TrackPipelineManager`.
 - Keep `Renderer` responsible for public locking and public API shape.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv`
+
+Result:
+
+- Added `TrackPipelineManager::count()` and `TrackPipelineManager::first_active_slot()`.
+- `Renderer::track_count` and `Renderer::first_active_track` now delegate to the manager instead of owning loops.
+- Added native coverage for empty, sparse, stopped, and cleared manager query states.
+- Verified with native-only tests plus rebuilt smoke and track remove/compact UI scripts.
+
+### P63 - Renderer Track Metadata Snapshot Boundary
+
+Goal:
+
+- Move `track_infos()` metadata assembly out of `Renderer` into a track snapshot helper.
+- Keep the public `TrackInfo` payload and runner MethodChannel map unchanged.
 
 Validation:
 

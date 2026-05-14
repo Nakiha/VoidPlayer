@@ -176,6 +176,32 @@ TEST_CASE("TrackLifecycle removes and compacts track slots",
     REQUIRE_FALSE(manager[2]);
 }
 
+TEST_CASE("TrackPipelineManager exposes active track queries",
+          "[track_pipeline]") {
+    TrackPipelineManager manager;
+    REQUIRE(manager.count() == 0);
+    REQUIRE(manager.first_active_slot() == -1);
+
+    auto first = std::make_unique<TrackPipeline>();
+    first->file_id = 21;
+    manager[1] = std::move(first);
+    auto second = std::make_unique<TrackPipeline>();
+    second->file_id = 42;
+    manager[3] = std::move(second);
+
+    REQUIRE(manager.count() == 2);
+    REQUIRE(manager.first_active_slot() == 1);
+    REQUIRE(manager.find_slot_by_file_id(42) == 3);
+
+    manager.stop_slot(1);
+    REQUIRE(manager.count() == 1);
+    REQUIRE(manager.first_active_slot() == 3);
+
+    manager.clear();
+    REQUIRE(manager.count() == 0);
+    REQUIRE(manager.first_active_slot() == -1);
+}
+
 TEST_CASE("TrackLifecycle compacts cached present decisions",
           "[track_pipeline][track_lifecycle]") {
     PresentDecision decision;

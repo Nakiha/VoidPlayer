@@ -8,6 +8,7 @@
 #include "video_renderer/sync/render_sink.h"
 
 #include <array>
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <string>
@@ -50,6 +51,8 @@ public:
 
     int find_empty_slot() const;
     int find_slot_by_file_id(int file_id) const;
+    int first_active_slot() const;
+    size_t count() const;
     void clear();
     void stop_all(const TrackCallback& before_stop = {});
     void stop_slot(size_t slot, const TrackCallback& before_stop = {});

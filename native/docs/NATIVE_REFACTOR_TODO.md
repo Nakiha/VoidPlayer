@@ -233,8 +233,12 @@ TODO:
    - 已把 `set_track_offset` 的轨道 offset 赋值与 render-sink offset 更新拆进 lifecycle helper，Renderer 保留 file-id lookup 与 redraw invalidation。
    - 验证：native-only + smoke/track offset refresh UI。
 
-18. [ ] `TrackManagerQueries`
-   - 后续把 `track_count` / first active slot 这类简单查询下放到 `TrackPipelineManager`，Renderer 保留 public API 和锁。
+18. [x] `TrackManagerQueries`
+   - 已把 `track_count` / first active slot 这类简单查询下放到 `TrackPipelineManager`，Renderer 保留 public API 和锁。
+   - 验证：native-only + smoke/track compact UI。
+
+19. [ ] `TrackInfoSnapshot`
+   - 后续把 `track_infos()` 的 metadata 组装拆到 track snapshot helper，Renderer 保留 public API 形状。
    - 验证：native-only + smoke/track compact UI。
 
 ## P1 - Windows Runner Plugin Split

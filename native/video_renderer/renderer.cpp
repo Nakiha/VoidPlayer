@@ -1275,9 +1275,7 @@ double Renderer::current_speed() const {
 }
 
 size_t Renderer::track_count() const {
-    size_t count = 0;
-    for (const auto& t : tracks_) { if (t) ++count; }
-    return count;
+    return tracks_.count();
 }
 
 int64_t Renderer::duration_us() const {
@@ -1947,10 +1945,7 @@ LayoutState Renderer::layout() const {
 // -- Dynamic track management --
 
 int Renderer::first_active_track() const {
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (tracks_[i]) return static_cast<int>(i);
-    }
-    return -1;
+    return tracks_.first_active_slot();
 }
 
 int Renderer::find_slot_by_file_id(int file_id) const {

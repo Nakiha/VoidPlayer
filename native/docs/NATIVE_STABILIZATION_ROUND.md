@@ -91,6 +91,7 @@ Fixed or reduced:
 - `Renderer`: seek pipeline stop/recreate/start/render-sink commit choreography moved into `track_lifecycle`; unused decode-thread-only recreate path removed.
 - `Renderer`: add-track render-sink/frame-presenter/tracks slot commit moved into `track_lifecycle`.
 - `Renderer`: add/remove-track temporary playback pause, failure rollback, and remove-success resume policy moved into `track_lifecycle`.
+- `Renderer`: seek target clamp and pending seek-preview event retarget decision moved into `SeekCoordinator` policy.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -107,14 +108,14 @@ Still active:
 
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
-- `Renderer` still owns layout mutation, public playback commands, and global seek clock/deferred gates.
+- `Renderer` still owns layout mutation, public playback commands, global seek clock/deferred gates, and per-track seek orchestration.
 - `DecodeThread` main loop still owns codec send/receive, EOF drain, AVFrame ownership, and hardware visibility transitions.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P59 Renderer Seek Target Clamp Boundary.
+Next patch: P60 Renderer Track Seek Target Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -741,10 +742,31 @@ Result:
 
 ### P59 - Renderer Seek Target Clamp Boundary
 
+Status: done in Patch 59.
+
 Goal:
 
 - Move seek target clamping and pending seek event retarget decision out of `Renderer::seek_internal`.
 - Keep `Renderer` responsible for actually updating the playback clock and running deferred seek gates.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/pts_offset_seek_clamp_generated.csv`
+
+Result:
+
+- Added `resolve_seek_target` and pending preview event state/result structs to `SeekCoordinator`.
+- `Renderer::seek_internal` now delegates requested-target clamp and pending event retarget decision before updating the playback clock.
+- Added native coverage for in-range, negative, tail, unbounded, and pending event retarget cases.
+- Verified with native-only tests plus rebuilt smoke and PTS-offset seek clamp UI scripts.
+
+### P60 - Renderer Track Seek Target Boundary
+
+Goal:
+
+- Move per-track seek requested-target/offset clamp facts out of `Renderer::seek_internal`.
+- Keep `Renderer` responsible for track iteration, logging, transition preparation, and seek request submission.
 
 Validation:
 

@@ -423,22 +423,21 @@ void Renderer::seek_internal(int64_t target_pts_us,
     // Caller must hold state_mutex_
     // See native/docs/SEEK_STRATEGY.md for codec/container-specific exact seek
     // limits, especially H.264 FLV streams without repeated SPS/PPS on IDR.
-    const int64_t requested_pts_us = target_pts_us;
-    const int64_t duration_us = effective_duration_us_locked();
-    if (duration_us > 0) {
-        target_pts_us = std::clamp(target_pts_us, int64_t(0), duration_us);
-    } else {
-        target_pts_us = std::max<int64_t>(0, target_pts_us);
-    }
-    if (target_pts_us != requested_pts_us) {
+    const PendingSeekPreviewEventState pending_event{
+        pending_seek_event_request_id_ >= 0,
+        pending_seek_event_emitted_,
+        pending_seek_event_target_pts_us_,
+    };
+    const auto seek_target = resolve_seek_target(
+        target_pts_us, effective_duration_us_locked(), pending_event);
+    target_pts_us = seek_target.target_pts_us;
+    if (seek_target.clamped) {
         spdlog::info("[Renderer] seek_internal clamp: requested={:.3f}s, clamped={:.3f}s, duration={:.3f}s",
-                     requested_pts_us / 1e6,
+                     seek_target.requested_pts_us / 1e6,
                      target_pts_us / 1e6,
-                     duration_us / 1e6);
+                     seek_target.effective_duration_us / 1e6);
     }
-    if (pending_seek_event_request_id_ >= 0 &&
-        !pending_seek_event_emitted_ &&
-        pending_seek_event_target_pts_us_ == requested_pts_us) {
+    if (seek_target.retarget_pending_event) {
         pending_seek_event_target_pts_us_ = target_pts_us;
     }
     spdlog::info("[Renderer] seek_internal: target={:.3f}s, type={}",

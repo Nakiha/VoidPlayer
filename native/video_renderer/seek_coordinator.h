@@ -3,9 +3,29 @@
 #include "media/seek_controller.h"
 
 #include <chrono>
+#include <cstdint>
 #include <optional>
 
 namespace vr {
+
+struct PendingSeekPreviewEventState {
+    bool has_request = false;
+    bool emitted = true;
+    int64_t target_pts_us = -1;
+};
+
+struct SeekTargetResolution {
+    int64_t requested_pts_us = 0;
+    int64_t target_pts_us = 0;
+    int64_t effective_duration_us = 0;
+    bool clamped = false;
+    bool retarget_pending_event = false;
+};
+
+SeekTargetResolution resolve_seek_target(
+    int64_t requested_pts_us,
+    int64_t effective_duration_us,
+    const PendingSeekPreviewEventState& pending_event);
 
 struct HevcSeekRecreateInput {
     bool is_hevc_hw_seek = false;

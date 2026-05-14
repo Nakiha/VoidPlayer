@@ -7,6 +7,66 @@
 
 using namespace vr;
 
+TEST_CASE("SeekTargetPolicy: clamps requested target to playable range",
+          "[seek][coordinator][target]") {
+    PendingSeekPreviewEventState no_pending;
+
+    auto result = resolve_seek_target(5000, 10000, no_pending);
+    REQUIRE(result.requested_pts_us == 5000);
+    REQUIRE(result.target_pts_us == 5000);
+    REQUIRE(result.effective_duration_us == 10000);
+    REQUIRE_FALSE(result.clamped);
+    REQUIRE_FALSE(result.retarget_pending_event);
+
+    result = resolve_seek_target(-250, 10000, no_pending);
+    REQUIRE(result.target_pts_us == 0);
+    REQUIRE(result.clamped);
+
+    result = resolve_seek_target(12000, 10000, no_pending);
+    REQUIRE(result.target_pts_us == 10000);
+    REQUIRE(result.clamped);
+
+    result = resolve_seek_target(-250, 0, no_pending);
+    REQUIRE(result.target_pts_us == 0);
+    REQUIRE(result.clamped);
+
+    result = resolve_seek_target(12000, 0, no_pending);
+    REQUIRE(result.target_pts_us == 12000);
+    REQUIRE_FALSE(result.clamped);
+}
+
+TEST_CASE("SeekTargetPolicy: retargets matching pending preview event only when clamped",
+          "[seek][coordinator][target]") {
+    PendingSeekPreviewEventState pending;
+    pending.has_request = true;
+    pending.emitted = false;
+    pending.target_pts_us = 12000;
+
+    auto result = resolve_seek_target(12000, 10000, pending);
+    REQUIRE(result.target_pts_us == 10000);
+    REQUIRE(result.clamped);
+    REQUIRE(result.retarget_pending_event);
+
+    pending.target_pts_us = 11000;
+    result = resolve_seek_target(12000, 10000, pending);
+    REQUIRE_FALSE(result.retarget_pending_event);
+
+    pending.target_pts_us = 12000;
+    pending.emitted = true;
+    result = resolve_seek_target(12000, 10000, pending);
+    REQUIRE_FALSE(result.retarget_pending_event);
+
+    pending.emitted = false;
+    pending.has_request = false;
+    result = resolve_seek_target(12000, 10000, pending);
+    REQUIRE_FALSE(result.retarget_pending_event);
+
+    pending.has_request = true;
+    result = resolve_seek_target(9000, 10000, pending);
+    REQUIRE_FALSE(result.clamped);
+    REQUIRE_FALSE(result.retarget_pending_event);
+}
+
 TEST_CASE("HevcSeekRecreatePolicy: ignores non-HEVC hardware seeks",
           "[seek][coordinator][hevc]") {
     HevcSeekRecreateInput input;

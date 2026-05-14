@@ -1,6 +1,30 @@
 #include "video_renderer/seek_coordinator.h"
 
+#include <algorithm>
+
 namespace vr {
+
+SeekTargetResolution resolve_seek_target(
+    int64_t requested_pts_us,
+    int64_t effective_duration_us,
+    const PendingSeekPreviewEventState& pending_event) {
+    SeekTargetResolution result;
+    result.requested_pts_us = requested_pts_us;
+    result.effective_duration_us = effective_duration_us;
+    if (effective_duration_us > 0) {
+        result.target_pts_us =
+            std::clamp(requested_pts_us, int64_t(0), effective_duration_us);
+    } else {
+        result.target_pts_us = std::max<int64_t>(0, requested_pts_us);
+    }
+    result.clamped = result.target_pts_us != requested_pts_us;
+    result.retarget_pending_event =
+        pending_event.has_request &&
+        !pending_event.emitted &&
+        pending_event.target_pts_us == requested_pts_us &&
+        result.clamped;
+    return result;
+}
 
 HevcSeekRecreateDecision choose_hevc_seek_recreate(
     const HevcSeekRecreateInput& input) {

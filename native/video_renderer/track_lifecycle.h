@@ -5,6 +5,8 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
+#include <string>
 
 namespace vr {
 
@@ -89,5 +91,25 @@ void submit_track_seek_after_recreate(
     SeekType type,
     bool paused_seek,
     bool recreated_for_seek);
+
+struct TrackPipelineRecreateHooks {
+    std::function<void(int file_id)> unregister_audio;
+    std::function<void(size_t slot)> clear_slot;
+    std::function<void(size_t slot)> reset_presenter_track;
+    std::function<std::unique_ptr<TrackPipeline>(
+        const std::string& path,
+        bool use_hardware_decode,
+        const SeekRequest& initial_seek)> create_pipeline;
+    TrackPipelineStartHooks start_hooks;
+    std::function<void(size_t slot, TrackPipeline& track)> commit_slot;
+};
+
+bool recreate_track_pipeline_for_seek(
+    TrackPipelineManager& tracks,
+    size_t slot,
+    int64_t target_pts_us,
+    SeekType type,
+    const TrackPipelineRecreateHooks& hooks,
+    const char* log_context);
 
 } // namespace vr

@@ -343,3 +343,82 @@ TEST_CASE("TrackLifecycle submits seek after optional recreate",
         track, 456000, SeekType::Keyframe, false, true);
     REQUIRE_FALSE(track.seek_controller->has_pending_seek());
 }
+
+TEST_CASE("TrackLifecycle recreates track pipeline for seek",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineFactory factory;
+    const std::string path = video_test_dir() + "/h264_9s_1920x1080.mp4";
+    auto current = factory.create_opened_pipeline(path, false);
+    REQUIRE(current);
+    current->file_id = 91;
+    current->offset_us = 12345;
+
+    TrackPipelineManager manager;
+    manager[0] = std::move(current);
+
+    std::atomic<int> seek_callbacks{0};
+    std::vector<std::string> events;
+    TrackPipelineRecreateHooks hooks;
+    hooks.unregister_audio = [&](int file_id) {
+        events.push_back("unregister:" + std::to_string(file_id));
+    };
+    hooks.clear_slot = [&](size_t slot) {
+        events.push_back("clear:" + std::to_string(slot));
+    };
+    hooks.reset_presenter_track = [&](size_t slot) {
+        events.push_back("reset:" + std::to_string(slot));
+    };
+    hooks.create_pipeline =
+        [&](const std::string& recreate_path,
+            bool use_hardware_decode,
+            const SeekRequest& initial_seek) {
+            REQUIRE(recreate_path == path);
+            REQUIRE_FALSE(use_hardware_decode);
+            REQUIRE(initial_seek.target_pts_us == 1000000);
+            REQUIRE(initial_seek.type == SeekType::Exact);
+            events.push_back("create");
+            return factory.create_opened_pipeline(
+                recreate_path, use_hardware_decode, &initial_seek);
+        };
+    hooks.start_hooks.configure_seek_callback = [&](TrackPipeline& track) {
+        events.push_back("configure_seek");
+        track.demux_thread->set_seek_callback(
+            [&](int64_t, SeekType) {
+                seek_callbacks.fetch_add(1, std::memory_order_acq_rel);
+            });
+    };
+    hooks.start_hooks.configure_error_callback = [&](TrackPipeline&) {
+        events.push_back("configure_error");
+    };
+    hooks.start_hooks.register_audio = [&](TrackPipeline& track) {
+        events.push_back("register:" + std::to_string(track.file_id));
+    };
+    hooks.start_hooks.unregister_audio = [&](int file_id) {
+        events.push_back("start_unregister:" + std::to_string(file_id));
+    };
+    hooks.commit_slot = [&](size_t slot, TrackPipeline& track) {
+        events.push_back(
+            "commit:" + std::to_string(slot) + ":" + std::to_string(track.file_id));
+    };
+
+    REQUIRE(recreate_track_pipeline_for_seek(
+        manager, 0, 1000000, SeekType::Exact, hooks, "TrackLifecycleTest"));
+
+    REQUIRE(manager[0]);
+    REQUIRE(manager[0]->file_id == 91);
+    REQUIRE(manager[0]->offset_us == 12345);
+    REQUIRE(manager[0]->recreated_for_paused_hevc_seek);
+    REQUIRE(events == std::vector<std::string>{
+        "unregister:91",
+        "clear:0",
+        "reset:0",
+        "create",
+        "configure_seek",
+        "configure_error",
+        "register:91",
+        "commit:0:91",
+    });
+
+    manager.stop_slot(0);
+    (void)seek_callbacks.load(std::memory_order_acquire);
+}

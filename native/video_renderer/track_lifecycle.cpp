@@ -3,7 +3,9 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <chrono>
 #include <optional>
+#include <thread>
 #include <utility>
 
 namespace vr {
@@ -188,6 +190,71 @@ void submit_track_seek_after_recreate(
     if (!recreated_for_seek) {
         track.seek_controller->request_seek(target_pts_us, type);
     }
+}
+
+bool recreate_track_pipeline_for_seek(
+    TrackPipelineManager& tracks,
+    size_t slot,
+    int64_t target_pts_us,
+    SeekType type,
+    const TrackPipelineRecreateHooks& hooks,
+    const char* log_context) {
+    auto& current = tracks[slot];
+    if (!current) {
+        return false;
+    }
+
+    const char* context = log_context ? log_context : "TrackLifecycle";
+    spdlog::info("{} Recreating pipeline for {}", context, current->file_path);
+
+    const auto file_path = current->file_path;
+    const auto file_id = current->file_id;
+    const auto offset_us = current->offset_us;
+    const auto use_hardware_decode = current->use_hardware_decode;
+
+    if (hooks.unregister_audio) {
+        hooks.unregister_audio(file_id);
+    }
+    if (hooks.clear_slot) {
+        hooks.clear_slot(slot);
+    }
+    if (hooks.reset_presenter_track) {
+        hooks.reset_presenter_track(slot);
+    }
+    tracks.stop_slot(slot);
+
+    // Give the driver a brief moment to retire the previous D3D11VA decoder
+    // objects before constructing a fresh hardware pipeline on the same file.
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+    if (!hooks.create_pipeline) {
+        spdlog::error("{} Failed to recreate pipeline for {}", context, file_path);
+        return false;
+    }
+    const SeekRequest initial_seek{target_pts_us, type};
+    auto replacement =
+        hooks.create_pipeline(file_path, use_hardware_decode, initial_seek);
+    if (!replacement) {
+        spdlog::error("{} Failed to recreate pipeline for {}", context, file_path);
+        return false;
+    }
+
+    const TrackPipelineStartConfig start_config{
+        file_id,
+        offset_us,
+        false,
+        true,
+    };
+    if (!configure_and_start_track_pipeline(
+            *replacement, start_config, hooks.start_hooks, context)) {
+        return false;
+    }
+
+    if (hooks.commit_slot) {
+        hooks.commit_slot(slot, *replacement);
+    }
+    tracks[slot] = std::move(replacement);
+    return true;
 }
 
 } // namespace vr

@@ -1978,106 +1978,35 @@ std::unique_ptr<TrackPipeline> Renderer::create_pipeline(
 }
 
 bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, SeekType type) {
-    auto& current = tracks_[slot];
-    if (!current) {
-        return false;
-    }
-
-    spdlog::info("[Renderer] Recreating pipeline for {}", current->file_path);
-
-    const auto file_path = current->file_path;
-    const auto file_id = current->file_id;
-    const auto offset_us = current->offset_us;
-    const auto use_hardware_decode = current->use_hardware_decode;
-
-    unregister_track_audio(file_id);
-    render_sink_->set_track(slot, nullptr);
-    if (frame_presenter_) {
-        frame_presenter_->reset_track(slot);
-    }
-    tracks_.stop_slot(slot);
-
-    // Give the driver a brief moment to retire the previous D3D11VA decoder
-    // objects before constructing a fresh hardware pipeline on the same file.
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-
-    const SeekRequest initial_seek{target_pts_us, type};
-    auto replacement = create_pipeline(file_path, use_hardware_decode, &initial_seek);
-    if (!replacement) {
-        spdlog::error("[Renderer] Failed to recreate pipeline for {}", file_path);
-        return false;
-    }
-
-    const TrackPipelineStartConfig start_config{
-        file_id,
-        offset_us,
-        false,
-        true,
+    TrackPipelineRecreateHooks hooks;
+    hooks.unregister_audio = [this](int file_id) { unregister_track_audio(file_id); };
+    hooks.clear_slot = [this](size_t cleared_slot) {
+        render_sink_->set_track(cleared_slot, nullptr);
     };
-    const TrackPipelineStartHooks hooks{
+    hooks.reset_presenter_track = [this](size_t reset_slot) {
+        if (frame_presenter_) {
+            frame_presenter_->reset_track(reset_slot);
+        }
+    };
+    hooks.create_pipeline =
+        [this](const std::string& path,
+               bool use_hardware_decode,
+               const SeekRequest& initial_seek) {
+            return create_pipeline(path, use_hardware_decode, &initial_seek);
+        };
+    hooks.start_hooks = TrackPipelineStartHooks{
         [this](TrackPipeline& track) { configure_track_seek_callback(track); },
         [this](TrackPipeline& track) { configure_track_error_callback(track); },
         [this](TrackPipeline& track) { register_track_audio(track); },
         [this](int id) { unregister_track_audio(id); },
     };
-    if (!configure_and_start_track_pipeline(
-            *replacement, start_config, hooks, "[Renderer] Recreate pipeline")) {
-        return false;
-    }
+    hooks.commit_slot = [this](size_t committed_slot, TrackPipeline& track) {
+        render_sink_->set_track(committed_slot, track.track_buffer);
+        render_sink_->set_track_offset(committed_slot, track.offset_us);
+    };
 
-    render_sink_->set_track(slot, replacement->track_buffer);
-    render_sink_->set_track_offset(slot, offset_us);
-    tracks_[slot] = std::move(replacement);
-    return true;
-}
-
-bool Renderer::recreate_decode_thread_for_seek(size_t slot, int64_t target_pts_us, SeekType type) {
-    auto& track = tracks_[slot];
-    if (!track) {
-        return false;
-    }
-
-    spdlog::info("[Renderer] Recreating decode thread for paused seek on {}", track->file_path);
-
-    track->decode_thread->stop();
-    track->packet_queue->reset();
-    track->packet_queue->flush();
-    track->track_buffer->reset();
-    track->track_buffer->set_state(TrackState::Flushing);
-    if (frame_presenter_) {
-        frame_presenter_->reset_track(slot);
-    }
-
-    const auto& stats = track->demux_thread->stats();
-    auto replacement = std::make_unique<DecodeThread>(
-        *track->packet_queue, *track->track_buffer, stats.codec_params, stats.time_base);
-    if (!replacement->is_valid()) {
-        spdlog::error("[Renderer] Failed to recreate decode thread for {}", track->file_path);
-        return false;
-    }
-
-    const int file_id = track->file_id;
-    track->demux_thread->set_seek_callback(
-        [this, dt = replacement.get(), file_id](int64_t pts, SeekType seek_type) {
-            dt->notify_seek(pts, seek_type);
-            if (audio_coordinator_) {
-                audio_coordinator_->notify_seek(file_id, pts, seek_type);
-            }
-        });
-
-    if (track->use_hardware_decode) {
-        replacement->enable_hardware_decode(
-            default_decode_device_mode(stats.codec_params->codec_id));
-    }
-
-    if (!replacement->start()) {
-        spdlog::error("[Renderer] Failed to start recreated decode thread for {}", track->file_path);
-        return false;
-    }
-
-    track->decode_thread = std::move(replacement);
-    track->seek_controller->request_seek(target_pts_us, type);
-    return true;
+    return recreate_track_pipeline_for_seek(
+        tracks_, slot, target_pts_us, type, hooks, "[Renderer]");
 }
 
 int Renderer::add_track(const std::string& video_path,

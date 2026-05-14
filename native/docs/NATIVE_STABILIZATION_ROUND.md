@@ -88,6 +88,7 @@ Fixed or reduced:
 - `Renderer`: add-track current-clock seek target clamp, buffer/queue flush, audio pause, and seek type choice moved into `track_lifecycle`.
 - `Renderer`: HEVC hardware seek recreate/coalesce/error decision moved into `SeekCoordinator` policy.
 - `Renderer`: generic per-track seek preparation and post-recreate seek submission moved into `track_lifecycle`.
+- `Renderer`: seek pipeline stop/recreate/start/render-sink commit choreography moved into `track_lifecycle`; unused decode-thread-only recreate path removed.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -104,14 +105,14 @@ Still active:
 
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
-- `Renderer` still owns track slot commit, layout mutation, playback pause/resume, global seek clock/deferred gates, and seek pipeline recreation.
+- `Renderer` still owns add/remove track slot commit, layout mutation, playback pause/resume, and global seek clock/deferred gates.
 - `DecodeThread` main loop still owns codec send/receive, EOF drain, AVFrame ownership, and hardware visibility transitions.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P55 Renderer Seek Pipeline Recreate Boundary.
+Next patch: P56 Renderer Track Add Commit Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -652,6 +653,8 @@ Result:
 
 ### P55 - Renderer Seek Pipeline Recreate Boundary
 
+Status: done in Patch 55.
+
 Goal:
 
 - Move `recreate_pipeline_for_seek` stop/recreate/start/render-sink commit choreography into a lifecycle helper.
@@ -661,6 +664,26 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`
+
+Result:
+
+- Added `TrackPipelineRecreateHooks` and `recreate_track_pipeline_for_seek` to `track_lifecycle`.
+- `Renderer::recreate_pipeline_for_seek` now provides hooks while lifecycle code owns old-track metadata capture, stop, driver settle, replacement startup, and slot commit.
+- Removed the unused decode-thread-only recreate path.
+- Added native coverage using a real replacement pipeline to verify hook order, metadata preservation, recreated flag, initial seek, and commit.
+- Verified with native-only tests plus rebuilt smoke and shutdown-during-seek recreate UI scripts.
+
+### P56 - Renderer Track Add Commit Boundary
+
+Goal:
+
+- Move add-track render-sink/frame-presenter/tracks slot commit into a lifecycle helper.
+- Keep layout mutation, duration cache update, playback pause/resume, and public file-id allocation in `Renderer`.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv`
 
 ## Do-Not-Drift List
 

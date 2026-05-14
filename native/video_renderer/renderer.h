@@ -373,9 +373,6 @@ private:
     /// Recreate a track pipeline so seek starts with a fresh demux/decode epoch.
     bool recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, SeekType type);
 
-    /// Recreate only the decode thread/hardware decoder while keeping demux alive.
-    bool recreate_decode_thread_for_seek(size_t slot, int64_t target_pts_us, SeekType type);
-
     /// Release all owned renderer resources after the render thread has stopped.
     /// Caller must hold state_mutex_.
     void release_resources_locked();

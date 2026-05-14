@@ -205,9 +205,13 @@ TODO:
    - 已把 `seek_internal` 内每轨 seek 前的 decode/audio pause、buffer clear、presenter reset、packet/audio queue flush、seek request submission 拆成 lifecycle helper。
    - 验证：native-only + smoke/timeline seek/shutdown-during-seek recreate UI。
 
-11. [ ] `SeekPipelineRecreateLifecycle`
-   - 后续把 `recreate_pipeline_for_seek` 的 stop/recreate/start/render-sink commit 编排拆成 lifecycle helper，并清理不再使用的 decode-thread-only recreate 路径。
+11. [x] `SeekPipelineRecreateLifecycle`
+   - 已把 `recreate_pipeline_for_seek` 的 stop/recreate/start/render-sink commit 编排拆成 lifecycle helper，并清理不再使用的 decode-thread-only recreate 路径。
    - 验证：native-only + smoke/shutdown-during-seek recreate UI。
+
+12. [ ] `TrackAddCommit`
+   - 后续把 add-track 的 render-sink/frame-presenter/tracks slot commit 拆成 lifecycle helper，Renderer 保留 layout/duration/playback 决策。
+   - 验证：native-only + smoke/track compact UI。
 
 ## P1 - Windows Runner Plugin Split
 

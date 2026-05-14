@@ -24,77 +24,49 @@ public:
     bool initialize(const RendererConfig& config);
     void shutdown();
 
-    void play() { renderer_.play(); }
-    void pause() { renderer_.pause(); }
+    void play();
+    void pause();
     void seek(int64_t target_pts_us,
               SeekType type = SeekType::Keyframe,
-              int64_t request_id = -1) {
-        renderer_.seek(target_pts_us, type, request_id);
-    }
-    void set_speed(double speed) { renderer_.set_speed(speed); }
-    void set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
-        renderer_.set_loop_range(enabled, start_us, end_us);
-    }
-    void set_audible_track(int file_id) { renderer_.set_audible_track(file_id); }
-    int audible_track() const { return renderer_.audible_track(); }
+              int64_t request_id = -1);
+    void set_speed(double speed);
+    void set_loop_range(bool enabled, int64_t start_us, int64_t end_us);
+    void set_audible_track(int file_id);
+    int audible_track() const;
 
-    void step_forward() { renderer_.step_forward(); }
-    void step_backward() { renderer_.step_backward(); }
+    void step_forward();
+    void step_backward();
 
-    bool is_playing() const { return renderer_.is_playing(); }
-    bool is_initialized() const { return renderer_.is_initialized(); }
-    int64_t current_pts_us() const { return renderer_.current_pts_us(); }
-    double current_speed() const { return renderer_.current_speed(); }
-    size_t track_count() const { return renderer_.track_count(); }
-    int64_t duration_us() const { return renderer_.duration_us(); }
+    bool is_playing() const;
+    bool is_initialized() const;
+    int64_t current_pts_us() const;
+    double current_speed() const;
+    size_t track_count() const;
+    int64_t duration_us() const;
 
-    int add_track(const std::string& video_path, bool use_hardware_decode = true) {
-        return renderer_.add_track(video_path, use_hardware_decode);
-    }
-    void remove_track(int file_id) { renderer_.remove_track(file_id); }
-    bool has_track(int slot) const { return renderer_.has_track(slot); }
-    std::pair<int, int> track_dimensions(int slot) const {
-        return renderer_.track_dimensions(slot);
-    }
-    std::vector<TrackInfo> track_infos() const { return renderer_.track_infos(); }
-    std::vector<TrackPerfStats> track_perf_stats() const {
-        return renderer_.track_perf_stats();
-    }
-    RendererGpuMemoryStats gpu_memory_stats() const {
-        return renderer_.gpu_memory_stats();
-    }
-    bool d3d_device_lost() const { return renderer_.d3d_device_lost(); }
-    long d3d_device_removed_reason() const {
-        return renderer_.d3d_device_removed_reason();
-    }
-    void set_track_offset(int file_id, int64_t offset_us) {
-        renderer_.set_track_offset(file_id, offset_us);
-    }
+    int add_track(const std::string& video_path, bool use_hardware_decode = true);
+    void remove_track(int file_id);
+    bool has_track(int slot) const;
+    std::pair<int, int> track_dimensions(int slot) const;
+    std::vector<TrackInfo> track_infos() const;
+    std::vector<TrackPerfStats> track_perf_stats() const;
+    RendererGpuMemoryStats gpu_memory_stats() const;
+    bool d3d_device_lost() const;
+    long d3d_device_removed_reason() const;
+    void set_track_offset(int file_id, int64_t offset_us);
 
-    void apply_layout(const LayoutState& state) { renderer_.apply_layout(state); }
-    void set_background_color(float r, float g, float b, float a) {
-        renderer_.set_background_color(r, g, b, a);
-    }
-    LayoutState layout() const { return renderer_.layout(); }
+    void apply_layout(const LayoutState& state);
+    void set_background_color(float r, float g, float b, float a);
+    LayoutState layout() const;
 
-    void set_frame_callback(std::function<void()> cb) {
-        renderer_.set_frame_callback(std::move(cb));
-    }
-    void set_event_callback(RendererEventCallback cb) {
-        renderer_.set_event_callback(std::move(cb));
-    }
-    int texture_width() const { return renderer_.texture_width(); }
-    int texture_height() const { return renderer_.texture_height(); }
-    bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
-        return renderer_.acquire_shared_texture(snapshot);
-    }
-    void release_shared_texture(int buffer_index, uint64_t buffer_generation) const {
-        renderer_.release_shared_texture(buffer_index, buffer_generation);
-    }
-    void resize(int width, int height) { renderer_.resize(width, height); }
-    bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
-        return renderer_.capture_front_buffer(bgra, width, height);
-    }
+    void set_frame_callback(std::function<void()> cb);
+    void set_event_callback(RendererEventCallback cb);
+    int texture_width() const;
+    int texture_height() const;
+    bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const;
+    void release_shared_texture(int buffer_index, uint64_t buffer_generation) const;
+    void resize(int width, int height);
+    bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
 
     PlaybackController& playback() { return playback_; }
     const PlaybackController& playback() const { return playback_; }
@@ -108,6 +80,8 @@ private:
         Initialized,
         ShuttingDown,
     };
+
+    bool renderer_ready_locked() const;
 
     mutable std::mutex lifecycle_mutex_;
     State state_ = State::Created;

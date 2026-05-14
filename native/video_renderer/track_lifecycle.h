@@ -48,6 +48,13 @@ int64_t track_pts_end_us_from_stats(const DemuxStats& stats);
 int64_t clamp_track_seek_target_us(const TrackPipeline& track,
                                    int64_t target_pts_us);
 
+int64_t track_duration_us(const TrackPipeline& track);
+
+int64_t extend_track_duration_cache(int64_t cached_duration_us,
+                                    const TrackPipeline& track);
+
+int64_t compute_track_duration_cache(const TrackPipelineManager& tracks);
+
 struct TrackAddSeekHooks {
     std::function<void(int file_id, bool paused)> set_audio_decode_paused;
 };

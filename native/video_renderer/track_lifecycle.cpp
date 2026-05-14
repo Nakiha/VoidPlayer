@@ -115,6 +115,28 @@ int64_t clamp_track_seek_target_us(const TrackPipeline& track,
     return std::min(track_target, track_end_us);
 }
 
+int64_t track_duration_us(const TrackPipeline& track) {
+    if (!track.demux_thread) {
+        return 0;
+    }
+    return std::max<int64_t>(0, track.demux_thread->stats().duration_us);
+}
+
+int64_t extend_track_duration_cache(int64_t cached_duration_us,
+                                    const TrackPipeline& track) {
+    return std::max(cached_duration_us, track_duration_us(track));
+}
+
+int64_t compute_track_duration_cache(const TrackPipelineManager& tracks) {
+    int64_t duration_us = 0;
+    for (const auto& track : tracks) {
+        if (track) {
+            duration_us = extend_track_duration_cache(duration_us, *track);
+        }
+    }
+    return duration_us;
+}
+
 TrackAddSeekResult prepare_add_track_seek_to_clock(
     TrackPipeline& track,
     int64_t current_pts_us,

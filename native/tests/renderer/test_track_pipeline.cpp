@@ -215,6 +215,31 @@ TEST_CASE("TrackLifecycle computes track PTS end from demux stats",
     REQUIRE(track_pts_end_us_from_stats(absolute_end) == 5000);
 }
 
+TEST_CASE("TrackLifecycle computes duration cache",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipeline no_demux_track;
+    REQUIRE(track_duration_us(no_demux_track) == 0);
+    REQUIRE(extend_track_duration_cache(5000, no_demux_track) == 5000);
+
+    TrackPipelineManager manager;
+    auto empty_track = std::make_unique<TrackPipeline>();
+    manager[0] = std::move(empty_track);
+    REQUIRE(compute_track_duration_cache(manager) == 0);
+
+    TrackPipelineFactory factory;
+    auto pipeline = factory.create_opened_pipeline(
+        video_test_dir() + "/h264_9s_1920x1080.mp4",
+        false);
+    REQUIRE(pipeline);
+    const int64_t duration_us = track_duration_us(*pipeline);
+    REQUIRE(duration_us > 0);
+    REQUIRE(extend_track_duration_cache(1, *pipeline) == duration_us);
+
+    manager[1] = std::move(pipeline);
+    REQUIRE(compute_track_duration_cache(manager) == duration_us);
+    manager.stop_slot(1);
+}
+
 TEST_CASE("TrackLifecycle prepares add-track seek to current clock",
           "[track_pipeline][track_lifecycle]") {
     TrackPipeline track;

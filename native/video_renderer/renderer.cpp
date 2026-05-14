@@ -191,13 +191,8 @@ bool Renderer::initialize(const RendererConfig& config) {
         }
     }
 
-    // Cache duration (immutable after init)
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (tracks_[i]) {
-            cached_duration_us_ = std::max(cached_duration_us_,
-                tracks_[i]->demux_thread->stats().duration_us);
-        }
-    }
+    // Cache duration (immutable until tracks are added/removed)
+    cached_duration_us_ = compute_track_duration_cache(tracks_);
 
     initialized_ = true;
 
@@ -2059,8 +2054,7 @@ int Renderer::add_track(const std::string& video_path,
     }
 
     // Update duration cache
-    cached_duration_us_ = std::max(cached_duration_us_,
-        pipeline->demux_thread->stats().duration_us);
+    cached_duration_us_ = extend_track_duration_cache(cached_duration_us_, *pipeline);
 
     const TrackAddCommitHooks commit_hooks{
         [this](size_t committed_slot, TrackPipeline& track) {
@@ -2157,14 +2151,7 @@ void Renderer::remove_track(int file_id) {
     layout_controller_.remove_track(
         layout_, file_id, [this](int id) { return find_slot_by_file_id(id); });
 
-    // Recalculate duration
-    cached_duration_us_ = 0;
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (tracks_[i]) {
-            cached_duration_us_ = std::max(cached_duration_us_,
-                tracks_[i]->demux_thread->stats().duration_us);
-        }
-    }
+    cached_duration_us_ = compute_track_duration_cache(tracks_);
 
     preview_drawn_ = false;
 

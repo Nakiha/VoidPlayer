@@ -106,14 +106,14 @@ Still active:
 
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
-- `Renderer` still owns layout mutation, playback pause/resume, duration cache updates, and global seek clock/deferred gates.
+- `Renderer` still owns layout mutation, playback pause/resume, and global seek clock/deferred gates.
 - `DecodeThread` main loop still owns codec send/receive, EOF drain, AVFrame ownership, and hardware visibility transitions.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P57 Renderer Track Duration Cache Boundary.
+Next patch: P58 Renderer Track Playback Pause Guard.
 
 ### P30 - VACache Atomic Publish
 
@@ -697,10 +697,31 @@ Result:
 
 ### P57 - Renderer Track Duration Cache Boundary
 
+Status: done in Patch 57.
+
 Goal:
 
 - Move track duration cache max/recompute helpers out of `Renderer`.
 - Keep the cached value field and public `duration_us()` API in `Renderer`.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv`
+
+Result:
+
+- Added `track_duration_us`, `extend_track_duration_cache`, and `compute_track_duration_cache` to `track_lifecycle`.
+- `Renderer` now delegates initial duration cache build, add-track extension, and remove-track recompute.
+- Added native coverage for no-demux tracks, manager recompute, and real opened pipeline duration.
+- Verified with native-only tests plus rebuilt smoke and track compact UI scripts.
+
+### P58 - Renderer Track Playback Pause Guard
+
+Goal:
+
+- Extract add/remove track temporary playback pause/resume decisions into a small helper or guard policy.
+- Keep `Renderer` responsible for public playback state, layout mutation, and operation failure rollback.
 
 Validation:
 

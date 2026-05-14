@@ -213,8 +213,12 @@ TODO:
    - 已把 add-track 的 render-sink/frame-presenter/tracks slot commit 拆成 lifecycle helper，Renderer 保留 layout/duration/playback 决策。
    - 验证：native-only + smoke/track compact UI。
 
-13. [ ] `TrackDurationCache`
-   - 后续把 initialize/add/remove 中的 track duration max/recompute 逻辑拆成可单测 helper，Renderer 只保留 cached value。
+13. [x] `TrackDurationCache`
+   - 已把 initialize/add/remove 中的 track duration max/recompute 逻辑拆成可单测 helper，Renderer 只保留 cached value。
+   - 验证：native-only + smoke/track compact UI。
+
+14. [ ] `TrackPlaybackPauseGuard`
+   - 后续把 add/remove track 中临时暂停播放、失败回滚、成功后按条件恢复播放的重复逻辑拆成 helper/policy。
    - 验证：native-only + smoke/track compact UI。
 
 ## P1 - Windows Runner Plugin Split

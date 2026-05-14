@@ -45,6 +45,22 @@ HevcSeekRecreateDecision choose_hevc_seek_recreate(
     return decision;
 }
 
+LoopRangeSeekDecision choose_loop_range_seek(
+    const LoopRangeSeekInput& input) {
+    LoopRangeSeekDecision decision;
+    if (!input.playing ||
+        !input.loop_enabled ||
+        input.clock_paused ||
+        input.end_us <= input.start_us ||
+        input.current_pts_us < input.end_us) {
+        return decision;
+    }
+
+    decision.should_seek = true;
+    decision.target_pts_us = input.start_us;
+    return decision;
+}
+
 SeekCoordinator::SeekCoordinator(std::chrono::milliseconds paused_hevc_settle_delay)
     : paused_hevc_settle_delay_(paused_hevc_settle_delay) {}
 

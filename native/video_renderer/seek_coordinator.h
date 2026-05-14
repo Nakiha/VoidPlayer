@@ -45,6 +45,23 @@ struct HevcSeekRecreateDecision {
 HevcSeekRecreateDecision choose_hevc_seek_recreate(
     const HevcSeekRecreateInput& input);
 
+struct LoopRangeSeekInput {
+    bool playing = false;
+    bool loop_enabled = false;
+    bool clock_paused = true;
+    int64_t current_pts_us = 0;
+    int64_t start_us = 0;
+    int64_t end_us = 0;
+};
+
+struct LoopRangeSeekDecision {
+    bool should_seek = false;
+    int64_t target_pts_us = 0;
+};
+
+LoopRangeSeekDecision choose_loop_range_seek(
+    const LoopRangeSeekInput& input);
+
 class SeekCoordinator {
 public:
     explicit SeekCoordinator(std::chrono::milliseconds paused_hevc_settle_delay);

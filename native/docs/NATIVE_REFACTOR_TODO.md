@@ -249,8 +249,12 @@ TODO:
    - 已把 `gpu_memory_stats()` 里的每轨 GPU/memory 字段组装拆到 `track_snapshot` helper，Renderer 保留 device/state locking、aggregate totals 和 D3D resource ownership。
    - 验证：native-only + smoke UI。
 
-22. [ ] `LoopRangeSeekPolicy`
-   - 后续把 `apply_loop_range_locked()` 的 loop 边界判断拆成可单测 policy，Renderer 保留锁、clock 读取、日志和 `seek_internal()` 执行。
+22. [x] `LoopRangeSeekPolicy`
+   - 已把 `apply_loop_range_locked()` 的 loop 边界判断拆成可单测 policy，Renderer 保留锁、clock 读取、日志和 `seek_internal()` 执行。
+   - 验证：native-only + smoke/loop UI。
+
+23. [ ] `LoopRangeState`
+   - 后续把 nested `LoopRangeState` 和 set-loop normalization/comparison 拆出 Renderer，Renderer 保留 validation、锁、状态存储和日志。
    - 验证：native-only + smoke/loop UI。
 
 ## P1 - Windows Runner Plugin Split

@@ -158,6 +158,63 @@ TEST_CASE("HevcSeekRecreatePolicy: forced paused transition can recreate",
     REQUIRE(decision.coalescing_transition);
 }
 
+TEST_CASE("LoopRangeSeekPolicy: seeks to loop start at or past end",
+          "[seek][coordinator][loop]") {
+    LoopRangeSeekInput input;
+    input.playing = true;
+    input.loop_enabled = true;
+    input.clock_paused = false;
+    input.start_us = 1000;
+    input.end_us = 4000;
+
+    input.current_pts_us = 3999;
+    auto decision = choose_loop_range_seek(input);
+    REQUIRE_FALSE(decision.should_seek);
+
+    input.current_pts_us = 4000;
+    decision = choose_loop_range_seek(input);
+    REQUIRE(decision.should_seek);
+    REQUIRE(decision.target_pts_us == 1000);
+
+    input.current_pts_us = 4500;
+    decision = choose_loop_range_seek(input);
+    REQUIRE(decision.should_seek);
+    REQUIRE(decision.target_pts_us == 1000);
+}
+
+TEST_CASE("LoopRangeSeekPolicy: ignores inactive or invalid loop states",
+          "[seek][coordinator][loop]") {
+    LoopRangeSeekInput input;
+    input.playing = true;
+    input.loop_enabled = true;
+    input.clock_paused = false;
+    input.current_pts_us = 5000;
+    input.start_us = 1000;
+    input.end_us = 4000;
+
+    auto decision = choose_loop_range_seek(input);
+    REQUIRE(decision.should_seek);
+
+    input.playing = false;
+    decision = choose_loop_range_seek(input);
+    REQUIRE_FALSE(decision.should_seek);
+
+    input.playing = true;
+    input.loop_enabled = false;
+    decision = choose_loop_range_seek(input);
+    REQUIRE_FALSE(decision.should_seek);
+
+    input.loop_enabled = true;
+    input.clock_paused = true;
+    decision = choose_loop_range_seek(input);
+    REQUIRE_FALSE(decision.should_seek);
+
+    input.clock_paused = false;
+    input.end_us = input.start_us;
+    decision = choose_loop_range_seek(input);
+    REQUIRE_FALSE(decision.should_seek);
+}
+
 TEST_CASE("SeekCoordinator: only paused exact HEVC hardware seek enters coordinator",
           "[seek][coordinator]") {
     SeekCoordinator coordinator(std::chrono::milliseconds(1));

@@ -98,6 +98,7 @@ Fixed or reduced:
 - `Renderer`: track metadata snapshot assembly moved into `track_snapshot`.
 - `Renderer`: per-track performance stats snapshot assembly moved into `track_snapshot`.
 - `Renderer`: per-track GPU/memory stats snapshot assembly moved into `track_snapshot`.
+- `Renderer`: loop-range boundary seek decision moved into `SeekCoordinator` policy.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -121,7 +122,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P66 Renderer Loop Range Seek Policy Boundary.
+Next patch: P67 Renderer Loop Range State Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -896,10 +897,31 @@ Result:
 
 ### P66 - Renderer Loop Range Seek Policy Boundary
 
+Status: done in Patch 66.
+
 Goal:
 
 - Move `apply_loop_range_locked` decision logic into a small seek/playback policy helper.
 - Keep `Renderer` responsible for lock ownership, reading the playback clock, logging, and invoking `seek_internal`.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/loop/h265_loop_range_enable_regression.csv`
+
+Result:
+
+- Added `LoopRangeSeekInput`, `LoopRangeSeekDecision`, and `choose_loop_range_seek` to `SeekCoordinator`.
+- `Renderer::apply_loop_range_locked` now delegates the boundary-trigger decision while retaining clock reads, logging, and exact seek execution.
+- Added native coverage for at-end/past-end loop seeks and disabled, paused, stopped, and invalid loop states.
+- Verified with native-only tests plus rebuilt smoke and H.265 loop range enable UI.
+
+### P67 - Renderer Loop Range State Boundary
+
+Goal:
+
+- Move `LoopRangeState` and loop range normalization/comparison out of `Renderer`.
+- Keep `Renderer` responsible for validation, lock ownership, state storage, and debug logging.
 
 Validation:
 

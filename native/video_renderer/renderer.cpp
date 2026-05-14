@@ -562,21 +562,22 @@ bool Renderer::apply_deferred_paused_hevc_seek_locked() {
 }
 
 bool Renderer::apply_loop_range_locked() {
-    if (!playing_.load() ||
-        !loop_range_.enabled ||
-        loop_range_.end_us <= loop_range_.start_us ||
-        playback_->clock().is_paused()) {
-        return false;
-    }
-
     const int64_t pts = playback_->clock().current_pts_us();
-    if (pts < loop_range_.end_us) {
+    LoopRangeSeekInput input;
+    input.playing = playing_.load();
+    input.loop_enabled = loop_range_.enabled;
+    input.clock_paused = playback_->clock().is_paused();
+    input.current_pts_us = pts;
+    input.start_us = loop_range_.start_us;
+    input.end_us = loop_range_.end_us;
+    const auto decision = choose_loop_range_seek(input);
+    if (!decision.should_seek) {
         return false;
     }
 
     spdlog::info("[Renderer] loop range boundary: pts={:.3f}s, seeking to {:.3f}s",
-                 pts / 1e6, loop_range_.start_us / 1e6);
-    seek_internal(loop_range_.start_us, SeekType::Exact);
+                 pts / 1e6, decision.target_pts_us / 1e6);
+    seek_internal(decision.target_pts_us, SeekType::Exact);
     return true;
 }
 

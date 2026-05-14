@@ -861,6 +861,56 @@ TEST_CASE("TrackPresentPolicy carries forward active last frames",
     REQUIRE_FALSE(decision.frames[3].has_value());
 }
 
+TEST_CASE("TrackPresentPolicy computes empty-buffer EOF clamp facts",
+          "[track_pipeline][track_present_policy]") {
+    const auto make_frame = [](int64_t pts_us, int64_t duration_us) {
+        TextureFrame frame;
+        frame.pts_us = pts_us;
+        frame.duration_us = duration_us;
+        return frame;
+    };
+    const auto make_track =
+        [&](int64_t offset_us, std::optional<TextureFrame> queued_frame) {
+            auto track = std::make_unique<TrackPipeline>();
+            track->offset_us = offset_us;
+            track->track_buffer = std::make_shared<TrackBuffer>();
+            if (queued_frame.has_value()) {
+                track->track_buffer->push_frame(*queued_frame);
+            }
+            return track;
+        };
+
+    TrackPipelineManager empty_manager;
+    auto empty = compute_empty_buffer_eof_clamp(empty_manager, PresentDecision());
+    REQUIRE(empty.all_active_buffers_empty);
+    REQUIRE(empty.max_end_pts_us == 0);
+
+    TrackPipelineManager manager;
+    manager[0] = make_track(100, std::nullopt);
+    manager[1] = make_track(-20, std::nullopt);
+    PresentDecision last_decision;
+    last_decision.frames[0] = make_frame(1000, 40);
+    last_decision.frames[1] = make_frame(2000, 50);
+
+    auto clamp = compute_empty_buffer_eof_clamp(manager, last_decision);
+    REQUIRE(clamp.all_active_buffers_empty);
+    REQUIRE(clamp.max_end_pts_us == 2030);
+
+    manager[2] = make_track(0, make_frame(3000, 30));
+    auto non_empty = compute_empty_buffer_eof_clamp(manager, last_decision);
+    REQUIRE_FALSE(non_empty.all_active_buffers_empty);
+
+    TrackPipelineManager missing_buffer_manager;
+    missing_buffer_manager[0] = std::make_unique<TrackPipeline>();
+    missing_buffer_manager[0]->offset_us = 7;
+    PresentDecision missing_last;
+    missing_last.frames[0] = make_frame(10, 5);
+    auto missing_buffer =
+        compute_empty_buffer_eof_clamp(missing_buffer_manager, missing_last);
+    REQUIRE(missing_buffer.all_active_buffers_empty);
+    REQUIRE(missing_buffer.max_end_pts_us == 22);
+}
+
 TEST_CASE("TrackStepPolicy builds step-forward decisions",
           "[track_pipeline][track_step_policy]") {
     TrackPipelineManager empty_manager;

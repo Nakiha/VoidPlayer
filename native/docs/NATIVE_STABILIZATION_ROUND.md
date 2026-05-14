@@ -110,6 +110,7 @@ Fixed or reduced:
 - `Renderer`: current-frame duration policy moved into `track_step_policy` and reused by step/EOF tolerance paths.
 - `Renderer`: preroll readiness track-state scan moved into dedicated `track_preroll_policy` owner.
 - `Renderer`: playing present-decision carry-forward moved into dedicated `track_present_policy` owner.
+- `Renderer`: empty-buffer EOF clamp fact calculation moved into `track_present_policy`.
 - `Renderer`: paused preview snapshot assembly moved into dedicated `track_preview_policy` owner.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
@@ -134,7 +135,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P79 Renderer Empty-Buffer EOF Clamp Boundary.
+Next patch: P80 Renderer Frame Deadline Event Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1187,11 +1188,33 @@ Result:
 
 ### P79 - Renderer Empty-Buffer EOF Clamp Boundary
 
+Status: done in Patch 79.
+
 Goal:
 
 - Move render-loop empty-buffer scan and max last-presented end-PTS calculation out of `Renderer`.
 - Keep `Renderer` responsible for clock seek/clamp and `settle_eof_locked`.
 - Preserve the behavior that one non-empty active buffer disables the EOF clamp.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `compute_empty_buffer_eof_clamp` to `track_present_policy`.
+- Render loop now delegates the empty-buffer/max-end-PTS scan while keeping clock clamping and `settle_eof_locked` in `Renderer`.
+- Added native coverage for empty managers, all-empty buffers, non-empty buffer disabling, and missing-buffer handling.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P80 - Renderer Frame Deadline Event Boundary
+
+Goal:
+
+- Move render-loop next frame event PTS scan out of `Renderer`.
+- Keep `Renderer` responsible for reading clock state, applying playback speed, calling `RenderLoopController::frame_deadline_sleep`, and sleeping.
+- Preserve the rule that future frames wake at their PTS and current frames wake at PTS + duration.
 
 Validation:
 

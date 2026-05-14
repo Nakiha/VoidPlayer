@@ -1488,28 +1488,15 @@ void Renderer::render_loop() {
         // end of the last presented frame so PTS doesn't run ahead.
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
-            bool buffer_empty = true;
-            int64_t max_end_pts = 0;
-            for (size_t i = 0; i < kMaxTracks; ++i) {
-                if (!tracks_[i]) continue;
-                if (tracks_[i]->track_buffer->peek(0).has_value()) {
-                    buffer_empty = false;
-                    // No need to check further — one non-empty buffer is enough
-                    break;
-                }
-                if (last_decision_.frames[i].has_value()) {
-                    max_end_pts = std::max(max_end_pts,
-                        last_decision_.frames[i]->pts_us +
-                        last_decision_.frames[i]->duration_us +
-                        tracks_[i]->offset_us);
-                }
-            }
-            if (buffer_empty && max_end_pts > 0) {
+            const auto eof_clamp =
+                compute_empty_buffer_eof_clamp(tracks_, last_decision_);
+            if (eof_clamp.all_active_buffers_empty &&
+                eof_clamp.max_end_pts_us > 0) {
                 int64_t current = playback_->clock().current_pts_us();
-                if (current > max_end_pts) {
-                    playback_->clock().seek(max_end_pts);
+                if (current > eof_clamp.max_end_pts_us) {
+                    playback_->clock().seek(eof_clamp.max_end_pts_us);
                 }
-                if (settle_eof_locked(max_end_pts)) {
+                if (settle_eof_locked(eof_clamp.max_end_pts_us)) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue;
                 }

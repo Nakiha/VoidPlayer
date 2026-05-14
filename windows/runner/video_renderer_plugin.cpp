@@ -15,7 +15,6 @@
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 #include <chrono>
-#include <cstring>
 #include <cwchar>
 #include <exception>
 #include <cmath>
@@ -196,50 +195,8 @@ bool read_string_arg(const flutter::EncodableValue& value, std::string& out) {
 extern "C" __declspec(dllexport)
 const NakiVrDiagnostics* naki_vr_get_diagnostics() {
     thread_local NakiVrDiagnostics d{};
-    std::memset(&d, 0, sizeof(d));
     static const NativeDiagnosticsProvider diagnostics;
-    const auto process_memory = diagnostics.QueryProcessMemoryUsage();
-    d.process_working_set_bytes = process_memory.working_set_bytes;
-    d.process_private_bytes = process_memory.private_bytes;
-    d.dedicated_video_memory_bytes = diagnostics.QueryDedicatedVideoMemoryUsage();
-
-    auto r = pin_global_player();
-    if (!r) return &d;
-
-    d.d3d_device_lost = r->d3d_device_lost() ? 1 : 0;
-    d.d3d_device_removed_reason = static_cast<int64_t>(r->d3d_device_removed_reason());
-    d.playback_time_s = static_cast<double>(r->current_pts_us()) / 1e6;
-    d.is_playing = r->is_playing() ? 1 : 0;
-
-    const auto memory_stats = r->gpu_memory_stats();
-    d.cpu_frame_memory_bytes = memory_stats.cpu_frame_bytes;
-    d.packet_queue_memory_bytes = memory_stats.packet_queue_bytes;
-    auto stats = r->track_perf_stats();
-    d.track_count = static_cast<int32_t>(stats.size());
-    for (int i = 0; i < kMaxTracksFFI && i < static_cast<int>(stats.size()); ++i) {
-        const auto& s = stats[i];
-        d.tracks[i].slot            = s.slot;
-        d.tracks[i].file_id         = s.file_id;
-        d.tracks[i].fps             = s.fps;
-        d.tracks[i].avg_decode_ms   = s.avg_decode_ms;
-        d.tracks[i].max_decode_ms   = s.max_decode_ms;
-        d.tracks[i].buffer_count    = static_cast<int32_t>(s.buffer_count);
-        d.tracks[i].buffer_capacity = static_cast<int32_t>(s.buffer_capacity);
-        d.tracks[i].buffer_state    = static_cast<int32_t>(s.buffer_state);
-        for (const auto& m : memory_stats.tracks) {
-            if (m.slot == s.slot && m.file_id == s.file_id) {
-                d.tracks[i].cpu_frame_memory_bytes = m.total_cpu_frame_bytes;
-                d.tracks[i].packet_queue_memory_bytes = m.packet_queue_bytes;
-                break;
-            }
-        }
-        d.tracks[i].current_pts_us  = s.current_pts_us;
-        d.tracks[i].current_dts_us  = s.current_dts_us;
-    }
-    // Mark unused slots
-    for (int i = static_cast<int>(stats.size()); i < kMaxTracksFFI; ++i) {
-        d.tracks[i].slot = -1;
-    }
+    diagnostics.FillFfiDiagnostics(d, pin_global_player());
     return &d;
 }
 

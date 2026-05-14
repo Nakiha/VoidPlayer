@@ -641,6 +641,27 @@ Follow-up:
 
 - Move the FFI flat diagnostics export through the provider, then tackle active-player lookup scope separately.
 
+2026-05-15 Patch 23 - NativeDiagnosticsProvider FFI Payload
+
+Changed:
+
+- Added `native_diagnostics_ffi.h` for the stable Dart FFI diagnostics structs.
+- Moved FFI flat diagnostics filling into `NativeDiagnosticsProvider::FillFfiDiagnostics()`.
+- Reduced `naki_vr_get_diagnostics()` to the exported ABI shim plus active-player lookup.
+- Kept the exported symbol, struct layout, and Dart FFI contract unchanged.
+
+Verified:
+
+- `python dev.py ui-test --build ui_tests/smoke/profiler_overlay.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- Move diagnostics active-player lookup from the process-global registry to plugin/provider scope.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
@@ -691,6 +712,7 @@ fixed:
 - Windows runner texture bridge: Patch 20 moved texture registration, shared-handle descriptor fill, release callbacks, and frame notifications into `FlutterTextureBridge`.
 - Windows runner global player state: Patch 21 wrapped the process-global active player weak pointer in `NativePlayerRegistry`.
 - Windows runner MethodChannel diagnostics: Patch 22 moved native/player diagnostics payload assembly into `NativeDiagnosticsProvider`.
+- Windows runner FFI diagnostics: Patch 23 moved flat struct filling into `NativeDiagnosticsProvider` behind a stable ABI header.
 
 accepted-backlog:
 
@@ -746,6 +768,7 @@ fixed:
 - Patch 20 completed the runner `FlutterTextureBridge` slice for Texture registrar and shared-handle callback ownership.
 - Patch 21 completed the first global-player-state slice by wrapping the active player weak pointer in `NativePlayerRegistry`.
 - Patch 22 completed MethodChannel diagnostics aggregation inside `NativeDiagnosticsProvider`.
+- Patch 23 completed FFI diagnostics aggregation inside `NativeDiagnosticsProvider`.
 
 accepted-backlog:
 

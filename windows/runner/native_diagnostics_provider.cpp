@@ -7,6 +7,7 @@
 #include <psapi.h>
 #include <wrl/client.h>
 #include <chrono>
+#include <cstring>
 #include <mutex>
 #include <vector>
 
@@ -264,4 +265,53 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
     map[flutter::EncodableValue("gpuBreakdown")] =
         flutter::EncodableValue(make_gpu_breakdown_map(active_player->gpu_memory_stats()));
     return map;
+}
+
+void NativeDiagnosticsProvider::FillFfiDiagnostics(
+    NakiVrDiagnostics& out,
+    const std::shared_ptr<vr::NativePlayer>& active_player) const {
+    std::memset(&out, 0, sizeof(out));
+    const auto process_memory = QueryProcessMemoryUsage();
+    out.process_working_set_bytes = process_memory.working_set_bytes;
+    out.process_private_bytes = process_memory.private_bytes;
+    out.dedicated_video_memory_bytes = QueryDedicatedVideoMemoryUsage();
+
+    if (!active_player) {
+        return;
+    }
+
+    out.d3d_device_lost = active_player->d3d_device_lost() ? 1 : 0;
+    out.d3d_device_removed_reason =
+        static_cast<int64_t>(active_player->d3d_device_removed_reason());
+    out.playback_time_s = static_cast<double>(active_player->current_pts_us()) / 1e6;
+    out.is_playing = active_player->is_playing() ? 1 : 0;
+
+    const auto memory_stats = active_player->gpu_memory_stats();
+    out.cpu_frame_memory_bytes = memory_stats.cpu_frame_bytes;
+    out.packet_queue_memory_bytes = memory_stats.packet_queue_bytes;
+    auto stats = active_player->track_perf_stats();
+    out.track_count = static_cast<int32_t>(stats.size());
+    for (int i = 0; i < kMaxTracksFFI && i < static_cast<int>(stats.size()); ++i) {
+        const auto& s = stats[i];
+        out.tracks[i].slot = s.slot;
+        out.tracks[i].file_id = s.file_id;
+        out.tracks[i].fps = s.fps;
+        out.tracks[i].avg_decode_ms = s.avg_decode_ms;
+        out.tracks[i].max_decode_ms = s.max_decode_ms;
+        out.tracks[i].buffer_count = static_cast<int32_t>(s.buffer_count);
+        out.tracks[i].buffer_capacity = static_cast<int32_t>(s.buffer_capacity);
+        out.tracks[i].buffer_state = static_cast<int32_t>(s.buffer_state);
+        for (const auto& m : memory_stats.tracks) {
+            if (m.slot == s.slot && m.file_id == s.file_id) {
+                out.tracks[i].cpu_frame_memory_bytes = m.total_cpu_frame_bytes;
+                out.tracks[i].packet_queue_memory_bytes = m.packet_queue_bytes;
+                break;
+            }
+        }
+        out.tracks[i].current_pts_us = s.current_pts_us;
+        out.tracks[i].current_dts_us = s.current_dts_us;
+    }
+    for (int i = static_cast<int>(stats.size()); i < kMaxTracksFFI; ++i) {
+        out.tracks[i].slot = -1;
+    }
 }

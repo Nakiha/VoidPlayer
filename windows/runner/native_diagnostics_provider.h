@@ -1,5 +1,7 @@
 #pragma once
 
+#include "native_diagnostics_ffi.h"
+
 #include <flutter/standard_method_codec.h>
 
 #include <cstdint>
@@ -28,5 +30,8 @@ public:
     uint64_t QueryDedicatedVideoMemoryUsage() const;
 
     flutter::EncodableMap BuildMethodChannelDiagnostics(
+        const std::shared_ptr<vr::NativePlayer>& active_player) const;
+    void FillFfiDiagnostics(
+        NakiVrDiagnostics& out,
         const std::shared_ptr<vr::NativePlayer>& active_player) const;
 };

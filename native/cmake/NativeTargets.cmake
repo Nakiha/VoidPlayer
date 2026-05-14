@@ -2,6 +2,7 @@ if(BUILD_FFI)
     add_library(video_renderer_ffi SHARED
         video_renderer/exports/ffi_exports.cpp
         video_renderer/exports/ffi_marshalling.cpp
+        video_renderer/exports/ffi_player_commands.cpp
         video_renderer/exports/ffi_player_registry.cpp
     )
     void_apply_native_compile_options(video_renderer_ffi)

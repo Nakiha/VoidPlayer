@@ -86,6 +86,7 @@ Fixed or reduced:
 - `Renderer`: render-loop debounce, diagnostics cadence, and frame-deadline sleep policy moved into `RenderLoopController`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
+- `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
 - `TrackPipelineManager`: demux/decode pipeline construction moved into `TrackPipelineFactory`, leaving manager focused on slot storage, stop, and compact.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
@@ -96,7 +97,7 @@ Fixed or reduced:
 Still active:
 
 - `Renderer` remains the coordination root.
-- `ffi_exports.cpp` still carries lifecycle/playback/track command dispatch density and a few command validators.
+- `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
 - Track lifecycle start/recreate/rollback order is still shared between `Renderer` and track helpers.
 - `DecodeThread` main loop still owns codec send/receive, EOF drain, AVFrame ownership, and hardware visibility transitions.
 - Target/feature boundaries are still too coupled.
@@ -104,7 +105,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P48 FFI Player Command Body Split.
+Next patch: P49 DecodeThread EOF Drain/Codec Flush Policy.
 
 ### P30 - VACache Atomic Publish
 
@@ -498,6 +499,8 @@ Result:
 
 ### P48 - FFI Player Command Body Split
 
+Status: done in Patch 48.
+
 Goal:
 
 - Move repetitive checked-player command bodies for playback, query, track, and layout operations behind typed helper functions.
@@ -507,6 +510,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `ffi_player_commands` for initialize/shutdown, playback, query, track, and layout command bodies while preserving checked-player lease and last-error semantics.
+- `ffi_exports.cpp` is now about 397 lines and mostly retains exported ABI guards, lifecycle registry shell code, and process-global logging/crash APIs.
+- Added focused native command tests for handle leases, pre-handle validation, output-slot clearing, layout marshalling reuse, and invalid-handle fallbacks.
+- Verified with native-only tests, C FFI validation, and a rebuilt Flutter smoke UI script.
+
+### P49 - DecodeThread EOF Drain/Codec Flush Policy
+
+Goal:
+
+- Continue P46 by isolating EOF drain and codec-flush decisions that are still embedded in the decode loop.
+- Keep AVFrame ownership, codec send/receive, and hardware visibility waits inside `DecodeThread` unless tests expose a smaller safe boundary.
+
+Validation:
+
+- `python dev.py test --native-only`
+- HEVC seek/step or smoke UI script if decode state transitions change.
 
 ## Do-Not-Drift List
 

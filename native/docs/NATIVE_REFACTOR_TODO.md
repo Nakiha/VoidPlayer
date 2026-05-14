@@ -81,6 +81,7 @@ TODO:
 - [x] 增加 `naki_vr_player_get_error(player, ...)` per-player query，并保持 destroy 后旧 token 走 thread-local invalid-handle error。
 - [x] 为 path count、空路径、过长路径、最大轨道数加 ABI 层校验；重复路径暂不禁止，因多轨同源文件在调试和对比场景下仍可用。
 - [x] 将 FFI ABI/config/log/layout/seek enum marshalling 从 `ffi_exports.cpp` 拆到 `ffi_marshalling`，并增加 focused native 单测。
+- [x] 将 FFI playback/query/track/layout checked-player command bodies 从 `ffi_exports.cpp` 拆到 `ffi_player_commands`，并增加 focused native 单测。
 - [x] 更新 `native/docs/FFI_AND_BINDINGS.md`：ABI v2 counted paths、status APIs、per-player error 和 legacy wrapper 规则。
 - [x] 扩展 `native/tests/ffi/test_ffi_c.c` 覆盖 v1/v2 coexist、counted path、per-player error、status APIs、destroy 并发。
 

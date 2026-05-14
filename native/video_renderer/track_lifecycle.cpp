@@ -213,6 +213,34 @@ void finish_track_removal_playback(
     }
 }
 
+void apply_track_playback_decode_state(
+    TrackPipelineManager& tracks,
+    bool playback_active,
+    const TrackPlaybackDecodeStateHooks& hooks) {
+    const bool paused = !playback_active;
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks[i]) {
+            continue;
+        }
+        if (hooks.set_pause_after_preroll) {
+            hooks.set_pause_after_preroll(i, *tracks[i], paused);
+        }
+    }
+
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks[i]) {
+            continue;
+        }
+        if (hooks.set_decode_paused) {
+            hooks.set_decode_paused(i, *tracks[i], paused);
+        }
+    }
+
+    if (hooks.set_all_audio_decode_paused) {
+        hooks.set_all_audio_decode_paused(paused);
+    }
+}
+
 TrackAddSeekResult prepare_add_track_seek_to_clock(
     TrackPipeline& track,
     int64_t current_pts_us,

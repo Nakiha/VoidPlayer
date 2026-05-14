@@ -529,6 +529,58 @@ TEST_CASE("TrackLifecycle guards playback around track mutation",
     });
 }
 
+TEST_CASE("TrackLifecycle applies playback decode state in stable order",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineManager manager;
+    auto first = std::make_unique<TrackPipeline>();
+    first->file_id = 10;
+    auto second = std::make_unique<TrackPipeline>();
+    second->file_id = 12;
+    manager[0] = std::move(first);
+    manager[2] = std::move(second);
+
+    std::vector<std::string> events;
+    const TrackPlaybackDecodeStateHooks hooks{
+        [&](size_t slot, TrackPipeline& track, bool enabled) {
+            events.push_back("preroll:" + std::to_string(slot) + ":" +
+                             std::to_string(track.file_id) + ":" +
+                             (enabled ? "true" : "false"));
+        },
+        [&](size_t slot, TrackPipeline& track, bool paused) {
+            events.push_back("decode:" + std::to_string(slot) + ":" +
+                             std::to_string(track.file_id) + ":" +
+                             (paused ? "true" : "false"));
+        },
+        [&](bool paused) {
+            events.push_back(std::string("audio:") + (paused ? "true" : "false"));
+        },
+    };
+
+    apply_track_playback_decode_state(manager, true, hooks);
+    REQUIRE(events == std::vector<std::string>{
+        "preroll:0:10:false",
+        "preroll:2:12:false",
+        "decode:0:10:false",
+        "decode:2:12:false",
+        "audio:false",
+    });
+
+    events.clear();
+    apply_track_playback_decode_state(manager, false, hooks);
+    REQUIRE(events == std::vector<std::string>{
+        "preroll:0:10:true",
+        "preroll:2:12:true",
+        "decode:0:10:true",
+        "decode:2:12:true",
+        "audio:true",
+    });
+
+    events.clear();
+    manager.clear();
+    apply_track_playback_decode_state(manager, false, hooks);
+    REQUIRE(events == std::vector<std::string>{"audio:true"});
+}
+
 TEST_CASE("TrackLifecycle prepares add-track seek to current clock",
           "[track_pipeline][track_lifecycle]") {
     TrackPipeline track;

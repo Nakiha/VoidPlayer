@@ -100,6 +100,7 @@ Fixed or reduced:
 - `Renderer`: per-track GPU/memory stats snapshot assembly moved into `track_snapshot`.
 - `Renderer`: loop-range boundary seek decision moved into `SeekCoordinator` policy.
 - `Renderer`: loop-range state normalization and comparison moved into `SeekCoordinator` policy.
+- `Renderer`: public play/pause decode pause and pause-after-preroll fanout moved into `track_lifecycle`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -123,7 +124,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P68 Renderer Playback Decode State Boundary.
+Next patch: P69 Renderer Decode Pause Fanout Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -940,10 +941,31 @@ Result:
 
 ### P68 - Renderer Playback Decode State Boundary
 
+Status: done in Patch 68.
+
 Goal:
 
 - Move public play/pause track decode pause and pause-after-preroll fanout out of `Renderer`.
 - Keep `Renderer` responsible for lifecycle/state locks, playback clock commands, `playing_`, and seek coordinator reset.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `TrackPlaybackDecodeStateHooks` and `apply_track_playback_decode_state` to `track_lifecycle`.
+- `Renderer::play` and `Renderer::pause` now delegate track pause-after-preroll, decode pause, and audio decode pause fanout while retaining locks, playback commands, `playing_`, and seek coordinator reset.
+- Preserved the previous fanout order: all pause-after-preroll updates, then all decode pause updates, then audio pause.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P69 - Renderer Decode Pause Fanout Boundary
+
+Goal:
+
+- Move the remaining all-track decode/audio pause fanout in `Renderer::set_decode_paused_for_all_tracks` into `track_lifecycle`.
+- Keep `Renderer` responsible for call-site intent and lock ownership.
 
 Validation:
 

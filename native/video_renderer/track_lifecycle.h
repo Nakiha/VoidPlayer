@@ -105,6 +105,19 @@ void finish_track_removal_playback(
     bool has_active_tracks,
     const TrackPlaybackMutationHooks& hooks);
 
+struct TrackPlaybackDecodeStateHooks {
+    std::function<void(size_t slot, TrackPipeline& track, bool enabled)>
+        set_pause_after_preroll;
+    std::function<void(size_t slot, TrackPipeline& track, bool paused)>
+        set_decode_paused;
+    std::function<void(bool paused)> set_all_audio_decode_paused;
+};
+
+void apply_track_playback_decode_state(
+    TrackPipelineManager& tracks,
+    bool playback_active,
+    const TrackPlaybackDecodeStateHooks& hooks);
+
 struct TrackAddSeekHooks {
     std::function<void(int file_id, bool paused)> set_audio_decode_paused;
 };

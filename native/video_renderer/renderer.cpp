@@ -339,11 +339,7 @@ void Renderer::play() {
         seek_coordinator_->reset();
     }
 
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks_[i]) continue;
-        tracks_[i]->decode_thread->set_pause_after_preroll(false);
-    }
-    set_decode_paused_for_all_tracks(false);
+    apply_playback_decode_state_locked(true);
     playback_->play();
     playing_ = true;
 }
@@ -351,11 +347,7 @@ void Renderer::play() {
 void Renderer::pause() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks_[i]) continue;
-        tracks_[i]->decode_thread->set_pause_after_preroll(true);
-    }
-    set_decode_paused_for_all_tracks(true);
+    apply_playback_decode_state_locked(false);
     playback_->pause();
     playing_ = false;
 }
@@ -1117,6 +1109,23 @@ void Renderer::set_decode_paused_for_all_tracks(bool paused) {
     if (audio_coordinator_) {
         audio_coordinator_->set_all_decode_paused(paused);
     }
+}
+
+void Renderer::apply_playback_decode_state_locked(bool playback_active) {
+    const TrackPlaybackDecodeStateHooks hooks{
+        [](size_t, TrackPipeline& track, bool enabled) {
+            track.decode_thread->set_pause_after_preroll(enabled);
+        },
+        [](size_t, TrackPipeline& track, bool paused) {
+            track.decode_thread->set_decode_paused(paused);
+        },
+        [this](bool paused) {
+            if (audio_coordinator_) {
+                audio_coordinator_->set_all_decode_paused(paused);
+            }
+        },
+    };
+    apply_track_playback_decode_state(tracks_, playback_active, hooks);
 }
 
 void Renderer::configure_track_seek_callback(TrackPipeline& track) {

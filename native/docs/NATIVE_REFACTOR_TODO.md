@@ -257,8 +257,12 @@ TODO:
    - 已把 nested `LoopRangeState` 和 set-loop normalization/comparison 拆出 Renderer，Renderer 保留 validation、锁、状态存储和日志。
    - 验证：native-only + smoke/loop UI。
 
-24. [ ] `PlaybackDecodeState`
-   - 后续把 public play/pause 的 track decode pause 和 pause-after-preroll fanout 拆到 helper，Renderer 保留生命周期锁、playback clock 命令、`playing_` 和 seek coordinator reset。
+24. [x] `PlaybackDecodeState`
+   - 已把 public play/pause 的 track decode pause 和 pause-after-preroll fanout 拆到 helper，Renderer 保留生命周期锁、playback clock 命令、`playing_` 和 seek coordinator reset。
+   - 验证：native-only + smoke UI。
+
+25. [ ] `DecodePauseFanout`
+   - 后续把 `set_decode_paused_for_all_tracks()` 的剩余 all-track decode/audio pause fanout 拆到 helper，Renderer 保留调用意图和锁。
    - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split

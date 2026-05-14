@@ -213,6 +213,18 @@ void finish_track_removal_playback(
     }
 }
 
+bool has_buffering_track(const TrackPipelineManager& tracks) {
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks[i] || !tracks[i]->track_buffer) {
+            continue;
+        }
+        if (tracks[i]->track_buffer->state() == TrackState::Buffering) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void apply_track_decode_pause_state(
     TrackPipelineManager& tracks,
     bool paused,

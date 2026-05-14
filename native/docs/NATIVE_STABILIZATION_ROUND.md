@@ -103,6 +103,7 @@ Fixed or reduced:
 - `Renderer`: public play/pause decode pause and pause-after-preroll fanout moved into `track_lifecycle`.
 - `Renderer`: remaining all-track decode/audio pause fanout moved into `track_lifecycle`.
 - `Renderer`: step-forward temporary video decode pause/resume fanout moved into `track_lifecycle`.
+- `Renderer`: shared step buffering gate moved into `track_lifecycle`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -126,7 +127,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P71 Renderer Step Buffering Gate Boundary.
+Next patch: P72 Renderer Step Backward Retreat Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1006,6 +1007,8 @@ Result:
 
 ### P71 - Renderer Step Buffering Gate Boundary
 
+Status: done in Patch 71.
+
 Goal:
 
 - Move the duplicate step-forward/step-backward "any track is Buffering" gate out of `Renderer` into a small track lifecycle/query helper.
@@ -1015,6 +1018,24 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_step_forward_visual_regression.csv`
+
+Result:
+
+- Added `has_buffering_track` to `track_lifecycle`.
+- `Renderer::step_forward` and `Renderer::step_backward` now share the same Buffering gate instead of duplicating track-buffer state loops.
+- Added native coverage for Empty, Ready, Buffering, and Flushing states and verified with rebuilt smoke plus H.265 step-forward UI.
+
+### P72 - Renderer Step Backward Retreat Boundary
+
+Goal:
+
+- Move `Renderer::step_backward` all-track `can_retreat()` and `retreat()` fanout into a track lifecycle helper.
+- Keep `Renderer` responsible for lifecycle/state locks, playback clock pause, reference-track clock seek, fallback exact seek, and final paused-frame draw.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
 
 ## Do-Not-Drift List
 

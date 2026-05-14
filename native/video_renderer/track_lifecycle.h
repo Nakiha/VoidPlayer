@@ -105,6 +105,8 @@ void finish_track_removal_playback(
     bool has_active_tracks,
     const TrackPlaybackMutationHooks& hooks);
 
+bool has_buffering_track(const TrackPipelineManager& tracks);
+
 struct TrackPlaybackDecodeStateHooks {
     std::function<void(size_t slot, TrackPipeline& track, bool enabled)>
         set_pause_after_preroll;

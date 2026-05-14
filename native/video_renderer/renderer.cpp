@@ -779,11 +779,7 @@ void Renderer::step_forward() {
         if (!initialized_) return;
 
         // If any track is still seeking, don't step from a half-updated buffer.
-        for (size_t i = 0; i < kMaxTracks; ++i) {
-            if (!tracks_[i]) continue;
-            auto& buf = tracks_[i]->track_buffer;
-            if (buf->state() == TrackState::Buffering) return;
-        }
+        if (has_buffering_track(tracks_)) return;
 
         playback_->clock().pause();
         playing_ = false;
@@ -877,14 +873,10 @@ void Renderer::step_backward() {
         std::lock_guard<std::mutex> lock(state_mutex_);
         if (!initialized_) return;
 
-        // If any track is still seeking/seeking, don't allow stepping
+        // If any track is still seeking, don't allow stepping
         // (prevents retreating to stale frames during async seek)
         // Exception: tracks past their duration (Ready + no frames) don't block.
-        for (size_t i = 0; i < kMaxTracks; ++i) {
-            if (!tracks_[i]) continue;
-            auto& buf = tracks_[i]->track_buffer;
-            if (buf->state() == TrackState::Buffering) return;
-        }
+        if (has_buffering_track(tracks_)) return;
 
         playback_->clock().pause();
         playing_ = false;

@@ -642,6 +642,27 @@ TEST_CASE("TrackLifecycle applies video-only decode pause fanout",
     });
 }
 
+TEST_CASE("TrackLifecycle detects buffering tracks",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineManager manager;
+    REQUIRE_FALSE(has_buffering_track(manager));
+
+    auto ready = std::make_unique<TrackPipeline>();
+    ready->track_buffer = std::make_shared<TrackBuffer>();
+    ready->track_buffer->set_state(TrackState::Ready);
+    manager[0] = std::move(ready);
+    REQUIRE_FALSE(has_buffering_track(manager));
+
+    auto buffering = std::make_unique<TrackPipeline>();
+    buffering->track_buffer = std::make_shared<TrackBuffer>();
+    buffering->track_buffer->set_state(TrackState::Buffering);
+    manager[2] = std::move(buffering);
+    REQUIRE(has_buffering_track(manager));
+
+    manager[2]->track_buffer->set_state(TrackState::Flushing);
+    REQUIRE_FALSE(has_buffering_track(manager));
+}
+
 TEST_CASE("TrackLifecycle prepares add-track seek to current clock",
           "[track_pipeline][track_lifecycle]") {
     TrackPipeline track;

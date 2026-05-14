@@ -269,9 +269,13 @@ TODO:
    - 已把 `step_forward()` 内临时 per-track decode pause/resume fanout 拆到 helper；该路径只影响视频 decode thread，不应触碰 audio decode pause state。
    - 验证：native-only + smoke/step-forward UI。
 
-27. [ ] `StepBufferingGate`
-   - 后续把 `step_forward()` / `step_backward()` 共享的 Buffering 轨道阻塞判断拆到 helper，Renderer 保留锁和 step/fallback 决策。
+27. [x] `StepBufferingGate`
+   - 已把 `step_forward()` / `step_backward()` 共享的 Buffering 轨道阻塞判断拆到 helper，Renderer 保留锁和 step/fallback 决策。
    - 验证：native-only + smoke/step-forward UI。
+
+28. [ ] `StepBackwardRetreatFanout`
+   - 后续把 `step_backward()` 内 all-track `can_retreat()` / `retreat()` 扇出拆到 helper，Renderer 保留 clock seek、fallback exact seek 和 draw 决策。
+   - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split
 

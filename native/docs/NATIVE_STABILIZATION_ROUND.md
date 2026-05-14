@@ -96,6 +96,7 @@ Fixed or reduced:
 - `Renderer`: track offset mutation and render-sink offset synchronization moved into `track_lifecycle`.
 - `Renderer`: active track count and first-active-slot queries moved into `TrackPipelineManager`.
 - `Renderer`: track metadata snapshot assembly moved into `track_snapshot`.
+- `Renderer`: per-track performance stats snapshot assembly moved into `track_snapshot`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -119,7 +120,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P64 Renderer Track Perf Snapshot Boundary.
+Next patch: P65 Renderer Track GPU Memory Snapshot Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -852,10 +853,31 @@ Result:
 
 ### P64 - Renderer Track Perf Snapshot Boundary
 
+Status: done in Patch 64.
+
 Goal:
 
 - Move per-track perf stat field assembly out of `Renderer::track_perf_stats`.
 - Keep `Renderer` responsible for locking, shared FPS baseline timing, and public API shape.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `TrackPerfStats` as a standalone payload header and `snapshot_track_perf_stats` in `track_snapshot`.
+- `Renderer::track_perf_stats` now delegates per-track payload assembly while retaining the public lock and shared FPS baseline timer.
+- Added native coverage for buffer state, current-frame timestamps, average/max decode timing, FPS delta calculation, and short-window no-FPS behavior.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P65 - Renderer Track GPU Memory Snapshot Boundary
+
+Goal:
+
+- Move per-track GPU/memory stats field assembly out of `Renderer::gpu_memory_stats`.
+- Keep `Renderer` responsible for device/state locking, aggregate totals, D3D resource ownership, and public API shape.
 
 Validation:
 

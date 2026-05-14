@@ -2170,37 +2170,17 @@ std::vector<TrackPerfStats> Renderer::track_perf_stats() const {
 
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks_[i]) continue;
-        const auto& track = tracks_[i];
-        auto snap = track->decode_thread->perf_counters().snapshot();
-
-        TrackPerfStats s;
-        s.slot = static_cast<int>(i);
-        s.file_id = track->file_id;
-        s.buffer_count = track->track_buffer->total_count();
-        s.buffer_capacity = track->track_buffer->preroll_target();
-        s.buffer_state = track->track_buffer->state();
-        if (last_decision_.frames[i].has_value()) {
-            const auto& current_frame = last_decision_.frames[i].value();
-            s.current_pts_us = current_frame.pts_us;
-            s.current_dts_us = current_frame.dts_us;
-        }
-
-        // Average decode time
-        if (snap.frames_decoded > 0) {
-            s.avg_decode_ms = static_cast<double>(snap.total_decode_us) /
-                              static_cast<double>(snap.frames_decoded) / 1000.0;
-        }
-        s.max_decode_ms = static_cast<double>(snap.max_decode_us) / 1000.0;
-
-        // FPS: delta frames / delta time since last snapshot
+        const auto& track = *tracks_[i];
+        const auto decode_perf = track.decode_thread->perf_counters().snapshot();
         auto& baseline = perf_baselines_[i];
-        uint64_t delta_frames = snap.frames_decoded - baseline.frames;
+        auto snapshot = snapshot_track_perf_stats(
+            i, track, decode_perf, last_decision_.frames[i], baseline.frames,
+            elapsed_s);
         if (elapsed_s > 0.5) {
-            s.fps = static_cast<double>(delta_frames) / elapsed_s;
-            baseline.frames = snap.frames_decoded;
+            baseline.frames = snapshot.frames_decoded;
         }
 
-        result.push_back(s);
+        result.push_back(snapshot.stats);
     }
 
     // Reset shared timer once after all tracks are processed

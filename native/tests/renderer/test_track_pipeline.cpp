@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -244,6 +245,49 @@ TEST_CASE("TrackSnapshot builds track metadata",
     REQUIRE(infos[1].file_id == 9);
 
     manager.clear();
+}
+
+TEST_CASE("TrackSnapshot builds track perf stats",
+          "[track_pipeline][track_snapshot]") {
+    TrackPipeline track;
+    track.file_id = 42;
+    track.track_buffer = std::make_shared<TrackBuffer>(4, 1);
+    TextureFrame buffered_frame;
+    buffered_frame.pts_us = 111000;
+    track.track_buffer->push_frame(buffered_frame);
+    track.track_buffer->set_state(TrackState::Ready);
+
+    TextureFrame current_frame;
+    current_frame.pts_us = 1234567;
+    current_frame.dts_us = 1200000;
+
+    DecodePerfCounters::Snapshot decode_perf{
+        120,
+        480000,
+        3500,
+        0,
+    };
+
+    auto snapshot = snapshot_track_perf_stats(
+        3, track, decode_perf, current_frame, 90, 1.5);
+
+    REQUIRE(snapshot.frames_decoded == 120);
+    REQUIRE(snapshot.stats.slot == 3);
+    REQUIRE(snapshot.stats.file_id == 42);
+    REQUIRE(snapshot.stats.buffer_count == 1);
+    REQUIRE(snapshot.stats.buffer_capacity == 4);
+    REQUIRE(snapshot.stats.buffer_state == TrackState::Ready);
+    REQUIRE(snapshot.stats.current_pts_us == 1234567);
+    REQUIRE(snapshot.stats.current_dts_us == 1200000);
+    REQUIRE(snapshot.stats.avg_decode_ms == 4.0);
+    REQUIRE(snapshot.stats.max_decode_ms == 3.5);
+    REQUIRE(snapshot.stats.fps == 20.0);
+
+    auto short_window = snapshot_track_perf_stats(
+        3, track, decode_perf, std::nullopt, 90, 0.25);
+    REQUIRE(short_window.stats.current_pts_us == 0);
+    REQUIRE(short_window.stats.current_dts_us == kNoTimestampUs);
+    REQUIRE(short_window.stats.fps == 0.0);
 }
 
 TEST_CASE("TrackLifecycle compacts cached present decisions",

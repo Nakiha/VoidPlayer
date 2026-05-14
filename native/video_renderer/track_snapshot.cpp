@@ -37,4 +37,39 @@ std::vector<TrackInfo> snapshot_track_infos(const TrackPipelineManager& tracks) 
     return infos;
 }
 
+TrackPerfSnapshotResult snapshot_track_perf_stats(
+    size_t slot,
+    const TrackPipeline& track,
+    const DecodePerfCounters::Snapshot& decode_perf,
+    const std::optional<TextureFrame>& current_frame,
+    uint64_t baseline_frames,
+    double elapsed_s) {
+    TrackPerfStats stats;
+    stats.slot = static_cast<int>(slot);
+    stats.file_id = track.file_id;
+    if (track.track_buffer) {
+        stats.buffer_count = track.track_buffer->total_count();
+        stats.buffer_capacity = track.track_buffer->preroll_target();
+        stats.buffer_state = track.track_buffer->state();
+    }
+    if (current_frame.has_value()) {
+        stats.current_pts_us = current_frame->pts_us;
+        stats.current_dts_us = current_frame->dts_us;
+    }
+
+    if (decode_perf.frames_decoded > 0) {
+        stats.avg_decode_ms = static_cast<double>(decode_perf.total_decode_us) /
+                              static_cast<double>(decode_perf.frames_decoded) /
+                              1000.0;
+    }
+    stats.max_decode_ms = static_cast<double>(decode_perf.max_decode_us) / 1000.0;
+
+    const uint64_t delta_frames = decode_perf.frames_decoded - baseline_frames;
+    if (elapsed_s > 0.5) {
+        stats.fps = static_cast<double>(delta_frames) / elapsed_s;
+    }
+
+    return {stats, decode_perf.frames_decoded};
+}
+
 } // namespace vr

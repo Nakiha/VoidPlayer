@@ -14,6 +14,7 @@
 #include "video_renderer/render_loop_controller.h"
 #include "video_renderer/shader_constants.h"
 #include "video_renderer/track_info.h"
+#include "video_renderer/track_perf_stats.h"
 #include "video_renderer/track_pipeline_factory.h"
 #include "common/logging.h"
 #include <vector>
@@ -39,20 +40,6 @@ class TextureManager;
 class AudioCoordinator;
 class SeekCoordinator;
 class AnalysisOverlayRenderer;
-
-/// Per-track performance stats snapshot.
-struct TrackPerfStats {
-    int slot = -1;
-    int file_id = 0;
-    double fps = 0.0;
-    double avg_decode_ms = 0.0;
-    double max_decode_ms = 0.0;
-    size_t buffer_count = 0;
-    size_t buffer_capacity = 0;
-    TrackState buffer_state = TrackState::Empty;
-    int64_t current_pts_us = 0;
-    int64_t current_dts_us = kNoTimestampUs;
-};
 
 struct RendererEvent {
     enum class Type {

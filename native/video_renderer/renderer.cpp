@@ -8,6 +8,7 @@
 #include "video_renderer/audio_coordinator.h"
 #include "video_renderer/seek_coordinator.h"
 #include "video_renderer/shader_constants.h"
+#include "video_renderer/track_snapshot.h"
 #include "video_renderer/d3d11/render_backend.h"
 #include "video_renderer/d3d11/memory_estimate.h"
 #include <spdlog/spdlog.h>
@@ -2158,28 +2159,7 @@ std::pair<int, int> Renderer::track_dimensions(int slot) const {
 }
 
 std::vector<TrackInfo> Renderer::track_infos() const {
-    std::vector<TrackInfo> infos;
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (tracks_[i]) {
-            const auto* demux = tracks_[i]->demux_thread.get();
-            const auto* decode = tracks_[i]->decode_thread.get();
-            infos.push_back({
-                tracks_[i]->file_id,
-                static_cast<int>(i),
-                tracks_[i]->file_path,
-                tracks_[i]->video_width,
-                tracks_[i]->video_height,
-                demux ? demux->stats().duration_us : 0,
-                demux ? demux->stats().start_time_us : 0,
-                demux ? demux->stats().bit_rate : 0,
-                demux ? demux->stats().format_name : std::string{},
-                demux ? demux->stats().codec_name : std::string{},
-                demux ? demux->stats().codec_long_name : std::string{},
-                decode ? decode->decoder_name() : std::string{}
-            });
-        }
-    }
-    return infos;
+    return snapshot_track_infos(tracks_);
 }
 
 std::vector<TrackPerfStats> Renderer::track_perf_stats() const {

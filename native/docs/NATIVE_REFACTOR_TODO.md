@@ -237,9 +237,13 @@ TODO:
    - 已把 `track_count` / first active slot 这类简单查询下放到 `TrackPipelineManager`，Renderer 保留 public API 和锁。
    - 验证：native-only + smoke/track compact UI。
 
-19. [ ] `TrackInfoSnapshot`
-   - 后续把 `track_infos()` 的 metadata 组装拆到 track snapshot helper，Renderer 保留 public API 形状。
+19. [x] `TrackInfoSnapshot`
+   - 已把 `track_infos()` 的 metadata 组装拆到 `track_snapshot` helper，Renderer 保留 public API 形状。
    - 验证：native-only + smoke/track compact UI。
+
+20. [ ] `TrackPerfSnapshot`
+   - 后续把 `track_perf_stats()` 的每轨字段组装拆到 snapshot helper，Renderer 保留锁、FPS baseline timing 和 public API。
+   - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split
 

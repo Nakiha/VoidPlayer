@@ -13,6 +13,7 @@
 #include "video_renderer/layout_state.h"
 #include "video_renderer/render_loop_controller.h"
 #include "video_renderer/shader_constants.h"
+#include "video_renderer/track_info.h"
 #include "video_renderer/track_pipeline_factory.h"
 #include "common/logging.h"
 #include <vector>
@@ -38,22 +39,6 @@ class TextureManager;
 class AudioCoordinator;
 class SeekCoordinator;
 class AnalysisOverlayRenderer;
-
-/// Track metadata returned to the UI layer.
-struct TrackInfo {
-    int file_id;       ///< Stable identifier (auto-incrementing, survives reorder)
-    int slot;
-    std::string file_path;
-    int width;
-    int height;
-    int64_t duration_us = 0;  ///< Track duration in microseconds
-    int64_t start_time_us = 0;
-    int64_t bit_rate = 0;
-    std::string format_name;
-    std::string codec_name;
-    std::string codec_long_name;
-    std::string decoder_name;
-};
 
 /// Per-track performance stats snapshot.
 struct TrackPerfStats {

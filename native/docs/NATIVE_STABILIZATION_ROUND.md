@@ -95,6 +95,7 @@ Fixed or reduced:
 - `Renderer`: per-track seek target/offset clamp facts moved into `track_lifecycle`.
 - `Renderer`: track offset mutation and render-sink offset synchronization moved into `track_lifecycle`.
 - `Renderer`: active track count and first-active-slot queries moved into `TrackPipelineManager`.
+- `Renderer`: track metadata snapshot assembly moved into `track_snapshot`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -118,7 +119,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P63 Renderer Track Metadata Snapshot Boundary.
+Next patch: P64 Renderer Track Perf Snapshot Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -830,6 +831,8 @@ Result:
 
 ### P63 - Renderer Track Metadata Snapshot Boundary
 
+Status: done in Patch 63.
+
 Goal:
 
 - Move `track_infos()` metadata assembly out of `Renderer` into a track snapshot helper.
@@ -839,6 +842,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv`
+
+Result:
+
+- Added `TrackInfo` as a standalone payload header and `snapshot_track_infos` in `track_snapshot`.
+- `Renderer::track_infos` now delegates metadata assembly while preserving the public payload.
+- Added native coverage for synthetic metadata, real demux/decode metadata, and slot ordering.
+- Verified with native-only tests plus rebuilt smoke and track remove/compact UI scripts.
+
+### P64 - Renderer Track Perf Snapshot Boundary
+
+Goal:
+
+- Move per-track perf stat field assembly out of `Renderer::track_perf_stats`.
+- Keep `Renderer` responsible for locking, shared FPS baseline timing, and public API shape.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
 
 ## Do-Not-Drift List
 

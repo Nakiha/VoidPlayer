@@ -3,6 +3,7 @@
 #include "test_utils.h"
 #include "video_renderer/track_lifecycle.h"
 #include "video_renderer/track_pipeline_factory.h"
+#include "video_renderer/track_snapshot.h"
 
 #include <atomic>
 #include <chrono>
@@ -200,6 +201,49 @@ TEST_CASE("TrackPipelineManager exposes active track queries",
     manager.clear();
     REQUIRE(manager.count() == 0);
     REQUIRE(manager.first_active_slot() == -1);
+}
+
+TEST_CASE("TrackSnapshot builds track metadata",
+          "[track_pipeline][track_snapshot]") {
+    TrackPipelineManager manager;
+    auto empty_metadata = std::make_unique<TrackPipeline>();
+    empty_metadata->file_id = 9;
+    empty_metadata->file_path = "synthetic.mp4";
+    empty_metadata->video_width = 640;
+    empty_metadata->video_height = 360;
+    manager[2] = std::move(empty_metadata);
+
+    auto infos = snapshot_track_infos(manager);
+    REQUIRE(infos.size() == 1);
+    REQUIRE(infos[0].file_id == 9);
+    REQUIRE(infos[0].slot == 2);
+    REQUIRE(infos[0].file_path == "synthetic.mp4");
+    REQUIRE(infos[0].width == 640);
+    REQUIRE(infos[0].height == 360);
+    REQUIRE(infos[0].duration_us == 0);
+    REQUIRE(infos[0].codec_name.empty());
+    REQUIRE(infos[0].decoder_name.empty());
+
+    TrackPipelineFactory factory;
+    auto pipeline = factory.create_opened_pipeline(
+        video_test_dir() + "/h264_9s_1920x1080.mp4",
+        false);
+    REQUIRE(pipeline);
+    pipeline->file_id = 7;
+    manager[0] = std::move(pipeline);
+
+    infos = snapshot_track_infos(manager);
+    REQUIRE(infos.size() == 2);
+    REQUIRE(infos[0].file_id == 7);
+    REQUIRE(infos[0].slot == 0);
+    REQUIRE(infos[0].width == 1920);
+    REQUIRE(infos[0].height == 1080);
+    REQUIRE(infos[0].duration_us > 0);
+    REQUIRE(infos[0].codec_name == "h264");
+    REQUIRE_FALSE(infos[0].decoder_name.empty());
+    REQUIRE(infos[1].file_id == 9);
+
+    manager.clear();
 }
 
 TEST_CASE("TrackLifecycle compacts cached present decisions",

@@ -210,16 +210,19 @@ void log_ffmpeg_runtime_versions() {
         format_ffmpeg_version(swresample_version()));
 }
 
-} // namespace
-
-// Process-global player pointer for cross-engine access (e.g. stats window).
-std::weak_ptr<vr::NativePlayer> g_player_weak;
-std::mutex g_player_mutex;
-
 std::shared_ptr<vr::NativePlayer> pin_global_player() {
-    std::lock_guard lock(g_player_mutex);
-    return g_player_weak.lock();
+    return GlobalNativePlayerRegistry().Pin();
 }
+
+void publish_global_player(const std::shared_ptr<vr::NativePlayer>& player) {
+    GlobalNativePlayerRegistry().Publish(player);
+}
+
+void clear_global_player() {
+    GlobalNativePlayerRegistry().Clear();
+}
+
+} // namespace
 
 bool read_int64_arg(const flutter::EncodableValue& value, int64_t& out) {
     if (std::holds_alternative<int>(value)) {
@@ -398,10 +401,7 @@ VideoRendererPlugin::~VideoRendererPlugin() {
         DestroyWindow(event_hwnd_);
         event_hwnd_ = nullptr;
     }
-    {
-        std::lock_guard lock(g_player_mutex);
-        g_player_weak.reset();
-    }
+    clear_global_player();
     texture_bridge_.DetachFrameCallback();
     if (player_) {
         player_->set_event_callback(nullptr);
@@ -1024,25 +1024,16 @@ void VideoRendererPlugin::CreatePlayer(
     }
 
     player_ = std::make_shared<vr::NativePlayer>();
-    {
-        std::lock_guard lock(g_player_mutex);
-        g_player_weak = player_;
-    }
+    publish_global_player(player_);
     if (!player_->initialize(config)) {
-        {
-            std::lock_guard lock(g_player_mutex);
-            g_player_weak.reset();
-        }
+        clear_global_player();
         player_.reset();
         result->Error("INIT_FAILED", "Failed to initialize player");
         return;
     }
 
     if (!texture_bridge_.Register(player_)) {
-        {
-            std::lock_guard lock(g_player_mutex);
-            g_player_weak.reset();
-        }
+        clear_global_player();
         player_->shutdown();
         player_.reset();
         result->Error("TEXTURE_FAILED", "Failed to register texture");
@@ -1087,10 +1078,7 @@ void VideoRendererPlugin::DestroyPlayer(
 
     try {
     if (player_) {
-        {
-            std::lock_guard lock(g_player_mutex);
-            g_player_weak.reset();
-        }
+        clear_global_player();
         texture_bridge_.DetachFrameCallback();
         player_->set_event_callback(nullptr);
         player_->shutdown();

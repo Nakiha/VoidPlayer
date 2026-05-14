@@ -599,6 +599,27 @@ Follow-up:
 
 - Continue with MethodChannel dispatcher extraction or player diagnostics/global-state isolation as separate patches.
 
+2026-05-15 Patch 21 - Runner NativePlayerRegistry
+
+Changed:
+
+- Added `NativePlayerRegistry` in the Windows runner to own the process-global active player weak pointer and mutex.
+- Removed exported `g_player_weak` / `g_player_mutex` state from `video_renderer_plugin.h/.cpp`; plugin code now publishes, clears, and pins through registry helpers.
+- Kept the current process-global diagnostics semantics unchanged for this slice, but made the remaining global-state boundary explicit.
+- Updated `NATIVE_REFACTOR_TODO.md` to track the registry wrapper as done and keep plugin/provider-scoped diagnostics as follow-up.
+
+Verified:
+
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/smoke/profiler_overlay.csv ui_tests/analysis/spawn_h264.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- Move diagnostics active-player lookup from process-global registry to plugin/provider scope, then delete the global registry if secondary-engine stats no longer need it.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
@@ -647,11 +668,12 @@ fixed:
 - Windows runner plugin diagnostics: Patch 18 moved process/heap/DXGI memory queries into `NativeDiagnosticsProvider`.
 - Windows runner logging/crash bootstrap: Patch 19 moved app-layer logging and crash handler opt-in into `NativeLoggingBootstrap`.
 - Windows runner texture bridge: Patch 20 moved texture registration, shared-handle descriptor fill, release callbacks, and frame notifications into `FlutterTextureBridge`.
+- Windows runner global player state: Patch 21 wrapped the process-global active player weak pointer in `NativePlayerRegistry`.
 
 accepted-backlog:
 
 - `Renderer` remains the root coordination object; future work should move one owner boundary at a time.
-- `windows/runner/video_renderer_plugin.cpp` remains a bridge God Module; split dispatcher and player diagnostics/global state later.
+- `windows/runner/video_renderer_plugin.cpp` remains a bridge God Module; split dispatcher and player diagnostics/provider scope later.
 - `ffi_exports.cpp` remains an ABI God Module candidate; split ABI shim / registry / commands / marshalling later.
 - `TrackPipelineManager` remains a lifecycle-heavy factory; further factory/lifecycle split remains useful.
 - `DecodeThread`, `FrameConverter`, target boundaries, process globals, and resource-budget policy remain second-stage refactor topics.
@@ -700,6 +722,7 @@ fixed:
 - Patch 18 completed the first runner `NativeDiagnosticsProvider` slice for process/heap/DXGI memory queries.
 - Patch 19 completed the runner `NativeLoggingBootstrap` slice for startup logging and crash handler opt-in.
 - Patch 20 completed the runner `FlutterTextureBridge` slice for Texture registrar and shared-handle callback ownership.
+- Patch 21 completed the first global-player-state slice by wrapping the active player weak pointer in `NativePlayerRegistry`.
 
 accepted-backlog:
 

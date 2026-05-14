@@ -189,14 +189,14 @@ TODO:
 证据：
 
 - 文件约 1430 行；同一文件处理 MethodChannel、texture registrar、logging/crash、diagnostics、WIC PNG、DXGI memory、file picker、global diagnostics。
-- `g_player_weak` 是 process-global player stats 入口，多 engine/multi player 语义脆。
+- `NativePlayerRegistry` 仍是 process-global player stats 入口，多 engine/multi player 语义仍需继续收口。
 
 TODO:
 
 - [ ] 新增 `NativePlayerMethodDispatcher`：只负责 MethodChannel method -> typed handler 分发。
 - [x] 新增 `FlutterTextureBridge`：收口 texture registrar、shared handle acquire/release、frame callback。
 - [x] 新增 `NativeDiagnosticsProvider`：先收口 process memory、heap、DXGI dedicated memory 查询，保持 MethodChannel/FFI payload 不变。
-- [ ] 将 native/player diagnostics 聚合进 `NativeDiagnosticsProvider`：消除 `g_player_weak` 或收口到 plugin instance。
+- [ ] 将 native/player diagnostics 聚合进 `NativeDiagnosticsProvider`：消除 process-global player registry 或收口到 plugin instance。
 - [x] 新增 `NativeLoggingBootstrap`：收口 runner 默认日志路径、log file 清洗、native logging reconfigure、startup trace flush 和 crash handler opt-in。
 - [x] 新增 `ViewportCaptureService`：PNG/WIC save 和 BGRA hash/preview 归一。
 - [ ] 分批迁移，每批保持 MethodChannel payload 不变。
@@ -212,13 +212,14 @@ TODO:
 
 证据：
 
-- `windows/runner/video_renderer_plugin.cpp` 有 `g_player_weak`。
+- `windows/runner/native_player_registry.*` 仍提供 process-global active player registry。
 - `windows/runner/analysis_ffi.cpp` 仍有 atomic global PTS callback 和 handle registry；legacy singleton reader API 已移除，overlay state 仍是 renderer-facing global。
 - FFI logging/crash convenience API 仍是 process-global。
 
 TODO:
 
-- [ ] 把 diagnostics 的 active player 从 global weak pointer 改为 plugin instance/provider scope。
+- [x] 把裸 `g_player_weak` / `g_player_mutex` 收口到 `NativePlayerRegistry`。
+- [ ] 把 diagnostics 的 active player 从 process-global registry 改为 plugin instance/provider scope。
 - [ ] analysis PTS callback 支持 handle/player scoped 注册；global callback 标记 deprecated。
 - [x] 移除 analysis legacy singleton reader API；Dart/native 读取路径改为 handle-scoped VAC2 session。
 - [ ] 为 process-global logging/crash FFI API 增加文档警示，并规划 host-provided logger/sink 的长期接口。

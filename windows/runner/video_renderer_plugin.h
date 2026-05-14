@@ -9,6 +9,7 @@
 #include "player/native_player.h"
 #include "native_diagnostics_provider.h"
 #include "native_logging_bootstrap.h"
+#include "native_player_registry.h"
 #include "viewport_capture_service.h"
 
 #include <cstdint>
@@ -17,14 +18,6 @@
 #include <memory>
 #include <mutex>
 #include <wrl/client.h>
-
-/// Process-global player pointer — allows any engine's plugin to query stats.
-namespace vr { class NativePlayer; }
-extern std::weak_ptr<vr::NativePlayer> g_player_weak;
-extern std::mutex g_player_mutex;
-
-/// Pin the global player into a shared_ptr. Returns nullptr if not alive.
-std::shared_ptr<vr::NativePlayer> pin_global_player();
 
 /// ---- dart:ffi flat struct for diagnostics (no heap, no string) ----
 

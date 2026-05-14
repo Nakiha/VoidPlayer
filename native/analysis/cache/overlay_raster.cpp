@@ -91,6 +91,41 @@ void stroke_overlay_rect_mask(std::vector<uint8_t>& pixels,
     }
 }
 
+void set_overlay_mask_pixel8(std::vector<uint8_t>& pixels,
+                             int width,
+                             int height,
+                             int x,
+                             int y) {
+    if (x < 0 || y < 0 || x >= width || y >= height) {
+        return;
+    }
+    pixels[static_cast<size_t>(y * width + x)] = 255;
+}
+
+void stroke_overlay_rect_mask8(std::vector<uint8_t>& pixels,
+                               int width,
+                               int height,
+                               int x0,
+                               int y0,
+                               int x1,
+                               int y1) {
+    if (x0 > x1) std::swap(x0, x1);
+    if (y0 > y1) std::swap(y0, y1);
+    x0 = std::clamp(x0, 0, width - 1);
+    x1 = std::clamp(x1, 0, width - 1);
+    y0 = std::clamp(y0, 0, height - 1);
+    y1 = std::clamp(y1, 0, height - 1);
+    if (x0 >= x1 || y0 >= y1) return;
+    for (int x = x0; x <= x1; ++x) {
+        set_overlay_mask_pixel8(pixels, width, height, x, y0);
+        set_overlay_mask_pixel8(pixels, width, height, x, y1);
+    }
+    for (int y = y0; y <= y1; ++y) {
+        set_overlay_mask_pixel8(pixels, width, height, x0, y);
+        set_overlay_mask_pixel8(pixels, width, height, x1, y);
+    }
+}
+
 void draw_overlay_line(std::vector<uint8_t>& pixels,
                        int width,
                        int height,

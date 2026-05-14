@@ -30,6 +30,8 @@ struct D3D11RenderResources {
     Microsoft::WRL::ComPtr<ID3D11BlendState> overlay_invert_blend_state;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> overlay_texture;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> overlay_srv;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> overlay_mask_texture;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> overlay_mask_srv;
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> cached_rtv;
     int overlay_width = 0;
     int overlay_height = 0;

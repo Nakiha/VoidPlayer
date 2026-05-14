@@ -60,7 +60,7 @@ SamplerState u_sampler : register(s0);
 
 float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_TARGET {
     float4 mask = u_overlay.Sample(u_sampler, texcoord);
-    if (mask.a < 0.5) {
+    if (mask.r < 0.5) {
         discard;
     }
     return float4(1.0, 1.0, 1.0, 1.0);

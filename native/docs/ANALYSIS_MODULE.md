@@ -134,11 +134,11 @@ python dev.py analysis-benchmark h264 h265 h266
 Overlay heatmap CPU raster 成本可用独立 benchmark 覆盖：
 
 ```bash
-python dev.py analysis-overlay-benchmark --iterations 240
+python dev.py analysis-overlay-benchmark --iterations 240 --with-grid
 ```
 
 该命令会生成一个临时 VAC2 base 和 overlay VACHUNK，然后调用
 `VoidPlayerCli.exe benchmark-overlay` 对指定帧重复栅格化，报告写入
 `build/analysis-overlay-benchmark/analysis_overlay_benchmark.json` 和 `.md`。
-它用于检查 CU/MB 热力图填充路径的回归；不包含 GUI 中的 D3D texture upload 和
-最终窗口合成。
+它用于检查 CU/MB 热力图填充和边界 mask 路径的回归；不包含 GUI 中的 D3D
+texture upload 和最终窗口合成，但报告会给出 color/mask upload 字节数估算。

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -62,6 +63,7 @@ struct CliOptions {
     std::string analyzer;
     std::string codec;
     std::string mode = "bitrate";
+    bool with_grid = false;
 };
 
 std::string fourcc(const char value[4]) {
@@ -221,13 +223,13 @@ void print_usage(std::ostream& out) {
         "  VoidPlayerCli check <base.vac|chunk.vck> [--json]\n"
         "  VoidPlayerCli frame <base.vac> --index N [--json]\n"
         "  VoidPlayerCli chunk-frame <chunk.vck> --frame N [--json] [--limit N]\n"
-        "  VoidPlayerCli benchmark-overlay <chunk.vck> --frame N [--width N] [--height N] [--iterations N] [--mode bitrate|qp] [--json]\n\n"
+        "  VoidPlayerCli benchmark-overlay <chunk.vck> --frame N [--width N] [--height N] [--iterations N] [--mode bitrate|qp] [--with-grid] [--json]\n\n"
         "  VoidPlayerCli generate-base --input <video> --cache-root <dir> --hash <hash> [--json]\n"
         "  VoidPlayerCli generate-overlay --input <video> --cache-root <dir> --hash <hash> --start-frame N --end-frame N [--codec h264|hevc|vvc] [--analyzer <exe>] [--json]\n\n"
         "Examples:\n"
         "  VoidPlayerCli inspect \"%APPDATA%\\VoidPlayer\\cache\\<hash>\\base.vac\"\n"
         "  VoidPlayerCli chunk-frame \"overlay.vck\" --frame 128 --json\n"
-        "  VoidPlayerCli benchmark-overlay \"overlay.vck\" --frame 0 --iterations 240 --json\n"
+        "  VoidPlayerCli benchmark-overlay \"overlay.vck\" --frame 0 --iterations 240 --with-grid --json\n"
         "  VoidPlayerCli generate-base --input input.mp4 --cache-root \"%APPDATA%\\VoidPlayer\\cache\" --hash <hash>\n"
         "  VoidPlayerCli generate-overlay --input input.mp4 --cache-root \"%APPDATA%\\VoidPlayer\\cache\" --hash <hash> --start-frame 128 --end-frame 191\n";
 }
@@ -242,6 +244,8 @@ bool parse_args(const std::vector<std::string>& args, CliOptions& options) {
         const std::string& arg = args[i];
         if (arg == "--json") {
             options.json = true;
+        } else if (arg == "--with-grid") {
+            options.with_grid = true;
         } else if (arg == "--limit" && i + 1 < args.size()) {
             if (!parse_u32(args[++i], options.limit)) return false;
         } else if (arg == "--index" && i + 1 < args.size()) {
@@ -970,9 +974,38 @@ int benchmark_overlay(const CliOptions& options) {
     const uint8_t alpha = 255;
     std::vector<uint8_t> pixels(
         static_cast<size_t>(options.width) * static_cast<size_t>(options.height) * 4);
+    std::vector<uint8_t> grid_mask;
+    if (options.with_grid) {
+        grid_mask.resize(static_cast<size_t>(options.width) * static_cast<size_t>(options.height));
+    }
     vr::analysis::OverlayRasterStats stats;
+    auto raster_grid = [&]() {
+        if (!options.with_grid) return;
+        const float scale_x = static_cast<float>(options.width) /
+            static_cast<float>(options.width);
+        const float scale_y = static_cast<float>(options.height) /
+            static_cast<float>(options.height);
+        for (const auto& cu : frame.cus) {
+            const auto& c = cu.common;
+            const int x0 = static_cast<int>(std::round(static_cast<float>(c.x) * scale_x));
+            const int y0 = static_cast<int>(std::round(static_cast<float>(c.y) * scale_y));
+            const int x1 = static_cast<int>(std::round(static_cast<float>(c.x + c.w) * scale_x));
+            const int y1 = static_cast<int>(std::round(static_cast<float>(c.y + c.h) * scale_y));
+            vr::analysis::stroke_overlay_rect_mask8(
+                grid_mask,
+                static_cast<int>(options.width),
+                static_cast<int>(options.height),
+                x0,
+                y0,
+                x1,
+                y1);
+        }
+    };
 
     std::fill(pixels.begin(), pixels.end(), 0);
+    if (options.with_grid) {
+        std::fill(grid_mask.begin(), grid_mask.end(), 0);
+    }
     if (!vr::analysis::raster_overlay_heatmap(
             frame,
             options.width,
@@ -986,10 +1019,14 @@ int benchmark_overlay(const CliOptions& options) {
         std::cerr << "Failed to raster overlay frame\n";
         return 2;
     }
+    raster_grid();
 
     const auto start = std::chrono::steady_clock::now();
     for (uint32_t i = 0; i < options.iterations; ++i) {
         std::fill(pixels.begin(), pixels.end(), 0);
+        if (options.with_grid) {
+            std::fill(grid_mask.begin(), grid_mask.end(), 0);
+        }
         if (!vr::analysis::raster_overlay_heatmap(
                 frame,
                 options.width,
@@ -1003,10 +1040,16 @@ int benchmark_overlay(const CliOptions& options) {
             std::cerr << "Failed to raster overlay frame\n";
             return 2;
         }
+        raster_grid();
     }
     const auto elapsed = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - start).count();
     const double avg_ms = elapsed / static_cast<double>(options.iterations);
+    const uint64_t color_upload_bytes =
+        static_cast<uint64_t>(options.width) * static_cast<uint64_t>(options.height) * 4;
+    const uint64_t mask_upload_bytes = options.with_grid
+        ? static_cast<uint64_t>(options.width) * static_cast<uint64_t>(options.height)
+        : 0;
 
     if (options.json) {
         std::cout << "{"
@@ -1017,8 +1060,11 @@ int benchmark_overlay(const CliOptions& options) {
                   << "\"width\":" << options.width << ","
                   << "\"height\":" << options.height << ","
                   << "\"iterations\":" << options.iterations << ","
+                  << "\"withGrid\":" << (options.with_grid ? "true" : "false") << ","
                   << "\"cuCount\":" << stats.cu_count << ","
                   << "\"filledPixels\":" << stats.filled_pixels << ","
+                  << "\"colorUploadBytes\":" << color_upload_bytes << ","
+                  << "\"maskUploadBytes\":" << mask_upload_bytes << ","
                   << "\"totalMs\":" << elapsed << ","
                   << "\"avgMs\":" << avg_ms
                   << "}\n";
@@ -1026,9 +1072,12 @@ int benchmark_overlay(const CliOptions& options) {
         std::cout << "Overlay raster benchmark: frame=" << options.frame
                   << " mode=" << options.mode
                   << " iterations=" << options.iterations
+                  << " grid=" << (options.with_grid ? "yes" : "no")
                   << " avg=" << avg_ms << " ms"
                   << " cus=" << stats.cu_count
-                  << " filled_pixels=" << stats.filled_pixels << "\n";
+                  << " filled_pixels=" << stats.filled_pixels
+                  << " color_upload_bytes=" << color_upload_bytes
+                  << " mask_upload_bytes=" << mask_upload_bytes << "\n";
     }
     return 0;
 }

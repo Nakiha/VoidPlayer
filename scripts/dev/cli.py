@@ -158,6 +158,8 @@ Examples:
     p_overlay_benchmark.add_argument("--mode", type=str, default="bitrate",
                                      choices=["bitrate", "qp"],
                                      help="Heatmap mode")
+    p_overlay_benchmark.add_argument("--with-grid", action="store_true",
+                                     help="Also raster the CU/MB boundary mask")
 
     return parser
 

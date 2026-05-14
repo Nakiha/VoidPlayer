@@ -52,13 +52,15 @@ overlay texture 的 CPU raster 成本。它默认使用 H.266 小样第一帧、
 
 ```bash
 python dev.py analysis-overlay-benchmark --build
-python dev.py analysis-overlay-benchmark --iterations 240
+python dev.py analysis-overlay-benchmark --iterations 240 --with-grid
 python dev.py analysis-overlay-benchmark --video <video> --codec hevc --frame 128 --mode qp
 ```
 
 报告默认写入
 `build/analysis-overlay-benchmark/analysis_overlay_benchmark.json` 和 `.md`。
-这条基准只测 CPU fill+raster，不代表完整 GUI 的 D3D upload、blend 或窗口合成成本。
+这条基准只测 CPU fill+raster，不代表完整 GUI 的 D3D upload、blend 或窗口合成成本；
+`--with-grid` 会同时测 CU/MB 边界 mask raster，并输出每帧 color/mask upload
+字节数估算。
 
 `dev.py build --native` 会在 native CMake 构建前检查 analysis 外部工具：
 

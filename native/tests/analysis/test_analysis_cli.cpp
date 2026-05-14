@@ -262,6 +262,7 @@ int main(int argc, char** argv) {
             "--width", "64",
             "--height", "64",
             "--iterations", "2",
+            "--with-grid",
             "--json",
         });
 

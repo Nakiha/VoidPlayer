@@ -55,6 +55,20 @@ void stroke_overlay_rect_mask(std::vector<uint8_t>& pixels,
                               int x1,
                               int y1);
 
+void set_overlay_mask_pixel8(std::vector<uint8_t>& pixels,
+                             int width,
+                             int height,
+                             int x,
+                             int y);
+
+void stroke_overlay_rect_mask8(std::vector<uint8_t>& pixels,
+                               int width,
+                               int height,
+                               int x0,
+                               int y0,
+                               int x1,
+                               int y1);
+
 void draw_overlay_line(std::vector<uint8_t>& pixels,
                        int width,
                        int height,

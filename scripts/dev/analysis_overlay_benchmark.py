@@ -60,6 +60,7 @@ def cmd_analysis_overlay_benchmark(args) -> None:
         height=args.height,
         iterations=args.iterations,
         mode=args.mode,
+        with_grid=args.with_grid,
     )
     report = {
         "schema": "voidplayer-analysis-overlay-benchmark-v1",
@@ -125,6 +126,7 @@ def _benchmark(
     height: int,
     iterations: int,
     mode: str,
+    with_grid: bool,
 ) -> dict:
     sample_hash = _hash_for_sample(codec, video)
     print(f"\nOverlay benchmark {codec}: {video.name} frame={frame} mode={mode}")
@@ -150,7 +152,7 @@ def _benchmark(
         "--analyzer", str(analyzer),
         "--json",
     ])
-    bench, _ = _run_json([
+    bench_command = [
         str(cli),
         "benchmark-overlay",
         chunk["path"],
@@ -159,8 +161,11 @@ def _benchmark(
         "--height", str(height),
         "--iterations", str(iterations),
         "--mode", mode,
-        "--json",
-    ])
+    ]
+    if with_grid:
+        bench_command.append("--with-grid")
+    bench_command.append("--json")
+    bench, _ = _run_json(bench_command)
     bench["codec"] = codec
     bench["video"] = str(video)
     bench["frames"] = frames
@@ -181,8 +186,10 @@ def _format_markdown(report: dict) -> str:
         f"- Analyzer: `{report['analyzer']}`\n"
         f"- Video: `{r['video']}`\n"
         f"- Chunk: `{r['chunkPath']}`\n\n"
-        "| Codec | Frame | Mode | Size | Iterations | CUs | Filled Pixels | Avg Raster |\n"
-        "| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |\n"
-        f"| {r['codec']} | {r['frame']} | {r['mode']} | {r['width']}x{r['height']} | "
-        f"{r['iterations']} | {r['cuCount']} | {r['filledPixels']} | {r['avgMs']:.3f} ms |\n"
+        "| Codec | Frame | Mode | Grid | Size | Iterations | CUs | Filled Pixels | Upload Bytes | Avg Raster |\n"
+        "| --- | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n"
+        f"| {r['codec']} | {r['frame']} | {r['mode']} | {'yes' if r.get('withGrid') else 'no'} | "
+        f"{r['width']}x{r['height']} | {r['iterations']} | {r['cuCount']} | "
+        f"{r['filledPixels']} | {r.get('colorUploadBytes', 0) + r.get('maskUploadBytes', 0)} | "
+        f"{r['avgMs']:.3f} ms |\n"
     )

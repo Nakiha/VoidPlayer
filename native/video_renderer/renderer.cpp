@@ -2106,6 +2106,8 @@ bool Renderer::ensure_analysis_overlay_texture(int width, int height) {
     auto& resources = *d3d_resources_;
     if (resources.overlay_texture &&
         resources.overlay_srv &&
+        resources.overlay_mask_texture &&
+        resources.overlay_mask_srv &&
         resources.overlay_width == width &&
         resources.overlay_height == height) {
         return true;
@@ -2113,6 +2115,8 @@ bool Renderer::ensure_analysis_overlay_texture(int width, int height) {
 
     resources.overlay_texture.Reset();
     resources.overlay_srv.Reset();
+    resources.overlay_mask_texture.Reset();
+    resources.overlay_mask_srv.Reset();
     resources.overlay_width = 0;
     resources.overlay_height = 0;
 
@@ -2145,6 +2149,33 @@ bool Renderer::ensure_analysis_overlay_texture(int width, int height) {
         spdlog::error("[Renderer] CreateShaderResourceView(analysis overlay) failed: HRESULT {:#x}",
                       static_cast<unsigned long>(hr));
         resources.overlay_texture.Reset();
+        return false;
+    }
+
+    D3D11_TEXTURE2D_DESC mask_desc = desc;
+    mask_desc.Format = DXGI_FORMAT_R8_UNORM;
+    hr = d3d_device_->device()->CreateTexture2D(
+        &mask_desc, nullptr, &resources.overlay_mask_texture);
+    if (FAILED(hr) || !resources.overlay_mask_texture) {
+        spdlog::error("[Renderer] CreateTexture2D(analysis overlay mask) failed: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        resources.overlay_texture.Reset();
+        resources.overlay_srv.Reset();
+        return false;
+    }
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC mask_srv_desc = {};
+    mask_srv_desc.Format = mask_desc.Format;
+    mask_srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    mask_srv_desc.Texture2D.MipLevels = 1;
+    hr = d3d_device_->device()->CreateShaderResourceView(
+        resources.overlay_mask_texture.Get(), &mask_srv_desc, &resources.overlay_mask_srv);
+    if (FAILED(hr) || !resources.overlay_mask_srv) {
+        spdlog::error("[Renderer] CreateShaderResourceView(analysis overlay mask) failed: HRESULT {:#x}",
+                      static_cast<unsigned long>(hr));
+        resources.overlay_texture.Reset();
+        resources.overlay_srv.Reset();
+        resources.overlay_mask_texture.Reset();
         return false;
     }
 
@@ -2206,8 +2237,8 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
     if (analysis_overlay_pixels_.size() != pixel_count * 4) {
         analysis_overlay_pixels_.resize(pixel_count * 4);
     }
-    if (analysis_overlay_line_pixels_.size() != pixel_count * 4) {
-        analysis_overlay_line_pixels_.resize(pixel_count * 4);
+    if (analysis_overlay_line_pixels_.size() != pixel_count) {
+        analysis_overlay_line_pixels_.resize(pixel_count);
     }
     std::fill(analysis_overlay_pixels_.begin(), analysis_overlay_pixels_.end(), 0);
     std::fill(analysis_overlay_line_pixels_.begin(), analysis_overlay_line_pixels_.end(), 0);
@@ -2369,7 +2400,7 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
 
             if (line_alpha > 0 &&
                 (show_grid || mode == 0 || pred_primary)) {
-                analysis::stroke_overlay_rect_mask(
+                analysis::stroke_overlay_rect_mask8(
                     analysis_overlay_line_pixels_,
                     width,
                     height,
@@ -2400,10 +2431,13 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
     }
 
     auto* ctx = d3d_device_->context();
-    auto upload_overlay = [&](const std::vector<uint8_t>& pixels, const char* label) -> bool {
+    auto upload_overlay = [&](ID3D11Texture2D* texture,
+                              const std::vector<uint8_t>& pixels,
+                              size_t row_bytes,
+                              const char* label) -> bool {
         D3D11_MAPPED_SUBRESOURCE mapped = {};
         HRESULT hr = ctx->Map(
-            resources.overlay_texture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+            texture, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
         if (FAILED(hr)) {
             spdlog::warn("[Renderer] Map({}) failed: HRESULT {:#x}",
                          label,
@@ -2412,13 +2446,12 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
         }
         const uint8_t* src = pixels.data();
         auto* dst = static_cast<uint8_t*>(mapped.pData);
-        const size_t row_bytes = static_cast<size_t>(width) * 4;
         for (int y = 0; y < height; ++y) {
             std::memcpy(dst + static_cast<size_t>(y) * mapped.RowPitch,
                         src + static_cast<size_t>(y) * row_bytes,
                         row_bytes);
         }
-        ctx->Unmap(resources.overlay_texture.Get(), 0);
+        ctx->Unmap(texture, 0);
         return true;
     };
 
@@ -2428,11 +2461,16 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
 
     ID3D11SamplerState* sampler = resources.overlay_sampler_state.Get();
     ID3D11ShaderResourceView* overlay_srv = resources.overlay_srv.Get();
+    ID3D11ShaderResourceView* overlay_mask_srv = resources.overlay_mask_srv.Get();
     ID3D11ShaderResourceView* null_srv = nullptr;
     float blend_factor[4] = {0, 0, 0, 0};
 
     if (has_color_overlay) {
-        if (!upload_overlay(analysis_overlay_pixels_, "analysis overlay")) {
+        if (!upload_overlay(
+                resources.overlay_texture.Get(),
+                analysis_overlay_pixels_,
+                static_cast<size_t>(width) * 4,
+                "analysis overlay")) {
             return;
         }
         ctx->OMSetBlendState(resources.overlay_blend_state.Get(), blend_factor, 0xffffffff);
@@ -2448,7 +2486,11 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
     }
 
     if (has_line_mask) {
-        if (!upload_overlay(analysis_overlay_line_pixels_, "analysis overlay line mask")) {
+        if (!upload_overlay(
+                resources.overlay_mask_texture.Get(),
+                analysis_overlay_line_pixels_,
+                static_cast<size_t>(width),
+                "analysis overlay line mask")) {
             ctx->OMSetBlendState(nullptr, nullptr, 0xffffffff);
             return;
         }
@@ -2459,7 +2501,7 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
         if (resources.overlay_invert_shader.layout) {
             ctx->IASetInputLayout(resources.overlay_invert_shader.layout.Get());
         }
-        ctx->PSSetShaderResources(0, 1, &overlay_srv);
+        ctx->PSSetShaderResources(0, 1, &overlay_mask_srv);
         ctx->PSSetSamplers(0, 1, &sampler);
         ctx->Draw(4, 0);
         ctx->PSSetShaderResources(0, 1, &null_srv);
@@ -2928,6 +2970,11 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
         result.analysis_overlay_bytes = estimate_d3d11_texture_bytes(desc);
         result.analysis_overlay_width = static_cast<int>(desc.Width);
         result.analysis_overlay_height = static_cast<int>(desc.Height);
+        if (d3d_resources_->overlay_mask_texture) {
+            D3D11_TEXTURE2D_DESC mask_desc = {};
+            d3d_resources_->overlay_mask_texture->GetDesc(&mask_desc);
+            result.analysis_overlay_bytes += estimate_d3d11_texture_bytes(mask_desc);
+        }
         result.total_estimated_bytes += result.analysis_overlay_bytes;
     }
 

@@ -66,10 +66,10 @@ Fixed:
 - Overlay precision and opacity semantics: native regression tests now cover 1x1, 2x2, 8K, shared-boundary, and clamped packed-UV coordinates, and FFI overlay opacity preserves 0 instead of forcing 10%.
 - Overlay generation budget and codec semantics: generated VACHUNK publish now uses the current remaining cache budget, VAC2/VACHUNK parsers reject undefined codec values, and overlay chunk keys are built from a validated base codec instead of a blind header cast.
 - VACHUNK checksum fields: v1 semantics are now explicit reserved-zero fields, with parser validation for nonzero header/section checksum values and docs updated to match the external analyzer's current output.
+- VACHUNK record-count guard: record section factories now check count/record-size narrowing before filling section metadata, and empty record sections no longer do pointer arithmetic on a null vector data pointer.
 
 Active backlog:
 
-- record count truncation should be guarded before write validation.
 - VAC2 frame model still has packet-index assumptions that can cause future overlay alignment issues.
 
 ### `review_godobject.md`
@@ -94,7 +94,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P37 VACHUNK Record Count Guard.
+Next patch: P38 VAC2 Frame Model Assumptions.
 
 ### P30 - VACache Atomic Publish
 
@@ -248,6 +248,8 @@ Validation:
 
 ### P37 - VACHUNK Record Count Guard
 
+Status: done in Patch 37.
+
 Source: `review_overlay.md`.
 
 Goal:
@@ -259,6 +261,26 @@ Likely files:
 
 - `native/analysis/parsers/vachunk_parser.*`
 - `native/tests/analysis/test_analysis_parsers.cpp`
+
+Validation:
+
+- `python dev.py test --native-only`
+
+### P38 - VAC2 Frame Model Assumptions
+
+Source: `review_overlay.md`.
+
+Goal:
+
+- Make the current packet-index-to-frame fallback explicit in metadata/docs/tests so future overlay alignment work has a hard boundary.
+- Add regression coverage around frame/packet mapping assumptions that overlay lookup depends on.
+
+Likely files:
+
+- `native/analysis/generators/analysis_generator.*`
+- `native/analysis/parsers/vac2_parser.*`
+- `native/tests/analysis/test_analysis_generator.cpp`
+- `native/docs/formats/VAC2.md`
 
 Validation:
 

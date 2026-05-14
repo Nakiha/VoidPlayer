@@ -2,7 +2,9 @@
 
 #include "analysis/parsers/binary_types.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -50,6 +52,14 @@ private:
     std::vector<VachunkSectionEntry> sections_;
 };
 
+inline constexpr bool vachunk_record_section_fits(size_t record_count,
+                                                  size_t record_size) {
+    return record_size <= std::numeric_limits<uint32_t>::max() &&
+           record_count <= std::numeric_limits<uint32_t>::max() &&
+           (record_size == 0 ||
+            record_count <= std::numeric_limits<uint64_t>::max() / record_size);
+}
+
 template <typename T>
 VachunkPayloadSection make_vachunk_record_section(const char (&type)[5],
                                                   const std::vector<T>& records,
@@ -60,11 +70,17 @@ VachunkPayloadSection make_vachunk_record_section(const char (&type)[5],
     section.type[2] = type[2];
     section.type[3] = type[3];
     section.flags = flags;
-    section.entry_size = sizeof(T);
+    if (!vachunk_record_section_fits(records.size(), sizeof(T))) {
+        section.entry_count = 1;
+        return section;
+    }
+    section.entry_size = static_cast<uint32_t>(sizeof(T));
     section.entry_count = static_cast<uint32_t>(records.size());
     section.decoded_size = static_cast<uint64_t>(records.size()) * sizeof(T);
-    const auto* begin = reinterpret_cast<const uint8_t*>(records.data());
-    section.bytes.assign(begin, begin + section.decoded_size);
+    if (!records.empty()) {
+        const auto* begin = reinterpret_cast<const uint8_t*>(records.data());
+        section.bytes.assign(begin, begin + section.decoded_size);
+    }
     return section;
 }
 

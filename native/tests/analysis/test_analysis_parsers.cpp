@@ -511,6 +511,23 @@ TEST_CASE("VACHUNK: writer rejects invalid range and tiny budget", "[analysis][v
     std::filesystem::remove(path);
 }
 
+TEST_CASE("VACHUNK: record section factory guards narrow counts",
+          "[analysis][vachunk]") {
+    REQUIRE(vr::analysis::vachunk_record_section_fits(
+        static_cast<size_t>(std::numeric_limits<uint32_t>::max()), 1));
+    REQUIRE_FALSE(vr::analysis::vachunk_record_section_fits(
+        static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1ull, 1));
+    REQUIRE_FALSE(vr::analysis::vachunk_record_section_fits(
+        1, static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1ull));
+
+    std::vector<VachunkFrameSummary> empty;
+    const auto section = vr::analysis::make_vachunk_record_section("FSUM", empty);
+    REQUIRE(section.entry_size == sizeof(VachunkFrameSummary));
+    REQUIRE(section.entry_count == 0);
+    REQUIRE(section.decoded_size == 0);
+    REQUIRE(section.bytes.empty());
+}
+
 TEST_CASE("VACHUNK: parser rejects undefined codec values", "[analysis][vachunk]") {
     const auto path = std::filesystem::temp_directory_path() /
         "voidplayer_test_chunk_bad_codec.vck";

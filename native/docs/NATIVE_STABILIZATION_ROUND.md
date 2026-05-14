@@ -273,13 +273,91 @@ Follow-up:
 
 | 来源 | 复核项 | 结果 |
 | --- | --- | --- |
-| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | TODO |
-| `review_godobject.md` | God Object 排名和 owner boundary 判断 | TODO |
-| `review_overlay.md` | AnalysisManager、VACHUNK、overlay cache、D3D pass 风险 | TODO |
-| `split_adv.md` | Patch 顺序和“不贪大”边界 | TODO |
+| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | fixed: #1/#2/#3/#5; accepted-backlog: #4/#6-#13 |
+| `review_godobject.md` | God Object 排名和 owner boundary 判断 | fixed: AudioMixer boundary + Analysis session snapshot; accepted-backlog: remaining owner splits |
+| `review_overlay.md` | AnalysisManager、VACHUNK、overlay cache、D3D pass 风险 | fixed: AnalysisManager session + current-base chunk filter; accepted-backlog: remaining overlay/cache/render-pass items |
+| `split_adv.md` | Patch 顺序和“不贪大”边界 | fixed: Patch 1-5 executed, verified, and committed |
 
 复核时只标三类状态：
 
 - `fixed`: 本轮已修且有验证。
 - `accepted-backlog`: 仍存在，但明确进入后续 backlog。
 - `not-applicable`: 源码已变化或 chat 判断不再成立，并写明证据。
+
+### `review_native.md`
+
+fixed:
+
+- #1 Demux seek callback race: Patch 1 split demux open/start and locked callback access.
+- #2 RenderSink raw `TrackBuffer*`: Patch 3 switched sink registration to shared buffer snapshots.
+- #3 Headless texture overwrite risk: Patch 4 added release-driven in-flight tracking.
+- #5 Audio pause discards PCM: Patch 2 made paused render output silence without consuming PCM.
+
+accepted-backlog:
+
+- #4 capture lock/GPU wait split maps to S6 / `FrameCaptureService`.
+- #6 NativePlayer facade locking remains a lifecycle boundary cleanup.
+- #7 FFI long-operation serialization remains an ABI/registry cleanup.
+- #8 layout validation maps to S7.
+- #9 RGBA texture size validation maps to S8.
+- #10 demux read error propagation maps to S9.
+- #11 `avcodec_open2()` SEH guard maps to S10.
+- #12 odd-dimension software path maps to S11.
+- #13 D3D shutdown `ClearState + Flush` maps to S12.
+
+not-applicable:
+
+- None.
+
+### `review_godobject.md`
+
+fixed:
+
+- `AudioEngine::Impl`: Patch 2 extracted `AudioMixer`, separating output submission from mixer/PCM consumption policy.
+- `AnalysisManager`: Patch 5 introduced session snapshots and moved overlay chunk cache/index state into the session.
+
+accepted-backlog:
+
+- `Renderer` remains the root coordination object; future work should move one owner boundary at a time.
+- `windows/runner/video_renderer_plugin.cpp` remains a bridge God Module; split dispatcher / texture bridge / diagnostics / capture later.
+- `ffi_exports.cpp` remains an ABI God Module candidate; split ABI shim / registry / commands / marshalling later.
+- `TrackPipelineManager` remains a lifecycle-heavy factory; further factory/lifecycle split remains useful.
+- `DecodeThread`, `FrameConverter`, target boundaries, process globals, and resource-budget policy remain second-stage refactor topics.
+
+not-applicable:
+
+- None.
+
+### `review_overlay.md`
+
+fixed:
+
+- AnalysisManager lifecycle data race: Patch 5 replaced mutable singleton session fields with shared session snapshots.
+- Overlay chunk consistency: Patch 5 filters overlay chunks by codec, base content revision, track index, and required CU geometry feature flags.
+
+accepted-backlog:
+
+- VACHUNK hot-path IO/cache amplification remains a cache/LRU or chunk-layout follow-up.
+- VACache atomic replace and tmp-name uniqueness remain a cache publication follow-up.
+- `overlay_raster.cpp` helper UB/bounds checks remain a raster hardening follow-up.
+- D3D overlay pass state contract remains a render-pass cleanup.
+- 16-bit rect precision tests, generation budget details, checksum validation, record-count guards, opacity 0 semantics, and deeper VAC2 frame modeling remain overlay backlog.
+
+not-applicable:
+
+- None.
+
+### `split_adv.md`
+
+fixed:
+
+- Patch 1-5 were completed in the recommended stabilization shape: one owner/lifetime/threading issue per patch, with native tests and relevant UI tests.
+- Patch 6 documentation/cross-check is this section.
+
+accepted-backlog:
+
+- Second-priority owner boundary work starts with S6/S7/S8 or `FrameCaptureService`; avoid jumping straight into a large Renderer split.
+
+not-applicable:
+
+- None.

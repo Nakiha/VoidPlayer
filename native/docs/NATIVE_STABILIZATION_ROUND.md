@@ -132,6 +132,7 @@ Fixed or reduced:
 - `Renderer`: track pipeline metadata setup, callback/audio hook registration, demux start, and failed-start rollback moved into `track_lifecycle`.
 - `Renderer`: track geometry mutation from presented frames moved into `layout_geometry`; Renderer now only logs returned geometry updates.
 - `Renderer`: cached paused-frame first-PTS lookup moved into `track_present_policy`.
+- `Renderer`: seek-preview presented track-event collection moved into `track_present_policy`; Renderer keeps pending-event state and callback emission.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
@@ -150,7 +151,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P95 Renderer Seek Preview Event Boundary.
+Next patch: P96 Renderer Track Perf Stats Snapshot Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1553,6 +1554,8 @@ Result:
 
 ### P95 - Renderer Seek Preview Event Boundary
 
+Status: done in Patch 95.
+
 Goal:
 
 - Move seek-preview presented track-event collection out of `Renderer::emit_seek_preview_presented_events`.
@@ -1563,6 +1566,26 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/timeline/h265_timeline_click_like.csv`
+
+Result:
+
+- Added `SeekPreviewPresentedTrackEvent` and `collect_seek_preview_presented_track_events` to `track_present_policy`.
+- `Renderer::emit_seek_preview_presented_events` now handles pending request state and emits converted `RendererEvent` records.
+- Added native coverage for slot ordering, missing-track filtering, invalid file-id filtering, request/target propagation, and DTS passthrough.
+- Verified with native-only tests plus rebuilt smoke and h265 timeline click-like UI.
+
+### P96 - Renderer Track Perf Stats Snapshot Boundary
+
+Goal:
+
+- Move the per-track perf stats scan out of `Renderer::track_perf_stats`.
+- Keep Renderer responsible for timer/baseline ownership, but move active-track snapshot collection into `track_snapshot`.
+- Preserve baseline rotation behavior and current-frame reporting.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
 
 ## Do-Not-Drift List
 

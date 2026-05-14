@@ -365,9 +365,13 @@ TODO:
    - 已把 paused cached-frame 日志里的 first-frame PTS scan 迁入 present policy helper，Renderer 只负责日志格式。
    - 验证：native-only + smoke UI。
 
-51. [ ] `SeekPreviewPresentedEventCollection`
-   - 后续把 `Renderer::emit_seek_preview_presented_events()` 中按 slot 拼 seek-preview presented track event 的扫描迁入 present policy helper。
+51. [x] `SeekPreviewPresentedEventCollection`
+   - 已把 `Renderer::emit_seek_preview_presented_events()` 中按 slot 拼 seek-preview presented track event 的扫描迁入 present policy helper。
    - 验证：native-only + smoke/timeline UI。
+
+52. [ ] `TrackPerfStatsCollection`
+   - 后续把 `Renderer::track_perf_stats()` 的 active-track snapshot collection 迁入 track snapshot helper，Renderer 保留 timer/baseline ownership。
+   - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split
 

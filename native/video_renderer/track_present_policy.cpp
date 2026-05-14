@@ -1,6 +1,7 @@
 #include "video_renderer/track_present_policy.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <optional>
 
 namespace vr {
@@ -22,6 +23,36 @@ std::optional<int64_t> first_present_decision_frame_pts_us(
         }
     }
     return std::nullopt;
+}
+
+std::vector<SeekPreviewPresentedTrackEvent>
+collect_seek_preview_presented_track_events(
+    const TrackPipelineManager& tracks,
+    const PresentDecision& decision,
+    int64_t request_id,
+    int64_t target_pts_us) {
+    std::vector<SeekPreviewPresentedTrackEvent> events;
+
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!decision.frames[i].has_value() || !tracks[i]) {
+            continue;
+        }
+        const int track_file_id = tracks[i]->file_id;
+        if (track_file_id < 0) {
+            continue;
+        }
+
+        SeekPreviewPresentedTrackEvent event;
+        event.slot = i;
+        event.file_id = track_file_id;
+        event.request_id = request_id;
+        event.pts_us = decision.frames[i]->pts_us;
+        event.dts_us = decision.frames[i]->dts_us;
+        event.target_pts_us = target_pts_us;
+        events.push_back(event);
+    }
+
+    return events;
 }
 
 void apply_present_carry_forward(

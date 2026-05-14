@@ -1171,6 +1171,47 @@ TEST_CASE("TrackPresentPolicy detects frames in present decisions",
     REQUIRE(first_present_decision_frame_pts_us(decision) == 5678);
 }
 
+TEST_CASE("TrackPresentPolicy collects seek preview presented events",
+          "[track_pipeline][track_present_policy]") {
+    const auto make_track = [](int file_id) {
+        auto track = std::make_unique<TrackPipeline>();
+        track->file_id = file_id;
+        return track;
+    };
+    const auto make_frame = [](int64_t pts_us, int64_t dts_us) {
+        TextureFrame frame;
+        frame.pts_us = pts_us;
+        frame.dts_us = dts_us;
+        return frame;
+    };
+
+    TrackPipelineManager manager;
+    manager[0] = make_track(10);
+    manager[1] = make_track(-1);
+    manager[3] = make_track(30);
+
+    PresentDecision decision;
+    decision.frames[0] = make_frame(1000, 900);
+    decision.frames[1] = make_frame(2000, 1900);
+    decision.frames[2] = make_frame(3000, 2900);
+    decision.frames[3] = make_frame(4000, kNoTimestampUs);
+
+    const auto events =
+        collect_seek_preview_presented_track_events(manager, decision, 77, 5555);
+
+    REQUIRE(events.size() == 2);
+    REQUIRE(events[0].slot == 0);
+    REQUIRE(events[0].file_id == 10);
+    REQUIRE(events[0].request_id == 77);
+    REQUIRE(events[0].pts_us == 1000);
+    REQUIRE(events[0].dts_us == 900);
+    REQUIRE(events[0].target_pts_us == 5555);
+    REQUIRE(events[1].slot == 3);
+    REQUIRE(events[1].file_id == 30);
+    REQUIRE(events[1].pts_us == 4000);
+    REQUIRE(events[1].dts_us == kNoTimestampUs);
+}
+
 TEST_CASE("TrackPresentPolicy carries forward active last frames",
           "[track_pipeline][track_present_policy]") {
     const auto make_track = [](int64_t offset_us) {

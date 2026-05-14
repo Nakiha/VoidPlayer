@@ -580,17 +580,16 @@ void Renderer::emit_seek_preview_presented_events(const PresentDecision& decisio
         pending_seek_event_emitted_ = true;
     }
 
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!decision.frames[i].has_value()) continue;
-        const int track_file_id = tracks_[i] ? tracks_[i]->file_id : -1;
-        if (track_file_id < 0) continue;
+    const auto events = collect_seek_preview_presented_track_events(
+        tracks_, decision, request_id, target_pts_us);
+    for (const auto& track_event : events) {
         RendererEvent event;
         event.type = RendererEvent::Type::SeekPreviewPresented;
-        event.request_id = request_id;
-        event.track_file_id = track_file_id;
-        event.pts_us = decision.frames[i]->pts_us;
-        event.dts_us = decision.frames[i]->dts_us;
-        event.target_pts_us = target_pts_us;
+        event.request_id = track_event.request_id;
+        event.track_file_id = track_event.file_id;
+        event.pts_us = track_event.pts_us;
+        event.dts_us = track_event.dts_us;
+        event.target_pts_us = track_event.target_pts_us;
         emit_event(event);
     }
 }

@@ -5,6 +5,7 @@
 #include "video_renderer/layout_geometry.h"
 #include "video_renderer/track_lifecycle.h"
 #include "video_renderer/track_pipeline_factory.h"
+#include "video_renderer/track_perf_baseline.h"
 #include "video_renderer/track_preroll_policy.h"
 #include "video_renderer/track_present_policy.h"
 #include "video_renderer/track_preview_policy.h"
@@ -272,6 +273,50 @@ TEST_CASE("LayoutController appends active tracks in slot order",
     REQUIRE(snapshot.order[1] == 42);
     REQUIRE(snapshot.order[2] == -1);
     REQUIRE(snapshot.order[3] == -1);
+}
+
+TEST_CASE("TrackPerfBaselineTracker resets frames and timer",
+          "[track_pipeline][track_perf]") {
+    using Clock = TrackPerfBaselineTracker::Clock;
+    const auto start = Clock::time_point(std::chrono::milliseconds(100));
+
+    TrackPerfBaselineTracker tracker;
+    tracker.reset(start);
+    tracker.update_baseline_frames(1, 42);
+    tracker.update_baseline_frames(3, 7);
+
+    REQUIRE(tracker.start_time() == start);
+    REQUIRE(tracker.baseline_frames(0) == 0);
+    REQUIRE(tracker.baseline_frames(1) == 42);
+    REQUIRE(tracker.baseline_frames(3) == 7);
+    REQUIRE(tracker.baseline_frames(kMaxTracks) == 0);
+
+    tracker.reset();
+    REQUIRE(tracker.start_time() == Clock::time_point{});
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        REQUIRE(tracker.baseline_frames(i) == 0);
+    }
+}
+
+TEST_CASE("TrackPerfBaselineTracker rotates elapsed window",
+          "[track_pipeline][track_perf]") {
+    using Clock = TrackPerfBaselineTracker::Clock;
+    const auto start = Clock::time_point(std::chrono::seconds(10));
+
+    TrackPerfBaselineTracker tracker;
+    tracker.reset(start);
+
+    const double short_elapsed =
+        tracker.elapsed_seconds(start + std::chrono::milliseconds(500));
+    REQUIRE_FALSE(tracker.should_rotate(short_elapsed));
+
+    const auto rotated_start = start + std::chrono::milliseconds(501);
+    const double long_elapsed = tracker.elapsed_seconds(rotated_start);
+    REQUIRE(tracker.should_rotate(long_elapsed));
+
+    tracker.rotate_timer(rotated_start);
+    REQUIRE_FALSE(tracker.should_rotate(tracker.elapsed_seconds(
+        rotated_start + std::chrono::milliseconds(1))));
 }
 
 TEST_CASE("TrackSnapshot builds track metadata",

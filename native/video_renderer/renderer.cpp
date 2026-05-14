@@ -176,9 +176,7 @@ bool Renderer::initialize(const RendererConfig& config) {
 
     initialized_ = true;
 
-    // Initialize perf stats baseline
-    stats_start_time_ = std::chrono::steady_clock::now();
-    for (auto& bl : perf_baselines_) bl.frames = 0;
+    perf_baseline_tracker_.reset(std::chrono::steady_clock::now());
 
     // Start render loop immediately (paused mode).
     // Decodes and displays first frame, fills buffers, but does not advance playback.
@@ -292,8 +290,7 @@ void Renderer::release_resources_locked() {
     pending_width_.store(0);
     pending_height_.store(0);
     render_loop_controller_.reset();
-    stats_start_time_ = std::chrono::steady_clock::time_point{};
-    for (auto& bl : perf_baselines_) bl.frames = 0;
+    perf_baseline_tracker_.reset();
     initialized_ = false;
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
 }
@@ -1972,26 +1969,27 @@ std::vector<TrackPerfStats> Renderer::track_perf_stats() const {
     std::lock_guard<std::mutex> lock(state_mutex_);
     std::vector<TrackPerfStats> result;
     auto now = std::chrono::steady_clock::now();
-    double elapsed_s = std::chrono::duration<double>(now - stats_start_time_).count();
+    const double elapsed_s = perf_baseline_tracker_.elapsed_seconds(now);
+    const bool should_rotate = perf_baseline_tracker_.should_rotate(elapsed_s);
 
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (!tracks_[i]) continue;
         const auto& track = *tracks_[i];
         const auto decode_perf = track.decode_thread->perf_counters().snapshot();
-        auto& baseline = perf_baselines_[i];
         auto snapshot = snapshot_track_perf_stats(
-            i, track, decode_perf, last_decision_.frames[i], baseline.frames,
-            elapsed_s);
-        if (elapsed_s > 0.5) {
-            baseline.frames = snapshot.frames_decoded;
+            i, track, decode_perf, last_decision_.frames[i],
+            perf_baseline_tracker_.baseline_frames(i), elapsed_s);
+        if (should_rotate) {
+            perf_baseline_tracker_.update_baseline_frames(i,
+                                                          snapshot.frames_decoded);
         }
 
         result.push_back(snapshot.stats);
     }
 
     // Reset shared timer once after all tracks are processed
-    if (elapsed_s > 0.5) {
-        stats_start_time_ = now;
+    if (should_rotate) {
+        perf_baseline_tracker_.rotate_timer(now);
     }
     return result;
 }

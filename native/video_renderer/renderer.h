@@ -16,11 +16,11 @@
 #include "video_renderer/shader_constants.h"
 #include "video_renderer/track_gpu_memory_stats.h"
 #include "video_renderer/track_info.h"
+#include "video_renderer/track_perf_baseline.h"
 #include "video_renderer/track_perf_stats.h"
 #include "video_renderer/track_pipeline_factory.h"
 #include "common/logging.h"
 #include <vector>
-#include <array>
 #include <string>
 #include <memory>
 #include <thread>
@@ -385,10 +385,7 @@ private:
     bool was_buffering_ = false;
     LoopRangeState loop_range_;
 
-    // -- Perf stats baseline for FPS calculation --
-    mutable std::chrono::steady_clock::time_point stats_start_time_;
-    struct PerfBaseline { uint64_t frames = 0; };
-    mutable std::array<PerfBaseline, kMaxTracks> perf_baselines_;
+    mutable TrackPerfBaselineTracker perf_baseline_tracker_;
 
     // Shared lock for D3D11 immediate context serialization.
     // Both the render thread and FFmpeg's D3D11VA decode threads must acquire

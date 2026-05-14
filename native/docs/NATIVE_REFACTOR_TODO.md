@@ -333,8 +333,12 @@ TODO:
    - 已把 `Renderer::initialize()` 中剩余的 active track 扫描替换为 `TrackPipelineManager` 查询，Renderer 保留失败分支和错误日志。
    - 验证：native-only + smoke UI。
 
-43. [ ] `PerfBaselineReset`
-   - 后续集中 `Renderer` 初始化/释放时的 perf baseline reset，减少重复状态清理循环，为后续 track perf ownership 继续外移做准备。
+43. [x] `PerfBaselineReset`
+   - 已新增 `TrackPerfBaselineTracker` 收口 stats timer 和 per-slot frame baseline reset/rotation，Renderer 不再直接持有 baseline array。
+   - 验证：native-only + smoke UI。
+
+44. [ ] `InitialTrackCreation`
+   - 后续把 `Renderer::initialize()` 的初始 video path loop 拆入 track lifecycle helper，Renderer 保留 pipeline factory hooks、file-id 分配和错误日志上下文。
    - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split

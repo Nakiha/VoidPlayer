@@ -377,9 +377,13 @@ TODO:
    - 已把 `Renderer::gpu_memory_stats()` 的 per-track memory aggregation 迁入 track snapshot helper，Renderer 保留 D3D presenter/headless/overlay 聚合。
    - 验证：native-only + smoke UI。
 
-54. [ ] `AnalysisOverlayMemoryStats`
-   - 后续把 `Renderer::gpu_memory_stats()` 的 analysis overlay GPU resource aggregation 迁出 Renderer。
+54. [x] `AnalysisOverlayMemoryStats`
+   - 已把 `Renderer::gpu_memory_stats()` 的 analysis overlay GPU resource aggregation 迁出 Renderer。
    - 验证：native-only + smoke UI。
+
+55. [ ] `TrackSeekFacts`
+   - 后续把 `Renderer::seek_internal()` 中 per-track target clamp / hardware decode / HEVC-HW / H.264-FLV exact-seek warning facts 集中到 track lifecycle helper。
+   - 验证：native-only + smoke/seek UI。
 
 ## P1 - Windows Runner Plugin Split
 

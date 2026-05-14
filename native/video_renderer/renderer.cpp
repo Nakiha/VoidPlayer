@@ -14,7 +14,6 @@
 #include "video_renderer/shader_constants.h"
 #include "video_renderer/track_snapshot.h"
 #include "video_renderer/d3d11/render_backend.h"
-#include "video_renderer/d3d11/memory_estimate.h"
 #include <spdlog/spdlog.h>
 #include <algorithm>
 #include <array>
@@ -1955,31 +1954,11 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
     }
 
     if (d3d_resources_) {
-        for (size_t i = 0; i < kMaxTracks; ++i) {
-            if (d3d_resources_->overlay_rect_capacity[i] > 0) {
-                result.analysis_overlay_bytes +=
-                    static_cast<uint64_t>(d3d_resources_->overlay_rect_capacity[i]) *
-                    static_cast<uint64_t>(AnalysisOverlayRenderer::gpu_rect_size());
-            }
-            if (d3d_resources_->overlay_textures[i]) {
-                D3D11_TEXTURE2D_DESC desc = {};
-                d3d_resources_->overlay_textures[i]->GetDesc(&desc);
-                result.analysis_overlay_bytes += estimate_d3d11_texture_bytes(desc);
-                result.analysis_overlay_width =
-                    std::max(result.analysis_overlay_width, static_cast<int>(desc.Width));
-                result.analysis_overlay_height =
-                    std::max(result.analysis_overlay_height, static_cast<int>(desc.Height));
-            }
-            if (d3d_resources_->overlay_mask_textures[i]) {
-                D3D11_TEXTURE2D_DESC mask_desc = {};
-                d3d_resources_->overlay_mask_textures[i]->GetDesc(&mask_desc);
-                result.analysis_overlay_bytes += estimate_d3d11_texture_bytes(mask_desc);
-                result.analysis_overlay_width =
-                    std::max(result.analysis_overlay_width, static_cast<int>(mask_desc.Width));
-                result.analysis_overlay_height =
-                    std::max(result.analysis_overlay_height, static_cast<int>(mask_desc.Height));
-            }
-        }
+        const auto overlay_stats =
+            snapshot_analysis_overlay_memory_stats(*d3d_resources_);
+        result.analysis_overlay_bytes = overlay_stats.estimated_bytes;
+        result.analysis_overlay_width = overlay_stats.width;
+        result.analysis_overlay_height = overlay_stats.height;
         if (result.analysis_overlay_bytes > 0) {
             result.total_estimated_bytes += result.analysis_overlay_bytes;
         }

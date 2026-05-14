@@ -135,6 +135,7 @@ Fixed or reduced:
 - `Renderer`: seek-preview presented track-event collection moved into `track_present_policy`; Renderer keeps pending-event state and callback emission.
 - `Renderer`: per-track perf stats collection moved into `track_snapshot`; Renderer keeps timing and baseline rotation ownership.
 - `Renderer`: per-track GPU/memory stats collection moved into `track_snapshot`; Renderer keeps D3D presenter/headless/overlay aggregation.
+- `Renderer`: analysis-overlay GPU resource memory accounting moved into `analysis_overlay_renderer`.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
@@ -153,7 +154,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P98 Renderer Analysis Overlay Memory Stats Boundary.
+Next patch: P99 Renderer Seek Track Facts Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1622,6 +1623,8 @@ Result:
 
 ### P98 - Renderer Analysis Overlay Memory Stats Boundary
 
+Status: done in Patch 98.
+
 Goal:
 
 - Move analysis-overlay GPU resource memory aggregation out of `Renderer::gpu_memory_stats`.
@@ -1632,6 +1635,26 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `AnalysisOverlayMemoryStats` and `snapshot_analysis_overlay_memory_stats` to `analysis_overlay_renderer`.
+- `Renderer::gpu_memory_stats` now delegates overlay rect/texture memory accounting and only merges returned bytes/dimensions.
+- Added native coverage for overlay rect-buffer memory accounting without requiring live D3D texture allocation.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P99 - Renderer Seek Track Facts Boundary
+
+Goal:
+
+- Move per-track seek classification facts out of `Renderer::seek_internal`.
+- Centralize target clamp, hardware-decode status, HEVC hardware seek detection, and H.264/FLV exact-seek warning facts.
+- Keep Renderer responsible for logging, hook wiring, pipeline recreation, and seek submission for this patch.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
 
 ## Do-Not-Drift List
 

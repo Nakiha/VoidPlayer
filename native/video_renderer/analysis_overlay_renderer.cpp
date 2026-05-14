@@ -2,6 +2,7 @@
 
 #include "analysis/analysis_manager.h"
 #include "analysis/cache/overlay_raster.h"
+#include "video_renderer/d3d11/memory_estimate.h"
 #include "video_renderer/d3d11/render_backend.h"
 #include "video_renderer/track_pipeline.h"
 
@@ -32,6 +33,35 @@ uint32_t pack_overlay_uv16(int a, int a_extent, int b, int b_extent) {
             std::lround(static_cast<double>(clamped) * 65535.0 / static_cast<double>(extent)));
     };
     return pack_one(a, a_extent) | (pack_one(b, b_extent) << 16);
+}
+
+AnalysisOverlayMemoryStats snapshot_analysis_overlay_memory_stats(
+    const D3D11RenderResources& resources) {
+    AnalysisOverlayMemoryStats stats;
+
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (resources.overlay_rect_capacity[i] > 0) {
+            stats.estimated_bytes +=
+                static_cast<uint64_t>(resources.overlay_rect_capacity[i]) *
+                static_cast<uint64_t>(AnalysisOverlayRenderer::gpu_rect_size());
+        }
+        if (resources.overlay_textures[i]) {
+            D3D11_TEXTURE2D_DESC desc = {};
+            resources.overlay_textures[i]->GetDesc(&desc);
+            stats.estimated_bytes += estimate_d3d11_texture_bytes(desc);
+            stats.width = std::max(stats.width, static_cast<int>(desc.Width));
+            stats.height = std::max(stats.height, static_cast<int>(desc.Height));
+        }
+        if (resources.overlay_mask_textures[i]) {
+            D3D11_TEXTURE2D_DESC mask_desc = {};
+            resources.overlay_mask_textures[i]->GetDesc(&mask_desc);
+            stats.estimated_bytes += estimate_d3d11_texture_bytes(mask_desc);
+            stats.width = std::max(stats.width, static_cast<int>(mask_desc.Width));
+            stats.height = std::max(stats.height, static_cast<int>(mask_desc.Height));
+        }
+    }
+
+    return stats;
 }
 
 void AnalysisOverlayRenderer::reset() {

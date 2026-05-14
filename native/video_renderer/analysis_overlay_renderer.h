@@ -13,6 +13,12 @@ class D3D11Device;
 struct D3D11RenderResources;
 class TrackPipelineManager;
 
+struct AnalysisOverlayMemoryStats {
+    uint64_t estimated_bytes = 0;
+    int width = 0;
+    int height = 0;
+};
+
 class AnalysisOverlayRenderer {
     struct AnalysisOverlayGpuRect {
         uint32_t rect_uv0 = 0;
@@ -79,5 +85,8 @@ private:
     std::array<std::vector<AnalysisOverlayGpuRect>, kMaxTracks> overlay_rects_;
     std::array<AnalysisOverlayCache, kMaxTracks> overlay_cache_;
 };
+
+AnalysisOverlayMemoryStats snapshot_analysis_overlay_memory_stats(
+    const D3D11RenderResources& resources);
 
 } // namespace vr

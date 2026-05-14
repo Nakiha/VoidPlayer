@@ -172,6 +172,13 @@ bool Renderer::initialize(const RendererConfig& config) {
         pipeline->file_id = next_file_id_++;
         configure_track_seek_callback(*pipeline);
         register_track_audio(*pipeline);
+        if (!pipeline->demux_thread->start_thread()) {
+            spdlog::error("Renderer: failed to start demux thread for {}", path);
+            unregister_track_audio(pipeline->file_id);
+            pipeline->decode_thread->stop();
+            pipeline->demux_thread->stop();
+            continue;
+        }
         tracks_[slot] = std::move(pipeline);
     }
 
@@ -2896,6 +2903,13 @@ bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, Se
     replacement->recreated_for_paused_hevc_seek = true;
     configure_track_seek_callback(*replacement);
     register_track_audio(*replacement);
+    if (!replacement->demux_thread->start_thread()) {
+        spdlog::error("[Renderer] Failed to start recreated demux thread for {}", file_path);
+        unregister_track_audio(file_id);
+        replacement->decode_thread->stop();
+        replacement->demux_thread->stop();
+        return false;
+    }
 
     render_sink_->set_track(slot, replacement->track_buffer.get());
     render_sink_->set_track_offset(slot, offset_us);
@@ -2981,6 +2995,22 @@ int Renderer::add_track(const std::string& video_path,
     }
     pipeline->decode_thread->set_pause_after_preroll(!was_playing);
 
+    pipeline->file_id = next_file_id_++;
+    int new_file_id = pipeline->file_id;
+    configure_track_seek_callback(*pipeline);
+    register_track_audio(*pipeline);
+    if (!pipeline->demux_thread->start_thread()) {
+        spdlog::error("Renderer::add_track: failed to start demux thread for {}", video_path);
+        unregister_track_audio(new_file_id);
+        pipeline->decode_thread->stop();
+        pipeline->demux_thread->stop();
+        if (was_playing) {
+            playback_->play();
+            playing_ = true;
+        }
+        return -1;
+    }
+
     // Register with render sink
     render_sink_->set_track(slot, pipeline->track_buffer.get());
     render_sink_->set_track_offset(slot, 0);
@@ -2994,10 +3024,6 @@ int Renderer::add_track(const std::string& video_path,
         frame_presenter_->reset_track(slot);
     }
     tracks_[slot] = std::move(pipeline);
-    tracks_[slot]->file_id = next_file_id_++;
-    int new_file_id = tracks_[slot]->file_id;
-    configure_track_seek_callback(*tracks_[slot]);
-    register_track_audio(*tracks_[slot]);
 
     // Append new file_id to the order arrays
     for (int i = 0; i < 4; ++i) {

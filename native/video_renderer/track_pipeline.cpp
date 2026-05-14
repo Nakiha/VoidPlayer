@@ -109,8 +109,8 @@ std::unique_ptr<TrackPipeline> TrackPipelineManager::create_pipeline(
     pipeline->demux_thread->add_optional_output(
         DemuxStreamKind::Audio, *pipeline->audio_packet_queue);
 
-    if (!pipeline->demux_thread->start()) {
-        spdlog::error("Renderer: failed to start demux for {}", path);
+    if (!pipeline->demux_thread->open()) {
+        spdlog::error("Renderer: failed to open demux for {}", path);
         return nullptr;
     }
 
@@ -155,11 +155,6 @@ std::unique_ptr<TrackPipeline> TrackPipelineManager::create_pipeline(
         return nullptr;
     }
 
-    pipeline->demux_thread->set_seek_callback(
-        [dt = pipeline->decode_thread.get()](int64_t pts, SeekType type) {
-            dt->notify_seek(pts, type);
-        });
-
     if (hw_decode) {
         pipeline->decode_thread->enable_hardware_decode(
             default_decode_device_mode(stats.codec_params->codec_id));
@@ -171,6 +166,9 @@ std::unique_ptr<TrackPipeline> TrackPipelineManager::create_pipeline(
         return nullptr;
     }
 
+    // The demux worker is intentionally not started here. Renderer owns the
+    // final seek callback wiring because it must notify both video decode and
+    // optional audio decode before pending initial seeks can be consumed.
     return pipeline;
 }
 

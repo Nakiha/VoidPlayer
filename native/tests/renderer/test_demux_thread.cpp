@@ -6,6 +6,7 @@
 #include <thread>
 #include <chrono>
 #include <string>
+#include <atomic>
 #include <cstdlib>
 #include <fstream>
 #include <filesystem>
@@ -325,6 +326,43 @@ TEST_CASE("DemuxThread: output routes are fixed after start",
 
     REQUIRE(demux.start());
     REQUIRE_FALSE(demux.add_output(DemuxStreamKind::Audio, audio_pq));
+
+    demux.stop();
+}
+
+TEST_CASE("DemuxThread: two-stage start keeps pending seek until callback is wired",
+          "[demux_thread][seek]") {
+    PacketQueue video_pq(200);
+    PacketQueue audio_pq(200);
+    SeekController sc;
+    sc.request_seek(1000000, SeekType::Exact);
+
+    DemuxThread demux(get_h264_path(), video_pq, sc);
+
+    REQUIRE(demux.open());
+    REQUIRE(sc.has_pending_seek());
+    REQUIRE_FALSE(demux.add_output(DemuxStreamKind::Audio, audio_pq));
+
+    std::atomic<int> callback_count{0};
+    std::atomic<int64_t> callback_pts{-1};
+    std::atomic<int> callback_type{-1};
+    demux.set_seek_callback([&](int64_t pts, SeekType type) {
+        callback_pts.store(pts, std::memory_order_release);
+        callback_type.store(static_cast<int>(type), std::memory_order_release);
+        callback_count.fetch_add(1, std::memory_order_acq_rel);
+    });
+
+    REQUIRE(demux.start_thread());
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (callback_count.load(std::memory_order_acquire) == 0 &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    REQUIRE(callback_count.load(std::memory_order_acquire) == 1);
+    REQUIRE(callback_pts.load(std::memory_order_acquire) == 1000000);
+    REQUIRE(callback_type.load(std::memory_order_acquire) == static_cast<int>(SeekType::Exact));
 
     demux.stop();
 }

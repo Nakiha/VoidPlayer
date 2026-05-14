@@ -32,7 +32,7 @@ chat 给出的方向和当前代码状态高度匹配。优先级最高的不是
 
 | ID | 问题 | 当前证据 | 风险 | 本轮状态 |
 | --- | --- | --- | --- | --- |
-| S1 | `DemuxThread::seek_callback_` 注册竞态 | `TrackPipelineManager::create_pipeline()` 先 `demux_thread->start()`，后 `set_seek_callback()`；`DemuxThread::run()` 并发读 callback | C++ data race / initial seek 玄学 | TODO |
+| S1 | `DemuxThread::seek_callback_` 注册竞态 | `TrackPipelineManager::create_pipeline()` 先 `demux_thread->start()`，后 `set_seek_callback()`；`DemuxThread::run()` 并发读 callback | C++ data race / initial seek 玄学 | DONE - Patch 1 |
 | S2 | paused audio 持续丢弃 PCM | `WaveOutOutput::render()` 在 `!playing_` 时写 silence 后调用 `discard_unheard(frames, kNoTrack, kNoTrack)` | pause/resume 音频空洞、underrun、重新对齐异常 | TODO |
 | S3 | `RenderSink` 长期保存裸 `TrackBuffer*` | `RenderSink::tracks_` 是裸指针数组；render loop `evaluate()` 与 remove/compact 不共享明确锁契约 | add/remove/compact 时 UAF 或错轨 | TODO |
 | S4 | Headless shared texture 没有 in-flight tracking | `pick_free_buffer()` 固定返回 `(front + 2) % 3`；release callback 只保证 lifetime，不保证内容不被重写 | Flutter 仍采样旧 texture 时 native 覆盖导致闪帧/撕裂 | TODO |
@@ -152,6 +152,28 @@ Verified:
 Blocked:
 Follow-up:
 ```
+
+2026-05-14 Patch 1 - Demux Seek Callback Lifecycle
+
+Changed:
+
+- Added two-stage `DemuxThread::open()` / `start_thread()` while keeping legacy `start()` as open + start.
+- Protected `seek_callback_` with a mutex and used a local callback snapshot in the demux loop.
+- Changed pipeline creation to open demux and start decode first; Renderer now wires the final seek callback, registers audio, and only then starts the demux worker.
+- Added a demux regression test proving a pending initial seek is not consumed before callback wiring.
+
+Verified:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_initial_seek_guard.csv ui_tests/seek/playing_exact_seek_keeps_state.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- S2 audio pause semantics is next.
 
 ## Final Cross-Check
 

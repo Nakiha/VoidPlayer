@@ -38,7 +38,18 @@ DemuxThread::~DemuxThread() {
 }
 
 bool DemuxThread::start() {
-    auto fail_start = [this]() {
+    if (!open()) {
+        return false;
+    }
+    if (!start_thread()) {
+        stop();
+        return false;
+    }
+    return true;
+}
+
+bool DemuxThread::open() {
+    auto fail_open = [this]() {
         std::unique_lock<std::mutex> lock(lifecycle_mutex_);
         running_.store(false, std::memory_order_release);
         open_deadline_ns_.store(0, std::memory_order_release);
@@ -77,7 +88,7 @@ bool DemuxThread::start() {
         auto demuxer = std::make_unique<PrivateCdnFlvDemuxer>();
         if (!demuxer->open(file_path_)) {
             spdlog::error("[DemuxThread] Private CDN FLV probe matched but open failed: {}", file_path_);
-            return fail_start();
+            return fail_open();
         }
         private_flv_demuxer_ = std::move(demuxer);
         stats_ = private_flv_demuxer_->stats();
@@ -87,7 +98,7 @@ bool DemuxThread::start() {
         fmt_ctx_ = avformat_alloc_context();
         if (!fmt_ctx_) {
             spdlog::error("[DemuxThread] Failed to allocate format context: {}", file_path_);
-            return fail_start();
+            return fail_open();
         }
         fmt_ctx_->interrupt_callback.callback = &DemuxThread::interrupt_callback;
         fmt_ctx_->interrupt_callback.opaque = this;
@@ -98,17 +109,17 @@ bool DemuxThread::start() {
         int ret = avformat_open_input(&fmt_ctx_, file_path_.c_str(), nullptr, nullptr);
         if (ret < 0) {
             spdlog::error("[DemuxThread] Failed to open input: {}", file_path_);
-            return fail_start();
+            return fail_open();
         }
         ret = avformat_find_stream_info(fmt_ctx_, nullptr);
         if (ret < 0) {
             spdlog::error("[DemuxThread] Failed to find stream info");
-            return fail_start();
+            return fail_open();
         }
         open_deadline_ns_.store(0, std::memory_order_release);
         if (!running_.load(std::memory_order_acquire)) {
             spdlog::info("[DemuxThread] Open cancelled during probe: {}", file_path_);
-            return fail_start();
+            return fail_open();
         }
 
         // Locate the first video stream. Audio is discovered now too, but it is
@@ -130,7 +141,7 @@ bool DemuxThread::start() {
             AVStream* stream = fmt_ctx_->streams[stats_.video_stream_index];
             if (!stats_.set_video_codec_params(stream->codecpar)) {
                 spdlog::error("[DemuxThread] Failed to copy video codec parameters");
-                return fail_start();
+                return fail_open();
             }
             stats_.time_base = stream->time_base;
             stats_.width = stream->codecpar->width;
@@ -180,7 +191,7 @@ bool DemuxThread::start() {
 
     if (output_routes_.empty()) {
         spdlog::error("[DemuxThread] No output routes registered for {}", file_path_);
-        return fail_start();
+        return fail_open();
     }
 
     for (auto& route : output_routes_) {
@@ -190,7 +201,7 @@ bool DemuxThread::start() {
                 continue;
             }
             spdlog::error("[DemuxThread] Requested output stream is missing in {}", file_path_);
-            return fail_start();
+            return fail_open();
         }
     }
 
@@ -207,15 +218,27 @@ bool DemuxThread::start() {
             if (fmt_ctx_) {
                 avformat_close_input(&fmt_ctx_);
             }
+            if (private_flv_demuxer_) {
+                private_flv_demuxer_.reset();
+            }
             opening_ = false;
             lock.unlock();
             lifecycle_cv_.notify_all();
             return false;
         }
-        thread_ = std::thread(&DemuxThread::run, this);
         opening_ = false;
     }
     lifecycle_cv_.notify_all();
+    return true;
+}
+
+bool DemuxThread::start_thread() {
+    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+    if (opening_ || !running_.load(std::memory_order_acquire) ||
+        thread_.joinable() || (!fmt_ctx_ && !private_flv_demuxer_)) {
+        return false;
+    }
+    thread_ = std::thread(&DemuxThread::run, this);
     return true;
 }
 
@@ -277,6 +300,7 @@ bool DemuxThread::add_optional_output(DemuxStreamKind kind, PacketQueue& output_
 }
 
 void DemuxThread::set_seek_callback(SeekCallback cb) {
+    std::lock_guard<std::mutex> lock(seek_callback_mutex_);
     seek_callback_ = std::move(cb);
 }
 
@@ -378,9 +402,14 @@ void DemuxThread::run() {
                 spdlog::info("[DemuxThread] av_seek_frame OK: target={:.3f}s", req.target_pts_us / 1e6);
             }
 
-            if (seek_callback_) {
+            SeekCallback seek_callback;
+            {
+                std::lock_guard<std::mutex> lock(seek_callback_mutex_);
+                seek_callback = seek_callback_;
+            }
+            if (seek_callback) {
                 spdlog::info("[DemuxThread] Invoking seek callback -> DecodeThread");
-                seek_callback_(req.target_pts_us, req.type);
+                seek_callback(req.target_pts_us, req.type);
             }
 
             eof_reached = false;

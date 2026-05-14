@@ -95,6 +95,14 @@ public:
                 SeekController& seek_controller);
     ~DemuxThread();
 
+    /// Open/probe the input and populate stats without starting packet reads.
+    /// Output routes must already be registered.
+    bool open();
+
+    /// Start the packet-reading worker after open() and callback wiring.
+    bool start_thread();
+
+    /// Backward-compatible one-shot open + start_thread.
     bool start();
     void stop();
 
@@ -134,6 +142,7 @@ private:
     std::thread thread_;
     std::atomic<bool> running_{false};
     SeekCallback seek_callback_;
+    mutable std::mutex seek_callback_mutex_;
     std::mutex lifecycle_mutex_;
     std::condition_variable lifecycle_cv_;
     bool opening_ = false;

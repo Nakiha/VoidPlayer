@@ -226,7 +226,8 @@ TODO:
 - [ ] analysis PTS callback 支持 handle/player scoped 注册；global callback 标记 deprecated。
 - [x] 移除 analysis legacy singleton reader API；Dart/native 读取路径改为 handle-scoped VAC2 session。
 - [ ] 为 process-global logging/crash FFI API 增加文档警示，并规划 host-provided logger/sink 的长期接口。
-- [ ] 增加多 player / plugin teardown / repeated create-destroy smoke。
+- [x] 增加 repeated create-destroy UI smoke，覆盖 last-track remove -> destroy -> recreate。
+- [ ] 增加 multi player / plugin teardown smoke。
 
 建议验证：
 

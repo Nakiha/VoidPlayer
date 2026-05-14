@@ -687,6 +687,27 @@ Follow-up:
 
 - Continue runner plugin cleanup with dispatcher extraction or active diagnostics scope.
 
+2026-05-15 Patch 25 - Repeated Create-Destroy UI Smoke
+
+Changed:
+
+- Added `ui_tests/track/repeated_create_destroy_smoke.csv`.
+- Covers repeated add-media, remove-last-track, player teardown, player recreation, and final viewport capture.
+- Marks the repeated create-destroy portion of the global-state test backlog complete while leaving multi-player/plugin teardown as follow-up.
+
+Verified:
+
+- `git diff --check`
+- `python dev.py ui-test ui_tests/track/repeated_create_destroy_smoke.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- Add multi-player or plugin teardown coverage once the app exposes a non-flaky automation entrypoint for that scenario.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
@@ -739,6 +760,7 @@ fixed:
 - Windows runner MethodChannel diagnostics: Patch 22 moved native/player diagnostics payload assembly into `NativeDiagnosticsProvider`.
 - Windows runner FFI diagnostics: Patch 23 moved flat struct filling into `NativeDiagnosticsProvider` behind a stable ABI header.
 - Windows runner file picker: Patch 24 moved native file dialog and path conversion into `FilePickerService`.
+- Global-state smoke coverage: Patch 25 added repeated create-destroy UI coverage.
 
 accepted-backlog:
 
@@ -796,6 +818,7 @@ fixed:
 - Patch 22 completed MethodChannel diagnostics aggregation inside `NativeDiagnosticsProvider`.
 - Patch 23 completed FFI diagnostics aggregation inside `NativeDiagnosticsProvider`.
 - Patch 24 completed the runner `FilePickerService` slice for native file dialog ownership.
+- Patch 25 added repeated create-destroy UI smoke coverage for last-track teardown and player recreation.
 
 accepted-backlog:
 

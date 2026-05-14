@@ -96,6 +96,7 @@ Fixed or reduced:
 - `Renderer`: track offset mutation and render-sink offset synchronization moved into `track_lifecycle`.
 - `Renderer`: active track count and first-active-slot queries moved into `TrackPipelineManager`.
 - `Renderer`: track metadata snapshot assembly moved into `track_snapshot`.
+- `Renderer`: periodic render-loop diagnostics snapshot assembly moved into `track_snapshot`.
 - `Renderer`: per-track performance stats snapshot assembly moved into `track_snapshot`.
 - `Renderer`: per-track GPU/memory stats snapshot assembly moved into `track_snapshot`.
 - `Renderer`: loop-range boundary seek decision moved into `SeekCoordinator` policy.
@@ -136,7 +137,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P81 Renderer Diagnostics Snapshot Boundary.
+Next patch: P82 Renderer Paused Frame Draw Snapshot Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1233,11 +1234,33 @@ Result:
 
 ### P81 - Renderer Diagnostics Snapshot Boundary
 
+Status: done in Patch 81.
+
 Goal:
 
 - Move periodic render-loop track diagnostics snapshot assembly out of `Renderer`.
 - Keep `Renderer` responsible for diagnostics cadence (`RenderLoopController`) and emitting the existing log lines.
 - Preserve logged payload fields: slot, PTS, PTS delta, buffer count/capacity, buffer state, and playing snapshot.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `snapshot_render_loop_track_diagnostics` to `track_snapshot`.
+- Render loop now delegates per-track diagnostics data collection while keeping cadence and log emission in `Renderer`.
+- Added native coverage for empty managers, buffered tracks, and missing-buffer tracks.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P82 - Renderer Paused Frame Draw Snapshot Boundary
+
+Goal:
+
+- Move `draw_paused_frame()` current-frame snapshot assembly out of `Renderer`.
+- Keep `Renderer` responsible for last-decision fallback, present, clock/log reference selection, and `last_decision_` commit.
+- Preserve the behavior that this draw helper uses any available active track frame and does not require all active tracks to be ready.
 
 Validation:
 

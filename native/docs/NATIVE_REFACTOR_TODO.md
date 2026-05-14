@@ -309,8 +309,12 @@ TODO:
    - 已把播放态 next frame event PTS 扫描拆到 `track_present_policy`，Renderer 保留 clock read、speed、`RenderLoopController::frame_deadline_sleep` 和实际 sleep。
    - 验证：native-only + smoke UI。
 
-37. [ ] `RenderLoopDiagnosticsSnapshot`
-   - 后续把 render-loop periodic diagnostics 的 per-track buffer count/cap/state 快照拆出 Renderer，Renderer 保留 cadence 和日志输出。
+37. [x] `RenderLoopDiagnosticsSnapshot`
+   - 已把 render-loop periodic diagnostics 的 per-track buffer count/cap/state 快照拆到 `track_snapshot`，Renderer 保留 cadence 和日志输出。
+   - 验证：native-only + smoke UI。
+
+38. [ ] `PausedFrameDrawSnapshot`
+   - 后续把 `draw_paused_frame()` 的 current-frame snapshot 组装拆出 Renderer，Renderer 保留 last-decision fallback、present、clock/log ref selection 和 commit。
    - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split

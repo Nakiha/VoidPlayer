@@ -252,6 +252,33 @@ TEST_CASE("TrackSnapshot builds track metadata",
     manager.clear();
 }
 
+TEST_CASE("TrackSnapshot builds render-loop diagnostics",
+          "[track_pipeline][track_snapshot]") {
+    TrackPipelineManager manager;
+    REQUIRE(snapshot_render_loop_track_diagnostics(manager).empty());
+
+    auto buffered = std::make_unique<TrackPipeline>();
+    buffered->track_buffer = std::make_shared<TrackBuffer>(5, 1);
+    TextureFrame frame;
+    frame.pts_us = 1000;
+    buffered->track_buffer->push_frame(frame);
+    buffered->track_buffer->set_state(TrackState::Ready);
+    manager[0] = std::move(buffered);
+
+    manager[2] = std::make_unique<TrackPipeline>();
+
+    auto diagnostics = snapshot_render_loop_track_diagnostics(manager);
+    REQUIRE(diagnostics.size() == 2);
+    REQUIRE(diagnostics[0].slot == 0);
+    REQUIRE(diagnostics[0].buffer_count == 1);
+    REQUIRE(diagnostics[0].buffer_capacity == 5);
+    REQUIRE(diagnostics[0].buffer_state == TrackState::Ready);
+    REQUIRE(diagnostics[1].slot == 2);
+    REQUIRE(diagnostics[1].buffer_count == 0);
+    REQUIRE(diagnostics[1].buffer_capacity == 0);
+    REQUIRE(diagnostics[1].buffer_state == TrackState::Empty);
+}
+
 TEST_CASE("TrackSnapshot builds track perf stats",
           "[track_pipeline][track_snapshot]") {
     TrackPipeline track;

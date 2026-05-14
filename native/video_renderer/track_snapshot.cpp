@@ -37,6 +37,26 @@ std::vector<TrackInfo> snapshot_track_infos(const TrackPipelineManager& tracks) 
     return infos;
 }
 
+std::vector<RenderLoopTrackDiagnosticSnapshot>
+snapshot_render_loop_track_diagnostics(const TrackPipelineManager& tracks) {
+    std::vector<RenderLoopTrackDiagnosticSnapshot> snapshots;
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks[i]) {
+            continue;
+        }
+
+        RenderLoopTrackDiagnosticSnapshot snapshot;
+        snapshot.slot = i;
+        if (tracks[i]->track_buffer) {
+            snapshot.buffer_count = tracks[i]->track_buffer->total_count();
+            snapshot.buffer_capacity = tracks[i]->track_buffer->preroll_target();
+            snapshot.buffer_state = tracks[i]->track_buffer->state();
+        }
+        snapshots.push_back(snapshot);
+    }
+    return snapshots;
+}
+
 TrackPerfSnapshotResult snapshot_track_perf_stats(
     size_t slot,
     const TrackPipeline& track,

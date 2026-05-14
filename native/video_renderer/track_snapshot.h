@@ -18,7 +18,17 @@ struct TrackPerfSnapshotResult {
     uint64_t frames_decoded = 0;
 };
 
+struct RenderLoopTrackDiagnosticSnapshot {
+    size_t slot = 0;
+    size_t buffer_count = 0;
+    size_t buffer_capacity = 0;
+    TrackState buffer_state = TrackState::Empty;
+};
+
 std::vector<TrackInfo> snapshot_track_infos(const TrackPipelineManager& tracks);
+
+std::vector<RenderLoopTrackDiagnosticSnapshot>
+snapshot_render_loop_track_diagnostics(const TrackPipelineManager& tracks);
 
 TrackPerfSnapshotResult snapshot_track_perf_stats(
     size_t slot,

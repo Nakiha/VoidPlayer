@@ -1454,16 +1454,15 @@ void Renderer::render_loop() {
             int64_t pts = playback_->clock().current_pts_us();
             int64_t pts_delta = 0;
             if (render_loop_controller_.should_emit_diagnostics(now, pts, pts_delta)) {
-                for (size_t i = 0; i < kMaxTracks; ++i) {
-                    if (!tracks_[i]) continue;
-                    auto buf_count = tracks_[i]->track_buffer->total_count();
-                    auto buf_cap = tracks_[i]->track_buffer->preroll_target();
-                    auto buf_state = tracks_[i]->track_buffer->state();
+                const auto diagnostics =
+                    snapshot_render_loop_track_diagnostics(tracks_);
+                for (const auto& track : diagnostics) {
                     spdlog::info("[diag] track[{}]: pts={:.3f}s delta={:.1f}ms "
                                  "buf={}/{} state={} playing={}",
-                                 i, pts / 1e6, pts_delta / 1e3,
-                                 buf_count, buf_cap,
-                                 static_cast<int>(buf_state), playing_snapshot);
+                                 track.slot, pts / 1e6, pts_delta / 1e3,
+                                 track.buffer_count, track.buffer_capacity,
+                                 static_cast<int>(track.buffer_state),
+                                 playing_snapshot);
                 }
             }
         }

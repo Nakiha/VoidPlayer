@@ -11,6 +11,7 @@
 #include "player/native_player.h"
 #include "native_diagnostics_provider.h"
 #include "native_logging_bootstrap.h"
+#include "native_player_method_dispatcher.h"
 #include "native_player_registry.h"
 #include "viewport_capture_service.h"
 
@@ -40,6 +41,7 @@ public:
     void DrainEventQueue();
 
 private:
+    void RegisterMethodHandlers();
     void HandleMethodCall(
         const flutter::MethodCall<flutter::EncodableValue>& method_call,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
@@ -64,11 +66,52 @@ private:
     void SetLoopRange(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void SetAudibleTrack(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void Play(
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void Pause(
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void Seek(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void Resize(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void SetViewportBackgroundColor(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void SetSpeed(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void StepForward(
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void StepBackward(
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void CurrentPts(
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void CurrentPresentedFrame(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void Duration(
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void IsPlaying(
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void ApplyLayout(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void GetTracks(
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void GetDiagnostics(
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void PickFiles(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void CaptureViewport(
         const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void GetLayout(
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void SetEventSink(std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink);
     void ClearEventSink();
@@ -84,6 +127,7 @@ private:
     std::atomic<int64_t> event_sequence_{0};
     Microsoft::WRL::ComPtr<IDXGIAdapter> dxgi_adapter_;
     NativeDiagnosticsProvider diagnostics_;
+    NativePlayerMethodDispatcher method_dispatcher_;
     FilePickerService file_picker_;
     NativeLoggingBootstrap logging_bootstrap_;
     ViewportCaptureService viewport_capture_;

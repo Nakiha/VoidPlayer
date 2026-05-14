@@ -13,6 +13,7 @@ add_executable(${BINARY_NAME} WIN32
   "main.cpp"
   "native_diagnostics_provider.cpp"
   "native_logging_bootstrap.cpp"
+  "native_player_method_dispatcher.cpp"
   "native_player_registry.cpp"
   "startup_trace.cpp"
   "utils.cpp"

@@ -20,7 +20,7 @@
 
 - FFmpeg runtime 合规仍需要 release 级闭环。当前顶层 `LICENSE` 是 GPL，`lib/app_metadata.dart` 标注 GPLv3/FFmpeg，`native/THIRD_PARTY_NATIVE.md` 和 staging 规则会复制 FFmpeg `README.txt` / `LICENSE*`；但还缺面向 release artifact 的 NOTICE/source-offer/configure-flags 检查。
 - `Renderer` 仍是大协调器。`native/video_renderer/renderer.h` 同时拥有 playback、track lifecycle、seek、layout、D3D11 backend、texture sharing、capture、analysis overlay、device-lost、render thread、metrics 和锁。
-- Windows runner plugin 仍过大。`windows/runner/video_renderer_plugin.cpp` 约 1430 行，混合 MethodChannel dispatch、logging/crash bootstrap、diagnostics、WIC capture、DXGI memory、file picker、Flutter texture bridge 和 process-global player weak pointer。
+- Windows runner plugin 仍过大。`windows/runner/video_renderer_plugin.cpp` 约 1415 行，仍混合 MethodChannel handlers、player lifecycle、event bridge 和 process-global player diagnostics。
 - C FFI ABI v1 仍偏窄。`naki_vr_player_config_t.video_paths` 是 null-terminated `const char**`，很多 mutating API 仍返回 `void`，`last_error` 仍是 thread-local，`player` 参数暂未提供 per-player 错误状态。
 - config validation 仍分散。FFI 只校验 ABI/log/dimension/layout/speed 的一部分，MethodChannel 有自己的 dimension/speed/layout 检查，FrameConverter 又有独立的 `kMaxDecodedDimension` / `kMaxCpuFrameBytes`。
 - `NativePlayer::initialize()` 的生命周期顺序有副作用风险：先 `playback_.start_session()`，再调用 `renderer_.initialize(config)`；重复 initialize 会先触碰 playback/audio session，再被 Renderer 拒绝。
@@ -188,12 +188,12 @@ TODO:
 
 证据：
 
-- 文件约 1430 行；同一文件处理 MethodChannel、texture registrar、logging/crash、diagnostics、WIC PNG、DXGI memory、file picker、global diagnostics。
+- 文件约 1415 行；同一文件仍处理 MethodChannel handlers、player lifecycle 和 global diagnostics。
 - `NativePlayerRegistry` 仍是 process-global player stats 入口，多 engine/multi player 语义仍需继续收口。
 
 TODO:
 
-- [ ] 新增 `NativePlayerMethodDispatcher`：只负责 MethodChannel method -> typed handler 分发。
+- [x] 新增 `NativePlayerMethodDispatcher`：只负责 MethodChannel method -> typed handler 分发。
 - [x] 新增 `FlutterTextureBridge`：收口 texture registrar、shared handle acquire/release、frame callback。
 - [x] 新增 `NativeDiagnosticsProvider`：先收口 process memory、heap、DXGI dedicated memory 查询，保持 MethodChannel/FFI payload 不变。
 - [x] 将 MethodChannel native/player diagnostics 聚合进 `NativeDiagnosticsProvider`，保持返回 payload 不变。

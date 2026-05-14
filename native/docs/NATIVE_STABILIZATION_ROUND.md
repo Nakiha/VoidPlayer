@@ -708,6 +708,28 @@ Follow-up:
 
 - Add multi-player or plugin teardown coverage once the app exposes a non-flaky automation entrypoint for that scenario.
 
+2026-05-15 Patch 26 - Native Player Method Dispatcher
+
+Changed:
+
+- Added `windows/runner/native_player_method_dispatcher.{h,cpp}` and wired it into the runner build.
+- Moved MethodChannel method-name lookup out of `VideoRendererPlugin::HandleMethodCall()` into `NativePlayerMethodDispatcher`.
+- Split the formerly inline MethodChannel branches into typed `VideoRendererPlugin` handlers while keeping method names, error codes, and return payloads unchanged.
+- Marked the runner dispatcher split item complete in `NATIVE_REFACTOR_TODO.md`.
+
+Verified:
+
+- `git diff --check`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/smoke/profiler_overlay.csv ui_tests/seek/playing_exact_seek_keeps_state.csv ui_tests/viewport/viewport_pan_layout_regression.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- Continue shrinking `VideoRendererPlugin` by moving player lifecycle/control handlers behind a narrower player bridge and by removing process-global diagnostics lookup where possible.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
@@ -761,11 +783,12 @@ fixed:
 - Windows runner FFI diagnostics: Patch 23 moved flat struct filling into `NativeDiagnosticsProvider` behind a stable ABI header.
 - Windows runner file picker: Patch 24 moved native file dialog and path conversion into `FilePickerService`.
 - Global-state smoke coverage: Patch 25 added repeated create-destroy UI coverage.
+- Windows runner MethodChannel dispatch: Patch 26 moved method-name lookup into `NativePlayerMethodDispatcher`.
 
 accepted-backlog:
 
 - `Renderer` remains the root coordination object; future work should move one owner boundary at a time.
-- `windows/runner/video_renderer_plugin.cpp` remains a bridge God Module; split dispatcher and player diagnostics/provider scope later.
+- `windows/runner/video_renderer_plugin.cpp` remains a bridge God Module; split player handlers and player diagnostics/provider scope later.
 - `ffi_exports.cpp` remains an ABI God Module candidate; split ABI shim / registry / commands / marshalling later.
 - `TrackPipelineManager` remains a lifecycle-heavy factory; further factory/lifecycle split remains useful.
 - `DecodeThread`, `FrameConverter`, target boundaries, process globals, and resource-budget policy remain second-stage refactor topics.
@@ -819,6 +842,7 @@ fixed:
 - Patch 23 completed FFI diagnostics aggregation inside `NativeDiagnosticsProvider`.
 - Patch 24 completed the runner `FilePickerService` slice for native file dialog ownership.
 - Patch 25 added repeated create-destroy UI smoke coverage for last-track teardown and player recreation.
+- Patch 26 completed the runner `NativePlayerMethodDispatcher` slice for MethodChannel method-name dispatch.
 
 accepted-backlog:
 

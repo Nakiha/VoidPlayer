@@ -201,6 +201,7 @@ TODO:
 - [ ] 将 diagnostics active-player lookup 从 process-global player registry 收口到 plugin/provider scope。
 - [x] 新增 `NativeLoggingBootstrap`：收口 runner 默认日志路径、log file 清洗、native logging reconfigure、startup trace flush 和 crash handler opt-in。
 - [x] 新增 `ViewportCaptureService`：PNG/WIC save 和 BGRA hash/preview 归一。
+- [x] 新增 `FilePickerService`：收口 Windows file dialog / video filter / UTF-16 path conversion。
 - [ ] 分批迁移，每批保持 MethodChannel payload 不变。
 
 建议验证：

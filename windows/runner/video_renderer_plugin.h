@@ -5,6 +5,7 @@
 #include <flutter/event_sink.h>
 #include <flutter/standard_method_codec.h>
 
+#include "file_picker_service.h"
 #include "flutter_texture_bridge.h"
 #include "native_diagnostics_ffi.h"
 #include "player/native_player.h"
@@ -83,6 +84,7 @@ private:
     std::atomic<int64_t> event_sequence_{0};
     Microsoft::WRL::ComPtr<IDXGIAdapter> dxgi_adapter_;
     NativeDiagnosticsProvider diagnostics_;
+    FilePickerService file_picker_;
     NativeLoggingBootstrap logging_bootstrap_;
     ViewportCaptureService viewport_capture_;
 };

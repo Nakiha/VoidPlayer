@@ -8,10 +8,6 @@
 #include <flutter/event_stream_handler_functions.h>
 #include <flutter_windows.h>
 #include <spdlog/spdlog.h>
-#include <shobjidl.h>
-#include <shlwapi.h>
-#include <commdlg.h>
-#include <wincodec.h>
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 #include <chrono>
@@ -1154,60 +1150,10 @@ void VideoRendererPlugin::PickFiles(
         }
     }
 
-    // Flutter UI thread already has COM initialized — no CoInitializeEx needed.
-
-    IFileOpenDialog* pfd = nullptr;
-    HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
-                          IID_PPV_ARGS(&pfd));
-    if (FAILED(hr)) {
-        // Return empty list (not null) to avoid Dart type cast issues
-        result->Success(flutter::EncodableValue(flutter::EncodableList()));
-        return;
-    }
-
-    FILEOPENDIALOGOPTIONS options = FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST | FOS_NOCHANGEDIR;
-    if (allow_multiple) options |= FOS_ALLOWMULTISELECT;
-    pfd->SetOptions(options);
-
-    // Video file filter
-    COMDLG_FILTERSPEC filterSpec[] = {
-        { L"Video Files", L"*.avi;*.flv;*.mkv;*.mov;*.mp4;*.mpeg;*.webm;*.wmv;*.ts;*.m2ts;*.vob;*.mpg;*.m4v;*.3gp" },
-        { L"All Files", L"*.*" },
-    };
-    pfd->SetFileTypes(2, filterSpec);
-    pfd->SetFileTypeIndex(1);
-
-    HWND hwndOwner = GetActiveWindow();
-
-    hr = pfd->Show(hwndOwner);
-
     flutter::EncodableList paths_list;
-
-    if (SUCCEEDED(hr)) {
-        IShellItemArray* items = nullptr;
-        hr = pfd->GetResults(&items);
-        if (SUCCEEDED(hr)) {
-            DWORD count = 0;
-            items->GetCount(&count);
-            for (DWORD i = 0; i < count; ++i) {
-                IShellItem* item = nullptr;
-                if (SUCCEEDED(items->GetItemAt(i, &item))) {
-                    LPWSTR name = nullptr;
-                    if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &name))) {
-                        std::string path = Utf8FromUtf16(name);
-                        if (!path.empty()) {
-                            paths_list.push_back(flutter::EncodableValue(path));
-                        }
-                        CoTaskMemFree(name);
-                    }
-                    item->Release();
-                }
-            }
-            items->Release();
-        }
+    for (const auto& path : file_picker_.PickVideoFiles(allow_multiple)) {
+        paths_list.push_back(flutter::EncodableValue(path));
     }
-
-    pfd->Release();
 
     // Always return a list (empty = cancelled, non-empty = selected files)
     result->Success(flutter::EncodableValue(paths_list));

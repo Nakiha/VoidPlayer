@@ -662,6 +662,31 @@ Follow-up:
 
 - Move diagnostics active-player lookup from the process-global registry to plugin/provider scope.
 
+2026-05-15 Patch 24 - Runner FilePickerService
+
+Changed:
+
+- Added `FilePickerService` in the Windows runner to own the file-open dialog, video filters, multi-select option, and UTF-16 path conversion.
+- Reduced `VideoRendererPlugin::PickFiles()` to argument parsing and MethodChannel list marshalling.
+- Kept `pickFiles` payload behavior unchanged: cancel, dialog failure, or no usable file path returns an empty list.
+- Marked the file picker runner split item complete in `NATIVE_REFACTOR_TODO.md`.
+
+Verified:
+
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Blocked:
+
+- None.
+
+Coverage gap:
+
+- No non-interactive UI automation currently selects real files through the native Windows file dialog.
+
+Follow-up:
+
+- Continue runner plugin cleanup with dispatcher extraction or active diagnostics scope.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
@@ -713,6 +738,7 @@ fixed:
 - Windows runner global player state: Patch 21 wrapped the process-global active player weak pointer in `NativePlayerRegistry`.
 - Windows runner MethodChannel diagnostics: Patch 22 moved native/player diagnostics payload assembly into `NativeDiagnosticsProvider`.
 - Windows runner FFI diagnostics: Patch 23 moved flat struct filling into `NativeDiagnosticsProvider` behind a stable ABI header.
+- Windows runner file picker: Patch 24 moved native file dialog and path conversion into `FilePickerService`.
 
 accepted-backlog:
 
@@ -769,6 +795,7 @@ fixed:
 - Patch 21 completed the first global-player-state slice by wrapping the active player weak pointer in `NativePlayerRegistry`.
 - Patch 22 completed MethodChannel diagnostics aggregation inside `NativeDiagnosticsProvider`.
 - Patch 23 completed FFI diagnostics aggregation inside `NativeDiagnosticsProvider`.
+- Patch 24 completed the runner `FilePickerService` slice for native file dialog ownership.
 
 accepted-backlog:
 

@@ -124,6 +124,12 @@ void apply_track_decode_pause_state(
     bool paused,
     const TrackDecodePauseHooks& hooks);
 
+void apply_track_video_decode_pause_state(
+    TrackPipelineManager& tracks,
+    bool paused,
+    std::function<void(size_t slot, TrackPipeline& track, bool paused)>
+        set_decode_paused);
+
 void apply_track_playback_decode_state(
     TrackPipelineManager& tracks,
     bool playback_active,

@@ -616,6 +616,32 @@ TEST_CASE("TrackLifecycle applies decode pause fanout",
     REQUIRE(events == std::vector<std::string>{"audio:false"});
 }
 
+TEST_CASE("TrackLifecycle applies video-only decode pause fanout",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineManager manager;
+    auto first = std::make_unique<TrackPipeline>();
+    first->file_id = 30;
+    auto second = std::make_unique<TrackPipeline>();
+    second->file_id = 31;
+    manager[0] = std::move(first);
+    manager[2] = std::move(second);
+
+    std::vector<std::string> events;
+    apply_track_video_decode_pause_state(
+        manager,
+        false,
+        [&](size_t slot, TrackPipeline& track, bool paused) {
+            events.push_back("video:" + std::to_string(slot) + ":" +
+                             std::to_string(track.file_id) + ":" +
+                             (paused ? "true" : "false"));
+        });
+
+    REQUIRE(events == std::vector<std::string>{
+        "video:0:30:false",
+        "video:2:31:false",
+    });
+}
+
 TEST_CASE("TrackLifecycle prepares add-track seek to current clock",
           "[track_pipeline][track_lifecycle]") {
     TrackPipeline track;

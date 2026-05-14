@@ -765,6 +765,14 @@ void Renderer::step_forward() {
     bool need_decode_wait = false;
     bool need_exact_seek = false;
     int64_t exact_seek_target = 0;
+    const auto set_video_decode_paused_locked = [this](bool paused) {
+        apply_track_video_decode_pause_state(
+            tracks_,
+            paused,
+            [](size_t, TrackPipeline& track, bool paused) {
+                track.decode_thread->set_decode_paused(paused);
+            });
+    };
 
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -792,10 +800,7 @@ void Renderer::step_forward() {
             have_step_decision = true;
         } else {
             discard_step_forward_consumed_frames_locked(last_decision_);
-            for (size_t i = 0; i < kMaxTracks; ++i) {
-                if (!tracks_[i]) continue;
-                tracks_[i]->decode_thread->set_decode_paused(false);
-            }
+            set_video_decode_paused_locked(false);
             need_decode_wait = true;
         }
     }
@@ -807,10 +812,7 @@ void Renderer::step_forward() {
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 if (!initialized_) return;
                 if (build_step_forward_decision_locked(step_decision)) {
-                    for (size_t i = 0; i < kMaxTracks; ++i) {
-                        if (!tracks_[i]) continue;
-                        tracks_[i]->decode_thread->set_decode_paused(true);
-                    }
+                    set_video_decode_paused_locked(true);
                     discard_step_forward_consumed_frames_locked(step_decision);
                     int ref = first_active_track();
                     if (ref >= 0) {
@@ -829,10 +831,7 @@ void Renderer::step_forward() {
         if (!have_step_decision) {
             std::lock_guard<std::mutex> lock(state_mutex_);
             if (!initialized_) return;
-            for (size_t i = 0; i < kMaxTracks; ++i) {
-                if (!tracks_[i]) continue;
-                tracks_[i]->decode_thread->set_decode_paused(true);
-            }
+            set_video_decode_paused_locked(true);
 
             int64_t base_pts = playback_->clock().current_pts_us();
             int ref = first_active_track();

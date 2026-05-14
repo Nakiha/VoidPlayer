@@ -86,6 +86,7 @@ Fixed or reduced:
 - `Renderer`: render-loop debounce, diagnostics cadence, and frame-deadline sleep policy moved into `RenderLoopController`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `TrackPipelineManager`: demux/decode pipeline construction moved into `TrackPipelineFactory`, leaving manager focused on slot storage, stop, and compact.
+- `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - Windows runner plugin: diagnostics, logging bootstrap, texture bridge, file picker, method dispatch, and MethodChannel diagnostics scope were split.
 - Process-global logging/crash FFI ownership is now documented.
 
@@ -94,13 +95,13 @@ Still active:
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries ABI guard, marshalling, and command dispatch density.
 - Track lifecycle start/recreate/rollback order is still shared between `Renderer` and track helpers.
-- `DecodeThread` remains a large seek/decode state machine.
+- `DecodeThread` main loop still owns drain, pause, EOF, and hardware visibility state transitions.
 - Target/feature boundaries are still too coupled.
 - Resource budget policy is still distributed.
 
 ## Active Patch Queue
 
-Next patch: P44 DecodeThread State-Machine Guards.
+Next patch: P45 Native Budget Policy Consolidation.
 
 ### P30 - VACache Atomic Publish
 
@@ -413,6 +414,8 @@ Result:
 
 ### P44 - DecodeThread State-Machine Guards
 
+Status: done in Patch 44.
+
 Goal:
 
 - Add focused tests and helper objects for seek/drain/exact-preview state combinations before large extraction.
@@ -420,6 +423,13 @@ Goal:
 Validation:
 
 - `python dev.py test --native-only`
+
+Result:
+
+- Added `exact_seek_window` as a pure helper for exact-seek lookbehind collection, preview-window readiness, and selected preview index fallback.
+- Replaced the duplicated exact-seek selection checks inside `DecodeThread` with calls into the helper while keeping frame conversion, hardware waits, and publish order inside the decode thread.
+- Added native unit coverage for pre-target lookbehind bounds, post-target window readiness, first-frame exact-target selection, latest pre-target fallback, and EOF/all-pre-target fallback.
+- Verified runner-facing exact seek behavior with smoke and HEVC visual seek UI scripts.
 
 ### P45 - Native Budget Policy Consolidation
 

@@ -253,7 +253,8 @@ TODO:
 
 - [x] 新增 deterministic stress test harness：固定 seed，随机 play/pause/seek/step/speed/loop/layout 控制序列。resize/capture/add/remove/shutdown 并发仍待后续专门测试。
 - [x] 先跑 native 层，不依赖 Flutter UI。Round 17 使用 windowed software renderer；headless capture stress 留给后续。
-- [ ] 给 DecodeThread seek/drain/flush 增加更小粒度状态机单测。
+- [x] 给 DecodeThread exact seek lookbehind / preview-window selection 增加更小粒度状态机单测。
+- [ ] 给 DecodeThread drain/flush 增加更小粒度状态机单测。
 - [x] 增加 shutdown during seek + recreate UI smoke。
 - [ ] 给 Renderer shutdown during capture/resize 增加 smoke/stress。
 - [x] 记录每个 stress test 的 seed 和失败复现命令入口。

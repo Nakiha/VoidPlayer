@@ -17,6 +17,7 @@ add_executable(video_renderer_tests
     renderer/test_bidi_ring_buffer.cpp
     renderer/test_track_buffer.cpp
     renderer/test_demux_thread.cpp
+    renderer/test_exact_seek_window.cpp
     renderer/test_frame_converter.cpp
     renderer/test_decode_thread.cpp
     renderer/test_d3d11_device.cpp

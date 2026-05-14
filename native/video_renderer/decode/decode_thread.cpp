@@ -1,4 +1,5 @@
 #include "video_renderer/decode/decode_thread.h"
+#include "video_renderer/decode/exact_seek_window.h"
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <chrono>
@@ -13,8 +14,6 @@ extern "C" {
 namespace vr {
 
 namespace {
-constexpr int64_t kExactSeekLookbehindUs = 250000;  // Keep a small B-frame window before target.
-constexpr size_t kExactSeekPreviewWindowFrames = 4;
 constexpr int kRendererOwnedHwExtraFrames = 0;
 
 uint64_t estimate_av_yuv_surface_bytes(int width, int height, AVPixelFormat format) {
@@ -593,7 +592,7 @@ void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*
         }
         if (target_us >= 0) {
             rescale_ts(frame);
-            if (frame->pts >= target_us - kExactSeekLookbehindUs) {
+            if (should_collect_exact_seek_candidate(frame->pts, target_us)) {
                 auto candidate = make_exact_seek_candidate(frame);
                 if (candidate.frame) {
                     collect_exact_seek_candidate(std::move(candidate));
@@ -757,16 +756,11 @@ void DecodeThread::log_hw_frame_context_once(const AVFrame* frame) {
 }
 
 bool DecodeThread::exact_seek_preview_window_ready() const {
-    if (exact_seek_target_us_ < 0 || exact_seek_reorder_.empty()) {
-        return false;
-    }
-    if (exact_seek_reorder_.back().pts_us < exact_seek_target_us_) {
-        return false;
-    }
-    if (exact_seek_reorder_.size() < kExactSeekPreviewWindowFrames) {
-        return false;
-    }
-    return true;
+    const int64_t newest_pts_us = exact_seek_reorder_.empty()
+        ? 0
+        : exact_seek_reorder_.back().pts_us;
+    return is_exact_seek_preview_window_ready(
+        exact_seek_target_us_, exact_seek_reorder_.size(), newest_pts_us);
 }
 
 void DecodeThread::publish_exact_seek_window(size_t selected) {
@@ -844,26 +838,22 @@ bool DecodeThread::publish_best_exact_seek_frame() {
         return false;
     }
 
-    size_t selected = 0;
-    bool found_before_target = false;
-    for (size_t i = 0; i < exact_seek_reorder_.size(); ++i) {
-        if (exact_seek_reorder_[i].pts_us < exact_seek_target_us_) {
-            selected = i;
-            found_before_target = true;
-        } else {
-            break;
-        }
+    std::vector<int64_t> candidate_pts_us;
+    candidate_pts_us.reserve(exact_seek_reorder_.size());
+    for (const auto& candidate : exact_seek_reorder_) {
+        candidate_pts_us.push_back(candidate.pts_us);
+    }
+    const auto selected = select_exact_seek_preview_index(
+        candidate_pts_us, exact_seek_target_us_);
+    if (!selected.has_value()) {
+        return false;
     }
 
-    if (!found_before_target) {
-        selected = 0;
-    }
-
-    const int64_t selected_pts = exact_seek_reorder_[selected].pts_us;
+    const int64_t selected_pts = exact_seek_reorder_[*selected].pts_us;
     const size_t collected = exact_seek_reorder_.size();
     spdlog::info("[DecodeThread] Exact seek reorder: selected pts={:.3f}s from {} frames (target={:.3f}s)",
                  selected_pts / 1e6, collected, exact_seek_target_us_ / 1e6);
-    publish_exact_seek_window(selected);
+    publish_exact_seek_window(*selected);
     return true;
 }
 
@@ -1225,7 +1215,7 @@ void DecodeThread::run() {
             // reordering. Keep only the latest frame before target, then a
             // tiny preview window after it.
             if (exact_seek_target_us_ >= 0) {
-                if (frame->pts < exact_seek_target_us_ - kExactSeekLookbehindUs) {
+                if (!should_collect_exact_seek_candidate(frame->pts, exact_seek_target_us_)) {
                     perf_.frames_dropped.fetch_add(1, std::memory_order_relaxed);
                     av_frame_unref(frame);
                     continue;

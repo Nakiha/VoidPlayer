@@ -859,6 +859,24 @@ static uint64_t remaining_current_hash_budget(const std::string& data_dir,
         : budget.available_for_current_hash - used;
 }
 
+static uint64_t overlay_publish_output_budget(const std::string& data_dir,
+                                              const char* hash,
+                                              const NativeCacheBudget& budget) {
+    return budget.limited ? remaining_current_hash_budget(data_dir, hash, budget) : 0;
+}
+
+#ifdef VOIDPLAYER_ANALYSIS_FFI_TESTING
+extern "C" uint64_t naki_analysis_test_overlay_publish_budget(
+    const char* data_dir,
+    const char* hash,
+    int64_t max_cache_bytes) {
+    if (!data_dir || !hash) return 0;
+    const NativeCacheBudget budget =
+        compute_native_cache_budget(data_dir, hash, max_cache_bytes);
+    return overlay_publish_output_budget(data_dir, hash, budget);
+}
+#endif
+
 static uint64_t watched_file_bytes(const std::vector<std::string>& paths) {
     uint64_t total = 0;
     for (const auto& path : paths) {
@@ -1301,15 +1319,24 @@ int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path,
         return 0;
     }
 
+    const AnalysisCodec base_codec = analysis_codec_from_u16(base.header().codec);
+    if (!is_supported_analysis_codec(base_codec)) {
+        spdlog::error("[Analysis] generate_vac2_overlay_chunk: base codec {} is unsupported",
+                      base.header().codec);
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "VAC2 base codec is unsupported");
+        return 0;
+    }
+
     const AnalysisCodec source_codec = detect_analysis_codec(video_path);
-    if (source_codec != static_cast<AnalysisCodec>(base.header().codec)) {
+    if (source_codec != base_codec) {
         spdlog::warn("[Analysis] generate_vac2_overlay_chunk: detected codec {} differs from base codec {}",
                      static_cast<int>(source_codec), base.header().codec);
     }
 
     vr::analysis::VachunkKey key;
     key.kind = VachunkKind::Overlay;
-    key.codec = static_cast<AnalysisCodec>(base.header().codec);
+    key.codec = base_codec;
     key.feature_flags = kOverlayVachunkFeatureFlags;
     key.base_content_revision = base.header().content_revision;
     key.generator_revision = 2;
@@ -1334,7 +1361,13 @@ int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path,
     }
 
     const uint64_t max_output_bytes =
-        max_cache_bytes > 0 ? static_cast<uint64_t>(max_cache_bytes) : 0;
+        overlay_publish_output_budget(data_dir, hash, budget);
+    if (budget.limited && max_output_bytes == 0) {
+        vr::win_utf8::delete_file_utf8(vachunk_tmp);
+        set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                           "cache limit leaves no room to publish overlay chunk");
+        return 0;
+    }
     if (!publish_generated_vachunk(store, key, vachunk_tmp, max_output_bytes)) {
         vr::win_utf8::delete_file_utf8(vachunk_tmp);
         set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,

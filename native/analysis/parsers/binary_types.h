@@ -81,6 +81,27 @@ enum class AnalysisCodec : uint16_t {
     MPEG2   = 6,
 };
 
+inline constexpr bool is_defined_analysis_codec_value(uint16_t value) {
+    return value == static_cast<uint16_t>(AnalysisCodec::Unknown) ||
+           value == static_cast<uint16_t>(AnalysisCodec::H264) ||
+           value == static_cast<uint16_t>(AnalysisCodec::HEVC) ||
+           value == static_cast<uint16_t>(AnalysisCodec::VVC) ||
+           value == static_cast<uint16_t>(AnalysisCodec::AV1) ||
+           value == static_cast<uint16_t>(AnalysisCodec::VP9) ||
+           value == static_cast<uint16_t>(AnalysisCodec::MPEG2);
+}
+
+inline constexpr bool is_supported_analysis_codec(AnalysisCodec codec) {
+    return codec != AnalysisCodec::Unknown &&
+           is_defined_analysis_codec_value(static_cast<uint16_t>(codec));
+}
+
+inline constexpr AnalysisCodec analysis_codec_from_u16(uint16_t value) {
+    return is_defined_analysis_codec_value(value)
+        ? static_cast<AnalysisCodec>(value)
+        : AnalysisCodec::Unknown;
+}
+
 enum class AnalysisUnitKind : uint16_t {
     Unknown   = 0,
     Nalu      = 1,

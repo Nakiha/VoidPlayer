@@ -100,7 +100,8 @@ void append_string_section(std::vector<uint8_t>& payload,
 }
 
 bool validate_write_data(const Vac2BaseData& data) {
-    return data.packets.size() <= kMaxVac2Records &&
+    return is_defined_analysis_codec_value(static_cast<uint16_t>(data.codec)) &&
+           data.packets.size() <= kMaxVac2Records &&
            data.units.size() <= kMaxVac2Records &&
            data.frames.size() <= kMaxVac2Records &&
            data.frame_summaries.size() == data.frames.size();
@@ -131,6 +132,7 @@ bool Vac2BaseFile::open(const std::string& path) {
         header_.section_entry_size != sizeof(Vac2SectionEntry) ||
         header_.section_count == 0 ||
         header_.section_count > kMaxVac2Sections ||
+        !is_defined_analysis_codec_value(header_.codec) ||
         header_.file_size != actual_size ||
         header_.packet_count > kMaxVac2Records ||
         header_.unit_count > kMaxVac2Records ||

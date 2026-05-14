@@ -64,10 +64,10 @@ Fixed:
 - `overlay_raster.cpp` helper hardening: BGRA fill no longer writes through aliased `uint32_t*`, public raster helpers guard invalid surfaces, and heatmap output rejects overflow or oversized allocations before resizing.
 - D3D overlay pass state contract: mask materialization now checks/restores the main RTV and viewport, unbinds overlay SRV hazards before writing mask RTVs, and overlay draw passes explicitly bind their render target, IA topology, shaders, blend state, and cleanup SRV slots.
 - Overlay precision and opacity semantics: native regression tests now cover 1x1, 2x2, 8K, shared-boundary, and clamped packed-UV coordinates, and FFI overlay opacity preserves 0 instead of forcing 10%.
+- Overlay generation budget and codec semantics: generated VACHUNK publish now uses the current remaining cache budget, VAC2/VACHUNK parsers reject undefined codec values, and overlay chunk keys are built from a validated base codec instead of a blind header cast.
 
 Active backlog:
 
-- Overlay generation budget should honor current-hash remaining budget, not only raw max cache bytes.
 - VACHUNK checksum semantics are not enforced.
 - record count truncation should be guarded before write validation.
 - VAC2 frame model still has packet-index assumptions that can cause future overlay alignment issues.
@@ -94,7 +94,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P35 Overlay Generation Budget And Enum Semantics.
+Next patch: P36 VACHUNK Checksum Semantics.
 
 ### P30 - VACache Atomic Publish
 
@@ -204,6 +204,8 @@ Validation:
 
 ### P35 - Overlay Generation Budget And Enum Semantics
 
+Status: done in Patch 35.
+
 Source: `review_overlay.md`.
 
 Goal:
@@ -221,6 +223,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/overlay_controls_h264.csv`
+
+### P36 - VACHUNK Checksum Semantics
+
+Source: `review_overlay.md`.
+
+Goal:
+
+- Decide and implement checksum behavior for VACHUNK header/section checksum fields.
+- If checksum remains unused, make the reserved/zero semantics explicit and validated; if enabled, verify corruption detection on read.
+
+Likely files:
+
+- `native/analysis/parsers/vachunk_parser.*`
+- `native/tests/analysis/test_analysis_parsers.cpp`
+- `native/docs/formats/VACHUNK.md`
+
+Validation:
+
+- `python dev.py test --native-only`
 
 ## Later Native Owner-Boundary Queue
 

@@ -10,7 +10,9 @@
 
 #include <cstring>
 #include <atomic>
+#include <cstddef>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <string>
 #include <thread>
@@ -125,6 +127,14 @@ bool set_overlay_frame_qp(vr::analysis::VachunkData& data,
         }
     }
     return updated_summary && updated_record;
+}
+
+void overwrite_u16(const std::filesystem::path& path, size_t offset, uint16_t value) {
+    std::fstream file(path, std::ios::binary | std::ios::in | std::ios::out);
+    REQUIRE(file);
+    file.seekp(static_cast<std::streamoff>(offset));
+    file.write(reinterpret_cast<const char*>(&value), sizeof(value));
+    REQUIRE(file);
 }
 
 vr::analysis::Vac2BaseData make_vacache_base_data(uint64_t content_revision) {
@@ -382,6 +392,19 @@ TEST_CASE("VAC2: writer respects output budget", "[analysis][vac2]") {
     std::filesystem::remove(path);
 }
 
+TEST_CASE("VAC2: parser rejects undefined codec values", "[analysis][vac2]") {
+    const auto path = std::filesystem::temp_directory_path() /
+        "voidplayer_test_base_bad_codec.vac";
+    REQUIRE(vr::analysis::write_vac2_base_container(
+        path.string(), make_vacache_base_data(88)));
+
+    overwrite_u16(path, offsetof(Vac2Header, codec), 0xffff);
+
+    vr::analysis::Vac2BaseFile vac2;
+    REQUIRE_FALSE(vac2.open(path.string()));
+    std::filesystem::remove(path);
+}
+
 // ===========================================================================
 // VACHUNK Derived Chunk Tests
 // ===========================================================================
@@ -477,6 +500,18 @@ TEST_CASE("VACHUNK: writer rejects invalid range and tiny budget", "[analysis][v
     data.start_frame = 10;
     data.end_frame = 10;
     REQUIRE_FALSE(vr::analysis::write_vachunk_file(path.string(), data, 8));
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("VACHUNK: parser rejects undefined codec values", "[analysis][vachunk]") {
+    const auto path = std::filesystem::temp_directory_path() /
+        "voidplayer_test_chunk_bad_codec.vck";
+    REQUIRE(vr::analysis::write_vachunk_file(path.string(), make_overlay_chunk(0, 0)));
+
+    overwrite_u16(path, offsetof(VachunkHeader, codec), 0xffff);
+
+    vr::analysis::VachunkFile chunk;
+    REQUIRE_FALSE(chunk.open(path.string()));
     std::filesystem::remove(path);
 }
 

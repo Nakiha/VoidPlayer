@@ -38,6 +38,9 @@ bool validate_write_data(const VachunkData& data) {
     if (data.sections.empty() || data.sections.size() > kMaxVachunkSections) {
         return false;
     }
+    if (!is_defined_analysis_codec_value(static_cast<uint16_t>(data.codec))) {
+        return false;
+    }
     if (!valid_scope(data.start_frame, data.end_frame) ||
         !valid_scope(data.start_packet, data.end_packet) ||
         !valid_scope(data.start_unit, data.end_unit)) {
@@ -142,6 +145,7 @@ bool VachunkFile::open(const std::string& path) {
         header_.section_entry_size != sizeof(VachunkSectionEntry) ||
         header_.section_count == 0 ||
         header_.section_count > kMaxVachunkSections ||
+        !is_defined_analysis_codec_value(header_.codec) ||
         (header_.compression != VACHUNK_COMPRESSION_NONE &&
          header_.compression != VACHUNK_COMPRESSION_ZSTD) ||
         header_.file_size != actual_size ||
@@ -246,7 +250,7 @@ bool VachunkFile::read_data(VachunkData& out) const {
     out = {};
     if (path_.empty()) return false;
     out.kind = static_cast<VachunkKind>(header_.kind);
-    out.codec = static_cast<AnalysisCodec>(header_.codec);
+    out.codec = analysis_codec_from_u16(header_.codec);
     out.feature_flags = header_.feature_flags;
     out.base_content_revision = header_.base_content_revision;
     out.generator_revision = header_.generator_revision;

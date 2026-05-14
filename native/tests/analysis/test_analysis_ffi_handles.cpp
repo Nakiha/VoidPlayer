@@ -7,6 +7,7 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -14,6 +15,24 @@
 #ifndef VIDEO_TEST_DIR
 #define VIDEO_TEST_DIR ""
 #endif
+
+extern "C" uint64_t naki_analysis_test_overlay_publish_budget(
+    const char* data_dir,
+    const char* hash,
+    int64_t max_cache_bytes);
+
+namespace {
+
+void write_sized_file(const std::filesystem::path& path, size_t bytes) {
+    std::filesystem::create_directories(path.parent_path());
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    REQUIRE(out);
+    std::vector<char> payload(bytes, 'x');
+    out.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+    REQUIRE(out);
+}
+
+} // namespace
 
 TEST_CASE("analysis FFI exposes ABI version and struct sizes",
           "[analysis][ffi][abi]") {
@@ -298,6 +317,33 @@ TEST_CASE("analysis FFI rejects overlay chunk generation without VAC2 base",
     REQUIRE(naki_analysis_last_error(message, sizeof(message)) ==
             NAKI_ANALYSIS_ERR_OPEN_FAILED);
     REQUIRE(std::string(message).find("base") != std::string::npos);
+
+    fs::remove_all(cache_root);
+}
+
+TEST_CASE("analysis FFI overlay publish budget uses remaining cache bytes",
+          "[analysis][ffi][vac2][vachunk]") {
+    namespace fs = std::filesystem;
+    const fs::path cache_root =
+        fs::temp_directory_path() / "voidplayer_ffi_overlay_publish_budget";
+    fs::remove_all(cache_root);
+
+    write_sized_file(cache_root / "hash-a" / "base.vac", 100);
+    write_sized_file(cache_root / "hash-a" / "chunks" / "overlay" / "old.vck", 40);
+    write_sized_file(cache_root / "hash-b" / "base.vac", 25);
+
+    REQUIRE(naki_analysis_test_overlay_publish_budget(
+                cache_root.string().c_str(),
+                "hash-a",
+                200) == 35);
+    REQUIRE(naki_analysis_test_overlay_publish_budget(
+                cache_root.string().c_str(),
+                "hash-a",
+                140) == 0);
+    REQUIRE(naki_analysis_test_overlay_publish_budget(
+                cache_root.string().c_str(),
+                "hash-a",
+                0) == 0);
 
     fs::remove_all(cache_root);
 }

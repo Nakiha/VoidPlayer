@@ -89,6 +89,7 @@ if(BUILD_ANALYSIS_TESTS)
     target_compile_definitions(analysis_tests PRIVATE
         VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
         FFMPEG_ANALYZER_PATH="${FFMPEG_ANALYZER_PATH}"
+        VOIDPLAYER_ANALYSIS_FFI_TESTING
     )
 
     add_test(NAME analysis_tests COMMAND analysis_tests)

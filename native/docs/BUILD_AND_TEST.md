@@ -45,9 +45,9 @@ python dev.py analysis-benchmark h264 h265 h266
 这条流程会同时覆盖 CLI、VAC2 生成、overlay VACHUNK 生成、chunk inspect 和
 zstd section 压缩统计。
 
-Analysis overlay 栅格化 benchmark 用于测量 dirty frame 下当前帧 VACHUNK CU 记录到
-video-space BGRA overlay texture 和 R8 mask texture 的 CPU raster 成本。它默认使用
-H.266 小样第一帧、比特率热力图，并优先使用 native build 目录下的
+Analysis overlay benchmark 用于测量 legacy dirty-frame CPU raster 参考成本，并估算
+当前 GUI/DX11 路径把 VACHUNK CU 记录上传为 GPU rect instances + R8 boundary mask 的
+字节数。它默认使用 H.266 小样第一帧、比特率热力图，并优先使用 native build 目录下的
 `VoidPlayerCli.exe`，方便在 renderer/analysis 迭代时拿到最新代码：
 
 ```bash
@@ -58,11 +58,10 @@ python dev.py analysis-overlay-benchmark --video <video> --codec hevc --frame 12
 
 报告默认写入
 `build/analysis-overlay-benchmark/analysis_overlay_benchmark.json` 和 `.md`。
-这条基准只测 dirty texture 的 CPU fill+raster，不代表完整 GUI 的 D3D blend 或窗口
-合成成本；GUI 平滑 pan/zoom/resize 会复用已上传的 video-space overlay texture。
-当前 raster 内核会跳过完整覆盖热力图的 BGRA 清屏，并用固定 LUT 计算 QP / bit-density
-颜色。`--with-grid` 会同时测 CU/MB 边界 mask raster，并输出每帧 color/mask upload
-字节数估算。
+这条基准不代表完整 GUI 的 D3D blend 或窗口合成成本。GUI 当前对热力图/预测模式填充
+使用 16-byte packed rect structured buffer + instanced quad pass；CU/MB 反色边界保留
+R8 mask texture，以避免共享边界双绘制。`--with-grid` 会同时测 CU/MB 边界 mask raster，
+并输出 legacy CPU texture upload 与当前 GPU rect+mask upload 的字节数估算。
 
 `dev.py build --native` 会在 native CMake 构建前检查 analysis 外部工具：
 

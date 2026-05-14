@@ -1048,6 +1048,8 @@ int benchmark_overlay(const CliOptions& options) {
     const uint64_t mask_upload_bytes = options.with_grid
         ? static_cast<uint64_t>(options.width) * static_cast<uint64_t>(options.height)
         : 0;
+    const uint64_t gpu_rect_upload_bytes = stats.cu_count * 16ull;
+    const uint64_t gpu_estimated_upload_bytes = gpu_rect_upload_bytes + mask_upload_bytes;
 
     if (options.json) {
         std::cout << "{"
@@ -1063,6 +1065,8 @@ int benchmark_overlay(const CliOptions& options) {
                   << "\"filledPixels\":" << stats.filled_pixels << ","
                   << "\"colorUploadBytes\":" << color_upload_bytes << ","
                   << "\"maskUploadBytes\":" << mask_upload_bytes << ","
+                  << "\"gpuRectUploadBytes\":" << gpu_rect_upload_bytes << ","
+                  << "\"gpuEstimatedUploadBytes\":" << gpu_estimated_upload_bytes << ","
                   << "\"totalMs\":" << elapsed << ","
                   << "\"avgMs\":" << avg_ms
                   << "}\n";
@@ -1075,7 +1079,9 @@ int benchmark_overlay(const CliOptions& options) {
                   << " cus=" << stats.cu_count
                   << " filled_pixels=" << stats.filled_pixels
                   << " color_upload_bytes=" << color_upload_bytes
-                  << " mask_upload_bytes=" << mask_upload_bytes << "\n";
+                  << " mask_upload_bytes=" << mask_upload_bytes
+                  << " gpu_rect_upload_bytes=" << gpu_rect_upload_bytes
+                  << " gpu_estimated_upload_bytes=" << gpu_estimated_upload_bytes << "\n";
     }
     return 0;
 }

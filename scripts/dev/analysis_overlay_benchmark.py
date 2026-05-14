@@ -173,7 +173,8 @@ def _benchmark(
     bench["chunkPath"] = chunk["path"]
     print(
         f"  avg={bench['avgMs']:.3f}ms iterations={iterations} "
-        f"cus={bench['cuCount']} filled={bench['filledPixels']}"
+        f"cus={bench['cuCount']} filled={bench['filledPixels']} "
+        f"gpuUpload={bench.get('gpuEstimatedUploadBytes', 0)}"
     )
     return bench
 
@@ -186,10 +187,11 @@ def _format_markdown(report: dict) -> str:
         f"- Analyzer: `{report['analyzer']}`\n"
         f"- Video: `{r['video']}`\n"
         f"- Chunk: `{r['chunkPath']}`\n\n"
-        "| Codec | Frame | Mode | Grid | Size | Iterations | CUs | Filled Pixels | Upload Bytes | Avg Raster |\n"
-        "| --- | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n"
+        "| Codec | Frame | Mode | Grid | Size | Iterations | CUs | Filled Pixels | CPU Upload Bytes | GPU Upload Bytes | Avg Raster |\n"
+        "| --- | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n"
         f"| {r['codec']} | {r['frame']} | {r['mode']} | {'yes' if r.get('withGrid') else 'no'} | "
         f"{r['width']}x{r['height']} | {r['iterations']} | {r['cuCount']} | "
         f"{r['filledPixels']} | {r.get('colorUploadBytes', 0) + r.get('maskUploadBytes', 0)} | "
+        f"{r.get('gpuEstimatedUploadBytes', 0)} | "
         f"{r['avgMs']:.3f} ms |\n"
     )

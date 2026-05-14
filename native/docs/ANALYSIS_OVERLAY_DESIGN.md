@@ -116,22 +116,20 @@ D3D11 renderer 负责：
 - 按显示尺度做 LOD：小尺度下隐藏过细线框或合并热力图。
 - 绘制 selected/hover 高亮。
 
-当前实现把 VACHUNK frame 栅格化成每个 track 一组 video-space dynamic texture：
-BGRA color overlay 保存热力图、预测模式和预测线，R8 mask overlay 保存需要反色合成的
-CU/MB 边界。renderer 按 `track_file_id + frame_index + overlay state + video size`
-缓存这些纹理；只有实际上屏帧、overlay 类型/图层/透明度或视频尺寸变化时才重新读取
-VACHUNK、CPU raster 并上传纹理。平滑 pan/zoom/resize 复用已有 video-space texture，
-由 D3D11 overlay shader 根据当前 layout constants 映射到 viewport，因此不会因为视口变化
-反复重投影或重传整张屏幕尺寸的 overlay。
+当前实现按 `track_file_id + frame_index + overlay state + video size` 缓存 renderer
+侧 overlay materialization；只有实际上屏帧、overlay 类型/图层/透明度或视频尺寸变化时
+才重新读取 VACHUNK。QP / bit-density / prediction-mode 填充不再生成整张 BGRA
+dynamic texture，而是把每个 CU/MB 写成 16-byte packed rect instance，上传到 D3D11
+structured buffer，并由 instanced quad pass 在 GPU 上直接绘制。平滑 pan/zoom/resize
+只更新已有 layout constants，不重新 raster 或上传整张 video-space color texture。
 
-CPU raster 的热力图矩形填充会直接写入 BGRA overlay buffer；CU/MB 反色线框使用独立
-R8 mask texture，预测线仍写入颜色 overlay。这个路径避免了对每个填充像素做 alpha
-blend，并把边界 mask 的上传量压到 1 byte/pixel。栅格化内核按 32-bit BGRA span
-写入；QP 和 bit-density ramp 使用固定 LUT，完整覆盖帧会跳过 BGRA 清屏，只在 chunk
-覆盖不完整时 fallback 清零。使用
-`python dev.py analysis-overlay-benchmark --iterations 240` 可以独立测量 dirty frame
-时 CU/MB heatmap raster 的 CPU 成本。后续如果 dirty-frame 上传仍成为瓶颈，再迁移到
-GPU instance/structured-buffer 绘制。
+CU/MB 反色线框仍使用独立 R8 mask texture。这个选择保留了共享边界的幂等绘制语义：
+同一条边只在 mask 中置位一次，再通过 fullscreen invert pass 合成，避免直接画线时
+双重叠加导致的点状闪烁。预测线/MV 线仍走小量 BGRA color texture fallback。使用
+`python dev.py analysis-overlay-benchmark --iterations 240` 可以独立测量 legacy dirty
+frame CPU raster 成本，并同时报告当前 GUI/DX11 路径的 estimated rect+mask upload
+字节数。后续如果边界 mask 仍成为瓶颈，应优先考虑 GPU-side R8 mask render target
+或 stencil/coverage pass，而不是直接把共享边界当普通 alpha line 绘制。
 
 当前 VACHUNK CU/MB record 已带 `bit_count`，`cuBitCostHeatmap` 使用
 `bit_count * 64 * 64 / (w * h)` 计算归一到 64x64 的 bit density，并用固定

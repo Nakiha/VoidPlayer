@@ -27,6 +27,25 @@ static constexpr int64_t MAX_SLEEP_US = 8000;  // 8ms cap → ~120Hz layout resp
 static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250);
 static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
 
+uint32_t pack_overlay_bgra(analysis::OverlayColor color) {
+    return static_cast<uint32_t>(color.b) |
+           (static_cast<uint32_t>(color.g) << 8) |
+           (static_cast<uint32_t>(color.r) << 16) |
+           (static_cast<uint32_t>(color.a) << 24);
+}
+
+uint32_t pack_overlay_uv16(int a, int a_extent, int b, int b_extent) {
+    auto pack_one = [](int value, int extent) -> uint32_t {
+        if (extent <= 0) {
+            return 0;
+        }
+        const int clamped = std::clamp(value, 0, extent);
+        return static_cast<uint32_t>(
+            std::lround(static_cast<double>(clamped) * 65535.0 / static_cast<double>(extent)));
+    };
+    return pack_one(a, a_extent) | (pack_one(b, b_extent) << 16);
+}
+
 uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
     return static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(
@@ -306,6 +325,9 @@ void Renderer::release_resources_locked() {
     }
     for (auto& pixels : analysis_overlay_line_pixels_) {
         pixels.clear();
+    }
+    for (auto& rects : analysis_overlay_rects_) {
+        rects.clear();
     }
     for (auto& cache : analysis_overlay_cache_) {
         cache = {};
@@ -2073,6 +2095,7 @@ void Renderer::draw_frame(const PresentDecision& decision) {
             }
         }
         ctx->UpdateSubresource(resources.compiled_shader.constant_buffer.Get(), 0, nullptr, &cb, 0, 0);
+        ctx->VSSetConstantBuffers(0, 1, resources.compiled_shader.constant_buffer.GetAddressOf());
         ctx->PSSetConstantBuffers(0, 1, resources.compiled_shader.constant_buffer.GetAddressOf());
         constants_ready = true;
     }
@@ -2108,28 +2131,43 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     // Temporary direct-texture SRVs are owned by prepared_frames until draw returns.
 }
 
-bool Renderer::ensure_analysis_overlay_texture(int slot, int width, int height) {
+bool Renderer::ensure_analysis_overlay_texture(int slot,
+                                               int width,
+                                               int height,
+                                               bool need_color,
+                                               bool need_mask) {
     if (!d3d_device_ || !d3d_resources_ ||
         slot < 0 || slot >= static_cast<int>(kMaxTracks) ||
         width <= 0 || height <= 0) {
         return false;
     }
+    if (!need_color && !need_mask) {
+        return true;
+    }
     auto& resources = *d3d_resources_;
-    if (resources.overlay_textures[slot] &&
-        resources.overlay_srvs[slot] &&
-        resources.overlay_mask_textures[slot] &&
-        resources.overlay_mask_srvs[slot] &&
+    const bool size_matches =
         resources.overlay_width[slot] == width &&
-        resources.overlay_height[slot] == height) {
+        resources.overlay_height[slot] == height;
+    const bool has_color =
+        resources.overlay_textures[slot] &&
+        resources.overlay_srvs[slot];
+    const bool has_mask =
+        resources.overlay_mask_textures[slot] &&
+        resources.overlay_mask_srvs[slot];
+    if (size_matches &&
+        (!need_color || has_color) &&
+        (!need_mask || has_mask)) {
         return true;
     }
 
-    resources.overlay_textures[slot].Reset();
-    resources.overlay_srvs[slot].Reset();
-    resources.overlay_mask_textures[slot].Reset();
-    resources.overlay_mask_srvs[slot].Reset();
-    resources.overlay_width[slot] = 0;
-    resources.overlay_height[slot] = 0;
+    if (!size_matches) {
+        resources.overlay_textures[slot].Reset();
+        resources.overlay_srvs[slot].Reset();
+        resources.overlay_mask_textures[slot].Reset();
+        resources.overlay_mask_srvs[slot].Reset();
+        resources.overlay_width[slot] = 0;
+        resources.overlay_height[slot] = 0;
+    }
 
     D3D11_TEXTURE2D_DESC desc = {};
     desc.Width = static_cast<UINT>(width);
@@ -2142,56 +2180,124 @@ bool Renderer::ensure_analysis_overlay_texture(int slot, int width, int height) 
     desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
     desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
-    HRESULT hr = d3d_device_->device()->CreateTexture2D(
-        &desc, nullptr, &resources.overlay_textures[slot]);
-    if (FAILED(hr) || !resources.overlay_textures[slot]) {
-        spdlog::error("[Renderer] CreateTexture2D(analysis overlay) failed: HRESULT {:#x}",
+    HRESULT hr = S_OK;
+    if (need_color && (!size_matches || !has_color)) {
+        resources.overlay_textures[slot].Reset();
+        resources.overlay_srvs[slot].Reset();
+        hr = d3d_device_->device()->CreateTexture2D(
+            &desc, nullptr, &resources.overlay_textures[slot]);
+        if (FAILED(hr) || !resources.overlay_textures[slot]) {
+            spdlog::error("[Renderer] CreateTexture2D(analysis overlay) failed: HRESULT {:#x}",
+                          static_cast<unsigned long>(hr));
+            return false;
+        }
+
+        D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
+        srv_desc.Format = desc.Format;
+        srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+        srv_desc.Texture2D.MipLevels = 1;
+        hr = d3d_device_->device()->CreateShaderResourceView(
+            resources.overlay_textures[slot].Get(), &srv_desc, &resources.overlay_srvs[slot]);
+        if (FAILED(hr) || !resources.overlay_srvs[slot]) {
+            spdlog::error("[Renderer] CreateShaderResourceView(analysis overlay) failed: HRESULT {:#x}",
+                          static_cast<unsigned long>(hr));
+            resources.overlay_textures[slot].Reset();
+            return false;
+        }
+    }
+
+    if (need_mask && (!size_matches || !has_mask)) {
+        resources.overlay_mask_textures[slot].Reset();
+        resources.overlay_mask_srvs[slot].Reset();
+        D3D11_TEXTURE2D_DESC mask_desc = desc;
+        mask_desc.Format = DXGI_FORMAT_R8_UNORM;
+        hr = d3d_device_->device()->CreateTexture2D(
+            &mask_desc, nullptr, &resources.overlay_mask_textures[slot]);
+        if (FAILED(hr) || !resources.overlay_mask_textures[slot]) {
+            spdlog::error("[Renderer] CreateTexture2D(analysis overlay mask) failed: HRESULT {:#x}",
+                          static_cast<unsigned long>(hr));
+            return false;
+        }
+
+        D3D11_SHADER_RESOURCE_VIEW_DESC mask_srv_desc = {};
+        mask_srv_desc.Format = mask_desc.Format;
+        mask_srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+        mask_srv_desc.Texture2D.MipLevels = 1;
+        hr = d3d_device_->device()->CreateShaderResourceView(
+            resources.overlay_mask_textures[slot].Get(), &mask_srv_desc, &resources.overlay_mask_srvs[slot]);
+        if (FAILED(hr) || !resources.overlay_mask_srvs[slot]) {
+            spdlog::error("[Renderer] CreateShaderResourceView(analysis overlay mask) failed: HRESULT {:#x}",
+                          static_cast<unsigned long>(hr));
+            resources.overlay_mask_textures[slot].Reset();
+            return false;
+        }
+    }
+
+    resources.overlay_width[slot] = width;
+    resources.overlay_height[slot] = height;
+    return true;
+}
+
+bool Renderer::ensure_analysis_overlay_rect_buffer(int slot, uint32_t rect_count) {
+    if (!d3d_device_ || !d3d_resources_ ||
+        slot < 0 || slot >= static_cast<int>(kMaxTracks)) {
+        return false;
+    }
+    if (rect_count == 0) {
+        return true;
+    }
+
+    auto& resources = *d3d_resources_;
+    if (resources.overlay_rect_buffers[slot] &&
+        resources.overlay_rect_srvs[slot] &&
+        resources.overlay_rect_capacity[slot] >= rect_count) {
+        return true;
+    }
+
+    uint32_t capacity = std::max<uint32_t>(rect_count, 1024);
+    if (resources.overlay_rect_capacity[slot] > 0) {
+        capacity = std::max<uint32_t>(
+            capacity,
+            resources.overlay_rect_capacity[slot] * 2);
+    }
+
+    resources.overlay_rect_buffers[slot].Reset();
+    resources.overlay_rect_srvs[slot].Reset();
+    resources.overlay_rect_capacity[slot] = 0;
+
+    D3D11_BUFFER_DESC desc = {};
+    desc.ByteWidth = capacity * static_cast<UINT>(sizeof(AnalysisOverlayGpuRect));
+    desc.Usage = D3D11_USAGE_DYNAMIC;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+    desc.StructureByteStride = static_cast<UINT>(sizeof(AnalysisOverlayGpuRect));
+
+    HRESULT hr = d3d_device_->device()->CreateBuffer(
+        &desc, nullptr, &resources.overlay_rect_buffers[slot]);
+    if (FAILED(hr) || !resources.overlay_rect_buffers[slot]) {
+        spdlog::error("[Renderer] CreateBuffer(analysis overlay rects) failed: HRESULT {:#x}",
                       static_cast<unsigned long>(hr));
         return false;
     }
 
     D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
-    srv_desc.Format = desc.Format;
-    srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    srv_desc.Texture2D.MipLevels = 1;
+    srv_desc.Format = DXGI_FORMAT_UNKNOWN;
+    srv_desc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+    srv_desc.Buffer.FirstElement = 0;
+    srv_desc.Buffer.NumElements = capacity;
     hr = d3d_device_->device()->CreateShaderResourceView(
-        resources.overlay_textures[slot].Get(), &srv_desc, &resources.overlay_srvs[slot]);
-    if (FAILED(hr) || !resources.overlay_srvs[slot]) {
-        spdlog::error("[Renderer] CreateShaderResourceView(analysis overlay) failed: HRESULT {:#x}",
+        resources.overlay_rect_buffers[slot].Get(),
+        &srv_desc,
+        &resources.overlay_rect_srvs[slot]);
+    if (FAILED(hr) || !resources.overlay_rect_srvs[slot]) {
+        spdlog::error("[Renderer] CreateShaderResourceView(analysis overlay rects) failed: HRESULT {:#x}",
                       static_cast<unsigned long>(hr));
-        resources.overlay_textures[slot].Reset();
+        resources.overlay_rect_buffers[slot].Reset();
         return false;
     }
 
-    D3D11_TEXTURE2D_DESC mask_desc = desc;
-    mask_desc.Format = DXGI_FORMAT_R8_UNORM;
-    hr = d3d_device_->device()->CreateTexture2D(
-        &mask_desc, nullptr, &resources.overlay_mask_textures[slot]);
-    if (FAILED(hr) || !resources.overlay_mask_textures[slot]) {
-        spdlog::error("[Renderer] CreateTexture2D(analysis overlay mask) failed: HRESULT {:#x}",
-                      static_cast<unsigned long>(hr));
-        resources.overlay_textures[slot].Reset();
-        resources.overlay_srvs[slot].Reset();
-        return false;
-    }
-
-    D3D11_SHADER_RESOURCE_VIEW_DESC mask_srv_desc = {};
-    mask_srv_desc.Format = mask_desc.Format;
-    mask_srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    mask_srv_desc.Texture2D.MipLevels = 1;
-    hr = d3d_device_->device()->CreateShaderResourceView(
-        resources.overlay_mask_textures[slot].Get(), &mask_srv_desc, &resources.overlay_mask_srvs[slot]);
-    if (FAILED(hr) || !resources.overlay_mask_srvs[slot]) {
-        spdlog::error("[Renderer] CreateShaderResourceView(analysis overlay mask) failed: HRESULT {:#x}",
-                      static_cast<unsigned long>(hr));
-        resources.overlay_textures[slot].Reset();
-        resources.overlay_srvs[slot].Reset();
-        resources.overlay_mask_textures[slot].Reset();
-        return false;
-    }
-
-    resources.overlay_width[slot] = width;
-    resources.overlay_height[slot] = height;
+    resources.overlay_rect_capacity[slot] = capacity;
     return true;
 }
 
@@ -2279,10 +2385,40 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
         ctx->Unmap(texture, 0);
         return true;
     };
+    auto upload_rects = [&](int slot,
+                            const std::vector<AnalysisOverlayGpuRect>& rects) -> bool {
+        if (rects.empty()) {
+            return true;
+        }
+        if (!ensure_analysis_overlay_rect_buffer(slot, static_cast<uint32_t>(rects.size()))) {
+            return false;
+        }
+        D3D11_MAPPED_SUBRESOURCE mapped = {};
+        HRESULT hr = ctx->Map(
+            resources.overlay_rect_buffers[slot].Get(),
+            0,
+            D3D11_MAP_WRITE_DISCARD,
+            0,
+            &mapped);
+        if (FAILED(hr)) {
+            spdlog::warn("[Renderer] Map(analysis overlay rects) failed: HRESULT {:#x}",
+                         static_cast<unsigned long>(hr));
+            return false;
+        }
+        std::memcpy(
+            mapped.pData,
+            rects.data(),
+            rects.size() * sizeof(AnalysisOverlayGpuRect));
+        ctx->Unmap(resources.overlay_rect_buffers[slot].Get(), 0);
+        return true;
+    };
 
     std::array<ID3D11ShaderResourceView*, kMaxTracks> color_srvs = {};
     std::array<ID3D11ShaderResourceView*, kMaxTracks> mask_srvs = {};
+    std::array<ID3D11ShaderResourceView*, kMaxTracks> rect_srvs = {};
+    std::array<uint32_t, kMaxTracks> rect_counts = {};
     bool has_color_overlay = false;
+    bool has_color_instances = false;
     bool has_line_mask = false;
 
     auto prepare_track_overlay = [&](int track_file_id,
@@ -2307,12 +2443,17 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
         if (video_w <= 0 || video_h <= 0) {
             return;
         }
+        const bool needs_mask_texture =
+            line_alpha > 0 && (show_grid || mode == 0 || pred_primary);
+        const bool needs_color_texture = line_primary && line_alpha > 0;
         const bool texture_was_valid =
-            resources.overlay_textures[slot] &&
-            resources.overlay_mask_textures[slot] &&
-            resources.overlay_width[slot] == video_w &&
-            resources.overlay_height[slot] == video_h;
-        if (!ensure_analysis_overlay_texture(slot, video_w, video_h)) {
+            (!needs_color_texture && !needs_mask_texture) ||
+            (resources.overlay_width[slot] == video_w &&
+             resources.overlay_height[slot] == video_h &&
+             (!needs_color_texture || resources.overlay_textures[slot]) &&
+             (!needs_mask_texture || resources.overlay_mask_textures[slot]));
+        if (!ensure_analysis_overlay_texture(
+                slot, video_w, video_h, needs_color_texture, needs_mask_texture)) {
             return;
         }
 
@@ -2355,22 +2496,33 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
                 static_cast<size_t>(video_w) * static_cast<size_t>(video_h);
             auto& color_pixels = analysis_overlay_pixels_[slot];
             auto& mask_pixels = analysis_overlay_line_pixels_[slot];
-            const bool primary_fills_frame =
-                (bit_cost_primary || qp_primary || pred_primary) &&
-                analysis::overlay_frame_covers_surface(
-                    frame,
-                    static_cast<uint32_t>(video_w),
-                    static_cast<uint32_t>(video_h),
-                    video_w,
-                    video_h);
-            const size_t color_bytes = pixel_count * 4;
-            if (color_pixels.size() != color_bytes) {
-                color_pixels.resize(color_bytes);
-            }
-            if (!primary_fills_frame) {
+            auto& rects = analysis_overlay_rects_[slot];
+            rects.clear();
+            if (needs_color_texture) {
+                const size_t color_bytes = pixel_count * 4;
+                if (color_pixels.size() != color_bytes) {
+                    color_pixels.resize(color_bytes);
+                }
                 std::fill(color_pixels.begin(), color_pixels.end(), 0);
             }
-            mask_pixels.assign(pixel_count, 0);
+            if (needs_mask_texture) {
+                mask_pixels.assign(pixel_count, 0);
+            }
+            rects.reserve(frame.cus.size());
+
+            auto push_rect = [&](int x0,
+                                 int y0,
+                                 int x1,
+                                 int y1,
+                                 analysis::OverlayColor color) {
+                AnalysisOverlayGpuRect rect = {};
+                rect.rect_uv0 = pack_overlay_uv16(x0, video_w, y0, video_h);
+                rect.rect_uv1 = pack_overlay_uv16(x1, video_w, y1, video_h);
+                rect.color_bgra = pack_overlay_bgra(color);
+                rect.track_idx = static_cast<uint32_t>(slot);
+                rects.push_back(rect);
+                cache.has_color_instances = true;
+            };
 
             for (const auto& cu : frame.cus) {
                 const auto& c = cu.common;
@@ -2382,39 +2534,34 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
 
                 if (bit_cost_primary) {
                     if (fill_alpha > 0) {
-                        analysis::fill_overlay_rect(
-                            color_pixels, video_w, video_h, x0, y0, x1, y1,
+                        push_rect(
+                            x0, y0, x1, y1,
                             analysis::cu_bit_density_color(c, fill_alpha));
-                        cache.has_color = true;
                     }
                 } else if (qp_primary) {
                     if (fill_alpha > 0) {
-                        analysis::fill_overlay_rect(
-                            color_pixels, video_w, video_h, x0, y0, x1, y1,
-                            analysis::qp_color(c.qp, fill_alpha));
-                        cache.has_color = true;
+                        push_rect(x0, y0, x1, y1, analysis::qp_color(c.qp, fill_alpha));
                     }
                 } else if (pred_primary) {
                     if (fill_alpha > 0) {
-                        analysis::fill_overlay_rect(
-                            color_pixels, video_w, video_h, x0, y0, x1, y1,
+                        push_rect(
+                            x0, y0, x1, y1,
                             c.pred_mode == 1
                                 ? analysis::OverlayColor{
                                       80, 235, 90, static_cast<uint8_t>(fill_alpha * 3 / 4)}
-                                : analysis::pred_color(
-                                      c.pred_mode, cu.inter,
-                                      static_cast<uint8_t>(fill_alpha * 3 / 4)));
-                        cache.has_color = true;
+                            : analysis::pred_color(
+                                  c.pred_mode, cu.inter,
+                                  static_cast<uint8_t>(fill_alpha * 3 / 4)));
                     }
                 }
 
-                if (line_alpha > 0 && (show_grid || mode == 0 || pred_primary)) {
+                if (needs_mask_texture) {
                     analysis::stroke_overlay_rect_mask8(
                         mask_pixels, video_w, video_h, x0, y0, x1, y1);
                     cache.has_mask = true;
                 }
 
-                if (line_primary && c.pred_mode != 1 && line_alpha > 0) {
+                if (needs_color_texture && c.pred_mode != 1) {
                     const int cx = (x0 + x1) / 2;
                     const int cy = (y0 + y1) / 2;
                     const int dx = std::clamp(static_cast<int>(cu.inter.mv_l0_x / 16), -80, 80);
@@ -2426,6 +2573,13 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
                 }
             }
 
+            if (cache.has_color_instances) {
+                if (!upload_rects(slot, rects)) {
+                    cache = {};
+                    return;
+                }
+                cache.color_instance_count = static_cast<uint32_t>(rects.size());
+            }
             if (cache.has_color) {
                 if (!upload_overlay(
                         resources.overlay_textures[slot].Get(),
@@ -2455,6 +2609,14 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
             color_srvs[slot] = resources.overlay_srvs[slot].Get();
             has_color_overlay = true;
         }
+        if (cache.valid &&
+            cache.has_color_instances &&
+            cache.color_instance_count > 0 &&
+            resources.overlay_rect_srvs[slot]) {
+            rect_srvs[slot] = resources.overlay_rect_srvs[slot].Get();
+            rect_counts[slot] = cache.color_instance_count;
+            has_color_instances = true;
+        }
         if (cache.valid && cache.has_mask) {
             mask_srvs[slot] = resources.overlay_mask_srvs[slot].Get();
             has_line_mask = true;
@@ -2467,7 +2629,7 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
         }
     }
 
-    if (!has_color_overlay && !has_line_mask) {
+    if (!has_color_overlay && !has_color_instances && !has_line_mask) {
         return;
     }
 
@@ -2475,7 +2637,36 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
     ID3D11ShaderResourceView* null_srvs[4] = {};
     float blend_factor[4] = {0, 0, 0, 0};
 
+    if (has_color_instances) {
+        ID3D11Buffer* null_vb = nullptr;
+        UINT zero = 0;
+        ID3D11ShaderResourceView* null_rect_srv = nullptr;
+        ctx->OMSetBlendState(resources.overlay_blend_state.Get(), blend_factor, 0xffffffff);
+        ctx->VSSetShader(resources.overlay_rect_shader.vs.Get(), nullptr, 0);
+        ctx->PSSetShader(resources.overlay_rect_shader.ps.Get(), nullptr, 0);
+        ctx->IASetInputLayout(nullptr);
+        ctx->IASetVertexBuffers(0, 1, &null_vb, &zero, &zero);
+        for (size_t slot = 0; slot < kMaxTracks; ++slot) {
+            if (!rect_srvs[slot] || rect_counts[slot] == 0) {
+                continue;
+            }
+            ID3D11ShaderResourceView* srv = rect_srvs[slot];
+            ctx->VSSetShaderResources(28, 1, &srv);
+            ctx->DrawInstanced(4, rect_counts[slot], 0, 0);
+        }
+        ctx->VSSetShaderResources(28, 1, &null_rect_srv);
+    }
+
+    auto bind_fullscreen_quad = [&]() {
+        UINT stride = sizeof(float) * 4;
+        UINT offset = 0;
+        ID3D11Buffer* vb = resources.vertex_buffer.Get();
+        ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    };
+
     if (has_color_overlay) {
+        bind_fullscreen_quad();
         ctx->OMSetBlendState(resources.overlay_blend_state.Get(), blend_factor, 0xffffffff);
         ctx->VSSetShader(resources.overlay_shader.vs.Get(), nullptr, 0);
         ctx->PSSetShader(resources.overlay_shader.ps.Get(), nullptr, 0);
@@ -2489,6 +2680,7 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
     }
 
     if (has_line_mask) {
+        bind_fullscreen_quad();
         ctx->OMSetBlendState(
             resources.overlay_invert_blend_state.Get(), blend_factor, 0xffffffff);
         ctx->VSSetShader(resources.overlay_invert_shader.vs.Get(), nullptr, 0);
@@ -2961,6 +3153,11 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
 
     if (d3d_resources_) {
         for (size_t i = 0; i < kMaxTracks; ++i) {
+            if (d3d_resources_->overlay_rect_capacity[i] > 0) {
+                result.analysis_overlay_bytes +=
+                    static_cast<uint64_t>(d3d_resources_->overlay_rect_capacity[i]) *
+                    static_cast<uint64_t>(sizeof(AnalysisOverlayGpuRect));
+            }
             if (d3d_resources_->overlay_textures[i]) {
                 D3D11_TEXTURE2D_DESC desc = {};
                 d3d_resources_->overlay_textures[i]->GetDesc(&desc);

@@ -123,6 +123,7 @@ Fixed or reduced:
 - `Renderer`: initial video-path open/start loop moved into `track_lifecycle`.
 - `Renderer`: shutdown resource-presence predicate centralized and now uses `TrackPipelineManager` active-track query.
 - `Renderer`: pure present-decision frame-presence query moved into `track_present_policy`.
+- `track_preview_policy`: paused-preview readiness now reuses the shared present-decision frame query.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -146,7 +147,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P91 Preview Policy Present-Decision Query Reuse.
+Next patch: P92 Renderer Effective Duration Policy Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1462,11 +1463,32 @@ Result:
 
 ### P91 - Preview Policy Present-Decision Query Reuse
 
+Status: done in Patch 91.
+
 Goal:
 
 - Remove the duplicate anonymous frame-presence helper from `track_preview_policy`.
 - Reuse `track_present_policy` for the shared `PresentDecision` query.
 - Keep paused preview readiness behavior unchanged.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Removed the anonymous `has_any_frame` helper from `track_preview_policy`.
+- Paused preview readiness now reuses `present_decision_has_frame`.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P92 - Renderer Effective Duration Policy Boundary
+
+Goal:
+
+- Move effective playback-duration synthesis out of `Renderer::effective_duration_us_locked`.
+- Reuse track duration facts from lifecycle/policy helpers.
+- Preserve cached-duration fallback when no track exposes a usable end PTS.
 
 Validation:
 

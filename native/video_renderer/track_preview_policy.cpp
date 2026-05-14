@@ -1,21 +1,9 @@
 #include "video_renderer/track_preview_policy.h"
+#include "video_renderer/track_present_policy.h"
 
 #include <optional>
 
 namespace vr {
-
-namespace {
-
-bool has_any_frame(const PresentDecision& decision) {
-    for (const auto& frame : decision.frames) {
-        if (frame.has_value()) {
-            return true;
-        }
-    }
-    return false;
-}
-
-} // namespace
 
 PausedPreviewSnapshot build_paused_preview_snapshot(
     const TrackPipelineManager& tracks) {
@@ -52,7 +40,7 @@ PausedPreviewSnapshot build_paused_preview_snapshot(
     snapshot.ready_to_present =
         all_active_ready &&
         all_active_have_frames &&
-        has_any_frame(snapshot.decision);
+        present_decision_has_frame(snapshot.decision);
     snapshot.decision.should_present = snapshot.ready_to_present;
     return snapshot;
 }

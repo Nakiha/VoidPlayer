@@ -349,8 +349,12 @@ TODO:
    - 已把 `Renderer::has_any_frame()` 这种纯 `PresentDecision` 查询迁入 present policy，Renderer 只保留 fallback 调度。
    - 验证：native-only + smoke UI。
 
-47. [ ] `PreviewPolicyPresentDecisionQueryReuse`
-   - 后续移除 `track_preview_policy` 中重复的匿名 frame-presence helper，复用 present policy 的共享查询。
+47. [x] `PreviewPolicyPresentDecisionQueryReuse`
+   - 已移除 `track_preview_policy` 中重复的匿名 frame-presence helper，复用 present policy 的共享查询。
+   - 验证：native-only + smoke UI。
+
+48. [ ] `EffectiveDurationPolicy`
+   - 后续把 `Renderer::effective_duration_us_locked()` 中 per-track duration/end-PTS 合成逻辑迁到 track lifecycle/duration policy，保留 cached-duration fallback。
    - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split

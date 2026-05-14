@@ -3,6 +3,7 @@
 #include "video_renderer/layout_geometry.h"
 #include "video_renderer/layout_validation.h"
 #include "video_renderer/renderer_config_validation.h"
+#include "video_renderer/track_lifecycle.h"
 #include "audio/audio_output_factory.h"
 #include "video_renderer/audio_coordinator.h"
 #include "video_renderer/seek_coordinator.h"
@@ -165,17 +166,20 @@ bool Renderer::initialize(const RendererConfig& config) {
 
         auto pipeline = create_pipeline(path, config.use_hardware_decode);
         if (!pipeline) continue;
-        pipeline->decode_thread->set_pause_after_preroll(true);
-
-        pipeline->file_id = next_file_id_++;
-        configure_track_seek_callback(*pipeline);
-        configure_track_error_callback(*pipeline);
-        register_track_audio(*pipeline);
-        if (!pipeline->demux_thread->start_thread()) {
-            spdlog::error("Renderer: failed to start demux thread for {}", path);
-            unregister_track_audio(pipeline->file_id);
-            pipeline->decode_thread->stop();
-            pipeline->demux_thread->stop();
+        const TrackPipelineStartConfig start_config{
+            next_file_id_++,
+            0,
+            true,
+            false,
+        };
+        const TrackPipelineStartHooks hooks{
+            [this](TrackPipeline& track) { configure_track_seek_callback(track); },
+            [this](TrackPipeline& track) { configure_track_error_callback(track); },
+            [this](TrackPipeline& track) { register_track_audio(track); },
+            [this](int file_id) { unregister_track_audio(file_id); },
+        };
+        if (!configure_and_start_track_pipeline(
+                *pipeline, start_config, hooks, "Renderer")) {
             continue;
         }
         tracks_[slot] = std::move(pipeline);
@@ -2033,17 +2037,20 @@ bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, Se
         return false;
     }
 
-    replacement->file_id = file_id;
-    replacement->offset_us = offset_us;
-    replacement->recreated_for_paused_hevc_seek = true;
-    configure_track_seek_callback(*replacement);
-    configure_track_error_callback(*replacement);
-    register_track_audio(*replacement);
-    if (!replacement->demux_thread->start_thread()) {
-        spdlog::error("[Renderer] Failed to start recreated demux thread for {}", file_path);
-        unregister_track_audio(file_id);
-        replacement->decode_thread->stop();
-        replacement->demux_thread->stop();
+    const TrackPipelineStartConfig start_config{
+        file_id,
+        offset_us,
+        false,
+        true,
+    };
+    const TrackPipelineStartHooks hooks{
+        [this](TrackPipeline& track) { configure_track_seek_callback(track); },
+        [this](TrackPipeline& track) { configure_track_error_callback(track); },
+        [this](TrackPipeline& track) { register_track_audio(track); },
+        [this](int id) { unregister_track_audio(id); },
+    };
+    if (!configure_and_start_track_pipeline(
+            *replacement, start_config, hooks, "[Renderer] Recreate pipeline")) {
         return false;
     }
 
@@ -2129,18 +2136,21 @@ int Renderer::add_track(const std::string& video_path,
         }
         return -1;
     }
-    pipeline->decode_thread->set_pause_after_preroll(!was_playing);
-
-    pipeline->file_id = next_file_id_++;
-    int new_file_id = pipeline->file_id;
-    configure_track_seek_callback(*pipeline);
-    configure_track_error_callback(*pipeline);
-    register_track_audio(*pipeline);
-    if (!pipeline->demux_thread->start_thread()) {
-        spdlog::error("Renderer::add_track: failed to start demux thread for {}", video_path);
-        unregister_track_audio(new_file_id);
-        pipeline->decode_thread->stop();
-        pipeline->demux_thread->stop();
+    const int new_file_id = next_file_id_++;
+    const TrackPipelineStartConfig start_config{
+        new_file_id,
+        0,
+        !was_playing,
+        false,
+    };
+    const TrackPipelineStartHooks hooks{
+        [this](TrackPipeline& track) { configure_track_seek_callback(track); },
+        [this](TrackPipeline& track) { configure_track_error_callback(track); },
+        [this](TrackPipeline& track) { register_track_audio(track); },
+        [this](int id) { unregister_track_audio(id); },
+    };
+    if (!configure_and_start_track_pipeline(
+            *pipeline, start_config, hooks, "Renderer::add_track")) {
         if (was_playing) {
             playback_->play();
             playing_ = true;

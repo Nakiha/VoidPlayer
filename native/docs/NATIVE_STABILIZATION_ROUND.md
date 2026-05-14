@@ -88,6 +88,7 @@ Fixed or reduced:
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
 - `TrackPipelineManager`: demux/decode pipeline construction moved into `TrackPipelineFactory`, leaving manager focused on slot storage, stop, and compact.
+- `Renderer`: track pipeline metadata setup, callback/audio hook registration, demux start, and failed-start rollback moved into `track_lifecycle`.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
@@ -99,14 +100,14 @@ Still active:
 
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
-- Track lifecycle start/recreate/rollback order is still shared between `Renderer` and track helpers.
+- `Renderer` still owns track slot commit, removal compaction, current-clock add-track seek, and HEVC recreate policy.
 - `DecodeThread` main loop still owns codec send/receive, EOF drain, AVFrame ownership, and hardware visibility transitions.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P50 Renderer Track Lifecycle Boundary.
+Next patch: P51 Renderer Track Removal/Compaction Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -542,6 +543,8 @@ Result:
 
 ### P50 - Renderer Track Lifecycle Boundary
 
+Status: done in Patch 50.
+
 Goal:
 
 - Move track add/recreate/rollback sequencing out of `Renderer` into a narrow lifecycle helper without changing slot ownership or render-thread contracts.
@@ -551,6 +554,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`
+
+Result:
+
+- Added `track_lifecycle` to configure track file_id/offset/recreate flags, wire seek/error/audio hooks, start the demux worker, and rollback decode/demux/audio state on failed start.
+- Updated initial load, add-track, and HEVC pipeline recreate paths to use the shared lifecycle helper.
+- Added native coverage with a real opened pipeline to verify hook wiring, demux start, seek callback delivery, and stop-time unregister behavior.
+- Verified with native-only tests plus rebuilt smoke, track compact, and shutdown-during-seek recreate UI scripts.
+
+### P51 - Renderer Track Removal/Compaction Boundary
+
+Goal:
+
+- Move remove-track stop/compact side effects into a helper that owns render-sink/presenter slot updates and `last_decision_` compaction.
+- Keep layout mutation and playback pause/resume decisions in `Renderer` for this patch.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv`
 
 ## Do-Not-Drift List
 

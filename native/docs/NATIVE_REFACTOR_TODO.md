@@ -184,6 +184,15 @@ TODO:
    - 集中 terminal/lost state、removed reason、metrics、future recovery policy。
    - 验证：能单测 policy，D3D 真 device lost 作为后续手工/模拟测试。
 
+6. [x] `TrackPipelineFactory` / `TrackLifecycle`
+   - 已把 demux/decode pipeline construction 拆到 `TrackPipelineFactory`。
+   - 已把 file_id/offset/recreate flags、seek/error/audio hooks、demux start、failed-start rollback 拆到 `track_lifecycle`。
+   - 验证：native track pipeline/lifecycle tests + smoke/track compact/shutdown-during-seek recreate UI。
+
+7. [ ] `TrackRemovalCompaction`
+   - 后续把 remove-track stop/compact/render-sink/presenter slot side effects 从 `Renderer` 主体拆出。
+   - 验证：native-only + `ui_tests/track/remove_middle_compact_regression.csv`。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

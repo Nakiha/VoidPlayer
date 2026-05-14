@@ -536,6 +536,27 @@ Follow-up:
 
 - If layout cleanup continues, extract viewport math separately from `display_pixel_size_for_layout_locked()` and geometry updates.
 
+2026-05-15 Patch 18 - Runner NativeDiagnosticsProvider Process Slice
+
+Changed:
+
+- Added `NativeDiagnosticsProvider` in the Windows runner for process memory, process heap, and DXGI dedicated memory queries.
+- Removed those helper structs/functions from `video_renderer_plugin.cpp`; the plugin now delegates diagnostics collection without changing MethodChannel or FFI payloads.
+- Kept player/global diagnostics in the plugin for this slice so the process-global `g_player_weak` cleanup can remain a separate, reviewable patch.
+- Updated the runner split backlog to mark the process/DXGI diagnostics slice complete and keep player/global diagnostics as follow-up.
+
+Verified:
+
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/smoke/profiler_overlay.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- Move native/player diagnostics aggregation behind the provider or a per-engine registry, then remove the process-global player weak pointer.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
@@ -581,11 +602,12 @@ fixed:
 
 - `AudioEngine::Impl`: Patch 2 extracted `AudioMixer`, separating output submission from mixer/PCM consumption policy.
 - `AnalysisManager`: Patch 5 introduced session snapshots and moved overlay chunk cache/index state into the session.
+- Windows runner plugin diagnostics: Patch 18 moved process/heap/DXGI memory queries into `NativeDiagnosticsProvider`.
 
 accepted-backlog:
 
 - `Renderer` remains the root coordination object; future work should move one owner boundary at a time.
-- `windows/runner/video_renderer_plugin.cpp` remains a bridge God Module; split dispatcher / texture bridge / diagnostics / capture later.
+- `windows/runner/video_renderer_plugin.cpp` remains a bridge God Module; split dispatcher / texture bridge / player diagnostics later.
 - `ffi_exports.cpp` remains an ABI God Module candidate; split ABI shim / registry / commands / marshalling later.
 - `TrackPipelineManager` remains a lifecycle-heavy factory; further factory/lifecycle split remains useful.
 - `DecodeThread`, `FrameConverter`, target boundaries, process globals, and resource-budget policy remain second-stage refactor topics.
@@ -631,6 +653,7 @@ fixed:
 - Patch 15 completed the native-facing `FrameCaptureService` boundary without touching runner PNG/WIC capture.
 - Patch 16 completed the runner-facing `ViewportCaptureService` slice while preserving MethodChannel behavior.
 - Patch 17 completed the first `LayoutController` slice for order ownership, intentionally leaving viewport math in Renderer.
+- Patch 18 completed the first runner `NativeDiagnosticsProvider` slice for process/heap/DXGI memory queries.
 
 accepted-backlog:
 

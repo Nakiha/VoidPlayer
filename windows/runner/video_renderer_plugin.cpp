@@ -17,7 +17,6 @@
 #include <wincodec.h>
 #include <d3d11.h>
 #include <dxgi1_4.h>
-#include <psapi.h>
 #include <wrl/client.h>
 #include <chrono>
 #include <cstring>
@@ -26,7 +25,6 @@
 #include <filesystem>
 #include <cmath>
 #include <mutex>
-#include <vector>
 #include <sstream>
 #include <iomanip>
 #include <variant>
@@ -68,7 +66,6 @@ extern "C" {
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "windowscodecs.lib")
 #pragma comment(lib, "dxgi.lib")
-#pragma comment(lib, "psapi.lib")
 
 namespace {
 using PluginResult = flutter::MethodResult<flutter::EncodableValue>;
@@ -281,18 +278,6 @@ void log_ffmpeg_runtime_versions() {
         format_ffmpeg_version(swresample_version()));
 }
 
-struct ProcessMemoryUsage {
-    uint64_t working_set_bytes = 0;
-    uint64_t private_bytes = 0;
-};
-
-struct ProcessHeapUsage {
-    uint64_t allocated_bytes = 0;
-    uint64_t committed_bytes = 0;
-    uint64_t reserved_bytes = 0;
-    uint32_t heap_count = 0;
-};
-
 struct FlutterTextureReleaseContext {
     ID3D11Texture2D* texture = nullptr;
     std::weak_ptr<vr::NativePlayer> player;
@@ -313,111 +298,6 @@ void ReleaseFlutterTexture(void* release_context) {
         context->texture->Release();
     }
     delete context;
-}
-ProcessMemoryUsage QueryProcessMemoryUsage() {
-    ProcessMemoryUsage usage;
-    PROCESS_MEMORY_COUNTERS_EX counters = {};
-    counters.cb = sizeof(counters);
-    if (GetProcessMemoryInfo(
-            GetCurrentProcess(),
-            reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters),
-            sizeof(counters))) {
-        usage.working_set_bytes = static_cast<uint64_t>(counters.WorkingSetSize);
-        usage.private_bytes = static_cast<uint64_t>(counters.PrivateUsage);
-    }
-    return usage;
-}
-
-ProcessHeapUsage QueryProcessHeapUsage() {
-    ProcessHeapUsage usage;
-    DWORD count = GetProcessHeaps(0, nullptr);
-    if (count == 0) {
-        return usage;
-    }
-
-    std::vector<HANDLE> heaps(count);
-    DWORD written = GetProcessHeaps(count, heaps.data());
-    if (written == 0) {
-        return usage;
-    }
-    if (written > count) {
-        heaps.resize(written);
-        written = GetProcessHeaps(written, heaps.data());
-        if (written == 0) {
-            return usage;
-        }
-    }
-
-    usage.heap_count = written;
-    for (DWORD i = 0; i < written; ++i) {
-        HEAP_SUMMARY summary = {};
-        summary.cb = sizeof(summary);
-        if (!HeapSummary(heaps[i], 0, &summary)) {
-            continue;
-        }
-        usage.allocated_bytes += static_cast<uint64_t>(summary.cbAllocated);
-        usage.committed_bytes += static_cast<uint64_t>(summary.cbCommitted);
-        usage.reserved_bytes += static_cast<uint64_t>(summary.cbReserved);
-    }
-    return usage;
-}
-
-uint64_t QueryDedicatedVideoMemoryUsage() {
-    using Clock = std::chrono::steady_clock;
-    static std::mutex cache_mutex;
-    static Clock::time_point last_query{};
-    static uint64_t cached_usage = 0;
-    static constexpr auto kCacheTtl = std::chrono::seconds(2);
-
-    const auto now = Clock::now();
-    {
-        std::lock_guard lock(cache_mutex);
-        if (last_query != Clock::time_point{} && now - last_query < kCacheTtl) {
-            return cached_usage;
-        }
-    }
-
-    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
-    HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
-    if (FAILED(hr) || !factory) {
-        std::lock_guard lock(cache_mutex);
-        last_query = now;
-        cached_usage = 0;
-        return cached_usage;
-    }
-
-    uint64_t total_usage = 0;
-    for (UINT index = 0;; ++index) {
-        Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
-        hr = factory->EnumAdapters1(index, &adapter);
-        if (hr == DXGI_ERROR_NOT_FOUND) {
-            break;
-        }
-        if (FAILED(hr) || !adapter) {
-            continue;
-        }
-
-        DXGI_ADAPTER_DESC1 desc = {};
-        if (SUCCEEDED(adapter->GetDesc1(&desc)) &&
-            (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0) {
-            continue;
-        }
-
-        Microsoft::WRL::ComPtr<IDXGIAdapter3> adapter3;
-        if (FAILED(adapter.As(&adapter3)) || !adapter3) {
-            continue;
-        }
-
-        DXGI_QUERY_VIDEO_MEMORY_INFO info = {};
-        if (SUCCEEDED(adapter3->QueryVideoMemoryInfo(
-                0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) {
-            total_usage += static_cast<uint64_t>(info.CurrentUsage);
-        }
-    }
-    std::lock_guard lock(cache_mutex);
-    last_query = now;
-    cached_usage = total_usage;
-    return cached_usage;
 }
 
 } // namespace
@@ -490,10 +370,11 @@ extern "C" __declspec(dllexport)
 const NakiVrDiagnostics* naki_vr_get_diagnostics() {
     thread_local NakiVrDiagnostics d{};
     std::memset(&d, 0, sizeof(d));
-    const auto process_memory = QueryProcessMemoryUsage();
+    static const NativeDiagnosticsProvider diagnostics;
+    const auto process_memory = diagnostics.QueryProcessMemoryUsage();
     d.process_working_set_bytes = process_memory.working_set_bytes;
     d.process_private_bytes = process_memory.private_bytes;
-    d.dedicated_video_memory_bytes = QueryDedicatedVideoMemoryUsage();
+    d.dedicated_video_memory_bytes = diagnostics.QueryDedicatedVideoMemoryUsage();
 
     auto r = pin_global_player();
     if (!r) return &d;
@@ -1045,8 +926,8 @@ void VideoRendererPlugin::HandleMethodCall(
         // Use global player so stats window (secondary engine) can query directly.
         auto diag_player = pin_global_player();
         flutter::EncodableMap map;
-        const auto process_memory = QueryProcessMemoryUsage();
-        const auto process_heap = QueryProcessHeapUsage();
+        const auto process_memory = diagnostics_.QueryProcessMemoryUsage();
+        const auto process_heap = diagnostics_.QueryProcessHeapUsage();
         map[flutter::EncodableValue("processRssBytes")] =
             flutter::EncodableValue(static_cast<int64_t>(process_memory.working_set_bytes));
         map[flutter::EncodableValue("processPrivateBytes")] =
@@ -1060,7 +941,7 @@ void VideoRendererPlugin::HandleMethodCall(
         map[flutter::EncodableValue("processHeapCount")] =
             flutter::EncodableValue(static_cast<int64_t>(process_heap.heap_count));
         map[flutter::EncodableValue("dedicatedGpuUsageBytes")] =
-            flutter::EncodableValue(static_cast<int64_t>(QueryDedicatedVideoMemoryUsage()));
+            flutter::EncodableValue(static_cast<int64_t>(diagnostics_.QueryDedicatedVideoMemoryUsage()));
         if (diag_player) {
             map[flutter::EncodableValue("d3dDeviceLost")] =
                 flutter::EncodableValue(diag_player->d3d_device_lost());

@@ -3,6 +3,7 @@
 #include "test_utils.h"
 #include "video_renderer/track_lifecycle.h"
 #include "video_renderer/track_pipeline_factory.h"
+#include "video_renderer/track_preroll_policy.h"
 #include "video_renderer/track_snapshot.h"
 #include "video_renderer/track_step_policy.h"
 
@@ -737,6 +738,34 @@ TEST_CASE("TrackStepPolicy computes minimum current frame duration",
     TrackPipelineManager oversized_manager;
     oversized_manager[0] = make_track_with_current_duration(100001);
     REQUIRE(compute_min_current_frame_duration_us(oversized_manager) == 33333);
+}
+
+TEST_CASE("TrackPrerollPolicy detects preroll-blocking tracks",
+          "[track_pipeline][track_preroll_policy]") {
+    TrackPipelineManager manager;
+    REQUIRE_FALSE(has_preroll_blocking_track(manager));
+
+    auto ready = std::make_unique<TrackPipeline>();
+    ready->track_buffer = std::make_shared<TrackBuffer>();
+    ready->track_buffer->set_state(TrackState::Ready);
+    manager[0] = std::move(ready);
+    REQUIRE_FALSE(has_preroll_blocking_track(manager));
+
+    manager[0]->track_buffer->set_state(TrackState::Buffering);
+    REQUIRE(has_preroll_blocking_track(manager));
+
+    manager[0]->track_buffer->set_state(TrackState::Empty);
+    REQUIRE(has_preroll_blocking_track(manager));
+
+    manager[0]->track_buffer->set_state(TrackState::Flushing);
+    REQUIRE(has_preroll_blocking_track(manager));
+
+    manager[0]->track_buffer->set_state(TrackState::Error);
+    REQUIRE_FALSE(has_preroll_blocking_track(manager));
+
+    auto missing_buffer = std::make_unique<TrackPipeline>();
+    manager[1] = std::move(missing_buffer);
+    REQUIRE(has_preroll_blocking_track(manager));
 }
 
 TEST_CASE("TrackStepPolicy builds step-forward decisions",

@@ -108,6 +108,7 @@ Fixed or reduced:
 - `Renderer`: step-specific track helpers moved into dedicated `track_step_policy` owner.
 - `Renderer`: step-forward next-frame selection and consumed-frame draining moved into `track_step_policy`.
 - `Renderer`: current-frame duration policy moved into `track_step_policy` and reused by step/EOF tolerance paths.
+- `Renderer`: preroll readiness track-state scan moved into dedicated `track_preroll_policy` owner.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -131,7 +132,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P76 Renderer Preroll Buffering Gate Boundary.
+Next patch: P77 Renderer Paused Preview Snapshot Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1118,11 +1119,33 @@ Result:
 
 ### P76 - Renderer Preroll Buffering Gate Boundary
 
+Status: done in Patch 76.
+
 Goal:
 
 - Move render-loop preroll readiness scan (`Buffering` / `Empty` / `Flushing`) out of `Renderer`.
 - Keep `Renderer` responsible for clock pause/resume, `was_buffering_`, preview invalidation, and logging.
 - Do not mix this with paused preview snapshot or render-sink carry-forward changes.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `track_preroll_policy` with `has_preroll_blocking_track`.
+- Render loop now delegates the Empty/Buffering/Flushing preroll readiness scan while keeping clock pause/resume, `was_buffering_`, preview invalidation, and logging in `Renderer`.
+- Added native coverage for Ready, Empty, Buffering, Flushing, Error, and missing-buffer states.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P77 - Renderer Paused Preview Snapshot Boundary
+
+Goal:
+
+- Move paused preview snapshot assembly (`ALL active tracks have frames` rule) out of the render loop into a small policy/helper.
+- Keep `Renderer` responsible for cached last-frame reuse, present, `preview_drawn_`, and logging.
+- Preserve the rule that partial active-track previews do not draw, avoiding black flashes during seek/preroll.
 
 Validation:
 

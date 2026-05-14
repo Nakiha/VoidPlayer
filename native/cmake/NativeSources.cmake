@@ -37,6 +37,7 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/track_lifecycle.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track_pipeline.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track_pipeline_factory.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/track_preroll_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track_snapshot.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track_step_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"

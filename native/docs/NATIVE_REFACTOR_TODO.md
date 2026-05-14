@@ -289,8 +289,12 @@ TODO:
    - 已把 `compute_frame_duration_us()` 的 per-track min duration/fallback policy 拆到 `track_step_policy`。
    - 验证：native-only + smoke/step-forward UI。
 
-32. [ ] `PrerollBufferingGate`
-   - 后续把 render loop 中 Empty/Flushing/Buffering 任一轨道阻塞 preroll 的判断拆出 Renderer，Renderer 保留 clock pause/resume 和 preview invalidation。
+32. [x] `PrerollBufferingGate`
+   - 已把 render loop 中 Empty/Flushing/Buffering 任一轨道阻塞 preroll 的判断拆到 `track_preroll_policy`，Renderer 保留 clock pause/resume 和 preview invalidation。
+   - 验证：native-only + smoke UI。
+
+33. [ ] `PausedPreviewSnapshot`
+   - 后续把 render loop 暂停预览的 ALL active tracks have frames 组装规则拆出 Renderer，Renderer 保留 cached last-frame reuse、present、`preview_drawn_` 和日志。
    - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split

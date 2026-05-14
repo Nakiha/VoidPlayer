@@ -4,6 +4,7 @@
 #include "video_renderer/layout_validation.h"
 #include "video_renderer/renderer_config_validation.h"
 #include "video_renderer/track_lifecycle.h"
+#include "video_renderer/track_preroll_policy.h"
 #include "video_renderer/track_step_policy.h"
 #include "audio/audio_output_factory.h"
 #include "video_renderer/audio_coordinator.h"
@@ -1363,17 +1364,7 @@ void Renderer::render_loop() {
         }
 
         // Preroll: keep clock paused while any track is still buffering
-        bool any_buffering = false;
-        for (size_t i = 0; i < kMaxTracks; ++i) {
-            if (!tracks_[i]) continue;
-            auto buf_state = tracks_[i]->track_buffer->state();
-            if (buf_state == TrackState::Buffering ||
-                buf_state == TrackState::Empty ||
-                buf_state == TrackState::Flushing) {
-                any_buffering = true;
-                break;
-            }
-        }
+        const bool any_buffering = has_preroll_blocking_track(tracks_);
 
         // Detect Buffering → Ready transition: force preview redraw so the
         // newly-ready track's first frame appears on screen immediately

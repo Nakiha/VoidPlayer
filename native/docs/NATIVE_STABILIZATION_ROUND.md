@@ -107,6 +107,7 @@ Fixed or reduced:
 - `Renderer`: step-backward retreat fanout moved into `track_lifecycle`.
 - `Renderer`: step-specific track helpers moved into dedicated `track_step_policy` owner.
 - `Renderer`: step-forward next-frame selection and consumed-frame draining moved into `track_step_policy`.
+- `Renderer`: current-frame duration policy moved into `track_step_policy` and reused by step/EOF tolerance paths.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -130,7 +131,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P75 Renderer Step Frame Duration Boundary.
+Next patch: P76 Renderer Preroll Buffering Gate Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1095,6 +1096,8 @@ Result:
 
 ### P75 - Renderer Step Frame Duration Boundary
 
+Status: done in Patch 75.
+
 Goal:
 
 - Move `Renderer::compute_frame_duration_us` min-current-frame duration policy into `track_step_policy`.
@@ -1105,6 +1108,26 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_step_forward_visual_regression.csv`
+
+Result:
+
+- Added `compute_min_current_frame_duration_us` to `track_step_policy`.
+- Removed the private `Renderer::compute_frame_duration_us` method; step-forward, step-backward, and EOF settle tolerance now reuse the same track policy helper.
+- Added native coverage for empty tracks, ignored non-positive durations, trusted minimum duration, and oversized-duration fallback.
+- Verified with native-only tests plus rebuilt smoke and H.265 step-forward UI.
+
+### P76 - Renderer Preroll Buffering Gate Boundary
+
+Goal:
+
+- Move render-loop preroll readiness scan (`Buffering` / `Empty` / `Flushing`) out of `Renderer`.
+- Keep `Renderer` responsible for clock pause/resume, `was_buffering_`, preview invalidation, and logging.
+- Do not mix this with paused preview snapshot or render-sink carry-forward changes.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
 
 ## Do-Not-Drift List
 

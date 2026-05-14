@@ -285,9 +285,13 @@ TODO:
    - 已把 `build_step_forward_decision_locked()` 的 next-frame selection 和 `discard_step_forward_consumed_frames_locked()` 的 buffer drain 拆到 `track_step_policy`。
    - 验证：native-only + smoke/step-forward UI。
 
-31. [ ] `StepFrameDurationPolicy`
-   - 后续把 `compute_frame_duration_us()` 的 per-track min duration/fallback policy 拆到 `track_step_policy`。
+31. [x] `StepFrameDurationPolicy`
+   - 已把 `compute_frame_duration_us()` 的 per-track min duration/fallback policy 拆到 `track_step_policy`。
    - 验证：native-only + smoke/step-forward UI。
+
+32. [ ] `PrerollBufferingGate`
+   - 后续把 render loop 中 Empty/Flushing/Buffering 任一轨道阻塞 preroll 的判断拆出 Renderer，Renderer 保留 clock pause/resume 和 preview invalidation。
+   - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split
 

@@ -697,7 +697,7 @@ void Renderer::step_forward() {
         return build_step_forward_decision(
             tracks_,
             playback_->clock().current_pts_us(),
-            compute_frame_duration_us(),
+            compute_min_current_frame_duration_us(tracks_),
             last_decision_,
             decision);
     };
@@ -781,7 +781,7 @@ void Renderer::step_forward() {
                     base_pts = frame->pts_us + tracks_[ref]->offset_us;
                 }
             }
-            int64_t dur = compute_frame_duration_us();
+            int64_t dur = compute_min_current_frame_duration_us(tracks_);
             exact_seek_target = base_pts + dur + 1000;
             if (cached_duration_us_ > 0) {
                 exact_seek_target = std::min(exact_seek_target, cached_duration_us_);
@@ -837,7 +837,7 @@ void Renderer::step_backward() {
             // Add 1ms margin: frame duration is integer-truncated (e.g. 1/60s → 16666us)
             // but actual PTS spacing is 16667us, so (pts - dur) overshoots the
             // previous frame by 1us and exact seek's "< target" check discards it.
-            int64_t dur = compute_frame_duration_us();
+            int64_t dur = compute_min_current_frame_duration_us(tracks_);
             int64_t target = std::max(int64_t(0),
                 playback_->clock().current_pts_us() - dur - 1000);
             spdlog::info("[Renderer] step_backward exact_seek: pts={:.3f}s, duration={:.3f}ms, target={:.3f}s",
@@ -1099,25 +1099,6 @@ void Renderer::unregister_track_audio(int file_id) {
     }
 }
 
-int64_t Renderer::compute_frame_duration_us() const {
-    // Use the minimum frame duration across all active tracks (= highest FPS).
-    // This ensures step_backward moves in the finest granularity, so the fastest
-    // track always advances exactly 1 frame; slower tracks hold until they have
-    // a frame at the target PTS.
-    int64_t min_dur = INT64_MAX;
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks_[i]) continue;
-        auto frame = tracks_[i]->track_buffer->peek(0);
-        if (frame.has_value() && frame->duration_us > 0) {
-            min_dur = std::min(min_dur, frame->duration_us);
-        }
-    }
-    if (min_dur != INT64_MAX && min_dur <= 100000) {
-        return min_dur;
-    }
-    return 33333; // fallback ~30fps
-}
-
 int64_t Renderer::effective_duration_us_locked() const {
     int64_t duration_us = 0;
     bool has_track_duration = false;
@@ -1144,7 +1125,7 @@ bool Renderer::settle_eof_locked(int64_t max_presented_end_us) {
 
     const int64_t duration_us = effective_duration_us_locked();
     const int64_t current_us = playback_->clock().current_pts_us();
-    const int64_t frame_duration_us = compute_frame_duration_us();
+    const int64_t frame_duration_us = compute_min_current_frame_duration_us(tracks_);
     const int64_t eof_tolerance_us =
         std::max<int64_t>(frame_duration_us + 2000, 5000);
 

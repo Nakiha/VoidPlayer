@@ -1,6 +1,14 @@
 #include "video_renderer/track_step_policy.h"
 
+#include <algorithm>
+#include <limits>
+
 namespace vr {
+
+namespace {
+constexpr int64_t kFallbackFrameDurationUs = 33333;
+constexpr int64_t kMaxTrustedFrameDurationUs = 100000;
+}
 
 bool has_buffering_track(const TrackPipelineManager& tracks) {
     for (size_t i = 0; i < kMaxTracks; ++i) {
@@ -46,6 +54,25 @@ bool retreat_tracks_if_all_can_retreat(TrackPipelineManager& tracks) {
         tracks[i]->track_buffer->retreat();
     }
     return true;
+}
+
+int64_t compute_min_current_frame_duration_us(
+    const TrackPipelineManager& tracks) {
+    int64_t min_duration_us = std::numeric_limits<int64_t>::max();
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks[i] || !tracks[i]->track_buffer) {
+            continue;
+        }
+        auto frame = tracks[i]->track_buffer->peek(0);
+        if (frame.has_value() && frame->duration_us > 0) {
+            min_duration_us = std::min(min_duration_us, frame->duration_us);
+        }
+    }
+    if (min_duration_us != std::numeric_limits<int64_t>::max() &&
+        min_duration_us <= kMaxTrustedFrameDurationUs) {
+        return min_duration_us;
+    }
+    return kFallbackFrameDurationUs;
 }
 
 bool build_step_forward_decision(

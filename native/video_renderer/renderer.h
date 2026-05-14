@@ -257,7 +257,6 @@ private:
                        SeekType type,
                        bool allow_deferred = true,
                        bool force_recreate_paused_hevc = false);
-    int64_t compute_frame_duration_us() const;
     void apply_playback_decode_state_locked(bool playback_active);
     void set_decode_paused_for_all_tracks(bool paused);
     void configure_track_seek_callback(TrackPipeline& track);

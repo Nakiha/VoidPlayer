@@ -709,6 +709,36 @@ TEST_CASE("TrackStepPolicy retreats tracks only when all can retreat",
     REQUIRE(failure_manager[1]->track_buffer->peek(0)->pts_us == 700);
 }
 
+TEST_CASE("TrackStepPolicy computes minimum current frame duration",
+          "[track_pipeline][track_step_policy]") {
+    TrackPipelineManager empty_manager;
+    REQUIRE(compute_min_current_frame_duration_us(empty_manager) == 33333);
+
+    const auto make_track_with_current_duration = [](int64_t duration_us) {
+        auto track = std::make_unique<TrackPipeline>();
+        track->track_buffer = std::make_shared<TrackBuffer>();
+        TextureFrame frame;
+        frame.pts_us = 0;
+        frame.duration_us = duration_us;
+        track->track_buffer->push_frame(frame);
+        return track;
+    };
+
+    TrackPipelineManager manager;
+    manager[0] = make_track_with_current_duration(33333);
+    manager[2] = make_track_with_current_duration(16667);
+    REQUIRE(compute_min_current_frame_duration_us(manager) == 16667);
+
+    TrackPipelineManager ignored_manager;
+    ignored_manager[0] = make_track_with_current_duration(0);
+    ignored_manager[1] = make_track_with_current_duration(-1);
+    REQUIRE(compute_min_current_frame_duration_us(ignored_manager) == 33333);
+
+    TrackPipelineManager oversized_manager;
+    oversized_manager[0] = make_track_with_current_duration(100001);
+    REQUIRE(compute_min_current_frame_duration_us(oversized_manager) == 33333);
+}
+
 TEST_CASE("TrackStepPolicy builds step-forward decisions",
           "[track_pipeline][track_step_policy]") {
     TrackPipelineManager empty_manager;

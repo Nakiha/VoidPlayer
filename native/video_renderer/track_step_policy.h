@@ -2,6 +2,7 @@
 
 #include "video_renderer/track_pipeline.h"
 
+#include <cstdint>
 #include <functional>
 
 namespace vr {
@@ -15,6 +16,9 @@ void apply_track_video_decode_pause_state(
         set_decode_paused);
 
 bool retreat_tracks_if_all_can_retreat(TrackPipelineManager& tracks);
+
+int64_t compute_min_current_frame_duration_us(
+    const TrackPipelineManager& tracks);
 
 bool build_step_forward_decision(
     const TrackPipelineManager& tracks,

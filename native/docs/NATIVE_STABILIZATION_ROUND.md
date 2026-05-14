@@ -59,11 +59,11 @@ Fixed:
 
 - AnalysisManager lifecycle data race: session snapshots replace mutable singleton session reads.
 - Overlay chunk consistency: chunk index filters by codec, base content revision, track index, and required CU geometry features.
+- VACache publication: cache files are published through atomic replace without deleting the final path first, and tmp names are unique across path/PID/TID/counter/time tokens.
 
 Active backlog:
 
 - VACHUNK hot-path IO/memory amplification: reading one frame can decode/copy whole chunk sections repeatedly.
-- VACache publication: replace is not atomic enough, tmp names are not collision-proof.
 - `overlay_raster.cpp` helper hardening: aliasing, zero-size, and size-multiply overflow guards.
 - D3D overlay pass state contract: mask/color/invert pass state ownership and SRV/RTV hazard rules need to be explicit.
 - High-resolution and tiny-rect overlay precision tests for 16-bit packed rects.
@@ -95,7 +95,11 @@ Still active:
 
 ## Active Patch Queue
 
+Next patch: P31 VACHUNK Hot-Path Cache.
+
 ### P30 - VACache Atomic Publish
+
+Status: done in Patch 30.
 
 Source: `review_overlay.md`.
 
@@ -112,6 +116,7 @@ Likely files:
 
 Validation:
 
+- `git diff --check`
 - `python dev.py test --native-only`
 
 ### P31 - VACHUNK Hot-Path Cache
@@ -206,7 +211,7 @@ These are real, but lower priority than the overlay backlog above:
 ## Do-Not-Drift List
 
 - Do not prioritize runner plugin cosmetics while `review_overlay.md` P1 items remain open.
-- Do not start a large Renderer split before P30-P33 are handled.
+- Do not start a large Renderer split before P31-P33 are handled.
 - Do not add broad fallback image conversion libraries; pixel-format support must stay deterministic.
 - Do not batch unrelated cleanup with behavior fixes.
 - Do not mark a chat item fixed without a test or an explicit documented coverage gap.

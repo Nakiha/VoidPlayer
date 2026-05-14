@@ -1,10 +1,14 @@
 #include "analysis/cache/vacache_store.h"
 #include "common/win_utf8.h"
 
+#include <atomic>
+#include <chrono>
 #include <filesystem>
+#include <functional>
 #include <iomanip>
 #include <sstream>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <spdlog/spdlog.h>
 
@@ -26,22 +30,80 @@ bool create_dir_utf8(const std::string& path) {
     return !ec;
 }
 
+std::string hex_u64(uint64_t value) {
+    std::ostringstream ss;
+    ss << std::hex << std::setw(16) << std::setfill('0') << value;
+    return ss.str();
+}
+
+uint64_t fnv1a64(const std::string& value) {
+    uint64_t hash = 1469598103934665603ull;
+    for (const unsigned char ch : value) {
+        hash ^= static_cast<uint64_t>(ch);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+uint64_t current_process_id_token() {
+#ifdef _WIN32
+    return static_cast<uint64_t>(GetCurrentProcessId());
+#else
+    return 0;
+#endif
+}
+
+std::string unique_tmp_path_for(const std::string& tmp_dir,
+                                const std::string& final_path,
+                                const std::string& prefix) {
+    static std::atomic<uint64_t> counter{0};
+    const uint64_t sequence = counter.fetch_add(1, std::memory_order_relaxed) + 1;
+    const uint64_t thread_id =
+        static_cast<uint64_t>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    const uint64_t time_token = static_cast<uint64_t>(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+
+    std::ostringstream name;
+    name << prefix
+         << "_" << hex_u64(fnv1a64(final_path))
+         << "_p" << hex_u64(current_process_id_token())
+         << "_t" << hex_u64(thread_id)
+         << "_c" << hex_u64(sequence)
+         << "_n" << hex_u64(time_token)
+         << ".tmp";
+    return path_to_utf8_string(
+        win_utf8::path_from_utf8(tmp_dir) / win_utf8::path_from_utf8(name.str()));
+}
+
 bool replace_file_utf8(const std::string& tmp_path, const std::string& final_path) {
+#ifdef _WIN32
+    const auto tmp_wide = win_utf8::utf16_from_utf8(tmp_path);
+    const auto final_wide = win_utf8::utf16_from_utf8(final_path);
+    if (tmp_wide.empty() || final_wide.empty()) {
+        win_utf8::delete_file_utf8(tmp_path);
+        return false;
+    }
+    const DWORD flags = MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH;
+    if (MoveFileExW(tmp_wide.c_str(), final_wide.c_str(), flags)) {
+        return true;
+    }
+    const DWORD error = GetLastError();
+    spdlog::warn(
+        "[VACache] atomic replace failed: {} -> {}, error={}",
+        tmp_path,
+        final_path,
+        error);
+    win_utf8::delete_file_utf8(tmp_path);
+    return false;
+#else
     std::error_code ec;
-    std::filesystem::remove(win_utf8::path_from_utf8(final_path), ec);
-    ec.clear();
     std::filesystem::rename(win_utf8::path_from_utf8(tmp_path),
                             win_utf8::path_from_utf8(final_path),
                             ec);
     if (!ec) return true;
     std::filesystem::remove(win_utf8::path_from_utf8(tmp_path));
     return false;
-}
-
-std::string hex_u64(uint64_t value) {
-    std::ostringstream ss;
-    ss << std::hex << std::setw(16) << std::setfill('0') << value;
-    return ss.str();
+#endif
 }
 
 std::string frame_range_name(uint32_t start, uint32_t end) {
@@ -130,8 +192,8 @@ bool VacacheStore::ensure_layout() const {
 bool VacacheStore::write_base_atomic(const Vac2BaseData& data,
                                      uint64_t max_output_bytes) const {
     if (!ensure_layout()) return false;
-    const std::string tmp_path = path_to_utf8_string(
-        win_utf8::path_from_utf8(tmp_dir()) / L"base.vac.tmp");
+    const std::string tmp_path =
+        unique_tmp_path_for(tmp_dir(), base_path(), "base_vac");
     if (!write_vac2_base_container(tmp_path, data, max_output_bytes)) {
         win_utf8::delete_file_utf8(tmp_path);
         return false;
@@ -168,16 +230,14 @@ bool VacacheStore::write_chunk_atomic(const VachunkKey& key,
     data.start_unit = key.start_unit;
     data.end_unit = key.end_unit;
 
-    const std::string tmp_name = "chunk_" + hex_u64(key.feature_flags) + ".vck.tmp";
-    const std::string tmp_path = path_to_utf8_string(
-        win_utf8::path_from_utf8(tmp_dir()) /
-        win_utf8::path_from_utf8(tmp_name));
+    const std::string final_path = chunk_path(key);
+    const std::string tmp_path =
+        unique_tmp_path_for(tmp_dir(), final_path, "chunk_vck");
     if (!write_vachunk_file(tmp_path, data, max_output_bytes)) {
         spdlog::error("[VACache] failed to write VACHUNK temp file: {}", tmp_path);
         win_utf8::delete_file_utf8(tmp_path);
         return false;
     }
-    const std::string final_path = chunk_path(key);
     if (!replace_file_utf8(tmp_path, final_path)) {
         spdlog::error("[VACache] failed to publish VACHUNK: {} -> {}",
                       tmp_path, final_path);

@@ -85,6 +85,72 @@ vr::analysis::VachunkData make_overlay_chunk(uint32_t start_frame,
     return data;
 }
 
+vr::analysis::Vac2BaseData make_vacache_base_data(uint64_t content_revision) {
+    vr::analysis::Vac2BaseData base;
+    base.codec = AnalysisCodec::HEVC;
+    base.time_base_num = 1;
+    base.time_base_den = 1000;
+    base.content_revision = content_revision;
+    base.metadata_json = R"({"schema":"vac2-cache-test"})";
+
+    Vac2PacketEntry packet{};
+    packet.pts = 40;
+    packet.dts = 40;
+    packet.size = 256;
+    packet.file_offset = UINT64_MAX;
+    packet.format_offset = UINT64_MAX;
+    packet.au_index = 0;
+    base.packets = {packet};
+
+    Vac2BitstreamUnitEntry unit{};
+    unit.packet_index = 0;
+    unit.au_index = 0;
+    unit.size = 256;
+    unit.nal_type = 19;
+    unit.unit_kind = static_cast<uint8_t>(AnalysisUnitKind::Nalu);
+    unit.flags = VAC2_UNIT_FLAG_IS_VCL |
+                 VAC2_UNIT_FLAG_IS_SLICE |
+                 VAC2_UNIT_FLAG_IS_KEYFRAME;
+    unit.pset_snapshot = UINT16_MAX;
+    base.units = {unit};
+
+    Vac2FrameEntry frame{};
+    frame.first_packet = 0;
+    frame.packet_count = 1;
+    frame.first_unit = 0;
+    frame.unit_count = 1;
+    frame.pts = 40;
+    frame.dts = 40;
+    frame.frame_size = 256;
+    frame.flags = VAC2_FRAME_FLAG_KEYFRAME | VAC2_FRAME_FLAG_RAP;
+    base.frames = {frame};
+
+    Vac2FrameSummaryEntry summary{};
+    summary.first_vcl_unit = 0;
+    summary.slice_type = 2;
+    summary.nal_type = 19;
+    summary.qp_kind = VAC2_QP_KIND_UNKNOWN;
+    base.frame_summaries = {summary};
+    return base;
+}
+
+vr::analysis::VachunkData make_frame_summary_chunk_data(uint8_t qp) {
+    Vac2FrameSummaryEntry summary{};
+    summary.first_vcl_unit = 0;
+    summary.slice_type = 2;
+    summary.nal_type = 19;
+    summary.qp_kind = VAC2_QP_KIND_EXACT;
+    summary.qp_avg = qp;
+    std::vector<Vac2FrameSummaryEntry> summaries{summary};
+
+    vr::analysis::VachunkData chunk_data;
+    chunk_data.sections.push_back(
+        vr::analysis::make_vachunk_string_section("META", "{}"));
+    chunk_data.sections.push_back(
+        vr::analysis::make_vachunk_record_section("FSUM", summaries));
+    return chunk_data;
+}
+
 } // namespace
 
 // ===========================================================================
@@ -753,6 +819,57 @@ TEST_CASE("VACache: publishes base and derived chunks atomically", "[analysis][v
     key.generator_revision = 4;
     vr::analysis::VachunkFile wrong_chunk;
     REQUIRE_FALSE(store.open_chunk(key, wrong_chunk));
+
+    std::filesystem::remove_all(root);
+}
+
+TEST_CASE("VACache: failed base publish leaves existing final path intact", "[analysis][vacache]") {
+    const auto root = std::filesystem::temp_directory_path() /
+        "voidplayer_vacache_base_publish_failure_test";
+    std::filesystem::remove_all(root);
+
+    vr::analysis::VacacheStore store(root.string(), "abc123");
+    REQUIRE(store.ensure_layout());
+
+    const auto final_path = std::filesystem::path(store.base_path());
+    REQUIRE(std::filesystem::create_directory(final_path));
+
+    REQUIRE_FALSE(store.write_base_atomic(make_vacache_base_data(88)));
+    REQUIRE(std::filesystem::is_directory(final_path));
+    REQUIRE(std::filesystem::is_empty(std::filesystem::path(store.tmp_dir())));
+
+    std::filesystem::remove_all(root);
+}
+
+TEST_CASE("VACache: failed chunk publish leaves existing final path intact", "[analysis][vacache]") {
+    const auto root = std::filesystem::temp_directory_path() /
+        "voidplayer_vacache_chunk_publish_failure_test";
+    std::filesystem::remove_all(root);
+
+    vr::analysis::VacacheStore store(root.string(), "abc123");
+    REQUIRE(store.ensure_layout());
+
+    vr::analysis::VachunkKey key;
+    key.kind = VachunkKind::FrameSummaryExact;
+    key.codec = AnalysisCodec::HEVC;
+    key.feature_flags = VACHUNK_FEATURE_QP;
+    key.base_content_revision = 88;
+    key.generator_revision = 3;
+    key.start_frame = 0;
+    key.end_frame = 0;
+    key.start_packet = 0;
+    key.end_packet = 0;
+    key.start_unit = 0;
+    key.end_unit = 0;
+
+    REQUIRE(std::filesystem::create_directories(
+        std::filesystem::path(store.chunks_dir(key.kind))));
+    const auto final_path = std::filesystem::path(store.chunk_path(key));
+    REQUIRE(std::filesystem::create_directory(final_path));
+
+    REQUIRE_FALSE(store.write_chunk_atomic(key, make_frame_summary_chunk_data(27)));
+    REQUIRE(std::filesystem::is_directory(final_path));
+    REQUIRE(std::filesystem::is_empty(std::filesystem::path(store.tmp_dir())));
 
     std::filesystem::remove_all(root);
 }

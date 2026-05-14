@@ -111,6 +111,7 @@ Fixed or reduced:
 - `Renderer`: preroll readiness track-state scan moved into dedicated `track_preroll_policy` owner.
 - `Renderer`: playing present-decision carry-forward moved into dedicated `track_present_policy` owner.
 - `Renderer`: empty-buffer EOF clamp fact calculation moved into `track_present_policy`.
+- `Renderer`: next frame deadline event PTS calculation moved into `track_present_policy`.
 - `Renderer`: paused preview snapshot assembly moved into dedicated `track_preview_policy` owner.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
@@ -135,7 +136,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P80 Renderer Frame Deadline Event Boundary.
+Next patch: P81 Renderer Diagnostics Snapshot Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1210,11 +1211,33 @@ Result:
 
 ### P80 - Renderer Frame Deadline Event Boundary
 
+Status: done in Patch 80.
+
 Goal:
 
 - Move render-loop next frame event PTS scan out of `Renderer`.
 - Keep `Renderer` responsible for reading clock state, applying playback speed, calling `RenderLoopController::frame_deadline_sleep`, and sleeping.
 - Preserve the rule that future frames wake at their PTS and current frames wake at PTS + duration.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `compute_next_frame_event_pts_us` to `track_present_policy`.
+- Render loop now delegates next frame event PTS scanning while keeping clock reads, speed, `RenderLoopController::frame_deadline_sleep`, and actual sleep in `Renderer`.
+- Added native coverage for no-frame managers, future-frame wakeups, current-frame expiry wakeups, empty buffers, and missing buffers.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P81 - Renderer Diagnostics Snapshot Boundary
+
+Goal:
+
+- Move periodic render-loop track diagnostics snapshot assembly out of `Renderer`.
+- Keep `Renderer` responsible for diagnostics cadence (`RenderLoopController`) and emitting the existing log lines.
+- Preserve logged payload fields: slot, PTS, PTS delta, buffer count/capacity, buffer state, and playing snapshot.
 
 Validation:
 

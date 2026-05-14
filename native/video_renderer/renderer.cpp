@@ -1508,26 +1508,12 @@ void Renderer::render_loop() {
         // targets an absolute PTS rather than an accumulated relative duration.
         {
             int64_t current_pts = playback_->clock().current_pts_us();
-            int64_t next_event_pts = INT64_MAX;
-
-            for (size_t i = 0; i < kMaxTracks; ++i) {
-                if (!tracks_[i]) continue;
-                auto frame = tracks_[i]->track_buffer->peek(0);
-                if (!frame.has_value()) continue;
-                if (frame->pts_us > current_pts) {
-                    // Future frame — wake when it should start
-                    next_event_pts = std::min(next_event_pts, frame->pts_us);
-                } else {
-                    // Frame being displayed — wake when it expires
-                    next_event_pts = std::min(next_event_pts,
-                                              frame->pts_us + frame->duration_us);
-                }
-            }
-
-            if (next_event_pts != INT64_MAX) {
+            const auto next_event_pts =
+                compute_next_frame_event_pts_us(tracks_, current_pts);
+            if (next_event_pts.has_value()) {
                 double spd = playback_->clock().speed();
                 const auto sleep_for = render_loop_controller_.frame_deadline_sleep(
-                    current_pts, next_event_pts, spd, MAX_SLEEP_US);
+                    current_pts, *next_event_pts, spd, MAX_SLEEP_US);
                 if (sleep_for.count() > 0) {
                     std::this_thread::sleep_for(sleep_for);
                 }

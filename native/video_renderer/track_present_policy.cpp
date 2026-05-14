@@ -1,6 +1,7 @@
 #include "video_renderer/track_present_policy.h"
 
 #include <algorithm>
+#include <optional>
 
 namespace vr {
 
@@ -47,6 +48,32 @@ EmptyBufferEofClamp compute_empty_buffer_eof_clamp(
     }
 
     return clamp;
+}
+
+std::optional<int64_t> compute_next_frame_event_pts_us(
+    const TrackPipelineManager& tracks,
+    int64_t current_pts_us) {
+    std::optional<int64_t> next_event_pts;
+
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks[i] || !tracks[i]->track_buffer) {
+            continue;
+        }
+        const auto frame = tracks[i]->track_buffer->peek(0);
+        if (!frame.has_value()) {
+            continue;
+        }
+
+        const int64_t event_pts =
+            frame->pts_us > current_pts_us
+                ? frame->pts_us
+                : frame->pts_us + frame->duration_us;
+        if (!next_event_pts.has_value() || event_pts < *next_event_pts) {
+            next_event_pts = event_pts;
+        }
+    }
+
+    return next_event_pts;
 }
 
 } // namespace vr

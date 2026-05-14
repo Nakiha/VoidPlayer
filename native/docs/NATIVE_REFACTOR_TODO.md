@@ -305,8 +305,12 @@ TODO:
    - 已把播放态 buffer-empty scan 和 max last-presented end PTS 计算拆到 `track_present_policy`，Renderer 保留 clock seek/clamp 与 `settle_eof_locked`。
    - 验证：native-only + smoke UI。
 
-36. [ ] `FrameDeadlineEventPolicy`
-   - 后续把播放态 next frame event PTS 扫描拆出 Renderer，Renderer 保留 clock read、speed、`RenderLoopController::frame_deadline_sleep` 和实际 sleep。
+36. [x] `FrameDeadlineEventPolicy`
+   - 已把播放态 next frame event PTS 扫描拆到 `track_present_policy`，Renderer 保留 clock read、speed、`RenderLoopController::frame_deadline_sleep` 和实际 sleep。
+   - 验证：native-only + smoke UI。
+
+37. [ ] `RenderLoopDiagnosticsSnapshot`
+   - 后续把 render-loop periodic diagnostics 的 per-track buffer count/cap/state 快照拆出 Renderer，Renderer 保留 cadence 和日志输出。
    - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split

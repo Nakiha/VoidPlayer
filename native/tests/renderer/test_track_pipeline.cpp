@@ -911,6 +911,45 @@ TEST_CASE("TrackPresentPolicy computes empty-buffer EOF clamp facts",
     REQUIRE(missing_buffer.max_end_pts_us == 22);
 }
 
+TEST_CASE("TrackPresentPolicy computes next frame event PTS",
+          "[track_pipeline][track_present_policy]") {
+    const auto make_track =
+        [](std::optional<TextureFrame> queued_frame) {
+            auto track = std::make_unique<TrackPipeline>();
+            track->track_buffer = std::make_shared<TrackBuffer>();
+            if (queued_frame.has_value()) {
+                track->track_buffer->push_frame(*queued_frame);
+            }
+            return track;
+        };
+    const auto make_frame = [](int64_t pts_us, int64_t duration_us) {
+        TextureFrame frame;
+        frame.pts_us = pts_us;
+        frame.duration_us = duration_us;
+        return frame;
+    };
+
+    TrackPipelineManager empty_manager;
+    REQUIRE_FALSE(compute_next_frame_event_pts_us(
+        empty_manager,
+        100).has_value());
+
+    TrackPipelineManager manager;
+    manager[0] = make_track(make_frame(140, 10));
+    manager[1] = make_track(make_frame(80, 30));
+    manager[2] = make_track(std::nullopt);
+    manager[3] = std::make_unique<TrackPipeline>();
+
+    auto next_event = compute_next_frame_event_pts_us(manager, 100);
+    REQUIRE(next_event.has_value());
+    REQUIRE(*next_event == 110);
+
+    manager[2] = make_track(make_frame(105, 20));
+    next_event = compute_next_frame_event_pts_us(manager, 100);
+    REQUIRE(next_event.has_value());
+    REQUIRE(*next_event == 105);
+}
+
 TEST_CASE("TrackStepPolicy builds step-forward decisions",
           "[track_pipeline][track_step_policy]") {
     TrackPipelineManager empty_manager;

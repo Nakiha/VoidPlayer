@@ -3,6 +3,7 @@
 #include "video_renderer/track_pipeline.h"
 
 #include <cstdint>
+#include <optional>
 
 namespace vr {
 
@@ -19,5 +20,9 @@ void apply_present_carry_forward(
 EmptyBufferEofClamp compute_empty_buffer_eof_clamp(
     const TrackPipelineManager& tracks,
     const PresentDecision& last_decision);
+
+std::optional<int64_t> compute_next_frame_event_pts_us(
+    const TrackPipelineManager& tracks,
+    int64_t current_pts_us);
 
 } // namespace vr

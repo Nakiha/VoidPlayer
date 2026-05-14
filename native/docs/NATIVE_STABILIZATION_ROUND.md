@@ -87,6 +87,7 @@ Fixed or reduced:
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `TrackPipelineManager`: demux/decode pipeline construction moved into `TrackPipelineFactory`, leaving manager focused on slot storage, stop, and compact.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
+- `NativeResourceBudget`: track buffer queued-frame depth decision moved into `TrackBufferBudget` and is tested as a policy boundary.
 - Windows runner plugin: diagnostics, logging bootstrap, texture bridge, file picker, method dispatch, and MethodChannel diagnostics scope were split.
 - Process-global logging/crash FFI ownership is now documented.
 
@@ -97,11 +98,11 @@ Still active:
 - Track lifecycle start/recreate/rollback order is still shared between `Renderer` and track helpers.
 - `DecodeThread` main loop still owns drain, pause, EOF, and hardware visibility state transitions.
 - Target/feature boundaries are still too coupled.
-- Resource budget policy is still distributed.
+- Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P45 Native Budget Policy Consolidation.
+Next patch: P46 DecodeThread Drain/Flush Guards.
 
 ### P30 - VACache Atomic Publish
 
@@ -433,6 +434,8 @@ Result:
 
 ### P45 - Native Budget Policy Consolidation
 
+Status: done in Patch 45.
+
 Goal:
 
 - Centralize queued-frame, exact-seek, analysis-cache, capture, and runtime memory budget rules into explicit policy objects.
@@ -441,6 +444,37 @@ Validation:
 
 - `python dev.py test --native-only`
 - UI scripts selected by touched policy surface.
+
+Result:
+
+- Added `TrackBufferBudget` as the explicit policy boundary for high-resolution detection and TrackBuffer forward/backward frame depth.
+- `TrackPipelineFactory` now consumes a budget decision instead of embedding the high-resolution queued-frame rule.
+- Added native coverage for invalid/small tracks, high-resolution software tracks, and reduced-depth high-resolution hardware tracks.
+- Verified runner-facing add/seek/render paths with smoke and AV1 codec visual UI scripts.
+
+### P46 - DecodeThread Drain/Flush Guards
+
+Goal:
+
+- Continue P44 by isolating drain-before-next-packet, EOF flush, post-seek pause, and cancellation guard decisions into small tested helpers.
+- Keep codec send/receive, AVFrame ownership, and hardware visibility flush calls inside `DecodeThread` until the guard semantics are pinned.
+
+Validation:
+
+- `python dev.py test --native-only`
+- HEVC seek/step UI script if decode seek behavior changes.
+
+### P47 - FFI Command/Marshalling Split
+
+Goal:
+
+- Continue P42 by moving UTF-8/path marshalling and typed command bodies out of `ffi_exports.cpp`.
+- Keep extern "C" exported functions as ABI shells that validate, pin the player, and forward.
+
+Validation:
+
+- `python dev.py test --native-only`
+- FFI C validation already included in native tests.
 
 ## Do-Not-Drift List
 

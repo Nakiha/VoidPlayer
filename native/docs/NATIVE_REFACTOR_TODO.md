@@ -356,7 +356,8 @@ Status: partially done in Round 16.
 TODO:
 
 - [x] 定义 `NativeResourceBudget` 和默认预算入口；显式 app/FFI/Python override 留给后续配置 API。
-- [ ] 预算覆盖：max tracks、max dimensions、max CPU frame bytes、max queued frames、max exact seek reorder frames/bytes、max capture bytes、max analysis file/cache size。Round 16 已集中 max tracks / dimensions / path bytes / CPU frame bytes / capture bytes / exact seek reorder frames / speed 常量；queued frames、analysis cache/file size 和 runtime override 仍待后续。
+- [x] 预算覆盖：TrackBuffer queued-frame depth 由 `TrackBufferBudget` 根据 `NativeResourceBudget` 统一决策。
+- [ ] 预算覆盖：max packet queue capacity、max exact seek reorder bytes、max analysis file/cache size 和 runtime override。Round 16 已集中 max tracks / dimensions / path bytes / CPU frame bytes / capture bytes / exact seek reorder frames / speed 常量；P45 已集中 TrackBuffer queued-frame depth。
 - [ ] 超预算返回明确错误码和日志。
 - [ ] diagnostics 输出预算命中/拒绝计数。
 - [x] 增加预算边界测试。

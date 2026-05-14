@@ -1,20 +1,9 @@
 #include "video_renderer/track_pipeline_factory.h"
-#include "video_renderer/renderer_limits.h"
+#include "video_renderer/track_buffer_budget.h"
 
 #include <spdlog/spdlog.h>
 
 namespace vr {
-namespace {
-
-bool is_high_resolution_track(const DemuxStats& stats) {
-    if (stats.width <= 0 || stats.height <= 0) {
-        return false;
-    }
-    return static_cast<size_t>(stats.width) * static_cast<size_t>(stats.height) >=
-        kHighResolutionTrackPixels;
-}
-
-} // namespace
 
 DecodeDeviceMode default_decode_device_mode(AVCodecID codec_id) {
     if (codec_id == AV_CODEC_ID_AV1 || codec_id == AV_CODEC_ID_VP9) {
@@ -67,18 +56,15 @@ std::unique_ptr<TrackPipeline> TrackPipelineFactory::create_opened_pipeline(
             (static_cast<float>(stats.width) / static_cast<float>(stats.height)) * sar;
     }
 
-    const size_t forward_depth =
-        hw_decode && is_high_resolution_track(stats)
-            ? kHighResolutionHardwareTrackForwardDepth
-            : kDefaultTrackForwardDepth;
+    const auto buffer_budget = choose_track_buffer_budget(stats, hw_decode);
     pipeline->track_buffer = std::make_shared<TrackBuffer>(
-        forward_depth, kDefaultTrackBackwardDepth);
+        buffer_budget.forward_depth, buffer_budget.backward_depth);
     spdlog::info(
         "Renderer: track buffer depth forward={}, backward={}, max_cached={}, high_res={}, hw_decode={}",
-        forward_depth,
-        kDefaultTrackBackwardDepth,
-        forward_depth + kDefaultTrackBackwardDepth,
-        is_high_resolution_track(stats),
+        buffer_budget.forward_depth,
+        buffer_budget.backward_depth,
+        buffer_budget.max_cached_frames(),
+        buffer_budget.high_resolution,
         hw_decode);
 
     pipeline->decode_thread = std::make_unique<DecodeThread>(

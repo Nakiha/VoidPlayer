@@ -2355,7 +2355,21 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
                 static_cast<size_t>(video_w) * static_cast<size_t>(video_h);
             auto& color_pixels = analysis_overlay_pixels_[slot];
             auto& mask_pixels = analysis_overlay_line_pixels_[slot];
-            color_pixels.assign(pixel_count * 4, 0);
+            const bool primary_fills_frame =
+                (bit_cost_primary || qp_primary || pred_primary) &&
+                analysis::overlay_frame_covers_surface(
+                    frame,
+                    static_cast<uint32_t>(video_w),
+                    static_cast<uint32_t>(video_h),
+                    video_w,
+                    video_h);
+            const size_t color_bytes = pixel_count * 4;
+            if (color_pixels.size() != color_bytes) {
+                color_pixels.resize(color_bytes);
+            }
+            if (!primary_fills_frame) {
+                std::fill(color_pixels.begin(), color_pixels.end(), 0);
+            }
             mask_pixels.assign(pixel_count, 0);
 
             for (const auto& cu : frame.cus) {

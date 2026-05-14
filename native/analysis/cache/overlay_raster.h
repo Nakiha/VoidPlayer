@@ -78,6 +78,12 @@ void draw_overlay_line(std::vector<uint8_t>& pixels,
                        int y1,
                        OverlayColor color);
 
+bool overlay_frame_covers_surface(const VachunkOverlayFrameData& frame,
+                                  uint32_t video_width,
+                                  uint32_t video_height,
+                                  int surface_width,
+                                  int surface_height);
+
 OverlayColor heatmap_ramp_color(float value, uint8_t alpha);
 OverlayColor qp_color(uint8_t qp, uint8_t alpha);
 OverlayColor cu_bit_density_color(const VachunkCuCommon& cu, uint8_t alpha);

@@ -1002,7 +1002,6 @@ int benchmark_overlay(const CliOptions& options) {
         }
     };
 
-    std::fill(pixels.begin(), pixels.end(), 0);
     if (options.with_grid) {
         std::fill(grid_mask.begin(), grid_mask.end(), 0);
     }
@@ -1023,7 +1022,6 @@ int benchmark_overlay(const CliOptions& options) {
 
     const auto start = std::chrono::steady_clock::now();
     for (uint32_t i = 0; i < options.iterations; ++i) {
-        std::fill(pixels.begin(), pixels.end(), 0);
         if (options.with_grid) {
             std::fill(grid_mask.begin(), grid_mask.end(), 0);
         }

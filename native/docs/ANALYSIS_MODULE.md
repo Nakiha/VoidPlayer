@@ -140,6 +140,7 @@ python dev.py analysis-overlay-benchmark --iterations 240 --with-grid
 该命令会生成一个临时 VAC2 base 和 overlay VACHUNK，然后调用
 `VoidPlayerCli.exe benchmark-overlay` 对指定帧重复栅格化，报告写入
 `build/analysis-overlay-benchmark/analysis_overlay_benchmark.json` 和 `.md`。
-它用于检查 dirty frame 下 CU/MB 热力图填充和边界 mask 路径的回归；不包含 GUI 中的
-D3D blend 或最终窗口合成，但报告会给出 video-space color/mask texture upload
-字节数估算。GUI 平滑 pan/zoom/resize 会复用已上传的 overlay texture。
+它用于检查 dirty frame 下 CU/MB 热力图填充和边界 mask 路径的回归；raster 内核会跳过
+完整覆盖热力图的 BGRA 清屏，并用固定 LUT 计算 QP / bit-density 颜色。该 benchmark
+不包含 GUI 中的 D3D blend 或最终窗口合成，但报告会给出 video-space color/mask
+texture upload 字节数估算。GUI 平滑 pan/zoom/resize 会复用已上传的 overlay texture。

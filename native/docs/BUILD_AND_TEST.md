@@ -60,8 +60,9 @@ python dev.py analysis-overlay-benchmark --video <video> --codec hevc --frame 12
 `build/analysis-overlay-benchmark/analysis_overlay_benchmark.json` 和 `.md`。
 这条基准只测 dirty texture 的 CPU fill+raster，不代表完整 GUI 的 D3D blend 或窗口
 合成成本；GUI 平滑 pan/zoom/resize 会复用已上传的 video-space overlay texture。
-`--with-grid` 会同时测 CU/MB 边界 mask raster，并输出每帧 color/mask upload 字节数
-估算。
+当前 raster 内核会跳过完整覆盖热力图的 BGRA 清屏，并用固定 LUT 计算 QP / bit-density
+颜色。`--with-grid` 会同时测 CU/MB 边界 mask raster，并输出每帧 color/mask upload
+字节数估算。
 
 `dev.py build --native` 会在 native CMake 构建前检查 analysis 外部工具：
 

@@ -1,9 +1,31 @@
 #include "analysis/cache/overlay_raster.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstring>
 
 namespace vr::analysis {
+namespace {
+
+uint32_t pack_bgra(OverlayColor color) {
+    return static_cast<uint32_t>(color.b) |
+           (static_cast<uint32_t>(color.g) << 8) |
+           (static_cast<uint32_t>(color.r) << 16) |
+           (static_cast<uint32_t>(color.a) << 24);
+}
+
+void fill_bgra_span(uint8_t* dst, int pixel_count, OverlayColor color) {
+    if (pixel_count <= 0) {
+        return;
+    }
+
+    const uint32_t packed = pack_bgra(color);
+    auto* words = reinterpret_cast<uint32_t*>(dst);
+    std::fill_n(words, pixel_count, packed);
+}
+
+} // namespace
 
 void blend_overlay_pixel(std::vector<uint8_t>& pixels,
                          int width,
@@ -41,14 +63,10 @@ void fill_overlay_rect(std::vector<uint8_t>& pixels,
         stats->filled_pixels +=
             static_cast<uint64_t>(x1 - x0) * static_cast<uint64_t>(y1 - y0);
     }
+    const int rect_width = x1 - x0;
     for (int y = y0; y < y1; ++y) {
         size_t off = static_cast<size_t>(y * width + x0) * 4;
-        for (int x = x0; x < x1; ++x, off += 4) {
-            pixels[off + 0] = color.b;
-            pixels[off + 1] = color.g;
-            pixels[off + 2] = color.r;
-            pixels[off + 3] = color.a;
-        }
+        fill_bgra_span(pixels.data() + off, rect_width, color);
     }
 }
 
@@ -116,13 +134,21 @@ void stroke_overlay_rect_mask8(std::vector<uint8_t>& pixels,
     y0 = std::clamp(y0, 0, height - 1);
     y1 = std::clamp(y1, 0, height - 1);
     if (x0 >= x1 || y0 >= y1) return;
-    for (int x = x0; x <= x1; ++x) {
-        set_overlay_mask_pixel8(pixels, width, height, x, y0);
-        set_overlay_mask_pixel8(pixels, width, height, x, y1);
+
+    const size_t top_off = static_cast<size_t>(y0) * static_cast<size_t>(width) +
+                           static_cast<size_t>(x0);
+    const size_t bottom_off = static_cast<size_t>(y1) * static_cast<size_t>(width) +
+                              static_cast<size_t>(x0);
+    const size_t span = static_cast<size_t>(x1 - x0 + 1);
+    std::memset(pixels.data() + top_off, 255, span);
+    if (y1 != y0) {
+        std::memset(pixels.data() + bottom_off, 255, span);
     }
+
     for (int y = y0; y <= y1; ++y) {
-        set_overlay_mask_pixel8(pixels, width, height, x0, y);
-        set_overlay_mask_pixel8(pixels, width, height, x1, y);
+        const size_t row = static_cast<size_t>(y) * static_cast<size_t>(width);
+        pixels[row + static_cast<size_t>(x0)] = 255;
+        pixels[row + static_cast<size_t>(x1)] = 255;
     }
 }
 
@@ -154,6 +180,40 @@ void draw_overlay_line(std::vector<uint8_t>& pixels,
     }
 }
 
+bool overlay_frame_covers_surface(const VachunkOverlayFrameData& frame,
+                                  uint32_t video_width,
+                                  uint32_t video_height,
+                                  int surface_width,
+                                  int surface_height) {
+    if (video_width == 0 || video_height == 0 || surface_width <= 0 || surface_height <= 0) {
+        return false;
+    }
+    const float scale_x = static_cast<float>(surface_width) / static_cast<float>(video_width);
+    const float scale_y = static_cast<float>(surface_height) / static_cast<float>(video_height);
+    uint64_t covered_pixels = 0;
+    for (const auto& cu : frame.cus) {
+        const auto& c = cu.common;
+        int x0 = static_cast<int>(std::floor(static_cast<float>(c.x) * scale_x));
+        int y0 = static_cast<int>(std::floor(static_cast<float>(c.y) * scale_y));
+        int x1 = static_cast<int>(std::ceil(static_cast<float>(c.x + c.w) * scale_x));
+        int y1 = static_cast<int>(std::ceil(static_cast<float>(c.y + c.h) * scale_y));
+        x0 = std::clamp(x0, 0, surface_width);
+        x1 = std::clamp(x1, 0, surface_width);
+        y0 = std::clamp(y0, 0, surface_height);
+        y1 = std::clamp(y1, 0, surface_height);
+        if (x1 <= x0 || y1 <= y0) continue;
+        covered_pixels +=
+            static_cast<uint64_t>(x1 - x0) * static_cast<uint64_t>(y1 - y0);
+        const uint64_t surface_pixels =
+            static_cast<uint64_t>(surface_width) * static_cast<uint64_t>(surface_height);
+        if (covered_pixels > surface_pixels) {
+            return false;
+        }
+    }
+    return covered_pixels ==
+        static_cast<uint64_t>(surface_width) * static_cast<uint64_t>(surface_height);
+}
+
 OverlayColor heatmap_ramp_color(float value, uint8_t alpha) {
     const float t = std::clamp(value, 0.0f, 1.0f);
     const float r = t < 0.5f ? (t * 2.0f) : 1.0f;
@@ -166,21 +226,40 @@ OverlayColor heatmap_ramp_color(float value, uint8_t alpha) {
 }
 
 OverlayColor qp_color(uint8_t qp, uint8_t alpha) {
-    const float t = std::clamp(static_cast<float>(qp) / 50.0f, 0.0f, 1.0f);
-    return heatmap_ramp_color(t, alpha);
+    static const auto lut = [] {
+        std::array<OverlayColor, 51> colors = {};
+        for (size_t i = 0; i < colors.size(); ++i) {
+            colors[i] = heatmap_ramp_color(static_cast<float>(i) / 50.0f, 255);
+        }
+        return colors;
+    }();
+    OverlayColor color = lut[std::min<uint8_t>(qp, 50)];
+    color.a = alpha;
+    return color;
 }
 
 OverlayColor cu_bit_density_color(const VachunkCuCommon& cu, uint8_t alpha) {
-    const float area = std::max(1.0f, static_cast<float>(cu.w) * static_cast<float>(cu.h));
-    const float bits_per_64x64 =
-        static_cast<float>(cu.bit_count) * (64.0f * 64.0f) / area;
-    const float low = std::log2(64.0f + 1.0f);
-    const float high = std::log2(4096.0f + 1.0f);
-    const float t = std::clamp(
-        (std::log2(bits_per_64x64 + 1.0f) - low) / (high - low),
-        0.0f,
-        1.0f);
-    return heatmap_ramp_color(t, alpha);
+    static const auto lut = [] {
+        std::array<OverlayColor, 4097> colors = {};
+        const float low = std::log2(64.0f + 1.0f);
+        const float high = std::log2(4096.0f + 1.0f);
+        for (size_t i = 0; i < colors.size(); ++i) {
+            const float t = std::clamp(
+                (std::log2(static_cast<float>(i) + 1.0f) - low) / (high - low),
+                0.0f,
+                1.0f);
+            colors[i] = heatmap_ramp_color(t, 255);
+        }
+        return colors;
+    }();
+
+    const uint64_t area =
+        std::max<uint64_t>(1, static_cast<uint64_t>(cu.w) * static_cast<uint64_t>(cu.h));
+    const uint64_t density =
+        (static_cast<uint64_t>(cu.bit_count) * 4096ull + area / 2ull) / area;
+    OverlayColor color = lut[static_cast<size_t>(std::min<uint64_t>(density, 4096ull))];
+    color.a = alpha;
+    return color;
 }
 
 OverlayColor pred_color(uint8_t pred_mode, const VachunkCuInter& inter, uint8_t alpha) {
@@ -206,6 +285,10 @@ bool raster_overlay_heatmap(const VachunkOverlayFrameData& frame,
         static_cast<size_t>(surface_width) * static_cast<size_t>(surface_height) * 4;
     if (pixels.size() != expected) {
         pixels.resize(expected);
+    }
+    if (!overlay_frame_covers_surface(
+            frame, video_width, video_height, surface_width, surface_height)) {
+        std::fill(pixels.begin(), pixels.end(), 0);
     }
     if (stats) {
         *stats = {};

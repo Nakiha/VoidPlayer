@@ -126,7 +126,9 @@ VACHUNK、CPU raster 并上传纹理。平滑 pan/zoom/resize 复用已有 video
 
 CPU raster 的热力图矩形填充会直接写入 BGRA overlay buffer；CU/MB 反色线框使用独立
 R8 mask texture，预测线仍写入颜色 overlay。这个路径避免了对每个填充像素做 alpha
-blend，并把边界 mask 的上传量压到 1 byte/pixel。使用
+blend，并把边界 mask 的上传量压到 1 byte/pixel。栅格化内核按 32-bit BGRA span
+写入；QP 和 bit-density ramp 使用固定 LUT，完整覆盖帧会跳过 BGRA 清屏，只在 chunk
+覆盖不完整时 fallback 清零。使用
 `python dev.py analysis-overlay-benchmark --iterations 240` 可以独立测量 dirty frame
 时 CU/MB heatmap raster 的 CPU 成本。后续如果 dirty-frame 上传仍成为瓶颈，再迁移到
 GPU instance/structured-buffer 绘制。

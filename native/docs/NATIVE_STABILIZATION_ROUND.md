@@ -124,6 +124,7 @@ Fixed or reduced:
 - `Renderer`: shutdown resource-presence predicate centralized and now uses `TrackPipelineManager` active-track query.
 - `Renderer`: pure present-decision frame-presence query moved into `track_present_policy`.
 - `track_preview_policy`: paused-preview readiness now reuses the shared present-decision frame query.
+- `Renderer`: effective playback-duration synthesis moved into track lifecycle policy.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -147,7 +148,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P92 Renderer Effective Duration Policy Boundary.
+Next patch: P93 Renderer Track Geometry Update Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1484,6 +1485,8 @@ Result:
 
 ### P92 - Renderer Effective Duration Policy Boundary
 
+Status: done in Patch 92.
+
 Goal:
 
 - Move effective playback-duration synthesis out of `Renderer::effective_duration_us_locked`.
@@ -1494,6 +1497,26 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `resolve_effective_duration_us` to track lifecycle policy.
+- `Renderer::effective_duration_us_locked` now delegates to the policy helper.
+- Added focused native coverage for cached fallback and track end-PTS plus offset synthesis.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P93 - Renderer Track Geometry Update Boundary
+
+Goal:
+
+- Move `Renderer::update_track_geometry_from_decision_locked` frame-size/aspect mutation logic into a layout/geometry helper.
+- Keep `Renderer` responsible for logging geometry changes.
+- Preserve SAR carry-forward behavior and invalid frame geometry filtering.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewport_pan_layout_regression.csv`
 
 ## Do-Not-Drift List
 

@@ -1039,22 +1039,7 @@ void Renderer::unregister_track_audio(int file_id) {
 }
 
 int64_t Renderer::effective_duration_us_locked() const {
-    int64_t duration_us = 0;
-    bool has_track_duration = false;
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks_[i] || !tracks_[i]->demux_thread) continue;
-        const int64_t track_pts_end_us =
-            track_pts_end_us_from_stats(tracks_[i]->demux_thread->stats());
-        if (track_pts_end_us <= 0) continue;
-        has_track_duration = true;
-        duration_us = std::max(
-            duration_us,
-            track_pts_end_us + tracks_[i]->offset_us);
-    }
-    if (!has_track_duration) {
-        duration_us = cached_duration_us_;
-    }
-    return std::max<int64_t>(0, duration_us);
+    return resolve_effective_duration_us(tracks_, cached_duration_us_);
 }
 
 bool Renderer::settle_eof_locked(int64_t max_presented_end_us) {

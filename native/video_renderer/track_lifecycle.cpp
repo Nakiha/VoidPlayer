@@ -212,6 +212,28 @@ int64_t compute_track_duration_cache(const TrackPipelineManager& tracks) {
     return duration_us;
 }
 
+int64_t resolve_effective_duration_us(const TrackPipelineManager& tracks,
+                                      int64_t cached_duration_us) {
+    int64_t duration_us = 0;
+    bool has_track_duration = false;
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks[i] || !tracks[i]->demux_thread) {
+            continue;
+        }
+        const int64_t track_pts_end_us =
+            track_pts_end_us_from_stats(tracks[i]->demux_thread->stats());
+        if (track_pts_end_us <= 0) {
+            continue;
+        }
+        has_track_duration = true;
+        duration_us = std::max(duration_us, track_pts_end_us + tracks[i]->offset_us);
+    }
+    if (!has_track_duration) {
+        duration_us = cached_duration_us;
+    }
+    return std::max<int64_t>(0, duration_us);
+}
+
 TrackPlaybackMutationState pause_playback_for_track_mutation(
     bool currently_playing,
     const TrackPlaybackMutationHooks& hooks) {

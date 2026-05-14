@@ -353,9 +353,13 @@ TODO:
    - 已移除 `track_preview_policy` 中重复的匿名 frame-presence helper，复用 present policy 的共享查询。
    - 验证：native-only + smoke UI。
 
-48. [ ] `EffectiveDurationPolicy`
-   - 后续把 `Renderer::effective_duration_us_locked()` 中 per-track duration/end-PTS 合成逻辑迁到 track lifecycle/duration policy，保留 cached-duration fallback。
+48. [x] `EffectiveDurationPolicy`
+   - 已把 `Renderer::effective_duration_us_locked()` 中 per-track duration/end-PTS 合成逻辑迁到 track lifecycle/duration policy，保留 cached-duration fallback。
    - 验证：native-only + smoke UI。
+
+49. [ ] `TrackGeometryUpdatePolicy`
+   - 后续把 `Renderer::update_track_geometry_from_decision_locked()` 的 frame-size/aspect mutation 迁入 layout/geometry helper，Renderer 保留日志。
+   - 验证：native-only + smoke/viewport UI。
 
 ## P1 - Windows Runner Plugin Split
 

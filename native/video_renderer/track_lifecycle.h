@@ -105,6 +105,9 @@ int64_t extend_track_duration_cache(int64_t cached_duration_us,
 
 int64_t compute_track_duration_cache(const TrackPipelineManager& tracks);
 
+int64_t resolve_effective_duration_us(const TrackPipelineManager& tracks,
+                                      int64_t cached_duration_us);
+
 struct TrackPlaybackMutationHooks {
     std::function<void()> pause_playback;
     std::function<void()> resume_playback;

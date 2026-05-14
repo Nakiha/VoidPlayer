@@ -707,6 +707,36 @@ TEST_CASE("TrackLifecycle computes duration cache",
     manager.stop_slot(1);
 }
 
+TEST_CASE("TrackLifecycle resolves effective duration with cached fallback",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineManager manager;
+    REQUIRE(resolve_effective_duration_us(manager, 5000) == 5000);
+    REQUIRE(resolve_effective_duration_us(manager, -5000) == 0);
+
+    manager[0] = std::make_unique<TrackPipeline>();
+    REQUIRE(resolve_effective_duration_us(manager, 6000) == 6000);
+}
+
+TEST_CASE("TrackLifecycle resolves effective duration from track end PTS",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineFactory factory;
+    TrackPipelineManager manager;
+    auto pipeline = factory.create_opened_pipeline(
+        video_test_dir() + "/h264_9s_1920x1080.mp4",
+        false);
+    REQUIRE(pipeline);
+
+    const int64_t track_end_us =
+        track_pts_end_us_from_stats(pipeline->demux_thread->stats());
+    REQUIRE(track_end_us > 0);
+
+    pipeline->offset_us = 12345;
+    manager[2] = std::move(pipeline);
+
+    REQUIRE(resolve_effective_duration_us(manager, 1) == track_end_us + 12345);
+    manager.stop_slot(2);
+}
+
 TEST_CASE("TrackLifecycle guards playback around track mutation",
           "[track_pipeline][track_lifecycle]") {
     std::vector<std::string> events;

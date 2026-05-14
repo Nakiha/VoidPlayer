@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "video_renderer/layout_validation.h"
 #include "video_renderer/renderer_config_validation.h"
 
 using namespace vr;
@@ -80,6 +81,50 @@ TEST_CASE("Renderer config validation covers speed and loop range",
     REQUIRE(validate_loop_range(true, 0, 1000).ok);
     REQUIRE_FALSE(validate_loop_range(true, -1, 1000).ok);
     REQUIRE_FALSE(validate_loop_range(true, 1000, 1000).ok);
+}
+
+TEST_CASE("Layout validation enforces viewport guardrails",
+          "[renderer_config][layout]") {
+    LayoutState layout;
+    layout.order[0] = 1;
+    layout.order[1] = 2;
+    layout.order[2] = -1;
+    layout.order[3] = -1;
+    REQUIRE(validate_layout_state(layout).ok);
+
+    auto invalid = layout;
+    invalid.split_pos = -0.01f;
+    REQUIRE_FALSE(validate_layout_state(invalid).ok);
+
+    invalid = layout;
+    invalid.split_pos = 1.01f;
+    REQUIRE_FALSE(validate_layout_state(invalid).ok);
+
+    invalid = layout;
+    invalid.zoom_ratio = kMinLayoutZoomRatio - 0.01f;
+    REQUIRE_FALSE(validate_layout_state(invalid).ok);
+
+    invalid = layout;
+    invalid.zoom_ratio = kMaxLayoutZoomRatio + 0.01f;
+    REQUIRE_FALSE(validate_layout_state(invalid).ok);
+}
+
+TEST_CASE("Layout validation treats order entries as file IDs",
+          "[renderer_config][layout]") {
+    LayoutState layout;
+    layout.order[0] = 42;
+    layout.order[1] = 99;
+    layout.order[2] = -1;
+    layout.order[3] = 0;
+    REQUIRE(validate_layout_state(layout).ok);
+
+    auto invalid = layout;
+    invalid.order[3] = 42;
+    REQUIRE_FALSE(validate_layout_state(invalid).ok);
+
+    invalid = layout;
+    invalid.order[2] = -2;
+    REQUIRE_FALSE(validate_layout_state(invalid).ok);
 }
 
 TEST_CASE("Native resource budget exposes renderer guardrails",

@@ -153,7 +153,7 @@ typedef struct naki_vr_player_layout_state_t {
     float zoom_ratio;             /* 1.0=fit, >1.0=zoom in */
     float view_offset[2];         /* Pan offset [x, y] in pixel coordinates */
     int pixel_size_mode;          /* 0=uniform video pixels, 1=fit each view slot */
-    int order[4];                 /* Track display order mapping */
+    int order[4];                 /* Track display order by file_id; -1/0 are placeholders */
 } naki_vr_player_layout_state_t;
 
 NAKI_VR_FFI_EXPORT void naki_vr_player_apply_layout(naki_vr_player_t player, const naki_vr_player_layout_state_t* state) NAKI_VR_FFI_NOEXCEPT;

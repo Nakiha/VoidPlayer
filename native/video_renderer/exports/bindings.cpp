@@ -86,7 +86,7 @@ PYBIND11_MODULE(video_renderer_native, m) {
                 s.view_offset[1] = v[1];
             },
             "Pan offset [x, y] in pixel coordinates")
-        // order: expose as Python list [0, 1, 2, 3]
+        // order: expose as Python list of file IDs; -1/0 are placeholders.
         .def_property("order",
             [](vr::LayoutState& s) -> std::vector<int> {
                 return {s.order[0], s.order[1], s.order[2], s.order[3]};

@@ -43,7 +43,7 @@ chat 给出的方向和当前代码状态高度匹配。优先级最高的不是
 | ID | 问题 | 当前证据 | 建议时机 |
 | --- | --- | --- | --- |
 | S6 | `capture_front_buffer_locked()` 持 texture mutex 做 GPU copy/map | `Renderer::capture_front_buffer()` 同时持 `device_mutex_` 和 texture mutex 调 staging copy/map | DONE - Patch 6 |
-| S7 | layout validation 太宽松 | `validate_layout_state()` 只检查 enum、finite、zoom positive | `LayoutController` 或小防线 patch |
+| S7 | layout validation 太宽松 | `validate_layout_state()` 只检查 enum、finite、zoom positive | DONE - Patch 7 |
 | S8 | `TextureManager::create_rgba_texture()` 缺尺寸校验 | RGBA create 直接 cast width/height，其他 create API 有基本校验 | 小防线 patch |
 | S9 | demux read error 没传播成明确 track error/event | `DemuxThread::run()` 非 EOF read error 后 break，最后只 `abort_outputs()` | error model patch |
 | S10 | `avcodec_open2()` 未包 SEH guard | send/receive 已有 SEH wrapper，open 阶段仍直调 | decode hardening patch |
@@ -289,16 +289,39 @@ Follow-up:
 
 - S7 layout validation is next.
 
+2026-05-14 Patch 7 - Layout Validation Guardrails
+
+Changed:
+
+- Added native layout split/zoom constants and used them in both validation and Renderer layout application.
+- Tightened `validate_layout_state()` to reject out-of-range split positions, zoom outside `[1, 50]`, invalid negative order entries, and duplicate positive file IDs.
+- Kept order validation aligned with the actual project model: order entries are file IDs, with `-1`/`0` accepted as placeholders rather than slot indexes.
+- Made `Renderer::apply_layout()` run the same validation so direct native callers cannot bypass FFI/runner checks and get silent clamp/fallback behavior.
+- Added native layout validation regressions for split, zoom, and file-ID order semantics.
+
+Verified:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/split_screen_edges_regression.csv ui_tests/viewport/split_handle_drag_regression.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- S8 `TextureManager::create_rgba_texture()` dimension validation is next.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
 
 | 来源 | 复核项 | 结果 |
 | --- | --- | --- |
-| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | fixed: #1/#2/#3/#4/#5; accepted-backlog: #6-#13 |
+| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | fixed: #1/#2/#3/#4/#5/#8; accepted-backlog: #6/#7/#9-#13 |
 | `review_godobject.md` | God Object 排名和 owner boundary 判断 | fixed: AudioMixer boundary + Analysis session snapshot; accepted-backlog: remaining owner splits |
 | `review_overlay.md` | AnalysisManager、VACHUNK、overlay cache、D3D pass 风险 | fixed: AnalysisManager session + current-base chunk filter; accepted-backlog: remaining overlay/cache/render-pass items |
-| `split_adv.md` | Patch 顺序和“不贪大”边界 | fixed: Patch 1-6 executed in stabilization-sized slices |
+| `split_adv.md` | Patch 顺序和“不贪大”边界 | fixed: Patch 1-7 executed in stabilization-sized slices |
 
 复核时只标三类状态：
 
@@ -315,12 +338,12 @@ fixed:
 - #3 Headless texture overwrite risk: Patch 4 added release-driven in-flight tracking.
 - #4 capture lock/GPU wait split: Patch 6 split front-buffer snapshot from GPU readback.
 - #5 Audio pause discards PCM: Patch 2 made paused render output silence without consuming PCM.
+- #8 layout validation: Patch 7 tightened split/zoom/order checks using file-ID order semantics.
 
 accepted-backlog:
 
 - #6 NativePlayer facade locking remains a lifecycle boundary cleanup.
 - #7 FFI long-operation serialization remains an ABI/registry cleanup.
-- #8 layout validation maps to S7.
 - #9 RGBA texture size validation maps to S8.
 - #10 demux read error propagation maps to S9.
 - #11 `avcodec_open2()` SEH guard maps to S10.
@@ -376,10 +399,11 @@ fixed:
 - Patch 1-5 were completed in the recommended stabilization shape: one owner/lifetime/threading issue per patch, with native tests and relevant UI tests.
 - Documentation/cross-check completed before starting the second-tier backlog.
 - Patch 6 completed the S6 capture lock-granularity cleanup without a large Renderer split.
+- Patch 7 completed the S7 layout validation guardrails as a narrow defensive patch.
 
 accepted-backlog:
 
-- Remaining second-priority owner boundary work starts with S7/S8 or a future `FrameCaptureService`; avoid jumping straight into a large Renderer split.
+- Remaining second-priority owner boundary work starts with S8 or a future `FrameCaptureService`; avoid jumping straight into a large Renderer split.
 
 not-applicable:
 

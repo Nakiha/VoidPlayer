@@ -22,9 +22,29 @@ inline LayoutValidationResult validate_layout_state(const LayoutState& state) {
     if (!std::isfinite(state.split_pos) ||
         !std::isfinite(state.zoom_ratio) ||
         !std::isfinite(state.view_offset[0]) ||
-        !std::isfinite(state.view_offset[1]) ||
-        state.zoom_ratio <= 0.0f) {
-        return {false, "layout values must be finite and zoom must be positive"};
+        !std::isfinite(state.view_offset[1])) {
+        return {false, "layout values must be finite"};
+    }
+    if (state.split_pos < kMinLayoutSplitPos || state.split_pos > kMaxLayoutSplitPos) {
+        return {false, "split position out of range"};
+    }
+    if (state.zoom_ratio < kMinLayoutZoomRatio ||
+        state.zoom_ratio > kMaxLayoutZoomRatio) {
+        return {false, "zoom ratio out of range"};
+    }
+    for (int i = 0; i < 4; ++i) {
+        const int file_id = state.order[i];
+        if (file_id < -1) {
+            return {false, "layout order file_id out of range"};
+        }
+        if (file_id <= 0) {
+            continue;
+        }
+        for (int j = 0; j < i; ++j) {
+            if (state.order[j] == file_id) {
+                return {false, "layout order contains duplicate file_id"};
+            }
+        }
     }
     return {};
 }

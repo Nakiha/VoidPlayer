@@ -1,4 +1,5 @@
 #include "video_renderer/renderer.h"
+#include "video_renderer/layout_validation.h"
 #include "video_renderer/renderer_config_validation.h"
 #include "audio/audio_output_factory.h"
 #include "video_renderer/audio_coordinator.h"
@@ -2815,9 +2816,15 @@ void Renderer::draw_analysis_overlay(const PresentDecision& decision,
 void Renderer::apply_layout(const LayoutState& state) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
+    if (auto validation = validate_layout_state(state); !validation.ok) {
+        spdlog::warn("[Renderer] ignoring invalid layout: {}", validation.message);
+        return;
+    }
     layout_.mode = state.mode;
-    layout_.split_pos = std::clamp(state.split_pos, 0.0f, 1.0f);
-    layout_.zoom_ratio = std::clamp(state.zoom_ratio, 1.0f, 50.0f);
+    layout_.split_pos =
+        std::clamp(state.split_pos, kMinLayoutSplitPos, kMaxLayoutSplitPos);
+    layout_.zoom_ratio =
+        std::clamp(state.zoom_ratio, kMinLayoutZoomRatio, kMaxLayoutZoomRatio);
     layout_.view_offset[0] = state.view_offset[0];
     layout_.view_offset[1] = state.view_offset[1];
     layout_.pixel_size_mode =

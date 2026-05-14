@@ -42,7 +42,7 @@ chat 给出的方向和当前代码状态高度匹配。优先级最高的不是
 
 | ID | 问题 | 当前证据 | 建议时机 |
 | --- | --- | --- | --- |
-| S6 | `capture_front_buffer_locked()` 持 texture mutex 做 GPU copy/map | `Renderer::capture_front_buffer()` 同时持 `device_mutex_` 和 texture mutex 调 staging copy/map | 可跟 `FrameCaptureService` 一起修 |
+| S6 | `capture_front_buffer_locked()` 持 texture mutex 做 GPU copy/map | `Renderer::capture_front_buffer()` 同时持 `device_mutex_` 和 texture mutex 调 staging copy/map | DONE - Patch 6 |
 | S7 | layout validation 太宽松 | `validate_layout_state()` 只检查 enum、finite、zoom positive | `LayoutController` 或小防线 patch |
 | S8 | `TextureManager::create_rgba_texture()` 缺尺寸校验 | RGBA create 直接 cast width/height，其他 create API 有基本校验 | 小防线 patch |
 | S9 | demux read error 没传播成明确 track error/event | `DemuxThread::run()` 非 EOF read error 后 break，最后只 `abort_outputs()` | error model patch |
@@ -267,16 +267,38 @@ Follow-up:
 
 - Run final cross-check against the original chat review files, then start second-tier stabilization backlog.
 
+2026-05-14 Patch 6 - Frame Capture Lock Granularity
+
+Changed:
+
+- Split headless front-buffer capture into a short `snapshot_front_buffer_locked()` step and a `capture_front_buffer_snapshot()` GPU readback step.
+- Kept Renderer capture serialized by `device_mutex_`, but release `texture_mutex()` before staging texture creation, `CopyResource`, `Flush`, and `Map`.
+- Pinned the source texture with a ComPtr snapshot so resize/shutdown can reset current shared buffers without invalidating an in-progress capture.
+- Added a native D3D11 regression proving capture reads from the pinned pre-resize snapshot.
+
+Verified:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- S7 layout validation is next.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
 
 | 来源 | 复核项 | 结果 |
 | --- | --- | --- |
-| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | fixed: #1/#2/#3/#5; accepted-backlog: #4/#6-#13 |
+| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | fixed: #1/#2/#3/#4/#5; accepted-backlog: #6-#13 |
 | `review_godobject.md` | God Object 排名和 owner boundary 判断 | fixed: AudioMixer boundary + Analysis session snapshot; accepted-backlog: remaining owner splits |
 | `review_overlay.md` | AnalysisManager、VACHUNK、overlay cache、D3D pass 风险 | fixed: AnalysisManager session + current-base chunk filter; accepted-backlog: remaining overlay/cache/render-pass items |
-| `split_adv.md` | Patch 顺序和“不贪大”边界 | fixed: Patch 1-5 executed, verified, and committed |
+| `split_adv.md` | Patch 顺序和“不贪大”边界 | fixed: Patch 1-6 executed in stabilization-sized slices |
 
 复核时只标三类状态：
 
@@ -291,11 +313,11 @@ fixed:
 - #1 Demux seek callback race: Patch 1 split demux open/start and locked callback access.
 - #2 RenderSink raw `TrackBuffer*`: Patch 3 switched sink registration to shared buffer snapshots.
 - #3 Headless texture overwrite risk: Patch 4 added release-driven in-flight tracking.
+- #4 capture lock/GPU wait split: Patch 6 split front-buffer snapshot from GPU readback.
 - #5 Audio pause discards PCM: Patch 2 made paused render output silence without consuming PCM.
 
 accepted-backlog:
 
-- #4 capture lock/GPU wait split maps to S6 / `FrameCaptureService`.
 - #6 NativePlayer facade locking remains a lifecycle boundary cleanup.
 - #7 FFI long-operation serialization remains an ABI/registry cleanup.
 - #8 layout validation maps to S7.
@@ -352,11 +374,12 @@ not-applicable:
 fixed:
 
 - Patch 1-5 were completed in the recommended stabilization shape: one owner/lifetime/threading issue per patch, with native tests and relevant UI tests.
-- Patch 6 documentation/cross-check is this section.
+- Documentation/cross-check completed before starting the second-tier backlog.
+- Patch 6 completed the S6 capture lock-granularity cleanup without a large Renderer split.
 
 accepted-backlog:
 
-- Second-priority owner boundary work starts with S6/S7/S8 or `FrameCaptureService`; avoid jumping straight into a large Renderer split.
+- Remaining second-priority owner boundary work starts with S7/S8 or a future `FrameCaptureService`; avoid jumping straight into a large Renderer split.
 
 not-applicable:
 

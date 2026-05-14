@@ -471,6 +471,45 @@ TEST_CASE("D3D11HeadlessOutput publishes and resizes buffers", "[d3d11][headless
     cleanup_test_device(dev, hwnd);
 }
 
+TEST_CASE("D3D11HeadlessOutput captures pinned front-buffer snapshots",
+          "[d3d11][headless_output]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::D3D11HeadlessOutput output;
+    REQUIRE(output.initialize(dev->device(), dev->context(), 64, 32));
+
+    vr::D3D11HeadlessOutputFrontBufferSnapshot snapshot;
+    {
+        std::lock_guard<std::mutex> lock(output.texture_mutex());
+        auto* rtv = output.begin_frame_locked();
+        REQUIRE(rtv != nullptr);
+        const float clear_color[4] = {0.1f, 0.4f, 0.8f, 1.0f};
+        dev->context()->ClearRenderTargetView(rtv, clear_color);
+        output.publish_frame_locked();
+        REQUIRE(output.snapshot_front_buffer_locked(snapshot));
+        REQUIRE(output.resize_locked(80, 40));
+    }
+
+    std::vector<uint8_t> bgra;
+    int width = 0;
+    int height = 0;
+    REQUIRE(output.capture_front_buffer_snapshot(snapshot, bgra, width, height));
+    REQUIRE(width == 64);
+    REQUIRE(height == 32);
+    REQUIRE(bgra.size() == static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
+
+    bool has_nonzero = false;
+    for (uint8_t byte : bgra) {
+        if (byte != 0) {
+            has_nonzero = true;
+            break;
+        }
+    }
+    REQUIRE(has_nonzero);
+
+    output.shutdown();
+    cleanup_test_device(dev, hwnd);
+}
+
 TEST_CASE("D3D11HeadlessOutput does not reuse in-flight shared buffers",
           "[d3d11][headless_output]") {
     auto [dev, hwnd] = create_test_device();

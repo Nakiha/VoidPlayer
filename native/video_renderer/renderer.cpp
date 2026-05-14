@@ -1233,8 +1233,14 @@ bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int&
     }
 
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-    std::lock_guard<std::mutex> tex_lock(texture_mutex());
-    return headless_output_->capture_front_buffer_locked(bgra, width, height);
+    D3D11HeadlessOutputFrontBufferSnapshot snapshot;
+    {
+        std::lock_guard<std::mutex> tex_lock(texture_mutex());
+        if (!headless_output_->snapshot_front_buffer_locked(snapshot)) {
+            return false;
+        }
+    }
+    return headless_output_->capture_front_buffer_snapshot(snapshot, bgra, width, height);
 }
 
 bool Renderer::has_any_frame(const PresentDecision& decision) {

@@ -29,6 +29,12 @@ struct D3D11HeadlessOutputTextureLease {
     uint64_t generation = 0;
 };
 
+struct D3D11HeadlessOutputFrontBufferSnapshot {
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+    int width = 0;
+    int height = 0;
+};
+
 class D3D11HeadlessOutput {
 public:
     static constexpr int kBufferCount = 3;
@@ -55,7 +61,12 @@ public:
 
     bool resize_locked(int width, int height);
     void cleanup_expired_pending_buffers();
-    bool capture_front_buffer_locked(std::vector<uint8_t>& bgra, int& width, int& height);
+    bool snapshot_front_buffer_locked(D3D11HeadlessOutputFrontBufferSnapshot& snapshot) const;
+    // Caller serializes D3D11 immediate-context access; texture_mutex() is not needed.
+    bool capture_front_buffer_snapshot(const D3D11HeadlessOutputFrontBufferSnapshot& snapshot,
+                                       std::vector<uint8_t>& bgra,
+                                       int& width,
+                                       int& height);
 
     void set_frame_callback(std::function<void()> cb);
     D3D11HeadlessOutputMemoryStats memory_stats() const;

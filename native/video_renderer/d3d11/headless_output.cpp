@@ -197,21 +197,44 @@ void D3D11HeadlessOutput::cleanup_expired_pending_buffers() {
     // release callbacks now drive buffer availability via release_shared_texture().
 }
 
-bool D3D11HeadlessOutput::capture_front_buffer_locked(std::vector<uint8_t>& bgra,
-                                                      int& width,
-                                                      int& height) {
-    if (!device_ || !context_) {
-        return false;
-    }
-
+bool D3D11HeadlessOutput::snapshot_front_buffer_locked(
+    D3D11HeadlessOutputFrontBufferSnapshot& snapshot) const {
+    snapshot = {};
     const int front = buffers_.front.load();
-    auto source = buffers_.textures[front];
-    if (!source) {
+    if (front < 0 || front >= kBufferCount) {
         return false;
     }
 
     D3D11_TEXTURE2D_DESC desc = {};
-    source->GetDesc(&desc);
+    auto texture = buffers_.textures[front];
+    if (!texture) {
+        return false;
+    }
+    texture->GetDesc(&desc);
+
+    snapshot.texture = std::move(texture);
+    snapshot.width = static_cast<int>(desc.Width);
+    snapshot.height = static_cast<int>(desc.Height);
+    return true;
+}
+
+bool D3D11HeadlessOutput::capture_front_buffer_snapshot(
+    const D3D11HeadlessOutputFrontBufferSnapshot& snapshot,
+    std::vector<uint8_t>& bgra,
+    int& width,
+    int& height) {
+    if (!device_ || !context_ || !snapshot.texture) {
+        return false;
+    }
+
+    width = snapshot.width;
+    height = snapshot.height;
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    snapshot.texture->GetDesc(&desc);
     width = static_cast<int>(desc.Width);
     height = static_cast<int>(desc.Height);
 
@@ -229,7 +252,7 @@ bool D3D11HeadlessOutput::capture_front_buffer_locked(std::vector<uint8_t>& bgra
         return false;
     }
 
-    context_->CopyResource(staging.Get(), source.Get());
+    context_->CopyResource(staging.Get(), snapshot.texture.Get());
     context_->Flush();
 
     D3D11_MAPPED_SUBRESOURCE mapped = {};

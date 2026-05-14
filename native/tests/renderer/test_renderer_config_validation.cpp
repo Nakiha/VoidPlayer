@@ -3,8 +3,10 @@
 #include "video_renderer/layout_validation.h"
 #include "video_renderer/layout_controller.h"
 #include "video_renderer/layout_geometry.h"
+#include "video_renderer/render_loop_controller.h"
 #include "video_renderer/renderer_config_validation.h"
 
+#include <chrono>
 #include <cmath>
 
 using namespace vr;
@@ -213,6 +215,34 @@ TEST_CASE("Layout geometry computes shader constants outside Renderer",
     const auto display = display_pixel_size_for_layout(2000, 1000, layout, tracks);
     REQUIRE(layout_float_near(display.first, 1000.0f));
     REQUIRE(layout_float_near(display.second, 562.5f));
+}
+
+TEST_CASE("RenderLoopController owns loop timing policy",
+          "[renderer_config][render_loop]") {
+    using Clock = std::chrono::steady_clock;
+    using namespace std::chrono_literals;
+
+    RenderLoopController controller;
+    const auto t0 = Clock::time_point{};
+
+    REQUIRE(controller.should_apply_resize(t0 + 34ms));
+    controller.mark_resize_applied(t0 + 34ms);
+    REQUIRE_FALSE(controller.should_apply_resize(t0 + 50ms));
+    REQUIRE(controller.should_apply_resize(t0 + 67ms));
+
+    controller.start(t0);
+    int64_t pts_delta = -1;
+    REQUIRE_FALSE(controller.should_emit_diagnostics(t0 + 1999ms, 5000, pts_delta));
+    REQUIRE(controller.should_emit_diagnostics(t0 + 2000ms, 5000, pts_delta));
+    REQUIRE(pts_delta == 5000);
+    REQUIRE(controller.should_emit_diagnostics(t0 + 4000ms, 9000, pts_delta));
+    REQUIRE(pts_delta == 4000);
+
+    REQUIRE(controller.frame_deadline_sleep(1000, 9000, 1.0, 8000).count() == 8000);
+    REQUIRE(controller.frame_deadline_sleep(1000, 30000, 1.0, 8000).count() == 8000);
+    REQUIRE(controller.frame_deadline_sleep(1000, 5000, 2.0, 8000).count() == 2000);
+    REQUIRE(controller.frame_deadline_sleep(5000, 1000, 1.0, 8000).count() == 0);
+    REQUIRE(controller.frame_deadline_sleep(1000, 5000, 0.0, 8000).count() == 0);
 }
 
 TEST_CASE("Native resource budget exposes renderer guardrails",

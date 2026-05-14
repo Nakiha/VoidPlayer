@@ -11,6 +11,7 @@
 #include "video_renderer/capture/frame_capture_service.h"
 #include "video_renderer/layout_controller.h"
 #include "video_renderer/layout_state.h"
+#include "video_renderer/render_loop_controller.h"
 #include "video_renderer/shader_constants.h"
 #include "common/logging.h"
 #include <vector>
@@ -408,6 +409,7 @@ private:
     D3D11RenderResources* d3d_resources_ = nullptr;
     FrameCaptureService frame_capture_;
     LayoutController layout_controller_;
+    RenderLoopController render_loop_controller_;
 
     TrackPipelineManager tracks_;
 
@@ -480,7 +482,6 @@ private:
     // Resize debounce: store pending dimensions, render loop applies at controlled rate.
     std::atomic<int> pending_width_{0};
     std::atomic<int> pending_height_{0};
-    std::chrono::steady_clock::time_point last_resize_time_{};
 };
 
 } // namespace vr

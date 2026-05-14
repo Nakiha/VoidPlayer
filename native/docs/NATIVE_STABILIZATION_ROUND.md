@@ -83,6 +83,7 @@ Fixed or reduced:
 - `AnalysisManager`: session snapshot split reduced global session risk.
 - `Renderer`: analysis overlay CPU cache, D3D overlay resource helpers, mask pass, and overlay draw pass moved into `AnalysisOverlayRenderer`; `Renderer` now delegates the overlay pass after the base frame draw.
 - `Renderer`: layout state/constants moved to layout-owned helpers; `Renderer` now snapshots track geometry and delegates shader layout math to `layout_geometry`.
+- `Renderer`: render-loop debounce, diagnostics cadence, and frame-deadline sleep policy moved into `RenderLoopController`.
 - Windows runner plugin: diagnostics, logging bootstrap, texture bridge, file picker, method dispatch, and MethodChannel diagnostics scope were split.
 - Process-global logging/crash FFI ownership is now documented.
 
@@ -97,7 +98,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P41 Render Loop Boundary.
+Next patch: P42 FFI ABI God Module Split.
 
 ### P30 - VACache Atomic Publish
 
@@ -348,6 +349,8 @@ Result:
 
 ### P41 - Render Loop Boundary
 
+Status: done in Patch 41.
+
 Goal:
 
 - Extract render-loop timing/device-lost decision boundaries only after overlay/layout state is calmer.
@@ -357,6 +360,13 @@ Validation:
 
 - `python dev.py test --native-only`
 - smoke + timeline/viewport UI scripts depending on touched paths.
+
+Result:
+
+- Added `RenderLoopController` as the owner for resize debounce timing, periodic diagnostics cadence, and frame deadline sleep calculation.
+- Removed the resize debounce timestamp and diagnostic timestamp/PTS bookkeeping from `Renderer::render_loop()`.
+- Kept D3D immediate-context ownership and present/publish paths inside `Renderer` for this patch.
+- Added native coverage for resize debounce, diagnostic delta calculation, and max-capped frame sleep.
 
 ### P42 - FFI ABI God Module Split
 

@@ -28,6 +28,7 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/capture/frame_capture_service.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/layout_controller.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/layout_geometry.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/render_loop_controller.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/renderer_config_validation.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/seek_coordinator.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track_pipeline.cpp"

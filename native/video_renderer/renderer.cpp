@@ -329,7 +329,7 @@ void Renderer::release_resources_locked() {
     loop_range_ = LoopRangeState();
     pending_width_.store(0);
     pending_height_.store(0);
-    last_resize_time_ = std::chrono::steady_clock::time_point{};
+    render_loop_controller_.reset();
     stats_start_time_ = std::chrono::steady_clock::time_point{};
     for (auto& bl : perf_baselines_) bl.frames = 0;
     initialized_ = false;
@@ -1439,10 +1439,7 @@ void Renderer::render_loop() {
     timeBeginPeriod(1);
     spdlog::info("[Renderer] Render loop started (timer resolution: 1ms), tid={}", GetCurrentThreadId());
 
-    // Periodic diagnostics — log buffer state every 2 seconds
-    auto diag_time = std::chrono::steady_clock::now();
-    int64_t diag_last_pts = 0;
-    constexpr auto diag_interval = std::chrono::seconds(2);
+    render_loop_controller_.start(std::chrono::steady_clock::now());
 
     while (running_) {
         if (d3d_device_ && d3d_device_->poll_device_removed("render_loop")) {
@@ -1469,9 +1466,9 @@ void Renderer::render_loop() {
             int ph = pending_height_.exchange(0);
             if (pw > 0 && ph > 0) {
                 auto now = std::chrono::steady_clock::now();
-                if (now - last_resize_time_ >= std::chrono::milliseconds(33)) {
+                if (render_loop_controller_.should_apply_resize(now)) {
                     do_resize(pw, ph);
-                    last_resize_time_ = now;
+                    render_loop_controller_.mark_resize_applied(now);
                 } else {
                     // Too soon — re-queue so the next iteration can pick it up.
                     // Write back only if no newer resize arrived in the meantime.
@@ -1610,11 +1607,9 @@ void Renderer::render_loop() {
         // Periodic diagnostics
         {
             auto now = std::chrono::steady_clock::now();
-            if (now - diag_time >= diag_interval) {
-                diag_time = now;
-                int64_t pts = playback_->clock().current_pts_us();
-                int64_t pts_delta = pts - diag_last_pts;
-                diag_last_pts = pts;
+            int64_t pts = playback_->clock().current_pts_us();
+            int64_t pts_delta = 0;
+            if (render_loop_controller_.should_emit_diagnostics(now, pts, pts_delta)) {
                 for (size_t i = 0; i < kMaxTracks; ++i) {
                     if (!tracks_[i]) continue;
                     auto buf_count = tracks_[i]->track_buffer->total_count();
@@ -1708,13 +1703,10 @@ void Renderer::render_loop() {
 
             if (next_event_pts != INT64_MAX) {
                 double spd = playback_->clock().speed();
-                if (spd > 0) {
-                    int64_t pts_delta = next_event_pts - current_pts;
-                    int64_t sleep_us = static_cast<int64_t>(pts_delta / spd);
-                    if (sleep_us > 0) {
-                        if (sleep_us > MAX_SLEEP_US) sleep_us = MAX_SLEEP_US;
-                        std::this_thread::sleep_for(std::chrono::microseconds(sleep_us));
-                    }
+                const auto sleep_for = render_loop_controller_.frame_deadline_sleep(
+                    current_pts, next_event_pts, spd, MAX_SLEEP_US);
+                if (sleep_for.count() > 0) {
+                    std::this_thread::sleep_for(sleep_for);
                 }
             } else {
                 // No frames available (buffer underflow) — short poll

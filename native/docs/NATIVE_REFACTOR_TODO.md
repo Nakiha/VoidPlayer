@@ -345,8 +345,12 @@ TODO:
    - 已集中 shutdown 里“是否还有资源需要释放”的判断，并复用 track manager active-track query 替代本地 track scan。
    - 验证：native-only + smoke UI；第一次 native-only 命中 unrelated analysis read-count 抖动，立即重跑通过。
 
-46. [ ] `PresentDecisionFrameQuery`
-   - 后续把 `Renderer::has_any_frame()` 这种纯 `PresentDecision` 查询迁入 present policy，Renderer 只保留 fallback 调度。
+46. [x] `PresentDecisionFrameQuery`
+   - 已把 `Renderer::has_any_frame()` 这种纯 `PresentDecision` 查询迁入 present policy，Renderer 只保留 fallback 调度。
+   - 验证：native-only + smoke UI。
+
+47. [ ] `PreviewPolicyPresentDecisionQueryReuse`
+   - 后续移除 `track_preview_policy` 中重复的匿名 frame-presence helper，复用 present policy 的共享查询。
    - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split

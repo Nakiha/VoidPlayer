@@ -293,9 +293,6 @@ private:
     /// Issue GPU fence and spin-wait for completion without publishing buffers.
     void wait_gpu_idle(const char* label);
 
-    /// Check if any frame slot in a PresentDecision has a value.
-    static bool has_any_frame(const PresentDecision& decision);
-
     /// Find the first active track slot (for clock reference).
     /// Returns -1 if no tracks are active.
     int first_active_track() const;

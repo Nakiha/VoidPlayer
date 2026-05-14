@@ -12,6 +12,8 @@ struct EmptyBufferEofClamp {
     int64_t max_end_pts_us = 0;
 };
 
+bool present_decision_has_frame(const PresentDecision& decision);
+
 void apply_present_carry_forward(
     const TrackPipelineManager& tracks,
     const PresentDecision& last_decision,

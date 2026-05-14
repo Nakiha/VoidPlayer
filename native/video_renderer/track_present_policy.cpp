@@ -5,6 +5,15 @@
 
 namespace vr {
 
+bool present_decision_has_frame(const PresentDecision& decision) {
+    for (const auto& frame : decision.frames) {
+        if (frame.has_value()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void apply_present_carry_forward(
     const TrackPipelineManager& tracks,
     const PresentDecision& last_decision,

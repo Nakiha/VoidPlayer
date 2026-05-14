@@ -122,6 +122,7 @@ Fixed or reduced:
 - `Renderer`: perf baseline timer/frame reset state moved into `TrackPerfBaselineTracker`.
 - `Renderer`: initial video-path open/start loop moved into `track_lifecycle`.
 - `Renderer`: shutdown resource-presence predicate centralized and now uses `TrackPipelineManager` active-track query.
+- `Renderer`: pure present-decision frame-presence query moved into `track_present_policy`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
 - `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `ffi_exports.cpp`: playback/query/track/layout command bodies moved into `ffi_player_commands` with focused command tests.
@@ -145,7 +146,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P90 Renderer Present-Decision Frame Query Boundary.
+Next patch: P91 Preview Policy Present-Decision Query Reuse.
 
 ### P30 - VACache Atomic Publish
 
@@ -1439,11 +1440,33 @@ Result:
 
 ### P90 - Renderer Present-Decision Frame Query Boundary
 
+Status: done in Patch 90.
+
 Goal:
 
 - Move the pure `PresentDecision` frame-presence query out of `Renderer`.
 - Keep render-loop fallback behavior unchanged.
 - Add focused policy coverage for empty and populated decisions.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Added `present_decision_has_frame` to `track_present_policy`.
+- Removed `Renderer::has_any_frame` and switched render-loop fallback paths to the policy helper.
+- Added focused native coverage for empty and populated decisions.
+- Verified with native-only tests plus rebuilt smoke UI.
+
+### P91 - Preview Policy Present-Decision Query Reuse
+
+Goal:
+
+- Remove the duplicate anonymous frame-presence helper from `track_preview_policy`.
+- Reuse `track_present_policy` for the shared `PresentDecision` query.
+- Keep paused preview readiness behavior unchanged.
 
 Validation:
 

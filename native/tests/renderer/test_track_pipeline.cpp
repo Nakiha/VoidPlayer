@@ -1081,6 +1081,18 @@ TEST_CASE("TrackPreviewPolicy builds available paused frame snapshots",
     REQUIRE(snapshot.decision.frames[3]->pts_us == 3000);
 }
 
+TEST_CASE("TrackPresentPolicy detects frames in present decisions",
+          "[track_pipeline][track_present_policy]") {
+    PresentDecision decision;
+    REQUIRE_FALSE(present_decision_has_frame(decision));
+
+    TextureFrame frame;
+    frame.pts_us = 1234;
+    decision.frames[2] = frame;
+
+    REQUIRE(present_decision_has_frame(decision));
+}
+
 TEST_CASE("TrackPresentPolicy carries forward active last frames",
           "[track_pipeline][track_present_policy]") {
     const auto make_track = [](int64_t offset_us) {

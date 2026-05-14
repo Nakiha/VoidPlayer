@@ -815,7 +815,7 @@ void Renderer::draw_paused_frame(const char* reason) {
     auto snapshot = build_available_paused_frame_snapshot(tracks_);
     PresentDecision decision = snapshot.decision;
     bool has_frame = snapshot.has_frame;
-    if (!has_frame && has_any_frame(last_decision_)) {
+    if (!has_frame && present_decision_has_frame(last_decision_)) {
         decision = last_decision_;
         has_frame = true;
     }
@@ -958,13 +958,6 @@ bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int&
     }
     return frame_capture_.capture_headless_front_buffer(
         *headless_output_, device_mutex_, bgra, width, height);
-}
-
-bool Renderer::has_any_frame(const PresentDecision& decision) {
-    for (auto& f : decision.frames) {
-        if (f.has_value()) return true;
-    }
-    return false;
 }
 
 void Renderer::set_decode_paused_for_all_tracks(bool paused) {
@@ -1340,7 +1333,7 @@ void Renderer::render_loop() {
                 bool drawn = false;
 
                 // Try cached last frame first (for layout changes while paused)
-                if (has_any_frame(last_decision_)) {
+                if (present_decision_has_frame(last_decision_)) {
                     present_frame(last_decision_);
                     drawn = true;
                     spdlog::debug("[Renderer] Paused frame (cached): pts={:.3f}s",
@@ -1421,7 +1414,7 @@ void Renderer::render_loop() {
             last_decision_ = decision;
         } else if (!preview_drawn_) {
             // No new frame but layout changed (e.g. zoom/pan during playback)
-            if (has_any_frame(last_decision_)) {
+            if (present_decision_has_frame(last_decision_)) {
                 redraw_layout();
             }
         }

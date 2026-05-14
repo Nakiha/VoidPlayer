@@ -10,6 +10,7 @@
 #include <cstring>
 #include <atomic>
 #include <filesystem>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -83,6 +84,45 @@ vr::analysis::VachunkData make_overlay_chunk(uint32_t start_frame,
     data.sections.push_back(
         vr::analysis::make_vachunk_record_section("CU4R", records));
     return data;
+}
+
+bool set_overlay_frame_qp(vr::analysis::VachunkData& data,
+                          uint32_t local_frame,
+                          uint8_t qp) {
+    bool updated_summary = false;
+    bool updated_record = false;
+    for (auto& section : data.sections) {
+        const std::string type(section.type, section.type + 4);
+        if (type == "FSUM") {
+            if (section.entry_size != sizeof(VachunkFrameSummary) ||
+                local_frame >= section.entry_count) {
+                return false;
+            }
+            const size_t offset =
+                static_cast<size_t>(local_frame) * sizeof(VachunkFrameSummary);
+            VachunkFrameSummary summary{};
+            std::memcpy(&summary, section.bytes.data() + offset, sizeof(summary));
+            summary.avg_qp = qp;
+            summary.qp_min = qp;
+            summary.qp_max = qp;
+            std::memcpy(section.bytes.data() + offset, &summary, sizeof(summary));
+            updated_summary = true;
+        } else if (type == "CU4R") {
+            if (section.entry_size != sizeof(vr::analysis::VachunkCuRecord) ||
+                local_frame >= section.entry_count) {
+                return false;
+            }
+            const size_t offset =
+                static_cast<size_t>(local_frame) *
+                sizeof(vr::analysis::VachunkCuRecord);
+            vr::analysis::VachunkCuRecord record{};
+            std::memcpy(&record, section.bytes.data() + offset, sizeof(record));
+            record.common.qp = qp;
+            std::memcpy(section.bytes.data() + offset, &record, sizeof(record));
+            updated_record = true;
+        }
+    }
+    return updated_summary && updated_record;
 }
 
 vr::analysis::Vac2BaseData make_vacache_base_data(uint64_t content_revision) {
@@ -523,6 +563,19 @@ TEST_CASE("VACHUNK: overlay chunk carries frame data",
         REQUIRE(frame0.cus[0].common.bit_count == 128);
     }
 
+    vr::analysis::DecodedOverlayChunk decoded_chunk;
+    REQUIRE(vr::analysis::read_overlay_vachunk_chunk(chunk, decoded_chunk));
+    vr::analysis::VachunkOverlayFrameData decoded_frame1;
+    REQUIRE(vr::analysis::read_overlay_vachunk_frame(
+        decoded_chunk,
+        1,
+        decoded_frame1));
+    REQUIRE(decoded_frame1.summary.avg_qp == 23);
+    REQUIRE(decoded_frame1.cus.size() == 1);
+    if (!decoded_frame1.cus.empty()) {
+        REQUIRE(decoded_frame1.cus[0].common.qp == 23);
+    }
+
     vr::analysis::VachunkOverlayFrameData missing;
     REQUIRE_FALSE(vr::analysis::read_overlay_vachunk_frame(chunk, 2, missing));
 
@@ -651,8 +704,9 @@ TEST_CASE("AnalysisManager: reads VAC2 base with overlay chunks",
 
     auto chunk_data = make_overlay_chunk(0, 1);
     chunk_data.base_content_revision = base.content_revision;
+    const auto chunk_path = overlay_dir / "overlay_00000000_00000001_g1.vck";
     REQUIRE(vr::analysis::write_vachunk_file(
-        (overlay_dir / "overlay_00000000_00000001_g1.vck").string(),
+        chunk_path.string(),
         chunk_data));
 
     const auto frame0 = manager.read_overlay_frame(0);
@@ -660,6 +714,27 @@ TEST_CASE("AnalysisManager: reads VAC2 base with overlay chunks",
     REQUIRE(frame0.cus.size() == 1);
     if (!frame0.cus.empty()) {
         REQUIRE(frame0.cus[0].common.qp == 22);
+    }
+
+    auto replacement_chunk_data = make_overlay_chunk(0, 2);
+    replacement_chunk_data.base_content_revision = base.content_revision;
+    replacement_chunk_data.generator_revision = chunk_data.generator_revision;
+    REQUIRE(set_overlay_frame_qp(replacement_chunk_data, 0, 56));
+    REQUIRE(set_overlay_frame_qp(replacement_chunk_data, 1, 57));
+    REQUIRE(vr::analysis::write_vachunk_file(
+        chunk_path.string(),
+        replacement_chunk_data));
+    const auto replaced_frame0 = manager.read_overlay_frame(0);
+    REQUIRE(replaced_frame0.summary.avg_qp == 56);
+    REQUIRE(replaced_frame0.cus.size() == 1);
+    if (!replaced_frame0.cus.empty()) {
+        REQUIRE(replaced_frame0.cus[0].common.qp == 56);
+    }
+    const auto replaced_frame1 = manager.read_overlay_frame(1);
+    REQUIRE(replaced_frame1.summary.avg_qp == 57);
+    REQUIRE(replaced_frame1.cus.size() == 1);
+    if (!replaced_frame1.cus.empty()) {
+        REQUIRE(replaced_frame1.cus[0].common.qp == 57);
     }
 
     auto newer_chunk_data = make_overlay_chunk(0, 1);

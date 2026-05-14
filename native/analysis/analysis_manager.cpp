@@ -4,8 +4,42 @@
 #include <algorithm>
 #include <filesystem>
 #include <limits>
+#include <utility>
 
 namespace vr::analysis {
+namespace {
+
+constexpr size_t kDecodedOverlayChunkCacheLimit = 3;
+
+struct FileFingerprint {
+    bool valid = false;
+    uint64_t file_size = 0;
+    std::filesystem::file_time_type write_time{};
+};
+
+FileFingerprint read_file_fingerprint(const std::string& path) {
+    FileFingerprint fingerprint;
+    const auto fs_path = win_utf8::path_from_utf8(path);
+    std::error_code ec;
+    const auto file_size = std::filesystem::file_size(fs_path, ec);
+    if (ec) return fingerprint;
+    const auto write_time = std::filesystem::last_write_time(fs_path, ec);
+    if (ec) return fingerprint;
+    fingerprint.valid = true;
+    fingerprint.file_size = static_cast<uint64_t>(file_size);
+    fingerprint.write_time = write_time;
+    return fingerprint;
+}
+
+bool same_file_fingerprint(const FileFingerprint& lhs,
+                           const FileFingerprint& rhs) {
+    return lhs.valid &&
+           rhs.valid &&
+           lhs.file_size == rhs.file_size &&
+           lhs.write_time == rhs.write_time;
+}
+
+} // namespace
 
 AnalysisManager& AnalysisManager::instance() {
     static AnalysisManager mgr;
@@ -133,6 +167,8 @@ void AnalysisManager::refresh_overlay_chunk_index_locked(const Session& session)
     session.overlay_chunk_index_loaded = true;
     session.overlay_chunk_index.clear();
     session.overlay_frame_cache = {};
+    session.overlay_decoded_chunk_cache.clear();
+    session.overlay_decoded_chunk_cache_clock = 0;
     if (session.analysis_path.empty()) return;
 
     const auto base_path = win_utf8::path_from_utf8(session.analysis_path);
@@ -196,23 +232,79 @@ VachunkOverlayFrameData AnalysisManager::read_overlay_frame_from_index_locked(
 
     if (!best) return result;
 
+    const auto frame_cache_fingerprint = read_file_fingerprint(best->path);
     if (session.overlay_frame_cache.valid &&
         session.overlay_frame_cache.frame_index == target &&
-        session.overlay_frame_cache.chunk_path == best->path) {
+        session.overlay_frame_cache.chunk_path == best->path &&
+        frame_cache_fingerprint.valid &&
+        session.overlay_frame_cache.file_size == frame_cache_fingerprint.file_size &&
+        session.overlay_frame_cache.write_time == frame_cache_fingerprint.write_time) {
         return session.overlay_frame_cache.data;
     }
 
-    VachunkFile chunk;
-    if (!chunk.open(best->path)) return result;
+    const auto* decoded_entry =
+        decoded_overlay_chunk_for_path_locked(session, best->path);
+    if (!decoded_entry) return result;
     VachunkOverlayFrameData frame;
-    if (!read_overlay_vachunk_frame(chunk, target, frame)) return result;
+    if (!read_overlay_vachunk_frame(decoded_entry->chunk, target, frame)) return result;
     result.summary = frame.summary;
     result.cus = std::move(frame.cus);
     session.overlay_frame_cache.valid = true;
     session.overlay_frame_cache.frame_index = target;
     session.overlay_frame_cache.chunk_path = best->path;
+    session.overlay_frame_cache.write_time = decoded_entry->write_time;
+    session.overlay_frame_cache.file_size = decoded_entry->file_size;
     session.overlay_frame_cache.data = result;
     return result;
+}
+
+const AnalysisManager::OverlayDecodedChunkCacheEntry*
+AnalysisManager::decoded_overlay_chunk_for_path_locked(
+    const Session& session,
+    const std::string& path) const {
+    const auto before = read_file_fingerprint(path);
+    if (!before.valid) return nullptr;
+
+    const uint64_t use_token = ++session.overlay_decoded_chunk_cache_clock;
+    auto& cache = session.overlay_decoded_chunk_cache;
+    for (auto it = cache.begin(); it != cache.end(); ++it) {
+        if (it->path != path) continue;
+        if (it->file_size == before.file_size &&
+            it->write_time == before.write_time) {
+            it->last_used = use_token;
+            return &(*it);
+        }
+        cache.erase(it);
+        break;
+    }
+
+    VachunkFile chunk;
+    if (!chunk.open(path)) return nullptr;
+    DecodedOverlayChunk decoded;
+    if (!read_overlay_vachunk_chunk(chunk, decoded)) return nullptr;
+
+    const auto after = read_file_fingerprint(path);
+    if (!same_file_fingerprint(before, after)) return nullptr;
+
+    if (cache.size() >= kDecodedOverlayChunkCacheLimit) {
+        const auto oldest = std::min_element(
+            cache.begin(),
+            cache.end(),
+            [](const auto& lhs, const auto& rhs) {
+                return lhs.last_used < rhs.last_used;
+            });
+        if (oldest != cache.end()) {
+            cache.erase(oldest);
+        }
+    }
+    cache.push_back(OverlayDecodedChunkCacheEntry{
+        path,
+        after.write_time,
+        after.file_size,
+        use_token,
+        std::move(decoded),
+    });
+    return &cache.back();
 }
 
 bool AnalysisManager::set_overlay_track(int track_file_id, const std::string& analysis_path) {

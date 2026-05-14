@@ -60,10 +60,10 @@ Fixed:
 - AnalysisManager lifecycle data race: session snapshots replace mutable singleton session reads.
 - Overlay chunk consistency: chunk index filters by codec, base content revision, track index, and required CU geometry features.
 - VACache publication: cache files are published through atomic replace without deleting the final path first, and tmp names are unique across path/PID/TID/counter/time tokens.
+- VACHUNK hot-path IO/memory amplification: overlay chunks are decoded once into a small per-session LRU keyed by path and file metadata; adjacent frame reads slice cached decoded sections instead of re-opening and re-decoding every section.
 
 Active backlog:
 
-- VACHUNK hot-path IO/memory amplification: reading one frame can decode/copy whole chunk sections repeatedly.
 - `overlay_raster.cpp` helper hardening: aliasing, zero-size, and size-multiply overflow guards.
 - D3D overlay pass state contract: mask/color/invert pass state ownership and SRV/RTV hazard rules need to be explicit.
 - High-resolution and tiny-rect overlay precision tests for 16-bit packed rects.
@@ -95,7 +95,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P31 VACHUNK Hot-Path Cache.
+Next patch: P32 Overlay Raster Hardening.
 
 ### P30 - VACache Atomic Publish
 
@@ -121,6 +121,8 @@ Validation:
 
 ### P31 - VACHUNK Hot-Path Cache
 
+Status: done in Patch 31.
+
 Source: `review_overlay.md`.
 
 Goal:
@@ -138,7 +140,7 @@ Likely files:
 Validation:
 
 - `python dev.py test --native-only`
-- analysis UI smoke if render-path behavior changes.
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/overlay_controls_h264.csv`
 
 ### P32 - Overlay Raster Hardening
 

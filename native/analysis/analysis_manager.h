@@ -65,7 +65,17 @@ private:
         bool valid = false;
         uint32_t frame_index = 0;
         std::string chunk_path;
+        std::filesystem::file_time_type write_time{};
+        uint64_t file_size = 0;
         VachunkOverlayFrameData data;
+    };
+
+    struct OverlayDecodedChunkCacheEntry {
+        std::string path;
+        std::filesystem::file_time_type write_time{};
+        uint64_t file_size = 0;
+        uint64_t last_used = 0;
+        DecodedOverlayChunk chunk;
     };
 
     struct Session {
@@ -76,6 +86,8 @@ private:
         mutable std::filesystem::file_time_type overlay_chunk_index_write_time{};
         mutable std::vector<OverlayChunkIndexEntry> overlay_chunk_index;
         mutable OverlayFrameCache overlay_frame_cache;
+        mutable uint64_t overlay_decoded_chunk_cache_clock = 0;
+        mutable std::vector<OverlayDecodedChunkCacheEntry> overlay_decoded_chunk_cache;
     };
 
     std::shared_ptr<const Session> session_snapshot() const;
@@ -87,6 +99,9 @@ private:
     VachunkOverlayFrameData read_overlay_frame_from_index_locked(
         const Session& session,
         int frame_idx) const;
+    const OverlayDecodedChunkCacheEntry* decoded_overlay_chunk_for_path_locked(
+        const Session& session,
+        const std::string& path) const;
 
     mutable std::mutex session_mutex_;
     std::shared_ptr<const Session> session_;

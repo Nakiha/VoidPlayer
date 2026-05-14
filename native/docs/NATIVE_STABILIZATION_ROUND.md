@@ -85,6 +85,7 @@ Fixed or reduced:
 - `Renderer`: layout state/constants moved to layout-owned helpers; `Renderer` now snapshots track geometry and delegates shader layout math to `layout_geometry`.
 - `Renderer`: render-loop debounce, diagnostics cadence, and frame-deadline sleep policy moved into `RenderLoopController`.
 - `ffi_exports.cpp`: player handle registry, gate lease, thread-local last error, and per-player error state moved into `ffi_player_registry`.
+- `ffi_exports.cpp`: ABI/config/log/layout/seek enum marshalling moved into `ffi_marshalling` with focused tests, leaving exported functions thinner.
 - `TrackPipelineManager`: demux/decode pipeline construction moved into `TrackPipelineFactory`, leaving manager focused on slot storage, stop, and compact.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
@@ -95,7 +96,7 @@ Fixed or reduced:
 Still active:
 
 - `Renderer` remains the coordination root.
-- `ffi_exports.cpp` still carries ABI guard, marshalling, and command dispatch density.
+- `ffi_exports.cpp` still carries lifecycle/playback/track command dispatch density and a few command validators.
 - Track lifecycle start/recreate/rollback order is still shared between `Renderer` and track helpers.
 - `DecodeThread` main loop still owns codec send/receive, EOF drain, AVFrame ownership, and hardware visibility transitions.
 - Target/feature boundaries are still too coupled.
@@ -103,7 +104,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P47 FFI Command/Marshalling Split.
+Next patch: P48 FFI Player Command Body Split.
 
 ### P30 - VACache Atomic Publish
 
@@ -476,6 +477,8 @@ Result:
 
 ### P47 - FFI Command/Marshalling Split
 
+Status: done in Patch 47 for the marshalling half; command-body split continues as P48.
+
 Goal:
 
 - Continue P42 by moving UTF-8/path marshalling and typed command bodies out of `ffi_exports.cpp`.
@@ -485,6 +488,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - FFI C validation already included in native tests.
+
+Result:
+
+- Added `ffi_marshalling` for ABI size/version checks, log config conversion, v1/v2 player config conversion, layout state conversion, and seek enum conversion.
+- Reduced `ffi_exports.cpp` by moving struct/path marshalling out while preserving exported function names and status/last-error behavior.
+- Added focused native tests for counted paths, log config, layout roundtrip, invalid counted-path storage, and seek enum conversion.
+- Verified with native-only tests, C FFI validation, and a rebuilt Flutter smoke UI script.
+
+### P48 - FFI Player Command Body Split
+
+Goal:
+
+- Move repetitive checked-player command bodies for playback, query, track, and layout operations behind typed helper functions.
+- Keep extern "C" functions as ABI shells and avoid changing legacy wrapper return semantics.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
 
 ## Do-Not-Drift List
 

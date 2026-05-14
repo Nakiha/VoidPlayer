@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "test_utils.h"
+#include "video_renderer/layout_geometry.h"
 #include "video_renderer/track_lifecycle.h"
 #include "video_renderer/track_pipeline_factory.h"
 #include "video_renderer/track_preroll_policy.h"
@@ -207,6 +208,42 @@ TEST_CASE("TrackPipelineManager exposes active track queries",
     manager.clear();
     REQUIRE(manager.count() == 0);
     REQUIRE(manager.first_active_slot() == -1);
+}
+
+TEST_CASE("LayoutGeometry snapshots track geometry",
+          "[track_pipeline][layout_geometry]") {
+    TrackPipelineManager empty_manager;
+    auto empty = snapshot_layout_track_geometry(empty_manager);
+    for (const auto& track : empty) {
+        REQUIRE_FALSE(track.active);
+        REQUIRE(track.width == 0);
+        REQUIRE(track.height == 0);
+        REQUIRE(track.aspect == 1.0f);
+    }
+
+    TrackPipelineManager manager;
+    auto primary = std::make_unique<TrackPipeline>();
+    primary->video_width = 1920;
+    primary->video_height = 1080;
+    primary->video_aspect = 16.0f / 9.0f;
+    manager[0] = std::move(primary);
+
+    auto secondary = std::make_unique<TrackPipeline>();
+    secondary->video_width = 1280;
+    secondary->video_height = 720;
+    secondary->video_aspect = 4.0f / 3.0f;
+    manager[2] = std::move(secondary);
+
+    auto geometry = snapshot_layout_track_geometry(manager);
+    REQUIRE(geometry[0].active);
+    REQUIRE(geometry[0].width == 1920);
+    REQUIRE(geometry[0].height == 1080);
+    REQUIRE(geometry[0].aspect == 16.0f / 9.0f);
+    REQUIRE_FALSE(geometry[1].active);
+    REQUIRE(geometry[2].active);
+    REQUIRE(geometry[2].width == 1280);
+    REQUIRE(geometry[2].height == 720);
+    REQUIRE(geometry[2].aspect == 4.0f / 3.0f);
 }
 
 TEST_CASE("TrackSnapshot builds track metadata",

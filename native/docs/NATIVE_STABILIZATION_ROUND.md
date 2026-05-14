@@ -83,6 +83,7 @@ Fixed or reduced:
 - `AnalysisManager`: session snapshot split reduced global session risk.
 - `Renderer`: analysis overlay CPU cache, D3D overlay resource helpers, mask pass, and overlay draw pass moved into `AnalysisOverlayRenderer`; `Renderer` now delegates the overlay pass after the base frame draw.
 - `Renderer`: layout state/constants moved to layout-owned helpers; `Renderer` now snapshots track geometry and delegates shader layout math to `layout_geometry`.
+- `Renderer`: layout track geometry snapshot helper moved into `layout_geometry`.
 - `Renderer`: render-loop debounce, diagnostics cadence, and frame-deadline sleep policy moved into `RenderLoopController`.
 - `Renderer`: remove-track stop/compact render-sink/presenter slot side effects and cached `PresentDecision` frame compaction moved into `track_lifecycle`.
 - `Renderer`: add-track current-clock seek target clamp, buffer/queue flush, audio pause, and seek type choice moved into `track_lifecycle`.
@@ -138,7 +139,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P83 Renderer Layout Track Geometry Snapshot Boundary.
+Next patch: P84 Renderer Initial Render-Sink Binding Boundary.
 
 ### P30 - VACache Atomic Publish
 
@@ -1279,6 +1280,8 @@ Result:
 
 ### P83 - Renderer Layout Track Geometry Snapshot Boundary
 
+Status: done in Patch 83.
+
 Goal:
 
 - Move `snapshot_layout_track_geometry` out of `renderer.cpp` and into the layout-owned helper module.
@@ -1289,6 +1292,26 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewport_pan_layout_regression.csv`
+
+Result:
+
+- Moved `snapshot_layout_track_geometry` into `layout_geometry`.
+- Removed the anonymous layout snapshot helper from `renderer.cpp`.
+- Added native coverage for inactive slots and active slot width/height/aspect snapshots.
+- Verified with native-only tests plus rebuilt smoke and viewport pan/layout UI.
+
+### P84 - Renderer Initial Render-Sink Binding Boundary
+
+Goal:
+
+- Move initial active-track-to-`RenderSink` binding out of `Renderer::initialize`.
+- Keep `Renderer` responsible for constructing the `RenderSink` with the playback clock.
+- Preserve slot-to-track-buffer binding semantics.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
 
 ## Do-Not-Drift List
 

@@ -55,20 +55,6 @@ bool is_h264_flv_track(const TrackPipeline& track) {
     return format.find("flv") != std::string::npos;
 }
 
-LayoutTrackGeometryList snapshot_layout_track_geometry(const TrackPipelineManager& tracks) {
-    LayoutTrackGeometryList result = {};
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks[i]) {
-            continue;
-        }
-        result[i].active = true;
-        result[i].width = tracks[i]->video_width;
-        result[i].height = tracks[i]->video_height;
-        result[i].aspect = tracks[i]->video_aspect;
-    }
-    return result;
-}
-
 Renderer::Renderer()
     : owned_playback_(std::make_unique<PlaybackController>(create_default_audio_output))
     , playback_(owned_playback_.get())

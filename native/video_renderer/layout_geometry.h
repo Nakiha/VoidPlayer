@@ -3,6 +3,7 @@
 #include "video_renderer/layout_state.h"
 #include "video_renderer/shader_constants.h"
 #include "video_renderer/sync/render_sink.h"
+#include "video_renderer/track_pipeline.h"
 
 #include <array>
 #include <utility>
@@ -17,6 +18,9 @@ struct LayoutTrackGeometry {
 };
 
 using LayoutTrackGeometryList = std::array<LayoutTrackGeometry, kMaxTracks>;
+
+LayoutTrackGeometryList snapshot_layout_track_geometry(
+    const TrackPipelineManager& tracks);
 
 std::pair<float, float> display_pixel_size_for_layout(
     int width,

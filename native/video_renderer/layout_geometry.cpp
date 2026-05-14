@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 namespace vr {
 namespace {
@@ -83,6 +84,21 @@ int first_display_track(const LayoutState& layout, const LayoutTrackGeometryList
 }
 
 } // namespace
+
+LayoutTrackGeometryList snapshot_layout_track_geometry(
+    const TrackPipelineManager& tracks) {
+    LayoutTrackGeometryList result = {};
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks[i]) {
+            continue;
+        }
+        result[i].active = true;
+        result[i].width = tracks[i]->video_width;
+        result[i].height = tracks[i]->video_height;
+        result[i].aspect = tracks[i]->video_aspect;
+    }
+    return result;
+}
 
 std::pair<float, float> display_pixel_size_for_layout(
     int width,

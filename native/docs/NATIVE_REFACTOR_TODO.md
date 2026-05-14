@@ -317,9 +317,13 @@ TODO:
    - 已把 `draw_paused_frame()` 的 current-frame snapshot 组装拆到 `track_preview_policy`，Renderer 保留 last-decision fallback、present、clock/log ref selection 和 commit。
    - 验证：native-only + smoke UI。
 
-39. [ ] `LayoutTrackGeometrySnapshot`
-   - 后续把 `snapshot_layout_track_geometry` 从 `renderer.cpp` 移入 layout-owned helper，Renderer 只传入 track manager 给 shader constants。
+39. [x] `LayoutTrackGeometrySnapshot`
+   - 已把 `snapshot_layout_track_geometry` 从 `renderer.cpp` 移入 `layout_geometry`，Renderer 只传入 track manager 给 shader constants。
    - 验证：native-only + smoke/viewport UI。
+
+40. [ ] `InitialRenderSinkBinding`
+   - 后续把 `Renderer::initialize()` 中 active track 到 `RenderSink` 的初始 slot binding 循环拆到 lifecycle helper，Renderer 保留 render sink 构造。
+   - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split
 

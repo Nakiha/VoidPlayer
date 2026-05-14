@@ -2,6 +2,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include "analysis/cache/vacache_store.h"
 #include "analysis/cache/overlay_chunk.h"
+#include "analysis/cache/overlay_raster.h"
 #include "analysis/analysis_manager.h"
 #include "analysis/parsers/vac2_parser.h"
 #include "analysis/parsers/vachunk_parser.h"
@@ -10,6 +11,7 @@
 #include <cstring>
 #include <atomic>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <thread>
 #include <vector>
@@ -602,6 +604,71 @@ TEST_CASE("VACHUNK: overlay chunk carries frame data",
     REQUIRE_FALSE(vr::analysis::read_overlay_vachunk_frame(window_chunk, 0, missing));
     window_chunk.close();
     fs::remove(window_path);
+}
+
+TEST_CASE("Overlay raster: fills BGRA spans and guards invalid surfaces",
+          "[analysis][overlay][raster]") {
+    std::vector<uint8_t> pixels(8, 0);
+    vr::analysis::OverlayRasterStats stats;
+    vr::analysis::fill_overlay_rect(
+        pixels,
+        2,
+        1,
+        0,
+        0,
+        2,
+        1,
+        vr::analysis::OverlayColor{1, 2, 3, 4},
+        &stats);
+    REQUIRE(stats.filled_pixels == 2);
+    REQUIRE(pixels == std::vector<uint8_t>{1, 2, 3, 4, 1, 2, 3, 4});
+
+    const std::vector<uint8_t> sentinel{9, 9, 9, 9};
+    std::vector<uint8_t> invalid = sentinel;
+    vr::analysis::blend_overlay_pixel(
+        invalid,
+        0,
+        1,
+        0,
+        0,
+        vr::analysis::OverlayColor{1, 2, 3, 4});
+    vr::analysis::fill_overlay_rect(
+        invalid,
+        -1,
+        1,
+        0,
+        0,
+        1,
+        1,
+        vr::analysis::OverlayColor{1, 2, 3, 4},
+        &stats);
+    vr::analysis::stroke_overlay_rect_mask(invalid, 0, 0, 0, 0, 1, 1);
+    vr::analysis::stroke_overlay_rect_mask8(invalid, 0, 0, 0, 0, 1, 1);
+    REQUIRE(invalid == sentinel);
+
+    vr::analysis::VachunkOverlayFrameData frame;
+    std::vector<uint8_t> heatmap = sentinel;
+    REQUIRE_FALSE(vr::analysis::raster_overlay_heatmap(
+        frame,
+        1,
+        1,
+        0,
+        1,
+        vr::analysis::OverlayHeatmapMode::Qp,
+        255,
+        heatmap));
+    REQUIRE(heatmap == sentinel);
+
+    REQUIRE_FALSE(vr::analysis::raster_overlay_heatmap(
+        frame,
+        1,
+        1,
+        std::numeric_limits<int>::max(),
+        std::numeric_limits<int>::max(),
+        vr::analysis::OverlayHeatmapMode::Qp,
+        255,
+        heatmap));
+    REQUIRE(heatmap == sentinel);
 }
 
 TEST_CASE("AnalysisManager: reads VAC2 base with overlay chunks",

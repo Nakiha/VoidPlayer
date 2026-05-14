@@ -61,10 +61,10 @@ Fixed:
 - Overlay chunk consistency: chunk index filters by codec, base content revision, track index, and required CU geometry features.
 - VACache publication: cache files are published through atomic replace without deleting the final path first, and tmp names are unique across path/PID/TID/counter/time tokens.
 - VACHUNK hot-path IO/memory amplification: overlay chunks are decoded once into a small per-session LRU keyed by path and file metadata; adjacent frame reads slice cached decoded sections instead of re-opening and re-decoding every section.
+- `overlay_raster.cpp` helper hardening: BGRA fill no longer writes through aliased `uint32_t*`, public raster helpers guard invalid surfaces, and heatmap output rejects overflow or oversized allocations before resizing.
 
 Active backlog:
 
-- `overlay_raster.cpp` helper hardening: aliasing, zero-size, and size-multiply overflow guards.
 - D3D overlay pass state contract: mask/color/invert pass state ownership and SRV/RTV hazard rules need to be explicit.
 - High-resolution and tiny-rect overlay precision tests for 16-bit packed rects.
 - Overlay generation budget should honor current-hash remaining budget, not only raw max cache bytes.
@@ -95,7 +95,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P32 Overlay Raster Hardening.
+Next patch: P33 D3D Overlay Pass Contract.
 
 ### P30 - VACache Atomic Publish
 
@@ -144,6 +144,8 @@ Validation:
 
 ### P32 - Overlay Raster Hardening
 
+Status: done in Patch 32.
+
 Source: `review_overlay.md`.
 
 Goal:
@@ -161,6 +163,7 @@ Likely files:
 Validation:
 
 - `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/overlay_controls_h264.csv`
 
 ### P33 - D3D Overlay Pass Contract
 
@@ -213,7 +216,7 @@ These are real, but lower priority than the overlay backlog above:
 ## Do-Not-Drift List
 
 - Do not prioritize runner plugin cosmetics while `review_overlay.md` P1 items remain open.
-- Do not start a large Renderer split before P31-P33 are handled.
+- Do not start a large Renderer split before P33 is handled.
 - Do not add broad fallback image conversion libraries; pixel-format support must stay deterministic.
 - Do not batch unrelated cleanup with behavior fixes.
 - Do not mark a chat item fixed without a test or an explicit documented coverage gap.

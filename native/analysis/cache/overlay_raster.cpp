@@ -4,15 +4,39 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 namespace vr::analysis {
 namespace {
 
-uint32_t pack_bgra(OverlayColor color) {
-    return static_cast<uint32_t>(color.b) |
-           (static_cast<uint32_t>(color.g) << 8) |
-           (static_cast<uint32_t>(color.r) << 16) |
-           (static_cast<uint32_t>(color.a) << 24);
+bool surface_byte_size(int width,
+                       int height,
+                       size_t bytes_per_pixel,
+                       size_t& out) {
+    out = 0;
+    if (width <= 0 || height <= 0 || bytes_per_pixel == 0) {
+        return false;
+    }
+    const size_t w = static_cast<size_t>(width);
+    const size_t h = static_cast<size_t>(height);
+    if (w > std::numeric_limits<size_t>::max() / h) {
+        return false;
+    }
+    const size_t pixels = w * h;
+    if (pixels > std::numeric_limits<size_t>::max() / bytes_per_pixel) {
+        return false;
+    }
+    out = pixels * bytes_per_pixel;
+    return true;
+}
+
+bool surface_has_bytes(const std::vector<uint8_t>& pixels,
+                       int width,
+                       int height,
+                       size_t bytes_per_pixel) {
+    size_t expected = 0;
+    return surface_byte_size(width, height, bytes_per_pixel, expected) &&
+           pixels.size() >= expected;
 }
 
 void fill_bgra_span(uint8_t* dst, int pixel_count, OverlayColor color) {
@@ -20,9 +44,10 @@ void fill_bgra_span(uint8_t* dst, int pixel_count, OverlayColor color) {
         return;
     }
 
-    const uint32_t packed = pack_bgra(color);
-    auto* words = reinterpret_cast<uint32_t*>(dst);
-    std::fill_n(words, pixel_count, packed);
+    const uint8_t packed[4] = {color.b, color.g, color.r, color.a};
+    for (int i = 0; i < pixel_count; ++i) {
+        std::memcpy(dst + static_cast<size_t>(i) * 4, packed, sizeof(packed));
+    }
 }
 
 } // namespace
@@ -33,6 +58,9 @@ void blend_overlay_pixel(std::vector<uint8_t>& pixels,
                          int x,
                          int y,
                          OverlayColor color) {
+    if (!surface_has_bytes(pixels, width, height, 4)) {
+        return;
+    }
     if (x < 0 || y < 0 || x >= width || y >= height || color.a == 0) {
         return;
     }
@@ -54,6 +82,9 @@ void fill_overlay_rect(std::vector<uint8_t>& pixels,
                        int y1,
                        OverlayColor color,
                        OverlayRasterStats* stats) {
+    if (!surface_has_bytes(pixels, width, height, 4)) {
+        return;
+    }
     x0 = std::clamp(x0, 0, width);
     x1 = std::clamp(x1, 0, width);
     y0 = std::clamp(y0, 0, height);
@@ -75,6 +106,9 @@ void set_overlay_mask_pixel(std::vector<uint8_t>& pixels,
                             int height,
                             int x,
                             int y) {
+    if (!surface_has_bytes(pixels, width, height, 4)) {
+        return;
+    }
     if (x < 0 || y < 0 || x >= width || y >= height) {
         return;
     }
@@ -92,6 +126,9 @@ void stroke_overlay_rect_mask(std::vector<uint8_t>& pixels,
                               int y0,
                               int x1,
                               int y1) {
+    if (!surface_has_bytes(pixels, width, height, 4)) {
+        return;
+    }
     if (x0 > x1) std::swap(x0, x1);
     if (y0 > y1) std::swap(y0, y1);
     x0 = std::clamp(x0, 0, width - 1);
@@ -114,6 +151,9 @@ void set_overlay_mask_pixel8(std::vector<uint8_t>& pixels,
                              int height,
                              int x,
                              int y) {
+    if (!surface_has_bytes(pixels, width, height, 1)) {
+        return;
+    }
     if (x < 0 || y < 0 || x >= width || y >= height) {
         return;
     }
@@ -127,6 +167,9 @@ void stroke_overlay_rect_mask8(std::vector<uint8_t>& pixels,
                                int y0,
                                int x1,
                                int y1) {
+    if (!surface_has_bytes(pixels, width, height, 1)) {
+        return;
+    }
     if (x0 > x1) std::swap(x0, x1);
     if (y0 > y1) std::swap(y0, y1);
     x0 = std::clamp(x0, 0, width - 1);
@@ -160,6 +203,9 @@ void draw_overlay_line(std::vector<uint8_t>& pixels,
                        int x1,
                        int y1,
                        OverlayColor color) {
+    if (!surface_has_bytes(pixels, width, height, 4)) {
+        return;
+    }
     const int dx = std::abs(x1 - x0);
     const int sx = x0 < x1 ? 1 : -1;
     const int dy = -std::abs(y1 - y0);
@@ -278,11 +324,15 @@ bool raster_overlay_heatmap(const VachunkOverlayFrameData& frame,
                             uint8_t alpha,
                             std::vector<uint8_t>& pixels,
                             OverlayRasterStats* stats) {
-    if (video_width == 0 || video_height == 0 || surface_width <= 0 || surface_height <= 0) {
+    size_t expected = 0;
+    if (video_width == 0 ||
+        video_height == 0 ||
+        !surface_byte_size(surface_width, surface_height, 4, expected)) {
         return false;
     }
-    const size_t expected =
-        static_cast<size_t>(surface_width) * static_cast<size_t>(surface_height) * 4;
+    if (expected > pixels.max_size()) {
+        return false;
+    }
     if (pixels.size() != expected) {
         pixels.resize(expected);
     }

@@ -620,6 +620,27 @@ Follow-up:
 
 - Move diagnostics active-player lookup from process-global registry to plugin/provider scope, then delete the global registry if secondary-engine stats no longer need it.
 
+2026-05-15 Patch 22 - NativeDiagnosticsProvider MethodChannel Payload
+
+Changed:
+
+- Moved MethodChannel `getDiagnostics` payload assembly into `NativeDiagnosticsProvider`.
+- Moved GPU memory breakdown map assembly out of `video_renderer_plugin.cpp`.
+- Kept the active-player lease source and all diagnostics field names unchanged for this slice.
+- Split the diagnostics backlog into completed MethodChannel aggregation and remaining FFI/provider-scope work.
+
+Verified:
+
+- `python dev.py ui-test --build ui_tests/smoke/profiler_overlay.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- Move the FFI flat diagnostics export through the provider, then tackle active-player lookup scope separately.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
@@ -669,6 +690,7 @@ fixed:
 - Windows runner logging/crash bootstrap: Patch 19 moved app-layer logging and crash handler opt-in into `NativeLoggingBootstrap`.
 - Windows runner texture bridge: Patch 20 moved texture registration, shared-handle descriptor fill, release callbacks, and frame notifications into `FlutterTextureBridge`.
 - Windows runner global player state: Patch 21 wrapped the process-global active player weak pointer in `NativePlayerRegistry`.
+- Windows runner MethodChannel diagnostics: Patch 22 moved native/player diagnostics payload assembly into `NativeDiagnosticsProvider`.
 
 accepted-backlog:
 
@@ -723,6 +745,7 @@ fixed:
 - Patch 19 completed the runner `NativeLoggingBootstrap` slice for startup logging and crash handler opt-in.
 - Patch 20 completed the runner `FlutterTextureBridge` slice for Texture registrar and shared-handle callback ownership.
 - Patch 21 completed the first global-player-state slice by wrapping the active player weak pointer in `NativePlayerRegistry`.
+- Patch 22 completed MethodChannel diagnostics aggregation inside `NativeDiagnosticsProvider`.
 
 accepted-backlog:
 

@@ -1,5 +1,7 @@
 #include "native_diagnostics_provider.h"
 
+#include "player/native_player.h"
+
 #include <windows.h>
 #include <dxgi1_4.h>
 #include <psapi.h>
@@ -10,6 +12,96 @@
 
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "psapi.lib")
+
+namespace {
+
+flutter::EncodableMap make_gpu_breakdown_map(const vr::RendererGpuMemoryStats& stats) {
+    flutter::EncodableMap map;
+    map[flutter::EncodableValue("totalEstimatedBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.total_estimated_bytes));
+    map[flutter::EncodableValue("decoderPoolBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.decoder_pool_bytes));
+    map[flutter::EncodableValue("exactSeekSnapshotBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.exact_seek_snapshot_bytes));
+    map[flutter::EncodableValue("presenterTextureBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.presenter_texture_bytes));
+    map[flutter::EncodableValue("headlessOutputBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.headless_output_bytes));
+    map[flutter::EncodableValue("analysisOverlayBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.analysis_overlay_bytes));
+    map[flutter::EncodableValue("cpuFrameBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.cpu_frame_bytes));
+    map[flutter::EncodableValue("trackBufferCpuBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.track_buffer_cpu_bytes));
+    map[flutter::EncodableValue("packetQueueBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.packet_queue_bytes));
+    map[flutter::EncodableValue("exactSeekCandidateCpuBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.exact_seek_candidate_cpu_bytes));
+    map[flutter::EncodableValue("exactSeekStableCpuBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.exact_seek_stable_cpu_bytes));
+    map[flutter::EncodableValue("headlessWidth")] =
+        flutter::EncodableValue(stats.headless_width);
+    map[flutter::EncodableValue("headlessHeight")] =
+        flutter::EncodableValue(stats.headless_height);
+    map[flutter::EncodableValue("headlessBufferCount")] =
+        flutter::EncodableValue(stats.headless_buffer_count);
+    map[flutter::EncodableValue("analysisOverlayWidth")] =
+        flutter::EncodableValue(stats.analysis_overlay_width);
+    map[flutter::EncodableValue("analysisOverlayHeight")] =
+        flutter::EncodableValue(stats.analysis_overlay_height);
+
+    flutter::EncodableList tracks;
+    for (const auto& track : stats.tracks) {
+        flutter::EncodableMap tm;
+        tm[flutter::EncodableValue("slot")] = flutter::EncodableValue(track.slot);
+        tm[flutter::EncodableValue("fileId")] = flutter::EncodableValue(track.file_id);
+        tm[flutter::EncodableValue("hardwareEnabled")] =
+            flutter::EncodableValue(track.hardware_enabled);
+        tm[flutter::EncodableValue("hardwareDownloadToCpu")] =
+            flutter::EncodableValue(track.hardware_download_to_cpu);
+        tm[flutter::EncodableValue("hwFormat")] = flutter::EncodableValue(track.hw_format);
+        tm[flutter::EncodableValue("swFormat")] = flutter::EncodableValue(track.sw_format);
+        tm[flutter::EncodableValue("hwWidth")] = flutter::EncodableValue(track.hw_width);
+        tm[flutter::EncodableValue("hwHeight")] = flutter::EncodableValue(track.hw_height);
+        tm[flutter::EncodableValue("hwInitialPoolSize")] =
+            flutter::EncodableValue(track.hw_initial_pool_size);
+        tm[flutter::EncodableValue("extraHwFrames")] =
+            flutter::EncodableValue(track.extra_hw_frames);
+        tm[flutter::EncodableValue("decoderFrameBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.decoder_frame_bytes));
+        tm[flutter::EncodableValue("decoderPoolBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.decoder_pool_bytes));
+        tm[flutter::EncodableValue("exactSeekSnapshotBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_snapshot_bytes));
+        tm[flutter::EncodableValue("presenterCopyTextureBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.presenter_copy_texture_bytes));
+        tm[flutter::EncodableValue("trackBufferCpuBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.track_buffer_cpu_bytes));
+        tm[flutter::EncodableValue("packetQueueBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.packet_queue_bytes));
+        tm[flutter::EncodableValue("exactSeekCandidateCpuBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_candidate_cpu_bytes));
+        tm[flutter::EncodableValue("exactSeekStableCpuBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_stable_cpu_bytes));
+        tm[flutter::EncodableValue("totalCpuFrameBytes")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.total_cpu_frame_bytes));
+        tm[flutter::EncodableValue("exactSeekReorderCount")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_reorder_count));
+        tm[flutter::EncodableValue("exactSeekPendingCount")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_pending_count));
+        tm[flutter::EncodableValue("exactSeekStableFrameCount")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_stable_frame_count));
+        tm[flutter::EncodableValue("bufferCount")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.buffer_count));
+        tm[flutter::EncodableValue("bufferCapacity")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.buffer_capacity));
+        tracks.push_back(flutter::EncodableValue(tm));
+    }
+    map[flutter::EncodableValue("tracks")] = flutter::EncodableValue(tracks);
+    return map;
+}
+
+} // namespace
 
 ProcessMemoryUsage NativeDiagnosticsProvider::QueryProcessMemoryUsage() const {
     ProcessMemoryUsage usage;
@@ -115,4 +207,61 @@ uint64_t NativeDiagnosticsProvider::QueryDedicatedVideoMemoryUsage() const {
     last_query = now;
     cached_usage = total_usage;
     return cached_usage;
+}
+
+flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
+    const std::shared_ptr<vr::NativePlayer>& active_player) const {
+    flutter::EncodableMap map;
+    const auto process_memory = QueryProcessMemoryUsage();
+    const auto process_heap = QueryProcessHeapUsage();
+    map[flutter::EncodableValue("processRssBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(process_memory.working_set_bytes));
+    map[flutter::EncodableValue("processPrivateBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(process_memory.private_bytes));
+    map[flutter::EncodableValue("processHeapAllocatedBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(process_heap.allocated_bytes));
+    map[flutter::EncodableValue("processHeapCommittedBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(process_heap.committed_bytes));
+    map[flutter::EncodableValue("processHeapReservedBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(process_heap.reserved_bytes));
+    map[flutter::EncodableValue("processHeapCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(process_heap.heap_count));
+    map[flutter::EncodableValue("dedicatedGpuUsageBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(QueryDedicatedVideoMemoryUsage()));
+
+    if (!active_player) {
+        return map;
+    }
+
+    map[flutter::EncodableValue("d3dDeviceLost")] =
+        flutter::EncodableValue(active_player->d3d_device_lost());
+    map[flutter::EncodableValue("d3dDeviceRemovedReason")] =
+        flutter::EncodableValue(static_cast<int64_t>(active_player->d3d_device_removed_reason()));
+    map[flutter::EncodableValue("playbackTime")] =
+        flutter::EncodableValue(static_cast<double>(active_player->current_pts_us()) / 1e6);
+    map[flutter::EncodableValue("isPlaying")] =
+        flutter::EncodableValue(active_player->is_playing());
+
+    flutter::EncodableList tracks_list;
+    for (const auto& ts : active_player->track_perf_stats()) {
+        flutter::EncodableMap tm;
+        tm[flutter::EncodableValue("slot")] = flutter::EncodableValue(ts.slot);
+        tm[flutter::EncodableValue("fileId")] = flutter::EncodableValue(ts.file_id);
+        tm[flutter::EncodableValue("fps")] = flutter::EncodableValue(ts.fps);
+        tm[flutter::EncodableValue("avgDecodeMs")] =
+            flutter::EncodableValue(ts.avg_decode_ms);
+        tm[flutter::EncodableValue("maxDecodeMs")] =
+            flutter::EncodableValue(ts.max_decode_ms);
+        tm[flutter::EncodableValue("bufferCount")] =
+            flutter::EncodableValue(static_cast<int>(ts.buffer_count));
+        tm[flutter::EncodableValue("bufferCapacity")] =
+            flutter::EncodableValue(static_cast<int>(ts.buffer_capacity));
+        tm[flutter::EncodableValue("bufferState")] =
+            flutter::EncodableValue(static_cast<int>(ts.buffer_state));
+        tracks_list.push_back(flutter::EncodableValue(tm));
+    }
+    map[flutter::EncodableValue("tracks")] = flutter::EncodableValue(tracks_list);
+    map[flutter::EncodableValue("gpuBreakdown")] =
+        flutter::EncodableValue(make_gpu_breakdown_map(active_player->gpu_memory_stats()));
+    return map;
 }

@@ -1,6 +1,13 @@
 #pragma once
 
+#include <flutter/standard_method_codec.h>
+
 #include <cstdint>
+#include <memory>
+
+namespace vr {
+class NativePlayer;
+}
 
 struct ProcessMemoryUsage {
     uint64_t working_set_bytes = 0;
@@ -19,4 +26,7 @@ public:
     ProcessMemoryUsage QueryProcessMemoryUsage() const;
     ProcessHeapUsage QueryProcessHeapUsage() const;
     uint64_t QueryDedicatedVideoMemoryUsage() const;
+
+    flutter::EncodableMap BuildMethodChannelDiagnostics(
+        const std::shared_ptr<vr::NativePlayer>& active_player) const;
 };

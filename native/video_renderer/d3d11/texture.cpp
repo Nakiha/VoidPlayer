@@ -1,9 +1,47 @@
 #include "texture.h"
+#include "video_renderer/renderer_limits.h"
 #include <cstring>
 #include <dxgi.h>
 #include <spdlog/spdlog.h>
 
 namespace vr {
+
+namespace {
+
+bool validate_texture_dimensions(const char* operation,
+                                 int width,
+                                 int height,
+                                 bool require_even = false) {
+    if (width <= 0 || height <= 0 ||
+        width > kMaxRendererDimension || height > kMaxRendererDimension ||
+        (require_even && ((width & 1) != 0 || (height & 1) != 0))) {
+        spdlog::error("{}: invalid geometry ({}x{}, max={})",
+                      operation, width, height, kMaxRendererDimension);
+        return false;
+    }
+    return true;
+}
+
+bool validate_texture_stride(const char* operation,
+                             int width,
+                             int height,
+                             int stride,
+                             int bytes_per_pixel,
+                             bool require_even = false) {
+    if (!validate_texture_dimensions(operation, width, height, require_even)) {
+        return false;
+    }
+    const int64_t row_bytes =
+        static_cast<int64_t>(width) * static_cast<int64_t>(bytes_per_pixel);
+    if (stride < row_bytes) {
+        spdlog::error("{}: invalid stride (width={}, height={}, stride={}, min_stride={})",
+                      operation, width, height, stride, row_bytes);
+        return false;
+    }
+    return true;
+}
+
+} // namespace
 
 TextureManager::TextureManager(ID3D11Device* device, ID3D11DeviceContext* context)
     : device_(device), context_(context) {
@@ -12,6 +50,9 @@ TextureManager::TextureManager(ID3D11Device* device, ID3D11DeviceContext* contex
 ID3D11Texture2D* TextureManager::create_rgba_texture(int width, int height) {
     if (!device_) {
         spdlog::error("Cannot create texture: device is null");
+        return nullptr;
+    }
+    if (!validate_texture_dimensions("Cannot create RGBA texture", width, height)) {
         return nullptr;
     }
 
@@ -45,8 +86,7 @@ ID3D11Texture2D* TextureManager::create_plane_texture(int width, int height, boo
         spdlog::error("Cannot create plane texture: device is null");
         return nullptr;
     }
-    if (width <= 0 || height <= 0) {
-        spdlog::error("Cannot create plane texture: invalid geometry ({}x{})", width, height);
+    if (!validate_texture_dimensions("Cannot create plane texture", width, height)) {
         return nullptr;
     }
 
@@ -81,8 +121,7 @@ ID3D11Texture2D* TextureManager::create_nv12_texture(int width, int height) {
         spdlog::error("Cannot create NV12 texture: device is null");
         return nullptr;
     }
-    if (width <= 0 || height <= 0 || (width & 1) != 0 || (height & 1) != 0) {
-        spdlog::error("Cannot create NV12 texture: invalid geometry ({}x{})", width, height);
+    if (!validate_texture_dimensions("Cannot create NV12 texture", width, height, true)) {
         return nullptr;
     }
 
@@ -116,8 +155,7 @@ ID3D11Texture2D* TextureManager::create_p010_texture(int width, int height) {
         spdlog::error("Cannot create P010 texture: device is null");
         return nullptr;
     }
-    if (width <= 0 || height <= 0 || (width & 1) != 0 || (height & 1) != 0) {
-        spdlog::error("Cannot create P010 texture: invalid geometry ({}x{})", width, height);
+    if (!validate_texture_dimensions("Cannot create P010 texture", width, height, true)) {
         return nullptr;
     }
 
@@ -154,9 +192,7 @@ bool TextureManager::upload_data(ID3D11Texture2D* texture, const uint8_t* data,
                        static_cast<void*>(context_));
         return false;
     }
-    if (width <= 0 || height <= 0 || stride < width * 4) {
-        spdlog::error("upload_data: invalid geometry (width={}, height={}, stride={})",
-                      width, height, stride);
+    if (!validate_texture_stride("upload_data", width, height, stride, 4)) {
         return false;
     }
 
@@ -196,12 +232,10 @@ bool TextureManager::upload_plane_data(ID3D11Texture2D* texture, const uint8_t* 
         return false;
     }
     const int bytes_per_sample = is_16bit ? 2 : 1;
-    const int row_bytes = width * bytes_per_sample;
-    if (width <= 0 || height <= 0 || stride < row_bytes) {
-        spdlog::error("upload_plane_data: invalid geometry (width={}, height={}, stride={}, is_16bit={})",
-                      width, height, stride, is_16bit);
+    if (!validate_texture_stride("upload_plane_data", width, height, stride, bytes_per_sample)) {
         return false;
     }
+    const int row_bytes = width * bytes_per_sample;
 
     D3D11_TEXTURE2D_DESC desc = {};
     texture->GetDesc(&desc);
@@ -247,12 +281,14 @@ bool TextureManager::upload_nv12_data(ID3D11Texture2D* texture, const uint8_t* d
         return false;
     }
     const int bytes_per_component = is_p010 ? 2 : 1;
+    if (!validate_texture_dimensions("upload_nv12_data", width, height, true)) {
+        return false;
+    }
     const int row_bytes = width * bytes_per_component;
-    if (width <= 0 || height <= 0 || (width & 1) != 0 || (height & 1) != 0 ||
-        y_stride < row_bytes || uv_stride < row_bytes) {
-        spdlog::error("upload_nv12_data: invalid geometry (width={}, height={}, "
-                      "y_stride={}, uv_stride={}, is_p010={})",
-                      width, height, y_stride, uv_stride, is_p010);
+    if (y_stride < row_bytes || uv_stride < row_bytes) {
+        spdlog::error("upload_nv12_data: invalid stride (width={}, height={}, "
+                      "y_stride={}, uv_stride={}, min_stride={}, is_p010={})",
+                      width, height, y_stride, uv_stride, row_bytes, is_p010);
         return false;
     }
 

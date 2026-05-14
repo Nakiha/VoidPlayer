@@ -12,6 +12,7 @@
 #include "video_renderer/d3d11/headless_output.h"
 #include "video_renderer/d3d11/texture.h"
 #include "video_renderer/decode/frame_converter.h"
+#include "video_renderer/renderer_limits.h"
 
 extern "C" {
 #include <libavutil/frame.h>
@@ -27,6 +28,18 @@ TEST_CASE("TextureManager creates RGBA texture 1920x1080", "[d3d11][texture]") {
     REQUIRE(tex != nullptr);
 
     tex->Release();
+    cleanup_test_device(dev, hwnd);
+}
+
+TEST_CASE("TextureManager rejects invalid RGBA texture dimensions", "[d3d11][texture]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::TextureManager tm(dev->device(), dev->context());
+
+    REQUIRE(tm.create_rgba_texture(0, 64) == nullptr);
+    REQUIRE(tm.create_rgba_texture(64, -1) == nullptr);
+    REQUIRE(tm.create_rgba_texture(vr::kMaxRendererDimension + 1, 64) == nullptr);
+    REQUIRE(tm.create_rgba_texture(64, vr::kMaxRendererDimension + 1) == nullptr);
+
     cleanup_test_device(dev, hwnd);
 }
 

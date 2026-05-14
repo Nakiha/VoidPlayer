@@ -44,7 +44,7 @@ chat 给出的方向和当前代码状态高度匹配。优先级最高的不是
 | --- | --- | --- | --- |
 | S6 | `capture_front_buffer_locked()` 持 texture mutex 做 GPU copy/map | `Renderer::capture_front_buffer()` 同时持 `device_mutex_` 和 texture mutex 调 staging copy/map | DONE - Patch 6 |
 | S7 | layout validation 太宽松 | `validate_layout_state()` 只检查 enum、finite、zoom positive | DONE - Patch 7 |
-| S8 | `TextureManager::create_rgba_texture()` 缺尺寸校验 | RGBA create 直接 cast width/height，其他 create API 有基本校验 | 小防线 patch |
+| S8 | `TextureManager::create_rgba_texture()` 缺尺寸校验 | RGBA create 直接 cast width/height，其他 create API 有基本校验 | DONE - Patch 8 |
 | S9 | demux read error 没传播成明确 track error/event | `DemuxThread::run()` 非 EOF read error 后 break，最后只 `abort_outputs()` | error model patch |
 | S10 | `avcodec_open2()` 未包 SEH guard | send/receive 已有 SEH wrapper，open 阶段仍直调 | decode hardening patch |
 | S11 | odd-dimension software path 直接拒绝 | `calculate_yuv420_layout()` 要求 width/height 都是偶数 | compatibility patch |
@@ -312,16 +312,38 @@ Follow-up:
 
 - S8 `TextureManager::create_rgba_texture()` dimension validation is next.
 
+2026-05-14 Patch 8 - Texture Dimension Guardrails
+
+Changed:
+
+- Added shared texture dimension/stride helpers in `TextureManager` using `kMaxRendererDimension`.
+- Rejected invalid RGBA texture dimensions before casting width/height to `UINT`.
+- Reused the same guardrails for plane/NV12/P010 texture creation and upload stride checks to avoid local integer multiplication traps.
+- Added a native D3D11 regression for invalid RGBA dimensions including zero, negative, and above-budget sizes.
+
+Verified:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Blocked:
+
+- None.
+
+Follow-up:
+
+- S9 demux read error propagation is next.
+
 ## Final Cross-Check
 
 完成本轮后，逐条回看 chat 文件，更新下列结果：
 
 | 来源 | 复核项 | 结果 |
 | --- | --- | --- |
-| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | fixed: #1/#2/#3/#4/#5/#8; accepted-backlog: #6/#7/#9-#13 |
+| `review_native.md` | 13 条 native correctness / lifecycle / validation 问题 | fixed: #1/#2/#3/#4/#5/#8/#9; accepted-backlog: #6/#7/#10-#13 |
 | `review_godobject.md` | God Object 排名和 owner boundary 判断 | fixed: AudioMixer boundary + Analysis session snapshot; accepted-backlog: remaining owner splits |
 | `review_overlay.md` | AnalysisManager、VACHUNK、overlay cache、D3D pass 风险 | fixed: AnalysisManager session + current-base chunk filter; accepted-backlog: remaining overlay/cache/render-pass items |
-| `split_adv.md` | Patch 顺序和“不贪大”边界 | fixed: Patch 1-7 executed in stabilization-sized slices |
+| `split_adv.md` | Patch 顺序和“不贪大”边界 | fixed: Patch 1-8 executed in stabilization-sized slices |
 
 复核时只标三类状态：
 
@@ -339,12 +361,12 @@ fixed:
 - #4 capture lock/GPU wait split: Patch 6 split front-buffer snapshot from GPU readback.
 - #5 Audio pause discards PCM: Patch 2 made paused render output silence without consuming PCM.
 - #8 layout validation: Patch 7 tightened split/zoom/order checks using file-ID order semantics.
+- #9 RGBA texture size validation: Patch 8 added texture dimension/stride guardrails.
 
 accepted-backlog:
 
 - #6 NativePlayer facade locking remains a lifecycle boundary cleanup.
 - #7 FFI long-operation serialization remains an ABI/registry cleanup.
-- #9 RGBA texture size validation maps to S8.
 - #10 demux read error propagation maps to S9.
 - #11 `avcodec_open2()` SEH guard maps to S10.
 - #12 odd-dimension software path maps to S11.
@@ -400,10 +422,11 @@ fixed:
 - Documentation/cross-check completed before starting the second-tier backlog.
 - Patch 6 completed the S6 capture lock-granularity cleanup without a large Renderer split.
 - Patch 7 completed the S7 layout validation guardrails as a narrow defensive patch.
+- Patch 8 completed the S8 texture dimension guardrail as a small low-risk patch.
 
 accepted-backlog:
 
-- Remaining second-priority owner boundary work starts with S8 or a future `FrameCaptureService`; avoid jumping straight into a large Renderer split.
+- Remaining second-priority owner boundary work starts with S9 or a future `FrameCaptureService`; avoid jumping straight into a large Renderer split.
 
 not-applicable:
 

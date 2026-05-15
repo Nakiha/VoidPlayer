@@ -174,7 +174,7 @@ TODO:
    - 目标：`D3D11FramePresenter::prepare_frame/reset_track/move_track/memory_stats` 对 slot resources 的访问统一串行化；优先考虑 render-thread command queue 或同一 device-side boundary。
    - 验证：native-only + smoke/track compact/seek UI。
 
-4. [ ] `RendererQueryLockBoundary`
+4. [x] `RendererQueryLockBoundary`
    - 目标：`track_count()`、`duration_us()`、`has_track()`、`track_dimensions()`、`track_infos()` 统一 `state_mutex_` 保护，不能依赖 NativePlayer shared lock。
    - 验证：native-only。
 

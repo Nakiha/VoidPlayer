@@ -163,7 +163,7 @@ bool Renderer::initialize(const RendererConfig& config) {
         return fail();
     }
 
-    spdlog::info("Renderer: initialized with {} tracks", track_count());
+    spdlog::info("Renderer: initialized with {} tracks", tracks_.count());
     return true;
 }
 
@@ -1116,10 +1116,12 @@ double Renderer::current_speed() const {
 }
 
 size_t Renderer::track_count() const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     return tracks_.count();
 }
 
 int64_t Renderer::duration_us() const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     return cached_duration_us_;
 }
 
@@ -1967,15 +1969,17 @@ void Renderer::remove_track(int file_id) {
     finish_track_removal_playback(
         playback_state, first_active_track() >= 0, playback_hooks);
 
-    spdlog::info("Renderer::remove_track: file_id={}, slot={}, remaining={}", file_id, slot, track_count());
+    spdlog::info("Renderer::remove_track: file_id={}, slot={}, remaining={}", file_id, slot, tracks_.count());
 }
 
 bool Renderer::has_track(int slot) const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     if (slot < 0 || slot >= static_cast<int>(kMaxTracks)) return false;
     return tracks_[slot] != nullptr;
 }
 
 std::pair<int, int> Renderer::track_dimensions(int slot) const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     if (slot < 0 || slot >= static_cast<int>(kMaxTracks) || !tracks_[slot]) {
         return {0, 0};
     }
@@ -1983,6 +1987,7 @@ std::pair<int, int> Renderer::track_dimensions(int slot) const {
 }
 
 std::vector<TrackInfo> Renderer::track_infos() const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     return snapshot_track_infos(tracks_);
 }
 

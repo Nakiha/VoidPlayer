@@ -198,7 +198,7 @@ Verified:
 
 ## Active Patch Queue
 
-Next patch: P139 Renderer Query Lock Boundary.
+Next patch: P140 Renderer Shutdown Callback And Loop Guard.
 
 Completed patch details through P123 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -522,6 +522,8 @@ Result:
 
 ### P139 - Renderer Query Lock Boundary
 
+Status: done in Patch 139.
+
 Goal:
 
 - Add consistent `state_mutex_` coverage to `track_count()`, `duration_us()`, `has_track()`, `track_dimensions()`, and `track_infos()`.
@@ -531,6 +533,25 @@ Goal:
 Validation:
 
 - `python dev.py test --native-only`
+
+Result:
+
+- Public renderer query APIs now take `state_mutex_` while reading `tracks_` or cached duration state.
+- Internal logs that already run under `state_mutex_` avoid re-entering those query helpers.
+- Native-only regression passed after the query lock boundary change.
+
+### P140 - Renderer Shutdown Callback And Loop Guard
+
+Goal:
+
+- Gate late demux/render callbacks after shutdown begins.
+- Wrap render-loop timer resolution with RAII and add an exception boundary around the render thread.
+- Drop pending resize state on render-loop exit instead of unconditionally flushing a resize during shutdown.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
 
 ## Do-Not-Drift List
 

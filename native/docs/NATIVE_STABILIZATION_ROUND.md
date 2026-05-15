@@ -199,7 +199,7 @@ Fixed:
 
 ### `review_renderer_v2.md`
 
-Status: partially accepted, active.
+Status: accepted items fixed; stale findings documented.
 
 Stale or already covered:
 
@@ -209,14 +209,12 @@ Stale or already covered:
 Accepted:
 
 - `PresentDecision` lacked track identity. A decision produced before remove/add/compact/recreate could later be applied to a reused slot, contaminating draw, geometry, cached decisions, carry-forward, seek-preview events, and stats.
-
-Remaining:
-
-- Move seek-recreate stop/open work out of long `state_mutex_` critical sections.
+- Non-headless present after draw failure, shutdown callback lifetime, render-loop crash state, and lifecycle long-lock follow-ups were valid and have been fixed.
+- Seek-recreate stop/open work has been moved out of long `state_mutex_` critical sections; direct branch coverage still needs a future fault-injection/native integration seam.
 
 ## Active Patch Queue
 
-Next patch: `review_renderer_v2.md` remaining renderer lifecycle/present safety follow-up.
+Next patch: resume broader renderer god-object ownership extraction now that the `review_renderer_v2.md` accepted safety items are closed.
 
 Completed patch details through P123 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -573,6 +571,10 @@ Validation:
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`
 
+Coverage gap:
+
+- Existing UI scripts cover software seek, shutdown/recreate, and HEVC hardware seek paths, but the attempted playing HEVC hardware timeline seek did not reliably trigger the `Recreating pipeline` branch. A direct fault-injection or native integration seam is still needed to assert the state lock is released during recreate stop/open/start.
+
 Result:
 
 - Renderer now sets a shutdown gate before stopping the render loop and resource teardown.
@@ -757,6 +759,27 @@ Result:
 
 - `add_track()` now uses short state-lock sections for preflight/playback pause and final commit, while pipeline creation/start runs without holding `state_mutex_`.
 - Failed pipeline creation/start rolls back the temporary playback pause under the state lock.
+
+### P149 - Renderer Seek Recreate Outside State Lock
+
+Status: done in Patch 149.
+
+Goal:
+
+- Shorten seek-triggered pipeline recreate by detaching renderer-visible slot state under `state_mutex_`, then stopping the old pipeline and opening/starting the replacement outside that lock.
+- Keep seek/recreate serialized with public lifecycle mutations while avoiding render/query starvation during stop/open/start.
+- Preserve render-sink clearing, presenter reset, track identity generation, initial seek, paused HEVC recreate tagging, and cached-decision invalidation.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`
+
+Result:
+
+- `seek_internal()` now receives an owning `std::unique_lock` so the recreate path can deliberately drop and reacquire `state_mutex_`.
+- HEVC recreate detaches the old slot state, clears stale present-decision data, stops decode/demux, waits for D3D11VA teardown, creates the replacement pipeline, and starts it without holding `state_mutex_`.
+- The final replacement commit is guarded by `state_mutex_`, using a fresh track generation so old frame decisions cannot be reused for the recreated slot.
 
 ## Do-Not-Drift List
 

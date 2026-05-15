@@ -61,6 +61,23 @@ uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
             std::chrono::steady_clock::now() - start).count());
 }
 
+void stop_detached_track_pipeline(size_t slot, std::unique_ptr<TrackPipeline>& track) {
+    if (!track) {
+        return;
+    }
+    if (track->decode_thread) {
+        spdlog::info("Renderer: stopping track[{}] decode ({})", slot, track->file_path);
+        track->decode_thread->stop();
+        spdlog::info("Renderer: track[{}] decode stopped", slot);
+    }
+    if (track->demux_thread) {
+        spdlog::info("Renderer: stopping track[{}] demux ({})", slot, track->file_path);
+        track->demux_thread->stop();
+        spdlog::info("Renderer: track[{}] demux stopped", slot);
+    }
+    track.reset();
+}
+
 Renderer::Renderer()
     : owned_playback_(std::make_unique<PlaybackController>(create_default_audio_output))
     , playback_(owned_playback_.get())
@@ -339,13 +356,13 @@ void Renderer::pause() {
 
 void Renderer::seek(int64_t target_pts_us, SeekType type, int64_t request_id) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    std::lock_guard<std::mutex> lock(state_mutex_);
+    std::unique_lock<std::mutex> lock(state_mutex_);
     if (request_id >= 0) {
         pending_seek_event_request_id_ = request_id;
         pending_seek_event_target_pts_us_ = target_pts_us;
         pending_seek_event_emitted_ = false;
     }
-    seek_internal(target_pts_us, type);
+    seek_internal(lock, target_pts_us, type);
 }
 
 void Renderer::set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
@@ -384,13 +401,18 @@ int Renderer::audible_track() const {
     return audio_coordinator_ ? audio_coordinator_->active_track() : -1;
 }
 
-void Renderer::seek_internal(int64_t target_pts_us,
+void Renderer::seek_internal(std::unique_lock<std::mutex>& state_lock,
+                             int64_t target_pts_us,
                              SeekType type,
                              bool allow_deferred,
                              bool force_recreate_paused_hevc) {
-    // Caller must hold state_mutex_
+    // Caller must hold lifecycle_mutex_ and state_mutex_.
     // See native/docs/SEEK_STRATEGY.md for codec/container-specific exact seek
     // limits, especially H.264 FLV streams without repeated SPS/PPS on IDR.
+    if (!state_lock.owns_lock()) {
+        spdlog::error("[Renderer] seek_internal called without state lock");
+        return;
+    }
     const PendingSeekPreviewEventState pending_event{
         pending_seek_event_request_id_ >= 0,
         pending_seek_event_emitted_,
@@ -443,8 +465,9 @@ void Renderer::seek_internal(int64_t target_pts_us,
                     }
                 },
             },
-            [this](size_t slot, int64_t seek_target_us, SeekType seek_type) {
-                return recreate_pipeline_for_seek(slot, seek_target_us, seek_type);
+            [this, &state_lock](size_t slot, int64_t seek_target_us, SeekType seek_type) {
+                return recreate_pipeline_for_seek(
+                    state_lock, slot, seek_target_us, seek_type);
             },
         };
         const auto seek_result = apply_track_seek_to_slot(
@@ -522,7 +545,8 @@ bool Renderer::should_defer_paused_hevc_seek_locked(const RendererSeekClockGateP
     return deferred;
 }
 
-bool Renderer::apply_deferred_paused_hevc_seek_locked() {
+bool Renderer::apply_deferred_paused_hevc_seek_locked(
+    std::unique_lock<std::mutex>& state_lock) {
     if (!seek_coordinator_) {
         return false;
     }
@@ -533,11 +557,11 @@ bool Renderer::apply_deferred_paused_hevc_seek_locked() {
     }
     spdlog::info("[Renderer] Applying deferred paused HEVC HW seek to {:.3f}s",
                  deferred->target_pts_us / 1e6);
-    seek_internal(deferred->target_pts_us, deferred->type, false, true);
+    seek_internal(state_lock, deferred->target_pts_us, deferred->type, false, true);
     return true;
 }
 
-bool Renderer::apply_loop_range_locked() {
+bool Renderer::apply_loop_range_locked(std::unique_lock<std::mutex>& state_lock) {
     const int64_t pts = playback_->clock().current_pts_us();
     LoopRangeSeekInput input;
     input.playing = playing_.load();
@@ -553,7 +577,7 @@ bool Renderer::apply_loop_range_locked() {
 
     spdlog::info("[Renderer] loop range boundary: pts={:.3f}s, seeking to {:.3f}s",
                  pts / 1e6, decision.target_pts_us / 1e6);
-    seek_internal(decision.target_pts_us, SeekType::Exact);
+    seek_internal(state_lock, decision.target_pts_us, SeekType::Exact);
     return true;
 }
 
@@ -764,8 +788,8 @@ void Renderer::step_forward() {
     }
 
     if (need_exact_seek) {
-        std::lock_guard<std::mutex> lock(state_mutex_);
-        seek_internal(exact_seek_target, SeekType::Exact);
+        std::unique_lock<std::mutex> lock(state_mutex_);
+        seek_internal(lock, exact_seek_target, SeekType::Exact);
         spdlog::info("[Renderer] step_forward exact_seek done: clock_pts={:.3f}s",
                      playback_->clock().current_pts_us() / 1e6);
     }
@@ -774,7 +798,7 @@ void Renderer::step_forward() {
 void Renderer::step_backward() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     {
-        std::lock_guard<std::mutex> lock(state_mutex_);
+        std::unique_lock<std::mutex> lock(state_mutex_);
         const auto step_plan = plan_renderer_step_command(
             initialized_,
             initialized_ && has_buffering_track(tracks_));
@@ -804,7 +828,7 @@ void Renderer::step_backward() {
                          fallback_seek.clock_pts_us / 1e6,
                          fallback_seek.frame_duration_us / 1e3,
                          target / 1e6);
-            seek_internal(target, SeekType::Exact);
+            seek_internal(lock, target, SeekType::Exact);
             spdlog::info("[Renderer] step_backward exact_seek done: clock_pts={:.3f}s",
                          playback_->clock().current_pts_us() / 1e6);
             // Don't draw stale frame — seek_internal set preview_drawn_=false,
@@ -1376,14 +1400,18 @@ void Renderer::render_loop_body() {
         }
 
         {
-            std::lock_guard<std::mutex> lock(state_mutex_);
-            if (apply_deferred_paused_hevc_seek_locked()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                continue;
-            }
-            if (apply_loop_range_locked()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                continue;
+            std::unique_lock<std::mutex> lifecycle_lock(
+                lifecycle_mutex_, std::try_to_lock);
+            if (lifecycle_lock.owns_lock()) {
+                std::unique_lock<std::mutex> lock(state_mutex_);
+                if (apply_deferred_paused_hevc_seek_locked(lock)) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    continue;
+                }
+                if (apply_loop_range_locked(lock)) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    continue;
+                }
             }
         }
 
@@ -1915,41 +1943,82 @@ std::unique_ptr<TrackPipeline> Renderer::create_pipeline(
     return track_pipeline_factory_.create_opened_pipeline(path, hw_decode, initial_seek);
 }
 
-bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, SeekType type) {
-    TrackPipelineRecreateHooks hooks;
-    hooks.unregister_audio = [this](int file_id) { unregister_track_audio(file_id); };
-    hooks.clear_slot = [this](size_t cleared_slot) {
-        render_sink_->set_track(cleared_slot, nullptr);
+bool Renderer::recreate_pipeline_for_seek(std::unique_lock<std::mutex>& state_lock,
+                                          size_t slot,
+                                          int64_t target_pts_us,
+                                          SeekType type) {
+    if (!state_lock.owns_lock()) {
+        spdlog::error("[Renderer] recreate_pipeline_for_seek called without state lock");
+        return false;
+    }
+    if (slot >= kMaxTracks || !tracks_[slot]) {
+        return false;
+    }
+
+    auto current = std::move(tracks_[slot]);
+    const auto file_path = current->file_path;
+    const auto file_id = current->file_id;
+    const auto offset_us = current->offset_us;
+    const auto use_hardware_decode = current->use_hardware_decode;
+    const auto generation = next_track_generation_++;
+
+    spdlog::info("[Renderer] Recreating pipeline for {}", file_path);
+
+    unregister_track_audio(file_id);
+    render_sink_->set_track(slot, nullptr);
+    if (auto* presenter = frame_presenter()) {
+        presenter->reset_track(slot);
+    }
+    clear_present_decision_slot(last_decision_, slot);
+    preview_drawn_ = false;
+
+    state_lock.unlock();
+
+    stop_detached_track_pipeline(slot, current);
+
+    // Give the driver a brief moment to retire the previous D3D11VA decoder
+    // objects before constructing a fresh hardware pipeline on the same file.
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+    const SeekRequest initial_seek{target_pts_us, type};
+    auto replacement = create_pipeline(file_path, use_hardware_decode, &initial_seek);
+    if (!replacement) {
+        spdlog::error("[Renderer] Failed to recreate pipeline for {}", file_path);
+        state_lock.lock();
+        return false;
+    }
+    replacement->generation = generation;
+
+    const TrackPipelineStartConfig start_config{
+        file_id,
+        offset_us,
+        false,
+        true,
     };
-    hooks.reset_presenter_track = [this](size_t reset_slot) {
-        if (auto* presenter = frame_presenter()) {
-            presenter->reset_track(reset_slot);
-        }
-    };
-    hooks.create_pipeline =
-        [this](const std::string& path,
-               bool use_hardware_decode,
-               const SeekRequest& initial_seek) {
-            auto pipeline = create_pipeline(path, use_hardware_decode, &initial_seek);
-            if (pipeline) {
-                pipeline->generation = next_track_generation_++;
-            }
-            return pipeline;
-        };
-    hooks.start_hooks = TrackPipelineStartHooks{
+    const TrackPipelineStartHooks start_hooks{
         [this](TrackPipeline& track) { configure_track_seek_callback(track); },
         [this](TrackPipeline& track) { configure_track_error_callback(track); },
         [this](TrackPipeline& track) { register_track_audio(track); },
         [this](int id) { unregister_track_audio(id); },
     };
-    hooks.commit_slot = [this](size_t committed_slot, TrackPipeline& track) {
-        render_sink_->set_track(
-            committed_slot, track.track_buffer, track.file_id, track.generation);
-        render_sink_->set_track_offset(committed_slot, track.offset_us);
-    };
+    if (!configure_and_start_track_pipeline(
+            *replacement, start_config, start_hooks, "[Renderer]")) {
+        state_lock.lock();
+        return false;
+    }
 
-    return recreate_track_pipeline_for_seek(
-        tracks_, slot, target_pts_us, type, hooks, "[Renderer]");
+    state_lock.lock();
+    if (!initialized_ || tracks_[slot]) {
+        state_lock.unlock();
+        stop_detached_track_pipeline(slot, replacement);
+        state_lock.lock();
+        return false;
+    }
+
+    render_sink_->set_track(slot, replacement->track_buffer, file_id, generation);
+    render_sink_->set_track_offset(slot, offset_us);
+    tracks_[slot] = std::move(replacement);
+    return true;
 }
 
 int Renderer::add_track(const std::string& video_path,

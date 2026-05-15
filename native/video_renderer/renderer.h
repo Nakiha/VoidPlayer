@@ -256,7 +256,8 @@ private:
     void draw_paused_frame(const char* reason);
     RendererDrawSnapshot build_draw_snapshot_locked(const PresentDecision& decision) const;
     void update_track_geometry_from_decision_locked(const PresentDecision& decision);
-    void seek_internal(int64_t target_pts_us,
+    void seek_internal(std::unique_lock<std::mutex>& state_lock,
+                       int64_t target_pts_us,
                        SeekType type,
                        bool allow_deferred = true,
                        bool force_recreate_paused_hevc = false);
@@ -267,8 +268,8 @@ private:
     void register_track_audio(TrackPipeline& track);
     void unregister_track_audio(int file_id);
     bool should_defer_paused_hevc_seek_locked(const RendererSeekClockGatePlan& gate);
-    bool apply_deferred_paused_hevc_seek_locked();
-    bool apply_loop_range_locked();
+    bool apply_deferred_paused_hevc_seek_locked(std::unique_lock<std::mutex>& state_lock);
+    bool apply_loop_range_locked(std::unique_lock<std::mutex>& state_lock);
     void mark_paused_hevc_seek_preview_drawn_locked();
     bool has_hevc_hw_track_locked() const;
     void emit_event(const RendererEvent& event);
@@ -317,7 +318,10 @@ private:
         const SeekRequest* initial_seek = nullptr);
 
     /// Recreate a track pipeline so seek starts with a fresh demux/decode epoch.
-    bool recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, SeekType type);
+    bool recreate_pipeline_for_seek(std::unique_lock<std::mutex>& state_lock,
+                                    size_t slot,
+                                    int64_t target_pts_us,
+                                    SeekType type);
 
     /// Release all owned renderer resources after the render thread has stopped.
     /// Caller must hold state_mutex_.

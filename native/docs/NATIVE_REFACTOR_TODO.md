@@ -199,9 +199,9 @@ TODO:
    - 目标：非 headless `present_frame()` 在 `draw_frame()` 失败时不再继续 swap-chain present，避免呈现上一帧或未完成 backbuffer。
    - 验证：native-only + smoke UI；当前缺少专门 fault-injection 覆盖 draw failure 分支。
 
-10. [ ] `RendererV2LifecyclePresentFollowups`
-   - 目标：继续收 `review_renderer_v2.md` 剩余真实项：seek recreate stop/open 仍需移出长 `state_mutex_`。
-   - 验证：按实际 patch 拆分，至少 native-only；上屏/track/recreate 相关补 UI。
+10. [x] `RendererV2LifecyclePresentFollowups`
+   - 目标：收掉 `review_renderer_v2.md` 剩余真实项：seek recreate stop/open 移出长 `state_mutex_`。
+   - 验证：native-only + smoke/seek shutdown recreate UI。
 
 11. [x] `RendererShutdownEventCallbackRelease`
    - 目标：shutdown / resource release 明确清空 `event_callback_`，避免宿主闭包跨 shutdown/reinitialize 残留。
@@ -218,6 +218,10 @@ TODO:
 14. [x] `RendererAddTrackOpenStartOutsideStateLock`
    - 目标：add-track 只在 `state_mutex_` 下分配 slot/id/generation 和最终 commit；文件 open/probe、pipeline 创建、callback wiring、demux start 移到锁外。
    - 验证：native-only + smoke/track compact UI。
+
+15. [x] `RendererSeekRecreateOutsideStateLock`
+   - 目标：seek 触发 HEVC pipeline recreate 时，旧 pipeline stop/join、driver settle sleep、新 pipeline open/start 不持有 `state_mutex_`；只在 detach/commit 时短暂持锁。
+   - 验证：native-only + smoke/seek shutdown recreate UI；当前 UI 脚本未能稳定触发 HEVC hardware recreate 分支，作为覆盖缺口记录在 round 文档。
 
 建议顺序：
 

@@ -957,12 +957,16 @@ void Renderer::present_frame(const PresentDecision& decision) {
             device_lost = device && device->poll_device_removed("headless present");
         } else {
             drew = draw_frame(snapshot);
-            const auto present_start = std::chrono::steady_clock::now();
-            const bool presented = device && device->present(0);
-            d3d_metrics_.present_publish_us.fetch_add(
-                elapsed_us_since(present_start), std::memory_order_relaxed);
-            d3d_metrics_.present_publish_count.fetch_add(1, std::memory_order_relaxed);
-            device_lost = !presented && device && device->device_lost();
+            if (drew && device) {
+                const auto present_start = std::chrono::steady_clock::now();
+                const bool presented = device->present(0);
+                d3d_metrics_.present_publish_us.fetch_add(
+                    elapsed_us_since(present_start), std::memory_order_relaxed);
+                d3d_metrics_.present_publish_count.fetch_add(1, std::memory_order_relaxed);
+                device_lost = !presented && device->device_lost();
+            } else {
+                device_lost = device && device->device_lost();
+            }
         }
     }
     if (device_lost) {

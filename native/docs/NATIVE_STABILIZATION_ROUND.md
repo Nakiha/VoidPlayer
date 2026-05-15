@@ -213,7 +213,6 @@ Accepted:
 Remaining:
 
 - Move heavy add/remove/recreate open/stop work out of long `state_mutex_` critical sections.
-- Do not present the swap chain when `draw_frame()` failed.
 - Mark render-loop exception exit as terminal/error state.
 - Clear `event_callback_` during shutdown resource release.
 
@@ -646,6 +645,30 @@ Result:
 - Assigned monotonically increasing generations to track pipelines and propagated identity through add/remove/compact/recreate render-sink commits.
 - Added shared present-decision identity helpers and used them before drawing, updating layout geometry, caching decisions, carrying frames forward, emitting seek-preview events, and collecting performance stats.
 - Added native coverage proving RenderSink decisions carry and clear track identity.
+
+### P144 - Renderer Non-Headless Present Failure Gate
+
+Status: done in Patch 144.
+
+Goal:
+
+- In non-headless `present_frame()`, skip swap-chain present when `draw_frame()` fails.
+- Preserve device-lost detection by checking `device_lost()` after a failed draw when a device exists.
+- Keep headless publish behavior unchanged.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Coverage gap:
+
+- Current tests compile and smoke the path, but do not fault-inject `draw_frame()` failure on a live swap chain.
+
+Result:
+
+- Non-headless `present_frame()` now only calls `device->present(0)` after a successful draw.
+- Present publish metrics are recorded only for attempted swap-chain presents.
 
 ## Do-Not-Drift List
 

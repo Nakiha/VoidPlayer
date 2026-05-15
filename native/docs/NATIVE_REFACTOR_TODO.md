@@ -195,8 +195,12 @@ TODO:
    - 目标：`PresentDecision` slot 带上 `file_id + generation`，并在 draw/layout/cache/carry-forward/seek-preview/stats 入口过滤当前 tracks，避免 remove/add/compact/recreate 后旧帧污染新 slot。
    - 验证：native-only + smoke/track compact/shutdown-during-seek UI。
 
-9. [ ] `RendererV2LifecyclePresentFollowups`
-   - 目标：继续收 `review_renderer_v2.md` 剩余真实项：重活移出长 `state_mutex_`、draw 失败不 present、render-loop exception 进入 terminal/error、shutdown 清空 event callback。
+9. [x] `RendererNonHeadlessPresentFailureGate`
+   - 目标：非 headless `present_frame()` 在 `draw_frame()` 失败时不再继续 swap-chain present，避免呈现上一帧或未完成 backbuffer。
+   - 验证：native-only + smoke UI；当前缺少专门 fault-injection 覆盖 draw failure 分支。
+
+10. [ ] `RendererV2LifecyclePresentFollowups`
+   - 目标：继续收 `review_renderer_v2.md` 剩余真实项：重活移出长 `state_mutex_`、render-loop exception 进入 terminal/error、shutdown 清空 event callback。
    - 验证：按实际 patch 拆分，至少 native-only；上屏/track/recreate 相关补 UI。
 
 建议顺序：

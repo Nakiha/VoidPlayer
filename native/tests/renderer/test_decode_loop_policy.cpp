@@ -79,6 +79,23 @@ TEST_CASE("DecodeLoopPolicy: packet send action keeps receive loop contract",
     REQUIRE(should_abort_packet_before_send(true));
 }
 
+TEST_CASE("DecodeLoopPolicy: frame receive action separates stop and error paths",
+          "[decode_thread][decode_loop_policy]") {
+    REQUIRE(choose_decode_frame_receive_action(0) ==
+            DecodeFrameReceiveAction::PublishFrame);
+    REQUIRE(choose_decode_frame_receive_action(AVERROR(EAGAIN)) ==
+            DecodeFrameReceiveAction::Stop);
+    REQUIRE(choose_decode_frame_receive_action(AVERROR_EOF) ==
+            DecodeFrameReceiveAction::Stop);
+    REQUIRE(choose_decode_frame_receive_action(AVERROR_INVALIDDATA) ==
+            DecodeFrameReceiveAction::StopWithLoggedError);
+    REQUIRE(choose_decode_frame_receive_action(codec_loop_seh_caught_code()) ==
+            DecodeFrameReceiveAction::StopWithError);
+
+    REQUIRE_FALSE(should_stop_receive_loop_before_frame(false));
+    REQUIRE(should_stop_receive_loop_before_frame(true));
+}
+
 TEST_CASE("DecodeLoopPolicy: EOF drain action preserves buffering semantics",
           "[decode_thread][decode_loop_policy]") {
     REQUIRE(choose_eof_drain_action(false, false, TrackState::Ready, false) ==

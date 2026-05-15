@@ -172,7 +172,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P119 DecodeThread Receive Action Boundary.
+Next patch: P120 DecodeThread Preroll Transition Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -579,6 +579,25 @@ Goal:
 - Continue reducing `DecodeThread` by extracting normal receive-loop return-value decisions around cancelled loops, codec receive SEH, EAGAIN/EOF, hard receive errors, and frame publish continuation.
 - Keep AVFrame unref timing, exact-seek candidate capture, hardware visibility flush, preroll state transition, and perf counter updates unchanged.
 - Prefer a tested policy/helper before moving frame lifetime or exact-seek publish code.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Extended `decode_loop_policy` with receive-loop cancel, EAGAIN/EOF, logged hard-error, and SEH error actions.
+- Replaced the normal decode receive-loop return-value condition tree with tested policy calls while keeping AVFrame unref timing, exact-seek capture, publish, and preroll transitions local.
+- Added native coverage for receive publish/stop/logged-error/error-stop behavior.
+
+### P120 - DecodeThread Preroll Transition Boundary
+
+Goal:
+
+- Continue reducing duplicated `DecodeThread` Buffering -> Ready transition code around normal preroll, post-seek fast preroll, EOF preroll completion, and pause-after-preroll.
+- Keep output buffer state mutation, `post_seek_` reset, `pause_after_preroll_` handling, and logs semantically unchanged.
+- Prefer a tested helper/policy that computes transition intent before any broader frame publishing extraction.
 
 Validation:
 

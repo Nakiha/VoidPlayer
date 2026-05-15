@@ -1002,18 +1002,22 @@ void DecodeThread::run() {
 
         int frames_produced = 0;
         while (true) {
-            if (cancelled_.load(std::memory_order_acquire)) break;
+            if (should_stop_receive_loop_before_frame(
+                    cancelled_.load(std::memory_order_acquire))) {
+                break;
+            }
             ret = receive_codec_frame_seh_guarded(codec_ctx_, frame, hw_enabled_, device_mutex_);
-            if (codec_loop_is_seh_caught(ret)) {
+            const auto receive_action = choose_decode_frame_receive_action(ret);
+            if (receive_action == DecodeFrameReceiveAction::StopWithError) {
                 output_buffer_.set_state(TrackState::Error);
                 decode_paused_.store(true, std::memory_order_release);
                 running_.store(false, std::memory_order_release);
                 break;
             }
-            if (codec_loop_is_again_or_eof(ret)) {
+            if (receive_action == DecodeFrameReceiveAction::Stop) {
                 break;
             }
-            if (ret < 0) {
+            if (receive_action == DecodeFrameReceiveAction::StopWithLoggedError) {
                 spdlog::error("[DecodeThread] Error receiving frame: {:#x}", static_cast<unsigned>(ret));
                 break;
             }

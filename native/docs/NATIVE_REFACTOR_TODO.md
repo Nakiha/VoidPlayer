@@ -461,6 +461,10 @@ TODO:
    - 扩展 `decode_loop_policy` 承接 packet pop 分流、cancel checkpoint 和 packet send 返回值决策；`DecodeThread` 保留 AVPacket ownership、日志和状态写入。
    - 验证：native-only + seek UI。
 
+75. [x] `DecodeThreadReceiveActionBoundary`
+   - 扩展 `decode_loop_policy` 承接普通 receive loop 的 cancel gate、EAGAIN/EOF stop、硬错误日志 stop 和 SEH error stop 决策；`DecodeThread` 保留 AVFrame lifetime、exact-seek candidate 和发布流程。
+   - 验证：native-only + seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

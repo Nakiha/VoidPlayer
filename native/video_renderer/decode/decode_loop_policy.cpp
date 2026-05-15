@@ -61,6 +61,23 @@ DecodePacketSendAction choose_decode_packet_send_action(int codec_ret) {
     return DecodePacketSendAction::ReceiveFrames;
 }
 
+bool should_stop_receive_loop_before_frame(bool cancelled) {
+    return cancelled;
+}
+
+DecodeFrameReceiveAction choose_decode_frame_receive_action(int codec_ret) {
+    if (codec_loop_is_seh_caught(codec_ret)) {
+        return DecodeFrameReceiveAction::StopWithError;
+    }
+    if (codec_loop_is_again_or_eof(codec_ret)) {
+        return DecodeFrameReceiveAction::Stop;
+    }
+    if (codec_ret < 0) {
+        return DecodeFrameReceiveAction::StopWithLoggedError;
+    }
+    return DecodeFrameReceiveAction::PublishFrame;
+}
+
 EofDrainAction choose_eof_drain_action(bool queue_eof,
                                        bool eof_flushed,
                                        TrackState output_state,

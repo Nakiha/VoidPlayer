@@ -36,12 +36,23 @@ enum class DecodePacketSendAction {
     StopWithError,
 };
 
+enum class DecodeFrameReceiveAction {
+    PublishFrame,
+    Stop,
+    StopWithLoggedError,
+    StopWithError,
+};
+
 DecodePacketPopAction choose_decode_packet_pop_action(PacketPopStatus status,
                                                       bool packet_present,
                                                       bool running,
                                                       bool cancelled);
 
 DecodePacketSendAction choose_decode_packet_send_action(int codec_ret);
+
+bool should_stop_receive_loop_before_frame(bool cancelled);
+
+DecodeFrameReceiveAction choose_decode_frame_receive_action(int codec_ret);
 
 enum class EofDrainAction {
     None,

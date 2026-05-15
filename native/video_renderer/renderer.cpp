@@ -4,6 +4,7 @@
 #include "video_renderer/layout_validation.h"
 #include "video_renderer/renderer_config_validation.h"
 #include "video_renderer/renderer_playback_command_policy.h"
+#include "video_renderer/renderer_seek_log_policy.h"
 #include "video_renderer/track_lifecycle.h"
 #include "video_renderer/track_preroll_policy.h"
 #include "video_renderer/track_present_policy.h"
@@ -364,17 +365,20 @@ void Renderer::seek_internal(int64_t target_pts_us,
     const auto seek_target = resolve_seek_target(
         target_pts_us, effective_duration_us_locked(), pending_event);
     target_pts_us = seek_target.target_pts_us;
-    if (seek_target.clamped) {
+    const auto clamp_log = build_seek_clamp_log_facts(seek_target);
+    if (clamp_log.should_log) {
         spdlog::info("[Renderer] seek_internal clamp: requested={:.3f}s, clamped={:.3f}s, duration={:.3f}s",
-                     seek_target.requested_pts_us / 1e6,
-                     target_pts_us / 1e6,
-                     seek_target.effective_duration_us / 1e6);
+                     clamp_log.requested_seconds,
+                     clamp_log.clamped_seconds,
+                     clamp_log.duration_seconds);
     }
     if (seek_target.retarget_pending_event) {
         pending_seek_event_target_pts_us_ = target_pts_us;
     }
+    const auto request_log = build_seek_request_log_facts(target_pts_us, type);
     spdlog::info("[Renderer] seek_internal: target={:.3f}s, type={}",
-                 target_pts_us / 1e6, type == SeekType::Exact ? "Exact" : "Keyframe");
+                 request_log.target_seconds,
+                 request_log.type_label);
     RendererSeekClockGateInput clock_gate_input;
     clock_gate_input.allow_deferred = allow_deferred;
     clock_gate_input.playing = playing_.load();
@@ -423,21 +427,25 @@ void Renderer::seek_internal(int64_t target_pts_us,
                          "headers for frame-accurate previews.");
         }
         const auto& track_target = seek_facts.target;
-        if (track_target.clamped) {
+        const auto track_clamp_log =
+            build_track_seek_target_clamp_log_facts(i, track_target);
+        if (track_clamp_log.should_log) {
             spdlog::info("[Renderer] seek_internal: track[{}] target clamp "
                          "requested={:.3f}s, clamped={:.3f}s",
-                         i,
-                         track_target.requested_target_us / 1e6,
-                         track_target.target_us / 1e6);
+                         track_clamp_log.slot,
+                         track_clamp_log.requested_seconds,
+                         track_clamp_log.clamped_seconds);
         }
         const auto& seek_prep = seek_result.preparation;
         const auto& seek_execution = seek_result.execution;
-        if (seek_execution.coalescing_transition) {
+        const auto coalescing_log = build_track_seek_coalescing_log_facts(
+            i, track_target, seek_prep, seek_execution);
+        if (coalescing_log.should_log) {
             spdlog::info("[Renderer] seek_internal: track[{}] coalescing HEVC HW seek during transition "
                          "(buf_state_before={}, target={:.3f}s)",
-                         i,
-                         static_cast<int>(seek_prep.buffer_state_before),
-                         track_target.target_us / 1e6);
+                         coalescing_log.slot,
+                         coalescing_log.buffer_state_before,
+                         coalescing_log.target_seconds);
         }
         if (!seek_execution.applied_seek) {
             continue;
@@ -447,12 +455,18 @@ void Renderer::seek_internal(int64_t target_pts_us,
             continue;
         }
         applied_seek = true;
+        const auto cleared_log = build_track_seek_cleared_log_facts(
+            i,
+            track_target,
+            seek_prep,
+            seek_execution,
+            track->track_buffer->total_count());
         spdlog::info("[Renderer] seek_internal: track[{}] cleared (buf={}->{}, pq={}->0), state->Flushing, target={:.3f}s",
-                     i,
-                     seek_prep.buffered_frames_before,
-                     track->track_buffer->total_count(),
-                     seek_prep.packet_queue_size_before,
-                     track_target.target_us / 1e6);
+                     cleared_log.slot,
+                     cleared_log.buffered_frames_before,
+                     cleared_log.buffered_frames_after,
+                     cleared_log.packet_queue_size_before,
+                     cleared_log.target_seconds);
     }
     if (applied_seek) {
         preview_drawn_ = false;

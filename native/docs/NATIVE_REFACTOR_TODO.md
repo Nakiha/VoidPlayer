@@ -505,6 +505,10 @@ TODO:
    - 扩展 `SeekCoordinator` 纯策略层，承接 `seek_internal` 的 clock target 和 paused HEVC exact-seek deferred gate eligibility；`Renderer` 保留 playback clock mutation、coordinator 状态 mutation 和 per-track seek 执行。
    - 验证：native-only + smoke/seek UI。
 
+86. [x] `RendererSeekLoggingBoundary`
+   - 新增 `renderer_seek_log_policy` 承接 seek request/clamp、per-track target clamp、HEVC coalescing、cleared-track diagnostics 的 facts assembly；`Renderer` 保留日志发射时机和 seek side effects。
+   - 验证：native-only + smoke/seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

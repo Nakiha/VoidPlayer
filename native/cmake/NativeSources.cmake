@@ -36,6 +36,7 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/render_loop_controller.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/renderer_config_validation.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/renderer_playback_command_policy.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/renderer_seek_log_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/seek_coordinator.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track_buffer_budget.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track_lifecycle.cpp"

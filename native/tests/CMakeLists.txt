@@ -18,6 +18,7 @@ add_executable(video_renderer_tests
     renderer/test_win_utf8.cpp
     renderer/test_native_player.cpp
     renderer/test_renderer_playback_command_policy.cpp
+    renderer/test_renderer_seek_log_policy.cpp
     renderer/test_renderer_config_validation.cpp
     renderer/test_renderer_stress.cpp
     renderer/test_packet_queue.cpp

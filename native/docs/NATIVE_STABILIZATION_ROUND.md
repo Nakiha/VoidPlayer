@@ -212,7 +212,7 @@ Accepted:
 
 Remaining:
 
-- Move heavy add/remove/recreate open/stop work out of long `state_mutex_` critical sections.
+- Move add-track open/start and seek-recreate stop/open work out of long `state_mutex_` critical sections.
 
 ## Active Patch Queue
 
@@ -716,6 +716,27 @@ Result:
 
 - Added `enter_terminal_render_loop_error_locked()` for non-D3D render-loop crashes.
 - The render-loop `std::exception` and unknown-exception catches now mark `running_=false`, `playing_=false`, `initialized_=false`, pause playback/decode, and set `device_state_` to `Terminal`.
+
+### P147 - Renderer Remove-Track Stop Outside State Lock
+
+Status: done in Patch 147.
+
+Goal:
+
+- Shorten `remove_track()`'s `state_mutex_` critical section by detaching and compacting renderer state first, then stopping/joining the removed pipeline outside the state lock.
+- Keep the public mutation serialized by `lifecycle_mutex_`.
+- Preserve render-sink slot clearing, presenter reset/move, layout order removal, duration cache recompute, cached present-decision compaction, and playback resume policy.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`
+
+Result:
+
+- `remove_track()` now removes the slot from renderer-visible state under `state_mutex_`, stores the removed `TrackPipeline` in a local owner, and releases the state lock before stopping decode/demux.
+- Removed demux callbacks are cleared before the detached pipeline is stopped outside the state lock.
+- Existing compacted tracks remain committed to `RenderSink` with their `file_id + generation` identity before the removed pipeline is stopped.
 
 ## Do-Not-Drift List
 

@@ -2059,51 +2059,83 @@ int Renderer::add_track(const std::string& video_path,
 
 void Renderer::remove_track(int file_id) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    int slot = find_slot_by_file_id(file_id);
-    if (slot < 0) return;
+    std::unique_ptr<TrackPipeline> removed_track;
+    int slot = -1;
+    size_t remaining = 0;
 
-    spdlog::info("Renderer::remove_track: file_id={}, slot={}", file_id, slot);
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        slot = find_slot_by_file_id(file_id);
+        if (slot < 0) return;
 
-    const TrackPlaybackMutationHooks playback_hooks{
-        [this]() { playback_->pause(); },
-        [this]() { playback_->play(); },
-        [this](bool playing) { playing_ = playing; },
-    };
-    const auto playback_state = pause_playback_for_track_mutation(
-        playing_.load(), playback_hooks);
+        spdlog::info("Renderer::remove_track: file_id={}, slot={}", file_id, slot);
 
-    const TrackRemovalHooks removal_hooks{
-        [this](int removed_file_id) { unregister_track_audio(removed_file_id); },
-        [this](size_t stopped_slot, TrackPipeline&) {
-            render_sink_->set_track(stopped_slot, nullptr);
-            if (auto* presenter = frame_presenter()) {
-                presenter->reset_track(stopped_slot);
-            }
-        },
-        [this](size_t from, size_t to, TrackPipeline& track) {
+        const TrackPlaybackMutationHooks playback_hooks{
+            [this]() { playback_->pause(); },
+            [this]() { playback_->play(); },
+            [this](bool playing) { playing_ = playing; },
+        };
+        const auto playback_state = pause_playback_for_track_mutation(
+            playing_.load(), playback_hooks);
+
+        unregister_track_audio(file_id);
+        render_sink_->set_track(static_cast<size_t>(slot), nullptr);
+        if (auto* presenter = frame_presenter()) {
+            presenter->reset_track(static_cast<size_t>(slot));
+        }
+        removed_track = std::move(tracks_[static_cast<size_t>(slot)]);
+        if (removed_track && removed_track->demux_thread) {
+            removed_track->demux_thread->set_seek_callback({});
+            removed_track->demux_thread->set_error_callback({});
+        }
+
+        tracks_.compact_from(static_cast<size_t>(slot), [this](
+            size_t from,
+            size_t to,
+            TrackPipeline& track) {
             if (auto* presenter = frame_presenter()) {
                 presenter->move_track(from, to);
             }
             render_sink_->set_track(to, track.track_buffer, track.file_id, track.generation);
             render_sink_->set_track_offset(to, track.offset_us);
             render_sink_->set_track(from, nullptr);
-        },
-    };
-    remove_and_compact_track_pipeline(tracks_, slot, removal_hooks);
-    compact_present_decision_frames(last_decision_, slot);
+        });
+        compact_present_decision_frames(last_decision_, static_cast<size_t>(slot));
 
-    layout_controller_.remove_track(
-        layout_, file_id, [this](int id) { return find_slot_by_file_id(id); });
+        layout_controller_.remove_track(
+            layout_, file_id, [this](int id) { return find_slot_by_file_id(id); });
 
-    cached_duration_us_ = compute_track_duration_cache(tracks_);
+        cached_duration_us_ = compute_track_duration_cache(tracks_);
+        preview_drawn_ = false;
+        remaining = tracks_.count();
 
-    preview_drawn_ = false;
+        finish_track_removal_playback(
+            playback_state, first_active_track() >= 0, playback_hooks);
+    }
 
-    finish_track_removal_playback(
-        playback_state, first_active_track() >= 0, playback_hooks);
+    if (removed_track) {
+        if (removed_track->decode_thread) {
+            spdlog::info("Renderer: stopping track[{}] decode ({})",
+                         slot,
+                         removed_track->file_path);
+            removed_track->decode_thread->stop();
+            spdlog::info("Renderer: track[{}] decode stopped", slot);
+        }
+        if (removed_track->demux_thread) {
+            spdlog::info("Renderer: stopping track[{}] demux ({})",
+                         slot,
+                         removed_track->file_path);
+            removed_track->demux_thread->stop();
+            spdlog::info("Renderer: track[{}] demux stopped", slot);
+        }
+        removed_track.reset();
+    }
 
-    spdlog::info("Renderer::remove_track: file_id={}, slot={}, remaining={}", file_id, slot, tracks_.count());
+    spdlog::info(
+        "Renderer::remove_track: file_id={}, slot={}, remaining={}",
+        file_id,
+        slot,
+        remaining);
 }
 
 bool Renderer::has_track(int slot) const {

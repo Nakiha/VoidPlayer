@@ -200,7 +200,7 @@ TODO:
    - 验证：native-only + smoke UI；当前缺少专门 fault-injection 覆盖 draw failure 分支。
 
 10. [ ] `RendererV2LifecyclePresentFollowups`
-   - 目标：继续收 `review_renderer_v2.md` 剩余真实项：重活移出长 `state_mutex_`。
+   - 目标：继续收 `review_renderer_v2.md` 剩余真实项：add-track open/start 和 seek recreate stop/open 仍需移出长 `state_mutex_`。
    - 验证：按实际 patch 拆分，至少 native-only；上屏/track/recreate 相关补 UI。
 
 11. [x] `RendererShutdownEventCallbackRelease`
@@ -210,6 +210,10 @@ TODO:
 12. [x] `RendererRenderLoopCrashTerminalState`
    - 目标：render loop exception boundary 不再只写 `running_/playing_`，而是进入 terminal runtime state 并让宿主查询看到 renderer 已不可用。
    - 验证：native-only + smoke UI；当前缺少 render-loop fault-injection 测试入口。
+
+13. [x] `RendererRemoveTrackStopOutsideStateLock`
+   - 目标：remove-track 先在 `state_mutex_` 下 detach/compact renderer state，再锁外 stop/join 被移除的 decode/demux pipeline，缩短 render loop 被 track removal 卡住的窗口。
+   - 验证：native-only + smoke/track compact/shutdown-during-seek UI。
 
 建议顺序：
 

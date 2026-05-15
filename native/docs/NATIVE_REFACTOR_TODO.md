@@ -477,6 +477,10 @@ TODO:
    - 新增 `exact_seek_publish_policy` 承接 exact-seek preview 发布窗口裁剪和成功发布后的 Ready/pause/drain/target-reset 状态意图；`DecodeThread` 保留 AVFrame、硬解 wait、stable-frame 复用和转换失败副作用。
    - 验证：native-only + seek UI。
 
+79. [x] `DecodeThreadFrameLifetimeBoundary`
+   - 新增 `AvFrameUnrefGuard` / `reset_reusable_av_frame` 收口 receive 成功后的可复用 AVFrame unref 时机；`DecodeThread` 不再在 normal receive、EOF drain、post-preview drain、exact-seek candidate 分支散落手动 unref。
+   - 验证：native-only + seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

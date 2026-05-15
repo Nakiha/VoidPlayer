@@ -47,6 +47,7 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/track_snapshot.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track_step_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/decode/av_frame_lifetime.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/codec_loop.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decode_drain_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decode_preroll_policy.cpp"

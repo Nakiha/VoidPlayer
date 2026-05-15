@@ -23,6 +23,7 @@ add_executable(video_renderer_tests
     renderer/test_bidi_ring_buffer.cpp
     renderer/test_track_buffer.cpp
     renderer/test_demux_thread.cpp
+    renderer/test_av_frame_lifetime.cpp
     renderer/test_codec_loop.cpp
     renderer/test_decode_drain_policy.cpp
     renderer/test_decode_preroll_policy.cpp

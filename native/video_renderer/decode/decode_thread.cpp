@@ -1,4 +1,5 @@
 #include "video_renderer/decode/decode_thread.h"
+#include "video_renderer/decode/av_frame_lifetime.h"
 #include "video_renderer/decode/codec_loop.h"
 #include "video_renderer/decode/decode_drain_policy.h"
 #include "video_renderer/decode/decode_loop_policy.h"
@@ -518,7 +519,7 @@ void DecodeThread::begin_seek_epoch(AVFrame* frame, const DecodeSeekNotification
                  output_buffer_.total_count(),
                  static_cast<int>(output_buffer_.state()));
 
-    av_frame_unref(frame);
+    reset_reusable_av_frame(frame);
     exact_seek_candidates_.clear();
     drain_decoder_before_next_packet_ = false;
 
@@ -558,8 +559,8 @@ void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*
     while (true) {
         int recv_ret = receive_codec_frame_seh_guarded(codec_ctx_, frame);
         if (recv_ret < 0) break;
+        AvFrameUnrefGuard frame_guard(frame);
         if (cancelled_.load(std::memory_order_acquire)) {
-            av_frame_unref(frame);
             break;
         }
         if (target_us >= 0) {
@@ -571,7 +572,6 @@ void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*
                 }
             }
         }
-        av_frame_unref(frame);
     }
     safe_flush_codec();
     eof_flushed_ = true;
@@ -864,14 +864,13 @@ bool DecodeThread::handle_queue_gap_or_eof(
             break;
         }
 
+        AvFrameUnrefGuard frame_guard(frame);
         rescale_ts(frame);
         log_hw_frame_context_once(frame);
         publisher.flush_before_publish_if_needed();
         if (!publisher.convert_and_push_frame(frame, "EOF drain")) {
-            av_frame_unref(frame);
             break;
         }
-        av_frame_unref(frame);
     }
     // Flush decode device after EOF drain to ensure shared NV12 textures are
     // visible to the render device.
@@ -949,14 +948,13 @@ void DecodeThread::run() {
                     break;
                 }
 
+                AvFrameUnrefGuard frame_guard(frame);
                 rescale_ts(frame);
                 log_hw_frame_context_once(frame);
                 publisher.flush_before_publish_if_needed(true);
                 if (!publisher.convert_and_push_frame(frame, "drain before next packet")) {
-                    av_frame_unref(frame);
                     break;
                 }
-                av_frame_unref(frame);
                 ++drained;
 
                 if (should_stop_drain_after_publish(
@@ -1059,6 +1057,7 @@ void DecodeThread::run() {
                 break;
             }
 
+            AvFrameUnrefGuard frame_guard(frame);
             rescale_ts(frame);
             log_hw_frame_context_once(frame);
 
@@ -1068,7 +1067,6 @@ void DecodeThread::run() {
             if (exact_seek_target_us_ >= 0) {
                 if (!should_collect_exact_seek_candidate(frame->pts, exact_seek_target_us_)) {
                     perf_.frames_dropped.fetch_add(1, std::memory_order_relaxed);
-                    av_frame_unref(frame);
                     continue;
                 }
 
@@ -1080,11 +1078,9 @@ void DecodeThread::run() {
 
                 if (exact_seek_preview_window_ready()) {
                     publish_best_exact_seek_frame();
-                    av_frame_unref(frame);
                     break;
                 }
 
-                av_frame_unref(frame);
                 continue;
             }
 
@@ -1104,13 +1100,10 @@ void DecodeThread::run() {
             // the race and draw an incomplete surface.
             publisher.flush_visibility_if_needed();
             if (!publisher.convert_and_push_frame(frame, "decode loop")) {
-                av_frame_unref(frame);
                 break;
             }
 
             complete_preroll_if_ready();
-
-            av_frame_unref(frame);
         }
 
         // Exact seek B-frame reordering fallback. The receive loop normally

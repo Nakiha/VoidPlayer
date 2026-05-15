@@ -166,13 +166,13 @@ Still active:
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
 - `Renderer` still owns layout mutation, public playback commands, global seek clock/deferred gates, and seek logging.
-- `DecodeThread` still owns AVFrame unref timing and exact-seek frame/pending publish side effects.
+- `DecodeThread` still owns exact-seek frame/pending publish side effects and conversion-failure state writes.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P124 DecodeThread Frame Lifetime Boundary.
+Next patch: P125 DecodeThread Publish Error Boundary.
 
 Completed patch details through P115 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -332,6 +332,8 @@ Result:
 
 ### P124 - DecodeThread Frame Lifetime Boundary
 
+Status: done in Patch 124.
+
 Goal:
 
 - Continue shrinking `DecodeThread` by extracting AVFrame ownership cleanup decisions around normal receive, exact-seek reorder collection, and failed publish paths.
@@ -342,6 +344,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - If touched code affects seek preview behavior, also run `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`.
+
+Result:
+
+- Added `AvFrameUnrefGuard` and `reset_reusable_av_frame` as the explicit reusable-frame lifetime boundary.
+- Replaced scattered manual `av_frame_unref()` calls in normal receive, EOF drain, post-preview drain, exact-seek candidate handling, and seek reset with the focused guard/helper.
+- Added native coverage for scope-exit unref, caller-owned dismiss, and null-safe reset.
+
+### P125 - DecodeThread Publish Error Boundary
+
+Goal:
+
+- Remove the remaining exact-seek conversion-failure state writes from `DecodeThread::publish_exact_seek_window()`.
+- Extend `DecodedFramePublisher` so exact-seek stable-frame reuse and converted-frame publish can share the same Error/pause/stop semantics as normal frame publish.
+- Preserve exact-seek window ordering, hardware wait/flush behavior, stable snapshot reuse, and pending candidate movement.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
 
 ## Do-Not-Drift List
 

@@ -164,7 +164,6 @@ Fixed or reduced:
 Still active:
 
 - `Renderer` remains the coordination root.
-- `ffi_exports.cpp` still carries ABI guard wrappers and process-global logging/crash convenience shells.
 - `Renderer` still owns layout mutation, public playback commands, global seek clock/deferred gates, and seek logging.
 - `DecodeThread` still owns exact-seek publish scheduling and post-preview completion wiring.
 - Target/feature boundaries are still too coupled.
@@ -172,7 +171,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P128 FFI Process-Global Shell Boundary.
+Next patch: P129 Renderer Playback Command Boundary.
 
 Completed patch details through P115 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -418,6 +417,8 @@ Result:
 
 ### P128 - FFI Process-Global Shell Boundary
 
+Status: done in Patch 128.
+
 Goal:
 
 - Move process-wide logging and crash-handler convenience command bodies out of `ffi_exports.cpp`.
@@ -427,6 +428,26 @@ Goal:
 Validation:
 
 - `python dev.py test --native-only`
+
+Result:
+
+- Added `ffi_process_globals` for process-wide logging and crash-handler convenience command bodies.
+- Reduced `ffi_exports.cpp` logging/crash functions to guarded ABI shims that call the process-global helper.
+- Added focused coverage for null logging config validation and crash-handler install/remove command behavior.
+- Kept existing C FFI ABI validation green.
+
+### P129 - Renderer Playback Command Boundary
+
+Goal:
+
+- Continue shrinking `Renderer` by moving public playback command intent around play/pause/step fanout into a focused helper/policy.
+- Keep `Renderer` responsible for lifecycle locks, playback clock ownership, and public API shape; move only deterministic command fanout/transition facts first.
+- Preserve current play/pause/step behavior and existing UI playback regressions.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
 
 ## Do-Not-Drift List
 

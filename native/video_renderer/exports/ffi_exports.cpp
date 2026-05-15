@@ -3,8 +3,7 @@
 #include "video_renderer/exports/ffi_player_commands.h"
 #include "video_renderer/exports/ffi_player_lifecycle.h"
 #include "video_renderer/exports/ffi_player_registry.h"
-#include "common/logging.h"
-#include "common/windows_crash_handler.h"
+#include "video_renderer/exports/ffi_process_globals.h"
 #include <spdlog/spdlog.h>
 #include <exception>
 #include <string>
@@ -308,17 +307,7 @@ void naki_vr_configure_logging(const naki_vr_log_config_t* config) noexcept {
 
 naki_vr_status_t naki_vr_configure_logging_status(const naki_vr_log_config_t* config) noexcept {
     return ffi_guard("naki_vr_configure_logging_status", NAKI_VR_ERR_INTERNAL, [config]() {
-        if (!config) {
-            set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "log config is required");
-            return NAKI_VR_ERR_INVALID_ARGUMENT;
-        }
-        vr::LogConfig cfg;
-        if (!to_log_config(*config, cfg)) {
-            return g_last_error.status;
-        }
-        vr::configure_logging(cfg);
-        set_ok();
-        return NAKI_VR_OK;
+        return configure_logging_process_command(config);
     });
 }
 
@@ -328,9 +317,7 @@ void naki_vr_install_crash_handler(const char* crash_dir) noexcept {
 
 naki_vr_status_t naki_vr_install_crash_handler_status(const char* crash_dir) noexcept {
     return ffi_guard("naki_vr_install_crash_handler_status", NAKI_VR_ERR_INTERNAL, [crash_dir]() {
-        vr::install_crash_handler(crash_dir ? crash_dir : "");
-        set_ok();
-        return NAKI_VR_OK;
+        return install_crash_handler_process_command(crash_dir);
     });
 }
 
@@ -340,8 +327,6 @@ void naki_vr_remove_crash_handler(void) noexcept {
 
 naki_vr_status_t naki_vr_remove_crash_handler_status(void) noexcept {
     return ffi_guard("naki_vr_remove_crash_handler_status", NAKI_VR_ERR_INTERNAL, []() {
-        vr::remove_crash_handler();
-        set_ok();
-        return NAKI_VR_OK;
+        return remove_crash_handler_process_command();
     });
 }

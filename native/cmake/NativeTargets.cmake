@@ -4,6 +4,7 @@ if(BUILD_FFI)
         video_renderer/exports/ffi_marshalling.cpp
         video_renderer/exports/ffi_player_commands.cpp
         video_renderer/exports/ffi_player_lifecycle.cpp
+        video_renderer/exports/ffi_process_globals.cpp
         video_renderer/exports/ffi_player_registry.cpp
     )
     void_apply_native_compile_options(video_renderer_ffi)

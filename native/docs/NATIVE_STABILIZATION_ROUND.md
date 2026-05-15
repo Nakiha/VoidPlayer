@@ -150,6 +150,7 @@ Fixed or reduced:
 - `DecodeThread`: codec send/receive SEH guards, return classification, and hardware device mutex wrapping now live in `codec_loop` with focused state tests.
 - `DecodeThread`: frame conversion/publish failure handling and hardware visibility flush now live in `DecodedFramePublisher` with focused state tests.
 - `DecodeThread`: drain-before-next-packet and EOF codec drain send/receive decisions now live in `decode_drain_policy` with focused state tests.
+- `DecodeThread`: exact-seek reorder/pending candidate ownership and candidate memory counters now live in `ExactSeekCandidateStore` with focused state tests.
 - `NativeResourceBudget`: track buffer queued-frame depth decision moved into `TrackBufferBudget` and is tested as a policy boundary.
 - `AudioEngine::Impl`: track registry, buffer publication facts, and decode pause/seek fanout moved into `AudioTrackRegistry`.
 - `AudioEngine::Impl`: nested FFmpeg audio decoder thread implementation moved into `AudioDecodeThread`.
@@ -164,13 +165,13 @@ Still active:
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
 - `Renderer` still owns layout mutation, public playback commands, global seek clock/deferred gates, and seek logging.
-- `DecodeThread` main loop still owns EOF drain choreography, AVFrame unref timing, and exact-seek candidate ownership.
+- `DecodeThread` main loop still owns EOF drain choreography, AVFrame unref timing, and exact-seek publish state transitions.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P115 DecodeThread Exact-Seek Candidate Ownership Boundary.
+Next patch: P116 DecodeThread Timestamp Rescale Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -492,11 +493,32 @@ Result:
 
 ### P115 - DecodeThread Exact-Seek Candidate Ownership Boundary
 
+Status: done in Patch 115.
+
 Goal:
 
 - Continue reducing `DecodeThread` by isolating exact-seek candidate ownership and memory counter maintenance from the main decode object.
 - Keep preview-window selection and post-target pending-frame behavior unchanged.
 - Prefer moving candidate collection/snapshot/memory stats behind a small owner if current call sites permit it.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `ExactSeekCandidateStore` for exact-seek candidate cloning, reorder/pending ownership, snapshot trigger points, preview-window readiness, and candidate memory stats.
+- `DecodeThread` now delegates candidate collection, pending queue moves/pops, reorder counts, and memory stats snapshots to the store.
+- Added native coverage for latest pre-target retention, first post-target snapshot trigger, pending tail moves, and stable-frame stats.
+
+### P116 - DecodeThread Timestamp Rescale Boundary
+
+Goal:
+
+- Continue reducing `DecodeThread` by extracting stream-timebase-to-microseconds frame timestamp rescale from the decode loop lambda.
+- Keep exact-seek target comparison and published PTS/DTS/duration semantics unchanged.
+- Prefer a small tested helper so future drain/publish extraction does not carry a member-capturing timestamp lambda.
 
 Validation:
 

@@ -2,6 +2,7 @@
 #include "media/packet_queue.h"
 #include "video_renderer/buffer/track_buffer.h"
 #include "video_renderer/decode/decoded_frame_publisher.h"
+#include "video_renderer/decode/exact_seek_candidate_store.h"
 #include "video_renderer/decode/frame_converter.h"
 #include "video_renderer/decode/hw/hw_decode_provider.h"
 #include "media/seek_controller.h"
@@ -109,12 +110,6 @@ public:
     void set_codec_open_for_test(CodecOpenFunction open_fn) { codec_open_for_test_ = open_fn; }
 
 private:
-    struct ExactSeekCandidate {
-        int64_t pts_us = 0;
-        std::shared_ptr<AVFrame> frame;
-        std::optional<TextureFrame> stable_frame;
-    };
-
     void run();
 
     /// Attempt to open codec. Returns true on success.
@@ -134,15 +129,12 @@ private:
     bool hardware_surfaces_are_renderer_owned() const;
 
     /// Drain remaining frames from the codec (avcodec_send_packet(nullptr) + receive loop).
-    /// If target_us >= 0, frames with pts >= target_us are added to exact_seek_reorder_.
+    /// If target_us >= 0, frames with pts >= target_us are added to exact seek candidates.
     /// Sets eof_flushed_ = true.
     void drain_codec(AVFrame* frame, const std::function<void(AVFrame*)>& rescale_ts, int64_t target_us = -1);
 
     /// Push currently collected exact-seek frames in decoder presentation order.
     void flush_reorder_buffer();
-
-    /// Keep an exact-seek candidate alive without converting its pixels yet.
-    ExactSeekCandidate make_exact_seek_candidate(AVFrame* frame) const;
 
     /// Add a candidate in decoder presentation order, retaining only the last pre-target frame.
     void collect_exact_seek_candidate(ExactSeekCandidate candidate);
@@ -167,9 +159,6 @@ private:
 
     /// Log the FFmpeg hardware frame pool geometry once it is materialized.
     void log_hw_frame_context_once(const AVFrame* frame);
-
-    /// Refresh lightweight exact-seek memory counters owned by the decode thread.
-    void refresh_exact_seek_memory_stats();
 
     /// Flush codec buffers after seek.
     void safe_flush_codec();
@@ -214,13 +203,7 @@ private:
     std::atomic<bool> decode_paused_{false};
     std::atomic<bool> pause_after_preroll_{false};
     int64_t exact_seek_target_us_ = -1;  // >= 0 when discarding frames before exact seek target
-    std::vector<ExactSeekCandidate> exact_seek_reorder_;  // Stream-ordered exact-seek candidates
-    std::deque<ExactSeekCandidate> exact_seek_pending_frames_;  // Post-preview frames for smooth play
-    std::atomic<size_t> exact_seek_reorder_count_{0};
-    std::atomic<size_t> exact_seek_pending_count_{0};
-    std::atomic<size_t> exact_seek_stable_frame_count_{0};
-    std::atomic<uint64_t> exact_seek_candidate_cpu_bytes_{0};
-    std::atomic<uint64_t> exact_seek_stable_cpu_bytes_{0};
+    ExactSeekCandidateStore exact_seek_candidates_;
     bool drain_decoder_before_next_packet_ = false;
 
     bool eof_flushed_ = false;

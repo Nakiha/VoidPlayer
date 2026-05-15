@@ -445,6 +445,10 @@ TODO:
    - 新增 `decode_drain_policy` 承接 drain-before-next-packet 与 EOF codec drain 的 send/receive 返回值判定、清 drain request、错误停止和暂停/flush 停止 gates。
    - 验证：native-only + seek UI。
 
+71. [x] `DecodeThreadExactSeekCandidateStoreBoundary`
+   - 新增 `ExactSeekCandidateStore` 承接 exact-seek reorder/pending 候选帧容器、候选收集规则和轻量内存统计；`DecodeThread` 保留发布、状态迁移和日志。
+   - 验证：native-only + seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

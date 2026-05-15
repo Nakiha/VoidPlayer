@@ -48,37 +48,6 @@ uint64_t estimate_av_yuv_surface_bytes(int width, int height, AVPixelFormat form
     }
 }
 
-uint64_t estimate_av_frame_cpu_bytes(const AVFrame* frame) {
-    if (!frame || frame->width <= 0 || frame->height <= 0 ||
-        frame->format == AV_PIX_FMT_NONE || frame->hw_frames_ctx) {
-        return 0;
-    }
-    const auto* desc = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(frame->format));
-    if (!desc) {
-        return 0;
-    }
-
-    int max_plane = 0;
-    for (int i = 0; i < desc->nb_components; ++i) {
-        max_plane = std::max(max_plane, static_cast<int>(desc->comp[i].plane));
-    }
-
-    uint64_t bytes = 0;
-    for (int plane = 0; plane <= max_plane && plane < AV_NUM_DATA_POINTERS; ++plane) {
-        if (!frame->data[plane] || frame->linesize[plane] == 0) {
-            continue;
-        }
-        const bool chroma_plane = plane == 1 || plane == 2;
-        const int shift = chroma_plane ? desc->log2_chroma_h : 0;
-        const int plane_height = (frame->height + (1 << shift) - 1) >> shift;
-        const int stride = frame->linesize[plane] < 0
-            ? -frame->linesize[plane]
-            : frame->linesize[plane];
-        bytes += static_cast<uint64_t>(stride) * static_cast<uint64_t>(plane_height);
-    }
-    return bytes;
-}
-
 size_t post_seek_preroll_target(bool hw_enabled) {
     // Hardware-decoded seek/add-track previews are more stable if we wait for
     // one extra frame before exposing the paused preview. Some GPU/driver
@@ -472,16 +441,12 @@ DecodeMemoryStats DecodeThread::memory_stats() const {
             static_cast<uint64_t>(stats.hw_initial_pool_size);
     }
     stats.snapshot_pool = converter_.snapshot_pool_stats();
-    stats.exact_seek_reorder_count =
-        exact_seek_reorder_count_.load(std::memory_order_relaxed);
-    stats.exact_seek_pending_count =
-        exact_seek_pending_count_.load(std::memory_order_relaxed);
-    stats.exact_seek_stable_frame_count =
-        exact_seek_stable_frame_count_.load(std::memory_order_relaxed);
-    stats.exact_seek_candidate_cpu_bytes =
-        exact_seek_candidate_cpu_bytes_.load(std::memory_order_relaxed);
-    stats.exact_seek_stable_cpu_bytes =
-        exact_seek_stable_cpu_bytes_.load(std::memory_order_relaxed);
+    const auto exact_stats = exact_seek_candidates_.stats_snapshot();
+    stats.exact_seek_reorder_count = exact_stats.reorder_count;
+    stats.exact_seek_pending_count = exact_stats.pending_count;
+    stats.exact_seek_stable_frame_count = exact_stats.stable_frame_count;
+    stats.exact_seek_candidate_cpu_bytes = exact_stats.candidate_cpu_bytes;
+    stats.exact_seek_stable_cpu_bytes = exact_stats.stable_cpu_bytes;
     return stats;
 }
 
@@ -497,9 +462,7 @@ void DecodeThread::stop() {
         thread_.join();
         spdlog::info("[DecodeThread] stop() decode thread joined");
     }
-    exact_seek_reorder_.clear();
-    exact_seek_pending_frames_.clear();
-    refresh_exact_seek_memory_stats();
+    exact_seek_candidates_.clear();
     // Release output frames BEFORE freeing hw resources.
     // TextureFrames hold hw_frame_ref (av_frame_ref) which reference
     // hw_frames_ctx -> hw_device_ctx. If hw_device_ctx is freed first,
@@ -557,7 +520,7 @@ void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*
         if (target_us >= 0) {
             rescale_ts(frame);
             if (should_collect_exact_seek_candidate(frame->pts, target_us)) {
-                auto candidate = make_exact_seek_candidate(frame);
+                auto candidate = ExactSeekCandidateStore::make_candidate(frame);
                 if (candidate.frame) {
                     collect_exact_seek_candidate(std::move(candidate));
                 }
@@ -580,10 +543,9 @@ void DecodeThread::safe_flush_codec() {
 }
 
 void DecodeThread::flush_reorder_buffer() {
-    exact_seek_pending_frames_.clear();
+    exact_seek_candidates_.clear_pending();
     drain_decoder_before_next_packet_ = false;
-    if (exact_seek_reorder_.empty()) {
-        refresh_exact_seek_memory_stats();
+    if (exact_seek_candidates_.reorder_empty()) {
         return;
     }
     // Make the decode-device writes visible before exposing reordered frames
@@ -591,7 +553,8 @@ void DecodeThread::flush_reorder_buffer() {
     // partially-written first seek frame.
     auto publisher = make_frame_publisher();
     publisher.flush_visibility_if_needed();
-    for (auto& f : exact_seek_reorder_) {
+    const size_t pushed_count = exact_seek_candidates_.reorder_count();
+    for (auto& f : exact_seek_candidates_.reorder_candidates()) {
         if (!f.frame) {
             continue;
         }
@@ -601,24 +564,9 @@ void DecodeThread::flush_reorder_buffer() {
         }
     }
     spdlog::info("[DecodeThread] Exact seek reorder: {} frames pushed",
-                 exact_seek_reorder_.size());
-    exact_seek_reorder_.clear();
+                 pushed_count);
+    exact_seek_candidates_.clear_reorder();
     exact_seek_target_us_ = -1;
-    refresh_exact_seek_memory_stats();
-}
-
-DecodeThread::ExactSeekCandidate DecodeThread::make_exact_seek_candidate(AVFrame* frame) const {
-    AVFrame* cloned = av_frame_clone(frame);
-    if (!cloned) {
-        spdlog::error("[DecodeThread] Failed to clone exact-seek candidate frame");
-        return {};
-    }
-    return ExactSeekCandidate{
-        frame->pts,
-        std::shared_ptr<AVFrame>(cloned, [](AVFrame* f) {
-            av_frame_free(&f);
-        }),
-    };
 }
 
 void DecodeThread::snapshot_exact_seek_candidate_if_needed(ExactSeekCandidate& candidate) {
@@ -631,51 +579,13 @@ void DecodeThread::snapshot_exact_seek_candidate_if_needed(ExactSeekCandidate& c
     }
 }
 
-void DecodeThread::refresh_exact_seek_memory_stats() {
-    size_t stable_count = 0;
-    uint64_t candidate_cpu_bytes = 0;
-    uint64_t stable_cpu_bytes = 0;
-    auto visit = [&](const ExactSeekCandidate& candidate) {
-        candidate_cpu_bytes += estimate_av_frame_cpu_bytes(candidate.frame.get());
-        if (candidate.stable_frame.has_value()) {
-            ++stable_count;
-            stable_cpu_bytes += estimate_texture_frame_cpu_bytes(*candidate.stable_frame);
-        }
-    };
-    for (const auto& candidate : exact_seek_reorder_) {
-        visit(candidate);
-    }
-    for (const auto& candidate : exact_seek_pending_frames_) {
-        visit(candidate);
-    }
-    exact_seek_reorder_count_.store(exact_seek_reorder_.size(), std::memory_order_relaxed);
-    exact_seek_pending_count_.store(exact_seek_pending_frames_.size(), std::memory_order_relaxed);
-    exact_seek_stable_frame_count_.store(stable_count, std::memory_order_relaxed);
-    exact_seek_candidate_cpu_bytes_.store(candidate_cpu_bytes, std::memory_order_relaxed);
-    exact_seek_stable_cpu_bytes_.store(stable_cpu_bytes, std::memory_order_relaxed);
-}
-
 void DecodeThread::collect_exact_seek_candidate(ExactSeekCandidate candidate) {
-    if (!candidate.frame) {
-        return;
-    }
-    // FFmpeg receive_frame() has already applied codec reorder for display
-    // order. While still before the target, only the latest pre-target frame
-    // can be selected, so drop older pre-target candidates immediately.
-    if (exact_seek_target_us_ >= 0 && candidate.pts_us < exact_seek_target_us_) {
-        exact_seek_reorder_.clear();
-    } else if (exact_seek_target_us_ >= 0 && exact_seek_reorder_.empty()) {
-        // If the target lands before the first displayable frame, that first
-        // post-target candidate becomes the preview.
-        snapshot_exact_seek_candidate_if_needed(candidate);
-    } else if (exact_seek_target_us_ >= 0 &&
-               !exact_seek_reorder_.empty() &&
-               exact_seek_reorder_.back().pts_us < exact_seek_target_us_ &&
-               !exact_seek_reorder_.back().stable_frame.has_value()) {
-        snapshot_exact_seek_candidate_if_needed(exact_seek_reorder_.back());
-    }
-    exact_seek_reorder_.push_back(std::move(candidate));
-    refresh_exact_seek_memory_stats();
+    exact_seek_candidates_.collect(
+        std::move(candidate),
+        exact_seek_target_us_,
+        [this](ExactSeekCandidate& candidate_to_snapshot) {
+            snapshot_exact_seek_candidate_if_needed(candidate_to_snapshot);
+        });
 }
 
 void DecodeThread::log_hw_frame_context_once(const AVFrame* frame) {
@@ -702,21 +612,17 @@ void DecodeThread::log_hw_frame_context_once(const AVFrame* frame) {
 }
 
 bool DecodeThread::exact_seek_preview_window_ready() const {
-    const int64_t newest_pts_us = exact_seek_reorder_.empty()
-        ? 0
-        : exact_seek_reorder_.back().pts_us;
-    return is_exact_seek_preview_window_ready(
-        exact_seek_target_us_, exact_seek_reorder_.size(), newest_pts_us);
+    return exact_seek_candidates_.preview_window_ready(exact_seek_target_us_);
 }
 
 void DecodeThread::publish_exact_seek_window(size_t selected) {
-    if (selected >= exact_seek_reorder_.size()) {
+    if (selected >= exact_seek_candidates_.reorder_count()) {
         return;
     }
 
     auto publisher = make_frame_publisher();
     publisher.flush_visibility_if_needed();
-    const int64_t pts = exact_seek_reorder_[selected].pts_us;
+    const int64_t pts = exact_seek_candidates_.reorder_at(selected).pts_us;
     const size_t buffered = output_buffer_.total_count();
     const size_t capacity = output_buffer_.max_count();
     const size_t free_slots = capacity > buffered ? capacity - buffered : 0;
@@ -724,12 +630,13 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
         spdlog::warn("[DecodeThread] Exact seek preview skipped: output buffer is full");
         return;
     }
-    const size_t end = std::min(exact_seek_reorder_.size(),
+    const size_t end = std::min(exact_seek_candidates_.reorder_count(),
                                 selected + std::min(kExactSeekPreviewWindowFrames, free_slots));
     const size_t published = end - selected;
     bool conversion_failed = false;
     for (size_t i = selected; i < end; ++i) {
-        if (!exact_seek_reorder_[i].frame) {
+        auto& candidate = exact_seek_candidates_.reorder_at(i);
+        if (!candidate.frame) {
             continue;
         }
         if (i == selected && hw_enabled_ && hw_provider_) {
@@ -740,11 +647,11 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
         }
         TextureFrame tex_frame;
         if (i == selected &&
-            exact_seek_reorder_[i].stable_frame.has_value() &&
-            exact_seek_reorder_[i].stable_frame->texture_handle) {
-            tex_frame = *exact_seek_reorder_[i].stable_frame;
+            candidate.stable_frame.has_value() &&
+            candidate.stable_frame->texture_handle) {
+            tex_frame = *candidate.stable_frame;
         } else {
-            auto converted = publisher.convert_frame_for_publish(exact_seek_reorder_[i].frame.get());
+            auto converted = publisher.convert_frame_for_publish(candidate.frame.get());
             if (!converted.has_value()) {
                 spdlog::error("[DecodeThread] Frame conversion failed while publishing exact-seek window");
                 output_buffer_.set_state(TrackState::Error);
@@ -758,15 +665,10 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
         output_buffer_.push_frame(std::move(tex_frame));
     }
     if (conversion_failed) {
-        exact_seek_reorder_.clear();
-        exact_seek_pending_frames_.clear();
-        refresh_exact_seek_memory_stats();
+        exact_seek_candidates_.clear();
         return;
     }
-    exact_seek_pending_frames_.clear();
-    for (size_t i = end; i < exact_seek_reorder_.size(); ++i) {
-        exact_seek_pending_frames_.push_back(std::move(exact_seek_reorder_[i]));
-    }
+    exact_seek_candidates_.move_reorder_tail_to_pending(end);
     output_buffer_.set_state(TrackState::Ready);
     if (pause_after_preroll_.load(std::memory_order_acquire)) {
         decode_paused_.store(true, std::memory_order_release);
@@ -774,30 +676,24 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
     post_seek_ = false;
     exact_seek_target_us_ = -1;
     drain_decoder_before_next_packet_ = true;
-    exact_seek_reorder_.clear();
-    refresh_exact_seek_memory_stats();
     spdlog::info("[DecodeThread] Exact seek drain: preview frame ready pts={:.3f}s, published={} frames, pending={} frames, state->Ready",
-                 pts / 1e6, published, exact_seek_pending_frames_.size());
+                 pts / 1e6, published, exact_seek_candidates_.pending_count());
 }
 
 bool DecodeThread::publish_best_exact_seek_frame() {
-    if (exact_seek_target_us_ < 0 || exact_seek_reorder_.empty()) {
+    if (exact_seek_target_us_ < 0 || exact_seek_candidates_.reorder_empty()) {
         return false;
     }
 
-    std::vector<int64_t> candidate_pts_us;
-    candidate_pts_us.reserve(exact_seek_reorder_.size());
-    for (const auto& candidate : exact_seek_reorder_) {
-        candidate_pts_us.push_back(candidate.pts_us);
-    }
+    auto candidate_pts_us = exact_seek_candidates_.reorder_pts();
     const auto selected = select_exact_seek_preview_index(
         candidate_pts_us, exact_seek_target_us_);
     if (!selected.has_value()) {
         return false;
     }
 
-    const int64_t selected_pts = exact_seek_reorder_[*selected].pts_us;
-    const size_t collected = exact_seek_reorder_.size();
+    const int64_t selected_pts = exact_seek_candidates_.reorder_at(*selected).pts_us;
+    const size_t collected = exact_seek_candidates_.reorder_count();
     spdlog::info("[DecodeThread] Exact seek reorder: selected pts={:.3f}s from {} frames (target={:.3f}s)",
                  selected_pts / 1e6, collected, exact_seek_target_us_ / 1e6);
     publish_exact_seek_window(*selected);
@@ -805,19 +701,16 @@ bool DecodeThread::publish_best_exact_seek_frame() {
 }
 
 void DecodeThread::publish_pending_exact_seek_frames() {
-    if (exact_seek_pending_frames_.empty()) {
+    auto candidate = exact_seek_candidates_.pop_pending();
+    if (!candidate.has_value()) {
         return;
     }
-    auto candidate = std::move(exact_seek_pending_frames_.front());
-    exact_seek_pending_frames_.pop_front();
-    if (!candidate.frame) {
-        refresh_exact_seek_memory_stats();
+    if (!candidate->frame) {
         return;
     }
     auto publisher = make_frame_publisher();
     publisher.flush_before_publish_if_needed(true);
-    publisher.convert_and_push_frame(candidate.frame.get(), "pending exact-seek frame");
-    refresh_exact_seek_memory_stats();
+    publisher.convert_and_push_frame(candidate->frame.get(), "pending exact-seek frame");
 }
 
 DecodedFramePublisher DecodeThread::make_frame_publisher() {
@@ -886,9 +779,7 @@ void DecodeThread::run() {
                          static_cast<int>(output_buffer_.state()));
 
             av_frame_unref(frame);
-            exact_seek_reorder_.clear();
-            exact_seek_pending_frames_.clear();
-            refresh_exact_seek_memory_stats();
+            exact_seek_candidates_.clear();
             drain_decoder_before_next_packet_ = false;
 
             // Always reset codec state on seek. During add-track initial seek,
@@ -921,7 +812,7 @@ void DecodeThread::run() {
         }
 
         if (should_publish_pending_exact_seek_frames(
-                exact_seek_pending_frames_.size(),
+                exact_seek_candidates_.pending_count(),
                 decode_paused_.load(std::memory_order_acquire),
                 output_buffer_.state())) {
             publish_pending_exact_seek_frames();
@@ -1012,7 +903,7 @@ void DecodeThread::run() {
                     if (eof_action == EofDrainAction::BufferingExactSeekDrain) {
                         drain_codec(frame, rescale_ts, exact_seek_target_us_);
                         spdlog::info("[DecodeThread] Exact seek EOF drain: reorder buffer has {} frames",
-                                     exact_seek_reorder_.size());
+                                     exact_seek_candidates_.reorder_count());
                     } else {
                         eof_flushed_ = true;
                     }
@@ -1153,7 +1044,7 @@ void DecodeThread::run() {
                     continue;
                 }
 
-                auto candidate = make_exact_seek_candidate(frame);
+                auto candidate = ExactSeekCandidateStore::make_candidate(frame);
                 ++frames_produced;
                 if (candidate.frame) {
                     collect_exact_seek_candidate(std::move(candidate));
@@ -1207,10 +1098,10 @@ void DecodeThread::run() {
         // Exact seek B-frame reordering fallback. The receive loop normally
         // publishes once enough frames are collected, but EOF/drain can also
         // make the buffer ready here.
-        if (exact_seek_target_us_ >= 0 && !exact_seek_reorder_.empty()) {
+        if (exact_seek_target_us_ >= 0 && !exact_seek_candidates_.reorder_empty()) {
             const auto publish_decision = choose_exact_seek_reorder_publish(
                 exact_seek_target_us_ >= 0,
-                exact_seek_reorder_.size(),
+                exact_seek_candidates_.reorder_count(),
                 input_queue_.is_eof(),
                 input_queue_.size(),
                 eof_flushed_,
@@ -1218,7 +1109,7 @@ void DecodeThread::run() {
             if (publish_decision.drain_codec) {
                 drain_codec(frame, rescale_ts, exact_seek_target_us_);
                 spdlog::info("[DecodeThread] Exact seek EOF: codec drain, reorder buffer now has {} frames",
-                             exact_seek_reorder_.size());
+                             exact_seek_candidates_.reorder_count());
             }
 
             if (publish_decision.publish) {

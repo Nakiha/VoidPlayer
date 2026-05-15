@@ -517,6 +517,10 @@ TODO:
    - 扩展 `exact_seek_publish_policy`，承接 exact-seek preview publish 成功 gate、pause/drain state facts 以及 completion log counters；`DecodeThread` 保留 TrackBuffer 状态写入、atomics 和日志发射。
    - 验证：native-only + smoke/seek UI。
 
+89. [x] `DecodeThreadExactSeekPublishSchedulingBoundary`
+   - 扩展 `decode_loop_policy`，承接 exact-seek candidate 收集后的 preview publish gate 和硬解 exact-seek pacing gate；`DecodeThread` 保留 candidate ownership、publish 调用、sleep 和 loop control。
+   - 验证：native-only + smoke/seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

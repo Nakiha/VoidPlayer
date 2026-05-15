@@ -157,6 +157,7 @@ Fixed or reduced:
 - `DecodeThread`: exact-seek reorder/pending candidate ownership and candidate memory counters now live in `ExactSeekCandidateStore` with focused state tests.
 - `DecodeThread`: AVFrame timestamp rescale to microseconds now lives in `frame_timestamp_rescaler` with focused state tests.
 - `DecodeThread`: exact-seek preview completion success gate, pause/drain state facts, and completion log counters now live in `exact_seek_publish_policy`.
+- `DecodeThread`: exact-seek preview-after-collect publish gate and hardware exact-seek pacing gate moved into `decode_loop_policy`.
 - `NativeResourceBudget`: track buffer queued-frame depth decision moved into `TrackBufferBudget` and is tested as a policy boundary.
 - `AudioEngine::Impl`: track registry, buffer publication facts, and decode pause/seek fanout moved into `AudioTrackRegistry`.
 - `AudioEngine::Impl`: nested FFmpeg audio decoder thread implementation moved into `AudioDecodeThread`.
@@ -170,13 +171,13 @@ Still active:
 
 - `Renderer` remains the coordination root.
 - `Renderer` still owns public layout API/redraw invalidation and deferred seek execution.
-- `DecodeThread` still owns exact-seek publish scheduling and drain-before-next-packet execution.
+- `DecodeThread` still owns drain-before-next-packet execution and decode-loop control flow.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P135 DecodeThread Exact Seek Publish Scheduling Boundary.
+Next patch: P136 Runner FFI Diagnostics Scope Boundary.
 
 Completed patch details through P123 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -413,6 +414,8 @@ Result:
 
 ### P135 - DecodeThread Exact Seek Publish Scheduling Boundary
 
+Status: done in Patch 135.
+
 Goal:
 
 - Continue shrinking `DecodeThread` by extracting the remaining exact-seek publish scheduling decisions around preview-window readiness, EOF fallback publish, and hardware pacing.
@@ -423,6 +426,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `decode_loop_policy` gates for exact-seek preview publish after candidate collection and hardware exact-seek pacing.
+- Rewired the receive loop to use the policy gates while keeping candidate ownership, publish calls, sleeps, and loop breaks inside `DecodeThread`.
+- Added focused native coverage for exact-seek preview publish and pacing gate combinations.
+
+### P136 - Runner FFI Diagnostics Scope Boundary
+
+Goal:
+
+- Continue closing chat's runner plugin God Module item by removing the remaining FFI diagnostics active-player lookup from the process-global player registry.
+- Keep the public `naki_vr_get_diagnostics` payload stable while moving lookup ownership toward host/session scope.
+- Preserve MethodChannel diagnostics and existing runner smoke behavior.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h264.csv`
 
 ## Do-Not-Drift List
 

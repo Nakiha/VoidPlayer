@@ -137,3 +137,14 @@ TEST_CASE("DecodeLoopPolicy: exact-seek reorder publishes on preview window or E
     REQUIRE_FALSE(decision.drain_codec);
     REQUIRE(decision.publish);
 }
+
+TEST_CASE("DecodeLoopPolicy: exact-seek preview publish and pacing gates stay explicit",
+          "[decode_thread][decode_loop_policy]") {
+    REQUIRE_FALSE(should_publish_exact_seek_preview_after_collect(false, true));
+    REQUIRE_FALSE(should_publish_exact_seek_preview_after_collect(true, false));
+    REQUIRE(should_publish_exact_seek_preview_after_collect(true, true));
+
+    REQUIRE_FALSE(should_pace_hardware_exact_seek_decode(false, true));
+    REQUIRE_FALSE(should_pace_hardware_exact_seek_decode(true, false));
+    REQUIRE(should_pace_hardware_exact_seek_decode(true, true));
+}

@@ -113,4 +113,16 @@ ExactSeekReorderPublishDecision choose_exact_seek_reorder_publish(
     return decision;
 }
 
+bool should_publish_exact_seek_preview_after_collect(
+    bool exact_seek_active,
+    bool preview_window_ready) {
+    return exact_seek_active && preview_window_ready;
+}
+
+bool should_pace_hardware_exact_seek_decode(
+    bool exact_seek_active,
+    bool hardware_decode) {
+    return exact_seek_active && hardware_decode;
+}
+
 } // namespace vr

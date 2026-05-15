@@ -1039,7 +1039,9 @@ void DecodeThread::run() {
                     collect_exact_seek_candidate(std::move(candidate));
                 }
 
-                if (exact_seek_preview_window_ready()) {
+                if (should_publish_exact_seek_preview_after_collect(
+                        exact_seek_target_us_ >= 0,
+                        exact_seek_preview_window_ready())) {
                     publish_best_exact_seek_frame();
                     break;
                 }
@@ -1099,7 +1101,8 @@ void DecodeThread::run() {
         // D3D11VA HEVC exact seek is sensitive to burst-feeding packets while
         // paused. Playback naturally paces this path through render/clock
         // consumption; mirror a tiny amount of that pacing during drain mode.
-        if (exact_seek_target_us_ >= 0 && hw_enabled_) {
+        if (should_pace_hardware_exact_seek_decode(
+                exact_seek_target_us_ >= 0, hw_enabled_)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 

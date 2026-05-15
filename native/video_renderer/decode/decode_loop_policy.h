@@ -79,4 +79,12 @@ ExactSeekReorderPublishDecision choose_exact_seek_reorder_publish(
     bool eof_flushed,
     bool preview_window_ready);
 
+bool should_publish_exact_seek_preview_after_collect(
+    bool exact_seek_active,
+    bool preview_window_ready);
+
+bool should_pace_hardware_exact_seek_decode(
+    bool exact_seek_active,
+    bool hardware_decode);
+
 } // namespace vr

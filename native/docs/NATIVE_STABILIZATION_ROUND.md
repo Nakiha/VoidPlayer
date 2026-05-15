@@ -176,163 +176,9 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P134 Native GodObject Round Archive.
+Next patch: P135 DecodeThread Exact Seek Publish Scheduling Boundary.
 
-Completed patch details through P115 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
-
-### P116 - DecodeThread Timestamp Rescale Boundary
-
-Status: done in Patch 116.
-
-Goal:
-
-- Continue reducing `DecodeThread` by extracting stream-timebase-to-microseconds frame timestamp rescale from the decode loop lambda.
-- Keep exact-seek target comparison and published PTS/DTS/duration semantics unchanged.
-- Prefer a small tested helper so future drain/publish extraction does not carry a member-capturing timestamp lambda.
-
-Validation:
-
-- `python dev.py test --native-only`
-- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
-
-Result:
-
-- Added `frame_timestamp_rescaler` for AVFrame PTS, best-effort PTS, DTS, and duration conversion from stream time base to microseconds.
-- Replaced the decode-loop timestamp lambda with the helper, leaving call sites and ordering unchanged.
-- Added native coverage for direct PTS, best-effort fallback, missing DTS, and non-positive duration behavior.
-
-### P117 - DecodeThread Seek Epoch Boundary
-
-Goal:
-
-- Continue reducing `DecodeThread` by extracting the seek notification take/reset/start-state preparation block from the main loop.
-- Keep codec flush, exact-seek target setup, post-seek preroll, and cancellation semantics unchanged.
-- Prefer a tested policy/helper for seek epoch state updates before moving broader EOF or frame lifetime choreography.
-
-Validation:
-
-- `python dev.py test --native-only`
-- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
-
-Result:
-
-- Added `decode_seek_epoch` for pending seek take/reset, seek type labeling, and exact/keyframe seek epoch start-state decisions.
-- Replaced the inline `DecodeThread::run()` seek block with `take_pending_seek_notification()` and `begin_seek_epoch()`, preserving codec flush, exact seek target setup, post-seek fast preroll, cancellation reset, and Buffering transition ordering.
-- Added native coverage for pending/idle/invalid seek notifications and exact/keyframe start-state differences.
-
-### P118 - DecodeThread Packet Consumption Boundary
-
-Goal:
-
-- Continue reducing `DecodeThread` by extracting packet-consumption decisions around pause, flushing, stale seek packets, codec send action, and AVPacket ownership cleanup.
-- Keep codec send ordering, cancellation semantics, queue EOF handling, and output state transitions unchanged.
-- Prefer tested policy/helper seams before moving any AVPacket lifetime code out of the decode loop.
-
-Validation:
-
-- `python dev.py test --native-only`
-- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
-
-Result:
-
-- Extended `decode_loop_policy` with packet pop routing, cancel-before-send checkpoint, and packet send return-value decisions.
-- Replaced the inline packet gap/stale packet/send error branches in `DecodeThread::run()` with tested policy calls while keeping AVPacket free timing, logs, and Error/paused/running state writes local.
-- Added native coverage for packet-present vs queue-gap handling, cancelled non-packet sleeps, send EAGAIN/EOF receive-loop preservation, hard send errors, and SEH stop behavior.
-
-### P119 - DecodeThread Receive Action Boundary
-
-Goal:
-
-- Continue reducing `DecodeThread` by extracting normal receive-loop return-value decisions around cancelled loops, codec receive SEH, EAGAIN/EOF, hard receive errors, and frame publish continuation.
-- Keep AVFrame unref timing, exact-seek candidate capture, hardware visibility flush, preroll state transition, and perf counter updates unchanged.
-- Prefer a tested policy/helper before moving frame lifetime or exact-seek publish code.
-
-Validation:
-
-- `python dev.py test --native-only`
-- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
-
-Result:
-
-- Extended `decode_loop_policy` with receive-loop cancel, EAGAIN/EOF, logged hard-error, and SEH error actions.
-- Replaced the normal decode receive-loop return-value condition tree with tested policy calls while keeping AVFrame unref timing, exact-seek capture, publish, and preroll transitions local.
-- Added native coverage for receive publish/stop/logged-error/error-stop behavior.
-
-### P120 - DecodeThread Preroll Transition Boundary
-
-Goal:
-
-- Continue reducing duplicated `DecodeThread` Buffering -> Ready transition code around normal preroll, post-seek fast preroll, EOF preroll completion, and pause-after-preroll.
-- Keep output buffer state mutation, `post_seek_` reset, `pause_after_preroll_` handling, and logs semantically unchanged.
-- Prefer a tested helper/policy that computes transition intent before any broader frame publishing extraction.
-
-Validation:
-
-- `python dev.py test --native-only`
-- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
-
-Result:
-
-- Added `decode_preroll_policy` for post-seek software/hardware preroll targets, normal/full-preroll readiness, and Buffering->Ready transition intent.
-- Replaced the duplicated normal preroll completion blocks with `DecodeThread::complete_preroll_if_ready()`, leaving logs, `TrackBuffer` state writes, `pause_after_preroll_`, and `post_seek_` reset in the decode thread.
-- Added native coverage for hardware post-seek extra-frame readiness, normal preroll delegation, Ready transition decisions, and no-op states.
-
-### P121 - DecodeThread EOF Drain Boundary
-
-Goal:
-
-- Continue reducing `DecodeThread` by extracting EOF/gap handling around Buffering exact-seek EOF drain, Buffering non-exact EOF mark-flushed, normal codec EOF drain, and post-seek EOF completion.
-- Keep codec drain ordering, exact-seek reorder publish behavior, output state transitions, and logs unchanged.
-- Prefer tested decisions before moving any codec drain or AVFrame lifetime code.
-
-Validation:
-
-- `python dev.py test --native-only`
-- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
-
-Result:
-
-- Moved queue-gap and EOF drain orchestration out of `DecodeThread::run()` into `handle_queue_gap_or_eof()`.
-- Preserved existing tested EOF decisions from `decode_loop_policy` / `decode_drain_policy`, including Buffering exact-seek EOF drain, Buffering mark-flushed, normal codec drain, and send-error stop behavior.
-- Kept codec drain ordering, exact-seek reorder publish calls, `eof_flushed_`, output state writes, and logs unchanged.
-
-### P122 - DecodeThread Exact Seek Publish Boundary
-
-Goal:
-
-- Continue reducing `DecodeThread` by extracting exact-seek publish state transitions around selected preview publish, pending candidate publish, post-preview drain request, and pause-after-preroll.
-- Keep AVFrame ownership, hardware visibility flush, stable-frame reuse, conversion failure handling, and preview logs unchanged.
-- Prefer tested state decisions before moving any frame conversion or snapshot ownership code.
-
-Validation:
-
-- `python dev.py test --native-only`
-- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
-
-Result:
-
-- Added `exact_seek_publish_policy` for exact-seek preview publish-window sizing and post-preview completion state.
-- `DecodeThread::publish_exact_seek_window()` now delegates output-buffer capacity/window math and Ready/pause/post-seek/target/drain-request completion intent while preserving frame conversion, stable-frame reuse, hardware wait/flush, candidate tail movement, and logs.
-- Added native coverage for capacity-bounded preview windows, full/invalid output rejection, and completion state reset.
-
-### P123 - Native GodObject Round Archive
-
-Status: done in Patch 123.
-
-Goal:
-
-- Keep this current cockpit from growing into another historical log by moving older completed patch details into `NATIVE_STABILIZATION_HISTORY.md`.
-- Preserve active status, still-active GodObject list, and the most recent/current patch queue needed for the next coding rounds.
-- No product code changes.
-
-Validation:
-
-- Documentation-only; run `git diff --check`.
-
-Result:
-
-- Archived completed patch details P100-P115 into `NATIVE_STABILIZATION_HISTORY.md`.
-- Kept the active cockpit focused on the still-open GodObject risks and recent DecodeThread slices.
+Completed patch details through P123 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
 ### P124 - DecodeThread Frame Lifetime Boundary
 
@@ -548,6 +394,8 @@ Result:
 
 ### P134 - Native GodObject Round Archive
 
+Status: done in Patch 134.
+
 Goal:
 
 - Move another early batch of completed GodObject patch details from this active cockpit into `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
@@ -557,6 +405,24 @@ Goal:
 Validation:
 
 - `git diff --check`
+
+Result:
+
+- Archived completed patch details P116-P123 into `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
+- Kept the active cockpit focused on P124+ and the remaining GodObject risks.
+
+### P135 - DecodeThread Exact Seek Publish Scheduling Boundary
+
+Goal:
+
+- Continue shrinking `DecodeThread` by extracting the remaining exact-seek publish scheduling decisions around preview-window readiness, EOF fallback publish, and hardware pacing.
+- Keep `DecodeThread` responsible for AVFrame ownership, codec drain execution, perf counters, and final loop control.
+- Preserve paused preview behavior and H.265 seek visual regression coverage.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
 
 ## Do-Not-Drift List
 

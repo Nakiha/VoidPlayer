@@ -3,6 +3,7 @@
 #include "video_renderer/decode/decode_drain_policy.h"
 #include "video_renderer/decode/decode_loop_policy.h"
 #include "video_renderer/decode/decode_preroll_policy.h"
+#include "video_renderer/decode/exact_seek_publish_policy.h"
 #include "video_renderer/decode/exact_seek_window.h"
 #include "video_renderer/decode/frame_timestamp_rescaler.h"
 #include <spdlog/spdlog.h>
@@ -667,18 +668,18 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
     auto publisher = make_frame_publisher();
     publisher.flush_visibility_if_needed();
     const int64_t pts = exact_seek_candidates_.reorder_at(selected).pts_us;
-    const size_t buffered = output_buffer_.total_count();
-    const size_t capacity = output_buffer_.max_count();
-    const size_t free_slots = capacity > buffered ? capacity - buffered : 0;
-    if (free_slots == 0) {
+    const auto window = choose_exact_seek_preview_publish_window(
+        selected,
+        exact_seek_candidates_.reorder_count(),
+        output_buffer_.total_count(),
+        output_buffer_.max_count(),
+        kExactSeekPreviewWindowFrames);
+    if (!window.can_publish) {
         spdlog::warn("[DecodeThread] Exact seek preview skipped: output buffer is full");
         return;
     }
-    const size_t end = std::min(exact_seek_candidates_.reorder_count(),
-                                selected + std::min(kExactSeekPreviewWindowFrames, free_slots));
-    const size_t published = end - selected;
     bool conversion_failed = false;
-    for (size_t i = selected; i < end; ++i) {
+    for (size_t i = selected; i < window.end; ++i) {
         auto& candidate = exact_seek_candidates_.reorder_at(i);
         if (!candidate.frame) {
             continue;
@@ -712,16 +713,18 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
         exact_seek_candidates_.clear();
         return;
     }
-    exact_seek_candidates_.move_reorder_tail_to_pending(end);
-    output_buffer_.set_state(TrackState::Ready);
-    if (pause_after_preroll_.load(std::memory_order_acquire)) {
+    exact_seek_candidates_.move_reorder_tail_to_pending(window.end);
+    const auto completion = complete_exact_seek_preview_publish(
+        pause_after_preroll_.load(std::memory_order_acquire));
+    output_buffer_.set_state(completion.output_state);
+    if (completion.pause_decode) {
         decode_paused_.store(true, std::memory_order_release);
     }
-    post_seek_ = false;
-    exact_seek_target_us_ = -1;
-    drain_decoder_before_next_packet_ = true;
+    post_seek_ = completion.post_seek;
+    exact_seek_target_us_ = completion.exact_seek_target_us;
+    drain_decoder_before_next_packet_ = completion.drain_decoder_before_next_packet;
     spdlog::info("[DecodeThread] Exact seek drain: preview frame ready pts={:.3f}s, published={} frames, pending={} frames, state->Ready",
-                 pts / 1e6, published, exact_seek_candidates_.pending_count());
+                 pts / 1e6, window.published, exact_seek_candidates_.pending_count());
 }
 
 bool DecodeThread::publish_best_exact_seek_frame() {

@@ -473,6 +473,10 @@ TODO:
    - 已把 queue gap / EOF drain 编排从 `run()` 抽到 `handle_queue_gap_or_eof()`，复用已测试的 EOF drain/send/receive policy；主循环只保留 pop 分流和 stop/continue 意图。
    - 验证：native-only + seek UI。
 
+78. [x] `DecodeThreadExactSeekPublishBoundary`
+   - 新增 `exact_seek_publish_policy` 承接 exact-seek preview 发布窗口裁剪和成功发布后的 Ready/pause/drain/target-reset 状态意图；`DecodeThread` 保留 AVFrame、硬解 wait、stable-frame 复用和转换失败副作用。
+   - 验证：native-only + seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

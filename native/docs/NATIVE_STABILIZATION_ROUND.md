@@ -172,7 +172,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P122 DecodeThread Exact Seek Publish Boundary.
+Next patch: P123 Native GodObject Round Archive.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -641,6 +641,24 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `exact_seek_publish_policy` for exact-seek preview publish-window sizing and post-preview completion state.
+- `DecodeThread::publish_exact_seek_window()` now delegates output-buffer capacity/window math and Ready/pause/post-seek/target/drain-request completion intent while preserving frame conversion, stable-frame reuse, hardware wait/flush, candidate tail movement, and logs.
+- Added native coverage for capacity-bounded preview windows, full/invalid output rejection, and completion state reset.
+
+### P123 - Native GodObject Round Archive
+
+Goal:
+
+- Keep this current cockpit from growing into another historical log by moving older completed patch details into `NATIVE_STABILIZATION_HISTORY.md`.
+- Preserve active status, still-active GodObject list, and the most recent/current patch queue needed for the next coding rounds.
+- No product code changes.
+
+Validation:
+
+- Documentation-only; run `git diff --check`.
 
 ## Do-Not-Drift List
 

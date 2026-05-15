@@ -192,9 +192,19 @@ int32_t naki_analysis_handle_nalu_to_frame(NakiAnalysisHandle handle, int32_t na
 extern "C" __declspec(dllexport)
 int32_t naki_analysis_handle_get_frame_buckets(NakiAnalysisHandle handle, int32_t start, int32_t bucket_size, NakiFrameBucket* out, int32_t max_count);
 
-// Register a callback that returns the current playback PTS in microseconds.
-// Called by video_renderer_plugin during initialization.
-void naki_analysis_register_pts_callback(int64_t (*cb)());
+using NakiAnalysisPtsCallback = int64_t (*)();
+
+// Legacy process-wide callback registration. Prefer the owner-scoped variant
+// when the caller has a host/plugin lifetime token.
+void naki_analysis_register_pts_callback(NakiAnalysisPtsCallback cb);
+
+// Register/clear a callback that returns the current playback PTS in
+// microseconds. Clear only removes the callback when the owner matches the
+// active registration, so plugin teardown cannot wipe a newer host.
+void naki_analysis_register_pts_callback_for_owner(
+    const void* owner,
+    NakiAnalysisPtsCallback cb);
+void naki_analysis_clear_pts_callback_for_owner(const void* owner);
 
 /// Generate a progressive VAC2 base cache for a video file.
 /// Writes to <cache_root>/<hash>/base.vac.

@@ -236,15 +236,18 @@ VideoRendererPlugin::VideoRendererPlugin(
     log_ffmpeg_runtime_versions();
 
     // Register PTS callback for analysis FFI (avoids analysis_ffi depending on NativePlayer)
-    naki_analysis_register_pts_callback([]() -> int64_t {
-        auto r = pin_diagnostics_player();
-        return r ? r->current_pts_us() : 0;
-    });
+    naki_analysis_register_pts_callback_for_owner(
+        diagnostics_session_.get(),
+        []() -> int64_t {
+            auto r = pin_diagnostics_player();
+            return r ? r->current_pts_us() : 0;
+        });
 }
 
 VideoRendererPlugin::~VideoRendererPlugin() {
     event_bridge_.Shutdown();
     if (diagnostics_session_) {
+        naki_analysis_clear_pts_callback_for_owner(diagnostics_session_.get());
         diagnostics_session_->ClearPlayer();
         GlobalNativeDiagnosticsSessionRegistry().Clear(diagnostics_session_);
     }

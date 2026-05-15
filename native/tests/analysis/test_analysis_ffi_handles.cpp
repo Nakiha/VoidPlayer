@@ -23,6 +23,12 @@ extern "C" uint64_t naki_analysis_test_overlay_publish_budget(
 
 namespace {
 
+std::atomic<int64_t> g_test_pts_us{0};
+
+int64_t test_pts_callback() {
+    return g_test_pts_us.load(std::memory_order_acquire);
+}
+
 void write_sized_file(const std::filesystem::path& path, size_t bytes) {
     std::filesystem::create_directories(path.parent_path());
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
@@ -236,6 +242,22 @@ TEST_CASE("analysis FFI handle opens VAC2 base indexes",
     REQUIRE(summary->packet_count == 2);
     REQUIRE(summary->nalu_count == 2);
     REQUIRE(summary->codec == static_cast<int32_t>(AnalysisCodec::H264));
+    REQUIRE(summary->current_frame_idx == -1);
+
+    int owner_a = 0;
+    int owner_b = 0;
+    g_test_pts_us.store(150000, std::memory_order_release);
+    naki_analysis_register_pts_callback_for_owner(&owner_a, test_pts_callback);
+    summary = naki_analysis_handle_get_summary(handle);
+    REQUIRE(summary->current_frame_idx == 1);
+
+    naki_analysis_clear_pts_callback_for_owner(&owner_b);
+    summary = naki_analysis_handle_get_summary(handle);
+    REQUIRE(summary->current_frame_idx == 1);
+
+    naki_analysis_clear_pts_callback_for_owner(&owner_a);
+    summary = naki_analysis_handle_get_summary(handle);
+    REQUIRE(summary->current_frame_idx == -1);
 
     NakiFrameInfo frame{};
     REQUIRE(naki_analysis_handle_get_frames_range(handle, 1, &frame, 1) == 1);

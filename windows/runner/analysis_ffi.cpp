@@ -34,8 +34,13 @@ extern "C" {
 
 // Callback registered by video_renderer_plugin to provide current PTS.
 // Avoids analysis_ffi needing to know about vr::Renderer.
-using PtsCallback = int64_t (*)();
-static std::atomic<PtsCallback> g_get_current_pts_us{nullptr};
+struct PtsCallbackRegistration {
+    const void* owner = nullptr;
+    NakiAnalysisPtsCallback callback = nullptr;
+};
+
+std::mutex g_pts_callback_mutex;
+PtsCallbackRegistration g_pts_callback;
 
 struct AnalysisFfiError {
     int32_t status = NAKI_ANALYSIS_OK;
@@ -53,8 +58,22 @@ void set_analysis_ok() {
     set_analysis_error(NAKI_ANALYSIS_OK, "");
 }
 
-void naki_analysis_register_pts_callback(int64_t (*cb)()) {
-    g_get_current_pts_us.store(cb, std::memory_order_release);
+void naki_analysis_register_pts_callback(NakiAnalysisPtsCallback cb) {
+    naki_analysis_register_pts_callback_for_owner(nullptr, cb);
+}
+
+void naki_analysis_register_pts_callback_for_owner(
+    const void* owner,
+    NakiAnalysisPtsCallback cb) {
+    std::lock_guard<std::mutex> lock(g_pts_callback_mutex);
+    g_pts_callback = PtsCallbackRegistration{owner, cb};
+}
+
+void naki_analysis_clear_pts_callback_for_owner(const void* owner) {
+    std::lock_guard<std::mutex> lock(g_pts_callback_mutex);
+    if (g_pts_callback.owner == owner) {
+        g_pts_callback = PtsCallbackRegistration{};
+    }
 }
 
 int32_t naki_analysis_abi_version() {
@@ -305,7 +324,11 @@ int32_t vac2_frame_idx_for_timestamp_us(const vr::analysis::Vac2BaseFile& base,
 }
 
 int32_t current_vac2_frame_idx(const vr::analysis::Vac2BaseFile& base) {
-    auto cb = g_get_current_pts_us.load(std::memory_order_acquire);
+    NakiAnalysisPtsCallback cb = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_pts_callback_mutex);
+        cb = g_pts_callback.callback;
+    }
     if (!cb) return -1;
     return vac2_frame_idx_for_pts_us(base, cb());
 }

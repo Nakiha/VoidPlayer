@@ -631,7 +631,7 @@ TODO:
 - [x] 把裸 `g_player_weak` / `g_player_mutex` 先收口到 registry，再替换为 host-owned `NativeDiagnosticsSession`。
 - [x] 把 MethodChannel diagnostics 的 active player 从 process-global registry 改为 plugin instance scope。
 - [x] 把 FFI diagnostics 的 active player 从 process-global registry 改为 host/session scope。
-- [ ] analysis PTS callback 支持 handle/player scoped 注册；global callback 标记 deprecated。
+- [x] analysis PTS callback 支持 host/player scoped 注册；legacy global callback 保留兼容并标记为非首选。
 - [x] 移除 analysis legacy singleton reader API；Dart/native 读取路径改为 handle-scoped VAC2 session。
 - [x] 为 process-global logging/crash FFI API 增加文档警示。
 - [ ] 规划 host-provided logger/sink 的长期接口。

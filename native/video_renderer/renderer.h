@@ -339,6 +339,10 @@ private:
     /// Caller must hold state_mutex_.
     void enter_terminal_device_lost_locked(const char* operation);
     void reset_d3d_metrics();
+    D3D11Device* d3d_device() const;
+    D3D11FramePresenter* frame_presenter() const;
+    D3D11HeadlessOutput* headless_output() const;
+    D3D11RenderResources* d3d_resources() const;
 
     std::unique_ptr<PlaybackController> owned_playback_;
     PlaybackController* playback_ = nullptr;
@@ -347,13 +351,7 @@ private:
     std::unique_ptr<SeekCoordinator> seek_coordinator_;
     std::unique_ptr<AnalysisOverlayRenderer> analysis_overlay_renderer_;
     std::unique_ptr<D3D11RenderBackend> d3d_backend_;
-    D3D11Device* d3d_device_ = nullptr;
-    TextureManager* texture_mgr_ = nullptr;
-    D3D11FramePresenter* frame_presenter_ = nullptr;
-    D3D11HeadlessOutput* headless_output_ = nullptr;
-    ShaderManager* shader_mgr_ = nullptr;
     std::unique_ptr<RenderSink> render_sink_;
-    D3D11RenderResources* d3d_resources_ = nullptr;
     FrameCaptureService frame_capture_;
     LayoutController layout_controller_;
     RenderLoopController render_loop_controller_;

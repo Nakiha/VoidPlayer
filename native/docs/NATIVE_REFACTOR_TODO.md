@@ -182,7 +182,7 @@ TODO:
    - 目标：shutdown 开始后 gate late demux/render callbacks；render loop 使用 RAII timer guard 和 noexcept exception boundary；退出时不再无条件 flush pending resize。
    - 验证：native-only + shutdown/recreate UI smoke。
 
-6. [ ] `RendererBackendRefsCleanup`
+6. [x] `RendererBackendRefsCleanup`
    - 目标：清掉未使用或可由 `RenderBackend` 访问的 borrowed raw backend pointers，降低 shutdown/reinit 悬空指针心智负担。
    - 验证：native-only + smoke UI。
 

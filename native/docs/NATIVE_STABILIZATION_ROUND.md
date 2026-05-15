@@ -198,7 +198,7 @@ Verified:
 
 ## Active Patch Queue
 
-Next patch: P141 Renderer Backend Refs Cleanup.
+Next patch: P142 Renderer Directory Regroup.
 
 Completed patch details through P123 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -564,6 +564,8 @@ Result:
 
 ### P141 - Renderer Backend Refs Cleanup
 
+Status: done in Patch 141.
+
 Goal:
 
 - Remove unused or trivially replaceable borrowed backend raw pointers from `Renderer`.
@@ -574,6 +576,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Removed cached borrowed backend members for D3D device, frame presenter, headless output, shader/texture managers, and render resources.
+- Renderer now queries backend-owned helpers through small accessors, keeping `D3D11RenderBackend` as the single owner of those objects.
+- Resource teardown no longer has to manually null a parallel set of borrowed backend pointers.
+
+### P142 - Renderer Directory Regroup
+
+Goal:
+
+- Move renderer helper/policy files into domain subdirectories after the concurrency fixes are stable.
+- Keep `renderer.cpp/h` at the root as the facade/owner for now.
+- Do not mix behavior changes with the file move; update includes and CMake/source lists only.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `flutter build windows --release`
 
 ## Do-Not-Drift List
 

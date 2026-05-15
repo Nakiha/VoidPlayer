@@ -130,12 +130,6 @@ bool Renderer::initialize(const RendererConfig& config) {
     if (!d3d_backend_->initialize(backend_config)) {
         return fail();
     }
-    d3d_device_ = d3d_backend_->device();
-    texture_mgr_ = d3d_backend_->texture_manager();
-    frame_presenter_ = d3d_backend_->frame_presenter();
-    headless_output_ = d3d_backend_->headless_output();
-    shader_mgr_ = d3d_backend_->shader_manager();
-    d3d_resources_ = d3d_backend_->resources();
 
     const InitialTrackOpenHooks initial_track_hooks{
         [this](const std::string& path, bool use_hardware_decode) {
@@ -220,14 +214,8 @@ void Renderer::shutdown() {
 
 bool Renderer::has_resources_locked() const {
     return tracks_.has_active_tracks() ||
-           d3d_device_ ||
            d3d_backend_ ||
-           texture_mgr_ ||
-           frame_presenter_ ||
-           headless_output_ ||
-           shader_mgr_ ||
            render_sink_ ||
-           d3d_resources_ ||
            initialized_.load() ||
            running_.load() ||
            render_thread_.joinable();
@@ -251,12 +239,6 @@ void Renderer::release_resources_locked() {
         playback_->stop_session();
         playback_session_started_by_renderer_ = false;
     }
-    shader_mgr_ = nullptr;
-    frame_presenter_ = nullptr;
-    texture_mgr_ = nullptr;
-    d3d_resources_ = nullptr;
-    headless_output_ = nullptr;
-    d3d_device_ = nullptr;
     if (d3d_backend_) {
         d3d_backend_->shutdown();
         d3d_backend_.reset();
@@ -296,6 +278,22 @@ void Renderer::reset_d3d_metrics() {
     d3d_metrics_.shared_texture_resize_count.store(0, std::memory_order_relaxed);
     d3d_metrics_.device_lost_count.store(0, std::memory_order_relaxed);
     d3d_metrics_.texture_sharing_failure_count.store(0, std::memory_order_relaxed);
+}
+
+D3D11Device* Renderer::d3d_device() const {
+    return d3d_backend_ ? d3d_backend_->device() : nullptr;
+}
+
+D3D11FramePresenter* Renderer::frame_presenter() const {
+    return d3d_backend_ ? d3d_backend_->frame_presenter() : nullptr;
+}
+
+D3D11HeadlessOutput* Renderer::headless_output() const {
+    return d3d_backend_ ? d3d_backend_->headless_output() : nullptr;
+}
+
+D3D11RenderResources* Renderer::d3d_resources() const {
+    return d3d_backend_ ? d3d_backend_->resources() : nullptr;
 }
 
 void Renderer::play() {
@@ -426,8 +424,8 @@ void Renderer::seek_internal(int64_t target_pts_us,
                     }
                 },
                 [this, i]() {
-                    if (frame_presenter_) {
-                        frame_presenter_->reset_track(i);
+                    if (auto* presenter = frame_presenter()) {
+                        presenter->reset_track(i);
                     }
                 },
             },
@@ -853,10 +851,10 @@ RendererDrawSnapshot Renderer::build_draw_snapshot_locked(
 
 void Renderer::wait_gpu_idle(const char* label) {
     const auto start = std::chrono::steady_clock::now();
-    if (headless_output_) {
-        headless_output_->wait_gpu_idle(label);
-    } else if (d3d_device_) {
-        d3d_device_->context()->Flush();
+    if (auto* output = headless_output()) {
+        output->wait_gpu_idle(label);
+    } else if (auto* device = d3d_device()) {
+        device->context()->Flush();
     }
     d3d_metrics_.render_wait_us.fetch_add(elapsed_us_since(start), std::memory_order_relaxed);
     d3d_metrics_.render_wait_count.fetch_add(1, std::memory_order_relaxed);
@@ -869,28 +867,27 @@ bool Renderer::draw_headless_and_publish(const RendererDrawSnapshot& snapshot,
     if (shutting_down_.load(std::memory_order_acquire)) {
         return false;
     }
-    if (!headless_output_) {
-        return false;
-    }
-    if (!d3d_resources_) {
+    auto* output = headless_output();
+    auto* resources = d3d_resources();
+    if (!output || !resources) {
         return false;
     }
     {
         std::lock_guard<std::mutex> tex_lock(texture_mutex());
-        auto* rtv = headless_output_->begin_frame_locked();
+        auto* rtv = output->begin_frame_locked();
         if (!rtv) {
             return false;
         }
-        d3d_resources_->cached_rtv = rtv;
+        resources->cached_rtv = rtv;
     }
     if (!draw_frame(snapshot)) {
         return false;
     }
     const auto publish_start = std::chrono::steady_clock::now();
-    headless_output_->wait_gpu_idle(label);
+    output->wait_gpu_idle(label);
     {
         std::lock_guard<std::mutex> tex_lock(texture_mutex());
-        callback = headless_output_->publish_frame_locked();
+        callback = output->publish_frame_locked();
     }
     if (shutting_down_.load(std::memory_order_acquire)) {
         callback = {};
@@ -907,8 +904,9 @@ void Renderer::enter_terminal_device_lost_locked(const char* operation) {
     }
 
     device_state_.store(RendererDeviceState::Lost, std::memory_order_release);
-    const long reason = d3d_device_
-        ? static_cast<long>(d3d_device_->device_removed_reason())
+    auto* device = d3d_device();
+    const long reason = device
+        ? static_cast<long>(device->device_removed_reason())
         : static_cast<long>(S_OK);
     d3d_metrics_.device_lost_count.fetch_add(1, std::memory_order_relaxed);
     spdlog::error(
@@ -937,17 +935,18 @@ void Renderer::present_frame(const PresentDecision& decision) {
     bool drew = false;
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+        auto* device = d3d_device();
         if (headless_) {
             drew = draw_headless_and_publish(snapshot, "present_frame", frame_callback);
-            device_lost = d3d_device_ && d3d_device_->poll_device_removed("headless present");
+            device_lost = device && device->poll_device_removed("headless present");
         } else {
             drew = draw_frame(snapshot);
             const auto present_start = std::chrono::steady_clock::now();
-            const bool presented = d3d_device_->present(0);
+            const bool presented = device && device->present(0);
             d3d_metrics_.present_publish_us.fetch_add(
                 elapsed_us_since(present_start), std::memory_order_relaxed);
             d3d_metrics_.present_publish_count.fetch_add(1, std::memory_order_relaxed);
-            device_lost = !presented && d3d_device_->device_lost();
+            device_lost = !presented && device && device->device_lost();
         }
     }
     if (device_lost) {
@@ -975,13 +974,14 @@ void Renderer::redraw_layout() {
     bool drew = false;
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+        auto* device = d3d_device();
         if (headless_) {
             drew = draw_headless_and_publish(snapshot, "redraw_layout", frame_callback);
-            device_lost = d3d_device_ && d3d_device_->poll_device_removed("headless redraw");
-        } else {
+            device_lost = device && device->poll_device_removed("headless redraw");
+        } else if (device) {
             drew = draw_frame(snapshot);
-            d3d_device_->context()->Flush();
-            device_lost = d3d_device_->poll_device_removed("redraw_layout");
+            device->context()->Flush();
+            device_lost = device->poll_device_removed("redraw_layout");
         }
     }
     if (device_lost) {
@@ -1000,14 +1000,15 @@ void Renderer::redraw_layout() {
 
 bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!headless_ || !headless_output_) {
+    auto* output = headless_output();
+    if (!headless_ || !output) {
         bgra.clear();
         width = 0;
         height = 0;
         return false;
     }
     return frame_capture_.capture_headless_front_buffer(
-        *headless_output_, device_mutex_, bgra, width, height);
+        *output, device_mutex_, bgra, width, height);
 }
 
 void Renderer::set_decode_paused_for_all_tracks(bool paused) {
@@ -1187,8 +1188,8 @@ void Renderer::set_track_offset(int file_id, int64_t offset_us) {
 
 void Renderer::set_frame_callback(std::function<void()> cb) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (headless_output_) {
-        headless_output_->set_frame_callback(std::move(cb));
+    if (auto* output = headless_output()) {
+        output->set_frame_callback(std::move(cb));
     }
 }
 
@@ -1201,14 +1202,15 @@ bool Renderer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
     snapshot = {};
 
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!headless_output_) {
+    auto* output = headless_output();
+    if (!output) {
         d3d_metrics_.texture_sharing_failure_count.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
 
     std::lock_guard<std::mutex> lock(texture_mutex());
     D3D11HeadlessOutputTextureLease lease;
-    if (!headless_output_->acquire_shared_texture_locked(lease)) {
+    if (!output->acquire_shared_texture_locked(lease)) {
         d3d_metrics_.texture_sharing_failure_count.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
@@ -1225,18 +1227,19 @@ bool Renderer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
 
 void Renderer::release_shared_texture(int buffer_index, uint64_t buffer_generation) const {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (headless_output_) {
-        headless_output_->release_shared_texture(buffer_index, buffer_generation);
+    if (auto* output = headless_output()) {
+        output->release_shared_texture(buffer_index, buffer_generation);
     }
 }
 
 std::mutex& Renderer::texture_mutex() const {
-    return headless_output_ ? headless_output_->texture_mutex() : texture_mutex_fallback_;
+    auto* output = headless_output();
+    return output ? output->texture_mutex() : texture_mutex_fallback_;
 }
 
 void Renderer::resize(int width, int height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!headless_ || !d3d_device_) return;
+    if (!headless_ || !d3d_device()) return;
     const auto validation = validate_renderer_dimensions(width, height, "resize dimensions");
     if (!validation.ok) {
         spdlog::warn("[Renderer] ignoring invalid resize: {}", validation.message);
@@ -1261,7 +1264,8 @@ void Renderer::do_resize(int width, int height) {
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
         std::lock_guard<std::mutex> tex_lock(texture_mutex());
-        if (!headless_output_ || !headless_output_->resize_locked(width, height)) {
+        auto* output = headless_output();
+        if (!output || !output->resize_locked(width, height)) {
             return;
         }
     }
@@ -1320,7 +1324,8 @@ void Renderer::render_loop_body() {
     render_loop_controller_.start(std::chrono::steady_clock::now());
 
     while (running_) {
-        if (d3d_device_ && d3d_device_->poll_device_removed("render_loop")) {
+        auto* device = d3d_device();
+        if (device && device->poll_device_removed("render_loop")) {
             std::lock_guard<std::mutex> lock(state_mutex_);
             enter_terminal_device_lost_locked("render_loop");
             break;
@@ -1358,8 +1363,8 @@ void Renderer::render_loop_body() {
             }
         }
 
-        if (headless_output_) {
-            headless_output_->cleanup_expired_pending_buffers();
+        if (auto* output = headless_output()) {
+            output->cleanup_expired_pending_buffers();
         }
 
         bool playing_snapshot;
@@ -1598,24 +1603,26 @@ void Renderer::render_loop_body() {
 }
 
 bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
-    if (!d3d_resources_ || !d3d_device_) {
+    auto* resources_ptr = d3d_resources();
+    auto* device = d3d_device();
+    if (!resources_ptr || !device) {
         return false;
     }
     const auto& decision = snapshot.decision;
-    auto& resources = *d3d_resources_;
-    auto* ctx = d3d_device_->context();
+    auto& resources = *resources_ptr;
+    auto* ctx = device->context();
 
     // Get or create cached render target view
     if (!resources.cached_rtv) {
         if (!headless_) {
             ID3D11Texture2D* back_buffer = nullptr;
-            HRESULT hr = d3d_device_->swap_chain()->GetBuffer(0, __uuidof(ID3D11Texture2D),
+            HRESULT hr = device->swap_chain()->GetBuffer(0, __uuidof(ID3D11Texture2D),
                                                   reinterpret_cast<void**>(&back_buffer));
             if (FAILED(hr)) {
                 spdlog::error("[Renderer] Failed to get back buffer: HRESULT {:#x}", static_cast<unsigned long>(hr));
                 return false;
             }
-            hr = d3d_device_->device()->CreateRenderTargetView(
+            hr = device->device()->CreateRenderTargetView(
                 back_buffer, nullptr, &resources.cached_rtv);
             back_buffer->Release();
             if (FAILED(hr)) {
@@ -1660,13 +1667,13 @@ bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
     ID3D11ShaderResourceView* planar_u_srvs[4] = {};  // t12-t15: planar U
     ID3D11ShaderResourceView* planar_v_srvs[4] = {};  // t16-t19: planar V
     std::array<D3D11PreparedFrame, kMaxTracks> prepared_frames;
-    if (frame_presenter_) {
+    if (auto* presenter = frame_presenter()) {
         for (size_t i = 0; i < kMaxTracks; ++i) {
             if (!decision.frames[i].has_value() || !decision.frames[i]->texture_handle) continue;
             if (!snapshot.tracks[i].active) continue;
 
             const auto prepare_start = std::chrono::steady_clock::now();
-            const bool prepared_ok = frame_presenter_->prepare_frame(
+            const bool prepared_ok = presenter->prepare_frame(
                 i,
                 decision.frames[i].value(),
                 snapshot.target_width,
@@ -1778,8 +1785,8 @@ bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
         analysis_overlay_renderer_->draw(
             decision,
             snapshot.tracks,
-            *d3d_device_,
-            *d3d_resources_,
+            *device,
+            resources,
             snapshot.target_width,
             snapshot.target_height);
     }
@@ -1855,8 +1862,8 @@ bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, Se
         render_sink_->set_track(cleared_slot, nullptr);
     };
     hooks.reset_presenter_track = [this](size_t reset_slot) {
-        if (frame_presenter_) {
-            frame_presenter_->reset_track(reset_slot);
+        if (auto* presenter = frame_presenter()) {
+            presenter->reset_track(reset_slot);
         }
     };
     hooks.create_pipeline =
@@ -1933,8 +1940,8 @@ int Renderer::add_track(const std::string& video_path,
             render_sink_->set_track_offset(committed_slot, track.offset_us);
         },
         [this](size_t committed_slot) {
-            if (frame_presenter_) {
-                frame_presenter_->reset_track(committed_slot);
+            if (auto* presenter = frame_presenter()) {
+                presenter->reset_track(committed_slot);
             }
         },
     };
@@ -2001,13 +2008,13 @@ void Renderer::remove_track(int file_id) {
         [this](int removed_file_id) { unregister_track_audio(removed_file_id); },
         [this](size_t stopped_slot, TrackPipeline&) {
             render_sink_->set_track(stopped_slot, nullptr);
-            if (frame_presenter_) {
-                frame_presenter_->reset_track(stopped_slot);
+            if (auto* presenter = frame_presenter()) {
+                presenter->reset_track(stopped_slot);
             }
         },
         [this](size_t from, size_t to, TrackPipeline& track) {
-            if (frame_presenter_) {
-                frame_presenter_->move_track(from, to);
+            if (auto* presenter = frame_presenter()) {
+                presenter->move_track(from, to);
             }
             render_sink_->set_track(to, track.track_buffer);
             render_sink_->set_track_offset(to, track.offset_us);
@@ -2096,14 +2103,15 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
     std::lock_guard<std::recursive_mutex> device_lock(device_mutex_);
     RendererGpuMemoryStats result;
 
-    const auto presenter_stats = frame_presenter_
-        ? frame_presenter_->memory_stats()
+    auto* presenter = frame_presenter();
+    const auto presenter_stats = presenter
+        ? presenter->memory_stats()
         : D3D11FramePresenterMemoryStats{};
     result.presenter_texture_bytes = presenter_stats.total_estimated_bytes;
     result.total_estimated_bytes += result.presenter_texture_bytes;
 
-    if (headless_output_) {
-        const auto headless_stats = headless_output_->memory_stats();
+    if (auto* output = headless_output()) {
+        const auto headless_stats = output->memory_stats();
         result.headless_output_bytes = headless_stats.estimated_bytes;
         result.headless_width = headless_stats.width;
         result.headless_height = headless_stats.height;
@@ -2111,9 +2119,9 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
         result.total_estimated_bytes += result.headless_output_bytes;
     }
 
-    if (d3d_resources_) {
+    if (auto* resources = d3d_resources()) {
         const auto overlay_stats =
-            snapshot_analysis_overlay_memory_stats(*d3d_resources_);
+            snapshot_analysis_overlay_memory_stats(*resources);
         result.analysis_overlay_bytes = overlay_stats.estimated_bytes;
         result.analysis_overlay_width = overlay_stats.width;
         result.analysis_overlay_height = overlay_stats.height;
@@ -2144,13 +2152,15 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
 }
 
 bool Renderer::d3d_device_lost() const {
+    auto* device = d3d_device();
     return device_state_.load(std::memory_order_acquire) != RendererDeviceState::Ready ||
-           (d3d_device_ && d3d_device_->device_lost());
+           (device && device->device_lost());
 }
 
 long Renderer::d3d_device_removed_reason() const {
-    return d3d_device_ ? static_cast<long>(d3d_device_->device_removed_reason())
-                       : static_cast<long>(S_OK);
+    auto* device = d3d_device();
+    return device ? static_cast<long>(device->device_removed_reason())
+                  : static_cast<long>(S_OK);
 }
 
 RendererDeviceState Renderer::device_state() const {

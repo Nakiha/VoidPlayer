@@ -469,6 +469,10 @@ TODO:
    - 新增 `decode_preroll_policy` 承接 post-seek 软/硬解 preroll target、普通/full preroll readiness 和 Buffering->Ready transition intent；`DecodeThread` 保留日志、TrackBuffer state 写入和 pause-after-preroll 原子状态。
    - 验证：native-only + seek UI。
 
+77. [x] `DecodeThreadEofDrainBoundary`
+   - 已把 queue gap / EOF drain 编排从 `run()` 抽到 `handle_queue_gap_or_eof()`，复用已测试的 EOF drain/send/receive policy；主循环只保留 pop 分流和 stop/continue 意图。
+   - 验证：native-only + seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

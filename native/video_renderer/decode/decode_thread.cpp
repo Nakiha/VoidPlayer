@@ -788,6 +788,97 @@ bool DecodeThread::complete_preroll_if_ready() {
     return true;
 }
 
+bool DecodeThread::handle_queue_gap_or_eof(
+    AVFrame* frame,
+    const std::function<void(AVFrame*)>& rescale_ts,
+    DecodedFramePublisher& publisher) {
+    // EOF flush: drain codec once when the producer signals EOF.
+    // Skip during Buffering (post-seek preroll) — the DemuxThread may signal
+    // EOF very quickly after seek (file is cached), but we need to keep
+    // decoding to fill the preroll buffer first.
+    const auto eof_action = choose_eof_drain_action(
+        input_queue_.is_eof(),
+        eof_flushed_,
+        output_buffer_.state(),
+        exact_seek_target_us_ >= 0);
+    if (eof_action == EofDrainAction::None) {
+        return false;
+    }
+
+    if (eof_action == EofDrainAction::BufferingExactSeekDrain ||
+        eof_action == EofDrainAction::BufferingMarkFlushed) {
+        // Drain codec for exact seek to flush remaining DPB frames.
+        if (eof_action == EofDrainAction::BufferingExactSeekDrain) {
+            drain_codec(frame, rescale_ts, exact_seek_target_us_);
+            spdlog::info("[DecodeThread] Exact seek EOF drain: reorder buffer has {} frames",
+                         exact_seek_candidates_.reorder_count());
+        } else {
+            eof_flushed_ = true;
+        }
+
+        // Flush exact-seek reorder buffer at EOF — no more frames coming.
+        if (eof_action == EofDrainAction::BufferingExactSeekDrain) {
+            publish_best_exact_seek_frame();
+        } else {
+            flush_reorder_buffer();
+        }
+        // Preroll check — may complete if reorder flush added frames.
+        // Even with 0 frames, transition to Ready: the seek target is past
+        // this track's duration, no frames will ever arrive here.
+        if (post_seek_) {
+            spdlog::info("[DecodeThread] === Preroll complete (EOF): {} frames, state->Ready",
+                         output_buffer_.total_count());
+            output_buffer_.set_state(TrackState::Ready);
+            post_seek_ = false;
+        } else {
+            spdlog::info("[DecodeThread] EOF seen during Buffering, deferring codec flush "
+                         "(buf={}, pq={})",
+                         output_buffer_.total_count(), input_queue_.size());
+        }
+        return false;
+    }
+
+    int send_ret = send_codec_packet_seh_guarded(codec_ctx_, nullptr);
+    const auto send_action = choose_eof_codec_send_action(send_ret);
+    if (send_action != EofCodecSendAction::ReceiveFrames) {
+        if (send_action == EofCodecSendAction::StopWithError) {
+            output_buffer_.set_state(TrackState::Error);
+            decode_paused_.store(true, std::memory_order_release);
+            running_.store(false, std::memory_order_release);
+        }
+        return true;
+    }
+    while (true) {
+        int ret = receive_codec_frame_seh_guarded(codec_ctx_, frame);
+        const auto receive_action = choose_eof_codec_receive_action(ret);
+        if (receive_action == DecodeDrainReceiveAction::StopWithError) {
+            output_buffer_.set_state(TrackState::Error);
+            decode_paused_.store(true, std::memory_order_release);
+            running_.store(false, std::memory_order_release);
+            break;
+        }
+        if (receive_action == DecodeDrainReceiveAction::Stop) {
+            break;
+        }
+
+        rescale_ts(frame);
+        log_hw_frame_context_once(frame);
+        publisher.flush_before_publish_if_needed();
+        if (!publisher.convert_and_push_frame(frame, "EOF drain")) {
+            av_frame_unref(frame);
+            break;
+        }
+        av_frame_unref(frame);
+    }
+    // Flush decode device after EOF drain to ensure shared NV12 textures are
+    // visible to the render device.
+    if (hw_enabled_ && hw_provider_) {
+        hw_provider_->flush();
+    }
+    eof_flushed_ = true;
+    return false;
+}
+
 DecodedFramePublisher DecodeThread::make_frame_publisher() {
     return DecodedFramePublisher(output_buffer_,
                                  converter_,
@@ -899,84 +990,8 @@ void DecodeThread::run() {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 continue;
             }
-            // EOF flush: drain codec once when the producer signals EOF.
-            // Skip during Buffering (post-seek preroll) — the DemuxThread may
-            // signal EOF very quickly after seek (file is cached), but we need
-            // to keep decoding to fill the preroll buffer first.
-            const auto eof_action = choose_eof_drain_action(
-                input_queue_.is_eof(),
-                eof_flushed_,
-                output_buffer_.state(),
-                exact_seek_target_us_ >= 0);
-            if (eof_action != EofDrainAction::None) {
-                if (eof_action == EofDrainAction::BufferingExactSeekDrain ||
-                    eof_action == EofDrainAction::BufferingMarkFlushed) {
-                    // Drain codec for exact seek to flush remaining DPB frames.
-                    if (eof_action == EofDrainAction::BufferingExactSeekDrain) {
-                        drain_codec(frame, rescale_ts, exact_seek_target_us_);
-                        spdlog::info("[DecodeThread] Exact seek EOF drain: reorder buffer has {} frames",
-                                     exact_seek_candidates_.reorder_count());
-                    } else {
-                        eof_flushed_ = true;
-                    }
-
-                    // Flush exact-seek reorder buffer at EOF — no more frames coming.
-                    if (eof_action == EofDrainAction::BufferingExactSeekDrain) {
-                        publish_best_exact_seek_frame();
-                    } else {
-                        flush_reorder_buffer();
-                    }
-                    // Preroll check — may complete if reorder flush added frames.
-                    // Even with 0 frames, transition to Ready: the seek target is past
-                    // this track's duration, no frames will ever arrive here.
-                    if (post_seek_) {
-                        spdlog::info("[DecodeThread] === Preroll complete (EOF): {} frames, state->Ready",
-                                     output_buffer_.total_count());
-                        output_buffer_.set_state(TrackState::Ready);
-                        post_seek_ = false;
-                    } else {
-                        spdlog::info("[DecodeThread] EOF seen during Buffering, deferring codec flush "
-                                     "(buf={}, pq={})",
-                                     output_buffer_.total_count(), input_queue_.size());
-                    }
-                } else if (eof_action == EofDrainAction::CodecDrain) {
-                    int send_ret = send_codec_packet_seh_guarded(codec_ctx_, nullptr);
-                    const auto send_action = choose_eof_codec_send_action(send_ret);
-                    if (send_action != EofCodecSendAction::ReceiveFrames) {
-                        if (send_action == EofCodecSendAction::StopWithError) {
-                            output_buffer_.set_state(TrackState::Error);
-                            decode_paused_.store(true, std::memory_order_release);
-                            running_.store(false, std::memory_order_release);
-                        }
-                        break;
-                    }
-                    while (true) {
-                        int ret = receive_codec_frame_seh_guarded(codec_ctx_, frame);
-                        const auto receive_action = choose_eof_codec_receive_action(ret);
-                        if (receive_action == DecodeDrainReceiveAction::StopWithError) {
-                            output_buffer_.set_state(TrackState::Error);
-                            decode_paused_.store(true, std::memory_order_release);
-                            running_.store(false, std::memory_order_release);
-                            break;
-                        }
-                        if (receive_action == DecodeDrainReceiveAction::Stop) break;
-
-                        rescale_ts(frame);
-                        log_hw_frame_context_once(frame);
-                        publisher.flush_before_publish_if_needed();
-                        if (!publisher.convert_and_push_frame(frame, "EOF drain")) {
-                            av_frame_unref(frame);
-                            break;
-                        }
-                        av_frame_unref(frame);
-                    }
-                    // Flush decode device after EOF drain to ensure shared NV12
-                    // textures are visible to the render device.
-                    if (hw_enabled_ && hw_provider_) {
-                        hw_provider_->flush();
-                    }
-                    eof_flushed_ = true;
-                }
+            if (handle_queue_gap_or_eof(frame, rescale_ts, publisher)) {
+                break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;

@@ -159,6 +159,12 @@ private:
     /// output buffer has enough frames.
     bool complete_preroll_if_ready();
 
+    /// Handle queue gaps and EOF codec draining. Returns true when the decode
+    /// loop should stop immediately.
+    bool handle_queue_gap_or_eof(AVFrame* frame,
+                                 const std::function<void(AVFrame*)>& rescale_ts,
+                                 DecodedFramePublisher& publisher);
+
     /// Create a lightweight publisher view over decode-thread-owned frame state.
     DecodedFramePublisher make_frame_publisher();
 

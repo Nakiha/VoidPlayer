@@ -166,13 +166,13 @@ Still active:
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
 - `Renderer` still owns layout mutation, public playback commands, global seek clock/deferred gates, and seek logging.
-- `DecodeThread` main loop still owns EOF drain choreography, AVFrame unref timing, and exact-seek publish state transitions.
+- `DecodeThread` still owns AVFrame unref timing and exact-seek publish state transitions.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P121 DecodeThread EOF Drain Boundary.
+Next patch: P122 DecodeThread Exact Seek Publish Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -617,6 +617,25 @@ Goal:
 - Continue reducing `DecodeThread` by extracting EOF/gap handling around Buffering exact-seek EOF drain, Buffering non-exact EOF mark-flushed, normal codec EOF drain, and post-seek EOF completion.
 - Keep codec drain ordering, exact-seek reorder publish behavior, output state transitions, and logs unchanged.
 - Prefer tested decisions before moving any codec drain or AVFrame lifetime code.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Moved queue-gap and EOF drain orchestration out of `DecodeThread::run()` into `handle_queue_gap_or_eof()`.
+- Preserved existing tested EOF decisions from `decode_loop_policy` / `decode_drain_policy`, including Buffering exact-seek EOF drain, Buffering mark-flushed, normal codec drain, and send-error stop behavior.
+- Kept codec drain ordering, exact-seek reorder publish calls, `eof_flushed_`, output state writes, and logs unchanged.
+
+### P122 - DecodeThread Exact Seek Publish Boundary
+
+Goal:
+
+- Continue reducing `DecodeThread` by extracting exact-seek publish state transitions around selected preview publish, pending candidate publish, post-preview drain request, and pause-after-preroll.
+- Keep AVFrame ownership, hardware visibility flush, stable-frame reuse, conversion failure handling, and preview logs unchanged.
+- Prefer tested state decisions before moving any frame conversion or snapshot ownership code.
 
 Validation:
 

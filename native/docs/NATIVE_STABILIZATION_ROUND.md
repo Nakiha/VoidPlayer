@@ -151,6 +151,7 @@ Fixed or reduced:
 - `DecodeThread`: frame conversion/publish failure handling and hardware visibility flush now live in `DecodedFramePublisher` with focused state tests.
 - `DecodeThread`: drain-before-next-packet and EOF codec drain send/receive decisions now live in `decode_drain_policy` with focused state tests.
 - `DecodeThread`: exact-seek reorder/pending candidate ownership and candidate memory counters now live in `ExactSeekCandidateStore` with focused state tests.
+- `DecodeThread`: AVFrame timestamp rescale to microseconds now lives in `frame_timestamp_rescaler` with focused state tests.
 - `NativeResourceBudget`: track buffer queued-frame depth decision moved into `TrackBufferBudget` and is tested as a policy boundary.
 - `AudioEngine::Impl`: track registry, buffer publication facts, and decode pause/seek fanout moved into `AudioTrackRegistry`.
 - `AudioEngine::Impl`: nested FFmpeg audio decoder thread implementation moved into `AudioDecodeThread`.
@@ -171,7 +172,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P116 DecodeThread Timestamp Rescale Boundary.
+Next patch: P117 DecodeThread Seek Epoch Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -514,11 +515,32 @@ Result:
 
 ### P116 - DecodeThread Timestamp Rescale Boundary
 
+Status: done in Patch 116.
+
 Goal:
 
 - Continue reducing `DecodeThread` by extracting stream-timebase-to-microseconds frame timestamp rescale from the decode loop lambda.
 - Keep exact-seek target comparison and published PTS/DTS/duration semantics unchanged.
 - Prefer a small tested helper so future drain/publish extraction does not carry a member-capturing timestamp lambda.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `frame_timestamp_rescaler` for AVFrame PTS, best-effort PTS, DTS, and duration conversion from stream time base to microseconds.
+- Replaced the decode-loop timestamp lambda with the helper, leaving call sites and ordering unchanged.
+- Added native coverage for direct PTS, best-effort fallback, missing DTS, and non-positive duration behavior.
+
+### P117 - DecodeThread Seek Epoch Boundary
+
+Goal:
+
+- Continue reducing `DecodeThread` by extracting the seek notification take/reset/start-state preparation block from the main loop.
+- Keep codec flush, exact-seek target setup, post-seek preroll, and cancellation semantics unchanged.
+- Prefer a tested policy/helper for seek epoch state updates before moving broader EOF or frame lifetime choreography.
 
 Validation:
 

@@ -3,6 +3,7 @@
 #include "video_renderer/decode/decode_drain_policy.h"
 #include "video_renderer/decode/decode_loop_policy.h"
 #include "video_renderer/decode/exact_seek_window.h"
+#include "video_renderer/decode/frame_timestamp_rescaler.h"
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <chrono>
@@ -732,19 +733,8 @@ void DecodeThread::run() {
         output_buffer_.set_state(TrackState::Error);
         return;
     }
-    // Rescale frame timestamps from stream time_base to microseconds
-    auto rescale_ts = [&](AVFrame* f) {
-        if (f->pts != AV_NOPTS_VALUE) {
-            f->pts = av_rescale_q(f->pts, time_base_, {1, 1000000});
-        } else if (f->best_effort_timestamp != AV_NOPTS_VALUE) {
-            f->pts = av_rescale_q(f->best_effort_timestamp, time_base_, {1, 1000000});
-        }
-        if (f->pkt_dts != AV_NOPTS_VALUE) {
-            f->pkt_dts = av_rescale_q(f->pkt_dts, time_base_, {1, 1000000});
-        }
-        if (f->duration > 0 && f->duration != AV_NOPTS_VALUE) {
-            f->duration = av_rescale_q(f->duration, time_base_, {1, 1000000});
-        }
+    auto rescale_ts = [&](AVFrame* frame_to_rescale) {
+        rescale_frame_timestamps_to_us(frame_to_rescale, time_base_);
     };
     auto publisher = make_frame_publisher();
 

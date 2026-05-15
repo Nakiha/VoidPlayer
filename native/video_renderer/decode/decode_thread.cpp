@@ -578,25 +578,6 @@ void DecodeThread::safe_flush_codec() {
     }
 }
 
-void DecodeThread::flush_hw_visibility_if_needed() {
-    if (!hw_enabled_ || !hw_provider_ || !hw_visibility_flush_pending_) {
-        return;
-    }
-    hw_provider_->flush();
-    hw_visibility_flush_pending_ = false;
-}
-
-void DecodeThread::flush_hw_before_publish_if_needed(bool force_for_shared_surface) {
-    if (!hw_enabled_ || !hw_provider_) {
-        return;
-    }
-    if (!force_for_shared_surface && !converter_.downloads_hardware_to_cpu()) {
-        return;
-    }
-    hw_provider_->flush();
-    hw_visibility_flush_pending_ = false;
-}
-
 void DecodeThread::flush_reorder_buffer() {
     exact_seek_pending_frames_.clear();
     drain_decoder_before_next_packet_ = false;
@@ -607,13 +588,14 @@ void DecodeThread::flush_reorder_buffer() {
     // Make the decode-device writes visible before exposing reordered frames
     // to the render thread; otherwise the paused preview can sample a
     // partially-written first seek frame.
-    flush_hw_visibility_if_needed();
+    auto publisher = make_frame_publisher();
+    publisher.flush_visibility_if_needed();
     for (auto& f : exact_seek_reorder_) {
         if (!f.frame) {
             continue;
         }
-        flush_hw_before_publish_if_needed(true);
-        if (!convert_and_push_frame(f.frame.get(), "exact-seek reorder flush")) {
+        publisher.flush_before_publish_if_needed(true);
+        if (!publisher.convert_and_push_frame(f.frame.get(), "exact-seek reorder flush")) {
             break;
         }
     }
@@ -731,7 +713,8 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
         return;
     }
 
-    flush_hw_visibility_if_needed();
+    auto publisher = make_frame_publisher();
+    publisher.flush_visibility_if_needed();
     const int64_t pts = exact_seek_reorder_[selected].pts_us;
     const size_t buffered = output_buffer_.total_count();
     const size_t capacity = output_buffer_.max_count();
@@ -752,7 +735,7 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
             hw_provider_->wait_idle();
             hw_visibility_flush_pending_ = false;
         } else {
-            flush_hw_before_publish_if_needed(true);
+            publisher.flush_before_publish_if_needed(true);
         }
         TextureFrame tex_frame;
         if (i == selected &&
@@ -760,7 +743,7 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
             exact_seek_reorder_[i].stable_frame->texture_handle) {
             tex_frame = *exact_seek_reorder_[i].stable_frame;
         } else {
-            auto converted = convert_frame_for_publish(exact_seek_reorder_[i].frame.get());
+            auto converted = publisher.convert_frame_for_publish(exact_seek_reorder_[i].frame.get());
             if (!converted.has_value()) {
                 spdlog::error("[DecodeThread] Frame conversion failed while publishing exact-seek window");
                 output_buffer_.set_state(TrackState::Error);
@@ -830,29 +813,20 @@ void DecodeThread::publish_pending_exact_seek_frames() {
         refresh_exact_seek_memory_stats();
         return;
     }
-    flush_hw_before_publish_if_needed(true);
-    convert_and_push_frame(candidate.frame.get(), "pending exact-seek frame");
+    auto publisher = make_frame_publisher();
+    publisher.flush_before_publish_if_needed(true);
+    publisher.convert_and_push_frame(candidate.frame.get(), "pending exact-seek frame");
     refresh_exact_seek_memory_stats();
 }
 
-std::optional<TextureFrame> DecodeThread::convert_frame_for_publish(AVFrame* frame) {
-    if (hw_enabled_ && !converter_.downloads_hardware_to_cpu()) {
-        return converter_.snapshot_hardware_frame(frame);
-    }
-    return converter_.convert(frame);
-}
-
-bool DecodeThread::convert_and_push_frame(AVFrame* frame, const char* context) {
-    auto converted = convert_frame_for_publish(frame);
-    if (!converted.has_value()) {
-        spdlog::error("[DecodeThread] Frame conversion failed ({})", context ? context : "unknown");
-        output_buffer_.set_state(TrackState::Error);
-        decode_paused_.store(true, std::memory_order_release);
-        running_.store(false, std::memory_order_release);
-        return false;
-    }
-    output_buffer_.push_frame(std::move(*converted));
-    return true;
+DecodedFramePublisher DecodeThread::make_frame_publisher() {
+    return DecodedFramePublisher(output_buffer_,
+                                 converter_,
+                                 hw_enabled_,
+                                 hw_provider_,
+                                 hw_visibility_flush_pending_,
+                                 decode_paused_,
+                                 running_);
 }
 
 void DecodeThread::run() {
@@ -878,6 +852,7 @@ void DecodeThread::run() {
             f->duration = av_rescale_q(f->duration, time_base_, {1, 1000000});
         }
     };
+    auto publisher = make_frame_publisher();
 
     while (running_.load()) {
         auto preroll_ready = [&] {
@@ -983,8 +958,8 @@ void DecodeThread::run() {
 
                 rescale_ts(frame);
                 log_hw_frame_context_once(frame);
-                flush_hw_before_publish_if_needed(true);
-                if (!convert_and_push_frame(frame, "drain before next packet")) {
+                publisher.flush_before_publish_if_needed(true);
+                if (!publisher.convert_and_push_frame(frame, "drain before next packet")) {
                     av_frame_unref(frame);
                     break;
                 }
@@ -1083,8 +1058,8 @@ void DecodeThread::run() {
 
                         rescale_ts(frame);
                         log_hw_frame_context_once(frame);
-                        flush_hw_before_publish_if_needed();
-                        if (!convert_and_push_frame(frame, "EOF drain")) {
+                        publisher.flush_before_publish_if_needed();
+                        if (!publisher.convert_and_push_frame(frame, "EOF drain")) {
                             av_frame_unref(frame);
                             break;
                         }
@@ -1206,8 +1181,8 @@ void DecodeThread::run() {
             // The flush must happen before push_frame() publishes this frame
             // to the render thread, otherwise the paused preview path can win
             // the race and draw an incomplete surface.
-            flush_hw_visibility_if_needed();
-            if (!convert_and_push_frame(frame, "decode loop")) {
+            publisher.flush_visibility_if_needed();
+            if (!publisher.convert_and_push_frame(frame, "decode loop")) {
                 av_frame_unref(frame);
                 break;
             }

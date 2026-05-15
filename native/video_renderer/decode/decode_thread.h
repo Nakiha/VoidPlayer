@@ -1,6 +1,7 @@
 #pragma once
 #include "media/packet_queue.h"
 #include "video_renderer/buffer/track_buffer.h"
+#include "video_renderer/decode/decoded_frame_publisher.h"
 #include "video_renderer/decode/frame_converter.h"
 #include "video_renderer/decode/hw/hw_decode_provider.h"
 #include "media/seek_controller.h"
@@ -161,11 +162,8 @@ private:
     /// Push decoded exact-seek frames that did not fit in the initial preview window.
     void publish_pending_exact_seek_frames();
 
-    /// Convert a decoded AVFrame into storage that can safely outlive decoder pool reuse.
-    std::optional<TextureFrame> convert_frame_for_publish(AVFrame* frame);
-
-    /// Convert a decoded AVFrame and publish it, or move the track to Error on failure.
-    bool convert_and_push_frame(AVFrame* frame, const char* context);
+    /// Create a lightweight publisher view over decode-thread-owned frame state.
+    DecodedFramePublisher make_frame_publisher();
 
     /// Log the FFmpeg hardware frame pool geometry once it is materialized.
     void log_hw_frame_context_once(const AVFrame* frame);
@@ -175,13 +173,6 @@ private:
 
     /// Flush codec buffers after seek.
     void safe_flush_codec();
-
-    /// Flush decode-device writes so the render device can safely sample the
-    /// first hardware frame after startup/seek.
-    void flush_hw_visibility_if_needed();
-
-    /// Flush decode-device writes before publishing a hardware frame.
-    void flush_hw_before_publish_if_needed(bool force_for_shared_surface = false);
 
     PacketQueue& input_queue_;
     TrackBuffer& output_buffer_;

@@ -148,6 +148,7 @@ Fixed or reduced:
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: codec send/receive SEH guards, return classification, and hardware device mutex wrapping now live in `codec_loop` with focused state tests.
+- `DecodeThread`: frame conversion/publish failure handling and hardware visibility flush now live in `DecodedFramePublisher` with focused state tests.
 - `NativeResourceBudget`: track buffer queued-frame depth decision moved into `TrackBufferBudget` and is tested as a policy boundary.
 - `AudioEngine::Impl`: track registry, buffer publication facts, and decode pause/seek fanout moved into `AudioTrackRegistry`.
 - `AudioEngine::Impl`: nested FFmpeg audio decoder thread implementation moved into `AudioDecodeThread`.
@@ -162,13 +163,13 @@ Still active:
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
 - `Renderer` still owns layout mutation, public playback commands, global seek clock/deferred gates, and seek logging.
-- `DecodeThread` main loop still owns EOF drain, AVFrame ownership, and hardware visibility transitions.
+- `DecodeThread` main loop still owns EOF drain, AVFrame unref timing, and exact-seek candidate ownership.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P113 DecodeThread Frame Publish Boundary.
+Next patch: P114 DecodeThread Drain Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -448,11 +449,32 @@ Result:
 
 ### P113 - DecodeThread Frame Publish Boundary
 
+Status: done in Patch 113.
+
 Goal:
 
 - Continue reducing `DecodeThread` by extracting the next frame ownership/publish boundary after codec receive.
 - Keep exact-seek candidate collection, pause-after-preroll, and hardware visibility flush semantics unchanged.
 - Prefer a focused helper around frame rescale/log/visibility/convert/push if the current loop allows a narrow cut.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `DecodedFramePublisher` for hardware visibility flush, frame conversion, output-buffer publish, and conversion-failure state transitions.
+- `DecodeThread` now delegates normal decode, EOF drain, drain-before-next-packet, reorder flush, and pending exact-seek frame publish paths to the publisher.
+- Added native coverage for successful software-frame publish and conversion-failure Error/pause/stop handling.
+
+### P114 - DecodeThread Drain Boundary
+
+Goal:
+
+- Continue reducing `DecodeThread` by extracting EOF drain and drain-before-next-packet loop mechanics once codec calls and frame publishing are already isolated.
+- Keep exact-seek EOF drain and reorder fallback behavior unchanged.
+- Prefer a narrow helper around drain loop orchestration before touching broader AVFrame lifetime.
 
 Validation:
 

@@ -437,6 +437,10 @@ TODO:
    - 新增 `codec_loop` 边界承接 FFmpeg codec send/receive 的 SEH 防护、返回值分类和硬解 device mutex 包装；`DecodeThread` 主循环不再直接散落 send/receive 包装细节。
    - 验证：native-only + seek UI。
 
+69. [x] `DecodeThreadFramePublisherBoundary`
+   - 新增 `DecodedFramePublisher` 承接硬解 visibility flush、frame conversion、push_frame 以及转换失败后的 Error/暂停/停止状态处理；`DecodeThread` 保留 exact-seek 和主循环策略。
+   - 验证：native-only + seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

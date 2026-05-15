@@ -417,8 +417,12 @@ TODO:
    - 已把 chat 点名的 `AudioEngine::Impl` track registry / buffer publication / pause-seek fanout 容器策略拆出 Impl。
    - 验证：native-only + smoke UI。
 
-64. [ ] `AudioDecodeThreadBoundary`
-   - 后续继续收 `AudioEngine::Impl` God Object，把 nested audio decoder thread 从 `audio_engine.cpp` 拆到独立边界。
+64. [x] `AudioDecodeThreadBoundary`
+   - 已继续收 `AudioEngine::Impl` God Object，把 nested audio decoder thread 从 `audio_engine.cpp` 拆到独立边界。
+   - 验证：native-only + smoke UI。
+
+65. [ ] `AudioWaveOutOutputBoundary`
+   - 后续继续收 `AudioEngine::Impl` God Object，把 nested waveOut device/output thread 从 `audio_engine.cpp` 拆到独立边界。
    - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split

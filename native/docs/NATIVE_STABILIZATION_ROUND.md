@@ -149,6 +149,7 @@ Fixed or reduced:
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
 - `NativeResourceBudget`: track buffer queued-frame depth decision moved into `TrackBufferBudget` and is tested as a policy boundary.
 - `AudioEngine::Impl`: track registry, buffer publication facts, and decode pause/seek fanout moved into `AudioTrackRegistry`.
+- `AudioEngine::Impl`: nested FFmpeg audio decoder thread implementation moved into `AudioDecodeThread`.
 - Windows runner plugin: diagnostics, logging bootstrap, texture bridge, file picker, method dispatch, and MethodChannel diagnostics scope were split.
 - Process-global logging/crash FFI ownership is now documented.
 
@@ -163,7 +164,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P108 AudioEngine Decode Thread Boundary.
+Next patch: P109 AudioEngine WaveOut Output Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -338,11 +339,32 @@ Validation:
 
 ### P108 - AudioEngine Decode Thread Boundary
 
+Status: done in Patch 108.
+
 Goal:
 
 - Continue addressing `review_godobject.md`'s `AudioEngine::Impl` finding by moving the nested `AudioDecodeThread` implementation out of `audio_engine.cpp`.
 - Keep `AudioEngine::Impl` as the audio coordinator and preserve the newly extracted `AudioTrackRegistry` ownership boundary.
 - Preserve pause/no-PCM-consumption, seek flush, resampler setup, and FFmpeg decoder lifecycle behavior.
+
+Result:
+
+- Added `AudioDecodeThread` as a dedicated audio module instead of a nested `audio_engine.cpp` implementation class.
+- Added shared audio output constants so the decoder, PCM buffer creation, mixer, and waveOut format do not duplicate sample-rate/channel parameters.
+- `AudioEngine::Impl` now constructs the decoder through the dedicated boundary and keeps only coordinator-level ownership.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+### P109 - AudioEngine WaveOut Output Boundary
+
+Goal:
+
+- Continue addressing `review_godobject.md`'s `AudioEngine::Impl` finding by moving the nested waveOut device/output thread implementation out of `audio_engine.cpp`.
+- Keep `AudioMixer` behavior, pause/no-PCM-consumption, and active-track transition semantics unchanged.
+- Leave `AudioEngine::Impl` responsible for play/pause policy and track registry coordination.
 
 Validation:
 

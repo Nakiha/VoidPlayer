@@ -1,6 +1,7 @@
 #include "audio/audio_engine.h"
 #include "audio/audio_mixer.h"
 #include "audio/pcm_buffer.h"
+#include "audio/audio_track_registry.h"
 #include <spdlog/spdlog.h>
 #include <array>
 #include <atomic>
@@ -34,7 +35,7 @@ constexpr int kOutputBufferCount = 4;
 constexpr size_t kPcmCapacityFrames = kOutputSampleRate / 2;  // 500ms
 constexpr size_t kFadeFrames = 480;  // 10ms
 
-class AudioDecodeThread {
+class AudioDecodeThread final : public AudioTrackController {
 public:
     AudioDecodeThread(PacketQueue& input_queue,
                       PcmBuffer& output_buffer,
@@ -45,7 +46,7 @@ public:
         , codec_params_(codec_params)
         , time_base_(time_base) {}
 
-    ~AudioDecodeThread() {
+    ~AudioDecodeThread() override {
         stop();
     }
 
@@ -83,7 +84,7 @@ public:
         return true;
     }
 
-    void stop() {
+    void stop() override {
         running_.store(false);
         input_queue_.abort();
         output_buffer_.abort();
@@ -98,11 +99,11 @@ public:
         }
     }
 
-    void set_paused(bool paused) {
+    void set_paused(bool paused) override {
         decode_paused_.store(paused);
     }
 
-    void notify_seek(int64_t target_pts_us, SeekType type) {
+    void notify_seek(int64_t target_pts_us, SeekType type) override {
         seek_pending_.store(true);
         output_buffer_.begin_seek(target_pts_us, type);
     }
@@ -237,12 +238,6 @@ private:
         return static_cast<int64_t>(
             (static_cast<int64_t>(frames) * 1000000LL) / static_cast<int64_t>(kOutputSampleRate));
     }
-};
-
-struct AudioTrack {
-    int file_id = 0;
-    std::shared_ptr<PcmBuffer> buffer;
-    std::unique_ptr<AudioDecodeThread> decoder;
 };
 
 class WaveOutOutput {
@@ -407,42 +402,39 @@ public:
             return false;
         }
         decoder->set_paused(paused_.load());
+        std::optional<AudioTrackHandle> previous;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            tracks_[file_id] = AudioTrack{file_id, buffer, std::move(decoder)};
+            previous = tracks_.add_or_replace(file_id, buffer, std::move(decoder));
             publish_buffers_locked();
         }
+        stop_track(std::move(previous));
         return true;
     }
 
     void remove_track(int file_id) {
-        std::unique_ptr<AudioDecodeThread> decoder;
+        std::optional<AudioTrackHandle> removed;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            auto it = tracks_.find(file_id);
-            if (it == tracks_.end()) return;
-            decoder = std::move(it->second.decoder);
-            tracks_.erase(it);
+            removed = tracks_.remove(file_id);
+            if (!removed) return;
             publish_buffers_locked();
         }
-        if (decoder) decoder->stop();
+        stop_track(std::move(removed));
         if (output_.active_track() == file_id) {
             output_.set_active_track(kAudioNoTrack);
         }
     }
 
     void clear() {
-        std::map<int, AudioTrack> old;
+        std::vector<AudioTrackHandle> removed;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            old.swap(tracks_);
+            removed = tracks_.clear();
             publish_buffers_locked();
         }
         output_.set_active_track(kAudioNoTrack);
-        for (auto& [_, track] : old) {
-            if (track.decoder) track.decoder->stop();
-            if (track.buffer) track.buffer->abort();
-        }
+        stop_tracks(std::move(removed));
     }
 
     void play() {
@@ -467,38 +459,39 @@ public:
 
     void set_track_decode_paused(int file_id, bool paused) {
         std::lock_guard<std::mutex> lock(mutex_);
-        auto it = tracks_.find(file_id);
-        if (it != tracks_.end() && it->second.decoder) {
-            it->second.decoder->set_paused(paused);
-        }
+        tracks_.set_track_decode_paused(file_id, paused);
     }
 
     void set_all_decode_paused(bool paused) {
         std::lock_guard<std::mutex> lock(mutex_);
-        for (auto& [_, track] : tracks_) {
-            if (track.decoder) track.decoder->set_paused(paused);
-        }
+        tracks_.set_all_decode_paused(paused);
     }
 
     void notify_seek(int file_id, int64_t target_pts_us, SeekType type) {
         std::lock_guard<std::mutex> lock(mutex_);
-        auto it = tracks_.find(file_id);
-        if (it != tracks_.end() && it->second.decoder) {
-            it->second.decoder->notify_seek(target_pts_us, type);
-        }
+        tracks_.notify_seek(file_id, target_pts_us, type);
     }
 
 private:
     void publish_buffers_locked() {
-        std::map<int, std::shared_ptr<PcmBuffer>> buffers;
-        for (auto& [file_id, track] : tracks_) {
-            buffers[file_id] = track.buffer;
+        output_.set_tracks(tracks_.buffers());
+    }
+
+    static void stop_track(std::optional<AudioTrackHandle> track) {
+        if (!track) return;
+        if (track->decoder) track->decoder->stop();
+        if (track->buffer) track->buffer->abort();
+    }
+
+    static void stop_tracks(std::vector<AudioTrackHandle> tracks) {
+        for (auto& track : tracks) {
+            if (track.decoder) track.decoder->stop();
+            if (track.buffer) track.buffer->abort();
         }
-        output_.set_tracks(buffers);
     }
 
     mutable std::mutex mutex_;
-    std::map<int, AudioTrack> tracks_;
+    AudioTrackRegistry tracks_;
     WaveOutOutput output_;
     std::atomic<bool> paused_{true};
 };

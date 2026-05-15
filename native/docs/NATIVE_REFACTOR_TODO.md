@@ -413,8 +413,12 @@ TODO:
    - 已把 `Renderer::step_backward()` 中 successful retreat 后的 reference slot / clock target 计算迁入 track step policy，Renderer 保留 retreat/fallback 分支、draw/log。
    - 验证：native-only + smoke/step-backward UI。
 
-63. [ ] `AudioEngineTrackRegistry`
-   - 后续开始收 chat 点名的 `AudioEngine::Impl` God Object，把 track registry / active-track selection 的纯容器策略拆出 Impl。
+63. [x] `AudioEngineTrackRegistry`
+   - 已把 chat 点名的 `AudioEngine::Impl` track registry / buffer publication / pause-seek fanout 容器策略拆出 Impl。
+   - 验证：native-only + smoke UI。
+
+64. [ ] `AudioDecodeThreadBoundary`
+   - 后续继续收 `AudioEngine::Impl` God Object，把 nested audio decoder thread 从 `audio_engine.cpp` 拆到独立边界。
    - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split

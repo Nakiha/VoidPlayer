@@ -148,6 +148,7 @@ Fixed or reduced:
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
 - `NativeResourceBudget`: track buffer queued-frame depth decision moved into `TrackBufferBudget` and is tested as a policy boundary.
+- `AudioEngine::Impl`: track registry, buffer publication facts, and decode pause/seek fanout moved into `AudioTrackRegistry`.
 - Windows runner plugin: diagnostics, logging bootstrap, texture bridge, file picker, method dispatch, and MethodChannel diagnostics scope were split.
 - Process-global logging/crash FFI ownership is now documented.
 
@@ -162,7 +163,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P107 AudioEngine Track Registry Boundary.
+Next patch: P108 AudioEngine Decode Thread Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -316,11 +317,32 @@ Validation:
 
 ### P107 - AudioEngine Track Registry Boundary
 
+Status: done in Patch 107.
+
 Goal:
 
 - Start addressing `review_godobject.md`'s `AudioEngine::Impl` finding by extracting track registry/query mutation policy out of the implementation body.
 - Keep waveOut/device submission, decoder thread lifecycle, and mixer behavior unchanged.
 - Preserve pause/no-PCM-consumption behavior and active-track selection semantics.
+
+Result:
+
+- Added `AudioTrackRegistry` and `AudioTrackController` to own audio track storage, buffer publication maps, replacement/removal/clear handles, and pause/seek fanout.
+- `AudioEngine::Impl` now delegates track map mutation and query behavior to the registry while keeping playback state, output device ownership, and decoder construction.
+- Added focused registry tests covering buffer publication, pause/seek fanout, remove/clear ownership, and replacement behavior.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+### P108 - AudioEngine Decode Thread Boundary
+
+Goal:
+
+- Continue addressing `review_godobject.md`'s `AudioEngine::Impl` finding by moving the nested `AudioDecodeThread` implementation out of `audio_engine.cpp`.
+- Keep `AudioEngine::Impl` as the audio coordinator and preserve the newly extracted `AudioTrackRegistry` ownership boundary.
+- Preserve pause/no-PCM-consumption, seek flush, resampler setup, and FFmpeg decoder lifecycle behavior.
 
 Validation:
 

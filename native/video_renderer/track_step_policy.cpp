@@ -169,6 +169,19 @@ StepForwardExactSeekTarget choose_step_forward_exact_seek_target(
     return result;
 }
 
+StepBackwardExactSeekTarget choose_step_backward_exact_seek_target(
+    const TrackPipelineManager& tracks,
+    int64_t clock_pts_us) {
+    StepBackwardExactSeekTarget result;
+    result.clock_pts_us = clock_pts_us;
+    result.frame_duration_us = compute_min_current_frame_duration_us(tracks);
+    const int64_t target =
+        clock_pts_us - result.frame_duration_us - 1000;
+    result.target_pts_us = std::max(int64_t(0), target);
+    result.clamped_to_zero = result.target_pts_us != target;
+    return result;
+}
+
 void discard_step_forward_consumed_frames(
     TrackPipelineManager& tracks,
     int64_t current_pts_us,

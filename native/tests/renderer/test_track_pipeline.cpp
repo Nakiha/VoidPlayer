@@ -1561,6 +1561,38 @@ TEST_CASE("TrackStepPolicy chooses step-forward exact-seek fallback targets",
     REQUIRE(clamped_target.clamped_to_duration);
 }
 
+TEST_CASE("TrackStepPolicy chooses step-backward exact-seek fallback targets",
+          "[track_pipeline][track_step_policy]") {
+    TrackPipelineManager empty_manager;
+    const auto empty_target = choose_step_backward_exact_seek_target(
+        empty_manager, 10000);
+    REQUIRE(empty_target.clock_pts_us == 10000);
+    REQUIRE(empty_target.frame_duration_us == 33333);
+    REQUIRE(empty_target.target_pts_us == 0);
+    REQUIRE(empty_target.clamped_to_zero);
+
+    auto track = std::make_unique<TrackPipeline>();
+    track->track_buffer = std::make_shared<TrackBuffer>();
+    TextureFrame frame;
+    frame.pts_us = 1000;
+    frame.duration_us = 40000;
+    track->track_buffer->push_frame(frame);
+
+    TrackPipelineManager manager;
+    manager[0] = std::move(track);
+    const auto target = choose_step_backward_exact_seek_target(
+        manager, 90000);
+    REQUIRE(target.clock_pts_us == 90000);
+    REQUIRE(target.frame_duration_us == 40000);
+    REQUIRE(target.target_pts_us == 49000);
+    REQUIRE_FALSE(target.clamped_to_zero);
+
+    const auto clamped_target = choose_step_backward_exact_seek_target(
+        manager, 40500);
+    REQUIRE(clamped_target.target_pts_us == 0);
+    REQUIRE(clamped_target.clamped_to_zero);
+}
+
 TEST_CASE("TrackStepPolicy discards consumed step-forward frames",
           "[track_pipeline][track_step_policy]") {
     const auto make_track_with_frames =

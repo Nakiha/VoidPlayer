@@ -42,6 +42,17 @@ StepForwardExactSeekTarget choose_step_forward_exact_seek_target(
     int64_t cached_duration_us,
     const PresentDecision& last_decision);
 
+struct StepBackwardExactSeekTarget {
+    int64_t clock_pts_us = 0;
+    int64_t frame_duration_us = 0;
+    int64_t target_pts_us = 0;
+    bool clamped_to_zero = false;
+};
+
+StepBackwardExactSeekTarget choose_step_backward_exact_seek_target(
+    const TrackPipelineManager& tracks,
+    int64_t clock_pts_us);
+
 void discard_step_forward_consumed_frames(
     TrackPipelineManager& tracks,
     int64_t current_pts_us,

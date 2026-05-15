@@ -717,11 +717,14 @@ void Renderer::step_backward() {
             // Add 1ms margin: frame duration is integer-truncated (e.g. 1/60s → 16666us)
             // but actual PTS spacing is 16667us, so (pts - dur) overshoots the
             // previous frame by 1us and exact seek's "< target" check discards it.
-            int64_t dur = compute_min_current_frame_duration_us(tracks_);
-            int64_t target = std::max(int64_t(0),
-                playback_->clock().current_pts_us() - dur - 1000);
+            const auto fallback_seek = choose_step_backward_exact_seek_target(
+                tracks_,
+                playback_->clock().current_pts_us());
+            const int64_t target = fallback_seek.target_pts_us;
             spdlog::info("[Renderer] step_backward exact_seek: pts={:.3f}s, duration={:.3f}ms, target={:.3f}s",
-                         playback_->clock().current_pts_us() / 1e6, dur / 1e3, target / 1e6);
+                         fallback_seek.clock_pts_us / 1e6,
+                         fallback_seek.frame_duration_us / 1e3,
+                         target / 1e6);
             seek_internal(target, SeekType::Exact);
             spdlog::info("[Renderer] step_backward exact_seek done: clock_pts={:.3f}s",
                          playback_->clock().current_pts_us() / 1e6);

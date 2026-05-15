@@ -112,6 +112,7 @@ Fixed or reduced:
 - `Renderer`: step-forward next-frame selection and consumed-frame draining moved into `track_step_policy`.
 - `Renderer`: current-frame duration policy moved into `track_step_policy` and reused by step/EOF tolerance paths.
 - `Renderer`: step-forward cache-miss exact-seek fallback target calculation moved into `track_step_policy`.
+- `Renderer`: step-backward cache-miss exact-seek fallback target calculation moved into `track_step_policy`.
 - `Renderer`: preroll readiness track-state scan moved into dedicated `track_preroll_policy` owner.
 - `Renderer`: playing present-decision carry-forward moved into dedicated `track_present_policy` owner.
 - `Renderer`: empty-buffer EOF clamp fact calculation moved into `track_present_policy`.
@@ -159,7 +160,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P104 Renderer Step Backward Fallback Boundary.
+Next patch: P105 Renderer Step Forward Decision Application Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -249,16 +250,38 @@ Validation:
 
 ### P104 - Renderer Step Backward Fallback Boundary
 
+Status: done in Patch 104.
+
 Goal:
 
 - Move `Renderer::step_backward()` cache-miss exact-seek target calculation into `track_step_policy`.
 - Keep Renderer responsible for retreat execution, seek invocation, draw/log calls, and lifecycle locking.
 - Preserve the 1ms backward margin and zero clamp behavior.
 
+Result:
+
+- Added `StepBackwardExactSeekTarget` and `choose_step_backward_exact_seek_target()` to `track_step_policy`.
+- `Renderer::step_backward()` now delegates fallback duration/target calculation and keeps retreat/seek/log ownership.
+- Added native coverage for fallback duration, zero clamp, and non-clamped target behavior.
+- Added `ui_tests/seek/h265_seek_step_backward_visual_regression.csv` to cover visible step-backward behavior.
+
 Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_step_backward_visual_regression.csv`
+
+### P105 - Renderer Step Forward Decision Application Boundary
+
+Goal:
+
+- Continue shrinking `Renderer::step_forward()` by extracting the repeated successful-decision application facts around consumed-frame discard, reference slot selection, and clock target calculation.
+- Keep Renderer responsible for lifecycle locking, wait-loop timing, `present_frame()`, and final seek/draw/log calls.
+- Preserve step-forward presentation and exact-seek fallback behavior.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_step_forward_visual_regression.csv`
 
 ## Do-Not-Drift List
 

@@ -711,26 +711,29 @@ TODO:
 
 ## P2 - Target / Feature Boundary
 
+Status: partially done in Patch 153.
+
 目标：让 native 不再天然等同于“完整 Windows App 内部模块”，逐步变成可选 feature 的库集合。
 
 证据：
 
 - `video_renderer_core` 仍链接 FFmpeg。
-- `video_renderer_lib` 固定链接 `analysis_lib`、D3D11/DXGI/d3dcompiler/winmm。
-- analysis overlay 不是可选 feature。
+- `video_renderer_lib` 仍固定链接 D3D11/DXGI/d3dcompiler/winmm，后续 target 边界还未拆细。
+- `BUILD_ANALYSIS=OFF` 已能让 renderer/player/FFI 不链接 `analysis_lib`，analysis overlay draw path 降级为 no-op stub。
 
 TODO:
 
 - [ ] 设计 target 边界：`void_core`、`void_media_ffmpeg`、`void_render_d3d11`、`void_player`、`void_analysis`、`void_ffi`、`void_flutter_windows_plugin`。
-- [ ] 先增加 feature options，不急着一次重命名 target。
-- [ ] 让 `BUILD_ANALYSIS=OFF` 时 renderer/player/FFI 能构建，analysis overlay API 返回 unsupported。
+- [x] 先增加 feature options，不急着一次重命名 target。
+- [x] 让 `BUILD_ANALYSIS=OFF` 时 renderer/player/FFI 能构建；renderer analysis overlay draw path 返回 no-op，memory snapshot helper 保持可用。
 - [ ] 让 `BUILD_FFI=OFF`、`BUILD_PYTHON=OFF`、`BUILD_TESTS=OFF` 的安装/导出路径干净。
 - [ ] 记录 public/internal target policy。
 
 建议验证：
 
-- `python dev.py test --native-only`
-- `cmake -S native -B native/build-local-min -DBUILD_PYTHON=OFF -DBUILD_FFI=OFF -DBUILD_TESTS=OFF -DBUILD_ANALYSIS=OFF`
+- `python dev.py test --native-only` passed on 2026-05-16.
+- `cmake -S native -B native/build-msvc-analysis-off -DBUILD_ANALYSIS=OFF -DBUILD_TESTS=OFF -DBUILD_PYTHON=OFF -DBUILD_FFI=ON` passed on 2026-05-16.
+- `cmake --build native/build-msvc-analysis-off --config Release --parallel` passed on 2026-05-16.
 
 ## P2 - Strict UTF-8 Paths
 

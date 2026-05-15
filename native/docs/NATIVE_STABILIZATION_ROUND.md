@@ -843,6 +843,28 @@ Result:
 - Added `DecodedFramePublisher` tests for one-shot pending hardware visibility flush and forced shared-surface publish flush behavior.
 - Added a direct D3D11 hardware `FrameConverter` lifetime test proving the converted `TextureFrame` holds an `AVFrame` ref after the reusable decode frame is unreffed.
 
+### P153 - Native Analysis Feature Boundary
+
+Status: done in Patch 153.
+
+Goal:
+
+- Close the `build/chat/chat_review.md` target-boundary item by making native analysis optional without renaming the full target graph yet.
+- Keep default builds behavior-compatible, including the real analysis overlay renderer, CLI, zstd, and analysis tests.
+- Let `BUILD_ANALYSIS=OFF` build renderer/player/FFI without linking `analysis_lib` or vendored zstd.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `cmake -S native -B native/build-msvc-analysis-off -DBUILD_ANALYSIS=OFF -DBUILD_TESTS=OFF -DBUILD_PYTHON=OFF -DBUILD_FFI=ON`
+- `cmake --build native/build-msvc-analysis-off --config Release --parallel`
+
+Result:
+
+- Added a `BUILD_ANALYSIS` option and guarded `analysis_lib`, zstd, `VoidPlayerCli`, CLI smoke tests, and analysis tests behind it.
+- Split renderer analysis overlay implementation selection: default builds compile the real overlay renderer, while analysis-off builds compile a no-op draw stub.
+- Kept `snapshot_analysis_overlay_memory_stats()` available in the stub so renderer memory diagnostics and focused tests do not depend on analysis sources.
+
 ## Do-Not-Drift List
 
 - Do not let runner plugin cosmetics displace the remaining `review_godobject.md` owner-boundary work.

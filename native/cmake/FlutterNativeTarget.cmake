@@ -3,7 +3,7 @@ include_guard(GLOBAL)
 include("${CMAKE_CURRENT_LIST_DIR}/NativeSources.cmake")
 
 set(VOID_FLUTTER_ZSTD_DIR "${VOID_NATIVE_DIR}/analysis/vendor/zstd")
-if(EXISTS "${VOID_FLUTTER_ZSTD_DIR}/build/cmake/CMakeLists.txt" AND NOT TARGET libzstd_static)
+if(BUILD_ANALYSIS AND EXISTS "${VOID_FLUTTER_ZSTD_DIR}/build/cmake/CMakeLists.txt" AND NOT TARGET libzstd_static)
     set(ZSTD_BUILD_SHARED OFF CACHE BOOL "" FORCE)
     set(ZSTD_BUILD_STATIC ON CACHE BOOL "" FORCE)
     set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
@@ -24,8 +24,10 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
         ${VOID_RENDERER_CORE_SOURCES}
         ${VOID_RENDERER_WINDOWS_SOURCES}
         ${VOID_D3D11_BACKEND_SOURCES}
-        ${VOID_ANALYSIS_SOURCES}
     )
+    if(BUILD_ANALYSIS)
+        target_sources(${target_name} PRIVATE ${VOID_ANALYSIS_SOURCES})
+    endif()
 
     target_include_directories(${target_name} PRIVATE
         "${VOID_NATIVE_DIR}"
@@ -37,7 +39,6 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
 
     target_link_libraries(${target_name} PRIVATE
         spdlog::spdlog_header_only
-        libzstd_static
         ${AVCODEC_LIBRARY}
         ${AVFORMAT_LIBRARY}
         ${AVUTIL_LIBRARY}
@@ -47,9 +48,13 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
         d3dcompiler
         winmm
     )
+    if(BUILD_ANALYSIS)
+        target_link_libraries(${target_name} PRIVATE libzstd_static)
+    endif()
 
     target_compile_definitions(${target_name} PRIVATE
         _CRT_SECURE_NO_WARNINGS
+        VOID_BUILD_ANALYSIS=$<BOOL:${BUILD_ANALYSIS}>
     )
 
     void_configure_renderer_shaders("${generated_include_dir}")

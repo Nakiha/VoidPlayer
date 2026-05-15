@@ -83,7 +83,7 @@ void_apply_native_compile_options(video_renderer_tests)
 add_test(NAME video_renderer_tests COMMAND video_renderer_tests)
 set_tests_properties(video_renderer_tests PROPERTIES TIMEOUT 180)
 
-if(BUILD_ANALYSIS_TESTS)
+if(BUILD_ANALYSIS AND BUILD_ANALYSIS_TESTS)
     # ==================== Analysis Tests ====================
 
     add_executable(analysis_tests

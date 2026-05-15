@@ -32,7 +32,6 @@ target_include_directories(video_renderer_lib SYSTEM PUBLIC
 
 target_link_libraries(video_renderer_lib PUBLIC
     video_renderer_core
-    analysis_lib
     spdlog::spdlog_header_only
     ${AVCODEC_LIBRARY}
     ${AVFORMAT_LIBRARY}
@@ -43,6 +42,12 @@ target_link_libraries(video_renderer_lib PUBLIC
     d3dcompiler
     winmm
 )
+if(BUILD_ANALYSIS)
+    target_link_libraries(video_renderer_lib PUBLIC analysis_lib)
+endif()
+
+target_compile_definitions(video_renderer_lib PUBLIC
+    VOID_BUILD_ANALYSIS=$<BOOL:${BUILD_ANALYSIS}>)
 
 void_configure_renderer_shaders("${CMAKE_CURRENT_BINARY_DIR}")
 

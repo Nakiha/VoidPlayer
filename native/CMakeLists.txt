@@ -27,7 +27,9 @@ option(BUILD_BENCHMARKS "Build native benchmark executables" OFF)
 option(BUILD_FFI "Build C FFI shared library" ON)
 
 enable_testing()
-add_subdirectory(analysis)
+if(BUILD_ANALYSIS)
+    add_subdirectory(analysis)
+endif()
 
 if(WIN32)
     add_subdirectory(video_renderer)
@@ -39,7 +41,7 @@ if(WIN32 AND BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-if(WIN32)
+if(WIN32 AND BUILD_ANALYSIS)
     add_executable(VoidPlayerCli
         tools/void_player_cli.cpp
         tools/analysis_overlay_gpu_benchmark.cpp)
@@ -83,4 +85,5 @@ message(STATUS "=== VoidPlayer Native Build ===")
 message(STATUS "  Generator: ${CMAKE_GENERATOR}")
 message(STATUS "  FFmpeg: ${FFMPEG_ROOT}")
 message(STATUS "  Test videos: ${VIDEO_TEST_DIR}")
+message(STATUS "  Analysis: ${BUILD_ANALYSIS}")
 message(STATUS "")

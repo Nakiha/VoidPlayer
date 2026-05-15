@@ -4,8 +4,10 @@ option(VOID_USE_LOCAL_DEPS
        "Use existing local dependency source directories instead of locked FetchContent downloads"
        OFF)
 
+option(BUILD_ANALYSIS "Build native analysis cache, CLI, and overlay feature" ON)
+
 set(VOID_ZSTD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/analysis/vendor/zstd")
-if(EXISTS "${VOID_ZSTD_DIR}/build/cmake/CMakeLists.txt" AND NOT TARGET libzstd_static)
+if(BUILD_ANALYSIS AND EXISTS "${VOID_ZSTD_DIR}/build/cmake/CMakeLists.txt" AND NOT TARGET libzstd_static)
     set(ZSTD_BUILD_SHARED OFF CACHE BOOL "" FORCE)
     set(ZSTD_BUILD_STATIC ON CACHE BOOL "" FORCE)
     set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
@@ -46,6 +48,10 @@ endif()
 
 option(BUILD_TESTS "Build tests" ON)
 option(BUILD_ANALYSIS_TESTS "Build native analysis tests that require external analysis tools" ON)
+if(NOT BUILD_ANALYSIS AND BUILD_ANALYSIS_TESTS)
+    message(STATUS "BUILD_ANALYSIS=OFF disables BUILD_ANALYSIS_TESTS")
+    set(BUILD_ANALYSIS_TESTS OFF CACHE BOOL "" FORCE)
+endif()
 if(BUILD_TESTS)
     set(CATCH2_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/_deps/catch2-src")
     if(VOID_USE_LOCAL_DEPS AND EXISTS "${CATCH2_LOCAL_DIR}/CMakeLists.txt")

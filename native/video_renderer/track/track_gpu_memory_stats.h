@@ -28,6 +28,7 @@ struct TrackGpuMemoryStats {
     size_t exact_seek_reorder_count = 0;
     size_t exact_seek_pending_count = 0;
     size_t exact_seek_stable_frame_count = 0;
+    size_t exact_seek_budget_drop_count = 0;
     size_t buffer_count = 0;
     size_t buffer_capacity = 0;
 };

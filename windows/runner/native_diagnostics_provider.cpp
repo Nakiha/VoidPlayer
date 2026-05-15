@@ -40,6 +40,8 @@ flutter::EncodableMap make_gpu_breakdown_map(const vr::RendererGpuMemoryStats& s
         flutter::EncodableValue(static_cast<int64_t>(stats.exact_seek_candidate_cpu_bytes));
     map[flutter::EncodableValue("exactSeekStableCpuBytes")] =
         flutter::EncodableValue(static_cast<int64_t>(stats.exact_seek_stable_cpu_bytes));
+    map[flutter::EncodableValue("exactSeekBudgetDropCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.exact_seek_budget_drop_count));
     map[flutter::EncodableValue("headlessWidth")] =
         flutter::EncodableValue(stats.headless_width);
     map[flutter::EncodableValue("headlessHeight")] =
@@ -92,6 +94,8 @@ flutter::EncodableMap make_gpu_breakdown_map(const vr::RendererGpuMemoryStats& s
             flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_pending_count));
         tm[flutter::EncodableValue("exactSeekStableFrameCount")] =
             flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_stable_frame_count));
+        tm[flutter::EncodableValue("exactSeekBudgetDropCount")] =
+            flutter::EncodableValue(static_cast<int64_t>(track.exact_seek_budget_drop_count));
         tm[flutter::EncodableValue("bufferCount")] =
             flutter::EncodableValue(static_cast<int64_t>(track.buffer_count));
         tm[flutter::EncodableValue("bufferCapacity")] =

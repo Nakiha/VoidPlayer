@@ -767,7 +767,7 @@ TODO:
 
 ## P2 - Resource Budget Policy
 
-Status: partially done in Round 16; tightened again in Patch 154.
+Status: partially done in Round 16; tightened again in Patch 154 and Patch 158.
 
 目标：把“别炸内存”的保险丝升级成统一、可配置、可测试的资源预算。
 
@@ -784,12 +784,13 @@ TODO:
 - [x] 预算覆盖：exact seek reorder frame count 由 `NativeResourceBudget` 统一决策，candidate store 会丢弃超过预算的最旧候选。
 - [ ] 预算覆盖：max exact seek reorder bytes、max analysis file/cache size 和 runtime override。Round 16 已集中 max tracks / dimensions / path bytes / CPU frame bytes / capture bytes / exact seek reorder frames / speed 常量；P45 已集中 TrackBuffer queued-frame depth；Patch 154 已集中 packet queue capacity 和 exact-seek candidate frame cap。
 - [ ] 超预算返回明确错误码和日志。
-- [ ] diagnostics 输出预算命中/拒绝计数。
+- [x] diagnostics 输出预算命中/拒绝计数：Patch 158 exposes exact-seek candidate budget drop counts through decode stats, track memory stats, and MethodChannel `gpuBreakdown`.
 - [x] 增加预算边界测试。
 
 建议验证：
 
 - `python dev.py test --native-only` passed on 2026-05-16.
+- `flutter build windows --release` passed on 2026-05-16.
 - `python dev.py test --native-only --github` build passed on 2026-05-10.
 - `ctest --test-dir native/build-msvc -C Release --output-on-failure -R video_renderer_tests` passed on 2026-05-10.
 - `ctest --test-dir native/build-msvc -C Release --output-on-failure -R test_ffi_c` passed on 2026-05-10.

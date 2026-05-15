@@ -153,6 +153,8 @@ TrackGpuMemoryStats snapshot_track_gpu_memory_stats(
         stats.exact_seek_pending_count = decode_stats->exact_seek_pending_count;
         stats.exact_seek_stable_frame_count =
             decode_stats->exact_seek_stable_frame_count;
+        stats.exact_seek_budget_drop_count =
+            decode_stats->exact_seek_budget_drop_count;
     }
     stats.presenter_copy_texture_bytes = presenter_copy_texture_bytes;
     stats.total_cpu_frame_bytes =
@@ -186,6 +188,7 @@ TrackGpuMemoryStatsCollectionResult snapshot_track_gpu_memory_stats_collection(
         result.exact_seek_candidate_cpu_bytes +=
             track.exact_seek_candidate_cpu_bytes;
         result.exact_seek_stable_cpu_bytes += track.exact_seek_stable_cpu_bytes;
+        result.exact_seek_budget_drop_count += track.exact_seek_budget_drop_count;
         result.cpu_frame_bytes += track.total_cpu_frame_bytes;
         result.total_estimated_bytes +=
             track.decoder_pool_bytes + track.exact_seek_snapshot_bytes;

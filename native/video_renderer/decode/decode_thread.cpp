@@ -443,6 +443,7 @@ DecodeMemoryStats DecodeThread::memory_stats() const {
     stats.exact_seek_reorder_count = exact_stats.reorder_count;
     stats.exact_seek_pending_count = exact_stats.pending_count;
     stats.exact_seek_stable_frame_count = exact_stats.stable_frame_count;
+    stats.exact_seek_budget_drop_count = exact_stats.dropped_by_budget_count;
     stats.exact_seek_candidate_cpu_bytes = exact_stats.candidate_cpu_bytes;
     stats.exact_seek_stable_cpu_bytes = exact_stats.stable_cpu_bytes;
     return stats;

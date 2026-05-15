@@ -139,6 +139,7 @@ void ExactSeekCandidateStore::collect(ExactSeekCandidate candidate,
     reorder_.push_back(std::move(candidate));
     while (reorder_.size() > max_reorder_frames_) {
         reorder_.erase(reorder_.begin());
+        dropped_by_budget_count_.fetch_add(1, std::memory_order_relaxed);
     }
     refresh_stats();
 }
@@ -181,6 +182,7 @@ ExactSeekCandidateMemoryStats ExactSeekCandidateStore::stats_snapshot() const {
         reorder_count_.load(std::memory_order_relaxed),
         pending_count_.load(std::memory_order_relaxed),
         stable_frame_count_.load(std::memory_order_relaxed),
+        dropped_by_budget_count_.load(std::memory_order_relaxed),
         candidate_cpu_bytes_.load(std::memory_order_relaxed),
         stable_cpu_bytes_.load(std::memory_order_relaxed),
     };

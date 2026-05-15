@@ -629,6 +629,7 @@ TEST_CASE("TrackSnapshot builds track GPU memory stats",
     decode_stats.exact_seek_reorder_count = 5;
     decode_stats.exact_seek_pending_count = 2;
     decode_stats.exact_seek_stable_frame_count = 1;
+    decode_stats.exact_seek_budget_drop_count = 7;
 
     const auto buffer_bytes = track.track_buffer->estimated_cpu_bytes();
     const auto packet_bytes = track.packet_queue->estimated_bytes();
@@ -656,6 +657,7 @@ TEST_CASE("TrackSnapshot builds track GPU memory stats",
     REQUIRE(stats.exact_seek_reorder_count == 5);
     REQUIRE(stats.exact_seek_pending_count == 2);
     REQUIRE(stats.exact_seek_stable_frame_count == 1);
+    REQUIRE(stats.exact_seek_budget_drop_count == 7);
     REQUIRE(stats.total_cpu_frame_bytes == buffer_bytes + 128 + 256);
 
     auto without_decode = snapshot_track_gpu_memory_stats(2, track, nullptr, 0);

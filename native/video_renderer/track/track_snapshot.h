@@ -33,6 +33,7 @@ struct TrackGpuMemoryStatsCollectionResult {
     uint64_t packet_queue_bytes = 0;
     uint64_t exact_seek_candidate_cpu_bytes = 0;
     uint64_t exact_seek_stable_cpu_bytes = 0;
+    size_t exact_seek_budget_drop_count = 0;
     uint64_t cpu_frame_bytes = 0;
     uint64_t total_estimated_bytes = 0;
 };

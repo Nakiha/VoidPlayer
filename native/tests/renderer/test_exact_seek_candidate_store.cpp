@@ -91,6 +91,7 @@ TEST_CASE("ExactSeekCandidateStore: reorder candidates are capped by budget",
     REQUIRE(store.reorder_at(0).pts_us == 60);
     REQUIRE(store.reorder_at(2).pts_us == 100);
     REQUIRE(store.stats_snapshot().reorder_count == 3);
+    REQUIRE(store.stats_snapshot().dropped_by_budget_count == 1);
 }
 
 TEST_CASE("ExactSeekCandidateStore: memory stats track stable frame count",

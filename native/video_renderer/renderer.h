@@ -86,6 +86,7 @@ struct RendererGpuMemoryStats {
     uint64_t packet_queue_bytes = 0;
     uint64_t exact_seek_candidate_cpu_bytes = 0;
     uint64_t exact_seek_stable_cpu_bytes = 0;
+    size_t exact_seek_budget_drop_count = 0;
     int headless_width = 0;
     int headless_height = 0;
     int headless_buffer_count = 0;

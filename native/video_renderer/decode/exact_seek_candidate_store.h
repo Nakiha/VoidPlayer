@@ -25,6 +25,7 @@ struct ExactSeekCandidateMemoryStats {
     size_t reorder_count = 0;
     size_t pending_count = 0;
     size_t stable_frame_count = 0;
+    size_t dropped_by_budget_count = 0;
     uint64_t candidate_cpu_bytes = 0;
     uint64_t stable_cpu_bytes = 0;
 };
@@ -72,6 +73,7 @@ private:
     std::atomic<size_t> reorder_count_{0};
     std::atomic<size_t> pending_count_{0};
     std::atomic<size_t> stable_frame_count_{0};
+    std::atomic<size_t> dropped_by_budget_count_{0};
     std::atomic<uint64_t> candidate_cpu_bytes_{0};
     std::atomic<uint64_t> stable_cpu_bytes_{0};
 };

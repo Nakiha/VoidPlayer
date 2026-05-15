@@ -2375,6 +2375,7 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
     result.exact_seek_candidate_cpu_bytes +=
         track_memory.exact_seek_candidate_cpu_bytes;
     result.exact_seek_stable_cpu_bytes += track_memory.exact_seek_stable_cpu_bytes;
+    result.exact_seek_budget_drop_count += track_memory.exact_seek_budget_drop_count;
     result.cpu_frame_bytes += track_memory.cpu_frame_bytes;
     result.total_estimated_bytes += track_memory.total_estimated_bytes;
     result.tracks = track_memory.tracks;

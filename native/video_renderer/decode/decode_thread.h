@@ -60,6 +60,7 @@ struct DecodeMemoryStats {
     size_t exact_seek_reorder_count = 0;
     size_t exact_seek_pending_count = 0;
     size_t exact_seek_stable_frame_count = 0;
+    size_t exact_seek_budget_drop_count = 0;
     uint64_t exact_seek_candidate_cpu_bytes = 0;
     uint64_t exact_seek_stable_cpu_bytes = 0;
     D3D11SnapshotPoolStats snapshot_pool;

@@ -949,6 +949,27 @@ Result:
 - Documented `BUILD_ANALYSIS` alongside the existing CMake options.
 - Marked the target-boundary design and public/internal policy tracker items complete.
 
+### P158 - Resource Budget Diagnostics Counter
+
+Status: done in Patch 158.
+
+Goal:
+
+- Make at least one runtime budget hit visible in diagnostics, not only enforced internally.
+- Keep the ABI stable by exposing the new field through MethodChannel diagnostics rather than changing the flat FFI diagnostics struct.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `flutter build windows --release`
+
+Result:
+
+- `ExactSeekCandidateStore` now tracks cumulative candidates dropped because the reorder budget was exceeded.
+- Decode memory stats, track GPU/memory stats, and renderer GPU breakdown aggregate the drop counter.
+- MethodChannel diagnostics now expose `exactSeekBudgetDropCount` at the total and per-track `gpuBreakdown` levels.
+- Added focused native assertions for the store cap and track snapshot propagation.
+
 ## Do-Not-Drift List
 
 - Do not let runner plugin cosmetics displace the remaining `review_godobject.md` owner-boundary work.

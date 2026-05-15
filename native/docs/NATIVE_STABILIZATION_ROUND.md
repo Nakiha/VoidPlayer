@@ -198,7 +198,7 @@ Verified:
 
 ## Active Patch Queue
 
-Next patch: P137 Renderer Render Loop State Snapshot Boundary.
+Next patch: P138 Renderer Frame Presenter Serialization Boundary.
 
 Completed patch details through P123 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -479,6 +479,8 @@ Result:
 
 ### P137 - Renderer Render Loop State Snapshot Boundary
 
+Status: done in Patch 137.
+
 Goal:
 
 - Stop render-loop policy helpers from directly reading mutable `tracks_` outside a single state snapshot boundary.
@@ -490,6 +492,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv ui_tests/timeline/h265_timeline_click_visual_regression.csv`
+
+Result:
+
+- Render-loop preroll, paused-preview, diagnostics, carry-forward, redraw, EOF, and frame-deadline decisions now read `tracks_`, `last_decision_`, `preview_drawn_`, and `was_buffering_` under explicit `state_mutex_` sections.
+- `draw_paused_frame()` and step-forward last-frame commit no longer write `last_decision_` outside `state_mutex_`.
+- Seek-preview event collection now snapshots track file IDs under `state_mutex_` before invoking callbacks outside renderer locks.
+
+### P138 - Renderer Frame Presenter Serialization Boundary
+
+Goal:
+
+- Serialize `D3D11FramePresenter` slot resource access across `prepare_frame()`, `reset_track()`, `move_track()`, `reset_all()`, and `memory_stats()`.
+- Prefer a focused internal presenter mutex for this patch so track lifecycle paths stop racing render draw without reshaping the full render-thread command model yet.
+- Preserve existing slot compaction, seek reset, NV12 copy cache, software texture cache, and GPU memory diagnostics behavior.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv ui_tests/seek/h265_seek_visual_regression.csv`
 
 ## Do-Not-Drift List
 

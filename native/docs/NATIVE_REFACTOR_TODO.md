@@ -166,7 +166,7 @@ TODO:
    - 目标：`draw_frame()` 不再拿 `state_mutex_`，也不直接读 `tracks_` / `layout_` / `background_color_`；进入 `device_mutex_` 前完成 immutable draw snapshot。
    - 验证：native-only + smoke/viewport/analysis UI。
 
-2. [ ] `RendererRenderLoopStateSnapshotBoundary`
+2. [x] `RendererRenderLoopStateSnapshotBoundary`
    - 目标：render loop policy helpers 不再直接吃 mutable `TrackPipelineManager&`；`last_decision_`、`preview_drawn_`、`was_buffering_` 的读写收口到明确状态边界。
    - 验证：native-only + smoke/seek/timeline UI。
 

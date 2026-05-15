@@ -564,6 +564,7 @@ void Renderer::emit_event(const RendererEvent& event) {
 void Renderer::emit_seek_preview_presented_events(const PresentDecision& decision) {
     int64_t request_id = -1;
     int64_t target_pts_us = -1;
+    std::vector<SeekPreviewPresentedTrackEvent> events;
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
         if (pending_seek_event_request_id_ < 0 || pending_seek_event_emitted_) {
@@ -572,10 +573,10 @@ void Renderer::emit_seek_preview_presented_events(const PresentDecision& decisio
         request_id = pending_seek_event_request_id_;
         target_pts_us = pending_seek_event_target_pts_us_;
         pending_seek_event_emitted_ = true;
+        events = collect_seek_preview_presented_track_events(
+            tracks_, decision, request_id, target_pts_us);
     }
 
-    const auto events = collect_seek_preview_presented_track_events(
-        tracks_, decision, request_id, target_pts_us);
     for (const auto& track_event : events) {
         RendererEvent event;
         event.type = RendererEvent::Type::SeekPreviewPresented;
@@ -706,7 +707,10 @@ void Renderer::step_forward() {
 
     if (have_step_decision) {
         present_frame(step_decision);
-        last_decision_ = step_decision;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            last_decision_ = step_decision;
+        }
         double pts = step_application.has_clock_target
                      ? step_application.presented_pts_us / 1e6 : -1.0;
         spdlog::info("[Renderer] draw_paused_frame(step_forward): pts={:.3f}s", pts);
@@ -766,17 +770,26 @@ void Renderer::step_backward() {
 }
 
 void Renderer::draw_paused_frame(const char* reason) {
-    auto snapshot = build_available_paused_frame_snapshot(tracks_);
-    PresentDecision decision = snapshot.decision;
-    bool has_frame = snapshot.has_frame;
-    if (!has_frame && present_decision_has_frame(last_decision_)) {
-        decision = last_decision_;
-        has_frame = true;
+    PresentDecision decision;
+    bool has_frame = false;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        auto snapshot = build_available_paused_frame_snapshot(tracks_);
+        decision = snapshot.decision;
+        has_frame = snapshot.has_frame;
+        if (!has_frame && present_decision_has_frame(last_decision_)) {
+            decision = last_decision_;
+            has_frame = true;
+        }
     }
     if (has_frame) {
         present_frame(decision);
-        last_decision_ = decision;
-        int ref = first_active_track();
+        int ref = -1;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            last_decision_ = decision;
+            ref = first_active_track();
+        }
         double pts = (ref >= 0 && decision.frames[ref].has_value())
                      ? decision.frames[ref]->pts_us / 1e6 : -1.0;
         spdlog::info("[Renderer] draw_paused_frame({}): pts={:.3f}s", reason, pts);
@@ -1282,54 +1295,84 @@ void Renderer::render_loop() {
             headless_output_->cleanup_expired_pending_buffers();
         }
 
-        // Snapshot playing_ under state_mutex_ to avoid torn read
-        // when pause()/resume() modify it concurrently.
         bool playing_snapshot;
+        bool clock_paused_snapshot;
+        bool log_preroll_transition = false;
+        bool log_preroll_pending = false;
+        bool log_preroll_complete = false;
+        double preroll_complete_pts_s = -1.0;
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             playing_snapshot = playing_;
+
+            // Preroll: keep clock paused while any track is still buffering.
+            const bool any_buffering = has_preroll_blocking_track(tracks_);
+
+            // Detect Buffering -> Ready transition: force preview redraw so the
+            // newly-ready track's first frame appears on screen immediately
+            // (even while paused -- matches initialize() behavior).
+            if (was_buffering_ && !any_buffering) {
+                preview_drawn_ = false;
+                last_decision_ = PresentDecision();  // Clear stale cached frames
+                log_preroll_transition = true;
+            }
+            was_buffering_ = any_buffering;
+
+            clock_paused_snapshot = playback_->clock().is_paused();
+            if (any_buffering && !clock_paused_snapshot) {
+                playback_->clock().pause();
+                clock_paused_snapshot = true;
+                log_preroll_pending = true;
+            } else if (!any_buffering && clock_paused_snapshot && playing_snapshot) {
+                set_decode_paused_for_all_tracks(false);
+                playback_->clock().resume();
+                preview_drawn_ = false;
+                clock_paused_snapshot = false;
+                preroll_complete_pts_s =
+                    static_cast<double>(playback_->clock().current_pts_us()) / 1e6;
+                log_preroll_complete = true;
+            }
         }
-
-        // Preroll: keep clock paused while any track is still buffering
-        const bool any_buffering = has_preroll_blocking_track(tracks_);
-
-        // Detect Buffering → Ready transition: force preview redraw so the
-        // newly-ready track's first frame appears on screen immediately
-        // (even while paused — matches initialize() behavior).
-        if (was_buffering_ && !any_buffering) {
-            preview_drawn_ = false;
-            last_decision_ = PresentDecision();  // Clear stale cached frames
+        if (log_preroll_transition) {
             spdlog::info("[Renderer] Preroll transition complete, forcing preview redraw");
         }
-        was_buffering_ = any_buffering;
-
-        if (any_buffering && !playback_->clock().is_paused()) {
-            playback_->clock().pause();
+        if (log_preroll_pending) {
             spdlog::info("[Renderer] Preroll: clock PENDING, some track buffering, "
                          "(playing={})", playing_snapshot);
-        } else if (!any_buffering && playback_->clock().is_paused() && playing_snapshot) {
-            set_decode_paused_for_all_tracks(false);
-            playback_->clock().resume();
-            preview_drawn_ = false;
+        }
+        if (log_preroll_complete) {
             spdlog::info("[Renderer] === Preroll COMPLETE: all tracks ready, clock resumed, "
                          "playing_={}, pts={:.3f}s)",
-                         playing_snapshot, playback_->clock().current_pts_us() / 1e6);
+                         playing_snapshot, preroll_complete_pts_s);
         }
 
-        if (!playing_snapshot || playback_->clock().is_paused()) {
+        if (!playing_snapshot || clock_paused_snapshot) {
             // While paused/prerolling, draw current frame if not yet drawn
-            if (!preview_drawn_) {
+            bool should_draw_preview = false;
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                should_draw_preview = !preview_drawn_;
+            }
+            if (should_draw_preview) {
                 bool drawn = false;
 
                 // Try cached last frame first (for layout changes while paused)
-                if (present_decision_has_frame(last_decision_)) {
-                    present_frame(last_decision_);
+                PresentDecision cached_decision;
+                std::optional<int64_t> cached_pts_us;
+                {
+                    std::lock_guard<std::mutex> lock(state_mutex_);
+                    if (present_decision_has_frame(last_decision_)) {
+                        cached_decision = last_decision_;
+                        cached_pts_us =
+                            first_present_decision_frame_pts_us(cached_decision);
+                    }
+                }
+                if (present_decision_has_frame(cached_decision)) {
+                    present_frame(cached_decision);
                     drawn = true;
-                    const auto pts_us =
-                        first_present_decision_frame_pts_us(last_decision_);
                     spdlog::debug("[Renderer] Paused frame (cached): pts={:.3f}s",
-                                  pts_us.has_value()
-                                      ? static_cast<double>(*pts_us) / 1e6
+                                  cached_pts_us.has_value()
+                                      ? static_cast<double>(*cached_pts_us) / 1e6
                                       : -1.0);
                 }
 
@@ -1337,28 +1380,44 @@ void Renderer::render_loop() {
                 // Only draw when ALL active tracks have frames, to avoid
                 // flashing black for tracks that haven't finished seeking.
                 if (!drawn) {
-                    auto snapshot = build_paused_preview_snapshot(tracks_);
+                    PausedPreviewSnapshot snapshot;
+                    {
+                        std::lock_guard<std::mutex> lock(state_mutex_);
+                        snapshot = build_paused_preview_snapshot(tracks_);
+                    }
                     if (snapshot.ready_to_present) {
                         auto& preview = snapshot.decision;
                         present_frame(preview);
-                        last_decision_ = preview;
                         bool preserve_requested_clock = false;
+                        int ref = -1;
+                        int64_t ref_offset_us = 0;
                         if (!playing_snapshot) {
-                            set_decode_paused_for_all_tracks(true);
                             std::lock_guard<std::mutex> lock(state_mutex_);
+                            last_decision_ = preview;
+                            set_decode_paused_for_all_tracks(true);
                             preserve_requested_clock = true;
                             mark_paused_hevc_seek_preview_drawn_locked();
+                            ref = first_active_track();
+                            if (ref >= 0 && tracks_[ref]) {
+                                ref_offset_us = tracks_[ref]->offset_us;
+                            }
+                        } else {
+                            std::lock_guard<std::mutex> lock(state_mutex_);
+                            last_decision_ = preview;
+                            ref = first_active_track();
+                            if (ref >= 0 && tracks_[ref]) {
+                                ref_offset_us = tracks_[ref]->offset_us;
+                            }
                         }
                         // Keep the logical clock at the user's requested target
                         // while paused. The decoded preview can land on a
                         // nearest/tail frame for individual tracks, but the
                         // timeline should not visually snap backward.
-                        int ref = first_active_track();
                         if (!preserve_requested_clock &&
                             ref >= 0 &&
                             preview.frames[ref].has_value()) {
                             playback_->clock().seek(
-                                preview.frames[ref]->pts_us + tracks_[ref]->offset_us);
+                                preview.frames[ref]->pts_us + ref_offset_us);
                         }
                         spdlog::info("[Renderer] Paused frame: pts={:.3f}s",
                                      ref >= 0 && preview.frames[ref].has_value()
@@ -1379,8 +1438,11 @@ void Renderer::render_loop() {
             int64_t pts = playback_->clock().current_pts_us();
             int64_t pts_delta = 0;
             if (render_loop_controller_.should_emit_diagnostics(now, pts, pts_delta)) {
-                const auto diagnostics =
-                    snapshot_render_loop_track_diagnostics(tracks_);
+                std::vector<RenderLoopTrackDiagnosticSnapshot> diagnostics;
+                {
+                    std::lock_guard<std::mutex> lock(state_mutex_);
+                    diagnostics = snapshot_render_loop_track_diagnostics(tracks_);
+                }
                 for (const auto& track : diagnostics) {
                     spdlog::info("[diag] track[{}]: pts={:.3f}s delta={:.1f}ms "
                                  "buf={}/{} state={} playing={}",
@@ -1398,12 +1460,24 @@ void Renderer::render_loop() {
             // Once a track has started, keep carrying its last frame even after
             // that track reaches EOF. This lets shorter tracks freeze on their
             // final image while longer tracks continue playing.
-            apply_present_carry_forward(tracks_, last_decision_, decision);
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                apply_present_carry_forward(tracks_, last_decision_, decision);
+            }
             present_frame(decision);
-            last_decision_ = decision;
-        } else if (!preview_drawn_) {
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                last_decision_ = decision;
+            }
+        } else {
             // No new frame but layout changed (e.g. zoom/pan during playback)
-            if (present_decision_has_frame(last_decision_)) {
+            bool should_redraw = false;
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                should_redraw =
+                    !preview_drawn_ && present_decision_has_frame(last_decision_);
+            }
+            if (should_redraw) {
                 redraw_layout();
             }
         }
@@ -1432,8 +1506,12 @@ void Renderer::render_loop() {
         // targets an absolute PTS rather than an accumulated relative duration.
         {
             int64_t current_pts = playback_->clock().current_pts_us();
-            const auto next_event_pts =
-                compute_next_frame_event_pts_us(tracks_, current_pts);
+            std::optional<int64_t> next_event_pts;
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                next_event_pts =
+                    compute_next_frame_event_pts_us(tracks_, current_pts);
+            }
             if (next_event_pts.has_value()) {
                 double spd = playback_->clock().speed();
                 const auto sleep_for = render_loop_controller_.frame_deadline_sleep(

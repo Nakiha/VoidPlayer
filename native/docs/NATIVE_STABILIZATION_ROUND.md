@@ -172,7 +172,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P118 DecodeThread Packet Consumption Boundary.
+Next patch: P119 DecodeThread Receive Action Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -560,6 +560,25 @@ Goal:
 - Continue reducing `DecodeThread` by extracting packet-consumption decisions around pause, flushing, stale seek packets, codec send action, and AVPacket ownership cleanup.
 - Keep codec send ordering, cancellation semantics, queue EOF handling, and output state transitions unchanged.
 - Prefer tested policy/helper seams before moving any AVPacket lifetime code out of the decode loop.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Extended `decode_loop_policy` with packet pop routing, cancel-before-send checkpoint, and packet send return-value decisions.
+- Replaced the inline packet gap/stale packet/send error branches in `DecodeThread::run()` with tested policy calls while keeping AVPacket free timing, logs, and Error/paused/running state writes local.
+- Added native coverage for packet-present vs queue-gap handling, cancelled non-packet sleeps, send EAGAIN/EOF receive-loop preservation, hard send errors, and SEH stop behavior.
+
+### P119 - DecodeThread Receive Action Boundary
+
+Goal:
+
+- Continue reducing `DecodeThread` by extracting normal receive-loop return-value decisions around cancelled loops, codec receive SEH, EAGAIN/EOF, hard receive errors, and frame publish continuation.
+- Keep AVFrame unref timing, exact-seek candidate capture, hardware visibility flush, preroll state transition, and perf counter updates unchanged.
+- Prefer a tested policy/helper before moving frame lifetime or exact-seek publish code.
 
 Validation:
 

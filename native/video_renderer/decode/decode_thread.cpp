@@ -507,6 +507,11 @@ std::optional<DecodeSeekNotification> DecodeThread::take_pending_seek_notificati
     return take_pending_decode_seek(seek_);
 }
 
+bool DecodeThread::has_pending_seek_notification() {
+    std::lock_guard<std::mutex> lock(seek_mutex_);
+    return seek_.pending;
+}
+
 void DecodeThread::begin_seek_epoch(AVFrame* frame, const DecodeSeekNotification& notification) {
     cancelled_.store(false, std::memory_order_release);
 
@@ -865,9 +870,13 @@ void DecodeThread::run() {
         // Non-blocking pop with short sleep — allows seek_pending to be checked promptly
         PacketPopResult packet_result = input_queue_.try_pop();
         AVPacket* pkt = packet_result.packet;
-        if (packet_result.status != PacketPopStatus::Packet || !pkt) {
-            if (!running_.load(std::memory_order_acquire) ||
-                cancelled_.load(std::memory_order_acquire)) {
+        const auto pop_action = choose_decode_packet_pop_action(
+            packet_result.status,
+            pkt != nullptr,
+            running_.load(std::memory_order_acquire),
+            cancelled_.load(std::memory_order_acquire));
+        if (pop_action != DecodePacketPopAction::ProcessPacket) {
+            if (pop_action == DecodePacketPopAction::SleepAndContinue) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 continue;
             }
@@ -959,15 +968,8 @@ void DecodeThread::run() {
         // If decode is paused (seek transition), discard the packet without
         // sending to codec.  This prevents the HEVC decoder from emitting
         // "Could not find ref with POC" warnings on stale packets.
-        bool seek_pending = false;
-        {
-            std::lock_guard<std::mutex> seek_lock(seek_mutex_);
-            if (seek_.pending) {
-                seek_pending = true;
-            }
-        }
         if (should_discard_packet_before_decode(
-                seek_pending,
+                has_pending_seek_notification(),
                 decode_paused_.load(std::memory_order_acquire),
                 output_buffer_.state())) {
             av_packet_free(&pkt);
@@ -975,7 +977,7 @@ void DecodeThread::run() {
         }
 
         // Cancel checkpoint: abort if a new seek arrived while we were waiting
-        if (cancelled_.load(std::memory_order_acquire)) {
+        if (should_abort_packet_before_send(cancelled_.load(std::memory_order_acquire))) {
             av_packet_free(&pkt);
             continue;
         }
@@ -983,7 +985,8 @@ void DecodeThread::run() {
         int ret = 0;
         auto batch_t0 = std::chrono::steady_clock::now();
         ret = send_codec_packet_seh_guarded(codec_ctx_, pkt, hw_enabled_, device_mutex_);
-        if (codec_loop_is_seh_caught(ret)) {
+        const auto send_action = choose_decode_packet_send_action(ret);
+        if (send_action == DecodePacketSendAction::StopWithError) {
             av_packet_free(&pkt);
             output_buffer_.set_state(TrackState::Error);
             decode_paused_.store(true, std::memory_order_release);
@@ -992,7 +995,7 @@ void DecodeThread::run() {
         }
         av_packet_free(&pkt);
 
-        if (ret < 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF) {
+        if (send_action == DecodePacketSendAction::SkipPacket) {
             spdlog::error("[DecodeThread] Error sending packet: {:#x}", static_cast<unsigned>(ret));
             continue;
         }

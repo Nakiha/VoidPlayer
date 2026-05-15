@@ -164,6 +164,9 @@ private:
     /// Atomically take the next pending seek notification, if any.
     std::optional<DecodeSeekNotification> take_pending_seek_notification();
 
+    /// Check whether a seek notification is pending without consuming it.
+    bool has_pending_seek_notification();
+
     /// Reset decode-thread state for a new seek epoch.
     void begin_seek_epoch(AVFrame* frame, const DecodeSeekNotification& notification);
 

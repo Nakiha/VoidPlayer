@@ -1,5 +1,6 @@
 #pragma once
 
+#include "media/packet_queue.h"
 #include "video_renderer/buffer/track_buffer.h"
 
 #include <cstddef>
@@ -20,6 +21,27 @@ bool should_pause_decode_consumption(bool decode_paused,
 bool should_discard_packet_before_decode(bool seek_pending,
                                          bool decode_paused,
                                          TrackState output_state);
+
+bool should_abort_packet_before_send(bool cancelled);
+
+enum class DecodePacketPopAction {
+    ProcessPacket,
+    SleepAndContinue,
+    HandleQueueGapOrEof,
+};
+
+enum class DecodePacketSendAction {
+    ReceiveFrames,
+    SkipPacket,
+    StopWithError,
+};
+
+DecodePacketPopAction choose_decode_packet_pop_action(PacketPopStatus status,
+                                                      bool packet_present,
+                                                      bool running,
+                                                      bool cancelled);
+
+DecodePacketSendAction choose_decode_packet_send_action(int codec_ret);
 
 enum class EofDrainAction {
     None,

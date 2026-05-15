@@ -1,6 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "video_renderer/decode/codec_loop.h"
 #include "video_renderer/decode/decode_loop_policy.h"
+
+extern "C" {
+#include <libavutil/error.h>
+}
 
 using namespace vr;
 
@@ -33,6 +38,45 @@ TEST_CASE("DecodeLoopPolicy: packets are discarded before codec during stale epo
     REQUIRE(should_discard_packet_before_decode(true, false, TrackState::Ready));
     REQUIRE(should_discard_packet_before_decode(false, true, TrackState::Ready));
     REQUIRE(should_discard_packet_before_decode(false, false, TrackState::Flushing));
+}
+
+TEST_CASE("DecodeLoopPolicy: packet pop action preserves queue gap handling",
+          "[decode_thread][decode_loop_policy]") {
+    REQUIRE(choose_decode_packet_pop_action(
+                PacketPopStatus::Packet, true, true, false) ==
+            DecodePacketPopAction::ProcessPacket);
+    REQUIRE(choose_decode_packet_pop_action(
+                PacketPopStatus::Packet, true, false, true) ==
+            DecodePacketPopAction::ProcessPacket);
+    REQUIRE(choose_decode_packet_pop_action(
+                PacketPopStatus::Packet, false, true, false) ==
+            DecodePacketPopAction::HandleQueueGapOrEof);
+    REQUIRE(choose_decode_packet_pop_action(
+                PacketPopStatus::Empty, false, false, false) ==
+            DecodePacketPopAction::SleepAndContinue);
+    REQUIRE(choose_decode_packet_pop_action(
+                PacketPopStatus::Eof, false, true, true) ==
+            DecodePacketPopAction::SleepAndContinue);
+    REQUIRE(choose_decode_packet_pop_action(
+                PacketPopStatus::Eof, false, true, false) ==
+            DecodePacketPopAction::HandleQueueGapOrEof);
+}
+
+TEST_CASE("DecodeLoopPolicy: packet send action keeps receive loop contract",
+          "[decode_thread][decode_loop_policy]") {
+    REQUIRE(choose_decode_packet_send_action(0) ==
+            DecodePacketSendAction::ReceiveFrames);
+    REQUIRE(choose_decode_packet_send_action(AVERROR(EAGAIN)) ==
+            DecodePacketSendAction::ReceiveFrames);
+    REQUIRE(choose_decode_packet_send_action(AVERROR_EOF) ==
+            DecodePacketSendAction::ReceiveFrames);
+    REQUIRE(choose_decode_packet_send_action(AVERROR_INVALIDDATA) ==
+            DecodePacketSendAction::SkipPacket);
+    REQUIRE(choose_decode_packet_send_action(codec_loop_seh_caught_code()) ==
+            DecodePacketSendAction::StopWithError);
+
+    REQUIRE_FALSE(should_abort_packet_before_send(false));
+    REQUIRE(should_abort_packet_before_send(true));
 }
 
 TEST_CASE("DecodeLoopPolicy: EOF drain action preserves buffering semantics",

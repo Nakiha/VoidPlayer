@@ -134,6 +134,41 @@ bool build_step_forward_decision(
     return decision.should_present;
 }
 
+StepForwardExactSeekTarget choose_step_forward_exact_seek_target(
+    const TrackPipelineManager& tracks,
+    int64_t clock_pts_us,
+    int64_t cached_duration_us,
+    const PresentDecision& last_decision) {
+    StepForwardExactSeekTarget result;
+    result.clock_pts_us = clock_pts_us;
+    result.base_pts_us = clock_pts_us;
+    result.reference_slot = tracks.first_active_slot();
+    if (result.reference_slot >= 0) {
+        const auto slot = static_cast<size_t>(result.reference_slot);
+        const auto& track = tracks[slot];
+        if (track) {
+            if (last_decision.frames[slot].has_value()) {
+                result.base_pts_us =
+                    last_decision.frames[slot]->pts_us + track->offset_us;
+            } else if (track->track_buffer) {
+                auto frame = track->track_buffer->peek(0);
+                if (frame.has_value()) {
+                    result.base_pts_us = frame->pts_us + track->offset_us;
+                }
+            }
+        }
+    }
+
+    result.frame_duration_us = compute_min_current_frame_duration_us(tracks);
+    result.target_pts_us =
+        result.base_pts_us + result.frame_duration_us + 1000;
+    if (cached_duration_us > 0 && result.target_pts_us > cached_duration_us) {
+        result.target_pts_us = cached_duration_us;
+        result.clamped_to_duration = true;
+    }
+    return result;
+}
+
 void discard_step_forward_consumed_frames(
     TrackPipelineManager& tracks,
     int64_t current_pts_us,

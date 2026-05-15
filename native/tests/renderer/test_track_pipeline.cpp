@@ -1512,6 +1512,55 @@ TEST_CASE("TrackStepPolicy builds step-forward decisions",
     REQUIRE_FALSE(gap_decision.should_present);
 }
 
+TEST_CASE("TrackStepPolicy chooses step-forward exact-seek fallback targets",
+          "[track_pipeline][track_step_policy]") {
+    const auto make_track_with_frame =
+        [](int64_t pts_us, int64_t duration_us, int64_t offset_us = 0) {
+            auto track = std::make_unique<TrackPipeline>();
+            track->offset_us = offset_us;
+            track->track_buffer = std::make_shared<TrackBuffer>();
+            TextureFrame frame;
+            frame.pts_us = pts_us;
+            frame.duration_us = duration_us;
+            track->track_buffer->push_frame(frame);
+            return track;
+        };
+
+    TrackPipelineManager empty_manager;
+    const auto empty_target = choose_step_forward_exact_seek_target(
+        empty_manager, 10000, 0, PresentDecision{});
+    REQUIRE(empty_target.reference_slot == -1);
+    REQUIRE(empty_target.base_pts_us == 10000);
+    REQUIRE(empty_target.clock_pts_us == 10000);
+    REQUIRE(empty_target.frame_duration_us == 33333);
+    REQUIRE(empty_target.target_pts_us == 44333);
+
+    TrackPipelineManager manager;
+    manager[0] = make_track_with_frame(1000, 40000, 100);
+
+    const auto peek_target = choose_step_forward_exact_seek_target(
+        manager, 9000, 0, PresentDecision{});
+    REQUIRE(peek_target.reference_slot == 0);
+    REQUIRE(peek_target.base_pts_us == 1100);
+    REQUIRE(peek_target.frame_duration_us == 40000);
+    REQUIRE(peek_target.target_pts_us == 42100);
+    REQUIRE_FALSE(peek_target.clamped_to_duration);
+
+    PresentDecision last_decision;
+    TextureFrame last_frame;
+    last_frame.pts_us = 3000;
+    last_decision.frames[0] = last_frame;
+    const auto last_target = choose_step_forward_exact_seek_target(
+        manager, 9000, 0, last_decision);
+    REQUIRE(last_target.base_pts_us == 3100);
+    REQUIRE(last_target.target_pts_us == 44100);
+
+    const auto clamped_target = choose_step_forward_exact_seek_target(
+        manager, 9000, 20000, last_decision);
+    REQUIRE(clamped_target.target_pts_us == 20000);
+    REQUIRE(clamped_target.clamped_to_duration);
+}
+
 TEST_CASE("TrackStepPolicy discards consumed step-forward frames",
           "[track_pipeline][track_step_policy]") {
     const auto make_track_with_frames =

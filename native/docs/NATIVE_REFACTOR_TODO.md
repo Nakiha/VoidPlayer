@@ -397,9 +397,13 @@ TODO:
    - 已把 `Renderer::seek_internal()` 中 per-slot facts / transition / plan / decision / execution 串联成一个 track lifecycle 边界，Renderer 只保留 hooks、全局 seek 状态和日志。
    - 验证：native-only + smoke/seek UI。
 
-59. [ ] `StepForwardExactSeekFallback`
-   - 后续继续把 `Renderer::step_forward()` 中 cache-miss exact-seek fallback target 计算迁入 track step policy，Renderer 保留 wait loop / seek / draw / log。
+59. [x] `StepForwardExactSeekFallback`
+   - 已把 `Renderer::step_forward()` 中 cache-miss exact-seek fallback target 计算迁入 track step policy，Renderer 保留 wait loop / seek / draw / log。
    - 验证：native-only + smoke/step-forward UI。
+
+60. [ ] `StepBackwardExactSeekFallback`
+   - 后续继续把 `Renderer::step_backward()` 中 cache-miss exact-seek fallback target 计算迁入 track step policy，Renderer 保留 retreat / seek / draw / log。
+   - 验证：native-only + smoke/step-backward UI。
 
 ## P1 - Windows Runner Plugin Split
 

@@ -657,22 +657,17 @@ void Renderer::step_forward() {
             if (!initialized_) return;
             set_video_decode_paused_locked(true);
 
-            int64_t base_pts = playback_->clock().current_pts_us();
-            int ref = first_active_track();
-            if (ref >= 0) {
-                if (last_decision_.frames[ref].has_value()) {
-                    base_pts = last_decision_.frames[ref]->pts_us + tracks_[ref]->offset_us;
-                } else if (auto frame = tracks_[ref]->track_buffer->peek(0); frame.has_value()) {
-                    base_pts = frame->pts_us + tracks_[ref]->offset_us;
-                }
-            }
-            int64_t dur = compute_min_current_frame_duration_us(tracks_);
-            exact_seek_target = base_pts + dur + 1000;
-            if (cached_duration_us_ > 0) {
-                exact_seek_target = std::min(exact_seek_target, cached_duration_us_);
-            }
+            const auto fallback_seek = choose_step_forward_exact_seek_target(
+                tracks_,
+                playback_->clock().current_pts_us(),
+                cached_duration_us_,
+                last_decision_);
+            exact_seek_target = fallback_seek.target_pts_us;
             spdlog::info("[Renderer] step_forward exact_seek: visible_pts={:.3f}s, clock_pts={:.3f}s, duration={:.3f}ms, target={:.3f}s",
-                         base_pts / 1e6, playback_->clock().current_pts_us() / 1e6, dur / 1e3, exact_seek_target / 1e6);
+                         fallback_seek.base_pts_us / 1e6,
+                         fallback_seek.clock_pts_us / 1e6,
+                         fallback_seek.frame_duration_us / 1e3,
+                         exact_seek_target / 1e6);
             need_exact_seek = true;
         }
     }

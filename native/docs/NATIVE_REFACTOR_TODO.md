@@ -684,7 +684,7 @@ TODO:
 
 ## P1 - CI / Tooling Hardening
 
-Status: partially done in Round 15.
+Status: partially done in Round 15; optional-target matrix tightened in Patch 156.
 
 目标：让外部 contributor 的 clean checkout 更可预期，让 native 回归更早暴露。
 
@@ -697,6 +697,7 @@ TODO:
 
 - [x] 增加 `CMakePresets.json`：windows-release、windows-debug、ffi-only、no-python-no-tests。
 - [x] CI matrix 增加 Debug build，至少覆盖 `BUILD_FFI=ON BUILD_TESTS=ON`。
+- [x] CI matrix 覆盖 `BUILD_ANALYSIS=OFF` 的 FFI build，以及 `BUILD_ANALYSIS=OFF BUILD_FFI=OFF BUILD_TESTS=ON` 的 no-FFI tests configure/build。
 - [ ] 增加 clang-cl configure/build job，先允许独立 warning baseline，再逐步收紧。本机当前未发现 `clang-cl`。
 - [ ] 增加 clang-tidy 或 cppcheck job，先限定 `native/common`、`native/player`、`native/video_renderer/exports`。本机当前未发现 `clang-tidy` / `cppcheck`。
 - [x] 增加 clean dist smoke：检查 FFI DLL、header、FFmpeg DLL 和 notice 文件进入 `dist/ffi`。
@@ -707,6 +708,7 @@ TODO:
 - `python scripts/dev/check_native_dist.py --ffi native/build-msvc/dist/ffi` passed on 2026-05-10.
 - `cmake --list-presets -S native` passed on 2026-05-10.
 - `cmake --preset no-python-no-tests -S native` -> `cmake --build native/build-msvc-preset-minimal --config Release --parallel` passed on 2026-05-10.
+- Local optional-target checks passed on 2026-05-16; CI confirmation pending PR run.
 - CI-only Debug matrix needs PR confirmation.
 
 ## P2 - Target / Feature Boundary

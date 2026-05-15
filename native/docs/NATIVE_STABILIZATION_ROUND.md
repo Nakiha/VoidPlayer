@@ -909,6 +909,27 @@ Result:
 - `NativeInstall.cmake` now creates `dist/ffi` and `dist/python` only when the corresponding FFI/Python target exists.
 - The all-off minimal native build now leaves no empty staging directories behind.
 
+### P156 - Optional Target CI Matrix
+
+Status: done in Patch 156.
+
+Goal:
+
+- Keep the new optional native target boundaries covered in CI.
+- Avoid adding clang-cl/static-analysis jobs that cannot be verified locally yet because `clang-cl`, `clang-tidy`, and `cppcheck` are not installed in this workspace.
+
+Validation:
+
+- Inspected local tool availability: `clang-cl`, `clang-tidy`, and `cppcheck` were not found.
+- Reviewed `.github/workflows/native.yml` matrix after edit.
+- Local optional-target configure/build checks from Patch 155 cover the same CMake combinations; PR CI still needs to confirm hosted runner behavior.
+
+Result:
+
+- Added `build_analysis` to the native config matrix.
+- Added `analysis-off-ffi-on-tests-off` to keep FFI builds covered without `analysis_lib`.
+- Added `analysis-off-ffi-off-tests-on` to keep no-FFI test generation covered without `test_ffi_c`.
+
 ## Do-Not-Drift List
 
 - Do not let runner plugin cosmetics displace the remaining `review_godobject.md` owner-boundary work.

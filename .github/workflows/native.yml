@@ -66,21 +66,37 @@ jobs:
             build_python: "OFF"
             build_ffi: "ON"
             build_tests: "ON"
+            build_analysis: "ON"
             config: "Release"
           - name: debug-python-off-ffi-on-tests-on
             build_python: "OFF"
             build_ffi: "ON"
             build_tests: "ON"
+            build_analysis: "ON"
             config: "Debug"
           - name: python-off-ffi-on-tests-off
             build_python: "OFF"
             build_ffi: "ON"
             build_tests: "OFF"
+            build_analysis: "ON"
             config: "Release"
           - name: python-off-ffi-off-tests-off
             build_python: "OFF"
             build_ffi: "OFF"
             build_tests: "OFF"
+            build_analysis: "ON"
+            config: "Release"
+          - name: analysis-off-ffi-on-tests-off
+            build_python: "OFF"
+            build_ffi: "ON"
+            build_tests: "OFF"
+            build_analysis: "OFF"
+            config: "Release"
+          - name: analysis-off-ffi-off-tests-on
+            build_python: "OFF"
+            build_ffi: "OFF"
+            build_tests: "ON"
+            build_analysis: "OFF"
             config: "Release"
     steps:
       - uses: actions/checkout@v4
@@ -94,6 +110,7 @@ jobs:
           -DBUILD_PYTHON=${{ matrix.build_python }}
           -DBUILD_FFI=${{ matrix.build_ffi }}
           -DBUILD_TESTS=${{ matrix.build_tests }}
+          -DBUILD_ANALYSIS=${{ matrix.build_analysis }}
           -DBUILD_ANALYSIS_TESTS=OFF
           -DBUILD_BENCHMARKS=OFF
 

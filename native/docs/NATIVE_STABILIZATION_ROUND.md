@@ -147,6 +147,7 @@ Fixed or reduced:
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
+- `DecodeThread`: codec send/receive SEH guards, return classification, and hardware device mutex wrapping now live in `codec_loop` with focused state tests.
 - `NativeResourceBudget`: track buffer queued-frame depth decision moved into `TrackBufferBudget` and is tested as a policy boundary.
 - `AudioEngine::Impl`: track registry, buffer publication facts, and decode pause/seek fanout moved into `AudioTrackRegistry`.
 - `AudioEngine::Impl`: nested FFmpeg audio decoder thread implementation moved into `AudioDecodeThread`.
@@ -161,13 +162,13 @@ Still active:
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
 - `Renderer` still owns layout mutation, public playback commands, global seek clock/deferred gates, and seek logging.
-- `DecodeThread` main loop still owns codec send/receive, EOF drain, AVFrame ownership, and hardware visibility transitions.
+- `DecodeThread` main loop still owns EOF drain, AVFrame ownership, and hardware visibility transitions.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P112 DecodeThread Codec Loop Boundary.
+Next patch: P113 DecodeThread Frame Publish Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -426,11 +427,32 @@ Validation:
 
 ### P112 - DecodeThread Codec Loop Boundary
 
+Status: done in Patch 112.
+
 Goal:
 
 - Resume `review_godobject.md`'s `DecodeThread` finding by extracting the next codec send/receive or frame ownership boundary from the main decode loop.
 - Preserve exact-seek, pause-after-preroll, EOF drain, and hardware visibility behavior already covered by focused policy tests.
 - Pick the exact cut after re-reading current `decode_thread.*`, because several seek/pause policies have already been split.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `codec_loop` for FFmpeg codec send/receive SEH wrappers, result classification, and optional hardware device mutex locking.
+- `DecodeThread` now delegates codec send/receive calls in normal decode, drain-before-next-packet, EOF drain, and exact-seek drain paths.
+- Added native coverage for codec result classification, including EAGAIN, EOF, SEH sentinel, and hard errors.
+
+### P113 - DecodeThread Frame Publish Boundary
+
+Goal:
+
+- Continue reducing `DecodeThread` by extracting the next frame ownership/publish boundary after codec receive.
+- Keep exact-seek candidate collection, pause-after-preroll, and hardware visibility flush semantics unchanged.
+- Prefer a focused helper around frame rescale/log/visibility/convert/push if the current loop allows a narrow cut.
 
 Validation:
 

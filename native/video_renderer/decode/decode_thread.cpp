@@ -1,4 +1,5 @@
 #include "video_renderer/decode/decode_thread.h"
+#include "video_renderer/decode/codec_loop.h"
 #include "video_renderer/decode/decode_loop_policy.h"
 #include "video_renderer/decode/exact_seek_window.h"
 #include <spdlog/spdlog.h>
@@ -120,45 +121,6 @@ bool renderer_owned_d3d11_supports_stream_format(AVPixelFormat format) {
     }
 }
 
-// SEH-safe wrappers for FFmpeg codec calls.
-// D3D11 internals can throw C++ exceptions (0xE06D7363) that propagate through
-// avcodec_send_packet / avcodec_receive_frame. Under /EHsc (the project default),
-// C++ catch(...) does NOT catch these cross-module SEH exceptions. We use
-// __try/__except instead, which requires the function to have no C++ objects
-// with destructors.
-//
-// MUST be __declspec(noinline): MSVC's x64 table-based EH requires each
-// __try/__except to live in its own RUNTIME_FUNCTION entry.  If the compiler
-// inlines these wrappers into a caller that also has C++ objects, the SEH
-// scope is lost and the exception leaks through uncaught.
-
-// Sentinel: value is negative and outside FFmpeg's AVERROR range.
-constexpr int kSehCaught = AVERROR_EXTERNAL;
-
-__declspec(noinline)
-int seh_send_packet(AVCodecContext* ctx, const AVPacket* pkt) {
-    __try {
-        return avcodec_send_packet(ctx, pkt);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        DWORD code = GetExceptionCode();
-        spdlog::error("[DecodeThread] SEH exception in avcodec_send_packet: {:#x}",
-                      static_cast<unsigned long>(code));
-        return kSehCaught;
-    }
-}
-
-__declspec(noinline)
-int seh_receive_frame(AVCodecContext* ctx, AVFrame* frame) {
-    __try {
-        return avcodec_receive_frame(ctx, frame);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        DWORD code = GetExceptionCode();
-        spdlog::error("[DecodeThread] SEH exception in avcodec_receive_frame: {:#x}",
-                      static_cast<unsigned long>(code));
-        return kSehCaught;
-    }
-}
-
 __declspec(noinline)
 int seh_open_codec(AVCodecContext* ctx,
                    const AVCodec* codec,
@@ -173,7 +135,7 @@ int seh_open_codec(AVCodecContext* ctx,
         DWORD code = GetExceptionCode();
         spdlog::error("[DecodeThread] SEH exception in avcodec_open2: {:#x}",
                       static_cast<unsigned long>(code));
-        return kSehCaught;
+        return codec_loop_seh_caught_code();
     }
 }
 
@@ -576,16 +538,16 @@ void DecodeThread::notify_seek(int64_t target_pts_us, SeekType type) {
 }
 
 void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*)>& rescale_ts, int64_t target_us) {
-    int send_ret = seh_send_packet(codec_ctx_, nullptr);
+    int send_ret = send_codec_packet_seh_guarded(codec_ctx_, nullptr);
     if (send_ret < 0 && send_ret != AVERROR(EAGAIN) && send_ret != AVERROR_EOF) {
-        if (send_ret == kSehCaught) {
+        if (codec_loop_is_seh_caught(send_ret)) {
             output_buffer_.set_state(TrackState::Error);
             running_.store(false, std::memory_order_release);
         }
         return;
     }
     while (true) {
-        int recv_ret = seh_receive_frame(codec_ctx_, frame);
+        int recv_ret = receive_codec_frame_seh_guarded(codec_ctx_, frame);
         if (recv_ret < 0) break;
         if (cancelled_.load(std::memory_order_acquire)) {
             av_frame_unref(frame);
@@ -1002,21 +964,15 @@ void DecodeThread::run() {
                     break;
                 }
 
-                int ret = 0;
-                if (hw_enabled_ && device_mutex_) {
-                    std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
-                    ret = seh_receive_frame(codec_ctx_, frame);
-                } else {
-                    ret = seh_receive_frame(codec_ctx_, frame);
-                }
-                if (ret == kSehCaught) {
+                int ret = receive_codec_frame_seh_guarded(
+                    codec_ctx_, frame, hw_enabled_, device_mutex_);
+                if (codec_loop_is_seh_caught(ret)) {
                     output_buffer_.set_state(TrackState::Error);
                     decode_paused_.store(true, std::memory_order_release);
                     running_.store(false, std::memory_order_release);
-                    ret = AVERROR_EXTERNAL;
                 }
 
-                if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+                if (codec_loop_is_again_or_eof(ret)) {
                     drain_decoder_before_next_packet_ = false;
                     break;
                 }
@@ -1105,9 +1061,9 @@ void DecodeThread::run() {
                                      output_buffer_.total_count(), input_queue_.size());
                     }
                 } else if (eof_action == EofDrainAction::CodecDrain) {
-                    int send_ret = seh_send_packet(codec_ctx_, nullptr);
+                    int send_ret = send_codec_packet_seh_guarded(codec_ctx_, nullptr);
                     if (send_ret < 0 && send_ret != AVERROR(EAGAIN) && send_ret != AVERROR_EOF) {
-                        if (send_ret == kSehCaught) {
+                        if (codec_loop_is_seh_caught(send_ret)) {
                             output_buffer_.set_state(TrackState::Error);
                             decode_paused_.store(true, std::memory_order_release);
                             running_.store(false, std::memory_order_release);
@@ -1115,14 +1071,14 @@ void DecodeThread::run() {
                         break;
                     }
                     while (true) {
-                        int ret = seh_receive_frame(codec_ctx_, frame);
-                        if (ret == kSehCaught) {
+                        int ret = receive_codec_frame_seh_guarded(codec_ctx_, frame);
+                        if (codec_loop_is_seh_caught(ret)) {
                             output_buffer_.set_state(TrackState::Error);
                             decode_paused_.store(true, std::memory_order_release);
                             running_.store(false, std::memory_order_release);
                             break;
                         }
-                        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
+                        if (codec_loop_is_again_or_eof(ret)) break;
                         if (ret < 0) break;
 
                         rescale_ts(frame);
@@ -1174,15 +1130,8 @@ void DecodeThread::run() {
 
         int ret = 0;
         auto batch_t0 = std::chrono::steady_clock::now();
-        {
-            if (hw_enabled_ && device_mutex_) {
-                std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
-                ret = seh_send_packet(codec_ctx_, pkt);
-            } else {
-                ret = seh_send_packet(codec_ctx_, pkt);
-            }
-        }
-        if (ret == kSehCaught) {
+        ret = send_codec_packet_seh_guarded(codec_ctx_, pkt, hw_enabled_, device_mutex_);
+        if (codec_loop_is_seh_caught(ret)) {
             av_packet_free(&pkt);
             output_buffer_.set_state(TrackState::Error);
             decode_paused_.store(true, std::memory_order_release);
@@ -1199,20 +1148,14 @@ void DecodeThread::run() {
         int frames_produced = 0;
         while (true) {
             if (cancelled_.load(std::memory_order_acquire)) break;
-            if (hw_enabled_ && device_mutex_) {
-                std::lock_guard<std::recursive_mutex> d3d_lock(*device_mutex_);
-                ret = seh_receive_frame(codec_ctx_, frame);
-            } else {
-                ret = seh_receive_frame(codec_ctx_, frame);
-            }
-            if (ret == kSehCaught) {
+            ret = receive_codec_frame_seh_guarded(codec_ctx_, frame, hw_enabled_, device_mutex_);
+            if (codec_loop_is_seh_caught(ret)) {
                 output_buffer_.set_state(TrackState::Error);
                 decode_paused_.store(true, std::memory_order_release);
                 running_.store(false, std::memory_order_release);
-                ret = AVERROR_EXTERNAL;
                 break;
             }
-            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+            if (codec_loop_is_again_or_eof(ret)) {
                 break;
             }
             if (ret < 0) {

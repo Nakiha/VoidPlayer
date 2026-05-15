@@ -433,8 +433,8 @@ TODO:
    - 已继续收 `AnalysisManager` 隐形 God Object，把 overlay track registry 从 singleton manager 中拆出，并改为保存 per-track `AnalysisSession`，消除了 recursive AnalysisManager 实例。
    - 验证：native-only + smoke/analysis UI。
 
-68. [ ] `DecodeThreadCodecLoopBoundary`
-   - 后续继续收 chat 点名的 `DecodeThread` 大状态机，先复核当前 codec send/receive、AVFrame ownership、硬解 visibility flush 还剩哪些边界没拆。
+68. [x] `DecodeThreadCodecLoopBoundary`
+   - 新增 `codec_loop` 边界承接 FFmpeg codec send/receive 的 SEH 防护、返回值分类和硬解 device mutex 包装；`DecodeThread` 主循环不再直接散落 send/receive 包装细节。
    - 验证：native-only + seek UI。
 
 ## P1 - Windows Runner Plugin Split

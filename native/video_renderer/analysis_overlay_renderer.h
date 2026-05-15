@@ -1,6 +1,6 @@
 #pragma once
 
-#include "video_renderer/sync/render_sink.h"
+#include "video_renderer/renderer_draw_snapshot.h"
 
 #include <array>
 #include <cstddef>
@@ -11,8 +11,6 @@ namespace vr {
 
 class D3D11Device;
 struct D3D11RenderResources;
-class TrackPipelineManager;
-
 struct AnalysisOverlayMemoryStats {
     uint64_t estimated_bytes = 0;
     int width = 0;
@@ -34,7 +32,7 @@ public:
 
     void reset();
     void draw(const PresentDecision& decision,
-              const TrackPipelineManager& tracks,
+              const RendererDrawTrackSnapshotList& tracks,
               D3D11Device& device,
               D3D11RenderResources& resources,
               int target_width,

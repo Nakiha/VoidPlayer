@@ -4,7 +4,6 @@
 #include "analysis/cache/overlay_raster.h"
 #include "video_renderer/d3d11/memory_estimate.h"
 #include "video_renderer/d3d11/render_backend.h"
-#include "video_renderer/track_pipeline.h"
 
 #include <spdlog/spdlog.h>
 
@@ -349,7 +348,7 @@ bool AnalysisOverlayRenderer::render_overlay_mask(D3D11Device& device,
 }
 
 void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
-                                   const TrackPipelineManager& tracks,
+                                   const RendererDrawTrackSnapshotList& tracks,
                                    D3D11Device& device,
                                    D3D11RenderResources& resources,
                                    int target_width,
@@ -489,15 +488,22 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
 
     auto prepare_track_overlay = [&](int track_file_id,
                                      const analysis::AnalysisSession& track_analysis) {
-        const int slot = tracks.find_slot_by_file_id(track_file_id);
-        if (slot < 0 || slot >= static_cast<int>(kMaxTracks) || !tracks[slot]) {
+        int slot = -1;
+        for (size_t i = 0; i < tracks.size(); ++i) {
+            if (tracks[i].active && tracks[i].file_id == track_file_id) {
+                slot = static_cast<int>(i);
+                break;
+            }
+        }
+        if (slot < 0 || slot >= static_cast<int>(kMaxTracks)) {
             return;
         }
+        const auto& track = tracks[slot];
 
         const int frame_idx = track_analysis.current_frame_idx(
             decision.frames[slot].has_value()
                 ? decision.frames[slot]->pts_us
-                : std::max<int64_t>(0, decision.current_pts_us - tracks[slot]->offset_us));
+                : std::max<int64_t>(0, decision.current_pts_us - track.offset_us));
         if (frame_idx < 0 || frame_idx >= track_analysis.frame_count()) {
             return;
         }

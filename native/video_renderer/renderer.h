@@ -12,6 +12,7 @@
 #include "video_renderer/layout_controller.h"
 #include "video_renderer/layout_state.h"
 #include "video_renderer/render_loop_controller.h"
+#include "video_renderer/renderer_draw_snapshot.h"
 #include "video_renderer/seek_coordinator.h"
 #include "video_renderer/shader_constants.h"
 #include "video_renderer/track_gpu_memory_stats.h"
@@ -250,8 +251,9 @@ public:
 
 private:
     void render_loop();
-    void draw_frame(const PresentDecision& decision);
+    bool draw_frame(const RendererDrawSnapshot& snapshot);
     void draw_paused_frame(const char* reason);
+    RendererDrawSnapshot build_draw_snapshot_locked(const PresentDecision& decision) const;
     void update_track_geometry_from_decision_locked(const PresentDecision& decision);
     void seek_internal(int64_t target_pts_us,
                        SeekType type,
@@ -282,7 +284,9 @@ private:
     /// selecting and publishing the shared buffer. Callers must not already
     /// hold texture_mutex(); callbacks returned from this method run outside
     /// both locks.
-    std::function<void()> draw_headless_and_publish(const PresentDecision& decision, const char* label);
+    bool draw_headless_and_publish(const RendererDrawSnapshot& snapshot,
+                                   const char* label,
+                                   std::function<void()>& callback);
 
     /// Internal mutex for D3D11 headless texture access.
     std::mutex& texture_mutex() const;

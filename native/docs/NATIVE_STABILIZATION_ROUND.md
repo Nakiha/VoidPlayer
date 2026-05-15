@@ -198,7 +198,7 @@ Verified:
 
 ## Active Patch Queue
 
-Next patch: P136 Renderer Draw Snapshot Lock Boundary.
+Next patch: P137 Renderer Render Loop State Snapshot Boundary.
 
 Completed patch details through P123 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -456,6 +456,8 @@ Result:
 
 ### P136 - Renderer Draw Snapshot Lock Boundary
 
+Status: done in Patch 136.
+
 Goal:
 
 - Remove `draw_frame()`'s `state_mutex_` acquisition and direct mutable renderer-state reads from the D3D draw path.
@@ -467,6 +469,27 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewport_pan_layout_regression.csv ui_tests/analysis/spawn_h264.csv`
+
+Result:
+
+- Added `RendererDrawSnapshot` as the immutable state bundle consumed by D3D draw.
+- `present_frame()`, `redraw_layout()`, and headless resize now build draw snapshots under `state_mutex_` before entering `device_mutex_`.
+- `draw_frame()` no longer takes `state_mutex_` or directly reads `tracks_`, `layout_`, `background_color_`, or target dimensions.
+- Analysis overlay draw now consumes the draw-track snapshot instead of reading `TrackPipelineManager` during D3D draw.
+
+### P137 - Renderer Render Loop State Snapshot Boundary
+
+Goal:
+
+- Stop render-loop policy helpers from directly reading mutable `tracks_` outside a single state snapshot boundary.
+- Move `last_decision_`, `preview_drawn_`, and `was_buffering_` render-loop transitions behind explicit `state_mutex_` sections or immutable per-tick facts.
+- Preserve paused preview, preroll transition, carry-forward, EOF clamp, and frame-deadline sleep behavior.
+- Keep presenter slot serialization for the following patch; this patch is about renderer-owned state reads/writes.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv ui_tests/timeline/h265_timeline_click_visual_regression.csv`
 
 ## Do-Not-Drift List
 

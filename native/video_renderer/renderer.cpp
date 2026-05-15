@@ -783,6 +783,32 @@ void Renderer::draw_paused_frame(const char* reason) {
     }
 }
 
+RendererDrawSnapshot Renderer::build_draw_snapshot_locked(
+    const PresentDecision& decision) const {
+    RendererDrawSnapshot snapshot;
+    snapshot.decision = decision;
+    snapshot.layout = layout_;
+    snapshot.track_geometry = snapshot_layout_track_geometry(tracks_);
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks_[i]) {
+            continue;
+        }
+        auto& out = snapshot.tracks[i];
+        out.active = true;
+        out.file_id = tracks_[i]->file_id;
+        out.offset_us = tracks_[i]->offset_us;
+        out.video_width = tracks_[i]->video_width;
+        out.video_height = tracks_[i]->video_height;
+        out.video_aspect = tracks_[i]->video_aspect;
+    }
+    for (int i = 0; i < 4; ++i) {
+        snapshot.background_color[i] = background_color_[i];
+    }
+    snapshot.target_width = target_width_;
+    snapshot.target_height = target_height_;
+    return snapshot;
+}
+
 void Renderer::wait_gpu_idle(const char* label) {
     const auto start = std::chrono::steady_clock::now();
     if (headless_output_) {
@@ -794,25 +820,29 @@ void Renderer::wait_gpu_idle(const char* label) {
     d3d_metrics_.render_wait_count.fetch_add(1, std::memory_order_relaxed);
 }
 
-std::function<void()> Renderer::draw_headless_and_publish(const PresentDecision& decision, const char* label) {
+bool Renderer::draw_headless_and_publish(const RendererDrawSnapshot& snapshot,
+                                         const char* label,
+                                         std::function<void()>& callback) {
+    callback = {};
     if (!headless_output_) {
-        return {};
+        return false;
     }
     if (!d3d_resources_) {
-        return {};
+        return false;
     }
     {
         std::lock_guard<std::mutex> tex_lock(texture_mutex());
         auto* rtv = headless_output_->begin_frame_locked();
         if (!rtv) {
-            return {};
+            return false;
         }
         d3d_resources_->cached_rtv = rtv;
     }
-    draw_frame(decision);
+    if (!draw_frame(snapshot)) {
+        return false;
+    }
     const auto publish_start = std::chrono::steady_clock::now();
     headless_output_->wait_gpu_idle(label);
-    std::function<void()> callback;
     {
         std::lock_guard<std::mutex> tex_lock(texture_mutex());
         callback = headless_output_->publish_frame_locked();
@@ -820,8 +850,7 @@ std::function<void()> Renderer::draw_headless_and_publish(const PresentDecision&
     d3d_metrics_.present_publish_us.fetch_add(
         elapsed_us_since(publish_start), std::memory_order_relaxed);
     d3d_metrics_.present_publish_count.fetch_add(1, std::memory_order_relaxed);
-    preview_drawn_ = true;
-    return callback;
+    return true;
 }
 
 void Renderer::enter_terminal_device_lost_locked(const char* operation) {
@@ -848,27 +877,29 @@ void Renderer::enter_terminal_device_lost_locked(const char* operation) {
 }
 
 void Renderer::present_frame(const PresentDecision& decision) {
-    spdlog::debug("[present_frame] mode={}", layout_.mode);
+    RendererDrawSnapshot snapshot;
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
+        spdlog::debug("[present_frame] mode={}", layout_.mode);
         update_track_geometry_from_decision_locked(decision);
+        snapshot = build_draw_snapshot_locked(decision);
     }
     std::function<void()> frame_callback;
     bool device_lost = false;
+    bool drew = false;
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
         if (headless_) {
-            frame_callback = draw_headless_and_publish(decision, "present_frame");
+            drew = draw_headless_and_publish(snapshot, "present_frame", frame_callback);
             device_lost = d3d_device_ && d3d_device_->poll_device_removed("headless present");
         } else {
-            draw_frame(decision);
+            drew = draw_frame(snapshot);
             const auto present_start = std::chrono::steady_clock::now();
             const bool presented = d3d_device_->present(0);
             d3d_metrics_.present_publish_us.fetch_add(
                 elapsed_us_since(present_start), std::memory_order_relaxed);
             d3d_metrics_.present_publish_count.fetch_add(1, std::memory_order_relaxed);
             device_lost = !presented && d3d_device_->device_lost();
-            preview_drawn_ = true;
         }
     }
     if (device_lost) {
@@ -876,28 +907,41 @@ void Renderer::present_frame(const PresentDecision& decision) {
         enter_terminal_device_lost_locked("present_frame");
         return;
     }
+    if (drew) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        preview_drawn_ = true;
+    }
     if (frame_callback) frame_callback();
 }
 
 void Renderer::redraw_layout() {
+    RendererDrawSnapshot snapshot;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        snapshot = build_draw_snapshot_locked(last_decision_);
+    }
     std::function<void()> frame_callback;
     bool device_lost = false;
+    bool drew = false;
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
         if (headless_) {
-            frame_callback = draw_headless_and_publish(last_decision_, "redraw_layout");
+            drew = draw_headless_and_publish(snapshot, "redraw_layout", frame_callback);
             device_lost = d3d_device_ && d3d_device_->poll_device_removed("headless redraw");
         } else {
-            draw_frame(last_decision_);
+            drew = draw_frame(snapshot);
             d3d_device_->context()->Flush();
             device_lost = d3d_device_->poll_device_removed("redraw_layout");
-            preview_drawn_ = true;
         }
     }
     if (device_lost) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         enter_terminal_device_lost_locked("redraw_layout");
         return;
+    }
+    if (drew) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        preview_drawn_ = true;
     }
     if (frame_callback) frame_callback();
 }
@@ -1143,32 +1187,46 @@ void Renderer::resize(int width, int height) {
 }
 
 void Renderer::do_resize(int width, int height) {
-    if (width == target_width_ && height == target_height_) return;
+    int old_width = 0;
+    int old_height = 0;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (width == target_width_ && height == target_height_) return;
+        old_width = target_width_;
+        old_height = target_height_;
+    }
 
-    spdlog::info("[Renderer] resize: {}x{} -> {}x{}", target_width_, target_height_, width, height);
+    spdlog::info("[Renderer] resize: {}x{} -> {}x{}", old_width, old_height, width, height);
 
+    {
+        std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+        std::lock_guard<std::mutex> tex_lock(texture_mutex());
+        if (!headless_output_ || !headless_output_->resize_locked(width, height)) {
+            return;
+        }
+    }
+    d3d_metrics_.shared_texture_resize_count.fetch_add(1, std::memory_order_relaxed);
+
+    RendererDrawSnapshot snapshot;
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
         const auto layout_tracks = snapshot_layout_track_geometry(tracks_);
         adjust_layout_view_offset_for_resize(
-            layout_, target_width_, target_height_, width, height, layout_tracks);
+            layout_, old_width, old_height, width, height, layout_tracks);
+        target_width_ = width;
+        target_height_ = height;
+        snapshot = build_draw_snapshot_locked(last_decision_);
     }
 
     std::function<void()> frame_callback;
+    bool drew = false;
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-        {
-            std::lock_guard<std::mutex> tex_lock(texture_mutex());
-            if (!headless_output_ || !headless_output_->resize_locked(width, height)) {
-                return;
-            }
-        }
-        d3d_metrics_.shared_texture_resize_count.fetch_add(1, std::memory_order_relaxed);
-
-        target_width_ = width;
-        target_height_ = height;
-
-        frame_callback = draw_headless_and_publish(last_decision_, "resize");
+        drew = draw_headless_and_publish(snapshot, "resize", frame_callback);
+    }
+    if (drew) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        preview_drawn_ = true;
     }
     if (frame_callback) frame_callback();
 }
@@ -1401,10 +1459,11 @@ void Renderer::render_loop() {
     timeEndPeriod(1);
 }
 
-void Renderer::draw_frame(const PresentDecision& decision) {
-    if (!d3d_resources_) {
-        return;
+bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
+    if (!d3d_resources_ || !d3d_device_) {
+        return false;
     }
+    const auto& decision = snapshot.decision;
     auto& resources = *d3d_resources_;
     auto* ctx = d3d_device_->context();
 
@@ -1416,36 +1475,29 @@ void Renderer::draw_frame(const PresentDecision& decision) {
                                                   reinterpret_cast<void**>(&back_buffer));
             if (FAILED(hr)) {
                 spdlog::error("[Renderer] Failed to get back buffer: HRESULT {:#x}", static_cast<unsigned long>(hr));
-                return;
+                return false;
             }
             hr = d3d_device_->device()->CreateRenderTargetView(
                 back_buffer, nullptr, &resources.cached_rtv);
             back_buffer->Release();
             if (FAILED(hr)) {
                 spdlog::error("[Renderer] Failed to create RTV: HRESULT {:#x}", static_cast<unsigned long>(hr));
-                return;
+                return false;
             }
         }
     }
 
     if (!resources.cached_rtv) {
-        return;
+        return false;
     }
 
-    float clear_color[4] = {};
-    {
-        std::lock_guard<std::mutex> lock(state_mutex_);
-        for (int i = 0; i < 4; ++i) {
-            clear_color[i] = background_color_[i];
-        }
-    }
-    ctx->ClearRenderTargetView(resources.cached_rtv.Get(), clear_color);
+    ctx->ClearRenderTargetView(resources.cached_rtv.Get(), snapshot.background_color);
     ctx->OMSetRenderTargets(1, resources.cached_rtv.GetAddressOf(), nullptr);
 
     // Setup viewport
     D3D11_VIEWPORT vp = {};
-    vp.Width = static_cast<float>(target_width_);
-    vp.Height = static_cast<float>(target_height_);
+    vp.Width = static_cast<float>(snapshot.target_width);
+    vp.Height = static_cast<float>(snapshot.target_height);
     vp.MinDepth = 0.0f;
     vp.MaxDepth = 1.0f;
     ctx->RSSetViewports(1, &vp);
@@ -1473,14 +1525,14 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     if (frame_presenter_) {
         for (size_t i = 0; i < kMaxTracks; ++i) {
             if (!decision.frames[i].has_value() || !decision.frames[i]->texture_handle) continue;
-            if (!tracks_[i]) continue;
+            if (!snapshot.tracks[i].active) continue;
 
             const auto prepare_start = std::chrono::steady_clock::now();
             const bool prepared_ok = frame_presenter_->prepare_frame(
                 i,
                 decision.frames[i].value(),
-                target_width_,
-                target_height_,
+                snapshot.target_width,
+                snapshot.target_height,
                 [this](const char* label) { wait_gpu_idle(label); },
                 prepared_frames[i]);
             d3d_metrics_.frame_copy_us.fetch_add(
@@ -1504,30 +1556,20 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     // Update constant buffer
     // Layout must match HLSL cbuffer Constants in multitrack.hlsl
     if (resources.compiled_shader.constant_buffer) {
-        LayoutState snap;
-        float background_color[4] = {};
-        {
-            std::lock_guard<std::mutex> lock(state_mutex_);
-            snap = layout_;
-            for (int i = 0; i < 4; ++i) {
-                background_color[i] = background_color_[i];
-            }
-        }
-
         populate_layout_shader_constants(
             cb,
-            snap,
-            snapshot_layout_track_geometry(tracks_),
-            target_width_,
-            target_height_);
+            snapshot.layout,
+            snapshot.track_geometry,
+            snapshot.target_width,
+            snapshot.target_height);
         cb.nv12_mask = 0;
         cb.planar_yuv_mask = 0;
         for (int i = 0; i < 4; ++i) {
-            cb.background_color[i] = background_color[i];
+            cb.background_color[i] = snapshot.background_color[i];
         }
 
         for (size_t i = 0; i < kMaxTracks; ++i) {
-            if (!tracks_[i]) {
+            if (!snapshot.tracks[i].active) {
                 cb.nv12_uv_scale_x[i] = 1.0f;
                 cb.nv12_uv_scale_y[i] = 1.0f;
                 cb.color_range[i] = VIDEO_COLOR_RANGE_LIMITED;
@@ -1544,7 +1586,8 @@ void Renderer::draw_frame(const PresentDecision& decision) {
                 : VIDEO_COLOR_RANGE_LIMITED;
             cb.color_matrix[i] = color.matrix != VIDEO_COLOR_MATRIX_UNKNOWN
                 ? color.matrix
-                : (tracks_[i]->video_width >= 1280 || tracks_[i]->video_height > 576
+                : (snapshot.tracks[i].video_width >= 1280 ||
+                   snapshot.tracks[i].video_height > 576
                     ? VIDEO_COLOR_MATRIX_BT709
                     : VIDEO_COLOR_MATRIX_BT601);
             cb.color_transfer[i] = color.transfer != VIDEO_COLOR_TRANSFER_UNKNOWN
@@ -1604,11 +1647,11 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     if (constants_ready && analysis_overlay_renderer_) {
         analysis_overlay_renderer_->draw(
             decision,
-            tracks_,
+            snapshot.tracks,
             *d3d_device_,
             *d3d_resources_,
-            target_width_,
-            target_height_);
+            snapshot.target_width,
+            snapshot.target_height);
     }
 
     // Unbind SRVs before releasing to avoid GPU resource-in-use issues
@@ -1620,6 +1663,7 @@ void Renderer::draw_frame(const PresentDecision& decision) {
     ctx->PSSetShaderResources(16, 4, null_srvs);
 
     // Temporary direct-texture SRVs are owned by prepared_frames until draw returns.
+    return true;
 }
 
 // -- Layout control --

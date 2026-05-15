@@ -162,7 +162,7 @@ TODO:
 
 新增优先队列（来自 `build/chat/review_renderer.md`）：
 
-1. [ ] `RendererDrawSnapshotLockBoundary`
+1. [x] `RendererDrawSnapshotLockBoundary`
    - 目标：`draw_frame()` 不再拿 `state_mutex_`，也不直接读 `tracks_` / `layout_` / `background_color_`；进入 `device_mutex_` 前完成 immutable draw snapshot。
    - 验证：native-only + smoke/viewport/analysis UI。
 

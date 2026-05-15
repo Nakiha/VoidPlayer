@@ -385,8 +385,12 @@ TODO:
    - 已把 `Renderer::seek_internal()` 中 per-track target clamp / hardware decode / HEVC-HW / H.264-FLV exact-seek warning facts 集中到 track lifecycle helper。
    - 验证：native-only + smoke/seek UI。
 
-56. [ ] `TrackSeekTransitionAssembly`
-   - 后续继续拆 `Renderer::seek_internal()` 中 per-track transition/recreate input assembly，Renderer 暂保留 hooks 和实际 seek/recreate 动作。
+56. [x] `TrackSeekTransitionAssembly`
+   - 已把 `Renderer::seek_internal()` 中 per-track transition/recreate input assembly 迁入 track lifecycle helper，Renderer 暂保留 hooks 和实际 seek/recreate 动作。
+   - 验证：native-only + smoke/seek UI。
+
+57. [ ] `TrackSeekExecutionBoundary`
+   - 后续继续拆 `Renderer::seek_internal()` 中 HEVC recreate application、error/coalesce result handling 和 seek submission 的 per-track execution 边界。
    - 验证：native-only + smoke/seek UI。
 
 ## P1 - Windows Runner Plugin Split

@@ -470,6 +470,28 @@ TrackSeekPreparationResult prepare_track_seek_transition(
     return result;
 }
 
+TrackSeekTransitionPlan build_track_seek_transition_plan(
+    const TrackPipeline& track,
+    const TrackSeekFacts& facts,
+    const TrackSeekPreparationResult& preparation,
+    bool playing,
+    bool force_recreate_paused_hevc,
+    SeekType type) {
+    TrackSeekTransitionPlan plan;
+    plan.paused_seek = !playing;
+    plan.seek_type = type;
+    plan.hevc_recreate_input.is_hevc_hw_seek = facts.hevc_hardware_seek;
+    plan.hevc_recreate_input.paused_seek = plan.paused_seek;
+    plan.hevc_recreate_input.seek_transition_active =
+        preparation.seek_transition_active;
+    plan.hevc_recreate_input.recreated_for_paused_hevc_seek =
+        track.recreated_for_paused_hevc_seek;
+    plan.hevc_recreate_input.force_recreate_paused_hevc =
+        force_recreate_paused_hevc;
+    plan.hevc_recreate_input.seek_type = type;
+    return plan;
+}
+
 void submit_track_seek_after_recreate(
     TrackPipeline& track,
     int64_t target_pts_us,

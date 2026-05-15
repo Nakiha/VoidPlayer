@@ -410,21 +410,15 @@ void Renderer::seek_internal(int64_t target_pts_us,
         };
         const auto seek_prep =
             prepare_track_seek_transition(*track, seek_prep_config, seek_prep_hooks);
-        const bool paused_seek = !playing_.load();
-        const SeekType track_seek_type = type;
-        HevcSeekRecreateInput hevc_recreate_input;
-        hevc_recreate_input.is_hevc_hw_seek = seek_facts.hevc_hardware_seek;
-        hevc_recreate_input.paused_seek = paused_seek;
-        hevc_recreate_input.seek_transition_active = seek_prep.seek_transition_active;
-        hevc_recreate_input.recreated_for_paused_hevc_seek =
-            track->recreated_for_paused_hevc_seek;
-        hevc_recreate_input.force_recreate_paused_hevc = force_recreate_paused_hevc;
-        hevc_recreate_input.seek_type = type;
+        const auto seek_plan = build_track_seek_transition_plan(
+            *track, seek_facts, seek_prep, playing_.load(),
+            force_recreate_paused_hevc, type);
         const auto hevc_recreate_decision =
-            choose_hevc_seek_recreate(hevc_recreate_input);
+            choose_hevc_seek_recreate(seek_plan.hevc_recreate_input);
         const bool recreated_for_seek =
             hevc_recreate_decision.should_recreate_pipeline &&
-            recreate_pipeline_for_seek(i, track_target.target_us, track_seek_type);
+            recreate_pipeline_for_seek(i, track_target.target_us,
+                                       seek_plan.seek_type);
         if (hevc_recreate_decision.error_if_recreate_not_applied &&
             !recreated_for_seek) {
             track->track_buffer->set_state(TrackState::Error);
@@ -439,7 +433,8 @@ void Renderer::seek_internal(int64_t target_pts_us,
         }
         track = tracks_[i].get();
         submit_track_seek_after_recreate(
-            *track, track_target.target_us, track_seek_type, paused_seek, recreated_for_seek);
+            *track, track_target.target_us, seek_plan.seek_type,
+            seek_plan.paused_seek, recreated_for_seek);
         applied_seek = true;
         spdlog::info("[Renderer] seek_internal: track[{}] cleared (buf={}->{}, pq={}->0), state->Flushing, target={:.3f}s",
                      i,

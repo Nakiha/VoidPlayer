@@ -137,6 +137,7 @@ Fixed or reduced:
 - `Renderer`: per-track GPU/memory stats collection moved into `track_snapshot`; Renderer keeps D3D presenter/headless/overlay aggregation.
 - `Renderer`: analysis-overlay GPU resource memory accounting moved into `analysis_overlay_renderer`.
 - `Renderer`: per-track seek target/hardware/codec warning facts moved into `track_lifecycle`; Renderer keeps logging and seek actions.
+- `Renderer`: per-track seek transition/recreate input assembly moved into `track_lifecycle`; Renderer keeps hook wiring and seek/recreate actions.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
@@ -155,17 +156,38 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P100 Renderer Seek Track Transition Boundary.
+Next patch: P101 Renderer Seek Track Execution Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
 ### P100 - Renderer Seek Track Transition Boundary
+
+Status: done in Patch 100.
 
 Goal:
 
 - Continue reducing `Renderer::seek_internal` by extracting per-track transition/recreate input assembly.
 - Keep Renderer responsible for hook wiring and actual `recreate_pipeline_for_seek` / `submit_track_seek_after_recreate` calls.
 - Preserve paused HEVC hardware seek coalescing and failure behavior.
+
+Result:
+
+- Added `TrackSeekTransitionPlan` and `build_track_seek_transition_plan()` to `track_lifecycle`.
+- `Renderer::seek_internal()` now delegates paused/type/HEVC recreate input assembly and keeps hook wiring, recreate, submit, and logging.
+- Added native coverage for paused and playing plan field propagation.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+### P101 - Renderer Seek Track Execution Boundary
+
+Goal:
+
+- Continue reducing `Renderer::seek_internal()` by extracting the per-track post-decision execution boundary around HEVC recreate application, error/coalesce result handling, and seek submission.
+- Keep Renderer responsible for member-capturing hook wiring and top-level pending preview/global clock state.
+- Preserve paused HEVC recreate failure and coalescing behavior exactly.
 
 Validation:
 

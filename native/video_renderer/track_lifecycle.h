@@ -1,6 +1,7 @@
 #pragma once
 
 #include "video_renderer/track_pipeline.h"
+#include "video_renderer/seek_coordinator.h"
 #include "video_renderer/sync/render_sink.h"
 
 #include <cstdint>
@@ -220,10 +221,24 @@ struct TrackSeekPreparationResult {
     bool seek_transition_active = false;
 };
 
+struct TrackSeekTransitionPlan {
+    bool paused_seek = false;
+    SeekType seek_type = SeekType::Keyframe;
+    HevcSeekRecreateInput hevc_recreate_input;
+};
+
 TrackSeekPreparationResult prepare_track_seek_transition(
     TrackPipeline& track,
     const TrackSeekPreparationConfig& config,
     const TrackSeekPreparationHooks& hooks);
+
+TrackSeekTransitionPlan build_track_seek_transition_plan(
+    const TrackPipeline& track,
+    const TrackSeekFacts& facts,
+    const TrackSeekPreparationResult& preparation,
+    bool playing,
+    bool force_recreate_paused_hevc,
+    SeekType type);
 
 void submit_track_seek_after_recreate(
     TrackPipeline& track,

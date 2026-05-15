@@ -1723,6 +1723,39 @@ TEST_CASE("TrackLifecycle prepares generic track seek transition",
     REQUIRE(transition_result.seek_transition_active);
 }
 
+TEST_CASE("TrackLifecycle builds seek transition plans",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipeline track;
+    track.recreated_for_paused_hevc_seek = true;
+
+    TrackSeekFacts facts;
+    facts.hevc_hardware_seek = true;
+
+    TrackSeekPreparationResult preparation;
+    preparation.seek_transition_active = true;
+
+    const auto paused_plan = build_track_seek_transition_plan(
+        track, facts, preparation, false, true, SeekType::Exact);
+
+    REQUIRE(paused_plan.paused_seek);
+    REQUIRE(paused_plan.seek_type == SeekType::Exact);
+    REQUIRE(paused_plan.hevc_recreate_input.is_hevc_hw_seek);
+    REQUIRE(paused_plan.hevc_recreate_input.paused_seek);
+    REQUIRE(paused_plan.hevc_recreate_input.seek_transition_active);
+    REQUIRE(paused_plan.hevc_recreate_input.recreated_for_paused_hevc_seek);
+    REQUIRE(paused_plan.hevc_recreate_input.force_recreate_paused_hevc);
+    REQUIRE(paused_plan.hevc_recreate_input.seek_type == SeekType::Exact);
+
+    const auto playing_plan = build_track_seek_transition_plan(
+        track, facts, TrackSeekPreparationResult{}, true, false,
+        SeekType::Keyframe);
+    REQUIRE_FALSE(playing_plan.paused_seek);
+    REQUIRE(playing_plan.seek_type == SeekType::Keyframe);
+    REQUIRE_FALSE(playing_plan.hevc_recreate_input.paused_seek);
+    REQUIRE_FALSE(playing_plan.hevc_recreate_input.seek_transition_active);
+    REQUIRE_FALSE(playing_plan.hevc_recreate_input.force_recreate_paused_hevc);
+}
+
 TEST_CASE("TrackLifecycle submits seek after optional recreate",
           "[track_pipeline][track_lifecycle]") {
     TrackPipeline track;

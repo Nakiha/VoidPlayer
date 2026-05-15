@@ -26,6 +26,22 @@ SeekTargetResolution resolve_seek_target(
     return result;
 }
 
+RendererSeekClockGatePlan plan_renderer_seek_clock_gate(
+    const RendererSeekClockGateInput& input) {
+    RendererSeekClockGatePlan plan;
+    plan.seek_clock = true;
+    plan.playing = input.playing;
+    plan.has_hevc_hw_track = input.has_hevc_hw_track;
+    plan.target_pts_us = input.target_pts_us;
+    plan.type = input.type;
+    plan.evaluate_paused_hevc_defer =
+        input.allow_deferred &&
+        !input.playing &&
+        input.has_hevc_hw_track &&
+        input.type == SeekType::Exact;
+    return plan;
+}
+
 HevcSeekRecreateDecision choose_hevc_seek_recreate(
     const HevcSeekRecreateInput& input) {
     HevcSeekRecreateDecision decision;

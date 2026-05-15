@@ -375,8 +375,18 @@ void Renderer::seek_internal(int64_t target_pts_us,
     }
     spdlog::info("[Renderer] seek_internal: target={:.3f}s, type={}",
                  target_pts_us / 1e6, type == SeekType::Exact ? "Exact" : "Keyframe");
-    playback_->seek_clock(target_pts_us);
-    if (allow_deferred && should_defer_paused_hevc_seek_locked(target_pts_us, type)) {
+    RendererSeekClockGateInput clock_gate_input;
+    clock_gate_input.allow_deferred = allow_deferred;
+    clock_gate_input.playing = playing_.load();
+    clock_gate_input.has_hevc_hw_track =
+        allow_deferred ? has_hevc_hw_track_locked() : false;
+    clock_gate_input.target_pts_us = target_pts_us;
+    clock_gate_input.type = type;
+    const auto clock_gate = plan_renderer_seek_clock_gate(clock_gate_input);
+    if (clock_gate.seek_clock) {
+        playback_->seek_clock(clock_gate.target_pts_us);
+    }
+    if (should_defer_paused_hevc_seek_locked(clock_gate)) {
         return;
     }
 
@@ -450,15 +460,16 @@ void Renderer::seek_internal(int64_t target_pts_us,
     }
 }
 
-bool Renderer::should_defer_paused_hevc_seek_locked(int64_t target_pts_us, SeekType type) {
-    if (!seek_coordinator_) {
+bool Renderer::should_defer_paused_hevc_seek_locked(const RendererSeekClockGatePlan& gate) {
+    if (!gate.evaluate_paused_hevc_defer || !seek_coordinator_) {
         return false;
     }
 
     const bool deferred = seek_coordinator_->should_defer_paused_hevc_seek(
-        playing_.load(), has_hevc_hw_track_locked(), target_pts_us, type);
+        gate.playing, gate.has_hevc_hw_track, gate.target_pts_us, gate.type);
     if (deferred) {
-        spdlog::info("[Renderer] Deferring paused HEVC HW seek to {:.3f}s", target_pts_us / 1e6);
+        spdlog::info("[Renderer] Deferring paused HEVC HW seek to {:.3f}s",
+                     gate.target_pts_us / 1e6);
     }
     return deferred;
 }

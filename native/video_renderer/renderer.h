@@ -263,7 +263,7 @@ private:
     void configure_track_error_callback(TrackPipeline& track);
     void register_track_audio(TrackPipeline& track);
     void unregister_track_audio(int file_id);
-    bool should_defer_paused_hevc_seek_locked(int64_t target_pts_us, SeekType type);
+    bool should_defer_paused_hevc_seek_locked(const RendererSeekClockGatePlan& gate);
     bool apply_deferred_paused_hevc_seek_locked();
     bool apply_loop_range_locked();
     void mark_paused_hevc_seek_preview_drawn_locked();

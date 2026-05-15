@@ -145,6 +145,7 @@ Fixed or reduced:
 - `Renderer`: per-track seek execution result handling moved into `track_lifecycle`; Renderer refreshes the post-recreate slot and keeps logging.
 - `Renderer`: per-slot seek facts/transition/plan/recreate-decision/execution orchestration moved into `track_lifecycle`; Renderer keeps global seek state, member-capturing hooks, and logs.
 - `Renderer`: public play/pause/step command intent moved into `renderer_playback_command_policy`; Renderer keeps locks, playback clock ownership, and command execution.
+- `Renderer`: global seek clock/deferred HEVC gate facts moved into `SeekCoordinator` policy; Renderer keeps clock mutation, coordinator state mutation, and seek execution.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
@@ -165,14 +166,14 @@ Fixed or reduced:
 Still active:
 
 - `Renderer` remains the coordination root.
-- `Renderer` still owns layout mutation, global seek clock/deferred gates, and seek logging.
+- `Renderer` still owns layout mutation, deferred seek execution, and seek logging.
 - `DecodeThread` still owns exact-seek publish scheduling and post-preview completion wiring.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P130 Renderer Seek Clock Boundary.
+Next patch: P131 Renderer Seek Logging Boundary.
 
 Completed patch details through P115 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -460,11 +461,32 @@ Result:
 
 ### P130 - Renderer Seek Clock Boundary
 
+Status: done in Patch 130.
+
 Goal:
 
 - Continue shrinking `Renderer::seek_internal` by extracting the global seek clock/deferred-gate decision facts into a focused helper/policy.
 - Keep `Renderer` responsible for locks, playback clock mutation, pending seek-preview event state, callbacks, and per-track seek execution.
 - Preserve exact/keyframe seek semantics and paused HEVC deferred seek behavior.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added a pure `RendererSeekClockGatePolicy` under `SeekCoordinator` for clock target and paused HEVC exact-seek defer-gate facts.
+- Rewired `Renderer::seek_internal` to consume the plan before mutating playback clock or querying the coordinator.
+- Added focused seek coordinator coverage for always-advance-clock behavior and paused HEVC exact-seek defer eligibility.
+
+### P131 - Renderer Seek Logging Boundary
+
+Goal:
+
+- Continue shrinking `Renderer::seek_internal` by extracting seek log message data assembly and stable formatting decisions into a focused helper.
+- Keep `Renderer` responsible for when logs are emitted, actual seek execution, callbacks, and state mutation.
+- Preserve existing log text where possible so current diagnostics remain familiar.
 
 Validation:
 

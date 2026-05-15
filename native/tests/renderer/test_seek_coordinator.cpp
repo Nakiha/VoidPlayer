@@ -67,6 +67,55 @@ TEST_CASE("SeekTargetPolicy: retargets matching pending preview event only when 
     REQUIRE_FALSE(result.retarget_pending_event);
 }
 
+TEST_CASE("RendererSeekClockGatePolicy: always advances clock to resolved target",
+          "[seek][coordinator][clock]") {
+    RendererSeekClockGateInput input;
+    input.allow_deferred = true;
+    input.playing = false;
+    input.has_hevc_hw_track = true;
+    input.target_pts_us = 12345;
+    input.type = SeekType::Exact;
+
+    const auto plan = plan_renderer_seek_clock_gate(input);
+    REQUIRE(plan.seek_clock);
+    REQUIRE(plan.target_pts_us == 12345);
+    REQUIRE(plan.type == SeekType::Exact);
+    REQUIRE_FALSE(plan.playing);
+    REQUIRE(plan.has_hevc_hw_track);
+}
+
+TEST_CASE("RendererSeekClockGatePolicy: only paused HEVC exact seeks enter defer gate",
+          "[seek][coordinator][clock]") {
+    RendererSeekClockGateInput input;
+    input.allow_deferred = true;
+    input.playing = false;
+    input.has_hevc_hw_track = true;
+    input.target_pts_us = 1000;
+    input.type = SeekType::Exact;
+
+    auto plan = plan_renderer_seek_clock_gate(input);
+    REQUIRE(plan.evaluate_paused_hevc_defer);
+
+    input.playing = true;
+    plan = plan_renderer_seek_clock_gate(input);
+    REQUIRE_FALSE(plan.evaluate_paused_hevc_defer);
+
+    input.playing = false;
+    input.has_hevc_hw_track = false;
+    plan = plan_renderer_seek_clock_gate(input);
+    REQUIRE_FALSE(plan.evaluate_paused_hevc_defer);
+
+    input.has_hevc_hw_track = true;
+    input.type = SeekType::Keyframe;
+    plan = plan_renderer_seek_clock_gate(input);
+    REQUIRE_FALSE(plan.evaluate_paused_hevc_defer);
+
+    input.type = SeekType::Exact;
+    input.allow_deferred = false;
+    plan = plan_renderer_seek_clock_gate(input);
+    REQUIRE_FALSE(plan.evaluate_paused_hevc_defer);
+}
+
 TEST_CASE("HevcSeekRecreatePolicy: ignores non-HEVC hardware seeks",
           "[seek][coordinator][hevc]") {
     HevcSeekRecreateInput input;

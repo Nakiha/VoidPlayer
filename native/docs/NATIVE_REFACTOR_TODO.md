@@ -501,6 +501,10 @@ TODO:
    - 新增 `renderer_playback_command_policy` 承接 play/pause/step 的 deterministic command plan；`Renderer` 保留生命周期锁、playback clock ownership、seek reset 和 decode fanout 执行。
    - 验证：native-only + smoke/seek UI。
 
+85. [x] `RendererSeekClockBoundary`
+   - 扩展 `SeekCoordinator` 纯策略层，承接 `seek_internal` 的 clock target 和 paused HEVC exact-seek deferred gate eligibility；`Renderer` 保留 playback clock mutation、coordinator 状态 mutation 和 per-track seek 执行。
+   - 验证：native-only + smoke/seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

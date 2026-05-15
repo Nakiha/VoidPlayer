@@ -27,6 +27,26 @@ SeekTargetResolution resolve_seek_target(
     int64_t effective_duration_us,
     const PendingSeekPreviewEventState& pending_event);
 
+struct RendererSeekClockGateInput {
+    bool allow_deferred = true;
+    bool playing = false;
+    bool has_hevc_hw_track = false;
+    int64_t target_pts_us = 0;
+    SeekType type = SeekType::Keyframe;
+};
+
+struct RendererSeekClockGatePlan {
+    bool seek_clock = true;
+    bool evaluate_paused_hevc_defer = false;
+    bool playing = false;
+    bool has_hevc_hw_track = false;
+    int64_t target_pts_us = 0;
+    SeekType type = SeekType::Keyframe;
+};
+
+RendererSeekClockGatePlan plan_renderer_seek_clock_gate(
+    const RendererSeekClockGateInput& input);
+
 struct HevcSeekRecreateInput {
     bool is_hevc_hw_seek = false;
     bool paused_seek = false;

@@ -1,14 +1,12 @@
 #include "video_renderer/exports/ffi_exports.h"
 #include "video_renderer/exports/ffi_marshalling.h"
 #include "video_renderer/exports/ffi_player_commands.h"
+#include "video_renderer/exports/ffi_player_lifecycle.h"
 #include "video_renderer/exports/ffi_player_registry.h"
 #include "common/logging.h"
 #include "common/windows_crash_handler.h"
 #include <spdlog/spdlog.h>
 #include <exception>
-#include <memory>
-#include <mutex>
-#include <shared_mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -53,57 +51,25 @@ uint32_t naki_vr_abi_version(void) noexcept {
     return NAKI_VR_ABI_VERSION;
 }
 
-naki_vr_status_t naki_vr_last_error(naki_vr_player_t /*player*/, char* buf, size_t cap) noexcept {
-    copy_error(g_last_error, buf, cap);
-    return g_last_error.status;
+naki_vr_status_t naki_vr_last_error(naki_vr_player_t player, char* buf, size_t cap) noexcept {
+    return copy_global_error_lifecycle_command(player, buf, cap);
 }
 
 naki_vr_status_t naki_vr_player_get_error(naki_vr_player_t player, char* buf, size_t cap) noexcept {
     return ffi_guard("naki_vr_player_get_error", NAKI_VR_ERR_INTERNAL, [player, buf, cap]() {
-        auto state = pin_player(player);
-        if (!state) {
-            copy_error(g_last_error, buf, cap);
-            return g_last_error.status;
-        }
-        std::lock_guard<std::mutex> lock(state->error_mutex);
-        copy_error(state->last_error, buf, cap);
-        return state->last_error.status;
+        return copy_player_error_lifecycle_command(player, buf, cap);
     });
 }
 
 naki_vr_player_t naki_vr_player_create(void) noexcept {
     return ffi_guard("naki_vr_player_create", static_cast<naki_vr_player_t>(nullptr), []() {
-        auto player = std::make_shared<PlayerHandleState>();
-        auto* handle = player.get();
-        register_player(player);
-        set_ok();
-        return static_cast<naki_vr_player_t>(handle);
+        return create_player_lifecycle_command();
     });
 }
 
 naki_vr_status_t naki_vr_player_destroy_status(naki_vr_player_t player) noexcept {
     return ffi_guard("naki_vr_player_destroy_status", NAKI_VR_ERR_INTERNAL, [player]() {
-        if (!player) {
-            set_ok();
-            return NAKI_VR_OK;
-        }
-        auto* typed = raw_player(player);
-        auto state = unregister_player(typed);
-        if (!state) {
-            set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "player handle is invalid or destroyed");
-            return NAKI_VR_ERR_INVALID_ARGUMENT;
-        }
-        {
-            std::unique_lock<std::shared_mutex> gate_lock(state->gate_mutex);
-            state->closing = true;
-        }
-        state->player.shutdown();
-        {
-            std::lock_guard<std::mutex> error_lock(state->error_mutex);
-            state->last_error = {NAKI_VR_OK, ""};
-        }
-        set_ok();
-        return NAKI_VR_OK;
+        return destroy_player_lifecycle_command(player);
     });
 }
 
@@ -113,35 +79,19 @@ void naki_vr_player_destroy(naki_vr_player_t player) noexcept {
 
 naki_vr_status_t naki_vr_player_initialize_v2(naki_vr_player_t player, const naki_vr_player_config_v2_t* config) noexcept {
     return ffi_guard("naki_vr_player_initialize_v2", NAKI_VR_ERR_INTERNAL, [player, config]() {
-        if (!config) {
-            set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "config is required");
-            return NAKI_VR_ERR_INVALID_ARGUMENT;
-        }
-        vr::RendererConfig cfg;
-        if (!fill_renderer_config_v2(*config, cfg)) {
-            return g_last_error.status;
-        }
-        return initialize_player_command(player, cfg);
+        return initialize_player_v2_lifecycle_command(player, config);
     });
 }
 
 naki_vr_status_t naki_vr_player_shutdown_status(naki_vr_player_t player) noexcept {
     return ffi_guard("naki_vr_player_shutdown_status", NAKI_VR_ERR_INTERNAL, [player]() {
-        return shutdown_player_command(player);
+        return shutdown_player_lifecycle_command(player);
     });
 }
 
 int naki_vr_player_initialize(naki_vr_player_t player, const naki_vr_player_config_t* config) noexcept {
     return ffi_guard("naki_vr_player_initialize", 0, [player, config]() {
-        if (!config) {
-            set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "config is required");
-            return 0;
-        }
-        vr::RendererConfig cfg;
-        if (!fill_renderer_config_v1(*config, cfg)) {
-            return 0;
-        }
-        return initialize_player_command(player, cfg) == NAKI_VR_OK ? 1 : 0;
+        return initialize_player_v1_lifecycle_command(player, config);
     });
 }
 

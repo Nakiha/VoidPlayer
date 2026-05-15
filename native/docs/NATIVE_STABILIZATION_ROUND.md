@@ -164,7 +164,7 @@ Fixed or reduced:
 Still active:
 
 - `Renderer` remains the coordination root.
-- `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
+- `ffi_exports.cpp` still carries ABI guard wrappers and process-global logging/crash convenience shells.
 - `Renderer` still owns layout mutation, public playback commands, global seek clock/deferred gates, and seek logging.
 - `DecodeThread` still owns exact-seek publish scheduling and post-preview completion wiring.
 - Target/feature boundaries are still too coupled.
@@ -172,7 +172,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P127 FFI Lifecycle Shell Boundary.
+Next patch: P128 FFI Process-Global Shell Boundary.
 
 Completed patch details through P115 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -397,11 +397,32 @@ Result:
 
 ### P127 - FFI Lifecycle Shell Boundary
 
+Status: done in Patch 127.
+
 Goal:
 
 - Continue reducing `ffi_exports.cpp` by moving player create/destroy/error/lifecycle command bodies behind a narrow lifecycle helper while keeping exported ABI functions as guarded shims.
 - Keep `ffi_exports.cpp` responsible for `extern "C"` names and `ffi_guard`; move registry mutation and per-player error-copy bodies out.
 - Preserve `naki_vr_player_create`, destroy/double-destroy, `last_error`, `player_get_error`, initialize v1/v2, and shutdown ABI behavior.
+
+Validation:
+
+- `python dev.py test --native-only`
+
+Result:
+
+- Added `ffi_player_lifecycle` for create/destroy/error copy, initialize v1/v2, and shutdown lifecycle command bodies.
+- Reduced `ffi_exports.cpp` lifecycle functions to guarded ABI shims that call the lifecycle helper.
+- Added focused lifecycle coverage for create/destroy/double-destroy, global/player error copy fallback, and null config validation.
+- Kept existing C FFI ABI validation green.
+
+### P128 - FFI Process-Global Shell Boundary
+
+Goal:
+
+- Move process-wide logging and crash-handler convenience command bodies out of `ffi_exports.cpp`.
+- Keep the exported `naki_vr_configure_logging*`, `naki_vr_install_crash_handler*`, and `naki_vr_remove_crash_handler*` functions as guarded ABI shims.
+- Preserve process-global semantics while making the global side effects explicit in a helper boundary.
 
 Validation:
 

@@ -489,6 +489,10 @@ TODO:
    - 新增 `exact_seek_frame_publisher` 承接 exact-seek preview window 帧发布、pending candidate 发布、硬解 wait/flush、stable-frame 复用和转换失败清理；`DecodeThread` 保留发布调度、成功后的 post_seek/drain/pause 状态收尾和日志。
    - 验证：native-only + seek UI。
 
+82. [x] `FfiLifecycleShellBoundary`
+   - 新增 `ffi_player_lifecycle` 承接 create/destroy/error copy、initialize v1/v2 和 shutdown lifecycle command bodies；`ffi_exports.cpp` 保留 ABI 函数名和 `ffi_guard` 外壳。
+   - 验证：native-only。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

@@ -2,6 +2,7 @@
 #include "video_renderer/decode/codec_loop.h"
 #include "video_renderer/decode/decode_drain_policy.h"
 #include "video_renderer/decode/decode_loop_policy.h"
+#include "video_renderer/decode/decode_preroll_policy.h"
 #include "video_renderer/decode/exact_seek_window.h"
 #include "video_renderer/decode/frame_timestamp_rescaler.h"
 #include <spdlog/spdlog.h>
@@ -47,13 +48,6 @@ uint64_t estimate_av_yuv_surface_bytes(int width, int height, AVPixelFormat form
     default:
         return 0;
     }
-}
-
-size_t post_seek_preroll_target(bool hw_enabled) {
-    // Hardware-decoded seek/add-track previews are more stable if we wait for
-    // one extra frame before exposing the paused preview. Some GPU/driver
-    // combinations can produce a partially-ready first post-seek frame.
-    return hw_enabled ? size_t(2) : size_t(1);
 }
 
 bool log_codec_exception(const char* stage, AVCodecID codec_id, bool hw_enabled) {
@@ -763,6 +757,37 @@ void DecodeThread::publish_pending_exact_seek_frames() {
     publisher.convert_and_push_frame(candidate->frame.get(), "pending exact-seek frame");
 }
 
+bool DecodeThread::complete_preroll_if_ready() {
+    const auto output_state = output_buffer_.state();
+    if (output_state != TrackState::Buffering) {
+        return false;
+    }
+
+    const bool preroll_ready = is_decode_preroll_ready(
+        post_seek_,
+        hw_enabled_,
+        output_buffer_.total_count(),
+        output_buffer_.has_preroll());
+    const auto decision = choose_decode_preroll_transition(
+        output_state,
+        preroll_ready,
+        pause_after_preroll_.load(std::memory_order_acquire));
+    if (!decision.complete) {
+        return false;
+    }
+
+    spdlog::info("[DecodeThread] === Preroll complete: {} frames buffered, post_seek={}, state->Ready",
+                 output_buffer_.total_count(), post_seek_);
+    output_buffer_.set_state(decision.output_state);
+    if (decision.pause_decode) {
+        decode_paused_.store(true, std::memory_order_release);
+    }
+    if (decision.clear_post_seek) {
+        post_seek_ = false;
+    }
+    return true;
+}
+
 DecodedFramePublisher DecodeThread::make_frame_publisher() {
     return DecodedFramePublisher(output_buffer_,
                                  converter_,
@@ -788,12 +813,6 @@ void DecodeThread::run() {
     auto publisher = make_frame_publisher();
 
     while (running_.load()) {
-        auto preroll_ready = [&] {
-            return post_seek_
-                ? output_buffer_.total_count() >= post_seek_preroll_target(hw_enabled_)
-                : output_buffer_.has_preroll();
-        };
-
         const auto seek_notification = take_pending_seek_notification();
         if (seek_notification.has_value()) {
             begin_seek_epoch(frame, *seek_notification);
@@ -1071,17 +1090,7 @@ void DecodeThread::run() {
                 break;
             }
 
-            if (output_buffer_.state() == TrackState::Buffering) {
-                if (preroll_ready()) {
-                    spdlog::info("[DecodeThread] === Preroll complete: {} frames buffered, post_seek={}, state->Ready",
-                                 output_buffer_.total_count(), post_seek_);
-                    output_buffer_.set_state(TrackState::Ready);
-                    if (pause_after_preroll_.load(std::memory_order_acquire)) {
-                        decode_paused_.store(true, std::memory_order_release);
-                    }
-                    post_seek_ = false;
-                }
-            }
+            complete_preroll_if_ready();
 
             av_frame_unref(frame);
         }
@@ -1111,18 +1120,7 @@ void DecodeThread::run() {
             }
         }
 
-        // Preroll check
-        if (output_buffer_.state() == TrackState::Buffering) {
-            if (preroll_ready()) {
-                spdlog::info("[DecodeThread] === Preroll complete: {} frames buffered, post_seek={}, state->Ready",
-                             output_buffer_.total_count(), post_seek_);
-                output_buffer_.set_state(TrackState::Ready);
-                if (pause_after_preroll_.load(std::memory_order_acquire)) {
-                    decode_paused_.store(true, std::memory_order_release);
-                }
-                post_seek_ = false;
-            }
-        }
+        complete_preroll_if_ready();
 
         // D3D11VA HEVC exact seek is sensitive to burst-feeding packets while
         // paused. Playback naturally paces this path through render/clock

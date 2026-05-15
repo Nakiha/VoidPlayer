@@ -172,7 +172,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P120 DecodeThread Preroll Transition Boundary.
+Next patch: P121 DecodeThread EOF Drain Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -598,6 +598,25 @@ Goal:
 - Continue reducing duplicated `DecodeThread` Buffering -> Ready transition code around normal preroll, post-seek fast preroll, EOF preroll completion, and pause-after-preroll.
 - Keep output buffer state mutation, `post_seek_` reset, `pause_after_preroll_` handling, and logs semantically unchanged.
 - Prefer a tested helper/policy that computes transition intent before any broader frame publishing extraction.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `decode_preroll_policy` for post-seek software/hardware preroll targets, normal/full-preroll readiness, and Buffering->Ready transition intent.
+- Replaced the duplicated normal preroll completion blocks with `DecodeThread::complete_preroll_if_ready()`, leaving logs, `TrackBuffer` state writes, `pause_after_preroll_`, and `post_seek_` reset in the decode thread.
+- Added native coverage for hardware post-seek extra-frame readiness, normal preroll delegation, Ready transition decisions, and no-op states.
+
+### P121 - DecodeThread EOF Drain Boundary
+
+Goal:
+
+- Continue reducing `DecodeThread` by extracting EOF/gap handling around Buffering exact-seek EOF drain, Buffering non-exact EOF mark-flushed, normal codec EOF drain, and post-seek EOF completion.
+- Keep codec drain ordering, exact-seek reorder publish behavior, output state transitions, and logs unchanged.
+- Prefer tested decisions before moving any codec drain or AVFrame lifetime code.
 
 Validation:
 

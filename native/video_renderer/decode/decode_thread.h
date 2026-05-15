@@ -155,6 +155,10 @@ private:
     /// Push decoded exact-seek frames that did not fit in the initial preview window.
     void publish_pending_exact_seek_frames();
 
+    /// Complete the Buffering -> Ready preroll transition when the current
+    /// output buffer has enough frames.
+    bool complete_preroll_if_ready();
+
     /// Create a lightweight publisher view over decode-thread-owned frame state.
     DecodedFramePublisher make_frame_publisher();
 

@@ -49,6 +49,7 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/codec_loop.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decode_drain_policy.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/decode/decode_preroll_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decode_seek_epoch.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decoded_frame_publisher.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decode_thread.cpp"

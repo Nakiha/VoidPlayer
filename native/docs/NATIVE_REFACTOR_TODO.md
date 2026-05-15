@@ -465,6 +465,10 @@ TODO:
    - 扩展 `decode_loop_policy` 承接普通 receive loop 的 cancel gate、EAGAIN/EOF stop、硬错误日志 stop 和 SEH error stop 决策；`DecodeThread` 保留 AVFrame lifetime、exact-seek candidate 和发布流程。
    - 验证：native-only + seek UI。
 
+76. [x] `DecodeThreadPrerollTransitionBoundary`
+   - 新增 `decode_preroll_policy` 承接 post-seek 软/硬解 preroll target、普通/full preroll readiness 和 Buffering->Ready transition intent；`DecodeThread` 保留日志、TrackBuffer state 写入和 pause-after-preroll 原子状态。
+   - 验证：native-only + seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

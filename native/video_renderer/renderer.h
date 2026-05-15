@@ -250,7 +250,8 @@ public:
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
 
 private:
-    void render_loop();
+    void render_loop() noexcept;
+    void render_loop_body();
     bool draw_frame(const RendererDrawSnapshot& snapshot);
     void draw_paused_frame(const char* reason);
     RendererDrawSnapshot build_draw_snapshot_locked(const PresentDecision& decision) const;
@@ -364,6 +365,7 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<bool> initialized_{false};
     std::atomic<bool> playing_{false};
+    std::atomic<bool> shutting_down_{false};
     std::atomic<RendererDeviceState> device_state_{RendererDeviceState::Ready};
     struct D3D11BackendMetricCounters {
         std::atomic<uint64_t> render_wait_us{0};

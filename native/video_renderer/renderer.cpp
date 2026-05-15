@@ -35,6 +35,26 @@ static constexpr int64_t MAX_SLEEP_US = 8000;  // 8ms cap → ~120Hz layout resp
 static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250);
 static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
 
+class ScopedTimerResolution {
+public:
+    explicit ScopedTimerResolution(UINT period) : period_(period) {
+        active_ = timeBeginPeriod(period_) == 0;
+    }
+
+    ~ScopedTimerResolution() {
+        if (active_) {
+            timeEndPeriod(period_);
+        }
+    }
+
+    ScopedTimerResolution(const ScopedTimerResolution&) = delete;
+    ScopedTimerResolution& operator=(const ScopedTimerResolution&) = delete;
+
+private:
+    UINT period_ = 0;
+    bool active_ = false;
+};
+
 uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
     return static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(
@@ -91,6 +111,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     headless_ = config.headless;
     target_width_ = config.width;
     target_height_ = config.height;
+    shutting_down_.store(false, std::memory_order_release);
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
     reset_d3d_metrics();
     playback_session_started_by_renderer_ = false;
@@ -176,6 +197,7 @@ void Renderer::shutdown() {
             return;
         }
 
+        shutting_down_.store(true, std::memory_order_release);
         running_ = false;
         playing_ = false;
     }
@@ -540,9 +562,16 @@ bool Renderer::has_hevc_hw_track_locked() const {
 }
 
 void Renderer::emit_event(const RendererEvent& event) {
+    if (shutting_down_.load(std::memory_order_acquire)) {
+        return;
+    }
+
     RendererEventCallback callback;
     {
         std::lock_guard<std::mutex> lock(event_callback_mutex_);
+        if (shutting_down_.load(std::memory_order_acquire)) {
+            return;
+        }
         callback = event_callback_;
     }
     if (callback) {
@@ -837,6 +866,9 @@ bool Renderer::draw_headless_and_publish(const RendererDrawSnapshot& snapshot,
                                          const char* label,
                                          std::function<void()>& callback) {
     callback = {};
+    if (shutting_down_.load(std::memory_order_acquire)) {
+        return false;
+    }
     if (!headless_output_) {
         return false;
     }
@@ -859,6 +891,9 @@ bool Renderer::draw_headless_and_publish(const RendererDrawSnapshot& snapshot,
     {
         std::lock_guard<std::mutex> tex_lock(texture_mutex());
         callback = headless_output_->publish_frame_locked();
+    }
+    if (shutting_down_.load(std::memory_order_acquire)) {
+        callback = {};
     }
     d3d_metrics_.present_publish_us.fetch_add(
         elapsed_us_since(publish_start), std::memory_order_relaxed);
@@ -924,7 +959,9 @@ void Renderer::present_frame(const PresentDecision& decision) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         preview_drawn_ = true;
     }
-    if (frame_callback) frame_callback();
+    if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
+        frame_callback();
+    }
 }
 
 void Renderer::redraw_layout() {
@@ -956,7 +993,9 @@ void Renderer::redraw_layout() {
         std::lock_guard<std::mutex> lock(state_mutex_);
         preview_drawn_ = true;
     }
-    if (frame_callback) frame_callback();
+    if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
+        frame_callback();
+    }
 }
 
 bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
@@ -1007,6 +1046,9 @@ void Renderer::configure_track_seek_callback(TrackPipeline& track) {
     const int file_id = track.file_id;
     track.demux_thread->set_seek_callback(
         [this, dt, file_id](int64_t pts, SeekType type) {
+            if (shutting_down_.load(std::memory_order_acquire)) {
+                return;
+            }
             dt->notify_seek(pts, type);
             if (audio_coordinator_) {
                 audio_coordinator_->notify_seek(file_id, pts, type);
@@ -1019,6 +1061,9 @@ void Renderer::configure_track_error_callback(TrackPipeline& track) {
     const auto buffer = track.track_buffer;
     track.demux_thread->set_error_callback(
         [this, file_id, buffer](int error_code) {
+            if (shutting_down_.load(std::memory_order_acquire)) {
+                return;
+            }
             if (buffer) {
                 buffer->set_state(TrackState::Error);
             }
@@ -1243,15 +1288,35 @@ void Renderer::do_resize(int width, int height) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         preview_drawn_ = true;
     }
-    if (frame_callback) frame_callback();
+    if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
+        frame_callback();
+    }
 }
 
-void Renderer::render_loop() {
+void Renderer::render_loop() noexcept {
     // Raise Windows timer resolution from default ~15.6ms to 1ms,
     // so sleep_for(16ms) actually wakes up near 16ms instead of 31ms.
-    timeBeginPeriod(1);
+    ScopedTimerResolution timer_resolution(1);
     spdlog::info("[Renderer] Render loop started (timer resolution: 1ms), tid={}", GetCurrentThreadId());
 
+    try {
+        render_loop_body();
+    } catch (const std::exception& e) {
+        spdlog::error("[Renderer] Render loop crashed: {}", e.what());
+        running_ = false;
+        playing_ = false;
+    } catch (...) {
+        spdlog::error("[Renderer] Render loop crashed with an unknown exception");
+        running_ = false;
+        playing_ = false;
+    }
+
+    pending_width_.store(0, std::memory_order_release);
+    pending_height_.store(0, std::memory_order_release);
+    spdlog::info("[Renderer] Render loop ended");
+}
+
+void Renderer::render_loop_body() {
     render_loop_controller_.start(std::chrono::steady_clock::now());
 
     while (running_) {
@@ -1528,15 +1593,8 @@ void Renderer::render_loop() {
         }
     }
 
-    // Flush any pending resize before exiting.
-    {
-        int pw = pending_width_.exchange(0);
-        int ph = pending_height_.exchange(0);
-        if (pw > 0 && ph > 0) do_resize(pw, ph);
-    }
-
-    spdlog::info("[Renderer] Render loop ended");
-    timeEndPeriod(1);
+    pending_width_.store(0, std::memory_order_release);
+    pending_height_.store(0, std::memory_order_release);
 }
 
 bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {

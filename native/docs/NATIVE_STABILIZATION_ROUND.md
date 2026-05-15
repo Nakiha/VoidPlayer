@@ -198,7 +198,7 @@ Verified:
 
 ## Active Patch Queue
 
-Next patch: P140 Renderer Shutdown Callback And Loop Guard.
+Next patch: P141 Renderer Backend Refs Cleanup.
 
 Completed patch details through P123 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -542,11 +542,33 @@ Result:
 
 ### P140 - Renderer Shutdown Callback And Loop Guard
 
+Status: done in Patch 140.
+
 Goal:
 
 - Gate late demux/render callbacks after shutdown begins.
 - Wrap render-loop timer resolution with RAII and add an exception boundary around the render thread.
 - Drop pending resize state on render-loop exit instead of unconditionally flushing a resize during shutdown.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`
+
+Result:
+
+- Renderer now sets a shutdown gate before stopping the render loop and resource teardown.
+- Demux seek/error callbacks and headless frame callbacks check the shutdown gate before touching renderer-owned callback paths.
+- Render loop work moved behind a `noexcept` entrypoint with RAII timer resolution and exception logging.
+- Pending resize state is discarded on render-loop exit rather than applied during shutdown/recreate teardown.
+
+### P141 - Renderer Backend Refs Cleanup
+
+Goal:
+
+- Remove unused or trivially replaceable borrowed backend raw pointers from `Renderer`.
+- Prefer accessing D3D11 helpers through `D3D11RenderBackend` where it keeps ownership and shutdown ordering clearer.
+- Keep behavior unchanged; this patch should only shrink dangling-pointer surface area.
 
 Validation:
 

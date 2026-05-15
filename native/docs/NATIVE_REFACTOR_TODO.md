@@ -178,7 +178,7 @@ TODO:
    - 目标：`track_count()`、`duration_us()`、`has_track()`、`track_dimensions()`、`track_infos()` 统一 `state_mutex_` 保护，不能依赖 NativePlayer shared lock。
    - 验证：native-only。
 
-5. [ ] `RendererShutdownCallbackAndLoopGuard`
+5. [x] `RendererShutdownCallbackAndLoopGuard`
    - 目标：shutdown 开始后 gate late demux/render callbacks；render loop 使用 RAII timer guard 和 noexcept exception boundary；退出时不再无条件 flush pending resize。
    - 验证：native-only + shutdown/recreate UI smoke。
 

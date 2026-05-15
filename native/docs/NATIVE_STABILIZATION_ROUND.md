@@ -174,10 +174,6 @@ Fixed or reduced:
 Still active:
 
 - `Renderer` remains the coordination root.
-- `Renderer` still has heavy add/remove/recreate work under `state_mutex_`; this is now performance/liveness risk rather than the original lock-order deadlock.
-- Non-headless present still needs to skip swap-chain present when `draw_frame()` fails.
-- Render-loop exception exit still needs a clearer terminal/error state instead of leaving an apparently initialized renderer with a dead render thread.
-- Shutdown should explicitly clear `event_callback_` after the late-callback gate is active.
 - `Renderer` still owns public layout API/redraw invalidation and deferred seek execution.
 - `DecodeThread` still owns drain-before-next-packet execution and decode-loop control flow.
 - Target/feature boundaries are still too coupled.
@@ -211,6 +207,7 @@ Accepted:
 - `PresentDecision` lacked track identity. A decision produced before remove/add/compact/recreate could later be applied to a reused slot, contaminating draw, geometry, cached decisions, carry-forward, seek-preview events, and stats.
 - Non-headless present after draw failure, shutdown callback lifetime, render-loop crash state, and lifecycle long-lock follow-ups were valid and have been fixed.
 - Seek-recreate stop/open work has been moved out of long `state_mutex_` critical sections; direct branch coverage still needs a future fault-injection/native integration seam.
+- Focused native coverage now guards event-callback release, terminal render-loop state transition, and the swap-chain present skip decision after draw failure.
 
 ## Active Patch Queue
 

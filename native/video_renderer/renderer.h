@@ -249,6 +249,11 @@ public:
     /// Capture the currently published headless frame as packed BGRA bytes.
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
 
+    // Native test seams for lifecycle states that are otherwise only reachable
+    // through render-thread or host-callback timing.
+    bool has_event_callback_for_test() const;
+    void enter_terminal_render_loop_error_for_test(const char* reason);
+
 private:
     void render_loop() noexcept;
     void render_loop_body();

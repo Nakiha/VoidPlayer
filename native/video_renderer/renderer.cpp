@@ -14,6 +14,7 @@
 #include "video_renderer/audio_coordinator.h"
 #include "video_renderer/seek/seek_coordinator.h"
 #include "video_renderer/render/shader_constants.h"
+#include "video_renderer/render/swap_chain_present_policy.h"
 #include "video_renderer/track/track_snapshot.h"
 #include "video_renderer/d3d11/render_backend.h"
 #include <spdlog/spdlog.h>
@@ -631,6 +632,16 @@ void Renderer::clear_event_callback() {
     event_callback_ = {};
 }
 
+bool Renderer::has_event_callback_for_test() const {
+    std::lock_guard<std::mutex> lock(event_callback_mutex_);
+    return static_cast<bool>(event_callback_);
+}
+
+void Renderer::enter_terminal_render_loop_error_for_test(const char* reason) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    enter_terminal_render_loop_error_locked(reason);
+}
+
 void Renderer::emit_seek_preview_presented_events(const PresentDecision& decision) {
     int64_t request_id = -1;
     int64_t target_pts_us = -1;
@@ -1005,7 +1016,7 @@ void Renderer::present_frame(const PresentDecision& decision) {
             device_lost = device && device->poll_device_removed("headless present");
         } else {
             drew = draw_frame(snapshot);
-            if (drew && device) {
+            if (should_present_swap_chain_after_draw(drew, device != nullptr)) {
                 const auto present_start = std::chrono::steady_clock::now();
                 const bool presented = device->present(0);
                 d3d_metrics_.present_publish_us.fetch_add(

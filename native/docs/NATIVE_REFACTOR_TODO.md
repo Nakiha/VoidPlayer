@@ -197,7 +197,7 @@ TODO:
 
 9. [x] `RendererNonHeadlessPresentFailureGate`
    - 目标：非 headless `present_frame()` 在 `draw_frame()` 失败时不再继续 swap-chain present，避免呈现上一帧或未完成 backbuffer。
-   - 验证：native-only + smoke UI；当前缺少专门 fault-injection 覆盖 draw failure 分支。
+   - 验证：native-only + smoke UI；已补 `SwapChainPresentPolicy` focused native coverage 保护 draw failure skip-present 决策。
 
 10. [x] `RendererV2LifecyclePresentFollowups`
    - 目标：收掉 `review_renderer_v2.md` 剩余真实项：seek recreate stop/open 移出长 `state_mutex_`。
@@ -205,11 +205,11 @@ TODO:
 
 11. [x] `RendererShutdownEventCallbackRelease`
    - 目标：shutdown / resource release 明确清空 `event_callback_`，避免宿主闭包跨 shutdown/reinitialize 残留。
-   - 验证：native-only + shutdown/recreate UI；当前缺少直接观测 callback storage 的单元测试。
+   - 验证：native-only + shutdown/recreate UI；已补 renderer lifecycle native test 直接观测 callback storage 被 shutdown 清空。
 
 12. [x] `RendererRenderLoopCrashTerminalState`
    - 目标：render loop exception boundary 不再只写 `running_/playing_`，而是进入 terminal runtime state 并让宿主查询看到 renderer 已不可用。
-   - 验证：native-only + smoke UI；当前缺少 render-loop fault-injection 测试入口。
+   - 验证：native-only + smoke UI；已补 renderer lifecycle native test seam 覆盖 terminal runtime state transition。
 
 13. [x] `RendererRemoveTrackStopOutsideStateLock`
    - 目标：remove-track 先在 `state_mutex_` 下 detach/compact renderer state，再锁外 stop/join 被移除的 decode/demux pipeline，缩短 render loop 被 track removal 卡住的窗口。

@@ -50,9 +50,16 @@ TEST_CASE("FfiPlayerLifecycle: initialize wrappers validate null configs",
     REQUIRE(initialize_player_v2_lifecycle_command(player, nullptr) ==
             NAKI_VR_ERR_INVALID_ARGUMENT);
     REQUIRE(g_last_error.status == NAKI_VR_ERR_INVALID_ARGUMENT);
+    char error[128] = {};
+    REQUIRE(copy_player_error_lifecycle_command(player, error, sizeof(error)) ==
+            NAKI_VR_ERR_INVALID_ARGUMENT);
+    REQUIRE(std::string(error).find("config") != std::string::npos);
 
     REQUIRE(initialize_player_v1_lifecycle_command(player, nullptr) == 0);
     REQUIRE(g_last_error.status == NAKI_VR_ERR_INVALID_ARGUMENT);
+    REQUIRE(copy_player_error_lifecycle_command(player, error, sizeof(error)) ==
+            NAKI_VR_ERR_INVALID_ARGUMENT);
+    REQUIRE(std::string(error).find("config") != std::string::npos);
 
     REQUIRE(shutdown_player_lifecycle_command(player) == NAKI_VR_OK);
     REQUIRE(destroy_player_lifecycle_command(player) == NAKI_VR_OK);

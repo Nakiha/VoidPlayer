@@ -21,6 +21,13 @@ extern "C" {
 #endif
 
 #define NAKI_VR_ABI_VERSION 1u
+#define NAKI_VR_API_LEVEL 2u
+
+#define NAKI_VR_CAP_PLAYER_CONFIG_V2       (1ull << 0)
+#define NAKI_VR_CAP_STATUS_APIS            (1ull << 1)
+#define NAKI_VR_CAP_PER_PLAYER_ERROR       (1ull << 2)
+#define NAKI_VR_CAP_LAYOUT_STATE           (1ull << 3)
+#define NAKI_VR_CAP_PLAYER_SCOPED_ERRORS   (1ull << 4)
 
 typedef enum naki_vr_status_t {
     NAKI_VR_OK = 0,
@@ -82,6 +89,8 @@ typedef struct naki_vr_player_config_v2_t {
 /* ---- Lifecycle ---- */
 
 NAKI_VR_FFI_EXPORT uint32_t naki_vr_abi_version(void) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT uint32_t naki_vr_api_level(void) NAKI_VR_FFI_NOEXCEPT;
+NAKI_VR_FFI_EXPORT uint64_t naki_vr_capabilities(void) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_last_error(naki_vr_player_t player, char* buf, size_t cap) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT naki_vr_status_t naki_vr_player_get_error(naki_vr_player_t player, char* buf, size_t cap) NAKI_VR_FFI_NOEXCEPT;
 NAKI_VR_FFI_EXPORT naki_vr_player_t naki_vr_player_create(void) NAKI_VR_FFI_NOEXCEPT;

@@ -20,6 +20,7 @@ typedef void* naki_vr_player_t;  // 不透明句柄
 
 ```c
 #define NAKI_VR_ABI_VERSION 1u
+#define NAKI_VR_API_LEVEL 2u
 
 typedef struct naki_vr_log_config_t {
     uint32_t size;          // sizeof(naki_vr_log_config_t)
@@ -48,11 +49,13 @@ Renderer config 校验集中在 `video_renderer/renderer_config_validation.*`，
 
 ABI v2 新增 `naki_vr_player_config_v2_t` 和 `naki_vr_player_initialize_v2()`。v2 config 使用 `(video_paths, video_path_count)`，不要求 NULL terminator；旧 v1 config 会继续保留兼容，但新绑定应优先使用 v2。
 
+`NAKI_VR_ABI_VERSION` 表示当前 size/version-prefixed C struct 的二进制兼容版本；它不再单独承担 feature discovery。绑定侧应使用 `naki_vr_api_level()` 和 `naki_vr_capabilities()` 判断当前 DLL 是否支持 counted-path v2 config、status APIs、per-player error 和 layout state 等能力。
+
 ### API 分类
 
 | 分类 | 函数 |
 |------|------|
-| ABI / 错误 | abi_version / last_error |
+| ABI / 能力 / 错误 | abi_version / api_level / capabilities / last_error / player_get_error |
 | 生命周期 | create / destroy / initialize / shutdown |
 | 播放控制 | play / pause / resume / seek / seek_typed / set_speed |
 | 逐帧 | step_forward / step_backward |
@@ -72,11 +75,13 @@ typedef enum naki_vr_status_t {
 } naki_vr_status_t;
 ```
 
-`naki_vr_last_error(player, buf, cap)` 返回最近一次 FFI 调用的 status，并在 `buf` 非空时复制一段诊断文本。当前实现使用线程本地 last-error 状态，`player` 参数保留给后续 per-player 错误状态。
+`naki_vr_last_error(player, buf, cap)` 返回当前线程最近一次 FFI 调用的 status，并在 `buf` 非空时复制一段诊断文本。
 
 因为 last-error 是 thread-local，必须在产生失败的同一线程读取；其他线程读取到的是该线程自己的最近 FFI 状态。
 
-ABI v2 同时提供 `naki_vr_player_get_error(player, buf, cap)`，读取 player handle 上保存的最近一次进入该 handle 后的操作结果。对于参数校验在 pin handle 之前失败的情况，例如 null player、非法 seek type、非法 counted path config，错误仍只保证写入 thread-local `naki_vr_last_error()`。新增的 mutating status API，例如 `naki_vr_player_play_status()`、`naki_vr_player_set_speed_status()`、`naki_vr_player_apply_layout_status()` 和 `naki_vr_player_add_track_status()`，会直接返回 `naki_vr_status_t`；旧 `void` / bool / int API 继续作为兼容 wrapper。
+ABI v2 同时提供 `naki_vr_player_get_error(player, buf, cap)`，读取 player handle 上保存的最近一次进入该 handle 后的操作结果。带 player 参数的 status API 会先 pin handle，再做 config/path/layout/seek/speed/loop 参数校验；因此参数错误会同时写入 thread-local last-error 和该 player 的 error slot。只有 null/invalid/destroyed player handle 无法 pin 时，错误才只保证写入 thread-local `naki_vr_last_error()`。
+
+查询 API 成功时会清空 thread-local last-error 和该 player 的 error slot，避免旧错误在成功 query 后继续泄漏。mutating status API，例如 `naki_vr_player_play_status()`、`naki_vr_player_set_speed_status()`、`naki_vr_player_apply_layout_status()` 和 `naki_vr_player_add_track_status()`，会直接返回 `naki_vr_status_t`；未初始化 player 上的播放、seek、track、layout 等操作返回 `NAKI_VR_ERR_NOT_INITIALIZED`，未知 track `file_id` 返回 `NAKI_VR_ERR_INVALID_ARGUMENT`。旧 `void` / bool / int API 继续作为兼容 wrapper，但新绑定应优先使用 status API。
 
 ### Seek 类型常量
 

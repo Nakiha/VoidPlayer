@@ -63,7 +63,7 @@ TODO:
 
 ## P0 - C FFI ABI v2 / Error Model
 
-Status: done in Round 12.
+Status: done in Round 12; tightened again for `build/chat/chat_review.md` on 2026-05-16.
 
 目标：让 C ABI 更适合 Dart/Rust/Go/Python 绑定，减少未定义扫描、跨线程错误丢失和未来破 ABI 风险。
 
@@ -79,6 +79,10 @@ TODO:
 - [x] 为 v2 mutating APIs 返回 `naki_vr_status_t`；旧 `void` API 作为兼容 wrapper。
 - [x] 设计 per-player error slot，保留 thread-local last-error 作为补充诊断。
 - [x] 增加 `naki_vr_player_get_error(player, ...)` per-player query，并保持 destroy 后旧 token 走 thread-local invalid-handle error。
+- [x] 增加 `naki_vr_api_level()` / `naki_vr_capabilities()`，让绑定侧不再只靠 `NAKI_VR_ABI_VERSION` 判断 v2 feature 是否存在。
+- [x] query API 成功路径统一清空 thread-local last-error 和 per-player error，避免旧错误遗留。
+- [x] 带 player 参数的 status API 先 pin handle，再做参数校验；config/path/layout/seek/speed/loop 参数错误写入该 player error slot。
+- [x] mutating status API 对未初始化 player 返回 `NAKI_VR_ERR_NOT_INITIALIZED`，对未知 track `file_id` 返回 `NAKI_VR_ERR_INVALID_ARGUMENT`。
 - [x] 为 path count、空路径、过长路径、最大轨道数加 ABI 层校验；重复路径暂不禁止，因多轨同源文件在调试和对比场景下仍可用。
 - [x] 将 FFI ABI/config/log/layout/seek enum marshalling 从 `ffi_exports.cpp` 拆到 `ffi_marshalling`，并增加 focused native 单测。
 - [x] 将 FFI playback/query/track/layout checked-player command bodies 从 `ffi_exports.cpp` 拆到 `ffi_player_commands`，并增加 focused native 单测。
@@ -90,6 +94,7 @@ TODO:
 - `python dev.py test --native-only --github` build passed on 2026-05-10.
 - `ctest --test-dir native/build-msvc -C Release --output-on-failure -R test_ffi_c` passed on 2026-05-10.
 - `ctest --test-dir native/build-msvc -C Release --output-on-failure -R video_renderer_tests` passed on 2026-05-10.
+- `python dev.py test --native-only` passed on 2026-05-16.
 
 ## P0 - Unified Renderer Config Validation
 

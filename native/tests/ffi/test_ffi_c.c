@@ -111,6 +111,11 @@ int main(void) {
     printf("=== C FFI Validation ===\n\n");
 
     CHECK(naki_vr_abi_version() == NAKI_VR_ABI_VERSION, "ABI version matches header");
+    CHECK(naki_vr_api_level() >= 2, "API level exposes v2 feature discovery");
+    CHECK((naki_vr_capabilities() & NAKI_VR_CAP_PLAYER_CONFIG_V2) != 0,
+          "capabilities advertise player config v2");
+    CHECK((naki_vr_capabilities() & NAKI_VR_CAP_PLAYER_SCOPED_ERRORS) != 0,
+          "capabilities advertise player-scoped errors");
     CHECK(sizeof(naki_vr_log_config_t) >= offsetof(naki_vr_log_config_t, level) + sizeof(int),
           "log config exposes size/version-prefixed layout");
     CHECK(sizeof(naki_vr_player_config_t) >= offsetof(naki_vr_player_config_t, log_config) + sizeof(naki_vr_log_config_t),
@@ -166,14 +171,14 @@ int main(void) {
         CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
               "invalid seek type reports invalid argument");
         naki_vr_player_set_speed(p, 2.0);
-        CHECK(naki_vr_player_set_speed_status(p, 2.0) == NAKI_VR_OK,
-              "status API returns OK for set_speed");
+        CHECK(naki_vr_player_set_speed_status(p, 2.0) == NAKI_VR_ERR_NOT_INITIALIZED,
+              "status API rejects set_speed before initialize");
         naki_vr_player_set_loop_range(p, 0, 0, 0);
         CHECK(naki_vr_player_set_loop_range_status(p, 1, -1, 0) ==
                   NAKI_VR_ERR_INVALID_ARGUMENT,
               "status API rejects invalid loop range");
-        CHECK(naki_vr_player_get_error(p, NULL, 0) == NAKI_VR_OK,
-              "per-player error remains OK for pre-handle validation failures");
+        CHECK(naki_vr_player_get_error(p, NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
+              "per-player error records player-scoped validation failures");
         naki_vr_player_set_audible_track(p, -1);
         naki_vr_player_set_track_offset(p, 1, 0);
         {
@@ -285,6 +290,8 @@ int main(void) {
               "initialize rejects ABI version mismatch");
         CHECK(last_error(NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
               "ABI version mismatch reports invalid argument");
+        CHECK(naki_vr_player_get_error(p, NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
+              "ABI version mismatch records per-player error");
         naki_vr_player_destroy(p);
     }
 
@@ -313,6 +320,8 @@ int main(void) {
         cfg.video_path_count = 5;
         CHECK(naki_vr_player_initialize_v2(p, &cfg) == NAKI_VR_ERR_INVALID_ARGUMENT,
               "initialize_v2 rejects too many counted paths");
+        CHECK(naki_vr_player_get_error(p, NULL, 0) == NAKI_VR_ERR_INVALID_ARGUMENT,
+              "initialize_v2 counted path error records per-player error");
         naki_vr_player_destroy(p);
     }
 

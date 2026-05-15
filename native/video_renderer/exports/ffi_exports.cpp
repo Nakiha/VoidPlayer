@@ -50,6 +50,18 @@ uint32_t naki_vr_abi_version(void) noexcept {
     return NAKI_VR_ABI_VERSION;
 }
 
+uint32_t naki_vr_api_level(void) noexcept {
+    return NAKI_VR_API_LEVEL;
+}
+
+uint64_t naki_vr_capabilities(void) noexcept {
+    return NAKI_VR_CAP_PLAYER_CONFIG_V2 |
+        NAKI_VR_CAP_STATUS_APIS |
+        NAKI_VR_CAP_PER_PLAYER_ERROR |
+        NAKI_VR_CAP_LAYOUT_STATE |
+        NAKI_VR_CAP_PLAYER_SCOPED_ERRORS;
+}
+
 naki_vr_status_t naki_vr_last_error(naki_vr_player_t player, char* buf, size_t cap) noexcept {
     return copy_global_error_lifecycle_command(player, buf, cap);
 }

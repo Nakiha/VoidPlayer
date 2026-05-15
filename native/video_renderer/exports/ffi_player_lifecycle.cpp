@@ -65,28 +65,44 @@ naki_vr_status_t destroy_player_lifecycle_command(naki_vr_player_t player) {
 naki_vr_status_t initialize_player_v2_lifecycle_command(
     naki_vr_player_t player,
     const naki_vr_player_config_v2_t* config) {
+    auto p = checked_player(player);
+    if (!p) return g_last_error.status;
     if (!config) {
-        set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "config is required");
+        set_lease_error(p, NAKI_VR_ERR_INVALID_ARGUMENT, "config is required");
         return NAKI_VR_ERR_INVALID_ARGUMENT;
     }
     RendererConfig cfg;
     if (!fill_renderer_config_v2(*config, cfg)) {
+        set_lease_error(p, g_last_error.status, g_last_error.message);
         return g_last_error.status;
     }
-    return initialize_player_command(player, cfg);
+    if (!p->initialize(cfg)) {
+        set_lease_error(p, NAKI_VR_ERR_OPEN_FAILED, "player initialize failed");
+        return NAKI_VR_ERR_OPEN_FAILED;
+    }
+    set_lease_ok(p);
+    return NAKI_VR_OK;
 }
 
 int initialize_player_v1_lifecycle_command(naki_vr_player_t player,
                                            const naki_vr_player_config_t* config) {
+    auto p = checked_player(player);
+    if (!p) return 0;
     if (!config) {
-        set_error(NAKI_VR_ERR_INVALID_ARGUMENT, "config is required");
+        set_lease_error(p, NAKI_VR_ERR_INVALID_ARGUMENT, "config is required");
         return 0;
     }
     RendererConfig cfg;
     if (!fill_renderer_config_v1(*config, cfg)) {
+        set_lease_error(p, g_last_error.status, g_last_error.message);
         return 0;
     }
-    return initialize_player_command(player, cfg) == NAKI_VR_OK ? 1 : 0;
+    if (!p->initialize(cfg)) {
+        set_lease_error(p, NAKI_VR_ERR_OPEN_FAILED, "player initialize failed");
+        return 0;
+    }
+    set_lease_ok(p);
+    return 1;
 }
 
 naki_vr_status_t shutdown_player_lifecycle_command(naki_vr_player_t player) {

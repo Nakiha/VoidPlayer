@@ -784,6 +784,28 @@ Result:
 - HEVC recreate detaches the old slot state, clears stale present-decision data, stops decode/demux, waits for D3D11VA teardown, creates the replacement pipeline, and starts it without holding `state_mutex_`.
 - The final replacement commit is guarded by `state_mutex_`, using a fresh track generation so old frame decisions cannot be reused for the recreated slot.
 
+### P150 - FFI Status Error Contract Tightening
+
+Status: done in Patch 150.
+
+Goal:
+
+- Close the `build/chat/chat_review.md` FFI error-model items without bumping the binary struct ABI.
+- Let bindings discover v2 features through API level/capability probes instead of overloading `NAKI_VR_ABI_VERSION`.
+- Make successful query APIs clear stale errors, and make player-scoped parameter failures land in the per-player error slot.
+- Stop status APIs from reporting success for no-op mutating calls on uninitialized players or unknown track `file_id`s.
+
+Validation:
+
+- `python dev.py test --native-only`
+
+Result:
+
+- Added `naki_vr_api_level()` and `naki_vr_capabilities()` with flags for counted-path config v2, status APIs, per-player errors, layout state, and player-scoped error semantics.
+- FFI query command success paths now call `set_lease_ok()`, clearing both thread-local and per-player stale errors.
+- Player command/lifecycle validation now pins the handle before validating config/path/layout/seek/speed/loop arguments and copies validation errors into the player error slot.
+- Mutating status APIs now return `NAKI_VR_ERR_NOT_INITIALIZED` before initialize and `NAKI_VR_ERR_INVALID_ARGUMENT` for unknown track `file_id`s.
+
 ## Do-Not-Drift List
 
 - Do not let runner plugin cosmetics displace the remaining `review_godobject.md` owner-boundary work.

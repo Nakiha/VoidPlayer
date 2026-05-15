@@ -25,6 +25,7 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/audio/audio_mixer.cpp"
     "${VOID_NATIVE_DIR}/audio/audio_track_registry.cpp"
     "${VOID_NATIVE_DIR}/audio/pcm_buffer.cpp"
+    "${VOID_NATIVE_DIR}/audio/wave_out_output.cpp"
     "${VOID_NATIVE_DIR}/audio/audio_output_factory.cpp"
     "${VOID_NATIVE_DIR}/player/native_player.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/analysis_overlay_renderer.cpp"

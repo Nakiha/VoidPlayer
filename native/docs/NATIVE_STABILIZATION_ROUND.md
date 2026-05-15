@@ -150,6 +150,7 @@ Fixed or reduced:
 - `NativeResourceBudget`: track buffer queued-frame depth decision moved into `TrackBufferBudget` and is tested as a policy boundary.
 - `AudioEngine::Impl`: track registry, buffer publication facts, and decode pause/seek fanout moved into `AudioTrackRegistry`.
 - `AudioEngine::Impl`: nested FFmpeg audio decoder thread implementation moved into `AudioDecodeThread`.
+- `AudioEngine::Impl`: nested waveOut output thread and WinMM device loop moved into `WaveOutOutput`.
 - Windows runner plugin: diagnostics, logging bootstrap, texture bridge, file picker, method dispatch, and MethodChannel diagnostics scope were split.
 - Process-global logging/crash FFI ownership is now documented.
 
@@ -164,7 +165,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P109 AudioEngine WaveOut Output Boundary.
+Next patch: P110 AnalysisManager Session Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -360,16 +361,37 @@ Validation:
 
 ### P109 - AudioEngine WaveOut Output Boundary
 
+Status: done in Patch 109.
+
 Goal:
 
 - Continue addressing `review_godobject.md`'s `AudioEngine::Impl` finding by moving the nested waveOut device/output thread implementation out of `audio_engine.cpp`.
 - Keep `AudioMixer` behavior, pause/no-PCM-consumption, and active-track transition semantics unchanged.
 - Leave `AudioEngine::Impl` responsible for play/pause policy and track registry coordination.
 
+Result:
+
+- Added `WaveOutOutput` as a dedicated audio output/device module around the WinMM buffer submission thread.
+- `audio_engine.cpp` no longer owns WinMM headers, waveOut device state, audio sample buffer submission, or mixer internals.
+- `AudioEngine::Impl` is now a small coordinator over `AudioTrackRegistry`, `AudioDecodeThread`, and `WaveOutOutput`.
+
 Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+### P110 - AnalysisManager Session Boundary
+
+Goal:
+
+- Resume `review_godobject.md`'s `AnalysisManager` finding by extracting the next session/registry/cache-facing boundary that still lives in the singleton manager.
+- Preserve existing analysis FFI/session snapshot behavior and overlay cache correctness fixed in the overlay rounds.
+- Choose the exact patch boundary after re-reading current `analysis_manager.*`, because several earlier overlay fixes already moved part of the state model.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h264.csv`
 
 ## Do-Not-Drift List
 

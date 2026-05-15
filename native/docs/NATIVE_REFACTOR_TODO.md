@@ -485,6 +485,10 @@ TODO:
    - 扩展 `DecodedFramePublisher::push_converted_frame`，让 exact-seek stable-frame / converted-frame 发布复用 normal publish 的 Error/pause/running 状态语义；`DecodeThread::publish_exact_seek_window` 不再直接写 conversion-failure 状态。
    - 验证：native-only + seek UI。
 
+81. [x] `DecodeThreadExactSeekFramePublisherBoundary`
+   - 新增 `exact_seek_frame_publisher` 承接 exact-seek preview window 帧发布、pending candidate 发布、硬解 wait/flush、stable-frame 复用和转换失败清理；`DecodeThread` 保留发布调度、成功后的 post_seek/drain/pause 状态收尾和日志。
+   - 验证：native-only + seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

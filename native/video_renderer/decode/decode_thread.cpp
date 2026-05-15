@@ -4,6 +4,7 @@
 #include "video_renderer/decode/decode_drain_policy.h"
 #include "video_renderer/decode/decode_loop_policy.h"
 #include "video_renderer/decode/decode_preroll_policy.h"
+#include "video_renderer/decode/exact_seek_frame_publisher.h"
 #include "video_renderer/decode/exact_seek_publish_policy.h"
 #include "video_renderer/decode/exact_seek_window.h"
 #include "video_renderer/decode/frame_timestamp_rescaler.h"
@@ -666,48 +667,17 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
     }
 
     auto publisher = make_frame_publisher();
-    publisher.flush_visibility_if_needed();
-    const int64_t pts = exact_seek_candidates_.reorder_at(selected).pts_us;
-    const auto window = choose_exact_seek_preview_publish_window(
+    const auto publish_result = publish_exact_seek_preview_frames(
+        exact_seek_candidates_,
         selected,
-        exact_seek_candidates_.reorder_count(),
-        output_buffer_.total_count(),
-        output_buffer_.max_count(),
-        kExactSeekPreviewWindowFrames);
-    if (!window.can_publish) {
-        spdlog::warn("[DecodeThread] Exact seek preview skipped: output buffer is full");
+        output_buffer_,
+        publisher,
+        hw_enabled_,
+        hw_provider_.get(),
+        hw_visibility_flush_pending_);
+    if (!publish_result.can_publish || publish_result.conversion_failed) {
         return;
     }
-    bool conversion_failed = false;
-    for (size_t i = selected; i < window.end; ++i) {
-        auto& candidate = exact_seek_candidates_.reorder_at(i);
-        if (!candidate.frame) {
-            continue;
-        }
-        if (i == selected && hw_enabled_ && hw_provider_) {
-            hw_provider_->wait_idle();
-            hw_visibility_flush_pending_ = false;
-        } else {
-            publisher.flush_before_publish_if_needed(true);
-        }
-        std::optional<TextureFrame> tex_frame;
-        if (i == selected &&
-            candidate.stable_frame.has_value() &&
-            candidate.stable_frame->texture_handle) {
-            tex_frame = *candidate.stable_frame;
-        } else {
-            tex_frame = publisher.convert_frame_for_publish(candidate.frame.get());
-        }
-        if (!publisher.push_converted_frame(std::move(tex_frame), "publishing exact-seek window")) {
-            conversion_failed = true;
-            break;
-        }
-    }
-    if (conversion_failed) {
-        exact_seek_candidates_.clear();
-        return;
-    }
-    exact_seek_candidates_.move_reorder_tail_to_pending(window.end);
     const auto completion = complete_exact_seek_preview_publish(
         pause_after_preroll_.load(std::memory_order_acquire));
     output_buffer_.set_state(completion.output_state);
@@ -718,7 +688,9 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
     exact_seek_target_us_ = completion.exact_seek_target_us;
     drain_decoder_before_next_packet_ = completion.drain_decoder_before_next_packet;
     spdlog::info("[DecodeThread] Exact seek drain: preview frame ready pts={:.3f}s, published={} frames, pending={} frames, state->Ready",
-                 pts / 1e6, window.published, exact_seek_candidates_.pending_count());
+                 publish_result.selected_pts_us / 1e6,
+                 publish_result.published_count,
+                 publish_result.pending_count);
 }
 
 bool DecodeThread::publish_best_exact_seek_frame() {
@@ -742,16 +714,8 @@ bool DecodeThread::publish_best_exact_seek_frame() {
 }
 
 void DecodeThread::publish_pending_exact_seek_frames() {
-    auto candidate = exact_seek_candidates_.pop_pending();
-    if (!candidate.has_value()) {
-        return;
-    }
-    if (!candidate->frame) {
-        return;
-    }
     auto publisher = make_frame_publisher();
-    publisher.flush_before_publish_if_needed(true);
-    publisher.convert_and_push_frame(candidate->frame.get(), "pending exact-seek frame");
+    publish_pending_exact_seek_frame(exact_seek_candidates_, publisher);
 }
 
 bool DecodeThread::complete_preroll_if_ready() {

@@ -55,6 +55,7 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/decode/decoded_frame_publisher.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decode_thread.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/exact_seek_candidate_store.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/decode/exact_seek_frame_publisher.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/exact_seek_publish_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/frame_timestamp_rescaler.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/hw/hw_decode_provider.cpp"

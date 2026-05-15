@@ -166,13 +166,13 @@ Still active:
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
 - `Renderer` still owns layout mutation, public playback commands, global seek clock/deferred gates, and seek logging.
-- `DecodeThread` still owns exact-seek frame/pending publish side effects.
+- `DecodeThread` still owns exact-seek publish scheduling and post-preview completion wiring.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P126 DecodeThread Exact Seek Frame Publisher Boundary.
+Next patch: P127 FFI Lifecycle Shell Boundary.
 
 Completed patch details through P115 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -375,6 +375,8 @@ Result:
 
 ### P126 - DecodeThread Exact Seek Frame Publisher Boundary
 
+Status: done in Patch 126.
+
 Goal:
 
 - Move the remaining exact-seek preview-window frame publish loop and pending-frame publish helper out of `DecodeThread`.
@@ -385,6 +387,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `exact_seek_frame_publisher` for exact-seek preview-window frame publishing and pending candidate publishing.
+- Moved selected-frame hardware wait, subsequent-frame flush, stable snapshot reuse, conversion failure cleanup, and pending tail movement out of `DecodeThread`.
+- `DecodeThread` now keeps only publish scheduling, successful post-preview completion state, and log emission around exact-seek frame publishing.
+- Added focused coverage for preview-window publish, pending publish, and conversion-failure candidate cleanup.
+
+### P127 - FFI Lifecycle Shell Boundary
+
+Goal:
+
+- Continue reducing `ffi_exports.cpp` by moving player create/destroy/error/lifecycle command bodies behind a narrow lifecycle helper while keeping exported ABI functions as guarded shims.
+- Keep `ffi_exports.cpp` responsible for `extern "C"` names and `ffi_guard`; move registry mutation and per-player error-copy bodies out.
+- Preserve `naki_vr_player_create`, destroy/double-destroy, `last_error`, `player_get_error`, initialize v1/v2, and shutdown ABI behavior.
+
+Validation:
+
+- `python dev.py test --native-only`
 
 ## Do-Not-Drift List
 

@@ -10,38 +10,11 @@
 #include <spdlog/spdlog.h>
 #include <dxgi1_4.h>
 #include <wrl/client.h>
-#include <chrono>
-#include <cwchar>
 #include <exception>
 #include <cmath>
-#include <mutex>
 #include <variant>
 #include <limits>
 #include <utility>
-
-namespace {
-constexpr UINT kVideoRendererEventDrainMessage = WM_APP + 0x4B7;
-constexpr wchar_t kVideoRendererEventWindowClass[] = L"VoidPlayerVideoRendererEvents";
-
-LRESULT CALLBACK VideoRendererEventWindowProc(HWND hwnd,
-                                              UINT message,
-                                              WPARAM wparam,
-                                              LPARAM lparam) {
-    if (message == WM_NCCREATE) {
-        auto* create = reinterpret_cast<CREATESTRUCTW*>(lparam);
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA,
-                          reinterpret_cast<LONG_PTR>(create->lpCreateParams));
-        return DefWindowProcW(hwnd, message, wparam, lparam);
-    }
-    auto* plugin = reinterpret_cast<VideoRendererPlugin*>(
-        GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-    if (message == kVideoRendererEventDrainMessage && plugin) {
-        plugin->DrainEventQueue();
-        return 0;
-    }
-    return DefWindowProcW(hwnd, message, wparam, lparam);
-}
-}
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -244,7 +217,7 @@ void VideoRendererPlugin::RegisterWithRegistrar(
                 plugin_ptr->ClearEventSink();
                 return nullptr;
             }));
-    plugin->RegisterEventDrainWindowProc();
+    plugin->event_bridge_.RegisterDrainWindow();
 
     registrar->AddPlugin(std::move(plugin));
 }
@@ -275,10 +248,7 @@ VideoRendererPlugin::VideoRendererPlugin(
 }
 
 VideoRendererPlugin::~VideoRendererPlugin() {
-    if (event_hwnd_) {
-        DestroyWindow(event_hwnd_);
-        event_hwnd_ = nullptr;
-    }
+    event_bridge_.Shutdown();
     clear_global_player();
     texture_bridge_.DetachFrameCallback();
     if (player_) {
@@ -289,106 +259,19 @@ VideoRendererPlugin::~VideoRendererPlugin() {
     if (player_) {
         player_.reset();
     }
-    ClearEventSink();
-}
-
-void VideoRendererPlugin::RegisterEventDrainWindowProc() {
-    if (event_hwnd_) {
-        return;
-    }
-    WNDCLASSW wc = {};
-    wc.lpfnWndProc = VideoRendererEventWindowProc;
-    wc.hInstance = GetModuleHandleW(nullptr);
-    wc.lpszClassName = kVideoRendererEventWindowClass;
-    RegisterClassW(&wc);
-    event_hwnd_ = CreateWindowExW(
-        0,
-        kVideoRendererEventWindowClass,
-        L"",
-        0,
-        0,
-        0,
-        0,
-        0,
-        HWND_MESSAGE,
-        nullptr,
-        GetModuleHandleW(nullptr),
-        this);
-    if (!event_hwnd_) {
-        spdlog::warn("[VideoRendererPlugin] failed to create renderer event message window");
-    }
 }
 
 void VideoRendererPlugin::SetEventSink(
     std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink) {
-    {
-        std::lock_guard<std::mutex> lock(event_mutex_);
-        event_sink_ = std::move(sink);
-    }
-    DrainEventQueue();
+    event_bridge_.SetSink(std::move(sink));
 }
 
 void VideoRendererPlugin::ClearEventSink() {
-    std::lock_guard<std::mutex> lock(event_mutex_);
-    event_sink_.reset();
-    pending_events_.clear();
+    event_bridge_.ClearSink();
 }
 
 void VideoRendererPlugin::QueueRendererEvent(const vr::RendererEvent& event) {
-    flutter::EncodableMap payload;
-    payload[flutter::EncodableValue("schemaVersion")] = flutter::EncodableValue(1);
-    payload[flutter::EncodableValue("sequence")] =
-        flutter::EncodableValue(event_sequence_.fetch_add(1, std::memory_order_relaxed) + 1);
-    payload[flutter::EncodableValue("timestampUs")] =
-        flutter::EncodableValue(static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count()));
-    switch (event.type) {
-    case vr::RendererEvent::Type::SeekPreviewPresented:
-        payload[flutter::EncodableValue("type")] =
-            flutter::EncodableValue("seekPreviewPresented");
-        break;
-    case vr::RendererEvent::Type::TrackError:
-        payload[flutter::EncodableValue("type")] =
-            flutter::EncodableValue("trackError");
-        break;
-    }
-    payload[flutter::EncodableValue("requestId")] = flutter::EncodableValue(event.request_id);
-    payload[flutter::EncodableValue("trackFileId")] = flutter::EncodableValue(event.track_file_id);
-    payload[flutter::EncodableValue("ptsUs")] = flutter::EncodableValue(event.pts_us);
-    payload[flutter::EncodableValue("dtsUs")] = flutter::EncodableValue(event.dts_us);
-    payload[flutter::EncodableValue("targetPtsUs")] = flutter::EncodableValue(event.target_pts_us);
-    payload[flutter::EncodableValue("errorCode")] = flutter::EncodableValue(event.error_code);
-
-    {
-        std::lock_guard<std::mutex> lock(event_mutex_);
-        if (pending_events_.size() >= 256) {
-            pending_events_.pop_front();
-            spdlog::warn("[VideoRendererPlugin] renderer event queue overflow, dropped oldest event");
-        }
-        pending_events_.emplace_back(std::move(payload));
-    }
-    spdlog::debug("[VideoRendererPlugin] queued renderer event request_id={} file_id={}",
-                  event.request_id, event.track_file_id);
-    if (event_hwnd_) {
-        PostMessage(event_hwnd_, kVideoRendererEventDrainMessage, 0, 0);
-    }
-}
-
-void VideoRendererPlugin::DrainEventQueue() {
-    for (;;) {
-        flutter::EncodableValue event;
-        {
-            std::lock_guard<std::mutex> lock(event_mutex_);
-            if (!event_sink_ || pending_events_.empty()) {
-                return;
-            }
-            event = std::move(pending_events_.front());
-            pending_events_.pop_front();
-            spdlog::debug("[VideoRendererPlugin] draining renderer event");
-            event_sink_->Success(event);
-        }
-    }
+    event_bridge_.Queue(event);
 }
 
 void VideoRendererPlugin::RegisterMethodHandlers() {

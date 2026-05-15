@@ -15,6 +15,7 @@ add_executable(${BINARY_NAME} WIN32
   "native_logging_bootstrap.cpp"
   "native_player_method_dispatcher.cpp"
   "native_player_registry.cpp"
+  "renderer_event_bridge.cpp"
   "startup_trace.cpp"
   "utils.cpp"
   "win32_window.cpp"

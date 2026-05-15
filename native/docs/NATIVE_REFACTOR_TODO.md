@@ -608,6 +608,7 @@ TODO:
 - [x] 新增 `NativeLoggingBootstrap`：收口 runner 默认日志路径、log file 清洗、native logging reconfigure、startup trace flush 和 crash handler opt-in。
 - [x] 新增 `ViewportCaptureService`：PNG/WIC save 和 BGRA hash/preview 归一。
 - [x] 新增 `FilePickerService`：收口 Windows file dialog / video filter / UTF-16 path conversion。
+- [x] 新增 `RendererEventBridge`：收口 EventChannel sink、renderer event queue、message-only drain window 和事件 payload 序列化。
 - [ ] 分批迁移，每批保持 MethodChannel payload 不变。
 
 建议验证：

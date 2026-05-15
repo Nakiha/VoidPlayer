@@ -13,13 +13,11 @@
 #include "native_logging_bootstrap.h"
 #include "native_player_method_dispatcher.h"
 #include "native_player_registry.h"
+#include "renderer_event_bridge.h"
 #include "viewport_capture_service.h"
 
 #include <cstdint>
-#include <atomic>
-#include <deque>
 #include <memory>
-#include <mutex>
 #include <wrl/client.h>
 
 /// Returns pointer to a static NakiVrDiagnostics (valid until next call).
@@ -37,8 +35,6 @@ public:
 
     VideoRendererPlugin(const VideoRendererPlugin&) = delete;
     VideoRendererPlugin& operator=(const VideoRendererPlugin&) = delete;
-
-    void DrainEventQueue();
 
 private:
     void RegisterMethodHandlers();
@@ -116,15 +112,10 @@ private:
     void SetEventSink(std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink);
     void ClearEventSink();
     void QueueRendererEvent(const vr::RendererEvent& event);
-    void RegisterEventDrainWindowProc();
 
     std::shared_ptr<vr::NativePlayer> player_;
     FlutterTextureBridge texture_bridge_;
-    HWND event_hwnd_ = nullptr;
-    std::mutex event_mutex_;
-    std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> event_sink_;
-    std::deque<flutter::EncodableValue> pending_events_;
-    std::atomic<int64_t> event_sequence_{0};
+    RendererEventBridge event_bridge_;
     Microsoft::WRL::ComPtr<IDXGIAdapter> dxgi_adapter_;
     NativeDiagnosticsProvider diagnostics_;
     NativePlayerMethodDispatcher method_dispatcher_;

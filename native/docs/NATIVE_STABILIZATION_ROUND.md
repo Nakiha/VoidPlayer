@@ -170,6 +170,7 @@ Fixed or reduced:
 - `AnalysisManager`: VAC2 session data, overlay chunk index/cache, decoded chunk LRU, and PTS-to-frame mapping moved into `AnalysisSession`.
 - `AnalysisManager`: overlay track registration/snapshot storage moved into `AnalysisOverlayTrackRegistry`, backed by per-track `AnalysisSession` snapshots instead of recursive manager instances.
 - Windows runner plugin: diagnostics, logging bootstrap, texture bridge, file picker, method dispatch, and MethodChannel diagnostics scope were split.
+- Windows runner plugin: renderer EventChannel sink, queued event payloads, and message-only drain window moved into `RendererEventBridge`.
 - Process-global logging/crash FFI ownership is now documented.
 
 Still active:

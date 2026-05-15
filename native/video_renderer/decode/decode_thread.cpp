@@ -675,11 +675,16 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
         hw_enabled_,
         hw_provider_.get(),
         hw_visibility_flush_pending_);
-    if (!publish_result.can_publish || publish_result.conversion_failed) {
+    const auto completion = plan_exact_seek_preview_completion(
+        publish_result.can_publish,
+        publish_result.conversion_failed,
+        pause_after_preroll_.load(std::memory_order_acquire),
+        publish_result.selected_pts_us,
+        publish_result.published_count,
+        publish_result.pending_count);
+    if (!completion.apply) {
         return;
     }
-    const auto completion = complete_exact_seek_preview_publish(
-        pause_after_preroll_.load(std::memory_order_acquire));
     output_buffer_.set_state(completion.output_state);
     if (completion.pause_decode) {
         decode_paused_.store(true, std::memory_order_release);
@@ -688,9 +693,9 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
     exact_seek_target_us_ = completion.exact_seek_target_us;
     drain_decoder_before_next_packet_ = completion.drain_decoder_before_next_packet;
     spdlog::info("[DecodeThread] Exact seek drain: preview frame ready pts={:.3f}s, published={} frames, pending={} frames, state->Ready",
-                 publish_result.selected_pts_us / 1e6,
-                 publish_result.published_count,
-                 publish_result.pending_count);
+                 completion.selected_pts_us / 1e6,
+                 completion.published_count,
+                 completion.pending_count);
 }
 
 bool DecodeThread::publish_best_exact_seek_frame() {

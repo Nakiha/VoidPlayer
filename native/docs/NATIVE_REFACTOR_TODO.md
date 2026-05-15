@@ -513,6 +513,10 @@ TODO:
    - 新增 `adjust_layout_view_offset_for_resize`，把 headless resize 时按旧/新 display size 缩放 `view_offset` 的 layout mutation 迁入 `layout_geometry`；`Renderer` 保留锁、target dimensions 和 D3D output resize。
    - 验证：native-only + smoke/viewport UI。
 
+88. [x] `DecodeThreadPostPreviewCompletionBoundary`
+   - 扩展 `exact_seek_publish_policy`，承接 exact-seek preview publish 成功 gate、pause/drain state facts 以及 completion log counters；`DecodeThread` 保留 TrackBuffer 状态写入、atomics 和日志发射。
+   - 验证：native-only + smoke/seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

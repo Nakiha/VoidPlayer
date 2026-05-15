@@ -156,6 +156,7 @@ Fixed or reduced:
 - `DecodeThread`: drain-before-next-packet and EOF codec drain send/receive decisions now live in `decode_drain_policy` with focused state tests.
 - `DecodeThread`: exact-seek reorder/pending candidate ownership and candidate memory counters now live in `ExactSeekCandidateStore` with focused state tests.
 - `DecodeThread`: AVFrame timestamp rescale to microseconds now lives in `frame_timestamp_rescaler` with focused state tests.
+- `DecodeThread`: exact-seek preview completion success gate, pause/drain state facts, and completion log counters now live in `exact_seek_publish_policy`.
 - `NativeResourceBudget`: track buffer queued-frame depth decision moved into `TrackBufferBudget` and is tested as a policy boundary.
 - `AudioEngine::Impl`: track registry, buffer publication facts, and decode pause/seek fanout moved into `AudioTrackRegistry`.
 - `AudioEngine::Impl`: nested FFmpeg audio decoder thread implementation moved into `AudioDecodeThread`.
@@ -169,13 +170,13 @@ Still active:
 
 - `Renderer` remains the coordination root.
 - `Renderer` still owns public layout API/redraw invalidation and deferred seek execution.
-- `DecodeThread` still owns exact-seek publish scheduling and post-preview completion wiring.
+- `DecodeThread` still owns exact-seek publish scheduling and drain-before-next-packet execution.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P133 DecodeThread Post-Preview Completion Boundary.
+Next patch: P134 Native GodObject Round Archive.
 
 Completed patch details through P115 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -526,6 +527,8 @@ Result:
 
 ### P133 - DecodeThread Post-Preview Completion Boundary
 
+Status: done in Patch 133.
+
 Goal:
 
 - Continue shrinking `DecodeThread` by extracting the exact-seek post-preview completion/drain scheduling facts that remain after `exact_seek_frame_publisher`.
@@ -536,6 +539,24 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Extended `exact_seek_publish_policy` with a completion plan that gates failed preview publishes and carries pause/drain state facts plus selected/published/pending log counters.
+- Rewired `DecodeThread::publish_exact_seek_window` to consume the completion plan while keeping TrackBuffer state writes, atomics, and logging emission inside `DecodeThread`.
+- Added focused native coverage for successful, skipped, and conversion-failed completion plans.
+
+### P134 - Native GodObject Round Archive
+
+Goal:
+
+- Move another early batch of completed GodObject patch details from this active cockpit into `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
+- Keep the active round focused on the current remaining GodObject risks and next patch queue.
+- Preserve the current cross-check summary and latest active status.
+
+Validation:
+
+- `git diff --check`
 
 ## Do-Not-Drift List
 

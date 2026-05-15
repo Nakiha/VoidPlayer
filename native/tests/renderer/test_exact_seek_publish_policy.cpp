@@ -44,6 +44,7 @@ TEST_CASE("ExactSeekPublishPolicy: publish window rejects invalid or full output
 TEST_CASE("ExactSeekPublishPolicy: successful preview completion resets seek state",
           "[decode_thread][exact_seek_publish]") {
     auto completion = complete_exact_seek_preview_publish(false);
+    REQUIRE(completion.apply);
     REQUIRE(completion.output_state == TrackState::Ready);
     REQUIRE_FALSE(completion.pause_decode);
     REQUIRE_FALSE(completion.post_seek);
@@ -52,4 +53,44 @@ TEST_CASE("ExactSeekPublishPolicy: successful preview completion resets seek sta
 
     completion = complete_exact_seek_preview_publish(true);
     REQUIRE(completion.pause_decode);
+}
+
+TEST_CASE("ExactSeekPublishPolicy: completion plan gates failed preview publish",
+          "[decode_thread][exact_seek_publish]") {
+    auto completion = plan_exact_seek_preview_completion(
+        true,
+        false,
+        true,
+        1230000,
+        3,
+        2);
+    REQUIRE(completion.apply);
+    REQUIRE(completion.pause_decode);
+    REQUIRE(completion.output_state == TrackState::Ready);
+    REQUIRE_FALSE(completion.post_seek);
+    REQUIRE(completion.exact_seek_target_us == -1);
+    REQUIRE(completion.drain_decoder_before_next_packet);
+    REQUIRE(completion.selected_pts_us == 1230000);
+    REQUIRE(completion.published_count == 3);
+    REQUIRE(completion.pending_count == 2);
+
+    completion = plan_exact_seek_preview_completion(
+        false,
+        false,
+        true,
+        1230000,
+        3,
+        2);
+    REQUIRE_FALSE(completion.apply);
+    REQUIRE_FALSE(completion.pause_decode);
+    REQUIRE(completion.published_count == 0);
+
+    completion = plan_exact_seek_preview_completion(
+        true,
+        true,
+        true,
+        1230000,
+        3,
+        2);
+    REQUIRE_FALSE(completion.apply);
 }

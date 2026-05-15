@@ -930,6 +930,25 @@ Result:
 - Added `analysis-off-ffi-on-tests-off` to keep FFI builds covered without `analysis_lib`.
 - Added `analysis-off-ffi-off-tests-on` to keep no-FFI test generation covered without `test_ffi_c`.
 
+### P157 - Native Target Boundary Policy
+
+Status: done in Patch 157.
+
+Goal:
+
+- Close the documentation half of the target-boundary work before larger target renames.
+- Make public/internal target ownership explicit so future refactors do not reintroduce analysis/runner coupling.
+
+Validation:
+
+- Documentation-only change; reviewed links from `ARCHITECTURE.md` and `BUILD_AND_TEST.md`.
+
+Result:
+
+- Added `native/docs/TARGET_BOUNDARIES.md` with current targets, feature-option requirements, planned target split, and public/internal ownership policy.
+- Documented `BUILD_ANALYSIS` alongside the existing CMake options.
+- Marked the target-boundary design and public/internal policy tracker items complete.
+
 ## Do-Not-Drift List
 
 - Do not let runner plugin cosmetics displace the remaining `review_godobject.md` owner-boundary work.

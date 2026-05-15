@@ -725,11 +725,11 @@ Status: partially done in Patch 153; tightened again in Patch 155.
 
 TODO:
 
-- [ ] 设计 target 边界：`void_core`、`void_media_ffmpeg`、`void_render_d3d11`、`void_player`、`void_analysis`、`void_ffi`、`void_flutter_windows_plugin`。
+- [x] 设计 target 边界：`void_core`、`void_media_ffmpeg`、`void_render_d3d11`、`void_player`、`void_analysis`、`void_ffi`、`void_flutter_windows_plugin`。
 - [x] 先增加 feature options，不急着一次重命名 target。
 - [x] 让 `BUILD_ANALYSIS=OFF` 时 renderer/player/FFI 能构建；renderer analysis overlay draw path 返回 no-op，memory snapshot helper 保持可用。
 - [x] 让 `BUILD_FFI=OFF`、`BUILD_PYTHON=OFF`、`BUILD_TESTS=OFF` 的构建路径干净；FFI C smoke 只在 FFI target 存在时生成，dist 子目录只在对应 target 存在时创建。
-- [ ] 记录 public/internal target policy。
+- [x] 记录 public/internal target policy。
 
 建议验证：
 

@@ -105,6 +105,7 @@ python native/build.py
 | `BUILD_FFI` | `ON` | 构建 C FFI DLL |
 | `BUILD_PYTHON` | `ON` | 构建 pybind11 Python 绑定；找不到 Python/pybind11 时自动关闭 |
 | `BUILD_TESTS` | `ON` | 构建 CTest 测试目标 |
+| `BUILD_ANALYSIS` | `ON` | 构建 analysis cache/overlay/CLI；关闭时 renderer 使用 no-op overlay stub，FFI/player 仍可构建 |
 | `BUILD_BENCHMARKS` | `OFF` | 构建 pipeline benchmark |
 
 CI 入口位于 `.github/workflows/native.yml`，包含完整 `python dev.py test --native-only`，并额外覆盖 `BUILD_PYTHON=OFF`、`BUILD_FFI=ON/OFF`、`BUILD_TESTS=ON/OFF` 的 clean configure + build 组合；FFI/tests 组合还会运行 `test_ffi_c` ABI smoke。

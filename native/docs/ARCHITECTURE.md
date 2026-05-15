@@ -118,6 +118,7 @@ Video File
 |------|------|
 | [线程模型](THREADING_MODEL.md) | 线程角色、锁策略、渲染循环 |
 | [数据管线](DATA_PIPELINE.md) | 帧格式变迁、零拷贝路径 |
+| [Target 边界](TARGET_BOUNDARIES.md) | CMake target 的 public/internal 边界、feature options 与后续拆分准则 |
 | [时钟与同步](CLOCK_AND_SYNC.md) | Clock API、倍速、A/V 同步算法 |
 | [缓冲设计](BUFFER_DESIGN.md) | 队列、环形缓冲、状态机、Preroll |
 | [解码管线](DECODE_PIPELINE.md) | 软解/硬解路径、HwDecodeProvider |

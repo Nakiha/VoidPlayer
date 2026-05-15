@@ -213,7 +213,6 @@ Accepted:
 Remaining:
 
 - Move heavy add/remove/recreate open/stop work out of long `state_mutex_` critical sections.
-- Mark render-loop exception exit as terminal/error state.
 
 ## Active Patch Queue
 
@@ -693,6 +692,30 @@ Result:
 - Added a focused `clear_event_callback()` helper guarded by `event_callback_mutex_`.
 - `shutdown()` clears the callback on the no-resource early-return path.
 - `release_resources_locked()` clears the callback before tearing down renderer-owned resources.
+
+### P146 - Renderer Render-Loop Crash Terminal State
+
+Status: done in Patch 146.
+
+Goal:
+
+- Make the render-loop exception boundary enter an explicit terminal runtime state instead of leaving `initialized_` true while the render thread is dead.
+- Keep device-lost handling separate from non-D3D runtime exceptions.
+- Preserve normal shutdown behavior, where resource release resets renderer state after the render thread joins.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Coverage gap:
+
+- Current tests cover the normal render loop and shutdown path, but do not fault-inject an exception inside `render_loop_body()`.
+
+Result:
+
+- Added `enter_terminal_render_loop_error_locked()` for non-D3D render-loop crashes.
+- The render-loop `std::exception` and unknown-exception catches now mark `running_=false`, `playing_=false`, `initialized_=false`, pause playback/decode, and set `device_state_` to `Terminal`.
 
 ## Do-Not-Drift List
 

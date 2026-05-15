@@ -339,6 +339,8 @@ private:
     /// implemented yet, so this stops rendering and leaves teardown to shutdown.
     /// Caller must hold state_mutex_.
     void enter_terminal_device_lost_locked(const char* operation);
+    /// Caller must hold state_mutex_.
+    void enter_terminal_render_loop_error_locked(const char* reason);
     void reset_d3d_metrics();
     void assign_missing_track_generations_locked();
     D3D11Device* d3d_device() const;

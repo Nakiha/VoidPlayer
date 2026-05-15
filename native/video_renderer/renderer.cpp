@@ -945,6 +945,21 @@ void Renderer::enter_terminal_device_lost_locked(const char* operation) {
     device_state_.store(RendererDeviceState::Terminal, std::memory_order_release);
 }
 
+void Renderer::enter_terminal_render_loop_error_locked(const char* reason) {
+    if (device_state_.load(std::memory_order_acquire) == RendererDeviceState::Terminal) {
+        return;
+    }
+    spdlog::error(
+        "[Renderer] Render loop entered terminal runtime state after {}",
+        reason);
+    running_ = false;
+    playing_ = false;
+    initialized_ = false;
+    playback_->pause();
+    set_decode_paused_for_all_tracks(true);
+    device_state_.store(RendererDeviceState::Terminal, std::memory_order_release);
+}
+
 void Renderer::present_frame(const PresentDecision& decision) {
     RendererDrawSnapshot snapshot;
     {
@@ -1336,12 +1351,12 @@ void Renderer::render_loop() noexcept {
         render_loop_body();
     } catch (const std::exception& e) {
         spdlog::error("[Renderer] Render loop crashed: {}", e.what());
-        running_ = false;
-        playing_ = false;
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        enter_terminal_render_loop_error_locked("std::exception");
     } catch (...) {
         spdlog::error("[Renderer] Render loop crashed with an unknown exception");
-        running_ = false;
-        playing_ = false;
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        enter_terminal_render_loop_error_locked("unknown exception");
     }
 
     pending_width_.store(0, std::memory_order_release);

@@ -139,6 +139,7 @@ Fixed or reduced:
 - `Renderer`: per-track seek target/hardware/codec warning facts moved into `track_lifecycle`; Renderer keeps logging and seek actions.
 - `Renderer`: per-track seek transition/recreate input assembly moved into `track_lifecycle`; Renderer keeps hook wiring and seek/recreate actions.
 - `Renderer`: per-track seek execution result handling moved into `track_lifecycle`; Renderer refreshes the post-recreate slot and keeps logging.
+- `Renderer`: per-slot seek facts/transition/plan/recreate-decision/execution orchestration moved into `track_lifecycle`; Renderer keeps global seek state, member-capturing hooks, and logs.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
@@ -150,14 +151,14 @@ Still active:
 
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
-- `Renderer` still owns layout mutation, public playback commands, global seek clock/deferred gates, and per-track seek orchestration.
+- `Renderer` still owns layout mutation, public playback commands, global seek clock/deferred gates, and seek logging.
 - `DecodeThread` main loop still owns codec send/receive, EOF drain, AVFrame ownership, and hardware visibility transitions.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P102 Renderer Seek Slot Application Boundary.
+Next patch: P103 Renderer Step Forward Fallback Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -205,16 +206,37 @@ Validation:
 
 ### P102 - Renderer Seek Slot Application Boundary
 
+Status: done in Patch 102.
+
 Goal:
 
 - Move the remaining per-slot seek orchestration inside `Renderer::seek_internal()` into a track-lifecycle helper that owns facts inspection, transition preparation, plan construction, recreate decision, and execution result assembly.
 - Keep Renderer responsible for building member-capturing hooks, top-level pending preview/global clock state, and final logging/callback-visible side effects.
 - Preserve all seek logs and paused HEVC recreate behavior.
 
+Result:
+
+- Added `TrackSeekSlotApplicationHooks`, `TrackSeekSlotApplicationResult`, and `apply_track_seek_to_slot()` to `track_lifecycle`.
+- `Renderer::seek_internal()` now delegates per-slot seek facts, preparation, plan, HEVC recreate decision, and execution result assembly.
+- Added native coverage for empty-slot no-op and active-slot seek target/flush/pending-seek behavior.
+
 Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+### P103 - Renderer Step Forward Fallback Boundary
+
+Goal:
+
+- Move `Renderer::step_forward()` exact-seek fallback target calculation into `track_step_policy`.
+- Keep Renderer responsible for the wait loop, playback clock mutation, seek execution, draw/log calls, and lifecycle locking.
+- Preserve cache-miss step-forward target clamping and log values.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_step_forward_visual_regression.csv`
 
 ## Do-Not-Drift List
 

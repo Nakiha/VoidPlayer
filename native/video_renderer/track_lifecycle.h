@@ -254,6 +254,30 @@ TrackSeekExecutionResult apply_track_seek_execution_result(
     const HevcSeekRecreateDecision& hevc_recreate_decision,
     bool recreated_for_seek);
 
+struct TrackSeekSlotApplicationHooks {
+    TrackSeekPreparationHooks preparation;
+    std::function<bool(size_t slot, int64_t target_pts_us, SeekType type)>
+        recreate_pipeline_for_seek;
+};
+
+struct TrackSeekSlotApplicationResult {
+    bool slot_present = false;
+    TrackSeekFacts facts;
+    TrackSeekPreparationResult preparation;
+    TrackSeekTransitionPlan plan;
+    HevcSeekRecreateDecision hevc_recreate_decision;
+    TrackSeekExecutionResult execution;
+};
+
+TrackSeekSlotApplicationResult apply_track_seek_to_slot(
+    TrackPipelineManager& tracks,
+    size_t slot,
+    int64_t global_target_pts_us,
+    SeekType type,
+    bool playing,
+    bool force_recreate_paused_hevc,
+    const TrackSeekSlotApplicationHooks& hooks);
+
 void submit_track_seek_after_recreate(
     TrackPipeline& track,
     int64_t target_pts_us,

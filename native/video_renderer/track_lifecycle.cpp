@@ -517,6 +517,49 @@ TrackSeekExecutionResult apply_track_seek_execution_result(
     return result;
 }
 
+TrackSeekSlotApplicationResult apply_track_seek_to_slot(
+    TrackPipelineManager& tracks,
+    size_t slot,
+    int64_t global_target_pts_us,
+    SeekType type,
+    bool playing,
+    bool force_recreate_paused_hevc,
+    const TrackSeekSlotApplicationHooks& hooks) {
+    TrackSeekSlotApplicationResult result;
+    auto* track = tracks[slot].get();
+    if (!track) {
+        return result;
+    }
+
+    result.slot_present = true;
+    result.facts = inspect_track_seek_facts(
+        *track, global_target_pts_us, type);
+    const TrackSeekPreparationConfig seek_prep_config{
+        result.facts.hardware_decode_enabled,
+    };
+    result.preparation =
+        prepare_track_seek_transition(*track, seek_prep_config, hooks.preparation);
+    result.plan = build_track_seek_transition_plan(
+        *track, result.facts, result.preparation, playing,
+        force_recreate_paused_hevc, type);
+    result.hevc_recreate_decision =
+        choose_hevc_seek_recreate(result.plan.hevc_recreate_input);
+    const bool recreated_for_seek =
+        result.hevc_recreate_decision.should_recreate_pipeline &&
+        hooks.recreate_pipeline_for_seek &&
+        hooks.recreate_pipeline_for_seek(
+            slot, result.facts.target.target_us, result.plan.seek_type);
+
+    track = tracks[slot].get();
+    if (!track) {
+        return result;
+    }
+    result.execution = apply_track_seek_execution_result(
+        *track, result.facts.target.target_us, result.plan,
+        result.hevc_recreate_decision, recreated_for_seek);
+    return result;
+}
+
 void submit_track_seek_after_recreate(
     TrackPipeline& track,
     int64_t target_pts_us,

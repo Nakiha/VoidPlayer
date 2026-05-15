@@ -393,9 +393,13 @@ TODO:
    - 已把 `Renderer::seek_internal()` 中 HEVC recreate decision 后的 error/coalesce/result handling 和 seek submission 迁入 track lifecycle helper。
    - 验证：native-only + smoke/seek UI。
 
-58. [ ] `TrackSeekSlotApplication`
-   - 后续继续把 `Renderer::seek_internal()` 中 per-slot facts / transition / plan / decision / execution 串联成一个 track lifecycle 边界，Renderer 只保留 hooks、全局 seek 状态和日志。
+58. [x] `TrackSeekSlotApplication`
+   - 已把 `Renderer::seek_internal()` 中 per-slot facts / transition / plan / decision / execution 串联成一个 track lifecycle 边界，Renderer 只保留 hooks、全局 seek 状态和日志。
    - 验证：native-only + smoke/seek UI。
+
+59. [ ] `StepForwardExactSeekFallback`
+   - 后续继续把 `Renderer::step_forward()` 中 cache-miss exact-seek fallback target 计算迁入 track step policy，Renderer 保留 wait loop / seek / draw / log。
+   - 验证：native-only + smoke/step-forward UI。
 
 ## P1 - Windows Runner Plugin Split
 

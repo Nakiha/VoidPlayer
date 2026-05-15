@@ -375,10 +375,30 @@ void Renderer::seek_internal(int64_t target_pts_us,
 
     bool applied_seek = false;
     for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks_[i]) continue;
-        auto* track = tracks_[i].get();
-        const auto seek_facts =
-            inspect_track_seek_facts(*track, target_pts_us, type);
+        const TrackSeekSlotApplicationHooks seek_hooks{
+            TrackSeekPreparationHooks{
+                [this](int file_id, bool paused) {
+                    if (audio_coordinator_) {
+                        audio_coordinator_->set_track_decode_paused(file_id, paused);
+                    }
+                },
+                [this, i]() {
+                    if (frame_presenter_) {
+                        frame_presenter_->reset_track(i);
+                    }
+                },
+            },
+            [this](size_t slot, int64_t seek_target_us, SeekType seek_type) {
+                return recreate_pipeline_for_seek(slot, seek_target_us, seek_type);
+            },
+        };
+        const auto seek_result = apply_track_seek_to_slot(
+            tracks_, i, target_pts_us, type, playing_.load(),
+            force_recreate_paused_hevc, seek_hooks);
+        if (!seek_result.slot_present) {
+            continue;
+        }
+        const auto& seek_facts = seek_result.facts;
         if (seek_facts.warn_h264_flv_exact_seek) {
             spdlog::warn("[Renderer] Exact seek on H.264/FLV is best-effort: "
                          "streams that omit SPS/PPS on IDR frames can decode "
@@ -393,39 +413,8 @@ void Renderer::seek_internal(int64_t target_pts_us,
                          track_target.requested_target_us / 1e6,
                          track_target.target_us / 1e6);
         }
-        const TrackSeekPreparationConfig seek_prep_config{
-            seek_facts.hardware_decode_enabled,
-        };
-        const TrackSeekPreparationHooks seek_prep_hooks{
-            [this](int file_id, bool paused) {
-                if (audio_coordinator_) {
-                    audio_coordinator_->set_track_decode_paused(file_id, paused);
-                }
-            },
-            [this, i]() {
-                if (frame_presenter_) {
-                    frame_presenter_->reset_track(i);
-                }
-            },
-        };
-        const auto seek_prep =
-            prepare_track_seek_transition(*track, seek_prep_config, seek_prep_hooks);
-        const auto seek_plan = build_track_seek_transition_plan(
-            *track, seek_facts, seek_prep, playing_.load(),
-            force_recreate_paused_hevc, type);
-        const auto hevc_recreate_decision =
-            choose_hevc_seek_recreate(seek_plan.hevc_recreate_input);
-        const bool recreated_for_seek =
-            hevc_recreate_decision.should_recreate_pipeline &&
-            recreate_pipeline_for_seek(i, track_target.target_us,
-                                       seek_plan.seek_type);
-        track = tracks_[i].get();
-        if (!track) {
-            continue;
-        }
-        const auto seek_execution = apply_track_seek_execution_result(
-            *track, track_target.target_us, seek_plan,
-            hevc_recreate_decision, recreated_for_seek);
+        const auto& seek_prep = seek_result.preparation;
+        const auto& seek_execution = seek_result.execution;
         if (seek_execution.coalescing_transition) {
             spdlog::info("[Renderer] seek_internal: track[{}] coalescing HEVC HW seek during transition "
                          "(buf_state_before={}, target={:.3f}s)",
@@ -434,6 +423,10 @@ void Renderer::seek_internal(int64_t target_pts_us,
                          track_target.target_us / 1e6);
         }
         if (!seek_execution.applied_seek) {
+            continue;
+        }
+        auto* track = tracks_[i].get();
+        if (!track) {
             continue;
         }
         applied_seek = true;

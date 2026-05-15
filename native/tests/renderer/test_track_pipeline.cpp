@@ -1801,6 +1801,69 @@ TEST_CASE("TrackLifecycle applies seek execution results",
     REQUIRE_FALSE(track.seek_controller->has_pending_seek());
 }
 
+TEST_CASE("TrackLifecycle applies seek to slots",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineManager manager;
+    auto track = std::make_unique<TrackPipeline>();
+    track->file_id = 88;
+    track->offset_us = 100000;
+    track->packet_queue = std::make_unique<PacketQueue>();
+    track->audio_packet_queue = std::make_unique<PacketQueue>();
+    track->track_buffer = std::make_shared<TrackBuffer>(4, 1);
+    track->track_buffer->set_state(TrackState::Ready);
+    track->seek_controller = std::make_unique<SeekController>();
+
+    TextureFrame frame;
+    frame.pts_us = 1000;
+    track->track_buffer->push_frame(frame);
+    manager[1] = std::move(track);
+
+    int audio_pause_count = 0;
+    int recreate_count = 0;
+    const TrackSeekSlotApplicationHooks hooks{
+        TrackSeekPreparationHooks{
+            [&](int file_id, bool paused) {
+                REQUIRE(file_id == 88);
+                REQUIRE(paused);
+                ++audio_pause_count;
+            },
+            {},
+        },
+        [&](size_t slot, int64_t, SeekType) {
+            REQUIRE(slot == 1);
+            ++recreate_count;
+            return false;
+        },
+    };
+
+    const auto empty_result = apply_track_seek_to_slot(
+        manager, 0, 1500000, SeekType::Exact, false, false, hooks);
+    REQUIRE_FALSE(empty_result.slot_present);
+
+    const auto result = apply_track_seek_to_slot(
+        manager, 1, 1500000, SeekType::Exact, false, false, hooks);
+    REQUIRE(result.slot_present);
+    REQUIRE(result.facts.target.requested_target_us == 1400000);
+    REQUIRE(result.facts.target.target_us == 1400000);
+    REQUIRE_FALSE(result.facts.hardware_decode_enabled);
+    REQUIRE(result.preparation.buffered_frames_before == 1);
+    REQUIRE(result.preparation.buffer_state_before == TrackState::Ready);
+    REQUIRE(result.plan.paused_seek);
+    REQUIRE(result.plan.seek_type == SeekType::Exact);
+    REQUIRE_FALSE(result.hevc_recreate_decision.should_recreate_pipeline);
+    REQUIRE(result.execution.applied_seek);
+    REQUIRE_FALSE(result.execution.recreated_for_seek);
+    REQUIRE(audio_pause_count == 1);
+    REQUIRE(recreate_count == 0);
+
+    auto pending_seek = manager[1]->seek_controller->take_pending();
+    REQUIRE(pending_seek);
+    REQUIRE(pending_seek->target_pts_us == 1400000);
+    REQUIRE(pending_seek->type == SeekType::Exact);
+    REQUIRE(manager[1]->track_buffer->state() == TrackState::Flushing);
+    REQUIRE(manager[1]->track_buffer->total_count() == 0);
+}
+
 TEST_CASE("TrackLifecycle submits seek after optional recreate",
           "[track_pipeline][track_lifecycle]") {
     TrackPipeline track;

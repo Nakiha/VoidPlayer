@@ -7,6 +7,7 @@ add_executable(video_renderer_tests
     ../video_renderer/exports/ffi_player_lifecycle.cpp
     ../video_renderer/exports/ffi_process_globals.cpp
     ../video_renderer/exports/ffi_player_registry.cpp
+    ../../windows/runner/native_player_registry.cpp
     renderer/test_utils.cpp
     renderer/test_clock.cpp
     renderer/test_logging.cpp
@@ -14,6 +15,7 @@ add_executable(video_renderer_tests
     renderer/test_ffi_player_commands.cpp
     renderer/test_ffi_player_lifecycle.cpp
     renderer/test_ffi_process_globals.cpp
+    renderer/test_native_diagnostics_session.cpp
     renderer/test_windows_crash_handler.cpp
     renderer/test_win_utf8.cpp
     renderer/test_native_player.cpp

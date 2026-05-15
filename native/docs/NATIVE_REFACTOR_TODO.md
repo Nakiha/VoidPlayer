@@ -594,7 +594,7 @@ TODO:
 证据：
 
 - 文件约 1415 行；同一文件仍处理 MethodChannel handlers、player lifecycle 和 FFI diagnostics export。
-- `NativePlayerRegistry` 仍是 FFI diagnostics 的 process-global player stats 入口，多 engine/multi player 语义仍需继续收口。
+- FFI diagnostics 仍通过 legacy process-global exported function 进入；active player lookup 已收口到 host-owned `NativeDiagnosticsSession`，多 engine 仍需要后续显式 session/host API。
 
 TODO:
 
@@ -604,7 +604,7 @@ TODO:
 - [x] 将 MethodChannel native/player diagnostics 聚合进 `NativeDiagnosticsProvider`，保持返回 payload 不变。
 - [x] 将 FFI flat diagnostics 聚合进 `NativeDiagnosticsProvider`，保持 `naki_vr_get_diagnostics` ABI 不变。
 - [x] 将 MethodChannel diagnostics active-player lookup 收口到 plugin instance scope。
-- [ ] 将 FFI diagnostics active-player lookup 从 process-global player registry 收口到 host/session scope。
+- [x] 将 FFI diagnostics active-player lookup 从 process-global player registry 收口到 host/session scope。
 - [x] 新增 `NativeLoggingBootstrap`：收口 runner 默认日志路径、log file 清洗、native logging reconfigure、startup trace flush 和 crash handler opt-in。
 - [x] 新增 `ViewportCaptureService`：PNG/WIC save 和 BGRA hash/preview 归一。
 - [x] 新增 `FilePickerService`：收口 Windows file dialog / video filter / UTF-16 path conversion。
@@ -628,9 +628,9 @@ TODO:
 
 TODO:
 
-- [x] 把裸 `g_player_weak` / `g_player_mutex` 收口到 `NativePlayerRegistry`。
+- [x] 把裸 `g_player_weak` / `g_player_mutex` 先收口到 registry，再替换为 host-owned `NativeDiagnosticsSession`。
 - [x] 把 MethodChannel diagnostics 的 active player 从 process-global registry 改为 plugin instance scope。
-- [ ] 把 FFI diagnostics 的 active player 从 process-global registry 改为 host/session scope。
+- [x] 把 FFI diagnostics 的 active player 从 process-global registry 改为 host/session scope。
 - [ ] analysis PTS callback 支持 handle/player scoped 注册；global callback 标记 deprecated。
 - [x] 移除 analysis legacy singleton reader API；Dart/native 读取路径改为 handle-scoped VAC2 session。
 - [x] 为 process-global logging/crash FFI API 增加文档警示。

@@ -116,6 +116,7 @@ private:
     std::shared_ptr<vr::NativePlayer> player_;
     FlutterTextureBridge texture_bridge_;
     RendererEventBridge event_bridge_;
+    std::shared_ptr<NativeDiagnosticsSession> diagnostics_session_;
     Microsoft::WRL::ComPtr<IDXGIAdapter> dxgi_adapter_;
     NativeDiagnosticsProvider diagnostics_;
     NativePlayerMethodDispatcher method_dispatcher_;

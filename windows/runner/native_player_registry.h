@@ -7,15 +7,26 @@ namespace vr {
 class NativePlayer;
 }
 
-class NativePlayerRegistry {
+class NativeDiagnosticsSession {
 public:
-    void Publish(const std::shared_ptr<vr::NativePlayer>& player);
-    void Clear();
-    std::shared_ptr<vr::NativePlayer> Pin() const;
+    void PublishPlayer(const std::shared_ptr<vr::NativePlayer>& player);
+    void ClearPlayer();
+    std::shared_ptr<vr::NativePlayer> PinPlayer() const;
 
 private:
     mutable std::mutex mutex_;
     std::weak_ptr<vr::NativePlayer> player_;
 };
 
-NativePlayerRegistry& GlobalNativePlayerRegistry();
+class NativeDiagnosticsSessionRegistry {
+public:
+    void Publish(const std::shared_ptr<NativeDiagnosticsSession>& session);
+    void Clear(const std::shared_ptr<NativeDiagnosticsSession>& session);
+    std::shared_ptr<NativeDiagnosticsSession> PinSession() const;
+
+private:
+    mutable std::mutex mutex_;
+    std::weak_ptr<NativeDiagnosticsSession> session_;
+};
+
+NativeDiagnosticsSessionRegistry& GlobalNativeDiagnosticsSessionRegistry();

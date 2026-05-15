@@ -93,16 +93,9 @@ void log_ffmpeg_runtime_versions() {
         format_ffmpeg_version(swresample_version()));
 }
 
-std::shared_ptr<vr::NativePlayer> pin_global_player() {
-    return GlobalNativePlayerRegistry().Pin();
-}
-
-void publish_global_player(const std::shared_ptr<vr::NativePlayer>& player) {
-    GlobalNativePlayerRegistry().Publish(player);
-}
-
-void clear_global_player() {
-    GlobalNativePlayerRegistry().Clear();
+std::shared_ptr<vr::NativePlayer> pin_diagnostics_player() {
+    auto session = GlobalNativeDiagnosticsSessionRegistry().PinSession();
+    return session ? session->PinPlayer() : nullptr;
 }
 
 bool require_player(const std::shared_ptr<vr::NativePlayer>& player, PluginResult* result) {
@@ -174,7 +167,7 @@ extern "C" __declspec(dllexport)
 const NakiVrDiagnostics* naki_vr_get_diagnostics() {
     thread_local NakiVrDiagnostics d{};
     static const NativeDiagnosticsProvider diagnostics;
-    diagnostics.FillFfiDiagnostics(d, pin_global_player());
+    diagnostics.FillFfiDiagnostics(d, pin_diagnostics_player());
     return &d;
 }
 
@@ -226,8 +219,10 @@ VideoRendererPlugin::VideoRendererPlugin(
     flutter::PluginRegistrarWindows*,
     flutter::TextureRegistrar* texture_registrar,
     IDXGIAdapter* dxgi_adapter)
-    : texture_bridge_(texture_registrar) {
+    : texture_bridge_(texture_registrar),
+      diagnostics_session_(std::make_shared<NativeDiagnosticsSession>()) {
     RegisterMethodHandlers();
+    GlobalNativeDiagnosticsSessionRegistry().Publish(diagnostics_session_);
 
     if (dxgi_adapter) {
         dxgi_adapter->AddRef();
@@ -242,14 +237,17 @@ VideoRendererPlugin::VideoRendererPlugin(
 
     // Register PTS callback for analysis FFI (avoids analysis_ffi depending on NativePlayer)
     naki_analysis_register_pts_callback([]() -> int64_t {
-        auto r = pin_global_player();
+        auto r = pin_diagnostics_player();
         return r ? r->current_pts_us() : 0;
     });
 }
 
 VideoRendererPlugin::~VideoRendererPlugin() {
     event_bridge_.Shutdown();
-    clear_global_player();
+    if (diagnostics_session_) {
+        diagnostics_session_->ClearPlayer();
+        GlobalNativeDiagnosticsSessionRegistry().Clear(diagnostics_session_);
+    }
     texture_bridge_.DetachFrameCallback();
     if (player_) {
         player_->set_event_callback(nullptr);
@@ -551,16 +549,16 @@ void VideoRendererPlugin::CreatePlayer(
     }
 
     player_ = std::make_shared<vr::NativePlayer>();
-    publish_global_player(player_);
+    diagnostics_session_->PublishPlayer(player_);
     if (!player_->initialize(config)) {
-        clear_global_player();
+        diagnostics_session_->ClearPlayer();
         player_.reset();
         result->Error("INIT_FAILED", "Failed to initialize player");
         return;
     }
 
     if (!texture_bridge_.Register(player_)) {
-        clear_global_player();
+        diagnostics_session_->ClearPlayer();
         player_->shutdown();
         player_.reset();
         result->Error("TEXTURE_FAILED", "Failed to register texture");
@@ -605,7 +603,7 @@ void VideoRendererPlugin::DestroyPlayer(
 
     try {
     if (player_) {
-        clear_global_player();
+        diagnostics_session_->ClearPlayer();
         texture_bridge_.DetachFrameCallback();
         player_->set_event_callback(nullptr);
         player_->shutdown();

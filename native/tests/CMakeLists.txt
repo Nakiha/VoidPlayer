@@ -126,28 +126,30 @@ if(BUILD_ANALYSIS AND BUILD_ANALYSIS_TESTS)
     set_tests_properties(analysis_tests PROPERTIES TIMEOUT 180)
 endif()
 
-# ==================== C FFI Validation ====================
+if(BUILD_FFI)
+    # ==================== C FFI Validation ====================
 
-add_executable(test_ffi_c
-    ffi/test_ffi_c.c
-)
+    add_executable(test_ffi_c
+        ffi/test_ffi_c.c
+    )
 
-set_target_properties(test_ffi_c PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>"
-)
+    set_target_properties(test_ffi_c PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>"
+    )
 
-target_include_directories(test_ffi_c PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/.."
-)
+    target_include_directories(test_ffi_c PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    )
 
-target_link_libraries(test_ffi_c PRIVATE
-    video_renderer_ffi
-    spdlog::spdlog_header_only
-)
+    target_link_libraries(test_ffi_c PRIVATE
+        video_renderer_ffi
+        spdlog::spdlog_header_only
+    )
 
-if(TARGET copy_ffmpeg_dlls)
-    add_dependencies(test_ffi_c copy_ffmpeg_dlls)
+    if(TARGET copy_ffmpeg_dlls)
+        add_dependencies(test_ffi_c copy_ffmpeg_dlls)
+    endif()
+
+    add_test(NAME test_ffi_c COMMAND test_ffi_c)
+    set_tests_properties(test_ffi_c PROPERTIES TIMEOUT 30)
 endif()
-
-add_test(NAME test_ffi_c COMMAND test_ffi_c)
-set_tests_properties(test_ffi_c PROPERTIES TIMEOUT 30)

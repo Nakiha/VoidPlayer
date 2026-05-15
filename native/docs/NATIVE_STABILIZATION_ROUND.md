@@ -885,6 +885,30 @@ Result:
 - Exact-seek candidate collection now caps the reorder list by dropping oldest candidates past the configured frame budget.
 - Added focused tests for default packet queue capacity and exact-seek reorder capping.
 
+### P155 - Optional Native Target Cleanup
+
+Status: done in Patch 155.
+
+Goal:
+
+- Finish the first target-boundary cleanup for disabled FFI/Python/tests combinations.
+- Avoid generating tests or staged dist directories for targets that were explicitly disabled.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `cmake -S native -B native/build-msvc-min-targets -DBUILD_ANALYSIS=OFF -DBUILD_FFI=OFF -DBUILD_PYTHON=OFF -DBUILD_TESTS=OFF`
+- `cmake --build native/build-msvc-min-targets --config Release --parallel`
+- Verified `native/build-msvc-min-targets/dist` stayed absent.
+- `cmake -S native -B native/build-msvc-no-ffi-tests -DBUILD_ANALYSIS=OFF -DBUILD_FFI=OFF -DBUILD_PYTHON=OFF -DBUILD_TESTS=ON -DBUILD_ANALYSIS_TESTS=OFF`
+- Verified generated files contained `video_renderer_tests` and no `test_ffi_c` target.
+
+Result:
+
+- `test_ffi_c` is now created only when `BUILD_FFI=ON`.
+- `NativeInstall.cmake` now creates `dist/ffi` and `dist/python` only when the corresponding FFI/Python target exists.
+- The all-off minimal native build now leaves no empty staging directories behind.
+
 ## Do-Not-Drift List
 
 - Do not let runner plugin cosmetics displace the remaining `review_godobject.md` owner-boundary work.

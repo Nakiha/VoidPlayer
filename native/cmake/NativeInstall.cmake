@@ -1,10 +1,8 @@
 set(DIST_DIR "${CMAKE_BINARY_DIR}/dist" CACHE PATH "Native staging directory")
 
-file(MAKE_DIRECTORY "${DIST_DIR}/python")
-file(MAKE_DIRECTORY "${DIST_DIR}/python/video_renderer")
-file(MAKE_DIRECTORY "${DIST_DIR}/ffi")
-
 if(TARGET video_renderer_ffi)
+    file(MAKE_DIRECTORY "${DIST_DIR}/ffi")
+
     add_custom_command(TARGET video_renderer_ffi POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${DIST_DIR}/ffi"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -47,6 +45,9 @@ if(TARGET video_renderer_ffi)
 endif()
 
 if(BUILD_PYTHON AND TARGET video_renderer_native)
+    file(MAKE_DIRECTORY "${DIST_DIR}/python")
+    file(MAKE_DIRECTORY "${DIST_DIR}/python/video_renderer")
+
     add_custom_command(TARGET video_renderer_native POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${DIST_DIR}/python/video_renderer"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

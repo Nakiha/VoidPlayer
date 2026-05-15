@@ -79,7 +79,7 @@ Active backlog:
 
 ### `review_godobject.md`
 
-Status: partially fixed, architecture backlog.
+Status: fixed for the current chat GodObject audit; architecture backlog remains.
 
 Fixed or reduced:
 
@@ -181,8 +181,9 @@ Still active:
 - `Renderer` remains the coordination root.
 - `Renderer` still owns public layout API/redraw invalidation and deferred seek execution.
 - `DecodeThread` still owns drain-before-next-packet execution and decode-loop control flow.
-- Target/feature boundaries are still too coupled.
-- Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
+- Runner plugin still has structural long tail in MethodChannel handler bodies and player lifecycle glue, but the chat-audit process-global/EventChannel/diagnostics risks are closed.
+- Target/feature boundaries are still too coupled; this is P2 target work rather than a remaining chat GodObject fix.
+- Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed; this is P2 budget work.
 
 ### `review_renderer.md`
 

@@ -589,11 +589,14 @@ TODO:
 
 ## P1 - Windows Runner Plugin Split
 
+Status: current chat audit done; structural long tail remains.
+
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。
 
 证据：
 
-- 文件约 1415 行；同一文件仍处理 MethodChannel handlers、player lifecycle 和 FFI diagnostics export。
+- 文件约 1430 行；同一文件仍保留 MethodChannel handler bodies 和 player lifecycle glue，这是后续普通结构性长尾。
+- logging/crash bootstrap、file picker、texture bridge、diagnostics provider、MethodChannel dispatcher、EventChannel bridge、FFI diagnostics active-player lookup 已拆出或收口。
 - FFI diagnostics 仍通过 legacy process-global exported function 进入；active player lookup 已收口到 host-owned `NativeDiagnosticsSession`，多 engine 仍需要后续显式 session/host API。
 
 TODO:
@@ -609,7 +612,7 @@ TODO:
 - [x] 新增 `ViewportCaptureService`：PNG/WIC save 和 BGRA hash/preview 归一。
 - [x] 新增 `FilePickerService`：收口 Windows file dialog / video filter / UTF-16 path conversion。
 - [x] 新增 `RendererEventBridge`：收口 EventChannel sink、renderer event queue、message-only drain window 和事件 payload 序列化。
-- [ ] 分批迁移，每批保持 MethodChannel payload 不变。
+- [x] 本轮 chat 点名的 runner GodContext 分批迁移完成，每批保持 MethodChannel / FFI payload 不变。
 
 建议验证：
 
@@ -622,9 +625,9 @@ TODO:
 
 证据：
 
-- `windows/runner/native_player_registry.*` 仍提供 process-global active player registry。
-- `windows/runner/analysis_ffi.cpp` 仍有 atomic global PTS callback 和 handle registry；legacy singleton reader API 已移除，overlay state 仍是 renderer-facing global。
-- FFI logging/crash convenience API 已在 public header 标明 process-global ownership；host-provided logger/sink 长期接口仍待设计。
+- `windows/runner/native_player_registry.*` 现在只保存 host-owned `NativeDiagnosticsSession`，不再保存 process-global active player weak pointer。
+- `windows/runner/analysis_ffi.cpp` 的 playback PTS callback 已支持 owner-scoped register/clear；legacy global callback 保留兼容。
+- FFI logging/crash convenience API 已在 public header 标明 process-global ownership；host-provided logger/sink 长期接口已记录为后续 contract。
 
 TODO:
 

@@ -502,6 +502,50 @@ void DecodeThread::notify_seek(int64_t target_pts_us, SeekType type) {
     seek_.pending = true;
 }
 
+std::optional<DecodeSeekNotification> DecodeThread::take_pending_seek_notification() {
+    std::lock_guard<std::mutex> lock(seek_mutex_);
+    return take_pending_decode_seek(seek_);
+}
+
+void DecodeThread::begin_seek_epoch(AVFrame* frame, const DecodeSeekNotification& notification) {
+    cancelled_.store(false, std::memory_order_release);
+
+    spdlog::info("[DecodeThread] === SEEK START: target={:.3f}s, type={}, "
+                 "input_pq={}, output_buf={}, buf_state={}",
+                 notification.target_pts_us / 1e6,
+                 decode_seek_type_name(notification.type),
+                 input_queue_.size(),
+                 output_buffer_.total_count(),
+                 static_cast<int>(output_buffer_.state()));
+
+    av_frame_unref(frame);
+    exact_seek_candidates_.clear();
+    drain_decoder_before_next_packet_ = false;
+
+    // Always reset codec state on seek. During add-track initial seek,
+    // demux can race ahead and the decoder may have already accepted
+    // packets even though no frames have been published yet.
+    safe_flush_codec();
+    spdlog::info("[DecodeThread] Seek flush: codec buffers flushed (hw={})", hw_enabled_);
+
+    // NOTE: Do NOT drain input queue here! The DemuxThread already
+    // flushes the queue before seeking and then pushes NEW packets.
+    // Draining here would discard those fresh post-seek packets.
+    const auto state = build_decode_seek_epoch_start_state(notification, hw_enabled_);
+    exact_seek_target_us_ = state.exact_seek_target_us;
+    if (notification.type == SeekType::Exact) {
+        spdlog::info("[DecodeThread] Exact seek: will discard frames < {:.3f}s",
+                     notification.target_pts_us / 1e6);
+    }
+
+    post_seek_ = state.post_seek;
+    hw_visibility_flush_pending_ = state.hw_visibility_flush_pending;
+    eof_flushed_ = state.eof_flushed;
+    decode_paused_.store(state.decode_paused, std::memory_order_release);
+    output_buffer_.set_state(state.output_state);
+    spdlog::info("[DecodeThread] === SEEK DONE: state->Buffering, post_seek fast preroll, waiting for new packets");
+}
+
 void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*)>& rescale_ts, int64_t target_us) {
     int send_ret = send_codec_packet_seh_guarded(codec_ctx_, nullptr);
     if (send_ret < 0 && send_ret != AVERROR(EAGAIN) && send_ret != AVERROR_EOF) {
@@ -745,59 +789,9 @@ void DecodeThread::run() {
                 : output_buffer_.has_preroll();
         };
 
-        // Handle seek notification — atomically take the pending seek
-        int64_t target_us = -1;
-        SeekType seek_type = SeekType::Keyframe;
-        {
-            std::lock_guard<std::mutex> lock(seek_mutex_);
-            if (seek_.pending) {
-                seek_.pending = false;
-                target_us = seek_.target_pts_us;
-                seek_type = seek_.type;
-            }
-        }
-        if (target_us >= 0) {
-            // Reset cancellation flag — this seek is now the active operation
-            cancelled_.store(false, std::memory_order_release);
-
-            spdlog::info("[DecodeThread] === SEEK START: target={:.3f}s, type={}, "
-                         "input_pq={}, output_buf={}, buf_state={}",
-                         target_us / 1e6,
-                         seek_type == SeekType::Exact ? "Exact" : "Keyframe",
-                         input_queue_.size(),
-                         output_buffer_.total_count(),
-                         static_cast<int>(output_buffer_.state()));
-
-            av_frame_unref(frame);
-            exact_seek_candidates_.clear();
-            drain_decoder_before_next_packet_ = false;
-
-            // Always reset codec state on seek. During add-track initial seek,
-            // demux can race ahead and the decoder may have already accepted
-            // packets even though no frames have been published yet.
-            safe_flush_codec();
-            spdlog::info("[DecodeThread] Seek flush: codec buffers flushed (hw={})", hw_enabled_);
-
-            // NOTE: Do NOT drain input queue here! The DemuxThread already
-            // flushes the queue before seeking and then pushes NEW packets.
-            // Draining here would discard those fresh post-seek packets.
-
-            // Set up exact seek frame discard if needed
-            if (seek_type == SeekType::Exact) {
-                exact_seek_target_us_ = target_us;
-                spdlog::info("[DecodeThread] Exact seek: will discard frames < {:.3f}s", target_us / 1e6);
-            } else {
-                exact_seek_target_us_ = -1;
-            }
-
-            // Fast preroll after seek: only need 1 frame to resume display
-            post_seek_ = true;
-            hw_visibility_flush_pending_ = hw_enabled_;
-
-            eof_flushed_ = false;
-            decode_paused_.store(false, std::memory_order_release);
-            output_buffer_.set_state(TrackState::Buffering);
-            spdlog::info("[DecodeThread] === SEEK DONE: state->Buffering, post_seek fast preroll, waiting for new packets");
+        const auto seek_notification = take_pending_seek_notification();
+        if (seek_notification.has_value()) {
+            begin_seek_epoch(frame, *seek_notification);
             continue;
         }
 

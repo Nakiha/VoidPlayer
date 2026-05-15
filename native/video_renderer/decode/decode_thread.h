@@ -2,6 +2,7 @@
 #include "media/packet_queue.h"
 #include "video_renderer/buffer/track_buffer.h"
 #include "video_renderer/decode/decoded_frame_publisher.h"
+#include "video_renderer/decode/decode_seek_epoch.h"
 #include "video_renderer/decode/exact_seek_candidate_store.h"
 #include "video_renderer/decode/frame_converter.h"
 #include "video_renderer/decode/hw/hw_decode_provider.h"
@@ -160,6 +161,12 @@ private:
     /// Log the FFmpeg hardware frame pool geometry once it is materialized.
     void log_hw_frame_context_once(const AVFrame* frame);
 
+    /// Atomically take the next pending seek notification, if any.
+    std::optional<DecodeSeekNotification> take_pending_seek_notification();
+
+    /// Reset decode-thread state for a new seek epoch.
+    void begin_seek_epoch(AVFrame* frame, const DecodeSeekNotification& notification);
+
     /// Flush codec buffers after seek.
     void safe_flush_codec();
 
@@ -192,12 +199,7 @@ private:
     // Seek coordination — protected by seek_mutex_ to avoid torn reads
     // between seek_target / seek_type / seek_pending
     std::mutex seek_mutex_;
-    struct SeekState {
-        bool pending = false;
-        int64_t target_pts_us = 0;
-        SeekType type = SeekType::Keyframe;
-    };
-    SeekState seek_;
+    DecodePendingSeekState seek_;
 
     std::atomic<bool> cancelled_{false};     // Set by notify_seek() to abort in-progress decode
     std::atomic<bool> decode_paused_{false};

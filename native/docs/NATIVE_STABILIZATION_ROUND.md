@@ -172,7 +172,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P117 DecodeThread Seek Epoch Boundary.
+Next patch: P118 DecodeThread Packet Consumption Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -541,6 +541,25 @@ Goal:
 - Continue reducing `DecodeThread` by extracting the seek notification take/reset/start-state preparation block from the main loop.
 - Keep codec flush, exact-seek target setup, post-seek preroll, and cancellation semantics unchanged.
 - Prefer a tested policy/helper for seek epoch state updates before moving broader EOF or frame lifetime choreography.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `decode_seek_epoch` for pending seek take/reset, seek type labeling, and exact/keyframe seek epoch start-state decisions.
+- Replaced the inline `DecodeThread::run()` seek block with `take_pending_seek_notification()` and `begin_seek_epoch()`, preserving codec flush, exact seek target setup, post-seek fast preroll, cancellation reset, and Buffering transition ordering.
+- Added native coverage for pending/idle/invalid seek notifications and exact/keyframe start-state differences.
+
+### P118 - DecodeThread Packet Consumption Boundary
+
+Goal:
+
+- Continue reducing `DecodeThread` by extracting packet-consumption decisions around pause, flushing, stale seek packets, codec send action, and AVPacket ownership cleanup.
+- Keep codec send ordering, cancellation semantics, queue EOF handling, and output state transitions unchanged.
+- Prefer tested policy/helper seams before moving any AVPacket lifetime code out of the decode loop.
 
 Validation:
 

@@ -453,6 +453,10 @@ TODO:
    - 新增 `frame_timestamp_rescaler` 承接 AVFrame PTS / best-effort PTS / DTS / duration 到微秒的转换语义；decode loop 不再携带成员捕获 lambda。
    - 验证：native-only + seek UI。
 
+73. [x] `DecodeThreadSeekEpochBoundary`
+   - 新增 `decode_seek_epoch` 承接 pending seek take/reset、seek type label 和 exact/keyframe seek epoch 起始状态决策；`DecodeThread` 保留 FFmpeg flush、buffer 状态写入和日志副作用。
+   - 验证：native-only + seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

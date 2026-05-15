@@ -108,6 +108,7 @@ Fixed or reduced:
 - `Renderer`: step-forward temporary video decode pause/resume fanout moved into `track_lifecycle`.
 - `Renderer`: shared step buffering gate moved into `track_lifecycle`.
 - `Renderer`: step-backward retreat fanout moved into `track_lifecycle`.
+- `Renderer`: step-backward retreat success reference-slot and clock-target calculation moved into `track_step_policy`.
 - `Renderer`: step-specific track helpers moved into dedicated `track_step_policy` owner.
 - `Renderer`: step-forward next-frame selection and consumed-frame draining moved into `track_step_policy`.
 - `Renderer`: step-forward successful-decision application, reference slot, and clock target calculation moved into `track_step_policy`.
@@ -161,7 +162,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P106 Renderer Step Backward Retreat Application Boundary.
+Next patch: P107 AudioEngine Track Registry Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -294,16 +295,37 @@ Validation:
 
 ### P106 - Renderer Step Backward Retreat Application Boundary
 
+Status: done in Patch 106.
+
 Goal:
 
 - Move `Renderer::step_backward()` successful retreat clock target calculation into `track_step_policy`.
 - Keep Renderer responsible for lifecycle locking, fallback seek execution, draw/log calls, and final paused-frame presentation.
 - Preserve retreat success behavior and existing step-backward fallback behavior.
 
+Result:
+
+- Added `StepBackwardRetreatApplication` and `choose_step_backward_retreat_application()` to `track_step_policy`.
+- `Renderer::step_backward()` now delegates retreat-success reference-slot and clock-target calculation.
+- Added native coverage for empty, active-frame, and missing-frame retreat application cases.
+
 Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_step_backward_visual_regression.csv`
+
+### P107 - AudioEngine Track Registry Boundary
+
+Goal:
+
+- Start addressing `review_godobject.md`'s `AudioEngine::Impl` finding by extracting track registry/query mutation policy out of the implementation body.
+- Keep waveOut/device submission, decoder thread lifecycle, and mixer behavior unchanged.
+- Preserve pause/no-PCM-consumption behavior and active-track selection semantics.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
 
 ## Do-Not-Drift List
 

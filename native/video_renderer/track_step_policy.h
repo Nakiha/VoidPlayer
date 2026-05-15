@@ -17,6 +17,16 @@ void apply_track_video_decode_pause_state(
 
 bool retreat_tracks_if_all_can_retreat(TrackPipelineManager& tracks);
 
+struct StepBackwardRetreatApplication {
+    int reference_slot = -1;
+    bool has_clock_target = false;
+    int64_t clock_target_us = 0;
+    int64_t presented_pts_us = 0;
+};
+
+StepBackwardRetreatApplication choose_step_backward_retreat_application(
+    const TrackPipelineManager& tracks);
+
 int64_t compute_min_current_frame_duration_us(
     const TrackPipelineManager& tracks);
 

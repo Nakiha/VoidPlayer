@@ -702,12 +702,10 @@ void Renderer::step_backward() {
         playing_ = false;
 
         if (retreat_tracks_if_all_can_retreat(tracks_)) {
-            int ref = first_active_track();
-            if (ref >= 0) {
-                auto frame = tracks_[ref]->track_buffer->peek(0);
-                if (frame.has_value()) {
-                    playback_->clock().seek(frame->pts_us + tracks_[ref]->offset_us);
-                }
+            const auto retreat_application =
+                choose_step_backward_retreat_application(tracks_);
+            if (retreat_application.has_clock_target) {
+                playback_->clock().seek(retreat_application.clock_target_us);
             }
         } else {
             // Cache miss: exact seek to (current_pts - frame_duration - margin)

@@ -56,6 +56,29 @@ bool retreat_tracks_if_all_can_retreat(TrackPipelineManager& tracks) {
     return true;
 }
 
+StepBackwardRetreatApplication choose_step_backward_retreat_application(
+    const TrackPipelineManager& tracks) {
+    StepBackwardRetreatApplication result;
+    result.reference_slot = tracks.first_active_slot();
+    if (result.reference_slot < 0) {
+        return result;
+    }
+
+    const auto slot = static_cast<size_t>(result.reference_slot);
+    if (!tracks[slot] || !tracks[slot]->track_buffer) {
+        return result;
+    }
+    auto frame = tracks[slot]->track_buffer->peek(0);
+    if (!frame.has_value()) {
+        return result;
+    }
+
+    result.presented_pts_us = frame->pts_us;
+    result.clock_target_us = frame->pts_us + tracks[slot]->offset_us;
+    result.has_clock_target = true;
+    return result;
+}
+
 int64_t compute_min_current_frame_duration_us(
     const TrackPipelineManager& tracks) {
     int64_t min_duration_us = std::numeric_limits<int64_t>::max();

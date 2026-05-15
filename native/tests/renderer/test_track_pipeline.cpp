@@ -1117,6 +1117,36 @@ TEST_CASE("TrackStepPolicy retreats tracks only when all can retreat",
     REQUIRE(failure_manager[1]->track_buffer->peek(0)->pts_us == 700);
 }
 
+TEST_CASE("TrackStepPolicy chooses step-backward retreat application",
+          "[track_pipeline][track_step_policy]") {
+    TrackPipelineManager empty_manager;
+    const auto empty = choose_step_backward_retreat_application(empty_manager);
+    REQUIRE(empty.reference_slot == -1);
+    REQUIRE_FALSE(empty.has_clock_target);
+
+    auto track = std::make_unique<TrackPipeline>();
+    track->offset_us = 50;
+    track->track_buffer = std::make_shared<TrackBuffer>();
+    TextureFrame frame;
+    frame.pts_us = 100;
+    track->track_buffer->push_frame(frame);
+
+    TrackPipelineManager manager;
+    manager[1] = std::move(track);
+    const auto application =
+        choose_step_backward_retreat_application(manager);
+    REQUIRE(application.reference_slot == 1);
+    REQUIRE(application.has_clock_target);
+    REQUIRE(application.presented_pts_us == 100);
+    REQUIRE(application.clock_target_us == 150);
+
+    manager[1]->track_buffer->clear_frames();
+    const auto missing_frame =
+        choose_step_backward_retreat_application(manager);
+    REQUIRE(missing_frame.reference_slot == 1);
+    REQUIRE_FALSE(missing_frame.has_clock_target);
+}
+
 TEST_CASE("TrackStepPolicy computes minimum current frame duration",
           "[track_pipeline][track_step_policy]") {
     TrackPipelineManager empty_manager;

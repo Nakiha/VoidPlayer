@@ -672,7 +672,7 @@ TODO:
 - [x] 给 DecodeThread EOF drain/exact-seek EOF publish decisions 增加更小粒度状态机单测。
 - [ ] 给 DecodeThread codec send/receive、AVFrame ownership 和硬解 visibility flush 增加更小粒度边界测试。
 - [x] 增加 shutdown during seek + recreate UI smoke。
-- [ ] 给 Renderer shutdown during capture/resize 增加 smoke/stress。
+- [x] 给 Renderer shutdown during capture/resize 增加 smoke/stress。
 - [x] 记录每个 stress test 的 seed 和失败复现命令入口。
 - [ ] 后续再接入 sanitizer/clang-cl 或 Windows Application Verifier。
 

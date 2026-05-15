@@ -806,6 +806,24 @@ Result:
 - Player command/lifecycle validation now pins the handle before validating config/path/layout/seek/speed/loop arguments and copies validation errors into the player error slot.
 - Mutating status APIs now return `NAKI_VR_ERR_NOT_INITIALIZED` before initialize and `NAKI_VR_ERR_INVALID_ARGUMENT` for unknown track `file_id`s.
 
+### P151 - Renderer Capture Resize Shutdown Stress
+
+Status: done in Patch 151.
+
+Goal:
+
+- Close the stress-test gap for shutdown racing headless capture and resize.
+- Exercise `capture_front_buffer()`, queued headless `resize()`, render-loop resize application, and `shutdown()` serialization under one deterministic test.
+
+Validation:
+
+- `python dev.py test --native-only`
+
+Result:
+
+- Added a deterministic headless renderer stress test with one capture thread and one resize thread running while the main thread calls `shutdown()`.
+- The test verifies capture/resize calls occurred, shutdown leaves the renderer uninitialized, and post-shutdown capture fails closed with cleared output.
+
 ## Do-Not-Drift List
 
 - Do not let runner plugin cosmetics displace the remaining `review_godobject.md` owner-boundary work.

@@ -497,6 +497,10 @@ TODO:
    - 新增 `ffi_process_globals` 承接 process-wide logging/crash handler convenience command bodies；`ffi_exports.cpp` 只保留对应 ABI guard shims。
    - 验证：native-only。
 
+84. [x] `RendererPlaybackCommandBoundary`
+   - 新增 `renderer_playback_command_policy` 承接 play/pause/step 的 deterministic command plan；`Renderer` 保留生命周期锁、playback clock ownership、seek reset 和 decode fanout 执行。
+   - 验证：native-only + smoke/seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

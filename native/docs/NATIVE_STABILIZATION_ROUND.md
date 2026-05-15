@@ -144,6 +144,7 @@ Fixed or reduced:
 - `Renderer`: per-track seek transition/recreate input assembly moved into `track_lifecycle`; Renderer keeps hook wiring and seek/recreate actions.
 - `Renderer`: per-track seek execution result handling moved into `track_lifecycle`; Renderer refreshes the post-recreate slot and keeps logging.
 - `Renderer`: per-slot seek facts/transition/plan/recreate-decision/execution orchestration moved into `track_lifecycle`; Renderer keeps global seek state, member-capturing hooks, and logs.
+- `Renderer`: public play/pause/step command intent moved into `renderer_playback_command_policy`; Renderer keeps locks, playback clock ownership, and command execution.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
@@ -164,14 +165,14 @@ Fixed or reduced:
 Still active:
 
 - `Renderer` remains the coordination root.
-- `Renderer` still owns layout mutation, public playback commands, global seek clock/deferred gates, and seek logging.
+- `Renderer` still owns layout mutation, global seek clock/deferred gates, and seek logging.
 - `DecodeThread` still owns exact-seek publish scheduling and post-preview completion wiring.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P129 Renderer Playback Command Boundary.
+Next patch: P130 Renderer Seek Clock Boundary.
 
 Completed patch details through P115 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -438,11 +439,32 @@ Result:
 
 ### P129 - Renderer Playback Command Boundary
 
+Status: done in Patch 129.
+
 Goal:
 
 - Continue shrinking `Renderer` by moving public playback command intent around play/pause/step fanout into a focused helper/policy.
 - Keep `Renderer` responsible for lifecycle locks, playback clock ownership, and public API shape; move only deterministic command fanout/transition facts first.
 - Preserve current play/pause/step behavior and existing UI playback regressions.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `renderer_playback_command_policy` for deterministic play/pause/step command plans.
+- Replaced the public playback command preflight logic in `Renderer` with policy calls while keeping locks, playback clock commands, seek reset, and decode fanout execution inside `Renderer`.
+- Added focused native coverage for play gating, pause intent, and step buffering/initialization gates.
+
+### P130 - Renderer Seek Clock Boundary
+
+Goal:
+
+- Continue shrinking `Renderer::seek_internal` by extracting the global seek clock/deferred-gate decision facts into a focused helper/policy.
+- Keep `Renderer` responsible for locks, playback clock mutation, pending seek-preview event state, callbacks, and per-track seek execution.
+- Preserve exact/keyframe seek semantics and paused HEVC deferred seek behavior.
 
 Validation:
 

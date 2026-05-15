@@ -3,6 +3,7 @@
 #include "video_renderer/layout_geometry.h"
 #include "video_renderer/layout_validation.h"
 #include "video_renderer/renderer_config_validation.h"
+#include "video_renderer/renderer_playback_command_policy.h"
 #include "video_renderer/track_lifecycle.h"
 #include "video_renderer/track_preroll_policy.h"
 #include "video_renderer/track_present_policy.h"
@@ -277,22 +278,28 @@ void Renderer::reset_d3d_metrics() {
 void Renderer::play() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
-    if (!initialized_ || playing_) return;
-    if (seek_coordinator_) {
+    const auto plan = plan_renderer_play_command(initialized_, playing_);
+    if (!plan.execute) return;
+    if (plan.reset_seek && seek_coordinator_) {
         seek_coordinator_->reset();
     }
 
-    apply_playback_decode_state_locked(true);
-    playback_->play();
-    playing_ = true;
+    apply_playback_decode_state_locked(plan.playback_active);
+    if (plan.play_clock) {
+        playback_->play();
+    }
+    playing_ = plan.playing;
 }
 
 void Renderer::pause() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
-    apply_playback_decode_state_locked(false);
-    playback_->pause();
-    playing_ = false;
+    const auto plan = plan_renderer_pause_command();
+    apply_playback_decode_state_locked(plan.playback_active);
+    if (plan.pause_clock) {
+        playback_->pause();
+    }
+    playing_ = plan.playing;
 }
 
 void Renderer::seek(int64_t target_pts_us, SeekType type, int64_t request_id) {
@@ -606,13 +613,15 @@ void Renderer::step_forward() {
 
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        if (!initialized_) return;
+        const auto step_plan = plan_renderer_step_command(
+            initialized_,
+            initialized_ && has_buffering_track(tracks_));
+        if (!step_plan.execute) return;
 
-        // If any track is still seeking, don't step from a half-updated buffer.
-        if (has_buffering_track(tracks_)) return;
-
-        playback_->clock().pause();
-        playing_ = false;
+        if (step_plan.pause_clock) {
+            playback_->clock().pause();
+        }
+        playing_ = step_plan.playing;
 
         if (build_step_decision_locked(step_decision)) {
             step_application = apply_step_decision_locked(step_decision);
@@ -691,15 +700,15 @@ void Renderer::step_backward() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        if (!initialized_) return;
+        const auto step_plan = plan_renderer_step_command(
+            initialized_,
+            initialized_ && has_buffering_track(tracks_));
+        if (!step_plan.execute) return;
 
-        // If any track is still seeking, don't allow stepping
-        // (prevents retreating to stale frames during async seek)
-        // Exception: tracks past their duration (Ready + no frames) don't block.
-        if (has_buffering_track(tracks_)) return;
-
-        playback_->clock().pause();
-        playing_ = false;
+        if (step_plan.pause_clock) {
+            playback_->clock().pause();
+        }
+        playing_ = step_plan.playing;
 
         if (retreat_tracks_if_all_can_retreat(tracks_)) {
             const auto retreat_application =

@@ -152,6 +152,7 @@ Fixed or reduced:
 - `AudioEngine::Impl`: nested FFmpeg audio decoder thread implementation moved into `AudioDecodeThread`.
 - `AudioEngine::Impl`: nested waveOut output thread and WinMM device loop moved into `WaveOutOutput`.
 - `AnalysisManager`: VAC2 session data, overlay chunk index/cache, decoded chunk LRU, and PTS-to-frame mapping moved into `AnalysisSession`.
+- `AnalysisManager`: overlay track registration/snapshot storage moved into `AnalysisOverlayTrackRegistry`, backed by per-track `AnalysisSession` snapshots instead of recursive manager instances.
 - Windows runner plugin: diagnostics, logging bootstrap, texture bridge, file picker, method dispatch, and MethodChannel diagnostics scope were split.
 - Process-global logging/crash FFI ownership is now documented.
 
@@ -166,7 +167,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P111 AnalysisManager Overlay Track Registry Boundary.
+Next patch: P112 DecodeThread Codec Loop Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -404,16 +405,37 @@ Validation:
 
 ### P111 - AnalysisManager Overlay Track Registry Boundary
 
+Status: done in Patch 111.
+
 Goal:
 
 - Continue reducing `AnalysisManager` by extracting overlay track registration/snapshot storage out of the singleton manager.
 - Prefer storing per-track `AnalysisSession` snapshots rather than recursive `AnalysisManager` instances if the current call sites allow it.
 - Preserve renderer-facing `overlay_track_snapshot()` behavior and FFI `set_overlay_track` / `clear_overlay_tracks` semantics.
 
+Result:
+
+- Added `AnalysisOverlayTrackRegistry` for overlay track set/clear/snapshot storage.
+- Overlay track snapshots now return `AnalysisSession` objects directly, and `AnalysisOverlayRenderer` reads per-track overlay data without recursive `AnalysisManager` instances.
+- Added native FFI coverage confirming overlay set/clear publishes readable per-track session snapshots.
+
 Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h264.csv`
+
+### P112 - DecodeThread Codec Loop Boundary
+
+Goal:
+
+- Resume `review_godobject.md`'s `DecodeThread` finding by extracting the next codec send/receive or frame ownership boundary from the main decode loop.
+- Preserve exact-seek, pause-after-preroll, EOF drain, and hardware visibility behavior already covered by focused policy tests.
+- Pick the exact cut after re-reading current `decode_thread.*`, because several seek/pause policies have already been split.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
 
 ## Do-Not-Drift List
 

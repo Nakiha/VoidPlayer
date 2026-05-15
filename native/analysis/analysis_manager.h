@@ -1,11 +1,11 @@
 #pragma once
 
+#include "analysis/analysis_overlay_track_registry.h"
 #include "analysis/analysis_session.h"
 #include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -43,20 +43,19 @@ public:
 
     bool set_overlay_track(int track_file_id, const std::string& analysis_path);
     void clear_overlay_tracks();
-    std::vector<std::pair<int, std::shared_ptr<const AnalysisManager>>>
+    std::vector<std::pair<int, std::shared_ptr<const AnalysisSession>>>
     overlay_track_snapshot() const;
+    std::shared_ptr<const AnalysisSession> session_snapshot() const;
 
     // Derive current frame index from PTS
     int current_frame_idx(int64_t pts_us) const;
 
 private:
-    std::shared_ptr<const AnalysisSession> session_snapshot() const;
     bool load_vac2(const std::string& analysis_path);
 
     mutable std::mutex session_mutex_;
     std::shared_ptr<const AnalysisSession> session_;
-    mutable std::mutex overlay_tracks_mutex_;
-    std::unordered_map<int, std::shared_ptr<AnalysisManager>> overlay_tracks_;
+    AnalysisOverlayTrackRegistry overlay_tracks_;
 };
 
 } // namespace vr::analysis

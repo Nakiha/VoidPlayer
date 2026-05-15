@@ -76,30 +76,16 @@ VachunkOverlayFrameData AnalysisManager::read_overlay_frame(int frame_idx) const
 }
 
 bool AnalysisManager::set_overlay_track(int track_file_id, const std::string& analysis_path) {
-    if (track_file_id < 0) return false;
-    auto track_manager = std::make_shared<AnalysisManager>();
-    if (!track_manager->load(analysis_path)) {
-        return false;
-    }
-    std::lock_guard<std::mutex> lock(overlay_tracks_mutex_);
-    overlay_tracks_[track_file_id] = std::move(track_manager);
-    return true;
+    return overlay_tracks_.set_track(track_file_id, analysis_path);
 }
 
 void AnalysisManager::clear_overlay_tracks() {
-    std::lock_guard<std::mutex> lock(overlay_tracks_mutex_);
     overlay_tracks_.clear();
 }
 
-std::vector<std::pair<int, std::shared_ptr<const AnalysisManager>>>
+std::vector<std::pair<int, std::shared_ptr<const AnalysisSession>>>
 AnalysisManager::overlay_track_snapshot() const {
-    std::lock_guard<std::mutex> lock(overlay_tracks_mutex_);
-    std::vector<std::pair<int, std::shared_ptr<const AnalysisManager>>> tracks;
-    tracks.reserve(overlay_tracks_.size());
-    for (const auto& [track_file_id, manager] : overlay_tracks_) {
-        tracks.emplace_back(track_file_id, manager);
-    }
-    return tracks;
+    return overlay_tracks_.snapshot();
 }
 
 int AnalysisManager::current_frame_idx(int64_t pts_us) const {

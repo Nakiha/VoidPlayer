@@ -429,9 +429,13 @@ TODO:
    - 已继续收 chat 点名的 `AnalysisManager` 隐形 God Object，把 VAC2 session / overlay chunk index-cache / decoded chunk LRU / PTS 映射拆到 `AnalysisSession`。
    - 验证：native-only + smoke/analysis UI。
 
-67. [ ] `AnalysisOverlayTrackRegistry`
-   - 后续继续收 `AnalysisManager` 隐形 God Object，把 overlay track registry 从 singleton manager 中拆出，尽量消除 recursive AnalysisManager 实例。
-   - 验证：native-only + smoke UI。
+67. [x] `AnalysisOverlayTrackRegistry`
+   - 已继续收 `AnalysisManager` 隐形 God Object，把 overlay track registry 从 singleton manager 中拆出，并改为保存 per-track `AnalysisSession`，消除了 recursive AnalysisManager 实例。
+   - 验证：native-only + smoke/analysis UI。
+
+68. [ ] `DecodeThreadCodecLoopBoundary`
+   - 后续继续收 chat 点名的 `DecodeThread` 大状态机，先复核当前 codec send/receive、AVFrame ownership、硬解 visibility flush 还剩哪些边界没拆。
+   - 验证：native-only + seek UI。
 
 ## P1 - Windows Runner Plugin Split
 

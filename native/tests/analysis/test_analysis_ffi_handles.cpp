@@ -57,7 +57,13 @@ TEST_CASE("analysis FFI loads and clears overlay tracks",
     REQUIRE(data.ensure());
 
     REQUIRE(naki_analysis_set_overlay_track(7, data.vac2_base_path().c_str()) == 1);
+    auto snapshot = vr::analysis::AnalysisManager::instance().overlay_track_snapshot();
+    REQUIRE(snapshot.size() == 1);
+    REQUIRE(snapshot[0].first == 7);
+    REQUIRE(snapshot[0].second != nullptr);
+    REQUIRE(snapshot[0].second->frame_count() > 0);
     naki_analysis_clear_overlay_tracks();
+    REQUIRE(vr::analysis::AnalysisManager::instance().overlay_track_snapshot().empty());
     REQUIRE(naki_analysis_set_overlay_track(-1, data.vac2_base_path().c_str()) == 0);
     naki_analysis_clear_overlay_tracks();
 }

@@ -386,11 +386,7 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
 
     auto overlay_tracks = manager.overlay_track_snapshot();
     if (overlay_tracks.empty() && manager.is_loaded() && file_id >= 0) {
-        overlay_tracks.emplace_back(
-            file_id,
-            std::shared_ptr<const analysis::AnalysisManager>(
-                &manager,
-                [](const analysis::AnalysisManager*) {}));
+        overlay_tracks.emplace_back(file_id, manager.session_snapshot());
     }
     if (overlay_tracks.empty()) {
         return;
@@ -492,9 +488,7 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
     bool has_line_mask = false;
 
     auto prepare_track_overlay = [&](int track_file_id,
-                                     const analysis::AnalysisManager& track_analysis) {
-        if (!track_analysis.is_loaded()) return;
-
+                                     const analysis::AnalysisSession& track_analysis) {
         const int slot = tracks.find_slot_by_file_id(track_file_id);
         if (slot < 0 || slot >= static_cast<int>(kMaxTracks) || !tracks[slot]) {
             return;

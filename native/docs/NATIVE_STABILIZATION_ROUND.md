@@ -173,6 +173,7 @@ Fixed or reduced:
 - Windows runner plugin: renderer EventChannel sink, queued event payloads, and message-only drain window moved into `RendererEventBridge`.
 - Windows runner plugin: FFI diagnostics active-player lookup now pins a host-owned `NativeDiagnosticsSession` instead of a process-global player weak pointer.
 - Analysis FFI: playback PTS callback registration now supports owner-scoped register/clear so plugin teardown cannot clear a newer host callback.
+- Analysis UI: player destroy/recreate around an existing analysis host session is covered by `ui_tests/analysis/recreate_player_analysis_session.csv`.
 - Process-global logging/crash FFI ownership is now documented.
 
 Still active:

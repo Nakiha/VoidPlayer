@@ -119,6 +119,8 @@ Python `RendererConfig` 和 `LayoutState` 使用和 C FFI 相同的核心校验�
 
 Crash handler 的实现位于 `common/windows_crash_handler.*`。它不是 renderer 生命周期的一部分；宿主进程需要显式 opt-in，并且要意识到这些 Windows hooks 会影响整个进程。VoidPlayer Windows runner 使用 `WindowsCrashHandlerConfig` 显式选择 SEH/VEH/CRT hooks；可复用库路径不在 renderer 初始化时安装 hooks。
 
+长期 host logging 接口应保持与这些 process-global convenience API 分离：宿主创建一个显式 log sink/token，把它传给 player/session 初始化；native 只向该 sink 发结构化日志事件，不拥有默认 logger、flush 线程或 crash hooks。旧 `naki_vr_configure_logging*` 继续作为单宿主 bootstrap/测试便捷入口，不能在多 engine 宿主里反复调用来模拟 per-player logging。
+
 ---
 
 ## 构建输出

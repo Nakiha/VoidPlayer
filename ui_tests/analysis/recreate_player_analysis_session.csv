@@ -1,0 +1,20 @@
+# Recreate the native player around an existing analysis host session.
+# Guards owner-scoped diagnostics/PTS callbacks against stale player pointers.
+@WINDOW,1280,720
+
+0.2,SET_ANALYSIS_TEST_SCRIPT,ui_tests/analysis/child_h264_codec.csv
+0.5,ADD_MEDIA,resources/video/h264_9s_1920x1080.mp4
+2.2,ASSERT_TRACK_COUNT,1
+2.5,RUN_ANALYSIS
+3.8,WAIT_ANALYSIS_PROCESS_COUNT,1,45000
+
+4.0,REMOVE_TRACK,1
+4.8,ASSERT_TRACK_COUNT,0
+5.0,ADD_MEDIA,resources/video/h264_9s_1920x1080.mp4
+6.6,ASSERT_TRACK_COUNT,1
+6.8,RUN_ANALYSIS
+7.8,ASSERT_ANALYSIS_PROCESS_COUNT,1
+
+8.0,CAPTURE_VIEWPORT,analysis_after_player_recreate,build/analysis_after_player_recreate.png
+8.1,ASSERT_CAPTURE_NOT_BLACK,analysis_after_player_recreate,0.01,4.0
+8.5,QUIT,0

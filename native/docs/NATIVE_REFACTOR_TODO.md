@@ -634,9 +634,9 @@ TODO:
 - [x] analysis PTS callback 支持 host/player scoped 注册；legacy global callback 保留兼容并标记为非首选。
 - [x] 移除 analysis legacy singleton reader API；Dart/native 读取路径改为 handle-scoped VAC2 session。
 - [x] 为 process-global logging/crash FFI API 增加文档警示。
-- [ ] 规划 host-provided logger/sink 的长期接口。
+- [x] 规划 host-provided logger/sink 的长期接口。
 - [x] 增加 repeated create-destroy UI smoke，覆盖 last-track remove -> destroy -> recreate。
-- [ ] 增加 multi player / plugin teardown smoke。
+- [x] 增加 player/plugin teardown + analysis session recreate UI smoke；true multi-engine smoke 留给显式 host/session API。
 
 建议验证：
 

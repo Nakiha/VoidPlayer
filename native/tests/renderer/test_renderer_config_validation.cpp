@@ -1,9 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/layout_validation.h"
-#include "video_renderer/layout_controller.h"
-#include "video_renderer/layout_geometry.h"
-#include "video_renderer/render_loop_controller.h"
+#include "video_renderer/layout/layout_validation.h"
+#include "video_renderer/layout/layout_controller.h"
+#include "video_renderer/layout/layout_geometry.h"
+#include "video_renderer/render/render_loop_controller.h"
 #include "video_renderer/renderer_config_validation.h"
 
 #include <chrono>

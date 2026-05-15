@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/renderer_playback_command_policy.h"
+#include "video_renderer/playback/renderer_playback_command_policy.h"
 
 using namespace vr;
 

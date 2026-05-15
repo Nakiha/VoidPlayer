@@ -1,7 +1,7 @@
 #include "video_renderer/d3d11/render_backend.h"
 
 #include "embedded_shaders.h"
-#include "video_renderer/shader_constants.h"
+#include "video_renderer/render/shader_constants.h"
 
 #include <dxgi.h>
 #include <spdlog/spdlog.h>

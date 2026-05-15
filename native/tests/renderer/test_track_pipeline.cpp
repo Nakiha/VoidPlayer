@@ -1,18 +1,18 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "test_utils.h"
-#include "video_renderer/analysis_overlay_renderer.h"
+#include "video_renderer/overlay/analysis_overlay_renderer.h"
 #include "video_renderer/d3d11/render_backend.h"
-#include "video_renderer/layout_controller.h"
-#include "video_renderer/layout_geometry.h"
-#include "video_renderer/track_lifecycle.h"
-#include "video_renderer/track_pipeline_factory.h"
-#include "video_renderer/track_perf_baseline.h"
-#include "video_renderer/track_preroll_policy.h"
-#include "video_renderer/track_present_policy.h"
-#include "video_renderer/track_preview_policy.h"
-#include "video_renderer/track_snapshot.h"
-#include "video_renderer/track_step_policy.h"
+#include "video_renderer/layout/layout_controller.h"
+#include "video_renderer/layout/layout_geometry.h"
+#include "video_renderer/track/track_lifecycle.h"
+#include "video_renderer/track/track_pipeline_factory.h"
+#include "video_renderer/track/track_perf_baseline.h"
+#include "video_renderer/track/track_preroll_policy.h"
+#include "video_renderer/track/track_present_policy.h"
+#include "video_renderer/track/track_preview_policy.h"
+#include "video_renderer/track/track_snapshot.h"
+#include "video_renderer/track/track_step_policy.h"
 
 #include <array>
 #include <atomic>

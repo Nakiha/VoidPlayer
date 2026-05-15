@@ -88,7 +88,7 @@ std::optional<TextureFrame> convert(AVFrame* frame);
 
 多轨渲染 shader 仍通过运行时 `D3DCompile` 编译内嵌 HLSL。Windows runner/native 发布包需要确保系统可加载 D3DCompiler 运行时；若后续遇到分发问题，再评估预编译 shader blob。
 
-`multitrack.hlsl` 的 `cbuffer Constants` 对应 C++ `video_renderer/shader_constants.h` 中的 `ShaderConstants`。该头文件包含 304-byte size 和关键 offset `static_assert`，native 单测也会校验布局，避免 C++ 字段移动后 shader 读错 uniform。
+`multitrack.hlsl` 的 `cbuffer Constants` 对应 C++ `video_renderer/render/shader_constants.h` 中的 `ShaderConstants`。该头文件包含 304-byte size 和关键 offset `static_assert`，native 单测也会校验布局，避免 C++ 字段移动后 shader 读错 uniform。
 
 ### 软件路径
 

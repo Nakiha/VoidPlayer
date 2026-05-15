@@ -2,7 +2,7 @@
 #include "test_utils.h"
 #include "video_renderer/d3d11/device.h"
 #include "video_renderer/d3d11/shader.h"
-#include "video_renderer/shader_constants.h"
+#include "video_renderer/render/shader_constants.h"
 #include <cstddef>
 
 using namespace vr::test;

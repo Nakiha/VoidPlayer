@@ -2,7 +2,7 @@
 
 #include "media/seek_controller.h"
 #include "video_renderer/exports/ffi_exports.h"
-#include "video_renderer/layout_state.h"
+#include "video_renderer/layout/layout_state.h"
 #include "video_renderer/renderer.h"
 
 #include <cstddef>

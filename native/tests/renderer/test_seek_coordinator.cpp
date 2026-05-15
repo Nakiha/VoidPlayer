@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/seek_coordinator.h"
+#include "video_renderer/seek/seek_coordinator.h"
 
 #include <chrono>
 #include <thread>

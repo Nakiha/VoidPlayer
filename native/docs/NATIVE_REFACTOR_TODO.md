@@ -102,7 +102,7 @@ Status: done in Round 11.
 - FFI 的 `validate_player_config()` 只检查 ABI、log、width/height positive。
 - MethodChannel 在 `windows/runner/video_renderer_plugin.cpp` 中独立校验 width/height <= 16384、speed、layout。
 - `FrameConverter` 有单独 `kMaxDecodedDimension = 16384` 和 `kMaxCpuFrameBytes = 1GB`。
-- 当前只有 `native/video_renderer/layout_validation.h` 针对 layout 做了共享校验。
+- 当前只有 `native/video_renderer/layout/layout_validation.h` 针对 layout 做了共享校验。
 
 TODO:
 
@@ -186,7 +186,7 @@ TODO:
    - 目标：清掉未使用或可由 `RenderBackend` 访问的 borrowed raw backend pointers，降低 shutdown/reinit 悬空指针心智负担。
    - 验证：native-only + smoke UI。
 
-7. [ ] `RendererDirectoryRegroup`
+7. [x] `RendererDirectoryRegroup`
    - 目标：并发修复稳定后，把 renderer policy/helper 文件按 `render/`、`layout/`、`track/`、`seek/`、`stats/` 等域分层；`renderer.cpp/h` 暂留 root 作为 facade/owner。
    - 验证：CMake/Flutter runner build + native-only；该 patch 只做 include/source-list move，不混入行为变化。
 

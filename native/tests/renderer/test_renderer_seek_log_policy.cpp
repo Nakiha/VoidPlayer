@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/renderer_seek_log_policy.h"
+#include "video_renderer/seek/renderer_seek_log_policy.h"
 
 #include <string>
 

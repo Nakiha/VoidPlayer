@@ -16,8 +16,8 @@
 
 当前优先级：
 
-1. `review_renderer.md` 点名的 Renderer 并发状态模型：draw snapshot 锁顺序、render-loop state snapshot、presenter slot serialization、query API locks、shutdown callback gate / render-loop RAII。
-2. `review_godobject.md` 中 Renderer owner boundary 的后续拆分，但必须先守住状态访问和锁契约。
+1. `review_renderer.md` 点名的 Renderer 并发状态模型和目录分层已完成；后续 Renderer 改动必须保持这些锁和目录契约。
+2. `review_godobject.md` 中 Renderer owner boundary 的后续拆分。
 3. `ffi_exports.cpp` / `TrackPipelineManager` / `DecodeThread` 这些二级 God Module 的收缩，排在 Renderer 并发收敛之后。
 4. `review_native.md` / `review_overlay.md` 已修 correctness 回归防线不能倒退。
 
@@ -184,21 +184,21 @@ Still active:
 
 ### `review_renderer.md`
 
-Status: accepted, high priority. This is not a stale or mostly-wrong chat audit.
+Status: fixed for the current chat audit.
 
-Verified:
+Fixed:
 
-- Lock-order inversion exists: `present_frame()` / `redraw_layout()` take `device_mutex_` and then enter `draw_frame()`, while `draw_frame()` later takes `state_mutex_`; `gpu_memory_stats()` follows the documented `state_mutex_ -> device_mutex_` order, so a real deadlock path exists.
-- `draw_frame()` still reads `tracks_` outside `state_mutex_`, including layout geometry, color defaults, frame preparation gates, and analysis overlay draw inputs.
-- `render_loop()` still calls policy helpers directly on `tracks_` and mutates `last_decision_`, `preview_drawn_`, and `was_buffering_` outside one consistent state boundary.
-- `D3D11FramePresenter` has no internal mutex; `prepare_frame()`, `reset_track()`, `move_track()`, and `memory_stats()` all touch the same slot resources.
-- `track_count()`, `duration_us()`, `has_track()`, `track_dimensions()`, and `track_infos()` do not consistently take `state_mutex_`; NativePlayer's outer shared lock does not serialize query vs mutation.
-- `render_loop()` still uses manual `timeBeginPeriod()` / `timeEndPeriod()` and flushes pending resize after the loop exits; shutdown callback gating remains soft.
-- The flat `native/video_renderer/` root is no longer a good long-term shape for renderer policy files, but directory regrouping should be a separate mechanical patch after the concurrency fixes.
+- Draw path now builds an immutable snapshot under `state_mutex_` before entering `device_mutex_`; `draw_frame()` no longer locks state or reads mutable tracks/layout directly.
+- Render loop state transitions for preroll, paused preview, diagnostics, carry-forward, redraw, EOF, and frame deadlines now use explicit `state_mutex_` boundaries.
+- `D3D11FramePresenter` slot resources are serialized internally, and prepared frames own SRV references plus UV scale snapshots through draw.
+- Public renderer query APIs read tracks/duration under `state_mutex_`.
+- Shutdown gates late demux/render callbacks, render-loop timer resolution is RAII scoped, the render thread has a `noexcept` exception boundary, and pending resize is dropped on loop exit.
+- Borrowed backend child pointers were removed from `Renderer`; backend-owned helpers are now queried through `D3D11RenderBackend`.
+- Renderer helper/policy files are grouped under `layout/`, `track/`, `seek/`, `render/`, `overlay/`, and `playback/` while `renderer.cpp/h` remain the facade/owner.
 
 ## Active Patch Queue
 
-Next patch: P142 Renderer Directory Regroup.
+Next patch: review-godobject Renderer owner-boundary follow-up.
 
 Completed patch details through P123 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -585,6 +585,8 @@ Result:
 
 ### P142 - Renderer Directory Regroup
 
+Status: done in Patch 142.
+
 Goal:
 
 - Move renderer helper/policy files into domain subdirectories after the concurrency fixes are stable.
@@ -594,7 +596,13 @@ Goal:
 Validation:
 
 - `python dev.py test --native-only`
-- `flutter build windows --release`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+Result:
+
+- Moved renderer helpers/policies into domain folders: `layout/`, `track/`, `seek/`, `render/`, `overlay/`, and `playback/`.
+- Updated includes, CMake source lists, tests, runner references, tools, and docs for the new paths.
+- Kept `renderer.cpp/h`, `renderer_config_validation.*`, `renderer_limits.h`, `audio_coordinator.*`, and `clock.*` at the renderer root.
 
 ## Do-Not-Drift List
 

@@ -1,7 +1,7 @@
 #include "video_renderer_plugin.h"
 #include "analysis_ffi.h"
 
-#include "video_renderer/layout_validation.h"
+#include "video_renderer/layout/layout_validation.h"
 #include "video_renderer/renderer_config_validation.h"
 #include "utils.h"
 #include <flutter/event_channel.h>

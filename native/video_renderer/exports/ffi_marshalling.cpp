@@ -1,7 +1,7 @@
 #include "video_renderer/exports/ffi_marshalling.h"
 
 #include "video_renderer/exports/ffi_player_registry.h"
-#include "video_renderer/layout_validation.h"
+#include "video_renderer/layout/layout_validation.h"
 #include "video_renderer/renderer_config_validation.h"
 #include "video_renderer/renderer_limits.h"
 

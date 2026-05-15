@@ -1756,6 +1756,51 @@ TEST_CASE("TrackLifecycle builds seek transition plans",
     REQUIRE_FALSE(playing_plan.hevc_recreate_input.force_recreate_paused_hevc);
 }
 
+TEST_CASE("TrackLifecycle applies seek execution results",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipeline track;
+    track.track_buffer = std::make_shared<TrackBuffer>();
+    track.seek_controller = std::make_unique<SeekController>();
+
+    TrackSeekTransitionPlan plan;
+    plan.paused_seek = true;
+    plan.seek_type = SeekType::Exact;
+
+    HevcSeekRecreateDecision coalescing_decision;
+    coalescing_decision.coalescing_transition = true;
+    const auto coalesced = apply_track_seek_execution_result(
+        track, 123000, plan, coalescing_decision, false);
+    REQUIRE(coalesced.applied_seek);
+    REQUIRE_FALSE(coalesced.recreated_for_seek);
+    REQUIRE_FALSE(coalesced.error_state_set);
+    REQUIRE(coalesced.coalescing_transition);
+
+    auto pending_seek = track.seek_controller->take_pending();
+    REQUIRE(pending_seek);
+    REQUIRE(pending_seek->target_pts_us == 123000);
+    REQUIRE(pending_seek->type == SeekType::Exact);
+
+    HevcSeekRecreateDecision failed_recreate_decision;
+    failed_recreate_decision.error_if_recreate_not_applied = true;
+    const auto failed = apply_track_seek_execution_result(
+        track, 456000, plan, failed_recreate_decision, false);
+    REQUIRE_FALSE(failed.applied_seek);
+    REQUIRE_FALSE(failed.recreated_for_seek);
+    REQUIRE(failed.error_state_set);
+    REQUIRE_FALSE(failed.coalescing_transition);
+    REQUIRE(track.track_buffer->state() == TrackState::Error);
+    REQUIRE_FALSE(track.seek_controller->has_pending_seek());
+
+    HevcSeekRecreateDecision recreate_decision;
+    recreate_decision.should_recreate_pipeline = true;
+    const auto recreated = apply_track_seek_execution_result(
+        track, 789000, plan, recreate_decision, true);
+    REQUIRE(recreated.applied_seek);
+    REQUIRE(recreated.recreated_for_seek);
+    REQUIRE_FALSE(recreated.error_state_set);
+    REQUIRE_FALSE(track.seek_controller->has_pending_seek());
+}
+
 TEST_CASE("TrackLifecycle submits seek after optional recreate",
           "[track_pipeline][track_lifecycle]") {
     TrackPipeline track;

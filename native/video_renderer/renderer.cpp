@@ -419,22 +419,23 @@ void Renderer::seek_internal(int64_t target_pts_us,
             hevc_recreate_decision.should_recreate_pipeline &&
             recreate_pipeline_for_seek(i, track_target.target_us,
                                        seek_plan.seek_type);
-        if (hevc_recreate_decision.error_if_recreate_not_applied &&
-            !recreated_for_seek) {
-            track->track_buffer->set_state(TrackState::Error);
+        track = tracks_[i].get();
+        if (!track) {
             continue;
         }
-        if (hevc_recreate_decision.coalescing_transition) {
+        const auto seek_execution = apply_track_seek_execution_result(
+            *track, track_target.target_us, seek_plan,
+            hevc_recreate_decision, recreated_for_seek);
+        if (seek_execution.coalescing_transition) {
             spdlog::info("[Renderer] seek_internal: track[{}] coalescing HEVC HW seek during transition "
                          "(buf_state_before={}, target={:.3f}s)",
                          i,
                          static_cast<int>(seek_prep.buffer_state_before),
                          track_target.target_us / 1e6);
         }
-        track = tracks_[i].get();
-        submit_track_seek_after_recreate(
-            *track, track_target.target_us, seek_plan.seek_type,
-            seek_plan.paused_seek, recreated_for_seek);
+        if (!seek_execution.applied_seek) {
+            continue;
+        }
         applied_seek = true;
         spdlog::info("[Renderer] seek_internal: track[{}] cleared (buf={}->{}, pq={}->0), state->Flushing, target={:.3f}s",
                      i,

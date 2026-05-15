@@ -389,8 +389,12 @@ TODO:
    - 已把 `Renderer::seek_internal()` 中 per-track transition/recreate input assembly 迁入 track lifecycle helper，Renderer 暂保留 hooks 和实际 seek/recreate 动作。
    - 验证：native-only + smoke/seek UI。
 
-57. [ ] `TrackSeekExecutionBoundary`
-   - 后续继续拆 `Renderer::seek_internal()` 中 HEVC recreate application、error/coalesce result handling 和 seek submission 的 per-track execution 边界。
+57. [x] `TrackSeekExecutionBoundary`
+   - 已把 `Renderer::seek_internal()` 中 HEVC recreate decision 后的 error/coalesce/result handling 和 seek submission 迁入 track lifecycle helper。
+   - 验证：native-only + smoke/seek UI。
+
+58. [ ] `TrackSeekSlotApplication`
+   - 后续继续把 `Renderer::seek_internal()` 中 per-slot facts / transition / plan / decision / execution 串联成一个 track lifecycle 边界，Renderer 只保留 hooks、全局 seek 状态和日志。
    - 验证：native-only + smoke/seek UI。
 
 ## P1 - Windows Runner Plugin Split

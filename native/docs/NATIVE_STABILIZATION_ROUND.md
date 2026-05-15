@@ -138,6 +138,7 @@ Fixed or reduced:
 - `Renderer`: analysis-overlay GPU resource memory accounting moved into `analysis_overlay_renderer`.
 - `Renderer`: per-track seek target/hardware/codec warning facts moved into `track_lifecycle`; Renderer keeps logging and seek actions.
 - `Renderer`: per-track seek transition/recreate input assembly moved into `track_lifecycle`; Renderer keeps hook wiring and seek/recreate actions.
+- `Renderer`: per-track seek execution result handling moved into `track_lifecycle`; Renderer refreshes the post-recreate slot and keeps logging.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
@@ -156,7 +157,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P101 Renderer Seek Track Execution Boundary.
+Next patch: P102 Renderer Seek Slot Application Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -183,11 +184,32 @@ Validation:
 
 ### P101 - Renderer Seek Track Execution Boundary
 
+Status: done in Patch 101.
+
 Goal:
 
 - Continue reducing `Renderer::seek_internal()` by extracting the per-track post-decision execution boundary around HEVC recreate application, error/coalesce result handling, and seek submission.
 - Keep Renderer responsible for member-capturing hook wiring and top-level pending preview/global clock state.
 - Preserve paused HEVC recreate failure and coalescing behavior exactly.
+
+Result:
+
+- Added `TrackSeekExecutionResult` and `apply_track_seek_execution_result()` to `track_lifecycle`.
+- `Renderer::seek_internal()` now refreshes the slot after optional recreate and delegates error-state/seek-submit result handling.
+- Added native coverage for normal submit, failed recreate error state, coalescing metadata, and recreated seek submission suppression.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+### P102 - Renderer Seek Slot Application Boundary
+
+Goal:
+
+- Move the remaining per-slot seek orchestration inside `Renderer::seek_internal()` into a track-lifecycle helper that owns facts inspection, transition preparation, plan construction, recreate decision, and execution result assembly.
+- Keep Renderer responsible for building member-capturing hooks, top-level pending preview/global clock state, and final logging/callback-visible side effects.
+- Preserve all seek logs and paused HEVC recreate behavior.
 
 Validation:
 

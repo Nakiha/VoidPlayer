@@ -240,6 +240,20 @@ TrackSeekTransitionPlan build_track_seek_transition_plan(
     bool force_recreate_paused_hevc,
     SeekType type);
 
+struct TrackSeekExecutionResult {
+    bool recreated_for_seek = false;
+    bool applied_seek = false;
+    bool error_state_set = false;
+    bool coalescing_transition = false;
+};
+
+TrackSeekExecutionResult apply_track_seek_execution_result(
+    TrackPipeline& track,
+    int64_t target_pts_us,
+    const TrackSeekTransitionPlan& plan,
+    const HevcSeekRecreateDecision& hevc_recreate_decision,
+    bool recreated_for_seek);
+
 void submit_track_seek_after_recreate(
     TrackPipeline& track,
     int64_t target_pts_us,

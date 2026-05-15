@@ -492,6 +492,31 @@ TrackSeekTransitionPlan build_track_seek_transition_plan(
     return plan;
 }
 
+TrackSeekExecutionResult apply_track_seek_execution_result(
+    TrackPipeline& track,
+    int64_t target_pts_us,
+    const TrackSeekTransitionPlan& plan,
+    const HevcSeekRecreateDecision& hevc_recreate_decision,
+    bool recreated_for_seek) {
+    TrackSeekExecutionResult result;
+    result.recreated_for_seek = recreated_for_seek;
+    result.coalescing_transition =
+        hevc_recreate_decision.coalescing_transition;
+
+    if (hevc_recreate_decision.error_if_recreate_not_applied &&
+        !recreated_for_seek) {
+        track.track_buffer->set_state(TrackState::Error);
+        result.error_state_set = true;
+        return result;
+    }
+
+    submit_track_seek_after_recreate(
+        track, target_pts_us, plan.seek_type, plan.paused_seek,
+        recreated_for_seek);
+    result.applied_seek = true;
+    return result;
+}
+
 void submit_track_seek_after_recreate(
     TrackPipeline& track,
     int64_t target_pts_us,

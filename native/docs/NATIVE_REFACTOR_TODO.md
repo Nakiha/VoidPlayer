@@ -149,7 +149,7 @@ TODO:
 - `ctest --test-dir native/build-msvc -C Release --output-on-failure -R test_ffi_c` passed on 2026-05-10.
 - Full `python dev.py test --native-only` was blocked before native build/test by missing local `native/analysis/vendor/ffmpeg/voidplayer/build_windows_msvc.ps1`; use `--github` or restore the analyzer submodule/tooling for the full local analysis path.
 
-## P1 - Renderer Split, Safe Order
+## P1 - Renderer Split / Concurrency Safe Order
 
 目标：逐步拆掉 God Object，但每轮只移动一个低争议边界，避免破坏 D3D/Texture/seek 交叉状态。
 
@@ -157,6 +157,38 @@ TODO:
 
 - `Renderer` 当前同时拥有 D3D backend/raw resource pointers、layout、analysis overlay pixels、capture、render loop、track manager、seek/audio coordinator、perf metrics、device lock、texture lock。
 - `native/docs/THREADING_MODEL.md` 已记录 lock order，可作为拆分护栏。
+- `build/chat/review_renderer.md` 的新核验属实：当前风险已经从“职责边界还大”升级为“Renderer 状态访问模型和锁契约不一致”。
+- `native/video_renderer/` 根目录已有 40+ 个 renderer 相关文件，policy/helper 平铺已经降低可审查性；但目录重组应等并发修复落地后单独做 mechanical patch。
+
+新增优先队列（来自 `build/chat/review_renderer.md`）：
+
+1. [ ] `RendererDrawSnapshotLockBoundary`
+   - 目标：`draw_frame()` 不再拿 `state_mutex_`，也不直接读 `tracks_` / `layout_` / `background_color_`；进入 `device_mutex_` 前完成 immutable draw snapshot。
+   - 验证：native-only + smoke/viewport/analysis UI。
+
+2. [ ] `RendererRenderLoopStateSnapshotBoundary`
+   - 目标：render loop policy helpers 不再直接吃 mutable `TrackPipelineManager&`；`last_decision_`、`preview_drawn_`、`was_buffering_` 的读写收口到明确状态边界。
+   - 验证：native-only + smoke/seek/timeline UI。
+
+3. [ ] `RendererFramePresenterSerializationBoundary`
+   - 目标：`D3D11FramePresenter::prepare_frame/reset_track/move_track/memory_stats` 对 slot resources 的访问统一串行化；优先考虑 render-thread command queue 或同一 device-side boundary。
+   - 验证：native-only + smoke/track compact/seek UI。
+
+4. [ ] `RendererQueryLockBoundary`
+   - 目标：`track_count()`、`duration_us()`、`has_track()`、`track_dimensions()`、`track_infos()` 统一 `state_mutex_` 保护，不能依赖 NativePlayer shared lock。
+   - 验证：native-only。
+
+5. [ ] `RendererShutdownCallbackAndLoopGuard`
+   - 目标：shutdown 开始后 gate late demux/render callbacks；render loop 使用 RAII timer guard 和 noexcept exception boundary；退出时不再无条件 flush pending resize。
+   - 验证：native-only + shutdown/recreate UI smoke。
+
+6. [ ] `RendererBackendRefsCleanup`
+   - 目标：清掉未使用或可由 `RenderBackend` 访问的 borrowed raw backend pointers，降低 shutdown/reinit 悬空指针心智负担。
+   - 验证：native-only + smoke UI。
+
+7. [ ] `RendererDirectoryRegroup`
+   - 目标：并发修复稳定后，把 renderer policy/helper 文件按 `render/`、`layout/`、`track/`、`seek/`、`stats/` 等域分层；`renderer.cpp/h` 暂留 root 作为 facade/owner。
+   - 验证：CMake/Flutter runner build + native-only；该 patch 只做 include/source-list move，不混入行为变化。
 
 建议顺序：
 

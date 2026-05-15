@@ -8,6 +8,7 @@
 - `build/chat/review_native.md`
 - `build/chat/review_overlay.md`
 - `build/chat/review_godobject.md`
+- `build/chat/review_renderer.md`
 - `build/chat/split_adv.md`
 - `native/docs/NATIVE_REFACTOR_TODO.md`
 
@@ -15,9 +16,10 @@
 
 当前优先级：
 
-1. `review_godobject.md` 中 Renderer owner boundary 的下一刀。
-2. `ffi_exports.cpp` / `TrackPipelineManager` / `DecodeThread` 这些二级 God Module 的收缩。
-3. `review_native.md` / `review_overlay.md` 已修 correctness 回归防线不能倒退。
+1. `review_renderer.md` 点名的 Renderer 并发状态模型：draw snapshot 锁顺序、render-loop state snapshot、presenter slot serialization、query API locks、shutdown callback gate / render-loop RAII。
+2. `review_godobject.md` 中 Renderer owner boundary 的后续拆分，但必须先守住状态访问和锁契约。
+3. `ffi_exports.cpp` / `TrackPipelineManager` / `DecodeThread` 这些二级 God Module 的收缩，排在 Renderer 并发收敛之后。
+4. `review_native.md` / `review_overlay.md` 已修 correctness 回归防线不能倒退。
 
 暂时不要继续做纯 runner plugin 清理，除非它直接关闭 native owner boundary、process-global、测试隔离或上屏正确性问题。
 
@@ -170,14 +172,33 @@ Fixed or reduced:
 Still active:
 
 - `Renderer` remains the coordination root.
+- `Renderer` draw/present path still violates the documented lock order by entering D3D draw under `device_mutex_` and later taking `state_mutex_`.
+- `Renderer` render loop still reads/writes `tracks_`, `last_decision_`, `preview_drawn_`, and `was_buffering_` without a single consistent state snapshot boundary.
+- `D3D11FramePresenter` slot resources are mutated by track lifecycle paths while render draw can prepare frames.
+- `Renderer` public query APIs still have inconsistent `state_mutex_` coverage.
+- Renderer shutdown still needs a late-callback gate plus a render-loop exception/timer guard.
 - `Renderer` still owns public layout API/redraw invalidation and deferred seek execution.
 - `DecodeThread` still owns drain-before-next-packet execution and decode-loop control flow.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
+### `review_renderer.md`
+
+Status: accepted, high priority. This is not a stale or mostly-wrong chat audit.
+
+Verified:
+
+- Lock-order inversion exists: `present_frame()` / `redraw_layout()` take `device_mutex_` and then enter `draw_frame()`, while `draw_frame()` later takes `state_mutex_`; `gpu_memory_stats()` follows the documented `state_mutex_ -> device_mutex_` order, so a real deadlock path exists.
+- `draw_frame()` still reads `tracks_` outside `state_mutex_`, including layout geometry, color defaults, frame preparation gates, and analysis overlay draw inputs.
+- `render_loop()` still calls policy helpers directly on `tracks_` and mutates `last_decision_`, `preview_drawn_`, and `was_buffering_` outside one consistent state boundary.
+- `D3D11FramePresenter` has no internal mutex; `prepare_frame()`, `reset_track()`, `move_track()`, and `memory_stats()` all touch the same slot resources.
+- `track_count()`, `duration_us()`, `has_track()`, `track_dimensions()`, and `track_infos()` do not consistently take `state_mutex_`; NativePlayer's outer shared lock does not serialize query vs mutation.
+- `render_loop()` still uses manual `timeBeginPeriod()` / `timeEndPeriod()` and flushes pending resize after the loop exits; shutdown callback gating remains soft.
+- The flat `native/video_renderer/` root is no longer a good long-term shape for renderer policy files, but directory regrouping should be a separate mechanical patch after the concurrency fixes.
+
 ## Active Patch Queue
 
-Next patch: P136 Runner FFI Diagnostics Scope Boundary.
+Next patch: P136 Renderer Draw Snapshot Lock Boundary.
 
 Completed patch details through P123 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -433,23 +454,25 @@ Result:
 - Rewired the receive loop to use the policy gates while keeping candidate ownership, publish calls, sleeps, and loop breaks inside `DecodeThread`.
 - Added focused native coverage for exact-seek preview publish and pacing gate combinations.
 
-### P136 - Runner FFI Diagnostics Scope Boundary
+### P136 - Renderer Draw Snapshot Lock Boundary
 
 Goal:
 
-- Continue closing chat's runner plugin God Module item by removing the remaining FFI diagnostics active-player lookup from the process-global player registry.
-- Keep the public `naki_vr_get_diagnostics` payload stable while moving lookup ownership toward host/session scope.
-- Preserve MethodChannel diagnostics and existing runner smoke behavior.
+- Remove `draw_frame()`'s `state_mutex_` acquisition and direct mutable renderer-state reads from the D3D draw path.
+- Build an immutable draw snapshot under `state_mutex_` before entering `device_mutex_`, including layout, background color, target size, geometry facts, active-track facts, and the `PresentDecision`.
+- Preserve headless/non-headless presentation behavior, analysis overlay rendering, GPU metrics, and device-lost handling.
+- Keep this patch focused on lock order and draw inputs; render-loop policy snapshots and presenter slot serialization follow in later patches.
 
 Validation:
 
 - `python dev.py test --native-only`
-- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h264.csv`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewport_pan_layout_regression.csv ui_tests/analysis/spawn_h264.csv`
 
 ## Do-Not-Drift List
 
 - Do not let runner plugin cosmetics displace the remaining `review_godobject.md` owner-boundary work.
 - Keep overlay regression coverage in place before starting large Renderer ownership splits.
+- Do not combine renderer directory moves with concurrency or draw-path behavior fixes.
 - Do not add broad fallback image conversion libraries; pixel-format support must stay deterministic.
 - Do not batch unrelated cleanup with behavior fixes.
 - Do not mark a chat item fixed without a test or an explicit documented coverage gap.

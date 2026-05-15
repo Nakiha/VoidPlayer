@@ -405,9 +405,13 @@ TODO:
    - 已把 `Renderer::step_backward()` 中 cache-miss exact-seek fallback target 计算迁入 track step policy，Renderer 保留 retreat / seek / draw / log。
    - 验证：native-only + smoke/step-backward UI。
 
-61. [ ] `StepForwardDecisionApplication`
-   - 后续继续拆 `Renderer::step_forward()` 中 successful step decision 的 consumed-frame discard / reference slot / clock target 计算，Renderer 保留 wait loop / present / final log。
+61. [x] `StepForwardDecisionApplication`
+   - 已把 `Renderer::step_forward()` 中 successful step decision 的 consumed-frame discard / reference slot / clock target 计算迁入 track step policy，Renderer 保留 wait loop / present / final log。
    - 验证：native-only + smoke/step-forward UI。
+
+62. [ ] `StepBackwardRetreatApplication`
+   - 后续继续拆 `Renderer::step_backward()` 中 successful retreat 后的 reference slot / clock target 计算，Renderer 保留 retreat/fallback 分支、draw/log。
+   - 验证：native-only + smoke/step-backward UI。
 
 ## P1 - Windows Runner Plugin Split
 

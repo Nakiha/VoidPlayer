@@ -1512,6 +1512,47 @@ TEST_CASE("TrackStepPolicy builds step-forward decisions",
     REQUIRE_FALSE(gap_decision.should_present);
 }
 
+TEST_CASE("TrackStepPolicy applies step-forward decisions",
+          "[track_pipeline][track_step_policy]") {
+    const auto make_track_with_frames =
+        [](std::initializer_list<int64_t> pts_values, int64_t offset_us = 0) {
+            auto track = std::make_unique<TrackPipeline>();
+            track->offset_us = offset_us;
+            track->track_buffer = std::make_shared<TrackBuffer>();
+            for (const int64_t pts : pts_values) {
+                TextureFrame frame;
+                frame.pts_us = pts;
+                track->track_buffer->push_frame(frame);
+            }
+            return track;
+        };
+
+    TrackPipelineManager manager;
+    manager[0] = make_track_with_frames({100, 200, 300}, 50);
+    manager[1] = make_track_with_frames({100, 200, 300});
+
+    PresentDecision decision;
+    TextureFrame selected0;
+    selected0.pts_us = 200;
+    decision.frames[0] = selected0;
+    TextureFrame selected1;
+    selected1.pts_us = 200;
+    decision.frames[1] = selected1;
+
+    const auto application = apply_step_forward_decision(
+        manager,
+        250,
+        decision,
+        PresentDecision{});
+
+    REQUIRE(application.reference_slot == 0);
+    REQUIRE(application.has_clock_target);
+    REQUIRE(application.presented_pts_us == 200);
+    REQUIRE(application.clock_target_us == 250);
+    REQUIRE(manager[0]->track_buffer->peek(0)->pts_us == 300);
+    REQUIRE(manager[1]->track_buffer->peek(0)->pts_us == 300);
+}
+
 TEST_CASE("TrackStepPolicy chooses step-forward exact-seek fallback targets",
           "[track_pipeline][track_step_policy]") {
     const auto make_track_with_frame =

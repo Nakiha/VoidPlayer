@@ -134,6 +134,32 @@ bool build_step_forward_decision(
     return decision.should_present;
 }
 
+StepForwardDecisionApplication apply_step_forward_decision(
+    TrackPipelineManager& tracks,
+    int64_t current_pts_us,
+    const PresentDecision& decision,
+    const PresentDecision& last_decision) {
+    StepForwardDecisionApplication result;
+    discard_step_forward_consumed_frames(
+        tracks, current_pts_us, decision, last_decision);
+
+    result.reference_slot = tracks.first_active_slot();
+    if (result.reference_slot < 0) {
+        return result;
+    }
+
+    const auto slot = static_cast<size_t>(result.reference_slot);
+    if (!tracks[slot] || !decision.frames[slot].has_value()) {
+        return result;
+    }
+
+    result.presented_pts_us = decision.frames[slot]->pts_us;
+    result.clock_target_us =
+        result.presented_pts_us + tracks[slot]->offset_us;
+    result.has_clock_target = true;
+    return result;
+}
+
 StepForwardExactSeekTarget choose_step_forward_exact_seek_target(
     const TrackPipelineManager& tracks,
     int64_t clock_pts_us,

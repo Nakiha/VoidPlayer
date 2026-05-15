@@ -578,6 +578,7 @@ void Renderer::step_forward() {
     bool need_decode_wait = false;
     bool need_exact_seek = false;
     int64_t exact_seek_target = 0;
+    StepForwardDecisionApplication step_application;
     const auto build_step_decision_locked = [this](PresentDecision& decision) {
         return build_step_forward_decision(
             tracks_,
@@ -586,12 +587,13 @@ void Renderer::step_forward() {
             last_decision_,
             decision);
     };
-    const auto discard_step_consumed_locked = [this](const PresentDecision& decision) {
-        discard_step_forward_consumed_frames(
-            tracks_,
-            playback_->clock().current_pts_us(),
-            decision,
-            last_decision_);
+    const auto apply_step_decision_locked =
+        [this](const PresentDecision& decision) {
+            return apply_step_forward_decision(
+                tracks_,
+                playback_->clock().current_pts_us(),
+                decision,
+                last_decision_);
     };
     const auto set_video_decode_paused_locked = [this](bool paused) {
         apply_track_video_decode_pause_state(
@@ -613,17 +615,17 @@ void Renderer::step_forward() {
         playing_ = false;
 
         if (build_step_decision_locked(step_decision)) {
-            discard_step_consumed_locked(step_decision);
-            int ref = first_active_track();
-            if (ref >= 0) {
-                auto& frame = step_decision.frames[ref];
-                if (frame.has_value()) {
-                    playback_->clock().seek(frame->pts_us + tracks_[ref]->offset_us);
-                }
+            step_application = apply_step_decision_locked(step_decision);
+            if (step_application.has_clock_target) {
+                playback_->clock().seek(step_application.clock_target_us);
             }
             have_step_decision = true;
         } else {
-            discard_step_consumed_locked(last_decision_);
+            discard_step_forward_consumed_frames(
+                tracks_,
+                playback_->clock().current_pts_us(),
+                last_decision_,
+                last_decision_);
             set_video_decode_paused_locked(false);
             need_decode_wait = true;
         }
@@ -637,13 +639,9 @@ void Renderer::step_forward() {
                 if (!initialized_) return;
                 if (build_step_decision_locked(step_decision)) {
                     set_video_decode_paused_locked(true);
-                    discard_step_consumed_locked(step_decision);
-                    int ref = first_active_track();
-                    if (ref >= 0) {
-                        auto& frame = step_decision.frames[ref];
-                        if (frame.has_value()) {
-                            playback_->clock().seek(frame->pts_us + tracks_[ref]->offset_us);
-                        }
+                    step_application = apply_step_decision_locked(step_decision);
+                    if (step_application.has_clock_target) {
+                        playback_->clock().seek(step_application.clock_target_us);
                     }
                     have_step_decision = true;
                     break;
@@ -675,9 +673,8 @@ void Renderer::step_forward() {
     if (have_step_decision) {
         present_frame(step_decision);
         last_decision_ = step_decision;
-        int ref = first_active_track();
-        double pts = (ref >= 0 && step_decision.frames[ref].has_value())
-                     ? step_decision.frames[ref]->pts_us / 1e6 : -1.0;
+        double pts = step_application.has_clock_target
+                     ? step_application.presented_pts_us / 1e6 : -1.0;
         spdlog::info("[Renderer] draw_paused_frame(step_forward): pts={:.3f}s", pts);
         return;
     }

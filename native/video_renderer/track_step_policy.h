@@ -27,6 +27,19 @@ bool build_step_forward_decision(
     const PresentDecision& last_decision,
     PresentDecision& decision);
 
+struct StepForwardDecisionApplication {
+    int reference_slot = -1;
+    bool has_clock_target = false;
+    int64_t clock_target_us = 0;
+    int64_t presented_pts_us = 0;
+};
+
+StepForwardDecisionApplication apply_step_forward_decision(
+    TrackPipelineManager& tracks,
+    int64_t current_pts_us,
+    const PresentDecision& decision,
+    const PresentDecision& last_decision);
+
 struct StepForwardExactSeekTarget {
     int reference_slot = -1;
     int64_t base_pts_us = 0;

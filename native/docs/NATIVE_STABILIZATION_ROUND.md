@@ -110,6 +110,7 @@ Fixed or reduced:
 - `Renderer`: step-backward retreat fanout moved into `track_lifecycle`.
 - `Renderer`: step-specific track helpers moved into dedicated `track_step_policy` owner.
 - `Renderer`: step-forward next-frame selection and consumed-frame draining moved into `track_step_policy`.
+- `Renderer`: step-forward successful-decision application, reference slot, and clock target calculation moved into `track_step_policy`.
 - `Renderer`: current-frame duration policy moved into `track_step_policy` and reused by step/EOF tolerance paths.
 - `Renderer`: step-forward cache-miss exact-seek fallback target calculation moved into `track_step_policy`.
 - `Renderer`: step-backward cache-miss exact-seek fallback target calculation moved into `track_step_policy`.
@@ -160,7 +161,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P105 Renderer Step Forward Decision Application Boundary.
+Next patch: P106 Renderer Step Backward Retreat Application Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -272,16 +273,37 @@ Validation:
 
 ### P105 - Renderer Step Forward Decision Application Boundary
 
+Status: done in Patch 105.
+
 Goal:
 
 - Continue shrinking `Renderer::step_forward()` by extracting the repeated successful-decision application facts around consumed-frame discard, reference slot selection, and clock target calculation.
 - Keep Renderer responsible for lifecycle locking, wait-loop timing, `present_frame()`, and final seek/draw/log calls.
 - Preserve step-forward presentation and exact-seek fallback behavior.
 
+Result:
+
+- Added `StepForwardDecisionApplication` and `apply_step_forward_decision()` to `track_step_policy`.
+- `Renderer::step_forward()` now delegates consumed-frame discard, reference-slot selection, and successful-decision clock target calculation.
+- Added native coverage for reference slot selection, clock target calculation, and consumed-frame discard.
+
 Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_step_forward_visual_regression.csv`
+
+### P106 - Renderer Step Backward Retreat Application Boundary
+
+Goal:
+
+- Move `Renderer::step_backward()` successful retreat clock target calculation into `track_step_policy`.
+- Keep Renderer responsible for lifecycle locking, fallback seek execution, draw/log calls, and final paused-frame presentation.
+- Preserve retreat success behavior and existing step-backward fallback behavior.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_step_backward_visual_regression.csv`
 
 ## Do-Not-Drift List
 

@@ -3,6 +3,8 @@
 #include "video_renderer/decode/decoded_frame_publisher.h"
 
 #include <cstring>
+#include <optional>
+#include <utility>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -107,4 +109,63 @@ TEST_CASE("DecodedFramePublisher: conversion failure marks decode error",
     REQUIRE_FALSE(output_buffer.peek(0).has_value());
 
     av_frame_free(&frame);
+}
+
+TEST_CASE("DecodedFramePublisher: publishes already converted frame",
+          "[decode_thread][decoded_frame_publisher]") {
+    TrackBuffer output_buffer;
+    FrameConverter converter;
+    bool hw_enabled = false;
+    bool hw_visibility_flush_pending = false;
+    std::unique_ptr<HwDecodeProvider> hw_provider;
+    std::atomic<bool> decode_paused{false};
+    std::atomic<bool> running{true};
+
+    DecodedFramePublisher publisher(output_buffer,
+                                    converter,
+                                    hw_enabled,
+                                    hw_provider,
+                                    hw_visibility_flush_pending,
+                                    decode_paused,
+                                    running);
+
+    TextureFrame frame;
+    frame.pts_us = 55;
+    frame.width = 8;
+    frame.height = 6;
+
+    REQUIRE(publisher.push_converted_frame(std::move(frame), "unit-test"));
+
+    auto published = output_buffer.peek(0);
+    REQUIRE(published.has_value());
+    REQUIRE(published->pts_us == 55);
+    REQUIRE(published->width == 8);
+    REQUIRE(published->height == 6);
+    REQUIRE_FALSE(decode_paused.load(std::memory_order_acquire));
+    REQUIRE(running.load(std::memory_order_acquire));
+}
+
+TEST_CASE("DecodedFramePublisher: missing converted frame marks decode error",
+          "[decode_thread][decoded_frame_publisher]") {
+    TrackBuffer output_buffer;
+    FrameConverter converter;
+    bool hw_enabled = false;
+    bool hw_visibility_flush_pending = false;
+    std::unique_ptr<HwDecodeProvider> hw_provider;
+    std::atomic<bool> decode_paused{false};
+    std::atomic<bool> running{true};
+
+    DecodedFramePublisher publisher(output_buffer,
+                                    converter,
+                                    hw_enabled,
+                                    hw_provider,
+                                    hw_visibility_flush_pending,
+                                    decode_paused,
+                                    running);
+
+    REQUIRE_FALSE(publisher.push_converted_frame(std::nullopt, "unit-test"));
+    REQUIRE(output_buffer.state() == TrackState::Error);
+    REQUIRE(decode_paused.load(std::memory_order_acquire));
+    REQUIRE_FALSE(running.load(std::memory_order_acquire));
+    REQUIRE_FALSE(output_buffer.peek(0).has_value());
 }

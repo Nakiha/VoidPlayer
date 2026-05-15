@@ -25,6 +25,7 @@ public:
     void flush_visibility_if_needed();
     void flush_before_publish_if_needed(bool force_for_shared_surface = false);
     std::optional<TextureFrame> convert_frame_for_publish(AVFrame* frame);
+    bool push_converted_frame(std::optional<TextureFrame> frame, const char* context);
     bool convert_and_push_frame(AVFrame* frame, const char* context);
 
 private:

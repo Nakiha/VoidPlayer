@@ -46,17 +46,21 @@ std::optional<TextureFrame> DecodedFramePublisher::convert_frame_for_publish(AVF
     return converter_.convert(frame);
 }
 
-bool DecodedFramePublisher::convert_and_push_frame(AVFrame* frame, const char* context) {
-    auto converted = convert_frame_for_publish(frame);
-    if (!converted.has_value()) {
+bool DecodedFramePublisher::push_converted_frame(std::optional<TextureFrame> frame,
+                                                 const char* context) {
+    if (!frame.has_value()) {
         spdlog::error("[DecodeThread] Frame conversion failed ({})", context ? context : "unknown");
         output_buffer_.set_state(TrackState::Error);
         decode_paused_.store(true, std::memory_order_release);
         running_.store(false, std::memory_order_release);
         return false;
     }
-    output_buffer_.push_frame(std::move(*converted));
+    output_buffer_.push_frame(std::move(*frame));
     return true;
+}
+
+bool DecodedFramePublisher::convert_and_push_frame(AVFrame* frame, const char* context) {
+    return push_converted_frame(convert_frame_for_publish(frame), context);
 }
 
 } // namespace vr

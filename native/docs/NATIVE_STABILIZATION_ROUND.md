@@ -166,13 +166,13 @@ Still active:
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
 - `Renderer` still owns layout mutation, public playback commands, global seek clock/deferred gates, and seek logging.
-- `DecodeThread` still owns exact-seek frame/pending publish side effects and conversion-failure state writes.
+- `DecodeThread` still owns exact-seek frame/pending publish side effects.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P125 DecodeThread Publish Error Boundary.
+Next patch: P126 DecodeThread Exact Seek Frame Publisher Boundary.
 
 Completed patch details through P115 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -353,11 +353,33 @@ Result:
 
 ### P125 - DecodeThread Publish Error Boundary
 
+Status: done in Patch 125.
+
 Goal:
 
 - Remove the remaining exact-seek conversion-failure state writes from `DecodeThread::publish_exact_seek_window()`.
 - Extend `DecodedFramePublisher` so exact-seek stable-frame reuse and converted-frame publish can share the same Error/pause/stop semantics as normal frame publish.
 - Preserve exact-seek window ordering, hardware wait/flush behavior, stable snapshot reuse, and pending candidate movement.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `DecodedFramePublisher::push_converted_frame()` so already-converted/stable exact-seek frames share normal publish error handling.
+- `convert_and_push_frame()` now delegates conversion result handling to the same helper.
+- `DecodeThread::publish_exact_seek_window()` no longer writes conversion-failure Error/pause/running state directly.
+- Added focused publisher coverage for prepared-frame publish and missing-frame error handling.
+
+### P126 - DecodeThread Exact Seek Frame Publisher Boundary
+
+Goal:
+
+- Move the remaining exact-seek preview-window frame publish loop and pending-frame publish helper out of `DecodeThread`.
+- Keep exact-seek candidate ownership in `ExactSeekCandidateStore`, publish-window sizing in `exact_seek_publish_policy`, and final post-preview state updates in `DecodeThread` for this patch.
+- Preserve selected-frame hardware wait, subsequent-frame flush, stable snapshot reuse, pending tail movement, and logs.
 
 Validation:
 

@@ -690,24 +690,18 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
         } else {
             publisher.flush_before_publish_if_needed(true);
         }
-        TextureFrame tex_frame;
+        std::optional<TextureFrame> tex_frame;
         if (i == selected &&
             candidate.stable_frame.has_value() &&
             candidate.stable_frame->texture_handle) {
             tex_frame = *candidate.stable_frame;
         } else {
-            auto converted = publisher.convert_frame_for_publish(candidate.frame.get());
-            if (!converted.has_value()) {
-                spdlog::error("[DecodeThread] Frame conversion failed while publishing exact-seek window");
-                output_buffer_.set_state(TrackState::Error);
-                decode_paused_.store(true, std::memory_order_release);
-                running_.store(false, std::memory_order_release);
-                conversion_failed = true;
-                break;
-            }
-            tex_frame = std::move(*converted);
+            tex_frame = publisher.convert_frame_for_publish(candidate.frame.get());
         }
-        output_buffer_.push_frame(std::move(tex_frame));
+        if (!publisher.push_converted_frame(std::move(tex_frame), "publishing exact-seek window")) {
+            conversion_failed = true;
+            break;
+        }
     }
     if (conversion_failed) {
         exact_seek_candidates_.clear();

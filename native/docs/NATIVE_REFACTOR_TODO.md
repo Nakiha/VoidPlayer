@@ -481,6 +481,10 @@ TODO:
    - 新增 `AvFrameUnrefGuard` / `reset_reusable_av_frame` 收口 receive 成功后的可复用 AVFrame unref 时机；`DecodeThread` 不再在 normal receive、EOF drain、post-preview drain、exact-seek candidate 分支散落手动 unref。
    - 验证：native-only + seek UI。
 
+80. [x] `DecodeThreadPublishErrorBoundary`
+   - 扩展 `DecodedFramePublisher::push_converted_frame`，让 exact-seek stable-frame / converted-frame 发布复用 normal publish 的 Error/pause/running 状态语义；`DecodeThread::publish_exact_seek_window` 不再直接写 conversion-failure 状态。
+   - 验证：native-only + seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

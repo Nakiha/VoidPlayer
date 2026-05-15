@@ -212,7 +212,7 @@ Accepted:
 
 Remaining:
 
-- Move add-track open/start and seek-recreate stop/open work out of long `state_mutex_` critical sections.
+- Move seek-recreate stop/open work out of long `state_mutex_` critical sections.
 
 ## Active Patch Queue
 
@@ -737,6 +737,26 @@ Result:
 - `remove_track()` now removes the slot from renderer-visible state under `state_mutex_`, stores the removed `TrackPipeline` in a local owner, and releases the state lock before stopping decode/demux.
 - Removed demux callbacks are cleared before the detached pipeline is stopped outside the state lock.
 - Existing compacted tracks remain committed to `RenderSink` with their `file_id + generation` identity before the removed pipeline is stopped.
+
+### P148 - Renderer Add-Track Open/Start Outside State Lock
+
+Status: done in Patch 148.
+
+Goal:
+
+- Shorten `add_track()`'s `state_mutex_` critical section by moving pipeline open/probe, decoder construction, callback wiring, and demux start outside the state lock.
+- Keep the public mutation serialized by `lifecycle_mutex_`.
+- Preserve slot reservation, playback pause/rollback, file-id/generation assignment, layout append, duration cache update, render-sink commit, presenter reset, current-clock seek alignment, and cached-decision invalidation.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv`
+
+Result:
+
+- `add_track()` now uses short state-lock sections for preflight/playback pause and final commit, while pipeline creation/start runs without holding `state_mutex_`.
+- Failed pipeline creation/start rolls back the temporary playback pause under the state lock.
 
 ## Do-Not-Drift List
 

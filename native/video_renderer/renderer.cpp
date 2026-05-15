@@ -1955,30 +1955,42 @@ bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, Se
 int Renderer::add_track(const std::string& video_path,
                         bool use_hardware_decode) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    if (!initialized_) return -1;
-
-    int slot = find_empty_slot();
-    if (slot < 0) {
-        spdlog::warn("Renderer::add_track: no empty slots");
-        return -1;
-    }
+    int slot = -1;
+    int new_file_id = 0;
+    uint64_t new_generation = 0;
+    int64_t current_pts = 0;
+    TrackPlaybackMutationState playback_state;
 
     const TrackPlaybackMutationHooks playback_hooks{
         [this]() { playback_->pause(); },
         [this]() { playback_->play(); },
         [this](bool playing) { playing_ = playing; },
     };
-    const auto playback_state = pause_playback_for_track_mutation(
-        playing_.load(), playback_hooks);
+
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (!initialized_) return -1;
+
+        slot = find_empty_slot();
+        if (slot < 0) {
+            spdlog::warn("Renderer::add_track: no empty slots");
+            return -1;
+        }
+
+        playback_state = pause_playback_for_track_mutation(
+            playing_.load(), playback_hooks);
+        new_file_id = next_file_id_++;
+        new_generation = next_track_generation_++;
+        current_pts = playback_->clock().current_pts_us();
+    }
 
     auto pipeline = create_pipeline(video_path, use_hardware_decode);
     if (!pipeline) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         rollback_track_mutation_playback(playback_state, playback_hooks);
         return -1;
     }
-    const int new_file_id = next_file_id_++;
-    pipeline->generation = next_track_generation_++;
+    pipeline->generation = new_generation;
     const TrackPipelineStartConfig start_config{
         new_file_id,
         0,
@@ -1993,62 +2005,77 @@ int Renderer::add_track(const std::string& video_path,
     };
     if (!configure_and_start_track_pipeline(
             *pipeline, start_config, hooks, "Renderer::add_track")) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         rollback_track_mutation_playback(playback_state, playback_hooks);
         return -1;
     }
 
-    // Update duration cache
-    cached_duration_us_ = extend_track_duration_cache(cached_duration_us_, *pipeline);
+    TrackAddSeekResult seek_result;
+    int64_t track_offset_us = 0;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (!initialized_ ||
+            slot < 0 ||
+            slot >= static_cast<int>(kMaxTracks) ||
+            tracks_[static_cast<size_t>(slot)]) {
+            rollback_track_mutation_playback(playback_state, playback_hooks);
+            return -1;
+        }
 
-    const TrackAddCommitHooks commit_hooks{
-        [this](size_t committed_slot, TrackPipeline& track) {
-            render_sink_->set_track(
-                committed_slot, track.track_buffer, track.file_id, track.generation);
-            render_sink_->set_track_offset(committed_slot, track.offset_us);
-        },
-        [this](size_t committed_slot) {
-            if (auto* presenter = frame_presenter()) {
-                presenter->reset_track(committed_slot);
-            }
-        },
-    };
-    TrackPipeline* track = commit_new_track_pipeline(
-        tracks_, static_cast<size_t>(slot), std::move(pipeline), commit_hooks);
-    if (!track) {
-        rollback_track_mutation_playback(playback_state, playback_hooks);
-        return -1;
+        // Update duration cache
+        cached_duration_us_ = extend_track_duration_cache(cached_duration_us_, *pipeline);
+
+        const TrackAddCommitHooks commit_hooks{
+            [this](size_t committed_slot, TrackPipeline& track) {
+                render_sink_->set_track(
+                    committed_slot, track.track_buffer, track.file_id, track.generation);
+                render_sink_->set_track_offset(committed_slot, track.offset_us);
+            },
+            [this](size_t committed_slot) {
+                if (auto* presenter = frame_presenter()) {
+                    presenter->reset_track(committed_slot);
+                }
+            },
+        };
+        TrackPipeline* track = commit_new_track_pipeline(
+            tracks_, static_cast<size_t>(slot), std::move(pipeline), commit_hooks);
+        if (!track) {
+            rollback_track_mutation_playback(playback_state, playback_hooks);
+            return -1;
+        }
+
+        layout_controller_.append_track(layout_, new_file_id, slot);
+
+        // Seek new track to current clock position so evaluate() can find matching frames.
+        // Without this, the new track starts from PTS=0 and evaluate() discards all its
+        // frames as "expired" when the clock is elsewhere, causing both panels to show
+        // the same old video.
+        const TrackAddSeekHooks add_seek_hooks{
+            [this](int file_id, bool paused) {
+                if (audio_coordinator_) {
+                    audio_coordinator_->set_track_decode_paused(file_id, paused);
+                }
+            },
+        };
+        seek_result = prepare_add_track_seek_to_clock(
+            *track, current_pts, playback_state.was_playing, add_seek_hooks);
+        track_offset_us = track->offset_us;
+
+        // Force redraw, but keep already-presented frames from existing tracks so
+        // they remain visible while the new track is still buffering/soft-decoding.
+        preview_drawn_ = false;
+        last_decision_.frames[slot] = std::nullopt;
+        last_decision_.file_ids[slot] = -1;
+        last_decision_.track_generations[slot] = 0;
     }
 
-    layout_controller_.append_track(layout_, new_file_id, slot);
-
-    // Seek new track to current clock position so evaluate() can find matching frames.
-    // Without this, the new track starts from PTS=0 and evaluate() discards all its
-    // frames as "expired" when the clock is elsewhere, causing both panels to show
-    // the same old video.
-    int64_t current_pts = playback_->clock().current_pts_us();
-    const TrackAddSeekHooks add_seek_hooks{
-        [this](int file_id, bool paused) {
-            if (audio_coordinator_) {
-                audio_coordinator_->set_track_decode_paused(file_id, paused);
-            }
-        },
-    };
-    const auto seek_result = prepare_add_track_seek_to_clock(
-        *track, current_pts, playback_state.was_playing, add_seek_hooks);
     if (seek_result.applied) {
         spdlog::info("Renderer::add_track: seeking slot={} to {:.3f}s (offset={:.3f}s, type={})",
                      slot,
                      seek_result.target_pts_us / 1e6,
-                     track->offset_us / 1e6,
+                     track_offset_us / 1e6,
                      seek_result.seek_type == SeekType::Exact ? "Exact" : "Keyframe");
     }
-
-    // Force redraw, but keep already-presented frames from existing tracks so
-    // they remain visible while the new track is still buffering/soft-decoding.
-    preview_drawn_ = false;
-    last_decision_.frames[slot] = std::nullopt;
-    last_decision_.file_ids[slot] = -1;
-    last_decision_.track_generations[slot] = 0;
 
     spdlog::info("Renderer::add_track: slot={} hw_decode={} path={}",
                  slot,

@@ -3,6 +3,7 @@
 #include "video_renderer/decode/decoded_frame_publisher.h"
 
 #include <cstring>
+#include <mutex>
 #include <optional>
 #include <utility>
 
@@ -46,6 +47,18 @@ AVFrame* make_unsupported_rgb_frame() {
     REQUIRE(av_frame_get_buffer(frame, 0) >= 0);
     return frame;
 }
+
+class CountingHwDecodeProvider : public HwDecodeProvider {
+public:
+    bool probe(const AVCodec*) const override { return true; }
+    HwDecodeInitResult init(const HwDecodeInitParams&) override { return {}; }
+    void shutdown() override {}
+    void flush() override { ++flush_count; }
+    HwDecodeType type() const override { return HwDecodeType::D3D11VA; }
+    const char* name() const override { return "counting"; }
+
+    int flush_count = 0;
+};
 
 } // namespace
 
@@ -168,4 +181,71 @@ TEST_CASE("DecodedFramePublisher: missing converted frame marks decode error",
     REQUIRE(decode_paused.load(std::memory_order_acquire));
     REQUIRE_FALSE(running.load(std::memory_order_acquire));
     REQUIRE_FALSE(output_buffer.peek(0).has_value());
+}
+
+TEST_CASE("DecodedFramePublisher: visibility flush runs once for pending hw frames",
+          "[decode_thread][decoded_frame_publisher][hw]") {
+    TrackBuffer output_buffer;
+    FrameConverter converter;
+    bool hw_enabled = true;
+    bool hw_visibility_flush_pending = true;
+    auto provider = std::make_unique<CountingHwDecodeProvider>();
+    auto* provider_ptr = provider.get();
+    std::unique_ptr<HwDecodeProvider> hw_provider = std::move(provider);
+    std::atomic<bool> decode_paused{false};
+    std::atomic<bool> running{true};
+
+    DecodedFramePublisher publisher(output_buffer,
+                                    converter,
+                                    hw_enabled,
+                                    hw_provider,
+                                    hw_visibility_flush_pending,
+                                    decode_paused,
+                                    running);
+
+    publisher.flush_visibility_if_needed();
+    REQUIRE(provider_ptr->flush_count == 1);
+    REQUIRE_FALSE(hw_visibility_flush_pending);
+
+    publisher.flush_visibility_if_needed();
+    REQUIRE(provider_ptr->flush_count == 1);
+}
+
+TEST_CASE("DecodedFramePublisher: publish flush respects hw download and shared-surface policy",
+          "[decode_thread][decoded_frame_publisher][hw]") {
+    TrackBuffer output_buffer;
+    FrameConverter converter;
+    std::recursive_mutex device_mutex;
+    REQUIRE(converter.init_hardware(
+        nullptr,
+        nullptr,
+        64,
+        64,
+        HwDecodeType::D3D11VA,
+        false,
+        &device_mutex));
+
+    bool hw_enabled = true;
+    bool hw_visibility_flush_pending = true;
+    auto provider = std::make_unique<CountingHwDecodeProvider>();
+    auto* provider_ptr = provider.get();
+    std::unique_ptr<HwDecodeProvider> hw_provider = std::move(provider);
+    std::atomic<bool> decode_paused{false};
+    std::atomic<bool> running{true};
+
+    DecodedFramePublisher publisher(output_buffer,
+                                    converter,
+                                    hw_enabled,
+                                    hw_provider,
+                                    hw_visibility_flush_pending,
+                                    decode_paused,
+                                    running);
+
+    publisher.flush_before_publish_if_needed(false);
+    REQUIRE(provider_ptr->flush_count == 0);
+    REQUIRE(hw_visibility_flush_pending);
+
+    publisher.flush_before_publish_if_needed(true);
+    REQUIRE(provider_ptr->flush_count == 1);
+    REQUIRE_FALSE(hw_visibility_flush_pending);
 }

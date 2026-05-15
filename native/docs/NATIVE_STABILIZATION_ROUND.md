@@ -824,6 +824,25 @@ Result:
 - Added a deterministic headless renderer stress test with one capture thread and one resize thread running while the main thread calls `shutdown()`.
 - The test verifies capture/resize calls occurred, shutdown leaves the renderer uninitialized, and post-shutdown capture fails closed with cleared output.
 
+### P152 - Decode Boundary Ownership And Flush Tests
+
+Status: done in Patch 152.
+
+Goal:
+
+- Close the focused test gap for codec send/receive wrappers, reusable `AVFrame` ownership, and hardware visibility flush policy.
+- Keep this as boundary coverage rather than another full decode/render integration test.
+
+Validation:
+
+- `python dev.py test --native-only`
+
+Result:
+
+- Added codec-loop wrapper coverage for guarded send/receive calls on unopened codec contexts, verifying they fail closed as explicit codec-loop errors.
+- Added `DecodedFramePublisher` tests for one-shot pending hardware visibility flush and forced shared-surface publish flush behavior.
+- Added a direct D3D11 hardware `FrameConverter` lifetime test proving the converted `TextureFrame` holds an `AVFrame` ref after the reusable decode frame is unreffed.
+
 ## Do-Not-Drift List
 
 - Do not let runner plugin cosmetics displace the remaining `review_godobject.md` owner-boundary work.

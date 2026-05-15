@@ -4,10 +4,15 @@
 #include <cstring>
 #include <mutex>
 #include <utility>
+#include <atomic>
+#include <d3d11.h>
+#include <wrl/client.h>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
+#include <libavutil/buffer.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/mem.h>
 }
 
 using namespace vr;
@@ -35,6 +40,12 @@ AVFrame* make_yuv420_frame(int width, int height, int64_t pts) {
         memset(frame->data[2] + y * frame->linesize[2], 128, chroma_width);
     }
     return frame;
+}
+
+void free_counted_buffer(void* opaque, uint8_t* data) {
+    auto* free_count = static_cast<std::atomic<int>*>(opaque);
+    free_count->fetch_add(1, std::memory_order_relaxed);
+    av_free(data);
 }
 
 } // namespace
@@ -520,6 +531,77 @@ TEST_CASE("FrameConverter: unsupported software format returns no frame",
 
     auto result = converter.convert(frame);
     REQUIRE(result.has_value() == false);
+
+    av_frame_free(&frame);
+}
+
+TEST_CASE("FrameConverter: direct D3D11 hardware frame keeps AVFrame ownership",
+          "[frame_converter][hw][av_frame_lifetime]") {
+    Microsoft::WRL::ComPtr<ID3D11Device> device;
+    D3D_FEATURE_LEVEL feature_level = D3D_FEATURE_LEVEL_11_0;
+    REQUIRE(SUCCEEDED(D3D11CreateDevice(
+        nullptr,
+        D3D_DRIVER_TYPE_HARDWARE,
+        nullptr,
+        0,
+        &feature_level,
+        1,
+        D3D11_SDK_VERSION,
+        &device,
+        nullptr,
+        nullptr)));
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = 64;
+    desc.Height = 64;
+    desc.MipLevels = 1;
+    desc.ArraySize = 2;
+    desc.Format = DXGI_FORMAT_NV12;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+    REQUIRE(SUCCEEDED(device->CreateTexture2D(&desc, nullptr, &texture)));
+
+    std::recursive_mutex device_mutex;
+    FrameConverter converter;
+    REQUIRE(converter.init_hardware(
+        nullptr,
+        nullptr,
+        64,
+        64,
+        HwDecodeType::D3D11VA,
+        false,
+        &device_mutex));
+
+    std::atomic<int> free_count{0};
+    AVFrame* frame = av_frame_alloc();
+    REQUIRE(frame != nullptr);
+    frame->format = AV_PIX_FMT_D3D11;
+    frame->width = 64;
+    frame->height = 64;
+    frame->pts = 7000;
+    frame->data[0] = reinterpret_cast<uint8_t*>(texture.Get());
+    frame->data[1] = reinterpret_cast<uint8_t*>(intptr_t{1});
+    auto* token = static_cast<uint8_t*>(av_malloc(1));
+    REQUIRE(token != nullptr);
+    frame->buf[0] = av_buffer_create(
+        token, 1, free_counted_buffer, &free_count, 0);
+    REQUIRE(frame->buf[0] != nullptr);
+
+    auto converted = converter.convert(frame);
+    REQUIRE(converted.has_value());
+    REQUIRE(converted->hw_frame_ref != nullptr);
+    REQUIRE(converted->storage_kind() == FrameStorageKind::D3D11Nv12);
+    REQUIRE(converted->texture_handle == texture.Get());
+    REQUIRE(converted->texture_array_index == 1);
+
+    av_frame_unref(frame);
+    REQUIRE(free_count.load(std::memory_order_relaxed) == 0);
+
+    converted.reset();
+    REQUIRE(free_count.load(std::memory_order_relaxed) == 1);
 
     av_frame_free(&frame);
 }

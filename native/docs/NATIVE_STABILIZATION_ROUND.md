@@ -149,6 +149,7 @@ Fixed or reduced:
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: codec send/receive SEH guards, return classification, and hardware device mutex wrapping now live in `codec_loop` with focused state tests.
 - `DecodeThread`: frame conversion/publish failure handling and hardware visibility flush now live in `DecodedFramePublisher` with focused state tests.
+- `DecodeThread`: drain-before-next-packet and EOF codec drain send/receive decisions now live in `decode_drain_policy` with focused state tests.
 - `NativeResourceBudget`: track buffer queued-frame depth decision moved into `TrackBufferBudget` and is tested as a policy boundary.
 - `AudioEngine::Impl`: track registry, buffer publication facts, and decode pause/seek fanout moved into `AudioTrackRegistry`.
 - `AudioEngine::Impl`: nested FFmpeg audio decoder thread implementation moved into `AudioDecodeThread`.
@@ -163,13 +164,13 @@ Still active:
 - `Renderer` remains the coordination root.
 - `ffi_exports.cpp` still carries lifecycle create/destroy/error APIs and process-global logging/crash convenience shells.
 - `Renderer` still owns layout mutation, public playback commands, global seek clock/deferred gates, and seek logging.
-- `DecodeThread` main loop still owns EOF drain, AVFrame unref timing, and exact-seek candidate ownership.
+- `DecodeThread` main loop still owns EOF drain choreography, AVFrame unref timing, and exact-seek candidate ownership.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P114 DecodeThread Drain Boundary.
+Next patch: P115 DecodeThread Exact-Seek Candidate Ownership Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -470,11 +471,32 @@ Result:
 
 ### P114 - DecodeThread Drain Boundary
 
+Status: done in Patch 114.
+
 Goal:
 
 - Continue reducing `DecodeThread` by extracting EOF drain and drain-before-next-packet loop mechanics once codec calls and frame publishing are already isolated.
 - Keep exact-seek EOF drain and reorder fallback behavior unchanged.
 - Prefer a narrow helper around drain loop orchestration before touching broader AVFrame lifetime.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `decode_drain_policy` for drain-before-next-packet receive actions, EOF codec-drain send/receive actions, and drain stop gates.
+- `DecodeThread` now delegates drain request clearing, SEH error marking choice, EOF send handling, and pause/flush stop checks to the policy helpers.
+- Added native coverage for EAGAIN, EOF, hard error, SEH sentinel, cancel, pause, and flushing drain decisions.
+
+### P115 - DecodeThread Exact-Seek Candidate Ownership Boundary
+
+Goal:
+
+- Continue reducing `DecodeThread` by isolating exact-seek candidate ownership and memory counter maintenance from the main decode object.
+- Keep preview-window selection and post-target pending-frame behavior unchanged.
+- Prefer moving candidate collection/snapshot/memory stats behind a small owner if current call sites permit it.
 
 Validation:
 

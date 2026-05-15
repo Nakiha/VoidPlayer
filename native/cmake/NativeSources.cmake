@@ -48,6 +48,7 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/track_step_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/codec_loop.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/decode/decode_drain_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decoded_frame_publisher.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decode_thread.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/hw/hw_decode_provider.cpp"

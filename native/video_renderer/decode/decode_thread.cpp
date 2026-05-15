@@ -1,5 +1,6 @@
 #include "video_renderer/decode/decode_thread.h"
 #include "video_renderer/decode/codec_loop.h"
+#include "video_renderer/decode/decode_drain_policy.h"
 #include "video_renderer/decode/decode_loop_policy.h"
 #include "video_renderer/decode/exact_seek_window.h"
 #include <spdlog/spdlog.h>
@@ -933,25 +934,24 @@ void DecodeThread::run() {
                 output_buffer_.state())) {
             int drained = 0;
             while (true) {
-                if (cancelled_.load(std::memory_order_acquire) ||
-                    output_buffer_.state() == TrackState::Flushing) {
+                if (should_abort_drain_before_receive(
+                        cancelled_.load(std::memory_order_acquire),
+                        output_buffer_.state())) {
                     drain_decoder_before_next_packet_ = false;
                     break;
                 }
 
                 int ret = receive_codec_frame_seh_guarded(
                     codec_ctx_, frame, hw_enabled_, device_mutex_);
-                if (codec_loop_is_seh_caught(ret)) {
+                const auto drain_action = choose_drain_before_next_packet_receive_action(ret);
+                if (drain_action == DecodeDrainReceiveAction::StopWithErrorAndClearDrainRequest) {
                     output_buffer_.set_state(TrackState::Error);
                     decode_paused_.store(true, std::memory_order_release);
                     running_.store(false, std::memory_order_release);
-                }
-
-                if (codec_loop_is_again_or_eof(ret)) {
                     drain_decoder_before_next_packet_ = false;
                     break;
                 }
-                if (ret < 0) {
+                if (drain_action == DecodeDrainReceiveAction::StopAndClearDrainRequest) {
                     drain_decoder_before_next_packet_ = false;
                     break;
                 }
@@ -966,8 +966,9 @@ void DecodeThread::run() {
                 av_frame_unref(frame);
                 ++drained;
 
-                if (decode_paused_.load(std::memory_order_acquire) ||
-                    output_buffer_.state() == TrackState::Flushing) {
+                if (should_stop_drain_after_publish(
+                        decode_paused_.load(std::memory_order_acquire),
+                        output_buffer_.state())) {
                     break;
                 }
             }
@@ -1037,8 +1038,9 @@ void DecodeThread::run() {
                     }
                 } else if (eof_action == EofDrainAction::CodecDrain) {
                     int send_ret = send_codec_packet_seh_guarded(codec_ctx_, nullptr);
-                    if (send_ret < 0 && send_ret != AVERROR(EAGAIN) && send_ret != AVERROR_EOF) {
-                        if (codec_loop_is_seh_caught(send_ret)) {
+                    const auto send_action = choose_eof_codec_send_action(send_ret);
+                    if (send_action != EofCodecSendAction::ReceiveFrames) {
+                        if (send_action == EofCodecSendAction::StopWithError) {
                             output_buffer_.set_state(TrackState::Error);
                             decode_paused_.store(true, std::memory_order_release);
                             running_.store(false, std::memory_order_release);
@@ -1047,14 +1049,14 @@ void DecodeThread::run() {
                     }
                     while (true) {
                         int ret = receive_codec_frame_seh_guarded(codec_ctx_, frame);
-                        if (codec_loop_is_seh_caught(ret)) {
+                        const auto receive_action = choose_eof_codec_receive_action(ret);
+                        if (receive_action == DecodeDrainReceiveAction::StopWithError) {
                             output_buffer_.set_state(TrackState::Error);
                             decode_paused_.store(true, std::memory_order_release);
                             running_.store(false, std::memory_order_release);
                             break;
                         }
-                        if (codec_loop_is_again_or_eof(ret)) break;
-                        if (ret < 0) break;
+                        if (receive_action == DecodeDrainReceiveAction::Stop) break;
 
                         rescale_ts(frame);
                         log_hw_frame_context_once(frame);

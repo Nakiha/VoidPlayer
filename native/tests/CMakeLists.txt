@@ -24,6 +24,7 @@ add_executable(video_renderer_tests
     renderer/test_track_buffer.cpp
     renderer/test_demux_thread.cpp
     renderer/test_codec_loop.cpp
+    renderer/test_decode_drain_policy.cpp
     renderer/test_decoded_frame_publisher.cpp
     renderer/test_decode_loop_policy.cpp
     renderer/test_exact_seek_window.cpp

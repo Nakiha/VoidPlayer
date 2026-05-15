@@ -441,6 +441,10 @@ TODO:
    - 新增 `DecodedFramePublisher` 承接硬解 visibility flush、frame conversion、push_frame 以及转换失败后的 Error/暂停/停止状态处理；`DecodeThread` 保留 exact-seek 和主循环策略。
    - 验证：native-only + seek UI。
 
+70. [x] `DecodeThreadDrainPolicyBoundary`
+   - 新增 `decode_drain_policy` 承接 drain-before-next-packet 与 EOF codec drain 的 send/receive 返回值判定、清 drain request、错误停止和暂停/flush 停止 gates。
+   - 验证：native-only + seek UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

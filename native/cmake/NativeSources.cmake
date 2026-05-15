@@ -74,6 +74,7 @@ set(VOID_ANALYSIS_SOURCES
     "${VOID_NATIVE_DIR}/analysis/parsers/vac2_parser.cpp"
     "${VOID_NATIVE_DIR}/analysis/parsers/vachunk_parser.cpp"
     "${VOID_NATIVE_DIR}/analysis/analysis_manager.cpp"
+    "${VOID_NATIVE_DIR}/analysis/analysis_session.cpp"
     "${VOID_NATIVE_DIR}/analysis/generators/bitstream_indexer.cpp"
     "${VOID_NATIVE_DIR}/analysis/generators/analysis_generator.cpp"
 )

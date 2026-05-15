@@ -151,6 +151,7 @@ Fixed or reduced:
 - `AudioEngine::Impl`: track registry, buffer publication facts, and decode pause/seek fanout moved into `AudioTrackRegistry`.
 - `AudioEngine::Impl`: nested FFmpeg audio decoder thread implementation moved into `AudioDecodeThread`.
 - `AudioEngine::Impl`: nested waveOut output thread and WinMM device loop moved into `WaveOutOutput`.
+- `AnalysisManager`: VAC2 session data, overlay chunk index/cache, decoded chunk LRU, and PTS-to-frame mapping moved into `AnalysisSession`.
 - Windows runner plugin: diagnostics, logging bootstrap, texture bridge, file picker, method dispatch, and MethodChannel diagnostics scope were split.
 - Process-global logging/crash FFI ownership is now documented.
 
@@ -165,7 +166,7 @@ Still active:
 
 ## Active Patch Queue
 
-Next patch: P110 AnalysisManager Session Boundary.
+Next patch: P111 AnalysisManager Overlay Track Registry Boundary.
 
 Completed patch details through P99 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -382,11 +383,32 @@ Validation:
 
 ### P110 - AnalysisManager Session Boundary
 
+Status: done in Patch 110.
+
 Goal:
 
 - Resume `review_godobject.md`'s `AnalysisManager` finding by extracting the next session/registry/cache-facing boundary that still lives in the singleton manager.
 - Preserve existing analysis FFI/session snapshot behavior and overlay cache correctness fixed in the overlay rounds.
 - Choose the exact patch boundary after re-reading current `analysis_manager.*`, because several earlier overlay fixes already moved part of the state model.
+
+Result:
+
+- Added `AnalysisSession` to own VAC2 base data, frame summary queries, PTS-to-frame mapping, overlay chunk index refresh, single-frame cache, and decoded chunk LRU.
+- `AnalysisManager` now holds an immutable session snapshot and delegates session reads to `AnalysisSession`.
+- Existing overlay chunk filtering/cache behavior and concurrent manager load/unload/read tests continue to cover the boundary.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h264.csv`
+
+### P111 - AnalysisManager Overlay Track Registry Boundary
+
+Goal:
+
+- Continue reducing `AnalysisManager` by extracting overlay track registration/snapshot storage out of the singleton manager.
+- Prefer storing per-track `AnalysisSession` snapshots rather than recursive `AnalysisManager` instances if the current call sites allow it.
+- Preserve renderer-facing `overlay_track_snapshot()` behavior and FFI `set_overlay_track` / `clear_overlay_tracks` semantics.
 
 Validation:
 

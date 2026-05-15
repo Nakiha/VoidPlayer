@@ -425,8 +425,12 @@ TODO:
    - 已继续收 `AudioEngine::Impl` God Object，把 nested waveOut device/output thread 从 `audio_engine.cpp` 拆到独立边界。
    - 验证：native-only + smoke UI。
 
-66. [ ] `AnalysisManagerSessionBoundary`
-   - 后续继续收 chat 点名的 `AnalysisManager` 隐形 God Object，先复核现有 session snapshot / overlay cache 拆分后还剩的 owner 边界。
+66. [x] `AnalysisManagerSessionBoundary`
+   - 已继续收 chat 点名的 `AnalysisManager` 隐形 God Object，把 VAC2 session / overlay chunk index-cache / decoded chunk LRU / PTS 映射拆到 `AnalysisSession`。
+   - 验证：native-only + smoke/analysis UI。
+
+67. [ ] `AnalysisOverlayTrackRegistry`
+   - 后续继续收 `AnalysisManager` 隐形 God Object，把 overlay track registry 从 singleton manager 中拆出，尽量消除 recursive AnalysisManager 实例。
    - 验证：native-only + smoke UI。
 
 ## P1 - Windows Runner Plugin Split

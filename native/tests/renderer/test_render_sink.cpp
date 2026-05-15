@@ -44,6 +44,35 @@ TEST_CASE("RenderSink: single track with matching PTS presents", "[render_sink]"
     REQUIRE(decision.frames[0]->pts_us == 1000000);
 }
 
+TEST_CASE("RenderSink: present decisions carry track identity",
+          "[render_sink]") {
+    MockTimeSource mt{0};
+    Clock clock([&mt]() { return mt.t; });
+    clock.play();
+
+    auto track = std::make_shared<TrackBuffer>(4, 2);
+    TextureFrame frame;
+    frame.pts_us = 1000000;
+    frame.duration_us = 33000;
+    frame.texture_handle = reinterpret_cast<void*>(0x1);
+    track->push_frame(frame);
+
+    RenderSink sink(clock);
+    sink.set_track(0, track, 42, 7);
+
+    mt.t = 1000000;
+    PresentDecision decision = sink.evaluate();
+    REQUIRE(decision.should_present == true);
+    REQUIRE(decision.frames[0].has_value());
+    REQUIRE(decision.file_ids[0] == 42);
+    REQUIRE(decision.track_generations[0] == 7);
+
+    sink.set_track(0, nullptr);
+    decision = sink.evaluate();
+    REQUIRE(decision.file_ids[0] == -1);
+    REQUIRE(decision.track_generations[0] == 0);
+}
+
 TEST_CASE("RenderSink: registered track is lifetime pinned by the sink",
           "[render_sink]") {
     MockTimeSource mt{0};

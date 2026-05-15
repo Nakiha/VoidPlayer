@@ -339,6 +339,7 @@ private:
     /// Caller must hold state_mutex_.
     void enter_terminal_device_lost_locked(const char* operation);
     void reset_d3d_metrics();
+    void assign_missing_track_generations_locked();
     D3D11Device* d3d_device() const;
     D3D11FramePresenter* frame_presenter() const;
     D3D11HeadlessOutput* headless_output() const;
@@ -406,6 +407,7 @@ private:
     // -- Layout state --
     LayoutState layout_;
     int next_file_id_ = 1;                         ///< Auto-incrementing file ID
+    uint64_t next_track_generation_ = 1;
 
     // -- Cached last frame for redraws (zoom/pan while paused or at EOF) --
     PresentDecision last_decision_;

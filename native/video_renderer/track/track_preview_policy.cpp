@@ -32,6 +32,7 @@ PausedPreviewSnapshot build_paused_preview_snapshot(
         auto frame = tracks[i]->track_buffer->peek(0);
         if (frame.has_value()) {
             snapshot.decision.frames[i] = frame;
+            set_present_decision_track_identity(snapshot.decision, i, *tracks[i]);
         } else if (state != TrackState::Ready) {
             all_active_have_frames = false;
         }
@@ -62,6 +63,7 @@ AvailablePausedFrameSnapshot build_available_paused_frame_snapshot(
         auto frame = tracks[i]->track_buffer->peek(0);
         if (frame.has_value()) {
             snapshot.decision.frames[i] = frame;
+            set_present_decision_track_identity(snapshot.decision, i, *tracks[i]);
             snapshot.has_frame = true;
         }
     }

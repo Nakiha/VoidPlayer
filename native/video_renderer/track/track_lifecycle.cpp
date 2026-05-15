@@ -145,8 +145,12 @@ void compact_present_decision_frames(PresentDecision& decision, size_t slot) {
     }
     for (size_t i = slot; i < kMaxTracks - 1; ++i) {
         decision.frames[i] = std::move(decision.frames[i + 1]);
+        decision.file_ids[i] = decision.file_ids[i + 1];
+        decision.track_generations[i] = decision.track_generations[i + 1];
     }
     decision.frames[kMaxTracks - 1] = std::nullopt;
+    decision.file_ids[kMaxTracks - 1] = -1;
+    decision.track_generations[kMaxTracks - 1] = 0;
 }
 
 int64_t track_pts_end_us_from_stats(const DemuxStats& stats) {
@@ -434,7 +438,8 @@ void bind_existing_tracks_to_render_sink(
         if (!tracks[i]) {
             continue;
         }
-        render_sink.set_track(i, tracks[i]->track_buffer);
+        render_sink.set_track(
+            i, tracks[i]->track_buffer, tracks[i]->file_id, tracks[i]->generation);
     }
 }
 

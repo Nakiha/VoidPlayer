@@ -9,6 +9,7 @@
 - `build/chat/review_overlay.md`
 - `build/chat/review_godobject.md`
 - `build/chat/review_renderer.md`
+- `build/chat/review_renderer_v2.md`
 - `build/chat/split_adv.md`
 - `native/docs/NATIVE_REFACTOR_TODO.md`
 
@@ -17,9 +18,10 @@
 当前优先级：
 
 1. `review_renderer.md` 点名的 Renderer 并发状态模型和目录分层已完成；后续 Renderer 改动必须保持这些锁和目录契约。
-2. `review_godobject.md` 中 Renderer owner boundary 的后续拆分。
-3. `ffi_exports.cpp` / `TrackPipelineManager` / `DecodeThread` 这些二级 God Module 的收缩，排在 Renderer 并发收敛之后。
-4. `review_native.md` / `review_overlay.md` 已修 correctness 回归防线不能倒退。
+2. `review_renderer_v2.md` 的新核验优先于普通 owner-boundary 拆分；先收真实的 Renderer 并发/生命周期缺口，再继续结构性下沉。
+3. `review_godobject.md` 中 Renderer owner boundary 的后续拆分。
+4. `ffi_exports.cpp` / `TrackPipelineManager` / `DecodeThread` 这些二级 God Module 的收缩，排在 Renderer 并发收敛之后。
+5. `review_native.md` / `review_overlay.md` 已修 correctness 回归防线不能倒退。
 
 暂时不要继续做纯 runner plugin 清理，除非它直接关闭 native owner boundary、process-global、测试隔离或上屏正确性问题。
 
@@ -172,11 +174,10 @@ Fixed or reduced:
 Still active:
 
 - `Renderer` remains the coordination root.
-- `Renderer` draw/present path still violates the documented lock order by entering D3D draw under `device_mutex_` and later taking `state_mutex_`.
-- `Renderer` render loop still reads/writes `tracks_`, `last_decision_`, `preview_drawn_`, and `was_buffering_` without a single consistent state snapshot boundary.
-- `D3D11FramePresenter` slot resources are mutated by track lifecycle paths while render draw can prepare frames.
-- `Renderer` public query APIs still have inconsistent `state_mutex_` coverage.
-- Renderer shutdown still needs a late-callback gate plus a render-loop exception/timer guard.
+- `Renderer` still has heavy add/remove/recreate work under `state_mutex_`; this is now performance/liveness risk rather than the original lock-order deadlock.
+- Non-headless present still needs to skip swap-chain present when `draw_frame()` fails.
+- Render-loop exception exit still needs a clearer terminal/error state instead of leaving an apparently initialized renderer with a dead render thread.
+- Shutdown should explicitly clear `event_callback_` after the late-callback gate is active.
 - `Renderer` still owns public layout API/redraw invalidation and deferred seek execution.
 - `DecodeThread` still owns drain-before-next-packet execution and decode-loop control flow.
 - Target/feature boundaries are still too coupled.
@@ -196,9 +197,29 @@ Fixed:
 - Borrowed backend child pointers were removed from `Renderer`; backend-owned helpers are now queried through `D3D11RenderBackend`.
 - Renderer helper/policy files are grouped under `layout/`, `track/`, `seek/`, `render/`, `overlay/`, and `playback/` while `renderer.cpp/h` remain the facade/owner.
 
+### `review_renderer_v2.md`
+
+Status: partially accepted, active.
+
+Stale or already covered:
+
+- `D3D11PreparedFrame` already owns SRV `ComPtr`s and carries `nv12_uv_scale_x/y` defaults of `1.0f`.
+- `D3D11FramePresenter` slot resource access is already serialized internally across prepare/reset/move/memory stats. The suggested extra `device_mutex_` wrapper can still be evaluated, but the original "not thread-safe container" severity no longer matches current code.
+
+Accepted:
+
+- `PresentDecision` lacked track identity. A decision produced before remove/add/compact/recreate could later be applied to a reused slot, contaminating draw, geometry, cached decisions, carry-forward, seek-preview events, and stats.
+
+Remaining:
+
+- Move heavy add/remove/recreate open/stop work out of long `state_mutex_` critical sections.
+- Do not present the swap chain when `draw_frame()` failed.
+- Mark render-loop exception exit as terminal/error state.
+- Clear `event_callback_` during shutdown resource release.
+
 ## Active Patch Queue
 
-Next patch: review-godobject Renderer owner-boundary follow-up.
+Next patch: `review_renderer_v2.md` remaining renderer lifecycle/present safety follow-up.
 
 Completed patch details through P123 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -603,6 +624,28 @@ Result:
 - Moved renderer helpers/policies into domain folders: `layout/`, `track/`, `seek/`, `render/`, `overlay/`, and `playback/`.
 - Updated includes, CMake source lists, tests, runner references, tools, and docs for the new paths.
 - Kept `renderer.cpp/h`, `renderer_config_validation.*`, `renderer_limits.h`, `audio_coordinator.*`, and `clock.*` at the renderer root.
+
+### P143 - Renderer PresentDecision Identity Boundary
+
+Status: done in Patch 143.
+
+Goal:
+
+- Attach track identity to every `PresentDecision` slot so decisions produced outside `state_mutex_` cannot be applied after remove/add/compact/recreate reuses the same slot.
+- Filter draw snapshots, geometry updates, carry-forward, paused preview, step decisions, seek-preview events, and stats against current `file_id + generation`.
+- Preserve legacy unit-test decisions that intentionally omit identity while production tracks receive nonzero generations.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`
+
+Result:
+
+- Added per-slot `file_id` and `track_generation` metadata to `PresentDecision` and `RenderSink`.
+- Assigned monotonically increasing generations to track pipelines and propagated identity through add/remove/compact/recreate render-sink commits.
+- Added shared present-decision identity helpers and used them before drawing, updating layout geometry, caching decisions, carrying frames forward, emitting seek-preview events, and collecting performance stats.
+- Added native coverage proving RenderSink decisions carry and clear track identity.
 
 ## Do-Not-Drift List
 

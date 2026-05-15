@@ -14,6 +14,8 @@ static constexpr size_t kMaxTracks = 4;
 struct PresentDecision {
     bool should_present = false;
     std::array<std::optional<TextureFrame>, kMaxTracks> frames;
+    std::array<int, kMaxTracks> file_ids = {-1, -1, -1, -1};
+    std::array<uint64_t, kMaxTracks> track_generations{};
     int64_t current_pts_us = 0;
 };
 
@@ -25,7 +27,10 @@ public:
     /// ownership and evaluate() snapshots handles under its own mutex, so track
     /// removal/compaction cannot leave an in-flight decision with dangling
     /// buffer pointers.
-    void set_track(size_t slot, std::shared_ptr<TrackBuffer> track);
+    void set_track(size_t slot,
+                   std::shared_ptr<TrackBuffer> track,
+                   int file_id = -1,
+                   uint64_t track_generation = 0);
 
     void remove_all_tracks();
 
@@ -39,6 +44,8 @@ private:
     mutable std::mutex mutex_;
     std::array<std::shared_ptr<TrackBuffer>, kMaxTracks> tracks_{};
     std::array<int64_t, kMaxTracks> track_offsets_{};
+    std::array<int, kMaxTracks> file_ids_ = {-1, -1, -1, -1};
+    std::array<uint64_t, kMaxTracks> track_generations_{};
 };
 
 } // namespace vr

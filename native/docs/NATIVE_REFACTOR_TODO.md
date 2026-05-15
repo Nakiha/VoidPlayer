@@ -157,10 +157,11 @@ TODO:
 
 - `Renderer` 当前同时拥有 D3D backend/raw resource pointers、layout、analysis overlay pixels、capture、render loop、track manager、seek/audio coordinator、perf metrics、device lock、texture lock。
 - `native/docs/THREADING_MODEL.md` 已记录 lock order，可作为拆分护栏。
-- `build/chat/review_renderer.md` 的新核验属实：当前风险已经从“职责边界还大”升级为“Renderer 状态访问模型和锁契约不一致”。
+- `build/chat/review_renderer.md` 的核验属实：风险已经从“职责边界还大”升级为“Renderer 状态访问模型和锁契约不一致”。
+- `build/chat/review_renderer_v2.md` 的新核验部分属实：prepared-frame UV/default 和 presenter 内部序列化描述已过时，但 `PresentDecision` 缺少 track identity 是真实错帧/错缓存风险。
 - `native/video_renderer/` 根目录已有 40+ 个 renderer 相关文件，policy/helper 平铺已经降低可审查性；但目录重组应等并发修复落地后单独做 mechanical patch。
 
-新增优先队列（来自 `build/chat/review_renderer.md`）：
+新增优先队列（来自 `build/chat/review_renderer.md` / `build/chat/review_renderer_v2.md`）：
 
 1. [x] `RendererDrawSnapshotLockBoundary`
    - 目标：`draw_frame()` 不再拿 `state_mutex_`，也不直接读 `tracks_` / `layout_` / `background_color_`；进入 `device_mutex_` 前完成 immutable draw snapshot。
@@ -189,6 +190,14 @@ TODO:
 7. [x] `RendererDirectoryRegroup`
    - 目标：并发修复稳定后，把 renderer policy/helper 文件按 `render/`、`layout/`、`track/`、`seek/`、`stats/` 等域分层；`renderer.cpp/h` 暂留 root 作为 facade/owner。
    - 验证：CMake/Flutter runner build + native-only；该 patch 只做 include/source-list move，不混入行为变化。
+
+8. [x] `RendererPresentDecisionIdentityBoundary`
+   - 目标：`PresentDecision` slot 带上 `file_id + generation`，并在 draw/layout/cache/carry-forward/seek-preview/stats 入口过滤当前 tracks，避免 remove/add/compact/recreate 后旧帧污染新 slot。
+   - 验证：native-only + smoke/track compact/shutdown-during-seek UI。
+
+9. [ ] `RendererV2LifecyclePresentFollowups`
+   - 目标：继续收 `review_renderer_v2.md` 剩余真实项：重活移出长 `state_mutex_`、draw 失败不 present、render-loop exception 进入 terminal/error、shutdown 清空 event callback。
+   - 验证：按实际 patch 拆分，至少 native-only；上屏/track/recreate 相关补 UI。
 
 建议顺序：
 

@@ -1,4 +1,5 @@
 #include "video_renderer/track/track_step_policy.h"
+#include "video_renderer/track/track_present_policy.h"
 
 #include <algorithm>
 #include <limits>
@@ -122,7 +123,7 @@ bool build_step_forward_decision(
         }
 
         int64_t base_pts = current_pts_us - tracks[i]->offset_us;
-        if (last_decision.frames[i].has_value()) {
+        if (present_decision_slot_matches_track(last_decision, tracks, i)) {
             base_pts = last_decision.frames[i]->pts_us;
         } else if (auto current = tracks[i]->track_buffer->peek(0);
                    current.has_value()) {
@@ -151,6 +152,7 @@ bool build_step_forward_decision(
             return false;
         }
         decision.frames[i] = best;
+        set_present_decision_track_identity(decision, i, *tracks[i]);
     }
 
     decision.should_present = any_active;
@@ -196,7 +198,7 @@ StepForwardExactSeekTarget choose_step_forward_exact_seek_target(
         const auto slot = static_cast<size_t>(result.reference_slot);
         const auto& track = tracks[slot];
         if (track) {
-            if (last_decision.frames[slot].has_value()) {
+            if (present_decision_slot_matches_track(last_decision, tracks, slot)) {
                 result.base_pts_us =
                     last_decision.frames[slot]->pts_us + track->offset_us;
             } else if (track->track_buffer) {
@@ -244,7 +246,7 @@ void discard_step_forward_consumed_frames(
         int64_t keep_after_pts = current_pts_us - tracks[i]->offset_us;
         if (decision.frames[i].has_value()) {
             keep_after_pts = decision.frames[i]->pts_us;
-        } else if (last_decision.frames[i].has_value()) {
+        } else if (present_decision_slot_matches_track(last_decision, tracks, i)) {
             keep_after_pts = last_decision.frames[i]->pts_us;
         }
 

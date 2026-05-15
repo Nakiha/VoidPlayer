@@ -17,6 +17,7 @@ namespace vr {
 
 struct TrackPipeline {
     int file_id = 0;
+    uint64_t generation = 0;
     std::string file_path;
     int64_t offset_us = 0;
     std::unique_ptr<PacketQueue> packet_queue;

@@ -146,6 +146,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     open_initial_track_pipelines(
         tracks_, config.video_paths, config.use_hardware_decode,
         initial_track_hooks, "Renderer");
+    assign_missing_track_generations_locked();
 
     if (!tracks_.has_active_tracks()) {
         spdlog::error("Renderer: no valid tracks");
@@ -250,6 +251,7 @@ void Renderer::release_resources_locked() {
     target_height_ = 1080;
     cached_duration_us_ = 0;
     next_file_id_ = 1;
+    next_track_generation_ = 1;
     layout_controller_.reset(layout_);
     if (analysis_overlay_renderer_) {
         analysis_overlay_renderer_->reset();
@@ -278,6 +280,14 @@ void Renderer::reset_d3d_metrics() {
     d3d_metrics_.shared_texture_resize_count.store(0, std::memory_order_relaxed);
     d3d_metrics_.device_lost_count.store(0, std::memory_order_relaxed);
     d3d_metrics_.texture_sharing_failure_count.store(0, std::memory_order_relaxed);
+}
+
+void Renderer::assign_missing_track_generations_locked() {
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (tracks_[i] && tracks_[i]->generation == 0) {
+            tracks_[i]->generation = next_track_generation_++;
+        }
+    }
 }
 
 D3D11Device* Renderer::d3d_device() const {
@@ -804,6 +814,7 @@ void Renderer::draw_paused_frame(const char* reason) {
         auto snapshot = build_available_paused_frame_snapshot(tracks_);
         decision = snapshot.decision;
         has_frame = snapshot.has_frame;
+        filter_present_decision_against_tracks(last_decision_, tracks_);
         if (!has_frame && present_decision_has_frame(last_decision_)) {
             decision = last_decision_;
             has_frame = true;
@@ -814,6 +825,7 @@ void Renderer::draw_paused_frame(const char* reason) {
         int ref = -1;
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
+            filter_present_decision_against_tracks(decision, tracks_);
             last_decision_ = decision;
             ref = first_active_track();
         }
@@ -827,6 +839,7 @@ RendererDrawSnapshot Renderer::build_draw_snapshot_locked(
     const PresentDecision& decision) const {
     RendererDrawSnapshot snapshot;
     snapshot.decision = decision;
+    filter_present_decision_against_tracks(snapshot.decision, tracks_);
     snapshot.layout = layout_;
     snapshot.track_geometry = snapshot_layout_track_geometry(tracks_);
     for (size_t i = 0; i < kMaxTracks; ++i) {
@@ -836,6 +849,7 @@ RendererDrawSnapshot Renderer::build_draw_snapshot_locked(
         auto& out = snapshot.tracks[i];
         out.active = true;
         out.file_id = tracks_[i]->file_id;
+        out.generation = tracks_[i]->generation;
         out.offset_us = tracks_[i]->offset_us;
         out.video_width = tracks_[i]->video_width;
         out.video_height = tracks_[i]->video_height;
@@ -927,8 +941,10 @@ void Renderer::present_frame(const PresentDecision& decision) {
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
         spdlog::debug("[present_frame] mode={}", layout_.mode);
-        update_track_geometry_from_decision_locked(decision);
-        snapshot = build_draw_snapshot_locked(decision);
+        PresentDecision filtered_decision = decision;
+        filter_present_decision_against_tracks(filtered_decision, tracks_);
+        update_track_geometry_from_decision_locked(filtered_decision);
+        snapshot = build_draw_snapshot_locked(filtered_decision);
     }
     std::function<void()> frame_callback;
     bool device_lost = false;
@@ -1433,6 +1449,7 @@ void Renderer::render_loop_body() {
                 std::optional<int64_t> cached_pts_us;
                 {
                     std::lock_guard<std::mutex> lock(state_mutex_);
+                    filter_present_decision_against_tracks(last_decision_, tracks_);
                     if (present_decision_has_frame(last_decision_)) {
                         cached_decision = last_decision_;
                         cached_pts_us =
@@ -1503,6 +1520,10 @@ void Renderer::render_loop_body() {
         }
 
         auto decision = render_sink_->evaluate();
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            filter_present_decision_against_tracks(decision, tracks_);
+        }
 
         // Periodic diagnostics
         {
@@ -1671,6 +1692,10 @@ bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
         for (size_t i = 0; i < kMaxTracks; ++i) {
             if (!decision.frames[i].has_value() || !decision.frames[i]->texture_handle) continue;
             if (!snapshot.tracks[i].active) continue;
+            if (decision.file_ids[i] != snapshot.tracks[i].file_id ||
+                decision.track_generations[i] != snapshot.tracks[i].generation) {
+                continue;
+            }
 
             const auto prepare_start = std::chrono::steady_clock::now();
             const bool prepared_ok = presenter->prepare_frame(
@@ -1723,7 +1748,11 @@ bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
                 cb.color_primaries[i] = VIDEO_COLOR_PRIMARIES_BT709;
                 continue;
             }
+            const bool frame_matches_track =
+                decision.file_ids[i] == snapshot.tracks[i].file_id &&
+                decision.track_generations[i] == snapshot.tracks[i].generation;
             const VideoColorInfo color = decision.frames[i].has_value()
+                && frame_matches_track
                 ? decision.frames[i]->color
                 : VideoColorInfo{};
             cb.color_range[i] = color.range != VIDEO_COLOR_RANGE_UNKNOWN
@@ -1746,11 +1775,14 @@ bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
                         ? VIDEO_COLOR_PRIMARIES_BT601
                         : VIDEO_COLOR_PRIMARIES_BT709));
             if (decision.frames[i].has_value() &&
+                frame_matches_track &&
                 decision.frames[i]->cpu_planar_yuv_storage()) {
                 cb.planar_yuv_mask |= (1 << static_cast<int>(i));
                 cb.nv12_uv_scale_x[i] = 1.0f;
                 cb.nv12_uv_scale_y[i] = 1.0f;
-            } else if (decision.frames[i].has_value() && decision.frames[i]->is_nv12) {
+            } else if (decision.frames[i].has_value() &&
+                       frame_matches_track &&
+                       decision.frames[i]->is_nv12) {
                 cb.nv12_mask |= (1 << static_cast<int>(i));
                 cb.nv12_uv_scale_x[i] = prepared_frames[i].nv12_uv_scale_x;
                 cb.nv12_uv_scale_y[i] = prepared_frames[i].nv12_uv_scale_y;
@@ -1870,7 +1902,11 @@ bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, Se
         [this](const std::string& path,
                bool use_hardware_decode,
                const SeekRequest& initial_seek) {
-            return create_pipeline(path, use_hardware_decode, &initial_seek);
+            auto pipeline = create_pipeline(path, use_hardware_decode, &initial_seek);
+            if (pipeline) {
+                pipeline->generation = next_track_generation_++;
+            }
+            return pipeline;
         };
     hooks.start_hooks = TrackPipelineStartHooks{
         [this](TrackPipeline& track) { configure_track_seek_callback(track); },
@@ -1879,7 +1915,8 @@ bool Renderer::recreate_pipeline_for_seek(size_t slot, int64_t target_pts_us, Se
         [this](int id) { unregister_track_audio(id); },
     };
     hooks.commit_slot = [this](size_t committed_slot, TrackPipeline& track) {
-        render_sink_->set_track(committed_slot, track.track_buffer);
+        render_sink_->set_track(
+            committed_slot, track.track_buffer, track.file_id, track.generation);
         render_sink_->set_track_offset(committed_slot, track.offset_us);
     };
 
@@ -1913,6 +1950,7 @@ int Renderer::add_track(const std::string& video_path,
         return -1;
     }
     const int new_file_id = next_file_id_++;
+    pipeline->generation = next_track_generation_++;
     const TrackPipelineStartConfig start_config{
         new_file_id,
         0,
@@ -1936,7 +1974,8 @@ int Renderer::add_track(const std::string& video_path,
 
     const TrackAddCommitHooks commit_hooks{
         [this](size_t committed_slot, TrackPipeline& track) {
-            render_sink_->set_track(committed_slot, track.track_buffer);
+            render_sink_->set_track(
+                committed_slot, track.track_buffer, track.file_id, track.generation);
             render_sink_->set_track_offset(committed_slot, track.offset_us);
         },
         [this](size_t committed_slot) {
@@ -1980,6 +2019,8 @@ int Renderer::add_track(const std::string& video_path,
     // they remain visible while the new track is still buffering/soft-decoding.
     preview_drawn_ = false;
     last_decision_.frames[slot] = std::nullopt;
+    last_decision_.file_ids[slot] = -1;
+    last_decision_.track_generations[slot] = 0;
 
     spdlog::info("Renderer::add_track: slot={} hw_decode={} path={}",
                  slot,
@@ -2016,7 +2057,7 @@ void Renderer::remove_track(int file_id) {
             if (auto* presenter = frame_presenter()) {
                 presenter->move_track(from, to);
             }
-            render_sink_->set_track(to, track.track_buffer);
+            render_sink_->set_track(to, track.track_buffer, track.file_id, track.generation);
             render_sink_->set_track_offset(to, track.offset_us);
             render_sink_->set_track(from, nullptr);
         },
@@ -2061,8 +2102,10 @@ std::vector<TrackPerfStats> Renderer::track_perf_stats() const {
     auto now = std::chrono::steady_clock::now();
     const double elapsed_s = perf_baseline_tracker_.elapsed_seconds(now);
     const bool should_rotate = perf_baseline_tracker_.should_rotate(elapsed_s);
+    PresentDecision filtered_last_decision = last_decision_;
+    filter_present_decision_against_tracks(filtered_last_decision, tracks_);
     const auto snapshot = snapshot_track_perf_stats_collection(
-        tracks_, last_decision_, perf_baseline_tracker_, elapsed_s);
+        tracks_, filtered_last_decision, perf_baseline_tracker_, elapsed_s);
 
     if (should_rotate) {
         for (size_t i = 0; i < kMaxTracks; ++i) {

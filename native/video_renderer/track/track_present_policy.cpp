@@ -15,6 +15,59 @@ bool present_decision_has_frame(const PresentDecision& decision) {
     return false;
 }
 
+bool present_decision_slot_matches_track(
+    const PresentDecision& decision,
+    const TrackPipelineManager& tracks,
+    size_t slot) {
+    if (slot >= kMaxTracks || !decision.frames[slot].has_value() || !tracks[slot]) {
+        return false;
+    }
+    if (tracks[slot]->generation == 0 &&
+        decision.file_ids[slot] == -1 &&
+        decision.track_generations[slot] == 0) {
+        return true;
+    }
+    return decision.file_ids[slot] == tracks[slot]->file_id &&
+           decision.track_generations[slot] == tracks[slot]->generation;
+}
+
+void set_present_decision_track_identity(
+    PresentDecision& decision,
+    size_t slot,
+    const TrackPipeline& track) {
+    if (slot >= kMaxTracks) {
+        return;
+    }
+    decision.file_ids[slot] = track.file_id;
+    decision.track_generations[slot] = track.generation;
+}
+
+void clear_present_decision_slot(PresentDecision& decision, size_t slot) {
+    if (slot >= kMaxTracks) {
+        return;
+    }
+    decision.frames[slot] = std::nullopt;
+    decision.file_ids[slot] = -1;
+    decision.track_generations[slot] = 0;
+}
+
+void filter_present_decision_against_tracks(
+    PresentDecision& decision,
+    const TrackPipelineManager& tracks) {
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!decision.frames[i].has_value()) {
+            if (!tracks[i]) {
+                clear_present_decision_slot(decision, i);
+            }
+            continue;
+        }
+        if (!present_decision_slot_matches_track(decision, tracks, i)) {
+            clear_present_decision_slot(decision, i);
+        }
+    }
+    decision.should_present = present_decision_has_frame(decision);
+}
+
 std::optional<int64_t> first_present_decision_frame_pts_us(
     const PresentDecision& decision) {
     for (const auto& frame : decision.frames) {
@@ -34,7 +87,7 @@ collect_seek_preview_presented_track_events(
     std::vector<SeekPreviewPresentedTrackEvent> events;
 
     for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!decision.frames[i].has_value() || !tracks[i]) {
+        if (!present_decision_slot_matches_track(decision, tracks, i)) {
             continue;
         }
         const int track_file_id = tracks[i]->file_id;
@@ -62,7 +115,8 @@ void apply_present_carry_forward(
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (decision.frames[i].has_value() ||
             !last_decision.frames[i].has_value() ||
-            !tracks[i]) {
+            !tracks[i] ||
+            !present_decision_slot_matches_track(last_decision, tracks, i)) {
             continue;
         }
 
@@ -70,6 +124,7 @@ void apply_present_carry_forward(
             decision.current_pts_us - tracks[i]->offset_us;
         if (effective_pts >= 0) {
             decision.frames[i] = last_decision.frames[i];
+            set_present_decision_track_identity(decision, i, *tracks[i]);
         }
     }
 }
@@ -88,7 +143,7 @@ EmptyBufferEofClamp compute_empty_buffer_eof_clamp(
             clamp.all_active_buffers_empty = false;
             break;
         }
-        if (last_decision.frames[i].has_value()) {
+        if (present_decision_slot_matches_track(last_decision, tracks, i)) {
             clamp.max_end_pts_us = std::max(
                 clamp.max_end_pts_us,
                 last_decision.frames[i]->pts_us +

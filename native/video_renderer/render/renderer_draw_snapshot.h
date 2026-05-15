@@ -11,6 +11,7 @@ namespace vr {
 struct RendererDrawTrackSnapshot {
     bool active = false;
     int file_id = -1;
+    uint64_t generation = 0;
     int64_t offset_us = 0;
     int video_width = 0;
     int video_height = 0;

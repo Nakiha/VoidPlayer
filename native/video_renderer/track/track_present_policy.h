@@ -25,6 +25,22 @@ struct SeekPreviewPresentedTrackEvent {
 
 bool present_decision_has_frame(const PresentDecision& decision);
 
+bool present_decision_slot_matches_track(
+    const PresentDecision& decision,
+    const TrackPipelineManager& tracks,
+    size_t slot);
+
+void set_present_decision_track_identity(
+    PresentDecision& decision,
+    size_t slot,
+    const TrackPipeline& track);
+
+void clear_present_decision_slot(PresentDecision& decision, size_t slot);
+
+void filter_present_decision_against_tracks(
+    PresentDecision& decision,
+    const TrackPipelineManager& tracks);
+
 std::optional<int64_t> first_present_decision_frame_pts_us(
     const PresentDecision& decision);
 

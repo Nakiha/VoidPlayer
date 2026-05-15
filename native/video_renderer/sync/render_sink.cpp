@@ -9,16 +9,23 @@ RenderSink::RenderSink(Clock& clock)
     : clock_(clock)
 {}
 
-void RenderSink::set_track(size_t slot, std::shared_ptr<TrackBuffer> track) {
+void RenderSink::set_track(size_t slot,
+                           std::shared_ptr<TrackBuffer> track,
+                           int file_id,
+                           uint64_t track_generation) {
     if (slot < kMaxTracks) {
         std::lock_guard<std::mutex> lock(mutex_);
         tracks_[slot] = std::move(track);
+        file_ids_[slot] = tracks_[slot] ? file_id : -1;
+        track_generations_[slot] = tracks_[slot] ? track_generation : 0;
     }
 }
 
 void RenderSink::remove_all_tracks() {
     std::lock_guard<std::mutex> lock(mutex_);
     tracks_.fill(nullptr);
+    file_ids_.fill(-1);
+    track_generations_.fill(0);
 }
 
 void RenderSink::set_track_offset(size_t slot, int64_t offset_us) {
@@ -33,10 +40,14 @@ PresentDecision RenderSink::evaluate() {
 
     std::array<std::shared_ptr<TrackBuffer>, kMaxTracks> tracks;
     std::array<int64_t, kMaxTracks> track_offsets;
+    std::array<int, kMaxTracks> file_ids;
+    std::array<uint64_t, kMaxTracks> track_generations;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         tracks = tracks_;
         track_offsets = track_offsets_;
+        file_ids = file_ids_;
+        track_generations = track_generations_;
     }
 
     int64_t current_pts_us = clock_.current_pts_us();
@@ -47,9 +58,13 @@ PresentDecision RenderSink::evaluate() {
     for (size_t t = 0; t < kMaxTracks; ++t) {
         if (!tracks[t]) {
             decision.frames[t] = std::nullopt;
+            decision.file_ids[t] = -1;
+            decision.track_generations[t] = 0;
             continue;
         }
         any_active = true;
+        decision.file_ids[t] = file_ids[t];
+        decision.track_generations[t] = track_generations[t];
 
         auto& track = tracks[t];
         int64_t effective_pts = current_pts_us - track_offsets[t];

@@ -1,4 +1,5 @@
 #include "video_renderer/layout/layout_geometry.h"
+#include "video_renderer/track/track_present_policy.h"
 
 #include <algorithm>
 #include <cmath>
@@ -106,7 +107,7 @@ std::vector<LayoutTrackGeometryUpdate> update_layout_track_geometry_from_decisio
     std::vector<LayoutTrackGeometryUpdate> updates;
 
     for (size_t i = 0; i < kMaxTracks; ++i) {
-        if (!tracks[i] || !decision.frames[i].has_value()) {
+        if (!present_decision_slot_matches_track(decision, tracks, i)) {
             continue;
         }
         const TextureFrame& frame = decision.frames[i].value();

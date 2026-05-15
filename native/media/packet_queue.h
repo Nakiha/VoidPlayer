@@ -1,4 +1,6 @@
 #pragma once
+#include "video_renderer/renderer_limits.h"
+
 #include <deque>
 #include <mutex>
 #include <condition_variable>
@@ -27,7 +29,7 @@ struct PacketPopResult {
 
 class PacketQueue {
 public:
-    explicit PacketQueue(size_t capacity = 100);
+    explicit PacketQueue(size_t capacity = kDefaultPacketQueueCapacity);
     ~PacketQueue();
 
     // Push a packet (takes ownership). Blocks if full. Returns false if aborted.
@@ -58,6 +60,7 @@ public:
 
     // State
     size_t size() const;
+    size_t capacity() const;
     uint64_t estimated_bytes() const;
     bool empty() const;
     bool is_aborted() const;

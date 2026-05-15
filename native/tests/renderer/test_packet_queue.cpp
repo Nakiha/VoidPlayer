@@ -37,6 +37,12 @@ TEST_CASE("PacketQueue: push and pop preserves order", "[packet_queue]") {
     }
 }
 
+TEST_CASE("PacketQueue: default capacity comes from native resource budget",
+          "[packet_queue]") {
+    PacketQueue pq;
+    REQUIRE(pq.capacity() == default_native_resource_budget().packet_queue_capacity);
+}
+
 TEST_CASE("PacketQueue: capacity enforced", "[packet_queue]") {
     PacketQueue pq(2);
     auto* p1 = av_packet_alloc(); p1->pts = 1;

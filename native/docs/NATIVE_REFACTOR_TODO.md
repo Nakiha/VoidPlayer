@@ -763,7 +763,7 @@ TODO:
 
 ## P2 - Resource Budget Policy
 
-Status: partially done in Round 16.
+Status: partially done in Round 16; tightened again in Patch 154.
 
 目标：把“别炸内存”的保险丝升级成统一、可配置、可测试的资源预算。
 
@@ -776,13 +776,16 @@ TODO:
 
 - [x] 定义 `NativeResourceBudget` 和默认预算入口；显式 app/FFI/Python override 留给后续配置 API。
 - [x] 预算覆盖：TrackBuffer queued-frame depth 由 `TrackBufferBudget` 根据 `NativeResourceBudget` 统一决策。
-- [ ] 预算覆盖：max packet queue capacity、max exact seek reorder bytes、max analysis file/cache size 和 runtime override。Round 16 已集中 max tracks / dimensions / path bytes / CPU frame bytes / capture bytes / exact seek reorder frames / speed 常量；P45 已集中 TrackBuffer queued-frame depth。
+- [x] 预算覆盖：packet queue capacity 由 `NativeResourceBudget` 统一决策，track pipeline factory 不再硬写队列深度。
+- [x] 预算覆盖：exact seek reorder frame count 由 `NativeResourceBudget` 统一决策，candidate store 会丢弃超过预算的最旧候选。
+- [ ] 预算覆盖：max exact seek reorder bytes、max analysis file/cache size 和 runtime override。Round 16 已集中 max tracks / dimensions / path bytes / CPU frame bytes / capture bytes / exact seek reorder frames / speed 常量；P45 已集中 TrackBuffer queued-frame depth；Patch 154 已集中 packet queue capacity 和 exact-seek candidate frame cap。
 - [ ] 超预算返回明确错误码和日志。
 - [ ] diagnostics 输出预算命中/拒绝计数。
 - [x] 增加预算边界测试。
 
 建议验证：
 
+- `python dev.py test --native-only` passed on 2026-05-16.
 - `python dev.py test --native-only --github` build passed on 2026-05-10.
 - `ctest --test-dir native/build-msvc -C Release --output-on-failure -R video_renderer_tests` passed on 2026-05-10.
 - `ctest --test-dir native/build-msvc -C Release --output-on-failure -R test_ffi_c` passed on 2026-05-10.

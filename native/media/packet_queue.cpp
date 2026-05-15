@@ -117,6 +117,11 @@ size_t PacketQueue::size() const {
     return queue_.size();
 }
 
+size_t PacketQueue::capacity() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return capacity_;
+}
+
 uint64_t PacketQueue::estimated_bytes() const {
     std::lock_guard<std::mutex> lock(mutex_);
     uint64_t bytes = 0;

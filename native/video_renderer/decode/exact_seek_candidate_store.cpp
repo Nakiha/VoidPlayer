@@ -47,6 +47,9 @@ uint64_t estimate_av_frame_cpu_bytes(const AVFrame* frame) {
 
 } // namespace
 
+ExactSeekCandidateStore::ExactSeekCandidateStore(size_t max_reorder_frames)
+    : max_reorder_frames_(max_reorder_frames) {}
+
 ExactSeekCandidate ExactSeekCandidateStore::make_candidate(AVFrame* frame) {
     AVFrame* cloned = av_frame_clone(frame);
     if (!cloned) {
@@ -129,7 +132,14 @@ void ExactSeekCandidateStore::collect(ExactSeekCandidate candidate,
             snapshot_if_needed(reorder_.back());
         }
     }
+    if (max_reorder_frames_ == 0) {
+        refresh_stats();
+        return;
+    }
     reorder_.push_back(std::move(candidate));
+    while (reorder_.size() > max_reorder_frames_) {
+        reorder_.erase(reorder_.begin());
+    }
     refresh_stats();
 }
 

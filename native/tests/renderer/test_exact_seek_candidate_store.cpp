@@ -77,6 +77,22 @@ TEST_CASE("ExactSeekCandidateStore: moves unpreviewed tail into pending queue",
     REQUIRE(store.pending_count() == 1);
 }
 
+TEST_CASE("ExactSeekCandidateStore: reorder candidates are capped by budget",
+          "[decode_thread][exact_seek_candidate_store]") {
+    ExactSeekCandidateStore store(3);
+    auto snapshot = [](ExactSeekCandidate&) {};
+
+    store.collect(make_candidate(40), 50, snapshot);
+    store.collect(make_candidate(60), 50, snapshot);
+    store.collect(make_candidate(80), 50, snapshot);
+    store.collect(make_candidate(100), 50, snapshot);
+
+    REQUIRE(store.reorder_count() == 3);
+    REQUIRE(store.reorder_at(0).pts_us == 60);
+    REQUIRE(store.reorder_at(2).pts_us == 100);
+    REQUIRE(store.stats_snapshot().reorder_count == 3);
+}
+
 TEST_CASE("ExactSeekCandidateStore: memory stats track stable frame count",
           "[decode_thread][exact_seek_candidate_store]") {
     ExactSeekCandidateStore store;

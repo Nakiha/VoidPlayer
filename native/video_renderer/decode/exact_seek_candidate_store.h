@@ -1,6 +1,7 @@
 #pragma once
 
 #include "video_renderer/buffer/bidi_ring_buffer.h"
+#include "video_renderer/renderer_limits.h"
 
 #include <atomic>
 #include <cstdint>
@@ -32,6 +33,10 @@ class ExactSeekCandidateStore {
 public:
     using SnapshotCallback = std::function<void(ExactSeekCandidate&)>;
 
+    explicit ExactSeekCandidateStore(
+        size_t max_reorder_frames =
+            default_native_resource_budget().max_exact_seek_reorder_frames);
+
     static ExactSeekCandidate make_candidate(AVFrame* frame);
 
     void clear();
@@ -61,6 +66,7 @@ public:
 private:
     void refresh_stats();
 
+    size_t max_reorder_frames_ = kMaxExactSeekReorderFrames;
     std::vector<ExactSeekCandidate> reorder_;
     std::deque<ExactSeekCandidate> pending_;
     std::atomic<size_t> reorder_count_{0};

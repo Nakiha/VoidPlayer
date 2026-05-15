@@ -24,8 +24,11 @@ std::unique_ptr<TrackPipeline> TrackPipelineFactory::create_opened_pipeline(
         pipeline->seek_controller->request_seek(
             initial_seek->target_pts_us, initial_seek->type);
     }
-    pipeline->packet_queue = std::make_unique<PacketQueue>(100);
-    pipeline->audio_packet_queue = std::make_unique<PacketQueue>(100);
+    const auto budget = default_native_resource_budget();
+    pipeline->packet_queue =
+        std::make_unique<PacketQueue>(budget.packet_queue_capacity);
+    pipeline->audio_packet_queue =
+        std::make_unique<PacketQueue>(budget.packet_queue_capacity);
 
     pipeline->demux_thread = std::make_unique<DemuxThread>(
         path, *pipeline->seek_controller);
@@ -56,7 +59,7 @@ std::unique_ptr<TrackPipeline> TrackPipelineFactory::create_opened_pipeline(
             (static_cast<float>(stats.width) / static_cast<float>(stats.height)) * sar;
     }
 
-    const auto buffer_budget = choose_track_buffer_budget(stats, hw_decode);
+    const auto buffer_budget = choose_track_buffer_budget(stats, hw_decode, budget);
     pipeline->track_buffer = std::make_shared<TrackBuffer>(
         buffer_budget.forward_depth, buffer_budget.backward_depth);
     spdlog::info(

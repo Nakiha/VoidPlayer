@@ -290,6 +290,7 @@ TEST_CASE("Native resource budget exposes renderer guardrails",
     REQUIRE(budget.max_cpu_frame_bytes == kMaxCpuFrameBytes);
     REQUIRE(budget.max_capture_frame_bytes == kMaxCaptureFrameBytes);
     REQUIRE(budget.max_exact_seek_reorder_frames == kMaxExactSeekReorderFrames);
+    REQUIRE(budget.packet_queue_capacity == kDefaultPacketQueueCapacity);
     REQUIRE(budget.high_resolution_track_pixels == kHighResolutionTrackPixels);
     REQUIRE(budget.default_track_forward_depth == kDefaultTrackForwardDepth);
     REQUIRE(budget.default_track_backward_depth == kDefaultTrackBackwardDepth);

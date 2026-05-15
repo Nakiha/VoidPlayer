@@ -865,6 +865,26 @@ Result:
 - Split renderer analysis overlay implementation selection: default builds compile the real overlay renderer, while analysis-off builds compile a no-op draw stub.
 - Kept `snapshot_analysis_overlay_memory_stats()` available in the stub so renderer memory diagnostics and focused tests do not depend on analysis sources.
 
+### P154 - Runtime Resource Budget Edges
+
+Status: done in Patch 154.
+
+Goal:
+
+- Move remaining hard-coded decode queue and exact-seek candidate limits into `NativeResourceBudget`.
+- Keep the change behavioral and testable without introducing the later app/FFI runtime override API yet.
+
+Validation:
+
+- `python dev.py test --native-only`
+
+Result:
+
+- Added `packet_queue_capacity` to `NativeResourceBudget`; `PacketQueue` defaults and `TrackPipelineFactory` now use that budget instead of a literal `100`.
+- Added a bounded `ExactSeekCandidateStore` constructor, defaulting to `max_exact_seek_reorder_frames`.
+- Exact-seek candidate collection now caps the reorder list by dropping oldest candidates past the configured frame budget.
+- Added focused tests for default packet queue capacity and exact-seek reorder capping.
+
 ## Do-Not-Drift List
 
 - Do not let runner plugin cosmetics displace the remaining `review_godobject.md` owner-boundary work.

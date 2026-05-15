@@ -13,6 +13,7 @@
 #include "audio/audio_output_factory.h"
 #include "video_renderer/audio_coordinator.h"
 #include "video_renderer/seek/seek_coordinator.h"
+#include "video_renderer/render/device_loss_policy.h"
 #include "video_renderer/render/shader_constants.h"
 #include "video_renderer/render/swap_chain_present_policy.h"
 #include "video_renderer/track/track_snapshot.h"
@@ -957,16 +958,20 @@ bool Renderer::draw_headless_and_publish(const RendererDrawSnapshot& snapshot,
 }
 
 void Renderer::enter_terminal_device_lost_locked(const char* operation) {
-    if (device_state_.load(std::memory_order_acquire) == RendererDeviceState::Terminal) {
+    const auto plan = plan_renderer_device_lost_transition(
+        device_state_.load(std::memory_order_acquire));
+    if (!plan.apply) {
         return;
     }
 
-    device_state_.store(RendererDeviceState::Lost, std::memory_order_release);
+    device_state_.store(plan.pre_terminal_state, std::memory_order_release);
     auto* device = d3d_device();
     const long reason = device
         ? static_cast<long>(device->device_removed_reason())
         : static_cast<long>(S_OK);
-    d3d_metrics_.device_lost_count.fetch_add(1, std::memory_order_relaxed);
+    if (plan.count_device_lost) {
+        d3d_metrics_.device_lost_count.fetch_add(1, std::memory_order_relaxed);
+    }
     spdlog::error(
         "[Renderer] D3D11 device lost during {}; entering terminal renderer state "
         "(reason={:#x})",
@@ -975,24 +980,40 @@ void Renderer::enter_terminal_device_lost_locked(const char* operation) {
 
     running_ = false;
     playing_ = false;
-    playback_->pause();
-    set_decode_paused_for_all_tracks(true);
-    device_state_.store(RendererDeviceState::Terminal, std::memory_order_release);
+    if (plan.pause_playback) {
+        playback_->pause();
+    }
+    if (plan.pause_decode) {
+        set_decode_paused_for_all_tracks(true);
+    }
+    if (plan.clear_initialized) {
+        initialized_ = false;
+    }
+    device_state_.store(plan.final_state, std::memory_order_release);
 }
 
 void Renderer::enter_terminal_render_loop_error_locked(const char* reason) {
-    if (device_state_.load(std::memory_order_acquire) == RendererDeviceState::Terminal) {
+    const auto plan = plan_renderer_runtime_error_transition(
+        device_state_.load(std::memory_order_acquire));
+    if (!plan.apply) {
         return;
     }
+    device_state_.store(plan.pre_terminal_state, std::memory_order_release);
     spdlog::error(
         "[Renderer] Render loop entered terminal runtime state after {}",
         reason);
     running_ = false;
     playing_ = false;
-    initialized_ = false;
-    playback_->pause();
-    set_decode_paused_for_all_tracks(true);
-    device_state_.store(RendererDeviceState::Terminal, std::memory_order_release);
+    if (plan.clear_initialized) {
+        initialized_ = false;
+    }
+    if (plan.pause_playback) {
+        playback_->pause();
+    }
+    if (plan.pause_decode) {
+        set_decode_paused_for_all_tracks(true);
+    }
+    device_state_.store(plan.final_state, std::memory_order_release);
 }
 
 void Renderer::present_frame(const PresentDecision& decision) {

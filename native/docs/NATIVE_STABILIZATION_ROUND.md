@@ -89,6 +89,7 @@ Fixed or reduced:
 - `Renderer`: layout state/constants moved to layout-owned helpers; `Renderer` now snapshots track geometry and delegates shader layout math to `layout_geometry`.
 - `Renderer`: layout track geometry snapshot helper moved into `layout_geometry`.
 - `Renderer`: render-loop debounce, diagnostics cadence, and frame-deadline sleep policy moved into `RenderLoopController`.
+- `Renderer`: device-lost and render-loop runtime-error terminal transition decisions moved into `DeviceLossPolicy`.
 - `Renderer`: remove-track stop/compact render-sink/presenter slot side effects and cached `PresentDecision` frame compaction moved into `track_lifecycle`.
 - `Renderer`: add-track current-clock seek target clamp, buffer/queue flush, audio pause, and seek type choice moved into `track_lifecycle`.
 - `Renderer`: HEVC hardware seek recreate/coalesce/error decision moved into `SeekCoordinator` policy.

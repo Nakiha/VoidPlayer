@@ -225,29 +225,30 @@ TODO:
 
 建议顺序：
 
-1. [ ] `FrameCaptureService`
+1. [x] `FrameCaptureService`
    - 输入：`D3D11HeadlessOutput` / published front buffer / WIC 或 BGRA copy helper。
-   - 从 `Renderer::capture_front_buffer()` 和 runner PNG capture 中切出 native-facing capture service。
-   - 验证：native test + `ui_tests/smoke/basic.csv` 中 capture/hash 相关路径。
+   - 已从 `Renderer::capture_front_buffer()` 切出 native-facing capture service，并收口 texture snapshot pinning 与 GPU copy/map 锁顺序。
+   - 验证：native-only + headless capture/visual integration 路径。
 
-2. [ ] `LayoutController`
+2. [x] `LayoutController`
    - 持有 `LayoutState`、background color、display pixel size、order mapping validation glue。
-   - 先抽 pure state/helper，不移动 render-thread D3D draw。
-   - 验证：`python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewport_pan_layout_regression.csv`
+   - 已抽 pure state/order mapping helper；render-thread D3D draw 仍只消费 snapshot。
+   - 验证：native-only + smoke/viewport UI 回归。
 
-3. [ ] `AnalysisOverlayRenderer`
+3. [x] `AnalysisOverlayRenderer`
    - 把 overlay texture、pixel cache、draw_analysis_overlay/ensure texture 从 Renderer 拆出。
-   - 目标是后续让 analysis feature 可选。
-   - 验证：`python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h264.csv`
+   - 已承接 overlay texture/cache/mask/rect draw pass；analysis feature 可选化仍属于 target boundary 后续项。
+   - 验证：native-only + analysis UI 回归。
 
-4. [ ] `RenderLoopController`
+4. [x] `RenderLoopController`
    - 最后拆，因它触碰 running/thread/join/callback/device lock。
-   - 先只封装 start/stop/join/publish callback，不改变 draw decision 逻辑。
-   - 验证：native-only + smoke + timeline/seek 相关脚本。
+   - 已先封装 resize debounce、diagnostic cadence、frame deadline sleep；start/stop/join 仍保留在 Renderer。
+   - 验证：native-only + smoke/timeline/seek UI 回归。
 
-5. [ ] `DeviceLossPolicy`
+5. [x] `DeviceLossPolicy`
    - 集中 terminal/lost state、removed reason、metrics、future recovery policy。
-   - 验证：能单测 policy，D3D 真 device lost 作为后续手工/模拟测试。
+   - 已抽 terminal/lost transition policy；removed reason 读取、metrics increment 和实际 teardown side effects 仍由 Renderer 执行。
+   - 验证：新增 focused native policy tests；D3D 真 device lost 作为后续手工/模拟测试。
 
 6. [x] `TrackPipelineFactory` / `TrackLifecycle`
    - 已把 demux/decode pipeline construction 拆到 `TrackPipelineFactory`。

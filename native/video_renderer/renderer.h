@@ -13,6 +13,7 @@
 #include "video_renderer/layout/layout_state.h"
 #include "video_renderer/render/render_loop_controller.h"
 #include "video_renderer/render/renderer_draw_snapshot.h"
+#include "video_renderer/render/renderer_device_state.h"
 #include "video_renderer/seek/seek_coordinator.h"
 #include "video_renderer/render/shader_constants.h"
 #include "video_renderer/track/track_gpu_memory_stats.h"
@@ -127,12 +128,6 @@ struct RendererConfig {
 enum class SharedTextureHandleType {
     None = 0,
     D3D11SharedHandle = 1,
-};
-
-enum class RendererDeviceState {
-    Ready = 0,
-    Lost,
-    Terminal,
 };
 
 struct SharedTextureSnapshot {

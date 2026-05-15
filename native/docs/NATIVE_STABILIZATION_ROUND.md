@@ -214,7 +214,6 @@ Remaining:
 
 - Move heavy add/remove/recreate open/stop work out of long `state_mutex_` critical sections.
 - Mark render-loop exception exit as terminal/error state.
-- Clear `event_callback_` during shutdown resource release.
 
 ## Active Patch Queue
 
@@ -669,6 +668,31 @@ Result:
 
 - Non-headless `present_frame()` now only calls `device->present(0)` after a successful draw.
 - Present publish metrics are recorded only for attempted swap-chain presents.
+
+### P145 - Renderer Shutdown Event Callback Release
+
+Status: done in Patch 145.
+
+Goal:
+
+- Clear `event_callback_` during shutdown/resource release so host callbacks do not survive across shutdown/reinitialize.
+- Also clear callbacks when shutdown is called before renderer resources were initialized.
+- Preserve the existing shutdown callback gate for late demux/render events.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/shutdown_during_seek_recreate_smoke.csv`
+
+Coverage gap:
+
+- Current tests cover shutdown/recreate behavior, but do not directly introspect private callback storage.
+
+Result:
+
+- Added a focused `clear_event_callback()` helper guarded by `event_callback_mutex_`.
+- `shutdown()` clears the callback on the no-resource early-return path.
+- `release_resources_locked()` clears the callback before tearing down renderer-owned resources.
 
 ## Do-Not-Drift List
 

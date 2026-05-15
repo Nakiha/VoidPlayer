@@ -273,6 +273,7 @@ private:
     bool has_hevc_hw_track_locked() const;
     void emit_event(const RendererEvent& event);
     void emit_seek_preview_presented_events(const PresentDecision& decision);
+    void clear_event_callback();
 
     /// Apply pending resize on the render thread.
     void do_resize(int width, int height);

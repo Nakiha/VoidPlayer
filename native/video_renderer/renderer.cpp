@@ -186,9 +186,12 @@ bool Renderer::initialize(const RendererConfig& config) {
 void Renderer::shutdown() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
 
+    bool has_resources = false;
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        if (!has_resources_locked()) {
+        has_resources = has_resources_locked();
+        if (!has_resources) {
+            clear_event_callback();
             return;
         }
 
@@ -225,6 +228,7 @@ bool Renderer::has_resources_locked() const {
 void Renderer::release_resources_locked() {
     running_ = false;
     playing_ = false;
+    clear_event_callback();
 
     // Clear cached frames that may hold hw decode surface references.
     // Must happen before decode_thread->stop() frees hw_device_ctx,
@@ -596,6 +600,11 @@ void Renderer::emit_event(const RendererEvent& event) {
         }
         callback(event);
     }
+}
+
+void Renderer::clear_event_callback() {
+    std::lock_guard<std::mutex> lock(event_callback_mutex_);
+    event_callback_ = {};
 }
 
 void Renderer::emit_seek_preview_presented_events(const PresentDecision& decision) {

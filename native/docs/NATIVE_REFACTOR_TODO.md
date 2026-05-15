@@ -200,8 +200,12 @@ TODO:
    - 验证：native-only + smoke UI；当前缺少专门 fault-injection 覆盖 draw failure 分支。
 
 10. [ ] `RendererV2LifecyclePresentFollowups`
-   - 目标：继续收 `review_renderer_v2.md` 剩余真实项：重活移出长 `state_mutex_`、render-loop exception 进入 terminal/error、shutdown 清空 event callback。
+   - 目标：继续收 `review_renderer_v2.md` 剩余真实项：重活移出长 `state_mutex_`、render-loop exception 进入 terminal/error。
    - 验证：按实际 patch 拆分，至少 native-only；上屏/track/recreate 相关补 UI。
+
+11. [x] `RendererShutdownEventCallbackRelease`
+   - 目标：shutdown / resource release 明确清空 `event_callback_`，避免宿主闭包跨 shutdown/reinitialize 残留。
+   - 验证：native-only + shutdown/recreate UI；当前缺少直接观测 callback storage 的单元测试。
 
 建议顺序：
 

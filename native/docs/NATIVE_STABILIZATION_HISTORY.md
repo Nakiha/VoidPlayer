@@ -2432,3 +2432,340 @@ Result:
 - `Renderer::has_hevc_hw_track_locked` now delegates the HEVC hardware scan to `track_lifecycle`.
 - Added native coverage for target resolution, no-demux/no-decode facts, and empty-manager hardware codec scanning.
 - Verified with native-only tests plus rebuilt smoke and h265 seek visual UI.
+
+### P100 - Renderer Seek Track Transition Boundary
+
+Status: done in Patch 100.
+
+Goal:
+
+- Continue reducing `Renderer::seek_internal` by extracting per-track transition/recreate input assembly.
+- Keep Renderer responsible for hook wiring and actual `recreate_pipeline_for_seek` / `submit_track_seek_after_recreate` calls.
+- Preserve paused HEVC hardware seek coalescing and failure behavior.
+
+Result:
+
+- Added `TrackSeekTransitionPlan` and `build_track_seek_transition_plan()` to `track_lifecycle`.
+- `Renderer::seek_internal()` now delegates paused/type/HEVC recreate input assembly and keeps hook wiring, recreate, submit, and logging.
+- Added native coverage for paused and playing plan field propagation.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+### P101 - Renderer Seek Track Execution Boundary
+
+Status: done in Patch 101.
+
+Goal:
+
+- Continue reducing `Renderer::seek_internal()` by extracting the per-track post-decision execution boundary around HEVC recreate application, error/coalesce result handling, and seek submission.
+- Keep Renderer responsible for member-capturing hook wiring and top-level pending preview/global clock state.
+- Preserve paused HEVC recreate failure and coalescing behavior exactly.
+
+Result:
+
+- Added `TrackSeekExecutionResult` and `apply_track_seek_execution_result()` to `track_lifecycle`.
+- `Renderer::seek_internal()` now refreshes the slot after optional recreate and delegates error-state/seek-submit result handling.
+- Added native coverage for normal submit, failed recreate error state, coalescing metadata, and recreated seek submission suppression.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+### P102 - Renderer Seek Slot Application Boundary
+
+Status: done in Patch 102.
+
+Goal:
+
+- Move the remaining per-slot seek orchestration inside `Renderer::seek_internal()` into a track-lifecycle helper that owns facts inspection, transition preparation, plan construction, recreate decision, and execution result assembly.
+- Keep Renderer responsible for building member-capturing hooks, top-level pending preview/global clock state, and final logging/callback-visible side effects.
+- Preserve all seek logs and paused HEVC recreate behavior.
+
+Result:
+
+- Added `TrackSeekSlotApplicationHooks`, `TrackSeekSlotApplicationResult`, and `apply_track_seek_to_slot()` to `track_lifecycle`.
+- `Renderer::seek_internal()` now delegates per-slot seek facts, preparation, plan, HEVC recreate decision, and execution result assembly.
+- Added native coverage for empty-slot no-op and active-slot seek target/flush/pending-seek behavior.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+### P103 - Renderer Step Forward Fallback Boundary
+
+Status: done in Patch 103.
+
+Goal:
+
+- Move `Renderer::step_forward()` exact-seek fallback target calculation into `track_step_policy`.
+- Keep Renderer responsible for the wait loop, playback clock mutation, seek execution, draw/log calls, and lifecycle locking.
+- Preserve cache-miss step-forward target clamping and log values.
+
+Result:
+
+- Added `StepForwardExactSeekTarget` and `choose_step_forward_exact_seek_target()` to `track_step_policy`.
+- `Renderer::step_forward()` now delegates fallback base/duration/target calculation and keeps wait-loop/seek/log ownership.
+- Added native coverage for empty-track fallback, peek-frame fallback, last-decision priority, and duration clamp behavior.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_step_forward_visual_regression.csv`
+
+### P104 - Renderer Step Backward Fallback Boundary
+
+Status: done in Patch 104.
+
+Goal:
+
+- Move `Renderer::step_backward()` cache-miss exact-seek target calculation into `track_step_policy`.
+- Keep Renderer responsible for retreat execution, seek invocation, draw/log calls, and lifecycle locking.
+- Preserve the 1ms backward margin and zero clamp behavior.
+
+Result:
+
+- Added `StepBackwardExactSeekTarget` and `choose_step_backward_exact_seek_target()` to `track_step_policy`.
+- `Renderer::step_backward()` now delegates fallback duration/target calculation and keeps retreat/seek/log ownership.
+- Added native coverage for fallback duration, zero clamp, and non-clamped target behavior.
+- Added `ui_tests/seek/h265_seek_step_backward_visual_regression.csv` to cover visible step-backward behavior.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_step_backward_visual_regression.csv`
+
+### P105 - Renderer Step Forward Decision Application Boundary
+
+Status: done in Patch 105.
+
+Goal:
+
+- Continue shrinking `Renderer::step_forward()` by extracting the repeated successful-decision application facts around consumed-frame discard, reference slot selection, and clock target calculation.
+- Keep Renderer responsible for lifecycle locking, wait-loop timing, `present_frame()`, and final seek/draw/log calls.
+- Preserve step-forward presentation and exact-seek fallback behavior.
+
+Result:
+
+- Added `StepForwardDecisionApplication` and `apply_step_forward_decision()` to `track_step_policy`.
+- `Renderer::step_forward()` now delegates consumed-frame discard, reference-slot selection, and successful-decision clock target calculation.
+- Added native coverage for reference slot selection, clock target calculation, and consumed-frame discard.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_step_forward_visual_regression.csv`
+
+### P106 - Renderer Step Backward Retreat Application Boundary
+
+Status: done in Patch 106.
+
+Goal:
+
+- Move `Renderer::step_backward()` successful retreat clock target calculation into `track_step_policy`.
+- Keep Renderer responsible for lifecycle locking, fallback seek execution, draw/log calls, and final paused-frame presentation.
+- Preserve retreat success behavior and existing step-backward fallback behavior.
+
+Result:
+
+- Added `StepBackwardRetreatApplication` and `choose_step_backward_retreat_application()` to `track_step_policy`.
+- `Renderer::step_backward()` now delegates retreat-success reference-slot and clock-target calculation.
+- Added native coverage for empty, active-frame, and missing-frame retreat application cases.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_step_backward_visual_regression.csv`
+
+### P107 - AudioEngine Track Registry Boundary
+
+Status: done in Patch 107.
+
+Goal:
+
+- Start addressing `review_godobject.md`'s `AudioEngine::Impl` finding by extracting track registry/query mutation policy out of the implementation body.
+- Keep waveOut/device submission, decoder thread lifecycle, and mixer behavior unchanged.
+- Preserve pause/no-PCM-consumption behavior and active-track selection semantics.
+
+Result:
+
+- Added `AudioTrackRegistry` and `AudioTrackController` to own audio track storage, buffer publication maps, replacement/removal/clear handles, and pause/seek fanout.
+- `AudioEngine::Impl` now delegates track map mutation and query behavior to the registry while keeping playback state, output device ownership, and decoder construction.
+- Added focused registry tests covering buffer publication, pause/seek fanout, remove/clear ownership, and replacement behavior.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+### P108 - AudioEngine Decode Thread Boundary
+
+Status: done in Patch 108.
+
+Goal:
+
+- Continue addressing `review_godobject.md`'s `AudioEngine::Impl` finding by moving the nested `AudioDecodeThread` implementation out of `audio_engine.cpp`.
+- Keep `AudioEngine::Impl` as the audio coordinator and preserve the newly extracted `AudioTrackRegistry` ownership boundary.
+- Preserve pause/no-PCM-consumption, seek flush, resampler setup, and FFmpeg decoder lifecycle behavior.
+
+Result:
+
+- Added `AudioDecodeThread` as a dedicated audio module instead of a nested `audio_engine.cpp` implementation class.
+- Added shared audio output constants so the decoder, PCM buffer creation, mixer, and waveOut format do not duplicate sample-rate/channel parameters.
+- `AudioEngine::Impl` now constructs the decoder through the dedicated boundary and keeps only coordinator-level ownership.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+### P109 - AudioEngine WaveOut Output Boundary
+
+Status: done in Patch 109.
+
+Goal:
+
+- Continue addressing `review_godobject.md`'s `AudioEngine::Impl` finding by moving the nested waveOut device/output thread implementation out of `audio_engine.cpp`.
+- Keep `AudioMixer` behavior, pause/no-PCM-consumption, and active-track transition semantics unchanged.
+- Leave `AudioEngine::Impl` responsible for play/pause policy and track registry coordination.
+
+Result:
+
+- Added `WaveOutOutput` as a dedicated audio output/device module around the WinMM buffer submission thread.
+- `audio_engine.cpp` no longer owns WinMM headers, waveOut device state, audio sample buffer submission, or mixer internals.
+- `AudioEngine::Impl` is now a small coordinator over `AudioTrackRegistry`, `AudioDecodeThread`, and `WaveOutOutput`.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv`
+
+### P110 - AnalysisManager Session Boundary
+
+Status: done in Patch 110.
+
+Goal:
+
+- Resume `review_godobject.md`'s `AnalysisManager` finding by extracting the next session/registry/cache-facing boundary that still lives in the singleton manager.
+- Preserve existing analysis FFI/session snapshot behavior and overlay cache correctness fixed in the overlay rounds.
+- Choose the exact patch boundary after re-reading current `analysis_manager.*`, because several earlier overlay fixes already moved part of the state model.
+
+Result:
+
+- Added `AnalysisSession` to own VAC2 base data, frame summary queries, PTS-to-frame mapping, overlay chunk index refresh, single-frame cache, and decoded chunk LRU.
+- `AnalysisManager` now holds an immutable session snapshot and delegates session reads to `AnalysisSession`.
+- Existing overlay chunk filtering/cache behavior and concurrent manager load/unload/read tests continue to cover the boundary.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h264.csv`
+
+### P111 - AnalysisManager Overlay Track Registry Boundary
+
+Status: done in Patch 111.
+
+Goal:
+
+- Continue reducing `AnalysisManager` by extracting overlay track registration/snapshot storage out of the singleton manager.
+- Prefer storing per-track `AnalysisSession` snapshots rather than recursive `AnalysisManager` instances if the current call sites allow it.
+- Preserve renderer-facing `overlay_track_snapshot()` behavior and FFI `set_overlay_track` / `clear_overlay_tracks` semantics.
+
+Result:
+
+- Added `AnalysisOverlayTrackRegistry` for overlay track set/clear/snapshot storage.
+- Overlay track snapshots now return `AnalysisSession` objects directly, and `AnalysisOverlayRenderer` reads per-track overlay data without recursive `AnalysisManager` instances.
+- Added native FFI coverage confirming overlay set/clear publishes readable per-track session snapshots.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h264.csv`
+
+### P112 - DecodeThread Codec Loop Boundary
+
+Status: done in Patch 112.
+
+Goal:
+
+- Resume `review_godobject.md`'s `DecodeThread` finding by extracting the next codec send/receive or frame ownership boundary from the main decode loop.
+- Preserve exact-seek, pause-after-preroll, EOF drain, and hardware visibility behavior already covered by focused policy tests.
+- Pick the exact cut after re-reading current `decode_thread.*`, because several seek/pause policies have already been split.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `codec_loop` for FFmpeg codec send/receive SEH wrappers, result classification, and optional hardware device mutex locking.
+- `DecodeThread` now delegates codec send/receive calls in normal decode, drain-before-next-packet, EOF drain, and exact-seek drain paths.
+- Added native coverage for codec result classification, including EAGAIN, EOF, SEH sentinel, and hard errors.
+
+### P113 - DecodeThread Frame Publish Boundary
+
+Status: done in Patch 113.
+
+Goal:
+
+- Continue reducing `DecodeThread` by extracting the next frame ownership/publish boundary after codec receive.
+- Keep exact-seek candidate collection, pause-after-preroll, and hardware visibility flush semantics unchanged.
+- Prefer a focused helper around frame rescale/log/visibility/convert/push if the current loop allows a narrow cut.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `DecodedFramePublisher` for hardware visibility flush, frame conversion, output-buffer publish, and conversion-failure state transitions.
+- `DecodeThread` now delegates normal decode, EOF drain, drain-before-next-packet, reorder flush, and pending exact-seek frame publish paths to the publisher.
+- Added native coverage for successful software-frame publish and conversion-failure Error/pause/stop handling.
+
+### P114 - DecodeThread Drain Boundary
+
+Status: done in Patch 114.
+
+Goal:
+
+- Continue reducing `DecodeThread` by extracting EOF drain and drain-before-next-packet loop mechanics once codec calls and frame publishing are already isolated.
+- Keep exact-seek EOF drain and reorder fallback behavior unchanged.
+- Prefer a narrow helper around drain loop orchestration before touching broader AVFrame lifetime.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `decode_drain_policy` for drain-before-next-packet receive actions, EOF codec-drain send/receive actions, and drain stop gates.
+- `DecodeThread` now delegates drain request clearing, SEH error marking choice, EOF send handling, and pause/flush stop checks to the policy helpers.
+- Added native coverage for EAGAIN, EOF, hard error, SEH sentinel, cancel, pause, and flushing drain decisions.
+
+### P115 - DecodeThread Exact-Seek Candidate Ownership Boundary
+
+Status: done in Patch 115.
+
+Goal:
+
+- Continue reducing `DecodeThread` by isolating exact-seek candidate ownership and memory counter maintenance from the main decode object.
+- Keep preview-window selection and post-target pending-frame behavior unchanged.
+- Prefer moving candidate collection/snapshot/memory stats behind a small owner if current call sites permit it.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added `ExactSeekCandidateStore` for exact-seek candidate cloning, reorder/pending ownership, snapshot trigger points, preview-window readiness, and candidate memory stats.
+- `DecodeThread` now delegates candidate collection, pending queue moves/pops, reorder counts, and memory stats snapshots to the store.
+- Added native coverage for latest pre-target retention, first post-target snapshot trigger, pending tail moves, and stable-frame stats.

@@ -198,7 +198,7 @@ Verified:
 
 ## Active Patch Queue
 
-Next patch: P138 Renderer Frame Presenter Serialization Boundary.
+Next patch: P139 Renderer Query Lock Boundary.
 
 Completed patch details through P123 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -501,6 +501,8 @@ Result:
 
 ### P138 - Renderer Frame Presenter Serialization Boundary
 
+Status: done in Patch 138.
+
 Goal:
 
 - Serialize `D3D11FramePresenter` slot resource access across `prepare_frame()`, `reset_track()`, `move_track()`, `reset_all()`, and `memory_stats()`.
@@ -511,6 +513,24 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/track/remove_middle_compact_regression.csv ui_tests/seek/h265_seek_visual_regression.csv`
+
+Result:
+
+- Added an internal `D3D11FramePresenter` mutex around slot resource mutation, preparation, reset/move, scale queries, and memory stats.
+- `D3D11PreparedFrame` now keeps SRV `ComPtr` ownership and UV scale snapshots so prepared draw inputs stay alive even if a slot reset/move waits or runs before the draw returns.
+- Renderer draw now uses the prepared-frame UV scale snapshot instead of re-querying presenter slot state during shader constant assembly.
+
+### P139 - Renderer Query Lock Boundary
+
+Goal:
+
+- Add consistent `state_mutex_` coverage to `track_count()`, `duration_us()`, `has_track()`, `track_dimensions()`, and `track_infos()`.
+- Keep these APIs as short read-only snapshots; do not widen NativePlayer outer locks in this patch.
+- Preserve FFI query defaults and runner diagnostics payloads.
+
+Validation:
+
+- `python dev.py test --native-only`
 
 ## Do-Not-Drift List
 

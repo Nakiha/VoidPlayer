@@ -170,7 +170,7 @@ TODO:
    - 目标：render loop policy helpers 不再直接吃 mutable `TrackPipelineManager&`；`last_decision_`、`preview_drawn_`、`was_buffering_` 的读写收口到明确状态边界。
    - 验证：native-only + smoke/seek/timeline UI。
 
-3. [ ] `RendererFramePresenterSerializationBoundary`
+3. [x] `RendererFramePresenterSerializationBoundary`
    - 目标：`D3D11FramePresenter::prepare_frame/reset_track/move_track/memory_stats` 对 slot resources 的访问统一串行化；优先考虑 render-thread command queue 或同一 device-side boundary。
    - 验证：native-only + smoke/track compact/seek UI。
 

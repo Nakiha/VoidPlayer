@@ -4,6 +4,7 @@
 #include "video_renderer/d3d11/texture.h"
 #include <array>
 #include <functional>
+#include <mutex>
 #include <wrl/client.h>
 
 namespace vr {
@@ -14,7 +15,13 @@ struct D3D11PreparedFrame {
     ID3D11ShaderResourceView* nv12_uv_srv = nullptr;
     ID3D11ShaderResourceView* planar_u_srv = nullptr;
     ID3D11ShaderResourceView* planar_v_srv = nullptr;
+    float nv12_uv_scale_x = 1.0f;
+    float nv12_uv_scale_y = 1.0f;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> owned_rgba_srv;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> owned_nv12_y_srv;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> owned_nv12_uv_srv;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> owned_planar_u_srv;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> owned_planar_v_srv;
 };
 
 struct D3D11FramePresenterSlotMemoryStats {
@@ -93,6 +100,7 @@ private:
 
     TextureManager* texture_manager_ = nullptr;
     ID3D11DeviceContext* context_ = nullptr;
+    mutable std::mutex mutex_;
     std::array<TrackResources, kMaxSlots> tracks_{};
 };
 

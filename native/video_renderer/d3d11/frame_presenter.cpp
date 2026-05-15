@@ -16,6 +16,7 @@ bool D3D11FramePresenter::prepare_frame(size_t slot,
                                         const GpuIdleWait& wait_gpu_idle,
                                         D3D11PreparedFrame& out) {
     out = {};
+    std::lock_guard<std::mutex> lock(mutex_);
     if (slot >= tracks_.size() || !frame.texture_handle) {
         return false;
     }
@@ -36,6 +37,7 @@ bool D3D11FramePresenter::prepare_frame(size_t slot,
 }
 
 float D3D11FramePresenter::nv12_uv_scale_x(size_t slot) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (slot >= tracks_.size()) {
         return 1.0f;
     }
@@ -43,6 +45,7 @@ float D3D11FramePresenter::nv12_uv_scale_x(size_t slot) const {
 }
 
 float D3D11FramePresenter::nv12_uv_scale_y(size_t slot) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (slot >= tracks_.size()) {
         return 1.0f;
     }
@@ -50,6 +53,7 @@ float D3D11FramePresenter::nv12_uv_scale_y(size_t slot) const {
 }
 
 void D3D11FramePresenter::reset_track(size_t slot) {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (slot >= tracks_.size()) {
         return;
     }
@@ -57,6 +61,7 @@ void D3D11FramePresenter::reset_track(size_t slot) {
 }
 
 void D3D11FramePresenter::move_track(size_t from, size_t to) {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (from >= tracks_.size() || to >= tracks_.size() || from == to) {
         return;
     }
@@ -65,12 +70,14 @@ void D3D11FramePresenter::move_track(size_t from, size_t to) {
 }
 
 void D3D11FramePresenter::reset_all() {
-    for (size_t i = 0; i < tracks_.size(); ++i) {
-        reset_track(i);
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto& track : tracks_) {
+        track = TrackResources{};
     }
 }
 
 D3D11FramePresenterMemoryStats D3D11FramePresenter::memory_stats() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     D3D11FramePresenterMemoryStats result;
     for (size_t i = 0; i < tracks_.size(); ++i) {
         const auto& resources = tracks_[i];
@@ -207,8 +214,12 @@ bool D3D11FramePresenter::prepare_nv12_frame(size_t slot,
     }
 
     resources.last_nv12_idx = array_idx;
-    out.nv12_y_srv = resources.nv12_y_srv.Get();
-    out.nv12_uv_srv = resources.nv12_uv_srv.Get();
+    out.nv12_uv_scale_x = resources.nv12_uv_scale_x;
+    out.nv12_uv_scale_y = resources.nv12_uv_scale_y;
+    out.owned_nv12_y_srv = resources.nv12_y_srv;
+    out.owned_nv12_uv_srv = resources.nv12_uv_srv;
+    out.nv12_y_srv = out.owned_nv12_y_srv.Get();
+    out.nv12_uv_srv = out.owned_nv12_uv_srv.Get();
     return out.nv12_y_srv && out.nv12_uv_srv;
 }
 
@@ -259,7 +270,8 @@ bool D3D11FramePresenter::prepare_software_frame(size_t slot,
         return false;
     }
 
-    out.rgba_srv = resources.sw_srv.Get();
+    out.owned_rgba_srv = resources.sw_srv;
+    out.rgba_srv = out.owned_rgba_srv.Get();
     return true;
 }
 
@@ -337,8 +349,12 @@ bool D3D11FramePresenter::prepare_software_nv12_frame(size_t slot,
 
     resources.nv12_uv_scale_x = static_cast<float>(display_w) / static_cast<float>(w);
     resources.nv12_uv_scale_y = static_cast<float>(display_h) / static_cast<float>(h);
-    out.nv12_y_srv = resources.sw_nv12_y_srv.Get();
-    out.nv12_uv_srv = resources.sw_nv12_uv_srv.Get();
+    out.nv12_uv_scale_x = resources.nv12_uv_scale_x;
+    out.nv12_uv_scale_y = resources.nv12_uv_scale_y;
+    out.owned_nv12_y_srv = resources.sw_nv12_y_srv;
+    out.owned_nv12_uv_srv = resources.sw_nv12_uv_srv;
+    out.nv12_y_srv = out.owned_nv12_y_srv.Get();
+    out.nv12_uv_srv = out.owned_nv12_uv_srv.Get();
     return out.nv12_y_srv && out.nv12_uv_srv;
 }
 
@@ -402,9 +418,14 @@ bool D3D11FramePresenter::prepare_software_planar_yuv_frame(size_t slot,
 
     resources.nv12_uv_scale_x = 1.0f;
     resources.nv12_uv_scale_y = 1.0f;
-    out.nv12_y_srv = resources.sw_planar_srvs[0].Get();
-    out.planar_u_srv = resources.sw_planar_srvs[1].Get();
-    out.planar_v_srv = resources.sw_planar_srvs[2].Get();
+    out.nv12_uv_scale_x = 1.0f;
+    out.nv12_uv_scale_y = 1.0f;
+    out.owned_nv12_y_srv = resources.sw_planar_srvs[0];
+    out.owned_planar_u_srv = resources.sw_planar_srvs[1];
+    out.owned_planar_v_srv = resources.sw_planar_srvs[2];
+    out.nv12_y_srv = out.owned_nv12_y_srv.Get();
+    out.planar_u_srv = out.owned_planar_u_srv.Get();
+    out.planar_v_srv = out.owned_planar_v_srv.Get();
     return out.nv12_y_srv && out.planar_u_srv && out.planar_v_srv;
 }
 

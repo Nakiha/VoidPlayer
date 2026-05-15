@@ -1685,19 +1685,11 @@ bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
                 cb.nv12_uv_scale_y[i] = 1.0f;
             } else if (decision.frames[i].has_value() && decision.frames[i]->is_nv12) {
                 cb.nv12_mask |= (1 << static_cast<int>(i));
-                cb.nv12_uv_scale_x[i] = frame_presenter_
-                    ? frame_presenter_->nv12_uv_scale_x(i)
-                    : 1.0f;
-                cb.nv12_uv_scale_y[i] = frame_presenter_
-                    ? frame_presenter_->nv12_uv_scale_y(i)
-                    : 1.0f;
+                cb.nv12_uv_scale_x[i] = prepared_frames[i].nv12_uv_scale_x;
+                cb.nv12_uv_scale_y[i] = prepared_frames[i].nv12_uv_scale_y;
             } else {
-                cb.nv12_uv_scale_x[i] = frame_presenter_
-                    ? frame_presenter_->nv12_uv_scale_x(i)
-                    : 1.0f;
-                cb.nv12_uv_scale_y[i] = frame_presenter_
-                    ? frame_presenter_->nv12_uv_scale_y(i)
-                    : 1.0f;
+                cb.nv12_uv_scale_x[i] = prepared_frames[i].nv12_uv_scale_x;
+                cb.nv12_uv_scale_y[i] = prepared_frames[i].nv12_uv_scale_y;
             }
         }
         ctx->UpdateSubresource(resources.compiled_shader.constant_buffer.Get(), 0, nullptr, &cb, 0, 0);

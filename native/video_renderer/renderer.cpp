@@ -1150,16 +1150,8 @@ void Renderer::do_resize(int width, int height) {
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
         const auto layout_tracks = snapshot_layout_track_geometry(tracks_);
-        const auto old_display = display_pixel_size_for_layout(
-            target_width_, target_height_, layout_, layout_tracks);
-        const auto new_display = display_pixel_size_for_layout(
-            width, height, layout_, layout_tracks);
-        if (old_display.first > 1e-4f && new_display.first > 1e-4f) {
-            layout_.view_offset[0] *= new_display.first / old_display.first;
-        }
-        if (old_display.second > 1e-4f && new_display.second > 1e-4f) {
-            layout_.view_offset[1] *= new_display.second / old_display.second;
-        }
+        adjust_layout_view_offset_for_resize(
+            layout_, target_width_, target_height_, width, height, layout_tracks);
     }
 
     std::function<void()> frame_callback;

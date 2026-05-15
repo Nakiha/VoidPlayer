@@ -31,6 +31,15 @@ struct LayoutTrackGeometryUpdate {
 
 using LayoutTrackGeometryList = std::array<LayoutTrackGeometry, kMaxTracks>;
 
+struct LayoutResizeViewOffsetAdjustment {
+    bool adjusted_x = false;
+    bool adjusted_y = false;
+    float old_offset_x = 0.0f;
+    float old_offset_y = 0.0f;
+    float new_offset_x = 0.0f;
+    float new_offset_y = 0.0f;
+};
+
 LayoutTrackGeometryList snapshot_layout_track_geometry(
     const TrackPipelineManager& tracks);
 
@@ -42,6 +51,14 @@ std::pair<float, float> display_pixel_size_for_layout(
     int width,
     int height,
     const LayoutState& layout,
+    const LayoutTrackGeometryList& tracks);
+
+LayoutResizeViewOffsetAdjustment adjust_layout_view_offset_for_resize(
+    LayoutState& layout,
+    int old_width,
+    int old_height,
+    int new_width,
+    int new_height,
     const LayoutTrackGeometryList& tracks);
 
 void populate_layout_shader_constants(ShaderConstants& constants,

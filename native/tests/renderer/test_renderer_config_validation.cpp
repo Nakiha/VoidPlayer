@@ -217,6 +217,42 @@ TEST_CASE("Layout geometry computes shader constants outside Renderer",
     REQUIRE(layout_float_near(display.second, 562.5f));
 }
 
+TEST_CASE("Layout geometry owns resize view offset scaling",
+          "[renderer_config][layout]") {
+    LayoutState layout;
+    layout.mode = LAYOUT_SIDE_BY_SIDE;
+    layout.zoom_ratio = 1.0f;
+    layout.pixel_size_mode = PIXEL_SIZE_UNIFORM_VIDEO_PIXELS;
+    layout.view_offset[0] = 100.0f;
+    layout.view_offset[1] = -50.0f;
+    layout.order[0] = 0;
+    layout.order[1] = 1;
+
+    LayoutTrackGeometryList tracks = {};
+    tracks[0] = {true, 1920, 1080, 16.0f / 9.0f};
+    tracks[1] = {true, 1280, 720, 16.0f / 9.0f};
+
+    const auto adjustment = adjust_layout_view_offset_for_resize(
+        layout, 2000, 1000, 4000, 2000, tracks);
+    REQUIRE(adjustment.adjusted_x);
+    REQUIRE(adjustment.adjusted_y);
+    REQUIRE(layout_float_near(adjustment.old_offset_x, 100.0f));
+    REQUIRE(layout_float_near(adjustment.old_offset_y, -50.0f));
+    REQUIRE(layout_float_near(layout.view_offset[0], 200.0f));
+    REQUIRE(layout_float_near(layout.view_offset[1], -100.0f));
+    REQUIRE(layout_float_near(adjustment.new_offset_x, 200.0f));
+    REQUIRE(layout_float_near(adjustment.new_offset_y, -100.0f));
+
+    layout.view_offset[0] = 12.0f;
+    layout.view_offset[1] = 34.0f;
+    const auto skipped = adjust_layout_view_offset_for_resize(
+        layout, 0, 1000, 4000, 2000, tracks);
+    REQUIRE_FALSE(skipped.adjusted_x);
+    REQUIRE_FALSE(skipped.adjusted_y);
+    REQUIRE(layout_float_near(layout.view_offset[0], 12.0f));
+    REQUIRE(layout_float_near(layout.view_offset[1], 34.0f));
+}
+
 TEST_CASE("RenderLoopController owns loop timing policy",
           "[renderer_config][render_loop]") {
     using Clock = std::chrono::steady_clock;

@@ -509,6 +509,10 @@ TODO:
    - 新增 `renderer_seek_log_policy` 承接 seek request/clamp、per-track target clamp、HEVC coalescing、cleared-track diagnostics 的 facts assembly；`Renderer` 保留日志发射时机和 seek side effects。
    - 验证：native-only + smoke/seek UI。
 
+87. [x] `RendererResizeLayoutMutationBoundary`
+   - 新增 `adjust_layout_view_offset_for_resize`，把 headless resize 时按旧/新 display size 缩放 `view_offset` 的 layout mutation 迁入 `layout_geometry`；`Renderer` 保留锁、target dimensions 和 D3D output resize。
+   - 验证：native-only + smoke/viewport UI。
+
 ## P1 - Windows Runner Plugin Split
 
 目标：把 `video_renderer_plugin.cpp` 从“第二个 Renderer”拆成可审查的 app bridge。

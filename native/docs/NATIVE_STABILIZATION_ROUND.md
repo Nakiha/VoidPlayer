@@ -147,6 +147,7 @@ Fixed or reduced:
 - `Renderer`: public play/pause/step command intent moved into `renderer_playback_command_policy`; Renderer keeps locks, playback clock ownership, and command execution.
 - `Renderer`: global seek clock/deferred HEVC gate facts moved into `SeekCoordinator` policy; Renderer keeps clock mutation, coordinator state mutation, and seek execution.
 - `Renderer`: seek diagnostics data assembly moved into `renderer_seek_log_policy`; Renderer keeps log emission timing and seek side effects.
+- `Renderer`: resize-driven view-offset scaling moved into `layout_geometry`; Renderer keeps resize locks, target dimensions, and D3D output resize.
 - `DecodeThread`: exact-seek lookbehind, preview-window readiness, and preview-frame selection now live in `exact_seek_window` with focused state tests.
 - `DecodeThread`: pending exact-seek publish, drain-before-next-packet, paused consumption, and stale-packet discard guards now live in `decode_loop_policy` with focused state tests.
 - `DecodeThread`: EOF drain action and exact-seek reorder publish decisions now live in `decode_loop_policy` with focused state tests.
@@ -167,14 +168,14 @@ Fixed or reduced:
 Still active:
 
 - `Renderer` remains the coordination root.
-- `Renderer` still owns layout mutation and deferred seek execution.
+- `Renderer` still owns public layout API/redraw invalidation and deferred seek execution.
 - `DecodeThread` still owns exact-seek publish scheduling and post-preview completion wiring.
 - Target/feature boundaries are still too coupled.
 - Packet queue capacity, analysis cache/file size, and runtime budget override policy are still distributed.
 
 ## Active Patch Queue
 
-Next patch: P132 Renderer Layout Mutation Boundary.
+Next patch: P133 DecodeThread Post-Preview Completion Boundary.
 
 Completed patch details through P115 are archived in `native/docs/NATIVE_STABILIZATION_HISTORY.md`.
 
@@ -504,6 +505,8 @@ Result:
 
 ### P132 - Renderer Layout Mutation Boundary
 
+Status: done in Patch 132.
+
 Goal:
 
 - Continue shrinking `Renderer` by moving the remaining layout/frame-geometry mutation facts out of Renderer methods.
@@ -514,6 +517,25 @@ Validation:
 
 - `python dev.py test --native-only`
 - `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewport_pan_layout_regression.csv`
+
+Result:
+
+- Added `adjust_layout_view_offset_for_resize` in `layout_geometry` for resize-driven view offset scaling.
+- Rewired headless `Renderer::do_resize` to delegate display-size ratio and offset mutation to the layout helper while keeping locks and D3D resize in Renderer.
+- Added focused layout geometry coverage for proportional offset scaling and invalid-size no-op behavior.
+
+### P133 - DecodeThread Post-Preview Completion Boundary
+
+Goal:
+
+- Continue shrinking `DecodeThread` by extracting the exact-seek post-preview completion/drain scheduling facts that remain after `exact_seek_frame_publisher`.
+- Keep `DecodeThread` responsible for AVFrame ownership, logging, buffer state writes, and loop control.
+- Preserve paused preview publication, pending exact-seek candidate handling, and drain-before-next-packet behavior.
+
+Validation:
+
+- `python dev.py test --native-only`
+- `python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/seek/h265_seek_visual_regression.csv`
 
 ## Do-Not-Drift List
 

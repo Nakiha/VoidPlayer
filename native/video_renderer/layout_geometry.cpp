@@ -210,6 +210,35 @@ std::pair<float, float> display_pixel_size_for_layout(
     return {ds_x * slot_w, ds_y * slot_h};
 }
 
+LayoutResizeViewOffsetAdjustment adjust_layout_view_offset_for_resize(
+    LayoutState& layout,
+    int old_width,
+    int old_height,
+    int new_width,
+    int new_height,
+    const LayoutTrackGeometryList& tracks) {
+    LayoutResizeViewOffsetAdjustment adjustment;
+    adjustment.old_offset_x = layout.view_offset[0];
+    adjustment.old_offset_y = layout.view_offset[1];
+
+    const auto old_display = display_pixel_size_for_layout(
+        old_width, old_height, layout, tracks);
+    const auto new_display = display_pixel_size_for_layout(
+        new_width, new_height, layout, tracks);
+    if (old_display.first > 1e-4f && new_display.first > 1e-4f) {
+        layout.view_offset[0] *= new_display.first / old_display.first;
+        adjustment.adjusted_x = true;
+    }
+    if (old_display.second > 1e-4f && new_display.second > 1e-4f) {
+        layout.view_offset[1] *= new_display.second / old_display.second;
+        adjustment.adjusted_y = true;
+    }
+
+    adjustment.new_offset_x = layout.view_offset[0];
+    adjustment.new_offset_y = layout.view_offset[1];
+    return adjustment;
+}
+
 void populate_layout_shader_constants(ShaderConstants& constants,
                                       const LayoutState& layout,
                                       const LayoutTrackGeometryList& tracks,

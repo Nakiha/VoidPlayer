@@ -6,6 +6,7 @@ import '../../preferences/playback_preferences.dart';
 import '../../startup_options.dart';
 import '../window_manager.dart' as app_window;
 import 'main_window_controller.dart';
+import 'main_window_shutdown.dart';
 import 'main_window_view.dart';
 
 class MainWindow extends StatefulWidget {
@@ -49,10 +50,12 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       playbackPreferences: widget.playbackPreferences,
       mounted: () => mounted,
     )..start(testScriptPath: widget.testScriptPath);
+    MainWindowShutdownRegistry.register(this, _controller.closeGracefully);
   }
 
   @override
   void dispose() {
+    MainWindowShutdownRegistry.unregister(this);
     _controller.dispose();
     super.dispose();
   }

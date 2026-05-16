@@ -169,6 +169,8 @@ class _FakeAnalysisToolbarDataSource implements AnalysisToolbarDataSource {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('MainWindowController keeps injected platform services', () {
     final platformWindow = _FakeMainWindowPlatform();
     final analysisProcesses = app_window.AnalysisProcessManager();

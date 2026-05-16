@@ -89,6 +89,10 @@ class AnalysisOverlayTrackSource {
   });
 }
 
+class _AnalysisCancelToken {
+  bool cancelled = false;
+}
+
 abstract class AnalysisGenerationService {
   String? get activeOverlayHash;
   bool get overlayPanelVisible;
@@ -153,9 +157,11 @@ class AnalysisManager extends ChangeNotifier
   final Map<String, Future<String?>> _ensureGeneratedInFlightByPath = {};
   final Map<String, Future<bool>> _ensureOverlayChunkInFlightByKey = {};
   final Map<String, AnalysisTrackGenerationStatus> _trackStatusByPath = {};
+  _AnalysisCancelToken _cancelToken = _AnalysisCancelToken();
   int _stateSerial = 0;
   int _loadSerial = 0;
   int _ensureAndLoadSerial = 0;
+  int _overlayActivationSerial = 0;
 
   AnalysisState get state => _state;
   AnalysisError? get error => _error;
@@ -190,8 +196,9 @@ class AnalysisManager extends ChangeNotifier
     final existing = _ensureGeneratedInFlightByPath[videoPath];
     if (existing != null) return existing;
 
+    final cancelToken = _cancelToken;
     late final Future<String?> future;
-    future = _ensureGeneratedImpl(videoPath).whenComplete(() {
+    future = _ensureGeneratedImpl(videoPath, cancelToken).whenComplete(() {
       if (identical(_ensureGeneratedInFlightByPath[videoPath], future)) {
         _ensureGeneratedInFlightByPath.remove(videoPath);
       }
@@ -246,6 +253,7 @@ class AnalysisManager extends ChangeNotifier
     final existing = _ensureOverlayChunkInFlightByKey[key];
     if (existing != null) return existing;
 
+    final cancelToken = _cancelToken;
     late final Future<bool> future;
     future =
         _ensureOverlayChunkImpl(
@@ -254,6 +262,7 @@ class AnalysisManager extends ChangeNotifier
           startFrame: startFrame,
           endFrame: endFrame,
           targetFrame: targetFrame,
+          cancelToken: cancelToken,
         ).whenComplete(() {
           if (identical(_ensureOverlayChunkInFlightByKey[key], future)) {
             _ensureOverlayChunkInFlightByKey.remove(key);
@@ -279,22 +288,29 @@ class AnalysisManager extends ChangeNotifier
     return loaded ? hash : null;
   }
 
-  Future<String?> _ensureGeneratedImpl(String videoPath) async {
+  Future<String?> _ensureGeneratedImpl(
+    String videoPath,
+    _AnalysisCancelToken cancelToken,
+  ) async {
     final fileName = p.basename(videoPath);
     final stateSerial = ++_stateSerial;
     log.info('[Analysis] ensureGenerated: videoPath=$videoPath');
 
     final indexedHash = await _cache.findHashForUnchangedVideo(videoPath);
+    if (cancelToken.cancelled) return null;
     if (indexedHash != null && _hasUsableCacheEntry(indexedHash, videoPath)) {
       log.info('[Analysis] metadata cache hit for $indexedHash');
       await _refreshCacheEntry(indexedHash, fileName, videoPath);
+      if (cancelToken.cancelled) return null;
       await _cache.touchEntry(indexedHash);
+      if (cancelToken.cancelled) return null;
       _setTrackStatus(
         videoPath,
         fileName: fileName,
         hash: indexedHash,
         status: AnalysisTrackStatus.cached,
         progress: 1,
+        cancelToken: cancelToken,
       );
       _setStateIfCurrent(stateSerial, AnalysisState.idle);
       return indexedHash;
@@ -307,9 +323,11 @@ class AnalysisManager extends ChangeNotifier
       fileName: fileName,
       status: AnalysisTrackStatus.computingHash,
       progress: 0,
+      cancelToken: cancelToken,
     );
     try {
       hash = await _computeHash(videoPath);
+      if (cancelToken.cancelled) return null;
       log.info('[Analysis] hash=$hash');
       _setTrackStatus(
         videoPath,
@@ -317,8 +335,10 @@ class AnalysisManager extends ChangeNotifier
         hash: hash,
         status: AnalysisTrackStatus.computingHash,
         progress: 0,
+        cancelToken: cancelToken,
       );
     } catch (e) {
+      if (cancelToken.cancelled) return null;
       log.severe('[Analysis] hash failed: $e');
       final error = AnalysisError(AnalysisErrorKey.hashFailed, ['$e']);
       _setTrackStatus(
@@ -327,6 +347,7 @@ class AnalysisManager extends ChangeNotifier
         status: AnalysisTrackStatus.error,
         progress: 0,
         error: error,
+        cancelToken: cancelToken,
       );
       if (_isStateCurrent(stateSerial)) {
         _setErrorObject(error);
@@ -337,13 +358,16 @@ class AnalysisManager extends ChangeNotifier
     if (_hasUsableCacheEntry(hash, videoPath)) {
       log.info('[Analysis] cache hit for $hash');
       await _refreshCacheEntry(hash, fileName, videoPath);
+      if (cancelToken.cancelled) return null;
       await _cache.touchEntry(hash);
+      if (cancelToken.cancelled) return null;
       _setTrackStatus(
         videoPath,
         fileName: fileName,
         hash: hash,
         status: AnalysisTrackStatus.cached,
         progress: 1,
+        cancelToken: cancelToken,
       );
       _setStateIfCurrent(stateSerial, AnalysisState.idle);
       return hash;
@@ -355,8 +379,9 @@ class AnalysisManager extends ChangeNotifier
     if (maxCacheBytes > 0) {
       final pruneResult = await _cache.enforceLimit(
         maxBytes: maxCacheBytes,
-        protectedHashes: {hash},
+        protectedHashes: _protectedHashes(hash),
       );
+      if (cancelToken.cancelled) return null;
       if (pruneResult.snapshot.isOverLimit) {
         log.warning(
           '[Analysis] cache limit reached: '
@@ -373,6 +398,7 @@ class AnalysisManager extends ChangeNotifier
           status: AnalysisTrackStatus.error,
           progress: 0,
           error: error,
+          cancelToken: cancelToken,
         );
         if (_isStateCurrent(stateSerial)) {
           _setErrorObject(error);
@@ -381,7 +407,7 @@ class AnalysisManager extends ChangeNotifier
       }
     }
 
-    if (_isStateCurrent(stateSerial)) {
+    if (!cancelToken.cancelled && _isStateCurrent(stateSerial)) {
       _state = AnalysisState.generating;
       _generatingFileName = fileName;
       _error = null;
@@ -393,6 +419,7 @@ class AnalysisManager extends ChangeNotifier
       hash: hash,
       status: AnalysisTrackStatus.generating,
       progress: 0,
+      cancelToken: cancelToken,
     );
 
     log.info(
@@ -401,6 +428,7 @@ class AnalysisManager extends ChangeNotifier
     final bool ok;
     try {
       ok = await _generateVac2BaseSerialized(videoPath, hash);
+      if (cancelToken.cancelled) return null;
     } catch (e, stack) {
       log.severe('[Analysis] generate VAC2 base threw: $e', e, stack);
       final error = await _generationFailureError(
@@ -408,6 +436,7 @@ class AnalysisManager extends ChangeNotifier
         fileName: fileName,
         maxCacheBytes: maxCacheBytes,
       );
+      if (cancelToken.cancelled) return null;
       _setTrackStatus(
         videoPath,
         fileName: fileName,
@@ -415,6 +444,7 @@ class AnalysisManager extends ChangeNotifier
         status: AnalysisTrackStatus.error,
         progress: 0,
         error: error,
+        cancelToken: cancelToken,
       );
       if (_isStateCurrent(stateSerial)) {
         _setErrorObject(error);
@@ -428,6 +458,7 @@ class AnalysisManager extends ChangeNotifier
         fileName: fileName,
         maxCacheBytes: maxCacheBytes,
       );
+      if (cancelToken.cancelled) return null;
       _setTrackStatus(
         videoPath,
         fileName: fileName,
@@ -435,6 +466,7 @@ class AnalysisManager extends ChangeNotifier
         status: AnalysisTrackStatus.error,
         progress: 0,
         error: error,
+        cancelToken: cancelToken,
       );
       if (_isStateCurrent(stateSerial)) {
         _setErrorObject(error);
@@ -450,6 +482,7 @@ class AnalysisManager extends ChangeNotifier
         maxCacheBytes: maxCacheBytes,
         forceIncomplete: true,
       );
+      if (cancelToken.cancelled) return null;
       _setTrackStatus(
         videoPath,
         fileName: fileName,
@@ -457,6 +490,7 @@ class AnalysisManager extends ChangeNotifier
         status: AnalysisTrackStatus.error,
         progress: 0,
         error: error,
+        cancelToken: cancelToken,
       );
       if (_isStateCurrent(stateSerial)) {
         _setErrorObject(error);
@@ -465,13 +499,15 @@ class AnalysisManager extends ChangeNotifier
     }
 
     await _refreshCacheEntry(hash, fileName, videoPath);
+    if (cancelToken.cancelled) return null;
     log.info('[Analysis] index entry saved');
 
     if (maxCacheBytes > 0) {
       final pruneResult = await _cache.enforceLimit(
         maxBytes: maxCacheBytes,
-        protectedHashes: {hash},
+        protectedHashes: _protectedHashes(hash),
       );
+      if (cancelToken.cancelled) return null;
       if (pruneResult.snapshot.isOverLimit) {
         log.warning(
           '[Analysis] cache exceeded after generation: '
@@ -486,6 +522,7 @@ class AnalysisManager extends ChangeNotifier
       hash: hash,
       status: AnalysisTrackStatus.cached,
       progress: 1,
+      cancelToken: cancelToken,
     );
     _setStateIfCurrent(stateSerial, AnalysisState.idle);
     return hash;
@@ -497,8 +534,12 @@ class AnalysisManager extends ChangeNotifier
     required String path,
   }) async {
     if (_loadedHash == hash) {
+      _overlayActivationSerial++;
       _activeOverlayHash = null;
       _activeOverlayTrackFileId = -1;
+      _activeOverlayHashesByTrackFileId.clear();
+      AnalysisFfi.clearOverlayTracks();
+      _releaseOverlayHashLocks();
       _applyDisabledOverlayConfig();
       _native.unload();
       _loadedHash = null;
@@ -609,7 +650,7 @@ class AnalysisManager extends ChangeNotifier
   Future<bool> activateOverlayTracks(
     List<AnalysisOverlayTrackSource> tracks,
   ) async {
-    _releaseOverlayHashLocks();
+    final serial = ++_overlayActivationSerial;
 
     final readyTracks = <AnalysisOverlayTrackSource>[];
     for (final track in tracks) {
@@ -623,6 +664,7 @@ class AnalysisManager extends ChangeNotifier
         presentedPtsUs: track.presentedPtsUs,
         presentedDtsUs: track.presentedDtsUs,
       );
+      if (!_isOverlayActivationCurrent(serial)) return false;
       if (!chunkReady) {
         log.info(
           '[Analysis] skipped overlay for ${track.hash}: '
@@ -637,6 +679,7 @@ class AnalysisManager extends ChangeNotifier
     _activeOverlayHashesByTrackFileId.clear();
     _activeOverlayHash = null;
     _activeOverlayTrackFileId = -1;
+    _releaseOverlayHashLocks();
 
     var activatedAny = false;
     for (final track in readyTracks) {
@@ -667,7 +710,15 @@ class AnalysisManager extends ChangeNotifier
         status: AnalysisTrackStatus.cached,
         progress: 1,
       );
-      await _cache.touchEntry(track.hash);
+      unawaited(
+        _cache.touchEntry(track.hash).catchError((Object e, StackTrace stack) {
+          log.warning(
+            '[Analysis] failed to touch overlay cache ${track.hash}: $e',
+            e,
+            stack,
+          );
+        }),
+      );
       activatedAny = true;
     }
 
@@ -692,11 +743,12 @@ class AnalysisManager extends ChangeNotifier
   @override
   void deactivateOverlay() {
     if (!overlayPanelVisible && _activeOverlayHash == null) return;
+    _overlayActivationSerial++;
     _activeOverlayHash = null;
     _activeOverlayTrackFileId = -1;
     _activeOverlayHashesByTrackFileId.clear();
-    _releaseOverlayHashLocks();
     AnalysisFfi.clearOverlayTracks();
+    _releaseOverlayHashLocks();
     _applyDisabledOverlayConfig();
     notifyListeners();
   }
@@ -705,13 +757,15 @@ class AnalysisManager extends ChangeNotifier
     _ensureAndLoadSerial++;
     _stateSerial++;
     _loadSerial++;
+    _overlayActivationSerial++;
+    _cancelPendingWork();
     _ensureGeneratedInFlightByPath.clear();
     _ensureOverlayChunkInFlightByKey.clear();
     _activeOverlayHash = null;
     _activeOverlayTrackFileId = -1;
     _activeOverlayHashesByTrackFileId.clear();
-    _releaseOverlayHashLocks();
     AnalysisFfi.clearOverlayTracks();
+    _releaseOverlayHashLocks();
     _applyDisabledOverlayConfig();
     if (_state == AnalysisState.loaded) {
       _native.unload();
@@ -731,6 +785,21 @@ class AnalysisManager extends ChangeNotifier
       lock.releaseSync();
     }
     _overlayHashLocksByTrackFileId.clear();
+  }
+
+  void _cancelPendingWork() {
+    _cancelToken.cancelled = true;
+    _cancelToken = _AnalysisCancelToken();
+  }
+
+  bool _isOverlayActivationCurrent(int serial) =>
+      serial == _overlayActivationSerial;
+
+  Set<String> _protectedHashes(String hash) {
+    final hashes = <String>{hash, ..._activeOverlayHashesByTrackFileId.values};
+    final loadedHash = _loadedHash;
+    if (loadedHash != null) hashes.add(loadedHash);
+    return hashes;
   }
 
   void _applyOverlayConfig() {
@@ -767,11 +836,12 @@ class AnalysisManager extends ChangeNotifier
     if (_loadedHash != hash && !overlayUsesHash) return;
     log.info('[Analysis] unloading stale cache before regeneration: $hash');
     if (overlayUsesHash) {
+      _overlayActivationSerial++;
       _activeOverlayHash = null;
       _activeOverlayTrackFileId = -1;
       _activeOverlayHashesByTrackFileId.clear();
-      _releaseOverlayHashLocks();
       AnalysisFfi.clearOverlayTracks();
+      _releaseOverlayHashLocks();
       _applyDisabledOverlayConfig();
     }
     if (_loadedHash == hash) {
@@ -922,7 +992,9 @@ class AnalysisManager extends ChangeNotifier
     required int startFrame,
     required int endFrame,
     required int targetFrame,
+    required _AnalysisCancelToken cancelToken,
   }) async {
+    if (cancelToken.cancelled) return false;
     if (_cache.deleteIfVacVersionMismatch(hash) || !_cache.filesExist(hash)) {
       return false;
     }
@@ -932,8 +1004,9 @@ class AnalysisManager extends ChangeNotifier
     if (maxCacheBytes > 0) {
       final pruneResult = await _cache.enforceLimit(
         maxBytes: maxCacheBytes,
-        protectedHashes: {hash},
+        protectedHashes: _protectedHashes(hash),
       );
+      if (cancelToken.cancelled) return false;
       if (pruneResult.snapshot.isOverLimit) {
         log.warning(
           '[Analysis] cannot generate overlay chunk; cache limit reached: '
@@ -954,6 +1027,7 @@ class AnalysisManager extends ChangeNotifier
       endFrame: endFrame,
       maxCacheBytes: maxCacheBytes,
     );
+    if (cancelToken.cancelled) return false;
     if (!ok) {
       log.warning(
         '[Analysis] generate VAC2 overlay chunk returned false: '
@@ -1129,7 +1203,9 @@ class AnalysisManager extends ChangeNotifier
     required AnalysisTrackStatus status,
     required double progress,
     AnalysisError? error,
+    _AnalysisCancelToken? cancelToken,
   }) {
+    if (cancelToken?.cancelled ?? false) return;
     final previous = _trackStatusByPath[path];
     final nextHash = hash ?? previous?.hash;
     if (previous != null &&

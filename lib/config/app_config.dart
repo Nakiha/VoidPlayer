@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import '../app_log.dart';
 import '../app_paths.dart';
 import '../preferences/playback_preferences.dart';
 import '../utils/atomic_file.dart';
@@ -37,17 +38,38 @@ class AppConfig {
     instance._lockPath = p.join(paths.locksDir, 'config.lock');
     await instance._migrateLegacyConfigIfNeeded(paths);
 
-    try {
-      await FileLockService.withShared(instance._lockPath, () async {
-        final content = await instance._file.readAsString();
-        final decoded = jsonDecode(content);
-        instance._data = decoded is Map
-            ? Map<String, dynamic>.from(decoded)
-            : <String, dynamic>{};
-      });
-    } catch (_) {
-      // File missing or corrupted — start fresh.
+    if (!await instance._file.exists()) {
       instance._data = {};
+    } else {
+      try {
+        await FileLockService.withShared(instance._lockPath, () async {
+          final content = await instance._file.readAsString();
+          final decoded = jsonDecode(content);
+          if (decoded is Map) {
+            instance._data = Map<String, dynamic>.from(decoded);
+          } else {
+            log.warning(
+              '[Config] config root is ${decoded.runtimeType}; using defaults',
+            );
+            await instance._backupCorruptConfig();
+            instance._data = {};
+          }
+        });
+      } on FormatException catch (e, stack) {
+        log.warning(
+          '[Config] config JSON is corrupted; using defaults',
+          e,
+          stack,
+        );
+        await instance._backupCorruptConfig();
+        instance._data = {};
+      } on FileSystemException catch (e, stack) {
+        log.warning('[Config] config read failed; using defaults', e, stack);
+        instance._data = {};
+      } catch (e, stack) {
+        log.warning('[Config] config load failed; using defaults', e, stack);
+        instance._data = {};
+      }
     }
 
     _instance = instance;
@@ -59,7 +81,8 @@ class AppConfig {
       await FileLockService.withExclusive(_lockPath, () async {
         await AtomicFileWriter.writeString(_file, jsonEncode(_data));
       });
-    } catch (_) {
+    } catch (e, stack) {
+      log.warning('[Config] save failed: ${_file.path}', e, stack);
       // Best-effort: don't block shutdown on write failure.
     }
   }
@@ -72,8 +95,21 @@ class AppConfig {
     try {
       await _file.parent.create(recursive: true);
       await legacy.copy(_file.path);
-    } catch (_) {
+    } catch (e, stack) {
+      log.warning('[Config] legacy config migration failed', e, stack);
       // Best-effort migration; fallback to a fresh config below.
+    }
+  }
+
+  Future<void> _backupCorruptConfig() async {
+    try {
+      if (!await _file.exists()) return;
+      final backupPath =
+          '${_file.path}.corrupt-${DateTime.now().millisecondsSinceEpoch}';
+      await _file.copy(backupPath);
+      log.warning('[Config] backed up unreadable config to $backupPath');
+    } catch (e, stack) {
+      log.warning('[Config] failed to back up unreadable config', e, stack);
     }
   }
 

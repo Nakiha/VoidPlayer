@@ -96,6 +96,20 @@ void main() {
 
       expect(api.calls, isEmpty);
     });
+
+    test('keeps disposed playback commands as no-ops', () async {
+      final api = _FakeNativePlayerApi();
+      final controller = NativePlayerController(api: api);
+
+      await controller.createPlayer(['a.mp4'], width: 320, height: 180);
+      await controller.dispose();
+      await controller.play();
+      await controller.seek(123);
+      await controller.resize(640, 360);
+      await controller.setViewportBackgroundColor(0xFF000000);
+
+      expect(api.calls, ['createPlayer:320x180:a.mp4', 'destroyPlayer']);
+    });
   });
 }
 

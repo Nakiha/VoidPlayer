@@ -63,6 +63,7 @@ class MainWindowController {
   int _fullScreenSerial = 0;
   bool? _pendingFullScreen;
   bool _fullScreenUiResizePending = false;
+  Future<void>? _shutdownFuture;
   int? _windowedViewportWidth;
   int? _windowedViewportHeight;
 
@@ -118,16 +119,33 @@ class MainWindowController {
   }
 
   void dispose() {
+    fireAndLog('dispose main window controller', closeGracefully());
+  }
+
+  Future<void> closeGracefully() {
+    final existing = _shutdownFuture;
+    if (existing != null) return existing;
+    final future = _closeGracefullyImpl();
+    _shutdownFuture = future;
+    return future;
+  }
+
+  Future<void> _closeGracefullyImpl() async {
     _fullScreenControlsTimer?.cancel();
     actionCoordinator.dispose();
     playbackCoordinator.dispose();
     mediaCoordinator.dispose();
     layoutCoordinator.dispose();
     timelineHoverNotifier.dispose();
-    stateStore.dispose();
-    fireAndLog('dispose analysis coordinator', analysisCoordinator.dispose());
-    trackManager.dispose();
-    fireAndLog('dispose player', player.dispose());
+    try {
+      await Future.wait([
+        analysisCoordinator.dispose(),
+        player.dispose(),
+      ], eagerError: false);
+    } finally {
+      trackManager.dispose();
+      stateStore.dispose();
+    }
   }
 
   void setViewportBackgroundColor(Color color) {

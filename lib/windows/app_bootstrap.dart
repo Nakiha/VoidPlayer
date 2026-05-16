@@ -11,6 +11,7 @@ import '../config/app_config.dart';
 import '../startup_options.dart';
 import 'analysis/analysis_window.dart';
 import 'analysis/ipc/analysis_ipc_client.dart';
+import 'main/main_window_shutdown.dart';
 import 'win32ffi.dart';
 import 'window_manager.dart';
 
@@ -170,6 +171,11 @@ class _CloseHandler with WindowListener {
     final bounds = await windowManager.getBounds();
     AppConfig.instance.windowRect = bounds;
     await AppConfig.instance.save();
+    try {
+      await MainWindowShutdownRegistry.closeGracefully();
+    } catch (e, stack) {
+      log.severe('[Startup] main window shutdown failed', e, stack);
+    }
     await WindowManager.closeAllAnalysisWindows();
     await windowManager.setPreventClose(false);
     await windowManager.close();

@@ -72,15 +72,17 @@ class NativePlayerEventStream {
   static const EventChannel _channel = EventChannel(
     NativePlayerChannel.eventsName,
   );
-
-  const NativePlayerEventStream();
-
-  Stream<NativePlayerEvent> get events => _channel
+  static final Stream<NativePlayerEvent> _events = _channel
       .receiveBroadcastStream()
       .where((event) => event is Map)
       .map(
         (event) =>
             NativePlayerEvent.fromMap(Map<dynamic, dynamic>.from(event as Map)),
       )
-      .where((event) => event.schemaVersion == 1);
+      .where((event) => event.schemaVersion == 1)
+      .asBroadcastStream();
+
+  const NativePlayerEventStream();
+
+  Stream<NativePlayerEvent> get events => _events;
 }

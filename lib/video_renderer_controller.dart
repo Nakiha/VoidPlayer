@@ -21,6 +21,7 @@ class NativePlayerController {
   int? get textureId => _textureId;
   bool get isDisposed => _disposed;
   bool get hasPlayer => _textureId != null;
+  bool get canAcceptCommands => !_disposed && _textureId != null;
   Stream<NativePlayerEvent> get events => _api.events;
 
   void _ensureAlive() {
@@ -37,8 +38,7 @@ class NativePlayerController {
   }
 
   bool _hasPlayerForCommand() {
-    _ensureAlive();
-    return _textureId != null;
+    return canAcceptCommands;
   }
 
   Future<CreatePlayerResult> createPlayer(
@@ -141,9 +141,8 @@ class NativePlayerController {
   }
 
   Future<void> setViewportBackgroundColor(int colorValue) {
-    _ensureAlive();
     _viewportBackgroundColor = colorValue;
-    if (_textureId == null) return Future.value();
+    if (!canAcceptCommands) return Future.value();
     return _api.setViewportBackgroundColor(colorValue);
   }
 

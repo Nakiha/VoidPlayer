@@ -57,6 +57,9 @@ std::filesystem::path make_dynamic_resolution_h264_fixture() {
     const fs::path seg_b = dir / "seg_b.h264";
     const fs::path combined = dir / "dynamic_res.h264";
     const std::string ffmpeg = FFMPEG_EXE_PATH;
+    if (!fs::exists(ffmpeg)) {
+        SKIP("FFmpeg CLI is not bundled with the minimal runtime package");
+    }
 
     auto encode_segment = [&](const fs::path& out, const char* size) {
         std::ostringstream cmd;

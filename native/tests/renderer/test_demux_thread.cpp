@@ -67,6 +67,10 @@ std::string make_multi_audio_fixture() {
     const fs::path output =
         fs::temp_directory_path() / "void_player_demux_multi_audio.mp4";
     const std::string ffmpeg = FFMPEG_EXE_PATH;
+    if (!fs::exists(ffmpeg)) {
+        SKIP("FFmpeg CLI is not bundled with the minimal runtime package");
+    }
+
     std::ostringstream cmd;
     cmd << quote_arg(ffmpeg)
         << " -y -loglevel error"

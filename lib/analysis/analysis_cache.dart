@@ -102,6 +102,7 @@ class AnalysisCache {
   AnalysisCache._();
 
   static const int currentVac2MajorVersion = 2;
+  static const int currentVac2MinorVersion = 1;
   static const int currentOverlayVachunkGeneratorRevision = 2;
   static const int _vac2HeaderSize = 124;
   static const int _vac2SectionEntrySize = 56;
@@ -232,12 +233,14 @@ class AnalysisCache {
         }
         final data = ByteData.sublistView(Uint8List.fromList(bytes));
         final major = data.getUint16(4, Endian.little);
+        final minor = data.getUint16(6, Endian.little);
         final headerSize = data.getUint16(8, Endian.little);
         final sectionEntrySize = data.getUint16(10, Endian.little);
         final sectionCount = data.getUint32(12, Endian.little);
         final sectionTableOffset = data.getUint64(52, Endian.little);
         final expectedFileSize = data.getUint64(60, Endian.little);
         if (major != currentVac2MajorVersion ||
+            minor != currentVac2MinorVersion ||
             headerSize != _vac2HeaderSize ||
             sectionEntrySize != _vac2SectionEntrySize ||
             sectionCount == 0 ||

@@ -19,6 +19,8 @@ extern "C" {
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
+#include <numeric>
 #include <vector>
 
 namespace vr::analysis {
@@ -177,6 +179,101 @@ static uint8_t infer_slice_type(AnalysisCodec codec, uint8_t nal_type, uint8_t f
     }
 }
 
+static bool supports_packet_order_reference_inference(AnalysisCodec codec) {
+    return codec == AnalysisCodec::H264 ||
+           codec == AnalysisCodec::HEVC ||
+           codec == AnalysisCodec::VVC;
+}
+
+static int64_t packet_presentation_key(const AnalysisPacketScanEntry& packet,
+                                       int fallback) {
+    if (packet.pts != AV_NOPTS_VALUE) return packet.pts;
+    if (packet.dts != AV_NOPTS_VALUE) return packet.dts;
+    return fallback;
+}
+
+static std::vector<int32_t> infer_display_order_by_packet(
+    const std::vector<AnalysisPacketScanEntry>& packets) {
+    std::vector<size_t> order(packets.size());
+    std::iota(order.begin(), order.end(), size_t{0});
+    std::stable_sort(order.begin(), order.end(), [&packets](size_t lhs, size_t rhs) {
+        const auto& a = packets[lhs];
+        const auto& b = packets[rhs];
+        const int64_t a_pts = packet_presentation_key(a, static_cast<int>(lhs));
+        const int64_t b_pts = packet_presentation_key(b, static_cast<int>(rhs));
+        if (a_pts != b_pts) return a_pts < b_pts;
+        if (a.dts != b.dts) return a.dts < b.dts;
+        return lhs < rhs;
+    });
+
+    std::vector<int32_t> display_order(packets.size(), 0);
+    for (size_t rank = 0; rank < order.size(); ++rank) {
+        display_order[order[rank]] = static_cast<int32_t>(rank);
+    }
+    return display_order;
+}
+
+static int nearest_decoded_display_ref(const std::vector<int32_t>& display_order,
+                                       int current,
+                                       bool before_current_display) {
+    const int32_t current_display = display_order[static_cast<size_t>(current)];
+    int best = -1;
+    int32_t best_display = before_current_display
+        ? std::numeric_limits<int32_t>::min()
+        : std::numeric_limits<int32_t>::max();
+    for (int i = 0; i < current; ++i) {
+        const int32_t candidate_display = display_order[static_cast<size_t>(i)];
+        if (before_current_display) {
+            if (candidate_display < current_display && candidate_display > best_display) {
+                best = i;
+                best_display = candidate_display;
+            }
+        } else if (candidate_display > current_display && candidate_display < best_display) {
+            best = i;
+            best_display = candidate_display;
+        }
+    }
+    return best;
+}
+
+static void infer_packet_order_references(
+    const std::vector<int32_t>& display_order,
+    int frame_index,
+    bool keyframe,
+    Vac2FrameSummaryEntry& summary) {
+    for (int i = 0; i < 15; ++i) {
+        summary.ref_pocs_l0[i] = -1;
+        summary.ref_pocs_l1[i] = -1;
+    }
+
+    if (keyframe || summary.slice_type == 2 || display_order.empty()) {
+        summary.slice_type = 2;
+        return;
+    }
+
+    const int previous_ref =
+        nearest_decoded_display_ref(display_order, frame_index, true);
+    const int future_ref =
+        nearest_decoded_display_ref(display_order, frame_index, false);
+
+    if (previous_ref >= 0 && future_ref >= 0) {
+        summary.slice_type = 0;
+        summary.num_ref_l0 = 1;
+        summary.num_ref_l1 = 1;
+        summary.ref_pocs_l0[0] = display_order[static_cast<size_t>(previous_ref)];
+        summary.ref_pocs_l1[0] = display_order[static_cast<size_t>(future_ref)];
+        summary.flags |= VAC2_FRAME_SUMMARY_FLAG_INFERRED_REFS;
+        return;
+    }
+
+    summary.slice_type = 1;
+    if (previous_ref >= 0) {
+        summary.num_ref_l0 = 1;
+        summary.ref_pocs_l0[0] = display_order[static_cast<size_t>(previous_ref)];
+        summary.flags |= VAC2_FRAME_SUMMARY_FLAG_INFERRED_REFS;
+    }
+}
+
 static bool build_vac2_base_from_scan(const std::string& video_path,
                                       const Vac2ScanData& scan,
                                       Vac2BaseData& out) {
@@ -194,7 +291,7 @@ static bool build_vac2_base_from_scan(const std::string& video_path,
     out.width = scan.width;
     out.height = scan.height;
     out.source_size = source_file_size(video_path);
-    out.content_revision = 1;
+    out.content_revision = 2;
     if ((out.width == 0 || out.height == 0) &&
         !probe_video_geometry(video_path, out.width, out.height)) {
         spdlog::warn("[AnalysisGen] failed to probe VAC2 base dimensions: {}", video_path);
@@ -203,6 +300,7 @@ static bool build_vac2_base_from_scan(const std::string& video_path,
         "{\"schema\":\"VAC2\",\"producer\":\"AnalysisGenerator::generate_vac2_base\","
         "\"source\":\"direct-vac2-scanner\","
         "\"frame_model\":\"one_packet_per_frame_fallback\","
+        "\"reference_model\":\"packet_pts_reorder_inference\","
         "\"frame_model_warning\":\"packet_index_equals_frame_index\"}";
 
     out.packets.resize(static_cast<size_t>(packet_count));
@@ -212,6 +310,8 @@ static bool build_vac2_base_from_scan(const std::string& video_path,
     std::vector<uint32_t> first_unit_by_frame(static_cast<size_t>(packet_count), UINT32_MAX);
     std::vector<uint32_t> unit_count_by_frame(static_cast<size_t>(packet_count), 0);
     std::vector<uint32_t> first_vcl_by_frame(static_cast<size_t>(packet_count), UINT32_MAX);
+    const std::vector<int32_t> display_order_by_frame =
+        infer_display_order_by_packet(scan.packets);
 
     uint32_t vcl_seen = 0;
     out.units.reserve(scan.units.size());
@@ -276,8 +376,8 @@ static bool build_vac2_base_from_scan(const std::string& video_path,
         frame.dts = src.dts;
         frame.duration = src.duration;
         frame.coded_order = index;
-        frame.display_order = static_cast<int32_t>(i);
-        frame.poc = src.poc;
+        frame.display_order = display_order_by_frame[static_cast<size_t>(i)];
+        frame.poc = frame.display_order;
         frame.frame_size = src.size;
         frame.rap_distance = 0;
         frame.flags = (src.flags & ANALYSIS_PACKET_FLAG_KEYFRAME)
@@ -287,7 +387,7 @@ static bool build_vac2_base_from_scan(const std::string& video_path,
         out.frames[static_cast<size_t>(i)] = frame;
 
         Vac2FrameSummaryEntry summary{};
-        summary.poc = src.poc;
+        summary.poc = frame.poc;
         summary.coded_order = index;
         summary.first_vcl_unit = first_vcl_by_frame[index];
         summary.flags = VAC2_FRAME_SUMMARY_FLAG_INFERRED_AU;
@@ -302,6 +402,13 @@ static bool build_vac2_base_from_scan(const std::string& video_path,
                 ((unit.flags & VAC2_UNIT_FLAG_IS_VCL) ? ANALYSIS_UNIT_FLAG_IS_VCL : 0) |
                 ((unit.flags & VAC2_UNIT_FLAG_IS_SLICE) ? ANALYSIS_UNIT_FLAG_IS_SLICE : 0) |
                 ((unit.flags & VAC2_UNIT_FLAG_IS_KEYFRAME) ? ANALYSIS_UNIT_FLAG_IS_KEYFRAME : 0)));
+        }
+        if (supports_packet_order_reference_inference(out.codec)) {
+            infer_packet_order_references(
+                display_order_by_frame,
+                i,
+                (frame.flags & VAC2_FRAME_FLAG_KEYFRAME) != 0,
+                summary);
         }
         out.frame_summaries[static_cast<size_t>(i)] = summary;
     }

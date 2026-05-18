@@ -142,6 +142,8 @@ const char* safe_cstr(const char* value) {
 
 struct AnalysisHandleState {
     std::unique_ptr<vr::analysis::Vac2BaseFile> vac2_base;
+    std::vector<Vac2FrameSummaryEntry> exact_frame_summaries;
+    std::vector<uint8_t> exact_frame_summary_present;
     std::mutex mutex;
     bool closed = false;
 };
@@ -245,11 +247,87 @@ bool is_vac2_base_path(const char* path) {
     return file_starts_with_magic_utf8(path, kMagic);
 }
 
+bool read_record_section_bytes(const vr::analysis::VachunkFile& chunk,
+                               const char (&type)[5],
+                               uint32_t entry_size,
+                               std::vector<uint8_t>& out) {
+    out.clear();
+    const auto* section = chunk.section(type);
+    if (!section ||
+        section->entry_size != entry_size ||
+        section->decoded_size != static_cast<uint64_t>(section->entry_count) * entry_size ||
+        section->decoded_size > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+        return false;
+    }
+    return chunk.read_section(type, out) && out.size() == section->decoded_size;
+}
+
+void load_exact_frame_summary_chunks(AnalysisHandleState& state,
+                                     const char* analysis_path) {
+    state.exact_frame_summaries.clear();
+    state.exact_frame_summary_present.clear();
+    if (!state.vac2_base || !analysis_path || analysis_path[0] == '\0') return;
+
+    const auto frame_count = state.vac2_base->frames().size();
+    if (frame_count == 0) return;
+    state.exact_frame_summaries.resize(frame_count);
+    state.exact_frame_summary_present.assign(frame_count, 0);
+
+    const auto base_path = vr::win_utf8::path_from_utf8(analysis_path);
+    const auto exact_dir = base_path.parent_path() / L"chunks" / L"frame_summary_exact";
+    std::error_code ec;
+    if (!std::filesystem::exists(exact_dir, ec) || ec) return;
+
+    const auto& base_header = state.vac2_base->header();
+    std::vector<uint64_t> generator_by_frame(frame_count, 0);
+    for (const auto& entry : std::filesystem::directory_iterator(exact_dir, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file(ec) || ec || entry.path().extension() != L".vck") {
+            ec.clear();
+            continue;
+        }
+
+        vr::analysis::VachunkFile chunk;
+        if (!chunk.open(vr::win_utf8::path_to_utf8(entry.path()))) continue;
+        const auto& header = chunk.header();
+        if (header.kind != static_cast<uint16_t>(VachunkKind::FrameSummaryExact) ||
+            header.codec != base_header.codec ||
+            header.track_index != base_header.track_index ||
+            header.base_content_revision != base_header.content_revision ||
+            header.start_frame > header.end_frame ||
+            header.end_frame >= frame_count) {
+            continue;
+        }
+
+        std::vector<uint8_t> bytes;
+        if (!read_record_section_bytes(chunk, "FSUM", sizeof(Vac2FrameSummaryEntry), bytes)) {
+            continue;
+        }
+        const auto count = bytes.size() / sizeof(Vac2FrameSummaryEntry);
+        const auto expected_count =
+            static_cast<size_t>(header.end_frame - header.start_frame + 1);
+        if (count != expected_count) continue;
+
+        const auto* summaries =
+            reinterpret_cast<const Vac2FrameSummaryEntry*>(bytes.data());
+        for (size_t i = 0; i < count; ++i) {
+            const size_t frame = static_cast<size_t>(header.start_frame) + i;
+            if (!state.exact_frame_summary_present[frame] ||
+                header.generator_revision >= generator_by_frame[frame]) {
+                state.exact_frame_summaries[frame] = summaries[i];
+                state.exact_frame_summary_present[frame] = 1;
+                generator_by_frame[frame] = header.generator_revision;
+            }
+        }
+    }
+}
+
 bool open_analysis_handle_path(AnalysisHandleState& state, const char* analysis_path) {
     if (!is_vac2_base_path(analysis_path)) return false;
     auto base = std::make_unique<vr::analysis::Vac2BaseFile>();
     if (!base->open(analysis_path)) return false;
     state.vac2_base = std::move(base);
+    load_exact_frame_summary_chunks(state, analysis_path);
     return true;
 }
 
@@ -260,6 +338,8 @@ int32_t clamp_count_to_i32(size_t count) {
 }
 
 bool fill_vac2_frame_at(const vr::analysis::Vac2BaseFile& base,
+                        const std::vector<Vac2FrameSummaryEntry>* exact_summaries,
+                        const std::vector<uint8_t>* exact_present,
                         int32_t source_index,
                         NakiFrameInfo& f);
 int32_t fill_vac2_nalus_range(const vr::analysis::Vac2BaseFile& base,
@@ -352,6 +432,8 @@ void fill_vac2_summary(const vr::analysis::Vac2BaseFile& base,
 }
 
 bool fill_vac2_frame_at(const vr::analysis::Vac2BaseFile& base,
+                        const std::vector<Vac2FrameSummaryEntry>* exact_summaries,
+                        const std::vector<uint8_t>* exact_present,
                         int32_t source_index,
                         NakiFrameInfo& f) {
     if (source_index < 0 ||
@@ -361,7 +443,14 @@ bool fill_vac2_frame_at(const vr::analysis::Vac2BaseFile& base,
 
     const auto& frame = base.frames()[source_index];
     const Vac2FrameSummaryEntry* summary = nullptr;
-    if (static_cast<size_t>(source_index) < base.frame_summaries().size()) {
+    const auto exact_index = static_cast<size_t>(source_index);
+    if (exact_summaries &&
+        exact_present &&
+        exact_index < exact_summaries->size() &&
+        exact_index < exact_present->size() &&
+        (*exact_present)[exact_index]) {
+        summary = &(*exact_summaries)[exact_index];
+    } else if (static_cast<size_t>(source_index) < base.frame_summaries().size()) {
         summary = &base.frame_summaries()[source_index];
     }
 
@@ -388,6 +477,8 @@ bool fill_vac2_frame_at(const vr::analysis::Vac2BaseFile& base,
 }
 
 int32_t fill_vac2_frames_range(const vr::analysis::Vac2BaseFile& base,
+                               const std::vector<Vac2FrameSummaryEntry>* exact_summaries,
+                               const std::vector<uint8_t>* exact_present,
                                int32_t start,
                                NakiFrameInfo* out,
                                int32_t max_count) {
@@ -396,7 +487,10 @@ int32_t fill_vac2_frames_range(const vr::analysis::Vac2BaseFile& base,
     if (start >= total_count) return 0;
     const int32_t count = std::min(max_count, total_count - start);
     for (int32_t i = 0; i < count; ++i) {
-        if (!fill_vac2_frame_at(base, start + i, out[i])) return i;
+        if (!fill_vac2_frame_at(
+                base, exact_summaries, exact_present, start + i, out[i])) {
+            return i;
+        }
     }
     return count;
 }
@@ -487,7 +581,7 @@ int32_t fill_vac2_frame_buckets(const vr::analysis::Vac2BaseFile& base,
 
         for (int32_t i = 0; i < count; ++i) {
             NakiFrameInfo f{};
-            if (!fill_vac2_frame_at(base, bucket_start + i, f)) break;
+            if (!fill_vac2_frame_at(base, nullptr, nullptr, bucket_start + i, f)) break;
             bucket.packet_size_min = std::min(bucket.packet_size_min, f.packet_size);
             bucket.packet_size_max = std::max(bucket.packet_size_max, f.packet_size);
             bucket.packet_size_sum += f.packet_size;
@@ -598,6 +692,8 @@ void naki_analysis_close(NakiAnalysisHandle handle) {
     state->closed = true;
     if (state->vac2_base) state->vac2_base->close();
     state->vac2_base.reset();
+    state->exact_frame_summaries.clear();
+    state->exact_frame_summary_present.clear();
     set_analysis_ok();
 }
 
@@ -656,7 +752,13 @@ int32_t naki_analysis_handle_get_frames(NakiAnalysisHandle handle, NakiFrameInfo
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return 0;
     }
-    auto count = fill_vac2_frames_range(*state->vac2_base, 0, out, max_count);
+    auto count = fill_vac2_frames_range(
+        *state->vac2_base,
+        &state->exact_frame_summaries,
+        &state->exact_frame_summary_present,
+        0,
+        out,
+        max_count);
     set_analysis_ok();
     return count;
 }
@@ -674,7 +776,13 @@ int32_t naki_analysis_handle_get_frames_range(NakiAnalysisHandle handle, int32_t
         set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
         return 0;
     }
-    auto count = fill_vac2_frames_range(*state->vac2_base, start, out, max_count);
+    auto count = fill_vac2_frames_range(
+        *state->vac2_base,
+        &state->exact_frame_summaries,
+        &state->exact_frame_summary_present,
+        start,
+        out,
+        max_count);
     set_analysis_ok();
     return count;
 }
@@ -1097,6 +1205,12 @@ static constexpr uint64_t kOverlayVachunkFeatureFlags =
     VACHUNK_FEATURE_REF_INDEXES |
     VACHUNK_FEATURE_BIT_COST;
 
+static constexpr uint64_t kFrameSummaryExactFeatureFlags =
+    VACHUNK_FEATURE_QP |
+    VACHUNK_FEATURE_REF_INDEXES;
+static constexpr uint64_t kFrameSummaryExactGeneratorRevision = 1;
+static constexpr int32_t kFrameSummaryExactChunkFrames = 64;
+
 static bool generate_ffmpeg_vachunk(const std::string& exe_dir,
                                     const std::string& data_dir,
                                     const std::string& staging_dir,
@@ -1154,6 +1268,174 @@ static bool generate_ffmpeg_vachunk(const std::string& exe_dir,
     }
     spdlog::info("[Analysis] ffmpeg-analysis vachunk_out={} exists={}", vachunk_out, vachunk_ok);
     return vachunk_ok;
+}
+
+const vr::analysis::VachunkPayloadSection* find_payload_section(
+    const vr::analysis::VachunkData& data,
+    const char (&type)[5]) {
+    for (const auto& section : data.sections) {
+        if (std::memcmp(section.type, type, 4) == 0) {
+            return &section;
+        }
+    }
+    return nullptr;
+}
+
+static bool convert_overlay_fsum_to_exact(
+    const vr::analysis::VachunkData& overlay_data,
+    const vr::analysis::Vac2BaseFile& base,
+    uint32_t start_frame,
+    uint32_t end_frame,
+    std::vector<Vac2FrameSummaryEntry>& exact) {
+    exact.clear();
+    const auto* fsum = find_payload_section(overlay_data, "FSUM");
+    if (!fsum ||
+        fsum->entry_size != sizeof(VachunkFrameSummary) ||
+        fsum->decoded_size != fsum->bytes.size() ||
+        fsum->entry_count != end_frame - start_frame + 1 ||
+        static_cast<size_t>(end_frame) >= base.frames().size()) {
+        return false;
+    }
+
+    const auto* source =
+        reinterpret_cast<const VachunkFrameSummary*>(fsum->bytes.data());
+    exact.resize(fsum->entry_count);
+    for (uint32_t i = 0; i < fsum->entry_count; ++i) {
+        const uint32_t frame_index = start_frame + i;
+        const auto& src = source[i];
+        auto& dst = exact[i];
+        std::memset(&dst, 0, sizeof(dst));
+        dst.poc = src.poc;
+        dst.coded_order = frame_index;
+        dst.first_vcl_unit = UINT32_MAX;
+        if (static_cast<size_t>(frame_index) < base.frame_summaries().size()) {
+            dst.first_vcl_unit = base.frame_summaries()[frame_index].first_vcl_unit;
+        }
+        dst.flags = VAC2_FRAME_SUMMARY_FLAG_EXACT_REFS;
+        dst.temporal_id = src.temporal_id;
+        dst.slice_type = src.slice_type;
+        dst.nal_type = src.nal_unit_type;
+        dst.qp_kind = src.num_cus > 0 ? VAC2_QP_KIND_EXACT : VAC2_QP_KIND_UNKNOWN;
+        if (src.num_cus > 0) {
+            dst.flags |= VAC2_FRAME_SUMMARY_FLAG_EXACT_QP;
+            dst.qp_avg = src.avg_qp;
+            dst.qp_min = src.qp_min;
+            dst.qp_max = src.qp_max;
+        }
+        dst.num_ref_l0 = std::min<uint8_t>(src.num_ref_l0, 15);
+        dst.num_ref_l1 = std::min<uint8_t>(src.num_ref_l1, 15);
+        for (int ref = 0; ref < 15; ++ref) {
+            dst.ref_pocs_l0[ref] = ref < dst.num_ref_l0 ? src.ref_pocs_l0[ref] : -1;
+            dst.ref_pocs_l1[ref] = ref < dst.num_ref_l1 ? src.ref_pocs_l1[ref] : -1;
+        }
+    }
+    return true;
+}
+
+static bool publish_frame_summary_exact_from_overlay(
+    vr::analysis::VacacheStore& store,
+    const vr::analysis::Vac2BaseFile& base,
+    const vr::analysis::VachunkKey& key,
+    const std::string& overlay_tmp,
+    uint64_t max_output_bytes) {
+    vr::analysis::VachunkData overlay_data;
+    if (!vr::analysis::read_vachunk_file_data(overlay_tmp, overlay_data)) {
+        spdlog::error("[Analysis] failed to read temporary overlay VACHUNK for FSUM");
+        return false;
+    }
+
+    std::vector<Vac2FrameSummaryEntry> exact_summaries;
+    if (!convert_overlay_fsum_to_exact(
+            overlay_data, base, key.start_frame, key.end_frame, exact_summaries)) {
+        spdlog::error("[Analysis] failed to convert overlay FSUM to exact frame summary");
+        return false;
+    }
+
+    vr::analysis::VachunkData exact_data;
+    exact_data.sections.push_back(
+        vr::analysis::make_vachunk_string_section("META",
+            "{\"producer\":\"analysis_ffi\",\"source\":\"ffmpeg-overlay-fsum\"}"));
+    exact_data.sections.push_back(
+        vr::analysis::make_vachunk_record_section("FSUM", exact_summaries));
+    return store.write_chunk_atomic(key, std::move(exact_data), max_output_bytes);
+}
+
+static bool generate_frame_summary_exact_chunks(
+    const std::string& exe_dir,
+    const std::string& data_dir,
+    const std::string& logs_dir,
+    const char* video_path,
+    const char* hash,
+    vr::analysis::VacacheStore& store,
+    const vr::analysis::Vac2BaseFile& base,
+    int64_t max_cache_bytes) {
+    const AnalysisCodec codec = analysis_codec_from_u16(base.header().codec);
+    if (!ffmpeg_analysis_codec_arg(codec) || base.frames().empty()) {
+        return true;
+    }
+
+    const NativeCacheBudget budget =
+        compute_native_cache_budget(data_dir, hash, max_cache_bytes);
+    if (budget.limited && budget.available_for_current_hash == 0) {
+        spdlog::warn("[Analysis] skipping exact frame summaries; cache limit reached");
+        return false;
+    }
+
+    const std::string staging_path = vr::win_utf8::path_to_utf8(
+        vr::win_utf8::path_from_utf8(store.tmp_dir()) /
+        vr::win_utf8::path_from_utf8(
+            "summary." + std::to_string(GetCurrentProcessId()) + "." +
+            std::to_string(GetTickCount64())));
+    ScopedStagingDir staging(staging_path);
+    if (!vr::win_utf8::create_directory_utf8(staging.path())) {
+        spdlog::warn("[Analysis] failed to create exact summary staging dir");
+        return false;
+    }
+
+    const auto frame_count = static_cast<uint32_t>(std::min<size_t>(
+        base.frames().size(), std::numeric_limits<uint32_t>::max()));
+    bool all_ok = true;
+    for (uint32_t start = 0; start < frame_count;
+         start += static_cast<uint32_t>(kFrameSummaryExactChunkFrames)) {
+        const uint32_t end = std::min<uint32_t>(
+            frame_count - 1, start + kFrameSummaryExactChunkFrames - 1);
+        vr::analysis::VachunkKey key;
+        key.kind = VachunkKind::FrameSummaryExact;
+        key.codec = codec;
+        key.feature_flags = kFrameSummaryExactFeatureFlags;
+        key.base_content_revision = base.header().content_revision;
+        key.generator_revision = kFrameSummaryExactGeneratorRevision;
+        key.start_frame = start;
+        key.end_frame = end;
+
+        vr::analysis::VachunkFile existing;
+        if (store.open_chunk(key, existing)) {
+            existing.close();
+            continue;
+        }
+
+        const std::string overlay_tmp =
+            staging.path() + "\\" + std::string(hash) + ".summary." +
+            std::to_string(start) + "." + std::to_string(end) + ".tmp.vck";
+        const bool generated = generate_ffmpeg_vachunk(
+            exe_dir, data_dir, staging.path(), logs_dir, video_path, hash,
+            codec, overlay_tmp, static_cast<int32_t>(start), static_cast<int32_t>(end),
+            key.base_content_revision, key.generator_revision, budget);
+        if (!generated) {
+            all_ok = false;
+            vr::win_utf8::delete_file_utf8(overlay_tmp);
+            continue;
+        }
+
+        const uint64_t max_output_bytes =
+            overlay_publish_output_budget(data_dir, hash, budget);
+        if (!publish_frame_summary_exact_from_overlay(
+                store, base, key, overlay_tmp, max_output_bytes)) {
+            all_ok = false;
+        }
+        vr::win_utf8::delete_file_utf8(overlay_tmp);
+    }
+    return all_ok;
 }
 
 static bool vachunk_matches_key(const vr::analysis::VachunkFile& chunk,
@@ -1272,6 +1554,16 @@ int32_t naki_analysis_generate_vac2_base(const char* video_path,
         set_analysis_error(NAKI_ANALYSIS_ERR_OPEN_FAILED,
                            "published VAC2 base cache failed to reopen");
         return 0;
+    }
+
+    const std::string exe_dir = get_exe_dir();
+    const std::string data_dir = cache_root;
+    const std::string logs_dir =
+        vr::win_utf8::path_to_utf8(vr::win_utf8::path_from_utf8(data_dir).parent_path() / L"logs");
+    if (!generate_frame_summary_exact_chunks(
+            exe_dir, data_dir, logs_dir, video_path, hash, store, verify,
+            max_cache_bytes)) {
+        spdlog::warn("[Analysis] generate_vac2_base: exact frame summaries unavailable");
     }
 
     set_analysis_ok();

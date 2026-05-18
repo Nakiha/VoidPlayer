@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import '../../../analysis/nalu_types.dart';
 import '../../../app_log.dart';
@@ -158,6 +159,14 @@ extension AnalysisPageTestRunner on AnalysisTestHost {
           'ASSERT_ANALYSIS_REFERENCE_EDGES $minEdges',
         );
         _assertAnalysisReferenceEdges(minEdges);
+
+      case _AnalysisTestCommand.assertReferenceMaxLayer:
+        final minLayer = instr.intArg(0, defaultValue: 1);
+        log.info(
+          'AnalysisTestRunner ${instr.time}: '
+          'ASSERT_ANALYSIS_REFERENCE_MAX_LAYER $minLayer',
+        );
+        _assertAnalysisReferenceMaxLayer(minLayer);
 
       case _AnalysisTestCommand.assertCounts:
         final frames = instr.intArg(0);
@@ -348,6 +357,48 @@ extension AnalysisPageTestRunner on AnalysisTestHost {
       );
     }
   }
+
+  void _assertAnalysisReferenceMaxLayer(int minLayer) {
+    _assertAnalysisLoaded();
+    final pocToIndex = <int, int>{};
+    for (var i = 0; i < analysisFrames.length; i++) {
+      pocToIndex.putIfAbsent(analysisFrames[i].poc, () => i);
+    }
+
+    final memo = <int, int>{};
+    final visiting = <int>{};
+    int layerFor(int index) {
+      final cached = memo[index];
+      if (cached != null) return cached;
+      if (!visiting.add(index)) return 0;
+      final f = analysisFrames[index];
+      var layer = 0;
+      if (f.sliceType == 0) {
+        for (var i = 0; i < f.numRefL0 && i < f.refPocsL0.length; i++) {
+          final refIndex = pocToIndex[f.refPocsL0[i]];
+          if (refIndex != null) layer = math.max(layer, layerFor(refIndex) + 1);
+        }
+        for (var i = 0; i < f.numRefL1 && i < f.refPocsL1.length; i++) {
+          final refIndex = pocToIndex[f.refPocsL1[i]];
+          if (refIndex != null) layer = math.max(layer, layerFor(refIndex) + 1);
+        }
+      }
+      visiting.remove(index);
+      memo[index] = layer;
+      return layer;
+    }
+
+    var maxLayer = 0;
+    for (var i = 0; i < analysisFrames.length; i++) {
+      maxLayer = math.max(maxLayer, layerFor(i));
+    }
+    if (maxLayer < minLayer) {
+      throw AssertionError(
+        'Expected reference max auto layer >= $minLayer, got $maxLayer '
+        '(frames=${analysisFrames.length})',
+      );
+    }
+  }
 }
 
 enum _AnalysisTestCommand {
@@ -360,6 +411,7 @@ enum _AnalysisTestCommand {
   assertSelectedFrame,
   assertSelectedFrameVisible,
   assertReferenceEdges,
+  assertReferenceMaxLayer,
   setTab,
   assertTab,
   setOrder,
@@ -441,6 +493,8 @@ List<_AnalysisTestInstruction> _parseAnalysisTestScript(String path) {
         _AnalysisTestCommand.assertSelectedFrameVisible,
       'ASSERT_ANALYSIS_REFERENCE_EDGES' =>
         _AnalysisTestCommand.assertReferenceEdges,
+      'ASSERT_ANALYSIS_REFERENCE_MAX_LAYER' =>
+        _AnalysisTestCommand.assertReferenceMaxLayer,
       'SET_ANALYSIS_TAB' => _AnalysisTestCommand.setTab,
       'ASSERT_ANALYSIS_TAB' => _AnalysisTestCommand.assertTab,
       'SET_ANALYSIS_ORDER' => _AnalysisTestCommand.setOrder,

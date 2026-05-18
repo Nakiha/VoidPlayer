@@ -144,7 +144,7 @@ inline constexpr uint8_t ANALYSIS_PACKET_FLAG_KEYFRAME = 0x01;
 // ===========================================================================
 
 inline constexpr uint16_t kVac2VersionMajor = 2;
-inline constexpr uint16_t kVac2VersionMinor = 0;
+inline constexpr uint16_t kVac2VersionMinor = 1;
 
 struct Vac2Header {
     char     magic[4];       // "VAC2"
@@ -266,6 +266,7 @@ inline constexpr uint32_t VAC2_FRAME_FLAG_INFERRED_AU = 0x00000004;
 inline constexpr uint32_t VAC2_FRAME_SUMMARY_FLAG_EXACT_REFS = 0x00000001;
 inline constexpr uint32_t VAC2_FRAME_SUMMARY_FLAG_EXACT_QP = 0x00000002;
 inline constexpr uint32_t VAC2_FRAME_SUMMARY_FLAG_INFERRED_AU = 0x00000004;
+inline constexpr uint32_t VAC2_FRAME_SUMMARY_FLAG_INFERRED_REFS = 0x00000008;
 
 inline constexpr uint8_t VAC2_QP_KIND_UNKNOWN = 0;
 inline constexpr uint8_t VAC2_QP_KIND_SLICE = 1;

@@ -110,6 +110,35 @@ TEST_CASE("AnalysisGenerator: generates VAC2 base from private CDN FLV",
     std::filesystem::remove_all(tmp);
 }
 
+TEST_CASE("AnalysisGenerator: H.265 VAC2 base infers fallback reference edges",
+          "[analysis][generator][vac2][resources][refs]") {
+    const std::string h265_video = test_dir + "/h265_10s_1920x1080.mp4";
+    if (!std::filesystem::exists(h265_video)) return;
+
+    auto tmp = make_temp_dir();
+    const std::string vac2_path = tmp + "/h265_refs.vac";
+    REQUIRE(vr::analysis::AnalysisGenerator::generate_vac2_base(
+        h265_video, vac2_path));
+
+    vr::analysis::Vac2BaseFile vac2;
+    REQUIRE(vac2.open(vac2_path));
+    REQUIRE(vac2.header().codec == static_cast<uint16_t>(AnalysisCodec::HEVC));
+
+    int ref_edges = 0;
+    for (const auto& summary : vac2.frame_summaries()) {
+        for (uint8_t i = 0; i < summary.num_ref_l0 && i < 15; ++i) {
+            if (summary.ref_pocs_l0[i] >= 0) ++ref_edges;
+        }
+        for (uint8_t i = 0; i < summary.num_ref_l1 && i < 15; ++i) {
+            if (summary.ref_pocs_l1[i] >= 0) ++ref_edges;
+        }
+    }
+
+    REQUIRE(ref_edges > 0);
+
+    std::filesystem::remove_all(tmp);
+}
+
 TEST_CASE("AnalysisGenerator: resources video samples produce VAC2 base",
           "[analysis][generator][vac2][resources]") {
     struct SampleCase {

@@ -28,6 +28,7 @@ target_include_directories(video_renderer_lib PUBLIC
 )
 target_include_directories(video_renderer_lib SYSTEM PUBLIC
     ${FFMPEG_INCLUDE_DIR}
+    ${VOID_MINIAUDIO_INCLUDE_DIR}
 )
 
 target_link_libraries(video_renderer_lib PUBLIC

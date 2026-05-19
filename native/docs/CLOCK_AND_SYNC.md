@@ -133,4 +133,4 @@ struct PresentDecision {
 
 `AudioDecodeThread::notify_seek(target_pts_us, type)` 会递增音频 buffer serial，并保留 seek target/type。seek 后旧 serial 的 PCM chunk 会被丢弃；新 chunk 如果早于目标点，会按 PTS 裁掉前缀；Exact seek 如果首个新 chunk 晚于目标点且 gap 较小，会先补一段 silence；Keyframe seek 或较大 gap 则记录 realign metric。
 
-waveOut 仍是临时输出后端，但 `waveOutOpen`、`waveOutPrepareHeader`、`waveOutWrite`、`waveOutUnprepareHeader`、`waveOutReset`、`waveOutClose` 都必须检查返回值并写入 native log。后续迁移 WASAPI shared mode 时，可以复用同一套 `PcmBuffer` 时间模型和 metrics。
+miniaudio 是 native 设备输出后端，当前只接管 playback callback；解封装、解码、重采样、混音和 `PcmBuffer` 时间模型仍由 VoidPlayer 维护。后续调整 WASAPI/CoreAudio 参数时，应继续保留同一套 PCM 时间模型和 metrics。

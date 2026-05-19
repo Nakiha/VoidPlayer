@@ -51,7 +51,7 @@ Required native target layers:
 | `void_player` | NativePlayer facade, playback, track lifecycle, layout state | no MethodChannel ownership |
 | `void_render_d3d11` | D3D11 device, shaders, capture, Windows texture bridge | Windows only |
 | `void_render_metal` | Metal device, shaders, CVPixelBuffer/IOSurface output | macOS only |
-| `void_audio_windows` | existing waveOut path until intentionally replaced | Windows only |
+| `void_audio_output` | miniaudio playback callback fed by VoidPlayer-owned decode/mix pipeline | Windows now, macOS later |
 | `void_audio_macos` | CoreAudio/miniaudio output implementation | macOS only |
 | `void_flutter_windows_plugin` | Windows runner glue | thin adapter |
 | `void_flutter_macos_plugin` | macOS runner glue | thin adapter |
@@ -144,8 +144,8 @@ Tasks:
   D3D11 backend objects; macOS work should first prove that `Renderer` can compile and run against
   a null/mock backend before a Metal backend is added.
 - Keep the `PlaybackController` dependency on `AudioOutput` platform-neutral. If source movement
-  exposes WaveOut coupling, pull the audio-output factory boundary forward instead of dragging
-  Windows audio into shared targets.
+  exposes backend coupling, pull the audio-output factory boundary forward instead of dragging
+  platform audio into shared targets.
 - Extract platform adapters for timer resolution, crash handling, audio output, hardware decode,
   render backend creation, and texture output.
 - Keep FFmpeg demux/decode code shared; platform-specific hardware decode providers should be

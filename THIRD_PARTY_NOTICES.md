@@ -24,6 +24,7 @@ the FFmpeg runtime with a compatible package that provides the same `include/`,
 The native module also uses:
 
 - zstd, from `native/analysis/vendor/zstd`, for VBS4 compression.
+- miniaudio, from `third_party/miniaudio`, for native audio device output.
 - spdlog, fetched by pinned commit unless `VOID_USE_LOCAL_DEPS=ON`.
 - Catch2, fetched by pinned commit for tests.
 - FFmpeg analyzer tooling under `native/analysis/vendor/ffmpeg`.

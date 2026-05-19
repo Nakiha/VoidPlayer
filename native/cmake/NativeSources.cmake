@@ -1,6 +1,7 @@
 include_guard(GLOBAL)
 
 get_filename_component(VOID_NATIVE_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+set(VOID_MINIAUDIO_INCLUDE_DIR "${VOID_NATIVE_DIR}/../third_party/miniaudio/include")
 
 option(BUILD_ANALYSIS "Build native analysis cache, CLI, and overlay feature" ON)
 
@@ -27,7 +28,7 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/audio/audio_mixer.cpp"
     "${VOID_NATIVE_DIR}/audio/audio_track_registry.cpp"
     "${VOID_NATIVE_DIR}/audio/pcm_buffer.cpp"
-    "${VOID_NATIVE_DIR}/audio/wave_out_output.cpp"
+    "${VOID_NATIVE_DIR}/audio/miniaudio_output.cpp"
     "${VOID_NATIVE_DIR}/audio/audio_output_factory.cpp"
     "${VOID_NATIVE_DIR}/player/native_player.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/audio_coordinator.cpp"

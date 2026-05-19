@@ -28,7 +28,7 @@ native/
 │   ├── packet_queue.h/cpp          # AVPacket 线程安全队列
 │   └── seek_controller.h/cpp       # Seek 请求协调
 ├── audio/
-│   └── audio_engine.h/cpp          # 音频解码 + WinMM 输出（单 audible track）
+│   └── audio_engine.h/cpp          # 音频解码 + miniaudio 设备输出（单 audible track）
 ├── player/
 │   └── native_player.h/cpp         # native 播放 facade，平级拥有 playback + renderer
 ├── playback/

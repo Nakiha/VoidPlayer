@@ -35,6 +35,7 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
     )
     target_include_directories(${target_name} SYSTEM PRIVATE
         "${FFMPEG_INCLUDE_DIR}"
+        "${VOID_MINIAUDIO_INCLUDE_DIR}"
     )
 
     target_link_libraries(${target_name} PRIVATE

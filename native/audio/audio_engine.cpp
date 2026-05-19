@@ -1,9 +1,10 @@
 #include "audio/audio_constants.h"
 #include "audio/audio_decode_thread.h"
 #include "audio/audio_engine.h"
-#include "audio/pcm_buffer.h"
+#include "audio/audio_mixer.h"
 #include "audio/audio_track_registry.h"
-#include "audio/wave_out_output.h"
+#include "audio/miniaudio_output.h"
+#include "audio/pcm_buffer.h"
 
 #include <atomic>
 #include <cstdint>
@@ -128,7 +129,7 @@ private:
 
     mutable std::mutex mutex_;
     AudioTrackRegistry tracks_;
-    WaveOutOutput output_;
+    MiniaudioOutput output_;
     std::atomic<bool> paused_{true};
 };
 

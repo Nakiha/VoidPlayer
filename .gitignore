@@ -57,6 +57,16 @@ app.*.map.json
 /windows/native/dist
 /windows/native/build-msvc
 /windows/native/_deps
+/macos/build
+/macos/build_native
+/macos/Flutter/ephemeral
+/macos/Pods
+/macos/Podfile
+/macos/Podfile.lock
+/macos/.symlinks
+/macos/Runner.xcodeproj/xcuserdata
+/macos/Runner.xcworkspace/xcuserdata
+/macos/Runner.xcworkspace/xcshareddata/swiftpm
 
 # Generated l10n files (source of truth is .arb)
 lib/l10n/app_localizations*.dart

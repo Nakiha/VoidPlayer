@@ -1,0 +1,22 @@
+# Flutter-generated
+Flutter/ephemeral/
+.symlinks/
+
+# CocoaPods-generated output. The Phase 0 runner baseline does not maintain a
+# hand-authored Podfile yet; Flutter regenerates it during macOS builds.
+Pods/
+Podfile
+Podfile.lock
+
+# Native/CMake and Xcode user output
+build/
+build_native/
+DerivedData/
+*.xcuserstate
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+xcuserdata/
+Runner.xcodeproj/xcuserdata/
+Runner.xcworkspace/xcuserdata/
+Runner.xcworkspace/xcshareddata/swiftpm/

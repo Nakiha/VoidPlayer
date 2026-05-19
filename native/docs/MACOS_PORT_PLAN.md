@@ -218,6 +218,16 @@ Exit criteria:
 Goal: build a minimal macOS native library that links FFmpeg and exposes the same player facade
 surface expected by the runner.
 
+Status on 2026-05-20:
+
+- Done: `macos_media_smoke` links `void_media_ffmpeg`, opens the bundled
+  `resources/video/h264_9s_1920x1080.mp4` fixture, and validates video stream metadata/duration.
+- Verified: `cmake --build native/build-macos-make --target macos_media_smoke -- -j2`,
+  `ctest --test-dir native/build-macos-make -R macos_media_smoke --output-on-failure`, and
+  `otool -L native/build-macos-make/macos_media_smoke`.
+- Remaining: this is still a CLI/CTest probe. The macOS runner does not yet link or package a
+  VoidPlayer native library, and FFmpeg dylibs are not yet copied/signed into the `.app` bundle.
+
 Tasks:
 
 - Add `native/cmake/MacOSNativeTarget.cmake` or equivalent CMake path.

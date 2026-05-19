@@ -37,3 +37,18 @@ target_link_libraries(void_media_ffmpeg PUBLIC
     ${AVFORMAT_LIBRARY}
     ${AVUTIL_LIBRARY}
 )
+
+if(APPLE)
+    add_executable(macos_media_smoke
+        "${VOID_NATIVE_DIR}/tools/macos_media_smoke.cpp"
+    )
+    void_apply_native_compile_options(macos_media_smoke)
+    target_link_libraries(macos_media_smoke PRIVATE
+        void_media_ffmpeg
+        spdlog::spdlog_header_only
+    )
+    target_compile_definitions(macos_media_smoke PRIVATE
+        VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
+    )
+    add_test(NAME macos_media_smoke COMMAND macos_media_smoke)
+endif()

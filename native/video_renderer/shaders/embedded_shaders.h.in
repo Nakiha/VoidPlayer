@@ -25,6 +25,10 @@ constexpr const char kAnalysisOverlayInvertHlsl[] = R"__SHADER__(
 @ANALYSIS_OVERLAY_INVERT_HLSL@
 )__SHADER__";
 
+constexpr const char kAnalysisOverlayContrastHlsl[] = R"__SHADER__(
+@ANALYSIS_OVERLAY_CONTRAST_HLSL@
+)__SHADER__";
+
 constexpr const char kAnalysisOverlayRectHlsl[] = R"__SHADER__(
 @ANALYSIS_OVERLAY_RECT_HLSL@
 )__SHADER__";

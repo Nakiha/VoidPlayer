@@ -91,6 +91,16 @@ bool D3D11RenderBackend::initialize_render_resources() {
     }
 
     if (!shader_manager_->compile_from_source(
+            kAnalysisOverlayContrastHlsl,
+            multitrack_includes,
+            "VSMain",
+            "PSMain",
+            resources_->overlay_contrast_shader)) {
+        spdlog::error("Renderer: failed to compile overlay contrast shaders");
+        return false;
+    }
+
+    if (!shader_manager_->compile_from_source(
             kAnalysisOverlayRectHlsl,
             multitrack_includes,
             "VSMain",

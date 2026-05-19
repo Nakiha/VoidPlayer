@@ -367,6 +367,8 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
         !resources.overlay_shader.ps ||
         !resources.overlay_invert_shader.vs ||
         !resources.overlay_invert_shader.ps ||
+        !resources.overlay_contrast_shader.vs ||
+        !resources.overlay_contrast_shader.ps ||
         !resources.overlay_mask_rect_shader.vs ||
         !resources.overlay_mask_rect_shader.ps ||
         !resources.overlay_blend_state ||
@@ -780,6 +782,16 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
         ctx->PSSetShader(resources.overlay_invert_shader.ps.Get(), nullptr, 0);
         if (resources.overlay_invert_shader.layout) {
             ctx->IASetInputLayout(resources.overlay_invert_shader.layout.Get());
+        }
+        ctx->PSSetShaderResources(24, static_cast<UINT>(mask_srvs.size()), mask_srvs.data());
+        ctx->PSSetSamplers(0, 1, &sampler);
+        ctx->Draw(4, 0);
+
+        ctx->OMSetBlendState(resources.overlay_blend_state.Get(), blend_factor, 0xffffffff);
+        ctx->VSSetShader(resources.overlay_contrast_shader.vs.Get(), nullptr, 0);
+        ctx->PSSetShader(resources.overlay_contrast_shader.ps.Get(), nullptr, 0);
+        if (resources.overlay_contrast_shader.layout) {
+            ctx->IASetInputLayout(resources.overlay_contrast_shader.layout.Get());
         }
         ctx->PSSetShaderResources(24, static_cast<UINT>(mask_srvs.size()), mask_srvs.data());
         ctx->PSSetSamplers(0, 1, &sampler);

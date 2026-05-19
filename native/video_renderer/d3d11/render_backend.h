@@ -24,6 +24,7 @@ struct D3D11RenderResources {
     CompiledShader compiled_shader;
     CompiledShader overlay_shader;
     CompiledShader overlay_invert_shader;
+    CompiledShader overlay_contrast_shader;
     CompiledShader overlay_rect_shader;
     CompiledShader overlay_mask_rect_shader;
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertex_buffer;

@@ -21,12 +21,16 @@ build settings.
 ## Current Scope
 
 This runner is a launch/build baseline only. It does not yet provide the VoidPlayer native playback
-bridge, Flutter texture bridge, full platform capability gates, or analysis window support.
+bridge, full platform capability gates, or analysis window support.
 
 Current Phase 1 work makes the main Dart entrypoint choose Windows/macOS bootstrap through deferred
 imports, injects platform services for window/accent/analysis dependencies, and registers a
-deterministic macOS `video_renderer` channel stub. The macOS runner currently launches to the real
+deterministic macOS `video_renderer` channel. The macOS runner currently launches to the real
 Flutter shell with playback controls gated off and app data/logs stored under
-`~/Library/Application Support/VoidPlayer`. The next Phase 1 step is deeper command gating for
-automation, capture, and action paths that can still reach unavailable backend methods without using
-the toolbar.
+`~/Library/Application Support/VoidPlayer`.
+
+The runner now has a Phase 4 synthetic `FlutterTexture` bridge: `createPlayer` registers a
+CPU-filled `CVPixelBuffer` texture, returns deterministic synthetic track metadata, supports
+resize/destroy lifecycle calls, and exposes a synthetic capture metric for automation. This is a
+port-validation backend only; diagnostics report `backend=synthetic-texture` and `available=false`
+until the real native player/FFmpeg path is wired in.

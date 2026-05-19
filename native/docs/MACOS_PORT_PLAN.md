@@ -20,8 +20,9 @@ playback orchestration，只替换窗口、音频、硬解、渲染和 Flutter t
 - 仓库已有 curated macOS runner 基线。`macos/Pods/`、`macos/Flutter/ephemeral/`、
   `macos/build*` 和 Xcode 用户态产物必须保持 ignored/generated 状态。
 - Dart 入口已经按平台 deferred 到 Windows/macOS bootstrap；macOS runner 现在注册
-  deterministic `video_renderer` / `video_renderer/events` stub，播放入口明确返回
-  `UNSUPPORTED_PLATFORM`，查询入口返回空流或默认状态。
+  deterministic `video_renderer` / `video_renderer/events` backend。该 backend 已可注册
+  synthetic `FlutterTexture` 并返回合成 track/capture 状态，但 diagnostics 仍明确标记
+  `available=false`，避免把桥接验证误认为真实播放。
 
 ## Non-Goals
 
@@ -255,21 +256,44 @@ Exit criteria:
 
 Goal: display a deterministic frame in Flutter on macOS before optimizing the render path.
 
+Status on 2026-05-20:
+
+- Done: macOS runner registers a synthetic `FlutterTexture` backed by a CPU-filled BGRA
+  `CVPixelBuffer`.
+- Done: `createPlayer`, `addTrack`, `resize`, `destroyPlayer`, `getTracks`, `duration`,
+  `currentPts`, and synthetic `captureViewport` now have deterministic macOS behavior for bridge
+  validation.
+- Done: `ui_tests/macos/synthetic_texture_smoke.csv` exercises the MethodChannel path through the
+  existing automation runner and checks synthetic capture metrics. The `ADD_MEDIA` path is a
+  synthetic label, not a sandboxed file read.
+- Done: manual visual smoke via Computer Use confirmed the Flutter window displays the synthetic
+  color bars through the macOS texture path.
+- Remaining: add a repeatable macOS screenshot/pixel assertion path, then connect the texture bridge
+  to decoded FFmpeg frames instead of generated color bars.
+- Risk note: until the real player is connected, track count, duration, `isPlaying`, seek/step, and
+  capture metrics are bridge-validation signals only. macOS feature availability must continue to
+  use platform capabilities or diagnostics, not plausible synthetic playback state.
+
 Tasks:
 
-- Implement a macOS `FlutterTexture` object whose `copyPixelBuffer` returns a retained current
+- [x] Implement a macOS `FlutterTexture` object whose `copyPixelBuffer` returns a retained current
   `CVPixelBufferRef`.
-- Add native-to-runner frame availability notification using Flutter macOS texture registrar.
-- Start with CPU-produced `CVPixelBuffer` frames; prove lifecycle, retain/release, frame pacing,
+- [x] Add native-to-runner frame availability notification using Flutter macOS texture registrar.
+- [x] Start with CPU-produced `CVPixelBuffer` frames; prove lifecycle, retain/release, frame pacing,
   resize, and shutdown behavior.
-- Add a synthetic color-bar/test-pattern source before connecting FFmpeg decode.
-- Add capture/hash support or a macOS-specific screenshot assertion path for UI tests.
+- [x] Add a synthetic color-bar/test-pattern source before connecting FFmpeg decode.
+- [x] Add synthetic capture metrics for UI-test assertions.
+- [ ] Add a macOS-specific screenshot assertion path that samples the real window/texture output.
 
 Validation:
 
 - `flutter build macos --debug`
 - Manual launch: synthetic frame appears, resize does not crash, close/reopen does not leak handles.
 - Automated screenshot/hash test when macOS UI automation is available.
+- Current smoke: copy `ui_tests/macos/synthetic_texture_smoke.csv` into
+  `~/Library/Containers/dev.nakiha.voidplayer/Data/tmp/`, then run
+  `build/macos/Build/Products/Debug/VoidPlayer.app/Contents/MacOS/VoidPlayer --silent-ui-test
+  --test-script <container-script-path>`. The copy is needed because the debug app is sandboxed.
 
 Exit criteria:
 

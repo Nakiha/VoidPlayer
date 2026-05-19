@@ -4,7 +4,7 @@ VoidPlayer is distributed under the GNU General Public License v3.0; see
 `LICENSE`.
 
 This file is the top-level release notice for dependencies that are bundled,
-staged, or materially used by the Windows native player. Native-specific
+staged, or materially used by the native player. Native-specific
 version pins and update notes live in `native/THIRD_PARTY_NATIVE.md`.
 
 ## FFmpeg Runtime Package
@@ -13,11 +13,16 @@ The default Windows FFmpeg runtime/dev package is the gyan.dev FFmpeg 8.1 full
 shared build stored under `windows/libs/ffmpeg`. That package is GPL v3 and is
 dynamically linked by VoidPlayer/native through FFmpeg import libraries.
 
-Release artifacts that include FFmpeg DLLs must include the FFmpeg package
-`README.txt` and `LICENSE` / `LICENSE.txt` files. The FFmpeg README records the
-source commit and configure flags for the bundled package. Users may replace
-the FFmpeg runtime with a compatible package that provides the same `include/`,
-`lib/`, `bin/`, `README.txt`, and `LICENSE*` layout.
+The macOS FFmpeg runtime/dev package is stored under `third_party/ffmpeg` and
+comes from the VoidPlayer-specific FFmpeg build workflow. macOS app builds copy
+`avcodec`, `avformat`, `avutil`, `swresample`, FFmpeg README/build metadata,
+and the package `LICENSES/` directory into the `.app` bundle.
+
+Release artifacts that include FFmpeg DLLs or dylibs must include the FFmpeg
+package `README.txt` and license files. The FFmpeg README/build metadata records
+the source commit and configure flags for the bundled package. Users may replace
+the FFmpeg runtime with a compatible package that provides the same development
+and runtime layout for the target platform.
 
 ## Native Dependencies
 

@@ -230,14 +230,16 @@ Status on 2026-05-20:
 - Verified: `cmake --build native/build-macos-make --target macos_media_smoke -- -j2`,
   `ctest --test-dir native/build-macos-make -R macos_media_smoke --output-on-failure`, and
   `otool -L native/build-macos-make/macos_media_smoke`.
+- Done: macOS app builds copy/sign FFmpeg dylibs plus package README/license metadata into the
+  `.app` bundle.
 - Remaining: this is still a CLI/CTest probe. The macOS runner does not yet link or package a
-  VoidPlayer native library, and FFmpeg dylibs are not yet copied/signed into the `.app` bundle.
+  VoidPlayer native library.
 
 Tasks:
 
 - Add `native/cmake/MacOSNativeTarget.cmake` or equivalent CMake path.
 - Link `third_party/ffmpeg/lib/*.dylib` and include `third_party/ffmpeg/include`.
-- Copy/sign/package FFmpeg dylibs into the macOS app bundle runtime location.
+- [x] Copy/sign/package FFmpeg dylibs into the macOS app bundle runtime location.
 - [x] Add a minimal CLI or CTest target that opens a local media file, reads metadata/duration, and
   can decode at least one software frame without presenting it.
 - Keep analysis optional; macOS native playback should build with `BUILD_ANALYSIS=OFF` first.

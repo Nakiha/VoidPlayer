@@ -241,6 +241,7 @@
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				76B411AEA8DDD416118232E8 /* [CP] Embed Pods Frameworks */,
+				A12F00012C05FF0100000001 /* [VoidPlayer] Embed FFmpeg dylibs */,
 			);
 			buildRules = (
 			);
@@ -420,6 +421,39 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		A12F00012C05FF0100000001 /* [VoidPlayer] Embed FFmpeg dylibs */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(PROJECT_DIR)/scripts/embed_ffmpeg_dylibs.sh",
+				"$(PROJECT_DIR)/../third_party/ffmpeg/README.txt",
+				"$(PROJECT_DIR)/../third_party/ffmpeg/VOIDPLAYER_BUILD.md",
+				"$(PROJECT_DIR)/../third_party/ffmpeg/voidplayer-ffmpeg-manifest.json",
+				"$(PROJECT_DIR)/../third_party/ffmpeg/lib/libavcodec.62.28.100.dylib",
+				"$(PROJECT_DIR)/../third_party/ffmpeg/lib/libavformat.62.12.100.dylib",
+				"$(PROJECT_DIR)/../third_party/ffmpeg/lib/libavutil.60.26.100.dylib",
+				"$(PROJECT_DIR)/../third_party/ffmpeg/lib/libswresample.6.3.100.dylib",
+			);
+			name = "[VoidPlayer] Embed FFmpeg dylibs";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/libavcodec.62.28.100.dylib",
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/libavformat.62.12.100.dylib",
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/libavutil.60.26.100.dylib",
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/libswresample.6.3.100.dylib",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ThirdParty/ffmpeg/README.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PROJECT_DIR}/scripts/embed_ffmpeg_dylibs.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */

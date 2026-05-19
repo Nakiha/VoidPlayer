@@ -70,14 +70,6 @@ private:
                                     D3D11RenderResources& resources,
                                     int slot,
                                     uint32_t rect_count);
-    bool render_overlay_mask(D3D11Device& device,
-                             D3D11RenderResources& resources,
-                             int slot,
-                             int width,
-                             int height,
-                             uint32_t rect_count,
-                             int target_width,
-                             int target_height);
 
     std::array<std::vector<uint8_t>, kMaxTracks> overlay_pixels_;
     std::array<std::vector<AnalysisOverlayGpuRect>, kMaxTracks> overlay_rects_;

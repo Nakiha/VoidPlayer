@@ -22,6 +22,11 @@ uint32_t pack_overlay_bgra(analysis::OverlayColor color) {
            (static_cast<uint32_t>(color.a) << 24);
 }
 
+uint32_t pack_overlay_track_payload(int slot, uint8_t line_alpha) {
+    return static_cast<uint32_t>(slot & 0xff) |
+           (static_cast<uint32_t>(line_alpha) << 8);
+}
+
 uint32_t pack_overlay_uv16(int a, int a_extent, int b, int b_extent) {
     auto pack_one = [](int value, int extent) -> uint32_t {
         if (extent <= 0) {
@@ -276,77 +281,6 @@ bool AnalysisOverlayRenderer::ensure_overlay_rect_buffer(D3D11Device& device,
     return true;
 }
 
-bool AnalysisOverlayRenderer::render_overlay_mask(D3D11Device& device,
-                                                  D3D11RenderResources& resources,
-                                                  int slot,
-                                                  int width,
-                                                  int height,
-                                                  uint32_t rect_count,
-                                                  int target_width,
-                                                  int target_height) {
-    if (!device.context() ||
-        slot < 0 || slot >= static_cast<int>(kMaxTracks) ||
-        width <= 0 || height <= 0 || rect_count == 0) {
-        return false;
-    }
-    if (!resources.overlay_mask_rtvs[slot] ||
-        !resources.overlay_rect_srvs[slot] ||
-        !resources.cached_rtv ||
-        !resources.overlay_mask_rect_shader.vs ||
-        !resources.overlay_mask_rect_shader.ps) {
-        return false;
-    }
-    if (target_width <= 0 || target_height <= 0) {
-        return false;
-    }
-
-    auto* ctx = device.context();
-    ID3D11ShaderResourceView* null_srvs[4] = {};
-    ID3D11ShaderResourceView* null_rect_srv = nullptr;
-
-    // Pass contract: this pass owns the temporary mask RTV. Before binding it
-    // as an output, unbind every overlay SRV slot that could still reference it.
-    ctx->PSSetShaderResources(24, 4, null_srvs);
-    ctx->VSSetShaderResources(28, 1, &null_rect_srv);
-
-    float clear[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    ID3D11RenderTargetView* mask_rtv = resources.overlay_mask_rtvs[slot].Get();
-    ctx->ClearRenderTargetView(mask_rtv, clear);
-    ctx->OMSetRenderTargets(1, &mask_rtv, nullptr);
-    ctx->OMSetBlendState(nullptr, nullptr, 0xffffffff);
-
-    D3D11_VIEWPORT mask_vp = {};
-    mask_vp.Width = static_cast<float>(width);
-    mask_vp.Height = static_cast<float>(height);
-    mask_vp.MinDepth = 0.0f;
-    mask_vp.MaxDepth = 1.0f;
-    ctx->RSSetViewports(1, &mask_vp);
-
-    ID3D11Buffer* null_vb = nullptr;
-    UINT zero = 0;
-    ctx->IASetInputLayout(nullptr);
-    ctx->IASetVertexBuffers(0, 1, &null_vb, &zero, &zero);
-    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-    ctx->VSSetShader(resources.overlay_mask_rect_shader.vs.Get(), nullptr, 0);
-    ctx->PSSetShader(resources.overlay_mask_rect_shader.ps.Get(), nullptr, 0);
-    ID3D11ShaderResourceView* rect_srv = resources.overlay_rect_srvs[slot].Get();
-    ctx->VSSetShaderResources(28, 1, &rect_srv);
-    ctx->DrawInstanced(4, rect_count, 0, 0);
-    ctx->VSSetShaderResources(28, 1, &null_rect_srv);
-
-    // Return ownership to the main render target before the mask SRV can be
-    // sampled by the invert pass.
-    ID3D11RenderTargetView* target_rtv = resources.cached_rtv.Get();
-    ctx->OMSetRenderTargets(1, &target_rtv, nullptr);
-    D3D11_VIEWPORT target_vp = {};
-    target_vp.Width = static_cast<float>(target_width);
-    target_vp.Height = static_cast<float>(target_height);
-    target_vp.MinDepth = 0.0f;
-    target_vp.MaxDepth = 1.0f;
-    ctx->RSSetViewports(1, &target_vp);
-    return true;
-}
-
 void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
                                    const RendererDrawTrackSnapshotList& tracks,
                                    D3D11Device& device,
@@ -479,7 +413,6 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
     };
 
     std::array<ID3D11ShaderResourceView*, kMaxTracks> color_srvs = {};
-    std::array<ID3D11ShaderResourceView*, kMaxTracks> mask_srvs = {};
     std::array<ID3D11ShaderResourceView*, kMaxTracks> rect_srvs = {};
     std::array<uint32_t, kMaxTracks> rect_counts = {};
     bool has_color_overlay = false;
@@ -513,18 +446,16 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
         if (video_w <= 0 || video_h <= 0) {
             return;
         }
-        const bool needs_mask_texture =
+        const bool needs_line_instances =
             line_alpha > 0 && (show_grid || mode == 0 || pred_primary);
         const bool needs_color_texture = line_primary && line_alpha > 0;
         const bool texture_was_valid =
-            (!needs_color_texture && !needs_mask_texture) ||
+            !needs_color_texture ||
             (resources.overlay_width[slot] == video_w &&
              resources.overlay_height[slot] == video_h &&
-             (!needs_color_texture || resources.overlay_textures[slot]) &&
-             (!needs_mask_texture ||
-              (resources.overlay_mask_textures[slot] && resources.overlay_mask_rtvs[slot])));
+             resources.overlay_textures[slot]);
         if (!ensure_overlay_texture(
-                device, resources, slot, video_w, video_h, needs_color_texture, needs_mask_texture)) {
+                device, resources, slot, video_w, video_h, needs_color_texture, false)) {
             return;
         }
 
@@ -587,7 +518,7 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
                 rect.rect_uv0 = pack_overlay_uv16(x0, video_w, y0, video_h);
                 rect.rect_uv1 = pack_overlay_uv16(x1, video_w, y1, video_h);
                 rect.color_bgra = pack_overlay_bgra(color);
-                rect.track_idx = static_cast<uint32_t>(slot);
+                rect.track_idx = pack_overlay_track_payload(slot, line_alpha);
                 rects.push_back(rect);
                 if (color_instance) {
                     cache.has_color_instances = true;
@@ -628,7 +559,7 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
                     }
                 }
 
-                if (needs_mask_texture) {
+                if (needs_line_instances) {
                     if (!cache.has_color_instances) {
                         push_rect(
                             x0, y0, x1, y1,
@@ -673,20 +604,6 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
                     return;
                 }
             }
-            if (cache.has_mask) {
-                if (!render_overlay_mask(
-                        device,
-                        resources,
-                        slot,
-                        video_w,
-                        video_h,
-                        cache.mask_instance_count,
-                        target_width,
-                        target_height)) {
-                    cache = {};
-                    return;
-                }
-            }
             cache.valid = true;
         }
 
@@ -703,7 +620,8 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
             has_color_instances = true;
         }
         if (cache.valid && cache.has_mask) {
-            mask_srvs[slot] = resources.overlay_mask_srvs[slot].Get();
+            rect_srvs[slot] = resources.overlay_rect_srvs[slot].Get();
+            rect_counts[slot] = std::max(rect_counts[slot], cache.mask_instance_count);
             has_line_mask = true;
         }
     };
@@ -766,18 +684,25 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
     }
 
     if (has_line_mask) {
-        bind_fullscreen_quad();
+        ID3D11Buffer* null_vb = nullptr;
+        UINT zero = 0;
+        ID3D11ShaderResourceView* null_rect_srv = nullptr;
         ctx->OMSetBlendState(
             resources.overlay_invert_blend_state.Get(), blend_factor, 0xffffffff);
-        ctx->VSSetShader(resources.overlay_invert_shader.vs.Get(), nullptr, 0);
-        ctx->PSSetShader(resources.overlay_invert_shader.ps.Get(), nullptr, 0);
-        if (resources.overlay_invert_shader.layout) {
-            ctx->IASetInputLayout(resources.overlay_invert_shader.layout.Get());
+        ctx->VSSetShader(resources.overlay_mask_rect_shader.vs.Get(), nullptr, 0);
+        ctx->PSSetShader(resources.overlay_mask_rect_shader.ps.Get(), nullptr, 0);
+        ctx->IASetInputLayout(nullptr);
+        ctx->IASetVertexBuffers(0, 1, &null_vb, &zero, &zero);
+        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+        for (size_t slot = 0; slot < kMaxTracks; ++slot) {
+            if (!rect_srvs[slot] || rect_counts[slot] == 0) {
+                continue;
+            }
+            ID3D11ShaderResourceView* srv = rect_srvs[slot];
+            ctx->VSSetShaderResources(28, 1, &srv);
+            ctx->DrawInstanced(4, rect_counts[slot], 0, 0);
         }
-        ctx->PSSetShaderResources(24, static_cast<UINT>(mask_srvs.size()), mask_srvs.data());
-        ctx->PSSetSamplers(0, 1, &sampler);
-        ctx->Draw(4, 0);
-        ctx->PSSetShaderResources(24, 4, null_srvs);
+        ctx->VSSetShaderResources(28, 1, &null_rect_srv);
     }
 
     ID3D11ShaderResourceView* null_rect_srv = nullptr;

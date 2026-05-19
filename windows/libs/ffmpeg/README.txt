@@ -16,4 +16,7 @@ for playback compatibility, including H.266/VVC software decode. Encoders,
 muxers, devices, filters, command-line programs, avdevice, and swscale are not
 included.
 
+Build configuration and provenance are recorded in VOIDPLAYER_BUILD.md and
+voidplayer-ffmpeg-manifest.json.
+
 The instrumented analysis FFmpeg submodule is not included.

@@ -14,7 +14,7 @@ Uint8List _minimalVac2() {
   final data = ByteData.sublistView(bytes);
   bytes.setAll(0, 'VAC2'.codeUnits);
   data.setUint16(4, AnalysisCache.currentVac2MajorVersion, Endian.little);
-  data.setUint16(6, 0, Endian.little);
+  data.setUint16(6, AnalysisCache.currentVac2MinorVersion, Endian.little);
   data.setUint16(8, headerSize, Endian.little);
   data.setUint16(10, sectionEntrySize, Endian.little);
   data.setUint32(12, 1, Endian.little);
@@ -49,7 +49,7 @@ void main() {
 
     final overlayChunkPath = p.join(
       AnalysisCache.overlayChunksDir(hash),
-      '2_f0000000000000001_b0000000000000001_g0000000000000001_00000008_00000016.vck',
+      '2_f0000000000000001_b0000000000000001_g0000000000000002_00000008_00000016.vck',
     );
     await Directory(p.dirname(overlayChunkPath)).create(recursive: true);
     await File(overlayChunkPath).writeAsBytes([1, 2, 3]);
@@ -74,5 +74,36 @@ void main() {
     expect(File(basePath).existsSync(), isFalse);
     expect(Directory(AnalysisCache.hashDir(hash)).existsSync(), isFalse);
     expect(File(orphanVac1Path).existsSync(), isFalse);
+  });
+
+  test('clears derived chunks while keeping VAC2 base', () async {
+    final hash = 'unit_chunks_${DateTime.now().microsecondsSinceEpoch}';
+    final basePath = AnalysisCache.vac2BasePath(hash);
+    await Directory(p.dirname(basePath)).create(recursive: true);
+    await File(basePath).writeAsBytes(_minimalVac2());
+
+    final overlayChunkPath = p.join(
+      AnalysisCache.overlayChunksDir(hash),
+      '2_f0000000000000001_b0000000000000001_g0000000000000002_00000000_00000000.vck',
+    );
+    final exactChunkPath = p.join(
+      AnalysisCache.chunksDir(hash),
+      'frame_summary_exact',
+      'exact.vck',
+    );
+    await Directory(p.dirname(overlayChunkPath)).create(recursive: true);
+    await File(overlayChunkPath).writeAsBytes([1, 2, 3]);
+    await Directory(p.dirname(exactChunkPath)).create(recursive: true);
+    await File(exactChunkPath).writeAsBytes([4, 5, 6]);
+
+    addTearDown(() async {
+      await AnalysisCache.deleteEntries([hash]);
+    });
+
+    final result = await AnalysisCache.clearDerivedChunks(hashes: [hash]);
+
+    expect(result.deletedHashes, contains(hash));
+    expect(File(basePath).existsSync(), isTrue);
+    expect(Directory(AnalysisCache.chunksDir(hash)).existsSync(), isFalse);
   });
 }

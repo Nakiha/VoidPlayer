@@ -127,3 +127,7 @@ class SetAnalysisOverlayOpacity extends AutomationAction {
   const SetAnalysisOverlayOpacity(this.opacity)
     : super('SET_ANALYSIS_OVERLAY_OPACITY');
 }
+
+class ClearAnalysisChunks extends AutomationAction {
+  const ClearAnalysisChunks() : super('CLEAR_ANALYSIS_CHUNKS');
+}

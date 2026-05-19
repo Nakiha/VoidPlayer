@@ -1209,8 +1209,6 @@ static constexpr uint64_t kFrameSummaryExactFeatureFlags =
     VACHUNK_FEATURE_QP |
     VACHUNK_FEATURE_REF_INDEXES;
 static constexpr uint64_t kFrameSummaryExactGeneratorRevision = 1;
-static constexpr int32_t kFrameSummaryExactChunkFrames = 64;
-
 static bool generate_ffmpeg_vachunk(const std::string& exe_dir,
                                     const std::string& data_dir,
                                     const std::string& staging_dir,
@@ -1360,84 +1358,6 @@ static bool publish_frame_summary_exact_from_overlay(
     return store.write_chunk_atomic(key, std::move(exact_data), max_output_bytes);
 }
 
-static bool generate_frame_summary_exact_chunks(
-    const std::string& exe_dir,
-    const std::string& data_dir,
-    const std::string& logs_dir,
-    const char* video_path,
-    const char* hash,
-    vr::analysis::VacacheStore& store,
-    const vr::analysis::Vac2BaseFile& base,
-    int64_t max_cache_bytes) {
-    const AnalysisCodec codec = analysis_codec_from_u16(base.header().codec);
-    if (!ffmpeg_analysis_codec_arg(codec) || base.frames().empty()) {
-        return true;
-    }
-
-    const NativeCacheBudget budget =
-        compute_native_cache_budget(data_dir, hash, max_cache_bytes);
-    if (budget.limited && budget.available_for_current_hash == 0) {
-        spdlog::warn("[Analysis] skipping exact frame summaries; cache limit reached");
-        return false;
-    }
-
-    const std::string staging_path = vr::win_utf8::path_to_utf8(
-        vr::win_utf8::path_from_utf8(store.tmp_dir()) /
-        vr::win_utf8::path_from_utf8(
-            "summary." + std::to_string(GetCurrentProcessId()) + "." +
-            std::to_string(GetTickCount64())));
-    ScopedStagingDir staging(staging_path);
-    if (!vr::win_utf8::create_directory_utf8(staging.path())) {
-        spdlog::warn("[Analysis] failed to create exact summary staging dir");
-        return false;
-    }
-
-    const auto frame_count = static_cast<uint32_t>(std::min<size_t>(
-        base.frames().size(), std::numeric_limits<uint32_t>::max()));
-    bool all_ok = true;
-    for (uint32_t start = 0; start < frame_count;
-         start += static_cast<uint32_t>(kFrameSummaryExactChunkFrames)) {
-        const uint32_t end = std::min<uint32_t>(
-            frame_count - 1, start + kFrameSummaryExactChunkFrames - 1);
-        vr::analysis::VachunkKey key;
-        key.kind = VachunkKind::FrameSummaryExact;
-        key.codec = codec;
-        key.feature_flags = kFrameSummaryExactFeatureFlags;
-        key.base_content_revision = base.header().content_revision;
-        key.generator_revision = kFrameSummaryExactGeneratorRevision;
-        key.start_frame = start;
-        key.end_frame = end;
-
-        vr::analysis::VachunkFile existing;
-        if (store.open_chunk(key, existing)) {
-            existing.close();
-            continue;
-        }
-
-        const std::string overlay_tmp =
-            staging.path() + "\\" + std::string(hash) + ".summary." +
-            std::to_string(start) + "." + std::to_string(end) + ".tmp.vck";
-        const bool generated = generate_ffmpeg_vachunk(
-            exe_dir, data_dir, staging.path(), logs_dir, video_path, hash,
-            codec, overlay_tmp, static_cast<int32_t>(start), static_cast<int32_t>(end),
-            key.base_content_revision, key.generator_revision, budget);
-        if (!generated) {
-            all_ok = false;
-            vr::win_utf8::delete_file_utf8(overlay_tmp);
-            continue;
-        }
-
-        const uint64_t max_output_bytes =
-            overlay_publish_output_budget(data_dir, hash, budget);
-        if (!publish_frame_summary_exact_from_overlay(
-                store, base, key, overlay_tmp, max_output_bytes)) {
-            all_ok = false;
-        }
-        vr::win_utf8::delete_file_utf8(overlay_tmp);
-    }
-    return all_ok;
-}
-
 static bool vachunk_matches_key(const vr::analysis::VachunkFile& chunk,
                                 const vr::analysis::VachunkKey& key) {
     const auto& h = chunk.header();
@@ -1457,7 +1377,8 @@ static bool vachunk_matches_key(const vr::analysis::VachunkFile& chunk,
 static bool publish_generated_vachunk(vr::analysis::VacacheStore& store,
                                       const vr::analysis::VachunkKey& key,
                                       const std::string& tmp_path,
-                                      uint64_t max_output_bytes) {
+                                      uint64_t max_output_bytes,
+                                      bool delete_tmp = true) {
     vr::analysis::VachunkFile verify;
     if (!verify.open(tmp_path) || !vachunk_matches_key(verify, key)) {
         spdlog::error("[Analysis] generated VACHUNK did not match requested key: {}", tmp_path);
@@ -1480,7 +1401,9 @@ static bool publish_generated_vachunk(vr::analysis::VacacheStore& store,
         spdlog::error("[Analysis] failed to publish generated VACHUNK through VACache store");
         return false;
     }
-    vr::win_utf8::delete_file_utf8(tmp_path);
+    if (delete_tmp) {
+        vr::win_utf8::delete_file_utf8(tmp_path);
+    }
     return true;
 }
 
@@ -1554,16 +1477,6 @@ int32_t naki_analysis_generate_vac2_base(const char* video_path,
         set_analysis_error(NAKI_ANALYSIS_ERR_OPEN_FAILED,
                            "published VAC2 base cache failed to reopen");
         return 0;
-    }
-
-    const std::string exe_dir = get_exe_dir();
-    const std::string data_dir = cache_root;
-    const std::string logs_dir =
-        vr::win_utf8::path_to_utf8(vr::win_utf8::path_from_utf8(data_dir).parent_path() / L"logs");
-    if (!generate_frame_summary_exact_chunks(
-            exe_dir, data_dir, logs_dir, video_path, hash, store, verify,
-            max_cache_bytes)) {
-        spdlog::warn("[Analysis] generate_vac2_base: exact frame summaries unavailable");
     }
 
     set_analysis_ok();
@@ -1683,12 +1596,30 @@ int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path,
                            "cache limit leaves no room to publish overlay chunk");
         return 0;
     }
-    if (!publish_generated_vachunk(store, key, vachunk_tmp, max_output_bytes)) {
+    if (!publish_generated_vachunk(store, key, vachunk_tmp, max_output_bytes, false)) {
         vr::win_utf8::delete_file_utf8(vachunk_tmp);
         set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
                            "failed to publish overlay VACHUNK");
         return 0;
     }
+
+    vr::analysis::VachunkKey exact_key;
+    exact_key.kind = VachunkKind::FrameSummaryExact;
+    exact_key.codec = base_codec;
+    exact_key.feature_flags = kFrameSummaryExactFeatureFlags;
+    exact_key.base_content_revision = key.base_content_revision;
+    exact_key.generator_revision = kFrameSummaryExactGeneratorRevision;
+    exact_key.start_frame = key.start_frame;
+    exact_key.end_frame = key.end_frame;
+    const uint64_t exact_output_bytes =
+        overlay_publish_output_budget(data_dir, hash, budget);
+    if (budget.limited && exact_output_bytes == 0) {
+        spdlog::warn("[Analysis] generate_vac2_overlay_chunk: skipped exact frame summary; cache limit reached");
+    } else if (!publish_frame_summary_exact_from_overlay(
+            store, base, exact_key, vachunk_tmp, exact_output_bytes)) {
+        spdlog::warn("[Analysis] generate_vac2_overlay_chunk: exact frame summary publish failed");
+    }
+    vr::win_utf8::delete_file_utf8(vachunk_tmp);
 
     set_analysis_ok();
     spdlog::info("[Analysis] generate_vac2_overlay_chunk succeeded: hash={}, frames={}-{}",

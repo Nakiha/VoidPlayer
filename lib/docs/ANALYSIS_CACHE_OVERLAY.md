@@ -35,6 +35,9 @@ AnalysisManager.ensureGenerated(videoPath)
 
 `base.vac` is the lightweight whole-file VAC2 index. It is required before any
 overlay VACHUNK can be generated. Stale VAC versions are deleted before use.
+Base generation must not run the deep FFmpeg analyzer for every frame; exact
+frame summaries are derived only for the overlay windows that are generated on
+demand.
 
 ## Overlay Chunk Generation
 
@@ -116,7 +119,9 @@ VACHUNK frame on demand.
   path, not only direct native seek.
 - Boundary regressions should use a target close to a 64-frame window edge.
 - If a bug depends on missing chunks, clear `cache/<hash>/chunks/overlay/*.vck`
-  while keeping `base.vac`, then rerun the UI test.
+  while keeping `base.vac`, then rerun the UI test. UI automation can use
+  `CLEAR_ANALYSIS_CHUNKS` to remove derived chunk directories without deleting
+  the base cache.
 
 Current dedicated coverage:
 

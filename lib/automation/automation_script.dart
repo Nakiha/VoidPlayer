@@ -436,6 +436,8 @@ ScriptInstruction? _parseInstruction(
         time,
         SetAnalysisOverlayOpacity(double.parse(args[0])),
       );
+    case 'CLEAR_ANALYSIS_CHUNKS':
+      return ScriptAutomationAction(time, const ClearAnalysisChunks());
     case 'RUN_ANALYSIS':
     case 'TRIGGER_ANALYSIS':
       return ScriptAction(time, const RunAnalysis());

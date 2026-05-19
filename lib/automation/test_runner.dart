@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../actions/automation_action.dart';
 import '../actions/player_action.dart';
+import '../analysis/analysis_cache.dart';
 import '../app_log.dart';
 import '../video_renderer_controller.dart';
 import '../windows/main/main_window_test_hooks.dart';
@@ -260,6 +261,17 @@ class TestRunner {
       case SetAnalysisOverlayOpacity(:final opacity):
         log.info('TestRunner: SET_ANALYSIS_OVERLAY_OPACITY $opacity');
         automation.setAnalysisOverlayOpacity(opacity);
+      case ClearAnalysisChunks():
+        log.info('TestRunner: CLEAR_ANALYSIS_CHUNKS');
+        final result = await AnalysisCache.clearDerivedChunks();
+        if (result.hasFailures) {
+          throw AssertionError(
+            'Failed to clear analysis chunks: ${result.failuresByHash}',
+          );
+        }
+        log.info(
+          'TestRunner: CLEAR_ANALYSIS_CHUNKS cleared ${result.deletedCount} cache entrie(s)',
+        );
     }
   }
 

@@ -307,7 +307,10 @@ TEST_CASE("analysis FFI generates VAC2 base cache layout",
                 64 * 1024 * 1024) == 1);
 
     const fs::path base_path = cache_root / "ffi_vac2" / "base.vac";
+    const fs::path exact_summary_dir =
+        cache_root / "ffi_vac2" / "chunks" / "frame_summary_exact";
     REQUIRE(fs::exists(base_path));
+    REQUIRE_FALSE(fs::exists(exact_summary_dir));
 
     NakiAnalysisHandle handle = naki_analysis_open(base_path.string().c_str());
     REQUIRE(handle != nullptr);

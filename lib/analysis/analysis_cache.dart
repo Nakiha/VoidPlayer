@@ -215,6 +215,13 @@ class AnalysisCache {
     return false;
   }
 
+  static Future<AnalysisCacheDeleteResult> clearDerivedChunks({
+    Iterable<String>? hashes,
+  }) async {
+    final targetHashes = hashes?.toSet();
+    return Isolate.run(() => _clearDerivedChunksSync(hashes: targetHashes));
+  }
+
   static bool _isCompleteVac2(String path) {
     final file = File(path);
     if (!file.existsSync()) return false;
@@ -670,6 +677,66 @@ class AnalysisCache {
     p.join(dataDir, '$hash.vac'),
     hashDir(hash),
   ];
+
+  static AnalysisCacheDeleteResult _clearDerivedChunksSync({
+    Iterable<String>? hashes,
+  }) {
+    final targetHashes = hashes?.toSet() ?? _allCacheHashesSync();
+    final deletedHashes = <String>[];
+    final failuresByHash = <String, List<String>>{};
+
+    for (final hash in targetHashes) {
+      final failures = FileLockService.tryExclusiveSync(
+        hashLockPath(hash),
+        () => _deleteDerivedChunkFilesSync(hash),
+      );
+      if (failures == null) {
+        failuresByHash[hash] = [chunksDir(hash)];
+        continue;
+      }
+      if (failures.isEmpty) {
+        deletedHashes.add(hash);
+      } else {
+        failuresByHash[hash] = failures;
+      }
+    }
+
+    return AnalysisCacheDeleteResult(
+      deletedHashes: deletedHashes,
+      failuresByHash: failuresByHash,
+    );
+  }
+
+  static Set<String> _allCacheHashesSync() {
+    final dir = Directory(dataDir);
+    if (!dir.existsSync()) return <String>{};
+    final hashes = <String>{};
+    for (final entity in dir.listSync(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final name = p.basename(entity.path);
+      if (name == 'locks' || name == 'tmp') continue;
+      if (File(vac2BasePath(name)).existsSync()) {
+        hashes.add(name);
+      }
+    }
+    return hashes;
+  }
+
+  static List<String> _deleteDerivedChunkFilesSync(String hash) {
+    final failures = <String>[];
+    final dir = Directory(chunksDir(hash));
+    if (dir.existsSync()) {
+      try {
+        dir.deleteSync(recursive: true);
+      } on FileSystemException catch (e) {
+        failures.add(e.path ?? dir.path);
+      } catch (_) {
+        failures.add(dir.path);
+      }
+    }
+    _deleteHashStagingDirsSync(hash, failures);
+    return failures;
+  }
 
   static Map<String, dynamic> _entriesFromIndex(Map<String, dynamic> index) {
     final rawEntries = index['entries'];

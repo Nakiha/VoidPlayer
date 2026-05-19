@@ -103,7 +103,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     case "getTracks":
       result(tracks)
     case "pickFiles":
-      result([])
+      pickFiles(arguments: call.arguments, result: result)
     case "getDiagnostics":
       result([
         "platform": "macos",
@@ -279,9 +279,39 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     return nil
   }
 
+  private func pickFiles(arguments: Any?, result: @escaping FlutterResult) {
+    let allowsMultipleSelection = boolArg(arguments, "allowMultiple") ?? true
+    DispatchQueue.main.async {
+      let panel = NSOpenPanel()
+      panel.canChooseFiles = true
+      panel.canChooseDirectories = false
+      panel.allowsMultipleSelection = allowsMultipleSelection
+      panel.resolvesAliases = true
+
+      panel.begin { response in
+        if response == .OK {
+          result(panel.urls.map(\.path))
+        } else {
+          result(nil)
+        }
+      }
+    }
+  }
+
   private func intArg(_ arguments: Any?, _ key: String) -> Int? {
     guard let map = arguments as? [String: Any] else { return nil }
     return intValue(map[key])
+  }
+
+  private func boolArg(_ arguments: Any?, _ key: String) -> Bool? {
+    guard let map = arguments as? [String: Any] else { return nil }
+    if let value = map[key] as? Bool {
+      return value
+    }
+    if let value = map[key] as? NSNumber {
+      return value.boolValue
+    }
+    return nil
   }
 
   private func stringArg(_ arguments: Any?, _ key: String) -> String? {

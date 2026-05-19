@@ -23,7 +23,7 @@ class PlatformCapabilities {
 
   static const macOSPhase1 = PlatformCapabilities(
     nativePlayback: false,
-    nativeFilePicker: false,
+    nativeFilePicker: true,
     externalAnalysisWindows: false,
     nativeViewportCapture: false,
     pathLauncher: true,

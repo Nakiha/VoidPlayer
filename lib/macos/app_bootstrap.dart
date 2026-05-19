@@ -87,7 +87,7 @@ Future<void> runMacOSVoidPlayer(List<String> args) async {
       platformCapabilities: PlatformCapabilities.macOSPhase1,
       systemAccentWatcherFactory: NoopSystemAccentWatcher.new,
       platformWindow: const WindowManagerMainWindowPlatform(),
-      nativeFilePicker: const UnsupportedNativeFilePicker(),
+      nativeFilePicker: const MethodChannelNativeFilePicker(),
       testScriptPath: testScriptPath,
       startupOptions: startupOptions,
     ),

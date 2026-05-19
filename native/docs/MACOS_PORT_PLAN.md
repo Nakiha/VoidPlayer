@@ -113,7 +113,8 @@ Status on 2026-05-20:
 - Done: app-data/log paths now resolve to `~/Library/Application Support/VoidPlayer` on macOS
   instead of attempting to create directories below `Contents/MacOS/VoidPlayer`.
 - Done: native file picking and path launching have platform interfaces/defaults outside
-  Windows-named classes.
+  Windows-named classes. macOS now implements `pickFiles` with `NSOpenPanel` and grants
+  sandboxed user-selected read-only file access.
 - Done: top-level Add Media, Analysis, and empty-viewport affordances now respect Phase 1
   platform capability state.
 - Remaining: deeper capability checks are still needed for automation-only commands, viewport
@@ -134,6 +135,8 @@ Tasks:
   error/status calls.
 - [x] Hide or disable top-level unavailable UI affordances through capabilities rather than
   silent no-op hosts.
+- [x] Implement macOS `pickFiles` through `NSOpenPanel` while keeping Add Media gated by
+  `nativePlayback=false`.
 - [ ] Add automation assertions that can verify "macOS backend unavailable" or "stub mode" without
   depending on real playback.
 

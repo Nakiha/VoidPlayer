@@ -35,6 +35,11 @@ resize/destroy lifecycle calls, and exposes a synthetic capture metric for autom
 port-validation backend only; diagnostics report `backend=synthetic-texture` and `available=false`
 until the real native player/FFmpeg path is wired in.
 
+The macOS runner also implements the shared `pickFiles` MethodChannel call with `NSOpenPanel`.
+Debug and Release entitlements include `com.apple.security.files.user-selected.read-only` so
+sandboxed file selections can be read by future playback code. The toolbar still keeps Add Media
+disabled while `nativePlayback=false`.
+
 Use `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv` for the current
 synthetic texture smoke. The helper copies CSV scripts into the app container before launch because
 the macOS debug app is sandboxed and cannot read arbitrary repository paths directly.

@@ -20,6 +20,7 @@
 
   "initializing": "初始化中...",
   "emptyHint": "点击\"添加媒体\"、拖拽文件，或拖入 http(s) 链接",
+  "platformPlaybackUnavailable": "当前平台的播放后端尚不可用。",
 
   "openLocalFile": "打开本地文件...",
   "openNetworkStream": "打开网络流...",

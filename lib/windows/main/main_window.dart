@@ -4,6 +4,8 @@ import '../../actions/action_registry.dart';
 import '../../config/app_settings_repository.dart';
 import '../../platform/analysis_process_host.dart';
 import '../../platform/main_window_platform.dart';
+import '../../platform/native_file_picker.dart';
+import '../../platform/platform_capabilities.dart';
 import '../../platform/pointer_button_state_provider.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../startup_options.dart';
@@ -16,7 +18,9 @@ class MainWindow extends StatefulWidget {
   final String? testScriptPath;
   final StartupOptions startupOptions;
   final AnalysisProcessHost? analysisProcesses;
+  final PlatformCapabilities platformCapabilities;
   final MainWindowPlatform? platformWindow;
+  final NativeFilePicker? nativeFilePicker;
   final PointerButtonStateProvider pointerButtonStateProvider;
   final AppSettingsRepository? appSettings;
   final PlaybackPreferences? playbackPreferences;
@@ -28,7 +32,9 @@ class MainWindow extends StatefulWidget {
     this.testScriptPath,
     this.startupOptions = const StartupOptions(),
     this.analysisProcesses,
+    this.platformCapabilities = PlatformCapabilities.windows,
     this.platformWindow,
+    this.nativeFilePicker,
     this.pointerButtonStateProvider = emptyPointerButtonStateProvider,
     this.appSettings,
     this.playbackPreferences,
@@ -52,7 +58,9 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       vsync: this,
       startupOptions: widget.startupOptions,
       analysisProcesses: widget.analysisProcesses,
+      platformCapabilities: widget.platformCapabilities,
       platformWindow: widget.platformWindow,
+      nativeFilePicker: widget.nativeFilePicker,
       appSettings: widget.appSettings,
       playbackPreferences: widget.playbackPreferences,
       mounted: () => mounted,

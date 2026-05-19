@@ -33,35 +33,68 @@ class AppPaths {
   static AppPathSet resolve({
     String? executablePath,
     Map<String, String>? environment,
+    String? operatingSystem,
     bool Function(String path)? directoryExists,
   }) {
-    final exeDir = p.dirname(executablePath ?? Platform.resolvedExecutable);
+    final resolvedExecutable = executablePath ?? Platform.resolvedExecutable;
+    final pathContext = _pathContextFor(resolvedExecutable, operatingSystem);
+    final exeDir = pathContext.dirname(resolvedExecutable);
     final exists = directoryExists ?? (path) => Directory(path).existsSync();
-    final portableCacheDir = p.join(exeDir, portableMarkerDirName);
+    final portableCacheDir = pathContext.join(exeDir, portableMarkerDirName);
     final isPortable = exists(portableCacheDir);
     final rootDir = isPortable
         ? exeDir
-        : _defaultAppDataRoot(exeDir, environment);
+        : _defaultAppDataRoot(
+            exeDir,
+            environment,
+            operatingSystem,
+            pathContext,
+          );
     return AppPathSet(
       exeDir: exeDir,
       rootDir: rootDir,
-      configFile: p.join(rootDir, 'config.json'),
-      locksDir: p.join(rootDir, 'locks'),
-      logsDir: p.join(rootDir, 'logs'),
-      analysisCacheDir: p.join(rootDir, 'cache'),
-      remoteCacheDir: p.join(rootDir, 'remote_cache'),
+      configFile: pathContext.join(rootDir, 'config.json'),
+      locksDir: pathContext.join(rootDir, 'locks'),
+      logsDir: pathContext.join(rootDir, 'logs'),
+      analysisCacheDir: pathContext.join(rootDir, 'cache'),
+      remoteCacheDir: pathContext.join(rootDir, 'remote_cache'),
       isPortable: isPortable,
     );
+  }
+
+  static p.Context _pathContextFor(
+    String executablePath,
+    String? operatingSystem,
+  ) {
+    if (operatingSystem == 'windows' ||
+        executablePath.contains(r'\') ||
+        RegExp(r'^[A-Za-z]:').hasMatch(executablePath)) {
+      return p.Context(style: p.Style.windows);
+    }
+    return p.Context(style: p.Style.posix);
   }
 
   static String _defaultAppDataRoot(
     String exeDir,
     Map<String, String>? environment,
+    String? operatingSystem,
+    p.Context pathContext,
   ) {
     final env = environment ?? Platform.environment;
     final appData = _firstNonEmpty([env['APPDATA'], env['LOCALAPPDATA']]);
-    if (appData != null) return p.join(appData, appDirName);
-    return p.join(exeDir, appDirName);
+    if (appData != null) return pathContext.join(appData, appDirName);
+    if ((operatingSystem ?? Platform.operatingSystem) == 'macos') {
+      final home = _firstNonEmpty([env['HOME']]);
+      if (home != null) {
+        return pathContext.join(
+          home,
+          'Library',
+          'Application Support',
+          appDirName,
+        );
+      }
+    }
+    return pathContext.join(exeDir, appDirName);
   }
 
   static String? _firstNonEmpty(Iterable<String?> values) {

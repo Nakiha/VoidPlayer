@@ -7,6 +7,8 @@ import 'feedback/app_feedback.dart';
 import 'l10n/app_localizations.dart';
 import 'platform/analysis_process_host.dart';
 import 'platform/main_window_platform.dart';
+import 'platform/native_file_picker.dart';
+import 'platform/platform_capabilities.dart';
 import 'platform/pointer_button_state_provider.dart';
 import 'platform/system_accent_watcher.dart';
 import 'preferences/app_config_playback_preferences.dart';
@@ -17,9 +19,11 @@ import 'windows/main/main_window.dart';
 class VoidPlayerApp extends StatefulWidget {
   final Color accentColor;
   final AnalysisProcessHost analysisProcesses;
+  final PlatformCapabilities platformCapabilities;
   final SystemAccentWatcher Function({required ValueChanged<Color> onChanged})
   systemAccentWatcherFactory;
   final MainWindowPlatform platformWindow;
+  final NativeFilePicker nativeFilePicker;
   final PointerButtonStateProvider pointerButtonStateProvider;
   final String? testScriptPath;
   final StartupOptions startupOptions;
@@ -28,8 +32,10 @@ class VoidPlayerApp extends StatefulWidget {
     super.key,
     required this.accentColor,
     required this.analysisProcesses,
+    required this.platformCapabilities,
     required this.systemAccentWatcherFactory,
     required this.platformWindow,
+    required this.nativeFilePicker,
     this.pointerButtonStateProvider = emptyPointerButtonStateProvider,
     this.testScriptPath,
     this.startupOptions = const StartupOptions(),
@@ -132,7 +138,9 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
                     testScriptPath: widget.testScriptPath,
                     startupOptions: widget.startupOptions,
                     analysisProcesses: widget.analysisProcesses,
+                    platformCapabilities: widget.platformCapabilities,
                     platformWindow: widget.platformWindow,
+                    nativeFilePicker: widget.nativeFilePicker,
                     pointerButtonStateProvider:
                         widget.pointerButtonStateProvider,
                     appSettings: _settingsRepository,

@@ -57,6 +57,9 @@ class MainWindowScaffold extends StatelessWidget {
                       tracks: media.tracks,
                       analysisDataSource: media.analysisDataSource,
                       viewModeEnabled: viewport.viewModeEnabled,
+                      nativePlaybackAvailable: media.nativePlaybackAvailable,
+                      nativeFilePickerAvailable:
+                          media.nativeFilePickerAvailable,
                       analysisEnabled: media.analysisEnabled,
                       mediaInfoActive: overlays.mediaInfoVisible,
                       profilerActive: overlays.profilerVisible,
@@ -75,6 +78,7 @@ class MainWindowScaffold extends StatelessWidget {
                     onPointerButton: viewportActions.onPointerButton,
                     onResize: viewportActions.onResize,
                     pointerButtonStateProvider: pointerButtonStateProvider,
+                    nativePlaybackAvailable: media.nativePlaybackAvailable,
                   ),
                 ),
                 if (!overlays.fullScreen && media.tracks.isNotEmpty)

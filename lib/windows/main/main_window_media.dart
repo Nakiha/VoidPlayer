@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../../app_log.dart';
+import '../../platform/native_file_picker.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../remote/ssh_remote_media.dart';
 import '../../track_manager.dart';
@@ -10,7 +11,6 @@ import '../../utils/async_guard.dart';
 import '../../utils/media_source.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
-import '../native_file_picker.dart';
 import 'main_window_layout.dart';
 import 'main_window_media_lifecycle.dart';
 import 'main_window_state.dart';
@@ -24,6 +24,7 @@ class MainWindowMediaCoordinator {
   final MainWindowTimelineMetrics timelineMetrics;
   final MainWindowMediaLifecycle lifecycle;
   final PlaybackPreferences playbackPreferences;
+  final NativeFilePicker nativeFilePicker;
   final bool Function() mounted;
   final SshRemoteMediaService sshRemoteMedia;
   Future<void>? _loadInFlight;
@@ -37,6 +38,7 @@ class MainWindowMediaCoordinator {
     required this.timelineMetrics,
     required this.lifecycle,
     required this.playbackPreferences,
+    this.nativeFilePicker = const MethodChannelNativeFilePicker(),
     required this.mounted,
     this.sshRemoteMedia = const SshRemoteMediaService(),
   });
@@ -185,7 +187,7 @@ class MainWindowMediaCoordinator {
   }
 
   Future<void> openFile() async {
-    final paths = await WindowsNativeFilePicker.pickFiles(allowMultiple: true);
+    final paths = await nativeFilePicker.pickFiles(allowMultiple: true);
     if (paths == null || paths.isEmpty) return;
     await loadMediaPaths(paths);
   }

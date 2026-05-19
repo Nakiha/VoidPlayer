@@ -25,6 +25,8 @@ bridge, Flutter texture bridge, full platform capability gates, or analysis wind
 
 Current Phase 1 work makes the main Dart entrypoint choose Windows/macOS bootstrap through deferred
 imports, injects platform services for window/accent/analysis dependencies, and registers a
-deterministic macOS `video_renderer` channel stub. The next Phase 1 step is UI capability gating:
-disable or reroute player, file picker, path launcher, and analysis affordances that are still backed
-by stub or Windows-named services.
+deterministic macOS `video_renderer` channel stub. The macOS runner currently launches to the real
+Flutter shell with playback controls gated off and app data/logs stored under
+`~/Library/Application Support/VoidPlayer`. The next Phase 1 step is deeper command gating for
+automation, capture, and action paths that can still reach unavailable backend methods without using
+the toolbar.

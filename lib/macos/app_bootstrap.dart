@@ -8,6 +8,8 @@ import '../app_log.dart';
 import '../config/app_config.dart';
 import '../platform/analysis_process_host.dart';
 import '../platform/main_window_platform.dart';
+import '../platform/native_file_picker.dart';
+import '../platform/platform_capabilities.dart';
 import '../platform/system_accent_watcher.dart';
 import '../startup_options.dart';
 
@@ -82,8 +84,10 @@ Future<void> runMacOSVoidPlayer(List<String> args) async {
     VoidPlayerApp(
       accentColor: const Color(0xFF007AFF),
       analysisProcesses: analysisProcesses,
+      platformCapabilities: PlatformCapabilities.macOSPhase1,
       systemAccentWatcherFactory: NoopSystemAccentWatcher.new,
       platformWindow: const WindowManagerMainWindowPlatform(),
+      nativeFilePicker: const UnsupportedNativeFilePicker(),
       testScriptPath: testScriptPath,
       startupOptions: startupOptions,
     ),

@@ -8,6 +8,8 @@ import 'package:window_manager/window_manager.dart' hide WindowManager;
 import '../app.dart';
 import '../app_log.dart';
 import '../config/app_config.dart';
+import '../platform/native_file_picker.dart';
+import '../platform/platform_capabilities.dart';
 import '../startup_options.dart';
 import 'analysis/analysis_window.dart';
 import 'analysis/ipc/analysis_ipc_client.dart';
@@ -359,8 +361,10 @@ Future<void> runVoidPlayer(List<String> args) async {
     VoidPlayerApp(
       accentColor: accentColor,
       analysisProcesses: analysisProcesses,
+      platformCapabilities: PlatformCapabilities.windows,
       systemAccentWatcherFactory: WindowsSystemAccentWatcher.new,
       platformWindow: const WindowsMainWindowPlatform(),
+      nativeFilePicker: const MethodChannelNativeFilePicker(),
       pointerButtonStateProvider: const Win32PointerButtonStateProvider(),
       testScriptPath: testScriptPath,
       startupOptions: startupOptions,

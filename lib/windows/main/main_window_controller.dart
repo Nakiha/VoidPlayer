@@ -11,6 +11,8 @@ import '../../config/app_config.dart';
 import '../../config/app_settings_repository.dart';
 import '../../platform/analysis_process_host.dart';
 import '../../platform/main_window_platform.dart';
+import '../../platform/native_file_picker.dart';
+import '../../platform/platform_capabilities.dart';
 import '../../preferences/app_config_playback_preferences.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../startup_options.dart';
@@ -37,6 +39,8 @@ class MainWindowController {
   final bool Function() mounted;
   final MainWindowPlatform platformWindow;
   final AnalysisProcessHost analysisProcesses;
+  final PlatformCapabilities platformCapabilities;
+  final NativeFilePicker nativeFilePicker;
   final AnalysisGenerationService analysisGeneration;
   final AnalysisToolbarDataSource analysisToolbarDataSource;
   final AppSettingsRepository appSettings;
@@ -84,6 +88,8 @@ class MainWindowController {
     required this.mounted,
     MainWindowPlatform? platformWindow,
     AnalysisProcessHost? analysisProcesses,
+    this.platformCapabilities = PlatformCapabilities.windows,
+    NativeFilePicker? nativeFilePicker,
     AnalysisGenerationService? analysisGeneration,
     AnalysisToolbarDataSource? analysisToolbarDataSource,
     AppSettingsRepository? appSettings,
@@ -92,6 +98,8 @@ class MainWindowController {
            platformWindow ?? const WindowManagerMainWindowPlatform(),
        analysisProcesses =
            analysisProcesses ?? UnsupportedAnalysisProcessHost(),
+       nativeFilePicker =
+           nativeFilePicker ?? const MethodChannelNativeFilePicker(),
        analysisGeneration = analysisGeneration ?? AnalysisManager.instance,
        appSettings =
            appSettings ?? AppConfigSettingsRepository(AppConfig.instance),
@@ -172,7 +180,11 @@ class MainWindowController {
         viewportKey: viewportKey,
       ),
       media: MainWindowMediaVm(
-        analysisEnabled: trackManager.count > 0,
+        analysisEnabled:
+            platformCapabilities.externalAnalysisWindows &&
+            trackManager.count > 0,
+        nativePlaybackAvailable: platformCapabilities.nativePlayback,
+        nativeFilePickerAvailable: platformCapabilities.nativeFilePicker,
         tracks: trackManager.entries,
         syncOffsets: _syncOffsets,
         audibleTrackFileId: _audibleTrackFileId,
@@ -489,6 +501,7 @@ class MainWindowController {
       timelineMetrics: timelineMetrics,
       lifecycle: mediaLifecycle,
       playbackPreferences: playbackPreferences,
+      nativeFilePicker: nativeFilePicker,
       mounted: mounted,
     );
     testHarness = MainWindowTestHarness(

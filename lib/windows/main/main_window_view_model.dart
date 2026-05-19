@@ -46,6 +46,8 @@ class MainWindowViewportVm {
 
 class MainWindowMediaVm {
   final bool analysisEnabled;
+  final bool nativePlaybackAvailable;
+  final bool nativeFilePickerAvailable;
   final List<TrackEntry> tracks;
   final Map<int, int> syncOffsets; // fileId -> offset in microseconds
   final int? audibleTrackFileId;
@@ -54,6 +56,8 @@ class MainWindowMediaVm {
 
   const MainWindowMediaVm({
     required this.analysisEnabled,
+    required this.nativePlaybackAvailable,
+    required this.nativeFilePickerAvailable,
     required this.tracks,
     required this.syncOffsets,
     required this.audibleTrackFileId,

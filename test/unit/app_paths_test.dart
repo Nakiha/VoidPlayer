@@ -53,6 +53,22 @@ void main() {
     expect(paths.rootDir, r'C:\Users\me\AppData\Local\VoidPlayer');
   });
 
+  test('uses Application Support root on macOS', () {
+    final paths = AppPaths.resolve(
+      executablePath: '/Applications/VoidPlayer.app/Contents/MacOS/VoidPlayer',
+      environment: const {'HOME': '/Users/me'},
+      operatingSystem: 'macos',
+      directoryExists: (_) => false,
+    );
+
+    expect(paths.isPortable, isFalse);
+    expect(paths.rootDir, '/Users/me/Library/Application Support/VoidPlayer');
+    expect(
+      paths.logsDir,
+      '/Users/me/Library/Application Support/VoidPlayer/logs',
+    );
+  });
+
   test('falls back to executable directory when AppData is unavailable', () {
     final paths = AppPaths.resolve(
       executablePath: r'D:\Tools\VoidPlayer\void_player.exe',

@@ -46,6 +46,9 @@
   "emptyHint": "Click \"Add Media\", drag files here, or drop an http(s) URL",
   "@emptyHint": { "description": "Empty viewport hint" },
 
+  "platformPlaybackUnavailable": "Playback is not available on this platform yet.",
+  "@platformPlaybackUnavailable": { "description": "Empty viewport hint when the native playback backend is unavailable" },
+
   "openLocalFile": "Open local file...",
   "@openLocalFile": { "description": "Add media menu item: open a local media file" },
 

@@ -7,7 +7,6 @@ import '../../feedback/app_feedback.dart';
 import '../../l10n/app_localizations.dart';
 import '../../platform/path_launcher.dart';
 import '../../theme/app_appearance.dart';
-import '../windows_path_launcher.dart';
 import 'settings_page_style.dart';
 
 const _cacheListTrailingPadding = 12.0;
@@ -25,7 +24,7 @@ class CacheSettingsPage extends StatefulWidget {
 
   const CacheSettingsPage({
     super.key,
-    this.pathLauncher = const WindowsPathLauncher(),
+    this.pathLauncher = const LocalPathLauncher(),
   });
 
   @override

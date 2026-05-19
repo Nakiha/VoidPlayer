@@ -32,6 +32,8 @@ class AppToolBar extends StatelessWidget {
   final List<TrackEntry> tracks;
   final AnalysisToolbarDataSource analysisDataSource;
   final bool viewModeEnabled;
+  final bool nativePlaybackAvailable;
+  final bool nativeFilePickerAvailable;
   final bool analysisEnabled;
   final bool mediaInfoActive;
   final bool profilerActive;
@@ -50,6 +52,8 @@ class AppToolBar extends StatelessWidget {
     required this.tracks,
     required this.analysisDataSource,
     this.viewModeEnabled = false,
+    this.nativePlaybackAvailable = true,
+    this.nativeFilePickerAvailable = true,
     this.analysisEnabled = false,
     this.mediaInfoActive = false,
     this.profilerActive = false,
@@ -75,6 +79,11 @@ class AppToolBar extends StatelessWidget {
           ),
           const Spacer(),
           _AddMediaButton(
+            localFileEnabled:
+                nativePlaybackAvailable && nativeFilePickerAvailable,
+            networkMediaEnabled: nativePlaybackAvailable,
+            sshRemoteMediaEnabled: nativePlaybackAvailable,
+            disabledTooltip: 'Playback is not available on this platform yet.',
             onOpenFile: onOpenFile,
             onOpenNetworkMedia: onOpenNetworkMedia,
             onOpenSshRemoteMedia: onOpenSshRemoteMedia,
@@ -124,17 +133,25 @@ class AppToolBar extends StatelessWidget {
 }
 
 class _AddMediaButton extends StatelessWidget {
+  final bool localFileEnabled;
+  final bool networkMediaEnabled;
+  final bool sshRemoteMediaEnabled;
+  final String disabledTooltip;
   final Future<void> Function() onOpenFile;
   final Future<void> Function(String url) onOpenNetworkMedia;
   final Future<void> Function(String remotePath) onOpenSshRemoteMedia;
 
   const _AddMediaButton({
+    required this.localFileEnabled,
+    required this.networkMediaEnabled,
+    required this.sshRemoteMediaEnabled,
+    required this.disabledTooltip,
     required this.onOpenFile,
     required this.onOpenNetworkMedia,
     required this.onOpenSshRemoteMedia,
   });
 
-  static const _choices = [
+  static const _allChoices = [
     _AddMediaChoice.localFile,
     _AddMediaChoice.networkStream,
     _AddMediaChoice.sshRemoteFile,
@@ -145,20 +162,29 @@ class _AddMediaButton extends StatelessWidget {
     final l = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final foreground = colorScheme.onPrimary;
+    final choices = _allChoices.where(_isEnabled).toList(growable: false);
+    final anyEnabled = choices.isNotEmpty;
+    final foreground = anyEnabled
+        ? colorScheme.onPrimary
+        : colorScheme.onSurface.withValues(alpha: 0.38);
+    final background = anyEnabled
+        ? colorScheme.primary
+        : colorScheme.surfaceContainerHighest;
     return SizedBox(
       height: 32,
-      child: Material(
-        color: colorScheme.primary,
-        borderRadius: BorderRadius.circular(18),
-        clipBehavior: Clip.antiAlias,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Tooltip(
-              message: l.openLocalFile,
-              child: InkWell(
-                onTap: () => unawaited(_openLocalFile()),
+      child: Tooltip(
+        message: anyEnabled ? l.openLocalFile : disabledTooltip,
+        child: Material(
+          color: background,
+          borderRadius: BorderRadius.circular(18),
+          clipBehavior: Clip.antiAlias,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              InkWell(
+                onTap: anyEnabled
+                    ? () => unawaited(_openFirstEnabled(context))
+                    : null,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 0, 10, 0),
                   child: SizedBox(
@@ -179,53 +205,82 @@ class _AddMediaButton extends StatelessWidget {
                   ),
                 ),
               ),
-            ),
-            SizedBox(
-              height: 18,
-              width: 1,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: foreground.withValues(alpha: 0.28),
+              SizedBox(
+                height: 18,
+                width: 1,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: foreground.withValues(alpha: 0.28),
+                  ),
                 ),
               ),
-            ),
-            Tooltip(
-              message: l.addMediaOptions,
-              child: AppMenuCombo<_AddMediaChoice>(
-                width: 36,
-                height: 32,
-                value: _AddMediaChoice.localFile,
-                items: _choices,
-                buttonLabel: '',
-                labelFor: (choice) => _labelFor(l, choice),
-                iconFor: _iconFor,
-                onChanged: (choice) {
-                  switch (choice) {
-                    case _AddMediaChoice.localFile:
-                      unawaited(_openLocalFile());
-                    case _AddMediaChoice.networkStream:
-                      unawaited(_openNetworkDialog(context));
-                    case _AddMediaChoice.sshRemoteFile:
-                      unawaited(_openSshDialog(context));
-                  }
-                },
-                menuTextStyle: theme.textTheme.bodySmall,
-                foregroundColor: foreground,
-                backgroundColor: Colors.transparent,
-                borderRadius: const BorderRadius.horizontal(
-                  right: Radius.circular(18),
-                ),
-                buttonPadding: const EdgeInsets.only(left: 6, right: 8),
-                itemPadding: const EdgeInsets.symmetric(horizontal: 12),
-                showSelectedCheck: false,
-                notifyOnReselect: true,
-                maxMenuWidth: 240,
+              Tooltip(
+                message: anyEnabled ? l.addMediaOptions : disabledTooltip,
+                child: choices.isEmpty
+                    ? SizedBox(
+                        width: 36,
+                        height: 32,
+                        child: Icon(
+                          Icons.arrow_drop_down,
+                          size: 18,
+                          color: foreground,
+                        ),
+                      )
+                    : AppMenuCombo<_AddMediaChoice>(
+                        width: 36,
+                        height: 32,
+                        value: choices.first,
+                        items: choices,
+                        buttonLabel: '',
+                        labelFor: (choice) => _labelFor(l, choice),
+                        iconFor: _iconFor,
+                        onChanged: (choice) {
+                          switch (choice) {
+                            case _AddMediaChoice.localFile:
+                              unawaited(_openLocalFile(context));
+                            case _AddMediaChoice.networkStream:
+                              unawaited(_openNetworkDialog(context));
+                            case _AddMediaChoice.sshRemoteFile:
+                              unawaited(_openSshDialog(context));
+                          }
+                        },
+                        menuTextStyle: theme.textTheme.bodySmall,
+                        foregroundColor: foreground,
+                        backgroundColor: Colors.transparent,
+                        borderRadius: const BorderRadius.horizontal(
+                          right: Radius.circular(18),
+                        ),
+                        buttonPadding: const EdgeInsets.only(left: 6, right: 8),
+                        itemPadding: const EdgeInsets.symmetric(horizontal: 12),
+                        showSelectedCheck: false,
+                        notifyOnReselect: true,
+                        maxMenuWidth: 240,
+                      ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  bool _isEnabled(_AddMediaChoice choice) {
+    return switch (choice) {
+      _AddMediaChoice.localFile => localFileEnabled,
+      _AddMediaChoice.networkStream => networkMediaEnabled,
+      _AddMediaChoice.sshRemoteFile => sshRemoteMediaEnabled,
+    };
+  }
+
+  Future<void> _openFirstEnabled(BuildContext context) {
+    if (localFileEnabled) return _openLocalFile(context);
+    if (networkMediaEnabled) {
+      return _openNetworkDialog(context);
+    }
+    if (sshRemoteMediaEnabled) {
+      return _openSshDialog(context);
+    }
+    return Future<void>.value();
   }
 
   String _labelFor(AppLocalizations l, _AddMediaChoice choice) {
@@ -244,9 +299,12 @@ class _AddMediaButton extends StatelessWidget {
     };
   }
 
-  Future<void> _openLocalFile() async {
+  Future<void> _openLocalFile(BuildContext context) async {
+    final feedback = AppFeedbackScope.read(context);
     try {
       await onOpenFile();
+    } on Object catch (e) {
+      feedback.showError(e.toString());
     } finally {
       await _restoreGlobalShortcutFocus();
     }

@@ -109,17 +109,20 @@ Status on 2026-05-20:
   Windows behavior.
 - Done: macOS bootstrap injects generic/no-op implementations and a fixed macOS accent color.
 - Done: macOS runner registers a deterministic `video_renderer` MethodChannel/EventChannel stub.
-- Remaining: native file picking/path launching still need platform services instead of Windows
-  class names in shared main-window code.
-- Remaining: UI capability gating is incomplete. The toolbar can still expose controls whose
-  backend is stubbed; they fail predictably, but they are not yet disabled through capability
-  state.
+- Done: app-data/log paths now resolve to `~/Library/Application Support/VoidPlayer` on macOS
+  instead of attempting to create directories below `Contents/MacOS/VoidPlayer`.
+- Done: native file picking and path launching have platform interfaces/defaults outside
+  Windows-named classes.
+- Done: top-level Add Media, Analysis, and empty-viewport affordances now respect Phase 1
+  platform capability state.
+- Remaining: deeper capability checks are still needed for automation-only commands, viewport
+  capture assertions, and settings/actions that may call unavailable backend methods directly.
 
 Tasks:
 
 - [x] Move Windows-specific assumptions behind platform services instead of importing `lib/windows/*`
   from app-level code paths that must run on macOS.
-- [ ] Define a platform capability surface for:
+- [x] Define a platform capability surface for:
   player backend, external analysis windows, native viewport capture, system accent/theme, path
   launching, pointer button state, and window effects.
 - [ ] Consolidate direct MethodChannel bypasses into platform services. Current examples include
@@ -128,7 +131,8 @@ Tasks:
 - [x] Implement macOS stubs for all MethodChannel methods expected by `NativePlayerApi`, including
   destroy, loop range, audible track, capture, presented frame, layout, tracks, diagnostics, and
   error/status calls.
-- [ ] Hide or disable unavailable UI affordances through capabilities rather than silent no-op hosts.
+- [x] Hide or disable top-level unavailable UI affordances through capabilities rather than
+  silent no-op hosts.
 - [ ] Add automation assertions that can verify "macOS backend unavailable" or "stub mode" without
   depending on real playback.
 
@@ -137,8 +141,9 @@ Validation:
 - `flutter analyze`
 - `flutter test` for platform service unit tests where possible.
 - `flutter build macos --debug` or `flutter build macos --release` once the runner exists.
-- Current verified subset: `flutter analyze`, `flutter test
-  test/unit/main_window_controller_injection_test.dart`, and `flutter build macos --debug`.
+- Current verified subset: `flutter analyze`, `flutter test test/unit/app_paths_test.dart
+  test/unit/main_window_controller_injection_test.dart`, `flutter build macos --debug`, and a
+  manual macOS launch smoke using Computer Use to confirm the Flutter toolbar/empty state render.
 - Not yet covered: real macOS UI automation. The existing `python dev.py ui-test ...` path is
   Windows-oriented and should not be counted as macOS UI coverage.
 - Future: a macOS smoke automation script once Codex/UI automation supports macOS windows.

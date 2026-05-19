@@ -5,11 +5,11 @@ import 'package:flutter/material.dart';
 
 import '../../feedback/app_feedback.dart';
 import '../../l10n/app_localizations.dart';
+import '../../platform/path_launcher.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../track_manager.dart';
 import '../settings_window.dart';
 import '../stats_window.dart';
-import '../windows_path_launcher.dart';
 import 'main_window_media_sections.dart';
 import 'main_window_view_model.dart';
 
@@ -356,10 +356,7 @@ class _AnimatedFloatingPanelSlot extends StatelessWidget {
         layoutBuilder: (currentChild, previousChildren) {
           return Stack(
             alignment: Alignment.topLeft,
-            children: [
-              ...previousChildren,
-              ?currentChild,
-            ],
+            children: [...previousChildren, ?currentChild],
           );
         },
         transitionBuilder: (child, animation) {
@@ -491,12 +488,12 @@ class _FloatingPanelFrame extends StatelessWidget {
 
 class MediaInfoPage extends StatefulWidget {
   final List<TrackEntry> tracks;
-  final WindowsPathLauncher pathLauncher;
+  final PathLauncher pathLauncher;
 
   const MediaInfoPage({
     super.key,
     required this.tracks,
-    this.pathLauncher = const WindowsPathLauncher(),
+    this.pathLauncher = const LocalPathLauncher(),
   });
 
   @override

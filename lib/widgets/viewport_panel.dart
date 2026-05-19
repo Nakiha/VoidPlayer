@@ -21,6 +21,7 @@ class ViewportPanel extends StatefulWidget {
   final void Function(bool panning, bool splitting) onPointerButton;
   final void Function(int width, int height, double devicePixelRatio)? onResize;
   final PointerButtonStateProvider pointerButtonStateProvider;
+  final bool nativePlaybackAvailable;
 
   const ViewportPanel({
     super.key,
@@ -34,6 +35,7 @@ class ViewportPanel extends StatefulWidget {
     required this.onPointerButton,
     this.onResize,
     this.pointerButtonStateProvider = emptyPointerButtonStateProvider,
+    this.nativePlaybackAvailable = true,
   });
 
   @override
@@ -234,7 +236,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    AppLocalizations.of(context)!.emptyHint,
+                    widget.nativePlaybackAvailable
+                        ? AppLocalizations.of(context)!.emptyHint
+                        : AppLocalizations.of(
+                            context,
+                          )!.platformPlaybackUnavailable,
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),

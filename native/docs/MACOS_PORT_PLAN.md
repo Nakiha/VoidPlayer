@@ -290,10 +290,8 @@ Validation:
 - `flutter build macos --debug`
 - Manual launch: synthetic frame appears, resize does not crash, close/reopen does not leak handles.
 - Automated screenshot/hash test when macOS UI automation is available.
-- Current smoke: copy `ui_tests/macos/synthetic_texture_smoke.csv` into
-  `~/Library/Containers/dev.nakiha.voidplayer/Data/tmp/`, then run
-  `build/macos/Build/Products/Debug/VoidPlayer.app/Contents/MacOS/VoidPlayer --silent-ui-test
-  --test-script <container-script-path>`. The copy is needed because the debug app is sandboxed.
+- Current smoke: `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv`.
+  The helper copies CSV scripts into the app container because the debug app is sandboxed.
 
 Exit criteria:
 

@@ -1,8 +1,6 @@
 # macOS runner smoke for the synthetic FlutterTexture bridge.
-# The debug app is sandboxed, so copy this script into the app container first:
-#   SCRIPT="$HOME/Library/Containers/dev.nakiha.voidplayer/Data/tmp/voidplayer_macos_synthetic_texture_smoke.csv"
-#   mkdir -p "$(dirname "$SCRIPT")" && cp ui_tests/macos/synthetic_texture_smoke.csv "$SCRIPT"
-#   build/macos/Build/Products/Debug/VoidPlayer.app/Contents/MacOS/VoidPlayer --silent-ui-test --test-script "$SCRIPT"
+# Run with:
+#   python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv
 @WINDOW, 960, 540
 0.3, ADD_MEDIA, macos-synthetic://color-bars
 1.1, ASSERT_TRACK_COUNT, 1

@@ -34,3 +34,7 @@ CPU-filled `CVPixelBuffer` texture, returns deterministic synthetic track metada
 resize/destroy lifecycle calls, and exposes a synthetic capture metric for automation. This is a
 port-validation backend only; diagnostics report `backend=synthetic-texture` and `available=false`
 until the real native player/FFmpeg path is wired in.
+
+Use `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv` for the current
+synthetic texture smoke. The helper copies CSV scripts into the app container before launch because
+the macOS debug app is sandboxed and cannot read arbitrary repository paths directly.

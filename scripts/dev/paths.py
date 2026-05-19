@@ -42,3 +42,20 @@ WINDOWS_RELEASE_DOCS_DIR = ROOT / "installer" / "windows" / "docs"
 def app_exe_path(debug: bool) -> Path:
     build_type = "Debug" if debug else "Release"
     return WINDOWS_BUILD_DIR / build_type / "void_player.exe"
+
+
+def macos_app_bundle_path(debug: bool) -> Path:
+    build_type = "Debug" if debug else "Release"
+    return (
+        ROOT
+        / "build"
+        / "macos"
+        / "Build"
+        / "Products"
+        / build_type
+        / "VoidPlayer.app"
+    )
+
+
+def macos_app_exe_path(debug: bool) -> Path:
+    return macos_app_bundle_path(debug) / "Contents" / "MacOS" / "VoidPlayer"

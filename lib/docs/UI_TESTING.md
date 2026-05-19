@@ -36,6 +36,14 @@ python dev.py ui-test ui_tests/smoke/basic.csv
 python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
 ```
 
+macOS 使用单独的 helper，因为 debug app 带 sandbox，不能直接读取仓库路径下的
+CSV。`mac-ui-test` 会先把脚本复制进 app container，再用 `--test-script` 启动
+macOS app：
+
+```bash
+python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv
+```
+
 ## 测试目录约定
 
 ```text
@@ -43,6 +51,7 @@ test/
 └── unit/               # 不启动真实窗口的 Dart/Flutter 单元测试
 
 ui_tests/               # 启动真实 app 的 CSV GUI 自动化脚本
+├── macos/              # macOS runner / texture bridge smoke
 ├── smoke/              # 快速主窗口 sanity check
 ├── analysis/           # analysis spawn / 子窗体 / IPC
 ├── timeline/           # timeline 真实 pointer/click 路径

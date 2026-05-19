@@ -2,12 +2,20 @@
 
 import csv
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from .native import ensure_ffmpeg_analyzer_tool, native_build
-from .paths import DEMO_SCRIPT, NATIVE_BUILD_DIR, NATIVE_DIR, ROOT, app_exe_path
+from .paths import (
+    DEMO_SCRIPT,
+    NATIVE_BUILD_DIR,
+    NATIVE_DIR,
+    ROOT,
+    app_exe_path,
+    macos_app_exe_path,
+)
 from .process import header, run
 from .ui_lock import gui_test_lock
 
@@ -20,6 +28,18 @@ def flutter_build(debug: bool) -> None:
     header(f"Build Flutter ({build_type})")
 
     cmd = ["flutter", "build", "windows"]
+    cmd.append("--debug" if debug else "--release")
+
+    run(cmd, cwd=str(ROOT))
+
+
+def flutter_build_macos(debug: bool) -> None:
+    """Build Flutter macOS app."""
+    build_type = "Debug" if debug else "Release"
+
+    header(f"Build Flutter macOS ({build_type})")
+
+    cmd = ["flutter", "build", "macos"]
     cmd.append("--debug" if debug else "--release")
 
     run(cmd, cwd=str(ROOT))
@@ -191,6 +211,78 @@ def _cmd_ui_test(args) -> None:
             sys.exit(result)
 
     print(f"\nUI test batch passed ({total} script{'s' if total != 1 else ''}).")
+
+
+def cmd_mac_ui_test(args) -> None:
+    """Launch the macOS app with CSV scripts copied into the app sandbox."""
+    if sys.platform != "darwin":
+        print("ERROR: mac-ui-test is only supported on macOS")
+        sys.exit(1)
+
+    try:
+        with gui_test_lock("mac-ui-test"):
+            _cmd_mac_ui_test(args)
+    except RuntimeError as exc:
+        print(f"macOS UI test failed: {exc}")
+        sys.exit(1)
+
+
+def _cmd_mac_ui_test(args) -> None:
+    script_paths = [Path(script).resolve() for script in args.scripts]
+    for script_path in script_paths:
+        if not script_path.exists():
+            print(f"ERROR: test script not found: {script_path}")
+            sys.exit(1)
+
+    exe = macos_app_exe_path(args.debug)
+
+    if args.build or not exe.exists():
+        flutter_build_macos(args.debug)
+
+    if not exe.exists():
+        print(f"ERROR: app executable not found: {exe}")
+        sys.exit(1)
+
+    container_scripts_dir = (
+        Path.home()
+        / "Library"
+        / "Containers"
+        / "dev.nakiha.voidplayer"
+        / "Data"
+        / "tmp"
+        / "voidplayer-ui-tests"
+    )
+    container_scripts_dir.mkdir(parents=True, exist_ok=True)
+
+    total = len(script_paths)
+    for index, script_path in enumerate(script_paths, start=1):
+        sandbox_script = (
+            container_scripts_dir / f"{index:02d}_{script_path.name}"
+        )
+        shutil.copy2(script_path, sandbox_script)
+
+        cmd = [str(exe), "--test-script", str(sandbox_script)]
+        cmd.extend(_script_app_args(script_path))
+        if not args.visible:
+            cmd.append("--silent-ui-test")
+        if args.log_level:
+            cmd.append(f"--log-level={args.log_level}")
+
+        label = (
+            script_path.relative_to(ROOT)
+            if script_path.is_relative_to(ROOT)
+            else script_path
+        )
+        header(f"macOS UI test {index}/{total} {label}")
+        result, ax_tree_error = _run_ui_test_process(cmd)
+        if ax_tree_error:
+            print(f"\nmacOS UI test failed: Flutter AXTree error detected: {label}")
+            sys.exit(1)
+        if result != 0:
+            print(f"\nmacOS UI test failed with exit code {result}: {label}")
+            sys.exit(result)
+
+    print(f"\nmacOS UI test batch passed ({total} script{'s' if total != 1 else ''}).")
 
 
 def _run_ui_test_process(cmd: list[str]) -> tuple[int, bool]:

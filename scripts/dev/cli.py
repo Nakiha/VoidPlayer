@@ -8,14 +8,30 @@ from .flutter_app import (
     cmd_build,
     cmd_demo,
     cmd_launch,
+    cmd_mac_ui_test,
     cmd_run,
     cmd_test,
     cmd_ui_test,
 )
-from .analysis_resize_stress import cmd_analysis_resize_stress
-from .analysis_benchmark import cmd_analysis_benchmark
-from .analysis_overlay_benchmark import cmd_analysis_overlay_benchmark
 from .package import cmd_package
+
+
+def cmd_analysis_resize_stress(args) -> None:
+    from .analysis_resize_stress import cmd_analysis_resize_stress as impl
+
+    impl(args)
+
+
+def cmd_analysis_benchmark(args) -> None:
+    from .analysis_benchmark import cmd_analysis_benchmark as impl
+
+    impl(args)
+
+
+def cmd_analysis_overlay_benchmark(args) -> None:
+    from .analysis_overlay_benchmark import cmd_analysis_overlay_benchmark as impl
+
+    impl(args)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,6 +54,7 @@ Examples:
   python dev.py package
   python dev.py package --installer
   python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
+  python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv
   python dev.py analysis-resize-stress
   python dev.py analysis-benchmark --build
   python dev.py analysis-overlay-benchmark --build
@@ -101,6 +118,23 @@ Examples:
                            help="Log level, e.g. 'flutter=DEBUG,native=TRACE'")
     p_ui_test.add_argument("--visible", action="store_true",
                            help="Show and focus test windows instead of using silent no-activate mode")
+
+    p_mac_ui_test = sub.add_parser(
+        "mac-ui-test",
+        help="Launch the macOS app with CSV UI test scripts copied into its sandbox",
+    )
+    p_mac_ui_test.add_argument("scripts", nargs="+", help="Path(s) to CSV test script(s)")
+    p_mac_ui_test_build = p_mac_ui_test.add_mutually_exclusive_group()
+    p_mac_ui_test_build.add_argument("--debug", dest="debug", action="store_true",
+                                     help="Use Debug build (default)")
+    p_mac_ui_test_build.add_argument("--release", dest="debug", action="store_false",
+                                     help="Use Release build")
+    p_mac_ui_test.set_defaults(debug=True)
+    p_mac_ui_test.add_argument("--build", action="store_true", help="Build Flutter app before launch")
+    p_mac_ui_test.add_argument("--log-level", type=str, default=None,
+                               help="Log level, e.g. 'flutter=DEBUG,native=TRACE'")
+    p_mac_ui_test.add_argument("--visible", action="store_true",
+                               help="Show and focus test windows instead of using silent no-activate mode")
 
     p_analysis_resize = sub.add_parser(
         "analysis-resize-stress",
@@ -184,6 +218,7 @@ def main() -> None:
         "test": cmd_test,
         "package": cmd_package,
         "ui-test": cmd_ui_test,
+        "mac-ui-test": cmd_mac_ui_test,
         "analysis-resize-stress": cmd_analysis_resize_stress,
         "analysis-benchmark": cmd_analysis_benchmark,
         "analysis-overlay-benchmark": cmd_analysis_overlay_benchmark,

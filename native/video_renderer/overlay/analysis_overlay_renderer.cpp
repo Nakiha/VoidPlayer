@@ -96,9 +96,12 @@ bool AnalysisOverlayRenderer::ensure_overlay_texture(D3D11Device& device,
         return true;
     }
 
-    const bool size_matches =
+    const bool color_size_matches =
         resources.overlay_width[slot] == width &&
         resources.overlay_height[slot] == height;
+    const bool mask_size_matches =
+        resources.overlay_mask_width[slot] == width &&
+        resources.overlay_mask_height[slot] == height;
     const bool has_color =
         resources.overlay_textures[slot] &&
         resources.overlay_srvs[slot];
@@ -106,20 +109,23 @@ bool AnalysisOverlayRenderer::ensure_overlay_texture(D3D11Device& device,
         resources.overlay_mask_textures[slot] &&
         resources.overlay_mask_srvs[slot] &&
         resources.overlay_mask_rtvs[slot];
-    if (size_matches &&
-        (!need_color || has_color) &&
-        (!need_mask || has_mask)) {
+    if ((!need_color || (color_size_matches && has_color)) &&
+        (!need_mask || (mask_size_matches && has_mask))) {
         return true;
     }
 
-    if (!size_matches) {
+    if (need_color && !color_size_matches) {
         resources.overlay_textures[slot].Reset();
         resources.overlay_srvs[slot].Reset();
+        resources.overlay_width[slot] = 0;
+        resources.overlay_height[slot] = 0;
+    }
+    if (need_mask && !mask_size_matches) {
         resources.overlay_mask_textures[slot].Reset();
         resources.overlay_mask_srvs[slot].Reset();
         resources.overlay_mask_rtvs[slot].Reset();
-        resources.overlay_width[slot] = 0;
-        resources.overlay_height[slot] = 0;
+        resources.overlay_mask_width[slot] = 0;
+        resources.overlay_mask_height[slot] = 0;
     }
 
     D3D11_TEXTURE2D_DESC desc = {};
@@ -134,7 +140,7 @@ bool AnalysisOverlayRenderer::ensure_overlay_texture(D3D11Device& device,
     desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
     HRESULT hr = S_OK;
-    if (need_color && (!size_matches || !has_color)) {
+    if (need_color && (!color_size_matches || !has_color)) {
         resources.overlay_textures[slot].Reset();
         resources.overlay_srvs[slot].Reset();
         hr = device.device()->CreateTexture2D(
@@ -159,7 +165,7 @@ bool AnalysisOverlayRenderer::ensure_overlay_texture(D3D11Device& device,
         }
     }
 
-    if (need_mask && (!size_matches || !has_mask)) {
+    if (need_mask && (!mask_size_matches || !has_mask)) {
         resources.overlay_mask_textures[slot].Reset();
         resources.overlay_mask_srvs[slot].Reset();
         D3D11_TEXTURE2D_DESC mask_desc = {};
@@ -211,8 +217,14 @@ bool AnalysisOverlayRenderer::ensure_overlay_texture(D3D11Device& device,
         }
     }
 
-    resources.overlay_width[slot] = width;
-    resources.overlay_height[slot] = height;
+    if (need_color) {
+        resources.overlay_width[slot] = width;
+        resources.overlay_height[slot] = height;
+    }
+    if (need_mask) {
+        resources.overlay_mask_width[slot] = width;
+        resources.overlay_mask_height[slot] = height;
+    }
     return true;
 }
 
@@ -278,6 +290,69 @@ bool AnalysisOverlayRenderer::ensure_overlay_rect_buffer(D3D11Device& device,
     }
 
     resources.overlay_rect_capacity[slot] = capacity;
+    return true;
+}
+
+bool AnalysisOverlayRenderer::render_overlay_mask(D3D11Device& device,
+                                                  D3D11RenderResources& resources,
+                                                  int slot,
+                                                  uint32_t rect_count,
+                                                  int target_width,
+                                                  int target_height) {
+    if (!device.context() ||
+        slot < 0 || slot >= static_cast<int>(kMaxTracks) ||
+        rect_count == 0 ||
+        target_width <= 0 || target_height <= 0) {
+        return false;
+    }
+    if (!resources.overlay_mask_rtvs[slot] ||
+        !resources.overlay_rect_srvs[slot] ||
+        !resources.cached_rtv ||
+        !resources.overlay_mask_rect_shader.vs ||
+        !resources.overlay_mask_rect_shader.ps) {
+        return false;
+    }
+
+    auto* ctx = device.context();
+    ID3D11ShaderResourceView* null_masks[4] = {};
+    ID3D11ShaderResourceView* null_rect_srv = nullptr;
+
+    ctx->PSSetShaderResources(24, 4, null_masks);
+    ctx->VSSetShaderResources(28, 1, &null_rect_srv);
+
+    float clear[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    ID3D11RenderTargetView* mask_rtv = resources.overlay_mask_rtvs[slot].Get();
+    ctx->ClearRenderTargetView(mask_rtv, clear);
+    ctx->OMSetRenderTargets(1, &mask_rtv, nullptr);
+    ctx->OMSetBlendState(nullptr, nullptr, 0xffffffff);
+
+    D3D11_VIEWPORT mask_vp = {};
+    mask_vp.Width = static_cast<float>(target_width);
+    mask_vp.Height = static_cast<float>(target_height);
+    mask_vp.MinDepth = 0.0f;
+    mask_vp.MaxDepth = 1.0f;
+    ctx->RSSetViewports(1, &mask_vp);
+
+    ID3D11Buffer* null_vb = nullptr;
+    UINT zero = 0;
+    ctx->IASetInputLayout(nullptr);
+    ctx->IASetVertexBuffers(0, 1, &null_vb, &zero, &zero);
+    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    ctx->VSSetShader(resources.overlay_mask_rect_shader.vs.Get(), nullptr, 0);
+    ctx->PSSetShader(resources.overlay_mask_rect_shader.ps.Get(), nullptr, 0);
+    ID3D11ShaderResourceView* rect_srv = resources.overlay_rect_srvs[slot].Get();
+    ctx->VSSetShaderResources(28, 1, &rect_srv);
+    ctx->DrawInstanced(4, rect_count, 0, 0);
+    ctx->VSSetShaderResources(28, 1, &null_rect_srv);
+
+    ID3D11RenderTargetView* target_rtv = resources.cached_rtv.Get();
+    ctx->OMSetRenderTargets(1, &target_rtv, nullptr);
+    D3D11_VIEWPORT target_vp = {};
+    target_vp.Width = static_cast<float>(target_width);
+    target_vp.Height = static_cast<float>(target_height);
+    target_vp.MinDepth = 0.0f;
+    target_vp.MaxDepth = 1.0f;
+    ctx->RSSetViewports(1, &target_vp);
     return true;
 }
 
@@ -413,6 +488,7 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
     };
 
     std::array<ID3D11ShaderResourceView*, kMaxTracks> color_srvs = {};
+    std::array<ID3D11ShaderResourceView*, kMaxTracks> mask_srvs = {};
     std::array<ID3D11ShaderResourceView*, kMaxTracks> rect_srvs = {};
     std::array<uint32_t, kMaxTracks> rect_counts = {};
     bool has_color_overlay = false;
@@ -456,6 +532,11 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
              resources.overlay_textures[slot]);
         if (!ensure_overlay_texture(
                 device, resources, slot, video_w, video_h, needs_color_texture, false)) {
+            return;
+        }
+        if (needs_line_instances &&
+            !ensure_overlay_texture(
+                device, resources, slot, target_width, target_height, false, true)) {
             return;
         }
 
@@ -620,8 +701,16 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
             has_color_instances = true;
         }
         if (cache.valid && cache.has_mask) {
-            rect_srvs[slot] = resources.overlay_rect_srvs[slot].Get();
-            rect_counts[slot] = std::max(rect_counts[slot], cache.mask_instance_count);
+            if (!render_overlay_mask(
+                    device,
+                    resources,
+                    slot,
+                    cache.mask_instance_count,
+                    target_width,
+                    target_height)) {
+                return;
+            }
+            mask_srvs[slot] = resources.overlay_mask_srvs[slot].Get();
             has_line_mask = true;
         }
     };
@@ -684,25 +773,18 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
     }
 
     if (has_line_mask) {
-        ID3D11Buffer* null_vb = nullptr;
-        UINT zero = 0;
-        ID3D11ShaderResourceView* null_rect_srv = nullptr;
+        bind_fullscreen_quad();
         ctx->OMSetBlendState(
             resources.overlay_invert_blend_state.Get(), blend_factor, 0xffffffff);
-        ctx->VSSetShader(resources.overlay_mask_rect_shader.vs.Get(), nullptr, 0);
-        ctx->PSSetShader(resources.overlay_mask_rect_shader.ps.Get(), nullptr, 0);
-        ctx->IASetInputLayout(nullptr);
-        ctx->IASetVertexBuffers(0, 1, &null_vb, &zero, &zero);
-        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-        for (size_t slot = 0; slot < kMaxTracks; ++slot) {
-            if (!rect_srvs[slot] || rect_counts[slot] == 0) {
-                continue;
-            }
-            ID3D11ShaderResourceView* srv = rect_srvs[slot];
-            ctx->VSSetShaderResources(28, 1, &srv);
-            ctx->DrawInstanced(4, rect_counts[slot], 0, 0);
+        ctx->VSSetShader(resources.overlay_invert_shader.vs.Get(), nullptr, 0);
+        ctx->PSSetShader(resources.overlay_invert_shader.ps.Get(), nullptr, 0);
+        if (resources.overlay_invert_shader.layout) {
+            ctx->IASetInputLayout(resources.overlay_invert_shader.layout.Get());
         }
-        ctx->VSSetShaderResources(28, 1, &null_rect_srv);
+        ctx->PSSetShaderResources(24, static_cast<UINT>(mask_srvs.size()), mask_srvs.data());
+        ctx->PSSetSamplers(0, 1, &sampler);
+        ctx->Draw(4, 0);
+        ctx->PSSetShaderResources(24, 4, null_srvs);
     }
 
     ID3D11ShaderResourceView* null_rect_srv = nullptr;

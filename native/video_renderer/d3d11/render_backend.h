@@ -41,6 +41,8 @@ struct D3D11RenderResources {
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> cached_rtv;
     std::array<int, 4> overlay_width = {0, 0, 0, 0};
     std::array<int, 4> overlay_height = {0, 0, 0, 0};
+    std::array<int, 4> overlay_mask_width = {0, 0, 0, 0};
+    std::array<int, 4> overlay_mask_height = {0, 0, 0, 0};
     std::array<uint32_t, 4> overlay_rect_capacity = {0, 0, 0, 0};
 };
 

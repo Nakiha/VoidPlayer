@@ -3,6 +3,7 @@
 #include "analysis/generators/bitstream_indexer.h"
 #include "analysis/parsers/binary_types.h"
 #include "analysis/parsers/vac2_parser.h"
+#include "analysis/parsers/vachunk_parser.h"
 #include "common/win_utf8.h"
 #include "media/private_cdn_flv_demuxer.h"
 
@@ -14,8 +15,13 @@ extern "C" {
 #include <libavcodec/bsf.h>
 }
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -291,7 +297,7 @@ static bool build_vac2_base_from_scan(const std::string& video_path,
     out.width = scan.width;
     out.height = scan.height;
     out.source_size = source_file_size(video_path);
-    out.content_revision = 2;
+    out.content_revision = 3;
     if ((out.width == 0 || out.height == 0) &&
         !probe_video_geometry(video_path, out.width, out.height)) {
         spdlog::warn("[AnalysisGen] failed to probe VAC2 base dimensions: {}", video_path);
@@ -856,6 +862,208 @@ static bool scanFfmpegVac2(const std::string& video_path,
     return true;
 }
 
+static bool copy_decoder_summary_into_base(Vac2BaseData& data,
+                                           const std::vector<VachunkFrameSummary>& summaries) {
+    if (summaries.empty() || data.frame_summaries.empty()) {
+        return false;
+    }
+
+    size_t applied = 0;
+    for (const auto& src : summaries) {
+        const size_t frame_index = static_cast<size_t>(src.coded_order);
+        if (frame_index >= data.frame_summaries.size()) {
+            continue;
+        }
+
+        auto& dst = data.frame_summaries[frame_index];
+        const uint32_t first_vcl_unit = dst.first_vcl_unit;
+        const uint32_t au_flags = dst.flags & VAC2_FRAME_SUMMARY_FLAG_INFERRED_AU;
+        dst.poc = src.poc;
+        dst.coded_order = static_cast<uint32_t>(frame_index);
+        dst.first_vcl_unit = first_vcl_unit;
+        dst.flags = au_flags | VAC2_FRAME_SUMMARY_FLAG_EXACT_REFS;
+        dst.temporal_id = src.temporal_id;
+        dst.slice_type = src.slice_type;
+        dst.nal_type = src.nal_unit_type;
+        dst.qp_kind = VAC2_QP_KIND_UNKNOWN;
+        dst.qp_avg = 0;
+        dst.qp_min = 0;
+        dst.qp_max = 0;
+        dst.num_ref_l0 = std::min<uint8_t>(src.num_ref_l0, 15);
+        dst.num_ref_l1 = std::min<uint8_t>(src.num_ref_l1, 15);
+        for (int ref = 0; ref < 15; ++ref) {
+            dst.ref_pocs_l0[ref] = ref < dst.num_ref_l0 ? src.ref_pocs_l0[ref] : -1;
+            dst.ref_pocs_l1[ref] = ref < dst.num_ref_l1 ? src.ref_pocs_l1[ref] : -1;
+        }
+        if (frame_index < data.frames.size()) {
+            data.frames[frame_index].poc = src.poc;
+        }
+        ++applied;
+    }
+    return applied > 0;
+}
+
+static const char* ffmpeg_analysis_codec_arg(AnalysisCodec codec) {
+    switch (codec) {
+    case AnalysisCodec::H264: return "h264";
+    case AnalysisCodec::HEVC: return "hevc";
+    case AnalysisCodec::VVC:  return "vvc";
+    default:                  return nullptr;
+    }
+}
+
+static bool file_exists_utf8(const std::string& path) {
+    std::error_code ec;
+    return !path.empty() &&
+        std::filesystem::is_regular_file(win_utf8::path_from_utf8(path), ec) &&
+        !ec;
+}
+
+static std::string find_ffmpeg_analyzer() {
+    if (const char* env = std::getenv("VOID_FFMPEG_ANALYZER")) {
+        if (file_exists_utf8(env)) return env;
+    }
+
+    std::vector<std::filesystem::path> roots;
+    roots.push_back(win_utf8::path_from_utf8(win_utf8::module_directory_utf8()));
+    std::error_code ec;
+    auto cwd = std::filesystem::current_path(ec);
+    if (!ec) roots.push_back(cwd);
+
+    for (auto root : roots) {
+        for (int depth = 0; depth < 8 && !root.empty(); ++depth) {
+            const std::vector<std::filesystem::path> candidates = {
+                root / L"tools" / L"ffmpeg-analysis" / L"void_ffmpeg_analyzer.exe",
+                root / L"void_ffmpeg_analyzer.exe",
+                root / L"analysis" / L"vendor" / L"ffmpeg" / L"bin" /
+                    L"windows-x64" / L"void_ffmpeg_analyzer.exe",
+                root / L"native" / L"analysis" / L"vendor" / L"ffmpeg" / L"bin" /
+                    L"windows-x64" / L"void_ffmpeg_analyzer.exe",
+            };
+            for (const auto& candidate : candidates) {
+                const auto text = win_utf8::path_to_utf8(candidate);
+                if (file_exists_utf8(text)) return text;
+            }
+            if (!root.has_parent_path() || root.parent_path() == root) break;
+            root = root.parent_path();
+        }
+    }
+    return {};
+}
+
+static bool run_hidden_command(const std::string& command) {
+#ifdef _WIN32
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESHOWWINDOW;
+    startup.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION process{};
+    std::wstring cmdline = win_utf8::utf16_from_utf8(command);
+    if (cmdline.empty()) return false;
+    if (!CreateProcessW(nullptr, cmdline.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process)) {
+        return false;
+    }
+    WaitForSingleObject(process.hProcess, INFINITE);
+    DWORD exit_code = 1;
+    GetExitCodeProcess(process.hProcess, &exit_code);
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return exit_code == 0;
+#else
+    return std::system(command.c_str()) == 0;
+#endif
+}
+
+static std::string make_temp_summary_path() {
+    std::error_code ec;
+    auto dir = std::filesystem::temp_directory_path(ec);
+    if (ec) dir = std::filesystem::current_path(ec);
+#ifdef _WIN32
+    const auto name = L"voidplayer_vac2_summary." +
+        std::to_wstring(GetCurrentProcessId()) + L"." +
+        std::to_wstring(GetTickCount64()) + L".vck";
+#else
+    const auto name = "voidplayer_vac2_summary.vck";
+#endif
+    return win_utf8::path_to_utf8(dir / name);
+}
+
+static bool read_frame_summary_chunk(const std::string& path,
+                                     std::vector<VachunkFrameSummary>& out) {
+    out.clear();
+    VachunkFile chunk;
+    if (!chunk.open(path)) return false;
+    const auto& header = chunk.header();
+    if (header.kind != static_cast<uint16_t>(VachunkKind::FrameSummaryExact)) {
+        return false;
+    }
+    const auto* section = chunk.section("FSUM");
+    if (!section ||
+        section->entry_size != sizeof(VachunkFrameSummary) ||
+        section->decoded_size !=
+            static_cast<uint64_t>(section->entry_count) * sizeof(VachunkFrameSummary)) {
+        return false;
+    }
+    std::vector<uint8_t> bytes;
+    if (!chunk.read_section("FSUM", bytes) ||
+        bytes.size() != section->decoded_size) {
+        return false;
+    }
+    out.resize(section->entry_count);
+    if (!bytes.empty()) {
+        std::memcpy(out.data(), bytes.data(), bytes.size());
+    }
+    return !out.empty();
+}
+
+static bool collect_decoder_frame_summaries(const std::string& video_path,
+                                            Vac2BaseData& data) {
+    if (data.codec != AnalysisCodec::H264 &&
+        data.codec != AnalysisCodec::HEVC &&
+        data.codec != AnalysisCodec::VVC) {
+        return false;
+    }
+
+    const char* codec_arg = ffmpeg_analysis_codec_arg(data.codec);
+    if (!codec_arg) return false;
+
+    const std::string analyzer = find_ffmpeg_analyzer();
+    if (analyzer.empty()) {
+        spdlog::warn("[AnalysisGen] FFmpeg analyzer not found for decoder frame summary");
+        return false;
+    }
+
+    const std::string summary_path = make_temp_summary_path();
+    win_utf8::delete_file_utf8(summary_path);
+    const std::string cmd = "\"" + analyzer +
+        "\" --codec " + codec_arg +
+        " --input \"" + video_path +
+        "\" --frame-summary \"" + summary_path + "\"";
+
+    spdlog::debug("[AnalysisGen] decoder frame summary cmd: {}", cmd);
+    if (!run_hidden_command(cmd) || !file_exists_utf8(summary_path)) {
+        win_utf8::delete_file_utf8(summary_path);
+        return false;
+    }
+
+    std::vector<VachunkFrameSummary> summaries;
+    const bool read = read_frame_summary_chunk(summary_path, summaries);
+    win_utf8::delete_file_utf8(summary_path);
+    if (!read) return false;
+
+    const bool ok = copy_decoder_summary_into_base(data, summaries);
+    if (ok) {
+        data.metadata_json =
+            "{\"schema\":\"VAC2\",\"producer\":\"AnalysisGenerator::generate_vac2_base\","
+            "\"source\":\"direct-vac2-scanner+ffmpeg-analysis-frame-summary\","
+            "\"frame_model\":\"one_packet_per_frame_fallback\","
+            "\"reference_model\":\"decoder_frame_summary\","
+            "\"frame_model_warning\":\"packet_index_equals_frame_index\"}";
+    }
+    return ok;
+}
+
 // ---------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------
@@ -883,6 +1091,9 @@ bool AnalysisGenerator::generate_vac2_base(const std::string& video_path,
     Vac2BaseData data;
     if (!build_vac2_base_from_scan(video_path, scan, data)) {
         return false;
+    }
+    if (!collect_decoder_frame_summaries(video_path, data)) {
+        spdlog::warn("[AnalysisGen] decoder frame summary unavailable; keeping inferred VAC2 refs");
     }
 
     return write_vac2_base_container(vac2_path, data, max_output_bytes);

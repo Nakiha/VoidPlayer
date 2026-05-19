@@ -139,6 +139,48 @@ TEST_CASE("AnalysisGenerator: H.265 VAC2 base infers fallback reference edges",
     std::filesystem::remove_all(tmp);
 }
 
+TEST_CASE("AnalysisGenerator: H.265 VAC2 base stores decoder frame references",
+          "[analysis][generator][vac2][resources][refs][exact]") {
+    const std::string h265_video = test_dir + "/h265_10s_1920x1080.mp4";
+    if (!std::filesystem::exists(h265_video)) return;
+
+    auto tmp = make_temp_dir();
+    const std::string vac2_path = tmp + "/h265_exact_refs.vac";
+    REQUIRE(vr::analysis::AnalysisGenerator::generate_vac2_base(
+        h265_video, vac2_path));
+
+    vr::analysis::Vac2BaseFile vac2;
+    REQUIRE(vac2.open(vac2_path));
+    REQUIRE(vac2.header().content_revision >= 3);
+
+    int exact_frames = 0;
+    int exact_ref_edges = 0;
+    int non_i_ref_frames = 0;
+    for (const auto& summary : vac2.frame_summaries()) {
+        if ((summary.flags & VAC2_FRAME_SUMMARY_FLAG_EXACT_REFS) == 0) {
+            continue;
+        }
+        ++exact_frames;
+        int frame_edges = 0;
+        for (uint8_t i = 0; i < summary.num_ref_l0 && i < 15; ++i) {
+            if (summary.ref_pocs_l0[i] >= 0) ++frame_edges;
+        }
+        for (uint8_t i = 0; i < summary.num_ref_l1 && i < 15; ++i) {
+            if (summary.ref_pocs_l1[i] >= 0) ++frame_edges;
+        }
+        exact_ref_edges += frame_edges;
+        if (summary.slice_type != 2 && frame_edges > 0) {
+            ++non_i_ref_frames;
+        }
+    }
+
+    REQUIRE(exact_frames > 0);
+    REQUIRE(exact_ref_edges > 0);
+    REQUIRE(non_i_ref_frames > 0);
+
+    std::filesystem::remove_all(tmp);
+}
+
 TEST_CASE("AnalysisGenerator: resources video samples produce VAC2 base",
           "[analysis][generator][vac2][resources]") {
     struct SampleCase {

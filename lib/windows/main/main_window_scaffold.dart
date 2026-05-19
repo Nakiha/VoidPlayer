@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../platform/pointer_button_state_provider.dart';
 import '../../widgets/app_feedback_host.dart';
 import '../../widgets/axtree_region.dart';
 import '../../widgets/media_header.dart';
 import '../../widgets/toolbar.dart';
 import '../../widgets/viewport_panel.dart';
-import '../win32_pointer_button_state_provider.dart';
 import 'main_window_media_sections.dart';
 import 'main_window_overlays.dart';
 import 'main_window_view_model.dart';
@@ -13,11 +13,13 @@ import 'main_window_view_model.dart';
 class MainWindowScaffold extends StatelessWidget {
   final MainWindowViewModel model;
   final MainWindowViewActions actions;
+  final PointerButtonStateProvider pointerButtonStateProvider;
 
   const MainWindowScaffold({
     super.key,
     required this.model,
     required this.actions,
+    this.pointerButtonStateProvider = emptyPointerButtonStateProvider,
   });
 
   @override
@@ -72,8 +74,7 @@ class MainWindowScaffold extends StatelessWidget {
                     onZoom: viewportActions.onZoom,
                     onPointerButton: viewportActions.onPointerButton,
                     onResize: viewportActions.onResize,
-                    pointerButtonStateProvider:
-                        const Win32PointerButtonStateProvider(),
+                    pointerButtonStateProvider: pointerButtonStateProvider,
                   ),
                 ),
                 if (!overlays.fullScreen && media.tracks.isNotEmpty)

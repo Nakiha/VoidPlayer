@@ -5,14 +5,14 @@ import 'package:path/path.dart' as p;
 import '../../analysis/analysis_manager.dart';
 import '../../analysis/analysis_overlay.dart';
 import '../../native_player/native_player_protocol.dart';
+import '../../platform/analysis_process_host.dart';
 import '../../track_manager.dart';
 import '../analysis/ipc/analysis_ipc_models.dart';
 import '../analysis/ipc/analysis_ipc_server.dart';
-import '../window_manager.dart';
 
 class MainWindowAnalysisCoordinator {
   final TrackManager trackManager;
-  final AnalysisProcessManager analysisProcesses;
+  final AnalysisProcessHost analysisProcesses;
   final AnalysisGenerationService analysisGeneration;
   final Future<PresentedFrameTiming?> Function(int fileId)?
   presentedFrameProvider;

@@ -7,11 +7,11 @@ import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/analysis/analysis_overlay.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
 import 'package:void_player/config/app_settings_repository.dart';
+import 'package:void_player/platform/analysis_process_host.dart';
+import 'package:void_player/platform/main_window_platform.dart';
 import 'package:void_player/preferences/playback_preferences.dart';
 import 'package:void_player/startup_options.dart';
 import 'package:void_player/windows/main/main_window_controller.dart';
-import 'package:void_player/windows/main/main_window_platform.dart';
-import 'package:void_player/windows/window_manager.dart' as app_window;
 
 class _FakeMainWindowPlatform implements MainWindowPlatform {
   @override
@@ -173,7 +173,7 @@ void main() {
 
   test('MainWindowController keeps injected platform services', () {
     final platformWindow = _FakeMainWindowPlatform();
-    final analysisProcesses = app_window.AnalysisProcessManager();
+    final analysisProcesses = UnsupportedAnalysisProcessHost();
     final analysisGeneration = _FakeAnalysisGenerationService();
     final analysisToolbarDataSource = _FakeAnalysisToolbarDataSource();
     final appSettings = _FakeAppSettingsRepository();

@@ -2,12 +2,8 @@ import 'dart:ui';
 
 import 'package:window_manager/window_manager.dart';
 
+import '../../platform/main_window_platform.dart';
 import '../win32ffi.dart';
-
-abstract class MainWindowPlatform {
-  Future<void> setFullScreen(bool fullScreen);
-  Future<Rect> getBounds();
-}
 
 class WindowsMainWindowPlatform implements MainWindowPlatform {
   const WindowsMainWindowPlatform();

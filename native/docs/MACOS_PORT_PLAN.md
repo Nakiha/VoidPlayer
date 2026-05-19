@@ -17,8 +17,11 @@ playback orchestration，只替换窗口、音频、硬解、渲染和 Flutter t
   `void_player.exe`，并链接 D3D11 / DXGI / WinMM。
 - macOS FFmpeg arm64 包已放在 `third_party/ffmpeg`，这是
   `native/cmake/FFmpeg.cmake` 的非 Windows 默认 root。
-- 当前仓库里的未跟踪 `macos/` 目录包含生成产物和 FetchContent 缓存；它不是可提交的
-  macOS runner 基线。
+- 仓库已有 curated macOS runner 基线。`macos/Pods/`、`macos/Flutter/ephemeral/`、
+  `macos/build*` 和 Xcode 用户态产物必须保持 ignored/generated 状态。
+- Dart 入口已经按平台 deferred 到 Windows/macOS bootstrap；macOS runner 现在注册
+  deterministic `video_renderer` / `video_renderer/events` stub，播放入口明确返回
+  `UNSUPPORTED_PLATFORM`，查询入口返回空流或默认状态。
 
 ## Non-Goals
 
@@ -95,21 +98,38 @@ Exit criteria:
 Goal: macOS can launch the Flutter UI and every player/analysis entrypoint fails predictably or
 returns deterministic stub state.
 
+Status on 2026-05-20:
+
+- Done: `lib/main.dart` no longer imports the Windows bootstrap eagerly. It deferred-loads
+  Windows or macOS bootstrap based on `Platform`.
+- Done: app-level dependencies for analysis process hosting, system accent watching, fullscreen
+  window operations, and pointer-button recovery now flow through platform interfaces under
+  `lib/platform/`.
+- Done: Windows bootstrap injects the existing Win32-backed implementations, preserving current
+  Windows behavior.
+- Done: macOS bootstrap injects generic/no-op implementations and a fixed macOS accent color.
+- Done: macOS runner registers a deterministic `video_renderer` MethodChannel/EventChannel stub.
+- Remaining: native file picking/path launching still need platform services instead of Windows
+  class names in shared main-window code.
+- Remaining: UI capability gating is incomplete. The toolbar can still expose controls whose
+  backend is stubbed; they fail predictably, but they are not yet disabled through capability
+  state.
+
 Tasks:
 
-- Move Windows-specific assumptions behind platform services instead of importing `lib/windows/*`
+- [x] Move Windows-specific assumptions behind platform services instead of importing `lib/windows/*`
   from app-level code paths that must run on macOS.
-- Define a platform capability surface for:
+- [ ] Define a platform capability surface for:
   player backend, external analysis windows, native viewport capture, system accent/theme, path
   launching, pointer button state, and window effects.
-- Consolidate direct MethodChannel bypasses into platform services. Current examples include
+- [ ] Consolidate direct MethodChannel bypasses into platform services. Current examples include
   `lib/app_log.dart` and `lib/windows/native_file_picker.dart` using `video_renderer` directly
   instead of going through the player API/platform boundary.
-- Implement macOS stubs for all MethodChannel methods expected by `NativePlayerApi`, including
+- [x] Implement macOS stubs for all MethodChannel methods expected by `NativePlayerApi`, including
   destroy, loop range, audible track, capture, presented frame, layout, tracks, diagnostics, and
   error/status calls.
-- Hide or disable unavailable UI affordances through capabilities rather than silent no-op hosts.
-- Add automation assertions that can verify "macOS backend unavailable" or "stub mode" without
+- [ ] Hide or disable unavailable UI affordances through capabilities rather than silent no-op hosts.
+- [ ] Add automation assertions that can verify "macOS backend unavailable" or "stub mode" without
   depending on real playback.
 
 Validation:
@@ -117,7 +137,11 @@ Validation:
 - `flutter analyze`
 - `flutter test` for platform service unit tests where possible.
 - `flutter build macos --debug` or `flutter build macos --release` once the runner exists.
-- A macOS smoke automation script once Codex/UI automation supports macOS windows.
+- Current verified subset: `flutter analyze`, `flutter test
+  test/unit/main_window_controller_injection_test.dart`, and `flutter build macos --debug`.
+- Not yet covered: real macOS UI automation. The existing `python dev.py ui-test ...` path is
+  Windows-oriented and should not be counted as macOS UI coverage.
+- Future: a macOS smoke automation script once Codex/UI automation supports macOS windows.
 
 Exit criteria:
 
@@ -356,7 +380,9 @@ Update docs in the same commit that changes the contract:
 
 1. Add macOS `.gitignore` hygiene and commit a clean Flutter macOS runner baseline.
 2. Introduce platform capability interfaces in Dart and make macOS unsupported paths explicit.
-3. Split native source lists so shared player/decode code can configure without Windows SDK libs.
-4. Add macOS native CMake target that links vendored FFmpeg and runs a headless metadata/decode
+3. Finish Phase 1 capability gating for player availability, file picking, path launching, and
+   external analysis windows.
+4. Split native source lists so shared player/decode code can configure without Windows SDK libs.
+5. Add macOS native CMake target that links vendored FFmpeg and runs a headless metadata/decode
    smoke.
-5. Implement synthetic `CVPixelBuffer` texture bridge and a macOS nonblank-frame smoke path.
+6. Implement synthetic `CVPixelBuffer` texture bridge and a macOS nonblank-frame smoke path.

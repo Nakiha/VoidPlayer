@@ -11,7 +11,10 @@ import '../config/app_config.dart';
 import '../startup_options.dart';
 import 'analysis/analysis_window.dart';
 import 'analysis/ipc/analysis_ipc_client.dart';
+import 'main/main_window_platform.dart';
 import 'main/main_window_shutdown.dart';
+import 'system_accent_watcher.dart';
+import 'win32_pointer_button_state_provider.dart';
 import 'win32ffi.dart';
 import 'window_manager.dart';
 
@@ -356,6 +359,9 @@ Future<void> runVoidPlayer(List<String> args) async {
     VoidPlayerApp(
       accentColor: accentColor,
       analysisProcesses: analysisProcesses,
+      systemAccentWatcherFactory: WindowsSystemAccentWatcher.new,
+      platformWindow: const WindowsMainWindowPlatform(),
+      pointerButtonStateProvider: const Win32PointerButtonStateProvider(),
       testScriptPath: testScriptPath,
       startupOptions: startupOptions,
     ),

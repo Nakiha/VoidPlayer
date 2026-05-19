@@ -21,7 +21,10 @@ build settings.
 ## Current Scope
 
 This runner is a launch/build baseline only. It does not yet provide the VoidPlayer native playback
-bridge, Flutter texture bridge, platform capability gates, or analysis window support.
+bridge, Flutter texture bridge, full platform capability gates, or analysis window support.
 
-The next phase should make Dart platform services explicit and add deterministic macOS stubs for
-the `video_renderer` MethodChannel surface before real playback is connected.
+Current Phase 1 work makes the main Dart entrypoint choose Windows/macOS bootstrap through deferred
+imports, injects platform services for window/accent/analysis dependencies, and registers a
+deterministic macOS `video_renderer` channel stub. The next Phase 1 step is UI capability gating:
+disable or reroute player, file picker, path launcher, and analysis affordances that are still backed
+by stub or Windows-named services.

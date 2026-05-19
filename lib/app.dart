@@ -5,16 +5,22 @@ import 'config/app_config.dart';
 import 'config/app_settings_repository.dart';
 import 'feedback/app_feedback.dart';
 import 'l10n/app_localizations.dart';
+import 'platform/analysis_process_host.dart';
+import 'platform/main_window_platform.dart';
+import 'platform/pointer_button_state_provider.dart';
+import 'platform/system_accent_watcher.dart';
 import 'preferences/app_config_playback_preferences.dart';
 import 'startup_options.dart';
 import 'theme/app_appearance.dart';
 import 'windows/main/main_window.dart';
-import 'windows/system_accent_watcher.dart';
-import 'windows/window_manager.dart' show AnalysisProcessManager;
 
 class VoidPlayerApp extends StatefulWidget {
   final Color accentColor;
-  final AnalysisProcessManager analysisProcesses;
+  final AnalysisProcessHost analysisProcesses;
+  final SystemAccentWatcher Function({required ValueChanged<Color> onChanged})
+  systemAccentWatcherFactory;
+  final MainWindowPlatform platformWindow;
+  final PointerButtonStateProvider pointerButtonStateProvider;
   final String? testScriptPath;
   final StartupOptions startupOptions;
 
@@ -22,6 +28,9 @@ class VoidPlayerApp extends StatefulWidget {
     super.key,
     required this.accentColor,
     required this.analysisProcesses,
+    required this.systemAccentWatcherFactory,
+    required this.platformWindow,
+    this.pointerButtonStateProvider = emptyPointerButtonStateProvider,
     this.testScriptPath,
     this.startupOptions = const StartupOptions(),
   });
@@ -46,7 +55,7 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
   late final AppSettingsRepository _settingsRepository =
       AppConfigSettingsRepository(AppConfig.instance);
   late final AppAppearanceController _appearance;
-  late final WindowsSystemAccentWatcher _systemAccentWatcher;
+  late final SystemAccentWatcher _systemAccentWatcher;
 
   @override
   void initState() {
@@ -55,7 +64,7 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
       settings: _settingsRepository,
       systemAccentColor: widget.accentColor,
     )..addListener(_syncAccentColor);
-    _systemAccentWatcher = WindowsSystemAccentWatcher(
+    _systemAccentWatcher = widget.systemAccentWatcherFactory(
       onChanged: _appearance.setSystemAccentColor,
     )..start();
     _syncAccentColor();
@@ -123,6 +132,9 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
                     testScriptPath: widget.testScriptPath,
                     startupOptions: widget.startupOptions,
                     analysisProcesses: widget.analysisProcesses,
+                    platformWindow: widget.platformWindow,
+                    pointerButtonStateProvider:
+                        widget.pointerButtonStateProvider,
                     appSettings: _settingsRepository,
                     accentColor: accentColor,
                     playbackPreferences: AppConfigPlaybackPreferences(

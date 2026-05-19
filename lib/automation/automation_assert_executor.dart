@@ -6,15 +6,15 @@ import 'dart:ui' as ui;
 import '../actions/player_assert.dart';
 import '../analysis/analysis_manager.dart';
 import '../app_log.dart';
-import '../windows/win32ffi.dart';
-import '../windows/window_manager.dart';
+import '../platform/analysis_process_host.dart';
+import '../windows/win32ffi.dart' deferred as win32;
 import 'automation_probe.dart';
 import 'automation_run_state.dart';
 
 class AutomationAssertExecutor {
   final AutomationProbe probe;
   final AutomationRunState state;
-  final AnalysisProcessManager analysisProcesses;
+  final AnalysisProcessHost analysisProcesses;
   final int Function() effectiveDurationUs;
 
   const AutomationAssertExecutor({
@@ -133,11 +133,15 @@ class AutomationAssertExecutor {
           );
         }
       case AssertMainWindowBorderless():
-        final hwnd = Win32FFI.findCurrentMainWindow();
+        if (!Platform.isWindows) {
+          throw AssertionError('ASSERT_MAIN_WINDOW_BORDERLESS is Windows-only');
+        }
+        await win32.loadLibrary();
+        final hwnd = win32.Win32FFI.findCurrentMainWindow();
         if (hwnd == 0) {
           throw AssertionError('Expected main window HWND to exist');
         }
-        if (Win32FFI.hasOverlappedWindowFrame(hwnd)) {
+        if (win32.Win32FFI.hasOverlappedWindowFrame(hwnd)) {
           throw AssertionError(
             'Expected main window to be borderless in fullscreen, hwnd=$hwnd',
           );

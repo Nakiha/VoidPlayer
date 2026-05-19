@@ -9,6 +9,8 @@ import '../../automation/test_runner.dart';
 import '../../automation/ui_automation_bridge.dart';
 import '../../config/app_config.dart';
 import '../../config/app_settings_repository.dart';
+import '../../platform/analysis_process_host.dart';
+import '../../platform/main_window_platform.dart';
 import '../../preferences/app_config_playback_preferences.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../startup_options.dart';
@@ -17,13 +19,11 @@ import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
 import '../../widgets/loop_range_bar.dart';
-import '../window_manager.dart' as app_window;
 import 'main_window_actions.dart';
 import 'main_window_analysis.dart';
 import 'main_window_layout.dart';
 import 'main_window_media.dart';
 import 'main_window_media_lifecycle.dart';
-import 'main_window_platform.dart';
 import 'main_window_playback.dart';
 import 'main_window_state.dart';
 import 'main_window_test_hooks.dart';
@@ -36,7 +36,7 @@ class MainWindowController {
   final StartupOptions startupOptions;
   final bool Function() mounted;
   final MainWindowPlatform platformWindow;
-  final app_window.AnalysisProcessManager analysisProcesses;
+  final AnalysisProcessHost analysisProcesses;
   final AnalysisGenerationService analysisGeneration;
   final AnalysisToolbarDataSource analysisToolbarDataSource;
   final AppSettingsRepository appSettings;
@@ -83,14 +83,15 @@ class MainWindowController {
     required this.startupOptions,
     required this.mounted,
     MainWindowPlatform? platformWindow,
-    app_window.AnalysisProcessManager? analysisProcesses,
+    AnalysisProcessHost? analysisProcesses,
     AnalysisGenerationService? analysisGeneration,
     AnalysisToolbarDataSource? analysisToolbarDataSource,
     AppSettingsRepository? appSettings,
     PlaybackPreferences? playbackPreferences,
-  }) : platformWindow = platformWindow ?? const WindowsMainWindowPlatform(),
+  }) : platformWindow =
+           platformWindow ?? const WindowManagerMainWindowPlatform(),
        analysisProcesses =
-           analysisProcesses ?? app_window.WindowManager.analysisProcesses,
+           analysisProcesses ?? UnsupportedAnalysisProcessHost(),
        analysisGeneration = analysisGeneration ?? AnalysisManager.instance,
        appSettings =
            appSettings ?? AppConfigSettingsRepository(AppConfig.instance),

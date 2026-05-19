@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../actions/action_registry.dart';
 import '../../config/app_settings_repository.dart';
+import '../../platform/analysis_process_host.dart';
+import '../../platform/main_window_platform.dart';
+import '../../platform/pointer_button_state_provider.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../startup_options.dart';
-import '../window_manager.dart' as app_window;
 import 'main_window_controller.dart';
 import 'main_window_shutdown.dart';
 import 'main_window_view.dart';
@@ -13,7 +15,9 @@ class MainWindow extends StatefulWidget {
   final ActionRegistry actionRegistry;
   final String? testScriptPath;
   final StartupOptions startupOptions;
-  final app_window.AnalysisProcessManager? analysisProcesses;
+  final AnalysisProcessHost? analysisProcesses;
+  final MainWindowPlatform? platformWindow;
+  final PointerButtonStateProvider pointerButtonStateProvider;
   final AppSettingsRepository? appSettings;
   final PlaybackPreferences? playbackPreferences;
   final Color? accentColor;
@@ -24,6 +28,8 @@ class MainWindow extends StatefulWidget {
     this.testScriptPath,
     this.startupOptions = const StartupOptions(),
     this.analysisProcesses,
+    this.platformWindow,
+    this.pointerButtonStateProvider = emptyPointerButtonStateProvider,
     this.appSettings,
     this.playbackPreferences,
     this.accentColor,
@@ -46,6 +52,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       vsync: this,
       startupOptions: widget.startupOptions,
       analysisProcesses: widget.analysisProcesses,
+      platformWindow: widget.platformWindow,
       appSettings: widget.appSettings,
       playbackPreferences: widget.playbackPreferences,
       mounted: () => mounted,
@@ -69,6 +76,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       builder: (context, _) => MainWindowView(
         model: _controller.viewModel,
         actions: _controller.viewActions,
+        pointerButtonStateProvider: widget.pointerButtonStateProvider,
       ),
     );
   }

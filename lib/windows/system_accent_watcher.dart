@@ -1,8 +1,9 @@
 import 'package:flutter/services.dart';
 
+import '../platform/system_accent_watcher.dart';
 import 'win32ffi.dart';
 
-class WindowsSystemAccentWatcher {
+class WindowsSystemAccentWatcher implements SystemAccentWatcher {
   WindowsSystemAccentWatcher({required this.onChanged});
 
   static const MethodChannel _channel = MethodChannel(
@@ -12,10 +13,12 @@ class WindowsSystemAccentWatcher {
   final ValueChanged<Color> onChanged;
   bool _disposed = false;
 
+  @override
   void start() {
     _channel.setMethodCallHandler(_handleMethodCall);
   }
 
+  @override
   void dispose() {
     _disposed = true;
     _channel.setMethodCallHandler(null);

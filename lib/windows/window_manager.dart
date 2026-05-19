@@ -4,10 +4,9 @@ import 'dart:io';
 import 'dart:ui';
 
 import '../app_log.dart';
+import '../platform/analysis_process_host.dart';
 import 'process_log_args.dart';
 import 'win32ffi.dart';
-
-typedef AnalysisWindowRequest = ({String hash, String? fileName});
 
 const String _analysisWindowType = 'analysis';
 const (int, int) _analysisDefaultSize = (1000, 700);
@@ -87,24 +86,35 @@ class WindowManager {
 }
 
 /// Manages external analysis processes and their lifecycle.
-class AnalysisProcessManager {
+class AnalysisProcessManager implements AnalysisProcessHost {
   final Map<String, Process> _analysisProcesses = {};
   final Map<String, int> _analysisExitCodes = {};
 
+  @override
   String? analysisTestScriptPath;
+  @override
   bool silentUiTest = false;
+  @override
   int? analysisIpcPort;
+  @override
   String? analysisIpcToken;
 
   /// Accent color set by the main window, passed to analysis processes.
+  @override
   int accentColorValue = 0xFF0078D4;
 
+  @override
   int get analysisProcessCount => _analysisProcesses.length;
 
+  @override
   Map<String, int> get analysisExitCodes =>
       Map.unmodifiable(_analysisExitCodes);
 
+  @override
+  bool get supportsExternalAnalysisWindows => true;
+
   /// Show an analysis window for a specific video hash.
+  @override
   Future<void> showAnalysisWindow(
     String hash, {
     String? fileName,
@@ -112,6 +122,7 @@ class AnalysisProcessManager {
   }) => _spawnAnalysisProcess(hash, fileName: fileName, onExit: onExit);
 
   /// Show multiple analysis views from one user action, arranged as a batch.
+  @override
   Future<void> showAnalysisWindows(
     List<AnalysisWindowRequest> windows, {
     void Function()? onExit,
@@ -130,12 +141,14 @@ class AnalysisProcessManager {
     await _spawnAnalysisWorkspaceProcess(windows, onExit: onExit);
   }
 
+  @override
   bool activateAnalysisWindows() {
     if (_analysisProcesses.isEmpty) return false;
     final key = _analysisProcessKey(_analysisProcesses.keys.first);
     return _activateAnalysisProcess(key);
   }
 
+  @override
   Future<bool> waitForAnalysisProcessCount(int count, Duration timeout) async {
     final sw = Stopwatch()..start();
     while (sw.elapsed < timeout) {
@@ -146,6 +159,7 @@ class AnalysisProcessManager {
   }
 
   /// Closes all analysis child processes before the main window exits.
+  @override
   Future<void> closeAllAnalysisWindows() async {
     for (final process in _analysisProcesses.values) {
       process.kill();

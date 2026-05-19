@@ -164,14 +164,17 @@ Status on 2026-05-20:
   macOS-buildable native source groups out of `VOID_RENDERER_CORE_SOURCES`.
 - Done: non-Windows CMake now creates `void_player_portable_core` and `void_media_ffmpeg`
   internal static libraries instead of building only third-party dependencies.
+- Done: `codec_loop.cpp` has a non-Windows FFmpeg path, allowing decode policies, exact seek
+  policies, and timestamp rescaling to compile in `void_media_ffmpeg`.
 - Verified: `cmake -S native -B native/build-macos-make -G "Unix Makefiles"
   -DBUILD_ANALYSIS=OFF -DBUILD_TESTS=OFF -DBUILD_FFI=OFF -DBUILD_PYTHON=OFF`
   and `cmake --build native/build-macos-make --target void_player_portable_core
   void_media_ffmpeg -- -j2`.
 - Note: this machine does not have Ninja installed, so macOS validation should not require
   `-G Ninja` until the toolchain baseline explicitly installs it.
-- Remaining: `frame_converter.cpp`, `decode_loop_policy.cpp`, and Windows SEH guarded
-  `codec_loop.cpp` still block moving more decode code into the portable target.
+- Remaining: `frame_converter.cpp`, `decoded_frame_publisher.cpp`, and
+  `exact_seek_frame_publisher.cpp` still depend on the D3D-oriented converter/hardware provider
+  surface and need a renderer-neutral frame publication boundary before moving further.
 
 Tasks:
 

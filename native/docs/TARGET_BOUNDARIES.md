@@ -7,7 +7,7 @@
 | Target | Boundary | Public Surface |
 | --- | --- | --- |
 | `void_player_portable_core` | macOS-buildable playback clock, logging, packet queue, seek coordinator, frame buffers, render sink | Internal static library; first Phase 2 portability target |
-| `void_media_ffmpeg` | macOS-buildable FFmpeg demux/private CDN FLV demux layer | Internal static library depending on `void_player_portable_core` |
+| `void_media_ffmpeg` | macOS-buildable FFmpeg demux/private CDN FLV demux layer plus decode/exact-seek policies that do not own texture conversion | Internal static library depending on `void_player_portable_core` |
 | `video_renderer_core` | FFmpeg demux/decode common logic, playback clock, queues, buffers, sync policies | Internal static library |
 | `video_renderer_lib` | Windows player/renderer facade, audio, D3D11 backend, optional analysis overlay implementation | Internal static library consumed by FFI/Python/tests |
 | `analysis_lib` | VAC2/VACHUNK cache, parsers, generators, analysis sessions | Internal static library, only when `BUILD_ANALYSIS=ON` |

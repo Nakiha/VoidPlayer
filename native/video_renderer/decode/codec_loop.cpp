@@ -1,7 +1,9 @@
 #include "video_renderer/decode/codec_loop.h"
 
 #include <spdlog/spdlog.h>
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -12,6 +14,8 @@ namespace vr {
 namespace {
 
 constexpr int kCodecLoopSehCaught = AVERROR_EXTERNAL;
+
+#ifdef _WIN32
 
 // D3D11 internals can throw cross-module SEH exceptions through FFmpeg codec
 // calls. Keep each __try/__except in a noinline function without C++ objects
@@ -39,6 +43,18 @@ int seh_receive_frame(AVCodecContext* ctx, AVFrame* frame) {
         return kCodecLoopSehCaught;
     }
 }
+
+#else
+
+int seh_send_packet(AVCodecContext* ctx, const AVPacket* pkt) {
+    return avcodec_send_packet(ctx, pkt);
+}
+
+int seh_receive_frame(AVCodecContext* ctx, AVFrame* frame) {
+    return avcodec_receive_frame(ctx, frame);
+}
+
+#endif
 
 } // namespace
 

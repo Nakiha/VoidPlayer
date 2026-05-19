@@ -222,7 +222,8 @@ surface expected by the runner.
 Status on 2026-05-20:
 
 - Done: `macos_media_smoke` links `void_media_ffmpeg`, opens the bundled
-  `resources/video/h264_9s_1920x1080.mp4` fixture, and validates video stream metadata/duration.
+  `resources/video/h264_9s_1920x1080.mp4` fixture, validates video stream metadata/duration, and
+  decodes the first software video frame.
 - Verified: `cmake --build native/build-macos-make --target macos_media_smoke -- -j2`,
   `ctest --test-dir native/build-macos-make -R macos_media_smoke --output-on-failure`, and
   `otool -L native/build-macos-make/macos_media_smoke`.
@@ -234,7 +235,7 @@ Tasks:
 - Add `native/cmake/MacOSNativeTarget.cmake` or equivalent CMake path.
 - Link `third_party/ffmpeg/lib/*.dylib` and include `third_party/ffmpeg/include`.
 - Copy/sign/package FFmpeg dylibs into the macOS app bundle runtime location.
-- Add a minimal CLI or CTest target that opens a local media file, reads metadata/duration, and
+- [x] Add a minimal CLI or CTest target that opens a local media file, reads metadata/duration, and
   can decode at least one software frame without presenting it.
 - Keep analysis optional; macOS native playback should build with `BUILD_ANALYSIS=OFF` first.
 

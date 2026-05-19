@@ -34,6 +34,7 @@ endif()
 if(WIN32)
     add_subdirectory(video_renderer)
 else()
+    include(cmake/PortableTargets.cmake)
     message(STATUS "video_renderer disabled: D3D11 backend is Windows-only")
 endif()
 

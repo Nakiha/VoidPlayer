@@ -5,21 +5,29 @@ set(VOID_MINIAUDIO_INCLUDE_DIR "${VOID_NATIVE_DIR}/../third_party/miniaudio/incl
 
 option(BUILD_ANALYSIS "Build native analysis cache, CLI, and overlay feature" ON)
 
-set(VOID_RENDERER_CORE_SOURCES
+set(VOID_PLAYER_PORTABLE_CORE_SOURCES
     "${VOID_NATIVE_DIR}/common/logging.cpp"
-    "${VOID_NATIVE_DIR}/common/windows_crash_handler.cpp"
     "${VOID_NATIVE_DIR}/playback/playback_controller.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/clock.cpp"
-    "${VOID_NATIVE_DIR}/media/demux_thread.cpp"
-    "${VOID_NATIVE_DIR}/media/private_cdn_flv_demuxer.cpp"
-    "${VOID_NATIVE_DIR}/video_renderer/decode/frame_converter.cpp"
-    "${VOID_NATIVE_DIR}/video_renderer/decode/decode_loop_policy.cpp"
-    "${VOID_NATIVE_DIR}/video_renderer/decode/exact_seek_window.cpp"
-    "${VOID_NATIVE_DIR}/media/packet_queue.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/buffer/bidi_ring_buffer.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/buffer/track_buffer.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/sync/render_sink.cpp"
+    "${VOID_NATIVE_DIR}/media/packet_queue.cpp"
     "${VOID_NATIVE_DIR}/media/seek_controller.cpp"
+)
+
+set(VOID_MEDIA_FFMPEG_SOURCES
+    "${VOID_NATIVE_DIR}/media/demux_thread.cpp"
+    "${VOID_NATIVE_DIR}/media/private_cdn_flv_demuxer.cpp"
+)
+
+set(VOID_RENDERER_CORE_SOURCES
+    ${VOID_PLAYER_PORTABLE_CORE_SOURCES}
+    ${VOID_MEDIA_FFMPEG_SOURCES}
+    "${VOID_NATIVE_DIR}/common/windows_crash_handler.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/decode/frame_converter.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/decode/decode_loop_policy.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/decode/exact_seek_window.cpp"
 )
 
 set(VOID_RENDERER_WINDOWS_SOURCES

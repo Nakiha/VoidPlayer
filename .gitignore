@@ -50,6 +50,7 @@ app.*.map.json
 
 # Native build artifacts
 /native/build
+/native/build-*
 /native/dist
 /native/build-msvc
 /native/_deps

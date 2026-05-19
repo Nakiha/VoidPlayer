@@ -6,6 +6,8 @@
 
 | Target | Boundary | Public Surface |
 | --- | --- | --- |
+| `void_player_portable_core` | macOS-buildable playback clock, logging, packet queue, seek coordinator, frame buffers, render sink | Internal static library; first Phase 2 portability target |
+| `void_media_ffmpeg` | macOS-buildable FFmpeg demux/private CDN FLV demux layer | Internal static library depending on `void_player_portable_core` |
 | `video_renderer_core` | FFmpeg demux/decode common logic, playback clock, queues, buffers, sync policies | Internal static library |
 | `video_renderer_lib` | Windows player/renderer facade, audio, D3D11 backend, optional analysis overlay implementation | Internal static library consumed by FFI/Python/tests |
 | `analysis_lib` | VAC2/VACHUNK cache, parsers, generators, analysis sessions | Internal static library, only when `BUILD_ANALYSIS=ON` |
@@ -31,7 +33,6 @@ The next target names should be introduced only when they remove a real dependen
 | Planned Target | Owns | Must Not Own |
 | --- | --- | --- |
 | `void_core` | logging helpers, limits, pure policies, clocks, thread-safe queues | FFmpeg headers, D3D11, Flutter, analysis cache |
-| `void_media_ffmpeg` | FFmpeg demux/decode adapters and packet/frame lifetime helpers | D3D11 rendering, Flutter/FFI ABI wrappers |
 | `void_render_d3d11` | D3D11 device, shaders, frame presenter, headless output, capture | analysis parsers/generators, public ABI wrappers |
 | `void_player` | NativePlayer facade, playback/audio/renderer orchestration | Flutter MethodChannel, C ABI exports |
 | `void_analysis` | VAC2/VACHUNK parser/generator/session/cache targets | renderer/player ownership |

@@ -158,6 +158,21 @@ Exit criteria:
 
 Goal: separate platform-independent playback/decode/layout logic from Windows D3D11/WinMM glue.
 
+Status on 2026-05-20:
+
+- Done: `VOID_PLAYER_PORTABLE_CORE_SOURCES` and `VOID_MEDIA_FFMPEG_SOURCES` split the first
+  macOS-buildable native source groups out of `VOID_RENDERER_CORE_SOURCES`.
+- Done: non-Windows CMake now creates `void_player_portable_core` and `void_media_ffmpeg`
+  internal static libraries instead of building only third-party dependencies.
+- Verified: `cmake -S native -B native/build-macos-make -G "Unix Makefiles"
+  -DBUILD_ANALYSIS=OFF -DBUILD_TESTS=OFF -DBUILD_FFI=OFF -DBUILD_PYTHON=OFF`
+  and `cmake --build native/build-macos-make --target void_player_portable_core
+  void_media_ffmpeg -- -j2`.
+- Note: this machine does not have Ninja installed, so macOS validation should not require
+  `-G Ninja` until the toolchain baseline explicitly installs it.
+- Remaining: `frame_converter.cpp`, `decode_loop_policy.cpp`, and Windows SEH guarded
+  `codec_loop.cpp` still block moving more decode code into the portable target.
+
 Tasks:
 
 - Split `VOID_RENDERER_WINDOWS_SOURCES` into:
@@ -186,7 +201,8 @@ Validation:
 - Windows: `python dev.py test --native-only`
 - Disabled-feature checks for `BUILD_ANALYSIS=OFF`, `BUILD_FFI=OFF`, and `BUILD_TESTS=OFF` when
   touched.
-- CMake configure on macOS for non-renderer core targets once available.
+- CMake configure/build on macOS for non-renderer core targets. Use an available generator such as
+  `Unix Makefiles`; do not assume Ninja is installed.
 
 Exit criteria:
 

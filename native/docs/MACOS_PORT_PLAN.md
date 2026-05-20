@@ -293,6 +293,9 @@ Status on 2026-05-20:
   visual frame changes while playing.
 - Done: macOS platform capabilities now expose local-file preview playback while keeping full
   native playback, network media, SSH media, analysis windows, and audio out of scope.
+- In progress: preview frame decode ownership is moving out of the Flutter runner into
+  `native/macos/preview_frame_decoder.*`, with the runner reduced to a thin Xcode shim until the
+  final native player facade exists.
 - Remaining: efficient continuous decode, frame queue scheduling, A/V sync, and real audio are
   still Phase 5 work. The seek/preview bridge is intentionally a runner-side proof, not the final
   shared native player architecture.
@@ -314,11 +317,13 @@ Tasks:
 - [x] Add synthetic capture metrics for UI-test assertions.
 - [x] Add macOS capture assertions for synthetic and first decoded frames.
 - [x] Feed one decoded FFmpeg software frame into the macOS texture bridge.
-- [ ] Replace the runner-local first-frame decoder with the shared native player facade.
+- [x] Move the preview FFmpeg frame decoder into `native/macos` and cover it with CTest.
+- [ ] Replace the preview decoder with the shared native player facade.
 
 Validation:
 
 - `flutter build macos --debug`
+- `ctest --test-dir native/build-macos-make -R macos_preview_frame_decoder_smoke --output-on-failure`
 - Manual launch: synthetic frame appears, resize does not crash, close/reopen does not leak handles.
 - Automated screenshot/hash test when macOS UI automation is available.
 - Current smokes:

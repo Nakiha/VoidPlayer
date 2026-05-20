@@ -30,6 +30,10 @@ set(VOID_MEDIA_FFMPEG_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/decode/frame_timestamp_rescaler.cpp"
 )
 
+set(VOID_MACOS_PREVIEW_SOURCES
+    "${VOID_NATIVE_DIR}/macos/preview_frame_decoder.cpp"
+)
+
 set(VOID_RENDERER_CORE_SOURCES
     ${VOID_PLAYER_PORTABLE_CORE_SOURCES}
     ${VOID_MEDIA_FFMPEG_SOURCES}

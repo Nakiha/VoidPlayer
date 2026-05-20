@@ -39,6 +39,23 @@ target_link_libraries(void_media_ffmpeg PUBLIC
 )
 
 if(APPLE)
+    add_library(void_macos_preview_decoder STATIC
+        ${VOID_MACOS_PREVIEW_SOURCES}
+    )
+    void_apply_native_compile_options(void_macos_preview_decoder)
+    target_include_directories(void_macos_preview_decoder PUBLIC
+        "${VOID_NATIVE_DIR}/macos"
+    )
+    target_include_directories(void_macos_preview_decoder SYSTEM PUBLIC
+        "${FFMPEG_INCLUDE_DIR}"
+    )
+    target_link_libraries(void_macos_preview_decoder PUBLIC
+        spdlog::spdlog_header_only
+        ${AVCODEC_LIBRARY}
+        ${AVFORMAT_LIBRARY}
+        ${AVUTIL_LIBRARY}
+    )
+
     add_executable(macos_media_smoke
         "${VOID_NATIVE_DIR}/tools/macos_media_smoke.cpp"
     )
@@ -51,4 +68,16 @@ if(APPLE)
         VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
     )
     add_test(NAME macos_media_smoke COMMAND macos_media_smoke)
+
+    add_executable(macos_preview_frame_decoder_smoke
+        "${VOID_NATIVE_DIR}/tools/macos_preview_frame_decoder_smoke.cpp"
+    )
+    void_apply_native_compile_options(macos_preview_frame_decoder_smoke)
+    target_link_libraries(macos_preview_frame_decoder_smoke PRIVATE
+        void_macos_preview_decoder
+    )
+    target_compile_definitions(macos_preview_frame_decoder_smoke PRIVATE
+        VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
+    )
+    add_test(NAME macos_preview_frame_decoder_smoke COMMAND macos_preview_frame_decoder_smoke)
 endif()

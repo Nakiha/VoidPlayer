@@ -37,6 +37,10 @@ seek/preview bridge to decode target-time software frames into the texture. macO
 local file playback controls for this preview path, but network/SSH media, analysis windows, real
 audio, and the final shared native player backend are still unavailable.
 
+Preview frame decoding is owned by `../native/macos/preview_frame_decoder.*` and covered by the
+native `macos_preview_frame_decoder_smoke` CTest. `Runner/MacOSFirstFrameDecoder.*` is only a thin
+Xcode/Swift bridging shim while the full native player facade is still being ported.
+
 The macOS runner also implements the shared `pickFiles` MethodChannel call with `NSOpenPanel`.
 Debug and Release entitlements include `com.apple.security.files.user-selected.read-only` so
 sandboxed file selections can be read by future playback code. The toolbar still keeps Add Media

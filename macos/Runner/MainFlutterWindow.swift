@@ -128,11 +128,11 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       result(nil)
     case "seek":
       let targetPtsUs = intArg(call.arguments, "ptsUs") ?? 0
-      currentPtsUs = max(0, min(Self.syntheticDurationUs, targetPtsUs))
+      currentPtsUs = max(0, min(activeDurationUs(), targetPtsUs))
       markFrameAvailable()
       result(nil)
     case "stepForward":
-      currentPtsUs = min(Self.syntheticDurationUs, currentPtsUs + 33_333)
+      currentPtsUs = min(activeDurationUs(), currentPtsUs + 33_333)
       markFrameAvailable()
       result(nil)
     case "stepBackward":
@@ -349,6 +349,10 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     if let id = textureId {
       textureRegistry.textureFrameAvailable(id)
     }
+  }
+
+  private func activeDurationUs() -> Int {
+    currentDurationUs > 0 ? currentDurationUs : Self.syntheticDurationUs
   }
 
   private func trackMap(

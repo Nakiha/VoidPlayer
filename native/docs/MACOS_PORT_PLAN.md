@@ -281,6 +281,8 @@ Status on 2026-05-20:
 - Done: `ui_tests/macos/first_frame_smoke.csv` copies a repo media fixture into the app container,
   opens it through the runner FFmpeg bridge, verifies duration, and asserts nonblack capture
   metrics.
+- Done: `ui_tests/macos/first_frame_controls_smoke.csv` exercises transitional play/pause,
+  seek/step, duration clamping, and capture after control commands.
 - Remaining: continuous decode/playback, seek-driven frame updates, and real audio are still Phase 5
   work. The first-frame bridge is intentionally a runner-side proof, not the final shared native
   player architecture.
@@ -310,7 +312,7 @@ Validation:
 - Manual launch: synthetic frame appears, resize does not crash, close/reopen does not leak handles.
 - Automated screenshot/hash test when macOS UI automation is available.
 - Current smokes:
-  `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/first_frame_smoke.csv`.
+  `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/first_frame_smoke.csv ui_tests/macos/first_frame_controls_smoke.csv`.
   The helper copies CSV scripts into the app container because the debug app is sandboxed.
 
 Exit criteria:

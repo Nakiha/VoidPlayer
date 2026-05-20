@@ -42,7 +42,8 @@ sandboxed file selections can be read by future playback code. The toolbar still
 disabled while `nativePlayback=false`.
 
 Use `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv` for the synthetic
-texture smoke and `python dev.py mac-ui-test ui_tests/macos/first_frame_smoke.csv` for the FFmpeg
-first-frame bridge. The helper copies CSV scripts into the app container before launch and rewrites
-repo-relative `ADD_MEDIA` fixtures to sandbox-local copies because the macOS debug app is sandboxed
-and cannot read arbitrary repository paths directly.
+texture smoke, `python dev.py mac-ui-test ui_tests/macos/first_frame_smoke.csv` for the FFmpeg
+first-frame bridge, and `python dev.py mac-ui-test ui_tests/macos/first_frame_controls_smoke.csv`
+for transitional play/pause/seek/step command semantics. The helper copies CSV scripts into the app
+container before launch and rewrites repo-relative `ADD_MEDIA` fixtures to sandbox-local copies
+because the macOS debug app is sandboxed and cannot read arbitrary repository paths directly.

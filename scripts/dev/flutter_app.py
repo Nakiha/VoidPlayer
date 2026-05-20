@@ -253,13 +253,15 @@ def _cmd_mac_ui_test(args) -> None:
         / "voidplayer-ui-tests"
     )
     container_scripts_dir.mkdir(parents=True, exist_ok=True)
+    container_media_dir = container_scripts_dir / "media"
+    container_media_dir.mkdir(parents=True, exist_ok=True)
 
     total = len(script_paths)
     for index, script_path in enumerate(script_paths, start=1):
         sandbox_script = (
             container_scripts_dir / f"{index:02d}_{script_path.name}"
         )
-        shutil.copy2(script_path, sandbox_script)
+        _prepare_macos_sandbox_script(script_path, sandbox_script, container_media_dir)
 
         cmd = [str(exe), "--test-script", str(sandbox_script)]
         cmd.extend(_script_app_args(script_path))
@@ -283,6 +285,47 @@ def _cmd_mac_ui_test(args) -> None:
             sys.exit(result)
 
     print(f"\nmacOS UI test batch passed ({total} script{'s' if total != 1 else ''}).")
+
+
+def _prepare_macos_sandbox_script(
+    script_path: Path,
+    sandbox_script: Path,
+    container_media_dir: Path,
+) -> None:
+    """Copy a macOS UI script and make repo media fixtures sandbox-readable."""
+    with script_path.open("r", encoding="utf-8-sig", newline="") as source:
+        with sandbox_script.open("w", encoding="utf-8", newline="") as dest:
+            reader = csv.reader(source)
+            writer = csv.writer(dest, lineterminator="\n")
+            for row in reader:
+                if _is_add_media_row(row):
+                    row[2] = _macos_sandbox_media_path(row[2], container_media_dir)
+                writer.writerow(row)
+
+
+def _is_add_media_row(row: list[str]) -> bool:
+    return len(row) >= 3 and row[1].strip().upper() == "ADD_MEDIA"
+
+
+def _macos_sandbox_media_path(media_path: str, container_media_dir: Path) -> str:
+    media_path = media_path.strip()
+    if media_path.startswith("macos-synthetic://"):
+        return media_path
+
+    path = Path(media_path)
+    resolved = path if path.is_absolute() else (ROOT / path)
+    try:
+        resolved = resolved.resolve()
+    except OSError:
+        return media_path
+
+    if not resolved.is_file() or not resolved.is_relative_to(ROOT):
+        return media_path
+
+    dest = container_media_dir / resolved.relative_to(ROOT)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(resolved, dest)
+    return str(dest)
 
 
 def _run_ui_test_process(cmd: list[str]) -> tuple[int, bool]:

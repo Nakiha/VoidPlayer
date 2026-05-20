@@ -99,7 +99,7 @@ Exit criteria:
 Goal: macOS can launch the Flutter UI and every player/analysis entrypoint fails predictably or
 returns deterministic stub state.
 
-Status on 2026-05-20:
+Status on 2026-05-21:
 
 - Done: `lib/main.dart` no longer imports the Windows bootstrap eagerly. It deferred-loads
   Windows or macOS bootstrap based on `Platform`.
@@ -266,19 +266,30 @@ Status on 2026-05-20:
 
 - Done: macOS runner registers a synthetic `FlutterTexture` backed by a CPU-filled BGRA
   `CVPixelBuffer`.
+- Done: local media paths can use a transitional FFmpeg first-frame bridge. The runner decodes the
+  first software frame to BGRA and publishes it through the same texture path; this proves app
+  bundle dylib loading, sandbox fixture access, MethodChannel open, and texture upload before full
+  playback exists.
 - Done: `createPlayer`, `addTrack`, `resize`, `destroyPlayer`, `getTracks`, `duration`,
-  `currentPts`, and synthetic `captureViewport` now have deterministic macOS behavior for bridge
+  `currentPts`, and `captureViewport` now have deterministic macOS behavior for bridge
   validation.
 - Done: `ui_tests/macos/synthetic_texture_smoke.csv` exercises the MethodChannel path through the
   existing automation runner and checks synthetic capture metrics. The `ADD_MEDIA` path is a
   synthetic label, not a sandboxed file read.
 - Done: manual visual smoke via Computer Use confirmed the Flutter window displays the synthetic
   color bars through the macOS texture path.
-- Remaining: add a repeatable macOS screenshot/pixel assertion path, then connect the texture bridge
-  to decoded FFmpeg frames instead of generated color bars.
-- Risk note: until the real player is connected, track count, duration, `isPlaying`, seek/step, and
-  capture metrics are bridge-validation signals only. macOS feature availability must continue to
-  use platform capabilities or diagnostics, not plausible synthetic playback state.
+- Done: `ui_tests/macos/first_frame_smoke.csv` copies a repo media fixture into the app container,
+  opens it through the runner FFmpeg bridge, verifies duration, and asserts nonblack capture
+  metrics.
+- Remaining: continuous decode/playback, seek-driven frame updates, and real audio are still Phase 5
+  work. The first-frame bridge is intentionally a runner-side proof, not the final shared native
+  player architecture.
+- Risk note: until the real player is connected, `isPlaying`, seek/step, and capture metrics are
+  bridge-validation signals only. macOS feature availability must continue to use platform
+  capabilities or diagnostics, not plausible transitional playback state.
+- Packaging note: the current vendored FFmpeg dylibs report `LC_BUILD_VERSION minos 14.0`, while
+  the Flutter runner still declares `MACOSX_DEPLOYMENT_TARGET=10.15`. Before release, either rebuild
+  the FFmpeg package for the intended minimum OS or intentionally raise the runner deployment target.
 
 Tasks:
 
@@ -289,14 +300,17 @@ Tasks:
   resize, and shutdown behavior.
 - [x] Add a synthetic color-bar/test-pattern source before connecting FFmpeg decode.
 - [x] Add synthetic capture metrics for UI-test assertions.
-- [ ] Add a macOS-specific screenshot assertion path that samples the real window/texture output.
+- [x] Add macOS capture assertions for synthetic and first decoded frames.
+- [x] Feed one decoded FFmpeg software frame into the macOS texture bridge.
+- [ ] Replace the runner-local first-frame decoder with the shared native player facade.
 
 Validation:
 
 - `flutter build macos --debug`
 - Manual launch: synthetic frame appears, resize does not crash, close/reopen does not leak handles.
 - Automated screenshot/hash test when macOS UI automation is available.
-- Current smoke: `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv`.
+- Current smokes:
+  `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/first_frame_smoke.csv`.
   The helper copies CSV scripts into the app container because the debug app is sandboxed.
 
 Exit criteria:

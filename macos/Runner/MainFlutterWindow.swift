@@ -2,6 +2,62 @@ import Cocoa
 import CoreVideo
 import FlutterMacOS
 
+private struct MacOSDecodedFirstFrame {
+  let width: Int
+  let height: Int
+  let durationUs: Int
+  let ptsUs: Int
+  let bgra: Data
+}
+
+private enum MacOSFirstFrameDecodeError: Error, CustomStringConvertible {
+  case failed(String)
+  case invalidPayload
+
+  var description: String {
+    switch self {
+    case .failed(let message):
+      return message
+    case .invalidPayload:
+      return "decoded first frame had invalid dimensions or pixel data"
+    }
+  }
+}
+
+private enum MacOSFirstFrameDecode {
+  static func decode(path: String) throws -> MacOSDecodedFirstFrame {
+    var frame = VPMacOSDecodedFrame()
+    var error = [CChar](repeating: 0, count: 1024)
+    let ret = path.withCString { pathPointer in
+      VPMacOSDecodeFirstVideoFrameBGRA(pathPointer, &frame, &error, error.count)
+    }
+    defer {
+      VPMacOSDecodedFrameFree(&frame)
+    }
+
+    if ret != 0 {
+      let message = String(cString: error)
+      throw MacOSFirstFrameDecodeError.failed(
+        message.isEmpty ? "FFmpeg first-frame decode failed with code \(ret)" : message
+      )
+    }
+    guard frame.width > 0,
+          frame.height > 0,
+          let bgra = frame.bgra,
+          frame.bgra_size > 0 else {
+      throw MacOSFirstFrameDecodeError.invalidPayload
+    }
+
+    return MacOSDecodedFirstFrame(
+      width: Int(frame.width),
+      height: Int(frame.height),
+      durationUs: Int(frame.duration_us),
+      ptsUs: Int(frame.pts_us),
+      bgra: Data(bytes: bgra, count: Int(frame.bgra_size))
+    )
+  }
+}
+
 class MainFlutterWindow: NSWindow {
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -27,7 +83,9 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private var tracks: [[String: Any]] = []
   private var layout: [String: Any] = MacOSVideoRendererStub.defaultLayout()
   private var currentPtsUs = 0
+  private var currentDurationUs = 0
   private var isPlaying = false
+  private var backendName = "synthetic-texture"
 
   init(textureRegistry: FlutterTextureRegistry) {
     self.textureRegistry = textureRegistry
@@ -84,7 +142,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     case "currentPts":
       result(currentPtsUs)
     case "duration":
-      result(tracks.isEmpty ? 0 : Self.syntheticDurationUs)
+      result(tracks.isEmpty ? 0 : currentDurationUs)
     case "currentPresentedFrame":
       result(
         textureId == nil
@@ -107,10 +165,10 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     case "getDiagnostics":
       result([
         "platform": "macos",
-        "backend": "synthetic-texture",
+        "backend": backendName,
         "available": false,
         "reason": "macOS native playback is not implemented yet; " +
-          "synthetic FlutterTexture bridge is active for port validation",
+          "first-frame bridge is active for port validation",
         "textureId": textureId ?? -1,
         "trackCount": tracks.count,
       ])
@@ -121,24 +179,70 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     }
   }
 
-  private func createPlayer(arguments: Any?) -> [String: Any] {
+  private func createPlayer(arguments: Any?) -> Any {
     destroyPlayer()
 
-    let width = max(16, intArg(arguments, "width") ?? 1920)
-    let height = max(16, intArg(arguments, "height") ?? 1080)
     let paths = stringListArg(arguments, "videoPaths")
-    let syntheticTexture = MacOSSyntheticTexture(width: width, height: height)
-    let registeredTextureId = textureRegistry.register(syntheticTexture)
+    let requestedWidth = max(16, intArg(arguments, "width") ?? 1920)
+    let requestedHeight = max(16, intArg(arguments, "height") ?? 1080)
+    let firstPath = paths.first ?? "macos-synthetic://color-bars"
 
-    texture = syntheticTexture
+    let nextTexture: MacOSSyntheticTexture
+    let trackWidth: Int
+    let trackHeight: Int
+    let trackDurationUs: Int
+    let trackFormatName: String
+    let trackCodecName: String
+    let trackCodecLongName: String
+    let trackDecoderName: String
+    if firstPath.hasPrefix("macos-synthetic://") {
+      nextTexture = MacOSSyntheticTexture(width: requestedWidth, height: requestedHeight)
+      trackWidth = requestedWidth
+      trackHeight = requestedHeight
+      trackDurationUs = Self.syntheticDurationUs
+      trackFormatName = "synthetic"
+      trackCodecName = "macos_synthetic"
+      trackCodecLongName = "macOS Synthetic FlutterTexture"
+      trackDecoderName = "synthetic"
+      backendName = "synthetic-texture"
+    } else {
+      do {
+        let decoded = try MacOSFirstFrameDecode.decode(path: firstPath)
+        nextTexture = MacOSSyntheticTexture(decoded: decoded)
+        trackWidth = decoded.width
+        trackHeight = decoded.height
+        trackDurationUs = decoded.durationUs > 0 ? decoded.durationUs : Self.syntheticDurationUs
+        trackFormatName = "ffmpeg-first-frame"
+        trackCodecName = "ffmpeg"
+        trackCodecLongName = "macOS FFmpeg first-frame bridge"
+        trackDecoderName = "ffmpeg_software_first_frame"
+        backendName = "ffmpeg-first-frame"
+      } catch {
+        return FlutterError(
+          code: "DECODE_FAILED",
+          message: "Failed to decode first macOS video frame",
+          details: "\(error)"
+        )
+      }
+    }
+
+    let registeredTextureId = textureRegistry.register(nextTexture)
+
+    texture = nextTexture
     textureId = registeredTextureId
+    currentDurationUs = trackDurationUs
     tracks = paths.enumerated().map { index, path in
       trackMap(
         fileId: index,
         slot: index,
         path: path,
-        width: width,
-        height: height
+        width: trackWidth,
+        height: trackHeight,
+        durationUs: trackDurationUs,
+        formatName: trackFormatName,
+        codecName: trackCodecName,
+        codecLongName: trackCodecLongName,
+        decoderName: trackDecoderName
       )
     }
     currentPtsUs = 0
@@ -159,7 +263,9 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     textureId = nil
     tracks.removeAll()
     currentPtsUs = 0
+    currentDurationUs = 0
     isPlaying = false
+    backendName = "synthetic-texture"
   }
 
   private func addTrack(arguments: Any?) -> Any {
@@ -180,7 +286,16 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       slot: slot,
       path: path,
       width: size.width,
-      height: size.height
+      height: size.height,
+      durationUs: currentDurationUs,
+      formatName: backendName,
+      codecName: backendName == "ffmpeg-first-frame" ? "ffmpeg" : "macos_synthetic",
+      codecLongName: backendName == "ffmpeg-first-frame"
+        ? "macOS FFmpeg first-frame bridge"
+        : "macOS Synthetic FlutterTexture",
+      decoderName: backendName == "ffmpeg-first-frame"
+        ? "ffmpeg_software_first_frame"
+        : "synthetic"
     )
     tracks.append(track)
     markFrameAvailable()
@@ -241,7 +356,12 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     slot: Int,
     path: String,
     width: Int,
-    height: Int
+    height: Int,
+    durationUs: Int,
+    formatName: String,
+    codecName: String,
+    codecLongName: String,
+    decoderName: String
   ) -> [String: Any] {
     return [
       "fileId": fileId,
@@ -249,13 +369,13 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       "path": path,
       "width": width,
       "height": height,
-      "durationUs": Self.syntheticDurationUs,
+      "durationUs": durationUs,
       "startTimeUs": 0,
       "bitRate": 0,
-      "formatName": "synthetic",
-      "codecName": "macos_synthetic",
-      "codecLongName": "macOS Synthetic FlutterTexture",
-      "decoderName": "synthetic",
+      "formatName": formatName,
+      "codecName": codecName,
+      "codecLongName": codecLongName,
+      "decoderName": decoderName,
     ]
   }
 
@@ -348,11 +468,27 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private let lock = NSLock()
   private(set) var width: Int
   private(set) var height: Int
+  private let syntheticPattern: Bool
+  private let decodedBGRA: Data?
+  private let hashPrefix: String
   private var pixelBuffer: CVPixelBuffer?
 
   init(width: Int, height: Int) {
     self.width = width
     self.height = height
+    self.syntheticPattern = true
+    self.decodedBGRA = nil
+    self.hashPrefix = "macos-synthetic"
+    super.init()
+    rebuildPixelBuffer()
+  }
+
+  init(decoded: MacOSDecodedFirstFrame) {
+    self.width = decoded.width
+    self.height = decoded.height
+    self.syntheticPattern = false
+    self.decodedBGRA = decoded.bgra
+    self.hashPrefix = "macos-first-frame"
     super.init()
     rebuildPixelBuffer()
   }
@@ -361,6 +497,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     lock.lock()
     defer { lock.unlock() }
 
+    guard syntheticPattern else { return }
     guard width != self.width || height != self.height else { return }
     self.width = width
     self.height = height
@@ -398,7 +535,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
         height: height,
         avgLuma: 0.0,
         nonBlackRatio: 0.0,
-        hash: "macos-synthetic-empty"
+        hash: "\(hashPrefix)-empty"
       )
     }
     return measure(buffer: pixelBuffer)
@@ -432,7 +569,11 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       return
     }
 
-    fill(buffer: nextBuffer)
+    if let decodedBGRA {
+      copyBGRA(decodedBGRA, to: nextBuffer)
+    } else {
+      fill(buffer: nextBuffer)
+    }
     pixelBuffer = nextBuffer
   }
 
@@ -452,7 +593,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
         height: height,
         avgLuma: 0.0,
         nonBlackRatio: 0.0,
-        hash: "macos-synthetic-empty"
+        hash: "\(hashPrefix)-empty"
       )
     }
 
@@ -489,7 +630,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       height: height,
       avgLuma: lumaSum / Double(pixelCount),
       nonBlackRatio: Double(nonBlack) / Double(pixelCount),
-      hash: String(format: "macos-synthetic-%dx%d-%016llx", width, height, hash)
+      hash: String(format: "%@-%dx%d-%016llx", hashPrefix, width, height, hash)
     )
   }
 
@@ -513,6 +654,29 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
         pixels[offset + 1] = color.g
         pixels[offset + 2] = color.r
         pixels[offset + 3] = 255
+      }
+    }
+  }
+
+  private func copyBGRA(_ data: Data, to buffer: CVPixelBuffer) {
+    CVPixelBufferLockBaseAddress(buffer, [])
+    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+
+    guard let baseAddress = CVPixelBufferGetBaseAddress(buffer) else { return }
+    let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
+    let rowBytes = width * 4
+
+    data.withUnsafeBytes { rawSource in
+      guard let source = rawSource.baseAddress else { return }
+      for y in 0..<height {
+        let sourceOffset = y * rowBytes
+        guard sourceOffset < rawSource.count else { break }
+        let sourceRowBytes = min(rowBytes, rawSource.count - sourceOffset)
+        memcpy(
+          baseAddress.advanced(by: y * bytesPerRow),
+          source.advanced(by: sourceOffset),
+          sourceRowBytes
+        )
       }
     }
   }

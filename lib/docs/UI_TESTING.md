@@ -37,11 +37,12 @@ python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
 ```
 
 macOS 使用单独的 helper，因为 debug app 带 sandbox，不能直接读取仓库路径下的
-CSV。`mac-ui-test` 会先把脚本复制进 app container，再用 `--test-script` 启动
-macOS app：
+CSV 或媒体 fixture。`mac-ui-test` 会先把脚本复制进 app container，并把仓库内的
+repo-relative `ADD_MEDIA` 路径重写为 container 内的媒体副本，再用 `--test-script`
+启动 macOS app：
 
 ```bash
-python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv
+python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/first_frame_smoke.csv
 ```
 
 ## 测试目录约定

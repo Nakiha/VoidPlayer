@@ -1,0 +1,10 @@
+# macOS runner smoke for the transitional FFmpeg first-frame bridge.
+# Run with:
+#   python dev.py mac-ui-test ui_tests/macos/first_frame_smoke.csv
+@WINDOW, 960, 540
+0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+1.3, ASSERT_TRACK_COUNT, 1
+1.4, ASSERT_DURATION, 9999956, 10
+1.5, CAPTURE_VIEWPORT, first_frame
+1.6, ASSERT_CAPTURE_NOT_BLACK, first_frame, 0.5, 16.0
+1.7, QUIT, 0

@@ -58,6 +58,10 @@ class MainWindowScaffold extends StatelessWidget {
                       analysisDataSource: media.analysisDataSource,
                       viewModeEnabled: viewport.viewModeEnabled,
                       nativePlaybackAvailable: media.nativePlaybackAvailable,
+                      localFilePlaybackAvailable:
+                          media.localFilePlaybackAvailable,
+                      networkMediaAvailable: media.networkMediaAvailable,
+                      sshRemoteMediaAvailable: media.sshRemoteMediaAvailable,
                       nativeFilePickerAvailable:
                           media.nativeFilePickerAvailable,
                       analysisEnabled: media.analysisEnabled,

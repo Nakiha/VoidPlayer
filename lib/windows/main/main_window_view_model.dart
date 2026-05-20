@@ -47,6 +47,9 @@ class MainWindowViewportVm {
 class MainWindowMediaVm {
   final bool analysisEnabled;
   final bool nativePlaybackAvailable;
+  final bool localFilePlaybackAvailable;
+  final bool networkMediaAvailable;
+  final bool sshRemoteMediaAvailable;
   final bool nativeFilePickerAvailable;
   final List<TrackEntry> tracks;
   final Map<int, int> syncOffsets; // fileId -> offset in microseconds
@@ -57,6 +60,9 @@ class MainWindowMediaVm {
   const MainWindowMediaVm({
     required this.analysisEnabled,
     required this.nativePlaybackAvailable,
+    required this.localFilePlaybackAvailable,
+    required this.networkMediaAvailable,
+    required this.sshRemoteMediaAvailable,
     required this.nativeFilePickerAvailable,
     required this.tracks,
     required this.syncOffsets,

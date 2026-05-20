@@ -8,6 +8,7 @@ import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/analysis/analysis_overlay.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
 import 'package:void_player/app_log.dart';
+import 'package:void_player/feedback/app_feedback.dart';
 import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/track_manager.dart';
 import 'package:void_player/video_renderer_controller.dart';
@@ -146,9 +147,12 @@ void main() {
     return MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: registry == null
-          ? toolbar
-          : ActionFocus(actionRegistry: registry, child: toolbar),
+      home: AppFeedbackScope(
+        controller: AppFeedbackController(),
+        child: registry == null
+            ? toolbar
+            : ActionFocus(actionRegistry: registry, child: toolbar),
+      ),
     );
   }
 

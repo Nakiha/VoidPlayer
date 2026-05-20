@@ -33,6 +33,9 @@ class AppToolBar extends StatelessWidget {
   final AnalysisToolbarDataSource analysisDataSource;
   final bool viewModeEnabled;
   final bool nativePlaybackAvailable;
+  final bool localFilePlaybackAvailable;
+  final bool networkMediaAvailable;
+  final bool sshRemoteMediaAvailable;
   final bool nativeFilePickerAvailable;
   final bool analysisEnabled;
   final bool mediaInfoActive;
@@ -53,6 +56,9 @@ class AppToolBar extends StatelessWidget {
     required this.analysisDataSource,
     this.viewModeEnabled = false,
     this.nativePlaybackAvailable = true,
+    this.localFilePlaybackAvailable = true,
+    this.networkMediaAvailable = true,
+    this.sshRemoteMediaAvailable = true,
     this.nativeFilePickerAvailable = true,
     this.analysisEnabled = false,
     this.mediaInfoActive = false,
@@ -80,9 +86,9 @@ class AppToolBar extends StatelessWidget {
           const Spacer(),
           _AddMediaButton(
             localFileEnabled:
-                nativePlaybackAvailable && nativeFilePickerAvailable,
-            networkMediaEnabled: nativePlaybackAvailable,
-            sshRemoteMediaEnabled: nativePlaybackAvailable,
+                localFilePlaybackAvailable && nativeFilePickerAvailable,
+            networkMediaEnabled: networkMediaAvailable,
+            sshRemoteMediaEnabled: sshRemoteMediaAvailable,
             disabledTooltip: 'Playback is not available on this platform yet.',
             onOpenFile: onOpenFile,
             onOpenNetworkMedia: onOpenNetworkMedia,

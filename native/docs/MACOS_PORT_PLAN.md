@@ -291,6 +291,8 @@ Status on 2026-05-20:
   serial background queue, and marks the texture available on the Flutter thread.
 - Done: `ui_tests/macos/preview_playback_smoke.csv` verifies playback state, PTS movement, and
   visual frame changes while playing.
+- Done: macOS platform capabilities now expose local-file preview playback while keeping full
+  native playback, network media, SSH media, analysis windows, and audio out of scope.
 - Remaining: efficient continuous decode, frame queue scheduling, A/V sync, and real audio are
   still Phase 5 work. The seek/preview bridge is intentionally a runner-side proof, not the final
   shared native player architecture.

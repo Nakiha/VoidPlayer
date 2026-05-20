@@ -33,8 +33,9 @@ The runner now has a Phase 4 `FlutterTexture` bridge: `createPlayer` registers a
 `CVPixelBuffer` texture, returns deterministic track metadata, supports resize/destroy lifecycle
 calls, and exposes capture metrics for automation. Synthetic `macos-synthetic://...` inputs still
 render generated color bars, while sandbox-readable local files use a transitional FFmpeg
-first-frame bridge to decode one software frame into the texture. This is still a port-validation
-backend only; diagnostics report `available=false` until continuous native playback is wired in.
+seek/preview bridge to decode target-time software frames into the texture. macOS currently exposes
+local file playback controls for this preview path, but network/SSH media, analysis windows, real
+audio, and the final shared native player backend are still unavailable.
 
 The macOS runner also implements the shared `pickFiles` MethodChannel call with `NSOpenPanel`.
 Debug and Release entitlements include `com.apple.security.files.user-selected.read-only` so

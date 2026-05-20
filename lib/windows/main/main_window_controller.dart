@@ -183,7 +183,12 @@ class MainWindowController {
         analysisEnabled:
             platformCapabilities.externalAnalysisWindows &&
             trackManager.count > 0,
-        nativePlaybackAvailable: platformCapabilities.nativePlayback,
+        nativePlaybackAvailable:
+            platformCapabilities.nativePlayback ||
+            platformCapabilities.localFilePlayback,
+        localFilePlaybackAvailable: platformCapabilities.localFilePlayback,
+        networkMediaAvailable: platformCapabilities.nativePlayback,
+        sshRemoteMediaAvailable: platformCapabilities.nativePlayback,
         nativeFilePickerAvailable: platformCapabilities.nativeFilePicker,
         tracks: trackManager.entries,
         syncOffsets: _syncOffsets,

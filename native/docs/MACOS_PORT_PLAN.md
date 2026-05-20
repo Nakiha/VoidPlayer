@@ -287,9 +287,13 @@ Status on 2026-05-20:
   step commands decode a target-time software frame and replace the texture payload.
 - Done: `ui_tests/macos/seek_frame_smoke.csv` verifies that target-time seek captures are nonblack
   and visually different from earlier captures.
-- Remaining: continuous decode/playback, frame scheduling, and real audio are still Phase 5 work.
-  The seek-frame bridge is intentionally a runner-side proof, not the final shared native player
-  architecture.
+- Done: temporary timer-driven preview playback advances PTS, decodes target-time frames on a
+  serial background queue, and marks the texture available on the Flutter thread.
+- Done: `ui_tests/macos/preview_playback_smoke.csv` verifies playback state, PTS movement, and
+  visual frame changes while playing.
+- Remaining: efficient continuous decode, frame queue scheduling, A/V sync, and real audio are
+  still Phase 5 work. The seek/preview bridge is intentionally a runner-side proof, not the final
+  shared native player architecture.
 - Risk note: until the real player is connected, `isPlaying`, seek/step, and capture metrics are
   bridge-validation signals only. macOS feature availability must continue to use platform
   capabilities or diagnostics, not plausible transitional playback state.
@@ -316,7 +320,7 @@ Validation:
 - Manual launch: synthetic frame appears, resize does not crash, close/reopen does not leak handles.
 - Automated screenshot/hash test when macOS UI automation is available.
 - Current smokes:
-  `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/first_frame_smoke.csv ui_tests/macos/first_frame_controls_smoke.csv ui_tests/macos/seek_frame_smoke.csv`.
+  `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/first_frame_smoke.csv ui_tests/macos/first_frame_controls_smoke.csv ui_tests/macos/seek_frame_smoke.csv ui_tests/macos/preview_playback_smoke.csv`.
   The helper copies CSV scripts into the app container because the debug app is sandboxed.
 
 Exit criteria:

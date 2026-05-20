@@ -1,0 +1,16 @@
+# macOS runner smoke for transitional timer-driven preview playback.
+# Run with:
+#   python dev.py mac-ui-test ui_tests/macos/preview_playback_smoke.csv
+@WINDOW, 960, 540
+0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+1.3, ASSERT_TRACK_COUNT, 1
+1.4, CAPTURE_VIEWPORT, preview_start
+1.5, ASSERT_CAPTURE_NOT_BLACK, preview_start, 0.5, 16.0
+1.6, PLAY
+3.0, ASSERT_PLAYING
+3.1, ASSERT_POSITION_RANGE, 500000, 2500000
+3.2, CAPTURE_VIEWPORT, preview_after_play
+3.3, ASSERT_CAPTURE_CHANGED, preview_start, preview_after_play
+3.4, PAUSE
+3.7, ASSERT_PAUSED
+3.8, QUIT, 0

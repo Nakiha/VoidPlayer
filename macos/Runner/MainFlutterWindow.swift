@@ -84,6 +84,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private static let syntheticDurationUs = 10_000_000
 
   private let textureRegistry: FlutterTextureRegistry
+  private let playbackQueue = DispatchQueue(label: "dev.nakiha.voidplayer.macos.preview-playback")
   private var texture: MacOSSyntheticTexture?
   private var textureId: Int64?
   private var tracks: [[String: Any]] = []
@@ -93,6 +94,9 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private var isPlaying = false
   private var backendName = "synthetic-texture"
   private var currentMediaPath: String?
+  private var playbackSpeed = 1.0
+  private var playbackTimer: DispatchSourceTimer?
+  private var playbackGeneration = 0
 
   init(textureRegistry: FlutterTextureRegistry) {
     self.textureRegistry = textureRegistry
@@ -111,8 +115,14 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
-    case "initLogging", "setSpeed", "setLoopRange", "setAudibleTrack",
+    case "initLogging", "setLoopRange", "setAudibleTrack",
          "setViewportBackgroundColor", "setTrackOffset":
+      result(nil)
+    case "setSpeed":
+      playbackSpeed = max(0.01, doubleArg(call.arguments, "speed") ?? 1.0)
+      if isPlaying {
+        startPreviewPlaybackTimer()
+      }
       result(nil)
     case "createPlayer":
       result(createPlayer(arguments: call.arguments))
@@ -129,12 +139,15 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       result(nil)
     case "play":
       isPlaying = textureId != nil
+      startPreviewPlaybackTimer()
       result(nil)
     case "pause":
       isPlaying = false
+      stopPreviewPlaybackTimer()
       result(nil)
     case "seek":
       let targetPtsUs = intArg(call.arguments, "ptsUs") ?? 0
+      stopPreviewPlaybackTimer()
       currentPtsUs = max(0, min(activeDurationUs(), targetPtsUs))
       if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
         result(error)
@@ -143,6 +156,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       markFrameAvailable()
       result(nil)
     case "stepForward":
+      stopPreviewPlaybackTimer()
       currentPtsUs = min(activeDurationUs(), currentPtsUs + 33_333)
       if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
         result(error)
@@ -151,6 +165,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       markFrameAvailable()
       result(nil)
     case "stepBackward":
+      stopPreviewPlaybackTimer()
       currentPtsUs = max(0, currentPtsUs - 33_333)
       if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
         result(error)
@@ -277,6 +292,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   }
 
   private func destroyPlayer() {
+    stopPreviewPlaybackTimer()
     if let id = textureId {
       textureRegistry.unregisterTexture(id)
     }
@@ -400,6 +416,82 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     }
   }
 
+  private func startPreviewPlaybackTimer() {
+    stopPreviewPlaybackTimer()
+    guard backendName == "ffmpeg-first-frame",
+          let path = currentMediaPath,
+          textureId != nil else {
+      return
+    }
+
+    let generation = playbackGeneration + 1
+    playbackGeneration = generation
+    let startPtsUs = currentPtsUs
+    let durationUs = activeDurationUs()
+    let speed = playbackSpeed
+    let startNanos = DispatchTime.now().uptimeNanoseconds
+    let timer = DispatchSource.makeTimerSource(queue: playbackQueue)
+    timer.schedule(deadline: .now() + .milliseconds(120), repeating: .milliseconds(120))
+    timer.setEventHandler { [weak self] in
+      self?.decodePreviewPlaybackTick(
+        path: path,
+        startPtsUs: startPtsUs,
+        durationUs: durationUs,
+        speed: speed,
+        generation: generation,
+        startNanos: startNanos
+      )
+    }
+    playbackTimer = timer
+    timer.resume()
+  }
+
+  private func stopPreviewPlaybackTimer() {
+    playbackGeneration += 1
+    playbackTimer?.setEventHandler {}
+    playbackTimer?.cancel()
+    playbackTimer = nil
+  }
+
+  private func decodePreviewPlaybackTick(
+    path: String,
+    startPtsUs: Int,
+    durationUs: Int,
+    speed: Double,
+    generation: Int,
+    startNanos: UInt64
+  ) {
+    let elapsedNanos = DispatchTime.now().uptimeNanoseconds - startNanos
+    let elapsedUs = Int((Double(elapsedNanos) / 1000.0) * speed)
+    let targetPtsUs = min(durationUs, startPtsUs + max(0, elapsedUs))
+
+    do {
+      let decoded = try MacOSFirstFrameDecode.decode(path: path, targetPtsUs: targetPtsUs)
+      DispatchQueue.main.async { [weak self] in
+        guard let self,
+              self.playbackGeneration == generation,
+              self.isPlaying,
+              self.backendName == "ffmpeg-first-frame" else {
+          return
+        }
+        self.currentPtsUs = targetPtsUs
+        self.texture?.update(decoded: decoded)
+        self.markFrameAvailable()
+        if targetPtsUs >= durationUs {
+          self.isPlaying = false
+          self.stopPreviewPlaybackTimer()
+        }
+      }
+    } catch {
+      DispatchQueue.main.async { [weak self] in
+        guard let self, self.playbackGeneration == generation else { return }
+        NSLog("VoidPlayer macOS preview playback decode failed: \(error)")
+        self.isPlaying = false
+        self.stopPreviewPlaybackTimer()
+      }
+    }
+  }
+
   private func trackMap(
     fileId: Int,
     slot: Int,
@@ -479,6 +571,17 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     }
     if let value = map[key] as? NSNumber {
       return value.boolValue
+    }
+    return nil
+  }
+
+  private func doubleArg(_ arguments: Any?, _ key: String) -> Double? {
+    guard let map = arguments as? [String: Any] else { return nil }
+    if let value = map[key] as? Double {
+      return value
+    }
+    if let value = map[key] as? NSNumber {
+      return value.doubleValue
     }
     return nil
   }

@@ -42,7 +42,7 @@ repo-relative `ADD_MEDIA` 路径重写为 container 内的媒体副本，再用 
 启动 macOS app：
 
 ```bash
-python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/first_frame_smoke.csv ui_tests/macos/first_frame_controls_smoke.csv
+python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/first_frame_smoke.csv ui_tests/macos/first_frame_controls_smoke.csv ui_tests/macos/seek_frame_smoke.csv
 ```
 
 ## 测试目录约定

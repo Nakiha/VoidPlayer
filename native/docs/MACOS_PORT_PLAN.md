@@ -283,9 +283,13 @@ Status on 2026-05-20:
   metrics.
 - Done: `ui_tests/macos/first_frame_controls_smoke.csv` exercises transitional play/pause,
   seek/step, duration clamping, and capture after control commands.
-- Remaining: continuous decode/playback, seek-driven frame updates, and real audio are still Phase 5
-  work. The first-frame bridge is intentionally a runner-side proof, not the final shared native
-  player architecture.
+- Done: seek-driven frame refresh is available in the transitional runner bridge. `SEEK_TO` and
+  step commands decode a target-time software frame and replace the texture payload.
+- Done: `ui_tests/macos/seek_frame_smoke.csv` verifies that target-time seek captures are nonblack
+  and visually different from earlier captures.
+- Remaining: continuous decode/playback, frame scheduling, and real audio are still Phase 5 work.
+  The seek-frame bridge is intentionally a runner-side proof, not the final shared native player
+  architecture.
 - Risk note: until the real player is connected, `isPlaying`, seek/step, and capture metrics are
   bridge-validation signals only. macOS feature availability must continue to use platform
   capabilities or diagnostics, not plausible transitional playback state.
@@ -312,7 +316,7 @@ Validation:
 - Manual launch: synthetic frame appears, resize does not crash, close/reopen does not leak handles.
 - Automated screenshot/hash test when macOS UI automation is available.
 - Current smokes:
-  `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/first_frame_smoke.csv ui_tests/macos/first_frame_controls_smoke.csv`.
+  `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/first_frame_smoke.csv ui_tests/macos/first_frame_controls_smoke.csv ui_tests/macos/seek_frame_smoke.csv`.
   The helper copies CSV scripts into the app container because the debug app is sandboxed.
 
 Exit criteria:

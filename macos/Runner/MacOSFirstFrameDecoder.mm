@@ -139,10 +139,11 @@ int64_t frame_pts_us(const AVFrame* frame, const AVStream* stream) {
 
 }  // namespace
 
-int VPMacOSDecodeFirstVideoFrameBGRA(const char* path,
-                                     VPMacOSDecodedFrame* out,
-                                     char* error,
-                                     size_t error_size) {
+int VPMacOSDecodeVideoFrameBGRA(const char* path,
+                                int64_t target_pts_us,
+                                VPMacOSDecodedFrame* out,
+                                char* error,
+                                size_t error_size) {
   if (!path || !out) {
     write_error(error, error_size, "invalid decoder arguments");
     return -1;
@@ -209,16 +210,48 @@ int VPMacOSDecodeFirstVideoFrameBGRA(const char* path,
     return ret;
   }
 
+  const int64_t clamped_target_pts_us = std::max<int64_t>(0, target_pts_us);
+  if (clamped_target_pts_us > 0) {
+    const int64_t target_ts =
+        av_rescale_q(clamped_target_pts_us, AVRational{1, 1000000}, stream->time_base);
+    ret = av_seek_frame(format_ctx, stream_index, target_ts, AVSEEK_FLAG_BACKWARD);
+    if (ret < 0) {
+      write_ffmpeg_error(error, error_size, "av_seek_frame failed", ret);
+      avcodec_free_context(&codec_ctx);
+      close_format();
+      return ret;
+    }
+    avcodec_flush_buffers(codec_ctx);
+  }
+
   AVPacket* packet = av_packet_alloc();
   AVFrame* frame = av_frame_alloc();
-  if (!packet || !frame) {
+  AVFrame* candidate = av_frame_alloc();
+  if (!packet || !frame || !candidate) {
     write_error(error, error_size, "failed to allocate packet/frame");
     av_packet_free(&packet);
     av_frame_free(&frame);
+    av_frame_free(&candidate);
     avcodec_free_context(&codec_ctx);
     close_format();
     return AVERROR(ENOMEM);
   }
+
+  bool have_candidate = false;
+  auto select_candidate = [&]() -> int {
+    av_frame_unref(candidate);
+    const int ref_ret = av_frame_ref(candidate, frame);
+    if (ref_ret < 0) {
+      write_ffmpeg_error(error, error_size, "av_frame_ref failed", ref_ret);
+      return ref_ret;
+    }
+    have_candidate = true;
+    if (clamped_target_pts_us <= 0 || frame->pts == AV_NOPTS_VALUE ||
+        frame_pts_us(frame, stream) >= clamped_target_pts_us) {
+      return 1;
+    }
+    return 0;
+  };
 
   bool decoded = false;
   while (!decoded && (ret = av_read_frame(format_ctx, packet)) >= 0) {
@@ -235,7 +268,18 @@ int VPMacOSDecodeFirstVideoFrameBGRA(const char* path,
     }
 
     while ((ret = avcodec_receive_frame(codec_ctx, frame)) == 0) {
-      decoded = true;
+      const int selection = select_candidate();
+      av_frame_unref(frame);
+      if (selection < 0) {
+        ret = selection;
+        break;
+      }
+      if (selection > 0) {
+        decoded = true;
+        break;
+      }
+    }
+    if (ret < 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF) {
       break;
     }
     if (ret != 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF) {
@@ -247,8 +291,22 @@ int VPMacOSDecodeFirstVideoFrameBGRA(const char* path,
   if (!decoded && ret == AVERROR_EOF) {
     ret = avcodec_send_packet(codec_ctx, nullptr);
     if (ret >= 0 || ret == AVERROR_EOF) {
-      decoded = avcodec_receive_frame(codec_ctx, frame) == 0;
+      while ((ret = avcodec_receive_frame(codec_ctx, frame)) == 0) {
+        const int selection = select_candidate();
+        av_frame_unref(frame);
+        if (selection < 0) {
+          ret = selection;
+          break;
+        }
+        if (selection > 0) {
+          decoded = true;
+          break;
+        }
+      }
     }
+  }
+  if (!decoded && have_candidate) {
+    decoded = true;
   }
 
   if (!decoded) {
@@ -257,44 +315,55 @@ int VPMacOSDecodeFirstVideoFrameBGRA(const char* path,
     }
     av_packet_free(&packet);
     av_frame_free(&frame);
+    av_frame_free(&candidate);
     avcodec_free_context(&codec_ctx);
     close_format();
     return ret < 0 ? ret : AVERROR(EINVAL);
   }
 
-  const size_t bgra_size = static_cast<size_t>(frame->width) * frame->height * 4;
+  const size_t bgra_size = static_cast<size_t>(candidate->width) * candidate->height * 4;
   uint8_t* bgra = static_cast<uint8_t*>(std::malloc(bgra_size));
   if (!bgra) {
     write_error(error, error_size, "failed to allocate BGRA frame");
     av_packet_free(&packet);
     av_frame_free(&frame);
+    av_frame_free(&candidate);
     avcodec_free_context(&codec_ctx);
     close_format();
     return AVERROR(ENOMEM);
   }
 
-  if (!convert_frame_to_bgra(frame, bgra)) {
-    write_error(error, error_size, "unsupported first-frame pixel format");
+  if (!convert_frame_to_bgra(candidate, bgra)) {
+    write_error(error, error_size, "unsupported decoded pixel format");
     std::free(bgra);
     av_packet_free(&packet);
     av_frame_free(&frame);
+    av_frame_free(&candidate);
     avcodec_free_context(&codec_ctx);
     close_format();
     return AVERROR(EINVAL);
   }
 
-  out->width = frame->width;
-  out->height = frame->height;
+  out->width = candidate->width;
+  out->height = candidate->height;
   out->duration_us = duration_us(format_ctx, stream);
-  out->pts_us = frame_pts_us(frame, stream);
+  out->pts_us = frame_pts_us(candidate, stream);
   out->bgra = bgra;
   out->bgra_size = bgra_size;
 
   av_packet_free(&packet);
   av_frame_free(&frame);
+  av_frame_free(&candidate);
   avcodec_free_context(&codec_ctx);
   close_format();
   return 0;
+}
+
+int VPMacOSDecodeFirstVideoFrameBGRA(const char* path,
+                                     VPMacOSDecodedFrame* out,
+                                     char* error,
+                                     size_t error_size) {
+  return VPMacOSDecodeVideoFrameBGRA(path, 0, out, error, error_size);
 }
 
 void VPMacOSDecodedFrameFree(VPMacOSDecodedFrame* frame) {

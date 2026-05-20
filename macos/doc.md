@@ -44,6 +44,8 @@ disabled while `nativePlayback=false`.
 Use `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv` for the synthetic
 texture smoke, `python dev.py mac-ui-test ui_tests/macos/first_frame_smoke.csv` for the FFmpeg
 first-frame bridge, and `python dev.py mac-ui-test ui_tests/macos/first_frame_controls_smoke.csv`
-for transitional play/pause/seek/step command semantics. The helper copies CSV scripts into the app
-container before launch and rewrites repo-relative `ADD_MEDIA` fixtures to sandbox-local copies
+for transitional play/pause/seek/step command semantics. Use
+`python dev.py mac-ui-test ui_tests/macos/seek_frame_smoke.csv` to verify that seek commands decode
+and publish a new target-time frame through the same texture. The helper copies CSV scripts into the
+app container before launch and rewrites repo-relative `ADD_MEDIA` fixtures to sandbox-local copies
 because the macOS debug app is sandboxed and cannot read arbitrary repository paths directly.

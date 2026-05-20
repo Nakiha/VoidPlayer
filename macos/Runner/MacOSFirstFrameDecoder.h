@@ -22,6 +22,12 @@ int VPMacOSDecodeFirstVideoFrameBGRA(const char* path,
                                      char* error,
                                      size_t error_size);
 
+int VPMacOSDecodeVideoFrameBGRA(const char* path,
+                                int64_t target_pts_us,
+                                VPMacOSDecodedFrame* out,
+                                char* error,
+                                size_t error_size);
+
 void VPMacOSDecodedFrameFree(VPMacOSDecodedFrame* frame);
 
 #ifdef __cplusplus

@@ -25,11 +25,17 @@ private enum MacOSFirstFrameDecodeError: Error, CustomStringConvertible {
 }
 
 private enum MacOSFirstFrameDecode {
-  static func decode(path: String) throws -> MacOSDecodedFirstFrame {
+  static func decode(path: String, targetPtsUs: Int = 0) throws -> MacOSDecodedFirstFrame {
     var frame = VPMacOSDecodedFrame()
     var error = [CChar](repeating: 0, count: 1024)
     let ret = path.withCString { pathPointer in
-      VPMacOSDecodeFirstVideoFrameBGRA(pathPointer, &frame, &error, error.count)
+      VPMacOSDecodeVideoFrameBGRA(
+        pathPointer,
+        Int64(targetPtsUs),
+        &frame,
+        &error,
+        error.count
+      )
     }
     defer {
       VPMacOSDecodedFrameFree(&frame)
@@ -86,6 +92,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private var currentDurationUs = 0
   private var isPlaying = false
   private var backendName = "synthetic-texture"
+  private var currentMediaPath: String?
 
   init(textureRegistry: FlutterTextureRegistry) {
     self.textureRegistry = textureRegistry
@@ -129,14 +136,26 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     case "seek":
       let targetPtsUs = intArg(call.arguments, "ptsUs") ?? 0
       currentPtsUs = max(0, min(activeDurationUs(), targetPtsUs))
+      if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
+        result(error)
+        return
+      }
       markFrameAvailable()
       result(nil)
     case "stepForward":
       currentPtsUs = min(activeDurationUs(), currentPtsUs + 33_333)
+      if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
+        result(error)
+        return
+      }
       markFrameAvailable()
       result(nil)
     case "stepBackward":
       currentPtsUs = max(0, currentPtsUs - 33_333)
+      if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
+        result(error)
+        return
+      }
       markFrameAvailable()
       result(nil)
     case "currentPts":
@@ -205,6 +224,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       trackCodecLongName = "macOS Synthetic FlutterTexture"
       trackDecoderName = "synthetic"
       backendName = "synthetic-texture"
+      currentMediaPath = nil
     } else {
       do {
         let decoded = try MacOSFirstFrameDecode.decode(path: firstPath)
@@ -217,6 +237,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         trackCodecLongName = "macOS FFmpeg first-frame bridge"
         trackDecoderName = "ffmpeg_software_first_frame"
         backendName = "ffmpeg-first-frame"
+        currentMediaPath = firstPath
       } catch {
         return FlutterError(
           code: "DECODE_FAILED",
@@ -266,6 +287,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     currentDurationUs = 0
     isPlaying = false
     backendName = "synthetic-texture"
+    currentMediaPath = nil
   }
 
   private func addTrack(arguments: Any?) -> Any {
@@ -353,6 +375,29 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
   private func activeDurationUs() -> Int {
     currentDurationUs > 0 ? currentDurationUs : Self.syntheticDurationUs
+  }
+
+  private func refreshDecodedFrameIfNeeded(targetPtsUs: Int) -> FlutterError? {
+    guard backendName == "ffmpeg-first-frame",
+          let currentMediaPath,
+          let texture else {
+      return nil
+    }
+
+    do {
+      let decoded = try MacOSFirstFrameDecode.decode(
+        path: currentMediaPath,
+        targetPtsUs: targetPtsUs
+      )
+      texture.update(decoded: decoded)
+      return nil
+    } catch {
+      return FlutterError(
+        code: "DECODE_FAILED",
+        message: "Failed to decode macOS video frame",
+        details: "\(error)"
+      )
+    }
   }
 
   private func trackMap(
@@ -473,7 +518,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private(set) var width: Int
   private(set) var height: Int
   private let syntheticPattern: Bool
-  private let decodedBGRA: Data?
+  private var decodedBGRA: Data?
   private let hashPrefix: String
   private var pixelBuffer: CVPixelBuffer?
 
@@ -505,6 +550,17 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     guard width != self.width || height != self.height else { return }
     self.width = width
     self.height = height
+    rebuildPixelBufferLocked()
+  }
+
+  func update(decoded: MacOSDecodedFirstFrame) {
+    lock.lock()
+    defer { lock.unlock() }
+
+    guard !syntheticPattern else { return }
+    width = decoded.width
+    height = decoded.height
+    decodedBGRA = decoded.bgra
     rebuildPixelBufferLocked()
   }
 

@@ -12,7 +12,6 @@
 #include <sstream>
 #include <chrono>
 #include <algorithm>
-#include <windows.h>
 
 extern "C" {
 #include <libavutil/hwcontext.h>
@@ -86,24 +85,6 @@ bool renderer_owned_d3d11_supports_stream_format(AVPixelFormat format) {
         return true;
     default:
         return false;
-    }
-}
-
-__declspec(noinline)
-int seh_open_codec(AVCodecContext* ctx,
-                   const AVCodec* codec,
-                   AVDictionary** options,
-                   DecodeThread::CodecOpenFunction open_fn) {
-    __try {
-        if (open_fn) {
-            return open_fn(ctx, codec, options);
-        }
-        return avcodec_open2(ctx, codec, options);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        DWORD code = GetExceptionCode();
-        spdlog::error("[DecodeThread] SEH exception in avcodec_open2: {:#x}",
-                      static_cast<unsigned long>(code));
-        return codec_loop_seh_caught_code();
     }
 }
 
@@ -278,7 +259,7 @@ bool DecodeThread::open_codec() {
         }
     }
 
-    int ret = seh_open_codec(codec_ctx_, codec_, nullptr, codec_open_for_test_);
+    int ret = open_codec_seh_guarded(codec_ctx_, codec_, nullptr, codec_open_for_test_);
     if (ret == 0) return true;
 
     spdlog::error("[DecodeThread] Failed to open codec: {:#x}", static_cast<unsigned>(ret));
@@ -302,7 +283,7 @@ bool DecodeThread::open_codec() {
             return false;
         }
 
-        int ret2 = seh_open_codec(codec_ctx_, codec_, nullptr, codec_open_for_test_);
+        int ret2 = open_codec_seh_guarded(codec_ctx_, codec_, nullptr, codec_open_for_test_);
         if (ret2 < 0) {
             spdlog::error("[DecodeThread] Software fallback also failed: {:#x}", static_cast<unsigned>(ret2));
             return false;

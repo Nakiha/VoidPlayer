@@ -57,3 +57,25 @@ TEST_CASE("CodecLoop: send receive wrappers fail closed for unopened codec conte
     av_packet_free(&packet);
     avcodec_free_context(&ctx);
 }
+
+TEST_CASE("CodecLoop: open wrapper supports injected open function",
+          "[decode_thread][codec_loop]") {
+    const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_H264);
+    REQUIRE(codec != nullptr);
+
+    AVCodecContext* ctx = avcodec_alloc_context3(codec);
+    REQUIRE(ctx != nullptr);
+
+    bool called = false;
+    auto open_fn = [](AVCodecContext*, const AVCodec*, AVDictionary**) -> int {
+        return AVERROR_INVALIDDATA;
+    };
+    const int ret = open_codec_seh_guarded(ctx, codec, nullptr, open_fn);
+    called = true;
+
+    REQUIRE(called);
+    REQUIRE(ret == AVERROR_INVALIDDATA);
+    REQUIRE(classify_codec_loop_result(ret) == CodecLoopResult::Error);
+
+    avcodec_free_context(&ctx);
+}

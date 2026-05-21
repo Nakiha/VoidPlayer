@@ -1,5 +1,6 @@
 #pragma once
 #include "media/packet_queue.h"
+#include "video_renderer/decode/codec_loop.h"
 #include "video_renderer/buffer/track_buffer.h"
 #include "video_renderer/decode/decoded_frame_publisher.h"
 #include "video_renderer/decode/decode_seek_epoch.h"
@@ -68,10 +69,6 @@ struct DecodeMemoryStats {
 
 class DecodeThread {
 public:
-    using CodecOpenFunction = int (*)(AVCodecContext* ctx,
-                                      const AVCodec* codec,
-                                      AVDictionary** options);
-
     DecodeThread(PacketQueue& input_queue, TrackBuffer& output_buffer,
                  const AVCodecParameters* codec_params, AVRational time_base);
     ~DecodeThread();

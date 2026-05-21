@@ -21,6 +21,24 @@ constexpr int kCodecLoopSehCaught = AVERROR_EXTERNAL;
 // calls. Keep each __try/__except in a noinline function without C++ objects
 // with destructors so MSVC does not merge the SEH scope into a caller.
 __declspec(noinline)
+int seh_open_codec(AVCodecContext* ctx,
+                   const AVCodec* codec,
+                   AVDictionary** options,
+                   CodecOpenFunction open_fn) {
+    __try {
+        if (open_fn) {
+            return open_fn(ctx, codec, options);
+        }
+        return avcodec_open2(ctx, codec, options);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        DWORD code = GetExceptionCode();
+        spdlog::error("[DecodeThread] SEH exception in avcodec_open2: {:#x}",
+                      static_cast<unsigned long>(code));
+        return kCodecLoopSehCaught;
+    }
+}
+
+__declspec(noinline)
 int seh_send_packet(AVCodecContext* ctx, const AVPacket* pkt) {
     __try {
         return avcodec_send_packet(ctx, pkt);
@@ -45,6 +63,16 @@ int seh_receive_frame(AVCodecContext* ctx, AVFrame* frame) {
 }
 
 #else
+
+int seh_open_codec(AVCodecContext* ctx,
+                   const AVCodec* codec,
+                   AVDictionary** options,
+                   CodecOpenFunction open_fn) {
+    if (open_fn) {
+        return open_fn(ctx, codec, options);
+    }
+    return avcodec_open2(ctx, codec, options);
+}
 
 int seh_send_packet(AVCodecContext* ctx, const AVPacket* pkt) {
     return avcodec_send_packet(ctx, pkt);
@@ -86,6 +114,13 @@ bool codec_loop_is_again_or_eof(int ret) {
 
 bool codec_loop_is_seh_caught(int ret) {
     return classify_codec_loop_result(ret) == CodecLoopResult::SehCaught;
+}
+
+int open_codec_seh_guarded(AVCodecContext* ctx,
+                           const AVCodec* codec,
+                           AVDictionary** options,
+                           CodecOpenFunction open_fn) {
+    return seh_open_codec(ctx, codec, options, open_fn);
 }
 
 int send_codec_packet_seh_guarded(AVCodecContext* ctx,

@@ -315,9 +315,9 @@ Status on 2026-05-20:
 - Done: preview frame decode ownership moved out of the Flutter runner into
   `native/macos/preview_frame_decoder.*`, with the runner reduced to a thin Xcode shim until the
   final native player facade exists.
-- Done: the preview decoder now links the shared `void_media_ffmpeg` target and uses the existing
-  native timestamp rescaler, so bridge scaffolding is converging toward shared decode components
-  instead of carrying parallel timestamp logic.
+- Done: the preview decoder now links the shared `void_media_ffmpeg` target and uses existing
+  native timestamp and software BGRA conversion helpers, so bridge scaffolding is converging toward
+  shared decode components instead of carrying parallel timestamp/color logic.
 - Remaining: efficient continuous decode, frame queue scheduling, A/V sync, and real audio are
   still Phase 5 work. The seek/preview bridge is intentionally a runner-side proof, not the final
   shared native player architecture.

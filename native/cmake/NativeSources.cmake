@@ -28,6 +28,7 @@ set(VOID_MEDIA_FFMPEG_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/decode/exact_seek_publish_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/exact_seek_window.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/frame_timestamp_rescaler.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/decode/software_bgra_converter.cpp"
 )
 
 set(VOID_MACOS_PREVIEW_SOURCES

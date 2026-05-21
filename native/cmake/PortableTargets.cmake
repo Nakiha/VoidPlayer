@@ -63,6 +63,15 @@ if(APPLE)
     )
     add_test(NAME macos_media_smoke COMMAND macos_media_smoke)
 
+    add_executable(software_bgra_converter_smoke
+        "${VOID_NATIVE_DIR}/tools/software_bgra_converter_smoke.cpp"
+    )
+    void_apply_native_compile_options(software_bgra_converter_smoke)
+    target_link_libraries(software_bgra_converter_smoke PRIVATE
+        void_media_ffmpeg
+    )
+    add_test(NAME software_bgra_converter_smoke COMMAND software_bgra_converter_smoke)
+
     add_executable(macos_preview_frame_decoder_smoke
         "${VOID_NATIVE_DIR}/tools/macos_preview_frame_decoder_smoke.cpp"
     )

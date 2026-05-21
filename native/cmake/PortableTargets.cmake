@@ -72,6 +72,15 @@ if(APPLE)
     )
     add_test(NAME software_bgra_converter_smoke COMMAND software_bgra_converter_smoke)
 
+    add_executable(software_frame_queue_smoke
+        "${VOID_NATIVE_DIR}/tools/software_frame_queue_smoke.cpp"
+    )
+    void_apply_native_compile_options(software_frame_queue_smoke)
+    target_link_libraries(software_frame_queue_smoke PRIVATE
+        void_media_ffmpeg
+    )
+    add_test(NAME software_frame_queue_smoke COMMAND software_frame_queue_smoke)
+
     add_executable(macos_preview_frame_decoder_smoke
         "${VOID_NATIVE_DIR}/tools/macos_preview_frame_decoder_smoke.cpp"
     )

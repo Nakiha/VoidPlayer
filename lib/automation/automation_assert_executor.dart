@@ -11,6 +11,10 @@ import '../windows/win32ffi.dart' deferred as win32;
 import 'automation_probe.dart';
 import 'automation_run_state.dart';
 
+int _gpuBreakdownBytes(Map<String, dynamic> breakdown, String key) {
+  return breakdown[key] as int? ?? 0;
+}
+
 class AutomationAssertExecutor {
   final AutomationProbe probe;
   final AutomationRunState state;
@@ -372,6 +376,7 @@ class AutomationAssertExecutor {
         :final maxRssDeltaMb,
         :final maxDedicatedGpuDeltaMb,
         :final maxPrivateDeltaMb,
+        :final maxKnownGpuDeltaMb,
       ):
         final expected = state.resourceBaselines[baseline];
         if (expected == null) {
@@ -402,6 +407,10 @@ class AutomationAssertExecutor {
         final heapReserveDeltaMb = AutomationProbe.bytesToMb(
           actual.heapReservedBytes - expected.heapReservedBytes,
         );
+        final knownGpuDeltaMb = AutomationProbe.bytesToMb(
+          _gpuBreakdownBytes(actual.gpuBreakdown, 'totalEstimatedBytes') -
+              _gpuBreakdownBytes(expected.gpuBreakdown, 'totalEstimatedBytes'),
+        );
         log.info(
           'ASSERT_RESOURCE_USAGE_DELTA_BELOW $baseline: '
           'rss=${rssDeltaMb.toStringAsFixed(1)}MB '
@@ -415,17 +424,22 @@ class AutomationAssertExecutor {
         );
         final privateFailed =
             maxPrivateDeltaMb != null && privateDeltaMb > maxPrivateDeltaMb;
+        final knownGpuFailed =
+            maxKnownGpuDeltaMb != null && knownGpuDeltaMb > maxKnownGpuDeltaMb;
         if (rssDeltaMb > maxRssDeltaMb ||
             gpuDeltaMb > maxDedicatedGpuDeltaMb ||
-            privateFailed) {
+            privateFailed ||
+            knownGpuFailed) {
           throw AssertionError(
             'Expected resource delta from $baseline <= '
             'rss=${maxRssDeltaMb.toStringAsFixed(1)}MB, '
             'dedicatedGpu=${maxDedicatedGpuDeltaMb.toStringAsFixed(1)}MB'
-            '${maxPrivateDeltaMb == null ? '' : ', private=${maxPrivateDeltaMb.toStringAsFixed(1)}MB'}; '
+            '${maxPrivateDeltaMb == null ? '' : ', private=${maxPrivateDeltaMb.toStringAsFixed(1)}MB'}'
+            '${maxKnownGpuDeltaMb == null ? '' : ', knownGpu=${maxKnownGpuDeltaMb.toStringAsFixed(1)}MB'}; '
             'got rss=${rssDeltaMb.toStringAsFixed(1)}MB, '
             'private=${privateDeltaMb.toStringAsFixed(1)}MB, '
-            'dedicatedGpu=${gpuDeltaMb.toStringAsFixed(1)}MB',
+            'dedicatedGpu=${gpuDeltaMb.toStringAsFixed(1)}MB, '
+            'knownGpu=${knownGpuDeltaMb.toStringAsFixed(1)}MB',
           );
         }
       case AssertNativeSeekCountDelta(:final baseline, :final expectedDelta):

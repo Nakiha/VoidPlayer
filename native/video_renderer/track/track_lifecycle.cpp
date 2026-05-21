@@ -224,7 +224,7 @@ TrackSeekFacts inspect_track_seek_facts(
     TrackSeekFacts facts;
     facts.target = resolve_track_seek_target(track, global_target_pts_us);
     facts.warn_h264_flv_exact_seek =
-        type == SeekType::Exact && is_h264_flv_track(track);
+        is_exact_seek_type(type) && is_h264_flv_track(track);
     facts.hardware_decode_enabled =
         track.decode_thread && track.decode_thread->is_hardware_decode_enabled();
     facts.hevc_hardware_seek = track_uses_hardware_codec(track, AV_CODEC_ID_HEVC);

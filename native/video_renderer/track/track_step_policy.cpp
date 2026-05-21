@@ -193,24 +193,30 @@ StepForwardExactSeekTarget choose_step_forward_exact_seek_target(
     StepForwardExactSeekTarget result;
     result.clock_pts_us = clock_pts_us;
     result.base_pts_us = clock_pts_us;
+    result.frame_duration_us = compute_min_current_frame_duration_us(tracks);
+    const int64_t forward_slop_us = std::max<int64_t>(2000, result.frame_duration_us / 2);
+    const auto apply_candidate_base = [&](int64_t candidate_us) {
+        if (candidate_us <= clock_pts_us + forward_slop_us) {
+            result.base_pts_us = std::max(candidate_us, clock_pts_us);
+        }
+    };
     result.reference_slot = tracks.first_active_slot();
     if (result.reference_slot >= 0) {
         const auto slot = static_cast<size_t>(result.reference_slot);
         const auto& track = tracks[slot];
         if (track) {
             if (present_decision_slot_matches_track(last_decision, tracks, slot)) {
-                result.base_pts_us =
-                    last_decision.frames[slot]->pts_us + track->offset_us;
+                apply_candidate_base(
+                    last_decision.frames[slot]->pts_us + track->offset_us);
             } else if (track->track_buffer) {
                 auto frame = track->track_buffer->peek(0);
                 if (frame.has_value()) {
-                    result.base_pts_us = frame->pts_us + track->offset_us;
+                    apply_candidate_base(frame->pts_us + track->offset_us);
                 }
             }
         }
     }
 
-    result.frame_duration_us = compute_min_current_frame_duration_us(tracks);
     result.target_pts_us =
         result.base_pts_us + result.frame_duration_us + 1000;
     if (cached_duration_us > 0 && result.target_pts_us > cached_duration_us) {

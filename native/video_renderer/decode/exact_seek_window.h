@@ -18,6 +18,7 @@ bool is_exact_seek_preview_window_ready(int64_t target_pts_us,
                                         size_t min_window = kExactSeekPreviewWindowFrames);
 std::optional<size_t> select_exact_seek_preview_index(
     const std::vector<int64_t>& candidate_pts_us,
-    int64_t target_pts_us);
+    int64_t target_pts_us,
+    bool prefer_after_target = false);
 
 } // namespace vr

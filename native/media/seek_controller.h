@@ -8,8 +8,17 @@ namespace vr {
 
 enum class SeekType {
     Keyframe,
-    Exact
+    Exact,
+    ExactStepForward
 };
+
+inline bool is_exact_seek_type(SeekType type) {
+    return type == SeekType::Exact || type == SeekType::ExactStepForward;
+}
+
+inline bool is_step_forward_seek_type(SeekType type) {
+    return type == SeekType::ExactStepForward;
+}
 
 struct SeekRequest {
     int64_t target_pts_us = 0;

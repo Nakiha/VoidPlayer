@@ -25,23 +25,39 @@ bool is_exact_seek_preview_window_ready(int64_t target_pts_us,
 
 std::optional<size_t> select_exact_seek_preview_index(
     const std::vector<int64_t>& candidate_pts_us,
-    int64_t target_pts_us) {
+    int64_t target_pts_us,
+    bool prefer_after_target) {
     if (target_pts_us < 0 || candidate_pts_us.empty()) {
         return std::nullopt;
     }
 
     size_t selected = 0;
-    bool found_before_target = false;
+    bool found_preferred = false;
     for (size_t i = 0; i < candidate_pts_us.size(); ++i) {
-        if (candidate_pts_us[i] < target_pts_us) {
+        const auto pts = candidate_pts_us[i];
+        if (prefer_after_target) {
+            if (pts >= target_pts_us &&
+                (!found_preferred || pts < candidate_pts_us[selected])) {
+                selected = i;
+                found_preferred = true;
+            }
+            continue;
+        }
+
+        if (pts <= target_pts_us &&
+            (!found_preferred || pts > candidate_pts_us[selected])) {
             selected = i;
-            found_before_target = true;
-        } else {
-            break;
+            found_preferred = true;
         }
     }
-    if (!found_before_target) {
-        selected = 0;
+    if (prefer_after_target && !found_preferred) {
+        for (size_t i = 0; i < candidate_pts_us.size(); ++i) {
+            const auto pts = candidate_pts_us[i];
+            if (pts <= target_pts_us &&
+                (i == 0 || pts > candidate_pts_us[selected])) {
+                selected = i;
+            }
+        }
     }
     return selected;
 }

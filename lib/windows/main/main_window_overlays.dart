@@ -447,7 +447,8 @@ class _FloatingPanelFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return IntrinsicWidth(
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 360, maxWidth: 560),
       child: Material(
         elevation: 12,
         color: theme.colorScheme.surface,

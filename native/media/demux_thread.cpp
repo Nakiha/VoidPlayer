@@ -394,7 +394,7 @@ void DemuxThread::run() {
 
             spdlog::info("[DemuxThread] Executing seek: target={:.3f}s, type={}, pq_size={}",
                          req.target_pts_us / 1e6,
-                         req.type == SeekType::Exact ? "Exact" : "Keyframe",
+                         is_exact_seek_type(req.type) ? "Exact" : "Keyframe",
                          output_routes_.empty() || !output_routes_[0].queue
                              ? 0
                              : output_routes_[0].queue->size());

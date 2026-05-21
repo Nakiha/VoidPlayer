@@ -9,7 +9,7 @@ double to_seconds(int64_t pts_us) {
 }
 
 const char* seek_type_label(SeekType type) {
-    return type == SeekType::Exact ? "Exact" : "Keyframe";
+    return is_exact_seek_type(type) ? "Exact" : "Keyframe";
 }
 
 } // namespace

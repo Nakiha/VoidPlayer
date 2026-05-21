@@ -801,7 +801,7 @@ void Renderer::step_forward() {
 
     if (need_exact_seek) {
         std::unique_lock<std::mutex> lock(state_mutex_);
-        seek_internal(lock, exact_seek_target, SeekType::Exact);
+        seek_internal(lock, exact_seek_target, SeekType::ExactStepForward);
         spdlog::info("[Renderer] step_forward exact_seek done: clock_pts={:.3f}s",
                      playback_->clock().current_pts_us() / 1e6);
     }
@@ -2175,7 +2175,7 @@ int Renderer::add_track(const std::string& video_path,
                      slot,
                      seek_result.target_pts_us / 1e6,
                      track_offset_us / 1e6,
-                     seek_result.seek_type == SeekType::Exact ? "Exact" : "Keyframe");
+                     is_exact_seek_type(seek_result.seek_type) ? "Exact" : "Keyframe");
     }
 
     spdlog::info("Renderer::add_track: slot={} hw_decode={} path={}",

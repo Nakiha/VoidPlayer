@@ -219,6 +219,7 @@ private:
     std::atomic<bool> decode_paused_{false};
     std::atomic<bool> pause_after_preroll_{false};
     int64_t exact_seek_target_us_ = -1;  // >= 0 when discarding frames before exact seek target
+    bool exact_seek_prefer_after_target_ = false;
     ExactSeekCandidateStore exact_seek_candidates_;
     bool drain_decoder_before_next_packet_ = false;
 

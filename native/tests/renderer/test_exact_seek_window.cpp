@@ -34,7 +34,10 @@ TEST_CASE("ExactSeekWindow: preview selection matches decode-thread fallback",
     REQUIRE_FALSE(select_exact_seek_preview_index({1000000}, -1).has_value());
 
     REQUIRE(select_exact_seek_preview_index({1000000, 1040000}, 1000000) == 0);
-    REQUIRE(select_exact_seek_preview_index({900000, 1000000, 1040000}, 1000000) == 0);
+    REQUIRE(select_exact_seek_preview_index({900000, 1000000, 1040000}, 1000000) == 1);
     REQUIRE(select_exact_seek_preview_index({700000, 900000, 950000}, 1000000) == 2);
     REQUIRE(select_exact_seek_preview_index({700000, 900000, 1100000, 1140000}, 1000000) == 1);
+    REQUIRE(select_exact_seek_preview_index({700000, 1100000, 950000, 900000}, 1000000) == 2);
+    REQUIRE(select_exact_seek_preview_index({700000, 1100000, 950000, 900000}, 1000000, true) == 1);
+    REQUIRE(select_exact_seek_preview_index({700000, 900000, 950000}, 1000000, true) == 2);
 }

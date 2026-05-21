@@ -1612,21 +1612,48 @@ TEST_CASE("TrackStepPolicy chooses step-forward exact-seek fallback targets",
     manager[0] = make_track_with_frame(1000, 40000, 100);
 
     const auto peek_target = choose_step_forward_exact_seek_target(
-        manager, 9000, 0, PresentDecision{});
+        manager, 500, 0, PresentDecision{});
     REQUIRE(peek_target.reference_slot == 0);
     REQUIRE(peek_target.base_pts_us == 1100);
     REQUIRE(peek_target.frame_duration_us == 40000);
     REQUIRE(peek_target.target_pts_us == 42100);
     REQUIRE_FALSE(peek_target.clamped_to_duration);
 
+    const auto stale_peek_target = choose_step_forward_exact_seek_target(
+        manager, 9000, 0, PresentDecision{});
+    REQUIRE(stale_peek_target.reference_slot == 0);
+    REQUIRE(stale_peek_target.base_pts_us == 9000);
+    REQUIRE(stale_peek_target.target_pts_us == 50000);
+
+    TrackPipelineManager future_manager;
+    future_manager[0] = make_track_with_frame(70000, 40000, 100);
+    const auto future_peek_target = choose_step_forward_exact_seek_target(
+        future_manager, 30000, 0, PresentDecision{});
+    REQUIRE(future_peek_target.base_pts_us == 30000);
+    REQUIRE(future_peek_target.target_pts_us == 71000);
+
     PresentDecision last_decision;
     TextureFrame last_frame;
     last_frame.pts_us = 3000;
     last_decision.frames[0] = last_frame;
     const auto last_target = choose_step_forward_exact_seek_target(
-        manager, 9000, 0, last_decision);
+        manager, 2000, 0, last_decision);
     REQUIRE(last_target.base_pts_us == 3100);
     REQUIRE(last_target.target_pts_us == 44100);
+
+    const auto stale_last_target = choose_step_forward_exact_seek_target(
+        manager, 9000, 0, last_decision);
+    REQUIRE(stale_last_target.base_pts_us == 9000);
+    REQUIRE(stale_last_target.target_pts_us == 50000);
+
+    PresentDecision future_last_decision;
+    TextureFrame future_last_frame;
+    future_last_frame.pts_us = 70000;
+    future_last_decision.frames[0] = future_last_frame;
+    const auto future_last_target = choose_step_forward_exact_seek_target(
+        future_manager, 30000, 0, future_last_decision);
+    REQUIRE(future_last_target.base_pts_us == 30000);
+    REQUIRE(future_last_target.target_pts_us == 71000);
 
     const auto clamped_target = choose_step_forward_exact_seek_target(
         manager, 9000, 20000, last_decision);

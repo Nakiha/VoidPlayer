@@ -21,13 +21,13 @@ DecodeSeekEpochStartState build_decode_seek_epoch_start_state(
     bool hw_enabled) {
     DecodeSeekEpochStartState state;
     state.exact_seek_target_us =
-        notification.type == SeekType::Exact ? notification.target_pts_us : -1;
+        is_exact_seek_type(notification.type) ? notification.target_pts_us : -1;
     state.hw_visibility_flush_pending = hw_enabled;
     return state;
 }
 
 const char* decode_seek_type_name(SeekType type) {
-    return type == SeekType::Exact ? "Exact" : "Keyframe";
+    return is_exact_seek_type(type) ? "Exact" : "Keyframe";
 }
 
 } // namespace vr

@@ -38,7 +38,7 @@ RendererSeekClockGatePlan plan_renderer_seek_clock_gate(
         input.allow_deferred &&
         !input.playing &&
         input.has_hevc_hw_track &&
-        input.type == SeekType::Exact;
+        is_exact_seek_type(input.type);
     return plan;
 }
 
@@ -55,7 +55,7 @@ HevcSeekRecreateDecision choose_hevc_seek_recreate(
     decision.should_recreate_pipeline =
         (!input.paused_seek && !input.seek_transition_active) ||
         (input.paused_seek &&
-         input.seek_type != SeekType::Exact &&
+         !is_exact_seek_type(input.seek_type) &&
          !input.recreated_for_paused_hevc_seek &&
          (!input.seek_transition_active || input.force_recreate_paused_hevc));
     return decision;
@@ -114,7 +114,7 @@ bool SeekCoordinator::should_defer_paused_hevc_seek(bool playing,
                                                     bool has_hevc_hw_track,
                                                     int64_t target_pts_us,
                                                     SeekType type) {
-    if (playing || !has_hevc_hw_track || type != SeekType::Exact) {
+    if (playing || !has_hevc_hw_track || !is_exact_seek_type(type)) {
         return false;
     }
 

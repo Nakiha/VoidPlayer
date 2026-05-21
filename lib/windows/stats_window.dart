@@ -341,7 +341,7 @@ class _MemorySummarySection extends StatelessWidget {
                             if (i != metrics.length - 1)
                               SizedBox(
                                 width: 1,
-                                height: 52,
+                                height: 56,
                                 child: ColoredBox(
                                   color: colorScheme.outlineVariant.withValues(
                                     alpha: 0.62,
@@ -374,7 +374,7 @@ class _MemoryMetricCell extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     return SizedBox(
       width: _MemorySummarySection._cellWidth,
-      height: 52,
+      height: 56,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         child: Column(

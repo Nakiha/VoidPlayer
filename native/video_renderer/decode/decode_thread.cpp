@@ -536,7 +536,8 @@ void DecodeThread::begin_seek_epoch(AVFrame* frame, const DecodeSeekNotification
     // Draining here would discard those fresh post-seek packets.
     const auto state = build_decode_seek_epoch_start_state(notification, hw_enabled_);
     exact_seek_target_us_ = state.exact_seek_target_us;
-    if (notification.type == SeekType::Exact) {
+    exact_seek_prefer_after_target_ = is_step_forward_seek_type(notification.type);
+    if (is_exact_seek_type(notification.type)) {
         spdlog::info("[DecodeThread] Exact seek: will discard frames < {:.3f}s",
                      notification.target_pts_us / 1e6);
     }
@@ -706,7 +707,7 @@ bool DecodeThread::publish_best_exact_seek_frame() {
 
     auto candidate_pts_us = exact_seek_candidates_.reorder_pts();
     const auto selected = select_exact_seek_preview_index(
-        candidate_pts_us, exact_seek_target_us_);
+        candidate_pts_us, exact_seek_target_us_, exact_seek_prefer_after_target_);
     if (!selected.has_value()) {
         return false;
     }

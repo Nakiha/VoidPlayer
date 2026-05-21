@@ -779,7 +779,12 @@ ScriptInstruction? _parseInstruction(
           args[0],
           double.parse(args[1]),
           double.parse(args[2]),
-          args.length >= 4 ? double.parse(args[3]) : null,
+          args.length >= 4 && args[3].trim().isNotEmpty
+              ? double.parse(args[3])
+              : null,
+          args.length >= 5 && args[4].trim().isNotEmpty
+              ? double.parse(args[4])
+              : null,
         ),
       );
     case 'ASSERT_NATIVE_SEEK_COUNT_DELTA':

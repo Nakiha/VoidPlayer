@@ -184,11 +184,13 @@ class AssertResourceUsageDeltaBelow extends PlayerAssert {
   final double maxRssDeltaMb;
   final double maxDedicatedGpuDeltaMb;
   final double? maxPrivateDeltaMb;
+  final double? maxKnownGpuDeltaMb;
   const AssertResourceUsageDeltaBelow(
     this.baseline,
     this.maxRssDeltaMb,
     this.maxDedicatedGpuDeltaMb, [
     this.maxPrivateDeltaMb,
+    this.maxKnownGpuDeltaMb,
   ]);
 }
 

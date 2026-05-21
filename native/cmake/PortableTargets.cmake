@@ -50,6 +50,17 @@ if(APPLE)
         void_media_ffmpeg
     )
 
+    add_library(void_macos_native_player STATIC
+        ${VOID_MACOS_NATIVE_PLAYER_SOURCES}
+    )
+    void_apply_native_compile_options(void_macos_native_player)
+    target_include_directories(void_macos_native_player PUBLIC
+        "${VOID_NATIVE_DIR}/macos"
+    )
+    target_link_libraries(void_macos_native_player PUBLIC
+        void_media_ffmpeg
+    )
+
     add_executable(macos_media_smoke
         "${VOID_NATIVE_DIR}/tools/macos_media_smoke.cpp"
     )
@@ -104,6 +115,18 @@ if(APPLE)
         VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
     )
     add_test(NAME decode_thread_software_smoke COMMAND decode_thread_software_smoke)
+
+    add_executable(macos_native_player_smoke
+        "${VOID_NATIVE_DIR}/tools/macos_native_player_smoke.cpp"
+    )
+    void_apply_native_compile_options(macos_native_player_smoke)
+    target_link_libraries(macos_native_player_smoke PRIVATE
+        void_macos_native_player
+    )
+    target_compile_definitions(macos_native_player_smoke PRIVATE
+        VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
+    )
+    add_test(NAME macos_native_player_smoke COMMAND macos_native_player_smoke)
 
     add_executable(macos_preview_frame_decoder_smoke
         "${VOID_NATIVE_DIR}/tools/macos_preview_frame_decoder_smoke.cpp"

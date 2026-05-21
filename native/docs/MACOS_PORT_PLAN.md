@@ -80,6 +80,7 @@ Goal: make the macOS MethodChannel call the same native player surface as Window
 
 - [ ] Add a macOS native library target instead of direct Xcode `#include` shims.
 - [ ] Define a small C/Objective-C++ bridge for create/destroy/open/play/pause/seek/currentPts.
+- [x] Add a CTest-covered C ABI facade over `DemuxThread` + `DecodeThread` for macOS.
 - [ ] Return `available=true` only when the shared facade drives playback state.
 - [ ] Keep current preview bridge behind diagnostics until it can be deleted.
 
@@ -134,8 +135,8 @@ python dev.py mac-ui-test \
 
 ## Next Slice
 
-The next implementation slice should move from proof-of-reuse to app integration: add a macOS native
-library/facade target that owns the existing `DemuxThread` + `DecodeThread` queue, then feed that
-queue into the current Flutter texture bridge with `CVPixelBuffer`. The Swift preview decoder remains
-diagnostic-only and should shrink as soon as the shared native facade can open, play, pause, seek, and
-destroy a local video.
+The next implementation slice should wire the CTest-covered macOS native facade into the Flutter
+runner: replace `MacOSFirstFrameDecoder.mm` with a native-player shim, have Swift create/open/play/
+pause/seek through that facade, and feed copied BGRA frames into the current `CVPixelBuffer` texture.
+The Swift preview decoder remains diagnostic-only and should shrink as soon as the shared native
+facade owns visible playback.

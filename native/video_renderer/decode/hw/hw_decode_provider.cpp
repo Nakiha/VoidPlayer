@@ -1,5 +1,7 @@
 #include "video_renderer/decode/hw/hw_decode_provider.h"
+#ifdef _WIN32
 #include "video_renderer/decode/hw/d3d11va_provider.h"
+#endif
 #include <spdlog/spdlog.h>
 #include <vector>
 #include <memory>
@@ -18,7 +20,9 @@ HwDecodeInitResult try_hw_decode_providers(
     // Priority-ordered list of hardware decode providers.
     // To add a new backend, instantiate it here.
     std::vector<std::unique_ptr<HwDecodeProvider>> providers;
+#ifdef _WIN32
     providers.push_back(std::make_unique<D3D11VAProvider>());
+#endif
     // Future: providers.push_back(std::make_unique<CUDAProvider>());
     // Future: providers.push_back(std::make_unique<DXVA2Provider>());
 

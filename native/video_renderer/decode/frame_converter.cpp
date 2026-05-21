@@ -1,5 +1,4 @@
 #include "video_renderer/decode/frame_converter.h"
-#include "video_renderer/d3d11/memory_estimate.h"
 #include "video_renderer/renderer_limits.h"
 #include <spdlog/spdlog.h>
 #include <algorithm>
@@ -10,8 +9,12 @@
 #include <new>
 #include <thread>
 #include <vector>
+
+#ifdef _WIN32
+#include "video_renderer/d3d11/memory_estimate.h"
 #include <d3d11.h>
 #include <wrl/client.h>
+#endif
 
 extern "C" {
 #include <libavutil/frame.h>
@@ -777,6 +780,7 @@ VideoColorInfo color_info_from_frame(const AVFrame* frame) {
     return info;
 }
 
+#ifdef _WIN32
 bool same_snapshot_desc(const D3D11_TEXTURE2D_DESC& a, const D3D11_TEXTURE2D_DESC& b) {
     return a.Width == b.Width &&
            a.Height == b.Height &&
@@ -837,7 +841,6 @@ void wait_d3d11_context_idle(ID3D11Device* device, ID3D11DeviceContext* context)
                      static_cast<unsigned long>(hr));
     }
 }
-}  // namespace
 
 struct D3D11SnapshotPool {
     Microsoft::WRL::ComPtr<ID3D11Texture2D> acquire(
@@ -929,6 +932,9 @@ D3D11SnapshotFrameRef::~D3D11SnapshotFrameRef() {
         owner->release(texture);
     }
 }
+#endif  // _WIN32
+
+}  // namespace
 
 FrameConverter::FrameConverter()
 {}
@@ -936,7 +942,11 @@ FrameConverter::FrameConverter()
 FrameConverter::~FrameConverter() = default;
 
 D3D11SnapshotPoolStats FrameConverter::snapshot_pool_stats() const {
+#ifdef _WIN32
     return d3d11_snapshot_pool_ ? d3d11_snapshot_pool_->stats() : D3D11SnapshotPoolStats{};
+#else
+    return {};
+#endif
 }
 
 bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat src_format) {
@@ -997,10 +1007,18 @@ bool FrameConverter::init_hardware(void* d3d_device, void* d3d_context,
     download_hw_to_cpu_ = download_to_cpu;
     hw_type_ = hw_type;
     downloaded_format_ = AV_PIX_FMT_NONE;
+#ifdef _WIN32
     d3d11_snapshot_pool_ =
         (!download_to_cpu && hw_type == HwDecodeType::D3D11VA)
         ? std::make_shared<D3D11SnapshotPool>()
         : nullptr;
+#else
+    d3d11_snapshot_pool_.reset();
+    if (!download_to_cpu) {
+        spdlog::error("[FrameConverter] Renderer-owned hardware frames are Windows-only");
+        return false;
+    }
+#endif
 
     spdlog::info("[FrameConverter] Hardware converter initialized ({}x{}, hw_type={}, download_to_cpu={})",
                  src_width, src_height,
@@ -1052,6 +1070,7 @@ std::optional<TextureFrame> FrameConverter::convert(AVFrame* frame) {
         }
         av_frame_free(&sw_frame);
     } else if (is_hw_) {
+#ifdef _WIN32
         // frame->data[0] = ID3D11Texture2D*, frame->data[1] = array index (intptr_t)
         if (frame->data[0]) {
             result.texture_handle = frame->data[0];
@@ -1107,6 +1126,10 @@ std::optional<TextureFrame> FrameConverter::convert(AVFrame* frame) {
             spdlog::error("[FrameConverter] Hardware frame has no D3D11 texture");
             return std::nullopt;
         }
+#else
+        spdlog::error("[FrameConverter] Renderer-owned hardware frames require a platform presenter");
+        return std::nullopt;
+#endif
     } else {
         // Software 8-bit 4:2:0 can be uploaded as its original Y/U/V planes.
         // Other supported software formats still use the deterministic packer.
@@ -1128,6 +1151,7 @@ std::optional<TextureFrame> FrameConverter::convert(AVFrame* frame) {
 }
 
 std::optional<TextureFrame> FrameConverter::snapshot_hardware_frame(AVFrame* frame) {
+#ifdef _WIN32
     if (!is_hw_ || download_hw_to_cpu_ || hw_type_ != HwDecodeType::D3D11VA ||
         !frame || !frame->data[0]) {
         return std::nullopt;
@@ -1220,6 +1244,10 @@ std::optional<TextureFrame> FrameConverter::snapshot_hardware_frame(AVFrame* fra
         result.hw_frame_ref,
     };
     return result;
+#else
+    (void)frame;
+    return std::nullopt;
+#endif
 }
 
 } // namespace vr

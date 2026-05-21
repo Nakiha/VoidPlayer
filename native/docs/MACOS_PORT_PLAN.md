@@ -72,6 +72,7 @@ pipeline.
 - [ ] Keep `TrackBuffer`, `RenderSink`, seek policies, and playback clock semantics shared.
 - [x] Add CTest coverage that exercises software frame publication -> `TrackBuffer` without D3D11.
 - [x] Extend the smoke from synthetic frames to FFmpeg-decoded frames.
+- [x] Build the existing `DemuxThread` + `DecodeThread` + `TrackBuffer` software path on macOS.
 
 ### M3: Shared NativePlayer Facade On macOS
 
@@ -133,6 +134,8 @@ python dev.py mac-ui-test \
 
 ## Next Slice
 
-The next implementation slice should be M2: introduce a renderer-neutral frame publication seam and
-prove software decode can feed a native frame queue without D3D11. That gives macOS a place to plug
-CVPixelBuffer/Metal output into the existing pipeline instead of extending the Swift preview timer.
+The next implementation slice should move from proof-of-reuse to app integration: add a macOS native
+library/facade target that owns the existing `DemuxThread` + `DecodeThread` queue, then feed that
+queue into the current Flutter texture bridge with `CVPixelBuffer`. The Swift preview decoder remains
+diagnostic-only and should shrink as soon as the shared native facade can open, play, pause, seek, and
+destroy a local video.

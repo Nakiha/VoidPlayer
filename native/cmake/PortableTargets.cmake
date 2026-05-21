@@ -46,14 +46,8 @@ if(APPLE)
     target_include_directories(void_macos_preview_decoder PUBLIC
         "${VOID_NATIVE_DIR}/macos"
     )
-    target_include_directories(void_macos_preview_decoder SYSTEM PUBLIC
-        "${FFMPEG_INCLUDE_DIR}"
-    )
     target_link_libraries(void_macos_preview_decoder PUBLIC
-        spdlog::spdlog_header_only
-        ${AVCODEC_LIBRARY}
-        ${AVFORMAT_LIBRARY}
-        ${AVUTIL_LIBRARY}
+        void_media_ffmpeg
     )
 
     add_executable(macos_media_smoke

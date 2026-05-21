@@ -618,6 +618,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
+					"$(PROJECT_DIR)/../native",
 					"$(PROJECT_DIR)/../third_party/ffmpeg/include",
 				);
 				INFOPLIST_FILE = Runner/Info.plist;
@@ -765,6 +766,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
+					"$(PROJECT_DIR)/../native",
 					"$(PROJECT_DIR)/../third_party/ffmpeg/include",
 				);
 				INFOPLIST_FILE = Runner/Info.plist;
@@ -800,6 +802,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
+					"$(PROJECT_DIR)/../native",
 					"$(PROJECT_DIR)/../third_party/ffmpeg/include",
 				);
 				INFOPLIST_FILE = Runner/Info.plist;

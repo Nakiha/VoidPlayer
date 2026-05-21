@@ -1,5 +1,7 @@
 #include "preview_frame_decoder.h"
 
+#include "../video_renderer/decode/frame_timestamp_rescaler.h"
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -130,11 +132,11 @@ int64_t duration_us(const AVFormatContext* format_ctx, const AVStream* stream) {
   return 0;
 }
 
-int64_t frame_pts_us(const AVFrame* frame, const AVStream* stream) {
+int64_t frame_pts_us(const AVFrame* frame) {
   if (frame->pts == AV_NOPTS_VALUE) {
     return 0;
   }
-  return av_rescale_q(frame->pts, stream->time_base, AVRational{1, 1000000});
+  return frame->pts;
 }
 
 }  // namespace
@@ -247,7 +249,7 @@ int VPMacOSDecodeVideoFrameBGRA(const char* path,
     }
     have_candidate = true;
     if (clamped_target_pts_us <= 0 || frame->pts == AV_NOPTS_VALUE ||
-        frame_pts_us(frame, stream) >= clamped_target_pts_us) {
+        frame_pts_us(frame) >= clamped_target_pts_us) {
       return 1;
     }
     return 0;
@@ -268,6 +270,7 @@ int VPMacOSDecodeVideoFrameBGRA(const char* path,
     }
 
     while ((ret = avcodec_receive_frame(codec_ctx, frame)) == 0) {
+      vr::rescale_frame_timestamps_to_us(frame, stream->time_base);
       const int selection = select_candidate();
       av_frame_unref(frame);
       if (selection < 0) {
@@ -292,6 +295,7 @@ int VPMacOSDecodeVideoFrameBGRA(const char* path,
     ret = avcodec_send_packet(codec_ctx, nullptr);
     if (ret >= 0 || ret == AVERROR_EOF) {
       while ((ret = avcodec_receive_frame(codec_ctx, frame)) == 0) {
+        vr::rescale_frame_timestamps_to_us(frame, stream->time_base);
         const int selection = select_candidate();
         av_frame_unref(frame);
         if (selection < 0) {
@@ -347,7 +351,7 @@ int VPMacOSDecodeVideoFrameBGRA(const char* path,
   out->width = candidate->width;
   out->height = candidate->height;
   out->duration_us = duration_us(format_ctx, stream);
-  out->pts_us = frame_pts_us(candidate, stream);
+  out->pts_us = frame_pts_us(candidate);
   out->bgra = bgra;
   out->bgra_size = bgra_size;
 

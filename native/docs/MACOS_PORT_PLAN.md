@@ -63,6 +63,25 @@ Required native target layers:
 The names above are target-direction names. Introduce them only when the dependency edge is real
 and covered by a validation command.
 
+## Single Native Pipeline Contract
+
+macOS support must reuse the existing native player pipeline instead of growing a second native
+backend. The runner, MethodChannel glue, and texture bridge are platform adapters only; playback
+ownership remains in the shared native layer.
+
+- Reuse the NativePlayer facade, playback controller semantics, demux/decode flow, seek policy,
+  track state, timeline/current-PTS behavior, layout model, and capture contracts.
+- Keep platform differences behind explicit backend interfaces: D3D11/shared-texture output on
+  Windows, CVPixelBuffer/IOSurface/Metal output on macOS, and platform audio devices.
+- Split D3D11-tied code out of shared decode/publication classes before moving them into macOS
+  targets. `FrameConverter`, `DecodedFramePublisher`, and exact-seek publishing need a portable
+  software frame boundary plus platform-specific presenters.
+- Treat `native/macos/preview_frame_decoder.*` as temporary scaffolding for bridge validation.
+  Each change to it should either delete runner-local behavior or pull it closer to shared native
+  components until the macOS runner can call the same player facade as Windows.
+- Do not duplicate playback state machines, timeline math, loop behavior, or track lifecycle in
+  Objective-C++ runner code.
+
 ## Phase 0: Repository Hygiene And Baseline
 
 Goal: make macOS work safe to start without disturbing Windows release behavior.
@@ -293,9 +312,12 @@ Status on 2026-05-20:
   visual frame changes while playing.
 - Done: macOS platform capabilities now expose local-file preview playback while keeping full
   native playback, network media, SSH media, analysis windows, and audio out of scope.
-- In progress: preview frame decode ownership is moving out of the Flutter runner into
+- Done: preview frame decode ownership moved out of the Flutter runner into
   `native/macos/preview_frame_decoder.*`, with the runner reduced to a thin Xcode shim until the
   final native player facade exists.
+- Done: the preview decoder now links the shared `void_media_ffmpeg` target and uses the existing
+  native timestamp rescaler, so bridge scaffolding is converging toward shared decode components
+  instead of carrying parallel timestamp logic.
 - Remaining: efficient continuous decode, frame queue scheduling, A/V sync, and real audio are
   still Phase 5 work. The seek/preview bridge is intentionally a runner-side proof, not the final
   shared native player architecture.

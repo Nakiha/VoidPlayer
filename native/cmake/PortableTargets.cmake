@@ -81,6 +81,18 @@ if(APPLE)
     )
     add_test(NAME software_frame_queue_smoke COMMAND software_frame_queue_smoke)
 
+    add_executable(software_decode_frame_queue_smoke
+        "${VOID_NATIVE_DIR}/tools/software_decode_frame_queue_smoke.cpp"
+    )
+    void_apply_native_compile_options(software_decode_frame_queue_smoke)
+    target_link_libraries(software_decode_frame_queue_smoke PRIVATE
+        void_media_ffmpeg
+    )
+    target_compile_definitions(software_decode_frame_queue_smoke PRIVATE
+        VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
+    )
+    add_test(NAME software_decode_frame_queue_smoke COMMAND software_decode_frame_queue_smoke)
+
     add_executable(macos_preview_frame_decoder_smoke
         "${VOID_NATIVE_DIR}/tools/macos_preview_frame_decoder_smoke.cpp"
     )

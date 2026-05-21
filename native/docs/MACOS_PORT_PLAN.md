@@ -58,7 +58,9 @@ logic out of Swift runner code.
 - [x] Reuse shared software BGRA conversion.
 - [ ] Move capture/hash metrics out of Swift into a shared test/diagnostic helper or retire them
   when native capture is available.
-- [ ] Replace timer-driven target-frame decoding with a native frame queue smoke.
+- [x] Add native frame queue smokes for synthetic and FFmpeg-decoded software frames.
+- [ ] Replace timer-driven target-frame decoding with a native frame queue feeding the texture
+  bridge.
 
 ### M2: Renderer-Neutral Frame Publication
 
@@ -69,7 +71,7 @@ pipeline.
 - [ ] Split `FrameConverter` into software packing and D3D11 snapshot/presenter pieces.
 - [ ] Keep `TrackBuffer`, `RenderSink`, seek policies, and playback clock semantics shared.
 - [x] Add CTest coverage that exercises software frame publication -> `TrackBuffer` without D3D11.
-- [ ] Extend the smoke from synthetic frames to FFmpeg-decoded frames.
+- [x] Extend the smoke from synthetic frames to FFmpeg-decoded frames.
 
 ### M3: Shared NativePlayer Facade On macOS
 

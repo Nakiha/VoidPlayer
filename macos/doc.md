@@ -64,7 +64,9 @@ facade sees and wires an audio stream, and
 resume. `native_audio_destroy_recreate_smoke.csv` removes the final audio track to force native
 teardown, then recreates playback from the same fixture. `native_quit_while_playing_smoke.csv`
 exercises explicit native teardown during test shutdown while playback is still active, and
-`native_user_window_close_smoke.csv` closes the main window while native playback is active. A seek
+`native_callback_stress_smoke.csv` adds rapid play/pause, playing seek storm, play-then-destroy,
+recreate, and play-then-window-close churn. `native_user_window_close_smoke.csv` closes the main
+window while native playback is active. A seek
 follows the shared keep-previous-state preference; step navigation is explicit pause-on-step. The helper copies CSV
 scripts into the app container before launch and rewrites
 repo-relative `ADD_MEDIA` fixtures to sandbox-local copies because the macOS debug app is sandboxed

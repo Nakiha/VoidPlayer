@@ -83,6 +83,15 @@ if(APPLE)
     )
     add_test(NAME software_bgra_converter_smoke COMMAND software_bgra_converter_smoke)
 
+    add_executable(software_frame_packer_smoke
+        "${VOID_NATIVE_DIR}/tools/software_frame_packer_smoke.cpp"
+    )
+    void_apply_native_compile_options(software_frame_packer_smoke)
+    target_link_libraries(software_frame_packer_smoke PRIVATE
+        void_media_ffmpeg
+    )
+    add_test(NAME software_frame_packer_smoke COMMAND software_frame_packer_smoke)
+
     add_executable(bgra_capture_metrics_smoke
         "${VOID_NATIVE_DIR}/tools/bgra_capture_metrics_smoke.cpp"
     )

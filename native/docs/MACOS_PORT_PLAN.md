@@ -120,6 +120,8 @@ Goal: improve performance after software playback is correct.
 
 - [ ] Add a Metal/CVPixelBuffer backend with the same responsibilities as D3D11 output.
 - [ ] Port shader/color/layout behavior with deterministic pixel tests.
+  Initial portable baselines now cover limited/full-range software BGRA conversion, padded
+  linesizes, odd-dimension NV21 -> even-coded NV12 packing, and planar YUV420 wrap metadata.
 - [ ] Add VideoToolbox behind the hardware decode provider interface.
 - [ ] Keep software fallback visible in diagnostics.
 
@@ -156,6 +158,7 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_seek_frame_smoke.csv \
   ui_tests/macos/native_playback_smoke.csv \
   ui_tests/macos/native_frame_callback_lifecycle_smoke.csv \
+  ui_tests/macos/native_callback_stress_smoke.csv \
   ui_tests/macos/native_playing_seek_keeps_state_smoke.csv \
   ui_tests/macos/native_playing_step_pauses_smoke.csv \
   ui_tests/macos/native_loop_range_smoke.csv \
@@ -166,8 +169,9 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_user_window_close_smoke.csv
 ```
 
-The full macOS smoke set above passed with `--build` on 2026-05-22 after the analysis submodules
-were initialized. On the same date, targeted loop/audio/quit validation passed with:
+The pre-stress macOS smoke set passed with `--build` on 2026-05-22 after the analysis submodules
+were initialized. `native_callback_stress_smoke.csv` passed on 2026-05-23 after being added to the
+set. On 2026-05-22, targeted loop/audio/quit validation passed with:
 
 ```bash
 python dev.py mac-ui-test --build \
@@ -204,11 +208,17 @@ coordinates color metadata, software-vs-hardware dispatch, and the Windows D3D11
 This keeps the current macOS playback queue on the shared native decode path without starting a
 second backend.
 
-Frame callback lifecycle status: macOS now has a targeted UI smoke that churns play/pause/play,
+M5 baseline status: `software_bgra_converter_smoke` now includes deterministic limited/full-range
+color samples and padded line strides, while `software_frame_packer_smoke` locks odd-size NV21
+packing and planar YUV420 wrap metadata. These are CPU-side reference points for future Metal and
+CVPixelBuffer layout parity tests.
+
+Frame callback lifecycle status: macOS now has targeted UI smokes that churn play/pause/play,
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks
-are active. The smoke also verifies `pixelBufferDirectCopyCount`, so the native-to-locked-buffer
-path is covered by UI automation. Main-window close while playing remains covered by
-`native_user_window_close_smoke.csv`.
+are active. `native_callback_stress_smoke.csv` adds rapid play/pause, a playing seek storm,
+play-then-destroy, recreate, and play-then-main-window-close coverage. The smokes also verify
+`pixelBufferDirectCopyCount`, so the native-to-locked-buffer path is covered by UI automation.
+Main-window close while playing remains covered independently by `native_user_window_close_smoke.csv`.
 
 Windows preservation status: on this macOS host, `python dev.py test --native-only` currently stops
 before the native test build while preparing the analyzer because it invokes

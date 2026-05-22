@@ -51,6 +51,7 @@ set(VOID_MEDIA_FFMPEG_SOURCES
 
 set(VOID_MACOS_NATIVE_PLAYER_SOURCES
     "${VOID_NATIVE_DIR}/macos/native_player_bridge.cpp"
+    "${VOID_NATIVE_DIR}/macos/presentation_adapter.cpp"
 )
 
 set(VOID_RENDERER_CORE_SOURCES

@@ -119,9 +119,12 @@ Goal: local-file software playback with correct timing and basic audio.
 Goal: improve performance after software playback is correct.
 
 - [ ] Add a Metal/CVPixelBuffer backend with the same responsibilities as D3D11 output.
+  The boundary now lives in `native/macos/presentation_adapter.*`; see
+  [MACOS_PRESENTATION_ADAPTER.md](MACOS_PRESENTATION_ADAPTER.md).
 - [ ] Port shader/color/layout behavior with deterministic pixel tests.
   Initial portable baselines now cover limited/full-range software BGRA conversion, padded
-  linesizes, odd-dimension NV21 -> even-coded NV12 packing, and planar YUV420 wrap metadata.
+  linesizes, BGRA channel order, odd-dimension NV21 -> even-coded NV12 packing, and planar
+  YUV420 wrap metadata.
 - [ ] Add VideoToolbox behind the hardware decode provider interface.
 - [ ] Keep software fallback visible in diagnostics.
 
@@ -169,9 +172,11 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_user_window_close_smoke.csv
 ```
 
-The pre-stress macOS smoke set passed with `--build` on 2026-05-22 after the analysis submodules
-were initialized. `native_callback_stress_smoke.csv` passed on 2026-05-23 after being added to the
-set. On 2026-05-22, targeted loop/audio/quit validation passed with:
+The full macOS smoke set, including `native_callback_stress_smoke.csv`, passed with `--build` on
+2026-05-23 against the rebuilt Debug app. An earlier full-set run exposed that
+`native_playing_seek_keeps_state_smoke.csv` used a fixed-time `ASSERT_PLAYING` that was too tight
+under batch load; the script now waits for playing state before checking post-seek position and
+presented-frame ranges. On 2026-05-22, targeted loop/audio/quit validation passed with:
 
 ```bash
 python dev.py mac-ui-test --build \
@@ -199,8 +204,11 @@ macOS app can launch or coordinate analysis windows; that remains a UI/IPC miles
 
 Publication status: decoded-frame publication now flows through a `DecodedFrameSink` interface. The
 default sink preserves the existing `TrackBuffer` behavior, and `decoded_frame_sink_smoke` covers
-frame delivery plus conversion-failure error state. This prepares the decode thread for a future
-Metal/CVPixelBuffer sink without creating another decode backend.
+frame delivery plus conversion-failure error state. macOS presentation now has a native
+`presentation_adapter` boundary that copies shared `TextureFrame` storage into a caller-provided
+BGRA destination; Swift owns `CVPixelBuffer` lifecycle, locking, and Flutter texture notification
+only. This prepares the decode thread for a future Metal/CVPixelBuffer sink without creating
+another decode backend.
 
 Frame conversion split status: deterministic software YUV/NV12/P010 packing and planar YUV420
 wrapping now live in `video_renderer/decode/software_frame_packer.*`, while `FrameConverter`
@@ -210,8 +218,10 @@ second backend.
 
 M5 baseline status: `software_bgra_converter_smoke` now includes deterministic limited/full-range
 color samples and padded line strides, while `software_frame_packer_smoke` locks odd-size NV21
-packing and planar YUV420 wrap metadata. These are CPU-side reference points for future Metal and
-CVPixelBuffer layout parity tests.
+packing and planar YUV420 wrap metadata. `macos_presentation_adapter_smoke` covers the macOS
+presentation boundary directly, including CPU RGBA stride copies, CPU NV12 color conversion,
+planar YUV conversion, adapter identity, and unsupported P010 rejection. These are CPU-side
+reference points for future Metal and CVPixelBuffer layout parity tests.
 
 Frame callback lifecycle status: macOS now has targeted UI smokes that churn play/pause/play,
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks

@@ -92,6 +92,15 @@ if(APPLE)
     )
     add_test(NAME software_frame_packer_smoke COMMAND software_frame_packer_smoke)
 
+    add_executable(macos_presentation_adapter_smoke
+        "${VOID_NATIVE_DIR}/tools/macos_presentation_adapter_smoke.cpp"
+    )
+    void_apply_native_compile_options(macos_presentation_adapter_smoke)
+    target_link_libraries(macos_presentation_adapter_smoke PRIVATE
+        void_macos_native_player
+    )
+    add_test(NAME macos_presentation_adapter_smoke COMMAND macos_presentation_adapter_smoke)
+
     add_executable(bgra_capture_metrics_smoke
         "${VOID_NATIVE_DIR}/tools/bgra_capture_metrics_smoke.cpp"
     )

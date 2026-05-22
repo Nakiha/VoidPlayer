@@ -79,6 +79,12 @@ hash/luma/non-black statistics are calculated by the shared native capture metri
 During playback the shared macOS native bridge now emits frame-available callbacks when the native
 tick advances the current frame; Swift no longer owns a fixed playback timer.
 
+Native playback presentation now goes through `native/macos/presentation_adapter.*`. Swift owns
+the `CVPixelBuffer`, locks its base address, and asks native code to copy the shared
+`TextureFrame` into that BGRA destination. The current adapter is reported in diagnostics as
+`presentationAdapter=cvpixelbuffer-bgra-copy`; decode, seek, loop, audio, and playback clock policy
+remain outside Swift.
+
 Manual audible smoke:
 
 ```bash

@@ -334,6 +334,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     case "pickFiles":
       pickFiles(arguments: call.arguments, result: result)
     case "getDiagnostics":
+      let textureStats = texture?.diagnostics()
       result([
         "platform": "macos",
         "backend": backendName,
@@ -347,6 +348,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "audioSampleRate": nativePlayer?.audioSampleRate() ?? 0,
         "audioChannels": nativePlayer?.audioChannels() ?? 0,
         "activeAudioTrack": nativePlayer?.activeAudioTrack() ?? -1,
+        "pixelBufferRebuildCount": textureStats?.rebuildCount ?? 0,
+        "pixelBufferReuseCount": textureStats?.reuseCount ?? 0,
       ])
     case "captureViewport":
       result(captureViewport())
@@ -818,6 +821,8 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private var decodedBGRA: Data?
   private let hashPrefix: String
   private var pixelBuffer: CVPixelBuffer?
+  private var pixelBufferRebuildCount = 0
+  private var pixelBufferReuseCount = 0
 
   init(width: Int, height: Int) {
     self.width = width
@@ -863,6 +868,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       rebuildPixelBufferLocked()
     } else if let pixelBuffer {
       copyBGRA(decoded.bgra, to: pixelBuffer)
+      pixelBufferReuseCount += 1
     }
   }
 
@@ -903,6 +909,16 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     return measure(buffer: pixelBuffer)
   }
 
+  func diagnostics() -> (rebuildCount: Int, reuseCount: Int) {
+    lock.lock()
+    defer { lock.unlock() }
+
+    return (
+      rebuildCount: pixelBufferRebuildCount,
+      reuseCount: pixelBufferReuseCount
+    )
+  }
+
   private func rebuildPixelBuffer() {
     lock.lock()
     defer { lock.unlock() }
@@ -930,6 +946,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       pixelBuffer = nil
       return
     }
+    pixelBufferRebuildCount += 1
 
     if let decodedBGRA {
       copyBGRA(decodedBGRA, to: nextBuffer)

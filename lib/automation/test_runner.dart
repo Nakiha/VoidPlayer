@@ -142,6 +142,10 @@ class TestRunner {
         );
         await runtime.setDecodeMode(mode);
 
+      case ScriptSetAudibleTrack(:final fileId):
+        log.info('TestRunner ${instr.time}: SET_AUDIBLE_TRACK $fileId');
+        await controller.setAudibleTrack(fileId);
+
       case ScriptSetViewportPixelSizeMode(:final mode):
         log.info(
           'TestRunner ${instr.time}: SET_VIEWPORT_PIXEL_SIZE_MODE ${mode.storageValue}',

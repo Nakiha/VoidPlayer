@@ -324,6 +324,10 @@ public:
   bool has_audio() const { return audio_available_; }
   int32_t audio_sample_rate() const { return audio_sample_rate_; }
   int32_t audio_channels() const { return audio_channels_; }
+  int32_t active_audio_track() const {
+    const auto* audio = playback_.audio_output();
+    return audio ? audio->active_track() : -1;
+  }
 
   bool copy_current_frame(VPMacOSNativeFrame* out, std::string& error) {
     if (!track_buffer_) {
@@ -515,6 +519,14 @@ int32_t VPMacOSNativePlayerAudioChannels(VPMacOSNativePlayer* player) {
   }
   std::lock_guard<std::mutex> lock(player->mutex);
   return player->core.audio_channels();
+}
+
+int32_t VPMacOSNativePlayerActiveAudioTrack(VPMacOSNativePlayer* player) {
+  if (!player) {
+    return -1;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  return player->core.active_audio_track();
 }
 
 int VPMacOSNativePlayerCopyCurrentFrameBGRA(VPMacOSNativePlayer* player,

@@ -44,6 +44,7 @@ int VPMacOSNativePlayerIsPlaying(VPMacOSNativePlayer* player);
 int VPMacOSNativePlayerHasAudio(VPMacOSNativePlayer* player);
 int32_t VPMacOSNativePlayerAudioSampleRate(VPMacOSNativePlayer* player);
 int32_t VPMacOSNativePlayerAudioChannels(VPMacOSNativePlayer* player);
+int32_t VPMacOSNativePlayerActiveAudioTrack(VPMacOSNativePlayer* player);
 
 int VPMacOSNativePlayerCopyCurrentFrameBGRA(VPMacOSNativePlayer* player,
                                             VPMacOSNativeFrame* out,

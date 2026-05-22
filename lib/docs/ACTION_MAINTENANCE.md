@@ -95,6 +95,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `CLICK_TIMELINE_FRACTION` | — | 按比例点击 controls bar 的 timeline slider，走真实 pointer/onSeek 路径 |
 | `DRAG_LOOP_HANDLE` | — | 测试脚本专用：拖动循环区间 start/end handle，走真实 pointer/onRangeChanged/onRangeChangeEnd 路径 |
 | `SET_SPEED` | — | 设置倍速 |
+| `SET_AUDIBLE_TRACK` | fileId / -1 | 直接设置 native 可听轨道 |
 | `STEP_FORWARD` | → | 逐帧前进 |
 | `STEP_BACKWARD` | ← | 逐帧后退 |
 | `OPEN_FILE` | O | 打开文件 |
@@ -138,7 +139,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `ASSERT_NATIVE_BACKEND` | backend, available | 断言平台诊断中的 native backend 名称与可用状态 |
 | `ASSERT_TRACK_METADATA` | slot, formatName, decoderName | 断言指定轨道的媒体格式/解码器元数据 |
 | `ASSERT_PRESENTED_FRAME_RANGE` | fileId, minUs, maxUs | 断言指定文件当前已上屏帧 PTS 位于范围内 |
-| `ASSERT_NATIVE_AUDIO` | available[, sampleRate[, channels]] | 断言 native 音频诊断信息 |
+| `ASSERT_NATIVE_AUDIO` | available[, sampleRate[, channels[, activeTrack]]] | 断言 native 音频诊断信息 |
 | `ASSERT_DURATION` | ptsUs, toleranceMs | 断言总时长 |
 | `ASSERT_LAYOUT_MODE` | mode | 断言布局模式 |
 | `ASSERT_ZOOM` | ratio, tolerance | 断言缩放比例 |

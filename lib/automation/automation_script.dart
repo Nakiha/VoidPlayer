@@ -78,6 +78,11 @@ class ScriptSetDecodeMode extends ScriptInstruction {
   const ScriptSetDecodeMode(super.time, this.mode);
 }
 
+class ScriptSetAudibleTrack extends ScriptInstruction {
+  final int? fileId;
+  const ScriptSetAudibleTrack(super.time, this.fileId);
+}
+
 class ScriptSetViewportPixelSizeMode extends ScriptInstruction {
   final ViewportPixelSizeMode mode;
   const ScriptSetViewportPixelSizeMode(super.time, this.mode);
@@ -156,6 +161,14 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAction(time, SetSpeed(double.parse(args[0])));
+    case 'SET_AUDIBLE_TRACK':
+      if (args.isEmpty ||
+          args[0].isEmpty ||
+          args[0] == '-1' ||
+          args[0].toLowerCase() == 'null') {
+        return ScriptSetAudibleTrack(time, null);
+      }
+      return ScriptSetAudibleTrack(time, int.parse(args[0]));
     case 'STEP_FORWARD':
       return ScriptAction(time, const StepForward());
     case 'STEP_BACKWARD':
@@ -613,6 +626,9 @@ ScriptInstruction? _parseInstruction(
               : null,
           channels: args.length >= 3 && args[2].isNotEmpty
               ? int.parse(args[2])
+              : null,
+          activeTrack: args.length >= 4 && args[3].isNotEmpty
+              ? int.parse(args[3])
               : null,
         ),
       );

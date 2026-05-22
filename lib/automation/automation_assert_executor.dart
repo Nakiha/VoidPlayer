@@ -111,18 +111,22 @@ class AutomationAssertExecutor {
         :final available,
         :final sampleRate,
         :final channels,
+        :final activeTrack,
       ):
         final diagnostics = await controller.getDiagnostics();
         final actualAvailable = diagnostics['audioAvailable'] as bool? ?? false;
         final actualSampleRate = diagnostics['audioSampleRate'] as int? ?? 0;
         final actualChannels = diagnostics['audioChannels'] as int? ?? 0;
+        final actualActiveTrack = diagnostics['activeAudioTrack'] as int? ?? -1;
         if (actualAvailable != available ||
             (sampleRate != null && actualSampleRate != sampleRate) ||
-            (channels != null && actualChannels != channels)) {
+            (channels != null && actualChannels != channels) ||
+            (activeTrack != null && actualActiveTrack != activeTrack)) {
           throw AssertionError(
             'Expected native audio available=$available sampleRate=$sampleRate '
-            'channels=$channels, got available=$actualAvailable '
-            'sampleRate=$actualSampleRate channels=$actualChannels',
+            'channels=$channels activeTrack=$activeTrack, got '
+            'available=$actualAvailable sampleRate=$actualSampleRate '
+            'channels=$actualChannels activeTrack=$actualActiveTrack',
           );
         }
       case AssertDuration(:final ptsUs, :final toleranceMs):

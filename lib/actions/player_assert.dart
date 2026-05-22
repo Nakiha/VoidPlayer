@@ -67,10 +67,12 @@ class AssertNativeAudio extends PlayerAssert {
   final bool available;
   final int? sampleRate;
   final int? channels;
+  final int? activeTrack;
   const AssertNativeAudio({
     required this.available,
     this.sampleRate,
     this.channels,
+    this.activeTrack,
   });
 }
 

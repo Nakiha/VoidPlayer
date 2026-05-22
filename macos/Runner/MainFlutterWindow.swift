@@ -108,6 +108,10 @@ private final class MacOSNativePlayerSession {
     Int(VPMacOSNativePlayerAudioChannels(handle))
   }
 
+  func activeAudioTrack() -> Int {
+    Int(VPMacOSNativePlayerActiveAudioTrack(handle))
+  }
+
   func copyCurrentFrame(waitTimeoutMs: Int = 0) throws -> MacOSDecodedFirstFrame {
     let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
     var lastError = ""
@@ -301,6 +305,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "audioAvailable": nativePlayer?.hasAudio() ?? false,
         "audioSampleRate": nativePlayer?.audioSampleRate() ?? 0,
         "audioChannels": nativePlayer?.audioChannels() ?? 0,
+        "activeAudioTrack": nativePlayer?.activeAudioTrack() ?? -1,
       ])
     case "captureViewport":
       result(captureViewport())

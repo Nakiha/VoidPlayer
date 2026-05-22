@@ -59,7 +59,7 @@ logic out of Swift runner code.
 - [x] Move FFmpeg first-frame/seek decode into `native/macos`.
 - [x] Reuse shared timestamp rescaling.
 - [x] Reuse shared software BGRA conversion.
-- [ ] Move capture/hash metrics out of Swift into a shared test/diagnostic helper or retire them
+- [x] Move capture/hash metrics out of Swift into a shared test/diagnostic helper or retire them
   when native capture is available.
 - [x] Add native frame queue smokes for synthetic and FFmpeg-decoded software frames.
 - [ ] Replace timer-driven target-frame decoding with a native frame queue feeding the texture
@@ -166,6 +166,10 @@ python dev.py mac-ui-test --build \
 Known build warnings remain the Metal toolchain Swift search path and the FFmpeg dylib
 deployment-target mismatch.
 
+`CAPTURE_VIEWPORT` hash/luma/non-black metrics now use the shared native
+`bgra_capture_metrics` helper. CTest covers the helper through `bgra_capture_metrics_smoke`, and
+macOS UI smoke covers both synthetic and native first-frame capture payloads.
+
 Current loop status: macOS loop enforcement now runs from a native playback tick owned by the
 macOS native player bridge. The Swift texture timer still copies frames to Flutter, but it is no
 longer responsible for deciding when loop seeks happen.
@@ -198,5 +202,4 @@ the speaker-level gap that the current native diagnostics cannot observe directl
 ## Next Slice
 
 The next implementation slice should run Windows native/UI preservation checks before M5, then start
-shrinking the remaining macOS texture bridge metrics and presentation code toward renderer-neutral
-publication.
+shrinking the remaining macOS presentation code toward renderer-neutral frame publication.

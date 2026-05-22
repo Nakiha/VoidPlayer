@@ -72,6 +72,9 @@ and cannot read arbitrary repository paths directly. By default it opens the rea
 Launch Services with background activation so the window still renders on screen without stealing
 focus from the user's current foreground app.
 
+macOS `CAPTURE_VIEWPORT` still locks the current `CVPixelBuffer` in Swift, but BGRA
+hash/luma/non-black statistics are calculated by the shared native capture metrics helper.
+
 Manual audible smoke:
 
 ```bash

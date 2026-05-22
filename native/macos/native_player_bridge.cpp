@@ -9,6 +9,7 @@
 #include "video_renderer/buffer/track_buffer.h"
 #include "video_renderer/decode/decode_thread.h"
 #include "video_renderer/frame/frame_storage.h"
+#include "video_renderer/capture/bgra_capture_metrics.h"
 #include "video_renderer/seek/seek_coordinator.h"
 
 #include <algorithm>
@@ -647,4 +648,22 @@ void VPMacOSNativeFrameFree(VPMacOSNativeFrame* frame) {
   }
   delete[] frame->bgra;
   *frame = {};
+}
+
+int VPMacOSMeasureBGRA(const uint8_t* bgra,
+                       int32_t width,
+                       int32_t height,
+                       int32_t stride_bytes,
+                       VPMacOSCaptureMetrics* out) {
+  if (!out) {
+    return -1;
+  }
+  const auto metrics = vr::measure_bgra_capture(
+      bgra, width, height, stride_bytes);
+  out->width = metrics.width;
+  out->height = metrics.height;
+  out->avg_luma = metrics.avg_luma;
+  out->non_black_ratio = metrics.non_black_ratio;
+  out->hash = metrics.hash;
+  return bgra ? 0 : -1;
 }

@@ -14,6 +14,7 @@ set(VOID_PLAYER_PORTABLE_CORE_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/sync/render_sink.cpp"
     "${VOID_NATIVE_DIR}/media/packet_queue.cpp"
     "${VOID_NATIVE_DIR}/media/seek_controller.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/capture/bgra_capture_metrics.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/seek/seek_coordinator.cpp"
 )
 

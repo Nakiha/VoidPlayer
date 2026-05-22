@@ -930,38 +930,30 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
 
     let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
     let pixels = baseAddress.assumingMemoryBound(to: UInt8.self)
-    var lumaSum = 0.0
-    var nonBlack = 0
-    var hash: UInt64 = 14_695_981_039_346_656_037
-
-    for y in 0..<height {
-      for x in 0..<width {
-        let offset = y * bytesPerRow + x * 4
-        let b = pixels[offset + 0]
-        let g = pixels[offset + 1]
-        let r = pixels[offset + 2]
-        let luma = 0.2126 * Double(r) + 0.7152 * Double(g) + 0.0722 * Double(b)
-        lumaSum += luma
-        if r > 4 || g > 4 || b > 4 {
-          nonBlack += 1
-        }
-
-        hash ^= UInt64(r)
-        hash = hash &* 1_099_511_628_211
-        hash ^= UInt64(g)
-        hash = hash &* 1_099_511_628_211
-        hash ^= UInt64(b)
-        hash = hash &* 1_099_511_628_211
-      }
+    var metrics = VPMacOSCaptureMetrics()
+    let ret = VPMacOSMeasureBGRA(
+      pixels,
+      Int32(width),
+      Int32(height),
+      Int32(bytesPerRow),
+      &metrics
+    )
+    guard ret == 0 else {
+      return (
+        width: width,
+        height: height,
+        avgLuma: 0.0,
+        nonBlackRatio: 0.0,
+        hash: "\(hashPrefix)-empty"
+      )
     }
 
-    let pixelCount = max(1, width * height)
     return (
-      width: width,
-      height: height,
-      avgLuma: lumaSum / Double(pixelCount),
-      nonBlackRatio: Double(nonBlack) / Double(pixelCount),
-      hash: String(format: "%@-%dx%d-%016llx", hashPrefix, width, height, hash)
+      width: Int(metrics.width),
+      height: Int(metrics.height),
+      avgLuma: metrics.avg_luma,
+      nonBlackRatio: metrics.non_black_ratio,
+      hash: String(format: "%@-%dx%d-%016llx", hashPrefix, width, height, metrics.hash)
     )
   }
 

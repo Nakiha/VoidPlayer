@@ -72,6 +72,12 @@ void AudioMixer::render(int16_t* dst, size_t frames) {
         fading_ = true;
     }
 
+    if (target == kAudioNoTrack && !fading_) {
+        std::memset(dst, 0, sample_count * sizeof(int16_t));
+        current_track_.store(kAudioNoTrack);
+        return;
+    }
+
     if (!fading_) {
         read_track(target, dst, frames);
         current_track_.store(target);

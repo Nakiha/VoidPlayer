@@ -94,7 +94,8 @@ Goal: local-file software playback with correct timing and basic audio.
 - [x] Route loop range to the macOS native facade and cover it with CTest/UI smoke.
 - [x] Exercise explicit test shutdown while playback is active.
 - [x] Validate user main-window close while native playback is active.
-- [ ] Validate audible-track selection with user-observable or captured PCM behavior.
+- [x] Validate inactive audible-track PCM behavior in shared `AudioMixer`.
+- [ ] Add user-observable audible playback notes or tooling.
 - [ ] Preserve Windows behavior and tests.
 
 ### M5: Metal And Hardware Decode
@@ -154,4 +155,4 @@ cannot outrun loop decisions if frame pumping stalls.
 ## Next Slice
 
 The next implementation slice should extend macOS audio coverage from diagnostics to audible-track
-selection and user-observable behavior, then run Windows native/UI preservation checks before M5.
+user-observable behavior, then run Windows native/UI preservation checks before M5.

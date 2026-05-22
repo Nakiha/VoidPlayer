@@ -128,4 +128,13 @@ if(APPLE)
     )
     add_test(NAME macos_native_player_smoke COMMAND macos_native_player_smoke)
 
+    add_executable(audio_mixer_smoke
+        "${VOID_NATIVE_DIR}/tools/audio_mixer_smoke.cpp"
+    )
+    void_apply_native_compile_options(audio_mixer_smoke)
+    target_link_libraries(audio_mixer_smoke PRIVATE
+        void_media_ffmpeg
+    )
+    add_test(NAME audio_mixer_smoke COMMAND audio_mixer_smoke)
+
 endif()

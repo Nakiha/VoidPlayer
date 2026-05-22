@@ -20,8 +20,8 @@ build settings.
 
 ## Current Scope
 
-This runner is a launch/build baseline only. It does not yet provide the VoidPlayer native playback
-bridge, full platform capability gates, or analysis window support.
+This runner is a launch/build baseline with an initial native playback bridge. It does not yet
+provide full platform capability gates, audio output, hardware decode, or analysis window support.
 
 Current Phase 1 work makes the main Dart entrypoint choose Windows/macOS bootstrap through deferred
 imports, injects platform services for window/accent/analysis dependencies, and registers a
@@ -32,14 +32,11 @@ Flutter shell with playback controls gated off and app data/logs stored under
 The runner now has a Phase 4 `FlutterTexture` bridge: `createPlayer` registers a CPU-owned BGRA
 `CVPixelBuffer` texture, returns deterministic track metadata, supports resize/destroy lifecycle
 calls, and exposes capture metrics for automation. Synthetic `macos-synthetic://...` inputs still
-render generated color bars, while sandbox-readable local files use a transitional FFmpeg
-seek/preview bridge to decode target-time software frames into the texture. macOS currently exposes
-local file playback controls for this preview path, but network/SSH media, analysis windows, real
-audio, and the final shared native player backend are still unavailable.
-
-Preview frame decoding is owned by `../native/macos/preview_frame_decoder.*` and covered by the
-native `macos_preview_frame_decoder_smoke` CTest. `Runner/MacOSFirstFrameDecoder.*` is only a thin
-Xcode/Swift bridging shim while the full native player facade is still being ported.
+render generated color bars, while sandbox-readable local files go through the shared macOS native
+facade in `../native/macos/native_player_bridge.*`. That facade owns the existing
+`DemuxThread` + `DecodeThread` + `TrackBuffer` software path and copies visible frames into the
+texture. Network/SSH media, analysis windows, real audio, hardware decode, and Metal presentation
+are still unavailable.
 
 The macOS runner also implements the shared `pickFiles` MethodChannel call with `NSOpenPanel`.
 Debug and Release entitlements include `com.apple.security.files.user-selected.read-only` so
@@ -47,12 +44,12 @@ sandboxed file selections can be read by future playback code. The toolbar still
 disabled while `nativePlayback=false`.
 
 Use `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv` for the synthetic
-texture smoke, `python dev.py mac-ui-test ui_tests/macos/first_frame_smoke.csv` for the FFmpeg
-first-frame bridge, and `python dev.py mac-ui-test ui_tests/macos/first_frame_controls_smoke.csv`
-for transitional play/pause/seek/step command semantics. Use
+texture smoke, `python dev.py mac-ui-test ui_tests/macos/first_frame_smoke.csv` for the native
+facade first visible frame, and `python dev.py mac-ui-test ui_tests/macos/first_frame_controls_smoke.csv`
+for play/pause/seek/step command semantics. Use
 `python dev.py mac-ui-test ui_tests/macos/seek_frame_smoke.csv` to verify that seek commands decode
 and publish a new target-time frame through the same texture.
-`python dev.py mac-ui-test ui_tests/macos/preview_playback_smoke.csv` covers the temporary
-timer-driven preview playback loop. The helper copies CSV scripts into the app container before
-launch and rewrites repo-relative `ADD_MEDIA` fixtures to sandbox-local copies because the macOS
-debug app is sandboxed and cannot read arbitrary repository paths directly.
+`python dev.py mac-ui-test ui_tests/macos/preview_playback_smoke.csv` covers visible native playback
+frame advancement. The helper copies CSV scripts into the app container before launch and rewrites
+repo-relative `ADD_MEDIA` fixtures to sandbox-local copies because the macOS debug app is sandboxed
+and cannot read arbitrary repository paths directly.

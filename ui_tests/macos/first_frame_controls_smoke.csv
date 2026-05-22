@@ -1,4 +1,4 @@
-# macOS runner smoke for first-frame bridge playback command semantics.
+# macOS runner smoke for native facade playback command semantics.
 # Run with:
 #   python dev.py mac-ui-test ui_tests/macos/first_frame_controls_smoke.csv
 @WINDOW, 960, 540

@@ -10,15 +10,14 @@ Historical phase notes moved to [archive/MACOS_PORT_PLAN_HISTORY.md](archive/MAC
 
 - Flutter launches on macOS through a platform bootstrap with explicit capability gates.
 - The macOS runner registers `video_renderer` / `video_renderer/events`, creates a
-  `FlutterTexture`, and can show synthetic pixels, first decoded FFmpeg frames, seek refreshes, and
-  a temporary timer-driven preview playback loop.
+  `FlutterTexture`, and can show synthetic pixels plus local-file frames from the shared macOS
+  native facade.
 - macOS FFmpeg dylibs are bundled and codesigned into the debug app.
 - Native macOS CMake builds portable targets: `void_player_portable_core`, `void_media_ffmpeg`,
-  `void_macos_preview_decoder`, and smoke tools.
-- The preview decoder now lives under `native/macos`, links `void_media_ffmpeg`, and reuses shared
-  timestamp and software BGRA conversion helpers.
-- The app is still not on the real shared `NativePlayer` path. It has no real frame queue, audio,
-  A/V sync, Metal backend, or VideoToolbox decode.
+  `void_macos_native_player`, and smoke tools.
+- The visible macOS local-file path now uses `DemuxThread` + `DecodeThread` + `TrackBuffer` through
+  `native/macos/native_player_bridge.*`; frames are copied into the current `CVPixelBuffer` bridge.
+- Audio, A/V sync hardening, Metal presentation, and VideoToolbox decode are still outstanding.
 
 ## Hard Contract
 
@@ -26,8 +25,8 @@ Historical phase notes moved to [archive/MACOS_PORT_PLAN_HISTORY.md](archive/MAC
   lifecycle, layout model, and capture contracts.
 - Keep platform differences behind adapters: D3D11/shared-texture output on Windows,
   CVPixelBuffer/IOSurface/Metal output on macOS, and platform audio devices.
-- Treat `native/macos/preview_frame_decoder.*` and the Swift preview timer as scaffolding. New work
-  should either delete that scaffolding or move it closer to shared native components.
+- Keep runner code as glue only. New playback state belongs in shared native components or thin
+  platform adapters, not in Objective-C++ or Swift.
 - Do not duplicate playback state machines, loop/timeline math, or track ownership in Objective-C++
   or Swift runner code.
 - Do not introduce `libswscale` / `libyuv` as a generic fallback.
@@ -83,7 +82,7 @@ Goal: make the macOS MethodChannel call the same native player surface as Window
 - [x] Add a CTest-covered C ABI facade over `DemuxThread` + `DecodeThread` for macOS.
 - [x] Return `available=true` only when the shared facade drives playback state.
 - [x] Route the macOS MethodChannel create/play/pause/seek path through the shared facade.
-- [ ] Delete the legacy preview decoder target once remaining smoke coverage moves to the facade.
+- [x] Delete the legacy preview decoder target once remaining smoke coverage moves to the facade.
 
 ### M4: Software Playback MVP
 
@@ -137,5 +136,5 @@ python dev.py mac-ui-test \
 ## Next Slice
 
 The next implementation slice should harden the new visible native path: add targeted macOS UI
-coverage for seek/step through the shared facade, remove the legacy preview decoder shim, and then
-start wiring audio output behind the existing playback abstractions.
+coverage for seek/step through the shared facade, rename remaining first-frame/preview test labels,
+and then start wiring audio output behind the existing playback abstractions.

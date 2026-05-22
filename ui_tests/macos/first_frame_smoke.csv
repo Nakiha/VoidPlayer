@@ -1,4 +1,4 @@
-# macOS runner smoke for the transitional FFmpeg first-frame bridge.
+# macOS runner smoke for the shared native facade's first visible frame.
 # Run with:
 #   python dev.py mac-ui-test ui_tests/macos/first_frame_smoke.csv
 @WINDOW, 960, 540

@@ -47,6 +47,16 @@ app 抢走；需要手动观察时可加 `--visible` 使用直接启动路径：
 python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/native_facade_smoke.csv ui_tests/macos/native_first_frame_smoke.csv ui_tests/macos/native_controls_smoke.csv ui_tests/macos/native_seek_frame_smoke.csv ui_tests/macos/native_playback_smoke.csv ui_tests/macos/native_playing_seek_keeps_state_smoke.csv ui_tests/macos/native_playing_step_pauses_smoke.csv ui_tests/macos/native_loop_range_smoke.csv ui_tests/macos/native_audio_diagnostics_smoke.csv ui_tests/macos/native_audio_play_seek_smoke.csv ui_tests/macos/native_audio_destroy_recreate_smoke.csv ui_tests/macos/native_quit_while_playing_smoke.csv ui_tests/macos/native_user_window_close_smoke.csv
 ```
 
+macOS 手动听音 smoke：
+
+```bash
+python dev.py mac-ui-test --visible --build ui_tests/macos/native_audio_play_seek_smoke.csv
+```
+
+这个脚本会生成短 sine 音频 fixture，播放、播放中 seek、暂停、恢复。自动化只能证明
+native facade 识别音轨并保持 active audio track；在有音量的默认输出设备上听到 seek/resume
+前后稳定的提示音，才算当前阶段的扬声器级确认。
+
 ## 测试目录约定
 
 ```text

@@ -17,7 +17,11 @@ Historical phase notes moved to [archive/MACOS_PORT_PLAN_HISTORY.md](archive/MAC
   `void_macos_native_player`, and smoke tools.
 - The visible macOS local-file path now uses `DemuxThread` + `DecodeThread` + `TrackBuffer` through
   `native/macos/native_player_bridge.*`; frames are copied into the current `CVPixelBuffer` bridge.
-- Audio, A/V sync hardening, Metal presentation, and VideoToolbox decode are still outstanding.
+- macOS audio now uses the shared native audio engine and miniaudio/CoreAudio output path. Automated
+  diagnostics cover stream wiring and play/seek/pause/resume lifecycle; a manual audible smoke is
+  documented for speaker-level confirmation.
+- A/V sync hardening, Metal presentation, VideoToolbox decode, and macOS analysis support are still
+  outstanding.
 
 ## Hard Contract
 
@@ -95,7 +99,7 @@ Goal: local-file software playback with correct timing and basic audio.
 - [x] Exercise explicit test shutdown while playback is active.
 - [x] Validate user main-window close while native playback is active.
 - [x] Validate inactive audible-track PCM behavior in shared `AudioMixer`.
-- [ ] Add user-observable audible playback notes or tooling.
+- [x] Add user-observable audible playback notes or tooling.
 - [ ] Preserve Windows behavior and tests.
 
 ### M5: Metal And Hardware Decode
@@ -147,12 +151,41 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_user_window_close_smoke.csv
 ```
 
+The full macOS smoke set above passed with `--build` on 2026-05-22 after the analysis submodules
+were initialized. Known build warnings remain the Metal toolchain Swift search path and the FFmpeg
+dylib deployment-target mismatch.
+
 Current limitation: macOS loop enforcement is evaluated from the native frame-copy path. That keeps
 the Swift layer as glue for the MVP, but it is still coupled to visible frame pumping. Move loop
 evaluation into a clock-owned native playback tick before starting Metal/VideoToolbox work so audio
 cannot outrun loop decisions if frame pumping stalls.
 
+Windows preservation status: on this macOS host, `python dev.py test --native-only` currently stops
+before the native test build while preparing the analyzer because it invokes
+`powershell ... native/analysis/vendor/ffmpeg/voidplayer/build_windows_msvc.ps1`, and PowerShell is
+not installed here. Run the native-only suite and a Windows UI smoke that exercises `QUIT` after
+player creation on a Windows host before closing M4.
+
+Manual audible smoke:
+
+```bash
+python dev.py mac-ui-test --visible --build ui_tests/macos/native_audio_play_seek_smoke.csv
+```
+
+Listen for the generated sine tone before and after play-time seek, pause, and resume. This fills
+the speaker-level gap that the current native diagnostics cannot observe directly.
+
+## M4 Exit Criteria
+
+- Full macOS smoke set passes with `--build`.
+- Portable macOS CTest passes for the shared native facade/audio path.
+- Manual audible smoke confirms speaker output on the default macOS output device.
+- Windows native-only and one Windows UI smoke with player creation plus `QUIT` pass on a Windows
+  host.
+- The loop-range frame-pump coupling is either moved into a native playback tick or remains an
+  explicit blocker before M5 starts.
+
 ## Next Slice
 
-The next implementation slice should extend macOS audio coverage from diagnostics to audible-track
-user-observable behavior, then run Windows native/UI preservation checks before M5.
+The next implementation slice should move macOS loop enforcement out of the visible frame-copy path
+and into a native playback tick, then run Windows native/UI preservation checks before M5.

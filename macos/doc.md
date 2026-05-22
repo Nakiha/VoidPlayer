@@ -38,9 +38,10 @@ facade in `../native/macos/native_player_bridge.*`. That facade owns the existin
 texture. The same facade now compiles and owns the shared native audio engine on macOS, routes
 optional audio packets into `AudioDecodeThread`, and controls output through the existing
 play/pause/seek/setAudibleTrack calls. UI automation can generate a short sine-audio media file and
-verify native audio diagnostics; user-observable audible behavior still needs stronger regression
-coverage. Network/SSH media, analysis windows, hardware decode, and Metal presentation are still
-unavailable.
+verify native audio diagnostics, while `audio_mixer_smoke` verifies that inactive audible tracks
+mute without consuming queued PCM. Speaker-level audible output still needs a manual smoke until the
+test harness has an audio capture or fake output device. Network/SSH media, analysis windows,
+hardware decode, and Metal presentation are still unavailable.
 
 The macOS runner also implements the shared `pickFiles` MethodChannel call with `NSOpenPanel`.
 Debug and Release entitlements include `com.apple.security.files.user-selected.read-only` so
@@ -69,3 +70,15 @@ repo-relative `ADD_MEDIA` fixtures to sandbox-local copies because the macOS deb
 and cannot read arbitrary repository paths directly. By default it opens the real `.app` through
 Launch Services with background activation so the window still renders on screen without stealing
 focus from the user's current foreground app.
+
+Manual audible smoke:
+
+```bash
+python dev.py mac-ui-test --visible --build ui_tests/macos/native_audio_play_seek_smoke.csv
+```
+
+This script generates the same short sine-audio fixture used by automation, plays it, seeks while
+playing, pauses, and resumes. With the system output device selected and volume audible, listen for
+a stable tone before and after seek/resume. The automated diagnostics prove the native facade sees
+the audio stream and keeps the active track wired; this manual check is the current speaker-level
+coverage.

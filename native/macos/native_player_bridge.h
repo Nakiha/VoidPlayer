@@ -32,6 +32,10 @@ void VPMacOSNativePlayerClose(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerPause(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerSetSpeed(VPMacOSNativePlayer* player, double speed);
+void VPMacOSNativePlayerSetLoopRange(VPMacOSNativePlayer* player,
+                                     int enabled,
+                                     int64_t start_us,
+                                     int64_t end_us);
 void VPMacOSNativePlayerSetAudibleTrack(VPMacOSNativePlayer* player,
                                         int32_t file_id);
 void VPMacOSNativePlayerSeek(VPMacOSNativePlayer* player, int64_t pts_us);

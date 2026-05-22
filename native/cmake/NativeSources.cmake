@@ -14,6 +14,7 @@ set(VOID_PLAYER_PORTABLE_CORE_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/sync/render_sink.cpp"
     "${VOID_NATIVE_DIR}/media/packet_queue.cpp"
     "${VOID_NATIVE_DIR}/media/seek_controller.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/seek/seek_coordinator.cpp"
 )
 
 set(VOID_MEDIA_FFMPEG_SOURCES
@@ -65,7 +66,6 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/renderer_config_validation.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/playback/renderer_playback_command_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/seek/renderer_seek_log_policy.cpp"
-    "${VOID_NATIVE_DIR}/video_renderer/seek/seek_coordinator.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track/track_buffer_budget.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track/track_lifecycle.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track/track_pipeline.cpp"

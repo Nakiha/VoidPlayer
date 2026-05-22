@@ -44,7 +44,7 @@ repo-relative `ADD_MEDIA` 路径重写为 container 内的媒体副本；`GENERA
 app 抢走；需要手动观察时可加 `--visible` 使用直接启动路径：
 
 ```bash
-python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/native_facade_smoke.csv ui_tests/macos/native_first_frame_smoke.csv ui_tests/macos/native_controls_smoke.csv ui_tests/macos/native_seek_frame_smoke.csv ui_tests/macos/native_playback_smoke.csv ui_tests/macos/native_playing_seek_keeps_state_smoke.csv ui_tests/macos/native_playing_step_pauses_smoke.csv ui_tests/macos/native_audio_diagnostics_smoke.csv ui_tests/macos/native_audio_play_seek_smoke.csv ui_tests/macos/native_audio_destroy_recreate_smoke.csv
+python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/native_facade_smoke.csv ui_tests/macos/native_first_frame_smoke.csv ui_tests/macos/native_controls_smoke.csv ui_tests/macos/native_seek_frame_smoke.csv ui_tests/macos/native_playback_smoke.csv ui_tests/macos/native_playing_seek_keeps_state_smoke.csv ui_tests/macos/native_playing_step_pauses_smoke.csv ui_tests/macos/native_loop_range_smoke.csv ui_tests/macos/native_audio_diagnostics_smoke.csv ui_tests/macos/native_audio_play_seek_smoke.csv ui_tests/macos/native_audio_destroy_recreate_smoke.csv
 ```
 
 ## 测试目录约定

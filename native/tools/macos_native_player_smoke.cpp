@@ -130,14 +130,38 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    VPMacOSNativePlayerSetLoopRange(player.get(), 1, 1'000'000, 1'250'000);
+    VPMacOSNativePlayerSeek(player.get(), 1'000'000);
+    VPMacOSNativePlayerPlay(player.get());
+    std::this_thread::sleep_for(std::chrono::milliseconds(900));
+    VPMacOSNativeFrame looped = {};
+    if (!wait_for_frame(player.get(), looped, std::chrono::seconds(3))) {
+        VPMacOSNativeFrameFree(&first);
+        VPMacOSNativeFrameFree(&playing);
+        VPMacOSNativeFrameFree(&seeked);
+        return 1;
+    }
+    VPMacOSNativePlayerPause(player.get());
+    VPMacOSNativePlayerSetLoopRange(player.get(), 0, 0, 0);
+    if (looped.pts_us > 1'450'000) {
+        std::cerr << "loop range did not seek back near start: " << looped.pts_us << "\n";
+        VPMacOSNativeFrameFree(&first);
+        VPMacOSNativeFrameFree(&playing);
+        VPMacOSNativeFrameFree(&seeked);
+        VPMacOSNativeFrameFree(&looped);
+        return 1;
+    }
+
     std::cout << "macOS native player frames: first=" << first_pts
               << " playing=" << playing.pts_us
               << " seeked=" << seeked.pts_us
+              << " looped=" << looped.pts_us
               << " size=" << first.width << "x" << first.height
               << " non_black=" << non_black_ratio(first) << "\n";
 
     VPMacOSNativeFrameFree(&first);
     VPMacOSNativeFrameFree(&playing);
     VPMacOSNativeFrameFree(&seeked);
+    VPMacOSNativeFrameFree(&looped);
     return 0;
 }

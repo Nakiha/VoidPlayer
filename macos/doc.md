@@ -55,12 +55,13 @@ native frame. `native_controls_smoke.csv` covers play/pause/seek/step command se
 `native_seek_frame_smoke.csv` verifies that seek commands decode and publish a new target-time
 frame through the same texture, `native_playback_smoke.csv` covers visible native playback frame
 advancement, the `native_playing_*` smokes lock down seek/step behavior while playback is
-running, `native_audio_diagnostics_smoke.csv` generates a short sine-audio media file to prove
-the native facade sees and wires an audio stream, and `native_audio_play_seek_smoke.csv` keeps that
-audio track stable across play, seek, pause, and resume. `native_audio_destroy_recreate_smoke.csv`
-removes the final audio track to force native teardown, then recreates playback from the same
-fixture. A seek follows the shared keep-previous-state preference; step navigation is explicit
-pause-on-step. The helper copies CSV
+running, `native_loop_range_smoke.csv` verifies that Dart loop-range state reaches the macOS native
+facade instead of relying on the fallback timer, `native_audio_diagnostics_smoke.csv` generates a
+short sine-audio media file to prove the native facade sees and wires an audio stream, and
+`native_audio_play_seek_smoke.csv` keeps that audio track stable across play, seek, pause, and
+resume. `native_audio_destroy_recreate_smoke.csv` removes the final audio track to force native
+teardown, then recreates playback from the same fixture. A seek follows the shared
+keep-previous-state preference; step navigation is explicit pause-on-step. The helper copies CSV
 scripts into the app container before launch and rewrites
 repo-relative `ADD_MEDIA` fixtures to sandbox-local copies because the macOS debug app is sandboxed
 and cannot read arbitrary repository paths directly. By default it opens the real `.app` through

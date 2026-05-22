@@ -478,6 +478,8 @@
 				"$(PROJECT_DIR)/../native/cmake/PortableTargets.cmake",
 				"$(PROJECT_DIR)/../native/macos/native_player_bridge.cpp",
 				"$(PROJECT_DIR)/../native/macos/native_player_bridge.h",
+				"$(PROJECT_DIR)/../native/video_renderer/seek/seek_coordinator.cpp",
+				"$(PROJECT_DIR)/../native/video_renderer/seek/seek_coordinator.h",
 			);
 			name = "[VoidPlayer] Build native macOS player";
 			outputFileListPaths = (

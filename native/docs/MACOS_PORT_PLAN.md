@@ -91,7 +91,8 @@ Goal: local-file software playback with correct timing and basic audio.
 - [x] Feed decoded frames into the macOS `CVPixelBuffer` texture bridge from a native queue.
 - [x] Add CoreAudio/miniaudio output behind the existing audio abstraction.
 - [x] Validate audio play/seek/pause/resume and destroy/recreate lifecycle through macOS UI smokes.
-- [ ] Validate audible-track selection, loop, and window close.
+- [x] Route loop range to the macOS native facade and cover it with CTest/UI smoke.
+- [ ] Validate audible-track selection and window close.
 - [ ] Preserve Windows behavior and tests.
 
 ### M5: Metal And Hardware Decode
@@ -135,6 +136,7 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_playback_smoke.csv \
   ui_tests/macos/native_playing_seek_keeps_state_smoke.csv \
   ui_tests/macos/native_playing_step_pauses_smoke.csv \
+  ui_tests/macos/native_loop_range_smoke.csv \
   ui_tests/macos/native_audio_diagnostics_smoke.csv \
   ui_tests/macos/native_audio_play_seek_smoke.csv \
   ui_tests/macos/native_audio_destroy_recreate_smoke.csv
@@ -143,5 +145,5 @@ python dev.py mac-ui-test \
 ## Next Slice
 
 The next implementation slice should extend macOS audio coverage from diagnostics to audible-track
-selection, loop, window-close shutdown, and user-observable behavior, while keeping the Swift timer
-limited to frame pumping and leaving timeline, loop, and decode policy in the shared layers.
+selection, window-close shutdown, and user-observable behavior, while keeping the Swift timer
+limited to frame pumping and leaving timeline and decode policy in the shared layers.

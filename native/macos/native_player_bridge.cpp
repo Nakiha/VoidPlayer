@@ -9,6 +9,7 @@
 #include "video_renderer/buffer/track_buffer.h"
 #include "video_renderer/decode/decode_thread.h"
 #include "video_renderer/frame/frame_storage.h"
+#include "video_renderer/seek/seek_coordinator.h"
 
 #include <algorithm>
 #include <cstring>
@@ -273,6 +274,7 @@ public:
     audio_available_ = false;
     audio_sample_rate_ = 0;
     audio_channels_ = 0;
+    loop_range_ = vr::LoopRangeState();
   }
 
   void play() {
@@ -290,6 +292,14 @@ public:
 
   void set_speed(double speed) {
     playback_.set_speed(std::max(0.01, speed));
+  }
+
+  void set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
+    const auto next = vr::normalize_loop_range_state(enabled, start_us, end_us);
+    if (vr::loop_range_states_equal(loop_range_, next)) {
+      return;
+    }
+    loop_range_ = next;
   }
 
   void set_audible_track(int32_t file_id) {
@@ -334,6 +344,7 @@ public:
       error = "player is not open";
       return false;
     }
+    apply_loop_range_if_needed();
     const int64_t target_pts = playback_.clock().current_pts_us();
     while (true) {
       auto next = track_buffer_->peek(1);
@@ -358,6 +369,23 @@ public:
   }
 
 private:
+  void apply_loop_range_if_needed() {
+    if (!track_buffer_ || !seek_controller_) {
+      return;
+    }
+    vr::LoopRangeSeekInput input;
+    input.playing = playing_;
+    input.loop_enabled = loop_range_.enabled;
+    input.clock_paused = playback_.clock().is_paused();
+    input.current_pts_us = playback_.clock().current_pts_us();
+    input.start_us = loop_range_.start_us;
+    input.end_us = loop_range_.end_us;
+    const auto decision = vr::choose_loop_range_seek(input);
+    if (decision.should_seek) {
+      seek(decision.target_pts_us);
+    }
+  }
+
   std::string path_;
   std::unique_ptr<vr::SeekController> seek_controller_;
   std::unique_ptr<vr::PacketQueue> packet_queue_;
@@ -372,6 +400,7 @@ private:
   bool audio_available_ = false;
   int32_t audio_sample_rate_ = 0;
   int32_t audio_channels_ = 0;
+  vr::LoopRangeState loop_range_;
   bool playing_ = false;
 };
 
@@ -438,6 +467,17 @@ void VPMacOSNativePlayerSetSpeed(VPMacOSNativePlayer* player, double speed) {
   }
   std::lock_guard<std::mutex> lock(player->mutex);
   player->core.set_speed(speed);
+}
+
+void VPMacOSNativePlayerSetLoopRange(VPMacOSNativePlayer* player,
+                                     int enabled,
+                                     int64_t start_us,
+                                     int64_t end_us) {
+  if (!player) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  player->core.set_loop_range(enabled != 0, start_us, end_us);
 }
 
 void VPMacOSNativePlayerSetAudibleTrack(VPMacOSNativePlayer* player,

@@ -68,6 +68,15 @@ private final class MacOSNativePlayerSession {
     VPMacOSNativePlayerSetSpeed(handle, speed)
   }
 
+  func setLoopRange(enabled: Bool, startUs: Int, endUs: Int) {
+    VPMacOSNativePlayerSetLoopRange(
+      handle,
+      enabled ? 1 : 0,
+      Int64(startUs),
+      Int64(endUs)
+    )
+  }
+
   func setAudibleTrack(_ fileId: Int) {
     VPMacOSNativePlayerSetAudibleTrack(handle, Int32(fileId))
   }
@@ -209,7 +218,14 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
-    case "initLogging", "setLoopRange", "setViewportBackgroundColor", "setTrackOffset":
+    case "initLogging", "setViewportBackgroundColor", "setTrackOffset":
+      result(nil)
+    case "setLoopRange":
+      nativePlayer?.setLoopRange(
+        enabled: boolArg(call.arguments, "enabled") ?? false,
+        startUs: intArg(call.arguments, "startUs") ?? 0,
+        endUs: intArg(call.arguments, "endUs") ?? 0
+      )
       result(nil)
     case "setAudibleTrack":
       let fileId = intArg(call.arguments, "fileId") ?? -1
@@ -598,7 +614,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private func copyNativePlaybackFrame(generation: Int) {
     do {
       guard let nativePlayer else { return }
-      let decoded = try nativePlayer.copyCurrentFrame()
+      let decoded = try nativePlayer.copyCurrentFrame(waitTimeoutMs: 100)
       DispatchQueue.main.async { [weak self] in
         guard let self,
               self.playbackGeneration == generation,

@@ -6,6 +6,7 @@ target_include_directories(video_renderer_core PUBLIC
 )
 target_include_directories(video_renderer_core SYSTEM PUBLIC
     ${FFMPEG_INCLUDE_DIR}
+    ${VOID_MINIAUDIO_INCLUDE_DIR}
 )
 
 target_link_libraries(video_renderer_core PUBLIC

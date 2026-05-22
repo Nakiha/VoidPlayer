@@ -1,10 +1,12 @@
 #include "native_player_bridge.h"
 
+#include "audio/audio_output.h"
+#include "audio/audio_output_factory.h"
 #include "media/demux_thread.h"
 #include "media/packet_queue.h"
 #include "media/seek_controller.h"
+#include "playback/playback_controller.h"
 #include "video_renderer/buffer/track_buffer.h"
-#include "video_renderer/clock.h"
 #include "video_renderer/decode/decode_thread.h"
 #include "video_renderer/frame/frame_storage.h"
 
@@ -163,6 +165,9 @@ bool copy_frame_to_bgra(const vr::TextureFrame& frame, VPMacOSNativeFrame* out) 
 
 class MacOSNativePlayerCore {
 public:
+  MacOSNativePlayerCore()
+      : playback_(vr::create_default_audio_output) {}
+
   ~MacOSNativePlayerCore() { close(); }
 
   bool open(const char* path, std::string& error) {
@@ -175,8 +180,10 @@ public:
     path_ = path;
     seek_controller_ = std::make_unique<vr::SeekController>();
     packet_queue_ = std::make_unique<vr::PacketQueue>(96);
+    audio_packet_queue_ = std::make_unique<vr::PacketQueue>(96);
     track_buffer_ = std::make_unique<vr::TrackBuffer>(16, 4);
     demux_ = std::make_unique<vr::DemuxThread>(path_, *packet_queue_, *seek_controller_);
+    demux_->add_optional_output(vr::DemuxStreamKind::Audio, *audio_packet_queue_);
 
     if (!demux_->open()) {
       error = "failed to open demux input";
@@ -194,6 +201,24 @@ public:
     width_ = stats.width;
     height_ = stats.height;
     duration_us_ = stats.duration_us;
+    audio_sample_rate_ = stats.sample_rate;
+    audio_channels_ = stats.channels;
+
+    playback_.stop_session();
+    if (stats.audio_stream_index >= 0 && stats.audio_codec_params) {
+      playback_.start_session();
+      auto* audio = playback_.audio_output();
+      audio_available_ = audio &&
+          audio->add_track(0, *audio_packet_queue_, stats.audio_codec_params,
+                           stats.audio_time_base);
+      if (audio_available_) {
+        audio->set_active_track(0);
+        audio->set_all_decode_paused(true);
+      } else {
+        playback_.stop_session();
+      }
+    }
+
     decoder_ = std::make_unique<vr::DecodeThread>(
         *packet_queue_, *track_buffer_, stats.codec_params, stats.time_base);
     if (!decoder_->is_valid()) {
@@ -204,6 +229,9 @@ public:
     demux_->set_seek_callback([this](int64_t pts_us, vr::SeekType type) {
       if (decoder_) {
         decoder_->notify_seek(pts_us, type);
+      }
+      if (auto* audio = playback_.audio_output()) {
+        audio->notify_seek(0, pts_us, type);
       }
     });
     if (!decoder_->start()) {
@@ -217,14 +245,15 @@ public:
       return false;
     }
 
-    clock_.seek(0);
-    clock_.pause();
+    playback_.seek_clock(0);
+    playback_.pause();
     playing_ = false;
     return true;
   }
 
   void close() {
     playing_ = false;
+    playback_.stop_session();
     if (decoder_) {
       decoder_->stop();
     }
@@ -234,12 +263,16 @@ public:
     decoder_.reset();
     demux_.reset();
     track_buffer_.reset();
+    audio_packet_queue_.reset();
     packet_queue_.reset();
     seek_controller_.reset();
     path_.clear();
     width_ = 0;
     height_ = 0;
     duration_us_ = 0;
+    audio_available_ = false;
+    audio_sample_rate_ = 0;
+    audio_channels_ = 0;
   }
 
   void play() {
@@ -247,16 +280,22 @@ public:
       return;
     }
     playing_ = true;
-    clock_.resume();
+    playback_.play();
   }
 
   void pause() {
     playing_ = false;
-    clock_.pause();
+    playback_.pause();
   }
 
   void set_speed(double speed) {
-    clock_.set_speed(std::max(0.01, speed));
+    playback_.set_speed(std::max(0.01, speed));
+  }
+
+  void set_audible_track(int32_t file_id) {
+    if (auto* audio = playback_.audio_output()) {
+      audio->set_active_track(file_id);
+    }
   }
 
   void seek(int64_t pts_us) {
@@ -267,25 +306,31 @@ public:
     track_buffer_->set_state(vr::TrackState::Flushing);
     track_buffer_->clear_frames();
     packet_queue_->flush();
+    if (audio_packet_queue_) {
+      audio_packet_queue_->flush();
+    }
     seek_controller_->request_seek(target, vr::SeekType::Exact);
-    clock_.seek(target);
+    playback_.seek_clock(target);
   }
 
   int64_t current_pts_us() const {
-    return clock_.current_pts_us();
+    return playback_.clock().current_pts_us();
   }
 
   int64_t duration_us() const { return duration_us_; }
   int32_t width() const { return width_; }
   int32_t height() const { return height_; }
   bool is_playing() const { return playing_; }
+  bool has_audio() const { return audio_available_; }
+  int32_t audio_sample_rate() const { return audio_sample_rate_; }
+  int32_t audio_channels() const { return audio_channels_; }
 
   bool copy_current_frame(VPMacOSNativeFrame* out, std::string& error) {
     if (!track_buffer_) {
       error = "player is not open";
       return false;
     }
-    const int64_t target_pts = clock_.current_pts_us();
+    const int64_t target_pts = playback_.clock().current_pts_us();
     while (true) {
       auto next = track_buffer_->peek(1);
       if (!next.has_value() || next->pts_us > target_pts) {
@@ -312,13 +357,17 @@ private:
   std::string path_;
   std::unique_ptr<vr::SeekController> seek_controller_;
   std::unique_ptr<vr::PacketQueue> packet_queue_;
+  std::unique_ptr<vr::PacketQueue> audio_packet_queue_;
   std::unique_ptr<vr::TrackBuffer> track_buffer_;
   std::unique_ptr<vr::DemuxThread> demux_;
   std::unique_ptr<vr::DecodeThread> decoder_;
-  vr::Clock clock_;
+  vr::PlaybackController playback_;
   int32_t width_ = 0;
   int32_t height_ = 0;
   int64_t duration_us_ = 0;
+  bool audio_available_ = false;
+  int32_t audio_sample_rate_ = 0;
+  int32_t audio_channels_ = 0;
   bool playing_ = false;
 };
 
@@ -387,6 +436,15 @@ void VPMacOSNativePlayerSetSpeed(VPMacOSNativePlayer* player, double speed) {
   player->core.set_speed(speed);
 }
 
+void VPMacOSNativePlayerSetAudibleTrack(VPMacOSNativePlayer* player,
+                                        int32_t file_id) {
+  if (!player) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  player->core.set_audible_track(file_id);
+}
+
 void VPMacOSNativePlayerSeek(VPMacOSNativePlayer* player, int64_t pts_us) {
   if (!player) {
     return;
@@ -433,6 +491,30 @@ int VPMacOSNativePlayerIsPlaying(VPMacOSNativePlayer* player) {
   }
   std::lock_guard<std::mutex> lock(player->mutex);
   return player->core.is_playing() ? 1 : 0;
+}
+
+int VPMacOSNativePlayerHasAudio(VPMacOSNativePlayer* player) {
+  if (!player) {
+    return 0;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  return player->core.has_audio() ? 1 : 0;
+}
+
+int32_t VPMacOSNativePlayerAudioSampleRate(VPMacOSNativePlayer* player) {
+  if (!player) {
+    return 0;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  return player->core.audio_sample_rate();
+}
+
+int32_t VPMacOSNativePlayerAudioChannels(VPMacOSNativePlayer* player) {
+  if (!player) {
+    return 0;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  return player->core.audio_channels();
 }
 
 int VPMacOSNativePlayerCopyCurrentFrameBGRA(VPMacOSNativePlayer* player,

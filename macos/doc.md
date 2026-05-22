@@ -21,7 +21,7 @@ build settings.
 ## Current Scope
 
 This runner is a launch/build baseline with an initial native playback bridge. It does not yet
-provide full platform capability gates, audio output, hardware decode, or analysis window support.
+provide full platform capability gates, hardware decode, or analysis window support.
 
 Current Phase 1 work makes the main Dart entrypoint choose Windows/macOS bootstrap through deferred
 imports, injects platform services for window/accent/analysis dependencies, and registers a
@@ -35,8 +35,11 @@ calls, and exposes capture metrics for automation. Synthetic `macos-synthetic://
 render generated color bars, while sandbox-readable local files go through the shared macOS native
 facade in `../native/macos/native_player_bridge.*`. That facade owns the existing
 `DemuxThread` + `DecodeThread` + `TrackBuffer` software path and copies visible frames into the
-texture. Network/SSH media, analysis windows, real audio, hardware decode, and Metal presentation
-are still unavailable.
+texture. The same facade now compiles and owns the shared native audio engine on macOS, routes
+optional audio packets into `AudioDecodeThread`, and controls output through the existing
+play/pause/seek/setAudibleTrack calls. The repository does not yet include a portable audio-bearing
+macOS UI fixture, so audible output still needs fixture-backed regression coverage. Network/SSH
+media, analysis windows, hardware decode, and Metal presentation are still unavailable.
 
 The macOS runner also implements the shared `pickFiles` MethodChannel call with `NSOpenPanel`.
 Debug and Release entitlements include `com.apple.security.files.user-selected.read-only` so

@@ -138,6 +138,6 @@ python dev.py mac-ui-test \
 
 ## Next Slice
 
-The next implementation slice should start wiring audio output behind the existing playback
-abstractions, while keeping the Swift timer limited to frame pumping and leaving timeline, loop, and
-decode policy in the shared layers.
+The next implementation slice should add a small portable audio-bearing fixture or generator path,
+then cover macOS audio diagnostics and audible-track selection in automation. Keep the Swift timer
+limited to frame pumping and leave timeline, loop, and decode policy in the shared layers.

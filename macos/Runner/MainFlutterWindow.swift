@@ -68,6 +68,10 @@ private final class MacOSNativePlayerSession {
     VPMacOSNativePlayerSetSpeed(handle, speed)
   }
 
+  func setAudibleTrack(_ fileId: Int) {
+    VPMacOSNativePlayerSetAudibleTrack(handle, Int32(fileId))
+  }
+
   func seek(_ ptsUs: Int) {
     VPMacOSNativePlayerSeek(handle, Int64(ptsUs))
   }
@@ -90,6 +94,18 @@ private final class MacOSNativePlayerSession {
 
   func isPlaying() -> Bool {
     VPMacOSNativePlayerIsPlaying(handle) != 0
+  }
+
+  func hasAudio() -> Bool {
+    VPMacOSNativePlayerHasAudio(handle) != 0
+  }
+
+  func audioSampleRate() -> Int {
+    Int(VPMacOSNativePlayerAudioSampleRate(handle))
+  }
+
+  func audioChannels() -> Int {
+    Int(VPMacOSNativePlayerAudioChannels(handle))
   }
 
   func copyCurrentFrame(waitTimeoutMs: Int = 0) throws -> MacOSDecodedFirstFrame {
@@ -189,8 +205,11 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
-    case "initLogging", "setLoopRange", "setAudibleTrack",
-         "setViewportBackgroundColor", "setTrackOffset":
+    case "initLogging", "setLoopRange", "setViewportBackgroundColor", "setTrackOffset":
+      result(nil)
+    case "setAudibleTrack":
+      let fileId = intArg(call.arguments, "fileId") ?? -1
+      nativePlayer?.setAudibleTrack(fileId)
       result(nil)
     case "setSpeed":
       playbackSpeed = max(0.01, doubleArg(call.arguments, "speed") ?? 1.0)
@@ -279,6 +298,9 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
           : "macOS shared native DecodeThread facade is active",
         "textureId": textureId ?? -1,
         "trackCount": tracks.count,
+        "audioAvailable": nativePlayer?.hasAudio() ?? false,
+        "audioSampleRate": nativePlayer?.audioSampleRate() ?? 0,
+        "audioChannels": nativePlayer?.audioChannels() ?? 0,
       ])
     case "captureViewport":
       result(captureViewport())

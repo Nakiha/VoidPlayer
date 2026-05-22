@@ -28,6 +28,7 @@ target_include_directories(void_media_ffmpeg PUBLIC
 )
 target_include_directories(void_media_ffmpeg SYSTEM PUBLIC
     "${FFMPEG_INCLUDE_DIR}"
+    "${VOID_MINIAUDIO_INCLUDE_DIR}"
 )
 
 target_link_libraries(void_media_ffmpeg PUBLIC
@@ -36,7 +37,17 @@ target_link_libraries(void_media_ffmpeg PUBLIC
     ${AVCODEC_LIBRARY}
     ${AVFORMAT_LIBRARY}
     ${AVUTIL_LIBRARY}
+    ${SWRESAMPLE_LIBRARY}
 )
+
+if(APPLE)
+    target_link_libraries(void_media_ffmpeg PUBLIC
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework AudioUnit"
+        "-framework CoreFoundation"
+    )
+endif()
 
 if(APPLE)
     add_library(void_macos_native_player STATIC

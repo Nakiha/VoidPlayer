@@ -17,6 +17,13 @@ set(VOID_PLAYER_PORTABLE_CORE_SOURCES
 )
 
 set(VOID_MEDIA_FFMPEG_SOURCES
+    "${VOID_NATIVE_DIR}/audio/audio_decode_thread.cpp"
+    "${VOID_NATIVE_DIR}/audio/audio_engine.cpp"
+    "${VOID_NATIVE_DIR}/audio/audio_mixer.cpp"
+    "${VOID_NATIVE_DIR}/audio/audio_output_factory.cpp"
+    "${VOID_NATIVE_DIR}/audio/audio_track_registry.cpp"
+    "${VOID_NATIVE_DIR}/audio/miniaudio_output.cpp"
+    "${VOID_NATIVE_DIR}/audio/pcm_buffer.cpp"
     "${VOID_NATIVE_DIR}/media/demux_thread.cpp"
     "${VOID_NATIVE_DIR}/media/private_cdn_flv_demuxer.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/av_frame_lifetime.cpp"
@@ -49,13 +56,6 @@ set(VOID_RENDERER_CORE_SOURCES
 )
 
 set(VOID_RENDERER_WINDOWS_SOURCES
-    "${VOID_NATIVE_DIR}/audio/audio_decode_thread.cpp"
-    "${VOID_NATIVE_DIR}/audio/audio_engine.cpp"
-    "${VOID_NATIVE_DIR}/audio/audio_mixer.cpp"
-    "${VOID_NATIVE_DIR}/audio/audio_track_registry.cpp"
-    "${VOID_NATIVE_DIR}/audio/pcm_buffer.cpp"
-    "${VOID_NATIVE_DIR}/audio/miniaudio_output.cpp"
-    "${VOID_NATIVE_DIR}/audio/audio_output_factory.cpp"
     "${VOID_NATIVE_DIR}/player/native_player.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/audio_coordinator.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/capture/frame_capture_service.cpp"

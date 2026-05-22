@@ -161,6 +161,9 @@ class TestRunner {
       case ScriptQuit(:final exitCode):
         log.info('TestRunner ${instr.time}: QUIT $exitCode');
         await automation.closeAllAnalysisWindows();
+        if (controller.hasPlayer) {
+          await controller.destroyPlayerOnly();
+        }
         runtime.quit(exitCode);
     }
   }

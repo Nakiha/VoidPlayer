@@ -14,6 +14,7 @@ abstract interface class UiAutomationRuntime {
     required int width,
     required int height,
     int ptsOffsetUs = 0,
+    bool withAudio = false,
   });
 
   Future<void> setSeekAfterJumpBehavior(SeekAfterJumpBehavior behavior);
@@ -40,6 +41,7 @@ class DefaultUiAutomationRuntime implements UiAutomationRuntime {
     required int width,
     required int height,
     int ptsOffsetUs = 0,
+    bool withAudio = false,
   }) {
     return generateTestVideo(
       path: path,
@@ -48,6 +50,7 @@ class DefaultUiAutomationRuntime implements UiAutomationRuntime {
       width: width,
       height: height,
       ptsOffsetUs: ptsOffsetUs,
+      withAudio: withAudio,
     );
   }
 

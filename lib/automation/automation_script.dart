@@ -54,6 +54,7 @@ class ScriptGenerateTestVideo extends ScriptInstruction {
   final int width;
   final int height;
   final int ptsOffsetUs;
+  final bool withAudio;
 
   const ScriptGenerateTestVideo(
     super.time, {
@@ -63,6 +64,7 @@ class ScriptGenerateTestVideo extends ScriptInstruction {
     required this.width,
     required this.height,
     this.ptsOffsetUs = 0,
+    this.withAudio = false,
   });
 }
 
@@ -477,8 +479,9 @@ ScriptInstruction? _parseInstruction(
       }
       return ScriptSetAnalysisTestScript(time, args[0]);
     case 'GENERATE_TEST_VIDEO':
+    case 'GENERATE_TEST_VIDEO_WITH_AUDIO':
       if (args.isEmpty) {
-        log.warning('GENERATE_TEST_VIDEO missing path argument: $rawLine');
+        log.warning('$cmd missing path argument: $rawLine');
         return null;
       }
       return ScriptGenerateTestVideo(
@@ -489,6 +492,7 @@ ScriptInstruction? _parseInstruction(
         width: args.length >= 4 ? int.parse(args[3]) : 64,
         height: args.length >= 5 ? int.parse(args[4]) : 64,
         ptsOffsetUs: args.length >= 6 ? int.parse(args[5]) : 0,
+        withAudio: cmd == 'GENERATE_TEST_VIDEO_WITH_AUDIO',
       );
     case 'SET_SEEK_AFTER_JUMP_BEHAVIOR':
       if (args.isEmpty) {
@@ -593,6 +597,23 @@ ScriptInstruction? _parseInstruction(
           fileId: int.parse(args[0]),
           minUs: int.parse(args[1]),
           maxUs: int.parse(args[2]),
+        ),
+      );
+    case 'ASSERT_NATIVE_AUDIO':
+      if (args.isEmpty) {
+        log.warning('ASSERT_NATIVE_AUDIO needs available flag: $rawLine');
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertNativeAudio(
+          available: args[0] == '1' || args[0].toLowerCase() == 'true',
+          sampleRate: args.length >= 2 && args[1].isNotEmpty
+              ? int.parse(args[1])
+              : null,
+          channels: args.length >= 3 && args[2].isNotEmpty
+              ? int.parse(args[2])
+              : null,
         ),
       );
     case 'ASSERT_DURATION':

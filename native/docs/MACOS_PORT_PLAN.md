@@ -89,8 +89,8 @@ Goal: make the macOS MethodChannel call the same native player surface as Window
 Goal: local-file software playback with correct timing and basic audio.
 
 - [x] Feed decoded frames into the macOS `CVPixelBuffer` texture bridge from a native queue.
-- [ ] Add CoreAudio or miniaudio output behind the existing audio abstraction.
-- [ ] Validate pause, seek, step, loop, destroy, and window close.
+- [x] Add CoreAudio/miniaudio output behind the existing audio abstraction.
+- [ ] Validate audible-track selection, loop, destroy, and window close.
 - [ ] Preserve Windows behavior and tests.
 
 ### M5: Metal And Hardware Decode
@@ -133,11 +133,12 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_seek_frame_smoke.csv \
   ui_tests/macos/native_playback_smoke.csv \
   ui_tests/macos/native_playing_seek_keeps_state_smoke.csv \
-  ui_tests/macos/native_playing_step_pauses_smoke.csv
+  ui_tests/macos/native_playing_step_pauses_smoke.csv \
+  ui_tests/macos/native_audio_diagnostics_smoke.csv
 ```
 
 ## Next Slice
 
-The next implementation slice should add a small portable audio-bearing fixture or generator path,
-then cover macOS audio diagnostics and audible-track selection in automation. Keep the Swift timer
-limited to frame pumping and leave timeline, loop, and decode policy in the shared layers.
+The next implementation slice should extend macOS audio coverage from diagnostics to audible-track
+selection and user-observable behavior, while keeping the Swift timer limited to frame pumping and
+leaving timeline, loop, and decode policy in the shared layers.

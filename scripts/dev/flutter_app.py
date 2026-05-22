@@ -303,18 +303,130 @@ def _prepare_macos_sandbox_script(
     container_media_dir: Path,
 ) -> None:
     """Copy a macOS UI script and make repo media fixtures sandbox-readable."""
+    generated_media: dict[str, str] = {}
     with script_path.open("r", encoding="utf-8-sig", newline="") as source:
         with sandbox_script.open("w", encoding="utf-8", newline="") as dest:
             reader = csv.reader(source)
             writer = csv.writer(dest, lineterminator="\n")
             for row in reader:
-                if _is_add_media_row(row):
-                    row[2] = _macos_sandbox_media_path(row[2], container_media_dir)
+                if _is_generate_media_row(row):
+                    original_path = row[2].strip()
+                    sandbox_path = _macos_generated_media_path(
+                        original_path,
+                        container_media_dir,
+                    )
+                    generated_media[original_path] = sandbox_path
+                    _generate_macos_test_video(row, sandbox_path)
+                    continue
+                elif _is_add_media_row(row):
+                    media_path = row[2].strip()
+                    row[2] = generated_media.get(
+                        media_path,
+                        _macos_sandbox_media_path(media_path, container_media_dir),
+                    )
                 writer.writerow(row)
 
 
 def _is_add_media_row(row: list[str]) -> bool:
     return len(row) >= 3 and row[1].strip().upper() == "ADD_MEDIA"
+
+
+def _is_generate_media_row(row: list[str]) -> bool:
+    return (
+        len(row) >= 3
+        and row[1].strip().upper()
+        in {"GENERATE_TEST_VIDEO", "GENERATE_TEST_VIDEO_WITH_AUDIO"}
+    )
+
+
+def _macos_generated_media_path(media_path: str, container_media_dir: Path) -> str:
+    path = Path(media_path.strip())
+    if path.is_absolute():
+        return str(path)
+    dest = container_media_dir / path
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    return str(dest)
+
+
+def _generate_macos_test_video(row: list[str], output_path: str) -> None:
+    cmd = row[1].strip().upper()
+    frames = int(row[3]) if len(row) >= 4 and row[3].strip() else 9000
+    fps = int(row[4]) if len(row) >= 5 and row[4].strip() else 120
+    width = int(row[5]) if len(row) >= 6 and row[5].strip() else 64
+    height = int(row[6]) if len(row) >= 7 and row[6].strip() else 64
+    pts_offset_us = int(row[7]) if len(row) >= 8 and row[7].strip() else 0
+    with_audio = cmd == "GENERATE_TEST_VIDEO_WITH_AUDIO"
+    if frames <= 0 or fps <= 0 or width <= 0 or height <= 0 or pts_offset_us < 0:
+        raise ValueError(f"invalid GENERATE_TEST_VIDEO row: {row}")
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("ffmpeg not found in PATH for macOS generated UI media")
+
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    duration_seconds = frames / fps
+    ffmpeg_cmd = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"testsrc2=size={width}x{height}:rate={fps}",
+    ]
+    if with_audio:
+        ffmpeg_cmd.extend([
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency=440:sample_rate=48000:duration={duration_seconds}",
+        ])
+    if pts_offset_us > 0:
+        ffmpeg_cmd.extend([
+            "-vf",
+            f"setpts=PTS+{pts_offset_us / 1000000.0}/TB",
+            "-avoid_negative_ts",
+            "disabled",
+        ])
+    ffmpeg_cmd.extend(["-frames:v", str(frames)])
+    if with_audio:
+        ffmpeg_cmd.extend(["-map", "0:v:0", "-map", "1:a:0"])
+    ffmpeg_cmd.extend([
+        "-metadata",
+        "comment=voidplayer-mac-ui-generated",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-g",
+        str(fps),
+        "-pix_fmt",
+        "yuv420p",
+    ])
+    if with_audio:
+        ffmpeg_cmd.extend(["-c:a", "aac", "-b:a", "96k", "-shortest"])
+    else:
+        ffmpeg_cmd.append("-an")
+    ffmpeg_cmd.append(str(output))
+
+    print(f"Generating macOS UI media: {output}")
+    result = subprocess.run(
+        ffmpeg_cmd,
+        cwd=str(ROOT),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg failed ({result.returncode}) generating {output}: "
+            f"{result.stderr}"
+        )
+    if not output.exists() or output.stat().st_size <= 0:
+        raise RuntimeError(f"generated macOS UI media is empty: {output}")
 
 
 def _macos_sandbox_media_path(media_path: str, container_media_dir: Path) -> str:
@@ -341,6 +453,7 @@ def _macos_sandbox_media_path(media_path: str, container_media_dir: Path) -> str
 def _run_ui_test_process(cmd: list[str]) -> tuple[int, bool]:
     ax_tree_error = False
     test_runner_failed = False
+    test_runner_quit = False
     process = subprocess.Popen(
         cmd,
         cwd=str(ROOT),
@@ -359,8 +472,10 @@ def _run_ui_test_process(cmd: list[str]) -> tuple[int, bool]:
             ax_tree_error = True
         if line_result[1]:
             test_runner_failed = True
+        if line_result[2]:
+            test_runner_quit = True
     result = process.wait()
-    if test_runner_failed and result == 0:
+    if (test_runner_failed or not test_runner_quit) and result == 0:
         result = 1
     return result, ax_tree_error
 
@@ -371,6 +486,7 @@ def _run_macos_ui_test_process(
 ) -> tuple[int, bool]:
     ax_tree_error = False
     test_runner_failed = False
+    test_runner_quit = False
     with tempfile.TemporaryDirectory(prefix="voidplayer-mac-ui-") as tmp:
         output_path = Path(tmp) / "app.log"
         open_cmd = [
@@ -399,6 +515,8 @@ def _run_macos_ui_test_process(
                             ax_tree_error = True
                         if line_result[1]:
                             test_runner_failed = True
+                        if line_result[2]:
+                            test_runner_quit = True
                     offset = file.tell()
             time.sleep(0.05)
 
@@ -412,16 +530,21 @@ def _run_macos_ui_test_process(
                         ax_tree_error = True
                     if line_result[1]:
                         test_runner_failed = True
+                    if line_result[2]:
+                        test_runner_quit = True
 
         result = process.returncode or 0
-        if test_runner_failed and result == 0:
+        if (test_runner_failed or not test_runner_quit) and result == 0:
             result = 1
         return result, ax_tree_error
 
 
-def _scan_ui_test_output(line: str) -> tuple[bool, bool]:
+def _scan_ui_test_output(line: str) -> tuple[bool, bool, bool]:
     ax_tree_error = (
         "Failed to update ui::AXTree" in line or "accessibility_bridge.cc" in line
     )
-    test_runner_failed = "TestRunner FAIL" in line
-    return ax_tree_error, test_runner_failed
+    test_runner_failed = (
+        "TestRunner FAIL" in line or "TestRunner: script ended without QUIT" in line
+    )
+    test_runner_quit = "TestRunner " in line and ": QUIT " in line
+    return ax_tree_error, test_runner_failed, test_runner_quit

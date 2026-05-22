@@ -9,6 +9,7 @@ Future<void> generateTestVideo({
   required int width,
   required int height,
   int ptsOffsetUs = 0,
+  bool withAudio = false,
 }) async {
   if (frames <= 0 || fps <= 0 || width <= 0 || height <= 0 || ptsOffsetUs < 0) {
     throw ArgumentError(
@@ -19,6 +20,7 @@ Future<void> generateTestVideo({
   final output = File(path).absolute;
   await output.parent.create(recursive: true);
   final ffmpeg = _resolveFfmpegExecutable();
+  final durationSeconds = frames / fps;
   final args = [
     '-hide_banner',
     '-loglevel',
@@ -28,6 +30,12 @@ Future<void> generateTestVideo({
     'lavfi',
     '-i',
     'testsrc2=size=${width}x$height:rate=$fps',
+    if (withAudio) ...[
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=440:sample_rate=48000:duration=$durationSeconds',
+    ],
     if (ptsOffsetUs > 0) ...[
       '-vf',
       'setpts=PTS+${ptsOffsetUs / 1000000.0}/TB',
@@ -36,6 +44,7 @@ Future<void> generateTestVideo({
     ],
     '-frames:v',
     '$frames',
+    if (withAudio) ...['-map', '0:v:0', '-map', '1:a:0'],
     '-metadata',
     'comment=voidplayer-test-${DateTime.now().microsecondsSinceEpoch}',
     '-c:v',
@@ -46,7 +55,7 @@ Future<void> generateTestVideo({
     '$fps',
     '-pix_fmt',
     'yuv420p',
-    '-an',
+    if (withAudio) ...['-c:a', 'aac', '-b:a', '96k', '-shortest'] else '-an',
     output.path,
   ];
   final result = await Process.run(ffmpeg, args);
@@ -62,7 +71,8 @@ Future<void> generateTestVideo({
   }
   log.info(
     'TestRunner: generated ${output.path} '
-    'frames=$frames fps=$fps ptsOffsetUs=$ptsOffsetUs bytes=$size',
+    'frames=$frames fps=$fps ptsOffsetUs=$ptsOffsetUs '
+    'withAudio=$withAudio bytes=$size',
   );
 }
 

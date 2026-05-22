@@ -113,10 +113,12 @@ class TestRunner {
         :final width,
         :final height,
         :final ptsOffsetUs,
+        :final withAudio,
       ):
         log.info(
           'TestRunner ${instr.time}: GENERATE_TEST_VIDEO '
-          '$path frames=$frames fps=$fps size=${width}x$height ptsOffsetUs=$ptsOffsetUs',
+          '$path frames=$frames fps=$fps size=${width}x$height '
+          'ptsOffsetUs=$ptsOffsetUs withAudio=$withAudio',
         );
         await runtime.generateVideo(
           path: path,
@@ -125,6 +127,7 @@ class TestRunner {
           width: width,
           height: height,
           ptsOffsetUs: ptsOffsetUs,
+          withAudio: withAudio,
         );
 
       case ScriptSetSeekAfterJumpBehavior(:final behavior):

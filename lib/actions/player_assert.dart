@@ -63,6 +63,17 @@ class AssertPresentedFrameRange extends PlayerAssert {
   });
 }
 
+class AssertNativeAudio extends PlayerAssert {
+  final bool available;
+  final int? sampleRate;
+  final int? channels;
+  const AssertNativeAudio({
+    required this.available,
+    this.sampleRate,
+    this.channels,
+  });
+}
+
 class AssertDuration extends PlayerAssert {
   final int ptsUs;
   final int toleranceMs;

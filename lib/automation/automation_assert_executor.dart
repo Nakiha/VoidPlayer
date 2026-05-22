@@ -107,6 +107,24 @@ class AutomationAssertExecutor {
             'Expected presented frame for fileId=$fileId in [$minUs, $maxUs] μs, got $ptsUs',
           );
         }
+      case AssertNativeAudio(
+        :final available,
+        :final sampleRate,
+        :final channels,
+      ):
+        final diagnostics = await controller.getDiagnostics();
+        final actualAvailable = diagnostics['audioAvailable'] as bool? ?? false;
+        final actualSampleRate = diagnostics['audioSampleRate'] as int? ?? 0;
+        final actualChannels = diagnostics['audioChannels'] as int? ?? 0;
+        if (actualAvailable != available ||
+            (sampleRate != null && actualSampleRate != sampleRate) ||
+            (channels != null && actualChannels != channels)) {
+          throw AssertionError(
+            'Expected native audio available=$available sampleRate=$sampleRate '
+            'channels=$channels, got available=$actualAvailable '
+            'sampleRate=$actualSampleRate channels=$actualChannels',
+          );
+        }
       case AssertDuration(:final ptsUs, :final toleranceMs):
         final actual = await controller.duration();
         final diff = (actual - ptsUs).abs();

@@ -37,9 +37,10 @@ facade in `../native/macos/native_player_bridge.*`. That facade owns the existin
 `DemuxThread` + `DecodeThread` + `TrackBuffer` software path and copies visible frames into the
 texture. The same facade now compiles and owns the shared native audio engine on macOS, routes
 optional audio packets into `AudioDecodeThread`, and controls output through the existing
-play/pause/seek/setAudibleTrack calls. The repository does not yet include a portable audio-bearing
-macOS UI fixture, so audible output still needs fixture-backed regression coverage. Network/SSH
-media, analysis windows, hardware decode, and Metal presentation are still unavailable.
+play/pause/seek/setAudibleTrack calls. UI automation can generate a short sine-audio media file and
+verify native audio diagnostics; user-observable audible behavior still needs stronger regression
+coverage. Network/SSH media, analysis windows, hardware decode, and Metal presentation are still
+unavailable.
 
 The macOS runner also implements the shared `pickFiles` MethodChannel call with `NSOpenPanel`.
 Debug and Release entitlements include `com.apple.security.files.user-selected.read-only` so
@@ -53,9 +54,11 @@ files report the shared native facade backend and metadata, and
 native frame. `native_controls_smoke.csv` covers play/pause/seek/step command semantics,
 `native_seek_frame_smoke.csv` verifies that seek commands decode and publish a new target-time
 frame through the same texture, `native_playback_smoke.csv` covers visible native playback frame
-advancement, and the `native_playing_*` smokes lock down seek/step behavior while playback is
-running. A seek follows the shared keep-previous-state preference; step navigation is explicit
-pause-on-step. The helper copies CSV scripts into the app container before launch and rewrites
+advancement, the `native_playing_*` smokes lock down seek/step behavior while playback is
+running, and `native_audio_diagnostics_smoke.csv` generates a short sine-audio media file to prove
+the native facade sees and wires an audio stream. A seek follows the shared keep-previous-state
+preference; step navigation is explicit pause-on-step. The helper copies CSV scripts into the app
+container before launch and rewrites
 repo-relative `ADD_MEDIA` fixtures to sandbox-local copies because the macOS debug app is sandboxed
 and cannot read arbitrary repository paths directly. By default it opens the real `.app` through
 Launch Services with background activation so the window still renders on screen without stealing

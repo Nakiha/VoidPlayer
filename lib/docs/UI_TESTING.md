@@ -38,12 +38,13 @@ python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
 
 macOS 使用单独的 helper，因为 debug app 带 sandbox，不能直接读取仓库路径下的
 CSV 或媒体 fixture。`mac-ui-test` 会先把脚本复制进 app container，并把仓库内的
-repo-relative `ADD_MEDIA` 路径重写为 container 内的媒体副本，再用 `--test-script`
-启动 macOS app。默认会通过 Launch Services 后台打开真实 `.app`，窗口仍然上屏，
-但不会主动把当前前台 app 抢走；需要手动观察时可加 `--visible` 使用直接启动路径：
+repo-relative `ADD_MEDIA` 路径重写为 container 内的媒体副本；`GENERATE_TEST_VIDEO*`
+媒体会在启动前由 helper 预生成到 container 内，再用 `--test-script` 启动 macOS app。
+默认会通过 Launch Services 后台打开真实 `.app`，窗口仍然上屏，但不会主动把当前前台
+app 抢走；需要手动观察时可加 `--visible` 使用直接启动路径：
 
 ```bash
-python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/native_facade_smoke.csv ui_tests/macos/native_first_frame_smoke.csv ui_tests/macos/native_controls_smoke.csv ui_tests/macos/native_seek_frame_smoke.csv ui_tests/macos/native_playback_smoke.csv ui_tests/macos/native_playing_seek_keeps_state_smoke.csv ui_tests/macos/native_playing_step_pauses_smoke.csv
+python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/native_facade_smoke.csv ui_tests/macos/native_first_frame_smoke.csv ui_tests/macos/native_controls_smoke.csv ui_tests/macos/native_seek_frame_smoke.csv ui_tests/macos/native_playback_smoke.csv ui_tests/macos/native_playing_seek_keeps_state_smoke.csv ui_tests/macos/native_playing_step_pauses_smoke.csv ui_tests/macos/native_audio_diagnostics_smoke.csv
 ```
 
 ## 测试目录约定

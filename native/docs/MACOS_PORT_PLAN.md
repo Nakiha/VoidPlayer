@@ -8,7 +8,9 @@ Historical phase notes moved to [archive/MACOS_PORT_PLAN_HISTORY.md](archive/MAC
 
 ## Current Status
 
-- Flutter launches on macOS through a platform bootstrap with explicit capability gates.
+- Flutter launches on macOS through a platform bootstrap with explicit capability gates; local
+  native playback and native viewport capture are enabled, while network/SSH media and external
+  analysis windows remain gated off.
 - The macOS runner registers `video_renderer` / `video_renderer/events`, creates a
   `FlutterTexture`, and can show synthetic pixels plus local-file frames from the shared macOS
   native facade.

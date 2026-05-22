@@ -187,8 +187,8 @@ class MainWindowController {
             platformCapabilities.nativePlayback ||
             platformCapabilities.localFilePlayback,
         localFilePlaybackAvailable: platformCapabilities.localFilePlayback,
-        networkMediaAvailable: platformCapabilities.nativePlayback,
-        sshRemoteMediaAvailable: platformCapabilities.nativePlayback,
+        networkMediaAvailable: platformCapabilities.networkMediaPlayback,
+        sshRemoteMediaAvailable: platformCapabilities.sshRemoteMediaPlayback,
         nativeFilePickerAvailable: platformCapabilities.nativeFilePicker,
         tracks: trackManager.entries,
         syncOffsets: _syncOffsets,

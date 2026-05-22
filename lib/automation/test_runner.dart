@@ -19,6 +19,7 @@ class TestRunner {
   final UiAutomationBridge automation;
   final UiAutomationRuntime runtime;
   final AutomationRunState _state = AutomationRunState();
+  bool _terminalInstructionSeen = false;
 
   TestRunner({
     required this.scriptPath,
@@ -60,6 +61,7 @@ class TestRunner {
 
       try {
         await _execute(instr);
+        if (_terminalInstructionSeen) return;
       } catch (e) {
         log.severe('TestRunner FAIL at ${instr.time}: $e');
         runtime.quit(1);
@@ -164,7 +166,16 @@ class TestRunner {
         if (controller.hasPlayer) {
           await controller.destroyPlayerOnly();
         }
+        _terminalInstructionSeen = true;
         runtime.quit(exitCode);
+
+      case ScriptCloseMainWindow():
+        log.info('TestRunner ${instr.time}: CLOSE_MAIN_WINDOW');
+        _terminalInstructionSeen = true;
+        await runtime.closeMainWindow();
+        await Future<void>.delayed(const Duration(seconds: 5));
+        log.severe('TestRunner: CLOSE_MAIN_WINDOW did not terminate the app');
+        runtime.quit(1);
     }
   }
 

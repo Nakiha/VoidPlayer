@@ -93,6 +93,10 @@ class ScriptQuit extends ScriptInstruction {
   const ScriptQuit(super.time, this.exitCode);
 }
 
+class ScriptCloseMainWindow extends ScriptInstruction {
+  const ScriptCloseMainWindow(super.time);
+}
+
 /// Parse a CSV automation script file into scheduled instructions.
 List<ScriptInstruction> parseAutomationScript(String path) {
   final file = File(path);
@@ -881,6 +885,8 @@ ScriptInstruction? _parseInstruction(
       );
 
     // Control
+    case 'CLOSE_MAIN_WINDOW':
+      return ScriptCloseMainWindow(time);
     case 'QUIT':
       final exitCode = args.isNotEmpty ? int.parse(args[0]) : 0;
       return ScriptQuit(time, exitCode);

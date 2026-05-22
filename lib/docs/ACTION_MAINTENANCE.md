@@ -78,6 +78,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 - 注释：`#` 开头的行
 - 空行：忽略
 - 测试退出码：`QUIT` 指令的参数，0 表示通过；退出前会销毁当前 native player
+- `CLOSE_MAIN_WINDOW` 表示走主窗体关闭路径，不等价于 `QUIT`
 - 推荐入口：`python dev.py ui-test ui_tests/smoke/basic.csv`
 - 自动化脚本优先使用 `ADD_MEDIA`，不要用会弹系统对话框的 `OPEN_FILE`
 - timeline/seek 回归优先使用 `CLICK_TIMELINE_FRACTION` 覆盖真实 slider pointer 路径；`SEEK_TO` 只覆盖直接调用 seek action 的路径。
@@ -96,6 +97,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `DRAG_LOOP_HANDLE` | — | 测试脚本专用：拖动循环区间 start/end handle，走真实 pointer/onRangeChanged/onRangeChangeEnd 路径 |
 | `SET_SPEED` | — | 设置倍速 |
 | `SET_AUDIBLE_TRACK` | fileId / -1 | 直接设置 native 可听轨道 |
+| `CLOSE_MAIN_WINDOW` | — | 测试脚本专用：关闭主窗体，覆盖非 `QUIT` 的窗口关闭路径 |
 | `STEP_FORWARD` | → | 逐帧前进 |
 | `STEP_BACKWARD` | ← | 逐帧后退 |
 | `OPEN_FILE` | O | 打开文件 |

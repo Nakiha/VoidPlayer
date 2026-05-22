@@ -28,11 +28,12 @@ void main() {
 0.9,ASSERT_CAPTURE_SPLIT_DIFF,cap,1.5,2.5,12
 1.0,ASSERT_CAPTURE_DIFF,soft,hard,1.5,2.5,12
 1.1,ASSERT_NATIVE_AUDIO,true,48000,1,-1
+1.2,CLOSE_MAIN_WINDOW
 ''');
 
     final instructions = parseAutomationScript(file.path);
 
-    expect(instructions, hasLength(11));
+    expect(instructions, hasLength(12));
     expect(instructions.map((i) => i.time.inMilliseconds), [
       100,
       200,
@@ -44,6 +45,7 @@ void main() {
       900,
       1000,
       1100,
+      1200,
       2000,
     ]);
     expect(
@@ -130,8 +132,9 @@ void main() {
             .having((a) => a.activeTrack, 'activeTrack', -1),
       ),
     );
+    expect(instructions[10], isA<ScriptCloseMainWindow>());
     expect(
-      instructions[10],
+      instructions[11],
       isA<ScriptQuit>().having((i) => i.exitCode, 'exitCode', 0),
     );
   });

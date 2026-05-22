@@ -166,6 +166,11 @@ private final class MacOSNativePlayerSession {
 }
 
 class MainFlutterWindow: NSWindow {
+  override func close() {
+    MacOSVideoRendererStub.destroyActivePlayerForWindowClose()
+    super.close()
+  }
+
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
@@ -183,6 +188,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private static let channelName = "video_renderer"
   private static let eventsChannelName = "video_renderer/events"
   private static let syntheticDurationUs = 10_000_000
+  private static weak var activeInstance: MacOSVideoRendererStub?
 
   private let textureRegistry: FlutterTextureRegistry
   private let playbackQueue = DispatchQueue(label: "dev.nakiha.voidplayer.macos.native-playback")
@@ -208,12 +214,17 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
   static func register(with engine: FlutterEngine) {
     let stub = MacOSVideoRendererStub(textureRegistry: engine)
+    activeInstance = stub
     let messenger = engine.binaryMessenger
     let channel = FlutterMethodChannel(name: channelName, binaryMessenger: messenger)
     channel.setMethodCallHandler(stub.handle)
 
     let events = FlutterEventChannel(name: eventsChannelName, binaryMessenger: messenger)
     events.setStreamHandler(stub)
+  }
+
+  static func destroyActivePlayerForWindowClose() {
+    activeInstance?.destroyPlayerForWindowClose()
   }
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -434,6 +445,14 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     backendName = "synthetic-texture"
     nativePlayer?.close()
     nativePlayer = nil
+  }
+
+  private func destroyPlayerForWindowClose() {
+    if textureId == nil && nativePlayer == nil {
+      return
+    }
+    NSLog("VoidPlayer macOS native player teardown before window close")
+    destroyPlayer()
   }
 
   private func addTrack(arguments: Any?) -> Any {

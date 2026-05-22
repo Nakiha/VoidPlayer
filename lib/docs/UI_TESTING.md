@@ -44,7 +44,7 @@ repo-relative `ADD_MEDIA` 路径重写为 container 内的媒体副本；`GENERA
 app 抢走；需要手动观察时可加 `--visible` 使用直接启动路径：
 
 ```bash
-python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/native_facade_smoke.csv ui_tests/macos/native_first_frame_smoke.csv ui_tests/macos/native_controls_smoke.csv ui_tests/macos/native_seek_frame_smoke.csv ui_tests/macos/native_playback_smoke.csv ui_tests/macos/native_playing_seek_keeps_state_smoke.csv ui_tests/macos/native_playing_step_pauses_smoke.csv ui_tests/macos/native_loop_range_smoke.csv ui_tests/macos/native_audio_diagnostics_smoke.csv ui_tests/macos/native_audio_play_seek_smoke.csv ui_tests/macos/native_audio_destroy_recreate_smoke.csv ui_tests/macos/native_quit_while_playing_smoke.csv
+python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/native_facade_smoke.csv ui_tests/macos/native_first_frame_smoke.csv ui_tests/macos/native_controls_smoke.csv ui_tests/macos/native_seek_frame_smoke.csv ui_tests/macos/native_playback_smoke.csv ui_tests/macos/native_playing_seek_keeps_state_smoke.csv ui_tests/macos/native_playing_step_pauses_smoke.csv ui_tests/macos/native_loop_range_smoke.csv ui_tests/macos/native_audio_diagnostics_smoke.csv ui_tests/macos/native_audio_play_seek_smoke.csv ui_tests/macos/native_audio_destroy_recreate_smoke.csv ui_tests/macos/native_quit_while_playing_smoke.csv ui_tests/macos/native_user_window_close_smoke.csv
 ```
 
 ## 测试目录约定
@@ -96,6 +96,7 @@ ui_tests/               # 启动真实 app 的 CSV GUI 自动化脚本
 - `@APP_ARG,<arg>` 或 `@APP_ARGS,<arg1>,<arg2>` 会由 `dev.py ui-test`
   作为 app 启动参数传入，适合覆盖 startup options / deep link 行为
 - `QUIT, 0` 表示通过并退出
+- `CLOSE_MAIN_WINDOW` 表示关闭主窗体；用于 macOS/Windows 窗口关闭路径，不要求脚本再写 `QUIT`
 
 ## 目录语义
 

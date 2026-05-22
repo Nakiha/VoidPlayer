@@ -27,6 +27,8 @@ abstract interface class UiAutomationRuntime {
 
   Future<void> restoreWindow();
 
+  Future<void> closeMainWindow();
+
   void quit(int exitCode);
 }
 
@@ -77,6 +79,9 @@ class DefaultUiAutomationRuntime implements UiAutomationRuntime {
 
   @override
   Future<void> restoreWindow() => wm.windowManager.restore();
+
+  @override
+  Future<void> closeMainWindow() => wm.windowManager.close();
 
   @override
   void quit(int exitCode) => exit(exitCode);

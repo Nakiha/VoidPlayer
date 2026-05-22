@@ -546,5 +546,7 @@ def _scan_ui_test_output(line: str) -> tuple[bool, bool, bool]:
     test_runner_failed = (
         "TestRunner FAIL" in line or "TestRunner: script ended without QUIT" in line
     )
-    test_runner_quit = "TestRunner " in line and ": QUIT " in line
+    test_runner_quit = "TestRunner " in line and (
+        ": QUIT " in line or ": CLOSE_MAIN_WINDOW" in line
+    )
     return ax_tree_error, test_runner_failed, test_runner_quit

@@ -93,7 +93,8 @@ Goal: local-file software playback with correct timing and basic audio.
 - [x] Validate audio play/seek/pause/resume and destroy/recreate lifecycle through macOS UI smokes.
 - [x] Route loop range to the macOS native facade and cover it with CTest/UI smoke.
 - [x] Exercise explicit test shutdown while playback is active.
-- [ ] Validate audible-track selection and user window close.
+- [x] Validate user main-window close while native playback is active.
+- [ ] Validate audible-track selection with user-observable or captured PCM behavior.
 - [ ] Preserve Windows behavior and tests.
 
 ### M5: Metal And Hardware Decode
@@ -141,11 +142,16 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_audio_diagnostics_smoke.csv \
   ui_tests/macos/native_audio_play_seek_smoke.csv \
   ui_tests/macos/native_audio_destroy_recreate_smoke.csv \
-  ui_tests/macos/native_quit_while_playing_smoke.csv
+  ui_tests/macos/native_quit_while_playing_smoke.csv \
+  ui_tests/macos/native_user_window_close_smoke.csv
 ```
+
+Current limitation: macOS loop enforcement is evaluated from the native frame-copy path. That keeps
+the Swift layer as glue for the MVP, but it is still coupled to visible frame pumping. Move loop
+evaluation into a clock-owned native playback tick before starting Metal/VideoToolbox work so audio
+cannot outrun loop decisions if frame pumping stalls.
 
 ## Next Slice
 
 The next implementation slice should extend macOS audio coverage from diagnostics to audible-track
-selection, user window-close shutdown, and user-observable behavior, while keeping the Swift timer
-limited to frame pumping and leaving timeline and decode policy in the shared layers.
+selection and user-observable behavior, then run Windows native/UI preservation checks before M5.

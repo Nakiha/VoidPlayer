@@ -407,6 +407,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "activeAudioTrack": nativePlayer?.activeAudioTrack() ?? -1,
         "pixelBufferRebuildCount": textureStats?.rebuildCount ?? 0,
         "pixelBufferReuseCount": textureStats?.reuseCount ?? 0,
+        "pixelBufferDirectCopyCount": textureStats?.directCopyCount ?? 0,
       ])
     case "captureViewport":
       result(captureViewport())
@@ -893,6 +894,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private var pixelBuffer: CVPixelBuffer?
   private var pixelBufferRebuildCount = 0
   private var pixelBufferReuseCount = 0
+  private var pixelBufferDirectCopyCount = 0
 
   init(width: Int, height: Int) {
     self.width = width
@@ -976,6 +978,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       waitTimeoutMs: waitTimeoutMs
     )
     pixelBufferReuseCount += 1
+    pixelBufferDirectCopyCount += 1
     return info
   }
 
@@ -1016,13 +1019,14 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     return measure(buffer: pixelBuffer)
   }
 
-  func diagnostics() -> (rebuildCount: Int, reuseCount: Int) {
+  func diagnostics() -> (rebuildCount: Int, reuseCount: Int, directCopyCount: Int) {
     lock.lock()
     defer { lock.unlock() }
 
     return (
       rebuildCount: pixelBufferRebuildCount,
-      reuseCount: pixelBufferReuseCount
+      reuseCount: pixelBufferReuseCount,
+      directCopyCount: pixelBufferDirectCopyCount
     )
   }
 

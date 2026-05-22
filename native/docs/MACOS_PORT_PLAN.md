@@ -198,7 +198,8 @@ Metal/CVPixelBuffer sink without creating another decode backend.
 
 Frame callback lifecycle status: macOS now has a targeted UI smoke that churns play/pause/play,
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks
-are active. Main-window close while playing remains covered by
+are active. The smoke also verifies `pixelBufferDirectCopyCount`, so the native-to-locked-buffer
+path is covered by UI automation. Main-window close while playing remains covered by
 `native_user_window_close_smoke.csv`.
 
 Windows preservation status: on this macOS host, `python dev.py test --native-only` currently stops

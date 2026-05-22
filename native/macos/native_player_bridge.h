@@ -21,6 +21,14 @@ typedef struct VPMacOSNativeFrame {
   size_t bgra_size;
 } VPMacOSNativeFrame;
 
+typedef struct VPMacOSNativeFrameInfo {
+  int32_t width;
+  int32_t height;
+  int64_t pts_us;
+  int64_t dts_us;
+  int64_t duration_us;
+} VPMacOSNativeFrameInfo;
+
 typedef struct VPMacOSCaptureMetrics {
   int32_t width;
   int32_t height;
@@ -67,6 +75,15 @@ int VPMacOSNativePlayerCopyCurrentFrameBGRA(VPMacOSNativePlayer* player,
                                             VPMacOSNativeFrame* out,
                                             char* error,
                                             size_t error_size);
+int VPMacOSNativePlayerCopyCurrentFrameBGRAInto(VPMacOSNativePlayer* player,
+                                                uint8_t* dst,
+                                                size_t dst_size,
+                                                int32_t width,
+                                                int32_t height,
+                                                int32_t stride_bytes,
+                                                VPMacOSNativeFrameInfo* out,
+                                                char* error,
+                                                size_t error_size);
 void VPMacOSNativeFrameFree(VPMacOSNativeFrame* frame);
 
 int VPMacOSMeasureBGRA(const uint8_t* bgra,

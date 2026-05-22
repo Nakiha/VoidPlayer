@@ -42,6 +42,31 @@ double non_black_ratio(const VPMacOSNativeFrame& frame) {
     return pixels == 0 ? 0.0 : static_cast<double>(non_black) / static_cast<double>(pixels);
 }
 
+double non_black_ratio_bgra(const std::vector<uint8_t>& bgra, int width, int height, int stride) {
+    if (width <= 0 || height <= 0 || stride < width * 4) {
+        return 0.0;
+    }
+    size_t non_black = 0;
+    size_t pixels = 0;
+    for (int y = 0; y < height; ++y) {
+        const size_t row = static_cast<size_t>(y) * static_cast<size_t>(stride);
+        for (int x = 0; x < width; ++x) {
+            const size_t offset = row + static_cast<size_t>(x) * 4u;
+            if (offset + 3 >= bgra.size()) {
+                return 0.0;
+            }
+            const uint8_t b = bgra[offset + 0];
+            const uint8_t g = bgra[offset + 1];
+            const uint8_t r = bgra[offset + 2];
+            if (r > 4 || g > 4 || b > 4) {
+                ++non_black;
+            }
+            ++pixels;
+        }
+    }
+    return pixels == 0 ? 0.0 : static_cast<double>(non_black) / static_cast<double>(pixels);
+}
+
 bool wait_for_frame(VPMacOSNativePlayer* player,
                     VPMacOSNativeFrame& frame,
                     std::chrono::milliseconds timeout) {
@@ -105,6 +130,30 @@ int main(int argc, char** argv) {
         return 1;
     }
     const int64_t first_pts = first.pts_us;
+    const int direct_stride = first.width * 4 + 64;
+    std::vector<uint8_t> direct_bgra(
+        static_cast<size_t>(direct_stride) * static_cast<size_t>(first.height), 0);
+    VPMacOSNativeFrameInfo direct_info = {};
+    if (VPMacOSNativePlayerCopyCurrentFrameBGRAInto(
+            player.get(),
+            direct_bgra.data(),
+            direct_bgra.size(),
+            first.width,
+            first.height,
+            direct_stride,
+            &direct_info,
+            error,
+            sizeof(error)) != 0) {
+        std::cerr << "direct BGRA copy failed: " << error << "\n";
+        VPMacOSNativeFrameFree(&first);
+        return 1;
+    }
+    if (direct_info.pts_us != first_pts ||
+        non_black_ratio_bgra(direct_bgra, first.width, first.height, direct_stride) <= 0.5) {
+        std::cerr << "direct BGRA copy returned invalid frame info or pixels\n";
+        VPMacOSNativeFrameFree(&first);
+        return 1;
+    }
 
     std::atomic<int> frame_available_callbacks{0};
     VPMacOSNativePlayerSetFrameAvailableCallback(

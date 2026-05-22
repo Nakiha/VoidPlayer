@@ -87,30 +87,59 @@ bool allocate_bgra(const vr::TextureFrame& frame, VPMacOSNativeFrame* out) {
   return true;
 }
 
-bool copy_cpu_rgba(const vr::TextureFrame& frame, VPMacOSNativeFrame* out) {
+bool validate_bgra_destination(const vr::TextureFrame& frame,
+                               uint8_t* dst,
+                               size_t dst_size,
+                               int32_t width,
+                               int32_t height,
+                               int32_t stride_bytes) {
+  if (!dst || frame.width <= 0 || frame.height <= 0 ||
+      width != frame.width || height != frame.height ||
+      stride_bytes < frame.width * 4) {
+    return false;
+  }
+  const size_t last_row_offset =
+      static_cast<size_t>(frame.height - 1) * static_cast<size_t>(stride_bytes);
+  const size_t needed = last_row_offset + static_cast<size_t>(frame.width) * 4u;
+  return needed <= dst_size;
+}
+
+void write_frame_info(const vr::TextureFrame& frame, VPMacOSNativeFrameInfo* out) {
+  if (!out) {
+    return;
+  }
+  out->width = frame.width;
+  out->height = frame.height;
+  out->pts_us = frame.pts_us;
+  out->dts_us = frame.dts_us;
+  out->duration_us = frame.duration_us;
+}
+
+bool copy_cpu_rgba_to_bgra(const vr::TextureFrame& frame,
+                           uint8_t* dst,
+                           int32_t stride_bytes) {
   const auto* storage = frame.cpu_rgba_storage();
-  if (!storage || !storage->data || storage->stride < frame.width * 4 ||
-      !allocate_bgra(frame, out)) {
+  if (!storage || !storage->data || storage->stride < frame.width * 4) {
     return false;
   }
   for (int y = 0; y < frame.height; ++y) {
     const size_t src_offset = static_cast<size_t>(y) * storage->stride;
-    const size_t dst_offset = static_cast<size_t>(y) * frame.width * 4u;
     if (src_offset + static_cast<size_t>(frame.width) * 4u > storage->data->size()) {
-      VPMacOSNativeFrameFree(out);
       return false;
     }
-    std::memcpy(out->bgra + dst_offset,
+    std::memcpy(dst + static_cast<size_t>(y) * stride_bytes,
                 storage->data->data() + src_offset,
                 static_cast<size_t>(frame.width) * 4u);
   }
   return true;
 }
 
-bool copy_cpu_planar_yuv420(const vr::TextureFrame& frame, VPMacOSNativeFrame* out) {
+bool copy_cpu_planar_yuv420_to_bgra(const vr::TextureFrame& frame,
+                                    uint8_t* dst,
+                                    int32_t stride_bytes) {
   const auto* storage = frame.cpu_planar_yuv_storage();
   if (!storage || storage->bytes_per_sample != 1 || !storage->planes[0] ||
-      !storage->planes[1] || !storage->planes[2] || !allocate_bgra(frame, out)) {
+      !storage->planes[1] || !storage->planes[2]) {
     return false;
   }
   const bool full_range = frame.color.range == vr::VIDEO_COLOR_RANGE_FULL;
@@ -121,7 +150,7 @@ bool copy_cpu_planar_yuv420(const vr::TextureFrame& frame, VPMacOSNativeFrame* o
         static_cast<size_t>(y / 2) * storage->strides[1];
     const uint8_t* v_row = storage->planes[2] +
         static_cast<size_t>(y / 2) * storage->strides[2];
-    uint8_t* dst_row = out->bgra + static_cast<size_t>(y) * frame.width * 4u;
+    uint8_t* dst_row = dst + static_cast<size_t>(y) * stride_bytes;
     for (int x = 0; x < frame.width; ++x) {
       yuv_to_bgra(y_row[x], u_row[x / 2], v_row[x / 2],
                   full_range, dst_row + x * 4);
@@ -130,10 +159,12 @@ bool copy_cpu_planar_yuv420(const vr::TextureFrame& frame, VPMacOSNativeFrame* o
   return true;
 }
 
-bool copy_cpu_nv12(const vr::TextureFrame& frame, VPMacOSNativeFrame* out) {
+bool copy_cpu_nv12_to_bgra(const vr::TextureFrame& frame,
+                           uint8_t* dst,
+                           int32_t stride_bytes) {
   const auto* storage = frame.cpu_nv12_storage();
   if (!storage || storage->is_p010 || !storage->data || storage->y_stride <= 0 ||
-      storage->uv_stride <= 0 || !allocate_bgra(frame, out)) {
+      storage->uv_stride <= 0) {
     return false;
   }
   const bool full_range = frame.color.range == vr::VIDEO_COLOR_RANGE_FULL;
@@ -143,7 +174,7 @@ bool copy_cpu_nv12(const vr::TextureFrame& frame, VPMacOSNativeFrame* out) {
   for (int y = 0; y < frame.height; ++y) {
     const uint8_t* y_row = y_plane + static_cast<size_t>(y) * storage->y_stride;
     const uint8_t* uv_row = uv_plane + static_cast<size_t>(y / 2) * storage->uv_stride;
-    uint8_t* dst_row = out->bgra + static_cast<size_t>(y) * frame.width * 4u;
+    uint8_t* dst_row = dst + static_cast<size_t>(y) * stride_bytes;
     for (int x = 0; x < frame.width; ++x) {
       const int uv_index = (x / 2) * 2;
       yuv_to_bgra(y_row[x], uv_row[uv_index], uv_row[uv_index + 1],
@@ -153,21 +184,62 @@ bool copy_cpu_nv12(const vr::TextureFrame& frame, VPMacOSNativeFrame* out) {
   return true;
 }
 
+bool copy_frame_to_bgra_destination(const vr::TextureFrame& frame,
+                                    uint8_t* dst,
+                                    size_t dst_size,
+                                    int32_t width,
+                                    int32_t height,
+                                    int32_t stride_bytes,
+                                    VPMacOSNativeFrameInfo* out) {
+  if (!validate_bgra_destination(
+          frame, dst, dst_size, width, height, stride_bytes)) {
+    return false;
+  }
+  bool copied = false;
+  switch (frame.storage_kind()) {
+  case vr::FrameStorageKind::CpuRgba:
+    copied = copy_cpu_rgba_to_bgra(frame, dst, stride_bytes);
+    break;
+  case vr::FrameStorageKind::CpuPlanarYuv:
+    copied = copy_cpu_planar_yuv420_to_bgra(frame, dst, stride_bytes);
+    break;
+  case vr::FrameStorageKind::CpuNv12:
+    copied = copy_cpu_nv12_to_bgra(frame, dst, stride_bytes);
+    break;
+  default:
+    copied = false;
+    break;
+  }
+  if (copied) {
+    write_frame_info(frame, out);
+  }
+  return copied;
+}
+
 bool copy_frame_to_bgra(const vr::TextureFrame& frame, VPMacOSNativeFrame* out) {
   if (!out) {
     return false;
   }
   *out = {};
-  switch (frame.storage_kind()) {
-  case vr::FrameStorageKind::CpuRgba:
-    return copy_cpu_rgba(frame, out);
-  case vr::FrameStorageKind::CpuPlanarYuv:
-    return copy_cpu_planar_yuv420(frame, out);
-  case vr::FrameStorageKind::CpuNv12:
-    return copy_cpu_nv12(frame, out);
-  default:
+  if (!allocate_bgra(frame, out)) {
     return false;
   }
+  VPMacOSNativeFrameInfo info{};
+  if (!copy_frame_to_bgra_destination(
+          frame,
+          out->bgra,
+          out->bgra_size,
+          frame.width,
+          frame.height,
+          frame.width * 4,
+          &info)) {
+    VPMacOSNativeFrameFree(out);
+    return false;
+  }
+  out->pts_us = info.pts_us;
+  out->dts_us = info.dts_us;
+  out->duration_us = info.duration_us;
+  return true;
 }
 
 class MacOSNativePlayerCore {
@@ -362,6 +434,31 @@ public:
     if (!copy_frame_to_bgra(*frame, out)) {
       VPMacOSNativeFrameFree(out);
       error = "decoded frame storage is not supported by the macOS BGRA bridge";
+      return false;
+    }
+    return true;
+  }
+
+  bool copy_current_frame_into(uint8_t* dst,
+                               size_t dst_size,
+                               int32_t width,
+                               int32_t height,
+                               int32_t stride_bytes,
+                               VPMacOSNativeFrameInfo* out,
+                               std::string& error) {
+    if (!track_buffer_) {
+      error = "player is not open";
+      return false;
+    }
+    advance_to_clock(nullptr);
+    auto frame = track_buffer_->peek(0);
+    if (!frame.has_value()) {
+      error = "no decoded frame is ready";
+      return false;
+    }
+    if (!copy_frame_to_bgra_destination(
+            *frame, dst, dst_size, width, height, stride_bytes, out)) {
+      error = "decoded frame cannot be copied into the supplied BGRA buffer";
       return false;
     }
     return true;
@@ -705,6 +802,31 @@ int VPMacOSNativePlayerCopyCurrentFrameBGRA(VPMacOSNativePlayer* player,
   std::lock_guard<std::mutex> lock(player->mutex);
   std::string message;
   if (!player->core.copy_current_frame(out, message)) {
+    write_error(error, error_size, message);
+    return -1;
+  }
+  write_error(error, error_size, "");
+  return 0;
+}
+
+int VPMacOSNativePlayerCopyCurrentFrameBGRAInto(VPMacOSNativePlayer* player,
+                                                uint8_t* dst,
+                                                size_t dst_size,
+                                                int32_t width,
+                                                int32_t height,
+                                                int32_t stride_bytes,
+                                                VPMacOSNativeFrameInfo* out,
+                                                char* error,
+                                                size_t error_size) {
+  if (!player || !dst || !out) {
+    write_error(error, error_size, "player, destination, or output info is null");
+    return -1;
+  }
+  *out = {};
+  std::lock_guard<std::mutex> lock(player->mutex);
+  std::string message;
+  if (!player->core.copy_current_frame_into(
+          dst, dst_size, width, height, stride_bytes, out, message)) {
     write_error(error, error_size, message);
     return -1;
   }

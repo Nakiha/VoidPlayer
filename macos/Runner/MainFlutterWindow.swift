@@ -11,6 +11,14 @@ private struct MacOSDecodedFirstFrame {
   let bgra: Data
 }
 
+private struct MacOSNativeFrameInfo {
+  let width: Int
+  let height: Int
+  let durationUs: Int
+  let ptsUs: Int
+  let dtsUs: Int
+}
+
 private enum MacOSNativePlayerError: Error, CustomStringConvertible {
   case failed(String)
   case invalidPayload
@@ -164,6 +172,55 @@ private final class MacOSNativePlayerSession {
       }
       let message = String(cString: error)
       lastError = message.isEmpty ? "copyCurrentFrame failed with code \(ret)" : message
+      Thread.sleep(forTimeInterval: 0.01)
+    } while Date() < deadline
+
+    throw MacOSNativePlayerError.failed(
+      lastError.isEmpty ? "timed out waiting for a decoded frame" : lastError
+    )
+  }
+
+  func copyCurrentFrameIntoBGRA(
+    _ dst: UnsafeMutablePointer<UInt8>,
+    dstSize: Int,
+    width: Int,
+    height: Int,
+    strideBytes: Int,
+    waitTimeoutMs: Int = 0
+  ) throws -> MacOSNativeFrameInfo {
+    let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
+    var lastError = ""
+
+    repeat {
+      var frameInfo = VPMacOSNativeFrameInfo()
+      var error = [CChar](repeating: 0, count: 1024)
+      let ret = VPMacOSNativePlayerCopyCurrentFrameBGRAInto(
+        handle,
+        dst,
+        dstSize,
+        Int32(width),
+        Int32(height),
+        Int32(strideBytes),
+        &frameInfo,
+        &error,
+        error.count
+      )
+      if ret == 0 {
+        guard frameInfo.width > 0, frameInfo.height > 0 else {
+          throw MacOSNativePlayerError.invalidPayload
+        }
+        return MacOSNativeFrameInfo(
+          width: Int(frameInfo.width),
+          height: Int(frameInfo.height),
+          durationUs: Int(frameInfo.duration_us),
+          ptsUs: Int(frameInfo.pts_us),
+          dtsUs: Int(frameInfo.dts_us)
+        )
+      }
+      let message = String(cString: error)
+      lastError = message.isEmpty
+        ? "copyCurrentFrameIntoBGRA failed with code \(ret)"
+        : message
       Thread.sleep(forTimeInterval: 0.01)
     } while Date() < deadline
 
@@ -617,8 +674,18 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     texture?.update(decoded: decoded)
   }
 
+  private func publishFrameInfo(_ info: MacOSNativeFrameInfo) {
+    currentPtsUs = info.ptsUs
+    lastPresentedPtsUs = info.ptsUs
+    lastPresentedDtsUs = normalizedDtsUs(info)
+  }
+
   private func normalizedDtsUs(_ decoded: MacOSDecodedFirstFrame) -> Int {
     decoded.dtsUs == Int.min ? decoded.ptsUs : decoded.dtsUs
+  }
+
+  private func normalizedDtsUs(_ info: MacOSNativeFrameInfo) -> Int {
+    info.dtsUs == Int.min ? info.ptsUs : info.dtsUs
   }
 
   private func startNativeFramePump() {
@@ -661,8 +728,11 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
   private func copyNativePlaybackFrame(generation: Int) {
     do {
-      guard let nativePlayer else { return }
-      let decoded = try nativePlayer.copyCurrentFrame(waitTimeoutMs: 100)
+      guard let nativePlayer, let texture else { return }
+      let frameInfo = try texture.updateFromNativePlayer(
+        nativePlayer,
+        waitTimeoutMs: 100
+      )
       DispatchQueue.main.async { [weak self] in
         guard let self,
               self.playbackGeneration == generation,
@@ -670,9 +740,9 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
               self.backendName == "macos-native-player" else {
           return
         }
-        self.publishDecodedFrame(decoded)
+        self.publishFrameInfo(frameInfo)
         self.markFrameAvailable()
-        if decoded.ptsUs >= self.activeDurationUs() {
+        if frameInfo.ptsUs >= self.activeDurationUs() {
           self.isPlaying = false
           self.nativePlayer?.pause()
           self.stopNativeFramePump()
@@ -870,6 +940,43 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       copyBGRA(decoded.bgra, to: pixelBuffer)
       pixelBufferReuseCount += 1
     }
+  }
+
+  func updateFromNativePlayer(
+    _ player: MacOSNativePlayerSession,
+    waitTimeoutMs: Int
+  ) throws -> MacOSNativeFrameInfo {
+    lock.lock()
+    defer { lock.unlock() }
+
+    guard !syntheticPattern else {
+      throw MacOSNativePlayerError.invalidPayload
+    }
+    if pixelBuffer == nil {
+      rebuildPixelBufferLocked()
+    }
+    guard let pixelBuffer else {
+      throw MacOSNativePlayerError.invalidPayload
+    }
+
+    CVPixelBufferLockBaseAddress(pixelBuffer, [])
+    defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
+
+    guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
+      throw MacOSNativePlayerError.invalidPayload
+    }
+    let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+    let dstSize = bytesPerRow * height
+    let info = try player.copyCurrentFrameIntoBGRA(
+      baseAddress.assumingMemoryBound(to: UInt8.self),
+      dstSize: dstSize,
+      width: width,
+      height: height,
+      strideBytes: bytesPerRow,
+      waitTimeoutMs: waitTimeoutMs
+    )
+    pixelBufferReuseCount += 1
+    return info
   }
 
   func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {

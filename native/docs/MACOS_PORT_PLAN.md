@@ -97,6 +97,8 @@ Goal: make the macOS MethodChannel call the same native player surface as Window
 Goal: local-file software playback with correct timing and basic audio.
 
 - [x] Feed decoded frames into the macOS `CVPixelBuffer` texture bridge from a native queue.
+- [x] Reuse the macOS `CVPixelBuffer` for same-sized native frame updates instead of allocating a
+  new pixel buffer per frame.
 - [x] Add CoreAudio/miniaudio output behind the existing audio abstraction.
 - [x] Validate audio play/seek/pause/resume and destroy/recreate lifecycle through macOS UI smokes.
 - [x] Route loop range to the macOS native facade and cover it with CTest/UI smoke.

@@ -855,10 +855,15 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     defer { lock.unlock() }
 
     guard !syntheticPattern else { return }
+    let sizeChanged = width != decoded.width || height != decoded.height
     width = decoded.width
     height = decoded.height
     decodedBGRA = decoded.bgra
-    rebuildPixelBufferLocked()
+    if sizeChanged || pixelBuffer == nil {
+      rebuildPixelBufferLocked()
+    } else if let pixelBuffer {
+      copyBGRA(decoded.bgra, to: pixelBuffer)
+    }
   }
 
   func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {

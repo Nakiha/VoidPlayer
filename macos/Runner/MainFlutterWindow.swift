@@ -7,6 +7,7 @@ private struct MacOSDecodedFirstFrame {
   let height: Int
   let durationUs: Int
   let ptsUs: Int
+  let dtsUs: Int
   let bgra: Data
 }
 
@@ -120,6 +121,7 @@ private final class MacOSNativePlayerSession {
           height: Int(frame.height),
           durationUs: Int(frame.duration_us),
           ptsUs: Int(frame.pts_us),
+          dtsUs: Int(frame.dts_us),
           bgra: Data(bytes: bgra, count: Int(frame.bgra_size))
         )
       }
@@ -161,6 +163,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private var layout: [String: Any] = MacOSVideoRendererStub.defaultLayout()
   private var currentPtsUs = 0
   private var currentDurationUs = 0
+  private var lastPresentedPtsUs: Int?
+  private var lastPresentedDtsUs: Int?
   private var isPlaying = false
   private var backendName = "synthetic-texture"
   private var nativePlayer: MacOSNativePlayerSession?
@@ -217,31 +221,26 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       result(nil)
     case "seek":
       let targetPtsUs = intArg(call.arguments, "ptsUs") ?? 0
-      stopNativePlaybackTimer()
-      currentPtsUs = max(0, min(activeDurationUs(), targetPtsUs))
-      if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
+      let resumeAfterSeek = nativePlayer?.isPlaying() ?? isPlaying
+      if let error = seekAndRefresh(
+        targetPtsUs: targetPtsUs,
+        resumeAfterSeek: resumeAfterSeek
+      ) {
         result(error)
         return
       }
-      markFrameAvailable()
       result(nil)
     case "stepForward":
-      stopNativePlaybackTimer()
-      currentPtsUs = min(activeDurationUs(), currentPtsUs + 33_333)
-      if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
+      if let error = stepAndRefresh(deltaUs: 33_333) {
         result(error)
         return
       }
-      markFrameAvailable()
       result(nil)
     case "stepBackward":
-      stopNativePlaybackTimer()
-      currentPtsUs = max(0, currentPtsUs - 33_333)
-      if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
+      if let error = stepAndRefresh(deltaUs: -33_333) {
         result(error)
         return
       }
-      markFrameAvailable()
       result(nil)
     case "currentPts":
       currentPtsUs = nativePlayer?.currentPtsUs() ?? currentPtsUs
@@ -252,7 +251,10 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       result(
         textureId == nil
           ? nil
-          : ["ptsUs": currentPtsUs, "dtsUs": currentPtsUs]
+          : [
+              "ptsUs": lastPresentedPtsUs ?? currentPtsUs,
+              "dtsUs": lastPresentedDtsUs ?? lastPresentedPtsUs ?? currentPtsUs,
+            ]
       )
     case "isPlaying":
       result(nativePlayer?.isPlaying() ?? isPlaying)
@@ -301,6 +303,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     let trackCodecName: String
     let trackCodecLongName: String
     let trackDecoderName: String
+    var initialPresentedPtsUs = 0
+    var initialPresentedDtsUs = 0
     if firstPath.hasPrefix("macos-synthetic://") {
       nextTexture = MacOSSyntheticTexture(width: requestedWidth, height: requestedHeight)
       trackWidth = requestedWidth
@@ -320,6 +324,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         try session.open(path: firstPath)
         let decoded = try session.copyCurrentFrame(waitTimeoutMs: 3_000)
         nextTexture = MacOSSyntheticTexture(decoded: decoded)
+        initialPresentedPtsUs = decoded.ptsUs
+        initialPresentedDtsUs = normalizedDtsUs(decoded)
         trackWidth = session.width() > 0 ? session.width() : decoded.width
         trackHeight = session.height() > 0 ? session.height() : decoded.height
         trackDurationUs = session.durationUs() > 0 ? session.durationUs() : Self.syntheticDurationUs
@@ -357,7 +363,9 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         decoderName: trackDecoderName
       )
     }
-    currentPtsUs = 0
+    currentPtsUs = initialPresentedPtsUs
+    lastPresentedPtsUs = initialPresentedPtsUs
+    lastPresentedDtsUs = initialPresentedDtsUs
     isPlaying = false
     markFrameAvailable()
 
@@ -377,6 +385,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     tracks.removeAll()
     currentPtsUs = 0
     currentDurationUs = 0
+    lastPresentedPtsUs = nil
+    lastPresentedDtsUs = nil
     isPlaying = false
     backendName = "synthetic-texture"
     nativePlayer?.close()
@@ -473,15 +483,14 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private func refreshDecodedFrameIfNeeded(targetPtsUs: Int) -> FlutterError? {
     guard backendName == "macos-native-player",
           let nativePlayer,
-          let texture else {
+          texture != nil else {
       return nil
     }
 
     do {
       nativePlayer.seek(targetPtsUs)
       let decoded = try nativePlayer.copyCurrentFrame(waitTimeoutMs: 3_000)
-      currentPtsUs = decoded.ptsUs
-      texture.update(decoded: decoded)
+      publishDecodedFrame(decoded)
       return nil
     } catch {
       return FlutterError(
@@ -490,6 +499,47 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         details: "\(error)"
       )
     }
+  }
+
+  private func seekAndRefresh(targetPtsUs: Int, resumeAfterSeek: Bool) -> FlutterError? {
+    stopNativePlaybackTimer()
+    nativePlayer?.pause()
+    isPlaying = false
+    currentPtsUs = max(0, min(activeDurationUs(), targetPtsUs))
+    if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
+      return error
+    }
+    markFrameAvailable()
+    if resumeAfterSeek {
+      isPlaying = textureId != nil
+      nativePlayer?.play()
+      startNativePlaybackTimer()
+    }
+    return nil
+  }
+
+  private func stepAndRefresh(deltaUs: Int) -> FlutterError? {
+    stopNativePlaybackTimer()
+    nativePlayer?.pause()
+    isPlaying = false
+    currentPtsUs = nativePlayer?.currentPtsUs() ?? currentPtsUs
+    currentPtsUs = max(0, min(activeDurationUs(), currentPtsUs + deltaUs))
+    if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
+      return error
+    }
+    markFrameAvailable()
+    return nil
+  }
+
+  private func publishDecodedFrame(_ decoded: MacOSDecodedFirstFrame) {
+    currentPtsUs = decoded.ptsUs
+    lastPresentedPtsUs = decoded.ptsUs
+    lastPresentedDtsUs = normalizedDtsUs(decoded)
+    texture?.update(decoded: decoded)
+  }
+
+  private func normalizedDtsUs(_ decoded: MacOSDecodedFirstFrame) -> Int {
+    decoded.dtsUs == Int.min ? decoded.ptsUs : decoded.dtsUs
   }
 
   private func startNativePlaybackTimer() {
@@ -529,8 +579,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
               self.backendName == "macos-native-player" else {
           return
         }
-        self.currentPtsUs = decoded.ptsUs
-        self.texture?.update(decoded: decoded)
+        self.publishDecodedFrame(decoded)
         self.markFrameAvailable()
         if decoded.ptsUs >= self.activeDurationUs() {
           self.isPlaying = false

@@ -49,8 +49,10 @@ files report the shared native facade backend and metadata, and
 `python dev.py mac-ui-test ui_tests/macos/native_first_frame_smoke.csv` for the first visible
 native frame. `native_controls_smoke.csv` covers play/pause/seek/step command semantics,
 `native_seek_frame_smoke.csv` verifies that seek commands decode and publish a new target-time
-frame through the same texture, and `native_playback_smoke.csv` covers visible native playback
-frame advancement. The helper copies CSV scripts into the app container before launch and rewrites
+frame through the same texture, `native_playback_smoke.csv` covers visible native playback frame
+advancement, and the `native_playing_*` smokes lock down seek/step behavior while playback is
+running. A seek follows the shared keep-previous-state preference; step navigation is explicit
+pause-on-step. The helper copies CSV scripts into the app container before launch and rewrites
 repo-relative `ADD_MEDIA` fixtures to sandbox-local copies because the macOS debug app is sandboxed
 and cannot read arbitrary repository paths directly. By default it opens the real `.app` through
 Launch Services with background activation so the window still renders on screen without stealing

@@ -131,11 +131,13 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_first_frame_smoke.csv \
   ui_tests/macos/native_controls_smoke.csv \
   ui_tests/macos/native_seek_frame_smoke.csv \
-  ui_tests/macos/native_playback_smoke.csv
+  ui_tests/macos/native_playback_smoke.csv \
+  ui_tests/macos/native_playing_seek_keeps_state_smoke.csv \
+  ui_tests/macos/native_playing_step_pauses_smoke.csv
 ```
 
 ## Next Slice
 
-The next implementation slice should clarify playback-state semantics around seek/step, keep the
-Swift timer limited to frame pumping, and then start wiring audio output behind the existing playback
-abstractions.
+The next implementation slice should start wiring audio output behind the existing playback
+abstractions, while keeping the Swift timer limited to frame pumping and leaving timeline, loop, and
+decode policy in the shared layers.

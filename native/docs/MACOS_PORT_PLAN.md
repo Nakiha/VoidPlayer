@@ -78,17 +78,18 @@ pipeline.
 
 Goal: make the macOS MethodChannel call the same native player surface as Windows.
 
-- [ ] Add a macOS native library target instead of direct Xcode `#include` shims.
-- [ ] Define a small C/Objective-C++ bridge for create/destroy/open/play/pause/seek/currentPts.
+- [x] Add a macOS native library target instead of direct Xcode `#include` shims.
+- [x] Define a small C/Objective-C++ bridge for create/destroy/open/play/pause/seek/currentPts.
 - [x] Add a CTest-covered C ABI facade over `DemuxThread` + `DecodeThread` for macOS.
-- [ ] Return `available=true` only when the shared facade drives playback state.
-- [ ] Keep current preview bridge behind diagnostics until it can be deleted.
+- [x] Return `available=true` only when the shared facade drives playback state.
+- [x] Route the macOS MethodChannel create/play/pause/seek path through the shared facade.
+- [ ] Delete the legacy preview decoder target once remaining smoke coverage moves to the facade.
 
 ### M4: Software Playback MVP
 
 Goal: local-file software playback with correct timing and basic audio.
 
-- [ ] Feed decoded frames into the macOS `CVPixelBuffer` texture bridge from a native queue.
+- [x] Feed decoded frames into the macOS `CVPixelBuffer` texture bridge from a native queue.
 - [ ] Add CoreAudio or miniaudio output behind the existing audio abstraction.
 - [ ] Validate pause, seek, step, loop, destroy, and window close.
 - [ ] Preserve Windows behavior and tests.
@@ -135,8 +136,6 @@ python dev.py mac-ui-test \
 
 ## Next Slice
 
-The next implementation slice should wire the CTest-covered macOS native facade into the Flutter
-runner: replace `MacOSFirstFrameDecoder.mm` with a native-player shim, have Swift create/open/play/
-pause/seek through that facade, and feed copied BGRA frames into the current `CVPixelBuffer` texture.
-The Swift preview decoder remains diagnostic-only and should shrink as soon as the shared native
-facade owns visible playback.
+The next implementation slice should harden the new visible native path: add targeted macOS UI
+coverage for seek/step through the shared facade, remove the legacy preview decoder shim, and then
+start wiring audio output behind the existing playback abstractions.

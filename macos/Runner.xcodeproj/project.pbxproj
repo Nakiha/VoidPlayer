@@ -242,6 +242,7 @@
 			buildConfigurationList = 33CC10FB2044A3C60003C045 /* Build configuration list for PBXNativeTarget "Runner" */;
 			buildPhases = (
 				8EDE35836BC9AA8F04B246DA /* [CP] Check Pods Manifest.lock */,
+				A12F00062C07FF0100000001 /* [VoidPlayer] Build native macOS player */,
 				33CC10E92044A3C60003C045 /* Sources */,
 				33CC10EA2044A3C60003C045 /* Frameworks */,
 				33CC10EB2044A3C60003C045 /* Resources */,
@@ -463,6 +464,34 @@
 			shellScript = "\"${PROJECT_DIR}/scripts/embed_ffmpeg_dylibs.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
+		A12F00062C07FF0100000001 /* [VoidPlayer] Build native macOS player */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(PROJECT_DIR)/../native/CMakeLists.txt",
+				"$(PROJECT_DIR)/../native/cmake/NativeSources.cmake",
+				"$(PROJECT_DIR)/../native/cmake/PortableTargets.cmake",
+				"$(PROJECT_DIR)/../native/macos/native_player_bridge.cpp",
+				"$(PROJECT_DIR)/../native/macos/native_player_bridge.h",
+			);
+			name = "[VoidPlayer] Build native macOS player";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
+				"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_media_ffmpeg.a",
+				"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_player_portable_core.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nBUILD_DIR=\"${PROJECT_DIR}/../native/build-xcode-macos\"\ncmake -S \"${PROJECT_DIR}/../native\" -B \"${BUILD_DIR}\" -G \"Unix Makefiles\" \\\n  -DBUILD_ANALYSIS=OFF \\\n  -DBUILD_TESTS=OFF \\\n  -DBUILD_FFI=OFF \\\n  -DBUILD_PYTHON=OFF \\\n  -DCMAKE_BUILD_TYPE=\"${CONFIGURATION}\"\ncmake --build \"${BUILD_DIR}\" --target void_macos_native_player -- -j \"$(sysctl -n hw.ncpu)\"\n";
+			showEnvVarsInLog = 0;
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -628,10 +657,14 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
+					"$(PROJECT_DIR)/../native/build-xcode-macos",
 					"$(PROJECT_DIR)/../third_party/ffmpeg/lib",
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
+					"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
+					"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_media_ffmpeg.a",
+					"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_player_portable_core.a",
 					"-lavformat",
 					"-lavcodec",
 					"-lavutil",
@@ -776,10 +809,14 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
+					"$(PROJECT_DIR)/../native/build-xcode-macos",
 					"$(PROJECT_DIR)/../third_party/ffmpeg/lib",
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
+					"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
+					"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_media_ffmpeg.a",
+					"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_player_portable_core.a",
 					"-lavformat",
 					"-lavcodec",
 					"-lavutil",
@@ -812,10 +849,14 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
+					"$(PROJECT_DIR)/../native/build-xcode-macos",
 					"$(PROJECT_DIR)/../third_party/ffmpeg/lib",
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
+					"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
+					"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_media_ffmpeg.a",
+					"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_player_portable_core.a",
 					"-lavformat",
 					"-lavcodec",
 					"-lavutil",

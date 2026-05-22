@@ -10,7 +10,7 @@ private struct MacOSDecodedFirstFrame {
   let bgra: Data
 }
 
-private enum MacOSFirstFrameDecodeError: Error, CustomStringConvertible {
+private enum MacOSNativePlayerError: Error, CustomStringConvertible {
   case failed(String)
   case invalidPayload
 
@@ -24,42 +24,112 @@ private enum MacOSFirstFrameDecodeError: Error, CustomStringConvertible {
   }
 }
 
-private enum MacOSFirstFrameDecode {
-  static func decode(path: String, targetPtsUs: Int = 0) throws -> MacOSDecodedFirstFrame {
-    var frame = VPMacOSDecodedFrame()
+private final class MacOSNativePlayerSession {
+  private let handle: OpaquePointer
+
+  init?() {
+    guard let handle = VPMacOSNativePlayerCreate() else {
+      return nil
+    }
+    self.handle = handle
+  }
+
+  deinit {
+    VPMacOSNativePlayerDestroy(handle)
+  }
+
+  func open(path: String) throws {
     var error = [CChar](repeating: 0, count: 1024)
     let ret = path.withCString { pathPointer in
-      VPMacOSDecodeVideoFrameBGRA(
-        pathPointer,
-        Int64(targetPtsUs),
+      VPMacOSNativePlayerOpen(handle, pathPointer, &error, error.count)
+    }
+    if ret != 0 {
+      let message = String(cString: error)
+      throw MacOSNativePlayerError.failed(
+        message.isEmpty ? "macOS native player open failed with code \(ret)" : message
+      )
+    }
+  }
+
+  func close() {
+    VPMacOSNativePlayerClose(handle)
+  }
+
+  func play() {
+    VPMacOSNativePlayerPlay(handle)
+  }
+
+  func pause() {
+    VPMacOSNativePlayerPause(handle)
+  }
+
+  func setSpeed(_ speed: Double) {
+    VPMacOSNativePlayerSetSpeed(handle, speed)
+  }
+
+  func seek(_ ptsUs: Int) {
+    VPMacOSNativePlayerSeek(handle, Int64(ptsUs))
+  }
+
+  func currentPtsUs() -> Int {
+    Int(VPMacOSNativePlayerCurrentPtsUs(handle))
+  }
+
+  func durationUs() -> Int {
+    Int(VPMacOSNativePlayerDurationUs(handle))
+  }
+
+  func width() -> Int {
+    Int(VPMacOSNativePlayerWidth(handle))
+  }
+
+  func height() -> Int {
+    Int(VPMacOSNativePlayerHeight(handle))
+  }
+
+  func isPlaying() -> Bool {
+    VPMacOSNativePlayerIsPlaying(handle) != 0
+  }
+
+  func copyCurrentFrame(waitTimeoutMs: Int = 0) throws -> MacOSDecodedFirstFrame {
+    let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
+    var lastError = ""
+
+    repeat {
+      var frame = VPMacOSNativeFrame()
+      var error = [CChar](repeating: 0, count: 1024)
+      let ret = VPMacOSNativePlayerCopyCurrentFrameBGRA(
+        handle,
         &frame,
         &error,
         error.count
       )
-    }
-    defer {
-      VPMacOSDecodedFrameFree(&frame)
-    }
+      if ret == 0 {
+        defer {
+          VPMacOSNativeFrameFree(&frame)
+        }
+        guard frame.width > 0,
+              frame.height > 0,
+              let bgra = frame.bgra,
+              frame.bgra_size > 0 else {
+          throw MacOSNativePlayerError.invalidPayload
+        }
 
-    if ret != 0 {
+        return MacOSDecodedFirstFrame(
+          width: Int(frame.width),
+          height: Int(frame.height),
+          durationUs: Int(frame.duration_us),
+          ptsUs: Int(frame.pts_us),
+          bgra: Data(bytes: bgra, count: Int(frame.bgra_size))
+        )
+      }
       let message = String(cString: error)
-      throw MacOSFirstFrameDecodeError.failed(
-        message.isEmpty ? "FFmpeg first-frame decode failed with code \(ret)" : message
-      )
-    }
-    guard frame.width > 0,
-          frame.height > 0,
-          let bgra = frame.bgra,
-          frame.bgra_size > 0 else {
-      throw MacOSFirstFrameDecodeError.invalidPayload
-    }
+      lastError = message.isEmpty ? "copyCurrentFrame failed with code \(ret)" : message
+      Thread.sleep(forTimeInterval: 0.01)
+    } while Date() < deadline
 
-    return MacOSDecodedFirstFrame(
-      width: Int(frame.width),
-      height: Int(frame.height),
-      durationUs: Int(frame.duration_us),
-      ptsUs: Int(frame.pts_us),
-      bgra: Data(bytes: bgra, count: Int(frame.bgra_size))
+    throw MacOSNativePlayerError.failed(
+      lastError.isEmpty ? "timed out waiting for a decoded frame" : lastError
     )
   }
 }
@@ -84,7 +154,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private static let syntheticDurationUs = 10_000_000
 
   private let textureRegistry: FlutterTextureRegistry
-  private let playbackQueue = DispatchQueue(label: "dev.nakiha.voidplayer.macos.preview-playback")
+  private let playbackQueue = DispatchQueue(label: "dev.nakiha.voidplayer.macos.native-playback")
   private var texture: MacOSSyntheticTexture?
   private var textureId: Int64?
   private var tracks: [[String: Any]] = []
@@ -93,7 +163,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private var currentDurationUs = 0
   private var isPlaying = false
   private var backendName = "synthetic-texture"
-  private var currentMediaPath: String?
+  private var nativePlayer: MacOSNativePlayerSession?
   private var playbackSpeed = 1.0
   private var playbackTimer: DispatchSourceTimer?
   private var playbackGeneration = 0
@@ -120,9 +190,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       result(nil)
     case "setSpeed":
       playbackSpeed = max(0.01, doubleArg(call.arguments, "speed") ?? 1.0)
-      if isPlaying {
-        startPreviewPlaybackTimer()
-      }
+      nativePlayer?.setSpeed(playbackSpeed)
       result(nil)
     case "createPlayer":
       result(createPlayer(arguments: call.arguments))
@@ -139,15 +207,17 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       result(nil)
     case "play":
       isPlaying = textureId != nil
-      startPreviewPlaybackTimer()
+      nativePlayer?.play()
+      startNativePlaybackTimer()
       result(nil)
     case "pause":
       isPlaying = false
-      stopPreviewPlaybackTimer()
+      nativePlayer?.pause()
+      stopNativePlaybackTimer()
       result(nil)
     case "seek":
       let targetPtsUs = intArg(call.arguments, "ptsUs") ?? 0
-      stopPreviewPlaybackTimer()
+      stopNativePlaybackTimer()
       currentPtsUs = max(0, min(activeDurationUs(), targetPtsUs))
       if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
         result(error)
@@ -156,7 +226,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       markFrameAvailable()
       result(nil)
     case "stepForward":
-      stopPreviewPlaybackTimer()
+      stopNativePlaybackTimer()
       currentPtsUs = min(activeDurationUs(), currentPtsUs + 33_333)
       if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
         result(error)
@@ -165,7 +235,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       markFrameAvailable()
       result(nil)
     case "stepBackward":
-      stopPreviewPlaybackTimer()
+      stopNativePlaybackTimer()
       currentPtsUs = max(0, currentPtsUs - 33_333)
       if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
         result(error)
@@ -174,6 +244,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       markFrameAvailable()
       result(nil)
     case "currentPts":
+      currentPtsUs = nativePlayer?.currentPtsUs() ?? currentPtsUs
       result(currentPtsUs)
     case "duration":
       result(tracks.isEmpty ? 0 : currentDurationUs)
@@ -184,7 +255,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
           : ["ptsUs": currentPtsUs, "dtsUs": currentPtsUs]
       )
     case "isPlaying":
-      result(isPlaying)
+      result(nativePlayer?.isPlaying() ?? isPlaying)
     case "getLayout":
       result(layout)
     case "applyLayout":
@@ -200,9 +271,10 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       result([
         "platform": "macos",
         "backend": backendName,
-        "available": false,
-        "reason": "macOS native playback is not implemented yet; " +
-          "first-frame bridge is active for port validation",
+        "available": nativePlayer != nil,
+        "reason": nativePlayer == nil
+          ? "Synthetic macOS texture is active"
+          : "macOS shared native DecodeThread facade is active",
         "textureId": textureId ?? -1,
         "trackCount": tracks.count,
       ])
@@ -239,24 +311,28 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       trackCodecLongName = "macOS Synthetic FlutterTexture"
       trackDecoderName = "synthetic"
       backendName = "synthetic-texture"
-      currentMediaPath = nil
+      nativePlayer = nil
     } else {
       do {
-        let decoded = try MacOSFirstFrameDecode.decode(path: firstPath)
+        guard let session = MacOSNativePlayerSession() else {
+          throw MacOSNativePlayerError.failed("failed to allocate macOS native player")
+        }
+        try session.open(path: firstPath)
+        let decoded = try session.copyCurrentFrame(waitTimeoutMs: 3_000)
         nextTexture = MacOSSyntheticTexture(decoded: decoded)
-        trackWidth = decoded.width
-        trackHeight = decoded.height
-        trackDurationUs = decoded.durationUs > 0 ? decoded.durationUs : Self.syntheticDurationUs
-        trackFormatName = "ffmpeg-first-frame"
+        trackWidth = session.width() > 0 ? session.width() : decoded.width
+        trackHeight = session.height() > 0 ? session.height() : decoded.height
+        trackDurationUs = session.durationUs() > 0 ? session.durationUs() : Self.syntheticDurationUs
+        trackFormatName = "macos-native-player"
         trackCodecName = "ffmpeg"
-        trackCodecLongName = "macOS FFmpeg first-frame bridge"
-        trackDecoderName = "ffmpeg_software_first_frame"
-        backendName = "ffmpeg-first-frame"
-        currentMediaPath = firstPath
+        trackCodecLongName = "macOS shared native DecodeThread facade"
+        trackDecoderName = "decode_thread_software"
+        backendName = "macos-native-player"
+        nativePlayer = session
       } catch {
         return FlutterError(
           code: "DECODE_FAILED",
-          message: "Failed to decode first macOS video frame",
+          message: "Failed to open macOS native player",
           details: "\(error)"
         )
       }
@@ -292,7 +368,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   }
 
   private func destroyPlayer() {
-    stopPreviewPlaybackTimer()
+    stopNativePlaybackTimer()
     if let id = textureId {
       textureRegistry.unregisterTexture(id)
     }
@@ -303,7 +379,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     currentDurationUs = 0
     isPlaying = false
     backendName = "synthetic-texture"
-    currentMediaPath = nil
+    nativePlayer?.close()
+    nativePlayer = nil
   }
 
   private func addTrack(arguments: Any?) -> Any {
@@ -327,12 +404,12 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       height: size.height,
       durationUs: currentDurationUs,
       formatName: backendName,
-      codecName: backendName == "ffmpeg-first-frame" ? "ffmpeg" : "macos_synthetic",
-      codecLongName: backendName == "ffmpeg-first-frame"
-        ? "macOS FFmpeg first-frame bridge"
+      codecName: backendName == "macos-native-player" ? "ffmpeg" : "macos_synthetic",
+      codecLongName: backendName == "macos-native-player"
+        ? "macOS shared native DecodeThread facade"
         : "macOS Synthetic FlutterTexture",
-      decoderName: backendName == "ffmpeg-first-frame"
-        ? "ffmpeg_software_first_frame"
+      decoderName: backendName == "macos-native-player"
+        ? "decode_thread_software"
         : "synthetic"
     )
     tracks.append(track)
@@ -394,17 +471,16 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   }
 
   private func refreshDecodedFrameIfNeeded(targetPtsUs: Int) -> FlutterError? {
-    guard backendName == "ffmpeg-first-frame",
-          let currentMediaPath,
+    guard backendName == "macos-native-player",
+          let nativePlayer,
           let texture else {
       return nil
     }
 
     do {
-      let decoded = try MacOSFirstFrameDecode.decode(
-        path: currentMediaPath,
-        targetPtsUs: targetPtsUs
-      )
+      nativePlayer.seek(targetPtsUs)
+      let decoded = try nativePlayer.copyCurrentFrame(waitTimeoutMs: 3_000)
+      currentPtsUs = decoded.ptsUs
       texture.update(decoded: decoded)
       return nil
     } catch {
@@ -416,78 +492,59 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     }
   }
 
-  private func startPreviewPlaybackTimer() {
-    stopPreviewPlaybackTimer()
-    guard backendName == "ffmpeg-first-frame",
-          let path = currentMediaPath,
+  private func startNativePlaybackTimer() {
+    stopNativePlaybackTimer()
+    guard backendName == "macos-native-player",
+          nativePlayer != nil,
           textureId != nil else {
       return
     }
 
     let generation = playbackGeneration + 1
     playbackGeneration = generation
-    let startPtsUs = currentPtsUs
-    let durationUs = activeDurationUs()
-    let speed = playbackSpeed
-    let startNanos = DispatchTime.now().uptimeNanoseconds
     let timer = DispatchSource.makeTimerSource(queue: playbackQueue)
-    timer.schedule(deadline: .now() + .milliseconds(120), repeating: .milliseconds(120))
+    timer.schedule(deadline: .now(), repeating: .milliseconds(33))
     timer.setEventHandler { [weak self] in
-      self?.decodePreviewPlaybackTick(
-        path: path,
-        startPtsUs: startPtsUs,
-        durationUs: durationUs,
-        speed: speed,
-        generation: generation,
-        startNanos: startNanos
-      )
+      self?.copyNativePlaybackFrame(generation: generation)
     }
     playbackTimer = timer
     timer.resume()
   }
 
-  private func stopPreviewPlaybackTimer() {
+  private func stopNativePlaybackTimer() {
     playbackGeneration += 1
     playbackTimer?.setEventHandler {}
     playbackTimer?.cancel()
     playbackTimer = nil
   }
 
-  private func decodePreviewPlaybackTick(
-    path: String,
-    startPtsUs: Int,
-    durationUs: Int,
-    speed: Double,
-    generation: Int,
-    startNanos: UInt64
-  ) {
-    let elapsedNanos = DispatchTime.now().uptimeNanoseconds - startNanos
-    let elapsedUs = Int((Double(elapsedNanos) / 1000.0) * speed)
-    let targetPtsUs = min(durationUs, startPtsUs + max(0, elapsedUs))
-
+  private func copyNativePlaybackFrame(generation: Int) {
     do {
-      let decoded = try MacOSFirstFrameDecode.decode(path: path, targetPtsUs: targetPtsUs)
+      guard let nativePlayer else { return }
+      let decoded = try nativePlayer.copyCurrentFrame()
       DispatchQueue.main.async { [weak self] in
         guard let self,
               self.playbackGeneration == generation,
               self.isPlaying,
-              self.backendName == "ffmpeg-first-frame" else {
+              self.backendName == "macos-native-player" else {
           return
         }
-        self.currentPtsUs = targetPtsUs
+        self.currentPtsUs = decoded.ptsUs
         self.texture?.update(decoded: decoded)
         self.markFrameAvailable()
-        if targetPtsUs >= durationUs {
+        if decoded.ptsUs >= self.activeDurationUs() {
           self.isPlaying = false
-          self.stopPreviewPlaybackTimer()
+          self.nativePlayer?.pause()
+          self.stopNativePlaybackTimer()
         }
       }
     } catch {
       DispatchQueue.main.async { [weak self] in
         guard let self, self.playbackGeneration == generation else { return }
-        NSLog("VoidPlayer macOS preview playback decode failed: \(error)")
+        NSLog("VoidPlayer macOS native playback frame copy failed: \(error)")
         self.isPlaying = false
-        self.stopPreviewPlaybackTimer()
+        self.nativePlayer?.pause()
+        self.stopNativePlaybackTimer()
       }
     }
   }

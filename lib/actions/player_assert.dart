@@ -35,6 +35,34 @@ class AssertTrackOrder extends PlayerAssert {
   const AssertTrackOrder(this.fileIds);
 }
 
+class AssertNativeBackend extends PlayerAssert {
+  final String backend;
+  final bool available;
+  const AssertNativeBackend(this.backend, {required this.available});
+}
+
+class AssertTrackMetadata extends PlayerAssert {
+  final int slot;
+  final String formatName;
+  final String decoderName;
+  const AssertTrackMetadata({
+    required this.slot,
+    required this.formatName,
+    required this.decoderName,
+  });
+}
+
+class AssertPresentedFrameRange extends PlayerAssert {
+  final int fileId;
+  final int minUs;
+  final int maxUs;
+  const AssertPresentedFrameRange({
+    required this.fileId,
+    required this.minUs,
+    required this.maxUs,
+  });
+}
+
 class AssertDuration extends PlayerAssert {
   final int ptsUs;
   final int toleranceMs;

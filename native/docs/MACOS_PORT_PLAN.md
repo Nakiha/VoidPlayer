@@ -127,14 +127,15 @@ Current macOS smoke set:
 ```bash
 python dev.py mac-ui-test \
   ui_tests/macos/synthetic_texture_smoke.csv \
-  ui_tests/macos/first_frame_smoke.csv \
-  ui_tests/macos/first_frame_controls_smoke.csv \
-  ui_tests/macos/seek_frame_smoke.csv \
-  ui_tests/macos/preview_playback_smoke.csv
+  ui_tests/macos/native_facade_smoke.csv \
+  ui_tests/macos/native_first_frame_smoke.csv \
+  ui_tests/macos/native_controls_smoke.csv \
+  ui_tests/macos/native_seek_frame_smoke.csv \
+  ui_tests/macos/native_playback_smoke.csv
 ```
 
 ## Next Slice
 
-The next implementation slice should harden the new visible native path: add targeted macOS UI
-coverage for seek/step through the shared facade, rename remaining first-frame/preview test labels,
-and then start wiring audio output behind the existing playback abstractions.
+The next implementation slice should clarify playback-state semantics around seek/step, keep the
+Swift timer limited to frame pumping, and then start wiring audio output behind the existing playback
+abstractions.

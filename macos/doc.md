@@ -44,12 +44,14 @@ sandboxed file selections can be read by future playback code. The toolbar still
 disabled while `nativePlayback=false`.
 
 Use `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv` for the synthetic
-texture smoke, `python dev.py mac-ui-test ui_tests/macos/first_frame_smoke.csv` for the native
-facade first visible frame, and `python dev.py mac-ui-test ui_tests/macos/first_frame_controls_smoke.csv`
-for play/pause/seek/step command semantics. Use
-`python dev.py mac-ui-test ui_tests/macos/seek_frame_smoke.csv` to verify that seek commands decode
-and publish a new target-time frame through the same texture.
-`python dev.py mac-ui-test ui_tests/macos/preview_playback_smoke.csv` covers visible native playback
+texture smoke, `python dev.py mac-ui-test ui_tests/macos/native_facade_smoke.csv` to prove local
+files report the shared native facade backend and metadata, and
+`python dev.py mac-ui-test ui_tests/macos/native_first_frame_smoke.csv` for the first visible
+native frame. `native_controls_smoke.csv` covers play/pause/seek/step command semantics,
+`native_seek_frame_smoke.csv` verifies that seek commands decode and publish a new target-time
+frame through the same texture, and `native_playback_smoke.csv` covers visible native playback
 frame advancement. The helper copies CSV scripts into the app container before launch and rewrites
 repo-relative `ADD_MEDIA` fixtures to sandbox-local copies because the macOS debug app is sandboxed
-and cannot read arbitrary repository paths directly.
+and cannot read arbitrary repository paths directly. By default it opens the real `.app` through
+Launch Services with background activation so the window still renders on screen without stealing
+focus from the user's current foreground app.

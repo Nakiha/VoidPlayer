@@ -39,10 +39,11 @@ python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
 macOS 使用单独的 helper，因为 debug app 带 sandbox，不能直接读取仓库路径下的
 CSV 或媒体 fixture。`mac-ui-test` 会先把脚本复制进 app container，并把仓库内的
 repo-relative `ADD_MEDIA` 路径重写为 container 内的媒体副本，再用 `--test-script`
-启动 macOS app：
+启动 macOS app。默认会通过 Launch Services 后台打开真实 `.app`，窗口仍然上屏，
+但不会主动把当前前台 app 抢走；需要手动观察时可加 `--visible` 使用直接启动路径：
 
 ```bash
-python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/first_frame_smoke.csv ui_tests/macos/first_frame_controls_smoke.csv ui_tests/macos/seek_frame_smoke.csv ui_tests/macos/preview_playback_smoke.csv
+python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/native_facade_smoke.csv ui_tests/macos/native_first_frame_smoke.csv ui_tests/macos/native_controls_smoke.csv ui_tests/macos/native_seek_frame_smoke.csv ui_tests/macos/native_playback_smoke.csv
 ```
 
 ## 测试目录约定
@@ -101,6 +102,7 @@ ui_tests/               # 启动真实 app 的 CSV GUI 自动化脚本
 
 | 目录 | 什么时候看这里 |
 |------|----------------|
+| `macos/` | macOS runner / texture bridge / native facade 上屏路径。 |
 | `smoke/` | 通用 UI 改动、先确认 app 能启动和基础播放路径。 |
 | `analysis/` | `lib/windows/analysis/`、主窗体生成 analysis、spawn analysis 窗体、analysis IPC track 更新。 |
 | `timeline/` | 用户真实点击/拖动 timeline，尤其是 timeline seek、重复点击、防崩溃。 |

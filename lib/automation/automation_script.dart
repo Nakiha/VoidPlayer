@@ -551,6 +551,50 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAssert(time, AssertTrackOrder(args.map(int.parse).toList()));
+    case 'ASSERT_NATIVE_BACKEND':
+      if (args.length < 2) {
+        log.warning(
+          'ASSERT_NATIVE_BACKEND needs backend and available: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertNativeBackend(
+          args[0],
+          available: args[1] == '1' || args[1].toLowerCase() == 'true',
+        ),
+      );
+    case 'ASSERT_TRACK_METADATA':
+      if (args.length < 3) {
+        log.warning(
+          'ASSERT_TRACK_METADATA needs slot, formatName and decoderName: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertTrackMetadata(
+          slot: int.parse(args[0]),
+          formatName: args[1],
+          decoderName: args[2],
+        ),
+      );
+    case 'ASSERT_PRESENTED_FRAME_RANGE':
+      if (args.length < 3) {
+        log.warning(
+          'ASSERT_PRESENTED_FRAME_RANGE needs fileId, minUs and maxUs: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertPresentedFrameRange(
+          fileId: int.parse(args[0]),
+          minUs: int.parse(args[1]),
+          maxUs: int.parse(args[2]),
+        ),
+      );
     case 'ASSERT_DURATION':
       if (args.length < 2) {
         log.warning('ASSERT_DURATION needs ptsUs and toleranceMs: $rawLine');

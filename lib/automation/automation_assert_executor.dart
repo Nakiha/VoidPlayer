@@ -71,6 +71,42 @@ class AutomationAssertExecutor {
             );
           }
         }
+      case AssertNativeBackend(:final backend, :final available):
+        final diagnostics = await controller.getDiagnostics();
+        final actualBackend = diagnostics['backend'] as String? ?? '';
+        final actualAvailable = diagnostics['available'] as bool? ?? false;
+        if (actualBackend != backend || actualAvailable != available) {
+          throw AssertionError(
+            'Expected native backend=$backend available=$available, '
+            'got backend=$actualBackend available=$actualAvailable',
+          );
+        }
+      case AssertTrackMetadata(
+        :final slot,
+        :final formatName,
+        :final decoderName,
+      ):
+        final tracks = await controller.getTracks();
+        final matches = tracks.where((track) => track.slot == slot).toList();
+        if (matches.isEmpty) {
+          throw AssertionError('Expected track metadata for slot $slot');
+        }
+        final track = matches.first;
+        if (track.formatName != formatName ||
+            track.decoderName != decoderName) {
+          throw AssertionError(
+            'Expected track[$slot] format=$formatName decoder=$decoderName, '
+            'got format=${track.formatName} decoder=${track.decoderName}',
+          );
+        }
+      case AssertPresentedFrameRange(:final fileId, :final minUs, :final maxUs):
+        final timing = await controller.currentPresentedFrame(fileId);
+        final ptsUs = timing?.ptsUs;
+        if (ptsUs == null || ptsUs < minUs || ptsUs > maxUs) {
+          throw AssertionError(
+            'Expected presented frame for fileId=$fileId in [$minUs, $maxUs] μs, got $ptsUs',
+          );
+        }
       case AssertDuration(:final ptsUs, :final toleranceMs):
         final actual = await controller.duration();
         final diff = (actual - ptsUs).abs();

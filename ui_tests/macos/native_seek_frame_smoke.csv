@@ -1,6 +1,6 @@
 # macOS runner smoke for seek-driven decoded frame refresh.
 # Run with:
-#   python dev.py mac-ui-test ui_tests/macos/seek_frame_smoke.csv
+#   python dev.py mac-ui-test ui_tests/macos/native_seek_frame_smoke.csv
 @WINDOW, 960, 540
 0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
 1.3, ASSERT_TRACK_COUNT, 1

@@ -5,6 +5,8 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 from .native import ensure_ffmpeg_analyzer_tool, native_build
@@ -14,6 +16,7 @@ from .paths import (
     NATIVE_DIR,
     ROOT,
     app_exe_path,
+    macos_app_bundle_path,
     macos_app_exe_path,
 )
 from .process import header, run
@@ -234,13 +237,14 @@ def _cmd_mac_ui_test(args) -> None:
             print(f"ERROR: test script not found: {script_path}")
             sys.exit(1)
 
+    app_bundle = macos_app_bundle_path(args.debug)
     exe = macos_app_exe_path(args.debug)
 
-    if args.build or not exe.exists():
+    if args.build or not app_bundle.exists() or not exe.exists():
         flutter_build_macos(args.debug)
 
-    if not exe.exists():
-        print(f"ERROR: app executable not found: {exe}")
+    if not app_bundle.exists() or not exe.exists():
+        print(f"ERROR: macOS app not found: {app_bundle}")
         sys.exit(1)
 
     container_scripts_dir = (
@@ -263,12 +267,12 @@ def _cmd_mac_ui_test(args) -> None:
         )
         _prepare_macos_sandbox_script(script_path, sandbox_script, container_media_dir)
 
-        cmd = [str(exe), "--test-script", str(sandbox_script)]
-        cmd.extend(_script_app_args(script_path))
+        app_args = ["--test-script", str(sandbox_script)]
+        app_args.extend(_script_app_args(script_path))
         if not args.visible:
-            cmd.append("--silent-ui-test")
+            app_args.append("--silent-ui-test")
         if args.log_level:
-            cmd.append(f"--log-level={args.log_level}")
+            app_args.append(f"--log-level={args.log_level}")
 
         label = (
             script_path.relative_to(ROOT)
@@ -276,7 +280,13 @@ def _cmd_mac_ui_test(args) -> None:
             else script_path
         )
         header(f"macOS UI test {index}/{total} {label}")
-        result, ax_tree_error = _run_ui_test_process(cmd)
+        if args.visible:
+            result, ax_tree_error = _run_ui_test_process([str(exe), *app_args])
+        else:
+            result, ax_tree_error = _run_macos_ui_test_process(
+                app_bundle,
+                app_args,
+            )
         if ax_tree_error:
             print(f"\nmacOS UI test failed: Flutter AXTree error detected: {label}")
             sys.exit(1)
@@ -330,6 +340,7 @@ def _macos_sandbox_media_path(media_path: str, container_media_dir: Path) -> str
 
 def _run_ui_test_process(cmd: list[str]) -> tuple[int, bool]:
     ax_tree_error = False
+    test_runner_failed = False
     process = subprocess.Popen(
         cmd,
         cwd=str(ROOT),
@@ -343,9 +354,74 @@ def _run_ui_test_process(cmd: list[str]) -> tuple[int, bool]:
     assert process.stdout is not None
     for line in process.stdout:
         print(line, end="")
-        if (
-            "Failed to update ui::AXTree" in line
-            or "accessibility_bridge.cc" in line
-        ):
+        line_result = _scan_ui_test_output(line)
+        if line_result[0]:
             ax_tree_error = True
-    return process.wait(), ax_tree_error
+        if line_result[1]:
+            test_runner_failed = True
+    result = process.wait()
+    if test_runner_failed and result == 0:
+        result = 1
+    return result, ax_tree_error
+
+
+def _run_macos_ui_test_process(
+    app_bundle: Path,
+    app_args: list[str],
+) -> tuple[int, bool]:
+    ax_tree_error = False
+    test_runner_failed = False
+    with tempfile.TemporaryDirectory(prefix="voidplayer-mac-ui-") as tmp:
+        output_path = Path(tmp) / "app.log"
+        open_cmd = [
+            "/usr/bin/open",
+            "-W",
+            "-n",
+            "-g",
+            "-o",
+            str(output_path),
+            "--stderr",
+            str(output_path),
+            str(app_bundle),
+            "--args",
+            *app_args,
+        ]
+        process = subprocess.Popen(open_cmd, cwd=str(ROOT))
+        offset = 0
+        while process.poll() is None:
+            if output_path.exists():
+                with output_path.open("r", encoding="utf-8", errors="replace") as file:
+                    file.seek(offset)
+                    for line in file:
+                        print(line, end="")
+                        line_result = _scan_ui_test_output(line)
+                        if line_result[0]:
+                            ax_tree_error = True
+                        if line_result[1]:
+                            test_runner_failed = True
+                    offset = file.tell()
+            time.sleep(0.05)
+
+        if output_path.exists():
+            with output_path.open("r", encoding="utf-8", errors="replace") as file:
+                file.seek(offset)
+                for line in file:
+                    print(line, end="")
+                    line_result = _scan_ui_test_output(line)
+                    if line_result[0]:
+                        ax_tree_error = True
+                    if line_result[1]:
+                        test_runner_failed = True
+
+        result = process.returncode or 0
+        if test_runner_failed and result == 0:
+            result = 1
+        return result, ax_tree_error
+
+
+def _scan_ui_test_output(line: str) -> tuple[bool, bool]:
+    ax_tree_error = (
+        "Failed to update ui::AXTree" in line or "accessibility_bridge.cc" in line
+    )
+    test_runner_failed = "TestRunner FAIL" in line
+    return ax_tree_error, test_runner_failed

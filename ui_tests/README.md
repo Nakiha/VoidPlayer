@@ -1,7 +1,9 @@
 # UI Test Suites
 
-`ui_tests/` contains CSV scripts that launch the real Windows app through
-`python dev.py ui-test <script>`. You can pass multiple scripts to run them in
+`ui_tests/` contains CSV scripts that launch the real app. Windows uses
+`python dev.py ui-test <script>`, while macOS uses
+`python dev.py mac-ui-test <script>` so sandboxed debug builds can read copied
+fixtures from the app container. You can pass multiple scripts to run them in
 order:
 
 ```bash
@@ -15,6 +17,7 @@ small smoke script first, then one or more scripts from the affected folder.
 
 | Folder | Scope |
 | --- | --- |
+| `macos/` | macOS runner, FlutterTexture bridge, and shared native facade visible-path smokes. |
 | `smoke/` | Fast app sanity checks. Use this for unrelated Flutter UI changes before picking a narrower regression. |
 | `analysis/` | Main-window analysis spawning, analysis child-window behavior, and analysis IPC track updates. Changes under `lib/windows/analysis/`, analysis launch flow, or analysis IPC should use this folder. |
 | `timeline/` | Real timeline pointer/click paths and repeated timeline seek regressions. Prefer this over direct `SEEK_TO` when a user-facing timeline interaction changed. |

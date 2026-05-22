@@ -36,6 +36,7 @@ private final class MacOSNativePlayerSession {
   }
 
   deinit {
+    setFrameAvailableCallback(nil, userData: nil)
     VPMacOSNativePlayerDestroy(handle)
   }
 
@@ -54,6 +55,13 @@ private final class MacOSNativePlayerSession {
 
   func close() {
     VPMacOSNativePlayerClose(handle)
+  }
+
+  func setFrameAvailableCallback(
+    _ callback: VPMacOSFrameAvailableCallback?,
+    userData: UnsafeMutableRawPointer?
+  ) {
+    VPMacOSNativePlayerSetFrameAvailableCallback(handle, callback, userData)
   }
 
   func play() {
@@ -165,6 +173,12 @@ private final class MacOSNativePlayerSession {
   }
 }
 
+private func macOSNativeFrameAvailable(_ userData: UnsafeMutableRawPointer?) {
+  guard let userData else { return }
+  let renderer = Unmanaged<MacOSVideoRendererStub>.fromOpaque(userData).takeUnretainedValue()
+  renderer.scheduleNativeFrameCopyFromCallback()
+}
+
 class MainFlutterWindow: NSWindow {
   override func close() {
     MacOSVideoRendererStub.destroyActivePlayerForWindowClose()
@@ -204,7 +218,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private var backendName = "synthetic-texture"
   private var nativePlayer: MacOSNativePlayerSession?
   private var playbackSpeed = 1.0
-  private var playbackTimer: DispatchSourceTimer?
+  private var nativeFrameCallbackRegistered = false
   private var playbackGeneration = 0
 
   init(textureRegistry: FlutterTextureRegistry) {
@@ -262,12 +276,12 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     case "play":
       isPlaying = textureId != nil
       nativePlayer?.play()
-      startNativePlaybackTimer()
+      startNativeFramePump()
       result(nil)
     case "pause":
       isPlaying = false
       nativePlayer?.pause()
-      stopNativePlaybackTimer()
+      stopNativeFramePump()
       result(nil)
     case "seek":
       let targetPtsUs = intArg(call.arguments, "ptsUs") ?? 0
@@ -430,7 +444,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   }
 
   private func destroyPlayer() {
-    stopNativePlaybackTimer()
+    stopNativeFramePump()
     if let id = textureId {
       textureRegistry.unregisterTexture(id)
     }
@@ -564,7 +578,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   }
 
   private func seekAndRefresh(targetPtsUs: Int, resumeAfterSeek: Bool) -> FlutterError? {
-    stopNativePlaybackTimer()
+    stopNativeFramePump()
     nativePlayer?.pause()
     isPlaying = false
     currentPtsUs = max(0, min(activeDurationUs(), targetPtsUs))
@@ -575,13 +589,13 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     if resumeAfterSeek {
       isPlaying = textureId != nil
       nativePlayer?.play()
-      startNativePlaybackTimer()
+      startNativeFramePump()
     }
     return nil
   }
 
   private func stepAndRefresh(deltaUs: Int) -> FlutterError? {
-    stopNativePlaybackTimer()
+    stopNativeFramePump()
     nativePlayer?.pause()
     isPlaying = false
     currentPtsUs = nativePlayer?.currentPtsUs() ?? currentPtsUs
@@ -604,30 +618,42 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     decoded.dtsUs == Int.min ? decoded.ptsUs : decoded.dtsUs
   }
 
-  private func startNativePlaybackTimer() {
-    stopNativePlaybackTimer()
+  private func startNativeFramePump() {
+    stopNativeFramePump()
     guard backendName == "macos-native-player",
-          nativePlayer != nil,
+          let nativePlayer,
           textureId != nil else {
       return
     }
 
     let generation = playbackGeneration + 1
     playbackGeneration = generation
-    let timer = DispatchSource.makeTimerSource(queue: playbackQueue)
-    timer.schedule(deadline: .now(), repeating: .milliseconds(33))
-    timer.setEventHandler { [weak self] in
+    nativeFrameCallbackRegistered = true
+    nativePlayer.setFrameAvailableCallback(
+      macOSNativeFrameAvailable,
+      userData: Unmanaged.passUnretained(self).toOpaque()
+    )
+    playbackQueue.async { [weak self] in
       self?.copyNativePlaybackFrame(generation: generation)
     }
-    playbackTimer = timer
-    timer.resume()
   }
 
-  private func stopNativePlaybackTimer() {
+  private func stopNativeFramePump() {
     playbackGeneration += 1
-    playbackTimer?.setEventHandler {}
-    playbackTimer?.cancel()
-    playbackTimer = nil
+    if nativeFrameCallbackRegistered {
+      nativePlayer?.setFrameAvailableCallback(nil, userData: nil)
+      nativeFrameCallbackRegistered = false
+    }
+  }
+
+  fileprivate func scheduleNativeFrameCopyFromCallback() {
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      let generation = self.playbackGeneration
+      self.playbackQueue.async { [weak self] in
+        self?.copyNativePlaybackFrame(generation: generation)
+      }
+    }
   }
 
   private func copyNativePlaybackFrame(generation: Int) {
@@ -646,7 +672,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         if decoded.ptsUs >= self.activeDurationUs() {
           self.isPlaying = false
           self.nativePlayer?.pause()
-          self.stopNativePlaybackTimer()
+          self.stopNativeFramePump()
         }
       }
     } catch {
@@ -655,7 +681,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         NSLog("VoidPlayer macOS native playback frame copy failed: \(error)")
         self.isPlaying = false
         self.nativePlayer?.pause()
-        self.stopNativePlaybackTimer()
+        self.stopNativeFramePump()
       }
     }
   }

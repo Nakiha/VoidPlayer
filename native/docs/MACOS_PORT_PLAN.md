@@ -62,7 +62,7 @@ logic out of Swift runner code.
 - [x] Move capture/hash metrics out of Swift into a shared test/diagnostic helper or retire them
   when native capture is available.
 - [x] Add native frame queue smokes for synthetic and FFmpeg-decoded software frames.
-- [ ] Replace timer-driven target-frame decoding with a native frame queue feeding the texture
+- [x] Replace timer-driven target-frame decoding with a native frame queue feeding the texture
   bridge.
 
 ### M2: Renderer-Neutral Frame Publication
@@ -171,8 +171,9 @@ deployment-target mismatch.
 macOS UI smoke covers both synthetic and native first-frame capture payloads.
 
 Current loop status: macOS loop enforcement now runs from a native playback tick owned by the
-macOS native player bridge. The Swift texture timer still copies frames to Flutter, but it is no
-longer responsible for deciding when loop seeks happen.
+macOS native player bridge. The same native tick emits frame-available callbacks when playback
+advances the current frame; Swift copies that frame into the `CVPixelBuffer` texture and no longer
+owns a fixed playback timer or loop decisions.
 
 Windows preservation status: on this macOS host, `python dev.py test --native-only` currently stops
 before the native test build while preparing the analyzer because it invokes
@@ -202,4 +203,4 @@ the speaker-level gap that the current native diagnostics cannot observe directl
 ## Next Slice
 
 The next implementation slice should run Windows native/UI preservation checks before M5, then start
-shrinking the remaining macOS presentation code toward renderer-neutral frame publication.
+M5 planning around a Metal/CVPixelBuffer backend with deterministic color/layout tests.

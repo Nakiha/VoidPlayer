@@ -9,6 +9,7 @@ extern "C" {
 #endif
 
 typedef struct VPMacOSNativePlayer VPMacOSNativePlayer;
+typedef void (*VPMacOSFrameAvailableCallback)(void* user_data);
 
 typedef struct VPMacOSNativeFrame {
   int32_t width;
@@ -36,6 +37,10 @@ int VPMacOSNativePlayerOpen(VPMacOSNativePlayer* player,
                             char* error,
                             size_t error_size);
 void VPMacOSNativePlayerClose(VPMacOSNativePlayer* player);
+void VPMacOSNativePlayerSetFrameAvailableCallback(
+    VPMacOSNativePlayer* player,
+    VPMacOSFrameAvailableCallback callback,
+    void* user_data);
 
 void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerPause(VPMacOSNativePlayer* player);

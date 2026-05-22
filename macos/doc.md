@@ -74,6 +74,8 @@ focus from the user's current foreground app.
 
 macOS `CAPTURE_VIEWPORT` still locks the current `CVPixelBuffer` in Swift, but BGRA
 hash/luma/non-black statistics are calculated by the shared native capture metrics helper.
+During playback the shared macOS native bridge now emits frame-available callbacks when the native
+tick advances the current frame; Swift no longer owns a fixed playback timer.
 
 Manual audible smoke:
 

@@ -1,5 +1,6 @@
 #include "native_player_bridge.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <iostream>
@@ -61,6 +62,12 @@ bool wait_for_frame(VPMacOSNativePlayer* player,
     return false;
 }
 
+void count_frame_available(void* user_data) {
+    if (!user_data) return;
+    auto* count = static_cast<std::atomic<int>*>(user_data);
+    count->fetch_add(1, std::memory_order_relaxed);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -99,6 +106,9 @@ int main(int argc, char** argv) {
     }
     const int64_t first_pts = first.pts_us;
 
+    std::atomic<int> frame_available_callbacks{0};
+    VPMacOSNativePlayerSetFrameAvailableCallback(
+        player.get(), count_frame_available, &frame_available_callbacks);
     VPMacOSNativePlayerPlay(player.get());
     std::this_thread::sleep_for(std::chrono::milliseconds(180));
     VPMacOSNativeFrame playing = {};
@@ -113,8 +123,15 @@ int main(int argc, char** argv) {
         VPMacOSNativeFrameFree(&playing);
         return 1;
     }
+    if (frame_available_callbacks.load(std::memory_order_relaxed) <= 0) {
+        std::cerr << "native frame-available callback was not invoked during playback\n";
+        VPMacOSNativeFrameFree(&first);
+        VPMacOSNativeFrameFree(&playing);
+        return 1;
+    }
 
     VPMacOSNativePlayerPause(player.get());
+    VPMacOSNativePlayerSetFrameAvailableCallback(player.get(), nullptr, nullptr);
     VPMacOSNativePlayerSeek(player.get(), 2'000'000);
     VPMacOSNativeFrame seeked = {};
     if (!wait_for_frame(player.get(), seeked, std::chrono::seconds(3))) {

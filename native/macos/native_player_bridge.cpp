@@ -17,6 +17,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -254,6 +255,7 @@ public:
     playback_.seek_clock(0);
     playback_.pause();
     playing_ = false;
+    last_tick_frame_pts_us_ = std::numeric_limits<int64_t>::min();
     return true;
   }
 
@@ -280,6 +282,7 @@ public:
     audio_sample_rate_ = 0;
     audio_channels_ = 0;
     loop_range_ = vr::LoopRangeState();
+    last_tick_frame_pts_us_ = std::numeric_limits<int64_t>::min();
   }
 
   void play() {
@@ -326,6 +329,7 @@ public:
     }
     seek_controller_->request_seek(target, vr::SeekType::Exact);
     playback_.seek_clock(target);
+    last_tick_frame_pts_us_ = std::numeric_limits<int64_t>::min();
   }
 
   int64_t current_pts_us() const {
@@ -349,16 +353,7 @@ public:
       error = "player is not open";
       return false;
     }
-    const int64_t target_pts = playback_.clock().current_pts_us();
-    while (true) {
-      auto next = track_buffer_->peek(1);
-      if (!next.has_value() || next->pts_us > target_pts) {
-        break;
-      }
-      if (!track_buffer_->advance()) {
-        break;
-      }
-    }
+    advance_to_clock(nullptr);
     auto frame = track_buffer_->peek(0);
     if (!frame.has_value()) {
       error = "no decoded frame is ready";
@@ -369,6 +364,22 @@ public:
       error = "decoded frame storage is not supported by the macOS BGRA bridge";
       return false;
     }
+    return true;
+  }
+
+  bool tick_playback() {
+    tick_loop_range();
+    if (!playing_) {
+      return false;
+    }
+    int64_t frame_pts_us = std::numeric_limits<int64_t>::min();
+    if (!advance_to_clock(&frame_pts_us)) {
+      return false;
+    }
+    if (frame_pts_us == last_tick_frame_pts_us_) {
+      return false;
+    }
+    last_tick_frame_pts_us_ = frame_pts_us;
     return true;
   }
 
@@ -390,6 +401,30 @@ public:
   }
 
 private:
+  bool advance_to_clock(int64_t* frame_pts_us) {
+    if (!track_buffer_) {
+      return false;
+    }
+    const int64_t target_pts = playback_.clock().current_pts_us();
+    while (true) {
+      auto next = track_buffer_->peek(1);
+      if (!next.has_value() || next->pts_us > target_pts) {
+        break;
+      }
+      if (!track_buffer_->advance()) {
+        break;
+      }
+    }
+    auto frame = track_buffer_->peek(0);
+    if (!frame.has_value()) {
+      return false;
+    }
+    if (frame_pts_us) {
+      *frame_pts_us = frame->pts_us;
+    }
+    return true;
+  }
+
   std::string path_;
   std::unique_ptr<vr::SeekController> seek_controller_;
   std::unique_ptr<vr::PacketQueue> packet_queue_;
@@ -405,6 +440,7 @@ private:
   int32_t audio_sample_rate_ = 0;
   int32_t audio_channels_ = 0;
   vr::LoopRangeState loop_range_;
+  int64_t last_tick_frame_pts_us_ = std::numeric_limits<int64_t>::min();
   bool playing_ = false;
 };
 
@@ -445,13 +481,35 @@ struct VPMacOSNativePlayer {
       if (tick_stop.load()) {
         break;
       }
-      std::lock_guard<std::mutex> player_lock(mutex);
-      core.tick_loop_range();
+      lock.unlock();
+      bool notify_frame = false;
+      {
+        std::lock_guard<std::mutex> player_lock(mutex);
+        notify_frame = core.tick_playback();
+      }
+      if (!notify_frame) {
+        lock.lock();
+        continue;
+      }
+      VPMacOSFrameAvailableCallback callback = nullptr;
+      void* user_data = nullptr;
+      {
+        std::lock_guard<std::mutex> callback_lock(callback_mutex);
+        callback = frame_available_callback;
+        user_data = frame_available_user_data;
+      }
+      if (callback) {
+        callback(user_data);
+      }
+      lock.lock();
     }
   }
 
   std::mutex mutex;
   MacOSNativePlayerCore core;
+  std::mutex callback_mutex;
+  VPMacOSFrameAvailableCallback frame_available_callback = nullptr;
+  void* frame_available_user_data = nullptr;
   std::mutex tick_mutex;
   std::condition_variable tick_cv;
   std::atomic<bool> tick_stop{false};
@@ -498,6 +556,18 @@ void VPMacOSNativePlayerClose(VPMacOSNativePlayer* player) {
   }
   std::lock_guard<std::mutex> lock(player->mutex);
   player->core.close();
+}
+
+void VPMacOSNativePlayerSetFrameAvailableCallback(
+    VPMacOSNativePlayer* player,
+    VPMacOSFrameAvailableCallback callback,
+    void* user_data) {
+  if (!player) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(player->callback_mutex);
+  player->frame_available_callback = callback;
+  player->frame_available_user_data = user_data;
 }
 
 void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player) {

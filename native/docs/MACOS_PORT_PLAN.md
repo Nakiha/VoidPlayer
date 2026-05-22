@@ -75,7 +75,9 @@ Goal: split decode output from D3D11 presentation so macOS can consume frames wi
 pipeline.
 
 - [x] Extract a platform-neutral decoded-frame publication interface from `DecodedFramePublisher`.
-- [ ] Split `FrameConverter` into software packing and D3D11 snapshot/presenter pieces.
+- [ ] Split `FrameConverter` into software packing and D3D11 snapshot/presenter pieces. Software
+  frame packing/wrapping is now isolated in `software_frame_packer`; the D3D11 snapshot/presenter
+  side still remains in `FrameConverter`.
 - [ ] Keep `TrackBuffer`, `RenderSink`, seek policies, and playback clock semantics shared.
 - [x] Add CTest coverage that exercises software frame publication -> `TrackBuffer` without D3D11.
 - [x] Extend the smoke from synthetic frames to FFmpeg-decoded frames.
@@ -195,6 +197,12 @@ Publication status: decoded-frame publication now flows through a `DecodedFrameS
 default sink preserves the existing `TrackBuffer` behavior, and `decoded_frame_sink_smoke` covers
 frame delivery plus conversion-failure error state. This prepares the decode thread for a future
 Metal/CVPixelBuffer sink without creating another decode backend.
+
+Frame conversion split status: deterministic software YUV/NV12/P010 packing and planar YUV420
+wrapping now live in `video_renderer/decode/software_frame_packer.*`, while `FrameConverter`
+coordinates color metadata, software-vs-hardware dispatch, and the Windows D3D11 snapshot path.
+This keeps the current macOS playback queue on the shared native decode path without starting a
+second backend.
 
 Frame callback lifecycle status: macOS now has a targeted UI smoke that churns play/pause/play,
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks

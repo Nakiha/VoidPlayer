@@ -76,6 +76,12 @@ class AssertNativeAudio extends PlayerAssert {
   });
 }
 
+class AssertNativeDiagnosticIntAtLeast extends PlayerAssert {
+  final String key;
+  final int minValue;
+  const AssertNativeDiagnosticIntAtLeast(this.key, this.minValue);
+}
+
 class AssertDuration extends PlayerAssert {
   final int ptsUs;
   final int toleranceMs;

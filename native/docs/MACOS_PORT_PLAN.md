@@ -151,6 +151,7 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_controls_smoke.csv \
   ui_tests/macos/native_seek_frame_smoke.csv \
   ui_tests/macos/native_playback_smoke.csv \
+  ui_tests/macos/native_frame_callback_lifecycle_smoke.csv \
   ui_tests/macos/native_playing_seek_keeps_state_smoke.csv \
   ui_tests/macos/native_playing_step_pauses_smoke.csv \
   ui_tests/macos/native_loop_range_smoke.csv \
@@ -192,6 +193,11 @@ Publication status: decoded-frame publication now flows through a `DecodedFrameS
 default sink preserves the existing `TrackBuffer` behavior, and `decoded_frame_sink_smoke` covers
 frame delivery plus conversion-failure error state. This prepares the decode thread for a future
 Metal/CVPixelBuffer sink without creating another decode backend.
+
+Frame callback lifecycle status: macOS now has a targeted UI smoke that churns play/pause/play,
+play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks
+are active. Main-window close while playing remains covered by
+`native_user_window_close_smoke.csv`.
 
 Windows preservation status: on this macOS host, `python dev.py test --native-only` currently stops
 before the native test build while preparing the analyzer because it invokes

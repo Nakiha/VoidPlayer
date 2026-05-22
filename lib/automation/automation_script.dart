@@ -636,6 +636,17 @@ ScriptInstruction? _parseInstruction(
               : null,
         ),
       );
+    case 'ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST':
+      if (args.length < 2) {
+        log.warning(
+          'ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST needs key and minValue: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertNativeDiagnosticIntAtLeast(args[0], int.parse(args[1])),
+      );
     case 'ASSERT_DURATION':
       if (args.length < 2) {
         log.warning('ASSERT_DURATION needs ptsUs and toleranceMs: $rawLine');

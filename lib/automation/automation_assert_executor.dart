@@ -129,6 +129,19 @@ class AutomationAssertExecutor {
             'channels=$actualChannels activeTrack=$actualActiveTrack',
           );
         }
+      case AssertNativeDiagnosticIntAtLeast(:final key, :final minValue):
+        final diagnostics = await controller.getDiagnostics();
+        final rawValue = diagnostics[key];
+        final actual = rawValue is int
+            ? rawValue
+            : rawValue is num
+            ? rawValue.toInt()
+            : null;
+        if (actual == null || actual < minValue) {
+          throw AssertionError(
+            'Expected native diagnostic $key >= $minValue, got $rawValue',
+          );
+        }
       case AssertDuration(:final ptsUs, :final toleranceMs):
         final actual = await controller.duration();
         final diff = (actual - ptsUs).abs();

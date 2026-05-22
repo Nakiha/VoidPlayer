@@ -24,13 +24,15 @@ void main() {
 0.3,ADD_SSH_MEDIA,user@example.com:/videos/clip.mp4
 0.7,ASSERT_PLAYING
 0.8,SET_DECODE_MODE,forceSoftware
+0.85,SET_AUDIBLE_TRACK,-1
 0.9,ASSERT_CAPTURE_SPLIT_DIFF,cap,1.5,2.5,12
 1.0,ASSERT_CAPTURE_DIFF,soft,hard,1.5,2.5,12
+1.1,ASSERT_NATIVE_AUDIO,true,48000,1,-1
 ''');
 
     final instructions = parseAutomationScript(file.path);
 
-    expect(instructions, hasLength(9));
+    expect(instructions, hasLength(11));
     expect(instructions.map((i) => i.time.inMilliseconds), [
       100,
       200,
@@ -38,8 +40,10 @@ void main() {
       500,
       700,
       800,
+      850,
       900,
       1000,
+      1100,
       2000,
     ]);
     expect(
@@ -96,6 +100,10 @@ void main() {
     );
     expect(
       instructions[6],
+      isA<ScriptSetAudibleTrack>().having((i) => i.fileId, 'fileId', isNull),
+    );
+    expect(
+      instructions[7],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -103,7 +111,7 @@ void main() {
       ),
     );
     expect(
-      instructions[7],
+      instructions[8],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -111,7 +119,19 @@ void main() {
       ),
     );
     expect(
-      instructions[8],
+      instructions[9],
+      isA<ScriptAssert>().having(
+        (i) => i.assertion,
+        'assertion',
+        isA<AssertNativeAudio>()
+            .having((a) => a.available, 'available', isTrue)
+            .having((a) => a.sampleRate, 'sampleRate', 48000)
+            .having((a) => a.channels, 'channels', 1)
+            .having((a) => a.activeTrack, 'activeTrack', -1),
+      ),
+    );
+    expect(
+      instructions[10],
       isA<ScriptQuit>().having((i) => i.exitCode, 'exitCode', 0),
     );
   });

@@ -1,0 +1,24 @@
+# macOS runner smoke for audio diagnostics across play, seek, pause, and resume.
+# Run with:
+#   python dev.py mac-ui-test ui_tests/macos/native_audio_play_seek_smoke.csv
+@WINDOW, 960, 540
+0.0, SET_SEEK_AFTER_JUMP_BEHAVIOR, keepPreviousState
+0.1, GENERATE_TEST_VIDEO_WITH_AUDIO, build/generated/macos/audio_seek_smoke.mp4, 120, 30, 320, 180
+0.4, ADD_MEDIA, build/generated/macos/audio_seek_smoke.mp4
+1.4, ASSERT_TRACK_COUNT, 1
+1.5, ASSERT_NATIVE_AUDIO, true, 48000, 1, 0
+1.6, PLAY
+2.0, ASSERT_PLAYING
+2.1, SEEK_TO, 1800000
+2.7, ASSERT_PLAYING
+2.8, ASSERT_POSITION_RANGE, 1800000, 3000000
+2.9, ASSERT_NATIVE_AUDIO, true, 48000, 1, 0
+3.0, PAUSE
+3.3, ASSERT_PAUSED
+3.4, ASSERT_NATIVE_AUDIO, true, 48000, 1, 0
+3.5, PLAY
+3.9, ASSERT_PLAYING
+4.0, ASSERT_NATIVE_AUDIO, true, 48000, 1, 0
+4.1, PAUSE
+4.4, ASSERT_PAUSED
+4.5, QUIT, 0

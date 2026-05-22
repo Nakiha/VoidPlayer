@@ -134,7 +134,8 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_playback_smoke.csv \
   ui_tests/macos/native_playing_seek_keeps_state_smoke.csv \
   ui_tests/macos/native_playing_step_pauses_smoke.csv \
-  ui_tests/macos/native_audio_diagnostics_smoke.csv
+  ui_tests/macos/native_audio_diagnostics_smoke.csv \
+  ui_tests/macos/native_audio_play_seek_smoke.csv
 ```
 
 ## Next Slice

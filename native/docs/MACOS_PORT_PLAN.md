@@ -72,7 +72,7 @@ logic out of Swift runner code.
 Goal: split decode output from D3D11 presentation so macOS can consume frames without a second
 pipeline.
 
-- [ ] Extract a platform-neutral decoded-frame publication interface from `DecodedFramePublisher`.
+- [x] Extract a platform-neutral decoded-frame publication interface from `DecodedFramePublisher`.
 - [ ] Split `FrameConverter` into software packing and D3D11 snapshot/presenter pieces.
 - [ ] Keep `TrackBuffer`, `RenderSink`, seek policies, and playback clock semantics shared.
 - [x] Add CTest coverage that exercises software frame publication -> `TrackBuffer` without D3D11.
@@ -183,6 +183,11 @@ Analysis status: `native/build-macos-analysis` now configures with `BUILD_ANALYS
 `analysis_lib` on macOS. The portability fixes live in the shared UTF-8 filesystem/env shim, so the
 same analysis/cache code can compile without Windows-only file helpers. This does not yet mean the
 macOS app can launch or coordinate analysis windows; that remains a UI/IPC milestone.
+
+Publication status: decoded-frame publication now flows through a `DecodedFrameSink` interface. The
+default sink preserves the existing `TrackBuffer` behavior, and `decoded_frame_sink_smoke` covers
+frame delivery plus conversion-failure error state. This prepares the decode thread for a future
+Metal/CVPixelBuffer sink without creating another decode backend.
 
 Windows preservation status: on this macOS host, `python dev.py test --native-only` currently stops
 before the native test build while preparing the analyzer because it invokes

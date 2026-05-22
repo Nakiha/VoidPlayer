@@ -92,6 +92,15 @@ if(APPLE)
     )
     add_test(NAME bgra_capture_metrics_smoke COMMAND bgra_capture_metrics_smoke)
 
+    add_executable(decoded_frame_sink_smoke
+        "${VOID_NATIVE_DIR}/tools/decoded_frame_sink_smoke.cpp"
+    )
+    void_apply_native_compile_options(decoded_frame_sink_smoke)
+    target_link_libraries(decoded_frame_sink_smoke PRIVATE
+        void_player_portable_core
+    )
+    add_test(NAME decoded_frame_sink_smoke COMMAND decoded_frame_sink_smoke)
+
     add_executable(software_frame_queue_smoke
         "${VOID_NATIVE_DIR}/tools/software_frame_queue_smoke.cpp"
     )

@@ -1,6 +1,5 @@
 #include "video_renderer/decode/decoded_frame_publisher.h"
 
-#include <spdlog/spdlog.h>
 #include <utility>
 
 namespace vr {
@@ -12,13 +11,26 @@ DecodedFramePublisher::DecodedFramePublisher(TrackBuffer& output_buffer,
                                              bool& hw_visibility_flush_pending,
                                              std::atomic<bool>& decode_paused,
                                              std::atomic<bool>& running)
-    : output_buffer_(output_buffer)
+    : owned_sink_(std::make_unique<TrackBufferDecodedFrameSink>(
+          output_buffer,
+          decode_paused,
+          running))
+    , sink_(*owned_sink_)
     , converter_(converter)
     , hw_enabled_(hw_enabled)
     , hw_provider_(hw_provider)
-    , hw_visibility_flush_pending_(hw_visibility_flush_pending)
-    , decode_paused_(decode_paused)
-    , running_(running) {}
+    , hw_visibility_flush_pending_(hw_visibility_flush_pending) {}
+
+DecodedFramePublisher::DecodedFramePublisher(DecodedFrameSink& sink,
+                                             FrameConverter& converter,
+                                             bool& hw_enabled,
+                                             std::unique_ptr<HwDecodeProvider>& hw_provider,
+                                             bool& hw_visibility_flush_pending)
+    : sink_(sink)
+    , converter_(converter)
+    , hw_enabled_(hw_enabled)
+    , hw_provider_(hw_provider)
+    , hw_visibility_flush_pending_(hw_visibility_flush_pending) {}
 
 void DecodedFramePublisher::flush_visibility_if_needed() {
     if (!hw_enabled_ || !hw_provider_ || !hw_visibility_flush_pending_) {
@@ -49,13 +61,10 @@ std::optional<TextureFrame> DecodedFramePublisher::convert_frame_for_publish(AVF
 bool DecodedFramePublisher::push_converted_frame(std::optional<TextureFrame> frame,
                                                  const char* context) {
     if (!frame.has_value()) {
-        spdlog::error("[DecodeThread] Frame conversion failed ({})", context ? context : "unknown");
-        output_buffer_.set_state(TrackState::Error);
-        decode_paused_.store(true, std::memory_order_release);
-        running_.store(false, std::memory_order_release);
+        sink_.fail_decoded_frame_publish(context);
         return false;
     }
-    output_buffer_.push_frame(std::move(*frame));
+    sink_.publish_decoded_frame(std::move(*frame));
     return true;
 }
 

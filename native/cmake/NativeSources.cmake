@@ -11,6 +11,7 @@ set(VOID_PLAYER_PORTABLE_CORE_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/clock.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/buffer/bidi_ring_buffer.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/buffer/track_buffer.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/decode/decoded_frame_sink.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/sync/render_sink.cpp"
     "${VOID_NATIVE_DIR}/media/packet_queue.cpp"
     "${VOID_NATIVE_DIR}/media/seek_controller.cpp"

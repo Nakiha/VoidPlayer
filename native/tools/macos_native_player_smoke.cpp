@@ -134,6 +134,15 @@ int main(int argc, char** argv) {
     VPMacOSNativePlayerSeek(player.get(), 1'000'000);
     VPMacOSNativePlayerPlay(player.get());
     std::this_thread::sleep_for(std::chrono::milliseconds(900));
+    const int64_t loop_tick_pts = VPMacOSNativePlayerCurrentPtsUs(player.get());
+    if (loop_tick_pts > 1'450'000) {
+        std::cerr << "loop range was not enforced by native playback tick before frame copy: "
+                  << loop_tick_pts << "\n";
+        VPMacOSNativeFrameFree(&first);
+        VPMacOSNativeFrameFree(&playing);
+        VPMacOSNativeFrameFree(&seeked);
+        return 1;
+    }
     VPMacOSNativeFrame looped = {};
     if (!wait_for_frame(player.get(), looped, std::chrono::seconds(3))) {
         VPMacOSNativeFrameFree(&first);
@@ -156,6 +165,7 @@ int main(int argc, char** argv) {
               << " playing=" << playing.pts_us
               << " seeked=" << seeked.pts_us
               << " looped=" << looped.pts_us
+              << " loop_tick=" << loop_tick_pts
               << " size=" << first.width << "x" << first.height
               << " non_black=" << non_black_ratio(first) << "\n";
 

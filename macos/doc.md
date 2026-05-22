@@ -57,8 +57,9 @@ native frame. `native_controls_smoke.csv` covers play/pause/seek/step command se
 frame through the same texture, `native_playback_smoke.csv` covers visible native playback frame
 advancement, the `native_playing_*` smokes lock down seek/step behavior while playback is
 running, `native_loop_range_smoke.csv` verifies that Dart loop-range state reaches the macOS native
-facade instead of relying on the fallback timer, `native_audio_diagnostics_smoke.csv` generates a
-short sine-audio media file to prove the native facade sees and wires an audio stream, and
+facade and is enforced by the native playback tick instead of the texture frame-copy path,
+`native_audio_diagnostics_smoke.csv` generates a short sine-audio media file to prove the native
+facade sees and wires an audio stream, and
 `native_audio_play_seek_smoke.csv` keeps that audio track stable across play, seek, pause, and
 resume. `native_audio_destroy_recreate_smoke.csv` removes the final audio track to force native
 teardown, then recreates playback from the same fixture. `native_quit_while_playing_smoke.csv`

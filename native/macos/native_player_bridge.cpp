@@ -12,11 +12,15 @@
 #include "video_renderer/seek/seek_coordinator.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <memory>
 #include <mutex>
 #include <new>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -344,7 +348,6 @@ public:
       error = "player is not open";
       return false;
     }
-    apply_loop_range_if_needed();
     const int64_t target_pts = playback_.clock().current_pts_us();
     while (true) {
       auto next = track_buffer_->peek(1);
@@ -368,8 +371,7 @@ public:
     return true;
   }
 
-private:
-  void apply_loop_range_if_needed() {
+  void tick_loop_range() {
     if (!track_buffer_ || !seek_controller_) {
       return;
     }
@@ -386,6 +388,7 @@ private:
     }
   }
 
+private:
   std::string path_;
   std::unique_ptr<vr::SeekController> seek_controller_;
   std::unique_ptr<vr::PacketQueue> packet_queue_;
@@ -407,12 +410,63 @@ private:
 }  // namespace
 
 struct VPMacOSNativePlayer {
+  VPMacOSNativePlayer() = default;
+  ~VPMacOSNativePlayer() { stop_tick_thread(); }
+
+  VPMacOSNativePlayer(const VPMacOSNativePlayer&) = delete;
+  VPMacOSNativePlayer& operator=(const VPMacOSNativePlayer&) = delete;
+
+  bool start_tick_thread() {
+    if (tick_thread.joinable()) {
+      return true;
+    }
+    tick_stop.store(false);
+    try {
+      tick_thread = std::thread([this] { run_tick_thread(); });
+    } catch (...) {
+      return false;
+    }
+    return true;
+  }
+
+  void stop_tick_thread() {
+    tick_stop.store(true);
+    tick_cv.notify_all();
+    if (tick_thread.joinable()) {
+      tick_thread.join();
+    }
+  }
+
+  void run_tick_thread() {
+    std::unique_lock<std::mutex> lock(tick_mutex);
+    while (!tick_stop.load()) {
+      tick_cv.wait_for(lock, std::chrono::milliseconds(10));
+      if (tick_stop.load()) {
+        break;
+      }
+      std::lock_guard<std::mutex> player_lock(mutex);
+      core.tick_loop_range();
+    }
+  }
+
   std::mutex mutex;
   MacOSNativePlayerCore core;
+  std::mutex tick_mutex;
+  std::condition_variable tick_cv;
+  std::atomic<bool> tick_stop{false};
+  std::thread tick_thread;
 };
 
 VPMacOSNativePlayer* VPMacOSNativePlayerCreate(void) {
-  return new (std::nothrow) VPMacOSNativePlayer();
+  auto* player = new (std::nothrow) VPMacOSNativePlayer();
+  if (!player) {
+    return nullptr;
+  }
+  if (!player->start_tick_thread()) {
+    delete player;
+    return nullptr;
+  }
+  return player;
 }
 
 void VPMacOSNativePlayerDestroy(VPMacOSNativePlayer* player) {

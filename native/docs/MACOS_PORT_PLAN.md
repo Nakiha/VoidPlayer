@@ -96,6 +96,8 @@ Goal: local-file software playback with correct timing and basic audio.
 - [x] Add CoreAudio/miniaudio output behind the existing audio abstraction.
 - [x] Validate audio play/seek/pause/resume and destroy/recreate lifecycle through macOS UI smokes.
 - [x] Route loop range to the macOS native facade and cover it with CTest/UI smoke.
+- [x] Move macOS loop enforcement out of the visible frame-copy path and into a native playback
+  tick.
 - [x] Exercise explicit test shutdown while playback is active.
 - [x] Validate user main-window close while native playback is active.
 - [x] Validate inactive audible-track PCM behavior in shared `AudioMixer`.
@@ -152,13 +154,21 @@ python dev.py mac-ui-test \
 ```
 
 The full macOS smoke set above passed with `--build` on 2026-05-22 after the analysis submodules
-were initialized. Known build warnings remain the Metal toolchain Swift search path and the FFmpeg
-dylib deployment-target mismatch.
+were initialized. On the same date, targeted loop/audio/quit validation passed with:
 
-Current limitation: macOS loop enforcement is evaluated from the native frame-copy path. That keeps
-the Swift layer as glue for the MVP, but it is still coupled to visible frame pumping. Move loop
-evaluation into a clock-owned native playback tick before starting Metal/VideoToolbox work so audio
-cannot outrun loop decisions if frame pumping stalls.
+```bash
+python dev.py mac-ui-test --build \
+  ui_tests/macos/native_loop_range_smoke.csv \
+  ui_tests/macos/native_audio_play_seek_smoke.csv \
+  ui_tests/macos/native_quit_while_playing_smoke.csv
+```
+
+Known build warnings remain the Metal toolchain Swift search path and the FFmpeg dylib
+deployment-target mismatch.
+
+Current loop status: macOS loop enforcement now runs from a native playback tick owned by the
+macOS native player bridge. The Swift texture timer still copies frames to Flutter, but it is no
+longer responsible for deciding when loop seeks happen.
 
 Windows preservation status: on this macOS host, `python dev.py test --native-only` currently stops
 before the native test build while preparing the analyzer because it invokes
@@ -182,10 +192,11 @@ the speaker-level gap that the current native diagnostics cannot observe directl
 - Manual audible smoke confirms speaker output on the default macOS output device.
 - Windows native-only and one Windows UI smoke with player creation plus `QUIT` pass on a Windows
   host.
-- The loop-range frame-pump coupling is either moved into a native playback tick or remains an
-  explicit blocker before M5 starts.
+- Loop-range enforcement remains native-tick driven and does not regress to texture frame-copy
+  coupling.
 
 ## Next Slice
 
-The next implementation slice should move macOS loop enforcement out of the visible frame-copy path
-and into a native playback tick, then run Windows native/UI preservation checks before M5.
+The next implementation slice should run Windows native/UI preservation checks before M5, then start
+shrinking the remaining macOS texture bridge metrics and presentation code toward renderer-neutral
+publication.

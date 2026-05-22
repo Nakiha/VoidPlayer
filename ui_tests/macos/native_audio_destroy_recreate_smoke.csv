@@ -1,0 +1,20 @@
+# macOS runner smoke for native audio lifecycle across destroy and recreate.
+# Run with:
+#   python dev.py mac-ui-test ui_tests/macos/native_audio_destroy_recreate_smoke.csv
+@WINDOW, 960, 540
+0.0, GENERATE_TEST_VIDEO_WITH_AUDIO, build/generated/macos/audio_destroy_smoke.mp4, 90, 30, 320, 180
+0.3, ADD_MEDIA, build/generated/macos/audio_destroy_smoke.mp4
+1.3, ASSERT_TRACK_COUNT, 1
+1.4, ASSERT_NATIVE_AUDIO, true, 48000, 1, 0
+1.5, PLAY
+2.0, ASSERT_PLAYING
+2.1, REMOVE_TRACK, 0
+2.8, ASSERT_TRACK_COUNT, 0
+3.0, ADD_MEDIA, build/generated/macos/audio_destroy_smoke.mp4
+4.0, ASSERT_TRACK_COUNT, 1
+4.1, ASSERT_NATIVE_AUDIO, true, 48000, 1, 0
+4.2, PLAY
+4.7, ASSERT_PLAYING
+4.8, PAUSE
+5.1, ASSERT_PAUSED
+5.2, QUIT, 0

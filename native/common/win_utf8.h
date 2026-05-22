@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdlib>
 #include <filesystem>
 #include <string>
 #include <utility>
@@ -7,6 +8,10 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#elif defined(__unix__)
+#include <unistd.h>
 #endif
 
 namespace vr::win_utf8 {
@@ -162,6 +167,74 @@ inline std::filesystem::path path_from_utf8(const std::string& utf8) {
 
 inline std::string path_to_utf8(const std::filesystem::path& path) {
     return path.u8string();
+}
+
+inline std::string module_directory_utf8() {
+#if defined(__APPLE__)
+    uint32_t length = 1024;
+    std::vector<char> buffer(static_cast<size_t>(length), '\0');
+    if (_NSGetExecutablePath(buffer.data(), &length) != 0) {
+        buffer.assign(static_cast<size_t>(length) + 1, '\0');
+        if (_NSGetExecutablePath(buffer.data(), &length) != 0) return {};
+    }
+    std::error_code ec;
+    auto path = std::filesystem::weakly_canonical(std::filesystem::path(buffer.data()), ec);
+    if (ec) path = std::filesystem::path(buffer.data());
+    return path_to_utf8(path.parent_path());
+#elif defined(__unix__)
+    std::vector<char> buffer(4096, '\0');
+    const ssize_t length = readlink("/proc/self/exe", buffer.data(), buffer.size() - 1);
+    if (length <= 0) return {};
+    buffer[static_cast<size_t>(length)] = '\0';
+    return path_to_utf8(std::filesystem::path(buffer.data()).parent_path());
+#else
+    std::error_code ec;
+    auto path = std::filesystem::current_path(ec);
+    return ec ? std::string{} : path_to_utf8(path);
+#endif
+}
+
+inline bool create_directory_utf8(const std::string& path) {
+    std::error_code ec;
+    std::filesystem::create_directories(path_from_utf8(path), ec);
+    return !ec;
+}
+
+inline bool file_exists_utf8(const std::string& path) {
+    std::error_code ec;
+    return !path.empty() && std::filesystem::exists(path_from_utf8(path), ec) && !ec;
+}
+
+inline bool delete_file_utf8(const std::string& path) {
+    std::error_code ec;
+    std::filesystem::remove(path_from_utf8(path), ec);
+    return !ec;
+}
+
+inline std::string narrow_env_name(const wchar_t* name) {
+    std::string result;
+    if (!name) return result;
+    for (const wchar_t* it = name; *it != L'\0'; ++it) {
+        if (*it < 0 || *it > 0x7f) return {};
+        result.push_back(static_cast<char>(*it));
+    }
+    return result;
+}
+
+inline std::string get_env_utf8(const wchar_t* name) {
+    const auto narrow = narrow_env_name(name);
+    if (narrow.empty()) return {};
+    const char* value = std::getenv(narrow.c_str());
+    return value ? std::string(value) : std::string{};
+}
+
+inline bool set_env_utf8(const wchar_t* name, const std::string& value) {
+    const auto narrow = narrow_env_name(name);
+    if (narrow.empty()) return false;
+    if (value.empty()) {
+        return unsetenv(narrow.c_str()) == 0;
+    }
+    return setenv(narrow.c_str(), value.c_str(), 1) == 0;
 }
 
 #endif

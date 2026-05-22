@@ -101,7 +101,7 @@ bool replace_file_utf8(const std::string& tmp_path, const std::string& final_pat
                             win_utf8::path_from_utf8(final_path),
                             ec);
     if (!ec) return true;
-    std::filesystem::remove(win_utf8::path_from_utf8(tmp_path));
+    win_utf8::delete_file_utf8(tmp_path);
     return false;
 #endif
 }

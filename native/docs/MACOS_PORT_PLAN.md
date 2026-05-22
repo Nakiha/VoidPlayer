@@ -20,8 +20,10 @@ Historical phase notes moved to [archive/MACOS_PORT_PLAN_HISTORY.md](archive/MAC
 - macOS audio now uses the shared native audio engine and miniaudio/CoreAudio output path. Automated
   diagnostics cover stream wiring and play/seek/pause/resume lifecycle; a manual audible smoke is
   documented for speaker-level confirmation.
-- A/V sync hardening, Metal presentation, VideoToolbox decode, and macOS analysis support are still
-  outstanding.
+- The native analysis library now configures and builds on macOS once the analysis submodules are
+  initialized, but the Flutter analysis workflow is not yet wired through the macOS app.
+- A/V sync hardening, Metal presentation, VideoToolbox decode, and macOS analysis UI/IPC support
+  are still outstanding.
 
 ## Hard Contract
 
@@ -120,7 +122,9 @@ Goal: make the app distributable and honest about unsupported features.
 - [ ] Resolve the FFmpeg dylib deployment-target mismatch: current dylibs report macOS 14.0 while
   the runner builds for macOS 10.15/11.0.
 - [ ] Add release build, signing, notarization, and third-party notice docs.
-- [ ] Decide macOS analysis support: native library, helper process, or explicit unsupported gate.
+- [x] Make the native analysis library build on macOS with the initialized submodules.
+- [ ] Decide macOS analysis UI/IPC support: native library, helper process, or explicit unsupported
+  gate.
 - [ ] Add macOS CI once the native facade path is stable.
 
 ## Validation Matrix
@@ -175,6 +179,11 @@ macOS native player bridge. The same native tick emits frame-available callbacks
 advances the current frame; Swift copies that frame into the `CVPixelBuffer` texture and no longer
 owns a fixed playback timer or loop decisions.
 
+Analysis status: `native/build-macos-analysis` now configures with `BUILD_ANALYSIS=ON` and builds
+`analysis_lib` on macOS. The portability fixes live in the shared UTF-8 filesystem/env shim, so the
+same analysis/cache code can compile without Windows-only file helpers. This does not yet mean the
+macOS app can launch or coordinate analysis windows; that remains a UI/IPC milestone.
+
 Windows preservation status: on this macOS host, `python dev.py test --native-only` currently stops
 before the native test build while preparing the analyzer because it invokes
 `powershell ... native/analysis/vendor/ffmpeg/voidplayer/build_windows_msvc.ps1`, and PowerShell is
@@ -202,5 +211,6 @@ the speaker-level gap that the current native diagnostics cannot observe directl
 
 ## Next Slice
 
-The next implementation slice should run Windows native/UI preservation checks before M5, then start
-M5 planning around a Metal/CVPixelBuffer backend with deterministic color/layout tests.
+The next implementation slice should start macOS analysis UI/IPC gating or the M5
+Metal/CVPixelBuffer backend, while keeping the Windows native/UI preservation checks on the first
+available Windows host.

@@ -1,5 +1,9 @@
 #include "macos/metal_presentation_backend.h"
 
+#include <algorithm>
+#include <cstring>
+#include <vector>
+
 namespace vp_macos {
 
 MetalPresentationBackend::~MetalPresentationBackend() {
@@ -98,14 +102,59 @@ int VPMacOSMetalPresentationBackendCopyCurrentFrameWithLayout(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size) {
-  return VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
-      VPMacOSMetalPresentationBackendUploader(backend),
+  if (!backend || !player) {
+    return VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
+        VPMacOSMetalPresentationBackendUploader(backend),
+        player,
+        pixel_buffer,
+        width,
+        height,
+        max_track_slots,
+        wait_timeout_ms,
+        out,
+        error,
+        error_size);
+  }
+
+  const size_t package_size =
+      VPMacOSNativePresentFramePackageMaxBytes(width, height, max_track_slots);
+  if (package_size == 0) {
+    if (error && error_size > 0) {
+      const char* message = "native Metal presentation package dimensions overflow";
+      const size_t copy_size = std::min(error_size - 1, std::strlen(message));
+      std::memcpy(error, message, copy_size);
+      error[copy_size] = '\0';
+    }
+    return -1;
+  }
+
+  std::vector<uint8_t> package_data(package_size);
+  VPMacOSNativePresentFramePackageInfo package = {};
+  const int copy_ret = VPMacOSNativePlayerCopyPresentFramePackage(
       player,
-      pixel_buffer,
+      package_data.data(),
+      package_data.size(),
       width,
       height,
       max_track_slots,
-      wait_timeout_ms,
+      &package,
+      error,
+      error_size);
+  if (copy_ret != 0) {
+    if (error && std::strcmp(error, "not all present decision frames are ready") == 0) {
+      return -1;
+    }
+    return -2;
+  }
+
+  return VPMacOSMetalPresentationBackendCopyPresentFramePackageWithLayout(
+      backend,
+      package_data.data(),
+      package_data.size(),
+      &package,
+      pixel_buffer,
+      width,
+      height,
       out,
       error,
       error_size);

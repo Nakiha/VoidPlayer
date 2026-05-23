@@ -126,6 +126,7 @@ Video File
 | [色彩管线](COLOR_PIPELINE.md) | 软件/硬件帧格式、YUV->RGB、HDR 到 SDR 边界 |
 | [Seek 策略](SEEK_STRATEGY.md) | SeekController、触发矩阵 |
 | [D3D11 后端](D3D11_BACKEND.md) | 设备、纹理、着色器、NV12 零拷贝 |
+| [Renderer 平台后端统一计划](RENDERER_PLATFORM_BACKEND_PLAN.md) | Windows/macOS 共用 renderer 调度、平台 presentation backend 拆分计划 |
 | [Native 事件通知管线](NATIVE_EVENT_PIPELINE_DESIGN.md) | native -> Dart EventChannel、seek preview 上屏事件、线程与回退策略 |
 | [码流遮罩层](ANALYSIS_OVERLAY_DESIGN.md) | VACHUNK/D3D11/Dart 交互边界与 roadmap |
 | [FFI 与绑定](FFI_AND_BINDINGS.md) | C FFI API、Python 绑定 |

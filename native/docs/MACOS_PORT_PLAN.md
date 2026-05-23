@@ -221,7 +221,10 @@ color samples and padded line strides, while `software_frame_packer_smoke` locks
 packing and planar YUV420 wrap metadata. `macos_presentation_adapter_smoke` covers the macOS
 presentation boundary directly, including CPU RGBA stride copies, CPU NV12 color conversion,
 planar YUV conversion, adapter identity, and unsupported P010 rejection. These are CPU-side
-reference points for future Metal and CVPixelBuffer layout parity tests.
+reference points for future Metal and CVPixelBuffer layout parity tests. UI automation can assert
+string-valued native diagnostics through `ASSERT_NATIVE_DIAGNOSTIC_STRING`, and macOS facade/stress
+smokes now lock `presentationAdapter=cvpixelbuffer-bgra-copy` as the visible software presentation
+fallback before Metal work starts.
 
 Frame callback lifecycle status: macOS now has targeted UI smokes that churn play/pause/play,
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks

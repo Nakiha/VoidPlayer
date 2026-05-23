@@ -142,6 +142,14 @@ class AutomationAssertExecutor {
             'Expected native diagnostic $key >= $minValue, got $rawValue',
           );
         }
+      case AssertNativeDiagnosticString(:final key, :final value):
+        final diagnostics = await controller.getDiagnostics();
+        final actual = diagnostics[key] as String? ?? '';
+        if (actual != value) {
+          throw AssertionError(
+            'Expected native diagnostic $key=$value, got $actual',
+          );
+        }
       case AssertDuration(:final ptsUs, :final toleranceMs):
         final actual = await controller.duration();
         final diff = (actual - ptsUs).abs();

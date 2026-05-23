@@ -142,6 +142,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `ASSERT_TRACK_METADATA` | slot, formatName, decoderName | 断言指定轨道的媒体格式/解码器元数据 |
 | `ASSERT_PRESENTED_FRAME_RANGE` | fileId, minUs, maxUs | 断言指定文件当前已上屏帧 PTS 位于范围内 |
 | `ASSERT_NATIVE_AUDIO` | available[, sampleRate[, channels[, activeTrack]]] | 断言 native 音频诊断信息 |
+| `ASSERT_NATIVE_DIAGNOSTIC_STRING` | key, value | 断言 native 诊断字段等于指定字符串 |
 | `ASSERT_DURATION` | ptsUs, toleranceMs | 断言总时长 |
 | `ASSERT_LAYOUT_MODE` | mode | 断言布局模式 |
 | `ASSERT_ZOOM` | ratio, tolerance | 断言缩放比例 |

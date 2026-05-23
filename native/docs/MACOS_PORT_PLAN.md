@@ -185,6 +185,7 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_quit_while_playing_smoke.csv \
   ui_tests/macos/native_user_window_close_smoke.csv \
   ui_tests/macos/native_direct_copy_fallback_smoke.csv \
+  ui_tests/macos/native_p010_presentation_smoke.csv \
   ui_tests/macos/native_software_fallback_smoke.csv \
   ui_tests/macos/analysis_gated_smoke.csv
 ```
@@ -261,7 +262,9 @@ test-only Metal upload path and asserts the same native frames can still present
 keeping the fallback contract explicit when VideoToolbox is unavailable or unsupported.
 `native_software_fallback_smoke.csv` covers a generated MPEG-2 path and asserts
 `decodeMode=software-fallback`, `hardwareDecodeActive=false`, and
-`softwareFallbackActive=true`.
+`softwareFallbackActive=true`. `native_p010_presentation_smoke.csv` covers generated 10-bit H.264
+VideoToolbox download-to-CPU decode through the P010 presentation path with the direct-copy fallback
+enabled.
 
 Frame callback lifecycle status: macOS now has targeted UI smokes that churn play/pause/play,
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks

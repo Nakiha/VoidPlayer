@@ -38,6 +38,7 @@ WINDOWS_INNO_SCRIPT = ROOT / "installer" / "windows" / "VoidPlayer.iss"
 WINDOWS_RELEASE_DOCS_DIR = ROOT / "installer" / "windows" / "docs"
 MACOS_PACKAGE_DIR = ROOT / "build" / "package" / "macos"
 MACOS_PACKAGE_STAGE_DIR = MACOS_PACKAGE_DIR / "VoidPlayer"
+MACOS_INSTALLER_DIR = MACOS_PACKAGE_DIR / "installer"
 MACOS_RELEASE_DOCS_DIR = ROOT / "installer" / "macos" / "docs"
 
 

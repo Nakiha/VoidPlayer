@@ -14,6 +14,7 @@ from .flutter_app import flutter_build, flutter_build_macos
 from .paths import (
     MACOS_PACKAGE_DIR,
     MACOS_PACKAGE_STAGE_DIR,
+    MACOS_INSTALLER_DIR,
     MACOS_RELEASE_DOCS_DIR,
     ROOT,
     WINDOWS_BUILD_DIR,
@@ -140,9 +141,6 @@ def _cmd_package_macos(args) -> None:
     if args.debug:
         print("ERROR: package currently supports release builds only")
         sys.exit(1)
-    if args.installer:
-        print("ERROR: macOS installer/DMG creation is not implemented yet; staging only.")
-        sys.exit(1)
 
     app_bundle = ROOT / "build" / "macos" / "Build" / "Products" / "Release" / "VoidPlayer.app"
     stage_dir = MACOS_PACKAGE_STAGE_DIR
@@ -176,7 +174,10 @@ def _cmd_package_macos(args) -> None:
     _verify_macos_codesign(stage_app)
 
     print(f"\nmacOS package staging ready: {stage_dir}")
-    print("Staging contains VoidPlayer.app plus release/compliance docs; DMG/notarization is not automated yet.")
+    if args.installer:
+        _create_macos_dmg(stage_dir)
+    else:
+        print("Use this directory as the DMG input, or pass --installer to create a local DMG.")
 
 
 def _remove_tree(path: Path) -> None:
@@ -447,6 +448,34 @@ def _compile_inno_installer(iscc_arg: str | None, stage_dir: Path) -> None:
         sys.exit(1)
 
     print(f"\nInstaller ready: {installer}")
+
+
+def _create_macos_dmg(stage_dir: Path) -> None:
+    header("Create macOS DMG")
+    _remove_tree(MACOS_INSTALLER_DIR)
+    MACOS_INSTALLER_DIR.mkdir(parents=True, exist_ok=True)
+
+    version = _read_pubspec_version()
+    dmg = MACOS_INSTALLER_DIR / f"VoidPlayer-{version}-macos-arm64.dmg"
+    run([
+        "hdiutil",
+        "create",
+        "-volname",
+        "VoidPlayer",
+        "-srcfolder",
+        str(stage_dir),
+        "-ov",
+        "-format",
+        "UDZO",
+        str(dmg),
+    ], cwd=str(ROOT))
+
+    if not dmg.exists():
+        print(f"ERROR: DMG was not created: {dmg}")
+        sys.exit(1)
+
+    print(f"\nDMG ready: {dmg}")
+    print("Developer ID signing and notarization remain manual release steps.")
 
 
 def _find_iscc(iscc_arg: str | None) -> Path | None:

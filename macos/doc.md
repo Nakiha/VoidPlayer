@@ -126,10 +126,13 @@ Release staging:
 
 ```bash
 python dev.py package
+python dev.py package --installer
 ```
 
 On macOS this builds a release app, copies `VoidPlayer.app` into
 `build/package/macos/VoidPlayer/`, stages GPL/third-party/FFmpeg compliance docs both alongside the
 app and inside app resources, validates the bundled FFmpeg `@rpath` linkage with `otool -L`, ad-hoc
-signs the staged app, and verifies the copied app signature. Developer ID signing, DMG creation,
-and notarization remain manual release steps.
+signs the staged app, and verifies the copied app signature. Developer ID signing and notarization
+remain manual release steps. With `--installer`, the same staging directory is also
+compressed into `build/package/macos/installer/VoidPlayer-<version>-macos-arm64.dmg` for local
+testing.

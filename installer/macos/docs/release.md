@@ -1,8 +1,9 @@
 # macOS Release Notes
 
-VoidPlayer macOS packages are staged by `python dev.py package` on macOS. The
-staging directory contains `VoidPlayer.app`, GPL/third-party notices, and the
-FFmpeg package README/license metadata copied from `third_party/ffmpeg`.
+VoidPlayer macOS packages are staged by `python dev.py package` on macOS. Pass
+`--installer` to also create a local compressed DMG from that staging directory.
+The staging directory contains `VoidPlayer.app`, GPL/third-party notices, and
+the FFmpeg package README/license metadata copied from `third_party/ffmpeg`.
 
 Current release boundary:
 
@@ -15,8 +16,12 @@ Current release boundary:
   gates until first-class macOS workflows are implemented.
 - `dev.py package` verifies the staged FFmpeg dylib layout with `otool -L`,
   ad-hoc signs the staged app after adding bundled notices, then verifies it
-  with `codesign --verify --deep --strict`. Developer ID signing, DMG creation,
-  and notarization are still manual follow-up steps.
+  with `codesign --verify --deep --strict`. Developer ID signing and
+  notarization are still manual follow-up steps.
+- `dev.py package --installer` creates
+  `build/package/macos/installer/VoidPlayer-<version>-macos-arm64.dmg` for local
+  testing. Release signing, notarization, and stapling still need to be run on
+  the release artifact before distribution.
 
 Before distributing outside local testing, sign the staged app with the release
 Developer ID identity, notarize the signed artifact, staple the ticket, and keep

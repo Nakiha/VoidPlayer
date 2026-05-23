@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <vector>
 
 namespace vp_macos {
 
@@ -27,6 +26,8 @@ void MetalPresentationBackend::shutdown() {
     VPMacOSMetalUploaderDestroy(uploader_);
     uploader_ = nullptr;
   }
+  present_package_scratch_.clear();
+  present_package_scratch_.shrink_to_fit();
   width_ = 0;
   height_ = 0;
   headless_ = true;
@@ -34,6 +35,76 @@ void MetalPresentationBackend::shutdown() {
 
 bool MetalPresentationBackend::available() const {
   return uploader_ && VPMacOSMetalUploaderIsAvailable(uploader_) != 0;
+}
+
+int MetalPresentationBackend::copy_current_frame_with_layout(
+    VPMacOSNativePlayer* player,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    int32_t max_track_slots,
+    int32_t wait_timeout_ms,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size) {
+  if (!player) {
+    return VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
+        uploader_,
+        player,
+        pixel_buffer,
+        width,
+        height,
+        max_track_slots,
+        wait_timeout_ms,
+        out,
+        error,
+        error_size);
+  }
+
+  const size_t package_size =
+      VPMacOSNativePresentFramePackageMaxBytes(width, height, max_track_slots);
+  if (package_size == 0) {
+    if (error && error_size > 0) {
+      const char* message = "native Metal presentation package dimensions overflow";
+      const size_t copy_size = std::min(error_size - 1, std::strlen(message));
+      std::memcpy(error, message, copy_size);
+      error[copy_size] = '\0';
+    }
+    return -1;
+  }
+
+  if (present_package_scratch_.size() < package_size) {
+    present_package_scratch_.resize(package_size);
+  }
+  VPMacOSNativePresentFramePackageInfo package = {};
+  const int copy_ret = VPMacOSNativePlayerCopyPresentFramePackage(
+      player,
+      present_package_scratch_.data(),
+      present_package_scratch_.size(),
+      width,
+      height,
+      max_track_slots,
+      &package,
+      error,
+      error_size);
+  if (copy_ret != 0) {
+    if (error && std::strcmp(error, "not all present decision frames are ready") == 0) {
+      return -1;
+    }
+    return -2;
+  }
+
+  return VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
+      uploader_,
+      present_package_scratch_.data(),
+      present_package_scratch_.size(),
+      &package,
+      pixel_buffer,
+      width,
+      height,
+      out,
+      error,
+      error_size);
 }
 
 }  // namespace vp_macos
@@ -127,46 +198,13 @@ int VPMacOSMetalPresentationBackendCopyCurrentFrameWithLayout(
         error,
         error_size);
   }
-
-  const size_t package_size =
-      VPMacOSNativePresentFramePackageMaxBytes(width, height, max_track_slots);
-  if (package_size == 0) {
-    if (error && error_size > 0) {
-      const char* message = "native Metal presentation package dimensions overflow";
-      const size_t copy_size = std::min(error_size - 1, std::strlen(message));
-      std::memcpy(error, message, copy_size);
-      error[copy_size] = '\0';
-    }
-    return -1;
-  }
-
-  std::vector<uint8_t> package_data(package_size);
-  VPMacOSNativePresentFramePackageInfo package = {};
-  const int copy_ret = VPMacOSNativePlayerCopyPresentFramePackage(
+  return backend->impl.copy_current_frame_with_layout(
       player,
-      package_data.data(),
-      package_data.size(),
-      width,
-      height,
-      max_track_slots,
-      &package,
-      error,
-      error_size);
-  if (copy_ret != 0) {
-    if (error && std::strcmp(error, "not all present decision frames are ready") == 0) {
-      return -1;
-    }
-    return -2;
-  }
-
-  return VPMacOSMetalPresentationBackendCopyPresentFramePackageWithLayout(
-      backend,
-      package_data.data(),
-      package_data.size(),
-      &package,
       pixel_buffer,
       width,
       height,
+      max_track_slots,
+      wait_timeout_ms,
       out,
       error,
       error_size);

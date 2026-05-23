@@ -1,0 +1,10 @@
+[project]
+name = "voidplayer-dev-tools"
+version = "0.0.0"
+description = "Development tooling metadata for VoidPlayer."
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.voidplayer]
+dev-script = "dev.py"
+recommended-python = "3.12"

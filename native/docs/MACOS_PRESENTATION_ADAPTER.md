@@ -56,6 +56,8 @@ planar limited/full range, unsupported GPU texture rejection, invalid P010
 rejection, destination mismatch rejection, and native Metal `CVPixelBuffer`
 validation.
 macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy`,
+`presentationAdapterKind=software-fallback`,
+`rendererOwnedPresentationActive=false`,
 `presentationUploadMode=metal-bgra-staging-upload`, `metalTextureValid=true`,
 seek refreshes and playback advance `pixelBufferMetalUploadCount`,
 `hardwareDecodeProvider=VideoToolbox`,

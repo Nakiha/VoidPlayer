@@ -134,7 +134,9 @@ Goal: improve performance after software playback is correct.
   The boundary now lives in `native/macos/presentation_adapter.*`; see
   [MACOS_PRESENTATION_ADAPTER.md](MACOS_PRESENTATION_ADAPTER.md).
   The current `cvpixelbuffer-bgra-copy` adapter is the software fallback presentation adapter, not
-  the final renderer-owned Metal backend.
+  the final renderer-owned Metal backend. Diagnostics now expose
+  `presentationAdapterKind=software-fallback` and `rendererOwnedPresentationActive=false` to keep
+  that distinction visible while the staging uploader exists.
   The runner now creates Metal-compatible `CVPixelBuffer` surfaces, while
   `metal_pixel_buffer_uploader.mm` owns `CVMetalTextureCache` validation, the shared `MTLBuffer`,
   and the blit into the texture-backed `CVPixelBuffer`. Seek/step refresh and playback callbacks

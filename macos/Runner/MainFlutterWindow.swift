@@ -465,6 +465,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "platform": "macos",
         "backend": backendName,
         "presentationAdapter": String(cString: VPMacOSNativePresentationAdapterName()),
+        "presentationAdapterKind": "software-fallback",
+        "rendererOwnedPresentationActive": false,
         "hardwareDecodeProvider": String(cString: VPMacOSNativeHardwareDecodeProviderName()),
         "hardwareDecodeAvailable": VPMacOSNativeHardwareDecodeAvailable() != 0,
         "hardwareDecodeActive": nativePlayer?.hardwareDecodeActive() ?? false,

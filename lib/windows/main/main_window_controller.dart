@@ -566,6 +566,8 @@ class MainWindowController {
           toggleAnalysisOverlayForSlot:
               analysisCoordinator.toggleOverlayForSlot,
           toggleAnalysisOverlayPanel: analysisCoordinator.toggleOverlayPanel,
+          generateAnalysisCacheForSlot:
+              analysisCoordinator.ensureGeneratedForSlot,
           setAnalysisOverlayType: (type) {
             analysisCoordinator.updateOverlayConfig(
               analysisGeneration.overlayConfig.withTypeDefaults(type),

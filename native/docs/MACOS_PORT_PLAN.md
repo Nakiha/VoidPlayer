@@ -241,8 +241,9 @@ that library through the native player archive, force-loads the app-facing bridg
 resolve `naki_analysis_*`, and `macos_analysis_ffi_smoke` verifies VAC2 generation plus handle
 readback. This does not yet mean the macOS app can launch or coordinate analysis windows;
 `PlatformCapabilities.macOSPhase1` keeps external analysis windows and main-window overlays
-disabled, and `analysis_gated_smoke.csv` asserts that the FFI is present while direct automation
-calls still no-op instead of spawning the Windows-only UI/IPC path.
+disabled, and `analysis_gated_smoke.csv` asserts that the FFI is present, generates a VAC2 base
+through `AnalysisManager.ensureGenerated`, and still confirms that direct analysis window/overlay
+automation no-ops instead of spawning the Windows-only UI/IPC path.
 
 Publication status: decoded-frame publication now flows through a `DecodedFrameSink` interface. The
 default sink preserves the existing `TrackBuffer` behavior, and `decoded_frame_sink_smoke` covers

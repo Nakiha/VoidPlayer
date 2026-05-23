@@ -58,6 +58,19 @@ class MainWindowAnalysisCoordinator {
     return _enqueueOperation(_toggleOverlayPanelImpl);
   }
 
+  Future<String?> ensureGeneratedForSlot(int slotIndex) {
+    return _enqueueValueOperation(() async {
+      if (slotIndex < 0 || slotIndex >= trackManager.entries.length) {
+        return null;
+      }
+      final entry = trackManager.entries[slotIndex];
+      final hash = await analysisGeneration.ensureGenerated(entry.path);
+      if (_disposed || hash == null) return null;
+      _hashesByFileId[entry.fileId] = hash;
+      return hash;
+    });
+  }
+
   Future<void> syncOverlayPanelTracks() {
     if (!analysisOverlaysEnabled) return Future.value();
     return _enqueueOperation(_syncOverlayPanelTracksImpl);
@@ -364,6 +377,26 @@ class MainWindowAnalysisCoordinator {
           }
         });
     _operationInFlight = future;
+    return future;
+  }
+
+  Future<T?> _enqueueValueOperation<T>(Future<T?> Function() operation) {
+    if (_disposed) return Future.value();
+    final previous = _operationInFlight;
+    late final Future<T?> future;
+    late final Future<void> completion;
+    future = (previous ?? Future<void>.value()).catchError((_) {}).then((
+      _,
+    ) async {
+      if (_disposed) return null;
+      return operation();
+    });
+    completion = future.whenComplete(() {
+      if (identical(_operationInFlight, completion)) {
+        _operationInFlight = null;
+      }
+    });
+    _operationInFlight = completion;
     return future;
   }
 

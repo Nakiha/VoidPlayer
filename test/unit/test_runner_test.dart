@@ -85,6 +85,7 @@ UiAutomationBridge _bridge(NativePlayerController controller) {
     effectiveDurationUs: () => 0,
     toggleAnalysisOverlayForSlot: (_) async {},
     toggleAnalysisOverlayPanel: () async {},
+    generateAnalysisCacheForSlot: (_) async => 'hash',
     setAnalysisOverlayType: (_) {},
     setAnalysisOverlayLayers: (_) {},
     setAnalysisOverlayOpacity: (_) {},

@@ -430,6 +430,15 @@ ScriptInstruction? _parseInstruction(
       );
     case 'TOGGLE_ANALYSIS_OVERLAY_PANEL':
       return ScriptAutomationAction(time, const ToggleAnalysisOverlayPanel());
+    case 'GENERATE_ANALYSIS_CACHE':
+      if (args.isEmpty) {
+        log.warning('GENERATE_ANALYSIS_CACHE needs slot index: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        GenerateAnalysisCache(int.parse(args[0])),
+      );
     case 'SET_ANALYSIS_OVERLAY_TYPE':
       if (args.isEmpty) {
         log.warning('SET_ANALYSIS_OVERLAY_TYPE needs type: $rawLine');

@@ -270,6 +270,17 @@ class TestRunner {
       case ToggleAnalysisOverlayPanel():
         log.info('TestRunner: TOGGLE_ANALYSIS_OVERLAY_PANEL');
         await automation.toggleAnalysisOverlayPanel();
+      case GenerateAnalysisCache(:final slotIndex):
+        log.info('TestRunner: GENERATE_ANALYSIS_CACHE slot=$slotIndex');
+        final hash = await automation.generateAnalysisCacheForSlot(slotIndex);
+        if (hash == null) {
+          throw AssertionError(
+            'Failed to generate analysis cache for slot $slotIndex',
+          );
+        }
+        log.info(
+          'TestRunner: GENERATE_ANALYSIS_CACHE slot=$slotIndex hash=$hash',
+        );
       case SetAnalysisOverlayType(:final type):
         log.info('TestRunner: SET_ANALYSIS_OVERLAY_TYPE ${type.name}');
         automation.setAnalysisOverlayType(type);

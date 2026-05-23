@@ -108,6 +108,13 @@ class ToggleAnalysisOverlayPanel extends AutomationAction {
   const ToggleAnalysisOverlayPanel() : super('TOGGLE_ANALYSIS_OVERLAY_PANEL');
 }
 
+class GenerateAnalysisCache extends AutomationAction {
+  final int slotIndex;
+
+  const GenerateAnalysisCache(this.slotIndex)
+    : super('GENERATE_ANALYSIS_CACHE');
+}
+
 class SetAnalysisOverlayType extends AutomationAction {
   final AnalysisOverlayType type;
 

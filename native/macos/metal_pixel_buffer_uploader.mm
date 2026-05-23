@@ -4,6 +4,7 @@
 #include <Metal/Metal.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstring>
 #include <limits>
@@ -14,8 +15,22 @@ constexpr const char* kLayoutBgraKernelSource = R"(
 #include <metal_stdlib>
 using namespace metal;
 
-constant int kModeSplitScreen = 1;
-constant uint kMaxTracks = 4;
+	constant int kModeSplitScreen = 1;
+	constant uint kMaxTracks = 4;
+	constant int kPresentFormatBGRA = 0;
+	constant int kPresentFormatNV12 = 1;
+	constant int kPresentFormatP010 = 2;
+	constant int kColorRangeFull = 2;
+	constant int kColorMatrixUnknown = 0;
+	constant int kColorMatrixBT601 = 1;
+	constant int kColorMatrixBT709 = 2;
+	constant int kColorMatrixBT2020NCL = 3;
+	constant int kColorTransferSDR = 1;
+	constant int kColorTransferPQ = 2;
+	constant int kColorTransferHLG = 3;
+	constant int kColorPrimariesBT601 = 1;
+	constant int kColorPrimariesBT709 = 2;
+	constant int kColorPrimariesBT2020 = 3;
 
 struct LayoutParams {
   uint width;
@@ -32,13 +47,65 @@ struct LayoutParams {
   int source_width2;
   int source_width3;
   int source_height0;
-  int source_height1;
-  int source_height2;
-  int source_height3;
-  int order0;
-  int order1;
-  int order2;
-  int order3;
+	  int source_height1;
+	  int source_height2;
+	  int source_height3;
+	  int yuv_format0;
+	  int yuv_format1;
+	  int yuv_format2;
+	  int yuv_format3;
+	  uint y_offset0;
+	  uint y_offset1;
+	  uint y_offset2;
+	  uint y_offset3;
+	  uint uv_offset0;
+	  uint uv_offset1;
+	  uint uv_offset2;
+	  uint uv_offset3;
+	  uint y_stride0;
+	  uint y_stride1;
+	  uint y_stride2;
+	  uint y_stride3;
+	  uint uv_stride0;
+	  uint uv_stride1;
+	  uint uv_stride2;
+	  uint uv_stride3;
+	  int coded_width0;
+	  int coded_width1;
+	  int coded_width2;
+	  int coded_width3;
+	  int coded_height0;
+	  int coded_height1;
+	  int coded_height2;
+	  int coded_height3;
+	  float nv12_uv_scale_x0;
+	  float nv12_uv_scale_x1;
+	  float nv12_uv_scale_x2;
+	  float nv12_uv_scale_x3;
+	  float nv12_uv_scale_y0;
+	  float nv12_uv_scale_y1;
+	  float nv12_uv_scale_y2;
+	  float nv12_uv_scale_y3;
+	  int color_range0;
+	  int color_range1;
+	  int color_range2;
+	  int color_range3;
+	  int color_matrix0;
+	  int color_matrix1;
+	  int color_matrix2;
+	  int color_matrix3;
+	  int color_transfer0;
+	  int color_transfer1;
+	  int color_transfer2;
+	  int color_transfer3;
+	  int color_primaries0;
+	  int color_primaries1;
+	  int color_primaries2;
+	  int color_primaries3;
+	  int order0;
+	  int order1;
+	  int order2;
+	  int order3;
   float display_offset_x0;
   float display_offset_x1;
   float display_offset_x2;
@@ -86,12 +153,89 @@ int source_width_at(constant LayoutParams& params, uint index) {
   return params.source_width3;
 }
 
-int source_height_at(constant LayoutParams& params, uint index) {
-  if (index == 0) return params.source_height0;
-  if (index == 1) return params.source_height1;
-  if (index == 2) return params.source_height2;
-  return params.source_height3;
-}
+	int source_height_at(constant LayoutParams& params, uint index) {
+	  if (index == 0) return params.source_height0;
+	  if (index == 1) return params.source_height1;
+	  if (index == 2) return params.source_height2;
+	  return params.source_height3;
+	}
+
+	int yuv_format_at(constant LayoutParams& params, uint index) {
+	  if (index == 0) return params.yuv_format0;
+	  if (index == 1) return params.yuv_format1;
+	  if (index == 2) return params.yuv_format2;
+	  return params.yuv_format3;
+	}
+
+	uint y_offset_at(constant LayoutParams& params, uint index) {
+	  if (index == 0) return params.y_offset0;
+	  if (index == 1) return params.y_offset1;
+	  if (index == 2) return params.y_offset2;
+	  return params.y_offset3;
+	}
+
+	uint uv_offset_at(constant LayoutParams& params, uint index) {
+	  if (index == 0) return params.uv_offset0;
+	  if (index == 1) return params.uv_offset1;
+	  if (index == 2) return params.uv_offset2;
+	  return params.uv_offset3;
+	}
+
+	uint y_stride_at(constant LayoutParams& params, uint index) {
+	  if (index == 0) return params.y_stride0;
+	  if (index == 1) return params.y_stride1;
+	  if (index == 2) return params.y_stride2;
+	  return params.y_stride3;
+	}
+
+	uint uv_stride_at(constant LayoutParams& params, uint index) {
+	  if (index == 0) return params.uv_stride0;
+	  if (index == 1) return params.uv_stride1;
+	  if (index == 2) return params.uv_stride2;
+	  return params.uv_stride3;
+	}
+
+	int coded_width_at(constant LayoutParams& params, uint index) {
+	  if (index == 0) return params.coded_width0;
+	  if (index == 1) return params.coded_width1;
+	  if (index == 2) return params.coded_width2;
+	  return params.coded_width3;
+	}
+
+	int coded_height_at(constant LayoutParams& params, uint index) {
+	  if (index == 0) return params.coded_height0;
+	  if (index == 1) return params.coded_height1;
+	  if (index == 2) return params.coded_height2;
+	  return params.coded_height3;
+	}
+
+	int color_range_at(constant LayoutParams& params, uint index) {
+	  if (index == 0) return params.color_range0;
+	  if (index == 1) return params.color_range1;
+	  if (index == 2) return params.color_range2;
+	  return params.color_range3;
+	}
+
+	int color_matrix_at(constant LayoutParams& params, uint index) {
+	  if (index == 0) return params.color_matrix0;
+	  if (index == 1) return params.color_matrix1;
+	  if (index == 2) return params.color_matrix2;
+	  return params.color_matrix3;
+	}
+
+	int color_transfer_at(constant LayoutParams& params, uint index) {
+	  if (index == 0) return params.color_transfer0;
+	  if (index == 1) return params.color_transfer1;
+	  if (index == 2) return params.color_transfer2;
+	  return params.color_transfer3;
+	}
+
+	int color_primaries_at(constant LayoutParams& params, uint index) {
+	  if (index == 0) return params.color_primaries0;
+	  if (index == 1) return params.color_primaries1;
+	  if (index == 2) return params.color_primaries2;
+	  return params.color_primaries3;
+	}
 
 float display_offset_x_at(constant LayoutParams& params, uint index) {
   if (index == 0) return params.display_offset_x0;
@@ -135,7 +279,7 @@ float view_offset_uv_y_at(constant LayoutParams& params, uint index) {
   return params.view_offset_uv_y3;
 }
 
-float2 aspect_fit_uv(float2 local_uv,
+	float2 aspect_fit_uv(float2 local_uv,
                      constant LayoutParams& params,
                      uint track_idx,
                      thread bool& out_of_bounds) {
@@ -155,13 +299,147 @@ float2 aspect_fit_uv(float2 local_uv,
     return float2(0.0, 0.0);
   }
   out_of_bounds = false;
-  return source_uv;
-}
+	  return source_uv;
+	}
 
-kernel void layout_bgra_copy(
-    device const uchar4* source [[buffer(0)]],
-    constant LayoutParams& params [[buffer(1)]],
-    texture2d<float, access::write> destination [[texture(0)]],
+	float3 linear_to_srgb(float3 x) {
+	  x = max(x, 0.0);
+	  float3 lo = x * 12.92;
+	  float3 hi = 1.055 * pow(x, 1.0 / 2.4) - 0.055;
+	  return mix(lo, hi, step(0.0031308, x));
+	}
+
+	float3 srgb_to_linear(float3 x) {
+	  x = saturate(x);
+	  float3 lo = x / 12.92;
+	  float3 hi = pow((x + 0.055) / 1.055, 2.4);
+	  return mix(lo, hi, step(0.04045, x));
+	}
+
+	float3 convert_linear_primaries_to_bt709(float3 rgb, int primaries) {
+	  if (primaries == kColorPrimariesBT2020) {
+	    return float3(
+	        1.6605 * rgb.r - 0.5876 * rgb.g - 0.0728 * rgb.b,
+	       -0.1246 * rgb.r + 1.1329 * rgb.g - 0.0083 * rgb.b,
+	       -0.0182 * rgb.r - 0.1006 * rgb.g + 1.1187 * rgb.b);
+	  }
+	  return rgb;
+	}
+
+	float3 pq_to_linear_nits(float3 x) {
+	  x = saturate(x);
+	  const float m1 = 0.1593017578125;
+	  const float m2 = 78.84375;
+	  const float c1 = 0.8359375;
+	  const float c2 = 18.8515625;
+	  const float c3 = 18.6875;
+	  float3 p = pow(x, 1.0 / m2);
+	  float3 num = max(p - c1, 0.0);
+	  float3 den = max(c2 - c3 * p, 1e-6);
+	  return pow(num / den, 1.0 / m1) * 10000.0;
+	}
+
+	float3 hlg_to_linear(float3 x) {
+	  x = saturate(x);
+	  const float a = 0.17883277;
+	  const float b = 0.28466892;
+	  const float c = 0.55991073;
+	  float3 lo = (x * x) / 3.0;
+	  float3 hi = (exp((x - c) / a) + b) / 12.0;
+	  return mix(lo, hi, step(0.5, x));
+	}
+
+	float3 tone_map_to_sdr(float3 rgb, int transfer, int primaries) {
+	  if (transfer == kColorTransferPQ) {
+	    float3 lin = pq_to_linear_nits(rgb) / 203.0;
+	    lin = convert_linear_primaries_to_bt709(lin, primaries);
+	    return saturate(linear_to_srgb(lin / (1.0 + lin)));
+	  }
+	  if (transfer == kColorTransferHLG) {
+	    float3 lin = hlg_to_linear(rgb) * 4.0;
+	    lin = convert_linear_primaries_to_bt709(lin, primaries);
+	    return saturate(linear_to_srgb(lin / (1.0 + lin)));
+	  }
+	  if (primaries == kColorPrimariesBT2020) {
+	    float3 lin = convert_linear_primaries_to_bt709(srgb_to_linear(rgb), primaries);
+	    return saturate(linear_to_srgb(lin));
+	  }
+	  return saturate(rgb);
+	}
+
+	float yuv_sample_to_float(device const uchar* source, uint offset, bool is_p010) {
+	  if (is_p010) {
+	    uint lo = uint(source[offset]);
+	    uint hi = uint(source[offset + 1]);
+	    uint sample = ((hi << 8) | lo) >> 6;
+	    return float(sample) / 1023.0;
+	  }
+	  return float(source[offset]) / 255.0;
+	}
+
+	float4 sample_yuv_track(device const uchar* source,
+	                        constant LayoutParams& params,
+	                        uint track_slot,
+	                        uint source_x,
+	                        uint source_y) {
+	  const int format = yuv_format_at(params, track_slot);
+	  const bool is_p010 = format == kPresentFormatP010;
+	  const uint bytes_per_sample = is_p010 ? 2u : 1u;
+	  const uint coded_width = uint(max(coded_width_at(params, track_slot), 1));
+	  const uint coded_height = uint(max(coded_height_at(params, track_slot), 1));
+	  const uint y_x = min(source_x, coded_width - 1);
+	  const uint y_y = min(source_y, coded_height - 1);
+	  const uint uv_x = min(y_x / 2u, max(coded_width / 2u, 1u) - 1u);
+	  const uint uv_y = min(y_y / 2u, max(coded_height / 2u, 1u) - 1u);
+	  const uint y_offset =
+	      y_offset_at(params, track_slot) + y_y * y_stride_at(params, track_slot) +
+	      y_x * bytes_per_sample;
+	  const uint uv_offset =
+	      uv_offset_at(params, track_slot) + uv_y * uv_stride_at(params, track_slot) +
+	      uv_x * bytes_per_sample * 2u;
+	  const float y = yuv_sample_to_float(source, y_offset, is_p010);
+	  const float u = yuv_sample_to_float(source, uv_offset, is_p010);
+	  const float v = yuv_sample_to_float(source, uv_offset + bytes_per_sample, is_p010);
+	  float y_full = y;
+	  float2 cbcr = (float2(u, v) * 255.0 - 128.0) / 255.0;
+	  if (color_range_at(params, track_slot) != kColorRangeFull) {
+	    y_full = (y * 255.0 - 16.0) / 219.0;
+	    cbcr = (float2(u, v) * 255.0 - 128.0) / 224.0;
+	  }
+	  float cb = cbcr.x;
+	  float cr = cbcr.y;
+	  float3 rgb;
+	  const int matrix = color_matrix_at(params, track_slot);
+	  if (matrix == kColorMatrixBT2020NCL) {
+	    rgb = float3(
+	        y_full + 1.4746 * cr,
+	        y_full - 0.164553 * cb - 0.571353 * cr,
+	        y_full + 1.8814 * cb);
+	  } else if (matrix == kColorMatrixBT709 || matrix == kColorMatrixUnknown) {
+	    rgb = float3(
+	        y_full + 1.5748 * cr,
+	        y_full - 0.187324 * cb - 0.468124 * cr,
+	        y_full + 1.8556 * cb);
+	  } else {
+	    rgb = float3(
+	        y_full + 1.402 * cr,
+	        y_full - 0.344136 * cb - 0.714136 * cr,
+	        y_full + 1.772 * cb);
+	  }
+	  if (color_transfer_at(params, track_slot) == kColorTransferSDR) {
+	    rgb -= (1.0 / 255.0);
+	  }
+	  return float4(
+	      tone_map_to_sdr(rgb,
+	                      color_transfer_at(params, track_slot),
+	                      color_primaries_at(params, track_slot)),
+	      1.0);
+	}
+
+	kernel void layout_bgra_copy(
+	    device const uchar* source [[buffer(0)]],
+	    constant LayoutParams& params [[buffer(1)]],
+	    texture2d<float, access::write> destination [[texture(0)]],
     uint2 gid [[thread_position_in_grid]]) {
   if (gid.x >= params.width || gid.y >= params.height) {
     return;
@@ -202,14 +480,23 @@ kernel void layout_bgra_copy(
     return;
   }
 
-  const uint source_width = uint(source_width_int);
-  const uint source_height = uint(source_height_int);
-  const uint source_x = min(uint(source_uv.x * float(source_width)), source_width - 1);
-  const uint source_y = min(uint(source_uv.y * float(source_height)), source_height - 1);
-  const uint track_offset = track_slot * params.width * params.height;
-  const uchar4 bgra = source[track_offset + source_y * params.width + source_x];
-  float4 color =
-      float4(float(bgra.z), float(bgra.y), float(bgra.x), float(bgra.w)) / 255.0;
+	  const uint source_width = uint(source_width_int);
+	  const uint source_height = uint(source_height_int);
+	  const uint source_x = min(uint(source_uv.x * float(source_width)), source_width - 1);
+	  const uint source_y = min(uint(source_uv.y * float(source_height)), source_height - 1);
+	  float4 color = float4(0.0, 0.0, 0.0, 1.0);
+	  if (yuv_format_at(params, track_slot) == kPresentFormatNV12 ||
+	      yuv_format_at(params, track_slot) == kPresentFormatP010) {
+	    color = sample_yuv_track(source, params, track_slot, source_x, source_y);
+	  } else {
+	    const uint track_offset = track_slot * params.width * params.height * 4u;
+	    const uint pixel_offset = track_offset + (source_y * params.width + source_x) * 4u;
+	    const uchar b = source[pixel_offset + 0u];
+	    const uchar g = source[pixel_offset + 1u];
+	    const uchar r = source[pixel_offset + 2u];
+	    const uchar a = source[pixel_offset + 3u];
+	    color = float4(float(r), float(g), float(b), float(a)) / 255.0;
+	  }
   if (params.mode == kModeSplitScreen && params.width > 0) {
     const float divider_x = params.split_pos * float(params.width);
     const float pixel_x = texcoord.x * float(params.width);
@@ -247,6 +534,58 @@ struct MetalLayoutParams {
   int32_t source_height1;
   int32_t source_height2;
   int32_t source_height3;
+  int32_t yuv_format0;
+  int32_t yuv_format1;
+  int32_t yuv_format2;
+  int32_t yuv_format3;
+  uint32_t y_offset0;
+  uint32_t y_offset1;
+  uint32_t y_offset2;
+  uint32_t y_offset3;
+  uint32_t uv_offset0;
+  uint32_t uv_offset1;
+  uint32_t uv_offset2;
+  uint32_t uv_offset3;
+  uint32_t y_stride0;
+  uint32_t y_stride1;
+  uint32_t y_stride2;
+  uint32_t y_stride3;
+  uint32_t uv_stride0;
+  uint32_t uv_stride1;
+  uint32_t uv_stride2;
+  uint32_t uv_stride3;
+  int32_t coded_width0;
+  int32_t coded_width1;
+  int32_t coded_width2;
+  int32_t coded_width3;
+  int32_t coded_height0;
+  int32_t coded_height1;
+  int32_t coded_height2;
+  int32_t coded_height3;
+  float nv12_uv_scale_x0;
+  float nv12_uv_scale_x1;
+  float nv12_uv_scale_x2;
+  float nv12_uv_scale_x3;
+  float nv12_uv_scale_y0;
+  float nv12_uv_scale_y1;
+  float nv12_uv_scale_y2;
+  float nv12_uv_scale_y3;
+  int32_t color_range0;
+  int32_t color_range1;
+  int32_t color_range2;
+  int32_t color_range3;
+  int32_t color_matrix0;
+  int32_t color_matrix1;
+  int32_t color_matrix2;
+  int32_t color_matrix3;
+  int32_t color_transfer0;
+  int32_t color_transfer1;
+  int32_t color_transfer2;
+  int32_t color_transfer3;
+  int32_t color_primaries0;
+  int32_t color_primaries1;
+  int32_t color_primaries2;
+  int32_t color_primaries3;
   int32_t order0;
   int32_t order1;
   int32_t order2;
@@ -334,9 +673,11 @@ const char* metal_uploader_status_message(int status) {
   id<MTLBuffer> _layoutParamsBuffer;
   id<MTLComputePipelineState> _layoutPipeline;
   CVMetalTextureCacheRef _textureCache;
+  std::atomic<int64_t> _directYuvUploadCount;
 }
 
 - (BOOL)isAvailable;
+- (int64_t)directYuvUploadCount;
 - (int)validatePixelBufferStatus:(CVPixelBufferRef)pixelBuffer
                             width:(int32_t)width
                            height:(int32_t)height;
@@ -368,6 +709,7 @@ const char* metal_uploader_status_message(int status) {
 - (instancetype)init {
   self = [super init];
   if (self) {
+    _directYuvUploadCount.store(0, std::memory_order_relaxed);
     _device = MTLCreateSystemDefaultDevice();
     if (_device) {
       _commandQueue = [_device newCommandQueue];
@@ -404,6 +746,10 @@ const char* metal_uploader_status_message(int status) {
 
 - (BOOL)isAvailable {
   return _device != nil && _commandQueue != nil && _textureCache != nullptr;
+}
+
+- (int64_t)directYuvUploadCount {
+  return _directYuvUploadCount.load(std::memory_order_relaxed);
 }
 
 - (int)validatePixelBufferStatus:(CVPixelBufferRef)pixelBuffer
@@ -596,15 +942,28 @@ const char* metal_uploader_status_message(int status) {
 
   size_t rowBytes = 0;
   size_t uploadSize = 0;
+  size_t bgraStagingSize = 0;
+  size_t yuvStagingSize = 0;
   size_t stagingSize = 0;
   const int32_t trackSlots =
       std::clamp(maxTrackSlots, static_cast<int32_t>(1), static_cast<int32_t>(VPMacOSNativeMaxTracks));
   if (!checked_mul_size(static_cast<size_t>(width), 4u, &rowBytes) ||
       !checked_mul_size(rowBytes, static_cast<size_t>(height), &uploadSize) ||
-      !checked_mul_size(uploadSize, static_cast<size_t>(trackSlots), &stagingSize)) {
+      !checked_mul_size(uploadSize, static_cast<size_t>(trackSlots), &bgraStagingSize)) {
     write_error(error, errorSize, "native Metal layout upload dimensions overflow");
     return -1;
   }
+  const size_t codedWidth = static_cast<size_t>((width + 1) & ~1);
+  const size_t codedHeight = static_cast<size_t>((height + 1) & ~1);
+  size_t yuvPlanePixels = 0;
+  size_t p010YuvBytes = 0;
+  if (!checked_mul_size(codedWidth, codedHeight, &yuvPlanePixels) ||
+      !checked_mul_size(yuvPlanePixels, 3u, &p010YuvBytes) ||
+      !checked_mul_size(p010YuvBytes, static_cast<size_t>(trackSlots), &yuvStagingSize)) {
+    write_error(error, errorSize, "native Metal layout upload dimensions overflow");
+    return -1;
+  }
+  stagingSize = std::max(bgraStagingSize, yuvStagingSize);
   if (rowBytes > static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
     write_error(error, errorSize, "native Metal layout upload row stride is too large");
     return -1;
@@ -616,17 +975,31 @@ const char* metal_uploader_status_message(int status) {
   }
 
   VPMacOSNativePresentDecisionInfo decisionInfo = {};
-  const int copyRet = VPMacOSNativePlayerCopyPresentFramesBGRAInto(
+  int copyRet = VPMacOSNativePlayerCopyPresentFramesYUVInto(
       player,
       static_cast<uint8_t*>([_stagingBuffer contents]),
-      stagingSize,
+      yuvStagingSize,
       width,
       height,
-      static_cast<int32_t>(rowBytes),
-      uploadSize,
+      static_cast<size_t>(trackSlots),
       &decisionInfo,
       error,
       errorSize);
+  const BOOL directYuvUpload = copyRet == 0;
+  if (copyRet != 0) {
+    decisionInfo = {};
+    copyRet = VPMacOSNativePlayerCopyPresentFramesBGRAInto(
+        player,
+        static_cast<uint8_t*>([_stagingBuffer contents]),
+        bgraStagingSize,
+        width,
+        height,
+        static_cast<int32_t>(rowBytes),
+        uploadSize,
+        &decisionInfo,
+        error,
+        errorSize);
+  }
   if (copyRet != 0) {
     if (error && std::strcmp(error, "not all present decision frames are ready") == 0) {
       return -1;
@@ -635,6 +1008,9 @@ const char* metal_uploader_status_message(int status) {
       write_error(error, errorSize, "failed to copy native present frames");
     }
     return -2;
+  }
+  if (directYuvUpload) {
+    _directYuvUploadCount.fetch_add(1, std::memory_order_relaxed);
   }
   if (out) {
     *out = {};
@@ -668,11 +1044,63 @@ const char* metal_uploader_status_message(int status) {
   metalParams->source_width1 = decisionInfo.source_width[1];
   metalParams->source_width2 = decisionInfo.source_width[2];
   metalParams->source_width3 = decisionInfo.source_width[3];
-  metalParams->source_height0 = decisionInfo.source_height[0];
-  metalParams->source_height1 = decisionInfo.source_height[1];
-  metalParams->source_height2 = decisionInfo.source_height[2];
-  metalParams->source_height3 = decisionInfo.source_height[3];
-  metalParams->order0 = decisionInfo.order[0];
+	  metalParams->source_height0 = decisionInfo.source_height[0];
+	  metalParams->source_height1 = decisionInfo.source_height[1];
+	  metalParams->source_height2 = decisionInfo.source_height[2];
+	  metalParams->source_height3 = decisionInfo.source_height[3];
+	  metalParams->yuv_format0 = decisionInfo.yuv_format[0];
+	  metalParams->yuv_format1 = decisionInfo.yuv_format[1];
+	  metalParams->yuv_format2 = decisionInfo.yuv_format[2];
+	  metalParams->yuv_format3 = decisionInfo.yuv_format[3];
+	  metalParams->y_offset0 = static_cast<uint32_t>(std::max(0, decisionInfo.y_offset[0]));
+	  metalParams->y_offset1 = static_cast<uint32_t>(std::max(0, decisionInfo.y_offset[1]));
+	  metalParams->y_offset2 = static_cast<uint32_t>(std::max(0, decisionInfo.y_offset[2]));
+	  metalParams->y_offset3 = static_cast<uint32_t>(std::max(0, decisionInfo.y_offset[3]));
+	  metalParams->uv_offset0 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_offset[0]));
+	  metalParams->uv_offset1 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_offset[1]));
+	  metalParams->uv_offset2 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_offset[2]));
+	  metalParams->uv_offset3 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_offset[3]));
+	  metalParams->y_stride0 = static_cast<uint32_t>(std::max(0, decisionInfo.y_stride[0]));
+	  metalParams->y_stride1 = static_cast<uint32_t>(std::max(0, decisionInfo.y_stride[1]));
+	  metalParams->y_stride2 = static_cast<uint32_t>(std::max(0, decisionInfo.y_stride[2]));
+	  metalParams->y_stride3 = static_cast<uint32_t>(std::max(0, decisionInfo.y_stride[3]));
+	  metalParams->uv_stride0 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_stride[0]));
+	  metalParams->uv_stride1 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_stride[1]));
+	  metalParams->uv_stride2 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_stride[2]));
+	  metalParams->uv_stride3 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_stride[3]));
+	  metalParams->coded_width0 = decisionInfo.coded_width[0];
+	  metalParams->coded_width1 = decisionInfo.coded_width[1];
+	  metalParams->coded_width2 = decisionInfo.coded_width[2];
+	  metalParams->coded_width3 = decisionInfo.coded_width[3];
+	  metalParams->coded_height0 = decisionInfo.coded_height[0];
+	  metalParams->coded_height1 = decisionInfo.coded_height[1];
+	  metalParams->coded_height2 = decisionInfo.coded_height[2];
+	  metalParams->coded_height3 = decisionInfo.coded_height[3];
+	  metalParams->nv12_uv_scale_x0 = decisionInfo.nv12_uv_scale_x[0];
+	  metalParams->nv12_uv_scale_x1 = decisionInfo.nv12_uv_scale_x[1];
+	  metalParams->nv12_uv_scale_x2 = decisionInfo.nv12_uv_scale_x[2];
+	  metalParams->nv12_uv_scale_x3 = decisionInfo.nv12_uv_scale_x[3];
+	  metalParams->nv12_uv_scale_y0 = decisionInfo.nv12_uv_scale_y[0];
+	  metalParams->nv12_uv_scale_y1 = decisionInfo.nv12_uv_scale_y[1];
+	  metalParams->nv12_uv_scale_y2 = decisionInfo.nv12_uv_scale_y[2];
+	  metalParams->nv12_uv_scale_y3 = decisionInfo.nv12_uv_scale_y[3];
+	  metalParams->color_range0 = decisionInfo.color_range[0];
+	  metalParams->color_range1 = decisionInfo.color_range[1];
+	  metalParams->color_range2 = decisionInfo.color_range[2];
+	  metalParams->color_range3 = decisionInfo.color_range[3];
+	  metalParams->color_matrix0 = decisionInfo.color_matrix[0];
+	  metalParams->color_matrix1 = decisionInfo.color_matrix[1];
+	  metalParams->color_matrix2 = decisionInfo.color_matrix[2];
+	  metalParams->color_matrix3 = decisionInfo.color_matrix[3];
+	  metalParams->color_transfer0 = decisionInfo.color_transfer[0];
+	  metalParams->color_transfer1 = decisionInfo.color_transfer[1];
+	  metalParams->color_transfer2 = decisionInfo.color_transfer[2];
+	  metalParams->color_transfer3 = decisionInfo.color_transfer[3];
+	  metalParams->color_primaries0 = decisionInfo.color_primaries[0];
+	  metalParams->color_primaries1 = decisionInfo.color_primaries[1];
+	  metalParams->color_primaries2 = decisionInfo.color_primaries[2];
+	  metalParams->color_primaries3 = decisionInfo.color_primaries[3];
+	  metalParams->order0 = decisionInfo.order[0];
   metalParams->order1 = decisionInfo.order[1];
   metalParams->order2 = decisionInfo.order[2];
   metalParams->order3 = decisionInfo.order[3];
@@ -773,6 +1201,13 @@ void VPMacOSMetalUploaderDestroy(VPMacOSMetalUploader* uploader) {
 
 int VPMacOSMetalUploaderIsAvailable(VPMacOSMetalUploader* uploader) {
   return uploader && uploader->impl && [uploader->impl isAvailable] ? 1 : 0;
+}
+
+int64_t VPMacOSMetalUploaderDirectYUVUploadCount(VPMacOSMetalUploader* uploader) {
+  if (!uploader || !uploader->impl) {
+    return 0;
+  }
+  return [uploader->impl directYuvUploadCount];
 }
 
 int VPMacOSMetalUploaderValidatePixelBuffer(VPMacOSMetalUploader* uploader,

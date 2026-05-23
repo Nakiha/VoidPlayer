@@ -73,6 +73,9 @@ enum {
   VPMacOSMetalUploaderStatusSizeMismatch = 3,
   VPMacOSMetalUploaderStatusUnsupportedPixelFormat = 4,
   VPMacOSMetalUploaderStatusTextureWrapFailed = 5,
+  VPMacOSNativePresentFormatBGRA = 0,
+  VPMacOSNativePresentFormatNV12 = 1,
+  VPMacOSNativePresentFormatP010 = 2,
 };
 
 typedef struct VPMacOSNativePresentFrameInfo {
@@ -102,6 +105,19 @@ typedef struct VPMacOSNativePresentDecisionInfo {
   float view_offset_uv_y[VPMacOSNativeMaxTracks];
   int32_t source_width[VPMacOSNativeMaxTracks];
   int32_t source_height[VPMacOSNativeMaxTracks];
+  int32_t yuv_format[VPMacOSNativeMaxTracks];
+  int32_t y_offset[VPMacOSNativeMaxTracks];
+  int32_t uv_offset[VPMacOSNativeMaxTracks];
+  int32_t y_stride[VPMacOSNativeMaxTracks];
+  int32_t uv_stride[VPMacOSNativeMaxTracks];
+  int32_t coded_width[VPMacOSNativeMaxTracks];
+  int32_t coded_height[VPMacOSNativeMaxTracks];
+  float nv12_uv_scale_x[VPMacOSNativeMaxTracks];
+  float nv12_uv_scale_y[VPMacOSNativeMaxTracks];
+  int32_t color_range[VPMacOSNativeMaxTracks];
+  int32_t color_matrix[VPMacOSNativeMaxTracks];
+  int32_t color_transfer[VPMacOSNativeMaxTracks];
+  int32_t color_primaries[VPMacOSNativeMaxTracks];
   VPMacOSNativePresentFrameInfo frames[VPMacOSNativeMaxTracks];
 } VPMacOSNativePresentDecisionInfo;
 
@@ -192,11 +208,22 @@ int VPMacOSNativePlayerCopyPresentFramesBGRAInto(
     VPMacOSNativePresentDecisionInfo* out,
     char* error,
     size_t error_size);
+int VPMacOSNativePlayerCopyPresentFramesYUVInto(
+    VPMacOSNativePlayer* player,
+    uint8_t* dst,
+    size_t dst_size,
+    int32_t width,
+    int32_t height,
+    size_t max_track_slots,
+    VPMacOSNativePresentDecisionInfo* out,
+    char* error,
+    size_t error_size);
 void VPMacOSNativeFrameFree(VPMacOSNativeFrame* frame);
 
 VPMacOSMetalUploader* VPMacOSMetalUploaderCreate(void);
 void VPMacOSMetalUploaderDestroy(VPMacOSMetalUploader* uploader);
 int VPMacOSMetalUploaderIsAvailable(VPMacOSMetalUploader* uploader);
+int64_t VPMacOSMetalUploaderDirectYUVUploadCount(VPMacOSMetalUploader* uploader);
 int VPMacOSMetalUploaderValidatePixelBuffer(VPMacOSMetalUploader* uploader,
                                             void* pixel_buffer,
                                             int32_t width,

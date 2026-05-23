@@ -83,6 +83,14 @@ bool probe_videotoolbox_h264() {
   return available;
 }
 
+size_t align_up_size(size_t value, size_t alignment) {
+  if (alignment == 0) {
+    return value;
+  }
+  const size_t remainder = value % alignment;
+  return remainder == 0 ? value : value + (alignment - remainder);
+}
+
 vr::LayoutState to_layout_state(const VPMacOSNativeLayoutState& state) {
   vr::LayoutState layout;
   layout.mode = state.mode;
@@ -333,6 +341,98 @@ public:
     return true;
   }
 
+  bool copy_present_frames_yuv_into(uint8_t* dst,
+                                    size_t dst_size,
+                                    int32_t width,
+                                    int32_t height,
+                                    size_t max_track_slots,
+                                    VPMacOSNativePresentDecisionInfo* out,
+                                    std::string& error) {
+    if (!dst || !out || width <= 0 || height <= 0 || max_track_slots == 0) {
+      error = "invalid present decision YUV destination";
+      return false;
+    }
+    if (!render_sink_) {
+      error = "player is not open";
+      return false;
+    }
+
+    const auto decision = render_sink_->evaluate();
+    fill_present_decision_info(decision, width, height, out);
+    if (!decision.should_present) {
+      error = "no presentable frame is ready";
+      return false;
+    }
+    if (out->track_count > 1 && out->frame_count < out->track_count) {
+      error = "not all present decision frames are ready";
+      return false;
+    }
+
+    size_t cursor = 0;
+    for (size_t slot = 0; slot < vr::kMaxTracks; ++slot) {
+      if (!decision.frames[slot].has_value()) {
+        continue;
+      }
+      if (slot >= max_track_slots) {
+        error = "present decision YUV destination is too small";
+        return false;
+      }
+      const auto& frame = *decision.frames[slot];
+      const auto* storage = frame.cpu_nv12_storage();
+      if (!storage || !storage->data || storage->y_stride <= 0 ||
+          storage->uv_stride <= 0 || storage->coded_width <= 0 ||
+          storage->coded_height <= 0 ||
+          storage->coded_width < frame.width ||
+          storage->coded_height < frame.height) {
+        error = "present decision contains non-NV12 frame storage";
+        return false;
+      }
+
+      const int bytes_per_sample = storage->is_p010 ? 2 : 1;
+      if (storage->y_stride < storage->coded_width * bytes_per_sample ||
+          storage->uv_stride < storage->coded_width * bytes_per_sample) {
+        error = "invalid NV12/P010 frame storage for Metal presentation";
+        return false;
+      }
+      const int chroma_height = (storage->coded_height + 1) / 2;
+      const size_t y_bytes =
+          static_cast<size_t>(storage->y_stride) * static_cast<size_t>(storage->coded_height);
+      const size_t uv_bytes =
+          static_cast<size_t>(storage->uv_stride) * static_cast<size_t>(chroma_height);
+      if (y_bytes > std::numeric_limits<size_t>::max() - uv_bytes ||
+          y_bytes + uv_bytes > storage->data->size()) {
+        error = "invalid NV12/P010 frame storage for Metal presentation";
+        return false;
+      }
+      cursor = align_up_size(cursor, static_cast<size_t>(bytes_per_sample));
+      if (cursor > dst_size || y_bytes > dst_size - cursor ||
+          uv_bytes > dst_size - cursor - y_bytes) {
+        error = "present decision YUV destination is too small";
+        return false;
+      }
+
+      const auto* source = storage->data->data();
+      std::memcpy(dst + cursor, source, y_bytes);
+      out->y_offset[slot] = static_cast<int32_t>(cursor);
+      cursor += y_bytes;
+      std::memcpy(dst + cursor, source + y_bytes, uv_bytes);
+      out->uv_offset[slot] = static_cast<int32_t>(cursor);
+      cursor += uv_bytes;
+      out->yuv_format[slot] = storage->is_p010
+          ? VPMacOSNativePresentFormatP010
+          : VPMacOSNativePresentFormatNV12;
+      out->y_stride[slot] = storage->y_stride;
+      out->uv_stride[slot] = storage->uv_stride;
+      out->coded_width[slot] = storage->coded_width;
+      out->coded_height[slot] = storage->coded_height;
+      out->nv12_uv_scale_x[slot] =
+          static_cast<float>(frame.width) / static_cast<float>(storage->coded_width);
+      out->nv12_uv_scale_y[slot] =
+          static_cast<float>(frame.height) / static_cast<float>(storage->coded_height);
+    }
+    return true;
+  }
+
   void seek(int64_t pts_us) {
     const int64_t target = std::max<int64_t>(0, pts_us);
     for (auto& track : tracks_) {
@@ -563,6 +663,8 @@ private:
       frame_out.file_id = decision.file_ids[slot];
       frame_out.slot = static_cast<int32_t>(slot);
       if (!decision.frames[slot].has_value()) {
+        out->nv12_uv_scale_x[slot] = 1.0f;
+        out->nv12_uv_scale_y[slot] = 1.0f;
         continue;
       }
       const auto& frame = *decision.frames[slot];
@@ -574,6 +676,26 @@ private:
       frame_out.pts_us = frame.pts_us;
       frame_out.dts_us = frame.dts_us;
       frame_out.duration_us = frame.duration_us;
+      out->nv12_uv_scale_x[slot] = 1.0f;
+      out->nv12_uv_scale_y[slot] = 1.0f;
+      out->color_range[slot] = frame.color.range != vr::VIDEO_COLOR_RANGE_UNKNOWN
+          ? frame.color.range
+          : vr::VIDEO_COLOR_RANGE_LIMITED;
+      out->color_matrix[slot] = frame.color.matrix != vr::VIDEO_COLOR_MATRIX_UNKNOWN
+          ? frame.color.matrix
+          : (frame.width >= 1280 || frame.height > 576
+              ? vr::VIDEO_COLOR_MATRIX_BT709
+              : vr::VIDEO_COLOR_MATRIX_BT601);
+      out->color_transfer[slot] = frame.color.transfer != vr::VIDEO_COLOR_TRANSFER_UNKNOWN
+          ? frame.color.transfer
+          : vr::VIDEO_COLOR_TRANSFER_SDR;
+      out->color_primaries[slot] = frame.color.primaries != vr::VIDEO_COLOR_PRIMARIES_UNKNOWN
+          ? frame.color.primaries
+          : (out->color_matrix[slot] == vr::VIDEO_COLOR_MATRIX_BT2020_NCL
+              ? vr::VIDEO_COLOR_PRIMARIES_BT2020
+              : (out->color_matrix[slot] == vr::VIDEO_COLOR_MATRIX_BT601
+                  ? vr::VIDEO_COLOR_PRIMARIES_BT601
+                  : vr::VIDEO_COLOR_PRIMARIES_BT709));
       ++out->frame_count;
     }
   }
@@ -1196,6 +1318,31 @@ int VPMacOSNativePlayerCopyPresentFramesBGRAInto(
   std::string message;
   if (!player->core.copy_present_frames_into(
           dst, dst_size, width, height, stride_bytes, track_stride_bytes, out, message)) {
+    write_error(error, error_size, message);
+    return -1;
+  }
+  write_error(error, error_size, "");
+  return 0;
+}
+
+int VPMacOSNativePlayerCopyPresentFramesYUVInto(
+    VPMacOSNativePlayer* player,
+    uint8_t* dst,
+    size_t dst_size,
+    int32_t width,
+    int32_t height,
+    size_t max_track_slots,
+    VPMacOSNativePresentDecisionInfo* out,
+    char* error,
+    size_t error_size) {
+  if (!player || !dst || !out) {
+    write_error(error, error_size, "player, destination, or present decision output is null");
+    return -1;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  std::string message;
+  if (!player->core.copy_present_frames_yuv_into(
+          dst, dst_size, width, height, max_track_slots, out, message)) {
     write_error(error, error_size, message);
     return -1;
   }

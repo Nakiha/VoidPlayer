@@ -610,6 +610,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "pixelBufferReuseCount": textureStats?.reuseCount ?? 0,
         "pixelBufferDirectCopyCount": textureStats?.directCopyCount ?? 0,
         "pixelBufferMetalUploadCount": textureStats?.metalUploadCount ?? 0,
+        "pixelBufferMetalYuvUploadCount": textureStats?.metalYuvUploadCount ?? 0,
         "pixelBufferMetalUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
         "pixelBufferMetalUploadEnabled": textureStats?.metalUploadEnabled ?? false,
         "presentationUploadMode": textureStats?.presentationUploadMode ?? "unavailable",
@@ -1456,6 +1457,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     reuseCount: Int,
     directCopyCount: Int,
     metalUploadCount: Int,
+    metalYuvUploadCount: Int,
     metalUploadFailureCount: Int,
     metalUploadEnabled: Bool,
     presentationUploadMode: String,
@@ -1474,6 +1476,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       reuseCount: pixelBufferReuseCount,
       directCopyCount: pixelBufferDirectCopyCount,
       metalUploadCount: pixelBufferMetalUploadCount,
+      metalYuvUploadCount: nativeMetalUploaderDirectYuvUploadCountLocked(),
       metalUploadFailureCount: pixelBufferMetalUploadFailureCount,
       metalUploadEnabled: metalUploadEnabled,
       presentationUploadMode: presentationUploadModeLocked(),
@@ -1532,6 +1535,11 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private func nativeMetalUploaderAvailableLocked() -> Bool {
     guard let nativeMetalUploader else { return false }
     return VPMacOSMetalUploaderIsAvailable(nativeMetalUploader) != 0
+  }
+
+  private func nativeMetalUploaderDirectYuvUploadCountLocked() -> Int {
+    guard let nativeMetalUploader else { return 0 }
+    return Int(VPMacOSMetalUploaderDirectYUVUploadCount(nativeMetalUploader))
   }
 
   private func presentationUploadModeLocked() -> String {

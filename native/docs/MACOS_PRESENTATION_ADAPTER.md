@@ -8,12 +8,12 @@ loop, audio, and playback clock policy stay in shared native code.
 
 `native/macos/presentation_adapter.*` exposes the current software fallback
 BGRA conversion adapter, and `native/macos/metal_pixel_buffer_uploader.mm` owns
-the single-track Metal layout upload:
+the Metal layout upload:
 
 - adapter name: `cvpixelbuffer-bgra-copy`
 - input: shared `vr::TextureFrame` storage
-- output: caller-provided BGRA rows, currently either a native `MTLBuffer`
-  staged into a `CVPixelBuffer` or a locked `CVPixelBuffer` fallback
+- output: caller-provided BGRA rows for fallback copies, or CPU NV12/P010 planes
+  staged into a native `MTLBuffer` and converted by the Metal layout shader
 - supported storage: CPU RGBA, CPU planar YUV420 8-bit, CPU NV12 8-bit, CPU P010 10-bit
 - unsupported storage: renderer-owned GPU textures
 - explicit failure contract: invalid BGRA destination, unsupported storage,
@@ -28,9 +28,11 @@ metadata. The runner creates Metal-compatible, IOSurface-backed pixel buffers,
 but native owns the Metal device, command queue, `CVMetalTextureCache`
 validation and shared `MTLBuffer` upload. The same surface is used for explicit
 seek/step refresh and playback callbacks when
-`presentationUploadMode=metal-bgra-layout-upload`, where native copies into a
-shared `MTLBuffer` and a Metal compute pass applies the shared layout transform
-into the texture-backed `CVPixelBuffer`.
+`presentationUploadMode=metal-bgra-layout-upload`, where native first tries to
+stage CPU NV12/P010 frames and applies YUV color conversion plus the shared
+layout transform in a Metal compute pass. If a frame storage kind is not yet
+supported by that shader path, the uploader falls back to the software BGRA
+adapter and runs the same layout compute pass over a BGRA atlas.
 Native validation rejects pixel buffers whose dimensions or pixel format do not
 match the expected BGRA texture surface before any frame upload is attempted.
 The Metal layout uploader exposes checked validation statuses for unavailable
@@ -68,7 +70,8 @@ macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy`,
 `presentationAdapterKind=software-fallback`,
 `rendererOwnedPresentationActive=false`,
 `presentationUploadMode=metal-bgra-layout-upload`, `metalTextureValid=true`,
-seek refreshes and playback advance `pixelBufferMetalUploadCount`,
+seek refreshes and playback advance `pixelBufferMetalUploadCount`, the 4K HEVC
+canary advances `pixelBufferMetalYuvUploadCount`,
 `hardwareDecodeProvider=VideoToolbox`,
 `hardwareDecodeActive=true`, `hardwareDecodeDownloadsToCpu=true`,
 `decodeMode=videotoolbox-download-to-cpu`, and `softwareFallbackActive=false`

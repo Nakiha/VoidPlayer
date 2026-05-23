@@ -145,8 +145,8 @@ Goal: improve performance after software playback is correct.
   The current `cvpixelbuffer-bgra-copy` adapter is the software fallback presentation adapter, not
   the final renderer-owned Metal backend. Diagnostics now expose
   `presentationAdapterKind=software-fallback` and `rendererOwnedPresentationActive=false` to keep
-  that distinction visible while the layout uploader is still a BGRA software-staging bridge rather
-  than a full renderer-owned Metal texture backend.
+  that distinction visible while the layout uploader is still a CPU-staging bridge rather than a full
+  renderer-owned Metal texture backend.
   The runner now creates Metal-compatible `CVPixelBuffer` surfaces, while
   `metal_pixel_buffer_uploader.mm` owns `CVMetalTextureCache` validation, the shared `MTLBuffer`,
   and the compute pass into the texture-backed `CVPixelBuffer`. Seek/step refresh, layout refresh,
@@ -156,13 +156,17 @@ Goal: improve performance after software playback is correct.
   direct copy path as fallback. The first multi-track slices copy the present decision into a native
   BGRA atlas and apply shared layout constants in Metal, with per-track source dimensions preserved
   so smaller secondary tracks sample like independent DX11 textures instead of being forced to the
-  output surface size. CTest covers CPU atlas readiness, same-size side-by-side output, and a
-  mixed-size 1920x1080 + 320x180 composition.
+  output surface size. The uploader now attempts a direct CPU NV12/P010 staging path first, passing
+  color range/matrix/transfer/primaries into the Metal compute shader so the YUV -> RGB conversion
+  lives in the presentation pipeline like the Windows D3D11 shader path. Unsupported storage falls
+  back to the BGRA software adapter. CTest covers CPU atlas readiness, same-size side-by-side output,
+  and a mixed-size 1920x1080 + 320x180 composition.
   The uploader now sizes its staging atlas to the active slot capacity instead of always reserving all
   four tracks, and Swift diagnostics expose native frame callback/copy/miss/error counters plus an
-  elapsed/fps estimate. The bundled 4K60 HEVC canary currently keeps a low copy-count threshold on
-  purpose: it is a regression guard for the current hwdownload path, not a performance target. Raising
-  it requires the next renderer-owned Metal step to avoid CPU YUV/P010 -> BGRA conversion per frame.
+  elapsed/fps estimate. The bundled 4K60 HEVC canary asserts the direct Metal YUV upload counter so it
+  cannot silently fall back to CPU BGRA conversion. It still keeps a low copy-count threshold on
+  purpose: this is a regression guard for the current hwdownload path, not a final 4K60 performance
+  target.
 - [ ] Port shader/color/layout behavior with deterministic pixel tests.
   Initial portable baselines now cover limited/full-range software BGRA conversion, padded
   linesizes, BGRA channel order, BT.601/BT.709/BT.2020 matrix selection in the shared CPU
@@ -411,8 +415,8 @@ the speaker-level gap that the current native diagnostics cannot observe directl
 ## Next Slice
 
 The next implementation slice should continue the M5 renderer-owned Metal/CVPixelBuffer backend:
-consume native frame storage without Swift-side playback policy, move YUV/NV12/P010 color conversion
-into the Metal presentation path, and compare it against the current BGRA software adapter before
-raising the 4K60 canary threshold. First-class macOS analysis workflow remains behind the explicit
-capability gates, and Windows native/UI preservation checks should run on the first available Windows
-host.
+compare the direct Metal NV12/P010 shader output against the BGRA software adapter on deterministic
+fixtures, add planar YUV shader staging or an explicit fallback reason, then move toward real
+VideoToolbox/CVPixelBuffer zero-copy before raising the 4K60 canary threshold. First-class macOS
+analysis workflow remains behind the explicit capability gates, and Windows native/UI preservation
+checks should run on the first available Windows host.

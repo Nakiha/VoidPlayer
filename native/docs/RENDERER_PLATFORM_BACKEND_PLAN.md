@@ -59,6 +59,11 @@ Goal: make the current split honest before moving code.
 - [ ] Mark the current `native/macos/native_player_bridge.*` tick thread and Swift callback copy path
   as transitional in code comments and diagnostics.
 
+Progress: shared `PresentationSnapshot` now centralizes present-decision metadata, layout constants,
+color defaults, storage kind, and NV12 coded-size scale for backend consumption. The macOS bridge
+fills its presentation ABI from this contract, and a native canary covers identity, layout, color,
+and odd-dimension NV12 metadata. Carry-forward parity still needs a renderer-loop test.
+
 Exit gate: current macOS playback still works, and diagnostics clearly distinguish transitional
 texture-pump presentation from renderer-owned presentation.
 

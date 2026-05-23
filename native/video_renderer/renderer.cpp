@@ -14,6 +14,7 @@
 #include "video_renderer/audio_coordinator.h"
 #include "video_renderer/seek/seek_coordinator.h"
 #include "video_renderer/render/device_loss_policy.h"
+#include "video_renderer/render/presentation_snapshot.h"
 #include "video_renderer/render/shader_constants.h"
 #include "video_renderer/render/swap_chain_present_policy.h"
 #include "video_renderer/track/track_snapshot.h"
@@ -1861,20 +1862,15 @@ bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
                 : VIDEO_COLOR_RANGE_LIMITED;
             cb.color_matrix[i] = color.matrix != VIDEO_COLOR_MATRIX_UNKNOWN
                 ? color.matrix
-                : (snapshot.tracks[i].video_width >= 1280 ||
-                   snapshot.tracks[i].video_height > 576
-                    ? VIDEO_COLOR_MATRIX_BT709
-                    : VIDEO_COLOR_MATRIX_BT601);
+                : default_presentation_color_matrix_for_size(
+                    snapshot.tracks[i].video_width,
+                    snapshot.tracks[i].video_height);
             cb.color_transfer[i] = color.transfer != VIDEO_COLOR_TRANSFER_UNKNOWN
                 ? color.transfer
                 : VIDEO_COLOR_TRANSFER_SDR;
             cb.color_primaries[i] = color.primaries != VIDEO_COLOR_PRIMARIES_UNKNOWN
                 ? color.primaries
-                : (cb.color_matrix[i] == VIDEO_COLOR_MATRIX_BT2020_NCL
-                    ? VIDEO_COLOR_PRIMARIES_BT2020
-                    : (cb.color_matrix[i] == VIDEO_COLOR_MATRIX_BT601
-                        ? VIDEO_COLOR_PRIMARIES_BT601
-                        : VIDEO_COLOR_PRIMARIES_BT709));
+                : default_presentation_color_primaries_for_matrix(cb.color_matrix[i]);
             if (decision.frames[i].has_value() &&
                 frame_matches_track &&
                 decision.frames[i]->cpu_planar_yuv_storage()) {

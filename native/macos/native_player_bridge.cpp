@@ -13,6 +13,7 @@
 #include "video_renderer/layout/layout_controller.h"
 #include "video_renderer/layout/layout_geometry.h"
 #include "video_renderer/render/presentation_scheduler.h"
+#include "video_renderer/render/presentation_snapshot.h"
 #include "video_renderer/render/shader_constants.h"
 #include "video_renderer/capture/bgra_capture_metrics.h"
 #include "video_renderer/seek/seek_coordinator.h"
@@ -631,11 +632,12 @@ private:
                                   int32_t height,
                                   VPMacOSNativePresentDecisionInfo* out) const {
     *out = {};
-    out->should_present = decision.should_present ? 1 : 0;
-    out->current_pts_us = decision.current_pts_us;
-    const auto tracks = layout_track_geometry();
-    vr::ShaderConstants constants = {};
-    vr::populate_layout_shader_constants(constants, layout_, tracks, width, height);
+    const auto snapshot = vr::build_presentation_snapshot(
+        decision, layout_, layout_track_geometry(), width, height);
+    const auto& constants = snapshot.constants;
+    out->should_present = snapshot.should_present ? 1 : 0;
+    out->current_pts_us = snapshot.current_pts_us;
+    out->frame_count = snapshot.frame_count;
     out->track_count = constants.track_count;
     out->mode = constants.mode;
     out->split_pos = constants.split_pos;
@@ -648,43 +650,32 @@ private:
       out->view_offset_uv_x[slot] = constants.view_offset_uv_x[slot];
       out->view_offset_uv_y[slot] = constants.view_offset_uv_y[slot];
       auto& frame_out = out->frames[slot];
-      frame_out.file_id = decision.file_ids[slot];
+      const auto& frame = snapshot.frames[slot];
+      frame_out.file_id = frame.file_id;
       frame_out.slot = static_cast<int32_t>(slot);
-      if (!decision.frames[slot].has_value()) {
+      out->source_width[slot] = frame.width;
+      out->source_height[slot] = frame.height;
+      out->nv12_uv_scale_x[slot] = frame.nv12_uv_scale_x;
+      out->nv12_uv_scale_y[slot] = frame.nv12_uv_scale_y;
+      out->color_range[slot] = frame.color_range;
+      out->color_matrix[slot] = frame.color_matrix;
+      out->color_transfer[slot] = frame.color_transfer;
+      out->color_primaries[slot] = frame.color_primaries;
+      out->y_stride[slot] = frame.y_stride;
+      out->uv_stride[slot] = frame.uv_stride;
+      out->coded_width[slot] = frame.coded_width;
+      out->coded_height[slot] = frame.coded_height;
+      if (!frame.present) {
         out->nv12_uv_scale_x[slot] = 1.0f;
         out->nv12_uv_scale_y[slot] = 1.0f;
         continue;
       }
-      const auto& frame = *decision.frames[slot];
       frame_out.present = 1;
       frame_out.width = frame.width;
       frame_out.height = frame.height;
-      out->source_width[slot] = frame.width;
-      out->source_height[slot] = frame.height;
       frame_out.pts_us = frame.pts_us;
       frame_out.dts_us = frame.dts_us;
       frame_out.duration_us = frame.duration_us;
-      out->nv12_uv_scale_x[slot] = 1.0f;
-      out->nv12_uv_scale_y[slot] = 1.0f;
-      out->color_range[slot] = frame.color.range != vr::VIDEO_COLOR_RANGE_UNKNOWN
-          ? frame.color.range
-          : vr::VIDEO_COLOR_RANGE_LIMITED;
-      out->color_matrix[slot] = frame.color.matrix != vr::VIDEO_COLOR_MATRIX_UNKNOWN
-          ? frame.color.matrix
-          : (frame.width >= 1280 || frame.height > 576
-              ? vr::VIDEO_COLOR_MATRIX_BT709
-              : vr::VIDEO_COLOR_MATRIX_BT601);
-      out->color_transfer[slot] = frame.color.transfer != vr::VIDEO_COLOR_TRANSFER_UNKNOWN
-          ? frame.color.transfer
-          : vr::VIDEO_COLOR_TRANSFER_SDR;
-      out->color_primaries[slot] = frame.color.primaries != vr::VIDEO_COLOR_PRIMARIES_UNKNOWN
-          ? frame.color.primaries
-          : (out->color_matrix[slot] == vr::VIDEO_COLOR_MATRIX_BT2020_NCL
-              ? vr::VIDEO_COLOR_PRIMARIES_BT2020
-              : (out->color_matrix[slot] == vr::VIDEO_COLOR_MATRIX_BT601
-                  ? vr::VIDEO_COLOR_PRIMARIES_BT601
-                  : vr::VIDEO_COLOR_PRIMARIES_BT709));
-      ++out->frame_count;
     }
   }
 

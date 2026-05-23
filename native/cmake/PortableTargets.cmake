@@ -184,6 +184,15 @@ if(APPLE)
     )
     add_test(NAME layout_geometry_smoke COMMAND layout_geometry_smoke)
 
+    add_executable(presentation_snapshot_smoke
+        "${VOID_NATIVE_DIR}/tools/presentation_snapshot_smoke.cpp"
+    )
+    void_apply_native_compile_options(presentation_snapshot_smoke)
+    target_link_libraries(presentation_snapshot_smoke PRIVATE
+        void_player_portable_core
+    )
+    add_test(NAME presentation_snapshot_smoke COMMAND presentation_snapshot_smoke)
+
     add_executable(software_frame_queue_smoke
         "${VOID_NATIVE_DIR}/tools/software_frame_queue_smoke.cpp"
     )

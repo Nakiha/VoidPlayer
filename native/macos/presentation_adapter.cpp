@@ -27,15 +27,16 @@ uint8_t p010_sample_to_u8(uint16_t p010_sample) {
   return clamp_u8((sample_10_bit + 2) >> 2);
 }
 
-bool allocate_bgra(const vr::TextureFrame& frame, VPMacOSNativeFrame* out) {
+PresentationAdapterStatus allocate_bgra(const vr::TextureFrame& frame,
+                                        VPMacOSNativeFrame* out) {
   if (!out || frame.width <= 0 || frame.height <= 0) {
-    return false;
+    return PresentationAdapterStatus::InvalidDestination;
   }
   const size_t size = static_cast<size_t>(frame.width) *
       static_cast<size_t>(frame.height) * 4u;
   auto* bgra = new (std::nothrow) uint8_t[size];
   if (!bgra) {
-    return false;
+    return PresentationAdapterStatus::AllocationFailed;
   }
   out->width = frame.width;
   out->height = frame.height;
@@ -44,24 +45,26 @@ bool allocate_bgra(const vr::TextureFrame& frame, VPMacOSNativeFrame* out) {
   out->duration_us = frame.duration_us;
   out->bgra = bgra;
   out->bgra_size = size;
-  return true;
+  return PresentationAdapterStatus::Ok;
 }
 
-bool validate_bgra_destination(const vr::TextureFrame& frame,
-                               uint8_t* dst,
-                               size_t dst_size,
-                               int32_t width,
-                               int32_t height,
-                               int32_t stride_bytes) {
+PresentationAdapterStatus validate_bgra_destination(const vr::TextureFrame& frame,
+                                                    uint8_t* dst,
+                                                    size_t dst_size,
+                                                    int32_t width,
+                                                    int32_t height,
+                                                    int32_t stride_bytes) {
   if (!dst || frame.width <= 0 || frame.height <= 0 ||
       width != frame.width || height != frame.height ||
       stride_bytes < frame.width * 4) {
-    return false;
+    return PresentationAdapterStatus::InvalidDestination;
   }
   const size_t last_row_offset =
       static_cast<size_t>(frame.height - 1) * static_cast<size_t>(stride_bytes);
   const size_t needed = last_row_offset + static_cast<size_t>(frame.width) * 4u;
-  return needed <= dst_size;
+  return needed <= dst_size
+      ? PresentationAdapterStatus::Ok
+      : PresentationAdapterStatus::InvalidDestination;
 }
 
 bool validate_cpu_nv12_storage(const vr::TextureFrame& frame,
@@ -227,16 +230,48 @@ const char* presentation_adapter_name() {
   return "cvpixelbuffer-bgra-copy";
 }
 
-bool copy_texture_frame_to_bgra_destination(const vr::TextureFrame& frame,
-                                            uint8_t* dst,
-                                            size_t dst_size,
-                                            int32_t width,
-                                            int32_t height,
-                                            int32_t stride_bytes,
-                                            VPMacOSNativeFrameInfo* out) {
-  if (!validate_bgra_destination(
-          frame, dst, dst_size, width, height, stride_bytes)) {
+const char* presentation_adapter_status_message(PresentationAdapterStatus status) {
+  switch (status) {
+  case PresentationAdapterStatus::Ok:
+    return "";
+  case PresentationAdapterStatus::InvalidDestination:
+    return "invalid BGRA destination dimensions, stride, or buffer size";
+  case PresentationAdapterStatus::UnsupportedStorage:
+    return "unsupported frame storage for software CVPixelBuffer adapter";
+  case PresentationAdapterStatus::InvalidStorage:
+    return "invalid or undersized frame storage for software CVPixelBuffer adapter";
+  case PresentationAdapterStatus::AllocationFailed:
+    return "failed to allocate owned BGRA frame";
+  }
+  return "unknown presentation adapter failure";
+}
+
+bool presentation_adapter_supports_storage(vr::FrameStorageKind kind) {
+  switch (kind) {
+  case vr::FrameStorageKind::CpuRgba:
+  case vr::FrameStorageKind::CpuPlanarYuv:
+  case vr::FrameStorageKind::CpuNv12:
+    return true;
+  case vr::FrameStorageKind::Empty:
+  case vr::FrameStorageKind::D3D11Nv12:
+  case vr::FrameStorageKind::D3D11Texture:
+  default:
     return false;
+  }
+}
+
+PresentationAdapterStatus copy_texture_frame_to_bgra_destination_checked(
+    const vr::TextureFrame& frame,
+    uint8_t* dst,
+    size_t dst_size,
+    int32_t width,
+    int32_t height,
+    int32_t stride_bytes,
+    VPMacOSNativeFrameInfo* out) {
+  const auto destination_status =
+      validate_bgra_destination(frame, dst, dst_size, width, height, stride_bytes);
+  if (destination_status != PresentationAdapterStatus::Ok) {
+    return destination_status;
   }
   bool copied = false;
   switch (frame.storage_kind()) {
@@ -252,13 +287,27 @@ bool copy_texture_frame_to_bgra_destination(const vr::TextureFrame& frame,
         : copy_cpu_nv12_to_bgra(frame, dst, stride_bytes);
     break;
   default:
-    copied = false;
-    break;
+    return PresentationAdapterStatus::UnsupportedStorage;
+  }
+  if (!copied) {
+    return PresentationAdapterStatus::InvalidStorage;
   }
   if (copied) {
     write_frame_info(frame, out);
   }
-  return copied;
+  return PresentationAdapterStatus::Ok;
+}
+
+bool copy_texture_frame_to_bgra_destination(const vr::TextureFrame& frame,
+                                            uint8_t* dst,
+                                            size_t dst_size,
+                                            int32_t width,
+                                            int32_t height,
+                                            int32_t stride_bytes,
+                                            VPMacOSNativeFrameInfo* out) {
+  return copy_texture_frame_to_bgra_destination_checked(
+      frame, dst, dst_size, width, height, stride_bytes, out) ==
+      PresentationAdapterStatus::Ok;
 }
 
 bool copy_texture_frame_to_owned_bgra(const vr::TextureFrame& frame,
@@ -267,7 +316,7 @@ bool copy_texture_frame_to_owned_bgra(const vr::TextureFrame& frame,
     return false;
   }
   *out = {};
-  if (!allocate_bgra(frame, out)) {
+  if (allocate_bgra(frame, out) != PresentationAdapterStatus::Ok) {
     return false;
   }
   VPMacOSNativeFrameInfo info{};

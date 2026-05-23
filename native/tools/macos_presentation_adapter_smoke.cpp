@@ -34,6 +34,13 @@ bool expect_pixel(const std::vector<uint8_t>& bgra,
       bgra[offset + 3] == a;
 }
 
+bool expect_status(vp_macos::PresentationAdapterStatus actual,
+                   vp_macos::PresentationAdapterStatus expected,
+                   const char* expected_message) {
+  return actual == expected &&
+      std::strcmp(vp_macos::presentation_adapter_status_message(actual), expected_message) == 0;
+}
+
 void write_p010_sample(std::vector<uint8_t>& data, size_t byte_offset, uint8_t value_8_bit) {
   const uint16_t p010 = static_cast<uint16_t>(value_8_bit) << 8;
   data[byte_offset] = static_cast<uint8_t>(p010 & 0xffu);
@@ -44,6 +51,31 @@ int check_adapter_identity() {
   const char* name = vp_macos::presentation_adapter_name();
   if (!name || std::strcmp(name, "cvpixelbuffer-bgra-copy") != 0) {
     return fail("unexpected presentation adapter name");
+  }
+  if (!expect_status(vp_macos::PresentationAdapterStatus::Ok,
+                     vp_macos::PresentationAdapterStatus::Ok,
+                     "") ||
+      !expect_status(
+          vp_macos::PresentationAdapterStatus::InvalidDestination,
+          vp_macos::PresentationAdapterStatus::InvalidDestination,
+          "invalid BGRA destination dimensions, stride, or buffer size") ||
+      !expect_status(
+          vp_macos::PresentationAdapterStatus::UnsupportedStorage,
+          vp_macos::PresentationAdapterStatus::UnsupportedStorage,
+          "unsupported frame storage for software CVPixelBuffer adapter") ||
+      !expect_status(
+          vp_macos::PresentationAdapterStatus::InvalidStorage,
+          vp_macos::PresentationAdapterStatus::InvalidStorage,
+          "invalid or undersized frame storage for software CVPixelBuffer adapter")) {
+    return fail("unexpected presentation adapter status message");
+  }
+  if (!vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::CpuRgba) ||
+      !vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::CpuNv12) ||
+      !vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::CpuPlanarYuv) ||
+      vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::D3D11Texture) ||
+      vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::D3D11Nv12) ||
+      vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::Empty)) {
+    return fail("unexpected presentation adapter storage support matrix");
   }
   return 0;
 }
@@ -137,15 +169,63 @@ int check_cpu_nv12_limited_colors() {
 
   frame.is_p010 = true;
   frame.storage = vr::CpuNv12FrameStorage{data, 4, 4, true, 4, 2};
-  if (vp_macos::copy_texture_frame_to_bgra_destination(
+  const auto invalid_p010 = vp_macos::copy_texture_frame_to_bgra_destination_checked(
           frame,
           bgra.data(),
           bgra.size(),
           frame.width,
           frame.height,
           dst_stride,
-          &info)) {
-    return fail("adapter accepted undersized P010 software frame");
+          &info);
+  if (invalid_p010 != vp_macos::PresentationAdapterStatus::InvalidStorage) {
+    return fail("adapter did not reject undersized P010 software frame with invalid-storage status");
+  }
+  return 0;
+}
+
+int check_cpu_nv12_odd_dimensions_even_coded_storage() {
+  auto data = std::make_shared<std::vector<uint8_t>>(
+      std::initializer_list<uint8_t>{
+          81, 145, 81, 0,
+          145, 81, 145, 0,
+          81, 145, 81, 0,
+          0, 0, 0, 0,
+          90, 240, 54, 34,
+          90, 240, 54, 34,
+      });
+  vr::TextureFrame frame;
+  frame.width = 3;
+  frame.height = 3;
+  frame.is_nv12 = true;
+  frame.color.range = vr::VIDEO_COLOR_RANGE_LIMITED;
+  frame.storage = vr::CpuNv12FrameStorage{
+      data,
+      4,
+      4,
+      false,
+      4,
+      4,
+  };
+
+  const int dst_stride = 16;
+  std::vector<uint8_t> bgra(static_cast<size_t>(dst_stride) * frame.height, 0xcc);
+  VPMacOSNativeFrameInfo info{};
+  if (vp_macos::copy_texture_frame_to_bgra_destination_checked(
+          frame,
+          bgra.data(),
+          bgra.size(),
+          frame.width,
+          frame.height,
+          dst_stride,
+          &info) != vp_macos::PresentationAdapterStatus::Ok) {
+    return fail("failed to copy odd-dimension even-coded nv12 frame");
+  }
+  if (!expect_pixel(bgra, dst_stride, 0, 0, 0, 0, 255, 255) ||
+      !expect_pixel(bgra, dst_stride, 1, 0, 74, 74, 255, 255) ||
+      !expect_pixel(bgra, dst_stride, 2, 2, 0, 181, 0, 255) ||
+      bgra[12] != 0xcc || bgra[13] != 0xcc ||
+      info.width != 3 || info.height != 3) {
+    return fail("unexpected odd-dimension even-coded nv12 adapter copy");
   }
   return 0;
 }
@@ -384,6 +464,83 @@ int check_cpu_planar_full_range_red() {
   return 0;
 }
 
+int check_cpu_planar_limited_black() {
+  std::array<uint8_t, 4> y = {16, 16, 16, 16};
+  std::array<uint8_t, 1> u = {128};
+  std::array<uint8_t, 1> v = {128};
+  vr::TextureFrame frame;
+  frame.width = 2;
+  frame.height = 2;
+  frame.color.range = vr::VIDEO_COLOR_RANGE_LIMITED;
+  frame.storage = vr::CpuPlanarYuvFrameStorage{
+      std::shared_ptr<void>(&y, [](void*) {}),
+      {y.data(), u.data(), v.data()},
+      {2, 1, 1},
+      {2, 1, 1},
+      {2, 1, 1},
+      1,
+  };
+
+  std::vector<uint8_t> bgra(16, 0xff);
+  VPMacOSNativeFrameInfo info{};
+  if (vp_macos::copy_texture_frame_to_bgra_destination_checked(
+          frame,
+          bgra.data(),
+          bgra.size(),
+          frame.width,
+          frame.height,
+          frame.width * 4,
+          &info) != vp_macos::PresentationAdapterStatus::Ok) {
+    return fail("failed to copy limited-range planar frame");
+  }
+  for (int i = 0; i < 4; ++i) {
+    const size_t offset = static_cast<size_t>(i) * 4u;
+    if (bgra[offset] != 0 || bgra[offset + 1] != 0 ||
+        bgra[offset + 2] != 0 || bgra[offset + 3] != 255) {
+      return fail("unexpected cpu planar limited-range black pixel");
+    }
+  }
+  return 0;
+}
+
+int check_adapter_failure_statuses() {
+  vr::TextureFrame frame;
+  frame.width = 2;
+  frame.height = 2;
+  frame.storage = vr::D3D11TextureFrameStorage{};
+
+  std::vector<uint8_t> bgra(16, 0);
+  VPMacOSNativeFrameInfo info{};
+  auto status = vp_macos::copy_texture_frame_to_bgra_destination_checked(
+      frame,
+      bgra.data(),
+      bgra.size(),
+      frame.width,
+      frame.height,
+      frame.width * 4,
+      &info);
+  if (status != vp_macos::PresentationAdapterStatus::UnsupportedStorage) {
+    return fail("adapter did not reject renderer-owned texture storage");
+  }
+
+  frame.storage = vr::CpuRgbaFrameStorage{
+      std::make_shared<std::vector<uint8_t>>(16, 0),
+      8,
+  };
+  status = vp_macos::copy_texture_frame_to_bgra_destination_checked(
+      frame,
+      bgra.data(),
+      bgra.size(),
+      1,
+      frame.height,
+      frame.width * 4,
+      &info);
+  if (status != vp_macos::PresentationAdapterStatus::InvalidDestination) {
+    return fail("adapter did not reject destination size mismatch");
+  }
+  return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -394,6 +551,9 @@ int main() {
     return ret;
   }
   if (const int ret = check_cpu_nv12_limited_colors(); ret != 0) {
+    return ret;
+  }
+  if (const int ret = check_cpu_nv12_odd_dimensions_even_coded_storage(); ret != 0) {
     return ret;
   }
   if (const int ret = check_cpu_nv12_bt709_limited_red(); ret != 0) {
@@ -409,6 +569,12 @@ int main() {
     return ret;
   }
   if (const int ret = check_cpu_planar_full_range_red(); ret != 0) {
+    return ret;
+  }
+  if (const int ret = check_cpu_planar_limited_black(); ret != 0) {
+    return ret;
+  }
+  if (const int ret = check_adapter_failure_statuses(); ret != 0) {
     return ret;
   }
   return 0;

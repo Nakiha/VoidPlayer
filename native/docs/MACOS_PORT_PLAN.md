@@ -133,6 +133,8 @@ Goal: improve performance after software playback is correct.
 - [ ] Add a Metal/CVPixelBuffer backend with the same responsibilities as D3D11 output.
   The boundary now lives in `native/macos/presentation_adapter.*`; see
   [MACOS_PRESENTATION_ADAPTER.md](MACOS_PRESENTATION_ADAPTER.md).
+  The current `cvpixelbuffer-bgra-copy` adapter is the software fallback presentation adapter, not
+  the final renderer-owned Metal backend.
   The runner now creates Metal-compatible `CVPixelBuffer` surfaces, while
   `metal_pixel_buffer_uploader.mm` owns `CVMetalTextureCache` validation, the shared `MTLBuffer`,
   and the blit into the texture-backed `CVPixelBuffer`. Seek/step refresh and playback callbacks
@@ -277,9 +279,12 @@ locks odd-size NV21 packing and planar YUV420 wrap metadata. `macos_presentation
 covers the macOS presentation boundary directly, including CPU RGBA stride copies, CPU NV12/P010
 color conversion, BT.709/BT.2020 matrix-aware presentation, unknown HD matrix fallback to BT.709,
 planar YUV conversion, adapter identity, and undersized P010 rejection. These are CPU-side reference
-points for future Metal and CVPixelBuffer layout parity tests. `macos_metal_uploader_smoke` covers
-native Metal `CVPixelBuffer` validation for matching BGRA surfaces, mismatched dimensions, and
-non-BGRA rejection. `videotoolbox_provider_smoke`
+points for future Metal and CVPixelBuffer layout parity tests. It also locks the adapter contract
+for supported storage kinds, distinct failure statuses, destination size mismatch, renderer-owned
+GPU texture rejection, invalid P010 storage rejection, planar limited/full range, and
+odd-dimension/even-coded NV12 metadata. `macos_metal_uploader_smoke` covers native Metal
+`CVPixelBuffer` validation for matching BGRA surfaces, mismatched dimensions, and non-BGRA
+rejection. `videotoolbox_provider_smoke`
 now proves that the macOS FFmpeg build can initialize the shared VideoToolbox provider for H.264 in
 download-to-CPU mode. UI automation can assert string-valued native diagnostics through
 `ASSERT_NATIVE_DIAGNOSTIC_STRING`, and macOS facade/stress smokes now lock

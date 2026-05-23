@@ -302,7 +302,7 @@ public:
     }
     if (!vp_macos::copy_texture_frame_to_owned_bgra(*frame, out)) {
       vp_macos::free_owned_bgra_frame(out);
-      error = "decoded frame storage is not supported by the macOS BGRA bridge";
+      error = "decoded frame storage is not supported by the macOS software presentation adapter";
       return false;
     }
     return true;
@@ -325,9 +325,10 @@ public:
       error = "no decoded frame is ready";
       return false;
     }
-    if (!vp_macos::copy_texture_frame_to_bgra_destination(
-            *frame, dst, dst_size, width, height, stride_bytes, out)) {
-      error = "decoded frame cannot be copied into the supplied BGRA buffer";
+    const auto status = vp_macos::copy_texture_frame_to_bgra_destination_checked(
+        *frame, dst, dst_size, width, height, stride_bytes, out);
+    if (status != vp_macos::PresentationAdapterStatus::Ok) {
+      error = vp_macos::presentation_adapter_status_message(status);
       return false;
     }
     return true;

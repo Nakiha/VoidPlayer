@@ -34,6 +34,12 @@ class _CountingAnalysisGenerationService implements AnalysisGenerationService {
   }
 
   @override
+  Future<String?> ensureGeneratedAndLoaded(String videoPath) async {
+    ensureGeneratedCalls++;
+    return 'hash-$ensureGeneratedCalls';
+  }
+
+  @override
   Future<bool> ensureOverlayChunk(
     String hash, {
     required String videoPath,

@@ -84,7 +84,7 @@ window while native playback is active. `native_direct_copy_fallback_smoke.csv` 
 test-only Metal upload path and keeps the CVPixelBuffer direct-copy presentation fallback visible.
 `native_software_fallback_smoke.csv` keeps MPEG-2 software decode fallback visible in diagnostics.
 `analysis_gated_smoke.csv` asserts that the analysis FFI symbols are available in the app process,
-generates a VAC2 base cache through `AnalysisManager.ensureGenerated`, and then verifies that direct
+generates and loads a VAC2 base cache through `AnalysisManager`, and then verifies that direct
 analysis window/overlay automation still no-ops because macOS analysis UI/IPC remains unsupported. A seek
 follows the shared keep-previous-state preference; step navigation is explicit pause-on-step. The helper copies CSV
 scripts into the app container before launch and rewrites

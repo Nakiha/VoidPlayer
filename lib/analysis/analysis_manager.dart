@@ -100,6 +100,7 @@ abstract class AnalysisGenerationService {
   AnalysisOverlayConfig get overlayConfig;
   AnalysisTrackGenerationStatus? statusForPath(String path);
   Future<String?> ensureGenerated(String videoPath);
+  Future<String?> ensureGeneratedAndLoaded(String videoPath);
   Future<bool> ensureOverlayChunk(
     String hash, {
     required String videoPath,
@@ -287,6 +288,10 @@ class AnalysisManager extends ChangeNotifier
     if (serial != _ensureAndLoadSerial) return null;
     return loaded ? hash : null;
   }
+
+  @override
+  Future<String?> ensureGeneratedAndLoaded(String videoPath) =>
+      ensureAndLoad(videoPath);
 
   Future<String?> _ensureGeneratedImpl(
     String videoPath,

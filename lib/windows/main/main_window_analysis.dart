@@ -64,7 +64,9 @@ class MainWindowAnalysisCoordinator {
         return null;
       }
       final entry = trackManager.entries[slotIndex];
-      final hash = await analysisGeneration.ensureGenerated(entry.path);
+      final hash = await analysisGeneration.ensureGeneratedAndLoaded(
+        entry.path,
+      );
       if (_disposed || hash == null) return null;
       _hashesByFileId[entry.fileId] = hash;
       return hash;

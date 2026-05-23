@@ -27,6 +27,14 @@ struct LayoutParams {
   uint frame_present1;
   uint frame_present2;
   uint frame_present3;
+  int source_width0;
+  int source_width1;
+  int source_width2;
+  int source_width3;
+  int source_height0;
+  int source_height1;
+  int source_height2;
+  int source_height3;
   int order0;
   int order1;
   int order2;
@@ -69,6 +77,20 @@ int order_at(constant LayoutParams& params, uint index) {
   if (index == 1) return params.order1;
   if (index == 2) return params.order2;
   return params.order3;
+}
+
+int source_width_at(constant LayoutParams& params, uint index) {
+  if (index == 0) return params.source_width0;
+  if (index == 1) return params.source_width1;
+  if (index == 2) return params.source_width2;
+  return params.source_width3;
+}
+
+int source_height_at(constant LayoutParams& params, uint index) {
+  if (index == 0) return params.source_height0;
+  if (index == 1) return params.source_height1;
+  if (index == 2) return params.source_height2;
+  return params.source_height3;
 }
 
 float display_offset_x_at(constant LayoutParams& params, uint index) {
@@ -166,6 +188,12 @@ kernel void layout_bgra_copy(
     destination.write(float4(0.0, 0.0, 0.0, 1.0), gid);
     return;
   }
+  const int source_width_int = source_width_at(params, track_slot);
+  const int source_height_int = source_height_at(params, track_slot);
+  if (source_width_int <= 0 || source_height_int <= 0) {
+    destination.write(float4(0.0, 0.0, 0.0, 1.0), gid);
+    return;
+  }
 
   bool out_of_bounds = false;
   const float2 source_uv = aspect_fit_uv(local_uv, params, track_slot, out_of_bounds);
@@ -174,8 +202,10 @@ kernel void layout_bgra_copy(
     return;
   }
 
-  const uint source_x = min(uint(source_uv.x * float(params.width)), params.width - 1);
-  const uint source_y = min(uint(source_uv.y * float(params.height)), params.height - 1);
+  const uint source_width = uint(source_width_int);
+  const uint source_height = uint(source_height_int);
+  const uint source_x = min(uint(source_uv.x * float(source_width)), source_width - 1);
+  const uint source_y = min(uint(source_uv.y * float(source_height)), source_height - 1);
   const uint track_offset = track_slot * params.width * params.height;
   const uchar4 bgra = source[track_offset + source_y * params.width + source_x];
   float4 color =
@@ -209,6 +239,14 @@ struct MetalLayoutParams {
   uint32_t frame_present1;
   uint32_t frame_present2;
   uint32_t frame_present3;
+  int32_t source_width0;
+  int32_t source_width1;
+  int32_t source_width2;
+  int32_t source_width3;
+  int32_t source_height0;
+  int32_t source_height1;
+  int32_t source_height2;
+  int32_t source_height3;
   int32_t order0;
   int32_t order1;
   int32_t order2;
@@ -623,6 +661,14 @@ const char* metal_uploader_status_message(int status) {
       static_cast<uint32_t>(decisionInfo.frames[2].present ? 1u : 0u);
   metalParams->frame_present3 =
       static_cast<uint32_t>(decisionInfo.frames[3].present ? 1u : 0u);
+  metalParams->source_width0 = decisionInfo.source_width[0];
+  metalParams->source_width1 = decisionInfo.source_width[1];
+  metalParams->source_width2 = decisionInfo.source_width[2];
+  metalParams->source_width3 = decisionInfo.source_width[3];
+  metalParams->source_height0 = decisionInfo.source_height[0];
+  metalParams->source_height1 = decisionInfo.source_height[1];
+  metalParams->source_height2 = decisionInfo.source_height[2];
+  metalParams->source_height3 = decisionInfo.source_height[3];
   metalParams->order0 = decisionInfo.order[0];
   metalParams->order1 = decisionInfo.order[1];
   metalParams->order2 = decisionInfo.order[2];

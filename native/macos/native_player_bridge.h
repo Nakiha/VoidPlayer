@@ -100,6 +100,8 @@ typedef struct VPMacOSNativePresentDecisionInfo {
   float inv_display_size_y[VPMacOSNativeMaxTracks];
   float view_offset_uv_x[VPMacOSNativeMaxTracks];
   float view_offset_uv_y[VPMacOSNativeMaxTracks];
+  int32_t source_width[VPMacOSNativeMaxTracks];
+  int32_t source_height[VPMacOSNativeMaxTracks];
   VPMacOSNativePresentFrameInfo frames[VPMacOSNativeMaxTracks];
 } VPMacOSNativePresentDecisionInfo;
 

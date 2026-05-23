@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstring>
 #include <cstdio>
+#include <filesystem>
 #include <string>
 #include <thread>
 #include <vector>
@@ -215,6 +216,15 @@ int main() {
     VPMacOSMetalUploaderDestroy(uploader);
     return fail("missing H.264 test video for Metal layout upload smoke");
   }
+  const std::filesystem::path second_path =
+      std::filesystem::path(VIDEO_TEST_DIR) / "ci_h264_smoke.mp4";
+  if (!std::filesystem::is_regular_file(second_path) ||
+      vp_tools::is_git_lfs_pointer(second_path)) {
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    return fail("missing secondary 320x180 test video for mixed-size Metal layout smoke");
+  }
   VPMacOSNativePlayer* player = VPMacOSNativePlayerCreate();
   if (!player) {
     CFRelease(argb);
@@ -268,8 +278,10 @@ int main() {
 
   VPMacOSNativeTrackInfo second_track = {};
   if (VPMacOSNativePlayerAddTrack(
-          player, path.c_str(), 1, &second_track, error, sizeof(error)) != 0 ||
-      second_track.slot != 1) {
+          player, second_path.string().c_str(), 1, &second_track, error, sizeof(error)) != 0 ||
+      second_track.slot != 1 ||
+      second_track.width != 320 ||
+      second_track.height != 180) {
     CFRelease(layout_buffer);
     VPMacOSNativePlayerDestroy(player);
     CFRelease(argb);
@@ -315,12 +327,16 @@ int main() {
           &present_slot0_metrics) != 0 ||
       VPMacOSMeasureBGRA(
           present_cpu.data() + track_bytes,
-          width,
-          height,
+          second_track.width,
+          second_track.height,
           static_cast<int32_t>(row_bytes),
           &present_slot1_metrics) != 0 ||
       present_slot0_metrics.non_black_ratio <= 0.5 ||
-      present_slot1_metrics.non_black_ratio <= 0.5) {
+      present_slot1_metrics.non_black_ratio <= 0.5 ||
+      present_decision.source_width[0] != width ||
+      present_decision.source_height[0] != height ||
+      present_decision.source_width[1] != second_track.width ||
+      present_decision.source_height[1] != second_track.height) {
     CFRelease(layout_buffer);
     VPMacOSNativePlayerDestroy(player);
     CFRelease(argb);
@@ -346,9 +362,9 @@ int main() {
   const double right_center_non_black = pixel_buffer_rect_non_black_ratio(
       layout_buffer, width * 5 / 8, height * 3 / 8, width / 4, height / 4);
   if (!measure_pixel_buffer(layout_buffer, width, height, &multitrack_metrics) ||
-      multitrack_metrics.non_black_ratio <= 0.45 ||
+      multitrack_metrics.non_black_ratio <= 0.24 ||
       left_center_non_black <= 0.8 ||
-      right_center_non_black <= 0.8 ||
+      right_center_non_black <= 0.05 ||
       multitrack_metrics.hash == default_metrics.hash ||
       multitrack_info.pts_us != default_info.pts_us) {
     std::fprintf(

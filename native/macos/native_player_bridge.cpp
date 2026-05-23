@@ -309,13 +309,14 @@ public:
         continue;
       }
       auto* slot_dst = dst + track_stride_bytes * slot;
+      const auto& frame = *decision.frames[slot];
       VPMacOSNativeFrameInfo frame_info = {};
       const auto status = vp_macos::copy_texture_frame_to_bgra_destination_checked(
-          *decision.frames[slot],
+          frame,
           slot_dst,
           track_stride_bytes,
-          width,
-          height,
+          frame.width,
+          frame.height,
           stride_bytes,
           &frame_info);
       if (status != vp_macos::PresentationAdapterStatus::Ok) {
@@ -562,6 +563,8 @@ private:
       frame_out.present = 1;
       frame_out.width = frame.width;
       frame_out.height = frame.height;
+      out->source_width[slot] = frame.width;
+      out->source_height[slot] = frame.height;
       frame_out.pts_us = frame.pts_us;
       frame_out.dts_us = frame.dts_us;
       frame_out.duration_us = frame.duration_us;

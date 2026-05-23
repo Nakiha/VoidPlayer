@@ -20,8 +20,9 @@ Historical phase notes moved to [archive/MACOS_PORT_PLAN_HISTORY.md](archive/MAC
 - The visible macOS local-file path now uses `DemuxThread` + `DecodeThread` + `TrackBuffer` through
   `native/macos/native_player_bridge.*`; `addTrack` creates real native demux/decode tracks in the
   shared `RenderSink`. Metal presentation now consumes the shared `RenderSink::PresentDecision`
-  and shared layout constants for same-sized BGRA tracks, keeping side-by-side composition aligned
-  with the DX11 layout model while deeper texture-format/color parity work continues.
+  and shared layout constants for BGRA tracks staged into a per-track atlas, keeping side-by-side
+  composition aligned with the DX11 layout model while deeper texture-format/color parity work
+  continues.
 - H.264 playback now enables VideoToolbox through the shared hardware decode provider in
   download-to-CPU mode; diagnostics keep both the active hardware path and software fallback state
   visible.
@@ -149,9 +150,11 @@ Goal: improve performance after software playback is correct.
   and playback callbacks now share that native Metal layout path; the uploader rejects mismatched
   dimensions or non-BGRA pixel buffers before upload, returns checked validation statuses for each
   failure class, mirrors the last validation reason into diagnostics, and leaves the locked-buffer
-  direct copy path as fallback. The first multi-track slice copies the present decision into a
-  native BGRA atlas and applies shared layout constants in Metal for same-sized tracks, with CTest
-  coverage for both CPU atlas readiness and Metal side-by-side output.
+  direct copy path as fallback. The first multi-track slices copy the present decision into a native
+  BGRA atlas and apply shared layout constants in Metal, with per-track source dimensions preserved
+  so smaller secondary tracks sample like independent DX11 textures instead of being forced to the
+  output surface size. CTest covers CPU atlas readiness, same-size side-by-side output, and a
+  mixed-size 1920x1080 + 320x180 composition.
 - [ ] Port shader/color/layout behavior with deterministic pixel tests.
   Initial portable baselines now cover limited/full-range software BGRA conversion, padded
   linesizes, BGRA channel order, BT.601/BT.709/BT.2020 matrix selection in the shared CPU

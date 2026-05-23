@@ -59,6 +59,10 @@ BUILD_ONLY_FILE_PATTERNS = {
 
 def cmd_package(args) -> None:
     """Build and stage a clean Windows package input directory."""
+    if sys.platform != "win32":
+        print("ERROR: dev.py package is only supported on Windows.")
+        sys.exit(1)
+
     if args.debug:
         print("ERROR: package currently supports release builds only")
         sys.exit(1)

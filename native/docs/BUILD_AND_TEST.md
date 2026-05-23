@@ -67,7 +67,7 @@ rect upload、rect upload CPU wall time、color instance pass、GPU mask pass、
 
 `dev.py build --native` 会在 native CMake 构建前检查 analysis 外部工具：
 
-- FFmpeg `void_ffmpeg_analyzer.exe`：如果缺失，或构建 stamp 与当前 `native/analysis/vendor/ffmpeg`、`zstd` 子模块版本 / `build_windows_msvc.ps1` 不一致，会自动运行 `native/analysis/vendor/ffmpeg/voidplayer/build_windows_msvc.ps1` 重编。
+- FFmpeg `void_ffmpeg_analyzer.exe`：如果缺失，或构建 stamp 与当前 `native/analysis/vendor/ffmpeg`、`zstd` 子模块版本 / Python analyzer build helper 不一致，会由 `dev.py` 自动重编。
 
 这意味着 cherry-pick 只改变 FFmpeg analyzer 或 zstd 子模块指针时，下一次 `python dev.py build --native` 会自动刷新对应的小工具，不需要手动记一条额外命令。
 

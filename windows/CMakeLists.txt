@@ -149,8 +149,7 @@ endif()
 if(NOT FFMPEG_ANALYSIS_GLOB)
   message(FATAL_ERROR
     "FFmpeg analysis tool missing. Build it with: "
-    "powershell -NoProfile -ExecutionPolicy Bypass -File "
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/vendor/ffmpeg/voidplayer/build_windows_msvc.ps1")
+    "python dev.py build --native")
 endif()
 foreach(FFMPEG_ANALYZER IN LISTS FFMPEG_ANALYSIS_GLOB)
   install(FILES "${FFMPEG_ANALYZER}"

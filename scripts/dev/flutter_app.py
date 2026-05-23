@@ -9,7 +9,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from .native import ensure_ffmpeg_analyzer_tool, native_build
+from .native import ensure_ffmpeg_analyzer_tool, native_build, native_build_macos
 from .paths import (
     DEMO_SCRIPT,
     NATIVE_BUILD_DIR,
@@ -21,6 +21,21 @@ from .paths import (
 )
 from .process import header, run
 from .ui_lock import gui_test_lock
+
+
+def _is_macos() -> bool:
+    return sys.platform == "darwin"
+
+
+def _is_windows() -> bool:
+    return sys.platform == "win32"
+
+
+def _unsupported_on_current_platform(command: str, replacement: str | None = None) -> None:
+    print(f"ERROR: dev.py {command} is only supported on Windows.")
+    if replacement:
+        print(f"Use: {replacement}")
+    sys.exit(1)
 
 
 def flutter_build(debug: bool) -> None:
@@ -64,17 +79,24 @@ def cmd_build(args) -> None:
         sys.exit(1)
 
     if not args.flutter:
-        native_build(args.debug, test=not args.no_test)
+        if _is_macos():
+            native_build_macos(args.debug, test=not args.no_test)
+        else:
+            native_build(args.debug, test=not args.no_test)
 
     if not args.native:
-        flutter_build(args.debug)
+        if _is_macos():
+            flutter_build_macos(args.debug)
+        else:
+            flutter_build(args.debug)
 
     print("\nBuild done.")
 
 
 def cmd_run(args) -> None:
     """Run the Flutter application via flutter run."""
-    flutter_args = ["flutter", "run", "-d", "windows"]
+    device = "macos" if _is_macos() else "windows"
+    flutter_args = ["flutter", "run", "-d", device]
     flutter_args.append("--debug" if args.debug else "--release")
 
     if args.log_level:
@@ -99,6 +121,10 @@ def cmd_launch(args) -> None:
 
 
 def _cmd_launch(args) -> None:
+    if _is_macos():
+        _cmd_launch_macos(args)
+        return
+
     exe = app_exe_path(args.debug)
 
     if args.build or not exe.exists():
@@ -118,8 +144,39 @@ def _cmd_launch(args) -> None:
     subprocess.call(cmd)
 
 
+def _cmd_launch_macos(args) -> None:
+    app_bundle = macos_app_bundle_path(args.debug)
+    exe = macos_app_exe_path(args.debug)
+
+    if args.build or not app_bundle.exists() or not exe.exists():
+        flutter_build_macos(args.debug)
+
+    if not app_bundle.exists() or not exe.exists():
+        print(f"ERROR: macOS app not found: {app_bundle}")
+        sys.exit(1)
+
+    cmd = [str(exe)]
+    if args.log_level:
+        cmd.append(f"--log-level={args.log_level}")
+    if args.test_script:
+        script_path = Path(args.test_script).resolve()
+        if not script_path.exists():
+            print(f"ERROR: test script not found: {script_path}")
+            sys.exit(1)
+        container_scripts_dir, container_media_dir = _macos_ui_test_container_dirs()
+        sandbox_script = container_scripts_dir / script_path.name
+        _prepare_macos_sandbox_script(script_path, sandbox_script, container_media_dir)
+        cmd.extend(["--test-script", str(sandbox_script)])
+
+    header(f"Launch {exe}")
+    subprocess.call(cmd)
+
+
 def cmd_demo(args) -> None:
     """Run the native Python demo (PySide6 + video_renderer_native)."""
+    if not _is_windows():
+        _unsupported_on_current_platform("demo")
+
     build_type = "Debug" if args.debug else "Release"
     native_lib = NATIVE_BUILD_DIR / build_type / "video_renderer_native.pyd"
 
@@ -147,11 +204,22 @@ def cmd_test(args) -> None:
         flutter_unit_test()
 
     if not args.flutter_only:
-        native_build(args.debug, test=True, github=args.github)
+        if _is_macos():
+            if args.github:
+                print("macOS native test mode ignores --github; running the local CTest suite.")
+            native_build_macos(args.debug, test=True)
+        else:
+            native_build(args.debug, test=True, github=args.github)
 
 
 def cmd_ui_test(args) -> None:
     """Launch the app with a CSV script and use process exit code as result."""
+    if not _is_windows():
+        _unsupported_on_current_platform(
+            "ui-test",
+            "python dev.py mac-ui-test <script.csv>",
+        )
+
     try:
         with gui_test_lock("ui-test"):
             _cmd_ui_test(args)
@@ -247,18 +315,7 @@ def _cmd_mac_ui_test(args) -> None:
         print(f"ERROR: macOS app not found: {app_bundle}")
         sys.exit(1)
 
-    container_scripts_dir = (
-        Path.home()
-        / "Library"
-        / "Containers"
-        / "dev.nakiha.voidplayer"
-        / "Data"
-        / "tmp"
-        / "voidplayer-ui-tests"
-    )
-    container_scripts_dir.mkdir(parents=True, exist_ok=True)
-    container_media_dir = container_scripts_dir / "media"
-    container_media_dir.mkdir(parents=True, exist_ok=True)
+    container_scripts_dir, container_media_dir = _macos_ui_test_container_dirs()
 
     total = len(script_paths)
     for index, script_path in enumerate(script_paths, start=1):
@@ -295,6 +352,22 @@ def _cmd_mac_ui_test(args) -> None:
             sys.exit(result)
 
     print(f"\nmacOS UI test batch passed ({total} script{'s' if total != 1 else ''}).")
+
+
+def _macos_ui_test_container_dirs() -> tuple[Path, Path]:
+    container_scripts_dir = (
+        Path.home()
+        / "Library"
+        / "Containers"
+        / "dev.nakiha.voidplayer"
+        / "Data"
+        / "tmp"
+        / "voidplayer-ui-tests"
+    )
+    container_scripts_dir.mkdir(parents=True, exist_ok=True)
+    container_media_dir = container_scripts_dir / "media"
+    container_media_dir.mkdir(parents=True, exist_ok=True)
+    return container_scripts_dir, container_media_dir
 
 
 def _prepare_macos_sandbox_script(

@@ -258,11 +258,10 @@ play-then-destroy, recreate, and play-then-main-window-close coverage. The smoke
 automation. `pixelBufferDirectCopyCount` remains diagnostic-only for fallback visibility.
 Main-window close while playing remains covered independently by `native_user_window_close_smoke.csv`.
 
-Windows preservation status: on this macOS host, `python dev.py test --native-only` currently stops
-before the native test build while preparing the analyzer because it invokes
-`powershell ... native/analysis/vendor/ffmpeg/voidplayer/build_windows_msvc.ps1`, and PowerShell is
-not installed here. Run the native-only suite and a Windows UI smoke that exercises `QUIT` after
-player creation on a Windows host before closing M4.
+Windows preservation status: on this macOS host, `python dev.py test --native-only` now runs the
+macOS portable CMake/CTest suite instead of preparing the Windows analyzer. The Windows analyzer
+builder has been folded into Python under `dev.py`; run the native-only suite and a Windows UI
+smoke that exercises `QUIT` after player creation on a Windows host before closing M4.
 
 Manual audible smoke:
 

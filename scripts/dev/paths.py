@@ -12,7 +12,6 @@ NATIVE_BUILD_DIR = NATIVE_DIR / "build-msvc"
 DEMO_SCRIPT = NATIVE_DIR / "video_renderer" / "demo" / "demo_video_renderer.py"
 
 FFMPEG_ANALYZER_DIR = ROOT / "native" / "analysis" / "vendor" / "ffmpeg"
-FFMPEG_ANALYZER_BUILD_SCRIPT = FFMPEG_ANALYZER_DIR / "voidplayer" / "build_windows_msvc.ps1"
 
 
 def find_ffmpeg_analyzer() -> Path:

@@ -16,19 +16,29 @@ from .flutter_app import (
 from .package import cmd_package
 
 
+def _require_windows_command(command: str) -> None:
+    if sys.platform == "win32":
+        return
+    print(f"ERROR: dev.py {command} is only supported on Windows.")
+    sys.exit(1)
+
+
 def cmd_analysis_resize_stress(args) -> None:
+    _require_windows_command("analysis-resize-stress")
     from .analysis_resize_stress import cmd_analysis_resize_stress as impl
 
     impl(args)
 
 
 def cmd_analysis_benchmark(args) -> None:
+    _require_windows_command("analysis-benchmark")
     from .analysis_benchmark import cmd_analysis_benchmark as impl
 
     impl(args)
 
 
 def cmd_analysis_overlay_benchmark(args) -> None:
+    _require_windows_command("analysis-overlay-benchmark")
     from .analysis_overlay_benchmark import cmd_analysis_overlay_benchmark as impl
 
     impl(args)
@@ -73,7 +83,7 @@ Examples:
     p_run.add_argument("--log-level", type=str, default=None,
                        help="Log level, e.g. 'flutter=DEBUG,native=TRACE'")
 
-    p_launch = sub.add_parser("launch", help="Launch exe directly")
+    p_launch = sub.add_parser("launch", help="Launch the built desktop app directly")
     p_launch.add_argument("--debug", action="store_true", help="Debug build")
     p_launch.add_argument("--build", action="store_true", help="Build Flutter app before launch")
     p_launch.add_argument("--log-level", type=str, default=None,
@@ -81,7 +91,7 @@ Examples:
     p_launch.add_argument("--test-script", type=str, default=None,
                           help="Path to CSV test script (passed to app via --test-script)")
 
-    p_demo = sub.add_parser("demo", help="Run native Python demo")
+    p_demo = sub.add_parser("demo", help="Run native Python demo (Windows)")
     p_demo.add_argument("--debug", action="store_true", help="Use debug build")
     p_demo.add_argument("--build", action="store_true", help="Build native standalone before demo")
     p_demo.add_argument("--log-level", type=str, default=None,
@@ -110,7 +120,7 @@ Examples:
     p_package.add_argument("--iscc", type=str, default=None,
                            help="Path to ISCC.exe (defaults to PATH/common Inno Setup locations)")
 
-    p_ui_test = sub.add_parser("ui-test", help="Launch the app with a CSV UI test script")
+    p_ui_test = sub.add_parser("ui-test", help="Launch the Windows app with CSV UI test scripts")
     p_ui_test.add_argument("scripts", nargs="+", help="Path(s) to CSV test script(s)")
     p_ui_test.add_argument("--debug", action="store_true", help="Debug build")
     p_ui_test.add_argument("--build", action="store_true", help="Build Flutter app before launch")

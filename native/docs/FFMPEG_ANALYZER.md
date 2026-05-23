@@ -42,11 +42,10 @@ MSYS2 is allowed at build time only.
 
 ## Build Command
 
-The FFmpeg fork carries a VoidPlayer build helper:
+The dev script owns the analyzer build orchestration:
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass `
-  -File native\analysis\vendor\ffmpeg\voidplayer\build_windows_msvc.ps1
+```bash
+python dev.py build --native
 ```
 
 Optional overrides:
@@ -57,7 +56,7 @@ $env:MSYS2_BASH = "D:\msys64\usr\bin\bash.exe"
 $env:CMAKE_GENERATOR = "Visual Studio 17 2022"
 ```
 
-The script configures a minimal static MSVC build with NASM enabled, builds the
+The Python build helper configures a minimal static MSVC build with NASM enabled, builds the
 analyzer tool, and installs it to:
 
 ```text
@@ -71,7 +70,7 @@ tool into the Flutter runner output under:
 build/windows/x64/runner/<Config>/tools/ffmpeg-analysis/void_ffmpeg_analyzer.exe
 ```
 
-The dev script stamps the analyzer with a signature over the wrapper source and
+The dev script stamps the analyzer with a signature over the Python build helper and
 codec hook files/headers. When H.264/HEVC/VVC hook code changes, the next build
 forces a clean analyzer rebuild so stale object files do not leave an old tool
 beside a freshly built runner.

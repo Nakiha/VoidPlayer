@@ -355,6 +355,7 @@ const char* metal_uploader_status_message(int status) {
                               toPixelBuffer:(CVPixelBufferRef)pixelBuffer
                                       width:(int32_t)width
                                      height:(int32_t)height
+                              maxTrackSlots:(int32_t)maxTrackSlots
                               waitTimeoutMs:(int32_t)waitTimeoutMs
                                         out:(VPMacOSNativeFrameInfo*)out
                                       error:(char*)error
@@ -573,6 +574,7 @@ const char* metal_uploader_status_message(int status) {
                               toPixelBuffer:(CVPixelBufferRef)pixelBuffer
                                       width:(int32_t)width
                                      height:(int32_t)height
+                              maxTrackSlots:(int32_t)maxTrackSlots
                               waitTimeoutMs:(int32_t)waitTimeoutMs
                                         out:(VPMacOSNativeFrameInfo*)out
                                       error:(char*)error
@@ -595,9 +597,11 @@ const char* metal_uploader_status_message(int status) {
   size_t rowBytes = 0;
   size_t uploadSize = 0;
   size_t stagingSize = 0;
+  const int32_t trackSlots =
+      std::clamp(maxTrackSlots, static_cast<int32_t>(1), static_cast<int32_t>(VPMacOSNativeMaxTracks));
   if (!checked_mul_size(static_cast<size_t>(width), 4u, &rowBytes) ||
       !checked_mul_size(rowBytes, static_cast<size_t>(height), &uploadSize) ||
-      !checked_mul_size(uploadSize, static_cast<size_t>(VPMacOSNativeMaxTracks), &stagingSize)) {
+      !checked_mul_size(uploadSize, static_cast<size_t>(trackSlots), &stagingSize)) {
     write_error(error, errorSize, "native Metal layout upload dimensions overflow");
     return -1;
   }
@@ -610,7 +614,6 @@ const char* metal_uploader_status_message(int status) {
     return metal_upload_failure(
         error, errorSize, "failed to allocate native Metal layout buffers");
   }
-  std::memset([_stagingBuffer contents], 0, stagingSize);
 
   VPMacOSNativePresentDecisionInfo decisionInfo = {};
   const int copyRet = VPMacOSNativePlayerCopyPresentFramesBGRAInto(
@@ -830,6 +833,7 @@ int VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
     void* pixel_buffer,
     int32_t width,
     int32_t height,
+    int32_t max_track_slots,
     int32_t wait_timeout_ms,
     VPMacOSNativeFrameInfo* out,
     char* error,
@@ -842,6 +846,7 @@ int VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
                                                 toPixelBuffer:(CVPixelBufferRef)pixel_buffer
                                                         width:width
                                                        height:height
+                                                maxTrackSlots:max_track_slots
                                                 waitTimeoutMs:wait_timeout_ms
                                                           out:out
                                                         error:error

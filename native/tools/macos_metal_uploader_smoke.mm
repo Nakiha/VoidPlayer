@@ -68,7 +68,16 @@ bool copy_frame_with_layout(VPMacOSMetalUploader* uploader,
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
   while (std::chrono::steady_clock::now() < deadline) {
     if (VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
-            uploader, player, buffer, width, height, 0, out, error, error_size) == 0) {
+            uploader,
+            player,
+            buffer,
+            width,
+            height,
+            VPMacOSNativeMaxTracks,
+            0,
+            out,
+            error,
+            error_size) == 0) {
       return true;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));

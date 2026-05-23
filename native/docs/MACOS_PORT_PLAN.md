@@ -26,6 +26,9 @@ Historical phase notes moved to [archive/MACOS_PORT_PLAN_HISTORY.md](archive/MAC
 - H.264 playback now enables VideoToolbox through the shared hardware decode provider in
   download-to-CPU mode; diagnostics keep both the active hardware path and software fallback state
   visible.
+- A 3840x2160 ~60fps HEVC UI canary now proves the macOS path initializes VideoToolbox and advances
+  playback, but it also documents the current performance ceiling: frames still download to CPU and
+  pass through BGRA software staging before Metal upload, so this is not yet a 4K60-capable renderer.
 - macOS audio now uses the shared native audio engine and miniaudio/CoreAudio output path. Automated
   diagnostics cover stream wiring and play/seek/pause/resume lifecycle; a manual audible smoke is
   documented for speaker-level confirmation.
@@ -155,6 +158,11 @@ Goal: improve performance after software playback is correct.
   so smaller secondary tracks sample like independent DX11 textures instead of being forced to the
   output surface size. CTest covers CPU atlas readiness, same-size side-by-side output, and a
   mixed-size 1920x1080 + 320x180 composition.
+  The uploader now sizes its staging atlas to the active slot capacity instead of always reserving all
+  four tracks, and Swift diagnostics expose native frame callback/copy/miss/error counters plus an
+  elapsed/fps estimate. The bundled 4K60 HEVC canary currently keeps a low copy-count threshold on
+  purpose: it is a regression guard for the current hwdownload path, not a performance target. Raising
+  it requires the next renderer-owned Metal step to avoid CPU YUV/P010 -> BGRA conversion per frame.
 - [ ] Port shader/color/layout behavior with deterministic pixel tests.
   Initial portable baselines now cover limited/full-range software BGRA conversion, padded
   linesizes, BGRA channel order, BT.601/BT.709/BT.2020 matrix selection in the shared CPU
@@ -247,6 +255,12 @@ python dev.py mac-ui-test --build \
   ui_tests/macos/native_loop_range_smoke.csv \
   ui_tests/macos/native_audio_play_seek_smoke.csv \
   ui_tests/macos/native_quit_while_playing_smoke.csv
+```
+
+Targeted 4K60 canary:
+
+```bash
+python dev.py mac-ui-test ui_tests/macos/native_4k60_playback_smoke.csv
 ```
 
 Known build warning: the local Xcode/Flutter invocation may still report a missing transient Metal
@@ -396,6 +410,9 @@ the speaker-level gap that the current native diagnostics cannot observe directl
 
 ## Next Slice
 
-The next implementation slice should continue the M5 Metal/CVPixelBuffer backend or start the
-first-class macOS analysis workflow behind the explicit capability gates, while keeping the Windows
-native/UI preservation checks on the first available Windows host.
+The next implementation slice should continue the M5 renderer-owned Metal/CVPixelBuffer backend:
+consume native frame storage without Swift-side playback policy, move YUV/NV12/P010 color conversion
+into the Metal presentation path, and compare it against the current BGRA software adapter before
+raising the 4K60 canary threshold. First-class macOS analysis workflow remains behind the explicit
+capability gates, and Windows native/UI preservation checks should run on the first available Windows
+host.

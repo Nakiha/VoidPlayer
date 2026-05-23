@@ -39,6 +39,17 @@ private enum MacOSNativePlayerError: Error, CustomStringConvertible {
       return "decoded first frame had invalid dimensions or pixel data"
     }
   }
+
+  var isTransientFrameUnavailable: Bool {
+    switch self {
+    case .failed(let message):
+      return message == "no decoded frame is ready" ||
+        message == "not all present decision frames are ready" ||
+        message == "timed out waiting for a decoded frame"
+    case .invalidPayload:
+      return false
+    }
+  }
 }
 
 private final class MacOSNativePlayerSession {
@@ -333,6 +344,7 @@ private final class MacOSNativePlayerSession {
     pixelBuffer: CVPixelBuffer,
     width: Int,
     height: Int,
+    maxTrackSlots: Int,
     waitTimeoutMs: Int = 0
   ) throws -> MacOSNativeFrameInfo? {
     let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
@@ -347,6 +359,7 @@ private final class MacOSNativePlayerSession {
         UnsafeMutableRawPointer(Unmanaged.passUnretained(pixelBuffer).toOpaque()),
         Int32(width),
         Int32(height),
+        Int32(max(1, min(4, maxTrackSlots))),
         Int32(waitTimeoutMs),
         &frameInfo,
         &error,
@@ -429,6 +442,12 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private var playbackSpeed = 1.0
   private var nativeFrameCallbackRegistered = false
   private var playbackGeneration = 0
+  private var nativeFrameCallbackCount = 0
+  private var nativeFrameCopyCount = 0
+  private var nativeFrameCopyMissCount = 0
+  private var nativeFrameCopyErrorCount = 0
+  private var nativeFrameCopyFirstHostNs: UInt64?
+  private var nativeFrameCopyLastHostNs: UInt64?
 
   init(textureRegistry: FlutterTextureRegistry) {
     self.textureRegistry = textureRegistry
@@ -600,6 +619,12 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "metalTextureCreationCount": textureStats?.metalTextureCreationCount ?? 0,
         "metalTextureFailureCount": textureStats?.metalTextureFailureCount ?? 0,
         "metalTextureLastError": textureStats?.metalTextureLastError ?? "",
+        "nativeFrameCallbackCount": nativeFrameCallbackCount,
+        "nativeFrameCopyCount": nativeFrameCopyCount,
+        "nativeFrameCopyMissCount": nativeFrameCopyMissCount,
+        "nativeFrameCopyErrorCount": nativeFrameCopyErrorCount,
+        "nativeFrameCopyElapsedMs": nativeFrameCopyElapsedMs(),
+        "nativeFrameCopyFps": nativeFrameCopyFps(),
       ]
       result(diagnostics)
     case "captureViewport":
@@ -902,6 +927,13 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     currentDurationUs > 0 ? currentDurationUs : Self.syntheticDurationUs
   }
 
+  private func activeTrackSlotCapacity() -> Int {
+    let maxSlot = tracks
+      .compactMap { intValue($0["slot"]) }
+      .max() ?? 0
+    return max(1, min(4, maxSlot + 1))
+  }
+
   private func refreshDecodedFrameIfNeeded(targetPtsUs: Int) -> FlutterError? {
     guard backendName == "macos-native-player",
           let nativePlayer,
@@ -916,6 +948,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       }
       let frameInfo = try texture.updateFromNativePlayer(
         nativePlayer,
+        maxTrackSlots: activeTrackSlotCapacity(),
         waitTimeoutMs: 3_000
       )
       publishFrameInfo(frameInfo)
@@ -939,6 +972,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     do {
       let frameInfo = try texture.updateFromNativePlayer(
         nativePlayer,
+        maxTrackSlots: activeTrackSlotCapacity(),
         waitTimeoutMs: 100
       )
       publishFrameInfo(frameInfo)
@@ -984,6 +1018,32 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     lastPresentedDtsUs = normalizedDtsUs(info)
   }
 
+  private func resetNativeFrameCounters() {
+    nativeFrameCallbackCount = 0
+    nativeFrameCopyCount = 0
+    nativeFrameCopyMissCount = 0
+    nativeFrameCopyErrorCount = 0
+    nativeFrameCopyFirstHostNs = nil
+    nativeFrameCopyLastHostNs = nil
+  }
+
+  private func nativeFrameCopyElapsedMs() -> Int {
+    guard let first = nativeFrameCopyFirstHostNs,
+          let last = nativeFrameCopyLastHostNs,
+          last >= first else {
+      return 0
+    }
+    return Int((last - first) / 1_000_000)
+  }
+
+  private func nativeFrameCopyFps() -> Double {
+    let elapsedMs = nativeFrameCopyElapsedMs()
+    guard nativeFrameCopyCount > 1, elapsedMs > 0 else {
+      return 0.0
+    }
+    return Double(nativeFrameCopyCount - 1) * 1000.0 / Double(elapsedMs)
+  }
+
   private func normalizedDtsUs(_ info: MacOSNativeFrameInfo) -> Int {
     info.dtsUs == Int.min ? info.ptsUs : info.dtsUs
   }
@@ -1002,13 +1062,15 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
     let generation = playbackGeneration + 1
     playbackGeneration = generation
+    resetNativeFrameCounters()
     nativeFrameCallbackRegistered = true
     nativePlayer.setFrameAvailableCallback(
       macOSNativeFrameAvailable,
       userData: Unmanaged.passUnretained(self).toOpaque()
     )
+    let maxTrackSlots = activeTrackSlotCapacity()
     playbackQueue.async { [weak self] in
-      self?.copyNativePlaybackFrame(generation: generation)
+      self?.copyNativePlaybackFrame(generation: generation, maxTrackSlots: maxTrackSlots)
     }
   }
 
@@ -1023,18 +1085,21 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   fileprivate func scheduleNativeFrameCopyFromCallback() {
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
+      self.nativeFrameCallbackCount += 1
       let generation = self.playbackGeneration
+      let maxTrackSlots = self.activeTrackSlotCapacity()
       self.playbackQueue.async { [weak self] in
-        self?.copyNativePlaybackFrame(generation: generation)
+        self?.copyNativePlaybackFrame(generation: generation, maxTrackSlots: maxTrackSlots)
       }
     }
   }
 
-  private func copyNativePlaybackFrame(generation: Int) {
+  private func copyNativePlaybackFrame(generation: Int, maxTrackSlots: Int) {
     do {
       guard let nativePlayer, let texture else { return }
       let frameInfo = try texture.updateFromNativePlayer(
         nativePlayer,
+        maxTrackSlots: maxTrackSlots,
         waitTimeoutMs: 100
       )
       DispatchQueue.main.async { [weak self] in
@@ -1044,6 +1109,12 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
               self.backendName == "macos-native-player" else {
           return
         }
+        let now = DispatchTime.now().uptimeNanoseconds
+        if self.nativeFrameCopyFirstHostNs == nil {
+          self.nativeFrameCopyFirstHostNs = now
+        }
+        self.nativeFrameCopyLastHostNs = now
+        self.nativeFrameCopyCount += 1
         self.publishFrameInfo(frameInfo)
         self.markFrameAvailable()
         if frameInfo.ptsUs >= self.activeDurationUs() {
@@ -1055,6 +1126,13 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     } catch {
       DispatchQueue.main.async { [weak self] in
         guard let self, self.playbackGeneration == generation else { return }
+        if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true,
+           self.isPlaying,
+           self.backendName == "macos-native-player" {
+          self.nativeFrameCopyMissCount += 1
+          return
+        }
+        self.nativeFrameCopyErrorCount += 1
         NSLog("VoidPlayer macOS native playback frame copy failed: \(error)")
         self.isPlaying = false
         self.nativePlayer?.pause()
@@ -1282,6 +1360,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
 
   func updateFromNativePlayer(
     _ player: MacOSNativePlayerSession,
+    maxTrackSlots: Int,
     waitTimeoutMs: Int
   ) throws -> MacOSNativeFrameInfo {
     lock.lock()
@@ -1300,6 +1379,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     if let info = try copyFromNativePlayerWithMetalUpload(
       player,
       pixelBuffer: pixelBuffer,
+      maxTrackSlots: maxTrackSlots,
       waitTimeoutMs: waitTimeoutMs
     ) {
       pixelBufferReuseCount += 1
@@ -1467,6 +1547,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private func copyFromNativePlayerWithMetalUpload(
     _ player: MacOSNativePlayerSession,
     pixelBuffer: CVPixelBuffer,
+    maxTrackSlots: Int,
     waitTimeoutMs: Int
   ) throws -> MacOSNativeFrameInfo? {
     guard metalUploadEnabled else {
@@ -1482,6 +1563,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
         pixelBuffer: pixelBuffer,
         width: width,
         height: height,
+        maxTrackSlots: maxTrackSlots,
         waitTimeoutMs: waitTimeoutMs
       ) else {
         pixelBufferMetalUploadFailureCount += 1

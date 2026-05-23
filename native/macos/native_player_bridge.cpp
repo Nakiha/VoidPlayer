@@ -280,14 +280,6 @@ public:
       error = "invalid present decision BGRA destination";
       return false;
     }
-    const size_t min_track_stride =
-        static_cast<size_t>(stride_bytes) * static_cast<size_t>(height);
-    if (track_stride_bytes < min_track_stride ||
-        track_stride_bytes > std::numeric_limits<size_t>::max() / vr::kMaxTracks ||
-        dst_size < track_stride_bytes * vr::kMaxTracks) {
-      error = "present decision BGRA destination is too small";
-      return false;
-    }
     if (!render_sink_) {
       error = "player is not open";
       return false;
@@ -301,6 +293,20 @@ public:
     }
     if (out->track_count > 1 && out->frame_count < out->track_count) {
       error = "not all present decision frames are ready";
+      return false;
+    }
+    size_t required_tracks = 1;
+    for (size_t slot = 0; slot < vr::kMaxTracks; ++slot) {
+      if (decision.frames[slot].has_value()) {
+        required_tracks = std::max(required_tracks, slot + 1);
+      }
+    }
+    const size_t min_track_stride =
+        static_cast<size_t>(stride_bytes) * static_cast<size_t>(height);
+    if (track_stride_bytes < min_track_stride ||
+        track_stride_bytes > std::numeric_limits<size_t>::max() / required_tracks ||
+        dst_size < track_stride_bytes * required_tracks) {
+      error = "present decision BGRA destination is too small";
       return false;
     }
 

@@ -278,7 +278,10 @@ smoke that exercises `QUIT` after player creation on a Windows host before closi
 
 CI status: `.github/workflows/native.yml` now has a `macos-14` native job that checks out Git LFS
 FFmpeg artifacts and runs `python dev.py test --native-only`, covering the portable macOS CTest
-suite without introducing headed Flutter UI automation into CI yet.
+suite without introducing headed Flutter UI automation into CI yet. The job sets
+`VOIDPLAYER_DISABLE_VIDEOTOOLBOX=1` because GitHub macOS runners can report VideoToolbox
+availability but fail real H.264 hardware decode initialization; local UI/facade smoke remains the
+hardware decode validation point.
 
 Manual audible smoke:
 

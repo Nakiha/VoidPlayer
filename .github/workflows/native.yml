@@ -84,6 +84,8 @@ jobs:
 
       - name: Run macOS native tests
         shell: bash
+        env:
+          VOIDPLAYER_DISABLE_VIDEOTOOLBOX: "1"
         run: python dev.py test --native-only
 
   native-config-matrix:

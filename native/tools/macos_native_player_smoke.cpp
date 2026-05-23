@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -93,6 +94,14 @@ void count_frame_available(void* user_data) {
     count->fetch_add(1, std::memory_order_relaxed);
 }
 
+bool videotoolbox_disabled_by_env() {
+    const char* value = std::getenv("VOIDPLAYER_DISABLE_VIDEOTOOLBOX");
+    if (!value || value[0] == '\0') {
+        return false;
+    }
+    return std::string(value) != "0" && std::string(value) != "false";
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -129,14 +138,25 @@ int main(int argc, char** argv) {
         VPMacOSNativeFrameFree(&first);
         return 1;
     }
-    if (std::string(VPMacOSNativePlayerDecodeModeName(player.get())) !=
-            "videotoolbox-download-to-cpu" ||
-        VPMacOSNativePlayerHardwareDecodeActive(player.get()) == 0 ||
-        VPMacOSNativePlayerHardwareDecodeDownloadsToCpu(player.get()) == 0) {
-        std::cerr << "VideoToolbox hwdownload decode was not active; mode="
-                  << VPMacOSNativePlayerDecodeModeName(player.get()) << "\n";
-        VPMacOSNativeFrameFree(&first);
-        return 1;
+    if (videotoolbox_disabled_by_env()) {
+        if (std::string(VPMacOSNativePlayerDecodeModeName(player.get())) !=
+                "software-fallback" ||
+            VPMacOSNativePlayerHardwareDecodeActive(player.get()) != 0) {
+            std::cerr << "software fallback decode was not active; mode="
+                      << VPMacOSNativePlayerDecodeModeName(player.get()) << "\n";
+            VPMacOSNativeFrameFree(&first);
+            return 1;
+        }
+    } else {
+        if (std::string(VPMacOSNativePlayerDecodeModeName(player.get())) !=
+                "videotoolbox-download-to-cpu" ||
+            VPMacOSNativePlayerHardwareDecodeActive(player.get()) == 0 ||
+            VPMacOSNativePlayerHardwareDecodeDownloadsToCpu(player.get()) == 0) {
+            std::cerr << "VideoToolbox hwdownload decode was not active; mode="
+                      << VPMacOSNativePlayerDecodeModeName(player.get()) << "\n";
+            VPMacOSNativeFrameFree(&first);
+            return 1;
+        }
     }
     const int64_t first_pts = first.pts_us;
     const int direct_stride = first.width * 4 + 64;

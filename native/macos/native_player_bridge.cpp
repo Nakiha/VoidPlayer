@@ -17,6 +17,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -41,7 +42,18 @@ void write_error(char* error, size_t error_size, const std::string& message) {
   error[copy_size] = '\0';
 }
 
+bool videotoolbox_disabled_by_env() {
+  const char* value = std::getenv("VOIDPLAYER_DISABLE_VIDEOTOOLBOX");
+  if (!value || value[0] == '\0') {
+    return false;
+  }
+  return std::strcmp(value, "0") != 0 && std::strcmp(value, "false") != 0;
+}
+
 bool probe_videotoolbox_h264() {
+  if (videotoolbox_disabled_by_env()) {
+    return false;
+  }
   const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_H264);
   if (!codec) {
     return false;
@@ -129,8 +141,10 @@ public:
       close();
       return false;
     }
-    decoder_->enable_hardware_decode(
-        vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice);
+    if (!videotoolbox_disabled_by_env()) {
+      decoder_->enable_hardware_decode(
+          vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice);
+    }
     demux_->set_seek_callback([this](int64_t pts_us, vr::SeekType type) {
       if (decoder_) {
         decoder_->notify_seek(pts_us, type);

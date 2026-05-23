@@ -187,6 +187,8 @@ void wait_d3d11_context_idle(ID3D11Device* device, ID3D11DeviceContext* context)
     }
 }
 
+}  // namespace
+
 struct D3D11SnapshotPool {
     Microsoft::WRL::ComPtr<ID3D11Texture2D> acquire(
         ID3D11Device* device,
@@ -271,6 +273,8 @@ struct D3D11SnapshotPool {
     size_t checked_out_count = 0;
     D3D11_TEXTURE2D_DESC last_desc = {};
 };
+
+namespace {
 
 D3D11SnapshotFrameRef::~D3D11SnapshotFrameRef() {
     if (auto owner = pool.lock()) {

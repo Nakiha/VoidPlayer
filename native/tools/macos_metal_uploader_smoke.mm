@@ -389,6 +389,68 @@ int main() {
     return fail("multi-track Metal layout upload did not compose the present decision");
   }
 
+  VPMacOSNativeLayoutState split_layout = {};
+  split_layout.mode = 1;
+  split_layout.split_pos = 0.0f;
+  split_layout.zoom_ratio = 1.0f;
+  split_layout.pixel_size_mode = 1;
+  split_layout.order[0] = 0;
+  split_layout.order[1] = 1;
+  split_layout.order[2] = 2;
+  split_layout.order[3] = 3;
+  VPMacOSNativePlayerApplyLayout(player, &split_layout);
+
+  VPMacOSNativeFrameInfo split_zero_info = {};
+  if (!copy_frame_with_layout(
+          uploader, player, layout_buffer, width, height,
+          &split_zero_info, error, sizeof(error))) {
+    CFRelease(layout_buffer);
+    VPMacOSNativePlayerDestroy(player);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    std::fprintf(stderr, "split-zero Metal layout upload failed: %s\n", error);
+    return 1;
+  }
+  VPMacOSCaptureMetrics split_zero_metrics = {};
+  if (!measure_pixel_buffer(layout_buffer, width, height, &split_zero_metrics) ||
+      split_zero_metrics.non_black_ratio <= 0.5 ||
+      split_zero_info.pts_us != default_info.pts_us) {
+    CFRelease(layout_buffer);
+    VPMacOSNativePlayerDestroy(player);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    return fail("split-zero Metal layout upload did not render the secondary track");
+  }
+
+  split_layout.split_pos = 1.0f;
+  VPMacOSNativePlayerApplyLayout(player, &split_layout);
+  VPMacOSNativeFrameInfo split_one_info = {};
+  if (!copy_frame_with_layout(
+          uploader, player, layout_buffer, width, height,
+          &split_one_info, error, sizeof(error))) {
+    CFRelease(layout_buffer);
+    VPMacOSNativePlayerDestroy(player);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    std::fprintf(stderr, "split-one Metal layout upload failed: %s\n", error);
+    return 1;
+  }
+  VPMacOSCaptureMetrics split_one_metrics = {};
+  if (!measure_pixel_buffer(layout_buffer, width, height, &split_one_metrics) ||
+      split_one_metrics.non_black_ratio <= 0.5 ||
+      split_one_metrics.hash == split_zero_metrics.hash ||
+      split_one_info.pts_us != default_info.pts_us) {
+    CFRelease(layout_buffer);
+    VPMacOSNativePlayerDestroy(player);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    return fail("split-one Metal layout upload did not switch to the primary track");
+  }
+
   VPMacOSNativeLayoutState zoom_layout = {};
   zoom_layout.mode = 0;
   zoom_layout.split_pos = 0.5f;

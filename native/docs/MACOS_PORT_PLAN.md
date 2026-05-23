@@ -87,7 +87,10 @@ pipeline.
   metadata mapping now lives in `frame_color_metadata`. Hardware download-to-CPU, D3D11VA direct
   wrapping, and exact-seek snapshot ownership now sit behind `hardware_frame_converter`, leaving
   `FrameConverter` as the stable software entrypoint plus hardware delegate.
-- [ ] Keep `TrackBuffer`, `RenderSink`, seek policies, and playback clock semantics shared.
+- [x] Keep `TrackBuffer`, `RenderSink`, seek policies, and playback clock semantics shared.
+  The macOS native bridge now binds its single visible track into the shared `RenderSink`, so
+  current-frame copy, frame callbacks, seek refresh, and playback ticks use the same frame-window
+  evaluation semantics as the Windows renderer instead of a macOS-only clock advance loop.
 - [x] Add CTest coverage that exercises software frame publication -> `TrackBuffer` without D3D11.
 - [x] Extend the smoke from synthetic frames to FFmpeg-decoded frames.
 - [x] Build the existing `DemuxThread` + `DecodeThread` + `TrackBuffer` software path on macOS.
@@ -263,7 +266,9 @@ wrapping now live in `video_renderer/decode/software_frame_packer.*`. D3D11VA di
 and exact-seek snapshot pooling now live in `video_renderer/decode/d3d11_frame_snapshot.*`, while
 hardware download-to-CPU and platform-owned frame publication are delegated through
 `video_renderer/decode/hardware_frame_converter.*`. This keeps the current macOS playback queue on
-the shared native decode path without starting a second backend.
+the shared native decode path without starting a second backend. The macOS native bridge also routes
+visible-frame selection through `RenderSink::evaluate()`, preserving shared `TrackBuffer` advancement
+and clock-window rules for first frame, seek refresh, and playback frame callbacks.
 
 M5 baseline status: `software_bgra_converter_smoke` now includes deterministic limited/full-range
 color samples, padded line strides, and BT.709 matrix conversion, while `software_frame_packer_smoke`

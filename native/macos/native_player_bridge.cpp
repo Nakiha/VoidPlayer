@@ -12,6 +12,7 @@
 #include "video_renderer/decode/hw/hw_decode_provider.h"
 #include "video_renderer/capture/bgra_capture_metrics.h"
 #include "video_renderer/seek/seek_coordinator.h"
+#include "video_renderer/sync/render_sink.h"
 
 #include <algorithm>
 #include <atomic>
@@ -96,7 +97,9 @@ public:
     seek_controller_ = std::make_unique<vr::SeekController>();
     packet_queue_ = std::make_unique<vr::PacketQueue>(96);
     audio_packet_queue_ = std::make_unique<vr::PacketQueue>(96);
-    track_buffer_ = std::make_unique<vr::TrackBuffer>(16, 4);
+    track_buffer_ = std::make_shared<vr::TrackBuffer>(16, 4);
+    render_sink_ = std::make_unique<vr::RenderSink>(playback_.clock());
+    render_sink_->set_track(0, track_buffer_, 0, 1);
     demux_ = std::make_unique<vr::DemuxThread>(path_, *packet_queue_, *seek_controller_);
     demux_->add_optional_output(vr::DemuxStreamKind::Audio, *audio_packet_queue_);
 
@@ -182,6 +185,7 @@ public:
     }
     decoder_.reset();
     demux_.reset();
+    render_sink_.reset();
     track_buffer_.reset();
     audio_packet_queue_.reset();
     packet_queue_.reset();
@@ -367,18 +371,12 @@ private:
     if (!track_buffer_) {
       return false;
     }
-    const int64_t target_pts = playback_.clock().current_pts_us();
-    while (true) {
-      auto next = track_buffer_->peek(1);
-      if (!next.has_value() || next->pts_us > target_pts) {
-        break;
-      }
-      if (!track_buffer_->advance()) {
-        break;
-      }
+    if (!render_sink_) {
+      return false;
     }
-    auto frame = track_buffer_->peek(0);
-    if (!frame.has_value()) {
+    const auto decision = render_sink_->evaluate();
+    const auto& frame = decision.frames[0];
+    if (!decision.should_present || !frame.has_value()) {
       return false;
     }
     if (frame_pts_us) {
@@ -391,7 +389,8 @@ private:
   std::unique_ptr<vr::SeekController> seek_controller_;
   std::unique_ptr<vr::PacketQueue> packet_queue_;
   std::unique_ptr<vr::PacketQueue> audio_packet_queue_;
-  std::unique_ptr<vr::TrackBuffer> track_buffer_;
+  std::shared_ptr<vr::TrackBuffer> track_buffer_;
+  std::unique_ptr<vr::RenderSink> render_sink_;
   std::unique_ptr<vr::DemuxThread> demux_;
   std::unique_ptr<vr::DecodeThread> decoder_;
   vr::PlaybackController playback_;

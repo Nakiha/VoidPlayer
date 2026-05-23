@@ -42,6 +42,7 @@ set(VOID_MEDIA_FFMPEG_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/decode/exact_seek_frame_publisher.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/exact_seek_publish_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/exact_seek_window.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/decode/frame_color_metadata.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/frame_converter.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/frame_timestamp_rescaler.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/hw/hw_decode_provider.cpp"

@@ -81,9 +81,10 @@ pipeline.
 - [x] Extract a platform-neutral decoded-frame publication interface from `DecodedFramePublisher`.
 - [ ] Split `FrameConverter` into software packing and D3D11 snapshot/presenter pieces. Software
   frame packing/wrapping is now isolated in `software_frame_packer`; D3D11VA direct-frame wrapping
-  and exact-seek snapshot pooling now live behind `d3d11_frame_snapshot`. `FrameConverter` still
-  coordinates software-vs-hardware dispatch and should shed the remaining platform presenter
-  decisions in a later slice.
+  and exact-seek snapshot pooling now live behind `d3d11_frame_snapshot`; FFmpeg frame color
+  metadata mapping now lives in `frame_color_metadata` and is shared by the software frame
+  publisher. `FrameConverter` still coordinates software-vs-hardware dispatch and should shed the
+  remaining platform presenter decisions in a later slice.
 - [ ] Keep `TrackBuffer`, `RenderSink`, seek policies, and playback clock semantics shared.
 - [x] Add CTest coverage that exercises software frame publication -> `TrackBuffer` without D3D11.
 - [x] Extend the smoke from synthetic frames to FFmpeg-decoded frames.

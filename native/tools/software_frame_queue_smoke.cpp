@@ -79,6 +79,12 @@ int main() {
     if (queued->width != 2 || queued->height != 2) {
         return fail("queued frame dimensions are wrong");
     }
+    if (queued->color.range != vr::VIDEO_COLOR_RANGE_LIMITED ||
+        queued->color.matrix != vr::VIDEO_COLOR_MATRIX_BT601 ||
+        queued->color.transfer != vr::VIDEO_COLOR_TRANSFER_SDR ||
+        queued->color.primaries != vr::VIDEO_COLOR_PRIMARIES_BT601) {
+        return fail("queued frame color metadata was not preserved");
+    }
 
     const auto* rgba = queued->cpu_rgba_storage();
     if (!rgba || !rgba->data || rgba->stride != 8 || rgba->data->size() != 16) {

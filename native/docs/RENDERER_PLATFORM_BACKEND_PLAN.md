@@ -54,7 +54,7 @@ Goal: make the current split honest before moving code.
   decode mode, CPU download state, and software fallback state.
 - [ ] Add a canary that fails when macOS visible playback is still driven only by the Swift frame
   pump once renderer-owned presentation is expected.
-- [ ] Add native tests for backend-independent present decision identity, carry-forward, and
+- [x] Add native tests for backend-independent present decision identity, carry-forward, and
   multi-track layout inputs.
 - [x] Mark the current `native/macos/native_player_bridge.*` tick thread and Swift callback copy path
   as transitional in code comments and diagnostics.
@@ -63,7 +63,8 @@ Progress: shared `PresentationSnapshot` now centralizes present-decision metadat
 color defaults, storage kind, and NV12 coded-size scale for backend consumption. The macOS bridge
 fills its presentation ABI from this contract, and a native canary covers identity, layout, color,
 and odd-dimension NV12 metadata. The macOS transitional thread now reports shared scheduler name and
-tick/present/notification counters. Carry-forward parity still needs a renderer-loop test.
+tick/present/notification counters. The macOS native test matrix also covers present-decision
+carry-forward identity and offset guards.
 
 Exit gate: current macOS playback still works, and diagnostics clearly distinguish transitional
 texture-pump presentation from renderer-owned presentation.

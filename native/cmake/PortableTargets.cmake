@@ -193,6 +193,15 @@ if(APPLE)
     )
     add_test(NAME presentation_snapshot_smoke COMMAND presentation_snapshot_smoke)
 
+    add_executable(presentation_carry_forward_smoke
+        "${VOID_NATIVE_DIR}/tools/presentation_carry_forward_smoke.cpp"
+    )
+    void_apply_native_compile_options(presentation_carry_forward_smoke)
+    target_link_libraries(presentation_carry_forward_smoke PRIVATE
+        void_media_ffmpeg
+    )
+    add_test(NAME presentation_carry_forward_smoke COMMAND presentation_carry_forward_smoke)
+
     add_executable(software_frame_queue_smoke
         "${VOID_NATIVE_DIR}/tools/software_frame_queue_smoke.cpp"
     )

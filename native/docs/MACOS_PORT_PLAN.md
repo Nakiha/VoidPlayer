@@ -310,10 +310,11 @@ CI status: `.github/workflows/native.yml` now has a `macos-14` native job that c
 FFmpeg artifacts and runs `python dev.py test --native-only`, covering the portable macOS CTest
 suite without introducing headed Flutter UI automation into CI yet. A second macOS job configures
 `BUILD_ANALYSIS=ON` and builds `analysis_lib`, keeping the shared analysis cache/parser/generator
-code compiling on macOS while external analysis windows remain gated. The native test job sets
-`VOIDPLAYER_DISABLE_VIDEOTOOLBOX=1` because GitHub macOS runners can report VideoToolbox
-availability but fail real H.264 hardware decode initialization; local UI/facade smoke remains the
-hardware decode validation point.
+code compiling on macOS while external analysis windows remain gated. A third macOS job runs
+`flutter build macos --debug`, covering Swift runner, Xcode project, native static library, and
+FFmpeg dylib linkage. The native test job sets `VOIDPLAYER_DISABLE_VIDEOTOOLBOX=1` because GitHub
+macOS runners can report VideoToolbox availability but fail real H.264 hardware decode
+initialization; local UI/facade smoke remains the hardware decode validation point.
 
 Manual audible smoke:
 

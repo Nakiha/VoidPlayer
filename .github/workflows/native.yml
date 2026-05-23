@@ -143,6 +143,39 @@ jobs:
         shell: bash
         run: cmake --build native/build-ci-macos-analysis --target analysis_lib -- -j "$(sysctl -n hw.ncpu)"
 
+  macos-runner-build:
+    name: macOS runner build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.41.9"
+          cache: true
+
+      - name: Verify macOS FFmpeg LFS artifacts
+        shell: bash
+        run: |
+          dylib="third_party/ffmpeg/lib/libavcodec.62.28.100.dylib"
+          test -s "$dylib"
+          if grep -q "version https://git-lfs.github.com/spec/v1" "$dylib"; then
+            echo "macOS FFmpeg dylib is still a Git LFS pointer" >&2
+            exit 1
+          fi
+
+      - name: Build macOS Flutter runner
+        shell: bash
+        run: flutter build macos --debug
+
   native-config-matrix:
     name: Build ${{ matrix.name }}
     runs-on: windows-latest

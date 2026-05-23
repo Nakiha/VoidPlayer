@@ -211,6 +211,11 @@ class AssertAnalysisProcessCount extends PlayerAssert {
   const AssertAnalysisProcessCount(this.count);
 }
 
+class AssertAnalysisFfiAvailable extends PlayerAssert {
+  final bool available;
+  const AssertAnalysisFfiAvailable(this.available);
+}
+
 class AssertAnalysisOverlay extends PlayerAssert {
   final bool active;
   final AnalysisOverlayType? type;

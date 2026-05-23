@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import '../actions/player_assert.dart';
+import '../analysis/analysis_ffi.dart';
 import '../analysis/analysis_manager.dart';
 import '../app_log.dart';
 import '../platform/analysis_process_host.dart';
@@ -390,6 +391,14 @@ class AutomationAssertExecutor {
           throw AssertionError(
             'Expected analysis process count $count, got $actual; '
             'exits=${analysisProcesses.analysisExitCodes}',
+          );
+        }
+      case AssertAnalysisFfiAvailable(:final available):
+        final actual = AnalysisFfi.isAvailable;
+        if (actual != available) {
+          throw AssertionError(
+            'Expected analysis FFI available=$available, got $actual; '
+            'reason=${AnalysisFfi.unavailableReason}',
           );
         }
       case AssertAnalysisOverlay(

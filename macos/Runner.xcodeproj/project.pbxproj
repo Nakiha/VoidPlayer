@@ -471,6 +471,8 @@
 				"$(PROJECT_DIR)/../native/CMakeLists.txt",
 				"$(PROJECT_DIR)/../native/cmake/NativeSources.cmake",
 				"$(PROJECT_DIR)/../native/cmake/PortableTargets.cmake",
+				"$(PROJECT_DIR)/../native/analysis/analysis_ffi_abi.h",
+				"$(PROJECT_DIR)/../native/macos/analysis_ffi_bridge.cpp",
 				"$(PROJECT_DIR)/../native/macos/metal_pixel_buffer_uploader.mm",
 				"$(PROJECT_DIR)/../native/macos/native_player_bridge.cpp",
 				"$(PROJECT_DIR)/../native/macos/native_player_bridge.h",
@@ -484,10 +486,12 @@
 				"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
 				"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_media_ffmpeg.a",
 				"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_player_portable_core.a",
+				"$(PROJECT_DIR)/../native/build-xcode-macos/analysis/libanalysis_lib.a",
+				"$(PROJECT_DIR)/../native/build-xcode-macos/_deps/zstd-build/lib/libzstd.a",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\nBUILD_DIR=\"${PROJECT_DIR}/../native/build-xcode-macos\"\ncmake -S \"${PROJECT_DIR}/../native\" -B \"${BUILD_DIR}\" -G \"Unix Makefiles\" \\\n  -DBUILD_ANALYSIS=OFF \\\n  -DBUILD_TESTS=OFF \\\n  -DBUILD_FFI=OFF \\\n  -DBUILD_PYTHON=OFF \\\n  -DCMAKE_OSX_DEPLOYMENT_TARGET=\"${MACOSX_DEPLOYMENT_TARGET}\" \\\n  -DCMAKE_BUILD_TYPE=\"${CONFIGURATION}\"\ncmake --build \"${BUILD_DIR}\" --target void_macos_native_player -- -j \"$(sysctl -n hw.ncpu)\"\n";
+			shellScript = "set -euo pipefail\nBUILD_DIR=\"${PROJECT_DIR}/../native/build-xcode-macos\"\ncmake -S \"${PROJECT_DIR}/../native\" -B \"${BUILD_DIR}\" -G \"Unix Makefiles\" \\\n  -DBUILD_ANALYSIS=ON \\\n  -DBUILD_ANALYSIS_TESTS=OFF \\\n  -DBUILD_TESTS=OFF \\\n  -DBUILD_FFI=OFF \\\n  -DBUILD_PYTHON=OFF \\\n  -DCMAKE_OSX_DEPLOYMENT_TARGET=\"${MACOSX_DEPLOYMENT_TARGET}\" \\\n  -DCMAKE_BUILD_TYPE=\"${CONFIGURATION}\"\ncmake --build \"${BUILD_DIR}\" --target void_macos_native_player -- -j \"$(sysctl -n hw.ncpu)\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -661,9 +665,11 @@
 				);
 					OTHER_LDFLAGS = (
 						"$(inherited)",
-						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
+						"-Wl,-force_load,$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
 						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_media_ffmpeg.a",
 						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_player_portable_core.a",
+						"$(PROJECT_DIR)/../native/build-xcode-macos/analysis/libanalysis_lib.a",
+						"$(PROJECT_DIR)/../native/build-xcode-macos/_deps/zstd-build/lib/libzstd.a",
 						"-lc++",
 						"-lavformat",
 						"-lavcodec",
@@ -826,9 +832,11 @@
 				);
 					OTHER_LDFLAGS = (
 						"$(inherited)",
-						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
+						"-Wl,-force_load,$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
 						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_media_ffmpeg.a",
 						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_player_portable_core.a",
+						"$(PROJECT_DIR)/../native/build-xcode-macos/analysis/libanalysis_lib.a",
+						"$(PROJECT_DIR)/../native/build-xcode-macos/_deps/zstd-build/lib/libzstd.a",
 						"-lc++",
 						"-lavformat",
 						"-lavcodec",
@@ -877,9 +885,11 @@
 				);
 					OTHER_LDFLAGS = (
 						"$(inherited)",
-						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
+						"-Wl,-force_load,$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
 						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_media_ffmpeg.a",
 						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_player_portable_core.a",
+						"$(PROJECT_DIR)/../native/build-xcode-macos/analysis/libanalysis_lib.a",
+						"$(PROJECT_DIR)/../native/build-xcode-macos/_deps/zstd-build/lib/libzstd.a",
 						"-lc++",
 						"-lavformat",
 						"-lavcodec",

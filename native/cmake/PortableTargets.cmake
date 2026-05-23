@@ -62,6 +62,9 @@ if(APPLE)
         "-framework Metal"
         "-framework CoreVideo"
     )
+    if(BUILD_ANALYSIS)
+        target_link_libraries(void_macos_native_player PUBLIC analysis_lib)
+    endif()
     target_compile_options(void_macos_native_player PRIVATE
         $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
     )
@@ -105,6 +108,20 @@ if(APPLE)
         void_macos_native_player
     )
     add_test(NAME macos_presentation_adapter_smoke COMMAND macos_presentation_adapter_smoke)
+
+    if(BUILD_ANALYSIS)
+        add_executable(macos_analysis_ffi_smoke
+            "${VOID_NATIVE_DIR}/tools/macos_analysis_ffi_smoke.cpp"
+        )
+        void_apply_native_compile_options(macos_analysis_ffi_smoke)
+        target_link_libraries(macos_analysis_ffi_smoke PRIVATE
+            void_macos_native_player
+        )
+        target_compile_definitions(macos_analysis_ffi_smoke PRIVATE
+            VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
+        )
+        add_test(NAME macos_analysis_ffi_smoke COMMAND macos_analysis_ffi_smoke)
+    endif()
 
     add_executable(videotoolbox_provider_smoke
         "${VOID_NATIVE_DIR}/tools/videotoolbox_provider_smoke.cpp"

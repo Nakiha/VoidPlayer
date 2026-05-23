@@ -841,6 +841,19 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAssert(time, AssertAnalysisProcessCount(int.parse(args[0])));
+    case 'ASSERT_ANALYSIS_FFI_AVAILABLE':
+      if (args.isEmpty) {
+        log.warning(
+          'ASSERT_ANALYSIS_FFI_AVAILABLE missing available flag: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertAnalysisFfiAvailable(
+          args[0] == '1' || args[0].toLowerCase() == 'true',
+        ),
+      );
     case 'ASSERT_ANALYSIS_OVERLAY':
       if (args.isEmpty) {
         log.warning('ASSERT_ANALYSIS_OVERLAY needs active flag: $rawLine');

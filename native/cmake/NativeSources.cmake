@@ -59,6 +59,11 @@ set(VOID_MACOS_NATIVE_PLAYER_SOURCES
     "${VOID_NATIVE_DIR}/macos/presentation_adapter.cpp"
 )
 
+if(BUILD_ANALYSIS)
+    list(APPEND VOID_MACOS_NATIVE_PLAYER_SOURCES
+        "${VOID_NATIVE_DIR}/macos/analysis_ffi_bridge.cpp")
+endif()
+
 set(VOID_RENDERER_CORE_SOURCES
     ${VOID_PLAYER_PORTABLE_CORE_SOURCES}
     ${VOID_MEDIA_FFMPEG_SOURCES}

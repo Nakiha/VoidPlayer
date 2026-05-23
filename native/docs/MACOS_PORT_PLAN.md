@@ -26,8 +26,10 @@ Historical phase notes moved to [archive/MACOS_PORT_PLAN_HISTORY.md](archive/MAC
   diagnostics cover stream wiring and play/seek/pause/resume lifecycle; a manual audible smoke is
   documented for speaker-level confirmation.
 - The native analysis library now configures and builds on macOS once the analysis submodules are
-  initialized. Flutter now explicitly gates unsupported macOS analysis windows and main-window
-  overlays, so direct automation cannot accidentally run the Windows-only UI/IPC path.
+  initialized. The macOS runner links it and exports the Dart-facing `naki_analysis_*` ABI for VAC2
+  base generation plus read-only handle queries. Flutter still gates unsupported macOS analysis
+  windows and main-window overlays, so direct automation cannot accidentally run the Windows-only
+  UI/IPC path.
 - A/V sync hardening, renderer-owned Metal presentation, deeper color/layout parity, and macOS
   analysis UI/IPC support are still outstanding.
 
@@ -158,12 +160,14 @@ Goal: make the app distributable and honest about unsupported features.
   `--macos-notarize --macos-notary-profile` or `VOIDPLAYER_MACOS_NOTARY_PROFILE` is provided.
   Real release credentials remain an operator-supplied step.
 - [x] Make the native analysis library build on macOS with the initialized submodules.
-  CI now has a macOS build-only job that configures `BUILD_ANALYSIS=ON` and builds `analysis_lib`
-  without enabling Windows-only analysis tests or UI tooling.
+  CI now has a macOS analysis job that configures `BUILD_ANALYSIS=ON`, builds the app-facing
+  analysis FFI smoke, and runs VAC2 base generation plus handle readback on a bundled H.264 sample.
 - [x] Add an explicit unsupported gate for macOS analysis windows and overlays until the workflow is
   wired.
 - [ ] Decide macOS analysis UI/IPC support: native library, helper process, or a first-class
-  in-process analysis workspace.
+  in-process analysis workspace. The native-library path now has a first foothold: macOS exports
+  the shared Dart analysis ABI, while overlay VACHUNK generation intentionally returns unsupported
+  until the analyzer/helper process contract is ported.
 - [x] Add macOS native CTest CI for the shared facade/presentation/hardware-decode smoke suite.
   Flutter macOS UI automation remains local-only until a reliable headed CI strategy is chosen.
 
@@ -232,11 +236,13 @@ owns a fixed playback timer or loop decisions.
 
 Analysis status: `native/build-macos-analysis` now configures with `BUILD_ANALYSIS=ON` and builds
 `analysis_lib` on macOS. The portability fixes live in the shared UTF-8 filesystem/env shim, so the
-same analysis/cache code can compile without Windows-only file helpers. This does not yet mean the
-macOS app can launch or coordinate analysis windows; `PlatformCapabilities.macOSPhase1` now keeps
-external analysis windows and main-window overlays disabled, and `analysis_gated_smoke.csv` asserts
-that direct automation calls no-op instead of spawning or generating through the Windows-only UI/IPC
-path.
+same analysis/cache code can compile without Windows-only file helpers. The macOS runner now links
+that library through the native player archive, force-loads the app-facing bridge so Dart FFI can
+resolve `naki_analysis_*`, and `macos_analysis_ffi_smoke` verifies VAC2 generation plus handle
+readback. This does not yet mean the macOS app can launch or coordinate analysis windows;
+`PlatformCapabilities.macOSPhase1` keeps external analysis windows and main-window overlays
+disabled, and `analysis_gated_smoke.csv` asserts that the FFI is present while direct automation
+calls still no-op instead of spawning the Windows-only UI/IPC path.
 
 Publication status: decoded-frame publication now flows through a `DecodedFrameSink` interface. The
 default sink preserves the existing `TrackBuffer` behavior, and `decoded_frame_sink_smoke` covers
@@ -310,12 +316,12 @@ smoke that exercises `QUIT` after player creation on a Windows host before closi
 CI status: `.github/workflows/native.yml` now has a `macos-14` native job that checks out Git LFS
 FFmpeg artifacts and runs `python dev.py test --native-only`, covering the portable macOS CTest
 suite without introducing headed Flutter UI automation into CI yet. A second macOS job configures
-`BUILD_ANALYSIS=ON` and builds `analysis_lib`, keeping the shared analysis cache/parser/generator
-code compiling on macOS while external analysis windows remain gated. A third macOS job runs
-`flutter build macos --debug`, covering Swift runner, Xcode project, native static library, and
-FFmpeg dylib linkage. The native test job sets `VOIDPLAYER_DISABLE_VIDEOTOOLBOX=1` because GitHub
-macOS runners can report VideoToolbox availability but fail real H.264 hardware decode
-initialization; local UI/facade smoke remains the hardware decode validation point.
+`BUILD_ANALYSIS=ON`, builds `macos_analysis_ffi_smoke`, and runs VAC2 generation/readback through
+the same `naki_analysis_*` ABI that Dart uses. A third macOS job runs `flutter build macos --debug`,
+covering Swift runner, Xcode project, the analysis-enabled native static library, and FFmpeg dylib
+linkage. The native test job sets `VOIDPLAYER_DISABLE_VIDEOTOOLBOX=1` because GitHub macOS runners
+can report VideoToolbox availability but fail real H.264 hardware decode initialization; local
+UI/facade smoke remains the hardware decode validation point.
 
 Manual audible smoke:
 

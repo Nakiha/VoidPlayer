@@ -146,9 +146,13 @@ jobs:
           -DBUILD_FFI=OFF
           -DBUILD_PYTHON=OFF
 
-      - name: Build macOS analysis library
+      - name: Build macOS analysis FFI smoke
         shell: bash
-        run: cmake --build native/build-ci-macos-analysis --target analysis_lib -- -j "$(sysctl -n hw.ncpu)"
+        run: cmake --build native/build-ci-macos-analysis --target macos_analysis_ffi_smoke -- -j "$(sysctl -n hw.ncpu)"
+
+      - name: Run macOS analysis FFI smoke
+        shell: bash
+        run: native/build-ci-macos-analysis/macos_analysis_ffi_smoke
 
   macos-runner-build:
     name: macOS runner build

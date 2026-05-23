@@ -80,7 +80,11 @@ overlay redraw 读不到实际显示帧。
 
 ## FFI 桥接
 
-`windows/runner/analysis_ffi.cpp` 将分析功能暴露给 Flutter/Dart：
+`windows/runner/analysis_ffi.cpp` 和 `native/macos/analysis_ffi_bridge.cpp` 将分析功能暴露给
+Flutter/Dart。两端共用 `native/analysis/analysis_ffi_abi.h` 中的 flat ABI struct 定义；
+Windows 仍承载完整外部 analyzer / overlay VACHUNK 生成流程，macOS 当前先提供 VAC2 base
+生成、只读 handle 查询和 overlay state/track 绑定符号，overlay VACHUNK 生成会明确返回
+unsupported，直到 macOS analysis workspace 工作流落地。
 
 | FFI 函数 | 功能 |
 |----------|------|
@@ -110,6 +114,10 @@ ABI / lifecycle notes:
 - Summary pointers point to thread-local snapshots and are valid only until the
   next analysis FFI call on that thread. Bulk data APIs use caller-provided
   output buffers.
+- macOS runner builds force-load the native macOS player archive so the
+  `naki_analysis_*` symbols remain visible to Dart FFI even though Swift does
+  not call them directly. `macos_analysis_ffi_smoke` covers VAC2 generation,
+  open/read/close, frame/NALU range reads, and bucket aggregation on macOS.
 
 ## 测试
 

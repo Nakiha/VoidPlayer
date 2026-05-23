@@ -46,9 +46,10 @@ verify native audio diagnostics, while `audio_mixer_smoke` verifies that inactiv
 mute without consuming queued PCM. Speaker-level audible output still needs a manual smoke until the
 test harness has an audio capture or fake output device. Network/SSH media and analysis windows are
 still unavailable. Analysis windows and main-window analysis overlays are
-explicitly gated off in `PlatformCapabilities.macOSPhase1`; the native analysis library can build
-on macOS, but the app will not run the Windows-style analysis UI/IPC path until the macOS workflow
-is wired behind those capability flags.
+explicitly gated off in `PlatformCapabilities.macOSPhase1`; the macOS runner now links the shared
+native analysis library and exports the Dart-facing `naki_analysis_*` ABI for VAC2 base generation
+and read-only handle queries, but the app will not run the Windows-style external analysis UI/IPC
+or overlay VACHUNK generation path until the macOS workflow is wired behind those capability flags.
 The shared hardware decode provider factory now initializes VideoToolbox for H.264 in
 download-to-CPU mode by default. Diagnostics expose
 `hardwareDecodeProvider=VideoToolbox`, `hardwareDecodeActive=true`,
@@ -82,8 +83,9 @@ recreate, and play-then-window-close churn. `native_user_window_close_smoke.csv`
 window while native playback is active. `native_direct_copy_fallback_smoke.csv` disables the
 test-only Metal upload path and keeps the CVPixelBuffer direct-copy presentation fallback visible.
 `native_software_fallback_smoke.csv` keeps MPEG-2 software decode fallback visible in diagnostics.
-`analysis_gated_smoke.csv` asserts that direct analysis
-automation calls no-op while macOS analysis UI/IPC remains unsupported. A seek
+`analysis_gated_smoke.csv` asserts that the analysis FFI symbols are available in the app process
+while direct analysis automation calls still no-op because macOS analysis UI/IPC remains
+unsupported. A seek
 follows the shared keep-previous-state preference; step navigation is explicit pause-on-step. The helper copies CSV
 scripts into the app container before launch and rewrites
 repo-relative `ADD_MEDIA` fixtures to sandbox-local copies because the macOS debug app is sandboxed

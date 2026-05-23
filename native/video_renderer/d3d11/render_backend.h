@@ -1,5 +1,6 @@
 #pragma once
 
+#include "video_renderer/render/presentation_backend.h"
 #include "video_renderer/d3d11/device.h"
 #include "video_renderer/d3d11/frame_presenter.h"
 #include "video_renderer/d3d11/headless_output.h"
@@ -12,13 +13,7 @@
 
 namespace vr {
 
-struct D3D11RenderBackendConfig {
-    void* hwnd = nullptr;
-    void* adapter = nullptr;
-    int width = 0;
-    int height = 0;
-    bool headless = false;
-};
+using D3D11RenderBackendConfig = PresentationBackendConfig;
 
 struct D3D11RenderResources {
     CompiledShader compiled_shader;
@@ -47,18 +42,20 @@ struct D3D11RenderResources {
     std::array<uint32_t, 4> overlay_rect_capacity = {0, 0, 0, 0};
 };
 
-class D3D11RenderBackend {
+class D3D11RenderBackend : public PresentationBackend {
 public:
     D3D11RenderBackend() = default;
-    ~D3D11RenderBackend();
+    ~D3D11RenderBackend() override;
 
     D3D11RenderBackend(const D3D11RenderBackend&) = delete;
     D3D11RenderBackend& operator=(const D3D11RenderBackend&) = delete;
 
-    bool initialize(const D3D11RenderBackendConfig& config);
-    void shutdown();
+    PresentationBackendKind kind() const override { return PresentationBackendKind::D3D11; }
+    const char* name() const override { return "d3d11"; }
+    bool initialize(const PresentationBackendConfig& config) override;
+    void shutdown() override;
 
-    bool headless() const { return headless_; }
+    bool headless() const override { return headless_; }
 
     D3D11Device* device() const { return device_.get(); }
     TextureManager* texture_manager() const { return texture_manager_.get(); }

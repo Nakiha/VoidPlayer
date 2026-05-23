@@ -139,16 +139,17 @@ bool Renderer::initialize(const RendererConfig& config) {
         playback_session_started_by_renderer_ = true;
     }
 
-    d3d_backend_ = std::make_unique<D3D11RenderBackend>();
-    D3D11RenderBackendConfig backend_config;
+    auto d3d_backend = std::make_unique<D3D11RenderBackend>();
+    PresentationBackendConfig backend_config;
     backend_config.hwnd = hwnd_;
     backend_config.adapter = config.backend.adapter;
     backend_config.width = target_width_;
     backend_config.height = target_height_;
     backend_config.headless = config.headless;
-    if (!d3d_backend_->initialize(backend_config)) {
+    if (!d3d_backend->initialize(backend_config)) {
         return fail();
     }
+    presentation_backend_ = std::move(d3d_backend);
 
     const InitialTrackOpenHooks initial_track_hooks{
         [this](const std::string& path, bool use_hardware_decode) {
@@ -237,7 +238,7 @@ void Renderer::shutdown() {
 
 bool Renderer::has_resources_locked() const {
     return tracks_.has_active_tracks() ||
-           d3d_backend_ ||
+           presentation_backend_ ||
            render_sink_ ||
            initialized_.load() ||
            running_.load() ||
@@ -263,9 +264,9 @@ void Renderer::release_resources_locked() {
         playback_->stop_session();
         playback_session_started_by_renderer_ = false;
     }
-    if (d3d_backend_) {
-        d3d_backend_->shutdown();
-        d3d_backend_.reset();
+    if (presentation_backend_) {
+        presentation_backend_->shutdown();
+        presentation_backend_.reset();
     }
 
     hwnd_ = nullptr;
@@ -313,20 +314,32 @@ void Renderer::assign_missing_track_generations_locked() {
     }
 }
 
+D3D11RenderBackend* Renderer::d3d_backend() const {
+    if (!presentation_backend_ ||
+        presentation_backend_->kind() != PresentationBackendKind::D3D11) {
+        return nullptr;
+    }
+    return static_cast<D3D11RenderBackend*>(presentation_backend_.get());
+}
+
 D3D11Device* Renderer::d3d_device() const {
-    return d3d_backend_ ? d3d_backend_->device() : nullptr;
+    auto* backend = d3d_backend();
+    return backend ? backend->device() : nullptr;
 }
 
 D3D11FramePresenter* Renderer::frame_presenter() const {
-    return d3d_backend_ ? d3d_backend_->frame_presenter() : nullptr;
+    auto* backend = d3d_backend();
+    return backend ? backend->frame_presenter() : nullptr;
 }
 
 D3D11HeadlessOutput* Renderer::headless_output() const {
-    return d3d_backend_ ? d3d_backend_->headless_output() : nullptr;
+    auto* backend = d3d_backend();
+    return backend ? backend->headless_output() : nullptr;
 }
 
 D3D11RenderResources* Renderer::d3d_resources() const {
-    return d3d_backend_ ? d3d_backend_->resources() : nullptr;
+    auto* backend = d3d_backend();
+    return backend ? backend->resources() : nullptr;
 }
 
 void Renderer::play() {

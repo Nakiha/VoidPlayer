@@ -13,7 +13,7 @@ D3D11RenderBackend::~D3D11RenderBackend() {
     shutdown();
 }
 
-bool D3D11RenderBackend::initialize(const D3D11RenderBackendConfig& config) {
+bool D3D11RenderBackend::initialize(const PresentationBackendConfig& config) {
     shutdown();
     headless_ = config.headless;
 

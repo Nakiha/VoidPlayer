@@ -14,6 +14,7 @@
 #include "video_renderer/render/render_loop_controller.h"
 #include "video_renderer/render/renderer_draw_snapshot.h"
 #include "video_renderer/render/renderer_device_state.h"
+#include "video_renderer/render/presentation_backend.h"
 #include "video_renderer/seek/seek_coordinator.h"
 #include "video_renderer/render/shader_constants.h"
 #include "video_renderer/track/track_gpu_memory_stats.h"
@@ -348,6 +349,7 @@ private:
     void enter_terminal_render_loop_error_locked(const char* reason);
     void reset_d3d_metrics();
     void assign_missing_track_generations_locked();
+    D3D11RenderBackend* d3d_backend() const;
     D3D11Device* d3d_device() const;
     D3D11FramePresenter* frame_presenter() const;
     D3D11HeadlessOutput* headless_output() const;
@@ -359,7 +361,7 @@ private:
     std::unique_ptr<AudioCoordinator> audio_coordinator_;
     std::unique_ptr<SeekCoordinator> seek_coordinator_;
     std::unique_ptr<AnalysisOverlayRenderer> analysis_overlay_renderer_;
-    std::unique_ptr<D3D11RenderBackend> d3d_backend_;
+    std::unique_ptr<PresentationBackend> presentation_backend_;
     std::unique_ptr<RenderSink> render_sink_;
     FrameCaptureService frame_capture_;
     LayoutController layout_controller_;

@@ -49,6 +49,9 @@ int metal_upload_failure(char* error, size_t error_size, const char* message) {
 }
 
 - (BOOL)isAvailable;
+- (BOOL)validatePixelBuffer:(CVPixelBufferRef)pixelBuffer
+                      width:(int32_t)width
+                     height:(int32_t)height;
 - (int)copyCurrentFrameFromPlayer:(VPMacOSNativePlayer*)player
                     toPixelBuffer:(CVPixelBufferRef)pixelBuffer
                             width:(int32_t)width
@@ -88,6 +91,32 @@ int metal_upload_failure(char* error, size_t error_size, const char* message) {
 
 - (BOOL)isAvailable {
   return _device != nil && _commandQueue != nil && _textureCache != nullptr;
+}
+
+- (BOOL)validatePixelBuffer:(CVPixelBufferRef)pixelBuffer
+                      width:(int32_t)width
+                     height:(int32_t)height {
+  if (![self isAvailable] || !pixelBuffer || width <= 0 || height <= 0) {
+    return NO;
+  }
+  CVMetalTextureRef metalTextureRef = nullptr;
+  const CVReturn status = CVMetalTextureCacheCreateTextureFromImage(
+      kCFAllocatorDefault,
+      _textureCache,
+      pixelBuffer,
+      nullptr,
+      MTLPixelFormatBGRA8Unorm,
+      width,
+      height,
+      0,
+      &metalTextureRef);
+  if (status != kCVReturnSuccess || !metalTextureRef) {
+    return NO;
+  }
+  id<MTLTexture> texture = CVMetalTextureGetTexture(metalTextureRef);
+  const BOOL valid = texture != nil;
+  CFRelease(metalTextureRef);
+  return valid;
 }
 
 - (BOOL)ensureStagingBufferWithLength:(size_t)length {
@@ -216,6 +245,18 @@ void VPMacOSMetalUploaderDestroy(VPMacOSMetalUploader* uploader) {
 
 int VPMacOSMetalUploaderIsAvailable(VPMacOSMetalUploader* uploader) {
   return uploader && uploader->impl && [uploader->impl isAvailable] ? 1 : 0;
+}
+
+int VPMacOSMetalUploaderValidatePixelBuffer(VPMacOSMetalUploader* uploader,
+                                            void* pixel_buffer,
+                                            int32_t width,
+                                            int32_t height) {
+  if (!uploader || !uploader->impl) {
+    return 0;
+  }
+  return [uploader->impl validatePixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                       width:width
+                                      height:height] ? 1 : 0;
 }
 
 int VPMacOSMetalUploaderCopyCurrentFrame(VPMacOSMetalUploader* uploader,

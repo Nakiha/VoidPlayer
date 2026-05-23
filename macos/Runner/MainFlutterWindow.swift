@@ -1,7 +1,6 @@
 import Cocoa
 import CoreVideo
 import FlutterMacOS
-import Metal
 
 private struct MacOSDecodedFirstFrame {
   let width: Int
@@ -984,8 +983,6 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private(set) var height: Int
   private let syntheticPattern: Bool
   private let metalUploadEnabled: Bool
-  private let metalDevice: MTLDevice?
-  private var metalTextureCache: CVMetalTextureCache?
   private var nativeMetalUploader: OpaquePointer?
   private var decodedBGRA: Data?
   private let hashPrefix: String
@@ -1004,11 +1001,9 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     self.height = height
     self.syntheticPattern = true
     self.metalUploadEnabled = metalUploadEnabled
-    self.metalDevice = MTLCreateSystemDefaultDevice()
     self.decodedBGRA = nil
     self.hashPrefix = "macos-synthetic"
     super.init()
-    createMetalTextureCache()
     createNativeMetalUploader()
     rebuildPixelBuffer()
   }
@@ -1018,11 +1013,9 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     self.height = decoded.height
     self.syntheticPattern = false
     self.metalUploadEnabled = metalUploadEnabled
-    self.metalDevice = MTLCreateSystemDefaultDevice()
     self.decodedBGRA = decoded.bgra
     self.hashPrefix = "macos-first-frame"
     super.init()
-    createMetalTextureCache()
     createNativeMetalUploader()
     rebuildPixelBuffer()
   }
@@ -1178,8 +1171,8 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       metalUploadFailureCount: pixelBufferMetalUploadFailureCount,
       metalUploadEnabled: metalUploadEnabled,
       presentationUploadMode: presentationUploadModeLocked(),
-      metalAvailable: metalDevice != nil,
-      metalTextureCacheAvailable: metalTextureCache != nil,
+      metalAvailable: nativeMetalUploaderAvailableLocked(),
+      metalTextureCacheAvailable: nativeMetalUploaderAvailableLocked(),
       metalTextureValid: metalTextureValid,
       metalTextureCreationCount: metalTextureCreationCount,
       metalTextureFailureCount: metalTextureFailureCount
@@ -1225,31 +1218,17 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     validateMetalTextureLocked(buffer: nextBuffer)
   }
 
-  private func createMetalTextureCache() {
-    guard let metalDevice else { return }
-    var cache: CVMetalTextureCache?
-    let status = CVMetalTextureCacheCreate(
-      kCFAllocatorDefault,
-      nil,
-      metalDevice,
-      nil,
-      &cache
-    )
-    if status == kCVReturnSuccess {
-      metalTextureCache = cache
-    }
-  }
-
   private func createNativeMetalUploader() {
-    guard metalUploadEnabled else { return }
     nativeMetalUploader = VPMacOSMetalUploaderCreate()
   }
 
+  private func nativeMetalUploaderAvailableLocked() -> Bool {
+    guard let nativeMetalUploader else { return false }
+    return VPMacOSMetalUploaderIsAvailable(nativeMetalUploader) != 0
+  }
+
   private func presentationUploadModeLocked() -> String {
-    if metalUploadEnabled,
-       metalTextureValid,
-       let nativeMetalUploader,
-       VPMacOSMetalUploaderIsAvailable(nativeMetalUploader) != 0 {
+    if metalUploadEnabled, metalTextureValid, nativeMetalUploaderAvailableLocked() {
       return "metal-bgra-staging-upload"
     }
     if pixelBuffer != nil {
@@ -1291,26 +1270,17 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   }
 
   private func validateMetalTextureLocked(buffer: CVPixelBuffer) {
-    guard let metalTextureCache else {
+    guard let nativeMetalUploader else {
       metalTextureValid = false
       return
     }
 
-    var metalTexture: CVMetalTexture?
-    let status = CVMetalTextureCacheCreateTextureFromImage(
-      kCFAllocatorDefault,
-      metalTextureCache,
-      buffer,
-      nil,
-      .bgra8Unorm,
-      width,
-      height,
-      0,
-      &metalTexture
-    )
-    if status == kCVReturnSuccess,
-       let metalTexture,
-       CVMetalTextureGetTexture(metalTexture) != nil {
+    if VPMacOSMetalUploaderValidatePixelBuffer(
+      nativeMetalUploader,
+      UnsafeMutableRawPointer(Unmanaged.passUnretained(buffer).toOpaque()),
+      Int32(width),
+      Int32(height)
+    ) != 0 {
       metalTextureCreationCount += 1
       metalTextureValid = true
     } else {

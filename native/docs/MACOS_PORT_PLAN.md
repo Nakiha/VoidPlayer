@@ -127,11 +127,10 @@ Goal: improve performance after software playback is correct.
 - [ ] Add a Metal/CVPixelBuffer backend with the same responsibilities as D3D11 output.
   The boundary now lives in `native/macos/presentation_adapter.*`; see
   [MACOS_PRESENTATION_ADAPTER.md](MACOS_PRESENTATION_ADAPTER.md).
-  The runner now creates Metal-compatible `CVPixelBuffer` surfaces and validates
-  `CVMetalTextureCache` wrapping through diagnostics. Playback frame callbacks now prefer the
-  native `metal_pixel_buffer_uploader.mm` C ABI, which copies the shared `TextureFrame` into a
-  shared `MTLBuffer` and blits into the texture-backed `CVPixelBuffer`; the locked-buffer direct
-  copy path remains as fallback.
+  The runner now creates Metal-compatible `CVPixelBuffer` surfaces, while
+  `metal_pixel_buffer_uploader.mm` owns `CVMetalTextureCache` validation, the shared `MTLBuffer`,
+  and the blit into the texture-backed `CVPixelBuffer`; the locked-buffer direct copy path remains
+  as fallback.
 - [ ] Port shader/color/layout behavior with deterministic pixel tests.
   Initial portable baselines now cover limited/full-range software BGRA conversion, padded
   linesizes, BGRA channel order, BT.601/BT.709/BT.2020 matrix selection in the shared CPU

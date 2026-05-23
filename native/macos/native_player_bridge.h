@@ -97,6 +97,10 @@ void VPMacOSNativeFrameFree(VPMacOSNativeFrame* frame);
 VPMacOSMetalUploader* VPMacOSMetalUploaderCreate(void);
 void VPMacOSMetalUploaderDestroy(VPMacOSMetalUploader* uploader);
 int VPMacOSMetalUploaderIsAvailable(VPMacOSMetalUploader* uploader);
+int VPMacOSMetalUploaderValidatePixelBuffer(VPMacOSMetalUploader* uploader,
+                                            void* pixel_buffer,
+                                            int32_t width,
+                                            int32_t height);
 int VPMacOSMetalUploaderCopyCurrentFrame(VPMacOSMetalUploader* uploader,
                                          VPMacOSNativePlayer* player,
                                          void* pixel_buffer,

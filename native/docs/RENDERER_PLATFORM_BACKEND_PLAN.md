@@ -62,9 +62,12 @@ Goal: make the current split honest before moving code.
 Progress: shared `PresentationSnapshot` now centralizes present-decision metadata, layout constants,
 color defaults, storage kind, and NV12 coded-size scale for backend consumption. The macOS bridge
 fills its presentation ABI from this contract, and a native canary covers identity, layout, color,
-and odd-dimension NV12 metadata. The macOS transitional thread now reports shared scheduler name and
-tick/present/notification counters. The macOS native test matrix also covers present-decision
-carry-forward identity and offset guards.
+and odd-dimension NV12 metadata. The macOS transitional thread now reports shared scheduler name,
+tick/present/notification counters, cached scheduler-decision availability, present-package upload
+count, and package storage. Package copy consumes the scheduler-selected `PresentDecision` when a
+tick has published one, and the Swift texture pump coalesces duplicate copy requests instead of
+queuing stale uploads. The macOS native test matrix also covers present-decision carry-forward
+identity and offset guards.
 
 Exit gate: current macOS playback still works, and diagnostics clearly distinguish transitional
 texture-pump presentation from renderer-owned presentation.
@@ -118,6 +121,10 @@ Goal: make Metal do the same job D3D11 does today.
   presented-frame cadence in diagnostics.
 
 Progress: macOS now exposes a native present-frame package ABI that combines the selected
+`PresentDecision`, storage kind, layout metadata, and packed frame bytes for backend consumption.
+The Swift-visible backend calls through this ABI, the Metal backend reuses a native staging scratch
+buffer, and diagnostics keep the current software/CPU-backed upload path visible while the
+renderer-owned backend is still under construction.
 present-decision metadata with either direct YUV staging data or BGRA fallback data. The current
 Metal uploader consumes this package path, which keeps player-side frame selection separate from
 Metal upload/composition. The Metal presentation backend also exposes a package-consuming ABI, so

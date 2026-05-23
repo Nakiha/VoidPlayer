@@ -48,6 +48,10 @@ int main() {
     VPMacOSMetalPresentationBackendDestroy(c_backend);
     return fail("Metal presentation backend C ABI uploader is unavailable");
   }
+  if (VPMacOSMetalPresentationBackendDirectYUVUploadCount(c_backend) != 0) {
+    VPMacOSMetalPresentationBackendDestroy(c_backend);
+    return fail("Metal presentation backend initial YUV upload count is not zero");
+  }
   VPMacOSMetalPresentationBackendDestroy(c_backend);
   return 0;
 }

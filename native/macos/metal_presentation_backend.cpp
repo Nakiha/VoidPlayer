@@ -64,3 +64,49 @@ VPMacOSMetalUploader* VPMacOSMetalPresentationBackendUploader(
     VPMacOSMetalPresentationBackend* backend) {
   return backend ? backend->impl.uploader() : nullptr;
 }
+
+int64_t VPMacOSMetalPresentationBackendDirectYUVUploadCount(
+    VPMacOSMetalPresentationBackend* backend) {
+  return VPMacOSMetalUploaderDirectYUVUploadCount(
+      VPMacOSMetalPresentationBackendUploader(backend));
+}
+
+int VPMacOSMetalPresentationBackendValidatePixelBufferChecked(
+    VPMacOSMetalPresentationBackend* backend,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    char* error,
+    size_t error_size) {
+  return VPMacOSMetalUploaderValidatePixelBufferChecked(
+      VPMacOSMetalPresentationBackendUploader(backend),
+      pixel_buffer,
+      width,
+      height,
+      error,
+      error_size);
+}
+
+int VPMacOSMetalPresentationBackendCopyCurrentFrameWithLayout(
+    VPMacOSMetalPresentationBackend* backend,
+    VPMacOSNativePlayer* player,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    int32_t max_track_slots,
+    int32_t wait_timeout_ms,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size) {
+  return VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
+      VPMacOSMetalPresentationBackendUploader(backend),
+      player,
+      pixel_buffer,
+      width,
+      height,
+      max_track_slots,
+      wait_timeout_ms,
+      out,
+      error,
+      error_size);
+}

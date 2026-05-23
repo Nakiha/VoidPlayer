@@ -340,7 +340,7 @@ private final class MacOSNativePlayerSession {
   }
 
   func copyCurrentFrameToMetalPixelBuffer(
-    uploader: OpaquePointer,
+    backend: OpaquePointer,
     pixelBuffer: CVPixelBuffer,
     width: Int,
     height: Int,
@@ -353,8 +353,8 @@ private final class MacOSNativePlayerSession {
     repeat {
       var frameInfo = VPMacOSNativeFrameInfo()
       var error = [CChar](repeating: 0, count: 1024)
-      let ret = VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
-        uploader,
+      let ret = VPMacOSMetalPresentationBackendCopyCurrentFrameWithLayout(
+        backend,
         handle,
         UnsafeMutableRawPointer(Unmanaged.passUnretained(pixelBuffer).toOpaque()),
         Int32(width),
@@ -1289,10 +1289,6 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private let syntheticPattern: Bool
   private let metalUploadEnabled: Bool
   private var nativeMetalPresentationBackend: OpaquePointer?
-  private var nativeMetalUploader: OpaquePointer? {
-    guard let nativeMetalPresentationBackend else { return nil }
-    return VPMacOSMetalPresentationBackendUploader(nativeMetalPresentationBackend)
-  }
   private var decodedBGRA: Data?
   private let hashPrefix: String
   private var pixelBuffer: CVPixelBuffer?
@@ -1557,8 +1553,10 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   }
 
   private func nativeMetalUploaderDirectYuvUploadCountLocked() -> Int {
-    guard let nativeMetalUploader else { return 0 }
-    return Int(VPMacOSMetalUploaderDirectYUVUploadCount(nativeMetalUploader))
+    guard let nativeMetalPresentationBackend else { return 0 }
+    return Int(
+      VPMacOSMetalPresentationBackendDirectYUVUploadCount(nativeMetalPresentationBackend)
+    )
   }
 
   private func presentationUploadModeLocked() -> String {
@@ -1580,13 +1578,13 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     guard metalUploadEnabled else {
       return nil
     }
-    guard let nativeMetalUploader,
-          VPMacOSMetalUploaderIsAvailable(nativeMetalUploader) != 0 else {
+    guard let nativeMetalPresentationBackend,
+          VPMacOSMetalPresentationBackendIsAvailable(nativeMetalPresentationBackend) != 0 else {
       return nil
     }
     do {
       guard let info = try player.copyCurrentFrameToMetalPixelBuffer(
-        uploader: nativeMetalUploader,
+        backend: nativeMetalPresentationBackend,
         pixelBuffer: pixelBuffer,
         width: width,
         height: height,
@@ -1606,15 +1604,15 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   }
 
   private func validateMetalTextureLocked(buffer: CVPixelBuffer) {
-    guard let nativeMetalUploader else {
+    guard let nativeMetalPresentationBackend else {
       metalTextureValid = false
-      metalTextureLastError = "native Metal uploader is null"
+      metalTextureLastError = "native Metal presentation backend is null"
       return
     }
 
     var error = [CChar](repeating: 0, count: 512)
-    let status = VPMacOSMetalUploaderValidatePixelBufferChecked(
-      nativeMetalUploader,
+    let status = VPMacOSMetalPresentationBackendValidatePixelBufferChecked(
+      nativeMetalPresentationBackend,
       UnsafeMutableRawPointer(Unmanaged.passUnretained(buffer).toOpaque()),
       Int32(width),
       Int32(height),

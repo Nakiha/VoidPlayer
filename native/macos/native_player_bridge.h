@@ -264,6 +264,26 @@ void VPMacOSMetalPresentationBackendDestroy(VPMacOSMetalPresentationBackend* bac
 int VPMacOSMetalPresentationBackendIsAvailable(VPMacOSMetalPresentationBackend* backend);
 VPMacOSMetalUploader* VPMacOSMetalPresentationBackendUploader(
     VPMacOSMetalPresentationBackend* backend);
+int64_t VPMacOSMetalPresentationBackendDirectYUVUploadCount(
+    VPMacOSMetalPresentationBackend* backend);
+int VPMacOSMetalPresentationBackendValidatePixelBufferChecked(
+    VPMacOSMetalPresentationBackend* backend,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    char* error,
+    size_t error_size);
+int VPMacOSMetalPresentationBackendCopyCurrentFrameWithLayout(
+    VPMacOSMetalPresentationBackend* backend,
+    VPMacOSNativePlayer* player,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    int32_t max_track_slots,
+    int32_t wait_timeout_ms,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
 
 int VPMacOSMeasureBGRA(const uint8_t* bgra,
                        int32_t width,

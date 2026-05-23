@@ -96,19 +96,20 @@ hash/luma/non-black statistics are calculated by the shared native capture metri
 During playback the shared macOS native bridge now emits frame-available callbacks when the native
 tick advances the current frame; Swift no longer owns a fixed playback timer.
 
-Native playback presentation now goes through `native/macos/presentation_adapter.*`. Swift owns
-the `CVPixelBuffer`, locks its base address, and asks native code to copy the shared
-`TextureFrame` into that BGRA destination. The current adapter is reported in diagnostics as
+Native playback presentation now goes through `native/macos/presentation_adapter.*` and
+`native/macos/metal_pixel_buffer_uploader.mm`. Swift owns `CVPixelBuffer` lifecycle, Flutter texture
+registration, and frame notifications, while native owns the shared `TextureFrame` copy path and the
+Metal staging upload. The current adapter is reported in diagnostics as
 `presentationAdapter=cvpixelbuffer-bgra-copy`; decode, seek, loop, audio, and playback clock policy
 remain outside Swift. The adapter accepts CPU RGBA, planar YUV420, NV12, and P010 frames, with
 deterministic smoke coverage for range and matrix-aware YUV conversion plus a 10-bit H.264
-VideoToolbox hwdownload UI smoke before a renderer-owned Metal presentation path takes over.
-The pixel buffer is created with Metal compatibility and IOSurface backing, and diagnostics expose
-whether a `CVMetalTextureCache` can wrap it (`metalTextureCreationCount`, `metalTextureValid`).
-Playback frame callbacks now prefer `presentationUploadMode=metal-bgra-staging-upload`: native
-copies the shared frame into a shared `MTLBuffer`, and Metal blits that staging buffer into the
-texture-backed `CVPixelBuffer`. The older locked-buffer direct copy remains a fallback and is
-reported through `pixelBufferDirectCopyCount`.
+VideoToolbox hwdownload UI smoke before a renderer-owned shader path takes over. The pixel buffer is
+created with Metal compatibility and IOSurface backing, and diagnostics expose whether a
+`CVMetalTextureCache` can wrap it (`metalTextureCreationCount`, `metalTextureValid`). Playback frame
+callbacks now prefer `presentationUploadMode=metal-bgra-staging-upload`: native copies the shared
+frame into a shared `MTLBuffer`, then blits that staging buffer into the texture-backed
+`CVPixelBuffer`. The older locked-buffer direct copy remains a fallback and is reported through
+`pixelBufferDirectCopyCount`.
 
 Manual audible smoke:
 

@@ -9,6 +9,7 @@ extern "C" {
 #endif
 
 typedef struct VPMacOSNativePlayer VPMacOSNativePlayer;
+typedef struct VPMacOSMetalUploader VPMacOSMetalUploader;
 typedef void (*VPMacOSFrameAvailableCallback)(void* user_data);
 
 typedef struct VPMacOSNativeFrame {
@@ -92,6 +93,19 @@ int VPMacOSNativePlayerCopyCurrentFrameBGRAInto(VPMacOSNativePlayer* player,
                                                 char* error,
                                                 size_t error_size);
 void VPMacOSNativeFrameFree(VPMacOSNativeFrame* frame);
+
+VPMacOSMetalUploader* VPMacOSMetalUploaderCreate(void);
+void VPMacOSMetalUploaderDestroy(VPMacOSMetalUploader* uploader);
+int VPMacOSMetalUploaderIsAvailable(VPMacOSMetalUploader* uploader);
+int VPMacOSMetalUploaderCopyCurrentFrame(VPMacOSMetalUploader* uploader,
+                                         VPMacOSNativePlayer* player,
+                                         void* pixel_buffer,
+                                         int32_t width,
+                                         int32_t height,
+                                         int32_t wait_timeout_ms,
+                                         VPMacOSNativeFrameInfo* out,
+                                         char* error,
+                                         size_t error_size);
 
 int VPMacOSMeasureBGRA(const uint8_t* bgra,
                        int32_t width,

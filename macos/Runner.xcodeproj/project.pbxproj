@@ -471,6 +471,7 @@
 				"$(PROJECT_DIR)/../native/CMakeLists.txt",
 				"$(PROJECT_DIR)/../native/cmake/NativeSources.cmake",
 				"$(PROJECT_DIR)/../native/cmake/PortableTargets.cmake",
+				"$(PROJECT_DIR)/../native/macos/metal_pixel_buffer_uploader.mm",
 				"$(PROJECT_DIR)/../native/macos/native_player_bridge.cpp",
 				"$(PROJECT_DIR)/../native/macos/native_player_bridge.h",
 				"$(PROJECT_DIR)/../native/video_renderer/seek/seek_coordinator.cpp",

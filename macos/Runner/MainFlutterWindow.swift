@@ -245,6 +245,57 @@ private final class MacOSNativePlayerSession {
       lastError.isEmpty ? "timed out waiting for a decoded frame" : lastError
     )
   }
+
+  func copyCurrentFrameToMetalPixelBuffer(
+    uploader: OpaquePointer,
+    pixelBuffer: CVPixelBuffer,
+    width: Int,
+    height: Int,
+    waitTimeoutMs: Int = 0
+  ) throws -> MacOSNativeFrameInfo? {
+    let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
+    var lastError = ""
+
+    repeat {
+      var frameInfo = VPMacOSNativeFrameInfo()
+      var error = [CChar](repeating: 0, count: 1024)
+      let ret = VPMacOSMetalUploaderCopyCurrentFrame(
+        uploader,
+        handle,
+        UnsafeMutableRawPointer(Unmanaged.passUnretained(pixelBuffer).toOpaque()),
+        Int32(width),
+        Int32(height),
+        Int32(waitTimeoutMs),
+        &frameInfo,
+        &error,
+        error.count
+      )
+      if ret == 0 {
+        guard frameInfo.width > 0, frameInfo.height > 0 else {
+          throw MacOSNativePlayerError.invalidPayload
+        }
+        return MacOSNativeFrameInfo(
+          width: Int(frameInfo.width),
+          height: Int(frameInfo.height),
+          durationUs: Int(frameInfo.duration_us),
+          ptsUs: Int(frameInfo.pts_us),
+          dtsUs: Int(frameInfo.dts_us)
+        )
+      }
+      if ret == -2 {
+        return nil
+      }
+      let message = String(cString: error)
+      lastError = message.isEmpty
+        ? "copyCurrentFrameToMetalPixelBuffer failed with code \(ret)"
+        : message
+      Thread.sleep(forTimeInterval: 0.01)
+    } while Date() < deadline
+
+    throw MacOSNativePlayerError.failed(
+      lastError.isEmpty ? "timed out waiting for a decoded frame" : lastError
+    )
+  }
 }
 
 private func macOSNativeFrameAvailable(_ userData: UnsafeMutableRawPointer?) {
@@ -935,8 +986,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private let metalUploadEnabled: Bool
   private let metalDevice: MTLDevice?
   private var metalTextureCache: CVMetalTextureCache?
-  private var metalCommandQueue: MTLCommandQueue?
-  private var metalStagingBuffer: MTLBuffer?
+  private var nativeMetalUploader: OpaquePointer?
   private var decodedBGRA: Data?
   private let hashPrefix: String
   private var pixelBuffer: CVPixelBuffer?
@@ -959,6 +1009,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     self.hashPrefix = "macos-synthetic"
     super.init()
     createMetalTextureCache()
+    createNativeMetalUploader()
     rebuildPixelBuffer()
   }
 
@@ -972,7 +1023,14 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     self.hashPrefix = "macos-first-frame"
     super.init()
     createMetalTextureCache()
+    createNativeMetalUploader()
     rebuildPixelBuffer()
+  }
+
+  deinit {
+    if let nativeMetalUploader {
+      VPMacOSMetalUploaderDestroy(nativeMetalUploader)
+    }
   }
 
   func resize(width: Int, height: Int) {
@@ -1179,12 +1237,19 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     )
     if status == kCVReturnSuccess {
       metalTextureCache = cache
-      metalCommandQueue = metalDevice.makeCommandQueue()
     }
   }
 
+  private func createNativeMetalUploader() {
+    guard metalUploadEnabled else { return }
+    nativeMetalUploader = VPMacOSMetalUploaderCreate()
+  }
+
   private func presentationUploadModeLocked() -> String {
-    if metalUploadEnabled, metalTextureValid, metalCommandQueue != nil {
+    if metalUploadEnabled,
+       metalTextureValid,
+       let nativeMetalUploader,
+       VPMacOSMetalUploaderIsAvailable(nativeMetalUploader) != 0 {
       return "metal-bgra-staging-upload"
     }
     if pixelBuffer != nil {
@@ -1201,78 +1266,28 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     guard metalUploadEnabled else {
       return nil
     }
-    guard let metalTextureCache,
-          let metalCommandQueue else {
+    guard let nativeMetalUploader,
+          VPMacOSMetalUploaderIsAvailable(nativeMetalUploader) != 0 else {
       return nil
     }
-
-    let rowBytes = width * 4
-    let uploadSize = rowBytes * height
-    if metalStagingBuffer == nil || metalStagingBuffer!.length < uploadSize {
-      metalStagingBuffer = metalDevice?.makeBuffer(
-        length: uploadSize,
-        options: [.storageModeShared]
-      )
-    }
-    guard let metalStagingBuffer else {
+    do {
+      guard let info = try player.copyCurrentFrameToMetalPixelBuffer(
+        uploader: nativeMetalUploader,
+        pixelBuffer: pixelBuffer,
+        width: width,
+        height: height,
+        waitTimeoutMs: waitTimeoutMs
+      ) else {
+        pixelBufferMetalUploadFailureCount += 1
+        return nil
+      }
+      pixelBufferMetalUploadCount += 1
+      validateMetalTextureLocked(buffer: pixelBuffer)
+      return info
+    } catch {
       pixelBufferMetalUploadFailureCount += 1
-      return nil
+      throw error
     }
-
-    let info = try player.copyCurrentFrameIntoBGRA(
-      metalStagingBuffer.contents().assumingMemoryBound(to: UInt8.self),
-      dstSize: uploadSize,
-      width: width,
-      height: height,
-      strideBytes: rowBytes,
-      waitTimeoutMs: waitTimeoutMs
-    )
-
-    var metalTextureRef: CVMetalTexture?
-    let status = CVMetalTextureCacheCreateTextureFromImage(
-      kCFAllocatorDefault,
-      metalTextureCache,
-      pixelBuffer,
-      nil,
-      .bgra8Unorm,
-      width,
-      height,
-      0,
-      &metalTextureRef
-    )
-    guard status == kCVReturnSuccess,
-          let metalTextureRef,
-          let destinationTexture = CVMetalTextureGetTexture(metalTextureRef),
-          let commandBuffer = metalCommandQueue.makeCommandBuffer(),
-          let blit = commandBuffer.makeBlitCommandEncoder() else {
-      pixelBufferMetalUploadFailureCount += 1
-      return nil
-    }
-
-    blit.copy(
-      from: metalStagingBuffer,
-      sourceOffset: 0,
-      sourceBytesPerRow: rowBytes,
-      sourceBytesPerImage: uploadSize,
-      sourceSize: MTLSize(width: width, height: height, depth: 1),
-      to: destinationTexture,
-      destinationSlice: 0,
-      destinationLevel: 0,
-      destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0)
-    )
-    blit.endEncoding()
-    commandBuffer.commit()
-    commandBuffer.waitUntilCompleted()
-
-    guard commandBuffer.status == .completed else {
-      pixelBufferMetalUploadFailureCount += 1
-      return nil
-    }
-
-    pixelBufferMetalUploadCount += 1
-    metalTextureCreationCount += 1
-    metalTextureValid = true
-    return info
   }
 
   private func validateMetalTextureLocked(buffer: CVPixelBuffer) {

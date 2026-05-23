@@ -59,6 +59,11 @@ if(APPLE)
     )
     target_link_libraries(void_macos_native_player PUBLIC
         void_media_ffmpeg
+        "-framework Metal"
+        "-framework CoreVideo"
+    )
+    target_compile_options(void_macos_native_player PRIVATE
+        $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
     )
 
     add_executable(macos_media_smoke

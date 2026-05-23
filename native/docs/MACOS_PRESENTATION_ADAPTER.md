@@ -1,32 +1,36 @@
 # macOS Presentation Adapter
 
-The macOS presentation boundary starts at `vr::TextureFrame` and ends at a
-locked BGRA destination owned by the macOS runner. Demux, decode, seek, loop,
-audio, and playback clock policy stay in shared native code.
+The macOS presentation boundary starts at `vr::TextureFrame` and ends at the
+BGRA `CVPixelBuffer` surface owned by the macOS runner. Demux, decode, seek,
+loop, audio, and playback clock policy stay in shared native code.
 
 ## Current Adapter
 
-`native/macos/presentation_adapter.*` exposes the current software adapter:
+`native/macos/presentation_adapter.*` exposes the current BGRA conversion
+adapter, and `native/macos/metal_pixel_buffer_uploader.mm` owns the Metal
+staging upload:
 
 - adapter name: `cvpixelbuffer-bgra-copy`
 - input: shared `vr::TextureFrame` storage
-- output: caller-provided BGRA rows, currently a locked `CVPixelBuffer`
+- output: caller-provided BGRA rows, currently either a native `MTLBuffer`
+  staged into a `CVPixelBuffer` or a locked `CVPixelBuffer` fallback
 - supported storage: CPU RGBA, CPU planar YUV420 8-bit, CPU NV12 8-bit, CPU P010 10-bit
 - unsupported storage: renderer-owned GPU textures
 
-The Swift runner only owns `CVPixelBuffer` lifecycle, locking, texture
-registration, and Flutter frame notifications. It asks native code to copy the
-current frame into the locked pixel buffer and receives frame timing metadata.
-The runner now creates Metal-compatible, IOSurface-backed pixel buffers and
-validates that CoreVideo can wrap them through a `CVMetalTextureCache`; that
-surface is used for `presentationUploadMode=metal-bgra-staging-upload`, where
-native copies into a shared `MTLBuffer` and Metal blits into the texture-backed
-`CVPixelBuffer`. Locked-buffer direct copy remains available as a fallback.
+The Swift runner only owns `CVPixelBuffer` lifecycle, texture registration,
+diagnostic counters, and Flutter frame notifications. It asks native code to
+copy the current frame into the native Metal uploader, or into a locked pixel
+buffer when the direct-copy fallback is enabled, and receives frame timing
+metadata. The runner creates Metal-compatible, IOSurface-backed pixel buffers
+and validates that CoreVideo can wrap them through a `CVMetalTextureCache`;
+the same surface is used for `presentationUploadMode=metal-bgra-staging-upload`,
+where native copies into a shared `MTLBuffer` and Metal blits into the
+texture-backed `CVPixelBuffer`.
 
 ## Parity Expectations
 
-These expectations are CPU-side baselines for the future Metal/CVPixelBuffer
-adapter:
+These expectations are CPU-side baselines for the current native Metal staging
+path and the future renderer-owned shader path:
 
 - preserve BGRA channel order
 - preserve full-range vs limited-range YUV behavior

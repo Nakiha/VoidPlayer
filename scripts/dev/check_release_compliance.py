@@ -29,6 +29,25 @@ def _require_text(path: Path, needles: list[str], label: str) -> None:
         raise RuntimeError(f"{label} is missing expected text: {joined}")
 
 
+def _has_ffmpeg_license(root: Path) -> bool:
+    return (
+        (root / "LICENSE").is_file() or
+        (root / "LICENSE.txt").is_file() or
+        (root / "LICENSES" / "FFmpeg-LICENSE.md").is_file()
+    )
+
+
+def _require_windows_ffmpeg_readme(path: Path) -> None:
+    _require_file(path, "Windows FFmpeg package README")
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    if "FFmpeg" not in text:
+        raise RuntimeError("Windows FFmpeg package README is missing expected text: 'FFmpeg'")
+    if "configuration" not in text and "Target: windows-x64-msvc" not in text:
+        raise RuntimeError(
+            "Windows FFmpeg package README is missing expected text: "
+            "'configuration' or 'Target: windows-x64-msvc'")
+
+
 def check_source_tree() -> None:
     _require_text(ROOT / "LICENSE", ["GNU GENERAL PUBLIC LICENSE", "Version 3"],
                   "top-level GPL license")
@@ -40,13 +59,11 @@ def check_source_tree() -> None:
                   "native third-party manifest")
 
     windows_ffmpeg_root = ROOT / "windows" / "libs" / "ffmpeg"
-    _require_text(windows_ffmpeg_root / "README.txt",
-                  ["FFmpeg", "configuration"],
-                  "Windows FFmpeg package README")
-    if not ((windows_ffmpeg_root / "LICENSE").is_file() or
-            (windows_ffmpeg_root / "LICENSE.txt").is_file()):
+    _require_windows_ffmpeg_readme(windows_ffmpeg_root / "README.txt")
+    if not _has_ffmpeg_license(windows_ffmpeg_root):
         raise RuntimeError(
-            f"missing FFmpeg LICENSE or LICENSE.txt in {windows_ffmpeg_root}")
+            "missing FFmpeg LICENSE, LICENSE.txt, or LICENSES/FFmpeg-LICENSE.md "
+            f"in {windows_ffmpeg_root}")
 
     macos_ffmpeg_root = ROOT / "third_party" / "ffmpeg"
     _require_text(macos_ffmpeg_root / "README.txt",
@@ -61,9 +78,7 @@ def check_source_tree() -> None:
 
 def check_stage(stage_dir: Path) -> None:
     _require_file(stage_dir / "README.txt", "staged FFmpeg README")
-    if not ((stage_dir / "LICENSE").is_file() or
-            (stage_dir / "LICENSE.txt").is_file() or
-            (stage_dir / "LICENSES" / "FFmpeg-LICENSE.md").is_file()):
+    if not _has_ffmpeg_license(stage_dir):
         raise RuntimeError(
             f"missing staged FFmpeg LICENSE, LICENSE.txt, or LICENSES/FFmpeg-LICENSE.md in {stage_dir}")
 

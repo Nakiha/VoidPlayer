@@ -14,12 +14,21 @@ def _require(path: Path, label: str) -> None:
         raise RuntimeError(f"{label} is empty: {path}")
 
 
+def _has_ffmpeg_license(path: Path) -> bool:
+    return (
+        (path / "LICENSE").is_file() or
+        (path / "LICENSE.txt").is_file() or
+        (path / "LICENSES" / "FFmpeg-LICENSE.md").is_file()
+    )
+
+
 def check_ffi_dist(path: Path) -> None:
     _require(path / "video_renderer_ffi.dll", "FFI DLL")
     _require(path / "ffi_exports.h", "FFI header")
     _require(path / "README.txt", "FFmpeg README")
-    if not ((path / "LICENSE").is_file() or (path / "LICENSE.txt").is_file()):
-        raise RuntimeError(f"missing FFmpeg LICENSE or LICENSE.txt in {path}")
+    if not _has_ffmpeg_license(path):
+        raise RuntimeError(
+            f"missing FFmpeg LICENSE, LICENSE.txt, or LICENSES/FFmpeg-LICENSE.md in {path}")
     for dll in ("avcodec-62.dll", "avformat-62.dll", "avutil-60.dll", "swresample-6.dll"):
         _require(path / dll, dll)
 

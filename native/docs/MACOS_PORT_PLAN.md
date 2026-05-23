@@ -147,8 +147,8 @@ Goal: make the app distributable and honest about unsupported features.
   app minimum and passing the same deployment target into the Xcode-triggered native CMake build.
 - [ ] Add release build, signing, notarization, and third-party notice docs.
   `dev.py package` now stages a macOS release app with bundled GPL/third-party/FFmpeg notices and
-  ad-hoc signs/verifies the copied app signature. Developer ID signing, DMG creation, and
-  notarization remain manual follow-up.
+  verifies bundled `@rpath` linkage before ad-hoc signing/verifying the copied app signature.
+  Developer ID signing, DMG creation, and notarization remain manual follow-up.
 - [x] Make the native analysis library build on macOS with the initialized submodules.
 - [x] Add an explicit unsupported gate for macOS analysis windows and overlays until the workflow is
   wired.
@@ -275,8 +275,9 @@ enabled.
 Packaging status: `python dev.py package` now works on macOS as a release staging command. It builds
 or reuses `build/macos/Build/Products/Release/VoidPlayer.app`, copies it to
 `build/package/macos/VoidPlayer/VoidPlayer.app`, adds top-level and in-app compliance docs, stages
-the macOS FFmpeg README/build manifest/license files, runs the release compliance smoke, ad-hoc
-signs the staged copy, and verifies it with `codesign --verify --deep --strict`.
+the macOS FFmpeg README/build manifest/license files, runs the release compliance smoke, verifies
+bundled `@rpath` linkage with `otool -L`, ad-hoc signs the staged copy, and verifies the app with
+`codesign --verify --deep --strict`.
 
 Frame callback lifecycle status: macOS now has targeted UI smokes that churn play/pause/play,
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks

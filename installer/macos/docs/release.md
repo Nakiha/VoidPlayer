@@ -13,9 +13,10 @@ Current release boundary:
   are supported.
 - Network/SSH media and analysis UI/IPC remain disabled by macOS capability
   gates until first-class macOS workflows are implemented.
-- `dev.py package` ad-hoc signs the staged app after adding bundled notices,
-  then verifies it with `codesign --verify --deep --strict`. Developer ID
-  signing, DMG creation, and notarization are still manual follow-up steps.
+- `dev.py package` verifies the staged FFmpeg dylib layout with `otool -L`,
+  ad-hoc signs the staged app after adding bundled notices, then verifies it
+  with `codesign --verify --deep --strict`. Developer ID signing, DMG creation,
+  and notarization are still manual follow-up steps.
 
 Before distributing outside local testing, sign the staged app with the release
 Developer ID identity, notarize the signed artifact, staple the ticket, and keep

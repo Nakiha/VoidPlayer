@@ -130,5 +130,6 @@ python dev.py package
 
 On macOS this builds a release app, copies `VoidPlayer.app` into
 `build/package/macos/VoidPlayer/`, stages GPL/third-party/FFmpeg compliance docs both alongside the
-app and inside app resources, ad-hoc signs the staged app, and verifies the copied app signature.
-Developer ID signing, DMG creation, and notarization remain manual release steps.
+app and inside app resources, validates the bundled FFmpeg `@rpath` linkage with `otool -L`, ad-hoc
+signs the staged app, and verifies the copied app signature. Developer ID signing, DMG creation,
+and notarization remain manual release steps.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -58,6 +59,24 @@ BUILD_ONLY_FILE_PATTERNS = {
     "*.lib",
     "*.pdb",
 }
+
+MACOS_FFMPEG_DYLIBS = [
+    "libavcodec.62.28.100.dylib",
+    "libavformat.62.12.100.dylib",
+    "libavutil.60.26.100.dylib",
+    "libswresample.6.3.100.dylib",
+]
+
+MACOS_FFMPEG_SYMLINKS = [
+    "libavcodec.62.dylib",
+    "libavcodec.dylib",
+    "libavformat.62.dylib",
+    "libavformat.dylib",
+    "libavutil.60.dylib",
+    "libavutil.dylib",
+    "libswresample.6.dylib",
+    "libswresample.dylib",
+]
 
 
 def cmd_package(args) -> None:
@@ -152,6 +171,7 @@ def _cmd_package_macos(args) -> None:
     _assert_no_mutable_artifacts(stage_dir, "macOS package staging")
     _assert_release_compliance(stage_dir)
     _assert_macos_app_compliance(stage_app)
+    _verify_macos_linkage(stage_app)
     _adhoc_sign_macos_app(stage_app)
     _verify_macos_codesign(stage_app)
 
@@ -278,6 +298,78 @@ def _assert_macos_app_compliance(stage_app: Path) -> None:
     for path in required:
         if not path.is_file():
             print(f"\nERROR: macOS app compliance file missing: {path}")
+            sys.exit(1)
+
+
+def _verify_macos_linkage(stage_app: Path) -> None:
+    header("Verify macOS app linkage")
+    executable = stage_app / "Contents" / "MacOS" / "VoidPlayer"
+    frameworks = stage_app / "Contents" / "Frameworks"
+    required_loads = {f"@rpath/{name}" for name in MACOS_FFMPEG_DYLIBS}
+
+    for name in MACOS_FFMPEG_DYLIBS:
+        path = frameworks / name
+        if not path.is_file():
+            print(f"\nERROR: bundled FFmpeg dylib missing: {path}")
+            sys.exit(1)
+
+    for name in MACOS_FFMPEG_SYMLINKS:
+        path = frameworks / name
+        if not path.is_symlink():
+            print(f"\nERROR: bundled FFmpeg dylib symlink missing: {path}")
+            sys.exit(1)
+
+    executable_loads = set(_otool_libraries(executable))
+    missing = sorted(required_loads - executable_loads)
+    if missing:
+        print("\nERROR: staged app executable is missing FFmpeg @rpath loads:")
+        for name in missing:
+            print(f"  - {name}")
+        sys.exit(1)
+
+    _assert_no_developer_paths(executable, executable_loads)
+    for name in MACOS_FFMPEG_DYLIBS:
+        dylib = frameworks / name
+        loads = _otool_libraries(dylib)
+        if not loads or loads[0] != f"@rpath/{name}":
+            actual = loads[0] if loads else "<none>"
+            print(f"\nERROR: {dylib.name} has unexpected install name: {actual}")
+            sys.exit(1)
+        _assert_ffmpeg_deps_use_rpath(dylib, loads)
+        _assert_no_developer_paths(dylib, loads)
+
+
+def _otool_libraries(binary: Path) -> list[str]:
+    print(f"> otool -L {binary}")
+    result = subprocess.run(
+        ["otool", "-L", str(binary)],
+        cwd=str(ROOT),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    libraries: list[str] = []
+    for line in result.stdout.splitlines()[1:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        libraries.append(stripped.split(" (", 1)[0])
+    return libraries
+
+
+def _assert_ffmpeg_deps_use_rpath(binary: Path, loads: list[str]) -> None:
+    for library in loads[1:]:
+        name = Path(library).name
+        if name.startswith(("libav", "libswresample")) and not library.startswith("@rpath/"):
+            print(f"\nERROR: {binary.name} has non-rpath FFmpeg dependency: {library}")
+            sys.exit(1)
+
+
+def _assert_no_developer_paths(binary: Path, loads: list[str]) -> None:
+    forbidden = (str(ROOT), "/third_party/ffmpeg/", "/native/build", "/build/macos/")
+    for library in loads:
+        if any(marker in library for marker in forbidden):
+            print(f"\nERROR: {binary.name} has developer-machine linkage path: {library}")
             sys.exit(1)
 
 

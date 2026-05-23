@@ -1,5 +1,9 @@
 name: Native
 
+permissions:
+  actions: read
+  contents: read
+
 on:
   push:
     paths:
@@ -103,7 +107,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           lfs: false
-          submodules: recursive
+          submodules: false
           fetch-depth: 0
 
       - name: Restore macOS FFmpeg artifact
@@ -121,6 +125,15 @@ jobs:
           rm -rf third_party/ffmpeg
           mkdir -p third_party
           mv build/ci-ffmpeg/unpacked/voidplayer-ffmpeg-macos-arm64-n8.1 third_party/ffmpeg
+          cat > third_party/ffmpeg/VOIDPLAYER_BUILD.md <<EOF
+          # VoidPlayer FFmpeg Package
+
+          Restored in CI from the latest successful VoidPlayer FFmpeg build.
+
+          - Repository: https://github.com/Nakiha/VoidPlayer-FFmpeg-Build
+          - GitHub Actions run: https://github.com/Nakiha/VoidPlayer-FFmpeg-Build/actions/runs/${run_id}
+          - Artifact: voidplayer-ffmpeg-macos-arm64-n8.1
+          EOF
 
       - uses: actions/setup-python@v5
         with:
@@ -167,6 +180,15 @@ jobs:
           rm -rf third_party/ffmpeg
           mkdir -p third_party
           mv build/ci-ffmpeg/unpacked/voidplayer-ffmpeg-macos-arm64-n8.1 third_party/ffmpeg
+          cat > third_party/ffmpeg/VOIDPLAYER_BUILD.md <<EOF
+          # VoidPlayer FFmpeg Package
+
+          Restored in CI from the latest successful VoidPlayer FFmpeg build.
+
+          - Repository: https://github.com/Nakiha/VoidPlayer-FFmpeg-Build
+          - GitHub Actions run: https://github.com/Nakiha/VoidPlayer-FFmpeg-Build/actions/runs/${run_id}
+          - Artifact: voidplayer-ffmpeg-macos-arm64-n8.1
+          EOF
 
       - uses: actions/setup-python@v5
         with:
@@ -227,6 +249,15 @@ jobs:
           rm -rf third_party/ffmpeg
           mkdir -p third_party
           mv build/ci-ffmpeg/unpacked/voidplayer-ffmpeg-macos-arm64-n8.1 third_party/ffmpeg
+          cat > third_party/ffmpeg/VOIDPLAYER_BUILD.md <<EOF
+          # VoidPlayer FFmpeg Package
+
+          Restored in CI from the latest successful VoidPlayer FFmpeg build.
+
+          - Repository: https://github.com/Nakiha/VoidPlayer-FFmpeg-Build
+          - GitHub Actions run: https://github.com/Nakiha/VoidPlayer-FFmpeg-Build/actions/runs/${run_id}
+          - Artifact: voidplayer-ffmpeg-macos-arm64-n8.1
+          EOF
 
       - uses: actions/setup-python@v5
         with:

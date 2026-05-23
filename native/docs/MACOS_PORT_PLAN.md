@@ -122,8 +122,9 @@ Goal: improve performance after software playback is correct.
   The boundary now lives in `native/macos/presentation_adapter.*`; see
   [MACOS_PRESENTATION_ADAPTER.md](MACOS_PRESENTATION_ADAPTER.md).
   The runner now creates Metal-compatible `CVPixelBuffer` surfaces and validates
-  `CVMetalTextureCache` wrapping through diagnostics, while presentation still uses the software
-  BGRA-copy adapter.
+  `CVMetalTextureCache` wrapping through diagnostics. Playback frame callbacks now prefer a
+  shared-`MTLBuffer` staging upload plus Metal blit into the texture-backed `CVPixelBuffer`, with
+  the locked-buffer direct copy path kept as fallback.
 - [ ] Port shader/color/layout behavior with deterministic pixel tests.
   Initial portable baselines now cover limited/full-range software BGRA conversion, padded
   linesizes, BGRA channel order, odd-dimension NV21 -> even-coded NV12 packing, and planar
@@ -230,14 +231,16 @@ smokes now lock `presentationAdapter=cvpixelbuffer-bgra-copy` as the visible sof
 fallback before Metal work starts. UI automation can also assert boolean diagnostics through
 `ASSERT_NATIVE_DIAGNOSTIC_BOOL`. The macOS runner reports Metal surface readiness through
 `metalAvailable`, `metalTextureCacheAvailable`, `metalTextureValid`, and
-`metalTextureCreationCount`; facade/stress smokes assert that Metal wrapping is valid and that at
-least one Metal texture wrapper can be created for the active pixel buffer.
+`metalTextureCreationCount`; facade/stress smokes assert that Metal wrapping is valid, that
+`presentationUploadMode=metal-bgra-staging-upload`, and that playback produces at least one Metal
+staging upload for the active pixel buffer.
 
 Frame callback lifecycle status: macOS now has targeted UI smokes that churn play/pause/play,
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks
 are active. `native_callback_stress_smoke.csv` adds rapid play/pause, a playing seek storm,
 play-then-destroy, recreate, and play-then-main-window-close coverage. The smokes also verify
-`pixelBufferDirectCopyCount`, so the native-to-locked-buffer path is covered by UI automation.
+`pixelBufferMetalUploadCount`, so the native-to-Metal-staging upload path is covered by UI
+automation. `pixelBufferDirectCopyCount` remains diagnostic-only for fallback visibility.
 Main-window close while playing remains covered independently by `native_user_window_close_smoke.csv`.
 
 Windows preservation status: on this macOS host, `python dev.py test --native-only` currently stops

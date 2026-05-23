@@ -10,6 +10,7 @@
 1.4, ASSERT_NATIVE_BACKEND, macos-native-player, true
 1.5, ASSERT_NATIVE_AUDIO, true, 48000, 1, 0
 1.55, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapter, cvpixelbuffer-bgra-copy
+1.555, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-bgra-staging-upload
 1.56, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureValid, true
 1.58, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, metalTextureCreationCount, 1
 1.6, PLAY
@@ -25,7 +26,7 @@
 3.2, ASSERT_PLAYING
 3.3, ASSERT_POSITION_RANGE, 2300000, 3400000
 3.4, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferReuseCount, 1
-3.45, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferDirectCopyCount, 1
+3.45, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalUploadCount, 1
 3.5, PAUSE
 3.8, ASSERT_PAUSED
 3.9, PLAY
@@ -34,11 +35,12 @@
 4.8, ADD_MEDIA, build/generated/macos/native_callback_stress_smoke.mp4
 5.8, ASSERT_TRACK_COUNT, 1
 5.85, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapter, cvpixelbuffer-bgra-copy
+5.855, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-bgra-staging-upload
 5.86, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureValid, true
 5.88, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, metalTextureCreationCount, 1
 5.9, PLAY
 6.2, ASSERT_PLAYING
 6.3, SEEK_TO, 1200000
 6.5, ASSERT_PLAYING
-6.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferDirectCopyCount, 1
+6.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalUploadCount, 1
 6.7, CLOSE_MAIN_WINDOW

@@ -86,8 +86,10 @@ the `CVPixelBuffer`, locks its base address, and asks native code to copy the sh
 remain outside Swift.
 The pixel buffer is created with Metal compatibility and IOSurface backing, and diagnostics expose
 whether a `CVMetalTextureCache` can wrap it (`metalTextureCreationCount`, `metalTextureValid`).
-This is the M5 presentation surface handshake; actual playback still goes through the software
-BGRA-copy adapter until Metal replaces that adapter.
+Playback frame callbacks now prefer `presentationUploadMode=metal-bgra-staging-upload`: native
+copies the shared frame into a shared `MTLBuffer`, and Metal blits that staging buffer into the
+texture-backed `CVPixelBuffer`. The older locked-buffer direct copy remains a fallback and is
+reported through `pixelBufferDirectCopyCount`.
 
 Manual audible smoke:
 

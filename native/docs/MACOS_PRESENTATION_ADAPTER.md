@@ -19,8 +19,9 @@ registration, and Flutter frame notifications. It asks native code to copy the
 current frame into the locked pixel buffer and receives frame timing metadata.
 The runner now creates Metal-compatible, IOSurface-backed pixel buffers and
 validates that CoreVideo can wrap them through a `CVMetalTextureCache`; that
-surface validation is diagnostic-only until the adapter replaces CPU BGRA copy
-with a real Metal presentation path.
+surface is used for `presentationUploadMode=metal-bgra-staging-upload`, where
+native copies into a shared `MTLBuffer` and Metal blits into the texture-backed
+`CVPixelBuffer`. Locked-buffer direct copy remains available as a fallback.
 
 ## Parity Expectations
 
@@ -38,9 +39,9 @@ adapter:
 `macos_presentation_adapter_smoke`, `software_bgra_converter_smoke`, and
 `software_frame_packer_smoke` cover these baselines in portable macOS CTest.
 macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy`,
-`metalTextureValid=true`, and `metalTextureCreationCount >= 1`, so future M5
-work must explicitly move the diagnostic contract when the Metal adapter
-becomes active.
+`presentationUploadMode=metal-bgra-staging-upload`, `metalTextureValid=true`,
+and `pixelBufferMetalUploadCount >= 1`, so future M5 work must explicitly move
+the diagnostic contract when deeper Metal color conversion becomes active.
 
 ## M5 Rule
 

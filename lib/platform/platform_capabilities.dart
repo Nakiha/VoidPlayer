@@ -5,6 +5,7 @@ class PlatformCapabilities {
   final bool sshRemoteMediaPlayback;
   final bool nativeFilePicker;
   final bool externalAnalysisWindows;
+  final bool analysisOverlays;
   final bool nativeViewportCapture;
   final bool pathLauncher;
 
@@ -15,6 +16,7 @@ class PlatformCapabilities {
     required this.sshRemoteMediaPlayback,
     required this.nativeFilePicker,
     required this.externalAnalysisWindows,
+    required this.analysisOverlays,
     required this.nativeViewportCapture,
     required this.pathLauncher,
   });
@@ -26,6 +28,7 @@ class PlatformCapabilities {
     sshRemoteMediaPlayback: true,
     nativeFilePicker: true,
     externalAnalysisWindows: true,
+    analysisOverlays: true,
     nativeViewportCapture: true,
     pathLauncher: true,
   );
@@ -37,6 +40,7 @@ class PlatformCapabilities {
     sshRemoteMediaPlayback: false,
     nativeFilePicker: true,
     externalAnalysisWindows: false,
+    analysisOverlays: false,
     nativeViewportCapture: true,
     pathLauncher: true,
   );

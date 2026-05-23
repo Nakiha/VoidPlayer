@@ -21,7 +21,7 @@ build settings.
 ## Current Scope
 
 This runner is a launch/build baseline with an initial native playback bridge. It does not yet
-provide full platform capability gates, hardware decode, or analysis window support.
+provide hardware decode or analysis window support.
 
 Current Phase 1 work makes the main Dart entrypoint choose Windows/macOS bootstrap through deferred
 imports, injects platform services for window/accent/analysis dependencies, and registers a
@@ -40,13 +40,16 @@ optional audio packets into `AudioDecodeThread`, and controls output through the
 play/pause/seek/setAudibleTrack calls. UI automation can generate a short sine-audio media file and
 verify native audio diagnostics, while `audio_mixer_smoke` verifies that inactive audible tracks
 mute without consuming queued PCM. Speaker-level audible output still needs a manual smoke until the
-test harness has an audio capture or fake output device. Network/SSH media, analysis windows,
-hardware decode, and Metal presentation are still unavailable.
+test harness has an audio capture or fake output device. Network/SSH media, analysis windows, and
+hardware decode are still unavailable. Analysis windows and main-window analysis overlays are
+explicitly gated off in `PlatformCapabilities.macOSPhase1`; the native analysis library can build
+on macOS, but the app will not run the Windows-style analysis UI/IPC path until the macOS workflow
+is wired behind those capability flags.
 
 The macOS runner also implements the shared `pickFiles` MethodChannel call with `NSOpenPanel`.
 Debug and Release entitlements include `com.apple.security.files.user-selected.read-only` so
 sandboxed file selections can be read by future playback code. The toolbar still keeps Add Media
-disabled while `nativePlayback=false`.
+limited to local files through the macOS capability gates.
 
 Use `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv` for the synthetic
 texture smoke, `python dev.py mac-ui-test ui_tests/macos/native_facade_smoke.csv` to prove local
@@ -66,7 +69,8 @@ teardown, then recreates playback from the same fixture. `native_quit_while_play
 exercises explicit native teardown during test shutdown while playback is still active, and
 `native_callback_stress_smoke.csv` adds rapid play/pause, playing seek storm, play-then-destroy,
 recreate, and play-then-window-close churn. `native_user_window_close_smoke.csv` closes the main
-window while native playback is active. A seek
+window while native playback is active. `analysis_gated_smoke.csv` asserts that direct analysis
+automation calls no-op while macOS analysis UI/IPC remains unsupported. A seek
 follows the shared keep-previous-state preference; step navigation is explicit pause-on-step. The helper copies CSV
 scripts into the app container before launch and rewrites
 repo-relative `ADD_MEDIA` fixtures to sandbox-local copies because the macOS debug app is sandboxed

@@ -9,8 +9,10 @@ import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
 import 'package:void_player/config/app_settings_repository.dart';
 import 'package:void_player/platform/analysis_process_host.dart';
 import 'package:void_player/platform/main_window_platform.dart';
+import 'package:void_player/platform/platform_capabilities.dart';
 import 'package:void_player/preferences/playback_preferences.dart';
 import 'package:void_player/startup_options.dart';
+import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/windows/main/main_window_controller.dart';
 
 class _FakeMainWindowPlatform implements MainWindowPlatform {
@@ -202,4 +204,35 @@ void main() {
     expect(controller.appSettings, same(appSettings));
     expect(controller.playbackPreferences, same(playbackPreferences));
   });
+
+  test(
+    'macOS phase capabilities hide analysis window and overlay entry points',
+    () {
+      final controller = MainWindowController(
+        actionRegistry: ActionRegistry(),
+        vsync: const TestVSync(),
+        startupOptions: const StartupOptions(),
+        mounted: () => true,
+        platformCapabilities: PlatformCapabilities.macOSPhase1,
+        analysisGeneration: _FakeAnalysisGenerationService(),
+        analysisToolbarDataSource: _FakeAnalysisToolbarDataSource(),
+        appSettings: _FakeAppSettingsRepository(),
+        playbackPreferences: _FakePlaybackPreferences(),
+      );
+      addTearDown(controller.dispose);
+
+      controller.trackManager.addTrack(
+        const TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: '/tmp/video.mp4',
+          width: 320,
+          height: 180,
+        ),
+      );
+
+      expect(controller.viewModel.media.analysisEnabled, isFalse);
+      expect(controller.viewModel.media.analysisOverlayEnabled, isFalse);
+    },
+  );
 }

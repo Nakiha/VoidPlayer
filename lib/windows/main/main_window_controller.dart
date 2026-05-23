@@ -183,6 +183,8 @@ class MainWindowController {
         analysisEnabled:
             platformCapabilities.externalAnalysisWindows &&
             trackManager.count > 0,
+        analysisOverlayEnabled:
+            platformCapabilities.analysisOverlays && trackManager.count > 0,
         nativePlaybackAvailable:
             platformCapabilities.nativePlayback ||
             platformCapabilities.localFilePlayback,
@@ -471,6 +473,7 @@ class MainWindowController {
       trackManager: trackManager,
       analysisProcesses: analysisProcesses,
       analysisGeneration: analysisGeneration,
+      analysisOverlaysEnabled: platformCapabilities.analysisOverlays,
       presentedFrameProvider: player.currentPresentedFrame,
       onOverlayStateChanged: _requestAnalysisOverlayRedraw,
     );

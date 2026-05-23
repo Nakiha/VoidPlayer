@@ -17,6 +17,7 @@ import 'app_menu_combo.dart';
 /// matching the PySide6 `MediaHeader`.
 class MediaHeaderBar extends StatelessWidget {
   final List<TrackEntry> entries;
+  final bool analysisOverlayEnabled;
   final AnalysisToolbarDataSource analysisDataSource;
   final Key? analysisOverlayButtonKey;
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
@@ -29,6 +30,7 @@ class MediaHeaderBar extends StatelessWidget {
   const MediaHeaderBar({
     super.key,
     required this.entries,
+    this.analysisOverlayEnabled = true,
     required this.analysisDataSource,
     this.analysisOverlayButtonKey,
     required this.onMediaSwapped,
@@ -43,6 +45,7 @@ class MediaHeaderBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return _MediaHeaderBarWithCache(
       entries: entries,
+      analysisOverlayEnabled: analysisOverlayEnabled,
       analysisDataSource: analysisDataSource,
       analysisOverlayButtonKey: analysisOverlayButtonKey,
       onMediaSwapped: onMediaSwapped,
@@ -375,6 +378,7 @@ class MediaHeaderOverlayPanelHostState
 
 class _MediaHeaderBarWithCache extends StatefulWidget {
   final List<TrackEntry> entries;
+  final bool analysisOverlayEnabled;
   final AnalysisToolbarDataSource analysisDataSource;
   final Key? analysisOverlayButtonKey;
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
@@ -386,6 +390,7 @@ class _MediaHeaderBarWithCache extends StatefulWidget {
 
   const _MediaHeaderBarWithCache({
     required this.entries,
+    required this.analysisOverlayEnabled,
     required this.analysisDataSource,
     this.analysisOverlayButtonKey,
     required this.onMediaSwapped,
@@ -425,7 +430,8 @@ class _MediaHeaderBarWithCacheState extends State<_MediaHeaderBarWithCache> {
                       analysisOverlayButtonKey: i == 0
                           ? widget.analysisOverlayButtonKey
                           : null,
-                      showOverlayPanelButton: i == 0,
+                      showOverlayPanelButton:
+                          widget.analysisOverlayEnabled && i == 0,
                       onMediaSwapped: widget.onMediaSwapped,
                       onAnalysisOverlayPanelToggle:
                           widget.onAnalysisOverlayPanelToggle,

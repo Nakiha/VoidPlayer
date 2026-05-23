@@ -1,0 +1,10 @@
+# macOS runner smoke for currently unsupported analysis window/overlay entry points.
+#   python dev.py mac-ui-test ui_tests/macos/analysis_gated_smoke.csv
+0.0, GENERATE_TEST_VIDEO, build/generated/macos/analysis_gated_smoke.mp4, 60, 30, 320, 180
+0.3, ADD_MEDIA, build/generated/macos/analysis_gated_smoke.mp4
+1.4, ASSERT_NATIVE_BACKEND, macos-native-player, true
+1.5, RUN_ANALYSIS
+1.7, ASSERT_ANALYSIS_PROCESS_COUNT, 0
+1.8, TOGGLE_ANALYSIS_OVERLAY_PANEL
+2.0, ASSERT_ANALYSIS_OVERLAY, false
+2.1, QUIT, 0

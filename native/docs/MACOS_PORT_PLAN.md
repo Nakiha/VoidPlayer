@@ -23,7 +23,8 @@ Historical phase notes moved to [archive/MACOS_PORT_PLAN_HISTORY.md](archive/MAC
   diagnostics cover stream wiring and play/seek/pause/resume lifecycle; a manual audible smoke is
   documented for speaker-level confirmation.
 - The native analysis library now configures and builds on macOS once the analysis submodules are
-  initialized, but the Flutter analysis workflow is not yet wired through the macOS app.
+  initialized. Flutter now explicitly gates unsupported macOS analysis windows and main-window
+  overlays, so direct automation cannot accidentally run the Windows-only UI/IPC path.
 - A/V sync hardening, Metal presentation, VideoToolbox decode, and macOS analysis UI/IPC support
   are still outstanding.
 
@@ -140,8 +141,10 @@ Goal: make the app distributable and honest about unsupported features.
   the runner builds for macOS 10.15/11.0.
 - [ ] Add release build, signing, notarization, and third-party notice docs.
 - [x] Make the native analysis library build on macOS with the initialized submodules.
-- [ ] Decide macOS analysis UI/IPC support: native library, helper process, or explicit unsupported
-  gate.
+- [x] Add an explicit unsupported gate for macOS analysis windows and overlays until the workflow is
+  wired.
+- [ ] Decide macOS analysis UI/IPC support: native library, helper process, or a first-class
+  in-process analysis workspace.
 - [ ] Add macOS CI once the native facade path is stable.
 
 ## Validation Matrix
@@ -173,7 +176,8 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_audio_play_seek_smoke.csv \
   ui_tests/macos/native_audio_destroy_recreate_smoke.csv \
   ui_tests/macos/native_quit_while_playing_smoke.csv \
-  ui_tests/macos/native_user_window_close_smoke.csv
+  ui_tests/macos/native_user_window_close_smoke.csv \
+  ui_tests/macos/analysis_gated_smoke.csv
 ```
 
 The full macOS smoke set, including `native_callback_stress_smoke.csv`, passed with `--build` on
@@ -204,7 +208,10 @@ owns a fixed playback timer or loop decisions.
 Analysis status: `native/build-macos-analysis` now configures with `BUILD_ANALYSIS=ON` and builds
 `analysis_lib` on macOS. The portability fixes live in the shared UTF-8 filesystem/env shim, so the
 same analysis/cache code can compile without Windows-only file helpers. This does not yet mean the
-macOS app can launch or coordinate analysis windows; that remains a UI/IPC milestone.
+macOS app can launch or coordinate analysis windows; `PlatformCapabilities.macOSPhase1` now keeps
+external analysis windows and main-window overlays disabled, and `analysis_gated_smoke.csv` asserts
+that direct automation calls no-op instead of spawning or generating through the Windows-only UI/IPC
+path.
 
 Publication status: decoded-frame publication now flows through a `DecodedFrameSink` interface. The
 default sink preserves the existing `TrackBuffer` behavior, and `decoded_frame_sink_smoke` covers
@@ -270,6 +277,6 @@ the speaker-level gap that the current native diagnostics cannot observe directl
 
 ## Next Slice
 
-The next implementation slice should start macOS analysis UI/IPC gating or the M5
-Metal/CVPixelBuffer backend, while keeping the Windows native/UI preservation checks on the first
-available Windows host.
+The next implementation slice should continue the M5 Metal/CVPixelBuffer backend or start the
+first-class macOS analysis workflow behind the explicit capability gates, while keeping the Windows
+native/UI preservation checks on the first available Windows host.

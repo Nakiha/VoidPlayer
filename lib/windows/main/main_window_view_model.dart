@@ -46,6 +46,7 @@ class MainWindowViewportVm {
 
 class MainWindowMediaVm {
   final bool analysisEnabled;
+  final bool analysisOverlayEnabled;
   final bool nativePlaybackAvailable;
   final bool localFilePlaybackAvailable;
   final bool networkMediaAvailable;
@@ -59,6 +60,7 @@ class MainWindowMediaVm {
 
   const MainWindowMediaVm({
     required this.analysisEnabled,
+    required this.analysisOverlayEnabled,
     required this.nativePlaybackAvailable,
     required this.localFilePlaybackAvailable,
     required this.networkMediaAvailable,

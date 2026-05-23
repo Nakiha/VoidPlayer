@@ -14,6 +14,7 @@ class MainWindowAnalysisCoordinator {
   final TrackManager trackManager;
   final AnalysisProcessHost analysisProcesses;
   final AnalysisGenerationService analysisGeneration;
+  final bool analysisOverlaysEnabled;
   final Future<PresentedFrameTiming?> Function(int fileId)?
   presentedFrameProvider;
   final void Function()? onOverlayStateChanged;
@@ -27,6 +28,7 @@ class MainWindowAnalysisCoordinator {
   MainWindowAnalysisCoordinator({
     required this.trackManager,
     required this.analysisProcesses,
+    this.analysisOverlaysEnabled = true,
     AnalysisGenerationService? analysisGeneration,
     this.presentedFrameProvider,
     this.onOverlayStateChanged,
@@ -47,18 +49,22 @@ class MainWindowAnalysisCoordinator {
   }
 
   Future<void> toggleOverlay(TrackEntry track, String hash) {
+    if (!analysisOverlaysEnabled) return Future.value();
     return _enqueueOperation(() => _toggleOverlayImpl(track, hash));
   }
 
   Future<void> toggleOverlayPanel() {
+    if (!analysisOverlaysEnabled) return Future.value();
     return _enqueueOperation(_toggleOverlayPanelImpl);
   }
 
   Future<void> syncOverlayPanelTracks() {
+    if (!analysisOverlaysEnabled) return Future.value();
     return _enqueueOperation(_syncOverlayPanelTracksImpl);
   }
 
   Future<void> refreshOverlayForCurrentFrame() {
+    if (!analysisOverlaysEnabled) return Future.value();
     return _enqueueOperation(_refreshOverlayForCurrentFrameImpl);
   }
 
@@ -67,6 +73,7 @@ class MainWindowAnalysisCoordinator {
     required int ptsUs,
     required int dtsUs,
   }) {
+    if (!analysisOverlaysEnabled) return Future.value();
     return _enqueueOperation(
       () => _refreshOverlayForCurrentFrameImpl(
         presentedFrameOverrides: {
@@ -78,6 +85,7 @@ class MainWindowAnalysisCoordinator {
 
   Future<void> toggleOverlayForSlot(int slotIndex) {
     return _enqueueOperation(() async {
+      if (!analysisOverlaysEnabled) return;
       if (slotIndex < 0 || slotIndex >= trackManager.entries.length) return;
       final track = trackManager.entries[slotIndex];
       if (analysisGeneration.activeOverlayTrackFileIds.contains(track.fileId)) {
@@ -94,6 +102,7 @@ class MainWindowAnalysisCoordinator {
 
   void updateOverlayConfig(AnalysisOverlayConfig config) {
     if (_disposed) return;
+    if (!analysisOverlaysEnabled) return;
     analysisGeneration.updateOverlayConfig(config);
     _notifyOverlayStateChanged();
   }
@@ -106,6 +115,7 @@ class MainWindowAnalysisCoordinator {
   }
 
   Future<void> _toggleOverlayPanelImpl() async {
+    if (!analysisOverlaysEnabled) return;
     if (trackManager.isEmpty) return;
     if (_overlayPanelRequested || analysisGeneration.overlayPanelVisible) {
       _overlayPanelRequested = false;
@@ -174,6 +184,7 @@ class MainWindowAnalysisCoordinator {
 
   Future<void> _triggerAnalysisImpl() async {
     if (trackManager.isEmpty) return;
+    if (!analysisProcesses.supportsExternalAnalysisWindows) return;
     if (analysisProcesses.activateAnalysisWindows()) return;
     final windows = <AnalysisWindowRequest>[];
     await _ipcServer.start();

@@ -77,12 +77,14 @@ class MainWindowMediaHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tracks = model.media.tracks;
+    final media = model.media;
+    final tracks = media.tracks;
     final mediaActions = actions.mediaTimeline;
     return MediaHeaderBar(
       entries: tracks,
-      analysisDataSource: model.media.analysisDataSource,
-      analysisOverlayButtonKey: model.media.analysisOverlayButtonKey,
+      analysisOverlayEnabled: media.analysisOverlayEnabled,
+      analysisDataSource: media.analysisDataSource,
+      analysisOverlayButtonKey: media.analysisOverlayButtonKey,
       onMediaSwapped: mediaActions.onMediaSwapped,
       onAnalysisOverlayPanelToggle:
           actions.toolbar.onAnalysisOverlayPanelToggle,

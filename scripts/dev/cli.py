@@ -111,7 +111,7 @@ Examples:
     p_test.add_argument("--github", action="store_true",
                         help="Run the lightweight native test set used by GitHub Actions")
 
-    p_package = sub.add_parser("package", help="Build and stage clean Windows installer input")
+    p_package = sub.add_parser("package", help="Build and stage clean platform package input")
     p_package.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)
     p_package.add_argument("--no-build", action="store_true",
                            help="Skip Flutter build and stage the existing clean Release output")

@@ -146,6 +146,9 @@ Goal: make the app distributable and honest about unsupported features.
 - [x] Resolve the FFmpeg dylib deployment-target mismatch by declaring macOS 14.0 as the current
   app minimum and passing the same deployment target into the Xcode-triggered native CMake build.
 - [ ] Add release build, signing, notarization, and third-party notice docs.
+  `dev.py package` now stages a macOS release app with bundled GPL/third-party/FFmpeg notices and
+  ad-hoc signs/verifies the copied app signature. Developer ID signing, DMG creation, and
+  notarization remain manual follow-up.
 - [x] Make the native analysis library build on macOS with the initialized submodules.
 - [x] Add an explicit unsupported gate for macOS analysis windows and overlays until the workflow is
   wired.
@@ -268,6 +271,12 @@ keeping the fallback contract explicit when VideoToolbox is unavailable or unsup
 `softwareFallbackActive=true`. `native_p010_presentation_smoke.csv` covers generated 10-bit H.264
 VideoToolbox download-to-CPU decode through the P010 presentation path with the direct-copy fallback
 enabled.
+
+Packaging status: `python dev.py package` now works on macOS as a release staging command. It builds
+or reuses `build/macos/Build/Products/Release/VoidPlayer.app`, copies it to
+`build/package/macos/VoidPlayer/VoidPlayer.app`, adds top-level and in-app compliance docs, stages
+the macOS FFmpeg README/build manifest/license files, runs the release compliance smoke, ad-hoc
+signs the staged copy, and verifies it with `codesign --verify --deep --strict`.
 
 Frame callback lifecycle status: macOS now has targeted UI smokes that churn play/pause/play,
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks

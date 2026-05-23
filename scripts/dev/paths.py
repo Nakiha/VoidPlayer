@@ -36,6 +36,9 @@ WINDOWS_PACKAGE_STAGE_DIR = WINDOWS_PACKAGE_DIR / "VoidPlayer"
 WINDOWS_INSTALLER_DIR = WINDOWS_PACKAGE_DIR / "installer"
 WINDOWS_INNO_SCRIPT = ROOT / "installer" / "windows" / "VoidPlayer.iss"
 WINDOWS_RELEASE_DOCS_DIR = ROOT / "installer" / "windows" / "docs"
+MACOS_PACKAGE_DIR = ROOT / "build" / "package" / "macos"
+MACOS_PACKAGE_STAGE_DIR = MACOS_PACKAGE_DIR / "VoidPlayer"
+MACOS_RELEASE_DOCS_DIR = ROOT / "installer" / "macos" / "docs"
 
 
 def app_exe_path(debug: bool) -> Path:

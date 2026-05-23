@@ -39,20 +39,33 @@ def check_source_tree() -> None:
                   ["FFmpeg runtime/dev package", "GPL v3 package"],
                   "native third-party manifest")
 
-    ffmpeg_root = ROOT / "windows" / "libs" / "ffmpeg"
-    _require_text(ffmpeg_root / "README.txt",
+    windows_ffmpeg_root = ROOT / "windows" / "libs" / "ffmpeg"
+    _require_text(windows_ffmpeg_root / "README.txt",
                   ["FFmpeg", "configuration"],
-                  "FFmpeg package README")
-    if not ((ffmpeg_root / "LICENSE").is_file() or
-            (ffmpeg_root / "LICENSE.txt").is_file()):
-        raise RuntimeError(f"missing FFmpeg LICENSE or LICENSE.txt in {ffmpeg_root}")
+                  "Windows FFmpeg package README")
+    if not ((windows_ffmpeg_root / "LICENSE").is_file() or
+            (windows_ffmpeg_root / "LICENSE.txt").is_file()):
+        raise RuntimeError(
+            f"missing FFmpeg LICENSE or LICENSE.txt in {windows_ffmpeg_root}")
+
+    macos_ffmpeg_root = ROOT / "third_party" / "ffmpeg"
+    _require_text(macos_ffmpeg_root / "README.txt",
+                  ["FFmpeg", "Target: macos-arm64", "VideoToolbox"],
+                  "macOS FFmpeg package README")
+    _require_file(macos_ffmpeg_root / "voidplayer-ffmpeg-manifest.json",
+                  "macOS FFmpeg package manifest")
+    if not (macos_ffmpeg_root / "LICENSES" / "FFmpeg-LICENSE.md").is_file():
+        raise RuntimeError(
+            f"missing FFmpeg-LICENSE.md in {macos_ffmpeg_root / 'LICENSES'}")
 
 
 def check_stage(stage_dir: Path) -> None:
     _require_file(stage_dir / "README.txt", "staged FFmpeg README")
     if not ((stage_dir / "LICENSE").is_file() or
-            (stage_dir / "LICENSE.txt").is_file()):
-        raise RuntimeError(f"missing staged FFmpeg LICENSE or LICENSE.txt in {stage_dir}")
+            (stage_dir / "LICENSE.txt").is_file() or
+            (stage_dir / "LICENSES" / "FFmpeg-LICENSE.md").is_file()):
+        raise RuntimeError(
+            f"missing staged FFmpeg LICENSE, LICENSE.txt, or LICENSES/FFmpeg-LICENSE.md in {stage_dir}")
 
     docs = stage_dir / "docs"
     _require_text(docs / "LICENSE", ["GNU GENERAL PUBLIC LICENSE", "Version 3"],

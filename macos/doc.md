@@ -121,3 +121,14 @@ playing, pauses, and resumes. With the system output device selected and volume 
 a stable tone before and after seek/resume. The automated diagnostics prove the native facade sees
 the audio stream and keeps the active track wired; this manual check is the current speaker-level
 coverage.
+
+Release staging:
+
+```bash
+python dev.py package
+```
+
+On macOS this builds a release app, copies `VoidPlayer.app` into
+`build/package/macos/VoidPlayer/`, stages GPL/third-party/FFmpeg compliance docs both alongside the
+app and inside app resources, ad-hoc signs the staged app, and verifies the copied app signature.
+Developer ID signing, DMG creation, and notarization remain manual release steps.

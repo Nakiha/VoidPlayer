@@ -1,4 +1,4 @@
-"""Windows packaging staging commands."""
+"""Platform packaging staging commands."""
 
 from __future__ import annotations
 
@@ -9,8 +9,11 @@ import sys
 from pathlib import Path
 
 from .check_release_compliance import check_source_tree, check_stage
-from .flutter_app import flutter_build
+from .flutter_app import flutter_build, flutter_build_macos
 from .paths import (
+    MACOS_PACKAGE_DIR,
+    MACOS_PACKAGE_STAGE_DIR,
+    MACOS_RELEASE_DOCS_DIR,
     ROOT,
     WINDOWS_BUILD_DIR,
     WINDOWS_INNO_SCRIPT,
@@ -58,9 +61,20 @@ BUILD_ONLY_FILE_PATTERNS = {
 
 
 def cmd_package(args) -> None:
-    """Build and stage a clean Windows package input directory."""
+    """Build and stage a clean platform package input directory."""
+    if sys.platform == "darwin":
+        _cmd_package_macos(args)
+        return
+    if sys.platform == "win32":
+        _cmd_package_windows(args)
+        return
+    print("ERROR: dev.py package is only supported on Windows and macOS.")
+    sys.exit(1)
+
+
+def _cmd_package_windows(args) -> None:
     if sys.platform != "win32":
-        print("ERROR: dev.py package is only supported on Windows.")
+        print("ERROR: Windows packaging is only supported on Windows.")
         sys.exit(1)
 
     if args.debug:
@@ -101,6 +115,48 @@ def cmd_package(args) -> None:
         _compile_inno_installer(args.iscc, stage_dir)
     else:
         print("Use this directory as the installer input; do not package runner\\Release directly.")
+
+
+def _cmd_package_macos(args) -> None:
+    if args.debug:
+        print("ERROR: package currently supports release builds only")
+        sys.exit(1)
+    if args.installer:
+        print("ERROR: macOS installer/DMG creation is not implemented yet; staging only.")
+        sys.exit(1)
+
+    app_bundle = ROOT / "build" / "macos" / "Build" / "Products" / "Release" / "VoidPlayer.app"
+    stage_dir = MACOS_PACKAGE_STAGE_DIR
+    stage_app = stage_dir / "VoidPlayer.app"
+
+    header("Prepare macOS package staging")
+    _remove_tree(MACOS_PACKAGE_DIR)
+
+    if not args.no_build:
+        _remove_tree(app_bundle)
+        flutter_build_macos(debug=False)
+
+    if not app_bundle.exists():
+        print(f"ERROR: release app bundle not found: {app_bundle}")
+        sys.exit(1)
+
+    _assert_no_mutable_artifacts(app_bundle, "macOS release app")
+
+    print(f"Copy package input: {app_bundle} -> {stage_app}")
+    shutil.copytree(app_bundle, stage_app, symlinks=True)
+    _copy_release_docs(stage_dir, MACOS_RELEASE_DOCS_DIR)
+    _copy_compliance_docs(stage_dir)
+    _copy_macos_ffmpeg_compliance(stage_dir)
+    _copy_compliance_docs(stage_app / "Contents" / "Resources")
+
+    _assert_no_mutable_artifacts(stage_dir, "macOS package staging")
+    _assert_release_compliance(stage_dir)
+    _assert_macos_app_compliance(stage_app)
+    _adhoc_sign_macos_app(stage_app)
+    _verify_macos_codesign(stage_app)
+
+    print(f"\nmacOS package staging ready: {stage_dir}")
+    print("Staging contains VoidPlayer.app plus release/compliance docs; DMG/notarization is not automated yet.")
 
 
 def _remove_tree(path: Path) -> None:
@@ -158,13 +214,14 @@ def _remove_build_only_artifacts(root: Path) -> int:
     return removed
 
 
-def _copy_release_docs(stage_dir: Path) -> None:
-    if not WINDOWS_RELEASE_DOCS_DIR.exists():
+def _copy_release_docs(stage_dir: Path, source_dir: Path | None = None) -> None:
+    release_docs_dir = source_dir or WINDOWS_RELEASE_DOCS_DIR
+    if not release_docs_dir.exists():
         return
 
     docs_dest = stage_dir / "docs"
-    print(f"Copy release docs: {WINDOWS_RELEASE_DOCS_DIR} -> {docs_dest}")
-    shutil.copytree(WINDOWS_RELEASE_DOCS_DIR, docs_dest, dirs_exist_ok=True)
+    print(f"Copy release docs: {release_docs_dir} -> {docs_dest}")
+    shutil.copytree(release_docs_dir, docs_dest, dirs_exist_ok=True)
 
 
 def _copy_compliance_docs(stage_dir: Path) -> None:
@@ -180,6 +237,23 @@ def _copy_compliance_docs(stage_dir: Path) -> None:
         shutil.copy2(src, dest)
 
 
+def _copy_macos_ffmpeg_compliance(stage_dir: Path) -> None:
+    ffmpeg_root = ROOT / "third_party" / "ffmpeg"
+    files = [
+        (ffmpeg_root / "README.txt", stage_dir / "README.txt"),
+        (ffmpeg_root / "VOIDPLAYER_BUILD.md", stage_dir / "VOIDPLAYER_BUILD.md"),
+        (ffmpeg_root / "voidplayer-ffmpeg-manifest.json", stage_dir / "voidplayer-ffmpeg-manifest.json"),
+    ]
+    for src, dest in files:
+        print(f"Copy macOS FFmpeg doc: {src} -> {dest}")
+        shutil.copy2(src, dest)
+
+    licenses_src = ffmpeg_root / "LICENSES"
+    licenses_dest = stage_dir / "LICENSES"
+    print(f"Copy macOS FFmpeg licenses: {licenses_src} -> {licenses_dest}")
+    shutil.copytree(licenses_src, licenses_dest, dirs_exist_ok=True)
+
+
 def _assert_release_compliance(stage_dir: Path) -> None:
     try:
         check_source_tree()
@@ -187,6 +261,34 @@ def _assert_release_compliance(stage_dir: Path) -> None:
     except RuntimeError as exc:
         print(f"\nERROR: release compliance smoke failed: {exc}")
         sys.exit(1)
+
+
+def _assert_macos_app_compliance(stage_app: Path) -> None:
+    resources = stage_app / "Contents" / "Resources"
+    ffmpeg_docs = resources / "ThirdParty" / "ffmpeg"
+    required = [
+        ffmpeg_docs / "README.txt",
+        ffmpeg_docs / "VOIDPLAYER_BUILD.md",
+        ffmpeg_docs / "voidplayer-ffmpeg-manifest.json",
+        ffmpeg_docs / "LICENSES" / "FFmpeg-LICENSE.md",
+        resources / "docs" / "LICENSE",
+        resources / "docs" / "THIRD_PARTY_NOTICES.md",
+        resources / "docs" / "THIRD_PARTY_NATIVE.md",
+    ]
+    for path in required:
+        if not path.is_file():
+            print(f"\nERROR: macOS app compliance file missing: {path}")
+            sys.exit(1)
+
+
+def _verify_macos_codesign(stage_app: Path) -> None:
+    header("Verify macOS app signature")
+    run(["codesign", "--verify", "--deep", "--strict", str(stage_app)], cwd=str(ROOT))
+
+
+def _adhoc_sign_macos_app(stage_app: Path) -> None:
+    header("Ad-hoc sign staged macOS app")
+    run(["codesign", "--force", "--deep", "--sign", "-", str(stage_app)], cwd=str(ROOT))
 
 
 def _assert_no_build_only_artifacts(root: Path) -> None:

@@ -24,6 +24,10 @@ on:
       - "windows/libs/ffmpeg/**"
       - "resources/video/**"
 
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   native-test:
     name: Native test

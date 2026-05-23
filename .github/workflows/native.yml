@@ -37,6 +37,7 @@ jobs:
         with:
           lfs: true
           submodules: recursive
+          fetch-depth: 0
 
       - name: Verify Windows FFmpeg LFS artifacts
         shell: pwsh
@@ -87,6 +88,7 @@ jobs:
         with:
           lfs: true
           submodules: recursive
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -116,6 +118,7 @@ jobs:
         with:
           lfs: true
           submodules: recursive
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -155,6 +158,7 @@ jobs:
         with:
           lfs: true
           submodules: recursive
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -228,6 +232,7 @@ jobs:
         with:
           lfs: true
           submodules: recursive
+          fetch-depth: 0
 
       - name: Verify Windows FFmpeg LFS artifacts
         shell: pwsh

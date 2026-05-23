@@ -97,6 +97,14 @@ private final class MacOSNativePlayerSession {
     VPMacOSNativePlayerSetAudibleTrack(handle, Int32(fileId))
   }
 
+  func setTrackOffset(fileId: Int, offsetUs: Int) {
+    VPMacOSNativePlayerSetTrackOffset(handle, Int32(fileId), Int64(offsetUs))
+  }
+
+  func trackOffsetUs(fileId: Int) -> Int {
+    Int(VPMacOSNativePlayerTrackOffsetUs(handle, Int32(fileId)))
+  }
+
   func seek(_ ptsUs: Int) {
     VPMacOSNativePlayerSeek(handle, Int64(ptsUs))
   }
@@ -369,7 +377,12 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
-    case "initLogging", "setViewportBackgroundColor", "setTrackOffset":
+    case "initLogging", "setViewportBackgroundColor":
+      result(nil)
+    case "setTrackOffset":
+      let fileId = intArg(call.arguments, "fileId") ?? -1
+      let offsetUs = intArg(call.arguments, "offsetUs") ?? 0
+      nativePlayer?.setTrackOffset(fileId: fileId, offsetUs: offsetUs)
       result(nil)
     case "setLoopRange":
       nativePlayer?.setLoopRange(
@@ -483,6 +496,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "audioSampleRate": nativePlayer?.audioSampleRate() ?? 0,
         "audioChannels": nativePlayer?.audioChannels() ?? 0,
         "activeAudioTrack": nativePlayer?.activeAudioTrack() ?? -1,
+        "primaryTrackOffsetUs": nativePlayer?.trackOffsetUs(fileId: 0) ?? 0,
         "pixelBufferRebuildCount": textureStats?.rebuildCount ?? 0,
         "pixelBufferReuseCount": textureStats?.reuseCount ?? 0,
         "pixelBufferDirectCopyCount": textureStats?.directCopyCount ?? 0,

@@ -21,6 +21,8 @@
 1.75, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, metalTextureCreationCount, 1
 1.77, ASSERT_NATIVE_DIAGNOSTIC_BOOL, pixelBufferMetalUploadEnabled, true
 1.78, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-bgra-staging-upload
+1.79, ADJUST_TRACK_OFFSET, 0, 250
+1.795, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, primaryTrackOffsetUs, 250000
 1.8, ASSERT_TRACK_METADATA, 0, macos-native-player, decode_thread_videotoolbox_hwdownload
 1.9, ASSERT_PRESENTED_FRAME_RANGE, 0, 0, 100000
 2.0, PLAY

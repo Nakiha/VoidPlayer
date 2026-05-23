@@ -69,6 +69,11 @@ void VPMacOSNativePlayerSetLoopRange(VPMacOSNativePlayer* player,
                                      int64_t end_us);
 void VPMacOSNativePlayerSetAudibleTrack(VPMacOSNativePlayer* player,
                                         int32_t file_id);
+void VPMacOSNativePlayerSetTrackOffset(VPMacOSNativePlayer* player,
+                                       int32_t file_id,
+                                       int64_t offset_us);
+int64_t VPMacOSNativePlayerTrackOffsetUs(VPMacOSNativePlayer* player,
+                                         int32_t file_id);
 void VPMacOSNativePlayerSeek(VPMacOSNativePlayer* player, int64_t pts_us);
 
 int64_t VPMacOSNativePlayerCurrentPtsUs(VPMacOSNativePlayer* player);

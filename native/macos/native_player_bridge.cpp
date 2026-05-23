@@ -198,6 +198,7 @@ public:
     audio_sample_rate_ = 0;
     audio_channels_ = 0;
     loop_range_ = vr::LoopRangeState();
+    track_offset_us_ = 0;
     last_tick_frame_pts_us_ = std::numeric_limits<int64_t>::min();
   }
 
@@ -230,6 +231,18 @@ public:
     if (auto* audio = playback_.audio_output()) {
       audio->set_active_track(file_id);
     }
+  }
+
+  void set_track_offset(int32_t file_id, int64_t offset_us) {
+    if (file_id != 0 || !render_sink_) {
+      return;
+    }
+    track_offset_us_ = offset_us;
+    render_sink_->set_track_offset(0, offset_us);
+  }
+
+  int64_t track_offset_us(int32_t file_id) const {
+    return file_id == 0 ? track_offset_us_ : 0;
   }
 
   void seek(int64_t pts_us) {
@@ -402,6 +415,7 @@ private:
   int32_t audio_sample_rate_ = 0;
   int32_t audio_channels_ = 0;
   vr::LoopRangeState loop_range_;
+  int64_t track_offset_us_ = 0;
   int64_t last_tick_frame_pts_us_ = std::numeric_limits<int64_t>::min();
   bool playing_ = false;
 };
@@ -574,6 +588,25 @@ void VPMacOSNativePlayerSetAudibleTrack(VPMacOSNativePlayer* player,
   }
   std::lock_guard<std::mutex> lock(player->mutex);
   player->core.set_audible_track(file_id);
+}
+
+void VPMacOSNativePlayerSetTrackOffset(VPMacOSNativePlayer* player,
+                                       int32_t file_id,
+                                       int64_t offset_us) {
+  if (!player) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  player->core.set_track_offset(file_id, offset_us);
+}
+
+int64_t VPMacOSNativePlayerTrackOffsetUs(VPMacOSNativePlayer* player,
+                                         int32_t file_id) {
+  if (!player) {
+    return 0;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  return player->core.track_offset_us(file_id);
 }
 
 void VPMacOSNativePlayerSeek(VPMacOSNativePlayer* player, int64_t pts_us) {

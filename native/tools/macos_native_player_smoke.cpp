@@ -128,6 +128,12 @@ int main(int argc, char** argv) {
         std::cerr << "player reported invalid media metadata\n";
         return 1;
     }
+    VPMacOSNativePlayerSetTrackOffset(player.get(), 0, 250'000);
+    if (VPMacOSNativePlayerTrackOffsetUs(player.get(), 0) != 250'000) {
+        std::cerr << "track offset was not retained by macOS native player\n";
+        return 1;
+    }
+    VPMacOSNativePlayerSetTrackOffset(player.get(), 0, 0);
 
     VPMacOSNativeFrame first = {};
     if (!wait_for_frame(player.get(), first, std::chrono::seconds(3))) {

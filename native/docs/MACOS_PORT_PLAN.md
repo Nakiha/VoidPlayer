@@ -310,7 +310,10 @@ the test-only Metal upload path and asserts the same native frames can still pre
 keeping the fallback contract explicit when VideoToolbox is unavailable or unsupported.
 `native_software_fallback_smoke.csv` covers a generated MPEG-2 path and asserts
 `decodeMode=software-fallback`, `hardwareDecodeActive=false`, and
-`softwareFallbackActive=true`. `native_p010_presentation_smoke.csv` covers generated 10-bit H.264
+`softwareFallbackActive=true`. The macOS native channel now forwards primary-track `setTrackOffset`
+to the shared `RenderSink` and exposes `primaryTrackOffsetUs` in diagnostics; multi-track offset
+composition remains gated on renderer-owned macOS presentation. `native_p010_presentation_smoke.csv`
+covers generated 10-bit H.264
 VideoToolbox download-to-CPU decode through the P010 presentation path with the direct-copy fallback
 enabled.
 

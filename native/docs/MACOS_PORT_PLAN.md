@@ -232,6 +232,9 @@ BGRA destination; Swift owns `CVPixelBuffer` lifecycle, locking, and Flutter tex
 only. This prepares the decode thread for a future Metal/CVPixelBuffer sink without creating
 another decode backend.
 
+Runner cleanup status: the obsolete `MacOSFirstFrameDecoder` ObjC++ shim has been removed; the
+Swift bridging header now includes the macOS native player bridge directly.
+
 Frame conversion split status: deterministic software YUV/NV12/P010 packing and planar YUV420
 wrapping now live in `video_renderer/decode/software_frame_packer.*`, while `FrameConverter`
 coordinates color metadata, software-vs-hardware dispatch, and the Windows D3D11 snapshot path.

@@ -1,1 +1,1 @@
-#include "MacOSFirstFrameDecoder.h"
+#include "../../native/macos/native_player_bridge.h"

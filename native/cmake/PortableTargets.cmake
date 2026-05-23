@@ -120,6 +120,9 @@ if(APPLE)
     target_link_libraries(macos_metal_uploader_smoke PRIVATE
         void_macos_native_player
     )
+    target_compile_definitions(macos_metal_uploader_smoke PRIVATE
+        VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
+    )
     add_test(NAME macos_metal_uploader_smoke COMMAND macos_metal_uploader_smoke)
 
     if(BUILD_ANALYSIS)

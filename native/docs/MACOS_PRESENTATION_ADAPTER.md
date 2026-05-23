@@ -61,7 +61,9 @@ unknown-HD-to-BT.709 fallback, odd-dimension/even-coded NV12 metadata,
 planar limited/full range, unsupported GPU texture rejection, invalid P010
 rejection, destination mismatch rejection, native Metal `CVPixelBuffer`
 validation, shared layout shader constants, pan offset normalization, and
-resize offset preservation.
+resize offset preservation. `macos_metal_uploader_smoke` also opens the bundled
+H.264 sample and verifies that changing native zoom layout changes the Metal
+layout-uploaded `CVPixelBuffer` hash.
 macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy`,
 `presentationAdapterKind=software-fallback`,
 `rendererOwnedPresentationActive=false`,

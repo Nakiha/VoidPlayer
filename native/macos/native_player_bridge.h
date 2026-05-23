@@ -48,6 +48,15 @@ typedef struct VPMacOSNativeLayoutState {
   int32_t order[4];
 } VPMacOSNativeLayoutState;
 
+typedef struct VPMacOSNativeLayoutPresentationParams {
+  float display_offset_x;
+  float display_offset_y;
+  float inv_display_size_x;
+  float inv_display_size_y;
+  float view_offset_uv_x;
+  float view_offset_uv_y;
+} VPMacOSNativeLayoutPresentationParams;
+
 enum {
   VPMacOSMetalUploaderStatusOk = 0,
   VPMacOSMetalUploaderStatusUnavailable = 1,
@@ -88,6 +97,11 @@ void VPMacOSNativePlayerApplyLayout(VPMacOSNativePlayer* player,
                                     const VPMacOSNativeLayoutState* state);
 int VPMacOSNativePlayerCopyLayout(VPMacOSNativePlayer* player,
                                   VPMacOSNativeLayoutState* out);
+int VPMacOSNativePlayerCopyLayoutPresentationParams(
+    VPMacOSNativePlayer* player,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeLayoutPresentationParams* out);
 void VPMacOSNativePlayerSeek(VPMacOSNativePlayer* player, int64_t pts_us);
 
 int64_t VPMacOSNativePlayerCurrentPtsUs(VPMacOSNativePlayer* player);
@@ -145,6 +159,16 @@ int VPMacOSMetalUploaderCopyCurrentFrame(VPMacOSMetalUploader* uploader,
                                          VPMacOSNativeFrameInfo* out,
                                          char* error,
                                          size_t error_size);
+int VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
+    VPMacOSMetalUploader* uploader,
+    VPMacOSNativePlayer* player,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    int32_t wait_timeout_ms,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
 
 int VPMacOSMeasureBGRA(const uint8_t* bgra,
                        int32_t width,

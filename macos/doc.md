@@ -101,7 +101,7 @@ tick advances the current frame; Swift no longer owns a fixed playback timer.
 Native playback presentation now goes through `native/macos/presentation_adapter.*` and
 `native/macos/metal_pixel_buffer_uploader.mm`. Swift owns `CVPixelBuffer` lifecycle, Flutter texture
 registration, diagnostic counters, and frame notifications, while native owns Metal device/cache
-validation, the shared `TextureFrame` copy path, and the Metal staging upload. The current adapter
+validation, the shared `TextureFrame` copy path, and the Metal layout upload. The current adapter
 is reported in diagnostics as
 `presentationAdapter=cvpixelbuffer-bgra-copy`; decode, seek, loop, audio, and playback clock policy
 remain outside Swift. The macOS channel also forwards primary-track `setTrackOffset` into the shared
@@ -115,8 +115,9 @@ takes over. The pixel buffer is created with Metal compatibility and IOSurface b
 `CVMetalTextureCache` can wrap it (`metalTextureCreationCount`, `metalTextureValid`). Validation
 failures keep explicit native reasons in `metalTextureLastError`, including size mismatch and
 unsupported non-BGRA surfaces. Explicit seek/step refresh and playback frame callbacks now prefer
-`presentationUploadMode=metal-bgra-staging-upload`: native copies the shared frame into a shared
-`MTLBuffer`, then blits that staging buffer into the texture-backed `CVPixelBuffer`. The older
+`presentationUploadMode=metal-bgra-layout-upload`: native copies the shared frame into a shared
+`MTLBuffer`, then a Metal compute pass applies the shared layout transform into the texture-backed
+`CVPixelBuffer`. The older
 locked-buffer direct copy remains a fallback and is reported through `pixelBufferDirectCopyCount`.
 
 Manual audible smoke:

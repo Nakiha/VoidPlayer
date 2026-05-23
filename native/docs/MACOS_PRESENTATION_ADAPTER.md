@@ -8,7 +8,7 @@ loop, audio, and playback clock policy stay in shared native code.
 
 `native/macos/presentation_adapter.*` exposes the current software fallback
 BGRA conversion adapter, and `native/macos/metal_pixel_buffer_uploader.mm` owns
-the Metal staging upload:
+the single-track Metal layout upload:
 
 - adapter name: `cvpixelbuffer-bgra-copy`
 - input: shared `vr::TextureFrame` storage
@@ -26,20 +26,21 @@ copy the current frame into the native Metal uploader, or into a locked pixel
 buffer when the direct-copy fallback is enabled, and receives frame timing
 metadata. The runner creates Metal-compatible, IOSurface-backed pixel buffers,
 but native owns the Metal device, command queue, `CVMetalTextureCache`
-validation, shared `MTLBuffer`, and blit. The same surface is used for explicit
+validation and shared `MTLBuffer` upload. The same surface is used for explicit
 seek/step refresh and playback callbacks when
-`presentationUploadMode=metal-bgra-staging-upload`, where native copies into a
-shared `MTLBuffer` and Metal blits into the texture-backed `CVPixelBuffer`.
+`presentationUploadMode=metal-bgra-layout-upload`, where native copies into a
+shared `MTLBuffer` and a Metal compute pass applies the shared layout transform
+into the texture-backed `CVPixelBuffer`.
 Native validation rejects pixel buffers whose dimensions or pixel format do not
 match the expected BGRA texture surface before any frame upload is attempted.
-The Metal staging uploader exposes checked validation statuses for unavailable
+The Metal layout uploader exposes checked validation statuses for unavailable
 Metal state, invalid arguments, size mismatches, unsupported non-BGRA pixel
 buffers, and CVPixelBuffer-to-Metal texture wrapping failures; Swift mirrors the
 last validation message in diagnostics.
 
 ## Parity Expectations
 
-These expectations are CPU-side baselines for the current native Metal staging
+These expectations are CPU-side baselines for the current native Metal layout
 path and the future renderer-owned shader path:
 
 - preserve BGRA channel order
@@ -64,7 +65,7 @@ resize offset preservation.
 macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy`,
 `presentationAdapterKind=software-fallback`,
 `rendererOwnedPresentationActive=false`,
-`presentationUploadMode=metal-bgra-staging-upload`, `metalTextureValid=true`,
+`presentationUploadMode=metal-bgra-layout-upload`, `metalTextureValid=true`,
 seek refreshes and playback advance `pixelBufferMetalUploadCount`,
 `hardwareDecodeProvider=VideoToolbox`,
 `hardwareDecodeActive=true`, `hardwareDecodeDownloadsToCpu=true`,

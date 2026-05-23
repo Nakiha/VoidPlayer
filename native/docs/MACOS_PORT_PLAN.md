@@ -136,14 +136,14 @@ Goal: improve performance after software playback is correct.
   The current `cvpixelbuffer-bgra-copy` adapter is the software fallback presentation adapter, not
   the final renderer-owned Metal backend. Diagnostics now expose
   `presentationAdapterKind=software-fallback` and `rendererOwnedPresentationActive=false` to keep
-  that distinction visible while the staging uploader exists.
+  that distinction visible while the layout uploader is still a single-track bridge.
   The runner now creates Metal-compatible `CVPixelBuffer` surfaces, while
   `metal_pixel_buffer_uploader.mm` owns `CVMetalTextureCache` validation, the shared `MTLBuffer`,
-  and the blit into the texture-backed `CVPixelBuffer`. Seek/step refresh and playback callbacks
-  now share that native Metal staging path; the uploader rejects mismatched dimensions or non-BGRA
-  pixel buffers before upload, returns checked validation statuses for each failure class, mirrors
-  the last validation reason into diagnostics, and leaves the locked-buffer direct copy path as
-  fallback.
+  and the compute pass into the texture-backed `CVPixelBuffer`. Seek/step refresh, layout refresh,
+  and playback callbacks now share that native Metal layout path; the uploader rejects mismatched
+  dimensions or non-BGRA pixel buffers before upload, returns checked validation statuses for each
+  failure class, mirrors the last validation reason into diagnostics, and leaves the locked-buffer
+  direct copy path as fallback.
 - [ ] Port shader/color/layout behavior with deterministic pixel tests.
   Initial portable baselines now cover limited/full-range software BGRA conversion, padded
   linesizes, BGRA channel order, BT.601/BT.709/BT.2020 matrix selection in the shared CPU
@@ -300,8 +300,8 @@ deeper Metal color work starts. UI automation can also assert boolean diagnostic
 `ASSERT_NATIVE_DIAGNOSTIC_BOOL`. The macOS runner reports Metal surface readiness through
 `metalAvailable`, `metalTextureCacheAvailable`, `metalTextureValid`, and
 `metalTextureCreationCount`; facade/stress smokes assert that Metal wrapping is valid, that
-`presentationUploadMode=metal-bgra-staging-upload`, and that playback produces at least one native
-Metal staging upload for the active pixel buffer. `native_direct_copy_fallback_smoke.csv` disables
+`presentationUploadMode=metal-bgra-layout-upload`, and that playback produces at least one native
+Metal layout upload for the active pixel buffer. `native_direct_copy_fallback_smoke.csv` disables
 the test-only Metal upload path and asserts the same native frames can still present through
 `presentationUploadMode=cvpixelbuffer-direct-copy` with visible pixels. The facade smoke also reports
 `hardwareDecodeProvider=VideoToolbox`, `hardwareDecodeAvailable=true`,
@@ -314,8 +314,10 @@ keeping the fallback contract explicit when VideoToolbox is unavailable or unsup
 to the shared `RenderSink` and exposes `primaryTrackOffsetUs` in diagnostics; multi-track offset
 composition remains gated on renderer-owned macOS presentation. It also mirrors `applyLayout` into
 the shared `LayoutController` and exposes `nativeLayoutMode`, `nativeLayoutZoomRatio`, and
-`nativeLayoutPixelSizeMode` diagnostics; visual layout application still waits for renderer-owned
-Metal presentation. `native_p010_presentation_smoke.csv` covers generated 10-bit H.264
+`nativeLayoutPixelSizeMode` diagnostics; single-track zoom layout now flows through the native Metal
+layout upload path and is covered by a before/after viewport capture in `native_facade_smoke.csv`.
+Multi-track visual layout remains gated on the renderer-owned macOS presentation backend.
+`native_p010_presentation_smoke.csv` covers generated 10-bit H.264
 VideoToolbox download-to-CPU decode through the P010 presentation path with the direct-copy fallback
 enabled.
 
@@ -335,7 +337,7 @@ Frame callback lifecycle status: macOS now has targeted UI smokes that churn pla
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks
 are active. `native_callback_stress_smoke.csv` adds rapid play/pause, a playing seek storm,
 play-then-destroy, recreate, and play-then-main-window-close coverage. The smokes also verify
-`pixelBufferMetalUploadCount`, so the native-owned Metal staging upload path is covered by UI
+`pixelBufferMetalUploadCount`, so the native-owned Metal layout upload path is covered by UI
 automation. `pixelBufferDirectCopyCount` remains diagnostic-only for fallback visibility.
 Main-window close while playing remains covered independently by `native_user_window_close_smoke.csv`.
 

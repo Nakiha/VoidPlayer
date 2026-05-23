@@ -11,6 +11,8 @@
 #include "video_renderer/decode/decode_thread.h"
 #include "video_renderer/decode/hw/hw_decode_provider.h"
 #include "video_renderer/layout/layout_controller.h"
+#include "video_renderer/layout/layout_geometry.h"
+#include "video_renderer/render/shader_constants.h"
 #include "video_renderer/capture/bgra_capture_metrics.h"
 #include "video_renderer/seek/seek_coordinator.h"
 #include "video_renderer/sync/render_sink.h"
@@ -286,6 +288,25 @@ public:
 
   VPMacOSNativeLayoutState layout_snapshot() const {
     return to_native_layout_state(layout_controller_.snapshot(layout_));
+  }
+
+  bool layout_presentation_params(int32_t width,
+                                  int32_t height,
+                                  VPMacOSNativeLayoutPresentationParams* out) const {
+    if (!out || width <= 0 || height <= 0 || width_ <= 0 || height_ <= 0) {
+      return false;
+    }
+    vr::LayoutTrackGeometryList tracks = {};
+    tracks[0] = {true, width_, height_, static_cast<float>(width_) / height_};
+    vr::ShaderConstants constants = {};
+    vr::populate_layout_shader_constants(constants, layout_, tracks, width, height);
+    out->display_offset_x = constants.display_offset_x[0];
+    out->display_offset_y = constants.display_offset_y[0];
+    out->inv_display_size_x = constants.inv_display_size_x[0];
+    out->inv_display_size_y = constants.inv_display_size_y[0];
+    out->view_offset_uv_x = constants.view_offset_uv_x[0];
+    out->view_offset_uv_y = constants.view_offset_uv_y[0];
+    return true;
   }
 
   void seek(int64_t pts_us) {
@@ -671,6 +692,18 @@ int VPMacOSNativePlayerCopyLayout(VPMacOSNativePlayer* player,
   std::lock_guard<std::mutex> lock(player->mutex);
   *out = player->core.layout_snapshot();
   return 0;
+}
+
+int VPMacOSNativePlayerCopyLayoutPresentationParams(
+    VPMacOSNativePlayer* player,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeLayoutPresentationParams* out) {
+  if (!player || !out) {
+    return -1;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  return player->core.layout_presentation_params(width, height, out) ? 0 : -1;
 }
 
 void VPMacOSNativePlayerSeek(VPMacOSNativePlayer* player, int64_t pts_us) {

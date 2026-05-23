@@ -308,7 +308,7 @@ private final class MacOSNativePlayerSession {
     repeat {
       var frameInfo = VPMacOSNativeFrameInfo()
       var error = [CChar](repeating: 0, count: 1024)
-      let ret = VPMacOSMetalUploaderCopyCurrentFrame(
+      let ret = VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
         uploader,
         handle,
         UnsafeMutableRawPointer(Unmanaged.passUnretained(pixelBuffer).toOpaque()),
@@ -517,6 +517,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
           order: intListValue(nextLayout["order"])
         )
         layout = nativePlayer?.layoutSnapshotMap() ?? nextLayout
+        refreshCurrentFrameAfterLayoutChange()
       }
       result(nil)
     case "getTracks":
@@ -807,6 +808,25 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         details: "\(error)"
       )
     }
+  }
+
+  private func refreshCurrentFrameAfterLayoutChange() {
+    guard backendName == "macos-native-player",
+          let nativePlayer,
+          let texture else {
+      markFrameAvailable()
+      return
+    }
+    do {
+      let frameInfo = try texture.updateFromNativePlayer(
+        nativePlayer,
+        waitTimeoutMs: 100
+      )
+      publishFrameInfo(frameInfo)
+    } catch {
+      NSLog("VoidPlayer macOS native layout refresh failed: \(error)")
+    }
+    markFrameAvailable()
   }
 
   private func seekAndRefresh(targetPtsUs: Int, resumeAfterSeek: Bool) -> FlutterError? {
@@ -1317,7 +1337,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
 
   private func presentationUploadModeLocked() -> String {
     if metalUploadEnabled, metalTextureValid, nativeMetalUploaderAvailableLocked() {
-      return "metal-bgra-staging-upload"
+      return "metal-bgra-layout-upload"
     }
     if pixelBuffer != nil {
       return "cvpixelbuffer-direct-copy"

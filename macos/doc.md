@@ -50,7 +50,7 @@ download-to-CPU mode by default. Diagnostics expose
 `hardwareDecodeProvider=VideoToolbox`, `hardwareDecodeActive=true`,
 `hardwareDecodeDownloadsToCpu=true`, and `decodeMode=videotoolbox-download-to-cpu` when the
 shared `DecodeThread` keeps hardware decode active; `softwareFallbackActive` remains visible for
-unsupported codecs or initialization fallback.
+unsupported codecs or initialization fallback and is covered with a generated MPEG-2 smoke.
 
 The macOS runner also implements the shared `pickFiles` MethodChannel call with `NSOpenPanel`.
 Debug and Release entitlements include `com.apple.security.files.user-selected.read-only` so
@@ -75,7 +75,8 @@ teardown, then recreates playback from the same fixture. `native_quit_while_play
 exercises explicit native teardown during test shutdown while playback is still active, and
 `native_callback_stress_smoke.csv` adds rapid play/pause, playing seek storm, play-then-destroy,
 recreate, and play-then-window-close churn. `native_user_window_close_smoke.csv` closes the main
-window while native playback is active. `analysis_gated_smoke.csv` asserts that direct analysis
+window while native playback is active. `native_software_fallback_smoke.csv` keeps MPEG-2
+software decode fallback visible in diagnostics. `analysis_gated_smoke.csv` asserts that direct analysis
 automation calls no-op while macOS analysis UI/IPC remains unsupported. A seek
 follows the shared keep-previous-state preference; step navigation is explicit pause-on-step. The helper copies CSV
 scripts into the app container before launch and rewrites

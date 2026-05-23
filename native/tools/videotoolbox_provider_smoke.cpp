@@ -22,6 +22,10 @@ int main() {
   if (!codec) {
     return fail("H.264 decoder is unavailable");
   }
+  const AVCodec* mpeg2_codec = avcodec_find_decoder(AV_CODEC_ID_MPEG2VIDEO);
+  if (!mpeg2_codec) {
+    return fail("MPEG-2 decoder is unavailable");
+  }
 
   vr::HwDecodeInitParams params;
   params.backend = vr::RenderBackendType::Metal;
@@ -45,5 +49,16 @@ int main() {
 
   av_buffer_unref(&result.hw_device_ctx);
   result.provider->shutdown();
+
+  auto mpeg2_result = vr::try_hw_decode_providers(mpeg2_codec, params);
+  if (mpeg2_result.success) {
+    if (mpeg2_result.hw_device_ctx) {
+      av_buffer_unref(&mpeg2_result.hw_device_ctx);
+    }
+    if (mpeg2_result.provider) {
+      mpeg2_result.provider->shutdown();
+    }
+    return fail("VideoToolbox provider unexpectedly initialized for MPEG-2");
+  }
   return 0;
 }

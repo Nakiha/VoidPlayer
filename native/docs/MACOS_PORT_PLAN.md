@@ -183,6 +183,7 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_audio_destroy_recreate_smoke.csv \
   ui_tests/macos/native_quit_while_playing_smoke.csv \
   ui_tests/macos/native_user_window_close_smoke.csv \
+  ui_tests/macos/native_software_fallback_smoke.csv \
   ui_tests/macos/analysis_gated_smoke.csv
 ```
 
@@ -253,6 +254,9 @@ staging upload for the active pixel buffer. The facade smoke also reports
 `hardwareDecodeActive=true`, `hardwareDecodeDownloadsToCpu=true`,
 `decodeMode=videotoolbox-download-to-cpu`, and `softwareFallbackActive=false` for the H.264 sample,
 keeping the fallback contract explicit when VideoToolbox is unavailable or unsupported.
+`native_software_fallback_smoke.csv` covers a generated MPEG-2 path and asserts
+`decodeMode=software-fallback`, `hardwareDecodeActive=false`, and
+`softwareFallbackActive=true`.
 
 Frame callback lifecycle status: macOS now has targeted UI smokes that churn play/pause/play,
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks

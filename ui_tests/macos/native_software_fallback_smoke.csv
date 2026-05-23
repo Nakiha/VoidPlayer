@@ -1,0 +1,23 @@
+# macOS runner smoke proving unsupported hardware decode falls back visibly.
+# Run with:
+#   python dev.py mac-ui-test ui_tests/macos/native_software_fallback_smoke.csv
+@WINDOW, 960, 540
+0.0, GENERATE_TEST_VIDEO, build/generated/macos/mpeg2_software_fallback.ts, 90, 30, 320, 180, 0, mpeg2
+0.3, ADD_MEDIA, build/generated/macos/mpeg2_software_fallback.ts
+1.3, ASSERT_TRACK_COUNT, 1
+1.4, ASSERT_NATIVE_BACKEND, macos-native-player, true
+1.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, hardwareDecodeProvider, VideoToolbox
+1.52, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeAvailable, true
+1.54, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, false
+1.56, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, false
+1.58, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, true
+1.6, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, software-fallback
+1.7, ASSERT_TRACK_METADATA, 0, macos-native-player, decode_thread_software
+1.8, CAPTURE_VIEWPORT, mpeg2_software_fallback_first_frame
+1.9, ASSERT_CAPTURE_NOT_BLACK, mpeg2_software_fallback_first_frame, 0.5, 16.0
+2.0, PLAY
+3.0, ASSERT_PLAYING
+3.1, ASSERT_POSITION_RANGE, 500000, 2500000
+3.2, PAUSE
+3.5, ASSERT_PAUSED
+3.6, QUIT, 0

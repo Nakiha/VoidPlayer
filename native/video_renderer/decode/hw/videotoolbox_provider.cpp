@@ -17,6 +17,17 @@ bool VideoToolboxProvider::probe(const AVCodec* codec) const {
         return false;
     }
 
+    switch (codec->id) {
+        case AV_CODEC_ID_H264:
+        case AV_CODEC_ID_HEVC:
+        case AV_CODEC_ID_VP9:
+            break;
+        default:
+            spdlog::info("[VideoToolbox] Codec {} is not enabled for VoidPlayer hwdownload path yet",
+                         codec->name ? codec->name : "unknown");
+            return false;
+    }
+
     for (int i = 0;; ++i) {
         const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
         if (!config) {

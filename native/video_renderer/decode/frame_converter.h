@@ -1,7 +1,7 @@
 #pragma once
 #include "video_renderer/buffer/bidi_ring_buffer.h"
+#include "video_renderer/decode/d3d11_frame_snapshot.h"
 #include "video_renderer/decode/hw/hw_decode_provider.h"
-#include <cstdint>
 #include <mutex>
 #include <optional>
 
@@ -13,20 +13,6 @@ struct ID3D11Device;
 struct ID3D11DeviceContext;
 
 namespace vr {
-
-struct D3D11SnapshotPool;
-
-struct D3D11SnapshotPoolStats {
-    uint64_t estimated_bytes = 0;
-    uint64_t texture_bytes = 0;
-    uint64_t created_count = 0;
-    uint64_t reused_count = 0;
-    size_t checked_out_count = 0;
-    size_t available_count = 0;
-    int width = 0;
-    int height = 0;
-    int format = 0;
-};
 
 class FrameConverter {
 public:

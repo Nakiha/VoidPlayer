@@ -80,8 +80,10 @@ pipeline.
 
 - [x] Extract a platform-neutral decoded-frame publication interface from `DecodedFramePublisher`.
 - [ ] Split `FrameConverter` into software packing and D3D11 snapshot/presenter pieces. Software
-  frame packing/wrapping is now isolated in `software_frame_packer`; the D3D11 snapshot/presenter
-  side still remains in `FrameConverter`.
+  frame packing/wrapping is now isolated in `software_frame_packer`; D3D11VA direct-frame wrapping
+  and exact-seek snapshot pooling now live behind `d3d11_frame_snapshot`. `FrameConverter` still
+  coordinates software-vs-hardware dispatch and should shed the remaining platform presenter
+  decisions in a later slice.
 - [ ] Keep `TrackBuffer`, `RenderSink`, seek policies, and playback clock semantics shared.
 - [x] Add CTest coverage that exercises software frame publication -> `TrackBuffer` without D3D11.
 - [x] Extend the smoke from synthetic frames to FFmpeg-decoded frames.
@@ -239,10 +241,10 @@ Runner cleanup status: the obsolete `MacOSFirstFrameDecoder` ObjC++ shim has bee
 Swift bridging header now includes the macOS native player bridge directly.
 
 Frame conversion split status: deterministic software YUV/NV12/P010 packing and planar YUV420
-wrapping now live in `video_renderer/decode/software_frame_packer.*`, while `FrameConverter`
-coordinates color metadata, software-vs-hardware dispatch, and the Windows D3D11 snapshot path.
-This keeps the current macOS playback queue on the shared native decode path without starting a
-second backend.
+wrapping now live in `video_renderer/decode/software_frame_packer.*`. D3D11VA direct-frame wrapping
+and exact-seek snapshot pooling now live in `video_renderer/decode/d3d11_frame_snapshot.*`, while
+`FrameConverter` coordinates color metadata and software-vs-hardware dispatch. This keeps the
+current macOS playback queue on the shared native decode path without starting a second backend.
 
 M5 baseline status: `software_bgra_converter_smoke` now includes deterministic limited/full-range
 color samples and padded line strides, while `software_frame_packer_smoke` locks odd-size NV21

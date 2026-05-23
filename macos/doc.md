@@ -106,10 +106,12 @@ is reported in diagnostics as
 `presentationAdapter=cvpixelbuffer-bgra-copy`; decode, seek, loop, audio, and playback clock policy
 remain outside Swift. The macOS channel also forwards primary-track `setTrackOffset` into the shared
 native `RenderSink`; multi-track offset composition still waits for renderer-owned macOS
-presentation rather than Swift-side policy. The adapter accepts CPU RGBA, planar YUV420, NV12, and
-P010 frames, with deterministic smoke coverage for range and matrix-aware YUV conversion plus a
-10-bit H.264 VideoToolbox hwdownload UI smoke before a renderer-owned shader path takes over. The
-pixel buffer is created with Metal compatibility and IOSurface backing, and native diagnostics expose whether a
+presentation rather than Swift-side policy. `applyLayout` is also mirrored into native
+`LayoutController` state and exposed through `nativeLayout*` diagnostics, but visual layout
+application still waits for renderer-owned Metal presentation. The adapter accepts CPU RGBA, planar
+YUV420, NV12, and P010 frames, with deterministic smoke coverage for range and matrix-aware YUV
+conversion plus a 10-bit H.264 VideoToolbox hwdownload UI smoke before a renderer-owned shader path
+takes over. The pixel buffer is created with Metal compatibility and IOSurface backing, and native diagnostics expose whether a
 `CVMetalTextureCache` can wrap it (`metalTextureCreationCount`, `metalTextureValid`). Validation
 failures keep explicit native reasons in `metalTextureLastError`, including size mismatch and
 unsupported non-BGRA surfaces. Explicit seek/step refresh and playback frame callbacks now prefer

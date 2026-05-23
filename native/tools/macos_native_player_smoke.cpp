@@ -134,6 +134,27 @@ int main(int argc, char** argv) {
         return 1;
     }
     VPMacOSNativePlayerSetTrackOffset(player.get(), 0, 0);
+    VPMacOSNativeLayoutState requested_layout = {};
+    requested_layout.mode = 1;
+    requested_layout.split_pos = 1.5f;
+    requested_layout.zoom_ratio = 2.0f;
+    requested_layout.view_offset_x = 32.0f;
+    requested_layout.view_offset_y = -16.0f;
+    requested_layout.pixel_size_mode = 1;
+    requested_layout.order[0] = 0;
+    requested_layout.order[1] = 99;
+    VPMacOSNativePlayerApplyLayout(player.get(), &requested_layout);
+    VPMacOSNativeLayoutState layout_snapshot = {};
+    if (VPMacOSNativePlayerCopyLayout(player.get(), &layout_snapshot) != 0 ||
+        layout_snapshot.mode != 1 ||
+        layout_snapshot.split_pos != 1.0f ||
+        layout_snapshot.zoom_ratio != 2.0f ||
+        layout_snapshot.pixel_size_mode != 1 ||
+        layout_snapshot.order[0] != 0 ||
+        layout_snapshot.order[1] != 99) {
+        std::cerr << "native layout state was not retained or clamped by macOS player\n";
+        return 1;
+    }
 
     VPMacOSNativeFrame first = {};
     if (!wait_for_frame(player.get(), first, std::chrono::seconds(3))) {

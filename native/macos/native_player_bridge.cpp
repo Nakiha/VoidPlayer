@@ -10,6 +10,7 @@
 #include "video_renderer/buffer/track_buffer.h"
 #include "video_renderer/decode/decode_thread.h"
 #include "video_renderer/decode/hw/hw_decode_provider.h"
+#include "video_renderer/layout/layout_controller.h"
 #include "video_renderer/capture/bgra_capture_metrics.h"
 #include "video_renderer/seek/seek_coordinator.h"
 #include "video_renderer/sync/render_sink.h"
@@ -79,6 +80,34 @@ bool probe_videotoolbox_h264() {
   return available;
 }
 
+vr::LayoutState to_layout_state(const VPMacOSNativeLayoutState& state) {
+  vr::LayoutState layout;
+  layout.mode = state.mode;
+  layout.split_pos = state.split_pos;
+  layout.zoom_ratio = state.zoom_ratio;
+  layout.view_offset[0] = state.view_offset_x;
+  layout.view_offset[1] = state.view_offset_y;
+  layout.pixel_size_mode = state.pixel_size_mode;
+  for (int i = 0; i < 4; ++i) {
+    layout.order[i] = state.order[i];
+  }
+  return layout;
+}
+
+VPMacOSNativeLayoutState to_native_layout_state(const vr::LayoutState& layout) {
+  VPMacOSNativeLayoutState state = {};
+  state.mode = layout.mode;
+  state.split_pos = layout.split_pos;
+  state.zoom_ratio = layout.zoom_ratio;
+  state.view_offset_x = layout.view_offset[0];
+  state.view_offset_y = layout.view_offset[1];
+  state.pixel_size_mode = layout.pixel_size_mode;
+  for (int i = 0; i < 4; ++i) {
+    state.order[i] = layout.order[i];
+  }
+  return state;
+}
+
 class MacOSNativePlayerCore {
 public:
   MacOSNativePlayerCore()
@@ -100,6 +129,8 @@ public:
     track_buffer_ = std::make_shared<vr::TrackBuffer>(16, 4);
     render_sink_ = std::make_unique<vr::RenderSink>(playback_.clock());
     render_sink_->set_track(0, track_buffer_, 0, 1);
+    layout_controller_.reset(layout_);
+    layout_controller_.append_track(layout_, 0, 0);
     demux_ = std::make_unique<vr::DemuxThread>(path_, *packet_queue_, *seek_controller_);
     demux_->add_optional_output(vr::DemuxStreamKind::Audio, *audio_packet_queue_);
 
@@ -199,6 +230,7 @@ public:
     audio_channels_ = 0;
     loop_range_ = vr::LoopRangeState();
     track_offset_us_ = 0;
+    layout_controller_.reset(layout_);
     last_tick_frame_pts_us_ = std::numeric_limits<int64_t>::min();
   }
 
@@ -243,6 +275,17 @@ public:
 
   int64_t track_offset_us(int32_t file_id) const {
     return file_id == 0 ? track_offset_us_ : 0;
+  }
+
+  void apply_layout(const VPMacOSNativeLayoutState& state) {
+    const auto requested = to_layout_state(state);
+    layout_controller_.apply(layout_, requested, [](int file_id) {
+      return file_id == 0 ? 0 : -1;
+    });
+  }
+
+  VPMacOSNativeLayoutState layout_snapshot() const {
+    return to_native_layout_state(layout_controller_.snapshot(layout_));
   }
 
   void seek(int64_t pts_us) {
@@ -416,6 +459,8 @@ private:
   int32_t audio_channels_ = 0;
   vr::LoopRangeState loop_range_;
   int64_t track_offset_us_ = 0;
+  vr::LayoutState layout_;
+  vr::LayoutController layout_controller_;
   int64_t last_tick_frame_pts_us_ = std::numeric_limits<int64_t>::min();
   bool playing_ = false;
 };
@@ -607,6 +652,25 @@ int64_t VPMacOSNativePlayerTrackOffsetUs(VPMacOSNativePlayer* player,
   }
   std::lock_guard<std::mutex> lock(player->mutex);
   return player->core.track_offset_us(file_id);
+}
+
+void VPMacOSNativePlayerApplyLayout(VPMacOSNativePlayer* player,
+                                    const VPMacOSNativeLayoutState* state) {
+  if (!player || !state) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  player->core.apply_layout(*state);
+}
+
+int VPMacOSNativePlayerCopyLayout(VPMacOSNativePlayer* player,
+                                  VPMacOSNativeLayoutState* out) {
+  if (!player || !out) {
+    return -1;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  *out = player->core.layout_snapshot();
+  return 0;
 }
 
 void VPMacOSNativePlayerSeek(VPMacOSNativePlayer* player, int64_t pts_us) {

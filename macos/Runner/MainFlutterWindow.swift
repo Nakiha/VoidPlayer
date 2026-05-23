@@ -105,6 +105,48 @@ private final class MacOSNativePlayerSession {
     Int(VPMacOSNativePlayerTrackOffsetUs(handle, Int32(fileId)))
   }
 
+  func applyLayout(
+    mode: Int,
+    splitPos: Double,
+    zoomRatio: Double,
+    viewOffsetX: Double,
+    viewOffsetY: Double,
+    pixelSizeMode: Int,
+    order: [Int]
+  ) {
+    let paddedOrder = (order + [0, 0, 0, 0]).prefix(4).map { Int32($0) }
+    var state = VPMacOSNativeLayoutState()
+    state.mode = Int32(mode)
+    state.split_pos = Float(splitPos)
+    state.zoom_ratio = Float(zoomRatio)
+    state.view_offset_x = Float(viewOffsetX)
+    state.view_offset_y = Float(viewOffsetY)
+    state.pixel_size_mode = Int32(pixelSizeMode)
+    state.order = (paddedOrder[0], paddedOrder[1], paddedOrder[2], paddedOrder[3])
+    VPMacOSNativePlayerApplyLayout(handle, &state)
+  }
+
+  func layoutSnapshotMap() -> [String: Any]? {
+    var state = VPMacOSNativeLayoutState()
+    guard VPMacOSNativePlayerCopyLayout(handle, &state) == 0 else {
+      return nil
+    }
+    return [
+      "mode": Int(state.mode),
+      "splitPos": Double(state.split_pos),
+      "zoomRatio": Double(state.zoom_ratio),
+      "viewOffsetX": Double(state.view_offset_x),
+      "viewOffsetY": Double(state.view_offset_y),
+      "pixelSizeMode": Int(state.pixel_size_mode),
+      "order": [
+        Int(state.order.0),
+        Int(state.order.1),
+        Int(state.order.2),
+        Int(state.order.3),
+      ],
+    ]
+  }
+
   func seek(_ ptsUs: Int) {
     VPMacOSNativePlayerSeek(handle, Int64(ptsUs))
   }
@@ -465,7 +507,16 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       result(layout)
     case "applyLayout":
       if let nextLayout = call.arguments as? [String: Any] {
-        layout = nextLayout
+        nativePlayer?.applyLayout(
+          mode: intValue(nextLayout["mode"]) ?? 0,
+          splitPos: doubleValue(nextLayout["splitPos"]) ?? 0.5,
+          zoomRatio: doubleValue(nextLayout["zoomRatio"]) ?? 1.0,
+          viewOffsetX: doubleValue(nextLayout["viewOffsetX"]) ?? 0.0,
+          viewOffsetY: doubleValue(nextLayout["viewOffsetY"]) ?? 0.0,
+          pixelSizeMode: intValue(nextLayout["pixelSizeMode"]) ?? 0,
+          order: intListValue(nextLayout["order"])
+        )
+        layout = nativePlayer?.layoutSnapshotMap() ?? nextLayout
       }
       result(nil)
     case "getTracks":
@@ -474,6 +525,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       pickFiles(arguments: call.arguments, result: result)
     case "getDiagnostics":
       let textureStats = texture?.diagnostics()
+      let nativeLayoutSnapshot = nativePlayer?.layoutSnapshotMap()
       let diagnostics: [String: Any] = [
         "platform": "macos",
         "backend": backendName,
@@ -497,6 +549,9 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "audioChannels": nativePlayer?.audioChannels() ?? 0,
         "activeAudioTrack": nativePlayer?.activeAudioTrack() ?? -1,
         "primaryTrackOffsetUs": nativePlayer?.trackOffsetUs(fileId: 0) ?? 0,
+        "nativeLayoutMode": nativeLayoutSnapshot?["mode"] ?? -1,
+        "nativeLayoutZoomRatio": nativeLayoutSnapshot?["zoomRatio"] ?? 0.0,
+        "nativeLayoutPixelSizeMode": nativeLayoutSnapshot?["pixelSizeMode"] ?? -1,
         "pixelBufferRebuildCount": textureStats?.rebuildCount ?? 0,
         "pixelBufferReuseCount": textureStats?.reuseCount ?? 0,
         "pixelBufferDirectCopyCount": textureStats?.directCopyCount ?? 0,
@@ -954,10 +1009,14 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
   private func doubleArg(_ arguments: Any?, _ key: String) -> Double? {
     guard let map = arguments as? [String: Any] else { return nil }
-    if let value = map[key] as? Double {
+    return doubleValue(map[key])
+  }
+
+  private func doubleValue(_ value: Any?) -> Double? {
+    if let value = value as? Double {
       return value
     }
-    if let value = map[key] as? NSNumber {
+    if let value = value as? NSNumber {
       return value.doubleValue
     }
     return nil
@@ -990,6 +1049,16 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       return value.intValue
     }
     return nil
+  }
+
+  private func intListValue(_ value: Any?) -> [Int] {
+    if let values = value as? [Int] {
+      return values
+    }
+    if let values = value as? [Any] {
+      return values.compactMap { intValue($0) }
+    }
+    return [0, 1, 2, 3]
   }
 }
 

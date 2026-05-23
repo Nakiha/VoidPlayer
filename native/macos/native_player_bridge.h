@@ -38,6 +38,16 @@ typedef struct VPMacOSCaptureMetrics {
   uint64_t hash;
 } VPMacOSCaptureMetrics;
 
+typedef struct VPMacOSNativeLayoutState {
+  int32_t mode;
+  float split_pos;
+  float zoom_ratio;
+  float view_offset_x;
+  float view_offset_y;
+  int32_t pixel_size_mode;
+  int32_t order[4];
+} VPMacOSNativeLayoutState;
+
 enum {
   VPMacOSMetalUploaderStatusOk = 0,
   VPMacOSMetalUploaderStatusUnavailable = 1,
@@ -74,6 +84,10 @@ void VPMacOSNativePlayerSetTrackOffset(VPMacOSNativePlayer* player,
                                        int64_t offset_us);
 int64_t VPMacOSNativePlayerTrackOffsetUs(VPMacOSNativePlayer* player,
                                          int32_t file_id);
+void VPMacOSNativePlayerApplyLayout(VPMacOSNativePlayer* player,
+                                    const VPMacOSNativeLayoutState* state);
+int VPMacOSNativePlayerCopyLayout(VPMacOSNativePlayer* player,
+                                  VPMacOSNativeLayoutState* out);
 void VPMacOSNativePlayerSeek(VPMacOSNativePlayer* player, int64_t pts_us);
 
 int64_t VPMacOSNativePlayerCurrentPtsUs(VPMacOSNativePlayer* player);

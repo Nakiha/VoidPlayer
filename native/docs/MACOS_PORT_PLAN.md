@@ -312,8 +312,10 @@ keeping the fallback contract explicit when VideoToolbox is unavailable or unsup
 `decodeMode=software-fallback`, `hardwareDecodeActive=false`, and
 `softwareFallbackActive=true`. The macOS native channel now forwards primary-track `setTrackOffset`
 to the shared `RenderSink` and exposes `primaryTrackOffsetUs` in diagnostics; multi-track offset
-composition remains gated on renderer-owned macOS presentation. `native_p010_presentation_smoke.csv`
-covers generated 10-bit H.264
+composition remains gated on renderer-owned macOS presentation. It also mirrors `applyLayout` into
+the shared `LayoutController` and exposes `nativeLayoutMode`, `nativeLayoutZoomRatio`, and
+`nativeLayoutPixelSizeMode` diagnostics; visual layout application still waits for renderer-owned
+Metal presentation. `native_p010_presentation_smoke.csv` covers generated 10-bit H.264
 VideoToolbox download-to-CPU decode through the P010 presentation path with the direct-copy fallback
 enabled.
 

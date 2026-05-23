@@ -647,6 +647,20 @@ ScriptInstruction? _parseInstruction(
         time,
         AssertNativeDiagnosticIntAtLeast(args[0], int.parse(args[1])),
       );
+    case 'ASSERT_NATIVE_DIAGNOSTIC_BOOL':
+      if (args.length < 2) {
+        log.warning(
+          'ASSERT_NATIVE_DIAGNOSTIC_BOOL needs key and value: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertNativeDiagnosticBool(
+          args[0],
+          args[1] == '1' || args[1].toLowerCase() == 'true',
+        ),
+      );
     case 'ASSERT_NATIVE_DIAGNOSTIC_STRING':
       if (args.length < 2) {
         log.warning(

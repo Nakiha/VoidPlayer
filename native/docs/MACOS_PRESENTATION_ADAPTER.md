@@ -37,9 +37,10 @@ adapter:
 
 `macos_presentation_adapter_smoke`, `software_bgra_converter_smoke`, and
 `software_frame_packer_smoke` cover these baselines in portable macOS CTest.
-macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy` and
-`metalTextureCreationCount >= 1`, so future M5 work must explicitly move the
-diagnostic contract when the Metal adapter becomes active.
+macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy`,
+`metalTextureValid=true`, and `metalTextureCreationCount >= 1`, so future M5
+work must explicitly move the diagnostic contract when the Metal adapter
+becomes active.
 
 ## M5 Rule
 

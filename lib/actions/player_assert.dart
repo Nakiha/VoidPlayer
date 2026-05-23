@@ -82,6 +82,12 @@ class AssertNativeDiagnosticIntAtLeast extends PlayerAssert {
   const AssertNativeDiagnosticIntAtLeast(this.key, this.minValue);
 }
 
+class AssertNativeDiagnosticBool extends PlayerAssert {
+  final String key;
+  final bool value;
+  const AssertNativeDiagnosticBool(this.key, this.value);
+}
+
 class AssertNativeDiagnosticString extends PlayerAssert {
   final String key;
   final String value;

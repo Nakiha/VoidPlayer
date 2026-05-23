@@ -29,12 +29,13 @@ void main() {
 1.0,ASSERT_CAPTURE_DIFF,soft,hard,1.5,2.5,12
 1.1,ASSERT_NATIVE_AUDIO,true,48000,1,-1
 1.2,ASSERT_NATIVE_DIAGNOSTIC_STRING,presentationAdapter,cvpixelbuffer-bgra-copy
-1.3,CLOSE_MAIN_WINDOW
+1.3,ASSERT_NATIVE_DIAGNOSTIC_BOOL,metalTextureValid,true
+1.4,CLOSE_MAIN_WINDOW
 ''');
 
     final instructions = parseAutomationScript(file.path);
 
-    expect(instructions, hasLength(13));
+    expect(instructions, hasLength(14));
     expect(instructions.map((i) => i.time.inMilliseconds), [
       100,
       200,
@@ -48,6 +49,7 @@ void main() {
       1100,
       1200,
       1300,
+      1400,
       2000,
     ]);
     expect(
@@ -144,9 +146,19 @@ void main() {
             .having((a) => a.value, 'value', 'cvpixelbuffer-bgra-copy'),
       ),
     );
-    expect(instructions[11], isA<ScriptCloseMainWindow>());
     expect(
-      instructions[12],
+      instructions[11],
+      isA<ScriptAssert>().having(
+        (i) => i.assertion,
+        'assertion',
+        isA<AssertNativeDiagnosticBool>()
+            .having((a) => a.key, 'key', 'metalTextureValid')
+            .having((a) => a.value, 'value', isTrue),
+      ),
+    );
+    expect(instructions[12], isA<ScriptCloseMainWindow>());
+    expect(
+      instructions[13],
       isA<ScriptQuit>().having((i) => i.exitCode, 'exitCode', 0),
     );
   });

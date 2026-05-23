@@ -183,6 +183,7 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_audio_destroy_recreate_smoke.csv \
   ui_tests/macos/native_quit_while_playing_smoke.csv \
   ui_tests/macos/native_user_window_close_smoke.csv \
+  ui_tests/macos/native_direct_copy_fallback_smoke.csv \
   ui_tests/macos/native_software_fallback_smoke.csv \
   ui_tests/macos/analysis_gated_smoke.csv
 ```
@@ -249,7 +250,9 @@ deeper Metal color work starts. UI automation can also assert boolean diagnostic
 `metalAvailable`, `metalTextureCacheAvailable`, `metalTextureValid`, and
 `metalTextureCreationCount`; facade/stress smokes assert that Metal wrapping is valid, that
 `presentationUploadMode=metal-bgra-staging-upload`, and that playback produces at least one Metal
-staging upload for the active pixel buffer. The facade smoke also reports
+staging upload for the active pixel buffer. `native_direct_copy_fallback_smoke.csv` disables the
+test-only Metal upload path and asserts the same native frames can still present through
+`presentationUploadMode=cvpixelbuffer-direct-copy` with visible pixels. The facade smoke also reports
 `hardwareDecodeProvider=VideoToolbox`, `hardwareDecodeAvailable=true`,
 `hardwareDecodeActive=true`, `hardwareDecodeDownloadsToCpu=true`,
 `decodeMode=videotoolbox-download-to-cpu`, and `softwareFallbackActive=false` for the H.264 sample,

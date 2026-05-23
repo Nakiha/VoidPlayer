@@ -276,6 +276,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private static let channelName = "video_renderer"
   private static let eventsChannelName = "video_renderer/events"
   private static let syntheticDurationUs = 10_000_000
+  private static let metalUploadDisabledForTest =
+    ProcessInfo.processInfo.arguments.contains("--macos-disable-metal-upload")
   private static weak var activeInstance: MacOSVideoRendererStub?
 
   private let textureRegistry: FlutterTextureRegistry
@@ -434,6 +436,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "pixelBufferDirectCopyCount": textureStats?.directCopyCount ?? 0,
         "pixelBufferMetalUploadCount": textureStats?.metalUploadCount ?? 0,
         "pixelBufferMetalUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
+        "pixelBufferMetalUploadEnabled": textureStats?.metalUploadEnabled ?? false,
         "presentationUploadMode": textureStats?.presentationUploadMode ?? "unavailable",
         "metalAvailable": textureStats?.metalAvailable ?? false,
         "metalTextureCacheAvailable": textureStats?.metalTextureCacheAvailable ?? false,
@@ -468,7 +471,11 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     var initialPresentedPtsUs = 0
     var initialPresentedDtsUs = 0
     if firstPath.hasPrefix("macos-synthetic://") {
-      nextTexture = MacOSSyntheticTexture(width: requestedWidth, height: requestedHeight)
+      nextTexture = MacOSSyntheticTexture(
+        width: requestedWidth,
+        height: requestedHeight,
+        metalUploadEnabled: !Self.metalUploadDisabledForTest
+      )
       trackWidth = requestedWidth
       trackHeight = requestedHeight
       trackDurationUs = Self.syntheticDurationUs
@@ -485,7 +492,10 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         }
         try session.open(path: firstPath)
         let decoded = try session.copyCurrentFrame(waitTimeoutMs: 3_000)
-        nextTexture = MacOSSyntheticTexture(decoded: decoded)
+        nextTexture = MacOSSyntheticTexture(
+          decoded: decoded,
+          metalUploadEnabled: !Self.metalUploadDisabledForTest
+        )
         initialPresentedPtsUs = decoded.ptsUs
         initialPresentedDtsUs = normalizedDtsUs(decoded)
         trackWidth = session.width() > 0 ? session.width() : decoded.width
@@ -922,6 +932,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private(set) var width: Int
   private(set) var height: Int
   private let syntheticPattern: Bool
+  private let metalUploadEnabled: Bool
   private let metalDevice: MTLDevice?
   private var metalTextureCache: CVMetalTextureCache?
   private var metalCommandQueue: MTLCommandQueue?
@@ -938,10 +949,11 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private var metalTextureCreationCount = 0
   private var metalTextureFailureCount = 0
 
-  init(width: Int, height: Int) {
+  init(width: Int, height: Int, metalUploadEnabled: Bool) {
     self.width = width
     self.height = height
     self.syntheticPattern = true
+    self.metalUploadEnabled = metalUploadEnabled
     self.metalDevice = MTLCreateSystemDefaultDevice()
     self.decodedBGRA = nil
     self.hashPrefix = "macos-synthetic"
@@ -950,10 +962,11 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     rebuildPixelBuffer()
   }
 
-  init(decoded: MacOSDecodedFirstFrame) {
+  init(decoded: MacOSDecodedFirstFrame, metalUploadEnabled: Bool) {
     self.width = decoded.width
     self.height = decoded.height
     self.syntheticPattern = false
+    self.metalUploadEnabled = metalUploadEnabled
     self.metalDevice = MTLCreateSystemDefaultDevice()
     self.decodedBGRA = decoded.bgra
     self.hashPrefix = "macos-first-frame"
@@ -1088,6 +1101,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     directCopyCount: Int,
     metalUploadCount: Int,
     metalUploadFailureCount: Int,
+    metalUploadEnabled: Bool,
     presentationUploadMode: String,
     metalAvailable: Bool,
     metalTextureCacheAvailable: Bool,
@@ -1104,6 +1118,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       directCopyCount: pixelBufferDirectCopyCount,
       metalUploadCount: pixelBufferMetalUploadCount,
       metalUploadFailureCount: pixelBufferMetalUploadFailureCount,
+      metalUploadEnabled: metalUploadEnabled,
       presentationUploadMode: presentationUploadModeLocked(),
       metalAvailable: metalDevice != nil,
       metalTextureCacheAvailable: metalTextureCache != nil,
@@ -1169,7 +1184,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   }
 
   private func presentationUploadModeLocked() -> String {
-    if metalTextureValid, metalCommandQueue != nil {
+    if metalUploadEnabled, metalTextureValid, metalCommandQueue != nil {
       return "metal-bgra-staging-upload"
     }
     if pixelBuffer != nil {
@@ -1183,6 +1198,9 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     pixelBuffer: CVPixelBuffer,
     waitTimeoutMs: Int
   ) throws -> MacOSNativeFrameInfo? {
+    guard metalUploadEnabled else {
+      return nil
+    }
     guard let metalTextureCache,
           let metalCommandQueue else {
       return nil

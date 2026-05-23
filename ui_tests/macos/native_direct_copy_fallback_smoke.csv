@@ -1,0 +1,24 @@
+# macOS runner smoke for the CVPixelBuffer direct-copy presentation fallback.
+# Run with:
+#   python dev.py mac-ui-test --build ui_tests/macos/native_direct_copy_fallback_smoke.csv
+@APP_ARG, --macos-disable-metal-upload
+@WINDOW, 960, 540
+0.0, GENERATE_TEST_VIDEO, build/generated/macos/native_direct_copy_fallback.mp4, 120, 30, 320, 180
+0.3, ADD_MEDIA, build/generated/macos/native_direct_copy_fallback.mp4
+1.3, ASSERT_TRACK_COUNT, 1
+1.4, ASSERT_NATIVE_BACKEND, macos-native-player, true
+1.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapter, cvpixelbuffer-bgra-copy
+1.55, ASSERT_NATIVE_DIAGNOSTIC_BOOL, pixelBufferMetalUploadEnabled, false
+1.6, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, cvpixelbuffer-direct-copy
+1.7, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureValid, true
+1.8, CAPTURE_VIEWPORT, direct_copy_initial
+1.9, ASSERT_CAPTURE_NOT_BLACK, direct_copy_initial, 0.5, 16.0
+2.0, PLAY
+3.0, ASSERT_PLAYING
+3.1, ASSERT_POSITION_RANGE, 500000, 2500000
+3.2, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferDirectCopyCount, 1
+3.3, CAPTURE_VIEWPORT, direct_copy_after_play
+3.4, ASSERT_CAPTURE_NOT_BLACK, direct_copy_after_play, 0.5, 16.0
+3.5, PAUSE
+3.8, ASSERT_PAUSED
+3.9, QUIT, 0

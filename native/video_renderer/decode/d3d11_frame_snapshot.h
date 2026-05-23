@@ -26,6 +26,8 @@ struct D3D11SnapshotPoolStats {
     int format = 0;
 };
 
+std::shared_ptr<D3D11SnapshotPool> create_d3d11_snapshot_pool();
+
 bool populate_d3d11_hardware_texture_frame(AVFrame* frame, TextureFrame& result);
 
 std::optional<TextureFrame> snapshot_d3d11_hardware_frame(

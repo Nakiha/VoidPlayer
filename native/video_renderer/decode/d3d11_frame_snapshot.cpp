@@ -175,6 +175,14 @@ D3D11SnapshotFrameRef::~D3D11SnapshotFrameRef() {
 }  // namespace
 #endif  // _WIN32
 
+std::shared_ptr<D3D11SnapshotPool> create_d3d11_snapshot_pool() {
+#ifdef _WIN32
+    return std::make_shared<D3D11SnapshotPool>();
+#else
+    return nullptr;
+#endif
+}
+
 bool populate_d3d11_hardware_texture_frame(AVFrame* frame, TextureFrame& result) {
 #ifdef _WIN32
     if (!frame || !frame->data[0]) {

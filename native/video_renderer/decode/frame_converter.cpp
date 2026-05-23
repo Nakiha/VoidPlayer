@@ -182,7 +182,7 @@ bool FrameConverter::init_hardware(void* d3d_device, void* d3d_context,
 #ifdef _WIN32
     d3d11_snapshot_pool_ =
         (!download_to_cpu && hw_type == HwDecodeType::D3D11VA)
-        ? std::make_shared<D3D11SnapshotPool>()
+        ? create_d3d11_snapshot_pool()
         : nullptr;
 #else
     d3d11_snapshot_pool_.reset();

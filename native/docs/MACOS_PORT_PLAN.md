@@ -196,8 +196,9 @@ python dev.py mac-ui-test \
   ui_tests/macos/analysis_gated_smoke.csv
 ```
 
-The full macOS smoke set, including `native_callback_stress_smoke.csv`, passed with `--build` on
-2026-05-23 against the rebuilt Debug app. An earlier full-set run exposed that
+The full macOS smoke set, including `native_callback_stress_smoke.csv`, passed on 2026-05-23 after
+the D3D11 frame snapshot split and macOS DMG packaging changes. The same set passed with `--build`
+earlier on 2026-05-23 against the rebuilt Debug app. An earlier full-set run exposed that
 `native_playing_seek_keeps_state_smoke.csv` used a fixed-time `ASSERT_PLAYING` that was too tight
 under batch load; the script now waits for playing state before checking post-seek position and
 presented-frame ranges. On 2026-05-22, targeted loop/audio/quit validation passed with:

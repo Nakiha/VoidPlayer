@@ -6,7 +6,7 @@
 2.2, ASSERT_TRACK_COUNT, 1
 2.3, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, true
 2.4, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-bgra-layout-upload
-2.42, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, transitional-native-tick
+2.42, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-presentation-scheduler/transitional-thread
 2.44, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, swift-cvpixelbuffer-texture-pump
 2.5, CAPTURE_VIEWPORT, native_4k60_start
 2.6, ASSERT_CAPTURE_NOT_BLACK, native_4k60_start, 0.01, 4.0
@@ -14,6 +14,8 @@
 4.5, ASSERT_POSITION_RANGE, 700000, 2900000
 4.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameCopyCount, 2
 4.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalYuvUploadCount, 2
+4.72, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerFrameNotificationCount, 2
+4.74, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerLastPresentFrameCount, 1
 4.8, CAPTURE_VIEWPORT, native_4k60_after_play
 4.9, ASSERT_CAPTURE_CHANGED, native_4k60_start, native_4k60_after_play
 5.0, PAUSE

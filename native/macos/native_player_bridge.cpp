@@ -167,6 +167,7 @@ public:
     playback_.pause();
     playing_ = false;
     presentation_scheduler_.reset();
+    reset_scheduler_stats();
     return true;
   }
 
@@ -188,6 +189,7 @@ public:
     loop_range_ = vr::LoopRangeState();
     layout_controller_.reset(layout_);
     presentation_scheduler_.reset();
+    reset_scheduler_stats();
   }
 
   void play() {
@@ -452,6 +454,8 @@ public:
     }
     playback_.seek_clock(target);
     presentation_scheduler_.reset();
+    scheduler_last_selected_pts_us_ = vr::kNoTimestampUs;
+    scheduler_last_present_frame_count_ = 0;
   }
 
   bool add_track(const char* path,
@@ -571,15 +575,40 @@ public:
     return true;
   }
 
-  bool tick_playback() {
+  vr::PresentationSchedulerTick tick_playback() {
+    ++scheduler_tick_count_;
     tick_loop_range();
     if (!playing_) {
-      return false;
+      return {};
     }
     if (!render_sink_) {
-      return false;
+      return {};
     }
-    return presentation_scheduler_.tick(*render_sink_).should_notify;
+    auto tick = presentation_scheduler_.tick(*render_sink_);
+    if (tick.has_presentable_frame) {
+      ++scheduler_presentable_tick_count_;
+      scheduler_last_selected_pts_us_ = tick.selected_pts_us;
+      scheduler_last_present_frame_count_ = 0;
+      for (const auto& frame : tick.decision.frames) {
+        if (frame.has_value()) {
+          ++scheduler_last_present_frame_count_;
+        }
+      }
+    }
+    if (tick.should_notify) {
+      ++scheduler_frame_notification_count_;
+    }
+    return tick;
+  }
+
+  VPMacOSNativePresentationSchedulerStats scheduler_stats() const {
+    VPMacOSNativePresentationSchedulerStats stats = {};
+    stats.tick_count = scheduler_tick_count_;
+    stats.presentable_tick_count = scheduler_presentable_tick_count_;
+    stats.frame_notification_count = scheduler_frame_notification_count_;
+    stats.last_selected_pts_us = scheduler_last_selected_pts_us_;
+    stats.last_present_frame_count = scheduler_last_present_frame_count_;
+    return stats;
   }
 
   void tick_loop_range() {
@@ -694,6 +723,19 @@ private:
   vr::LayoutController layout_controller_;
   vr::PresentationScheduler presentation_scheduler_;
   bool playing_ = false;
+  uint64_t scheduler_tick_count_ = 0;
+  uint64_t scheduler_presentable_tick_count_ = 0;
+  uint64_t scheduler_frame_notification_count_ = 0;
+  int64_t scheduler_last_selected_pts_us_ = vr::kNoTimestampUs;
+  int32_t scheduler_last_present_frame_count_ = 0;
+
+  void reset_scheduler_stats() {
+    scheduler_tick_count_ = 0;
+    scheduler_presentable_tick_count_ = 0;
+    scheduler_frame_notification_count_ = 0;
+    scheduler_last_selected_pts_us_ = vr::kNoTimestampUs;
+    scheduler_last_present_frame_count_ = 0;
+  }
 
   int first_free_slot() const {
     for (size_t i = 0; i < tracks_.size(); ++i) {
@@ -891,6 +933,9 @@ struct VPMacOSNativePlayer {
   }
 
   void run_tick_thread() {
+    // Transitional macOS publication loop: it consumes the shared presentation
+    // scheduler, then asks Swift to copy the selected frame into the Flutter
+    // texture. Renderer-owned Metal presentation should replace this path.
     std::unique_lock<std::mutex> lock(tick_mutex);
     while (!tick_stop.load()) {
       tick_cv.wait_for(lock, std::chrono::milliseconds(10));
@@ -898,12 +943,12 @@ struct VPMacOSNativePlayer {
         break;
       }
       lock.unlock();
-      bool notify_frame = false;
+      vr::PresentationSchedulerTick tick;
       {
         std::lock_guard<std::mutex> player_lock(mutex);
-        notify_frame = core.tick_playback();
+        tick = core.tick_playback();
       }
-      if (!notify_frame) {
+      if (!tick.should_notify) {
         lock.lock();
         continue;
       }
@@ -1224,6 +1269,21 @@ const char* VPMacOSNativePlayerDecoderName(VPMacOSNativePlayer* player) {
 
 const char* VPMacOSNativePresentationAdapterName(void) {
   return vp_macos::presentation_adapter_name();
+}
+
+const char* VPMacOSNativePresentationSchedulerName(void) {
+  return "shared-presentation-scheduler/transitional-thread";
+}
+
+int VPMacOSNativePlayerCopyPresentationSchedulerStats(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativePresentationSchedulerStats* out) {
+  if (!player || !out) {
+    return -1;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  *out = player->core.scheduler_stats();
+  return 0;
 }
 
 int VPMacOSNativeHardwareDecodeAvailable(void) {

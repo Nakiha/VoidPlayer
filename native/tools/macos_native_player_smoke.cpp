@@ -254,6 +254,21 @@ int main(int argc, char** argv) {
         VPMacOSNativeFrameFree(&playing);
         return 1;
     }
+    VPMacOSNativePresentationSchedulerStats scheduler_stats = {};
+    if (std::string(VPMacOSNativePresentationSchedulerName()) !=
+            "shared-presentation-scheduler/transitional-thread" ||
+        VPMacOSNativePlayerCopyPresentationSchedulerStats(
+            player.get(), &scheduler_stats) != 0 ||
+        scheduler_stats.tick_count == 0 ||
+        scheduler_stats.presentable_tick_count == 0 ||
+        scheduler_stats.frame_notification_count == 0 ||
+        scheduler_stats.last_present_frame_count <= 0 ||
+        scheduler_stats.last_selected_pts_us <= first_pts) {
+        std::cerr << "native presentation scheduler stats were not updated during playback\n";
+        VPMacOSNativeFrameFree(&first);
+        VPMacOSNativeFrameFree(&playing);
+        return 1;
+    }
 
     VPMacOSNativePlayerPause(player.get());
     VPMacOSNativePlayerSetFrameAvailableCallback(player.get(), nullptr, nullptr);

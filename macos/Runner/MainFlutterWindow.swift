@@ -247,6 +247,27 @@ private final class MacOSNativePlayerSession {
     String(cString: VPMacOSNativePlayerDecoderName(handle))
   }
 
+  func presentationSchedulerStats() -> [String: Any] {
+    var stats = VPMacOSNativePresentationSchedulerStats()
+    guard VPMacOSNativePlayerCopyPresentationSchedulerStats(handle, &stats) == 0 else {
+      return [
+        "tickCount": 0,
+        "presentableTickCount": 0,
+        "frameNotificationCount": 0,
+        "lastSelectedPtsUs": -1,
+        "lastPresentFrameCount": 0,
+      ]
+    }
+    let maxInt64 = UInt64(Int64.max)
+    return [
+      "tickCount": Int64(min(UInt64(stats.tick_count), maxInt64)),
+      "presentableTickCount": Int64(min(UInt64(stats.presentable_tick_count), maxInt64)),
+      "frameNotificationCount": Int64(min(UInt64(stats.frame_notification_count), maxInt64)),
+      "lastSelectedPtsUs": Int64(stats.last_selected_pts_us),
+      "lastPresentFrameCount": Int(stats.last_present_frame_count),
+    ]
+  }
+
   func copyCurrentFrame(waitTimeoutMs: Int = 0) throws -> MacOSDecodedFirstFrame {
     let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
     var lastError = ""
@@ -579,12 +600,13 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     case "getDiagnostics":
       let textureStats = texture?.diagnostics()
       let nativeLayoutSnapshot = nativePlayer?.layoutSnapshotMap()
+      let schedulerStats = nativePlayer?.presentationSchedulerStats()
       let diagnostics: [String: Any] = [
         "platform": "macos",
         "backend": backendName,
         "presentationAdapter": String(cString: VPMacOSNativePresentationAdapterName()),
         "presentationAdapterKind": "software-fallback",
-        "presentationScheduler": "transitional-native-tick",
+        "presentationScheduler": String(cString: VPMacOSNativePresentationSchedulerName()),
         "presentationBackend": "swift-cvpixelbuffer-texture-pump",
         "rendererOwnedPresentationActive": false,
         "hardwareDecodeProvider": String(cString: VPMacOSNativeHardwareDecodeProviderName()),
@@ -605,6 +627,11 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "activeAudioTrack": nativePlayer?.activeAudioTrack() ?? -1,
         "primaryTrackOffsetUs": nativePlayer?.trackOffsetUs(fileId: 0) ?? 0,
         "secondaryTrackOffsetUs": nativePlayer?.trackOffsetUs(fileId: 1) ?? 0,
+        "presentationSchedulerTickCount": schedulerStats?["tickCount"] ?? 0,
+        "presentationSchedulerPresentableTickCount": schedulerStats?["presentableTickCount"] ?? 0,
+        "presentationSchedulerFrameNotificationCount": schedulerStats?["frameNotificationCount"] ?? 0,
+        "presentationSchedulerLastSelectedPtsUs": schedulerStats?["lastSelectedPtsUs"] ?? -1,
+        "presentationSchedulerLastPresentFrameCount": schedulerStats?["lastPresentFrameCount"] ?? 0,
         "nativeLayoutMode": nativeLayoutSnapshot?["mode"] ?? -1,
         "nativeLayoutZoomRatio": nativeLayoutSnapshot?["zoomRatio"] ?? 0.0,
         "nativeLayoutPixelSizeMode": nativeLayoutSnapshot?["pixelSizeMode"] ?? -1,

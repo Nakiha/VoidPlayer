@@ -66,6 +66,14 @@ typedef struct VPMacOSNativeLayoutPresentationParams {
   float view_offset_uv_y;
 } VPMacOSNativeLayoutPresentationParams;
 
+typedef struct VPMacOSNativePresentationSchedulerStats {
+  uint64_t tick_count;
+  uint64_t presentable_tick_count;
+  uint64_t frame_notification_count;
+  int64_t last_selected_pts_us;
+  int32_t last_present_frame_count;
+} VPMacOSNativePresentationSchedulerStats;
+
 enum {
   VPMacOSNativeMaxTracks = 4,
   VPMacOSMetalUploaderStatusOk = 0,
@@ -182,6 +190,10 @@ int VPMacOSNativePlayerHardwareDecodeDownloadsToCpu(VPMacOSNativePlayer* player)
 const char* VPMacOSNativePlayerDecodeModeName(VPMacOSNativePlayer* player);
 const char* VPMacOSNativePlayerDecoderName(VPMacOSNativePlayer* player);
 const char* VPMacOSNativePresentationAdapterName(void);
+const char* VPMacOSNativePresentationSchedulerName(void);
+int VPMacOSNativePlayerCopyPresentationSchedulerStats(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativePresentationSchedulerStats* out);
 int VPMacOSNativeHardwareDecodeAvailable(void);
 const char* VPMacOSNativeHardwareDecodeProviderName(void);
 

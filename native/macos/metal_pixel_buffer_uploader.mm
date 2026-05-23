@@ -99,6 +99,11 @@ int metal_upload_failure(char* error, size_t error_size, const char* message) {
   if (![self isAvailable] || !pixelBuffer || width <= 0 || height <= 0) {
     return NO;
   }
+  if (CVPixelBufferGetWidth(pixelBuffer) != static_cast<size_t>(width) ||
+      CVPixelBufferGetHeight(pixelBuffer) != static_cast<size_t>(height) ||
+      CVPixelBufferGetPixelFormatType(pixelBuffer) != kCVPixelFormatType_32BGRA) {
+    return NO;
+  }
   CVMetalTextureRef metalTextureRef = nullptr;
   const CVReturn status = CVMetalTextureCacheCreateTextureFromImage(
       kCFAllocatorDefault,
@@ -142,6 +147,10 @@ int metal_upload_failure(char* error, size_t error_size, const char* message) {
   }
   if (!player || !pixelBuffer || !out || width <= 0 || height <= 0) {
     write_error(error, errorSize, "invalid native Metal upload arguments");
+    return -1;
+  }
+  if (![self validatePixelBuffer:pixelBuffer width:width height:height]) {
+    write_error(error, errorSize, "invalid native Metal upload pixel buffer");
     return -1;
   }
 

@@ -27,6 +27,8 @@ validation, shared `MTLBuffer`, and blit. The same surface is used for explicit
 seek/step refresh and playback callbacks when
 `presentationUploadMode=metal-bgra-staging-upload`, where native copies into a
 shared `MTLBuffer` and Metal blits into the texture-backed `CVPixelBuffer`.
+Native validation rejects pixel buffers whose dimensions or pixel format do not
+match the expected BGRA texture surface before any frame upload is attempted.
 
 ## Parity Expectations
 
@@ -42,9 +44,10 @@ path and the future renderer-owned shader path:
 - keep unsupported formats visible as adapter failures until implemented
 - keep the software adapter and Metal-capable surface visible in diagnostics
 
-`macos_presentation_adapter_smoke`, `software_bgra_converter_smoke`, and
-`software_frame_packer_smoke` cover these baselines in portable macOS CTest,
-including matrix-aware BT.709 samples for the CPU presentation fallback.
+`macos_presentation_adapter_smoke`, `macos_metal_uploader_smoke`,
+`software_bgra_converter_smoke`, and `software_frame_packer_smoke` cover these
+baselines in portable macOS CTest, including matrix-aware BT.709/BT.2020 samples,
+unknown-HD-to-BT.709 fallback, and native Metal `CVPixelBuffer` validation.
 macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy`,
 `presentationUploadMode=metal-bgra-staging-upload`, `metalTextureValid=true`,
 seek refreshes and playback advance `pixelBufferMetalUploadCount`,

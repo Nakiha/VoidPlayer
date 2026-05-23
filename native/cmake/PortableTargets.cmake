@@ -59,6 +59,7 @@ if(APPLE)
     )
     target_link_libraries(void_macos_native_player PUBLIC
         void_media_ffmpeg
+        "-framework Foundation"
         "-framework Metal"
         "-framework CoreVideo"
     )
@@ -108,6 +109,18 @@ if(APPLE)
         void_macos_native_player
     )
     add_test(NAME macos_presentation_adapter_smoke COMMAND macos_presentation_adapter_smoke)
+
+    add_executable(macos_metal_uploader_smoke
+        "${VOID_NATIVE_DIR}/tools/macos_metal_uploader_smoke.mm"
+    )
+    void_apply_native_compile_options(macos_metal_uploader_smoke)
+    target_compile_options(macos_metal_uploader_smoke PRIVATE
+        $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
+    )
+    target_link_libraries(macos_metal_uploader_smoke PRIVATE
+        void_macos_native_player
+    )
+    add_test(NAME macos_metal_uploader_smoke COMMAND macos_metal_uploader_smoke)
 
     if(BUILD_ANALYSIS)
         add_executable(macos_analysis_ffi_smoke

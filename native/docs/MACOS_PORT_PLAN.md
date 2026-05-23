@@ -226,6 +226,7 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_audio_play_seek_smoke.csv \
   ui_tests/macos/native_audio_destroy_recreate_smoke.csv \
   ui_tests/macos/native_add_track_smoke.csv \
+  ui_tests/macos/native_layout_split_smoke.csv \
   ui_tests/macos/native_quit_while_playing_smoke.csv \
   ui_tests/macos/native_user_window_close_smoke.csv \
   ui_tests/macos/native_direct_copy_fallback_smoke.csv \

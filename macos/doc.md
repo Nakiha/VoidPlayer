@@ -79,7 +79,9 @@ facade sees and wires an audio stream, and
 resume. `native_audio_destroy_recreate_smoke.csv` removes the final audio track to force native
 teardown, then recreates playback from the same fixture. `native_add_track_smoke.csv` verifies that a
 second `ADD_MEDIA` opens a native Demux/Decode track, returns native metadata, accepts a secondary
-track offset, and removes that track cleanly. `native_quit_while_playing_smoke.csv`
+track offset, and removes that track cleanly. `native_layout_split_smoke.csv` switches the same
+native Metal presentation path through split-screen positions 0.0, 1.0, and 0.5 with different-size
+tracks and verifies the viewport capture changes. `native_quit_while_playing_smoke.csv`
 exercises explicit native teardown during test shutdown while playback is still active, and
 `native_callback_stress_smoke.csv` adds rapid play/pause, playing seek storm, play-then-destroy,
 recreate, and play-then-window-close churn. `native_user_window_close_smoke.csv` closes the main

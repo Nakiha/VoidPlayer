@@ -220,6 +220,7 @@ public:
     playing_ = false;
     presentation_scheduler_.reset();
     reset_scheduler_stats();
+    clear_scheduler_present_decision();
     return true;
   }
 
@@ -242,6 +243,7 @@ public:
     layout_controller_.reset(layout_);
     presentation_scheduler_.reset();
     reset_scheduler_stats();
+    clear_scheduler_present_decision();
   }
 
   void play() {
@@ -282,6 +284,7 @@ public:
     }
     track->offset_us = offset_us;
     render_sink_->set_track_offset(static_cast<size_t>(track->slot), offset_us);
+    clear_scheduler_present_decision();
   }
 
   int64_t track_offset_us(int32_t file_id) const {
@@ -349,7 +352,7 @@ public:
       return false;
     }
 
-    const auto decision = render_sink_->evaluate();
+    const auto decision = current_present_decision();
     fill_present_decision_info(decision, width, height, out);
     if (!decision.should_present) {
       error = "no presentable frame is ready";
@@ -413,7 +416,7 @@ public:
       return false;
     }
 
-    const auto decision = render_sink_->evaluate();
+    const auto decision = current_present_decision();
     fill_present_decision_info(decision, width, height, out);
     if (!decision.should_present) {
       error = "no presentable frame is ready";
@@ -508,6 +511,7 @@ public:
     presentation_scheduler_.reset();
     scheduler_last_selected_pts_us_ = vr::kNoTimestampUs;
     scheduler_last_present_frame_count_ = 0;
+    clear_scheduler_present_decision();
   }
 
   bool add_track(const char* path,
@@ -638,6 +642,8 @@ public:
     }
     auto tick = presentation_scheduler_.tick(*render_sink_);
     if (tick.has_presentable_frame) {
+      scheduler_cached_present_decision_ = tick.decision;
+      scheduler_cached_present_decision_available_ = true;
       ++scheduler_presentable_tick_count_;
       scheduler_last_selected_pts_us_ = tick.selected_pts_us;
       scheduler_last_present_frame_count_ = 0;
@@ -660,6 +666,8 @@ public:
     stats.frame_notification_count = scheduler_frame_notification_count_;
     stats.last_selected_pts_us = scheduler_last_selected_pts_us_;
     stats.last_present_frame_count = scheduler_last_present_frame_count_;
+    stats.cached_present_decision_available =
+        scheduler_cached_present_decision_available_ ? 1 : 0;
     return stats;
   }
 
@@ -682,6 +690,18 @@ public:
   }
 
 private:
+  vr::PresentDecision current_present_decision() const {
+    if (scheduler_cached_present_decision_available_) {
+      return scheduler_cached_present_decision_;
+    }
+    return render_sink_ ? render_sink_->evaluate() : vr::PresentDecision();
+  }
+
+  void clear_scheduler_present_decision() {
+    scheduler_cached_present_decision_ = {};
+    scheduler_cached_present_decision_available_ = false;
+  }
+
   bool advance_to_clock(int64_t* frame_pts_us) {
     if (!render_sink_) {
       return false;
@@ -780,6 +800,8 @@ private:
   uint64_t scheduler_frame_notification_count_ = 0;
   int64_t scheduler_last_selected_pts_us_ = vr::kNoTimestampUs;
   int32_t scheduler_last_present_frame_count_ = 0;
+  vr::PresentDecision scheduler_cached_present_decision_;
+  bool scheduler_cached_present_decision_available_ = false;
 
   void reset_scheduler_stats() {
     scheduler_tick_count_ = 0;
@@ -787,6 +809,7 @@ private:
     scheduler_frame_notification_count_ = 0;
     scheduler_last_selected_pts_us_ = vr::kNoTimestampUs;
     scheduler_last_present_frame_count_ = 0;
+    clear_scheduler_present_decision();
   }
 
   int first_free_slot() const {
@@ -919,6 +942,7 @@ private:
       render_sink_->set_track(
           static_cast<size_t>(slot), track->track_buffer, file_id, track->generation);
     }
+    clear_scheduler_present_decision();
     layout_controller_.append_track(layout_, file_id, slot);
     out.file_id = file_id;
     out.slot = slot;

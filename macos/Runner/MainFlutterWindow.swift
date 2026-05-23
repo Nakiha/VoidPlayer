@@ -256,6 +256,7 @@ private final class MacOSNativePlayerSession {
         "frameNotificationCount": 0,
         "lastSelectedPtsUs": -1,
         "lastPresentFrameCount": 0,
+        "cachedPresentDecisionAvailable": false,
       ]
     }
     let maxInt64 = UInt64(Int64.max)
@@ -265,6 +266,7 @@ private final class MacOSNativePlayerSession {
       "frameNotificationCount": Int64(min(UInt64(stats.frame_notification_count), maxInt64)),
       "lastSelectedPtsUs": Int64(stats.last_selected_pts_us),
       "lastPresentFrameCount": Int(stats.last_present_frame_count),
+      "cachedPresentDecisionAvailable": stats.cached_present_decision_available != 0,
     ]
   }
 
@@ -632,6 +634,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "presentationSchedulerFrameNotificationCount": schedulerStats?["frameNotificationCount"] ?? 0,
         "presentationSchedulerLastSelectedPtsUs": schedulerStats?["lastSelectedPtsUs"] ?? -1,
         "presentationSchedulerLastPresentFrameCount": schedulerStats?["lastPresentFrameCount"] ?? 0,
+        "presentationSchedulerCachedDecisionAvailable": schedulerStats?["cachedPresentDecisionAvailable"] ?? false,
         "nativeLayoutMode": nativeLayoutSnapshot?["mode"] ?? -1,
         "nativeLayoutZoomRatio": nativeLayoutSnapshot?["zoomRatio"] ?? 0.0,
         "nativeLayoutPixelSizeMode": nativeLayoutSnapshot?["pixelSizeMode"] ?? -1,

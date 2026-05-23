@@ -18,6 +18,7 @@
 4.715, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, yuv
 4.72, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerFrameNotificationCount, 2
 4.74, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerLastPresentFrameCount, 1
+4.745, ASSERT_NATIVE_DIAGNOSTIC_BOOL, presentationSchedulerCachedDecisionAvailable, true
 4.8, CAPTURE_VIEWPORT, native_4k60_after_play
 4.9, ASSERT_CAPTURE_CHANGED, native_4k60_start, native_4k60_after_play
 5.0, PAUSE

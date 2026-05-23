@@ -469,6 +469,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private var nativeFrameCopyCount = 0
   private var nativeFrameCopyMissCount = 0
   private var nativeFrameCopyErrorCount = 0
+  private var nativeFrameCopyCoalescedCount = 0
+  private var nativeFrameCopyInFlight = false
   private var nativeFrameCopyFirstHostNs: UInt64?
   private var nativeFrameCopyLastHostNs: UInt64?
 
@@ -658,6 +660,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "nativeFrameCopyCount": nativeFrameCopyCount,
         "nativeFrameCopyMissCount": nativeFrameCopyMissCount,
         "nativeFrameCopyErrorCount": nativeFrameCopyErrorCount,
+        "nativeFrameCopyCoalescedCount": nativeFrameCopyCoalescedCount,
         "nativeFrameCopyElapsedMs": nativeFrameCopyElapsedMs(),
         "nativeFrameCopyFps": nativeFrameCopyFps(),
       ]
@@ -1058,6 +1061,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     nativeFrameCopyCount = 0
     nativeFrameCopyMissCount = 0
     nativeFrameCopyErrorCount = 0
+    nativeFrameCopyCoalescedCount = 0
+    nativeFrameCopyInFlight = false
     nativeFrameCopyFirstHostNs = nil
     nativeFrameCopyLastHostNs = nil
   }
@@ -1104,6 +1109,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       userData: Unmanaged.passUnretained(self).toOpaque()
     )
     let maxTrackSlots = activeTrackSlotCapacity()
+    nativeFrameCopyInFlight = true
     playbackQueue.async { [weak self] in
       self?.copyNativePlaybackFrame(generation: generation, maxTrackSlots: maxTrackSlots)
     }
@@ -1111,6 +1117,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
   private func stopNativeFramePump() {
     playbackGeneration += 1
+    nativeFrameCopyInFlight = false
     if nativeFrameCallbackRegistered {
       nativePlayer?.setFrameAvailableCallback(nil, userData: nil)
       nativeFrameCallbackRegistered = false
@@ -1121,6 +1128,15 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
       self.nativeFrameCallbackCount += 1
+      guard self.isPlaying,
+            self.backendName == "macos-native-player" else {
+        return
+      }
+      if self.nativeFrameCopyInFlight {
+        self.nativeFrameCopyCoalescedCount += 1
+        return
+      }
+      self.nativeFrameCopyInFlight = true
       let generation = self.playbackGeneration
       let maxTrackSlots = self.activeTrackSlotCapacity()
       self.playbackQueue.async { [weak self] in
@@ -1131,7 +1147,13 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
   private func copyNativePlaybackFrame(generation: Int, maxTrackSlots: Int) {
     do {
-      guard let nativePlayer, let texture else { return }
+      guard let nativePlayer, let texture else {
+        DispatchQueue.main.async { [weak self] in
+          guard let self, self.playbackGeneration == generation else { return }
+          self.nativeFrameCopyInFlight = false
+        }
+        return
+      }
       let frameInfo = try texture.updateFromNativePlayer(
         nativePlayer,
         maxTrackSlots: maxTrackSlots,
@@ -1142,8 +1164,10 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
               self.playbackGeneration == generation,
               self.isPlaying,
               self.backendName == "macos-native-player" else {
+          self?.nativeFrameCopyInFlight = false
           return
         }
+        self.nativeFrameCopyInFlight = false
         let now = DispatchTime.now().uptimeNanoseconds
         if self.nativeFrameCopyFirstHostNs == nil {
           self.nativeFrameCopyFirstHostNs = now
@@ -1161,6 +1185,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     } catch {
       DispatchQueue.main.async { [weak self] in
         guard let self, self.playbackGeneration == generation else { return }
+        self.nativeFrameCopyInFlight = false
         if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true,
            self.isPlaying,
            self.backendName == "macos-native-player" {

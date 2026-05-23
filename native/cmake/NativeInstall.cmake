@@ -20,6 +20,7 @@ if(TARGET video_renderer_ffi)
     if(EXISTS "${FFMPEG_BIN_DIR}")
         void_collect_ffmpeg_runtime_dlls(FFMPEG_FFI_DLL_FILES)
         void_collect_ffmpeg_notice_files(FFMPEG_FFI_NOTICE_FILES)
+        void_collect_ffmpeg_notice_dirs(FFMPEG_FFI_NOTICE_DIRS)
         set(FFI_DLL_COPY_CMDS "")
         foreach(DLL ${FFMPEG_FFI_DLL_FILES})
             list(APPEND FFI_DLL_COPY_CMDS
@@ -28,6 +29,11 @@ if(TARGET video_renderer_ffi)
         foreach(NOTICE ${FFMPEG_FFI_NOTICE_FILES})
             list(APPEND FFI_DLL_COPY_CMDS
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different "${NOTICE}" "${DIST_DIR}/ffi/")
+        endforeach()
+        foreach(NOTICE_DIR ${FFMPEG_FFI_NOTICE_DIRS})
+            get_filename_component(NOTICE_DIR_NAME "${NOTICE_DIR}" NAME)
+            list(APPEND FFI_DLL_COPY_CMDS
+                COMMAND ${CMAKE_COMMAND} -E copy_directory "${NOTICE_DIR}" "${DIST_DIR}/ffi/${NOTICE_DIR_NAME}")
         endforeach()
         add_custom_target(copy_ffmpeg_to_ffi_dist ALL
             COMMAND ${CMAKE_COMMAND} -E make_directory "${DIST_DIR}/ffi"
@@ -62,6 +68,7 @@ if(BUILD_PYTHON AND TARGET video_renderer_native)
     if(EXISTS "${FFMPEG_BIN_DIR}")
         void_collect_ffmpeg_runtime_dlls(FFMPEG_DLL_FILES)
         void_collect_ffmpeg_notice_files(FFMPEG_NOTICE_FILES)
+        void_collect_ffmpeg_notice_dirs(FFMPEG_NOTICE_DIRS)
         set(DIST_DLL_COPY_CMDS "")
         foreach(DLL ${FFMPEG_DLL_FILES})
             list(APPEND DIST_DLL_COPY_CMDS
@@ -70,6 +77,11 @@ if(BUILD_PYTHON AND TARGET video_renderer_native)
         foreach(NOTICE ${FFMPEG_NOTICE_FILES})
             list(APPEND DIST_DLL_COPY_CMDS
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different "${NOTICE}" "${DIST_DIR}/python/")
+        endforeach()
+        foreach(NOTICE_DIR ${FFMPEG_NOTICE_DIRS})
+            get_filename_component(NOTICE_DIR_NAME "${NOTICE_DIR}" NAME)
+            list(APPEND DIST_DLL_COPY_CMDS
+                COMMAND ${CMAKE_COMMAND} -E copy_directory "${NOTICE_DIR}" "${DIST_DIR}/python/${NOTICE_DIR_NAME}")
         endforeach()
         add_custom_target(copy_ffmpeg_to_dist ALL
             COMMAND ${CMAKE_COMMAND} -E make_directory "${DIST_DIR}/python"

@@ -362,7 +362,7 @@ bool FrameConverter::init_hardware(void* d3d_device, void* d3d_context,
 
     spdlog::info("[FrameConverter] Hardware converter initialized ({}x{}, hw_type={}, download_to_cpu={})",
                  src_width, src_height,
-                 hw_type == HwDecodeType::D3D11VA ? "D3D11VA" : "unknown",
+                 hw_decode_type_name(hw_type),
                  download_hw_to_cpu_);
     return true;
 }

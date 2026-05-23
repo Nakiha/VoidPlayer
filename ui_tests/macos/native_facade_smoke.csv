@@ -8,13 +8,16 @@
 1.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapter, cvpixelbuffer-bgra-copy
 1.52, ASSERT_NATIVE_DIAGNOSTIC_STRING, hardwareDecodeProvider, VideoToolbox
 1.54, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeAvailable, true
-1.56, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, false
+1.56, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, true
+1.565, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, true
+1.57, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, false
+1.575, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, videotoolbox-download-to-cpu
 1.6, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalAvailable, true
 1.65, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureCacheAvailable, true
 1.7, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureValid, true
 1.75, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, metalTextureCreationCount, 1
 1.78, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-bgra-staging-upload
-1.8, ASSERT_TRACK_METADATA, 0, macos-native-player, decode_thread_software
+1.8, ASSERT_TRACK_METADATA, 0, macos-native-player, decode_thread_videotoolbox_hwdownload
 1.9, ASSERT_PRESENTED_FRAME_RANGE, 0, 0, 100000
 2.0, PLAY
 3.0, ASSERT_PLAYING

@@ -129,6 +129,15 @@ int main(int argc, char** argv) {
         VPMacOSNativeFrameFree(&first);
         return 1;
     }
+    if (std::string(VPMacOSNativePlayerDecodeModeName(player.get())) !=
+            "videotoolbox-download-to-cpu" ||
+        VPMacOSNativePlayerHardwareDecodeActive(player.get()) == 0 ||
+        VPMacOSNativePlayerHardwareDecodeDownloadsToCpu(player.get()) == 0) {
+        std::cerr << "VideoToolbox hwdownload decode was not active; mode="
+                  << VPMacOSNativePlayerDecodeModeName(player.get()) << "\n";
+        VPMacOSNativeFrameFree(&first);
+        return 1;
+    }
     const int64_t first_pts = first.pts_us;
     const int direct_stride = first.width * 4 + 64;
     std::vector<uint8_t> direct_bgra(

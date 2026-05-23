@@ -41,9 +41,11 @@ adapter:
 macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy`,
 `presentationUploadMode=metal-bgra-staging-upload`, `metalTextureValid=true`,
 `pixelBufferMetalUploadCount >= 1`, `hardwareDecodeProvider=VideoToolbox`,
-and `hardwareDecodeActive=false`, so future M5 work must explicitly move the
-diagnostic contract when deeper Metal color conversion or active VideoToolbox
-playback becomes active.
+`hardwareDecodeActive=true`, `hardwareDecodeDownloadsToCpu=true`,
+`decodeMode=videotoolbox-download-to-cpu`, and `softwareFallbackActive=false`
+for the H.264 fixture. Unsupported codecs or initialization failures must keep
+the fallback visible by flipping the decode-mode diagnostics instead of silently
+changing playback state.
 
 ## M5 Rule
 

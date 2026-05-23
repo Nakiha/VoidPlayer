@@ -129,6 +129,8 @@ public:
       close();
       return false;
     }
+    decoder_->enable_hardware_decode(
+        vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice);
     demux_->set_seek_callback([this](int64_t pts_us, vr::SeekType type) {
       if (decoder_) {
         decoder_->notify_seek(pts_us, type);
@@ -242,6 +244,31 @@ public:
   int32_t active_audio_track() const {
     const auto* audio = playback_.audio_output();
     return audio ? audio->active_track() : -1;
+  }
+  bool hardware_decode_active() const {
+    return decoder_ && decoder_->is_hardware_decode_enabled();
+  }
+  bool hardware_decode_downloads_to_cpu() const {
+    return decoder_ && decoder_->memory_stats().hardware_download_to_cpu;
+  }
+  const char* decode_mode_name() const {
+    if (!decoder_) {
+      return "none";
+    }
+    if (hardware_decode_active()) {
+      return hardware_decode_downloads_to_cpu()
+          ? "videotoolbox-download-to-cpu"
+          : "videotoolbox-renderer-owned";
+    }
+    return "software-fallback";
+  }
+  const char* decoder_name() const {
+    if (!decoder_) {
+      return "none";
+    }
+    return hardware_decode_active()
+        ? "decode_thread_videotoolbox_hwdownload"
+        : "decode_thread_software";
   }
 
   bool copy_current_frame(VPMacOSNativeFrame* out, std::string& error) {
@@ -613,6 +640,38 @@ int32_t VPMacOSNativePlayerActiveAudioTrack(VPMacOSNativePlayer* player) {
   }
   std::lock_guard<std::mutex> lock(player->mutex);
   return player->core.active_audio_track();
+}
+
+int VPMacOSNativePlayerHardwareDecodeActive(VPMacOSNativePlayer* player) {
+  if (!player) {
+    return 0;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  return player->core.hardware_decode_active() ? 1 : 0;
+}
+
+int VPMacOSNativePlayerHardwareDecodeDownloadsToCpu(VPMacOSNativePlayer* player) {
+  if (!player) {
+    return 0;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  return player->core.hardware_decode_downloads_to_cpu() ? 1 : 0;
+}
+
+const char* VPMacOSNativePlayerDecodeModeName(VPMacOSNativePlayer* player) {
+  if (!player) {
+    return "none";
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  return player->core.decode_mode_name();
+}
+
+const char* VPMacOSNativePlayerDecoderName(VPMacOSNativePlayer* player) {
+  if (!player) {
+    return "none";
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  return player->core.decoder_name();
 }
 
 const char* VPMacOSNativePresentationAdapterName(void) {

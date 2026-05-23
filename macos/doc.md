@@ -21,7 +21,7 @@ build settings.
 ## Current Scope
 
 This runner is a launch/build baseline with an initial native playback bridge. It does not yet
-provide hardware decode or analysis window support.
+provide analysis window support.
 
 Current Phase 1 work makes the main Dart entrypoint choose Windows/macOS bootstrap through deferred
 imports, injects platform services for window/accent/analysis dependencies, and registers a
@@ -40,14 +40,17 @@ optional audio packets into `AudioDecodeThread`, and controls output through the
 play/pause/seek/setAudibleTrack calls. UI automation can generate a short sine-audio media file and
 verify native audio diagnostics, while `audio_mixer_smoke` verifies that inactive audible tracks
 mute without consuming queued PCM. Speaker-level audible output still needs a manual smoke until the
-test harness has an audio capture or fake output device. Network/SSH media, analysis windows, and
-hardware decode are still unavailable. Analysis windows and main-window analysis overlays are
+test harness has an audio capture or fake output device. Network/SSH media and analysis windows are
+still unavailable. Analysis windows and main-window analysis overlays are
 explicitly gated off in `PlatformCapabilities.macOSPhase1`; the native analysis library can build
 on macOS, but the app will not run the Windows-style analysis UI/IPC path until the macOS workflow
 is wired behind those capability flags.
-The shared hardware decode provider factory can now initialize VideoToolbox for H.264 in
-download-to-CPU mode, and diagnostics expose that as `hardwareDecodeProvider=VideoToolbox` with
-`hardwareDecodeActive=false` until playback intentionally enables it.
+The shared hardware decode provider factory now initializes VideoToolbox for H.264 in
+download-to-CPU mode by default. Diagnostics expose
+`hardwareDecodeProvider=VideoToolbox`, `hardwareDecodeActive=true`,
+`hardwareDecodeDownloadsToCpu=true`, and `decodeMode=videotoolbox-download-to-cpu` when the
+shared `DecodeThread` keeps hardware decode active; `softwareFallbackActive` remains visible for
+unsupported codecs or initialization fallback.
 
 The macOS runner also implements the shared `pickFiles` MethodChannel call with `NSOpenPanel`.
 Debug and Release entitlements include `com.apple.security.files.user-selected.read-only` so

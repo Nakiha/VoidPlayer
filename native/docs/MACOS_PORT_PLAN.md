@@ -19,14 +19,17 @@ Historical phase notes moved to [archive/MACOS_PORT_PLAN_HISTORY.md](archive/MAC
   `void_macos_native_player`, and smoke tools.
 - The visible macOS local-file path now uses `DemuxThread` + `DecodeThread` + `TrackBuffer` through
   `native/macos/native_player_bridge.*`; frames are copied into the current `CVPixelBuffer` bridge.
+- H.264 playback now enables VideoToolbox through the shared hardware decode provider in
+  download-to-CPU mode; diagnostics keep both the active hardware path and software fallback state
+  visible.
 - macOS audio now uses the shared native audio engine and miniaudio/CoreAudio output path. Automated
   diagnostics cover stream wiring and play/seek/pause/resume lifecycle; a manual audible smoke is
   documented for speaker-level confirmation.
 - The native analysis library now configures and builds on macOS once the analysis submodules are
   initialized. Flutter now explicitly gates unsupported macOS analysis windows and main-window
   overlays, so direct automation cannot accidentally run the Windows-only UI/IPC path.
-- A/V sync hardening, Metal presentation, VideoToolbox decode, and macOS analysis UI/IPC support
-  are still outstanding.
+- A/V sync hardening, renderer-owned Metal presentation, deeper color/layout parity, and macOS
+  analysis UI/IPC support are still outstanding.
 
 ## Hard Contract
 
@@ -131,10 +134,10 @@ Goal: improve performance after software playback is correct.
   linesizes, BGRA channel order, odd-dimension NV21 -> even-coded NV12 packing, and planar
   YUV420 wrap metadata.
 - [x] Add VideoToolbox behind the hardware decode provider interface.
-  The provider is registered through the shared `HwDecodeProvider` factory and currently only
-  permits the `FfmpegOwnedHwDownloadDevice` mode, so experimental hardware decode still publishes
+  The provider is registered through the shared `HwDecodeProvider` factory and now runs the macOS
+  facade through `FfmpegOwnedHwDownloadDevice` by default. This keeps decoded frames published
   through the existing CPU frame path instead of creating a second renderer backend.
-- [ ] Keep software fallback visible in diagnostics.
+- [x] Keep software fallback visible in diagnostics.
 
 ### M6: Packaging And Release
 
@@ -246,9 +249,10 @@ deeper Metal color work starts. UI automation can also assert boolean diagnostic
 `metalTextureCreationCount`; facade/stress smokes assert that Metal wrapping is valid, that
 `presentationUploadMode=metal-bgra-staging-upload`, and that playback produces at least one Metal
 staging upload for the active pixel buffer. The facade smoke also reports
-`hardwareDecodeProvider=VideoToolbox`, `hardwareDecodeAvailable=true`, and
-`hardwareDecodeActive=false`, keeping the software fallback explicit until VideoToolbox is enabled
-for playback.
+`hardwareDecodeProvider=VideoToolbox`, `hardwareDecodeAvailable=true`,
+`hardwareDecodeActive=true`, `hardwareDecodeDownloadsToCpu=true`,
+`decodeMode=videotoolbox-download-to-cpu`, and `softwareFallbackActive=false` for the H.264 sample,
+keeping the fallback contract explicit when VideoToolbox is unavailable or unsupported.
 
 Frame callback lifecycle status: macOS now has targeted UI smokes that churn play/pause/play,
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks

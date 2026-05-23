@@ -138,6 +138,22 @@ private final class MacOSNativePlayerSession {
     Int(VPMacOSNativePlayerActiveAudioTrack(handle))
   }
 
+  func hardwareDecodeActive() -> Bool {
+    VPMacOSNativePlayerHardwareDecodeActive(handle) != 0
+  }
+
+  func hardwareDecodeDownloadsToCpu() -> Bool {
+    VPMacOSNativePlayerHardwareDecodeDownloadsToCpu(handle) != 0
+  }
+
+  func decodeModeName() -> String {
+    String(cString: VPMacOSNativePlayerDecodeModeName(handle))
+  }
+
+  func decoderName() -> String {
+    String(cString: VPMacOSNativePlayerDecoderName(handle))
+  }
+
   func copyCurrentFrame(waitTimeoutMs: Int = 0) throws -> MacOSDecodedFirstFrame {
     let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
     var lastError = ""
@@ -399,7 +415,10 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "presentationAdapter": String(cString: VPMacOSNativePresentationAdapterName()),
         "hardwareDecodeProvider": String(cString: VPMacOSNativeHardwareDecodeProviderName()),
         "hardwareDecodeAvailable": VPMacOSNativeHardwareDecodeAvailable() != 0,
-        "hardwareDecodeActive": false,
+        "hardwareDecodeActive": nativePlayer?.hardwareDecodeActive() ?? false,
+        "hardwareDecodeDownloadsToCpu": nativePlayer?.hardwareDecodeDownloadsToCpu() ?? false,
+        "decodeMode": nativePlayer?.decodeModeName() ?? "none",
+        "softwareFallbackActive": nativePlayer?.hardwareDecodeActive() != true,
         "available": nativePlayer != nil,
         "reason": nativePlayer == nil
           ? "Synthetic macOS texture is active"
@@ -475,7 +494,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         trackFormatName = "macos-native-player"
         trackCodecName = "ffmpeg"
         trackCodecLongName = "macOS shared native DecodeThread facade"
-        trackDecoderName = "decode_thread_software"
+        trackDecoderName = session.decoderName()
         backendName = "macos-native-player"
         nativePlayer = session
       } catch {
@@ -570,7 +589,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         ? "macOS shared native DecodeThread facade"
         : "macOS Synthetic FlutterTexture",
       decoderName: backendName == "macos-native-player"
-        ? "decode_thread_software"
+        ? nativePlayer?.decoderName() ?? "decode_thread_software"
         : "synthetic"
     )
     tracks.append(track)

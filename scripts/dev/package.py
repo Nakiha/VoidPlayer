@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import os
 import re
 import shutil
 import subprocess
@@ -170,12 +171,19 @@ def _cmd_package_macos(args) -> None:
     _assert_release_compliance(stage_dir)
     _assert_macos_app_compliance(stage_app)
     _verify_macos_linkage(stage_app)
-    _adhoc_sign_macos_app(stage_app)
+    sign_identity = args.macos_sign_identity or os.environ.get("VOIDPLAYER_MACOS_SIGN_IDENTITY")
+    _sign_macos_app(stage_app, sign_identity)
     _verify_macos_codesign(stage_app)
 
     print(f"\nmacOS package staging ready: {stage_dir}")
     if args.installer:
-        _create_macos_dmg(stage_dir)
+        dmg = _create_macos_dmg(stage_dir)
+        if args.macos_notarize:
+            notary_profile = (
+                args.macos_notary_profile
+                or os.environ.get("VOIDPLAYER_MACOS_NOTARY_PROFILE")
+            )
+            _notarize_macos_dmg(dmg, notary_profile)
     else:
         print("Use this directory as the DMG input, or pass --installer to create a local DMG.")
 
@@ -384,6 +392,25 @@ def _adhoc_sign_macos_app(stage_app: Path) -> None:
     run(["codesign", "--force", "--deep", "--sign", "-", str(stage_app)], cwd=str(ROOT))
 
 
+def _sign_macos_app(stage_app: Path, identity: str | None) -> None:
+    if not identity:
+        _adhoc_sign_macos_app(stage_app)
+        return
+
+    header("Developer ID sign staged macOS app")
+    run([
+        "codesign",
+        "--force",
+        "--deep",
+        "--options",
+        "runtime",
+        "--timestamp",
+        "--sign",
+        identity,
+        str(stage_app),
+    ], cwd=str(ROOT))
+
+
 def _assert_no_build_only_artifacts(root: Path) -> None:
     offenders: list[Path] = []
     for path in root.rglob("*"):
@@ -450,7 +477,7 @@ def _compile_inno_installer(iscc_arg: str | None, stage_dir: Path) -> None:
     print(f"\nInstaller ready: {installer}")
 
 
-def _create_macos_dmg(stage_dir: Path) -> None:
+def _create_macos_dmg(stage_dir: Path) -> Path:
     header("Create macOS DMG")
     _remove_tree(MACOS_INSTALLER_DIR)
     MACOS_INSTALLER_DIR.mkdir(parents=True, exist_ok=True)
@@ -475,7 +502,31 @@ def _create_macos_dmg(stage_dir: Path) -> None:
         sys.exit(1)
 
     print(f"\nDMG ready: {dmg}")
-    print("Developer ID signing and notarization remain manual release steps.")
+    print("Pass --macos-notarize with a notarytool profile to notarize and staple this DMG.")
+    return dmg
+
+
+def _notarize_macos_dmg(dmg: Path, notary_profile: str | None) -> None:
+    header("Notarize macOS DMG")
+    if not notary_profile:
+        print("ERROR: macOS notarization requires a notarytool keychain profile.")
+        print("Create one with xcrun notarytool store-credentials, then pass:")
+        print("  python dev.py package --installer --macos-notarize --macos-notary-profile PROFILE")
+        print("or set VOIDPLAYER_MACOS_NOTARY_PROFILE=PROFILE.")
+        sys.exit(1)
+
+    run([
+        "xcrun",
+        "notarytool",
+        "submit",
+        str(dmg),
+        "--keychain-profile",
+        notary_profile,
+        "--wait",
+    ], cwd=str(ROOT))
+    run(["xcrun", "stapler", "staple", str(dmg)], cwd=str(ROOT))
+    run(["xcrun", "stapler", "validate", str(dmg)], cwd=str(ROOT))
+    print(f"\nNotarized and stapled DMG ready: {dmg}")
 
 
 def _find_iscc(iscc_arg: str | None) -> Path | None:

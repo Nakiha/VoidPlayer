@@ -151,8 +151,11 @@ Goal: make the app distributable and honest about unsupported features.
 - [ ] Add release build, signing, notarization, and third-party notice docs.
   `dev.py package` now stages a macOS release app with bundled GPL/third-party/FFmpeg notices and
   verifies bundled `@rpath` linkage before ad-hoc signing/verifying the copied app signature.
-  `dev.py package --installer` creates a local compressed DMG. Developer ID signing,
-  notarization, and stapling remain manual follow-up.
+  It can also Developer ID sign the staged app when `--macos-sign-identity` or
+  `VOIDPLAYER_MACOS_SIGN_IDENTITY` is provided. `dev.py package --installer` creates a local
+  compressed DMG and can submit/staple/validate it through `xcrun notarytool` when
+  `--macos-notarize --macos-notary-profile` or `VOIDPLAYER_MACOS_NOTARY_PROFILE` is provided.
+  Real release credentials remain an operator-supplied step.
 - [x] Make the native analysis library build on macOS with the initialized submodules.
 - [x] Add an explicit unsupported gate for macOS analysis windows and overlays until the workflow is
   wired.
@@ -285,7 +288,8 @@ the macOS FFmpeg README/build manifest/license files, runs the release complianc
 bundled `@rpath` linkage with `otool -L`, ad-hoc signs the staged copy, and verifies the app with
 `codesign --verify --deep --strict`. Passing `--installer` creates
 `build/package/macos/installer/VoidPlayer-<version>-macos-arm64.dmg` with `hdiutil` for local
-testing; Developer ID signing/notarization/stapling remain outside `dev.py`.
+testing. Passing `--macos-sign-identity` replaces ad-hoc signing with Developer ID hardened-runtime
+signing, and `--macos-notarize --macos-notary-profile` notarizes, staples, and validates the DMG.
 
 Frame callback lifecycle status: macOS now has targeted UI smokes that churn play/pause/play,
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks

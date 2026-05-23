@@ -63,6 +63,7 @@ Examples:
   python dev.py test --native-only --github
   python dev.py package
   python dev.py package --installer
+  python dev.py package --installer --macos-sign-identity "Developer ID Application: Team" --macos-notarize --macos-notary-profile PROFILE
   python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
   python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv
   python dev.py analysis-resize-stress
@@ -116,9 +117,15 @@ Examples:
     p_package.add_argument("--no-build", action="store_true",
                            help="Skip Flutter build and stage the existing clean Release output")
     p_package.add_argument("--installer", action="store_true",
-                           help="Compile the Inno Setup installer after staging")
+                           help="Create the platform installer after staging")
     p_package.add_argument("--iscc", type=str, default=None,
                            help="Path to ISCC.exe (defaults to PATH/common Inno Setup locations)")
+    p_package.add_argument("--macos-sign-identity", type=str, default=None,
+                           help="macOS Developer ID Application identity; defaults to VOIDPLAYER_MACOS_SIGN_IDENTITY")
+    p_package.add_argument("--macos-notarize", action="store_true",
+                           help="Submit and staple the macOS DMG with xcrun notarytool")
+    p_package.add_argument("--macos-notary-profile", type=str, default=None,
+                           help="notarytool keychain profile; defaults to VOIDPLAYER_MACOS_NOTARY_PROFILE")
 
     p_ui_test = sub.add_parser("ui-test", help="Launch the Windows app with CSV UI test scripts")
     p_ui_test.add_argument("scripts", nargs="+", help="Path(s) to CSV test script(s)")

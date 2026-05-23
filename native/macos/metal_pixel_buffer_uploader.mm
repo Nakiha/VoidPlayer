@@ -14,16 +14,127 @@ constexpr const char* kLayoutBgraKernelSource = R"(
 #include <metal_stdlib>
 using namespace metal;
 
+constant int kModeSplitScreen = 1;
+constant uint kMaxTracks = 4;
+
 struct LayoutParams {
   uint width;
   uint height;
-  float display_offset_x;
-  float display_offset_y;
-  float inv_display_size_x;
-  float inv_display_size_y;
-  float view_offset_uv_x;
-  float view_offset_uv_y;
+  int mode;
+  int track_count;
+  float split_pos;
+  uint frame_present0;
+  uint frame_present1;
+  uint frame_present2;
+  uint frame_present3;
+  int order0;
+  int order1;
+  int order2;
+  int order3;
+  float display_offset_x0;
+  float display_offset_x1;
+  float display_offset_x2;
+  float display_offset_x3;
+  float display_offset_y0;
+  float display_offset_y1;
+  float display_offset_y2;
+  float display_offset_y3;
+  float inv_display_size_x0;
+  float inv_display_size_x1;
+  float inv_display_size_x2;
+  float inv_display_size_x3;
+  float inv_display_size_y0;
+  float inv_display_size_y1;
+  float inv_display_size_y2;
+  float inv_display_size_y3;
+  float view_offset_uv_x0;
+  float view_offset_uv_x1;
+  float view_offset_uv_x2;
+  float view_offset_uv_x3;
+  float view_offset_uv_y0;
+  float view_offset_uv_y1;
+  float view_offset_uv_y2;
+  float view_offset_uv_y3;
 };
+
+uint frame_present_at(constant LayoutParams& params, uint index) {
+  if (index == 0) return params.frame_present0;
+  if (index == 1) return params.frame_present1;
+  if (index == 2) return params.frame_present2;
+  return params.frame_present3;
+}
+
+int order_at(constant LayoutParams& params, uint index) {
+  if (index == 0) return params.order0;
+  if (index == 1) return params.order1;
+  if (index == 2) return params.order2;
+  return params.order3;
+}
+
+float display_offset_x_at(constant LayoutParams& params, uint index) {
+  if (index == 0) return params.display_offset_x0;
+  if (index == 1) return params.display_offset_x1;
+  if (index == 2) return params.display_offset_x2;
+  return params.display_offset_x3;
+}
+
+float display_offset_y_at(constant LayoutParams& params, uint index) {
+  if (index == 0) return params.display_offset_y0;
+  if (index == 1) return params.display_offset_y1;
+  if (index == 2) return params.display_offset_y2;
+  return params.display_offset_y3;
+}
+
+float inv_display_size_x_at(constant LayoutParams& params, uint index) {
+  if (index == 0) return params.inv_display_size_x0;
+  if (index == 1) return params.inv_display_size_x1;
+  if (index == 2) return params.inv_display_size_x2;
+  return params.inv_display_size_x3;
+}
+
+float inv_display_size_y_at(constant LayoutParams& params, uint index) {
+  if (index == 0) return params.inv_display_size_y0;
+  if (index == 1) return params.inv_display_size_y1;
+  if (index == 2) return params.inv_display_size_y2;
+  return params.inv_display_size_y3;
+}
+
+float view_offset_uv_x_at(constant LayoutParams& params, uint index) {
+  if (index == 0) return params.view_offset_uv_x0;
+  if (index == 1) return params.view_offset_uv_x1;
+  if (index == 2) return params.view_offset_uv_x2;
+  return params.view_offset_uv_x3;
+}
+
+float view_offset_uv_y_at(constant LayoutParams& params, uint index) {
+  if (index == 0) return params.view_offset_uv_y0;
+  if (index == 1) return params.view_offset_uv_y1;
+  if (index == 2) return params.view_offset_uv_y2;
+  return params.view_offset_uv_y3;
+}
+
+float2 aspect_fit_uv(float2 local_uv,
+                     constant LayoutParams& params,
+                     uint track_idx,
+                     thread bool& out_of_bounds) {
+  const float2 display_offset = float2(
+      display_offset_x_at(params, track_idx),
+      display_offset_y_at(params, track_idx));
+  const float2 inv_display_size = float2(
+      inv_display_size_x_at(params, track_idx),
+      inv_display_size_y_at(params, track_idx));
+  const float2 view_offset_uv = float2(
+      view_offset_uv_x_at(params, track_idx),
+      view_offset_uv_y_at(params, track_idx));
+  const float2 source_uv = (local_uv - display_offset) * inv_display_size - view_offset_uv;
+  if (source_uv.x < 0.0 || source_uv.x > 1.0 ||
+      source_uv.y < 0.0 || source_uv.y > 1.0) {
+    out_of_bounds = true;
+    return float2(0.0, 0.0);
+  }
+  out_of_bounds = false;
+  return source_uv;
+}
 
 kernel void layout_bgra_copy(
     device const uchar4* source [[buffer(0)]],
@@ -35,36 +146,97 @@ kernel void layout_bgra_copy(
   }
 
   const float2 canvas_size = float2(float(params.width), float(params.height));
-  const float2 local_uv = (float2(gid) + float2(0.5, 0.5)) / canvas_size;
-  const float2 display_offset = float2(params.display_offset_x, params.display_offset_y);
-  const float2 inv_display_size = float2(params.inv_display_size_x, params.inv_display_size_y);
-  const float2 view_offset_uv = float2(params.view_offset_uv_x, params.view_offset_uv_y);
-  const float2 source_uv = (local_uv - display_offset) * inv_display_size - view_offset_uv;
+  const float2 texcoord = (float2(gid) + float2(0.5, 0.5)) / canvas_size;
+  int track_idx = 0;
+  float2 local_uv = texcoord;
+  if (params.mode == kModeSplitScreen) {
+    track_idx = texcoord.x < params.split_pos
+        ? order_at(params, 0)
+        : order_at(params, 1);
+  } else {
+    const int count = max(params.track_count, 1);
+    const float scaled_x = texcoord.x * float(count);
+    const int display_slot = clamp(int(scaled_x), 0, count - 1);
+    track_idx = order_at(params, uint(display_slot));
+    local_uv = float2(scaled_x - float(display_slot), texcoord.y);
+  }
+  track_idx = clamp(track_idx, 0, int(kMaxTracks) - 1);
+  const uint track_slot = uint(track_idx);
+  if (frame_present_at(params, track_slot) == 0) {
+    destination.write(float4(0.0, 0.0, 0.0, 1.0), gid);
+    return;
+  }
 
-  if (source_uv.x < 0.0 || source_uv.x > 1.0 ||
-      source_uv.y < 0.0 || source_uv.y > 1.0) {
+  bool out_of_bounds = false;
+  const float2 source_uv = aspect_fit_uv(local_uv, params, track_slot, out_of_bounds);
+  if (out_of_bounds) {
     destination.write(float4(0.0, 0.0, 0.0, 1.0), gid);
     return;
   }
 
   const uint source_x = min(uint(source_uv.x * float(params.width)), params.width - 1);
   const uint source_y = min(uint(source_uv.y * float(params.height)), params.height - 1);
-  const uchar4 bgra = source[source_y * params.width + source_x];
-  destination.write(
-      float4(float(bgra.z), float(bgra.y), float(bgra.x), float(bgra.w)) / 255.0,
-      gid);
+  const uint track_offset = track_slot * params.width * params.height;
+  const uchar4 bgra = source[track_offset + source_y * params.width + source_x];
+  float4 color =
+      float4(float(bgra.z), float(bgra.y), float(bgra.x), float(bgra.w)) / 255.0;
+  if (params.mode == kModeSplitScreen && params.width > 0) {
+    const float divider_x = params.split_pos * float(params.width);
+    const float pixel_x = texcoord.x * float(params.width);
+    const float dist = abs(pixel_x - divider_x);
+    const float core_width = 1.25;
+    const float edge_width = 0.75;
+    if (dist <= core_width + edge_width) {
+      const float alpha = (dist <= core_width)
+          ? 1.0
+          : 1.0 - ((dist - core_width) / edge_width);
+      const float3 divider_color = 1.0 - color.rgb;
+      color.rgb = divider_color * alpha + color.rgb * (1.0 - alpha);
+      color.a = 1.0;
+    }
+  }
+  destination.write(color, gid);
 }
 )";
 
 struct MetalLayoutParams {
   uint32_t width;
   uint32_t height;
-  float display_offset_x;
-  float display_offset_y;
-  float inv_display_size_x;
-  float inv_display_size_y;
-  float view_offset_uv_x;
-  float view_offset_uv_y;
+  int32_t mode;
+  int32_t track_count;
+  float split_pos;
+  uint32_t frame_present0;
+  uint32_t frame_present1;
+  uint32_t frame_present2;
+  uint32_t frame_present3;
+  int32_t order0;
+  int32_t order1;
+  int32_t order2;
+  int32_t order3;
+  float display_offset_x0;
+  float display_offset_x1;
+  float display_offset_x2;
+  float display_offset_x3;
+  float display_offset_y0;
+  float display_offset_y1;
+  float display_offset_y2;
+  float display_offset_y3;
+  float inv_display_size_x0;
+  float inv_display_size_x1;
+  float inv_display_size_x2;
+  float inv_display_size_x3;
+  float inv_display_size_y0;
+  float inv_display_size_y1;
+  float inv_display_size_y2;
+  float inv_display_size_y3;
+  float view_offset_uv_x0;
+  float view_offset_uv_x1;
+  float view_offset_uv_x2;
+  float view_offset_uv_x3;
+  float view_offset_uv_y0;
+  float view_offset_uv_y1;
+  float view_offset_uv_y2;
+  float view_offset_uv_y3;
 };
 
 void write_error(char* error, size_t error_size, const char* message) {
@@ -384,8 +556,10 @@ const char* metal_uploader_status_message(int status) {
 
   size_t rowBytes = 0;
   size_t uploadSize = 0;
+  size_t stagingSize = 0;
   if (!checked_mul_size(static_cast<size_t>(width), 4u, &rowBytes) ||
-      !checked_mul_size(rowBytes, static_cast<size_t>(height), &uploadSize)) {
+      !checked_mul_size(rowBytes, static_cast<size_t>(height), &uploadSize) ||
+      !checked_mul_size(uploadSize, static_cast<size_t>(VPMacOSNativeMaxTracks), &stagingSize)) {
     write_error(error, errorSize, "native Metal layout upload dimensions overflow");
     return -1;
   }
@@ -393,41 +567,90 @@ const char* metal_uploader_status_message(int status) {
     write_error(error, errorSize, "native Metal layout upload row stride is too large");
     return -1;
   }
-  if (![self ensureStagingBufferWithLength:uploadSize] ||
+  if (![self ensureStagingBufferWithLength:stagingSize] ||
       ![self ensureLayoutParamsBuffer]) {
     return metal_upload_failure(
         error, errorSize, "failed to allocate native Metal layout buffers");
   }
+  std::memset([_stagingBuffer contents], 0, stagingSize);
 
-  const int copyRet = VPMacOSNativePlayerCopyCurrentFrameBGRAInto(
+  VPMacOSNativePresentDecisionInfo decisionInfo = {};
+  const int copyRet = VPMacOSNativePlayerCopyPresentFramesBGRAInto(
       player,
       static_cast<uint8_t*>([_stagingBuffer contents]),
-      uploadSize,
+      stagingSize,
       width,
       height,
       static_cast<int32_t>(rowBytes),
-      out,
+      uploadSize,
+      &decisionInfo,
       error,
       errorSize);
   if (copyRet != 0) {
-    return copyRet;
+    if (error && std::strcmp(error, "not all present decision frames are ready") == 0) {
+      return -1;
+    }
+    if (!error || error[0] == '\0') {
+      write_error(error, errorSize, "failed to copy native present frames");
+    }
+    return -2;
+  }
+  if (out) {
+    *out = {};
+    for (int slot = 0; slot < VPMacOSNativeMaxTracks; ++slot) {
+      if (decisionInfo.frames[slot].present) {
+        out->width = decisionInfo.frames[slot].width;
+        out->height = decisionInfo.frames[slot].height;
+        out->pts_us = decisionInfo.frames[slot].pts_us;
+        out->dts_us = decisionInfo.frames[slot].dts_us;
+        out->duration_us = decisionInfo.frames[slot].duration_us;
+        break;
+      }
+    }
   }
 
-  VPMacOSNativeLayoutPresentationParams layoutParams = {};
-  if (VPMacOSNativePlayerCopyLayoutPresentationParams(
-          player, width, height, &layoutParams) != 0) {
-    write_error(error, errorSize, "failed to read native layout presentation parameters");
-    return -1;
-  }
   auto* metalParams = static_cast<MetalLayoutParams*>([_layoutParamsBuffer contents]);
   metalParams->width = static_cast<uint32_t>(width);
   metalParams->height = static_cast<uint32_t>(height);
-  metalParams->display_offset_x = layoutParams.display_offset_x;
-  metalParams->display_offset_y = layoutParams.display_offset_y;
-  metalParams->inv_display_size_x = layoutParams.inv_display_size_x;
-  metalParams->inv_display_size_y = layoutParams.inv_display_size_y;
-  metalParams->view_offset_uv_x = layoutParams.view_offset_uv_x;
-  metalParams->view_offset_uv_y = layoutParams.view_offset_uv_y;
+  metalParams->mode = decisionInfo.mode;
+  metalParams->track_count = decisionInfo.track_count;
+  metalParams->split_pos = decisionInfo.split_pos;
+  metalParams->frame_present0 =
+      static_cast<uint32_t>(decisionInfo.frames[0].present ? 1u : 0u);
+  metalParams->frame_present1 =
+      static_cast<uint32_t>(decisionInfo.frames[1].present ? 1u : 0u);
+  metalParams->frame_present2 =
+      static_cast<uint32_t>(decisionInfo.frames[2].present ? 1u : 0u);
+  metalParams->frame_present3 =
+      static_cast<uint32_t>(decisionInfo.frames[3].present ? 1u : 0u);
+  metalParams->order0 = decisionInfo.order[0];
+  metalParams->order1 = decisionInfo.order[1];
+  metalParams->order2 = decisionInfo.order[2];
+  metalParams->order3 = decisionInfo.order[3];
+  metalParams->display_offset_x0 = decisionInfo.display_offset_x[0];
+  metalParams->display_offset_x1 = decisionInfo.display_offset_x[1];
+  metalParams->display_offset_x2 = decisionInfo.display_offset_x[2];
+  metalParams->display_offset_x3 = decisionInfo.display_offset_x[3];
+  metalParams->display_offset_y0 = decisionInfo.display_offset_y[0];
+  metalParams->display_offset_y1 = decisionInfo.display_offset_y[1];
+  metalParams->display_offset_y2 = decisionInfo.display_offset_y[2];
+  metalParams->display_offset_y3 = decisionInfo.display_offset_y[3];
+  metalParams->inv_display_size_x0 = decisionInfo.inv_display_size_x[0];
+  metalParams->inv_display_size_x1 = decisionInfo.inv_display_size_x[1];
+  metalParams->inv_display_size_x2 = decisionInfo.inv_display_size_x[2];
+  metalParams->inv_display_size_x3 = decisionInfo.inv_display_size_x[3];
+  metalParams->inv_display_size_y0 = decisionInfo.inv_display_size_y[0];
+  metalParams->inv_display_size_y1 = decisionInfo.inv_display_size_y[1];
+  metalParams->inv_display_size_y2 = decisionInfo.inv_display_size_y[2];
+  metalParams->inv_display_size_y3 = decisionInfo.inv_display_size_y[3];
+  metalParams->view_offset_uv_x0 = decisionInfo.view_offset_uv_x[0];
+  metalParams->view_offset_uv_x1 = decisionInfo.view_offset_uv_x[1];
+  metalParams->view_offset_uv_x2 = decisionInfo.view_offset_uv_x[2];
+  metalParams->view_offset_uv_x3 = decisionInfo.view_offset_uv_x[3];
+  metalParams->view_offset_uv_y0 = decisionInfo.view_offset_uv_y[0];
+  metalParams->view_offset_uv_y1 = decisionInfo.view_offset_uv_y[1];
+  metalParams->view_offset_uv_y2 = decisionInfo.view_offset_uv_y[2];
+  metalParams->view_offset_uv_y3 = decisionInfo.view_offset_uv_y[3];
 
   CVMetalTextureRef metalTextureRef = nullptr;
   const CVReturn textureStatus = CVMetalTextureCacheCreateTextureFromImage(

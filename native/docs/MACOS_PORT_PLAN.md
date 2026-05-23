@@ -19,8 +19,9 @@ Historical phase notes moved to [archive/MACOS_PORT_PLAN_HISTORY.md](archive/MAC
   `void_macos_native_player`, and smoke tools.
 - The visible macOS local-file path now uses `DemuxThread` + `DecodeThread` + `TrackBuffer` through
   `native/macos/native_player_bridge.*`; `addTrack` creates real native demux/decode tracks in the
-  shared `RenderSink`, while presentation still copies the primary track into the current
-  `CVPixelBuffer` bridge until renderer-owned multi-track Metal composition lands.
+  shared `RenderSink`. Metal presentation now consumes the shared `RenderSink::PresentDecision`
+  and shared layout constants for same-sized BGRA tracks, keeping side-by-side composition aligned
+  with the DX11 layout model while deeper texture-format/color parity work continues.
 - H.264 playback now enables VideoToolbox through the shared hardware decode provider in
   download-to-CPU mode; diagnostics keep both the active hardware path and software fallback state
   visible.
@@ -140,20 +141,26 @@ Goal: improve performance after software playback is correct.
   The current `cvpixelbuffer-bgra-copy` adapter is the software fallback presentation adapter, not
   the final renderer-owned Metal backend. Diagnostics now expose
   `presentationAdapterKind=software-fallback` and `rendererOwnedPresentationActive=false` to keep
-  that distinction visible while the layout uploader is still a single-track bridge.
+  that distinction visible while the layout uploader is still a BGRA software-staging bridge rather
+  than a full renderer-owned Metal texture backend.
   The runner now creates Metal-compatible `CVPixelBuffer` surfaces, while
   `metal_pixel_buffer_uploader.mm` owns `CVMetalTextureCache` validation, the shared `MTLBuffer`,
   and the compute pass into the texture-backed `CVPixelBuffer`. Seek/step refresh, layout refresh,
   and playback callbacks now share that native Metal layout path; the uploader rejects mismatched
   dimensions or non-BGRA pixel buffers before upload, returns checked validation statuses for each
   failure class, mirrors the last validation reason into diagnostics, and leaves the locked-buffer
-  direct copy path as fallback.
+  direct copy path as fallback. The first multi-track slice copies the present decision into a
+  native BGRA atlas and applies shared layout constants in Metal for same-sized tracks, with CTest
+  coverage for both CPU atlas readiness and Metal side-by-side output.
 - [ ] Port shader/color/layout behavior with deterministic pixel tests.
   Initial portable baselines now cover limited/full-range software BGRA conversion, padded
   linesizes, BGRA channel order, BT.601/BT.709/BT.2020 matrix selection in the shared CPU
   YUV-to-BGRA helper, BT.2020 and unknown-HD-to-BT.709 matrix selection in the macOS presentation
   adapter, odd-dimension NV21 -> even-coded NV12 packing, planar YUV420 wrap metadata, and P010 ->
-  BGRA presentation conversion.
+  BGRA presentation conversion. Keep the next Metal work tied to the existing DX11 shader contract:
+  `RenderSink::PresentDecision`, `ShaderConstants`, and `populate_layout_shader_constants` are the
+  source of truth; MSL shader behavior should be compared against the HLSL sampling/layout path
+  before adding VideoToolbox zero-copy presentation.
 - [x] Add VideoToolbox behind the hardware decode provider interface.
   The provider is registered through the shared `HwDecodeProvider` factory and now runs the macOS
   facade through `FfmpegOwnedHwDownloadDevice` by default. This keeps decoded frames published

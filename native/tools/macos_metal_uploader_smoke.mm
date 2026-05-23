@@ -4,11 +4,13 @@
 #include <CoreVideo/CoreVideo.h>
 #include <Foundation/Foundation.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <cstdio>
 #include <string>
 #include <thread>
+#include <vector>
 
 #ifndef VIDEO_TEST_DIR
 #define VIDEO_TEST_DIR ""
@@ -91,6 +93,44 @@ bool measure_pixel_buffer(CVPixelBufferRef buffer,
       out);
   CVPixelBufferUnlockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
   return ret == 0;
+}
+
+double pixel_buffer_rect_non_black_ratio(CVPixelBufferRef buffer,
+                                         int x,
+                                         int y,
+                                         int width,
+                                         int height) {
+  if (!buffer || x < 0 || y < 0 || width <= 0 || height <= 0) {
+    return 0.0;
+  }
+  CVPixelBufferLockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
+  const int buffer_width = static_cast<int>(CVPixelBufferGetWidth(buffer));
+  const int buffer_height = static_cast<int>(CVPixelBufferGetHeight(buffer));
+  const auto* base =
+      static_cast<const uint8_t*>(CVPixelBufferGetBaseAddress(buffer));
+  const size_t stride = CVPixelBufferGetBytesPerRow(buffer);
+  const int max_x = std::min(buffer_width, x + width);
+  const int max_y = std::min(buffer_height, y + height);
+  int non_black = 0;
+  int pixel_count = 0;
+  if (base && x < buffer_width && y < buffer_height) {
+    for (int row_y = y; row_y < max_y; ++row_y) {
+      const uint8_t* row = base + static_cast<size_t>(row_y) * stride;
+      for (int col_x = x; col_x < max_x; ++col_x) {
+        const uint8_t b = row[col_x * 4 + 0];
+        const uint8_t g = row[col_x * 4 + 1];
+        const uint8_t r = row[col_x * 4 + 2];
+        if (r > 4 || g > 4 || b > 4) {
+          ++non_black;
+        }
+        ++pixel_count;
+      }
+    }
+  }
+  CVPixelBufferUnlockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
+  return pixel_count > 0
+      ? static_cast<double>(non_black) / static_cast<double>(pixel_count)
+      : 0.0;
 }
 
 }  // namespace
@@ -224,6 +264,113 @@ int main() {
     CFRelease(bgra);
     VPMacOSMetalUploaderDestroy(uploader);
     return fail("default Metal layout upload produced invalid pixels");
+  }
+
+  VPMacOSNativeTrackInfo second_track = {};
+  if (VPMacOSNativePlayerAddTrack(
+          player, path.c_str(), 1, &second_track, error, sizeof(error)) != 0 ||
+      second_track.slot != 1) {
+    CFRelease(layout_buffer);
+    VPMacOSNativePlayerDestroy(player);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    std::fprintf(stderr, "second native track add failed for Metal layout smoke: %s\n", error);
+    return 1;
+  }
+
+  VPMacOSNativeFrameInfo multitrack_info = {};
+  const size_t row_bytes = static_cast<size_t>(width) * 4u;
+  const size_t track_bytes = row_bytes * static_cast<size_t>(height);
+  std::vector<uint8_t> present_cpu(track_bytes * VPMacOSNativeMaxTracks, 0);
+  VPMacOSNativePresentDecisionInfo present_decision = {};
+  VPMacOSCaptureMetrics present_slot0_metrics = {};
+  VPMacOSCaptureMetrics present_slot1_metrics = {};
+  bool present_copy_ready = false;
+  const auto present_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+  while (std::chrono::steady_clock::now() < present_deadline) {
+    if (VPMacOSNativePlayerCopyPresentFramesBGRAInto(
+            player,
+            present_cpu.data(),
+            present_cpu.size(),
+            width,
+            height,
+            static_cast<int32_t>(row_bytes),
+            track_bytes,
+            &present_decision,
+            error,
+            sizeof(error)) == 0 &&
+        present_decision.frame_count == 2) {
+      present_copy_ready = true;
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  if (!present_copy_ready ||
+      VPMacOSMeasureBGRA(
+          present_cpu.data(),
+          width,
+          height,
+          static_cast<int32_t>(row_bytes),
+          &present_slot0_metrics) != 0 ||
+      VPMacOSMeasureBGRA(
+          present_cpu.data() + track_bytes,
+          width,
+          height,
+          static_cast<int32_t>(row_bytes),
+          &present_slot1_metrics) != 0 ||
+      present_slot0_metrics.non_black_ratio <= 0.5 ||
+      present_slot1_metrics.non_black_ratio <= 0.5) {
+    CFRelease(layout_buffer);
+    VPMacOSNativePlayerDestroy(player);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    std::fprintf(stderr, "native present decision BGRA copy failed: %s\n", error);
+    return 1;
+  }
+  if (!copy_frame_with_layout(
+          uploader, player, layout_buffer, width, height,
+          &multitrack_info, error, sizeof(error))) {
+    CFRelease(layout_buffer);
+    VPMacOSNativePlayerDestroy(player);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    std::fprintf(stderr, "multi-track Metal layout upload failed: %s\n", error);
+    return 1;
+  }
+  VPMacOSCaptureMetrics multitrack_metrics = {};
+  const double left_center_non_black = pixel_buffer_rect_non_black_ratio(
+      layout_buffer, width / 8, height * 3 / 8, width / 4, height / 4);
+  const double right_center_non_black = pixel_buffer_rect_non_black_ratio(
+      layout_buffer, width * 5 / 8, height * 3 / 8, width / 4, height / 4);
+  if (!measure_pixel_buffer(layout_buffer, width, height, &multitrack_metrics) ||
+      multitrack_metrics.non_black_ratio <= 0.45 ||
+      left_center_non_black <= 0.8 ||
+      right_center_non_black <= 0.8 ||
+      multitrack_metrics.hash == default_metrics.hash ||
+      multitrack_info.pts_us != default_info.pts_us) {
+    std::fprintf(
+        stderr,
+        "multi-track metrics: default_hash=%llu multi_hash=%llu "
+        "default_non_black=%.4f multi_non_black=%.4f "
+        "left_center=%.4f right_center=%.4f "
+        "default_pts=%lld multi_pts=%lld\n",
+        static_cast<unsigned long long>(default_metrics.hash),
+        static_cast<unsigned long long>(multitrack_metrics.hash),
+        default_metrics.non_black_ratio,
+        multitrack_metrics.non_black_ratio,
+        left_center_non_black,
+        right_center_non_black,
+        static_cast<long long>(default_info.pts_us),
+        static_cast<long long>(multitrack_info.pts_us));
+    CFRelease(layout_buffer);
+    VPMacOSNativePlayerDestroy(player);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    return fail("multi-track Metal layout upload did not compose the present decision");
   }
 
   VPMacOSNativeLayoutState zoom_layout = {};

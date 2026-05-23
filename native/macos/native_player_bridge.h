@@ -66,6 +66,7 @@ typedef struct VPMacOSNativeLayoutPresentationParams {
 } VPMacOSNativeLayoutPresentationParams;
 
 enum {
+  VPMacOSNativeMaxTracks = 4,
   VPMacOSMetalUploaderStatusOk = 0,
   VPMacOSMetalUploaderStatusUnavailable = 1,
   VPMacOSMetalUploaderStatusInvalidArguments = 2,
@@ -73,6 +74,34 @@ enum {
   VPMacOSMetalUploaderStatusUnsupportedPixelFormat = 4,
   VPMacOSMetalUploaderStatusTextureWrapFailed = 5,
 };
+
+typedef struct VPMacOSNativePresentFrameInfo {
+  int32_t present;
+  int32_t file_id;
+  int32_t slot;
+  int32_t width;
+  int32_t height;
+  int64_t pts_us;
+  int64_t dts_us;
+  int64_t duration_us;
+} VPMacOSNativePresentFrameInfo;
+
+typedef struct VPMacOSNativePresentDecisionInfo {
+  int32_t should_present;
+  int32_t frame_count;
+  int32_t track_count;
+  int32_t mode;
+  int64_t current_pts_us;
+  float split_pos;
+  int32_t order[VPMacOSNativeMaxTracks];
+  float display_offset_x[VPMacOSNativeMaxTracks];
+  float display_offset_y[VPMacOSNativeMaxTracks];
+  float inv_display_size_x[VPMacOSNativeMaxTracks];
+  float inv_display_size_y[VPMacOSNativeMaxTracks];
+  float view_offset_uv_x[VPMacOSNativeMaxTracks];
+  float view_offset_uv_y[VPMacOSNativeMaxTracks];
+  VPMacOSNativePresentFrameInfo frames[VPMacOSNativeMaxTracks];
+} VPMacOSNativePresentDecisionInfo;
 
 VPMacOSNativePlayer* VPMacOSNativePlayerCreate(void);
 void VPMacOSNativePlayerDestroy(VPMacOSNativePlayer* player);
@@ -150,6 +179,17 @@ int VPMacOSNativePlayerCopyCurrentFrameBGRAInto(VPMacOSNativePlayer* player,
                                                 VPMacOSNativeFrameInfo* out,
                                                 char* error,
                                                 size_t error_size);
+int VPMacOSNativePlayerCopyPresentFramesBGRAInto(
+    VPMacOSNativePlayer* player,
+    uint8_t* dst,
+    size_t dst_size,
+    int32_t width,
+    int32_t height,
+    int32_t stride_bytes,
+    size_t track_stride_bytes,
+    VPMacOSNativePresentDecisionInfo* out,
+    char* error,
+    size_t error_size);
 void VPMacOSNativeFrameFree(VPMacOSNativeFrame* frame);
 
 VPMacOSMetalUploader* VPMacOSMetalUploaderCreate(void);

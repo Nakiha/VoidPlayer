@@ -804,7 +804,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         let track = nativeTrackMap(path: path, metadata: metadata)
         tracks.append(track)
         currentDurationUs = max(currentDurationUs, metadata.durationUs)
-        markFrameAvailable()
+        refreshCurrentFrameAfterLayoutChange()
         return track
       } catch {
         return FlutterError(
@@ -860,7 +860,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     if tracks.isEmpty {
       destroyPlayer()
     } else {
-      markFrameAvailable()
+      refreshCurrentFrameAfterLayoutChange()
     }
   }
 

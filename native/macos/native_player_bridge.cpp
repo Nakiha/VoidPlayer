@@ -268,6 +268,64 @@ public:
     return true;
   }
 
+  bool copy_present_frames_into(uint8_t* dst,
+                                size_t dst_size,
+                                int32_t width,
+                                int32_t height,
+                                int32_t stride_bytes,
+                                size_t track_stride_bytes,
+                                VPMacOSNativePresentDecisionInfo* out,
+                                std::string& error) {
+    if (!dst || !out || width <= 0 || height <= 0 || stride_bytes < width * 4) {
+      error = "invalid present decision BGRA destination";
+      return false;
+    }
+    const size_t min_track_stride =
+        static_cast<size_t>(stride_bytes) * static_cast<size_t>(height);
+    if (track_stride_bytes < min_track_stride ||
+        track_stride_bytes > std::numeric_limits<size_t>::max() / vr::kMaxTracks ||
+        dst_size < track_stride_bytes * vr::kMaxTracks) {
+      error = "present decision BGRA destination is too small";
+      return false;
+    }
+    if (!render_sink_) {
+      error = "player is not open";
+      return false;
+    }
+
+    const auto decision = render_sink_->evaluate();
+    fill_present_decision_info(decision, width, height, out);
+    if (!decision.should_present) {
+      error = "no presentable frame is ready";
+      return false;
+    }
+    if (out->track_count > 1 && out->frame_count < out->track_count) {
+      error = "not all present decision frames are ready";
+      return false;
+    }
+
+    for (size_t slot = 0; slot < vr::kMaxTracks; ++slot) {
+      if (!decision.frames[slot].has_value()) {
+        continue;
+      }
+      auto* slot_dst = dst + track_stride_bytes * slot;
+      VPMacOSNativeFrameInfo frame_info = {};
+      const auto status = vp_macos::copy_texture_frame_to_bgra_destination_checked(
+          *decision.frames[slot],
+          slot_dst,
+          track_stride_bytes,
+          width,
+          height,
+          stride_bytes,
+          &frame_info);
+      if (status != vp_macos::PresentationAdapterStatus::Ok) {
+        error = vp_macos::presentation_adapter_status_message(status);
+        return false;
+      }
+    }
+    return true;
+  }
+
   void seek(int64_t pts_us) {
     const int64_t target = std::max<int64_t>(0, pts_us);
     for (auto& track : tracks_) {
@@ -452,6 +510,63 @@ private:
       *frame_pts_us = frame->pts_us;
     }
     return true;
+  }
+
+  vr::LayoutTrackGeometryList layout_track_geometry() const {
+    vr::LayoutTrackGeometryList tracks = {};
+    for (const auto& track : tracks_) {
+      if (!track || track->slot < 0 || track->slot >= static_cast<int32_t>(tracks.size())) {
+        continue;
+      }
+      const float aspect = track->height > 0
+          ? static_cast<float>(track->width) / static_cast<float>(track->height)
+          : 1.0f;
+      tracks[static_cast<size_t>(track->slot)] = {
+          true,
+          track->width,
+          track->height,
+          aspect,
+      };
+    }
+    return tracks;
+  }
+
+  void fill_present_decision_info(const vr::PresentDecision& decision,
+                                  int32_t width,
+                                  int32_t height,
+                                  VPMacOSNativePresentDecisionInfo* out) const {
+    *out = {};
+    out->should_present = decision.should_present ? 1 : 0;
+    out->current_pts_us = decision.current_pts_us;
+    const auto tracks = layout_track_geometry();
+    vr::ShaderConstants constants = {};
+    vr::populate_layout_shader_constants(constants, layout_, tracks, width, height);
+    out->track_count = constants.track_count;
+    out->mode = constants.mode;
+    out->split_pos = constants.split_pos;
+    for (size_t slot = 0; slot < vr::kMaxTracks; ++slot) {
+      out->order[slot] = constants.order[slot];
+      out->display_offset_x[slot] = constants.display_offset_x[slot];
+      out->display_offset_y[slot] = constants.display_offset_y[slot];
+      out->inv_display_size_x[slot] = constants.inv_display_size_x[slot];
+      out->inv_display_size_y[slot] = constants.inv_display_size_y[slot];
+      out->view_offset_uv_x[slot] = constants.view_offset_uv_x[slot];
+      out->view_offset_uv_y[slot] = constants.view_offset_uv_y[slot];
+      auto& frame_out = out->frames[slot];
+      frame_out.file_id = decision.file_ids[slot];
+      frame_out.slot = static_cast<int32_t>(slot);
+      if (!decision.frames[slot].has_value()) {
+        continue;
+      }
+      const auto& frame = *decision.frames[slot];
+      frame_out.present = 1;
+      frame_out.width = frame.width;
+      frame_out.height = frame.height;
+      frame_out.pts_us = frame.pts_us;
+      frame_out.dts_us = frame.dts_us;
+      frame_out.duration_us = frame.duration_us;
+      ++out->frame_count;
+    }
   }
 
   std::unique_ptr<vr::PacketQueue> audio_packet_queue_;
@@ -1046,6 +1161,32 @@ int VPMacOSNativePlayerCopyCurrentFrameBGRAInto(VPMacOSNativePlayer* player,
   std::string message;
   if (!player->core.copy_current_frame_into(
           dst, dst_size, width, height, stride_bytes, out, message)) {
+    write_error(error, error_size, message);
+    return -1;
+  }
+  write_error(error, error_size, "");
+  return 0;
+}
+
+int VPMacOSNativePlayerCopyPresentFramesBGRAInto(
+    VPMacOSNativePlayer* player,
+    uint8_t* dst,
+    size_t dst_size,
+    int32_t width,
+    int32_t height,
+    int32_t stride_bytes,
+    size_t track_stride_bytes,
+    VPMacOSNativePresentDecisionInfo* out,
+    char* error,
+    size_t error_size) {
+  if (!player || !dst || !out) {
+    write_error(error, error_size, "player, destination, or present decision output is null");
+    return -1;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  std::string message;
+  if (!player->core.copy_present_frames_into(
+          dst, dst_size, width, height, stride_bytes, track_stride_bytes, out, message)) {
     write_error(error, error_size, message);
     return -1;
   }

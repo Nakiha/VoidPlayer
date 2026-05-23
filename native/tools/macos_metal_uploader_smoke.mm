@@ -354,6 +354,45 @@ int main() {
     std::fprintf(stderr, "native present decision BGRA copy failed: %s\n", error);
     return 1;
   }
+
+  const size_t package_size =
+      VPMacOSNativePresentFramePackageMaxBytes(width, height, VPMacOSNativeMaxTracks);
+  std::vector<uint8_t> present_package(package_size, 0);
+  VPMacOSNativePresentFramePackageInfo package_info = {};
+  bool package_ready = false;
+  const auto package_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+  while (std::chrono::steady_clock::now() < package_deadline) {
+    if (VPMacOSNativePlayerCopyPresentFramePackage(
+            player,
+            present_package.data(),
+            present_package.size(),
+            width,
+            height,
+            VPMacOSNativeMaxTracks,
+            &package_info,
+            error,
+            sizeof(error)) == 0 &&
+        package_info.decision.frame_count == 2) {
+      package_ready = true;
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  if (!package_ready ||
+      package_info.storage == VPMacOSNativePresentPackageStorageUnavailable ||
+      package_info.used_bytes == 0 ||
+      package_info.used_bytes > present_package.size() ||
+      package_info.decision.source_width[0] != width ||
+      package_info.decision.source_width[1] != second_track.width) {
+    CFRelease(layout_buffer);
+    VPMacOSNativePlayerDestroy(player);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    std::fprintf(stderr, "native present frame package copy failed: %s\n", error);
+    return 1;
+  }
+
   if (!copy_frame_with_layout(
           uploader, player, layout_buffer, width, height,
           &multitrack_info, error, sizeof(error))) {

@@ -85,6 +85,9 @@ enum {
   VPMacOSNativePresentFormatBGRA = 0,
   VPMacOSNativePresentFormatNV12 = 1,
   VPMacOSNativePresentFormatP010 = 2,
+  VPMacOSNativePresentPackageStorageUnavailable = 0,
+  VPMacOSNativePresentPackageStorageYUV = 1,
+  VPMacOSNativePresentPackageStorageBGRA = 2,
 };
 
 typedef struct VPMacOSNativePresentFrameInfo {
@@ -129,6 +132,17 @@ typedef struct VPMacOSNativePresentDecisionInfo {
   int32_t color_primaries[VPMacOSNativeMaxTracks];
   VPMacOSNativePresentFrameInfo frames[VPMacOSNativeMaxTracks];
 } VPMacOSNativePresentDecisionInfo;
+
+typedef struct VPMacOSNativePresentFramePackageInfo {
+  int32_t storage;
+  int32_t width;
+  int32_t height;
+  int32_t max_track_slots;
+  int32_t stride_bytes;
+  size_t track_stride_bytes;
+  size_t used_bytes;
+  VPMacOSNativePresentDecisionInfo decision;
+} VPMacOSNativePresentFramePackageInfo;
 
 VPMacOSNativePlayer* VPMacOSNativePlayerCreate(void);
 void VPMacOSNativePlayerDestroy(VPMacOSNativePlayer* player);
@@ -229,6 +243,19 @@ int VPMacOSNativePlayerCopyPresentFramesYUVInto(
     int32_t height,
     size_t max_track_slots,
     VPMacOSNativePresentDecisionInfo* out,
+    char* error,
+    size_t error_size);
+size_t VPMacOSNativePresentFramePackageMaxBytes(int32_t width,
+                                                int32_t height,
+                                                int32_t max_track_slots);
+int VPMacOSNativePlayerCopyPresentFramePackage(
+    VPMacOSNativePlayer* player,
+    uint8_t* dst,
+    size_t dst_size,
+    int32_t width,
+    int32_t height,
+    int32_t max_track_slots,
+    VPMacOSNativePresentFramePackageInfo* out,
     char* error,
     size_t error_size);
 void VPMacOSNativeFrameFree(VPMacOSNativeFrame* frame);

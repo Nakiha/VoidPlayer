@@ -940,32 +940,12 @@ const char* metal_uploader_status_message(int status) {
     return -1;
   }
 
-  size_t rowBytes = 0;
-  size_t uploadSize = 0;
-  size_t bgraStagingSize = 0;
-  size_t yuvStagingSize = 0;
-  size_t stagingSize = 0;
   const int32_t trackSlots =
       std::clamp(maxTrackSlots, static_cast<int32_t>(1), static_cast<int32_t>(VPMacOSNativeMaxTracks));
-  if (!checked_mul_size(static_cast<size_t>(width), 4u, &rowBytes) ||
-      !checked_mul_size(rowBytes, static_cast<size_t>(height), &uploadSize) ||
-      !checked_mul_size(uploadSize, static_cast<size_t>(trackSlots), &bgraStagingSize)) {
+  const size_t stagingSize =
+      VPMacOSNativePresentFramePackageMaxBytes(width, height, trackSlots);
+  if (stagingSize == 0) {
     write_error(error, errorSize, "native Metal layout upload dimensions overflow");
-    return -1;
-  }
-  const size_t codedWidth = static_cast<size_t>((width + 1) & ~1);
-  const size_t codedHeight = static_cast<size_t>((height + 1) & ~1);
-  size_t yuvPlanePixels = 0;
-  size_t p010YuvBytes = 0;
-  if (!checked_mul_size(codedWidth, codedHeight, &yuvPlanePixels) ||
-      !checked_mul_size(yuvPlanePixels, 3u, &p010YuvBytes) ||
-      !checked_mul_size(p010YuvBytes, static_cast<size_t>(trackSlots), &yuvStagingSize)) {
-    write_error(error, errorSize, "native Metal layout upload dimensions overflow");
-    return -1;
-  }
-  stagingSize = std::max(bgraStagingSize, yuvStagingSize);
-  if (rowBytes > static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
-    write_error(error, errorSize, "native Metal layout upload row stride is too large");
     return -1;
   }
   if (![self ensureStagingBufferWithLength:stagingSize] ||
@@ -974,32 +954,17 @@ const char* metal_uploader_status_message(int status) {
         error, errorSize, "failed to allocate native Metal layout buffers");
   }
 
-  VPMacOSNativePresentDecisionInfo decisionInfo = {};
-  int copyRet = VPMacOSNativePlayerCopyPresentFramesYUVInto(
+  VPMacOSNativePresentFramePackageInfo package = {};
+  const int copyRet = VPMacOSNativePlayerCopyPresentFramePackage(
       player,
       static_cast<uint8_t*>([_stagingBuffer contents]),
-      yuvStagingSize,
+      stagingSize,
       width,
       height,
-      static_cast<size_t>(trackSlots),
-      &decisionInfo,
+      trackSlots,
+      &package,
       error,
       errorSize);
-  const BOOL directYuvUpload = copyRet == 0;
-  if (copyRet != 0) {
-    decisionInfo = {};
-    copyRet = VPMacOSNativePlayerCopyPresentFramesBGRAInto(
-        player,
-        static_cast<uint8_t*>([_stagingBuffer contents]),
-        bgraStagingSize,
-        width,
-        height,
-        static_cast<int32_t>(rowBytes),
-        uploadSize,
-        &decisionInfo,
-        error,
-        errorSize);
-  }
   if (copyRet != 0) {
     if (error && std::strcmp(error, "not all present decision frames are ready") == 0) {
       return -1;
@@ -1009,6 +974,9 @@ const char* metal_uploader_status_message(int status) {
     }
     return -2;
   }
+  const auto& decisionInfo = package.decision;
+  const BOOL directYuvUpload =
+      package.storage == VPMacOSNativePresentPackageStorageYUV;
   if (directYuvUpload) {
     _directYuvUploadCount.fetch_add(1, std::memory_order_relaxed);
   }

@@ -2,6 +2,7 @@
 
 #include "video_renderer/buffer/bidi_ring_buffer.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -193,6 +194,98 @@ int check_cpu_nv12_bt709_limited_red() {
   return 0;
 }
 
+int check_cpu_nv12_bt2020_limited_sample() {
+  auto data = std::make_shared<std::vector<uint8_t>>(
+      std::initializer_list<uint8_t>{
+          100, 100,
+          100, 100,
+          90, 200,
+      });
+  vr::TextureFrame frame;
+  frame.width = 2;
+  frame.height = 2;
+  frame.is_nv12 = true;
+  frame.color.range = vr::VIDEO_COLOR_RANGE_LIMITED;
+  frame.color.matrix = vr::VIDEO_COLOR_MATRIX_BT2020_NCL;
+  frame.storage = vr::CpuNv12FrameStorage{
+      data,
+      2,
+      2,
+      false,
+      2,
+      2,
+  };
+
+  std::vector<uint8_t> bgra(16, 0);
+  VPMacOSNativeFrameInfo info{};
+  if (!vp_macos::copy_texture_frame_to_bgra_destination(
+          frame,
+          bgra.data(),
+          bgra.size(),
+          frame.width,
+          frame.height,
+          frame.width * 4,
+          &info)) {
+    return fail("failed to copy bt2020 nv12 frame");
+  }
+  for (int i = 0; i < 4; ++i) {
+    const size_t offset = static_cast<size_t>(i) * 4u;
+    if (bgra[offset] != 16 || bgra[offset + 1] != 58 ||
+        bgra[offset + 2] != 219 || bgra[offset + 3] != 255) {
+      return fail("unexpected bt2020 nv12 adapter pixel");
+    }
+  }
+  return 0;
+}
+
+int check_cpu_nv12_unknown_hd_defaults_to_bt709() {
+  const int width = 1280;
+  const int height = 2;
+  auto data = std::make_shared<std::vector<uint8_t>>(
+      static_cast<size_t>(width) * height +
+      static_cast<size_t>(width) * (height / 2),
+      0);
+  std::fill(data->begin(), data->begin() + static_cast<size_t>(width) * height, 100);
+  for (size_t offset = static_cast<size_t>(width) * height; offset < data->size(); offset += 2) {
+    (*data)[offset] = 90;
+    (*data)[offset + 1] = 200;
+  }
+
+  vr::TextureFrame frame;
+  frame.width = width;
+  frame.height = height;
+  frame.is_nv12 = true;
+  frame.color.range = vr::VIDEO_COLOR_RANGE_LIMITED;
+  frame.color.matrix = vr::VIDEO_COLOR_MATRIX_UNKNOWN;
+  frame.storage = vr::CpuNv12FrameStorage{
+      data,
+      width,
+      width,
+      false,
+      width,
+      height,
+  };
+
+  const int dst_stride = width * 4;
+  std::vector<uint8_t> bgra(static_cast<size_t>(dst_stride) * height, 0);
+  VPMacOSNativeFrameInfo info{};
+  if (!vp_macos::copy_texture_frame_to_bgra_destination(
+          frame,
+          bgra.data(),
+          bgra.size(),
+          frame.width,
+          frame.height,
+          dst_stride,
+          &info)) {
+    return fail("failed to copy unknown-matrix hd nv12 frame");
+  }
+  if (!expect_pixel(bgra, dst_stride, 0, 0, 17, 68, 227, 255) ||
+      !expect_pixel(bgra, dst_stride, width - 1, height - 1, 17, 68, 227, 255)) {
+    return fail("unknown hd nv12 frame did not default to bt709");
+  }
+  return 0;
+}
+
 int check_cpu_p010_limited_colors() {
   auto data = std::make_shared<std::vector<uint8_t>>(24, 0);
   const int y_stride = 8;
@@ -304,6 +397,12 @@ int main() {
     return ret;
   }
   if (const int ret = check_cpu_nv12_bt709_limited_red(); ret != 0) {
+    return ret;
+  }
+  if (const int ret = check_cpu_nv12_bt2020_limited_sample(); ret != 0) {
+    return ret;
+  }
+  if (const int ret = check_cpu_nv12_unknown_hd_defaults_to_bt709(); ret != 0) {
     return ret;
   }
   if (const int ret = check_cpu_p010_limited_colors(); ret != 0) {

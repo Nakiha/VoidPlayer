@@ -38,9 +38,10 @@ The runner now has a Phase 4 `FlutterTexture` bridge: `createPlayer` registers a
 calls, and exposes capture metrics for automation. Synthetic `macos-synthetic://...` inputs still
 render generated color bars, while sandbox-readable local files go through the shared macOS native
 facade in `../native/macos/native_player_bridge.*`. That facade owns the existing
-`DemuxThread` + `DecodeThread` + `TrackBuffer` software path and copies visible frames into the
-texture. The same facade now compiles and owns the shared native audio engine on macOS, routes
-optional audio packets into `AudioDecodeThread`, and controls output through the existing
+`DemuxThread` + `DecodeThread` + `TrackBuffer` software path, creates real native tracks for
+`addTrack`, and copies the primary visible frame into the texture until renderer-owned multi-track
+Metal presentation is wired. The same facade now compiles and owns the shared native audio engine on
+macOS, routes optional audio packets into `AudioDecodeThread`, and controls output through the existing
 play/pause/seek/setAudibleTrack calls. UI automation can generate a short sine-audio media file and
 verify native audio diagnostics, while `audio_mixer_smoke` verifies that inactive audible tracks
 mute without consuming queued PCM. Speaker-level audible output still needs a manual smoke until the
@@ -76,7 +77,9 @@ facade and is enforced by the native playback tick instead of the texture frame-
 facade sees and wires an audio stream, and
 `native_audio_play_seek_smoke.csv` keeps that audio track stable across play, seek, pause, and
 resume. `native_audio_destroy_recreate_smoke.csv` removes the final audio track to force native
-teardown, then recreates playback from the same fixture. `native_quit_while_playing_smoke.csv`
+teardown, then recreates playback from the same fixture. `native_add_track_smoke.csv` verifies that a
+second `ADD_MEDIA` opens a native Demux/Decode track, returns native metadata, accepts a secondary
+track offset, and removes that track cleanly. `native_quit_while_playing_smoke.csv`
 exercises explicit native teardown during test shutdown while playback is still active, and
 `native_callback_stress_smoke.csv` adds rapid play/pause, playing seek storm, play-then-destroy,
 recreate, and play-then-window-close churn. `native_user_window_close_smoke.csv` closes the main
@@ -105,8 +108,9 @@ validation, the shared `TextureFrame` copy path, and the Metal layout upload. Th
 is reported in diagnostics as
 `presentationAdapter=cvpixelbuffer-bgra-copy`; decode, seek, loop, audio, and playback clock policy
 remain outside Swift. The macOS channel also forwards primary-track `setTrackOffset` into the shared
-native `RenderSink`; multi-track offset composition still waits for renderer-owned macOS
-presentation rather than Swift-side policy. `applyLayout` is also mirrored into native
+native `RenderSink` and routes secondary-track offsets to native tracks as well; visual multi-track
+offset composition still waits for renderer-owned macOS presentation rather than Swift-side policy.
+`applyLayout` is also mirrored into native
 `LayoutController` state and exposed through `nativeLayout*` diagnostics, but visual layout
 application still waits for renderer-owned Metal presentation. The adapter accepts CPU RGBA, planar
 YUV420, NV12, and P010 frames, with deterministic smoke coverage for range and matrix-aware YUV

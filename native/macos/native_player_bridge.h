@@ -30,6 +30,14 @@ typedef struct VPMacOSNativeFrameInfo {
   int64_t duration_us;
 } VPMacOSNativeFrameInfo;
 
+typedef struct VPMacOSNativeTrackInfo {
+  int32_t file_id;
+  int32_t slot;
+  int32_t width;
+  int32_t height;
+  int64_t duration_us;
+} VPMacOSNativeTrackInfo;
+
 typedef struct VPMacOSCaptureMetrics {
   int32_t width;
   int32_t height;
@@ -73,6 +81,14 @@ int VPMacOSNativePlayerOpen(VPMacOSNativePlayer* player,
                             const char* path,
                             char* error,
                             size_t error_size);
+int VPMacOSNativePlayerAddTrack(VPMacOSNativePlayer* player,
+                                const char* path,
+                                int32_t file_id,
+                                VPMacOSNativeTrackInfo* out,
+                                char* error,
+                                size_t error_size);
+void VPMacOSNativePlayerRemoveTrack(VPMacOSNativePlayer* player,
+                                    int32_t file_id);
 void VPMacOSNativePlayerClose(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerSetFrameAvailableCallback(
     VPMacOSNativePlayer* player,

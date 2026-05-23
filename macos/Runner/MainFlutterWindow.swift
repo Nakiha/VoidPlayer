@@ -19,6 +19,14 @@ private struct MacOSNativeFrameInfo {
   let dtsUs: Int
 }
 
+private struct MacOSNativeTrackMetadata {
+  let fileId: Int
+  let slot: Int
+  let width: Int
+  let height: Int
+  let durationUs: Int
+}
+
 private enum MacOSNativePlayerError: Error, CustomStringConvertible {
   case failed(String)
   case invalidPayload
@@ -59,6 +67,31 @@ private final class MacOSNativePlayerSession {
         message.isEmpty ? "macOS native player open failed with code \(ret)" : message
       )
     }
+  }
+
+  func addTrack(path: String, fileId: Int) throws -> MacOSNativeTrackMetadata {
+    var info = VPMacOSNativeTrackInfo()
+    var error = [CChar](repeating: 0, count: 1024)
+    let ret = path.withCString { pathPointer in
+      VPMacOSNativePlayerAddTrack(handle, pathPointer, Int32(fileId), &info, &error, error.count)
+    }
+    if ret != 0 {
+      let message = String(cString: error)
+      throw MacOSNativePlayerError.failed(
+        message.isEmpty ? "macOS native player addTrack failed with code \(ret)" : message
+      )
+    }
+    return MacOSNativeTrackMetadata(
+      fileId: Int(info.file_id),
+      slot: Int(info.slot),
+      width: Int(info.width),
+      height: Int(info.height),
+      durationUs: Int(info.duration_us)
+    )
+  }
+
+  func removeTrack(fileId: Int) {
+    VPMacOSNativePlayerRemoveTrack(handle, Int32(fileId))
   }
 
   func close() {
@@ -550,6 +583,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "audioChannels": nativePlayer?.audioChannels() ?? 0,
         "activeAudioTrack": nativePlayer?.activeAudioTrack() ?? -1,
         "primaryTrackOffsetUs": nativePlayer?.trackOffsetUs(fileId: 0) ?? 0,
+        "secondaryTrackOffsetUs": nativePlayer?.trackOffsetUs(fileId: 1) ?? 0,
         "nativeLayoutMode": nativeLayoutSnapshot?["mode"] ?? -1,
         "nativeLayoutZoomRatio": nativeLayoutSnapshot?["zoomRatio"] ?? 0.0,
         "nativeLayoutPixelSizeMode": nativeLayoutSnapshot?["pixelSizeMode"] ?? -1,
@@ -643,21 +677,59 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
     texture = nextTexture
     textureId = registeredTextureId
-    currentDurationUs = trackDurationUs
-    tracks = paths.enumerated().map { index, path in
-      trackMap(
-        fileId: index,
-        slot: index,
-        path: path,
-        width: trackWidth,
-        height: trackHeight,
-        durationUs: trackDurationUs,
-        formatName: trackFormatName,
-        codecName: trackCodecName,
-        codecLongName: trackCodecLongName,
-        decoderName: trackDecoderName
-      )
+    if backendName == "macos-native-player" {
+      tracks = [
+        trackMap(
+          fileId: 0,
+          slot: 0,
+          path: firstPath,
+          width: trackWidth,
+          height: trackHeight,
+          durationUs: trackDurationUs,
+          formatName: trackFormatName,
+          codecName: trackCodecName,
+          codecLongName: trackCodecLongName,
+          decoderName: trackDecoderName
+        )
+      ]
+      if paths.count > 1 {
+        for path in paths.dropFirst() {
+          let fileId = (tracks.map { intValue($0["fileId"]) ?? 0 }.max() ?? -1) + 1
+          do {
+            guard let session = nativePlayer else {
+              throw MacOSNativePlayerError.failed("macOS native player is unavailable")
+            }
+            let metadata = try session.addTrack(path: path, fileId: fileId)
+            tracks.append(nativeTrackMap(path: path, metadata: metadata))
+          } catch {
+            destroyPlayer()
+            return FlutterError(
+              code: "DECODE_FAILED",
+              message: "Failed to add macOS native track",
+              details: "\(error)"
+            )
+          }
+        }
+      }
+    } else {
+      tracks = paths.enumerated().map { index, path in
+        trackMap(
+          fileId: index,
+          slot: index,
+          path: path,
+          width: trackWidth,
+          height: trackHeight,
+          durationUs: trackDurationUs,
+          formatName: trackFormatName,
+          codecName: trackCodecName,
+          codecLongName: trackCodecLongName,
+          decoderName: trackDecoderName
+        )
+      }
     }
+    currentDurationUs = tracks
+      .map { intValue($0["durationUs"]) ?? trackDurationUs }
+      .max() ?? trackDurationUs
     currentPtsUs = initialPresentedPtsUs
     lastPresentedPtsUs = initialPresentedPtsUs
     lastPresentedDtsUs = initialPresentedDtsUs
@@ -668,6 +740,21 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       "textureId": registeredTextureId,
       "tracks": tracks,
     ]
+  }
+
+  private func nativeTrackMap(path: String, metadata: MacOSNativeTrackMetadata) -> [String: Any] {
+    trackMap(
+      fileId: metadata.fileId,
+      slot: metadata.slot,
+      path: path,
+      width: metadata.width,
+      height: metadata.height,
+      durationUs: metadata.durationUs,
+      formatName: "macos-native-player",
+      codecName: "ffmpeg",
+      codecLongName: "macOS shared native DecodeThread facade",
+      decoderName: nativePlayer?.decoderName() ?? "decode_thread_software"
+    )
   }
 
   private func destroyPlayer() {
@@ -708,6 +795,26 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     let fileId = (tracks.map { intValue($0["fileId"]) ?? 0 }.max() ?? -1) + 1
     let slot = tracks.count
     let path = stringArg(arguments, "path") ?? "macos-synthetic-\(fileId)"
+    if backendName == "macos-native-player" {
+      do {
+        guard let session = nativePlayer else {
+          throw MacOSNativePlayerError.failed("macOS native player is unavailable")
+        }
+        let metadata = try session.addTrack(path: path, fileId: fileId)
+        let track = nativeTrackMap(path: path, metadata: metadata)
+        tracks.append(track)
+        currentDurationUs = max(currentDurationUs, metadata.durationUs)
+        markFrameAvailable()
+        return track
+      } catch {
+        return FlutterError(
+          code: "DECODE_FAILED",
+          message: "Failed to add macOS native track",
+          details: "\(error)"
+        )
+      }
+    }
+
     let size = texture?.dimensions() ?? (width: 1920, height: 1080)
     let track = trackMap(
       fileId: fileId,
@@ -732,12 +839,24 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
   private func removeTrack(arguments: Any?) {
     guard let fileId = intArg(arguments, "fileId") else { return }
-    tracks.removeAll { intValue($0["fileId"]) == fileId }
-    tracks = tracks.enumerated().map { index, track in
-      var next = track
-      next["slot"] = index
-      return next
+    if backendName == "macos-native-player" {
+      if fileId == 0 {
+        destroyPlayer()
+        return
+      }
+      nativePlayer?.removeTrack(fileId: fileId)
     }
+    tracks.removeAll { intValue($0["fileId"]) == fileId }
+    if backendName != "macos-native-player" {
+      tracks = tracks.enumerated().map { index, track in
+        var next = track
+        next["slot"] = index
+        return next
+      }
+    }
+    currentDurationUs = tracks
+      .map { intValue($0["durationUs"]) ?? 0 }
+      .max() ?? 0
     if tracks.isEmpty {
       destroyPlayer()
     } else {

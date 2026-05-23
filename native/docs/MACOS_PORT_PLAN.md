@@ -18,7 +18,9 @@ Historical phase notes moved to [archive/MACOS_PORT_PLAN_HISTORY.md](archive/MAC
 - Native macOS CMake builds portable targets: `void_player_portable_core`, `void_media_ffmpeg`,
   `void_macos_native_player`, and smoke tools.
 - The visible macOS local-file path now uses `DemuxThread` + `DecodeThread` + `TrackBuffer` through
-  `native/macos/native_player_bridge.*`; frames are copied into the current `CVPixelBuffer` bridge.
+  `native/macos/native_player_bridge.*`; `addTrack` creates real native demux/decode tracks in the
+  shared `RenderSink`, while presentation still copies the primary track into the current
+  `CVPixelBuffer` bridge until renderer-owned multi-track Metal composition lands.
 - H.264 playback now enables VideoToolbox through the shared hardware decode provider in
   download-to-CPU mode; diagnostics keep both the active hardware path and software fallback state
   visible.
@@ -88,9 +90,11 @@ pipeline.
   wrapping, and exact-seek snapshot ownership now sit behind `hardware_frame_converter`, leaving
   `FrameConverter` as the stable software entrypoint plus hardware delegate.
 - [x] Keep `TrackBuffer`, `RenderSink`, seek policies, and playback clock semantics shared.
-  The macOS native bridge now binds its single visible track into the shared `RenderSink`, so
-  current-frame copy, frame callbacks, seek refresh, and playback ticks use the same frame-window
-  evaluation semantics as the Windows renderer instead of a macOS-only clock advance loop.
+  The macOS native bridge now binds native file tracks into the shared `RenderSink`, so current-frame
+  copy, frame callbacks, seek refresh, offset updates, and playback ticks use the same frame-window
+  evaluation semantics as the Windows renderer instead of a macOS-only clock advance loop. Visual
+  composition is still primary-track only until the Metal presentation backend can consume the full
+  multi-track decision.
 - [x] Add CTest coverage that exercises software frame publication -> `TrackBuffer` without D3D11.
 - [x] Extend the smoke from synthetic frames to FFmpeg-decoded frames.
 - [x] Build the existing `DemuxThread` + `DecodeThread` + `TrackBuffer` software path on macOS.
@@ -211,6 +215,7 @@ python dev.py mac-ui-test \
   ui_tests/macos/native_audio_diagnostics_smoke.csv \
   ui_tests/macos/native_audio_play_seek_smoke.csv \
   ui_tests/macos/native_audio_destroy_recreate_smoke.csv \
+  ui_tests/macos/native_add_track_smoke.csv \
   ui_tests/macos/native_quit_while_playing_smoke.csv \
   ui_tests/macos/native_user_window_close_smoke.csv \
   ui_tests/macos/native_direct_copy_fallback_smoke.csv \
@@ -310,13 +315,14 @@ the test-only Metal upload path and asserts the same native frames can still pre
 keeping the fallback contract explicit when VideoToolbox is unavailable or unsupported.
 `native_software_fallback_smoke.csv` covers a generated MPEG-2 path and asserts
 `decodeMode=software-fallback`, `hardwareDecodeActive=false`, and
-`softwareFallbackActive=true`. The macOS native channel now forwards primary-track `setTrackOffset`
-to the shared `RenderSink` and exposes `primaryTrackOffsetUs` in diagnostics; multi-track offset
-composition remains gated on renderer-owned macOS presentation. It also mirrors `applyLayout` into
-the shared `LayoutController` and exposes `nativeLayoutMode`, `nativeLayoutZoomRatio`, and
-`nativeLayoutPixelSizeMode` diagnostics; single-track zoom layout now flows through the native Metal
-layout upload path and is covered by a before/after viewport capture in `native_facade_smoke.csv`.
-Multi-track visual layout remains gated on the renderer-owned macOS presentation backend.
+`softwareFallbackActive=true`. The macOS native channel now forwards track `setTrackOffset` calls to
+the shared `RenderSink`; diagnostics expose `primaryTrackOffsetUs` and `secondaryTrackOffsetUs`, and
+`native_add_track_smoke.csv` proves a second `ADD_MEDIA` opens a real native Demux/Decode track before
+removal. Multi-track visual composition remains gated on renderer-owned macOS presentation. The
+channel also mirrors `applyLayout` into the shared `LayoutController` and exposes `nativeLayoutMode`,
+`nativeLayoutZoomRatio`, and `nativeLayoutPixelSizeMode` diagnostics; single-track zoom layout now
+flows through the native Metal layout upload path and is covered by a before/after viewport capture in
+`native_facade_smoke.csv`.
 `native_p010_presentation_smoke.csv` covers generated 10-bit H.264
 VideoToolbox download-to-CPU decode through the P010 presentation path with the direct-copy fallback
 enabled.

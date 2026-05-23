@@ -18,6 +18,7 @@
 #include "video_renderer/sync/render_sink.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -110,6 +111,22 @@ VPMacOSNativeLayoutState to_native_layout_state(const vr::LayoutState& layout) {
   return state;
 }
 
+struct MacOSNativeTrackRuntime {
+  int32_t file_id = -1;
+  int32_t slot = -1;
+  uint64_t generation = 1;
+  std::string path;
+  std::unique_ptr<vr::SeekController> seek_controller;
+  std::unique_ptr<vr::PacketQueue> packet_queue;
+  std::shared_ptr<vr::TrackBuffer> track_buffer;
+  std::unique_ptr<vr::DemuxThread> demux;
+  std::unique_ptr<vr::DecodeThread> decoder;
+  int32_t width = 0;
+  int32_t height = 0;
+  int64_t duration_us = 0;
+  int64_t offset_us = 0;
+};
+
 class MacOSNativePlayerCore {
 public:
   MacOSNativePlayerCore()
@@ -124,81 +141,17 @@ public:
       return false;
     }
 
-    path_ = path;
-    seek_controller_ = std::make_unique<vr::SeekController>();
-    packet_queue_ = std::make_unique<vr::PacketQueue>(96);
-    audio_packet_queue_ = std::make_unique<vr::PacketQueue>(96);
-    track_buffer_ = std::make_shared<vr::TrackBuffer>(16, 4);
     render_sink_ = std::make_unique<vr::RenderSink>(playback_.clock());
-    render_sink_->set_track(0, track_buffer_, 0, 1);
     layout_controller_.reset(layout_);
-    layout_controller_.append_track(layout_, 0, 0);
-    demux_ = std::make_unique<vr::DemuxThread>(path_, *packet_queue_, *seek_controller_);
-    demux_->add_optional_output(vr::DemuxStreamKind::Audio, *audio_packet_queue_);
+    audio_packet_queue_ = std::make_unique<vr::PacketQueue>(96);
 
-    if (!demux_->open()) {
-      error = "failed to open demux input";
+    VPMacOSNativeTrackInfo track_info = {};
+    if (!add_track_locked(path, 0, track_info, error, true)) {
       close();
       return false;
     }
-
-    const auto& stats = demux_->stats();
-    if (!stats.codec_params || stats.video_stream_index < 0 || stats.time_base.den == 0) {
-      error = "input has no usable video stream";
-      close();
-      return false;
-    }
-
-    width_ = stats.width;
-    height_ = stats.height;
-    duration_us_ = stats.duration_us;
-    audio_sample_rate_ = stats.sample_rate;
-    audio_channels_ = stats.channels;
-
-    playback_.stop_session();
-    if (stats.audio_stream_index >= 0 && stats.audio_codec_params) {
-      playback_.start_session();
-      auto* audio = playback_.audio_output();
-      audio_available_ = audio &&
-          audio->add_track(0, *audio_packet_queue_, stats.audio_codec_params,
-                           stats.audio_time_base);
-      if (audio_available_) {
-        audio->set_active_track(0);
-        audio->set_all_decode_paused(true);
-      } else {
-        playback_.stop_session();
-      }
-    }
-
-    decoder_ = std::make_unique<vr::DecodeThread>(
-        *packet_queue_, *track_buffer_, stats.codec_params, stats.time_base);
-    if (!decoder_->is_valid()) {
-      error = "decode thread failed to initialize";
-      close();
-      return false;
-    }
-    if (!videotoolbox_disabled_by_env()) {
-      decoder_->enable_hardware_decode(
-          vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice);
-    }
-    demux_->set_seek_callback([this](int64_t pts_us, vr::SeekType type) {
-      if (decoder_) {
-        decoder_->notify_seek(pts_us, type);
-      }
-      if (auto* audio = playback_.audio_output()) {
-        audio->notify_seek(0, pts_us, type);
-      }
-    });
-    if (!decoder_->start()) {
-      error = "decode thread failed to start";
-      close();
-      return false;
-    }
-    if (!demux_->start_thread()) {
-      error = "demux thread failed to start";
-      close();
-      return false;
-    }
+    width_ = track_info.width;
+    height_ = track_info.height;
 
     playback_.seek_clock(0);
     playback_.pause();
@@ -209,21 +162,13 @@ public:
 
   void close() {
     playing_ = false;
+    for (auto& track : tracks_) {
+      stop_track(track);
+      track.reset();
+    }
     playback_.stop_session();
-    if (decoder_) {
-      decoder_->stop();
-    }
-    if (demux_) {
-      demux_->stop();
-    }
-    decoder_.reset();
-    demux_.reset();
     render_sink_.reset();
-    track_buffer_.reset();
     audio_packet_queue_.reset();
-    packet_queue_.reset();
-    seek_controller_.reset();
-    path_.clear();
     width_ = 0;
     height_ = 0;
     duration_us_ = 0;
@@ -231,13 +176,12 @@ public:
     audio_sample_rate_ = 0;
     audio_channels_ = 0;
     loop_range_ = vr::LoopRangeState();
-    track_offset_us_ = 0;
     layout_controller_.reset(layout_);
     last_tick_frame_pts_us_ = std::numeric_limits<int64_t>::min();
   }
 
   void play() {
-    if (!decoder_) {
+    if (!find_track_by_file_id(0)) {
       return;
     }
     playing_ = true;
@@ -268,21 +212,23 @@ public:
   }
 
   void set_track_offset(int32_t file_id, int64_t offset_us) {
-    if (file_id != 0 || !render_sink_) {
+    auto* track = find_track_by_file_id(file_id);
+    if (!track || !render_sink_) {
       return;
     }
-    track_offset_us_ = offset_us;
-    render_sink_->set_track_offset(0, offset_us);
+    track->offset_us = offset_us;
+    render_sink_->set_track_offset(static_cast<size_t>(track->slot), offset_us);
   }
 
   int64_t track_offset_us(int32_t file_id) const {
-    return file_id == 0 ? track_offset_us_ : 0;
+    const auto* track = find_track_by_file_id(file_id);
+    return track ? track->offset_us : 0;
   }
 
   void apply_layout(const VPMacOSNativeLayoutState& state) {
     const auto requested = to_layout_state(state);
-    layout_controller_.apply(layout_, requested, [](int file_id) {
-      return file_id == 0 ? 0 : -1;
+    layout_controller_.apply(layout_, requested, [this](int file_id) {
+      return slot_for_file_id(file_id);
     });
   }
 
@@ -297,7 +243,20 @@ public:
       return false;
     }
     vr::LayoutTrackGeometryList tracks = {};
-    tracks[0] = {true, width_, height_, static_cast<float>(width_) / height_};
+    for (const auto& track : tracks_) {
+      if (!track || track->slot < 0 || track->slot >= static_cast<int32_t>(tracks.size())) {
+        continue;
+      }
+      const float aspect = track->height > 0
+          ? static_cast<float>(track->width) / static_cast<float>(track->height)
+          : 1.0f;
+      tracks[static_cast<size_t>(track->slot)] = {
+          true,
+          track->width,
+          track->height,
+          aspect,
+      };
+    }
     vr::ShaderConstants constants = {};
     vr::populate_layout_shader_constants(constants, layout_, tracks, width, height);
     out->display_offset_x = constants.display_offset_x[0];
@@ -310,19 +269,45 @@ public:
   }
 
   void seek(int64_t pts_us) {
-    if (!seek_controller_ || !track_buffer_) {
-      return;
-    }
     const int64_t target = std::max<int64_t>(0, pts_us);
-    track_buffer_->set_state(vr::TrackState::Flushing);
-    track_buffer_->clear_frames();
-    packet_queue_->flush();
+    for (auto& track : tracks_) {
+      if (!track || !track->seek_controller || !track->track_buffer || !track->packet_queue) {
+        continue;
+      }
+      const int64_t track_target = std::max<int64_t>(0, target - track->offset_us);
+      track->track_buffer->set_state(vr::TrackState::Flushing);
+      track->track_buffer->clear_frames();
+      track->packet_queue->flush();
+      track->seek_controller->request_seek(track_target, vr::SeekType::Exact);
+    }
     if (audio_packet_queue_) {
       audio_packet_queue_->flush();
     }
-    seek_controller_->request_seek(target, vr::SeekType::Exact);
     playback_.seek_clock(target);
     last_tick_frame_pts_us_ = std::numeric_limits<int64_t>::min();
+  }
+
+  bool add_track(const char* path,
+                 int32_t file_id,
+                 VPMacOSNativeTrackInfo& out,
+                 std::string& error) {
+    return add_track_locked(path, file_id, out, error, false);
+  }
+
+  void remove_track(int32_t file_id) {
+    const int slot = slot_for_file_id(file_id);
+    if (slot < 0) {
+      return;
+    }
+    stop_track(tracks_[static_cast<size_t>(slot)]);
+    tracks_[static_cast<size_t>(slot)].reset();
+    if (render_sink_) {
+      render_sink_->set_track(static_cast<size_t>(slot), nullptr, -1, 0);
+    }
+    layout_controller_.remove_track(layout_, file_id, [this](int candidate_file_id) {
+      return slot_for_file_id(candidate_file_id);
+    });
+    recompute_duration();
   }
 
   int64_t current_pts_us() const {
@@ -341,13 +326,18 @@ public:
     return audio ? audio->active_track() : -1;
   }
   bool hardware_decode_active() const {
-    return decoder_ && decoder_->is_hardware_decode_enabled();
+    const auto* primary = find_track_by_file_id(0);
+    return primary && primary->decoder &&
+        primary->decoder->is_hardware_decode_enabled();
   }
   bool hardware_decode_downloads_to_cpu() const {
-    return decoder_ && decoder_->memory_stats().hardware_download_to_cpu;
+    const auto* primary = find_track_by_file_id(0);
+    return primary && primary->decoder &&
+        primary->decoder->memory_stats().hardware_download_to_cpu;
   }
   const char* decode_mode_name() const {
-    if (!decoder_) {
+    const auto* primary = find_track_by_file_id(0);
+    if (!primary || !primary->decoder) {
       return "none";
     }
     if (hardware_decode_active()) {
@@ -358,7 +348,8 @@ public:
     return "software-fallback";
   }
   const char* decoder_name() const {
-    if (!decoder_) {
+    const auto* primary = find_track_by_file_id(0);
+    if (!primary || !primary->decoder) {
       return "none";
     }
     return hardware_decode_active()
@@ -367,12 +358,13 @@ public:
   }
 
   bool copy_current_frame(VPMacOSNativeFrame* out, std::string& error) {
-    if (!track_buffer_) {
+    auto* primary = find_track_by_file_id(0);
+    if (!primary || !primary->track_buffer) {
       error = "player is not open";
       return false;
     }
     advance_to_clock(nullptr);
-    auto frame = track_buffer_->peek(0);
+    auto frame = primary->track_buffer->peek(0);
     if (!frame.has_value()) {
       error = "no decoded frame is ready";
       return false;
@@ -392,12 +384,13 @@ public:
                                int32_t stride_bytes,
                                VPMacOSNativeFrameInfo* out,
                                std::string& error) {
-    if (!track_buffer_) {
+    auto* primary = find_track_by_file_id(0);
+    if (!primary || !primary->track_buffer) {
       error = "player is not open";
       return false;
     }
     advance_to_clock(nullptr);
-    auto frame = track_buffer_->peek(0);
+    auto frame = primary->track_buffer->peek(0);
     if (!frame.has_value()) {
       error = "no decoded frame is ready";
       return false;
@@ -428,7 +421,8 @@ public:
   }
 
   void tick_loop_range() {
-    if (!track_buffer_ || !seek_controller_) {
+    auto* primary = find_track_by_file_id(0);
+    if (!primary || !primary->track_buffer || !primary->seek_controller) {
       return;
     }
     vr::LoopRangeSeekInput input;
@@ -446,9 +440,6 @@ public:
 
 private:
   bool advance_to_clock(int64_t* frame_pts_us) {
-    if (!track_buffer_) {
-      return false;
-    }
     if (!render_sink_) {
       return false;
     }
@@ -463,14 +454,9 @@ private:
     return true;
   }
 
-  std::string path_;
-  std::unique_ptr<vr::SeekController> seek_controller_;
-  std::unique_ptr<vr::PacketQueue> packet_queue_;
   std::unique_ptr<vr::PacketQueue> audio_packet_queue_;
-  std::shared_ptr<vr::TrackBuffer> track_buffer_;
   std::unique_ptr<vr::RenderSink> render_sink_;
-  std::unique_ptr<vr::DemuxThread> demux_;
-  std::unique_ptr<vr::DecodeThread> decoder_;
+  std::array<std::unique_ptr<MacOSNativeTrackRuntime>, vr::kMaxTracks> tracks_{};
   vr::PlaybackController playback_;
   int32_t width_ = 0;
   int32_t height_ = 0;
@@ -479,11 +465,174 @@ private:
   int32_t audio_sample_rate_ = 0;
   int32_t audio_channels_ = 0;
   vr::LoopRangeState loop_range_;
-  int64_t track_offset_us_ = 0;
   vr::LayoutState layout_;
   vr::LayoutController layout_controller_;
   int64_t last_tick_frame_pts_us_ = std::numeric_limits<int64_t>::min();
   bool playing_ = false;
+
+  int first_free_slot() const {
+    for (size_t i = 0; i < tracks_.size(); ++i) {
+      if (!tracks_[i]) {
+        return static_cast<int>(i);
+      }
+    }
+    return -1;
+  }
+
+  int slot_for_file_id(int file_id) const {
+    for (size_t i = 0; i < tracks_.size(); ++i) {
+      if (tracks_[i] && tracks_[i]->file_id == file_id) {
+        return static_cast<int>(i);
+      }
+    }
+    return -1;
+  }
+
+  MacOSNativeTrackRuntime* find_track_by_file_id(int32_t file_id) {
+    const int slot = slot_for_file_id(file_id);
+    return slot >= 0 ? tracks_[static_cast<size_t>(slot)].get() : nullptr;
+  }
+
+  const MacOSNativeTrackRuntime* find_track_by_file_id(int32_t file_id) const {
+    const int slot = slot_for_file_id(file_id);
+    return slot >= 0 ? tracks_[static_cast<size_t>(slot)].get() : nullptr;
+  }
+
+  bool add_track_locked(const char* path,
+                        int32_t file_id,
+                        VPMacOSNativeTrackInfo& out,
+                        std::string& error,
+                        bool primary) {
+    if (!path || std::strlen(path) == 0) {
+      error = "path is empty";
+      return false;
+    }
+    if (slot_for_file_id(file_id) >= 0) {
+      error = "file id is already open";
+      return false;
+    }
+    const int slot = primary ? 0 : first_free_slot();
+    if (slot < 0 || slot >= static_cast<int>(tracks_.size()) || tracks_[slot]) {
+      error = "no free macOS native track slots";
+      return false;
+    }
+
+    auto track = std::make_unique<MacOSNativeTrackRuntime>();
+    track->file_id = file_id;
+    track->slot = slot;
+    track->generation = 1;
+    track->path = path;
+    track->seek_controller = std::make_unique<vr::SeekController>();
+    track->packet_queue = std::make_unique<vr::PacketQueue>(96);
+    track->track_buffer = std::make_shared<vr::TrackBuffer>(16, 4);
+    track->demux = std::make_unique<vr::DemuxThread>(
+        track->path, *track->packet_queue, *track->seek_controller);
+    if (primary && audio_packet_queue_) {
+      track->demux->add_optional_output(vr::DemuxStreamKind::Audio, *audio_packet_queue_);
+    }
+
+    if (!track->demux->open()) {
+      error = "failed to open demux input";
+      return false;
+    }
+    const auto& stats = track->demux->stats();
+    if (!stats.codec_params || stats.video_stream_index < 0 || stats.time_base.den == 0) {
+      error = "input has no usable video stream";
+      return false;
+    }
+
+    track->width = stats.width;
+    track->height = stats.height;
+    track->duration_us = stats.duration_us;
+
+    if (primary) {
+      duration_us_ = stats.duration_us;
+      audio_sample_rate_ = stats.sample_rate;
+      audio_channels_ = stats.channels;
+      playback_.stop_session();
+      if (stats.audio_stream_index >= 0 && stats.audio_codec_params) {
+        playback_.start_session();
+        auto* audio = playback_.audio_output();
+        audio_available_ = audio &&
+            audio->add_track(0, *audio_packet_queue_, stats.audio_codec_params,
+                             stats.audio_time_base);
+        if (audio_available_) {
+          audio->set_active_track(0);
+          audio->set_all_decode_paused(true);
+        } else {
+          playback_.stop_session();
+        }
+      }
+    }
+
+    track->decoder = std::make_unique<vr::DecodeThread>(
+        *track->packet_queue, *track->track_buffer, stats.codec_params, stats.time_base);
+    if (!track->decoder->is_valid()) {
+      error = "decode thread failed to initialize";
+      return false;
+    }
+    if (!videotoolbox_disabled_by_env()) {
+      track->decoder->enable_hardware_decode(
+          vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice);
+    }
+    auto* decoder = track->decoder.get();
+    auto* audio_output = primary ? playback_.audio_output() : nullptr;
+    track->demux->set_seek_callback(
+        [decoder, audio_output, primary](int64_t pts_us, vr::SeekType type) {
+          if (decoder) {
+            decoder->notify_seek(pts_us, type);
+          }
+          if (primary && audio_output) {
+            audio_output->notify_seek(0, pts_us, type);
+          }
+        });
+    if (!track->decoder->start()) {
+      error = "decode thread failed to start";
+      return false;
+    }
+    if (!track->demux->start_thread()) {
+      error = "demux thread failed to start";
+      track->decoder->stop();
+      return false;
+    }
+
+    if (render_sink_) {
+      render_sink_->set_track(
+          static_cast<size_t>(slot), track->track_buffer, file_id, track->generation);
+    }
+    layout_controller_.append_track(layout_, file_id, slot);
+    out.file_id = file_id;
+    out.slot = slot;
+    out.width = track->width;
+    out.height = track->height;
+    out.duration_us = track->duration_us;
+    tracks_[static_cast<size_t>(slot)] = std::move(track);
+    recompute_duration();
+    return true;
+  }
+
+  void stop_track(std::unique_ptr<MacOSNativeTrackRuntime>& track) {
+    if (!track) {
+      return;
+    }
+    if (track->decoder) {
+      track->decoder->stop();
+    }
+    if (track->demux) {
+      track->demux->stop();
+    }
+  }
+
+  void recompute_duration() {
+    int64_t duration = 0;
+    for (const auto& track : tracks_) {
+      if (!track) {
+        continue;
+      }
+      duration = std::max(duration, track->duration_us + track->offset_us);
+    }
+    duration_us_ = duration;
+  }
 };
 
 }  // namespace
@@ -590,6 +739,36 @@ int VPMacOSNativePlayerOpen(VPMacOSNativePlayer* player,
   }
   write_error(error, error_size, "");
   return 0;
+}
+
+int VPMacOSNativePlayerAddTrack(VPMacOSNativePlayer* player,
+                                const char* path,
+                                int32_t file_id,
+                                VPMacOSNativeTrackInfo* out,
+                                char* error,
+                                size_t error_size) {
+  if (!player || !out) {
+    write_error(error, error_size, "player or output track info is null");
+    return -1;
+  }
+  *out = {};
+  std::lock_guard<std::mutex> lock(player->mutex);
+  std::string message;
+  if (!player->core.add_track(path, file_id, *out, message)) {
+    write_error(error, error_size, message);
+    return -1;
+  }
+  write_error(error, error_size, "");
+  return 0;
+}
+
+void VPMacOSNativePlayerRemoveTrack(VPMacOSNativePlayer* player,
+                                    int32_t file_id) {
+  if (!player) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  player->core.remove_track(file_id);
 }
 
 void VPMacOSNativePlayerClose(VPMacOSNativePlayer* player) {

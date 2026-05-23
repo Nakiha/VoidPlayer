@@ -134,6 +134,26 @@ int main(int argc, char** argv) {
         return 1;
     }
     VPMacOSNativePlayerSetTrackOffset(player.get(), 0, 0);
+    VPMacOSNativeTrackInfo second_track = {};
+    if (VPMacOSNativePlayerAddTrack(
+            player.get(), path.c_str(), 1, &second_track, error, sizeof(error)) != 0) {
+        std::cerr << "add second native track failed: " << error << "\n";
+        return 1;
+    }
+    if (second_track.file_id != 1 ||
+        second_track.slot != 1 ||
+        second_track.width <= 0 ||
+        second_track.height <= 0 ||
+        second_track.duration_us <= 0) {
+        std::cerr << "second native track reported invalid metadata\n";
+        return 1;
+    }
+    VPMacOSNativePlayerSetTrackOffset(player.get(), 1, 125'000);
+    if (VPMacOSNativePlayerTrackOffsetUs(player.get(), 1) != 125'000 ||
+        VPMacOSNativePlayerDurationUs(player.get()) < second_track.duration_us) {
+        std::cerr << "second native track offset or duration was not retained\n";
+        return 1;
+    }
     VPMacOSNativeLayoutState requested_layout = {};
     requested_layout.mode = 1;
     requested_layout.split_pos = 1.5f;
@@ -142,7 +162,7 @@ int main(int argc, char** argv) {
     requested_layout.view_offset_y = -16.0f;
     requested_layout.pixel_size_mode = 1;
     requested_layout.order[0] = 0;
-    requested_layout.order[1] = 99;
+    requested_layout.order[1] = 1;
     VPMacOSNativePlayerApplyLayout(player.get(), &requested_layout);
     VPMacOSNativeLayoutState layout_snapshot = {};
     if (VPMacOSNativePlayerCopyLayout(player.get(), &layout_snapshot) != 0 ||
@@ -151,7 +171,7 @@ int main(int argc, char** argv) {
         layout_snapshot.zoom_ratio != 2.0f ||
         layout_snapshot.pixel_size_mode != 1 ||
         layout_snapshot.order[0] != 0 ||
-        layout_snapshot.order[1] != 99) {
+        layout_snapshot.order[1] != 1) {
         std::cerr << "native layout state was not retained or clamped by macOS player\n";
         return 1;
     }
@@ -276,6 +296,15 @@ int main(int argc, char** argv) {
     VPMacOSNativePlayerSetLoopRange(player.get(), 0, 0, 0);
     if (looped.pts_us > 1'450'000) {
         std::cerr << "loop range did not seek back near start: " << looped.pts_us << "\n";
+        VPMacOSNativeFrameFree(&first);
+        VPMacOSNativeFrameFree(&playing);
+        VPMacOSNativeFrameFree(&seeked);
+        VPMacOSNativeFrameFree(&looped);
+        return 1;
+    }
+    VPMacOSNativePlayerRemoveTrack(player.get(), 1);
+    if (VPMacOSNativePlayerTrackOffsetUs(player.get(), 1) != 0) {
+        std::cerr << "removed native track still reports an offset\n";
         VPMacOSNativeFrameFree(&first);
         VPMacOSNativeFrameFree(&playing);
         VPMacOSNativeFrameFree(&seeked);

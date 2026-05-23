@@ -2,14 +2,11 @@
 #include "test_utils.h"
 #include "video_renderer/d3d11/device.h"
 #include "video_renderer/d3d11/shader.h"
+#include "video_renderer/overlay/analysis_overlay_renderer.h"
 #include "video_renderer/render/shader_constants.h"
 #include <cstddef>
 
 using namespace vr::test;
-
-namespace vr {
-uint32_t pack_overlay_uv16(int a, int a_extent, int b, int b_extent);
-}
 
 TEST_CASE("ShaderManager compiles trivial VS and PS from source", "[d3d11][shader]") {
     auto [dev, hwnd] = create_test_device();

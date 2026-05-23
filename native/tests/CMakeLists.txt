@@ -150,6 +150,13 @@ if(BUILD_FFI)
         add_dependencies(test_ffi_c copy_ffmpeg_dlls)
     endif()
 
-    add_test(NAME test_ffi_c COMMAND test_ffi_c)
-    set_tests_properties(test_ffi_c PROPERTIES TIMEOUT 30)
+    add_test(NAME test_ffi_c
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=$<TARGET_FILE_DIR:test_ffi_c>$<SEMICOLON>$ENV{PATH}"
+            "$<TARGET_FILE:test_ffi_c>"
+    )
+    set_tests_properties(test_ffi_c PROPERTIES
+        TIMEOUT 30
+        WORKING_DIRECTORY "$<TARGET_FILE_DIR:test_ffi_c>"
+    )
 endif()

@@ -17,6 +17,8 @@ struct AnalysisOverlayMemoryStats {
     int height = 0;
 };
 
+uint32_t pack_overlay_uv16(int a, int a_extent, int b, int b_extent);
+
 class AnalysisOverlayRenderer {
     struct AnalysisOverlayGpuRect {
         uint32_t rect_uv0 = 0;

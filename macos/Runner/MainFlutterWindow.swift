@@ -1288,7 +1288,11 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private(set) var height: Int
   private let syntheticPattern: Bool
   private let metalUploadEnabled: Bool
-  private var nativeMetalUploader: OpaquePointer?
+  private var nativeMetalPresentationBackend: OpaquePointer?
+  private var nativeMetalUploader: OpaquePointer? {
+    guard let nativeMetalPresentationBackend else { return nil }
+    return VPMacOSMetalPresentationBackendUploader(nativeMetalPresentationBackend)
+  }
   private var decodedBGRA: Data?
   private let hashPrefix: String
   private var pixelBuffer: CVPixelBuffer?
@@ -1310,7 +1314,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     self.decodedBGRA = nil
     self.hashPrefix = "macos-synthetic"
     super.init()
-    createNativeMetalUploader()
+    createNativeMetalPresentationBackend()
     rebuildPixelBuffer()
   }
 
@@ -1322,13 +1326,13 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     self.decodedBGRA = decoded.bgra
     self.hashPrefix = "macos-first-frame"
     super.init()
-    createNativeMetalUploader()
+    createNativeMetalPresentationBackend()
     rebuildPixelBuffer()
   }
 
   deinit {
-    if let nativeMetalUploader {
-      VPMacOSMetalUploaderDestroy(nativeMetalUploader)
+    if let nativeMetalPresentationBackend {
+      VPMacOSMetalPresentationBackendDestroy(nativeMetalPresentationBackend)
     }
   }
 
@@ -1340,6 +1344,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     guard width != self.width || height != self.height else { return }
     self.width = width
     self.height = height
+    createNativeMetalPresentationBackendLocked()
     rebuildPixelBufferLocked()
   }
 
@@ -1530,13 +1535,25 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     validateMetalTextureLocked(buffer: nextBuffer)
   }
 
-  private func createNativeMetalUploader() {
-    nativeMetalUploader = VPMacOSMetalUploaderCreate()
+  private func createNativeMetalPresentationBackend() {
+    lock.lock()
+    defer { lock.unlock() }
+    createNativeMetalPresentationBackendLocked()
+  }
+
+  private func createNativeMetalPresentationBackendLocked() {
+    if let nativeMetalPresentationBackend {
+      VPMacOSMetalPresentationBackendDestroy(nativeMetalPresentationBackend)
+    }
+    nativeMetalPresentationBackend = VPMacOSMetalPresentationBackendCreate(
+      Int32(width),
+      Int32(height)
+    )
   }
 
   private func nativeMetalUploaderAvailableLocked() -> Bool {
-    guard let nativeMetalUploader else { return false }
-    return VPMacOSMetalUploaderIsAvailable(nativeMetalUploader) != 0
+    guard let nativeMetalPresentationBackend else { return false }
+    return VPMacOSMetalPresentationBackendIsAvailable(nativeMetalPresentationBackend) != 0
   }
 
   private func nativeMetalUploaderDirectYuvUploadCountLocked() -> Int {

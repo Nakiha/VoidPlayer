@@ -6,7 +6,9 @@ on:
       - ".github/workflows/native.yml"
       - "dev.py"
       - "scripts/dev/**"
+      - "macos/**"
       - "native/**"
+      - "third_party/ffmpeg/**"
       - "THIRD_PARTY_NOTICES.md"
       - "windows/libs/ffmpeg/**"
       - "resources/video/**"
@@ -15,7 +17,9 @@ on:
       - ".github/workflows/native.yml"
       - "dev.py"
       - "scripts/dev/**"
+      - "macos/**"
       - "native/**"
+      - "third_party/ffmpeg/**"
       - "THIRD_PARTY_NOTICES.md"
       - "windows/libs/ffmpeg/**"
       - "resources/video/**"
@@ -54,6 +58,33 @@ jobs:
       - name: Run native build
         shell: pwsh
         run: python dev.py test --native-only --github
+
+  macos-native-test:
+    name: macOS native test
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify macOS FFmpeg LFS artifacts
+        shell: bash
+        run: |
+          dylib="third_party/ffmpeg/lib/libavcodec.62.28.100.dylib"
+          test -s "$dylib"
+          if grep -q "version https://git-lfs.github.com/spec/v1" "$dylib"; then
+            echo "macOS FFmpeg dylib is still a Git LFS pointer" >&2
+            exit 1
+          fi
+
+      - name: Run macOS native tests
+        shell: bash
+        run: python dev.py test --native-only
 
   native-config-matrix:
     name: Build ${{ matrix.name }}

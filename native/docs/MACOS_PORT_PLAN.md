@@ -151,7 +151,8 @@ Goal: make the app distributable and honest about unsupported features.
   wired.
 - [ ] Decide macOS analysis UI/IPC support: native library, helper process, or a first-class
   in-process analysis workspace.
-- [ ] Add macOS CI once the native facade path is stable.
+- [x] Add macOS native CTest CI for the shared facade/presentation/hardware-decode smoke suite.
+  Flutter macOS UI automation remains local-only until a reliable headed CI strategy is chosen.
 
 ## Validation Matrix
 
@@ -274,6 +275,10 @@ Windows preservation status: on this macOS host, `python dev.py test --native-on
 macOS portable CMake/CTest suite instead of preparing the Windows analyzer. The Windows analyzer
 builder has been folded into Python under `dev.py`; run the native-only suite and a Windows UI
 smoke that exercises `QUIT` after player creation on a Windows host before closing M4.
+
+CI status: `.github/workflows/native.yml` now has a `macos-14` native job that checks out Git LFS
+FFmpeg artifacts and runs `python dev.py test --native-only`, covering the portable macOS CTest
+suite without introducing headed Flutter UI automation into CI yet.
 
 Manual audible smoke:
 

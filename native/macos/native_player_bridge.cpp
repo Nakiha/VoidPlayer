@@ -12,6 +12,7 @@
 #include "video_renderer/decode/hw/hw_decode_provider.h"
 #include "video_renderer/layout/layout_controller.h"
 #include "video_renderer/layout/layout_geometry.h"
+#include "video_renderer/render/presentation_scheduler.h"
 #include "video_renderer/render/shader_constants.h"
 #include "video_renderer/capture/bgra_capture_metrics.h"
 #include "video_renderer/seek/seek_coordinator.h"
@@ -164,7 +165,7 @@ public:
     playback_.seek_clock(0);
     playback_.pause();
     playing_ = false;
-    last_tick_frame_pts_us_ = std::numeric_limits<int64_t>::min();
+    presentation_scheduler_.reset();
     return true;
   }
 
@@ -185,7 +186,7 @@ public:
     audio_channels_ = 0;
     loop_range_ = vr::LoopRangeState();
     layout_controller_.reset(layout_);
-    last_tick_frame_pts_us_ = std::numeric_limits<int64_t>::min();
+    presentation_scheduler_.reset();
   }
 
   void play() {
@@ -449,7 +450,7 @@ public:
       audio_packet_queue_->flush();
     }
     playback_.seek_clock(target);
-    last_tick_frame_pts_us_ = std::numeric_limits<int64_t>::min();
+    presentation_scheduler_.reset();
   }
 
   bool add_track(const char* path,
@@ -574,15 +575,10 @@ public:
     if (!playing_) {
       return false;
     }
-    int64_t frame_pts_us = std::numeric_limits<int64_t>::min();
-    if (!advance_to_clock(&frame_pts_us)) {
+    if (!render_sink_) {
       return false;
     }
-    if (frame_pts_us == last_tick_frame_pts_us_) {
-      return false;
-    }
-    last_tick_frame_pts_us_ = frame_pts_us;
-    return true;
+    return presentation_scheduler_.tick(*render_sink_).should_notify;
   }
 
   void tick_loop_range() {
@@ -608,15 +604,7 @@ private:
     if (!render_sink_) {
       return false;
     }
-    const auto decision = render_sink_->evaluate();
-    const auto& frame = decision.frames[0];
-    if (!decision.should_present || !frame.has_value()) {
-      return false;
-    }
-    if (frame_pts_us) {
-      *frame_pts_us = frame->pts_us;
-    }
-    return true;
+    return presentation_scheduler_.advance_to_clock(*render_sink_, frame_pts_us);
   }
 
   vr::LayoutTrackGeometryList layout_track_geometry() const {
@@ -713,7 +701,7 @@ private:
   vr::LoopRangeState loop_range_;
   vr::LayoutState layout_;
   vr::LayoutController layout_controller_;
-  int64_t last_tick_frame_pts_us_ = std::numeric_limits<int64_t>::min();
+  vr::PresentationScheduler presentation_scheduler_;
   bool playing_ = false;
 
   int first_free_slot() const {

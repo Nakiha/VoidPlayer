@@ -101,6 +101,15 @@ if(APPLE)
     )
     add_test(NAME macos_presentation_adapter_smoke COMMAND macos_presentation_adapter_smoke)
 
+    add_executable(videotoolbox_provider_smoke
+        "${VOID_NATIVE_DIR}/tools/videotoolbox_provider_smoke.cpp"
+    )
+    void_apply_native_compile_options(videotoolbox_provider_smoke)
+    target_link_libraries(videotoolbox_provider_smoke PRIVATE
+        void_media_ffmpeg
+    )
+    add_test(NAME videotoolbox_provider_smoke COMMAND videotoolbox_provider_smoke)
+
     add_executable(bgra_capture_metrics_smoke
         "${VOID_NATIVE_DIR}/tools/bgra_capture_metrics_smoke.cpp"
     )

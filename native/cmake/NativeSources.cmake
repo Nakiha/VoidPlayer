@@ -44,6 +44,7 @@ set(VOID_MEDIA_FFMPEG_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/decode/frame_converter.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/frame_timestamp_rescaler.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/hw/hw_decode_provider.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/decode/hw/videotoolbox_provider.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/software_bgra_converter.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/software_frame_packer.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/software_frame_publisher.cpp"

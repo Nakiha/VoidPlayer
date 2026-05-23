@@ -17,6 +17,7 @@ enum class HwDecodeType {
     CUDA,
     DXVA2,
     Vulkan,
+    VideoToolbox,
 };
 
 enum class RenderBackendType {
@@ -94,5 +95,7 @@ using HwDecodeInitResult = HwDecodeProvider::HwDecodeInitResult;
 HwDecodeInitResult try_hw_decode_providers(
     const AVCodec* codec,
     const HwDecodeInitParams& params);
+
+const char* hw_decode_type_name(HwDecodeType type);
 
 } // namespace vr

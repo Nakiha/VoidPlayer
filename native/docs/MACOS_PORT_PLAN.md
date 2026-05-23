@@ -130,7 +130,10 @@ Goal: improve performance after software playback is correct.
   Initial portable baselines now cover limited/full-range software BGRA conversion, padded
   linesizes, BGRA channel order, odd-dimension NV21 -> even-coded NV12 packing, and planar
   YUV420 wrap metadata.
-- [ ] Add VideoToolbox behind the hardware decode provider interface.
+- [x] Add VideoToolbox behind the hardware decode provider interface.
+  The provider is registered through the shared `HwDecodeProvider` factory and currently only
+  permits the `FfmpegOwnedHwDownloadDevice` mode, so experimental hardware decode still publishes
+  through the existing CPU frame path instead of creating a second renderer backend.
 - [ ] Keep software fallback visible in diagnostics.
 
 ### M6: Packaging And Release
@@ -232,15 +235,20 @@ color samples and padded line strides, while `software_frame_packer_smoke` locks
 packing and planar YUV420 wrap metadata. `macos_presentation_adapter_smoke` covers the macOS
 presentation boundary directly, including CPU RGBA stride copies, CPU NV12 color conversion,
 planar YUV conversion, adapter identity, and unsupported P010 rejection. These are CPU-side
-reference points for future Metal and CVPixelBuffer layout parity tests. UI automation can assert
-string-valued native diagnostics through `ASSERT_NATIVE_DIAGNOSTIC_STRING`, and macOS facade/stress
-smokes now lock `presentationAdapter=cvpixelbuffer-bgra-copy` as the visible software presentation
-fallback before Metal work starts. UI automation can also assert boolean diagnostics through
+reference points for future Metal and CVPixelBuffer layout parity tests. `videotoolbox_provider_smoke`
+now proves that the macOS FFmpeg build can initialize the shared VideoToolbox provider for H.264 in
+download-to-CPU mode. UI automation can assert string-valued native diagnostics through
+`ASSERT_NATIVE_DIAGNOSTIC_STRING`, and macOS facade/stress smokes now lock
+`presentationAdapter=cvpixelbuffer-bgra-copy` as the visible software presentation fallback before
+deeper Metal color work starts. UI automation can also assert boolean diagnostics through
 `ASSERT_NATIVE_DIAGNOSTIC_BOOL`. The macOS runner reports Metal surface readiness through
 `metalAvailable`, `metalTextureCacheAvailable`, `metalTextureValid`, and
 `metalTextureCreationCount`; facade/stress smokes assert that Metal wrapping is valid, that
 `presentationUploadMode=metal-bgra-staging-upload`, and that playback produces at least one Metal
-staging upload for the active pixel buffer.
+staging upload for the active pixel buffer. The facade smoke also reports
+`hardwareDecodeProvider=VideoToolbox`, `hardwareDecodeAvailable=true`, and
+`hardwareDecodeActive=false`, keeping the software fallback explicit until VideoToolbox is enabled
+for playback.
 
 Frame callback lifecycle status: macOS now has targeted UI smokes that churn play/pause/play,
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks

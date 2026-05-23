@@ -40,8 +40,10 @@ adapter:
 `software_frame_packer_smoke` cover these baselines in portable macOS CTest.
 macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy`,
 `presentationUploadMode=metal-bgra-staging-upload`, `metalTextureValid=true`,
-and `pixelBufferMetalUploadCount >= 1`, so future M5 work must explicitly move
-the diagnostic contract when deeper Metal color conversion becomes active.
+`pixelBufferMetalUploadCount >= 1`, `hardwareDecodeProvider=VideoToolbox`,
+and `hardwareDecodeActive=false`, so future M5 work must explicitly move the
+diagnostic contract when deeper Metal color conversion or active VideoToolbox
+playback becomes active.
 
 ## M5 Rule
 

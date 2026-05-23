@@ -397,6 +397,9 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "platform": "macos",
         "backend": backendName,
         "presentationAdapter": String(cString: VPMacOSNativePresentationAdapterName()),
+        "hardwareDecodeProvider": String(cString: VPMacOSNativeHardwareDecodeProviderName()),
+        "hardwareDecodeAvailable": VPMacOSNativeHardwareDecodeAvailable() != 0,
+        "hardwareDecodeActive": false,
         "available": nativePlayer != nil,
         "reason": nativePlayer == nil
           ? "Synthetic macOS texture is active"

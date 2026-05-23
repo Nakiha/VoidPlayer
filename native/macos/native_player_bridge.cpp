@@ -9,6 +9,7 @@
 #include "playback/playback_controller.h"
 #include "video_renderer/buffer/track_buffer.h"
 #include "video_renderer/decode/decode_thread.h"
+#include "video_renderer/decode/hw/hw_decode_provider.h"
 #include "video_renderer/capture/bgra_capture_metrics.h"
 #include "video_renderer/seek/seek_coordinator.h"
 
@@ -24,6 +25,11 @@
 #include <string>
 #include <thread>
 
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavutil/buffer.h>
+}
+
 namespace {
 
 void write_error(char* error, size_t error_size, const std::string& message) {
@@ -33,6 +39,31 @@ void write_error(char* error, size_t error_size, const std::string& message) {
   const size_t copy_size = std::min(error_size - 1, message.size());
   std::memcpy(error, message.data(), copy_size);
   error[copy_size] = '\0';
+}
+
+bool probe_videotoolbox_h264() {
+  const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_H264);
+  if (!codec) {
+    return false;
+  }
+
+  vr::HwDecodeInitParams params;
+  params.backend = vr::RenderBackendType::Metal;
+  params.device_mode = vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
+  params.width = 320;
+  params.height = 180;
+  auto result = vr::try_hw_decode_providers(codec, params);
+  const bool available =
+      result.success &&
+      result.type == vr::HwDecodeType::VideoToolbox &&
+      result.hw_device_ctx;
+  if (result.hw_device_ctx) {
+    av_buffer_unref(&result.hw_device_ctx);
+  }
+  if (result.provider) {
+    result.provider->shutdown();
+  }
+  return available;
 }
 
 class MacOSNativePlayerCore {
@@ -586,6 +617,15 @@ int32_t VPMacOSNativePlayerActiveAudioTrack(VPMacOSNativePlayer* player) {
 
 const char* VPMacOSNativePresentationAdapterName(void) {
   return vp_macos::presentation_adapter_name();
+}
+
+int VPMacOSNativeHardwareDecodeAvailable(void) {
+  static const bool available = probe_videotoolbox_h264();
+  return available ? 1 : 0;
+}
+
+const char* VPMacOSNativeHardwareDecodeProviderName(void) {
+  return VPMacOSNativeHardwareDecodeAvailable() != 0 ? "VideoToolbox" : "none";
 }
 
 int VPMacOSNativePlayerCopyCurrentFrameBGRA(VPMacOSNativePlayer* player,

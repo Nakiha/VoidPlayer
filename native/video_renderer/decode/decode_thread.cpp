@@ -243,7 +243,7 @@ bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
     codec_ctx_->opaque = &hw_pix_fmt_;
 
     spdlog::info("[DecodeThread] Hardware decode enabled via {} (pix_fmt={})",
-                 result.type == HwDecodeType::D3D11VA ? "D3D11VA" : "unknown",
+                 hw_decode_type_name(result.type),
                  static_cast<int>(result.hw_pix_fmt));
     return true;
 }

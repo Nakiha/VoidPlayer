@@ -45,6 +45,9 @@ hardware decode are still unavailable. Analysis windows and main-window analysis
 explicitly gated off in `PlatformCapabilities.macOSPhase1`; the native analysis library can build
 on macOS, but the app will not run the Windows-style analysis UI/IPC path until the macOS workflow
 is wired behind those capability flags.
+The shared hardware decode provider factory can now initialize VideoToolbox for H.264 in
+download-to-CPU mode, and diagnostics expose that as `hardwareDecodeProvider=VideoToolbox` with
+`hardwareDecodeActive=false` until playback intentionally enables it.
 
 The macOS runner also implements the shared `pickFiles` MethodChannel call with `NSOpenPanel`.
 Debug and Release entitlements include `com.apple.security.files.user-selected.read-only` so

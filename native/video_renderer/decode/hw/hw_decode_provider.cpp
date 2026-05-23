@@ -2,6 +2,9 @@
 #ifdef _WIN32
 #include "video_renderer/decode/hw/d3d11va_provider.h"
 #endif
+#ifdef __APPLE__
+#include "video_renderer/decode/hw/videotoolbox_provider.h"
+#endif
 #include <spdlog/spdlog.h>
 #include <vector>
 #include <memory>
@@ -22,6 +25,12 @@ HwDecodeInitResult try_hw_decode_providers(
     std::vector<std::unique_ptr<HwDecodeProvider>> providers;
 #ifdef _WIN32
     providers.push_back(std::make_unique<D3D11VAProvider>());
+#endif
+#ifdef __APPLE__
+    if (params.backend == RenderBackendType::Metal ||
+        params.device_mode == DecodeDeviceMode::FfmpegOwnedHwDownloadDevice) {
+        providers.push_back(std::make_unique<VideoToolboxProvider>());
+    }
 #endif
     // Future: providers.push_back(std::make_unique<CUDAProvider>());
     // Future: providers.push_back(std::make_unique<DXVA2Provider>());
@@ -47,6 +56,24 @@ HwDecodeInitResult try_hw_decode_providers(
 
     spdlog::info("[HWDecode] No hardware decoder available, will use software decode");
     return {};
+}
+
+const char* hw_decode_type_name(HwDecodeType type) {
+    switch (type) {
+    case HwDecodeType::None:
+        return "none";
+    case HwDecodeType::D3D11VA:
+        return "D3D11VA";
+    case HwDecodeType::CUDA:
+        return "CUDA";
+    case HwDecodeType::DXVA2:
+        return "DXVA2";
+    case HwDecodeType::Vulkan:
+        return "Vulkan";
+    case HwDecodeType::VideoToolbox:
+        return "VideoToolbox";
+    }
+    return "unknown";
 }
 
 } // namespace vr

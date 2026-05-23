@@ -1,10 +1,10 @@
 #pragma once
 
+#include "video_renderer/render/backend_type.h"
+
 namespace vr {
 
-enum class PresentationBackendKind {
-    D3D11 = 1,
-};
+using PresentationBackendKind = RenderBackendKind;
 
 struct PresentationBackendConfig {
     void* hwnd = nullptr;

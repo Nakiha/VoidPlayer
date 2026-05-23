@@ -10,6 +10,60 @@
 #include <memory>
 
 namespace vr {
+namespace {
+
+using HwDecodeProviderFactory = std::unique_ptr<HwDecodeProvider> (*)();
+
+struct HwDecodeProviderDescriptor {
+    const char* name = "";
+    RenderBackendKind backend = RenderBackendKind::Unknown;
+    bool allow_ffmpeg_owned_hwdownload = false;
+    HwDecodeProviderFactory create = nullptr;
+};
+
+#ifdef _WIN32
+std::unique_ptr<HwDecodeProvider> create_d3d11va_provider() {
+    return std::make_unique<D3D11VAProvider>();
+}
+#endif
+
+#ifdef __APPLE__
+std::unique_ptr<HwDecodeProvider> create_videotoolbox_provider() {
+    return std::make_unique<VideoToolboxProvider>();
+}
+#endif
+
+std::vector<HwDecodeProviderDescriptor> registered_hw_decode_providers() {
+    std::vector<HwDecodeProviderDescriptor> providers;
+#ifdef _WIN32
+    providers.push_back({
+        "D3D11VA",
+        RenderBackendKind::D3D11,
+        false,
+        &create_d3d11va_provider,
+    });
+#endif
+#ifdef __APPLE__
+    providers.push_back({
+        "VideoToolbox",
+        RenderBackendKind::Metal,
+        true,
+        &create_videotoolbox_provider,
+    });
+#endif
+    return providers;
+}
+
+bool provider_matches_request(const HwDecodeProviderDescriptor& provider,
+                              const HwDecodeInitParams& params) {
+    if (provider.backend == params.backend) {
+        return true;
+    }
+    return provider.allow_ffmpeg_owned_hwdownload &&
+           params.device_mode == DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
+}
+
+} // namespace
 
 HwDecodeInitResult try_hw_decode_providers(
     const AVCodec* codec,
@@ -20,20 +74,13 @@ HwDecodeInitResult try_hw_decode_providers(
         return {};
     }
 
-    // Priority-ordered list of hardware decode providers.
-    // To add a new backend, instantiate it here.
     std::vector<std::unique_ptr<HwDecodeProvider>> providers;
-#ifdef _WIN32
-    providers.push_back(std::make_unique<D3D11VAProvider>());
-#endif
-#ifdef __APPLE__
-    if (params.backend == RenderBackendType::Metal ||
-        params.device_mode == DecodeDeviceMode::FfmpegOwnedHwDownloadDevice) {
-        providers.push_back(std::make_unique<VideoToolboxProvider>());
+    for (const auto& descriptor : registered_hw_decode_providers()) {
+        if (!descriptor.create || !provider_matches_request(descriptor, params)) {
+            continue;
+        }
+        providers.push_back(descriptor.create());
     }
-#endif
-    // Future: providers.push_back(std::make_unique<CUDAProvider>());
-    // Future: providers.push_back(std::make_unique<DXVA2Provider>());
 
     for (auto& provider : providers) {
         spdlog::info("[HWDecode] Probing {} for codec {}",
@@ -74,6 +121,22 @@ const char* hw_decode_type_name(HwDecodeType type) {
         return "VideoToolbox";
     }
     return "unknown";
+}
+
+std::vector<const char*> compatible_hw_decode_provider_names(
+    RenderBackendKind backend,
+    DecodeDeviceMode device_mode) {
+    HwDecodeInitParams params;
+    params.backend = backend;
+    params.device_mode = device_mode;
+
+    std::vector<const char*> names;
+    for (const auto& descriptor : registered_hw_decode_providers()) {
+        if (provider_matches_request(descriptor, params)) {
+            names.push_back(descriptor.name);
+        }
+    }
+    return names;
 }
 
 } // namespace vr

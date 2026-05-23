@@ -96,9 +96,7 @@ struct RendererGpuMemoryStats {
     std::vector<TrackGpuMemoryStats> tracks;
 };
 
-enum class RendererBackendType {
-    D3D11 = 1,
-};
+using RendererBackendType = RenderBackendKind;
 
 /// Platform-specific renderer interop values.
 /// D3D11 uses `adapter` as the Flutter Windows DXGI adapter pointer. Future

@@ -1,6 +1,7 @@
 #include "video_renderer/decode/hw/hw_decode_provider.h"
 
 #include <iostream>
+#include <string>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -32,6 +33,17 @@ int main() {
   params.device_mode = vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
   params.width = 320;
   params.height = 180;
+
+  auto compatible = vr::compatible_hw_decode_provider_names(
+      vr::RenderBackendType::Metal,
+      vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice);
+  bool has_videotoolbox = false;
+  for (const char* name : compatible) {
+    has_videotoolbox = has_videotoolbox || std::string(name) == "VideoToolbox";
+  }
+  if (!has_videotoolbox) {
+    return fail("VideoToolbox provider is not registered for Metal hwdownload");
+  }
 
   auto result = vr::try_hw_decode_providers(codec, params);
   if (!result.success) {

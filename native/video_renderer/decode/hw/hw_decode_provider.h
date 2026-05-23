@@ -1,7 +1,9 @@
 #pragma once
+#include "video_renderer/render/backend_type.h"
 #include <cstdint>
 #include <mutex>
 #include <memory>
+#include <vector>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -20,12 +22,7 @@ enum class HwDecodeType {
     VideoToolbox,
 };
 
-enum class RenderBackendType {
-    Unknown = 0,
-    D3D11,
-    Metal,
-    Vulkan,
-};
+using RenderBackendType = RenderBackendKind;
 
 enum class DecodeDeviceMode {
     IndependentDevice,
@@ -97,5 +94,8 @@ HwDecodeInitResult try_hw_decode_providers(
     const HwDecodeInitParams& params);
 
 const char* hw_decode_type_name(HwDecodeType type);
+std::vector<const char*> compatible_hw_decode_provider_names(
+    RenderBackendKind backend,
+    DecodeDeviceMode device_mode);
 
 } // namespace vr

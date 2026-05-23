@@ -108,11 +108,11 @@ remain outside Swift. The adapter accepts CPU RGBA, planar YUV420, NV12, and P01
 deterministic smoke coverage for range and matrix-aware YUV conversion plus a 10-bit H.264
 VideoToolbox hwdownload UI smoke before a renderer-owned shader path takes over. The pixel buffer is
 created with Metal compatibility and IOSurface backing, and native diagnostics expose whether a
-`CVMetalTextureCache` can wrap it (`metalTextureCreationCount`, `metalTextureValid`). Playback frame
-callbacks now prefer `presentationUploadMode=metal-bgra-staging-upload`: native copies the shared
-frame into a shared `MTLBuffer`, then blits that staging buffer into the texture-backed
-`CVPixelBuffer`. The older locked-buffer direct copy remains a fallback and is reported through
-`pixelBufferDirectCopyCount`.
+`CVMetalTextureCache` can wrap it (`metalTextureCreationCount`, `metalTextureValid`). Explicit
+seek/step refresh and playback frame callbacks now prefer
+`presentationUploadMode=metal-bgra-staging-upload`: native copies the shared frame into a shared
+`MTLBuffer`, then blits that staging buffer into the texture-backed `CVPixelBuffer`. The older
+locked-buffer direct copy remains a fallback and is reported through `pixelBufferDirectCopyCount`.
 
 Manual audible smoke:
 

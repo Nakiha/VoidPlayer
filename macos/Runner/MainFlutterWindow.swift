@@ -271,7 +271,7 @@ private final class MacOSNativePlayerSession {
       )
       if ret == 0 {
         guard frameInfo.width > 0, frameInfo.height > 0 else {
-          throw MacOSNativePlayerError.invalidPayload
+          return nil
         }
         return MacOSNativeFrameInfo(
           width: Int(frameInfo.width),
@@ -719,8 +719,14 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
     do {
       nativePlayer.seek(targetPtsUs)
-      let decoded = try nativePlayer.copyCurrentFrame(waitTimeoutMs: 3_000)
-      publishDecodedFrame(decoded)
+      guard let texture else {
+        throw MacOSNativePlayerError.invalidPayload
+      }
+      let frameInfo = try texture.updateFromNativePlayer(
+        nativePlayer,
+        waitTimeoutMs: 3_000
+      )
+      publishFrameInfo(frameInfo)
       return nil
     } catch {
       return FlutterError(
@@ -761,25 +767,18 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     return nil
   }
 
-  private func publishDecodedFrame(_ decoded: MacOSDecodedFirstFrame) {
-    currentPtsUs = decoded.ptsUs
-    lastPresentedPtsUs = decoded.ptsUs
-    lastPresentedDtsUs = normalizedDtsUs(decoded)
-    texture?.update(decoded: decoded)
-  }
-
   private func publishFrameInfo(_ info: MacOSNativeFrameInfo) {
     currentPtsUs = info.ptsUs
     lastPresentedPtsUs = info.ptsUs
     lastPresentedDtsUs = normalizedDtsUs(info)
   }
 
-  private func normalizedDtsUs(_ decoded: MacOSDecodedFirstFrame) -> Int {
-    decoded.dtsUs == Int.min ? decoded.ptsUs : decoded.dtsUs
-  }
-
   private func normalizedDtsUs(_ info: MacOSNativeFrameInfo) -> Int {
     info.dtsUs == Int.min ? info.ptsUs : info.dtsUs
+  }
+
+  private func normalizedDtsUs(_ decoded: MacOSDecodedFirstFrame) -> Int {
+    decoded.dtsUs == Int.min ? decoded.ptsUs : decoded.dtsUs
   }
 
   private func startNativeFramePump() {

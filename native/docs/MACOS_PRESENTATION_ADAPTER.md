@@ -23,7 +23,8 @@ copy the current frame into the native Metal uploader, or into a locked pixel
 buffer when the direct-copy fallback is enabled, and receives frame timing
 metadata. The runner creates Metal-compatible, IOSurface-backed pixel buffers,
 but native owns the Metal device, command queue, `CVMetalTextureCache`
-validation, shared `MTLBuffer`, and blit. The same surface is used for
+validation, shared `MTLBuffer`, and blit. The same surface is used for explicit
+seek/step refresh and playback callbacks when
 `presentationUploadMode=metal-bgra-staging-upload`, where native copies into a
 shared `MTLBuffer` and Metal blits into the texture-backed `CVPixelBuffer`.
 
@@ -46,7 +47,8 @@ path and the future renderer-owned shader path:
 including matrix-aware BT.709 samples for the CPU presentation fallback.
 macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy`,
 `presentationUploadMode=metal-bgra-staging-upload`, `metalTextureValid=true`,
-`pixelBufferMetalUploadCount >= 1`, `hardwareDecodeProvider=VideoToolbox`,
+seek refreshes and playback advance `pixelBufferMetalUploadCount`,
+`hardwareDecodeProvider=VideoToolbox`,
 `hardwareDecodeActive=true`, `hardwareDecodeDownloadsToCpu=true`,
 `decodeMode=videotoolbox-download-to-cpu`, and `softwareFallbackActive=false`
 for the H.264 fixture. Unsupported codecs or initialization failures must keep

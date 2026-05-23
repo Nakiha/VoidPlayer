@@ -491,7 +491,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\nBUILD_DIR=\"${PROJECT_DIR}/../native/build-xcode-macos\"\ncmake -S \"${PROJECT_DIR}/../native\" -B \"${BUILD_DIR}\" -G \"Unix Makefiles\" \\\n  -DBUILD_ANALYSIS=OFF \\\n  -DBUILD_TESTS=OFF \\\n  -DBUILD_FFI=OFF \\\n  -DBUILD_PYTHON=OFF \\\n  -DCMAKE_BUILD_TYPE=\"${CONFIGURATION}\"\ncmake --build \"${BUILD_DIR}\" --target void_macos_native_player -- -j \"$(sysctl -n hw.ncpu)\"\n";
+			shellScript = "set -euo pipefail\nBUILD_DIR=\"${PROJECT_DIR}/../native/build-xcode-macos\"\ncmake -S \"${PROJECT_DIR}/../native\" -B \"${BUILD_DIR}\" -G \"Unix Makefiles\" \\\n  -DBUILD_ANALYSIS=OFF \\\n  -DBUILD_TESTS=OFF \\\n  -DBUILD_FFI=OFF \\\n  -DBUILD_PYTHON=OFF \\\n  -DCMAKE_OSX_DEPLOYMENT_TARGET=\"${MACOSX_DEPLOYMENT_TARGET}\" \\\n  -DCMAKE_BUILD_TYPE=\"${CONFIGURATION}\"\ncmake --build \"${BUILD_DIR}\" --target void_macos_native_player -- -j \"$(sysctl -n hw.ncpu)\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -630,7 +630,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -741,7 +741,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
@@ -791,7 +791,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;

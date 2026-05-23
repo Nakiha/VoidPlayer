@@ -25,7 +25,9 @@ outputs, FFI/Python dist directories, and Flutter runner outputs.
 macOS app builds copy the real FFmpeg dylibs and their major/unversioned symlink
 aliases from `third_party/ffmpeg/lib` into `.app/Contents/Frameworks`, then copy
 `README.txt`, `VOIDPLAYER_BUILD.md`, `voidplayer-ffmpeg-manifest.json`, and
-`LICENSES/` into `.app/Contents/Resources/ThirdParty/ffmpeg`.
+`LICENSES/` into `.app/Contents/Resources/ThirdParty/ffmpeg`. The current
+macOS FFmpeg package declares `LC_BUILD_VERSION minos 14.0`, so the macOS runner
+also declares macOS 14.0 as its minimum deployment target.
 
 The default player runtime copies `avcodec`, `avformat`, `avutil`, and
 `swresample`. `swscale` is only copied for benchmark targets that explicitly

@@ -3,6 +3,10 @@
 This directory contains the curated source/config subset of a Flutter macOS runner. It is the
 Phase 0 baseline for the macOS port plan in `../native/docs/MACOS_PORT_PLAN.md`.
 
+The current app minimum is macOS 14.0 because the vendored FFmpeg dylibs in
+`../third_party/ffmpeg/lib` are built with `LC_BUILD_VERSION minos 14.0`. The Xcode runner passes
+the same deployment target into the native CMake build used by the app bundle.
+
 ## Baseline Source
 
 - Generated from a clean temporary project with:

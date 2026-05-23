@@ -143,8 +143,8 @@ Goal: improve performance after software playback is correct.
 
 Goal: make the app distributable and honest about unsupported features.
 
-- [ ] Resolve the FFmpeg dylib deployment-target mismatch: current dylibs report macOS 14.0 while
-  the runner builds for macOS 10.15/11.0.
+- [x] Resolve the FFmpeg dylib deployment-target mismatch by declaring macOS 14.0 as the current
+  app minimum and passing the same deployment target into the Xcode-triggered native CMake build.
 - [ ] Add release build, signing, notarization, and third-party notice docs.
 - [x] Make the native analysis library build on macOS with the initialized submodules.
 - [x] Add an explicit unsupported gate for macOS analysis windows and overlays until the workflow is
@@ -201,8 +201,9 @@ python dev.py mac-ui-test --build \
   ui_tests/macos/native_quit_while_playing_smoke.csv
 ```
 
-Known build warnings remain the Metal toolchain Swift search path and the FFmpeg dylib
-deployment-target mismatch.
+Known build warning: the local Xcode/Flutter invocation may still report a missing transient Metal
+toolchain Swift search path under `/var/run/com.apple.security.cryptexd`; the FFmpeg dylib
+deployment target is now aligned to macOS 14.0.
 
 `CAPTURE_VIEWPORT` hash/luma/non-black metrics now use the shared native
 `bgra_capture_metrics` helper. CTest covers the helper through `bgra_capture_metrics_smoke`, and

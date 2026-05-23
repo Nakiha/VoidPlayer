@@ -157,6 +157,8 @@ Goal: make the app distributable and honest about unsupported features.
   `--macos-notarize --macos-notary-profile` or `VOIDPLAYER_MACOS_NOTARY_PROFILE` is provided.
   Real release credentials remain an operator-supplied step.
 - [x] Make the native analysis library build on macOS with the initialized submodules.
+  CI now has a macOS build-only job that configures `BUILD_ANALYSIS=ON` and builds `analysis_lib`
+  without enabling Windows-only analysis tests or UI tooling.
 - [x] Add an explicit unsupported gate for macOS analysis windows and overlays until the workflow is
   wired.
 - [ ] Decide macOS analysis UI/IPC support: native library, helper process, or a first-class
@@ -306,7 +308,9 @@ smoke that exercises `QUIT` after player creation on a Windows host before closi
 
 CI status: `.github/workflows/native.yml` now has a `macos-14` native job that checks out Git LFS
 FFmpeg artifacts and runs `python dev.py test --native-only`, covering the portable macOS CTest
-suite without introducing headed Flutter UI automation into CI yet. The job sets
+suite without introducing headed Flutter UI automation into CI yet. A second macOS job configures
+`BUILD_ANALYSIS=ON` and builds `analysis_lib`, keeping the shared analysis cache/parser/generator
+code compiling on macOS while external analysis windows remain gated. The native test job sets
 `VOIDPLAYER_DISABLE_VIDEOTOOLBOX=1` because GitHub macOS runners can report VideoToolbox
 availability but fail real H.264 hardware decode initialization; local UI/facade smoke remains the
 hardware decode validation point.

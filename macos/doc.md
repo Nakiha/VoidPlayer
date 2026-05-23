@@ -84,6 +84,10 @@ the `CVPixelBuffer`, locks its base address, and asks native code to copy the sh
 `TextureFrame` into that BGRA destination. The current adapter is reported in diagnostics as
 `presentationAdapter=cvpixelbuffer-bgra-copy`; decode, seek, loop, audio, and playback clock policy
 remain outside Swift.
+The pixel buffer is created with Metal compatibility and IOSurface backing, and diagnostics expose
+whether a `CVMetalTextureCache` can wrap it (`metalTextureCreationCount`, `metalTextureValid`).
+This is the M5 presentation surface handshake; actual playback still goes through the software
+BGRA-copy adapter until Metal replaces that adapter.
 
 Manual audible smoke:
 

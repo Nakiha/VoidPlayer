@@ -121,6 +121,9 @@ Goal: improve performance after software playback is correct.
 - [ ] Add a Metal/CVPixelBuffer backend with the same responsibilities as D3D11 output.
   The boundary now lives in `native/macos/presentation_adapter.*`; see
   [MACOS_PRESENTATION_ADAPTER.md](MACOS_PRESENTATION_ADAPTER.md).
+  The runner now creates Metal-compatible `CVPixelBuffer` surfaces and validates
+  `CVMetalTextureCache` wrapping through diagnostics, while presentation still uses the software
+  BGRA-copy adapter.
 - [ ] Port shader/color/layout behavior with deterministic pixel tests.
   Initial portable baselines now cover limited/full-range software BGRA conversion, padded
   linesizes, BGRA channel order, odd-dimension NV21 -> even-coded NV12 packing, and planar
@@ -224,7 +227,10 @@ planar YUV conversion, adapter identity, and unsupported P010 rejection. These a
 reference points for future Metal and CVPixelBuffer layout parity tests. UI automation can assert
 string-valued native diagnostics through `ASSERT_NATIVE_DIAGNOSTIC_STRING`, and macOS facade/stress
 smokes now lock `presentationAdapter=cvpixelbuffer-bgra-copy` as the visible software presentation
-fallback before Metal work starts.
+fallback before Metal work starts. The macOS runner also reports Metal surface readiness through
+`metalAvailable`, `metalTextureCacheAvailable`, `metalTextureValid`, and
+`metalTextureCreationCount`; facade/stress smokes assert that at least one Metal texture wrapper can
+be created for the active pixel buffer.
 
 Frame callback lifecycle status: macOS now has targeted UI smokes that churn play/pause/play,
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks

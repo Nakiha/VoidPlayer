@@ -1,6 +1,7 @@
 import Cocoa
 import CoreVideo
 import FlutterMacOS
+import Metal
 
 private struct MacOSDecodedFirstFrame {
   let width: Int
@@ -409,6 +410,11 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "pixelBufferRebuildCount": textureStats?.rebuildCount ?? 0,
         "pixelBufferReuseCount": textureStats?.reuseCount ?? 0,
         "pixelBufferDirectCopyCount": textureStats?.directCopyCount ?? 0,
+        "metalAvailable": textureStats?.metalAvailable ?? false,
+        "metalTextureCacheAvailable": textureStats?.metalTextureCacheAvailable ?? false,
+        "metalTextureValid": textureStats?.metalTextureValid ?? false,
+        "metalTextureCreationCount": textureStats?.metalTextureCreationCount ?? 0,
+        "metalTextureFailureCount": textureStats?.metalTextureFailureCount ?? 0,
       ])
     case "captureViewport":
       result(captureViewport())
@@ -890,20 +896,27 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private(set) var width: Int
   private(set) var height: Int
   private let syntheticPattern: Bool
+  private let metalDevice: MTLDevice?
+  private var metalTextureCache: CVMetalTextureCache?
   private var decodedBGRA: Data?
   private let hashPrefix: String
   private var pixelBuffer: CVPixelBuffer?
   private var pixelBufferRebuildCount = 0
   private var pixelBufferReuseCount = 0
   private var pixelBufferDirectCopyCount = 0
+  private var metalTextureValid = false
+  private var metalTextureCreationCount = 0
+  private var metalTextureFailureCount = 0
 
   init(width: Int, height: Int) {
     self.width = width
     self.height = height
     self.syntheticPattern = true
+    self.metalDevice = MTLCreateSystemDefaultDevice()
     self.decodedBGRA = nil
     self.hashPrefix = "macos-synthetic"
     super.init()
+    createMetalTextureCache()
     rebuildPixelBuffer()
   }
 
@@ -911,9 +924,11 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     self.width = decoded.width
     self.height = decoded.height
     self.syntheticPattern = false
+    self.metalDevice = MTLCreateSystemDefaultDevice()
     self.decodedBGRA = decoded.bgra
     self.hashPrefix = "macos-first-frame"
     super.init()
+    createMetalTextureCache()
     rebuildPixelBuffer()
   }
 
@@ -941,6 +956,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       rebuildPixelBufferLocked()
     } else if let pixelBuffer {
       copyBGRA(decoded.bgra, to: pixelBuffer)
+      validateMetalTextureLocked(buffer: pixelBuffer)
       pixelBufferReuseCount += 1
     }
   }
@@ -963,21 +979,28 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     }
 
     CVPixelBufferLockBaseAddress(pixelBuffer, [])
-    defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
-
     guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
+      CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
       throw MacOSNativePlayerError.invalidPayload
     }
     let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
     let dstSize = bytesPerRow * height
-    let info = try player.copyCurrentFrameIntoBGRA(
-      baseAddress.assumingMemoryBound(to: UInt8.self),
-      dstSize: dstSize,
-      width: width,
-      height: height,
-      strideBytes: bytesPerRow,
-      waitTimeoutMs: waitTimeoutMs
-    )
+    let info: MacOSNativeFrameInfo
+    do {
+      info = try player.copyCurrentFrameIntoBGRA(
+        baseAddress.assumingMemoryBound(to: UInt8.self),
+        dstSize: dstSize,
+        width: width,
+        height: height,
+        strideBytes: bytesPerRow,
+        waitTimeoutMs: waitTimeoutMs
+      )
+    } catch {
+      CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+      throw error
+    }
+    CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+    validateMetalTextureLocked(buffer: pixelBuffer)
     pixelBufferReuseCount += 1
     pixelBufferDirectCopyCount += 1
     return info
@@ -1020,14 +1043,28 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     return measure(buffer: pixelBuffer)
   }
 
-  func diagnostics() -> (rebuildCount: Int, reuseCount: Int, directCopyCount: Int) {
+  func diagnostics() -> (
+    rebuildCount: Int,
+    reuseCount: Int,
+    directCopyCount: Int,
+    metalAvailable: Bool,
+    metalTextureCacheAvailable: Bool,
+    metalTextureValid: Bool,
+    metalTextureCreationCount: Int,
+    metalTextureFailureCount: Int
+  ) {
     lock.lock()
     defer { lock.unlock() }
 
     return (
       rebuildCount: pixelBufferRebuildCount,
       reuseCount: pixelBufferReuseCount,
-      directCopyCount: pixelBufferDirectCopyCount
+      directCopyCount: pixelBufferDirectCopyCount,
+      metalAvailable: metalDevice != nil,
+      metalTextureCacheAvailable: metalTextureCache != nil,
+      metalTextureValid: metalTextureValid,
+      metalTextureCreationCount: metalTextureCreationCount,
+      metalTextureFailureCount: metalTextureFailureCount
     )
   }
 
@@ -1042,6 +1079,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     let attributes = [
       kCVPixelBufferCGImageCompatibilityKey as String: true,
       kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
+      kCVPixelBufferMetalCompatibilityKey as String: true,
       kCVPixelBufferIOSurfacePropertiesKey as String: [:],
     ] as CFDictionary
 
@@ -1066,6 +1104,51 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       fill(buffer: nextBuffer)
     }
     pixelBuffer = nextBuffer
+    validateMetalTextureLocked(buffer: nextBuffer)
+  }
+
+  private func createMetalTextureCache() {
+    guard let metalDevice else { return }
+    var cache: CVMetalTextureCache?
+    let status = CVMetalTextureCacheCreate(
+      kCFAllocatorDefault,
+      nil,
+      metalDevice,
+      nil,
+      &cache
+    )
+    if status == kCVReturnSuccess {
+      metalTextureCache = cache
+    }
+  }
+
+  private func validateMetalTextureLocked(buffer: CVPixelBuffer) {
+    guard let metalTextureCache else {
+      metalTextureValid = false
+      return
+    }
+
+    var metalTexture: CVMetalTexture?
+    let status = CVMetalTextureCacheCreateTextureFromImage(
+      kCFAllocatorDefault,
+      metalTextureCache,
+      buffer,
+      nil,
+      .bgra8Unorm,
+      width,
+      height,
+      0,
+      &metalTexture
+    )
+    if status == kCVReturnSuccess,
+       let metalTexture,
+       CVMetalTextureGetTexture(metalTexture) != nil {
+      metalTextureCreationCount += 1
+      metalTextureValid = true
+    } else {
+      metalTextureFailureCount += 1
+      metalTextureValid = false
+    }
   }
 
   private func measure(buffer: CVPixelBuffer) -> (
@@ -1145,6 +1228,10 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     CVPixelBufferLockBaseAddress(buffer, [])
     defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
 
+    copyBGRALocked(data, to: buffer)
+  }
+
+  private func copyBGRALocked(_ data: Data, to buffer: CVPixelBuffer) {
     guard let baseAddress = CVPixelBufferGetBaseAddress(buffer) else { return }
     let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
     let rowBytes = width * 4

@@ -33,3 +33,34 @@ bool MetalPresentationBackend::available() const {
 }
 
 }  // namespace vp_macos
+
+struct VPMacOSMetalPresentationBackend {
+  vp_macos::MetalPresentationBackend impl;
+};
+
+VPMacOSMetalPresentationBackend* VPMacOSMetalPresentationBackendCreate(int32_t width,
+                                                                       int32_t height) {
+  auto* backend = new VPMacOSMetalPresentationBackend();
+  vr::PresentationBackendConfig config;
+  config.width = width;
+  config.height = height;
+  config.headless = true;
+  if (!backend->impl.initialize(config)) {
+    delete backend;
+    return nullptr;
+  }
+  return backend;
+}
+
+void VPMacOSMetalPresentationBackendDestroy(VPMacOSMetalPresentationBackend* backend) {
+  delete backend;
+}
+
+int VPMacOSMetalPresentationBackendIsAvailable(VPMacOSMetalPresentationBackend* backend) {
+  return backend && backend->impl.available() ? 1 : 0;
+}
+
+VPMacOSMetalUploader* VPMacOSMetalPresentationBackendUploader(
+    VPMacOSMetalPresentationBackend* backend) {
+  return backend ? backend->impl.uploader() : nullptr;
+}

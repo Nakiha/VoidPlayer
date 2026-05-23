@@ -37,5 +37,17 @@ int main() {
   if (backend.available() || backend.uploader()) {
     return fail("Metal presentation backend did not release uploader");
   }
+
+  VPMacOSMetalPresentationBackend* c_backend =
+      VPMacOSMetalPresentationBackendCreate(640, 360);
+  if (!c_backend) {
+    return fail("Metal presentation backend C ABI did not initialize");
+  }
+  if (VPMacOSMetalPresentationBackendIsAvailable(c_backend) == 0 ||
+      !VPMacOSMetalPresentationBackendUploader(c_backend)) {
+    VPMacOSMetalPresentationBackendDestroy(c_backend);
+    return fail("Metal presentation backend C ABI uploader is unavailable");
+  }
+  VPMacOSMetalPresentationBackendDestroy(c_backend);
   return 0;
 }

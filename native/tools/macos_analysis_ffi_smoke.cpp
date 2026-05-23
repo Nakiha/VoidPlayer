@@ -1,4 +1,5 @@
 #include "analysis/analysis_ffi_abi.h"
+#include "tools/test_video_assets.h"
 
 #include <cassert>
 #include <chrono>
@@ -32,7 +33,7 @@ int main() {
     assert(naki_analysis_sizeof_overlay_state() == sizeof(NakiOverlayState));
 
     const std::filesystem::path video =
-        std::filesystem::path(VIDEO_TEST_DIR) / "h264_9s_1920x1080.mp4";
+        vp_tools::h264_smoke_video_path(VIDEO_TEST_DIR);
     const std::filesystem::path cache_root = make_temp_cache_root();
     std::filesystem::create_directories(cache_root);
 

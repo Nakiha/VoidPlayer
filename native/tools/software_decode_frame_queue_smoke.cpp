@@ -1,5 +1,6 @@
 #include "video_renderer/decode/frame_timestamp_rescaler.h"
 #include "video_renderer/decode/software_frame_publisher.h"
+#include "tools/test_video_assets.h"
 
 #include <cstdint>
 #include <iostream>
@@ -20,8 +21,7 @@ extern "C" {
 namespace {
 
 std::string default_media_path() {
-    const std::string root = VIDEO_TEST_DIR;
-    return root.empty() ? std::string{} : root + "/h264_9s_1920x1080.mp4";
+    return vp_tools::h264_smoke_video_path(VIDEO_TEST_DIR);
 }
 
 std::string ffmpeg_error(int err) {

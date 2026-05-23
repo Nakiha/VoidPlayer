@@ -35,11 +35,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
           submodules: recursive
           fetch-depth: 0
 
-      - name: Verify Windows FFmpeg LFS artifacts
+      - name: Restore Windows FFmpeg artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $runId = gh run list -R Nakiha/VoidPlayer-FFmpeg-Build --workflow "Build FFmpeg" --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId'
+          if (-not $runId) { throw "No successful VoidPlayer-FFmpeg-Build run found" }
+          Remove-Item -Recurse -Force build/ci-ffmpeg -ErrorAction SilentlyContinue
+          gh run download $runId -R Nakiha/VoidPlayer-FFmpeg-Build --name voidplayer-ffmpeg-windows-x64-n8.1 --dir build/ci-ffmpeg
+          $zip = Get-ChildItem build/ci-ffmpeg -Recurse -Filter voidplayer-ffmpeg-windows-x64-n8.1.zip | Select-Object -First 1
+          if (-not $zip) { throw "Windows FFmpeg artifact zip not found" }
+          Expand-Archive -Force $zip.FullName build/ci-ffmpeg/unpacked
+          Remove-Item -Recurse -Force windows/libs/ffmpeg -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force windows/libs | Out-Null
+          Move-Item build/ci-ffmpeg/unpacked/voidplayer-ffmpeg-windows-x64-n8.1 windows/libs/ffmpeg
+
+      - name: Verify Windows FFmpeg artifacts
         shell: pwsh
         run: |
           $dll = "windows/libs/ffmpeg/bin/avcodec-62.dll"
@@ -86,15 +102,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
           submodules: recursive
           fetch-depth: 0
+
+      - name: Restore macOS FFmpeg artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id="$(gh run list -R Nakiha/VoidPlayer-FFmpeg-Build --workflow "Build FFmpeg" --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')"
+          test -n "$run_id"
+          rm -rf build/ci-ffmpeg
+          gh run download "$run_id" -R Nakiha/VoidPlayer-FFmpeg-Build --name voidplayer-ffmpeg-macos-arm64-n8.1 --dir build/ci-ffmpeg
+          zip_path="$(find build/ci-ffmpeg -name 'voidplayer-ffmpeg-macos-arm64-n8.1.zip' -print -quit)"
+          test -n "$zip_path"
+          unzip -q "$zip_path" -d build/ci-ffmpeg/unpacked
+          rm -rf third_party/ffmpeg
+          mkdir -p third_party
+          mv build/ci-ffmpeg/unpacked/voidplayer-ffmpeg-macos-arm64-n8.1 third_party/ffmpeg
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Verify macOS FFmpeg LFS artifacts
+      - name: Verify macOS FFmpeg artifacts
         shell: bash
         run: |
           dylib="third_party/ffmpeg/lib/libavcodec.62.28.100.dylib"
@@ -116,15 +148,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
           submodules: recursive
           fetch-depth: 0
+
+      - name: Restore macOS FFmpeg artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id="$(gh run list -R Nakiha/VoidPlayer-FFmpeg-Build --workflow "Build FFmpeg" --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')"
+          test -n "$run_id"
+          rm -rf build/ci-ffmpeg
+          gh run download "$run_id" -R Nakiha/VoidPlayer-FFmpeg-Build --name voidplayer-ffmpeg-macos-arm64-n8.1 --dir build/ci-ffmpeg
+          zip_path="$(find build/ci-ffmpeg -name 'voidplayer-ffmpeg-macos-arm64-n8.1.zip' -print -quit)"
+          test -n "$zip_path"
+          unzip -q "$zip_path" -d build/ci-ffmpeg/unpacked
+          rm -rf third_party/ffmpeg
+          mkdir -p third_party
+          mv build/ci-ffmpeg/unpacked/voidplayer-ffmpeg-macos-arm64-n8.1 third_party/ffmpeg
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Verify macOS FFmpeg LFS artifacts
+      - name: Verify macOS FFmpeg artifacts
         shell: bash
         run: |
           dylib="third_party/ffmpeg/lib/libavcodec.62.28.100.dylib"
@@ -160,9 +208,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
           submodules: recursive
           fetch-depth: 0
+
+      - name: Restore macOS FFmpeg artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id="$(gh run list -R Nakiha/VoidPlayer-FFmpeg-Build --workflow "Build FFmpeg" --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')"
+          test -n "$run_id"
+          rm -rf build/ci-ffmpeg
+          gh run download "$run_id" -R Nakiha/VoidPlayer-FFmpeg-Build --name voidplayer-ffmpeg-macos-arm64-n8.1 --dir build/ci-ffmpeg
+          zip_path="$(find build/ci-ffmpeg -name 'voidplayer-ffmpeg-macos-arm64-n8.1.zip' -print -quit)"
+          test -n "$zip_path"
+          unzip -q "$zip_path" -d build/ci-ffmpeg/unpacked
+          rm -rf third_party/ffmpeg
+          mkdir -p third_party
+          mv build/ci-ffmpeg/unpacked/voidplayer-ffmpeg-macos-arm64-n8.1 third_party/ffmpeg
 
       - uses: actions/setup-python@v5
         with:
@@ -174,7 +238,7 @@ jobs:
           flutter-version: "3.41.9"
           cache: true
 
-      - name: Verify macOS FFmpeg LFS artifacts
+      - name: Verify macOS FFmpeg artifacts
         shell: bash
         run: |
           dylib="third_party/ffmpeg/lib/libavcodec.62.28.100.dylib"
@@ -234,11 +298,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
           submodules: recursive
           fetch-depth: 0
 
-      - name: Verify Windows FFmpeg LFS artifacts
+      - name: Restore Windows FFmpeg artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $runId = gh run list -R Nakiha/VoidPlayer-FFmpeg-Build --workflow "Build FFmpeg" --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId'
+          if (-not $runId) { throw "No successful VoidPlayer-FFmpeg-Build run found" }
+          Remove-Item -Recurse -Force build/ci-ffmpeg -ErrorAction SilentlyContinue
+          gh run download $runId -R Nakiha/VoidPlayer-FFmpeg-Build --name voidplayer-ffmpeg-windows-x64-n8.1 --dir build/ci-ffmpeg
+          $zip = Get-ChildItem build/ci-ffmpeg -Recurse -Filter voidplayer-ffmpeg-windows-x64-n8.1.zip | Select-Object -First 1
+          if (-not $zip) { throw "Windows FFmpeg artifact zip not found" }
+          Expand-Archive -Force $zip.FullName build/ci-ffmpeg/unpacked
+          Remove-Item -Recurse -Force windows/libs/ffmpeg -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force windows/libs | Out-Null
+          Move-Item build/ci-ffmpeg/unpacked/voidplayer-ffmpeg-windows-x64-n8.1 windows/libs/ffmpeg
+
+      - name: Verify Windows FFmpeg artifacts
         shell: pwsh
         run: |
           $dll = "windows/libs/ffmpeg/bin/avcodec-62.dll"

@@ -3,6 +3,7 @@
 #include "media/seek_controller.h"
 #include "video_renderer/buffer/track_buffer.h"
 #include "video_renderer/decode/decode_thread.h"
+#include "tools/test_video_assets.h"
 
 #include <chrono>
 #include <iostream>
@@ -16,8 +17,7 @@
 namespace {
 
 std::string default_media_path() {
-    const std::string root = VIDEO_TEST_DIR;
-    return root.empty() ? std::string{} : root + "/h264_9s_1920x1080.mp4";
+    return vp_tools::h264_smoke_video_path(VIDEO_TEST_DIR);
 }
 
 const char* storage_kind_name(vr::FrameStorageKind kind) {

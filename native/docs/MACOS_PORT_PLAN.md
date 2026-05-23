@@ -334,9 +334,11 @@ macOS portable CMake/CTest suite instead of preparing the Windows analyzer. The 
 builder has been folded into Python under `dev.py`; run the native-only suite and a Windows UI
 smoke that exercises `QUIT` after player creation on a Windows host before closing M4.
 
-CI status: `.github/workflows/native.yml` now has a `macos-14` native job that checks out Git LFS
-FFmpeg artifacts and runs `python dev.py test --native-only`, covering the portable macOS CTest
-suite without introducing headed Flutter UI automation into CI yet. A second macOS job configures
+CI status: `.github/workflows/native.yml` now has a `macos-14` native job that checks out without
+Git LFS smudge, restores FFmpeg from the latest successful `VoidPlayer-FFmpeg-Build` artifact, and
+runs `python dev.py test --native-only`, covering the portable macOS CTest suite without introducing
+headed Flutter UI automation into CI yet. A tiny non-LFS H.264 fixture keeps native smokes runnable
+when the full video fixtures are still LFS pointer files in CI. A second macOS job configures
 `BUILD_ANALYSIS=ON`, builds `macos_analysis_ffi_smoke`, and runs VAC2 generation/readback through
 the same `naki_analysis_*` ABI that Dart uses. A third macOS job runs `flutter build macos --debug`,
 covering Swift runner, Xcode project, the analysis-enabled native static library, and FFmpeg dylib

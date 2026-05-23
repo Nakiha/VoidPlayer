@@ -53,12 +53,14 @@ path and the future renderer-owned shader path:
 - keep the software adapter and Metal-capable surface visible in diagnostics
 
 `macos_presentation_adapter_smoke`, `macos_metal_uploader_smoke`,
-`software_bgra_converter_smoke`, and `software_frame_packer_smoke` cover these
+`layout_geometry_smoke`, `software_bgra_converter_smoke`, and
+`software_frame_packer_smoke` cover these
 baselines in portable macOS CTest, including matrix-aware BT.709/BT.2020 samples,
 unknown-HD-to-BT.709 fallback, odd-dimension/even-coded NV12 metadata,
 planar limited/full range, unsupported GPU texture rejection, invalid P010
-rejection, destination mismatch rejection, and native Metal `CVPixelBuffer`
-validation.
+rejection, destination mismatch rejection, native Metal `CVPixelBuffer`
+validation, shared layout shader constants, pan offset normalization, and
+resize offset preservation.
 macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy`,
 `presentationAdapterKind=software-fallback`,
 `rendererOwnedPresentationActive=false`,

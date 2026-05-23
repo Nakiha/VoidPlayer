@@ -288,7 +288,10 @@ for supported storage kinds, distinct failure statuses, destination size mismatc
 GPU texture rejection, invalid P010 storage rejection, planar limited/full range, and
 odd-dimension/even-coded NV12 metadata. `macos_metal_uploader_smoke` covers native Metal
 `CVPixelBuffer` checked validation for matching BGRA surfaces, mismatched dimensions, non-BGRA
-rejection, and stable failure messages. `videotoolbox_provider_smoke`
+rejection, and stable failure messages. `layout_geometry_smoke` covers shared native layout math for
+side-by-side uniform video-pixel scaling, split-screen zoom/pan UV normalization, resize pan-offset
+preservation, and invalid aspect fallback before that contract is wired to the macOS renderer-owned
+Metal presentation path. `videotoolbox_provider_smoke`
 now proves that the macOS FFmpeg build can initialize the shared VideoToolbox provider for H.264 in
 download-to-CPU mode. UI automation can assert string-valued native diagnostics through
 `ASSERT_NATIVE_DIAGNOSTIC_STRING`, and macOS facade/stress smokes now lock

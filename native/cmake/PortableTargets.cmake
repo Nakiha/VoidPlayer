@@ -163,6 +163,15 @@ if(APPLE)
     )
     add_test(NAME decoded_frame_sink_smoke COMMAND decoded_frame_sink_smoke)
 
+    add_executable(layout_geometry_smoke
+        "${VOID_NATIVE_DIR}/tools/layout_geometry_smoke.cpp"
+    )
+    void_apply_native_compile_options(layout_geometry_smoke)
+    target_link_libraries(layout_geometry_smoke PRIVATE
+        void_player_portable_core
+    )
+    add_test(NAME layout_geometry_smoke COMMAND layout_geometry_smoke)
+
     add_executable(software_frame_queue_smoke
         "${VOID_NATIVE_DIR}/tools/software_frame_queue_smoke.cpp"
     )

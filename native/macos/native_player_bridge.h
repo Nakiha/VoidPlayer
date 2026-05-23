@@ -264,6 +264,8 @@ VPMacOSMetalUploader* VPMacOSMetalUploaderCreate(void);
 void VPMacOSMetalUploaderDestroy(VPMacOSMetalUploader* uploader);
 int VPMacOSMetalUploaderIsAvailable(VPMacOSMetalUploader* uploader);
 int64_t VPMacOSMetalUploaderDirectYUVUploadCount(VPMacOSMetalUploader* uploader);
+int64_t VPMacOSMetalUploaderPresentPackageUploadCount(VPMacOSMetalUploader* uploader);
+int32_t VPMacOSMetalUploaderLastPresentPackageStorage(VPMacOSMetalUploader* uploader);
 int VPMacOSMetalUploaderValidatePixelBuffer(VPMacOSMetalUploader* uploader,
                                             void* pixel_buffer,
                                             int32_t width,
@@ -315,6 +317,10 @@ int VPMacOSMetalPresentationBackendIsAvailable(VPMacOSMetalPresentationBackend* 
 VPMacOSMetalUploader* VPMacOSMetalPresentationBackendUploader(
     VPMacOSMetalPresentationBackend* backend);
 int64_t VPMacOSMetalPresentationBackendDirectYUVUploadCount(
+    VPMacOSMetalPresentationBackend* backend);
+int64_t VPMacOSMetalPresentationBackendPresentPackageUploadCount(
+    VPMacOSMetalPresentationBackend* backend);
+int32_t VPMacOSMetalPresentationBackendLastPresentPackageStorage(
     VPMacOSMetalPresentationBackend* backend);
 int VPMacOSMetalPresentationBackendValidatePixelBufferChecked(
     VPMacOSMetalPresentationBackend* backend,

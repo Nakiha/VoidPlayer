@@ -394,6 +394,8 @@ int main() {
   }
 
   VPMacOSNativeFrameInfo package_upload_info = {};
+  const int64_t package_upload_count_before =
+      VPMacOSMetalUploaderPresentPackageUploadCount(uploader);
   if (VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
           uploader,
           present_package.data(),
@@ -424,10 +426,21 @@ int main() {
     VPMacOSMetalUploaderDestroy(uploader);
     return fail("native Metal package upload did not render the present package");
   }
+  if (VPMacOSMetalUploaderPresentPackageUploadCount(uploader) <=
+          package_upload_count_before ||
+      VPMacOSMetalUploaderLastPresentPackageStorage(uploader) != package_info.storage) {
+    CFRelease(layout_buffer);
+    VPMacOSNativePlayerDestroy(player);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    return fail("native Metal package upload diagnostics did not update");
+  }
 
   VPMacOSMetalPresentationBackend* backend =
       VPMacOSMetalPresentationBackendCreate(width, height);
   if (!backend ||
+      VPMacOSMetalPresentationBackendPresentPackageUploadCount(backend) != 0 ||
       VPMacOSMetalPresentationBackendCopyPresentFramePackageWithLayout(
           backend,
           present_package.data(),
@@ -449,6 +462,17 @@ int main() {
     VPMacOSMetalUploaderDestroy(uploader);
     std::fprintf(stderr, "native Metal backend package upload failed: %s\n", error);
     return 1;
+  }
+  if (VPMacOSMetalPresentationBackendPresentPackageUploadCount(backend) != 1 ||
+      VPMacOSMetalPresentationBackendLastPresentPackageStorage(backend) !=
+          package_info.storage) {
+    VPMacOSMetalPresentationBackendDestroy(backend);
+    CFRelease(layout_buffer);
+    VPMacOSNativePlayerDestroy(player);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    return fail("native Metal backend package diagnostics did not update");
   }
   VPMacOSMetalPresentationBackendDestroy(backend);
 

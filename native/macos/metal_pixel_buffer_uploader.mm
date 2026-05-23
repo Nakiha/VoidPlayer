@@ -799,10 +799,14 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   id<MTLComputePipelineState> _layoutPipeline;
   CVMetalTextureCacheRef _textureCache;
   std::atomic<int64_t> _directYuvUploadCount;
+  std::atomic<int64_t> _presentPackageUploadCount;
+  std::atomic<int32_t> _lastPresentPackageStorage;
 }
 
 - (BOOL)isAvailable;
 - (int64_t)directYuvUploadCount;
+- (int64_t)presentPackageUploadCount;
+- (int32_t)lastPresentPackageStorage;
 - (int)validatePixelBufferStatus:(CVPixelBufferRef)pixelBuffer
                             width:(int32_t)width
                            height:(int32_t)height;
@@ -851,6 +855,10 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   self = [super init];
   if (self) {
     _directYuvUploadCount.store(0, std::memory_order_relaxed);
+    _presentPackageUploadCount.store(0, std::memory_order_relaxed);
+    _lastPresentPackageStorage.store(
+        VPMacOSNativePresentPackageStorageUnavailable,
+        std::memory_order_relaxed);
     _device = MTLCreateSystemDefaultDevice();
     if (_device) {
       _commandQueue = [_device newCommandQueue];
@@ -891,6 +899,14 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
 
 - (int64_t)directYuvUploadCount {
   return _directYuvUploadCount.load(std::memory_order_relaxed);
+}
+
+- (int64_t)presentPackageUploadCount {
+  return _presentPackageUploadCount.load(std::memory_order_relaxed);
+}
+
+- (int32_t)lastPresentPackageStorage {
+  return _lastPresentPackageStorage.load(std::memory_order_relaxed);
 }
 
 - (int)validatePixelBufferStatus:(CVPixelBufferRef)pixelBuffer
@@ -1169,6 +1185,8 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
         error, errorSize, "native Metal layout compute did not complete");
   }
 
+  _presentPackageUploadCount.fetch_add(1, std::memory_order_relaxed);
+  _lastPresentPackageStorage.store(package->storage, std::memory_order_relaxed);
   write_error(error, errorSize, "");
   return 0;
 }
@@ -1268,6 +1286,20 @@ int64_t VPMacOSMetalUploaderDirectYUVUploadCount(VPMacOSMetalUploader* uploader)
     return 0;
   }
   return [uploader->impl directYuvUploadCount];
+}
+
+int64_t VPMacOSMetalUploaderPresentPackageUploadCount(VPMacOSMetalUploader* uploader) {
+  if (!uploader || !uploader->impl) {
+    return 0;
+  }
+  return [uploader->impl presentPackageUploadCount];
+}
+
+int32_t VPMacOSMetalUploaderLastPresentPackageStorage(VPMacOSMetalUploader* uploader) {
+  if (!uploader || !uploader->impl) {
+    return VPMacOSNativePresentPackageStorageUnavailable;
+  }
+  return [uploader->impl lastPresentPackageStorage];
 }
 
 int VPMacOSMetalUploaderValidatePixelBuffer(VPMacOSMetalUploader* uploader,

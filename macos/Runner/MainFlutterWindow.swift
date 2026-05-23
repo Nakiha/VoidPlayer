@@ -643,6 +643,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "pixelBufferMetalUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
         "pixelBufferMetalUploadEnabled": textureStats?.metalUploadEnabled ?? false,
         "presentationUploadMode": textureStats?.presentationUploadMode ?? "unavailable",
+        "presentationPackageUploadCount": textureStats?.presentPackageUploadCount ?? 0,
+        "presentationPackageStorage": textureStats?.presentPackageStorage ?? "unavailable",
         "metalAvailable": textureStats?.metalAvailable ?? false,
         "metalTextureCacheAvailable": textureStats?.metalTextureCacheAvailable ?? false,
         "metalTextureValid": textureStats?.metalTextureValid ?? false,
@@ -1491,6 +1493,8 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     metalUploadFailureCount: Int,
     metalUploadEnabled: Bool,
     presentationUploadMode: String,
+    presentPackageUploadCount: Int,
+    presentPackageStorage: String,
     metalAvailable: Bool,
     metalTextureCacheAvailable: Bool,
     metalTextureValid: Bool,
@@ -1510,6 +1514,8 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       metalUploadFailureCount: pixelBufferMetalUploadFailureCount,
       metalUploadEnabled: metalUploadEnabled,
       presentationUploadMode: presentationUploadModeLocked(),
+      presentPackageUploadCount: nativeMetalPresentPackageUploadCountLocked(),
+      presentPackageStorage: nativeMetalLastPresentPackageStorageLocked(),
       metalAvailable: nativeMetalUploaderAvailableLocked(),
       metalTextureCacheAvailable: nativeMetalUploaderAvailableLocked(),
       metalTextureValid: metalTextureValid,
@@ -1584,6 +1590,28 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     return Int(
       VPMacOSMetalPresentationBackendDirectYUVUploadCount(nativeMetalPresentationBackend)
     )
+  }
+
+  private func nativeMetalPresentPackageUploadCountLocked() -> Int {
+    guard let nativeMetalPresentationBackend else { return 0 }
+    return Int(
+      VPMacOSMetalPresentationBackendPresentPackageUploadCount(nativeMetalPresentationBackend)
+    )
+  }
+
+  private func nativeMetalLastPresentPackageStorageLocked() -> String {
+    guard let nativeMetalPresentationBackend else { return "unavailable" }
+    let storage = VPMacOSMetalPresentationBackendLastPresentPackageStorage(
+      nativeMetalPresentationBackend
+    )
+    switch storage {
+    case Int32(VPMacOSNativePresentPackageStorageYUV):
+      return "yuv"
+    case Int32(VPMacOSNativePresentPackageStorageBGRA):
+      return "bgra"
+    default:
+      return "unavailable"
+    }
   }
 
   private func presentationUploadModeLocked() -> String {

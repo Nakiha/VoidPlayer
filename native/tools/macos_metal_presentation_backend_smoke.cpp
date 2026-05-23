@@ -52,6 +52,12 @@ int main() {
     VPMacOSMetalPresentationBackendDestroy(c_backend);
     return fail("Metal presentation backend initial YUV upload count is not zero");
   }
+  if (VPMacOSMetalPresentationBackendPresentPackageUploadCount(c_backend) != 0 ||
+      VPMacOSMetalPresentationBackendLastPresentPackageStorage(c_backend) !=
+          VPMacOSNativePresentPackageStorageUnavailable) {
+    VPMacOSMetalPresentationBackendDestroy(c_backend);
+    return fail("Metal presentation backend initial package diagnostics are not empty");
+  }
   VPMacOSMetalPresentationBackendDestroy(c_backend);
   return 0;
 }

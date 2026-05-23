@@ -75,6 +75,18 @@ int64_t VPMacOSMetalPresentationBackendDirectYUVUploadCount(
       VPMacOSMetalPresentationBackendUploader(backend));
 }
 
+int64_t VPMacOSMetalPresentationBackendPresentPackageUploadCount(
+    VPMacOSMetalPresentationBackend* backend) {
+  return VPMacOSMetalUploaderPresentPackageUploadCount(
+      VPMacOSMetalPresentationBackendUploader(backend));
+}
+
+int32_t VPMacOSMetalPresentationBackendLastPresentPackageStorage(
+    VPMacOSMetalPresentationBackend* backend) {
+  return VPMacOSMetalUploaderLastPresentPackageStorage(
+      VPMacOSMetalPresentationBackendUploader(backend));
+}
+
 int VPMacOSMetalPresentationBackendValidatePixelBufferChecked(
     VPMacOSMetalPresentationBackend* backend,
     void* pixel_buffer,

@@ -38,6 +38,25 @@ int metal_upload_failure(char* error, size_t error_size, const char* message) {
   return -2;
 }
 
+const char* metal_uploader_status_message(int status) {
+  switch (status) {
+  case VPMacOSMetalUploaderStatusOk:
+    return "";
+  case VPMacOSMetalUploaderStatusUnavailable:
+    return "native Metal uploader is not available";
+  case VPMacOSMetalUploaderStatusInvalidArguments:
+    return "invalid native Metal pixel buffer validation arguments";
+  case VPMacOSMetalUploaderStatusSizeMismatch:
+    return "native Metal pixel buffer dimensions do not match the presentation surface";
+  case VPMacOSMetalUploaderStatusUnsupportedPixelFormat:
+    return "native Metal pixel buffer must be 32-bit BGRA";
+  case VPMacOSMetalUploaderStatusTextureWrapFailed:
+    return "failed to wrap CVPixelBuffer as a Metal BGRA texture";
+  default:
+    return "unknown native Metal pixel buffer validation failure";
+  }
+}
+
 }  // namespace
 
 @interface VPMacOSMetalUploaderImpl : NSObject {
@@ -49,6 +68,9 @@ int metal_upload_failure(char* error, size_t error_size, const char* message) {
 }
 
 - (BOOL)isAvailable;
+- (int)validatePixelBufferStatus:(CVPixelBufferRef)pixelBuffer
+                            width:(int32_t)width
+                           height:(int32_t)height;
 - (BOOL)validatePixelBuffer:(CVPixelBufferRef)pixelBuffer
                       width:(int32_t)width
                      height:(int32_t)height;
@@ -93,16 +115,20 @@ int metal_upload_failure(char* error, size_t error_size, const char* message) {
   return _device != nil && _commandQueue != nil && _textureCache != nullptr;
 }
 
-- (BOOL)validatePixelBuffer:(CVPixelBufferRef)pixelBuffer
-                      width:(int32_t)width
-                     height:(int32_t)height {
+- (int)validatePixelBufferStatus:(CVPixelBufferRef)pixelBuffer
+                            width:(int32_t)width
+                           height:(int32_t)height {
   if (![self isAvailable] || !pixelBuffer || width <= 0 || height <= 0) {
-    return NO;
+    return [self isAvailable]
+        ? VPMacOSMetalUploaderStatusInvalidArguments
+        : VPMacOSMetalUploaderStatusUnavailable;
   }
   if (CVPixelBufferGetWidth(pixelBuffer) != static_cast<size_t>(width) ||
-      CVPixelBufferGetHeight(pixelBuffer) != static_cast<size_t>(height) ||
-      CVPixelBufferGetPixelFormatType(pixelBuffer) != kCVPixelFormatType_32BGRA) {
-    return NO;
+      CVPixelBufferGetHeight(pixelBuffer) != static_cast<size_t>(height)) {
+    return VPMacOSMetalUploaderStatusSizeMismatch;
+  }
+  if (CVPixelBufferGetPixelFormatType(pixelBuffer) != kCVPixelFormatType_32BGRA) {
+    return VPMacOSMetalUploaderStatusUnsupportedPixelFormat;
   }
   CVMetalTextureRef metalTextureRef = nullptr;
   const CVReturn status = CVMetalTextureCacheCreateTextureFromImage(
@@ -116,12 +142,21 @@ int metal_upload_failure(char* error, size_t error_size, const char* message) {
       0,
       &metalTextureRef);
   if (status != kCVReturnSuccess || !metalTextureRef) {
-    return NO;
+    return VPMacOSMetalUploaderStatusTextureWrapFailed;
   }
   id<MTLTexture> texture = CVMetalTextureGetTexture(metalTextureRef);
   const BOOL valid = texture != nil;
   CFRelease(metalTextureRef);
-  return valid;
+  return valid
+      ? VPMacOSMetalUploaderStatusOk
+      : VPMacOSMetalUploaderStatusTextureWrapFailed;
+}
+
+- (BOOL)validatePixelBuffer:(CVPixelBufferRef)pixelBuffer
+                      width:(int32_t)width
+                     height:(int32_t)height {
+  return [self validatePixelBufferStatus:pixelBuffer width:width height:height] ==
+      VPMacOSMetalUploaderStatusOk;
 }
 
 - (BOOL)ensureStagingBufferWithLength:(size_t)length {
@@ -149,8 +184,10 @@ int metal_upload_failure(char* error, size_t error_size, const char* message) {
     write_error(error, errorSize, "invalid native Metal upload arguments");
     return -1;
   }
-  if (![self validatePixelBuffer:pixelBuffer width:width height:height]) {
-    write_error(error, errorSize, "invalid native Metal upload pixel buffer");
+  const int validationStatus =
+      [self validatePixelBufferStatus:pixelBuffer width:width height:height];
+  if (validationStatus != VPMacOSMetalUploaderStatusOk) {
+    write_error(error, errorSize, metal_uploader_status_message(validationStatus));
     return -1;
   }
 
@@ -260,12 +297,29 @@ int VPMacOSMetalUploaderValidatePixelBuffer(VPMacOSMetalUploader* uploader,
                                             void* pixel_buffer,
                                             int32_t width,
                                             int32_t height) {
-  if (!uploader || !uploader->impl) {
-    return 0;
+  return VPMacOSMetalUploaderValidatePixelBufferChecked(
+      uploader, pixel_buffer, width, height, nullptr, 0) ==
+      VPMacOSMetalUploaderStatusOk ? 1 : 0;
+}
+
+const char* VPMacOSMetalUploaderStatusMessage(int status) {
+  return metal_uploader_status_message(status);
+}
+
+int VPMacOSMetalUploaderValidatePixelBufferChecked(VPMacOSMetalUploader* uploader,
+                                                   void* pixel_buffer,
+                                                   int32_t width,
+                                                   int32_t height,
+                                                   char* error,
+                                                   size_t error_size) {
+  int status = VPMacOSMetalUploaderStatusUnavailable;
+  if (uploader && uploader->impl) {
+    status = [uploader->impl validatePixelBufferStatus:(CVPixelBufferRef)pixel_buffer
+                                                width:width
+                                               height:height];
   }
-  return [uploader->impl validatePixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                       width:width
-                                      height:height] ? 1 : 0;
+  write_error(error, error_size, metal_uploader_status_message(status));
+  return status;
 }
 
 int VPMacOSMetalUploaderCopyCurrentFrame(VPMacOSMetalUploader* uploader,

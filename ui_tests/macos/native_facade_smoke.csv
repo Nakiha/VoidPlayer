@@ -17,6 +17,7 @@
 1.6, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalAvailable, true
 1.65, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureCacheAvailable, true
 1.7, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureValid, true
+1.72, ASSERT_NATIVE_DIAGNOSTIC_STRING, metalTextureLastError,
 1.75, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, metalTextureCreationCount, 1
 1.77, ASSERT_NATIVE_DIAGNOSTIC_BOOL, pixelBufferMetalUploadEnabled, true
 1.78, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-bgra-staging-upload

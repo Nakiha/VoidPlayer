@@ -141,7 +141,9 @@ Goal: improve performance after software playback is correct.
   `metal_pixel_buffer_uploader.mm` owns `CVMetalTextureCache` validation, the shared `MTLBuffer`,
   and the blit into the texture-backed `CVPixelBuffer`. Seek/step refresh and playback callbacks
   now share that native Metal staging path; the uploader rejects mismatched dimensions or non-BGRA
-  pixel buffers before upload, and the locked-buffer direct copy path remains as fallback.
+  pixel buffers before upload, returns checked validation statuses for each failure class, mirrors
+  the last validation reason into diagnostics, and leaves the locked-buffer direct copy path as
+  fallback.
 - [ ] Port shader/color/layout behavior with deterministic pixel tests.
   Initial portable baselines now cover limited/full-range software BGRA conversion, padded
   linesizes, BGRA channel order, BT.601/BT.709/BT.2020 matrix selection in the shared CPU
@@ -285,8 +287,8 @@ points for future Metal and CVPixelBuffer layout parity tests. It also locks the
 for supported storage kinds, distinct failure statuses, destination size mismatch, renderer-owned
 GPU texture rejection, invalid P010 storage rejection, planar limited/full range, and
 odd-dimension/even-coded NV12 metadata. `macos_metal_uploader_smoke` covers native Metal
-`CVPixelBuffer` validation for matching BGRA surfaces, mismatched dimensions, and non-BGRA
-rejection. `videotoolbox_provider_smoke`
+`CVPixelBuffer` checked validation for matching BGRA surfaces, mismatched dimensions, non-BGRA
+rejection, and stable failure messages. `videotoolbox_provider_smoke`
 now proves that the macOS FFmpeg build can initialize the shared VideoToolbox provider for H.264 in
 download-to-CPU mode. UI automation can assert string-valued native diagnostics through
 `ASSERT_NATIVE_DIAGNOSTIC_STRING`, and macOS facade/stress smokes now lock

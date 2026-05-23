@@ -495,6 +495,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "metalTextureValid": textureStats?.metalTextureValid ?? false,
         "metalTextureCreationCount": textureStats?.metalTextureCreationCount ?? 0,
         "metalTextureFailureCount": textureStats?.metalTextureFailureCount ?? 0,
+        "metalTextureLastError": textureStats?.metalTextureLastError ?? "",
       ]
       result(diagnostics)
     case "captureViewport":
@@ -996,6 +997,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private var metalTextureValid = false
   private var metalTextureCreationCount = 0
   private var metalTextureFailureCount = 0
+  private var metalTextureLastError = ""
 
   init(width: Int, height: Int, metalUploadEnabled: Bool) {
     self.width = width
@@ -1159,7 +1161,8 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     metalTextureCacheAvailable: Bool,
     metalTextureValid: Bool,
     metalTextureCreationCount: Int,
-    metalTextureFailureCount: Int
+    metalTextureFailureCount: Int,
+    metalTextureLastError: String
   ) {
     lock.lock()
     defer { lock.unlock() }
@@ -1176,7 +1179,8 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       metalTextureCacheAvailable: nativeMetalUploaderAvailableLocked(),
       metalTextureValid: metalTextureValid,
       metalTextureCreationCount: metalTextureCreationCount,
-      metalTextureFailureCount: metalTextureFailureCount
+      metalTextureFailureCount: metalTextureFailureCount,
+      metalTextureLastError: metalTextureLastError
     )
   }
 
@@ -1273,20 +1277,27 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private func validateMetalTextureLocked(buffer: CVPixelBuffer) {
     guard let nativeMetalUploader else {
       metalTextureValid = false
+      metalTextureLastError = "native Metal uploader is null"
       return
     }
 
-    if VPMacOSMetalUploaderValidatePixelBuffer(
+    var error = [CChar](repeating: 0, count: 512)
+    let status = VPMacOSMetalUploaderValidatePixelBufferChecked(
       nativeMetalUploader,
       UnsafeMutableRawPointer(Unmanaged.passUnretained(buffer).toOpaque()),
       Int32(width),
-      Int32(height)
-    ) != 0 {
+      Int32(height),
+      &error,
+      error.count
+    )
+    if status == 0 {
       metalTextureCreationCount += 1
       metalTextureValid = true
+      metalTextureLastError = ""
     } else {
       metalTextureFailureCount += 1
       metalTextureValid = false
+      metalTextureLastError = String(cString: error)
     }
   }
 

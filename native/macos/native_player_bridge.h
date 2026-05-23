@@ -38,6 +38,15 @@ typedef struct VPMacOSCaptureMetrics {
   uint64_t hash;
 } VPMacOSCaptureMetrics;
 
+enum {
+  VPMacOSMetalUploaderStatusOk = 0,
+  VPMacOSMetalUploaderStatusUnavailable = 1,
+  VPMacOSMetalUploaderStatusInvalidArguments = 2,
+  VPMacOSMetalUploaderStatusSizeMismatch = 3,
+  VPMacOSMetalUploaderStatusUnsupportedPixelFormat = 4,
+  VPMacOSMetalUploaderStatusTextureWrapFailed = 5,
+};
+
 VPMacOSNativePlayer* VPMacOSNativePlayerCreate(void);
 void VPMacOSNativePlayerDestroy(VPMacOSNativePlayer* player);
 
@@ -101,6 +110,13 @@ int VPMacOSMetalUploaderValidatePixelBuffer(VPMacOSMetalUploader* uploader,
                                             void* pixel_buffer,
                                             int32_t width,
                                             int32_t height);
+const char* VPMacOSMetalUploaderStatusMessage(int status);
+int VPMacOSMetalUploaderValidatePixelBufferChecked(VPMacOSMetalUploader* uploader,
+                                                   void* pixel_buffer,
+                                                   int32_t width,
+                                                   int32_t height,
+                                                   char* error,
+                                                   size_t error_size);
 int VPMacOSMetalUploaderCopyCurrentFrame(VPMacOSMetalUploader* uploader,
                                          VPMacOSNativePlayer* player,
                                          void* pixel_buffer,

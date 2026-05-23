@@ -32,6 +32,10 @@ seek/step refresh and playback callbacks when
 shared `MTLBuffer` and Metal blits into the texture-backed `CVPixelBuffer`.
 Native validation rejects pixel buffers whose dimensions or pixel format do not
 match the expected BGRA texture surface before any frame upload is attempted.
+The Metal staging uploader exposes checked validation statuses for unavailable
+Metal state, invalid arguments, size mismatches, unsupported non-BGRA pixel
+buffers, and CVPixelBuffer-to-Metal texture wrapping failures; Swift mirrors the
+last validation message in diagnostics.
 
 ## Parity Expectations
 
@@ -65,7 +69,9 @@ seek refreshes and playback advance `pixelBufferMetalUploadCount`,
 `decodeMode=videotoolbox-download-to-cpu`, and `softwareFallbackActive=false`
 for the H.264 fixture. Unsupported codecs or initialization failures must keep
 the fallback visible by flipping the decode-mode diagnostics instead of silently
-changing playback state.
+changing playback state. Metal surface validation failures must be visible
+through `metalTextureLastError` rather than collapsing into a generic upload
+failure.
 
 ## M5 Rule
 

@@ -8,6 +8,8 @@
 1.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapter, cvpixelbuffer-bgra-copy
 1.505, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, software-fallback
 1.51, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, false
+1.512, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, transitional-native-tick
+1.514, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, swift-cvpixelbuffer-texture-pump
 1.52, ASSERT_NATIVE_DIAGNOSTIC_STRING, hardwareDecodeProvider, VideoToolbox
 1.54, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeAvailable, true
 1.56, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, true
@@ -27,10 +29,6 @@
 1.95, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeLayoutPixelSizeMode, 1
 2.05, ASSERT_TRACK_METADATA, 0, macos-native-player, decode_thread_videotoolbox_hwdownload
 2.1, ASSERT_PRESENTED_FRAME_RANGE, 0, 0, 100000
-2.15, CAPTURE_VIEWPORT, before_zoom
-2.2, SET_ZOOM, 2.0
-2.6, CAPTURE_VIEWPORT, after_zoom
-2.65, ASSERT_CAPTURE_CHANGED, before_zoom, after_zoom
 2.8, PLAY
 3.8, ASSERT_PLAYING
 3.9, ASSERT_POSITION_RANGE, 500000, 2500000

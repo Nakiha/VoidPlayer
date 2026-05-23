@@ -584,6 +584,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "backend": backendName,
         "presentationAdapter": String(cString: VPMacOSNativePresentationAdapterName()),
         "presentationAdapterKind": "software-fallback",
+        "presentationScheduler": "transitional-native-tick",
+        "presentationBackend": "swift-cvpixelbuffer-texture-pump",
         "rendererOwnedPresentationActive": false,
         "hardwareDecodeProvider": String(cString: VPMacOSNativeHardwareDecodeProviderName()),
         "hardwareDecodeAvailable": VPMacOSNativeHardwareDecodeAvailable() != 0,
@@ -594,7 +596,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "available": nativePlayer != nil,
         "reason": nativePlayer == nil
           ? "Synthetic macOS texture is active"
-          : "macOS shared native DecodeThread facade is active",
+          : "macOS shared native facade is active with transitional texture-pump presentation",
         "textureId": textureId ?? -1,
         "trackCount": tracks.count,
         "audioAvailable": nativePlayer?.hasAudio() ?? false,

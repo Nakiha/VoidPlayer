@@ -6,6 +6,8 @@
 2.2, ASSERT_TRACK_COUNT, 1
 2.3, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, true
 2.4, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-bgra-layout-upload
+2.42, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, transitional-native-tick
+2.44, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, swift-cvpixelbuffer-texture-pump
 2.5, CAPTURE_VIEWPORT, native_4k60_start
 2.6, ASSERT_CAPTURE_NOT_BLACK, native_4k60_start, 0.01, 4.0
 2.7, PLAY

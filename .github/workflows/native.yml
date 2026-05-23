@@ -31,7 +31,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          lfs: true
           submodules: recursive
+
+      - name: Verify Windows FFmpeg LFS artifacts
+        shell: pwsh
+        run: |
+          $dll = "windows/libs/ffmpeg/bin/avcodec-62.dll"
+          if ((Get-Item $dll).Length -lt 1000000) {
+            Write-Error "Windows FFmpeg DLL is unexpectedly small: $dll"
+            exit 1
+          }
+          $bytes = [System.IO.File]::ReadAllBytes($dll)
+          $prefix = [System.Text.Encoding]::ASCII.GetString($bytes, 0, [Math]::Min($bytes.Length, 64))
+          if ($prefix.StartsWith("version https://git-lfs.github.com/spec/v1")) {
+            Write-Error "Windows FFmpeg DLL is still a Git LFS pointer: $dll"
+            exit 1
+          }
 
       - uses: actions/setup-python@v5
         with:
@@ -134,7 +150,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          lfs: true
           submodules: recursive
+
+      - name: Verify Windows FFmpeg LFS artifacts
+        shell: pwsh
+        run: |
+          $dll = "windows/libs/ffmpeg/bin/avcodec-62.dll"
+          if ((Get-Item $dll).Length -lt 1000000) {
+            Write-Error "Windows FFmpeg DLL is unexpectedly small: $dll"
+            exit 1
+          }
+          $bytes = [System.IO.File]::ReadAllBytes($dll)
+          $prefix = [System.Text.Encoding]::ASCII.GetString($bytes, 0, [Math]::Min($bytes.Length, 64))
+          if ($prefix.StartsWith("version https://git-lfs.github.com/spec/v1")) {
+            Write-Error "Windows FFmpeg DLL is still a Git LFS pointer: $dll"
+            exit 1
+          }
 
       - name: Configure native
         shell: pwsh

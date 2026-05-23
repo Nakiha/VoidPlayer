@@ -81,12 +81,12 @@ Goal: split decode output from D3D11 presentation so macOS can consume frames wi
 pipeline.
 
 - [x] Extract a platform-neutral decoded-frame publication interface from `DecodedFramePublisher`.
-- [ ] Split `FrameConverter` into software packing and D3D11 snapshot/presenter pieces. Software
+- [x] Split `FrameConverter` into software packing and D3D11 snapshot/presenter pieces. Software
   frame packing/wrapping is now isolated in `software_frame_packer`; D3D11VA direct-frame wrapping
   and exact-seek snapshot pooling now live behind `d3d11_frame_snapshot`; FFmpeg frame color
-  metadata mapping now lives in `frame_color_metadata` and is shared by the software frame
-  publisher. `FrameConverter` still coordinates software-vs-hardware dispatch and should shed the
-  remaining platform presenter decisions in a later slice.
+  metadata mapping now lives in `frame_color_metadata`. Hardware download-to-CPU, D3D11VA direct
+  wrapping, and exact-seek snapshot ownership now sit behind `hardware_frame_converter`, leaving
+  `FrameConverter` as the stable software entrypoint plus hardware delegate.
 - [ ] Keep `TrackBuffer`, `RenderSink`, seek policies, and playback clock semantics shared.
 - [x] Add CTest coverage that exercises software frame publication -> `TrackBuffer` without D3D11.
 - [x] Extend the smoke from synthetic frames to FFmpeg-decoded frames.
@@ -259,8 +259,9 @@ Swift bridging header now includes the macOS native player bridge directly.
 Frame conversion split status: deterministic software YUV/NV12/P010 packing and planar YUV420
 wrapping now live in `video_renderer/decode/software_frame_packer.*`. D3D11VA direct-frame wrapping
 and exact-seek snapshot pooling now live in `video_renderer/decode/d3d11_frame_snapshot.*`, while
-`FrameConverter` coordinates color metadata and software-vs-hardware dispatch. This keeps the
-current macOS playback queue on the shared native decode path without starting a second backend.
+hardware download-to-CPU and platform-owned frame publication are delegated through
+`video_renderer/decode/hardware_frame_converter.*`. This keeps the current macOS playback queue on
+the shared native decode path without starting a second backend.
 
 M5 baseline status: `software_bgra_converter_smoke` now includes deterministic limited/full-range
 color samples, padded line strides, and BT.709 matrix conversion, while `software_frame_packer_smoke`

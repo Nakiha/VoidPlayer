@@ -1,7 +1,8 @@
 #pragma once
 #include "video_renderer/buffer/bidi_ring_buffer.h"
-#include "video_renderer/decode/d3d11_frame_snapshot.h"
+#include "video_renderer/decode/hardware_frame_converter.h"
 #include "video_renderer/decode/hw/hw_decode_provider.h"
+#include <memory>
 #include <mutex>
 #include <optional>
 
@@ -29,22 +30,17 @@ public:
     std::optional<TextureFrame> convert(AVFrame* frame);
     std::optional<TextureFrame> snapshot_hardware_frame(AVFrame* frame);
 
-    bool is_hardware() const { return is_hw_; }
-    bool downloads_hardware_to_cpu() const { return is_hw_ && download_hw_to_cpu_; }
+    bool is_hardware() const { return hardware_converter_ != nullptr; }
+    bool downloads_hardware_to_cpu() const {
+        return hardware_converter_ && hardware_converter_->downloads_to_cpu();
+    }
     D3D11SnapshotPoolStats snapshot_pool_stats() const;
 
 private:
     int width_ = 0;
     int height_ = 0;
-    bool is_hw_ = false;
-    bool download_hw_to_cpu_ = false;
-    HwDecodeType hw_type_ = HwDecodeType::None;
     AVPixelFormat src_format_ = AV_PIX_FMT_NONE;
-    AVPixelFormat downloaded_format_ = AV_PIX_FMT_NONE;
-    void* d3d_device_ = nullptr;
-    void* d3d_context_ = nullptr;
-    std::recursive_mutex* device_mutex_ = nullptr;
-    std::shared_ptr<D3D11SnapshotPool> d3d11_snapshot_pool_;
+    std::unique_ptr<HardwareFrameConverter> hardware_converter_;
 };
 
 } // namespace vr

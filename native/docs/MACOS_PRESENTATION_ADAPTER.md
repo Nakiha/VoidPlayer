@@ -11,8 +11,8 @@ audio, and playback clock policy stay in shared native code.
 - adapter name: `cvpixelbuffer-bgra-copy`
 - input: shared `vr::TextureFrame` storage
 - output: caller-provided BGRA rows, currently a locked `CVPixelBuffer`
-- supported storage: CPU RGBA, CPU planar YUV420 8-bit, CPU NV12 8-bit
-- unsupported storage: P010 and renderer-owned GPU textures
+- supported storage: CPU RGBA, CPU planar YUV420 8-bit, CPU NV12 8-bit, CPU P010 10-bit
+- unsupported storage: renderer-owned GPU textures
 
 The Swift runner only owns `CVPixelBuffer` lifecycle, locking, texture
 registration, and Flutter frame notifications. It asks native code to copy the
@@ -30,6 +30,7 @@ adapter:
 
 - preserve BGRA channel order
 - preserve full-range vs limited-range YUV behavior
+- preserve BT.601/BT.709/BT.2020 YUV matrix selection
 - preserve padded destination stride semantics
 - preserve odd-dimension frames through even-coded NV12 packing metadata
 - preserve planar YUV420 plane strides, widths, and heights
@@ -37,7 +38,8 @@ adapter:
 - keep the software adapter and Metal-capable surface visible in diagnostics
 
 `macos_presentation_adapter_smoke`, `software_bgra_converter_smoke`, and
-`software_frame_packer_smoke` cover these baselines in portable macOS CTest.
+`software_frame_packer_smoke` cover these baselines in portable macOS CTest,
+including matrix-aware BT.709 samples for the CPU presentation fallback.
 macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy`,
 `presentationUploadMode=metal-bgra-staging-upload`, `metalTextureValid=true`,
 `pixelBufferMetalUploadCount >= 1`, `hardwareDecodeProvider=VideoToolbox`,

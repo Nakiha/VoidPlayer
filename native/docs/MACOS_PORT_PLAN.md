@@ -133,8 +133,9 @@ Goal: improve performance after software playback is correct.
   the locked-buffer direct copy path kept as fallback.
 - [ ] Port shader/color/layout behavior with deterministic pixel tests.
   Initial portable baselines now cover limited/full-range software BGRA conversion, padded
-  linesizes, BGRA channel order, odd-dimension NV21 -> even-coded NV12 packing, planar
-  YUV420 wrap metadata, and P010 -> BGRA presentation conversion.
+  linesizes, BGRA channel order, BT.601/BT.709/BT.2020 matrix selection in the shared CPU
+  YUV-to-BGRA helper, odd-dimension NV21 -> even-coded NV12 packing, planar YUV420 wrap
+  metadata, and P010 -> BGRA presentation conversion.
 - [x] Add VideoToolbox behind the hardware decode provider interface.
   The provider is registered through the shared `HwDecodeProvider` factory and now runs the macOS
   facade through `FfmpegOwnedHwDownloadDevice` by default. This keeps decoded frames published
@@ -249,11 +250,12 @@ and exact-seek snapshot pooling now live in `video_renderer/decode/d3d11_frame_s
 current macOS playback queue on the shared native decode path without starting a second backend.
 
 M5 baseline status: `software_bgra_converter_smoke` now includes deterministic limited/full-range
-color samples and padded line strides, while `software_frame_packer_smoke` locks odd-size NV21
-packing and planar YUV420 wrap metadata. `macos_presentation_adapter_smoke` covers the macOS
-presentation boundary directly, including CPU RGBA stride copies, CPU NV12/P010 color conversion,
-planar YUV conversion, adapter identity, and undersized P010 rejection. These are CPU-side
-reference points for future Metal and CVPixelBuffer layout parity tests. `videotoolbox_provider_smoke`
+color samples, padded line strides, and BT.709 matrix conversion, while `software_frame_packer_smoke`
+locks odd-size NV21 packing and planar YUV420 wrap metadata. `macos_presentation_adapter_smoke`
+covers the macOS presentation boundary directly, including CPU RGBA stride copies, CPU NV12/P010
+color conversion, BT.709 matrix-aware presentation, planar YUV conversion, adapter identity, and
+undersized P010 rejection. These are CPU-side reference points for future Metal and CVPixelBuffer
+layout parity tests. `videotoolbox_provider_smoke`
 now proves that the macOS FFmpeg build can initialize the shared VideoToolbox provider for H.264 in
 download-to-CPU mode. UI automation can assert string-valued native diagnostics through
 `ASSERT_NATIVE_DIAGNOSTIC_STRING`, and macOS facade/stress smokes now lock

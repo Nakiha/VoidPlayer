@@ -101,8 +101,8 @@ the `CVPixelBuffer`, locks its base address, and asks native code to copy the sh
 `TextureFrame` into that BGRA destination. The current adapter is reported in diagnostics as
 `presentationAdapter=cvpixelbuffer-bgra-copy`; decode, seek, loop, audio, and playback clock policy
 remain outside Swift. The adapter accepts CPU RGBA, planar YUV420, NV12, and P010 frames, with
-deterministic smoke coverage and a 10-bit H.264 VideoToolbox hwdownload UI smoke before a
-renderer-owned Metal presentation path takes over.
+deterministic smoke coverage for range and matrix-aware YUV conversion plus a 10-bit H.264
+VideoToolbox hwdownload UI smoke before a renderer-owned Metal presentation path takes over.
 The pixel buffer is created with Metal compatibility and IOSurface backing, and diagnostics expose
 whether a `CVMetalTextureCache` can wrap it (`metalTextureCreationCount`, `metalTextureValid`).
 Playback frame callbacks now prefer `presentationUploadMode=metal-bgra-staging-upload`: native

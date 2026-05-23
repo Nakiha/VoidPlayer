@@ -179,6 +179,39 @@ int check_nv12_limited_primary_colors() {
   return 0;
 }
 
+int check_nv12_bt709_limited_red() {
+  AVFrame* frame = av_frame_alloc();
+  if (!frame) {
+    return fail("failed to allocate nv12 bt709 frame");
+  }
+
+  std::array<uint8_t, 4> y = {63, 63, 63, 63};
+  std::array<uint8_t, 2> uv = {102, 240};
+  std::array<uint8_t, 16> bgra = {};
+
+  frame->format = AV_PIX_FMT_NV12;
+  frame->width = 2;
+  frame->height = 2;
+  frame->color_range = AVCOL_RANGE_MPEG;
+  frame->colorspace = AVCOL_SPC_BT709;
+  frame->data[0] = y.data();
+  frame->data[1] = uv.data();
+  frame->linesize[0] = 2;
+  frame->linesize[1] = 2;
+
+  const bool converted = vr::convert_software_frame_to_bgra(frame, bgra.data(), bgra.size());
+  av_frame_free(&frame);
+  if (!converted) {
+    return fail("failed to convert nv12 bt709 red");
+  }
+  for (size_t i = 0; i < 4; ++i) {
+    if (!expect_pixel(bgra, i, 0, 1, 255, 255)) {
+      return fail("unexpected nv12 bt709 red pixel");
+    }
+  }
+  return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -192,6 +225,9 @@ int main() {
     return ret;
   }
   if (const int ret = check_nv12_limited_primary_colors(); ret != 0) {
+    return ret;
+  }
+  if (const int ret = check_nv12_bt709_limited_red(); ret != 0) {
     return ret;
   }
   return 0;

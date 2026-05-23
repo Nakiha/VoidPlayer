@@ -49,6 +49,7 @@ set(VOID_MEDIA_FFMPEG_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/decode/software_bgra_converter.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/software_frame_packer.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/software_frame_publisher.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/decode/yuv_to_bgra.cpp"
 )
 
 set(VOID_MACOS_NATIVE_PLAYER_SOURCES

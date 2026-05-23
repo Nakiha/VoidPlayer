@@ -1,6 +1,5 @@
 #include "video_renderer/decode/software_bgra_converter.h"
-
-#include <algorithm>
+#include "video_renderer/decode/yuv_to_bgra.h"
 
 extern "C" {
 #include <libavutil/frame.h>
@@ -10,40 +9,32 @@ extern "C" {
 namespace vr {
 namespace {
 
-uint8_t clamp_u8(int value) {
-  return static_cast<uint8_t>(std::max(0, std::min(255, value)));
+int color_range_from_frame(const AVFrame* frame) {
+  return (frame->color_range == AVCOL_RANGE_JPEG ||
+          frame->format == AV_PIX_FMT_YUVJ420P)
+      ? VIDEO_COLOR_RANGE_FULL
+      : VIDEO_COLOR_RANGE_LIMITED;
 }
 
-void yuv_to_bgra(uint8_t y,
-                 uint8_t u,
-                 uint8_t v,
-                 bool full_range,
-                 uint8_t* out) {
-  const int uu = static_cast<int>(u) - 128;
-  const int vv = static_cast<int>(v) - 128;
-  int r = 0;
-  int g = 0;
-  int b = 0;
-  if (full_range) {
-    const int yy = static_cast<int>(y);
-    r = (256 * yy + 359 * vv + 128) >> 8;
-    g = (256 * yy - 88 * uu - 183 * vv + 128) >> 8;
-    b = (256 * yy + 454 * uu + 128) >> 8;
-  } else {
-    const int yy = std::max(0, static_cast<int>(y) - 16);
-    r = (298 * yy + 409 * vv + 128) >> 8;
-    g = (298 * yy - 100 * uu - 208 * vv + 128) >> 8;
-    b = (298 * yy + 516 * uu + 128) >> 8;
+int color_matrix_from_frame(const AVFrame* frame) {
+  switch (frame->colorspace) {
+    case AVCOL_SPC_BT709:
+      return VIDEO_COLOR_MATRIX_BT709;
+    case AVCOL_SPC_BT2020_NCL:
+    case AVCOL_SPC_BT2020_CL:
+      return VIDEO_COLOR_MATRIX_BT2020_NCL;
+    case AVCOL_SPC_BT470BG:
+    case AVCOL_SPC_SMPTE170M:
+    case AVCOL_SPC_SMPTE240M:
+      return VIDEO_COLOR_MATRIX_BT601;
+    default:
+      return default_yuv_color_matrix_for_size(frame->width, frame->height);
   }
-  out[0] = clamp_u8(b);
-  out[1] = clamp_u8(g);
-  out[2] = clamp_u8(r);
-  out[3] = 255;
 }
 
 bool convert_yuv420p_to_bgra(const AVFrame* frame, uint8_t* dst) {
-  const bool full_range = frame->color_range == AVCOL_RANGE_JPEG ||
-                          frame->format == AV_PIX_FMT_YUVJ420P;
+  const int color_range = color_range_from_frame(frame);
+  const int color_matrix = color_matrix_from_frame(frame);
   const int width = frame->width;
   const int height = frame->height;
   const uint8_t* y_plane = frame->data[0];
@@ -59,14 +50,17 @@ bool convert_yuv420p_to_bgra(const AVFrame* frame, uint8_t* dst) {
     const uint8_t* v_row = v_plane + (y / 2) * frame->linesize[2];
     uint8_t* dst_row = dst + static_cast<size_t>(y) * width * 4;
     for (int x = 0; x < width; ++x) {
-      yuv_to_bgra(y_row[x], u_row[x / 2], v_row[x / 2], full_range, dst_row + x * 4);
+      write_yuv_to_bgra(
+          y_row[x], u_row[x / 2], v_row[x / 2],
+          color_range, color_matrix, dst_row + x * 4);
     }
   }
   return true;
 }
 
 bool convert_nv12_to_bgra(const AVFrame* frame, uint8_t* dst) {
-  const bool full_range = frame->color_range == AVCOL_RANGE_JPEG;
+  const int color_range = color_range_from_frame(frame);
+  const int color_matrix = color_matrix_from_frame(frame);
   const int width = frame->width;
   const int height = frame->height;
   const uint8_t* y_plane = frame->data[0];
@@ -81,7 +75,9 @@ bool convert_nv12_to_bgra(const AVFrame* frame, uint8_t* dst) {
     uint8_t* dst_row = dst + static_cast<size_t>(y) * width * 4;
     for (int x = 0; x < width; ++x) {
       const int uv_index = (x / 2) * 2;
-      yuv_to_bgra(y_row[x], uv_row[uv_index], uv_row[uv_index + 1], full_range, dst_row + x * 4);
+      write_yuv_to_bgra(
+          y_row[x], uv_row[uv_index], uv_row[uv_index + 1],
+          color_range, color_matrix, dst_row + x * 4);
     }
   }
   return true;

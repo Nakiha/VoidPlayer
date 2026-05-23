@@ -120,7 +120,9 @@ Goal: make Metal do the same job D3D11 does today.
 Progress: macOS now exposes a native present-frame package ABI that combines the selected
 present-decision metadata with either direct YUV staging data or BGRA fallback data. The current
 Metal uploader consumes this package path, which keeps player-side frame selection separate from
-Metal upload/composition and gives the future renderer-owned backend a stable payload to consume.
+Metal upload/composition. The Metal presentation backend also exposes a package-consuming ABI, so
+the future renderer-owned publication path can hand selected payloads to the backend without asking
+the backend to call back into the player.
 
 Exit gate: macOS can present multi-track CPU-decoded frames through renderer-owned Metal without the
 Swift pump choosing frames, and shader parity tests cover the supported formats.

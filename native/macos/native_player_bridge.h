@@ -295,6 +295,17 @@ int VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
+int VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
+    VPMacOSMetalUploader* uploader,
+    const uint8_t* data,
+    size_t data_size,
+    const VPMacOSNativePresentFramePackageInfo* package,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
 
 VPMacOSMetalPresentationBackend* VPMacOSMetalPresentationBackendCreate(
     int32_t width,
@@ -320,6 +331,17 @@ int VPMacOSMetalPresentationBackendCopyCurrentFrameWithLayout(
     int32_t height,
     int32_t max_track_slots,
     int32_t wait_timeout_ms,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
+int VPMacOSMetalPresentationBackendCopyPresentFramePackageWithLayout(
+    VPMacOSMetalPresentationBackend* backend,
+    const uint8_t* data,
+    size_t data_size,
+    const VPMacOSNativePresentFramePackageInfo* package,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);

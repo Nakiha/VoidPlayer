@@ -110,3 +110,27 @@ int VPMacOSMetalPresentationBackendCopyCurrentFrameWithLayout(
       error,
       error_size);
 }
+
+int VPMacOSMetalPresentationBackendCopyPresentFramePackageWithLayout(
+    VPMacOSMetalPresentationBackend* backend,
+    const uint8_t* data,
+    size_t data_size,
+    const VPMacOSNativePresentFramePackageInfo* package,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size) {
+  return VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
+      VPMacOSMetalPresentationBackendUploader(backend),
+      data,
+      data_size,
+      package,
+      pixel_buffer,
+      width,
+      height,
+      out,
+      error,
+      error_size);
+}

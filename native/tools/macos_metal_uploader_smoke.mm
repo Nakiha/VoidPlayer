@@ -393,6 +393,65 @@ int main() {
     return 1;
   }
 
+  VPMacOSNativeFrameInfo package_upload_info = {};
+  if (VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
+          uploader,
+          present_package.data(),
+          present_package.size(),
+          &package_info,
+          layout_buffer,
+          width,
+          height,
+          &package_upload_info,
+          error,
+          sizeof(error)) != 0) {
+    CFRelease(layout_buffer);
+    VPMacOSNativePlayerDestroy(player);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    std::fprintf(stderr, "native Metal package upload failed: %s\n", error);
+    return 1;
+  }
+  VPMacOSCaptureMetrics package_upload_metrics = {};
+  if (!measure_pixel_buffer(layout_buffer, width, height, &package_upload_metrics) ||
+      package_upload_metrics.non_black_ratio <= 0.24 ||
+      package_upload_info.pts_us != package_info.decision.frames[0].pts_us) {
+    CFRelease(layout_buffer);
+    VPMacOSNativePlayerDestroy(player);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    return fail("native Metal package upload did not render the present package");
+  }
+
+  VPMacOSMetalPresentationBackend* backend =
+      VPMacOSMetalPresentationBackendCreate(width, height);
+  if (!backend ||
+      VPMacOSMetalPresentationBackendCopyPresentFramePackageWithLayout(
+          backend,
+          present_package.data(),
+          present_package.size(),
+          &package_info,
+          layout_buffer,
+          width,
+          height,
+          &package_upload_info,
+          error,
+          sizeof(error)) != 0) {
+    if (backend) {
+      VPMacOSMetalPresentationBackendDestroy(backend);
+    }
+    CFRelease(layout_buffer);
+    VPMacOSNativePlayerDestroy(player);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    std::fprintf(stderr, "native Metal backend package upload failed: %s\n", error);
+    return 1;
+  }
+  VPMacOSMetalPresentationBackendDestroy(backend);
+
   if (!copy_frame_with_layout(
           uploader, player, layout_buffer, width, height,
           &multitrack_info, error, sizeof(error))) {

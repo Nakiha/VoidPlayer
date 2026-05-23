@@ -131,8 +131,8 @@ Goal: improve performance after software playback is correct.
   the locked-buffer direct copy path kept as fallback.
 - [ ] Port shader/color/layout behavior with deterministic pixel tests.
   Initial portable baselines now cover limited/full-range software BGRA conversion, padded
-  linesizes, BGRA channel order, odd-dimension NV21 -> even-coded NV12 packing, and planar
-  YUV420 wrap metadata.
+  linesizes, BGRA channel order, odd-dimension NV21 -> even-coded NV12 packing, planar
+  YUV420 wrap metadata, and P010 -> BGRA presentation conversion.
 - [x] Add VideoToolbox behind the hardware decode provider interface.
   The provider is registered through the shared `HwDecodeProvider` factory and now runs the macOS
   facade through `FfmpegOwnedHwDownloadDevice` by default. This keeps decoded frames published
@@ -240,8 +240,8 @@ second backend.
 M5 baseline status: `software_bgra_converter_smoke` now includes deterministic limited/full-range
 color samples and padded line strides, while `software_frame_packer_smoke` locks odd-size NV21
 packing and planar YUV420 wrap metadata. `macos_presentation_adapter_smoke` covers the macOS
-presentation boundary directly, including CPU RGBA stride copies, CPU NV12 color conversion,
-planar YUV conversion, adapter identity, and unsupported P010 rejection. These are CPU-side
+presentation boundary directly, including CPU RGBA stride copies, CPU NV12/P010 color conversion,
+planar YUV conversion, adapter identity, and undersized P010 rejection. These are CPU-side
 reference points for future Metal and CVPixelBuffer layout parity tests. `videotoolbox_provider_smoke`
 now proves that the macOS FFmpeg build can initialize the shared VideoToolbox provider for H.264 in
 download-to-CPU mode. UI automation can assert string-valued native diagnostics through

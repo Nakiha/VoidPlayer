@@ -100,7 +100,8 @@ Native playback presentation now goes through `native/macos/presentation_adapter
 the `CVPixelBuffer`, locks its base address, and asks native code to copy the shared
 `TextureFrame` into that BGRA destination. The current adapter is reported in diagnostics as
 `presentationAdapter=cvpixelbuffer-bgra-copy`; decode, seek, loop, audio, and playback clock policy
-remain outside Swift.
+remain outside Swift. The adapter accepts CPU RGBA, planar YUV420, NV12, and P010 frames, with
+deterministic smoke coverage before a renderer-owned Metal presentation path takes over.
 The pixel buffer is created with Metal compatibility and IOSurface backing, and diagnostics expose
 whether a `CVMetalTextureCache` can wrap it (`metalTextureCreationCount`, `metalTextureValid`).
 Playback frame callbacks now prefer `presentationUploadMode=metal-bgra-staging-upload`: native

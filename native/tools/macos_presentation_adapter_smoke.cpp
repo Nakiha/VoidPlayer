@@ -33,6 +33,12 @@ bool expect_pixel(const std::vector<uint8_t>& bgra,
       bgra[offset + 3] == a;
 }
 
+void write_p010_sample(std::vector<uint8_t>& data, size_t byte_offset, uint8_t value_8_bit) {
+  const uint16_t p010 = static_cast<uint16_t>(value_8_bit) << 8;
+  data[byte_offset] = static_cast<uint8_t>(p010 & 0xffu);
+  data[byte_offset + 1] = static_cast<uint8_t>((p010 >> 8) & 0xffu);
+}
+
 int check_adapter_identity() {
   const char* name = vp_macos::presentation_adapter_name();
   if (!name || std::strcmp(name, "cvpixelbuffer-bgra-copy") != 0) {
@@ -138,7 +144,66 @@ int check_cpu_nv12_limited_colors() {
           frame.height,
           dst_stride,
           &info)) {
-    return fail("adapter accepted unsupported P010 software frame");
+    return fail("adapter accepted undersized P010 software frame");
+  }
+  return 0;
+}
+
+int check_cpu_p010_limited_colors() {
+  auto data = std::make_shared<std::vector<uint8_t>>(24, 0);
+  const int y_stride = 8;
+  const int uv_stride = 8;
+  const std::array<uint8_t, 8> y_values = {
+      81, 81, 145, 145,
+      81, 81, 145, 145,
+  };
+  for (int y = 0; y < 2; ++y) {
+    for (int x = 0; x < 4; ++x) {
+      write_p010_sample(
+          *data,
+          static_cast<size_t>(y) * y_stride + static_cast<size_t>(x) * 2u,
+          y_values[static_cast<size_t>(y) * 4u + static_cast<size_t>(x)]);
+    }
+  }
+  const size_t uv_offset = static_cast<size_t>(y_stride) * 2u;
+  const std::array<uint8_t, 4> uv_values = {90, 240, 54, 34};
+  for (int i = 0; i < 4; ++i) {
+    write_p010_sample(*data, uv_offset + static_cast<size_t>(i) * 2u, uv_values[i]);
+  }
+
+  vr::TextureFrame frame;
+  frame.width = 4;
+  frame.height = 2;
+  frame.is_nv12 = true;
+  frame.is_p010 = true;
+  frame.color.range = vr::VIDEO_COLOR_RANGE_LIMITED;
+  frame.storage = vr::CpuNv12FrameStorage{
+      data,
+      y_stride,
+      uv_stride,
+      true,
+      4,
+      2,
+  };
+
+  const int dst_stride = 20;
+  std::vector<uint8_t> bgra(static_cast<size_t>(dst_stride) * frame.height, 0);
+  VPMacOSNativeFrameInfo info{};
+  if (!vp_macos::copy_texture_frame_to_bgra_destination(
+          frame,
+          bgra.data(),
+          bgra.size(),
+          frame.width,
+          frame.height,
+          dst_stride,
+          &info)) {
+    return fail("failed to copy cpu p010 frame");
+  }
+  if (!expect_pixel(bgra, dst_stride, 0, 0, 0, 0, 255, 255) ||
+      !expect_pixel(bgra, dst_stride, 1, 0, 0, 0, 255, 255) ||
+      !expect_pixel(bgra, dst_stride, 2, 0, 1, 255, 0, 255) ||
+      !expect_pixel(bgra, dst_stride, 3, 0, 1, 255, 0, 255)) {
+    return fail("unexpected cpu p010 adapter pixels");
   }
   return 0;
 }
@@ -192,6 +257,9 @@ int main() {
     return ret;
   }
   if (const int ret = check_cpu_nv12_limited_colors(); ret != 0) {
+    return ret;
+  }
+  if (const int ret = check_cpu_p010_limited_colors(); ret != 0) {
     return ret;
   }
   if (const int ret = check_cpu_planar_full_range_red(); ret != 0) {

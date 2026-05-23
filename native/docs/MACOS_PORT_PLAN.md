@@ -151,14 +151,15 @@ Goal: make the app distributable and honest about unsupported features.
 
 - [x] Resolve the FFmpeg dylib deployment-target mismatch by declaring macOS 14.0 as the current
   app minimum and passing the same deployment target into the Xcode-triggered native CMake build.
-- [ ] Add release build, signing, notarization, and third-party notice docs.
+- [x] Add release build, signing, notarization, and third-party notice docs.
   `dev.py package` now stages a macOS release app with bundled GPL/third-party/FFmpeg notices and
   verifies bundled `@rpath` linkage before ad-hoc signing/verifying the copied app signature.
   It can also Developer ID sign the staged app when `--macos-sign-identity` or
   `VOIDPLAYER_MACOS_SIGN_IDENTITY` is provided. `dev.py package --installer` creates a local
   compressed DMG and can submit/staple/validate it through `xcrun notarytool` when
   `--macos-notarize --macos-notary-profile` or `VOIDPLAYER_MACOS_NOTARY_PROFILE` is provided.
-  Real release credentials remain an operator-supplied step.
+  Local staging and DMG creation passed on 2026-05-23; real release credentials remain an
+  operator-supplied step.
 - [x] Make the native analysis library build on macOS with the initialized submodules.
   CI now has a macOS analysis job that configures `BUILD_ANALYSIS=ON`, builds the app-facing
   analysis FFI smoke, and runs VAC2 base generation plus handle readback on a bundled H.264 sample.
@@ -301,6 +302,8 @@ bundled `@rpath` linkage with `otool -L`, ad-hoc signs the staged copy, and veri
 `build/package/macos/installer/VoidPlayer-<version>-macos-arm64.dmg` with `hdiutil` for local
 testing. Passing `--macos-sign-identity` replaces ad-hoc signing with Developer ID hardened-runtime
 signing, and `--macos-notarize --macos-notary-profile` notarizes, staples, and validates the DMG.
+Local validation passed on 2026-05-23 with `python3 dev.py package --no-build` and
+`python3 dev.py package --no-build --installer`.
 
 Frame callback lifecycle status: macOS now has targeted UI smokes that churn play/pause/play,
 play/seek/pause, destroy/recreate, and pixel-buffer reuse diagnostics while native frame callbacks

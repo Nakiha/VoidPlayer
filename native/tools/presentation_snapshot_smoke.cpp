@@ -1,4 +1,5 @@
 #include "video_renderer/render/presentation_snapshot.h"
+#include "video_renderer/render/presentation_package.h"
 
 #include <cstdio>
 #include <memory>
@@ -109,6 +110,17 @@ int main() {
       snapshot.constants.nv12_uv_scale_x[1] != 7.0f / 8.0f ||
       snapshot.constants.nv12_uv_scale_y[1] != 3.0f / 4.0f) {
     return fail("presentation snapshot did not preserve NV12 coded-size metadata");
+  }
+  const auto package_layout = vr::describe_presentation_package_layout(7, 3, 2);
+  if (package_layout.bgra_row_bytes != 28 ||
+      package_layout.bgra_track_stride_bytes != 84 ||
+      package_layout.bgra_max_bytes != 168 ||
+      package_layout.yuv_max_bytes != 192 ||
+      package_layout.max_bytes != 192) {
+    return fail("presentation package layout did not preserve BGRA/YUV sizing");
+  }
+  if (vr::describe_presentation_package_layout(0, 3, 2).max_bytes != 0) {
+    return fail("presentation package layout accepted invalid dimensions");
   }
   return 0;
 }

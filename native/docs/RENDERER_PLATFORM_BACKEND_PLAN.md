@@ -153,6 +153,8 @@ the backend to call back into the player. The zero-copy CVPixelBuffer fast path 
 storage diagnostic, keeping it separate from YUV staging. Software-decoded single-track playback no
 longer opts out of the renderer-owned Metal target; the VVC/H.266 macOS smoke locks that path down
 with zero Swift fallback copies while still reporting `presentationFallbackReason=software-decode`.
+The native Metal uploader smoke now also includes a synthetic planar YUV420 package parity canary,
+covering the three-plane offset/stride shader path without relying on a large media fixture.
 
 Exit gate: macOS can present multi-track CPU-decoded frames through renderer-owned Metal without the
 Swift pump choosing frames, and shader parity tests cover the supported formats.

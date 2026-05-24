@@ -143,6 +143,36 @@ double pixel_buffer_rect_non_black_ratio(CVPixelBufferRef buffer,
       : 0.0;
 }
 
+bool read_pixel_bgra(CVPixelBufferRef buffer,
+                     int x,
+                     int y,
+                     uint8_t* b,
+                     uint8_t* g,
+                     uint8_t* r,
+                     uint8_t* a) {
+  if (!buffer || !b || !g || !r || !a || x < 0 || y < 0 ||
+      x >= static_cast<int>(CVPixelBufferGetWidth(buffer)) ||
+      y >= static_cast<int>(CVPixelBufferGetHeight(buffer))) {
+    return false;
+  }
+  CVPixelBufferLockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
+  const auto* base =
+      static_cast<const uint8_t*>(CVPixelBufferGetBaseAddress(buffer));
+  const size_t stride = CVPixelBufferGetBytesPerRow(buffer);
+  if (!base) {
+    CVPixelBufferUnlockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
+    return false;
+  }
+  const uint8_t* pixel = base + static_cast<size_t>(y) * stride +
+      static_cast<size_t>(x) * 4u;
+  *b = pixel[0];
+  *g = pixel[1];
+  *r = pixel[2];
+  *a = pixel[3];
+  CVPixelBufferUnlockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -217,6 +247,103 @@ int main() {
     VPMacOSMetalUploaderDestroy(uploader);
     return fail("native Metal uploader did not report unsupported-pixel-format status");
   }
+
+  CVPixelBufferRef planar_buffer =
+      create_pixel_buffer(kCVPixelFormatType_32BGRA, 4, 4);
+  if (!planar_buffer) {
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    return fail("failed to create planar YUV parity CVPixelBuffer");
+  }
+  std::vector<uint8_t> planar_package_data(24, 128);
+  VPMacOSNativePresentFramePackageInfo planar_package = {};
+  planar_package.storage = VPMacOSNativePresentPackageStorageYUV;
+  planar_package.width = 4;
+  planar_package.height = 4;
+  planar_package.max_track_slots = 1;
+  planar_package.used_bytes = planar_package_data.size();
+  auto& planar_decision = planar_package.decision;
+  planar_decision.should_present = 1;
+  planar_decision.frame_count = 1;
+  planar_decision.track_count = 1;
+  planar_decision.mode = 0;
+  planar_decision.split_pos = 0.5f;
+  planar_decision.order[0] = 0;
+  planar_decision.display_offset_x[0] = 0.0f;
+  planar_decision.display_offset_y[0] = 0.0f;
+  planar_decision.inv_display_size_x[0] = 1.0f;
+  planar_decision.inv_display_size_y[0] = 1.0f;
+  planar_decision.source_width[0] = 4;
+  planar_decision.source_height[0] = 4;
+  planar_decision.yuv_format[0] = VPMacOSNativePresentFormatYUV420P;
+  planar_decision.y_offset[0] = 0;
+  planar_decision.uv_offset[0] = 16;
+  planar_decision.v_offset[0] = 20;
+  planar_decision.y_stride[0] = 4;
+  planar_decision.uv_stride[0] = 2;
+  planar_decision.coded_width[0] = 4;
+  planar_decision.coded_height[0] = 4;
+  planar_decision.nv12_uv_scale_x[0] = 1.0f;
+  planar_decision.nv12_uv_scale_y[0] = 1.0f;
+  planar_decision.color_range[0] = 2;
+  planar_decision.color_matrix[0] = 2;
+  planar_decision.frames[0].present = 1;
+  planar_decision.frames[0].slot = 0;
+  planar_decision.frames[0].width = 4;
+  planar_decision.frames[0].height = 4;
+  planar_decision.frames[0].pts_us = 42;
+  char planar_error[512] = {};
+  VPMacOSNativeFrameInfo planar_info = {};
+  const int64_t planar_upload_count_before =
+      VPMacOSMetalUploaderPresentPackageUploadCount(uploader);
+  if (VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
+          uploader,
+          planar_package_data.data(),
+          planar_package_data.size(),
+          &planar_package,
+          planar_buffer,
+          4,
+          4,
+          &planar_info,
+          planar_error,
+          sizeof(planar_error)) != 0) {
+    CFRelease(planar_buffer);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    std::fprintf(stderr, "planar YUV420 Metal package upload failed: %s\n", planar_error);
+    return 1;
+  }
+  uint8_t b = 0;
+  uint8_t g = 0;
+  uint8_t r = 0;
+  uint8_t a = 0;
+  if (!read_pixel_bgra(planar_buffer, 2, 2, &b, &g, &r, &a) ||
+      r < 120 || r > 136 ||
+      g < 120 || g > 136 ||
+      b < 120 || b > 136 ||
+      a != 255 ||
+      planar_info.pts_us != 42 ||
+      VPMacOSMetalUploaderPresentPackageUploadCount(uploader) <=
+          planar_upload_count_before ||
+      VPMacOSMetalUploaderLastPresentPackageStorage(uploader) !=
+          VPMacOSNativePresentPackageStorageYUV) {
+    CFRelease(planar_buffer);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    std::fprintf(
+        stderr,
+        "planar YUV420 parity pixel BGRA=(%u,%u,%u,%u), pts=%lld\n",
+        static_cast<unsigned>(b),
+        static_cast<unsigned>(g),
+        static_cast<unsigned>(r),
+        static_cast<unsigned>(a),
+        static_cast<long long>(planar_info.pts_us));
+    return fail("planar YUV420 Metal package upload did not produce neutral BGRA");
+  }
+  CFRelease(planar_buffer);
 
   const std::string path = vp_tools::h264_smoke_video_path(VIDEO_TEST_DIR);
   if (path.empty()) {

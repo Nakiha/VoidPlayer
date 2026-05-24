@@ -73,6 +73,83 @@ def flutter_unit_test() -> None:
     run(["flutter", "test", "test/unit"], cwd=str(ROOT))
 
 
+def _is_macos_launch_source(path: Path) -> bool:
+    rel = path.relative_to(ROOT)
+    parts = rel.parts
+    if not parts:
+        return False
+    if parts[0] in {".dart_tool", ".git", "build"}:
+        return False
+    if parts[0] == "native" and (
+        len(parts) > 1 and (parts[1].startswith("build") or parts[1] == "analysis")
+    ):
+        return False
+    if parts[0] == "macos" and len(parts) > 1 and parts[1] in {"Pods", "Flutter"}:
+        return False
+    if parts[0] in {"lib", "macos", "native", "third_party"}:
+        return path.suffix.lower() in {
+            ".c",
+            ".cc",
+            ".cmake",
+            ".cpp",
+            ".dart",
+            ".h",
+            ".hpp",
+            ".m",
+            ".mm",
+            ".metal",
+            ".podspec",
+            ".swift",
+            ".txt",
+            ".yaml",
+        }
+    return rel.as_posix() in {
+        "CMakeLists.txt",
+        "pubspec.yaml",
+        "pubspec.lock",
+    }
+
+
+def _macos_app_stale(exe: Path) -> bool:
+    if not exe.exists():
+        return True
+    exe_mtime = exe.stat().st_mtime
+    for name in ("pubspec.yaml", "pubspec.lock"):
+        path = ROOT / name
+        try:
+            if path.exists() and path.stat().st_mtime > exe_mtime:
+                return True
+        except OSError:
+            continue
+
+    for dirpath, dirnames, filenames in os.walk(ROOT):
+        path = Path(dirpath)
+        rel_parts = path.relative_to(ROOT).parts
+        if not rel_parts:
+            dirnames[:] = [
+                name for name in dirnames
+                if name in {"lib", "macos", "native", "third_party"}
+            ]
+        elif rel_parts == ("macos",):
+            dirnames[:] = [name for name in dirnames if name not in {"Flutter", "Pods"}]
+        elif rel_parts == ("native",):
+            dirnames[:] = [
+                name for name in dirnames
+                if not name.startswith("build") and name != "analysis"
+            ]
+        elif rel_parts == ("third_party",):
+            dirnames[:] = [name for name in dirnames if name == "ffmpeg"]
+
+        for filename in filenames:
+            source = path / filename
+            try:
+                if _is_macos_launch_source(source) and source.stat().st_mtime > exe_mtime:
+                    return True
+            except (OSError, ValueError):
+                continue
+    return False
+
+
 def cmd_build(args) -> None:
     """Build native standalone module and/or Flutter app."""
     if args.native and args.flutter:
@@ -149,7 +226,7 @@ def _cmd_launch_macos(args) -> None:
     app_bundle = macos_app_bundle_path(args.debug)
     exe = macos_app_exe_path(args.debug)
 
-    if args.build or not app_bundle.exists() or not exe.exists():
+    if args.build or not app_bundle.exists() or _macos_app_stale(exe):
         flutter_build_macos(args.debug)
 
     if not app_bundle.exists() or not exe.exists():

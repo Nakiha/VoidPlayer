@@ -532,8 +532,15 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
   private let textureRegistry: FlutterTextureRegistry
   private let playbackQueue = DispatchQueue(label: "dev.nakiha.voidplayer.macos.native-playback")
+  private var methodChannel: FlutterMethodChannel?
+  private var eventChannel: FlutterEventChannel?
   private var texture: MacOSSyntheticTexture?
   private var textureId: Int64?
+  private var eventSink: FlutterEventSink?
+  private var nativeEventListenCount = 0
+  private var nativeEventEmitCount = 0
+  private var nativeEventDropNoSinkCount = 0
+  private var nativeEventSequence = 0
   private var tracks: [[String: Any]] = []
   private var layout: [String: Any] = MacOSVideoRendererStub.defaultLayout()
   private var currentPtsUs = 0
@@ -578,9 +585,11 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     let messenger = engine.binaryMessenger
     let channel = FlutterMethodChannel(name: channelName, binaryMessenger: messenger)
     channel.setMethodCallHandler(stub.handle)
+    stub.methodChannel = channel
 
     let events = FlutterEventChannel(name: eventsChannelName, binaryMessenger: messenger)
     events.setStreamHandler(stub)
+    stub.eventChannel = events
   }
 
   private static func configureNativeEnvironment() {
@@ -656,9 +665,11 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       result(nil)
     case "seek":
       let targetPtsUs = intArg(call.arguments, "ptsUs") ?? 0
+      let requestId = intArg(call.arguments, "requestId")
       let resumeAfterSeek = nativePlayer?.isPlaying() ?? isPlaying
       if let error = seekAndRefresh(
         targetPtsUs: targetPtsUs,
+        requestId: requestId,
         resumeAfterSeek: resumeAfterSeek
       ) {
         result(error)
@@ -791,6 +802,9 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "nativeFrameCopyMissCount": nativeFrameCopyMissCount,
         "nativeFrameCopyErrorCount": nativeFrameCopyErrorCount,
         "nativeFrameCopyCoalescedCount": nativeFrameCopyCoalescedCount,
+        "nativeEventListenCount": nativeEventListenCount,
+        "nativeEventEmitCount": nativeEventEmitCount,
+        "nativeEventDropNoSinkCount": nativeEventDropNoSinkCount,
         "nativePresentationTargetInstalled": nativePresentationTargetInstalled,
         "nativeRendererOwnedUploadCount": nativePlayer?.rendererOwnedPresentationUploadCount() ?? 0,
         "nativeRendererOwnedUploadFailureCount": nativePlayer?.rendererOwnedPresentationFailureCount() ?? 0,
@@ -1205,7 +1219,11 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     markFrameAvailable()
   }
 
-  private func seekAndRefresh(targetPtsUs: Int, resumeAfterSeek: Bool) -> FlutterError? {
+  private func seekAndRefresh(
+    targetPtsUs: Int,
+    requestId: Int?,
+    resumeAfterSeek: Bool
+  ) -> FlutterError? {
     stopNativeFramePump()
     nativePlayer?.pause()
     isPlaying = false
@@ -1214,6 +1232,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       return error
     }
     markFrameAvailable()
+    emitSeekPreviewPresented(requestId: requestId, targetPtsUs: currentPtsUs)
     if resumeAfterSeek {
       isPlaying = textureId != nil
       nativePlayer?.play()
@@ -1258,6 +1277,33 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     lastPresentedDtsUs = normalizedDtsUs(info)
     lastPresentedDurationUs = info.durationUs
     recordPresentedPts(info.ptsUs)
+  }
+
+  private func emitSeekPreviewPresented(requestId: Int?, targetPtsUs: Int) {
+    guard let requestId,
+          let ptsUs = lastPresentedPtsUs else {
+      return
+    }
+    guard let eventSink else {
+      nativeEventDropNoSinkCount += 1
+      return
+    }
+    nativeEventSequence += 1
+    nativeEventEmitCount += 1
+    let payload: [String: Any] = [
+      "schemaVersion": 1,
+      "sequence": nativeEventSequence,
+      "type": "seekPreviewPresented",
+      "timestampUs": Int(Date().timeIntervalSince1970 * 1_000_000),
+      "requestId": requestId,
+      "trackFileId": 0,
+      "ptsUs": ptsUs,
+      "dtsUs": lastPresentedDtsUs ?? ptsUs,
+      "targetPtsUs": targetPtsUs,
+    ]
+    DispatchQueue.main.async {
+      eventSink(payload)
+    }
   }
 
   private func resetNativeFrameCounters() {
@@ -1557,10 +1603,13 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   }
 
   func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+    eventSink = events
+    nativeEventListenCount += 1
     return nil
   }
 
   func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    eventSink = nil
     return nil
   }
 

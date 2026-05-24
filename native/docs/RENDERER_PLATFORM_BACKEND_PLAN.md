@@ -191,6 +191,9 @@ Windows renderer plus macOS sidecar path.
 Progress: the unused Swift decoded-first-frame object path and its allocating BGRA native bridge
 entrypoint have been removed. macOS now initializes visible native media through the presentation
 path rather than caching a one-off decoded frame blob in Swift.
+The macOS event bridge now retains the `video_renderer/events` channel and emits
+`seekPreviewPresented` asynchronously after paused seek publication, removing the Dart timer
+fallback from normal macOS seek-settle flow.
 
 ## Validation Strategy
 

@@ -99,6 +99,9 @@ recreate, and play-then-window-close churn. `native_user_window_close_smoke.csv`
 window while native playback is active. `native_direct_copy_fallback_smoke.csv` disables the
 test-only Metal upload path and keeps the CVPixelBuffer direct-copy presentation fallback visible.
 `native_software_fallback_smoke.csv` keeps MPEG-2 software decode fallback visible in diagnostics.
+`native_seek_preview_event_smoke.csv` locks the macOS `video_renderer/events` bridge so paused seek
+publishes `seekPreviewPresented` asynchronously after the method call returns, matching the Windows
+event timing that Dart expects before canceling its seek-settle timer fallback.
 `analysis_gated_smoke.csv` asserts that the analysis FFI symbols are available in the app process,
 generates and loads a VAC2 base cache through `AnalysisManager`, and then verifies that direct
 analysis window/overlay automation still no-ops because macOS analysis UI/IPC remains unsupported. A seek

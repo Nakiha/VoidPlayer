@@ -519,6 +519,13 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private var nativeFrameCopyInFlight = false
   private var nativeFrameCopyFirstHostNs: UInt64?
   private var nativeFrameCopyLastHostNs: UInt64?
+  private let presentedPtsTraceCapacity = 240
+  private var presentedPtsTrace: [Int] = []
+  private var presentedPtsSampleCount = 0
+  private var presentedPtsDistinctCount = 0
+  private var presentedPtsFirstUs: Int?
+  private var presentedPtsLastStepUs = 0
+  private var presentedPtsMonotonicViolationCount = 0
 
   init(textureRegistry: FlutterTextureRegistry) {
     self.textureRegistry = textureRegistry
@@ -656,6 +663,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       pickFiles(arguments: call.arguments, result: result)
     case "getDiagnostics":
       let textureStats = texture?.diagnostics()
+      let textureDimensions = texture?.dimensions()
       let nativeLayoutSnapshot = nativePlayer?.layoutSnapshotMap()
       let schedulerStats = nativePlayer?.presentationSchedulerStats()
       let diagnostics: [String: Any] = [
@@ -679,6 +687,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
           ? "Synthetic macOS texture is active"
           : "macOS shared native facade is active with transitional texture-pump presentation",
         "textureId": textureId ?? -1,
+        "textureWidth": textureDimensions?.width ?? 0,
+        "textureHeight": textureDimensions?.height ?? 0,
         "trackCount": tracks.count,
         "audioAvailable": nativePlayer?.hasAudio() ?? false,
         "audioSampleRate": nativePlayer?.audioSampleRate() ?? 0,
@@ -724,6 +734,17 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "nativeFrameCopyCoalescedCount": nativeFrameCopyCoalescedCount,
         "nativeFrameCopyElapsedMs": nativeFrameCopyElapsedMs(),
         "nativeFrameCopyFps": nativeFrameCopyFps(),
+        "presentedFramePtsSampleCount": presentedPtsSampleCount,
+        "presentedFramePtsDistinctCount": presentedPtsDistinctCount,
+        "presentedFramePtsFirstUs": presentedPtsFirstUs ?? -1,
+        "presentedFramePtsLastUs": lastPresentedPtsUs ?? -1,
+        "presentedFramePtsAdvanceUs": presentedPtsAdvanceUs(),
+        "presentedFramePtsLastStepUs": presentedPtsLastStepUs,
+        "presentedFramePtsMonotonicViolationCount": presentedPtsMonotonicViolationCount,
+        "presentedFramePtsTrace": presentedPtsTrace
+          .suffix(32)
+          .map { String($0) }
+          .joined(separator: ","),
       ]
       result(diagnostics)
     case "captureViewport":
@@ -773,8 +794,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         }
         try session.open(path: firstPath)
         nextTexture = MacOSSyntheticTexture(
-          nativeWidth: session.width() > 0 ? session.width() : requestedWidth,
-          nativeHeight: session.height() > 0 ? session.height() : requestedHeight,
+          nativeWidth: requestedWidth,
+          nativeHeight: requestedHeight,
           metalUploadEnabled: !Self.metalUploadDisabledForTest
         )
         let firstFrame = try nextTexture.updateFromNativePlayer(
@@ -997,7 +1018,27 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     let width = intArg(arguments, "width")
     let height = intArg(arguments, "height")
     if let width, let height {
-      texture?.resize(width: max(16, width), height: max(16, height))
+      let nextWidth = max(16, width)
+      let nextHeight = max(16, height)
+      let currentDimensions = texture?.dimensions()
+      let willChange = currentDimensions?.width != nextWidth ||
+        currentDimensions?.height != nextHeight
+      if backendName == "macos-native-player", willChange {
+        nativePlayer?.clearMetalPresentationTarget()
+      }
+      _ = texture?.resize(width: nextWidth, height: nextHeight) ?? false
+      if backendName == "macos-native-player" {
+        refreshCurrentFrameAfterLayoutChange()
+        if isPlaying,
+           let nativePlayer,
+           let texture,
+           texture.installNativePresentationTarget(
+             nativePlayer,
+             maxTrackSlots: activeTrackSlotCapacity()
+           ) {
+          // The next scheduler callback will publish the next renderer-owned frame.
+        }
+      }
     }
     markFrameAvailable()
   }
@@ -1120,6 +1161,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     currentPtsUs = info.ptsUs
     lastPresentedPtsUs = info.ptsUs
     lastPresentedDtsUs = normalizedDtsUs(info)
+    recordPresentedPts(info.ptsUs)
   }
 
   private func resetNativeFrameCounters() {
@@ -1131,6 +1173,47 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     nativeFrameCopyInFlight = false
     nativeFrameCopyFirstHostNs = nil
     nativeFrameCopyLastHostNs = nil
+    resetPresentedPtsTrace()
+  }
+
+  private func resetPresentedPtsTrace() {
+    presentedPtsTrace.removeAll(keepingCapacity: true)
+    presentedPtsSampleCount = 0
+    presentedPtsDistinctCount = 0
+    presentedPtsFirstUs = nil
+    presentedPtsLastStepUs = 0
+    presentedPtsMonotonicViolationCount = 0
+  }
+
+  private func recordPresentedPts(_ ptsUs: Int) {
+    if let last = presentedPtsTrace.last {
+      let step = ptsUs - last
+      presentedPtsLastStepUs = step
+      if step < 0 {
+        presentedPtsMonotonicViolationCount += 1
+      }
+      if step != 0 {
+        presentedPtsDistinctCount += 1
+      }
+    } else {
+      presentedPtsDistinctCount = 1
+    }
+    if presentedPtsFirstUs == nil {
+      presentedPtsFirstUs = ptsUs
+    }
+    presentedPtsSampleCount += 1
+    presentedPtsTrace.append(ptsUs)
+    if presentedPtsTrace.count > presentedPtsTraceCapacity {
+      presentedPtsTrace.removeFirst(presentedPtsTrace.count - presentedPtsTraceCapacity)
+    }
+  }
+
+  private func presentedPtsAdvanceUs() -> Int {
+    guard let first = presentedPtsFirstUs,
+          let last = lastPresentedPtsUs else {
+      return 0
+    }
+    return max(0, last - first)
   }
 
   private func nativeFrameCopyElapsedMs() -> Int {
@@ -1223,6 +1306,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
           self.currentPtsUs = ptsInt
           self.lastPresentedPtsUs = ptsInt
           self.lastPresentedDtsUs = ptsInt
+          self.recordPresentedPts(ptsInt)
           if ptsInt >= self.activeDurationUs() {
             self.isPlaying = false
             self.nativePlayer?.pause()
@@ -1501,16 +1585,16 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     }
   }
 
-  func resize(width: Int, height: Int) {
+  func resize(width: Int, height: Int) -> Bool {
     lock.lock()
     defer { lock.unlock() }
 
-    guard syntheticPattern else { return }
-    guard width != self.width || height != self.height else { return }
+    guard width != self.width || height != self.height else { return false }
     self.width = width
     self.height = height
     createNativeMetalPresentationBackendLocked()
     rebuildPixelBufferLocked()
+    return true
   }
 
   func update(decoded: MacOSDecodedFirstFrame) {

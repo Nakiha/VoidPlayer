@@ -30,12 +30,13 @@ void main() {
 1.1,ASSERT_NATIVE_AUDIO,true,48000,1,-1
 1.2,ASSERT_NATIVE_DIAGNOSTIC_STRING,presentationAdapter,cvpixelbuffer-bgra-copy
 1.3,ASSERT_NATIVE_DIAGNOSTIC_BOOL,metalTextureValid,true
-1.4,CLOSE_MAIN_WINDOW
+1.4,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,textureWidth,320,1920
+1.5,CLOSE_MAIN_WINDOW
 ''');
 
     final instructions = parseAutomationScript(file.path);
 
-    expect(instructions, hasLength(14));
+    expect(instructions, hasLength(15));
     expect(instructions.map((i) => i.time.inMilliseconds), [
       100,
       200,
@@ -50,6 +51,7 @@ void main() {
       1200,
       1300,
       1400,
+      1500,
       2000,
     ]);
     expect(
@@ -156,9 +158,20 @@ void main() {
             .having((a) => a.value, 'value', isTrue),
       ),
     );
-    expect(instructions[12], isA<ScriptCloseMainWindow>());
     expect(
-      instructions[13],
+      instructions[12],
+      isA<ScriptAssert>().having(
+        (i) => i.assertion,
+        'assertion',
+        isA<AssertNativeDiagnosticIntRange>()
+            .having((a) => a.key, 'key', 'textureWidth')
+            .having((a) => a.minValue, 'minValue', 320)
+            .having((a) => a.maxValue, 'maxValue', 1920),
+      ),
+    );
+    expect(instructions[13], isA<ScriptCloseMainWindow>());
+    expect(
+      instructions[14],
       isA<ScriptQuit>().having((i) => i.exitCode, 'exitCode', 0),
     );
   });

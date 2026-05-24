@@ -656,6 +656,21 @@ ScriptInstruction? _parseInstruction(
         time,
         AssertNativeDiagnosticIntAtLeast(args[0], int.parse(args[1])),
       );
+    case 'ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE':
+      if (args.length < 3) {
+        log.warning(
+          'ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE needs key, minValue, and maxValue: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertNativeDiagnosticIntRange(
+          args[0],
+          int.parse(args[1]),
+          int.parse(args[2]),
+        ),
+      );
     case 'ASSERT_NATIVE_DIAGNOSTIC_BOOL':
       if (args.length < 2) {
         log.warning(

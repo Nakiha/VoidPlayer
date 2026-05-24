@@ -23,6 +23,8 @@
 1.75, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, metalTextureCreationCount, 1
 1.77, ASSERT_NATIVE_DIAGNOSTIC_BOOL, pixelBufferMetalUploadEnabled, true
 1.78, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-bgra-layout-upload
+1.785, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureWidth, 320, 1920
+1.786, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureHeight, 180, 1080
 1.79, ADJUST_TRACK_OFFSET, 0, 250
 1.795, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, primaryTrackOffsetUs, 250000
 1.85, SET_VIEWPORT_PIXEL_SIZE_MODE, fillView
@@ -42,6 +44,8 @@
 6.57, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerDeadlineSleepCount, 1
 6.575, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
 6.58, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-metal-cvpixelbuffer-target
+6.59, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFramePtsSampleCount, 10
+6.595, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFramePtsAdvanceUs, 300000
 6.7, PAUSE
 7.0, ASSERT_PAUSED
 7.1, QUIT, 0

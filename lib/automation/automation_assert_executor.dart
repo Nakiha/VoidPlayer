@@ -143,6 +143,23 @@ class AutomationAssertExecutor {
             'Expected native diagnostic $key >= $minValue, got $rawValue',
           );
         }
+      case AssertNativeDiagnosticIntRange(
+        :final key,
+        :final minValue,
+        :final maxValue,
+      ):
+        final diagnostics = await controller.getDiagnostics();
+        final rawValue = diagnostics[key];
+        final actual = rawValue is int
+            ? rawValue
+            : rawValue is num
+            ? rawValue.toInt()
+            : null;
+        if (actual == null || actual < minValue || actual > maxValue) {
+          throw AssertionError(
+            'Expected native diagnostic $key in [$minValue, $maxValue], got $rawValue',
+          );
+        }
       case AssertNativeDiagnosticBool(:final key, :final value):
         final diagnostics = await controller.getDiagnostics();
         final actual = diagnostics[key] as bool?;

@@ -42,6 +42,9 @@ repo-relative `ADD_MEDIA` 路径重写为 container 内的媒体副本；`GENERA
 媒体会在启动前由 helper 预生成到 container 内，再用 `--test-script` 启动 macOS app。
 默认会通过 Launch Services 后台打开真实 `.app`，窗口仍然上屏，但不会主动把当前前台
 app 抢走；需要手动观察时可加 `--visible` 使用直接启动路径：
+每条脚本运行前后还会检查 `~/Library/Logs/DiagnosticReports` 下新增的 `VoidPlayer*.ips`
+或 `void_player*.ips`。如果 app 在 TestRunner 正常 QUIT 后才崩溃，`mac-ui-test` 也会失败
+并打印 faulting thread 的关键栈，避免把退出崩溃误判成通过。
 
 ```bash
 python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv ui_tests/macos/native_facade_smoke.csv ui_tests/macos/native_first_frame_smoke.csv ui_tests/macos/native_controls_smoke.csv ui_tests/macos/native_seek_frame_smoke.csv ui_tests/macos/native_playback_smoke.csv ui_tests/macos/native_frame_callback_lifecycle_smoke.csv ui_tests/macos/native_callback_stress_smoke.csv ui_tests/macos/native_playing_seek_keeps_state_smoke.csv ui_tests/macos/native_playing_step_pauses_smoke.csv ui_tests/macos/native_loop_range_smoke.csv ui_tests/macos/native_audio_diagnostics_smoke.csv ui_tests/macos/native_audio_play_seek_smoke.csv ui_tests/macos/native_audio_destroy_recreate_smoke.csv ui_tests/macos/native_quit_while_playing_smoke.csv ui_tests/macos/native_user_window_close_smoke.csv ui_tests/macos/native_direct_copy_fallback_smoke.csv ui_tests/macos/native_p010_presentation_smoke.csv ui_tests/macos/native_software_fallback_smoke.csv

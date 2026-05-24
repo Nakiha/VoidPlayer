@@ -154,6 +154,19 @@ a stable tone before and after seek/resume. The automated diagnostics prove the 
 the audio stream and keeps the active track wired; this manual check is the current speaker-level
 coverage.
 
+Crash diagnostics:
+
+```bash
+python dev.py mac-ui-test ui_tests/macos/native_quit_while_playing_smoke.csv
+```
+
+The macOS runner installs a native terminate/signal crash handler during the Dart `initLogging`
+channel call, using the same VoidPlayer logs directory as Flutter logs. C++ terminate crashes write
+`crash_macos_terminate_*.log`; fatal signals write `crash_macos_signal_*.log`. macOS still writes
+system `.ips` reports under `~/Library/Logs/DiagnosticReports`, and `dev.py mac-ui-test` now treats
+new `VoidPlayer*.ips` / `void_player*.ips` files as test failures with a short faulting-thread
+summary.
+
 Release staging:
 
 ```bash

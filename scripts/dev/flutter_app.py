@@ -1,6 +1,7 @@
 """Flutter app build, launch, demo, and UI test commands."""
 
 import csv
+import json
 import os
 import shutil
 import subprocess
@@ -337,6 +338,7 @@ def _cmd_mac_ui_test(args) -> None:
             else script_path
         )
         header(f"macOS UI test {index}/{total} {label}")
+        before_crash_reports = _macos_diagnostic_report_paths()
         if args.visible:
             result, ax_tree_error = _run_ui_test_process([str(exe), *app_args])
         else:
@@ -344,6 +346,11 @@ def _cmd_mac_ui_test(args) -> None:
                 app_bundle,
                 app_args,
             )
+        crash_reports = _wait_for_new_macos_crash_reports(before_crash_reports)
+        if crash_reports:
+            _print_macos_crash_reports(crash_reports)
+            if result == 0:
+                result = 1
         if ax_tree_error:
             print(f"\nmacOS UI test failed: Flutter AXTree error detected: {label}")
             sys.exit(1)
@@ -368,6 +375,72 @@ def _macos_ui_test_container_dirs() -> tuple[Path, Path]:
     container_media_dir = container_scripts_dir / "media"
     container_media_dir.mkdir(parents=True, exist_ok=True)
     return container_scripts_dir, container_media_dir
+
+
+def _macos_diagnostic_report_paths() -> set[Path]:
+    reports_dir = Path.home() / "Library" / "Logs" / "DiagnosticReports"
+    if not reports_dir.exists():
+        return set()
+    reports: set[Path] = set()
+    for pattern in ("VoidPlayer*.ips", "void_player*.ips"):
+        reports.update(path for path in reports_dir.glob(pattern) if path.is_file())
+    return reports
+
+
+def _wait_for_new_macos_crash_reports(before: set[Path]) -> list[Path]:
+    deadline = time.monotonic() + 3.0
+    new_reports: set[Path] = set()
+    while time.monotonic() < deadline:
+        new_reports = _macos_diagnostic_report_paths() - before
+        if new_reports:
+            break
+        time.sleep(0.1)
+    return sorted(new_reports, key=lambda path: path.stat().st_mtime)
+
+
+def _print_macos_crash_reports(reports: list[Path]) -> None:
+    print("\nmacOS crash report generated during UI test:")
+    for report in reports:
+        print(f"  {report}")
+        for line in _macos_crash_report_summary(report):
+            print(f"    {line}")
+
+
+def _macos_crash_report_summary(report: Path) -> list[str]:
+    try:
+        raw = report.read_text(encoding="utf-8", errors="replace")
+        first_line, _, body = raw.partition("\n")
+        header_data = json.loads(first_line) if first_line else {}
+        data = json.loads(body) if body else {}
+    except Exception as exc:
+        return [f"summary unavailable: {exc}"]
+
+    lines: list[str] = []
+    app_name = header_data.get("app_name") or data.get("procName") or "unknown"
+    timestamp = header_data.get("timestamp") or data.get("captureTime") or "unknown time"
+    exception = data.get("exception") or {}
+    termination = data.get("termination") or {}
+    exception_text = exception.get("type") or "unknown exception"
+    signal_text = exception.get("signal") or termination.get("indicator")
+    if signal_text:
+        exception_text = f"{exception_text} / {signal_text}"
+    lines.append(f"{app_name} at {timestamp}: {exception_text}")
+
+    faulting_thread = data.get("faultingThread")
+    threads = data.get("threads") or []
+    if isinstance(faulting_thread, int) and 0 <= faulting_thread < len(threads):
+        frames = threads[faulting_thread].get("frames") or []
+        symbols: list[str] = []
+        for frame in frames[:8]:
+            symbol = frame.get("symbol") or frame.get("sourceFile") or "<unknown>"
+            source = frame.get("sourceFile")
+            line = frame.get("sourceLine")
+            if source and line:
+                symbol = f"{symbol} ({source}:{line})"
+            symbols.append(symbol)
+        if symbols:
+            lines.append("faulting thread: " + " <- ".join(symbols))
+    return lines
 
 
 def _prepare_macos_sandbox_script(

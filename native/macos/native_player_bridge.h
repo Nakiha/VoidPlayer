@@ -157,6 +157,9 @@ typedef struct VPMacOSNativeCVPixelBufferPresentFrame {
   VPMacOSNativePresentDecisionInfo decision;
 } VPMacOSNativeCVPixelBufferPresentFrame;
 
+void VPMacOSInstallCrashHandler(const char* crash_dir);
+void VPMacOSRemoveCrashHandler(void);
+
 VPMacOSNativePlayer* VPMacOSNativePlayerCreate(void);
 void VPMacOSNativePlayerDestroy(VPMacOSNativePlayer* player);
 

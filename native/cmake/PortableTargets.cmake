@@ -135,6 +135,15 @@ if(APPLE)
     )
     add_test(NAME macos_metal_presentation_backend_smoke COMMAND macos_metal_presentation_backend_smoke)
 
+    add_executable(macos_crash_handler_smoke
+        "${VOID_NATIVE_DIR}/tools/macos_crash_handler_smoke.cpp"
+    )
+    void_apply_native_compile_options(macos_crash_handler_smoke)
+    target_link_libraries(macos_crash_handler_smoke PRIVATE
+        void_macos_native_player
+    )
+    add_test(NAME macos_crash_handler_smoke COMMAND macos_crash_handler_smoke)
+
     if(BUILD_ANALYSIS)
         add_executable(macos_analysis_ffi_smoke
             "${VOID_NATIVE_DIR}/tools/macos_analysis_ffi_smoke.cpp"

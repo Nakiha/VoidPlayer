@@ -554,9 +554,23 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     activeInstance?.destroyPlayerForWindowClose()
   }
 
+  private func configureNativeLogging(arguments: Any?) {
+    guard let args = arguments as? [String: Any],
+          let logsDir = args["logsDir"] as? String,
+          !logsDir.isEmpty else {
+      return
+    }
+    logsDir.withCString { logsDirPointer in
+      VPMacOSInstallCrashHandler(logsDirPointer)
+    }
+  }
+
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
-    case "initLogging", "setViewportBackgroundColor":
+    case "initLogging":
+      configureNativeLogging(arguments: call.arguments)
+      result(nil)
+    case "setViewportBackgroundColor":
       result(nil)
     case "setTrackOffset":
       let fileId = intArg(call.arguments, "fileId") ?? -1

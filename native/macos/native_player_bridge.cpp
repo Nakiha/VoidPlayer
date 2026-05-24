@@ -53,8 +53,40 @@ void write_error(char* error, size_t error_size, const std::string& message) {
   error[copy_size] = '\0';
 }
 
+class ScopedCVPixelBufferLock {
+public:
+  explicit ScopedCVPixelBufferLock(CVPixelBufferRef buffer)
+      : buffer_(buffer),
+        locked_(buffer &&
+                CVPixelBufferLockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly) ==
+                    kCVReturnSuccess) {}
+
+  ~ScopedCVPixelBufferLock() {
+    if (locked_) {
+      CVPixelBufferUnlockBaseAddress(buffer_, kCVPixelBufferLock_ReadOnly);
+    }
+  }
+
+  ScopedCVPixelBufferLock(const ScopedCVPixelBufferLock&) = delete;
+  ScopedCVPixelBufferLock& operator=(const ScopedCVPixelBufferLock&) = delete;
+
+  bool locked() const { return locked_; }
+
+private:
+  CVPixelBufferRef buffer_ = nullptr;
+  bool locked_ = false;
+};
+
 bool videotoolbox_disabled_by_env() {
   const char* value = std::getenv("VOIDPLAYER_DISABLE_VIDEOTOOLBOX");
+  if (!value || value[0] == '\0') {
+    return false;
+  }
+  return std::strcmp(value, "0") != 0 && std::strcmp(value, "false") != 0;
+}
+
+bool videotoolbox_hwdownload_forced_by_env() {
+  const char* value = std::getenv("VOIDPLAYER_FORCE_VIDEOTOOLBOX_HWDOWNLOAD");
   if (!value || value[0] == '\0') {
     return false;
   }
@@ -72,7 +104,9 @@ bool probe_videotoolbox_h264() {
 
   vr::HwDecodeInitParams params;
   params.backend = vr::RenderBackendType::Metal;
-  params.device_mode = vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
+  params.device_mode = videotoolbox_hwdownload_forced_by_env()
+      ? vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice
+      : vr::DecodeDeviceMode::IndependentDevice;
   params.width = 320;
   params.height = 180;
   auto result = vr::try_hw_decode_providers(codec, params);
@@ -390,28 +424,71 @@ public:
       }
       const auto& frame = *decision.frames[slot];
       const auto* storage = frame.cpu_nv12_storage();
-      if (!storage || !storage->data || storage->y_stride <= 0 ||
-          storage->uv_stride <= 0 || storage->coded_width <= 0 ||
-          storage->coded_height <= 0 ||
-          storage->coded_width < frame.width ||
-          storage->coded_height < frame.height) {
+      const auto* cv_storage = frame.macos_cv_pixel_buffer_storage();
+      const uint8_t* y_source = nullptr;
+      const uint8_t* uv_source = nullptr;
+      int y_stride = 0;
+      int uv_stride = 0;
+      int coded_width = 0;
+      int coded_height = 0;
+      bool is_p010 = false;
+      std::unique_ptr<ScopedCVPixelBufferLock> cv_lock;
+      if (storage) {
+        if (!storage->data || storage->y_stride <= 0 || storage->uv_stride <= 0 ||
+            storage->coded_width <= 0 || storage->coded_height <= 0 ||
+            storage->coded_width < frame.width ||
+            storage->coded_height < frame.height) {
+          error = "present decision contains invalid NV12 frame storage";
+          return false;
+        }
+        y_source = storage->data->data();
+        y_stride = storage->y_stride;
+        uv_stride = storage->uv_stride;
+        coded_width = storage->coded_width;
+        coded_height = storage->coded_height;
+        is_p010 = storage->is_p010;
+        uv_source = y_source + static_cast<size_t>(y_stride) * coded_height;
+      } else if (cv_storage) {
+        auto* pixel_buffer = static_cast<CVPixelBufferRef>(cv_storage->pixel_buffer);
+        cv_lock = std::make_unique<ScopedCVPixelBufferLock>(pixel_buffer);
+        if (!pixel_buffer || !cv_lock->locked() || cv_storage->plane_count < 2 ||
+            cv_storage->coded_width <= 0 || cv_storage->coded_height <= 0 ||
+            cv_storage->coded_width < frame.width ||
+            cv_storage->coded_height < frame.height) {
+          error = "present decision contains invalid CVPixelBuffer frame storage";
+          return false;
+        }
+        y_source = static_cast<const uint8_t*>(
+            CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, 0));
+        uv_source = static_cast<const uint8_t*>(
+            CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, 1));
+        y_stride = static_cast<int>(CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 0));
+        uv_stride = static_cast<int>(CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 1));
+        coded_width = cv_storage->coded_width;
+        coded_height = cv_storage->coded_height;
+        is_p010 = cv_storage->is_p010;
+      } else {
         error = "present decision contains non-NV12 frame storage";
         return false;
       }
+      if (!y_source || !uv_source || y_stride <= 0 || uv_stride <= 0) {
+        error = "present decision contains invalid YUV plane pointers";
+        return false;
+      }
 
-      const int bytes_per_sample = storage->is_p010 ? 2 : 1;
-      if (storage->y_stride < storage->coded_width * bytes_per_sample ||
-          storage->uv_stride < storage->coded_width * bytes_per_sample) {
+      const int bytes_per_sample = is_p010 ? 2 : 1;
+      if (y_stride < coded_width * bytes_per_sample ||
+          uv_stride < coded_width * bytes_per_sample) {
         error = "invalid NV12/P010 frame storage for Metal presentation";
         return false;
       }
-      const int chroma_height = (storage->coded_height + 1) / 2;
+      const int chroma_height = (coded_height + 1) / 2;
       const size_t y_bytes =
-          static_cast<size_t>(storage->y_stride) * static_cast<size_t>(storage->coded_height);
+          static_cast<size_t>(y_stride) * static_cast<size_t>(coded_height);
       const size_t uv_bytes =
-          static_cast<size_t>(storage->uv_stride) * static_cast<size_t>(chroma_height);
-      if (y_bytes > std::numeric_limits<size_t>::max() - uv_bytes ||
-          y_bytes + uv_bytes > storage->data->size()) {
+          static_cast<size_t>(uv_stride) * static_cast<size_t>(chroma_height);
+      if (storage && (y_bytes > std::numeric_limits<size_t>::max() - uv_bytes ||
+          y_bytes + uv_bytes > storage->data->size())) {
         error = "invalid NV12/P010 frame storage for Metal presentation";
         return false;
       }
@@ -422,24 +499,23 @@ public:
         return false;
       }
 
-      const auto* source = storage->data->data();
-      std::memcpy(dst + cursor, source, y_bytes);
+      std::memcpy(dst + cursor, y_source, y_bytes);
       out->y_offset[slot] = static_cast<int32_t>(cursor);
       cursor += y_bytes;
-      std::memcpy(dst + cursor, source + y_bytes, uv_bytes);
+      std::memcpy(dst + cursor, uv_source, uv_bytes);
       out->uv_offset[slot] = static_cast<int32_t>(cursor);
       cursor += uv_bytes;
-      out->yuv_format[slot] = storage->is_p010
+      out->yuv_format[slot] = is_p010
           ? VPMacOSNativePresentFormatP010
           : VPMacOSNativePresentFormatNV12;
-      out->y_stride[slot] = storage->y_stride;
-      out->uv_stride[slot] = storage->uv_stride;
-      out->coded_width[slot] = storage->coded_width;
-      out->coded_height[slot] = storage->coded_height;
+      out->y_stride[slot] = y_stride;
+      out->uv_stride[slot] = uv_stride;
+      out->coded_width[slot] = coded_width;
+      out->coded_height[slot] = coded_height;
       out->nv12_uv_scale_x[slot] =
-          static_cast<float>(frame.width) / static_cast<float>(storage->coded_width);
+          static_cast<float>(frame.width) / static_cast<float>(coded_width);
       out->nv12_uv_scale_y[slot] =
-          static_cast<float>(frame.height) / static_cast<float>(storage->coded_height);
+          static_cast<float>(frame.height) / static_cast<float>(coded_height);
     }
     return true;
   }
@@ -458,7 +534,10 @@ public:
       return false;
     }
     *out = {};
-    const auto decision = current_present_decision();
+    auto decision = current_present_decision();
+    if (!decision.should_present) {
+      decision = primary_peek_present_decision();
+    }
     fill_present_decision_info(decision, width, height, &out->decision);
     if (!decision.should_present) {
       error = "no presentable frame is ready";
@@ -593,9 +672,12 @@ public:
     if (!primary || !primary->decoder) {
       return "none";
     }
-    return hardware_decode_active()
+    if (!hardware_decode_active()) {
+      return "decode_thread_software";
+    }
+    return hardware_decode_downloads_to_cpu()
         ? "decode_thread_videotoolbox_hwdownload"
-        : "decode_thread_software";
+        : "decode_thread_videotoolbox_renderer_owned";
   }
 
   bool copy_current_frame(VPMacOSNativeFrame* out, std::string& error) {
@@ -734,6 +816,26 @@ private:
       return scheduler_cached_present_decision_;
     }
     return render_sink_ ? render_sink_->evaluate() : vr::PresentDecision();
+  }
+
+  vr::PresentDecision primary_peek_present_decision() const {
+    vr::PresentDecision decision;
+    const auto* primary = find_track_by_file_id(0);
+    if (!primary || !primary->track_buffer || primary->slot < 0 ||
+        primary->slot >= static_cast<int32_t>(vr::kMaxTracks)) {
+      return decision;
+    }
+    auto frame = primary->track_buffer->peek(0);
+    if (!frame.has_value()) {
+      return decision;
+    }
+    const auto slot = static_cast<size_t>(primary->slot);
+    decision.should_present = true;
+    decision.frames[slot] = frame;
+    decision.file_ids[slot] = primary->file_id;
+    decision.track_generations[slot] = primary->generation;
+    decision.current_pts_us = frame->pts_us + primary->offset_us;
+    return decision;
   }
 
   void clear_scheduler_present_decision() {
@@ -979,8 +1081,11 @@ private:
       return false;
     }
     if (!videotoolbox_disabled_by_env()) {
+      const auto mode = videotoolbox_hwdownload_forced_by_env()
+          ? vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice
+          : vr::DecodeDeviceMode::IndependentDevice;
       track->decoder->enable_hardware_decode(
-          vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice);
+          mode, nullptr, nullptr, vr::RenderBackendKind::Metal);
     }
     auto* decoder = track->decoder.get();
     auto* audio_output = primary ? playback_.audio_output() : nullptr;

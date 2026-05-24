@@ -71,10 +71,10 @@ macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy`,
 `rendererOwnedPresentationActive=false`,
 `presentationUploadMode=metal-bgra-layout-upload`, `metalTextureValid=true`,
 seek refreshes and playback advance `pixelBufferMetalUploadCount`, the 4K HEVC
-canary advances `pixelBufferMetalYuvUploadCount`,
+canary advances `pixelBufferMetalCVPixelBufferUploadCount`,
 `hardwareDecodeProvider=VideoToolbox`,
-`hardwareDecodeActive=true`, `hardwareDecodeDownloadsToCpu=true`,
-`decodeMode=videotoolbox-download-to-cpu`, and `softwareFallbackActive=false`
+`hardwareDecodeActive=true`, `hardwareDecodeDownloadsToCpu=false`,
+`decodeMode=videotoolbox-renderer-owned`, and `softwareFallbackActive=false`
 for the H.264 fixture. Unsupported codecs or initialization failures must keep
 the fallback visible by flipping the decode-mode diagnostics instead of silently
 changing playback state. Metal surface validation failures must be visible

@@ -30,6 +30,7 @@ private struct MacOSNativeTrackMetadata {
 private enum MacOSNativePlayerError: Error, CustomStringConvertible {
   case failed(String)
   case invalidPayload
+  case transientFrameUnavailable(String)
 
   var description: String {
     switch self {
@@ -37,6 +38,8 @@ private enum MacOSNativePlayerError: Error, CustomStringConvertible {
       return message
     case .invalidPayload:
       return "decoded first frame had invalid dimensions or pixel data"
+    case .transientFrameUnavailable(let message):
+      return message
     }
   }
 
@@ -48,6 +51,8 @@ private enum MacOSNativePlayerError: Error, CustomStringConvertible {
         message == "timed out waiting for a decoded frame"
     case .invalidPayload:
       return false
+    case .transientFrameUnavailable:
+      return true
     }
   }
 }
@@ -438,9 +443,6 @@ private final class MacOSNativePlayerSession {
           dtsUs: Int(frameInfo.dts_us)
         )
       }
-      if ret == -2 {
-        return nil
-      }
       let message = String(cString: error)
       lastError = message.isEmpty
         ? "copyCurrentFrameToMetalPixelBuffer failed with code \(ret)"
@@ -450,6 +452,10 @@ private final class MacOSNativePlayerSession {
       }
     } while Date() < deadline
 
+    if lastError == "no presentable frame is ready" ||
+        lastError == "not all present decision frames are ready" {
+      return nil
+    }
     throw MacOSNativePlayerError.failed(
       lastError.isEmpty ? "timed out waiting for a decoded frame" : lastError
     )
@@ -520,6 +526,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   }
 
   static func register(with engine: FlutterEngine) {
+    configureNativeEnvironment()
     let stub = MacOSVideoRendererStub(textureRegistry: engine)
     activeInstance = stub
     let messenger = engine.binaryMessenger
@@ -528,6 +535,12 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
     let events = FlutterEventChannel(name: eventsChannelName, binaryMessenger: messenger)
     events.setStreamHandler(stub)
+  }
+
+  private static func configureNativeEnvironment() {
+    if metalUploadDisabledForTest {
+      setenv("VOIDPLAYER_FORCE_VIDEOTOOLBOX_HWDOWNLOAD", "1", 1)
+    }
   }
 
   static func destroyActivePlayerForWindowClose() {
@@ -759,15 +772,20 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
           throw MacOSNativePlayerError.failed("failed to allocate macOS native player")
         }
         try session.open(path: firstPath)
-        let decoded = try session.copyCurrentFrame(waitTimeoutMs: 3_000)
         nextTexture = MacOSSyntheticTexture(
-          decoded: decoded,
+          nativeWidth: session.width() > 0 ? session.width() : requestedWidth,
+          nativeHeight: session.height() > 0 ? session.height() : requestedHeight,
           metalUploadEnabled: !Self.metalUploadDisabledForTest
         )
-        initialPresentedPtsUs = decoded.ptsUs
-        initialPresentedDtsUs = normalizedDtsUs(decoded)
-        trackWidth = session.width() > 0 ? session.width() : decoded.width
-        trackHeight = session.height() > 0 ? session.height() : decoded.height
+        let firstFrame = try nextTexture.updateFromNativePlayer(
+          session,
+          maxTrackSlots: 1,
+          waitTimeoutMs: 3_000
+        )
+        initialPresentedPtsUs = firstFrame.ptsUs
+        initialPresentedDtsUs = normalizedDtsUs(firstFrame)
+        trackWidth = session.width() > 0 ? session.width() : firstFrame.width
+        trackHeight = session.height() > 0 ? session.height() : firstFrame.height
         trackDurationUs = session.durationUs() > 0 ? session.durationUs() : Self.syntheticDurationUs
         trackFormatName = "macos-native-player"
         trackCodecName = "ffmpeg"
@@ -1465,6 +1483,18 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     rebuildPixelBuffer()
   }
 
+  init(nativeWidth: Int, nativeHeight: Int, metalUploadEnabled: Bool) {
+    self.width = nativeWidth
+    self.height = nativeHeight
+    self.syntheticPattern = false
+    self.metalUploadEnabled = metalUploadEnabled
+    self.decodedBGRA = nil
+    self.hashPrefix = "macos-native-frame"
+    super.init()
+    createNativeMetalPresentationBackend()
+    rebuildPixelBuffer()
+  }
+
   deinit {
     if let nativeMetalPresentationBackend {
       VPMacOSMetalPresentationBackendDestroy(nativeMetalPresentationBackend)
@@ -1519,14 +1549,17 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       throw MacOSNativePlayerError.invalidPayload
     }
 
-    if let info = try copyFromNativePlayerWithMetalUpload(
-      player,
-      pixelBuffer: pixelBuffer,
-      maxTrackSlots: maxTrackSlots,
-      waitTimeoutMs: waitTimeoutMs
-    ) {
-      pixelBufferReuseCount += 1
-      return info
+    if metalUploadEnabled {
+      if let info = try copyFromNativePlayerWithMetalUpload(
+        player,
+        pixelBuffer: pixelBuffer,
+        maxTrackSlots: maxTrackSlots,
+        waitTimeoutMs: waitTimeoutMs
+      ) {
+        pixelBufferReuseCount += 1
+        return info
+      }
+      throw MacOSNativePlayerError.transientFrameUnavailable("no presentable Metal frame is ready")
     }
 
     CVPixelBufferLockBaseAddress(pixelBuffer, [])

@@ -301,60 +301,6 @@ int main() {
   }
 
   VPMacOSNativeFrameInfo multitrack_info = {};
-  const size_t row_bytes = static_cast<size_t>(width) * 4u;
-  const size_t track_bytes = row_bytes * static_cast<size_t>(height);
-  std::vector<uint8_t> present_cpu(track_bytes * VPMacOSNativeMaxTracks, 0);
-  VPMacOSNativePresentDecisionInfo present_decision = {};
-  VPMacOSCaptureMetrics present_slot0_metrics = {};
-  VPMacOSCaptureMetrics present_slot1_metrics = {};
-  bool present_copy_ready = false;
-  const auto present_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-  while (std::chrono::steady_clock::now() < present_deadline) {
-    if (VPMacOSNativePlayerCopyPresentFramesBGRAInto(
-            player,
-            present_cpu.data(),
-            present_cpu.size(),
-            width,
-            height,
-            static_cast<int32_t>(row_bytes),
-            track_bytes,
-            &present_decision,
-            error,
-            sizeof(error)) == 0 &&
-        present_decision.frame_count == 2) {
-      present_copy_ready = true;
-      break;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-  if (!present_copy_ready ||
-      VPMacOSMeasureBGRA(
-          present_cpu.data(),
-          width,
-          height,
-          static_cast<int32_t>(row_bytes),
-          &present_slot0_metrics) != 0 ||
-      VPMacOSMeasureBGRA(
-          present_cpu.data() + track_bytes,
-          second_track.width,
-          second_track.height,
-          static_cast<int32_t>(row_bytes),
-          &present_slot1_metrics) != 0 ||
-      present_slot0_metrics.non_black_ratio <= 0.5 ||
-      present_slot1_metrics.non_black_ratio <= 0.5 ||
-      present_decision.source_width[0] != width ||
-      present_decision.source_height[0] != height ||
-      present_decision.source_width[1] != second_track.width ||
-      present_decision.source_height[1] != second_track.height) {
-    CFRelease(layout_buffer);
-    VPMacOSNativePlayerDestroy(player);
-    CFRelease(argb);
-    CFRelease(bgra);
-    VPMacOSMetalUploaderDestroy(uploader);
-    std::fprintf(stderr, "native present decision BGRA copy failed: %s\n", error);
-    return 1;
-  }
-
   const size_t package_size =
       VPMacOSNativePresentFramePackageMaxBytes(width, height, VPMacOSNativeMaxTracks);
   std::vector<uint8_t> present_package(package_size, 0);

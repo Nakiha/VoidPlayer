@@ -126,8 +126,15 @@ bool HardwareFrameConverter::init(void* d3d_device, void* d3d_context,
 #else
     d3d11_snapshot_pool_.reset();
     if (!download_to_cpu) {
+#ifdef __APPLE__
+        if (hw_type != HwDecodeType::VideoToolbox) {
+            spdlog::error("[HardwareFrameConverter] Renderer-owned hardware frames require a platform presenter");
+            return false;
+        }
+#else
         spdlog::error("[HardwareFrameConverter] Renderer-owned hardware frames are Windows-only");
         return false;
+#endif
     }
 #endif
 

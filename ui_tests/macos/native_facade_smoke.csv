@@ -13,9 +13,9 @@
 1.52, ASSERT_NATIVE_DIAGNOSTIC_STRING, hardwareDecodeProvider, VideoToolbox
 1.54, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeAvailable, true
 1.56, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, true
-1.565, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, true
+1.565, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, false
 1.57, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, false
-1.575, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, videotoolbox-download-to-cpu
+1.575, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, videotoolbox-renderer-owned
 1.6, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalAvailable, true
 1.65, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureCacheAvailable, true
 1.7, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureValid, true
@@ -27,21 +27,21 @@
 1.795, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, primaryTrackOffsetUs, 250000
 1.85, SET_VIEWPORT_PIXEL_SIZE_MODE, fillView
 1.95, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeLayoutPixelSizeMode, 1
-2.05, ASSERT_TRACK_METADATA, 0, macos-native-player, decode_thread_videotoolbox_hwdownload
+2.05, ASSERT_TRACK_METADATA, 0, macos-native-player, decode_thread_videotoolbox_renderer_owned
 2.1, ASSERT_PRESENTED_FRAME_RANGE, 0, 0, 100000
-2.8, PLAY
-3.8, ASSERT_PLAYING
-3.9, ASSERT_POSITION_RANGE, 500000, 2500000
-4.0, ASSERT_PRESENTED_FRAME_RANGE, 0, 500000, 2500000
-4.05, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalUploadCount, 1
-4.052, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationPackageUploadCount, 1
-4.054, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, yuv
-4.055, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerFrameNotificationCount, 1
-4.06, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerLastPresentFrameCount, 1
-4.065, ASSERT_NATIVE_DIAGNOSTIC_BOOL, presentationSchedulerCachedDecisionAvailable, true
-4.07, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerDeadlineSleepCount, 1
-4.075, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
-4.08, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-metal-cvpixelbuffer-target
-4.1, PAUSE
-4.4, ASSERT_PAUSED
-4.5, QUIT, 0
+5.2, PLAY
+5.3, ASSERT_PLAYING
+6.4, ASSERT_POSITION_RANGE, 500000, 2500000
+6.5, ASSERT_PRESENTED_FRAME_RANGE, 0, 500000, 2500000
+6.55, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalUploadCount, 1
+6.552, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalCVPixelBufferUploadCount, 1
+6.554, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, yuv
+6.555, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerFrameNotificationCount, 1
+6.56, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerLastPresentFrameCount, 1
+6.565, ASSERT_NATIVE_DIAGNOSTIC_BOOL, presentationSchedulerCachedDecisionAvailable, true
+6.57, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerDeadlineSleepCount, 1
+6.575, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
+6.58, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-metal-cvpixelbuffer-target
+6.7, PAUSE
+7.0, ASSERT_PAUSED
+7.1, QUIT, 0

@@ -138,10 +138,10 @@ Swift pump choosing frames, and shader parity tests cover the supported formats.
 
 Goal: remove the 4K60 bottleneck caused by hardware decode download-to-CPU.
 
-- [ ] Teach the hardware-frame converter to preserve VideoToolbox `CVPixelBuffer` backed frames when
+- [x] Teach the hardware-frame converter to preserve VideoToolbox `CVPixelBuffer` backed frames when
   the macOS presentation backend can consume them.
-- [ ] Map VideoToolbox NV12/P010 planes into Metal textures through IOSurface/CVMetalTextureCache.
-- [ ] Keep explicit fallback to download-to-CPU when codec, format, device, or sandbox constraints
+- [x] Map VideoToolbox NV12/P010 planes into Metal textures through IOSurface/CVMetalTextureCache.
+- [x] Keep explicit fallback to download-to-CPU when codec, format, device, or sandbox constraints
   prevent zero-copy.
 - [ ] Add 4K60 local performance diagnostics that report decode fps, render fps, presented fps,
   upload time, and fallback reason.

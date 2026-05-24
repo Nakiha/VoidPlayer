@@ -1,6 +1,8 @@
 #include "native_player_bridge.h"
 #include "tools/test_video_assets.h"
 
+#include <CoreVideo/CoreVideo.h>
+
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -26,61 +28,121 @@ struct PlayerDeleter {
     }
 };
 
-double non_black_ratio(const VPMacOSNativeFrame& frame) {
-    if (!frame.bgra || frame.bgra_size < 4) {
-        return 0.0;
+struct MetalBackendDeleter {
+    void operator()(VPMacOSMetalPresentationBackend* backend) const {
+        VPMacOSMetalPresentationBackendDestroy(backend);
     }
-    size_t non_black = 0;
-    const size_t pixels = frame.bgra_size / 4;
-    for (size_t offset = 0; offset + 3 < frame.bgra_size; offset += 4) {
-        const uint8_t b = frame.bgra[offset + 0];
-        const uint8_t g = frame.bgra[offset + 1];
-        const uint8_t r = frame.bgra[offset + 2];
-        if (r > 4 || g > 4 || b > 4) {
-            ++non_black;
+};
+
+struct PixelBufferHolder {
+    CVPixelBufferRef buffer = nullptr;
+
+    ~PixelBufferHolder() {
+        if (buffer) {
+            CVPixelBufferRelease(buffer);
         }
     }
-    return pixels == 0 ? 0.0 : static_cast<double>(non_black) / static_cast<double>(pixels);
-}
 
-double non_black_ratio_bgra(const std::vector<uint8_t>& bgra, int width, int height, int stride) {
-    if (width <= 0 || height <= 0 || stride < width * 4) {
+    PixelBufferHolder() = default;
+    PixelBufferHolder(const PixelBufferHolder&) = delete;
+    PixelBufferHolder& operator=(const PixelBufferHolder&) = delete;
+    PixelBufferHolder(PixelBufferHolder&& other) noexcept : buffer(other.buffer) {
+        other.buffer = nullptr;
+    }
+    PixelBufferHolder& operator=(PixelBufferHolder&& other) noexcept {
+        if (this != &other) {
+            if (buffer) {
+                CVPixelBufferRelease(buffer);
+            }
+            buffer = other.buffer;
+            other.buffer = nullptr;
+        }
+        return *this;
+    }
+};
+
+double non_black_ratio_pixel_buffer(CVPixelBufferRef buffer) {
+    if (!buffer ||
+        CVPixelBufferLockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) {
         return 0.0;
     }
+    const int width = static_cast<int>(CVPixelBufferGetWidth(buffer));
+    const int height = static_cast<int>(CVPixelBufferGetHeight(buffer));
+    const int stride = static_cast<int>(CVPixelBufferGetBytesPerRow(buffer));
+    const auto* bgra = static_cast<const uint8_t*>(CVPixelBufferGetBaseAddress(buffer));
     size_t non_black = 0;
     size_t pixels = 0;
-    for (int y = 0; y < height; ++y) {
-        const size_t row = static_cast<size_t>(y) * static_cast<size_t>(stride);
-        for (int x = 0; x < width; ++x) {
-            const size_t offset = row + static_cast<size_t>(x) * 4u;
-            if (offset + 3 >= bgra.size()) {
-                return 0.0;
+    if (bgra && width > 0 && height > 0 && stride >= width * 4) {
+        for (int y = 0; y < height; ++y) {
+            const uint8_t* row = bgra + static_cast<size_t>(y) * stride;
+            for (int x = 0; x < width; ++x) {
+                const uint8_t* pixel = row + static_cast<size_t>(x) * 4u;
+                const uint8_t b = pixel[0];
+                const uint8_t g = pixel[1];
+                const uint8_t r = pixel[2];
+                if (r > 4 || g > 4 || b > 4) {
+                    ++non_black;
+                }
+                ++pixels;
             }
-            const uint8_t b = bgra[offset + 0];
-            const uint8_t g = bgra[offset + 1];
-            const uint8_t r = bgra[offset + 2];
-            if (r > 4 || g > 4 || b > 4) {
-                ++non_black;
-            }
-            ++pixels;
         }
     }
+    CVPixelBufferUnlockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
     return pixels == 0 ? 0.0 : static_cast<double>(non_black) / static_cast<double>(pixels);
 }
 
-bool wait_for_frame(VPMacOSNativePlayer* player,
-                    VPMacOSNativeFrame& frame,
-                    std::chrono::milliseconds timeout) {
+PixelBufferHolder make_bgra_pixel_buffer(int width, int height) {
+    PixelBufferHolder holder;
+    const void* keys[] = {kCVPixelBufferMetalCompatibilityKey};
+    const void* values[] = {kCFBooleanTrue};
+    CFDictionaryRef attrs = CFDictionaryCreate(
+        kCFAllocatorDefault,
+        keys,
+        values,
+        1,
+        &kCFTypeDictionaryKeyCallBacks,
+        &kCFTypeDictionaryValueCallBacks);
+    CVPixelBufferCreate(
+        kCFAllocatorDefault,
+        width,
+        height,
+        kCVPixelFormatType_32BGRA,
+        attrs,
+        &holder.buffer);
+    if (attrs) {
+        CFRelease(attrs);
+    }
+    return holder;
+}
+
+bool wait_for_presented_frame(VPMacOSNativePlayer* player,
+                              VPMacOSMetalPresentationBackend* backend,
+                              CVPixelBufferRef target,
+                              int width,
+                              int height,
+                              VPMacOSNativeFrameInfo& info,
+                              double& non_black,
+                              std::chrono::milliseconds timeout) {
     auto deadline = std::chrono::steady_clock::now() + timeout;
     char error[1024] = {};
     while (std::chrono::steady_clock::now() < deadline) {
-        VPMacOSNativeFrameFree(&frame);
-        if (VPMacOSNativePlayerCopyCurrentFrameBGRA(player, &frame, error, sizeof(error)) == 0) {
+        if (VPMacOSMetalPresentationBackendCopyCurrentFrameWithLayout(
+                backend,
+                player,
+                target,
+                width,
+                height,
+                1,
+                0,
+                &info,
+                error,
+                sizeof(error)) == 0) {
+            non_black = non_black_ratio_pixel_buffer(target);
             return true;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    std::cerr << "timed out waiting for frame";
+    std::cerr << "timed out waiting for presented frame";
     if (error[0] != '\0') {
         std::cerr << ": " << error;
     }
@@ -128,12 +190,80 @@ int main(int argc, char** argv) {
         std::cerr << "player reported invalid media metadata\n";
         return 1;
     }
+    const int target_width = VPMacOSNativePlayerWidth(player.get());
+    const int target_height = VPMacOSNativePlayerHeight(player.get());
+    std::unique_ptr<VPMacOSMetalPresentationBackend, MetalBackendDeleter> backend(
+        VPMacOSMetalPresentationBackendCreate(target_width, target_height));
+    PixelBufferHolder target = make_bgra_pixel_buffer(target_width, target_height);
+    if (!backend || !target.buffer) {
+        std::cerr << "failed to create Metal presentation target for native smoke\n";
+        return 1;
+    }
     VPMacOSNativePlayerSetTrackOffset(player.get(), 0, 250'000);
     if (VPMacOSNativePlayerTrackOffsetUs(player.get(), 0) != 250'000) {
         std::cerr << "track offset was not retained by macOS native player\n";
         return 1;
     }
     VPMacOSNativePlayerSetTrackOffset(player.get(), 0, 0);
+
+    VPMacOSNativeFrameInfo first = {};
+    double first_non_black = 0.0;
+    if (!wait_for_presented_frame(
+            player.get(),
+            backend.get(),
+            target.buffer,
+            target_width,
+            target_height,
+            first,
+            first_non_black,
+            std::chrono::seconds(3))) {
+        return 1;
+    }
+    if (first.width <= 0 || first.height <= 0 || first_non_black <= 0.5) {
+        std::cerr << "first presented frame is invalid or unexpectedly black\n";
+        return 1;
+    }
+    if (videotoolbox_disabled_by_env()) {
+        if (std::string(VPMacOSNativePlayerDecodeModeName(player.get())) !=
+                "software-fallback" ||
+            VPMacOSNativePlayerHardwareDecodeActive(player.get()) != 0) {
+            std::cerr << "software fallback decode was not active; mode="
+                      << VPMacOSNativePlayerDecodeModeName(player.get()) << "\n";
+            return 1;
+        }
+    } else {
+        const bool force_hwdownload =
+            std::getenv("VOIDPLAYER_FORCE_VIDEOTOOLBOX_HWDOWNLOAD") != nullptr;
+        const std::string expected_mode = force_hwdownload
+            ? "videotoolbox-download-to-cpu"
+            : "videotoolbox-renderer-owned";
+        const int expected_downloads = force_hwdownload ? 1 : 0;
+        if (std::string(VPMacOSNativePlayerDecodeModeName(player.get())) != expected_mode ||
+            VPMacOSNativePlayerHardwareDecodeActive(player.get()) == 0 ||
+            VPMacOSNativePlayerHardwareDecodeDownloadsToCpu(player.get()) != expected_downloads) {
+            std::cerr << "VideoToolbox decode mode mismatch; mode="
+                      << VPMacOSNativePlayerDecodeModeName(player.get()) << "\n";
+            return 1;
+        }
+    }
+    VPMacOSNativeFrameInfo direct_info = {};
+    double direct_non_black = 0.0;
+    if (!wait_for_presented_frame(
+            player.get(),
+            backend.get(),
+            target.buffer,
+            target_width,
+            target_height,
+            direct_info,
+            direct_non_black,
+            std::chrono::seconds(1))) {
+        return 1;
+    }
+    if (direct_info.pts_us != first.pts_us || direct_non_black <= 0.5) {
+        std::cerr << "Metal presentation copy returned invalid frame info or pixels\n";
+        return 1;
+    }
+
     VPMacOSNativeTrackInfo second_track = {};
     if (VPMacOSNativePlayerAddTrack(
             player.get(), path.c_str(), 1, &second_track, error, sizeof(error)) != 0) {
@@ -175,83 +305,35 @@ int main(int argc, char** argv) {
         std::cerr << "native layout state was not retained or clamped by macOS player\n";
         return 1;
     }
-
-    VPMacOSNativeFrame first = {};
-    if (!wait_for_frame(player.get(), first, std::chrono::seconds(3))) {
-        return 1;
-    }
-    if (first.width <= 0 || first.height <= 0 || non_black_ratio(first) <= 0.5) {
-        std::cerr << "first frame is invalid or unexpectedly black\n";
-        VPMacOSNativeFrameFree(&first);
-        return 1;
-    }
-    if (videotoolbox_disabled_by_env()) {
-        if (std::string(VPMacOSNativePlayerDecodeModeName(player.get())) !=
-                "software-fallback" ||
-            VPMacOSNativePlayerHardwareDecodeActive(player.get()) != 0) {
-            std::cerr << "software fallback decode was not active; mode="
-                      << VPMacOSNativePlayerDecodeModeName(player.get()) << "\n";
-            VPMacOSNativeFrameFree(&first);
-            return 1;
-        }
-    } else {
-        if (std::string(VPMacOSNativePlayerDecodeModeName(player.get())) !=
-                "videotoolbox-download-to-cpu" ||
-            VPMacOSNativePlayerHardwareDecodeActive(player.get()) == 0 ||
-            VPMacOSNativePlayerHardwareDecodeDownloadsToCpu(player.get()) == 0) {
-            std::cerr << "VideoToolbox hwdownload decode was not active; mode="
-                      << VPMacOSNativePlayerDecodeModeName(player.get()) << "\n";
-            VPMacOSNativeFrameFree(&first);
-            return 1;
-        }
-    }
-    const int64_t first_pts = first.pts_us;
-    const int direct_stride = first.width * 4 + 64;
-    std::vector<uint8_t> direct_bgra(
-        static_cast<size_t>(direct_stride) * static_cast<size_t>(first.height), 0);
-    VPMacOSNativeFrameInfo direct_info = {};
-    if (VPMacOSNativePlayerCopyCurrentFrameBGRAInto(
-            player.get(),
-            direct_bgra.data(),
-            direct_bgra.size(),
-            first.width,
-            first.height,
-            direct_stride,
-            &direct_info,
-            error,
-            sizeof(error)) != 0) {
-        std::cerr << "direct BGRA copy failed: " << error << "\n";
-        VPMacOSNativeFrameFree(&first);
-        return 1;
-    }
-    if (direct_info.pts_us != first_pts ||
-        non_black_ratio_bgra(direct_bgra, first.width, first.height, direct_stride) <= 0.5) {
-        std::cerr << "direct BGRA copy returned invalid frame info or pixels\n";
-        VPMacOSNativeFrameFree(&first);
-        return 1;
-    }
+    VPMacOSNativePlayerRemoveTrack(player.get(), 1);
+    VPMacOSNativeLayoutState single_track_layout = {};
+    VPMacOSNativePlayerApplyLayout(player.get(), &single_track_layout);
 
     std::atomic<int> frame_available_callbacks{0};
     VPMacOSNativePlayerSetFrameAvailableCallback(
         player.get(), count_frame_available, &frame_available_callbacks);
     VPMacOSNativePlayerPlay(player.get());
     std::this_thread::sleep_for(std::chrono::milliseconds(180));
-    VPMacOSNativeFrame playing = {};
-    if (!wait_for_frame(player.get(), playing, std::chrono::seconds(2))) {
-        VPMacOSNativeFrameFree(&first);
+    VPMacOSNativeFrameInfo playing = {};
+    double playing_non_black = 0.0;
+    if (!wait_for_presented_frame(
+            player.get(),
+            backend.get(),
+            target.buffer,
+            target_width,
+            target_height,
+            playing,
+            playing_non_black,
+            std::chrono::seconds(2))) {
         return 1;
     }
-    if (playing.pts_us <= first_pts) {
-        std::cerr << "playback did not advance frames: first=" << first_pts
+    if (playing.pts_us <= first.pts_us || playing_non_black <= 0.5) {
+        std::cerr << "playback did not advance frames: first=" << first.pts_us
                   << " playing=" << playing.pts_us << "\n";
-        VPMacOSNativeFrameFree(&first);
-        VPMacOSNativeFrameFree(&playing);
         return 1;
     }
     if (frame_available_callbacks.load(std::memory_order_relaxed) <= 0) {
         std::cerr << "native frame-available callback was not invoked during playback\n";
-        VPMacOSNativeFrameFree(&first);
-        VPMacOSNativeFrameFree(&playing);
         return 1;
     }
     VPMacOSNativePresentationSchedulerStats scheduler_stats = {};
@@ -267,27 +349,29 @@ int main(int argc, char** argv) {
         scheduler_stats.deadline_sleep_count == 0 ||
         scheduler_stats.last_deadline_sleep_us < 0 ||
         scheduler_stats.last_deadline_sleep_us > 8000 ||
-        scheduler_stats.last_selected_pts_us <= first_pts) {
+        scheduler_stats.last_selected_pts_us <= first.pts_us) {
         std::cerr << "native presentation scheduler stats were not updated during playback\n";
-        VPMacOSNativeFrameFree(&first);
-        VPMacOSNativeFrameFree(&playing);
         return 1;
     }
 
     VPMacOSNativePlayerPause(player.get());
     VPMacOSNativePlayerSetFrameAvailableCallback(player.get(), nullptr, nullptr);
     VPMacOSNativePlayerSeek(player.get(), 2'000'000);
-    VPMacOSNativeFrame seeked = {};
-    if (!wait_for_frame(player.get(), seeked, std::chrono::seconds(3))) {
-        VPMacOSNativeFrameFree(&first);
-        VPMacOSNativeFrameFree(&playing);
+    VPMacOSNativeFrameInfo seeked = {};
+    double seeked_non_black = 0.0;
+    if (!wait_for_presented_frame(
+            player.get(),
+            backend.get(),
+            target.buffer,
+            target_width,
+            target_height,
+            seeked,
+            seeked_non_black,
+            std::chrono::seconds(3))) {
         return 1;
     }
-    if (seeked.pts_us < 1'500'000) {
+    if (seeked.pts_us < 1'500'000 || seeked_non_black <= 0.5) {
         std::cerr << "seek did not reach the requested region: " << seeked.pts_us << "\n";
-        VPMacOSNativeFrameFree(&first);
-        VPMacOSNativeFrameFree(&playing);
-        VPMacOSNativeFrameFree(&seeked);
         return 1;
     }
 
@@ -299,49 +383,39 @@ int main(int argc, char** argv) {
     if (loop_tick_pts > 1'450'000) {
         std::cerr << "loop range was not enforced by native playback tick before frame copy: "
                   << loop_tick_pts << "\n";
-        VPMacOSNativeFrameFree(&first);
-        VPMacOSNativeFrameFree(&playing);
-        VPMacOSNativeFrameFree(&seeked);
         return 1;
     }
-    VPMacOSNativeFrame looped = {};
-    if (!wait_for_frame(player.get(), looped, std::chrono::seconds(3))) {
-        VPMacOSNativeFrameFree(&first);
-        VPMacOSNativeFrameFree(&playing);
-        VPMacOSNativeFrameFree(&seeked);
+    VPMacOSNativeFrameInfo looped = {};
+    double looped_non_black = 0.0;
+    if (!wait_for_presented_frame(
+            player.get(),
+            backend.get(),
+            target.buffer,
+            target_width,
+            target_height,
+            looped,
+            looped_non_black,
+            std::chrono::seconds(3))) {
         return 1;
     }
     VPMacOSNativePlayerPause(player.get());
     VPMacOSNativePlayerSetLoopRange(player.get(), 0, 0, 0);
-    if (looped.pts_us > 1'450'000) {
+    if (looped.pts_us > 1'450'000 || looped_non_black <= 0.5) {
         std::cerr << "loop range did not seek back near start: " << looped.pts_us << "\n";
-        VPMacOSNativeFrameFree(&first);
-        VPMacOSNativeFrameFree(&playing);
-        VPMacOSNativeFrameFree(&seeked);
-        VPMacOSNativeFrameFree(&looped);
         return 1;
     }
-    VPMacOSNativePlayerRemoveTrack(player.get(), 1);
     if (VPMacOSNativePlayerTrackOffsetUs(player.get(), 1) != 0) {
         std::cerr << "removed native track still reports an offset\n";
-        VPMacOSNativeFrameFree(&first);
-        VPMacOSNativeFrameFree(&playing);
-        VPMacOSNativeFrameFree(&seeked);
-        VPMacOSNativeFrameFree(&looped);
         return 1;
     }
 
-    std::cout << "macOS native player frames: first=" << first_pts
+    std::cout << "macOS native player frames: first=" << first.pts_us
               << " playing=" << playing.pts_us
               << " seeked=" << seeked.pts_us
               << " looped=" << looped.pts_us
               << " loop_tick=" << loop_tick_pts
               << " size=" << first.width << "x" << first.height
-              << " non_black=" << non_black_ratio(first) << "\n";
+              << " non_black=" << first_non_black << "\n";
 
-    VPMacOSNativeFrameFree(&first);
-    VPMacOSNativeFrameFree(&playing);
-    VPMacOSNativeFrameFree(&seeked);
-    VPMacOSNativeFrameFree(&looped);
     return 0;
 }

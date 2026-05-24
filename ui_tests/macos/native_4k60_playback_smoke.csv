@@ -1,10 +1,11 @@
 # macOS native playback smoke for the bundled 3840x2160 ~60fps HEVC sample.
-# This is a throughput canary for the current VideoToolbox hwdownload + BGRA Metal upload path,
-# not the final zero-copy VideoToolbox/Metal renderer.
+# This is a throughput canary for the VideoToolbox renderer-owned CVPixelBuffer + Metal path.
 @WINDOW, 960, 540
 0.3, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
 2.2, ASSERT_TRACK_COUNT, 1
 2.3, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, true
+2.35, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, false
+2.36, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, videotoolbox-renderer-owned
 2.4, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-bgra-layout-upload
 2.42, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-presentation-scheduler/transitional-thread
 2.44, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, swift-cvpixelbuffer-texture-pump
@@ -13,10 +14,9 @@
 2.7, PLAY
 4.5, ASSERT_POSITION_RANGE, 700000, 2900000
 4.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameCopyCount, 2
-4.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalYuvUploadCount, 2
-4.71, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationPackageUploadCount, 2
+4.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalCVPixelBufferUploadCount, 2
 4.715, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, yuv
-4.716, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationPackageCopyUs, 1
+4.716, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationPackageCopyUs, 0
 4.717, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationPackageGpuWaitUs, 1
 4.718, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationPackageTotalUs, 1
 4.72, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerFrameNotificationCount, 2

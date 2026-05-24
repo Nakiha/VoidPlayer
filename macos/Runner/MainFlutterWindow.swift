@@ -534,7 +534,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private let playbackQueue = DispatchQueue(label: "dev.nakiha.voidplayer.macos.native-playback")
   private var methodChannel: FlutterMethodChannel?
   private var eventChannel: FlutterEventChannel?
-  private var texture: MacOSSyntheticTexture?
+  private var texture: MacOSFlutterTextureBridge?
   private var textureId: Int64?
   private var eventSink: FlutterEventSink?
   private var nativeEventListenCount = 0
@@ -750,7 +750,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "softwareFallbackActive": nativePlayer?.hardwareDecodeActive() != true,
         "available": nativePlayer != nil,
         "reason": nativePlayer == nil
-          ? "Synthetic macOS texture is active"
+          ? "Synthetic macOS texture bridge is active"
           : (nativePlayer?.rendererOwnedPresentationActive() == true
             ? "macOS shared native facade is active with renderer-owned Metal presentation"
             : "macOS shared native facade is active with transitional texture-pump presentation"),
@@ -852,7 +852,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     let requestedHeight = max(16, intArg(arguments, "height") ?? 1080)
     let firstPath = paths.first ?? "macos-synthetic://color-bars"
 
-    let nextTexture: MacOSSyntheticTexture
+    let nextTexture: MacOSFlutterTextureBridge
     let trackWidth: Int
     let trackHeight: Int
     let trackDurationUs: Int
@@ -863,7 +863,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     var initialPresentedPtsUs = 0
     var initialPresentedDtsUs = 0
     if firstPath.hasPrefix("macos-synthetic://") {
-      nextTexture = MacOSSyntheticTexture(
+      nextTexture = MacOSFlutterTextureBridge(
         width: requestedWidth,
         height: requestedHeight,
         metalUploadEnabled: !Self.metalUploadDisabledForTest
@@ -883,7 +883,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
           throw MacOSNativePlayerError.failed("failed to allocate macOS native player")
         }
         try session.open(path: firstPath)
-        nextTexture = MacOSSyntheticTexture(
+        nextTexture = MacOSFlutterTextureBridge(
           nativeWidth: requestedWidth,
           nativeHeight: requestedHeight,
           metalUploadEnabled: !Self.metalUploadDisabledForTest
@@ -1139,7 +1139,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     guard let texture else {
       return FlutterError(
         code: "NO_PLAYER",
-        message: "No macOS synthetic texture is registered",
+        message: "No macOS Flutter texture bridge is registered",
         details: nil
       )
     }
@@ -1703,11 +1703,11 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   }
 }
 
-private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
+private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
   private let lock = NSLock()
   private(set) var width: Int
   private(set) var height: Int
-  private let syntheticPattern: Bool
+  private let isSyntheticSource: Bool
   private let metalUploadEnabled: Bool
   private var nativeMetalPresentationBackend: OpaquePointer?
   private let hashPrefix: String
@@ -1727,7 +1727,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   init(width: Int, height: Int, metalUploadEnabled: Bool) {
     self.width = width
     self.height = height
-    self.syntheticPattern = true
+    self.isSyntheticSource = true
     self.metalUploadEnabled = metalUploadEnabled
     self.hashPrefix = "macos-synthetic"
     super.init()
@@ -1738,7 +1738,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   init(nativeWidth: Int, nativeHeight: Int, metalUploadEnabled: Bool) {
     self.width = nativeWidth
     self.height = nativeHeight
-    self.syntheticPattern = false
+    self.isSyntheticSource = false
     self.metalUploadEnabled = metalUploadEnabled
     self.hashPrefix = "macos-native-frame"
     super.init()
@@ -1772,7 +1772,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     lock.lock()
     defer { lock.unlock() }
 
-    guard !syntheticPattern else {
+    guard !isSyntheticSource else {
       throw MacOSNativePlayerError.invalidPayload
     }
     if pixelBuffer == nil {
@@ -1923,7 +1923,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     lock.lock()
     defer { lock.unlock() }
 
-    guard !syntheticPattern,
+    guard !isSyntheticSource,
           metalUploadEnabled,
           let nativeMetalPresentationBackend,
           let pixelBuffer,

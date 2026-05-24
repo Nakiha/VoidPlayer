@@ -517,6 +517,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private var nativeFrameCopyErrorCount = 0
   private var nativeFrameCopyCoalescedCount = 0
   private var nativeFrameCopyInFlight = false
+  private var nativePresentationTargetInstalled = false
+  private var nativeRendererOwnedUploadFailureCount = 0
   private var nativeFrameCopyFirstHostNs: UInt64?
   private var nativeFrameCopyLastHostNs: UInt64?
   private let presentedPtsTraceCapacity = 240
@@ -699,7 +701,9 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "available": nativePlayer != nil,
         "reason": nativePlayer == nil
           ? "Synthetic macOS texture is active"
-          : "macOS shared native facade is active with transitional texture-pump presentation",
+          : (nativePlayer?.rendererOwnedPresentationActive() == true
+            ? "macOS shared native facade is active with renderer-owned Metal presentation"
+            : "macOS shared native facade is active with transitional texture-pump presentation"),
         "textureId": textureId ?? -1,
         "textureWidth": textureDimensions?.width ?? 0,
         "textureHeight": textureDimensions?.height ?? 0,
@@ -746,6 +750,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "nativeFrameCopyMissCount": nativeFrameCopyMissCount,
         "nativeFrameCopyErrorCount": nativeFrameCopyErrorCount,
         "nativeFrameCopyCoalescedCount": nativeFrameCopyCoalescedCount,
+        "nativePresentationTargetInstalled": nativePresentationTargetInstalled,
+        "nativeRendererOwnedUploadFailureCount": nativeRendererOwnedUploadFailureCount,
         "nativeFrameCopyElapsedMs": nativeFrameCopyElapsedMs(),
         "nativeFrameCopyFps": nativeFrameCopyFps(),
         "presentedFramePtsSampleCount": presentedPtsSampleCount,
@@ -1185,6 +1191,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     nativeFrameCopyErrorCount = 0
     nativeFrameCopyCoalescedCount = 0
     nativeFrameCopyInFlight = false
+    nativeRendererOwnedUploadFailureCount = 0
     nativeFrameCopyFirstHostNs = nil
     nativeFrameCopyLastHostNs = nil
     resetPresentedPtsTrace()
@@ -1267,7 +1274,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     playbackGeneration = generation
     resetNativeFrameCounters()
     nativeFrameCallbackRegistered = true
-    var nativePresentationTargetInstalled = false
+    nativePresentationTargetInstalled = false
     if let texture {
       nativePresentationTargetInstalled = texture.installNativePresentationTarget(
         nativePlayer,
@@ -1292,6 +1299,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     playbackGeneration += 1
     nativeFrameCopyInFlight = false
     nativePlayer?.clearMetalPresentationTarget()
+    nativePresentationTargetInstalled = false
     if nativeFrameCallbackRegistered {
       nativePlayer?.setFrameAvailableCallback(nil, userData: nil)
       nativeFrameCallbackRegistered = false
@@ -1328,6 +1336,10 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
           }
         }
         self.markFrameAvailable()
+        return
+      }
+      if self.nativePresentationTargetInstalled {
+        self.nativeRendererOwnedUploadFailureCount += 1
         return
       }
       if self.nativeFrameCopyInFlight {

@@ -107,8 +107,10 @@ macOS bridge now uses the shared `TrackPipelineFactory` with `render_backend=Met
 VideoToolbox device-mode selection platform-specific while sharing the normal native track pipeline
 construction path. Presentation tick bookkeeping, cached present-decision ownership, deadline sleep,
 and presentation stats now live in the portable `PresentationLoopDriver`; the separate macOS tick
-thread is reduced to a transitional host loop around that shared driver and remains the main cleanup
-target for this phase.
+thread is reduced to a transitional host loop around that shared driver. When the native Metal
+presentation target is installed, Swift no longer falls back to the old copy path on upload failure;
+failures are counted in diagnostics instead, making renderer-owned presentation problems visible.
+The host loop itself remains the main cleanup target for this phase.
 
 Exit gate: macOS UI smokes pass with `rendererOwnedPresentationActive=true`, and the old tick-driven
 presentation path is no longer the normal route.

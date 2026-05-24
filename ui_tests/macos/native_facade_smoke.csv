@@ -44,6 +44,8 @@
 6.57, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerDeadlineSleepCount, 1
 6.575, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
 6.58, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-metal-cvpixelbuffer-target
+6.582, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true
+6.584, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0
 6.59, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFramePtsSampleCount, 10
 6.595, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFramePtsAdvanceUs, 300000
 6.7, PAUSE

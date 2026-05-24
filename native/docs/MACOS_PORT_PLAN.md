@@ -20,7 +20,9 @@ current renderer unification work is tracked in
   still driven by the transitional native tick plus Swift texture notification path. The native tick
   delegates scheduler-selected present decisions, deadline sleep, and presentation stats to the
   portable `PresentationLoopDriver`; Swift coalesces duplicate copy requests so the transition path
-  does not queue stale uploads under 4K load.
+  does not queue stale uploads under 4K load. When the native Metal presentation target is active,
+  upload failures stay visible in diagnostics instead of silently falling back to the old Swift copy
+  path.
 - macOS analysis FFI can build and answer basic handle/base-generation calls, while analysis windows
   and overlays remain capability-gated.
 

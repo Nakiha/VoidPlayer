@@ -264,6 +264,9 @@ int main(int argc, char** argv) {
         scheduler_stats.frame_notification_count == 0 ||
         scheduler_stats.last_present_frame_count <= 0 ||
         scheduler_stats.cached_present_decision_available == 0 ||
+        scheduler_stats.deadline_sleep_count == 0 ||
+        scheduler_stats.last_deadline_sleep_us < 0 ||
+        scheduler_stats.last_deadline_sleep_us > 8000 ||
         scheduler_stats.last_selected_pts_us <= first_pts) {
         std::cerr << "native presentation scheduler stats were not updated during playback\n";
         VPMacOSNativeFrameFree(&first);

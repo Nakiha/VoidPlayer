@@ -13,6 +13,7 @@
 #include "video_renderer/layout/layout_controller.h"
 #include "video_renderer/layout/layout_geometry.h"
 #include "video_renderer/render/presentation_package.h"
+#include "video_renderer/render/render_loop_controller.h"
 #include "video_renderer/render/presentation_scheduler.h"
 #include "video_renderer/render/presentation_snapshot.h"
 #include "video_renderer/render/shader_constants.h"
@@ -608,6 +609,29 @@ public:
     return tick;
   }
 
+  std::chrono::microseconds next_presentation_sleep(std::chrono::microseconds max_sleep) {
+    if (!playing_ || !render_sink_ || max_sleep.count() <= 0) {
+      scheduler_last_deadline_sleep_us_ = 0;
+      return std::chrono::microseconds(0);
+    }
+    const int64_t current_pts_us = playback_.clock().current_pts_us();
+    const auto next_event_pts = next_frame_event_pts_us(current_pts_us);
+    if (!next_event_pts.has_value()) {
+      scheduler_last_deadline_sleep_us_ = 1000;
+      return std::chrono::milliseconds(1);
+    }
+    const auto sleep_for = render_loop_controller_.frame_deadline_sleep(
+        current_pts_us,
+        *next_event_pts,
+        playback_.clock().speed(),
+        max_sleep.count());
+    scheduler_last_deadline_sleep_us_ = sleep_for.count();
+    if (sleep_for.count() > 0) {
+      ++scheduler_deadline_sleep_count_;
+    }
+    return sleep_for;
+  }
+
   VPMacOSNativePresentationSchedulerStats scheduler_stats() const {
     VPMacOSNativePresentationSchedulerStats stats = {};
     stats.tick_count = scheduler_tick_count_;
@@ -617,6 +641,8 @@ public:
     stats.last_present_frame_count = scheduler_last_present_frame_count_;
     stats.cached_present_decision_available =
         scheduler_cached_present_decision_available_ ? 1 : 0;
+    stats.deadline_sleep_count = scheduler_deadline_sleep_count_;
+    stats.last_deadline_sleep_us = scheduler_last_deadline_sleep_us_;
     return stats;
   }
 
@@ -656,6 +682,27 @@ private:
       return false;
     }
     return presentation_scheduler_.advance_to_clock(*render_sink_, frame_pts_us);
+  }
+
+  std::optional<int64_t> next_frame_event_pts_us(int64_t current_pts_us) const {
+    std::optional<int64_t> next_event_pts;
+    for (const auto& track : tracks_) {
+      if (!track || !track->track_buffer) {
+        continue;
+      }
+      const auto frame = track->track_buffer->peek(0);
+      if (!frame.has_value()) {
+        continue;
+      }
+      const int64_t effective_current_pts = current_pts_us - track->offset_us;
+      const int64_t event_pts = frame->pts_us > effective_current_pts
+          ? frame->pts_us + track->offset_us
+          : frame->pts_us + frame->duration_us + track->offset_us;
+      if (!next_event_pts.has_value() || event_pts < *next_event_pts) {
+        next_event_pts = event_pts;
+      }
+    }
+    return next_event_pts;
   }
 
   vr::LayoutTrackGeometryList layout_track_geometry() const {
@@ -743,10 +790,13 @@ private:
   vr::LayoutState layout_;
   vr::LayoutController layout_controller_;
   vr::PresentationScheduler presentation_scheduler_;
+  vr::RenderLoopController render_loop_controller_;
   bool playing_ = false;
   uint64_t scheduler_tick_count_ = 0;
   uint64_t scheduler_presentable_tick_count_ = 0;
   uint64_t scheduler_frame_notification_count_ = 0;
+  uint64_t scheduler_deadline_sleep_count_ = 0;
+  int64_t scheduler_last_deadline_sleep_us_ = 0;
   int64_t scheduler_last_selected_pts_us_ = vr::kNoTimestampUs;
   int32_t scheduler_last_present_frame_count_ = 0;
   vr::PresentDecision scheduler_cached_present_decision_;
@@ -756,6 +806,8 @@ private:
     scheduler_tick_count_ = 0;
     scheduler_presentable_tick_count_ = 0;
     scheduler_frame_notification_count_ = 0;
+    scheduler_deadline_sleep_count_ = 0;
+    scheduler_last_deadline_sleep_us_ = 0;
     scheduler_last_selected_pts_us_ = vr::kNoTimestampUs;
     scheduler_last_present_frame_count_ = 0;
     clear_scheduler_present_decision();
@@ -961,18 +1013,24 @@ struct VPMacOSNativePlayer {
     // Transitional macOS publication loop: it consumes the shared presentation
     // scheduler, then asks Swift to copy the selected frame into the Flutter
     // texture. Renderer-owned Metal presentation should replace this path.
+    constexpr auto kMaxPresentationSleep = std::chrono::microseconds(8000);
     std::unique_lock<std::mutex> lock(tick_mutex);
     while (!tick_stop.load()) {
-      tick_cv.wait_for(lock, std::chrono::milliseconds(10));
+      tick_cv.wait_for(lock, next_tick_sleep);
       if (tick_stop.load()) {
         break;
       }
       lock.unlock();
       vr::PresentationSchedulerTick tick;
+      std::chrono::microseconds sleep_for = std::chrono::milliseconds(1);
       {
         std::lock_guard<std::mutex> player_lock(mutex);
         tick = core.tick_playback();
+        sleep_for = core.next_presentation_sleep(kMaxPresentationSleep);
       }
+      next_tick_sleep = sleep_for.count() > 0
+          ? sleep_for
+          : std::chrono::milliseconds(1);
       if (!tick.should_notify) {
         lock.lock();
         continue;
@@ -998,6 +1056,7 @@ struct VPMacOSNativePlayer {
   void* frame_available_user_data = nullptr;
   std::mutex tick_mutex;
   std::condition_variable tick_cv;
+  std::chrono::microseconds next_tick_sleep{std::chrono::milliseconds(1)};
   std::atomic<bool> tick_stop{false};
   std::thread tick_thread;
 };

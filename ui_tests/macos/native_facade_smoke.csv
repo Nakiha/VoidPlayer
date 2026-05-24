@@ -39,6 +39,7 @@
 4.055, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerFrameNotificationCount, 1
 4.06, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerLastPresentFrameCount, 1
 4.065, ASSERT_NATIVE_DIAGNOSTIC_BOOL, presentationSchedulerCachedDecisionAvailable, true
+4.07, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerDeadlineSleepCount, 1
 4.1, PAUSE
 4.4, ASSERT_PAUSED
 4.5, QUIT, 0

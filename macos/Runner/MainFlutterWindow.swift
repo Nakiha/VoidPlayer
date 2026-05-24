@@ -257,6 +257,8 @@ private final class MacOSNativePlayerSession {
         "lastSelectedPtsUs": -1,
         "lastPresentFrameCount": 0,
         "cachedPresentDecisionAvailable": false,
+        "deadlineSleepCount": 0,
+        "lastDeadlineSleepUs": 0,
       ]
     }
     let maxInt64 = UInt64(Int64.max)
@@ -267,6 +269,8 @@ private final class MacOSNativePlayerSession {
       "lastSelectedPtsUs": Int64(stats.last_selected_pts_us),
       "lastPresentFrameCount": Int(stats.last_present_frame_count),
       "cachedPresentDecisionAvailable": stats.cached_present_decision_available != 0,
+      "deadlineSleepCount": Int64(min(UInt64(stats.deadline_sleep_count), maxInt64)),
+      "lastDeadlineSleepUs": Int64(stats.last_deadline_sleep_us),
     ]
   }
 
@@ -305,7 +309,9 @@ private final class MacOSNativePlayerSession {
       }
       let message = String(cString: error)
       lastError = message.isEmpty ? "copyCurrentFrame failed with code \(ret)" : message
-      Thread.sleep(forTimeInterval: 0.01)
+      if Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.01)
+      }
     } while Date() < deadline
 
     throw MacOSNativePlayerError.failed(
@@ -354,7 +360,9 @@ private final class MacOSNativePlayerSession {
       lastError = message.isEmpty
         ? "copyCurrentFrameIntoBGRA failed with code \(ret)"
         : message
-      Thread.sleep(forTimeInterval: 0.01)
+      if Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.01)
+      }
     } while Date() < deadline
 
     throw MacOSNativePlayerError.failed(
@@ -407,7 +415,9 @@ private final class MacOSNativePlayerSession {
       lastError = message.isEmpty
         ? "copyCurrentFrameToMetalPixelBuffer failed with code \(ret)"
         : message
-      Thread.sleep(forTimeInterval: 0.01)
+      if Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.01)
+      }
     } while Date() < deadline
 
     throw MacOSNativePlayerError.failed(
@@ -637,6 +647,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "presentationSchedulerLastSelectedPtsUs": schedulerStats?["lastSelectedPtsUs"] ?? -1,
         "presentationSchedulerLastPresentFrameCount": schedulerStats?["lastPresentFrameCount"] ?? 0,
         "presentationSchedulerCachedDecisionAvailable": schedulerStats?["cachedPresentDecisionAvailable"] ?? false,
+        "presentationSchedulerDeadlineSleepCount": schedulerStats?["deadlineSleepCount"] ?? 0,
+        "presentationSchedulerLastDeadlineSleepUs": schedulerStats?["lastDeadlineSleepUs"] ?? 0,
         "nativeLayoutMode": nativeLayoutSnapshot?["mode"] ?? -1,
         "nativeLayoutZoomRatio": nativeLayoutSnapshot?["zoomRatio"] ?? 0.0,
         "nativeLayoutPixelSizeMode": nativeLayoutSnapshot?["pixelSizeMode"] ?? -1,
@@ -1157,7 +1169,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       let frameInfo = try texture.updateFromNativePlayer(
         nativePlayer,
         maxTrackSlots: maxTrackSlots,
-        waitTimeoutMs: 100
+        waitTimeoutMs: 0
       )
       DispatchQueue.main.async { [weak self] in
         guard let self,

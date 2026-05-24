@@ -73,6 +73,8 @@ typedef struct VPMacOSNativePresentationSchedulerStats {
   int64_t last_selected_pts_us;
   int32_t last_present_frame_count;
   int32_t cached_present_decision_available;
+  uint64_t deadline_sleep_count;
+  int64_t last_deadline_sleep_us;
 } VPMacOSNativePresentationSchedulerStats;
 
 enum {

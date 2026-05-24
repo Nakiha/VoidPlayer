@@ -7,7 +7,7 @@
 2.3, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, true
 2.35, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, false
 2.36, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, videotoolbox-renderer-owned
-2.4, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-bgra-layout-upload
+2.4, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-cvpixelbuffer-present-package
 2.42, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-presentation-scheduler/transitional-thread
 2.44, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, swift-cvpixelbuffer-texture-pump
 2.46, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureWidth, 320, 1920

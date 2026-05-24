@@ -2095,7 +2095,16 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
 
   private func presentationUploadModeLocked() -> String {
     if metalUploadEnabled, metalTextureValid, nativeMetalUploaderAvailableLocked() {
-      return "metal-bgra-layout-upload"
+      switch nativeMetalLastPresentPackageStorageLocked() {
+      case "cvpixelbuffer":
+        return "metal-cvpixelbuffer-present-package"
+      case "yuv":
+        return "metal-yuv-present-package"
+      case "bgra":
+        return "metal-bgra-present-package"
+      default:
+        return "metal-presentation-target-ready"
+      }
     }
     if pixelBuffer != nil {
       return "cvpixelbuffer-direct-copy"

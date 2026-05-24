@@ -10,7 +10,7 @@
 2.05, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, software-fallback
 2.1, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, true
 2.15, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationFallbackReason, software-decode
-2.2, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-bgra-layout-upload
+2.2, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-yuv-present-package
 2.25, CAPTURE_VIEWPORT, vvc_software_start
 2.35, ASSERT_CAPTURE_NOT_BLACK, vvc_software_start, 0.01, 4.0
 2.5, PLAY

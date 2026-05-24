@@ -23,7 +23,7 @@
 1.72, ASSERT_NATIVE_DIAGNOSTIC_STRING, metalTextureLastError,
 1.75, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, metalTextureCreationCount, 1
 1.77, ASSERT_NATIVE_DIAGNOSTIC_BOOL, pixelBufferMetalUploadEnabled, true
-1.78, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-bgra-layout-upload
+1.78, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-cvpixelbuffer-present-package
 1.785, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureWidth, 320, 1920
 1.786, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureHeight, 180, 1080
 1.79, ADJUST_TRACK_OFFSET, 0, 250

@@ -154,6 +154,10 @@ VVC/H.266 macOS smoke locks that path down with zero Swift fallback copies while
 `presentationFallbackReason=software-decode`. The native Metal uploader smoke covers synthetic NV12,
 planar YUV420, and P010 package parity, including offset/stride shader paths without relying on a
 large media fixture.
+macOS diagnostics now name the upload storage explicitly:
+`metal-cvpixelbuffer-present-package`, `metal-yuv-present-package`, or
+`metal-bgra-present-package`, so 4K60 zero-copy and software fallback paths no longer look like the
+same BGRA upload mode.
 
 Exit gate: macOS can present multi-track CPU-decoded frames through renderer-owned Metal without the
 Swift pump choosing frames, and shader parity tests cover the supported formats.

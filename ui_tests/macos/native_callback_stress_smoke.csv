@@ -10,7 +10,7 @@
 1.4, ASSERT_NATIVE_BACKEND, macos-native-player, true
 1.5, ASSERT_NATIVE_AUDIO, true, 48000, 1, 0
 1.55, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapter, cvpixelbuffer-bgra-copy
-1.555, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-bgra-layout-upload
+1.555, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-cvpixelbuffer-present-package
 1.56, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureValid, true
 1.58, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, metalTextureCreationCount, 1
 1.6, PLAY
@@ -35,7 +35,7 @@
 4.8, ADD_MEDIA, build/generated/macos/native_callback_stress_smoke.mp4
 5.8, ASSERT_TRACK_COUNT, 1
 5.85, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapter, cvpixelbuffer-bgra-copy
-5.855, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-bgra-layout-upload
+5.855, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-cvpixelbuffer-present-package
 5.86, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureValid, true
 5.88, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, metalTextureCreationCount, 1
 5.9, PLAY

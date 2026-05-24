@@ -27,12 +27,13 @@ buffer when the direct-copy fallback is enabled, and receives frame timing
 metadata. The runner creates Metal-compatible, IOSurface-backed pixel buffers,
 but native owns the Metal device, command queue, `CVMetalTextureCache`
 validation and shared `MTLBuffer` upload. The same surface is used for explicit
-seek/step refresh and playback callbacks when
-`presentationUploadMode=metal-bgra-layout-upload`, where native first tries to
-stage CPU NV12/P010 frames and applies YUV color conversion plus the shared
-layout transform in a Metal compute pass. If a frame storage kind is not yet
-supported by that shader path, the uploader falls back to the software BGRA
-adapter and runs the same layout compute pass over a BGRA atlas.
+seek/step refresh and playback callbacks. `presentationUploadMode` reports the
+actual storage consumed by the native uploader:
+`metal-cvpixelbuffer-present-package` for retained VideoToolbox frames,
+`metal-yuv-present-package` for staged NV12/P010/planar frames, and
+`metal-bgra-present-package` for BGRA fallback packages. If a frame storage kind
+is not yet supported by the shader path, the uploader falls back to the software
+BGRA adapter and runs the same layout compute pass over a BGRA atlas.
 Native validation rejects pixel buffers whose dimensions or pixel format do not
 match the expected BGRA texture surface before any frame upload is attempted.
 The Metal layout uploader exposes checked validation statuses for unavailable
@@ -69,7 +70,7 @@ layout-uploaded `CVPixelBuffer` hash.
 macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy`,
 `presentationAdapterKind=software-fallback`,
 `rendererOwnedPresentationActive=false`,
-`presentationUploadMode=metal-bgra-layout-upload`, `metalTextureValid=true`,
+`presentationUploadMode=metal-cvpixelbuffer-present-package`, `metalTextureValid=true`,
 seek refreshes and playback advance `pixelBufferMetalUploadCount`, the 4K HEVC
 canary advances `pixelBufferMetalCVPixelBufferUploadCount`,
 `hardwareDecodeProvider=VideoToolbox`,

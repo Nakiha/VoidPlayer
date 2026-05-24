@@ -193,6 +193,11 @@ int VPMacOSNativePlayerLastRendererOwnedPresentationSucceeded(VPMacOSNativePlaye
 int VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(
     VPMacOSNativePlayer* player,
     VPMacOSNativeFrameInfo* out);
+void VPMacOSNativePlayerResetRendererOwnedPresentationStats(VPMacOSNativePlayer* player);
+uint64_t VPMacOSNativePlayerRendererOwnedPresentationUploadCount(
+    VPMacOSNativePlayer* player);
+uint64_t VPMacOSNativePlayerRendererOwnedPresentationFailureCount(
+    VPMacOSNativePlayer* player);
 
 void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerPause(VPMacOSNativePlayer* player);

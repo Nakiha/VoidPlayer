@@ -111,7 +111,8 @@ thread is reduced to a transitional host loop around that shared driver. When th
 presentation target is installed, Swift no longer falls back to the old copy path on upload failure;
 failures are counted in diagnostics instead, making renderer-owned presentation problems visible.
 Renderer-owned callbacks now publish the native upload result's frame metadata instead of
-reconstructing presented PTS/DTS from scheduler stats in Swift.
+reconstructing presented PTS/DTS from scheduler stats in Swift. Renderer-owned upload success and
+failure counters are owned by the native presentation target and exposed through diagnostics.
 The host loop itself remains the main cleanup target for this phase.
 
 Exit gate: macOS UI smokes pass with `rendererOwnedPresentationActive=true`, and the old tick-driven

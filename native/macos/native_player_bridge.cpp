@@ -1098,6 +1098,7 @@ struct VPMacOSNativePlayer {
       }
       VPMacOSFrameAvailableCallback callback = nullptr;
       void* user_data = nullptr;
+      bool renderer_owned_upload_attempted = false;
       bool renderer_owned_upload_succeeded = false;
       VPMacOSNativeFrameInfo renderer_owned_frame_info = {};
       {
@@ -1106,6 +1107,7 @@ struct VPMacOSNativePlayer {
         user_data = frame_available_user_data;
         if (presentation_target_backend && presentation_target_pixel_buffer &&
             presentation_target_width > 0 && presentation_target_height > 0) {
+          renderer_owned_upload_attempted = true;
           VPMacOSNativeFrameInfo frame_info = {};
           char error[256] = {};
           const int upload_ret = VPMacOSMetalPresentationBackendCopyCurrentFrameWithLayout(
@@ -1129,6 +1131,13 @@ struct VPMacOSNativePlayer {
         if (renderer_owned_upload_succeeded) {
           last_renderer_owned_frame_info = renderer_owned_frame_info;
         }
+        if (renderer_owned_upload_attempted) {
+          if (renderer_owned_upload_succeeded) {
+            ++renderer_owned_presentation_upload_count;
+          } else {
+            ++renderer_owned_presentation_failure_count;
+          }
+        }
       }
       if (callback) {
         callback(user_data);
@@ -1150,6 +1159,8 @@ struct VPMacOSNativePlayer {
   bool last_renderer_owned_presentation_succeeded = false;
   bool last_renderer_owned_frame_info_available = false;
   VPMacOSNativeFrameInfo last_renderer_owned_frame_info = {};
+  uint64_t renderer_owned_presentation_upload_count = 0;
+  uint64_t renderer_owned_presentation_failure_count = 0;
   std::mutex tick_mutex;
   std::condition_variable tick_cv;
   std::chrono::microseconds next_tick_sleep{std::chrono::milliseconds(1)};
@@ -1311,6 +1322,36 @@ int VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(
   }
   *out = player->last_renderer_owned_frame_info;
   return 0;
+}
+
+void VPMacOSNativePlayerResetRendererOwnedPresentationStats(VPMacOSNativePlayer* player) {
+  if (!player) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(player->callback_mutex);
+  player->last_renderer_owned_presentation_succeeded = false;
+  player->last_renderer_owned_frame_info_available = false;
+  player->last_renderer_owned_frame_info = {};
+  player->renderer_owned_presentation_upload_count = 0;
+  player->renderer_owned_presentation_failure_count = 0;
+}
+
+uint64_t VPMacOSNativePlayerRendererOwnedPresentationUploadCount(
+    VPMacOSNativePlayer* player) {
+  if (!player) {
+    return 0;
+  }
+  std::lock_guard<std::mutex> lock(player->callback_mutex);
+  return player->renderer_owned_presentation_upload_count;
+}
+
+uint64_t VPMacOSNativePlayerRendererOwnedPresentationFailureCount(
+    VPMacOSNativePlayer* player) {
+  if (!player) {
+    return 0;
+  }
+  std::lock_guard<std::mutex> lock(player->callback_mutex);
+  return player->renderer_owned_presentation_failure_count;
 }
 
 void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player) {

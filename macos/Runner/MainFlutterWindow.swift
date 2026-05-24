@@ -165,6 +165,18 @@ private final class MacOSNativePlayerSession {
     )
   }
 
+  func resetRendererOwnedPresentationStats() {
+    VPMacOSNativePlayerResetRendererOwnedPresentationStats(handle)
+  }
+
+  func rendererOwnedPresentationUploadCount() -> Int {
+    Int(VPMacOSNativePlayerRendererOwnedPresentationUploadCount(handle))
+  }
+
+  func rendererOwnedPresentationFailureCount() -> Int {
+    Int(VPMacOSNativePlayerRendererOwnedPresentationFailureCount(handle))
+  }
+
   func play() {
     VPMacOSNativePlayerPlay(handle)
   }
@@ -533,7 +545,6 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private var nativeFrameCopyCoalescedCount = 0
   private var nativeFrameCopyInFlight = false
   private var nativePresentationTargetInstalled = false
-  private var nativeRendererOwnedUploadFailureCount = 0
   private var nativeFrameCopyFirstHostNs: UInt64?
   private var nativeFrameCopyLastHostNs: UInt64?
   private let presentedPtsTraceCapacity = 240
@@ -767,7 +778,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "nativeFrameCopyErrorCount": nativeFrameCopyErrorCount,
         "nativeFrameCopyCoalescedCount": nativeFrameCopyCoalescedCount,
         "nativePresentationTargetInstalled": nativePresentationTargetInstalled,
-        "nativeRendererOwnedUploadFailureCount": nativeRendererOwnedUploadFailureCount,
+        "nativeRendererOwnedUploadCount": nativePlayer?.rendererOwnedPresentationUploadCount() ?? 0,
+        "nativeRendererOwnedUploadFailureCount": nativePlayer?.rendererOwnedPresentationFailureCount() ?? 0,
         "nativeFrameCopyElapsedMs": nativeFrameCopyElapsedMs(),
         "nativeFrameCopyFps": nativeFrameCopyFps(),
         "presentedFramePtsSampleCount": presentedPtsSampleCount,
@@ -1212,7 +1224,6 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     nativeFrameCopyErrorCount = 0
     nativeFrameCopyCoalescedCount = 0
     nativeFrameCopyInFlight = false
-    nativeRendererOwnedUploadFailureCount = 0
     nativeFrameCopyFirstHostNs = nil
     nativeFrameCopyLastHostNs = nil
     resetPresentedPtsTrace()
@@ -1294,6 +1305,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     let generation = playbackGeneration + 1
     playbackGeneration = generation
     resetNativeFrameCounters()
+    nativePlayer.resetRendererOwnedPresentationStats()
     nativeFrameCallbackRegistered = true
     nativePresentationTargetInstalled = false
     if let texture {
@@ -1354,7 +1366,6 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         return
       }
       if self.nativePresentationTargetInstalled {
-        self.nativeRendererOwnedUploadFailureCount += 1
         return
       }
       if self.nativeFrameCopyInFlight {

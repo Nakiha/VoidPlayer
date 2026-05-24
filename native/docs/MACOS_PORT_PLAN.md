@@ -23,7 +23,8 @@ current renderer unification work is tracked in
   does not queue stale uploads under 4K load. When the native Metal presentation target is active,
   upload failures stay visible in diagnostics instead of silently falling back to the old Swift copy
   path, and callbacks publish the native upload result's frame metadata rather than rebuilding it
-  from scheduler stats in Swift.
+  from scheduler stats in Swift. Renderer-owned upload success/failure counters are now tracked by
+  native presentation state and surfaced to Dart diagnostics.
 - macOS analysis FFI can build and answer basic handle/base-generation calls, while analysis windows
   and overlays remain capability-gated.
 

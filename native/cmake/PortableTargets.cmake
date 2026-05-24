@@ -203,6 +203,15 @@ if(APPLE)
     )
     add_test(NAME presentation_snapshot_smoke COMMAND presentation_snapshot_smoke)
 
+    add_executable(presentation_loop_driver_smoke
+        "${VOID_NATIVE_DIR}/tools/presentation_loop_driver_smoke.cpp"
+    )
+    void_apply_native_compile_options(presentation_loop_driver_smoke)
+    target_link_libraries(presentation_loop_driver_smoke PRIVATE
+        void_player_portable_core
+    )
+    add_test(NAME presentation_loop_driver_smoke COMMAND presentation_loop_driver_smoke)
+
     add_executable(presentation_carry_forward_smoke
         "${VOID_NATIVE_DIR}/tools/presentation_carry_forward_smoke.cpp"
     )

@@ -105,8 +105,10 @@ Goal: delete the separate macOS playback tick as a presentation scheduler.
 Progress: macOS track creation no longer hand-builds its own demux/decode/track-buffer stack. The
 macOS bridge now uses the shared `TrackPipelineFactory` with `render_backend=Metal`, keeping
 VideoToolbox device-mode selection platform-specific while sharing the normal native track pipeline
-construction path. The separate macOS tick thread still owns visible presentation timing and remains
-the main cleanup target for this phase.
+construction path. Presentation tick bookkeeping, cached present-decision ownership, deadline sleep,
+and presentation stats now live in the portable `PresentationLoopDriver`; the separate macOS tick
+thread is reduced to a transitional host loop around that shared driver and remains the main cleanup
+target for this phase.
 
 Exit gate: macOS UI smokes pass with `rendererOwnedPresentationActive=true`, and the old tick-driven
 presentation path is no longer the normal route.

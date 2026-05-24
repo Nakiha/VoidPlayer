@@ -18,8 +18,9 @@ current renderer unification work is tracked in
   downloads frames to CPU before presentation.
 - Metal currently participates in layout/color upload from CPU frames, but macOS visible playback is
   still driven by the transitional native tick plus Swift texture notification path. The native tick
-  now caches the scheduler-selected present decision, and Swift coalesces duplicate copy requests so
-  the transition path does not queue stale uploads under 4K load.
+  delegates scheduler-selected present decisions, deadline sleep, and presentation stats to the
+  portable `PresentationLoopDriver`; Swift coalesces duplicate copy requests so the transition path
+  does not queue stale uploads under 4K load.
 - macOS analysis FFI can build and answer basic handle/base-generation calls, while analysis windows
   and overlays remain capability-gated.
 

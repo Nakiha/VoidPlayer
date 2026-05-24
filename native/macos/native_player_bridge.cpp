@@ -13,8 +13,7 @@
 #include "video_renderer/layout/layout_controller.h"
 #include "video_renderer/layout/layout_geometry.h"
 #include "video_renderer/render/presentation_package.h"
-#include "video_renderer/render/render_loop_controller.h"
-#include "video_renderer/render/presentation_scheduler.h"
+#include "video_renderer/render/presentation_loop_driver.h"
 #include "video_renderer/render/presentation_snapshot.h"
 #include "video_renderer/render/shader_constants.h"
 #include "video_renderer/capture/bgra_capture_metrics.h"
@@ -188,9 +187,7 @@ public:
     playback_.seek_clock(0);
     playback_.pause();
     playing_ = false;
-    presentation_scheduler_.reset();
     reset_scheduler_stats();
-    clear_scheduler_present_decision();
     return true;
   }
 
@@ -210,9 +207,7 @@ public:
     audio_channels_ = 0;
     loop_range_ = vr::LoopRangeState();
     layout_controller_.reset(layout_);
-    presentation_scheduler_.reset();
     reset_scheduler_stats();
-    clear_scheduler_present_decision();
   }
 
   void play() {
@@ -585,10 +580,7 @@ public:
       primary->audio_packet_queue->flush();
     }
     playback_.seek_clock(target);
-    presentation_scheduler_.reset();
-    scheduler_last_selected_pts_us_ = vr::kNoTimestampUs;
-    scheduler_last_present_frame_count_ = 0;
-    clear_scheduler_present_decision();
+    presentation_loop_driver_.reset_presentation_state();
   }
 
   bool add_track(const char* path,
@@ -711,68 +703,33 @@ public:
     return true;
   }
 
-  vr::PresentationSchedulerTick tick_playback() {
-    ++scheduler_tick_count_;
+  vr::PresentationLoopDriverTick tick_playback(std::chrono::microseconds max_sleep) {
     tick_loop_range();
-    if (!playing_) {
-      return {};
-    }
     if (!render_sink_) {
       return {};
     }
-    auto tick = presentation_scheduler_.tick(*render_sink_);
-    if (tick.has_presentable_frame) {
-      scheduler_cached_present_decision_ = tick.decision;
-      scheduler_cached_present_decision_available_ = true;
-      ++scheduler_presentable_tick_count_;
-      scheduler_last_selected_pts_us_ = tick.selected_pts_us;
-      scheduler_last_present_frame_count_ = 0;
-      for (const auto& frame : tick.decision.frames) {
-        if (frame.has_value()) {
-          ++scheduler_last_present_frame_count_;
-        }
-      }
-    }
-    if (tick.should_notify) {
-      ++scheduler_frame_notification_count_;
-    }
-    return tick;
-  }
-
-  std::chrono::microseconds next_presentation_sleep(std::chrono::microseconds max_sleep) {
-    if (!playing_ || !render_sink_ || max_sleep.count() <= 0) {
-      scheduler_last_deadline_sleep_us_ = 0;
-      return std::chrono::microseconds(0);
-    }
     const int64_t current_pts_us = playback_.clock().current_pts_us();
-    const auto next_event_pts = next_frame_event_pts_us(current_pts_us);
-    if (!next_event_pts.has_value()) {
-      scheduler_last_deadline_sleep_us_ = 1000;
-      return std::chrono::milliseconds(1);
-    }
-    const auto sleep_for = render_loop_controller_.frame_deadline_sleep(
+    return presentation_loop_driver_.tick(
+        *render_sink_,
+        playing_,
         current_pts_us,
-        *next_event_pts,
         playback_.clock().speed(),
-        max_sleep.count());
-    scheduler_last_deadline_sleep_us_ = sleep_for.count();
-    if (sleep_for.count() > 0) {
-      ++scheduler_deadline_sleep_count_;
-    }
-    return sleep_for;
+        next_frame_event_pts_us(current_pts_us),
+        max_sleep);
   }
 
   VPMacOSNativePresentationSchedulerStats scheduler_stats() const {
     VPMacOSNativePresentationSchedulerStats stats = {};
-    stats.tick_count = scheduler_tick_count_;
-    stats.presentable_tick_count = scheduler_presentable_tick_count_;
-    stats.frame_notification_count = scheduler_frame_notification_count_;
-    stats.last_selected_pts_us = scheduler_last_selected_pts_us_;
-    stats.last_present_frame_count = scheduler_last_present_frame_count_;
+    const auto driver_stats = presentation_loop_driver_.stats();
+    stats.tick_count = driver_stats.tick_count;
+    stats.presentable_tick_count = driver_stats.presentable_tick_count;
+    stats.frame_notification_count = driver_stats.frame_notification_count;
+    stats.last_selected_pts_us = driver_stats.last_selected_pts_us;
+    stats.last_present_frame_count = driver_stats.last_present_frame_count;
     stats.cached_present_decision_available =
-        scheduler_cached_present_decision_available_ ? 1 : 0;
-    stats.deadline_sleep_count = scheduler_deadline_sleep_count_;
-    stats.last_deadline_sleep_us = scheduler_last_deadline_sleep_us_;
+        driver_stats.cached_present_decision_available ? 1 : 0;
+    stats.deadline_sleep_count = driver_stats.deadline_sleep_count;
+    stats.last_deadline_sleep_us = driver_stats.last_deadline_sleep_us;
     return stats;
   }
 
@@ -795,11 +752,8 @@ public:
   }
 
 private:
-  vr::PresentDecision current_present_decision() const {
-    if (scheduler_cached_present_decision_available_) {
-      return scheduler_cached_present_decision_;
-    }
-    return render_sink_ ? render_sink_->evaluate() : vr::PresentDecision();
+  vr::PresentDecision current_present_decision() {
+    return presentation_loop_driver_.current_present_decision(render_sink_.get());
   }
 
   vr::PresentDecision primary_peek_present_decision() const {
@@ -823,15 +777,14 @@ private:
   }
 
   void clear_scheduler_present_decision() {
-    scheduler_cached_present_decision_ = {};
-    scheduler_cached_present_decision_available_ = false;
+    presentation_loop_driver_.clear_cached_present_decision();
   }
 
   bool advance_to_clock(int64_t* frame_pts_us) {
     if (!render_sink_) {
       return false;
     }
-    return presentation_scheduler_.advance_to_clock(*render_sink_, frame_pts_us);
+    return presentation_loop_driver_.advance_to_clock(*render_sink_, frame_pts_us);
   }
 
   std::optional<int64_t> next_frame_event_pts_us(int64_t current_pts_us) const {
@@ -939,28 +892,11 @@ private:
   vr::LoopRangeState loop_range_;
   vr::LayoutState layout_;
   vr::LayoutController layout_controller_;
-  vr::PresentationScheduler presentation_scheduler_;
-  vr::RenderLoopController render_loop_controller_;
+  vr::PresentationLoopDriver presentation_loop_driver_;
   bool playing_ = false;
-  uint64_t scheduler_tick_count_ = 0;
-  uint64_t scheduler_presentable_tick_count_ = 0;
-  uint64_t scheduler_frame_notification_count_ = 0;
-  uint64_t scheduler_deadline_sleep_count_ = 0;
-  int64_t scheduler_last_deadline_sleep_us_ = 0;
-  int64_t scheduler_last_selected_pts_us_ = vr::kNoTimestampUs;
-  int32_t scheduler_last_present_frame_count_ = 0;
-  vr::PresentDecision scheduler_cached_present_decision_;
-  bool scheduler_cached_present_decision_available_ = false;
 
   void reset_scheduler_stats() {
-    scheduler_tick_count_ = 0;
-    scheduler_presentable_tick_count_ = 0;
-    scheduler_frame_notification_count_ = 0;
-    scheduler_deadline_sleep_count_ = 0;
-    scheduler_last_deadline_sleep_us_ = 0;
-    scheduler_last_selected_pts_us_ = vr::kNoTimestampUs;
-    scheduler_last_present_frame_count_ = 0;
-    clear_scheduler_present_decision();
+    presentation_loop_driver_.reset();
   }
 
   int first_free_slot() const {
@@ -1146,17 +1082,17 @@ struct VPMacOSNativePlayer {
         break;
       }
       lock.unlock();
-      vr::PresentationSchedulerTick tick;
+      vr::PresentationLoopDriverTick tick;
       std::chrono::microseconds sleep_for = std::chrono::milliseconds(1);
       {
         std::lock_guard<std::mutex> player_lock(mutex);
-        tick = core.tick_playback();
-        sleep_for = core.next_presentation_sleep(kMaxPresentationSleep);
+        tick = core.tick_playback(kMaxPresentationSleep);
+        sleep_for = tick.next_sleep;
       }
       next_tick_sleep = sleep_for.count() > 0
           ? sleep_for
           : std::chrono::milliseconds(1);
-      if (!tick.should_notify) {
+      if (!tick.scheduler.should_notify) {
         lock.lock();
         continue;
       }

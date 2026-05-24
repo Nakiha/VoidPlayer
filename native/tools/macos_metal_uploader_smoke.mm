@@ -345,6 +345,171 @@ int main() {
   }
   CFRelease(planar_buffer);
 
+  CVPixelBufferRef nv12_buffer =
+      create_pixel_buffer(kCVPixelFormatType_32BGRA, 4, 4);
+  if (!nv12_buffer) {
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    return fail("failed to create NV12 parity CVPixelBuffer");
+  }
+  std::vector<uint8_t> nv12_package_data(24, 128);
+  VPMacOSNativePresentFramePackageInfo nv12_package = {};
+  nv12_package.storage = VPMacOSNativePresentPackageStorageYUV;
+  nv12_package.width = 4;
+  nv12_package.height = 4;
+  nv12_package.max_track_slots = 1;
+  nv12_package.used_bytes = nv12_package_data.size();
+  auto& nv12_decision = nv12_package.decision;
+  nv12_decision.should_present = 1;
+  nv12_decision.frame_count = 1;
+  nv12_decision.track_count = 1;
+  nv12_decision.mode = 0;
+  nv12_decision.split_pos = 0.5f;
+  nv12_decision.order[0] = 0;
+  nv12_decision.display_offset_x[0] = 0.0f;
+  nv12_decision.display_offset_y[0] = 0.0f;
+  nv12_decision.inv_display_size_x[0] = 1.0f;
+  nv12_decision.inv_display_size_y[0] = 1.0f;
+  nv12_decision.source_width[0] = 4;
+  nv12_decision.source_height[0] = 4;
+  nv12_decision.yuv_format[0] = VPMacOSNativePresentFormatNV12;
+  nv12_decision.y_offset[0] = 0;
+  nv12_decision.uv_offset[0] = 16;
+  nv12_decision.y_stride[0] = 4;
+  nv12_decision.uv_stride[0] = 4;
+  nv12_decision.coded_width[0] = 4;
+  nv12_decision.coded_height[0] = 4;
+  nv12_decision.nv12_uv_scale_x[0] = 1.0f;
+  nv12_decision.nv12_uv_scale_y[0] = 1.0f;
+  nv12_decision.color_range[0] = 2;
+  nv12_decision.color_matrix[0] = 2;
+  nv12_decision.frames[0].present = 1;
+  nv12_decision.frames[0].slot = 0;
+  nv12_decision.frames[0].width = 4;
+  nv12_decision.frames[0].height = 4;
+  nv12_decision.frames[0].pts_us = 43;
+  char nv12_error[512] = {};
+  VPMacOSNativeFrameInfo nv12_info = {};
+  if (VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
+          uploader,
+          nv12_package_data.data(),
+          nv12_package_data.size(),
+          &nv12_package,
+          nv12_buffer,
+          4,
+          4,
+          &nv12_info,
+          nv12_error,
+          sizeof(nv12_error)) != 0 ||
+      !read_pixel_bgra(nv12_buffer, 2, 2, &b, &g, &r, &a) ||
+      r < 120 || r > 136 ||
+      g < 120 || g > 136 ||
+      b < 120 || b > 136 ||
+      a != 255 ||
+      nv12_info.pts_us != 43) {
+    CFRelease(nv12_buffer);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    std::fprintf(
+        stderr,
+        "NV12 parity failed: error=%s BGRA=(%u,%u,%u,%u), pts=%lld\n",
+        nv12_error,
+        static_cast<unsigned>(b),
+        static_cast<unsigned>(g),
+        static_cast<unsigned>(r),
+        static_cast<unsigned>(a),
+        static_cast<long long>(nv12_info.pts_us));
+    return fail("NV12 Metal package upload did not produce neutral BGRA");
+  }
+  CFRelease(nv12_buffer);
+
+  CVPixelBufferRef p010_buffer =
+      create_pixel_buffer(kCVPixelFormatType_32BGRA, 4, 4);
+  if (!p010_buffer) {
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    return fail("failed to create P010 parity CVPixelBuffer");
+  }
+  std::vector<uint8_t> p010_package_data(48, 0);
+  const uint16_t neutral_p010 = static_cast<uint16_t>(512u << 6);
+  for (size_t offset = 0; offset + 1 < p010_package_data.size(); offset += 2) {
+    p010_package_data[offset] = static_cast<uint8_t>(neutral_p010 & 0xffu);
+    p010_package_data[offset + 1] = static_cast<uint8_t>(neutral_p010 >> 8);
+  }
+  VPMacOSNativePresentFramePackageInfo p010_package = {};
+  p010_package.storage = VPMacOSNativePresentPackageStorageYUV;
+  p010_package.width = 4;
+  p010_package.height = 4;
+  p010_package.max_track_slots = 1;
+  p010_package.used_bytes = p010_package_data.size();
+  auto& p010_decision = p010_package.decision;
+  p010_decision.should_present = 1;
+  p010_decision.frame_count = 1;
+  p010_decision.track_count = 1;
+  p010_decision.mode = 0;
+  p010_decision.split_pos = 0.5f;
+  p010_decision.order[0] = 0;
+  p010_decision.display_offset_x[0] = 0.0f;
+  p010_decision.display_offset_y[0] = 0.0f;
+  p010_decision.inv_display_size_x[0] = 1.0f;
+  p010_decision.inv_display_size_y[0] = 1.0f;
+  p010_decision.source_width[0] = 4;
+  p010_decision.source_height[0] = 4;
+  p010_decision.yuv_format[0] = VPMacOSNativePresentFormatP010;
+  p010_decision.y_offset[0] = 0;
+  p010_decision.uv_offset[0] = 32;
+  p010_decision.y_stride[0] = 8;
+  p010_decision.uv_stride[0] = 8;
+  p010_decision.coded_width[0] = 4;
+  p010_decision.coded_height[0] = 4;
+  p010_decision.nv12_uv_scale_x[0] = 1.0f;
+  p010_decision.nv12_uv_scale_y[0] = 1.0f;
+  p010_decision.color_range[0] = 2;
+  p010_decision.color_matrix[0] = 2;
+  p010_decision.frames[0].present = 1;
+  p010_decision.frames[0].slot = 0;
+  p010_decision.frames[0].width = 4;
+  p010_decision.frames[0].height = 4;
+  p010_decision.frames[0].pts_us = 44;
+  char p010_error[512] = {};
+  VPMacOSNativeFrameInfo p010_info = {};
+  if (VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
+          uploader,
+          p010_package_data.data(),
+          p010_package_data.size(),
+          &p010_package,
+          p010_buffer,
+          4,
+          4,
+          &p010_info,
+          p010_error,
+          sizeof(p010_error)) != 0 ||
+      !read_pixel_bgra(p010_buffer, 2, 2, &b, &g, &r, &a) ||
+      r < 120 || r > 136 ||
+      g < 120 || g > 136 ||
+      b < 120 || b > 136 ||
+      a != 255 ||
+      p010_info.pts_us != 44) {
+    CFRelease(p010_buffer);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    std::fprintf(
+        stderr,
+        "P010 parity failed: error=%s BGRA=(%u,%u,%u,%u), pts=%lld\n",
+        p010_error,
+        static_cast<unsigned>(b),
+        static_cast<unsigned>(g),
+        static_cast<unsigned>(r),
+        static_cast<unsigned>(a),
+        static_cast<long long>(p010_info.pts_us));
+    return fail("P010 Metal package upload did not produce neutral BGRA");
+  }
+  CFRelease(p010_buffer);
+
   const std::string path = vp_tools::h264_smoke_video_path(VIDEO_TEST_DIR);
   if (path.empty()) {
     CFRelease(argb);

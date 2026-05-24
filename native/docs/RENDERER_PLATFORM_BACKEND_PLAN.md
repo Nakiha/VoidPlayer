@@ -131,7 +131,7 @@ Goal: make Metal do the same job D3D11 does today.
 
 - [ ] Own `MTLDevice`, command queue, `CVMetalTextureCache`, staging resources, and reusable textures
   inside the macOS presentation backend.
-- [ ] Present BGRA, NV12, planar YUV420, and P010 through a single Metal shader contract derived from
+- [x] Present BGRA, NV12, planar YUV420, and P010 through a single Metal shader contract derived from
   the D3D11 layout/color constants.
 - [ ] Preserve track identity, carry-forward, per-track source dimensions, padded stride semantics,
   and multi-track composition.
@@ -140,21 +140,16 @@ Goal: make Metal do the same job D3D11 does today.
 - [ ] Expose upload latency, dropped/late frame counts, backend fallback reasons, and actual
   presented-frame cadence in diagnostics.
 
-Progress: macOS now exposes a native present-frame package ABI that combines the selected
+Progress: macOS exposes a native present-frame package ABI that combines the selected
 `PresentDecision`, storage kind, layout metadata, and packed frame bytes for backend consumption.
-The Swift-visible backend calls through this ABI, the Metal backend reuses a native staging scratch
-buffer, and diagnostics keep the current software/CPU-backed upload path visible while the
-renderer-owned backend is still under construction.
-present-decision metadata with either direct YUV staging data or BGRA fallback data. The current
-Metal uploader consumes this package path, which keeps player-side frame selection separate from
-Metal upload/composition. The Metal presentation backend also exposes a package-consuming ABI, so
-the future renderer-owned publication path can hand selected payloads to the backend without asking
-the backend to call back into the player. The zero-copy CVPixelBuffer fast path has a distinct
-storage diagnostic, keeping it separate from YUV staging. Software-decoded single-track playback no
-longer opts out of the renderer-owned Metal target; the VVC/H.266 macOS smoke locks that path down
-with zero Swift fallback copies while still reporting `presentationFallbackReason=software-decode`.
-The native Metal uploader smoke now also includes a synthetic planar YUV420 package parity canary,
-covering the three-plane offset/stride shader path without relying on a large media fixture.
+The Swift-visible backend calls through this ABI, and the native Metal presentation backend can
+consume the same package without asking Swift to choose frames. The package path keeps
+zero-copy CVPixelBuffer, staged YUV, and BGRA fallback storage distinct in diagnostics.
+Software-decoded single-track playback no longer opts out of the renderer-owned Metal target; the
+VVC/H.266 macOS smoke locks that path down with zero Swift fallback copies while still reporting
+`presentationFallbackReason=software-decode`. The native Metal uploader smoke covers synthetic NV12,
+planar YUV420, and P010 package parity, including offset/stride shader paths without relying on a
+large media fixture.
 
 Exit gate: macOS can present multi-track CPU-decoded frames through renderer-owned Metal without the
 Swift pump choosing frames, and shader parity tests cover the supported formats.

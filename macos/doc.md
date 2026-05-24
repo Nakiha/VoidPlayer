@@ -61,7 +61,11 @@ shared `DecodeThread` keeps hardware decode active. The test-only
 `--macos-disable-metal-upload` launch flag forces VideoToolbox hwdownload so the software
 CVPixelBuffer copy fallback can still be exercised without a Metal upload target.
 `softwareFallbackActive` remains visible for unsupported codecs or initialization fallback and is
-covered with a generated MPEG-2 smoke.
+covered with a generated MPEG-2 smoke. Visible presentation diagnostics also split the legacy
+`nativeFrameCopyCount` into `nativeFrameRendererOwnedPresentCount` and `nativeFrameSwiftCopyCount`.
+Renderer-owned smokes assert the Swift copy count stays at zero once the Metal presentation target
+is active; the direct-copy fallback smoke asserts the opposite so the compatibility path stays
+observable.
 
 The macOS runner also implements the shared `pickFiles` MethodChannel call with `NSOpenPanel`.
 Debug and Release entitlements include `com.apple.security.files.user-selected.read-only` so
@@ -72,8 +76,10 @@ Use `python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv` for t
 texture smoke, `python dev.py mac-ui-test ui_tests/macos/native_facade_smoke.csv` to prove local
 files report the shared native facade backend and metadata, and
 `python dev.py mac-ui-test ui_tests/macos/native_first_frame_smoke.csv` for the first visible
-native frame. `native_controls_smoke.csv` covers play/pause/seek/step command semantics,
-`native_seek_frame_smoke.csv` verifies that seek commands decode and publish a new target-time
+native frame. The renderer-owned facade and 4K60 smokes generate their H.264 media at test time so
+they do not depend on Git LFS fixture availability. `native_controls_smoke.csv` covers
+play/pause/seek/step command semantics, `native_seek_frame_smoke.csv` verifies that seek commands
+decode and publish a new target-time
 frame through the same texture, `native_playback_smoke.csv` covers visible native playback frame
 advancement, the `native_playing_*` smokes lock down seek/step behavior while playback is
 running, `native_loop_range_smoke.csv` verifies that Dart loop-range state reaches the macOS native
@@ -140,7 +146,8 @@ CVPixelBuffer decisions currently fall back through the YUV package staging path
 backend grows per-track CV texture inputs. Diagnostics expose package upload count,
 CVPixelBuffer upload count, last package storage (`yuv`/`bgra`), scheduler-selected present frame
 count, and whether the package copy consumed the cached scheduler decision. The older
-locked-buffer direct copy remains a fallback and is reported through `pixelBufferDirectCopyCount`.
+locked-buffer direct copy remains a fallback and is reported through `pixelBufferDirectCopyCount`
+and `nativeFrameSwiftCopyCount`.
 
 Manual audible smoke:
 

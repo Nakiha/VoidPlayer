@@ -2,7 +2,8 @@
 # Run with:
 #   python dev.py mac-ui-test ui_tests/macos/native_facade_smoke.csv
 @WINDOW, 960, 540
-0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+0.0, GENERATE_TEST_VIDEO, build/generated/macos/native_facade_h264.mp4, 270, 30, 1920, 1080
+0.3, ADD_MEDIA, build/generated/macos/native_facade_h264.mp4
 1.3, ASSERT_TRACK_COUNT, 1
 1.4, ASSERT_NATIVE_BACKEND, macos-native-player, true
 1.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapter, cvpixelbuffer-bgra-copy
@@ -47,6 +48,8 @@
 6.582, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true
 6.584, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeRendererOwnedUploadCount, 1
 6.586, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0
+6.588, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedPresentCount, 1
+6.589, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeFrameSwiftCopyCount, 0, 0
 6.59, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFramePtsSampleCount, 10
 6.595, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFramePtsAdvanceUs, 300000
 6.596, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameDurationLastUs, 1

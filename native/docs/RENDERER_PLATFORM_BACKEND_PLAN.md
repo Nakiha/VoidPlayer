@@ -50,9 +50,9 @@ state.
 
 Goal: make the current split honest before moving code.
 
-- [ ] Keep diagnostics explicit: scheduler kind, presentation backend kind, upload mode, hardware
+- [x] Keep diagnostics explicit: scheduler kind, presentation backend kind, upload mode, hardware
   decode mode, CPU download state, and software fallback state.
-- [ ] Add a canary that fails when macOS visible playback is still driven only by the Swift frame
+- [x] Add a canary that fails when macOS visible playback is still driven only by the Swift frame
   pump once renderer-owned presentation is expected.
 - [x] Add native tests for backend-independent present decision identity, carry-forward, and
   multi-track layout inputs.
@@ -68,7 +68,11 @@ count, and package storage. Package copy consumes the scheduler-selected `Presen
 tick has published one, and CVPixelBuffer-backed hardware frames are now reported as
 `cvpixelbuffer` instead of being collapsed into the staged `yuv` package diagnostic. The Swift
 texture pump coalesces duplicate copy requests instead of queuing stale uploads. The macOS native
-test matrix also covers present-decision carry-forward identity and offset guards.
+test matrix also covers present-decision carry-forward identity and offset guards. Swift-side
+diagnostics now split visible presentation into renderer-owned presentation and Swift fallback-copy
+counters. The macOS facade and 4K VideoToolbox smokes require renderer-owned presentation with zero
+Swift fallback copies, while the direct-copy fallback smoke proves the legacy Swift path remains
+explicit and isolated.
 
 Exit gate: current macOS playback still works, and diagnostics clearly distinguish transitional
 texture-pump presentation from renderer-owned presentation.

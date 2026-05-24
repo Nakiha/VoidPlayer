@@ -1,7 +1,8 @@
-# macOS native playback smoke for the bundled 3840x2160 ~60fps HEVC sample.
+# macOS native playback smoke for a generated 3840x2160 60fps H.264 sample.
 # This is a throughput canary for the VideoToolbox renderer-owned CVPixelBuffer + Metal path.
 @WINDOW, 960, 540
-0.3, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+0.0, GENERATE_TEST_VIDEO, build/generated/macos/native_4k60_h264.mp4, 180, 60, 3840, 2160
+0.3, ADD_MEDIA, build/generated/macos/native_4k60_h264.mp4
 2.2, ASSERT_TRACK_COUNT, 1
 2.3, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, true
 2.35, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, false
@@ -16,6 +17,8 @@
 2.7, PLAY
 4.5, ASSERT_POSITION_RANGE, 700000, 2900000
 4.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameCopyCount, 2
+4.65, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedPresentCount, 2
+4.66, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeFrameSwiftCopyCount, 0, 0
 4.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalCVPixelBufferUploadCount, 2
 4.715, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, cvpixelbuffer
 4.716, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, presentationPackageCopyUs, 0, 0

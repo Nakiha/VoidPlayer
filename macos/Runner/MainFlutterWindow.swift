@@ -613,6 +613,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private var playbackGeneration = 0
   private var nativeFrameCallbackCount = 0
   private var nativeFrameCopyCount = 0
+  private var nativeFrameRendererOwnedPresentCount = 0
+  private var nativeFrameSwiftCopyCount = 0
   private var nativeFrameCopyMissCount = 0
   private var nativeFrameCopyErrorCount = 0
   private var nativeFrameCopyCoalescedCount = 0
@@ -847,6 +849,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "metalTextureLastError": textureStats?.metalTextureLastError ?? "",
         "nativeFrameCallbackCount": nativeFrameCallbackCount,
         "nativeFrameCopyCount": nativeFrameCopyCount,
+        "nativeFrameRendererOwnedPresentCount": nativeFrameRendererOwnedPresentCount,
+        "nativeFrameSwiftCopyCount": nativeFrameSwiftCopyCount,
         "nativeFrameCopyMissCount": nativeFrameCopyMissCount,
         "nativeFrameCopyErrorCount": nativeFrameCopyErrorCount,
         "nativeFrameCopyCoalescedCount": nativeFrameCopyCoalescedCount,
@@ -1310,6 +1314,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private func resetNativeFrameCounters() {
     nativeFrameCallbackCount = 0
     nativeFrameCopyCount = 0
+    nativeFrameRendererOwnedPresentCount = 0
+    nativeFrameSwiftCopyCount = 0
     nativeFrameCopyMissCount = 0
     nativeFrameCopyErrorCount = 0
     nativeFrameCopyCoalescedCount = 0
@@ -1439,6 +1445,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       }
       if self.nativePlayer?.lastRendererOwnedPresentationSucceeded() == true {
         self.nativeFrameCopyCount += 1
+        self.nativeFrameRendererOwnedPresentCount += 1
         let now = DispatchTime.now().uptimeNanoseconds
         if self.nativeFrameCopyFirstHostNs == nil {
           self.nativeFrameCopyFirstHostNs = now
@@ -1500,6 +1507,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         }
         self.nativeFrameCopyLastHostNs = now
         self.nativeFrameCopyCount += 1
+        self.nativeFrameSwiftCopyCount += 1
         self.publishFrameInfo(frameInfo)
         self.markFrameAvailable()
         if frameInfo.ptsUs >= self.activeDurationUs() {

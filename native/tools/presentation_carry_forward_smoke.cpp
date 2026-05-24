@@ -82,5 +82,32 @@ int main() {
     return fail("carry-forward accepted stale track identity");
   }
 
+  const auto near_duration = vr::choose_playback_eof_settlement({
+      true,
+      10'001,
+      10'000,
+      10'002,
+      1'000,
+  });
+  if (!near_duration.should_settle ||
+      !near_duration.used_reported_duration ||
+      near_duration.settle_pts_us != 10'002) {
+    return fail("EOF settlement did not preserve near reported duration");
+  }
+
+  const auto wrong_duration = vr::choose_playback_eof_settlement({
+      true,
+      15'000,
+      10'000,
+      20'000,
+      1'000,
+  });
+  if (!wrong_duration.should_settle ||
+      wrong_duration.used_reported_duration ||
+      !wrong_duration.should_clamp_clock ||
+      wrong_duration.settle_pts_us != 10'000) {
+    return fail("EOF settlement did not prefer frame end over wrong duration");
+  }
+
   return 0;
 }

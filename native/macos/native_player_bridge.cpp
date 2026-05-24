@@ -22,6 +22,7 @@
 #include "video_renderer/sync/render_sink.h"
 #include "video_renderer/track/track_preview_policy.h"
 #include "video_renderer/track/track_pipeline_factory.h"
+#include "video_renderer/track/track_present_policy.h"
 #include "video_renderer/track/track_step_policy.h"
 
 #include <CoreVideo/CoreVideo.h>
@@ -1004,13 +1005,15 @@ public:
       return {};
     }
     const int64_t current_pts_us = playback_.clock().current_pts_us();
-    return presentation_loop_driver_.tick(
+    auto tick = presentation_loop_driver_.tick(
         *render_sink_,
         playing_,
         current_pts_us,
         playback_.clock().speed(),
         next_frame_event_pts_us(current_pts_us),
         max_sleep);
+    settle_eof_if_ready();
+    return tick;
   }
 
   VPMacOSNativePresentationSchedulerStats scheduler_stats() const {
@@ -1080,6 +1083,57 @@ private:
       return false;
     }
     return presentation_loop_driver_.advance_to_clock(*render_sink_, frame_pts_us);
+  }
+
+  void set_decode_paused_for_all_tracks(bool paused) {
+    vr::apply_track_video_decode_pause_state(
+        tracks_,
+        paused,
+        [](size_t, vr::TrackPipeline& track, bool next_paused) {
+          if (track.decode_thread) {
+            track.decode_thread->set_decode_paused(next_paused);
+          }
+        });
+    if (auto* audio = playback_.audio_output()) {
+      audio->set_all_decode_paused(paused);
+    }
+  }
+
+  bool settle_eof_if_ready() {
+    if (!playing_) {
+      return false;
+    }
+    auto decision = current_present_decision();
+    vr::filter_present_decision_against_tracks(decision, tracks_);
+    const auto eof_clamp = vr::compute_empty_buffer_eof_clamp(tracks_, decision);
+    if (!eof_clamp.all_active_buffers_empty || eof_clamp.max_end_pts_us <= 0) {
+      return false;
+    }
+    for (const auto& track : tracks_) {
+      if (!track || !track->packet_queue) {
+        continue;
+      }
+      if (!track->packet_queue->empty() || !track->packet_queue->is_eof()) {
+        return false;
+      }
+    }
+
+    const auto settlement = vr::choose_playback_eof_settlement({
+        playing_,
+        playback_.clock().current_pts_us(),
+        eof_clamp.max_end_pts_us,
+        duration_us_,
+        vr::compute_min_current_frame_duration_us(tracks_),
+    });
+    if (!settlement.should_settle) {
+      return false;
+    }
+
+    set_decode_paused_for_all_tracks(true);
+    playback_.clock().seek(settlement.settle_pts_us);
+    playback_.clock().pause();
+    playing_ = false;
+    return true;
   }
 
   std::optional<int64_t> next_frame_event_pts_us(int64_t current_pts_us) const {

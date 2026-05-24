@@ -1214,35 +1214,25 @@ int64_t Renderer::effective_duration_us_locked() const {
 }
 
 bool Renderer::settle_eof_locked(int64_t max_presented_end_us) {
-    if (!playing_.load() || max_presented_end_us <= 0) {
-        return false;
-    }
-
     const int64_t duration_us = effective_duration_us_locked();
-    const int64_t current_us = playback_->clock().current_pts_us();
-    const int64_t frame_duration_us = compute_min_current_frame_duration_us(tracks_);
-    const int64_t eof_tolerance_us =
-        std::max<int64_t>(frame_duration_us + 2000, 5000);
-
-    int64_t end_us = max_presented_end_us;
-    if (duration_us > 0) {
-        if (std::llabs(duration_us - max_presented_end_us) > eof_tolerance_us) {
-            return false;
-        }
-        end_us = duration_us;
-    }
-
-    if (current_us + eof_tolerance_us < end_us) {
+    const auto decision = choose_playback_eof_settlement({
+        playing_.load(),
+        playback_->clock().current_pts_us(),
+        max_presented_end_us,
+        duration_us,
+        compute_min_current_frame_duration_us(tracks_),
+    });
+    if (!decision.should_settle) {
         return false;
     }
 
     set_decode_paused_for_all_tracks(true);
-    playback_->clock().seek(end_us);
+    playback_->clock().seek(decision.settle_pts_us);
     playback_->clock().pause();
     playing_ = false;
     preview_drawn_ = true;
     spdlog::info("[Renderer] EOF reached: clock fixed at {:.3f}s (last_frame_end={:.3f}s, duration={:.3f}s)",
-                 end_us / 1e6,
+                 decision.settle_pts_us / 1e6,
                  max_presented_end_us / 1e6,
                  duration_us / 1e6);
     return true;

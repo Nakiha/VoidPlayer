@@ -1443,6 +1443,50 @@ TEST_CASE("TrackPresentPolicy computes empty-buffer EOF clamp facts",
     REQUIRE(missing_buffer.max_end_pts_us == 22);
 }
 
+TEST_CASE("TrackPresentPolicy settles EOF from last presented frame end",
+          "[track_pipeline][track_present_policy]") {
+    auto not_playing = choose_playback_eof_settlement({
+        false,
+        12'000,
+        10'000,
+        10'000,
+        1'000,
+    });
+    REQUIRE_FALSE(not_playing.should_settle);
+
+    auto before_end = choose_playback_eof_settlement({
+        true,
+        8'000,
+        10'000,
+        10'000,
+        1'000,
+    });
+    REQUIRE_FALSE(before_end.should_settle);
+
+    auto near_reported_duration = choose_playback_eof_settlement({
+        true,
+        10'001,
+        10'000,
+        10'002,
+        1'000,
+    });
+    REQUIRE(near_reported_duration.should_settle);
+    REQUIRE(near_reported_duration.used_reported_duration);
+    REQUIRE(near_reported_duration.settle_pts_us == 10'002);
+
+    auto wrong_reported_duration = choose_playback_eof_settlement({
+        true,
+        15'000,
+        10'000,
+        20'000,
+        1'000,
+    });
+    REQUIRE(wrong_reported_duration.should_settle);
+    REQUIRE_FALSE(wrong_reported_duration.used_reported_duration);
+    REQUIRE(wrong_reported_duration.should_clamp_clock);
+    REQUIRE(wrong_reported_duration.settle_pts_us == 10'000);
+}
+
 TEST_CASE("TrackPresentPolicy computes next frame event PTS",
           "[track_pipeline][track_present_policy]") {
     const auto make_track =

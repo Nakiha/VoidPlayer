@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdlib>
 #include <optional>
 
 namespace vr {
@@ -153,6 +154,36 @@ EmptyBufferEofClamp compute_empty_buffer_eof_clamp(
     }
 
     return clamp;
+}
+
+PlaybackEofSettlementDecision choose_playback_eof_settlement(
+    const PlaybackEofSettlementInput& input) {
+    PlaybackEofSettlementDecision decision;
+    const int64_t frame_duration_us = input.frame_duration_us > 0
+        ? input.frame_duration_us
+        : 0;
+    decision.tolerance_us = std::max<int64_t>(frame_duration_us + 2000, 5000);
+
+    if (!input.playing || input.last_presented_end_us <= 0) {
+        return decision;
+    }
+
+    int64_t settle_pts_us = input.last_presented_end_us;
+    if (input.reported_duration_us > 0 &&
+        std::llabs(input.reported_duration_us - input.last_presented_end_us) <=
+            decision.tolerance_us) {
+        settle_pts_us = input.reported_duration_us;
+        decision.used_reported_duration = true;
+    }
+
+    if (input.current_pts_us + decision.tolerance_us < settle_pts_us) {
+        return decision;
+    }
+
+    decision.should_settle = true;
+    decision.should_clamp_clock = input.current_pts_us > settle_pts_us;
+    decision.settle_pts_us = settle_pts_us;
+    return decision;
 }
 
 std::optional<int64_t> compute_next_frame_event_pts_us(

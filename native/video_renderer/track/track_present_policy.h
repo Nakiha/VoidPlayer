@@ -14,6 +14,22 @@ struct EmptyBufferEofClamp {
     int64_t max_end_pts_us = 0;
 };
 
+struct PlaybackEofSettlementInput {
+    bool playing = false;
+    int64_t current_pts_us = 0;
+    int64_t last_presented_end_us = 0;
+    int64_t reported_duration_us = 0;
+    int64_t frame_duration_us = 0;
+};
+
+struct PlaybackEofSettlementDecision {
+    bool should_settle = false;
+    bool should_clamp_clock = false;
+    bool used_reported_duration = false;
+    int64_t settle_pts_us = 0;
+    int64_t tolerance_us = 0;
+};
+
 struct SeekPreviewPresentedTrackEvent {
     size_t slot = 0;
     int file_id = -1;
@@ -59,6 +75,9 @@ void apply_present_carry_forward(
 EmptyBufferEofClamp compute_empty_buffer_eof_clamp(
     const TrackPipelineManager& tracks,
     const PresentDecision& last_decision);
+
+PlaybackEofSettlementDecision choose_playback_eof_settlement(
+    const PlaybackEofSettlementInput& input);
 
 std::optional<int64_t> compute_next_frame_event_pts_us(
     const TrackPipelineManager& tracks,

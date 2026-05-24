@@ -276,6 +276,16 @@ int VPMacOSNativePlayerCopyPresentFramesBGRAInto(
     VPMacOSNativePresentDecisionInfo* out,
     char* error,
     size_t error_size);
+int VPMacOSNativePlayerCopyPresentationBGRAInto(
+    VPMacOSNativePlayer* player,
+    uint8_t* dst,
+    size_t dst_size,
+    int32_t width,
+    int32_t height,
+    int32_t stride_bytes,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
 int VPMacOSNativePlayerCopyPresentFramesYUVInto(
     VPMacOSNativePlayer* player,
     uint8_t* dst,

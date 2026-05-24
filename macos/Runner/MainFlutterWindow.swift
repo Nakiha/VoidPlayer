@@ -453,6 +453,57 @@ private final class MacOSNativePlayerSession {
     )
   }
 
+  func copyPresentationIntoBGRA(
+    _ dst: UnsafeMutablePointer<UInt8>,
+    dstSize: Int,
+    width: Int,
+    height: Int,
+    strideBytes: Int,
+    waitTimeoutMs: Int = 0
+  ) throws -> MacOSNativeFrameInfo {
+    let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
+    var lastError = ""
+
+    repeat {
+      var frameInfo = VPMacOSNativeFrameInfo()
+      var error = [CChar](repeating: 0, count: 1024)
+      let ret = VPMacOSNativePlayerCopyPresentationBGRAInto(
+        handle,
+        dst,
+        dstSize,
+        Int32(width),
+        Int32(height),
+        Int32(strideBytes),
+        &frameInfo,
+        &error,
+        error.count
+      )
+      if ret == 0 {
+        guard frameInfo.width > 0, frameInfo.height > 0 else {
+          throw MacOSNativePlayerError.invalidPayload
+        }
+        return MacOSNativeFrameInfo(
+          width: Int(frameInfo.width),
+          height: Int(frameInfo.height),
+          durationUs: Int(frameInfo.duration_us),
+          ptsUs: Int(frameInfo.pts_us),
+          dtsUs: Int(frameInfo.dts_us)
+        )
+      }
+      let message = String(cString: error)
+      lastError = message.isEmpty
+        ? "copyPresentationIntoBGRA failed with code \(ret)"
+        : message
+      if Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.01)
+      }
+    } while Date() < deadline
+
+    throw MacOSNativePlayerError.failed(
+      lastError.isEmpty ? "timed out waiting for a presentable frame" : lastError
+    )
+  }
+
   func copyCurrentFrameToMetalPixelBuffer(
     backend: OpaquePointer,
     pixelBuffer: CVPixelBuffer,
@@ -1724,7 +1775,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       throw MacOSNativePlayerError.invalidPayload
     }
 
-    if metalUploadEnabled {
+    if metalUploadEnabled, player.decodeModeName() != "software-fallback" {
       if let info = try copyFromNativePlayerWithMetalUpload(
         player,
         pixelBuffer: pixelBuffer,
@@ -1734,7 +1785,6 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
         pixelBufferReuseCount += 1
         return info
       }
-      throw MacOSNativePlayerError.transientFrameUnavailable("no presentable Metal frame is ready")
     }
 
     CVPixelBufferLockBaseAddress(pixelBuffer, [])
@@ -1746,7 +1796,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     let dstSize = bytesPerRow * height
     let info: MacOSNativeFrameInfo
     do {
-      info = try player.copyCurrentFrameIntoBGRA(
+      info = try player.copyPresentationIntoBGRA(
         baseAddress.assumingMemoryBound(to: UInt8.self),
         dstSize: dstSize,
         width: width,
@@ -1863,6 +1913,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
 
     guard !syntheticPattern,
           metalUploadEnabled,
+          player.decodeModeName() != "software-fallback",
           let nativeMetalPresentationBackend,
           let pixelBuffer,
           nativeMetalUploaderAvailableLocked(),
@@ -2037,7 +2088,8 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       return info
     } catch {
       pixelBufferMetalUploadFailureCount += 1
-      throw error
+      NSLog("VoidPlayer macOS Metal layout upload failed; falling back to CPU BGRA layout: \(error)")
+      return nil
     }
   }
 

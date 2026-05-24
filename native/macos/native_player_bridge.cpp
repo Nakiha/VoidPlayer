@@ -30,6 +30,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdlib>
 #include <cstring>
@@ -79,6 +80,77 @@ private:
   CVPixelBufferRef buffer_ = nullptr;
   bool locked_ = false;
 };
+
+void clear_bgra_canvas(uint8_t* dst,
+                       size_t dst_size,
+                       int32_t width,
+                       int32_t height,
+                       int32_t stride_bytes) {
+  if (!dst || width <= 0 || height <= 0 || stride_bytes < width * 4) {
+    return;
+  }
+  const size_t needed = static_cast<size_t>(height - 1) *
+      static_cast<size_t>(stride_bytes) + static_cast<size_t>(width) * 4u;
+  if (needed > dst_size) {
+    return;
+  }
+  for (int32_t y = 0; y < height; ++y) {
+    auto* row = dst + static_cast<size_t>(y) * static_cast<size_t>(stride_bytes);
+    std::memset(row, 0, static_cast<size_t>(width) * 4u);
+    for (int32_t x = 0; x < width; ++x) {
+      row[static_cast<size_t>(x) * 4u + 3u] = 255;
+    }
+  }
+}
+
+int ordered_track_at(const VPMacOSNativePresentDecisionInfo& info, size_t index) {
+  if (index >= static_cast<size_t>(VPMacOSNativeMaxTracks)) {
+    return 0;
+  }
+  return std::clamp(info.order[index], 0, VPMacOSNativeMaxTracks - 1);
+}
+
+bool bgra_canvas_source_uv(const VPMacOSNativePresentDecisionInfo& info,
+                           int32_t width,
+                           int32_t height,
+                           int32_t x,
+                           int32_t y,
+                           int* out_track,
+                           float* out_u,
+                           float* out_v) {
+  if (!out_track || !out_u || !out_v || width <= 0 || height <= 0) {
+    return false;
+  }
+  const float tex_u = (static_cast<float>(x) + 0.5f) / static_cast<float>(width);
+  const float tex_v = (static_cast<float>(y) + 0.5f) / static_cast<float>(height);
+  int track = 0;
+  float local_u = tex_u;
+  const float local_v = tex_v;
+  if (info.mode == vr::LAYOUT_SPLIT_SCREEN) {
+    track = tex_u < info.split_pos ? ordered_track_at(info, 0) : ordered_track_at(info, 1);
+  } else {
+    const int count = std::max(info.track_count, 1);
+    const float scaled_x = tex_u * static_cast<float>(count);
+    const int display_slot = std::clamp(static_cast<int>(scaled_x), 0, count - 1);
+    track = ordered_track_at(info, static_cast<size_t>(display_slot));
+    local_u = scaled_x - static_cast<float>(display_slot);
+  }
+  track = std::clamp(track, 0, VPMacOSNativeMaxTracks - 1);
+  const float source_u =
+      (local_u - info.display_offset_x[track]) * info.inv_display_size_x[track] -
+      info.view_offset_uv_x[track];
+  const float source_v =
+      (local_v - info.display_offset_y[track]) * info.inv_display_size_y[track] -
+      info.view_offset_uv_y[track];
+  if (!std::isfinite(source_u) || !std::isfinite(source_v) ||
+      source_u < 0.0f || source_u > 1.0f || source_v < 0.0f || source_v > 1.0f) {
+    return false;
+  }
+  *out_track = track;
+  *out_u = source_u;
+  *out_v = source_v;
+  return true;
+}
 
 bool videotoolbox_disabled_by_env() {
   const char* value = std::getenv("VOIDPLAYER_DISABLE_VIDEOTOOLBOX");
@@ -364,6 +436,108 @@ public:
         return false;
       }
     }
+    return true;
+  }
+
+  bool copy_present_canvas_bgra_into(uint8_t* dst,
+                                     size_t dst_size,
+                                     int32_t width,
+                                     int32_t height,
+                                     int32_t stride_bytes,
+                                     VPMacOSNativeFrameInfo* out,
+                                     std::string& error) {
+    if (!dst || !out || width <= 0 || height <= 0 || stride_bytes < width * 4) {
+      error = "invalid present canvas BGRA destination";
+      return false;
+    }
+    const size_t last_row_offset =
+        static_cast<size_t>(height - 1) * static_cast<size_t>(stride_bytes);
+    const size_t needed = last_row_offset + static_cast<size_t>(width) * 4u;
+    if (needed > dst_size) {
+      error = "present canvas BGRA destination is too small";
+      return false;
+    }
+    if (!render_sink_) {
+      error = "player is not open";
+      return false;
+    }
+
+    const auto decision = current_present_decision();
+    VPMacOSNativePresentDecisionInfo info = {};
+    fill_present_decision_info(decision, width, height, &info);
+    if (!decision.should_present) {
+      error = "no presentable frame is ready";
+      return false;
+    }
+    if (info.track_count > 1 && info.frame_count < info.track_count) {
+      error = "not all present decision frames are ready";
+      return false;
+    }
+
+    std::array<VPMacOSNativeFrame, vr::kMaxTracks> owned_frames{};
+    auto release_owned = [&]() {
+      for (auto& frame : owned_frames) {
+        vp_macos::free_owned_bgra_frame(&frame);
+      }
+    };
+
+    for (size_t slot = 0; slot < vr::kMaxTracks; ++slot) {
+      if (!decision.frames[slot].has_value()) {
+        continue;
+      }
+      if (!vp_macos::copy_texture_frame_to_owned_bgra(*decision.frames[slot],
+                                                      &owned_frames[slot])) {
+        release_owned();
+        error = "decoded frame storage is not supported by the macOS BGRA layout adapter";
+        return false;
+      }
+    }
+
+    clear_bgra_canvas(dst, dst_size, width, height, stride_bytes);
+    for (int32_t y = 0; y < height; ++y) {
+      auto* dst_row = dst + static_cast<size_t>(y) * static_cast<size_t>(stride_bytes);
+      for (int32_t x = 0; x < width; ++x) {
+        int track = 0;
+        float source_u = 0.0f;
+        float source_v = 0.0f;
+        if (!bgra_canvas_source_uv(info, width, height, x, y,
+                                   &track, &source_u, &source_v)) {
+          continue;
+        }
+        const auto& frame = owned_frames[static_cast<size_t>(track)];
+        if (!frame.bgra || frame.width <= 0 || frame.height <= 0) {
+          continue;
+        }
+        const int32_t source_x = std::clamp(
+            static_cast<int32_t>(source_u * static_cast<float>(frame.width)),
+            0,
+            frame.width - 1);
+        const int32_t source_y = std::clamp(
+            static_cast<int32_t>(source_v * static_cast<float>(frame.height)),
+            0,
+            frame.height - 1);
+        const size_t source_offset =
+            (static_cast<size_t>(source_y) * static_cast<size_t>(frame.width) +
+             static_cast<size_t>(source_x)) *
+            4u;
+        const size_t dst_offset = static_cast<size_t>(x) * 4u;
+        if (source_offset + 4u <= frame.bgra_size) {
+          std::memcpy(dst_row + dst_offset, frame.bgra + source_offset, 4u);
+        }
+      }
+    }
+
+    for (const auto& frame : owned_frames) {
+      if (frame.bgra) {
+        out->width = frame.width;
+        out->height = frame.height;
+        out->pts_us = frame.pts_us;
+        out->dts_us = frame.dts_us;
+        out->duration_us = frame.duration_us;
+        break;
+      }
+    }
+    release_owned();
     return true;
   }
 
@@ -1796,6 +1970,32 @@ int VPMacOSNativePlayerCopyPresentFramesBGRAInto(
   std::string message;
   if (!player->core.copy_present_frames_into(
           dst, dst_size, width, height, stride_bytes, track_stride_bytes, out, message)) {
+    write_error(error, error_size, message);
+    return -1;
+  }
+  write_error(error, error_size, "");
+  return 0;
+}
+
+int VPMacOSNativePlayerCopyPresentationBGRAInto(
+    VPMacOSNativePlayer* player,
+    uint8_t* dst,
+    size_t dst_size,
+    int32_t width,
+    int32_t height,
+    int32_t stride_bytes,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size) {
+  if (!player || !dst || !out) {
+    write_error(error, error_size, "player, destination, or output info is null");
+    return -1;
+  }
+  *out = {};
+  std::lock_guard<std::mutex> lock(player->mutex);
+  std::string message;
+  if (!player->core.copy_present_canvas_bgra_into(
+          dst, dst_size, width, height, stride_bytes, out, message)) {
     write_error(error, error_size, message);
     return -1;
   }

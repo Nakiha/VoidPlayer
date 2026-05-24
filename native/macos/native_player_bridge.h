@@ -354,15 +354,6 @@ int VPMacOSMetalUploaderValidatePixelBufferChecked(VPMacOSMetalUploader* uploade
                                                    int32_t height,
                                                    char* error,
                                                    size_t error_size);
-int VPMacOSMetalUploaderCopyCurrentFrame(VPMacOSMetalUploader* uploader,
-                                         VPMacOSNativePlayer* player,
-                                         void* pixel_buffer,
-                                         int32_t width,
-                                         int32_t height,
-                                         int32_t wait_timeout_ms,
-                                         VPMacOSNativeFrameInfo* out,
-                                         char* error,
-                                         size_t error_size);
 int VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
     VPMacOSMetalUploader* uploader,
     VPMacOSNativePlayer* player,

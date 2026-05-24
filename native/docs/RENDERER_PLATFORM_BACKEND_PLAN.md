@@ -205,6 +205,8 @@ fallback from normal macOS seek-settle flow.
 Swift no longer stops playback by comparing the presented PTS against the reported duration; EOF
 settlement is owned by the native/shared playback policy so bad container durations do not create a
 separate macOS timeline rule.
+The unused no-layout `VPMacOSMetalUploaderCopyCurrentFrame` blit ABI has also been removed; macOS
+Metal uploads now enter through the layout/present-package or retained-CVPixelBuffer paths.
 
 ## Validation Strategy
 

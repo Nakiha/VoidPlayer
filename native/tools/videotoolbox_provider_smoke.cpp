@@ -62,6 +62,30 @@ int main() {
   av_buffer_unref(&result.hw_device_ctx);
   result.provider->shutdown();
 
+  vr::HwDecodeInitParams renderer_owned_params = params;
+  renderer_owned_params.device_mode = vr::DecodeDeviceMode::IndependentDevice;
+  auto renderer_owned_compatible = vr::compatible_hw_decode_provider_names(
+      vr::RenderBackendType::Metal,
+      vr::DecodeDeviceMode::IndependentDevice);
+  bool renderer_owned_has_videotoolbox = false;
+  for (const char* name : renderer_owned_compatible) {
+    renderer_owned_has_videotoolbox =
+        renderer_owned_has_videotoolbox || std::string(name) == "VideoToolbox";
+  }
+  if (!renderer_owned_has_videotoolbox) {
+    return fail("VideoToolbox provider is not registered for Metal renderer-owned decode");
+  }
+  auto renderer_owned_result =
+      vr::try_hw_decode_providers(codec, renderer_owned_params);
+  if (!renderer_owned_result.success ||
+      renderer_owned_result.type != vr::HwDecodeType::VideoToolbox ||
+      renderer_owned_result.hw_pix_fmt != AV_PIX_FMT_VIDEOTOOLBOX ||
+      !renderer_owned_result.hw_device_ctx) {
+    return fail("VideoToolbox renderer-owned provider did not initialize");
+  }
+  av_buffer_unref(&renderer_owned_result.hw_device_ctx);
+  renderer_owned_result.provider->shutdown();
+
   auto mpeg2_result = vr::try_hw_decode_providers(mpeg2_codec, params);
   if (mpeg2_result.success) {
     if (mpeg2_result.hw_device_ctx) {

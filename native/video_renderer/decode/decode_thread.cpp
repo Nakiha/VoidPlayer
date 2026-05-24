@@ -157,7 +157,8 @@ DecodeThread::~DecodeThread() {
 
 bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
                                            void* render_device,
-                                           std::recursive_mutex* device_mutex) {
+                                           std::recursive_mutex* device_mutex,
+                                           RenderBackendKind backend) {
     if (!codec_ctx_ || !codec_) {
         spdlog::warn("[DecodeThread] Cannot enable hw decode: codec not initialized");
         return false;
@@ -173,7 +174,8 @@ bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
     device_mutex_ = device_mutex;
 
     const auto stream_format = static_cast<AVPixelFormat>(codec_params_->format);
-    if (mode != DecodeDeviceMode::FfmpegOwnedHwDownloadDevice &&
+    if (backend == RenderBackendKind::D3D11 &&
+        mode != DecodeDeviceMode::FfmpegOwnedHwDownloadDevice &&
         !renderer_owned_d3d11_supports_stream_format(stream_format)) {
         const char* name = av_get_pix_fmt_name(stream_format);
         spdlog::info("[DecodeThread] Hardware decode disabled for stream pixel format {} ({}) "
@@ -190,7 +192,7 @@ bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
     }
 
     HwDecodeInitParams hw_params;
-    hw_params.backend = RenderBackendType::D3D11;
+    hw_params.backend = backend;
     hw_params.device_mode = mode;
     hw_params.render_device = render_device;
     hw_params.width = codec_params_->width;

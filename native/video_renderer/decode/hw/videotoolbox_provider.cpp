@@ -43,9 +43,9 @@ bool VideoToolboxProvider::probe(const AVCodec* codec) const {
 
 HwDecodeInitResult VideoToolboxProvider::init(const HwDecodeInitParams& params) {
     HwDecodeInitResult result;
-    if (params.device_mode != DecodeDeviceMode::FfmpegOwnedHwDownloadDevice) {
-        spdlog::info("[VideoToolbox] Renderer-owned CVPixelBuffer output is not wired yet; "
-                     "use FfmpegOwnedHwDownloadDevice for the current shared pipeline");
+    if (params.backend != RenderBackendKind::Metal &&
+        params.device_mode != DecodeDeviceMode::FfmpegOwnedHwDownloadDevice) {
+        spdlog::info("[VideoToolbox] Renderer-owned CVPixelBuffer output requires Metal backend");
         return result;
     }
 

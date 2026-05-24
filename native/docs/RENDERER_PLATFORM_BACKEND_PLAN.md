@@ -150,7 +150,9 @@ Metal uploader consumes this package path, which keeps player-side frame selecti
 Metal upload/composition. The Metal presentation backend also exposes a package-consuming ABI, so
 the future renderer-owned publication path can hand selected payloads to the backend without asking
 the backend to call back into the player. The zero-copy CVPixelBuffer fast path has a distinct
-storage diagnostic, keeping it separate from YUV staging.
+storage diagnostic, keeping it separate from YUV staging. Software-decoded single-track playback no
+longer opts out of the renderer-owned Metal target; the VVC/H.266 macOS smoke locks that path down
+with zero Swift fallback copies while still reporting `presentationFallbackReason=software-decode`.
 
 Exit gate: macOS can present multi-track CPU-decoded frames through renderer-owned Metal without the
 Swift pump choosing frames, and shader parity tests cover the supported formats.

@@ -101,6 +101,7 @@ enum {
   VPMacOSNativePresentFormatBGRA = 0,
   VPMacOSNativePresentFormatNV12 = 1,
   VPMacOSNativePresentFormatP010 = 2,
+  VPMacOSNativePresentFormatYUV420P = 3,
   VPMacOSNativePresentPackageStorageUnavailable = 0,
   VPMacOSNativePresentPackageStorageYUV = 1,
   VPMacOSNativePresentPackageStorageBGRA = 2,
@@ -137,6 +138,7 @@ typedef struct VPMacOSNativePresentDecisionInfo {
   int32_t yuv_format[VPMacOSNativeMaxTracks];
   int32_t y_offset[VPMacOSNativeMaxTracks];
   int32_t uv_offset[VPMacOSNativeMaxTracks];
+  int32_t v_offset[VPMacOSNativeMaxTracks];
   int32_t y_stride[VPMacOSNativeMaxTracks];
   int32_t uv_stride[VPMacOSNativeMaxTracks];
   int32_t coded_width[VPMacOSNativeMaxTracks];

@@ -151,7 +151,10 @@ and `nativeFrameSwiftCopyCount`. The diagnostics map also reports primary decode
 (`nativeDecodeFrameCount`, `nativeDecodeFpsX1000`), renderer-owned upload cadence
 (`nativeRendererOwnedUploadFpsX1000`), presented callback cadence (`nativeFrameCopyFpsX1000`), and
 `presentationFallbackReason` so 4K playback regressions can be separated into decode, upload,
-presentation, or fallback causes.
+presentation, or fallback causes. Software-decoded tracks, including VVC/H.266 while VideoToolbox
+declines it, still install the renderer-owned Metal presentation target when Metal upload is
+available; `presentationFallbackReason=software-decode` describes decode fallback, not a return to
+Swift-side frame copying.
 
 Manual audible smoke:
 

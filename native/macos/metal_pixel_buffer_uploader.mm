@@ -21,6 +21,7 @@ using namespace metal;
 	constant int kPresentFormatBGRA = 0;
 	constant int kPresentFormatNV12 = 1;
 	constant int kPresentFormatP010 = 2;
+	constant int kPresentFormatYUV420P = 3;
 	constant int kColorRangeFull = 2;
 	constant int kColorMatrixUnknown = 0;
 	constant int kColorMatrixBT601 = 1;
@@ -63,6 +64,10 @@ struct LayoutParams {
 	  uint uv_offset1;
 	  uint uv_offset2;
 	  uint uv_offset3;
+	  uint v_offset0;
+	  uint v_offset1;
+	  uint v_offset2;
+	  uint v_offset3;
 	  uint y_stride0;
 	  uint y_stride1;
 	  uint y_stride2;
@@ -180,6 +185,13 @@ int source_width_at(constant LayoutParams& params, uint index) {
 	  if (index == 1) return params.uv_offset1;
 	  if (index == 2) return params.uv_offset2;
 	  return params.uv_offset3;
+	}
+
+	uint v_offset_at(constant LayoutParams& params, uint index) {
+	  if (index == 0) return params.v_offset0;
+	  if (index == 1) return params.v_offset1;
+	  if (index == 2) return params.v_offset2;
+	  return params.v_offset3;
 	}
 
 	uint y_stride_at(constant LayoutParams& params, uint index) {
@@ -385,22 +397,30 @@ float view_offset_uv_y_at(constant LayoutParams& params, uint index) {
 	                        uint source_y) {
 	  const int format = yuv_format_at(params, track_slot);
 	  const bool is_p010 = format == kPresentFormatP010;
+	  const bool is_planar_yuv420 = format == kPresentFormatYUV420P;
 	  const uint bytes_per_sample = is_p010 ? 2u : 1u;
 	  const uint coded_width = uint(max(coded_width_at(params, track_slot), 1));
 	  const uint coded_height = uint(max(coded_height_at(params, track_slot), 1));
 	  const uint y_x = min(source_x, coded_width - 1);
 	  const uint y_y = min(source_y, coded_height - 1);
-	  const uint uv_x = min(y_x / 2u, max(coded_width / 2u, 1u) - 1u);
-	  const uint uv_y = min(y_y / 2u, max(coded_height / 2u, 1u) - 1u);
+	  const uint chroma_width = max((coded_width + 1u) / 2u, 1u);
+	  const uint chroma_height = max((coded_height + 1u) / 2u, 1u);
+	  const uint uv_x = min(y_x / 2u, chroma_width - 1u);
+	  const uint uv_y = min(y_y / 2u, chroma_height - 1u);
 	  const uint y_offset =
 	      y_offset_at(params, track_slot) + y_y * y_stride_at(params, track_slot) +
 	      y_x * bytes_per_sample;
-	  const uint uv_offset =
-	      uv_offset_at(params, track_slot) + uv_y * uv_stride_at(params, track_slot) +
-	      uv_x * bytes_per_sample * 2u;
+	  const uint uv_offset = uv_offset_at(params, track_slot) +
+	      uv_y * uv_stride_at(params, track_slot) +
+	      uv_x * bytes_per_sample * (is_planar_yuv420 ? 1u : 2u);
+	  const uint v_offset = is_planar_yuv420
+	      ? v_offset_at(params, track_slot) +
+	            uv_y * uv_stride_at(params, track_slot) +
+	            uv_x * bytes_per_sample
+	      : uv_offset + bytes_per_sample;
 	  const float y = yuv_sample_to_float(source, y_offset, is_p010);
 	  const float u = yuv_sample_to_float(source, uv_offset, is_p010);
-	  const float v = yuv_sample_to_float(source, uv_offset + bytes_per_sample, is_p010);
+	  const float v = yuv_sample_to_float(source, v_offset, is_p010);
 	  float y_full = y;
 	  float2 cbcr = (float2(u, v) * 255.0 - 128.0) / 255.0;
 	  if (color_range_at(params, track_slot) != kColorRangeFull) {
@@ -487,7 +507,8 @@ float view_offset_uv_y_at(constant LayoutParams& params, uint index) {
 	  const uint source_y = min(uint(source_uv.y * float(source_height)), source_height - 1);
 	  float4 color = float4(0.0, 0.0, 0.0, 1.0);
 	  if (yuv_format_at(params, track_slot) == kPresentFormatNV12 ||
-	      yuv_format_at(params, track_slot) == kPresentFormatP010) {
+	      yuv_format_at(params, track_slot) == kPresentFormatP010 ||
+	      yuv_format_at(params, track_slot) == kPresentFormatYUV420P) {
 	    color = sample_yuv_track(source, params, track_slot, source_x, source_y);
 	  } else {
 	    const uint track_offset = track_slot * params.width * params.height * 4u;
@@ -637,6 +658,10 @@ struct MetalLayoutParams {
   uint32_t uv_offset1;
   uint32_t uv_offset2;
   uint32_t uv_offset3;
+  uint32_t v_offset0;
+  uint32_t v_offset1;
+  uint32_t v_offset2;
+  uint32_t v_offset3;
   uint32_t y_stride0;
   uint32_t y_stride1;
   uint32_t y_stride2;
@@ -815,6 +840,10 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   metalParams.uv_offset1 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_offset[1]));
   metalParams.uv_offset2 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_offset[2]));
   metalParams.uv_offset3 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_offset[3]));
+  metalParams.v_offset0 = static_cast<uint32_t>(std::max(0, decisionInfo.v_offset[0]));
+  metalParams.v_offset1 = static_cast<uint32_t>(std::max(0, decisionInfo.v_offset[1]));
+  metalParams.v_offset2 = static_cast<uint32_t>(std::max(0, decisionInfo.v_offset[2]));
+  metalParams.v_offset3 = static_cast<uint32_t>(std::max(0, decisionInfo.v_offset[3]));
   metalParams.y_stride0 = static_cast<uint32_t>(std::max(0, decisionInfo.y_stride[0]));
   metalParams.y_stride1 = static_cast<uint32_t>(std::max(0, decisionInfo.y_stride[1]));
   metalParams.y_stride2 = static_cast<uint32_t>(std::max(0, decisionInfo.y_stride[2]));

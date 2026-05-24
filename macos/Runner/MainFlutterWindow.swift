@@ -1876,7 +1876,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       throw MacOSNativePlayerError.invalidPayload
     }
 
-    if metalUploadEnabled, player.decodeModeName() != "software-fallback" {
+    if metalUploadEnabled {
       if let info = try copyFromNativePlayerWithMetalUpload(
         player,
         pixelBuffer: pixelBuffer,
@@ -2019,7 +2019,6 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
 
     guard !syntheticPattern,
           metalUploadEnabled,
-          player.decodeModeName() != "software-fallback",
           let nativeMetalPresentationBackend,
           let pixelBuffer,
           nativeMetalUploaderAvailableLocked(),

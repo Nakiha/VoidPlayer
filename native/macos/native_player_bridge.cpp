@@ -582,14 +582,20 @@ public:
       }
       const auto& frame = *decision.frames[slot];
       const auto* storage = frame.cpu_nv12_storage();
+      const auto* planar_storage = frame.cpu_planar_yuv_storage();
       const auto* cv_storage = frame.macos_cv_pixel_buffer_storage();
       const uint8_t* y_source = nullptr;
       const uint8_t* uv_source = nullptr;
+      const uint8_t* v_source = nullptr;
       int y_stride = 0;
       int uv_stride = 0;
+      int v_stride = 0;
       int coded_width = 0;
       int coded_height = 0;
+      int chroma_width = 0;
+      int chroma_height = 0;
       bool is_p010 = false;
+      bool is_planar_yuv420 = false;
       std::unique_ptr<ScopedCVPixelBufferLock> cv_lock;
       if (storage) {
         if (!storage->data || storage->y_stride <= 0 || storage->uv_stride <= 0 ||
@@ -606,6 +612,52 @@ public:
         coded_height = storage->coded_height;
         is_p010 = storage->is_p010;
         uv_source = y_source + static_cast<size_t>(y_stride) * coded_height;
+        chroma_width = (coded_width + 1) / 2;
+        chroma_height = (coded_height + 1) / 2;
+      } else if (planar_storage) {
+        if (planar_storage->bytes_per_sample != 1) {
+          error = "planar 10-bit YUV is not supported by Metal presentation yet";
+          return false;
+        }
+        for (int plane = 0; plane < 3; ++plane) {
+          if (!planar_storage->planes[plane] ||
+              planar_storage->plane_widths[plane] <= 0 ||
+              planar_storage->plane_heights[plane] <= 0 ||
+              planar_storage->strides[plane] <
+                  planar_storage->plane_widths[plane] * planar_storage->bytes_per_sample) {
+            error = "present decision contains invalid planar YUV frame storage";
+            return false;
+          }
+        }
+        if (planar_storage->plane_widths[0] < frame.width ||
+            planar_storage->plane_heights[0] < frame.height) {
+          error = "planar YUV frame storage is smaller than the display frame";
+          return false;
+        }
+        const int expected_chroma_width = (planar_storage->plane_widths[0] + 1) / 2;
+        const int expected_chroma_height = (planar_storage->plane_heights[0] + 1) / 2;
+        if (planar_storage->plane_widths[1] != expected_chroma_width ||
+            planar_storage->plane_widths[2] != expected_chroma_width ||
+            planar_storage->plane_heights[1] != expected_chroma_height ||
+            planar_storage->plane_heights[2] != expected_chroma_height) {
+          error = "only planar YUV420 frame storage is supported by Metal presentation";
+          return false;
+        }
+        if (planar_storage->strides[1] != planar_storage->strides[2]) {
+          error = "planar YUV U/V strides must match for Metal presentation";
+          return false;
+        }
+        y_source = planar_storage->planes[0];
+        uv_source = planar_storage->planes[1];
+        v_source = planar_storage->planes[2];
+        y_stride = planar_storage->strides[0];
+        uv_stride = planar_storage->strides[1];
+        v_stride = planar_storage->strides[2];
+        coded_width = planar_storage->plane_widths[0];
+        coded_height = planar_storage->plane_heights[0];
+        chroma_width = planar_storage->plane_widths[1];
+        chroma_height = planar_storage->plane_heights[1];
+        is_planar_yuv420 = true;
       } else if (cv_storage) {
         auto* pixel_buffer = static_cast<CVPixelBufferRef>(cv_storage->pixel_buffer);
         cv_lock = std::make_unique<ScopedCVPixelBufferLock>(pixel_buffer);
@@ -625,8 +677,10 @@ public:
         coded_width = cv_storage->coded_width;
         coded_height = cv_storage->coded_height;
         is_p010 = cv_storage->is_p010;
+        chroma_width = (coded_width + 1) / 2;
+        chroma_height = (coded_height + 1) / 2;
       } else {
-        error = "present decision contains non-NV12 frame storage";
+        error = "present decision contains unsupported YUV frame storage";
         return false;
       }
       if (!y_source || !uv_source || y_stride <= 0 || uv_stride <= 0) {
@@ -635,16 +689,26 @@ public:
       }
 
       const int bytes_per_sample = is_p010 ? 2 : 1;
-      if (y_stride < coded_width * bytes_per_sample ||
-          uv_stride < coded_width * bytes_per_sample) {
+      if (!is_planar_yuv420 && (
+          y_stride < coded_width * bytes_per_sample ||
+          uv_stride < coded_width * bytes_per_sample)) {
         error = "invalid NV12/P010 frame storage for Metal presentation";
         return false;
       }
-      const int chroma_height = (coded_height + 1) / 2;
+      if (is_planar_yuv420 && (!v_source || v_stride <= 0 ||
+          y_stride < coded_width * bytes_per_sample ||
+          uv_stride < chroma_width * bytes_per_sample ||
+          v_stride < chroma_width * bytes_per_sample)) {
+        error = "invalid planar YUV420 frame storage for Metal presentation";
+        return false;
+      }
       const size_t y_bytes =
           static_cast<size_t>(y_stride) * static_cast<size_t>(coded_height);
       const size_t uv_bytes =
           static_cast<size_t>(uv_stride) * static_cast<size_t>(chroma_height);
+      const size_t v_bytes = is_planar_yuv420
+          ? static_cast<size_t>(v_stride) * static_cast<size_t>(chroma_height)
+          : 0u;
       if (storage && (y_bytes > std::numeric_limits<size_t>::max() - uv_bytes ||
           y_bytes + uv_bytes > storage->data->size())) {
         error = "invalid NV12/P010 frame storage for Metal presentation";
@@ -652,7 +716,8 @@ public:
       }
       cursor = align_up_size(cursor, static_cast<size_t>(bytes_per_sample));
       if (cursor > dst_size || y_bytes > dst_size - cursor ||
-          uv_bytes > dst_size - cursor - y_bytes) {
+          uv_bytes > dst_size - cursor - y_bytes ||
+          v_bytes > dst_size - cursor - y_bytes - uv_bytes) {
         error = "present decision YUV destination is too small";
         return false;
       }
@@ -663,9 +728,15 @@ public:
       std::memcpy(dst + cursor, uv_source, uv_bytes);
       out->uv_offset[slot] = static_cast<int32_t>(cursor);
       cursor += uv_bytes;
-      out->yuv_format[slot] = is_p010
-          ? VPMacOSNativePresentFormatP010
-          : VPMacOSNativePresentFormatNV12;
+      if (is_planar_yuv420) {
+        std::memcpy(dst + cursor, v_source, v_bytes);
+        out->v_offset[slot] = static_cast<int32_t>(cursor);
+        cursor += v_bytes;
+      }
+      out->yuv_format[slot] = is_planar_yuv420
+          ? VPMacOSNativePresentFormatYUV420P
+          : (is_p010 ? VPMacOSNativePresentFormatP010
+                     : VPMacOSNativePresentFormatNV12);
       out->y_stride[slot] = y_stride;
       out->uv_stride[slot] = uv_stride;
       out->coded_width[slot] = coded_width;

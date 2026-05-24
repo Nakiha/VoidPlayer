@@ -167,6 +167,16 @@ void VPMacOSNativePlayerSetFrameAvailableCallback(
     VPMacOSNativePlayer* player,
     VPMacOSFrameAvailableCallback callback,
     void* user_data);
+int VPMacOSNativePlayerSetMetalPresentationTarget(
+    VPMacOSNativePlayer* player,
+    VPMacOSMetalPresentationBackend* backend,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    int32_t max_track_slots);
+void VPMacOSNativePlayerClearMetalPresentationTarget(VPMacOSNativePlayer* player);
+int VPMacOSNativePlayerRendererOwnedPresentationActive(VPMacOSNativePlayer* player);
+int VPMacOSNativePlayerLastRendererOwnedPresentationSucceeded(VPMacOSNativePlayer* player);
 
 void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerPause(VPMacOSNativePlayer* player);

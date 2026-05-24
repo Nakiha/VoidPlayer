@@ -64,6 +64,7 @@ private final class MacOSNativePlayerSession {
 
   deinit {
     setFrameAvailableCallback(nil, userData: nil)
+    clearMetalPresentationTarget()
     VPMacOSNativePlayerDestroy(handle)
   }
 
@@ -114,6 +115,35 @@ private final class MacOSNativePlayerSession {
     userData: UnsafeMutableRawPointer?
   ) {
     VPMacOSNativePlayerSetFrameAvailableCallback(handle, callback, userData)
+  }
+
+  func setMetalPresentationTarget(
+    backend: OpaquePointer,
+    pixelBuffer: CVPixelBuffer,
+    width: Int,
+    height: Int,
+    maxTrackSlots: Int
+  ) -> Bool {
+    VPMacOSNativePlayerSetMetalPresentationTarget(
+      handle,
+      backend,
+      UnsafeMutableRawPointer(Unmanaged.passUnretained(pixelBuffer).toOpaque()),
+      Int32(width),
+      Int32(height),
+      Int32(max(1, min(4, maxTrackSlots)))
+    ) == 0
+  }
+
+  func clearMetalPresentationTarget() {
+    VPMacOSNativePlayerClearMetalPresentationTarget(handle)
+  }
+
+  func rendererOwnedPresentationActive() -> Bool {
+    VPMacOSNativePlayerRendererOwnedPresentationActive(handle) != 0
+  }
+
+  func lastRendererOwnedPresentationSucceeded() -> Bool {
+    VPMacOSNativePlayerLastRendererOwnedPresentationSucceeded(handle) != 0
   }
 
   func play() {
@@ -621,8 +651,10 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "presentationAdapter": String(cString: VPMacOSNativePresentationAdapterName()),
         "presentationAdapterKind": "software-fallback",
         "presentationScheduler": String(cString: VPMacOSNativePresentationSchedulerName()),
-        "presentationBackend": "swift-cvpixelbuffer-texture-pump",
-        "rendererOwnedPresentationActive": false,
+        "presentationBackend": nativePlayer?.rendererOwnedPresentationActive() == true
+          ? "native-metal-cvpixelbuffer-target"
+          : "swift-cvpixelbuffer-texture-pump",
+        "rendererOwnedPresentationActive": nativePlayer?.rendererOwnedPresentationActive() ?? false,
         "hardwareDecodeProvider": String(cString: VPMacOSNativeHardwareDecodeProviderName()),
         "hardwareDecodeAvailable": VPMacOSNativeHardwareDecodeAvailable() != 0,
         "hardwareDecodeActive": nativePlayer?.hardwareDecodeActive() ?? false,
@@ -1116,11 +1148,21 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     playbackGeneration = generation
     resetNativeFrameCounters()
     nativeFrameCallbackRegistered = true
+    var nativePresentationTargetInstalled = false
+    if let texture {
+      nativePresentationTargetInstalled = texture.installNativePresentationTarget(
+        nativePlayer,
+        maxTrackSlots: activeTrackSlotCapacity()
+      )
+    }
     nativePlayer.setFrameAvailableCallback(
       macOSNativeFrameAvailable,
       userData: Unmanaged.passUnretained(self).toOpaque()
     )
     let maxTrackSlots = activeTrackSlotCapacity()
+    guard !nativePresentationTargetInstalled else {
+      return
+    }
     nativeFrameCopyInFlight = true
     playbackQueue.async { [weak self] in
       self?.copyNativePlaybackFrame(generation: generation, maxTrackSlots: maxTrackSlots)
@@ -1130,6 +1172,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private func stopNativeFramePump() {
     playbackGeneration += 1
     nativeFrameCopyInFlight = false
+    nativePlayer?.clearMetalPresentationTarget()
     if nativeFrameCallbackRegistered {
       nativePlayer?.setFrameAvailableCallback(nil, userData: nil)
       nativeFrameCallbackRegistered = false
@@ -1142,6 +1185,29 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       self.nativeFrameCallbackCount += 1
       guard self.isPlaying,
             self.backendName == "macos-native-player" else {
+        return
+      }
+      if self.nativePlayer?.lastRendererOwnedPresentationSucceeded() == true {
+        self.nativeFrameCopyCount += 1
+        let now = DispatchTime.now().uptimeNanoseconds
+        if self.nativeFrameCopyFirstHostNs == nil {
+          self.nativeFrameCopyFirstHostNs = now
+        }
+        self.nativeFrameCopyLastHostNs = now
+        if let stats = self.nativePlayer?.presentationSchedulerStats(),
+           let pts = stats["lastSelectedPtsUs"] as? Int64,
+           pts >= 0 {
+          let ptsInt = Int(pts)
+          self.currentPtsUs = ptsInt
+          self.lastPresentedPtsUs = ptsInt
+          self.lastPresentedDtsUs = ptsInt
+          if ptsInt >= self.activeDurationUs() {
+            self.isPlaying = false
+            self.nativePlayer?.pause()
+            self.stopNativeFramePump()
+          }
+        }
+        self.markFrameAvailable()
         return
       }
       if self.nativeFrameCopyInFlight {
@@ -1549,7 +1615,10 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       rebuildCount: pixelBufferRebuildCount,
       reuseCount: pixelBufferReuseCount,
       directCopyCount: pixelBufferDirectCopyCount,
-      metalUploadCount: pixelBufferMetalUploadCount,
+      metalUploadCount: max(
+        pixelBufferMetalUploadCount,
+        nativeMetalPresentPackageUploadCountLocked()
+      ),
       metalYuvUploadCount: nativeMetalUploaderDirectYuvUploadCountLocked(),
       metalUploadFailureCount: pixelBufferMetalUploadFailureCount,
       metalUploadEnabled: metalUploadEnabled,
@@ -1562,6 +1631,30 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       metalTextureCreationCount: metalTextureCreationCount,
       metalTextureFailureCount: metalTextureFailureCount,
       metalTextureLastError: metalTextureLastError
+    )
+  }
+
+  func installNativePresentationTarget(
+    _ player: MacOSNativePlayerSession,
+    maxTrackSlots: Int
+  ) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+
+    guard !syntheticPattern,
+          metalUploadEnabled,
+          let nativeMetalPresentationBackend,
+          let pixelBuffer,
+          nativeMetalUploaderAvailableLocked(),
+          metalTextureValid else {
+      return false
+    }
+    return player.setMetalPresentationTarget(
+      backend: nativeMetalPresentationBackend,
+      pixelBuffer: pixelBuffer,
+      width: width,
+      height: height,
+      maxTrackSlots: maxTrackSlots
     )
   }
 

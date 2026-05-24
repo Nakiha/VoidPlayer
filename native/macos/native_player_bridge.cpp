@@ -1037,10 +1037,29 @@ struct VPMacOSNativePlayer {
       }
       VPMacOSFrameAvailableCallback callback = nullptr;
       void* user_data = nullptr;
+      bool renderer_owned_upload_succeeded = false;
       {
         std::lock_guard<std::mutex> callback_lock(callback_mutex);
         callback = frame_available_callback;
         user_data = frame_available_user_data;
+        if (presentation_target_backend && presentation_target_pixel_buffer &&
+            presentation_target_width > 0 && presentation_target_height > 0) {
+          VPMacOSNativeFrameInfo frame_info = {};
+          char error[256] = {};
+          const int upload_ret = VPMacOSMetalPresentationBackendCopyCurrentFrameWithLayout(
+              presentation_target_backend,
+              this,
+              presentation_target_pixel_buffer,
+              presentation_target_width,
+              presentation_target_height,
+              presentation_target_max_track_slots,
+              0,
+              &frame_info,
+              error,
+              sizeof(error));
+          renderer_owned_upload_succeeded = upload_ret == 0;
+        }
+        last_renderer_owned_presentation_succeeded = renderer_owned_upload_succeeded;
       }
       if (callback) {
         callback(user_data);
@@ -1054,6 +1073,12 @@ struct VPMacOSNativePlayer {
   std::mutex callback_mutex;
   VPMacOSFrameAvailableCallback frame_available_callback = nullptr;
   void* frame_available_user_data = nullptr;
+  VPMacOSMetalPresentationBackend* presentation_target_backend = nullptr;
+  void* presentation_target_pixel_buffer = nullptr;
+  int32_t presentation_target_width = 0;
+  int32_t presentation_target_height = 0;
+  int32_t presentation_target_max_track_slots = 1;
+  bool last_renderer_owned_presentation_succeeded = false;
   std::mutex tick_mutex;
   std::condition_variable tick_cv;
   std::chrono::microseconds next_tick_sleep{std::chrono::milliseconds(1)};
@@ -1143,6 +1168,60 @@ void VPMacOSNativePlayerSetFrameAvailableCallback(
   std::lock_guard<std::mutex> lock(player->callback_mutex);
   player->frame_available_callback = callback;
   player->frame_available_user_data = user_data;
+}
+
+int VPMacOSNativePlayerSetMetalPresentationTarget(
+    VPMacOSNativePlayer* player,
+    VPMacOSMetalPresentationBackend* backend,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    int32_t max_track_slots) {
+  if (!player || !backend || !pixel_buffer || width <= 0 || height <= 0) {
+    return -1;
+  }
+  std::lock_guard<std::mutex> lock(player->callback_mutex);
+  player->presentation_target_backend = backend;
+  player->presentation_target_pixel_buffer = pixel_buffer;
+  player->presentation_target_width = width;
+  player->presentation_target_height = height;
+  player->presentation_target_max_track_slots =
+      std::clamp(max_track_slots, static_cast<int32_t>(1),
+                 static_cast<int32_t>(VPMacOSNativeMaxTracks));
+  player->last_renderer_owned_presentation_succeeded = false;
+  return 0;
+}
+
+void VPMacOSNativePlayerClearMetalPresentationTarget(VPMacOSNativePlayer* player) {
+  if (!player) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(player->callback_mutex);
+  player->presentation_target_backend = nullptr;
+  player->presentation_target_pixel_buffer = nullptr;
+  player->presentation_target_width = 0;
+  player->presentation_target_height = 0;
+  player->presentation_target_max_track_slots = 1;
+  player->last_renderer_owned_presentation_succeeded = false;
+}
+
+int VPMacOSNativePlayerRendererOwnedPresentationActive(VPMacOSNativePlayer* player) {
+  if (!player) {
+    return 0;
+  }
+  std::lock_guard<std::mutex> lock(player->callback_mutex);
+  return player->presentation_target_backend && player->presentation_target_pixel_buffer
+      ? 1
+      : 0;
+}
+
+int VPMacOSNativePlayerLastRendererOwnedPresentationSucceeded(
+    VPMacOSNativePlayer* player) {
+  if (!player) {
+    return 0;
+  }
+  std::lock_guard<std::mutex> lock(player->callback_mutex);
+  return player->last_renderer_owned_presentation_succeeded ? 1 : 0;
 }
 
 void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player) {

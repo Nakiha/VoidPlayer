@@ -188,6 +188,10 @@ Goal: leave one maintainable native architecture.
 Exit gate: documentation and diagnostics describe one shared renderer with platform backends, not a
 Windows renderer plus macOS sidecar path.
 
+Progress: the unused Swift decoded-first-frame object path and its allocating BGRA native bridge
+entrypoint have been removed. macOS now initializes visible native media through the presentation
+path rather than caching a one-off decoded frame blob in Swift.
+
 ## Validation Strategy
 
 - Native portable: `python dev.py test --native-only`

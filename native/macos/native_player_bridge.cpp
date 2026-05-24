@@ -1040,26 +1040,6 @@ public:
         .count();
   }
 
-  bool copy_current_frame(VPMacOSNativeFrame* out, std::string& error) {
-    auto* primary = find_track_by_file_id(0);
-    if (!primary || !primary->track_buffer) {
-      error = "player is not open";
-      return false;
-    }
-    advance_to_clock(nullptr);
-    auto frame = primary->track_buffer->peek(0);
-    if (!frame.has_value()) {
-      error = "no decoded frame is ready";
-      return false;
-    }
-    if (!vp_macos::copy_texture_frame_to_owned_bgra(*frame, out)) {
-      vp_macos::free_owned_bgra_frame(out);
-      error = "decoded frame storage is not supported by the macOS software presentation adapter";
-      return false;
-    }
-    return true;
-  }
-
   bool copy_current_frame_into(uint8_t* dst,
                                size_t dst_size,
                                int32_t width,
@@ -2109,24 +2089,6 @@ int VPMacOSNativeHardwareDecodeAvailable(void) {
 
 const char* VPMacOSNativeHardwareDecodeProviderName(void) {
   return VPMacOSNativeHardwareDecodeAvailable() != 0 ? "VideoToolbox" : "none";
-}
-
-int VPMacOSNativePlayerCopyCurrentFrameBGRA(VPMacOSNativePlayer* player,
-                                            VPMacOSNativeFrame* out,
-                                            char* error,
-                                            size_t error_size) {
-  if (!player || !out) {
-    write_error(error, error_size, "player or output frame is null");
-    return -1;
-  }
-  std::lock_guard<std::mutex> lock(player->mutex);
-  std::string message;
-  if (!player->core.copy_current_frame(out, message)) {
-    write_error(error, error_size, message);
-    return -1;
-  }
-  write_error(error, error_size, "");
-  return 0;
 }
 
 int VPMacOSNativePlayerCopyCurrentFrameBGRAInto(VPMacOSNativePlayer* player,

@@ -2,15 +2,6 @@ import Cocoa
 import CoreVideo
 import FlutterMacOS
 
-private struct MacOSDecodedFirstFrame {
-  let width: Int
-  let height: Int
-  let durationUs: Int
-  let ptsUs: Int
-  let dtsUs: Int
-  let bgra: Data
-}
-
 private struct MacOSNativeFrameInfo {
   let width: Int
   let height: Int
@@ -37,7 +28,7 @@ private enum MacOSNativePlayerError: Error, CustomStringConvertible {
     case .failed(let message):
       return message
     case .invalidPayload:
-      return "decoded first frame had invalid dimensions or pixel data"
+      return "native frame had invalid dimensions or pixel data"
     case .transientFrameUnavailable(let message):
       return message
     }
@@ -396,102 +387,6 @@ private final class MacOSNativePlayerSession {
         max(0.0, stats.renderer_owned_upload_fps * 1000.0)
       ),
     ]
-  }
-
-  func copyCurrentFrame(waitTimeoutMs: Int = 0) throws -> MacOSDecodedFirstFrame {
-    let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
-    var lastError = ""
-
-    repeat {
-      var frame = VPMacOSNativeFrame()
-      var error = [CChar](repeating: 0, count: 1024)
-      let ret = VPMacOSNativePlayerCopyCurrentFrameBGRA(
-        handle,
-        &frame,
-        &error,
-        error.count
-      )
-      if ret == 0 {
-        defer {
-          VPMacOSNativeFrameFree(&frame)
-        }
-        guard frame.width > 0,
-              frame.height > 0,
-              let bgra = frame.bgra,
-              frame.bgra_size > 0 else {
-          throw MacOSNativePlayerError.invalidPayload
-        }
-
-        return MacOSDecodedFirstFrame(
-          width: Int(frame.width),
-          height: Int(frame.height),
-          durationUs: Int(frame.duration_us),
-          ptsUs: Int(frame.pts_us),
-          dtsUs: Int(frame.dts_us),
-          bgra: Data(bytes: bgra, count: Int(frame.bgra_size))
-        )
-      }
-      let message = String(cString: error)
-      lastError = message.isEmpty ? "copyCurrentFrame failed with code \(ret)" : message
-      if Date() < deadline {
-        Thread.sleep(forTimeInterval: 0.01)
-      }
-    } while Date() < deadline
-
-    throw MacOSNativePlayerError.failed(
-      lastError.isEmpty ? "timed out waiting for a decoded frame" : lastError
-    )
-  }
-
-  func copyCurrentFrameIntoBGRA(
-    _ dst: UnsafeMutablePointer<UInt8>,
-    dstSize: Int,
-    width: Int,
-    height: Int,
-    strideBytes: Int,
-    waitTimeoutMs: Int = 0
-  ) throws -> MacOSNativeFrameInfo {
-    let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
-    var lastError = ""
-
-    repeat {
-      var frameInfo = VPMacOSNativeFrameInfo()
-      var error = [CChar](repeating: 0, count: 1024)
-      let ret = VPMacOSNativePlayerCopyCurrentFrameBGRAInto(
-        handle,
-        dst,
-        dstSize,
-        Int32(width),
-        Int32(height),
-        Int32(strideBytes),
-        &frameInfo,
-        &error,
-        error.count
-      )
-      if ret == 0 {
-        guard frameInfo.width > 0, frameInfo.height > 0 else {
-          throw MacOSNativePlayerError.invalidPayload
-        }
-        return MacOSNativeFrameInfo(
-          width: Int(frameInfo.width),
-          height: Int(frameInfo.height),
-          durationUs: Int(frameInfo.duration_us),
-          ptsUs: Int(frameInfo.pts_us),
-          dtsUs: Int(frameInfo.dts_us)
-        )
-      }
-      let message = String(cString: error)
-      lastError = message.isEmpty
-        ? "copyCurrentFrameIntoBGRA failed with code \(ret)"
-        : message
-      if Date() < deadline {
-        Thread.sleep(forTimeInterval: 0.01)
-      }
-    } while Date() < deadline
-
-    throw MacOSNativePlayerError.failed(
-      lastError.isEmpty ? "timed out waiting for a decoded frame" : lastError
-    )
   }
 
   func copyPresentationIntoBGRA(
@@ -1476,10 +1371,6 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     info.dtsUs == Int.min ? info.ptsUs : info.dtsUs
   }
 
-  private func normalizedDtsUs(_ decoded: MacOSDecodedFirstFrame) -> Int {
-    decoded.dtsUs == Int.min ? decoded.ptsUs : decoded.dtsUs
-  }
-
   private func startNativeFramePump() {
     stopNativeFramePump()
     guard backendName == "macos-native-player",
@@ -1770,7 +1661,6 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private let syntheticPattern: Bool
   private let metalUploadEnabled: Bool
   private var nativeMetalPresentationBackend: OpaquePointer?
-  private var decodedBGRA: Data?
   private let hashPrefix: String
   private var pixelBuffer: CVPixelBuffer?
   private var pixelBufferBackBuffer: CVPixelBuffer?
@@ -1790,20 +1680,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     self.height = height
     self.syntheticPattern = true
     self.metalUploadEnabled = metalUploadEnabled
-    self.decodedBGRA = nil
     self.hashPrefix = "macos-synthetic"
-    super.init()
-    createNativeMetalPresentationBackend()
-    rebuildPixelBuffer()
-  }
-
-  init(decoded: MacOSDecodedFirstFrame, metalUploadEnabled: Bool) {
-    self.width = decoded.width
-    self.height = decoded.height
-    self.syntheticPattern = false
-    self.metalUploadEnabled = metalUploadEnabled
-    self.decodedBGRA = decoded.bgra
-    self.hashPrefix = "macos-first-frame"
     super.init()
     createNativeMetalPresentationBackend()
     rebuildPixelBuffer()
@@ -1814,7 +1691,6 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     self.height = nativeHeight
     self.syntheticPattern = false
     self.metalUploadEnabled = metalUploadEnabled
-    self.decodedBGRA = nil
     self.hashPrefix = "macos-native-frame"
     super.init()
     createNativeMetalPresentationBackend()
@@ -1837,25 +1713,6 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     createNativeMetalPresentationBackendLocked()
     rebuildPixelBufferLocked()
     return true
-  }
-
-  func update(decoded: MacOSDecodedFirstFrame) {
-    lock.lock()
-    defer { lock.unlock() }
-
-    guard !syntheticPattern else { return }
-    let sizeChanged = width != decoded.width || height != decoded.height
-    width = decoded.width
-    height = decoded.height
-    decodedBGRA = decoded.bgra
-    if sizeChanged || pixelBuffer == nil {
-      rebuildPixelBufferLocked()
-    } else if let targetBuffer = ensureBackPixelBufferLocked() {
-      copyBGRA(decoded.bgra, to: targetBuffer)
-      publishBackBufferLocked(targetBuffer)
-      validateMetalTextureLocked(buffer: targetBuffer)
-      pixelBufferReuseCount += 1
-    }
   }
 
   func updateFromNativePlayer(
@@ -2057,11 +1914,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     }
     pixelBufferRebuildCount += 1
 
-    if let decodedBGRA {
-      copyBGRA(decodedBGRA, to: nextBuffer)
-    } else {
-      fill(buffer: nextBuffer)
-    }
+    fill(buffer: nextBuffer)
     pixelBuffer = nextBuffer
     pixelBufferBackBuffer = makePixelBufferLocked(attributes: attributes)
     pixelBufferRetiredBuffer = makePixelBufferLocked(attributes: attributes)

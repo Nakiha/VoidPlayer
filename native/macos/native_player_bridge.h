@@ -270,10 +270,6 @@ int VPMacOSNativePlayerCopyPerfStats(
 int VPMacOSNativeHardwareDecodeAvailable(void);
 const char* VPMacOSNativeHardwareDecodeProviderName(void);
 
-int VPMacOSNativePlayerCopyCurrentFrameBGRA(VPMacOSNativePlayer* player,
-                                            VPMacOSNativeFrame* out,
-                                            char* error,
-                                            size_t error_size);
 int VPMacOSNativePlayerCopyCurrentFrameBGRAInto(VPMacOSNativePlayer* player,
                                                 uint8_t* dst,
                                                 size_t dst_size,

@@ -1480,11 +1480,6 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         self.nativeFrameCopyLastHostNs = now
         if let frameInfo = self.nativePlayer?.lastRendererOwnedFrameInfo() {
           self.publishFrameInfo(frameInfo)
-          if frameInfo.ptsUs >= self.activeDurationUs() {
-            self.isPlaying = false
-            self.nativePlayer?.pause()
-            self.stopNativeFramePump()
-          }
         }
         self.markFrameAvailable()
         return
@@ -1537,11 +1532,6 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         self.nativeFrameSwiftCopyCount += 1
         self.publishFrameInfo(frameInfo)
         self.markFrameAvailable()
-        if frameInfo.ptsUs >= self.activeDurationUs() {
-          self.isPlaying = false
-          self.nativePlayer?.pause()
-          self.stopNativeFramePump()
-        }
       }
     } catch {
       DispatchQueue.main.async { [weak self] in

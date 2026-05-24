@@ -198,6 +198,9 @@ path rather than caching a one-off decoded frame blob in Swift.
 The macOS event bridge now retains the `video_renderer/events` channel and emits
 `seekPreviewPresented` asynchronously after paused seek publication, removing the Dart timer
 fallback from normal macOS seek-settle flow.
+Swift no longer stops playback by comparing the presented PTS against the reported duration; EOF
+settlement is owned by the native/shared playback policy so bad container durations do not create a
+separate macOS timeline rule.
 
 ## Validation Strategy
 

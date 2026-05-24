@@ -5,6 +5,10 @@
 
 #include <spdlog/spdlog.h>
 
+#ifdef __APPLE__
+#include <CoreVideo/CoreVideo.h>
+#endif
+
 extern "C" {
 #include <libavutil/frame.h>
 #include <libavutil/hwcontext.h>
@@ -27,6 +31,76 @@ TextureFrame make_texture_frame_metadata(AVFrame* frame) {
     result.color = color_info_from_av_frame(frame);
     return result;
 }
+
+std::shared_ptr<void> clone_av_frame_ref(AVFrame* frame) {
+    AVFrame* clone = av_frame_clone(frame);
+    if (!clone) {
+        return {};
+    }
+    return std::shared_ptr<void>(clone, [](void* ptr) {
+        auto* owned = static_cast<AVFrame*>(ptr);
+        av_frame_free(&owned);
+    });
+}
+
+#ifdef __APPLE__
+bool cv_pixel_format_is_nv12(uint32_t format) {
+    return format == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange ||
+           format == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
+}
+
+bool cv_pixel_format_is_p010(uint32_t format) {
+    return format == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange ||
+           format == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange;
+}
+
+std::optional<TextureFrame> populate_videotoolbox_frame(AVFrame* frame,
+                                                        TextureFrame metadata) {
+    auto* pixel_buffer = reinterpret_cast<CVPixelBufferRef>(frame->data[3]);
+    if (!pixel_buffer) {
+        spdlog::error("[HardwareFrameConverter] VideoToolbox frame is missing CVPixelBuffer");
+        return std::nullopt;
+    }
+
+    const auto pixel_format =
+        static_cast<uint32_t>(CVPixelBufferGetPixelFormatType(pixel_buffer));
+    if (!cv_pixel_format_is_nv12(pixel_format) && !cv_pixel_format_is_p010(pixel_format)) {
+        spdlog::error("[HardwareFrameConverter] Unsupported VideoToolbox CVPixelBuffer format {}",
+                      pixel_format);
+        return std::nullopt;
+    }
+
+    auto frame_ref = clone_av_frame_ref(frame);
+    if (!frame_ref) {
+        spdlog::error("[HardwareFrameConverter] Failed to retain VideoToolbox frame");
+        return std::nullopt;
+    }
+
+    const int plane_count = static_cast<int>(CVPixelBufferGetPlaneCount(pixel_buffer));
+    const int coded_width = plane_count > 0
+        ? static_cast<int>(CVPixelBufferGetWidthOfPlane(pixel_buffer, 0))
+        : static_cast<int>(CVPixelBufferGetWidth(pixel_buffer));
+    const int coded_height = plane_count > 0
+        ? static_cast<int>(CVPixelBufferGetHeightOfPlane(pixel_buffer, 0))
+        : static_cast<int>(CVPixelBufferGetHeight(pixel_buffer));
+
+    metadata.texture_handle = pixel_buffer;
+    metadata.is_ref = true;
+    metadata.is_nv12 = true;
+    metadata.is_p010 = cv_pixel_format_is_p010(pixel_format);
+    metadata.hw_frame_ref = frame_ref;
+    metadata.storage = MacOSCVPixelBufferFrameStorage{
+        pixel_buffer,
+        pixel_format,
+        plane_count,
+        metadata.is_p010,
+        coded_width,
+        coded_height,
+        frame_ref,
+    };
+    return metadata;
+}
+#endif
 
 } // namespace
 
@@ -102,6 +176,12 @@ std::optional<TextureFrame> HardwareFrameConverter::convert(AVFrame* frame) {
         }
         return result;
     }
+
+#ifdef __APPLE__
+    if (hw_type_ == HwDecodeType::VideoToolbox) {
+        return populate_videotoolbox_frame(frame, result);
+    }
+#endif
 
     spdlog::error("[HardwareFrameConverter] Renderer-owned hardware frames require a platform presenter");
     return std::nullopt;

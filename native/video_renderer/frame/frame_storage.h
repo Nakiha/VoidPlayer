@@ -78,13 +78,24 @@ struct D3D11TextureFrameStorage {
     std::shared_ptr<void> frame_ref;
 };
 
+struct MacOSCVPixelBufferFrameStorage {
+    void* pixel_buffer = nullptr;
+    uint32_t pixel_format = 0;
+    int plane_count = 0;
+    bool is_p010 = false;
+    int coded_width = 0;
+    int coded_height = 0;
+    std::shared_ptr<void> frame_ref;
+};
+
 using FrameStorage = std::variant<
     std::monostate,
     CpuRgbaFrameStorage,
     CpuNv12FrameStorage,
     CpuPlanarYuvFrameStorage,
     D3D11Nv12FrameStorage,
-    D3D11TextureFrameStorage>;
+    D3D11TextureFrameStorage,
+    MacOSCVPixelBufferFrameStorage>;
 
 enum class FrameStorageKind {
     Empty,
@@ -93,6 +104,7 @@ enum class FrameStorageKind {
     CpuPlanarYuv,
     D3D11Nv12,
     D3D11Texture,
+    MacOSCVPixelBuffer,
 };
 
 inline FrameStorageKind frame_storage_kind(const FrameStorage& storage) {
@@ -110,6 +122,9 @@ inline FrameStorageKind frame_storage_kind(const FrameStorage& storage) {
     }
     if (std::holds_alternative<D3D11TextureFrameStorage>(storage)) {
         return FrameStorageKind::D3D11Texture;
+    }
+    if (std::holds_alternative<MacOSCVPixelBufferFrameStorage>(storage)) {
+        return FrameStorageKind::MacOSCVPixelBuffer;
     }
     return FrameStorageKind::Empty;
 }

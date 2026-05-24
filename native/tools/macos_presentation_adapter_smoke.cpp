@@ -74,6 +74,7 @@ int check_adapter_identity() {
       !vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::CpuPlanarYuv) ||
       vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::D3D11Texture) ||
       vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::D3D11Nv12) ||
+      vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::MacOSCVPixelBuffer) ||
       vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::Empty)) {
     return fail("unexpected presentation adapter storage support matrix");
   }

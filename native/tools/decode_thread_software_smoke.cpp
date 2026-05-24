@@ -32,6 +32,8 @@ const char* storage_kind_name(vr::FrameStorageKind kind) {
         return "D3D11Nv12";
     case vr::FrameStorageKind::D3D11Texture:
         return "D3D11Texture";
+    case vr::FrameStorageKind::MacOSCVPixelBuffer:
+        return "MacOSCVPixelBuffer";
     case vr::FrameStorageKind::Empty:
     default:
         return "Empty";

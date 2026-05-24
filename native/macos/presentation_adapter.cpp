@@ -255,6 +255,7 @@ bool presentation_adapter_supports_storage(vr::FrameStorageKind kind) {
   case vr::FrameStorageKind::Empty:
   case vr::FrameStorageKind::D3D11Nv12:
   case vr::FrameStorageKind::D3D11Texture:
+  case vr::FrameStorageKind::MacOSCVPixelBuffer:
   default:
     return false;
   }

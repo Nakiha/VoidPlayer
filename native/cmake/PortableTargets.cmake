@@ -46,6 +46,7 @@ if(APPLE)
         "-framework AudioToolbox"
         "-framework AudioUnit"
         "-framework CoreFoundation"
+        "-framework CoreVideo"
     )
 endif()
 

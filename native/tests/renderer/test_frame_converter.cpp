@@ -667,3 +667,33 @@ TEST_CASE("TextureFrame: storage exposes CPU planar YUV metadata", "[frame_stora
     REQUIRE(frame.cpu_planar_yuv_storage()->strides[0] == 64);
     REQUIRE(frame.cpu_planar_yuv_storage()->bytes_per_sample == 1);
 }
+
+TEST_CASE("TextureFrame: storage exposes macOS CVPixelBuffer metadata", "[frame_storage]") {
+    TextureFrame frame;
+    auto ref = std::shared_ptr<void>(reinterpret_cast<void*>(0x2468), [](void*) {});
+    void* pixel_buffer = reinterpret_cast<void*>(0x1357);
+
+    frame.texture_handle = pixel_buffer;
+    frame.is_ref = true;
+    frame.is_nv12 = true;
+    frame.hw_frame_ref = ref;
+    frame.storage = MacOSCVPixelBufferFrameStorage{
+        pixel_buffer,
+        0x34323066u,
+        2,
+        true,
+        1920,
+        1080,
+        ref,
+    };
+
+    REQUIRE(frame.storage_kind() == FrameStorageKind::MacOSCVPixelBuffer);
+    REQUIRE(frame.macos_cv_pixel_buffer_storage() != nullptr);
+    REQUIRE(frame.macos_cv_pixel_buffer_storage()->pixel_buffer == pixel_buffer);
+    REQUIRE(frame.macos_cv_pixel_buffer_storage()->pixel_format == 0x34323066u);
+    REQUIRE(frame.macos_cv_pixel_buffer_storage()->plane_count == 2);
+    REQUIRE(frame.macos_cv_pixel_buffer_storage()->is_p010);
+    REQUIRE(frame.macos_cv_pixel_buffer_storage()->coded_width == 1920);
+    REQUIRE(frame.macos_cv_pixel_buffer_storage()->coded_height == 1080);
+    REQUIRE(frame.macos_cv_pixel_buffer_storage()->frame_ref == ref);
+}

@@ -52,6 +52,9 @@ struct TextureFrame {
     const D3D11TextureFrameStorage* d3d11_texture_storage() const {
         return std::get_if<D3D11TextureFrameStorage>(&storage);
     }
+    const MacOSCVPixelBufferFrameStorage* macos_cv_pixel_buffer_storage() const {
+        return std::get_if<MacOSCVPixelBufferFrameStorage>(&storage);
+    }
 };
 
 inline uint64_t estimate_texture_frame_cpu_bytes(const TextureFrame& frame) {

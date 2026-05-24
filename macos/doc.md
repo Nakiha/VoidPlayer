@@ -147,7 +147,11 @@ backend grows per-track CV texture inputs. Diagnostics expose package upload cou
 CVPixelBuffer upload count, last package storage (`yuv`/`bgra`), scheduler-selected present frame
 count, and whether the package copy consumed the cached scheduler decision. The older
 locked-buffer direct copy remains a fallback and is reported through `pixelBufferDirectCopyCount`
-and `nativeFrameSwiftCopyCount`.
+and `nativeFrameSwiftCopyCount`. The diagnostics map also reports primary decode cadence
+(`nativeDecodeFrameCount`, `nativeDecodeFpsX1000`), renderer-owned upload cadence
+(`nativeRendererOwnedUploadFpsX1000`), presented callback cadence (`nativeFrameCopyFpsX1000`), and
+`presentationFallbackReason` so 4K playback regressions can be separated into decode, upload,
+presentation, or fallback causes.
 
 Manual audible smoke:
 

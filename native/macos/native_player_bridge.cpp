@@ -264,6 +264,7 @@ public:
     playback_.pause();
     playing_ = false;
     reset_scheduler_stats();
+    perf_start_time_ = std::chrono::steady_clock::now();
     return true;
   }
 
@@ -284,6 +285,7 @@ public:
     loop_range_ = vr::LoopRangeState();
     layout_controller_.reset(layout_);
     reset_scheduler_stats();
+    perf_start_time_ = std::chrono::steady_clock::now();
   }
 
   void play() {
@@ -952,6 +954,21 @@ public:
         : "decode_thread_videotoolbox_renderer_owned";
   }
 
+  vr::DecodePerfCounters::Snapshot primary_decode_perf_snapshot() const {
+    const auto* primary = find_track_by_file_id(0);
+    if (!primary || !primary->decode_thread) {
+      return {};
+    }
+    return primary->decode_thread->perf_counters().snapshot();
+  }
+
+  int64_t perf_elapsed_ms() const {
+    const auto now = std::chrono::steady_clock::now();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               now - perf_start_time_)
+        .count();
+  }
+
   bool copy_current_frame(VPMacOSNativeFrame* out, std::string& error) {
     auto* primary = find_track_by_file_id(0);
     if (!primary || !primary->track_buffer) {
@@ -1243,6 +1260,8 @@ private:
   vr::LayoutController layout_controller_;
   vr::PresentationLoopDriver presentation_loop_driver_;
   bool playing_ = false;
+  std::chrono::steady_clock::time_point perf_start_time_ =
+      std::chrono::steady_clock::now();
 
   void reset_scheduler_stats() {
     presentation_loop_driver_.reset();
@@ -1473,6 +1492,11 @@ struct VPMacOSNativePlayer {
         }
         if (renderer_owned_upload_attempted) {
           if (renderer_owned_upload_succeeded) {
+            const auto now = std::chrono::steady_clock::now();
+            if (renderer_owned_presentation_upload_count == 0) {
+              renderer_owned_presentation_first_upload_time = now;
+            }
+            renderer_owned_presentation_last_upload_time = now;
             ++renderer_owned_presentation_upload_count;
           } else {
             ++renderer_owned_presentation_failure_count;
@@ -1501,6 +1525,8 @@ struct VPMacOSNativePlayer {
   VPMacOSNativeFrameInfo last_renderer_owned_frame_info = {};
   uint64_t renderer_owned_presentation_upload_count = 0;
   uint64_t renderer_owned_presentation_failure_count = 0;
+  std::chrono::steady_clock::time_point renderer_owned_presentation_first_upload_time{};
+  std::chrono::steady_clock::time_point renderer_owned_presentation_last_upload_time{};
   std::mutex tick_mutex;
   std::condition_variable tick_cv;
   std::chrono::microseconds next_tick_sleep{std::chrono::milliseconds(1)};
@@ -1674,6 +1700,8 @@ void VPMacOSNativePlayerResetRendererOwnedPresentationStats(VPMacOSNativePlayer*
   player->last_renderer_owned_frame_info = {};
   player->renderer_owned_presentation_upload_count = 0;
   player->renderer_owned_presentation_failure_count = 0;
+  player->renderer_owned_presentation_first_upload_time = {};
+  player->renderer_owned_presentation_last_upload_time = {};
 }
 
 uint64_t VPMacOSNativePlayerRendererOwnedPresentationUploadCount(
@@ -1950,6 +1978,56 @@ int VPMacOSNativePlayerCopyPresentationSchedulerStats(
   }
   std::lock_guard<std::mutex> lock(player->mutex);
   *out = player->core.scheduler_stats();
+  return 0;
+}
+
+int VPMacOSNativePlayerCopyPerfStats(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativePlayerPerfStats* out) {
+  if (!player || !out) {
+    return -1;
+  }
+  *out = {};
+  {
+    std::lock_guard<std::mutex> lock(player->mutex);
+    const auto decode = player->core.primary_decode_perf_snapshot();
+    out->decode_frame_count = decode.frames_decoded;
+    out->decode_dropped_count = decode.frames_dropped;
+    out->decode_elapsed_ms = player->core.perf_elapsed_ms();
+    if (decode.frames_decoded > 0) {
+      out->decode_avg_ms =
+          static_cast<double>(decode.total_decode_us) /
+          static_cast<double>(decode.frames_decoded) / 1000.0;
+    }
+    out->decode_max_ms = static_cast<double>(decode.max_decode_us) / 1000.0;
+    if (out->decode_elapsed_ms > 0) {
+      out->decode_fps =
+          static_cast<double>(decode.frames_decoded) * 1000.0 /
+          static_cast<double>(out->decode_elapsed_ms);
+    }
+  }
+  {
+    std::lock_guard<std::mutex> lock(player->callback_mutex);
+    out->renderer_owned_upload_count =
+        player->renderer_owned_presentation_upload_count;
+    out->renderer_owned_upload_failure_count =
+        player->renderer_owned_presentation_failure_count;
+    if (player->renderer_owned_presentation_upload_count > 1 &&
+        player->renderer_owned_presentation_last_upload_time >=
+            player->renderer_owned_presentation_first_upload_time) {
+      out->renderer_owned_upload_elapsed_ms =
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              player->renderer_owned_presentation_last_upload_time -
+              player->renderer_owned_presentation_first_upload_time)
+              .count();
+      if (out->renderer_owned_upload_elapsed_ms > 0) {
+        out->renderer_owned_upload_fps =
+            static_cast<double>(player->renderer_owned_presentation_upload_count - 1) *
+            1000.0 /
+            static_cast<double>(out->renderer_owned_upload_elapsed_ms);
+      }
+    }
+  }
   return 0;
 }
 

@@ -357,6 +357,47 @@ private final class MacOSNativePlayerSession {
     ]
   }
 
+  func performanceStats() -> [String: Any] {
+    var stats = VPMacOSNativePlayerPerfStats()
+    guard VPMacOSNativePlayerCopyPerfStats(handle, &stats) == 0 else {
+      return [
+        "decodeFrameCount": 0,
+        "decodeDroppedCount": 0,
+        "decodeElapsedMs": 0,
+        "decodeFps": 0.0,
+        "decodeFpsX1000": 0,
+        "decodeAvgMs": 0.0,
+        "decodeMaxMs": 0.0,
+        "rendererOwnedUploadCount": 0,
+        "rendererOwnedUploadFailureCount": 0,
+        "rendererOwnedUploadElapsedMs": 0,
+        "rendererOwnedUploadFps": 0.0,
+        "rendererOwnedUploadFpsX1000": 0,
+      ]
+    }
+    let maxInt64 = UInt64(Int64.max)
+    return [
+      "decodeFrameCount": Int64(min(UInt64(stats.decode_frame_count), maxInt64)),
+      "decodeDroppedCount": Int64(min(UInt64(stats.decode_dropped_count), maxInt64)),
+      "decodeElapsedMs": Int64(stats.decode_elapsed_ms),
+      "decodeFps": stats.decode_fps,
+      "decodeFpsX1000": Int64(max(0.0, stats.decode_fps * 1000.0)),
+      "decodeAvgMs": stats.decode_avg_ms,
+      "decodeMaxMs": stats.decode_max_ms,
+      "rendererOwnedUploadCount": Int64(
+        min(UInt64(stats.renderer_owned_upload_count), maxInt64)
+      ),
+      "rendererOwnedUploadFailureCount": Int64(
+        min(UInt64(stats.renderer_owned_upload_failure_count), maxInt64)
+      ),
+      "rendererOwnedUploadElapsedMs": Int64(stats.renderer_owned_upload_elapsed_ms),
+      "rendererOwnedUploadFps": stats.renderer_owned_upload_fps,
+      "rendererOwnedUploadFpsX1000": Int64(
+        max(0.0, stats.renderer_owned_upload_fps * 1000.0)
+      ),
+    ]
+  }
+
   func copyCurrentFrame(waitTimeoutMs: Int = 0) throws -> MacOSDecodedFirstFrame {
     let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
     var lastError = ""
@@ -784,6 +825,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       let textureDimensions = texture?.dimensions()
       let nativeLayoutSnapshot = nativePlayer?.layoutSnapshotMap()
       let schedulerStats = nativePlayer?.presentationSchedulerStats()
+      let perfStats = nativePlayer?.performanceStats()
       let diagnostics: [String: Any] = [
         "platform": "macos",
         "backend": backendName,
@@ -857,8 +899,20 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "nativePresentationTargetInstalled": nativePresentationTargetInstalled,
         "nativeRendererOwnedUploadCount": nativePlayer?.rendererOwnedPresentationUploadCount() ?? 0,
         "nativeRendererOwnedUploadFailureCount": nativePlayer?.rendererOwnedPresentationFailureCount() ?? 0,
+        "nativeRendererOwnedUploadFps": perfStats?["rendererOwnedUploadFps"] ?? 0.0,
+        "nativeRendererOwnedUploadFpsX1000": perfStats?["rendererOwnedUploadFpsX1000"] ?? 0,
+        "nativeRendererOwnedUploadElapsedMs": perfStats?["rendererOwnedUploadElapsedMs"] ?? 0,
+        "nativeDecodeFrameCount": perfStats?["decodeFrameCount"] ?? 0,
+        "nativeDecodeDroppedCount": perfStats?["decodeDroppedCount"] ?? 0,
+        "nativeDecodeElapsedMs": perfStats?["decodeElapsedMs"] ?? 0,
+        "nativeDecodeFps": perfStats?["decodeFps"] ?? 0.0,
+        "nativeDecodeFpsX1000": perfStats?["decodeFpsX1000"] ?? 0,
+        "nativeDecodeAvgMs": perfStats?["decodeAvgMs"] ?? 0.0,
+        "nativeDecodeMaxMs": perfStats?["decodeMaxMs"] ?? 0.0,
+        "presentationFallbackReason": presentationFallbackReason(perfStats: perfStats),
         "nativeFrameCopyElapsedMs": nativeFrameCopyElapsedMs(),
         "nativeFrameCopyFps": nativeFrameCopyFps(),
+        "nativeFrameCopyFpsX1000": Int(nativeFrameCopyFps() * 1000.0),
         "presentedFramePtsSampleCount": presentedPtsSampleCount,
         "presentedFramePtsDistinctCount": presentedPtsDistinctCount,
         "presentedFramePtsFirstUs": presentedPtsFirstUs ?? -1,
@@ -1380,6 +1434,42 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       return 0.0
     }
     return Double(nativeFrameCopyCount - 1) * 1000.0 / Double(elapsedMs)
+  }
+
+  private func presentationFallbackReason(perfStats: [String: Any]?) -> String {
+    guard let player = nativePlayer else {
+      return "no-native-player"
+    }
+    if !player.hardwareDecodeActive() {
+      return "software-decode"
+    }
+    if player.hardwareDecodeDownloadsToCpu() {
+      return "hardware-download-to-cpu"
+    }
+    if !nativePresentationTargetInstalled {
+      return "native-presentation-target-unavailable"
+    }
+    let uploadCount = int64Diagnostic(perfStats?["rendererOwnedUploadCount"])
+    let failureCount = int64Diagnostic(perfStats?["rendererOwnedUploadFailureCount"])
+    if uploadCount == 0 && failureCount > 0 {
+      return "renderer-owned-upload-failed"
+    }
+    return "none"
+  }
+
+  private func int64Diagnostic(_ value: Any?) -> Int64 {
+    switch value {
+    case let value as Int64:
+      return value
+    case let value as Int:
+      return Int64(value)
+    case let value as UInt64:
+      return Int64(min(value, UInt64(Int64.max)))
+    case let value as Double:
+      return Int64(value)
+    default:
+      return 0
+    }
   }
 
   private func normalizedDtsUs(_ info: MacOSNativeFrameInfo) -> Int {

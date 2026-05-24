@@ -77,6 +77,19 @@ typedef struct VPMacOSNativePresentationSchedulerStats {
   int64_t last_deadline_sleep_us;
 } VPMacOSNativePresentationSchedulerStats;
 
+typedef struct VPMacOSNativePlayerPerfStats {
+  uint64_t decode_frame_count;
+  uint64_t decode_dropped_count;
+  int64_t decode_elapsed_ms;
+  double decode_fps;
+  double decode_avg_ms;
+  double decode_max_ms;
+  uint64_t renderer_owned_upload_count;
+  uint64_t renderer_owned_upload_failure_count;
+  int64_t renderer_owned_upload_elapsed_ms;
+  double renderer_owned_upload_fps;
+} VPMacOSNativePlayerPerfStats;
+
 enum {
   VPMacOSNativeMaxTracks = 4,
   VPMacOSMetalUploaderStatusOk = 0,
@@ -249,6 +262,9 @@ const char* VPMacOSNativePresentationSchedulerName(void);
 int VPMacOSNativePlayerCopyPresentationSchedulerStats(
     VPMacOSNativePlayer* player,
     VPMacOSNativePresentationSchedulerStats* out);
+int VPMacOSNativePlayerCopyPerfStats(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativePlayerPerfStats* out);
 int VPMacOSNativeHardwareDecodeAvailable(void);
 const char* VPMacOSNativeHardwareDecodeProviderName(void);
 

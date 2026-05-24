@@ -164,8 +164,13 @@ Goal: remove the 4K60 bottleneck caused by hardware decode download-to-CPU.
 - [x] Map VideoToolbox NV12/P010 planes into Metal textures through IOSurface/CVMetalTextureCache.
 - [x] Keep explicit fallback to download-to-CPU when codec, format, device, or sandbox constraints
   prevent zero-copy.
-- [ ] Add 4K60 local performance diagnostics that report decode fps, render fps, presented fps,
+- [x] Add 4K60 local performance diagnostics that report decode fps, render fps, presented fps,
   upload time, and fallback reason.
+
+Progress: macOS diagnostics now expose primary decode frame count/fps, renderer-owned upload fps,
+presented-frame callback fps, upload timing, and `presentationFallbackReason`. The 4K60 VideoToolbox
+smoke asserts nonzero decode/upload cadence and `presentationFallbackReason=none` on the
+renderer-owned CVPixelBuffer path.
 
 Exit gate: local 4K60 HEVC/H.264 samples report zero-copy presentation when supported, and fallback
 cases are visible rather than silent.

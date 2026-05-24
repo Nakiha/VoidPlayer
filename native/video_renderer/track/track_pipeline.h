@@ -17,6 +17,7 @@ namespace vr {
 
 struct TrackPipeline {
     int file_id = 0;
+    int slot = -1;
     uint64_t generation = 0;
     std::string file_path;
     int64_t offset_us = 0;
@@ -31,6 +32,7 @@ struct TrackPipeline {
 
     int video_width = 0;
     int video_height = 0;
+    int64_t duration_us = 0;
     float video_aspect = 16.0f / 9.0f;
 };
 

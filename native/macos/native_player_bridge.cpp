@@ -20,6 +20,7 @@
 #include "video_renderer/capture/bgra_capture_metrics.h"
 #include "video_renderer/seek/seek_coordinator.h"
 #include "video_renderer/sync/render_sink.h"
+#include "video_renderer/track/track_pipeline_factory.h"
 
 #include <CoreVideo/CoreVideo.h>
 
@@ -159,22 +160,6 @@ VPMacOSNativeLayoutState to_native_layout_state(const vr::LayoutState& layout) {
   return state;
 }
 
-struct MacOSNativeTrackRuntime {
-  int32_t file_id = -1;
-  int32_t slot = -1;
-  uint64_t generation = 1;
-  std::string path;
-  std::unique_ptr<vr::SeekController> seek_controller;
-  std::unique_ptr<vr::PacketQueue> packet_queue;
-  std::shared_ptr<vr::TrackBuffer> track_buffer;
-  std::unique_ptr<vr::DemuxThread> demux;
-  std::unique_ptr<vr::DecodeThread> decoder;
-  int32_t width = 0;
-  int32_t height = 0;
-  int64_t duration_us = 0;
-  int64_t offset_us = 0;
-};
-
 class MacOSNativePlayerCore {
 public:
   MacOSNativePlayerCore()
@@ -191,7 +176,6 @@ public:
 
     render_sink_ = std::make_unique<vr::RenderSink>(playback_.clock());
     layout_controller_.reset(layout_);
-    audio_packet_queue_ = std::make_unique<vr::PacketQueue>(96);
 
     VPMacOSNativeTrackInfo track_info = {};
     if (!add_track_locked(path, 0, track_info, error, true)) {
@@ -212,13 +196,12 @@ public:
 
   void close() {
     playing_ = false;
+    playback_.stop_session();
     for (auto& track : tracks_) {
       stop_track(track);
       track.reset();
     }
-    playback_.stop_session();
     render_sink_.reset();
-    audio_packet_queue_.reset();
     width_ = 0;
     height_ = 0;
     duration_us_ = 0;
@@ -300,13 +283,13 @@ public:
       if (!track || track->slot < 0 || track->slot >= static_cast<int32_t>(tracks.size())) {
         continue;
       }
-      const float aspect = track->height > 0
-          ? static_cast<float>(track->width) / static_cast<float>(track->height)
+      const float aspect = track->video_height > 0
+          ? static_cast<float>(track->video_width) / static_cast<float>(track->video_height)
           : 1.0f;
       tracks[static_cast<size_t>(track->slot)] = {
           true,
-          track->width,
-          track->height,
+          track->video_width,
+          track->video_height,
           aspect,
       };
     }
@@ -597,8 +580,9 @@ public:
       track->packet_queue->flush();
       track->seek_controller->request_seek(track_target, vr::SeekType::Exact);
     }
-    if (audio_packet_queue_) {
-      audio_packet_queue_->flush();
+    auto* primary = find_track_by_file_id(0);
+    if (primary && primary->audio_packet_queue) {
+      primary->audio_packet_queue->flush();
     }
     playback_.seek_clock(target);
     presentation_scheduler_.reset();
@@ -647,17 +631,17 @@ public:
   }
   bool hardware_decode_active() const {
     const auto* primary = find_track_by_file_id(0);
-    return primary && primary->decoder &&
-        primary->decoder->is_hardware_decode_enabled();
+    return primary && primary->decode_thread &&
+        primary->decode_thread->is_hardware_decode_enabled();
   }
   bool hardware_decode_downloads_to_cpu() const {
     const auto* primary = find_track_by_file_id(0);
-    return primary && primary->decoder &&
-        primary->decoder->memory_stats().hardware_download_to_cpu;
+    return primary && primary->decode_thread &&
+        primary->decode_thread->memory_stats().hardware_download_to_cpu;
   }
   const char* decode_mode_name() const {
     const auto* primary = find_track_by_file_id(0);
-    if (!primary || !primary->decoder) {
+    if (!primary || !primary->decode_thread) {
       return "none";
     }
     if (hardware_decode_active()) {
@@ -669,7 +653,7 @@ public:
   }
   const char* decoder_name() const {
     const auto* primary = find_track_by_file_id(0);
-    if (!primary || !primary->decoder) {
+    if (!primary || !primary->decode_thread) {
       return "none";
     }
     if (!hardware_decode_active()) {
@@ -877,13 +861,13 @@ private:
       if (!track || track->slot < 0 || track->slot >= static_cast<int32_t>(tracks.size())) {
         continue;
       }
-      const float aspect = track->height > 0
-          ? static_cast<float>(track->width) / static_cast<float>(track->height)
+      const float aspect = track->video_height > 0
+          ? static_cast<float>(track->video_width) / static_cast<float>(track->video_height)
           : 1.0f;
       tracks[static_cast<size_t>(track->slot)] = {
           true,
-          track->width,
-          track->height,
+          track->video_width,
+          track->video_height,
           aspect,
       };
     }
@@ -942,9 +926,9 @@ private:
     }
   }
 
-  std::unique_ptr<vr::PacketQueue> audio_packet_queue_;
   std::unique_ptr<vr::RenderSink> render_sink_;
-  std::array<std::unique_ptr<MacOSNativeTrackRuntime>, vr::kMaxTracks> tracks_{};
+  std::array<std::unique_ptr<vr::TrackPipeline>, vr::kMaxTracks> tracks_{};
+  vr::TrackPipelineFactory track_pipeline_factory_;
   vr::PlaybackController playback_;
   int32_t width_ = 0;
   int32_t height_ = 0;
@@ -997,12 +981,12 @@ private:
     return -1;
   }
 
-  MacOSNativeTrackRuntime* find_track_by_file_id(int32_t file_id) {
+  vr::TrackPipeline* find_track_by_file_id(int32_t file_id) {
     const int slot = slot_for_file_id(file_id);
     return slot >= 0 ? tracks_[static_cast<size_t>(slot)].get() : nullptr;
   }
 
-  const MacOSNativeTrackRuntime* find_track_by_file_id(int32_t file_id) const {
+  const vr::TrackPipeline* find_track_by_file_id(int32_t file_id) const {
     const int slot = slot_for_file_id(file_id);
     return slot >= 0 ? tracks_[static_cast<size_t>(slot)].get() : nullptr;
   }
@@ -1026,33 +1010,22 @@ private:
       return false;
     }
 
-    auto track = std::make_unique<MacOSNativeTrackRuntime>();
+    vr::TrackPipelineOpenOptions options;
+    options.render_backend = vr::RenderBackendKind::Metal;
+    options.use_default_decode_device_mode = false;
+    options.decode_device_mode = videotoolbox_hwdownload_forced_by_env()
+        ? vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice
+        : vr::DecodeDeviceMode::IndependentDevice;
+    auto track = track_pipeline_factory_.create_opened_pipeline(
+        path, !videotoolbox_disabled_by_env(), nullptr, options);
+    if (!track) {
+      error = "failed to open shared native track pipeline";
+      return false;
+    }
     track->file_id = file_id;
     track->slot = slot;
     track->generation = 1;
-    track->path = path;
-    track->seek_controller = std::make_unique<vr::SeekController>();
-    track->packet_queue = std::make_unique<vr::PacketQueue>(96);
-    track->track_buffer = std::make_shared<vr::TrackBuffer>(16, 4);
-    track->demux = std::make_unique<vr::DemuxThread>(
-        track->path, *track->packet_queue, *track->seek_controller);
-    if (primary && audio_packet_queue_) {
-      track->demux->add_optional_output(vr::DemuxStreamKind::Audio, *audio_packet_queue_);
-    }
-
-    if (!track->demux->open()) {
-      error = "failed to open demux input";
-      return false;
-    }
-    const auto& stats = track->demux->stats();
-    if (!stats.codec_params || stats.video_stream_index < 0 || stats.time_base.den == 0) {
-      error = "input has no usable video stream";
-      return false;
-    }
-
-    track->width = stats.width;
-    track->height = stats.height;
-    track->duration_us = stats.duration_us;
+    const auto& stats = track->demux_thread->stats();
 
     if (primary) {
       duration_us_ = stats.duration_us;
@@ -1063,7 +1036,7 @@ private:
         playback_.start_session();
         auto* audio = playback_.audio_output();
         audio_available_ = audio &&
-            audio->add_track(0, *audio_packet_queue_, stats.audio_codec_params,
+            audio->add_track(0, *track->audio_packet_queue, stats.audio_codec_params,
                              stats.audio_time_base);
         if (audio_available_) {
           audio->set_active_track(0);
@@ -1074,22 +1047,9 @@ private:
       }
     }
 
-    track->decoder = std::make_unique<vr::DecodeThread>(
-        *track->packet_queue, *track->track_buffer, stats.codec_params, stats.time_base);
-    if (!track->decoder->is_valid()) {
-      error = "decode thread failed to initialize";
-      return false;
-    }
-    if (!videotoolbox_disabled_by_env()) {
-      const auto mode = videotoolbox_hwdownload_forced_by_env()
-          ? vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice
-          : vr::DecodeDeviceMode::IndependentDevice;
-      track->decoder->enable_hardware_decode(
-          mode, nullptr, nullptr, vr::RenderBackendKind::Metal);
-    }
-    auto* decoder = track->decoder.get();
+    auto* decoder = track->decode_thread.get();
     auto* audio_output = primary ? playback_.audio_output() : nullptr;
-    track->demux->set_seek_callback(
+    track->demux_thread->set_seek_callback(
         [decoder, audio_output, primary](int64_t pts_us, vr::SeekType type) {
           if (decoder) {
             decoder->notify_seek(pts_us, type);
@@ -1098,13 +1058,9 @@ private:
             audio_output->notify_seek(0, pts_us, type);
           }
         });
-    if (!track->decoder->start()) {
-      error = "decode thread failed to start";
-      return false;
-    }
-    if (!track->demux->start_thread()) {
+    if (!track->demux_thread->start_thread()) {
       error = "demux thread failed to start";
-      track->decoder->stop();
+      track->decode_thread->stop();
       return false;
     }
 
@@ -1116,23 +1072,23 @@ private:
     layout_controller_.append_track(layout_, file_id, slot);
     out.file_id = file_id;
     out.slot = slot;
-    out.width = track->width;
-    out.height = track->height;
+    out.width = track->video_width;
+    out.height = track->video_height;
     out.duration_us = track->duration_us;
     tracks_[static_cast<size_t>(slot)] = std::move(track);
     recompute_duration();
     return true;
   }
 
-  void stop_track(std::unique_ptr<MacOSNativeTrackRuntime>& track) {
+  void stop_track(std::unique_ptr<vr::TrackPipeline>& track) {
     if (!track) {
       return;
     }
-    if (track->decoder) {
-      track->decoder->stop();
+    if (track->decode_thread) {
+      track->decode_thread->stop();
     }
-    if (track->demux) {
-      track->demux->stop();
+    if (track->demux_thread) {
+      track->demux_thread->stop();
     }
   }
 

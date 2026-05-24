@@ -37,9 +37,11 @@ The runner now has a Phase 4 `FlutterTexture` bridge: `createPlayer` registers a
 `CVPixelBuffer` texture, returns deterministic track metadata, supports resize/destroy lifecycle
 calls, and exposes capture metrics for automation. Synthetic `macos-synthetic://...` inputs still
 render generated color bars, while sandbox-readable local files go through the shared macOS native
-facade in `../native/macos/native_player_bridge.*`. That facade owns the existing
-`DemuxThread` + `DecodeThread` + `TrackBuffer` software path, creates real native tracks for
-`addTrack`, and feeds the shared present decision into the Metal layout uploader for BGRA
+facade in `../native/macos/native_player_bridge.*`. That facade now creates tracks through the
+shared `TrackPipelineFactory` with a Metal render backend, so demux/decode queue construction,
+track-buffer sizing, and hardware decode setup stay on the same native track pipeline path used by
+the renderer. It creates real native tracks for `addTrack`, and feeds the shared present decision
+into the Metal layout uploader for BGRA
 multi-track composition. The same facade now compiles and owns the shared native audio engine on
 macOS, routes optional audio packets into `AudioDecodeThread`, and controls output through the existing
 play/pause/seek/setAudibleTrack calls. UI automation can generate a short sine-audio media file and

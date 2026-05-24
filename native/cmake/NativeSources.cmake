@@ -24,6 +24,8 @@ set(VOID_PLAYER_PORTABLE_CORE_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/render/presentation_scheduler.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/render/presentation_snapshot.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/seek/seek_coordinator.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/track/track_buffer_budget.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/track/track_pipeline.cpp"
 )
 
 set(VOID_MEDIA_FFMPEG_SOURCES
@@ -59,6 +61,7 @@ set(VOID_MEDIA_FFMPEG_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/decode/software_frame_packer.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/software_frame_publisher.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/yuv_to_bgra.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/track/track_pipeline_factory.cpp"
 )
 
 set(VOID_MACOS_NATIVE_PLAYER_SOURCES
@@ -86,10 +89,7 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/renderer_config_validation.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/playback/renderer_playback_command_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/seek/renderer_seek_log_policy.cpp"
-    "${VOID_NATIVE_DIR}/video_renderer/track/track_buffer_budget.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track/track_lifecycle.cpp"
-    "${VOID_NATIVE_DIR}/video_renderer/track/track_pipeline.cpp"
-    "${VOID_NATIVE_DIR}/video_renderer/track/track_pipeline_factory.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track/track_perf_baseline.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track/track_preroll_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track/track_preview_policy.cpp"

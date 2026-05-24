@@ -102,6 +102,12 @@ Goal: delete the separate macOS playback tick as a presentation scheduler.
 - [ ] Keep the current software adapter callable as the renderer fallback while Metal parity is
   incomplete.
 
+Progress: macOS track creation no longer hand-builds its own demux/decode/track-buffer stack. The
+macOS bridge now uses the shared `TrackPipelineFactory` with `render_backend=Metal`, keeping
+VideoToolbox device-mode selection platform-specific while sharing the normal native track pipeline
+construction path. The separate macOS tick thread still owns visible presentation timing and remains
+the main cleanup target for this phase.
+
 Exit gate: macOS UI smokes pass with `rendererOwnedPresentationActive=true`, and the old tick-driven
 presentation path is no longer the normal route.
 

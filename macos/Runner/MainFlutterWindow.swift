@@ -1951,6 +1951,8 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       return "yuv"
     case Int32(VPMacOSNativePresentPackageStorageBGRA):
       return "bgra"
+    case Int32(VPMacOSNativePresentPackageStorageCVPixelBuffer):
+      return "cvpixelbuffer"
     default:
       return "unavailable"
     }

@@ -1462,7 +1462,7 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   _cvPixelBufferUploadCount.fetch_add(1, std::memory_order_relaxed);
   _lastPresentPackageCopyUs.store(0, std::memory_order_relaxed);
   _lastPresentPackageTotalUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
-  _lastPresentPackageStorage.store(VPMacOSNativePresentPackageStorageYUV,
+  _lastPresentPackageStorage.store(VPMacOSNativePresentPackageStorageCVPixelBuffer,
                                    std::memory_order_relaxed);
   write_error(error, errorSize, "");
   return 0;

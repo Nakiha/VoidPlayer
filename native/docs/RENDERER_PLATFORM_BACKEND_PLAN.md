@@ -65,9 +65,10 @@ fills its presentation ABI from this contract, and a native canary covers identi
 and odd-dimension NV12 metadata. The macOS transitional thread now reports shared scheduler name,
 tick/present/notification counters, cached scheduler-decision availability, present-package upload
 count, and package storage. Package copy consumes the scheduler-selected `PresentDecision` when a
-tick has published one, and the Swift texture pump coalesces duplicate copy requests instead of
-queuing stale uploads. The macOS native test matrix also covers present-decision carry-forward
-identity and offset guards.
+tick has published one, and CVPixelBuffer-backed hardware frames are now reported as
+`cvpixelbuffer` instead of being collapsed into the staged `yuv` package diagnostic. The Swift
+texture pump coalesces duplicate copy requests instead of queuing stale uploads. The macOS native
+test matrix also covers present-decision carry-forward identity and offset guards.
 
 Exit gate: current macOS playback still works, and diagnostics clearly distinguish transitional
 texture-pump presentation from renderer-owned presentation.
@@ -142,7 +143,8 @@ present-decision metadata with either direct YUV staging data or BGRA fallback d
 Metal uploader consumes this package path, which keeps player-side frame selection separate from
 Metal upload/composition. The Metal presentation backend also exposes a package-consuming ABI, so
 the future renderer-owned publication path can hand selected payloads to the backend without asking
-the backend to call back into the player.
+the backend to call back into the player. The zero-copy CVPixelBuffer fast path has a distinct
+storage diagnostic, keeping it separate from YUV staging.
 
 Exit gate: macOS can present multi-track CPU-decoded frames through renderer-owned Metal without the
 Swift pump choosing frames, and shader parity tests cover the supported formats.

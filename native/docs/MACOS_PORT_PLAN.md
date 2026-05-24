@@ -24,7 +24,8 @@ current renderer unification work is tracked in
   upload failures stay visible in diagnostics instead of silently falling back to the old Swift copy
   path, and callbacks publish the native upload result's frame metadata rather than rebuilding it
   from scheduler stats in Swift. Renderer-owned upload success/failure counters are now tracked by
-  native presentation state and surfaced to Dart diagnostics.
+  native presentation state and surfaced to Dart diagnostics. CVPixelBuffer hardware-frame uploads
+  are distinguished from staged YUV package uploads in diagnostics.
 - macOS analysis FFI can build and answer basic handle/base-generation calls, while analysis windows
   and overlays remain capability-gated.
 

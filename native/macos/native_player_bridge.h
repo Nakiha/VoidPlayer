@@ -91,6 +91,7 @@ enum {
   VPMacOSNativePresentPackageStorageUnavailable = 0,
   VPMacOSNativePresentPackageStorageYUV = 1,
   VPMacOSNativePresentPackageStorageBGRA = 2,
+  VPMacOSNativePresentPackageStorageCVPixelBuffer = 3,
 };
 
 typedef struct VPMacOSNativePresentFrameInfo {

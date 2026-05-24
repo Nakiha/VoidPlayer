@@ -17,8 +17,8 @@
 4.5, ASSERT_POSITION_RANGE, 700000, 2900000
 4.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameCopyCount, 2
 4.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalCVPixelBufferUploadCount, 2
-4.715, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, yuv
-4.716, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationPackageCopyUs, 0
+4.715, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, cvpixelbuffer
+4.716, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, presentationPackageCopyUs, 0, 0
 4.717, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationPackageGpuWaitUs, 1
 4.718, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationPackageTotalUs, 1
 4.72, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerFrameNotificationCount, 2

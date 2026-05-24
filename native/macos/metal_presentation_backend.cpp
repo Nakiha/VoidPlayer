@@ -42,6 +42,32 @@ int MetalPresentationBackend::copy_current_frame_with_layout(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size) {
+  if (player) {
+    VPMacOSNativeCVPixelBufferPresentFrame cv_frame = {};
+    char cv_error[256] = {};
+    if (VPMacOSNativePlayerCopyRetainedCVPixelBufferPresentFrame(
+            player,
+            width,
+            height,
+            &cv_frame,
+            cv_error,
+            sizeof(cv_error)) == 0) {
+      const int cv_ret = VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
+          uploader_,
+          &cv_frame,
+          pixel_buffer,
+          width,
+          height,
+          out,
+          error,
+          error_size);
+      VPMacOSNativeReleaseRetainedCVPixelBuffer(cv_frame.pixel_buffer);
+      if (cv_ret == 0) {
+        return 0;
+      }
+    }
+  }
+
   return VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
       uploader_,
       player,
@@ -91,6 +117,12 @@ VPMacOSMetalUploader* VPMacOSMetalPresentationBackendUploader(
 int64_t VPMacOSMetalPresentationBackendDirectYUVUploadCount(
     VPMacOSMetalPresentationBackend* backend) {
   return VPMacOSMetalUploaderDirectYUVUploadCount(
+      VPMacOSMetalPresentationBackendUploader(backend));
+}
+
+int64_t VPMacOSMetalPresentationBackendCVPixelBufferUploadCount(
+    VPMacOSMetalPresentationBackend* backend) {
+  return VPMacOSMetalUploaderCVPixelBufferUploadCount(
       VPMacOSMetalPresentationBackendUploader(backend));
 }
 
@@ -192,6 +224,26 @@ int VPMacOSMetalPresentationBackendCopyPresentFramePackageWithLayout(
       data,
       data_size,
       package,
+      pixel_buffer,
+      width,
+      height,
+      out,
+      error,
+      error_size);
+}
+
+int VPMacOSMetalPresentationBackendCopyCVPixelBufferPresentFrameWithLayout(
+    VPMacOSMetalPresentationBackend* backend,
+    const VPMacOSNativeCVPixelBufferPresentFrame* frame,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size) {
+  return VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
+      VPMacOSMetalPresentationBackendUploader(backend),
+      frame,
       pixel_buffer,
       width,
       height,

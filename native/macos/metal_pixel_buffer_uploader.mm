@@ -515,6 +515,96 @@ float view_offset_uv_y_at(constant LayoutParams& params, uint index) {
   }
   destination.write(color, gid);
 }
+
+float4 sample_cv_yuv_track(texture2d<float, access::read> y_texture,
+                           texture2d<float, access::read> uv_texture,
+                           constant LayoutParams& params,
+                           uint track_slot,
+                           uint source_x,
+                           uint source_y) {
+  const uint coded_width = uint(max(coded_width_at(params, track_slot), 1));
+  const uint coded_height = uint(max(coded_height_at(params, track_slot), 1));
+  const uint y_x = min(source_x, coded_width - 1);
+  const uint y_y = min(source_y, coded_height - 1);
+  const uint uv_x = min(y_x / 2u, max(coded_width / 2u, 1u) - 1u);
+  const uint uv_y = min(y_y / 2u, max(coded_height / 2u, 1u) - 1u);
+  const float y = y_texture.read(uint2(y_x, y_y)).r;
+  const float2 uv = uv_texture.read(uint2(uv_x, uv_y)).rg;
+  float y_full = y;
+  float2 cbcr = (uv * 255.0 - 128.0) / 255.0;
+  if (color_range_at(params, track_slot) != kColorRangeFull) {
+    y_full = (y * 255.0 - 16.0) / 219.0;
+    cbcr = (uv * 255.0 - 128.0) / 224.0;
+  }
+  const float cb = cbcr.x;
+  const float cr = cbcr.y;
+  float3 rgb;
+  const int matrix = color_matrix_at(params, track_slot);
+  if (matrix == kColorMatrixBT2020NCL) {
+    rgb = float3(
+        y_full + 1.4746 * cr,
+        y_full - 0.164553 * cb - 0.571353 * cr,
+        y_full + 1.8814 * cb);
+  } else if (matrix == kColorMatrixBT709 || matrix == kColorMatrixUnknown) {
+    rgb = float3(
+        y_full + 1.5748 * cr,
+        y_full - 0.187324 * cb - 0.468124 * cr,
+        y_full + 1.8556 * cb);
+  } else {
+    rgb = float3(
+        y_full + 1.402 * cr,
+        y_full - 0.344136 * cb - 0.714136 * cr,
+        y_full + 1.772 * cb);
+  }
+  if (color_transfer_at(params, track_slot) == kColorTransferSDR) {
+    rgb -= (1.0 / 255.0);
+  }
+  return float4(
+      tone_map_to_sdr(rgb,
+                      color_transfer_at(params, track_slot),
+                      color_primaries_at(params, track_slot)),
+      1.0);
+}
+
+kernel void layout_cv_yuv_copy(
+    constant LayoutParams& params [[buffer(0)]],
+    texture2d<float, access::write> destination [[texture(0)]],
+    texture2d<float, access::read> source_y [[texture(1)]],
+    texture2d<float, access::read> source_uv [[texture(2)]],
+    uint2 gid [[thread_position_in_grid]]) {
+  if (gid.x >= params.width || gid.y >= params.height) {
+    return;
+  }
+
+  const float2 canvas_size = float2(float(params.width), float(params.height));
+  const float2 texcoord = (float2(gid) + float2(0.5, 0.5)) / canvas_size;
+  const uint track_slot = 0u;
+  if (frame_present_at(params, track_slot) == 0) {
+    destination.write(float4(0.0, 0.0, 0.0, 1.0), gid);
+    return;
+  }
+  const int source_width_int = source_width_at(params, track_slot);
+  const int source_height_int = source_height_at(params, track_slot);
+  if (source_width_int <= 0 || source_height_int <= 0) {
+    destination.write(float4(0.0, 0.0, 0.0, 1.0), gid);
+    return;
+  }
+
+  bool out_of_bounds = false;
+  const float2 source_uv_coord = aspect_fit_uv(texcoord, params, track_slot, out_of_bounds);
+  if (out_of_bounds) {
+    destination.write(float4(0.0, 0.0, 0.0, 1.0), gid);
+    return;
+  }
+
+  const uint source_width = uint(source_width_int);
+  const uint source_height = uint(source_height_int);
+  const uint source_x = min(uint(source_uv_coord.x * float(source_width)), source_width - 1);
+  const uint source_y_pos = min(uint(source_uv_coord.y * float(source_height)), source_height - 1);
+  float4 color = sample_cv_yuv_track(
+      source_y, source_uv, params, track_slot, source_x, source_y_pos);
+  destination.write(color, gid);
+}
 )";
 
 struct MetalLayoutParams {
@@ -804,8 +894,10 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   id<MTLBuffer> _stagingBuffer;
   id<MTLBuffer> _layoutParamsBuffer;
   id<MTLComputePipelineState> _layoutPipeline;
+  id<MTLComputePipelineState> _cvPixelBufferPipeline;
   CVMetalTextureCacheRef _textureCache;
   std::atomic<int64_t> _directYuvUploadCount;
+  std::atomic<int64_t> _cvPixelBufferUploadCount;
   std::atomic<int64_t> _presentPackageUploadCount;
   std::atomic<int64_t> _lastPresentPackageCopyUs;
   std::atomic<int64_t> _lastPresentPackageGpuWaitUs;
@@ -815,6 +907,7 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
 
 - (BOOL)isAvailable;
 - (int64_t)directYuvUploadCount;
+- (int64_t)cvPixelBufferUploadCount;
 - (int64_t)presentPackageUploadCount;
 - (int64_t)lastPresentPackageCopyUs;
 - (int64_t)lastPresentPackageGpuWaitUs;
@@ -852,6 +945,13 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
                             out:(VPMacOSNativeFrameInfo*)out
                           error:(char*)error
                       errorSize:(size_t)errorSize;
+- (int)copyCVPixelBufferPresentFrame:(const VPMacOSNativeCVPixelBufferPresentFrame*)frame
+                        toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                width:(int32_t)width
+                               height:(int32_t)height
+                                  out:(VPMacOSNativeFrameInfo*)out
+                                error:(char*)error
+                            errorSize:(size_t)errorSize;
 - (int)uploadPreparedPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
                            toPixelBuffer:(CVPixelBufferRef)pixelBuffer
                                    width:(int32_t)width
@@ -868,6 +968,7 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   self = [super init];
   if (self) {
     _directYuvUploadCount.store(0, std::memory_order_relaxed);
+    _cvPixelBufferUploadCount.store(0, std::memory_order_relaxed);
     _presentPackageUploadCount.store(0, std::memory_order_relaxed);
     _lastPresentPackageCopyUs.store(0, std::memory_order_relaxed);
     _lastPresentPackageGpuWaitUs.store(0, std::memory_order_relaxed);
@@ -897,6 +998,13 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
         _layoutPipeline = [_device newComputePipelineStateWithFunction:function
                                                                   error:&pipelineError];
       }
+      id<MTLFunction> cvFunction =
+          library ? [library newFunctionWithName:@"layout_cv_yuv_copy"] : nil;
+      if (cvFunction) {
+        NSError* pipelineError = nil;
+        _cvPixelBufferPipeline = [_device newComputePipelineStateWithFunction:cvFunction
+                                                                        error:&pipelineError];
+      }
     }
   }
   return self;
@@ -915,6 +1023,10 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
 
 - (int64_t)directYuvUploadCount {
   return _directYuvUploadCount.load(std::memory_order_relaxed);
+}
+
+- (int64_t)cvPixelBufferUploadCount {
+  return _cvPixelBufferUploadCount.load(std::memory_order_relaxed);
 }
 
 - (int64_t)presentPackageUploadCount {
@@ -1226,6 +1338,136 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   return 0;
 }
 
+- (int)copyCVPixelBufferPresentFrame:(const VPMacOSNativeCVPixelBufferPresentFrame*)frame
+                        toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                width:(int32_t)width
+                               height:(int32_t)height
+                                  out:(VPMacOSNativeFrameInfo*)out
+                                error:(char*)error
+                            errorSize:(size_t)errorSize {
+  if (![self isAvailable] || !_cvPixelBufferPipeline) {
+    write_error(error, errorSize, "native Metal CVPixelBuffer uploader is not available");
+    return -1;
+  }
+  if (!frame || !frame->pixel_buffer || !pixelBuffer || !out ||
+      width <= 0 || height <= 0 || frame->plane_count < 2 ||
+      frame->coded_width <= 0 || frame->coded_height <= 0) {
+    write_error(error, errorSize, "invalid native Metal CVPixelBuffer upload arguments");
+    return -1;
+  }
+  const int validationStatus =
+      [self validatePixelBufferStatus:pixelBuffer width:width height:height];
+  if (validationStatus != VPMacOSMetalUploaderStatusOk) {
+    write_error(error, errorSize, metal_uploader_status_message(validationStatus));
+    return -1;
+  }
+  if (![self ensureLayoutParamsBuffer]) {
+    return metal_upload_failure(
+        error, errorSize, "failed to allocate native Metal layout buffers");
+  }
+
+  auto* metalParams = static_cast<MetalLayoutParams*>([_layoutParamsBuffer contents]);
+  fill_metal_layout_params(*metalParams, frame->decision, width, height);
+  write_first_present_frame_info(frame->decision, out);
+
+  CVPixelBufferRef sourcePixelBuffer =
+      static_cast<CVPixelBufferRef>(frame->pixel_buffer);
+  const bool isP010 = frame->is_p010 != 0;
+  const MTLPixelFormat yFormat = isP010 ? MTLPixelFormatR16Unorm : MTLPixelFormatR8Unorm;
+  const MTLPixelFormat uvFormat = isP010 ? MTLPixelFormatRG16Unorm : MTLPixelFormatRG8Unorm;
+  CVMetalTextureRef sourceYRef = nullptr;
+  CVMetalTextureRef sourceUVRef = nullptr;
+  CVMetalTextureRef destinationRef = nullptr;
+  const CVReturn yStatus = CVMetalTextureCacheCreateTextureFromImage(
+      kCFAllocatorDefault,
+      _textureCache,
+      sourcePixelBuffer,
+      nullptr,
+      yFormat,
+      CVPixelBufferGetWidthOfPlane(sourcePixelBuffer, 0),
+      CVPixelBufferGetHeightOfPlane(sourcePixelBuffer, 0),
+      0,
+      &sourceYRef);
+  const CVReturn uvStatus = CVMetalTextureCacheCreateTextureFromImage(
+      kCFAllocatorDefault,
+      _textureCache,
+      sourcePixelBuffer,
+      nullptr,
+      uvFormat,
+      CVPixelBufferGetWidthOfPlane(sourcePixelBuffer, 1),
+      CVPixelBufferGetHeightOfPlane(sourcePixelBuffer, 1),
+      1,
+      &sourceUVRef);
+  const CVReturn destinationStatus = CVMetalTextureCacheCreateTextureFromImage(
+      kCFAllocatorDefault,
+      _textureCache,
+      pixelBuffer,
+      nullptr,
+      MTLPixelFormatBGRA8Unorm,
+      width,
+      height,
+      0,
+      &destinationRef);
+  if (yStatus != kCVReturnSuccess || uvStatus != kCVReturnSuccess ||
+      destinationStatus != kCVReturnSuccess || !sourceYRef || !sourceUVRef ||
+      !destinationRef) {
+    if (sourceYRef) CFRelease(sourceYRef);
+    if (sourceUVRef) CFRelease(sourceUVRef);
+    if (destinationRef) CFRelease(destinationRef);
+    return metal_upload_failure(
+        error, errorSize, "failed to wrap CVPixelBuffer planes as Metal textures");
+  }
+
+  id<MTLTexture> sourceYTexture = CVMetalTextureGetTexture(sourceYRef);
+  id<MTLTexture> sourceUVTexture = CVMetalTextureGetTexture(sourceUVRef);
+  id<MTLTexture> destinationTexture = CVMetalTextureGetTexture(destinationRef);
+  const auto gpuStart = std::chrono::steady_clock::now();
+  id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
+  id<MTLComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
+  if (!sourceYTexture || !sourceUVTexture || !destinationTexture ||
+      !commandBuffer || !compute) {
+    CFRelease(sourceYRef);
+    CFRelease(sourceUVRef);
+    CFRelease(destinationRef);
+    return metal_upload_failure(
+        error, errorSize, "failed to create native Metal CVPixelBuffer compute command");
+  }
+
+  [compute setComputePipelineState:_cvPixelBufferPipeline];
+  [compute setBuffer:_layoutParamsBuffer offset:0 atIndex:0];
+  [compute setTexture:destinationTexture atIndex:0];
+  [compute setTexture:sourceYTexture atIndex:1];
+  [compute setTexture:sourceUVTexture atIndex:2];
+
+  const NSUInteger threadWidth = _cvPixelBufferPipeline.threadExecutionWidth;
+  const NSUInteger threadHeight =
+      std::max<NSUInteger>(1, _cvPixelBufferPipeline.maxTotalThreadsPerThreadgroup / threadWidth);
+  const MTLSize threadsPerThreadgroup = MTLSizeMake(threadWidth, threadHeight, 1);
+  const MTLSize threads = MTLSizeMake(width, height, 1);
+  [compute dispatchThreads:threads threadsPerThreadgroup:threadsPerThreadgroup];
+  [compute endEncoding];
+  [commandBuffer commit];
+  [commandBuffer waitUntilCompleted];
+
+  const BOOL completed = [commandBuffer status] == MTLCommandBufferStatusCompleted;
+  _lastPresentPackageGpuWaitUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
+  CFRelease(sourceYRef);
+  CFRelease(sourceUVRef);
+  CFRelease(destinationRef);
+  if (!completed) {
+    return metal_upload_failure(
+        error, errorSize, "native Metal CVPixelBuffer compute did not complete");
+  }
+
+  _cvPixelBufferUploadCount.fetch_add(1, std::memory_order_relaxed);
+  _lastPresentPackageCopyUs.store(0, std::memory_order_relaxed);
+  _lastPresentPackageTotalUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
+  _lastPresentPackageStorage.store(VPMacOSNativePresentPackageStorageYUV,
+                                   std::memory_order_relaxed);
+  write_error(error, errorSize, "");
+  return 0;
+}
+
 - (int)copyCurrentFrameWithLayoutFromPlayer:(VPMacOSNativePlayer*)player
                               toPixelBuffer:(CVPixelBufferRef)pixelBuffer
                                       width:(int32_t)width
@@ -1326,6 +1568,13 @@ int64_t VPMacOSMetalUploaderDirectYUVUploadCount(VPMacOSMetalUploader* uploader)
     return 0;
   }
   return [uploader->impl directYuvUploadCount];
+}
+
+int64_t VPMacOSMetalUploaderCVPixelBufferUploadCount(VPMacOSMetalUploader* uploader) {
+  if (!uploader || !uploader->impl) {
+    return 0;
+  }
+  return [uploader->impl cvPixelBufferUploadCount];
 }
 
 int64_t VPMacOSMetalUploaderPresentPackageUploadCount(VPMacOSMetalUploader* uploader) {
@@ -1465,4 +1714,26 @@ int VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
                                              out:out
                                            error:error
                                        errorSize:error_size];
+}
+
+int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
+    VPMacOSMetalUploader* uploader,
+    const VPMacOSNativeCVPixelBufferPresentFrame* frame,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size) {
+  if (!uploader || !uploader->impl) {
+    write_error(error, error_size, "native Metal uploader is null");
+    return -1;
+  }
+  return [uploader->impl copyCVPixelBufferPresentFrame:frame
+                                         toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                                 width:width
+                                                height:height
+                                                   out:out
+                                                 error:error
+                                             errorSize:error_size];
 }

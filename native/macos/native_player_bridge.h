@@ -147,6 +147,16 @@ typedef struct VPMacOSNativePresentFramePackageInfo {
   VPMacOSNativePresentDecisionInfo decision;
 } VPMacOSNativePresentFramePackageInfo;
 
+typedef struct VPMacOSNativeCVPixelBufferPresentFrame {
+  void* pixel_buffer;
+  int32_t pixel_format;
+  int32_t plane_count;
+  int32_t is_p010;
+  int32_t coded_width;
+  int32_t coded_height;
+  VPMacOSNativePresentDecisionInfo decision;
+} VPMacOSNativeCVPixelBufferPresentFrame;
+
 VPMacOSNativePlayer* VPMacOSNativePlayerCreate(void);
 void VPMacOSNativePlayerDestroy(VPMacOSNativePlayer* player);
 
@@ -271,12 +281,21 @@ int VPMacOSNativePlayerCopyPresentFramePackage(
     VPMacOSNativePresentFramePackageInfo* out,
     char* error,
     size_t error_size);
+int VPMacOSNativePlayerCopyRetainedCVPixelBufferPresentFrame(
+    VPMacOSNativePlayer* player,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeCVPixelBufferPresentFrame* out,
+    char* error,
+    size_t error_size);
+void VPMacOSNativeReleaseRetainedCVPixelBuffer(void* pixel_buffer);
 void VPMacOSNativeFrameFree(VPMacOSNativeFrame* frame);
 
 VPMacOSMetalUploader* VPMacOSMetalUploaderCreate(void);
 void VPMacOSMetalUploaderDestroy(VPMacOSMetalUploader* uploader);
 int VPMacOSMetalUploaderIsAvailable(VPMacOSMetalUploader* uploader);
 int64_t VPMacOSMetalUploaderDirectYUVUploadCount(VPMacOSMetalUploader* uploader);
+int64_t VPMacOSMetalUploaderCVPixelBufferUploadCount(VPMacOSMetalUploader* uploader);
 int64_t VPMacOSMetalUploaderPresentPackageUploadCount(VPMacOSMetalUploader* uploader);
 int64_t VPMacOSMetalUploaderLastPresentPackageCopyUs(VPMacOSMetalUploader* uploader);
 int64_t VPMacOSMetalUploaderLastPresentPackageGpuWaitUs(VPMacOSMetalUploader* uploader);
@@ -324,6 +343,15 @@ int VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
+int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
+    VPMacOSMetalUploader* uploader,
+    const VPMacOSNativeCVPixelBufferPresentFrame* frame,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
 
 VPMacOSMetalPresentationBackend* VPMacOSMetalPresentationBackendCreate(
     int32_t width,
@@ -333,6 +361,8 @@ int VPMacOSMetalPresentationBackendIsAvailable(VPMacOSMetalPresentationBackend* 
 VPMacOSMetalUploader* VPMacOSMetalPresentationBackendUploader(
     VPMacOSMetalPresentationBackend* backend);
 int64_t VPMacOSMetalPresentationBackendDirectYUVUploadCount(
+    VPMacOSMetalPresentationBackend* backend);
+int64_t VPMacOSMetalPresentationBackendCVPixelBufferUploadCount(
     VPMacOSMetalPresentationBackend* backend);
 int64_t VPMacOSMetalPresentationBackendPresentPackageUploadCount(
     VPMacOSMetalPresentationBackend* backend);
@@ -367,6 +397,15 @@ int VPMacOSMetalPresentationBackendCopyPresentFramePackageWithLayout(
     const uint8_t* data,
     size_t data_size,
     const VPMacOSNativePresentFramePackageInfo* package,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
+int VPMacOSMetalPresentationBackendCopyCVPixelBufferPresentFrameWithLayout(
+    VPMacOSMetalPresentationBackend* backend,
+    const VPMacOSNativeCVPixelBufferPresentFrame* frame,
     void* pixel_buffer,
     int32_t width,
     int32_t height,

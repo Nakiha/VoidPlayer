@@ -689,6 +689,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "pixelBufferDirectCopyCount": textureStats?.directCopyCount ?? 0,
         "pixelBufferMetalUploadCount": textureStats?.metalUploadCount ?? 0,
         "pixelBufferMetalYuvUploadCount": textureStats?.metalYuvUploadCount ?? 0,
+        "pixelBufferMetalCVPixelBufferUploadCount": textureStats?.metalCVPixelBufferUploadCount ?? 0,
         "pixelBufferMetalUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
         "pixelBufferMetalUploadEnabled": textureStats?.metalUploadEnabled ?? false,
         "presentationUploadMode": textureStats?.presentationUploadMode ?? "unavailable",
@@ -1599,6 +1600,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     directCopyCount: Int,
     metalUploadCount: Int,
     metalYuvUploadCount: Int,
+    metalCVPixelBufferUploadCount: Int,
     metalUploadFailureCount: Int,
     metalUploadEnabled: Bool,
     presentationUploadMode: String,
@@ -1626,6 +1628,7 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
         nativeMetalPresentPackageUploadCountLocked()
       ),
       metalYuvUploadCount: nativeMetalUploaderDirectYuvUploadCountLocked(),
+      metalCVPixelBufferUploadCount: nativeMetalUploaderCVPixelBufferUploadCountLocked(),
       metalUploadFailureCount: pixelBufferMetalUploadFailureCount,
       metalUploadEnabled: metalUploadEnabled,
       presentationUploadMode: presentationUploadModeLocked(),
@@ -1731,6 +1734,13 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     guard let nativeMetalPresentationBackend else { return 0 }
     return Int(
       VPMacOSMetalPresentationBackendDirectYUVUploadCount(nativeMetalPresentationBackend)
+    )
+  }
+
+  private func nativeMetalUploaderCVPixelBufferUploadCountLocked() -> Int {
+    guard let nativeMetalPresentationBackend else { return 0 }
+    return Int(
+      VPMacOSMetalPresentationBackendCVPixelBufferUploadCount(nativeMetalPresentationBackend)
     )
   }
 

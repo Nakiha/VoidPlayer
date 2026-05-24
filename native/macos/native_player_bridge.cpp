@@ -21,6 +21,8 @@
 #include "video_renderer/seek/seek_coordinator.h"
 #include "video_renderer/sync/render_sink.h"
 
+#include <CoreVideo/CoreVideo.h>
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -440,6 +442,68 @@ public:
           static_cast<float>(frame.height) / static_cast<float>(storage->coded_height);
     }
     return true;
+  }
+
+  bool copy_retained_cv_pixel_buffer_present_frame(
+      int32_t width,
+      int32_t height,
+      VPMacOSNativeCVPixelBufferPresentFrame* out,
+      std::string& error) {
+    if (!out || width <= 0 || height <= 0) {
+      error = "invalid CVPixelBuffer present frame output";
+      return false;
+    }
+    if (!render_sink_) {
+      error = "player is not open";
+      return false;
+    }
+    *out = {};
+    const auto decision = current_present_decision();
+    fill_present_decision_info(decision, width, height, &out->decision);
+    if (!decision.should_present) {
+      error = "no presentable frame is ready";
+      return false;
+    }
+    if (out->decision.frame_count != 1) {
+      error = "present decision is not a single CVPixelBuffer frame";
+      return false;
+    }
+
+    for (size_t slot = 0; slot < vr::kMaxTracks; ++slot) {
+      if (!decision.frames[slot].has_value()) {
+        continue;
+      }
+      if (slot != 0) {
+        error = "CVPixelBuffer fast path currently requires the primary track slot";
+        return false;
+      }
+      const auto& frame = *decision.frames[slot];
+      const auto* storage = frame.macos_cv_pixel_buffer_storage();
+      if (!storage || !storage->pixel_buffer || storage->plane_count < 2 ||
+          storage->coded_width < frame.width || storage->coded_height < frame.height) {
+        error = "present decision does not contain a supported CVPixelBuffer frame";
+        return false;
+      }
+      CVPixelBufferRetain(static_cast<CVPixelBufferRef>(storage->pixel_buffer));
+      out->pixel_buffer = storage->pixel_buffer;
+      out->pixel_format = static_cast<int32_t>(storage->pixel_format);
+      out->plane_count = storage->plane_count;
+      out->is_p010 = storage->is_p010 ? 1 : 0;
+      out->coded_width = storage->coded_width;
+      out->coded_height = storage->coded_height;
+      out->decision.yuv_format[slot] = storage->is_p010
+          ? VPMacOSNativePresentFormatP010
+          : VPMacOSNativePresentFormatNV12;
+      out->decision.coded_width[slot] = storage->coded_width;
+      out->decision.coded_height[slot] = storage->coded_height;
+      out->decision.nv12_uv_scale_x[slot] =
+          static_cast<float>(frame.width) / static_cast<float>(storage->coded_width);
+      out->decision.nv12_uv_scale_y[slot] =
+          static_cast<float>(frame.height) / static_cast<float>(storage->coded_height);
+      return true;
+    }
+    error = "present decision has no CVPixelBuffer frame";
+    return false;
   }
 
   void seek(int64_t pts_us) {
@@ -1638,6 +1702,34 @@ int VPMacOSNativePlayerCopyPresentFramePackage(
   }
   write_error(error, error_size, message);
   return -1;
+}
+
+int VPMacOSNativePlayerCopyRetainedCVPixelBufferPresentFrame(
+    VPMacOSNativePlayer* player,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeCVPixelBufferPresentFrame* out,
+    char* error,
+    size_t error_size) {
+  if (!player || !out || width <= 0 || height <= 0) {
+    write_error(error, error_size, "player or CVPixelBuffer present output is null");
+    return -1;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  std::string message;
+  if (!player->core.copy_retained_cv_pixel_buffer_present_frame(
+          width, height, out, message)) {
+    write_error(error, error_size, message);
+    return -1;
+  }
+  write_error(error, error_size, "");
+  return 0;
+}
+
+void VPMacOSNativeReleaseRetainedCVPixelBuffer(void* pixel_buffer) {
+  if (pixel_buffer) {
+    CVPixelBufferRelease(static_cast<CVPixelBufferRef>(pixel_buffer));
+  }
 }
 
 void VPMacOSNativeFrameFree(VPMacOSNativeFrame* frame) {

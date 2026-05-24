@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstring>
 #include <limits>
@@ -644,6 +645,12 @@ int metal_upload_failure(char* error, size_t error_size, const char* message) {
   return -2;
 }
 
+int64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
+  return std::chrono::duration_cast<std::chrono::microseconds>(
+             std::chrono::steady_clock::now() - start)
+      .count();
+}
+
 const char* metal_uploader_status_message(int status) {
   switch (status) {
   case VPMacOSMetalUploaderStatusOk:
@@ -800,12 +807,18 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   CVMetalTextureCacheRef _textureCache;
   std::atomic<int64_t> _directYuvUploadCount;
   std::atomic<int64_t> _presentPackageUploadCount;
+  std::atomic<int64_t> _lastPresentPackageCopyUs;
+  std::atomic<int64_t> _lastPresentPackageGpuWaitUs;
+  std::atomic<int64_t> _lastPresentPackageTotalUs;
   std::atomic<int32_t> _lastPresentPackageStorage;
 }
 
 - (BOOL)isAvailable;
 - (int64_t)directYuvUploadCount;
 - (int64_t)presentPackageUploadCount;
+- (int64_t)lastPresentPackageCopyUs;
+- (int64_t)lastPresentPackageGpuWaitUs;
+- (int64_t)lastPresentPackageTotalUs;
 - (int32_t)lastPresentPackageStorage;
 - (int)validatePixelBufferStatus:(CVPixelBufferRef)pixelBuffer
                             width:(int32_t)width
@@ -856,6 +869,9 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   if (self) {
     _directYuvUploadCount.store(0, std::memory_order_relaxed);
     _presentPackageUploadCount.store(0, std::memory_order_relaxed);
+    _lastPresentPackageCopyUs.store(0, std::memory_order_relaxed);
+    _lastPresentPackageGpuWaitUs.store(0, std::memory_order_relaxed);
+    _lastPresentPackageTotalUs.store(0, std::memory_order_relaxed);
     _lastPresentPackageStorage.store(
         VPMacOSNativePresentPackageStorageUnavailable,
         std::memory_order_relaxed);
@@ -903,6 +919,18 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
 
 - (int64_t)presentPackageUploadCount {
   return _presentPackageUploadCount.load(std::memory_order_relaxed);
+}
+
+- (int64_t)lastPresentPackageCopyUs {
+  return _lastPresentPackageCopyUs.load(std::memory_order_relaxed);
+}
+
+- (int64_t)lastPresentPackageGpuWaitUs {
+  return _lastPresentPackageGpuWaitUs.load(std::memory_order_relaxed);
+}
+
+- (int64_t)lastPresentPackageTotalUs {
+  return _lastPresentPackageTotalUs.load(std::memory_order_relaxed);
 }
 
 - (int32_t)lastPresentPackageStorage {
@@ -1096,14 +1124,19 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
     return metal_upload_failure(
         error, errorSize, "failed to allocate native Metal layout buffers");
   }
+  const auto totalStart = std::chrono::steady_clock::now();
+  const auto copyStart = std::chrono::steady_clock::now();
   std::memcpy([_stagingBuffer contents], data, package->used_bytes);
-  return [self uploadPreparedPresentFramePackage:package
-                                   toPixelBuffer:pixelBuffer
-                                           width:width
-                                          height:height
-                                             out:out
-                                           error:error
-                                       errorSize:errorSize];
+  _lastPresentPackageCopyUs.store(elapsed_us_since(copyStart), std::memory_order_relaxed);
+  const int uploadRet = [self uploadPreparedPresentFramePackage:package
+                                                  toPixelBuffer:pixelBuffer
+                                                          width:width
+                                                         height:height
+                                                            out:out
+                                                          error:error
+                                                      errorSize:errorSize];
+  _lastPresentPackageTotalUs.store(elapsed_us_since(totalStart), std::memory_order_relaxed);
+  return uploadRet;
 }
 
 - (int)uploadPreparedPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
@@ -1155,6 +1188,7 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   }
 
   id<MTLTexture> destinationTexture = CVMetalTextureGetTexture(metalTextureRef);
+  const auto gpuStart = std::chrono::steady_clock::now();
   id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
   id<MTLComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
   if (!destinationTexture || !commandBuffer || !compute) {
@@ -1179,6 +1213,7 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   [commandBuffer waitUntilCompleted];
 
   const BOOL completed = [commandBuffer status] == MTLCommandBufferStatusCompleted;
+  _lastPresentPackageGpuWaitUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
   CFRelease(metalTextureRef);
   if (!completed) {
     return metal_upload_failure(
@@ -1230,6 +1265,8 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   }
 
   VPMacOSNativePresentFramePackageInfo package = {};
+  const auto totalStart = std::chrono::steady_clock::now();
+  const auto copyStart = std::chrono::steady_clock::now();
   const int copyRet = VPMacOSNativePlayerCopyPresentFramePackage(
       player,
       static_cast<uint8_t*>([_stagingBuffer contents]),
@@ -1240,6 +1277,7 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
       &package,
       error,
       errorSize);
+  _lastPresentPackageCopyUs.store(elapsed_us_since(copyStart), std::memory_order_relaxed);
   if (copyRet != 0) {
     if (error && std::strcmp(error, "not all present decision frames are ready") == 0) {
       return -1;
@@ -1249,13 +1287,15 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
     }
     return -2;
   }
-  return [self uploadPreparedPresentFramePackage:&package
-                                   toPixelBuffer:pixelBuffer
-                                           width:width
-                                          height:height
-                                             out:out
-                                           error:error
-                                       errorSize:errorSize];
+  const int uploadRet = [self uploadPreparedPresentFramePackage:&package
+                                                  toPixelBuffer:pixelBuffer
+                                                          width:width
+                                                         height:height
+                                                            out:out
+                                                          error:error
+                                                      errorSize:errorSize];
+  _lastPresentPackageTotalUs.store(elapsed_us_since(totalStart), std::memory_order_relaxed);
+  return uploadRet;
 }
 
 @end
@@ -1293,6 +1333,27 @@ int64_t VPMacOSMetalUploaderPresentPackageUploadCount(VPMacOSMetalUploader* uplo
     return 0;
   }
   return [uploader->impl presentPackageUploadCount];
+}
+
+int64_t VPMacOSMetalUploaderLastPresentPackageCopyUs(VPMacOSMetalUploader* uploader) {
+  if (!uploader || !uploader->impl) {
+    return 0;
+  }
+  return [uploader->impl lastPresentPackageCopyUs];
+}
+
+int64_t VPMacOSMetalUploaderLastPresentPackageGpuWaitUs(VPMacOSMetalUploader* uploader) {
+  if (!uploader || !uploader->impl) {
+    return 0;
+  }
+  return [uploader->impl lastPresentPackageGpuWaitUs];
+}
+
+int64_t VPMacOSMetalUploaderLastPresentPackageTotalUs(VPMacOSMetalUploader* uploader) {
+  if (!uploader || !uploader->impl) {
+    return 0;
+  }
+  return [uploader->impl lastPresentPackageTotalUs];
 }
 
 int32_t VPMacOSMetalUploaderLastPresentPackageStorage(VPMacOSMetalUploader* uploader) {

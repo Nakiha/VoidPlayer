@@ -5,7 +5,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <vector>
 
 namespace vp_macos {
 
@@ -39,7 +38,6 @@ public:
 
 private:
   VPMacOSMetalUploader* uploader_ = nullptr;
-  std::vector<uint8_t> present_package_scratch_;
   int width_ = 0;
   int height_ = 0;
   bool headless_ = true;

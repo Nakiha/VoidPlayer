@@ -278,6 +278,9 @@ void VPMacOSMetalUploaderDestroy(VPMacOSMetalUploader* uploader);
 int VPMacOSMetalUploaderIsAvailable(VPMacOSMetalUploader* uploader);
 int64_t VPMacOSMetalUploaderDirectYUVUploadCount(VPMacOSMetalUploader* uploader);
 int64_t VPMacOSMetalUploaderPresentPackageUploadCount(VPMacOSMetalUploader* uploader);
+int64_t VPMacOSMetalUploaderLastPresentPackageCopyUs(VPMacOSMetalUploader* uploader);
+int64_t VPMacOSMetalUploaderLastPresentPackageGpuWaitUs(VPMacOSMetalUploader* uploader);
+int64_t VPMacOSMetalUploaderLastPresentPackageTotalUs(VPMacOSMetalUploader* uploader);
 int32_t VPMacOSMetalUploaderLastPresentPackageStorage(VPMacOSMetalUploader* uploader);
 int VPMacOSMetalUploaderValidatePixelBuffer(VPMacOSMetalUploader* uploader,
                                             void* pixel_buffer,
@@ -332,6 +335,12 @@ VPMacOSMetalUploader* VPMacOSMetalPresentationBackendUploader(
 int64_t VPMacOSMetalPresentationBackendDirectYUVUploadCount(
     VPMacOSMetalPresentationBackend* backend);
 int64_t VPMacOSMetalPresentationBackendPresentPackageUploadCount(
+    VPMacOSMetalPresentationBackend* backend);
+int64_t VPMacOSMetalPresentationBackendLastPresentPackageCopyUs(
+    VPMacOSMetalPresentationBackend* backend);
+int64_t VPMacOSMetalPresentationBackendLastPresentPackageGpuWaitUs(
+    VPMacOSMetalPresentationBackend* backend);
+int64_t VPMacOSMetalPresentationBackendLastPresentPackageTotalUs(
     VPMacOSMetalPresentationBackend* backend);
 int32_t VPMacOSMetalPresentationBackendLastPresentPackageStorage(
     VPMacOSMetalPresentationBackend* backend);

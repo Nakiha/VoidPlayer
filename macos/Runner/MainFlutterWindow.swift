@@ -693,6 +693,9 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "pixelBufferMetalUploadEnabled": textureStats?.metalUploadEnabled ?? false,
         "presentationUploadMode": textureStats?.presentationUploadMode ?? "unavailable",
         "presentationPackageUploadCount": textureStats?.presentPackageUploadCount ?? 0,
+        "presentationPackageCopyUs": textureStats?.presentPackageCopyUs ?? 0,
+        "presentationPackageGpuWaitUs": textureStats?.presentPackageGpuWaitUs ?? 0,
+        "presentationPackageTotalUs": textureStats?.presentPackageTotalUs ?? 0,
         "presentationPackageStorage": textureStats?.presentPackageStorage ?? "unavailable",
         "metalAvailable": textureStats?.metalAvailable ?? false,
         "metalTextureCacheAvailable": textureStats?.metalTextureCacheAvailable ?? false,
@@ -1600,6 +1603,9 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     metalUploadEnabled: Bool,
     presentationUploadMode: String,
     presentPackageUploadCount: Int,
+    presentPackageCopyUs: Int,
+    presentPackageGpuWaitUs: Int,
+    presentPackageTotalUs: Int,
     presentPackageStorage: String,
     metalAvailable: Bool,
     metalTextureCacheAvailable: Bool,
@@ -1624,6 +1630,9 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       metalUploadEnabled: metalUploadEnabled,
       presentationUploadMode: presentationUploadModeLocked(),
       presentPackageUploadCount: nativeMetalPresentPackageUploadCountLocked(),
+      presentPackageCopyUs: nativeMetalLastPresentPackageCopyUsLocked(),
+      presentPackageGpuWaitUs: nativeMetalLastPresentPackageGpuWaitUsLocked(),
+      presentPackageTotalUs: nativeMetalLastPresentPackageTotalUsLocked(),
       presentPackageStorage: nativeMetalLastPresentPackageStorageLocked(),
       metalAvailable: nativeMetalUploaderAvailableLocked(),
       metalTextureCacheAvailable: nativeMetalUploaderAvailableLocked(),
@@ -1729,6 +1738,27 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     guard let nativeMetalPresentationBackend else { return 0 }
     return Int(
       VPMacOSMetalPresentationBackendPresentPackageUploadCount(nativeMetalPresentationBackend)
+    )
+  }
+
+  private func nativeMetalLastPresentPackageCopyUsLocked() -> Int {
+    guard let nativeMetalPresentationBackend else { return 0 }
+    return Int(
+      VPMacOSMetalPresentationBackendLastPresentPackageCopyUs(nativeMetalPresentationBackend)
+    )
+  }
+
+  private func nativeMetalLastPresentPackageGpuWaitUsLocked() -> Int {
+    guard let nativeMetalPresentationBackend else { return 0 }
+    return Int(
+      VPMacOSMetalPresentationBackendLastPresentPackageGpuWaitUs(nativeMetalPresentationBackend)
+    )
+  }
+
+  private func nativeMetalLastPresentPackageTotalUsLocked() -> Int {
+    guard let nativeMetalPresentationBackend else { return 0 }
+    return Int(
+      VPMacOSMetalPresentationBackendLastPresentPackageTotalUs(nativeMetalPresentationBackend)
     )
   }
 

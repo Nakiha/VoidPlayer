@@ -256,6 +256,28 @@ private final class MacOSNativePlayerSession {
     VPMacOSNativePlayerSeek(handle, Int64(ptsUs))
   }
 
+  func stepForward() throws {
+    var error = [CChar](repeating: 0, count: 1024)
+    let ret = VPMacOSNativePlayerStepForward(handle, &error, error.count)
+    if ret != 0 {
+      let message = String(cString: error)
+      throw MacOSNativePlayerError.failed(
+        message.isEmpty ? "macOS native player stepForward failed with code \(ret)" : message
+      )
+    }
+  }
+
+  func stepBackward() throws {
+    var error = [CChar](repeating: 0, count: 1024)
+    let ret = VPMacOSNativePlayerStepBackward(handle, &error, error.count)
+    if ret != 0 {
+      let message = String(cString: error)
+      throw MacOSNativePlayerError.failed(
+        message.isEmpty ? "macOS native player stepBackward failed with code \(ret)" : message
+      )
+    }
+  }
+
   func currentPtsUs() -> Int {
     Int(VPMacOSNativePlayerCurrentPtsUs(handle))
   }
@@ -655,13 +677,13 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       }
       result(nil)
     case "stepForward":
-      if let error = stepAndRefresh(deltaUs: 33_333) {
+      if let error = stepAndRefresh(forward: true) {
         result(error)
         return
       }
       result(nil)
     case "stepBackward":
-      if let error = stepAndRefresh(deltaUs: -33_333) {
+      if let error = stepAndRefresh(forward: false) {
         result(error)
         return
       }
@@ -1196,14 +1218,31 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     return nil
   }
 
-  private func stepAndRefresh(deltaUs: Int) -> FlutterError? {
+  private func stepAndRefresh(forward: Bool) -> FlutterError? {
     stopNativeFramePump()
-    nativePlayer?.pause()
     isPlaying = false
-    currentPtsUs = nativePlayer?.currentPtsUs() ?? currentPtsUs
-    currentPtsUs = max(0, min(activeDurationUs(), currentPtsUs + deltaUs))
-    if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
-      return error
+    guard let nativePlayer,
+          let texture else {
+      return nil
+    }
+    do {
+      if forward {
+        try nativePlayer.stepForward()
+      } else {
+        try nativePlayer.stepBackward()
+      }
+      let frameInfo = try texture.updateFromNativePlayer(
+        nativePlayer,
+        maxTrackSlots: activeTrackSlotCapacity(),
+        waitTimeoutMs: 3_000
+      )
+      publishFrameInfo(frameInfo)
+    } catch {
+      return FlutterError(
+        code: "STEP_FAILED",
+        message: "Failed to step macOS native playback",
+        details: "\(error)"
+      )
     }
     markFrameAvailable()
     return nil

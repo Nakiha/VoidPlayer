@@ -224,6 +224,12 @@ int VPMacOSNativePlayerCopyLayoutPresentationParams(
     int32_t height,
     VPMacOSNativeLayoutPresentationParams* out);
 void VPMacOSNativePlayerSeek(VPMacOSNativePlayer* player, int64_t pts_us);
+int VPMacOSNativePlayerStepForward(VPMacOSNativePlayer* player,
+                                   char* error,
+                                   size_t error_size);
+int VPMacOSNativePlayerStepBackward(VPMacOSNativePlayer* player,
+                                    char* error,
+                                    size_t error_size);
 
 int64_t VPMacOSNativePlayerCurrentPtsUs(VPMacOSNativePlayer* player);
 int64_t VPMacOSNativePlayerDurationUs(VPMacOSNativePlayer* player);

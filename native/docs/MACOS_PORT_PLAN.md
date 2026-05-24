@@ -25,7 +25,8 @@ current renderer unification work is tracked in
   path, and callbacks publish the native upload result's frame metadata rather than rebuilding it
   from scheduler stats in Swift. Renderer-owned upload success/failure counters are now tracked by
   native presentation state and surfaced to Dart diagnostics. CVPixelBuffer hardware-frame uploads
-  are distinguished from staged YUV package uploads in diagnostics.
+  are distinguished from staged YUV package uploads in diagnostics. Step-forward/backward commands
+  now call native shared step policy instead of applying fixed PTS deltas in Swift.
 - macOS analysis FFI can build and answer basic handle/base-generation calls, while analysis windows
   and overlays remain capability-gated.
 

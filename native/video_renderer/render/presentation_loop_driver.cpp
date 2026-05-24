@@ -58,6 +58,28 @@ PresentDecision PresentationLoopDriver::current_present_decision(RenderSink* ren
     return render_sink ? render_sink->evaluate() : PresentDecision();
 }
 
+void PresentationLoopDriver::publish_present_decision(const PresentDecision& decision) {
+    cached_present_decision_ = decision;
+    stats_.cached_present_decision_available = decision.should_present;
+    if (!decision.should_present) {
+        stats_.last_present_frame_count = 0;
+        return;
+    }
+    int64_t selected_pts_us = kNoTimestampUs;
+    int32_t frame_count = 0;
+    for (const auto& frame : decision.frames) {
+        if (!frame.has_value()) {
+            continue;
+        }
+        ++frame_count;
+        if (selected_pts_us == kNoTimestampUs || frame->pts_us < selected_pts_us) {
+            selected_pts_us = frame->pts_us;
+        }
+    }
+    stats_.last_selected_pts_us = selected_pts_us;
+    stats_.last_present_frame_count = frame_count;
+}
+
 void PresentationLoopDriver::reset_presentation_state() {
     scheduler_.reset();
     clear_cached_present_decision();

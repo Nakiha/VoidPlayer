@@ -38,6 +38,7 @@ public:
 
     bool advance_to_clock(RenderSink& render_sink, int64_t* selected_pts_us = nullptr) const;
     PresentDecision current_present_decision(RenderSink* render_sink);
+    void publish_present_decision(const PresentDecision& decision);
     void reset_presentation_state();
     void clear_cached_present_decision();
 

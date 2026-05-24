@@ -81,6 +81,23 @@ int main() {
     return fail("cached present decision did not preserve track identity");
   }
 
+  vr::PresentDecision manual;
+  manual.should_present = true;
+  manual.current_pts_us = 33'333;
+  manual.frames[0] = make_frame(33'333);
+  manual.file_ids[0] = 84;
+  manual.track_generations[0] = 8;
+  driver.publish_present_decision(manual);
+  cached = driver.current_present_decision(&render_sink);
+  stats = driver.stats();
+  if (!cached.should_present ||
+      cached.file_ids[0] != 84 ||
+      stats.last_selected_pts_us != 33'333 ||
+      stats.last_present_frame_count != 1 ||
+      !stats.cached_present_decision_available) {
+    return fail("manual presentation decision publication did not update cache");
+  }
+
   driver.reset_presentation_state();
   stats = driver.stats();
   if (stats.tick_count != 2 ||

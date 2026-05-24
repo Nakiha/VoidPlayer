@@ -17,9 +17,12 @@
 #include "video_renderer/render/presentation_snapshot.h"
 #include "video_renderer/render/shader_constants.h"
 #include "video_renderer/capture/bgra_capture_metrics.h"
+#include "video_renderer/playback/renderer_playback_command_policy.h"
 #include "video_renderer/seek/seek_coordinator.h"
 #include "video_renderer/sync/render_sink.h"
+#include "video_renderer/track/track_preview_policy.h"
 #include "video_renderer/track/track_pipeline_factory.h"
+#include "video_renderer/track/track_step_policy.h"
 
 #include <CoreVideo/CoreVideo.h>
 
@@ -563,7 +566,7 @@ public:
     return false;
   }
 
-  void seek(int64_t pts_us) {
+  void seek(int64_t pts_us, vr::SeekType type = vr::SeekType::Exact) {
     const int64_t target = std::max<int64_t>(0, pts_us);
     for (auto& track : tracks_) {
       if (!track || !track->seek_controller || !track->track_buffer || !track->packet_queue) {
@@ -573,7 +576,7 @@ public:
       track->track_buffer->set_state(vr::TrackState::Flushing);
       track->track_buffer->clear_frames();
       track->packet_queue->flush();
-      track->seek_controller->request_seek(track_target, vr::SeekType::Exact);
+      track->seek_controller->request_seek(track_target, type);
     }
     auto* primary = find_track_by_file_id(0);
     if (primary && primary->audio_packet_queue) {
@@ -581,6 +584,124 @@ public:
     }
     playback_.seek_clock(target);
     presentation_loop_driver_.reset_presentation_state();
+  }
+
+  bool step_forward(std::string& error) {
+    if (!render_sink_ || !tracks_.has_active_tracks()) {
+      error = "player is not open";
+      return false;
+    }
+    const auto step_plan =
+        vr::plan_renderer_step_command(true, vr::has_buffering_track(tracks_));
+    if (!step_plan.execute) {
+      error = "step forward is not ready";
+      return false;
+    }
+
+    if (step_plan.pause_clock) {
+      pause();
+    }
+    const auto set_video_decode_paused = [this](bool paused) {
+      vr::apply_track_video_decode_pause_state(
+          tracks_,
+          paused,
+          [](size_t, vr::TrackPipeline& track, bool next_paused) {
+            if (track.decode_thread) {
+              track.decode_thread->set_decode_paused(next_paused);
+            }
+          });
+    };
+    const auto build_decision = [this](const vr::PresentDecision& last_decision,
+                                       vr::PresentDecision& decision) {
+      return vr::build_step_forward_decision(
+          tracks_,
+          playback_.clock().current_pts_us(),
+          vr::compute_min_current_frame_duration_us(tracks_),
+          last_decision,
+          decision);
+    };
+    const auto apply_decision = [this](const vr::PresentDecision& last_decision,
+                                       const vr::PresentDecision& decision) {
+      return vr::apply_step_forward_decision(
+          tracks_,
+          playback_.clock().current_pts_us(),
+          decision,
+          last_decision);
+    };
+
+    vr::PresentDecision last_decision = current_present_decision();
+    vr::PresentDecision step_decision;
+    if (build_decision(last_decision, step_decision)) {
+      const auto application = apply_decision(last_decision, step_decision);
+      if (application.has_clock_target) {
+        playback_.clock().seek(application.clock_target_us);
+        step_decision.current_pts_us = application.clock_target_us;
+      }
+      presentation_loop_driver_.publish_present_decision(step_decision);
+      return true;
+    }
+
+    vr::discard_step_forward_consumed_frames(
+        tracks_, playback_.clock().current_pts_us(), last_decision, last_decision);
+    set_video_decode_paused(false);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(180);
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (build_decision(last_decision, step_decision)) {
+        set_video_decode_paused(true);
+        const auto application = apply_decision(last_decision, step_decision);
+        if (application.has_clock_target) {
+          playback_.clock().seek(application.clock_target_us);
+          step_decision.current_pts_us = application.clock_target_us;
+        }
+        presentation_loop_driver_.publish_present_decision(step_decision);
+        return true;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+
+    set_video_decode_paused(true);
+    const auto fallback_seek = vr::choose_step_forward_exact_seek_target(
+        tracks_,
+        playback_.clock().current_pts_us(),
+        duration_us_,
+        last_decision);
+    seek(fallback_seek.target_pts_us, vr::SeekType::ExactStepForward);
+    return true;
+  }
+
+  bool step_backward(std::string& error) {
+    if (!render_sink_ || !tracks_.has_active_tracks()) {
+      error = "player is not open";
+      return false;
+    }
+    const auto step_plan =
+        vr::plan_renderer_step_command(true, vr::has_buffering_track(tracks_));
+    if (!step_plan.execute) {
+      error = "step backward is not ready";
+      return false;
+    }
+
+    if (step_plan.pause_clock) {
+      pause();
+    }
+    if (vr::retreat_tracks_if_all_can_retreat(tracks_)) {
+      const auto application = vr::choose_step_backward_retreat_application(tracks_);
+      if (application.has_clock_target) {
+        playback_.clock().seek(application.clock_target_us);
+      }
+      auto snapshot = vr::build_available_paused_frame_snapshot(tracks_);
+      if (snapshot.has_frame) {
+        snapshot.decision.current_pts_us = playback_.clock().current_pts_us();
+        snapshot.decision.should_present = true;
+        presentation_loop_driver_.publish_present_decision(snapshot.decision);
+      }
+      return true;
+    }
+
+    const auto fallback_seek = vr::choose_step_backward_exact_seek_target(
+        tracks_, playback_.clock().current_pts_us());
+    seek(fallback_seek.target_pts_us, vr::SeekType::Exact);
+    return true;
   }
 
   bool add_track(const char* path,
@@ -880,7 +1001,7 @@ private:
   }
 
   std::unique_ptr<vr::RenderSink> render_sink_;
-  std::array<std::unique_ptr<vr::TrackPipeline>, vr::kMaxTracks> tracks_{};
+  vr::TrackPipelineManager tracks_;
   vr::TrackPipelineFactory track_pipeline_factory_;
   vr::PlaybackController playback_;
   int32_t width_ = 0;
@@ -900,21 +1021,11 @@ private:
   }
 
   int first_free_slot() const {
-    for (size_t i = 0; i < tracks_.size(); ++i) {
-      if (!tracks_[i]) {
-        return static_cast<int>(i);
-      }
-    }
-    return -1;
+    return tracks_.find_empty_slot();
   }
 
   int slot_for_file_id(int file_id) const {
-    for (size_t i = 0; i < tracks_.size(); ++i) {
-      if (tracks_[i] && tracks_[i]->file_id == file_id) {
-        return static_cast<int>(i);
-      }
-    }
-    return -1;
+    return tracks_.find_slot_by_file_id(file_id);
   }
 
   vr::TrackPipeline* find_track_by_file_id(int32_t file_id) {
@@ -941,7 +1052,8 @@ private:
       return false;
     }
     const int slot = primary ? 0 : first_free_slot();
-    if (slot < 0 || slot >= static_cast<int>(tracks_.size()) || tracks_[slot]) {
+    if (slot < 0 || slot >= static_cast<int>(vr::kMaxTracks) ||
+        tracks_[static_cast<size_t>(slot)]) {
       error = "no free macOS native track slots";
       return false;
     }
@@ -1454,6 +1566,40 @@ void VPMacOSNativePlayerSeek(VPMacOSNativePlayer* player, int64_t pts_us) {
   }
   std::lock_guard<std::mutex> lock(player->mutex);
   player->core.seek(pts_us);
+}
+
+int VPMacOSNativePlayerStepForward(VPMacOSNativePlayer* player,
+                                   char* error,
+                                   size_t error_size) {
+  if (!player) {
+    write_error(error, error_size, "player is null");
+    return -1;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  std::string message;
+  if (!player->core.step_forward(message)) {
+    write_error(error, error_size, message);
+    return -1;
+  }
+  write_error(error, error_size, "");
+  return 0;
+}
+
+int VPMacOSNativePlayerStepBackward(VPMacOSNativePlayer* player,
+                                    char* error,
+                                    size_t error_size) {
+  if (!player) {
+    write_error(error, error_size, "player is null");
+    return -1;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  std::string message;
+  if (!player->core.step_backward(message)) {
+    write_error(error, error_size, message);
+    return -1;
+  }
+  write_error(error, error_size, "");
+  return 0;
 }
 
 int64_t VPMacOSNativePlayerCurrentPtsUs(VPMacOSNativePlayer* player) {

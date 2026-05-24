@@ -114,6 +114,8 @@ failures are counted in diagnostics instead, making renderer-owned presentation 
 Renderer-owned callbacks now publish the native upload result's frame metadata instead of
 reconstructing presented PTS/DTS from scheduler stats in Swift. Renderer-owned upload success and
 failure counters are owned by the native presentation target and exposed through diagnostics.
+macOS step-forward/backward now reuses the portable native step policy and publishes paused-frame
+decisions through the shared presentation loop driver.
 The host loop itself remains the main cleanup target for this phase.
 
 Exit gate: macOS UI smokes pass with `rendererOwnedPresentationActive=true`, and the old tick-driven

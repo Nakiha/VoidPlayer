@@ -1,6 +1,4 @@
 resources/video/** filter=lfs diff=lfs merge=lfs -text
-*.mp4 filter=lfs diff=lfs merge=lfs -text
-*.webm filter=lfs diff=lfs merge=lfs -text
 resources/video/ci_h264_smoke.mp4 -filter -diff -merge -text
 
 # FFmpeg DLLs via LFS

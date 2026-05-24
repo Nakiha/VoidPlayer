@@ -32,6 +32,7 @@
 4.77, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFramePtsSampleCount, 20
 4.775, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFramePtsDistinctCount, 20
 4.78, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFramePtsAdvanceUs, 500000
+4.782, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameDurationLastUs, 1
 4.785, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, presentedFramePtsMonotonicViolationCount, 0, 0
 4.8, CAPTURE_VIEWPORT, native_4k60_after_play
 4.9, ASSERT_CAPTURE_CHANGED, native_4k60_start, native_4k60_after_play

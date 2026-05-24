@@ -1099,6 +1099,7 @@ struct VPMacOSNativePlayer {
       VPMacOSFrameAvailableCallback callback = nullptr;
       void* user_data = nullptr;
       bool renderer_owned_upload_succeeded = false;
+      VPMacOSNativeFrameInfo renderer_owned_frame_info = {};
       {
         std::lock_guard<std::mutex> callback_lock(callback_mutex);
         callback = frame_available_callback;
@@ -1119,8 +1120,15 @@ struct VPMacOSNativePlayer {
               error,
               sizeof(error));
           renderer_owned_upload_succeeded = upload_ret == 0;
+          if (renderer_owned_upload_succeeded) {
+            renderer_owned_frame_info = frame_info;
+          }
         }
         last_renderer_owned_presentation_succeeded = renderer_owned_upload_succeeded;
+        last_renderer_owned_frame_info_available = renderer_owned_upload_succeeded;
+        if (renderer_owned_upload_succeeded) {
+          last_renderer_owned_frame_info = renderer_owned_frame_info;
+        }
       }
       if (callback) {
         callback(user_data);
@@ -1140,6 +1148,8 @@ struct VPMacOSNativePlayer {
   int32_t presentation_target_height = 0;
   int32_t presentation_target_max_track_slots = 1;
   bool last_renderer_owned_presentation_succeeded = false;
+  bool last_renderer_owned_frame_info_available = false;
+  VPMacOSNativeFrameInfo last_renderer_owned_frame_info = {};
   std::mutex tick_mutex;
   std::condition_variable tick_cv;
   std::chrono::microseconds next_tick_sleep{std::chrono::milliseconds(1)};
@@ -1250,6 +1260,8 @@ int VPMacOSNativePlayerSetMetalPresentationTarget(
       std::clamp(max_track_slots, static_cast<int32_t>(1),
                  static_cast<int32_t>(VPMacOSNativeMaxTracks));
   player->last_renderer_owned_presentation_succeeded = false;
+  player->last_renderer_owned_frame_info_available = false;
+  player->last_renderer_owned_frame_info = {};
   return 0;
 }
 
@@ -1264,6 +1276,8 @@ void VPMacOSNativePlayerClearMetalPresentationTarget(VPMacOSNativePlayer* player
   player->presentation_target_height = 0;
   player->presentation_target_max_track_slots = 1;
   player->last_renderer_owned_presentation_succeeded = false;
+  player->last_renderer_owned_frame_info_available = false;
+  player->last_renderer_owned_frame_info = {};
 }
 
 int VPMacOSNativePlayerRendererOwnedPresentationActive(VPMacOSNativePlayer* player) {
@@ -1283,6 +1297,20 @@ int VPMacOSNativePlayerLastRendererOwnedPresentationSucceeded(
   }
   std::lock_guard<std::mutex> lock(player->callback_mutex);
   return player->last_renderer_owned_presentation_succeeded ? 1 : 0;
+}
+
+int VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativeFrameInfo* out) {
+  if (!player || !out) {
+    return -1;
+  }
+  std::lock_guard<std::mutex> lock(player->callback_mutex);
+  if (!player->last_renderer_owned_frame_info_available) {
+    return -1;
+  }
+  *out = player->last_renderer_owned_frame_info;
+  return 0;
 }
 
 void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player) {

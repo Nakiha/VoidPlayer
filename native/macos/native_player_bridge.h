@@ -190,6 +190,9 @@ int VPMacOSNativePlayerSetMetalPresentationTarget(
 void VPMacOSNativePlayerClearMetalPresentationTarget(VPMacOSNativePlayer* player);
 int VPMacOSNativePlayerRendererOwnedPresentationActive(VPMacOSNativePlayer* player);
 int VPMacOSNativePlayerLastRendererOwnedPresentationSucceeded(VPMacOSNativePlayer* player);
+int VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativeFrameInfo* out);
 
 void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerPause(VPMacOSNativePlayer* player);

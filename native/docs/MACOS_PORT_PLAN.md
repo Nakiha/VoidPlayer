@@ -22,7 +22,8 @@ current renderer unification work is tracked in
   portable `PresentationLoopDriver`; Swift coalesces duplicate copy requests so the transition path
   does not queue stale uploads under 4K load. When the native Metal presentation target is active,
   upload failures stay visible in diagnostics instead of silently falling back to the old Swift copy
-  path.
+  path, and callbacks publish the native upload result's frame metadata rather than rebuilding it
+  from scheduler stats in Swift.
 - macOS analysis FFI can build and answer basic handle/base-generation calls, while analysis windows
   and overlays remain capability-gated.
 

@@ -151,6 +151,20 @@ private final class MacOSNativePlayerSession {
     VPMacOSNativePlayerLastRendererOwnedPresentationSucceeded(handle) != 0
   }
 
+  func lastRendererOwnedFrameInfo() -> MacOSNativeFrameInfo? {
+    var info = VPMacOSNativeFrameInfo()
+    guard VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(handle, &info) == 0 else {
+      return nil
+    }
+    return MacOSNativeFrameInfo(
+      width: Int(info.width),
+      height: Int(info.height),
+      durationUs: Int(info.duration_us),
+      ptsUs: Int(info.pts_us),
+      dtsUs: Int(info.dts_us)
+    )
+  }
+
   func play() {
     VPMacOSNativePlayerPlay(handle)
   }
@@ -505,6 +519,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private var currentDurationUs = 0
   private var lastPresentedPtsUs: Int?
   private var lastPresentedDtsUs: Int?
+  private var lastPresentedDurationUs: Int?
   private var isPlaying = false
   private var backendName = "synthetic-texture"
   private var nativePlayer: MacOSNativePlayerSession?
@@ -652,6 +667,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
           : [
               "ptsUs": lastPresentedPtsUs ?? currentPtsUs,
               "dtsUs": lastPresentedDtsUs ?? lastPresentedPtsUs ?? currentPtsUs,
+              "durationUs": lastPresentedDurationUs ?? 0,
             ]
       )
     case "isPlaying":
@@ -758,6 +774,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "presentedFramePtsDistinctCount": presentedPtsDistinctCount,
         "presentedFramePtsFirstUs": presentedPtsFirstUs ?? -1,
         "presentedFramePtsLastUs": lastPresentedPtsUs ?? -1,
+        "presentedFrameDtsLastUs": lastPresentedDtsUs ?? -1,
+        "presentedFrameDurationLastUs": lastPresentedDurationUs ?? 0,
         "presentedFramePtsAdvanceUs": presentedPtsAdvanceUs(),
         "presentedFramePtsLastStepUs": presentedPtsLastStepUs,
         "presentedFramePtsMonotonicViolationCount": presentedPtsMonotonicViolationCount,
@@ -903,6 +921,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     currentPtsUs = initialPresentedPtsUs
     lastPresentedPtsUs = initialPresentedPtsUs
     lastPresentedDtsUs = initialPresentedDtsUs
+    lastPresentedDurationUs = trackDurationUs
     isPlaying = false
     markFrameAvailable()
 
@@ -939,6 +958,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     currentDurationUs = 0
     lastPresentedPtsUs = nil
     lastPresentedDtsUs = nil
+    lastPresentedDurationUs = nil
     isPlaying = false
     backendName = "synthetic-texture"
     nativePlayer?.close()
@@ -1181,6 +1201,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     currentPtsUs = info.ptsUs
     lastPresentedPtsUs = info.ptsUs
     lastPresentedDtsUs = normalizedDtsUs(info)
+    lastPresentedDurationUs = info.durationUs
     recordPresentedPts(info.ptsUs)
   }
 
@@ -1321,15 +1342,9 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
           self.nativeFrameCopyFirstHostNs = now
         }
         self.nativeFrameCopyLastHostNs = now
-        if let stats = self.nativePlayer?.presentationSchedulerStats(),
-           let pts = stats["lastSelectedPtsUs"] as? Int64,
-           pts >= 0 {
-          let ptsInt = Int(pts)
-          self.currentPtsUs = ptsInt
-          self.lastPresentedPtsUs = ptsInt
-          self.lastPresentedDtsUs = ptsInt
-          self.recordPresentedPts(ptsInt)
-          if ptsInt >= self.activeDurationUs() {
+        if let frameInfo = self.nativePlayer?.lastRendererOwnedFrameInfo() {
+          self.publishFrameInfo(frameInfo)
+          if frameInfo.ptsUs >= self.activeDurationUs() {
             self.isPlaying = false
             self.nativePlayer?.pause()
             self.stopNativeFramePump()

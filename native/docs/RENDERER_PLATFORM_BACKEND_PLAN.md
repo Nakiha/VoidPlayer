@@ -119,7 +119,11 @@ Renderer-owned callbacks now publish the native upload result's frame metadata i
 reconstructing presented PTS/DTS from scheduler stats in Swift. Renderer-owned upload success and
 failure counters are owned by the native presentation target and exposed through diagnostics.
 macOS step-forward/backward now reuses the portable native step policy and publishes paused-frame
-decisions through the shared presentation loop driver.
+decisions through the shared presentation loop driver. The portable scheduler now keys frame
+notifications by the per-slot presented-frame signature instead of only the first selected PTS, and
+the macOS bridge applies the shared carry-forward policy before caching a present decision. Multi-track
+macOS presentation therefore follows the Windows rule that tracks with no new frame keep their last
+valid frame instead of being silently dropped from the current upload.
 The host loop itself remains the main cleanup target for this phase.
 
 Exit gate: macOS UI smokes pass with `rendererOwnedPresentationActive=true`, and the old tick-driven
@@ -133,7 +137,7 @@ Goal: make Metal do the same job D3D11 does today.
   inside the macOS presentation backend.
 - [x] Present BGRA, NV12, planar YUV420, and P010 through a single Metal shader contract derived from
   the D3D11 layout/color constants.
-- [ ] Preserve track identity, carry-forward, per-track source dimensions, padded stride semantics,
+- [x] Preserve track identity, carry-forward, per-track source dimensions, padded stride semantics,
   and multi-track composition.
 - [ ] Add deterministic CPU-vs-Metal and D3D11-contract parity tests before raising performance
   thresholds.

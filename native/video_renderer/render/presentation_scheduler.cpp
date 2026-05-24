@@ -1,5 +1,6 @@
 #include "video_renderer/render/presentation_scheduler.h"
 
+#include <cstddef>
 #include <limits>
 
 namespace vr {
@@ -20,8 +21,22 @@ bool first_presented_frame_pts(const PresentDecision& decision, int64_t& pts_us)
 
 } // namespace
 
+PresentationScheduler::PresentedSignature PresentationScheduler::signature_for(
+    const PresentDecision& decision) {
+    PresentedSignature signature;
+    signature.should_present = decision.should_present;
+    signature.file_ids = decision.file_ids;
+    signature.track_generations = decision.track_generations;
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        signature.has_frame[i] = decision.frames[i].has_value();
+        signature.pts_us[i] =
+            decision.frames[i].has_value() ? decision.frames[i]->pts_us : kNoTimestampUs;
+    }
+    return signature;
+}
+
 void PresentationScheduler::reset() {
-    last_presented_pts_us_ = kNoTimestampUs;
+    last_presented_signature_ = {};
 }
 
 PresentationSchedulerTick PresentationScheduler::tick(RenderSink& render_sink) {
@@ -35,11 +50,16 @@ PresentationSchedulerTick PresentationScheduler::tick(RenderSink& render_sink) {
 
     result.has_presentable_frame = true;
     result.selected_pts_us = pts_us;
-    if (pts_us == last_presented_pts_us_) {
+    const auto signature = signature_for(result.decision);
+    if (signature.should_present == last_presented_signature_.should_present &&
+        signature.has_frame == last_presented_signature_.has_frame &&
+        signature.pts_us == last_presented_signature_.pts_us &&
+        signature.file_ids == last_presented_signature_.file_ids &&
+        signature.track_generations == last_presented_signature_.track_generations) {
         return result;
     }
 
-    last_presented_pts_us_ = pts_us;
+    last_presented_signature_ = signature;
     result.should_notify = true;
     return result;
 }

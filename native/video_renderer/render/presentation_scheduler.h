@@ -2,6 +2,7 @@
 
 #include "video_renderer/sync/render_sink.h"
 
+#include <array>
 #include <cstdint>
 
 namespace vr {
@@ -21,7 +22,17 @@ public:
     bool advance_to_clock(RenderSink& render_sink, int64_t* selected_pts_us = nullptr) const;
 
 private:
-    int64_t last_presented_pts_us_ = kNoTimestampUs;
+    struct PresentedSignature {
+        bool should_present = false;
+        std::array<bool, kMaxTracks> has_frame{};
+        std::array<int64_t, kMaxTracks> pts_us{};
+        std::array<int, kMaxTracks> file_ids{};
+        std::array<uint64_t, kMaxTracks> track_generations{};
+    };
+
+    static PresentedSignature signature_for(const PresentDecision& decision);
+
+    PresentedSignature last_presented_signature_;
 };
 
 } // namespace vr

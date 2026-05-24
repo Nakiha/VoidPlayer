@@ -1073,6 +1073,7 @@ public:
       return {};
     }
     const int64_t current_pts_us = playback_.clock().current_pts_us();
+    const auto previous_decision = current_present_decision();
     auto tick = presentation_loop_driver_.tick(
         *render_sink_,
         playing_,
@@ -1080,6 +1081,13 @@ public:
         playback_.clock().speed(),
         next_frame_event_pts_us(current_pts_us),
         max_sleep);
+    if (tick.scheduler.has_presentable_frame) {
+      auto decision = tick.scheduler.decision;
+      filter_present_decision_against_tracks(decision, tracks_);
+      apply_present_carry_forward(tracks_, previous_decision, decision);
+      presentation_loop_driver_.publish_present_decision(decision);
+      tick.scheduler.decision = decision;
+    }
     settle_eof_if_ready();
     return tick;
   }

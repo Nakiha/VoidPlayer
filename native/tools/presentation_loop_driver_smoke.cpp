@@ -20,6 +20,12 @@ vr::TextureFrame make_frame(int64_t pts_us) {
   return frame;
 }
 
+vr::TextureFrame make_frame_with_duration(int64_t pts_us, int64_t duration_us) {
+  auto frame = make_frame(pts_us);
+  frame.duration_us = duration_us;
+  return frame;
+}
+
 }  // namespace
 
 int main() {
@@ -118,6 +124,47 @@ int main() {
   if (!tick.scheduler.should_notify ||
       tick.scheduler.selected_pts_us != 33'333) {
     return fail("presentation loop did not advance to the next frame");
+  }
+
+  now_us = 0;
+  clock.seek(0);
+  auto primary = std::make_shared<vr::TrackBuffer>();
+  primary->push_frame(make_frame_with_duration(0, 100'000));
+  primary->set_state(vr::TrackState::Ready);
+  auto secondary = std::make_shared<vr::TrackBuffer>();
+  secondary->push_frame(make_frame(0));
+  secondary->push_frame(make_frame(33'333));
+  secondary->set_state(vr::TrackState::Ready);
+
+  vr::RenderSink multitrack_sink(clock);
+  multitrack_sink.set_track(0, primary, 1, 1);
+  multitrack_sink.set_track(1, secondary, 2, 1);
+
+  vr::PresentationLoopDriver multitrack_driver;
+  tick = multitrack_driver.tick(
+      multitrack_sink,
+      true,
+      clock.current_pts_us(),
+      clock.speed(),
+      33'333,
+      std::chrono::microseconds(8'000));
+  if (!tick.scheduler.should_notify) {
+    return fail("multitrack first presentation tick did not publish");
+  }
+  now_us = 40'000;
+  tick = multitrack_driver.tick(
+      multitrack_sink,
+      true,
+      clock.current_pts_us(),
+      clock.speed(),
+      66'666,
+      std::chrono::microseconds(8'000));
+  if (!tick.scheduler.should_notify ||
+      !tick.scheduler.decision.frames[0].has_value() ||
+      !tick.scheduler.decision.frames[1].has_value() ||
+      tick.scheduler.decision.frames[0]->pts_us != 0 ||
+      tick.scheduler.decision.frames[1]->pts_us != 33'333) {
+    return fail("multitrack presentation tick coalesced a secondary-track frame");
   }
 
   driver.reset();

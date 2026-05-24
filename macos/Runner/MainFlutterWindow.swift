@@ -1675,6 +1675,8 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
   private var decodedBGRA: Data?
   private let hashPrefix: String
   private var pixelBuffer: CVPixelBuffer?
+  private var pixelBufferBackBuffer: CVPixelBuffer?
+  private var pixelBufferRetiredBuffer: CVPixelBuffer?
   private var pixelBufferRebuildCount = 0
   private var pixelBufferReuseCount = 0
   private var pixelBufferDirectCopyCount = 0
@@ -1750,9 +1752,10 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
     decodedBGRA = decoded.bgra
     if sizeChanged || pixelBuffer == nil {
       rebuildPixelBufferLocked()
-    } else if let pixelBuffer {
-      copyBGRA(decoded.bgra, to: pixelBuffer)
-      validateMetalTextureLocked(buffer: pixelBuffer)
+    } else if let targetBuffer = ensureBackPixelBufferLocked() {
+      copyBGRA(decoded.bgra, to: targetBuffer)
+      publishBackBufferLocked(targetBuffer)
+      validateMetalTextureLocked(buffer: targetBuffer)
       pixelBufferReuseCount += 1
     }
   }
@@ -1787,12 +1790,16 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       }
     }
 
-    CVPixelBufferLockBaseAddress(pixelBuffer, [])
-    guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
-      CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+    guard let targetBuffer = ensureBackPixelBufferLocked() else {
       throw MacOSNativePlayerError.invalidPayload
     }
-    let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+
+    CVPixelBufferLockBaseAddress(targetBuffer, [])
+    guard let baseAddress = CVPixelBufferGetBaseAddress(targetBuffer) else {
+      CVPixelBufferUnlockBaseAddress(targetBuffer, [])
+      throw MacOSNativePlayerError.invalidPayload
+    }
+    let bytesPerRow = CVPixelBufferGetBytesPerRow(targetBuffer)
     let dstSize = bytesPerRow * height
     let info: MacOSNativeFrameInfo
     do {
@@ -1805,11 +1812,12 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
         waitTimeoutMs: waitTimeoutMs
       )
     } catch {
-      CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+      CVPixelBufferUnlockBaseAddress(targetBuffer, [])
       throw error
     }
-    CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
-    validateMetalTextureLocked(buffer: pixelBuffer)
+    CVPixelBufferUnlockBaseAddress(targetBuffer, [])
+    publishBackBufferLocked(targetBuffer)
+    validateMetalTextureLocked(buffer: targetBuffer)
     pixelBufferReuseCount += 1
     pixelBufferDirectCopyCount += 1
     return info
@@ -1944,17 +1952,10 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       kCVPixelBufferIOSurfacePropertiesKey as String: [:],
     ] as CFDictionary
 
-    var nextBuffer: CVPixelBuffer?
-    let status = CVPixelBufferCreate(
-      kCFAllocatorDefault,
-      width,
-      height,
-      kCVPixelFormatType_32BGRA,
-      attributes,
-      &nextBuffer
-    )
-    guard status == kCVReturnSuccess, let nextBuffer else {
+    guard let nextBuffer = makePixelBufferLocked(attributes: attributes) else {
       pixelBuffer = nil
+      pixelBufferBackBuffer = nil
+      pixelBufferRetiredBuffer = nil
       return
     }
     pixelBufferRebuildCount += 1
@@ -1965,7 +1966,62 @@ private final class MacOSSyntheticTexture: NSObject, FlutterTexture {
       fill(buffer: nextBuffer)
     }
     pixelBuffer = nextBuffer
+    pixelBufferBackBuffer = makePixelBufferLocked(attributes: attributes)
+    pixelBufferRetiredBuffer = makePixelBufferLocked(attributes: attributes)
     validateMetalTextureLocked(buffer: nextBuffer)
+  }
+
+  private func makePixelBufferLocked(attributes: CFDictionary) -> CVPixelBuffer? {
+    var nextBuffer: CVPixelBuffer?
+    let status = CVPixelBufferCreate(
+      kCFAllocatorDefault,
+      width,
+      height,
+      kCVPixelFormatType_32BGRA,
+      attributes,
+      &nextBuffer
+    )
+    guard status == kCVReturnSuccess else { return nil }
+    return nextBuffer
+  }
+
+  private func makePixelBufferLocked() -> CVPixelBuffer? {
+    let attributes = [
+      kCVPixelBufferCGImageCompatibilityKey as String: true,
+      kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
+      kCVPixelBufferMetalCompatibilityKey as String: true,
+      kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+    ] as CFDictionary
+    return makePixelBufferLocked(attributes: attributes)
+  }
+
+  private func ensureBackPixelBufferLocked() -> CVPixelBuffer? {
+    if let pixelBufferBackBuffer,
+       CVPixelBufferGetWidth(pixelBufferBackBuffer) == width,
+       CVPixelBufferGetHeight(pixelBufferBackBuffer) == height {
+      return pixelBufferBackBuffer
+    }
+    pixelBufferBackBuffer = makePixelBufferLocked()
+    return pixelBufferBackBuffer
+  }
+
+  private func publishBackBufferLocked(_ buffer: CVPixelBuffer) {
+    let previousFront = pixelBuffer
+    let previousRetired = pixelBufferRetiredBuffer
+    pixelBuffer = buffer
+    pixelBufferRetiredBuffer = previousFront
+    if let previousFront,
+       CVPixelBufferGetWidth(previousFront) != width ||
+       CVPixelBufferGetHeight(previousFront) != height {
+      pixelBufferRetiredBuffer = nil
+    }
+    if let previousRetired,
+       CVPixelBufferGetWidth(previousRetired) == width,
+       CVPixelBufferGetHeight(previousRetired) == height {
+      pixelBufferBackBuffer = previousRetired
+    } else {
+      pixelBufferBackBuffer = makePixelBufferLocked()
+    }
   }
 
   private func createNativeMetalPresentationBackend() {

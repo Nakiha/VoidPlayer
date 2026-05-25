@@ -1,6 +1,6 @@
 #pragma once
 
-#include "video_renderer/renderer.h"
+#include "video_renderer/renderer_config.h"
 #include "video_renderer/renderer_limits.h"
 
 #include <cstdint>

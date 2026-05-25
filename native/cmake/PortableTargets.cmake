@@ -194,6 +194,15 @@ if(APPLE)
     )
     add_test(NAME layout_geometry_smoke COMMAND layout_geometry_smoke)
 
+    add_executable(renderer_config_validation_smoke
+        "${VOID_NATIVE_DIR}/tools/renderer_config_validation_smoke.cpp"
+    )
+    void_apply_native_compile_options(renderer_config_validation_smoke)
+    target_link_libraries(renderer_config_validation_smoke PRIVATE
+        void_player_portable_core
+    )
+    add_test(NAME renderer_config_validation_smoke COMMAND renderer_config_validation_smoke)
+
     add_executable(presentation_snapshot_smoke
         "${VOID_NATIVE_DIR}/tools/presentation_snapshot_smoke.cpp"
     )

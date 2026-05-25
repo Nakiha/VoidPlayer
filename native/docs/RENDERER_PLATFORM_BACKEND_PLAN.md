@@ -146,6 +146,8 @@ renderer-owned upload failures; only a successfully uploaded renderer-owned fram
 frame-available callback on the normal Metal path.
 The first-frame/paused refresh fallback that peeks a primary track frame is now a shared
 `TrackPresentPolicy` helper instead of a macOS-private frame-selection snippet.
+Renderer-owned upload bookkeeping is centralized in the macOS native player wrapper, so manual
+refresh and the transitional host loop share the same pending/success/failure accounting.
 
 Exit gate: macOS UI smokes pass with `rendererOwnedPresentationActive=true`, and the old tick-driven
 presentation path is no longer the normal route.

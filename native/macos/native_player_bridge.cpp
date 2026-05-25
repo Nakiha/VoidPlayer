@@ -1185,6 +1185,14 @@ private:
 }  // namespace
 
 struct VPMacOSNativePlayer {
+  struct RendererOwnedPresentationAttempt {
+    bool target_available = false;
+    bool succeeded = false;
+    bool pending = false;
+    VPMacOSNativeFrameInfo frame_info = {};
+    std::string error;
+  };
+
   VPMacOSNativePlayer() = default;
   ~VPMacOSNativePlayer() { stop_tick_thread(); }
 
@@ -1214,8 +1222,8 @@ struct VPMacOSNativePlayer {
 
   void run_tick_thread() {
     // Transitional macOS publication loop: it consumes the shared presentation
-    // scheduler, then asks Swift to copy the selected frame into the Flutter
-    // texture. Renderer-owned Metal presentation should replace this path.
+    // scheduler and uploads the selected draw snapshot into the Flutter texture
+    // target. The shared renderer loop should eventually own this wakeup source.
     constexpr auto kMaxPresentationSleep = std::chrono::microseconds(8000);
     std::unique_lock<std::mutex> lock(tick_mutex);
     while (!tick_stop.load()) {
@@ -1240,17 +1248,13 @@ struct VPMacOSNativePlayer {
       }
       VPMacOSFrameAvailableCallback callback = nullptr;
       void* user_data = nullptr;
-      bool renderer_owned_upload_attempted = false;
-      bool renderer_owned_upload_succeeded = false;
-      bool renderer_owned_upload_pending = false;
-      VPMacOSNativeFrameInfo renderer_owned_frame_info = {};
+      RendererOwnedPresentationAttempt presentation_attempt;
       {
         std::lock_guard<std::mutex> callback_lock(callback_mutex);
         callback = frame_available_callback;
         user_data = frame_available_user_data;
         if (presentation_target_backend && presentation_target_pixel_buffer &&
             presentation_target_width > 0 && presentation_target_height > 0) {
-          renderer_owned_upload_attempted = true;
           vr::RendererDrawSnapshot draw_snapshot;
           {
             std::lock_guard<std::mutex> player_lock(mutex);
@@ -1259,36 +1263,12 @@ struct VPMacOSNativePlayer {
                 presentation_target_width,
                 presentation_target_height);
           }
-          vr::PresentationBackendDrawHooks draw_hooks;
-          renderer_owned_upload_succeeded =
-              presentation_target_backend->impl.draw_frame(draw_snapshot, draw_hooks);
-          renderer_owned_upload_pending =
-              is_transient_presentation_error(
-                  presentation_target_backend->impl.last_error());
-          if (renderer_owned_upload_succeeded) {
-            presentation_target_backend->impl.copy_last_draw_frame_info(
-                &renderer_owned_frame_info);
-          }
-        }
-        last_renderer_owned_presentation_succeeded = renderer_owned_upload_succeeded;
-        last_renderer_owned_frame_info_available = renderer_owned_upload_succeeded;
-        if (renderer_owned_upload_succeeded) {
-          last_renderer_owned_frame_info = renderer_owned_frame_info;
-        }
-        if (renderer_owned_upload_attempted) {
-          if (renderer_owned_upload_succeeded) {
-            const auto now = std::chrono::steady_clock::now();
-            if (renderer_owned_presentation_upload_count == 0) {
-              renderer_owned_presentation_first_upload_time = now;
-            }
-            renderer_owned_presentation_last_upload_time = now;
-            ++renderer_owned_presentation_upload_count;
-          } else if (!renderer_owned_upload_pending) {
-            ++renderer_owned_presentation_failure_count;
-          }
+          presentation_attempt =
+              present_draw_snapshot_to_target_locked(draw_snapshot);
         }
       }
-      if (renderer_owned_upload_attempted && !renderer_owned_upload_succeeded) {
+      if (presentation_attempt.target_available &&
+          !presentation_attempt.succeeded) {
         lock.lock();
         continue;
       }
@@ -1321,6 +1301,60 @@ struct VPMacOSNativePlayer {
   std::chrono::microseconds next_tick_sleep{std::chrono::milliseconds(1)};
   std::atomic<bool> tick_stop{false};
   std::thread tick_thread;
+
+  RendererOwnedPresentationAttempt present_draw_snapshot_to_target_locked(
+      const vr::RendererDrawSnapshot& draw_snapshot) {
+    RendererOwnedPresentationAttempt attempt;
+    attempt.target_available =
+        presentation_target_backend && presentation_target_pixel_buffer &&
+        presentation_target_width > 0 && presentation_target_height > 0;
+    if (!attempt.target_available) {
+      attempt.error = "renderer-owned presentation target is not installed";
+      last_renderer_owned_presentation_succeeded = false;
+      last_renderer_owned_frame_info_available = false;
+      return attempt;
+    }
+    if (!draw_snapshot.decision.should_present) {
+      attempt.pending = true;
+      attempt.error = "no presentable frame is ready";
+      last_renderer_owned_presentation_succeeded = false;
+      last_renderer_owned_frame_info_available = false;
+      return attempt;
+    }
+
+    vr::PresentationBackendDrawHooks draw_hooks;
+    attempt.succeeded =
+        presentation_target_backend->impl.draw_frame(draw_snapshot, draw_hooks);
+    attempt.pending = is_transient_presentation_error(
+        presentation_target_backend->impl.last_error());
+    if (attempt.succeeded &&
+        !presentation_target_backend->impl.copy_last_draw_frame_info(
+            &attempt.frame_info)) {
+      attempt.succeeded = false;
+      attempt.pending = false;
+      attempt.error = "renderer-owned presentation upload failed";
+    } else if (!attempt.succeeded) {
+      attempt.error = presentation_target_backend->impl.last_error();
+      if (attempt.error.empty()) {
+        attempt.error = "renderer-owned presentation upload failed";
+      }
+    }
+
+    last_renderer_owned_presentation_succeeded = attempt.succeeded;
+    last_renderer_owned_frame_info_available = attempt.succeeded;
+    if (attempt.succeeded) {
+      last_renderer_owned_frame_info = attempt.frame_info;
+      const auto now = std::chrono::steady_clock::now();
+      if (renderer_owned_presentation_upload_count == 0) {
+        renderer_owned_presentation_first_upload_time = now;
+      }
+      renderer_owned_presentation_last_upload_time = now;
+      ++renderer_owned_presentation_upload_count;
+    } else if (!attempt.pending) {
+      ++renderer_owned_presentation_failure_count;
+    }
+    return attempt;
+  }
 };
 
 VPMacOSNativePlayer* VPMacOSNativePlayerCreate(void) {
@@ -1532,58 +1566,34 @@ int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
   }
   *out = {};
   std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
-  if (!player->presentation_target_backend ||
-      !player->presentation_target_pixel_buffer ||
-      player->presentation_target_width <= 0 ||
-      player->presentation_target_height <= 0) {
-    write_error(error, error_size, "renderer-owned presentation target is not installed");
-    return -1;
-  }
-
   vr::RendererDrawSnapshot draw_snapshot;
   {
+    if (!player->presentation_target_backend ||
+        !player->presentation_target_pixel_buffer ||
+        player->presentation_target_width <= 0 ||
+        player->presentation_target_height <= 0) {
+      write_error(error, error_size, "renderer-owned presentation target is not installed");
+      return -1;
+    }
     std::lock_guard<std::mutex> player_lock(player->mutex);
     draw_snapshot = player->core.draw_snapshot_for_current_frame(
         player->presentation_target_width,
         player->presentation_target_height);
   }
-  if (!draw_snapshot.decision.should_present) {
-    player->last_renderer_owned_presentation_succeeded = false;
-    player->last_renderer_owned_frame_info_available = false;
-    write_error(error, error_size, "no presentable frame is ready");
-    return -1;
-  }
 
-  vr::PresentationBackendDrawHooks draw_hooks;
-  const bool succeeded =
-      player->presentation_target_backend->impl.draw_frame(draw_snapshot, draw_hooks);
-  player->last_renderer_owned_presentation_succeeded = succeeded;
-  player->last_renderer_owned_frame_info_available = succeeded;
-  if (succeeded &&
-      player->presentation_target_backend->impl.copy_last_draw_frame_info(out)) {
-    player->last_renderer_owned_frame_info = *out;
-    const auto now = std::chrono::steady_clock::now();
-    if (player->renderer_owned_presentation_upload_count == 0) {
-      player->renderer_owned_presentation_first_upload_time = now;
-    }
-    player->renderer_owned_presentation_last_upload_time = now;
-    ++player->renderer_owned_presentation_upload_count;
+  const auto attempt =
+      player->present_draw_snapshot_to_target_locked(draw_snapshot);
+  if (attempt.succeeded) {
+    *out = attempt.frame_info;
     write_error(error, error_size, "");
     return 0;
   }
 
-  player->last_renderer_owned_presentation_succeeded = false;
-  player->last_renderer_owned_frame_info_available = false;
-  const auto& backend_error =
-      player->presentation_target_backend->impl.last_error();
-  if (!is_transient_presentation_error(backend_error)) {
-    ++player->renderer_owned_presentation_failure_count;
-  }
   write_error(error,
               error_size,
-              backend_error.empty()
+              attempt.error.empty()
                   ? "renderer-owned presentation upload failed"
-                  : backend_error.c_str());
+                  : attempt.error);
   return -1;
 }
 

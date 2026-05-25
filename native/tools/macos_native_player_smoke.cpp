@@ -125,15 +125,19 @@ bool wait_for_presented_frame(VPMacOSNativePlayer* player,
                               std::chrono::milliseconds timeout) {
     auto deadline = std::chrono::steady_clock::now() + timeout;
     char error[1024] = {};
+    if (VPMacOSNativePlayerSetMetalPresentationTarget(
+            player,
+            backend,
+            target,
+            width,
+            height,
+            1) != 0) {
+        std::cerr << "failed to install renderer-owned Metal presentation target\n";
+        return false;
+    }
     while (std::chrono::steady_clock::now() < deadline) {
-        if (VPMacOSMetalPresentationBackendCopyCurrentFrameWithLayout(
-                backend,
+        if (VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
                 player,
-                target,
-                width,
-                height,
-                1,
-                0,
                 &info,
                 error,
                 sizeof(error)) == 0) {

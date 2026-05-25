@@ -470,61 +470,6 @@ private final class MacOSNativePlayerSession {
     )
   }
 
-  func copyCurrentFrameToMetalPixelBuffer(
-    backend: OpaquePointer,
-    pixelBuffer: CVPixelBuffer,
-    width: Int,
-    height: Int,
-    maxTrackSlots: Int,
-    waitTimeoutMs: Int = 0
-  ) throws -> MacOSNativeFrameInfo? {
-    let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
-    var lastError = ""
-
-    repeat {
-      var frameInfo = VPMacOSNativeFrameInfo()
-      var error = [CChar](repeating: 0, count: 1024)
-      let ret = VPMacOSMetalPresentationBackendCopyCurrentFrameWithLayout(
-        backend,
-        handle,
-        UnsafeMutableRawPointer(Unmanaged.passUnretained(pixelBuffer).toOpaque()),
-        Int32(width),
-        Int32(height),
-        Int32(max(1, min(4, maxTrackSlots))),
-        Int32(waitTimeoutMs),
-        &frameInfo,
-        &error,
-        error.count
-      )
-      if ret == 0 {
-        guard frameInfo.width > 0, frameInfo.height > 0 else {
-          return nil
-        }
-        return MacOSNativeFrameInfo(
-          width: Int(frameInfo.width),
-          height: Int(frameInfo.height),
-          durationUs: Int(frameInfo.duration_us),
-          ptsUs: Int(frameInfo.pts_us),
-          dtsUs: Int(frameInfo.dts_us)
-        )
-      }
-      let message = String(cString: error)
-      lastError = message.isEmpty
-        ? "copyCurrentFrameToMetalPixelBuffer failed with code \(ret)"
-        : message
-      if Date() < deadline {
-        Thread.sleep(forTimeInterval: 0.01)
-      }
-    } while Date() < deadline
-
-    if lastError == "no presentable frame is ready" ||
-        lastError == "not all present decision frames are ready" {
-      return nil
-    }
-    throw MacOSNativePlayerError.failed(
-      lastError.isEmpty ? "timed out waiting for a decoded frame" : lastError
-    )
-  }
 }
 
 private func macOSNativeFrameAvailable(_ userData: UnsafeMutableRawPointer?) {

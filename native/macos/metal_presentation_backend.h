@@ -34,15 +34,6 @@ public:
                        int32_t max_track_slots);
   void clear_draw_target();
   bool copy_last_draw_frame_info(VPMacOSNativeFrameInfo* out) const;
-  int copy_current_frame_with_layout(VPMacOSNativePlayer* player,
-                                     void* pixel_buffer,
-                                     int32_t width,
-                                     int32_t height,
-                                     int32_t max_track_slots,
-                                     int32_t wait_timeout_ms,
-                                     VPMacOSNativeFrameInfo* out,
-                                     char* error,
-                                     size_t error_size);
 
 private:
   VPMacOSMetalUploader* uploader_ = nullptr;

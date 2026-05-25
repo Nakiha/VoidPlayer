@@ -194,55 +194,6 @@ bool MetalPresentationBackend::copy_last_draw_frame_info(
   return true;
 }
 
-int MetalPresentationBackend::copy_current_frame_with_layout(
-    VPMacOSNativePlayer* player,
-    void* pixel_buffer,
-    int32_t width,
-    int32_t height,
-    int32_t max_track_slots,
-    int32_t wait_timeout_ms,
-    VPMacOSNativeFrameInfo* out,
-    char* error,
-    size_t error_size) {
-  if (player) {
-    VPMacOSNativeCVPixelBufferPresentFrame cv_frame = {};
-    char cv_error[256] = {};
-    if (VPMacOSNativePlayerCopyRetainedCVPixelBufferPresentFrame(
-            player,
-            width,
-            height,
-            &cv_frame,
-            cv_error,
-            sizeof(cv_error)) == 0) {
-      const int cv_ret = VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
-          uploader_,
-          &cv_frame,
-          pixel_buffer,
-          width,
-          height,
-          out,
-          error,
-          error_size);
-      VPMacOSNativeReleaseRetainedCVPixelBuffer(cv_frame.pixel_buffer);
-      if (cv_ret == 0) {
-        return 0;
-      }
-    }
-  }
-
-  return VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
-      uploader_,
-      player,
-      pixel_buffer,
-      width,
-      height,
-      max_track_slots,
-      wait_timeout_ms,
-      out,
-      error,
-      error_size);
-}
-
 }  // namespace vp_macos
 
 VPMacOSMetalPresentationBackend* VPMacOSMetalPresentationBackendCreate(int32_t width,
@@ -344,42 +295,6 @@ int VPMacOSMetalPresentationBackendValidatePixelBufferChecked(
       pixel_buffer,
       width,
       height,
-      error,
-      error_size);
-}
-
-int VPMacOSMetalPresentationBackendCopyCurrentFrameWithLayout(
-    VPMacOSMetalPresentationBackend* backend,
-    VPMacOSNativePlayer* player,
-    void* pixel_buffer,
-    int32_t width,
-    int32_t height,
-    int32_t max_track_slots,
-    int32_t wait_timeout_ms,
-    VPMacOSNativeFrameInfo* out,
-    char* error,
-    size_t error_size) {
-  if (!backend || !player) {
-    return VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
-        VPMacOSMetalPresentationBackendUploader(backend),
-        player,
-        pixel_buffer,
-        width,
-        height,
-        max_track_slots,
-        wait_timeout_ms,
-        out,
-        error,
-        error_size);
-  }
-  return backend->impl.copy_current_frame_with_layout(
-      player,
-      pixel_buffer,
-      width,
-      height,
-      max_track_slots,
-      wait_timeout_ms,
-      out,
       error,
       error_size);
 }

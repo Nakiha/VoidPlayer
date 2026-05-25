@@ -4,7 +4,6 @@ import FlutterMacOS
 final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private static let channelName = "video_renderer"
   private static let eventsChannelName = "video_renderer/events"
-  private static let syntheticDurationUs = 10_000_000
   private static weak var activeInstance: MacOSVideoRendererBridge?
 
   private let textureRegistry: FlutterTextureRegistry
@@ -185,125 +184,29 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private func createPlayer(arguments: Any?) -> Any {
     destroyPlayer()
 
-    let paths = MacOSFlutterArguments.stringListArg(arguments, "videoPaths")
-    let requestedWidth = max(16, MacOSFlutterArguments.intArg(arguments, "width") ?? 1920)
-    let requestedHeight = max(16, MacOSFlutterArguments.intArg(arguments, "height") ?? 1080)
-    let firstPath = paths.first ?? "macos-synthetic://color-bars"
-
-    let nextTexture: MacOSFlutterTextureBridge
-    let trackWidth: Int
-    let trackHeight: Int
-    let trackDurationUs: Int
-    let trackFormatName: String
-    let trackCodecName: String
-    let trackCodecLongName: String
-    let trackDecoderName: String
-    var initialPresentedPtsUs = 0
-    var initialPresentedDtsUs = 0
-    if firstPath.hasPrefix("macos-synthetic://") {
-      nextTexture = MacOSFlutterTextureBridge(
-        width: requestedWidth,
-        height: requestedHeight
+    let startup: MacOSVideoRendererStartup
+    do {
+      startup = try MacOSVideoRendererStartupFactory.make(arguments: arguments)
+    } catch {
+      return FlutterError(
+        code: "DECODE_FAILED",
+        message: "Failed to open macOS native player",
+        details: "\(error)"
       )
-      trackWidth = requestedWidth
-      trackHeight = requestedHeight
-      trackDurationUs = Self.syntheticDurationUs
-      trackFormatName = MacOSVideoTrackPayload.syntheticFormatName
-      trackCodecName = MacOSVideoTrackPayload.syntheticCodecName
-      trackCodecLongName = MacOSVideoTrackPayload.syntheticCodecLongName
-      trackDecoderName = MacOSVideoTrackPayload.syntheticDecoderName
-      backendName = "synthetic-texture"
-      nativePlayer = nil
-    } else {
-      do {
-        guard let session = MacOSNativePlayerSession() else {
-          throw MacOSNativePlayerError.failed("failed to allocate macOS native player")
-        }
-        try session.open(path: firstPath)
-        nextTexture = MacOSFlutterTextureBridge(
-          nativeWidth: requestedWidth,
-          nativeHeight: requestedHeight
-        )
-        let firstFrame = try nextTexture.updateFromNativePlayer(
-          session,
-          maxTrackSlots: 1,
-          waitTimeoutMs: 3_000
-        )
-        framePump.setTargetInstalled(session.rendererOwnedPresentationActive())
-        initialPresentedPtsUs = firstFrame.ptsUs
-        initialPresentedDtsUs = MacOSFramePresentationState.normalizedDtsUs(firstFrame)
-        trackWidth = session.width() > 0 ? session.width() : firstFrame.width
-        trackHeight = session.height() > 0 ? session.height() : firstFrame.height
-        trackDurationUs = session.durationUs() > 0 ? session.durationUs() : Self.syntheticDurationUs
-        trackFormatName = MacOSVideoTrackPayload.nativeFormatName
-        trackCodecName = MacOSVideoTrackPayload.nativeCodecName
-        trackCodecLongName = MacOSVideoTrackPayload.nativeCodecLongName
-        trackDecoderName = session.decoderName()
-        backendName = MacOSVideoTrackPayload.nativeFormatName
-        nativePlayer = session
-      } catch {
-        return FlutterError(
-          code: "DECODE_FAILED",
-          message: "Failed to open macOS native player",
-          details: "\(error)"
-        )
-      }
     }
 
-    let registeredTextureId = textureRegistry.register(nextTexture)
+    let registeredTextureId = textureRegistry.register(startup.texture)
 
-    texture = nextTexture
+    texture = startup.texture
     textureId = registeredTextureId
-    if backendName == MacOSVideoTrackPayload.nativeFormatName {
-      trackStore.replace(with: [
-        MacOSVideoTrackPayload.track(
-          fileId: 0,
-          slot: 0,
-          path: firstPath,
-          width: trackWidth,
-          height: trackHeight,
-          durationUs: trackDurationUs,
-          formatName: trackFormatName,
-          codecName: trackCodecName,
-          codecLongName: trackCodecLongName,
-          decoderName: trackDecoderName
-        )
-      ], fallbackDurationUs: trackDurationUs)
-      if paths.count > 1 {
-        for path in paths.dropFirst() {
-          let fileId = trackStore.nextFileId()
-          do {
-            guard let session = nativePlayer else {
-              throw MacOSNativePlayerError.failed("macOS native player is unavailable")
-            }
-            let metadata = try session.addTrack(path: path, fileId: fileId)
-            trackStore.append(nativeTrackMap(path: path, metadata: metadata))
-          } catch {
-            destroyPlayer()
-            return FlutterError(
-              code: "DECODE_FAILED",
-              message: "Failed to add macOS native track",
-              details: "\(error)"
-            )
-          }
-        }
-      }
-    } else {
-      trackStore.replace(with: paths.enumerated().map { index, path in
-        MacOSVideoTrackPayload.syntheticTrack(
-          fileId: index,
-          slot: index,
-          path: path,
-          width: trackWidth,
-          height: trackHeight,
-          durationUs: trackDurationUs
-        )
-      }, fallbackDurationUs: trackDurationUs)
-    }
+    backendName = startup.backendName
+    nativePlayer = startup.nativePlayer
+    framePump.setTargetInstalled(startup.presentationTargetInstalled)
+    trackStore.replace(with: startup.tracks, fallbackDurationUs: startup.trackDurationUs)
     presentationState.seedPresentedFrame(
-      ptsUs: initialPresentedPtsUs,
-      dtsUs: initialPresentedDtsUs,
-      durationUs: trackDurationUs
+      ptsUs: startup.initialPresentedPtsUs,
+      dtsUs: startup.initialPresentedDtsUs,
+      durationUs: startup.trackDurationUs
     )
     isPlaying = false
     markFrameAvailable()
@@ -466,7 +369,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func activeDurationUs() -> Int {
-    trackStore.currentDurationUs > 0 ? trackStore.currentDurationUs : Self.syntheticDurationUs
+    let durationUs = trackStore.currentDurationUs
+    return durationUs > 0 ? durationUs : MacOSVideoTrackPayload.syntheticDurationUs
   }
 
   private func activeTrackSlotCapacity() -> Int {

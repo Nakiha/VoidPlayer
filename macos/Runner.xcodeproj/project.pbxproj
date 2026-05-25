@@ -37,6 +37,7 @@
 		A12F01102C08FF0100000001 /* MacOSNativePlayerDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01112C08FF0100000001 /* MacOSNativePlayerDiagnostics.swift */; };
 		A12F01122C08FF0100000001 /* MacOSNativePlayerTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01132C08FF0100000001 /* MacOSNativePlayerTypes.swift */; };
 		A12F01182C08FF0100000001 /* MacOSVideoRendererDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01192C08FF0100000001 /* MacOSVideoRendererDiagnostics.swift */; };
+		A12F01202C08FF0100000001 /* MacOSVideoRendererStartup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01212C08FF0100000001 /* MacOSVideoRendererStartup.swift */; };
 		A12F011E2C08FF0100000001 /* MacOSVideoTrackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F011F2C08FF0100000001 /* MacOSVideoTrackStore.swift */; };
 		A12F01062C08FF0100000001 /* MacOSPresentationDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01072C08FF0100000001 /* MacOSPresentationDiagnostics.swift */; };
 		A12F01082C08FF0100000001 /* MacOSVideoTrackPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01092C08FF0100000001 /* MacOSVideoTrackPayload.swift */; };
@@ -104,6 +105,7 @@
 		A12F01112C08FF0100000001 /* MacOSNativePlayerDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativePlayerDiagnostics.swift; sourceTree = "<group>"; };
 		A12F01132C08FF0100000001 /* MacOSNativePlayerTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativePlayerTypes.swift; sourceTree = "<group>"; };
 		A12F01192C08FF0100000001 /* MacOSVideoRendererDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSVideoRendererDiagnostics.swift; sourceTree = "<group>"; };
+		A12F01212C08FF0100000001 /* MacOSVideoRendererStartup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSVideoRendererStartup.swift; sourceTree = "<group>"; };
 		A12F011F2C08FF0100000001 /* MacOSVideoTrackStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSVideoTrackStore.swift; sourceTree = "<group>"; };
 		A12F01072C08FF0100000001 /* MacOSPresentationDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSPresentationDiagnostics.swift; sourceTree = "<group>"; };
 		A12F01092C08FF0100000001 /* MacOSVideoTrackPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSVideoTrackPayload.swift; sourceTree = "<group>"; };
@@ -220,6 +222,7 @@
 				A12F01112C08FF0100000001 /* MacOSNativePlayerDiagnostics.swift */,
 				A12F01132C08FF0100000001 /* MacOSNativePlayerTypes.swift */,
 				A12F01192C08FF0100000001 /* MacOSVideoRendererDiagnostics.swift */,
+				A12F01212C08FF0100000001 /* MacOSVideoRendererStartup.swift */,
 				A12F011F2C08FF0100000001 /* MacOSVideoTrackStore.swift */,
 				A12F01072C08FF0100000001 /* MacOSPresentationDiagnostics.swift */,
 				A12F01092C08FF0100000001 /* MacOSVideoTrackPayload.swift */,
@@ -568,6 +571,7 @@
 				A12F01102C08FF0100000001 /* MacOSNativePlayerDiagnostics.swift in Sources */,
 				A12F01122C08FF0100000001 /* MacOSNativePlayerTypes.swift in Sources */,
 				A12F01182C08FF0100000001 /* MacOSVideoRendererDiagnostics.swift in Sources */,
+				A12F01202C08FF0100000001 /* MacOSVideoRendererStartup.swift in Sources */,
 				A12F011E2C08FF0100000001 /* MacOSVideoTrackStore.swift in Sources */,
 				A12F01062C08FF0100000001 /* MacOSPresentationDiagnostics.swift in Sources */,
 				A12F01082C08FF0100000001 /* MacOSVideoTrackPayload.swift in Sources */,

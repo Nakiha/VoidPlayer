@@ -18,6 +18,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private let presentationState = MacOSFramePresentationState()
   private let nativeEvents = MacOSNativeEventState()
   private let playback = MacOSPlaybackController()
+  private let transport = MacOSTransportController()
 
   init(textureRegistry: FlutterTextureRegistry) {
     self.textureRegistry = textureRegistry
@@ -60,24 +61,16 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "setViewportBackgroundColor":
       result(nil)
     case "setTrackOffset":
-      let fileId = MacOSFlutterArguments.intArg(call.arguments, "fileId") ?? -1
-      let offsetUs = MacOSFlutterArguments.intArg(call.arguments, "offsetUs") ?? 0
-      nativePlayer?.setTrackOffset(fileId: fileId, offsetUs: offsetUs)
+      transport.setTrackOffset(arguments: call.arguments, player: nativePlayer)
       result(nil)
     case "setLoopRange":
-      nativePlayer?.setLoopRange(
-        enabled: MacOSFlutterArguments.boolArg(call.arguments, "enabled") ?? false,
-        startUs: MacOSFlutterArguments.intArg(call.arguments, "startUs") ?? 0,
-        endUs: MacOSFlutterArguments.intArg(call.arguments, "endUs") ?? 0
-      )
+      transport.setLoopRange(arguments: call.arguments, player: nativePlayer)
       result(nil)
     case "setAudibleTrack":
-      let fileId = MacOSFlutterArguments.intArg(call.arguments, "fileId") ?? -1
-      nativePlayer?.setAudibleTrack(fileId)
+      transport.setAudibleTrack(arguments: call.arguments, player: nativePlayer)
       result(nil)
     case "setSpeed":
-      let speed = max(0.01, MacOSFlutterArguments.doubleArg(call.arguments, "speed") ?? 1.0)
-      nativePlayer?.setSpeed(speed)
+      transport.setSpeed(arguments: call.arguments, player: nativePlayer)
       result(nil)
     case "createPlayer":
       result(createPlayer(arguments: call.arguments))
@@ -109,30 +102,30 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       let targetPtsUs = MacOSFlutterArguments.intArg(call.arguments, "ptsUs") ?? 0
       let requestId = MacOSFlutterArguments.intArg(call.arguments, "requestId")
       let resumeAfterSeek = playback.currentIsPlaying(player: nativePlayer)
-      if let error = seekAndRefresh(
+      if let error = transport.seekAndRefresh(
         targetPtsUs: targetPtsUs,
         requestId: requestId,
-        resumeAfterSeek: resumeAfterSeek
+        resumeAfterSeek: resumeAfterSeek,
+        context: transportContext()
       ) {
         result(error)
         return
       }
       result(nil)
     case "stepForward":
-      if let error = stepAndRefresh(forward: true) {
+      if let error = transport.stepAndRefresh(forward: true, context: transportContext()) {
         result(error)
         return
       }
       result(nil)
     case "stepBackward":
-      if let error = stepAndRefresh(forward: false) {
+      if let error = transport.stepAndRefresh(forward: false, context: transportContext()) {
         result(error)
         return
       }
       result(nil)
     case "currentPts":
-      presentationState.setCurrentPts(nativePlayer?.currentPtsUs() ?? presentationState.currentPtsUs)
-      result(presentationState.currentPtsUs)
+      result(transport.currentPts(player: nativePlayer, presentationState: presentationState))
     case "duration":
       result(tracks.isEmpty ? 0 : tracks.currentDurationUs)
     case "currentPresentedFrame":
@@ -308,23 +301,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     return durationUs > 0 ? durationUs : MacOSVideoTrackPayload.syntheticDurationUs
   }
 
-  private func refreshDecodedFrameIfNeeded(targetPtsUs: Int) -> FlutterError? {
-    guard backendName == MacOSVideoTrackPayload.nativeFormatName,
-          let nativePlayer,
-          let texture else {
-      return nil
-    }
-
-    return MacOSNativeFrameRefresh.seekAndRefresh(
-      player: nativePlayer,
-      texture: texture,
-      targetPtsUs: targetPtsUs,
-      maxTrackSlots: tracks.activeSlotCapacity(),
-      presentationState: presentationState,
-      framePump: playback.framePumpForRefresh
-    )
-  }
-
   private func refreshCurrentFrameAfterLayoutChange() {
     guard backendName == MacOSVideoTrackPayload.nativeFormatName,
           let nativePlayer,
@@ -342,58 +318,31 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     markFrameAvailable()
   }
 
-  private func seekAndRefresh(
-    targetPtsUs: Int,
-    requestId: Int?,
-    resumeAfterSeek: Bool
-  ) -> FlutterError? {
-    playback.stopForBlockingCommand(player: nativePlayer, pausePlayer: true)
-    let settledPtsUs = max(0, min(activeDurationUs(), targetPtsUs))
-    presentationState.setCurrentPts(settledPtsUs)
-    if let error = refreshDecodedFrameIfNeeded(targetPtsUs: settledPtsUs) {
-      return error
-    }
-    markFrameAvailable()
-    emitSeekPreviewPresented(requestId: requestId, targetPtsUs: settledPtsUs)
-    if resumeAfterSeek {
-      playback.resumeIfNeeded(
-        true,
-        player: nativePlayer,
-        texture: texture,
-        textureRegistered: textureId != nil,
-        maxTrackSlots: tracks.activeSlotCapacity(),
-        userData: Unmanaged.passUnretained(self).toOpaque(),
-        presentationState: presentationState
-      )
-    }
-    return nil
-  }
-
-  private func stepAndRefresh(forward: Bool) -> FlutterError? {
-    playback.stopForBlockingCommand(player: nativePlayer, pausePlayer: false)
-    guard let nativePlayer,
-          let texture else {
-      return nil
-    }
-    if let error = MacOSNativeFrameRefresh.stepAndRefresh(
-      player: nativePlayer,
-      texture: texture,
-      forward: forward,
-      maxTrackSlots: tracks.activeSlotCapacity(),
-      presentationState: presentationState,
-      framePump: playback.framePumpForRefresh
-    ) {
-      return error
-    }
-    markFrameAvailable()
-    return nil
-  }
-
   private func emitSeekPreviewPresented(requestId: Int?, targetPtsUs: Int) {
     nativeEvents.emitSeekPreviewPresented(
       requestId: requestId,
       targetPtsUs: targetPtsUs,
       presentationState: presentationState
+    )
+  }
+
+  private func transportContext() -> MacOSTransportContext {
+    MacOSTransportContext(
+      nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
+      player: nativePlayer,
+      texture: texture,
+      textureRegistered: textureId != nil,
+      playback: playback,
+      presentationState: presentationState,
+      activeDurationUs: activeDurationUs(),
+      maxTrackSlots: tracks.activeSlotCapacity(),
+      userData: Unmanaged.passUnretained(self).toOpaque(),
+      markFrameAvailable: { [weak self] in
+        self?.markFrameAvailable()
+      },
+      emitSeekPreviewPresented: { [weak self] requestId, targetPtsUs in
+        self?.emitSeekPreviewPresented(requestId: requestId, targetPtsUs: targetPtsUs)
+      }
     )
   }
 

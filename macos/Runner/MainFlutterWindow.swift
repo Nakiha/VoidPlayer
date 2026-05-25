@@ -911,7 +911,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   }
 
   private func destroyPlayer() {
-    stopNativeFramePump()
+    stopNativeFramePump(clearPresentationTarget: true)
     if let id = textureId {
       textureRegistry.unregisterTexture(id)
     }
@@ -1407,10 +1407,12 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     stopNativeFramePump()
   }
 
-  private func stopNativeFramePump() {
+  private func stopNativeFramePump(clearPresentationTarget: Bool = false) {
     playbackGeneration += 1
-    nativePlayer?.clearMetalPresentationTarget()
-    nativePresentationTargetInstalled = false
+    if clearPresentationTarget {
+      nativePlayer?.clearMetalPresentationTarget()
+      nativePresentationTargetInstalled = false
+    }
     if nativeFrameCallbackRegistered {
       nativePlayer?.setFrameAvailableCallback(nil, userData: nil)
       nativeFrameCallbackRegistered = false

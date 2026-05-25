@@ -406,6 +406,14 @@ int VPMacOSNativePlayerSetMetalPresentationTarget(
   }
   {
     std::lock_guard<std::mutex> lock(player->callback_mutex);
+    const bool target_changed =
+        player->presentation_target_backend != backend ||
+        player->presentation_target_pixel_buffer != pixel_buffer ||
+        player->presentation_target_width != width ||
+        player->presentation_target_height != height ||
+        player->presentation_target_max_track_slots !=
+            std::clamp(max_track_slots, static_cast<int32_t>(1),
+                       static_cast<int32_t>(VPMacOSNativeMaxTracks));
     player->presentation_target_backend = backend;
     player->presentation_target_pixel_buffer = pixel_buffer;
     player->presentation_target_width = width;
@@ -413,9 +421,11 @@ int VPMacOSNativePlayerSetMetalPresentationTarget(
     player->presentation_target_max_track_slots =
         std::clamp(max_track_slots, static_cast<int32_t>(1),
                    static_cast<int32_t>(VPMacOSNativeMaxTracks));
-    player->last_renderer_owned_presentation_succeeded = false;
-    player->last_renderer_owned_frame_info_available = false;
-    player->last_renderer_owned_frame_info = {};
+    if (target_changed) {
+      player->last_renderer_owned_presentation_succeeded = false;
+      player->last_renderer_owned_frame_info_available = false;
+      player->last_renderer_owned_frame_info = {};
+    }
   }
 
   std::lock_guard<std::mutex> player_lock(player->mutex);

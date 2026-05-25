@@ -6,23 +6,35 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private static let eventsChannelName = "video_renderer/events"
   private static weak var activeInstance: MacOSVideoRendererBridge?
 
-  private let textureRegistry: FlutterTextureRegistry
   private var methodChannel: FlutterMethodChannel?
   private var eventChannel: FlutterEventChannel?
-  private var texture: MacOSFlutterTextureBridge?
-  private var textureId: Int64?
+  private let lifecycle: MacOSPlayerLifecycleController
   private let tracks = MacOSVideoTrackController()
   private var layout: [String: Any] = MacOSVideoTrackPayload.defaultLayout()
-  private var backendName = "synthetic-texture"
-  private var nativePlayer: MacOSNativePlayerSession?
   private let presentationState = MacOSFramePresentationState()
   private let nativeEvents = MacOSNativeEventState()
   private let playback = MacOSPlaybackController()
   private let transport = MacOSTransportController()
 
   init(textureRegistry: FlutterTextureRegistry) {
-    self.textureRegistry = textureRegistry
+    self.lifecycle = MacOSPlayerLifecycleController(textureRegistry: textureRegistry)
     super.init()
+  }
+
+  private var texture: MacOSFlutterTextureBridge? {
+    lifecycle.texture
+  }
+
+  private var textureId: Int64? {
+    lifecycle.textureId
+  }
+
+  private var backendName: String {
+    lifecycle.backendName
+  }
+
+  private var nativePlayer: MacOSNativePlayerSession? {
+    lifecycle.nativePlayer
   }
 
   static func register(with engine: FlutterEngine) {
@@ -171,53 +183,19 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func createPlayer(arguments: Any?) -> Any {
-    destroyPlayer()
-
-    let startup: MacOSVideoRendererStartup
-    do {
-      startup = try MacOSVideoRendererStartupFactory.make(arguments: arguments)
-    } catch {
-      return FlutterError(
-        code: "DECODE_FAILED",
-        message: "Failed to open macOS native player",
-        details: "\(error)"
-      )
-    }
-
-    let registeredTextureId = textureRegistry.register(startup.texture)
-
-    texture = startup.texture
-    textureId = registeredTextureId
-    backendName = startup.backendName
-    nativePlayer = startup.nativePlayer
-    playback.setTargetInstalled(startup.presentationTargetInstalled)
-    tracks.replace(with: startup.tracks, fallbackDurationUs: startup.trackDurationUs)
-    presentationState.seedPresentedFrame(
-      ptsUs: startup.initialPresentedPtsUs,
-      dtsUs: startup.initialPresentedDtsUs,
-      durationUs: startup.trackDurationUs
+    lifecycle.create(
+      arguments: arguments,
+      playback: playback,
+      tracks: tracks,
+      presentationState: presentationState,
+      markFrameAvailable: { [weak self] in
+        self?.markFrameAvailable()
+      }
     )
-    markFrameAvailable()
-
-    return [
-      "textureId": registeredTextureId,
-      "tracks": tracks.tracks,
-    ]
   }
 
   private func destroyPlayer() {
-    playback.stopFramePump(player: nativePlayer, clearPresentationTarget: true)
-    if let id = textureId {
-      textureRegistry.unregisterTexture(id)
-    }
-    texture = nil
-    textureId = nil
-    tracks.reset()
-    presentationState.resetAll()
-    backendName = "synthetic-texture"
-    playback.reset()
-    nativePlayer?.close()
-    nativePlayer = nil
+    lifecycle.destroy(playback: playback, tracks: tracks, presentationState: presentationState)
   }
 
   private func destroyPlayerForWindowClose() {
@@ -291,9 +269,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func markFrameAvailable() {
-    if let id = textureId {
-      textureRegistry.textureFrameAvailable(id)
-    }
+    lifecycle.markFrameAvailable()
   }
 
   private func activeDurationUs() -> Int {

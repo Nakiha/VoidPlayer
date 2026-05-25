@@ -44,6 +44,40 @@ extension MacOSNativePlayerSession {
     ]
   }
 
+  func rendererOwnedPresentationState() -> [String: Any] {
+    var state = VPMacOSNativeRendererOwnedPresentationState()
+    guard VPMacOSNativePlayerCopyRendererOwnedPresentationState(handle, &state) == 0 else {
+      return Self.emptyRendererOwnedPresentationState()
+    }
+    let lastError = withUnsafeBytes(of: &state.last_draw_error) { rawBuffer -> String in
+      guard let base = rawBuffer.bindMemory(to: CChar.self).baseAddress else {
+        return ""
+      }
+      return String(cString: base)
+    }
+    let active = state.renderer_initialized != 0 &&
+      state.target_installed != 0 &&
+      state.backend_available != 0 &&
+      state.last_draw_succeeded != 0
+    return [
+      "rendererInitialized": state.renderer_initialized != 0,
+      "targetInstalled": state.target_installed != 0,
+      "backendAvailable": state.backend_available != 0,
+      "active": active,
+      "lastDrawSucceeded": state.last_draw_succeeded != 0,
+      "consecutiveDrawFailures": Int64(min(state.consecutive_draw_failures, UInt64(Int64.max))),
+      "drawFailureCount": Int64(min(state.draw_failure_count, UInt64(Int64.max))),
+      "uploadCount": Int64(min(state.upload_count, UInt64(Int64.max))),
+      "uploadFailureCount": Int64(min(state.upload_failure_count, UInt64(Int64.max))),
+      "targetGeneration": Int64(min(state.target_generation, UInt64(Int64.max))),
+      "targetWidth": Int(state.target_width),
+      "targetHeight": Int(state.target_height),
+      "uploadStorageKind": Self.presentPackageStorageName(state.upload_storage_kind),
+      "lastSuccessfulFramePtsUs": Int64(state.last_successful_frame_pts_us),
+      "lastDrawError": lastError,
+    ]
+  }
+
   func performanceStats() -> [String: Any] {
     var stats = VPMacOSNativePlayerPerfStats()
     guard VPMacOSNativePlayerCopyPerfStats(handle, &stats) == 0 else {
@@ -124,5 +158,25 @@ extension MacOSNativePlayerSession {
     default:
       return "unavailable"
     }
+  }
+
+  private static func emptyRendererOwnedPresentationState() -> [String: Any] {
+    [
+      "rendererInitialized": false,
+      "targetInstalled": false,
+      "backendAvailable": false,
+      "active": false,
+      "lastDrawSucceeded": false,
+      "consecutiveDrawFailures": 0,
+      "drawFailureCount": 0,
+      "uploadCount": 0,
+      "uploadFailureCount": 0,
+      "targetGeneration": 0,
+      "targetWidth": 0,
+      "targetHeight": 0,
+      "uploadStorageKind": "unavailable",
+      "lastSuccessfulFramePtsUs": 0,
+      "lastDrawError": "",
+    ]
   }
 }

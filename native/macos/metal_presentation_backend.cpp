@@ -114,6 +114,13 @@ vr::PresentationBackendStats MetalPresentationBackend::presentation_stats() cons
       VPMacOSMetalUploaderLastPresentPackageTotalUs(uploader_);
   stats.last_present_package_storage =
       VPMacOSMetalUploaderLastPresentPackageStorage(uploader_);
+  stats.backend_available = available() ? 1 : 0;
+  stats.target_installed =
+      draw_target_pixel_buffer_ && draw_target_width_ > 0 && draw_target_height_ > 0 ? 1 : 0;
+  stats.last_draw_succeeded = last_draw_succeeded_ ? 1 : 0;
+  stats.draw_failure_count = draw_failure_count_;
+  stats.consecutive_draw_failures = consecutive_draw_failures_;
+  stats.last_successful_frame_pts_us = last_draw_frame_info_.pts_us;
   return stats;
 }
 
@@ -138,14 +145,29 @@ void MetalPresentationBackend::set_last_error(std::string error) {
   last_error_ = std::move(error);
 }
 
+void MetalPresentationBackend::mark_draw_failure(std::string error) {
+  last_draw_frame_info_available_ = false;
+  last_draw_succeeded_ = false;
+  ++draw_failure_count_;
+  ++consecutive_draw_failures_;
+  set_last_error(std::move(error));
+}
+
+void MetalPresentationBackend::mark_draw_success(const VPMacOSNativeFrameInfo& frame_info) {
+  last_draw_frame_info_ = frame_info;
+  last_draw_frame_info_available_ = true;
+  last_draw_succeeded_ = true;
+  consecutive_draw_failures_ = 0;
+  set_last_error("");
+}
+
 bool MetalPresentationBackend::draw_frame(
     const vr::RendererDrawSnapshot& snapshot,
     const vr::PresentationBackendDrawHooks& hooks) {
   set_last_error("");
   if (!available() || !draw_target_pixel_buffer_ ||
       draw_target_width_ <= 0 || draw_target_height_ <= 0) {
-    last_draw_frame_info_available_ = false;
-    set_last_error("renderer-owned Metal presentation target is unavailable");
+    mark_draw_failure("renderer-owned Metal presentation target is unavailable");
     return false;
   }
 
@@ -160,8 +182,7 @@ bool MetalPresentationBackend::draw_frame(
   if (package_layout.max_bytes == 0 ||
       package_layout.bgra_row_bytes >
           static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
-    last_draw_frame_info_available_ = false;
-    set_last_error("renderer-owned Metal presentation package layout is invalid");
+    mark_draw_failure("renderer-owned Metal presentation package layout is invalid");
     return false;
   }
 
@@ -189,12 +210,11 @@ bool MetalPresentationBackend::draw_frame(
           std::chrono::duration_cast<std::chrono::microseconds>(
               std::chrono::steady_clock::now() - start).count()));
     }
-    last_draw_frame_info_available_ = ret == 0;
     if (ret == 0) {
-      last_draw_frame_info_ = frame_info;
+      mark_draw_success(frame_info);
       return true;
     }
-    set_last_error(upload_error[0] ? upload_error : error);
+    mark_draw_failure(upload_error[0] ? upload_error : error);
     return false;
   }
 
@@ -229,8 +249,7 @@ bool MetalPresentationBackend::draw_frame(
                                     package.track_stride_bytes,
                                     &package,
                                     error)) {
-      last_draw_frame_info_available_ = false;
-      set_last_error(error);
+      mark_draw_failure(error);
       return false;
     }
     package.storage = VPMacOSNativePresentPackageStorageBGRA;
@@ -255,11 +274,10 @@ bool MetalPresentationBackend::draw_frame(
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - start).count()));
   }
-  last_draw_frame_info_available_ = ret == 0;
   if (ret == 0) {
-    last_draw_frame_info_ = frame_info;
+    mark_draw_success(frame_info);
   } else {
-    set_last_error(upload_error[0] ? upload_error : error);
+    mark_draw_failure(upload_error[0] ? upload_error : error);
   }
   return ret == 0;
 }
@@ -275,6 +293,7 @@ void MetalPresentationBackend::set_draw_target(void* pixel_buffer,
       std::clamp(max_track_slots,
                  1,
                  static_cast<int32_t>(VPMacOSNativeMaxTracks));
+  last_draw_succeeded_ = false;
 }
 
 void MetalPresentationBackend::clear_draw_target() {
@@ -284,6 +303,8 @@ void MetalPresentationBackend::clear_draw_target() {
   draw_target_max_track_slots_ = VPMacOSNativeMaxTracks;
   last_draw_frame_info_available_ = false;
   last_draw_frame_info_ = {};
+  last_draw_succeeded_ = false;
+  set_last_error("");
 }
 
 bool MetalPresentationBackend::copy_last_draw_frame_info(

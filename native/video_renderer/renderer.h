@@ -199,6 +199,7 @@ public:
 
     /// Set callback invoked after each frame is drawn in headless mode.
     void set_frame_callback(std::function<void()> cb);
+    void set_frame_failure_callback(std::function<void(const char*)> cb);
 
     /// Set callback invoked for low-frequency renderer/player events.
     void set_event_callback(RendererEventCallback cb);
@@ -332,6 +333,8 @@ private:
     /// Caller must hold state_mutex_.
     void enter_terminal_render_loop_error_locked(const char* reason);
     void reset_d3d_metrics();
+    std::function<void(const char*)> frame_failure_callback_snapshot() const;
+    std::string presentation_backend_last_error() const;
     void assign_missing_track_generations_locked();
     int add_track_internal(const std::string& video_path,
                            bool use_hardware_decode,
@@ -385,6 +388,7 @@ private:
     mutable std::mutex event_callback_mutex_;
     RendererEventCallback event_callback_;
     std::function<void()> frame_callback_;
+    std::function<void(const char*)> frame_failure_callback_;
     float background_color_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     bool preview_drawn_ = false;
     bool was_buffering_ = false;

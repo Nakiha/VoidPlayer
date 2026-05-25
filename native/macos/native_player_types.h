@@ -65,6 +65,23 @@ typedef struct VPMacOSNativePresentationSchedulerStats {
   int64_t last_deadline_sleep_us;
 } VPMacOSNativePresentationSchedulerStats;
 
+typedef struct VPMacOSNativeRendererOwnedPresentationState {
+  int32_t renderer_initialized;
+  int32_t target_installed;
+  int32_t backend_available;
+  int32_t last_draw_succeeded;
+  uint64_t consecutive_draw_failures;
+  uint64_t draw_failure_count;
+  uint64_t upload_count;
+  uint64_t upload_failure_count;
+  uint64_t target_generation;
+  int32_t target_width;
+  int32_t target_height;
+  int32_t upload_storage_kind;
+  int64_t last_successful_frame_pts_us;
+  char last_draw_error[256];
+} VPMacOSNativeRendererOwnedPresentationState;
+
 typedef struct VPMacOSNativePlayerPerfStats {
   uint64_t decode_frame_count;
   uint64_t decode_dropped_count;

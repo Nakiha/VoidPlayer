@@ -8,7 +8,16 @@
 #include <mutex>
 
 int VPMacOSNativePlayerRendererOwnedPresentationActive(VPMacOSNativePlayer* player) {
-  return player && player->renderer_active.load(std::memory_order_acquire) ? 1 : 0;
+  VPMacOSNativeRendererOwnedPresentationState state = {};
+  if (VPMacOSNativePlayerCopyRendererOwnedPresentationState(player, &state) != 0) {
+    return 0;
+  }
+  return state.renderer_initialized != 0 &&
+                 state.target_installed != 0 &&
+                 state.backend_available != 0 &&
+                 state.last_draw_succeeded != 0
+             ? 1
+             : 0;
 }
 
 int VPMacOSNativePlayerLastRendererOwnedPresentationSucceeded(
@@ -34,6 +43,60 @@ int VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(
   return 0;
 }
 
+int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativeRendererOwnedPresentationState* out) {
+  if (!player || !out) {
+    return -1;
+  }
+  *out = {};
+  std::string last_error;
+  {
+    std::lock_guard<std::mutex> lock(player->callback_mutex);
+    out->target_installed =
+        player->presentation_target_pixel_buffer &&
+                player->presentation_target_width > 0 &&
+                player->presentation_target_height > 0
+            ? 1
+            : 0;
+    out->target_width = player->presentation_target_width;
+    out->target_height = player->presentation_target_height;
+    out->target_generation = player->presentation_target_generation;
+    out->last_draw_succeeded =
+        player->last_renderer_owned_presentation_succeeded ? 1 : 0;
+    out->consecutive_draw_failures =
+        player->renderer_owned_presentation_consecutive_failures;
+    out->draw_failure_count =
+        player->renderer_owned_presentation_draw_failure_count;
+    out->upload_count = player->renderer_owned_presentation_upload_count;
+    out->upload_failure_count = player->renderer_owned_presentation_failure_count;
+    out->last_successful_frame_pts_us =
+        player->last_renderer_owned_frame_info_available
+            ? player->last_renderer_owned_frame_info.pts_us
+            : 0;
+    last_error = player->renderer_owned_presentation_last_error;
+  }
+  {
+    std::lock_guard<std::mutex> lock(player->mutex);
+    out->renderer_initialized = player->renderer_active_locked() ? 1 : 0;
+    if (player->renderer_active_locked()) {
+      const auto backend_stats = player->renderer->presentation_backend_stats();
+      out->backend_available = backend_stats.backend_available;
+      out->target_installed =
+          out->target_installed != 0 && backend_stats.target_installed != 0 ? 1 : 0;
+      out->last_draw_succeeded = backend_stats.last_draw_succeeded;
+      out->upload_storage_kind = backend_stats.last_present_package_storage;
+      if (backend_stats.last_successful_frame_pts_us != 0) {
+        out->last_successful_frame_pts_us =
+            backend_stats.last_successful_frame_pts_us;
+      }
+    }
+  }
+  vp_macos::write_error(
+      out->last_draw_error, sizeof(out->last_draw_error), last_error);
+  return 0;
+}
+
 void VPMacOSNativePlayerResetRendererOwnedPresentationStats(VPMacOSNativePlayer* player) {
   if (!player) {
     return;
@@ -44,6 +107,9 @@ void VPMacOSNativePlayerResetRendererOwnedPresentationStats(VPMacOSNativePlayer*
   player->last_renderer_owned_frame_info = {};
   player->renderer_owned_presentation_upload_count = 0;
   player->renderer_owned_presentation_failure_count = 0;
+  player->renderer_owned_presentation_draw_failure_count = 0;
+  player->renderer_owned_presentation_consecutive_failures = 0;
+  player->renderer_owned_presentation_last_error.clear();
   player->renderer_owned_presentation_first_upload_time = {};
   player->renderer_owned_presentation_last_upload_time = {};
 }

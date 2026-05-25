@@ -44,6 +44,12 @@ struct PresentationBackendStats {
     int64_t last_present_package_gpu_wait_us = 0;
     int64_t last_present_package_total_us = 0;
     int32_t last_present_package_storage = 0;
+    int32_t backend_available = 0;
+    int32_t target_installed = 0;
+    int32_t last_draw_succeeded = 0;
+    uint64_t draw_failure_count = 0;
+    uint64_t consecutive_draw_failures = 0;
+    int64_t last_successful_frame_pts_us = 0;
 };
 
 class PresentationBackend {
@@ -68,6 +74,7 @@ public:
     virtual void clear_headless_output() {}
     virtual PresentationBackendStats presentation_stats() const { return {}; }
     virtual bool copy_last_frame_info(PresentationBackendFrameInfo*) const { return false; }
+    virtual const char* last_error() const { return ""; }
     virtual bool draw_frame(const RendererDrawSnapshot& snapshot,
                             const PresentationBackendDrawHooks& hooks) = 0;
 };

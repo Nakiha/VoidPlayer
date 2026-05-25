@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <cstdlib>
 #include <cstdint>
 #include <iostream>
@@ -124,6 +125,12 @@ bool wait_for_presented_frame(VPMacOSNativePlayer* player,
     return false;
 }
 
+bool copy_presentation_state(VPMacOSNativePlayer* player,
+                             VPMacOSNativeRendererOwnedPresentationState& state) {
+    state = {};
+    return VPMacOSNativePlayerCopyRendererOwnedPresentationState(player, &state) == 0;
+}
+
 } // namespace
 
 int main() {
@@ -154,13 +161,26 @@ int main() {
         std::cerr << "failed to install shared renderer Metal target\n";
         return 1;
     }
+    VPMacOSNativeRendererOwnedPresentationState state = {};
+    if (!copy_presentation_state(player.get(), state) ||
+        state.renderer_initialized != 0 ||
+        state.target_installed == 0 ||
+        state.backend_available != 0 ||
+        state.target_generation == 0 ||
+        state.target_width != target_width ||
+        state.target_height != target_height) {
+        std::cerr << "shared renderer bridge did not expose pre-open target state\n";
+        return 1;
+    }
 
     char error[1024] = {};
     if (VPMacOSNativePlayerOpen(player.get(), path.c_str(), error, sizeof(error)) != 0) {
         std::cerr << "shared renderer open failed: " << error << "\n";
         return 1;
     }
-    if (VPMacOSNativePlayerRendererOwnedPresentationActive(player.get()) == 0 ||
+    if (!copy_presentation_state(player.get(), state) ||
+        state.renderer_initialized == 0 ||
+        state.target_installed == 0 ||
         VPMacOSNativePlayerWidth(player.get()) <= 0 ||
         VPMacOSNativePlayerHeight(player.get()) <= 0 ||
         VPMacOSNativePlayerDurationUs(player.get()) <= 0) {
@@ -181,8 +201,63 @@ int main() {
             player.get(), target.buffer, first, first_non_black, std::chrono::seconds(3))) {
         return 1;
     }
+    if (!copy_presentation_state(player.get(), state) ||
+        state.renderer_initialized == 0 ||
+        state.target_installed == 0 ||
+        state.backend_available == 0 ||
+        state.last_draw_succeeded == 0 ||
+        state.draw_failure_count != 0 ||
+        state.consecutive_draw_failures != 0 ||
+        state.last_successful_frame_pts_us != first.pts_us ||
+        state.upload_storage_kind == VPMacOSNativePresentPackageStorageUnavailable ||
+        state.last_draw_error[0] != '\0') {
+        std::cerr << "shared renderer bridge did not expose successful presentation state\n";
+        return 1;
+    }
     if (callbacks.load(std::memory_order_relaxed) <= 0) {
         std::cerr << "shared renderer bridge did not publish frame callbacks\n";
+        return 1;
+    }
+
+    PixelBufferHolder invalid_target =
+        make_bgra_pixel_buffer(target_width / 2, target_height / 2);
+    if (!invalid_target.buffer) {
+        std::cerr << "failed to create invalid presentation target fixture\n";
+        return 1;
+    }
+    const uint64_t failure_count_before = state.draw_failure_count;
+    if (VPMacOSNativePlayerSetMetalPresentationTarget(
+            player.get(), backend.get(), invalid_target.buffer, target_width, target_height, 2) != 0) {
+        std::cerr << "invalid-size target install should keep renderer alive for diagnostics\n";
+        return 1;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    if (!copy_presentation_state(player.get(), state) ||
+        state.last_draw_succeeded != 0 ||
+        state.draw_failure_count <= failure_count_before ||
+        state.consecutive_draw_failures == 0 ||
+        std::strstr(state.last_draw_error, "dimensions") == nullptr) {
+        std::cerr << "shared renderer bridge did not expose invalid target failure state: "
+                  << state.last_draw_error << "\n";
+        return 1;
+    }
+    if (VPMacOSNativePlayerSetMetalPresentationTarget(
+            player.get(), backend.get(), target.buffer, target_width, target_height, 2) != 0) {
+        std::cerr << "failed to reinstall valid shared renderer Metal target\n";
+        return 1;
+    }
+    VPMacOSNativeFrameInfo recovered = {};
+    double recovered_non_black = 0.0;
+    if (!wait_for_presented_frame(player.get(),
+                                  target.buffer,
+                                  recovered,
+                                  recovered_non_black,
+                                  std::chrono::seconds(2)) ||
+        !copy_presentation_state(player.get(), state) ||
+        state.last_draw_succeeded == 0 ||
+        state.consecutive_draw_failures != 0 ||
+        state.last_draw_error[0] != '\0') {
+        std::cerr << "shared renderer bridge did not recover presentation state\n";
         return 1;
     }
 

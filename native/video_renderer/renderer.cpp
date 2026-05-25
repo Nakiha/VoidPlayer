@@ -313,6 +313,18 @@ void Renderer::reset_d3d_metrics() {
     d3d_metrics_.texture_sharing_failure_count.store(0, std::memory_order_relaxed);
 }
 
+std::function<void(const char*)> Renderer::frame_failure_callback_snapshot() const {
+    return frame_failure_callback_;
+}
+
+std::string Renderer::presentation_backend_last_error() const {
+    if (!presentation_backend_) {
+        return "presentation backend is not available";
+    }
+    const char* error = presentation_backend_->last_error();
+    return error && error[0] != '\0' ? error : "presentation backend draw failed";
+}
+
 void Renderer::assign_missing_track_generations_locked() {
     for (size_t i = 0; i < kMaxTracks; ++i) {
         if (tracks_[i] && tracks_[i]->generation == 0) {
@@ -1102,6 +1114,9 @@ void Renderer::present_frame(const PresentDecision& decision) {
         snapshot = build_draw_snapshot_locked(filtered_decision);
     }
     std::function<void()> frame_callback;
+    auto frame_failure_callback = frame_failure_callback_snapshot();
+    std::string frame_failure_error;
+    const bool attempted_draw = present_decision_has_frame(snapshot.decision);
     bool device_lost = false;
     bool drew = false;
     {
@@ -1131,6 +1146,9 @@ void Renderer::present_frame(const PresentDecision& decision) {
                 device_lost = backend && backend->device_lost();
             }
         }
+        if (attempted_draw && !drew) {
+            frame_failure_error = presentation_backend_last_error();
+        }
     }
     if (device_lost) {
         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -1144,6 +1162,10 @@ void Renderer::present_frame(const PresentDecision& decision) {
     if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
         frame_callback();
     }
+    if (attempted_draw && !drew && frame_failure_callback &&
+        !shutting_down_.load(std::memory_order_acquire)) {
+        frame_failure_callback(frame_failure_error.c_str());
+    }
 }
 
 void Renderer::redraw_layout() {
@@ -1153,6 +1175,9 @@ void Renderer::redraw_layout() {
         snapshot = build_draw_snapshot_locked(last_decision_);
     }
     std::function<void()> frame_callback;
+    auto frame_failure_callback = frame_failure_callback_snapshot();
+    std::string frame_failure_error;
+    const bool attempted_draw = present_decision_has_frame(snapshot.decision);
     bool device_lost = false;
     bool drew = false;
     {
@@ -1173,6 +1198,9 @@ void Renderer::redraw_layout() {
             backend->wait_idle("redraw_layout");
             device_lost = backend->poll_device_removed("redraw_layout");
         }
+        if (attempted_draw && !drew) {
+            frame_failure_error = presentation_backend_last_error();
+        }
     }
     if (device_lost) {
         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -1185,6 +1213,10 @@ void Renderer::redraw_layout() {
     }
     if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
         frame_callback();
+    }
+    if (attempted_draw && !drew && frame_failure_callback &&
+        !shutting_down_.load(std::memory_order_acquire)) {
+        frame_failure_callback(frame_failure_error.c_str());
     }
 }
 
@@ -1397,6 +1429,11 @@ void Renderer::set_frame_callback(std::function<void()> cb) {
     frame_callback_ = std::move(cb);
 }
 
+void Renderer::set_frame_failure_callback(std::function<void(const char*)> cb) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    frame_failure_callback_ = std::move(cb);
+}
+
 void Renderer::set_event_callback(RendererEventCallback cb) {
     std::lock_guard<std::mutex> lock(event_callback_mutex_);
     event_callback_ = std::move(cb);
@@ -1475,7 +1512,10 @@ bool Renderer::update_headless_output(void* output,
                                       int height,
                                       int max_track_slots) {
     std::function<void()> frame_callback;
+    auto frame_failure_callback = frame_failure_callback_snapshot();
+    std::string frame_failure_error;
     bool drew = false;
+    bool attempted_draw = false;
     {
         std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
         if (!headless_ || !presentation_backend_) {
@@ -1511,10 +1551,13 @@ bool Renderer::update_headless_output(void* output,
             snapshot = build_draw_snapshot_locked(last_decision_);
         }
         if (present_decision_has_frame(snapshot.decision)) {
+            attempted_draw = true;
             std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
             drew = draw_frame(snapshot);
             if (drew) {
                 frame_callback = frame_callback_;
+            } else {
+                frame_failure_error = presentation_backend_last_error();
             }
         }
     }
@@ -1524,6 +1567,10 @@ bool Renderer::update_headless_output(void* output,
     }
     if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
         frame_callback();
+    }
+    if (attempted_draw && !drew && frame_failure_callback &&
+        !shutting_down_.load(std::memory_order_acquire)) {
+        frame_failure_callback(frame_failure_error.c_str());
     }
     return true;
 }

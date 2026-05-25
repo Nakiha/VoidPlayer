@@ -9,6 +9,11 @@
 1.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapter, cvpixelbuffer-bgra-copy
 1.505, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-metal
 1.51, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
+1.511, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedRendererInitialized, true
+1.5115, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedTargetInstalled, true
+1.512, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedBackendAvailable, true
+1.5125, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
+1.513, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
 1.512, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-renderer
 1.514, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-metal-cvpixelbuffer-target
 1.52, ASSERT_NATIVE_DIAGNOSTIC_STRING, hardwareDecodeProvider, VideoToolbox

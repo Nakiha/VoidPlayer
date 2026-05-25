@@ -188,6 +188,8 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
 
   renderer = std::move(next_renderer);
   renderer->set_frame_callback([this]() { on_frame_available(); });
+  renderer->set_frame_failure_callback(
+      [this](const char* message) { on_frame_failed(message); });
   renderer_active.store(true, std::memory_order_release);
   perf_start_time = std::chrono::steady_clock::now();
   update_decode_names_locked();
@@ -201,6 +203,8 @@ void VPMacOSNativePlayer::on_frame_available() {
     std::lock_guard<std::mutex> callback_lock(callback_mutex);
     last_renderer_owned_presentation_succeeded = true;
     last_renderer_owned_frame_info_available = true;
+    renderer_owned_presentation_consecutive_failures = 0;
+    renderer_owned_presentation_last_error.clear();
     last_renderer_owned_frame_info.width = presentation_target_width;
     last_renderer_owned_frame_info.height = presentation_target_height;
     if (renderer) {
@@ -227,6 +231,26 @@ void VPMacOSNativePlayer::on_frame_available() {
   if (callback) {
     callback(user_data);
   }
+}
+
+void VPMacOSNativePlayer::record_presentation_failure_locked(
+    const std::string& error,
+    bool upload_failure) {
+  last_renderer_owned_presentation_succeeded = false;
+  last_renderer_owned_frame_info_available = false;
+  ++renderer_owned_presentation_draw_failure_count;
+  if (upload_failure) {
+    ++renderer_owned_presentation_failure_count;
+  }
+  ++renderer_owned_presentation_consecutive_failures;
+  renderer_owned_presentation_last_error =
+      error.empty() ? "renderer-owned Metal presentation failed" : error;
+}
+
+void VPMacOSNativePlayer::on_frame_failed(const char* error) {
+  std::lock_guard<std::mutex> callback_lock(callback_mutex);
+  record_presentation_failure_locked(
+      error ? std::string(error) : std::string(), false);
 }
 
 void VPMacOSNativePlayer::update_decode_names_locked() {

@@ -34,6 +34,9 @@ struct VPMacOSNativePlayer {
   void clear_last_frame_locked();
   bool ensure_renderer_locked(std::string& error);
   void on_frame_available();
+  void on_frame_failed(const char* error);
+  void record_presentation_failure_locked(const std::string& error,
+                                          bool upload_failure);
   void update_decode_names_locked();
   VPMacOSNativeTrackInfo track_info_for_file_id_locked(int file_id);
 
@@ -54,11 +57,15 @@ struct VPMacOSNativePlayer {
   int32_t presentation_target_width = 0;
   int32_t presentation_target_height = 0;
   int32_t presentation_target_max_track_slots = 1;
+  uint64_t presentation_target_generation = 0;
   bool last_renderer_owned_presentation_succeeded = false;
   bool last_renderer_owned_frame_info_available = false;
   VPMacOSNativeFrameInfo last_renderer_owned_frame_info = {};
   uint64_t renderer_owned_presentation_upload_count = 0;
   uint64_t renderer_owned_presentation_failure_count = 0;
+  uint64_t renderer_owned_presentation_draw_failure_count = 0;
+  uint64_t renderer_owned_presentation_consecutive_failures = 0;
+  std::string renderer_owned_presentation_last_error;
   std::chrono::steady_clock::time_point renderer_owned_presentation_first_upload_time{};
   std::chrono::steady_clock::time_point renderer_owned_presentation_last_upload_time{};
 };

@@ -26,14 +26,34 @@ enum MacOSVideoRendererDiagnostics {
     let layoutSnapshot = player?.layoutSnapshotMap()
     let schedulerStats = player?.presentationSchedulerStats()
     let perfStats = player?.performanceStats()
+    let rendererOwnedState = player?.rendererOwnedPresentationState()
+      ?? Self.emptyRendererOwnedPresentationState()
+    let rendererOwnedActive = rendererOwnedState["active"] as? Bool ?? false
     var diagnostics: [String: Any] = [
       "platform": "macos",
       "backend": backendName,
       "presentationAdapter": String(cString: VPMacOSNativePresentationAdapterName()),
-      "presentationAdapterKind": presentationAdapterKind(player: player),
+      "presentationAdapterKind": presentationAdapterKind(
+        player: player,
+        state: rendererOwnedState
+      ),
       "presentationScheduler": String(cString: VPMacOSNativePresentationSchedulerName()),
-      "presentationBackend": presentationBackendName(player: player),
-      "rendererOwnedPresentationActive": player?.rendererOwnedPresentationActive() ?? false,
+      "presentationBackend": presentationBackendName(player: player, state: rendererOwnedState),
+      "rendererOwnedPresentationActive": rendererOwnedActive,
+      "rendererOwnedRendererInitialized": rendererOwnedState["rendererInitialized"] ?? false,
+      "rendererOwnedTargetInstalled": rendererOwnedState["targetInstalled"] ?? false,
+      "rendererOwnedBackendAvailable": rendererOwnedState["backendAvailable"] ?? false,
+      "rendererOwnedLastDrawSucceeded": rendererOwnedState["lastDrawSucceeded"] ?? false,
+      "rendererOwnedConsecutiveDrawFailures":
+        rendererOwnedState["consecutiveDrawFailures"] ?? 0,
+      "rendererOwnedDrawFailureCount": rendererOwnedState["drawFailureCount"] ?? 0,
+      "rendererOwnedTargetGeneration": rendererOwnedState["targetGeneration"] ?? 0,
+      "rendererOwnedTargetWidth": rendererOwnedState["targetWidth"] ?? 0,
+      "rendererOwnedTargetHeight": rendererOwnedState["targetHeight"] ?? 0,
+      "rendererOwnedUploadStorageKind": rendererOwnedState["uploadStorageKind"] ?? "unavailable",
+      "rendererOwnedLastSuccessfulFramePtsUs":
+        rendererOwnedState["lastSuccessfulFramePtsUs"] ?? 0,
+      "rendererOwnedLastDrawError": rendererOwnedState["lastDrawError"] ?? "",
       "hardwareDecodeProvider": String(cString: VPMacOSNativeHardwareDecodeProviderName()),
       "hardwareDecodeAvailable": VPMacOSNativeHardwareDecodeAvailable() != 0,
       "hardwareDecodeActive": player?.hardwareDecodeActive() ?? false,
@@ -43,7 +63,7 @@ enum MacOSVideoRendererDiagnostics {
       "available": player != nil,
       "reason": player == nil
         ? "Explicit macOS synthetic texture source is active"
-        : presentationReason(player: player),
+        : presentationReason(player: player, state: rendererOwnedState),
       "textureId": textureId ?? -1,
       "textureWidth": textureDimensions?.width ?? 0,
       "textureHeight": textureDimensions?.height ?? 0,
@@ -118,30 +138,60 @@ enum MacOSVideoRendererDiagnostics {
     return diagnostics
   }
 
-  private static func presentationBackendName(player: MacOSNativePlayerSession?) -> String {
-    guard let player else {
+  private static func presentationBackendName(
+    player: MacOSNativePlayerSession?,
+    state: [String: Any]
+  ) -> String {
+    guard player != nil else {
       return "explicit-synthetic-texture"
     }
-    if player.rendererOwnedPresentationActive() {
+    if state["active"] as? Bool == true {
       return "native-metal-cvpixelbuffer-target"
     }
     return "native-metal-target-unavailable"
   }
 
-  private static func presentationAdapterKind(player: MacOSNativePlayerSession?) -> String {
-    guard let player else {
+  private static func presentationAdapterKind(
+    player: MacOSNativePlayerSession?,
+    state: [String: Any]
+  ) -> String {
+    guard player != nil else {
       return "explicit-synthetic"
     }
-    if player.rendererOwnedPresentationActive() {
+    if state["active"] as? Bool == true {
       return "renderer-owned-metal"
     }
     return "unavailable"
   }
 
-  private static func presentationReason(player: MacOSNativePlayerSession?) -> String {
-    if player?.rendererOwnedPresentationActive() == true {
+  private static func presentationReason(
+    player: MacOSNativePlayerSession?,
+    state: [String: Any]
+  ) -> String {
+    if player != nil && state["active"] as? Bool == true {
       return "macOS shared renderer is active with renderer-owned Metal presentation"
     }
+    if let error = state["lastDrawError"] as? String, !error.isEmpty {
+      return error
+    }
     return "macOS shared renderer has no active renderer-owned presentation target"
+  }
+
+  private static func emptyRendererOwnedPresentationState() -> [String: Any] {
+    [
+      "rendererInitialized": false,
+      "targetInstalled": false,
+      "backendAvailable": false,
+      "active": false,
+      "lastDrawSucceeded": false,
+      "consecutiveDrawFailures": 0,
+      "drawFailureCount": 0,
+      "targetGeneration": 0,
+      "targetWidth": 0,
+      "targetHeight": 0,
+      "uploadStorageKind": "unavailable",
+      "lastSuccessfulFramePtsUs": 0,
+      "lastDrawError": "",
+    ]
   }
 }

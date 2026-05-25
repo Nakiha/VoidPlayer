@@ -29,6 +29,7 @@ public:
   void clear_headless_output() override;
   vr::PresentationBackendStats presentation_stats() const override;
   bool copy_last_frame_info(vr::PresentationBackendFrameInfo* out) const override;
+  const char* last_error() const override { return last_error_.c_str(); }
   bool draw_frame(const vr::RendererDrawSnapshot& snapshot,
                   const vr::PresentationBackendDrawHooks& hooks) override;
 
@@ -42,10 +43,11 @@ public:
                        int32_t max_track_slots);
   void clear_draw_target();
   bool copy_last_draw_frame_info(VPMacOSNativeFrameInfo* out) const;
-  const std::string& last_error() const { return last_error_; }
 
 private:
   void set_last_error(std::string error);
+  void mark_draw_failure(std::string error);
+  void mark_draw_success(const VPMacOSNativeFrameInfo& frame_info);
 
   VPMacOSMetalUploader* uploader_ = nullptr;
   void* draw_target_pixel_buffer_ = nullptr;
@@ -57,6 +59,9 @@ private:
   bool last_draw_frame_info_available_ = false;
   VPMacOSNativeFrameInfo last_draw_frame_info_ = {};
   std::string last_error_;
+  uint64_t draw_failure_count_ = 0;
+  uint64_t consecutive_draw_failures_ = 0;
+  bool last_draw_succeeded_ = false;
   bool headless_ = true;
 };
 

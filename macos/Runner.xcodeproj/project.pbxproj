@@ -562,6 +562,7 @@
 				"$(PROJECT_DIR)/../native/macos/metal_pixel_buffer_uploader.mm",
 				"$(PROJECT_DIR)/../native/macos/metal_pixel_buffer_uploader_shaders.inc",
 				"$(PROJECT_DIR)/../native/macos/metal_presentation_backend_bridge.h",
+				"$(PROJECT_DIR)/../native/macos/metal_presentation_backend_bridge.cpp",
 				"$(PROJECT_DIR)/../native/macos/metal_texture_wrapping.h",
 				"$(PROJECT_DIR)/../native/macos/metal_texture_wrapping.mm",
 				"$(PROJECT_DIR)/../native/macos/metal_uploader_bridge.h",

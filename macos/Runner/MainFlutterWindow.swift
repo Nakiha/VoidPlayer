@@ -1,7 +1,7 @@
 import Cocoa
 import FlutterMacOS
 
-private func macOSNativeFrameAvailable(_ userData: UnsafeMutableRawPointer?) {
+func macOSNativeFrameAvailable(_ userData: UnsafeMutableRawPointer?) {
   guard let userData else { return }
   let renderer = Unmanaged<MacOSVideoRendererBridge>.fromOpaque(userData).takeUnretainedValue()
   renderer.scheduleNativeFrameCopyFromCallback()
@@ -45,10 +45,9 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var backendName = "synthetic-texture"
   private var nativePlayer: MacOSNativePlayerSession?
   private var playbackSpeed = 1.0
-  private var nativeFrameCallbackRegistered = false
-  private var nativePresentationTargetInstalled = false
   private let presentationState = MacOSFramePresentationState()
   private let nativeEvents = MacOSNativeEventState()
+  private let framePump = MacOSNativeFramePump()
 
   init(textureRegistry: FlutterTextureRegistry) {
     self.textureRegistry = textureRegistry
@@ -252,7 +251,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         "presentationUploadMode": MacOSPresentationDiagnostics.uploadMode(
           perfStats: perfStats,
           targetReady: textureStats?.metalTextureValid ?? false,
-          targetInstalled: nativePresentationTargetInstalled,
+          targetInstalled: framePump.targetInstalled,
           textureRegistered: textureId != nil
         ),
         "presentationPackageUploadCount":
@@ -270,7 +269,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         "metalTextureCreationCount": textureStats?.metalTextureCreationCount ?? 0,
         "metalTextureFailureCount": textureStats?.metalTextureFailureCount ?? 0,
         "metalTextureLastError": textureStats?.metalTextureLastError ?? "",
-        "nativePresentationTargetInstalled": nativePresentationTargetInstalled,
+        "nativePresentationTargetInstalled": framePump.targetInstalled,
         "nativeRendererOwnedUploadCount": nativePlayer?.rendererOwnedPresentationUploadCount() ?? 0,
         "nativeRendererOwnedUploadFailureCount": nativePlayer?.rendererOwnedPresentationFailureCount() ?? 0,
         "nativeRendererOwnedUploadFps": perfStats?["rendererOwnedUploadFps"] ?? 0.0,
@@ -285,7 +284,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         "nativeDecodeMaxMs": perfStats?["decodeMaxMs"] ?? 0.0,
         "presentationFallbackReason": MacOSPresentationDiagnostics.fallbackReason(
           player: nativePlayer,
-          targetInstalled: nativePresentationTargetInstalled,
+          targetInstalled: framePump.targetInstalled,
           perfStats: perfStats
         ),
       ]
@@ -346,7 +345,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
           maxTrackSlots: 1,
           waitTimeoutMs: 3_000
         )
-        nativePresentationTargetInstalled = session.rendererOwnedPresentationActive()
+        framePump.setTargetInstalled(session.rendererOwnedPresentationActive())
         initialPresentedPtsUs = firstFrame.ptsUs
         initialPresentedDtsUs = MacOSFramePresentationState.normalizedDtsUs(firstFrame)
         trackWidth = session.width() > 0 ? session.width() : firstFrame.width
@@ -465,7 +464,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     currentDurationUs = 0
     isPlaying = false
     backendName = "synthetic-texture"
-    nativePresentationTargetInstalled = false
+    framePump.setTargetInstalled(false)
     nativePlayer?.close()
     nativePlayer = nil
   }
@@ -576,12 +575,12 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         refreshCurrentFrameAfterLayoutChange()
         if isPlaying,
            let nativePlayer,
-           let texture,
-           texture.installNativePresentationTarget(
-             nativePlayer,
-             maxTrackSlots: activeTrackSlotCapacity()
-           ) {
-          // The next scheduler callback will publish the next renderer-owned frame.
+           let texture {
+          let installed = texture.installNativePresentationTarget(
+            nativePlayer,
+            maxTrackSlots: activeTrackSlotCapacity()
+          )
+          framePump.setTargetInstalled(installed)
         }
       }
     }
@@ -641,7 +640,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         maxTrackSlots: activeTrackSlotCapacity(),
         waitTimeoutMs: 3_000
       )
-      nativePresentationTargetInstalled = nativePlayer.rendererOwnedPresentationActive()
+      framePump.setTargetInstalled(nativePlayer.rendererOwnedPresentationActive())
       publishFrameInfo(frameInfo)
       return nil
     } catch {
@@ -666,7 +665,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         maxTrackSlots: activeTrackSlotCapacity(),
         waitTimeoutMs: 100
       )
-      nativePresentationTargetInstalled = nativePlayer.rendererOwnedPresentationActive()
+      framePump.setTargetInstalled(nativePlayer.rendererOwnedPresentationActive())
       publishFrameInfo(frameInfo)
     } catch {
       if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true {
@@ -719,7 +718,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         maxTrackSlots: activeTrackSlotCapacity(),
         waitTimeoutMs: 3_000
       )
-      nativePresentationTargetInstalled = nativePlayer.rendererOwnedPresentationActive()
+      framePump.setTargetInstalled(nativePlayer.rendererOwnedPresentationActive())
       publishFrameInfo(frameInfo)
     } catch {
       return FlutterError(
@@ -779,39 +778,20 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       return
     }
 
-    presentationState.resetFrameCounters()
-    nativePlayer.resetRendererOwnedPresentationStats()
-    nativeFrameCallbackRegistered = true
-    nativePresentationTargetInstalled = false
-    if let texture {
-      nativePresentationTargetInstalled = texture.installNativePresentationTarget(
-        nativePlayer,
-        maxTrackSlots: activeTrackSlotCapacity()
-      )
-    }
-    nativePlayer.setFrameAvailableCallback(
-      macOSNativeFrameAvailable,
-      userData: Unmanaged.passUnretained(self).toOpaque()
+    let started = framePump.start(
+      player: nativePlayer,
+      texture: texture,
+      maxTrackSlots: activeTrackSlotCapacity(),
+      userData: Unmanaged.passUnretained(self).toOpaque(),
+      presentationState: presentationState
     )
-    guard !nativePresentationTargetInstalled else {
-      return
+    if !started {
+      isPlaying = false
     }
-    presentationState.recordError()
-    NSLog("VoidPlayer macOS renderer-owned Metal presentation target unavailable")
-    isPlaying = false
-    nativePlayer.pause()
-    stopNativeFramePump()
   }
 
   private func stopNativeFramePump(clearPresentationTarget: Bool = false) {
-    if clearPresentationTarget {
-      nativePlayer?.clearMetalPresentationTarget()
-      nativePresentationTargetInstalled = false
-    }
-    if nativeFrameCallbackRegistered {
-      nativePlayer?.setFrameAvailableCallback(nil, userData: nil)
-      nativeFrameCallbackRegistered = false
-    }
+    framePump.stop(player: nativePlayer, clearPresentationTarget: clearPresentationTarget)
   }
 
   fileprivate func scheduleNativeFrameCopyFromCallback() {
@@ -830,7 +810,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         self.markFrameAvailable()
         return
       }
-      if self.nativePresentationTargetInstalled {
+      if self.framePump.targetInstalled {
         return
       }
       self.presentationState.recordError()

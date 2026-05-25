@@ -132,7 +132,8 @@ offset composition is presented through the renderer-owned Metal target rather t
 `LayoutController` state and exposed through `nativeLayout*` diagnostics; visual layout
 application is refreshed through native renderer snapshots. The adapter accepts CPU RGBA, planar
 YUV420, NV12, and P010 frames, with deterministic smoke coverage for range and matrix-aware YUV
-conversion plus a 10-bit H.264 VideoToolbox hwdownload UI smoke for the forced fallback path.
+conversion plus a 10-bit H.264 VideoToolbox UI smoke for renderer-owned P010 CVPixelBuffer
+presentation. The forced fallback path remains covered by the direct-copy fallback smoke.
 The pixel buffer is created with Metal compatibility and IOSurface backing, and native diagnostics expose whether a
 `CVMetalTextureCache` can wrap it (`metalTextureCreationCount`, `metalTextureValid`). Validation
 failures keep explicit native reasons in `metalTextureLastError`, including size mismatch and

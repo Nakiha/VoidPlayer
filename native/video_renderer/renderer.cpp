@@ -17,6 +17,7 @@
 #include "video_renderer/render/device_loss_policy.h"
 #include "video_renderer/render/presentation_backend_factory.h"
 #include "video_renderer/render/presentation_snapshot.h"
+#include "video_renderer/render/render_thread_platform.h"
 #include "video_renderer/render/swap_chain_present_policy.h"
 #include "video_renderer/track/track_snapshot.h"
 #include "video_renderer/d3d11/render_backend.h"
@@ -28,9 +29,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
-#include <windows.h>
-#include <mmsystem.h>
-#pragma comment(lib, "winmm.lib")
 
 namespace vr {
 
@@ -38,26 +36,6 @@ namespace vr {
 static constexpr int64_t MAX_SLEEP_US = 8000;  // 8ms cap → ~120Hz layout response
 static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250);
 static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
-
-class ScopedTimerResolution {
-public:
-    explicit ScopedTimerResolution(UINT period) : period_(period) {
-        active_ = timeBeginPeriod(period_) == 0;
-    }
-
-    ~ScopedTimerResolution() {
-        if (active_) {
-            timeEndPeriod(period_);
-        }
-    }
-
-    ScopedTimerResolution(const ScopedTimerResolution&) = delete;
-    ScopedTimerResolution& operator=(const ScopedTimerResolution&) = delete;
-
-private:
-    UINT period_ = 0;
-    bool active_ = false;
-};
 
 uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
     return static_cast<uint64_t>(
@@ -1417,8 +1395,9 @@ void Renderer::do_resize(int width, int height) {
 void Renderer::render_loop() noexcept {
     // Raise Windows timer resolution from default ~15.6ms to 1ms,
     // so sleep_for(16ms) actually wakes up near 16ms instead of 31ms.
-    ScopedTimerResolution timer_resolution(1);
-    spdlog::info("[Renderer] Render loop started (timer resolution: 1ms), tid={}", GetCurrentThreadId());
+    ScopedRenderThreadTiming render_thread_timing;
+    spdlog::info("[Renderer] Render loop started (timer resolution: platform), tid={}",
+                 current_render_thread_id_string());
 
     try {
         render_loop_body();

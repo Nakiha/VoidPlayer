@@ -27,6 +27,7 @@ set(VOID_PLAYER_PORTABLE_CORE_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/render/render_loop_controller.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/render/presentation_scheduler.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/render/presentation_snapshot.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/render/render_thread_platform.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/renderer_config_validation.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/seek/seek_coordinator.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track/track_buffer_budget.cpp"

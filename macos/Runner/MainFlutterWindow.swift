@@ -713,9 +713,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "presentationAdapter": String(cString: VPMacOSNativePresentationAdapterName()),
         "presentationAdapterKind": "software-fallback",
         "presentationScheduler": String(cString: VPMacOSNativePresentationSchedulerName()),
-        "presentationBackend": nativePlayer?.rendererOwnedPresentationActive() == true
-          ? "native-metal-cvpixelbuffer-target"
-          : "swift-cvpixelbuffer-texture-pump",
+        "presentationBackend": presentationBackendName(),
         "rendererOwnedPresentationActive": nativePlayer?.rendererOwnedPresentationActive() ?? false,
         "hardwareDecodeProvider": String(cString: VPMacOSNativeHardwareDecodeProviderName()),
         "hardwareDecodeAvailable": VPMacOSNativeHardwareDecodeAvailable() != 0,
@@ -726,9 +724,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "available": nativePlayer != nil,
         "reason": nativePlayer == nil
           ? "Synthetic macOS texture bridge is active"
-          : (nativePlayer?.rendererOwnedPresentationActive() == true
-            ? "macOS shared native facade is active with renderer-owned Metal presentation"
-            : "macOS shared native facade is active with transitional texture-pump presentation"),
+          : presentationReason(),
         "textureId": textureId ?? -1,
         "textureWidth": textureDimensions?.width ?? 0,
         "textureHeight": textureDimensions?.height ?? 0,
@@ -1378,6 +1374,29 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     return "none"
   }
 
+  private func presentationBackendName() -> String {
+    guard nativePlayer != nil else {
+      return "synthetic-texture"
+    }
+    if nativePlayer?.rendererOwnedPresentationActive() == true {
+      return "native-metal-cvpixelbuffer-target"
+    }
+    if texture?.directCopyFallbackEnabled() == true {
+      return "swift-cvpixelbuffer-direct-copy-fallback"
+    }
+    return "native-metal-target-unavailable"
+  }
+
+  private func presentationReason() -> String {
+    if nativePlayer?.rendererOwnedPresentationActive() == true {
+      return "macOS shared native facade is active with renderer-owned Metal presentation"
+    }
+    if texture?.directCopyFallbackEnabled() == true {
+      return "macOS shared native facade is using the explicit direct-copy fallback"
+    }
+    return "macOS shared native facade has no active renderer-owned presentation target"
+  }
+
   private func int64Diagnostic(_ value: Any?) -> Int64 {
     switch value {
     case let value as Int64:
@@ -1425,6 +1444,14 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     guard !nativePresentationTargetInstalled else {
       return
     }
+    guard texture?.directCopyFallbackEnabled() == true else {
+      nativeFrameCopyErrorCount += 1
+      NSLog("VoidPlayer macOS renderer-owned Metal presentation target unavailable")
+      isPlaying = false
+      nativePlayer.pause()
+      stopNativeFramePump()
+      return
+    }
     nativeFrameCopyInFlight = true
     playbackQueue.async { [weak self] in
       self?.copyNativePlaybackFrame(generation: generation, maxTrackSlots: maxTrackSlots)
@@ -1465,6 +1492,14 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         return
       }
       if self.nativePresentationTargetInstalled {
+        return
+      }
+      guard self.texture?.directCopyFallbackEnabled() == true else {
+        self.nativeFrameCopyErrorCount += 1
+        NSLog("VoidPlayer macOS renderer-owned Metal presentation failed without fallback")
+        self.isPlaying = false
+        self.nativePlayer?.pause()
+        self.stopNativeFramePump()
         return
       }
       if self.nativeFrameCopyInFlight {
@@ -1753,15 +1788,16 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
     }
 
     if metalUploadEnabled {
-      if let info = try copyFromNativePlayerWithMetalUpload(
+      guard let info = try copyFromNativePlayerWithMetalUpload(
         player,
         pixelBuffer: pixelBuffer,
         maxTrackSlots: maxTrackSlots,
         waitTimeoutMs: waitTimeoutMs
-      ) {
-        pixelBufferReuseCount += 1
-        return info
+      ) else {
+        throw MacOSNativePlayerError.failed("renderer-owned Metal presentation is unavailable")
       }
+      pixelBufferReuseCount += 1
+      return info
     }
 
     guard let targetBuffer = ensureBackPixelBufferLocked() else {
@@ -1810,6 +1846,10 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
     defer { lock.unlock() }
 
     return (width: width, height: height)
+  }
+
+  func directCopyFallbackEnabled() -> Bool {
+    !metalUploadEnabled
   }
 
   func captureMetrics() -> (
@@ -2086,8 +2126,11 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
         return "metal-presentation-target-ready"
       }
     }
-    if pixelBuffer != nil {
+    if pixelBuffer != nil, !metalUploadEnabled {
       return "cvpixelbuffer-direct-copy"
+    }
+    if pixelBuffer != nil {
+      return "metal-presentation-target-unavailable"
     }
     return "unavailable"
   }
@@ -2103,7 +2146,7 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
     }
     guard let nativeMetalPresentationBackend,
           VPMacOSMetalPresentationBackendIsAvailable(nativeMetalPresentationBackend) != 0 else {
-      return nil
+      throw MacOSNativePlayerError.failed("renderer-owned Metal presentation backend is unavailable")
     }
     do {
       guard player.setMetalPresentationTarget(
@@ -2113,7 +2156,7 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
         height: height,
         maxTrackSlots: maxTrackSlots
       ) else {
-        return nil
+        throw MacOSNativePlayerError.failed("failed to install renderer-owned Metal presentation target")
       }
       let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
       var lastError: Error?
@@ -2138,8 +2181,8 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
       return nil
     } catch {
       pixelBufferMetalUploadFailureCount += 1
-      NSLog("VoidPlayer macOS renderer-owned Metal refresh failed; falling back to CPU BGRA layout: \(error)")
-      return nil
+      NSLog("VoidPlayer macOS renderer-owned Metal refresh failed: \(error)")
+      throw error
     }
   }
 

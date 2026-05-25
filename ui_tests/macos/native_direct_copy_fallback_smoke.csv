@@ -11,6 +11,7 @@
 1.52, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, software-fallback
 1.54, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, false
 1.55, ASSERT_NATIVE_DIAGNOSTIC_BOOL, pixelBufferMetalUploadEnabled, false
+1.56, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, swift-cvpixelbuffer-direct-copy-fallback
 1.6, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, cvpixelbuffer-direct-copy
 1.7, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureValid, true
 1.8, CAPTURE_VIEWPORT, direct_copy_initial

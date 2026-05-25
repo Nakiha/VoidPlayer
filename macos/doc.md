@@ -65,7 +65,8 @@ covered with a generated MPEG-2 smoke. Visible presentation diagnostics also spl
 `nativeFrameCopyCount` into `nativeFrameRendererOwnedPresentCount` and `nativeFrameSwiftCopyCount`.
 Renderer-owned smokes assert the Swift copy count stays at zero once the Metal presentation target
 is active; the direct-copy fallback smoke asserts the opposite so the compatibility path stays
-observable.
+observable. Metal-enabled native playback treats a missing renderer-owned target as a presentation
+failure instead of silently falling back to locked-buffer copies.
 
 The macOS runner also implements the shared `pickFiles` MethodChannel call with `NSOpenPanel`.
 Debug and Release entitlements include `com.apple.security.files.user-selected.read-only` so
@@ -154,7 +155,9 @@ CVPixelBuffer upload count, last package storage (`yuv`/`bgra`), scheduler-selec
 count, and whether the package copy consumed the cached scheduler decision. The older
 locked-buffer direct copy remains a fallback and is reported through `pixelBufferDirectCopyCount`
 and `nativeFrameSwiftCopyCount`; normal Metal-enabled first-frame, seek, step, offset, layout, and
-playback paths keep those fallback counters at zero. The diagnostics map also reports primary decode cadence
+playback paths keep those fallback counters at zero. The diagnostics map reports the fallback as
+`presentationBackend=swift-cvpixelbuffer-direct-copy-fallback` only when it is explicitly enabled.
+It also reports primary decode cadence
 (`nativeDecodeFrameCount`, `nativeDecodeFpsX1000`), renderer-owned upload cadence
 (`nativeRendererOwnedUploadFpsX1000`), presented callback cadence (`nativeFrameCopyFpsX1000`), and
 `presentationFallbackReason` so 4K playback regressions can be separated into decode, upload,

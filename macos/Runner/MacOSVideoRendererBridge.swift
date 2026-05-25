@@ -1,0 +1,704 @@
+import Cocoa
+import FlutterMacOS
+
+func macOSNativeFrameAvailable(_ userData: UnsafeMutableRawPointer?) {
+  guard let userData else { return }
+  let renderer = Unmanaged<MacOSVideoRendererBridge>.fromOpaque(userData).takeUnretainedValue()
+  renderer.scheduleNativeFrameCopyFromCallback()
+}
+
+final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
+  private static let channelName = "video_renderer"
+  private static let eventsChannelName = "video_renderer/events"
+  private static let syntheticDurationUs = 10_000_000
+  private static weak var activeInstance: MacOSVideoRendererBridge?
+
+  private let textureRegistry: FlutterTextureRegistry
+  private let playbackQueue = DispatchQueue(label: "dev.nakiha.voidplayer.macos.native-playback")
+  private var methodChannel: FlutterMethodChannel?
+  private var eventChannel: FlutterEventChannel?
+  private var texture: MacOSFlutterTextureBridge?
+  private var textureId: Int64?
+  private var tracks: [[String: Any]] = []
+  private var layout: [String: Any] = MacOSVideoTrackPayload.defaultLayout()
+  private var currentDurationUs = 0
+  private var isPlaying = false
+  private var backendName = "synthetic-texture"
+  private var nativePlayer: MacOSNativePlayerSession?
+  private var playbackSpeed = 1.0
+  private let presentationState = MacOSFramePresentationState()
+  private let nativeEvents = MacOSNativeEventState()
+  private let framePump = MacOSNativeFramePump()
+
+  init(textureRegistry: FlutterTextureRegistry) {
+    self.textureRegistry = textureRegistry
+    super.init()
+  }
+
+  static func register(with engine: FlutterEngine) {
+    configureNativeEnvironment()
+    let bridge = MacOSVideoRendererBridge(textureRegistry: engine)
+    activeInstance = bridge
+    let messenger = engine.binaryMessenger
+    let channel = FlutterMethodChannel(name: channelName, binaryMessenger: messenger)
+    channel.setMethodCallHandler(bridge.handle)
+    bridge.methodChannel = channel
+
+    let events = FlutterEventChannel(name: eventsChannelName, binaryMessenger: messenger)
+    events.setStreamHandler(bridge)
+    bridge.eventChannel = events
+  }
+
+  private static func configureNativeEnvironment() {
+  }
+
+  static func destroyActivePlayerForWindowClose() {
+    activeInstance?.destroyPlayerForWindowClose()
+  }
+
+  private func configureNativeLogging(arguments: Any?) {
+    guard let args = arguments as? [String: Any],
+          let logsDir = args["logsDir"] as? String,
+          !logsDir.isEmpty else {
+      return
+    }
+    logsDir.withCString { logsDirPointer in
+      VPMacOSInstallCrashHandler(logsDirPointer)
+    }
+  }
+
+  private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "initLogging":
+      configureNativeLogging(arguments: call.arguments)
+      result(nil)
+    case "setViewportBackgroundColor":
+      result(nil)
+    case "setTrackOffset":
+      let fileId = MacOSFlutterArguments.intArg(call.arguments, "fileId") ?? -1
+      let offsetUs = MacOSFlutterArguments.intArg(call.arguments, "offsetUs") ?? 0
+      nativePlayer?.setTrackOffset(fileId: fileId, offsetUs: offsetUs)
+      result(nil)
+    case "setLoopRange":
+      nativePlayer?.setLoopRange(
+        enabled: MacOSFlutterArguments.boolArg(call.arguments, "enabled") ?? false,
+        startUs: MacOSFlutterArguments.intArg(call.arguments, "startUs") ?? 0,
+        endUs: MacOSFlutterArguments.intArg(call.arguments, "endUs") ?? 0
+      )
+      result(nil)
+    case "setAudibleTrack":
+      let fileId = MacOSFlutterArguments.intArg(call.arguments, "fileId") ?? -1
+      nativePlayer?.setAudibleTrack(fileId)
+      result(nil)
+    case "setSpeed":
+      playbackSpeed = max(0.01, MacOSFlutterArguments.doubleArg(call.arguments, "speed") ?? 1.0)
+      nativePlayer?.setSpeed(playbackSpeed)
+      result(nil)
+    case "createPlayer":
+      result(createPlayer(arguments: call.arguments))
+    case "destroyPlayer":
+      destroyPlayer()
+      result(nil)
+    case "addTrack":
+      result(addTrack(arguments: call.arguments))
+    case "removeTrack":
+      removeTrack(arguments: call.arguments)
+      result(nil)
+    case "resize":
+      resize(arguments: call.arguments)
+      result(nil)
+    case "play":
+      isPlaying = textureId != nil
+      nativePlayer?.play()
+      startNativeFramePump()
+      result(nil)
+    case "pause":
+      isPlaying = false
+      nativePlayer?.pause()
+      stopNativeFramePump()
+      result(nil)
+    case "seek":
+      let targetPtsUs = MacOSFlutterArguments.intArg(call.arguments, "ptsUs") ?? 0
+      let requestId = MacOSFlutterArguments.intArg(call.arguments, "requestId")
+      let resumeAfterSeek = nativePlayer?.isPlaying() ?? isPlaying
+      if let error = seekAndRefresh(
+        targetPtsUs: targetPtsUs,
+        requestId: requestId,
+        resumeAfterSeek: resumeAfterSeek
+      ) {
+        result(error)
+        return
+      }
+      result(nil)
+    case "stepForward":
+      if let error = stepAndRefresh(forward: true) {
+        result(error)
+        return
+      }
+      result(nil)
+    case "stepBackward":
+      if let error = stepAndRefresh(forward: false) {
+        result(error)
+        return
+      }
+      result(nil)
+    case "currentPts":
+      presentationState.setCurrentPts(nativePlayer?.currentPtsUs() ?? presentationState.currentPtsUs)
+      result(presentationState.currentPtsUs)
+    case "duration":
+      result(tracks.isEmpty ? 0 : currentDurationUs)
+    case "currentPresentedFrame":
+      result(
+        textureId == nil
+          ? nil
+          : presentationState.currentPresentedFrameMap()
+      )
+    case "isPlaying":
+      result(nativePlayer?.isPlaying() ?? isPlaying)
+    case "getLayout":
+      result(layout)
+    case "applyLayout":
+      if let nextLayout = call.arguments as? [String: Any] {
+        nativePlayer?.applyLayout(
+          mode: MacOSFlutterArguments.intValue(nextLayout["mode"]) ?? 0,
+          splitPos: MacOSFlutterArguments.doubleValue(nextLayout["splitPos"]) ?? 0.5,
+          zoomRatio: MacOSFlutterArguments.doubleValue(nextLayout["zoomRatio"]) ?? 1.0,
+          viewOffsetX: MacOSFlutterArguments.doubleValue(nextLayout["viewOffsetX"]) ?? 0.0,
+          viewOffsetY: MacOSFlutterArguments.doubleValue(nextLayout["viewOffsetY"]) ?? 0.0,
+          pixelSizeMode: MacOSFlutterArguments.intValue(nextLayout["pixelSizeMode"]) ?? 0,
+          order: MacOSFlutterArguments.intListValue(nextLayout["order"])
+        )
+        layout = nativePlayer?.layoutSnapshotMap() ?? nextLayout
+        refreshCurrentFrameAfterLayoutChange()
+      }
+      result(nil)
+    case "getTracks":
+      result(tracks)
+    case "pickFiles":
+      pickFiles(arguments: call.arguments, result: result)
+    case "getDiagnostics":
+      result(MacOSVideoRendererDiagnostics.map(
+        backendName: backendName,
+        player: nativePlayer,
+        textureId: textureId,
+        textureStats: texture?.diagnostics(),
+        textureDimensions: texture?.dimensions(),
+        trackCount: tracks.count,
+        presentationTargetInstalled: framePump.targetInstalled,
+        nativeEventDiagnostics: nativeEvents.diagnosticMap(),
+        presentationDiagnostics: presentationState.diagnosticMap()
+      ))
+    case "captureViewport":
+      result(captureViewport())
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func createPlayer(arguments: Any?) -> Any {
+    destroyPlayer()
+
+    let paths = MacOSFlutterArguments.stringListArg(arguments, "videoPaths")
+    let requestedWidth = max(16, MacOSFlutterArguments.intArg(arguments, "width") ?? 1920)
+    let requestedHeight = max(16, MacOSFlutterArguments.intArg(arguments, "height") ?? 1080)
+    let firstPath = paths.first ?? "macos-synthetic://color-bars"
+
+    let nextTexture: MacOSFlutterTextureBridge
+    let trackWidth: Int
+    let trackHeight: Int
+    let trackDurationUs: Int
+    let trackFormatName: String
+    let trackCodecName: String
+    let trackCodecLongName: String
+    let trackDecoderName: String
+    var initialPresentedPtsUs = 0
+    var initialPresentedDtsUs = 0
+    if firstPath.hasPrefix("macos-synthetic://") {
+      nextTexture = MacOSFlutterTextureBridge(
+        width: requestedWidth,
+        height: requestedHeight
+      )
+      trackWidth = requestedWidth
+      trackHeight = requestedHeight
+      trackDurationUs = Self.syntheticDurationUs
+      trackFormatName = MacOSVideoTrackPayload.syntheticFormatName
+      trackCodecName = MacOSVideoTrackPayload.syntheticCodecName
+      trackCodecLongName = MacOSVideoTrackPayload.syntheticCodecLongName
+      trackDecoderName = MacOSVideoTrackPayload.syntheticDecoderName
+      backendName = "synthetic-texture"
+      nativePlayer = nil
+    } else {
+      do {
+        guard let session = MacOSNativePlayerSession() else {
+          throw MacOSNativePlayerError.failed("failed to allocate macOS native player")
+        }
+        try session.open(path: firstPath)
+        nextTexture = MacOSFlutterTextureBridge(
+          nativeWidth: requestedWidth,
+          nativeHeight: requestedHeight
+        )
+        let firstFrame = try nextTexture.updateFromNativePlayer(
+          session,
+          maxTrackSlots: 1,
+          waitTimeoutMs: 3_000
+        )
+        framePump.setTargetInstalled(session.rendererOwnedPresentationActive())
+        initialPresentedPtsUs = firstFrame.ptsUs
+        initialPresentedDtsUs = MacOSFramePresentationState.normalizedDtsUs(firstFrame)
+        trackWidth = session.width() > 0 ? session.width() : firstFrame.width
+        trackHeight = session.height() > 0 ? session.height() : firstFrame.height
+        trackDurationUs = session.durationUs() > 0 ? session.durationUs() : Self.syntheticDurationUs
+        trackFormatName = MacOSVideoTrackPayload.nativeFormatName
+        trackCodecName = MacOSVideoTrackPayload.nativeCodecName
+        trackCodecLongName = MacOSVideoTrackPayload.nativeCodecLongName
+        trackDecoderName = session.decoderName()
+        backendName = MacOSVideoTrackPayload.nativeFormatName
+        nativePlayer = session
+      } catch {
+        return FlutterError(
+          code: "DECODE_FAILED",
+          message: "Failed to open macOS native player",
+          details: "\(error)"
+        )
+      }
+    }
+
+    let registeredTextureId = textureRegistry.register(nextTexture)
+
+    texture = nextTexture
+    textureId = registeredTextureId
+    if backendName == MacOSVideoTrackPayload.nativeFormatName {
+      tracks = [
+        MacOSVideoTrackPayload.track(
+          fileId: 0,
+          slot: 0,
+          path: firstPath,
+          width: trackWidth,
+          height: trackHeight,
+          durationUs: trackDurationUs,
+          formatName: trackFormatName,
+          codecName: trackCodecName,
+          codecLongName: trackCodecLongName,
+          decoderName: trackDecoderName
+        )
+      ]
+      if paths.count > 1 {
+        for path in paths.dropFirst() {
+          let fileId = (tracks.map { MacOSFlutterArguments.intValue($0["fileId"]) ?? 0 }.max() ?? -1) + 1
+          do {
+            guard let session = nativePlayer else {
+              throw MacOSNativePlayerError.failed("macOS native player is unavailable")
+            }
+            let metadata = try session.addTrack(path: path, fileId: fileId)
+            tracks.append(nativeTrackMap(path: path, metadata: metadata))
+          } catch {
+            destroyPlayer()
+            return FlutterError(
+              code: "DECODE_FAILED",
+              message: "Failed to add macOS native track",
+              details: "\(error)"
+            )
+          }
+        }
+      }
+    } else {
+      tracks = paths.enumerated().map { index, path in
+        MacOSVideoTrackPayload.syntheticTrack(
+          fileId: index,
+          slot: index,
+          path: path,
+          width: trackWidth,
+          height: trackHeight,
+          durationUs: trackDurationUs
+        )
+      }
+    }
+    currentDurationUs = tracks
+      .map { MacOSFlutterArguments.intValue($0["durationUs"]) ?? trackDurationUs }
+      .max() ?? trackDurationUs
+    presentationState.seedPresentedFrame(
+      ptsUs: initialPresentedPtsUs,
+      dtsUs: initialPresentedDtsUs,
+      durationUs: trackDurationUs
+    )
+    isPlaying = false
+    markFrameAvailable()
+
+    return [
+      "textureId": registeredTextureId,
+      "tracks": tracks,
+    ]
+  }
+
+  private func nativeTrackMap(path: String, metadata: MacOSNativeTrackMetadata) -> [String: Any] {
+    MacOSVideoTrackPayload.nativeTrack(
+      path: path,
+      metadata: metadata,
+      decoderName: nativePlayer?.decoderName() ?? "decode_thread_software"
+    )
+  }
+
+  private func destroyPlayer() {
+    stopNativeFramePump(clearPresentationTarget: true)
+    if let id = textureId {
+      textureRegistry.unregisterTexture(id)
+    }
+    texture = nil
+    textureId = nil
+    tracks.removeAll()
+    presentationState.resetAll()
+    currentDurationUs = 0
+    isPlaying = false
+    backendName = "synthetic-texture"
+    framePump.setTargetInstalled(false)
+    nativePlayer?.close()
+    nativePlayer = nil
+  }
+
+  private func destroyPlayerForWindowClose() {
+    if textureId == nil && nativePlayer == nil {
+      return
+    }
+    NSLog("VoidPlayer macOS native player teardown before window close")
+    destroyPlayer()
+  }
+
+  private func addTrack(arguments: Any?) -> Any {
+    guard textureId != nil else {
+      return FlutterError(
+        code: "NO_PLAYER",
+        message: "createPlayer must be called before addTrack",
+        details: nil
+      )
+    }
+
+    let fileId = (tracks.map { MacOSFlutterArguments.intValue($0["fileId"]) ?? 0 }.max() ?? -1) + 1
+    let slot = tracks.count
+    let path = MacOSFlutterArguments.stringArg(arguments, "path") ?? "macos-synthetic-\(fileId)"
+    if backendName == MacOSVideoTrackPayload.nativeFormatName {
+      do {
+        guard let session = nativePlayer else {
+          throw MacOSNativePlayerError.failed("macOS native player is unavailable")
+        }
+        let metadata = try session.addTrack(path: path, fileId: fileId)
+        let track = nativeTrackMap(path: path, metadata: metadata)
+        tracks.append(track)
+        currentDurationUs = max(currentDurationUs, metadata.durationUs)
+        refreshCurrentFrameAfterLayoutChange()
+        return track
+      } catch {
+        return FlutterError(
+          code: "DECODE_FAILED",
+          message: "Failed to add macOS native track",
+          details: "\(error)"
+        )
+      }
+    }
+
+    let size = texture?.dimensions() ?? (width: 1920, height: 1080)
+    let track = MacOSVideoTrackPayload.syntheticTrack(
+      fileId: fileId,
+      slot: slot,
+      path: path,
+      width: size.width,
+      height: size.height,
+      durationUs: currentDurationUs
+    )
+    tracks.append(track)
+    markFrameAvailable()
+    return track
+  }
+
+  private func removeTrack(arguments: Any?) {
+    guard let fileId = MacOSFlutterArguments.intArg(arguments, "fileId") else { return }
+    if backendName == MacOSVideoTrackPayload.nativeFormatName {
+      if fileId == 0 {
+        destroyPlayer()
+        return
+      }
+      nativePlayer?.removeTrack(fileId: fileId)
+    }
+    tracks.removeAll { MacOSFlutterArguments.intValue($0["fileId"]) == fileId }
+    if backendName != MacOSVideoTrackPayload.nativeFormatName {
+      tracks = tracks.enumerated().map { index, track in
+        var next = track
+        next["slot"] = index
+        return next
+      }
+    }
+    currentDurationUs = tracks
+      .map { MacOSFlutterArguments.intValue($0["durationUs"]) ?? 0 }
+      .max() ?? 0
+    if tracks.isEmpty {
+      destroyPlayer()
+    } else {
+      refreshCurrentFrameAfterLayoutChange()
+    }
+  }
+
+  private func resize(arguments: Any?) {
+    let width = MacOSFlutterArguments.intArg(arguments, "width")
+    let height = MacOSFlutterArguments.intArg(arguments, "height")
+    if let width, let height {
+      let nextWidth = max(16, width)
+      let nextHeight = max(16, height)
+      let currentDimensions = texture?.dimensions()
+      let willChange = currentDimensions?.width != nextWidth ||
+        currentDimensions?.height != nextHeight
+      if backendName == MacOSVideoTrackPayload.nativeFormatName, willChange {
+        nativePlayer?.clearMetalPresentationTarget()
+      }
+      _ = texture?.resize(width: nextWidth, height: nextHeight) ?? false
+      if backendName == MacOSVideoTrackPayload.nativeFormatName {
+        refreshCurrentFrameAfterLayoutChange()
+        if isPlaying,
+           let nativePlayer,
+           let texture {
+          let installed = texture.installNativePresentationTarget(
+            nativePlayer,
+            maxTrackSlots: activeTrackSlotCapacity()
+          )
+          framePump.setTargetInstalled(installed)
+        }
+      }
+    }
+    markFrameAvailable()
+  }
+
+  private func captureViewport() -> Any {
+    guard let texture else {
+      return FlutterError(
+        code: "NO_PLAYER",
+        message: "No macOS Flutter texture bridge is registered",
+        details: nil
+      )
+    }
+    let metrics = texture.captureMetrics()
+
+    return [
+      "hash": metrics.hash,
+      "width": metrics.width,
+      "height": metrics.height,
+      "avgLuma": metrics.avgLuma,
+      "nonBlackRatio": metrics.nonBlackRatio,
+    ]
+  }
+
+  private func markFrameAvailable() {
+    if let id = textureId {
+      textureRegistry.textureFrameAvailable(id)
+    }
+  }
+
+  private func activeDurationUs() -> Int {
+    currentDurationUs > 0 ? currentDurationUs : Self.syntheticDurationUs
+  }
+
+  private func activeTrackSlotCapacity() -> Int {
+    let maxSlot = tracks
+      .compactMap { MacOSFlutterArguments.intValue($0["slot"]) }
+      .max() ?? 0
+    return max(1, min(4, maxSlot + 1))
+  }
+
+  private func refreshDecodedFrameIfNeeded(targetPtsUs: Int) -> FlutterError? {
+    guard backendName == MacOSVideoTrackPayload.nativeFormatName,
+          let nativePlayer,
+          texture != nil else {
+      return nil
+    }
+
+    do {
+      nativePlayer.seek(targetPtsUs)
+      guard let texture else {
+        throw MacOSNativePlayerError.invalidPayload
+      }
+      let frameInfo = try texture.updateFromNativePlayer(
+        nativePlayer,
+        maxTrackSlots: activeTrackSlotCapacity(),
+        waitTimeoutMs: 3_000
+      )
+      framePump.setTargetInstalled(nativePlayer.rendererOwnedPresentationActive())
+      publishFrameInfo(frameInfo)
+      return nil
+    } catch {
+      return FlutterError(
+        code: "DECODE_FAILED",
+        message: "Failed to decode macOS video frame",
+        details: "\(error)"
+      )
+    }
+  }
+
+  private func refreshCurrentFrameAfterLayoutChange() {
+    guard backendName == MacOSVideoTrackPayload.nativeFormatName,
+          let nativePlayer,
+          let texture else {
+      markFrameAvailable()
+      return
+    }
+    do {
+      let frameInfo = try texture.updateFromNativePlayer(
+        nativePlayer,
+        maxTrackSlots: activeTrackSlotCapacity(),
+        waitTimeoutMs: 100
+      )
+      framePump.setTargetInstalled(nativePlayer.rendererOwnedPresentationActive())
+      publishFrameInfo(frameInfo)
+    } catch {
+      if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true {
+        presentationState.recordMiss()
+      } else {
+        NSLog("VoidPlayer macOS native layout refresh failed: \(error)")
+      }
+    }
+    markFrameAvailable()
+  }
+
+  private func seekAndRefresh(
+    targetPtsUs: Int,
+    requestId: Int?,
+    resumeAfterSeek: Bool
+  ) -> FlutterError? {
+    stopNativeFramePump()
+    nativePlayer?.pause()
+    isPlaying = false
+    let settledPtsUs = max(0, min(activeDurationUs(), targetPtsUs))
+    presentationState.setCurrentPts(settledPtsUs)
+    if let error = refreshDecodedFrameIfNeeded(targetPtsUs: settledPtsUs) {
+      return error
+    }
+    markFrameAvailable()
+    emitSeekPreviewPresented(requestId: requestId, targetPtsUs: settledPtsUs)
+    if resumeAfterSeek {
+      isPlaying = textureId != nil
+      nativePlayer?.play()
+      startNativeFramePump()
+    }
+    return nil
+  }
+
+  private func stepAndRefresh(forward: Bool) -> FlutterError? {
+    stopNativeFramePump()
+    isPlaying = false
+    guard let nativePlayer,
+          let texture else {
+      return nil
+    }
+    do {
+      if forward {
+        try nativePlayer.stepForward()
+      } else {
+        try nativePlayer.stepBackward()
+      }
+      let frameInfo = try texture.updateFromNativePlayer(
+        nativePlayer,
+        maxTrackSlots: activeTrackSlotCapacity(),
+        waitTimeoutMs: 3_000
+      )
+      framePump.setTargetInstalled(nativePlayer.rendererOwnedPresentationActive())
+      publishFrameInfo(frameInfo)
+    } catch {
+      return FlutterError(
+        code: "STEP_FAILED",
+        message: "Failed to step macOS native playback",
+        details: "\(error)"
+      )
+    }
+    markFrameAvailable()
+    return nil
+  }
+
+  private func publishFrameInfo(_ info: MacOSNativeFrameInfo) {
+    presentationState.recordFrame(info)
+  }
+
+  private func emitSeekPreviewPresented(requestId: Int?, targetPtsUs: Int) {
+    nativeEvents.emitSeekPreviewPresented(
+      requestId: requestId,
+      targetPtsUs: targetPtsUs,
+      presentationState: presentationState
+    )
+  }
+
+  private func startNativeFramePump() {
+    stopNativeFramePump()
+    guard backendName == MacOSVideoTrackPayload.nativeFormatName,
+          let nativePlayer,
+          textureId != nil else {
+      return
+    }
+
+    let started = framePump.start(
+      player: nativePlayer,
+      texture: texture,
+      maxTrackSlots: activeTrackSlotCapacity(),
+      userData: Unmanaged.passUnretained(self).toOpaque(),
+      presentationState: presentationState
+    )
+    if !started {
+      isPlaying = false
+    }
+  }
+
+  private func stopNativeFramePump(clearPresentationTarget: Bool = false) {
+    framePump.stop(player: nativePlayer, clearPresentationTarget: clearPresentationTarget)
+  }
+
+  fileprivate func scheduleNativeFrameCopyFromCallback() {
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.presentationState.recordCallback()
+      guard self.isPlaying,
+            self.backendName == MacOSVideoTrackPayload.nativeFormatName else {
+        return
+      }
+      if self.nativePlayer?.lastRendererOwnedPresentationSucceeded() == true {
+        self.presentationState.recordPresentation(rendererOwned: true)
+        if let frameInfo = self.nativePlayer?.lastRendererOwnedFrameInfo() {
+          self.publishFrameInfo(frameInfo)
+        }
+        self.markFrameAvailable()
+        return
+      }
+      if self.framePump.targetInstalled {
+        return
+      }
+      self.presentationState.recordError()
+      NSLog("VoidPlayer macOS renderer-owned Metal presentation failed")
+      self.isPlaying = false
+      self.nativePlayer?.pause()
+      self.stopNativeFramePump()
+    }
+  }
+
+  func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+    nativeEvents.onListen(events)
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    nativeEvents.onCancel()
+    return nil
+  }
+
+  private func pickFiles(arguments: Any?, result: @escaping FlutterResult) {
+    let allowsMultipleSelection = MacOSFlutterArguments.boolArg(arguments, "allowMultiple") ?? true
+    DispatchQueue.main.async {
+      let panel = NSOpenPanel()
+      panel.canChooseFiles = true
+      panel.canChooseDirectories = false
+      panel.allowsMultipleSelection = allowsMultipleSelection
+      panel.resolvesAliases = true
+
+      panel.begin { response in
+        if response == .OK {
+          result(panel.urls.map(\.path))
+        } else {
+          result(nil)
+        }
+      }
+    }
+  }
+
+}

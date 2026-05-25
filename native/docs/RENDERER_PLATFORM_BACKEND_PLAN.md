@@ -255,6 +255,9 @@ Unused public bridge entrypoints for raw current-frame BGRA, raw present-frame B
 CVPixelBuffer frame copies, and allocating BGRA frame ownership have been removed; macOS
 presentation now exposes either the explicit software fallback canvas copy or the renderer
 present-package path.
+macOS track add/remove now follows the shared renderer identity rule more closely: tracks receive
+monotonic generation ids, removed slots clear their render-sink offsets and cached presentation
+decisions, and the native smoke covers remove/re-add so stale offsets cannot leak into a new track.
 
 ## Validation Strategy
 

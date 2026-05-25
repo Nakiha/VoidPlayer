@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 #ifndef VIDEO_TEST_DIR
 #define VIDEO_TEST_DIR ""
@@ -160,6 +161,48 @@ void count_frame_available(void* user_data) {
     count->fetch_add(1, std::memory_order_relaxed);
 }
 
+bool wait_for_present_package_frame_count(VPMacOSNativePlayer* player,
+                                          int width,
+                                          int height,
+                                          int max_track_slots,
+                                          int expected_frame_count,
+                                          std::chrono::milliseconds timeout) {
+    const size_t max_bytes =
+        VPMacOSNativePresentFramePackageMaxBytes(width, height, max_track_slots);
+    if (max_bytes == 0) {
+        std::cerr << "invalid present package max bytes\n";
+        return false;
+    }
+    std::vector<uint8_t> buffer(max_bytes);
+    VPMacOSNativePresentFramePackageInfo package = {};
+    char error[1024] = {};
+    auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (VPMacOSNativePlayerCopyPresentFramePackage(
+                player,
+                buffer.data(),
+                buffer.size(),
+                width,
+                height,
+                max_track_slots,
+                &package,
+                error,
+                sizeof(error)) == 0 &&
+            package.decision.frame_count >= expected_frame_count) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    std::cerr << "timed out waiting for present package frame_count >= "
+              << expected_frame_count << ", last="
+              << package.decision.frame_count;
+    if (error[0] != '\0') {
+        std::cerr << ": " << error;
+    }
+    std::cerr << "\n";
+    return false;
+}
+
 bool videotoolbox_disabled_by_env() {
     const char* value = std::getenv("VOIDPLAYER_DISABLE_VIDEOTOOLBOX");
     if (!value || value[0] == '\0') {
@@ -307,6 +350,22 @@ int main(int argc, char** argv) {
         layout_snapshot.order[0] != 0 ||
         layout_snapshot.order[1] != 1) {
         std::cerr << "native layout state was not retained or clamped by macOS player\n";
+        return 1;
+    }
+    VPMacOSNativePlayerRemoveTrack(player.get(), 1);
+    VPMacOSNativeTrackInfo readded_track = {};
+    if (VPMacOSNativePlayerAddTrack(
+            player.get(), path.c_str(), 1, &readded_track, error, sizeof(error)) != 0) {
+        std::cerr << "re-add second native track failed: " << error << "\n";
+        return 1;
+    }
+    if (VPMacOSNativePlayerTrackOffsetUs(player.get(), 1) != 0) {
+        std::cerr << "re-added native track retained stale offset\n";
+        return 1;
+    }
+    if (!wait_for_present_package_frame_count(
+            player.get(), target_width, target_height, 2, 2, std::chrono::seconds(2))) {
+        std::cerr << "re-added native track did not publish as an un-offset present frame\n";
         return 1;
     }
     VPMacOSNativePlayerRemoveTrack(player.get(), 1);

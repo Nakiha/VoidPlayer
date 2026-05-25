@@ -252,6 +252,7 @@ public:
     width_ = 0;
     height_ = 0;
     duration_us_ = 0;
+    next_track_generation_ = 1;
     audio_available_ = false;
     audio_sample_rate_ = 0;
     audio_channels_ = 0;
@@ -706,7 +707,9 @@ public:
     tracks_[static_cast<size_t>(slot)].reset();
     if (render_sink_) {
       render_sink_->set_track(static_cast<size_t>(slot), nullptr, -1, 0);
+      render_sink_->set_track_offset(static_cast<size_t>(slot), 0);
     }
+    clear_scheduler_present_decision();
     layout_controller_.remove_track(layout_, file_id, [this](int candidate_file_id) {
       return slot_for_file_id(candidate_file_id);
     });
@@ -996,6 +999,7 @@ private:
   int32_t width_ = 0;
   int32_t height_ = 0;
   int64_t duration_us_ = 0;
+  uint64_t next_track_generation_ = 1;
   bool audio_available_ = false;
   int32_t audio_sample_rate_ = 0;
   int32_t audio_channels_ = 0;
@@ -1063,7 +1067,7 @@ private:
     }
     track->file_id = file_id;
     track->slot = slot;
-    track->generation = 1;
+    track->generation = next_track_generation_++;
     const auto& stats = track->demux_thread->stats();
 
     if (primary) {
@@ -1106,6 +1110,7 @@ private:
     if (render_sink_) {
       render_sink_->set_track(
           static_cast<size_t>(slot), track->track_buffer, file_id, track->generation);
+      render_sink_->set_track_offset(static_cast<size_t>(slot), track->offset_us);
     }
     clear_scheduler_present_decision();
     layout_controller_.append_track(layout_, file_id, slot);

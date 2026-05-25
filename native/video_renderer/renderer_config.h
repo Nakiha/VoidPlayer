@@ -27,6 +27,7 @@ struct RendererConfig {
     int width = 1920;
     int height = 1080;
     bool use_hardware_decode = true;
+    int initial_file_id = 1;
 
     /// Headless mode: render to offscreen texture instead of swap chain.
     bool headless = false;

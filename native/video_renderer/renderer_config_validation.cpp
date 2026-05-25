@@ -90,6 +90,9 @@ RendererConfigValidationResult validate_renderer_config(
     if (config.video_paths.empty()) {
         return invalid("at least one video path is required");
     }
+    if (config.initial_file_id < 0) {
+        return invalid("initial file id must not be negative");
+    }
     const auto budget = default_native_resource_budget();
     if (config.video_paths.size() > budget.max_tracks) {
         return invalid("too many video paths");

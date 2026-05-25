@@ -1220,7 +1220,6 @@ struct VPMacOSNativePlayer {
       shared_renderer.reset();
     }
     shared_renderer_opened_paths.clear();
-    shared_track_offsets.fill(0);
     shared_decode_mode_name = "none";
     shared_decoder_name = "none";
     shared_renderer_active = false;
@@ -1258,6 +1257,7 @@ struct VPMacOSNativePlayer {
     config.height = height;
     config.headless = true;
     config.use_hardware_decode = true;
+    config.initial_file_id = 0;
     config.backend.type = vr::RendererBackendType::Metal;
     config.backend.output = output;
     config.backend.max_track_slots =
@@ -1436,7 +1436,6 @@ struct VPMacOSNativePlayer {
   std::unique_ptr<vr::Renderer> shared_renderer;
   std::string primary_opened_path;
   std::vector<std::string> shared_renderer_opened_paths;
-  std::array<int64_t, VPMacOSNativeMaxTracks> shared_track_offsets{};
   std::string shared_decode_mode_name = "none";
   std::string shared_decoder_name = "none";
   std::mutex callback_mutex;
@@ -1573,7 +1572,8 @@ int VPMacOSNativePlayerAddTrack(VPMacOSNativePlayer* player,
   *out = {};
   std::lock_guard<std::mutex> lock(player->mutex);
   if (player->shared_renderer_active_locked()) {
-    const int slot = player->shared_renderer->add_track(path ? path : "");
+    const int slot = player->shared_renderer->add_track_with_file_id(
+        path ? path : "", file_id);
     if (slot < 0) {
       write_error(error, error_size, "shared macOS renderer failed to add track");
       return -1;
@@ -1582,9 +1582,6 @@ int VPMacOSNativePlayerAddTrack(VPMacOSNativePlayer* player,
     if (out->slot < 0) {
       write_error(error, error_size, "shared macOS renderer did not report added track");
       return -1;
-    }
-    if (file_id >= 0 && file_id < VPMacOSNativeMaxTracks) {
-      player->shared_track_offsets[static_cast<size_t>(file_id)] = 0;
     }
     player->update_shared_renderer_decode_names_locked();
     write_error(error, error_size, "");
@@ -1607,9 +1604,6 @@ void VPMacOSNativePlayerRemoveTrack(VPMacOSNativePlayer* player,
   std::lock_guard<std::mutex> lock(player->mutex);
   if (player->shared_renderer_active_locked()) {
     player->shared_renderer->remove_track(file_id);
-    if (file_id >= 0 && file_id < VPMacOSNativeMaxTracks) {
-      player->shared_track_offsets[static_cast<size_t>(file_id)] = 0;
-    }
     return;
   }
   player->core.remove_track(file_id);
@@ -1903,9 +1897,6 @@ void VPMacOSNativePlayerSetTrackOffset(VPMacOSNativePlayer* player,
   std::lock_guard<std::mutex> lock(player->mutex);
   if (player->shared_renderer_active_locked()) {
     player->shared_renderer->set_track_offset(file_id, offset_us);
-    if (file_id >= 0 && file_id < VPMacOSNativeMaxTracks) {
-      player->shared_track_offsets[static_cast<size_t>(file_id)] = offset_us;
-    }
     return;
   }
   player->core.set_track_offset(file_id, offset_us);
@@ -1918,9 +1909,7 @@ int64_t VPMacOSNativePlayerTrackOffsetUs(VPMacOSNativePlayer* player,
   }
   std::lock_guard<std::mutex> lock(player->mutex);
   if (player->shared_renderer_active_locked()) {
-    return file_id >= 0 && file_id < VPMacOSNativeMaxTracks
-        ? player->shared_track_offsets[static_cast<size_t>(file_id)]
-        : 0;
+    return player->shared_renderer->track_offset_us(file_id);
   }
   return player->core.track_offset_us(file_id);
 }

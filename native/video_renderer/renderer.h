@@ -149,6 +149,9 @@ public:
     /// Returns the slot index (0-3), or -1 if all slots are full or init fails.
     int add_track(const std::string& video_path,
                   bool use_hardware_decode = true);
+    int add_track_with_file_id(const std::string& video_path,
+                               int file_id,
+                               bool use_hardware_decode = true);
 
     /// Remove a track by file_id. Stops its pipeline, compacts slots.
     void remove_track(int file_id);
@@ -174,6 +177,7 @@ public:
     /// Set per-track sync offset in microseconds.
     /// Positive = delayed start (blank lead-in), negative = early start (skip beginning).
     void set_track_offset(int file_id, int64_t offset_us);
+    int64_t track_offset_us(int file_id) const;
 
     // -- Layout control --
 
@@ -319,6 +323,9 @@ private:
     void enter_terminal_render_loop_error_locked(const char* reason);
     void reset_d3d_metrics();
     void assign_missing_track_generations_locked();
+    int add_track_internal(const std::string& video_path,
+                           bool use_hardware_decode,
+                           int requested_file_id);
     D3D11RenderBackend* d3d_backend() const;
     D3D11Device* d3d_device() const;
     D3D11FramePresenter* frame_presenter() const;

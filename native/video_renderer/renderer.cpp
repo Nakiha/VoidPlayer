@@ -152,11 +152,16 @@ bool Renderer::initialize(const RendererConfig& config) {
     }
     presentation_backend_ = std::move(backend);
 
+    int next_initial_file_id = config.initial_file_id;
     const InitialTrackOpenHooks initial_track_hooks{
         [this](const std::string& path, bool use_hardware_decode) {
             return create_pipeline(path, use_hardware_decode);
         },
-        [this]() { return next_file_id_++; },
+        [this, &next_initial_file_id]() {
+            const int file_id = next_initial_file_id++;
+            next_file_id_ = std::max(next_file_id_, file_id + 1);
+            return file_id;
+        },
         TrackPipelineStartHooks{
             [this](TrackPipeline& track) { configure_track_seek_callback(track); },
             [this](TrackPipeline& track) { configure_track_error_callback(track); },
@@ -1339,6 +1344,15 @@ void Renderer::set_track_offset(int file_id, int64_t offset_us) {
     preview_drawn_ = false;
 }
 
+int64_t Renderer::track_offset_us(int file_id) const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    int slot = find_slot_by_file_id(file_id);
+    if (slot < 0 || !tracks_[slot]) {
+        return 0;
+    }
+    return tracks_[slot]->offset_us;
+}
+
 void Renderer::set_frame_callback(std::function<void()> cb) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
 #ifdef _WIN32
@@ -1965,6 +1979,22 @@ bool Renderer::recreate_pipeline_for_seek(std::unique_lock<std::mutex>& state_lo
 
 int Renderer::add_track(const std::string& video_path,
                         bool use_hardware_decode) {
+    return add_track_internal(video_path, use_hardware_decode, -1);
+}
+
+int Renderer::add_track_with_file_id(const std::string& video_path,
+                                     int file_id,
+                                     bool use_hardware_decode) {
+    if (file_id < 0) {
+        spdlog::warn("Renderer::add_track_with_file_id: invalid file_id={}", file_id);
+        return -1;
+    }
+    return add_track_internal(video_path, use_hardware_decode, file_id);
+}
+
+int Renderer::add_track_internal(const std::string& video_path,
+                                 bool use_hardware_decode,
+                                 int requested_file_id) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     int slot = -1;
     int new_file_id = 0;
@@ -1987,10 +2017,20 @@ int Renderer::add_track(const std::string& video_path,
             spdlog::warn("Renderer::add_track: no empty slots");
             return -1;
         }
+        if (requested_file_id >= 0 && find_slot_by_file_id(requested_file_id) >= 0) {
+            spdlog::warn("Renderer::add_track: file_id={} is already open",
+                         requested_file_id);
+            return -1;
+        }
 
         playback_state = pause_playback_for_track_mutation(
             playing_.load(), playback_hooks);
-        new_file_id = next_file_id_++;
+        if (requested_file_id >= 0) {
+            new_file_id = requested_file_id;
+            next_file_id_ = std::max(next_file_id_, requested_file_id + 1);
+        } else {
+            new_file_id = next_file_id_++;
+        }
         new_generation = next_track_generation_++;
         current_pts = playback_->clock().current_pts_us();
     }

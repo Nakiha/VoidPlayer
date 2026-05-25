@@ -150,7 +150,7 @@ int main() {
     VPMacOSNativePlayerSetFrameAvailableCallback(
         player.get(), count_frame_available, &callbacks);
     if (VPMacOSNativePlayerSetMetalPresentationTarget(
-            player.get(), backend.get(), target.buffer, target_width, target_height, 1) != 0) {
+            player.get(), backend.get(), target.buffer, target_width, target_height, 2) != 0) {
         std::cerr << "failed to install shared renderer Metal target\n";
         return 1;
     }
@@ -176,6 +176,28 @@ int main() {
     }
     if (callbacks.load(std::memory_order_relaxed) <= 0) {
         std::cerr << "shared renderer bridge did not publish frame callbacks\n";
+        return 1;
+    }
+
+    VPMacOSNativeTrackInfo second_track = {};
+    if (VPMacOSNativePlayerAddTrack(
+            player.get(), path.c_str(), 1, &second_track, error, sizeof(error)) != 0 ||
+        second_track.file_id != 1 ||
+        second_track.slot != 1 ||
+        second_track.width <= 0 ||
+        second_track.height <= 0) {
+        std::cerr << "shared renderer bridge add-track failed or reported wrong id: "
+                  << error << "\n";
+        return 1;
+    }
+    VPMacOSNativePlayerSetTrackOffset(player.get(), 1, 125'000);
+    if (VPMacOSNativePlayerTrackOffsetUs(player.get(), 1) != 125'000) {
+        std::cerr << "shared renderer bridge did not retain track offset\n";
+        return 1;
+    }
+    VPMacOSNativePlayerRemoveTrack(player.get(), 1);
+    if (VPMacOSNativePlayerTrackOffsetUs(player.get(), 1) != 0) {
+        std::cerr << "shared renderer bridge retained offset for removed track\n";
         return 1;
     }
 

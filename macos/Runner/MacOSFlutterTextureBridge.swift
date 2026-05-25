@@ -202,7 +202,11 @@ final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
     }
     pixelBufferRebuildCount += 1
 
-    MacOSSyntheticTexturePattern.fill(buffer: nextBuffer, width: width, height: height)
+    if isSyntheticSource {
+      MacOSSyntheticTexturePattern.fill(buffer: nextBuffer, width: width, height: height)
+    } else {
+      MacOSSyntheticTexturePattern.clear(buffer: nextBuffer, width: width, height: height)
+    }
     pixelBuffer = nextBuffer
     validateMetalTextureLocked(buffer: nextBuffer)
   }

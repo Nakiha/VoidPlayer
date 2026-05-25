@@ -1,6 +1,20 @@
 import CoreVideo
 
 enum MacOSSyntheticTexturePattern {
+  static func clear(buffer: CVPixelBuffer, width: Int, height: Int) {
+    CVPixelBufferLockBaseAddress(buffer, [])
+    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+
+    guard let baseAddress = CVPixelBufferGetBaseAddress(buffer) else { return }
+    let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
+    let pixels = baseAddress.assumingMemoryBound(to: UInt8.self)
+
+    for y in 0..<height {
+      let row = pixels.advanced(by: y * bytesPerRow)
+      row.update(repeating: 0, count: width * 4)
+    }
+  }
+
   static func fill(buffer: CVPixelBuffer, width: Int, height: Int) {
     CVPixelBufferLockBaseAddress(buffer, [])
     defer { CVPixelBufferUnlockBaseAddress(buffer, []) }

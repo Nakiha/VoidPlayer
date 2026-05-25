@@ -38,11 +38,6 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var eventChannel: FlutterEventChannel?
   private var texture: MacOSFlutterTextureBridge?
   private var textureId: Int64?
-  private var eventSink: FlutterEventSink?
-  private var nativeEventListenCount = 0
-  private var nativeEventEmitCount = 0
-  private var nativeEventDropNoSinkCount = 0
-  private var nativeEventSequence = 0
   private var tracks: [[String: Any]] = []
   private var layout: [String: Any] = MacOSVideoTrackPayload.defaultLayout()
   private var currentDurationUs = 0
@@ -53,6 +48,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var nativeFrameCallbackRegistered = false
   private var nativePresentationTargetInstalled = false
   private let presentationState = MacOSFramePresentationState()
+  private let nativeEvents = MacOSNativeEventState()
 
   init(textureRegistry: FlutterTextureRegistry) {
     self.textureRegistry = textureRegistry
@@ -274,9 +270,6 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         "metalTextureCreationCount": textureStats?.metalTextureCreationCount ?? 0,
         "metalTextureFailureCount": textureStats?.metalTextureFailureCount ?? 0,
         "metalTextureLastError": textureStats?.metalTextureLastError ?? "",
-        "nativeEventListenCount": nativeEventListenCount,
-        "nativeEventEmitCount": nativeEventEmitCount,
-        "nativeEventDropNoSinkCount": nativeEventDropNoSinkCount,
         "nativePresentationTargetInstalled": nativePresentationTargetInstalled,
         "nativeRendererOwnedUploadCount": nativePlayer?.rendererOwnedPresentationUploadCount() ?? 0,
         "nativeRendererOwnedUploadFailureCount": nativePlayer?.rendererOwnedPresentationFailureCount() ?? 0,
@@ -296,6 +289,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
           perfStats: perfStats
         ),
       ]
+      nativeEvents.diagnosticMap().forEach { diagnostics[$0.key] = $0.value }
       presentationState.diagnosticMap().forEach { diagnostics[$0.key] = $0.value }
       result(diagnostics)
     case "captureViewport":
@@ -743,30 +737,11 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func emitSeekPreviewPresented(requestId: Int?, targetPtsUs: Int) {
-    guard let requestId,
-          let ptsUs = presentationState.lastPresentedPtsUs else {
-      return
-    }
-    guard let eventSink else {
-      nativeEventDropNoSinkCount += 1
-      return
-    }
-    nativeEventSequence += 1
-    nativeEventEmitCount += 1
-    let payload: [String: Any] = [
-      "schemaVersion": 1,
-      "sequence": nativeEventSequence,
-      "type": "seekPreviewPresented",
-      "timestampUs": Int(Date().timeIntervalSince1970 * 1_000_000),
-      "requestId": requestId,
-      "trackFileId": 0,
-      "ptsUs": ptsUs,
-      "dtsUs": presentationState.lastPresentedDtsUs ?? ptsUs,
-      "targetPtsUs": targetPtsUs,
-    ]
-    DispatchQueue.main.async {
-      eventSink(payload)
-    }
+    nativeEvents.emitSeekPreviewPresented(
+      requestId: requestId,
+      targetPtsUs: targetPtsUs,
+      presentationState: presentationState
+    )
   }
 
   private func presentationBackendName() -> String {
@@ -867,13 +842,12 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
-    eventSink = events
-    nativeEventListenCount += 1
+    nativeEvents.onListen(events)
     return nil
   }
 
   func onCancel(withArguments arguments: Any?) -> FlutterError? {
-    eventSink = nil
+    nativeEvents.onCancel()
     return nil
   }
 

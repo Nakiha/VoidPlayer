@@ -99,12 +99,14 @@ struct RendererGpuMemoryStats {
 using RendererBackendType = RenderBackendKind;
 
 /// Platform-specific renderer interop values.
-/// D3D11 uses `adapter` as the Flutter Windows DXGI adapter pointer. Future
-/// backends can add their own opaque handles without changing the
-/// cross-platform RendererConfig fields.
+/// D3D11 uses `adapter` as the Flutter Windows DXGI adapter pointer.
+/// Backends that present into a host-owned target, such as macOS Metal writing
+/// into a CVPixelBuffer, use `output`.
 struct RendererBackendInterop {
     RendererBackendType type = RendererBackendType::D3D11;
     void* adapter = nullptr;
+    void* output = nullptr;
+    int max_track_slots = 0;
 };
 
 struct RendererConfig {

@@ -19,6 +19,31 @@ RendererConfigValidationResult invalid(std::string message) {
     return result;
 }
 
+RendererConfigValidationResult validate_headless_backend(
+    const RendererBackendInterop& backend) {
+    const auto budget = default_native_resource_budget();
+    switch (backend.type) {
+    case RendererBackendType::D3D11:
+        if (backend.adapter == nullptr) {
+            return invalid("headless d3d11 renderer requires a DXGI adapter");
+        }
+        return ok_result();
+    case RendererBackendType::Metal:
+        if (backend.output == nullptr) {
+            return invalid("headless metal renderer requires an output target");
+        }
+        if (backend.max_track_slots < 0 ||
+            static_cast<size_t>(backend.max_track_slots) > budget.max_tracks) {
+            return invalid("headless metal renderer max track slots out of range");
+        }
+        return ok_result();
+    case RendererBackendType::Unknown:
+    case RendererBackendType::Vulkan:
+        return invalid("unsupported renderer backend type");
+    }
+    return invalid("unsupported renderer backend type");
+}
+
 } // namespace
 
 RendererConfigValidationResult validate_renderer_dimensions(
@@ -79,11 +104,8 @@ RendererConfigValidationResult validate_renderer_config(
         if (config.hwnd != nullptr) {
             return invalid("headless renderer must not also receive an HWND");
         }
-        if (config.backend.type != RendererBackendType::D3D11) {
-            return invalid("unsupported renderer backend type");
-        }
-        if (config.backend.adapter == nullptr) {
-            return invalid("headless renderer requires a DXGI adapter");
+        if (auto result = validate_headless_backend(config.backend); !result.ok) {
+            return result;
         }
     } else if (config.hwnd == nullptr) {
         return invalid("windowed renderer requires an HWND");

@@ -143,8 +143,10 @@ bool Renderer::initialize(const RendererConfig& config) {
     PresentationBackendConfig backend_config;
     backend_config.hwnd = hwnd_;
     backend_config.adapter = config.backend.adapter;
+    backend_config.output = config.backend.output;
     backend_config.width = target_width_;
     backend_config.height = target_height_;
+    backend_config.max_track_slots = config.backend.max_track_slots;
     backend_config.headless = config.headless;
     auto backend = create_presentation_backend(config.backend.type);
     if (!backend) {

@@ -34,6 +34,7 @@
 		A12F010C2C08FF0100000001 /* MacOSNativeEventState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F010D2C08FF0100000001 /* MacOSNativeEventState.swift */; };
 		A12F01102C08FF0100000001 /* MacOSNativePlayerDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01112C08FF0100000001 /* MacOSNativePlayerDiagnostics.swift */; };
 		A12F01122C08FF0100000001 /* MacOSNativePlayerTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01132C08FF0100000001 /* MacOSNativePlayerTypes.swift */; };
+		A12F01182C08FF0100000001 /* MacOSVideoRendererDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01192C08FF0100000001 /* MacOSVideoRendererDiagnostics.swift */; };
 		A12F01062C08FF0100000001 /* MacOSPresentationDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01072C08FF0100000001 /* MacOSPresentationDiagnostics.swift */; };
 		A12F01082C08FF0100000001 /* MacOSVideoTrackPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01092C08FF0100000001 /* MacOSVideoTrackPayload.swift */; };
 		A12F01162C08FF0100000001 /* MacOSSyntheticTexturePattern.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01172C08FF0100000001 /* MacOSSyntheticTexturePattern.swift */; };
@@ -97,6 +98,7 @@
 		A12F010D2C08FF0100000001 /* MacOSNativeEventState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativeEventState.swift; sourceTree = "<group>"; };
 		A12F01112C08FF0100000001 /* MacOSNativePlayerDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativePlayerDiagnostics.swift; sourceTree = "<group>"; };
 		A12F01132C08FF0100000001 /* MacOSNativePlayerTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativePlayerTypes.swift; sourceTree = "<group>"; };
+		A12F01192C08FF0100000001 /* MacOSVideoRendererDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSVideoRendererDiagnostics.swift; sourceTree = "<group>"; };
 		A12F01072C08FF0100000001 /* MacOSPresentationDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSPresentationDiagnostics.swift; sourceTree = "<group>"; };
 		A12F01092C08FF0100000001 /* MacOSVideoTrackPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSVideoTrackPayload.swift; sourceTree = "<group>"; };
 		A12F01172C08FF0100000001 /* MacOSSyntheticTexturePattern.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSSyntheticTexturePattern.swift; sourceTree = "<group>"; };
@@ -209,6 +211,7 @@
 				A12F010D2C08FF0100000001 /* MacOSNativeEventState.swift */,
 				A12F01112C08FF0100000001 /* MacOSNativePlayerDiagnostics.swift */,
 				A12F01132C08FF0100000001 /* MacOSNativePlayerTypes.swift */,
+				A12F01192C08FF0100000001 /* MacOSVideoRendererDiagnostics.swift */,
 				A12F01072C08FF0100000001 /* MacOSPresentationDiagnostics.swift */,
 				A12F01092C08FF0100000001 /* MacOSVideoTrackPayload.swift */,
 				A12F01172C08FF0100000001 /* MacOSSyntheticTexturePattern.swift */,
@@ -553,6 +556,7 @@
 				A12F010C2C08FF0100000001 /* MacOSNativeEventState.swift in Sources */,
 				A12F01102C08FF0100000001 /* MacOSNativePlayerDiagnostics.swift in Sources */,
 				A12F01122C08FF0100000001 /* MacOSNativePlayerTypes.swift in Sources */,
+				A12F01182C08FF0100000001 /* MacOSVideoRendererDiagnostics.swift in Sources */,
 				A12F01062C08FF0100000001 /* MacOSPresentationDiagnostics.swift in Sources */,
 				A12F01082C08FF0100000001 /* MacOSVideoTrackPayload.swift in Sources */,
 				A12F01162C08FF0100000001 /* MacOSSyntheticTexturePattern.swift in Sources */,

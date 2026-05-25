@@ -196,101 +196,17 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "pickFiles":
       pickFiles(arguments: call.arguments, result: result)
     case "getDiagnostics":
-      let textureStats = texture?.diagnostics()
-      let textureDimensions = texture?.dimensions()
-      let nativeLayoutSnapshot = nativePlayer?.layoutSnapshotMap()
-      let schedulerStats = nativePlayer?.presentationSchedulerStats()
-      let perfStats = nativePlayer?.performanceStats()
-      var diagnostics: [String: Any] = [
-        "platform": "macos",
-        "backend": backendName,
-        "presentationAdapter": String(cString: VPMacOSNativePresentationAdapterName()),
-        "presentationAdapterKind": presentationAdapterKind(),
-        "presentationScheduler": String(cString: VPMacOSNativePresentationSchedulerName()),
-        "presentationBackend": presentationBackendName(),
-        "rendererOwnedPresentationActive": nativePlayer?.rendererOwnedPresentationActive() ?? false,
-        "hardwareDecodeProvider": String(cString: VPMacOSNativeHardwareDecodeProviderName()),
-        "hardwareDecodeAvailable": VPMacOSNativeHardwareDecodeAvailable() != 0,
-        "hardwareDecodeActive": nativePlayer?.hardwareDecodeActive() ?? false,
-        "hardwareDecodeDownloadsToCpu": nativePlayer?.hardwareDecodeDownloadsToCpu() ?? false,
-        "decodeMode": nativePlayer?.decodeModeName() ?? "none",
-        "softwareFallbackActive": nativePlayer?.hardwareDecodeActive() != true,
-        "available": nativePlayer != nil,
-        "reason": nativePlayer == nil
-          ? "Synthetic macOS texture bridge is active"
-          : presentationReason(),
-        "textureId": textureId ?? -1,
-        "textureWidth": textureDimensions?.width ?? 0,
-        "textureHeight": textureDimensions?.height ?? 0,
-        "trackCount": tracks.count,
-        "audioAvailable": nativePlayer?.hasAudio() ?? false,
-        "audioSampleRate": nativePlayer?.audioSampleRate() ?? 0,
-        "audioChannels": nativePlayer?.audioChannels() ?? 0,
-        "activeAudioTrack": nativePlayer?.activeAudioTrack() ?? -1,
-        "primaryTrackOffsetUs": nativePlayer?.trackOffsetUs(fileId: 0) ?? 0,
-        "secondaryTrackOffsetUs": nativePlayer?.trackOffsetUs(fileId: 1) ?? 0,
-        "presentationSchedulerTickCount": schedulerStats?["tickCount"] ?? 0,
-        "presentationSchedulerPresentableTickCount": schedulerStats?["presentableTickCount"] ?? 0,
-        "presentationSchedulerFrameNotificationCount": schedulerStats?["frameNotificationCount"] ?? 0,
-        "presentationSchedulerLastSelectedPtsUs": schedulerStats?["lastSelectedPtsUs"] ?? -1,
-        "presentationSchedulerLastPresentFrameCount": schedulerStats?["lastPresentFrameCount"] ?? 0,
-        "presentationSchedulerCachedDecisionAvailable": schedulerStats?["cachedPresentDecisionAvailable"] ?? false,
-        "presentationSchedulerDeadlineSleepCount": schedulerStats?["deadlineSleepCount"] ?? 0,
-        "presentationSchedulerLastDeadlineSleepUs": schedulerStats?["lastDeadlineSleepUs"] ?? 0,
-        "nativeLayoutMode": nativeLayoutSnapshot?["mode"] ?? -1,
-        "nativeLayoutZoomRatio": nativeLayoutSnapshot?["zoomRatio"] ?? 0.0,
-        "nativeLayoutPixelSizeMode": nativeLayoutSnapshot?["pixelSizeMode"] ?? -1,
-        "pixelBufferRebuildCount": textureStats?.rebuildCount ?? 0,
-        "pixelBufferReuseCount": textureStats?.reuseCount ?? 0,
-        "pixelBufferMetalUploadCount": textureStats?.metalUploadCount ?? 0,
-        "pixelBufferMetalYuvUploadCount":
-          perfStats?["rendererOwnedDirectYuvUploadCount"] ?? 0,
-        "pixelBufferMetalCVPixelBufferUploadCount":
-          perfStats?["rendererOwnedCVPixelBufferUploadCount"] ?? 0,
-        "pixelBufferMetalUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
-        "presentationUploadMode": MacOSPresentationDiagnostics.uploadMode(
-          perfStats: perfStats,
-          targetReady: textureStats?.metalTextureValid ?? false,
-          targetInstalled: framePump.targetInstalled,
-          textureRegistered: textureId != nil
-        ),
-        "presentationPackageUploadCount":
-          perfStats?["rendererOwnedPresentPackageUploadCount"] ?? 0,
-        "presentationPackageCopyUs": perfStats?["rendererOwnedPresentPackageCopyUs"] ?? 0,
-        "presentationPackageGpuWaitUs":
-          perfStats?["rendererOwnedPresentPackageGpuWaitUs"] ?? 0,
-        "presentationPackageTotalUs":
-          perfStats?["rendererOwnedPresentPackageTotalUs"] ?? 0,
-        "presentationPackageStorage":
-          perfStats?["rendererOwnedPresentPackageStorage"] ?? "unavailable",
-        "metalAvailable": textureStats?.metalAvailable ?? false,
-        "metalTextureCacheAvailable": textureStats?.metalTextureCacheAvailable ?? false,
-        "metalTextureValid": textureStats?.metalTextureValid ?? false,
-        "metalTextureCreationCount": textureStats?.metalTextureCreationCount ?? 0,
-        "metalTextureFailureCount": textureStats?.metalTextureFailureCount ?? 0,
-        "metalTextureLastError": textureStats?.metalTextureLastError ?? "",
-        "nativePresentationTargetInstalled": framePump.targetInstalled,
-        "nativeRendererOwnedUploadCount": nativePlayer?.rendererOwnedPresentationUploadCount() ?? 0,
-        "nativeRendererOwnedUploadFailureCount": nativePlayer?.rendererOwnedPresentationFailureCount() ?? 0,
-        "nativeRendererOwnedUploadFps": perfStats?["rendererOwnedUploadFps"] ?? 0.0,
-        "nativeRendererOwnedUploadFpsX1000": perfStats?["rendererOwnedUploadFpsX1000"] ?? 0,
-        "nativeRendererOwnedUploadElapsedMs": perfStats?["rendererOwnedUploadElapsedMs"] ?? 0,
-        "nativeDecodeFrameCount": perfStats?["decodeFrameCount"] ?? 0,
-        "nativeDecodeDroppedCount": perfStats?["decodeDroppedCount"] ?? 0,
-        "nativeDecodeElapsedMs": perfStats?["decodeElapsedMs"] ?? 0,
-        "nativeDecodeFps": perfStats?["decodeFps"] ?? 0.0,
-        "nativeDecodeFpsX1000": perfStats?["decodeFpsX1000"] ?? 0,
-        "nativeDecodeAvgMs": perfStats?["decodeAvgMs"] ?? 0.0,
-        "nativeDecodeMaxMs": perfStats?["decodeMaxMs"] ?? 0.0,
-        "presentationFallbackReason": MacOSPresentationDiagnostics.fallbackReason(
-          player: nativePlayer,
-          targetInstalled: framePump.targetInstalled,
-          perfStats: perfStats
-        ),
-      ]
-      nativeEvents.diagnosticMap().forEach { diagnostics[$0.key] = $0.value }
-      presentationState.diagnosticMap().forEach { diagnostics[$0.key] = $0.value }
-      result(diagnostics)
+      result(MacOSVideoRendererDiagnostics.map(
+        backendName: backendName,
+        player: nativePlayer,
+        textureId: textureId,
+        textureStats: texture?.diagnostics(),
+        textureDimensions: texture?.dimensions(),
+        trackCount: tracks.count,
+        presentationTargetInstalled: framePump.targetInstalled,
+        nativeEventDiagnostics: nativeEvents.diagnosticMap(),
+        presentationDiagnostics: presentationState.diagnosticMap()
+      ))
     case "captureViewport":
       result(captureViewport())
     default:
@@ -741,33 +657,6 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       targetPtsUs: targetPtsUs,
       presentationState: presentationState
     )
-  }
-
-  private func presentationBackendName() -> String {
-    guard nativePlayer != nil else {
-      return "synthetic-texture"
-    }
-    if nativePlayer?.rendererOwnedPresentationActive() == true {
-      return "native-metal-cvpixelbuffer-target"
-    }
-    return "native-metal-target-unavailable"
-  }
-
-  private func presentationAdapterKind() -> String {
-    guard nativePlayer != nil else {
-      return "synthetic"
-    }
-    if nativePlayer?.rendererOwnedPresentationActive() == true {
-      return "renderer-owned-metal"
-    }
-    return "unavailable"
-  }
-
-  private func presentationReason() -> String {
-    if nativePlayer?.rendererOwnedPresentationActive() == true {
-      return "macOS shared native facade is active with renderer-owned Metal presentation"
-    }
-    return "macOS shared native facade has no active renderer-owned presentation target"
   }
 
   private func startNativeFramePump() {

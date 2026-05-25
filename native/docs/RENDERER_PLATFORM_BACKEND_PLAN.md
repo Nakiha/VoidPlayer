@@ -192,8 +192,8 @@ The Metal presentation backend now owns a renderer draw target and can consume
 present-package uploader used by the transitional macOS path. A native smoke covers the shared
 snapshot-to-Metal backend draw path with a real CVPixelBuffer target.
 `MetalPresentationBackend::draw_frame` also preserves the VideoToolbox CVPixelBuffer fast path when
-the shared snapshot contains a single retained CVPixelBuffer frame, so the bridge handoff does not
-regress 4K60 zero-copy presentation.
+the shared snapshot contains a single decoder-owned CVPixelBuffer frame, so the bridge handoff does
+not regress 4K60 zero-copy presentation.
 
 Exit gate: macOS can present multi-track CPU-decoded frames through renderer-owned Metal without the
 Swift pump choosing frames, and shader parity tests cover the supported formats.
@@ -242,7 +242,7 @@ Swift no longer stops playback by comparing the presented PTS against the report
 settlement is owned by the native/shared playback policy so bad container durations do not create a
 separate macOS timeline rule.
 The unused no-layout `VPMacOSMetalUploaderCopyCurrentFrame` blit ABI has also been removed; macOS
-Metal uploads now enter through the layout/present-package or retained-CVPixelBuffer paths.
+Metal uploads now enter through the layout/present-package or decoder-owned CVPixelBuffer paths.
 macOS present-package construction has been centralized in `presentation_package_builder`, so the
 legacy bridge C ABI and the renderer-owned Metal backend consume the same `RendererDrawSnapshot`
 rules for decision metadata, YUV/BGRA package layout, CVPixelBuffer fast-path metadata, stride
@@ -251,9 +251,10 @@ Swift presentation counting now records renderer-owned and explicit fallback pre
 one helper while keeping the existing diagnostics keys stable.
 The remaining player-querying Metal uploader ABI has been removed from tests and the C bridge; test
 coverage now copies an explicit present package and asks the uploader/backend to render that package.
-Unused public bridge entrypoints for raw current-frame BGRA, raw present-frame BGRA/YUV, and retained
-CVPixelBuffer frame copies have been removed; macOS presentation now exposes either the explicit
-software fallback canvas copy or the renderer present-package path.
+Unused public bridge entrypoints for raw current-frame BGRA, raw present-frame BGRA/YUV, retained
+CVPixelBuffer frame copies, and allocating BGRA frame ownership have been removed; macOS
+presentation now exposes either the explicit software fallback canvas copy or the renderer
+present-package path.
 
 ## Validation Strategy
 

@@ -368,7 +368,6 @@ bool copy_snapshot_bgra_package(const vr::RendererDrawSnapshot& snapshot,
 bool snapshot_cv_pixel_buffer_frame(const vr::RendererDrawSnapshot& snapshot,
                                     int32_t width,
                                     int32_t height,
-                                    bool retain_pixel_buffer,
                                     VPMacOSNativeCVPixelBufferPresentFrame* out,
                                     std::string& error) {
   if (!out || width <= 0 || height <= 0) {
@@ -398,9 +397,6 @@ bool snapshot_cv_pixel_buffer_frame(const vr::RendererDrawSnapshot& snapshot,
         storage->coded_width < frame.width || storage->coded_height < frame.height) {
       error = "snapshot does not contain a supported CVPixelBuffer frame";
       return false;
-    }
-    if (retain_pixel_buffer) {
-      CVPixelBufferRetain(static_cast<CVPixelBufferRef>(storage->pixel_buffer));
     }
     out->pixel_buffer = storage->pixel_buffer;
     out->pixel_format = static_cast<int32_t>(storage->pixel_format);

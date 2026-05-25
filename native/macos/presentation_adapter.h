@@ -12,6 +12,16 @@ enum class FrameStorageKind;
 
 namespace vp_macos {
 
+struct OwnedBGRAFrame {
+  int32_t width = 0;
+  int32_t height = 0;
+  int64_t pts_us = 0;
+  int64_t dts_us = 0;
+  int64_t duration_us = 0;
+  uint8_t* bgra = nullptr;
+  size_t bgra_size = 0;
+};
+
 enum class PresentationAdapterStatus {
   Ok,
   InvalidDestination,
@@ -42,8 +52,8 @@ bool copy_texture_frame_to_bgra_destination(const vr::TextureFrame& frame,
                                             VPMacOSNativeFrameInfo* out);
 
 bool copy_texture_frame_to_owned_bgra(const vr::TextureFrame& frame,
-                                      VPMacOSNativeFrame* out);
+                                      OwnedBGRAFrame* out);
 
-void free_owned_bgra_frame(VPMacOSNativeFrame* frame);
+void free_owned_bgra_frame(OwnedBGRAFrame* frame);
 
 }  // namespace vp_macos

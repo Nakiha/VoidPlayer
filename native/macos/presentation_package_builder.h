@@ -41,7 +41,6 @@ bool copy_snapshot_bgra_package(const vr::RendererDrawSnapshot& snapshot,
 bool snapshot_cv_pixel_buffer_frame(const vr::RendererDrawSnapshot& snapshot,
                                     int32_t width,
                                     int32_t height,
-                                    bool retain_pixel_buffer,
                                     VPMacOSNativeCVPixelBufferPresentFrame* out,
                                     std::string& error);
 

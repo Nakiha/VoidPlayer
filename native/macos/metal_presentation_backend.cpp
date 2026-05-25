@@ -80,7 +80,6 @@ bool MetalPresentationBackend::draw_frame(
   if (snapshot_cv_pixel_buffer_frame(snapshot,
                                      draw_target_width_,
                                      draw_target_height_,
-                                     false,
                                      &cv_frame,
                                      error)) {
     VPMacOSNativeFrameInfo frame_info = {};

@@ -27,8 +27,6 @@
 #include "video_renderer/track/track_present_policy.h"
 #include "video_renderer/track/track_step_policy.h"
 
-#include <CoreVideo/CoreVideo.h>
-
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -455,7 +453,7 @@ public:
       return false;
     }
 
-    std::array<VPMacOSNativeFrame, vr::kMaxTracks> owned_frames{};
+    std::array<vp_macos::OwnedBGRAFrame, vr::kMaxTracks> owned_frames{};
     auto release_owned = [&]() {
       for (auto& frame : owned_frames) {
         vp_macos::free_owned_bgra_frame(&frame);
@@ -1995,16 +1993,6 @@ int VPMacOSNativePlayerCopyPresentFramePackage(
   }
   write_error(error, error_size, message);
   return -1;
-}
-
-void VPMacOSNativeReleaseRetainedCVPixelBuffer(void* pixel_buffer) {
-  if (pixel_buffer) {
-    CVPixelBufferRelease(static_cast<CVPixelBufferRef>(pixel_buffer));
-  }
-}
-
-void VPMacOSNativeFrameFree(VPMacOSNativeFrame* frame) {
-  vp_macos::free_owned_bgra_frame(frame);
 }
 
 int VPMacOSMeasureBGRA(const uint8_t* bgra,

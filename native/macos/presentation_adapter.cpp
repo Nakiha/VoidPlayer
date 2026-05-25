@@ -28,7 +28,7 @@ uint8_t p010_sample_to_u8(uint16_t p010_sample) {
 }
 
 PresentationAdapterStatus allocate_bgra(const vr::TextureFrame& frame,
-                                        VPMacOSNativeFrame* out) {
+                                        OwnedBGRAFrame* out) {
   if (!out || frame.width <= 0 || frame.height <= 0) {
     return PresentationAdapterStatus::InvalidDestination;
   }
@@ -312,7 +312,7 @@ bool copy_texture_frame_to_bgra_destination(const vr::TextureFrame& frame,
 }
 
 bool copy_texture_frame_to_owned_bgra(const vr::TextureFrame& frame,
-                                      VPMacOSNativeFrame* out) {
+                                      OwnedBGRAFrame* out) {
   if (!out) {
     return false;
   }
@@ -338,7 +338,7 @@ bool copy_texture_frame_to_owned_bgra(const vr::TextureFrame& frame,
   return true;
 }
 
-void free_owned_bgra_frame(VPMacOSNativeFrame* frame) {
+void free_owned_bgra_frame(OwnedBGRAFrame* frame) {
   if (!frame) {
     return;
   }

@@ -117,7 +117,7 @@ int check_cpu_rgba_stride_copy() {
     return fail("unexpected cpu rgba adapter copy");
   }
 
-  VPMacOSNativeFrame owned{};
+  vp_macos::OwnedBGRAFrame owned{};
   if (!vp_macos::copy_texture_frame_to_owned_bgra(frame, &owned) ||
       owned.bgra_size != 16 || owned.width != 2 || owned.height != 2) {
     vp_macos::free_owned_bgra_frame(&owned);

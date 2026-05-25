@@ -13,16 +13,6 @@ typedef struct VPMacOSMetalUploader VPMacOSMetalUploader;
 typedef struct VPMacOSMetalPresentationBackend VPMacOSMetalPresentationBackend;
 typedef void (*VPMacOSFrameAvailableCallback)(void* user_data);
 
-typedef struct VPMacOSNativeFrame {
-  int32_t width;
-  int32_t height;
-  int64_t pts_us;
-  int64_t dts_us;
-  int64_t duration_us;
-  uint8_t* bgra;
-  size_t bgra_size;
-} VPMacOSNativeFrame;
-
 typedef struct VPMacOSNativeFrameInfo {
   int32_t width;
   int32_t height;
@@ -298,8 +288,6 @@ int VPMacOSNativePlayerCopyPresentFramePackage(
     VPMacOSNativePresentFramePackageInfo* out,
     char* error,
     size_t error_size);
-void VPMacOSNativeReleaseRetainedCVPixelBuffer(void* pixel_buffer);
-void VPMacOSNativeFrameFree(VPMacOSNativeFrame* frame);
 
 VPMacOSMetalUploader* VPMacOSMetalUploaderCreate(void);
 void VPMacOSMetalUploaderDestroy(VPMacOSMetalUploader* uploader);

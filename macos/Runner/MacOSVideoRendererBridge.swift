@@ -144,17 +144,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "getLayout":
       result(layout)
     case "applyLayout":
-      if let nextLayout = call.arguments as? [String: Any] {
-        nativePlayer?.applyLayout(
-          mode: MacOSFlutterArguments.intValue(nextLayout["mode"]) ?? 0,
-          splitPos: MacOSFlutterArguments.doubleValue(nextLayout["splitPos"]) ?? 0.5,
-          zoomRatio: MacOSFlutterArguments.doubleValue(nextLayout["zoomRatio"]) ?? 1.0,
-          viewOffsetX: MacOSFlutterArguments.doubleValue(nextLayout["viewOffsetX"]) ?? 0.0,
-          viewOffsetY: MacOSFlutterArguments.doubleValue(nextLayout["viewOffsetY"]) ?? 0.0,
-          pixelSizeMode: MacOSFlutterArguments.intValue(nextLayout["pixelSizeMode"]) ?? 0,
-          order: MacOSFlutterArguments.intListValue(nextLayout["order"])
-        )
-        layout = nativePlayer?.layoutSnapshotMap() ?? nextLayout
+      if let nextLayout = MacOSNativeLayoutBridge.apply(
+        arguments: call.arguments,
+        player: nativePlayer
+      ) {
+        layout = nextLayout
         refreshCurrentFrameAfterLayoutChange()
       }
       result(nil)

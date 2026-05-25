@@ -142,6 +142,37 @@ int main() {
     return fail("Metal presentation backend draw_frame diagnostics did not update");
   }
 
+  auto nv12 = std::make_shared<std::vector<uint8_t>>(
+      static_cast<size_t>(kWidth * kHeight + kWidth * (kHeight / 2)), 128);
+  vr::TextureFrame nv12_frame;
+  nv12_frame.width = kWidth;
+  nv12_frame.height = kHeight;
+  nv12_frame.pts_us = 156333;
+  nv12_frame.duration_us = 33333;
+  nv12_frame.is_nv12 = true;
+  nv12_frame.storage = vr::CpuNv12FrameStorage{
+      nv12,
+      kWidth,
+      kWidth,
+      false,
+      kWidth,
+      kHeight,
+  };
+  vr::RendererDrawSnapshot nv12_snapshot = snapshot;
+  nv12_snapshot.decision.current_pts_us = nv12_frame.pts_us;
+  nv12_snapshot.decision.frames[0] = nv12_frame;
+  if (!backend.draw_frame(nv12_snapshot, hooks)) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("Metal presentation backend draw_frame did not upload NV12 snapshot");
+  }
+  if (copy_metric_count != 2 ||
+      VPMacOSMetalUploaderPresentPackageUploadCount(backend.uploader()) != 2 ||
+      VPMacOSMetalUploaderLastPresentPackageStorage(backend.uploader()) !=
+          VPMacOSNativePresentPackageStorageYUV) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("Metal presentation backend NV12 draw_frame diagnostics did not update");
+  }
+
   backend.shutdown();
   if (backend.available() || backend.uploader()) {
     CVPixelBufferRelease(pixel_buffer);

@@ -45,32 +45,14 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var nativeEventSequence = 0
   private var tracks: [[String: Any]] = []
   private var layout: [String: Any] = MacOSVideoTrackPayload.defaultLayout()
-  private var currentPtsUs = 0
   private var currentDurationUs = 0
-  private var lastPresentedPtsUs: Int?
-  private var lastPresentedDtsUs: Int?
-  private var lastPresentedDurationUs: Int?
   private var isPlaying = false
   private var backendName = "synthetic-texture"
   private var nativePlayer: MacOSNativePlayerSession?
   private var playbackSpeed = 1.0
   private var nativeFrameCallbackRegistered = false
-  private var playbackGeneration = 0
-  private var nativeFrameCallbackCount = 0
-  private var nativeFrameCopyCount = 0
-  private var nativeFrameRendererOwnedPresentCount = 0
-  private var nativeFrameCopyMissCount = 0
-  private var nativeFrameCopyErrorCount = 0
   private var nativePresentationTargetInstalled = false
-  private var nativeFrameCopyFirstHostNs: UInt64?
-  private var nativeFrameCopyLastHostNs: UInt64?
-  private let presentedPtsTraceCapacity = 240
-  private var presentedPtsTrace: [Int] = []
-  private var presentedPtsSampleCount = 0
-  private var presentedPtsDistinctCount = 0
-  private var presentedPtsFirstUs: Int?
-  private var presentedPtsLastStepUs = 0
-  private var presentedPtsMonotonicViolationCount = 0
+  private let presentationState = MacOSFramePresentationState()
 
   init(textureRegistry: FlutterTextureRegistry) {
     self.textureRegistry = textureRegistry
@@ -185,19 +167,15 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       }
       result(nil)
     case "currentPts":
-      currentPtsUs = nativePlayer?.currentPtsUs() ?? currentPtsUs
-      result(currentPtsUs)
+      presentationState.setCurrentPts(nativePlayer?.currentPtsUs() ?? presentationState.currentPtsUs)
+      result(presentationState.currentPtsUs)
     case "duration":
       result(tracks.isEmpty ? 0 : currentDurationUs)
     case "currentPresentedFrame":
       result(
         textureId == nil
           ? nil
-          : [
-              "ptsUs": lastPresentedPtsUs ?? currentPtsUs,
-              "dtsUs": lastPresentedDtsUs ?? lastPresentedPtsUs ?? currentPtsUs,
-              "durationUs": lastPresentedDurationUs ?? 0,
-            ]
+          : presentationState.currentPresentedFrameMap()
       )
     case "isPlaying":
       result(nativePlayer?.isPlaying() ?? isPlaying)
@@ -228,7 +206,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       let nativeLayoutSnapshot = nativePlayer?.layoutSnapshotMap()
       let schedulerStats = nativePlayer?.presentationSchedulerStats()
       let perfStats = nativePlayer?.performanceStats()
-      let diagnostics: [String: Any] = [
+      var diagnostics: [String: Any] = [
         "platform": "macos",
         "backend": backendName,
         "presentationAdapter": String(cString: VPMacOSNativePresentationAdapterName()),
@@ -296,15 +274,6 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         "metalTextureCreationCount": textureStats?.metalTextureCreationCount ?? 0,
         "metalTextureFailureCount": textureStats?.metalTextureFailureCount ?? 0,
         "metalTextureLastError": textureStats?.metalTextureLastError ?? "",
-        "nativeFrameCallbackCount": nativeFrameCallbackCount,
-        "nativeFramePresentationCount": nativeFrameCopyCount,
-        "nativeFramePresentationElapsedMs": nativeFrameCopyElapsedMs(),
-        "nativeFramePresentationFps": nativeFrameCopyFps(),
-        "nativeFramePresentationFpsX1000": Int(nativeFrameCopyFps() * 1000.0),
-        "nativeFrameCopyCount": nativeFrameCopyCount,
-        "nativeFrameRendererOwnedPresentCount": nativeFrameRendererOwnedPresentCount,
-        "nativeFrameCopyMissCount": nativeFrameCopyMissCount,
-        "nativeFrameCopyErrorCount": nativeFrameCopyErrorCount,
         "nativeEventListenCount": nativeEventListenCount,
         "nativeEventEmitCount": nativeEventEmitCount,
         "nativeEventDropNoSinkCount": nativeEventDropNoSinkCount,
@@ -326,23 +295,8 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
           targetInstalled: nativePresentationTargetInstalled,
           perfStats: perfStats
         ),
-        "nativeFrameCopyElapsedMs": nativeFrameCopyElapsedMs(),
-        "nativeFrameCopyFps": nativeFrameCopyFps(),
-        "nativeFrameCopyFpsX1000": Int(nativeFrameCopyFps() * 1000.0),
-        "presentedFramePtsSampleCount": presentedPtsSampleCount,
-        "presentedFramePtsDistinctCount": presentedPtsDistinctCount,
-        "presentedFramePtsFirstUs": presentedPtsFirstUs ?? -1,
-        "presentedFramePtsLastUs": lastPresentedPtsUs ?? -1,
-        "presentedFrameDtsLastUs": lastPresentedDtsUs ?? -1,
-        "presentedFrameDurationLastUs": lastPresentedDurationUs ?? 0,
-        "presentedFramePtsAdvanceUs": presentedPtsAdvanceUs(),
-        "presentedFramePtsLastStepUs": presentedPtsLastStepUs,
-        "presentedFramePtsMonotonicViolationCount": presentedPtsMonotonicViolationCount,
-        "presentedFramePtsTrace": presentedPtsTrace
-          .suffix(32)
-          .map { String($0) }
-          .joined(separator: ","),
       ]
+      presentationState.diagnosticMap().forEach { diagnostics[$0.key] = $0.value }
       result(diagnostics)
     case "captureViewport":
       result(captureViewport())
@@ -400,7 +354,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         )
         nativePresentationTargetInstalled = session.rendererOwnedPresentationActive()
         initialPresentedPtsUs = firstFrame.ptsUs
-        initialPresentedDtsUs = normalizedDtsUs(firstFrame)
+        initialPresentedDtsUs = MacOSFramePresentationState.normalizedDtsUs(firstFrame)
         trackWidth = session.width() > 0 ? session.width() : firstFrame.width
         trackHeight = session.height() > 0 ? session.height() : firstFrame.height
         trackDurationUs = session.durationUs() > 0 ? session.durationUs() : Self.syntheticDurationUs
@@ -476,10 +430,11 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     currentDurationUs = tracks
       .map { MacOSFlutterArguments.intValue($0["durationUs"]) ?? trackDurationUs }
       .max() ?? trackDurationUs
-    currentPtsUs = initialPresentedPtsUs
-    lastPresentedPtsUs = initialPresentedPtsUs
-    lastPresentedDtsUs = initialPresentedDtsUs
-    lastPresentedDurationUs = trackDurationUs
+    presentationState.seedPresentedFrame(
+      ptsUs: initialPresentedPtsUs,
+      dtsUs: initialPresentedDtsUs,
+      durationUs: trackDurationUs
+    )
     isPlaying = false
     markFrameAvailable()
 
@@ -512,11 +467,8 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     texture = nil
     textureId = nil
     tracks.removeAll()
-    currentPtsUs = 0
+    presentationState.resetAll()
     currentDurationUs = 0
-    lastPresentedPtsUs = nil
-    lastPresentedDtsUs = nil
-    lastPresentedDurationUs = nil
     isPlaying = false
     backendName = "synthetic-texture"
     nativePresentationTargetInstalled = false
@@ -724,7 +676,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       publishFrameInfo(frameInfo)
     } catch {
       if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true {
-        nativeFrameCopyMissCount += 1
+        presentationState.recordMiss()
       } else {
         NSLog("VoidPlayer macOS native layout refresh failed: \(error)")
       }
@@ -740,12 +692,13 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     stopNativeFramePump()
     nativePlayer?.pause()
     isPlaying = false
-    currentPtsUs = max(0, min(activeDurationUs(), targetPtsUs))
-    if let error = refreshDecodedFrameIfNeeded(targetPtsUs: currentPtsUs) {
+    let settledPtsUs = max(0, min(activeDurationUs(), targetPtsUs))
+    presentationState.setCurrentPts(settledPtsUs)
+    if let error = refreshDecodedFrameIfNeeded(targetPtsUs: settledPtsUs) {
       return error
     }
     markFrameAvailable()
-    emitSeekPreviewPresented(requestId: requestId, targetPtsUs: currentPtsUs)
+    emitSeekPreviewPresented(requestId: requestId, targetPtsUs: settledPtsUs)
     if resumeAfterSeek {
       isPlaying = textureId != nil
       nativePlayer?.play()
@@ -786,16 +739,12 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func publishFrameInfo(_ info: MacOSNativeFrameInfo) {
-    currentPtsUs = info.ptsUs
-    lastPresentedPtsUs = info.ptsUs
-    lastPresentedDtsUs = normalizedDtsUs(info)
-    lastPresentedDurationUs = info.durationUs
-    recordPresentedPts(info.ptsUs)
+    presentationState.recordFrame(info)
   }
 
   private func emitSeekPreviewPresented(requestId: Int?, targetPtsUs: Int) {
     guard let requestId,
-          let ptsUs = lastPresentedPtsUs else {
+          let ptsUs = presentationState.lastPresentedPtsUs else {
       return
     }
     guard let eventSink else {
@@ -812,92 +761,12 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       "requestId": requestId,
       "trackFileId": 0,
       "ptsUs": ptsUs,
-      "dtsUs": lastPresentedDtsUs ?? ptsUs,
+      "dtsUs": presentationState.lastPresentedDtsUs ?? ptsUs,
       "targetPtsUs": targetPtsUs,
     ]
     DispatchQueue.main.async {
       eventSink(payload)
     }
-  }
-
-  private func resetNativeFrameCounters() {
-    nativeFrameCallbackCount = 0
-    nativeFrameCopyCount = 0
-    nativeFrameRendererOwnedPresentCount = 0
-    nativeFrameCopyMissCount = 0
-    nativeFrameCopyErrorCount = 0
-    nativeFrameCopyFirstHostNs = nil
-    nativeFrameCopyLastHostNs = nil
-    resetPresentedPtsTrace()
-  }
-
-  private func recordNativeFramePresentation(rendererOwned: Bool) {
-    let now = DispatchTime.now().uptimeNanoseconds
-    if nativeFrameCopyFirstHostNs == nil {
-      nativeFrameCopyFirstHostNs = now
-    }
-    nativeFrameCopyLastHostNs = now
-    nativeFrameCopyCount += 1
-    if rendererOwned {
-      nativeFrameRendererOwnedPresentCount += 1
-    }
-  }
-
-  private func resetPresentedPtsTrace() {
-    presentedPtsTrace.removeAll(keepingCapacity: true)
-    presentedPtsSampleCount = 0
-    presentedPtsDistinctCount = 0
-    presentedPtsFirstUs = nil
-    presentedPtsLastStepUs = 0
-    presentedPtsMonotonicViolationCount = 0
-  }
-
-  private func recordPresentedPts(_ ptsUs: Int) {
-    if let last = presentedPtsTrace.last {
-      let step = ptsUs - last
-      presentedPtsLastStepUs = step
-      if step < 0 {
-        presentedPtsMonotonicViolationCount += 1
-      }
-      if step != 0 {
-        presentedPtsDistinctCount += 1
-      }
-    } else {
-      presentedPtsDistinctCount = 1
-    }
-    if presentedPtsFirstUs == nil {
-      presentedPtsFirstUs = ptsUs
-    }
-    presentedPtsSampleCount += 1
-    presentedPtsTrace.append(ptsUs)
-    if presentedPtsTrace.count > presentedPtsTraceCapacity {
-      presentedPtsTrace.removeFirst(presentedPtsTrace.count - presentedPtsTraceCapacity)
-    }
-  }
-
-  private func presentedPtsAdvanceUs() -> Int {
-    guard let first = presentedPtsFirstUs,
-          let last = lastPresentedPtsUs else {
-      return 0
-    }
-    return max(0, last - first)
-  }
-
-  private func nativeFrameCopyElapsedMs() -> Int {
-    guard let first = nativeFrameCopyFirstHostNs,
-          let last = nativeFrameCopyLastHostNs,
-          last >= first else {
-      return 0
-    }
-    return Int((last - first) / 1_000_000)
-  }
-
-  private func nativeFrameCopyFps() -> Double {
-    let elapsedMs = nativeFrameCopyElapsedMs()
-    guard nativeFrameCopyCount > 1, elapsedMs > 0 else {
-      return 0.0
-    }
-    return Double(nativeFrameCopyCount - 1) * 1000.0 / Double(elapsedMs)
   }
 
   private func presentationBackendName() -> String {
@@ -927,10 +796,6 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     return "macOS shared native facade has no active renderer-owned presentation target"
   }
 
-  private func normalizedDtsUs(_ info: MacOSNativeFrameInfo) -> Int {
-    info.dtsUs == Int.min ? info.ptsUs : info.dtsUs
-  }
-
   private func startNativeFramePump() {
     stopNativeFramePump()
     guard backendName == "macos-native-player",
@@ -939,9 +804,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       return
     }
 
-    let generation = playbackGeneration + 1
-    playbackGeneration = generation
-    resetNativeFrameCounters()
+    presentationState.resetFrameCounters()
     nativePlayer.resetRendererOwnedPresentationStats()
     nativeFrameCallbackRegistered = true
     nativePresentationTargetInstalled = false
@@ -958,7 +821,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     guard !nativePresentationTargetInstalled else {
       return
     }
-    nativeFrameCopyErrorCount += 1
+    presentationState.recordError()
     NSLog("VoidPlayer macOS renderer-owned Metal presentation target unavailable")
     isPlaying = false
     nativePlayer.pause()
@@ -966,7 +829,6 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func stopNativeFramePump(clearPresentationTarget: Bool = false) {
-    playbackGeneration += 1
     if clearPresentationTarget {
       nativePlayer?.clearMetalPresentationTarget()
       nativePresentationTargetInstalled = false
@@ -980,13 +842,13 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   fileprivate func scheduleNativeFrameCopyFromCallback() {
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
-      self.nativeFrameCallbackCount += 1
+      self.presentationState.recordCallback()
       guard self.isPlaying,
             self.backendName == "macos-native-player" else {
         return
       }
       if self.nativePlayer?.lastRendererOwnedPresentationSucceeded() == true {
-        self.recordNativeFramePresentation(rendererOwned: true)
+        self.presentationState.recordPresentation(rendererOwned: true)
         if let frameInfo = self.nativePlayer?.lastRendererOwnedFrameInfo() {
           self.publishFrameInfo(frameInfo)
         }
@@ -996,7 +858,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       if self.nativePresentationTargetInstalled {
         return
       }
-      self.nativeFrameCopyErrorCount += 1
+      self.presentationState.recordError()
       NSLog("VoidPlayer macOS renderer-owned Metal presentation failed")
       self.isPlaying = false
       self.nativePlayer?.pause()

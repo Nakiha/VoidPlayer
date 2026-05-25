@@ -3,6 +3,7 @@
 #include "video_renderer/render/backend_type.h"
 #include "video_renderer/render/renderer_draw_snapshot.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 
@@ -36,6 +37,14 @@ public:
     virtual bool initialize(const PresentationBackendConfig& config) = 0;
     virtual void shutdown() = 0;
     virtual bool headless() const = 0;
+    virtual bool supports_swap_chain_present() const { return false; }
+    virtual bool poll_device_removed(const char*) { return false; }
+    virtual bool device_lost() const { return false; }
+    virtual long device_removed_reason() const { return 0; }
+    virtual void wait_idle(const char*) {}
+    virtual bool present_swap_chain(int) { return false; }
+    virtual void reset_track(size_t) {}
+    virtual void move_track(size_t, size_t) {}
     virtual bool draw_frame(const RendererDrawSnapshot& snapshot,
                             const PresentationBackendDrawHooks& hooks) = 0;
 };

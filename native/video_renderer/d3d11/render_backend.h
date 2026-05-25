@@ -56,6 +56,14 @@ public:
     void shutdown() override;
 
     bool headless() const override { return headless_; }
+    bool supports_swap_chain_present() const override;
+    bool poll_device_removed(const char* operation) override;
+    bool device_lost() const override;
+    long device_removed_reason() const override;
+    void wait_idle(const char* label) override;
+    bool present_swap_chain(int sync_interval) override;
+    void reset_track(size_t slot) override;
+    void move_track(size_t from, size_t to) override;
 
     D3D11Device* device() const { return device_.get(); }
     TextureManager* texture_manager() const { return texture_manager_.get(); }

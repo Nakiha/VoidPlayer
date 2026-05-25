@@ -44,6 +44,46 @@ bool D3D11RenderBackend::initialize(const PresentationBackendConfig& config) {
     return initialize_render_resources();
 }
 
+bool D3D11RenderBackend::supports_swap_chain_present() const {
+    return device_ && !headless_;
+}
+
+bool D3D11RenderBackend::poll_device_removed(const char* operation) {
+    return device_ && device_->poll_device_removed(operation);
+}
+
+bool D3D11RenderBackend::device_lost() const {
+    return device_ && device_->device_lost();
+}
+
+long D3D11RenderBackend::device_removed_reason() const {
+    return device_ ? static_cast<long>(device_->device_removed_reason()) : 0;
+}
+
+void D3D11RenderBackend::wait_idle(const char* label) {
+    if (headless_output_) {
+        headless_output_->wait_gpu_idle(label);
+    } else if (device_ && device_->context()) {
+        device_->context()->Flush();
+    }
+}
+
+bool D3D11RenderBackend::present_swap_chain(int sync_interval) {
+    return device_ && device_->present(sync_interval);
+}
+
+void D3D11RenderBackend::reset_track(size_t slot) {
+    if (frame_presenter_) {
+        frame_presenter_->reset_track(slot);
+    }
+}
+
+void D3D11RenderBackend::move_track(size_t from, size_t to) {
+    if (frame_presenter_) {
+        frame_presenter_->move_track(from, to);
+    }
+}
+
 bool D3D11RenderBackend::initialize_device(const D3D11RenderBackendConfig& config) {
     device_ = std::make_unique<D3D11Device>();
     if (config.headless) {

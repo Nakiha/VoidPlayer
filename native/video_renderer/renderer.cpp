@@ -464,8 +464,8 @@ void Renderer::seek_internal(std::unique_lock<std::mutex>& state_lock,
                     }
                 },
                 [this, i]() {
-                    if (auto* presenter = frame_presenter()) {
-                        presenter->reset_track(i);
+                    if (presentation_backend_) {
+                        presentation_backend_->reset_track(i);
                     }
                 },
             },
@@ -912,10 +912,8 @@ RendererDrawSnapshot Renderer::build_draw_snapshot_locked(
 
 void Renderer::wait_gpu_idle(const char* label) {
     const auto start = std::chrono::steady_clock::now();
-    if (auto* output = headless_output()) {
-        output->wait_gpu_idle(label);
-    } else if (auto* device = d3d_device()) {
-        device->context()->Flush();
+    if (presentation_backend_) {
+        presentation_backend_->wait_idle(label);
     }
     d3d_metrics_.render_wait_us.fetch_add(elapsed_us_since(start), std::memory_order_relaxed);
     d3d_metrics_.render_wait_count.fetch_add(1, std::memory_order_relaxed);
@@ -967,10 +965,9 @@ void Renderer::enter_terminal_device_lost_locked(const char* operation) {
     }
 
     device_state_.store(plan.pre_terminal_state, std::memory_order_release);
-    auto* device = d3d_device();
-    const long reason = device
-        ? static_cast<long>(device->device_removed_reason())
-        : static_cast<long>(S_OK);
+    const long reason = presentation_backend_
+        ? presentation_backend_->device_removed_reason()
+        : 0;
     if (plan.count_device_lost) {
         d3d_metrics_.device_lost_count.fetch_add(1, std::memory_order_relaxed);
     }
@@ -1033,21 +1030,22 @@ void Renderer::present_frame(const PresentDecision& decision) {
     bool drew = false;
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-        auto* device = d3d_device();
+        auto* backend = presentation_backend_.get();
         if (headless_) {
             drew = draw_headless_and_publish(snapshot, "present_frame", frame_callback);
-            device_lost = device && device->poll_device_removed("headless present");
+            device_lost = backend && backend->poll_device_removed("headless present");
         } else {
             drew = draw_frame(snapshot);
-            if (should_present_swap_chain_after_draw(drew, device != nullptr)) {
+            if (should_present_swap_chain_after_draw(
+                    drew, backend && backend->supports_swap_chain_present())) {
                 const auto present_start = std::chrono::steady_clock::now();
-                const bool presented = device->present(0);
+                const bool presented = backend->present_swap_chain(0);
                 d3d_metrics_.present_publish_us.fetch_add(
                     elapsed_us_since(present_start), std::memory_order_relaxed);
                 d3d_metrics_.present_publish_count.fetch_add(1, std::memory_order_relaxed);
-                device_lost = !presented && device->device_lost();
+                device_lost = !presented && backend->device_lost();
             } else {
-                device_lost = device && device->device_lost();
+                device_lost = backend && backend->device_lost();
             }
         }
     }
@@ -1076,14 +1074,14 @@ void Renderer::redraw_layout() {
     bool drew = false;
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-        auto* device = d3d_device();
+        auto* backend = presentation_backend_.get();
         if (headless_) {
             drew = draw_headless_and_publish(snapshot, "redraw_layout", frame_callback);
-            device_lost = device && device->poll_device_removed("headless redraw");
-        } else if (device) {
+            device_lost = backend && backend->poll_device_removed("headless redraw");
+        } else if (backend) {
             drew = draw_frame(snapshot);
-            device->context()->Flush();
-            device_lost = device->poll_device_removed("redraw_layout");
+            backend->wait_idle("redraw_layout");
+            device_lost = backend->poll_device_removed("redraw_layout");
         }
     }
     if (device_lost) {
@@ -1420,8 +1418,8 @@ void Renderer::render_loop_body() {
     render_loop_controller_.start(std::chrono::steady_clock::now());
 
     while (running_) {
-        auto* device = d3d_device();
-        if (device && device->poll_device_removed("render_loop")) {
+        auto* backend = presentation_backend_.get();
+        if (backend && backend->poll_device_removed("render_loop")) {
             std::lock_guard<std::mutex> lock(state_mutex_);
             enter_terminal_device_lost_locked("render_loop");
             break;
@@ -1816,8 +1814,8 @@ bool Renderer::recreate_pipeline_for_seek(std::unique_lock<std::mutex>& state_lo
 
     unregister_track_audio(file_id);
     render_sink_->set_track(slot, nullptr);
-    if (auto* presenter = frame_presenter()) {
-        presenter->reset_track(slot);
+    if (presentation_backend_) {
+        presentation_backend_->reset_track(slot);
     }
     clear_present_decision_slot(last_decision_, slot);
     preview_drawn_ = false;
@@ -1951,8 +1949,8 @@ int Renderer::add_track(const std::string& video_path,
                 render_sink_->set_track_offset(committed_slot, track.offset_us);
             },
             [this](size_t committed_slot) {
-                if (auto* presenter = frame_presenter()) {
-                    presenter->reset_track(committed_slot);
+                if (presentation_backend_) {
+                    presentation_backend_->reset_track(committed_slot);
                 }
             },
         };
@@ -2026,8 +2024,8 @@ void Renderer::remove_track(int file_id) {
 
         unregister_track_audio(file_id);
         render_sink_->set_track(static_cast<size_t>(slot), nullptr);
-        if (auto* presenter = frame_presenter()) {
-            presenter->reset_track(static_cast<size_t>(slot));
+        if (presentation_backend_) {
+            presentation_backend_->reset_track(static_cast<size_t>(slot));
         }
         removed_track = std::move(tracks_[static_cast<size_t>(slot)]);
         if (removed_track && removed_track->demux_thread) {
@@ -2039,8 +2037,8 @@ void Renderer::remove_track(int file_id) {
             size_t from,
             size_t to,
             TrackPipeline& track) {
-            if (auto* presenter = frame_presenter()) {
-                presenter->move_track(from, to);
+            if (presentation_backend_) {
+                presentation_backend_->move_track(from, to);
             }
             render_sink_->set_track(to, track.track_buffer, track.file_id, track.generation);
             render_sink_->set_track_offset(to, track.offset_us);
@@ -2202,15 +2200,12 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
 }
 
 bool Renderer::d3d_device_lost() const {
-    auto* device = d3d_device();
     return device_state_.load(std::memory_order_acquire) != RendererDeviceState::Ready ||
-           (device && device->device_lost());
+           (presentation_backend_ && presentation_backend_->device_lost());
 }
 
 long Renderer::d3d_device_removed_reason() const {
-    auto* device = d3d_device();
-    return device ? static_cast<long>(device->device_removed_reason())
-                  : static_cast<long>(S_OK);
+    return presentation_backend_ ? presentation_backend_->device_removed_reason() : 0;
 }
 
 RendererDeviceState Renderer::device_state() const {

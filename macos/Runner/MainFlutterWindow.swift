@@ -3,13 +3,13 @@ import FlutterMacOS
 
 private func macOSNativeFrameAvailable(_ userData: UnsafeMutableRawPointer?) {
   guard let userData else { return }
-  let renderer = Unmanaged<MacOSVideoRendererStub>.fromOpaque(userData).takeUnretainedValue()
+  let renderer = Unmanaged<MacOSVideoRendererBridge>.fromOpaque(userData).takeUnretainedValue()
   renderer.scheduleNativeFrameCopyFromCallback()
 }
 
 class MainFlutterWindow: NSWindow {
   override func close() {
-    MacOSVideoRendererStub.destroyActivePlayerForWindowClose()
+    MacOSVideoRendererBridge.destroyActivePlayerForWindowClose()
     super.close()
   }
 
@@ -19,18 +19,18 @@ class MainFlutterWindow: NSWindow {
     self.contentViewController = flutterViewController
     self.setFrame(windowFrame, display: true)
 
-    MacOSVideoRendererStub.register(with: flutterViewController.engine)
+    MacOSVideoRendererBridge.register(with: flutterViewController.engine)
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()
   }
 }
 
-private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
+private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private static let channelName = "video_renderer"
   private static let eventsChannelName = "video_renderer/events"
   private static let syntheticDurationUs = 10_000_000
-  private static weak var activeInstance: MacOSVideoRendererStub?
+  private static weak var activeInstance: MacOSVideoRendererBridge?
 
   private let textureRegistry: FlutterTextureRegistry
   private let playbackQueue = DispatchQueue(label: "dev.nakiha.voidplayer.macos.native-playback")
@@ -44,7 +44,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private var nativeEventDropNoSinkCount = 0
   private var nativeEventSequence = 0
   private var tracks: [[String: Any]] = []
-  private var layout: [String: Any] = MacOSVideoRendererStub.defaultLayout()
+  private var layout: [String: Any] = MacOSVideoRendererBridge.defaultLayout()
   private var currentPtsUs = 0
   private var currentDurationUs = 0
   private var lastPresentedPtsUs: Int?
@@ -79,16 +79,16 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
   static func register(with engine: FlutterEngine) {
     configureNativeEnvironment()
-    let stub = MacOSVideoRendererStub(textureRegistry: engine)
-    activeInstance = stub
+    let bridge = MacOSVideoRendererBridge(textureRegistry: engine)
+    activeInstance = bridge
     let messenger = engine.binaryMessenger
     let channel = FlutterMethodChannel(name: channelName, binaryMessenger: messenger)
-    channel.setMethodCallHandler(stub.handle)
-    stub.methodChannel = channel
+    channel.setMethodCallHandler(bridge.handle)
+    bridge.methodChannel = channel
 
     let events = FlutterEventChannel(name: eventsChannelName, binaryMessenger: messenger)
-    events.setStreamHandler(stub)
-    stub.eventChannel = events
+    events.setStreamHandler(bridge)
+    bridge.eventChannel = events
   }
 
   private static func configureNativeEnvironment() {

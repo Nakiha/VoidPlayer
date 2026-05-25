@@ -361,30 +361,18 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private func refreshDecodedFrameIfNeeded(targetPtsUs: Int) -> FlutterError? {
     guard backendName == MacOSVideoTrackPayload.nativeFormatName,
           let nativePlayer,
-          texture != nil else {
+          let texture else {
       return nil
     }
 
-    do {
-      nativePlayer.seek(targetPtsUs)
-      guard let texture else {
-        throw MacOSNativePlayerError.invalidPayload
-      }
-      let frameInfo = try texture.updateFromNativePlayer(
-        nativePlayer,
-        maxTrackSlots: activeTrackSlotCapacity(),
-        waitTimeoutMs: 3_000
-      )
-      framePump.setTargetInstalled(nativePlayer.rendererOwnedPresentationActive())
-      publishFrameInfo(frameInfo)
-      return nil
-    } catch {
-      return FlutterError(
-        code: "DECODE_FAILED",
-        message: "Failed to decode macOS video frame",
-        details: "\(error)"
-      )
-    }
+    return MacOSNativeFrameRefresh.seekAndRefresh(
+      player: nativePlayer,
+      texture: texture,
+      targetPtsUs: targetPtsUs,
+      maxTrackSlots: activeTrackSlotCapacity(),
+      presentationState: presentationState,
+      framePump: framePump
+    )
   }
 
   private func refreshCurrentFrameAfterLayoutChange() {
@@ -394,21 +382,13 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       markFrameAvailable()
       return
     }
-    do {
-      let frameInfo = try texture.updateFromNativePlayer(
-        nativePlayer,
-        maxTrackSlots: activeTrackSlotCapacity(),
-        waitTimeoutMs: 100
-      )
-      framePump.setTargetInstalled(nativePlayer.rendererOwnedPresentationActive())
-      publishFrameInfo(frameInfo)
-    } catch {
-      if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true {
-        presentationState.recordMiss()
-      } else {
-        NSLog("VoidPlayer macOS native layout refresh failed: \(error)")
-      }
-    }
+    MacOSNativeFrameRefresh.refreshCurrentFrameAfterLayoutChange(
+      player: nativePlayer,
+      texture: texture,
+      maxTrackSlots: activeTrackSlotCapacity(),
+      presentationState: presentationState,
+      framePump: framePump
+    )
     markFrameAvailable()
   }
 
@@ -442,32 +422,18 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
           let texture else {
       return nil
     }
-    do {
-      if forward {
-        try nativePlayer.stepForward()
-      } else {
-        try nativePlayer.stepBackward()
-      }
-      let frameInfo = try texture.updateFromNativePlayer(
-        nativePlayer,
-        maxTrackSlots: activeTrackSlotCapacity(),
-        waitTimeoutMs: 3_000
-      )
-      framePump.setTargetInstalled(nativePlayer.rendererOwnedPresentationActive())
-      publishFrameInfo(frameInfo)
-    } catch {
-      return FlutterError(
-        code: "STEP_FAILED",
-        message: "Failed to step macOS native playback",
-        details: "\(error)"
-      )
+    if let error = MacOSNativeFrameRefresh.stepAndRefresh(
+      player: nativePlayer,
+      texture: texture,
+      forward: forward,
+      maxTrackSlots: activeTrackSlotCapacity(),
+      presentationState: presentationState,
+      framePump: framePump
+    ) {
+      return error
     }
     markFrameAvailable()
     return nil
-  }
-
-  private func publishFrameInfo(_ info: MacOSNativeFrameInfo) {
-    presentationState.recordFrame(info)
   }
 
   private func emitSeekPreviewPresented(requestId: Int?, targetPtsUs: Int) {
@@ -513,7 +479,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       if self.nativePlayer?.lastRendererOwnedPresentationSucceeded() == true {
         self.presentationState.recordPresentation(rendererOwned: true)
         if let frameInfo = self.nativePlayer?.lastRendererOwnedFrameInfo() {
-          self.publishFrameInfo(frameInfo)
+          self.presentationState.recordFrame(frameInfo)
         }
         self.markFrameAvailable()
         return

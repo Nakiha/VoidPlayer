@@ -366,6 +366,7 @@ private:
     mutable std::mutex state_mutex_;
     mutable std::mutex event_callback_mutex_;
     RendererEventCallback event_callback_;
+    std::function<void()> frame_callback_;
     float background_color_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     bool preview_drawn_ = false;
     bool was_buffering_ = false;

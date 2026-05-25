@@ -1071,9 +1071,14 @@ void Renderer::present_frame(const PresentDecision& decision) {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
         auto* backend = presentation_backend_.get();
         if (headless_) {
-            drew = backend && backend->renderer_manages_headless_publish()
-                ? draw_headless_and_publish(snapshot, "present_frame", frame_callback)
-                : draw_frame(snapshot);
+            if (backend && backend->renderer_manages_headless_publish()) {
+                drew = draw_headless_and_publish(snapshot, "present_frame", frame_callback);
+            } else {
+                drew = draw_frame(snapshot);
+                if (drew) {
+                    frame_callback = frame_callback_;
+                }
+            }
             device_lost = backend && backend->poll_device_removed("headless present");
         } else {
             drew = draw_frame(snapshot);
@@ -1117,9 +1122,14 @@ void Renderer::redraw_layout() {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
         auto* backend = presentation_backend_.get();
         if (headless_) {
-            drew = backend && backend->renderer_manages_headless_publish()
-                ? draw_headless_and_publish(snapshot, "redraw_layout", frame_callback)
-                : draw_frame(snapshot);
+            if (backend && backend->renderer_manages_headless_publish()) {
+                drew = draw_headless_and_publish(snapshot, "redraw_layout", frame_callback);
+            } else {
+                drew = draw_frame(snapshot);
+                if (drew) {
+                    frame_callback = frame_callback_;
+                }
+            }
             device_lost = backend && backend->poll_device_removed("headless redraw");
         } else if (backend) {
             drew = draw_frame(snapshot);
@@ -1330,14 +1340,15 @@ void Renderer::set_track_offset(int file_id, int64_t offset_us) {
 }
 
 void Renderer::set_frame_callback(std::function<void()> cb) {
-#ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+#ifdef _WIN32
     if (auto* output = headless_output()) {
         output->set_frame_callback(std::move(cb));
+        frame_callback_ = {};
+        return;
     }
-#else
-    (void)cb;
 #endif
+    frame_callback_ = std::move(cb);
 }
 
 void Renderer::set_event_callback(RendererEventCallback cb) {

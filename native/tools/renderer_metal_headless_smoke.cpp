@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <atomic>
 #include <memory>
 #include <string>
 #include <thread>
@@ -109,6 +110,10 @@ int main() {
         std::cerr << "shared Renderer failed to initialize with Metal backend\n";
         return 1;
     }
+    std::atomic<int> callbacks{0};
+    renderer.set_frame_callback([&callbacks]() {
+        callbacks.fetch_add(1, std::memory_order_relaxed);
+    });
 
     double non_black = 0.0;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
@@ -124,6 +129,10 @@ int main() {
     if (non_black <= 0.5) {
         std::cerr << "shared Renderer Metal target did not receive a visible frame; non_black="
                   << non_black << "\n";
+        return 1;
+    }
+    if (callbacks.load(std::memory_order_relaxed) <= 0) {
+        std::cerr << "shared Renderer Metal frame callback was not invoked\n";
         return 1;
     }
 

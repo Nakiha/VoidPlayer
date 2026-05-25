@@ -26,6 +26,9 @@
 4.592, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, yuv
 4.593, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, yuv
 4.595, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true
+4.596, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameHostIntervalSampleCount, 1
+4.597, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameExpectedIntervalUs, 1
+4.598, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedRatioX1000, 900
 4.6, CAPTURE_VIEWPORT, vvc_software_after_play
 4.7, ASSERT_CAPTURE_CHANGED, vvc_software_start, vvc_software_after_play
 4.8, PAUSE

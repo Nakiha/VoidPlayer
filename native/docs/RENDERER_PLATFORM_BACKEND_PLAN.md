@@ -302,9 +302,14 @@ as Windows; the playing-step UI smoke now resumes playback and verifies the view
 - Performance: local 4K60 samples are manual/perf gates until automated headed macOS performance
   testing is reliable
 
-## Immediate Next Slice
+## Next Stabilization Slices
 
-Start with P0 and P1. The first code change should not add new Metal capabilities. It should extract
-the platform presentation backend seam from the existing Windows renderer while preserving D3D11
-behavior exactly. Once that seam is real, macOS can plug into the same scheduler instead of extending
-the transitional Swift frame pump.
+The backend seam and macOS renderer-owned path are already on the normal route. Future slices should
+stay small and focus on evidence rather than broad migration:
+
+- Metal shader parity: compare BGRA/NV12/YUV420/P010 output against the shared layout/color contract.
+- Presentation cadence diagnostics: make repeated PTS, large PTS gaps, host-frame intervals, and
+  renderer-owned presentation ratio visible in smoke tests before raising 4K60 thresholds.
+- Windows preservation: rerun native/build/UI gates on a Windows host after shared backend changes.
+- Release packaging: verify FFmpeg dylibs, license notices, crash/log paths, sandbox file access, and
+  signing/notarization inputs.

@@ -14,12 +14,17 @@ final class MacOSFramePresentationState {
   private var errorCount = 0
   private var firstHostNs: UInt64?
   private var lastHostNs: UInt64?
+  private var hostIntervalSampleCount = 0
+  private var hostIntervalTotalNs: UInt64 = 0
+  private var hostIntervalMaxNs: UInt64 = 0
   private var ptsTrace: [Int] = []
   private var ptsSampleCount = 0
   private var ptsDistinctCount = 0
   private var ptsFirstUs: Int?
   private var ptsLastStepUs = 0
   private var ptsMonotonicViolationCount = 0
+  private var ptsDuplicateCount = 0
+  private var ptsLargeGapCount = 0
 
   func resetAll() {
     currentPtsUs = 0
@@ -37,6 +42,9 @@ final class MacOSFramePresentationState {
     errorCount = 0
     firstHostNs = nil
     lastHostNs = nil
+    hostIntervalSampleCount = 0
+    hostIntervalTotalNs = 0
+    hostIntervalMaxNs = 0
     resetPtsTrace()
   }
 
@@ -68,6 +76,12 @@ final class MacOSFramePresentationState {
     let now = DispatchTime.now().uptimeNanoseconds
     if firstHostNs == nil {
       firstHostNs = now
+    }
+    if let last = lastHostNs, now >= last {
+      let interval = now - last
+      hostIntervalSampleCount += 1
+      hostIntervalTotalNs += interval
+      hostIntervalMaxNs = max(hostIntervalMaxNs, interval)
     }
     lastHostNs = now
     presentationCount += 1
@@ -102,6 +116,7 @@ final class MacOSFramePresentationState {
       "nativeFramePresentationFpsX1000": Int(fps * 1000.0),
       "nativeFrameCopyCount": presentationCount,
       "nativeFrameRendererOwnedPresentCount": rendererOwnedPresentCount,
+      "nativeFrameRendererOwnedRatioX1000": rendererOwnedRatioX1000(),
       "nativeFrameCopyMissCount": missCount,
       "nativeFrameCopyErrorCount": errorCount,
       "nativeFrameCopyElapsedMs": presentationElapsedMs(),
@@ -116,6 +131,12 @@ final class MacOSFramePresentationState {
       "presentedFramePtsAdvanceUs": presentedPtsAdvanceUs(),
       "presentedFramePtsLastStepUs": ptsLastStepUs,
       "presentedFramePtsMonotonicViolationCount": ptsMonotonicViolationCount,
+      "presentedFramePtsDuplicateCount": ptsDuplicateCount,
+      "presentedFramePtsLargeGapCount": ptsLargeGapCount,
+      "presentedFrameExpectedIntervalUs": expectedPresentedIntervalUs(),
+      "presentedFrameHostIntervalSampleCount": hostIntervalSampleCount,
+      "presentedFrameHostIntervalAvgMs": hostIntervalAvgMs(),
+      "presentedFrameHostIntervalMaxMs": hostIntervalMaxMs(),
       "presentedFramePtsTrace": ptsTrace.suffix(32).map { String($0) }.joined(separator: ","),
     ]
   }
@@ -131,6 +152,8 @@ final class MacOSFramePresentationState {
     ptsFirstUs = nil
     ptsLastStepUs = 0
     ptsMonotonicViolationCount = 0
+    ptsDuplicateCount = 0
+    ptsLargeGapCount = 0
   }
 
   private func recordPresentedPts(_ ptsUs: Int) {
@@ -139,6 +162,12 @@ final class MacOSFramePresentationState {
       ptsLastStepUs = step
       if step < 0 {
         ptsMonotonicViolationCount += 1
+      }
+      if step == 0 {
+        ptsDuplicateCount += 1
+      }
+      if step > largeGapThresholdUs() {
+        ptsLargeGapCount += 1
       }
       if step != 0 {
         ptsDistinctCount += 1
@@ -162,6 +191,32 @@ final class MacOSFramePresentationState {
       return 0
     }
     return max(0, last - first)
+  }
+
+  private func expectedPresentedIntervalUs() -> Int {
+    max(0, lastPresentedDurationUs ?? 0)
+  }
+
+  private func largeGapThresholdUs() -> Int {
+    max(Int(Double(expectedPresentedIntervalUs()) * 2.5), 100_000)
+  }
+
+  private func rendererOwnedRatioX1000() -> Int {
+    guard presentationCount > 0 else {
+      return 0
+    }
+    return rendererOwnedPresentCount * 1000 / presentationCount
+  }
+
+  private func hostIntervalAvgMs() -> Int {
+    guard hostIntervalSampleCount > 0 else {
+      return 0
+    }
+    return Int(hostIntervalTotalNs / UInt64(hostIntervalSampleCount) / 1_000_000)
+  }
+
+  private func hostIntervalMaxMs() -> Int {
+    Int(hostIntervalMaxNs / 1_000_000)
   }
 
   private func presentationElapsedMs() -> Int {

@@ -47,6 +47,10 @@
 4.78, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFramePtsAdvanceUs, 500000
 4.782, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameDurationLastUs, 1
 4.785, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, presentedFramePtsMonotonicViolationCount, 0, 0
+4.786, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, presentedFramePtsLargeGapCount, 0, 0
+4.787, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameHostIntervalSampleCount, 1
+4.788, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameExpectedIntervalUs, 1
+4.789, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedRatioX1000, 900
 4.8, CAPTURE_VIEWPORT, native_4k60_after_play
 4.9, ASSERT_CAPTURE_CHANGED, native_4k60_start, native_4k60_after_play
 5.0, PAUSE

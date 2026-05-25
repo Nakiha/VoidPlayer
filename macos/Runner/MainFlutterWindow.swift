@@ -44,7 +44,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var nativeEventDropNoSinkCount = 0
   private var nativeEventSequence = 0
   private var tracks: [[String: Any]] = []
-  private var layout: [String: Any] = MacOSVideoRendererBridge.defaultLayout()
+  private var layout: [String: Any] = MacOSVideoTrackPayload.defaultLayout()
   private var currentPtsUs = 0
   private var currentDurationUs = 0
   private var lastPresentedPtsUs: Int?
@@ -425,7 +425,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     textureId = registeredTextureId
     if backendName == "macos-native-player" {
       tracks = [
-        trackMap(
+        MacOSVideoTrackPayload.track(
           fileId: 0,
           slot: 0,
           path: firstPath,
@@ -459,7 +459,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       }
     } else {
       tracks = paths.enumerated().map { index, path in
-        trackMap(
+        MacOSVideoTrackPayload.track(
           fileId: index,
           slot: index,
           path: path,
@@ -490,7 +490,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func nativeTrackMap(path: String, metadata: MacOSNativeTrackMetadata) -> [String: Any] {
-    trackMap(
+    MacOSVideoTrackPayload.track(
       fileId: metadata.fileId,
       slot: metadata.slot,
       path: path,
@@ -565,7 +565,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
 
     let size = texture?.dimensions() ?? (width: 1920, height: 1080)
-    let track = trackMap(
+    let track = MacOSVideoTrackPayload.track(
       fileId: fileId,
       slot: slot,
       path: path,
@@ -1002,46 +1002,6 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       self.nativePlayer?.pause()
       self.stopNativeFramePump()
     }
-  }
-
-  private func trackMap(
-    fileId: Int,
-    slot: Int,
-    path: String,
-    width: Int,
-    height: Int,
-    durationUs: Int,
-    formatName: String,
-    codecName: String,
-    codecLongName: String,
-    decoderName: String
-  ) -> [String: Any] {
-    return [
-      "fileId": fileId,
-      "slot": slot,
-      "path": path,
-      "width": width,
-      "height": height,
-      "durationUs": durationUs,
-      "startTimeUs": 0,
-      "bitRate": 0,
-      "formatName": formatName,
-      "codecName": codecName,
-      "codecLongName": codecLongName,
-      "decoderName": decoderName,
-    ]
-  }
-
-  private static func defaultLayout() -> [String: Any] {
-    return [
-      "mode": 0,
-      "splitPos": 0.5,
-      "zoomRatio": 1.0,
-      "viewOffsetX": 0.0,
-      "viewOffsetY": 0.0,
-      "pixelSizeMode": 0,
-      "order": [0, 1, 2, 3],
-    ]
   }
 
   func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {

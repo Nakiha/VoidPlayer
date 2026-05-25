@@ -82,7 +82,7 @@ texture-pump presentation from renderer-owned presentation.
 Goal: split the Windows renderer loop from D3D11-specific presentation without changing Windows
 behavior.
 
-- [ ] Define a renderer-owned backend interface that consumes immutable draw snapshots and
+- [x] Define a renderer-owned backend interface that consumes immutable draw snapshots and
   `RenderSink::PresentDecision`.
 - [ ] Move D3D11 draw, frame preparation, shared texture publication, capture, and device-loss
   handling behind the Windows implementation of that interface.
@@ -91,10 +91,10 @@ behavior.
 - [ ] Preserve existing Windows FFI, runner, and UI automation behavior.
 
 Progress: the first draw seam is in place. `Renderer` now builds the immutable
-`RendererDrawSnapshot` and delegates D3D11 frame drawing to `D3D11RenderBackend::draw_frame`, while
-retaining ownership of scheduling, playback state, track lifecycle, GPU wait accounting, and overlay
-hooks. This is intentionally behavior-preserving groundwork for a future Metal backend to consume
-the same draw snapshot contract.
+`RendererDrawSnapshot` and delegates frame drawing through the `PresentationBackend::draw_frame`
+interface. D3D11 implements that contract today; Metal has an explicit unsupported stub until it is
+wired to the shared renderer loop. `Renderer` retains ownership of scheduling, playback state, track
+lifecycle, GPU wait accounting, and overlay hooks.
 
 Exit gate: Windows native tests and representative UI smokes pass with no observable behavior change.
 

@@ -1,7 +1,6 @@
 #include "video_renderer/d3d11/render_backend.h"
 
 #include "embedded_shaders.h"
-#include "video_renderer/overlay/analysis_overlay_renderer.h"
 #include "video_renderer/render/presentation_snapshot.h"
 #include "video_renderer/render/shader_constants.h"
 
@@ -221,7 +220,7 @@ bool D3D11RenderBackend::initialize_render_resources() {
 }
 
 bool D3D11RenderBackend::draw_frame(const RendererDrawSnapshot& snapshot,
-                                    const D3D11RenderBackendDrawHooks& hooks) {
+                                    const PresentationBackendDrawHooks& hooks) {
     if (!resources_ || !device_) {
         return false;
     }
@@ -409,14 +408,8 @@ bool D3D11RenderBackend::draw_frame(const RendererDrawSnapshot& snapshot,
 
     ctx->Draw(4, 0);
 
-    if (constants_ready && hooks.analysis_overlay_renderer) {
-        hooks.analysis_overlay_renderer->draw(
-            decision,
-            snapshot.tracks,
-            *device_,
-            resources,
-            snapshot.target_width,
-            snapshot.target_height);
+    if (constants_ready && hooks.draw_overlay) {
+        hooks.draw_overlay(*this, snapshot);
     }
 
     ID3D11ShaderResourceView* null_srvs[4] = {};

@@ -32,6 +32,14 @@ bool MetalPresentationBackend::available() const {
   return uploader_ && VPMacOSMetalUploaderIsAvailable(uploader_) != 0;
 }
 
+bool MetalPresentationBackend::draw_frame(
+    const vr::RendererDrawSnapshot& snapshot,
+    const vr::PresentationBackendDrawHooks& hooks) {
+  (void)snapshot;
+  (void)hooks;
+  return false;
+}
+
 int MetalPresentationBackend::copy_current_frame_with_layout(
     VPMacOSNativePlayer* player,
     void* pixel_buffer,

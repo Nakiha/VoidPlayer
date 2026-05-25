@@ -6,17 +6,13 @@
 #include "video_renderer/d3d11/headless_output.h"
 #include "video_renderer/d3d11/shader.h"
 #include "video_renderer/d3d11/texture.h"
-#include "video_renderer/render/renderer_draw_snapshot.h"
 
 #include <array>
-#include <cstdint>
-#include <functional>
 #include <memory>
 #include <wrl/client.h>
 
 namespace vr {
 
-class AnalysisOverlayRenderer;
 using D3D11RenderBackendConfig = PresentationBackendConfig;
 
 struct D3D11RenderResources {
@@ -46,12 +42,6 @@ struct D3D11RenderResources {
     std::array<uint32_t, 4> overlay_rect_capacity = {0, 0, 0, 0};
 };
 
-struct D3D11RenderBackendDrawHooks {
-    AnalysisOverlayRenderer* analysis_overlay_renderer = nullptr;
-    std::function<void(const char*)> wait_gpu_idle;
-    std::function<void(uint64_t)> record_frame_copy_us;
-};
-
 class D3D11RenderBackend : public PresentationBackend {
 public:
     D3D11RenderBackend() = default;
@@ -74,7 +64,7 @@ public:
     ShaderManager* shader_manager() const { return shader_manager_.get(); }
     D3D11RenderResources* resources() const { return resources_.get(); }
     bool draw_frame(const RendererDrawSnapshot& snapshot,
-                    const D3D11RenderBackendDrawHooks& hooks);
+                    const PresentationBackendDrawHooks& hooks) override;
 
 private:
     bool initialize_device(const D3D11RenderBackendConfig& config);

@@ -1715,16 +1715,35 @@ void Renderer::render_loop_body() {
 }
 
 bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
-    auto* backend = d3d_backend();
+    auto* backend = presentation_backend_.get();
     if (!backend) {
         return false;
     }
-    D3D11RenderBackendDrawHooks hooks;
-    hooks.analysis_overlay_renderer = analysis_overlay_renderer_.get();
+    PresentationBackendDrawHooks hooks;
     hooks.wait_gpu_idle = [this](const char* label) { wait_gpu_idle(label); };
     hooks.record_frame_copy_us = [this](uint64_t elapsed_us) {
         d3d_metrics_.frame_copy_us.fetch_add(elapsed_us, std::memory_order_relaxed);
         d3d_metrics_.frame_copy_count.fetch_add(1, std::memory_order_relaxed);
+    };
+    hooks.draw_overlay = [this](PresentationBackend& backend,
+                                const RendererDrawSnapshot& draw_snapshot) {
+        if (!analysis_overlay_renderer_ ||
+            backend.kind() != PresentationBackendKind::D3D11) {
+            return;
+        }
+        auto* d3d = static_cast<D3D11RenderBackend*>(&backend);
+        auto* device = d3d->device();
+        auto* resources = d3d->resources();
+        if (!device || !resources) {
+            return;
+        }
+        analysis_overlay_renderer_->draw(
+            draw_snapshot.decision,
+            draw_snapshot.tracks,
+            *device,
+            *resources,
+            draw_snapshot.target_width,
+            draw_snapshot.target_height);
     };
     return backend->draw_frame(snapshot, hooks);
 }

@@ -21,6 +21,8 @@ public:
   bool initialize(const vr::PresentationBackendConfig& config) override;
   void shutdown() override;
   bool headless() const override { return headless_; }
+  bool draw_frame(const vr::RendererDrawSnapshot& snapshot,
+                  const vr::PresentationBackendDrawHooks& hooks) override;
 
   bool available() const;
   int width() const { return width_; }

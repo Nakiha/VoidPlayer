@@ -139,6 +139,8 @@ The transitional macOS host loop now builds a `RendererDrawSnapshot` from the sh
 decision and asks `MetalPresentationBackend::draw_frame` to upload it, instead of calling the older
 player-querying copy entrypoint. The host loop still owns thread wakeups for now, but visible
 renderer-owned uploads are no longer selected by a separate Swift/player copy path.
+The next-frame deadline calculation is now the same offset-aware native policy on Windows and macOS;
+the macOS host loop no longer carries its own duplicate offset deadline helper.
 
 Exit gate: macOS UI smokes pass with `rendererOwnedPresentationActive=true`, and the old tick-driven
 presentation path is no longer the normal route.

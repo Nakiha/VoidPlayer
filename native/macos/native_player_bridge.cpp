@@ -839,7 +839,7 @@ public:
         playing_,
         current_pts_us,
         playback_.clock().speed(),
-        next_frame_event_pts_us(current_pts_us),
+        vr::compute_next_frame_event_pts_us(tracks_, current_pts_us),
         max_sleep);
     if (tick.scheduler.has_presentable_frame) {
       auto decision = tick.scheduler.decision;
@@ -970,27 +970,6 @@ private:
     playback_.clock().pause();
     playing_ = false;
     return true;
-  }
-
-  std::optional<int64_t> next_frame_event_pts_us(int64_t current_pts_us) const {
-    std::optional<int64_t> next_event_pts;
-    for (const auto& track : tracks_) {
-      if (!track || !track->track_buffer) {
-        continue;
-      }
-      const auto frame = track->track_buffer->peek(0);
-      if (!frame.has_value()) {
-        continue;
-      }
-      const int64_t effective_current_pts = current_pts_us - track->offset_us;
-      const int64_t event_pts = frame->pts_us > effective_current_pts
-          ? frame->pts_us + track->offset_us
-          : frame->pts_us + frame->duration_us + track->offset_us;
-      if (!next_event_pts.has_value() || event_pts < *next_event_pts) {
-        next_event_pts = event_pts;
-      }
-    }
-    return next_event_pts;
   }
 
   vr::LayoutTrackGeometryList layout_track_geometry() const {

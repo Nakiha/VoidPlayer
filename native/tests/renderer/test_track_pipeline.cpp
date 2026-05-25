@@ -1524,6 +1524,18 @@ TEST_CASE("TrackPresentPolicy computes next frame event PTS",
     next_event = compute_next_frame_event_pts_us(manager, 100);
     REQUIRE(next_event.has_value());
     REQUIRE(*next_event == 105);
+
+    manager[2]->offset_us = 20;
+    next_event = compute_next_frame_event_pts_us(manager, 100);
+    REQUIRE(next_event.has_value());
+    REQUIRE(*next_event == 110);
+
+    manager[0]->offset_us = 500;
+    manager[1]->offset_us = 500;
+    manager[2]->offset_us = 200;
+    next_event = compute_next_frame_event_pts_us(manager, 100);
+    REQUIRE(next_event.has_value());
+    REQUIRE(*next_event == 305);
 }
 
 TEST_CASE("TrackStepPolicy builds step-forward decisions",

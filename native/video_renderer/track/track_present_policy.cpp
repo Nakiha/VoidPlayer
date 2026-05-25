@@ -199,11 +199,13 @@ std::optional<int64_t> compute_next_frame_event_pts_us(
         if (!frame.has_value()) {
             continue;
         }
+        const int64_t effective_current_pts =
+            current_pts_us - tracks[i]->offset_us;
 
         const int64_t event_pts =
-            frame->pts_us > current_pts_us
-                ? frame->pts_us
-                : frame->pts_us + frame->duration_us;
+            frame->pts_us > effective_current_pts
+                ? frame->pts_us + tracks[i]->offset_us
+                : frame->pts_us + frame->duration_us + tracks[i]->offset_us;
         if (!next_event_pts.has_value() || event_pts < *next_event_pts) {
             next_event_pts = event_pts;
         }

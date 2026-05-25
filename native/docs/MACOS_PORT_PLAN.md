@@ -14,19 +14,17 @@ current renderer unification work is tracked in
 - Local-file playback uses shared demux/decode queues and the shared `RenderSink`.
 - Audio uses the shared native audio engine with the miniaudio/CoreAudio output path.
 - FFmpeg dylibs are bundled and staged for macOS builds.
-- VideoToolbox can initialize through the shared hardware decode provider, but the active path still
-  downloads frames to CPU before presentation.
-- Metal currently participates in layout/color upload from CPU frames, but macOS visible playback is
-  still driven by the transitional native tick plus Swift texture notification path. The native tick
-  delegates scheduler-selected present decisions, deadline sleep, and presentation stats to the
-  portable `PresentationLoopDriver`; Swift coalesces duplicate copy requests so the transition path
-  does not queue stale uploads under 4K load. When the native Metal presentation target is active,
-  upload failures stay visible in diagnostics instead of silently falling back to the old Swift copy
-  path, and callbacks publish the native upload result's frame metadata rather than rebuilding it
-  from scheduler stats in Swift. Renderer-owned upload success/failure counters are now tracked by
-  native presentation state and surfaced to Dart diagnostics. CVPixelBuffer hardware-frame uploads
-  are distinguished from staged YUV package uploads in diagnostics. Step-forward/backward commands
-  now call native shared step policy instead of applying fixed PTS deltas in Swift.
+- VideoToolbox initializes through the shared hardware decode provider. H.264/H.265 hardware frames
+  can stay in CVPixelBuffer/IOSurface storage for renderer-owned Metal presentation; unsupported
+  codecs and formats fall back through the named software path.
+- Metal is the normal native presentation target for macOS playback. The remaining transitional
+  native tick delegates scheduler-selected present decisions, deadline sleep, and presentation stats
+  to the portable `PresentationLoopDriver`; Swift only installs the texture target and forwards
+  successful frame notifications to Flutter. Upload failures stay visible in diagnostics instead of
+  silently falling back to the old Swift copy path. Renderer-owned upload success/failure counters are
+  tracked by native presentation state and surfaced to Dart diagnostics. CVPixelBuffer hardware-frame
+  uploads are distinguished from staged YUV package uploads in diagnostics. Step-forward/backward
+  commands now call native shared step policy instead of applying fixed PTS deltas in Swift.
 - macOS analysis FFI can build and answer basic handle/base-generation calls, while analysis windows
   and overlays remain capability-gated.
 

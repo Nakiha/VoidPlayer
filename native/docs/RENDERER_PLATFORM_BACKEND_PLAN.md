@@ -244,6 +244,8 @@ macOS present-package construction has been centralized in `presentation_package
 legacy bridge C ABI and the renderer-owned Metal backend consume the same `RendererDrawSnapshot`
 rules for decision metadata, YUV/BGRA package layout, CVPixelBuffer fast-path metadata, stride
 guards, and fallback behavior.
+Swift presentation counting now records renderer-owned and explicit fallback presentations through
+one helper while keeping the existing diagnostics keys stable.
 
 ## Validation Strategy
 

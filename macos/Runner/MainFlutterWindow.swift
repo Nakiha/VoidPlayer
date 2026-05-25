@@ -1305,6 +1305,21 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     resetPresentedPtsTrace()
   }
 
+  private func recordNativeFramePresentation(rendererOwned: Bool, swiftCopy: Bool) {
+    let now = DispatchTime.now().uptimeNanoseconds
+    if nativeFrameCopyFirstHostNs == nil {
+      nativeFrameCopyFirstHostNs = now
+    }
+    nativeFrameCopyLastHostNs = now
+    nativeFrameCopyCount += 1
+    if rendererOwned {
+      nativeFrameRendererOwnedPresentCount += 1
+    }
+    if swiftCopy {
+      nativeFrameSwiftCopyCount += 1
+    }
+  }
+
   private func resetPresentedPtsTrace() {
     presentedPtsTrace.removeAll(keepingCapacity: true)
     presentedPtsSampleCount = 0
@@ -1500,13 +1515,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         return
       }
       if self.nativePlayer?.lastRendererOwnedPresentationSucceeded() == true {
-        self.nativeFrameCopyCount += 1
-        self.nativeFrameRendererOwnedPresentCount += 1
-        let now = DispatchTime.now().uptimeNanoseconds
-        if self.nativeFrameCopyFirstHostNs == nil {
-          self.nativeFrameCopyFirstHostNs = now
-        }
-        self.nativeFrameCopyLastHostNs = now
+        self.recordNativeFramePresentation(rendererOwned: true, swiftCopy: false)
         if let frameInfo = self.nativePlayer?.lastRendererOwnedFrameInfo() {
           self.publishFrameInfo(frameInfo)
         }
@@ -1560,13 +1569,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
           return
         }
         self.nativeFrameCopyInFlight = false
-        let now = DispatchTime.now().uptimeNanoseconds
-        if self.nativeFrameCopyFirstHostNs == nil {
-          self.nativeFrameCopyFirstHostNs = now
-        }
-        self.nativeFrameCopyLastHostNs = now
-        self.nativeFrameCopyCount += 1
-        self.nativeFrameSwiftCopyCount += 1
+        self.recordNativeFramePresentation(rendererOwned: false, swiftCopy: true)
         self.publishFrameInfo(frameInfo)
         self.markFrameAvailable()
       }

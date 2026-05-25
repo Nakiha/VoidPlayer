@@ -251,6 +251,9 @@ Swift presentation counting now records renderer-owned and explicit fallback pre
 one helper while keeping the existing diagnostics keys stable.
 The remaining player-querying Metal uploader ABI has been removed from tests and the C bridge; test
 coverage now copies an explicit present package and asks the uploader/backend to render that package.
+Unused public bridge entrypoints for raw current-frame BGRA, raw present-frame BGRA/YUV, and retained
+CVPixelBuffer frame copies have been removed; macOS presentation now exposes either the explicit
+software fallback canvas copy or the renderer present-package path.
 
 ## Validation Strategy
 

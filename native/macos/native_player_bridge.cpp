@@ -554,25 +554,6 @@ public:
     return copied;
   }
 
-  bool copy_retained_cv_pixel_buffer_present_frame(
-      int32_t width,
-      int32_t height,
-      VPMacOSNativeCVPixelBufferPresentFrame* out,
-      std::string& error) {
-    if (!out || width <= 0 || height <= 0) {
-      error = "invalid CVPixelBuffer present frame output";
-      return false;
-    }
-    if (!render_sink_) {
-      error = "player is not open";
-      return false;
-    }
-    auto decision = current_or_available_paused_decision();
-    const auto snapshot = draw_snapshot_for_decision(decision, width, height);
-    return vp_macos::snapshot_cv_pixel_buffer_frame(
-        snapshot, width, height, true, out, error);
-  }
-
   void seek(int64_t pts_us, vr::SeekType type = vr::SeekType::Exact) {
     const int64_t target = std::max<int64_t>(0, pts_us);
     for (auto& track : tracks_) {
@@ -797,33 +778,6 @@ public:
     return std::chrono::duration_cast<std::chrono::milliseconds>(
                now - perf_start_time_)
         .count();
-  }
-
-  bool copy_current_frame_into(uint8_t* dst,
-                               size_t dst_size,
-                               int32_t width,
-                               int32_t height,
-                               int32_t stride_bytes,
-                               VPMacOSNativeFrameInfo* out,
-                               std::string& error) {
-    auto* primary = find_track_by_file_id(0);
-    if (!primary || !primary->track_buffer) {
-      error = "player is not open";
-      return false;
-    }
-    advance_to_clock(nullptr);
-    auto frame = primary->track_buffer->peek(0);
-    if (!frame.has_value()) {
-      error = "no decoded frame is ready";
-      return false;
-    }
-    const auto status = vp_macos::copy_texture_frame_to_bgra_destination_checked(
-        *frame, dst, dst_size, width, height, stride_bytes, out);
-    if (status != vp_macos::PresentationAdapterStatus::Ok) {
-      error = vp_macos::presentation_adapter_status_message(status);
-      return false;
-    }
-    return true;
   }
 
   vr::PresentationLoopDriverTick tick_playback(std::chrono::microseconds max_sleep) {
@@ -1929,57 +1883,6 @@ const char* VPMacOSNativeHardwareDecodeProviderName(void) {
   return VPMacOSNativeHardwareDecodeAvailable() != 0 ? "VideoToolbox" : "none";
 }
 
-int VPMacOSNativePlayerCopyCurrentFrameBGRAInto(VPMacOSNativePlayer* player,
-                                                uint8_t* dst,
-                                                size_t dst_size,
-                                                int32_t width,
-                                                int32_t height,
-                                                int32_t stride_bytes,
-                                                VPMacOSNativeFrameInfo* out,
-                                                char* error,
-                                                size_t error_size) {
-  if (!player || !dst || !out) {
-    write_error(error, error_size, "player, destination, or output info is null");
-    return -1;
-  }
-  *out = {};
-  std::lock_guard<std::mutex> lock(player->mutex);
-  std::string message;
-  if (!player->core.copy_current_frame_into(
-          dst, dst_size, width, height, stride_bytes, out, message)) {
-    write_error(error, error_size, message);
-    return -1;
-  }
-  write_error(error, error_size, "");
-  return 0;
-}
-
-int VPMacOSNativePlayerCopyPresentFramesBGRAInto(
-    VPMacOSNativePlayer* player,
-    uint8_t* dst,
-    size_t dst_size,
-    int32_t width,
-    int32_t height,
-    int32_t stride_bytes,
-    size_t track_stride_bytes,
-    VPMacOSNativePresentDecisionInfo* out,
-    char* error,
-    size_t error_size) {
-  if (!player || !dst || !out) {
-    write_error(error, error_size, "player, destination, or present decision output is null");
-    return -1;
-  }
-  std::lock_guard<std::mutex> lock(player->mutex);
-  std::string message;
-  if (!player->core.copy_present_frames_into(
-          dst, dst_size, width, height, stride_bytes, track_stride_bytes, out, message)) {
-    write_error(error, error_size, message);
-    return -1;
-  }
-  write_error(error, error_size, "");
-  return 0;
-}
-
 int VPMacOSNativePlayerCopyPresentationBGRAInto(
     VPMacOSNativePlayer* player,
     uint8_t* dst,
@@ -1999,31 +1902,6 @@ int VPMacOSNativePlayerCopyPresentationBGRAInto(
   std::string message;
   if (!player->core.copy_present_canvas_bgra_into(
           dst, dst_size, width, height, stride_bytes, out, message)) {
-    write_error(error, error_size, message);
-    return -1;
-  }
-  write_error(error, error_size, "");
-  return 0;
-}
-
-int VPMacOSNativePlayerCopyPresentFramesYUVInto(
-    VPMacOSNativePlayer* player,
-    uint8_t* dst,
-    size_t dst_size,
-    int32_t width,
-    int32_t height,
-    size_t max_track_slots,
-    VPMacOSNativePresentDecisionInfo* out,
-    char* error,
-    size_t error_size) {
-  if (!player || !dst || !out) {
-    write_error(error, error_size, "player, destination, or present decision output is null");
-    return -1;
-  }
-  std::lock_guard<std::mutex> lock(player->mutex);
-  std::string message;
-  if (!player->core.copy_present_frames_yuv_into(
-          dst, dst_size, width, height, max_track_slots, out, message)) {
     write_error(error, error_size, message);
     return -1;
   }
@@ -2117,28 +1995,6 @@ int VPMacOSNativePlayerCopyPresentFramePackage(
   }
   write_error(error, error_size, message);
   return -1;
-}
-
-int VPMacOSNativePlayerCopyRetainedCVPixelBufferPresentFrame(
-    VPMacOSNativePlayer* player,
-    int32_t width,
-    int32_t height,
-    VPMacOSNativeCVPixelBufferPresentFrame* out,
-    char* error,
-    size_t error_size) {
-  if (!player || !out || width <= 0 || height <= 0) {
-    write_error(error, error_size, "player or CVPixelBuffer present output is null");
-    return -1;
-  }
-  std::lock_guard<std::mutex> lock(player->mutex);
-  std::string message;
-  if (!player->core.copy_retained_cv_pixel_buffer_present_frame(
-          width, height, out, message)) {
-    write_error(error, error_size, message);
-    return -1;
-  }
-  write_error(error, error_size, "");
-  return 0;
 }
 
 void VPMacOSNativeReleaseRetainedCVPixelBuffer(void* pixel_buffer) {

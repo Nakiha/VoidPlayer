@@ -275,26 +275,6 @@ int VPMacOSNativePlayerCopyPerfStats(
 int VPMacOSNativeHardwareDecodeAvailable(void);
 const char* VPMacOSNativeHardwareDecodeProviderName(void);
 
-int VPMacOSNativePlayerCopyCurrentFrameBGRAInto(VPMacOSNativePlayer* player,
-                                                uint8_t* dst,
-                                                size_t dst_size,
-                                                int32_t width,
-                                                int32_t height,
-                                                int32_t stride_bytes,
-                                                VPMacOSNativeFrameInfo* out,
-                                                char* error,
-                                                size_t error_size);
-int VPMacOSNativePlayerCopyPresentFramesBGRAInto(
-    VPMacOSNativePlayer* player,
-    uint8_t* dst,
-    size_t dst_size,
-    int32_t width,
-    int32_t height,
-    int32_t stride_bytes,
-    size_t track_stride_bytes,
-    VPMacOSNativePresentDecisionInfo* out,
-    char* error,
-    size_t error_size);
 int VPMacOSNativePlayerCopyPresentationBGRAInto(
     VPMacOSNativePlayer* player,
     uint8_t* dst,
@@ -303,16 +283,6 @@ int VPMacOSNativePlayerCopyPresentationBGRAInto(
     int32_t height,
     int32_t stride_bytes,
     VPMacOSNativeFrameInfo* out,
-    char* error,
-    size_t error_size);
-int VPMacOSNativePlayerCopyPresentFramesYUVInto(
-    VPMacOSNativePlayer* player,
-    uint8_t* dst,
-    size_t dst_size,
-    int32_t width,
-    int32_t height,
-    size_t max_track_slots,
-    VPMacOSNativePresentDecisionInfo* out,
     char* error,
     size_t error_size);
 size_t VPMacOSNativePresentFramePackageMaxBytes(int32_t width,
@@ -326,13 +296,6 @@ int VPMacOSNativePlayerCopyPresentFramePackage(
     int32_t height,
     int32_t max_track_slots,
     VPMacOSNativePresentFramePackageInfo* out,
-    char* error,
-    size_t error_size);
-int VPMacOSNativePlayerCopyRetainedCVPixelBufferPresentFrame(
-    VPMacOSNativePlayer* player,
-    int32_t width,
-    int32_t height,
-    VPMacOSNativeCVPixelBufferPresentFrame* out,
     char* error,
     size_t error_size);
 void VPMacOSNativeReleaseRetainedCVPixelBuffer(void* pixel_buffer);

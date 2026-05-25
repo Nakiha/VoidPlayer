@@ -1695,6 +1695,12 @@ int VPMacOSNativePlayerSetMetalPresentationTarget(
   player->presentation_target_max_track_slots =
       std::clamp(max_track_slots, static_cast<int32_t>(1),
                  static_cast<int32_t>(VPMacOSNativeMaxTracks));
+  VPMacOSMetalPresentationBackendSetDrawTarget(
+      backend,
+      pixel_buffer,
+      width,
+      height,
+      player->presentation_target_max_track_slots);
   player->last_renderer_owned_presentation_succeeded = false;
   player->last_renderer_owned_frame_info_available = false;
   player->last_renderer_owned_frame_info = {};
@@ -1706,11 +1712,15 @@ void VPMacOSNativePlayerClearMetalPresentationTarget(VPMacOSNativePlayer* player
     return;
   }
   std::lock_guard<std::mutex> lock(player->callback_mutex);
+  auto* backend = player->presentation_target_backend;
   player->presentation_target_backend = nullptr;
   player->presentation_target_pixel_buffer = nullptr;
   player->presentation_target_width = 0;
   player->presentation_target_height = 0;
   player->presentation_target_max_track_slots = 1;
+  if (backend) {
+    VPMacOSMetalPresentationBackendClearDrawTarget(backend);
+  }
   player->last_renderer_owned_presentation_succeeded = false;
   player->last_renderer_owned_frame_info_available = false;
   player->last_renderer_owned_frame_info = {};

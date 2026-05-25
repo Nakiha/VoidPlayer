@@ -14,8 +14,10 @@ class PresentationBackend;
 struct PresentationBackendConfig {
     void* hwnd = nullptr;
     void* adapter = nullptr;
+    void* output = nullptr;
     int width = 0;
     int height = 0;
+    int max_track_slots = 0;
     bool headless = false;
 };
 

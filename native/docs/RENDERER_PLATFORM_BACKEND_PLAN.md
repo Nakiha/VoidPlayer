@@ -164,6 +164,10 @@ macOS diagnostics now name the upload storage explicitly:
 `metal-cvpixelbuffer-present-package`, `metal-yuv-present-package`, or
 `metal-bgra-present-package`, so 4K60 zero-copy and software fallback paths no longer look like the
 same BGRA upload mode.
+The Metal presentation backend now owns a renderer draw target and can consume
+`RendererDrawSnapshot` directly, packaging scheduler-selected CPU frames through the same Metal
+present-package uploader used by the transitional macOS path. A native smoke covers the shared
+snapshot-to-Metal backend draw path with a real CVPixelBuffer target.
 
 Exit gate: macOS can present multi-track CPU-decoded frames through renderer-owned Metal without the
 Swift pump choosing frames, and shader parity tests cover the supported formats.

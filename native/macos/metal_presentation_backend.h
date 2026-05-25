@@ -28,6 +28,11 @@ public:
   int width() const { return width_; }
   int height() const { return height_; }
   VPMacOSMetalUploader* uploader() const { return uploader_; }
+  void set_draw_target(void* pixel_buffer,
+                       int32_t width,
+                       int32_t height,
+                       int32_t max_track_slots);
+  void clear_draw_target();
   int copy_current_frame_with_layout(VPMacOSNativePlayer* player,
                                      void* pixel_buffer,
                                      int32_t width,
@@ -40,8 +45,12 @@ public:
 
 private:
   VPMacOSMetalUploader* uploader_ = nullptr;
+  void* draw_target_pixel_buffer_ = nullptr;
   int width_ = 0;
   int height_ = 0;
+  int draw_target_width_ = 0;
+  int draw_target_height_ = 0;
+  int draw_target_max_track_slots_ = VPMacOSNativeMaxTracks;
   bool headless_ = true;
 };
 

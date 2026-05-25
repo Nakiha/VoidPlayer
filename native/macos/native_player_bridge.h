@@ -393,6 +393,14 @@ void VPMacOSMetalPresentationBackendDestroy(VPMacOSMetalPresentationBackend* bac
 int VPMacOSMetalPresentationBackendIsAvailable(VPMacOSMetalPresentationBackend* backend);
 VPMacOSMetalUploader* VPMacOSMetalPresentationBackendUploader(
     VPMacOSMetalPresentationBackend* backend);
+void VPMacOSMetalPresentationBackendSetDrawTarget(
+    VPMacOSMetalPresentationBackend* backend,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    int32_t max_track_slots);
+void VPMacOSMetalPresentationBackendClearDrawTarget(
+    VPMacOSMetalPresentationBackend* backend);
 int64_t VPMacOSMetalPresentationBackendDirectYUVUploadCount(
     VPMacOSMetalPresentationBackend* backend);
 int64_t VPMacOSMetalPresentationBackendCVPixelBufferUploadCount(

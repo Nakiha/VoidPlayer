@@ -11,7 +11,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var eventChannel: FlutterEventChannel?
   private var texture: MacOSFlutterTextureBridge?
   private var textureId: Int64?
-  private let trackStore = MacOSVideoTrackStore()
+  private let tracks = MacOSVideoTrackController()
   private var layout: [String: Any] = MacOSVideoTrackPayload.defaultLayout()
   private var backendName = "synthetic-texture"
   private var nativePlayer: MacOSNativePlayerSession?
@@ -97,7 +97,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         player: nativePlayer,
         texture: texture,
         textureRegistered: textureId != nil,
-        maxTrackSlots: activeTrackSlotCapacity(),
+        maxTrackSlots: tracks.activeSlotCapacity(),
         userData: Unmanaged.passUnretained(self).toOpaque(),
         presentationState: presentationState
       )
@@ -134,7 +134,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       presentationState.setCurrentPts(nativePlayer?.currentPtsUs() ?? presentationState.currentPtsUs)
       result(presentationState.currentPtsUs)
     case "duration":
-      result(trackStore.isEmpty ? 0 : trackStore.currentDurationUs)
+      result(tracks.isEmpty ? 0 : tracks.currentDurationUs)
     case "currentPresentedFrame":
       result(
         textureId == nil
@@ -155,7 +155,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       }
       result(nil)
     case "getTracks":
-      result(trackStore.tracks)
+      result(tracks.tracks)
     case "pickFiles":
       MacOSFilePicker.pickFiles(arguments: call.arguments, result: result)
     case "getDiagnostics":
@@ -165,7 +165,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         textureId: textureId,
         textureStats: texture?.diagnostics(),
         textureDimensions: texture?.dimensions(),
-        trackCount: trackStore.count,
+        trackCount: tracks.count,
         presentationTargetInstalled: playback.targetInstalled,
         nativeEventDiagnostics: nativeEvents.diagnosticMap(),
         presentationDiagnostics: presentationState.diagnosticMap()
@@ -198,7 +198,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     backendName = startup.backendName
     nativePlayer = startup.nativePlayer
     playback.setTargetInstalled(startup.presentationTargetInstalled)
-    trackStore.replace(with: startup.tracks, fallbackDurationUs: startup.trackDurationUs)
+    tracks.replace(with: startup.tracks, fallbackDurationUs: startup.trackDurationUs)
     presentationState.seedPresentedFrame(
       ptsUs: startup.initialPresentedPtsUs,
       dtsUs: startup.initialPresentedDtsUs,
@@ -208,16 +208,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
     return [
       "textureId": registeredTextureId,
-      "tracks": trackStore.tracks,
+      "tracks": tracks.tracks,
     ]
-  }
-
-  private func nativeTrackMap(path: String, metadata: MacOSNativeTrackMetadata) -> [String: Any] {
-    MacOSVideoTrackPayload.nativeTrack(
-      path: path,
-      metadata: metadata,
-      decoderName: nativePlayer?.decoderName() ?? "decode_thread_software"
-    )
   }
 
   private func destroyPlayer() {
@@ -227,7 +219,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
     texture = nil
     textureId = nil
-    trackStore.reset()
+    tracks.reset()
     presentationState.resetAll()
     backendName = "synthetic-texture"
     playback.reset()
@@ -252,58 +244,30 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       )
     }
 
-    let fileId = trackStore.nextFileId()
-    let slot = trackStore.count
-    let path = MacOSFlutterArguments.stringArg(arguments, "path") ?? "macos-synthetic-\(fileId)"
-    if backendName == MacOSVideoTrackPayload.nativeFormatName {
-      do {
-        guard let session = nativePlayer else {
-          throw MacOSNativePlayerError.failed("macOS native player is unavailable")
-        }
-        let metadata = try session.addTrack(path: path, fileId: fileId)
-        let track = nativeTrackMap(path: path, metadata: metadata)
-        trackStore.append(track)
-        refreshCurrentFrameAfterLayoutChange()
-        return track
-      } catch {
-        return FlutterError(
-          code: "DECODE_FAILED",
-          message: "Failed to add macOS native track",
-          details: "\(error)"
-        )
-      }
-    }
-
-    let size = texture?.dimensions() ?? (width: 1920, height: 1080)
-    let track = MacOSVideoTrackPayload.syntheticTrack(
-      fileId: fileId,
-      slot: slot,
-      path: path,
-      width: size.width,
-      height: size.height,
-      durationUs: trackStore.currentDurationUs
+    let addResult = tracks.addTrack(
+      arguments: arguments,
+      backendName: backendName,
+      nativePlayer: nativePlayer,
+      textureDimensions: texture?.dimensions()
     )
-    trackStore.append(track)
-    markFrameAvailable()
-    return track
+    if addResult.refreshCurrentFrame {
+      refreshCurrentFrameAfterLayoutChange()
+    }
+    if addResult.markFrameAvailable {
+      markFrameAvailable()
+    }
+    return addResult.payload
   }
 
   private func removeTrack(arguments: Any?) {
-    guard let fileId = MacOSFlutterArguments.intArg(arguments, "fileId") else { return }
-    if backendName == MacOSVideoTrackPayload.nativeFormatName {
-      if fileId == 0 {
-        destroyPlayer()
-        return
-      }
-      nativePlayer?.removeTrack(fileId: fileId)
-    }
-    trackStore.remove(
-      fileId: fileId,
-      compactSlots: backendName != MacOSVideoTrackPayload.nativeFormatName
+    let removeResult = tracks.removeTrack(
+      arguments: arguments,
+      backendName: backendName,
+      nativePlayer: nativePlayer
     )
-    if trackStore.isEmpty {
+    if removeResult.destroyPlayer {
       destroyPlayer()
-    } else {
+    } else if removeResult.refreshCurrentFrame {
       refreshCurrentFrameAfterLayoutChange()
     }
   }
@@ -326,7 +290,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         playback.reinstallPresentationTargetIfPlaying(
           player: nativePlayer,
           texture: texture,
-          maxTrackSlots: activeTrackSlotCapacity()
+          maxTrackSlots: tracks.activeSlotCapacity()
         )
       }
     }
@@ -340,12 +304,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func activeDurationUs() -> Int {
-    let durationUs = trackStore.currentDurationUs
+    let durationUs = tracks.currentDurationUs
     return durationUs > 0 ? durationUs : MacOSVideoTrackPayload.syntheticDurationUs
-  }
-
-  private func activeTrackSlotCapacity() -> Int {
-    trackStore.activeSlotCapacity()
   }
 
   private func refreshDecodedFrameIfNeeded(targetPtsUs: Int) -> FlutterError? {
@@ -359,7 +319,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       player: nativePlayer,
       texture: texture,
       targetPtsUs: targetPtsUs,
-      maxTrackSlots: activeTrackSlotCapacity(),
+      maxTrackSlots: tracks.activeSlotCapacity(),
       presentationState: presentationState,
       framePump: playback.framePumpForRefresh
     )
@@ -375,7 +335,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     MacOSNativeFrameRefresh.refreshCurrentFrameAfterLayoutChange(
       player: nativePlayer,
       texture: texture,
-      maxTrackSlots: activeTrackSlotCapacity(),
+      maxTrackSlots: tracks.activeSlotCapacity(),
       presentationState: presentationState,
       framePump: playback.framePumpForRefresh
     )
@@ -401,7 +361,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         player: nativePlayer,
         texture: texture,
         textureRegistered: textureId != nil,
-        maxTrackSlots: activeTrackSlotCapacity(),
+        maxTrackSlots: tracks.activeSlotCapacity(),
         userData: Unmanaged.passUnretained(self).toOpaque(),
         presentationState: presentationState
       )
@@ -419,7 +379,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       player: nativePlayer,
       texture: texture,
       forward: forward,
-      maxTrackSlots: activeTrackSlotCapacity(),
+      maxTrackSlots: tracks.activeSlotCapacity(),
       presentationState: presentationState,
       framePump: playback.framePumpForRefresh
     ) {

@@ -7,7 +7,7 @@
 1.3, ASSERT_TRACK_COUNT, 1
 1.4, ASSERT_NATIVE_BACKEND, macos-native-player, true
 1.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapter, cvpixelbuffer-bgra-copy
-1.505, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, software-fallback
+1.505, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-metal
 1.51, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
 1.512, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-presentation-scheduler/transitional-thread
 1.514, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-metal-cvpixelbuffer-target

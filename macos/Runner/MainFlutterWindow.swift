@@ -711,7 +711,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "platform": "macos",
         "backend": backendName,
         "presentationAdapter": String(cString: VPMacOSNativePresentationAdapterName()),
-        "presentationAdapterKind": "software-fallback",
+        "presentationAdapterKind": presentationAdapterKind(),
         "presentationScheduler": String(cString: VPMacOSNativePresentationSchedulerName()),
         "presentationBackend": presentationBackendName(),
         "rendererOwnedPresentationActive": nativePlayer?.rendererOwnedPresentationActive() ?? false,
@@ -1394,6 +1394,19 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       return "swift-cvpixelbuffer-direct-copy-fallback"
     }
     return "native-metal-target-unavailable"
+  }
+
+  private func presentationAdapterKind() -> String {
+    guard nativePlayer != nil else {
+      return "synthetic"
+    }
+    if nativePlayer?.rendererOwnedPresentationActive() == true {
+      return "renderer-owned-metal"
+    }
+    if texture?.directCopyFallbackEnabled() == true {
+      return "software-fallback"
+    }
+    return "unavailable"
   }
 
   private func presentationReason() -> String {

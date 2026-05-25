@@ -125,9 +125,10 @@ registration, diagnostic counters, and frame notifications, while native owns Me
 validation, the shared `TextureFrame` copy path, present-frame package creation, scheduler-selected
 present decision caching, and the Metal layout upload. Swift coalesces frame-copy requests so a slow
 4K upload cannot build an unbounded queue of stale copies. The current adapter is reported in
-diagnostics as
-`presentationAdapter=cvpixelbuffer-bgra-copy`; decode, seek, loop, audio, and playback clock policy
-remain outside Swift. The macOS channel also forwards primary-track `setTrackOffset` into the shared
+diagnostics as `presentationAdapter=cvpixelbuffer-bgra-copy`, while `presentationAdapterKind`
+distinguishes the normal renderer-owned Metal path from the explicit software fallback; decode,
+seek, loop, audio, and playback clock policy remain outside Swift. The macOS channel also forwards
+primary-track `setTrackOffset` into the shared
 native `RenderSink` and routes secondary-track offsets to native tracks as well; visual multi-track
 offset composition is presented through the renderer-owned Metal target rather than Swift-side policy.
 `applyLayout` is also mirrored into native

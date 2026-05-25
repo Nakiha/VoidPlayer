@@ -51,6 +51,11 @@ extern "C" {
 
 namespace {
 
+bool is_transient_presentation_error(const std::string& error) {
+  return error == "no presentable frame is ready" ||
+         error == "not all present decision frames are ready";
+}
+
 void write_error(char* error, size_t error_size, const std::string& message) {
   if (!error || error_size == 0) {
     return;
@@ -1257,6 +1262,7 @@ struct VPMacOSNativePlayer {
       void* user_data = nullptr;
       bool renderer_owned_upload_attempted = false;
       bool renderer_owned_upload_succeeded = false;
+      bool renderer_owned_upload_pending = false;
       VPMacOSNativeFrameInfo renderer_owned_frame_info = {};
       {
         std::lock_guard<std::mutex> callback_lock(callback_mutex);
@@ -1276,6 +1282,9 @@ struct VPMacOSNativePlayer {
           vr::PresentationBackendDrawHooks draw_hooks;
           renderer_owned_upload_succeeded =
               presentation_target_backend->impl.draw_frame(draw_snapshot, draw_hooks);
+          renderer_owned_upload_pending =
+              is_transient_presentation_error(
+                  presentation_target_backend->impl.last_error());
           if (renderer_owned_upload_succeeded) {
             presentation_target_backend->impl.copy_last_draw_frame_info(
                 &renderer_owned_frame_info);
@@ -1294,10 +1303,14 @@ struct VPMacOSNativePlayer {
             }
             renderer_owned_presentation_last_upload_time = now;
             ++renderer_owned_presentation_upload_count;
-          } else {
+          } else if (!renderer_owned_upload_pending) {
             ++renderer_owned_presentation_failure_count;
           }
         }
+      }
+      if (renderer_owned_upload_attempted && !renderer_owned_upload_succeeded) {
+        lock.lock();
+        continue;
       }
       if (callback) {
         callback(user_data);
@@ -1581,9 +1594,11 @@ int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
 
   player->last_renderer_owned_presentation_succeeded = false;
   player->last_renderer_owned_frame_info_available = false;
-  ++player->renderer_owned_presentation_failure_count;
   const auto& backend_error =
       player->presentation_target_backend->impl.last_error();
+  if (!is_transient_presentation_error(backend_error)) {
+    ++player->renderer_owned_presentation_failure_count;
+  }
   write_error(error,
               error_size,
               backend_error.empty()

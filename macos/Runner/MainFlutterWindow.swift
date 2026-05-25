@@ -2202,8 +2202,8 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
       }
       return nil
     } catch {
-      pixelBufferMetalUploadFailureCount += 1
       if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable != true {
+        pixelBufferMetalUploadFailureCount += 1
         NSLog("VoidPlayer macOS renderer-owned Metal refresh failed: \(error)")
       }
       throw error

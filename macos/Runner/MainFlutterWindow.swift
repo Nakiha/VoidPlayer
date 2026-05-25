@@ -117,23 +117,23 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "setViewportBackgroundColor":
       result(nil)
     case "setTrackOffset":
-      let fileId = intArg(call.arguments, "fileId") ?? -1
-      let offsetUs = intArg(call.arguments, "offsetUs") ?? 0
+      let fileId = MacOSFlutterArguments.intArg(call.arguments, "fileId") ?? -1
+      let offsetUs = MacOSFlutterArguments.intArg(call.arguments, "offsetUs") ?? 0
       nativePlayer?.setTrackOffset(fileId: fileId, offsetUs: offsetUs)
       result(nil)
     case "setLoopRange":
       nativePlayer?.setLoopRange(
-        enabled: boolArg(call.arguments, "enabled") ?? false,
-        startUs: intArg(call.arguments, "startUs") ?? 0,
-        endUs: intArg(call.arguments, "endUs") ?? 0
+        enabled: MacOSFlutterArguments.boolArg(call.arguments, "enabled") ?? false,
+        startUs: MacOSFlutterArguments.intArg(call.arguments, "startUs") ?? 0,
+        endUs: MacOSFlutterArguments.intArg(call.arguments, "endUs") ?? 0
       )
       result(nil)
     case "setAudibleTrack":
-      let fileId = intArg(call.arguments, "fileId") ?? -1
+      let fileId = MacOSFlutterArguments.intArg(call.arguments, "fileId") ?? -1
       nativePlayer?.setAudibleTrack(fileId)
       result(nil)
     case "setSpeed":
-      playbackSpeed = max(0.01, doubleArg(call.arguments, "speed") ?? 1.0)
+      playbackSpeed = max(0.01, MacOSFlutterArguments.doubleArg(call.arguments, "speed") ?? 1.0)
       nativePlayer?.setSpeed(playbackSpeed)
       result(nil)
     case "createPlayer":
@@ -160,8 +160,8 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       stopNativeFramePump()
       result(nil)
     case "seek":
-      let targetPtsUs = intArg(call.arguments, "ptsUs") ?? 0
-      let requestId = intArg(call.arguments, "requestId")
+      let targetPtsUs = MacOSFlutterArguments.intArg(call.arguments, "ptsUs") ?? 0
+      let requestId = MacOSFlutterArguments.intArg(call.arguments, "requestId")
       let resumeAfterSeek = nativePlayer?.isPlaying() ?? isPlaying
       if let error = seekAndRefresh(
         targetPtsUs: targetPtsUs,
@@ -206,13 +206,13 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "applyLayout":
       if let nextLayout = call.arguments as? [String: Any] {
         nativePlayer?.applyLayout(
-          mode: intValue(nextLayout["mode"]) ?? 0,
-          splitPos: doubleValue(nextLayout["splitPos"]) ?? 0.5,
-          zoomRatio: doubleValue(nextLayout["zoomRatio"]) ?? 1.0,
-          viewOffsetX: doubleValue(nextLayout["viewOffsetX"]) ?? 0.0,
-          viewOffsetY: doubleValue(nextLayout["viewOffsetY"]) ?? 0.0,
-          pixelSizeMode: intValue(nextLayout["pixelSizeMode"]) ?? 0,
-          order: intListValue(nextLayout["order"])
+          mode: MacOSFlutterArguments.intValue(nextLayout["mode"]) ?? 0,
+          splitPos: MacOSFlutterArguments.doubleValue(nextLayout["splitPos"]) ?? 0.5,
+          zoomRatio: MacOSFlutterArguments.doubleValue(nextLayout["zoomRatio"]) ?? 1.0,
+          viewOffsetX: MacOSFlutterArguments.doubleValue(nextLayout["viewOffsetX"]) ?? 0.0,
+          viewOffsetY: MacOSFlutterArguments.doubleValue(nextLayout["viewOffsetY"]) ?? 0.0,
+          pixelSizeMode: MacOSFlutterArguments.intValue(nextLayout["pixelSizeMode"]) ?? 0,
+          order: MacOSFlutterArguments.intListValue(nextLayout["order"])
         )
         layout = nativePlayer?.layoutSnapshotMap() ?? nextLayout
         refreshCurrentFrameAfterLayoutChange()
@@ -275,9 +275,11 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         "pixelBufferMetalCVPixelBufferUploadCount":
           perfStats?["rendererOwnedCVPixelBufferUploadCount"] ?? 0,
         "pixelBufferMetalUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
-        "presentationUploadMode": presentationUploadMode(
+        "presentationUploadMode": MacOSPresentationDiagnostics.uploadMode(
           perfStats: perfStats,
-          targetReady: textureStats?.metalTextureValid ?? false
+          targetReady: textureStats?.metalTextureValid ?? false,
+          targetInstalled: nativePresentationTargetInstalled,
+          textureRegistered: textureId != nil
         ),
         "presentationPackageUploadCount":
           perfStats?["rendererOwnedPresentPackageUploadCount"] ?? 0,
@@ -319,7 +321,11 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         "nativeDecodeFpsX1000": perfStats?["decodeFpsX1000"] ?? 0,
         "nativeDecodeAvgMs": perfStats?["decodeAvgMs"] ?? 0.0,
         "nativeDecodeMaxMs": perfStats?["decodeMaxMs"] ?? 0.0,
-        "presentationFallbackReason": presentationFallbackReason(perfStats: perfStats),
+        "presentationFallbackReason": MacOSPresentationDiagnostics.fallbackReason(
+          player: nativePlayer,
+          targetInstalled: nativePresentationTargetInstalled,
+          perfStats: perfStats
+        ),
         "nativeFrameCopyElapsedMs": nativeFrameCopyElapsedMs(),
         "nativeFrameCopyFps": nativeFrameCopyFps(),
         "nativeFrameCopyFpsX1000": Int(nativeFrameCopyFps() * 1000.0),
@@ -348,9 +354,9 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private func createPlayer(arguments: Any?) -> Any {
     destroyPlayer()
 
-    let paths = stringListArg(arguments, "videoPaths")
-    let requestedWidth = max(16, intArg(arguments, "width") ?? 1920)
-    let requestedHeight = max(16, intArg(arguments, "height") ?? 1080)
+    let paths = MacOSFlutterArguments.stringListArg(arguments, "videoPaths")
+    let requestedWidth = max(16, MacOSFlutterArguments.intArg(arguments, "width") ?? 1920)
+    let requestedHeight = max(16, MacOSFlutterArguments.intArg(arguments, "height") ?? 1080)
     let firstPath = paths.first ?? "macos-synthetic://color-bars"
 
     let nextTexture: MacOSFlutterTextureBridge
@@ -434,7 +440,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       ]
       if paths.count > 1 {
         for path in paths.dropFirst() {
-          let fileId = (tracks.map { intValue($0["fileId"]) ?? 0 }.max() ?? -1) + 1
+          let fileId = (tracks.map { MacOSFlutterArguments.intValue($0["fileId"]) ?? 0 }.max() ?? -1) + 1
           do {
             guard let session = nativePlayer else {
               throw MacOSNativePlayerError.failed("macOS native player is unavailable")
@@ -468,7 +474,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       }
     }
     currentDurationUs = tracks
-      .map { intValue($0["durationUs"]) ?? trackDurationUs }
+      .map { MacOSFlutterArguments.intValue($0["durationUs"]) ?? trackDurationUs }
       .max() ?? trackDurationUs
     currentPtsUs = initialPresentedPtsUs
     lastPresentedPtsUs = initialPresentedPtsUs
@@ -535,9 +541,9 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       )
     }
 
-    let fileId = (tracks.map { intValue($0["fileId"]) ?? 0 }.max() ?? -1) + 1
+    let fileId = (tracks.map { MacOSFlutterArguments.intValue($0["fileId"]) ?? 0 }.max() ?? -1) + 1
     let slot = tracks.count
-    let path = stringArg(arguments, "path") ?? "macos-synthetic-\(fileId)"
+    let path = MacOSFlutterArguments.stringArg(arguments, "path") ?? "macos-synthetic-\(fileId)"
     if backendName == "macos-native-player" {
       do {
         guard let session = nativePlayer else {
@@ -581,7 +587,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func removeTrack(arguments: Any?) {
-    guard let fileId = intArg(arguments, "fileId") else { return }
+    guard let fileId = MacOSFlutterArguments.intArg(arguments, "fileId") else { return }
     if backendName == "macos-native-player" {
       if fileId == 0 {
         destroyPlayer()
@@ -589,7 +595,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       }
       nativePlayer?.removeTrack(fileId: fileId)
     }
-    tracks.removeAll { intValue($0["fileId"]) == fileId }
+    tracks.removeAll { MacOSFlutterArguments.intValue($0["fileId"]) == fileId }
     if backendName != "macos-native-player" {
       tracks = tracks.enumerated().map { index, track in
         var next = track
@@ -598,7 +604,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       }
     }
     currentDurationUs = tracks
-      .map { intValue($0["durationUs"]) ?? 0 }
+      .map { MacOSFlutterArguments.intValue($0["durationUs"]) ?? 0 }
       .max() ?? 0
     if tracks.isEmpty {
       destroyPlayer()
@@ -608,8 +614,8 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func resize(arguments: Any?) {
-    let width = intArg(arguments, "width")
-    let height = intArg(arguments, "height")
+    let width = MacOSFlutterArguments.intArg(arguments, "width")
+    let height = MacOSFlutterArguments.intArg(arguments, "height")
     if let width, let height {
       let nextWidth = max(16, width)
       let nextHeight = max(16, height)
@@ -667,7 +673,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
   private func activeTrackSlotCapacity() -> Int {
     let maxSlot = tracks
-      .compactMap { intValue($0["slot"]) }
+      .compactMap { MacOSFlutterArguments.intValue($0["slot"]) }
       .max() ?? 0
     return max(1, min(4, maxSlot + 1))
   }
@@ -894,47 +900,6 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     return Double(nativeFrameCopyCount - 1) * 1000.0 / Double(elapsedMs)
   }
 
-  private func presentationFallbackReason(perfStats: [String: Any]?) -> String {
-    guard let player = nativePlayer else {
-      return "no-native-player"
-    }
-    if !player.hardwareDecodeActive() {
-      return "software-decode"
-    }
-    if player.hardwareDecodeDownloadsToCpu() {
-      return "hardware-download-to-cpu"
-    }
-    if !nativePresentationTargetInstalled {
-      return "native-presentation-target-unavailable"
-    }
-    let uploadCount = int64Diagnostic(perfStats?["rendererOwnedUploadCount"])
-    let failureCount = int64Diagnostic(perfStats?["rendererOwnedUploadFailureCount"])
-    if uploadCount == 0 && failureCount > 0 {
-      return "renderer-owned-upload-failed"
-    }
-    return "none"
-  }
-
-  private func presentationUploadMode(perfStats: [String: Any]?, targetReady: Bool) -> String {
-    switch perfStats?["rendererOwnedPresentPackageStorage"] as? String {
-    case "cvpixelbuffer":
-      return "metal-cvpixelbuffer-present-package"
-    case "yuv":
-      return "metal-yuv-present-package"
-    case "bgra":
-      return "metal-bgra-present-package"
-    default:
-      break
-    }
-    if targetReady && nativePresentationTargetInstalled {
-      return "metal-presentation-target-ready"
-    }
-    if textureId != nil {
-      return "metal-presentation-target-unavailable"
-    }
-    return "unavailable"
-  }
-
   private func presentationBackendName() -> String {
     guard nativePlayer != nil else {
       return "synthetic-texture"
@@ -960,21 +925,6 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       return "macOS shared native facade is active with renderer-owned Metal presentation"
     }
     return "macOS shared native facade has no active renderer-owned presentation target"
-  }
-
-  private func int64Diagnostic(_ value: Any?) -> Int64 {
-    switch value {
-    case let value as Int64:
-      return value
-    case let value as Int:
-      return Int64(value)
-    case let value as UInt64:
-      return Int64(min(value, UInt64(Int64.max)))
-    case let value as Double:
-      return Int64(value)
-    default:
-      return 0
-    }
   }
 
   private func normalizedDtsUs(_ info: MacOSNativeFrameInfo) -> Int {
@@ -1106,7 +1056,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func pickFiles(arguments: Any?, result: @escaping FlutterResult) {
-    let allowsMultipleSelection = boolArg(arguments, "allowMultiple") ?? true
+    let allowsMultipleSelection = MacOSFlutterArguments.boolArg(arguments, "allowMultiple") ?? true
     DispatchQueue.main.async {
       let panel = NSOpenPanel()
       panel.canChooseFiles = true
@@ -1124,73 +1074,4 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
   }
 
-  private func intArg(_ arguments: Any?, _ key: String) -> Int? {
-    guard let map = arguments as? [String: Any] else { return nil }
-    return intValue(map[key])
-  }
-
-  private func boolArg(_ arguments: Any?, _ key: String) -> Bool? {
-    guard let map = arguments as? [String: Any] else { return nil }
-    if let value = map[key] as? Bool {
-      return value
-    }
-    if let value = map[key] as? NSNumber {
-      return value.boolValue
-    }
-    return nil
-  }
-
-  private func doubleArg(_ arguments: Any?, _ key: String) -> Double? {
-    guard let map = arguments as? [String: Any] else { return nil }
-    return doubleValue(map[key])
-  }
-
-  private func doubleValue(_ value: Any?) -> Double? {
-    if let value = value as? Double {
-      return value
-    }
-    if let value = value as? NSNumber {
-      return value.doubleValue
-    }
-    return nil
-  }
-
-  private func stringArg(_ arguments: Any?, _ key: String) -> String? {
-    guard let map = arguments as? [String: Any] else { return nil }
-    return map[key] as? String
-  }
-
-  private func stringListArg(_ arguments: Any?, _ key: String) -> [String] {
-    guard let map = arguments as? [String: Any] else { return [] }
-    if let values = map[key] as? [String] {
-      return values
-    }
-    if let values = map[key] as? [Any] {
-      return values.compactMap { $0 as? String }
-    }
-    return []
-  }
-
-  private func intValue(_ value: Any?) -> Int? {
-    if let value = value as? Int {
-      return value
-    }
-    if let value = value as? Int64 {
-      return Int(value)
-    }
-    if let value = value as? NSNumber {
-      return value.intValue
-    }
-    return nil
-  }
-
-  private func intListValue(_ value: Any?) -> [Int] {
-    if let values = value as? [Int] {
-      return values
-    }
-    if let values = value as? [Any] {
-      return values.compactMap { intValue($0) }
-    }
-    return [0, 1, 2, 3]
-  }
 }

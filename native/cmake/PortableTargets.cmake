@@ -205,11 +205,26 @@ if(APPLE)
 
     add_library(renderer_portable_compile_smoke OBJECT
         "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"
+        ${VOID_RENDERER_PORTABLE_DRIVER_SOURCES}
     )
     void_apply_native_compile_options(renderer_portable_compile_smoke)
     target_link_libraries(renderer_portable_compile_smoke PRIVATE
         void_media_ffmpeg
     )
+
+    add_executable(renderer_metal_headless_smoke
+        "${VOID_NATIVE_DIR}/tools/renderer_metal_headless_smoke.cpp"
+        $<TARGET_OBJECTS:renderer_portable_compile_smoke>
+        "${VOID_NATIVE_DIR}/video_renderer/overlay/analysis_overlay_renderer_portable_stub.cpp"
+    )
+    void_apply_native_compile_options(renderer_metal_headless_smoke)
+    target_link_libraries(renderer_metal_headless_smoke PRIVATE
+        void_macos_native_player
+    )
+    target_compile_definitions(renderer_metal_headless_smoke PRIVATE
+        VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
+    )
+    add_test(NAME renderer_metal_headless_smoke COMMAND renderer_metal_headless_smoke)
 
     add_executable(presentation_snapshot_smoke
         "${VOID_NATIVE_DIR}/tools/presentation_snapshot_smoke.cpp"

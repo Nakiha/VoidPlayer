@@ -85,20 +85,24 @@ if(BUILD_ANALYSIS)
         "${VOID_NATIVE_DIR}/macos/analysis_ffi_bridge.cpp")
 endif()
 
+set(VOID_RENDERER_PORTABLE_DRIVER_SOURCES
+    "${VOID_NATIVE_DIR}/video_renderer/audio_coordinator.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/seek/renderer_seek_log_policy.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/track/track_perf_baseline.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/track/track_preroll_policy.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/track/track_snapshot.cpp"
+)
+
 set(VOID_RENDERER_CORE_SOURCES
     ${VOID_PLAYER_PORTABLE_CORE_SOURCES}
     ${VOID_MEDIA_FFMPEG_SOURCES}
+    ${VOID_RENDERER_PORTABLE_DRIVER_SOURCES}
     "${VOID_NATIVE_DIR}/common/windows_crash_handler.cpp"
 )
 
 set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/player/native_player.cpp"
-    "${VOID_NATIVE_DIR}/video_renderer/audio_coordinator.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/capture/frame_capture_service.cpp"
-    "${VOID_NATIVE_DIR}/video_renderer/seek/renderer_seek_log_policy.cpp"
-    "${VOID_NATIVE_DIR}/video_renderer/track/track_perf_baseline.cpp"
-    "${VOID_NATIVE_DIR}/video_renderer/track/track_preroll_policy.cpp"
-    "${VOID_NATIVE_DIR}/video_renderer/track/track_snapshot.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/hw/d3d11va_provider.cpp"
 )

@@ -13,12 +13,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var textureId: Int64?
   private let trackStore = MacOSVideoTrackStore()
   private var layout: [String: Any] = MacOSVideoTrackPayload.defaultLayout()
-  private var isPlaying = false
   private var backendName = "synthetic-texture"
   private var nativePlayer: MacOSNativePlayerSession?
   private let presentationState = MacOSFramePresentationState()
   private let nativeEvents = MacOSNativeEventState()
-  private let framePump = MacOSNativeFramePump()
+  private let playback = MacOSPlaybackController()
 
   init(textureRegistry: FlutterTextureRegistry) {
     self.textureRegistry = textureRegistry
@@ -94,19 +93,22 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       resize(arguments: call.arguments)
       result(nil)
     case "play":
-      isPlaying = textureId != nil
-      nativePlayer?.play()
-      startNativeFramePump()
+      playback.play(
+        player: nativePlayer,
+        texture: texture,
+        textureRegistered: textureId != nil,
+        maxTrackSlots: activeTrackSlotCapacity(),
+        userData: Unmanaged.passUnretained(self).toOpaque(),
+        presentationState: presentationState
+      )
       result(nil)
     case "pause":
-      isPlaying = false
-      nativePlayer?.pause()
-      stopNativeFramePump()
+      playback.pause(player: nativePlayer)
       result(nil)
     case "seek":
       let targetPtsUs = MacOSFlutterArguments.intArg(call.arguments, "ptsUs") ?? 0
       let requestId = MacOSFlutterArguments.intArg(call.arguments, "requestId")
-      let resumeAfterSeek = nativePlayer?.isPlaying() ?? isPlaying
+      let resumeAfterSeek = playback.currentIsPlaying(player: nativePlayer)
       if let error = seekAndRefresh(
         targetPtsUs: targetPtsUs,
         requestId: requestId,
@@ -140,7 +142,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
           : presentationState.currentPresentedFrameMap()
       )
     case "isPlaying":
-      result(nativePlayer?.isPlaying() ?? isPlaying)
+      result(playback.currentIsPlaying(player: nativePlayer))
     case "getLayout":
       result(layout)
     case "applyLayout":
@@ -164,7 +166,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         textureStats: texture?.diagnostics(),
         textureDimensions: texture?.dimensions(),
         trackCount: trackStore.count,
-        presentationTargetInstalled: framePump.targetInstalled,
+        presentationTargetInstalled: playback.targetInstalled,
         nativeEventDiagnostics: nativeEvents.diagnosticMap(),
         presentationDiagnostics: presentationState.diagnosticMap()
       ))
@@ -195,14 +197,13 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     textureId = registeredTextureId
     backendName = startup.backendName
     nativePlayer = startup.nativePlayer
-    framePump.setTargetInstalled(startup.presentationTargetInstalled)
+    playback.setTargetInstalled(startup.presentationTargetInstalled)
     trackStore.replace(with: startup.tracks, fallbackDurationUs: startup.trackDurationUs)
     presentationState.seedPresentedFrame(
       ptsUs: startup.initialPresentedPtsUs,
       dtsUs: startup.initialPresentedDtsUs,
       durationUs: startup.trackDurationUs
     )
-    isPlaying = false
     markFrameAvailable()
 
     return [
@@ -220,7 +221,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func destroyPlayer() {
-    stopNativeFramePump(clearPresentationTarget: true)
+    playback.stopFramePump(player: nativePlayer, clearPresentationTarget: true)
     if let id = textureId {
       textureRegistry.unregisterTexture(id)
     }
@@ -228,9 +229,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     textureId = nil
     trackStore.reset()
     presentationState.resetAll()
-    isPlaying = false
     backendName = "synthetic-texture"
-    framePump.setTargetInstalled(false)
+    playback.reset()
     nativePlayer?.close()
     nativePlayer = nil
   }
@@ -323,15 +323,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       _ = texture?.resize(width: nextWidth, height: nextHeight) ?? false
       if backendName == MacOSVideoTrackPayload.nativeFormatName {
         refreshCurrentFrameAfterLayoutChange()
-        if isPlaying,
-           let nativePlayer,
-           let texture {
-          let installed = texture.installNativePresentationTarget(
-            nativePlayer,
-            maxTrackSlots: activeTrackSlotCapacity()
-          )
-          framePump.setTargetInstalled(installed)
-        }
+        playback.reinstallPresentationTargetIfPlaying(
+          player: nativePlayer,
+          texture: texture,
+          maxTrackSlots: activeTrackSlotCapacity()
+        )
       }
     }
     markFrameAvailable()
@@ -365,7 +361,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       targetPtsUs: targetPtsUs,
       maxTrackSlots: activeTrackSlotCapacity(),
       presentationState: presentationState,
-      framePump: framePump
+      framePump: playback.framePumpForRefresh
     )
   }
 
@@ -381,7 +377,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       texture: texture,
       maxTrackSlots: activeTrackSlotCapacity(),
       presentationState: presentationState,
-      framePump: framePump
+      framePump: playback.framePumpForRefresh
     )
     markFrameAvailable()
   }
@@ -391,9 +387,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     requestId: Int?,
     resumeAfterSeek: Bool
   ) -> FlutterError? {
-    stopNativeFramePump()
-    nativePlayer?.pause()
-    isPlaying = false
+    playback.stopForBlockingCommand(player: nativePlayer, pausePlayer: true)
     let settledPtsUs = max(0, min(activeDurationUs(), targetPtsUs))
     presentationState.setCurrentPts(settledPtsUs)
     if let error = refreshDecodedFrameIfNeeded(targetPtsUs: settledPtsUs) {
@@ -402,16 +396,21 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     markFrameAvailable()
     emitSeekPreviewPresented(requestId: requestId, targetPtsUs: settledPtsUs)
     if resumeAfterSeek {
-      isPlaying = textureId != nil
-      nativePlayer?.play()
-      startNativeFramePump()
+      playback.resumeIfNeeded(
+        true,
+        player: nativePlayer,
+        texture: texture,
+        textureRegistered: textureId != nil,
+        maxTrackSlots: activeTrackSlotCapacity(),
+        userData: Unmanaged.passUnretained(self).toOpaque(),
+        presentationState: presentationState
+      )
     }
     return nil
   }
 
   private func stepAndRefresh(forward: Bool) -> FlutterError? {
-    stopNativeFramePump()
-    isPlaying = false
+    playback.stopForBlockingCommand(player: nativePlayer, pausePlayer: false)
     guard let nativePlayer,
           let texture else {
       return nil
@@ -422,7 +421,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       forward: forward,
       maxTrackSlots: activeTrackSlotCapacity(),
       presentationState: presentationState,
-      framePump: framePump
+      framePump: playback.framePumpForRefresh
     ) {
       return error
     }
@@ -438,54 +437,15 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     )
   }
 
-  private func startNativeFramePump() {
-    stopNativeFramePump()
-    guard backendName == MacOSVideoTrackPayload.nativeFormatName,
-          let nativePlayer,
-          textureId != nil else {
-      return
-    }
-
-    let started = framePump.start(
-      player: nativePlayer,
-      texture: texture,
-      maxTrackSlots: activeTrackSlotCapacity(),
-      userData: Unmanaged.passUnretained(self).toOpaque(),
-      presentationState: presentationState
-    )
-    if !started {
-      isPlaying = false
-    }
-  }
-
-  private func stopNativeFramePump(clearPresentationTarget: Bool = false) {
-    framePump.stop(player: nativePlayer, clearPresentationTarget: clearPresentationTarget)
-  }
-
   func scheduleNativeFrameCopyFromCallback() {
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
-      self.presentationState.recordCallback()
-      guard self.isPlaying,
-            self.backendName == MacOSVideoTrackPayload.nativeFormatName else {
-        return
-      }
-      if self.nativePlayer?.lastRendererOwnedPresentationSucceeded() == true {
-        self.presentationState.recordPresentation(rendererOwned: true)
-        if let frameInfo = self.nativePlayer?.lastRendererOwnedFrameInfo() {
-          self.presentationState.recordFrame(frameInfo)
-        }
-        self.markFrameAvailable()
-        return
-      }
-      if self.framePump.targetInstalled {
-        return
-      }
-      self.presentationState.recordError()
-      NSLog("VoidPlayer macOS renderer-owned Metal presentation failed")
-      self.isPlaying = false
-      self.nativePlayer?.pause()
-      self.stopNativeFramePump()
+      self.playback.handleFrameCallback(
+        player: self.nativePlayer,
+        nativeBackendActive: self.backendName == MacOSVideoTrackPayload.nativeFormatName,
+        presentationState: self.presentationState,
+        markFrameAvailable: self.markFrameAvailable
+      )
     }
   }
 

@@ -17,6 +17,7 @@
 #include "video_renderer/render/presentation_package.h"
 #include "video_renderer/render/presentation_loop_driver.h"
 #include "video_renderer/render/presentation_snapshot.h"
+#include "video_renderer/renderer.h"
 #include "video_renderer/render/shader_constants.h"
 #include "video_renderer/capture/bgra_capture_metrics.h"
 #include "video_renderer/playback/renderer_playback_command_policy.h"
@@ -46,6 +47,8 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/buffer.h>
 }
+
+#include <spdlog/spdlog.h>
 
 namespace {
 
@@ -144,6 +147,14 @@ bool videotoolbox_disabled_by_env() {
 
 bool videotoolbox_hwdownload_forced_by_env() {
   const char* value = std::getenv("VOIDPLAYER_FORCE_VIDEOTOOLBOX_HWDOWNLOAD");
+  if (!value || value[0] == '\0') {
+    return false;
+  }
+  return std::strcmp(value, "0") != 0 && std::strcmp(value, "false") != 0;
+}
+
+bool macos_shared_renderer_enabled_by_env() {
+  const char* value = std::getenv("VOIDPLAYER_MACOS_SHARED_RENDERER");
   if (!value || value[0] == '\0') {
     return false;
   }
@@ -1189,11 +1200,149 @@ struct VPMacOSNativePlayer {
     std::string error;
   };
 
-  VPMacOSNativePlayer() = default;
-  ~VPMacOSNativePlayer() { stop_tick_thread(); }
+  VPMacOSNativePlayer()
+      : shared_renderer_requested(macos_shared_renderer_enabled_by_env()) {}
+  ~VPMacOSNativePlayer() {
+    shutdown_shared_renderer_locked();
+    stop_tick_thread();
+  }
 
   VPMacOSNativePlayer(const VPMacOSNativePlayer&) = delete;
   VPMacOSNativePlayer& operator=(const VPMacOSNativePlayer&) = delete;
+
+  bool shared_renderer_active_locked() const {
+    return shared_renderer && shared_renderer->is_initialized();
+  }
+
+  void shutdown_shared_renderer_locked() {
+    if (shared_renderer) {
+      shared_renderer->shutdown();
+      shared_renderer.reset();
+    }
+    shared_renderer_opened_paths.clear();
+    shared_track_offsets.fill(0);
+    shared_decode_mode_name = "none";
+    shared_decoder_name = "none";
+    shared_renderer_active = false;
+  }
+
+  bool initialize_shared_renderer_locked(const std::string& path,
+                                         std::string& error) {
+    if (path.empty()) {
+      error = "path is empty";
+      return false;
+    }
+
+    void* output = nullptr;
+    int32_t width = 0;
+    int32_t height = 0;
+    int32_t max_track_slots = 1;
+    {
+      std::lock_guard<std::mutex> callback_lock(callback_mutex);
+      output = presentation_target_pixel_buffer;
+      width = presentation_target_width;
+      height = presentation_target_height;
+      max_track_slots = presentation_target_max_track_slots;
+    }
+    if (!output || width <= 0 || height <= 0) {
+      error = "shared macOS renderer requires a Metal presentation target";
+      return false;
+    }
+
+    shutdown_shared_renderer_locked();
+
+    auto renderer = std::make_unique<vr::Renderer>();
+    vr::RendererConfig config;
+    config.video_paths = {path};
+    config.width = width;
+    config.height = height;
+    config.headless = true;
+    config.use_hardware_decode = true;
+    config.backend.type = vr::RendererBackendType::Metal;
+    config.backend.output = output;
+    config.backend.max_track_slots =
+        std::clamp(max_track_slots,
+                   static_cast<int32_t>(1),
+                   static_cast<int32_t>(VPMacOSNativeMaxTracks));
+    if (!renderer->initialize(config)) {
+      error = "shared macOS renderer failed to initialize";
+      return false;
+    }
+
+    renderer->set_frame_callback([this]() {
+      VPMacOSFrameAvailableCallback callback = nullptr;
+      void* user_data = nullptr;
+      {
+        std::lock_guard<std::mutex> callback_lock(callback_mutex);
+        last_renderer_owned_presentation_succeeded = true;
+        last_renderer_owned_frame_info_available = true;
+        last_renderer_owned_frame_info.width = presentation_target_width;
+        last_renderer_owned_frame_info.height = presentation_target_height;
+        if (shared_renderer) {
+          last_renderer_owned_frame_info.pts_us =
+              shared_renderer->current_pts_us();
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (renderer_owned_presentation_upload_count == 0) {
+          renderer_owned_presentation_first_upload_time = now;
+        }
+        renderer_owned_presentation_last_upload_time = now;
+        ++renderer_owned_presentation_upload_count;
+        callback = frame_available_callback;
+        user_data = frame_available_user_data;
+      }
+      if (callback) {
+        callback(user_data);
+      }
+    });
+
+    shared_renderer = std::move(renderer);
+    shared_renderer_opened_paths = {path};
+    shared_renderer_active = true;
+    update_shared_renderer_decode_names_locked();
+    return true;
+  }
+
+  void update_shared_renderer_decode_names_locked() {
+    shared_decode_mode_name = "none";
+    shared_decoder_name = "none";
+    if (!shared_renderer_active_locked()) {
+      return;
+    }
+    const auto infos = shared_renderer->track_infos();
+    if (infos.empty()) {
+      return;
+    }
+    shared_decoder_name = infos.front().decoder_name.empty()
+        ? "renderer"
+        : infos.front().decoder_name;
+    const bool hardware =
+        shared_decoder_name.find("videotoolbox") != std::string::npos ||
+        shared_decoder_name.find("VideoToolbox") != std::string::npos;
+    shared_decode_mode_name = hardware
+        ? "shared-renderer-videotoolbox"
+        : "shared-renderer-software";
+  }
+
+  VPMacOSNativeTrackInfo shared_track_info_for_slot_locked(int slot) {
+    VPMacOSNativeTrackInfo out = {};
+    if (!shared_renderer_active_locked()) {
+      return out;
+    }
+    const auto infos = shared_renderer->track_infos();
+    for (const auto& info : infos) {
+      if (info.slot != slot) {
+        continue;
+      }
+      out.file_id = info.file_id;
+      out.slot = info.slot;
+      out.width = info.width;
+      out.height = info.height;
+      out.duration_us = info.duration_us;
+      return out;
+    }
+    return out;
+  }
 
   bool start_tick_thread() {
     if (tick_thread.joinable()) {
@@ -1282,6 +1431,14 @@ struct VPMacOSNativePlayer {
 
   std::mutex mutex;
   MacOSNativePlayerCore core;
+  bool shared_renderer_requested = false;
+  std::atomic<bool> shared_renderer_active{false};
+  std::unique_ptr<vr::Renderer> shared_renderer;
+  std::string primary_opened_path;
+  std::vector<std::string> shared_renderer_opened_paths;
+  std::array<int64_t, VPMacOSNativeMaxTracks> shared_track_offsets{};
+  std::string shared_decode_mode_name = "none";
+  std::string shared_decoder_name = "none";
   std::mutex callback_mutex;
   VPMacOSFrameAvailableCallback frame_available_callback = nullptr;
   void* frame_available_user_data = nullptr;
@@ -1384,10 +1541,21 @@ int VPMacOSNativePlayerOpen(VPMacOSNativePlayer* player,
   }
   std::lock_guard<std::mutex> lock(player->mutex);
   std::string message;
+  if (player->shared_renderer_requested &&
+      player->initialize_shared_renderer_locked(path ? path : "", message)) {
+    player->primary_opened_path = path ? path : "";
+    write_error(error, error_size, "");
+    return 0;
+  }
+  if (player->shared_renderer_requested && !message.empty()) {
+    spdlog::warn("macOS shared renderer unavailable, falling back to transitional core: {}",
+                 message);
+  }
   if (!player->core.open(path, message)) {
     write_error(error, error_size, message);
     return -1;
   }
+  player->primary_opened_path = path ? path : "";
   write_error(error, error_size, "");
   return 0;
 }
@@ -1404,6 +1572,24 @@ int VPMacOSNativePlayerAddTrack(VPMacOSNativePlayer* player,
   }
   *out = {};
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    const int slot = player->shared_renderer->add_track(path ? path : "");
+    if (slot < 0) {
+      write_error(error, error_size, "shared macOS renderer failed to add track");
+      return -1;
+    }
+    *out = player->shared_track_info_for_slot_locked(slot);
+    if (out->slot < 0) {
+      write_error(error, error_size, "shared macOS renderer did not report added track");
+      return -1;
+    }
+    if (file_id >= 0 && file_id < VPMacOSNativeMaxTracks) {
+      player->shared_track_offsets[static_cast<size_t>(file_id)] = 0;
+    }
+    player->update_shared_renderer_decode_names_locked();
+    write_error(error, error_size, "");
+    return 0;
+  }
   std::string message;
   if (!player->core.add_track(path, file_id, *out, message)) {
     write_error(error, error_size, message);
@@ -1419,6 +1605,13 @@ void VPMacOSNativePlayerRemoveTrack(VPMacOSNativePlayer* player,
     return;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    player->shared_renderer->remove_track(file_id);
+    if (file_id >= 0 && file_id < VPMacOSNativeMaxTracks) {
+      player->shared_track_offsets[static_cast<size_t>(file_id)] = 0;
+    }
+    return;
+  }
   player->core.remove_track(file_id);
 }
 
@@ -1427,6 +1620,10 @@ void VPMacOSNativePlayerClose(VPMacOSNativePlayer* player) {
     return;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    player->shutdown_shared_renderer_locked();
+  }
+  player->primary_opened_path.clear();
   player->core.close();
 }
 
@@ -1452,23 +1649,41 @@ int VPMacOSNativePlayerSetMetalPresentationTarget(
   if (!player || !backend || !pixel_buffer || width <= 0 || height <= 0) {
     return -1;
   }
-  std::lock_guard<std::mutex> lock(player->callback_mutex);
-  player->presentation_target_backend = backend;
-  player->presentation_target_pixel_buffer = pixel_buffer;
-  player->presentation_target_width = width;
-  player->presentation_target_height = height;
-  player->presentation_target_max_track_slots =
-      std::clamp(max_track_slots, static_cast<int32_t>(1),
-                 static_cast<int32_t>(VPMacOSNativeMaxTracks));
-  VPMacOSMetalPresentationBackendSetDrawTarget(
-      backend,
-      pixel_buffer,
-      width,
-      height,
-      player->presentation_target_max_track_slots);
-  player->last_renderer_owned_presentation_succeeded = false;
-  player->last_renderer_owned_frame_info_available = false;
-  player->last_renderer_owned_frame_info = {};
+  {
+    std::lock_guard<std::mutex> lock(player->callback_mutex);
+    player->presentation_target_backend = backend;
+    player->presentation_target_pixel_buffer = pixel_buffer;
+    player->presentation_target_width = width;
+    player->presentation_target_height = height;
+    player->presentation_target_max_track_slots =
+        std::clamp(max_track_slots, static_cast<int32_t>(1),
+                   static_cast<int32_t>(VPMacOSNativeMaxTracks));
+    VPMacOSMetalPresentationBackendSetDrawTarget(
+        backend,
+        pixel_buffer,
+        width,
+        height,
+        player->presentation_target_max_track_slots);
+    player->last_renderer_owned_presentation_succeeded = false;
+    player->last_renderer_owned_frame_info_available = false;
+    player->last_renderer_owned_frame_info = {};
+  }
+  if (player->shared_renderer_requested) {
+    std::lock_guard<std::mutex> player_lock(player->mutex);
+    if (!player->shared_renderer_active_locked() &&
+        !player->primary_opened_path.empty()) {
+      std::string message;
+      if (player->initialize_shared_renderer_locked(
+              player->primary_opened_path, message)) {
+        player->core.close();
+      } else if (!message.empty()) {
+        spdlog::warn("macOS shared renderer target install fallback: {}",
+                     message);
+      }
+    } else if (player->shared_renderer_active_locked()) {
+      player->shared_renderer->resize(width, height);
+    }
+  }
   return 0;
 }
 
@@ -1476,19 +1691,25 @@ void VPMacOSNativePlayerClearMetalPresentationTarget(VPMacOSNativePlayer* player
   if (!player) {
     return;
   }
-  std::lock_guard<std::mutex> lock(player->callback_mutex);
-  auto* backend = player->presentation_target_backend;
-  player->presentation_target_backend = nullptr;
-  player->presentation_target_pixel_buffer = nullptr;
-  player->presentation_target_width = 0;
-  player->presentation_target_height = 0;
-  player->presentation_target_max_track_slots = 1;
-  if (backend) {
-    VPMacOSMetalPresentationBackendClearDrawTarget(backend);
+  {
+    std::lock_guard<std::mutex> lock(player->callback_mutex);
+    auto* backend = player->presentation_target_backend;
+    player->presentation_target_backend = nullptr;
+    player->presentation_target_pixel_buffer = nullptr;
+    player->presentation_target_width = 0;
+    player->presentation_target_height = 0;
+    player->presentation_target_max_track_slots = 1;
+    if (backend) {
+      VPMacOSMetalPresentationBackendClearDrawTarget(backend);
+    }
+    player->last_renderer_owned_presentation_succeeded = false;
+    player->last_renderer_owned_frame_info_available = false;
+    player->last_renderer_owned_frame_info = {};
   }
-  player->last_renderer_owned_presentation_succeeded = false;
-  player->last_renderer_owned_frame_info_available = false;
-  player->last_renderer_owned_frame_info = {};
+  if (player->shared_renderer_requested) {
+    std::lock_guard<std::mutex> player_lock(player->mutex);
+    player->shutdown_shared_renderer_locked();
+  }
 }
 
 int VPMacOSNativePlayerRendererOwnedPresentationActive(VPMacOSNativePlayer* player) {
@@ -1496,7 +1717,8 @@ int VPMacOSNativePlayerRendererOwnedPresentationActive(VPMacOSNativePlayer* play
     return 0;
   }
   std::lock_guard<std::mutex> lock(player->callback_mutex);
-  return player->presentation_target_backend && player->presentation_target_pixel_buffer
+  return (player->shared_renderer_active ||
+          (player->presentation_target_backend && player->presentation_target_pixel_buffer))
       ? 1
       : 0;
 }
@@ -1566,6 +1788,16 @@ int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
     return -1;
   }
   *out = {};
+  if (player->shared_renderer_active.load()) {
+    std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
+    if (player->last_renderer_owned_frame_info_available) {
+      *out = player->last_renderer_owned_frame_info;
+      write_error(error, error_size, "");
+      return 0;
+    }
+    write_error(error, error_size, "shared macOS renderer has not presented a frame yet");
+    return -1;
+  }
   std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
   vr::RendererDrawSnapshot draw_snapshot;
   {
@@ -1603,6 +1835,10 @@ void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player) {
     return;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    player->shared_renderer->play();
+    return;
+  }
   player->core.play();
 }
 
@@ -1611,6 +1847,10 @@ void VPMacOSNativePlayerPause(VPMacOSNativePlayer* player) {
     return;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    player->shared_renderer->pause();
+    return;
+  }
   player->core.pause();
 }
 
@@ -1619,6 +1859,10 @@ void VPMacOSNativePlayerSetSpeed(VPMacOSNativePlayer* player, double speed) {
     return;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    player->shared_renderer->set_speed(speed);
+    return;
+  }
   player->core.set_speed(speed);
 }
 
@@ -1630,6 +1874,10 @@ void VPMacOSNativePlayerSetLoopRange(VPMacOSNativePlayer* player,
     return;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    player->shared_renderer->set_loop_range(enabled != 0, start_us, end_us);
+    return;
+  }
   player->core.set_loop_range(enabled != 0, start_us, end_us);
 }
 
@@ -1639,6 +1887,10 @@ void VPMacOSNativePlayerSetAudibleTrack(VPMacOSNativePlayer* player,
     return;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    player->shared_renderer->set_audible_track(file_id);
+    return;
+  }
   player->core.set_audible_track(file_id);
 }
 
@@ -1649,6 +1901,13 @@ void VPMacOSNativePlayerSetTrackOffset(VPMacOSNativePlayer* player,
     return;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    player->shared_renderer->set_track_offset(file_id, offset_us);
+    if (file_id >= 0 && file_id < VPMacOSNativeMaxTracks) {
+      player->shared_track_offsets[static_cast<size_t>(file_id)] = offset_us;
+    }
+    return;
+  }
   player->core.set_track_offset(file_id, offset_us);
 }
 
@@ -1658,6 +1917,11 @@ int64_t VPMacOSNativePlayerTrackOffsetUs(VPMacOSNativePlayer* player,
     return 0;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    return file_id >= 0 && file_id < VPMacOSNativeMaxTracks
+        ? player->shared_track_offsets[static_cast<size_t>(file_id)]
+        : 0;
+  }
   return player->core.track_offset_us(file_id);
 }
 
@@ -1667,6 +1931,10 @@ void VPMacOSNativePlayerApplyLayout(VPMacOSNativePlayer* player,
     return;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    player->shared_renderer->apply_layout(to_layout_state(*state));
+    return;
+  }
   player->core.apply_layout(*state);
 }
 
@@ -1676,6 +1944,10 @@ int VPMacOSNativePlayerCopyLayout(VPMacOSNativePlayer* player,
     return -1;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    *out = to_native_layout_state(player->shared_renderer->layout());
+    return 0;
+  }
   *out = player->core.layout_snapshot();
   return 0;
 }
@@ -1689,6 +1961,35 @@ int VPMacOSNativePlayerCopyLayoutPresentationParams(
     return -1;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    vr::LayoutTrackGeometryList tracks = {};
+    const auto infos = player->shared_renderer->track_infos();
+    for (const auto& info : infos) {
+      if (info.slot < 0 ||
+          info.slot >= static_cast<int>(tracks.size())) {
+        continue;
+      }
+      const float aspect = info.height > 0
+          ? static_cast<float>(info.width) / static_cast<float>(info.height)
+          : 1.0f;
+      tracks[static_cast<size_t>(info.slot)] = {
+          true,
+          info.width,
+          info.height,
+          aspect,
+      };
+    }
+    vr::ShaderConstants constants = {};
+    vr::populate_layout_shader_constants(
+        constants, player->shared_renderer->layout(), tracks, width, height);
+    out->display_offset_x = constants.display_offset_x[0];
+    out->display_offset_y = constants.display_offset_y[0];
+    out->inv_display_size_x = constants.inv_display_size_x[0];
+    out->inv_display_size_y = constants.inv_display_size_y[0];
+    out->view_offset_uv_x = constants.view_offset_uv_x[0];
+    out->view_offset_uv_y = constants.view_offset_uv_y[0];
+    return 0;
+  }
   return player->core.layout_presentation_params(width, height, out) ? 0 : -1;
 }
 
@@ -1697,6 +1998,16 @@ void VPMacOSNativePlayerSeek(VPMacOSNativePlayer* player, int64_t pts_us) {
     return;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    {
+      std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
+      player->last_renderer_owned_presentation_succeeded = false;
+      player->last_renderer_owned_frame_info_available = false;
+      player->last_renderer_owned_frame_info = {};
+    }
+    player->shared_renderer->seek(pts_us, vr::SeekType::Exact);
+    return;
+  }
   player->core.seek(pts_us);
 }
 
@@ -1708,6 +2019,11 @@ int VPMacOSNativePlayerStepForward(VPMacOSNativePlayer* player,
     return -1;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    player->shared_renderer->step_forward();
+    write_error(error, error_size, "");
+    return 0;
+  }
   std::string message;
   if (!player->core.step_forward(message)) {
     write_error(error, error_size, message);
@@ -1725,6 +2041,11 @@ int VPMacOSNativePlayerStepBackward(VPMacOSNativePlayer* player,
     return -1;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    player->shared_renderer->step_backward();
+    write_error(error, error_size, "");
+    return 0;
+  }
   std::string message;
   if (!player->core.step_backward(message)) {
     write_error(error, error_size, message);
@@ -1739,6 +2060,9 @@ int64_t VPMacOSNativePlayerCurrentPtsUs(VPMacOSNativePlayer* player) {
     return 0;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    return player->shared_renderer->current_pts_us();
+  }
   return player->core.current_pts_us();
 }
 
@@ -1747,6 +2071,9 @@ int64_t VPMacOSNativePlayerDurationUs(VPMacOSNativePlayer* player) {
     return 0;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    return player->shared_renderer->duration_us();
+  }
   return player->core.duration_us();
 }
 
@@ -1755,6 +2082,9 @@ int32_t VPMacOSNativePlayerWidth(VPMacOSNativePlayer* player) {
     return 0;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    return player->shared_renderer->track_dimensions(0).first;
+  }
   return player->core.width();
 }
 
@@ -1763,6 +2093,9 @@ int32_t VPMacOSNativePlayerHeight(VPMacOSNativePlayer* player) {
     return 0;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    return player->shared_renderer->track_dimensions(0).second;
+  }
   return player->core.height();
 }
 
@@ -1771,6 +2104,9 @@ int VPMacOSNativePlayerIsPlaying(VPMacOSNativePlayer* player) {
     return 0;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    return player->shared_renderer->is_playing() ? 1 : 0;
+  }
   return player->core.is_playing() ? 1 : 0;
 }
 
@@ -1803,6 +2139,9 @@ int32_t VPMacOSNativePlayerActiveAudioTrack(VPMacOSNativePlayer* player) {
     return -1;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    return player->shared_renderer->audible_track();
+  }
   return player->core.active_audio_track();
 }
 
@@ -1811,6 +2150,10 @@ int VPMacOSNativePlayerHardwareDecodeActive(VPMacOSNativePlayer* player) {
     return 0;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    player->update_shared_renderer_decode_names_locked();
+    return player->shared_decode_mode_name == "shared-renderer-videotoolbox" ? 1 : 0;
+  }
   return player->core.hardware_decode_active() ? 1 : 0;
 }
 
@@ -1819,6 +2162,9 @@ int VPMacOSNativePlayerHardwareDecodeDownloadsToCpu(VPMacOSNativePlayer* player)
     return 0;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    return 0;
+  }
   return player->core.hardware_decode_downloads_to_cpu() ? 1 : 0;
 }
 
@@ -1827,6 +2173,10 @@ const char* VPMacOSNativePlayerDecodeModeName(VPMacOSNativePlayer* player) {
     return "none";
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    player->update_shared_renderer_decode_names_locked();
+    return player->shared_decode_mode_name.c_str();
+  }
   return player->core.decode_mode_name();
 }
 
@@ -1835,6 +2185,10 @@ const char* VPMacOSNativePlayerDecoderName(VPMacOSNativePlayer* player) {
     return "none";
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    player->update_shared_renderer_decode_names_locked();
+    return player->shared_decoder_name.c_str();
+  }
   return player->core.decoder_name();
 }
 

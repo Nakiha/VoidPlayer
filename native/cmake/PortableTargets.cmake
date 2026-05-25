@@ -51,8 +51,19 @@ if(APPLE)
 endif()
 
 if(APPLE)
+    add_library(void_renderer_portable_driver OBJECT
+        "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"
+        ${VOID_RENDERER_PORTABLE_DRIVER_SOURCES}
+        "${VOID_NATIVE_DIR}/video_renderer/overlay/analysis_overlay_renderer_portable_stub.cpp"
+    )
+    void_apply_native_compile_options(void_renderer_portable_driver)
+    target_link_libraries(void_renderer_portable_driver PRIVATE
+        void_media_ffmpeg
+    )
+
     add_library(void_macos_native_player STATIC
         ${VOID_MACOS_NATIVE_PLAYER_SOURCES}
+        $<TARGET_OBJECTS:void_renderer_portable_driver>
     )
     void_apply_native_compile_options(void_macos_native_player)
     target_include_directories(void_macos_native_player PUBLIC
@@ -203,19 +214,12 @@ if(APPLE)
     )
     add_test(NAME renderer_config_validation_smoke COMMAND renderer_config_validation_smoke)
 
-    add_library(renderer_portable_compile_smoke OBJECT
-        "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"
-        ${VOID_RENDERER_PORTABLE_DRIVER_SOURCES}
-    )
-    void_apply_native_compile_options(renderer_portable_compile_smoke)
-    target_link_libraries(renderer_portable_compile_smoke PRIVATE
-        void_media_ffmpeg
+    add_custom_target(renderer_portable_compile_smoke
+        DEPENDS void_renderer_portable_driver
     )
 
     add_executable(renderer_metal_headless_smoke
         "${VOID_NATIVE_DIR}/tools/renderer_metal_headless_smoke.cpp"
-        $<TARGET_OBJECTS:renderer_portable_compile_smoke>
-        "${VOID_NATIVE_DIR}/video_renderer/overlay/analysis_overlay_renderer_portable_stub.cpp"
     )
     void_apply_native_compile_options(renderer_metal_headless_smoke)
     target_link_libraries(renderer_metal_headless_smoke PRIVATE
@@ -297,6 +301,19 @@ if(APPLE)
         VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
     )
     add_test(NAME macos_native_player_smoke COMMAND macos_native_player_smoke)
+
+    add_executable(macos_native_player_shared_renderer_smoke
+        "${VOID_NATIVE_DIR}/tools/macos_native_player_shared_renderer_smoke.cpp"
+    )
+    void_apply_native_compile_options(macos_native_player_shared_renderer_smoke)
+    target_link_libraries(macos_native_player_shared_renderer_smoke PRIVATE
+        void_macos_native_player
+    )
+    target_compile_definitions(macos_native_player_shared_renderer_smoke PRIVATE
+        VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
+    )
+    add_test(NAME macos_native_player_shared_renderer_smoke
+        COMMAND macos_native_player_shared_renderer_smoke)
 
     add_executable(audio_mixer_smoke
         "${VOID_NATIVE_DIR}/tools/audio_mixer_smoke.cpp"

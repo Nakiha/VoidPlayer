@@ -1,0 +1,223 @@
+#include "native_player_bridge.h"
+#include "tools/test_video_assets.h"
+
+#include <CoreVideo/CoreVideo.h>
+
+#include <atomic>
+#include <chrono>
+#include <cstdlib>
+#include <cstdint>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <thread>
+
+#ifndef VIDEO_TEST_DIR
+#define VIDEO_TEST_DIR ""
+#endif
+
+namespace {
+
+struct PlayerDeleter {
+    void operator()(VPMacOSNativePlayer* player) const {
+        VPMacOSNativePlayerDestroy(player);
+    }
+};
+
+struct MetalBackendDeleter {
+    void operator()(VPMacOSMetalPresentationBackend* backend) const {
+        VPMacOSMetalPresentationBackendDestroy(backend);
+    }
+};
+
+struct PixelBufferHolder {
+    CVPixelBufferRef buffer = nullptr;
+
+    ~PixelBufferHolder() {
+        if (buffer) {
+            CVPixelBufferRelease(buffer);
+        }
+    }
+};
+
+PixelBufferHolder make_bgra_pixel_buffer(int width, int height) {
+    PixelBufferHolder holder;
+    const void* keys[] = {kCVPixelBufferMetalCompatibilityKey};
+    const void* values[] = {kCFBooleanTrue};
+    CFDictionaryRef attrs = CFDictionaryCreate(
+        kCFAllocatorDefault,
+        keys,
+        values,
+        1,
+        &kCFTypeDictionaryKeyCallBacks,
+        &kCFTypeDictionaryValueCallBacks);
+    CVPixelBufferCreate(
+        kCFAllocatorDefault,
+        width,
+        height,
+        kCVPixelFormatType_32BGRA,
+        attrs,
+        &holder.buffer);
+    if (attrs) {
+        CFRelease(attrs);
+    }
+    return holder;
+}
+
+double non_black_ratio_pixel_buffer(CVPixelBufferRef buffer) {
+    if (!buffer ||
+        CVPixelBufferLockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) {
+        return 0.0;
+    }
+    const int width = static_cast<int>(CVPixelBufferGetWidth(buffer));
+    const int height = static_cast<int>(CVPixelBufferGetHeight(buffer));
+    const int stride = static_cast<int>(CVPixelBufferGetBytesPerRow(buffer));
+    const auto* bgra = static_cast<const uint8_t*>(CVPixelBufferGetBaseAddress(buffer));
+    size_t non_black = 0;
+    size_t pixels = 0;
+    if (bgra && width > 0 && height > 0 && stride >= width * 4) {
+        for (int y = 0; y < height; ++y) {
+            const uint8_t* row = bgra + static_cast<size_t>(y) * stride;
+            for (int x = 0; x < width; ++x) {
+                const uint8_t* pixel = row + static_cast<size_t>(x) * 4u;
+                if (pixel[0] > 4 || pixel[1] > 4 || pixel[2] > 4) {
+                    ++non_black;
+                }
+                ++pixels;
+            }
+        }
+    }
+    CVPixelBufferUnlockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
+    return pixels == 0 ? 0.0 : static_cast<double>(non_black) / static_cast<double>(pixels);
+}
+
+void count_frame_available(void* user_data) {
+    if (!user_data) {
+        return;
+    }
+    auto* count = static_cast<std::atomic<int>*>(user_data);
+    count->fetch_add(1, std::memory_order_relaxed);
+}
+
+bool wait_for_presented_frame(VPMacOSNativePlayer* player,
+                              CVPixelBufferRef target,
+                              VPMacOSNativeFrameInfo& info,
+                              double& non_black,
+                              std::chrono::milliseconds timeout) {
+    char error[1024] = {};
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
+                player, &info, error, sizeof(error)) == 0) {
+            non_black = non_black_ratio_pixel_buffer(target);
+            if (non_black > 0.5) {
+                return true;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    std::cerr << "timed out waiting for shared renderer frame";
+    if (error[0] != '\0') {
+        std::cerr << ": " << error;
+    }
+    std::cerr << "\n";
+    return false;
+}
+
+} // namespace
+
+int main() {
+    setenv("VOIDPLAYER_MACOS_SHARED_RENDERER", "1", 1);
+
+    const std::string path = vp_tools::h264_smoke_video_path(VIDEO_TEST_DIR);
+    if (path.empty()) {
+        std::cerr << "missing h264 smoke video\n";
+        return 2;
+    }
+
+    constexpr int target_width = 640;
+    constexpr int target_height = 360;
+    std::unique_ptr<VPMacOSNativePlayer, PlayerDeleter> player(VPMacOSNativePlayerCreate());
+    std::unique_ptr<VPMacOSMetalPresentationBackend, MetalBackendDeleter> backend(
+        VPMacOSMetalPresentationBackendCreate(target_width, target_height));
+    PixelBufferHolder target = make_bgra_pixel_buffer(target_width, target_height);
+    if (!player || !backend || !target.buffer) {
+        std::cerr << "failed to create shared renderer smoke fixtures\n";
+        return 1;
+    }
+
+    std::atomic<int> callbacks{0};
+    VPMacOSNativePlayerSetFrameAvailableCallback(
+        player.get(), count_frame_available, &callbacks);
+    if (VPMacOSNativePlayerSetMetalPresentationTarget(
+            player.get(), backend.get(), target.buffer, target_width, target_height, 1) != 0) {
+        std::cerr << "failed to install shared renderer Metal target\n";
+        return 1;
+    }
+
+    char error[1024] = {};
+    if (VPMacOSNativePlayerOpen(player.get(), path.c_str(), error, sizeof(error)) != 0) {
+        std::cerr << "shared renderer open failed: " << error << "\n";
+        return 1;
+    }
+    if (VPMacOSNativePlayerRendererOwnedPresentationActive(player.get()) == 0 ||
+        VPMacOSNativePlayerWidth(player.get()) <= 0 ||
+        VPMacOSNativePlayerHeight(player.get()) <= 0 ||
+        VPMacOSNativePlayerDurationUs(player.get()) <= 0) {
+        std::cerr << "shared renderer bridge did not expose valid metadata\n";
+        return 1;
+    }
+
+    VPMacOSNativeFrameInfo first = {};
+    double first_non_black = 0.0;
+    if (!wait_for_presented_frame(
+            player.get(), target.buffer, first, first_non_black, std::chrono::seconds(3))) {
+        return 1;
+    }
+    if (callbacks.load(std::memory_order_relaxed) <= 0) {
+        std::cerr << "shared renderer bridge did not publish frame callbacks\n";
+        return 1;
+    }
+
+    VPMacOSNativeLayoutState requested_layout = {};
+    requested_layout.mode = 0;
+    requested_layout.zoom_ratio = 1.25f;
+    requested_layout.order[0] = 0;
+    VPMacOSNativePlayerApplyLayout(player.get(), &requested_layout);
+    VPMacOSNativeLayoutState layout_snapshot = {};
+    if (VPMacOSNativePlayerCopyLayout(player.get(), &layout_snapshot) != 0 ||
+        layout_snapshot.zoom_ratio != 1.25f) {
+        std::cerr << "shared renderer bridge did not retain layout state\n";
+        return 1;
+    }
+
+    VPMacOSNativePlayerPlay(player.get());
+    std::this_thread::sleep_for(std::chrono::milliseconds(220));
+    VPMacOSNativeFrameInfo playing = {};
+    double playing_non_black = 0.0;
+    if (!wait_for_presented_frame(
+            player.get(), target.buffer, playing, playing_non_black, std::chrono::seconds(2)) ||
+        playing.pts_us <= first.pts_us) {
+        std::cerr << "shared renderer bridge did not advance during playback: first="
+                  << first.pts_us << " playing=" << playing.pts_us << "\n";
+        return 1;
+    }
+
+    VPMacOSNativePlayerPause(player.get());
+    VPMacOSNativePlayerSeek(player.get(), 2'000'000);
+    VPMacOSNativeFrameInfo seeked = {};
+    double seeked_non_black = 0.0;
+    if (!wait_for_presented_frame(
+            player.get(), target.buffer, seeked, seeked_non_black, std::chrono::seconds(3)) ||
+        seeked.pts_us < 1'500'000) {
+        std::cerr << "shared renderer bridge seek did not reach requested region: "
+                  << seeked.pts_us << "\n";
+        return 1;
+    }
+
+    std::cout << "macOS shared renderer bridge smoke passed; first="
+              << first.pts_us << " playing=" << playing.pts_us
+              << " seeked=" << seeked.pts_us
+              << " non_black=" << first_non_black << "\n";
+    return 0;
+}

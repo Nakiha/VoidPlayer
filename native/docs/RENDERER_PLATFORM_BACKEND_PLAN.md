@@ -150,6 +150,9 @@ Renderer-owned upload bookkeeping is centralized in the macOS native player wrap
 refresh and the transitional host loop share the same pending/success/failure accounting.
 Manual renderer-owned refresh now falls back to the shared paused-frame snapshot across all active
 tracks instead of peeking only the primary file id.
+The frame-available callback publication rule is now a shared presentation-loop policy: scheduler
+notifications without a renderer-owned target still publish for explicit fallback paths, but an
+installed renderer-owned target must upload successfully before Flutter is notified.
 
 Exit gate: macOS UI smokes pass with `rendererOwnedPresentationActive=true`, and the old tick-driven
 presentation path is no longer the normal route.

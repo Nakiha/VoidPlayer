@@ -2,6 +2,17 @@
 
 namespace vr {
 
+bool should_publish_presentation_frame_callback(
+    const PresentationFrameCallbackInput& input) {
+    if (!input.scheduler_should_notify) {
+        return false;
+    }
+    if (!input.renderer_owned_target_available) {
+        return true;
+    }
+    return input.renderer_owned_upload_succeeded;
+}
+
 void PresentationLoopDriver::reset() {
     scheduler_.reset();
     render_loop_controller_.reset();

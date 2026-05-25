@@ -1276,8 +1276,13 @@ struct VPMacOSNativePlayer {
               present_draw_snapshot_to_target_locked(draw_snapshot);
         }
       }
-      if (presentation_attempt.target_available &&
-          !presentation_attempt.succeeded) {
+      const bool should_publish_callback =
+          vr::should_publish_presentation_frame_callback({
+              tick.scheduler.should_notify,
+              presentation_attempt.target_available,
+              presentation_attempt.succeeded,
+          });
+      if (!should_publish_callback) {
         lock.lock();
         continue;
       }

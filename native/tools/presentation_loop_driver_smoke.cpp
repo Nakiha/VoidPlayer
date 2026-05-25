@@ -29,6 +29,19 @@ vr::TextureFrame make_frame_with_duration(int64_t pts_us, int64_t duration_us) {
 }  // namespace
 
 int main() {
+  if (vr::should_publish_presentation_frame_callback({false, false, false})) {
+    return fail("presentation callback policy published without scheduler notification");
+  }
+  if (!vr::should_publish_presentation_frame_callback({true, false, false})) {
+    return fail("presentation callback policy suppressed the legacy no-target callback");
+  }
+  if (!vr::should_publish_presentation_frame_callback({true, true, true})) {
+    return fail("presentation callback policy suppressed a renderer-owned upload");
+  }
+  if (vr::should_publish_presentation_frame_callback({true, true, false})) {
+    return fail("presentation callback policy published a failed renderer-owned upload");
+  }
+
   int64_t now_us = 0;
   vr::Clock clock([&now_us]() { return now_us; });
   clock.seek(0);

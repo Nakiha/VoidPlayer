@@ -25,6 +25,15 @@ struct PresentationLoopDriverTick {
     std::chrono::microseconds next_sleep{0};
 };
 
+struct PresentationFrameCallbackInput {
+    bool scheduler_should_notify = false;
+    bool renderer_owned_target_available = false;
+    bool renderer_owned_upload_succeeded = false;
+};
+
+bool should_publish_presentation_frame_callback(
+    const PresentationFrameCallbackInput& input);
+
 class PresentationLoopDriver {
 public:
     void reset();

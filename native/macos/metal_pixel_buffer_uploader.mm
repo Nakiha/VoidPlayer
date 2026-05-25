@@ -1,5 +1,7 @@
 #include "native_player_bridge.h"
 
+#include "macos/metal_layout_params.h"
+
 #include <CoreVideo/CoreVideo.h>
 #include <Metal/Metal.h>
 
@@ -15,110 +17,6 @@ namespace {
 constexpr const char* kLayoutBgraKernelSource =
 #include "macos/metal_pixel_buffer_uploader_shaders.inc"
     ;
-
-struct MetalLayoutParams {
-  uint32_t width;
-  uint32_t height;
-  int32_t mode;
-  int32_t track_count;
-  float split_pos;
-  uint32_t frame_present0;
-  uint32_t frame_present1;
-  uint32_t frame_present2;
-  uint32_t frame_present3;
-  int32_t source_width0;
-  int32_t source_width1;
-  int32_t source_width2;
-  int32_t source_width3;
-  int32_t source_height0;
-  int32_t source_height1;
-  int32_t source_height2;
-  int32_t source_height3;
-  int32_t yuv_format0;
-  int32_t yuv_format1;
-  int32_t yuv_format2;
-  int32_t yuv_format3;
-  uint32_t y_offset0;
-  uint32_t y_offset1;
-  uint32_t y_offset2;
-  uint32_t y_offset3;
-  uint32_t uv_offset0;
-  uint32_t uv_offset1;
-  uint32_t uv_offset2;
-  uint32_t uv_offset3;
-  uint32_t v_offset0;
-  uint32_t v_offset1;
-  uint32_t v_offset2;
-  uint32_t v_offset3;
-  uint32_t y_stride0;
-  uint32_t y_stride1;
-  uint32_t y_stride2;
-  uint32_t y_stride3;
-  uint32_t uv_stride0;
-  uint32_t uv_stride1;
-  uint32_t uv_stride2;
-  uint32_t uv_stride3;
-  int32_t coded_width0;
-  int32_t coded_width1;
-  int32_t coded_width2;
-  int32_t coded_width3;
-  int32_t coded_height0;
-  int32_t coded_height1;
-  int32_t coded_height2;
-  int32_t coded_height3;
-  float nv12_uv_scale_x0;
-  float nv12_uv_scale_x1;
-  float nv12_uv_scale_x2;
-  float nv12_uv_scale_x3;
-  float nv12_uv_scale_y0;
-  float nv12_uv_scale_y1;
-  float nv12_uv_scale_y2;
-  float nv12_uv_scale_y3;
-  int32_t color_range0;
-  int32_t color_range1;
-  int32_t color_range2;
-  int32_t color_range3;
-  int32_t color_matrix0;
-  int32_t color_matrix1;
-  int32_t color_matrix2;
-  int32_t color_matrix3;
-  int32_t color_transfer0;
-  int32_t color_transfer1;
-  int32_t color_transfer2;
-  int32_t color_transfer3;
-  int32_t color_primaries0;
-  int32_t color_primaries1;
-  int32_t color_primaries2;
-  int32_t color_primaries3;
-  int32_t order0;
-  int32_t order1;
-  int32_t order2;
-  int32_t order3;
-  float display_offset_x0;
-  float display_offset_x1;
-  float display_offset_x2;
-  float display_offset_x3;
-  float display_offset_y0;
-  float display_offset_y1;
-  float display_offset_y2;
-  float display_offset_y3;
-  float inv_display_size_x0;
-  float inv_display_size_x1;
-  float inv_display_size_x2;
-  float inv_display_size_x3;
-  float inv_display_size_y0;
-  float inv_display_size_y1;
-  float inv_display_size_y2;
-  float inv_display_size_y3;
-  float view_offset_uv_x0;
-  float view_offset_uv_x1;
-  float view_offset_uv_x2;
-  float view_offset_uv_x3;
-  float view_offset_uv_y0;
-  float view_offset_uv_y1;
-  float view_offset_uv_y2;
-  float view_offset_uv_y3;
-};
 
 void write_error(char* error, size_t error_size, const char* message) {
   if (!error || error_size == 0) {
@@ -171,135 +69,6 @@ const char* metal_uploader_status_message(int status) {
   default:
     return "unknown native Metal pixel buffer validation failure";
   }
-}
-
-void write_first_present_frame_info(const VPMacOSNativePresentDecisionInfo& decisionInfo,
-                                    VPMacOSNativeFrameInfo* out) {
-  if (!out) {
-    return;
-  }
-  *out = {};
-  for (int slot = 0; slot < VPMacOSNativeMaxTracks; ++slot) {
-    if (decisionInfo.frames[slot].present) {
-      out->width = decisionInfo.frames[slot].width;
-      out->height = decisionInfo.frames[slot].height;
-      out->pts_us = decisionInfo.frames[slot].pts_us;
-      out->dts_us = decisionInfo.frames[slot].dts_us;
-      out->duration_us = decisionInfo.frames[slot].duration_us;
-      break;
-    }
-  }
-}
-
-void fill_metal_layout_params(MetalLayoutParams& metalParams,
-                              const VPMacOSNativePresentDecisionInfo& decisionInfo,
-                              int32_t width,
-                              int32_t height) {
-  metalParams.width = static_cast<uint32_t>(width);
-  metalParams.height = static_cast<uint32_t>(height);
-  metalParams.mode = decisionInfo.mode;
-  metalParams.track_count = decisionInfo.track_count;
-  metalParams.split_pos = decisionInfo.split_pos;
-  metalParams.frame_present0 =
-      static_cast<uint32_t>(decisionInfo.frames[0].present ? 1u : 0u);
-  metalParams.frame_present1 =
-      static_cast<uint32_t>(decisionInfo.frames[1].present ? 1u : 0u);
-  metalParams.frame_present2 =
-      static_cast<uint32_t>(decisionInfo.frames[2].present ? 1u : 0u);
-  metalParams.frame_present3 =
-      static_cast<uint32_t>(decisionInfo.frames[3].present ? 1u : 0u);
-  metalParams.source_width0 = decisionInfo.source_width[0];
-  metalParams.source_width1 = decisionInfo.source_width[1];
-  metalParams.source_width2 = decisionInfo.source_width[2];
-  metalParams.source_width3 = decisionInfo.source_width[3];
-  metalParams.source_height0 = decisionInfo.source_height[0];
-  metalParams.source_height1 = decisionInfo.source_height[1];
-  metalParams.source_height2 = decisionInfo.source_height[2];
-  metalParams.source_height3 = decisionInfo.source_height[3];
-  metalParams.yuv_format0 = decisionInfo.yuv_format[0];
-  metalParams.yuv_format1 = decisionInfo.yuv_format[1];
-  metalParams.yuv_format2 = decisionInfo.yuv_format[2];
-  metalParams.yuv_format3 = decisionInfo.yuv_format[3];
-  metalParams.y_offset0 = static_cast<uint32_t>(std::max(0, decisionInfo.y_offset[0]));
-  metalParams.y_offset1 = static_cast<uint32_t>(std::max(0, decisionInfo.y_offset[1]));
-  metalParams.y_offset2 = static_cast<uint32_t>(std::max(0, decisionInfo.y_offset[2]));
-  metalParams.y_offset3 = static_cast<uint32_t>(std::max(0, decisionInfo.y_offset[3]));
-  metalParams.uv_offset0 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_offset[0]));
-  metalParams.uv_offset1 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_offset[1]));
-  metalParams.uv_offset2 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_offset[2]));
-  metalParams.uv_offset3 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_offset[3]));
-  metalParams.v_offset0 = static_cast<uint32_t>(std::max(0, decisionInfo.v_offset[0]));
-  metalParams.v_offset1 = static_cast<uint32_t>(std::max(0, decisionInfo.v_offset[1]));
-  metalParams.v_offset2 = static_cast<uint32_t>(std::max(0, decisionInfo.v_offset[2]));
-  metalParams.v_offset3 = static_cast<uint32_t>(std::max(0, decisionInfo.v_offset[3]));
-  metalParams.y_stride0 = static_cast<uint32_t>(std::max(0, decisionInfo.y_stride[0]));
-  metalParams.y_stride1 = static_cast<uint32_t>(std::max(0, decisionInfo.y_stride[1]));
-  metalParams.y_stride2 = static_cast<uint32_t>(std::max(0, decisionInfo.y_stride[2]));
-  metalParams.y_stride3 = static_cast<uint32_t>(std::max(0, decisionInfo.y_stride[3]));
-  metalParams.uv_stride0 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_stride[0]));
-  metalParams.uv_stride1 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_stride[1]));
-  metalParams.uv_stride2 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_stride[2]));
-  metalParams.uv_stride3 = static_cast<uint32_t>(std::max(0, decisionInfo.uv_stride[3]));
-  metalParams.coded_width0 = decisionInfo.coded_width[0];
-  metalParams.coded_width1 = decisionInfo.coded_width[1];
-  metalParams.coded_width2 = decisionInfo.coded_width[2];
-  metalParams.coded_width3 = decisionInfo.coded_width[3];
-  metalParams.coded_height0 = decisionInfo.coded_height[0];
-  metalParams.coded_height1 = decisionInfo.coded_height[1];
-  metalParams.coded_height2 = decisionInfo.coded_height[2];
-  metalParams.coded_height3 = decisionInfo.coded_height[3];
-  metalParams.nv12_uv_scale_x0 = decisionInfo.nv12_uv_scale_x[0];
-  metalParams.nv12_uv_scale_x1 = decisionInfo.nv12_uv_scale_x[1];
-  metalParams.nv12_uv_scale_x2 = decisionInfo.nv12_uv_scale_x[2];
-  metalParams.nv12_uv_scale_x3 = decisionInfo.nv12_uv_scale_x[3];
-  metalParams.nv12_uv_scale_y0 = decisionInfo.nv12_uv_scale_y[0];
-  metalParams.nv12_uv_scale_y1 = decisionInfo.nv12_uv_scale_y[1];
-  metalParams.nv12_uv_scale_y2 = decisionInfo.nv12_uv_scale_y[2];
-  metalParams.nv12_uv_scale_y3 = decisionInfo.nv12_uv_scale_y[3];
-  metalParams.color_range0 = decisionInfo.color_range[0];
-  metalParams.color_range1 = decisionInfo.color_range[1];
-  metalParams.color_range2 = decisionInfo.color_range[2];
-  metalParams.color_range3 = decisionInfo.color_range[3];
-  metalParams.color_matrix0 = decisionInfo.color_matrix[0];
-  metalParams.color_matrix1 = decisionInfo.color_matrix[1];
-  metalParams.color_matrix2 = decisionInfo.color_matrix[2];
-  metalParams.color_matrix3 = decisionInfo.color_matrix[3];
-  metalParams.color_transfer0 = decisionInfo.color_transfer[0];
-  metalParams.color_transfer1 = decisionInfo.color_transfer[1];
-  metalParams.color_transfer2 = decisionInfo.color_transfer[2];
-  metalParams.color_transfer3 = decisionInfo.color_transfer[3];
-  metalParams.color_primaries0 = decisionInfo.color_primaries[0];
-  metalParams.color_primaries1 = decisionInfo.color_primaries[1];
-  metalParams.color_primaries2 = decisionInfo.color_primaries[2];
-  metalParams.color_primaries3 = decisionInfo.color_primaries[3];
-  metalParams.order0 = decisionInfo.order[0];
-  metalParams.order1 = decisionInfo.order[1];
-  metalParams.order2 = decisionInfo.order[2];
-  metalParams.order3 = decisionInfo.order[3];
-  metalParams.display_offset_x0 = decisionInfo.display_offset_x[0];
-  metalParams.display_offset_x1 = decisionInfo.display_offset_x[1];
-  metalParams.display_offset_x2 = decisionInfo.display_offset_x[2];
-  metalParams.display_offset_x3 = decisionInfo.display_offset_x[3];
-  metalParams.display_offset_y0 = decisionInfo.display_offset_y[0];
-  metalParams.display_offset_y1 = decisionInfo.display_offset_y[1];
-  metalParams.display_offset_y2 = decisionInfo.display_offset_y[2];
-  metalParams.display_offset_y3 = decisionInfo.display_offset_y[3];
-  metalParams.inv_display_size_x0 = decisionInfo.inv_display_size_x[0];
-  metalParams.inv_display_size_x1 = decisionInfo.inv_display_size_x[1];
-  metalParams.inv_display_size_x2 = decisionInfo.inv_display_size_x[2];
-  metalParams.inv_display_size_x3 = decisionInfo.inv_display_size_x[3];
-  metalParams.inv_display_size_y0 = decisionInfo.inv_display_size_y[0];
-  metalParams.inv_display_size_y1 = decisionInfo.inv_display_size_y[1];
-  metalParams.inv_display_size_y2 = decisionInfo.inv_display_size_y[2];
-  metalParams.inv_display_size_y3 = decisionInfo.inv_display_size_y[3];
-  metalParams.view_offset_uv_x0 = decisionInfo.view_offset_uv_x[0];
-  metalParams.view_offset_uv_x1 = decisionInfo.view_offset_uv_x[1];
-  metalParams.view_offset_uv_x2 = decisionInfo.view_offset_uv_x[2];
-  metalParams.view_offset_uv_x3 = decisionInfo.view_offset_uv_x[3];
-  metalParams.view_offset_uv_y0 = decisionInfo.view_offset_uv_y[0];
-  metalParams.view_offset_uv_y1 = decisionInfo.view_offset_uv_y[1];
-  metalParams.view_offset_uv_y2 = decisionInfo.view_offset_uv_y[2];
-  metalParams.view_offset_uv_y3 = decisionInfo.view_offset_uv_y[3];
 }
 
 }  // namespace
@@ -503,10 +272,10 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
 }
 
 - (BOOL)ensureLayoutParamsBuffer {
-  if (_layoutParamsBuffer != nil && [_layoutParamsBuffer length] >= sizeof(MetalLayoutParams)) {
+  if (_layoutParamsBuffer != nil && [_layoutParamsBuffer length] >= sizeof(vp_macos::MetalLayoutParams)) {
     return YES;
   }
-  _layoutParamsBuffer = [_device newBufferWithLength:sizeof(MetalLayoutParams)
+  _layoutParamsBuffer = [_device newBufferWithLength:sizeof(vp_macos::MetalLayoutParams)
                                              options:MTLResourceStorageModeShared];
   return _layoutParamsBuffer != nil;
 }
@@ -576,10 +345,10 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   if (package->storage == VPMacOSNativePresentPackageStorageYUV) {
     _directYuvUploadCount.fetch_add(1, std::memory_order_relaxed);
   }
-  write_first_present_frame_info(decisionInfo, out);
+  vp_macos::write_first_present_frame_info(decisionInfo, out);
 
-  auto* metalParams = static_cast<MetalLayoutParams*>([_layoutParamsBuffer contents]);
-  fill_metal_layout_params(*metalParams, decisionInfo, width, height);
+  auto* metalParams = static_cast<vp_macos::MetalLayoutParams*>([_layoutParamsBuffer contents]);
+  vp_macos::fill_metal_layout_params(*metalParams, decisionInfo, width, height);
 
   CVMetalTextureRef metalTextureRef = nullptr;
   const CVReturn textureStatus = CVMetalTextureCacheCreateTextureFromImage(
@@ -664,9 +433,9 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
         error, errorSize, "failed to allocate native Metal layout buffers");
   }
 
-  auto* metalParams = static_cast<MetalLayoutParams*>([_layoutParamsBuffer contents]);
-  fill_metal_layout_params(*metalParams, frame->decision, width, height);
-  write_first_present_frame_info(frame->decision, out);
+  auto* metalParams = static_cast<vp_macos::MetalLayoutParams*>([_layoutParamsBuffer contents]);
+  vp_macos::fill_metal_layout_params(*metalParams, frame->decision, width, height);
+  vp_macos::write_first_present_frame_info(frame->decision, out);
 
   CVPixelBufferRef sourcePixelBuffer =
       static_cast<CVPixelBufferRef>(frame->pixel_buffer);

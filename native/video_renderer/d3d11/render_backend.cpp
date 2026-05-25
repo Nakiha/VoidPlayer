@@ -1,8 +1,12 @@
 #include "video_renderer/d3d11/render_backend.h"
 
 #include "embedded_shaders.h"
+#include "video_renderer/overlay/analysis_overlay_renderer.h"
+#include "video_renderer/render/presentation_snapshot.h"
 #include "video_renderer/render/shader_constants.h"
 
+#include <array>
+#include <chrono>
 #include <dxgi.h>
 #include <spdlog/spdlog.h>
 #include <vector>
@@ -212,6 +216,215 @@ bool D3D11RenderBackend::initialize_render_resources() {
                       static_cast<unsigned long>(hr));
         return false;
     }
+
+    return true;
+}
+
+bool D3D11RenderBackend::draw_frame(const RendererDrawSnapshot& snapshot,
+                                    const D3D11RenderBackendDrawHooks& hooks) {
+    if (!resources_ || !device_) {
+        return false;
+    }
+    const auto& decision = snapshot.decision;
+    auto& resources = *resources_;
+    auto* ctx = device_->context();
+
+    if (!resources.cached_rtv) {
+        if (!headless_) {
+            ID3D11Texture2D* back_buffer = nullptr;
+            HRESULT hr = device_->swap_chain()->GetBuffer(
+                0,
+                __uuidof(ID3D11Texture2D),
+                reinterpret_cast<void**>(&back_buffer));
+            if (FAILED(hr)) {
+                spdlog::error("[Renderer] Failed to get back buffer: HRESULT {:#x}",
+                              static_cast<unsigned long>(hr));
+                return false;
+            }
+            hr = device_->device()->CreateRenderTargetView(
+                back_buffer, nullptr, &resources.cached_rtv);
+            back_buffer->Release();
+            if (FAILED(hr)) {
+                spdlog::error("[Renderer] Failed to create RTV: HRESULT {:#x}",
+                              static_cast<unsigned long>(hr));
+                return false;
+            }
+        }
+    }
+
+    if (!resources.cached_rtv) {
+        return false;
+    }
+
+    ctx->ClearRenderTargetView(resources.cached_rtv.Get(), snapshot.background_color);
+    ctx->OMSetRenderTargets(1, resources.cached_rtv.GetAddressOf(), nullptr);
+
+    D3D11_VIEWPORT vp = {};
+    vp.Width = static_cast<float>(snapshot.target_width);
+    vp.Height = static_cast<float>(snapshot.target_height);
+    vp.MinDepth = 0.0f;
+    vp.MaxDepth = 1.0f;
+    ctx->RSSetViewports(1, &vp);
+
+    UINT stride = sizeof(float) * 4;
+    UINT offset = 0;
+    ID3D11Buffer* vb = resources.vertex_buffer.Get();
+    ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    if (resources.compiled_shader.layout) {
+        ctx->IASetInputLayout(resources.compiled_shader.layout.Get());
+    }
+
+    ctx->VSSetShader(resources.compiled_shader.vs.Get(), nullptr, 0);
+    ctx->PSSetShader(resources.compiled_shader.ps.Get(), nullptr, 0);
+
+    ID3D11ShaderResourceView* srvs[4] = {};
+    ID3D11ShaderResourceView* nv12_y_srvs[4] = {};
+    ID3D11ShaderResourceView* nv12_uv_srvs[4] = {};
+    ID3D11ShaderResourceView* planar_u_srvs[4] = {};
+    ID3D11ShaderResourceView* planar_v_srvs[4] = {};
+    std::array<D3D11PreparedFrame, kMaxTracks> prepared_frames;
+    const D3D11FramePresenter::GpuIdleWait wait_gpu_idle =
+        hooks.wait_gpu_idle
+            ? hooks.wait_gpu_idle
+            : D3D11FramePresenter::GpuIdleWait([](const char*) {});
+    if (frame_presenter_) {
+        for (size_t i = 0; i < kMaxTracks; ++i) {
+            if (!decision.frames[i].has_value() ||
+                !decision.frames[i]->texture_handle ||
+                !snapshot.tracks[i].active ||
+                decision.file_ids[i] != snapshot.tracks[i].file_id ||
+                decision.track_generations[i] != snapshot.tracks[i].generation) {
+                continue;
+            }
+
+            const auto prepare_start = std::chrono::steady_clock::now();
+            const bool prepared_ok = frame_presenter_->prepare_frame(
+                i,
+                decision.frames[i].value(),
+                snapshot.target_width,
+                snapshot.target_height,
+                wait_gpu_idle,
+                prepared_frames[i]);
+            if (hooks.record_frame_copy_us) {
+                hooks.record_frame_copy_us(static_cast<uint64_t>(
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::steady_clock::now() - prepare_start).count()));
+            }
+            if (!prepared_ok) {
+                continue;
+            }
+
+            srvs[i] = prepared_frames[i].rgba_srv;
+            nv12_y_srvs[i] = prepared_frames[i].nv12_y_srv;
+            nv12_uv_srvs[i] = prepared_frames[i].nv12_uv_srv;
+            planar_u_srvs[i] = prepared_frames[i].planar_u_srv;
+            planar_v_srvs[i] = prepared_frames[i].planar_v_srv;
+        }
+    }
+
+    ShaderConstants cb = {};
+    bool constants_ready = false;
+
+    if (resources.compiled_shader.constant_buffer) {
+        populate_layout_shader_constants(
+            cb,
+            snapshot.layout,
+            snapshot.track_geometry,
+            snapshot.target_width,
+            snapshot.target_height);
+        cb.nv12_mask = 0;
+        cb.planar_yuv_mask = 0;
+        for (int i = 0; i < 4; ++i) {
+            cb.background_color[i] = snapshot.background_color[i];
+        }
+
+        for (size_t i = 0; i < kMaxTracks; ++i) {
+            if (!snapshot.tracks[i].active) {
+                cb.nv12_uv_scale_x[i] = 1.0f;
+                cb.nv12_uv_scale_y[i] = 1.0f;
+                cb.color_range[i] = VIDEO_COLOR_RANGE_LIMITED;
+                cb.color_matrix[i] = VIDEO_COLOR_MATRIX_BT709;
+                cb.color_transfer[i] = VIDEO_COLOR_TRANSFER_SDR;
+                cb.color_primaries[i] = VIDEO_COLOR_PRIMARIES_BT709;
+                continue;
+            }
+            const bool frame_matches_track =
+                decision.file_ids[i] == snapshot.tracks[i].file_id &&
+                decision.track_generations[i] == snapshot.tracks[i].generation;
+            const VideoColorInfo color =
+                decision.frames[i].has_value() && frame_matches_track
+                    ? decision.frames[i]->color
+                    : VideoColorInfo{};
+            cb.color_range[i] = color.range != VIDEO_COLOR_RANGE_UNKNOWN
+                ? color.range
+                : VIDEO_COLOR_RANGE_LIMITED;
+            cb.color_matrix[i] = color.matrix != VIDEO_COLOR_MATRIX_UNKNOWN
+                ? color.matrix
+                : default_presentation_color_matrix_for_size(
+                    snapshot.tracks[i].video_width,
+                    snapshot.tracks[i].video_height);
+            cb.color_transfer[i] = color.transfer != VIDEO_COLOR_TRANSFER_UNKNOWN
+                ? color.transfer
+                : VIDEO_COLOR_TRANSFER_SDR;
+            cb.color_primaries[i] = color.primaries != VIDEO_COLOR_PRIMARIES_UNKNOWN
+                ? color.primaries
+                : default_presentation_color_primaries_for_matrix(cb.color_matrix[i]);
+            if (decision.frames[i].has_value() &&
+                frame_matches_track &&
+                decision.frames[i]->cpu_planar_yuv_storage()) {
+                cb.planar_yuv_mask |= (1 << static_cast<int>(i));
+                cb.nv12_uv_scale_x[i] = 1.0f;
+                cb.nv12_uv_scale_y[i] = 1.0f;
+            } else if (decision.frames[i].has_value() &&
+                       frame_matches_track &&
+                       decision.frames[i]->is_nv12) {
+                cb.nv12_mask |= (1 << static_cast<int>(i));
+                cb.nv12_uv_scale_x[i] = prepared_frames[i].nv12_uv_scale_x;
+                cb.nv12_uv_scale_y[i] = prepared_frames[i].nv12_uv_scale_y;
+            } else {
+                cb.nv12_uv_scale_x[i] = prepared_frames[i].nv12_uv_scale_x;
+                cb.nv12_uv_scale_y[i] = prepared_frames[i].nv12_uv_scale_y;
+            }
+        }
+        ctx->UpdateSubresource(
+            resources.compiled_shader.constant_buffer.Get(), 0, nullptr, &cb, 0, 0);
+        ctx->VSSetConstantBuffers(
+            0, 1, resources.compiled_shader.constant_buffer.GetAddressOf());
+        ctx->PSSetConstantBuffers(
+            0, 1, resources.compiled_shader.constant_buffer.GetAddressOf());
+        constants_ready = true;
+    }
+
+    if (resources.sampler_state) {
+        ID3D11SamplerState* sampler = resources.sampler_state.Get();
+        ctx->PSSetSamplers(0, 1, &sampler);
+    }
+
+    ctx->PSSetShaderResources(0, 4, srvs);
+    ctx->PSSetShaderResources(4, 4, nv12_y_srvs);
+    ctx->PSSetShaderResources(8, 4, nv12_uv_srvs);
+    ctx->PSSetShaderResources(12, 4, planar_u_srvs);
+    ctx->PSSetShaderResources(16, 4, planar_v_srvs);
+
+    ctx->Draw(4, 0);
+
+    if (constants_ready && hooks.analysis_overlay_renderer) {
+        hooks.analysis_overlay_renderer->draw(
+            decision,
+            snapshot.tracks,
+            *device_,
+            resources,
+            snapshot.target_width,
+            snapshot.target_height);
+    }
+
+    ID3D11ShaderResourceView* null_srvs[4] = {};
+    ctx->PSSetShaderResources(0, 4, null_srvs);
+    ctx->PSSetShaderResources(4, 4, null_srvs);
+    ctx->PSSetShaderResources(8, 4, null_srvs);
+    ctx->PSSetShaderResources(12, 4, null_srvs);
+    ctx->PSSetShaderResources(16, 4, null_srvs);
 
     return true;
 }

@@ -90,6 +90,12 @@ behavior.
   timing.
 - [ ] Preserve existing Windows FFI, runner, and UI automation behavior.
 
+Progress: the first draw seam is in place. `Renderer` now builds the immutable
+`RendererDrawSnapshot` and delegates D3D11 frame drawing to `D3D11RenderBackend::draw_frame`, while
+retaining ownership of scheduling, playback state, track lifecycle, GPU wait accounting, and overlay
+hooks. This is intentionally behavior-preserving groundwork for a future Metal backend to consume
+the same draw snapshot contract.
+
 Exit gate: Windows native tests and representative UI smokes pass with no observable behavior change.
 
 ### P2: Plug macOS Into The Shared Renderer Scheduler

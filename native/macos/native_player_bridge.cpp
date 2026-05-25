@@ -4,7 +4,6 @@
 #include "video_renderer/capture/bgra_capture_metrics.h"
 #include "video_renderer/decode/hw/hw_decode_provider.h"
 #include "video_renderer/layout/layout_geometry.h"
-#include "video_renderer/render/presentation_package.h"
 #include "video_renderer/render/shader_constants.h"
 #include "video_renderer/renderer.h"
 
@@ -917,53 +916,6 @@ int VPMacOSNativeHardwareDecodeAvailable(void) {
 
 const char* VPMacOSNativeHardwareDecodeProviderName(void) {
   return VPMacOSNativeHardwareDecodeAvailable() != 0 ? "VideoToolbox" : "none";
-}
-
-int VPMacOSNativePlayerCopyPresentationBGRAInto(
-    VPMacOSNativePlayer*,
-    uint8_t*,
-    size_t,
-    int32_t,
-    int32_t,
-    int32_t,
-    VPMacOSNativeFrameInfo* out,
-    char* error,
-    size_t error_size) {
-  if (out) {
-    *out = {};
-  }
-  write_error(error,
-              error_size,
-              "direct macOS BGRA copy fallback was removed; use renderer-owned Metal presentation");
-  return -1;
-}
-
-size_t VPMacOSNativePresentFramePackageMaxBytes(int32_t width,
-                                                int32_t height,
-                                                int32_t max_track_slots) {
-  const int32_t track_slots =
-      std::clamp(max_track_slots, static_cast<int32_t>(1),
-                 static_cast<int32_t>(VPMacOSNativeMaxTracks));
-  return vr::describe_presentation_package_layout(width, height, track_slots).max_bytes;
-}
-
-int VPMacOSNativePlayerCopyPresentFramePackage(
-    VPMacOSNativePlayer*,
-    uint8_t*,
-    size_t,
-    int32_t,
-    int32_t,
-    int32_t,
-    VPMacOSNativePresentFramePackageInfo* out,
-    char* error,
-    size_t error_size) {
-  if (out) {
-    *out = {};
-  }
-  write_error(error,
-              error_size,
-              "macOS present-frame package fallback was removed; use renderer-owned Metal presentation");
-  return -1;
 }
 
 int VPMacOSMeasureBGRA(const uint8_t* bgra,

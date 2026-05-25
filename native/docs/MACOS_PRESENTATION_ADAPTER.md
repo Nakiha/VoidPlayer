@@ -22,9 +22,8 @@ the Metal layout upload:
 
 The Swift runner only owns `CVPixelBuffer` lifecycle, texture registration,
 diagnostic counters, and Flutter frame notifications. It asks native code to
-present the current renderer snapshot through the installed Metal target, or
-into a locked pixel buffer when the direct-copy fallback is enabled, and receives frame timing
-metadata. The runner creates Metal-compatible, IOSurface-backed pixel buffers,
+present the current renderer snapshot through the installed Metal target and
+receives frame timing metadata. The runner creates Metal-compatible, IOSurface-backed pixel buffers,
 but native owns the Metal device, command queue, `CVMetalTextureCache`
 validation and shared `MTLBuffer` upload. The same surface is used for explicit
 seek/step refresh and playback callbacks. `presentationUploadMode` reports the
@@ -68,14 +67,13 @@ resize offset preservation. `macos_metal_uploader_smoke` also opens the bundled
 H.264 sample and verifies that changing native zoom layout changes the Metal
 layout-uploaded `CVPixelBuffer` hash.
 macOS UI smoke also asserts `presentationAdapter=cvpixelbuffer-bgra-copy`,
-`presentationAdapterKind=software-fallback`,
-`rendererOwnedPresentationActive=false`,
-`presentationUploadMode=metal-cvpixelbuffer-present-package`, `metalTextureValid=true`,
-seek refreshes and playback advance `pixelBufferMetalUploadCount`, the 4K HEVC
+`presentationAdapterKind=renderer-owned-metal`,
+`rendererOwnedPresentationActive=true`, `metalTextureValid=true`,
+seek refreshes and playback advance `pixelBufferMetalUploadCount`, the 4K H.264
 canary advances `pixelBufferMetalCVPixelBufferUploadCount`,
 `hardwareDecodeProvider=VideoToolbox`,
 `hardwareDecodeActive=true`, `hardwareDecodeDownloadsToCpu=false`,
-`decodeMode=videotoolbox-renderer-owned`, and `softwareFallbackActive=false`
+`decodeMode=shared-renderer-videotoolbox`, and `softwareFallbackActive=false`
 for the H.264 fixture. Unsupported codecs or initialization failures must keep
 the fallback visible by flipping the decode-mode diagnostics instead of silently
 changing playback state. Metal surface validation failures must be visible

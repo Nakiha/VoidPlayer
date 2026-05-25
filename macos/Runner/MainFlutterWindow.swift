@@ -40,7 +40,8 @@ private enum MacOSNativePlayerError: Error, CustomStringConvertible {
       return message == "no presentable frame is ready" ||
         message == "no decoded frame is ready" ||
         message == "not all present decision frames are ready" ||
-        message == "timed out waiting for a decoded frame"
+        message == "timed out waiting for a decoded frame" ||
+        message == "shared macOS renderer has not presented a frame yet"
     case .invalidPayload:
       return false
     case .transientFrameUnavailable:
@@ -419,57 +420,6 @@ private final class MacOSNativePlayerSession {
     ]
   }
 
-  func copyPresentationIntoBGRA(
-    _ dst: UnsafeMutablePointer<UInt8>,
-    dstSize: Int,
-    width: Int,
-    height: Int,
-    strideBytes: Int,
-    waitTimeoutMs: Int = 0
-  ) throws -> MacOSNativeFrameInfo {
-    let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
-    var lastError = ""
-
-    repeat {
-      var frameInfo = VPMacOSNativeFrameInfo()
-      var error = [CChar](repeating: 0, count: 1024)
-      let ret = VPMacOSNativePlayerCopyPresentationBGRAInto(
-        handle,
-        dst,
-        dstSize,
-        Int32(width),
-        Int32(height),
-        Int32(strideBytes),
-        &frameInfo,
-        &error,
-        error.count
-      )
-      if ret == 0 {
-        guard frameInfo.width > 0, frameInfo.height > 0 else {
-          throw MacOSNativePlayerError.invalidPayload
-        }
-        return MacOSNativeFrameInfo(
-          width: Int(frameInfo.width),
-          height: Int(frameInfo.height),
-          durationUs: Int(frameInfo.duration_us),
-          ptsUs: Int(frameInfo.pts_us),
-          dtsUs: Int(frameInfo.dts_us)
-        )
-      }
-      let message = String(cString: error)
-      lastError = message.isEmpty
-        ? "copyPresentationIntoBGRA failed with code \(ret)"
-        : message
-      if Date() < deadline {
-        Thread.sleep(forTimeInterval: 0.01)
-      }
-    } while Date() < deadline
-
-    throw MacOSNativePlayerError.failed(
-      lastError.isEmpty ? "timed out waiting for a presentable frame" : lastError
-    )
-  }
-
 }
 
 private func macOSNativeFrameAvailable(_ userData: UnsafeMutableRawPointer?) {
@@ -530,11 +480,8 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private var nativeFrameCallbackCount = 0
   private var nativeFrameCopyCount = 0
   private var nativeFrameRendererOwnedPresentCount = 0
-  private var nativeFrameSwiftCopyCount = 0
   private var nativeFrameCopyMissCount = 0
   private var nativeFrameCopyErrorCount = 0
-  private var nativeFrameCopyCoalescedCount = 0
-  private var nativeFrameCopyInFlight = false
   private var nativePresentationTargetInstalled = false
   private var nativeFrameCopyFirstHostNs: UInt64?
   private var nativeFrameCopyLastHostNs: UInt64?
@@ -743,12 +690,10 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "nativeLayoutPixelSizeMode": nativeLayoutSnapshot?["pixelSizeMode"] ?? -1,
         "pixelBufferRebuildCount": textureStats?.rebuildCount ?? 0,
         "pixelBufferReuseCount": textureStats?.reuseCount ?? 0,
-        "pixelBufferDirectCopyCount": textureStats?.directCopyCount ?? 0,
         "pixelBufferMetalUploadCount": textureStats?.metalUploadCount ?? 0,
         "pixelBufferMetalYuvUploadCount": textureStats?.metalYuvUploadCount ?? 0,
         "pixelBufferMetalCVPixelBufferUploadCount": textureStats?.metalCVPixelBufferUploadCount ?? 0,
         "pixelBufferMetalUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
-        "pixelBufferMetalUploadEnabled": textureStats?.metalUploadEnabled ?? false,
         "presentationUploadMode": textureStats?.presentationUploadMode ?? "unavailable",
         "presentationPackageUploadCount": textureStats?.presentPackageUploadCount ?? 0,
         "presentationPackageCopyUs": textureStats?.presentPackageCopyUs ?? 0,
@@ -766,13 +711,10 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "nativeFramePresentationElapsedMs": nativeFrameCopyElapsedMs(),
         "nativeFramePresentationFps": nativeFrameCopyFps(),
         "nativeFramePresentationFpsX1000": Int(nativeFrameCopyFps() * 1000.0),
-        "nativeFrameFallbackCopyCount": nativeFrameSwiftCopyCount,
         "nativeFrameCopyCount": nativeFrameCopyCount,
         "nativeFrameRendererOwnedPresentCount": nativeFrameRendererOwnedPresentCount,
-        "nativeFrameSwiftCopyCount": nativeFrameSwiftCopyCount,
         "nativeFrameCopyMissCount": nativeFrameCopyMissCount,
         "nativeFrameCopyErrorCount": nativeFrameCopyErrorCount,
-        "nativeFrameCopyCoalescedCount": nativeFrameCopyCoalescedCount,
         "nativeEventListenCount": nativeEventListenCount,
         "nativeEventEmitCount": nativeEventEmitCount,
         "nativeEventDropNoSinkCount": nativeEventDropNoSinkCount,
@@ -836,8 +778,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     if firstPath.hasPrefix("macos-synthetic://") {
       nextTexture = MacOSFlutterTextureBridge(
         width: requestedWidth,
-        height: requestedHeight,
-        metalUploadEnabled: true
+        height: requestedHeight
       )
       trackWidth = requestedWidth
       trackHeight = requestedHeight
@@ -856,8 +797,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         try session.open(path: firstPath)
         nextTexture = MacOSFlutterTextureBridge(
           nativeWidth: requestedWidth,
-          nativeHeight: requestedHeight,
-          metalUploadEnabled: true
+          nativeHeight: requestedHeight
         )
         let firstFrame = try nextTexture.updateFromNativePlayer(
           session,
@@ -1290,17 +1230,14 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     nativeFrameCallbackCount = 0
     nativeFrameCopyCount = 0
     nativeFrameRendererOwnedPresentCount = 0
-    nativeFrameSwiftCopyCount = 0
     nativeFrameCopyMissCount = 0
     nativeFrameCopyErrorCount = 0
-    nativeFrameCopyCoalescedCount = 0
-    nativeFrameCopyInFlight = false
     nativeFrameCopyFirstHostNs = nil
     nativeFrameCopyLastHostNs = nil
     resetPresentedPtsTrace()
   }
 
-  private func recordNativeFramePresentation(rendererOwned: Bool, swiftCopy: Bool) {
+  private func recordNativeFramePresentation(rendererOwned: Bool) {
     let now = DispatchTime.now().uptimeNanoseconds
     if nativeFrameCopyFirstHostNs == nil {
       nativeFrameCopyFirstHostNs = now
@@ -1309,9 +1246,6 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     nativeFrameCopyCount += 1
     if rendererOwned {
       nativeFrameRendererOwnedPresentCount += 1
-    }
-    if swiftCopy {
-      nativeFrameSwiftCopyCount += 1
     }
   }
 
@@ -1475,7 +1409,6 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
 
   private func stopNativeFramePump() {
     playbackGeneration += 1
-    nativeFrameCopyInFlight = false
     nativePlayer?.clearMetalPresentationTarget()
     nativePresentationTargetInstalled = false
     if nativeFrameCallbackRegistered {
@@ -1493,7 +1426,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         return
       }
       if self.nativePlayer?.lastRendererOwnedPresentationSucceeded() == true {
-        self.recordNativeFramePresentation(rendererOwned: true, swiftCopy: false)
+        self.recordNativeFramePresentation(rendererOwned: true)
         if let frameInfo = self.nativePlayer?.lastRendererOwnedFrameInfo() {
           self.publishFrameInfo(frameInfo)
         }
@@ -1657,7 +1590,6 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
   private(set) var width: Int
   private(set) var height: Int
   private let isSyntheticSource: Bool
-  private let metalUploadEnabled: Bool
   private var nativeMetalPresentationBackend: OpaquePointer?
   private let hashPrefix: String
   private var pixelBuffer: CVPixelBuffer?
@@ -1665,7 +1597,6 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
   private var pixelBufferRetiredBuffer: CVPixelBuffer?
   private var pixelBufferRebuildCount = 0
   private var pixelBufferReuseCount = 0
-  private var pixelBufferDirectCopyCount = 0
   private var pixelBufferMetalUploadCount = 0
   private var pixelBufferMetalUploadFailureCount = 0
   private var metalTextureValid = false
@@ -1673,22 +1604,20 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
   private var metalTextureFailureCount = 0
   private var metalTextureLastError = ""
 
-  init(width: Int, height: Int, metalUploadEnabled: Bool) {
+  init(width: Int, height: Int) {
     self.width = width
     self.height = height
     self.isSyntheticSource = true
-    self.metalUploadEnabled = metalUploadEnabled
     self.hashPrefix = "macos-synthetic"
     super.init()
     createNativeMetalPresentationBackend()
     rebuildPixelBuffer()
   }
 
-  init(nativeWidth: Int, nativeHeight: Int, metalUploadEnabled: Bool) {
+  init(nativeWidth: Int, nativeHeight: Int) {
     self.width = nativeWidth
     self.height = nativeHeight
     self.isSyntheticSource = false
-    self.metalUploadEnabled = metalUploadEnabled
     self.hashPrefix = "macos-native-frame"
     super.init()
     createNativeMetalPresentationBackend()
@@ -1783,12 +1712,10 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
   func diagnostics() -> (
     rebuildCount: Int,
     reuseCount: Int,
-    directCopyCount: Int,
     metalUploadCount: Int,
     metalYuvUploadCount: Int,
     metalCVPixelBufferUploadCount: Int,
     metalUploadFailureCount: Int,
-    metalUploadEnabled: Bool,
     presentationUploadMode: String,
     presentPackageUploadCount: Int,
     presentPackageCopyUs: Int,
@@ -1808,7 +1735,6 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
     return (
       rebuildCount: pixelBufferRebuildCount,
       reuseCount: pixelBufferReuseCount,
-      directCopyCount: pixelBufferDirectCopyCount,
       metalUploadCount: max(
         pixelBufferMetalUploadCount,
         nativeMetalPresentPackageUploadCountLocked()
@@ -1816,7 +1742,6 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
       metalYuvUploadCount: nativeMetalUploaderDirectYuvUploadCountLocked(),
       metalCVPixelBufferUploadCount: nativeMetalUploaderCVPixelBufferUploadCountLocked(),
       metalUploadFailureCount: pixelBufferMetalUploadFailureCount,
-      metalUploadEnabled: metalUploadEnabled,
       presentationUploadMode: presentationUploadModeLocked(),
       presentPackageUploadCount: nativeMetalPresentPackageUploadCountLocked(),
       presentPackageCopyUs: nativeMetalLastPresentPackageCopyUsLocked(),
@@ -1840,7 +1765,6 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
     defer { lock.unlock() }
 
     guard !isSyntheticSource,
-          metalUploadEnabled,
           let nativeMetalPresentationBackend,
           let pixelBuffer,
           nativeMetalUploaderAvailableLocked(),
@@ -2020,7 +1944,7 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
   }
 
   private func presentationUploadModeLocked() -> String {
-    if metalUploadEnabled, metalTextureValid, nativeMetalUploaderAvailableLocked() {
+    if metalTextureValid, nativeMetalUploaderAvailableLocked() {
       switch nativeMetalLastPresentPackageStorageLocked() {
       case "cvpixelbuffer":
         return "metal-cvpixelbuffer-present-package"
@@ -2031,9 +1955,6 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
       default:
         return "metal-presentation-target-ready"
       }
-    }
-    if pixelBuffer != nil, !metalUploadEnabled {
-      return "cvpixelbuffer-direct-copy"
     }
     if pixelBuffer != nil {
       return "metal-presentation-target-unavailable"
@@ -2047,9 +1968,6 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
     maxTrackSlots: Int,
     waitTimeoutMs: Int
   ) throws -> MacOSNativeFrameInfo? {
-    guard metalUploadEnabled else {
-      return nil
-    }
     guard let nativeMetalPresentationBackend,
           VPMacOSMetalPresentationBackendIsAvailable(nativeMetalPresentationBackend) != 0 else {
       throw MacOSNativePlayerError.failed("renderer-owned Metal presentation backend is unavailable")

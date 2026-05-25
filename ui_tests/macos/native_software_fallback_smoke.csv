@@ -11,7 +11,7 @@
 1.54, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, false
 1.56, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, false
 1.58, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, true
-1.6, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, software-fallback
+1.6, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-software
 1.7, ASSERT_TRACK_METADATA, 0, macos-native-player, decode_thread_software
 1.8, CAPTURE_VIEWPORT, mpeg2_software_fallback_first_frame
 1.9, ASSERT_CAPTURE_NOT_BLACK, mpeg2_software_fallback_first_frame, 0.5, 16.0

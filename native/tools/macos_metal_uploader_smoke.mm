@@ -1,21 +1,12 @@
 #include "macos/native_player_bridge.h"
-#include "tools/test_video_assets.h"
 
 #include <CoreVideo/CoreVideo.h>
 #include <Foundation/Foundation.h>
 
 #include <algorithm>
-#include <chrono>
 #include <cstring>
 #include <cstdio>
-#include <filesystem>
-#include <string>
-#include <thread>
 #include <vector>
-
-#ifndef VIDEO_TEST_DIR
-#define VIDEO_TEST_DIR ""
-#endif
 
 namespace {
 
@@ -55,52 +46,6 @@ CVPixelBufferRef create_pixel_buffer(OSType pixel_format, int width, int height)
     return nullptr;
   }
   return buffer;
-}
-
-bool copy_frame_with_layout(VPMacOSMetalUploader* uploader,
-                            VPMacOSNativePlayer* player,
-                            CVPixelBufferRef buffer,
-                            int width,
-                            int height,
-                            VPMacOSNativeFrameInfo* out,
-                            char* error,
-                            size_t error_size) {
-  const size_t package_size =
-      VPMacOSNativePresentFramePackageMaxBytes(width, height, VPMacOSNativeMaxTracks);
-  if (package_size == 0) {
-    std::snprintf(error, error_size, "%s", "present package dimensions overflow");
-    return false;
-  }
-  std::vector<uint8_t> present_package(package_size, 0);
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-  while (std::chrono::steady_clock::now() < deadline) {
-    VPMacOSNativePresentFramePackageInfo package_info = {};
-    if (VPMacOSNativePlayerCopyPresentFramePackage(
-            player,
-            present_package.data(),
-            present_package.size(),
-            width,
-            height,
-            VPMacOSNativeMaxTracks,
-            &package_info,
-            error,
-            error_size) == 0 &&
-        VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
-            uploader,
-            present_package.data(),
-            present_package.size(),
-            &package_info,
-            buffer,
-            width,
-            height,
-            out,
-            error,
-            error_size) == 0) {
-      return true;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-  return false;
 }
 
 bool measure_pixel_buffer(CVPixelBufferRef buffer,

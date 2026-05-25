@@ -346,6 +346,7 @@ private:
     FrameCaptureService* frame_capture_ = nullptr;
     LayoutController layout_controller_;
     RenderLoopController render_loop_controller_;
+    RenderBackendKind render_backend_kind_ = RenderBackendKind::D3D11;
 
     TrackPipelineFactory track_pipeline_factory_;
     TrackPipelineManager tracks_;

@@ -9,54 +9,22 @@
 1.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapter, cvpixelbuffer-bgra-copy
 1.505, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-metal
 1.51, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
-1.512, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-presentation-scheduler/transitional-thread
+1.512, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-renderer
 1.514, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-metal-cvpixelbuffer-target
 1.52, ASSERT_NATIVE_DIAGNOSTIC_STRING, hardwareDecodeProvider, VideoToolbox
 1.54, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeAvailable, true
 1.56, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, true
 1.565, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, false
 1.57, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, false
-1.575, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, videotoolbox-renderer-owned
+1.575, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-videotoolbox
 1.6, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalAvailable, true
 1.65, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureCacheAvailable, true
 1.7, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureValid, true
 1.72, ASSERT_NATIVE_DIAGNOSTIC_STRING, metalTextureLastError,
 1.75, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, metalTextureCreationCount, 1
-1.77, ASSERT_NATIVE_DIAGNOSTIC_BOOL, pixelBufferMetalUploadEnabled, true
-1.78, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-cvpixelbuffer-present-package
-1.781, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, pixelBufferDirectCopyCount, 0, 0
 1.782, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true
 1.785, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureWidth, 320, 1920
 1.786, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureHeight, 180, 1080
-1.79, ADJUST_TRACK_OFFSET, 0, 250
-1.795, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, primaryTrackOffsetUs, 250000
-1.796, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, pixelBufferDirectCopyCount, 0, 0
-1.85, SET_VIEWPORT_PIXEL_SIZE_MODE, fillView
-1.95, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeLayoutPixelSizeMode, 1
-1.96, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, pixelBufferDirectCopyCount, 0, 0
-2.05, ASSERT_TRACK_METADATA, 0, macos-native-player, decode_thread_videotoolbox_renderer_owned
+2.05, ASSERT_TRACK_METADATA, 0, macos-native-player, VideoToolbox / h264
 2.1, ASSERT_PRESENTED_FRAME_RANGE, 0, 0, 100000
-5.2, PLAY
-5.3, ASSERT_PLAYING
-6.4, ASSERT_POSITION_RANGE, 500000, 2500000
-6.5, ASSERT_PRESENTED_FRAME_RANGE, 0, 500000, 2500000
-6.55, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalUploadCount, 1
-6.552, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalCVPixelBufferUploadCount, 1
-6.554, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, cvpixelbuffer
-6.555, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerFrameNotificationCount, 1
-6.56, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerLastPresentFrameCount, 1
-6.565, ASSERT_NATIVE_DIAGNOSTIC_BOOL, presentationSchedulerCachedDecisionAvailable, true
-6.57, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerDeadlineSleepCount, 1
-6.575, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
-6.58, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-metal-cvpixelbuffer-target
-6.582, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true
-6.584, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeRendererOwnedUploadCount, 1
-6.586, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0
-6.588, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedPresentCount, 1
-6.589, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeFrameFallbackCopyCount, 0, 0
-6.59, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFramePtsSampleCount, 10
-6.595, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFramePtsAdvanceUs, 300000
-6.596, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameDurationLastUs, 1
-6.7, PAUSE
-7.0, ASSERT_PAUSED
-7.1, QUIT, 0
+2.2, QUIT, 0

@@ -7,12 +7,10 @@
 1.8, ASSERT_TRACK_COUNT, 1
 1.9, ASSERT_NATIVE_BACKEND, macos-native-player, true
 2.0, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, false
-2.05, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, software-fallback
+2.05, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-software
 2.1, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, true
 2.15, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationFallbackReason, software-decode
-2.2, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-yuv-present-package
 2.205, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
-2.21, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, pixelBufferDirectCopyCount, 0, 0
 2.25, CAPTURE_VIEWPORT, vvc_software_start
 2.35, ASSERT_CAPTURE_NOT_BLACK, vvc_software_start, 0.01, 4.0
 2.5, PLAY
@@ -20,7 +18,6 @@
 4.5, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeDecodeFrameCount, 8
 4.55, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFramePresentationCount, 2
 4.56, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedPresentCount, 2
-4.57, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeFrameFallbackCopyCount, 0, 0
 4.58, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeRendererOwnedUploadCount, 2
 4.59, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0
 4.592, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, yuv

@@ -60,12 +60,10 @@ renderer-owned mode by default. Diagnostics expose
 shared `Renderer` keeps hardware decode active.
 `softwareFallbackActive` remains visible for unsupported codecs or initialization fallback and is
 covered with a generated MPEG-2 smoke. Visible presentation diagnostics now expose
-`nativeFramePresentationCount`, `nativeFrameRendererOwnedPresentCount`, and
-`nativeFrameFallbackCopyCount`.
-Renderer-owned smokes assert the fallback copy count stays at zero once the Metal presentation target
-is active; the direct-copy fallback smoke asserts the opposite so the compatibility path stays
-observable. Metal-enabled native playback treats a missing renderer-owned target as a presentation
-failure instead of silently falling back to locked-buffer copies.
+`nativeFramePresentationCount` and `nativeFrameRendererOwnedPresentCount`.
+Renderer-owned smokes assert the Metal presentation target is installed and receiving native frame
+callbacks. Metal-enabled native playback treats a missing renderer-owned target as a presentation
+failure instead of silently routing frames through a Swift-side copy path.
 
 The macOS runner also implements the shared `pickFiles` MethodChannel call with `NSOpenPanel`.
 Debug and Release entitlements include `com.apple.security.files.user-selected.read-only` so
@@ -133,7 +131,7 @@ offset composition is presented through the renderer-owned Metal target rather t
 application is refreshed through native renderer snapshots. The adapter accepts CPU RGBA, planar
 YUV420, NV12, and P010 frames, with deterministic smoke coverage for range and matrix-aware YUV
 conversion plus a 10-bit H.264 VideoToolbox UI smoke for renderer-owned P010 CVPixelBuffer
-presentation. The forced fallback path remains covered by the direct-copy fallback smoke.
+presentation. The forced software decode path remains covered by generated MPEG-2/VVC smokes.
 The pixel buffer is created with Metal compatibility and IOSurface backing, and native diagnostics expose whether a
 `CVMetalTextureCache` can wrap it (`metalTextureCreationCount`, `metalTextureValid`). Validation
 failures keep explicit native reasons in `metalTextureLastError`, including size mismatch and
@@ -152,8 +150,8 @@ CVPixelBuffer decisions currently fall back through the YUV package staging path
 backend grows per-track CV texture inputs. Diagnostics expose package upload count,
 CVPixelBuffer upload count, last package storage (`yuv`/`bgra`), scheduler-selected present frame
 count, and whether the package copy consumed the cached scheduler decision. macOS native playback
-now requires renderer-owned Metal presentation; the older locked-buffer direct copy fallback has
-been removed from the app path. It also reports primary decode cadence
+now requires renderer-owned Metal presentation and no longer keeps the early Swift-side copy
+presentation path in the app. It also reports primary decode cadence
 (`nativeDecodeFrameCount`, `nativeDecodeFpsX1000`), renderer-owned upload cadence
 (`nativeRendererOwnedUploadFpsX1000`), presented callback cadence (`nativeFramePresentationFpsX1000`), and
 `presentationFallbackReason` so 4K playback regressions can be separated into decode, upload,

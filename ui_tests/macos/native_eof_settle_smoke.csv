@@ -3,7 +3,7 @@
 @WINDOW, 960, 540
 0.3, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
 2.2, ASSERT_TRACK_COUNT, 1
-2.3, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, videotoolbox-renderer-owned
+2.3, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-videotoolbox
 2.4, PLAY
 5.5, WAIT_PAUSED, 3000
 5.7, ASSERT_PAUSED

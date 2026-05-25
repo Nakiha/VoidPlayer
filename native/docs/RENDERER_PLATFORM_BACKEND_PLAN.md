@@ -66,17 +66,14 @@ and odd-dimension NV12 metadata. The macOS transitional thread now reports share
 tick/present/notification counters, cached scheduler-decision availability, present-package upload
 count, and package storage. Package copy consumes the scheduler-selected `PresentDecision` when a
 tick has published one, and CVPixelBuffer-backed hardware frames are now reported as
-`cvpixelbuffer` instead of being collapsed into the staged `yuv` package diagnostic. The Swift
-texture pump coalesces duplicate copy requests instead of queuing stale uploads. The macOS native
-test matrix also covers present-decision carry-forward identity and offset guards. Swift-side
-diagnostics now split visible presentation into renderer-owned presentation and Swift fallback-copy
-counters. The macOS facade and 4K VideoToolbox smokes require renderer-owned presentation with zero
-Swift fallback copies, while the direct-copy fallback smoke proves the legacy Swift path remains
-explicit and isolated. First-frame, seek, step, offset, and layout refreshes now install the same
-renderer-owned Metal presentation target and ask native to present the current renderer snapshot;
-the Swift direct-copy path is reserved for the explicit Metal-disabled fallback. Metal-enabled
-playback now treats an unavailable renderer-owned target as a visible presentation failure instead
-of silently entering the direct-copy fallback.
+`cvpixelbuffer` instead of being collapsed into the staged `yuv` package diagnostic. The macOS
+native test matrix also covers present-decision carry-forward identity and offset guards.
+Swift-side diagnostics now expose renderer-owned presentation counts only. The macOS facade and 4K
+VideoToolbox smokes require the shared renderer-owned Metal target, and the legacy Swift copy path
+has been removed from the app ABI. First-frame, seek, step, offset, and layout refreshes install
+the same renderer-owned Metal presentation target and ask native to present the current renderer
+snapshot. Metal-enabled playback now treats an unavailable renderer-owned target as a visible
+presentation failure.
 
 Exit gate: current macOS playback still works, and diagnostics clearly distinguish transitional
 texture-pump presentation from renderer-owned presentation.
@@ -183,10 +180,10 @@ The Swift-visible backend calls through this ABI, and the native Metal presentat
 consume the same package without asking Swift to choose frames. The package path keeps
 zero-copy CVPixelBuffer, staged YUV, and BGRA fallback storage distinct in diagnostics.
 Software-decoded single-track playback no longer opts out of the renderer-owned Metal target; the
-VVC/H.266 macOS smoke locks that path down with zero Swift fallback copies while still reporting
+VVC/H.266 macOS smoke locks that path down while still reporting
 `presentationFallbackReason=software-decode`. The 10-bit H.264/P010 macOS smoke runs through
-VideoToolbox renderer-owned CVPixelBuffer presentation instead of forcing the direct-copy hwdownload
-path. The native Metal uploader smoke covers synthetic NV12, planar YUV420, and P010 package parity,
+VideoToolbox renderer-owned CVPixelBuffer presentation. The native Metal uploader smoke covers
+synthetic NV12, planar YUV420, and P010 package parity,
 including offset/stride shader paths without relying on a large media fixture.
 macOS diagnostics now name the upload storage explicitly:
 `metal-cvpixelbuffer-present-package`, `metal-yuv-present-package`, or

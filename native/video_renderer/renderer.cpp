@@ -141,6 +141,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     backend_config.height = target_height_;
     backend_config.max_track_slots = config.backend.max_track_slots;
     backend_config.headless = config.headless;
+    render_backend_kind_ = config.backend.type;
     auto backend = create_presentation_backend(config.backend.type);
     if (!backend) {
         spdlog::error("Renderer: unsupported presentation backend {}",
@@ -1927,7 +1928,10 @@ std::unique_ptr<TrackPipeline> Renderer::create_pipeline(
     const std::string& path,
     bool hw_decode,
     const SeekRequest* initial_seek) {
-    return track_pipeline_factory_.create_opened_pipeline(path, hw_decode, initial_seek);
+    TrackPipelineOpenOptions options;
+    options.render_backend = render_backend_kind_;
+    return track_pipeline_factory_.create_opened_pipeline(
+        path, hw_decode, initial_seek, options);
 }
 
 bool Renderer::recreate_pipeline_for_seek(std::unique_lock<std::mutex>& state_lock,

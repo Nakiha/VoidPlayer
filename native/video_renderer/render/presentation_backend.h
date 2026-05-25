@@ -28,6 +28,14 @@ struct PresentationBackendDrawHooks {
     std::function<void(PresentationBackend&, const RendererDrawSnapshot&)> draw_overlay;
 };
 
+struct PresentationBackendFrameInfo {
+    int32_t width = 0;
+    int32_t height = 0;
+    int64_t pts_us = 0;
+    int64_t dts_us = 0;
+    int64_t duration_us = 0;
+};
+
 class PresentationBackend {
 public:
     virtual ~PresentationBackend() = default;
@@ -46,6 +54,16 @@ public:
     virtual bool present_swap_chain(int) { return false; }
     virtual void reset_track(size_t) {}
     virtual void move_track(size_t, size_t) {}
+    virtual bool update_headless_output(void*, int, int, int) { return false; }
+    virtual void clear_headless_output() {}
+    virtual int64_t direct_yuv_upload_count() const { return 0; }
+    virtual int64_t cvpixelbuffer_upload_count() const { return 0; }
+    virtual int64_t present_package_upload_count() const { return 0; }
+    virtual int64_t last_present_package_copy_us() const { return 0; }
+    virtual int64_t last_present_package_gpu_wait_us() const { return 0; }
+    virtual int64_t last_present_package_total_us() const { return 0; }
+    virtual int32_t last_present_package_storage() const { return 0; }
+    virtual bool copy_last_frame_info(PresentationBackendFrameInfo*) const { return false; }
     virtual bool draw_frame(const RendererDrawSnapshot& snapshot,
                             const PresentationBackendDrawHooks& hooks) = 0;
 };

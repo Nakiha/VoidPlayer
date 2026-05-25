@@ -22,6 +22,19 @@ public:
   bool initialize(const vr::PresentationBackendConfig& config) override;
   void shutdown() override;
   bool headless() const override { return headless_; }
+  bool update_headless_output(void* output,
+                              int width,
+                              int height,
+                              int max_track_slots) override;
+  void clear_headless_output() override;
+  int64_t direct_yuv_upload_count() const override;
+  int64_t cvpixelbuffer_upload_count() const override;
+  int64_t present_package_upload_count() const override;
+  int64_t last_present_package_copy_us() const override;
+  int64_t last_present_package_gpu_wait_us() const override;
+  int64_t last_present_package_total_us() const override;
+  int32_t last_present_package_storage() const override;
+  bool copy_last_frame_info(vr::PresentationBackendFrameInfo* out) const override;
   bool draw_frame(const vr::RendererDrawSnapshot& snapshot,
                   const vr::PresentationBackendDrawHooks& hooks) override;
 

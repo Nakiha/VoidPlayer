@@ -78,6 +78,13 @@ typedef struct VPMacOSNativePlayerPerfStats {
   uint64_t renderer_owned_upload_failure_count;
   int64_t renderer_owned_upload_elapsed_ms;
   double renderer_owned_upload_fps;
+  int64_t renderer_owned_direct_yuv_upload_count;
+  int64_t renderer_owned_cvpixelbuffer_upload_count;
+  int64_t renderer_owned_present_package_upload_count;
+  int64_t renderer_owned_present_package_copy_us;
+  int64_t renderer_owned_present_package_gpu_wait_us;
+  int64_t renderer_owned_present_package_total_us;
+  int32_t renderer_owned_present_package_storage;
 } VPMacOSNativePlayerPerfStats;
 
 enum {

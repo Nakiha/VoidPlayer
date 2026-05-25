@@ -76,6 +76,16 @@ struct D3D11BackendMetrics {
     uint64_t texture_sharing_failure_count = 0;
 };
 
+struct PresentationBackendStats {
+    int64_t direct_yuv_upload_count = 0;
+    int64_t cvpixelbuffer_upload_count = 0;
+    int64_t present_package_upload_count = 0;
+    int64_t last_present_package_copy_us = 0;
+    int64_t last_present_package_gpu_wait_us = 0;
+    int64_t last_present_package_total_us = 0;
+    int32_t last_present_package_storage = 0;
+};
+
 struct RendererGpuMemoryStats {
     uint64_t total_estimated_bytes = 0;
     uint64_t decoder_pool_bytes = 0;
@@ -171,6 +181,8 @@ public:
     /// Get per-track performance stats snapshot (thread-safe).
     std::vector<TrackPerfStats> track_perf_stats() const;
     D3D11BackendMetrics d3d_backend_metrics() const;
+    PresentationBackendStats presentation_backend_stats() const;
+    bool copy_last_presentation_frame_info(PresentationBackendFrameInfo* out) const;
     RendererGpuMemoryStats gpu_memory_stats() const;
 
     bool d3d_device_lost() const;
@@ -219,6 +231,11 @@ public:
     /// Resize the offscreen shared texture (headless mode only).
     /// Stores pending dimensions; render loop applies at controlled rate.
     void resize(int width, int height);
+    bool update_headless_output(void* output,
+                                int width,
+                                int height,
+                                int max_track_slots);
+    void clear_headless_output();
 
     /// Capture the currently published headless frame as packed BGRA bytes.
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);

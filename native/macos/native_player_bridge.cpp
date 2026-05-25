@@ -215,7 +215,16 @@ struct VPMacOSNativePlayer {
       last_renderer_owned_frame_info.width = presentation_target_width;
       last_renderer_owned_frame_info.height = presentation_target_height;
       if (renderer) {
-        last_renderer_owned_frame_info.pts_us = renderer->current_pts_us();
+        vr::PresentationBackendFrameInfo frame_info;
+        if (renderer->copy_last_presentation_frame_info(&frame_info)) {
+          last_renderer_owned_frame_info.width = frame_info.width;
+          last_renderer_owned_frame_info.height = frame_info.height;
+          last_renderer_owned_frame_info.pts_us = frame_info.pts_us;
+          last_renderer_owned_frame_info.dts_us = frame_info.dts_us;
+          last_renderer_owned_frame_info.duration_us = frame_info.duration_us;
+        } else {
+          last_renderer_owned_frame_info.pts_us = renderer->current_pts_us();
+        }
       }
       const auto now = std::chrono::steady_clock::now();
       if (renderer_owned_presentation_upload_count == 0) {
@@ -430,8 +439,15 @@ int VPMacOSNativePlayerSetMetalPresentationTarget(
 
   std::lock_guard<std::mutex> player_lock(player->mutex);
   if (player->renderer_active_locked()) {
-    player->renderer->resize(width, height);
-    return 0;
+    return player->renderer->update_headless_output(
+               pixel_buffer,
+               width,
+               height,
+               std::clamp(max_track_slots,
+                          static_cast<int32_t>(1),
+                          static_cast<int32_t>(VPMacOSNativeMaxTracks)))
+               ? 0
+               : -1;
   }
   if (!player->opened_path.empty()) {
     std::string message;
@@ -459,9 +475,7 @@ void VPMacOSNativePlayerClearMetalPresentationTarget(VPMacOSNativePlayer* player
   }
   std::lock_guard<std::mutex> player_lock(player->mutex);
   if (player->renderer_active_locked()) {
-    player->renderer->shutdown();
-    player->renderer.reset();
-    player->renderer_active.store(false, std::memory_order_release);
+    player->renderer->clear_headless_output();
   }
 }
 
@@ -888,10 +902,26 @@ int VPMacOSNativePlayerCopyPerfStats(
     if (player->renderer_active_locked()) {
       const auto stats = player->renderer->track_perf_stats();
       if (!stats.empty()) {
+        out->decode_frame_count = stats.front().frames_decoded;
         out->decode_fps = stats.front().fps;
         out->decode_avg_ms = stats.front().avg_decode_ms;
         out->decode_max_ms = stats.front().max_decode_ms;
       }
+      const auto backend_stats = player->renderer->presentation_backend_stats();
+      out->renderer_owned_direct_yuv_upload_count =
+          backend_stats.direct_yuv_upload_count;
+      out->renderer_owned_cvpixelbuffer_upload_count =
+          backend_stats.cvpixelbuffer_upload_count;
+      out->renderer_owned_present_package_upload_count =
+          backend_stats.present_package_upload_count;
+      out->renderer_owned_present_package_copy_us =
+          backend_stats.last_present_package_copy_us;
+      out->renderer_owned_present_package_gpu_wait_us =
+          backend_stats.last_present_package_gpu_wait_us;
+      out->renderer_owned_present_package_total_us =
+          backend_stats.last_present_package_total_us;
+      out->renderer_owned_present_package_storage =
+          backend_stats.last_present_package_storage;
     }
   }
   {

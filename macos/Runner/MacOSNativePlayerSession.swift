@@ -395,6 +395,13 @@ final class MacOSNativePlayerSession {
         "rendererOwnedUploadElapsedMs": 0,
         "rendererOwnedUploadFps": 0.0,
         "rendererOwnedUploadFpsX1000": 0,
+        "rendererOwnedDirectYuvUploadCount": 0,
+        "rendererOwnedCVPixelBufferUploadCount": 0,
+        "rendererOwnedPresentPackageUploadCount": 0,
+        "rendererOwnedPresentPackageCopyUs": 0,
+        "rendererOwnedPresentPackageGpuWaitUs": 0,
+        "rendererOwnedPresentPackageTotalUs": 0,
+        "rendererOwnedPresentPackageStorage": "unavailable",
       ]
     }
     let maxInt64 = UInt64(Int64.max)
@@ -417,8 +424,41 @@ final class MacOSNativePlayerSession {
       "rendererOwnedUploadFpsX1000": Int64(
         max(0.0, stats.renderer_owned_upload_fps * 1000.0)
       ),
+      "rendererOwnedDirectYuvUploadCount": Int64(
+        stats.renderer_owned_direct_yuv_upload_count
+      ),
+      "rendererOwnedCVPixelBufferUploadCount": Int64(
+        stats.renderer_owned_cvpixelbuffer_upload_count
+      ),
+      "rendererOwnedPresentPackageUploadCount": Int64(
+        stats.renderer_owned_present_package_upload_count
+      ),
+      "rendererOwnedPresentPackageCopyUs": Int64(
+        stats.renderer_owned_present_package_copy_us
+      ),
+      "rendererOwnedPresentPackageGpuWaitUs": Int64(
+        stats.renderer_owned_present_package_gpu_wait_us
+      ),
+      "rendererOwnedPresentPackageTotalUs": Int64(
+        stats.renderer_owned_present_package_total_us
+      ),
+      "rendererOwnedPresentPackageStorage": Self.presentPackageStorageName(
+        stats.renderer_owned_present_package_storage
+      ),
     ]
   }
 
-}
+  private static func presentPackageStorageName(_ storage: Int32) -> String {
+    switch storage {
+    case Int32(VPMacOSNativePresentPackageStorageYUV):
+      return "yuv"
+    case Int32(VPMacOSNativePresentPackageStorageBGRA):
+      return "bgra"
+    case Int32(VPMacOSNativePresentPackageStorageCVPixelBuffer):
+      return "cvpixelbuffer"
+    default:
+      return "unavailable"
+    }
+  }
 
+}

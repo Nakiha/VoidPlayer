@@ -67,6 +67,7 @@ TrackPerfSnapshotResult snapshot_track_perf_stats(
     TrackPerfStats stats;
     stats.slot = static_cast<int>(slot);
     stats.file_id = track.file_id;
+    stats.frames_decoded = decode_perf.frames_decoded;
     if (track.track_buffer) {
         stats.buffer_count = track.track_buffer->total_count();
         stats.buffer_capacity = track.track_buffer->preroll_target();

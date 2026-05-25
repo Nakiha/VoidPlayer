@@ -80,6 +80,65 @@ bool MetalPresentationBackend::available() const {
   return uploader_ && VPMacOSMetalUploaderIsAvailable(uploader_) != 0;
 }
 
+bool MetalPresentationBackend::update_headless_output(void* output,
+                                                      int width,
+                                                      int height,
+                                                      int max_track_slots) {
+  if (!output || width <= 0 || height <= 0) {
+    clear_draw_target();
+    return false;
+  }
+  width_ = width;
+  height_ = height;
+  set_draw_target(output, width, height, max_track_slots);
+  return available();
+}
+
+void MetalPresentationBackend::clear_headless_output() {
+  clear_draw_target();
+}
+
+int64_t MetalPresentationBackend::direct_yuv_upload_count() const {
+  return VPMacOSMetalUploaderDirectYUVUploadCount(uploader_);
+}
+
+int64_t MetalPresentationBackend::cvpixelbuffer_upload_count() const {
+  return VPMacOSMetalUploaderCVPixelBufferUploadCount(uploader_);
+}
+
+int64_t MetalPresentationBackend::present_package_upload_count() const {
+  return VPMacOSMetalUploaderPresentPackageUploadCount(uploader_);
+}
+
+int64_t MetalPresentationBackend::last_present_package_copy_us() const {
+  return VPMacOSMetalUploaderLastPresentPackageCopyUs(uploader_);
+}
+
+int64_t MetalPresentationBackend::last_present_package_gpu_wait_us() const {
+  return VPMacOSMetalUploaderLastPresentPackageGpuWaitUs(uploader_);
+}
+
+int64_t MetalPresentationBackend::last_present_package_total_us() const {
+  return VPMacOSMetalUploaderLastPresentPackageTotalUs(uploader_);
+}
+
+int32_t MetalPresentationBackend::last_present_package_storage() const {
+  return VPMacOSMetalUploaderLastPresentPackageStorage(uploader_);
+}
+
+bool MetalPresentationBackend::copy_last_frame_info(
+    vr::PresentationBackendFrameInfo* out) const {
+  if (!out || !last_draw_frame_info_available_) {
+    return false;
+  }
+  out->width = last_draw_frame_info_.width;
+  out->height = last_draw_frame_info_.height;
+  out->pts_us = last_draw_frame_info_.pts_us;
+  out->dts_us = last_draw_frame_info_.dts_us;
+  out->duration_us = last_draw_frame_info_.duration_us;
+  return true;
+}
+
 std::unique_ptr<vr::PresentationBackend> create_metal_presentation_backend() {
   return std::make_unique<MetalPresentationBackend>();
 }

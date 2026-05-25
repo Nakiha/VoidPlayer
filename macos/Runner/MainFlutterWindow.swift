@@ -270,15 +270,28 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "pixelBufferRebuildCount": textureStats?.rebuildCount ?? 0,
         "pixelBufferReuseCount": textureStats?.reuseCount ?? 0,
         "pixelBufferMetalUploadCount": textureStats?.metalUploadCount ?? 0,
-        "pixelBufferMetalYuvUploadCount": textureStats?.metalYuvUploadCount ?? 0,
-        "pixelBufferMetalCVPixelBufferUploadCount": textureStats?.metalCVPixelBufferUploadCount ?? 0,
+        "pixelBufferMetalYuvUploadCount":
+          perfStats?["rendererOwnedDirectYuvUploadCount"] ?? textureStats?.metalYuvUploadCount ?? 0,
+        "pixelBufferMetalCVPixelBufferUploadCount":
+          perfStats?["rendererOwnedCVPixelBufferUploadCount"] ??
+          textureStats?.metalCVPixelBufferUploadCount ?? 0,
         "pixelBufferMetalUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
         "presentationUploadMode": textureStats?.presentationUploadMode ?? "unavailable",
-        "presentationPackageUploadCount": textureStats?.presentPackageUploadCount ?? 0,
-        "presentationPackageCopyUs": textureStats?.presentPackageCopyUs ?? 0,
-        "presentationPackageGpuWaitUs": textureStats?.presentPackageGpuWaitUs ?? 0,
-        "presentationPackageTotalUs": textureStats?.presentPackageTotalUs ?? 0,
-        "presentationPackageStorage": textureStats?.presentPackageStorage ?? "unavailable",
+        "presentationPackageUploadCount":
+          perfStats?["rendererOwnedPresentPackageUploadCount"] ??
+          textureStats?.presentPackageUploadCount ?? 0,
+        "presentationPackageCopyUs":
+          perfStats?["rendererOwnedPresentPackageCopyUs"] ??
+          textureStats?.presentPackageCopyUs ?? 0,
+        "presentationPackageGpuWaitUs":
+          perfStats?["rendererOwnedPresentPackageGpuWaitUs"] ??
+          textureStats?.presentPackageGpuWaitUs ?? 0,
+        "presentationPackageTotalUs":
+          perfStats?["rendererOwnedPresentPackageTotalUs"] ??
+          textureStats?.presentPackageTotalUs ?? 0,
+        "presentationPackageStorage":
+          perfStats?["rendererOwnedPresentPackageStorage"] ??
+          textureStats?.presentPackageStorage ?? "unavailable",
         "metalAvailable": textureStats?.metalAvailable ?? false,
         "metalTextureCacheAvailable": textureStats?.metalTextureCacheAvailable ?? false,
         "metalTextureValid": textureStats?.metalTextureValid ?? false,

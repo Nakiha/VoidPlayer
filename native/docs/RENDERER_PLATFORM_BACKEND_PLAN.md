@@ -196,6 +196,11 @@ snapshot-to-Metal backend draw path with a real CVPixelBuffer target.
 `MetalPresentationBackend::draw_frame` also preserves the VideoToolbox CVPixelBuffer fast path when
 the shared snapshot contains a single decoder-owned CVPixelBuffer frame, so the bridge handoff does
 not regress 4K60 zero-copy presentation.
+macOS resize and target replacement now update the renderer-owned headless Metal output in place
+instead of clearing the presentation target by shutting down the shared renderer; diagnostics for
+CVPixelBuffer/YUV/BGRA upload counts, package latency, storage kind, decode frame count, and
+presented frame timing now come from that shared renderer path rather than the Swift validation
+backend.
 
 Exit gate: macOS can present multi-track CPU-decoded frames through renderer-owned Metal without the
 Swift pump choosing frames, and shader parity tests cover the supported formats.

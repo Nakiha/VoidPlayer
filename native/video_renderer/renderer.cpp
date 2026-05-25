@@ -1470,6 +1470,73 @@ void Renderer::resize(int width, int height) {
     pending_height_.store(height);
 }
 
+bool Renderer::update_headless_output(void* output,
+                                      int width,
+                                      int height,
+                                      int max_track_slots) {
+    std::function<void()> frame_callback;
+    bool drew = false;
+    {
+        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+        if (!headless_ || !presentation_backend_) {
+            return false;
+        }
+        const auto validation =
+            validate_renderer_dimensions(width, height, "headless output dimensions");
+        if (!validation.ok) {
+            spdlog::warn("[Renderer] ignoring invalid headless output: {}",
+                         validation.message);
+            return false;
+        }
+        {
+            std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+            if (!presentation_backend_->update_headless_output(
+                    output, width, height, max_track_slots)) {
+                return false;
+            }
+        }
+
+        RendererDrawSnapshot snapshot;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            const auto old_width = target_width_;
+            const auto old_height = target_height_;
+            if (old_width != width || old_height != height) {
+                const auto layout_tracks = snapshot_layout_track_geometry(tracks_);
+                adjust_layout_view_offset_for_resize(
+                    layout_, old_width, old_height, width, height, layout_tracks);
+                target_width_ = width;
+                target_height_ = height;
+            }
+            snapshot = build_draw_snapshot_locked(last_decision_);
+        }
+        if (present_decision_has_frame(snapshot.decision)) {
+            std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+            drew = draw_frame(snapshot);
+            if (drew) {
+                frame_callback = frame_callback_;
+            }
+        }
+    }
+    if (drew) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        preview_drawn_ = true;
+    }
+    if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
+        frame_callback();
+    }
+    return true;
+}
+
+void Renderer::clear_headless_output() {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    if (!headless_ || !presentation_backend_) {
+        return;
+    }
+    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+    presentation_backend_->clear_headless_output();
+}
+
 void Renderer::do_resize(int width, int height) {
 #ifdef _WIN32
     int old_width = 0;
@@ -2312,6 +2379,35 @@ D3D11BackendMetrics Renderer::d3d_backend_metrics() const {
     result.texture_sharing_failure_count =
         d3d_metrics_.texture_sharing_failure_count.load(std::memory_order_relaxed);
     return result;
+}
+
+PresentationBackendStats Renderer::presentation_backend_stats() const {
+    PresentationBackendStats result;
+    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+    if (!presentation_backend_) {
+        return result;
+    }
+    result.direct_yuv_upload_count =
+        presentation_backend_->direct_yuv_upload_count();
+    result.cvpixelbuffer_upload_count =
+        presentation_backend_->cvpixelbuffer_upload_count();
+    result.present_package_upload_count =
+        presentation_backend_->present_package_upload_count();
+    result.last_present_package_copy_us =
+        presentation_backend_->last_present_package_copy_us();
+    result.last_present_package_gpu_wait_us =
+        presentation_backend_->last_present_package_gpu_wait_us();
+    result.last_present_package_total_us =
+        presentation_backend_->last_present_package_total_us();
+    result.last_present_package_storage =
+        presentation_backend_->last_present_package_storage();
+    return result;
+}
+
+bool Renderer::copy_last_presentation_frame_info(
+    PresentationBackendFrameInfo* out) const {
+    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+    return presentation_backend_ && presentation_backend_->copy_last_frame_info(out);
 }
 
 RendererGpuMemoryStats Renderer::gpu_memory_stats() const {

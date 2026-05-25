@@ -11,6 +11,7 @@ namespace vr {
 struct TrackPerfStats {
     int slot = -1;
     int file_id = 0;
+    uint64_t frames_decoded = 0;
     double fps = 0.0;
     double avg_decode_ms = 0.0;
     double max_decode_ms = 0.0;

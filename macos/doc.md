@@ -61,9 +61,10 @@ shared `DecodeThread` keeps hardware decode active. The test-only
 `--macos-disable-metal-upload` launch flag forces VideoToolbox hwdownload so the software
 CVPixelBuffer copy fallback can still be exercised without a Metal upload target.
 `softwareFallbackActive` remains visible for unsupported codecs or initialization fallback and is
-covered with a generated MPEG-2 smoke. Visible presentation diagnostics also split the legacy
-`nativeFrameCopyCount` into `nativeFrameRendererOwnedPresentCount` and `nativeFrameSwiftCopyCount`.
-Renderer-owned smokes assert the Swift copy count stays at zero once the Metal presentation target
+covered with a generated MPEG-2 smoke. Visible presentation diagnostics now expose
+`nativeFramePresentationCount`, `nativeFrameRendererOwnedPresentCount`, and
+`nativeFrameFallbackCopyCount`.
+Renderer-owned smokes assert the fallback copy count stays at zero once the Metal presentation target
 is active; the direct-copy fallback smoke asserts the opposite so the compatibility path stays
 observable. Metal-enabled native playback treats a missing renderer-owned target as a presentation
 failure instead of silently falling back to locked-buffer copies.
@@ -154,12 +155,12 @@ backend grows per-track CV texture inputs. Diagnostics expose package upload cou
 CVPixelBuffer upload count, last package storage (`yuv`/`bgra`), scheduler-selected present frame
 count, and whether the package copy consumed the cached scheduler decision. The older
 locked-buffer direct copy remains a fallback and is reported through `pixelBufferDirectCopyCount`
-and `nativeFrameSwiftCopyCount`; normal Metal-enabled first-frame, seek, step, offset, layout, and
+and `nativeFrameFallbackCopyCount`; normal Metal-enabled first-frame, seek, step, offset, layout, and
 playback paths keep those fallback counters at zero. The diagnostics map reports the fallback as
 `presentationBackend=swift-cvpixelbuffer-direct-copy-fallback` only when it is explicitly enabled.
 It also reports primary decode cadence
 (`nativeDecodeFrameCount`, `nativeDecodeFpsX1000`), renderer-owned upload cadence
-(`nativeRendererOwnedUploadFpsX1000`), presented callback cadence (`nativeFrameCopyFpsX1000`), and
+(`nativeRendererOwnedUploadFpsX1000`), presented callback cadence (`nativeFramePresentationFpsX1000`), and
 `presentationFallbackReason` so 4K playback regressions can be separated into decode, upload,
 presentation, or fallback causes. Software-decoded tracks, including VVC/H.266 while VideoToolbox
 declines it, still install the renderer-owned Metal presentation target when Metal upload is

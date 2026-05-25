@@ -33,6 +33,7 @@ public:
                        int32_t height,
                        int32_t max_track_slots);
   void clear_draw_target();
+  bool copy_last_draw_frame_info(VPMacOSNativeFrameInfo* out) const;
   int copy_current_frame_with_layout(VPMacOSNativePlayer* player,
                                      void* pixel_buffer,
                                      int32_t width,
@@ -51,7 +52,13 @@ private:
   int draw_target_width_ = 0;
   int draw_target_height_ = 0;
   int draw_target_max_track_slots_ = VPMacOSNativeMaxTracks;
+  bool last_draw_frame_info_available_ = false;
+  VPMacOSNativeFrameInfo last_draw_frame_info_ = {};
   bool headless_ = true;
 };
 
 }  // namespace vp_macos
+
+struct VPMacOSMetalPresentationBackend {
+  vp_macos::MetalPresentationBackend impl;
+};

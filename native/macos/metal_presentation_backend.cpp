@@ -305,6 +305,60 @@ bool copy_snapshot_bgra_package(const vr::RendererDrawSnapshot& snapshot,
   return true;
 }
 
+bool snapshot_cv_pixel_buffer_frame(const vr::RendererDrawSnapshot& snapshot,
+                                    int32_t width,
+                                    int32_t height,
+                                    VPMacOSNativeCVPixelBufferPresentFrame* out,
+                                    std::string& error) {
+  if (!out || width <= 0 || height <= 0) {
+    error = "invalid CVPixelBuffer snapshot output";
+    return false;
+  }
+  *out = {};
+  fill_present_decision_info_from_snapshot(snapshot, width, height, &out->decision);
+  if (!present_decision_is_complete(out->decision, error)) {
+    return false;
+  }
+  if (out->decision.frame_count != 1) {
+    error = "snapshot is not a single CVPixelBuffer frame";
+    return false;
+  }
+  for (size_t slot = 0; slot < vr::kMaxTracks; ++slot) {
+    if (!snapshot.decision.frames[slot].has_value()) {
+      continue;
+    }
+    if (slot != 0) {
+      error = "CVPixelBuffer fast path currently requires the primary track slot";
+      return false;
+    }
+    const auto& frame = *snapshot.decision.frames[slot];
+    const auto* storage = frame.macos_cv_pixel_buffer_storage();
+    if (!storage || !storage->pixel_buffer || storage->plane_count < 2 ||
+        storage->coded_width < frame.width || storage->coded_height < frame.height) {
+      error = "snapshot does not contain a supported CVPixelBuffer frame";
+      return false;
+    }
+    out->pixel_buffer = storage->pixel_buffer;
+    out->pixel_format = static_cast<int32_t>(storage->pixel_format);
+    out->plane_count = storage->plane_count;
+    out->is_p010 = storage->is_p010 ? 1 : 0;
+    out->coded_width = storage->coded_width;
+    out->coded_height = storage->coded_height;
+    out->decision.yuv_format[slot] = storage->is_p010
+        ? VPMacOSNativePresentFormatP010
+        : VPMacOSNativePresentFormatNV12;
+    out->decision.coded_width[slot] = storage->coded_width;
+    out->decision.coded_height[slot] = storage->coded_height;
+    out->decision.nv12_uv_scale_x[slot] =
+        static_cast<float>(frame.width) / static_cast<float>(storage->coded_width);
+    out->decision.nv12_uv_scale_y[slot] =
+        static_cast<float>(frame.height) / static_cast<float>(storage->coded_height);
+    return true;
+  }
+  error = "snapshot has no CVPixelBuffer frame";
+  return false;
+}
+
 }  // namespace
 
 MetalPresentationBackend::~MetalPresentationBackend() {
@@ -347,6 +401,7 @@ bool MetalPresentationBackend::draw_frame(
     const vr::PresentationBackendDrawHooks& hooks) {
   if (!available() || !draw_target_pixel_buffer_ ||
       draw_target_width_ <= 0 || draw_target_height_ <= 0) {
+    last_draw_frame_info_available_ = false;
     return false;
   }
 
@@ -359,6 +414,39 @@ bool MetalPresentationBackend::draw_frame(
   if (package_layout.max_bytes == 0 ||
       package_layout.bgra_row_bytes >
           static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
+    last_draw_frame_info_available_ = false;
+    return false;
+  }
+
+  std::string error;
+  VPMacOSNativeCVPixelBufferPresentFrame cv_frame = {};
+  if (snapshot_cv_pixel_buffer_frame(snapshot,
+                                     draw_target_width_,
+                                     draw_target_height_,
+                                     &cv_frame,
+                                     error)) {
+    VPMacOSNativeFrameInfo frame_info = {};
+    char upload_error[256] = {};
+    const auto start = std::chrono::steady_clock::now();
+    const int ret = VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
+        uploader_,
+        &cv_frame,
+        draw_target_pixel_buffer_,
+        draw_target_width_,
+        draw_target_height_,
+        &frame_info,
+        upload_error,
+        sizeof(upload_error));
+    if (hooks.record_frame_copy_us) {
+      hooks.record_frame_copy_us(static_cast<uint64_t>(
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              std::chrono::steady_clock::now() - start).count()));
+    }
+    last_draw_frame_info_available_ = ret == 0;
+    if (ret == 0) {
+      last_draw_frame_info_ = frame_info;
+      return true;
+    }
     return false;
   }
 
@@ -370,7 +458,6 @@ bool MetalPresentationBackend::draw_frame(
       snapshot, draw_target_width_, draw_target_height_, &package.decision);
 
   std::vector<uint8_t> data(package_layout.max_bytes);
-  std::string error;
   if (copy_snapshot_yuv_package(snapshot,
                                 data.data(),
                                 data.size(),
@@ -390,6 +477,7 @@ bool MetalPresentationBackend::draw_frame(
                                     package.track_stride_bytes,
                                     &package,
                                     error)) {
+      last_draw_frame_info_available_ = false;
       return false;
     }
     package.storage = VPMacOSNativePresentPackageStorageBGRA;
@@ -414,6 +502,10 @@ bool MetalPresentationBackend::draw_frame(
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - start).count()));
   }
+  last_draw_frame_info_available_ = ret == 0;
+  if (ret == 0) {
+    last_draw_frame_info_ = frame_info;
+  }
   return ret == 0;
 }
 
@@ -435,6 +527,17 @@ void MetalPresentationBackend::clear_draw_target() {
   draw_target_width_ = 0;
   draw_target_height_ = 0;
   draw_target_max_track_slots_ = VPMacOSNativeMaxTracks;
+  last_draw_frame_info_available_ = false;
+  last_draw_frame_info_ = {};
+}
+
+bool MetalPresentationBackend::copy_last_draw_frame_info(
+    VPMacOSNativeFrameInfo* out) const {
+  if (!out || !last_draw_frame_info_available_) {
+    return false;
+  }
+  *out = last_draw_frame_info_;
+  return true;
 }
 
 int MetalPresentationBackend::copy_current_frame_with_layout(
@@ -487,10 +590,6 @@ int MetalPresentationBackend::copy_current_frame_with_layout(
 }
 
 }  // namespace vp_macos
-
-struct VPMacOSMetalPresentationBackend {
-  vp_macos::MetalPresentationBackend impl;
-};
 
 VPMacOSMetalPresentationBackend* VPMacOSMetalPresentationBackendCreate(int32_t width,
                                                                        int32_t height) {

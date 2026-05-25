@@ -1,5 +1,6 @@
 #include "native_player_bridge.h"
 
+#include "macos/metal_presentation_backend.h"
 #include "macos/presentation_adapter.h"
 #include "audio/audio_output.h"
 #include "audio/audio_output_factory.h"
@@ -343,6 +344,34 @@ public:
 
   VPMacOSNativeLayoutState layout_snapshot() const {
     return to_native_layout_state(layout_controller_.snapshot(layout_));
+  }
+
+  vr::RendererDrawSnapshot draw_snapshot_for_decision(
+      const vr::PresentDecision& decision,
+      int32_t width,
+      int32_t height) const {
+    vr::RendererDrawSnapshot snapshot;
+    snapshot.decision = decision;
+    vr::filter_present_decision_against_tracks(snapshot.decision, tracks_);
+    snapshot.layout = layout_;
+    snapshot.track_geometry = layout_track_geometry();
+    for (size_t slot = 0; slot < vr::kMaxTracks; ++slot) {
+      const auto& track = tracks_[slot];
+      if (!track) {
+        continue;
+      }
+      auto& out = snapshot.tracks[slot];
+      out.active = true;
+      out.file_id = track->file_id;
+      out.generation = track->generation;
+      out.offset_us = track->offset_us;
+      out.video_width = track->video_width;
+      out.video_height = track->video_height;
+      out.video_aspect = track->video_aspect;
+    }
+    snapshot.target_width = width;
+    snapshot.target_height = height;
+    return snapshot;
   }
 
   bool layout_presentation_params(int32_t width,
@@ -1526,22 +1555,20 @@ struct VPMacOSNativePlayer {
         if (presentation_target_backend && presentation_target_pixel_buffer &&
             presentation_target_width > 0 && presentation_target_height > 0) {
           renderer_owned_upload_attempted = true;
-          VPMacOSNativeFrameInfo frame_info = {};
-          char error[256] = {};
-          const int upload_ret = VPMacOSMetalPresentationBackendCopyCurrentFrameWithLayout(
-              presentation_target_backend,
-              this,
-              presentation_target_pixel_buffer,
-              presentation_target_width,
-              presentation_target_height,
-              presentation_target_max_track_slots,
-              0,
-              &frame_info,
-              error,
-              sizeof(error));
-          renderer_owned_upload_succeeded = upload_ret == 0;
+          vr::RendererDrawSnapshot draw_snapshot;
+          {
+            std::lock_guard<std::mutex> player_lock(mutex);
+            draw_snapshot = core.draw_snapshot_for_decision(
+                tick.scheduler.decision,
+                presentation_target_width,
+                presentation_target_height);
+          }
+          vr::PresentationBackendDrawHooks draw_hooks;
+          renderer_owned_upload_succeeded =
+              presentation_target_backend->impl.draw_frame(draw_snapshot, draw_hooks);
           if (renderer_owned_upload_succeeded) {
-            renderer_owned_frame_info = frame_info;
+            presentation_target_backend->impl.copy_last_draw_frame_info(
+                &renderer_owned_frame_info);
           }
         }
         last_renderer_owned_presentation_succeeded = renderer_owned_upload_succeeded;

@@ -131,6 +131,10 @@ the macOS bridge applies the shared carry-forward policy before caching a presen
 macOS presentation therefore follows the Windows rule that tracks with no new frame keep their last
 valid frame instead of being silently dropped from the current upload.
 The host loop itself remains the main cleanup target for this phase.
+The transitional macOS host loop now builds a `RendererDrawSnapshot` from the shared scheduler
+decision and asks `MetalPresentationBackend::draw_frame` to upload it, instead of calling the older
+player-querying copy entrypoint. The host loop still owns thread wakeups for now, but visible
+renderer-owned uploads are no longer selected by a separate Swift/player copy path.
 
 Exit gate: macOS UI smokes pass with `rendererOwnedPresentationActive=true`, and the old tick-driven
 presentation path is no longer the normal route.
@@ -168,6 +172,9 @@ The Metal presentation backend now owns a renderer draw target and can consume
 `RendererDrawSnapshot` directly, packaging scheduler-selected CPU frames through the same Metal
 present-package uploader used by the transitional macOS path. A native smoke covers the shared
 snapshot-to-Metal backend draw path with a real CVPixelBuffer target.
+`MetalPresentationBackend::draw_frame` also preserves the VideoToolbox CVPixelBuffer fast path when
+the shared snapshot contains a single retained CVPixelBuffer frame, so the bridge handoff does not
+regress 4K60 zero-copy presentation.
 
 Exit gate: macOS can present multi-track CPU-decoded frames through renderer-owned Metal without the
 Swift pump choosing frames, and shader parity tests cover the supported formats.

@@ -29,6 +29,7 @@ set(VOID_PLAYER_PORTABLE_CORE_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/render/presentation_snapshot.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/seek/seek_coordinator.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track/track_buffer_budget.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/track/track_lifecycle.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track/track_pipeline.cpp"
 )
 
@@ -94,7 +95,6 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/capture/frame_capture_service.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/renderer_config_validation.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/seek/renderer_seek_log_policy.cpp"
-    "${VOID_NATIVE_DIR}/video_renderer/track/track_lifecycle.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track/track_perf_baseline.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track/track_preroll_policy.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/track/track_snapshot.cpp"

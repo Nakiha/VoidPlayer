@@ -258,6 +258,9 @@ present-package path.
 macOS track add/remove now follows the shared renderer identity rule more closely: tracks receive
 monotonic generation ids, removed slots clear their render-sink offsets and cached presentation
 decisions, and the native smoke covers remove/re-add so stale offsets cannot leak into a new track.
+macOS play/pause now uses the shared renderer playback command policy and shared track decode-state
+helper, so resuming after step/seek restores video decode and pause-after-preroll state the same way
+as Windows; the playing-step UI smoke now resumes playback and verifies the viewport advances.
 
 ## Validation Strategy
 

@@ -20,8 +20,8 @@
 #include "video_renderer/render/shader_constants.h"
 #include "video_renderer/capture/bgra_capture_metrics.h"
 #include "video_renderer/playback/renderer_playback_command_policy.h"
-#include "video_renderer/seek/seek_coordinator.h"
 #include "video_renderer/sync/render_sink.h"
+#include "video_renderer/track/track_lifecycle.h"
 #include "video_renderer/track/track_preview_policy.h"
 #include "video_renderer/track/track_pipeline_factory.h"
 #include "video_renderer/track/track_present_policy.h"
@@ -263,16 +263,25 @@ public:
   }
 
   void play() {
-    if (!find_track_by_file_id(0)) {
+    const auto plan =
+        vr::plan_renderer_play_command(tracks_.has_active_tracks(), playing_);
+    if (!plan.execute) {
       return;
     }
-    playing_ = true;
-    playback_.play();
+    apply_playback_decode_state(plan.playback_active);
+    if (plan.play_clock) {
+      playback_.play();
+    }
+    playing_ = plan.playing;
   }
 
   void pause() {
-    playing_ = false;
-    playback_.pause();
+    const auto plan = vr::plan_renderer_pause_command();
+    apply_playback_decode_state(plan.playback_active);
+    if (plan.pause_clock) {
+      playback_.pause();
+    }
+    playing_ = plan.playing;
   }
 
   void set_speed(double speed) {
@@ -882,6 +891,27 @@ private:
     if (auto* audio = playback_.audio_output()) {
       audio->set_all_decode_paused(paused);
     }
+  }
+
+  void apply_playback_decode_state(bool playback_active) {
+    const vr::TrackPlaybackDecodeStateHooks hooks{
+        [](size_t, vr::TrackPipeline& track, bool enabled) {
+          if (track.decode_thread) {
+            track.decode_thread->set_pause_after_preroll(enabled);
+          }
+        },
+        [](size_t, vr::TrackPipeline& track, bool paused) {
+          if (track.decode_thread) {
+            track.decode_thread->set_decode_paused(paused);
+          }
+        },
+        [this](bool paused) {
+          if (auto* audio = playback_.audio_output()) {
+            audio->set_all_decode_paused(paused);
+          }
+        },
+    };
+    vr::apply_track_playback_decode_state(tracks_, playback_active, hooks);
   }
 
   bool settle_eof_if_ready() {

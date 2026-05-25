@@ -56,6 +56,7 @@ public:
     void shutdown() override;
 
     bool headless() const override { return headless_; }
+    bool renderer_manages_headless_publish() const override { return true; }
     bool supports_swap_chain_present() const override;
     bool poll_device_removed(const char* operation) override;
     bool device_lost() const override;

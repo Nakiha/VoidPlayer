@@ -37,6 +37,7 @@ public:
     virtual bool initialize(const PresentationBackendConfig& config) = 0;
     virtual void shutdown() = 0;
     virtual bool headless() const = 0;
+    virtual bool renderer_manages_headless_publish() const { return false; }
     virtual bool supports_swap_chain_present() const { return false; }
     virtual bool poll_device_removed(const char*) { return false; }
     virtual bool device_lost() const { return false; }

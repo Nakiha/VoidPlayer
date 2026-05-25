@@ -29,6 +29,7 @@
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
 		A12F01042C08FF0100000001 /* MacOSFlutterArguments.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01052C08FF0100000001 /* MacOSFlutterArguments.swift */; };
 		A12F011C2C08FF0100000001 /* MacOSFilePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F011D2C08FF0100000001 /* MacOSFilePicker.swift */; };
+		A12F01222C08FF0100000001 /* MacOSViewportCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01232C08FF0100000001 /* MacOSViewportCapture.swift */; };
 		A12F010A2C08FF0100000001 /* MacOSFramePresentationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F010B2C08FF0100000001 /* MacOSFramePresentationState.swift */; };
 		A12F01142C08FF0100000001 /* MacOSPixelBufferMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01152C08FF0100000001 /* MacOSPixelBufferMetrics.swift */; };
 		A12F011A2C08FF0100000001 /* MacOSVideoRendererBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F011B2C08FF0100000001 /* MacOSVideoRendererBridge.swift */; };
@@ -97,6 +98,7 @@
 		33E5194F232828860026EE4D /* AppInfo.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = AppInfo.xcconfig; sourceTree = "<group>"; };
 		A12F01052C08FF0100000001 /* MacOSFlutterArguments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSFlutterArguments.swift; sourceTree = "<group>"; };
 		A12F011D2C08FF0100000001 /* MacOSFilePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSFilePicker.swift; sourceTree = "<group>"; };
+		A12F01232C08FF0100000001 /* MacOSViewportCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSViewportCapture.swift; sourceTree = "<group>"; };
 		A12F010B2C08FF0100000001 /* MacOSFramePresentationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSFramePresentationState.swift; sourceTree = "<group>"; };
 		A12F01152C08FF0100000001 /* MacOSPixelBufferMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSPixelBufferMetrics.swift; sourceTree = "<group>"; };
 		A12F011B2C08FF0100000001 /* MacOSVideoRendererBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSVideoRendererBridge.swift; sourceTree = "<group>"; };
@@ -214,6 +216,7 @@
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
 				A12F01052C08FF0100000001 /* MacOSFlutterArguments.swift */,
 				A12F011D2C08FF0100000001 /* MacOSFilePicker.swift */,
+				A12F01232C08FF0100000001 /* MacOSViewportCapture.swift */,
 				A12F010B2C08FF0100000001 /* MacOSFramePresentationState.swift */,
 				A12F01152C08FF0100000001 /* MacOSPixelBufferMetrics.swift */,
 				A12F011B2C08FF0100000001 /* MacOSVideoRendererBridge.swift */,
@@ -563,6 +566,7 @@
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				A12F01042C08FF0100000001 /* MacOSFlutterArguments.swift in Sources */,
 				A12F011C2C08FF0100000001 /* MacOSFilePicker.swift in Sources */,
+				A12F01222C08FF0100000001 /* MacOSViewportCapture.swift in Sources */,
 				A12F010A2C08FF0100000001 /* MacOSFramePresentationState.swift in Sources */,
 				A12F01142C08FF0100000001 /* MacOSPixelBufferMetrics.swift in Sources */,
 				A12F011A2C08FF0100000001 /* MacOSVideoRendererBridge.swift in Sources */,

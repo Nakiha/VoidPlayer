@@ -175,7 +175,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         presentationDiagnostics: presentationState.diagnosticMap()
       ))
     case "captureViewport":
-      result(captureViewport())
+      result(MacOSViewportCapture.capture(texture: texture))
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -341,25 +341,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       }
     }
     markFrameAvailable()
-  }
-
-  private func captureViewport() -> Any {
-    guard let texture else {
-      return FlutterError(
-        code: "NO_PLAYER",
-        message: "No macOS Flutter texture bridge is registered",
-        details: nil
-      )
-    }
-    let metrics = texture.captureMetrics()
-
-    return [
-      "hash": metrics.hash,
-      "width": metrics.width,
-      "height": metrics.height,
-      "avgLuma": metrics.avgLuma,
-      "nonBlackRatio": metrics.nonBlackRatio,
-    ]
   }
 
   private func markFrameAvailable() {

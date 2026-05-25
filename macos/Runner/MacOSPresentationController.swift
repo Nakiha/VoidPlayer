@@ -3,7 +3,8 @@ import Foundation
 struct MacOSPresentationContext {
   let nativeBackendActive: Bool
   let player: MacOSNativePlayerSession?
-  let texture: MacOSFlutterTextureBridge?
+  let texture: MacOSVideoTexture?
+  let nativeTexture: MacOSFlutterTextureBridge?
   let maxTrackSlots: Int
   let playback: MacOSPlaybackController
   let presentationState: MacOSFramePresentationState
@@ -45,7 +46,7 @@ final class MacOSPresentationController {
         refreshCurrentFrame(context: context)
         context.playback.reinstallPresentationTargetIfPlaying(
           player: context.player,
-          texture: context.texture,
+          texture: context.nativeTexture,
           maxTrackSlots: context.maxTrackSlots
         )
       }
@@ -56,7 +57,7 @@ final class MacOSPresentationController {
   func refreshCurrentFrame(context: MacOSPresentationContext) {
     guard context.nativeBackendActive,
           let player = context.player,
-          let texture = context.texture else {
+          let texture = context.nativeTexture else {
       context.markFrameAvailable()
       return
     }

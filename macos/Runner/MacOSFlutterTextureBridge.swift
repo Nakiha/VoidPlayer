@@ -2,11 +2,36 @@ import Cocoa
 import CoreVideo
 import FlutterMacOS
 
-final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
+typealias MacOSTextureDiagnostics = (
+  rebuildCount: Int,
+  reuseCount: Int,
+  metalUploadCount: Int,
+  metalUploadFailureCount: Int,
+  metalAvailable: Bool,
+  metalTextureCacheAvailable: Bool,
+  metalTextureValid: Bool,
+  metalTextureCreationCount: Int,
+  metalTextureFailureCount: Int,
+  metalTextureLastError: String
+)
+
+protocol MacOSVideoTexture: FlutterTexture {
+  func resize(width: Int, height: Int) -> Bool
+  func dimensions() -> (width: Int, height: Int)
+  func captureMetrics() -> (
+    width: Int,
+    height: Int,
+    avgLuma: Double,
+    nonBlackRatio: Double,
+    hash: String
+  )
+  func diagnostics() -> MacOSTextureDiagnostics
+}
+
+final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   private let lock = NSLock()
   private(set) var width: Int
   private(set) var height: Int
-  private let isSyntheticSource: Bool
   private var nativeMetalPresentationBackend: OpaquePointer?
   private let hashPrefix: String
   private var pixelBuffer: CVPixelBuffer?
@@ -19,20 +44,9 @@ final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
   private var metalTextureFailureCount = 0
   private var metalTextureLastError = ""
 
-  init(width: Int, height: Int) {
-    self.width = width
-    self.height = height
-    self.isSyntheticSource = true
-    self.hashPrefix = "macos-synthetic"
-    super.init()
-    createNativeMetalPresentationBackend()
-    rebuildPixelBuffer()
-  }
-
   init(nativeWidth: Int, nativeHeight: Int) {
     self.width = nativeWidth
     self.height = nativeHeight
-    self.isSyntheticSource = false
     self.hashPrefix = "macos-native-frame"
     super.init()
     createNativeMetalPresentationBackend()
@@ -65,9 +79,6 @@ final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
     lock.lock()
     defer { lock.unlock() }
 
-    guard !isSyntheticSource else {
-      throw MacOSNativePlayerError.invalidPayload
-    }
     if pixelBuffer == nil {
       rebuildPixelBufferLocked()
     }
@@ -129,18 +140,7 @@ final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
     )
   }
 
-  func diagnostics() -> (
-    rebuildCount: Int,
-    reuseCount: Int,
-    metalUploadCount: Int,
-    metalUploadFailureCount: Int,
-    metalAvailable: Bool,
-    metalTextureCacheAvailable: Bool,
-    metalTextureValid: Bool,
-    metalTextureCreationCount: Int,
-    metalTextureFailureCount: Int,
-    metalTextureLastError: String
-  ) {
+  func diagnostics() -> MacOSTextureDiagnostics {
     lock.lock()
     defer { lock.unlock() }
 
@@ -165,8 +165,7 @@ final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
     lock.lock()
     defer { lock.unlock() }
 
-    guard !isSyntheticSource,
-          let nativeMetalPresentationBackend,
+    guard let nativeMetalPresentationBackend,
           let pixelBuffer,
           nativeMetalUploaderAvailableLocked(),
           metalTextureValid else {
@@ -202,11 +201,7 @@ final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
     }
     pixelBufferRebuildCount += 1
 
-    if isSyntheticSource {
-      MacOSSyntheticTexturePattern.fill(buffer: nextBuffer, width: width, height: height)
-    } else {
-      MacOSSyntheticTexturePattern.clear(buffer: nextBuffer, width: width, height: height)
-    }
+    MacOSSyntheticTexturePattern.clear(buffer: nextBuffer, width: width, height: height)
     pixelBuffer = nextBuffer
     validateMetalTextureLocked(buffer: nextBuffer)
   }

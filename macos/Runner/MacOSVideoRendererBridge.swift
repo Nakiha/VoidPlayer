@@ -21,8 +21,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     super.init()
   }
 
-  private var texture: MacOSFlutterTextureBridge? {
+  private var texture: MacOSVideoTexture? {
     lifecycle.texture
+  }
+
+  private var nativeTexture: MacOSFlutterTextureBridge? {
+    lifecycle.nativeTexture
   }
 
   private var textureId: Int64? {
@@ -100,7 +104,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "play":
       playback.play(
         player: nativePlayer,
-        texture: texture,
+        texture: nativeTexture,
         textureRegistered: textureId != nil,
         maxTrackSlots: tracks.activeSlotCapacity(),
         userData: Unmanaged.passUnretained(self).toOpaque(),
@@ -260,6 +264,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
       player: nativePlayer,
       texture: texture,
+      nativeTexture: nativeTexture,
       maxTrackSlots: tracks.activeSlotCapacity(),
       playback: playback,
       presentationState: presentationState,
@@ -273,7 +278,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     MacOSTransportContext(
       nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
       player: nativePlayer,
-      texture: texture,
+      texture: nativeTexture,
       textureRegistered: textureId != nil,
       playback: playback,
       presentationState: presentationState,

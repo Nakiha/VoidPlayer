@@ -1,4 +1,124 @@
 import CoreVideo
+import FlutterMacOS
+
+final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
+  private let lock = NSLock()
+  private(set) var width: Int
+  private(set) var height: Int
+  private var pixelBuffer: CVPixelBuffer?
+  private var rebuildCount = 0
+  private var reuseCount = 0
+
+  init(width: Int, height: Int) {
+    self.width = width
+    self.height = height
+    super.init()
+    rebuildPixelBuffer()
+  }
+
+  func resize(width: Int, height: Int) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+
+    guard width != self.width || height != self.height else { return false }
+    self.width = width
+    self.height = height
+    rebuildPixelBufferLocked()
+    return true
+  }
+
+  func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {
+    lock.lock()
+    defer { lock.unlock() }
+
+    guard let pixelBuffer else { return nil }
+    reuseCount += 1
+    return Unmanaged.passRetained(pixelBuffer)
+  }
+
+  func dimensions() -> (width: Int, height: Int) {
+    lock.lock()
+    defer { lock.unlock() }
+
+    return (width: width, height: height)
+  }
+
+  func captureMetrics() -> (
+    width: Int,
+    height: Int,
+    avgLuma: Double,
+    nonBlackRatio: Double,
+    hash: String
+  ) {
+    lock.lock()
+    defer { lock.unlock() }
+
+    guard let pixelBuffer else {
+      return (
+        width: width,
+        height: height,
+        avgLuma: 0.0,
+        nonBlackRatio: 0.0,
+        hash: "macos-synthetic-empty"
+      )
+    }
+    return MacOSPixelBufferMetrics.capture(
+      buffer: pixelBuffer,
+      width: width,
+      height: height,
+      hashPrefix: "macos-synthetic"
+    )
+  }
+
+  func diagnostics() -> MacOSTextureDiagnostics {
+    lock.lock()
+    defer { lock.unlock() }
+
+    return (
+      rebuildCount: rebuildCount,
+      reuseCount: reuseCount,
+      metalUploadCount: 0,
+      metalUploadFailureCount: 0,
+      metalAvailable: false,
+      metalTextureCacheAvailable: false,
+      metalTextureValid: false,
+      metalTextureCreationCount: 0,
+      metalTextureFailureCount: 0,
+      metalTextureLastError: ""
+    )
+  }
+
+  private func rebuildPixelBuffer() {
+    lock.lock()
+    defer { lock.unlock() }
+
+    rebuildPixelBufferLocked()
+  }
+
+  private func rebuildPixelBufferLocked() {
+    let attributes = [
+      kCVPixelBufferCGImageCompatibilityKey as String: true,
+      kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
+      kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+    ] as CFDictionary
+    var nextBuffer: CVPixelBuffer?
+    let status = CVPixelBufferCreate(
+      kCFAllocatorDefault,
+      width,
+      height,
+      kCVPixelFormatType_32BGRA,
+      attributes,
+      &nextBuffer
+    )
+    guard status == kCVReturnSuccess, let nextBuffer else {
+      pixelBuffer = nil
+      return
+    }
+    rebuildCount += 1
+    MacOSSyntheticTexturePattern.fill(buffer: nextBuffer, width: width, height: height)
+    pixelBuffer = nextBuffer
+  }
+}
 
 enum MacOSSyntheticTexturePattern {
   static func clear(buffer: CVPixelBuffer, width: Int, height: Int) {

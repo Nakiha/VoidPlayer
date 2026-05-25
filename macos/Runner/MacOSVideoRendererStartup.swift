@@ -1,7 +1,8 @@
 import Foundation
 
 struct MacOSVideoRendererStartup {
-  let texture: MacOSFlutterTextureBridge
+  let texture: MacOSVideoTexture
+  let nativeTexture: MacOSFlutterTextureBridge?
   let backendName: String
   let nativePlayer: MacOSNativePlayerSession?
   let tracks: [[String: Any]]
@@ -40,7 +41,7 @@ enum MacOSVideoRendererStartupFactory {
     requestedWidth: Int,
     requestedHeight: Int
   ) -> MacOSVideoRendererStartup {
-    let texture = MacOSFlutterTextureBridge(
+    let texture = MacOSSyntheticTextureBridge(
       width: requestedWidth,
       height: requestedHeight
     )
@@ -56,6 +57,7 @@ enum MacOSVideoRendererStartupFactory {
     }
     return MacOSVideoRendererStartup(
       texture: texture,
+      nativeTexture: nil,
       backendName: "synthetic-texture",
       nativePlayer: nil,
       tracks: tracks,
@@ -114,6 +116,7 @@ enum MacOSVideoRendererStartupFactory {
     }
     return MacOSVideoRendererStartup(
       texture: texture,
+      nativeTexture: texture,
       backendName: MacOSVideoTrackPayload.nativeFormatName,
       nativePlayer: session,
       tracks: tracks,

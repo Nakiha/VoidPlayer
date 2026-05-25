@@ -4,7 +4,8 @@ import Foundation
 final class MacOSPlayerLifecycleController {
   private let textureRegistry: FlutterTextureRegistry
 
-  private(set) var texture: MacOSFlutterTextureBridge?
+  private(set) var texture: MacOSVideoTexture?
+  private(set) var nativeTexture: MacOSFlutterTextureBridge?
   private(set) var textureId: Int64?
   private(set) var backendName = "synthetic-texture"
   private(set) var nativePlayer: MacOSNativePlayerSession?
@@ -36,6 +37,7 @@ final class MacOSPlayerLifecycleController {
     let registeredTextureId = textureRegistry.register(startup.texture)
 
     texture = startup.texture
+    nativeTexture = startup.nativeTexture
     textureId = registeredTextureId
     backendName = startup.backendName
     nativePlayer = startup.nativePlayer
@@ -64,6 +66,7 @@ final class MacOSPlayerLifecycleController {
       textureRegistry.unregisterTexture(id)
     }
     texture = nil
+    nativeTexture = nil
     textureId = nil
     tracks.reset()
     presentationState.resetAll()

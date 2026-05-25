@@ -2,7 +2,7 @@ import FlutterMacOS
 import Foundation
 
 enum MacOSViewportCapture {
-  static func capture(texture: MacOSFlutterTextureBridge?) -> Any {
+  static func capture(texture: MacOSVideoTexture?) -> Any {
     guard let texture else {
       return FlutterError(
         code: "NO_PLAYER",

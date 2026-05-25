@@ -144,6 +144,8 @@ the macOS host loop no longer carries its own duplicate offset deadline helper.
 Pending multi-track presentation decisions no longer wake the Swift texture bridge or count as
 renderer-owned upload failures; only a successfully uploaded renderer-owned frame is reported as a
 frame-available callback on the normal Metal path.
+The first-frame/paused refresh fallback that peeks a primary track frame is now a shared
+`TrackPresentPolicy` helper instead of a macOS-private frame-selection snippet.
 
 Exit gate: macOS UI smokes pass with `rendererOwnedPresentationActive=true`, and the old tick-driven
 presentation path is no longer the normal route.

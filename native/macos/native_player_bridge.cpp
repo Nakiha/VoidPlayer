@@ -352,7 +352,7 @@ public:
                                                            int32_t height) {
     auto decision = current_present_decision();
     if (!decision.should_present) {
-      decision = primary_peek_present_decision();
+      decision = vr::peek_present_decision_for_track_file_id(tracks_, 0);
     }
     return draw_snapshot_for_decision(decision, width, height);
   }
@@ -572,7 +572,7 @@ public:
     }
     auto decision = current_present_decision();
     if (!decision.should_present) {
-      decision = primary_peek_present_decision();
+      decision = vr::peek_present_decision_for_track_file_id(tracks_, 0);
     }
     const auto snapshot = draw_snapshot_for_decision(decision, width, height);
     return vp_macos::snapshot_cv_pixel_buffer_frame(
@@ -893,26 +893,6 @@ public:
 private:
   vr::PresentDecision current_present_decision() {
     return presentation_loop_driver_.current_present_decision(render_sink_.get());
-  }
-
-  vr::PresentDecision primary_peek_present_decision() const {
-    vr::PresentDecision decision;
-    const auto* primary = find_track_by_file_id(0);
-    if (!primary || !primary->track_buffer || primary->slot < 0 ||
-        primary->slot >= static_cast<int32_t>(vr::kMaxTracks)) {
-      return decision;
-    }
-    auto frame = primary->track_buffer->peek(0);
-    if (!frame.has_value()) {
-      return decision;
-    }
-    const auto slot = static_cast<size_t>(primary->slot);
-    decision.should_present = true;
-    decision.frames[slot] = frame;
-    decision.file_ids[slot] = primary->file_id;
-    decision.track_generations[slot] = primary->generation;
-    decision.current_pts_us = frame->pts_us + primary->offset_us;
-    return decision;
   }
 
   void clear_scheduler_present_decision() {

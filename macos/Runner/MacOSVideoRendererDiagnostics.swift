@@ -42,7 +42,7 @@ enum MacOSVideoRendererDiagnostics {
       "softwareFallbackActive": player?.hardwareDecodeActive() != true,
       "available": player != nil,
       "reason": player == nil
-        ? "Synthetic macOS texture bridge is active"
+        ? "Explicit macOS synthetic texture source is active"
         : presentationReason(player: player),
       "textureId": textureId ?? -1,
       "textureWidth": textureDimensions?.width ?? 0,
@@ -120,7 +120,7 @@ enum MacOSVideoRendererDiagnostics {
 
   private static func presentationBackendName(player: MacOSNativePlayerSession?) -> String {
     guard let player else {
-      return "synthetic-texture"
+      return "explicit-synthetic-texture"
     }
     if player.rendererOwnedPresentationActive() {
       return "native-metal-cvpixelbuffer-target"
@@ -130,7 +130,7 @@ enum MacOSVideoRendererDiagnostics {
 
   private static func presentationAdapterKind(player: MacOSNativePlayerSession?) -> String {
     guard let player else {
-      return "synthetic"
+      return "explicit-synthetic"
     }
     if player.rendererOwnedPresentationActive() {
       return "renderer-owned-metal"
@@ -140,8 +140,8 @@ enum MacOSVideoRendererDiagnostics {
 
   private static func presentationReason(player: MacOSNativePlayerSession?) -> String {
     if player?.rendererOwnedPresentationActive() == true {
-      return "macOS shared native facade is active with renderer-owned Metal presentation"
+      return "macOS shared renderer is active with renderer-owned Metal presentation"
     }
-    return "macOS shared native facade has no active renderer-owned presentation target"
+    return "macOS shared renderer has no active renderer-owned presentation target"
   }
 }

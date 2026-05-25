@@ -4,7 +4,7 @@ enum MacOSVideoTrackPayload {
   static let syntheticDurationUs = 10_000_000
   static let nativeFormatName = "macos-native-player"
   static let nativeCodecName = "ffmpeg"
-  static let nativeCodecLongName = "macOS shared native DecodeThread facade"
+  static let nativeCodecLongName = "macOS shared native renderer pipeline"
   static let syntheticFormatName = "synthetic"
   static let syntheticCodecName = "macos_synthetic"
   static let syntheticCodecLongName = "macOS Synthetic FlutterTexture"

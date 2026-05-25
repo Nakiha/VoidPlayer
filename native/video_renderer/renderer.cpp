@@ -2382,26 +2382,11 @@ D3D11BackendMetrics Renderer::d3d_backend_metrics() const {
 }
 
 PresentationBackendStats Renderer::presentation_backend_stats() const {
-    PresentationBackendStats result;
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
     if (!presentation_backend_) {
-        return result;
+        return {};
     }
-    result.direct_yuv_upload_count =
-        presentation_backend_->direct_yuv_upload_count();
-    result.cvpixelbuffer_upload_count =
-        presentation_backend_->cvpixelbuffer_upload_count();
-    result.present_package_upload_count =
-        presentation_backend_->present_package_upload_count();
-    result.last_present_package_copy_us =
-        presentation_backend_->last_present_package_copy_us();
-    result.last_present_package_gpu_wait_us =
-        presentation_backend_->last_present_package_gpu_wait_us();
-    result.last_present_package_total_us =
-        presentation_backend_->last_present_package_total_us();
-    result.last_present_package_storage =
-        presentation_backend_->last_present_package_storage();
-    return result;
+    return presentation_backend_->presentation_stats();
 }
 
 bool Renderer::copy_last_presentation_frame_info(

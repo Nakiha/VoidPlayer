@@ -36,6 +36,16 @@ struct PresentationBackendFrameInfo {
     int64_t duration_us = 0;
 };
 
+struct PresentationBackendStats {
+    int64_t direct_yuv_upload_count = 0;
+    int64_t cvpixelbuffer_upload_count = 0;
+    int64_t present_package_upload_count = 0;
+    int64_t last_present_package_copy_us = 0;
+    int64_t last_present_package_gpu_wait_us = 0;
+    int64_t last_present_package_total_us = 0;
+    int32_t last_present_package_storage = 0;
+};
+
 class PresentationBackend {
 public:
     virtual ~PresentationBackend() = default;
@@ -56,13 +66,7 @@ public:
     virtual void move_track(size_t, size_t) {}
     virtual bool update_headless_output(void*, int, int, int) { return false; }
     virtual void clear_headless_output() {}
-    virtual int64_t direct_yuv_upload_count() const { return 0; }
-    virtual int64_t cvpixelbuffer_upload_count() const { return 0; }
-    virtual int64_t present_package_upload_count() const { return 0; }
-    virtual int64_t last_present_package_copy_us() const { return 0; }
-    virtual int64_t last_present_package_gpu_wait_us() const { return 0; }
-    virtual int64_t last_present_package_total_us() const { return 0; }
-    virtual int32_t last_present_package_storage() const { return 0; }
+    virtual PresentationBackendStats presentation_stats() const { return {}; }
     virtual bool copy_last_frame_info(PresentationBackendFrameInfo*) const { return false; }
     virtual bool draw_frame(const RendererDrawSnapshot& snapshot,
                             const PresentationBackendDrawHooks& hooks) = 0;

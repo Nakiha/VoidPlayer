@@ -76,16 +76,6 @@ struct D3D11BackendMetrics {
     uint64_t texture_sharing_failure_count = 0;
 };
 
-struct PresentationBackendStats {
-    int64_t direct_yuv_upload_count = 0;
-    int64_t cvpixelbuffer_upload_count = 0;
-    int64_t present_package_upload_count = 0;
-    int64_t last_present_package_copy_us = 0;
-    int64_t last_present_package_gpu_wait_us = 0;
-    int64_t last_present_package_total_us = 0;
-    int32_t last_present_package_storage = 0;
-};
-
 struct RendererGpuMemoryStats {
     uint64_t total_estimated_bytes = 0;
     uint64_t decoder_pool_bytes = 0;

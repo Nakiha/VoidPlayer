@@ -98,32 +98,23 @@ void MetalPresentationBackend::clear_headless_output() {
   clear_draw_target();
 }
 
-int64_t MetalPresentationBackend::direct_yuv_upload_count() const {
-  return VPMacOSMetalUploaderDirectYUVUploadCount(uploader_);
-}
-
-int64_t MetalPresentationBackend::cvpixelbuffer_upload_count() const {
-  return VPMacOSMetalUploaderCVPixelBufferUploadCount(uploader_);
-}
-
-int64_t MetalPresentationBackend::present_package_upload_count() const {
-  return VPMacOSMetalUploaderPresentPackageUploadCount(uploader_);
-}
-
-int64_t MetalPresentationBackend::last_present_package_copy_us() const {
-  return VPMacOSMetalUploaderLastPresentPackageCopyUs(uploader_);
-}
-
-int64_t MetalPresentationBackend::last_present_package_gpu_wait_us() const {
-  return VPMacOSMetalUploaderLastPresentPackageGpuWaitUs(uploader_);
-}
-
-int64_t MetalPresentationBackend::last_present_package_total_us() const {
-  return VPMacOSMetalUploaderLastPresentPackageTotalUs(uploader_);
-}
-
-int32_t MetalPresentationBackend::last_present_package_storage() const {
-  return VPMacOSMetalUploaderLastPresentPackageStorage(uploader_);
+vr::PresentationBackendStats MetalPresentationBackend::presentation_stats() const {
+  vr::PresentationBackendStats stats;
+  stats.direct_yuv_upload_count =
+      VPMacOSMetalUploaderDirectYUVUploadCount(uploader_);
+  stats.cvpixelbuffer_upload_count =
+      VPMacOSMetalUploaderCVPixelBufferUploadCount(uploader_);
+  stats.present_package_upload_count =
+      VPMacOSMetalUploaderPresentPackageUploadCount(uploader_);
+  stats.last_present_package_copy_us =
+      VPMacOSMetalUploaderLastPresentPackageCopyUs(uploader_);
+  stats.last_present_package_gpu_wait_us =
+      VPMacOSMetalUploaderLastPresentPackageGpuWaitUs(uploader_);
+  stats.last_present_package_total_us =
+      VPMacOSMetalUploaderLastPresentPackageTotalUs(uploader_);
+  stats.last_present_package_storage =
+      VPMacOSMetalUploaderLastPresentPackageStorage(uploader_);
+  return stats;
 }
 
 bool MetalPresentationBackend::copy_last_frame_info(

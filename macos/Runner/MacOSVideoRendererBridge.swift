@@ -175,7 +175,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "getTracks":
       result(tracks)
     case "pickFiles":
-      pickFiles(arguments: call.arguments, result: result)
+      MacOSFilePicker.pickFiles(arguments: call.arguments, result: result)
     case "getDiagnostics":
       result(MacOSVideoRendererDiagnostics.map(
         backendName: backendName,
@@ -680,25 +680,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   func onCancel(withArguments arguments: Any?) -> FlutterError? {
     nativeEvents.onCancel()
     return nil
-  }
-
-  private func pickFiles(arguments: Any?, result: @escaping FlutterResult) {
-    let allowsMultipleSelection = MacOSFlutterArguments.boolArg(arguments, "allowMultiple") ?? true
-    DispatchQueue.main.async {
-      let panel = NSOpenPanel()
-      panel.canChooseFiles = true
-      panel.canChooseDirectories = false
-      panel.allowsMultipleSelection = allowsMultipleSelection
-      panel.resolvesAliases = true
-
-      panel.begin { response in
-        if response == .OK {
-          result(panel.urls.map(\.path))
-        } else {
-          result(nil)
-        }
-      }
-    }
   }
 
 }

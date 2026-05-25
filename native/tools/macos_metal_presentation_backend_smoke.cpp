@@ -1,11 +1,13 @@
 #include "macos/metal_presentation_backend.h"
 
+#include "video_renderer/render/presentation_backend_factory.h"
 #include "video_renderer/render/renderer_draw_snapshot.h"
 
 #include <CoreVideo/CoreVideo.h>
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace {
@@ -66,6 +68,18 @@ int main() {
   }
 
   vp_macos::MetalPresentationBackend backend;
+  auto factory_backend =
+      vr::create_presentation_backend(vr::RenderBackendKind::Metal);
+  if (!factory_backend ||
+      factory_backend->kind() != vr::PresentationBackendKind::Metal ||
+      std::string(factory_backend->name()) != "metal-cvpixelbuffer") {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("Metal presentation backend factory did not create Metal backend");
+  }
+  if (vr::create_presentation_backend(vr::RenderBackendKind::D3D11)) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("Metal presentation backend factory created unsupported D3D11 backend");
+  }
   vr::PresentationBackendConfig config;
   config.output = pixel_buffer;
   config.width = kWidth;

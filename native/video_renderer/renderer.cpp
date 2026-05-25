@@ -14,6 +14,7 @@
 #include "video_renderer/audio_coordinator.h"
 #include "video_renderer/seek/seek_coordinator.h"
 #include "video_renderer/render/device_loss_policy.h"
+#include "video_renderer/render/presentation_backend_factory.h"
 #include "video_renderer/render/presentation_snapshot.h"
 #include "video_renderer/render/swap_chain_present_policy.h"
 #include "video_renderer/track/track_snapshot.h"
@@ -139,17 +140,22 @@ bool Renderer::initialize(const RendererConfig& config) {
         playback_session_started_by_renderer_ = true;
     }
 
-    auto d3d_backend = std::make_unique<D3D11RenderBackend>();
     PresentationBackendConfig backend_config;
     backend_config.hwnd = hwnd_;
     backend_config.adapter = config.backend.adapter;
     backend_config.width = target_width_;
     backend_config.height = target_height_;
     backend_config.headless = config.headless;
-    if (!d3d_backend->initialize(backend_config)) {
+    auto backend = create_presentation_backend(config.backend.type);
+    if (!backend) {
+        spdlog::error("Renderer: unsupported presentation backend {}",
+                      render_backend_kind_name(config.backend.type));
         return fail();
     }
-    presentation_backend_ = std::move(d3d_backend);
+    if (!backend->initialize(backend_config)) {
+        return fail();
+    }
+    presentation_backend_ = std::move(backend);
 
     const InitialTrackOpenHooks initial_track_hooks{
         [this](const std::string& path, bool use_hardware_decode) {

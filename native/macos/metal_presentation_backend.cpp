@@ -1,11 +1,13 @@
 #include "macos/metal_presentation_backend.h"
 
 #include "macos/presentation_package_builder.h"
+#include "video_renderer/render/presentation_backend_factory.h"
 #include "video_renderer/render/presentation_package.h"
 
 #include <algorithm>
 #include <chrono>
 #include <limits>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -44,6 +46,10 @@ void MetalPresentationBackend::shutdown() {
 
 bool MetalPresentationBackend::available() const {
   return uploader_ && VPMacOSMetalUploaderIsAvailable(uploader_) != 0;
+}
+
+std::unique_ptr<vr::PresentationBackend> create_metal_presentation_backend() {
+  return std::make_unique<MetalPresentationBackend>();
 }
 
 void MetalPresentationBackend::set_last_error(std::string error) {
@@ -206,6 +212,18 @@ bool MetalPresentationBackend::copy_last_draw_frame_info(
 }
 
 }  // namespace vp_macos
+
+namespace vr {
+
+std::unique_ptr<PresentationBackend> create_presentation_backend(
+    RenderBackendKind kind) {
+  if (kind == RenderBackendKind::Metal) {
+    return vp_macos::create_metal_presentation_backend();
+  }
+  return nullptr;
+}
+
+}  // namespace vr
 
 VPMacOSMetalPresentationBackend* VPMacOSMetalPresentationBackendCreate(int32_t width,
                                                                        int32_t height) {

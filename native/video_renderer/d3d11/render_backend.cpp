@@ -1,12 +1,14 @@
 #include "video_renderer/d3d11/render_backend.h"
 
 #include "embedded_shaders.h"
+#include "video_renderer/render/presentation_backend_factory.h"
 #include "video_renderer/render/presentation_snapshot.h"
 #include "video_renderer/render/shader_constants.h"
 
 #include <array>
 #include <chrono>
 #include <dxgi.h>
+#include <memory>
 #include <spdlog/spdlog.h>
 #include <vector>
 
@@ -14,6 +16,14 @@ namespace vr {
 
 D3D11RenderBackend::~D3D11RenderBackend() {
     shutdown();
+}
+
+std::unique_ptr<PresentationBackend> create_presentation_backend(
+    RenderBackendKind kind) {
+    if (kind == RenderBackendKind::D3D11) {
+        return std::make_unique<D3D11RenderBackend>();
+    }
+    return nullptr;
 }
 
 bool D3D11RenderBackend::initialize(const PresentationBackendConfig& config) {

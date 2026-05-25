@@ -88,6 +88,8 @@ behavior.
 
 - [x] Define a renderer-owned backend interface that consumes immutable draw snapshots and
   `RenderSink::PresentDecision`.
+- [x] Create platform-specific presentation backends through a backend factory instead of hardcoding
+  D3D11 construction inside `Renderer`.
 - [ ] Move D3D11 draw, frame preparation, shared texture publication, capture, and device-loss
   handling behind the Windows implementation of that interface.
 - [ ] Keep `Renderer` as the owner of scheduling, playback state, track lifecycle, and render-loop
@@ -99,6 +101,9 @@ Progress: the first draw seam is in place. `Renderer` now builds the immutable
 interface. D3D11 implements that contract today; Metal has an explicit unsupported stub until it is
 wired to the shared renderer loop. `Renderer` retains ownership of scheduling, playback state, track
 lifecycle, GPU wait accounting, and overlay hooks.
+Backend construction is now behind `create_presentation_backend(RenderBackendKind)`: Windows creates
+the D3D11 backend from the D3D11 module, and macOS creates the Metal backend from the macOS module.
+`Renderer` asks the factory for the configured backend kind instead of directly instantiating D3D11.
 
 Exit gate: Windows native tests and representative UI smokes pass with no observable behavior change.
 

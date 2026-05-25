@@ -28,11 +28,76 @@ protocol MacOSVideoTexture: FlutterTexture {
   func diagnostics() -> MacOSTextureDiagnostics
 }
 
+final class MacOSNativeMetalPresentationTarget {
+  private var backend: OpaquePointer?
+
+  init(width: Int, height: Int) {
+    recreate(width: width, height: height)
+  }
+
+  deinit {
+    if let backend {
+      VPMacOSMetalPresentationBackendDestroy(backend)
+    }
+  }
+
+  func resize(width: Int, height: Int) {
+    recreate(width: width, height: height)
+  }
+
+  func isAvailable() -> Bool {
+    guard let backend else { return false }
+    return VPMacOSMetalPresentationBackendIsAvailable(backend) != 0
+  }
+
+  func install(
+    player: MacOSNativePlayerSession,
+    pixelBuffer: CVPixelBuffer,
+    width: Int,
+    height: Int,
+    maxTrackSlots: Int
+  ) -> Bool {
+    guard let backend, isAvailable() else { return false }
+    return player.setMetalPresentationTarget(
+      backend: backend,
+      pixelBuffer: pixelBuffer,
+      width: width,
+      height: height,
+      maxTrackSlots: maxTrackSlots
+    )
+  }
+
+  func validate(pixelBuffer: CVPixelBuffer, width: Int, height: Int) -> (valid: Bool, error: String) {
+    guard let backend else {
+      return (valid: false, error: "native Metal presentation backend is null")
+    }
+    var error = [CChar](repeating: 0, count: 512)
+    let status = VPMacOSMetalPresentationBackendValidatePixelBufferChecked(
+      backend,
+      UnsafeMutableRawPointer(Unmanaged.passUnretained(pixelBuffer).toOpaque()),
+      Int32(width),
+      Int32(height),
+      &error,
+      error.count
+    )
+    return status == 0
+      ? (valid: true, error: "")
+      : (valid: false, error: String(cString: error))
+  }
+
+  private func recreate(width: Int, height: Int) {
+    if let backend {
+      VPMacOSMetalPresentationBackendDestroy(backend)
+    }
+    backend = VPMacOSMetalPresentationBackendCreate(Int32(width), Int32(height))
+  }
+}
+
 final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   private let lock = NSLock()
   private(set) var width: Int
   private(set) var height: Int
-  private var nativeMetalPresentationBackend: OpaquePointer?
+  private let presentationTarget: MacOSNativeMetalPresentationTarget
   private let hashPrefix: String
   private var pixelBuffer: CVPixelBuffer?
   private var pixelBufferRebuildCount = 0
@@ -47,16 +112,13 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   init(nativeWidth: Int, nativeHeight: Int) {
     self.width = nativeWidth
     self.height = nativeHeight
+    self.presentationTarget = MacOSNativeMetalPresentationTarget(
+      width: nativeWidth,
+      height: nativeHeight
+    )
     self.hashPrefix = "macos-native-frame"
     super.init()
-    createNativeMetalPresentationBackend()
     rebuildPixelBuffer()
-  }
-
-  deinit {
-    if let nativeMetalPresentationBackend {
-      VPMacOSMetalPresentationBackendDestroy(nativeMetalPresentationBackend)
-    }
   }
 
   func resize(width: Int, height: Int) -> Bool {
@@ -66,7 +128,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     guard width != self.width || height != self.height else { return false }
     self.width = width
     self.height = height
-    createNativeMetalPresentationBackendLocked()
+    presentationTarget.resize(width: width, height: height)
     rebuildPixelBufferLocked()
     return true
   }
@@ -149,8 +211,8 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       reuseCount: pixelBufferReuseCount,
       metalUploadCount: pixelBufferMetalUploadCount,
       metalUploadFailureCount: pixelBufferMetalUploadFailureCount,
-      metalAvailable: nativeMetalUploaderAvailableLocked(),
-      metalTextureCacheAvailable: nativeMetalUploaderAvailableLocked(),
+      metalAvailable: presentationTarget.isAvailable(),
+      metalTextureCacheAvailable: presentationTarget.isAvailable(),
       metalTextureValid: metalTextureValid,
       metalTextureCreationCount: metalTextureCreationCount,
       metalTextureFailureCount: metalTextureFailureCount,
@@ -165,14 +227,13 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     lock.lock()
     defer { lock.unlock() }
 
-    guard let nativeMetalPresentationBackend,
-          let pixelBuffer,
-          nativeMetalUploaderAvailableLocked(),
+    guard let pixelBuffer,
+          presentationTarget.isAvailable(),
           metalTextureValid else {
       return false
     }
-    return player.setMetalPresentationTarget(
-      backend: nativeMetalPresentationBackend,
+    return presentationTarget.install(
+      player: player,
       pixelBuffer: pixelBuffer,
       width: width,
       height: height,
@@ -220,40 +281,18 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     return nextBuffer
   }
 
-  private func createNativeMetalPresentationBackend() {
-    lock.lock()
-    defer { lock.unlock() }
-    createNativeMetalPresentationBackendLocked()
-  }
-
-  private func createNativeMetalPresentationBackendLocked() {
-    if let nativeMetalPresentationBackend {
-      VPMacOSMetalPresentationBackendDestroy(nativeMetalPresentationBackend)
-    }
-    nativeMetalPresentationBackend = VPMacOSMetalPresentationBackendCreate(
-      Int32(width),
-      Int32(height)
-    )
-  }
-
-  private func nativeMetalUploaderAvailableLocked() -> Bool {
-    guard let nativeMetalPresentationBackend else { return false }
-    return VPMacOSMetalPresentationBackendIsAvailable(nativeMetalPresentationBackend) != 0
-  }
-
   private func copyFromNativePlayerWithMetalUpload(
     _ player: MacOSNativePlayerSession,
     pixelBuffer: CVPixelBuffer,
     maxTrackSlots: Int,
     waitTimeoutMs: Int
   ) throws -> MacOSNativeFrameInfo? {
-    guard let nativeMetalPresentationBackend,
-          VPMacOSMetalPresentationBackendIsAvailable(nativeMetalPresentationBackend) != 0 else {
+    guard presentationTarget.isAvailable() else {
       throw MacOSNativePlayerError.failed("renderer-owned Metal presentation backend is unavailable")
     }
     do {
-      guard player.setMetalPresentationTarget(
-        backend: nativeMetalPresentationBackend,
+      guard presentationTarget.install(
+        player: player,
         pixelBuffer: pixelBuffer,
         width: width,
         height: height,
@@ -292,29 +331,15 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   }
 
   private func validateMetalTextureLocked(buffer: CVPixelBuffer) {
-    guard let nativeMetalPresentationBackend else {
-      metalTextureValid = false
-      metalTextureLastError = "native Metal presentation backend is null"
-      return
-    }
-
-    var error = [CChar](repeating: 0, count: 512)
-    let status = VPMacOSMetalPresentationBackendValidatePixelBufferChecked(
-      nativeMetalPresentationBackend,
-      UnsafeMutableRawPointer(Unmanaged.passUnretained(buffer).toOpaque()),
-      Int32(width),
-      Int32(height),
-      &error,
-      error.count
-    )
-    if status == 0 {
+    let validation = presentationTarget.validate(pixelBuffer: buffer, width: width, height: height)
+    if validation.valid {
       metalTextureCreationCount += 1
       metalTextureValid = true
       metalTextureLastError = ""
     } else {
       metalTextureFailureCount += 1
       metalTextureValid = false
-      metalTextureLastError = String(cString: error)
+      metalTextureLastError = validation.error
     }
   }
 

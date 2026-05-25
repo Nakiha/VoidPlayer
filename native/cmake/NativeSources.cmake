@@ -88,6 +88,7 @@ set(VOID_MACOS_NATIVE_PLAYER_SOURCES
     "${VOID_NATIVE_DIR}/macos/native_player_transport.cpp"
     "${VOID_NATIVE_DIR}/macos/metal_pixel_buffer_uploader.mm"
     "${VOID_NATIVE_DIR}/macos/presentation_adapter.cpp"
+    "${VOID_NATIVE_DIR}/macos/presentation_cv_pixel_buffer_frame.cpp"
     "${VOID_NATIVE_DIR}/macos/presentation_package_builder.cpp"
 )
 

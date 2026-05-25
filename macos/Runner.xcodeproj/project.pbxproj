@@ -575,6 +575,7 @@
 				"$(PROJECT_DIR)/../native/macos/native_player_state.h",
 				"$(PROJECT_DIR)/../native/macos/native_player_types.h",
 				"$(PROJECT_DIR)/../native/macos/native_player_transport.cpp",
+				"$(PROJECT_DIR)/../native/macos/presentation_cv_pixel_buffer_frame.cpp",
 				"$(PROJECT_DIR)/../native/video_renderer/seek/seek_coordinator.cpp",
 				"$(PROJECT_DIR)/../native/video_renderer/seek/seek_coordinator.h",
 			);

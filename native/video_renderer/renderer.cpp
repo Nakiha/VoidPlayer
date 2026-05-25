@@ -142,7 +142,12 @@ bool Renderer::initialize(const RendererConfig& config) {
     backend_config.max_track_slots = config.backend.max_track_slots;
     backend_config.headless = config.headless;
     render_backend_kind_ = config.backend.type;
-    auto backend = create_presentation_backend(config.backend.type);
+    const auto* backend_provider = config.backend.provider
+        ? config.backend.provider
+        : default_presentation_backend_provider();
+    auto backend = backend_provider && backend_provider->supports(config.backend.type)
+        ? backend_provider->create(config.backend.type)
+        : nullptr;
     if (!backend) {
         spdlog::error("Renderer: unsupported presentation backend {}",
                       render_backend_kind_name(config.backend.type));
@@ -1256,6 +1261,18 @@ bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int&
     return frame_capture_->capture_headless_front_buffer(
         *output, device_mutex_, bgra, width, height);
 #else
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    if (!headless_) {
+        bgra.clear();
+        width = 0;
+        height = 0;
+        return false;
+    }
+    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+    if (presentation_backend_ &&
+        presentation_backend_->capture_front_buffer(bgra, width, height)) {
+        return true;
+    }
     bgra.clear();
     width = 0;
     height = 0;
@@ -2431,8 +2448,8 @@ std::vector<TrackPerfStats> Renderer::track_perf_stats() const {
     return snapshot.stats;
 }
 
-D3D11BackendMetrics Renderer::d3d_backend_metrics() const {
-    D3D11BackendMetrics result;
+PresentationBackendMetrics Renderer::presentation_backend_metrics() const {
+    PresentationBackendMetrics result;
     result.render_wait_us = d3d_metrics_.render_wait_us.load(std::memory_order_relaxed);
     result.render_wait_count = d3d_metrics_.render_wait_count.load(std::memory_order_relaxed);
     result.frame_copy_us = d3d_metrics_.frame_copy_us.load(std::memory_order_relaxed);
@@ -2446,6 +2463,10 @@ D3D11BackendMetrics Renderer::d3d_backend_metrics() const {
     result.texture_sharing_failure_count =
         d3d_metrics_.texture_sharing_failure_count.load(std::memory_order_relaxed);
     return result;
+}
+
+D3D11BackendMetrics Renderer::d3d_backend_metrics() const {
+    return presentation_backend_metrics();
 }
 
 PresentationBackendStats Renderer::presentation_backend_stats() const {

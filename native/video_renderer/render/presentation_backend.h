@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <vector>
 
 namespace vr {
 
@@ -50,6 +51,21 @@ struct PresentationBackendStats {
     uint64_t draw_failure_count = 0;
     uint64_t consecutive_draw_failures = 0;
     int64_t last_successful_frame_pts_us = 0;
+    uint64_t staging_allocation_count = 0;
+    uint64_t staging_reuse_count = 0;
+    uint64_t staging_max_bytes = 0;
+};
+
+struct PresentationBackendMetrics {
+    uint64_t render_wait_us = 0;
+    uint64_t render_wait_count = 0;
+    uint64_t frame_copy_us = 0;
+    uint64_t frame_copy_count = 0;
+    uint64_t present_publish_us = 0;
+    uint64_t present_publish_count = 0;
+    uint64_t shared_texture_resize_count = 0;
+    uint64_t device_lost_count = 0;
+    uint64_t texture_sharing_failure_count = 0;
 };
 
 class PresentationBackend {
@@ -74,6 +90,7 @@ public:
     virtual void clear_headless_output() {}
     virtual PresentationBackendStats presentation_stats() const { return {}; }
     virtual bool copy_last_frame_info(PresentationBackendFrameInfo*) const { return false; }
+    virtual bool capture_front_buffer(std::vector<uint8_t>&, int&, int&) { return false; }
     virtual const char* last_error() const { return ""; }
     virtual bool draw_frame(const RendererDrawSnapshot& snapshot,
                             const PresentationBackendDrawHooks& hooks) = 0;

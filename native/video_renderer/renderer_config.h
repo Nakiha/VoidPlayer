@@ -9,6 +9,7 @@
 namespace vr {
 
 using RendererBackendType = RenderBackendKind;
+class PresentationBackendProvider;
 
 /// Platform-specific renderer interop values.
 /// D3D11 uses `adapter` as the Flutter Windows DXGI adapter pointer.
@@ -19,6 +20,7 @@ struct RendererBackendInterop {
     void* adapter = nullptr;
     void* output = nullptr;
     int max_track_slots = 0;
+    const PresentationBackendProvider* provider = nullptr;
 };
 
 struct RendererConfig {

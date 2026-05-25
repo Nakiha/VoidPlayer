@@ -82,6 +82,27 @@ typedef struct VPMacOSNativeRendererOwnedPresentationState {
   char last_draw_error[256];
 } VPMacOSNativeRendererOwnedPresentationState;
 
+typedef struct VPMacOSNativeTrackDiagnosticInfo {
+  int32_t file_id;
+  int32_t slot;
+  int32_t width;
+  int32_t height;
+  int64_t duration_us;
+  int64_t offset_us;
+  int32_t hardware_decode_active;
+  int32_t hardware_decode_downloads_to_cpu;
+  int32_t buffer_state;
+  uint64_t frames_decoded;
+  double decode_fps;
+  double decode_avg_ms;
+  double decode_max_ms;
+  int64_t current_pts_us;
+  int64_t current_dts_us;
+  char codec_name[64];
+  char decoder_name[128];
+  char decode_mode[64];
+} VPMacOSNativeTrackDiagnosticInfo;
+
 typedef struct VPMacOSNativePlayerPerfStats {
   uint64_t decode_frame_count;
   uint64_t decode_dropped_count;
@@ -100,6 +121,12 @@ typedef struct VPMacOSNativePlayerPerfStats {
   int64_t renderer_owned_present_package_gpu_wait_us;
   int64_t renderer_owned_present_package_total_us;
   int32_t renderer_owned_present_package_storage;
+  uint64_t active_track_count;
+  uint64_t aggregate_decode_frame_count;
+  double aggregate_decode_fps;
+  uint64_t renderer_owned_staging_allocation_count;
+  uint64_t renderer_owned_staging_reuse_count;
+  uint64_t renderer_owned_staging_max_bytes;
 } VPMacOSNativePlayerPerfStats;
 
 enum {

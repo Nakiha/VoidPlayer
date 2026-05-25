@@ -26,6 +26,9 @@ enum MacOSVideoRendererDiagnostics {
     let layoutSnapshot = player?.layoutSnapshotMap()
     let schedulerStats = player?.presentationSchedulerStats()
     let perfStats = player?.performanceStats()
+    let trackDiagnostics = player?.trackDiagnostics() ?? []
+    let primaryTrack = trackDiagnostics.first
+    let secondaryTrack = trackDiagnostics.dropFirst().first
     let rendererOwnedState = player?.rendererOwnedPresentationState()
       ?? Self.emptyRendererOwnedPresentationState()
     let rendererOwnedActive = rendererOwnedState["active"] as? Bool ?? false
@@ -59,6 +62,19 @@ enum MacOSVideoRendererDiagnostics {
       "hardwareDecodeActive": player?.hardwareDecodeActive() ?? false,
       "hardwareDecodeDownloadsToCpu": player?.hardwareDecodeDownloadsToCpu() ?? false,
       "decodeMode": player?.decodeModeName() ?? "none",
+      "nativeTrackDiagnostics": trackDiagnostics,
+      "nativeTrackDiagnosticCount": trackDiagnostics.count,
+      "primaryTrackFileId": primaryTrack?["fileId"] ?? -1,
+      "primaryTrackSlot": primaryTrack?["slot"] ?? -1,
+      "primaryTrackDecodeMode": primaryTrack?["decodeMode"] ?? "none",
+      "primaryTrackDecoderName": primaryTrack?["decoderName"] ?? "none",
+      "primaryTrackHardwareDecodeActive": primaryTrack?["hardwareDecodeActive"] ?? false,
+      "primaryTrackFramesDecoded": primaryTrack?["framesDecoded"] ?? 0,
+      "secondaryTrackFileId": secondaryTrack?["fileId"] ?? -1,
+      "secondaryTrackSlot": secondaryTrack?["slot"] ?? -1,
+      "secondaryTrackDecodeMode": secondaryTrack?["decodeMode"] ?? "none",
+      "secondaryTrackDecoderName": secondaryTrack?["decoderName"] ?? "none",
+      "secondaryTrackOffsetUs": secondaryTrack?["offsetUs"] ?? 0,
       "softwareFallbackActive": player?.hardwareDecodeActive() != true,
       "available": player != nil,
       "reason": player == nil
@@ -73,7 +89,7 @@ enum MacOSVideoRendererDiagnostics {
       "audioChannels": player?.audioChannels() ?? 0,
       "activeAudioTrack": player?.activeAudioTrack() ?? -1,
       "primaryTrackOffsetUs": player?.trackOffsetUs(fileId: 0) ?? 0,
-      "secondaryTrackOffsetUs": player?.trackOffsetUs(fileId: 1) ?? 0,
+      "legacySecondaryTrackOffsetUs": player?.trackOffsetUs(fileId: 1) ?? 0,
       "presentationSchedulerTickCount": schedulerStats?["tickCount"] ?? 0,
       "presentationSchedulerPresentableTickCount": schedulerStats?["presentableTickCount"] ?? 0,
       "presentationSchedulerFrameNotificationCount": schedulerStats?["frameNotificationCount"] ?? 0,
@@ -108,6 +124,12 @@ enum MacOSVideoRendererDiagnostics {
         perfStats?["rendererOwnedPresentPackageTotalUs"] ?? 0,
       "presentationPackageStorage":
         perfStats?["rendererOwnedPresentPackageStorage"] ?? "unavailable",
+      "presentationPackageStagingAllocationCount":
+        perfStats?["rendererOwnedStagingAllocationCount"] ?? 0,
+      "presentationPackageStagingReuseCount":
+        perfStats?["rendererOwnedStagingReuseCount"] ?? 0,
+      "presentationPackageStagingMaxBytes":
+        perfStats?["rendererOwnedStagingMaxBytes"] ?? 0,
       "metalAvailable": textureStats?.metalAvailable ?? false,
       "metalTextureCacheAvailable": textureStats?.metalTextureCacheAvailable ?? false,
       "metalTextureValid": textureStats?.metalTextureValid ?? false,
@@ -127,6 +149,10 @@ enum MacOSVideoRendererDiagnostics {
       "nativeDecodeFpsX1000": perfStats?["decodeFpsX1000"] ?? 0,
       "nativeDecodeAvgMs": perfStats?["decodeAvgMs"] ?? 0.0,
       "nativeDecodeMaxMs": perfStats?["decodeMaxMs"] ?? 0.0,
+      "nativeActiveTrackCount": perfStats?["activeTrackCount"] ?? 0,
+      "nativeAggregateDecodeFrameCount": perfStats?["aggregateDecodeFrameCount"] ?? 0,
+      "nativeAggregateDecodeFps": perfStats?["aggregateDecodeFps"] ?? 0.0,
+      "nativeAggregateDecodeFpsX1000": perfStats?["aggregateDecodeFpsX1000"] ?? 0,
       "presentationFallbackReason": MacOSPresentationDiagnostics.fallbackReason(
         player: player,
         targetInstalled: presentationTargetInstalled,

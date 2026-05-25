@@ -6,6 +6,26 @@
 
 #include <chrono>
 #include <mutex>
+#include <vector>
+
+namespace {
+
+void write_c_string(char* dest, size_t dest_size, const std::string& value) {
+  vp_macos::write_error(dest, dest_size, value);
+}
+
+const vr::TrackPerfStats* find_perf_stats(
+    const std::vector<vr::TrackPerfStats>& stats,
+    int file_id) {
+  for (const auto& perf : stats) {
+    if (perf.file_id == file_id) {
+      return &perf;
+    }
+  }
+  return nullptr;
+}
+
+}  // namespace
 
 int VPMacOSNativePlayerRendererOwnedPresentationActive(VPMacOSNativePlayer* player) {
   VPMacOSNativeRendererOwnedPresentationState state = {};
@@ -94,6 +114,68 @@ int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
   }
   vp_macos::write_error(
       out->last_draw_error, sizeof(out->last_draw_error), last_error);
+  return 0;
+}
+
+int VPMacOSNativePlayerCopyTrackDiagnostics(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativeTrackDiagnosticInfo* out,
+    size_t capacity,
+    size_t* out_count) {
+  if (out_count) {
+    *out_count = 0;
+  }
+  if (!player) {
+    return -1;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  if (!player->renderer_active_locked()) {
+    return 0;
+  }
+  const auto infos = player->renderer->track_infos();
+  const auto perf_stats = player->renderer->track_perf_stats();
+  const size_t count = infos.size();
+  if (out_count) {
+    *out_count = count;
+  }
+  if (!out || capacity == 0) {
+    return 0;
+  }
+  const size_t copy_count = std::min(capacity, count);
+  for (size_t i = 0; i < copy_count; ++i) {
+    const auto& info = infos[i];
+    auto& dst = out[i];
+    dst = {};
+    dst.file_id = info.file_id;
+    dst.slot = info.slot;
+    dst.width = info.width;
+    dst.height = info.height;
+    dst.duration_us = info.duration_us;
+    dst.offset_us = player->renderer->track_offset_us(info.file_id);
+    const std::string decoder_name =
+        info.decoder_name.empty() ? "renderer" : info.decoder_name;
+    const bool videotoolbox =
+        vp_macos::decoder_name_is_videotoolbox(decoder_name);
+    dst.hardware_decode_active = videotoolbox ? 1 : 0;
+    dst.hardware_decode_downloads_to_cpu =
+        videotoolbox && vp_macos::videotoolbox_hwdownload_forced_by_env() ? 1 : 0;
+    const auto* perf = find_perf_stats(perf_stats, info.file_id);
+    if (perf) {
+      dst.buffer_state = static_cast<int32_t>(perf->buffer_state);
+      dst.frames_decoded = perf->frames_decoded;
+      dst.decode_fps = perf->fps;
+      dst.decode_avg_ms = perf->avg_decode_ms;
+      dst.decode_max_ms = perf->max_decode_ms;
+      dst.current_pts_us = perf->current_pts_us;
+      dst.current_dts_us = perf->current_dts_us;
+    }
+    write_c_string(dst.codec_name, sizeof(dst.codec_name), info.codec_name);
+    write_c_string(dst.decoder_name, sizeof(dst.decoder_name), decoder_name);
+    write_c_string(dst.decode_mode,
+                   sizeof(dst.decode_mode),
+                   videotoolbox ? "shared-renderer-videotoolbox"
+                                : "shared-renderer-software");
+  }
   return 0;
 }
 
@@ -212,6 +294,11 @@ int VPMacOSNativePlayerCopyPerfStats(
         out->decode_avg_ms = stats.front().avg_decode_ms;
         out->decode_max_ms = stats.front().max_decode_ms;
       }
+      out->active_track_count = stats.size();
+      for (const auto& track_stats : stats) {
+        out->aggregate_decode_frame_count += track_stats.frames_decoded;
+        out->aggregate_decode_fps += track_stats.fps;
+      }
       const auto backend_stats = player->renderer->presentation_backend_stats();
       out->renderer_owned_direct_yuv_upload_count =
           backend_stats.direct_yuv_upload_count;
@@ -227,6 +314,12 @@ int VPMacOSNativePlayerCopyPerfStats(
           backend_stats.last_present_package_total_us;
       out->renderer_owned_present_package_storage =
           backend_stats.last_present_package_storage;
+      out->renderer_owned_staging_allocation_count =
+          backend_stats.staging_allocation_count;
+      out->renderer_owned_staging_reuse_count =
+          backend_stats.staging_reuse_count;
+      out->renderer_owned_staging_max_bytes =
+          backend_stats.staging_max_bytes;
     }
   }
   {

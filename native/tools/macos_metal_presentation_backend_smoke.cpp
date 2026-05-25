@@ -70,6 +70,19 @@ int main() {
   vp_macos::MetalPresentationBackend backend;
   auto factory_backend =
       vr::create_presentation_backend(vr::RenderBackendKind::Metal);
+  const auto* default_provider = vr::default_presentation_backend_provider();
+  if (!default_provider ||
+      !default_provider->supports(vr::RenderBackendKind::Metal) ||
+      default_provider->supports(vr::RenderBackendKind::D3D11)) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("Metal presentation backend default provider support set is wrong");
+  }
+  auto provider_backend = default_provider->create(vr::RenderBackendKind::Metal);
+  if (!provider_backend ||
+      provider_backend->kind() != vr::PresentationBackendKind::Metal) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("Metal presentation backend provider did not create Metal backend");
+  }
   if (!factory_backend ||
       factory_backend->kind() != vr::PresentationBackendKind::Metal ||
       std::string(factory_backend->name()) != "metal-cvpixelbuffer") {
@@ -185,6 +198,13 @@ int main() {
           VPMacOSNativePresentPackageStorageYUV) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("Metal presentation backend NV12 draw_frame diagnostics did not update");
+  }
+  const auto backend_stats = backend.presentation_stats();
+  if (backend_stats.staging_allocation_count == 0 ||
+      backend_stats.staging_reuse_count == 0 ||
+      backend_stats.staging_max_bytes == 0) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("Metal presentation backend staging diagnostics did not update");
   }
 
   backend.shutdown();

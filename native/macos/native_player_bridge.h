@@ -50,6 +50,11 @@ int VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(
 int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
     VPMacOSNativePlayer* player,
     VPMacOSNativeRendererOwnedPresentationState* out);
+int VPMacOSNativePlayerCopyTrackDiagnostics(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativeTrackDiagnosticInfo* out,
+    size_t capacity,
+    size_t* out_count);
 void VPMacOSNativePlayerResetRendererOwnedPresentationStats(VPMacOSNativePlayer* player);
 uint64_t VPMacOSNativePlayerRendererOwnedPresentationUploadCount(
     VPMacOSNativePlayer* player);

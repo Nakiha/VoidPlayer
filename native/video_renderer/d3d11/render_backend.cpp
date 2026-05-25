@@ -18,12 +18,33 @@ D3D11RenderBackend::~D3D11RenderBackend() {
     shutdown();
 }
 
-std::unique_ptr<PresentationBackend> create_presentation_backend(
-    RenderBackendKind kind) {
-    if (kind == RenderBackendKind::D3D11) {
+namespace {
+
+class D3D11PresentationBackendProvider final : public PresentationBackendProvider {
+public:
+    bool supports(RenderBackendKind kind) const override {
+        return kind == RenderBackendKind::D3D11;
+    }
+
+    std::unique_ptr<PresentationBackend> create(RenderBackendKind kind) const override {
+        if (!supports(kind)) {
+            return nullptr;
+        }
         return std::make_unique<D3D11RenderBackend>();
     }
-    return nullptr;
+};
+
+}  // namespace
+
+const PresentationBackendProvider* default_presentation_backend_provider() {
+    static const D3D11PresentationBackendProvider provider;
+    return &provider;
+}
+
+std::unique_ptr<PresentationBackend> create_presentation_backend(
+    RenderBackendKind kind) {
+    const auto* provider = default_presentation_backend_provider();
+    return provider && provider->supports(kind) ? provider->create(kind) : nullptr;
 }
 
 bool D3D11RenderBackend::initialize(const PresentationBackendConfig& config) {

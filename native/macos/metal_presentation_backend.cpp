@@ -4,8 +4,10 @@
 #include "video_renderer/render/presentation_backend_factory.h"
 #include "video_renderer/render/presentation_package.h"
 
+#include <CoreVideo/CoreVideo.h>
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <string>
@@ -121,6 +123,9 @@ vr::PresentationBackendStats MetalPresentationBackend::presentation_stats() cons
   stats.draw_failure_count = draw_failure_count_;
   stats.consecutive_draw_failures = consecutive_draw_failures_;
   stats.last_successful_frame_pts_us = last_draw_frame_info_.pts_us;
+  stats.staging_allocation_count = staging_allocation_count_;
+  stats.staging_reuse_count = staging_reuse_count_;
+  stats.staging_max_bytes = staging_max_bytes_;
   return stats;
 }
 
@@ -134,6 +139,45 @@ bool MetalPresentationBackend::copy_last_frame_info(
   out->pts_us = last_draw_frame_info_.pts_us;
   out->dts_us = last_draw_frame_info_.dts_us;
   out->duration_us = last_draw_frame_info_.duration_us;
+  return true;
+}
+
+bool MetalPresentationBackend::capture_front_buffer(std::vector<uint8_t>& bgra,
+                                                    int& width,
+                                                    int& height) {
+  auto* pixel_buffer =
+      static_cast<CVPixelBufferRef>(draw_target_pixel_buffer_);
+  if (!pixel_buffer ||
+      CVPixelBufferLockBaseAddress(pixel_buffer, kCVPixelBufferLock_ReadOnly) !=
+          kCVReturnSuccess) {
+    bgra.clear();
+    width = 0;
+    height = 0;
+    return false;
+  }
+  const int pixel_width = static_cast<int>(CVPixelBufferGetWidth(pixel_buffer));
+  const int pixel_height = static_cast<int>(CVPixelBufferGetHeight(pixel_buffer));
+  const int stride = static_cast<int>(CVPixelBufferGetBytesPerRow(pixel_buffer));
+  const auto* source =
+      static_cast<const uint8_t*>(CVPixelBufferGetBaseAddress(pixel_buffer));
+  if (!source || pixel_width <= 0 || pixel_height <= 0 ||
+      stride < pixel_width * 4) {
+    CVPixelBufferUnlockBaseAddress(pixel_buffer, kCVPixelBufferLock_ReadOnly);
+    bgra.clear();
+    width = 0;
+    height = 0;
+    return false;
+  }
+  width = pixel_width;
+  height = pixel_height;
+  bgra.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+  const size_t row_bytes = static_cast<size_t>(width) * 4u;
+  for (int y = 0; y < height; ++y) {
+    std::memcpy(bgra.data() + static_cast<size_t>(y) * row_bytes,
+                source + static_cast<size_t>(y) * static_cast<size_t>(stride),
+                row_bytes);
+  }
+  CVPixelBufferUnlockBaseAddress(pixel_buffer, kCVPixelBufferLock_ReadOnly);
   return true;
 }
 
@@ -225,10 +269,18 @@ bool MetalPresentationBackend::draw_frame(
   fill_present_decision_info_from_snapshot(
       snapshot, draw_target_width_, draw_target_height_, &package.decision);
 
-  std::vector<uint8_t> data(package_layout.max_bytes);
+  if (staging_buffer_.size() < package_layout.max_bytes) {
+    staging_buffer_.assign(package_layout.max_bytes, 0);
+    ++staging_allocation_count_;
+    staging_max_bytes_ = std::max(staging_max_bytes_, staging_buffer_.size());
+  } else {
+    ++staging_reuse_count_;
+  }
+  auto* data = staging_buffer_.data();
+  const auto data_size = staging_buffer_.size();
   if (copy_snapshot_yuv_package(snapshot,
-                                data.data(),
-                                data.size(),
+                                data,
+                                data_size,
                                 draw_target_width_,
                                 draw_target_height_,
                                 static_cast<size_t>(track_slots),
@@ -241,8 +293,8 @@ bool MetalPresentationBackend::draw_frame(
     package.stride_bytes = static_cast<int32_t>(package_layout.bgra_row_bytes);
     package.track_stride_bytes = package_layout.bgra_track_stride_bytes;
     if (!copy_snapshot_bgra_package(snapshot,
-                                    data.data(),
-                                    data.size(),
+                                    data,
+                                    data_size,
                                     draw_target_width_,
                                     draw_target_height_,
                                     package.stride_bytes,
@@ -260,7 +312,7 @@ bool MetalPresentationBackend::draw_frame(
   const auto start = std::chrono::steady_clock::now();
   const int ret = VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
       uploader_,
-      data.data(),
+      data,
       package.used_bytes,
       &package,
       draw_target_pixel_buffer_,
@@ -320,12 +372,33 @@ bool MetalPresentationBackend::copy_last_draw_frame_info(
 
 namespace vr {
 
-std::unique_ptr<PresentationBackend> create_presentation_backend(
-    RenderBackendKind kind) {
-  if (kind == RenderBackendKind::Metal) {
+namespace {
+
+class MetalPresentationBackendProvider final : public PresentationBackendProvider {
+public:
+  bool supports(RenderBackendKind kind) const override {
+    return kind == RenderBackendKind::Metal;
+  }
+
+  std::unique_ptr<PresentationBackend> create(RenderBackendKind kind) const override {
+    if (!supports(kind)) {
+      return nullptr;
+    }
     return vp_macos::create_metal_presentation_backend();
   }
-  return nullptr;
+};
+
+}  // namespace
+
+const PresentationBackendProvider* default_presentation_backend_provider() {
+  static const MetalPresentationBackendProvider provider;
+  return &provider;
+}
+
+std::unique_ptr<PresentationBackend> create_presentation_backend(
+    RenderBackendKind kind) {
+  const auto* provider = default_presentation_backend_provider();
+  return provider && provider->supports(kind) ? provider->create(kind) : nullptr;
 }
 
 }  // namespace vr

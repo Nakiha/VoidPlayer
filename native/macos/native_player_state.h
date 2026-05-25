@@ -18,6 +18,7 @@ void write_error(char* error, size_t error_size, const std::string& message);
 bool videotoolbox_disabled_by_env();
 bool videotoolbox_hwdownload_forced_by_env();
 bool probe_videotoolbox_h264();
+bool decoder_name_is_videotoolbox(const std::string& decoder_name);
 vr::LayoutState to_layout_state(const VPMacOSNativeLayoutState& state);
 VPMacOSNativeLayoutState to_native_layout_state(const vr::LayoutState& layout);
 

@@ -101,6 +101,13 @@ extension MacOSNativePlayerSession {
         "rendererOwnedPresentPackageGpuWaitUs": 0,
         "rendererOwnedPresentPackageTotalUs": 0,
         "rendererOwnedPresentPackageStorage": "unavailable",
+        "activeTrackCount": 0,
+        "aggregateDecodeFrameCount": 0,
+        "aggregateDecodeFps": 0.0,
+        "aggregateDecodeFpsX1000": 0,
+        "rendererOwnedStagingAllocationCount": 0,
+        "rendererOwnedStagingReuseCount": 0,
+        "rendererOwnedStagingMaxBytes": 0,
       ]
     }
     let maxInt64 = UInt64(Int64.max)
@@ -144,7 +151,65 @@ extension MacOSNativePlayerSession {
       "rendererOwnedPresentPackageStorage": Self.presentPackageStorageName(
         stats.renderer_owned_present_package_storage
       ),
+      "activeTrackCount": Int64(min(UInt64(stats.active_track_count), maxInt64)),
+      "aggregateDecodeFrameCount": Int64(
+        min(UInt64(stats.aggregate_decode_frame_count), maxInt64)
+      ),
+      "aggregateDecodeFps": stats.aggregate_decode_fps,
+      "aggregateDecodeFpsX1000": Int64(max(0.0, stats.aggregate_decode_fps * 1000.0)),
+      "rendererOwnedStagingAllocationCount": Int64(
+        min(UInt64(stats.renderer_owned_staging_allocation_count), maxInt64)
+      ),
+      "rendererOwnedStagingReuseCount": Int64(
+        min(UInt64(stats.renderer_owned_staging_reuse_count), maxInt64)
+      ),
+      "rendererOwnedStagingMaxBytes": Int64(
+        min(UInt64(stats.renderer_owned_staging_max_bytes), maxInt64)
+      ),
     ]
+  }
+
+  func trackDiagnostics() -> [[String: Any]] {
+    var count: Int = 0
+    _ = VPMacOSNativePlayerCopyTrackDiagnostics(handle, nil, 0, &count)
+    guard count > 0 else { return [] }
+    var tracks = Array(
+      repeating: VPMacOSNativeTrackDiagnosticInfo(),
+      count: min(count, Int(VPMacOSNativeMaxTracks))
+    )
+    var copiedCount: Int = 0
+    let ret = tracks.withUnsafeMutableBufferPointer { buffer in
+      VPMacOSNativePlayerCopyTrackDiagnostics(
+        handle,
+        buffer.baseAddress,
+        buffer.count,
+        &copiedCount
+      )
+    }
+    guard ret == 0 else { return [] }
+    return tracks.prefix(min(copiedCount, tracks.count)).map { track in
+      [
+        "fileId": Int(track.file_id),
+        "slot": Int(track.slot),
+        "width": Int(track.width),
+        "height": Int(track.height),
+        "durationUs": Int64(track.duration_us),
+        "offsetUs": Int64(track.offset_us),
+        "hardwareDecodeActive": track.hardware_decode_active != 0,
+        "hardwareDecodeDownloadsToCpu": track.hardware_decode_downloads_to_cpu != 0,
+        "bufferState": Int(track.buffer_state),
+        "framesDecoded": Int64(min(track.frames_decoded, UInt64(Int64.max))),
+        "decodeFps": track.decode_fps,
+        "decodeFpsX1000": Int64(max(0.0, track.decode_fps * 1000.0)),
+        "decodeAvgMs": track.decode_avg_ms,
+        "decodeMaxMs": track.decode_max_ms,
+        "currentPtsUs": Int64(track.current_pts_us),
+        "currentDtsUs": Int64(track.current_dts_us),
+        "codecName": Self.cString(track.codec_name),
+        "decoderName": Self.cString(track.decoder_name),
+        "decodeMode": Self.cString(track.decode_mode),
+      ]
+    }
   }
 
   private static func presentPackageStorageName(_ storage: Int32) -> String {
@@ -157,6 +222,15 @@ extension MacOSNativePlayerSession {
       return "cvpixelbuffer"
     default:
       return "unavailable"
+    }
+  }
+
+  private static func cString<T>(_ tuple: T) -> String {
+    withUnsafeBytes(of: tuple) { rawBuffer -> String in
+      guard let base = rawBuffer.bindMemory(to: CChar.self).baseAddress else {
+        return ""
+      }
+      return String(cString: base)
     }
   }
 

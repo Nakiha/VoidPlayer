@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace vp_macos {
 
@@ -29,6 +30,7 @@ public:
   void clear_headless_output() override;
   vr::PresentationBackendStats presentation_stats() const override;
   bool copy_last_frame_info(vr::PresentationBackendFrameInfo* out) const override;
+  bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) override;
   const char* last_error() const override { return last_error_.c_str(); }
   bool draw_frame(const vr::RendererDrawSnapshot& snapshot,
                   const vr::PresentationBackendDrawHooks& hooks) override;
@@ -61,6 +63,10 @@ private:
   std::string last_error_;
   uint64_t draw_failure_count_ = 0;
   uint64_t consecutive_draw_failures_ = 0;
+  uint64_t staging_allocation_count_ = 0;
+  uint64_t staging_reuse_count_ = 0;
+  size_t staging_max_bytes_ = 0;
+  std::vector<uint8_t> staging_buffer_;
   bool last_draw_succeeded_ = false;
   bool headless_ = true;
 };

@@ -22,6 +22,11 @@
 1.565, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, false
 1.57, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, false
 1.575, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-videotoolbox
+1.576, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTrackDiagnosticCount, 1
+1.577, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, primaryTrackFileId, 0, 0
+1.578, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, primaryTrackSlot, 0, 0
+1.579, ASSERT_NATIVE_DIAGNOSTIC_STRING, primaryTrackDecodeMode, shared-renderer-videotoolbox
+1.58, ASSERT_NATIVE_DIAGNOSTIC_BOOL, primaryTrackHardwareDecodeActive, true
 1.6, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalAvailable, true
 1.65, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureCacheAvailable, true
 1.7, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureValid, true

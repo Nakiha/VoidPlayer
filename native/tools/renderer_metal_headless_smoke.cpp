@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 #ifndef VIDEO_TEST_DIR
 #define VIDEO_TEST_DIR ""
@@ -124,6 +125,11 @@ int main() {
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
+    std::vector<uint8_t> captured_bgra;
+    int captured_width = 0;
+    int captured_height = 0;
+    const bool captured =
+        renderer.capture_front_buffer(captured_bgra, captured_width, captured_height);
     renderer.shutdown();
 
     if (non_black <= 0.5) {
@@ -133,6 +139,12 @@ int main() {
     }
     if (callbacks.load(std::memory_order_relaxed) <= 0) {
         std::cerr << "shared Renderer Metal frame callback was not invoked\n";
+        return 1;
+    }
+    if (!captured || captured_width != target_width || captured_height != target_height ||
+        captured_bgra.size() !=
+            static_cast<size_t>(target_width) * static_cast<size_t>(target_height) * 4u) {
+        std::cerr << "shared Renderer Metal capture_front_buffer failed\n";
         return 1;
     }
 

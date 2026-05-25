@@ -64,17 +64,7 @@ struct RendererEvent {
 
 using RendererEventCallback = std::function<void(const RendererEvent&)>;
 
-struct D3D11BackendMetrics {
-    uint64_t render_wait_us = 0;
-    uint64_t render_wait_count = 0;
-    uint64_t frame_copy_us = 0;
-    uint64_t frame_copy_count = 0;
-    uint64_t present_publish_us = 0;
-    uint64_t present_publish_count = 0;
-    uint64_t shared_texture_resize_count = 0;
-    uint64_t device_lost_count = 0;
-    uint64_t texture_sharing_failure_count = 0;
-};
+using D3D11BackendMetrics = PresentationBackendMetrics;
 
 struct RendererGpuMemoryStats {
     uint64_t total_estimated_bytes = 0;
@@ -170,6 +160,7 @@ public:
 
     /// Get per-track performance stats snapshot (thread-safe).
     std::vector<TrackPerfStats> track_perf_stats() const;
+    PresentationBackendMetrics presentation_backend_metrics() const;
     D3D11BackendMetrics d3d_backend_metrics() const;
     PresentationBackendStats presentation_backend_stats() const;
     bool copy_last_presentation_frame_info(PresentationBackendFrameInfo* out) const;

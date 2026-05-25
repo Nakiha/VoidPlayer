@@ -197,6 +197,12 @@ jobs:
           VOIDPLAYER_DISABLE_VIDEOTOOLBOX: "1"
         run: python dev.py test --native-only
 
+      - name: Run macOS VideoToolbox native smokes
+        shell: bash
+        run: |
+          native/build-macos-make/videotoolbox_provider_smoke
+          native/build-macos-make/macos_native_player_shared_renderer_smoke
+
   macos-analysis-build:
     name: macOS analysis build
     needs: ffmpeg-artifacts

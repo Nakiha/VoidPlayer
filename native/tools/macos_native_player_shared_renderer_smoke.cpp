@@ -12,6 +12,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 #ifndef VIDEO_TEST_DIR
 #define VIDEO_TEST_DIR ""
@@ -147,6 +148,23 @@ bool copy_presentation_state(VPMacOSNativePlayer* player,
                              VPMacOSNativeRendererOwnedPresentationState& state) {
     state = {};
     return VPMacOSNativePlayerCopyRendererOwnedPresentationState(player, &state) == 0;
+}
+
+bool copy_track_diagnostics(VPMacOSNativePlayer* player,
+                            std::vector<VPMacOSNativeTrackDiagnosticInfo>& tracks) {
+    size_t count = 0;
+    if (VPMacOSNativePlayerCopyTrackDiagnostics(player, nullptr, 0, &count) != 0) {
+        return false;
+    }
+    tracks.assign(count, {});
+    size_t copied = 0;
+    if (!tracks.empty() &&
+        VPMacOSNativePlayerCopyTrackDiagnostics(
+            player, tracks.data(), tracks.size(), &copied) != 0) {
+        return false;
+    }
+    tracks.resize(std::min(copied, tracks.size()));
+    return true;
 }
 
 } // namespace
@@ -300,6 +318,18 @@ int main() {
     VPMacOSNativePlayerSetTrackOffset(player.get(), 1, 125'000);
     if (VPMacOSNativePlayerTrackOffsetUs(player.get(), 1) != 125'000) {
         std::cerr << "shared renderer bridge did not retain track offset\n";
+        return 1;
+    }
+    std::vector<VPMacOSNativeTrackDiagnosticInfo> track_diagnostics;
+    if (!copy_track_diagnostics(player.get(), track_diagnostics) ||
+        track_diagnostics.size() < 2 ||
+        track_diagnostics[0].file_id != 0 ||
+        track_diagnostics[0].slot != 0 ||
+        track_diagnostics[1].file_id != 1 ||
+        track_diagnostics[1].slot != 1 ||
+        track_diagnostics[1].offset_us != 125'000 ||
+        track_diagnostics[1].decode_mode[0] == '\0') {
+        std::cerr << "shared renderer bridge per-track diagnostics were invalid\n";
         return 1;
     }
     VPMacOSNativePlayerRemoveTrack(player.get(), 1);

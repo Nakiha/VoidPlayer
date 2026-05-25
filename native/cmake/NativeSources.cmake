@@ -74,9 +74,12 @@ set(VOID_MEDIA_FFMPEG_SOURCES
 set(VOID_MACOS_NATIVE_PLAYER_SOURCES
     "${VOID_NATIVE_DIR}/macos/macos_crash_handler.cpp"
     "${VOID_NATIVE_DIR}/macos/metal_layout_params.cpp"
+    "${VOID_NATIVE_DIR}/macos/metal_presentation_backend_bridge.h"
     "${VOID_NATIVE_DIR}/macos/metal_presentation_backend.cpp"
+    "${VOID_NATIVE_DIR}/macos/metal_uploader_bridge.h"
     "${VOID_NATIVE_DIR}/macos/metal_texture_wrapping.mm"
     "${VOID_NATIVE_DIR}/macos/native_player_bridge.cpp"
+    "${VOID_NATIVE_DIR}/macos/native_player_types.h"
     "${VOID_NATIVE_DIR}/macos/native_player_diagnostics.cpp"
     "${VOID_NATIVE_DIR}/macos/native_player_layout.cpp"
     "${VOID_NATIVE_DIR}/macos/native_player_presentation_target.cpp"

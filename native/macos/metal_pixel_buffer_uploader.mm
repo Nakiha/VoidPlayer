@@ -1,4 +1,4 @@
-#include "native_player_bridge.h"
+#include "metal_uploader_bridge.h"
 
 #include "macos/metal_layout_params.h"
 #include "macos/metal_texture_wrapping.h"

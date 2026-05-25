@@ -1,7 +1,7 @@
 #ifndef VOIDPLAYER_MACOS_METAL_LAYOUT_PARAMS_H_
 #define VOIDPLAYER_MACOS_METAL_LAYOUT_PARAMS_H_
 
-#include "macos/native_player_bridge.h"
+#include "macos/metal_uploader_bridge.h"
 
 #include <cstdint>
 

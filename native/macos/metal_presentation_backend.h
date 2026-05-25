@@ -1,6 +1,6 @@
 #pragma once
 
-#include "native_player_bridge.h"
+#include "metal_presentation_backend_bridge.h"
 #include "video_renderer/render/presentation_backend.h"
 
 #include <cstddef>

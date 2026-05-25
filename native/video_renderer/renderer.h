@@ -130,6 +130,9 @@ public:
     void set_loop_range(bool enabled, int64_t start_us, int64_t end_us);
     void set_audible_track(int file_id);
     int audible_track() const;
+    bool has_audio() const;
+    int audio_sample_rate() const;
+    int audio_channels() const;
 
     // Frame stepping (pause + advance/retreat)
     void step_forward();

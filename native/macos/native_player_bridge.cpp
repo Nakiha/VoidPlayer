@@ -2104,6 +2104,9 @@ int VPMacOSNativePlayerHasAudio(VPMacOSNativePlayer* player) {
     return 0;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    return player->shared_renderer->has_audio() ? 1 : 0;
+  }
   return player->core.has_audio() ? 1 : 0;
 }
 
@@ -2112,6 +2115,9 @@ int32_t VPMacOSNativePlayerAudioSampleRate(VPMacOSNativePlayer* player) {
     return 0;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    return player->shared_renderer->audio_sample_rate();
+  }
   return player->core.audio_sample_rate();
 }
 
@@ -2120,6 +2126,9 @@ int32_t VPMacOSNativePlayerAudioChannels(VPMacOSNativePlayer* player) {
     return 0;
   }
   std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->shared_renderer_active_locked()) {
+    return player->shared_renderer->audio_channels();
+  }
   return player->core.audio_channels();
 }
 

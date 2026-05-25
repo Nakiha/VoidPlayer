@@ -23,16 +23,20 @@ bool AudioCoordinator::register_track(int file_id,
     if (!audio) {
         return false;
     }
-    return audio->add_track(
+    const bool added = audio->add_track(
         file_id,
         audio_packet_queue,
         stats.audio_codec_params,
         stats.audio_time_base);
+    if (added && audio->active_track() < 0) {
+        audio->set_active_track(file_id);
+    }
+    return added;
 }
 
 void AudioCoordinator::unregister_track(int file_id) {
     auto* audio = playback_.audio_output();
-    if (audio && file_id > 0) {
+    if (audio && file_id >= 0) {
         audio->remove_track(file_id);
     }
 }

@@ -167,6 +167,13 @@ int main() {
         std::cerr << "shared renderer bridge did not expose valid metadata\n";
         return 1;
     }
+    if (VPMacOSNativePlayerHasAudio(player.get()) != 0 &&
+        (VPMacOSNativePlayerAudioSampleRate(player.get()) <= 0 ||
+         VPMacOSNativePlayerAudioChannels(player.get()) <= 0 ||
+         VPMacOSNativePlayerActiveAudioTrack(player.get()) != 0)) {
+        std::cerr << "shared renderer bridge reported invalid audio metadata\n";
+        return 1;
+    }
 
     VPMacOSNativeFrameInfo first = {};
     double first_non_black = 0.0;

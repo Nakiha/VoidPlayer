@@ -934,7 +934,7 @@ void Renderer::step_backward() {
     draw_paused_frame("step_backward");
 }
 
-void Renderer::draw_paused_frame(const char* reason) {
+bool Renderer::draw_paused_frame(const char* reason) {
     PresentDecision decision;
     bool has_frame = false;
     {
@@ -948,19 +948,39 @@ void Renderer::draw_paused_frame(const char* reason) {
             has_frame = true;
         }
     }
-    if (has_frame) {
-        present_frame(decision);
-        int ref = -1;
-        {
-            std::lock_guard<std::mutex> lock(state_mutex_);
-            filter_present_decision_against_tracks(decision, tracks_);
-            last_decision_ = decision;
-            ref = first_active_track();
-        }
-        double pts = (ref >= 0 && decision.frames[ref].has_value())
-                     ? decision.frames[ref]->pts_us / 1e6 : -1.0;
-        spdlog::info("[Renderer] draw_paused_frame({}): pts={:.3f}s", reason, pts);
+    if (!has_frame) {
+        return false;
     }
+    present_frame(decision);
+    int ref = -1;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        filter_present_decision_against_tracks(decision, tracks_);
+        last_decision_ = decision;
+        ref = first_active_track();
+    }
+    double pts = (ref >= 0 && decision.frames[ref].has_value())
+                 ? decision.frames[ref]->pts_us / 1e6 : -1.0;
+    spdlog::info("[Renderer] draw_paused_frame({}): pts={:.3f}s", reason, pts);
+    return true;
+}
+
+bool Renderer::request_frame_refresh(const char* reason) {
+    {
+        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+        if (!initialized_.load(std::memory_order_acquire) ||
+            shutting_down_.load(std::memory_order_acquire)) {
+            return false;
+        }
+    }
+    const char* refresh_reason = reason && reason[0] != '\0'
+                                     ? reason
+                                     : "request_frame_refresh";
+    if (playing_.load(std::memory_order_acquire)) {
+        redraw_layout();
+        return true;
+    }
+    return draw_paused_frame(refresh_reason);
 }
 
 RendererDrawSnapshot Renderer::build_draw_snapshot_locked(

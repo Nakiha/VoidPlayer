@@ -52,7 +52,7 @@ extension MacOSNativePlayerSession {
     )
   }
 
-  func presentCurrentFrameToMetalTarget() throws -> MacOSNativeFrameInfo {
+  func copyLastRendererOwnedFrameInfo() throws -> MacOSNativeFrameInfo {
     var info = VPMacOSNativeFrameInfo()
     var error = [CChar](repeating: 0, count: 1024)
     let ret = VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
@@ -68,6 +68,39 @@ extension MacOSNativePlayerSession {
           ? "macOS renderer-owned presentation failed with code \(ret)"
           : message
       )
+    }
+    guard info.width > 0, info.height > 0 else {
+      throw MacOSNativePlayerError.invalidPayload
+    }
+    return MacOSNativeFrameInfo(
+      width: Int(info.width),
+      height: Int(info.height),
+      durationUs: Int(info.duration_us),
+      ptsUs: Int(info.pts_us),
+      dtsUs: Int(info.dts_us)
+    )
+  }
+
+  func requestRendererOwnedFrameRefresh(timeoutMs: Int) throws -> MacOSNativeFrameInfo {
+    var info = VPMacOSNativeFrameInfo()
+    var error = [CChar](repeating: 0, count: 1024)
+    let ret = VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
+      handle,
+      Int32(max(0, timeoutMs)),
+      &info,
+      &error,
+      error.count
+    )
+    if ret != 0 {
+      let message = String(cString: error)
+      let fallback = ret == -2
+        ? "renderer-owned Metal frame refresh timed out"
+        : "macOS renderer-owned presentation failed with code \(ret)"
+      let finalMessage = message.isEmpty ? fallback : message
+      if ret == -2 {
+        throw MacOSNativePlayerError.transientFrameUnavailable(finalMessage)
+      }
+      throw MacOSNativePlayerError.failed(finalMessage)
     }
     guard info.width > 0, info.height > 0 else {
       throw MacOSNativePlayerError.invalidPayload

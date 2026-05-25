@@ -139,25 +139,54 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     waitTimeoutMs: Int
   ) throws -> MacOSNativeFrameInfo {
     lock.lock()
-    defer { lock.unlock() }
-
     if pixelBuffer == nil {
       rebuildPixelBufferLocked()
     }
     guard let pixelBuffer else {
+      lock.unlock()
       throw MacOSNativePlayerError.invalidPayload
     }
-
-    guard let info = try copyFromNativePlayerWithMetalUpload(
-      player,
-      pixelBuffer: pixelBuffer,
-      maxTrackSlots: maxTrackSlots,
-      waitTimeoutMs: waitTimeoutMs
-    ) else {
-      throw MacOSNativePlayerError.failed("renderer-owned Metal presentation is unavailable")
+    guard presentationTarget.isAvailable() else {
+      lock.unlock()
+      throw MacOSNativePlayerError.failed("renderer-owned Metal presentation backend is unavailable")
     }
-    pixelBufferReuseCount += 1
-    return info
+    guard presentationTarget.install(
+      player: player,
+      pixelBuffer: pixelBuffer,
+      width: width,
+      height: height,
+      maxTrackSlots: maxTrackSlots
+    ) else {
+      pixelBufferMetalUploadFailureCount += 1
+      lock.unlock()
+      throw MacOSNativePlayerError.failed("failed to install renderer-owned Metal presentation target")
+    }
+    lock.unlock()
+
+    do {
+      let info = try withExtendedLifetime(pixelBuffer) {
+        try player.requestRendererOwnedFrameRefresh(timeoutMs: waitTimeoutMs)
+      }
+      lock.lock()
+      defer { lock.unlock() }
+      let expectedPixelBuffer = Unmanaged.passUnretained(pixelBuffer).toOpaque()
+      guard let currentPixelBuffer = self.pixelBuffer,
+            Unmanaged.passUnretained(currentPixelBuffer).toOpaque() == expectedPixelBuffer else {
+        throw MacOSNativePlayerError.failed("renderer-owned Metal presentation target changed during refresh")
+      }
+      pixelBufferMetalUploadCount += 1
+      pixelBufferReuseCount += 1
+      validateMetalTextureLocked(buffer: pixelBuffer)
+      return info
+    } catch {
+      if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable != true {
+        lock.lock()
+        pixelBufferMetalUploadFailureCount += 1
+        lock.unlock()
+        NSLog("VoidPlayer macOS renderer-owned Metal refresh failed: \(error)")
+      }
+      throw error
+    }
   }
 
   func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {
@@ -279,55 +308,6 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     )
     guard status == kCVReturnSuccess else { return nil }
     return nextBuffer
-  }
-
-  private func copyFromNativePlayerWithMetalUpload(
-    _ player: MacOSNativePlayerSession,
-    pixelBuffer: CVPixelBuffer,
-    maxTrackSlots: Int,
-    waitTimeoutMs: Int
-  ) throws -> MacOSNativeFrameInfo? {
-    guard presentationTarget.isAvailable() else {
-      throw MacOSNativePlayerError.failed("renderer-owned Metal presentation backend is unavailable")
-    }
-    do {
-      guard presentationTarget.install(
-        player: player,
-        pixelBuffer: pixelBuffer,
-        width: width,
-        height: height,
-        maxTrackSlots: maxTrackSlots
-      ) else {
-        throw MacOSNativePlayerError.failed("failed to install renderer-owned Metal presentation target")
-      }
-      let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
-      var lastError: Error?
-      repeat {
-        do {
-          let info = try player.presentCurrentFrameToMetalTarget()
-          pixelBufferMetalUploadCount += 1
-          validateMetalTextureLocked(buffer: pixelBuffer)
-          return info
-        } catch {
-          lastError = error
-          guard (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true,
-                Date() < deadline else {
-            throw error
-          }
-          Thread.sleep(forTimeInterval: 0.01)
-        }
-      } while Date() < deadline
-      if let lastError {
-        throw lastError
-      }
-      return nil
-    } catch {
-      if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable != true {
-        pixelBufferMetalUploadFailureCount += 1
-        NSLog("VoidPlayer macOS renderer-owned Metal refresh failed: \(error)")
-      }
-      throw error
-    }
   }
 
   private func validateMetalTextureLocked(buffer: CVPixelBuffer) {

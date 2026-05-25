@@ -106,23 +106,41 @@ bool wait_for_presented_frame(VPMacOSNativePlayer* player,
                               double& non_black,
                               std::chrono::milliseconds timeout) {
     char error[1024] = {};
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
-    while (std::chrono::steady_clock::now() < deadline) {
-        if (VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
-                player, &info, error, sizeof(error)) == 0) {
-            non_black = non_black_ratio_pixel_buffer(target);
-            if (non_black > 0.5) {
-                return true;
-            }
+    const int timeout_ms = static_cast<int>(timeout.count());
+    if (VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
+            player, timeout_ms, &info, error, sizeof(error)) != 0) {
+        std::cerr << "timed out waiting for shared renderer frame";
+        if (error[0] != '\0') {
+            std::cerr << ": " << error;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        std::cerr << "\n";
+        return false;
     }
-    std::cerr << "timed out waiting for shared renderer frame";
-    if (error[0] != '\0') {
-        std::cerr << ": " << error;
-    }
-    std::cerr << "\n";
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    do {
+        non_black = non_black_ratio_pixel_buffer(target);
+        if (non_black > 0.5) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    } while (std::chrono::steady_clock::now() < deadline);
+    std::cerr << "shared renderer frame stayed black after refresh\n";
     return false;
+}
+
+bool request_refresh_expect_failure(VPMacOSNativePlayer* player,
+                                    std::string& message,
+                                    std::chrono::milliseconds timeout) {
+    VPMacOSNativeFrameInfo info = {};
+    char error[1024] = {};
+    const int ret = VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
+        player, static_cast<int>(timeout.count()), &info, error, sizeof(error));
+    message = error;
+    if (ret >= 0) {
+        std::cerr << "renderer-owned refresh unexpectedly succeeded\n";
+        return false;
+    }
+    return true;
 }
 
 bool copy_presentation_state(VPMacOSNativePlayer* player,
@@ -231,7 +249,14 @@ int main() {
         std::cerr << "invalid-size target install should keep renderer alive for diagnostics\n";
         return 1;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::string invalid_refresh_error;
+    if (!request_refresh_expect_failure(
+            player.get(), invalid_refresh_error, std::chrono::milliseconds(500)) ||
+        invalid_refresh_error.find("dimensions") == std::string::npos) {
+        std::cerr << "invalid-size target refresh did not return dimensions failure: "
+                  << invalid_refresh_error << "\n";
+        return 1;
+    }
     if (!copy_presentation_state(player.get(), state) ||
         state.last_draw_succeeded != 0 ||
         state.draw_failure_count <= failure_count_before ||

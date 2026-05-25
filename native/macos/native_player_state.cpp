@@ -225,9 +225,11 @@ void VPMacOSNativePlayer::on_frame_available() {
     }
     renderer_owned_presentation_last_upload_time = now;
     ++renderer_owned_presentation_upload_count;
+    ++renderer_owned_presentation_event_sequence;
     callback = frame_available_callback;
     user_data = frame_available_user_data;
   }
+  presentation_condition.notify_all();
   if (callback) {
     callback(user_data);
   }
@@ -242,15 +244,19 @@ void VPMacOSNativePlayer::record_presentation_failure_locked(
   if (upload_failure) {
     ++renderer_owned_presentation_failure_count;
   }
+  ++renderer_owned_presentation_event_sequence;
   ++renderer_owned_presentation_consecutive_failures;
   renderer_owned_presentation_last_error =
       error.empty() ? "renderer-owned Metal presentation failed" : error;
 }
 
 void VPMacOSNativePlayer::on_frame_failed(const char* error) {
-  std::lock_guard<std::mutex> callback_lock(callback_mutex);
-  record_presentation_failure_locked(
-      error ? std::string(error) : std::string(), false);
+  {
+    std::lock_guard<std::mutex> callback_lock(callback_mutex);
+    record_presentation_failure_locked(
+        error ? std::string(error) : std::string(), false);
+  }
+  presentation_condition.notify_all();
 }
 
 void VPMacOSNativePlayer::update_decode_names_locked() {

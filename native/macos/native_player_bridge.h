@@ -60,6 +60,12 @@ int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
+int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
+    VPMacOSNativePlayer* player,
+    int32_t timeout_ms,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
 
 void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerPause(VPMacOSNativePlayer* player);

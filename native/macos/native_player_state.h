@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -50,6 +51,7 @@ struct VPMacOSNativePlayer {
       std::chrono::steady_clock::now();
 
   mutable std::mutex callback_mutex;
+  std::condition_variable presentation_condition;
   VPMacOSFrameAvailableCallback frame_available_callback = nullptr;
   void* frame_available_user_data = nullptr;
   VPMacOSMetalPresentationBackend* presentation_target_backend = nullptr;
@@ -64,6 +66,7 @@ struct VPMacOSNativePlayer {
   uint64_t renderer_owned_presentation_upload_count = 0;
   uint64_t renderer_owned_presentation_failure_count = 0;
   uint64_t renderer_owned_presentation_draw_failure_count = 0;
+  uint64_t renderer_owned_presentation_event_sequence = 0;
   uint64_t renderer_owned_presentation_consecutive_failures = 0;
   std::string renderer_owned_presentation_last_error;
   std::chrono::steady_clock::time_point renderer_owned_presentation_first_upload_time{};

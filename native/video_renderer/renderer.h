@@ -228,6 +228,10 @@ public:
                                 int max_track_slots);
     void clear_headless_output();
 
+    /// Request an immediate redraw of the currently presentable frame.
+    /// Returns false when the renderer cannot issue a refresh command.
+    bool request_frame_refresh(const char* reason);
+
     /// Capture the currently published headless frame as packed BGRA bytes.
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
 
@@ -240,7 +244,7 @@ private:
     void render_loop() noexcept;
     void render_loop_body();
     bool draw_frame(const RendererDrawSnapshot& snapshot);
-    void draw_paused_frame(const char* reason);
+    bool draw_paused_frame(const char* reason);
     RendererDrawSnapshot build_draw_snapshot_locked(const PresentDecision& decision) const;
     void update_track_geometry_from_decision_locked(const PresentDecision& decision);
     void seek_internal(std::unique_lock<std::mutex>& state_lock,

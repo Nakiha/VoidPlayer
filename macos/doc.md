@@ -127,10 +127,10 @@ diagnostics as
 `presentationAdapter=cvpixelbuffer-bgra-copy`; decode, seek, loop, audio, and playback clock policy
 remain outside Swift. The macOS channel also forwards primary-track `setTrackOffset` into the shared
 native `RenderSink` and routes secondary-track offsets to native tracks as well; visual multi-track
-offset composition still waits for renderer-owned macOS presentation rather than Swift-side policy.
+offset composition is presented through the renderer-owned Metal target rather than Swift-side policy.
 `applyLayout` is also mirrored into native
-`LayoutController` state and exposed through `nativeLayout*` diagnostics, but visual layout
-application still waits for renderer-owned Metal presentation. The adapter accepts CPU RGBA, planar
+`LayoutController` state and exposed through `nativeLayout*` diagnostics; visual layout
+application is refreshed through native renderer snapshots. The adapter accepts CPU RGBA, planar
 YUV420, NV12, and P010 frames, with deterministic smoke coverage for range and matrix-aware YUV
 conversion plus a 10-bit H.264 VideoToolbox hwdownload UI smoke for the forced fallback path.
 The pixel buffer is created with Metal compatibility and IOSurface backing, and native diagnostics expose whether a
@@ -152,7 +152,8 @@ backend grows per-track CV texture inputs. Diagnostics expose package upload cou
 CVPixelBuffer upload count, last package storage (`yuv`/`bgra`), scheduler-selected present frame
 count, and whether the package copy consumed the cached scheduler decision. The older
 locked-buffer direct copy remains a fallback and is reported through `pixelBufferDirectCopyCount`
-and `nativeFrameSwiftCopyCount`. The diagnostics map also reports primary decode cadence
+and `nativeFrameSwiftCopyCount`; normal Metal-enabled first-frame, seek, step, offset, layout, and
+playback paths keep those fallback counters at zero. The diagnostics map also reports primary decode cadence
 (`nativeDecodeFrameCount`, `nativeDecodeFpsX1000`), renderer-owned upload cadence
 (`nativeRendererOwnedUploadFpsX1000`), presented callback cadence (`nativeFrameCopyFpsX1000`), and
 `presentationFallbackReason` so 4K playback regressions can be separated into decode, upload,

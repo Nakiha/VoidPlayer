@@ -214,6 +214,11 @@ uint64_t VPMacOSNativePlayerRendererOwnedPresentationUploadCount(
     VPMacOSNativePlayer* player);
 uint64_t VPMacOSNativePlayerRendererOwnedPresentationFailureCount(
     VPMacOSNativePlayer* player);
+int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
 
 void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerPause(VPMacOSNativePlayer* player);

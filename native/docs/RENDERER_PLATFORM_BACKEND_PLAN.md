@@ -72,7 +72,9 @@ test matrix also covers present-decision carry-forward identity and offset guard
 diagnostics now split visible presentation into renderer-owned presentation and Swift fallback-copy
 counters. The macOS facade and 4K VideoToolbox smokes require renderer-owned presentation with zero
 Swift fallback copies, while the direct-copy fallback smoke proves the legacy Swift path remains
-explicit and isolated.
+explicit and isolated. First-frame, seek, step, offset, and layout refreshes now install the same
+renderer-owned Metal presentation target and ask native to present the current renderer snapshot;
+the Swift direct-copy path is reserved for the explicit Metal-disabled fallback.
 
 Exit gate: current macOS playback still works, and diagnostics clearly distinguish transitional
 texture-pump presentation from renderer-owned presentation.

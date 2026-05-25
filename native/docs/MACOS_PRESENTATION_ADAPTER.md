@@ -22,8 +22,8 @@ the Metal layout upload:
 
 The Swift runner only owns `CVPixelBuffer` lifecycle, texture registration,
 diagnostic counters, and Flutter frame notifications. It asks native code to
-copy the current frame into the native Metal uploader, or into a locked pixel
-buffer when the direct-copy fallback is enabled, and receives frame timing
+present the current renderer snapshot through the installed Metal target, or
+into a locked pixel buffer when the direct-copy fallback is enabled, and receives frame timing
 metadata. The runner creates Metal-compatible, IOSurface-backed pixel buffers,
 but native owns the Metal device, command queue, `CVMetalTextureCache`
 validation and shared `MTLBuffer` upload. The same surface is used for explicit

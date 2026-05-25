@@ -8,9 +8,9 @@
 1.4, ASSERT_NATIVE_BACKEND, macos-native-player, true
 1.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapter, cvpixelbuffer-bgra-copy
 1.505, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, software-fallback
-1.51, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, false
+1.51, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
 1.512, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-presentation-scheduler/transitional-thread
-1.514, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, swift-cvpixelbuffer-texture-pump
+1.514, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-metal-cvpixelbuffer-target
 1.52, ASSERT_NATIVE_DIAGNOSTIC_STRING, hardwareDecodeProvider, VideoToolbox
 1.54, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeAvailable, true
 1.56, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, true
@@ -24,12 +24,16 @@
 1.75, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, metalTextureCreationCount, 1
 1.77, ASSERT_NATIVE_DIAGNOSTIC_BOOL, pixelBufferMetalUploadEnabled, true
 1.78, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationUploadMode, metal-cvpixelbuffer-present-package
+1.781, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, pixelBufferDirectCopyCount, 0, 0
+1.782, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true
 1.785, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureWidth, 320, 1920
 1.786, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureHeight, 180, 1080
 1.79, ADJUST_TRACK_OFFSET, 0, 250
 1.795, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, primaryTrackOffsetUs, 250000
+1.796, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, pixelBufferDirectCopyCount, 0, 0
 1.85, SET_VIEWPORT_PIXEL_SIZE_MODE, fillView
 1.95, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeLayoutPixelSizeMode, 1
+1.96, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, pixelBufferDirectCopyCount, 0, 0
 2.05, ASSERT_TRACK_METADATA, 0, macos-native-player, decode_thread_videotoolbox_renderer_owned
 2.1, ASSERT_PRESENTED_FRAME_RANGE, 0, 0, 100000
 5.2, PLAY

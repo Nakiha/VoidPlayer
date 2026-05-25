@@ -37,7 +37,8 @@ private enum MacOSNativePlayerError: Error, CustomStringConvertible {
   var isTransientFrameUnavailable: Bool {
     switch self {
     case .failed(let message):
-      return message == "no decoded frame is ready" ||
+      return message == "no presentable frame is ready" ||
+        message == "no decoded frame is ready" ||
         message == "not all present decision frames are ready" ||
         message == "timed out waiting for a decoded frame"
     case .invalidPayload:
@@ -146,6 +147,35 @@ private final class MacOSNativePlayerSession {
     var info = VPMacOSNativeFrameInfo()
     guard VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(handle, &info) == 0 else {
       return nil
+    }
+    return MacOSNativeFrameInfo(
+      width: Int(info.width),
+      height: Int(info.height),
+      durationUs: Int(info.duration_us),
+      ptsUs: Int(info.pts_us),
+      dtsUs: Int(info.dts_us)
+    )
+  }
+
+  func presentCurrentFrameToMetalTarget() throws -> MacOSNativeFrameInfo {
+    var info = VPMacOSNativeFrameInfo()
+    var error = [CChar](repeating: 0, count: 1024)
+    let ret = VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
+      handle,
+      &info,
+      &error,
+      error.count
+    )
+    if ret != 0 {
+      let message = String(cString: error)
+      throw MacOSNativePlayerError.failed(
+        message.isEmpty
+          ? "macOS renderer-owned presentation failed with code \(ret)"
+          : message
+      )
+    }
+    guard info.width > 0, info.height > 0 else {
+      throw MacOSNativePlayerError.invalidPayload
     }
     return MacOSNativeFrameInfo(
       width: Int(info.width),
@@ -893,6 +923,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
           maxTrackSlots: 1,
           waitTimeoutMs: 3_000
         )
+        nativePresentationTargetInstalled = session.rendererOwnedPresentationActive()
         initialPresentedPtsUs = firstFrame.ptsUs
         initialPresentedDtsUs = normalizedDtsUs(firstFrame)
         trackWidth = session.width() > 0 ? session.width() : firstFrame.width
@@ -1013,6 +1044,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     lastPresentedDurationUs = nil
     isPlaying = false
     backendName = "synthetic-texture"
+    nativePresentationTargetInstalled = false
     nativePlayer?.close()
     nativePlayer = nil
   }
@@ -1188,6 +1220,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         maxTrackSlots: activeTrackSlotCapacity(),
         waitTimeoutMs: 3_000
       )
+      nativePresentationTargetInstalled = nativePlayer.rendererOwnedPresentationActive()
       publishFrameInfo(frameInfo)
       return nil
     } catch {
@@ -1212,6 +1245,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         maxTrackSlots: activeTrackSlotCapacity(),
         waitTimeoutMs: 100
       )
+      nativePresentationTargetInstalled = nativePlayer.rendererOwnedPresentationActive()
       publishFrameInfo(frameInfo)
     } catch {
       NSLog("VoidPlayer macOS native layout refresh failed: \(error)")
@@ -1259,6 +1293,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         maxTrackSlots: activeTrackSlotCapacity(),
         waitTimeoutMs: 3_000
       )
+      nativePresentationTargetInstalled = nativePlayer.rendererOwnedPresentationActive()
       publishFrameInfo(frameInfo)
     } catch {
       return FlutterError(
@@ -2126,23 +2161,39 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
       return nil
     }
     do {
-      guard let info = try player.copyCurrentFrameToMetalPixelBuffer(
+      guard player.setMetalPresentationTarget(
         backend: nativeMetalPresentationBackend,
         pixelBuffer: pixelBuffer,
         width: width,
         height: height,
-        maxTrackSlots: maxTrackSlots,
-        waitTimeoutMs: waitTimeoutMs
+        maxTrackSlots: maxTrackSlots
       ) else {
-        pixelBufferMetalUploadFailureCount += 1
         return nil
       }
-      pixelBufferMetalUploadCount += 1
-      validateMetalTextureLocked(buffer: pixelBuffer)
-      return info
+      let deadline = Date().addingTimeInterval(Double(waitTimeoutMs) / 1000.0)
+      var lastError: Error?
+      repeat {
+        do {
+          let info = try player.presentCurrentFrameToMetalTarget()
+          pixelBufferMetalUploadCount += 1
+          validateMetalTextureLocked(buffer: pixelBuffer)
+          return info
+        } catch {
+          lastError = error
+          guard (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true,
+                Date() < deadline else {
+            throw error
+          }
+          Thread.sleep(forTimeInterval: 0.01)
+        }
+      } while Date() < deadline
+      if let lastError {
+        throw lastError
+      }
+      return nil
     } catch {
       pixelBufferMetalUploadFailureCount += 1
-      NSLog("VoidPlayer macOS Metal layout upload failed; falling back to CPU BGRA layout: \(error)")
+      NSLog("VoidPlayer macOS renderer-owned Metal refresh failed; falling back to CPU BGRA layout: \(error)")
       return nil
     }
   }

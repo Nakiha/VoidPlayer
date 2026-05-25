@@ -343,6 +343,15 @@ public:
     return snapshot;
   }
 
+  vr::RendererDrawSnapshot draw_snapshot_for_current_frame(int32_t width,
+                                                           int32_t height) {
+    auto decision = current_present_decision();
+    if (!decision.should_present) {
+      decision = primary_peek_present_decision();
+    }
+    return draw_snapshot_for_decision(decision, width, height);
+  }
+
   bool layout_presentation_params(int32_t width,
                                   int32_t height,
                                   VPMacOSNativeLayoutPresentationParams* out) const {
@@ -1538,6 +1547,64 @@ uint64_t VPMacOSNativePlayerRendererOwnedPresentationFailureCount(
   }
   std::lock_guard<std::mutex> lock(player->callback_mutex);
   return player->renderer_owned_presentation_failure_count;
+}
+
+int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size) {
+  if (!player || !out) {
+    write_error(error, error_size, "player or renderer-owned frame output is null");
+    return -1;
+  }
+  *out = {};
+  std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
+  if (!player->presentation_target_backend ||
+      !player->presentation_target_pixel_buffer ||
+      player->presentation_target_width <= 0 ||
+      player->presentation_target_height <= 0) {
+    write_error(error, error_size, "renderer-owned presentation target is not installed");
+    return -1;
+  }
+
+  vr::RendererDrawSnapshot draw_snapshot;
+  {
+    std::lock_guard<std::mutex> player_lock(player->mutex);
+    draw_snapshot = player->core.draw_snapshot_for_current_frame(
+        player->presentation_target_width,
+        player->presentation_target_height);
+  }
+  if (!draw_snapshot.decision.should_present) {
+    player->last_renderer_owned_presentation_succeeded = false;
+    player->last_renderer_owned_frame_info_available = false;
+    write_error(error, error_size, "no presentable frame is ready");
+    return -1;
+  }
+
+  vr::PresentationBackendDrawHooks draw_hooks;
+  const bool succeeded =
+      player->presentation_target_backend->impl.draw_frame(draw_snapshot, draw_hooks);
+  player->last_renderer_owned_presentation_succeeded = succeeded;
+  player->last_renderer_owned_frame_info_available = succeeded;
+  if (succeeded &&
+      player->presentation_target_backend->impl.copy_last_draw_frame_info(out)) {
+    player->last_renderer_owned_frame_info = *out;
+    const auto now = std::chrono::steady_clock::now();
+    if (player->renderer_owned_presentation_upload_count == 0) {
+      player->renderer_owned_presentation_first_upload_time = now;
+    }
+    player->renderer_owned_presentation_last_upload_time = now;
+    ++player->renderer_owned_presentation_upload_count;
+    write_error(error, error_size, "");
+    return 0;
+  }
+
+  player->last_renderer_owned_presentation_succeeded = false;
+  player->last_renderer_owned_frame_info_available = false;
+  ++player->renderer_owned_presentation_failure_count;
+  write_error(error, error_size, "renderer-owned presentation upload failed");
+  return -1;
 }
 
 void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player) {

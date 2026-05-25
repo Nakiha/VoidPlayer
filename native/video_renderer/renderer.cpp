@@ -126,7 +126,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     target_height_ = config.height;
     shutting_down_.store(false, std::memory_order_release);
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
-    reset_d3d_metrics();
+    reset_presentation_backend_metrics();
     playback_session_started_by_renderer_ = false;
     if (!playback_->audio_output()) {
         playback_->start_session();
@@ -306,16 +306,16 @@ void Renderer::release_resources_locked() {
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
 }
 
-void Renderer::reset_d3d_metrics() {
-    d3d_metrics_.render_wait_us.store(0, std::memory_order_relaxed);
-    d3d_metrics_.render_wait_count.store(0, std::memory_order_relaxed);
-    d3d_metrics_.frame_copy_us.store(0, std::memory_order_relaxed);
-    d3d_metrics_.frame_copy_count.store(0, std::memory_order_relaxed);
-    d3d_metrics_.present_publish_us.store(0, std::memory_order_relaxed);
-    d3d_metrics_.present_publish_count.store(0, std::memory_order_relaxed);
-    d3d_metrics_.shared_texture_resize_count.store(0, std::memory_order_relaxed);
-    d3d_metrics_.device_lost_count.store(0, std::memory_order_relaxed);
-    d3d_metrics_.texture_sharing_failure_count.store(0, std::memory_order_relaxed);
+void Renderer::reset_presentation_backend_metrics() {
+    presentation_backend_metrics_.render_wait_us.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.render_wait_count.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.frame_copy_us.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.frame_copy_count.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.present_publish_us.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.present_publish_count.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.shared_texture_resize_count.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.device_lost_count.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.texture_sharing_failure_count.store(0, std::memory_order_relaxed);
 }
 
 std::function<void(const char*)> Renderer::frame_failure_callback_snapshot() const {
@@ -1021,8 +1021,9 @@ void Renderer::wait_gpu_idle(const char* label) {
     if (presentation_backend_) {
         presentation_backend_->wait_idle(label);
     }
-    d3d_metrics_.render_wait_us.fetch_add(elapsed_us_since(start), std::memory_order_relaxed);
-    d3d_metrics_.render_wait_count.fetch_add(1, std::memory_order_relaxed);
+    presentation_backend_metrics_.render_wait_us.fetch_add(
+        elapsed_us_since(start), std::memory_order_relaxed);
+    presentation_backend_metrics_.render_wait_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 bool Renderer::draw_headless_and_publish(const RendererDrawSnapshot& snapshot,
@@ -1058,9 +1059,9 @@ bool Renderer::draw_headless_and_publish(const RendererDrawSnapshot& snapshot,
     if (shutting_down_.load(std::memory_order_acquire)) {
         callback = {};
     }
-    d3d_metrics_.present_publish_us.fetch_add(
+    presentation_backend_metrics_.present_publish_us.fetch_add(
         elapsed_us_since(publish_start), std::memory_order_relaxed);
-    d3d_metrics_.present_publish_count.fetch_add(1, std::memory_order_relaxed);
+    presentation_backend_metrics_.present_publish_count.fetch_add(1, std::memory_order_relaxed);
     return true;
 #else
     (void)snapshot;
@@ -1082,7 +1083,7 @@ void Renderer::enter_terminal_device_lost_locked(const char* operation) {
         ? presentation_backend_->device_removed_reason()
         : 0;
     if (plan.count_device_lost) {
-        d3d_metrics_.device_lost_count.fetch_add(1, std::memory_order_relaxed);
+        presentation_backend_metrics_.device_lost_count.fetch_add(1, std::memory_order_relaxed);
     }
     spdlog::error(
         "[Renderer] D3D11 device lost during {}; entering terminal renderer state "
@@ -1163,9 +1164,10 @@ void Renderer::present_frame(const PresentDecision& decision) {
                     drew, backend && backend->supports_swap_chain_present())) {
                 const auto present_start = std::chrono::steady_clock::now();
                 const bool presented = backend->present_swap_chain(0);
-                d3d_metrics_.present_publish_us.fetch_add(
+                presentation_backend_metrics_.present_publish_us.fetch_add(
                     elapsed_us_since(present_start), std::memory_order_relaxed);
-                d3d_metrics_.present_publish_count.fetch_add(1, std::memory_order_relaxed);
+                presentation_backend_metrics_.present_publish_count.fetch_add(
+                    1, std::memory_order_relaxed);
                 device_lost = !presented && backend->device_lost();
             } else {
                 device_lost = backend && backend->device_lost();
@@ -1483,14 +1485,16 @@ bool Renderer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     auto* output = headless_output();
     if (!output) {
-        d3d_metrics_.texture_sharing_failure_count.fetch_add(1, std::memory_order_relaxed);
+        presentation_backend_metrics_.texture_sharing_failure_count.fetch_add(
+            1, std::memory_order_relaxed);
         return false;
     }
 
     std::lock_guard<std::mutex> lock(texture_mutex());
     D3D11HeadlessOutputTextureLease lease;
     if (!output->acquire_shared_texture_locked(lease)) {
-        d3d_metrics_.texture_sharing_failure_count.fetch_add(1, std::memory_order_relaxed);
+        presentation_backend_metrics_.texture_sharing_failure_count.fetch_add(
+            1, std::memory_order_relaxed);
         return false;
     }
 
@@ -1642,7 +1646,8 @@ void Renderer::do_resize(int width, int height) {
             return;
         }
     }
-    d3d_metrics_.shared_texture_resize_count.fetch_add(1, std::memory_order_relaxed);
+    presentation_backend_metrics_.shared_texture_resize_count.fetch_add(
+        1, std::memory_order_relaxed);
 
     RendererDrawSnapshot snapshot;
     {
@@ -1999,8 +2004,10 @@ bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
     PresentationBackendDrawHooks hooks;
     hooks.wait_gpu_idle = [this](const char* label) { wait_gpu_idle(label); };
     hooks.record_frame_copy_us = [this](uint64_t elapsed_us) {
-        d3d_metrics_.frame_copy_us.fetch_add(elapsed_us, std::memory_order_relaxed);
-        d3d_metrics_.frame_copy_count.fetch_add(1, std::memory_order_relaxed);
+        presentation_backend_metrics_.frame_copy_us.fetch_add(
+            elapsed_us, std::memory_order_relaxed);
+        presentation_backend_metrics_.frame_copy_count.fetch_add(
+            1, std::memory_order_relaxed);
     };
     hooks.draw_overlay = [this](PresentationBackend& backend,
                                 const RendererDrawSnapshot& draw_snapshot) {
@@ -2450,18 +2457,24 @@ std::vector<TrackPerfStats> Renderer::track_perf_stats() const {
 
 PresentationBackendMetrics Renderer::presentation_backend_metrics() const {
     PresentationBackendMetrics result;
-    result.render_wait_us = d3d_metrics_.render_wait_us.load(std::memory_order_relaxed);
-    result.render_wait_count = d3d_metrics_.render_wait_count.load(std::memory_order_relaxed);
-    result.frame_copy_us = d3d_metrics_.frame_copy_us.load(std::memory_order_relaxed);
-    result.frame_copy_count = d3d_metrics_.frame_copy_count.load(std::memory_order_relaxed);
-    result.present_publish_us = d3d_metrics_.present_publish_us.load(std::memory_order_relaxed);
+    result.render_wait_us =
+        presentation_backend_metrics_.render_wait_us.load(std::memory_order_relaxed);
+    result.render_wait_count =
+        presentation_backend_metrics_.render_wait_count.load(std::memory_order_relaxed);
+    result.frame_copy_us =
+        presentation_backend_metrics_.frame_copy_us.load(std::memory_order_relaxed);
+    result.frame_copy_count =
+        presentation_backend_metrics_.frame_copy_count.load(std::memory_order_relaxed);
+    result.present_publish_us =
+        presentation_backend_metrics_.present_publish_us.load(std::memory_order_relaxed);
     result.present_publish_count =
-        d3d_metrics_.present_publish_count.load(std::memory_order_relaxed);
+        presentation_backend_metrics_.present_publish_count.load(std::memory_order_relaxed);
     result.shared_texture_resize_count =
-        d3d_metrics_.shared_texture_resize_count.load(std::memory_order_relaxed);
-    result.device_lost_count = d3d_metrics_.device_lost_count.load(std::memory_order_relaxed);
+        presentation_backend_metrics_.shared_texture_resize_count.load(std::memory_order_relaxed);
+    result.device_lost_count =
+        presentation_backend_metrics_.device_lost_count.load(std::memory_order_relaxed);
     result.texture_sharing_failure_count =
-        d3d_metrics_.texture_sharing_failure_count.load(std::memory_order_relaxed);
+        presentation_backend_metrics_.texture_sharing_failure_count.load(std::memory_order_relaxed);
     return result;
 }
 

@@ -13,6 +13,8 @@
 2.72, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTrackDiagnosticCount, 2
 2.73, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, primaryTrackSlot, 0, 0
 2.74, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, secondaryTrackSlot, 1, 1
+2.745, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
+2.748, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationFallbackReason, none
 2.75, CAPTURE_VIEWPORT, after_second_native_track
 2.8, ASSERT_CAPTURE_CHANGED, before_second_native_track, after_second_native_track
 2.9, ADJUST_TRACK_OFFSET, 1, 120
@@ -20,6 +22,7 @@
 3.01, ASSERT_NATIVE_DIAGNOSTIC_STRING, secondaryTrackDecodeMode, shared-renderer-videotoolbox
 3.02, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0
 3.04, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, pixelBufferMetalUploadFailureCount, 0, 0
+3.05, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
 3.1, REMOVE_TRACK, 1
 3.8, ASSERT_TRACK_COUNT, 1
 3.9, ASSERT_TRACK_ORDER, 0

@@ -12,6 +12,7 @@
 2.445, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
 2.4455, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
 2.446, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
+2.4465, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
 2.446, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true
 2.46, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureWidth, 320, 1920
 2.47, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureHeight, 180, 1080
@@ -23,6 +24,7 @@
 4.65, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedPresentCount, 2
 4.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalCVPixelBufferUploadCount, 2
 4.715, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, cvpixelbuffer
+4.7155, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, cvpixelbuffer
 4.716, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, presentationPackageCopyUs, 0, 0
 4.717, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationPackageGpuWaitUs, 1
 4.718, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationPackageTotalUs, 1
@@ -34,6 +36,7 @@
 4.757, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
 4.76, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-metal-cvpixelbuffer-target
 4.761, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationFallbackReason, none
+4.7615, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTrackDiagnosticCount, 1
 4.762, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true
 4.764, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeRendererOwnedUploadCount, 2
 4.766, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0

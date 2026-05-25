@@ -5,8 +5,9 @@ Windows and macOS may differ in decoder devices, GPU resources, texture export, 
 but they must not differ in track lifecycle, seek, loop, clock, multi-track present decisions, layout,
 or playback state machines.
 
-This plan supersedes the early macOS MVP texture-pump direction. The MVP path remains available only
-as a temporary compatibility fallback while the renderer-owned macOS backend is brought up.
+This plan supersedes the early macOS MVP texture-pump direction. The renderer-owned macOS backend is
+now the normal playback route; remaining work is stabilization, parity coverage, release readiness,
+and Windows preservation after the shared backend boundary changes.
 
 ## Target Shape
 
@@ -30,6 +31,19 @@ The shared renderer loop owns presentation cadence. Platform backends prepare re
 the already selected `RenderSink::PresentDecision`; they do not choose playback time or own track
 state.
 
+## Current Gate Matrix
+
+The macOS native playback path is feature-complete enough to stabilize instead of continuing broad
+architecture migration. Use these gates when changing the shared renderer or macOS presentation path:
+
+| Area | Gate |
+| --- | --- |
+| Shared native scheduler/backend | `python3.12 dev.py test --native-only` |
+| macOS runner/texture integration | `python3.12 dev.py build --flutter` |
+| macOS renderer-owned smoke | `python3.12 dev.py mac-ui-test --build ui_tests/macos/native_facade_smoke.csv ui_tests/macos/native_4k60_playback_smoke.csv ui_tests/macos/native_vvc_software_playback_smoke.csv ui_tests/macos/native_add_track_smoke.csv` |
+| Release staging | `python3.12 dev.py package` |
+| Windows preservation | Run native/build/UI preservation on a Windows host before closing the macOS release gate. |
+
 ## Non-Negotiable Boundaries
 
 - One playback clock, loop policy, seek policy, and track lifecycle path.
@@ -46,7 +60,7 @@ state.
 
 ## Migration Phases
 
-### P0: Lock The Contract
+### P0: Lock The Contract - Complete
 
 Goal: make the current split honest before moving code.
 
@@ -75,48 +89,51 @@ the same renderer-owned Metal presentation target and ask native to present the 
 snapshot. Metal-enabled playback now treats an unavailable renderer-owned target as a visible
 presentation failure.
 
-Exit gate: current macOS playback still works, and diagnostics clearly distinguish transitional
-texture-pump presentation from renderer-owned presentation.
+Exit gate: complete. Diagnostics now distinguish renderer initialization, target installation,
+backend availability, draw success, failure counts, storage kind, and last error.
 
-### P1: Extract A Platform Presentation Backend Interface
+### P1: Extract A Platform Presentation Backend Interface - Stabilization Gate
 
 Goal: split the Windows renderer loop from D3D11-specific presentation without changing Windows
 behavior.
 
 - [x] Define a renderer-owned backend interface that consumes immutable draw snapshots and
   `RenderSink::PresentDecision`.
-- [x] Create platform-specific presentation backends through a backend factory instead of hardcoding
-  D3D11 construction inside `Renderer`.
-- [ ] Move D3D11 draw, frame preparation, shared texture publication, capture, and device-loss
-  handling behind the Windows implementation of that interface.
-- [ ] Keep `Renderer` as the owner of scheduling, playback state, track lifecycle, and render-loop
+- [x] Create platform-specific presentation backends through an explicit backend provider instead
+  of hardcoding D3D11 construction inside `Renderer`.
+- [x] Keep `Renderer` as the owner of scheduling, playback state, track lifecycle, and render-loop
   timing.
-- [ ] Preserve existing Windows FFI, runner, and UI automation behavior.
+- [ ] Move the remaining D3D11-specific capture/device-loss/publication details behind the Windows
+  implementation where doing so does not churn working Windows behavior.
+- [ ] Preserve existing Windows FFI, runner, and UI automation behavior with a Windows-host
+  preservation pass.
 
 Progress: the first draw seam is in place. `Renderer` now builds the immutable
 `RendererDrawSnapshot` and delegates frame drawing through the `PresentationBackend::draw_frame`
 interface. D3D11 implements that contract today; Metal has an explicit unsupported stub until it is
 wired to the shared renderer loop. `Renderer` retains ownership of scheduling, playback state, track
 lifecycle, GPU wait accounting, and overlay hooks.
-Backend construction is now behind `create_presentation_backend(RenderBackendKind)`: Windows creates
-the D3D11 backend from the D3D11 module, and macOS creates the Metal backend from the macOS module.
-`Renderer` asks the factory for the configured backend kind instead of directly instantiating D3D11.
+Backend construction is now behind `PresentationBackendProvider`: Windows and macOS each declare
+which backend kinds they support and create the platform backend explicitly. The old
+`create_presentation_backend(RenderBackendKind)` entrypoint remains as a compatibility wrapper.
+Renderer-facing backend metrics are now named generically, while `d3d_backend_metrics()` remains a
+Windows compatibility accessor.
 
 Exit gate: Windows native tests and representative UI smokes pass with no observable behavior change.
 
-### P2: Plug macOS Into The Shared Renderer Scheduler
+### P2: Plug macOS Into The Shared Renderer Scheduler - Feature Complete
 
 Goal: delete the separate macOS playback tick as a presentation scheduler.
 
-- [ ] Add a macOS renderer configuration path that creates the shared `Renderer` with a Metal-capable
+- [x] Add a macOS renderer configuration path that creates the shared `Renderer` with a Metal-capable
   presentation backend.
-- [ ] Route macOS create/open/play/pause/seek/step/loop/layout/capture calls through the same
+- [x] Route macOS create/open/play/pause/seek/step/loop/layout/capture calls through the same
   `NativePlayer` and `Renderer` command surface as Windows.
-- [ ] Replace `run_tick_thread()` / `tick_playback()` as the source of visible frame callbacks with
+- [x] Replace `run_tick_thread()` / `tick_playback()` as the source of visible frame callbacks with
   renderer-loop publication.
-- [ ] Keep Swift limited to texture registration, `CVPixelBuffer` ownership, and forwarding frame
+- [x] Keep Swift limited to texture registration, `CVPixelBuffer` ownership, and forwarding frame
   availability to Flutter.
-- [ ] Keep the current software adapter callable as the renderer fallback while Metal parity is
+- [x] Keep the current software adapter callable as the renderer fallback while Metal parity is
   incomplete.
 
 Progress: macOS track creation no longer hand-builds its own demux/decode/track-buffer stack. The
@@ -156,14 +173,15 @@ The frame-available callback publication rule is now a shared presentation-loop 
 notifications without a renderer-owned target still publish for explicit fallback paths, but an
 installed renderer-owned target must upload successfully before Flutter is notified.
 
-Exit gate: macOS UI smokes pass with `rendererOwnedPresentationActive=true`, and the old tick-driven
-presentation path is no longer the normal route.
+Exit gate: complete for the normal playback route. macOS UI smokes require
+`rendererOwnedPresentationActive=true`; refresh, seek, layout, and frame callbacks now go through
+renderer-owned completion and diagnostics instead of a Swift frame-pump scheduler.
 
-### P3: Implement Renderer-Owned Metal Presentation
+### P3: Implement Renderer-Owned Metal Presentation - Stabilization Gate
 
 Goal: make Metal do the same job D3D11 does today.
 
-- [ ] Own `MTLDevice`, command queue, `CVMetalTextureCache`, staging resources, and reusable textures
+- [x] Own `MTLDevice`, command queue, `CVMetalTextureCache`, and staging resources
   inside the macOS presentation backend.
 - [x] Present BGRA, NV12, planar YUV420, and P010 through a single Metal shader contract derived from
   the D3D11 layout/color constants.
@@ -203,9 +221,10 @@ presented frame timing now come from that shared renderer path rather than the S
 backend.
 
 Exit gate: macOS can present multi-track CPU-decoded frames through renderer-owned Metal without the
-Swift pump choosing frames, and shader parity tests cover the supported formats.
+Swift pump choosing frames. Remaining stabilization gates are shader parity tests, reusable texture
+pooling beyond package staging, and explicit drop/late/present-cadence diagnostics.
 
-### P4: Move VideoToolbox Toward Zero-Copy Presentation
+### P4: Move VideoToolbox Toward Zero-Copy Presentation - Feature Complete
 
 Goal: remove the 4K60 bottleneck caused by hardware decode download-to-CPU.
 
@@ -222,14 +241,16 @@ presented-frame callback fps, upload timing, and `presentationFallbackReason`. T
 smoke asserts nonzero decode/upload cadence and `presentationFallbackReason=none` on the
 renderer-owned CVPixelBuffer path.
 
-Exit gate: local 4K60 HEVC/H.264 samples report zero-copy presentation when supported, and fallback
-cases are visible rather than silent.
+Exit gate: complete for supported H.264/H.265 VideoToolbox samples. Local 4K60 smokes report
+zero-copy presentation when supported, and VVC/software fallback cases are visible rather than
+silent.
 
-### P5: Remove MVP Leftovers
+### P5: Stabilize, Document, And Remove Remaining MVP Leftovers
 
 Goal: leave one maintainable native architecture.
 
-- [ ] Delete obsolete macOS-only preview decoders, frame-copy schedulers, and duplicate diagnostics.
+- [x] Delete obsolete macOS-only preview decoders, frame-copy schedulers, and duplicate diagnostics
+  from the normal playback route.
 - [ ] Fold remaining macOS presentation adapter tests into renderer backend tests, keeping the
   software adapter as a named fallback oracle.
 - [ ] Update architecture, threading, decode, color, and build docs to describe the platform backend
@@ -237,7 +258,8 @@ Goal: leave one maintainable native architecture.
 - [ ] Re-run the macOS smoke set and schedule Windows preservation checks on a Windows host.
 
 Exit gate: documentation and diagnostics describe one shared renderer with platform backends, not a
-Windows renderer plus macOS sidecar path.
+Windows renderer plus macOS sidecar path. The release gate also requires Windows preservation,
+package staging, and license/crash/log checks.
 
 Progress: the unused Swift decoded-first-frame object path and its allocating BGRA native bridge
 entrypoint have been removed. macOS now initializes visible native media through the presentation

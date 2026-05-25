@@ -16,7 +16,9 @@ enum MacOSVideoRendererStartupFactory {
     let paths = MacOSFlutterArguments.stringListArg(arguments, "videoPaths")
     let requestedWidth = max(16, MacOSFlutterArguments.intArg(arguments, "width") ?? 1920)
     let requestedHeight = max(16, MacOSFlutterArguments.intArg(arguments, "height") ?? 1080)
-    let firstPath = paths.first ?? "macos-synthetic://color-bars"
+    guard let firstPath = paths.first, !firstPath.isEmpty else {
+      throw MacOSNativePlayerError.failed("createPlayer requires at least one media path")
+    }
 
     if firstPath.hasPrefix("macos-synthetic://") {
       return syntheticStartup(

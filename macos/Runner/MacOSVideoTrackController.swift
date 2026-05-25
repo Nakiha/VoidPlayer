@@ -51,7 +51,17 @@ final class MacOSVideoTrackController {
   ) -> MacOSVideoTrackAddResult {
     let fileId = store.nextFileId()
     let slot = store.count
-    let path = MacOSFlutterArguments.stringArg(arguments, "path") ?? "macos-synthetic-\(fileId)"
+    guard let path = MacOSFlutterArguments.stringArg(arguments, "path"), !path.isEmpty else {
+      return MacOSVideoTrackAddResult(
+        payload: FlutterError(
+          code: "INVALID_ARGUMENT",
+          message: "addTrack requires a media path",
+          details: nil
+        ),
+        refreshCurrentFrame: false,
+        markFrameAvailable: false
+      )
+    }
 
     if backendName == MacOSVideoTrackPayload.nativeFormatName {
       do {

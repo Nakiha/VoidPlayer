@@ -1194,7 +1194,11 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       nativePresentationTargetInstalled = nativePlayer.rendererOwnedPresentationActive()
       publishFrameInfo(frameInfo)
     } catch {
-      NSLog("VoidPlayer macOS native layout refresh failed: \(error)")
+      if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true {
+        nativeFrameCopyMissCount += 1
+      } else {
+        NSLog("VoidPlayer macOS native layout refresh failed: \(error)")
+      }
     }
     markFrameAvailable()
   }
@@ -2186,7 +2190,9 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
       return nil
     } catch {
       pixelBufferMetalUploadFailureCount += 1
-      NSLog("VoidPlayer macOS renderer-owned Metal refresh failed: \(error)")
+      if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable != true {
+        NSLog("VoidPlayer macOS renderer-owned Metal refresh failed: \(error)")
+      }
       throw error
     }
   }

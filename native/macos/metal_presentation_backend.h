@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace vp_macos {
 
@@ -34,8 +35,11 @@ public:
                        int32_t max_track_slots);
   void clear_draw_target();
   bool copy_last_draw_frame_info(VPMacOSNativeFrameInfo* out) const;
+  const std::string& last_error() const { return last_error_; }
 
 private:
+  void set_last_error(std::string error);
+
   VPMacOSMetalUploader* uploader_ = nullptr;
   void* draw_target_pixel_buffer_ = nullptr;
   int width_ = 0;
@@ -45,6 +49,7 @@ private:
   int draw_target_max_track_slots_ = VPMacOSNativeMaxTracks;
   bool last_draw_frame_info_available_ = false;
   VPMacOSNativeFrameInfo last_draw_frame_info_ = {};
+  std::string last_error_;
   bool headless_ = true;
 };
 

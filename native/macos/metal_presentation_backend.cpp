@@ -7,6 +7,7 @@
 #include <chrono>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace vp_macos {
@@ -45,12 +46,18 @@ bool MetalPresentationBackend::available() const {
   return uploader_ && VPMacOSMetalUploaderIsAvailable(uploader_) != 0;
 }
 
+void MetalPresentationBackend::set_last_error(std::string error) {
+  last_error_ = std::move(error);
+}
+
 bool MetalPresentationBackend::draw_frame(
     const vr::RendererDrawSnapshot& snapshot,
     const vr::PresentationBackendDrawHooks& hooks) {
+  set_last_error("");
   if (!available() || !draw_target_pixel_buffer_ ||
       draw_target_width_ <= 0 || draw_target_height_ <= 0) {
     last_draw_frame_info_available_ = false;
+    set_last_error("renderer-owned Metal presentation target is unavailable");
     return false;
   }
 
@@ -64,6 +71,7 @@ bool MetalPresentationBackend::draw_frame(
       package_layout.bgra_row_bytes >
           static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
     last_draw_frame_info_available_ = false;
+    set_last_error("renderer-owned Metal presentation package layout is invalid");
     return false;
   }
 
@@ -97,6 +105,7 @@ bool MetalPresentationBackend::draw_frame(
       last_draw_frame_info_ = frame_info;
       return true;
     }
+    set_last_error(upload_error[0] ? upload_error : error);
     return false;
   }
 
@@ -132,6 +141,7 @@ bool MetalPresentationBackend::draw_frame(
                                     &package,
                                     error)) {
       last_draw_frame_info_available_ = false;
+      set_last_error(error);
       return false;
     }
     package.storage = VPMacOSNativePresentPackageStorageBGRA;
@@ -159,6 +169,8 @@ bool MetalPresentationBackend::draw_frame(
   last_draw_frame_info_available_ = ret == 0;
   if (ret == 0) {
     last_draw_frame_info_ = frame_info;
+  } else {
+    set_last_error(upload_error[0] ? upload_error : error);
   }
   return ret == 0;
 }

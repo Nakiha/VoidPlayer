@@ -1582,7 +1582,13 @@ int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
   player->last_renderer_owned_presentation_succeeded = false;
   player->last_renderer_owned_frame_info_available = false;
   ++player->renderer_owned_presentation_failure_count;
-  write_error(error, error_size, "renderer-owned presentation upload failed");
+  const auto& backend_error =
+      player->presentation_target_backend->impl.last_error();
+  write_error(error,
+              error_size,
+              backend_error.empty()
+                  ? "renderer-owned presentation upload failed"
+                  : backend_error.c_str());
   return -1;
 }
 

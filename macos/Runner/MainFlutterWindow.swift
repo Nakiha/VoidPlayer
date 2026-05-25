@@ -271,27 +271,23 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         "pixelBufferReuseCount": textureStats?.reuseCount ?? 0,
         "pixelBufferMetalUploadCount": textureStats?.metalUploadCount ?? 0,
         "pixelBufferMetalYuvUploadCount":
-          perfStats?["rendererOwnedDirectYuvUploadCount"] ?? textureStats?.metalYuvUploadCount ?? 0,
+          perfStats?["rendererOwnedDirectYuvUploadCount"] ?? 0,
         "pixelBufferMetalCVPixelBufferUploadCount":
-          perfStats?["rendererOwnedCVPixelBufferUploadCount"] ??
-          textureStats?.metalCVPixelBufferUploadCount ?? 0,
+          perfStats?["rendererOwnedCVPixelBufferUploadCount"] ?? 0,
         "pixelBufferMetalUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
-        "presentationUploadMode": textureStats?.presentationUploadMode ?? "unavailable",
+        "presentationUploadMode": presentationUploadMode(
+          perfStats: perfStats,
+          targetReady: textureStats?.metalTextureValid ?? false
+        ),
         "presentationPackageUploadCount":
-          perfStats?["rendererOwnedPresentPackageUploadCount"] ??
-          textureStats?.presentPackageUploadCount ?? 0,
-        "presentationPackageCopyUs":
-          perfStats?["rendererOwnedPresentPackageCopyUs"] ??
-          textureStats?.presentPackageCopyUs ?? 0,
+          perfStats?["rendererOwnedPresentPackageUploadCount"] ?? 0,
+        "presentationPackageCopyUs": perfStats?["rendererOwnedPresentPackageCopyUs"] ?? 0,
         "presentationPackageGpuWaitUs":
-          perfStats?["rendererOwnedPresentPackageGpuWaitUs"] ??
-          textureStats?.presentPackageGpuWaitUs ?? 0,
+          perfStats?["rendererOwnedPresentPackageGpuWaitUs"] ?? 0,
         "presentationPackageTotalUs":
-          perfStats?["rendererOwnedPresentPackageTotalUs"] ??
-          textureStats?.presentPackageTotalUs ?? 0,
+          perfStats?["rendererOwnedPresentPackageTotalUs"] ?? 0,
         "presentationPackageStorage":
-          perfStats?["rendererOwnedPresentPackageStorage"] ??
-          textureStats?.presentPackageStorage ?? "unavailable",
+          perfStats?["rendererOwnedPresentPackageStorage"] ?? "unavailable",
         "metalAvailable": textureStats?.metalAvailable ?? false,
         "metalTextureCacheAvailable": textureStats?.metalTextureCacheAvailable ?? false,
         "metalTextureValid": textureStats?.metalTextureValid ?? false,
@@ -917,6 +913,26 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       return "renderer-owned-upload-failed"
     }
     return "none"
+  }
+
+  private func presentationUploadMode(perfStats: [String: Any]?, targetReady: Bool) -> String {
+    switch perfStats?["rendererOwnedPresentPackageStorage"] as? String {
+    case "cvpixelbuffer":
+      return "metal-cvpixelbuffer-present-package"
+    case "yuv":
+      return "metal-yuv-present-package"
+    case "bgra":
+      return "metal-bgra-present-package"
+    default:
+      break
+    }
+    if targetReady && nativePresentationTargetInstalled {
+      return "metal-presentation-target-ready"
+    }
+    if textureId != nil {
+      return "metal-presentation-target-unavailable"
+    }
+    return "unavailable"
   }
 
   private func presentationBackendName() -> String {

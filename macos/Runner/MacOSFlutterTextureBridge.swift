@@ -10,8 +10,6 @@ final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
   private var nativeMetalPresentationBackend: OpaquePointer?
   private let hashPrefix: String
   private var pixelBuffer: CVPixelBuffer?
-  private var pixelBufferBackBuffer: CVPixelBuffer?
-  private var pixelBufferRetiredBuffer: CVPixelBuffer?
   private var pixelBufferRebuildCount = 0
   private var pixelBufferReuseCount = 0
   private var pixelBufferMetalUploadCount = 0
@@ -130,15 +128,7 @@ final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
     rebuildCount: Int,
     reuseCount: Int,
     metalUploadCount: Int,
-    metalYuvUploadCount: Int,
-    metalCVPixelBufferUploadCount: Int,
     metalUploadFailureCount: Int,
-    presentationUploadMode: String,
-    presentPackageUploadCount: Int,
-    presentPackageCopyUs: Int,
-    presentPackageGpuWaitUs: Int,
-    presentPackageTotalUs: Int,
-    presentPackageStorage: String,
     metalAvailable: Bool,
     metalTextureCacheAvailable: Bool,
     metalTextureValid: Bool,
@@ -152,19 +142,8 @@ final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
     return (
       rebuildCount: pixelBufferRebuildCount,
       reuseCount: pixelBufferReuseCount,
-      metalUploadCount: max(
-        pixelBufferMetalUploadCount,
-        nativeMetalPresentPackageUploadCountLocked()
-      ),
-      metalYuvUploadCount: nativeMetalUploaderDirectYuvUploadCountLocked(),
-      metalCVPixelBufferUploadCount: nativeMetalUploaderCVPixelBufferUploadCountLocked(),
+      metalUploadCount: pixelBufferMetalUploadCount,
       metalUploadFailureCount: pixelBufferMetalUploadFailureCount,
-      presentationUploadMode: presentationUploadModeLocked(),
-      presentPackageUploadCount: nativeMetalPresentPackageUploadCountLocked(),
-      presentPackageCopyUs: nativeMetalLastPresentPackageCopyUsLocked(),
-      presentPackageGpuWaitUs: nativeMetalLastPresentPackageGpuWaitUsLocked(),
-      presentPackageTotalUs: nativeMetalLastPresentPackageTotalUsLocked(),
-      presentPackageStorage: nativeMetalLastPresentPackageStorageLocked(),
       metalAvailable: nativeMetalUploaderAvailableLocked(),
       metalTextureCacheAvailable: nativeMetalUploaderAvailableLocked(),
       metalTextureValid: metalTextureValid,
@@ -214,16 +193,12 @@ final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
 
     guard let nextBuffer = makePixelBufferLocked(attributes: attributes) else {
       pixelBuffer = nil
-      pixelBufferBackBuffer = nil
-      pixelBufferRetiredBuffer = nil
       return
     }
     pixelBufferRebuildCount += 1
 
     fill(buffer: nextBuffer)
     pixelBuffer = nextBuffer
-    pixelBufferBackBuffer = makePixelBufferLocked(attributes: attributes)
-    pixelBufferRetiredBuffer = makePixelBufferLocked(attributes: attributes)
     validateMetalTextureLocked(buffer: nextBuffer)
   }
 
@@ -239,45 +214,6 @@ final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
     )
     guard status == kCVReturnSuccess else { return nil }
     return nextBuffer
-  }
-
-  private func makePixelBufferLocked() -> CVPixelBuffer? {
-    let attributes = [
-      kCVPixelBufferCGImageCompatibilityKey as String: true,
-      kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
-      kCVPixelBufferMetalCompatibilityKey as String: true,
-      kCVPixelBufferIOSurfacePropertiesKey as String: [:],
-    ] as CFDictionary
-    return makePixelBufferLocked(attributes: attributes)
-  }
-
-  private func ensureBackPixelBufferLocked() -> CVPixelBuffer? {
-    if let pixelBufferBackBuffer,
-       CVPixelBufferGetWidth(pixelBufferBackBuffer) == width,
-       CVPixelBufferGetHeight(pixelBufferBackBuffer) == height {
-      return pixelBufferBackBuffer
-    }
-    pixelBufferBackBuffer = makePixelBufferLocked()
-    return pixelBufferBackBuffer
-  }
-
-  private func publishBackBufferLocked(_ buffer: CVPixelBuffer) {
-    let previousFront = pixelBuffer
-    let previousRetired = pixelBufferRetiredBuffer
-    pixelBuffer = buffer
-    pixelBufferRetiredBuffer = previousFront
-    if let previousFront,
-       CVPixelBufferGetWidth(previousFront) != width ||
-       CVPixelBufferGetHeight(previousFront) != height {
-      pixelBufferRetiredBuffer = nil
-    }
-    if let previousRetired,
-       CVPixelBufferGetWidth(previousRetired) == width,
-       CVPixelBufferGetHeight(previousRetired) == height {
-      pixelBufferBackBuffer = previousRetired
-    } else {
-      pixelBufferBackBuffer = makePixelBufferLocked()
-    }
   }
 
   private func createNativeMetalPresentationBackend() {
@@ -299,84 +235,6 @@ final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
   private func nativeMetalUploaderAvailableLocked() -> Bool {
     guard let nativeMetalPresentationBackend else { return false }
     return VPMacOSMetalPresentationBackendIsAvailable(nativeMetalPresentationBackend) != 0
-  }
-
-  private func nativeMetalUploaderDirectYuvUploadCountLocked() -> Int {
-    guard let nativeMetalPresentationBackend else { return 0 }
-    return Int(
-      VPMacOSMetalPresentationBackendDirectYUVUploadCount(nativeMetalPresentationBackend)
-    )
-  }
-
-  private func nativeMetalUploaderCVPixelBufferUploadCountLocked() -> Int {
-    guard let nativeMetalPresentationBackend else { return 0 }
-    return Int(
-      VPMacOSMetalPresentationBackendCVPixelBufferUploadCount(nativeMetalPresentationBackend)
-    )
-  }
-
-  private func nativeMetalPresentPackageUploadCountLocked() -> Int {
-    guard let nativeMetalPresentationBackend else { return 0 }
-    return Int(
-      VPMacOSMetalPresentationBackendPresentPackageUploadCount(nativeMetalPresentationBackend)
-    )
-  }
-
-  private func nativeMetalLastPresentPackageCopyUsLocked() -> Int {
-    guard let nativeMetalPresentationBackend else { return 0 }
-    return Int(
-      VPMacOSMetalPresentationBackendLastPresentPackageCopyUs(nativeMetalPresentationBackend)
-    )
-  }
-
-  private func nativeMetalLastPresentPackageGpuWaitUsLocked() -> Int {
-    guard let nativeMetalPresentationBackend else { return 0 }
-    return Int(
-      VPMacOSMetalPresentationBackendLastPresentPackageGpuWaitUs(nativeMetalPresentationBackend)
-    )
-  }
-
-  private func nativeMetalLastPresentPackageTotalUsLocked() -> Int {
-    guard let nativeMetalPresentationBackend else { return 0 }
-    return Int(
-      VPMacOSMetalPresentationBackendLastPresentPackageTotalUs(nativeMetalPresentationBackend)
-    )
-  }
-
-  private func nativeMetalLastPresentPackageStorageLocked() -> String {
-    guard let nativeMetalPresentationBackend else { return "unavailable" }
-    let storage = VPMacOSMetalPresentationBackendLastPresentPackageStorage(
-      nativeMetalPresentationBackend
-    )
-    switch storage {
-    case Int32(VPMacOSNativePresentPackageStorageYUV):
-      return "yuv"
-    case Int32(VPMacOSNativePresentPackageStorageBGRA):
-      return "bgra"
-    case Int32(VPMacOSNativePresentPackageStorageCVPixelBuffer):
-      return "cvpixelbuffer"
-    default:
-      return "unavailable"
-    }
-  }
-
-  private func presentationUploadModeLocked() -> String {
-    if metalTextureValid, nativeMetalUploaderAvailableLocked() {
-      switch nativeMetalLastPresentPackageStorageLocked() {
-      case "cvpixelbuffer":
-        return "metal-cvpixelbuffer-present-package"
-      case "yuv":
-        return "metal-yuv-present-package"
-      case "bgra":
-        return "metal-bgra-present-package"
-      default:
-        return "metal-presentation-target-ready"
-      }
-    }
-    if pixelBuffer != nil {
-      return "metal-presentation-target-unavailable"
-    }
-    return "unavailable"
   }
 
   private func copyFromNativePlayerWithMetalUpload(
@@ -525,33 +383,6 @@ final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
         pixels[offset + 1] = color.g
         pixels[offset + 2] = color.r
         pixels[offset + 3] = 255
-      }
-    }
-  }
-
-  private func copyBGRA(_ data: Data, to buffer: CVPixelBuffer) {
-    CVPixelBufferLockBaseAddress(buffer, [])
-    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-
-    copyBGRALocked(data, to: buffer)
-  }
-
-  private func copyBGRALocked(_ data: Data, to buffer: CVPixelBuffer) {
-    guard let baseAddress = CVPixelBufferGetBaseAddress(buffer) else { return }
-    let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
-    let rowBytes = width * 4
-
-    data.withUnsafeBytes { rawSource in
-      guard let source = rawSource.baseAddress else { return }
-      for y in 0..<height {
-        let sourceOffset = y * rowBytes
-        guard sourceOffset < rawSource.count else { break }
-        let sourceRowBytes = min(rowBytes, rawSource.count - sourceOffset)
-        memcpy(
-          baseAddress.advanced(by: y * bytesPerRow),
-          source.advanced(by: sourceOffset),
-          sourceRowBytes
-        )
       }
     }
   }

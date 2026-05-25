@@ -1,6 +1,22 @@
 import Foundation
 
 extension MacOSNativePlayerSession {
+  func hardwareDecodeActive() -> Bool {
+    VPMacOSNativePlayerHardwareDecodeActive(handle) != 0
+  }
+
+  func hardwareDecodeDownloadsToCpu() -> Bool {
+    VPMacOSNativePlayerHardwareDecodeDownloadsToCpu(handle) != 0
+  }
+
+  func decodeModeName() -> String {
+    String(cString: VPMacOSNativePlayerDecodeModeName(handle))
+  }
+
+  func decoderName() -> String {
+    String(cString: VPMacOSNativePlayerDecoderName(handle))
+  }
+
   func presentationSchedulerStats() -> [String: Any] {
     var stats = VPMacOSNativePresentationSchedulerStats()
     guard VPMacOSNativePlayerCopyPresentationSchedulerStats(handle, &stats) == 0 else {

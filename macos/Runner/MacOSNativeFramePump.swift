@@ -1,5 +1,11 @@
 import Foundation
 
+func macOSNativeFrameAvailable(_ userData: UnsafeMutableRawPointer?) {
+  guard let userData else { return }
+  let renderer = Unmanaged<MacOSVideoRendererBridge>.fromOpaque(userData).takeUnretainedValue()
+  renderer.scheduleNativeFrameCopyFromCallback()
+}
+
 final class MacOSNativeFramePump {
   private var callbackRegistered = false
   private(set) var targetInstalled = false

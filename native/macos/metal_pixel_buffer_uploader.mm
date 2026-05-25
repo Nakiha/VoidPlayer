@@ -1,6 +1,7 @@
 #include "native_player_bridge.h"
 
 #include "macos/metal_layout_params.h"
+#include "macos/metal_texture_wrapping.h"
 
 #include <CoreVideo/CoreVideo.h>
 #include <Metal/Metal.h>
@@ -233,24 +234,19 @@ const char* metal_uploader_status_message(int status) {
   if (CVPixelBufferGetPixelFormatType(pixelBuffer) != kCVPixelFormatType_32BGRA) {
     return VPMacOSMetalUploaderStatusUnsupportedPixelFormat;
   }
-  CVMetalTextureRef metalTextureRef = nullptr;
-  const CVReturn status = CVMetalTextureCacheCreateTextureFromImage(
-      kCFAllocatorDefault,
+  vp_macos::ScopedCVMetalTexture metalTexture;
+  const CVReturn status = vp_macos::create_cv_metal_texture(
       _textureCache,
       pixelBuffer,
-      nullptr,
       MTLPixelFormatBGRA8Unorm,
       width,
       height,
       0,
-      &metalTextureRef);
-  if (status != kCVReturnSuccess || !metalTextureRef) {
+      &metalTexture);
+  if (status != kCVReturnSuccess || !metalTexture.valid()) {
     return VPMacOSMetalUploaderStatusTextureWrapFailed;
   }
-  id<MTLTexture> texture = CVMetalTextureGetTexture(metalTextureRef);
-  const BOOL valid = texture != nil;
-  CFRelease(metalTextureRef);
-  return valid
+  return metalTexture.valid()
       ? VPMacOSMetalUploaderStatusOk
       : VPMacOSMetalUploaderStatusTextureWrapFailed;
 }
@@ -350,28 +346,25 @@ const char* metal_uploader_status_message(int status) {
   auto* metalParams = static_cast<vp_macos::MetalLayoutParams*>([_layoutParamsBuffer contents]);
   vp_macos::fill_metal_layout_params(*metalParams, decisionInfo, width, height);
 
-  CVMetalTextureRef metalTextureRef = nullptr;
-  const CVReturn textureStatus = CVMetalTextureCacheCreateTextureFromImage(
-      kCFAllocatorDefault,
+  vp_macos::ScopedCVMetalTexture destinationRef;
+  const CVReturn textureStatus = vp_macos::create_cv_metal_texture(
       _textureCache,
       pixelBuffer,
-      nullptr,
       MTLPixelFormatBGRA8Unorm,
       width,
       height,
       0,
-      &metalTextureRef);
-  if (textureStatus != kCVReturnSuccess || !metalTextureRef) {
+      &destinationRef);
+  if (textureStatus != kCVReturnSuccess || !destinationRef.valid()) {
     return metal_upload_failure(
         error, errorSize, "failed to wrap CVPixelBuffer as a Metal texture");
   }
 
-  id<MTLTexture> destinationTexture = CVMetalTextureGetTexture(metalTextureRef);
+  id<MTLTexture> destinationTexture = destinationRef.texture();
   const auto gpuStart = std::chrono::steady_clock::now();
   id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
   id<MTLComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
   if (!destinationTexture || !commandBuffer || !compute) {
-    CFRelease(metalTextureRef);
     return metal_upload_failure(
         error, errorSize, "failed to create native Metal layout compute command");
   }
@@ -393,7 +386,6 @@ const char* metal_uploader_status_message(int status) {
 
   const BOOL completed = [commandBuffer status] == MTLCommandBufferStatusCompleted;
   _lastPresentPackageGpuWaitUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
-  CFRelease(metalTextureRef);
   if (!completed) {
     return metal_upload_failure(
         error, errorSize, "native Metal layout compute did not complete");
@@ -442,60 +434,48 @@ const char* metal_uploader_status_message(int status) {
   const bool isP010 = frame->is_p010 != 0;
   const MTLPixelFormat yFormat = isP010 ? MTLPixelFormatR16Unorm : MTLPixelFormatR8Unorm;
   const MTLPixelFormat uvFormat = isP010 ? MTLPixelFormatRG16Unorm : MTLPixelFormatRG8Unorm;
-  CVMetalTextureRef sourceYRef = nullptr;
-  CVMetalTextureRef sourceUVRef = nullptr;
-  CVMetalTextureRef destinationRef = nullptr;
-  const CVReturn yStatus = CVMetalTextureCacheCreateTextureFromImage(
-      kCFAllocatorDefault,
+  vp_macos::ScopedCVMetalTexture sourceYRef;
+  vp_macos::ScopedCVMetalTexture sourceUVRef;
+  vp_macos::ScopedCVMetalTexture destinationRef;
+  const CVReturn yStatus = vp_macos::create_cv_metal_texture(
       _textureCache,
       sourcePixelBuffer,
-      nullptr,
       yFormat,
       CVPixelBufferGetWidthOfPlane(sourcePixelBuffer, 0),
       CVPixelBufferGetHeightOfPlane(sourcePixelBuffer, 0),
       0,
       &sourceYRef);
-  const CVReturn uvStatus = CVMetalTextureCacheCreateTextureFromImage(
-      kCFAllocatorDefault,
+  const CVReturn uvStatus = vp_macos::create_cv_metal_texture(
       _textureCache,
       sourcePixelBuffer,
-      nullptr,
       uvFormat,
       CVPixelBufferGetWidthOfPlane(sourcePixelBuffer, 1),
       CVPixelBufferGetHeightOfPlane(sourcePixelBuffer, 1),
       1,
       &sourceUVRef);
-  const CVReturn destinationStatus = CVMetalTextureCacheCreateTextureFromImage(
-      kCFAllocatorDefault,
+  const CVReturn destinationStatus = vp_macos::create_cv_metal_texture(
       _textureCache,
       pixelBuffer,
-      nullptr,
       MTLPixelFormatBGRA8Unorm,
       width,
       height,
       0,
       &destinationRef);
   if (yStatus != kCVReturnSuccess || uvStatus != kCVReturnSuccess ||
-      destinationStatus != kCVReturnSuccess || !sourceYRef || !sourceUVRef ||
-      !destinationRef) {
-    if (sourceYRef) CFRelease(sourceYRef);
-    if (sourceUVRef) CFRelease(sourceUVRef);
-    if (destinationRef) CFRelease(destinationRef);
+      destinationStatus != kCVReturnSuccess || !sourceYRef.valid() ||
+      !sourceUVRef.valid() || !destinationRef.valid()) {
     return metal_upload_failure(
         error, errorSize, "failed to wrap CVPixelBuffer planes as Metal textures");
   }
 
-  id<MTLTexture> sourceYTexture = CVMetalTextureGetTexture(sourceYRef);
-  id<MTLTexture> sourceUVTexture = CVMetalTextureGetTexture(sourceUVRef);
-  id<MTLTexture> destinationTexture = CVMetalTextureGetTexture(destinationRef);
+  id<MTLTexture> sourceYTexture = sourceYRef.texture();
+  id<MTLTexture> sourceUVTexture = sourceUVRef.texture();
+  id<MTLTexture> destinationTexture = destinationRef.texture();
   const auto gpuStart = std::chrono::steady_clock::now();
   id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
   id<MTLComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
   if (!sourceYTexture || !sourceUVTexture || !destinationTexture ||
       !commandBuffer || !compute) {
-    CFRelease(sourceYRef);
-    CFRelease(sourceUVRef);
-    CFRelease(destinationRef);
     return metal_upload_failure(
         error, errorSize, "failed to create native Metal CVPixelBuffer compute command");
   }
@@ -518,9 +498,6 @@ const char* metal_uploader_status_message(int status) {
 
   const BOOL completed = [commandBuffer status] == MTLCommandBufferStatusCompleted;
   _lastPresentPackageGpuWaitUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
-  CFRelease(sourceYRef);
-  CFRelease(sourceUVRef);
-  CFRelease(destinationRef);
   if (!completed) {
     return metal_upload_failure(
         error, errorSize, "native Metal CVPixelBuffer compute did not complete");

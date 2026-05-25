@@ -79,31 +79,6 @@ std::optional<int64_t> first_present_decision_frame_pts_us(
     return std::nullopt;
 }
 
-PresentDecision peek_present_decision_for_track_file_id(
-    const TrackPipelineManager& tracks,
-    int file_id) {
-    PresentDecision decision;
-    for (const auto& track : tracks) {
-        if (!track || track->file_id != file_id || !track->track_buffer ||
-            track->slot < 0 ||
-            track->slot >= static_cast<int32_t>(kMaxTracks)) {
-            continue;
-        }
-        auto frame = track->track_buffer->peek(0);
-        if (!frame.has_value()) {
-            return decision;
-        }
-        const auto slot = static_cast<size_t>(track->slot);
-        decision.should_present = true;
-        decision.frames[slot] = frame;
-        decision.file_ids[slot] = track->file_id;
-        decision.track_generations[slot] = track->generation;
-        decision.current_pts_us = frame->pts_us + track->offset_us;
-        return decision;
-    }
-    return decision;
-}
-
 std::vector<SeekPreviewPresentedTrackEvent>
 collect_seek_preview_presented_track_events(
     const TrackPipelineManager& tracks,

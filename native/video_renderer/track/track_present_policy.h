@@ -60,10 +60,6 @@ void filter_present_decision_against_tracks(
 std::optional<int64_t> first_present_decision_frame_pts_us(
     const PresentDecision& decision);
 
-PresentDecision peek_present_decision_for_track_file_id(
-    const TrackPipelineManager& tracks,
-    int file_id);
-
 std::vector<SeekPreviewPresentedTrackEvent>
 collect_seek_preview_presented_track_events(
     const TrackPipelineManager& tracks,

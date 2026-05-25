@@ -350,10 +350,7 @@ public:
 
   vr::RendererDrawSnapshot draw_snapshot_for_current_frame(int32_t width,
                                                            int32_t height) {
-    auto decision = current_present_decision();
-    if (!decision.should_present) {
-      decision = vr::peek_present_decision_for_track_file_id(tracks_, 0);
-    }
+    auto decision = current_or_available_paused_decision();
     return draw_snapshot_for_decision(decision, width, height);
   }
 
@@ -570,10 +567,7 @@ public:
       error = "player is not open";
       return false;
     }
-    auto decision = current_present_decision();
-    if (!decision.should_present) {
-      decision = vr::peek_present_decision_for_track_file_id(tracks_, 0);
-    }
+    auto decision = current_or_available_paused_decision();
     const auto snapshot = draw_snapshot_for_decision(decision, width, height);
     return vp_macos::snapshot_cv_pixel_buffer_frame(
         snapshot, width, height, true, out, error);
@@ -893,6 +887,21 @@ public:
 private:
   vr::PresentDecision current_present_decision() {
     return presentation_loop_driver_.current_present_decision(render_sink_.get());
+  }
+
+  vr::PresentDecision current_or_available_paused_decision() {
+    auto decision = current_present_decision();
+    if (decision.should_present) {
+      return decision;
+    }
+
+    auto paused_snapshot = vr::build_available_paused_frame_snapshot(tracks_);
+    if (!paused_snapshot.has_frame) {
+      return decision;
+    }
+    paused_snapshot.decision.should_present = true;
+    paused_snapshot.decision.current_pts_us = playback_.clock().current_pts_us();
+    return paused_snapshot.decision;
   }
 
   void clear_scheduler_present_decision() {

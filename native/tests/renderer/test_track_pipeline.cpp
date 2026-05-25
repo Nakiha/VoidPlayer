@@ -1314,43 +1314,6 @@ TEST_CASE("TrackPresentPolicy detects frames in present decisions",
     REQUIRE(first_present_decision_frame_pts_us(decision) == 5678);
 }
 
-TEST_CASE("TrackPresentPolicy peeks a present decision for a file id",
-          "[track_pipeline][track_present_policy]") {
-    const auto make_track =
-        [](int file_id, int slot, int64_t generation, int64_t offset_us) {
-            auto track = std::make_unique<TrackPipeline>();
-            track->file_id = file_id;
-            track->slot = slot;
-            track->generation = generation;
-            track->offset_us = offset_us;
-            track->track_buffer = std::make_shared<TrackBuffer>();
-            return track;
-        };
-    const auto make_frame = [](int64_t pts_us, int64_t duration_us) {
-        TextureFrame frame;
-        frame.pts_us = pts_us;
-        frame.duration_us = duration_us;
-        return frame;
-    };
-
-    TrackPipelineManager manager;
-    manager[0] = make_track(11, 0, 100, 0);
-    manager[1] = make_track(22, 1, 200, 3000);
-    manager[1]->track_buffer->push_frame(make_frame(7000, 33));
-
-    auto missing = peek_present_decision_for_track_file_id(manager, 11);
-    REQUIRE_FALSE(missing.should_present);
-
-    auto decision = peek_present_decision_for_track_file_id(manager, 22);
-    REQUIRE(decision.should_present);
-    REQUIRE_FALSE(decision.frames[0].has_value());
-    REQUIRE(decision.frames[1].has_value());
-    REQUIRE(decision.frames[1]->pts_us == 7000);
-    REQUIRE(decision.file_ids[1] == 22);
-    REQUIRE(decision.track_generations[1] == 200);
-    REQUIRE(decision.current_pts_us == 10000);
-}
-
 TEST_CASE("TrackPresentPolicy collects seek preview presented events",
           "[track_pipeline][track_present_policy]") {
     const auto make_track = [](int file_id) {

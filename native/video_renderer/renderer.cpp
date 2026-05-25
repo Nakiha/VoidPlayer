@@ -12,7 +12,6 @@
 #include "video_renderer/track/track_step_policy.h"
 #include "audio/audio_output_factory.h"
 #include "video_renderer/audio_coordinator.h"
-#include "video_renderer/capture/frame_capture_service.h"
 #include "video_renderer/seek/seek_coordinator.h"
 #include "video_renderer/render/device_loss_policy.h"
 #include "video_renderer/render/presentation_backend_factory.h"
@@ -20,7 +19,10 @@
 #include "video_renderer/render/render_thread_platform.h"
 #include "video_renderer/render/swap_chain_present_policy.h"
 #include "video_renderer/track/track_snapshot.h"
+#ifdef _WIN32
+#include "video_renderer/capture/frame_capture_service.h"
 #include "video_renderer/d3d11/render_backend.h"
+#endif
 #include <spdlog/spdlog.h>
 #include <algorithm>
 #include <array>
@@ -65,18 +67,28 @@ Renderer::Renderer()
     , playback_(owned_playback_.get())
     , audio_coordinator_(std::make_unique<AudioCoordinator>(*playback_))
     , seek_coordinator_(std::make_unique<SeekCoordinator>(kPausedHevcSeekSettleDelay))
-    , analysis_overlay_renderer_(std::make_unique<AnalysisOverlayRenderer>())
-    , frame_capture_(std::make_unique<FrameCaptureService>()) {}
+    , analysis_overlay_renderer_(std::make_unique<AnalysisOverlayRenderer>()) {
+#ifdef _WIN32
+    frame_capture_ = new FrameCaptureService();
+#endif
+}
 
 Renderer::Renderer(PlaybackController& playback)
     : playback_(&playback)
     , audio_coordinator_(std::make_unique<AudioCoordinator>(*playback_))
     , seek_coordinator_(std::make_unique<SeekCoordinator>(kPausedHevcSeekSettleDelay))
-    , analysis_overlay_renderer_(std::make_unique<AnalysisOverlayRenderer>())
-    , frame_capture_(std::make_unique<FrameCaptureService>()) {}
+    , analysis_overlay_renderer_(std::make_unique<AnalysisOverlayRenderer>()) {
+#ifdef _WIN32
+    frame_capture_ = new FrameCaptureService();
+#endif
+}
 
 Renderer::~Renderer() {
     shutdown();
+#ifdef _WIN32
+    delete frame_capture_;
+    frame_capture_ = nullptr;
+#endif
 }
 
 bool Renderer::initialize(const RendererConfig& config) {
@@ -304,31 +316,51 @@ void Renderer::assign_missing_track_generations_locked() {
 }
 
 D3D11RenderBackend* Renderer::d3d_backend() const {
+#ifdef _WIN32
     if (!presentation_backend_ ||
         presentation_backend_->kind() != PresentationBackendKind::D3D11) {
         return nullptr;
     }
     return static_cast<D3D11RenderBackend*>(presentation_backend_.get());
+#else
+    return nullptr;
+#endif
 }
 
 D3D11Device* Renderer::d3d_device() const {
+#ifdef _WIN32
     auto* backend = d3d_backend();
     return backend ? backend->device() : nullptr;
+#else
+    return nullptr;
+#endif
 }
 
 D3D11FramePresenter* Renderer::frame_presenter() const {
+#ifdef _WIN32
     auto* backend = d3d_backend();
     return backend ? backend->frame_presenter() : nullptr;
+#else
+    return nullptr;
+#endif
 }
 
 D3D11HeadlessOutput* Renderer::headless_output() const {
+#ifdef _WIN32
     auto* backend = d3d_backend();
     return backend ? backend->headless_output() : nullptr;
+#else
+    return nullptr;
+#endif
 }
 
 D3D11RenderResources* Renderer::d3d_resources() const {
+#ifdef _WIN32
     auto* backend = d3d_backend();
     return backend ? backend->resources() : nullptr;
+#else
+    return nullptr;
+#endif
 }
 
 void Renderer::play() {
@@ -922,6 +954,7 @@ void Renderer::wait_gpu_idle(const char* label) {
 bool Renderer::draw_headless_and_publish(const RendererDrawSnapshot& snapshot,
                                          const char* label,
                                          std::function<void()>& callback) {
+#ifdef _WIN32
     callback = {};
     if (shutting_down_.load(std::memory_order_acquire)) {
         return false;
@@ -955,6 +988,12 @@ bool Renderer::draw_headless_and_publish(const RendererDrawSnapshot& snapshot,
         elapsed_us_since(publish_start), std::memory_order_relaxed);
     d3d_metrics_.present_publish_count.fetch_add(1, std::memory_order_relaxed);
     return true;
+#else
+    (void)snapshot;
+    (void)label;
+    callback = {};
+    return false;
+#endif
 }
 
 void Renderer::enter_terminal_device_lost_locked(const char* operation) {
@@ -1099,6 +1138,7 @@ void Renderer::redraw_layout() {
 }
 
 bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
+#ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     auto* output = headless_output();
     if (!headless_ || !output) {
@@ -1112,6 +1152,12 @@ bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int&
     }
     return frame_capture_->capture_headless_front_buffer(
         *output, device_mutex_, bgra, width, height);
+#else
+    bgra.clear();
+    width = 0;
+    height = 0;
+    return false;
+#endif
 }
 
 void Renderer::set_decode_paused_for_all_tracks(bool paused) {
@@ -1280,10 +1326,14 @@ void Renderer::set_track_offset(int file_id, int64_t offset_us) {
 }
 
 void Renderer::set_frame_callback(std::function<void()> cb) {
+#ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (auto* output = headless_output()) {
         output->set_frame_callback(std::move(cb));
     }
+#else
+    (void)cb;
+#endif
 }
 
 void Renderer::set_event_callback(RendererEventCallback cb) {
@@ -1294,6 +1344,7 @@ void Renderer::set_event_callback(RendererEventCallback cb) {
 bool Renderer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
     snapshot = {};
 
+#ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     auto* output = headless_output();
     if (!output) {
@@ -1316,23 +1367,39 @@ bool Renderer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
     snapshot.buffer_index = lease.buffer_index;
     snapshot.buffer_generation = lease.generation;
     return true;
+#else
+    return false;
+#endif
 }
 
 void Renderer::release_shared_texture(int buffer_index, uint64_t buffer_generation) const {
+#ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (auto* output = headless_output()) {
         output->release_shared_texture(buffer_index, buffer_generation);
     }
+#else
+    (void)buffer_index;
+    (void)buffer_generation;
+#endif
 }
 
 std::mutex& Renderer::texture_mutex() const {
+#ifdef _WIN32
     auto* output = headless_output();
     return output ? output->texture_mutex() : texture_mutex_fallback_;
+#else
+    return texture_mutex_fallback_;
+#endif
 }
 
 void Renderer::resize(int width, int height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+#ifdef _WIN32
     if (!headless_ || !d3d_device()) return;
+#else
+    if (!headless_ || !presentation_backend_) return;
+#endif
     const auto validation = validate_renderer_dimensions(width, height, "resize dimensions");
     if (!validation.ok) {
         spdlog::warn("[Renderer] ignoring invalid resize: {}", validation.message);
@@ -1343,6 +1410,7 @@ void Renderer::resize(int width, int height) {
 }
 
 void Renderer::do_resize(int width, int height) {
+#ifdef _WIN32
     int old_width = 0;
     int old_height = 0;
     {
@@ -1388,6 +1456,10 @@ void Renderer::do_resize(int width, int height) {
     if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
         frame_callback();
     }
+#else
+    (void)width;
+    (void)height;
+#endif
 }
 
 void Renderer::render_loop() noexcept {
@@ -1461,9 +1533,11 @@ void Renderer::render_loop_body() {
             }
         }
 
+#ifdef _WIN32
         if (auto* output = headless_output()) {
             output->cleanup_expired_pending_buffers();
         }
+#endif
 
         bool playing_snapshot;
         bool clock_paused_snapshot;
@@ -1718,6 +1792,7 @@ bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
     };
     hooks.draw_overlay = [this](PresentationBackend& backend,
                                 const RendererDrawSnapshot& draw_snapshot) {
+#ifdef _WIN32
         if (!analysis_overlay_renderer_ ||
             backend.kind() != PresentationBackendKind::D3D11) {
             return;
@@ -1735,6 +1810,10 @@ bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
             *resources,
             draw_snapshot.target_width,
             draw_snapshot.target_height);
+#else
+        (void)backend;
+        (void)draw_snapshot;
+#endif
     };
     return backend->draw_frame(snapshot, hooks);
 }
@@ -2150,6 +2229,7 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
     std::lock_guard<std::recursive_mutex> device_lock(device_mutex_);
     RendererGpuMemoryStats result;
 
+#ifdef _WIN32
     auto* presenter = frame_presenter();
     const auto presenter_stats = presenter
         ? presenter->memory_stats()
@@ -2182,6 +2262,9 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
         presenter_copy_texture_bytes_by_slot[i] =
             presenter_stats.slots[i].render_nv12_copy_texture_bytes;
     }
+#else
+    std::array<uint64_t, kMaxTracks> presenter_copy_texture_bytes_by_slot{};
+#endif
     const auto track_memory = snapshot_track_gpu_memory_stats_collection(
         tracks_, presenter_copy_texture_bytes_by_slot);
     result.decoder_pool_bytes += track_memory.decoder_pool_bytes;

@@ -333,7 +333,7 @@ private:
     std::unique_ptr<AnalysisOverlayRenderer> analysis_overlay_renderer_;
     std::unique_ptr<PresentationBackend> presentation_backend_;
     std::unique_ptr<RenderSink> render_sink_;
-    std::unique_ptr<FrameCaptureService> frame_capture_;
+    FrameCaptureService* frame_capture_ = nullptr;
     LayoutController layout_controller_;
     RenderLoopController render_loop_controller_;
 

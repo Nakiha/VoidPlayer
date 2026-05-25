@@ -203,6 +203,14 @@ if(APPLE)
     )
     add_test(NAME renderer_config_validation_smoke COMMAND renderer_config_validation_smoke)
 
+    add_library(renderer_portable_compile_smoke OBJECT
+        "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"
+    )
+    void_apply_native_compile_options(renderer_portable_compile_smoke)
+    target_link_libraries(renderer_portable_compile_smoke PRIVATE
+        void_media_ffmpeg
+    )
+
     add_executable(presentation_snapshot_smoke
         "${VOID_NATIVE_DIR}/tools/presentation_snapshot_smoke.cpp"
     )

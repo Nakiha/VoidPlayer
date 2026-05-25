@@ -65,16 +65,34 @@ bool copy_frame_with_layout(VPMacOSMetalUploader* uploader,
                             VPMacOSNativeFrameInfo* out,
                             char* error,
                             size_t error_size) {
+  const size_t package_size =
+      VPMacOSNativePresentFramePackageMaxBytes(width, height, VPMacOSNativeMaxTracks);
+  if (package_size == 0) {
+    std::snprintf(error, error_size, "%s", "present package dimensions overflow");
+    return false;
+  }
+  std::vector<uint8_t> present_package(package_size, 0);
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
   while (std::chrono::steady_clock::now() < deadline) {
-    if (VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
-            uploader,
+    VPMacOSNativePresentFramePackageInfo package_info = {};
+    if (VPMacOSNativePlayerCopyPresentFramePackage(
             player,
-            buffer,
+            present_package.data(),
+            present_package.size(),
             width,
             height,
             VPMacOSNativeMaxTracks,
-            0,
+            &package_info,
+            error,
+            error_size) == 0 &&
+        VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
+            uploader,
+            present_package.data(),
+            present_package.size(),
+            &package_info,
+            buffer,
+            width,
+            height,
             out,
             error,
             error_size) == 0) {

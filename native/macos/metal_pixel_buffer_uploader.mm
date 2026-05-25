@@ -948,15 +948,6 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
 - (BOOL)validatePixelBuffer:(CVPixelBufferRef)pixelBuffer
                       width:(int32_t)width
                      height:(int32_t)height;
-- (int)copyCurrentFrameWithLayoutFromPlayer:(VPMacOSNativePlayer*)player
-                              toPixelBuffer:(CVPixelBufferRef)pixelBuffer
-                                      width:(int32_t)width
-                                     height:(int32_t)height
-                              maxTrackSlots:(int32_t)maxTrackSlots
-                              waitTimeoutMs:(int32_t)waitTimeoutMs
-                                        out:(VPMacOSNativeFrameInfo*)out
-                                      error:(char*)error
-                                  errorSize:(size_t)errorSize;
 - (int)copyPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
                            data:(const uint8_t*)data
                        dataSize:(size_t)dataSize
@@ -1387,78 +1378,6 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   return 0;
 }
 
-- (int)copyCurrentFrameWithLayoutFromPlayer:(VPMacOSNativePlayer*)player
-                              toPixelBuffer:(CVPixelBufferRef)pixelBuffer
-                                      width:(int32_t)width
-                                     height:(int32_t)height
-                              maxTrackSlots:(int32_t)maxTrackSlots
-                              waitTimeoutMs:(int32_t)waitTimeoutMs
-                                        out:(VPMacOSNativeFrameInfo*)out
-                                      error:(char*)error
-                                  errorSize:(size_t)errorSize {
-  if (![self isAvailable] || !_layoutPipeline) {
-    write_error(error, errorSize, "native Metal layout uploader is not available");
-    return -1;
-  }
-  if (!player || !pixelBuffer || !out || width <= 0 || height <= 0) {
-    write_error(error, errorSize, "invalid native Metal layout upload arguments");
-    return -1;
-  }
-  const int validationStatus =
-      [self validatePixelBufferStatus:pixelBuffer width:width height:height];
-  if (validationStatus != VPMacOSMetalUploaderStatusOk) {
-    write_error(error, errorSize, metal_uploader_status_message(validationStatus));
-    return -1;
-  }
-
-  const int32_t trackSlots =
-      std::clamp(maxTrackSlots, static_cast<int32_t>(1), static_cast<int32_t>(VPMacOSNativeMaxTracks));
-  const size_t stagingSize =
-      VPMacOSNativePresentFramePackageMaxBytes(width, height, trackSlots);
-  if (stagingSize == 0) {
-    write_error(error, errorSize, "native Metal layout upload dimensions overflow");
-    return -1;
-  }
-  if (![self ensureStagingBufferWithLength:stagingSize] ||
-      ![self ensureLayoutParamsBuffer]) {
-    return metal_upload_failure(
-        error, errorSize, "failed to allocate native Metal layout buffers");
-  }
-
-  VPMacOSNativePresentFramePackageInfo package = {};
-  const auto totalStart = std::chrono::steady_clock::now();
-  const auto copyStart = std::chrono::steady_clock::now();
-  const int copyRet = VPMacOSNativePlayerCopyPresentFramePackage(
-      player,
-      static_cast<uint8_t*>([_stagingBuffer contents]),
-      stagingSize,
-      width,
-      height,
-      trackSlots,
-      &package,
-      error,
-      errorSize);
-  _lastPresentPackageCopyUs.store(elapsed_us_since(copyStart), std::memory_order_relaxed);
-  if (copyRet != 0) {
-    if (error && std::strcmp(error, "not all present decision frames are ready") == 0) {
-      return -1;
-    }
-    if (!error || error[0] == '\0') {
-      write_error(error, errorSize, "failed to copy native present frames");
-    }
-    return -2;
-  }
-  const int uploadRet = [self uploadPreparedPresentFramePackage:&package
-                                                  toPixelBuffer:pixelBuffer
-                                                          width:width
-                                                         height:height
-                                                            out:out
-                                                          error:error
-                                                      errorSize:errorSize];
-  _lastPresentPackageTotalUs.store(elapsed_us_since(totalStart), std::memory_order_relaxed);
-  return uploadRet;
-}
-
 @end
 
 struct VPMacOSMetalUploader {
@@ -1558,32 +1477,6 @@ int VPMacOSMetalUploaderValidatePixelBufferChecked(VPMacOSMetalUploader* uploade
   }
   write_error(error, error_size, metal_uploader_status_message(status));
   return status;
-}
-
-int VPMacOSMetalUploaderCopyCurrentFrameWithLayout(
-    VPMacOSMetalUploader* uploader,
-    VPMacOSNativePlayer* player,
-    void* pixel_buffer,
-    int32_t width,
-    int32_t height,
-    int32_t max_track_slots,
-    int32_t wait_timeout_ms,
-    VPMacOSNativeFrameInfo* out,
-    char* error,
-    size_t error_size) {
-  if (!uploader || !uploader->impl) {
-    write_error(error, error_size, "native Metal uploader is null");
-    return -1;
-  }
-  return [uploader->impl copyCurrentFrameWithLayoutFromPlayer:player
-                                                toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                                        width:width
-                                                       height:height
-                                                maxTrackSlots:max_track_slots
-                                                waitTimeoutMs:wait_timeout_ms
-                                                          out:out
-                                                        error:error
-                                                    errorSize:error_size];
 }
 
 int VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(

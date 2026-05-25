@@ -249,6 +249,8 @@ rules for decision metadata, YUV/BGRA package layout, CVPixelBuffer fast-path me
 guards, and fallback behavior.
 Swift presentation counting now records renderer-owned and explicit fallback presentations through
 one helper while keeping the existing diagnostics keys stable.
+The remaining player-querying Metal uploader ABI has been removed from tests and the C bridge; test
+coverage now copies an explicit present package and asks the uploader/backend to render that package.
 
 ## Validation Strategy
 

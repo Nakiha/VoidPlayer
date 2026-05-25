@@ -1,7 +1,8 @@
 #ifndef VOIDPLAYER_MACOS_NATIVE_PLAYER_STATE_H_
 #define VOIDPLAYER_MACOS_NATIVE_PLAYER_STATE_H_
 
-#include "macos/native_player_bridge.h"
+#include "macos/metal_presentation_backend_bridge.h"
+#include "macos/native_player_types.h"
 #include "video_renderer/renderer.h"
 
 #include <atomic>

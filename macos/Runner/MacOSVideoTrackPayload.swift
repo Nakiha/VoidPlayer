@@ -1,6 +1,14 @@
 import Foundation
 
 enum MacOSVideoTrackPayload {
+  static let nativeFormatName = "macos-native-player"
+  static let nativeCodecName = "ffmpeg"
+  static let nativeCodecLongName = "macOS shared native DecodeThread facade"
+  static let syntheticFormatName = "synthetic"
+  static let syntheticCodecName = "macos_synthetic"
+  static let syntheticCodecLongName = "macOS Synthetic FlutterTexture"
+  static let syntheticDecoderName = "synthetic"
+
   static func track(
     fileId: Int,
     slot: Int,
@@ -27,6 +35,47 @@ enum MacOSVideoTrackPayload {
       "codecLongName": codecLongName,
       "decoderName": decoderName,
     ]
+  }
+
+  static func nativeTrack(
+    path: String,
+    metadata: MacOSNativeTrackMetadata,
+    decoderName: String
+  ) -> [String: Any] {
+    track(
+      fileId: metadata.fileId,
+      slot: metadata.slot,
+      path: path,
+      width: metadata.width,
+      height: metadata.height,
+      durationUs: metadata.durationUs,
+      formatName: nativeFormatName,
+      codecName: nativeCodecName,
+      codecLongName: nativeCodecLongName,
+      decoderName: decoderName
+    )
+  }
+
+  static func syntheticTrack(
+    fileId: Int,
+    slot: Int,
+    path: String,
+    width: Int,
+    height: Int,
+    durationUs: Int
+  ) -> [String: Any] {
+    track(
+      fileId: fileId,
+      slot: slot,
+      path: path,
+      width: width,
+      height: height,
+      durationUs: durationUs,
+      formatName: syntheticFormatName,
+      codecName: syntheticCodecName,
+      codecLongName: syntheticCodecLongName,
+      decoderName: syntheticDecoderName
+    )
   }
 
   static func defaultLayout() -> [String: Any] {

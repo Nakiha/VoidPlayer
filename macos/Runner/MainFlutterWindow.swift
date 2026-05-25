@@ -240,10 +240,10 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       trackWidth = requestedWidth
       trackHeight = requestedHeight
       trackDurationUs = Self.syntheticDurationUs
-      trackFormatName = "synthetic"
-      trackCodecName = "macos_synthetic"
-      trackCodecLongName = "macOS Synthetic FlutterTexture"
-      trackDecoderName = "synthetic"
+      trackFormatName = MacOSVideoTrackPayload.syntheticFormatName
+      trackCodecName = MacOSVideoTrackPayload.syntheticCodecName
+      trackCodecLongName = MacOSVideoTrackPayload.syntheticCodecLongName
+      trackDecoderName = MacOSVideoTrackPayload.syntheticDecoderName
       backendName = "synthetic-texture"
       nativePlayer = nil
     } else {
@@ -267,11 +267,11 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         trackWidth = session.width() > 0 ? session.width() : firstFrame.width
         trackHeight = session.height() > 0 ? session.height() : firstFrame.height
         trackDurationUs = session.durationUs() > 0 ? session.durationUs() : Self.syntheticDurationUs
-        trackFormatName = "macos-native-player"
-        trackCodecName = "ffmpeg"
-        trackCodecLongName = "macOS shared native DecodeThread facade"
+        trackFormatName = MacOSVideoTrackPayload.nativeFormatName
+        trackCodecName = MacOSVideoTrackPayload.nativeCodecName
+        trackCodecLongName = MacOSVideoTrackPayload.nativeCodecLongName
         trackDecoderName = session.decoderName()
-        backendName = "macos-native-player"
+        backendName = MacOSVideoTrackPayload.nativeFormatName
         nativePlayer = session
       } catch {
         return FlutterError(
@@ -286,7 +286,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
     texture = nextTexture
     textureId = registeredTextureId
-    if backendName == "macos-native-player" {
+    if backendName == MacOSVideoTrackPayload.nativeFormatName {
       tracks = [
         MacOSVideoTrackPayload.track(
           fileId: 0,
@@ -322,17 +322,13 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       }
     } else {
       tracks = paths.enumerated().map { index, path in
-        MacOSVideoTrackPayload.track(
+        MacOSVideoTrackPayload.syntheticTrack(
           fileId: index,
           slot: index,
           path: path,
           width: trackWidth,
           height: trackHeight,
-          durationUs: trackDurationUs,
-          formatName: trackFormatName,
-          codecName: trackCodecName,
-          codecLongName: trackCodecLongName,
-          decoderName: trackDecoderName
+          durationUs: trackDurationUs
         )
       }
     }
@@ -354,16 +350,9 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func nativeTrackMap(path: String, metadata: MacOSNativeTrackMetadata) -> [String: Any] {
-    MacOSVideoTrackPayload.track(
-      fileId: metadata.fileId,
-      slot: metadata.slot,
+    MacOSVideoTrackPayload.nativeTrack(
       path: path,
-      width: metadata.width,
-      height: metadata.height,
-      durationUs: metadata.durationUs,
-      formatName: "macos-native-player",
-      codecName: "ffmpeg",
-      codecLongName: "macOS shared native DecodeThread facade",
+      metadata: metadata,
       decoderName: nativePlayer?.decoderName() ?? "decode_thread_software"
     )
   }
@@ -405,7 +394,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     let fileId = (tracks.map { MacOSFlutterArguments.intValue($0["fileId"]) ?? 0 }.max() ?? -1) + 1
     let slot = tracks.count
     let path = MacOSFlutterArguments.stringArg(arguments, "path") ?? "macos-synthetic-\(fileId)"
-    if backendName == "macos-native-player" {
+    if backendName == MacOSVideoTrackPayload.nativeFormatName {
       do {
         guard let session = nativePlayer else {
           throw MacOSNativePlayerError.failed("macOS native player is unavailable")
@@ -426,21 +415,13 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
 
     let size = texture?.dimensions() ?? (width: 1920, height: 1080)
-    let track = MacOSVideoTrackPayload.track(
+    let track = MacOSVideoTrackPayload.syntheticTrack(
       fileId: fileId,
       slot: slot,
       path: path,
       width: size.width,
       height: size.height,
-      durationUs: currentDurationUs,
-      formatName: backendName,
-      codecName: backendName == "macos-native-player" ? "ffmpeg" : "macos_synthetic",
-      codecLongName: backendName == "macos-native-player"
-        ? "macOS shared native DecodeThread facade"
-        : "macOS Synthetic FlutterTexture",
-      decoderName: backendName == "macos-native-player"
-        ? nativePlayer?.decoderName() ?? "decode_thread_software"
-        : "synthetic"
+      durationUs: currentDurationUs
     )
     tracks.append(track)
     markFrameAvailable()
@@ -449,7 +430,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
   private func removeTrack(arguments: Any?) {
     guard let fileId = MacOSFlutterArguments.intArg(arguments, "fileId") else { return }
-    if backendName == "macos-native-player" {
+    if backendName == MacOSVideoTrackPayload.nativeFormatName {
       if fileId == 0 {
         destroyPlayer()
         return
@@ -457,7 +438,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       nativePlayer?.removeTrack(fileId: fileId)
     }
     tracks.removeAll { MacOSFlutterArguments.intValue($0["fileId"]) == fileId }
-    if backendName != "macos-native-player" {
+    if backendName != MacOSVideoTrackPayload.nativeFormatName {
       tracks = tracks.enumerated().map { index, track in
         var next = track
         next["slot"] = index
@@ -483,11 +464,11 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       let currentDimensions = texture?.dimensions()
       let willChange = currentDimensions?.width != nextWidth ||
         currentDimensions?.height != nextHeight
-      if backendName == "macos-native-player", willChange {
+      if backendName == MacOSVideoTrackPayload.nativeFormatName, willChange {
         nativePlayer?.clearMetalPresentationTarget()
       }
       _ = texture?.resize(width: nextWidth, height: nextHeight) ?? false
-      if backendName == "macos-native-player" {
+      if backendName == MacOSVideoTrackPayload.nativeFormatName {
         refreshCurrentFrameAfterLayoutChange()
         if isPlaying,
            let nativePlayer,
@@ -540,7 +521,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func refreshDecodedFrameIfNeeded(targetPtsUs: Int) -> FlutterError? {
-    guard backendName == "macos-native-player",
+    guard backendName == MacOSVideoTrackPayload.nativeFormatName,
           let nativePlayer,
           texture != nil else {
       return nil
@@ -569,7 +550,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func refreshCurrentFrameAfterLayoutChange() {
-    guard backendName == "macos-native-player",
+    guard backendName == MacOSVideoTrackPayload.nativeFormatName,
           let nativePlayer,
           let texture else {
       markFrameAvailable()
@@ -661,7 +642,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
   private func startNativeFramePump() {
     stopNativeFramePump()
-    guard backendName == "macos-native-player",
+    guard backendName == MacOSVideoTrackPayload.nativeFormatName,
           let nativePlayer,
           textureId != nil else {
       return
@@ -688,7 +669,7 @@ private final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       guard let self else { return }
       self.presentationState.recordCallback()
       guard self.isPlaying,
-            self.backendName == "macos-native-player" else {
+            self.backendName == MacOSVideoTrackPayload.nativeFormatName else {
         return
       }
       if self.nativePlayer?.lastRendererOwnedPresentationSucceeded() == true {

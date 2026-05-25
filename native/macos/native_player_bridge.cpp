@@ -2,6 +2,7 @@
 
 #include "macos/metal_presentation_backend.h"
 #include "macos/presentation_adapter.h"
+#include "macos/presentation_package_builder.h"
 #include "audio/audio_output.h"
 #include "audio/audio_output_factory.h"
 #include "media/demux_thread.h"
@@ -58,30 +59,6 @@ void write_error(char* error, size_t error_size, const std::string& message) {
   std::memcpy(error, message.data(), copy_size);
   error[copy_size] = '\0';
 }
-
-class ScopedCVPixelBufferLock {
-public:
-  explicit ScopedCVPixelBufferLock(CVPixelBufferRef buffer)
-      : buffer_(buffer),
-        locked_(buffer &&
-                CVPixelBufferLockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly) ==
-                    kCVReturnSuccess) {}
-
-  ~ScopedCVPixelBufferLock() {
-    if (locked_) {
-      CVPixelBufferUnlockBaseAddress(buffer_, kCVPixelBufferLock_ReadOnly);
-    }
-  }
-
-  ScopedCVPixelBufferLock(const ScopedCVPixelBufferLock&) = delete;
-  ScopedCVPixelBufferLock& operator=(const ScopedCVPixelBufferLock&) = delete;
-
-  bool locked() const { return locked_; }
-
-private:
-  CVPixelBufferRef buffer_ = nullptr;
-  bool locked_ = false;
-};
 
 void clear_bgra_canvas(uint8_t* dst,
                        size_t dst_size,
@@ -198,14 +175,6 @@ bool probe_videotoolbox_h264() {
     result.provider->shutdown();
   }
   return available;
-}
-
-size_t align_up_size(size_t value, size_t alignment) {
-  if (alignment == 0) {
-    return value;
-  }
-  const size_t remainder = value % alignment;
-  return remainder == 0 ? value : value + (alignment - remainder);
 }
 
 vr::LayoutState to_layout_state(const VPMacOSNativeLayoutState& state) {
@@ -423,52 +392,21 @@ public:
       return false;
     }
 
-    const auto decision = current_present_decision();
-    fill_present_decision_info(decision, width, height, out);
-    if (!decision.should_present) {
-      error = "no presentable frame is ready";
-      return false;
-    }
-    if (out->track_count > 1 && out->frame_count < out->track_count) {
-      error = "not all present decision frames are ready";
-      return false;
-    }
-    size_t required_tracks = 1;
-    for (size_t slot = 0; slot < vr::kMaxTracks; ++slot) {
-      if (decision.frames[slot].has_value()) {
-        required_tracks = std::max(required_tracks, slot + 1);
-      }
-    }
-    const size_t min_track_stride =
-        static_cast<size_t>(stride_bytes) * static_cast<size_t>(height);
-    if (track_stride_bytes < min_track_stride ||
-        track_stride_bytes > std::numeric_limits<size_t>::max() / required_tracks ||
-        dst_size < track_stride_bytes * required_tracks) {
-      error = "present decision BGRA destination is too small";
-      return false;
-    }
-
-    for (size_t slot = 0; slot < vr::kMaxTracks; ++slot) {
-      if (!decision.frames[slot].has_value()) {
-        continue;
-      }
-      auto* slot_dst = dst + track_stride_bytes * slot;
-      const auto& frame = *decision.frames[slot];
-      VPMacOSNativeFrameInfo frame_info = {};
-      const auto status = vp_macos::copy_texture_frame_to_bgra_destination_checked(
-          frame,
-          slot_dst,
-          track_stride_bytes,
-          frame.width,
-          frame.height,
-          stride_bytes,
-          &frame_info);
-      if (status != vp_macos::PresentationAdapterStatus::Ok) {
-        error = vp_macos::presentation_adapter_status_message(status);
-        return false;
-      }
-    }
-    return true;
+    const auto snapshot =
+        draw_snapshot_for_decision(current_present_decision(), width, height);
+    VPMacOSNativePresentFramePackageInfo package = {};
+    const bool copied = vp_macos::copy_snapshot_bgra_package(
+        snapshot,
+        dst,
+        dst_size,
+        width,
+        height,
+        stride_bytes,
+        track_stride_bytes,
+        &package,
+        error);
+    *out = package.decision;
+    return copied;
   }
 
   bool copy_present_canvas_bgra_into(uint8_t* dst,
@@ -589,193 +527,20 @@ public:
       return false;
     }
 
-    const auto decision = current_present_decision();
-    fill_present_decision_info(decision, width, height, out);
-    if (!decision.should_present) {
-      error = "no presentable frame is ready";
-      return false;
-    }
-    if (out->track_count > 1 && out->frame_count < out->track_count) {
-      error = "not all present decision frames are ready";
-      return false;
-    }
-
-    size_t cursor = 0;
-    for (size_t slot = 0; slot < vr::kMaxTracks; ++slot) {
-      if (!decision.frames[slot].has_value()) {
-        continue;
-      }
-      if (slot >= max_track_slots) {
-        error = "present decision YUV destination is too small";
-        return false;
-      }
-      const auto& frame = *decision.frames[slot];
-      const auto* storage = frame.cpu_nv12_storage();
-      const auto* planar_storage = frame.cpu_planar_yuv_storage();
-      const auto* cv_storage = frame.macos_cv_pixel_buffer_storage();
-      const uint8_t* y_source = nullptr;
-      const uint8_t* uv_source = nullptr;
-      const uint8_t* v_source = nullptr;
-      int y_stride = 0;
-      int uv_stride = 0;
-      int v_stride = 0;
-      int coded_width = 0;
-      int coded_height = 0;
-      int chroma_width = 0;
-      int chroma_height = 0;
-      bool is_p010 = false;
-      bool is_planar_yuv420 = false;
-      std::unique_ptr<ScopedCVPixelBufferLock> cv_lock;
-      if (storage) {
-        if (!storage->data || storage->y_stride <= 0 || storage->uv_stride <= 0 ||
-            storage->coded_width <= 0 || storage->coded_height <= 0 ||
-            storage->coded_width < frame.width ||
-            storage->coded_height < frame.height) {
-          error = "present decision contains invalid NV12 frame storage";
-          return false;
-        }
-        y_source = storage->data->data();
-        y_stride = storage->y_stride;
-        uv_stride = storage->uv_stride;
-        coded_width = storage->coded_width;
-        coded_height = storage->coded_height;
-        is_p010 = storage->is_p010;
-        uv_source = y_source + static_cast<size_t>(y_stride) * coded_height;
-        chroma_width = (coded_width + 1) / 2;
-        chroma_height = (coded_height + 1) / 2;
-      } else if (planar_storage) {
-        if (planar_storage->bytes_per_sample != 1) {
-          error = "planar 10-bit YUV is not supported by Metal presentation yet";
-          return false;
-        }
-        for (int plane = 0; plane < 3; ++plane) {
-          if (!planar_storage->planes[plane] ||
-              planar_storage->plane_widths[plane] <= 0 ||
-              planar_storage->plane_heights[plane] <= 0 ||
-              planar_storage->strides[plane] <
-                  planar_storage->plane_widths[plane] * planar_storage->bytes_per_sample) {
-            error = "present decision contains invalid planar YUV frame storage";
-            return false;
-          }
-        }
-        if (planar_storage->plane_widths[0] < frame.width ||
-            planar_storage->plane_heights[0] < frame.height) {
-          error = "planar YUV frame storage is smaller than the display frame";
-          return false;
-        }
-        const int expected_chroma_width = (planar_storage->plane_widths[0] + 1) / 2;
-        const int expected_chroma_height = (planar_storage->plane_heights[0] + 1) / 2;
-        if (planar_storage->plane_widths[1] != expected_chroma_width ||
-            planar_storage->plane_widths[2] != expected_chroma_width ||
-            planar_storage->plane_heights[1] != expected_chroma_height ||
-            planar_storage->plane_heights[2] != expected_chroma_height) {
-          error = "only planar YUV420 frame storage is supported by Metal presentation";
-          return false;
-        }
-        if (planar_storage->strides[1] != planar_storage->strides[2]) {
-          error = "planar YUV U/V strides must match for Metal presentation";
-          return false;
-        }
-        y_source = planar_storage->planes[0];
-        uv_source = planar_storage->planes[1];
-        v_source = planar_storage->planes[2];
-        y_stride = planar_storage->strides[0];
-        uv_stride = planar_storage->strides[1];
-        v_stride = planar_storage->strides[2];
-        coded_width = planar_storage->plane_widths[0];
-        coded_height = planar_storage->plane_heights[0];
-        chroma_width = planar_storage->plane_widths[1];
-        chroma_height = planar_storage->plane_heights[1];
-        is_planar_yuv420 = true;
-      } else if (cv_storage) {
-        auto* pixel_buffer = static_cast<CVPixelBufferRef>(cv_storage->pixel_buffer);
-        cv_lock = std::make_unique<ScopedCVPixelBufferLock>(pixel_buffer);
-        if (!pixel_buffer || !cv_lock->locked() || cv_storage->plane_count < 2 ||
-            cv_storage->coded_width <= 0 || cv_storage->coded_height <= 0 ||
-            cv_storage->coded_width < frame.width ||
-            cv_storage->coded_height < frame.height) {
-          error = "present decision contains invalid CVPixelBuffer frame storage";
-          return false;
-        }
-        y_source = static_cast<const uint8_t*>(
-            CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, 0));
-        uv_source = static_cast<const uint8_t*>(
-            CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, 1));
-        y_stride = static_cast<int>(CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 0));
-        uv_stride = static_cast<int>(CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 1));
-        coded_width = cv_storage->coded_width;
-        coded_height = cv_storage->coded_height;
-        is_p010 = cv_storage->is_p010;
-        chroma_width = (coded_width + 1) / 2;
-        chroma_height = (coded_height + 1) / 2;
-      } else {
-        error = "present decision contains unsupported YUV frame storage";
-        return false;
-      }
-      if (!y_source || !uv_source || y_stride <= 0 || uv_stride <= 0) {
-        error = "present decision contains invalid YUV plane pointers";
-        return false;
-      }
-
-      const int bytes_per_sample = is_p010 ? 2 : 1;
-      if (!is_planar_yuv420 && (
-          y_stride < coded_width * bytes_per_sample ||
-          uv_stride < coded_width * bytes_per_sample)) {
-        error = "invalid NV12/P010 frame storage for Metal presentation";
-        return false;
-      }
-      if (is_planar_yuv420 && (!v_source || v_stride <= 0 ||
-          y_stride < coded_width * bytes_per_sample ||
-          uv_stride < chroma_width * bytes_per_sample ||
-          v_stride < chroma_width * bytes_per_sample)) {
-        error = "invalid planar YUV420 frame storage for Metal presentation";
-        return false;
-      }
-      const size_t y_bytes =
-          static_cast<size_t>(y_stride) * static_cast<size_t>(coded_height);
-      const size_t uv_bytes =
-          static_cast<size_t>(uv_stride) * static_cast<size_t>(chroma_height);
-      const size_t v_bytes = is_planar_yuv420
-          ? static_cast<size_t>(v_stride) * static_cast<size_t>(chroma_height)
-          : 0u;
-      if (storage && (y_bytes > std::numeric_limits<size_t>::max() - uv_bytes ||
-          y_bytes + uv_bytes > storage->data->size())) {
-        error = "invalid NV12/P010 frame storage for Metal presentation";
-        return false;
-      }
-      cursor = align_up_size(cursor, static_cast<size_t>(bytes_per_sample));
-      if (cursor > dst_size || y_bytes > dst_size - cursor ||
-          uv_bytes > dst_size - cursor - y_bytes ||
-          v_bytes > dst_size - cursor - y_bytes - uv_bytes) {
-        error = "present decision YUV destination is too small";
-        return false;
-      }
-
-      std::memcpy(dst + cursor, y_source, y_bytes);
-      out->y_offset[slot] = static_cast<int32_t>(cursor);
-      cursor += y_bytes;
-      std::memcpy(dst + cursor, uv_source, uv_bytes);
-      out->uv_offset[slot] = static_cast<int32_t>(cursor);
-      cursor += uv_bytes;
-      if (is_planar_yuv420) {
-        std::memcpy(dst + cursor, v_source, v_bytes);
-        out->v_offset[slot] = static_cast<int32_t>(cursor);
-        cursor += v_bytes;
-      }
-      out->yuv_format[slot] = is_planar_yuv420
-          ? VPMacOSNativePresentFormatYUV420P
-          : (is_p010 ? VPMacOSNativePresentFormatP010
-                     : VPMacOSNativePresentFormatNV12);
-      out->y_stride[slot] = y_stride;
-      out->uv_stride[slot] = uv_stride;
-      out->coded_width[slot] = coded_width;
-      out->coded_height[slot] = coded_height;
-      out->nv12_uv_scale_x[slot] =
-          static_cast<float>(frame.width) / static_cast<float>(coded_width);
-      out->nv12_uv_scale_y[slot] =
-          static_cast<float>(frame.height) / static_cast<float>(coded_height);
-    }
-    return true;
+    const auto snapshot =
+        draw_snapshot_for_decision(current_present_decision(), width, height);
+    VPMacOSNativePresentFramePackageInfo package = {};
+    const bool copied = vp_macos::copy_snapshot_yuv_package(
+        snapshot,
+        dst,
+        dst_size,
+        width,
+        height,
+        max_track_slots,
+        &package,
+        error);
+    *out = package.decision;
+    return copied;
   }
 
   bool copy_retained_cv_pixel_buffer_present_frame(
@@ -791,56 +556,13 @@ public:
       error = "player is not open";
       return false;
     }
-    *out = {};
     auto decision = current_present_decision();
     if (!decision.should_present) {
       decision = primary_peek_present_decision();
     }
-    fill_present_decision_info(decision, width, height, &out->decision);
-    if (!decision.should_present) {
-      error = "no presentable frame is ready";
-      return false;
-    }
-    if (out->decision.frame_count != 1) {
-      error = "present decision is not a single CVPixelBuffer frame";
-      return false;
-    }
-
-    for (size_t slot = 0; slot < vr::kMaxTracks; ++slot) {
-      if (!decision.frames[slot].has_value()) {
-        continue;
-      }
-      if (slot != 0) {
-        error = "CVPixelBuffer fast path currently requires the primary track slot";
-        return false;
-      }
-      const auto& frame = *decision.frames[slot];
-      const auto* storage = frame.macos_cv_pixel_buffer_storage();
-      if (!storage || !storage->pixel_buffer || storage->plane_count < 2 ||
-          storage->coded_width < frame.width || storage->coded_height < frame.height) {
-        error = "present decision does not contain a supported CVPixelBuffer frame";
-        return false;
-      }
-      CVPixelBufferRetain(static_cast<CVPixelBufferRef>(storage->pixel_buffer));
-      out->pixel_buffer = storage->pixel_buffer;
-      out->pixel_format = static_cast<int32_t>(storage->pixel_format);
-      out->plane_count = storage->plane_count;
-      out->is_p010 = storage->is_p010 ? 1 : 0;
-      out->coded_width = storage->coded_width;
-      out->coded_height = storage->coded_height;
-      out->decision.yuv_format[slot] = storage->is_p010
-          ? VPMacOSNativePresentFormatP010
-          : VPMacOSNativePresentFormatNV12;
-      out->decision.coded_width[slot] = storage->coded_width;
-      out->decision.coded_height[slot] = storage->coded_height;
-      out->decision.nv12_uv_scale_x[slot] =
-          static_cast<float>(frame.width) / static_cast<float>(storage->coded_width);
-      out->decision.nv12_uv_scale_y[slot] =
-          static_cast<float>(frame.height) / static_cast<float>(storage->coded_height);
-      return true;
-    }
-    error = "present decision has no CVPixelBuffer frame";
-    return false;
+    const auto snapshot = draw_snapshot_for_decision(decision, width, height);
+    return vp_macos::snapshot_cv_pixel_buffer_frame(
+        snapshot, width, height, true, out, error);
   }
 
   void seek(int64_t pts_us, vr::SeekType type = vr::SeekType::Exact) {

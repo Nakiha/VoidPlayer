@@ -224,6 +224,10 @@ settlement is owned by the native/shared playback policy so bad container durati
 separate macOS timeline rule.
 The unused no-layout `VPMacOSMetalUploaderCopyCurrentFrame` blit ABI has also been removed; macOS
 Metal uploads now enter through the layout/present-package or retained-CVPixelBuffer paths.
+macOS present-package construction has been centralized in `presentation_package_builder`, so the
+legacy bridge C ABI and the renderer-owned Metal backend consume the same `RendererDrawSnapshot`
+rules for decision metadata, YUV/BGRA package layout, CVPixelBuffer fast-path metadata, stride
+guards, and fallback behavior.
 
 ## Validation Strategy
 

@@ -12,6 +12,7 @@
 #include "video_renderer/track/track_step_policy.h"
 #include "audio/audio_output_factory.h"
 #include "video_renderer/audio_coordinator.h"
+#include "video_renderer/capture/frame_capture_service.h"
 #include "video_renderer/seek/seek_coordinator.h"
 #include "video_renderer/render/device_loss_policy.h"
 #include "video_renderer/render/presentation_backend_factory.h"
@@ -86,13 +87,15 @@ Renderer::Renderer()
     , playback_(owned_playback_.get())
     , audio_coordinator_(std::make_unique<AudioCoordinator>(*playback_))
     , seek_coordinator_(std::make_unique<SeekCoordinator>(kPausedHevcSeekSettleDelay))
-    , analysis_overlay_renderer_(std::make_unique<AnalysisOverlayRenderer>()) {}
+    , analysis_overlay_renderer_(std::make_unique<AnalysisOverlayRenderer>())
+    , frame_capture_(std::make_unique<FrameCaptureService>()) {}
 
 Renderer::Renderer(PlaybackController& playback)
     : playback_(&playback)
     , audio_coordinator_(std::make_unique<AudioCoordinator>(*playback_))
     , seek_coordinator_(std::make_unique<SeekCoordinator>(kPausedHevcSeekSettleDelay))
-    , analysis_overlay_renderer_(std::make_unique<AnalysisOverlayRenderer>()) {}
+    , analysis_overlay_renderer_(std::make_unique<AnalysisOverlayRenderer>())
+    , frame_capture_(std::make_unique<FrameCaptureService>()) {}
 
 Renderer::~Renderer() {
     shutdown();
@@ -1128,7 +1131,10 @@ bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int&
         height = 0;
         return false;
     }
-    return frame_capture_.capture_headless_front_buffer(
+    if (!frame_capture_) {
+        return false;
+    }
+    return frame_capture_->capture_headless_front_buffer(
         *output, device_mutex_, bgra, width, height);
 }
 

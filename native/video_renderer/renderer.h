@@ -8,7 +8,6 @@
 #include "media/seek_controller.h"
 #include "video_renderer/sync/render_sink.h"
 #include "video_renderer/track/track_pipeline.h"
-#include "video_renderer/capture/frame_capture_service.h"
 #include "video_renderer/layout/layout_controller.h"
 #include "video_renderer/layout/layout_state.h"
 #include "video_renderer/render/render_loop_controller.h"
@@ -41,6 +40,7 @@ class D3D11FramePresenter;
 class D3D11HeadlessOutput;
 class D3D11RenderBackend;
 struct D3D11RenderResources;
+class FrameCaptureService;
 class ShaderManager;
 class TextureManager;
 class AudioCoordinator;
@@ -333,7 +333,7 @@ private:
     std::unique_ptr<AnalysisOverlayRenderer> analysis_overlay_renderer_;
     std::unique_ptr<PresentationBackend> presentation_backend_;
     std::unique_ptr<RenderSink> render_sink_;
-    FrameCaptureService frame_capture_;
+    std::unique_ptr<FrameCaptureService> frame_capture_;
     LayoutController layout_controller_;
     RenderLoopController render_loop_controller_;
 

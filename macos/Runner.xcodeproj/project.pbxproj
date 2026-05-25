@@ -566,6 +566,8 @@
 				"$(PROJECT_DIR)/../native/macos/metal_texture_wrapping.h",
 				"$(PROJECT_DIR)/../native/macos/metal_texture_wrapping.mm",
 				"$(PROJECT_DIR)/../native/macos/metal_uploader_bridge.h",
+				"$(PROJECT_DIR)/../native/macos/metal_uploader_bridge.mm",
+				"$(PROJECT_DIR)/../native/macos/metal_uploader_internal.h",
 				"$(PROJECT_DIR)/../native/macos/native_player_bridge.cpp",
 				"$(PROJECT_DIR)/../native/macos/native_player_bridge.h",
 				"$(PROJECT_DIR)/../native/macos/native_player_diagnostics.cpp",

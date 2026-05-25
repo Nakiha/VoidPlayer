@@ -1,13 +1,11 @@
-#include "metal_uploader_bridge.h"
+#include "macos/metal_uploader_internal.h"
 
 #include "macos/metal_layout_params.h"
 #include "macos/metal_texture_wrapping.h"
 
 #include <CoreVideo/CoreVideo.h>
-#include <Metal/Metal.h>
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstring>
@@ -53,7 +51,9 @@ int64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
       .count();
 }
 
-const char* metal_uploader_status_message(int status) {
+}  // namespace
+
+const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   switch (status) {
   case VPMacOSMetalUploaderStatusOk:
     return "";
@@ -71,66 +71,6 @@ const char* metal_uploader_status_message(int status) {
     return "unknown native Metal pixel buffer validation failure";
   }
 }
-
-}  // namespace
-
-@interface VPMacOSMetalUploaderImpl : NSObject {
- @private
-  id<MTLDevice> _device;
-  id<MTLCommandQueue> _commandQueue;
-  id<MTLBuffer> _stagingBuffer;
-  id<MTLBuffer> _layoutParamsBuffer;
-  id<MTLComputePipelineState> _layoutPipeline;
-  id<MTLComputePipelineState> _cvPixelBufferPipeline;
-  CVMetalTextureCacheRef _textureCache;
-  std::atomic<int64_t> _directYuvUploadCount;
-  std::atomic<int64_t> _cvPixelBufferUploadCount;
-  std::atomic<int64_t> _presentPackageUploadCount;
-  std::atomic<int64_t> _lastPresentPackageCopyUs;
-  std::atomic<int64_t> _lastPresentPackageGpuWaitUs;
-  std::atomic<int64_t> _lastPresentPackageTotalUs;
-  std::atomic<int32_t> _lastPresentPackageStorage;
-}
-
-- (BOOL)isAvailable;
-- (int64_t)directYuvUploadCount;
-- (int64_t)cvPixelBufferUploadCount;
-- (int64_t)presentPackageUploadCount;
-- (int64_t)lastPresentPackageCopyUs;
-- (int64_t)lastPresentPackageGpuWaitUs;
-- (int64_t)lastPresentPackageTotalUs;
-- (int32_t)lastPresentPackageStorage;
-- (int)validatePixelBufferStatus:(CVPixelBufferRef)pixelBuffer
-                            width:(int32_t)width
-                           height:(int32_t)height;
-- (BOOL)validatePixelBuffer:(CVPixelBufferRef)pixelBuffer
-                      width:(int32_t)width
-                     height:(int32_t)height;
-- (int)copyPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
-                           data:(const uint8_t*)data
-                       dataSize:(size_t)dataSize
-                  toPixelBuffer:(CVPixelBufferRef)pixelBuffer
-                          width:(int32_t)width
-                         height:(int32_t)height
-                            out:(VPMacOSNativeFrameInfo*)out
-                          error:(char*)error
-                      errorSize:(size_t)errorSize;
-- (int)copyCVPixelBufferPresentFrame:(const VPMacOSNativeCVPixelBufferPresentFrame*)frame
-                        toPixelBuffer:(CVPixelBufferRef)pixelBuffer
-                                width:(int32_t)width
-                               height:(int32_t)height
-                                  out:(VPMacOSNativeFrameInfo*)out
-                                error:(char*)error
-                            errorSize:(size_t)errorSize;
-- (int)uploadPreparedPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
-                           toPixelBuffer:(CVPixelBufferRef)pixelBuffer
-                                   width:(int32_t)width
-                                  height:(int32_t)height
-                                     out:(VPMacOSNativeFrameInfo*)out
-                                   error:(char*)error
-                               errorSize:(size_t)errorSize;
-
-@end
 
 @implementation VPMacOSMetalUploaderImpl
 
@@ -333,7 +273,7 @@ const char* metal_uploader_status_message(int status) {
   const int validationStatus =
       [self validatePixelBufferStatus:pixelBuffer width:width height:height];
   if (validationStatus != VPMacOSMetalUploaderStatusOk) {
-    write_error(error, errorSize, metal_uploader_status_message(validationStatus));
+    write_error(error, errorSize, VPMacOSMetalUploaderStatusMessageForCode(validationStatus));
     return -1;
   }
 
@@ -417,7 +357,7 @@ const char* metal_uploader_status_message(int status) {
   const int validationStatus =
       [self validatePixelBufferStatus:pixelBuffer width:width height:height];
   if (validationStatus != VPMacOSMetalUploaderStatusOk) {
-    write_error(error, errorSize, metal_uploader_status_message(validationStatus));
+    write_error(error, errorSize, VPMacOSMetalUploaderStatusMessageForCode(validationStatus));
     return -1;
   }
   if (![self ensureLayoutParamsBuffer]) {
@@ -513,150 +453,3 @@ const char* metal_uploader_status_message(int status) {
 }
 
 @end
-
-struct VPMacOSMetalUploader {
-  VPMacOSMetalUploaderImpl* impl;
-};
-
-VPMacOSMetalUploader* VPMacOSMetalUploaderCreate(void) {
-  VPMacOSMetalUploaderImpl* impl = [[VPMacOSMetalUploaderImpl alloc] init];
-  if (!impl) {
-    return nullptr;
-  }
-  auto* uploader = new VPMacOSMetalUploader{impl};
-  return uploader;
-}
-
-void VPMacOSMetalUploaderDestroy(VPMacOSMetalUploader* uploader) {
-  delete uploader;
-}
-
-int VPMacOSMetalUploaderIsAvailable(VPMacOSMetalUploader* uploader) {
-  return uploader && uploader->impl && [uploader->impl isAvailable] ? 1 : 0;
-}
-
-int64_t VPMacOSMetalUploaderDirectYUVUploadCount(VPMacOSMetalUploader* uploader) {
-  if (!uploader || !uploader->impl) {
-    return 0;
-  }
-  return [uploader->impl directYuvUploadCount];
-}
-
-int64_t VPMacOSMetalUploaderCVPixelBufferUploadCount(VPMacOSMetalUploader* uploader) {
-  if (!uploader || !uploader->impl) {
-    return 0;
-  }
-  return [uploader->impl cvPixelBufferUploadCount];
-}
-
-int64_t VPMacOSMetalUploaderPresentPackageUploadCount(VPMacOSMetalUploader* uploader) {
-  if (!uploader || !uploader->impl) {
-    return 0;
-  }
-  return [uploader->impl presentPackageUploadCount];
-}
-
-int64_t VPMacOSMetalUploaderLastPresentPackageCopyUs(VPMacOSMetalUploader* uploader) {
-  if (!uploader || !uploader->impl) {
-    return 0;
-  }
-  return [uploader->impl lastPresentPackageCopyUs];
-}
-
-int64_t VPMacOSMetalUploaderLastPresentPackageGpuWaitUs(VPMacOSMetalUploader* uploader) {
-  if (!uploader || !uploader->impl) {
-    return 0;
-  }
-  return [uploader->impl lastPresentPackageGpuWaitUs];
-}
-
-int64_t VPMacOSMetalUploaderLastPresentPackageTotalUs(VPMacOSMetalUploader* uploader) {
-  if (!uploader || !uploader->impl) {
-    return 0;
-  }
-  return [uploader->impl lastPresentPackageTotalUs];
-}
-
-int32_t VPMacOSMetalUploaderLastPresentPackageStorage(VPMacOSMetalUploader* uploader) {
-  if (!uploader || !uploader->impl) {
-    return VPMacOSNativePresentPackageStorageUnavailable;
-  }
-  return [uploader->impl lastPresentPackageStorage];
-}
-
-int VPMacOSMetalUploaderValidatePixelBuffer(VPMacOSMetalUploader* uploader,
-                                            void* pixel_buffer,
-                                            int32_t width,
-                                            int32_t height) {
-  return VPMacOSMetalUploaderValidatePixelBufferChecked(
-      uploader, pixel_buffer, width, height, nullptr, 0) ==
-      VPMacOSMetalUploaderStatusOk ? 1 : 0;
-}
-
-const char* VPMacOSMetalUploaderStatusMessage(int status) {
-  return metal_uploader_status_message(status);
-}
-
-int VPMacOSMetalUploaderValidatePixelBufferChecked(VPMacOSMetalUploader* uploader,
-                                                   void* pixel_buffer,
-                                                   int32_t width,
-                                                   int32_t height,
-                                                   char* error,
-                                                   size_t error_size) {
-  int status = VPMacOSMetalUploaderStatusUnavailable;
-  if (uploader && uploader->impl) {
-    status = [uploader->impl validatePixelBufferStatus:(CVPixelBufferRef)pixel_buffer
-                                                width:width
-                                               height:height];
-  }
-  write_error(error, error_size, metal_uploader_status_message(status));
-  return status;
-}
-
-int VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
-    VPMacOSMetalUploader* uploader,
-    const uint8_t* data,
-    size_t data_size,
-    const VPMacOSNativePresentFramePackageInfo* package,
-    void* pixel_buffer,
-    int32_t width,
-    int32_t height,
-    VPMacOSNativeFrameInfo* out,
-    char* error,
-    size_t error_size) {
-  if (!uploader || !uploader->impl) {
-    write_error(error, error_size, "native Metal uploader is null");
-    return -1;
-  }
-  return [uploader->impl copyPresentFramePackage:package
-                                            data:data
-                                        dataSize:data_size
-                                   toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                           width:width
-                                          height:height
-                                             out:out
-                                           error:error
-                                       errorSize:error_size];
-}
-
-int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
-    VPMacOSMetalUploader* uploader,
-    const VPMacOSNativeCVPixelBufferPresentFrame* frame,
-    void* pixel_buffer,
-    int32_t width,
-    int32_t height,
-    VPMacOSNativeFrameInfo* out,
-    char* error,
-    size_t error_size) {
-  if (!uploader || !uploader->impl) {
-    write_error(error, error_size, "native Metal uploader is null");
-    return -1;
-  }
-  return [uploader->impl copyCVPixelBufferPresentFrame:frame
-                                         toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                                 width:width
-                                                height:height
-                                                   out:out
-                                                 error:error
-                                             errorSize:error_size];
-}

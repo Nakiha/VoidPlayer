@@ -558,6 +558,7 @@
 				"$(PROJECT_DIR)/../native/analysis/analysis_ffi_abi.h",
 				"$(PROJECT_DIR)/../native/macos/analysis_ffi_bridge.cpp",
 				"$(PROJECT_DIR)/../native/macos/metal_pixel_buffer_uploader.mm",
+				"$(PROJECT_DIR)/../native/macos/metal_pixel_buffer_uploader_shaders.inc",
 				"$(PROJECT_DIR)/../native/macos/native_player_bridge.cpp",
 				"$(PROJECT_DIR)/../native/macos/native_player_bridge.h",
 				"$(PROJECT_DIR)/../native/macos/native_player_diagnostics.cpp",

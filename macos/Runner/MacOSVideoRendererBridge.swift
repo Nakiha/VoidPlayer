@@ -10,7 +10,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var eventChannel: FlutterEventChannel?
   private let lifecycle: MacOSPlayerLifecycleController
   private let tracks = MacOSVideoTrackController()
-  private var layout: [String: Any] = MacOSVideoTrackPayload.defaultLayout()
+  private let presentation = MacOSPresentationController()
   private let presentationState = MacOSFramePresentationState()
   private let nativeEvents = MacOSNativeEventState()
   private let playback = MacOSPlaybackController()
@@ -95,7 +95,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       removeTrack(arguments: call.arguments)
       result(nil)
     case "resize":
-      resize(arguments: call.arguments)
+      presentation.resize(arguments: call.arguments, context: presentationContext())
       result(nil)
     case "play":
       playback.play(
@@ -149,15 +149,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "isPlaying":
       result(playback.currentIsPlaying(player: nativePlayer))
     case "getLayout":
-      result(layout)
+      result(presentation.layout)
     case "applyLayout":
-      if let nextLayout = MacOSNativeLayoutBridge.apply(
-        arguments: call.arguments,
-        player: nativePlayer
-      ) {
-        layout = nextLayout
-        refreshCurrentFrameAfterLayoutChange()
-      }
+      presentation.applyLayout(arguments: call.arguments, context: presentationContext())
       result(nil)
     case "getTracks":
       result(tracks.tracks)
@@ -196,6 +190,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
   private func destroyPlayer() {
     lifecycle.destroy(playback: playback, tracks: tracks, presentationState: presentationState)
+    presentation.resetLayout()
   }
 
   private func destroyPlayerForWindowClose() {
@@ -222,7 +217,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       textureDimensions: texture?.dimensions()
     )
     if addResult.refreshCurrentFrame {
-      refreshCurrentFrameAfterLayoutChange()
+      presentation.refreshCurrentFrame(context: presentationContext())
     }
     if addResult.markFrameAvailable {
       markFrameAvailable()
@@ -239,33 +234,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     if removeResult.destroyPlayer {
       destroyPlayer()
     } else if removeResult.refreshCurrentFrame {
-      refreshCurrentFrameAfterLayoutChange()
+      presentation.refreshCurrentFrame(context: presentationContext())
     }
-  }
-
-  private func resize(arguments: Any?) {
-    let width = MacOSFlutterArguments.intArg(arguments, "width")
-    let height = MacOSFlutterArguments.intArg(arguments, "height")
-    if let width, let height {
-      let nextWidth = max(16, width)
-      let nextHeight = max(16, height)
-      let currentDimensions = texture?.dimensions()
-      let willChange = currentDimensions?.width != nextWidth ||
-        currentDimensions?.height != nextHeight
-      if backendName == MacOSVideoTrackPayload.nativeFormatName, willChange {
-        nativePlayer?.clearMetalPresentationTarget()
-      }
-      _ = texture?.resize(width: nextWidth, height: nextHeight) ?? false
-      if backendName == MacOSVideoTrackPayload.nativeFormatName {
-        refreshCurrentFrameAfterLayoutChange()
-        playback.reinstallPresentationTargetIfPlaying(
-          player: nativePlayer,
-          texture: texture,
-          maxTrackSlots: tracks.activeSlotCapacity()
-        )
-      }
-    }
-    markFrameAvailable()
   }
 
   private func markFrameAvailable() {
@@ -277,28 +247,25 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     return durationUs > 0 ? durationUs : MacOSVideoTrackPayload.syntheticDurationUs
   }
 
-  private func refreshCurrentFrameAfterLayoutChange() {
-    guard backendName == MacOSVideoTrackPayload.nativeFormatName,
-          let nativePlayer,
-          let texture else {
-      markFrameAvailable()
-      return
-    }
-    MacOSNativeFrameRefresh.refreshCurrentFrameAfterLayoutChange(
-      player: nativePlayer,
-      texture: texture,
-      maxTrackSlots: tracks.activeSlotCapacity(),
-      presentationState: presentationState,
-      framePump: playback.framePumpForRefresh
-    )
-    markFrameAvailable()
-  }
-
   private func emitSeekPreviewPresented(requestId: Int?, targetPtsUs: Int) {
     nativeEvents.emitSeekPreviewPresented(
       requestId: requestId,
       targetPtsUs: targetPtsUs,
       presentationState: presentationState
+    )
+  }
+
+  private func presentationContext() -> MacOSPresentationContext {
+    MacOSPresentationContext(
+      nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
+      player: nativePlayer,
+      texture: texture,
+      maxTrackSlots: tracks.activeSlotCapacity(),
+      playback: playback,
+      presentationState: presentationState,
+      markFrameAvailable: { [weak self] in
+        self?.markFrameAvailable()
+      }
     )
   }
 

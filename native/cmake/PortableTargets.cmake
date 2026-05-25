@@ -290,18 +290,6 @@ if(APPLE)
     )
     add_test(NAME decode_thread_software_smoke COMMAND decode_thread_software_smoke)
 
-    add_executable(macos_native_player_smoke
-        "${VOID_NATIVE_DIR}/tools/macos_native_player_smoke.cpp"
-    )
-    void_apply_native_compile_options(macos_native_player_smoke)
-    target_link_libraries(macos_native_player_smoke PRIVATE
-        void_macos_native_player
-    )
-    target_compile_definitions(macos_native_player_smoke PRIVATE
-        VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
-    )
-    add_test(NAME macos_native_player_smoke COMMAND macos_native_player_smoke)
-
     add_executable(macos_native_player_shared_renderer_smoke
         "${VOID_NATIVE_DIR}/tools/macos_native_player_shared_renderer_smoke.cpp"
     )

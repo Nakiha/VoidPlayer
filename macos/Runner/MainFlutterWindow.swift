@@ -501,8 +501,6 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   private static let channelName = "video_renderer"
   private static let eventsChannelName = "video_renderer/events"
   private static let syntheticDurationUs = 10_000_000
-  private static let metalUploadDisabledForTest =
-    ProcessInfo.processInfo.arguments.contains("--macos-disable-metal-upload")
   private static weak var activeInstance: MacOSVideoRendererStub?
 
   private let textureRegistry: FlutterTextureRegistry
@@ -568,9 +566,6 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
   }
 
   private static func configureNativeEnvironment() {
-    if metalUploadDisabledForTest {
-      setenv("VOIDPLAYER_FORCE_VIDEOTOOLBOX_HWDOWNLOAD", "1", 1)
-    }
   }
 
   static func destroyActivePlayerForWindowClose() {
@@ -842,7 +837,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       nextTexture = MacOSFlutterTextureBridge(
         width: requestedWidth,
         height: requestedHeight,
-        metalUploadEnabled: !Self.metalUploadDisabledForTest
+        metalUploadEnabled: true
       )
       trackWidth = requestedWidth
       trackHeight = requestedHeight
@@ -862,7 +857,7 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
         nextTexture = MacOSFlutterTextureBridge(
           nativeWidth: requestedWidth,
           nativeHeight: requestedHeight,
-          metalUploadEnabled: !Self.metalUploadDisabledForTest
+          metalUploadEnabled: true
         )
         let firstFrame = try nextTexture.updateFromNativePlayer(
           session,
@@ -1405,9 +1400,6 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     if nativePlayer?.rendererOwnedPresentationActive() == true {
       return "native-metal-cvpixelbuffer-target"
     }
-    if texture?.directCopyFallbackEnabled() == true {
-      return "swift-cvpixelbuffer-direct-copy-fallback"
-    }
     return "native-metal-target-unavailable"
   }
 
@@ -1418,18 +1410,12 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
     if nativePlayer?.rendererOwnedPresentationActive() == true {
       return "renderer-owned-metal"
     }
-    if texture?.directCopyFallbackEnabled() == true {
-      return "software-fallback"
-    }
     return "unavailable"
   }
 
   private func presentationReason() -> String {
     if nativePlayer?.rendererOwnedPresentationActive() == true {
       return "macOS shared native facade is active with renderer-owned Metal presentation"
-    }
-    if texture?.directCopyFallbackEnabled() == true {
-      return "macOS shared native facade is using the explicit direct-copy fallback"
     }
     return "macOS shared native facade has no active renderer-owned presentation target"
   }
@@ -1477,22 +1463,14 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       macOSNativeFrameAvailable,
       userData: Unmanaged.passUnretained(self).toOpaque()
     )
-    let maxTrackSlots = activeTrackSlotCapacity()
     guard !nativePresentationTargetInstalled else {
       return
     }
-    guard texture?.directCopyFallbackEnabled() == true else {
-      nativeFrameCopyErrorCount += 1
-      NSLog("VoidPlayer macOS renderer-owned Metal presentation target unavailable")
-      isPlaying = false
-      nativePlayer.pause()
-      stopNativeFramePump()
-      return
-    }
-    nativeFrameCopyInFlight = true
-    playbackQueue.async { [weak self] in
-      self?.copyNativePlaybackFrame(generation: generation, maxTrackSlots: maxTrackSlots)
-    }
+    nativeFrameCopyErrorCount += 1
+    NSLog("VoidPlayer macOS renderer-owned Metal presentation target unavailable")
+    isPlaying = false
+    nativePlayer.pause()
+    stopNativeFramePump()
   }
 
   private func stopNativeFramePump() {
@@ -1525,70 +1503,11 @@ private final class MacOSVideoRendererStub: NSObject, FlutterStreamHandler {
       if self.nativePresentationTargetInstalled {
         return
       }
-      guard self.texture?.directCopyFallbackEnabled() == true else {
-        self.nativeFrameCopyErrorCount += 1
-        NSLog("VoidPlayer macOS renderer-owned Metal presentation failed without fallback")
-        self.isPlaying = false
-        self.nativePlayer?.pause()
-        self.stopNativeFramePump()
-        return
-      }
-      if self.nativeFrameCopyInFlight {
-        self.nativeFrameCopyCoalescedCount += 1
-        return
-      }
-      self.nativeFrameCopyInFlight = true
-      let generation = self.playbackGeneration
-      let maxTrackSlots = self.activeTrackSlotCapacity()
-      self.playbackQueue.async { [weak self] in
-        self?.copyNativePlaybackFrame(generation: generation, maxTrackSlots: maxTrackSlots)
-      }
-    }
-  }
-
-  private func copyNativePlaybackFrame(generation: Int, maxTrackSlots: Int) {
-    do {
-      guard let nativePlayer, let texture else {
-        DispatchQueue.main.async { [weak self] in
-          guard let self, self.playbackGeneration == generation else { return }
-          self.nativeFrameCopyInFlight = false
-        }
-        return
-      }
-      let frameInfo = try texture.updateFromNativePlayer(
-        nativePlayer,
-        maxTrackSlots: maxTrackSlots,
-        waitTimeoutMs: 0
-      )
-      DispatchQueue.main.async { [weak self] in
-        guard let self,
-              self.playbackGeneration == generation,
-              self.isPlaying,
-              self.backendName == "macos-native-player" else {
-          self?.nativeFrameCopyInFlight = false
-          return
-        }
-        self.nativeFrameCopyInFlight = false
-        self.recordNativeFramePresentation(rendererOwned: false, swiftCopy: true)
-        self.publishFrameInfo(frameInfo)
-        self.markFrameAvailable()
-      }
-    } catch {
-      DispatchQueue.main.async { [weak self] in
-        guard let self, self.playbackGeneration == generation else { return }
-        self.nativeFrameCopyInFlight = false
-        if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true,
-           self.isPlaying,
-           self.backendName == "macos-native-player" {
-          self.nativeFrameCopyMissCount += 1
-          return
-        }
-        self.nativeFrameCopyErrorCount += 1
-        NSLog("VoidPlayer macOS native playback frame copy failed: \(error)")
-        self.isPlaying = false
-        self.nativePlayer?.pause()
-        self.stopNativeFramePump()
-      }
+      self.nativeFrameCopyErrorCount += 1
+      NSLog("VoidPlayer macOS renderer-owned Metal presentation failed")
+      self.isPlaying = false
+      self.nativePlayer?.pause()
+      self.stopNativeFramePump()
     }
   }
 
@@ -1812,49 +1731,15 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
       throw MacOSNativePlayerError.invalidPayload
     }
 
-    if metalUploadEnabled {
-      guard let info = try copyFromNativePlayerWithMetalUpload(
-        player,
-        pixelBuffer: pixelBuffer,
-        maxTrackSlots: maxTrackSlots,
-        waitTimeoutMs: waitTimeoutMs
-      ) else {
-        throw MacOSNativePlayerError.failed("renderer-owned Metal presentation is unavailable")
-      }
-      pixelBufferReuseCount += 1
-      return info
+    guard let info = try copyFromNativePlayerWithMetalUpload(
+      player,
+      pixelBuffer: pixelBuffer,
+      maxTrackSlots: maxTrackSlots,
+      waitTimeoutMs: waitTimeoutMs
+    ) else {
+      throw MacOSNativePlayerError.failed("renderer-owned Metal presentation is unavailable")
     }
-
-    guard let targetBuffer = ensureBackPixelBufferLocked() else {
-      throw MacOSNativePlayerError.invalidPayload
-    }
-
-    CVPixelBufferLockBaseAddress(targetBuffer, [])
-    guard let baseAddress = CVPixelBufferGetBaseAddress(targetBuffer) else {
-      CVPixelBufferUnlockBaseAddress(targetBuffer, [])
-      throw MacOSNativePlayerError.invalidPayload
-    }
-    let bytesPerRow = CVPixelBufferGetBytesPerRow(targetBuffer)
-    let dstSize = bytesPerRow * height
-    let info: MacOSNativeFrameInfo
-    do {
-      info = try player.copyPresentationIntoBGRA(
-        baseAddress.assumingMemoryBound(to: UInt8.self),
-        dstSize: dstSize,
-        width: width,
-        height: height,
-        strideBytes: bytesPerRow,
-        waitTimeoutMs: waitTimeoutMs
-      )
-    } catch {
-      CVPixelBufferUnlockBaseAddress(targetBuffer, [])
-      throw error
-    }
-    CVPixelBufferUnlockBaseAddress(targetBuffer, [])
-    publishBackBufferLocked(targetBuffer)
-    validateMetalTextureLocked(buffer: targetBuffer)
     pixelBufferReuseCount += 1
-    pixelBufferDirectCopyCount += 1
     return info
   }
 
@@ -1871,10 +1756,6 @@ private final class MacOSFlutterTextureBridge: NSObject, FlutterTexture {
     defer { lock.unlock() }
 
     return (width: width, height: height)
-  }
-
-  func directCopyFallbackEnabled() -> Bool {
-    !metalUploadEnabled
   }
 
   func captureMetrics() -> (

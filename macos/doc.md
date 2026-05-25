@@ -56,10 +56,8 @@ or overlay VACHUNK generation path until the macOS workflow is wired behind thos
 The shared hardware decode provider factory now initializes VideoToolbox for H.264 in
 renderer-owned mode by default. Diagnostics expose
 `hardwareDecodeProvider=VideoToolbox`, `hardwareDecodeActive=true`,
-`hardwareDecodeDownloadsToCpu=false`, and `decodeMode=videotoolbox-renderer-owned` when the
-shared `DecodeThread` keeps hardware decode active. The test-only
-`--macos-disable-metal-upload` launch flag forces VideoToolbox hwdownload so the software
-CVPixelBuffer copy fallback can still be exercised without a Metal upload target.
+`hardwareDecodeDownloadsToCpu=false`, and `decodeMode=shared-renderer-videotoolbox` when the
+shared `Renderer` keeps hardware decode active.
 `softwareFallbackActive` remains visible for unsupported codecs or initialization fallback and is
 covered with a generated MPEG-2 smoke. Visible presentation diagnostics now expose
 `nativeFramePresentationCount`, `nativeFrameRendererOwnedPresentCount`, and
@@ -98,9 +96,8 @@ tracks and verifies the viewport capture changes. `native_quit_while_playing_smo
 exercises explicit native teardown during test shutdown while playback is still active, and
 `native_callback_stress_smoke.csv` adds rapid play/pause, playing seek storm, play-then-destroy,
 recreate, and play-then-window-close churn. `native_user_window_close_smoke.csv` closes the main
-window while native playback is active. `native_direct_copy_fallback_smoke.csv` disables the
-test-only Metal upload path and keeps the CVPixelBuffer direct-copy presentation fallback visible.
-`native_software_fallback_smoke.csv` keeps MPEG-2 software decode fallback visible in diagnostics.
+window while native playback is active. `native_software_fallback_smoke.csv` keeps MPEG-2 software
+decode fallback visible in diagnostics.
 `native_seek_preview_event_smoke.csv` locks the macOS `video_renderer/events` bridge so paused seek
 publishes `seekPreviewPresented` asynchronously after the method call returns, matching the Windows
 event timing that Dart expects before canceling its seek-settle timer fallback.
@@ -154,12 +151,9 @@ with `CVMetalTextureCache`, avoiding the hwdownload/package staging bottleneck. 
 CVPixelBuffer decisions currently fall back through the YUV package staging path until the Metal
 backend grows per-track CV texture inputs. Diagnostics expose package upload count,
 CVPixelBuffer upload count, last package storage (`yuv`/`bgra`), scheduler-selected present frame
-count, and whether the package copy consumed the cached scheduler decision. The older
-locked-buffer direct copy remains a fallback and is reported through `pixelBufferDirectCopyCount`
-and `nativeFrameFallbackCopyCount`; normal Metal-enabled first-frame, seek, step, offset, layout, and
-playback paths keep those fallback counters at zero. The diagnostics map reports the fallback as
-`presentationBackend=swift-cvpixelbuffer-direct-copy-fallback` only when it is explicitly enabled.
-It also reports primary decode cadence
+count, and whether the package copy consumed the cached scheduler decision. macOS native playback
+now requires renderer-owned Metal presentation; the older locked-buffer direct copy fallback has
+been removed from the app path. It also reports primary decode cadence
 (`nativeDecodeFrameCount`, `nativeDecodeFpsX1000`), renderer-owned upload cadence
 (`nativeRendererOwnedUploadFpsX1000`), presented callback cadence (`nativeFramePresentationFpsX1000`), and
 `presentationFallbackReason` so 4K playback regressions can be separated into decode, upload,

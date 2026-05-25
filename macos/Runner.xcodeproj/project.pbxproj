@@ -29,12 +29,14 @@
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
 		A12F01042C08FF0100000001 /* MacOSFlutterArguments.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01052C08FF0100000001 /* MacOSFlutterArguments.swift */; };
 		A12F010A2C08FF0100000001 /* MacOSFramePresentationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F010B2C08FF0100000001 /* MacOSFramePresentationState.swift */; };
+		A12F01142C08FF0100000001 /* MacOSPixelBufferMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01152C08FF0100000001 /* MacOSPixelBufferMetrics.swift */; };
 		A12F010E2C08FF0100000001 /* MacOSNativeFramePump.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F010F2C08FF0100000001 /* MacOSNativeFramePump.swift */; };
 		A12F010C2C08FF0100000001 /* MacOSNativeEventState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F010D2C08FF0100000001 /* MacOSNativeEventState.swift */; };
 		A12F01102C08FF0100000001 /* MacOSNativePlayerDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01112C08FF0100000001 /* MacOSNativePlayerDiagnostics.swift */; };
 		A12F01122C08FF0100000001 /* MacOSNativePlayerTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01132C08FF0100000001 /* MacOSNativePlayerTypes.swift */; };
 		A12F01062C08FF0100000001 /* MacOSPresentationDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01072C08FF0100000001 /* MacOSPresentationDiagnostics.swift */; };
 		A12F01082C08FF0100000001 /* MacOSVideoTrackPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01092C08FF0100000001 /* MacOSVideoTrackPayload.swift */; };
+		A12F01162C08FF0100000001 /* MacOSSyntheticTexturePattern.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01172C08FF0100000001 /* MacOSSyntheticTexturePattern.swift */; };
 		A12F01022C08FF0100000001 /* MacOSNativePlayerSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01002C08FF0100000001 /* MacOSNativePlayerSession.swift */; };
 		A12F01032C08FF0100000001 /* MacOSFlutterTextureBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01012C08FF0100000001 /* MacOSFlutterTextureBridge.swift */; };
 		406BC048B40C74B2435DBBEA /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5047C53179C373A5BFA48D6B /* Pods_RunnerTests.framework */; };
@@ -90,12 +92,14 @@
 		33E5194F232828860026EE4D /* AppInfo.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = AppInfo.xcconfig; sourceTree = "<group>"; };
 		A12F01052C08FF0100000001 /* MacOSFlutterArguments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSFlutterArguments.swift; sourceTree = "<group>"; };
 		A12F010B2C08FF0100000001 /* MacOSFramePresentationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSFramePresentationState.swift; sourceTree = "<group>"; };
+		A12F01152C08FF0100000001 /* MacOSPixelBufferMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSPixelBufferMetrics.swift; sourceTree = "<group>"; };
 		A12F010F2C08FF0100000001 /* MacOSNativeFramePump.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativeFramePump.swift; sourceTree = "<group>"; };
 		A12F010D2C08FF0100000001 /* MacOSNativeEventState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativeEventState.swift; sourceTree = "<group>"; };
 		A12F01112C08FF0100000001 /* MacOSNativePlayerDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativePlayerDiagnostics.swift; sourceTree = "<group>"; };
 		A12F01132C08FF0100000001 /* MacOSNativePlayerTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativePlayerTypes.swift; sourceTree = "<group>"; };
 		A12F01072C08FF0100000001 /* MacOSPresentationDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSPresentationDiagnostics.swift; sourceTree = "<group>"; };
 		A12F01092C08FF0100000001 /* MacOSVideoTrackPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSVideoTrackPayload.swift; sourceTree = "<group>"; };
+		A12F01172C08FF0100000001 /* MacOSSyntheticTexturePattern.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSSyntheticTexturePattern.swift; sourceTree = "<group>"; };
 		A12F01002C08FF0100000001 /* MacOSNativePlayerSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativePlayerSession.swift; sourceTree = "<group>"; };
 		A12F01012C08FF0100000001 /* MacOSFlutterTextureBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSFlutterTextureBridge.swift; sourceTree = "<group>"; };
 		5047C53179C373A5BFA48D6B /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -200,12 +204,14 @@
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
 				A12F01052C08FF0100000001 /* MacOSFlutterArguments.swift */,
 				A12F010B2C08FF0100000001 /* MacOSFramePresentationState.swift */,
+				A12F01152C08FF0100000001 /* MacOSPixelBufferMetrics.swift */,
 				A12F010F2C08FF0100000001 /* MacOSNativeFramePump.swift */,
 				A12F010D2C08FF0100000001 /* MacOSNativeEventState.swift */,
 				A12F01112C08FF0100000001 /* MacOSNativePlayerDiagnostics.swift */,
 				A12F01132C08FF0100000001 /* MacOSNativePlayerTypes.swift */,
 				A12F01072C08FF0100000001 /* MacOSPresentationDiagnostics.swift */,
 				A12F01092C08FF0100000001 /* MacOSVideoTrackPayload.swift */,
+				A12F01172C08FF0100000001 /* MacOSSyntheticTexturePattern.swift */,
 				A12F01002C08FF0100000001 /* MacOSNativePlayerSession.swift */,
 				A12F01012C08FF0100000001 /* MacOSFlutterTextureBridge.swift */,
 				A12F00052C06FF0100000001 /* Runner-Bridging-Header.h */,
@@ -542,12 +548,14 @@
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				A12F01042C08FF0100000001 /* MacOSFlutterArguments.swift in Sources */,
 				A12F010A2C08FF0100000001 /* MacOSFramePresentationState.swift in Sources */,
+				A12F01142C08FF0100000001 /* MacOSPixelBufferMetrics.swift in Sources */,
 				A12F010E2C08FF0100000001 /* MacOSNativeFramePump.swift in Sources */,
 				A12F010C2C08FF0100000001 /* MacOSNativeEventState.swift in Sources */,
 				A12F01102C08FF0100000001 /* MacOSNativePlayerDiagnostics.swift in Sources */,
 				A12F01122C08FF0100000001 /* MacOSNativePlayerTypes.swift in Sources */,
 				A12F01062C08FF0100000001 /* MacOSPresentationDiagnostics.swift in Sources */,
 				A12F01082C08FF0100000001 /* MacOSVideoTrackPayload.swift in Sources */,
+				A12F01162C08FF0100000001 /* MacOSSyntheticTexturePattern.swift in Sources */,
 				A12F01022C08FF0100000001 /* MacOSNativePlayerSession.swift in Sources */,
 				A12F01032C08FF0100000001 /* MacOSFlutterTextureBridge.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,

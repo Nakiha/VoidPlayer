@@ -13,6 +13,38 @@
 #include <vector>
 
 namespace vp_macos {
+namespace {
+
+std::pair<int32_t, int32_t> package_storage_extent(
+    const vr::RendererDrawSnapshot& snapshot,
+    int32_t target_width,
+    int32_t target_height) {
+  int32_t width = target_width;
+  int32_t height = target_height;
+  for (const auto& frame : snapshot.decision.frames) {
+    if (!frame.has_value()) {
+      continue;
+    }
+    width = std::max(width, frame->width);
+    height = std::max(height, frame->height);
+    if (const auto* nv12 = frame->cpu_nv12_storage()) {
+      width = std::max(width, nv12->coded_width);
+      height = std::max(height, nv12->coded_height);
+    }
+    if (const auto* planar = frame->cpu_planar_yuv_storage()) {
+      width = std::max(width, planar->plane_widths[0]);
+      height = std::max(height, planar->plane_heights[0]);
+    }
+    if (const auto* cv = frame->macos_cv_pixel_buffer_storage()) {
+      width = std::max(width, cv->coded_width);
+      height = std::max(height, cv->coded_height);
+    }
+  }
+  return {width, height};
+}
+
+}  // namespace
+
 MetalPresentationBackend::~MetalPresentationBackend() {
   shutdown();
 }
@@ -71,8 +103,10 @@ bool MetalPresentationBackend::draw_frame(
       std::clamp(draw_target_max_track_slots_,
                  1,
                  static_cast<int>(VPMacOSNativeMaxTracks));
+  const auto storage_extent =
+      package_storage_extent(snapshot, draw_target_width_, draw_target_height_);
   const auto package_layout = vr::describe_presentation_package_layout(
-      draw_target_width_, draw_target_height_, track_slots);
+      storage_extent.first, storage_extent.second, track_slots);
   if (package_layout.max_bytes == 0 ||
       package_layout.bgra_row_bytes >
           static_cast<size_t>(std::numeric_limits<int32_t>::max())) {

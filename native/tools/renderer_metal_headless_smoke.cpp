@@ -86,8 +86,8 @@ int main() {
         return 1;
     }
 
-    constexpr int target_width = 1920;
-    constexpr int target_height = 1080;
+    constexpr int target_width = 640;
+    constexpr int target_height = 360;
     auto target = make_bgra_pixel_buffer(target_width, target_height);
     if (!target.buffer) {
         std::cerr << "failed to create Metal-compatible target buffer\n";

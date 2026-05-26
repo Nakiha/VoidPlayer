@@ -26,6 +26,7 @@ MACOS_UI_NIGHTLY = [
     "ui_tests/macos/native_quit_while_playing_smoke.csv",
     "ui_tests/macos/native_loop_range_smoke.csv",
     "ui_tests/macos/native_eof_settle_smoke.csv",
+    "ui_tests/macos/native_add_short_after_eof_smoke.csv",
     "ui_tests/macos/native_playing_seek_keeps_state_smoke.csv",
     "ui_tests/macos/native_playing_step_pauses_smoke.csv",
     "ui_tests/macos/native_seek_preview_event_smoke.csv",

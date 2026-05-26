@@ -18,6 +18,10 @@ bool snapshot_cv_pixel_buffer_frame(const vr::RendererDrawSnapshot& snapshot,
   if (!present_decision_info_is_complete(out->decision, error)) {
     return false;
   }
+  if (out->decision.track_count != 1) {
+    error = "CVPixelBuffer fast path requires a single layout track";
+    return false;
+  }
   if (out->decision.frame_count != 1) {
     error = "snapshot is not a single CVPixelBuffer frame";
     return false;

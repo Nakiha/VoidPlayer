@@ -125,6 +125,7 @@ python3.12 dev.py gate macos-ui-smoke
 | `native_4k60_playback_smoke.csv` | VideoToolbox CVPixelBuffer + Metal 4K canary |
 | `native_vvc_software_playback_smoke.csv` | software fallback + Metal package path |
 | `native_p010_presentation_smoke.csv` | 10-bit/P010 presentation path |
+| `native_add_short_after_eof_smoke.csv` | EOF carry-forward after adding a shorter third track |
 | `native_callback_stress_smoke.csv` | callback lifecycle stress |
 
 Native macOS CTest includes `videotoolbox_provider_smoke`, `macos_metal_uploader_smoke`,

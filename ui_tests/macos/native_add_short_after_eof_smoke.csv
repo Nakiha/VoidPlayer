@@ -1,0 +1,14 @@
+@WINDOW, 960, 540
+0.3, ADD_MEDIA, resources/video/av1_10s_1920x1080.webm
+1.2, ADD_MEDIA, resources/video/h266_10s_1920x1080.mp4
+2.6, ASSERT_TRACK_COUNT, 2
+2.7, CAPTURE_VIEWPORT, before_play
+2.8, ASSERT_CAPTURE_NOT_BLACK, before_play, 0.01, 4.0
+2.9, PLAY
+13.8, WAIT_PAUSED, 4000
+14.0, ASSERT_POSITION_RANGE, 9700000, 10300000
+14.2, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+16.0, ASSERT_TRACK_COUNT, 3
+16.2, CAPTURE_VIEWPORT, after_add_short_at_eof
+16.3, ASSERT_CAPTURE_NOT_BLACK, after_add_short_at_eof, 0.01, 4.0
+16.5, QUIT, 0

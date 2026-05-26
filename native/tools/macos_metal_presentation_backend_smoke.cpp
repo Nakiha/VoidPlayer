@@ -97,7 +97,7 @@ int main() {
   config.output = pixel_buffer;
   config.width = kWidth;
   config.height = kHeight;
-  config.max_track_slots = 1;
+  config.max_track_slots = 3;
   config.headless = true;
 
   if (!backend.initialize(config)) {
@@ -169,6 +169,51 @@ int main() {
     return fail("Metal presentation backend draw_frame diagnostics did not update");
   }
 
+  auto second_bgra = std::make_shared<std::vector<uint8_t>>(
+      static_cast<size_t>(kWidth * kHeight * 4), 0);
+  for (int i = 0; i < kWidth * kHeight; ++i) {
+    (*second_bgra)[static_cast<size_t>(i) * 4 + 0] = 192;
+    (*second_bgra)[static_cast<size_t>(i) * 4 + 1] = 96;
+    (*second_bgra)[static_cast<size_t>(i) * 4 + 2] = 16;
+    (*second_bgra)[static_cast<size_t>(i) * 4 + 3] = 255;
+  }
+  vr::TextureFrame second_frame = frame;
+  second_frame.pts_us = frame.pts_us;
+  second_frame.storage = vr::CpuRgbaFrameStorage{second_bgra, kWidth * 4};
+
+  vr::RendererDrawSnapshot partial_snapshot = snapshot;
+  partial_snapshot.decision.frames[1] = second_frame;
+  partial_snapshot.decision.file_ids[1] = 8;
+  partial_snapshot.decision.track_generations[1] = 1;
+  partial_snapshot.tracks[1].active = true;
+  partial_snapshot.tracks[1].file_id = 8;
+  partial_snapshot.tracks[1].generation = 1;
+  partial_snapshot.tracks[1].video_width = kWidth;
+  partial_snapshot.tracks[1].video_height = kHeight;
+  partial_snapshot.tracks[1].video_aspect = 1.0f;
+  partial_snapshot.tracks[2].active = true;
+  partial_snapshot.tracks[2].file_id = 9;
+  partial_snapshot.tracks[2].generation = 1;
+  partial_snapshot.tracks[2].video_width = kWidth;
+  partial_snapshot.tracks[2].video_height = kHeight;
+  partial_snapshot.tracks[2].video_aspect = 1.0f;
+  partial_snapshot.track_geometry[1] = {true, kWidth, kHeight, 1.0f};
+  partial_snapshot.track_geometry[2] = {true, kWidth, kHeight, 1.0f};
+  if (!backend.draw_frame(partial_snapshot, hooks)) {
+    std::cerr << "Metal presentation backend rejected partial multi-track "
+                 "snapshot: "
+              << backend.last_error() << "\n";
+    CVPixelBufferRelease(pixel_buffer);
+    return 1;
+  }
+  if (copy_metric_count != 2 ||
+      VPMacOSMetalUploaderPresentPackageUploadCount(backend.uploader()) != 2 ||
+      VPMacOSMetalUploaderLastPresentPackageStorage(backend.uploader()) !=
+          VPMacOSNativePresentPackageStorageBGRA) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("Metal presentation backend partial multi-track diagnostics did not update");
+  }
+
   auto nv12 = std::make_shared<std::vector<uint8_t>>(
       static_cast<size_t>(kWidth * kHeight + kWidth * (kHeight / 2)), 128);
   vr::TextureFrame nv12_frame;
@@ -192,8 +237,8 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("Metal presentation backend draw_frame did not upload NV12 snapshot");
   }
-  if (copy_metric_count != 2 ||
-      VPMacOSMetalUploaderPresentPackageUploadCount(backend.uploader()) != 2 ||
+  if (copy_metric_count != 3 ||
+      VPMacOSMetalUploaderPresentPackageUploadCount(backend.uploader()) != 3 ||
       VPMacOSMetalUploaderLastPresentPackageStorage(backend.uploader()) !=
           VPMacOSNativePresentPackageStorageYUV) {
     CVPixelBufferRelease(pixel_buffer);

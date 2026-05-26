@@ -110,10 +110,6 @@ bool present_decision_info_is_complete(
     error = "no presentable frame is ready";
     return false;
   }
-  if (info.track_count > 1 && info.frame_count < info.track_count) {
-    error = "not all present decision frames are ready";
-    return false;
-  }
   return true;
 }
 

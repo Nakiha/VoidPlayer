@@ -944,13 +944,32 @@ bool Renderer::draw_paused_frame(const char* reason) {
     bool has_frame = false;
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        auto snapshot = build_available_paused_frame_snapshot(tracks_);
-        decision = snapshot.decision;
-        has_frame = snapshot.has_frame;
+        if (render_sink_) {
+            decision = render_sink_->evaluate();
+            filter_present_decision_against_tracks(decision, tracks_);
+            if (decision.should_present) {
+                apply_present_carry_forward(tracks_, last_decision_, decision);
+            }
+        }
+        has_frame = present_decision_has_frame(decision);
         filter_present_decision_against_tracks(last_decision_, tracks_);
         if (!has_frame && present_decision_has_frame(last_decision_)) {
             decision = last_decision_;
             has_frame = true;
+        }
+        if (has_frame) {
+            auto available = build_available_paused_frame_snapshot(tracks_);
+            for (size_t i = 0; i < kMaxTracks; ++i) {
+                if (!decision.frames[i].has_value() &&
+                    available.decision.frames[i].has_value()) {
+                    decision.frames[i] = available.decision.frames[i];
+                    decision.file_ids[i] = available.decision.file_ids[i];
+                    decision.track_generations[i] =
+                        available.decision.track_generations[i];
+                }
+            }
+            filter_present_decision_against_tracks(decision, tracks_);
+            has_frame = present_decision_has_frame(decision);
         }
     }
     if (!has_frame) {
@@ -1774,7 +1793,6 @@ void Renderer::render_loop_body() {
             // (even while paused -- matches initialize() behavior).
             if (was_buffering_ && !any_buffering) {
                 preview_drawn_ = false;
-                last_decision_ = PresentDecision();  // Clear stale cached frames
                 log_preroll_transition = true;
             }
             was_buffering_ = any_buffering;
@@ -1825,6 +1843,20 @@ void Renderer::render_loop_body() {
                     filter_present_decision_against_tracks(last_decision_, tracks_);
                     if (present_decision_has_frame(last_decision_)) {
                         cached_decision = last_decision_;
+                        auto available = build_available_paused_frame_snapshot(tracks_);
+                        for (size_t i = 0; i < kMaxTracks; ++i) {
+                            if (!cached_decision.frames[i].has_value() &&
+                                available.decision.frames[i].has_value()) {
+                                cached_decision.frames[i] =
+                                    available.decision.frames[i];
+                                cached_decision.file_ids[i] =
+                                    available.decision.file_ids[i];
+                                cached_decision.track_generations[i] =
+                                    available.decision.track_generations[i];
+                            }
+                        }
+                        filter_present_decision_against_tracks(
+                            cached_decision, tracks_);
                         cached_pts_us =
                             first_present_decision_frame_pts_us(cached_decision);
                     }

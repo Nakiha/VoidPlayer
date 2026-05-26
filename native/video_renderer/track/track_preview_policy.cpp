@@ -33,7 +33,7 @@ PausedPreviewSnapshot build_paused_preview_snapshot(
         if (frame.has_value()) {
             snapshot.decision.frames[i] = frame;
             set_present_decision_track_identity(snapshot.decision, i, *tracks[i]);
-        } else if (state != TrackState::Ready) {
+        } else {
             all_active_have_frames = false;
         }
     }

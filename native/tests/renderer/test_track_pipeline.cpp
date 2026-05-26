@@ -1239,7 +1239,8 @@ TEST_CASE("TrackPreviewPolicy builds paused preview snapshots",
 
     ready_manager[1] = make_track(TrackState::Ready, std::nullopt);
     auto eof_ready = build_paused_preview_snapshot(ready_manager);
-    REQUIRE(eof_ready.ready_to_present);
+    REQUIRE_FALSE(eof_ready.ready_to_present);
+    REQUIRE_FALSE(eof_ready.decision.should_present);
     REQUIRE_FALSE(eof_ready.decision.frames[1].has_value());
 
     ready_manager[3] = make_track(TrackState::Buffering, std::nullopt);

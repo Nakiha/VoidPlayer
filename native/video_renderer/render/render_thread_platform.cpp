@@ -4,8 +4,8 @@
 #include <thread>
 
 #ifdef _WIN32
-#include <mmsystem.h>
 #include <windows.h>
+#include <mmsystem.h>
 #pragma comment(lib, "winmm.lib")
 #endif
 

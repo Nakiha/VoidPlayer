@@ -29,6 +29,7 @@ public:
     void set_track_decode_paused(int file_id, bool paused) override;
     void set_all_decode_paused(bool paused) override;
     void notify_seek(int file_id, int64_t target_pts_us, SeekType type) override;
+    AudioOutputStats stats() const override;
 
 private:
     class Impl;

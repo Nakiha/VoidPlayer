@@ -143,6 +143,21 @@ typedef struct VPMacOSNativePlayerPerfStats {
   uint64_t renderer_owned_staging_max_bytes;
 } VPMacOSNativePlayerPerfStats;
 
+typedef struct VPMacOSNativeAudioDiagnostics {
+  int32_t device_initialized;
+  int32_t playing;
+  int32_t active_track;
+  int32_t output_sample_rate;
+  int32_t output_channels;
+  uint64_t registered_track_count;
+  int32_t active_track_registered;
+  uint64_t active_track_queued_frames;
+  int64_t active_track_queued_duration_us;
+  uint64_t active_track_underrun_frames;
+  uint64_t active_track_discarded_frames;
+  uint64_t active_track_seek_trimmed_frames;
+} VPMacOSNativeAudioDiagnostics;
+
 enum {
   VPMacOSNativeMaxTracks = 4,
 };

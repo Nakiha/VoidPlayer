@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -94,6 +95,34 @@ public:
         return output_.active_track();
     }
 
+    AudioOutputStats stats() const {
+        AudioOutputStats result;
+        result.device_initialized = output_.initialized();
+        result.playing = !paused_.load();
+        result.active_track = output_.active_track();
+        result.output_sample_rate = kAudioOutputSampleRate;
+        result.output_channels = kAudioOutputChannels;
+
+        std::map<int, std::shared_ptr<PcmBuffer>> buffers;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            result.registered_track_count = tracks_.size();
+            buffers = tracks_.buffers();
+        }
+
+        const auto it = buffers.find(result.active_track);
+        result.active_track_registered = it != buffers.end() && it->second != nullptr;
+        if (result.active_track_registered) {
+            const PcmBufferStats pcm = it->second->stats();
+            result.active_track_queued_frames = pcm.queued_frames;
+            result.active_track_queued_duration_us = pcm.queued_duration_us;
+            result.active_track_underrun_frames = pcm.underrun_frames;
+            result.active_track_discarded_frames = pcm.discarded_frames;
+            result.active_track_seek_trimmed_frames = pcm.seek_trimmed_frames;
+        }
+        return result;
+    }
+
     void set_track_decode_paused(int file_id, bool paused) {
         std::lock_guard<std::mutex> lock(mutex_);
         tracks_.set_track_decode_paused(file_id, paused);
@@ -167,6 +196,10 @@ void AudioEngine::set_active_track(int file_id) {
 
 int AudioEngine::active_track() const {
     return impl_->active_track();
+}
+
+AudioOutputStats AudioEngine::stats() const {
+    return impl_->stats();
 }
 
 void AudioEngine::set_track_decode_paused(int file_id, bool paused) {

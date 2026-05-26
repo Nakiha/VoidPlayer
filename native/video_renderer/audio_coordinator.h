@@ -1,5 +1,6 @@
 #pragma once
 
+#include "audio/audio_output.h"
 #include "media/demux_thread.h"
 #include "media/seek_controller.h"
 
@@ -22,6 +23,7 @@ public:
     void set_track_decode_paused(int file_id, bool paused);
     void set_all_decode_paused(bool paused);
     void notify_seek(int file_id, int64_t target_pts_us, SeekType type);
+    AudioOutputStats stats() const;
 
 private:
     PlaybackController& playback_;

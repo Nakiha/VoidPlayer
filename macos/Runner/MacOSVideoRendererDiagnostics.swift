@@ -26,6 +26,7 @@ enum MacOSVideoRendererDiagnostics {
     let layoutSnapshot = player?.layoutSnapshotMap()
     let schedulerStats = player?.presentationSchedulerStats()
     let perfStats = player?.performanceStats()
+    let audioDiagnostics = player?.audioDiagnostics() ?? [:]
     let trackDiagnostics = player?.trackDiagnostics() ?? []
     let primaryTrack = trackDiagnostics.first
     let secondaryTrack = trackDiagnostics.dropFirst().first
@@ -88,6 +89,25 @@ enum MacOSVideoRendererDiagnostics {
       "audioSampleRate": player?.audioSampleRate() ?? 0,
       "audioChannels": player?.audioChannels() ?? 0,
       "activeAudioTrack": player?.activeAudioTrack() ?? -1,
+      "audioOutputDeviceInitialized":
+        audioDiagnostics["audioOutputDeviceInitialized"] ?? false,
+      "audioOutputPlaying": audioDiagnostics["audioOutputPlaying"] ?? false,
+      "audioOutputActiveTrack": audioDiagnostics["audioOutputActiveTrack"] ?? -1,
+      "audioOutputSampleRate": audioDiagnostics["audioOutputSampleRate"] ?? 0,
+      "audioOutputChannels": audioDiagnostics["audioOutputChannels"] ?? 0,
+      "audioOutputRegisteredTrackCount":
+        audioDiagnostics["audioOutputRegisteredTrackCount"] ?? 0,
+      "audioOutputActiveTrackRegistered":
+        audioDiagnostics["audioOutputActiveTrackRegistered"] ?? false,
+      "audioOutputQueuedFrames": audioDiagnostics["audioOutputQueuedFrames"] ?? 0,
+      "audioOutputQueuedDurationUs":
+        audioDiagnostics["audioOutputQueuedDurationUs"] ?? 0,
+      "audioOutputUnderrunFrames":
+        audioDiagnostics["audioOutputUnderrunFrames"] ?? 0,
+      "audioOutputDiscardedFrames":
+        audioDiagnostics["audioOutputDiscardedFrames"] ?? 0,
+      "audioOutputSeekTrimmedFrames":
+        audioDiagnostics["audioOutputSeekTrimmedFrames"] ?? 0,
       "primaryTrackOffsetUs": player?.trackOffsetUs(fileId: 0) ?? 0,
       "legacySecondaryTrackOffsetUs": player?.trackOffsetUs(fileId: 1) ?? 0,
       "presentationSchedulerTickCount": schedulerStats?["tickCount"] ?? 0,

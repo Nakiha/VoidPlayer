@@ -74,4 +74,9 @@ void AudioCoordinator::notify_seek(int file_id, int64_t target_pts_us, SeekType 
     }
 }
 
+AudioOutputStats AudioCoordinator::stats() const {
+    auto* audio = playback_.audio_output();
+    return audio ? audio->stats() : AudioOutputStats{};
+}
+
 } // namespace vr

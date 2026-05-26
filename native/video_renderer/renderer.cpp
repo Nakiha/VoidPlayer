@@ -462,18 +462,39 @@ int Renderer::audible_track() const {
 
 bool Renderer::has_audio() const {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    const int slot = first_active_track();
-    if (slot < 0 || !tracks_[static_cast<size_t>(slot)] ||
-        !tracks_[static_cast<size_t>(slot)]->demux_thread) {
-        return false;
+    return find_audio_info_slot_locked() >= 0;
+}
+
+int Renderer::find_audio_info_slot_locked() const {
+    const int active_audio_track =
+        audio_coordinator_ ? audio_coordinator_->active_track() : -1;
+    if (active_audio_track >= 0) {
+        const int slot = find_slot_by_file_id(active_audio_track);
+        if (slot >= 0 && tracks_[static_cast<size_t>(slot)] &&
+            tracks_[static_cast<size_t>(slot)]->demux_thread) {
+            const auto& stats =
+                tracks_[static_cast<size_t>(slot)]->demux_thread->stats();
+            if (stats.audio_stream_index >= 0 && stats.audio_codec_params) {
+                return slot;
+            }
+        }
     }
-    const auto& stats = tracks_[static_cast<size_t>(slot)]->demux_thread->stats();
-    return stats.audio_stream_index >= 0 && stats.audio_codec_params != nullptr;
+
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (!tracks_[i] || !tracks_[i]->demux_thread) {
+            continue;
+        }
+        const auto& stats = tracks_[i]->demux_thread->stats();
+        if (stats.audio_stream_index >= 0 && stats.audio_codec_params) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
 }
 
 int Renderer::audio_sample_rate() const {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    const int slot = first_active_track();
+    const int slot = find_audio_info_slot_locked();
     if (slot < 0 || !tracks_[static_cast<size_t>(slot)] ||
         !tracks_[static_cast<size_t>(slot)]->demux_thread) {
         return 0;
@@ -483,12 +504,17 @@ int Renderer::audio_sample_rate() const {
 
 int Renderer::audio_channels() const {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    const int slot = first_active_track();
+    const int slot = find_audio_info_slot_locked();
     if (slot < 0 || !tracks_[static_cast<size_t>(slot)] ||
         !tracks_[static_cast<size_t>(slot)]->demux_thread) {
         return 0;
     }
     return tracks_[static_cast<size_t>(slot)]->demux_thread->stats().channels;
+}
+
+AudioOutputStats Renderer::audio_output_stats() const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    return audio_coordinator_ ? audio_coordinator_->stats() : AudioOutputStats{};
 }
 
 void Renderer::seek_internal(std::unique_lock<std::mutex>& state_lock,

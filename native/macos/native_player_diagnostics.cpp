@@ -380,6 +380,33 @@ int VPMacOSNativePlayerCopyPerfStats(
   return 0;
 }
 
+int VPMacOSNativePlayerCopyAudioDiagnostics(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativeAudioDiagnostics* out) {
+  if (!player || !out) {
+    return -1;
+  }
+  *out = {};
+  std::lock_guard<std::mutex> lock(player->mutex);
+  if (!player->renderer_active_locked()) {
+    return 0;
+  }
+  const auto stats = player->renderer->audio_output_stats();
+  out->device_initialized = stats.device_initialized ? 1 : 0;
+  out->playing = stats.playing ? 1 : 0;
+  out->active_track = stats.active_track;
+  out->output_sample_rate = stats.output_sample_rate;
+  out->output_channels = stats.output_channels;
+  out->registered_track_count = stats.registered_track_count;
+  out->active_track_registered = stats.active_track_registered ? 1 : 0;
+  out->active_track_queued_frames = stats.active_track_queued_frames;
+  out->active_track_queued_duration_us = stats.active_track_queued_duration_us;
+  out->active_track_underrun_frames = stats.active_track_underrun_frames;
+  out->active_track_discarded_frames = stats.active_track_discarded_frames;
+  out->active_track_seek_trimmed_frames = stats.active_track_seek_trimmed_frames;
+  return 0;
+}
+
 int VPMacOSNativeHardwareDecodeAvailable(void) {
   static const bool available = vp_macos::probe_videotoolbox_h264();
   return available ? 1 : 0;

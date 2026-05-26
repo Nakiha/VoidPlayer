@@ -127,6 +127,9 @@ int VPMacOSNativePlayerCopyPresentationSchedulerStats(
 int VPMacOSNativePlayerCopyPerfStats(
     VPMacOSNativePlayer* player,
     VPMacOSNativePlayerPerfStats* out);
+int VPMacOSNativePlayerCopyAudioDiagnostics(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativeAudioDiagnostics* out);
 int VPMacOSNativeHardwareDecodeAvailable(void);
 const char* VPMacOSNativeHardwareDecodeProviderName(void);
 

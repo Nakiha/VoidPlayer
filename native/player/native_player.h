@@ -51,6 +51,7 @@ public:
     std::vector<TrackInfo> track_infos() const;
     std::vector<TrackPerfStats> track_perf_stats() const;
     RendererGpuMemoryStats gpu_memory_stats() const;
+    AudioOutputStats audio_output_stats() const;
     bool d3d_device_lost() const;
     long d3d_device_removed_reason() const;
     void set_track_offset(int file_id, int64_t offset_us);

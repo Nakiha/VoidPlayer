@@ -218,6 +218,14 @@ RendererGpuMemoryStats NativePlayer::gpu_memory_stats() const {
     return renderer_.gpu_memory_stats();
 }
 
+AudioOutputStats NativePlayer::audio_output_stats() const {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (!renderer_ready_locked()) {
+        return {};
+    }
+    return renderer_.audio_output_stats();
+}
+
 bool NativePlayer::d3d_device_lost() const {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     return renderer_ready_locked() && renderer_.d3d_device_lost();

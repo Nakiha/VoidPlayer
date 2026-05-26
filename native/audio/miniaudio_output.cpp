@@ -100,6 +100,11 @@ public:
         return mixer_.active_track();
     }
 
+    bool initialized() const {
+        std::lock_guard<std::mutex> lock(device_mutex_);
+        return initialized_;
+    }
+
     void set_tracks(const std::map<int, std::shared_ptr<PcmBuffer>>& tracks) {
         mixer_.set_tracks(tracks);
     }
@@ -122,7 +127,7 @@ private:
     }
 
     AudioMixer mixer_;
-    std::mutex device_mutex_;
+    mutable std::mutex device_mutex_;
     ma_device device_{};
     bool initialized_ = false;
 };
@@ -150,6 +155,10 @@ void MiniaudioOutput::set_active_track(int file_id) {
 
 int MiniaudioOutput::active_track() const {
     return impl_->active_track();
+}
+
+bool MiniaudioOutput::initialized() const {
+    return impl_->initialized();
 }
 
 void MiniaudioOutput::set_tracks(

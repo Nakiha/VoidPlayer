@@ -95,4 +95,25 @@ extension MacOSNativePlayerSession {
   func activeAudioTrack() -> Int {
     Int(VPMacOSNativePlayerActiveAudioTrack(handle))
   }
+
+  func audioDiagnostics() -> [String: Any] {
+    var stats = VPMacOSNativeAudioDiagnostics()
+    guard VPMacOSNativePlayerCopyAudioDiagnostics(handle, &stats) == 0 else {
+      return [:]
+    }
+    return [
+      "audioOutputDeviceInitialized": stats.device_initialized != 0,
+      "audioOutputPlaying": stats.playing != 0,
+      "audioOutputActiveTrack": Int(stats.active_track),
+      "audioOutputSampleRate": Int(stats.output_sample_rate),
+      "audioOutputChannels": Int(stats.output_channels),
+      "audioOutputRegisteredTrackCount": Int(stats.registered_track_count),
+      "audioOutputActiveTrackRegistered": stats.active_track_registered != 0,
+      "audioOutputQueuedFrames": Int(stats.active_track_queued_frames),
+      "audioOutputQueuedDurationUs": Int(stats.active_track_queued_duration_us),
+      "audioOutputUnderrunFrames": Int(stats.active_track_underrun_frames),
+      "audioOutputDiscardedFrames": Int(stats.active_track_discarded_frames),
+      "audioOutputSeekTrimmedFrames": Int(stats.active_track_seek_trimmed_frames),
+    ]
+  }
 }

@@ -1,4 +1,5 @@
 #pragma once
+#include "audio/audio_output.h"
 #include "playback/playback_controller.h"
 #include "media/demux_thread.h"
 #include "video_renderer/decode/decode_thread.h"
@@ -123,6 +124,7 @@ public:
     bool has_audio() const;
     int audio_sample_rate() const;
     int audio_channels() const;
+    AudioOutputStats audio_output_stats() const;
 
     // Frame stepping (pause + advance/retreat)
     void step_forward();
@@ -291,6 +293,7 @@ private:
 
     /// Find the slot index for a given file_id. Returns -1 if not found.
     int find_slot_by_file_id(int file_id) const;
+    int find_audio_info_slot_locked() const;
 
     /// Create a TrackPipeline for the given video path.
     /// Returns nullptr if pipeline init fails (demux/decode errors).

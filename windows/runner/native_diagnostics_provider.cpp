@@ -246,6 +246,39 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         flutter::EncodableValue(static_cast<double>(active_player->current_pts_us()) / 1e6);
     map[flutter::EncodableValue("isPlaying")] =
         flutter::EncodableValue(active_player->is_playing());
+    const auto audio_stats = active_player->audio_output_stats();
+    map[flutter::EncodableValue("audioAvailable")] =
+        flutter::EncodableValue(active_player->renderer().has_audio());
+    map[flutter::EncodableValue("audioSampleRate")] =
+        flutter::EncodableValue(active_player->renderer().audio_sample_rate());
+    map[flutter::EncodableValue("audioChannels")] =
+        flutter::EncodableValue(active_player->renderer().audio_channels());
+    map[flutter::EncodableValue("activeAudioTrack")] =
+        flutter::EncodableValue(active_player->audible_track());
+    map[flutter::EncodableValue("audioOutputDeviceInitialized")] =
+        flutter::EncodableValue(audio_stats.device_initialized);
+    map[flutter::EncodableValue("audioOutputPlaying")] =
+        flutter::EncodableValue(audio_stats.playing);
+    map[flutter::EncodableValue("audioOutputActiveTrack")] =
+        flutter::EncodableValue(audio_stats.active_track);
+    map[flutter::EncodableValue("audioOutputSampleRate")] =
+        flutter::EncodableValue(audio_stats.output_sample_rate);
+    map[flutter::EncodableValue("audioOutputChannels")] =
+        flutter::EncodableValue(audio_stats.output_channels);
+    map[flutter::EncodableValue("audioOutputRegisteredTrackCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(audio_stats.registered_track_count));
+    map[flutter::EncodableValue("audioOutputActiveTrackRegistered")] =
+        flutter::EncodableValue(audio_stats.active_track_registered);
+    map[flutter::EncodableValue("audioOutputQueuedFrames")] =
+        flutter::EncodableValue(static_cast<int64_t>(audio_stats.active_track_queued_frames));
+    map[flutter::EncodableValue("audioOutputQueuedDurationUs")] =
+        flutter::EncodableValue(static_cast<int64_t>(audio_stats.active_track_queued_duration_us));
+    map[flutter::EncodableValue("audioOutputUnderrunFrames")] =
+        flutter::EncodableValue(static_cast<int64_t>(audio_stats.active_track_underrun_frames));
+    map[flutter::EncodableValue("audioOutputDiscardedFrames")] =
+        flutter::EncodableValue(static_cast<int64_t>(audio_stats.active_track_discarded_frames));
+    map[flutter::EncodableValue("audioOutputSeekTrimmedFrames")] =
+        flutter::EncodableValue(static_cast<int64_t>(audio_stats.active_track_seek_trimmed_frames));
 
     flutter::EncodableList tracks_list;
     for (const auto& ts : active_player->track_perf_stats()) {

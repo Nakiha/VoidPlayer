@@ -21,6 +21,7 @@ public:
     void set_active_track(int file_id);
     int active_track() const;
     void set_tracks(const std::map<int, std::shared_ptr<PcmBuffer>>& tracks);
+    bool initialized() const;
 
 private:
     class Impl;

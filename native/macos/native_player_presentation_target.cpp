@@ -173,17 +173,23 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     baseline_frame_available = player->last_renderer_owned_frame_info_available;
   }
 
-  std::string message;
-  {
+  auto trigger_renderer_refresh = [&]() -> bool {
+    std::string message;
     std::lock_guard<std::mutex> lock(player->mutex);
     if (!player->ensure_renderer_locked(message)) {
       write_error(error, error_size, message);
-      return -1;
+      return false;
     }
     if (player->renderer) {
       refresh_clock_us = player->renderer->current_pts_us();
       player->renderer->request_frame_refresh("macos-renderer-owned-refresh");
+      return true;
     }
+    write_error(error, error_size, "shared macOS renderer is not available");
+    return false;
+  };
+  if (!trigger_renderer_refresh()) {
+    return -1;
   }
 
   std::unique_lock<std::mutex> callback_lock(player->callback_mutex);
@@ -211,10 +217,29 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
                baseline_draw_failure_count;
   };
   if (bounded_timeout_ms > 0) {
-    player->presentation_condition.wait_for(
-        callback_lock,
-        std::chrono::milliseconds(bounded_timeout_ms),
-        completed);
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::milliseconds(bounded_timeout_ms);
+    while (!completed()) {
+      const auto now = std::chrono::steady_clock::now();
+      if (now >= deadline) {
+        break;
+      }
+      const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+          deadline - now);
+      const auto wait_slice =
+          std::min<std::chrono::milliseconds>(remaining,
+                                              std::chrono::milliseconds(20));
+      player->presentation_condition.wait_for(callback_lock, wait_slice, completed);
+      if (completed()) {
+        break;
+      }
+      callback_lock.unlock();
+      const bool requested = trigger_renderer_refresh();
+      callback_lock.lock();
+      if (!requested) {
+        return -1;
+      }
+    }
   }
 
   if (player->presentation_target_generation != baseline_target_generation) {

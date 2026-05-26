@@ -1,0 +1,90 @@
+name: macOS UI
+
+permissions:
+  actions: read
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "macOS UI gate profile"
+        required: true
+        default: "macos-ui-smoke"
+        type: choice
+        options:
+          - "macos-ui-smoke"
+          - "macos-ui-nightly"
+  schedule:
+    - cron: "47 20 * * 0"
+
+concurrency:
+  group: macos-ui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos-ui:
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'macos-ui-smoke' }}
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+          submodules: false
+          fetch-depth: 0
+
+      - name: Initialize analysis submodules
+        shell: bash
+        run: |
+          git config --local --unset-all http.https://github.com/.extraheader || true
+          git config --global --unset-all http.https://github.com/.extraheader || true
+          git -c http.https://github.com/.extraheader= submodule sync -- native/analysis/vendor/ffmpeg native/analysis/vendor/zstd
+          git -c http.https://github.com/.extraheader= submodule update --init --recursive --checkout native/analysis/vendor/ffmpeg native/analysis/vendor/zstd
+
+      - name: Pull headed UI media fixtures
+        shell: bash
+        run: |
+          git lfs install --local
+          git lfs pull --include="resources/video/h264_9s_1920x1080.mp4"
+          if [[ "${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'macos-ui-smoke' }}" == "macos-ui-nightly" ]]; then
+            git lfs pull --include="resources/video/h266_10s_1920x1080.mp4,resources/video/mhw_hevc_fullrange_bt709_3s.mp4"
+          fi
+
+      - name: Download FFmpeg build artifact
+        id: ffmpeg
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=""
+          for attempt in 1 2 3; do
+            run_id="$(gh run list -R Nakiha/VoidPlayer-FFmpeg-Build --workflow "Build FFmpeg" --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')" && test -n "$run_id" && break
+            sleep $((attempt * 10))
+          done
+          test -n "$run_id"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          rm -rf build/ci-ffmpeg
+          mkdir -p build/ci-ffmpeg
+          gh run download "$run_id" -R Nakiha/VoidPlayer-FFmpeg-Build --name voidplayer-ffmpeg-macos-arm64-n8.1 --dir build/ci-ffmpeg
+
+      - name: Restore and verify macOS FFmpeg artifact
+        shell: bash
+        env:
+          VOIDPLAYER_FFMPEG_BUILD_RUN_ID: ${{ steps.ffmpeg.outputs.run_id }}
+        run: bash scripts/ci/restore_ffmpeg_macos.sh
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.41.9"
+          cache: true
+
+      - name: Run macOS UI gate
+        shell: bash
+        run: python3.12 dev.py gate "${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'macos-ui-smoke' }}"

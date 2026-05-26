@@ -89,9 +89,9 @@ macOS CI 的 native fast gate uses the hosted-runner CTest profile：
 bash scripts/ci/run_macos_native_fast.sh
 ```
 
-Hosted macOS PR fast excludes `renderer_metal_headless_smoke`; keep that canary for nightly/headed or targeted
-Metal changes because GitHub runner GPU presentation can report a black front buffer while the shared native
-player Metal canary passes.
+Hosted macOS PR fast excludes tests labelled `hosted-flaky`; today that is `renderer_metal_headless_smoke`.
+Keep that canary for nightly/headed or targeted Metal changes because GitHub runner GPU presentation can report a
+black front buffer while the shared native player Metal canary passes.
 
 CTest labels 可用于本地收窄测试：
 
@@ -99,6 +99,7 @@ CTest labels 可用于本地收窄测试：
 ctest --test-dir native/build-macos-make -L contract --output-on-failure
 ctest --test-dir native/build-macos-make -L backend --output-on-failure
 ctest --test-dir native/build-macos-make -L macos --output-on-failure
+ctest --test-dir native/build-macos-make -LE hosted-flaky --output-on-failure
 ```
 
 ## macOS Stabilization Gates
@@ -149,6 +150,10 @@ Use them for nightly, release candidate, or targeted local validation:
 python3.12 dev.py gate macos-ui-nightly
 ```
 
+`.github/workflows/macos-ui.yml` provides a separate headed macOS UI workflow. It runs `macos-ui-smoke` weekly and can
+be manually dispatched with either `macos-ui-smoke` or `macos-ui-nightly`; it is intentionally not part of the regular
+push/PR native workflow.
+
 `ui_tests/local/**` is manual/local only and must not be added to CI.
 
 ## Release / Package Checks
@@ -179,9 +184,12 @@ Release candidate readiness must verify:
 - full Windows native config matrix in `.github/workflows/native.yml`;
 - Windows UI preservation and macOS headed smoke set selected from [TEST_MATRIX.md](TEST_MATRIX.md).
 
+The local `dev.py gate release-candidate` command does not trigger GitHub's full Windows native config matrix; run the
+`Native` workflow manually with `full_matrix=true` or use the scheduled matrix run as separate release evidence.
+
 ## CI
 
-CI entrypoint is `.github/workflows/native.yml`. It currently covers:
+Main CI entrypoint is `.github/workflows/native.yml`. It currently covers:
 
 - FFmpeg artifact download once, then per-job restore through `scripts/ci/restore_ffmpeg_*`;
 - Windows native fast build/test and release compliance smoke;
@@ -189,6 +197,8 @@ CI entrypoint is `.github/workflows/native.yml`. It currently covers:
 - macOS analysis FFI build smoke;
 - macOS runner debug build;
 - full Windows native config matrix on scheduled runs or manual `workflow_dispatch` with `full_matrix=true`.
+
+Headed macOS UI evidence lives in `.github/workflows/macos-ui.yml`, which is schedule/manual only.
 
 Do not interpret CI green as full release readiness: headed macOS UI smokes, Windows UI preservation, package staging,
 full release compliance against staged packages, and long-run/perf checks remain release-candidate or local gates.

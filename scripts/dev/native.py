@@ -528,5 +528,5 @@ def native_build_macos(debug: bool, test: bool = True, github: bool = False) -> 
             "--output-on-failure",
         ]
         if github:
-            ctest_cmd.extend(["-E", "renderer_metal_headless_smoke"])
+            ctest_cmd.extend(["-LE", "hosted-flaky"])
         run(ctest_cmd, cwd=str(ROOT))

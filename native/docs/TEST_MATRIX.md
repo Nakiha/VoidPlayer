@@ -29,6 +29,8 @@ targets:
 | `videotoolbox` | VideoToolbox-specific native canary. |
 | `diagnostics` | Crash/log/diagnostic behavior. |
 | `audio` | Native audio behavior. |
+| `hosted-flaky` | Valid targeted/nightly coverage, but excluded from hosted PR fast CI. |
+| `nightly` | Belongs in nightly/headed or targeted runs rather than the PR fast gate. |
 
 Examples:
 
@@ -36,6 +38,7 @@ Examples:
 ctest --test-dir native/build-macos-make -L contract --output-on-failure
 ctest --test-dir native/build-macos-make -L macos --output-on-failure
 ctest --test-dir native/build-macos-make -L backend --output-on-failure
+ctest --test-dir native/build-macos-make -LE hosted-flaky --output-on-failure
 ```
 
 ## Native Test Inventory
@@ -62,7 +65,7 @@ ctest --test-dir native/build-macos-make -L backend --output-on-failure
 | `macos_metal_uploader_smoke` | backend canary | PR fast | Metal, sample media | Metal uploader and CVPixelBuffer validation. |
 | `macos_metal_presentation_backend_smoke` | backend canary | PR fast | Metal | Metal backend provider/draw canary. |
 | `videotoolbox_provider_smoke` | backend canary | PR fast / macOS stabilization | VideoToolbox availability | VT provider support/fallback visibility. |
-| `renderer_metal_headless_smoke` | backend integration | Nightly/headed or targeted Metal changes | Metal, sample media | Renderer-owned Metal headless path; excluded from hosted PR fast because CI GPUs may fail visible-frame capture. |
+| `renderer_metal_headless_smoke` | backend integration | Nightly/headed or targeted Metal changes | Metal, sample media | Renderer-owned Metal headless path; labelled `hosted-flaky;nightly` and excluded from hosted PR fast because CI GPUs may fail visible-frame capture. |
 | `macos_media_smoke` | native integration | macOS stabilization | FFmpeg media | macOS media open/metadata path. |
 | `software_decode_frame_queue_smoke` | native integration | macOS stabilization | sample media | Software decode frame queue. |
 | `decode_thread_software_smoke` | native integration | macOS stabilization | sample media | Decode thread software path. |
@@ -93,6 +96,18 @@ ctest --test-dir native/build-macos-make -L backend --output-on-failure
 | `ui_tests/macos/native_callback_stress_smoke.csv` | Callback lifecycle stress. | Nightly/headed. |
 | `ui_tests/macos/native_quit_while_playing_smoke.csv` / `native_user_window_close_smoke.csv` | Teardown and crash-report regression. | Nightly/headed or targeted runner changes. |
 | `ui_tests/local/**` | Developer-specific absolute-path regressions. | Manual/local only; never CI. |
+
+## Workflow Mapping
+
+| Workflow | Trigger | Gate |
+| --- | --- | --- |
+| `.github/workflows/native.yml` | push / PR | native PR fast, macOS native fast, macOS runner build, macOS analysis smoke |
+| `.github/workflows/native.yml` | weekly or manual `full_matrix=true` | full Windows native config matrix |
+| `.github/workflows/macos-ui.yml` | weekly | `python3.12 dev.py gate macos-ui-smoke` |
+| `.github/workflows/macos-ui.yml` | manual `profile=macos-ui-smoke` or `macos-ui-nightly` | headed macOS UI smoke/nightly gate |
+
+The local `release-candidate` gate and the GitHub full native config matrix are separate pieces of release evidence:
+run both when preparing a release candidate.
 
 ## Phase 2 Cleanup Decisions
 

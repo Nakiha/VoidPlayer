@@ -246,7 +246,7 @@ if(APPLE)
         VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
     )
     add_test(NAME renderer_metal_headless_smoke COMMAND renderer_metal_headless_smoke)
-    void_label_test(renderer_metal_headless_smoke "macos;backend;integration")
+    void_label_test(renderer_metal_headless_smoke "macos;backend;integration;hosted-flaky;nightly")
 
     add_executable(presentation_snapshot_smoke
         "${VOID_NATIVE_DIR}/tools/presentation_snapshot_smoke.cpp"

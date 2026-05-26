@@ -2,6 +2,8 @@
 
 #include "macos/native_player_state.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <mutex>
 
 using vp_macos::write_error;
@@ -90,6 +92,11 @@ void VPMacOSNativePlayerSeek(VPMacOSNativePlayer* player, int64_t pts_us) {
   std::lock_guard<std::mutex> lock(player->mutex);
   if (player->renderer_active_locked()) {
     player->clear_last_frame_locked();
+    {
+      std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
+      player->renderer_owned_refresh_min_pts_us =
+          std::max<int64_t>(0, pts_us - 500'000);
+    }
     player->renderer->seek(pts_us, vr::SeekType::Exact);
   }
 }

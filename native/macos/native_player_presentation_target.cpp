@@ -157,6 +157,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
   uint64_t baseline_target_generation = 0;
   bool baseline_frame_available = false;
   int64_t refresh_clock_us = 0;
+  int64_t refresh_min_pts_us = -1;
   {
     std::lock_guard<std::mutex> lock(player->callback_mutex);
     if (!player->presentation_target_pixel_buffer ||
@@ -171,6 +172,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
         player->renderer_owned_presentation_draw_failure_count;
     baseline_target_generation = player->presentation_target_generation;
     baseline_frame_available = player->last_renderer_owned_frame_info_available;
+    refresh_min_pts_us = player->renderer_owned_refresh_min_pts_us;
   }
 
   auto trigger_renderer_refresh = [&]() -> bool {
@@ -194,10 +196,13 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
 
   std::unique_lock<std::mutex> callback_lock(player->callback_mutex);
   const bool enforce_refresh_pts_window =
-      !baseline_frame_available && refresh_clock_us > 0;
+      refresh_min_pts_us >= 0 || (!baseline_frame_available && refresh_clock_us > 0);
   const auto frame_matches_refresh_request = [&]() {
     if (!player->last_renderer_owned_frame_info_available) {
       return false;
+    }
+    if (refresh_min_pts_us >= 0) {
+      return player->last_renderer_owned_frame_info.pts_us >= refresh_min_pts_us;
     }
     if (!enforce_refresh_pts_window) {
       return true;
@@ -250,6 +255,9 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
   if (player->renderer_owned_presentation_upload_count > baseline_upload_count &&
       frame_matches_refresh_request()) {
     *out = player->last_renderer_owned_frame_info;
+    if (refresh_min_pts_us >= 0) {
+      player->renderer_owned_refresh_min_pts_us = -1;
+    }
     write_error(error, error_size, "");
     return 0;
   }

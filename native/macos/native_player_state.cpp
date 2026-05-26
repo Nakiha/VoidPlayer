@@ -140,6 +140,7 @@ void VPMacOSNativePlayer::clear_last_frame_locked() {
   last_renderer_owned_presentation_succeeded = false;
   last_renderer_owned_frame_info_available = false;
   last_renderer_owned_frame_info = {};
+  renderer_owned_refresh_min_pts_us = -1;
 }
 
 bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {

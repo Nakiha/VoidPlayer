@@ -70,6 +70,7 @@ struct VPMacOSNativePlayer {
   uint64_t renderer_owned_presentation_event_sequence = 0;
   uint64_t renderer_owned_presentation_consecutive_failures = 0;
   std::string renderer_owned_presentation_last_error;
+  int64_t renderer_owned_refresh_min_pts_us = -1;
   std::chrono::steady_clock::time_point renderer_owned_presentation_first_upload_time{};
   std::chrono::steady_clock::time_point renderer_owned_presentation_last_upload_time{};
 };

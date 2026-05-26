@@ -9,6 +9,7 @@ on:
     paths:
       - ".github/workflows/native.yml"
       - "dev.py"
+      - "scripts/ci/**"
       - "scripts/dev/**"
       - "macos/**"
       - "native/**"
@@ -20,6 +21,7 @@ on:
     paths:
       - ".github/workflows/native.yml"
       - "dev.py"
+      - "scripts/ci/**"
       - "scripts/dev/**"
       - "macos/**"
       - "native/**"
@@ -88,31 +90,9 @@ jobs:
           name: ci-ffmpeg-artifacts
           path: build/ci-ffmpeg
 
-      - name: Restore Windows FFmpeg artifact
+      - name: Restore and verify Windows FFmpeg artifact
         shell: pwsh
-        run: |
-          Remove-Item -Recurse -Force build/ci-ffmpeg/unpacked -ErrorAction SilentlyContinue
-          $zip = Get-ChildItem build/ci-ffmpeg -Recurse -Filter voidplayer-ffmpeg-windows-x64-n8.1.zip | Select-Object -First 1
-          if (-not $zip) { throw "Windows FFmpeg artifact zip not found" }
-          Expand-Archive -Force $zip.FullName build/ci-ffmpeg/unpacked
-          Remove-Item -Recurse -Force windows/libs/ffmpeg -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force windows/libs/ffmpeg | Out-Null
-          Move-Item build/ci-ffmpeg/unpacked/* windows/libs/ffmpeg/
-
-      - name: Verify Windows FFmpeg artifacts
-        shell: pwsh
-        run: |
-          $dll = "windows/libs/ffmpeg/bin/avcodec-62.dll"
-          if ((Get-Item $dll).Length -lt 1000000) {
-            Write-Error "Windows FFmpeg DLL is unexpectedly small: $dll"
-            exit 1
-          }
-          $bytes = [System.IO.File]::ReadAllBytes($dll)
-          $prefix = [System.Text.Encoding]::ASCII.GetString($bytes, 0, [Math]::Min($bytes.Length, 64))
-          if ($prefix.StartsWith("version https://git-lfs.github.com/spec/v1")) {
-            Write-Error "Windows FFmpeg DLL is still a Git LFS pointer: $dll"
-            exit 1
-          }
+        run: scripts/ci/restore_ffmpeg_windows.ps1
 
       - uses: actions/setup-python@v5
         with:
@@ -156,52 +136,19 @@ jobs:
           name: ci-ffmpeg-artifacts
           path: build/ci-ffmpeg
 
-      - name: Restore macOS FFmpeg artifact
+      - name: Restore and verify macOS FFmpeg artifact
         shell: bash
-        run: |
-          run_id="${{ needs.ffmpeg-artifacts.outputs.build_run_id }}"
-          rm -rf build/ci-ffmpeg/unpacked
-          zip_path="$(find build/ci-ffmpeg -name 'voidplayer-ffmpeg-macos-arm64-n8.1.zip' -print -quit)"
-          test -n "$zip_path"
-          unzip -q "$zip_path" -d build/ci-ffmpeg/unpacked
-          rm -rf third_party/ffmpeg
-          mkdir -p third_party
-          mv build/ci-ffmpeg/unpacked/voidplayer-ffmpeg-macos-arm64-n8.1 third_party/ffmpeg
-          cat > third_party/ffmpeg/VOIDPLAYER_BUILD.md <<EOF
-          # VoidPlayer FFmpeg Package
-
-          Restored in CI from the latest successful VoidPlayer FFmpeg build.
-
-          - Repository: https://github.com/Nakiha/VoidPlayer-FFmpeg-Build
-          - GitHub Actions run: https://github.com/Nakiha/VoidPlayer-FFmpeg-Build/actions/runs/${run_id}
-          - Artifact: voidplayer-ffmpeg-macos-arm64-n8.1
-          EOF
+        env:
+          VOIDPLAYER_FFMPEG_BUILD_RUN_ID: ${{ needs.ffmpeg-artifacts.outputs.build_run_id }}
+        run: bash scripts/ci/restore_ffmpeg_macos.sh
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Verify macOS FFmpeg artifacts
+      - name: Run macOS native fast gate
         shell: bash
-        run: |
-          dylib="third_party/ffmpeg/lib/libavcodec.62.28.100.dylib"
-          test -s "$dylib"
-          if grep -q "version https://git-lfs.github.com/spec/v1" "$dylib"; then
-            echo "macOS FFmpeg dylib is still a Git LFS pointer" >&2
-            exit 1
-          fi
-
-      - name: Run macOS native tests
-        shell: bash
-        env:
-          VOIDPLAYER_DISABLE_VIDEOTOOLBOX: "1"
-        run: python dev.py test --native-only
-
-      - name: Run macOS VideoToolbox native smokes
-        shell: bash
-        run: |
-          native/build-macos-make/videotoolbox_provider_smoke
-          native/build-macos-make/macos_native_player_shared_renderer_smoke
+        run: bash scripts/ci/run_macos_native_fast.sh
 
   macos-analysis-build:
     name: macOS analysis build
@@ -227,40 +174,15 @@ jobs:
           name: ci-ffmpeg-artifacts
           path: build/ci-ffmpeg
 
-      - name: Restore macOS FFmpeg artifact
+      - name: Restore and verify macOS FFmpeg artifact
         shell: bash
-        run: |
-          run_id="${{ needs.ffmpeg-artifacts.outputs.build_run_id }}"
-          rm -rf build/ci-ffmpeg/unpacked
-          zip_path="$(find build/ci-ffmpeg -name 'voidplayer-ffmpeg-macos-arm64-n8.1.zip' -print -quit)"
-          test -n "$zip_path"
-          unzip -q "$zip_path" -d build/ci-ffmpeg/unpacked
-          rm -rf third_party/ffmpeg
-          mkdir -p third_party
-          mv build/ci-ffmpeg/unpacked/voidplayer-ffmpeg-macos-arm64-n8.1 third_party/ffmpeg
-          cat > third_party/ffmpeg/VOIDPLAYER_BUILD.md <<EOF
-          # VoidPlayer FFmpeg Package
-
-          Restored in CI from the latest successful VoidPlayer FFmpeg build.
-
-          - Repository: https://github.com/Nakiha/VoidPlayer-FFmpeg-Build
-          - GitHub Actions run: https://github.com/Nakiha/VoidPlayer-FFmpeg-Build/actions/runs/${run_id}
-          - Artifact: voidplayer-ffmpeg-macos-arm64-n8.1
-          EOF
+        env:
+          VOIDPLAYER_FFMPEG_BUILD_RUN_ID: ${{ needs.ffmpeg-artifacts.outputs.build_run_id }}
+        run: bash scripts/ci/restore_ffmpeg_macos.sh
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Verify macOS FFmpeg artifacts
-        shell: bash
-        run: |
-          dylib="third_party/ffmpeg/lib/libavcodec.62.28.100.dylib"
-          test -s "$dylib"
-          if grep -q "version https://git-lfs.github.com/spec/v1" "$dylib"; then
-            echo "macOS FFmpeg dylib is still a Git LFS pointer" >&2
-            exit 1
-          fi
 
       - name: Configure macOS analysis library
         shell: bash
@@ -306,26 +228,11 @@ jobs:
           name: ci-ffmpeg-artifacts
           path: build/ci-ffmpeg
 
-      - name: Restore macOS FFmpeg artifact
+      - name: Restore and verify macOS FFmpeg artifact
         shell: bash
-        run: |
-          run_id="${{ needs.ffmpeg-artifacts.outputs.build_run_id }}"
-          rm -rf build/ci-ffmpeg/unpacked
-          zip_path="$(find build/ci-ffmpeg -name 'voidplayer-ffmpeg-macos-arm64-n8.1.zip' -print -quit)"
-          test -n "$zip_path"
-          unzip -q "$zip_path" -d build/ci-ffmpeg/unpacked
-          rm -rf third_party/ffmpeg
-          mkdir -p third_party
-          mv build/ci-ffmpeg/unpacked/voidplayer-ffmpeg-macos-arm64-n8.1 third_party/ffmpeg
-          cat > third_party/ffmpeg/VOIDPLAYER_BUILD.md <<EOF
-          # VoidPlayer FFmpeg Package
-
-          Restored in CI from the latest successful VoidPlayer FFmpeg build.
-
-          - Repository: https://github.com/Nakiha/VoidPlayer-FFmpeg-Build
-          - GitHub Actions run: https://github.com/Nakiha/VoidPlayer-FFmpeg-Build/actions/runs/${run_id}
-          - Artifact: voidplayer-ffmpeg-macos-arm64-n8.1
-          EOF
+        env:
+          VOIDPLAYER_FFMPEG_BUILD_RUN_ID: ${{ needs.ffmpeg-artifacts.outputs.build_run_id }}
+        run: bash scripts/ci/restore_ffmpeg_macos.sh
 
       - uses: actions/setup-python@v5
         with:
@@ -337,22 +244,12 @@ jobs:
           flutter-version: "3.41.9"
           cache: true
 
-      - name: Verify macOS FFmpeg artifacts
-        shell: bash
-        run: |
-          dylib="third_party/ffmpeg/lib/libavcodec.62.28.100.dylib"
-          test -s "$dylib"
-          if grep -q "version https://git-lfs.github.com/spec/v1" "$dylib"; then
-            echo "macOS FFmpeg dylib is still a Git LFS pointer" >&2
-            exit 1
-          fi
-
       - name: Build macOS Flutter runner
         shell: bash
         run: flutter build macos --debug
 
   native-config-matrix:
-    name: Build ${{ matrix.name }}
+    name: Full native config matrix / ${{ matrix.name }}
     needs: ffmpeg-artifacts
     runs-on: windows-latest
     strategy:
@@ -416,31 +313,9 @@ jobs:
           name: ci-ffmpeg-artifacts
           path: build/ci-ffmpeg
 
-      - name: Restore Windows FFmpeg artifact
+      - name: Restore and verify Windows FFmpeg artifact
         shell: pwsh
-        run: |
-          Remove-Item -Recurse -Force build/ci-ffmpeg/unpacked -ErrorAction SilentlyContinue
-          $zip = Get-ChildItem build/ci-ffmpeg -Recurse -Filter voidplayer-ffmpeg-windows-x64-n8.1.zip | Select-Object -First 1
-          if (-not $zip) { throw "Windows FFmpeg artifact zip not found" }
-          Expand-Archive -Force $zip.FullName build/ci-ffmpeg/unpacked
-          Remove-Item -Recurse -Force windows/libs/ffmpeg -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force windows/libs/ffmpeg | Out-Null
-          Move-Item build/ci-ffmpeg/unpacked/* windows/libs/ffmpeg/
-
-      - name: Verify Windows FFmpeg artifacts
-        shell: pwsh
-        run: |
-          $dll = "windows/libs/ffmpeg/bin/avcodec-62.dll"
-          if ((Get-Item $dll).Length -lt 1000000) {
-            Write-Error "Windows FFmpeg DLL is unexpectedly small: $dll"
-            exit 1
-          }
-          $bytes = [System.IO.File]::ReadAllBytes($dll)
-          $prefix = [System.Text.Encoding]::ASCII.GetString($bytes, 0, [Math]::Min($bytes.Length, 64))
-          if ($prefix.StartsWith("version https://git-lfs.github.com/spec/v1")) {
-            Write-Error "Windows FFmpeg DLL is still a Git LFS pointer: $dll"
-            exit 1
-          }
+        run: scripts/ci/restore_ffmpeg_windows.ps1
 
       - name: Configure native
         shell: pwsh

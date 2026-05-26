@@ -50,6 +50,10 @@ if(APPLE)
     )
 endif()
 
+function(void_label_test test_name labels)
+    set_tests_properties("${test_name}" PROPERTIES LABELS "${labels}")
+endfunction()
+
 if(APPLE)
     add_library(void_renderer_portable_driver OBJECT
         "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"
@@ -94,6 +98,7 @@ if(APPLE)
         VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
     )
     add_test(NAME macos_media_smoke COMMAND macos_media_smoke)
+    void_label_test(macos_media_smoke "macos;native;integration")
 
     add_executable(software_bgra_converter_smoke
         "${VOID_NATIVE_DIR}/tools/software_bgra_converter_smoke.cpp"
@@ -103,6 +108,7 @@ if(APPLE)
         void_media_ffmpeg
     )
     add_test(NAME software_bgra_converter_smoke COMMAND software_bgra_converter_smoke)
+    void_label_test(software_bgra_converter_smoke "contract;portable")
 
     add_executable(software_frame_packer_smoke
         "${VOID_NATIVE_DIR}/tools/software_frame_packer_smoke.cpp"
@@ -112,6 +118,7 @@ if(APPLE)
         void_media_ffmpeg
     )
     add_test(NAME software_frame_packer_smoke COMMAND software_frame_packer_smoke)
+    void_label_test(software_frame_packer_smoke "contract;portable")
 
     add_executable(macos_presentation_adapter_smoke
         "${VOID_NATIVE_DIR}/tools/macos_presentation_adapter_smoke.cpp"
@@ -121,6 +128,7 @@ if(APPLE)
         void_macos_native_player
     )
     add_test(NAME macos_presentation_adapter_smoke COMMAND macos_presentation_adapter_smoke)
+    void_label_test(macos_presentation_adapter_smoke "macos;backend;canary")
 
     add_executable(macos_metal_uploader_smoke
         "${VOID_NATIVE_DIR}/tools/macos_metal_uploader_smoke.mm"
@@ -136,6 +144,7 @@ if(APPLE)
         VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
     )
     add_test(NAME macos_metal_uploader_smoke COMMAND macos_metal_uploader_smoke)
+    void_label_test(macos_metal_uploader_smoke "macos;backend;canary")
 
     add_executable(macos_metal_presentation_backend_smoke
         "${VOID_NATIVE_DIR}/tools/macos_metal_presentation_backend_smoke.cpp"
@@ -145,6 +154,7 @@ if(APPLE)
         void_macos_native_player
     )
     add_test(NAME macos_metal_presentation_backend_smoke COMMAND macos_metal_presentation_backend_smoke)
+    void_label_test(macos_metal_presentation_backend_smoke "macos;backend;canary")
 
     add_executable(macos_crash_handler_smoke
         "${VOID_NATIVE_DIR}/tools/macos_crash_handler_smoke.cpp"
@@ -154,6 +164,7 @@ if(APPLE)
         void_macos_native_player
     )
     add_test(NAME macos_crash_handler_smoke COMMAND macos_crash_handler_smoke)
+    void_label_test(macos_crash_handler_smoke "macos;diagnostics;canary")
 
     if(BUILD_ANALYSIS)
         add_executable(macos_analysis_ffi_smoke
@@ -167,6 +178,7 @@ if(APPLE)
             VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
         )
         add_test(NAME macos_analysis_ffi_smoke COMMAND macos_analysis_ffi_smoke)
+        void_label_test(macos_analysis_ffi_smoke "macos;analysis;ffi;canary")
     endif()
 
     add_executable(videotoolbox_provider_smoke
@@ -177,6 +189,7 @@ if(APPLE)
         void_media_ffmpeg
     )
     add_test(NAME videotoolbox_provider_smoke COMMAND videotoolbox_provider_smoke)
+    void_label_test(videotoolbox_provider_smoke "macos;videotoolbox;backend;canary")
 
     add_executable(bgra_capture_metrics_smoke
         "${VOID_NATIVE_DIR}/tools/bgra_capture_metrics_smoke.cpp"
@@ -186,6 +199,7 @@ if(APPLE)
         void_player_portable_core
     )
     add_test(NAME bgra_capture_metrics_smoke COMMAND bgra_capture_metrics_smoke)
+    void_label_test(bgra_capture_metrics_smoke "contract;portable")
 
     add_executable(decoded_frame_sink_smoke
         "${VOID_NATIVE_DIR}/tools/decoded_frame_sink_smoke.cpp"
@@ -195,6 +209,7 @@ if(APPLE)
         void_player_portable_core
     )
     add_test(NAME decoded_frame_sink_smoke COMMAND decoded_frame_sink_smoke)
+    void_label_test(decoded_frame_sink_smoke "contract;portable")
 
     add_executable(layout_geometry_smoke
         "${VOID_NATIVE_DIR}/tools/layout_geometry_smoke.cpp"
@@ -204,6 +219,7 @@ if(APPLE)
         void_player_portable_core
     )
     add_test(NAME layout_geometry_smoke COMMAND layout_geometry_smoke)
+    void_label_test(layout_geometry_smoke "contract;portable")
 
     add_executable(renderer_config_validation_smoke
         "${VOID_NATIVE_DIR}/tools/renderer_config_validation_smoke.cpp"
@@ -213,6 +229,7 @@ if(APPLE)
         void_player_portable_core
     )
     add_test(NAME renderer_config_validation_smoke COMMAND renderer_config_validation_smoke)
+    void_label_test(renderer_config_validation_smoke "contract;portable")
 
     add_custom_target(renderer_portable_compile_smoke
         DEPENDS void_renderer_portable_driver
@@ -229,6 +246,7 @@ if(APPLE)
         VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
     )
     add_test(NAME renderer_metal_headless_smoke COMMAND renderer_metal_headless_smoke)
+    void_label_test(renderer_metal_headless_smoke "macos;backend;integration")
 
     add_executable(presentation_snapshot_smoke
         "${VOID_NATIVE_DIR}/tools/presentation_snapshot_smoke.cpp"
@@ -238,6 +256,7 @@ if(APPLE)
         void_player_portable_core
     )
     add_test(NAME presentation_snapshot_smoke COMMAND presentation_snapshot_smoke)
+    void_label_test(presentation_snapshot_smoke "contract;portable")
 
     add_executable(presentation_loop_driver_smoke
         "${VOID_NATIVE_DIR}/tools/presentation_loop_driver_smoke.cpp"
@@ -247,6 +266,7 @@ if(APPLE)
         void_player_portable_core
     )
     add_test(NAME presentation_loop_driver_smoke COMMAND presentation_loop_driver_smoke)
+    void_label_test(presentation_loop_driver_smoke "contract;portable")
 
     add_executable(presentation_carry_forward_smoke
         "${VOID_NATIVE_DIR}/tools/presentation_carry_forward_smoke.cpp"
@@ -256,6 +276,7 @@ if(APPLE)
         void_media_ffmpeg
     )
     add_test(NAME presentation_carry_forward_smoke COMMAND presentation_carry_forward_smoke)
+    void_label_test(presentation_carry_forward_smoke "contract;portable")
 
     add_executable(software_frame_queue_smoke
         "${VOID_NATIVE_DIR}/tools/software_frame_queue_smoke.cpp"
@@ -265,6 +286,7 @@ if(APPLE)
         void_media_ffmpeg
     )
     add_test(NAME software_frame_queue_smoke COMMAND software_frame_queue_smoke)
+    void_label_test(software_frame_queue_smoke "contract;portable")
 
     add_executable(software_decode_frame_queue_smoke
         "${VOID_NATIVE_DIR}/tools/software_decode_frame_queue_smoke.cpp"
@@ -277,6 +299,7 @@ if(APPLE)
         VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
     )
     add_test(NAME software_decode_frame_queue_smoke COMMAND software_decode_frame_queue_smoke)
+    void_label_test(software_decode_frame_queue_smoke "macos;native;integration")
 
     add_executable(decode_thread_software_smoke
         "${VOID_NATIVE_DIR}/tools/decode_thread_software_smoke.cpp"
@@ -289,6 +312,7 @@ if(APPLE)
         VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
     )
     add_test(NAME decode_thread_software_smoke COMMAND decode_thread_software_smoke)
+    void_label_test(decode_thread_software_smoke "macos;native;integration")
 
     add_executable(macos_native_player_shared_renderer_smoke
         "${VOID_NATIVE_DIR}/tools/macos_native_player_shared_renderer_smoke.cpp"
@@ -302,6 +326,7 @@ if(APPLE)
     )
     add_test(NAME macos_native_player_shared_renderer_smoke
         COMMAND macos_native_player_shared_renderer_smoke)
+    void_label_test(macos_native_player_shared_renderer_smoke "macos;native;integration")
 
     add_executable(audio_mixer_smoke
         "${VOID_NATIVE_DIR}/tools/audio_mixer_smoke.cpp"
@@ -311,5 +336,6 @@ if(APPLE)
         void_media_ffmpeg
     )
     add_test(NAME audio_mixer_smoke COMMAND audio_mixer_smoke)
+    void_label_test(audio_mixer_smoke "contract;portable;audio")
 
 endif()

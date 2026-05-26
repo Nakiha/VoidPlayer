@@ -52,6 +52,39 @@ Native 子目录仍可直接使用 CMake/presets，但日常开发建议通过�
 | `BUILD_ANALYSIS` | `ON` | 构建 analysis cache/overlay/CLI；关闭时 renderer 使用 no-op overlay stub |
 | `BUILD_BENCHMARKS` | `OFF` | 构建 benchmark targets |
 
+## Test Matrix
+
+测试分层和 ownership 维护在 [TEST_MATRIX.md](TEST_MATRIX.md)。新增或删除测试前，先确认它保护的风险、
+所属 gate、是否与已有脚本重复。
+
+## PR Fast Gates
+
+PR fast gate 只放稳定、高信号、非 headed 的检查：
+
+```bash
+python3.12 dev.py test --native-only
+```
+
+Windows CI 还会跑 release compliance notice smoke：
+
+```bash
+python3.12 scripts/dev/check_release_compliance.py
+```
+
+macOS CI 的 native fast gate 分成 software native suite + VideoToolbox canary：
+
+```bash
+bash scripts/ci/run_macos_native_fast.sh
+```
+
+CTest labels 可用于本地收窄测试：
+
+```bash
+ctest --test-dir native/build-macos-make -L contract --output-on-failure
+ctest --test-dir native/build-macos-make -L backend --output-on-failure
+ctest --test-dir native/build-macos-make -L macos --output-on-failure
+```
+
 ## macOS Stabilization Gates
 
 macOS native playback 当前是 feature-complete / stabilization 状态。修改 shared renderer、Metal backend、VideoToolbox、
@@ -98,6 +131,23 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv
 
 Add targeted Windows UI scripts when touching seek, loop, viewport/layout, codec, track, analysis, or D3D11 shared texture/capture behavior.
 
+## Nightly / Headed UI Gates
+
+Headed UI, callback churn, audio speaker behavior, long-run perf, and stress tests should not become default PR fast gates.
+Use them for nightly, release candidate, or targeted local validation:
+
+```bash
+python3.12 dev.py mac-ui-test --build \
+  ui_tests/macos/native_facade_smoke.csv \
+  ui_tests/macos/native_seek_frame_smoke.csv \
+  ui_tests/macos/native_layout_split_smoke.csv \
+  ui_tests/macos/native_audio_play_seek_smoke.csv \
+  ui_tests/macos/native_4k60_playback_smoke.csv \
+  ui_tests/macos/native_vvc_software_playback_smoke.csv
+```
+
+`ui_tests/local/**` is manual/local only and must not be added to CI.
+
 ## Release / Package Checks
 
 `python3.12 dev.py package` builds/stages clean package input for the current platform. On macOS it stages
@@ -116,21 +166,29 @@ python3.12 scripts/dev/check_release_compliance.py
 python3.12 scripts/dev/check_release_compliance.py --stage build/package/macos/stage
 ```
 
-Release readiness must verify:
+Release candidate readiness must verify:
 
 - FFmpeg dylibs/runtime files and README/manifest/license notices;
 - top-level `LICENSE`, `THIRD_PARTY_NOTICES.md`, and `native/THIRD_PARTY_NATIVE.md`;
 - crash/log paths do not land in package staging;
 - sandbox file access and file picker behavior;
 - signing/notarization inputs for external distribution.
+- full Windows native config matrix in `.github/workflows/native.yml`;
+- Windows UI preservation and macOS headed smoke set selected from [TEST_MATRIX.md](TEST_MATRIX.md).
 
 ## CI
 
-CI entrypoint is `.github/workflows/native.yml`. It currently covers Windows native tests, macOS native tests, macOS
-analysis build, macOS runner build, FFmpeg package restore, release compliance smoke, and a VideoToolbox native smoke.
+CI entrypoint is `.github/workflows/native.yml`. It currently covers:
 
-Do not interpret CI green as full release readiness: headed macOS UI smokes, Windows UI preservation, package staging, and
-long-run/perf checks remain local or future nightly gates.
+- FFmpeg artifact download once, then per-job restore through `scripts/ci/restore_ffmpeg_*`;
+- Windows native fast build/test and release compliance smoke;
+- macOS native fast gate through `scripts/ci/run_macos_native_fast.sh`;
+- macOS analysis FFI build smoke;
+- macOS runner debug build;
+- full Windows native config matrix.
+
+Do not interpret CI green as full release readiness: headed macOS UI smokes, Windows UI preservation, package staging,
+full release compliance against staged packages, and long-run/perf checks remain release-candidate or local gates.
 
 ## Analysis Benchmarks
 

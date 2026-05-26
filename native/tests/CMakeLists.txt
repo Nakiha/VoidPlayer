@@ -81,7 +81,10 @@ target_compile_definitions(video_renderer_tests PRIVATE
 void_apply_native_compile_options(video_renderer_tests)
 
 add_test(NAME video_renderer_tests COMMAND video_renderer_tests)
-set_tests_properties(video_renderer_tests PROPERTIES TIMEOUT 180)
+set_tests_properties(video_renderer_tests PROPERTIES
+    TIMEOUT 180
+    LABELS "windows;native;contract;integration"
+)
 
 if(BUILD_ANALYSIS AND BUILD_ANALYSIS_TESTS)
     # ==================== Analysis Tests ====================
@@ -123,7 +126,10 @@ if(BUILD_ANALYSIS AND BUILD_ANALYSIS_TESTS)
     )
 
     add_test(NAME analysis_tests COMMAND analysis_tests)
-    set_tests_properties(analysis_tests PROPERTIES TIMEOUT 180)
+    set_tests_properties(analysis_tests PROPERTIES
+        TIMEOUT 180
+        LABELS "windows;analysis;contract"
+    )
 endif()
 
 if(BUILD_FFI)
@@ -157,6 +163,7 @@ if(BUILD_FFI)
     )
     set_tests_properties(test_ffi_c PROPERTIES
         TIMEOUT 30
+        LABELS "windows;ffi;canary"
         WORKING_DIRECTORY "$<TARGET_FILE_DIR:test_ffi_c>"
     )
 endif()

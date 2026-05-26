@@ -74,11 +74,15 @@ if(WIN32 AND BUILD_ANALYSIS)
         void_link_zstd(analysis_cli_smoke_tests)
         add_dependencies(analysis_cli_smoke_tests VoidPlayerCli)
         add_test(NAME voidplayer_cli_help COMMAND VoidPlayerCli --help)
+        set_tests_properties(voidplayer_cli_help PROPERTIES
+            LABELS "windows;analysis;cli;canary")
         add_test(NAME analysis_cli_smoke COMMAND
             analysis_cli_smoke_tests
             $<TARGET_FILE:VoidPlayerCli>
             "${FFMPEG_ANALYZER_PATH}"
             "${VIDEO_TEST_DIR}/h265_10s_1920x1080.mp4")
+        set_tests_properties(analysis_cli_smoke PROPERTIES
+            LABELS "windows;analysis;cli;integration")
     endif()
 endif()
 

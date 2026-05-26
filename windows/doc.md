@@ -1,6 +1,7 @@
 # Windows 宿主层文档
 
-本文档是 Windows Flutter runner / Win32 宿主层入口。Native C++ 渲染引擎文档见
+本文档是 Windows Flutter runner / Win32 宿主层入口。macOS runner 文档见
+[../macos/doc.md](../macos/doc.md)，shared native renderer 文档见
 [../native/docs/ARCHITECTURE.md](../native/docs/ARCHITECTURE.md)。
 
 ## 模块定位

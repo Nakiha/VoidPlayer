@@ -1,5 +1,5 @@
 name: void_player
-description: "A Windows Flutter video player with native FFmpeg and D3D11 rendering."
+description: "A Flutter video player with shared native FFmpeg playback and platform presentation backends."
 publish_to: 'none'
 version: 1.0.4+5
 

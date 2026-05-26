@@ -5,15 +5,16 @@
 
 ## 模块定位
 
-Flutter 层负责 VoidPlayer 的 Windows 桌面 UI、窗口协调、Action 自动化入口、
-MethodChannel 调用编排，以及 DX11 texture 的 Flutter 侧展示。
+Flutter 层负责 VoidPlayer 的跨平台 UI shell、主窗口/播放控制、Action 自动化入口、
+platform service 注入、MethodChannel/EventChannel 调用编排，以及平台 texture 的 Flutter 侧展示。
 
 核心边界：
 
 - UI 只组合 widget 和 view model，不直接承载播放/布局业务。
 - 主窗口业务由 `MainWindowController` 组合多个 coordinator。
-- Native 播放、渲染与解码能力通过 `NativePlayerController` 暴露，Flutter 层不直接处理帧数据。
+- Native 播放、渲染与解码能力通过 `NativePlayerController` 暴露，Flutter 层不直接处理帧数据；Windows D3D11 shared texture 和 macOS CVPixelBuffer/FlutterTexture 都是平台细节。
 - Windows 专属能力集中在 `lib/windows/`，其中主窗口在 `lib/windows/main/`，analysis 窗口在 `lib/windows/analysis/`，跨窗口基础设施留在 `lib/windows/` 根目录。
+- macOS runner/platform services 由 `macos/` 和平台能力开关承接；native playback 已可用，analysis UI/IPC 仍 capability-gated。
 
 ## 详细文档索引
 
@@ -28,6 +29,7 @@ MethodChannel 调用编排，以及 DX11 texture 的 Flutter 侧展示。
 | [Action 维护](docs/ACTION_MAINTENANCE.md) | 新增/修改/移除 Action 与 Assert 的维护清单 |
 | [AXTree 维护](docs/AXTREE_MAINTENANCE.md) | 主窗口 / analysis 窗口 Semantics、UIA、识图分割维护规则 |
 | [UI 自动化测试](docs/UI_TESTING.md) | `ui_tests/` 目录分区、回归选择、补测试规则 |
+| [macOS Runner](../macos/doc.md) | macOS Cocoa runner、FlutterTexture/CVPixelBuffer、Metal presentation、release gate |
 | [VoidPlayerCli](../installer/windows/docs/cli.md) | 发布包内只读 VAC2/VACHUNK cache 检查工具 |
 
 ## 常用开发命令

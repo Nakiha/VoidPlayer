@@ -114,7 +114,20 @@ python dev.py package --installer
 On macOS this builds a release app, copies `VoidPlayer.app` into
 `build/package/macos/VoidPlayer/`, stages GPL/third-party/FFmpeg compliance
 docs, validates bundled FFmpeg `@rpath` linkage with `otool -L`, ad-hoc signs
-the staged app, and verifies the copied app signature.
+the staged app with Release entitlements, and verifies the copied app signature.
+
+Before a release candidate, run the macOS package readiness gate:
+
+```bash
+python dev.py gate macos-release-readiness
+```
+
+This gate stages the app and checks bundled FFmpeg dylibs/symlinks, `@rpath`
+linkage, GPL/third-party notices, package cleanliness, sandbox file-picker
+inputs, crash-report watcher wiring, codesign verification, and release
+entitlements. The default gate accepts ad-hoc signing for local testing; use
+`scripts/dev/check_macos_release_readiness.py --require-developer-id` against a
+Developer ID signed stage before external distribution.
 
 With `--installer`, the same staging directory is compressed into
 `build/package/macos/installer/VoidPlayer-<version>-macos-arm64.dmg` for local

@@ -11,6 +11,7 @@ and UI tests into gates and records cleanup decisions that changed the active se
 | Windows preservation | Windows runner/D3D11 preservation after shared renderer/backend changes. | `python dev.py gate windows-preservation` |
 | macOS stabilization | macOS native playback and renderer-owned Metal confidence. | `python3.12 dev.py gate macos-ui-smoke` |
 | Nightly/headed | Slower headed UI, stress, audio, 4K/cadence, and lifecycle churn. | `python3.12 dev.py gate macos-ui-nightly` or Windows UI suites |
+| macOS release readiness | macOS package stage, FFmpeg dylibs, `@rpath`, notices, entitlements, sandbox/crash-log inputs, and codesign smoke. | `python3.12 dev.py gate macos-release-readiness` |
 | Release candidate | Full native config matrix, platform UI preservation, package, compliance, signing inputs. | `python3.12 dev.py gate release-candidate` plus CI full matrix |
 | Manual/local | Tests needing local media, audible speakers, external paths, or long perf runs. | `ui_tests/local/**`, manual audio/perf scripts |
 
@@ -106,6 +107,7 @@ ctest --test-dir native/build-macos-make -LE hosted-flaky --output-on-failure
 | `.github/workflows/native.yml` | weekly or manual `full_matrix=true` | full Windows native config matrix |
 | `.github/workflows/macos-ui.yml` | weekly | `python3.12 dev.py gate macos-ui-smoke` |
 | `.github/workflows/macos-ui.yml` | manual `profile=macos-ui-smoke` or `macos-ui-nightly` | headed macOS UI smoke/nightly gate |
+| Local macOS package gate | manual before release candidate | `python3.12 dev.py gate macos-release-readiness` |
 
 The local `release-candidate` gate and the GitHub full native config matrix are separate pieces of release evidence:
 run both when preparing a release candidate.

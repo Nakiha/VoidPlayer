@@ -41,7 +41,7 @@ architecture migration. Use these gates when changing the shared renderer or mac
 | Shared native scheduler/backend | `python3.12 dev.py test --native-only` |
 | macOS runner/texture integration | `python3.12 dev.py build --flutter` |
 | macOS renderer-owned smoke | `python3.12 dev.py mac-ui-test --build ui_tests/macos/native_facade_smoke.csv ui_tests/macos/native_4k60_playback_smoke.csv ui_tests/macos/native_vvc_software_playback_smoke.csv ui_tests/macos/native_add_track_smoke.csv` |
-| Release staging | `python3.12 dev.py package` |
+| Release staging | `python3.12 dev.py gate macos-release-readiness` |
 | Windows preservation | Run native/build/UI preservation on a Windows host before closing the macOS release gate. |
 
 ## Non-Negotiable Boundaries

@@ -65,8 +65,8 @@ That path is now feature-complete. The active work is stabilization:
 2. Add deterministic Metal shader/layout/color parity coverage before raising performance thresholds.
 3. Preserve Windows behavior after shared backend boundary changes.
 4. Convert remaining architecture docs and tests from migration notes to current backend contracts.
-5. Prepare release-level package, license, crash/log, and file-permission checks without moving
-   playback policy back into Swift.
+5. Keep release-level package, license, crash/log, file-permission, signing, and notarization
+   evidence current without moving playback policy back into Swift.
 
 See [RENDERER_PLATFORM_BACKEND_PLAN.md](RENDERER_PLATFORM_BACKEND_PLAN.md) for the phased execution
 plan.
@@ -79,8 +79,9 @@ plan.
   treated as release gates.
 - macOS analysis UI/IPC support still needs a first-class design.
 - Windows preservation checks must run on a Windows host after renderer backend boundary changes.
-- Release staging must verify FFmpeg dylibs, license notices, crash/log paths, sandbox file access,
-  and package signing/notarization inputs.
+- macOS release-readiness now verifies FFmpeg dylibs, license notices, crash/log watcher wiring,
+  sandbox file-picker inputs, package cleanliness, `@rpath`, codesign, and Release entitlements.
+  External distribution still needs Developer ID signing and notarization evidence.
 
 ## Validation Entry Points
 
@@ -90,7 +91,7 @@ plan.
 | macOS runner or texture path | `flutter build macos --debug` plus targeted `python dev.py mac-ui-test ...` |
 | Shared renderer scheduling | macOS native tests plus Windows native/UI preservation checks |
 | Metal/color/layout behavior | native parity tests plus targeted macOS UI capture smokes |
-| Packaging | `python dev.py package` |
+| Packaging | `python dev.py gate macos-release-readiness` |
 
 Representative local macOS smoke set:
 

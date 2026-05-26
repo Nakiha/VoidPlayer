@@ -68,6 +68,19 @@ def _run_windows_preservation() -> None:
     _python_dev("ui-test", "--build", "ui_tests/smoke/basic.csv")
 
 
+def _run_macos_release_readiness() -> None:
+    _python_dev("package")
+    run(
+        [
+            sys.executable,
+            "scripts/dev/check_macos_release_readiness.py",
+            "--stage",
+            "build/package/macos/VoidPlayer",
+        ],
+        cwd=str(ROOT),
+    )
+
+
 def cmd_gate(args: argparse.Namespace) -> None:
     """Run a named validation gate profile."""
     profile = args.profile
@@ -107,21 +120,18 @@ def cmd_gate(args: argparse.Namespace) -> None:
         _run_windows_preservation()
         return
 
+    if profile == "macos-release-readiness":
+        if not _is_macos():
+            _unsupported(profile, "macOS")
+        _run_macos_release_readiness()
+        return
+
     if profile == "release-candidate":
         if _is_macos():
             _run_macos_native_fast()
             _python_dev("build", "--flutter")
             _run_macos_ui_nightly()
-            _python_dev("package")
-            run(
-                [
-                    sys.executable,
-                    "scripts/dev/check_release_compliance.py",
-                    "--stage",
-                    "build/package/macos/VoidPlayer",
-                ],
-                cwd=str(ROOT),
-            )
+            _run_macos_release_readiness()
         elif _is_windows():
             _run_windows_preservation()
             _python_dev("package")

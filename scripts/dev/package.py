@@ -80,6 +80,8 @@ MACOS_FFMPEG_SYMLINKS = [
     "libswresample.dylib",
 ]
 
+MACOS_RELEASE_ENTITLEMENTS = ROOT / "macos" / "Runner" / "Release.entitlements"
+
 
 def cmd_package(args) -> None:
     """Build and stage a clean platform package input directory."""
@@ -389,7 +391,16 @@ def _verify_macos_codesign(stage_app: Path) -> None:
 
 def _adhoc_sign_macos_app(stage_app: Path) -> None:
     header("Ad-hoc sign staged macOS app")
-    run(["codesign", "--force", "--deep", "--sign", "-", str(stage_app)], cwd=str(ROOT))
+    run([
+        "codesign",
+        "--force",
+        "--deep",
+        "--sign",
+        "-",
+        "--entitlements",
+        str(MACOS_RELEASE_ENTITLEMENTS),
+        str(stage_app),
+    ], cwd=str(ROOT))
 
 
 def _sign_macos_app(stage_app: Path, identity: str | None) -> None:
@@ -407,6 +418,8 @@ def _sign_macos_app(stage_app: Path, identity: str | None) -> None:
         "--timestamp",
         "--sign",
         identity,
+        "--entitlements",
+        str(MACOS_RELEASE_ENTITLEMENTS),
         str(stage_app),
     ], cwd=str(ROOT))
 

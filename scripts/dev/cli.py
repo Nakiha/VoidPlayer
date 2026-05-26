@@ -64,6 +64,7 @@ Examples:
   python dev.py test --native-only --github
   python dev.py gate pr-fast
   python dev.py gate macos-ui-smoke
+  python dev.py gate macos-release-readiness
   python dev.py package
   python dev.py package --installer
   python dev.py package --installer --macos-sign-identity "Developer ID Application: Team" --macos-notarize --macos-notary-profile PROFILE
@@ -123,6 +124,7 @@ Examples:
             "macos-native-fast",
             "macos-ui-smoke",
             "macos-ui-nightly",
+            "macos-release-readiness",
             "windows-preservation",
             "release-candidate",
         ],

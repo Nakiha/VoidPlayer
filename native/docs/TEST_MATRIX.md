@@ -62,7 +62,7 @@ ctest --test-dir native/build-macos-make -L backend --output-on-failure
 | `macos_metal_uploader_smoke` | backend canary | PR fast | Metal, sample media | Metal uploader and CVPixelBuffer validation. |
 | `macos_metal_presentation_backend_smoke` | backend canary | PR fast | Metal | Metal backend provider/draw canary. |
 | `videotoolbox_provider_smoke` | backend canary | PR fast / macOS stabilization | VideoToolbox availability | VT provider support/fallback visibility. |
-| `renderer_metal_headless_smoke` | backend integration | macOS stabilization | Metal, sample media | Renderer-owned Metal headless path. |
+| `renderer_metal_headless_smoke` | backend integration | Nightly/headed or targeted Metal changes | Metal, sample media | Renderer-owned Metal headless path; excluded from hosted PR fast because CI GPUs may fail visible-frame capture. |
 | `macos_media_smoke` | native integration | macOS stabilization | FFmpeg media | macOS media open/metadata path. |
 | `software_decode_frame_queue_smoke` | native integration | macOS stabilization | sample media | Software decode frame queue. |
 | `decode_thread_software_smoke` | native integration | macOS stabilization | sample media | Decode thread software path. |

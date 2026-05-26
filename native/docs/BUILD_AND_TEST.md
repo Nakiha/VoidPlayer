@@ -89,6 +89,10 @@ macOS CI 的 native fast gate 分成 software native suite + VideoToolbox canary
 bash scripts/ci/run_macos_native_fast.sh
 ```
 
+Hosted macOS PR fast excludes `renderer_metal_headless_smoke`; keep that canary for nightly/headed or targeted
+Metal changes because GitHub runner GPU presentation can report a black front buffer while the shared native
+player Metal canary passes.
+
 CTest labels 可用于本地收窄测试：
 
 ```bash

@@ -284,8 +284,8 @@ def cmd_test(args) -> None:
     if not args.flutter_only:
         if _is_macos():
             if args.github:
-                print("macOS native test mode ignores --github; running the local CTest suite.")
-            native_build_macos(args.debug, test=True)
+                print("macOS native GitHub mode: excluding hosted-runner-only Metal headless flake.")
+            native_build_macos(args.debug, test=True, github=args.github)
         else:
             native_build(args.debug, test=True, github=args.github)
 

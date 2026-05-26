@@ -489,7 +489,7 @@ def native_build(debug: bool, test: bool = True, github: bool = False) -> None:
         run(test_cmd, cwd=str(NATIVE_DIR))
 
 
-def native_build_macos(debug: bool, test: bool = True) -> None:
+def native_build_macos(debug: bool, test: bool = True, github: bool = False) -> None:
     """Build the portable native macOS targets, optionally run CTest."""
     build_type = "Debug" if debug else "Release"
     build_dir = NATIVE_DIR / "build-macos-make"
@@ -521,9 +521,12 @@ def native_build_macos(debug: bool, test: bool = True) -> None:
 
     if test:
         header(f"Test native macOS ({build_type})")
-        run([
+        ctest_cmd = [
             "ctest",
             "--test-dir",
             str(build_dir),
             "--output-on-failure",
-        ], cwd=str(ROOT))
+        ]
+        if github:
+            ctest_cmd.extend(["-E", "renderer_metal_headless_smoke"])
+        run(ctest_cmd, cwd=str(ROOT))
